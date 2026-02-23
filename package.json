@@ -1,0 +1,38 @@
+{
+  "name": "ticrif-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=18.x",
+    "npm": ">=9.x"
+  },
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w apps/frontend\" \"npm run dev -w apps/backend\"",
+    "dev:backend": "npm run dev -w apps/backend",
+    "dev:frontend": "npm run dev -w apps/frontend",
+    "build": "npm run build:backend && npm run build:frontend",
+    "build:backend": "cd apps/backend && npm install && npx prisma generate && npm run build",
+    "build:frontend": "cd apps/frontend && npm install && npm run build",
+    "postinstall": "npm run postinstall:backend",
+    "postinstall:backend": "cd apps/backend && npx prisma generate",
+    "migrate": "npm run migrate -w apps/backend",
+    "migrate:deploy": "npm run migrate:deploy -w apps/backend",
+    "worker": "npm run worker -w apps/backend",
+    "start:railway": "npm run start:prod -w apps/backend",
+    "worker:railway": "npm run worker:prod -w apps/backend",
+    "build:railway": "npm run build:backend",
+    "studio": "npm run studio -w apps/backend",
+    "vercel-build": "npm run build",
+    "smoke:api": "node scripts/smoke-api.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "multer": "^2.0.2",
+    "qs": "^6.15.0"
+  }
+}

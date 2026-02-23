@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "dist/src/vercel.js",
+      "use": "@vercel/node",
+      "config": {
+        "maxDuration": 30,
+        "includeFiles": [
+          "dist/**",
+          "prisma/**",
+          "node_modules/.prisma/**",
+          "node_modules/@prisma/**"
+        ]
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "dist/src/vercel.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "name": "ticrif-backend",
+  "version": "1.0.0",
+  "description": "Backend NestJS para TICRIF - Análise de Trading com IA",
+  "author": "",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18.x"
+  },
+  "scripts": {
+    "build": "prisma generate && nest build",
+    "postinstall": "prisma generate",
+    "vercel-build": "prisma generate && nest build",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "start": "node dist/src/main",
+    "dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
+    "start:prod": "node dist/src/main",
+    "lint": "eslint \"{src,apps,libs,test,worker}/**/*.ts\" --fix",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "migrate": "prisma migrate dev",
+    "migrate:deploy": "node scripts/run-migrate-deploy.js",
+    "migrate:reset": "prisma migrate reset --force",
+    "studio": "prisma studio",
+    "seed": "ts-node prisma/seed.ts",
+    "worker": "npm run worker:dev",
+    "worker:dev": "ts-node -r tsconfig-paths/register worker/ai.worker.ts",
+    "worker:prod": "node dist/worker/ai.worker.js"
+  },
+  "dependencies": {
+    "@clerk/backend": "^1.0.0",
+    "@nestjs/common": "^10.0.0",
+    "@nestjs/config": "^4.0.3",
+    "@nestjs/core": "^10.0.0",
+    "@nestjs/platform-express": "^10.0.0",
+    "@nestjs/throttler": "^6.5.0",
+    "@prisma/client": "^6.19.0",
+    "@vendia/serverless-express": "^4.12.6",
+    "bullmq": "^5.1.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "express": "^4.21.2",
+    "ioredis": "^5.3.2",
+    "multer": "^2.0.2",
+    "openai": "^4.20.1",
+    "qs": "^6.15.0",
+    "reflect-metadata": "^0.1.13",
+    "rxjs": "^7.8.1",
+    "stripe": "^14.7.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@nestjs/cli": "^10.0.0",
+    "@nestjs/schematics": "^10.0.0",
+    "@nestjs/testing": "^10.0.0",
+    "@types/express": "^4.17.17",
+    "@types/jest": "^29.5.2",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.3.1",
+    "@types/supertest": "^2.0.12",
+    "@typescript-eslint/eslint-plugin": "^8.56.0",
+    "@typescript-eslint/parser": "^8.56.0",
+    "eslint": "^9.27.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "jest": "^29.5.0",
+    "prettier": "^3.0.0",
+    "prisma": "^6.19.0",
+    "source-map-support": "^0.5.21",
+    "supertest": "^7.1.3",
+    "ts-jest": "^29.1.0",
+    "ts-loader": "^9.4.3",
+    "ts-node": "^10.9.1",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.1.3"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  }
+}

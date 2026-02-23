@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+  // Necessário para Vercel (Node serverless em Debian/openssl 1.1)
+  binaryTargets = ["native", "debian-openssl-1.1.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["tickrify"]
+}
+
+model User {
+  id          String   @id @default(cuid())
+  clerkUserId String   @unique
+  email       String?
+  name        String?
+  role        String   @default("user") // user, admin
+  plan        String   @default("FREE") // FREE, PRO, PREMIUM
+  createdAt   DateTime @default(now())
+
+  // Stripe fields
+  stripeCustomerId     String? @unique
+  stripeSubscriptionId String? @unique
+  subscriptionStatus   String? // active, canceled, past_due, etc
+
+  subscriptions Subscription[]
+  analyses      Analysis[]
+  analysisUsage AnalysisUsage[]
+  promptAudits  PromptAudit[]
+  adminAudits   AdminAudit[] @relation("AdminAuditActor")
+  adminTargets  AdminAudit[] @relation("AdminAuditTarget")
+
+  @@schema("tickrify")
+}
+
+model Subscription {
+  id        String   @id @default(cuid())
+  userId    String
+  stripeId  String   @unique
+  status    String
+  priceId   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("tickrify")
+}
+
+model Analysis {
+  id             String   @id @default(cuid())
+  userId         String
+  imageUrl       String? // Opcional - imagem não é mais salva para economizar espaço
+  status         String // pending, processing, completed, failed
+  recommendation String? // "BUY", "SELL", "WAIT"
+  confidence     Float? // 0-100
+  reasoning      String?  @db.Text
+  fullResponse   Json?
+  promptVer      Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@schema("tickrify")
+}
+
+model AnalysisUsage {
+  id          String   @id @default(cuid())
+  userId      String
+  periodType  String // MONTH
+  periodStart DateTime
+  count       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, periodType, periodStart])
+  @@index([periodType, periodStart])
+  @@schema("tickrify")
+}
+
+model PromptConfig {
+  id        String        @id @default(cuid())
+  version   Int           @unique
+  prompt    String        @db.Text
+  isActive  Boolean       @default(false)
+  createdAt DateTime      @default(now())
+  audits    PromptAudit[]
+
+  @@index([isActive])
+  @@schema("tickrify")
+}
+
+model PromptAudit {
+  id               String        @id @default(cuid())
+  promptConfigId   String?
+  action           String
+  actorUserId      String
+  actorClerkUserId String
+  payload          Json?
+  createdAt        DateTime      @default(now())
+  promptConfig     PromptConfig? @relation(fields: [promptConfigId], references: [id], onDelete: SetNull)
+  actorUser        User          @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@schema("tickrify")
+}
+
+model AdminAudit {
+  id         String   @id @default(cuid())
+  actorUserId String?
+  targetUserId String?
+  targetEmail String?
+  action     String
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  actorUser  User? @relation("AdminAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  targetUser User? @relation("AdminAuditTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([action, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@schema("tickrify")
+}

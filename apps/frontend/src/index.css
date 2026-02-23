@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 230 21% 8%; /* #0A0E27 */
+    --foreground: 220 20% 90%; /* #B4BCD0 */
+    
+    --card: 228 19% 11%; /* #131729 */
+    --card-foreground: 220 20% 90%;
+
+    --popover: 230 21% 8%;
+    --popover-foreground: 220 20% 90%;
+
+    --primary: 151 100% 50%; /* #00FF88 */
+    --primary-foreground: 230 21% 8%;
+    --primary-dark: 149 100% 40%; /* #00CC6A */
+
+    --secondary: 3 100% 61%; /* #FF3B30 */
+    --secondary-foreground: 0 0% 100%;
+    --secondary-dark: 3 80% 51%; /* #CC2F26 */
+
+    --muted: 227 18% 17%; /* #1E2337 */
+    --muted-foreground: 220 10% 50%; /* #6B7280 */
+
+    --accent: 227 18% 17%;
+    --accent-foreground: 220 20% 90%;
+    --accent-blue: 217 91% 60%; /* #3B82F6 */
+    --accent-purple: 262 89% 67%; /* #8B5CF6 */
+
+    --destructive: 3 100% 61%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 227 18% 17%;
+    --input: 227 18% 17%;
+    --ring: 151 100% 50%;
+    
+    --neutral: 43 100% 50%; /* #FFB800 */
+
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}

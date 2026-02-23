@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log
+.git
+.github
+*.md
+.env
+.env.local
+.DS_Store
+logs
+*.log
+apps/frontend/dist
+apps/frontend/node_modules
+apps/backend/dist
+dumps
+
