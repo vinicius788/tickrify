@@ -256,7 +256,7 @@ npx prisma migrate deploy
 NODE_ENV=production
 DATABASE_URL=postgresql://...
 DIRECT_URL=postgresql://...
-CLERK_SECRET_KEY=sk_...
+CLERK_SECRET_KEY=YOUR_CLERK_SECRET_KEY_HERE
 OPENAI_API_KEY=YOUR_OPENAI_API_KEY_HERE
 STRIPE_SECRET_KEY=YOUR_STRIPE_SECRET_KEY_HERE
 STRIPE_WEBHOOK_SECRET=YOUR_WEBHOOK_SECRET_HERE
@@ -275,7 +275,7 @@ AWS_S3_BUCKET=...
 
 ### Frontend (obrigatórias)
 ```bash
-VITE_CLERK_PUBLISHABLE_KEY=pk_...
+VITE_CLERK_PUBLISHABLE_KEY=YOUR_CLERK_PUBLISHABLE_KEY_HERE
 VITE_API_URL=https://seu-backend.vercel.app
 ```
 
@@ -380,4 +380,3 @@ O projeto **Tickrify** está completamente configurado e pronto para deploy!
 Leia o `GUIA_FINAL_DEPLOYMENT.md` e siga os passos!
 
 Boa sorte! 🎉
-

@@ -49,7 +49,7 @@ export class AIAdapter {
   private readonly openai: OpenAI;
 
   constructor() {
-    const apiKey = process.env.OPENAI_API_KEY || 'sk-dummy-key-for-development';
+    const apiKey = process.env.OPENAI_API_KEY || 'OPENAI_API_KEY_PLACEHOLDER';
 
     if (!process.env.OPENAI_API_KEY) {
       console.warn(
@@ -183,4 +183,3 @@ export class AIAdapter {
     };
   }
 }
-

@@ -47,10 +47,21 @@ function getRedisConnection() {
 }
 
 function hasValidOpenAiKey(): boolean {
+  const key = process.env.OPENAI_API_KEY?.trim();
+  if (!key) {
+    return false;
+  }
+
+  if (
+    key === 'YOUR_OPENAI_API_KEY_HERE' ||
+    key === 'OPENAI_API_KEY_PLACEHOLDER' ||
+    key === 'DUMMY_OPENAI_KEY'
+  ) {
+    return false;
+  }
+
   return Boolean(
-    process.env.OPENAI_API_KEY &&
-      process.env.OPENAI_API_KEY !== 'sk-xxxxx' &&
-      process.env.OPENAI_API_KEY.startsWith('sk-'),
+    key.length >= 20,
   );
 }
 
