@@ -55,3 +55,9 @@ apps/frontend/.env.production
 apps/backend/.env
 apps/backend/.env.production
 .env
+
+.env
+**/.env
+**/.env.production
+**/.env.local
+apps/frontend/.env.production
