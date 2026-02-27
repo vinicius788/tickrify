@@ -17,7 +17,7 @@
     "build:backend": "cd apps/backend && npm install && npx prisma generate && npm run build",
     "build:frontend": "cd apps/frontend && npm install && npm run build",
     "postinstall": "npm run postinstall:backend",
-    "postinstall:backend": "cd apps/backend && npx prisma generate",
+    "postinstall:backend": "cd apps/backend && npx prisma generate --config ./prisma.config.ts",
     "migrate": "npm run migrate -w apps/backend",
     "migrate:deploy": "npm run migrate:deploy -w apps/backend",
     "worker": "npm run worker -w apps/backend",
@@ -32,6 +32,7 @@
     "concurrently": "^8.2.2"
   },
   "dependencies": {
+    "dotenv": "^17.2.3",
     "multer": "^2.0.2",
     "qs": "^6.15.0"
   }
