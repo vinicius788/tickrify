@@ -140,6 +140,13 @@ stripe trigger checkout.session.completed
 
 Todas as variáveis do `.env.example`
 
+Para Prisma ORM v7, configure as URLs do banco sem aspas e sem prefixo `DATABASE_URL=` dentro do valor:
+
+```env
+MIGRATIONS_DATABASE_URL=postgresql://user:pass@host:5432/db?schema=tickrify&sslmode=require
+DATABASE_URL=postgresql://user:pass@host:5432/db?schema=tickrify&sslmode=require
+```
+
 ### 2. Deploy
 
 ```bash
