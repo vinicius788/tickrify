@@ -1,0 +1,101 @@
+envVarGroups:
+  - name: tickrify-backend-common
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: DEMO_MODE
+        value: "false"
+      - key: AI_MODEL
+        value: gpt-4o
+      - key: FREE_ANALYSIS_LIMIT_PER_MONTH
+        value: "3"
+      - key: MAX_IMAGE_UPLOAD_BYTES
+        value: "10485760"
+      - key: SUPABASE_STORAGE_BUCKET
+        value: analysis-images
+      - key: ALLOW_LEGACY_AUTH_FALLBACK
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: MIGRATIONS_DATABASE_URL
+        sync: false
+      - key: DIRECT_DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_JWT_KEY
+        sync: false
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: CLERK_ISSUER
+        sync: false
+      - key: CLERK_AUTHORIZED_PARTIES
+        sync: false
+      - key: BOOTSTRAP_ADMIN_EMAILS
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_PUBLIC_BASE_URL
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_PRICE_PRO_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_PRO_ANNUAL
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+
+services:
+  - type: web
+    name: tickrify-backend-api
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci && npm run build -w apps/backend
+    startCommand: npm run migrate:deploy -w apps/backend && npm run start:prod -w apps/backend
+    healthCheckPath: /api/health/live
+    buildFilter:
+      paths:
+        - apps/backend/**
+        - package.json
+        - package-lock.json
+    envVars:
+      - fromGroup: tickrify-backend-common
+
+  - type: worker
+    name: tickrify-backend-worker
+    runtime: node
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci && npm run build -w apps/backend
+    startCommand: npm run worker:prod -w apps/backend
+    buildFilter:
+      paths:
+        - apps/backend/**
+        - package.json
+        - package-lock.json
+    envVars:
+      - fromGroup: tickrify-backend-common
