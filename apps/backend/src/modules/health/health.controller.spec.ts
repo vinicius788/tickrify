@@ -54,6 +54,10 @@ describe('HealthController', () => {
     expect(readiness.ai.ready).toBe(true);
   });
 
+  it('returns minimal public liveness payload', () => {
+    expect(controller.getLiveness()).toEqual({ status: 'ok' });
+  });
+
   it('fails readiness in production when OpenAI key is missing', async () => {
     process.env.NODE_ENV = 'production';
     process.env.APP_ENV = 'production';
@@ -88,4 +92,3 @@ describe('HealthController', () => {
     }
   });
 });
-

@@ -1,8 +1,9 @@
-import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { getAiQueueReadiness } from '../ai/ai.queue';
 import { hasValidOpenAiKey } from '../../common/utils/ai-runtime';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
+import { OpsTokenGuard } from './ops-token.guard';
 
 type ReadinessItem = {
   required: boolean;
@@ -16,15 +17,11 @@ export class HealthController {
 
   @Get('live')
   getLiveness() {
-    return {
-      status: 'ok',
-      service: 'tickrify-backend',
-      timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || 'development',
-    };
+    return { status: 'ok' };
   }
 
   @Get('ready')
+  @UseGuards(OpsTokenGuard)
   async getReadiness() {
     const databaseReady = this.prisma.isReady() && (await this.prisma.checkConnection());
     const queue = await getAiQueueReadiness();
@@ -100,6 +97,7 @@ export class HealthController {
   }
 
   @Get()
+  @UseGuards(OpsTokenGuard)
   async getHealth() {
     const ready = this.prisma.isReady() && (await this.prisma.checkConnection());
     const queue = await getAiQueueReadiness();
