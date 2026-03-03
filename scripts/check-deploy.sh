@@ -27,6 +27,41 @@ fi
 BACKEND_URL=$1
 FRONTEND_URL=$2
 
+HEALTH_JSON=$(curl -s "$BACKEND_URL/api/health" || echo "")
+READY_HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/api/health/ready")
+FAILURES=0
+
+read_health_field() {
+  local path=$1
+  printf '%s' "$HEALTH_JSON" | node -e "
+const fs = require('fs');
+const path = process.argv[1];
+const input = fs.readFileSync(0, 'utf8');
+try {
+  const payload = JSON.parse(input || '{}');
+  const parts = String(path || '').split('.').filter(Boolean);
+  let value = payload;
+  for (const part of parts) {
+    if (value && Object.prototype.hasOwnProperty.call(value, part)) {
+      value = value[part];
+    } else {
+      value = '';
+      break;
+    }
+  }
+  if (value === null || value === undefined) {
+    process.stdout.write('');
+  } else if (typeof value === 'object') {
+    process.stdout.write(JSON.stringify(value));
+  } else {
+    process.stdout.write(String(value));
+  }
+} catch {
+  process.stdout.write('');
+}
+" "$path"
+}
+
 # ============================================
 # CHECK 1: Backend Health
 # ============================================
@@ -35,9 +70,14 @@ echo -e "${BLUE}[1/6] Verificando Backend Health...${NC}"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/api/health")
 
 if [ "$HTTP_CODE" -eq 200 ]; then
-    echo -e "${GREEN}✅ Backend está online (HTTP $HTTP_CODE)${NC}"
+    echo -e "${GREEN}✅ Backend está online (HTTP $HTTP_CODE, ready HTTP $READY_HTTP_CODE)${NC}"
+    if [ "$READY_HTTP_CODE" -ne 200 ]; then
+        echo -e "${YELLOW}⚠️  Backend /health/ready não está OK (HTTP $READY_HTTP_CODE)${NC}"
+        FAILURES=$((FAILURES + 1))
+    fi
 else
     echo -e "${RED}❌ Backend não está respondendo (HTTP $HTTP_CODE)${NC}"
+    FAILURES=$((FAILURES + 1))
 fi
 
 # ============================================
@@ -46,77 +86,78 @@ fi
 
 echo ""
 echo -e "${BLUE}[2/6] Verificando Database Connection...${NC}"
-DB_CHECK=$(curl -s "$BACKEND_URL/api/health" | grep -o "database.*ok" || echo "fail")
+DB_STATUS=$(read_health_field "database")
 
-if [[ $DB_CHECK == *"ok"* ]]; then
+if [[ "$DB_STATUS" == "ok" ]]; then
     echo -e "${GREEN}✅ Database conectado${NC}"
 else
-    echo -e "${RED}❌ Database não conectado${NC}"
+    echo -e "${RED}❌ Database não conectado (status: ${DB_STATUS:-desconhecido})${NC}"
+    FAILURES=$((FAILURES + 1))
 fi
 
 # ============================================
-# CHECK 3: Redis Connection
+# CHECK 3: Queue/Worker Connection
 # ============================================
 
 echo ""
-echo -e "${BLUE}[3/6] Verificando Redis Connection...${NC}"
-REDIS_CHECK=$(curl -s "$BACKEND_URL/api/health" | grep -o "redis.*ok" || echo "fail")
+echo -e "${BLUE}[3/6] Verificando Queue/Worker...${NC}"
+QUEUE_CONNECTED=$(read_health_field "queue.connected")
+QUEUE_WORKERS=$(read_health_field "queue.workersCount")
+QUEUE_REASON=$(read_health_field "queue.reason")
+QUEUE_READY=$(read_health_field "queue.ready")
 
-if [[ $REDIS_CHECK == *"ok"* ]]; then
-    echo -e "${GREEN}✅ Redis conectado${NC}"
+if [[ "$QUEUE_CONNECTED" == "true" ]]; then
+    echo -e "${GREEN}✅ Queue conectada (workers=${QUEUE_WORKERS:-0}, ready=${QUEUE_READY:-false})${NC}"
 else
-    echo -e "${YELLOW}⚠️  Redis status desconhecido${NC}"
+    echo -e "${YELLOW}⚠️  Queue nao conectada (reason=${QUEUE_REASON:-unknown})${NC}"
+    FAILURES=$((FAILURES + 1))
 fi
 
 # ============================================
-# CHECK 4: Frontend Accessibility
+# CHECK 4: Dependencias criticas de runtime
 # ============================================
 
 echo ""
-echo -e "${BLUE}[4/6] Verificando Frontend...${NC}"
+echo -e "${BLUE}[4/6] Verificando auth/storage/AI (runtime)...${NC}"
+AUTH_READY=$(read_health_field "auth.ready")
+STORAGE_READY=$(read_health_field "storage.ready")
+AI_READY=$(read_health_field "ai.ready")
+
+if [[ "$AUTH_READY" == "true" && "$STORAGE_READY" == "true" && "$AI_READY" == "true" ]]; then
+    echo -e "${GREEN}✅ Dependencias criticas prontas${NC}"
+else
+    echo -e "${YELLOW}⚠️  Dependencias incompletas (auth=${AUTH_READY:-?}, storage=${STORAGE_READY:-?}, ai=${AI_READY:-?})${NC}"
+    FAILURES=$((FAILURES + 1))
+fi
+
+# ============================================
+# CHECK 5: Frontend Accessibility
+# ============================================
+
+echo ""
+echo -e "${BLUE}[5/6] Verificando Frontend...${NC}"
 FRONTEND_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$FRONTEND_URL")
 
 if [ "$FRONTEND_CODE" -eq 200 ]; then
     echo -e "${GREEN}✅ Frontend está online (HTTP $FRONTEND_CODE)${NC}"
 else
     echo -e "${RED}❌ Frontend não está respondendo (HTTP $FRONTEND_CODE)${NC}"
+    FAILURES=$((FAILURES + 1))
 fi
 
 # ============================================
-# CHECK 5: API Connectivity from Frontend
+# CHECK 6: API Connectivity from Frontend
 # ============================================
 
 echo ""
-echo -e "${BLUE}[5/6] Verificando conectividade Frontend → Backend...${NC}"
+echo -e "${BLUE}[6/6] Verificando conectividade Frontend → Backend...${NC}"
 API_CHECK=$(curl -s "$BACKEND_URL/api/health" -H "Origin: $FRONTEND_URL" -v 2>&1 | grep -i "access-control-allow-origin")
 
 if [ ! -z "$API_CHECK" ]; then
     echo -e "${GREEN}✅ CORS configurado corretamente${NC}"
 else
     echo -e "${YELLOW}⚠️  CORS pode não estar configurado corretamente${NC}"
-fi
-
-# ============================================
-# CHECK 6: SSL Certificates
-# ============================================
-
-echo ""
-echo -e "${BLUE}[6/6] Verificando SSL...${NC}"
-
-# Backend SSL
-BACKEND_SSL=$(curl -vI "$BACKEND_URL" 2>&1 | grep -i "ssl certificate verify" || echo "ok")
-if [[ $BACKEND_SSL == *"ok"* ]]; then
-    echo -e "${GREEN}✅ Backend SSL válido${NC}"
-else
-    echo -e "${YELLOW}⚠️  Backend SSL pode ter problemas${NC}"
-fi
-
-# Frontend SSL
-FRONTEND_SSL=$(curl -vI "$FRONTEND_URL" 2>&1 | grep -i "ssl certificate verify" || echo "ok")
-if [[ $FRONTEND_SSL == *"ok"* ]]; then
-    echo -e "${GREEN}✅ Frontend SSL válido${NC}"
-else
-    echo -e "${YELLOW}⚠️  Frontend SSL pode ter problemas${NC}"
+    FAILURES=$((FAILURES + 1))
 fi
 
 # ============================================
@@ -143,3 +184,25 @@ echo "  Railway: railway logs --service backend"
 echo "           railway logs --service worker"
 echo "  Vercel:  vercel logs $FRONTEND_URL"
 
+echo ""
+echo "🧪 Smoke API:"
+if command -v node >/dev/null 2>&1; then
+    if node scripts/smoke-api.mjs "$BACKEND_URL"; then
+        echo -e "${GREEN}✅ smoke-api passou${NC}"
+    else
+        echo -e "${YELLOW}⚠️  smoke-api falhou (ver mensagem acima)${NC}"
+        FAILURES=$((FAILURES + 1))
+    fi
+else
+    echo -e "${YELLOW}⚠️  Node não encontrado para executar scripts/smoke-api.mjs${NC}"
+    FAILURES=$((FAILURES + 1))
+fi
+
+if [ "$FAILURES" -gt 0 ]; then
+    echo ""
+    echo -e "${RED}❌ Checagem finalizou com ${FAILURES} falha(s) crítica(s).${NC}"
+    exit 1
+fi
+
+echo ""
+echo -e "${GREEN}✅ Checagem finalizou sem falhas críticas.${NC}"

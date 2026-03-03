@@ -125,7 +125,7 @@ vercel --prod
 
 ### DevOps
 - **Docker** ready
-- **Railway** para backend/worker
+- **Render** para backend/worker
 - **Vercel** para frontend
 - **GitHub Actions** CI/CD
 
@@ -152,7 +152,7 @@ npm install
 **Backend** (`apps/backend/.env`):
 ```env
 DATABASE_URL="postgresql://..."
-DIRECT_URL="postgresql://..."
+MIGRATIONS_DATABASE_URL="postgresql://..."
 CLERK_PUBLISHABLE_KEY="YOUR_PUBLISHABLE_KEY_HERE"
 CLERK_SECRET_KEY="YOUR_SECRET_KEY_HERE"
 OPENAI_API_KEY="YOUR_OPENAI_API_KEY_HERE"
@@ -164,6 +164,22 @@ NODE_ENV=development
 APP_ENV=dev
 PORT=3001
 ```
+
+## ✅ Release Gate (RC)
+
+Antes de promover para produção:
+- CI verde (`lint`, `test`, `build`)
+- `prisma migrate status` e `migrate deploy` validados em staging
+- Smoke pós-deploy verde
+
+Criar tag RC:
+
+```bash
+git tag vX.Y.Z-rc1
+git push origin vX.Y.Z-rc1
+```
+
+Guia completo: [DEPLOY.md](./DEPLOY.md)
 
 **Frontend** (`apps/frontend/.env`):
 ```env

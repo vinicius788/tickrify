@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { UploadedFile } from '../interfaces/multer';
+import { isProductionRuntime } from './runtime-env';
 
 export interface PreparedImage {
   buffer: Buffer;
@@ -8,47 +9,136 @@ export interface PreparedImage {
   extension: string;
 }
 
-function normalizeMimeType(value?: string): string {
-  const mimeType = String(value || '').trim().toLowerCase();
+const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+const MAX_IMAGE_BYTES = (() => {
+  const configured = Number(process.env.MAX_IMAGE_UPLOAD_BYTES || DEFAULT_MAX_IMAGE_BYTES);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return DEFAULT_MAX_IMAGE_BYTES;
+  }
+  return Math.floor(configured);
+})();
+
+function normalizeMimeType(value?: string): string | undefined {
+  const mimeType = String(value || '')
+    .trim()
+    .toLowerCase();
   if (!mimeType) {
-    return 'image/png';
+    return undefined;
+  }
+  if (mimeType === 'image/jpg') {
+    return 'image/jpeg';
   }
   return mimeType;
+}
+
+function parseDataUrl(value: string): { mimeType?: string; base64Payload: string } {
+  const match = String(value || '')
+    .trim()
+    .match(/^data:([^;,]+)(?:;[^,]*)?;base64,([a-z0-9+/=\s]+)$/i);
+
+  if (!match) {
+    throw new Error('Invalid base64 image payload');
+  }
+
+  return {
+    mimeType: normalizeMimeType(match[1]),
+    base64Payload: match[2],
+  };
+}
+
+function decodeBase64Payload(payload: string): Buffer {
+  const normalized = String(payload || '').replace(/\s+/g, '');
+  if (!normalized) {
+    throw new Error('Empty base64 image payload');
+  }
+
+  if (!/^[a-z0-9+/]+={0,2}$/i.test(normalized) || normalized.length % 4 !== 0) {
+    throw new Error('Invalid base64 image payload');
+  }
+
+  const buffer = Buffer.from(normalized, 'base64');
+  if (!buffer.length) {
+    throw new Error('Empty base64 image payload');
+  }
+
+  return buffer;
+}
+
+function detectMimeTypeFromBuffer(buffer: Buffer): string | null {
+  if (buffer.length >= PNG_SIGNATURE.length && buffer.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+    return 'image/png';
+  }
+
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+
+  if (
+    buffer.length >= 12 &&
+    buffer.toString('ascii', 0, 4) === 'RIFF' &&
+    buffer.toString('ascii', 8, 12) === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+
+  return null;
+}
+
+function formatAllowedImageTypes(): string {
+  return 'PNG, JPG/JPEG, WEBP';
+}
+
+function validateImagePayload(buffer: Buffer, declaredMimeType?: string): { mimeType: string; extension: string } {
+  if (!buffer?.length) {
+    throw new Error('Empty image payload');
+  }
+
+  if (buffer.length > MAX_IMAGE_BYTES) {
+    const maxMb = Math.floor(MAX_IMAGE_BYTES / (1024 * 1024));
+    throw new Error(`Image exceeds maximum size of ${maxMb}MB`);
+  }
+
+  const detectedMimeType = detectMimeTypeFromBuffer(buffer);
+  if (!detectedMimeType) {
+    throw new Error(`Unsupported image format. Allowed: ${formatAllowedImageTypes()}`);
+  }
+
+  const normalizedDeclared = normalizeMimeType(declaredMimeType);
+  if (normalizedDeclared && !ALLOWED_IMAGE_MIME_TYPES.has(normalizedDeclared)) {
+    throw new Error(`Unsupported image format. Allowed: ${formatAllowedImageTypes()}`);
+  }
+
+  if (normalizedDeclared && normalizedDeclared !== detectedMimeType) {
+    throw new Error('Image MIME type does not match file signature');
+  }
+
+  const finalMimeType = normalizedDeclared || detectedMimeType;
+  return {
+    mimeType: finalMimeType,
+    extension: extensionFromMimeType(finalMimeType),
+  };
 }
 
 function extensionFromMimeType(mimeType: string): string {
   switch (mimeType) {
     case 'image/jpeg':
-    case 'image/jpg':
       return 'jpg';
     case 'image/webp':
       return 'webp';
-    case 'image/svg+xml':
-      return 'svg';
-    case 'image/gif':
-      return 'gif';
     default:
       return 'png';
   }
 }
 
 export function decodeDataUrl(dataUrl: string): { buffer: Buffer; mimeType: string } {
-  const match = String(dataUrl || '')
-    .trim()
-    .match(/^data:(.+?);base64,(.+)$/i);
+  const parsed = parseDataUrl(dataUrl);
+  const buffer = decodeBase64Payload(parsed.base64Payload);
+  const validated = validateImagePayload(buffer, parsed.mimeType);
 
-  if (!match) {
-    throw new Error('Invalid base64 image payload');
-  }
-
-  const mimeType = normalizeMimeType(match[1]);
-  const buffer = Buffer.from(match[2], 'base64');
-
-  if (!buffer.length) {
-    throw new Error('Empty base64 image payload');
-  }
-
-  return { buffer, mimeType };
+  return { buffer, mimeType: validated.mimeType };
 }
 
 export function encodeDataUrl(buffer: Buffer, mimeType: string): string {
@@ -60,26 +150,34 @@ export function prepareIncomingImage(
   base64Image?: string,
 ): PreparedImage {
   if (imageFile?.buffer?.length) {
-    const mimeType = normalizeMimeType(imageFile.mimetype);
+    const validated = validateImagePayload(imageFile.buffer, imageFile.mimetype);
     return {
       buffer: imageFile.buffer,
-      mimeType,
-      extension: extensionFromMimeType(mimeType),
-      dataUrl: encodeDataUrl(imageFile.buffer, mimeType),
+      mimeType: validated.mimeType,
+      extension: validated.extension,
+      dataUrl: encodeDataUrl(imageFile.buffer, validated.mimeType),
     };
   }
 
   if (base64Image) {
     const trimmed = base64Image.trim();
-    const dataUrl = trimmed.startsWith('data:')
-      ? trimmed
-      : `data:image/png;base64,${trimmed}`;
-    const decoded = decodeDataUrl(dataUrl);
+    let declaredMimeType: string | undefined;
+    let base64Payload = trimmed;
+
+    if (trimmed.startsWith('data:')) {
+      const parsed = parseDataUrl(trimmed);
+      declaredMimeType = parsed.mimeType;
+      base64Payload = parsed.base64Payload;
+    }
+
+    const buffer = decodeBase64Payload(base64Payload);
+    const validated = validateImagePayload(buffer, declaredMimeType);
+
     return {
-      buffer: decoded.buffer,
-      mimeType: decoded.mimeType,
-      extension: extensionFromMimeType(decoded.mimeType),
-      dataUrl,
+      buffer,
+      mimeType: validated.mimeType,
+      extension: validated.extension,
+      dataUrl: encodeDataUrl(buffer, validated.mimeType),
     };
   }
 
@@ -99,10 +197,7 @@ export class ImageStorageClient {
   }
 
   requiresRemoteStorage(): boolean {
-    const runtimeEnv = String(process.env.APP_ENV || process.env.NODE_ENV || 'development')
-      .trim()
-      .toLowerCase();
-    return runtimeEnv === 'production';
+    return isProductionRuntime();
   }
 
   async uploadBuffer(params: {
@@ -115,7 +210,8 @@ export class ImageStorageClient {
       throw new Error('Supabase Storage is not configured');
     }
 
-    const extension = params.extension || extensionFromMimeType(params.mimeType);
+    const validated = validateImagePayload(params.buffer, params.mimeType);
+    const extension = params.extension || validated.extension;
     const objectPath = `${params.pathPrefix}/${Date.now()}-${randomUUID()}.${extension}`.replace(
       /\/+/g,
       '/',
@@ -130,7 +226,7 @@ export class ImageStorageClient {
       headers: {
         authorization: `Bearer ${this.serviceKey}`,
         apikey: this.serviceKey,
-        'content-type': params.mimeType,
+        'content-type': validated.mimeType,
         'x-upsert': 'true',
       },
       body: new Uint8Array(params.buffer),

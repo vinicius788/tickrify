@@ -1,5 +1,7 @@
+import 'dotenv/config';
 import { Job, Worker } from 'bullmq';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { TRADING_SYSTEM_PROMPT } from '../src/common/prompts/trading-system-prompt';
 import {
   buildPersistedAnalysisPayload,
@@ -12,8 +14,15 @@ import {
 import { buildDemoDrawingPlan } from '../src/common/utils/drawing-plan';
 import { AIAdapter } from '../src/modules/ai/ai.adapter';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
+import { isProductionRuntime } from '../src/common/utils/runtime-env';
+import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-runtime';
+import { resolvePrismaDatasourceUrl } from '../src/modules/database/prisma.datasource';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({
+    connectionString: resolvePrismaDatasourceUrl(),
+  }),
+});
 const aiAdapter = new AIAdapter();
 const storage = new ImageStorageClient();
 
@@ -44,41 +53,6 @@ function getRedisConnection() {
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
   };
-}
-
-function hasValidOpenAiKey(): boolean {
-  const key = process.env.OPENAI_API_KEY?.trim();
-  if (!key) {
-    return false;
-  }
-
-  if (
-    key === 'YOUR_OPENAI_API_KEY_HERE' ||
-    key === 'OPENAI_API_KEY_PLACEHOLDER' ||
-    key === 'DUMMY_OPENAI_KEY'
-  ) {
-    return false;
-  }
-
-  return Boolean(
-    key.length >= 20,
-  );
-}
-
-function isProductionEnvironment(): boolean {
-  const env = String(process.env.APP_ENV || process.env.NODE_ENV || 'development')
-    .trim()
-    .toLowerCase();
-  return env === 'production';
-}
-
-function canUseDemoFallback(): boolean {
-  if (isProductionEnvironment()) {
-    return false;
-  }
-
-  const appEnv = String(process.env.APP_ENV || '').trim().toLowerCase();
-  return appEnv === 'dev' || process.env.DEMO_MODE === 'true';
 }
 
 function randomRecommendation(): Recommendation {
@@ -156,14 +130,27 @@ async function persistAnnotatedImage(
   }
 
   const owner = userId || 'unknown-user';
-  const uploadedUrl = await storage.uploadDataUrl(
-    payload.annotatedImageUrl,
-    `analyses/${owner}/annotated`,
-  );
+  try {
+    const uploadedUrl = await storage.uploadDataUrl(
+      payload.annotatedImageUrl,
+      `analyses/${owner}/annotated`,
+    );
 
-  payload.annotatedImageUrl = uploadedUrl;
-  payload.fullResponse.annotated_image_url = uploadedUrl;
-  payload.fullResponse.drawing_failed = Boolean(payload.drawingFailed);
+    payload.annotatedImageUrl = uploadedUrl;
+    payload.fullResponse.annotated_image_url = uploadedUrl;
+    payload.fullResponse.drawing_failed = Boolean(payload.drawingFailed);
+  } catch (error) {
+    console.warn(
+      `[Worker] Failed to persist annotated image for ${owner}: ${
+        error instanceof Error ? error.message : 'unknown error'
+      }`,
+    );
+    payload.annotatedImageUrl = null;
+    payload.drawingFailed = true;
+    payload.fullResponse.annotated_image_url = null;
+    payload.fullResponse.drawing_failed = true;
+  }
+
   return payload;
 }
 
@@ -180,7 +167,7 @@ async function resolveAiSource(imageUrl: string, prompt: string) {
 }
 
 function safeWorkerErrorMessage(error: unknown): string {
-  if (!isProductionEnvironment() && error instanceof Error) {
+  if (!isProductionRuntime() && error instanceof Error) {
     return error.message;
   }
 

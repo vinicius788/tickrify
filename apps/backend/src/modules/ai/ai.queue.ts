@@ -1,4 +1,5 @@
 import { Queue } from 'bullmq';
+import { isProductionRuntime } from '../../common/utils/runtime-env';
 
 let queueInstance: Queue | null = null;
 
@@ -25,13 +26,6 @@ function getRedisConnection() {
   }
 
   return null;
-}
-
-function isProductionRuntime(): boolean {
-  const runtime = String(process.env.APP_ENV || process.env.NODE_ENV || 'development')
-    .trim()
-    .toLowerCase();
-  return runtime === 'production';
 }
 
 export interface QueueReadiness {

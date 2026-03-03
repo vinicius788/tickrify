@@ -18,7 +18,9 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'image/*': ['.jpeg', '.png', '.jpg'] },
+    accept: { 'image/*': ['.jpeg', '.png', '.jpg', '.webp'] },
+    multiple: false,
+    maxSize: 10 * 1024 * 1024,
   });
 
   return (
@@ -32,7 +34,7 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
         <h3 className="text-2xl font-medium">
           {isDragActive ? 'Solte a imagem do gráfico aqui...' : 'Arraste e solte o seu gráfico'}
         </h3>
-        <p className="text-muted-foreground">ou clique para fazer upload (PNG, JPG)</p>
+        <p className="text-muted-foreground">ou clique para fazer upload (PNG, JPG, WEBP)</p>
         <p className="mt-2 text-xs text-muted-foreground">
           No celular, você pode usar a câmera.
         </p>

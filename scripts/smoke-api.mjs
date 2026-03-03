@@ -12,7 +12,7 @@ if (!rawBaseUrl) {
 
 const baseUrl = rawBaseUrl.replace(/\/+$/, '');
 
-async function assertJsonHealth(path) {
+async function fetchJson(path) {
   const target = `${baseUrl}${path}`;
   const response = await fetch(target, {
     method: 'GET',
@@ -43,12 +43,33 @@ async function assertJsonHealth(path) {
     throw new Error(`${target} returned status=${payload?.status ?? 'unknown'}.`);
   }
 
-  console.log(`[smoke] OK ${path}`);
+  return {
+    payload,
+    headers: response.headers,
+  };
 }
 
 async function main() {
-  await assertJsonHealth('/api/health/live');
-  await assertJsonHealth('/api/health/ready');
+  const live = await fetchJson('/api/health/live');
+  const requestId = String(live.headers.get('x-request-id') || '').trim();
+  if (!requestId) {
+    throw new Error('/api/health/live did not return x-request-id header.');
+  }
+  console.log(`[smoke] OK /api/health/live (x-request-id=${requestId})`);
+
+  const ready = await fetchJson('/api/health/ready');
+  const critical = ['auth', 'storage', 'ai'];
+  for (const key of critical) {
+    const item = ready.payload?.[key];
+    if (!item || typeof item !== 'object') {
+      throw new Error(`/api/health/ready missing ${key} readiness block.`);
+    }
+    if (item.required === true && item.ready !== true) {
+      throw new Error(`/api/health/ready ${key} is required but not ready.`);
+    }
+  }
+  console.log('[smoke] OK /api/health/ready (critical dependencies validated)');
+
   console.log('[smoke] API health checks passed.');
 }
 

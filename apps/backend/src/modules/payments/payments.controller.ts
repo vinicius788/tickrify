@@ -1,4 +1,14 @@
-import { Controller, Post, Body, UseGuards, Req, Headers, RawBodyRequest } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Headers,
+  NotFoundException,
+  Post,
+  RawBodyRequest,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../../common/decorators/user.decorator';
 import { PaymentsService } from './payments.service';
@@ -22,8 +32,12 @@ export class PaymentsController {
       where: { clerkUserId: user.clerkUserId },
     });
 
+    if (!dbUser) {
+      throw new NotFoundException('Authenticated user not found');
+    }
+
     return this.paymentsService.createCheckoutSession(
-      dbUser!.id,
+      dbUser.id,
       body.priceId,
       body.mode as 'payment' | 'subscription',
     );
@@ -34,6 +48,14 @@ export class PaymentsController {
     @Headers('stripe-signature') signature: string,
     @Req() req: RawBodyRequest<Request>,
   ) {
-    return this.paymentsService.handleWebhook(signature, req.rawBody!);
+    if (!signature) {
+      throw new BadRequestException('Missing stripe-signature header');
+    }
+
+    if (!req.rawBody) {
+      throw new BadRequestException('Missing raw body');
+    }
+
+    return this.paymentsService.handleWebhook(signature, req.rawBody);
   }
 }

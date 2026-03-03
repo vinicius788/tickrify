@@ -32,6 +32,8 @@ type ActiveMarketItem = {
 };
 
 const ENABLE_ANNUAL_BILLING = import.meta.env.VITE_ENABLE_ANNUAL_BILLING === "true";
+const MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
 
 const DashboardPage = () => {
   const [activeView, setActiveView] = useState<View>('new-analysis');
@@ -186,6 +188,21 @@ const DashboardPage = () => {
       setErrorMessage('Por favor, faça upload de uma imagem de gráfico.');
       setActiveView('error');
       return;
+    }
+
+    if (imageFile) {
+      const normalizedType = String(imageFile.type || '').toLowerCase();
+      if (!ALLOWED_IMAGE_TYPES.has(normalizedType)) {
+        setErrorMessage('Formato inválido. Envie uma imagem PNG, JPG/JPEG ou WEBP.');
+        setActiveView('error');
+        return;
+      }
+
+      if (imageFile.size > MAX_IMAGE_FILE_SIZE) {
+        setErrorMessage('Arquivo muito grande. O limite é de 10MB.');
+        setActiveView('error');
+        return;
+      }
     }
 
     try {

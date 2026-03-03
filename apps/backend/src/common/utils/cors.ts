@@ -1,3 +1,5 @@
+import { isProductionRuntime } from './runtime-env';
+
 function normalizeOrigin(origin: string): string {
   return origin.trim().replace(/\/+$/, '');
 }
@@ -12,7 +14,7 @@ export function resolveAllowedOrigins(): string[] {
     .filter(Boolean);
 
   const localOrigins =
-    process.env.NODE_ENV === 'production'
+    isProductionRuntime()
       ? []
       : [
           'http://localhost:5173',
@@ -28,10 +30,11 @@ export function resolveAllowedOrigins(): string[] {
 
 export function isOriginAllowed(origin: string, allowedOrigins: string[]): boolean {
   const normalizedOrigin = normalizeOrigin(origin);
+  const productionRuntime = isProductionRuntime();
 
   return allowedOrigins.some((allowedOrigin) => {
     if (allowedOrigin === '*') {
-      return true;
+      return !productionRuntime;
     }
 
     if (allowedOrigin.startsWith('*.')) {
@@ -42,4 +45,3 @@ export function isOriginAllowed(origin: string, allowedOrigins: string[]): boole
     return normalizedOrigin === normalizeOrigin(allowedOrigin);
   });
 }
-

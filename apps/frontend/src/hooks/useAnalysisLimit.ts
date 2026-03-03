@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { apiClient } from '@/lib/api';
-import { getUserSubscription } from '@/lib/stripe';
 
 interface AnalysisLimitData {
   total: number;
@@ -15,14 +14,11 @@ interface AnalysisLimitData {
 const FREE_LIMIT = 3;
 const ANALYSIS_REFRESH_EVENT = 'tickrify:analysis-created';
 
-function isActivePaidSubscription(status?: string): boolean {
-  return ['active', 'trialing'].includes(String(status || '').toLowerCase());
-}
-
 export function useAnalysisLimit(): AnalysisLimitData {
   const { user, isLoaded } = useUser();
   const { getToken } = useAuth();
   const [analysisCount, setAnalysisCount] = useState(0);
+  const [analysisLimit, setAnalysisLimit] = useState(FREE_LIMIT);
   const [userPlan, setUserPlan] = useState<'free' | 'pro'>('free');
 
   // Verificar se está no modo demo (rota /demo sem usuário)
@@ -40,31 +36,23 @@ export function useAnalysisLimit(): AnalysisLimitData {
       if (!token) {
         setUserPlan('free');
         setAnalysisCount(0);
+        setAnalysisLimit(FREE_LIMIT);
         return;
       }
 
-      const [subscription, analyses] = await Promise.all([
-        getUserSubscription(token).catch(() => null),
-        apiClient.listAnalyses(token, 100).catch(() => []),
-      ]);
+      const usage = await apiClient.getAnalysisUsage(token);
 
-      const hasProPlan =
-        String(subscription?.plan || '').toLowerCase() === 'pro' ||
-        isActivePaidSubscription(subscription?.status);
-
-      setUserPlan(hasProPlan ? 'pro' : 'free');
-
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const monthlyUsed = analyses.filter((analysis) => {
-        const createdAt = new Date(analysis.createdAt);
-        return createdAt >= monthStart;
-      }).length;
-
-      setAnalysisCount(monthlyUsed);
+      setUserPlan(usage.plan === 'pro' ? 'pro' : 'free');
+      setAnalysisCount(usage.used);
+      setAnalysisLimit(
+        typeof usage.total === 'number' && Number.isFinite(usage.total) && usage.total > 0
+          ? usage.total
+          : FREE_LIMIT,
+      );
     } catch {
       setUserPlan('free');
       setAnalysisCount(0);
+      setAnalysisLimit(FREE_LIMIT);
     }
   }, [getToken, isLoaded, user]);
 
@@ -85,6 +73,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
   useEffect(() => {
     if (!user) {
       setAnalysisCount(0);
+      setAnalysisLimit(FREE_LIMIT);
       setUserPlan('free');
     }
   }, [user]);
@@ -102,9 +91,9 @@ export function useAnalysisLimit(): AnalysisLimitData {
   }
 
   // Usuário logado
-  const total = isUnlimited ? Infinity : FREE_LIMIT;
+  const total = isUnlimited ? Infinity : analysisLimit;
   const used = analysisCount;
-  const remaining = isUnlimited ? Infinity : Math.max(0, FREE_LIMIT - used);
+  const remaining = isUnlimited ? Infinity : Math.max(0, analysisLimit - used);
   const canAnalyze = isUnlimited || remaining > 0;
 
   return {

@@ -99,6 +99,17 @@ export interface CreateAnalysisPayload {
   promptOverride?: string;
 }
 
+export interface AnalysisUsageResponse {
+  plan: 'free' | 'pro';
+  period: 'monthly';
+  periodStart: string;
+  total: number | null;
+  used: number;
+  remaining: number | null;
+  isUnlimited: boolean;
+  canAnalyze: boolean;
+}
+
 class APIClient {
   private getAuthHeader(token: string | null): HeadersInit {
     return token ? { 'Authorization': `Bearer ${token}` } : {};
@@ -129,7 +140,7 @@ class APIClient {
       formData.append('promptOverride', payload.promptOverride);
     }
 
-    const response = await fetch(buildApiUrl('/api/analyze-chart'), {
+    const response = await fetch(buildApiUrl('/api/ai/analyze'), {
       method: 'POST',
       headers: {
         ...this.getAuthHeader(token),
@@ -148,7 +159,7 @@ class APIClient {
     analysisId: string,
     token: string | null,
   ): Promise<AIAnalysisResponse> {
-    const response = await fetch(buildApiUrl(`/api/analyses/${analysisId}`), {
+    const response = await fetch(buildApiUrl(`/api/ai/analysis/${analysisId}`), {
       method: 'GET',
       headers: {
         ...this.getAuthHeader(token),
@@ -180,6 +191,21 @@ class APIClient {
 
     return response.json();
   }
+
+  async getAnalysisUsage(token: string | null): Promise<AnalysisUsageResponse> {
+    const response = await fetch(buildApiUrl('/api/ai/usage'), {
+      method: 'GET',
+      headers: {
+        ...this.getAuthHeader(token),
+      },
+    });
+
+    if (!response.ok) {
+      throw await this.buildApiError(response, 'Failed to fetch analysis usage');
+    }
+
+    return response.json();
+  }
 }
 
 export const apiClient = new APIClient();
@@ -200,6 +226,10 @@ export function useAPIClient() {
     listAnalyses: async (limit?: number) => {
       const token = await getToken();
       return apiClient.listAnalyses(token, limit);
+    },
+    getAnalysisUsage: async () => {
+      const token = await getToken();
+      return apiClient.getAnalysisUsage(token);
     },
   };
 }

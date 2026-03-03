@@ -3,6 +3,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -22,6 +23,7 @@ import {
   ImageStorageClient,
   prepareIncomingImage,
 } from '../../common/utils/image-storage';
+import { isProductionRuntime } from '../../common/utils/runtime-env';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
 const DEFAULT_FREE_ANALYSIS_LIMIT = 3;
@@ -30,6 +32,8 @@ type ApiAnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
+
   constructor(
     private prisma: PrismaService,
     private aiAdapter: AIAdapter,
@@ -42,25 +46,23 @@ export class AiService {
     promptOverride?: string,
   ) {
     const preparedImage = this.prepareImagePayload(imageFile, base64Image);
-
-    await this.enforceAccess(userId);
     const queueReadiness = await getAiQueueReadiness();
 
-    if (this.isProduction() && !queueReadiness.configured) {
+    if (isProductionRuntime() && !queueReadiness.configured) {
       throw new ServiceUnavailableException({
         code: 'queue_required',
         message: 'Redis queue is required in production.',
       });
     }
 
-    if (this.isProduction() && !queueReadiness.connected) {
+    if (isProductionRuntime() && !queueReadiness.connected) {
       throw new ServiceUnavailableException({
         code: 'queue_unavailable',
         message: 'Queue service is unavailable.',
       });
     }
 
-    if (this.isProduction() && !queueReadiness.hasWorkers) {
+    if (isProductionRuntime() && !queueReadiness.hasWorkers) {
       throw new ServiceUnavailableException({
         code: 'worker_unavailable',
         message: 'Queue worker is unavailable.',
@@ -93,6 +95,9 @@ export class AiService {
       });
     }
 
+    // Only consume free quota after infrastructure/storage prerequisites are validated.
+    await this.enforceAccess(userId);
+
     const analysis = await this.prisma.analysis.create({
       data: {
         userId,
@@ -104,7 +109,7 @@ export class AiService {
 
     const queue = queueReadiness.connected ? getAiQueue() : null;
 
-    if (queue && (queueReadiness.hasWorkers || this.isProduction())) {
+    if (queue && (queueReadiness.hasWorkers || isProductionRuntime())) {
       await queue.add('process-analysis', {
         analysisId: analysis.id,
         imageUrl,
@@ -121,7 +126,7 @@ export class AiService {
       };
     }
 
-    if (this.isProduction()) {
+    if (isProductionRuntime()) {
       await this.prisma.analysis.update({
         where: { id: analysis.id },
         data: {
@@ -195,6 +200,45 @@ export class AiService {
         createdAt: analysis.createdAt,
       };
     });
+  }
+
+  async getUsage(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Authenticated user not found');
+    }
+
+    const periodStart = this.getCurrentUsagePeriodStart();
+    const freeLimit = this.getFreeLimit();
+    const paidAccess = await this.hasPaidAccess(userId);
+
+    const usageRow = await this.prisma.analysisUsage.findUnique({
+      where: {
+        userId_periodType_periodStart: {
+          userId,
+          periodType: 'MONTH',
+          periodStart,
+        },
+      },
+      select: { count: true },
+    });
+
+    const used = usageRow?.count ?? 0;
+
+    return {
+      plan: paidAccess ? 'pro' : 'free',
+      period: 'monthly',
+      periodStart,
+      total: paidAccess ? null : freeLimit,
+      used,
+      remaining: paidAccess ? null : Math.max(0, freeLimit - used),
+      isUnlimited: paidAccess,
+      canAnalyze: paidAccess || used < freeLimit,
+    };
   }
 
   private async processSynchronously(params: {
@@ -283,14 +327,26 @@ export class AiService {
       return payload;
     }
 
-    const uploadedUrl = await storage.uploadDataUrl(
-      annotatedImageUrl,
-      `analyses/${userId}/annotated`,
-    );
+    try {
+      const uploadedUrl = await storage.uploadDataUrl(
+        annotatedImageUrl,
+        `analyses/${userId}/annotated`,
+      );
 
-    payload.annotatedImageUrl = uploadedUrl;
-    payload.fullResponse.annotated_image_url = uploadedUrl;
-    payload.fullResponse.drawing_failed = Boolean(payload.drawingFailed);
+      payload.annotatedImageUrl = uploadedUrl;
+      payload.fullResponse.annotated_image_url = uploadedUrl;
+      payload.fullResponse.drawing_failed = Boolean(payload.drawingFailed);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to persist annotated image for user ${userId}: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+      payload.annotatedImageUrl = null;
+      payload.drawingFailed = true;
+      payload.fullResponse.annotated_image_url = null;
+      payload.fullResponse.drawing_failed = true;
+    }
 
     return payload;
   }
@@ -358,8 +414,7 @@ export class AiService {
   }
 
   private async consumeFreeQuotaSlot(userId: string, limit: number) {
-    const now = new Date();
-    const periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+    const periodStart = this.getCurrentUsagePeriodStart();
 
     const rows = await this.prisma.$queryRaw<Array<{ count: number }>>(Prisma.sql`
       INSERT INTO "tickrify"."AnalysisUsage"
@@ -385,6 +440,11 @@ export class AiService {
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
+  }
+
+  private getCurrentUsagePeriodStart(): Date {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
   }
 
   private serializeAnalysis(analysis: {
@@ -451,12 +511,5 @@ export class AiService {
     }
 
     return 'Failed to process analysis';
-  }
-
-  private isProduction(): boolean {
-    const runtime = String(process.env.APP_ENV || process.env.NODE_ENV || 'development')
-      .trim()
-      .toLowerCase();
-    return runtime === 'production';
   }
 }

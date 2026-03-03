@@ -2,6 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { isOriginAllowed, resolveAllowedOrigins } from './common/utils/cors';
+import { attachRequestContext } from './common/middleware/request-context.middleware';
+import { validateStartupEnv } from './common/utils/env-validation';
 
 /**
  * Bootstrap function for local development
@@ -9,12 +11,15 @@ import { isOriginAllowed, resolveAllowedOrigins } from './common/utils/cors';
  */
 async function bootstrap() {
   try {
+    validateStartupEnv();
+    const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
     console.log('🚀 Starting NestJS application...');
     
     const app = await NestFactory.create(AppModule, {
       rawBody: true,
-      logger: ['error', 'warn', 'log', 'debug'],
+      logger: isProd ? ['error', 'warn', 'log'] : ['error', 'warn', 'log', 'debug'],
     });
+    app.use(attachRequestContext);
     const expressApp = app.getHttpAdapter().getInstance();
     expressApp.set('trust proxy', 1);
 
@@ -56,7 +61,8 @@ async function bootstrap() {
     console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🔗 Allowed origins: ${allowedOrigins.join(', ')}`);
   } catch (error) {
-    console.error('❌ Failed to start application:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`❌ Failed to start application: ${message}`);
     process.exit(1);
   }
 }

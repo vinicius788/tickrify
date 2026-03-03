@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Logger,
   Param,
   Post,
   Query,
@@ -22,6 +23,8 @@ import { ListAnalysesQueryDto } from './dto/list-analyses-query.dto';
 
 @Controller('ai')
 export class AiController {
+  private readonly logger = new Logger(AiController.name);
+
   constructor(
     private aiService: AiService,
     private prisma: PrismaService,
@@ -43,13 +46,6 @@ export class AiController {
     @Body() body: CreateAnalysisDto,
   ) {
     try {
-      console.log('[AiController] analyze endpoint called', { 
-        userId: user.id,
-        clerkUserId: user.clerkUserId,
-        hasFile: !!file,
-        hasBase64: !!body.base64Image 
-      });
-
       let dbUserId = user.id;
       if (!dbUserId) {
         const dbUser = await this.prisma.user.findUnique({
@@ -69,10 +65,12 @@ export class AiController {
         body.promptOverride,
       );
 
-      console.log('[AiController] Analysis created successfully:', result.id);
+      this.logger.log(`Analysis created: ${result.id}`);
       return result;
     } catch (error) {
-      console.error('[AiController] Error in analyze endpoint:', error);
+      this.logger.warn(
+        `Analyze request failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
       throw error;
     }
   }
@@ -121,5 +119,25 @@ export class AiController {
     }
 
     return this.aiService.listAnalyses(dbUserId, query.limit ?? 20);
+  }
+
+  @Get('usage')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async getUsage(@CurrentUser() user: { id?: string; clerkUserId: string }) {
+    const dbUserId =
+      user.id ||
+      (
+        await this.prisma.user.findUnique({
+          where: { clerkUserId: user.clerkUserId },
+          select: { id: true },
+        })
+      )?.id;
+
+    if (!dbUserId) {
+      throw new UnauthorizedException('Authenticated user not found');
+    }
+
+    return this.aiService.getUsage(dbUserId);
   }
 }

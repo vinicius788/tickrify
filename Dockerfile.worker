@@ -58,5 +58,4 @@ RUN npx prisma generate
 EXPOSE 3000
 
 # Comando do worker
-CMD ["npm", "run", "worker"]
-
+CMD ["npm", "run", "worker:prod"]

@@ -1,17 +1,37 @@
-import { BadRequestException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import Stripe from 'stripe';
 import { PrismaService } from '../database/prisma.service';
-import { stripeConfig, PlanType, BillingCycle } from '../../config/stripe.config';
+import { getStripeConfig, PlanType, BillingCycle } from '../../config/stripe.config';
 
 @Injectable()
 export class StripeService {
   private readonly logger = new Logger(StripeService.name);
-  private stripe: Stripe;
+  private stripe: Stripe | null;
 
   constructor(private prisma: PrismaService) {
+    const stripeConfig = getStripeConfig();
+    if (!stripeConfig.secretKey) {
+      this.stripe = null;
+      this.logger.warn('Stripe is not configured (missing STRIPE_SECRET_KEY)');
+      return;
+    }
+
     this.stripe = new Stripe(stripeConfig.secretKey, {
       apiVersion: '2023-10-16',
     });
+  }
+
+  private getStripeClient(): Stripe {
+    if (!this.stripe) {
+      throw new ServiceUnavailableException('Stripe is not configured');
+    }
+    return this.stripe;
   }
 
   /**
@@ -23,6 +43,7 @@ export class StripeService {
     billingCycle: BillingCycle,
   ) {
     try {
+      const stripeConfig = getStripeConfig();
       if (planType !== 'pro') {
         throw new Error(`Invalid plan type: ${planType}`);
       }
@@ -48,7 +69,8 @@ export class StripeService {
       const customerId = await this.resolveOrCreateCustomerId(user);
 
       // Criar checkout session
-      const session = await this.stripe.checkout.sessions.create({
+      const stripe = this.getStripeClient();
+      const session = await stripe.checkout.sessions.create({
         customer: customerId,
         mode: 'subscription',
         payment_method_types: ['card'],
@@ -117,6 +139,7 @@ export class StripeService {
     clerkUserId: string;
     stripeCustomerId: string | null;
   }) {
+    const stripe = this.getStripeClient();
     let customerId = user.stripeCustomerId;
 
     if (customerId) {
@@ -130,7 +153,7 @@ export class StripeService {
     }
 
     if (!customerId) {
-      const customer = await this.stripe.customers.create({
+      const customer = await stripe.customers.create({
         email: user.email || undefined,
         metadata: {
           userId: user.id,
@@ -150,8 +173,9 @@ export class StripeService {
   }
 
   private async customerExists(customerId: string) {
+    const stripe = this.getStripeClient();
     try {
-      const customer = await this.stripe.customers.retrieve(customerId);
+      const customer = await stripe.customers.retrieve(customerId);
       return !('deleted' in customer && customer.deleted);
     } catch (error) {
       const stripeError = error as { type?: string; code?: string };
@@ -170,6 +194,7 @@ export class StripeService {
    */
   async createCustomerPortal(clerkUserId: string) {
     try {
+      const stripe = this.getStripeClient();
       const user = await this.prisma.user.findUnique({
         where: { clerkUserId },
       });
@@ -178,7 +203,7 @@ export class StripeService {
         throw new Error('User does not have a Stripe customer ID');
       }
 
-      const session = await this.stripe.billingPortal.sessions.create({
+      const session = await stripe.billingPortal.sessions.create({
         customer: user.stripeCustomerId,
         return_url: `${this.resolveAppBaseUrl()}/dashboard`,
       });
@@ -223,6 +248,7 @@ export class StripeService {
    */
   async cancelSubscription(clerkUserId: string) {
     try {
+      const stripe = this.getStripeClient();
       const user = await this.prisma.user.findUnique({
         where: { clerkUserId },
         select: { id: true },
@@ -246,7 +272,7 @@ export class StripeService {
         throw new Error('User does not have an active subscription');
       }
 
-      const subscription = await this.stripe.subscriptions.update(
+      const subscription = await stripe.subscriptions.update(
         subscriptionRecord.stripeId,
         {
           cancel_at_period_end: true,
@@ -273,6 +299,7 @@ export class StripeService {
    */
   async reactivateSubscription(clerkUserId: string) {
     try {
+      const stripe = this.getStripeClient();
       const user = await this.prisma.user.findUnique({
         where: { clerkUserId },
         select: { id: true },
@@ -296,7 +323,7 @@ export class StripeService {
         throw new Error('User does not have a subscription');
       }
 
-      const subscription = await this.stripe.subscriptions.update(
+      const subscription = await stripe.subscriptions.update(
         subscriptionRecord.stripeId,
         {
           cancel_at_period_end: false,
@@ -322,6 +349,7 @@ export class StripeService {
    */
   async getUserSubscription(clerkUserId: string) {
     try {
+      const stripe = this.getStripeClient();
       const user = await this.prisma.user.findUnique({
         where: { clerkUserId },
         select: { id: true },
@@ -340,7 +368,7 @@ export class StripeService {
         return null;
       }
 
-      let subscription = await this.stripe.subscriptions.retrieve(subscriptionRecord.stripeId);
+      let subscription = await stripe.subscriptions.retrieve(subscriptionRecord.stripeId);
       await this.upsertSubscriptionForUser(user.id, subscription);
 
       return {
@@ -364,7 +392,13 @@ export class StripeService {
    */
   async handleWebhookEvent(signature: string, payload: Buffer) {
     try {
-      const event = this.stripe.webhooks.constructEvent(
+      const stripeConfig = getStripeConfig();
+      if (!stripeConfig.webhookSecret) {
+        throw new ServiceUnavailableException('Stripe webhook secret is not configured');
+      }
+
+      const stripe = this.getStripeClient();
+      const event = stripe.webhooks.constructEvent(
         payload,
         signature,
         stripeConfig.webhookSecret,
@@ -416,6 +450,7 @@ export class StripeService {
    * Handler: Checkout session completed
    */
   private async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
+    const stripe = this.getStripeClient();
     const userId = session.metadata?.userId;
 
     if (!userId) {
@@ -429,7 +464,7 @@ export class StripeService {
       return;
     }
 
-    const subscription = await this.stripe.subscriptions.retrieve(subscriptionId);
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
     await this.upsertSubscriptionForUser(userId, subscription);
 
     this.logger.log(`User ${userId} subscription synchronized: ${subscription.id}`);

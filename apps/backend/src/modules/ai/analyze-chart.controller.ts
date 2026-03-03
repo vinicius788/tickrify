@@ -40,11 +40,20 @@ export class AnalyzeChartController {
     @UploadedFile() file: UploadedFileType,
     @Body() body: CreateAnalysisDto,
   ) {
-    if (!user.id) {
+    const dbUserId =
+      user.id ||
+      (
+        await this.prisma.user.findUnique({
+          where: { clerkUserId: user.clerkUserId },
+          select: { id: true },
+        })
+      )?.id;
+
+    if (!dbUserId) {
       throw new UnauthorizedException('Authenticated user not found');
     }
 
-    return this.aiService.createAnalysis(user.id, file, body.base64Image, body.promptOverride);
+    return this.aiService.createAnalysis(dbUserId, file, body.base64Image, body.promptOverride);
   }
 
   @Get('analyses/:id')

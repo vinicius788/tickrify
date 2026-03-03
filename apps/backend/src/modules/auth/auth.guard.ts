@@ -1,6 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { verifyToken } from '@clerk/backend';
 import { PrismaService } from '../database/prisma.service';
+import { isProductionRuntime } from '../../common/utils/runtime-env';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -114,8 +115,7 @@ export class AuthGuard implements CanActivate {
       return null;
     }
 
-    const isProduction = process.env.NODE_ENV === 'production';
-    if (isProduction) {
+    if (isProductionRuntime()) {
       return null;
     }
 
@@ -150,7 +150,7 @@ export class AuthGuard implements CanActivate {
   }
 
   private shouldBootstrapAdmin(currentRole: string, email: string | null): boolean {
-    if (!this.isProductionEnvironment()) {
+    if (!isProductionRuntime()) {
       return false;
     }
 
@@ -173,13 +173,6 @@ export class AuthGuard implements CanActivate {
         .map((value) => value.trim().toLowerCase())
         .filter(Boolean),
     );
-  }
-
-  private isProductionEnvironment(): boolean {
-    const runtime = String(process.env.APP_ENV || process.env.NODE_ENV || 'development')
-      .trim()
-      .toLowerCase();
-    return runtime === 'production';
   }
 
   private async promoteUserToAdmin(userId: string, clerkUserId: string, email: string) {

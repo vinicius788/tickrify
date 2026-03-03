@@ -1,5 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { resolvePrismaDatasourceUrl } from './prisma.datasource';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
@@ -7,8 +9,12 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   private ready = false;
 
   constructor() {
-    super();
-    this.normalizeDatabaseUrls();
+    const adapter = new PrismaPg({
+      connectionString: resolvePrismaDatasourceUrl(),
+    });
+    super({
+      adapter,
+    });
   }
 
   async onModuleInit() {
@@ -65,43 +71,5 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     throw new Error(
       `Unable to connect to database after ${maxAttempts} attempts. Check DATABASE_URL/DIRECT_URL.`,
     );
-  }
-
-  private normalizeDatabaseUrls() {
-    const runtimeUrl = this.withRequiredSslMode(process.env.DATABASE_URL);
-    const directUrl = this.withRequiredSslMode(process.env.DIRECT_URL);
-
-    if (!runtimeUrl && directUrl) {
-      process.env.DATABASE_URL = directUrl;
-    } else if (runtimeUrl) {
-      process.env.DATABASE_URL = runtimeUrl;
-    }
-
-    if (!directUrl && runtimeUrl) {
-      process.env.DIRECT_URL = runtimeUrl;
-    } else if (directUrl) {
-      process.env.DIRECT_URL = directUrl;
-    }
-  }
-
-  private withRequiredSslMode(value?: string): string | undefined {
-    if (!value) {
-      return value;
-    }
-
-    try {
-      const url = new URL(value);
-      if (!['postgres:', 'postgresql:'].includes(url.protocol)) {
-        return value;
-      }
-
-      if (!url.searchParams.has('sslmode')) {
-        url.searchParams.set('sslmode', 'require');
-      }
-
-      return url.toString();
-    } catch {
-      return value;
-    }
   }
 }

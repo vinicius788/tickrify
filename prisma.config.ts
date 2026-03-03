@@ -48,7 +48,7 @@ function withRequiredSslMode(value: string): string {
 }
 
 export default defineConfig({
-  schema: 'prisma/schema.prisma',
-  migrations: { path: 'prisma/migrations' },
+  schema: 'apps/backend/prisma/schema.prisma',
+  migrations: { path: 'apps/backend/prisma/migrations' },
   datasource: { url: resolveMigrationsDbUrl() },
 });

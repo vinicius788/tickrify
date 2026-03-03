@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MulterModule } from '@nestjs/platform-express';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { DatabaseModule } from './modules/database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -10,6 +10,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { PromptModule } from './modules/prompt/prompt.module';
 import { HealthModule } from './modules/health/health.module';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
+import { HttpLoggingInterceptor } from './common/interceptors/http-logging.interceptor';
 
 @Module({
   imports: [
@@ -39,6 +40,10 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
     {
       provide: APP_GUARD,
       useClass: AppThrottlerGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: HttpLoggingInterceptor,
     },
   ],
 })
