@@ -1,12 +1,14 @@
 import serverlessExpress from '@vendia/serverless-express';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ExpressAdapter } from '@nestjs/platform-express';
 import express from 'express';
 import { isOriginAllowed, resolveAllowedOrigins } from './common/utils/cors';
 import { attachRequestContext } from './common/middleware/request-context.middleware';
 import { validateStartupEnv } from './common/utils/env-validation';
+import { isProductionRuntime } from './common/utils/runtime-env';
 
 let cachedServer: any;
 
@@ -42,6 +44,27 @@ async function bootstrap() {
       const expressApp = express();
       expressApp.use(attachRequestContext);
       expressApp.set('trust proxy', 1);
+      expressApp.use(
+        helmet({
+          contentSecurityPolicy: {
+            directives: {
+              defaultSrc: ["'self'"],
+              scriptSrc: ["'self'"],
+              objectSrc: ["'none'"],
+              upgradeInsecureRequests: [],
+            },
+          },
+          hsts: isProductionRuntime()
+            ? {
+                maxAge: 31_536_000,
+                includeSubDomains: true,
+                preload: true,
+              }
+            : false,
+          frameguard: { action: 'deny' },
+          noSniff: true,
+        }),
+      );
       
       const app = await NestFactory.create(
         AppModule,

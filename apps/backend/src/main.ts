@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { isOriginAllowed, resolveAllowedOrigins } from './common/utils/cors';
 import { attachRequestContext } from './common/middleware/request-context.middleware';
@@ -23,6 +24,27 @@ async function bootstrap() {
     app.use(attachRequestContext);
     const expressApp = app.getHttpAdapter().getInstance();
     expressApp.set('trust proxy', 1);
+    app.use(
+      helmet({
+        contentSecurityPolicy: {
+          directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            upgradeInsecureRequests: [],
+          },
+        },
+        hsts: isProductionRuntime()
+          ? {
+              maxAge: 31_536_000,
+              includeSubDomains: true,
+              preload: true,
+            }
+          : false,
+        frameguard: { action: 'deny' },
+        noSniff: true,
+      }),
+    );
 
     const allowedOrigins = resolveAllowedOrigins();
 
