@@ -64,16 +64,7 @@ export class AuthGuard implements CanActivate {
   }
 
   private async verifyAuthToken(token: string): Promise<Record<string, any>> {
-    try {
-      return await this.verifyClerkToken(token);
-    } catch (clerkError) {
-      const legacyClaims = this.verifyLegacyToken(token);
-      if (legacyClaims) {
-        return legacyClaims;
-      }
-
-      throw clerkError;
-    }
+    return this.verifyClerkToken(token);
   }
 
   private async verifyClerkToken(token: string): Promise<Record<string, any>> {
@@ -107,37 +98,6 @@ export class AuthGuard implements CanActivate {
     }
 
     return claims;
-  }
-
-  private verifyLegacyToken(token: string): Record<string, any> | null {
-    const fallbackEnabled = process.env.ALLOW_LEGACY_AUTH_FALLBACK === 'true';
-    if (!fallbackEnabled) {
-      return null;
-    }
-
-    if (isProductionRuntime()) {
-      return null;
-    }
-
-    const parts = token.split('.');
-    if (parts.length < 2) {
-      return null;
-    }
-
-    try {
-      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-      const subject = String(payload?.sub || payload?.user_id || '').trim();
-      if (!subject) {
-        return null;
-      }
-
-      return {
-        sub: subject,
-        email: payload?.email,
-      };
-    } catch {
-      return null;
-    }
   }
 
   private extractEmailFromClaims(claims: Record<string, any>): string | null {

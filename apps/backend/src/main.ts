@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { isOriginAllowed, resolveAllowedOrigins } from './common/utils/cors';
 import { attachRequestContext } from './common/middleware/request-context.middleware';
 import { validateStartupEnv } from './common/utils/env-validation';
+import { isProductionRuntime } from './common/utils/runtime-env';
 
 /**
  * Bootstrap function for local development
@@ -53,6 +54,18 @@ async function bootstrap() {
         forbidNonWhitelisted: true,
       }),
     );
+
+    const legacyFallback = String(process.env.ALLOW_LEGACY_AUTH_FALLBACK || '').trim();
+    if (legacyFallback.toLowerCase() === 'true' && isProductionRuntime()) {
+      throw new Error(
+        '[SECURITY] ALLOW_LEGACY_AUTH_FALLBACK=true is forbidden in production runtime. Unset this variable and redeploy.',
+      );
+    }
+    if (legacyFallback.toLowerCase() === 'true') {
+      console.warn(
+        '[SECURITY] ALLOW_LEGACY_AUTH_FALLBACK is enabled — NEVER deploy to production with this flag.',
+      );
+    }
 
     const port = Number(process.env.PORT || 3001);
     await app.listen(port);
