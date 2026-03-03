@@ -14,8 +14,8 @@ export function validateStartupEnv(): void {
     missing.push('APP_ENV');
   }
 
-  if (!hasValue('DATABASE_URL') && !hasValue('DIRECT_URL')) {
-    missing.push('DATABASE_URL (or DIRECT_URL)');
+  if (!hasValue('DATABASE_URL') && !hasValue('DIRECT_URL') && !hasValue('DIRECT_DATABASE_URL')) {
+    missing.push('DATABASE_URL (or DIRECT_URL / DIRECT_DATABASE_URL)');
   }
 
   if (missing.length > 0) {

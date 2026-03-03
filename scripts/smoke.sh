@@ -5,6 +5,7 @@ set -euo pipefail
 BACKEND_URL="${1:-${BACKEND_URL:-}}"
 FRONTEND_URL="${2:-${FRONTEND_URL:-}}"
 SMOKE_AUTH_TOKEN="${SMOKE_AUTH_TOKEN:-}"
+SMOKE_OPS_TOKEN="${SMOKE_OPS_TOKEN:-${INTERNAL_OPS_TOKEN:-}}"
 VERCEL_PROTECTION_BYPASS="${VERCEL_PROTECTION_BYPASS:-}"
 
 if [ -z "$BACKEND_URL" ]; then
@@ -67,12 +68,24 @@ detect_health_prefix() {
     ready_body="${TMP_DIR}/ready_${idx}.txt"
 
     live_status="$(request GET "${BACKEND_URL}${live_path}" "$live_body" -H "accept: application/json")"
-    ready_status="$(request GET "${BACKEND_URL}${ready_path}" "$ready_body" -H "accept: application/json")"
+    if [ -n "$SMOKE_OPS_TOKEN" ]; then
+      ready_status="$(
+        request GET "${BACKEND_URL}${ready_path}" "$ready_body" \
+          -H "accept: application/json" \
+          -H "x-ops-token: ${SMOKE_OPS_TOKEN}"
+      )"
+    else
+      ready_status="$(request GET "${BACKEND_URL}${ready_path}" "$ready_body" -H "accept: application/json")"
+    fi
 
-    if [ "$live_status" = "200" ] && [ "$ready_status" = "200" ]; then
+    if [ "$live_status" = "200" ] && { [ "$ready_status" = "200" ] || [ "$ready_status" = "403" ]; }; then
       HEALTH_PREFIX="$candidate_prefix"
       echo "[smoke] OK ${live_path}"
-      echo "[smoke] OK ${ready_path}"
+      if [ "$ready_status" = "200" ]; then
+        echo "[smoke] OK ${ready_path}"
+      else
+        echo "[smoke] WARN ${ready_path} -> HTTP 403 (expected without SMOKE_OPS_TOKEN)"
+      fi
       echo "[smoke] Prefixo detectado: ${HEALTH_PREFIX:-/}"
       return 0
     fi

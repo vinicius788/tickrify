@@ -4,7 +4,7 @@ require('dotenv/config');
 const dns = require('dns/promises');
 
 function pickDatabaseUrl() {
-  const migrationsUrl = String(process.env.MIGRATIONS_DATABASE_URL || '').trim();
+  const migrationsUrl = normalizeDbUrl(process.env.MIGRATIONS_DATABASE_URL);
   if (migrationsUrl) {
     return {
       source: 'MIGRATIONS_DATABASE_URL',
@@ -12,7 +12,23 @@ function pickDatabaseUrl() {
     };
   }
 
-  const databaseUrl = String(process.env.DATABASE_URL || '').trim();
+  const directUrl = normalizeDbUrl(process.env.DIRECT_URL);
+  if (directUrl) {
+    return {
+      source: 'DIRECT_URL',
+      value: directUrl,
+    };
+  }
+
+  const directDatabaseUrl = normalizeDbUrl(process.env.DIRECT_DATABASE_URL);
+  if (directDatabaseUrl) {
+    return {
+      source: 'DIRECT_DATABASE_URL',
+      value: directDatabaseUrl,
+    };
+  }
+
+  const databaseUrl = normalizeDbUrl(process.env.DATABASE_URL);
   if (databaseUrl) {
     return {
       source: 'DATABASE_URL',
@@ -23,10 +39,24 @@ function pickDatabaseUrl() {
   throw new Error(
     [
       'Nenhuma URL de banco foi encontrada.',
-      'Defina MIGRATIONS_DATABASE_URL (preferencial) ou DATABASE_URL.',
+      'Defina MIGRATIONS_DATABASE_URL (preferencial), DIRECT_URL/DIRECT_DATABASE_URL, ou DATABASE_URL.',
       'Veja DEPLOY.md para instruções de conexão.',
     ].join(' '),
   );
+}
+
+function normalizeDbUrl(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return '';
+  }
+
+  // Ignore unresolved interpolation placeholders like ${DATABASE_URL}.
+  if (normalized.startsWith('${') || normalized.startsWith('$')) {
+    return '';
+  }
+
+  return normalized;
 }
 
 function isPlaceholderUrl(url) {

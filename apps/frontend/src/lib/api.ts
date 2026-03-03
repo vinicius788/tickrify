@@ -115,6 +115,25 @@ class APIClient {
     return token ? { 'Authorization': `Bearer ${token}` } : {};
   }
 
+  private async request(
+    path: string,
+    init: RequestInit,
+    fallbackMessage: string,
+  ): Promise<Response> {
+    try {
+      return await fetch(buildApiUrl(path), init);
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw new APIError(
+          `Não foi possível conectar ao backend (${API_BASE_URL}). Verifique VITE_API_URL, CORS e status da API.`,
+          0,
+          'network_error',
+        );
+      }
+      throw new APIError(fallbackMessage, 0);
+    }
+  }
+
   private async buildApiError(response: Response, fallbackMessage: string): Promise<APIError> {
     const error = await response.json().catch(() => ({}));
     const message = error.message || fallbackMessage;
@@ -140,13 +159,17 @@ class APIClient {
       formData.append('promptOverride', payload.promptOverride);
     }
 
-    const response = await fetch(buildApiUrl('/api/ai/analyze'), {
-      method: 'POST',
-      headers: {
-        ...this.getAuthHeader(token),
+    const response = await this.request(
+      '/api/ai/analyze',
+      {
+        method: 'POST',
+        headers: {
+          ...this.getAuthHeader(token),
+        },
+        body: formData,
       },
-      body: formData,
-    });
+      'Failed to create analysis',
+    );
 
     if (!response.ok) {
       throw await this.buildApiError(response, 'Failed to create analysis');
@@ -159,12 +182,16 @@ class APIClient {
     analysisId: string,
     token: string | null,
   ): Promise<AIAnalysisResponse> {
-    const response = await fetch(buildApiUrl(`/api/ai/analysis/${analysisId}`), {
-      method: 'GET',
-      headers: {
-        ...this.getAuthHeader(token),
+    const response = await this.request(
+      `/api/ai/analysis/${analysisId}`,
+      {
+        method: 'GET',
+        headers: {
+          ...this.getAuthHeader(token),
+        },
       },
-    });
+      'Failed to get analysis',
+    );
 
     if (!response.ok) {
       throw await this.buildApiError(response, 'Failed to get analysis');
@@ -178,12 +205,16 @@ class APIClient {
     limit = 20,
   ): Promise<AIAnalysisResponse[]> {
     const safeLimit = Math.max(1, Math.min(100, Math.floor(limit || 20)));
-    const response = await fetch(buildApiUrl(`/api/ai/analyses?limit=${safeLimit}`), {
-      method: 'GET',
-      headers: {
-        ...this.getAuthHeader(token),
+    const response = await this.request(
+      `/api/ai/analyses?limit=${safeLimit}`,
+      {
+        method: 'GET',
+        headers: {
+          ...this.getAuthHeader(token),
+        },
       },
-    });
+      'Failed to list analyses',
+    );
 
     if (!response.ok) {
       throw await this.buildApiError(response, 'Failed to list analyses');
@@ -193,12 +224,16 @@ class APIClient {
   }
 
   async getAnalysisUsage(token: string | null): Promise<AnalysisUsageResponse> {
-    const response = await fetch(buildApiUrl('/api/ai/usage'), {
-      method: 'GET',
-      headers: {
-        ...this.getAuthHeader(token),
+    const response = await this.request(
+      '/api/ai/usage',
+      {
+        method: 'GET',
+        headers: {
+          ...this.getAuthHeader(token),
+        },
       },
-    });
+      'Failed to fetch analysis usage',
+    );
 
     if (!response.ok) {
       throw await this.buildApiError(response, 'Failed to fetch analysis usage');

@@ -21,7 +21,7 @@ envVarGroups:
         sync: false
       - key: MIGRATIONS_DATABASE_URL
         sync: false
-      - key: DIRECT_DATABASE_URL
+      - key: DIRECT_URL
         sync: false
       - key: REDIS_URL
         sync: false

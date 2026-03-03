@@ -18,7 +18,12 @@ function isGenerateCommand(): boolean {
 loadDotenvIfAvailable();
 
 function resolveMigrationsDbUrl() {
-  const raw = process.env.MIGRATIONS_DATABASE_URL ?? process.env.DATABASE_URL;
+  const raw = pickFirstDbUrl([
+    process.env.MIGRATIONS_DATABASE_URL,
+    process.env.DIRECT_URL,
+    process.env.DIRECT_DATABASE_URL,
+    process.env.DATABASE_URL,
+  ]);
 
   if (!raw) {
     if (isGenerateCommand()) {
@@ -26,7 +31,10 @@ function resolveMigrationsDbUrl() {
     }
 
     throw new Error(
-      'Missing DB env. Set MIGRATIONS_DATABASE_URL (recommended) or DATABASE_URL.',
+      [
+        'Missing DB env.',
+        'Set MIGRATIONS_DATABASE_URL (recommended), DIRECT_URL/DIRECT_DATABASE_URL, or DATABASE_URL.',
+      ].join(' '),
     );
   }
 
@@ -45,6 +53,24 @@ function resolveMigrationsDbUrl() {
   }
 
   return withRequiredSslMode(url);
+}
+
+function pickFirstDbUrl(candidates: Array<string | undefined>): string | null {
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim();
+    if (!value) {
+      continue;
+    }
+
+    // Ignore unresolved env interpolation placeholders like ${DATABASE_URL}.
+    if (value.startsWith('${') || value.startsWith('$')) {
+      continue;
+    }
+
+    return value;
+  }
+
+  return null;
 }
 
 function withRequiredSslMode(value: string): string {
