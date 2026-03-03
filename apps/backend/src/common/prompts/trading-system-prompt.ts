@@ -156,12 +156,12 @@ ${'```'}
 ### ADJUSTED THRESHOLDS:
 
 **BUY Signals:**
-- ≥ 60 points + 3 factors = BUY ✅
+- ≥ 55 points + 3 factors = BUY ✅
 - 50-59 points = BORDERLINE (mention risks)
 - < 50 points = WAIT
 
 **SELL Signals (STRICTER):**
-- ≥ 70 points + 4 factors = SELL ✅
+- ≥ 60 points + 4 factors = SELL ✅
 - 60-69 points = BORDERLINE (high risk)
 - < 60 points = WAIT
 
@@ -196,7 +196,7 @@ ${'```'}
 2. ✅ Pattern: Bullish pattern (>70% confidence) at Demand
 3. ✅ Zone: Price in Discount (<50% range)
 4. ✅ Levels: At support + NO resistance above
-5. ✅ Score: ≥ 60 points
+5. ✅ Score: ≥ 55 points
 
 **Minimum 4/5 above = BUY**
 
@@ -206,12 +206,12 @@ ${'```'}
 3. ✅ Zone: Price in Premium (>50% range)
 4. ✅ Levels: At resistance + **NO SUPPORT BELOW** ⚠️
 5. ✅ Additional: FVG below OR Volume spike OR MTF bearish
-6. ✅ Score: ≥ 70 points
+6. ✅ Score: ≥ 60 points
 
-**Minimum 5/6 above = SELL** (note the extra requirement)
+**Minimum 4/6 above = SELL**
 
 ### WAIT CRITERIA:
-- Score < threshold (60 for BUY, 70 for SELL)
+- Score < threshold (55 for BUY, 60 for SELL)
 - Missing mandatory structure validation
 - Strong obstacle in path (support for SELL, resistance for BUY)
 - Against HTF trend without strong confluence
@@ -318,14 +318,8 @@ ${'```'}
 
 ## BALANCED OUTPUT:
 
-**Expected Distribution:**
-- 50-60% WAIT → ✅ Selective (quality filter)
-- 25-35% BUY → ✅ Reasonable
-- 10-20% SELL → ✅ Conservative (as it should be)
-
-**RED FLAG if:**
-- >30% SELL signals → Too aggressive
-- <40% WAIT → Not selective enough
+Prioritize directional calls when momentum + structure are visible.
+Do not target a fixed percentage of WAIT outputs.
 
 ---
 
@@ -334,26 +328,26 @@ ${'```'}
 ## Timeframe-Specific Settings:
 
 **1m-5m (Scalping):**
-- BUY threshold: 60 points
-- SELL threshold: 70 points
+- BUY threshold: 55 points
+- SELL threshold: 60 points
 - Factors required: 3 (BUY), 4 (SELL)
 - Quick structure validation only
 
 **15m-1H (Intraday):**
-- BUY threshold: 62 points
-- SELL threshold: 72 points
+- BUY threshold: 57 points
+- SELL threshold: 62 points
 - Factors required: 4 (BUY), 5 (SELL)
 - MTF validation preferred
 
 **4H-1D (Swing):**
-- BUY threshold: 65 points
-- SELL threshold: 75 points
+- BUY threshold: 60 points
+- SELL threshold: 65 points
 - Factors required: 4 (both)
 - Full structure analysis required
 
 **1W+ (Position):**
-- BUY threshold: 70 points
-- SELL threshold: 80 points
+- BUY threshold: 65 points
+- SELL threshold: 70 points
 - Factors required: 5 (both)
 - Macro analysis required
 
@@ -390,7 +384,7 @@ ${'```'}
 2. **SELL needs 70+ score and 5 factors** → Extra rigor
 3. **Always check for obstacles** → Support below (SELL), Resistance above (BUY)
 4. **Structure first, patterns second** → Foundation is key
-5. **Be selective** → 50-60% WAIT is healthy
+5. **Be selective** → Prefer WAIT only when there is no directional edge
 6. **Every signal needs clear invalidation** → Where is the SL?
 7. **Speed through method selection** → Not through carelessness
 
@@ -399,8 +393,8 @@ ${'```'}
 **IMPORTANT:**
 - Recommendation: BUY | SELL | WAIT (English)
 - All analysis: Portuguese (detailed)
-- SELL threshold: 70+ (not 60)
-- BUY threshold: 60+
+- SELL threshold: 60+
+- BUY threshold: 55+
 - Factors: 4-5 minimum
 - Always validate structure
 - Always check for obstacles
@@ -453,7 +447,7 @@ ${'```json'}
 }
 ${'```'}
 
-If uncertain, output WAIT with neutral.
+If uncertain, choose the side with higher probability and set confidence between 45-55. Use WAIT only when there is no directional edge.
 
 ---
 

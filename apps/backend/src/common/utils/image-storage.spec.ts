@@ -1,9 +1,15 @@
-import { decodeDataUrl, prepareIncomingImage } from './image-storage';
+import { decodeDataUrl, ImageStorageClient, prepareIncomingImage } from './image-storage';
 
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00]);
 
 describe('image-storage validation', () => {
+  const originalEnv = process.env;
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
   it('accepts png file upload and normalizes payload', () => {
     const prepared = prepareIncomingImage({
       fieldname: 'image',
@@ -57,5 +63,29 @@ describe('image-storage validation', () => {
     expect(() => decodeDataUrl('data:image/png;base64,not valid base64%%')).toThrow(
       'Invalid base64 image payload',
     );
+  });
+
+  it('respects USE_LOCAL_STORAGE in non-production runtime', () => {
+    process.env.APP_ENV = 'development';
+    process.env.USE_LOCAL_STORAGE = 'true';
+    process.env.SUPABASE_URL = 'https://example.supabase.co';
+    process.env.SUPABASE_SERVICE_KEY = 'service-key';
+    process.env.SUPABASE_STORAGE_BUCKET = 'analysis-images';
+
+    const storage = new ImageStorageClient();
+    expect(storage.isConfigured()).toBe(false);
+    expect(storage.requiresRemoteStorage()).toBe(false);
+  });
+
+  it('does not bypass remote storage requirements in production runtime', () => {
+    process.env.APP_ENV = 'production';
+    process.env.USE_LOCAL_STORAGE = 'true';
+    process.env.SUPABASE_URL = 'https://example.supabase.co';
+    process.env.SUPABASE_SERVICE_KEY = 'service-key';
+    process.env.SUPABASE_STORAGE_BUCKET = 'analysis-images';
+
+    const storage = new ImageStorageClient();
+    expect(storage.isConfigured()).toBe(true);
+    expect(storage.requiresRemoteStorage()).toBe(true);
   });
 });

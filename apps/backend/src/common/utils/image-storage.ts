@@ -133,6 +133,13 @@ function extensionFromMimeType(mimeType: string): string {
   }
 }
 
+function isTruthyFlag(value?: string): boolean {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+}
+
 export function decodeDataUrl(dataUrl: string): { buffer: Buffer; mimeType: string } {
   const parsed = parseDataUrl(dataUrl);
   const buffer = decodeBase64Payload(parsed.base64Payload);
@@ -191,12 +198,22 @@ export class ImageStorageClient {
     process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
     '';
   private readonly bucket = process.env.SUPABASE_STORAGE_BUCKET?.trim() || 'analysis-images';
+  private readonly localStorageEnabled =
+    !isProductionRuntime() && isTruthyFlag(process.env.USE_LOCAL_STORAGE);
 
   isConfigured(): boolean {
+    if (this.localStorageEnabled) {
+      return false;
+    }
+
     return Boolean(this.supabaseUrl && this.serviceKey && this.bucket);
   }
 
   requiresRemoteStorage(): boolean {
+    if (this.localStorageEnabled) {
+      return false;
+    }
+
     return isProductionRuntime();
   }
 
