@@ -8,7 +8,7 @@ import express from 'express';
 import { isOriginAllowed, resolveAllowedOrigins } from './common/utils/cors';
 import { attachRequestContext } from './common/middleware/request-context.middleware';
 import { validateStartupEnv } from './common/utils/env-validation';
-import { isProductionRuntime } from './common/utils/runtime-env';
+import { buildHelmetConfig } from './common/utils/security-headers';
 
 let cachedServer: any;
 
@@ -44,27 +44,7 @@ async function bootstrap() {
       const expressApp = express();
       expressApp.use(attachRequestContext);
       expressApp.set('trust proxy', 1);
-      expressApp.use(
-        helmet({
-          contentSecurityPolicy: {
-            directives: {
-              defaultSrc: ["'self'"],
-              scriptSrc: ["'self'"],
-              objectSrc: ["'none'"],
-              upgradeInsecureRequests: [],
-            },
-          },
-          hsts: isProductionRuntime()
-            ? {
-                maxAge: 31_536_000,
-                includeSubDomains: true,
-                preload: true,
-              }
-            : false,
-          frameguard: { action: 'deny' },
-          noSniff: true,
-        }),
-      );
+      expressApp.use(helmet(buildHelmetConfig()));
       
       const app = await NestFactory.create(
         AppModule,

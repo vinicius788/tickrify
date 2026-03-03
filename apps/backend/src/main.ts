@@ -6,6 +6,7 @@ import { isOriginAllowed, resolveAllowedOrigins } from './common/utils/cors';
 import { attachRequestContext } from './common/middleware/request-context.middleware';
 import { validateStartupEnv } from './common/utils/env-validation';
 import { isProductionRuntime } from './common/utils/runtime-env';
+import { buildHelmetConfig } from './common/utils/security-headers';
 
 /**
  * Bootstrap function for local development
@@ -24,27 +25,7 @@ async function bootstrap() {
     app.use(attachRequestContext);
     const expressApp = app.getHttpAdapter().getInstance();
     expressApp.set('trust proxy', 1);
-    app.use(
-      helmet({
-        contentSecurityPolicy: {
-          directives: {
-            defaultSrc: ["'self'"],
-            scriptSrc: ["'self'"],
-            objectSrc: ["'none'"],
-            upgradeInsecureRequests: [],
-          },
-        },
-        hsts: isProductionRuntime()
-          ? {
-              maxAge: 31_536_000,
-              includeSubDomains: true,
-              preload: true,
-            }
-          : false,
-        frameguard: { action: 'deny' },
-        noSniff: true,
-      }),
-    );
+    app.use(helmet(buildHelmetConfig()));
 
     const allowedOrigins = resolveAllowedOrigins();
 
