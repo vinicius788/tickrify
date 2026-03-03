@@ -314,7 +314,7 @@ ${'```'}
 - SELL requires extra proof
 - Every signal must have clear SL
 - Be honest about borderline setups
-- WAIT when uncertain
+- Prefer directional call when momentum/structure are present
 
 ## BALANCED OUTPUT:
 
@@ -367,7 +367,7 @@ Do not target a fixed percentage of WAIT outputs.
 - Pattern: Shooting star → 18/30
 - Levels: At resistance but SUPPORT 3% below → 10/20 ❌
 - Risk: R:R only 1.5:1 → 12/15 ❌
-- **TOTAL: 58 → WAIT** (below 70 threshold + support issue)
+- **TOTAL: 58 → WAIT** (below 60 threshold + support issue)
 
 ## Example 3: VALID SELL (Score 74)
 - Structure: LH + CHoCH confirmed → 32/35 ✅
