@@ -10,6 +10,7 @@ WORKDIR /app
 # Copiar package files da raiz (monorepo)
 COPY package*.json ./
 COPY apps/backend/package*.json ./apps/backend/
+COPY apps/backend/prisma.config.ts ./apps/backend/prisma.config.ts
 
 # Copiar apenas o schema do Prisma antes do install (postinstall do @prisma/client precisa do schema)
 RUN mkdir -p ./apps/backend/prisma

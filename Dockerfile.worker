@@ -14,6 +14,8 @@ WORKDIR /app
 FROM base AS deps
 
 COPY apps/backend/package*.json ./
+COPY apps/backend/prisma.config.ts ./prisma.config.ts
+COPY apps/backend/prisma ./prisma
 RUN npm ci --only=production
 
 # ============================================
@@ -24,6 +26,8 @@ FROM base AS builder
 WORKDIR /app
 
 COPY apps/backend/package*.json ./
+COPY apps/backend/prisma.config.ts ./prisma.config.ts
+COPY apps/backend/prisma ./prisma
 RUN npm ci
 
 COPY apps/backend/ ./
