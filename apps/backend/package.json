@@ -9,9 +9,9 @@
     "node": ">=18.x"
   },
   "scripts": {
-    "build": "prisma generate --config ./prisma.config.ts && nest build",
-    "postinstall": "prisma generate --config ./prisma.config.ts",
-    "vercel-build": "prisma generate --config ./prisma.config.ts && nest build",
+    "build": "prisma generate --schema=./prisma/schema.prisma && nest build",
+    "postinstall": "prisma generate --schema=./prisma/schema.prisma",
+    "vercel-build": "prisma generate --schema=./prisma/schema.prisma && nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "node dist/src/main",
     "dev": "nest start --watch",
