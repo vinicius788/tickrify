@@ -4,8 +4,10 @@ function normalizeRuntimeValue(value?: string): string {
     .toLowerCase();
 }
 
+const KNOWN_NON_PROD = new Set(['development', 'dev', 'test', 'local']);
+
 export function getNodeEnv(): string {
-  return normalizeRuntimeValue(process.env.NODE_ENV) || 'development';
+  return normalizeRuntimeValue(process.env.NODE_ENV);
 }
 
 export function getAppEnv(): string {
@@ -14,11 +16,13 @@ export function getAppEnv(): string {
 
 /**
  * Fail-closed strategy:
- * If either NODE_ENV or APP_ENV is "production", runtime is treated as production.
+ * Only explicit known non-prod envs are treated as non-production.
+ * Missing/unknown env values are treated as production.
  */
 export function isProductionRuntime(): boolean {
-  const nodeEnv = getNodeEnv();
-  const appEnv = getAppEnv();
-  return nodeEnv === 'production' || appEnv === 'production';
+  const runtimeEnv = getAppEnv() || getNodeEnv();
+  if (!runtimeEnv) {
+    return true;
+  }
+  return !KNOWN_NON_PROD.has(runtimeEnv);
 }
-

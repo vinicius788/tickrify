@@ -10,6 +10,10 @@ function hasValue(name: string): boolean {
 export function validateStartupEnv(): void {
   const missing: string[] = [];
 
+  if (!hasValue('APP_ENV')) {
+    missing.push('APP_ENV');
+  }
+
   if (!hasValue('DATABASE_URL') && !hasValue('DIRECT_URL')) {
     missing.push('DATABASE_URL (or DIRECT_URL)');
   }
@@ -22,6 +26,13 @@ export function validateStartupEnv(): void {
     const hasCorsConfig = hasValue('FRONTEND_URL') || hasValue('CORS_ORIGINS');
     if (!hasCorsConfig) {
       throw new Error('Missing required environment variables: FRONTEND_URL or CORS_ORIGINS');
+    }
+
+    const hasAuthConfig = hasValue('CLERK_SECRET_KEY') || hasValue('CLERK_JWT_KEY');
+    if (!hasAuthConfig) {
+      throw new Error(
+        'Missing required environment variables: CLERK_SECRET_KEY or CLERK_JWT_KEY',
+      );
     }
   }
 }
