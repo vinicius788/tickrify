@@ -15,6 +15,7 @@ RUN npm ci
 
 # Backend source
 COPY apps/backend ./apps/backend
+COPY apps/backend/scripts ./apps/backend/scripts
 
 # Build backend (also runs Prisma generate via backend build script)
 RUN npm run build -w apps/backend
