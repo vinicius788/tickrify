@@ -1,65 +1,33 @@
-# Dockerfile para o Worker AI
-# Pode ser usado para deploy no Fly.io ou qualquer plataforma Docker
-
-FROM node:18-alpine AS base
-
-# Instalar dependências necessárias
-RUN apk add --no-cache libc6-compat openssl
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# ============================================
-# Stage 1: Dependencies
-# ============================================
-FROM base AS deps
+RUN apk add --no-cache openssl
 
-COPY apps/backend/package*.json ./
-COPY apps/backend/prisma.config.ts ./prisma.config.ts
-COPY apps/backend/prisma ./prisma
-RUN npm ci --only=production
+COPY package*.json ./
+COPY apps/backend/package*.json ./apps/backend/
+COPY apps/backend/prisma.config.ts ./apps/backend/prisma.config.ts
+COPY apps/backend/prisma ./apps/backend/prisma
 
-# ============================================
-# Stage 2: Builder
-# ============================================
-FROM base AS builder
-
-WORKDIR /app
-
-COPY apps/backend/package*.json ./
-COPY apps/backend/prisma.config.ts ./prisma.config.ts
-COPY apps/backend/prisma ./prisma
 RUN npm ci
 
-COPY apps/backend/ ./
+COPY apps/backend ./apps/backend
 
-# Generate Prisma Client
-RUN npx prisma generate
+RUN npm run build -w apps/backend
 
-# Build
-RUN npm run build
-
-# ============================================
-# Stage 3: Runner
-# ============================================
-FROM base AS runner
+FROM node:20-alpine AS runner
 
 WORKDIR /app
+
+RUN apk add --no-cache openssl
 
 ENV NODE_ENV=production
 
-# Copiar dependências
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/apps/backend/package.json ./apps/backend/package.json
+COPY --from=builder /app/apps/backend/prisma.config.ts ./apps/backend/prisma.config.ts
+COPY --from=builder /app/apps/backend/prisma ./apps/backend/prisma
+COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 
-# Copiar build
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/package*.json ./
-
-# Generate Prisma Client no runtime
-RUN npx prisma generate
-
-# Expor porta (opcional para worker)
-EXPOSE 3000
-
-# Comando do worker
-CMD ["npm", "run", "worker:prod"]
+CMD ["npm", "run", "worker:prod", "-w", "apps/backend"]

@@ -1,25 +1,12 @@
 #!/bin/sh
-set -eu
+set -e
 
-cd /app/apps/backend
-
-if [ -z "${DATABASE_URL:-}" ] && [ -n "${DIRECT_URL:-}" ]; then
-  export DATABASE_URL="$DIRECT_URL"
+if [ "${RUN_MIGRATIONS_ON_START:-true}" = "true" ]; then
+  echo "[entrypoint] Running migrations..."
+  npm run migrate:deploy -w apps/backend
+else
+  echo "[entrypoint] Skipping migrations (RUN_MIGRATIONS_ON_START=false)"
 fi
 
-if [ -z "${DIRECT_URL:-}" ] && [ -n "${DATABASE_URL:-}" ]; then
-  export DIRECT_URL="$DATABASE_URL"
-fi
-
-echo "[entrypoint] Generating Prisma client..."
-npx prisma generate --schema=./prisma/schema.prisma
-
-echo "[entrypoint] Running Prisma migrations..."
-npm run migrate:deploy
-
-echo "[entrypoint] Starting backend..."
-if [ "$#" -eq 0 ]; then
-  exec npm run start:prod
-fi
-
+echo "[entrypoint] Starting API..."
 exec "$@"

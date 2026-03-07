@@ -1,43 +1,45 @@
-# Usar Node.js 20
-FROM node:20-bookworm-slim
+FROM node:20-alpine AS builder
 
-# OpenSSL para Prisma (evita warnings e problemas de runtime)
-RUN apt-get update -y && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
-
-# Definir diretório de trabalho
 WORKDIR /app
 
-# Copiar package files da raiz (monorepo)
+RUN apk add --no-cache openssl
+
+# Monorepo manifests and backend Prisma config/schema are needed during install
 COPY package*.json ./
 COPY apps/backend/package*.json ./apps/backend/
 COPY apps/backend/prisma.config.ts ./apps/backend/prisma.config.ts
-
-# Copiar apenas o schema do Prisma antes do install (postinstall do @prisma/client precisa do schema)
-RUN mkdir -p ./apps/backend/prisma
 COPY apps/backend/prisma ./apps/backend/prisma
 
-# Instalar dependências (workspace)
-RUN npm install
+# Install workspace dependencies (includes backend deps)
+RUN npm ci
 
-# Copiar código fonte completo
-COPY . .
+# Backend source
+COPY apps/backend ./apps/backend
 
-# Build do backend
-WORKDIR /app/apps/backend
-RUN npm run build
+# Build backend (also runs Prisma generate via backend build script)
+RUN npm run build -w apps/backend
 
-# Gerar Prisma Client
-RUN npx prisma generate --schema=./prisma/schema.prisma
+FROM node:20-alpine AS runner
 
-# Copiar entrypoint que roda migrations e inicia o servidor
 WORKDIR /app
+
+RUN apk add --no-cache openssl
+
+ENV NODE_ENV=production
+ENV PORT=3001
+
+# Runtime dependencies and backend build output
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/apps/backend/package.json ./apps/backend/package.json
+COPY --from=builder /app/apps/backend/prisma.config.ts ./apps/backend/prisma.config.ts
+COPY --from=builder /app/apps/backend/prisma ./apps/backend/prisma
+COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
+
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Expor porta do backend
 EXPOSE 3001
 
-# EntryPoint garante execução do script mesmo se a plataforma definir um Start Command
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-# Comando padrão (usado como args do entrypoint se Start Command for definido)
-CMD ["npm", "run", "start:prod"]
+CMD ["npm", "run", "start:prod", "-w", "apps/backend"]
