@@ -1,5 +1,5 @@
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { isOriginAllowed, resolveAllowedOrigins } from './common/utils/cors';
@@ -8,12 +8,25 @@ import { validateStartupEnv } from './common/utils/env-validation';
 import { isProductionRuntime } from './common/utils/runtime-env';
 import { buildHelmetConfig } from './common/utils/security-headers';
 
+type GlobalWithNestApp = typeof globalThis & {
+  __tickrifyNestApp?: INestApplication;
+};
+
 /**
  * Bootstrap function for local development
  * This is used when running the server locally with `npm run dev` or `npm start`
  */
 async function bootstrap() {
   try {
+    const globalRef = globalThis as GlobalWithNestApp;
+
+    // In watch mode, Nest can re-run bootstrap before the old app is fully released.
+    // Close the previous instance first to avoid intermittent EADDRINUSE on :3001.
+    if (globalRef.__tickrifyNestApp) {
+      await globalRef.__tickrifyNestApp.close();
+      globalRef.__tickrifyNestApp = undefined;
+    }
+
     validateStartupEnv();
     const isProd = String(process.env.NODE_ENV || '').toLowerCase() === 'production';
     console.log('🚀 Starting NestJS application...');
@@ -30,7 +43,10 @@ async function bootstrap() {
     const allowedOrigins = resolveAllowedOrigins();
 
     app.enableCors({
-      origin: (origin, callback) => {
+      origin: (
+        origin: string | undefined,
+        callback: (error: Error | null, allow?: boolean) => void,
+      ) => {
         if (!origin) {
           callback(null, true);
           return;
@@ -72,6 +88,7 @@ async function bootstrap() {
 
     const port = Number(process.env.PORT || 3001);
     await app.listen(port);
+    globalRef.__tickrifyNestApp = app;
     
     console.log(`✅ Backend running on http://localhost:${port}`);
     console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);

@@ -20,10 +20,11 @@ export function useAnalysisLimit(): AnalysisLimitData {
   const [analysisCount, setAnalysisCount] = useState(0);
   const [analysisLimit, setAnalysisLimit] = useState(FREE_LIMIT);
   const [userPlan, setUserPlan] = useState<'free' | 'pro'>('free');
+  const [backendUnlimited, setBackendUnlimited] = useState(false);
 
   // Verificar se está no modo demo (rota /demo sem usuário)
   const isDemo = !user;
-  const isUnlimited = userPlan === 'pro';
+  const isUnlimited = userPlan === 'pro' || backendUnlimited;
 
   const refreshLimits = useCallback(async () => {
     if (!isLoaded || !user) {
@@ -37,12 +38,14 @@ export function useAnalysisLimit(): AnalysisLimitData {
         setUserPlan('free');
         setAnalysisCount(0);
         setAnalysisLimit(FREE_LIMIT);
+        setBackendUnlimited(false);
         return;
       }
 
       const usage = await apiClient.getAnalysisUsage(token);
 
       setUserPlan(usage.plan === 'pro' ? 'pro' : 'free');
+      setBackendUnlimited(Boolean(usage.isUnlimited));
       setAnalysisCount(usage.used);
       setAnalysisLimit(
         typeof usage.total === 'number' && Number.isFinite(usage.total) && usage.total > 0
@@ -53,6 +56,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setUserPlan('free');
       setAnalysisCount(0);
       setAnalysisLimit(FREE_LIMIT);
+      setBackendUnlimited(false);
     }
   }, [getToken, isLoaded, user]);
 
@@ -75,6 +79,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setAnalysisCount(0);
       setAnalysisLimit(FREE_LIMIT);
       setUserPlan('free');
+      setBackendUnlimited(false);
     }
   }, [user]);
 

@@ -36,7 +36,7 @@ export class AuthGuard implements CanActivate {
         },
       });
 
-      if (this.shouldBootstrapAdmin(user.role, email)) {
+      if (email && this.shouldBootstrapAdmin(user.role, email)) {
         user = await this.promoteUserToAdmin(user.id, clerkUserId, email);
       }
 

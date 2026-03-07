@@ -5,14 +5,15 @@ import {
   Logger,
   NestInterceptor,
 } from '@nestjs/common';
-import { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
 
 @Injectable()
 export class HttpLoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger('HTTP');
 
-  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+  intercept(
+    context: ExecutionContext,
+    next: CallHandler,
+  ): ReturnType<CallHandler['handle']> {
     if (context.getType() !== 'http') {
       return next.handle();
     }
@@ -21,17 +22,20 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     const request = http.getRequest();
     const response = http.getResponse();
     const start = Date.now();
+    let logged = false;
 
-    return next.handle().pipe(
-      tap({
-        next: () => {
-          this.logRequest(request, response, Date.now() - start);
-        },
-        error: () => {
-          this.logRequest(request, response, Date.now() - start);
-        },
-      }),
-    );
+    const logOnce = (): void => {
+      if (logged) {
+        return;
+      }
+      logged = true;
+      this.logRequest(request, response, Date.now() - start);
+    };
+
+    response.on?.('finish', logOnce);
+    response.on?.('close', logOnce);
+
+    return next.handle();
   }
 
   private logRequest(request: any, response: any, durationMs: number): void {
@@ -58,4 +62,3 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     this.logger.log(message);
   }
 }
-

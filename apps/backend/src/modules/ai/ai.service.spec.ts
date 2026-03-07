@@ -93,4 +93,19 @@ describe('AiService access enforcement', () => {
     expect(usage.canAnalyze).toBe(true);
     expect(usage.isUnlimited).toBe(true);
   });
+
+  it('returns unlimited usage for free users when free limit is disabled', async () => {
+    process.env.FREE_ANALYSIS_LIMIT_PER_MONTH = '0';
+    prisma.analysisUsage.findUnique.mockResolvedValue({ count: 99 });
+    prisma.subscription.findFirst.mockResolvedValue(null);
+
+    const usage = await service.getUsage('usr_1');
+
+    expect(usage.plan).toBe('free');
+    expect(usage.total).toBeNull();
+    expect(usage.remaining).toBeNull();
+    expect(usage.used).toBe(99);
+    expect(usage.canAnalyze).toBe(true);
+    expect(usage.isUnlimited).toBe(true);
+  });
 });

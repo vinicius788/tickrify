@@ -1,47 +1,91 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { Bot } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-const LOADING_MESSAGES = [
-  "Analisando tendências macro...",
-  "Calculando indicadores técnicos...",
-  "Identificando padrões de candlestick...",
-  "Avaliando volume e volatilidade...",
-  "Cruzando dados multi-timeframe...",
-  "Compilando o relatório final..."
+const STEPS = [
+  'Classificando tipo de gráfico...',
+  'Analisando estrutura de mercado...',
+  'Validando zonas de demanda/oferta...',
+  'Calculando níveis de entry/stop/take...',
+  'Gerando relatório final...',
 ];
 
 const AnalysisLoading = () => {
-  const [progress, setProgress] = useState(10);
-  const [currentMessage, setCurrentMessage] = useState(LOADING_MESSAGES[0]);
+  const [activeStep, setActiveStep] = useState(0);
+  const [progress, setProgress] = useState(8);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setProgress((prev) => (prev >= 95 ? 95 : prev + 5));
-    }, 150);
+    const stepTimer = setInterval(() => {
+      setActiveStep((prev) => Math.min(prev + 1, STEPS.length - 1));
+    }, 2500);
 
-    const messageTimer = setInterval(() => {
-        setCurrentMessage(LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)]);
-    }, 500);
+    const progressTimer = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 92) {
+          return 92;
+        }
+        return Math.min(prev + 3, 92);
+      });
+    }, 250);
 
     return () => {
-      clearInterval(timer);
-      clearInterval(messageTimer);
+      clearInterval(stepTimer);
+      clearInterval(progressTimer);
     };
   }, []);
 
+  const rows = useMemo(
+    () =>
+      STEPS.map((label, index) => {
+        if (index < activeStep) {
+          return { label, status: 'DONE', marker: '✓' };
+        }
+        if (index === activeStep) {
+          return { label, status: 'RUNNING', marker: '●' };
+        }
+        return { label, status: 'PENDING', marker: '○' };
+      }),
+    [activeStep],
+  );
+
   return (
-    <Card className="w-full max-w-2xl mx-auto flex flex-col items-center justify-center text-center p-8">
-      <CardContent className="flex flex-col items-center justify-center">
-        <div className="relative w-24 h-24 mb-6">
-            <div className="absolute inset-0 bg-gradient-to-tr from-primary to-accent-purple rounded-full blur-xl opacity-70 animate-pulse"></div>
-            <Bot className="relative w-full h-full text-primary" />
+    <Card className="surface-terminal-elevated mx-auto w-full max-w-3xl rounded-xl">
+      <CardHeader className="border-b border-[var(--border-subtle)] pb-3">
+        <CardTitle className="text-sm tracking-wider text-[var(--text-primary)]">
+          TICKRIFY AI · PROCESSANDO
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6 p-5 md:p-6">
+        <div className="space-y-2 text-sm">
+          {rows.map((step) => (
+            <div
+              key={step.label}
+              className="grid grid-cols-[1fr_auto] items-center gap-3 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2"
+            >
+              <span className="text-[var(--text-primary)]">&gt; {step.label}</span>
+              <span
+                className={
+                  step.status === 'DONE'
+                    ? 'text-[var(--signal-buy)]'
+                    : step.status === 'RUNNING'
+                      ? 'animate-pulse text-[var(--signal-hold)]'
+                      : 'text-[var(--text-secondary)]'
+                }
+              >
+                {step.marker} {step.status}
+              </span>
+            </div>
+          ))}
         </div>
-        <h2 className="text-2xl font-semibold mb-2">Analisando com a IA</h2>
-        <p className="text-muted-foreground mb-6">Aguarde um momento, estamos processando os dados para você.</p>
-        <Progress value={progress} className="w-full mb-4" />
-        <p className="text-sm text-muted-foreground font-mono h-5">{currentMessage}</p>
+
+        <div className="space-y-2">
+          <div className="h-3 overflow-hidden rounded-sm bg-[var(--bg-overlay)]">
+            <div
+              className="h-full bg-[var(--signal-buy)] transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <p className="font-terminal text-xs text-[var(--text-secondary)]">{progress}%</p>
+        </div>
       </CardContent>
     </Card>
   );

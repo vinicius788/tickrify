@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical } from "lucide-react";
+import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical, Clock3, Wifi, WifiOff } from "lucide-react";
 import { Link } from "react-router-dom";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -17,6 +17,7 @@ import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit
 import { APIError, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
 import { createCheckoutSession, type BillingCycle } from "@/lib/stripe";
 import { useToast } from "@/hooks/use-toast";
+import { normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
 
 type View = 'new-analysis' | 'my-trades' | 'watchlist' | 'analysis-result' | 'loading' | 'error';
 type RecentAnalysisItem = {
@@ -24,6 +25,7 @@ type RecentAnalysisItem = {
   timeframe: string;
   recommendation: Recommendation;
   bias: Bias;
+  confidence: number;
   createdAt: string;
 };
 type ActiveMarketItem = {
@@ -42,13 +44,16 @@ const DashboardPage = () => {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isStartingCheckout, setIsStartingCheckout] = useState(false);
-  const { plan } = useAnalysisLimit();
+  const { plan, total, used, remaining, isUnlimited } = useAnalysisLimit();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
   const { getToken } = useAuth();
   const { toast } = useToast();
   const apiClient = useAPIClient();
   const isDemo = !user;
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true,
+  );
 
   // Dados de exemplo APENAS para modo DEMO
   const demoActiveMarkets = [
@@ -58,9 +63,9 @@ const DashboardPage = () => {
   ];
 
   const demoRecentAnalyses = [
-    { symbol: "ETH/USD", timeframe: "4H", recommendation: "BUY", bias: "bullish" },
-    { symbol: "TSLA", timeframe: "1D", recommendation: "WAIT", bias: "neutral" },
-    { symbol: "XAU/USD", timeframe: "1H", recommendation: "SELL", bias: "bearish" },
+    { symbol: "ETH/USD", timeframe: "4H", recommendation: "COMPRA", bias: "bullish", confidence: 82, createdAt: new Date().toISOString() },
+    { symbol: "TSLA", timeframe: "1D", recommendation: "AGUARDAR", bias: "neutral", confidence: 58, createdAt: new Date().toISOString() },
+    { symbol: "XAU/USD", timeframe: "1H", recommendation: "VENDA", bias: "bearish", confidence: 77, createdAt: new Date().toISOString() },
   ];
 
   // Estados para dados REAIS da API
@@ -71,7 +76,7 @@ const DashboardPage = () => {
   const fetchRecentAnalyses = useCallback(async () => {
     try {
       setLoadingAnalyses(true);
-      const analyses = await apiClient.listAnalyses(100);
+      const analyses = await apiClient.listAnalyses(40);
 
       const now = Date.now();
       const activeWindowMs = 8 * 60 * 60 * 1000; // 8 horas
@@ -83,28 +88,37 @@ const DashboardPage = () => {
         return `${hours}h atrás`;
       };
 
-      // Pegar as 3 mais recentes
-      const recent: RecentAnalysisItem[] = analyses.slice(0, 3).map((a) => ({
-        symbol: a.symbol || ('Análise #' + a.id.slice(0, 8)),
-        timeframe: a.timeframe || new Date(a.createdAt).toLocaleDateString('pt-BR'),
-        recommendation: (a.recommendation || 'WAIT') as Recommendation,
+      const completedRecent: RecentAnalysisItem[] = analyses
+        .filter((a) => a.status === 'completed')
+        .map((a) => ({
+        symbol: String(a.symbol || '').trim() || 'N/A',
+        timeframe: String(a.timeframe || '').trim() || 'N/A',
+        recommendation: normalizeRecommendationLabel(a.recommendation) as Recommendation,
         bias: (a.bias || 'neutral') as Bias,
+        confidence:
+          Number(a.confidence) >= 0 && Number(a.confidence) <= 1
+            ? Number(a.confidence) * 100
+            : Number(a.confidence) || 0,
         createdAt: a.createdAt,
       }));
+      const withIdentity = completedRecent.filter(
+        (item) => item.symbol !== 'N/A' && item.timeframe !== 'N/A',
+      );
+      const recent = (withIdentity.length > 0 ? withIdentity : completedRecent).slice(0, 3);
       setRecentAnalyses(recent);
 
       // Mercados ativos = símbolos analisados nas últimas 8 horas
       const recentMarketAnalyses = analyses
         .filter((a) => {
-          if (!a.symbol || !a.createdAt) return false;
+          if (!a.createdAt) return false;
           return now - new Date(a.createdAt).getTime() <= activeWindowMs;
         })
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
       const marketMap = new Map<string, ActiveMarketItem>();
       for (const analysis of recentMarketAnalyses) {
-        const symbol = String(analysis.symbol).trim();
-        if (!symbol) continue;
+        const symbol = String(analysis.symbol || '').trim();
+        if (!symbol || symbol === 'N/A') continue;
         if (!marketMap.has(symbol)) {
           const timeframe = analysis.timeframe ? ` • ${analysis.timeframe}` : '';
           marketMap.set(symbol, {
@@ -129,14 +143,25 @@ const DashboardPage = () => {
     }
   }, [fetchRecentAnalyses, isDemo, user]);
 
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+
   // Usar dados demo ou reais dependendo do modo
   const activeMarkets = isDemo ? demoActiveMarkets : realActiveMarkets;
   const displayRecentAnalyses = isDemo ? demoRecentAnalyses : recentAnalyses;
 
   const signalColor = (recommendation: Recommendation) => {
-    if (recommendation === 'BUY') return 'text-green-500';
-    if (recommendation === 'SELL') return 'text-red-500';
-    return 'text-yellow-500';
+    return signalToneClass(recommendation);
   };
 
   const startUpgradeCheckout = useCallback(async (billingCycle: BillingCycle = 'monthly') => {
@@ -223,21 +248,7 @@ const DashboardPage = () => {
       // Incrementar contador (apenas quando logado)
       incrementAnalysis();
 
-      // Poll para verificar status da análise
-      let analysis = response;
-      let pollCount = 0;
-      const maxPolls = 60; // 60 * 2s = 120 segundos max
-
-      while (analysis.status === 'pending' || analysis.status === 'processing') {
-        if (pollCount >= maxPolls) {
-          throw new Error('Tempo limite de análise excedido. Tente novamente.');
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 segundos
-        analysis = await apiClient.getAnalysis(analysis.id);
-        console.log('[Dashboard] Poll status:', analysis.status);
-        pollCount++;
-      }
+      const analysis = await apiClient.waitForAnalysisCompletion(response.id, response);
 
       if (analysis.status === 'failed') {
         throw new Error(analysis.reasoning || 'Falha ao processar análise');
@@ -263,7 +274,11 @@ const DashboardPage = () => {
         }
       }
 
-      setErrorMessage(error instanceof Error ? error.message : 'Erro desconhecido ao processar análise');
+      if (error instanceof APIError && error.code === 'analysis_timeout') {
+        setErrorMessage('A análise demorou mais que o esperado, tente novamente.');
+      } else {
+        setErrorMessage(error instanceof Error ? error.message : 'Erro desconhecido ao processar análise');
+      }
       setActiveView('error');
     }
   };
@@ -307,6 +322,17 @@ const DashboardPage = () => {
     }
   };
 
+  const safeTotal = Number.isFinite(total) ? Math.max(0, Number(total)) : null;
+  const safeUsed = Number.isFinite(used) ? Math.max(0, Number(used)) : 0;
+  const navbarUnlimited =
+    isUnlimited ||
+    total === null ||
+    total === undefined ||
+    total === -1 ||
+    !Number.isFinite(total);
+  const quotaText = safeTotal === null ? `${safeUsed}/-` : `${Math.min(safeUsed, safeTotal)}/${safeTotal}`;
+  const sidebarSectionTitleClass = 'text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]';
+
   return (
     <div className="flex min-h-screen w-full flex-col bg-background">
       {/* Banner de Demo */}
@@ -324,21 +350,48 @@ const DashboardPage = () => {
         </div>
       )}
       
-      <header className="sticky top-0 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6 z-40">
-        {/* Logo - se logado vai para dashboard, senão vai para home */}
-        <Link to={user ? "/dashboard" : "/"} className="flex items-center gap-2">
-          <img src="/icon.png" alt="Tickrify" className="h-8 w-8" />
-          <span className="sr-only">Tickrify</span>
-        </Link>
-        
-        <div className="flex w-full items-center gap-4 ml-auto md:gap-2 lg:gap-4">
-          <div className="ml-auto flex-1 sm:flex-initial">
-            {/* Search can be added here later */}
+      <header className="sticky top-0 z-40 border-b border-[var(--border-subtle)] bg-[rgba(10,11,13,0.85)] backdrop-blur-md">
+        <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between gap-4 px-4 md:px-6">
+          <Link to={user ? "/dashboard" : "/"} className="flex items-center gap-3">
+            <img src="/icon.png" alt="Tickrify" className="h-8 w-8" />
+            <div className="leading-tight">
+              <p className="text-sm font-semibold tracking-[0.16em] text-[var(--text-primary)]">
+                TICKRIFY
+              </p>
+              <p className="text-[11px] text-[var(--text-secondary)]">Institutional Terminal</p>
+            </div>
+          </Link>
+
+          <div className="flex items-center gap-3 text-xs">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 ${
+                isOnline
+                  ? 'border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] text-[var(--signal-buy)]'
+                  : 'border-[var(--signal-sell-border)] bg-[var(--signal-sell-bg)] text-[var(--signal-sell)]'
+              }`}
+            >
+              {isOnline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+              {isOnline ? 'Online' : 'Offline'}
+            </span>
+
+            {navbarUnlimited ? (
+              <div className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1.5">
+                <span className="text-yellow-400">👑</span>
+                <span className="font-terminal text-xs font-medium text-yellow-400">PRO</span>
+                <span className="text-xs text-[var(--text-secondary)]">· Ilimitado</span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1.5">
+                <Clock3 className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
+                <span className="font-terminal text-xs text-[var(--text-primary)]">{quotaText} análises</span>
+              </div>
+            )}
+
+            {user && <UserButton afterSignOutUrl="/" />}
           </div>
-          {user && <UserButton afterSignOutUrl="/" />}
         </div>
       </header>
-      <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-8">
+      <main className="flex flex-1 flex-col gap-4 p-4 md:gap-6 md:p-6">
         
         {/* Mobile Navigation */}
         <div className="md:hidden">
@@ -384,44 +437,44 @@ const DashboardPage = () => {
           )}
         </div>
 
-        <div className="grid gap-4 md:grid-cols-[240px_1fr] lg:grid-cols-[280px_1fr]">
-          <div className="hidden md:flex flex-col gap-6">
+        <div className="grid gap-4 md:grid-cols-[280px_1fr] xl:grid-cols-[320px_1fr]">
+          <div className="hidden md:flex flex-col gap-4">
             {/* Contador de Análises */}
             {user && <AnalysisCounter onUpgradeClick={() => setShowUpgradeModal(true)} />}
             
-            <Card>
-              <CardHeader>
-                <CardTitle>Ações Rápidas</CardTitle>
+            <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
+              <CardHeader className="px-4 pb-2 pt-4">
+                <CardTitle className={sidebarSectionTitleClass}>Ações rápidas</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-2">
-                <Button onClick={() => setActiveView('new-analysis')} variant={activeView.startsWith('analysis') || activeView === 'loading' || activeView === 'error' ? 'default' : 'outline'}><PlusCircle className="mr-2 h-4 w-4" /> Nova Análise</Button>
-                <Button onClick={() => setActiveView('my-trades')} variant={activeView === 'my-trades' ? 'default' : 'outline'}><History className="mr-2 h-4 w-4" /> Meus Trades</Button>
-                <Button onClick={() => setActiveView('watchlist')} variant={activeView === 'watchlist' ? 'default' : 'outline'}><Star className="mr-2 h-4 w-4" /> Watchlist</Button>
+              <CardContent className="grid gap-2 p-4 pt-0">
+                <Button onClick={() => setActiveView('new-analysis')} variant={activeView.startsWith('analysis') || activeView === 'loading' || activeView === 'error' ? 'default' : 'outline'} className="justify-start"><PlusCircle className="mr-2 h-4 w-4" /> Nova Análise</Button>
+                <Button onClick={() => setActiveView('my-trades')} variant={activeView === 'my-trades' ? 'default' : 'outline'} className="justify-start"><History className="mr-2 h-4 w-4" /> Meus Trades</Button>
+                <Button onClick={() => setActiveView('watchlist')} variant={activeView === 'watchlist' ? 'default' : 'outline'} className="justify-start"><Star className="mr-2 h-4 w-4" /> Watchlist</Button>
                 {user && plan === 'free' && (
-                  <Button onClick={() => setShowUpgradeModal(true)} variant="outline">
+                  <Button onClick={() => setShowUpgradeModal(true)} variant="outline" className="justify-start">
                     <Crown className="mr-2 h-4 w-4" />
                     Fazer Upgrade para Pro
                   </Button>
                 )}
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle>Mercados Ativos</CardTitle>
+            <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
+              <CardHeader className="px-4 pb-2 pt-4">
+                <CardTitle className={sidebarSectionTitleClass}>Mercados ativos</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-4">
+              <CardContent className="space-y-2 p-4 pt-0 text-xs">
                 {isDemo ? (
                   demoActiveMarkets.map((market) => (
-                    <div key={market.name} className="flex items-center justify-between">
-                      <span className="font-medium">{market.name}</span>
+                    <div key={market.name} className="grid grid-cols-[1fr_auto] items-center rounded-sm border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 py-1.5">
+                      <span className="font-terminal font-medium">{market.name}</span>
                       <span className={market.isUp ? "text-green-500" : "text-red-500"}>{market.change}</span>
                     </div>
                   ))
                 ) : activeMarkets.length > 0 ? (
                   (activeMarkets as ActiveMarketItem[]).map((market) => (
-                    <div key={market.name} className="flex items-center justify-between">
-                      <span className="font-medium">{market.name}</span>
-                      <span className="text-muted-foreground text-xs">{market.lastSeen}</span>
+                    <div key={market.name} className="grid grid-cols-[1fr_auto] items-center rounded-sm border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 py-1.5">
+                      <span className="font-terminal font-medium text-[var(--text-primary)]">{market.name}</span>
+                      <span className="font-terminal text-[var(--text-secondary)]">{market.lastSeen}</span>
                     </div>
                   ))
                 ) : (
@@ -431,46 +484,47 @@ const DashboardPage = () => {
                 )}
               </CardContent>
             </Card>
-            {!isDemo && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Últimas Análises</CardTitle>
-                </CardHeader>
-                <CardContent className="grid gap-3">
-                  {loadingAnalyses ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">Carregando...</p>
-                  ) : displayRecentAnalyses.length > 0 ? (
-                    displayRecentAnalyses.map((analysis, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-sm">
-                        <span className="font-medium">{analysis.symbol} <span className="text-muted-foreground">{analysis.timeframe}</span></span>
-                        <span className={`font-semibold ${signalColor(analysis.recommendation as Recommendation)}`}>
-                          {String(analysis.bias || 'neutral').toUpperCase()} • {analysis.recommendation}
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted-foreground text-center py-4">Nenhuma análise ainda. Faça sua primeira!</p>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-            {isDemo && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Últimas Análises</CardTitle>
-                </CardHeader>
-                <CardContent className="grid gap-3">
-                  {displayRecentAnalyses.map((analysis, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-sm">
-                      <span className="font-medium">{analysis.symbol} <span className="text-muted-foreground">{analysis.timeframe}</span></span>
-                      <span className={`font-semibold ${signalColor(analysis.recommendation as Recommendation)}`}>
-                        {String(analysis.bias || 'neutral').toUpperCase()} • {analysis.recommendation}
-                      </span>
+            <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
+              <CardHeader className="px-4 pb-2 pt-4">
+                <CardTitle className={sidebarSectionTitleClass}>Últimas análises</CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-0">
+                {loadingAnalyses ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">Carregando...</p>
+                ) : displayRecentAnalyses.length > 0 ? (
+                  <div className="overflow-hidden rounded-sm border border-[var(--border-subtle)]">
+                    <div className="grid grid-cols-[1fr_58px_52px_62px] bg-[var(--bg-overlay)] px-2 py-1.5 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
+                      <span>Símbolo</span>
+                      <span>Signal</span>
+                      <span>Conf.</span>
+                      <span>Tempo</span>
                     </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
+                    {displayRecentAnalyses.map((analysis, idx) => {
+                      const recLabel = normalizeRecommendationLabel(analysis.recommendation);
+                      const minutesAgo = Math.max(
+                        1,
+                        Math.floor((Date.now() - new Date(analysis.createdAt).getTime()) / (1000 * 60)),
+                      );
+                      return (
+                        <div
+                          key={idx}
+                          className="grid grid-cols-[1fr_58px_52px_62px] items-center border-t border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 py-2 text-[11px]"
+                        >
+                          <span className="truncate font-terminal text-[var(--text-primary)]">
+                            {analysis.symbol} <span className="font-terminal text-[var(--text-secondary)]">{analysis.timeframe}</span>
+                          </span>
+                          <span className={`font-semibold ${signalColor(recLabel as Recommendation)}`}>{recLabel}</span>
+                          <span className="font-terminal text-[var(--text-secondary)]">{Math.round(Number(analysis.confidence) || 0)}%</span>
+                          <span className="font-terminal text-[var(--text-secondary)]">{minutesAgo}m</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">Nenhuma análise ainda. Faça sua primeira!</p>
+                )}
+              </CardContent>
+            </Card>
           </div>
           <div className="flex flex-col gap-8">
             {renderContent()}

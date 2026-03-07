@@ -18,6 +18,13 @@ import { BillingCycle } from '../../config/stripe.config';
 import { Throttle } from '@nestjs/throttler';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto';
 
+type AuthenticatedUser = {
+  id?: string;
+  clerkUserId: string;
+  email?: string | null;
+  role?: string;
+};
+
 @Controller('stripe')
 export class StripeController {
   constructor(private readonly stripeService: StripeService) {}
@@ -29,7 +36,7 @@ export class StripeController {
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 12, ttl: 60_000 } })
   async createCheckoutSession(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() body: CreateCheckoutSessionDto,
   ) {
     const planType = 'pro' as const;
@@ -44,7 +51,7 @@ export class StripeController {
   @Post('create-customer-portal')
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 12, ttl: 60_000 } })
-  async createCustomerPortal(@CurrentUser() user: any) {
+  async createCustomerPortal(@CurrentUser() user: AuthenticatedUser) {
     return this.stripeService.createCustomerPortal(user.clerkUserId);
   }
 
@@ -54,7 +61,7 @@ export class StripeController {
   @Post('cancel-subscription')
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
-  async cancelSubscription(@CurrentUser() user: any) {
+  async cancelSubscription(@CurrentUser() user: AuthenticatedUser) {
     return this.stripeService.cancelSubscription(user.clerkUserId);
   }
 
@@ -64,7 +71,7 @@ export class StripeController {
   @Post('reactivate-subscription')
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
-  async reactivateSubscription(@CurrentUser() user: any) {
+  async reactivateSubscription(@CurrentUser() user: AuthenticatedUser) {
     return this.stripeService.reactivateSubscription(user.clerkUserId);
   }
 
@@ -74,7 +81,7 @@ export class StripeController {
   @Get('subscription')
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  async getUserSubscription(@CurrentUser() user: any) {
+  async getUserSubscription(@CurrentUser() user: AuthenticatedUser) {
     return this.stripeService.getUserSubscription(user.clerkUserId);
   }
 

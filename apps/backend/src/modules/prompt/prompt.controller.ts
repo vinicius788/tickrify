@@ -4,6 +4,7 @@ import { AdminGuard } from '../auth/admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PromptService } from './prompt.service';
 import { Throttle } from '@nestjs/throttler';
+import { CreatePromptDto } from './dto/create-prompt.dto';
 
 @Controller('prompts')
 export class PromptController {
@@ -14,7 +15,7 @@ export class PromptController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async createConfig(
     @CurrentUser() user: { id: string; clerkUserId: string },
-    @Body() body: { prompt: string; setActive?: boolean },
+    @Body() body: CreatePromptDto,
   ) {
     return this.promptService.createPromptConfig(body.prompt, body.setActive ?? true, {
       id: user.id,

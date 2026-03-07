@@ -1,62 +1,75 @@
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
-import { motion } from "framer-motion";
+import { useState } from 'react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { useReveal } from '@/hooks/useReveal';
+import SectionTitle from '@/components/landing/SectionTitle';
+
+const faqs = [
+  {
+    question: 'O que é Tickrify?',
+    answer:
+      'Tickrify é uma plataforma de análise técnica com IA focada em leitura estrutural de gráficos, gestão de risco e suporte à decisão operacional.',
+  },
+  {
+    question: 'A análise da IA é confiável?',
+    answer:
+      'A IA segue regras objetivas de mercado e validações matemáticas de risco. Ainda assim, o uso deve ser combinado com disciplina operacional e gestão de capital.',
+  },
+  {
+    question: 'Preciso ter experiência para usar a plataforma?',
+    answer:
+      'Não. Iniciantes recebem direção clara de entrada/stop/take. Traders avançados têm detalhes de estrutura, confluência e invalidação do setup.',
+  },
+  {
+    question: 'Funciona para qualquer mercado (Forex, Cripto, Ações BR)?',
+    answer:
+      'Sim. O fluxo foi projetado para múltiplos mercados e timeframes, desde que o gráfico enviado tenha boa qualidade e contexto visual suficiente.',
+  },
+  {
+    question: 'Como o sistema calcula o Stop Loss e Take Profit?',
+    answer:
+      'Os níveis são derivados de estrutura de mercado (swing points, zonas e invalidação), com validação de risco/retorno para evitar setups estatisticamente frágeis.',
+  },
+  {
+    question: 'Posso cancelar minha assinatura a qualquer momento?',
+    answer:
+      'Sim, via portal de cobrança. Antes da contratação, revise os termos e políticas vigentes para entender regras de renovação e cancelamento.',
+  },
+];
 
 const FaqSection = () => {
-  const faqs = [
-    {
-      question: "O que é Tickrify?",
-      answer: "Tickrify é uma plataforma de análise de trading que utiliza Inteligência Artificial para fornecer sinais e setups de alta probabilidade para diversos mercados, como Forex, Criptomoedas, Ações e Commodities.",
-    },
-    {
-      question: "A análise da IA é confiável?",
-      answer: "Nossa IA é treinada com milhões de pontos de dados históricos e combina mais de 10 indicadores técnicos para encontrar confluências. Embora nenhum sistema seja 100% infalível, nossa precisão histórica é de 89% em sinais validados.",
-    },
-    {
-      question: "Preciso ter experiência para usar a plataforma?",
-      answer: "Não! Tickrify foi projetado para traders de todos os níveis. Para iniciantes, oferecemos explicações didáticas e setups claros. Para avançados, fornecemos dados profundos, backtesting e acesso via API.",
-    },
-    {
-      question: "Posso cancelar minha assinatura a qualquer momento?",
-      answer: "As compras digitais da Tickrify seguem a política sem reembolso descrita nos Termos de Serviço. Antes de contratar, leia os termos completos para entender as condições aplicáveis.",
-    },
-    {
-      question: "O que preciso saber antes de usar a Tickrify?",
-      answer: "Gráfico: Captura com aproximadamente 300 velas japonesas em boa qualidade. Se o gráfico for muito pequeno, a IA não conseguirá analisar. Uso responsável: A plataforma indica stop loss e alvos, mas siga sempre sua meta diária estabelecida.",
-    },
-  ];
+  const revealRef = useReveal<HTMLElement>();
+  const [openItem, setOpenItem] = useState<string>('item-0');
 
   return (
-    <section id="faq" className="py-20 md:py-28 bg-muted/20">
+    <section ref={revealRef} id="faq" className="reveal-on-scroll py-28">
       <div className="container max-w-4xl">
-        <div className="text-center">
-          <h2 className="text-3xl font-bold md:text-4xl">Perguntas Frequentes</h2>
-          <p className="mt-4 text-muted-foreground">
-            Tudo o que você precisa saber sobre a Tickrify.
-          </p>
-        </div>
-        <motion.div
-          initial={{ opacity: 0, y: 50 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="mt-12"
-        >
-          <Accordion type="single" collapsible className="w-full">
-            {faqs.map((faq, index) => (
-              <AccordionItem key={index} value={`item-${index}`}>
-                <AccordionTrigger className="text-left">{faq.question}</AccordionTrigger>
-                <AccordionContent className="text-muted-foreground">
+        <SectionTitle label="FAQ" title="Dúvidas de" highlight="traders profissionais." />
+
+        <Accordion type="single" collapsible value={openItem} onValueChange={(value) => setOpenItem(value || '')}>
+          {faqs.map((faq, index) => {
+            const value = `item-${index}`;
+            const isOpen = openItem === value;
+
+            return (
+              <AccordionItem
+                key={value}
+                value={value}
+                className={`border-[var(--border-subtle)] px-4 transition-colors ${
+                  isOpen
+                    ? 'border-l-2 border-l-[var(--signal-buy)] bg-[var(--signal-buy-bg)]'
+                    : 'bg-[var(--bg-elevated)]'
+                }`}
+              >
+                <AccordionTrigger className="text-base font-semibold text-[var(--text-primary)] hover:no-underline">
+                  {faq.question}
+                </AccordionTrigger>
+                <AccordionContent className="text-sm leading-relaxed text-[var(--text-secondary)]">
                   {faq.answer}
                 </AccordionContent>
               </AccordionItem>
-            ))}
-          </Accordion>
-        </motion.div>
+            );
+          })}
+        </Accordion>
       </div>
     </section>
   );

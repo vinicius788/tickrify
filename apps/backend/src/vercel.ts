@@ -60,7 +60,10 @@ async function bootstrap() {
       const allowedOrigins = resolveAllowedOrigins();
 
       app.enableCors({
-        origin: (origin, callback) => {
+        origin: (
+          origin: string | undefined,
+          callback: (error: Error | null, allow?: boolean) => void,
+        ) => {
           // Allow requests with no origin (like mobile apps or curl)
           if (!origin) return callback(null, true);
           

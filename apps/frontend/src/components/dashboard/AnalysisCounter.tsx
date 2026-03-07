@@ -9,17 +9,22 @@ interface AnalysisCounterProps {
 }
 
 const AnalysisCounter = ({ onUpgradeClick }: AnalysisCounterProps) => {
-  const { total, used, remaining, isUnlimited } = useAnalysisLimit();
+  const { total, used, remaining, isUnlimited, plan } = useAnalysisLimit();
 
   if (isUnlimited) {
+    const isPaidPlan = plan === 'pro';
     return (
-      <Card className="bg-gradient-to-r from-primary/10 to-secondary/10 border-primary/20">
+      <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
         <CardContent className="p-4">
           <div className="flex items-center gap-3">
             <Crown className="h-5 w-5 text-primary" />
             <div className="flex-1">
-              <p className="text-sm font-semibold">Plano Pro</p>
-              <p className="text-xs text-muted-foreground">Análises ilimitadas</p>
+              <p className="text-sm font-semibold tracking-wide text-[var(--text-primary)]">
+                {isPaidPlan ? 'PLANO PRO' : 'ACESSO LIBERADO'}
+              </p>
+              <p className="text-xs text-[var(--text-secondary)]">
+                {isPaidPlan ? 'Análises ilimitadas' : 'Análises ilimitadas temporariamente'}
+              </p>
             </div>
           </div>
         </CardContent>
@@ -31,20 +36,20 @@ const AnalysisCounter = ({ onUpgradeClick }: AnalysisCounterProps) => {
   const isLimitReached = remaining === 0;
 
   return (
-    <Card className={isLimitReached ? "border-destructive/50" : ""}>
-      <CardContent className="p-4">
+      <Card className={`surface-terminal-elevated border border-[var(--border-subtle)] ${isLimitReached ? "border-destructive/50" : ""}`}>
+        <CardContent className="p-4">
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium">Análises Gratuitas</span>
+              <span className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Análises gratuitas</span>
             </div>
-            <span className="text-sm font-bold">
-              {remaining} de {total}
+            <span className="font-terminal text-sm font-bold text-[var(--text-primary)]">
+              {remaining}/{total}
             </span>
           </div>
 
-          <Progress value={usagePercent} className="h-2" />
+          <Progress value={usagePercent} className="h-2 bg-[var(--bg-overlay)]" />
 
           {isLimitReached ? (
             <div className="space-y-2">

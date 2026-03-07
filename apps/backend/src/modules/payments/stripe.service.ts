@@ -212,8 +212,12 @@ export class StripeService {
         url: session.url,
       };
     } catch (error) {
-      this.logger.error('Error creating customer portal:', error);
-      throw error;
+      this.logger.error('Failed to create customer portal', {
+        clerkUserId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      this.rethrowStripeError(error, 'Falha ao criar portal do cliente no Stripe.');
     }
   }
 
@@ -289,8 +293,12 @@ export class StripeService {
         currentPeriodEnd: subscription.current_period_end,
       };
     } catch (error) {
-      this.logger.error('Error cancelling subscription:', error);
-      throw error;
+      this.logger.error('Failed to cancel subscription', {
+        clerkUserId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      this.rethrowStripeError(error, 'Falha ao cancelar assinatura no Stripe.');
     }
   }
 
@@ -339,8 +347,12 @@ export class StripeService {
         status: subscription.status,
       };
     } catch (error) {
-      this.logger.error('Error reactivating subscription:', error);
-      throw error;
+      this.logger.error('Failed to reactivate subscription', {
+        clerkUserId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      this.rethrowStripeError(error, 'Falha ao reativar assinatura no Stripe.');
     }
   }
 
@@ -348,6 +360,8 @@ export class StripeService {
    * Obter assinatura do usuário
    */
   async getUserSubscription(clerkUserId: string) {
+    let userId: string | null = null;
+
     try {
       const stripe = this.getStripeClient();
       const user = await this.prisma.user.findUnique({
@@ -358,6 +372,7 @@ export class StripeService {
       if (!user) {
         return null;
       }
+      userId = user.id;
 
       const subscriptionRecord = await this.prisma.subscription.findFirst({
         where: { userId: user.id },
@@ -382,8 +397,13 @@ export class StripeService {
           : 'free',
       };
     } catch (error) {
-      this.logger.error('Error getting user subscription:', error);
-      return null;
+      this.logger.error('Failed to get user subscription', {
+        userId,
+        clerkUserId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      this.rethrowStripeError(error, 'Falha ao obter assinatura do usuário.');
     }
   }
 
@@ -442,7 +462,7 @@ export class StripeService {
       if (stripeError?.type === 'StripeSignatureVerificationError') {
         throw new BadRequestException('Invalid webhook signature');
       }
-      throw error instanceof Error ? new BadRequestException(error.message) : error;
+      this.rethrowStripeError(error, 'Falha ao processar webhook do Stripe.');
     }
   }
 
@@ -600,5 +620,41 @@ export class StripeService {
         priceId: subscription.items.data[0]?.price.id || null,
       },
     });
+  }
+
+  private rethrowStripeError(error: unknown, fallbackMessage: string): never {
+    if (
+      error instanceof BadRequestException ||
+      error instanceof ServiceUnavailableException ||
+      error instanceof InternalServerErrorException
+    ) {
+      throw error;
+    }
+
+    const stripeError = error as {
+      type?: string;
+      code?: string;
+      message?: string;
+    };
+
+    if (stripeError?.type === 'StripeInvalidRequestError' || stripeError?.code === 'resource_missing') {
+      throw new BadRequestException(stripeError.message || fallbackMessage);
+    }
+
+    if (
+      stripeError?.type === 'StripeAuthenticationError' ||
+      stripeError?.type === 'StripePermissionError' ||
+      stripeError?.type === 'StripeRateLimitError' ||
+      stripeError?.type === 'StripeAPIError' ||
+      stripeError?.type === 'StripeConnectionError'
+    ) {
+      throw new ServiceUnavailableException(stripeError.message || fallbackMessage);
+    }
+
+    if (error instanceof Error && error.message) {
+      throw new BadRequestException(error.message);
+    }
+
+    throw new InternalServerErrorException(fallbackMessage);
   }
 }

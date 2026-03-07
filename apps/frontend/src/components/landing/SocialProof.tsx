@@ -1,35 +1,65 @@
-import { motion } from "framer-motion";
+import { useReveal } from '@/hooks/useReveal';
+import SectionTitle from '@/components/landing/SectionTitle';
+
+type RealStat = {
+  value: string;
+  label: string;
+  sublabel: string;
+};
+
+const REAL_STATS: RealStat[] = [
+  {
+    value: '< 3s',
+    label: 'tempo médio de análise',
+    sublabel: 'do upload ao resultado',
+  },
+  {
+    value: '6+',
+    label: 'mercados suportados',
+    sublabel: 'Forex, Cripto, Ações BR, Índices',
+  },
+  {
+    value: '3',
+    label: 'análises gratuitas',
+    sublabel: 'sem cartão de crédito',
+  },
+  {
+    value: '2:1',
+    label: 'R/R mínimo validado',
+    sublabel: 'em todo sinal gerado',
+  },
+];
 
 const SocialProof = () => {
-  const stats = [
-    { value: "1.234", label: "traders ativos" },
-    { value: "89%", label: "de precisão em sinais" },
-    { value: "R$2.3M", label: "em lucros gerados" },
-  ];
+  const revealRef = useReveal<HTMLElement>();
 
   return (
-    <section className="py-12 bg-muted/20">
+    <section ref={revealRef} className="reveal-on-scroll py-28">
       <div className="container">
-        <motion.div
-          initial={{ opacity: 0 }}
-          whileInView={{ opacity: 1 }}
-          viewport={{ once: true, amount: 0.5 }}
-          transition={{ duration: 0.5 }}
-          className="grid grid-cols-1 gap-8 text-center md:grid-cols-3"
-        >
-          {stats.map((stat, index) => (
-            <motion.div
-              key={index}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
+        <SectionTitle
+          label="Indicadores da plataforma"
+          title="Métricas"
+          highlight="verificáveis."
+          subtitle="Dados técnicos e regras operacionais utilizadas para orientar decisões."
+          align="center"
+        />
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {REAL_STATS.map((stat) => (
+            <article
+              key={stat.label}
+              className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4"
             >
-              <p className="text-4xl font-bold text-primary font-mono">{stat.value}</p>
-              <p className="mt-2 text-muted-foreground">{stat.label}</p>
-            </motion.div>
+              <p className="font-terminal text-4xl font-semibold leading-none text-[var(--text-primary)]">{stat.value}</p>
+              <p className="mt-2 text-sm text-[var(--text-secondary)]">{stat.label}</p>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">{stat.sublabel}</p>
+            </article>
           ))}
-        </motion.div>
+        </div>
+
+        <p className="mt-6 text-center font-terminal text-xs text-[var(--text-muted)]">
+          * Métricas baseadas na arquitetura e regras do sistema. Resultados de trading dependem do operador.
+        </p>
       </div>
     </section>
   );

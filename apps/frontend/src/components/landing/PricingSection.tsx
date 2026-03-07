@@ -1,110 +1,115 @@
-import { useState, useEffect, useCallback } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
-import { Check } from "lucide-react";
-import { motion } from "framer-motion";
-import { useAuth } from "@clerk/clerk-react";
-import { createCheckoutSession, type BillingCycle } from "../../lib/stripe";
-import { useToast } from "../../hooks/use-toast";
+import { useCallback, useEffect, useState } from 'react';
+import { useAuth } from '@clerk/clerk-react';
+import { Check, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { createCheckoutSession, type BillingCycle } from '../../lib/stripe';
+import { useToast } from '../../hooks/use-toast';
+import { useReveal } from '@/hooks/useReveal';
+import SectionTitle from '@/components/landing/SectionTitle';
 
-const SESSION_STORAGE_KEY = "pendingProBillingCycle";
-const ENABLE_ANNUAL_BILLING = import.meta.env.VITE_ENABLE_ANNUAL_BILLING === "true";
-const PLAN_FEATURES = [
-  "Análises ilimitadas",
-  "Análise avançada de IA",
-  "Histórico ilimitado",
-  "Indicadores personalizados",
-  "Alertas em tempo real",
-  "API de acesso",
-  "Suporte prioritário 24/7",
-];
+const SESSION_STORAGE_KEY = 'pendingProBillingCycle';
+const ENABLE_ANNUAL_BILLING = import.meta.env.VITE_ENABLE_ANNUAL_BILLING === 'true';
 
-const BILLING_OPTIONS: Record<BillingCycle, { priceLabel: string; periodLabel: string; cta: string; helper: string }> = {
+const BILLING_OPTIONS: Record<
+  BillingCycle,
+  { priceLabel: string; periodLabel: string; helper: string; referencePriceLabel?: string; isBeta?: boolean }
+> = {
   monthly: {
-    priceLabel: "R$ 80",
-    periodLabel: "/mês",
-    cta: "Assinar Pro Mensal",
-    helper: "Cobrança mensal recorrente",
+    priceLabel: '49,90',
+    periodLabel: '/mês',
+    helper: 'Oferta beta para os primeiros 50 assinantes',
+    referencePriceLabel: '79,90',
+    isBeta: true,
   },
   annual: {
-    priceLabel: "R$ 960",
-    periodLabel: "/ano",
-    cta: "Assinar Pro Anual",
-    helper: "Cobrança anual recorrente",
+    priceLabel: '599,00',
+    periodLabel: '/ano',
+    helper: 'Cobrança anual recorrente (equivalente a R$49,90/mês)',
   },
 };
+
+const FREE_FEATURES = [
+  { included: true, text: '3 análises por mês' },
+  { included: true, text: 'Todos os mercados (Forex, Cripto, Ações)' },
+  { included: true, text: 'Entry, Stop e Take automáticos' },
+  { included: true, text: 'Análise técnica detalhada com reasoning' },
+  { included: false, text: 'Histórico ilimitado' },
+  { included: false, text: 'Suporte prioritário' },
+];
+
+const PRO_FEATURES = [
+  { included: true, text: 'Análises ilimitadas' },
+  { included: true, text: 'Histórico ilimitado' },
+  { included: true, text: 'Gestão de risco automática' },
+  { included: true, text: 'Exportação avançada' },
+  { included: true, text: 'Suporte prioritário' },
+  { included: true, text: 'API de integração' },
+];
 
 const PricingSection = () => {
   const { getToken, isSignedIn, isLoaded } = useAuth();
   const { toast } = useToast();
-  const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+  const revealRef = useReveal<HTMLElement>();
+
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [loadingCycle, setLoadingCycle] = useState<BillingCycle | null>(null);
   const [processingUpgrade, setProcessingUpgrade] = useState(false);
 
-  const normalizeCycle = useCallback((cycle: BillingCycle): BillingCycle => {
-    if (cycle === "annual" && !ENABLE_ANNUAL_BILLING) {
-      return "monthly";
-    }
-    return cycle;
-  }, []);
+  const normalizeCycle = useCallback(
+    (cycle: BillingCycle): BillingCycle => (cycle === 'annual' && !ENABLE_ANNUAL_BILLING ? 'monthly' : cycle),
+    [],
+  );
 
-  const handleUpgrade = useCallback(async (cycle: BillingCycle) => {
-    if (!isSignedIn) {
-      sessionStorage.setItem(SESSION_STORAGE_KEY, normalizeCycle(cycle));
-      window.location.href = "/sign-in";
-      return;
-    }
-
-    try {
-      const normalizedCycle = normalizeCycle(cycle);
-      setLoadingCycle(normalizedCycle);
-      const token = await getToken();
-
-      if (!token) {
-        sessionStorage.removeItem(SESSION_STORAGE_KEY);
-        toast({
-          title: "Erro",
-          description: "Não foi possível obter token de autenticação",
-          variant: "destructive",
-        });
+  const handleUpgrade = useCallback(
+    async (cycle: BillingCycle) => {
+      if (!isSignedIn) {
+        sessionStorage.setItem(SESSION_STORAGE_KEY, normalizeCycle(cycle));
+        window.location.href = '/sign-in';
         return;
       }
 
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout ao conectar com servidor")), 10000),
-      );
-      const checkoutPromise = createCheckoutSession("pro", token, normalizedCycle);
-      const { url } = (await Promise.race([checkoutPromise, timeoutPromise])) as { url: string };
+      try {
+        const normalizedCycle = normalizeCycle(cycle);
+        setLoadingCycle(normalizedCycle);
 
-      sessionStorage.removeItem(SESSION_STORAGE_KEY);
-      window.location.href = url;
-    } catch (error) {
-      sessionStorage.removeItem(SESSION_STORAGE_KEY);
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "Falha ao criar sessão de checkout. Verifique se o backend está rodando.";
-      toast({
-        title: "Erro ao processar pagamento",
-        description: errorMessage,
-        variant: "destructive",
-      });
-    } finally {
-      setLoadingCycle(null);
-      setProcessingUpgrade(false);
-    }
-  }, [getToken, isSignedIn, normalizeCycle, toast]);
+        const token = await getToken();
+        if (!token) {
+          throw new Error('Não foi possível obter token de autenticação');
+        }
+
+        const { url } = await createCheckoutSession('pro', token, normalizedCycle);
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        window.location.href = url;
+      } catch (error) {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        toast({
+          title: 'Erro ao processar pagamento',
+          description:
+            error instanceof Error
+              ? error.message
+              : 'Falha ao criar sessão de checkout. Tente novamente em instantes.',
+          variant: 'destructive',
+        });
+      } finally {
+        setLoadingCycle(null);
+        setProcessingUpgrade(false);
+      }
+    },
+    [getToken, isSignedIn, normalizeCycle, toast],
+  );
 
   useEffect(() => {
     const processUpgrade = async () => {
-      if (isLoaded && isSignedIn && !processingUpgrade) {
-        const pendingCycle = sessionStorage.getItem(SESSION_STORAGE_KEY) as BillingCycle | null;
-        if (pendingCycle === "monthly" || pendingCycle === "annual") {
-          const normalizedCycle = normalizeCycle(pendingCycle);
-          setProcessingUpgrade(true);
-          setBillingCycle(normalizedCycle);
-          await handleUpgrade(normalizedCycle);
-        }
+      if (!isLoaded || !isSignedIn || processingUpgrade) {
+        return;
+      }
+
+      const pendingCycle = sessionStorage.getItem(SESSION_STORAGE_KEY) as BillingCycle | null;
+      if (pendingCycle === 'monthly' || pendingCycle === 'annual') {
+        const normalizedCycle = normalizeCycle(pendingCycle);
+        setProcessingUpgrade(true);
+        setBillingCycle(normalizedCycle);
+        await handleUpgrade(normalizedCycle);
       }
     };
 
@@ -113,103 +118,137 @@ const PricingSection = () => {
 
   if (processingUpgrade) {
     return (
-      <section id="pricing" className="py-20 md:py-28">
-        <div className="container">
-          <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-            <p className="text-lg text-muted-foreground">Processando sua assinatura...</p>
-            <p className="text-sm text-muted-foreground">Redirecionando para pagamento</p>
-          </div>
+      <section id="planos" className="py-28">
+        <div className="container flex min-h-[280px] items-center justify-center">
+          <p className="font-terminal text-sm text-[var(--text-secondary)]">Processando assinatura...</p>
         </div>
       </section>
     );
   }
 
   const selected = BILLING_OPTIONS[billingCycle];
+  const [priceMajor, priceMinor = '00'] = selected.priceLabel.split(',');
   const isLoading = loadingCycle === billingCycle;
 
   return (
-    <section id="pricing" className="py-20 md:py-28">
+    <section ref={revealRef} id="planos" className="reveal-on-scroll py-28">
       <div className="container">
-        <div className="text-center max-w-3xl mx-auto">
-          <h2 className="text-3xl font-bold md:text-4xl">Plano Pro</h2>
-          <p className="mt-4 text-muted-foreground">
-            {ENABLE_ANNUAL_BILLING
-              ? "Um único plano completo, com escolha de cobrança mensal ou anual."
-              : "Um único plano completo, com cobrança mensal."}
-          </p>
+        <SectionTitle align="center" label="Planos" title="Escolha seu" highlight="ritmo operacional." />
+
+        <div
+          className="mx-auto mb-8 mt-8 flex max-w-2xl flex-col items-center justify-center gap-2 rounded-lg border px-4 py-3 text-center sm:flex-row sm:text-left"
+          style={{ borderColor: 'rgba(0,210,106,0.3)', backgroundColor: 'rgba(0,210,106,0.06)' }}
+        >
+          <span className="font-terminal text-xs text-[var(--signal-buy)]">⚡ OFERTA BETA</span>
+          <span className="text-sm text-[var(--text-secondary)]">
+            Primeiros 50 assinantes pagam <strong className="text-[var(--text-primary)]">R$49,90/mês</strong> — preço
+            sobe para R$79,90 após lotação.
+          </span>
+          <span className="whitespace-nowrap font-terminal text-xs text-[var(--text-muted)]">23 vagas restantes</span>
         </div>
 
-        <div className="mt-8 flex items-center justify-center">
-          <div className="inline-flex rounded-lg border border-border p-1 bg-card/60">
+        <div className="flex items-center justify-center">
+          <div className="inline-flex rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-1">
             <Button
-              variant={billingCycle === "monthly" ? "default" : "ghost"}
               size="sm"
-              onClick={() => setBillingCycle("monthly")}
+              onClick={() => setBillingCycle('monthly')}
+              className={billingCycle === 'monthly' ? 'bg-[var(--signal-buy)] text-black hover:opacity-90' : 'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'}
             >
               Mensal
             </Button>
-            {ENABLE_ANNUAL_BILLING && (
+            {ENABLE_ANNUAL_BILLING ? (
               <Button
-                variant={billingCycle === "annual" ? "default" : "ghost"}
                 size="sm"
-                onClick={() => setBillingCycle("annual")}
+                onClick={() => setBillingCycle('annual')}
+                className={billingCycle === 'annual' ? 'bg-[var(--signal-buy)] text-black hover:opacity-90' : 'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-overlay)]'}
               >
                 Anual
               </Button>
-            )}
+            ) : null}
           </div>
         </div>
 
-        <div className="mt-10 max-w-xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
-            className="h-full"
-          >
-            <Card className="flex flex-col h-full border-primary shadow-lg shadow-primary/20">
-              <CardHeader>
-                <div className="text-primary font-semibold text-sm">PRO</div>
-                <CardTitle className="text-2xl mt-2">Tickrify Pro</CardTitle>
-                <div className="flex items-baseline">
-                  <span className="text-4xl font-bold font-mono">{selected.priceLabel}</span>
-                  <span className="text-muted-foreground">{selected.periodLabel}</span>
-                </div>
-                <CardDescription>{selected.helper}</CardDescription>
-              </CardHeader>
-
-              <CardContent className="flex-grow">
-                <ul className="space-y-3">
-                  {PLAN_FEATURES.map((feature) => (
-                    <li key={feature} className="flex items-center">
-                      <Check className="h-4 w-4 text-primary mr-2" />
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-
-              <CardFooter>
-                <Button
-                  className="w-full"
-                  variant="default"
-                  onClick={() => handleUpgrade(billingCycle)}
-                  disabled={isLoading}
+        <div className="mt-10 grid gap-4 lg:grid-cols-2">
+          <article className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5">
+            <p className="font-terminal text-xs uppercase tracking-widest text-[var(--text-secondary)]">Free</p>
+            <p className="mt-3 font-display text-5xl font-semibold text-[var(--text-primary)]">
+              <span className="text-2xl">R$</span>0
+              <span className="ml-2 text-base font-medium text-[var(--text-secondary)]">/mês</span>
+            </p>
+            <ul className="mt-5 space-y-2 text-sm">
+              {FREE_FEATURES.map((feature) => (
+                <li
+                  key={feature.text}
+                  className={`flex items-center gap-2 ${feature.included ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}
                 >
-                  {isLoading ? (
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Processando...
-                    </div>
+                  {feature.included ? (
+                    <Check className="h-4 w-4 text-[var(--signal-buy)]" />
                   ) : (
-                    selected.cta
+                    <X className="h-4 w-4 text-[var(--text-muted)]" />
                   )}
-                </Button>
-              </CardFooter>
-            </Card>
-          </motion.div>
+                  {feature.text}
+                </li>
+              ))}
+            </ul>
+            <Button
+              asChild
+              variant="outline"
+              className="mt-6 w-full border-[var(--border-default)] bg-transparent text-[var(--text-primary)] hover:bg-[var(--bg-overlay)]"
+            >
+              <a href="/sign-in">Começar Grátis — sem cartão</a>
+            </Button>
+          </article>
+
+          <article
+            className="rounded-xl border border-[var(--signal-buy)] bg-[var(--bg-elevated)] p-5"
+            style={{ boxShadow: '0 0 30px rgba(0,210,106,0.12)' }}
+          >
+            <div className="mb-3 inline-flex rounded-full border border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] px-3 py-1 font-terminal text-[10px] uppercase tracking-widest text-[var(--signal-buy)]">
+              MAIS POPULAR
+            </div>
+            <p className="font-terminal text-xs uppercase tracking-widest text-[var(--text-secondary)]">Pro</p>
+            {selected.referencePriceLabel ? (
+              <div className="mb-1 mt-3 flex items-baseline gap-1">
+                <span className="text-sm text-[var(--text-muted)] line-through">R${selected.referencePriceLabel}</span>
+                {selected.isBeta ? (
+                  <span className="rounded bg-[var(--signal-buy-bg)] px-1.5 py-0.5 font-terminal text-xs text-[var(--signal-buy)]">
+                    BETA
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <div className="mt-3" />
+            )}
+            <div className="flex items-baseline gap-1">
+              <span className="text-sm text-[var(--text-secondary)]">R$</span>
+              <span
+                style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: '3rem', color: 'var(--text-primary)' }}
+              >
+                {priceMajor}
+              </span>
+              <span className="text-[var(--text-secondary)]">
+                ,{priceMinor}
+                {selected.periodLabel}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-[var(--text-secondary)]">{selected.helper}</p>
+
+            <ul className="mt-5 space-y-2 text-sm">
+              {PRO_FEATURES.map((feature) => (
+                <li key={feature.text} className="flex items-center gap-2 text-[var(--text-primary)]">
+                  <Check className="h-4 w-4 text-[var(--signal-buy)]" /> {feature.text}
+                </li>
+              ))}
+            </ul>
+
+            <Button
+              onClick={() => handleUpgrade(billingCycle)}
+              disabled={isLoading}
+              className="mt-6 w-full bg-[var(--signal-buy)] font-semibold uppercase tracking-wide text-black hover:opacity-90"
+            >
+              {isLoading ? 'Processando...' : 'Assinar Pro'}
+            </Button>
+          </article>
         </div>
       </div>
     </section>

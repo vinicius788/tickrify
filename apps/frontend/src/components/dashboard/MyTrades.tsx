@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { useUser } from "@clerk/clerk-react";
 import { useAPIClient, type AIAnalysisResponse } from "@/lib/api";
 import { useState, useEffect, useCallback } from "react";
+import { normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
 
 type TradeRow = {
   id: string;
@@ -24,9 +25,9 @@ const MyTrades = () => {
 
   // Dados fake APENAS para modo demo
   const demoTrades = [
-    { date: "01/11/25", symbol: "BTC/USD", type: "BUY", bias: "BULLISH", result: "+3.2%", status: "WIN" },
-    { date: "31/10/25", symbol: "EUR/USD", type: "SELL", bias: "BEARISH", result: "-0.9%", status: "LOSS" },
-    { date: "30/10/25", symbol: "AAPL", type: "WAIT", bias: "NEUTRAL", result: "+5.1%", status: "WIN" },
+    { date: "01/11/25", symbol: "BTC/USD", type: "COMPRA", bias: "BULLISH", result: "+3.2%", status: "WIN" },
+    { date: "31/10/25", symbol: "EUR/USD", type: "VENDA", bias: "BEARISH", result: "-0.9%", status: "LOSS" },
+    { date: "30/10/25", symbol: "AAPL", type: "AGUARDAR", bias: "NEUTRAL", result: "+5.1%", status: "WIN" },
   ];
 
   const fetchAnalyses = useCallback(async () => {
@@ -60,10 +61,16 @@ const MyTrades = () => {
     : analyses.map((analysis) => ({
         id: analysis.id,
         date: new Date(analysis.createdAt).toLocaleDateString('pt-BR'),
-        symbol: analysis.symbol || ('Análise #' + analysis.id.slice(0, 8)),
-        type: analysis.recommendation || 'WAIT',
+        symbol: String(analysis.symbol || '').trim() || 'N/A',
+        type: normalizeRecommendationLabel(analysis.recommendation),
         bias: String(analysis.bias || 'neutral').toUpperCase(),
-        result: analysis.confidence ? `${analysis.confidence}% confiança` : '-',
+        result:
+          analysis.confidence !== null && analysis.confidence !== undefined
+            ? `${(Number(analysis.confidence) >= 0 && Number(analysis.confidence) <= 1
+                ? Number(analysis.confidence) * 100
+                : Number(analysis.confidence)
+              ).toFixed(2)}%`
+            : '-',
       }));
 
   return (
@@ -91,17 +98,11 @@ const MyTrades = () => {
                   <TableCell>{trade.date}</TableCell>
                   <TableCell className="font-medium">{trade.symbol}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={
-                      trade.type === 'BUY'
-                        ? 'text-green-400 border-green-400/50' 
-                        : trade.type === 'SELL'
-                        ? 'text-red-400 border-red-400/50'
-                        : 'text-yellow-400 border-yellow-400/50'
-                    }>
+                    <Badge variant="outline" className={signalToneClass(trade.type)}>
                       {trade.bias} • {trade.type}
                     </Badge>
                   </TableCell>
-                  <TableCell className={`text-right font-mono ${trade.type === 'BUY' ? 'text-green-500' : trade.type === 'SELL' ? 'text-red-500' : 'text-muted-foreground'}`}>
+                  <TableCell className={`text-right font-mono ${signalToneClass(trade.type)}`}>
                     {trade.result}
                   </TableCell>
                 </TableRow>

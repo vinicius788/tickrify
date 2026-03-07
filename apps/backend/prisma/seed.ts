@@ -6,70 +6,42 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding database...');
 
-  // Criar prompt inicial - Versão 1 (Production - Full Multi-Agent System)
-  const defaultPrompt = await prisma.promptConfig.upsert({
-    where: { version: 1 },
-    update: {},
-    create: {
-      version: 1,
-      isActive: true,
+  await prisma.promptConfig.updateMany({
+    where: { version: { lt: 3 } },
+    data: { isActive: false },
+  });
+
+  const promptV3 = await prisma.promptConfig.upsert({
+    where: { version: 3 },
+    update: {
       prompt: TRADING_SYSTEM_PROMPT.trim(),
+      isActive: true,
     },
-  });
-
-  console.log('✅ Prompt v1 (Production Multi-Agent) criado:', {
-    id: defaultPrompt.id,
-    version: defaultPrompt.version,
-    isActive: defaultPrompt.isActive,
-    length: defaultPrompt.prompt.length,
-  });
-
-  // Criar prompt alternativo - Versão 2 (Simplified para testes rápidos)
-  const simplifiedPrompt = await prisma.promptConfig.upsert({
-    where: { version: 2 },
-    update: {},
     create: {
-      version: 2,
-      isActive: false,
-      prompt: `
-Analise o gráfico de trading fornecido e retorne APENAS um JSON válido no seguinte formato:
-
-{
-  "recommendation": "BUY" | "SELL" | "HOLD",
-  "confidence": 85,
-  "reasoning": "Explicação detalhada da análise técnica"
-}
-
-Instruções:
-- recommendation: Use EXATAMENTE "BUY" para compra, "SELL" para venda, ou "HOLD" para aguardar
-- confidence: Número entre 0 e 100 indicando confiança na recomendação
-- reasoning: Explicação clara e objetiva baseada em análise técnica
-
-Analise os seguintes aspectos:
-1. Padrões de candlestick visíveis
-2. Níveis de suporte e resistência
-3. Tendências (alta, baixa, lateral)
-4. Volume de negociação (se visível)
-5. Indicadores técnicos visíveis no gráfico (RSI, MACD, Médias Móveis, etc)
-
-Seja preciso, objetivo e baseie-se apenas no que é visível no gráfico.
-      `.trim(),
+      version: 3,
+      prompt: TRADING_SYSTEM_PROMPT.trim(),
+      isActive: true,
     },
   });
 
-  console.log('✅ Prompt v2 (Simplified) criado:', {
-    id: simplifiedPrompt.id,
-    version: simplifiedPrompt.version,
-    isActive: simplifiedPrompt.isActive,
+  await prisma.promptConfig.updateMany({
+    where: {
+      version: { not: 3 },
+      isActive: true,
+    },
+    data: { isActive: false },
   });
 
-  console.log('\n🎉 Seed completed successfully!');
-  console.log('\n📝 Resumo:');
-  console.log('   - Prompt v1: ATIVO - Sistema Multi-Agente Completo (Production)');
-  console.log('   - Prompt v2: Inativo - Versão Simplificada (Testes)');
-  console.log('\n💡 Para alternar versões:');
-  console.log('   POST /api/prompts/2/activate (ativa v2)');
-  console.log('   POST /api/prompts/1/activate (volta para v1)');
+  console.log('✅ Prompt v3 ativo:', {
+    id: promptV3.id,
+    version: promptV3.version,
+    isActive: promptV3.isActive,
+    length: promptV3.prompt.length,
+    description:
+      'v3 - checklist binário, COMPRA/VENDA/AGUARDAR, regras matemáticas e reasoning estruturado',
+  });
+
+  console.log('🎉 Seed completed successfully!');
 }
 
 main()

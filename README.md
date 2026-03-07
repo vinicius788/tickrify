@@ -181,6 +181,37 @@ git push origin vX.Y.Z-rc1
 
 Guia completo: [DEPLOY.md](./DEPLOY.md)
 
+## 🔐 Resposta a Vulnerabilidades
+
+Fluxo padrão para dependências vulneráveis (`high`/`critical`):
+
+```bash
+# 1) detectar
+npm audit --audit-level=high
+
+# 2) corrigir sem breaking changes quando possível
+npm audit fix
+
+# 3) se restar high/critical, aplicar update direcionado (dep direta/override)
+#    e registrar decisão no PR (pacote, risco, plano de remoção)
+
+# 4) validar novamente
+npm audit --audit-level=high
+```
+
+Política de release:
+- `high`/`critical` não justificados bloqueiam merge/release.
+- Exceções temporárias exigem justificativa técnica no PR e issue de acompanhamento com prazo.
+
+Estratégia aplicada no release atual (Mar/2026):
+- Backend atualizado para `@nestjs/platform-express@11.1.16` (Nest 11), removendo caminho vulnerável de `multer@2.0.2`.
+- `prisma`, `@prisma/client` e `@prisma/adapter-pg` fixados em `6.19.2`, removendo advisories `high` transitivos introduzidos na linha `7.x`.
+- Gate do CI permanece com `npm audit --audit-level=high` (sem `--omit=dev`), garantindo bloqueio para qualquer vulnerabilidade `high/critical` na árvore auditada.
+
+Status atual:
+- `npm audit --audit-level=high` retorna `0 high` e `0 critical` no monorepo.
+- Restam apenas advisories `moderate` de tooling de desenvolvimento.
+
 **Frontend** (`apps/frontend/.env`):
 ```env
 VITE_API_URL=http://localhost:3001

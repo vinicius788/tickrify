@@ -26,16 +26,25 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
   return (
     <Card 
       {...getRootProps()} 
-      className={`flex-1 flex flex-col items-center justify-center text-center p-8 border-2 border-dashed cursor-pointer transition-colors min-h-[400px] hover:border-primary hover:bg-primary/5 ${isDragActive ? 'border-primary bg-primary/10' : 'border-border'}`}
+      className={`surface-terminal-elevated flex min-h-[420px] flex-1 cursor-pointer flex-col items-center justify-center border-2 border-dashed p-8 text-center transition-all duration-300 hover:border-[var(--border-emphasis)] hover:bg-[var(--bg-overlay)] ${isDragActive ? 'border-[var(--signal-buy)] bg-[var(--signal-buy-bg)]' : 'border-[var(--border-default)]'}`}
     >
       <input {...getInputProps({ capture: 'environment' })} />
-      <div className="flex flex-col items-center justify-center gap-4">
-        <UploadCloud className="h-16 w-16 text-muted-foreground" />
-        <h3 className="text-2xl font-medium">
-          {isDragActive ? 'Solte a imagem do gráfico aqui...' : 'Arraste e solte o seu gráfico'}
-        </h3>
-        <p className="text-muted-foreground">ou clique para fazer upload (PNG, JPG, WEBP)</p>
-        <p className="mt-2 text-xs text-muted-foreground">
+      <div className="w-full max-w-2xl space-y-5">
+        <div className="rounded-md border border-dashed border-[var(--border-default)] bg-[var(--bg-surface)] p-10 transition-all duration-300 hover:border-[var(--signal-buy-border)]">
+          <div className="flex flex-col items-center justify-center gap-4">
+            <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-[var(--bg-overlay)] text-[var(--text-secondary)]">
+              <UploadCloud className="h-7 w-7" />
+            </span>
+            <h3 className="text-xl font-semibold text-[var(--text-primary)]">
+              {isDragActive ? 'Solte o gráfico aqui' : 'Arraste o gráfico aqui'}
+            </h3>
+            <p className="text-sm text-[var(--text-secondary)]">ou clique para selecionar o arquivo</p>
+          </div>
+        </div>
+        <p className="text-xs text-[var(--text-secondary)]">
+          Suporta: PNG, JPG, WEBP • Máx: 10MB
+        </p>
+        <p className="text-xs text-[var(--text-secondary)]">
           No celular, você pode usar a câmera.
         </p>
       </div>

@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { useUser } from "@clerk/clerk-react";
 import { ArrowRight, Target } from "lucide-react";
+import { normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
 
 const Watchlist = () => {
   const { user } = useUser();
@@ -9,8 +10,8 @@ const Watchlist = () => {
 
   // Dados fake APENAS para modo demo
   const demoOpportunities = [
-    { symbol: "BTC/USD", timeframe: "1H", confidence: "85%", recommendation: "BUY", bias: "BULLISH" },
-    { symbol: "AAPL", timeframe: "4H", confidence: "65%", recommendation: "WAIT", bias: "NEUTRAL" },
+    { symbol: "BTC/USD", timeframe: "1H", confidence: "85%", recommendation: "COMPRA", bias: "BULLISH" },
+    { symbol: "AAPL", timeframe: "4H", confidence: "65%", recommendation: "AGUARDAR", bias: "NEUTRAL" },
   ];
 
   const demoOtherAssets = [
@@ -41,8 +42,8 @@ const Watchlist = () => {
                 <Card key={index} className="p-4 flex items-center justify-between">
                   <div>
                     <p className="font-bold">{op.symbol} <span className="font-normal text-muted-foreground">{op.timeframe}</span></p>
-                    <p className={`text-sm font-semibold ${op.recommendation === 'BUY' ? 'text-green-500' : op.recommendation === 'SELL' ? 'text-red-500' : 'text-yellow-500'}`}>
-                      {op.bias} | {op.recommendation} ({op.confidence})
+                    <p className={`text-sm font-semibold ${signalToneClass(op.recommendation)}`}>
+                      {op.bias} | {normalizeRecommendationLabel(op.recommendation)} ({op.confidence})
                     </p>
                   </div>
                   <Button variant="secondary">

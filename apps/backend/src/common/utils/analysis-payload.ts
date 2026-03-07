@@ -3,6 +3,7 @@ import {
   Recommendation,
   normalizeBias,
   normalizeConfidence,
+  parseJsonFromContent,
   normalizeReasoning,
   normalizeRecommendation,
 } from './analysis-normalizer';
@@ -30,21 +31,89 @@ function isObject(value: unknown): value is Record<string, any> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function normalizeAnalysisObject(
-  analysis: unknown,
-  bias: Bias,
-): Record<string, any> | undefined {
-  if (!isObject(analysis)) {
+function pickFirstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const text = String(value || '').trim();
+    if (text) {
+      return text;
+    }
+  }
+  return undefined;
+}
+
+function normalizeTimeframeValue(value?: string): string | undefined {
+  const raw = String(value || '')
+    .trim()
+    .toUpperCase();
+  if (!raw) {
     return undefined;
   }
 
-  const marketStructure = isObject(analysis.marketStructure)
-    ? { ...analysis.marketStructure, bias }
+  const compact = raw.replace(/\s+/g, '');
+  if (/^\d+[MHDW]$/.test(compact)) {
+    return compact;
+  }
+  if (/^M\d+$/.test(compact) || /^H\d+$/.test(compact) || /^D\d+$/.test(compact) || /^W\d+$/.test(compact)) {
+    return compact;
+  }
+  if (/^MN\d+$/.test(compact)) {
+    return compact;
+  }
+
+  return compact;
+}
+
+function normalizeAnalysisObject(
+  analysis: unknown,
+  bias: Bias,
+  source?: Record<string, any>,
+): Record<string, any> | undefined {
+  const base = isObject(analysis) ? analysis : {};
+
+  const marketStructure = isObject(base.marketStructure)
+    ? { ...base.marketStructure, bias }
     : { bias };
 
+  const symbol =
+    pickFirstString(
+      base.symbol,
+      base.ticker,
+      base.asset,
+      base.assetName,
+      base.instrument,
+      base.pair,
+      source?.symbol,
+      source?.ticker,
+      source?.asset,
+      source?.assetName,
+      source?.instrument,
+      source?.pair,
+      source?.analysis?.symbol,
+      source?.analysis?.ticker,
+      source?.analysis?.asset,
+      source?.analysis?.assetName,
+      source?.analysis?.instrument,
+      source?.analysis?.pair,
+    ) || 'N/A';
+
+  const timeframeRaw = pickFirstString(
+    base.timeframe,
+    base.period,
+    base.interval,
+    source?.timeframe,
+    source?.period,
+    source?.interval,
+    source?.analysis?.timeframe,
+    source?.analysis?.period,
+    source?.analysis?.interval,
+  );
+  const timeframe = normalizeTimeframeValue(timeframeRaw) || 'N/A';
+
   return {
-    ...analysis,
+    ...base,
     marketStructure,
+    symbol,
+    timeframe,
   };
 }
 
@@ -109,7 +178,7 @@ export function buildPersistedAnalysisPayload(params: {
     drawingFailed = true;
   }
 
-  const analysis = normalizeAnalysisObject(params.analysis ?? params.source.analysis, bias);
+  const analysis = normalizeAnalysisObject(params.analysis ?? params.source.analysis, bias, params.source);
 
   const fullResponse: Record<string, any> = {
     ...(isObject(params.source) ? params.source : {}),
@@ -122,6 +191,8 @@ export function buildPersistedAnalysisPayload(params: {
     original_image_url: originalImageUrl,
     annotated_image_url: annotatedImageUrl,
     drawing_failed: drawingFailed,
+    symbol: analysis?.symbol,
+    timeframe: analysis?.timeframe,
   };
 
   return {
@@ -142,9 +213,21 @@ export function normalizeStoredAnalysis(analysisRecord: {
   confidence?: number | null;
   reasoning?: string | null;
   imageUrl?: string | null;
-  fullResponse?: any;
+  result?: unknown;
+  fullResponse?: unknown;
 }): NormalizedPersistedAnalysis {
-  const fullResponse = isObject(analysisRecord.fullResponse) ? analysisRecord.fullResponse : {};
+  let fullResponse: Record<string, any> = {};
+
+  if (isObject(analysisRecord.result)) {
+    fullResponse = analysisRecord.result;
+  } else if (isObject(analysisRecord.fullResponse)) {
+    fullResponse = analysisRecord.fullResponse;
+  } else if (typeof analysisRecord.fullResponse === 'string') {
+    const parsed = parseJsonFromContent(analysisRecord.fullResponse);
+    if (parsed) {
+      fullResponse = parsed;
+    }
+  }
 
   return buildPersistedAnalysisPayload({
     source: fullResponse,
@@ -161,4 +244,3 @@ export function normalizeStoredAnalysis(analysisRecord: {
       null,
   });
 }
-

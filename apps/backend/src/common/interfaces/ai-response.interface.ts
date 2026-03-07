@@ -17,4 +17,5 @@ export interface AIAnalysisResponse {
     trend?: string;
   };
   rawResponse?: any;
+  rawContent?: string;
 }

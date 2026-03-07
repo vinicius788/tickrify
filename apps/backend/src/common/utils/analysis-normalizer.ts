@@ -62,13 +62,24 @@ export function normalizeBias(value: unknown, recommendation?: Recommendation): 
 }
 
 export function normalizeConfidence(value: unknown, fallback = 50): number {
-  const numeric = Number(value);
+  let numeric = Number(value);
+
+  if (!Number.isFinite(numeric) && typeof value === 'string') {
+    const match = value.match(/-?\d+(?:\.\d+)?/);
+    if (match) {
+      numeric = Number(match[0]);
+    }
+  }
 
   if (!Number.isFinite(numeric)) {
     return clamp(fallback, 0, 100);
   }
 
-  return clamp(numeric, 0, 100);
+  // Accept both scales:
+  // - 0..1  => probability (e.g. 0.85 means 85%)
+  // - 0..100 => percentage points
+  const normalized = numeric >= 0 && numeric <= 1 ? numeric * 100 : numeric;
+  return clamp(normalized, 0, 100);
 }
 
 export function clamp(value: number, min: number, max: number): number {
@@ -111,4 +122,3 @@ export function parseJsonFromContent(content: string): Record<string, any> | nul
 
   return null;
 }
-

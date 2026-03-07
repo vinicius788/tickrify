@@ -2,6 +2,7 @@
 
 const baseUrlArg = process.argv[2];
 const rawBaseUrl = String(baseUrlArg || process.env.SMOKE_API_BASE_URL || '').trim();
+const opsToken = String(process.env.OPS_TOKEN || process.env.INTERNAL_OPS_TOKEN || '').trim();
 
 if (!rawBaseUrl) {
   console.error(
@@ -12,13 +13,16 @@ if (!rawBaseUrl) {
 
 const baseUrl = rawBaseUrl.replace(/\/+$/, '');
 
-async function fetchJson(path) {
+async function fetchJson(path, options = {}) {
+  const headers = {
+    accept: 'application/json',
+    ...(options.headers || {}),
+  };
+
   const target = `${baseUrl}${path}`;
   const response = await fetch(target, {
     method: 'GET',
-    headers: {
-      accept: 'application/json',
-    },
+    headers,
   });
 
   const contentType = String(response.headers.get('content-type') || '').toLowerCase();
@@ -57,7 +61,19 @@ async function main() {
   }
   console.log(`[smoke] OK /api/health/live (x-request-id=${requestId})`);
 
-  const ready = await fetchJson('/api/health/ready');
+  if (!opsToken) {
+    console.warn(
+      '[smoke] WARN OPS_TOKEN não definido. Pulando verificação protegida de /api/health/ready.',
+    );
+    console.log('[smoke] API health live check passed.');
+    return;
+  }
+
+  const ready = await fetchJson('/api/health/ready', {
+    headers: {
+      'x-ops-token': opsToken,
+    },
+  });
   const critical = ['auth', 'storage', 'ai'];
   for (const key of critical) {
     const item = ready.payload?.[key];

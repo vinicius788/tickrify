@@ -26,10 +26,18 @@ fi
 
 BACKEND_URL=$1
 FRONTEND_URL=$2
+OPS_TOKEN="${OPS_TOKEN:-${INTERNAL_OPS_TOKEN:-}}"
 
-HEALTH_JSON=$(curl -s "$BACKEND_URL/api/health" || echo "")
-READY_HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/api/health/ready")
+HEALTH_JSON=""
+READY_HTTP_CODE="SKIPPED"
 FAILURES=0
+
+if [ -n "$OPS_TOKEN" ]; then
+  HEALTH_JSON=$(curl -s -H "x-ops-token: $OPS_TOKEN" "$BACKEND_URL/api/health" || echo "")
+  READY_HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "x-ops-token: $OPS_TOKEN" "$BACKEND_URL/api/health/ready")
+else
+  echo -e "${YELLOW}⚠️  OPS_TOKEN não definido. Checks de /api/health e /api/health/ready serão pulados.${NC}"
+fi
 
 read_health_field() {
   local path=$1
@@ -67,16 +75,23 @@ try {
 # ============================================
 
 echo -e "${BLUE}[1/6] Verificando Backend Health...${NC}"
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/api/health")
+LIVE_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BACKEND_URL/api/health/live")
+HTTP_CODE=$LIVE_CODE
 
 if [ "$HTTP_CODE" -eq 200 ]; then
-    echo -e "${GREEN}✅ Backend está online (HTTP $HTTP_CODE, ready HTTP $READY_HTTP_CODE)${NC}"
-    if [ "$READY_HTTP_CODE" -ne 200 ]; then
-        echo -e "${YELLOW}⚠️  Backend /health/ready não está OK (HTTP $READY_HTTP_CODE)${NC}"
-        FAILURES=$((FAILURES + 1))
+    echo -e "${GREEN}✅ Backend /health/live está online (HTTP $HTTP_CODE)${NC}"
+    if [ -n "$OPS_TOKEN" ]; then
+        if [ "$READY_HTTP_CODE" -eq 200 ]; then
+            echo -e "${GREEN}✅ Backend /health/ready está online (HTTP $READY_HTTP_CODE)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Backend /health/ready não está OK (HTTP $READY_HTTP_CODE)${NC}"
+            FAILURES=$((FAILURES + 1))
+        fi
+    else
+        echo -e "${YELLOW}⚠️  /health/ready não validado sem OPS_TOKEN${NC}"
     fi
 else
-    echo -e "${RED}❌ Backend não está respondendo (HTTP $HTTP_CODE)${NC}"
+    echo -e "${RED}❌ Backend /health/live não está respondendo (HTTP $HTTP_CODE)${NC}"
     FAILURES=$((FAILURES + 1))
 fi
 
@@ -86,13 +101,17 @@ fi
 
 echo ""
 echo -e "${BLUE}[2/6] Verificando Database Connection...${NC}"
-DB_STATUS=$(read_health_field "database")
-
-if [[ "$DB_STATUS" == "ok" ]]; then
-    echo -e "${GREEN}✅ Database conectado${NC}"
+if [ -z "$OPS_TOKEN" ]; then
+    echo -e "${YELLOW}⚠️  Check de banco pulado sem OPS_TOKEN${NC}"
 else
-    echo -e "${RED}❌ Database não conectado (status: ${DB_STATUS:-desconhecido})${NC}"
-    FAILURES=$((FAILURES + 1))
+    DB_STATUS=$(read_health_field "database")
+
+    if [[ "$DB_STATUS" == "ok" ]]; then
+        echo -e "${GREEN}✅ Database conectado${NC}"
+    else
+        echo -e "${RED}❌ Database não conectado (status: ${DB_STATUS:-desconhecido})${NC}"
+        FAILURES=$((FAILURES + 1))
+    fi
 fi
 
 # ============================================
@@ -101,16 +120,20 @@ fi
 
 echo ""
 echo -e "${BLUE}[3/6] Verificando Queue/Worker...${NC}"
-QUEUE_CONNECTED=$(read_health_field "queue.connected")
-QUEUE_WORKERS=$(read_health_field "queue.workersCount")
-QUEUE_REASON=$(read_health_field "queue.reason")
-QUEUE_READY=$(read_health_field "queue.ready")
-
-if [[ "$QUEUE_CONNECTED" == "true" ]]; then
-    echo -e "${GREEN}✅ Queue conectada (workers=${QUEUE_WORKERS:-0}, ready=${QUEUE_READY:-false})${NC}"
+if [ -z "$OPS_TOKEN" ]; then
+    echo -e "${YELLOW}⚠️  Check de queue/worker pulado sem OPS_TOKEN${NC}"
 else
-    echo -e "${YELLOW}⚠️  Queue nao conectada (reason=${QUEUE_REASON:-unknown})${NC}"
-    FAILURES=$((FAILURES + 1))
+    QUEUE_CONNECTED=$(read_health_field "queue.connected")
+    QUEUE_WORKERS=$(read_health_field "queue.workersCount")
+    QUEUE_REASON=$(read_health_field "queue.reason")
+    QUEUE_READY=$(read_health_field "queue.ready")
+
+    if [[ "$QUEUE_CONNECTED" == "true" ]]; then
+        echo -e "${GREEN}✅ Queue conectada (workers=${QUEUE_WORKERS:-0}, ready=${QUEUE_READY:-false})${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Queue nao conectada (reason=${QUEUE_REASON:-unknown})${NC}"
+        FAILURES=$((FAILURES + 1))
+    fi
 fi
 
 # ============================================
@@ -119,15 +142,19 @@ fi
 
 echo ""
 echo -e "${BLUE}[4/6] Verificando auth/storage/AI (runtime)...${NC}"
-AUTH_READY=$(read_health_field "auth.ready")
-STORAGE_READY=$(read_health_field "storage.ready")
-AI_READY=$(read_health_field "ai.ready")
-
-if [[ "$AUTH_READY" == "true" && "$STORAGE_READY" == "true" && "$AI_READY" == "true" ]]; then
-    echo -e "${GREEN}✅ Dependencias criticas prontas${NC}"
+if [ -z "$OPS_TOKEN" ]; then
+    echo -e "${YELLOW}⚠️  Check de dependências críticas pulado sem OPS_TOKEN${NC}"
 else
-    echo -e "${YELLOW}⚠️  Dependencias incompletas (auth=${AUTH_READY:-?}, storage=${STORAGE_READY:-?}, ai=${AI_READY:-?})${NC}"
-    FAILURES=$((FAILURES + 1))
+    AUTH_READY=$(read_health_field "auth.ready")
+    STORAGE_READY=$(read_health_field "storage.ready")
+    AI_READY=$(read_health_field "ai.ready")
+
+    if [[ "$AUTH_READY" == "true" && "$STORAGE_READY" == "true" && "$AI_READY" == "true" ]]; then
+        echo -e "${GREEN}✅ Dependencias criticas prontas${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Dependencias incompletas (auth=${AUTH_READY:-?}, storage=${STORAGE_READY:-?}, ai=${AI_READY:-?})${NC}"
+        FAILURES=$((FAILURES + 1))
+    fi
 fi
 
 # ============================================
@@ -151,7 +178,16 @@ fi
 
 echo ""
 echo -e "${BLUE}[6/6] Verificando conectividade Frontend → Backend...${NC}"
-API_CHECK=$(curl -s "$BACKEND_URL/api/health" -H "Origin: $FRONTEND_URL" -v 2>&1 | grep -i "access-control-allow-origin")
+if [ -n "$OPS_TOKEN" ]; then
+    API_CHECK=$(curl -s "$BACKEND_URL/api/health" \
+      -H "x-ops-token: $OPS_TOKEN" \
+      -H "Origin: $FRONTEND_URL" \
+      -v 2>&1 | grep -i "access-control-allow-origin")
+else
+    API_CHECK=$(curl -s "$BACKEND_URL/api/health/live" \
+      -H "Origin: $FRONTEND_URL" \
+      -v 2>&1 | grep -i "access-control-allow-origin")
+fi
 
 if [ ! -z "$API_CHECK" ]; then
     echo -e "${GREEN}✅ CORS configurado corretamente${NC}"
@@ -187,7 +223,7 @@ echo "  Vercel:  vercel logs $FRONTEND_URL"
 echo ""
 echo "🧪 Smoke API:"
 if command -v node >/dev/null 2>&1; then
-    if node scripts/smoke-api.mjs "$BACKEND_URL"; then
+    if OPS_TOKEN="$OPS_TOKEN" node scripts/smoke-api.mjs "$BACKEND_URL"; then
         echo -e "${GREEN}✅ smoke-api passou${NC}"
     else
         echo -e "${YELLOW}⚠️  smoke-api falhou (ver mensagem acima)${NC}"

@@ -1,5 +1,6 @@
 // API Client for Tickrify Backend
 import { useAuth } from '@clerk/clerk-react';
+import { useCallback, useMemo } from 'react';
 
 const DEV_API_FALLBACK = 'http://localhost:3001';
 
@@ -24,7 +25,14 @@ function buildApiUrl(path: string): string {
   return `${API_BASE_URL}${normalizedPath}`;
 }
 
-export type Recommendation = 'BUY' | 'SELL' | 'WAIT';
+export type Recommendation =
+  | 'BUY'
+  | 'SELL'
+  | 'WAIT'
+  | 'HOLD'
+  | 'COMPRA'
+  | 'VENDA'
+  | 'AGUARDAR';
 export type Bias = 'bullish' | 'bearish' | 'neutral';
 
 export class APIError extends Error {
@@ -46,7 +54,10 @@ export interface AIAnalysisResponse {
   bias?: Bias;
   confidence?: number;
   symbol?: string | null;
+  ticker?: string | null;
+  asset?: string | null;
   timeframe?: string | null;
+  period?: string | null;
   reasoning?: string;
   drawing_plan?: {
     elements: Array<Record<string, unknown>>;
@@ -59,6 +70,11 @@ export interface AIAnalysisResponse {
     bias: Bias;
     confidence: number;
     reasoning: string;
+    symbol?: string;
+    ticker?: string;
+    asset?: string;
+    timeframe?: string;
+    period?: string;
     drawing_plan?: {
       elements: Array<Record<string, unknown>>;
     } | null;
@@ -67,7 +83,10 @@ export interface AIAnalysisResponse {
     drawing_failed?: boolean;
     analysis?: {
       symbol?: string;
+      ticker?: string;
+      asset?: string;
       timeframe?: string;
+      period?: string;
       currentPrice?: number;
       entry?: number;
       stopLoss?: number;
@@ -111,6 +130,13 @@ export interface AnalysisUsageResponse {
 }
 
 class APIClient {
+  private static readonly REQUEST_TIMEOUT_MS = 15000;
+  private static readonly ANALYZE_TIMEOUT_MS = 120000;
+  private static readonly POLL_TIMEOUT_MS = 120000;
+  private static readonly POLL_MAX_ATTEMPTS = 60;
+  private static readonly POLL_INITIAL_DELAY_MS = 2000;
+  private static readonly POLL_MAX_DELAY_MS = 10000;
+
   private getAuthHeader(token: string | null): HeadersInit {
     return token ? { 'Authorization': `Bearer ${token}` } : {};
   }
@@ -119,10 +145,24 @@ class APIClient {
     path: string,
     init: RequestInit,
     fallbackMessage: string,
+    timeoutMs = APIClient.REQUEST_TIMEOUT_MS,
   ): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
-      return await fetch(buildApiUrl(path), init);
+      return await fetch(buildApiUrl(path), {
+        ...init,
+        signal: controller.signal,
+      });
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new APIError(
+          `Timeout ao conectar no backend (${API_BASE_URL}) em ${path}. Verifique se a API está online e tente novamente.`,
+          0,
+          'timeout',
+        );
+      }
       if (error instanceof TypeError) {
         throw new APIError(
           `Não foi possível conectar ao backend (${API_BASE_URL}). Verifique VITE_API_URL, CORS e status da API.`,
@@ -131,6 +171,8 @@ class APIClient {
         );
       }
       throw new APIError(fallbackMessage, 0);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -169,6 +211,7 @@ class APIClient {
         body: formData,
       },
       'Failed to create analysis',
+      APIClient.ANALYZE_TIMEOUT_MS,
     );
 
     if (!response.ok) {
@@ -241,6 +284,38 @@ class APIClient {
 
     return response.json();
   }
+
+  async waitForAnalysisCompletion(
+    analysisId: string,
+    token: string | null,
+    initialAnalysis?: AIAnalysisResponse,
+  ): Promise<AIAnalysisResponse> {
+    let analysis = initialAnalysis ?? (await this.getAnalysis(analysisId, token));
+    const startedAt = Date.now();
+    let attempts = 0;
+
+    while (analysis.status === 'pending' || analysis.status === 'processing') {
+      attempts += 1;
+      const elapsedMs = Date.now() - startedAt;
+
+      if (attempts > APIClient.POLL_MAX_ATTEMPTS || elapsedMs >= APIClient.POLL_TIMEOUT_MS) {
+        throw new APIError(
+          'A análise demorou mais que o esperado. Tente novamente em instantes.',
+          408,
+          'analysis_timeout',
+        );
+      }
+
+      const delayMs = Math.min(
+        APIClient.POLL_INITIAL_DELAY_MS * attempts,
+        APIClient.POLL_MAX_DELAY_MS,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      analysis = await this.getAnalysis(analysisId, token);
+    }
+
+    return analysis;
+  }
 }
 
 export const apiClient = new APIClient();
@@ -249,22 +324,39 @@ export const apiClient = new APIClient();
 export function useAPIClient() {
   const { getToken } = useAuth();
 
-  return {
-    createAnalysis: async (payload: CreateAnalysisPayload) => {
+  const createAnalysis = useCallback(async (payload: CreateAnalysisPayload) => {
+    const token = await getToken();
+    return apiClient.createAnalysis(payload, token);
+  }, [getToken]);
+
+  const getAnalysis = useCallback(async (analysisId: string) => {
+    const token = await getToken();
+    return apiClient.getAnalysis(analysisId, token);
+  }, [getToken]);
+
+  const listAnalyses = useCallback(async (limit?: number) => {
+    const token = await getToken();
+    return apiClient.listAnalyses(token, limit);
+  }, [getToken]);
+
+  const getAnalysisUsage = useCallback(async () => {
+    const token = await getToken();
+    return apiClient.getAnalysisUsage(token);
+  }, [getToken]);
+
+  const waitForAnalysisCompletion = useCallback(
+    async (analysisId: string, initialAnalysis?: AIAnalysisResponse) => {
       const token = await getToken();
-      return apiClient.createAnalysis(payload, token);
+      return apiClient.waitForAnalysisCompletion(analysisId, token, initialAnalysis);
     },
-    getAnalysis: async (analysisId: string) => {
-      const token = await getToken();
-      return apiClient.getAnalysis(analysisId, token);
-    },
-    listAnalyses: async (limit?: number) => {
-      const token = await getToken();
-      return apiClient.listAnalyses(token, limit);
-    },
-    getAnalysisUsage: async () => {
-      const token = await getToken();
-      return apiClient.getAnalysisUsage(token);
-    },
-  };
+    [getToken],
+  );
+
+  return useMemo(() => ({
+    createAnalysis,
+    getAnalysis,
+    listAnalyses,
+    getAnalysisUsage,
+    waitForAnalysisCompletion,
+  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, waitForAnalysisCompletion]);
 }

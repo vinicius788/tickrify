@@ -7,19 +7,25 @@ import HowItWorksSection from '@/components/landing/HowItWorksSection';
 import PricingSection from '@/components/landing/PricingSection';
 import FaqSection from '@/components/landing/FaqSection';
 import Footer from '@/components/landing/Footer';
+import RecentTickerSection from '@/components/landing/RecentTickerSection';
+import RecentAnalysesSection from '@/components/landing/RecentAnalysesSection';
+import FinalCtaSection from '@/components/landing/FinalCtaSection';
 
 const LandingPage = () => {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="grain-overlay grid-background flex min-h-screen flex-col bg-[var(--bg-base)]">
       <Header />
       <main className="flex-grow">
         <HeroSection />
-        <AnalysisPanelPreviewSection />
+        <RecentTickerSection />
         <SocialProof />
-        <FeaturesSection />
         <HowItWorksSection />
+        <FeaturesSection />
+        <AnalysisPanelPreviewSection />
+        <RecentAnalysesSection />
         <PricingSection />
         <FaqSection />
+        <FinalCtaSection />
       </main>
       <Footer />
     </div>

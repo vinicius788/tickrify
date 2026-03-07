@@ -20,13 +20,18 @@ import {
   NormalizedPersistedAnalysis,
 } from '../../common/utils/analysis-payload';
 import {
+  normalizeBias,
+  normalizeConfidence,
+  normalizeRecommendation,
+} from '../../common/utils/analysis-normalizer';
+import {
   ImageStorageClient,
   prepareIncomingImage,
 } from '../../common/utils/image-storage';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
-const DEFAULT_FREE_ANALYSIS_LIMIT = 3;
+const DEFAULT_FREE_ANALYSIS_LIMIT = 0;
 
 type ApiAnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
@@ -82,12 +87,25 @@ export class AiService {
     let imageUrl = preparedImage.dataUrl;
 
     if (storage.isConfigured()) {
-      imageUrl = await storage.uploadBuffer({
-        buffer: preparedImage.buffer,
-        mimeType: preparedImage.mimeType,
-        extension: preparedImage.extension,
-        pathPrefix: `analyses/${userId}/original`,
-      });
+      try {
+        imageUrl = await storage.uploadBuffer({
+          buffer: preparedImage.buffer,
+          mimeType: preparedImage.mimeType,
+          extension: preparedImage.extension,
+          pathPrefix: `analyses/${userId}/original`,
+        });
+      } catch (error) {
+        if (isProductionRuntime()) {
+          throw error;
+        }
+
+        this.logger.warn(
+          `Storage upload failed in non-production, falling back to inline image payload: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`,
+        );
+        imageUrl = preparedImage.dataUrl;
+      }
     } else if (storage.requiresRemoteStorage()) {
       throw new ServiceUnavailableException({
         code: 'storage_not_configured',
@@ -132,6 +150,8 @@ export class AiService {
         data: {
           status: 'failed',
           reasoning: 'Queue service unavailable in production.',
+          errorMessage: 'Queue service unavailable in production.',
+          result: Prisma.DbNull,
         },
       });
 
@@ -174,27 +194,65 @@ export class AiService {
     });
 
     return analyses.map((analysis) => {
-      const normalized = normalizeStoredAnalysis(analysis);
+      const fullResponse = this.getStoredAnalysisPayload(analysis);
       const analysisMeta =
-        normalized.fullResponse && typeof normalized.fullResponse.analysis === 'object'
-          ? (normalized.fullResponse.analysis as Record<string, unknown>)
+        fullResponse && typeof fullResponse.analysis === 'object'
+          ? (fullResponse.analysis as Record<string, unknown>)
           : null;
-      const symbol =
+      const symbolFromAnalysis =
         analysisMeta && typeof analysisMeta.symbol === 'string'
           ? (analysisMeta.symbol as string)
           : null;
-      const timeframe =
+      const timeframeFromAnalysis =
         analysisMeta && typeof analysisMeta.timeframe === 'string'
           ? (analysisMeta.timeframe as string)
           : null;
 
+      const marketStructure =
+        analysisMeta && typeof analysisMeta.marketStructure === 'object'
+          ? (analysisMeta.marketStructure as Record<string, unknown>)
+          : null;
+      const recommendation = normalizeRecommendation(
+        analysis.recommendation ?? (fullResponse?.recommendation as string),
+      );
+      const bias = normalizeBias(
+        (fullResponse?.bias as string) ?? marketStructure?.bias,
+        recommendation,
+      );
+      const confidence = normalizeConfidence(
+        analysis.confidence ?? (fullResponse?.confidence as number),
+        50,
+      );
+
+      const symbol = String(
+        symbolFromAnalysis ||
+          (fullResponse?.symbol as string) ||
+          (fullResponse?.ticker as string) ||
+          (fullResponse?.asset as string) ||
+          '',
+      ).trim() || 'N/A';
+
+      const timeframe = String(
+        timeframeFromAnalysis ||
+          (analysisMeta && typeof analysisMeta.period === 'string' ? analysisMeta.period : '') ||
+          (fullResponse?.timeframe as string) ||
+          (fullResponse?.period as string) ||
+          '',
+      ).trim() || 'N/A';
+
       return {
         id: analysis.id,
-        imageUrl: normalized.originalImageUrl,
+        imageUrl:
+          String(
+            analysis.imageUrl ||
+              (fullResponse?.original_image_url as string) ||
+              (fullResponse?.originalImageUrl as string) ||
+              '',
+          ).trim() || null,
         status: this.toApiStatus(analysis.status),
-        recommendation: normalized.recommendation,
-        bias: normalized.bias,
-        confidence: normalized.confidence,
+        recommendation,
+        bias,
+        confidence,
         symbol,
         timeframe,
         createdAt: analysis.createdAt,
@@ -215,6 +273,7 @@ export class AiService {
     const periodStart = this.getCurrentUsagePeriodStart();
     const freeLimit = this.getFreeLimit();
     const paidAccess = await this.hasPaidAccess(userId);
+    const freeUnlimited = freeLimit === null;
 
     const usageRow = await this.prisma.analysisUsage.findUnique({
       where: {
@@ -233,11 +292,11 @@ export class AiService {
       plan: paidAccess ? 'pro' : 'free',
       period: 'monthly',
       periodStart,
-      total: paidAccess ? null : freeLimit,
+      total: paidAccess || freeUnlimited ? null : freeLimit,
       used,
-      remaining: paidAccess ? null : Math.max(0, freeLimit - used),
-      isUnlimited: paidAccess,
-      canAnalyze: paidAccess || used < freeLimit,
+      remaining: paidAccess || freeUnlimited ? null : Math.max(0, freeLimit - used),
+      isUnlimited: paidAccess || freeUnlimited,
+      canAnalyze: paidAccess || freeUnlimited || used < freeLimit,
     };
   }
 
@@ -271,6 +330,10 @@ export class AiService {
       });
 
       normalizedPayload = await this.persistAnnotatedImage(normalizedPayload, userId);
+      const rawContent =
+        typeof aiResponse.rawContent === 'string' && aiResponse.rawContent.trim().length > 0
+          ? aiResponse.rawContent
+          : JSON.stringify(aiResponse.rawResponse || {});
 
       const updated = await this.prisma.analysis.update({
         where: { id: analysisId },
@@ -280,7 +343,9 @@ export class AiService {
           confidence: normalizedPayload.confidence,
           reasoning: normalizedPayload.reasoning,
           imageUrl: normalizedPayload.originalImageUrl,
-          fullResponse: normalizedPayload.fullResponse as any,
+          result: normalizedPayload.fullResponse as any,
+          fullResponse: rawContent,
+          errorMessage: null,
         },
       });
 
@@ -292,6 +357,8 @@ export class AiService {
         data: {
           status: 'failed',
           reasoning: safeMessage,
+          errorMessage: safeMessage,
+          result: Prisma.DbNull,
         },
       });
       throw error;
@@ -388,6 +455,9 @@ export class AiService {
     }
 
     const freeLimit = this.getFreeLimit();
+    if (freeLimit === null) {
+      return;
+    }
     await this.consumeFreeQuotaSlot(userId, freeLimit);
   }
 
@@ -405,12 +475,18 @@ export class AiService {
     return Boolean(activeSubscription);
   }
 
-  private getFreeLimit(): number {
+  private getFreeLimit(): number | null {
     const configured = Number(process.env.FREE_ANALYSIS_LIMIT_PER_MONTH || DEFAULT_FREE_ANALYSIS_LIMIT);
-    if (!Number.isFinite(configured) || configured < 1) {
-      return DEFAULT_FREE_ANALYSIS_LIMIT;
+    if (!Number.isFinite(configured)) {
+      return DEFAULT_FREE_ANALYSIS_LIMIT > 0 ? DEFAULT_FREE_ANALYSIS_LIMIT : null;
     }
-    return Math.floor(configured);
+
+    const normalized = Math.floor(configured);
+    if (normalized <= 0) {
+      return null;
+    }
+
+    return normalized;
   }
 
   private async consumeFreeQuotaSlot(userId: string, limit: number) {
@@ -454,7 +530,9 @@ export class AiService {
     recommendation?: string | null;
     confidence?: number | null;
     reasoning?: string | null;
-    fullResponse?: any;
+    result?: unknown;
+    fullResponse?: unknown;
+    errorMessage?: string | null;
     createdAt: Date;
     updatedAt: Date;
   }) {
@@ -467,15 +545,46 @@ export class AiService {
       recommendation: normalized.recommendation,
       bias: normalized.bias,
       confidence: normalized.confidence,
-      reasoning: normalized.reasoning,
+      reasoning: analysis.errorMessage || normalized.reasoning,
       drawing_plan: normalized.drawingPlan,
       original_image_url: normalized.originalImageUrl,
       annotated_image_url: normalized.annotatedImageUrl,
       drawing_failed: normalized.drawingFailed,
       fullResponse: normalized.fullResponse,
+      errorMessage: analysis.errorMessage || null,
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
     };
+  }
+
+  private getStoredAnalysisPayload(analysis: {
+    result?: unknown;
+    fullResponse?: unknown;
+  }): Record<string, unknown> | null {
+    if (analysis.result && typeof analysis.result === 'object' && !Array.isArray(analysis.result)) {
+      return analysis.result as Record<string, unknown>;
+    }
+
+    if (
+      analysis.fullResponse &&
+      typeof analysis.fullResponse === 'object' &&
+      !Array.isArray(analysis.fullResponse)
+    ) {
+      return analysis.fullResponse as Record<string, unknown>;
+    }
+
+    if (typeof analysis.fullResponse === 'string') {
+      try {
+        const parsed = JSON.parse(analysis.fullResponse);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
   }
 
   private toApiStatus(status: string): ApiAnalysisStatus {
