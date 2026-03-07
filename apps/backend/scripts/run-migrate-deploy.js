@@ -1,15 +1,18 @@
 const { execSync } = require('child_process');
 const path = require('path');
 
-// Em monorepo, prisma fica na raiz (não no workspace)
-const rootDir = path.resolve(__dirname, '../../..');
 const backendDir = path.resolve(__dirname, '..');
-const prismaBin = path.resolve(rootDir, 'node_modules/.bin/prisma');
+
+// Chamar prisma via node diretamente (evita problema de symlink no Docker)
+const prismaEntry = path.resolve(
+  backendDir,
+  '../../node_modules/prisma/build/index.js'
+);
 
 try {
   console.log('[migrate] Rodando prisma migrate deploy...');
   execSync(
-    `${prismaBin} migrate deploy --schema=./prisma/schema.prisma`,
+    `node ${prismaEntry} migrate deploy --schema=./prisma/schema.prisma`,
     { stdio: 'inherit', cwd: backendDir }
   );
   console.log('[migrate] Concluído.');
