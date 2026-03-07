@@ -34,6 +34,7 @@ COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/apps/backend/package.json ./apps/backend/package.json
 COPY --from=builder /app/apps/backend/prisma.config.ts ./apps/backend/prisma.config.ts
 COPY --from=builder /app/apps/backend/prisma ./apps/backend/prisma
+COPY --from=builder /app/apps/backend/scripts ./apps/backend/scripts
 COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
