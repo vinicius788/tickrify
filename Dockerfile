@@ -31,6 +31,7 @@ ENV PORT=3001
 
 # Runtime dependencies and backend build output
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/backend/node_modules ./apps/backend/node_modules
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/apps/backend/package.json ./apps/backend/package.json
 COPY --from=builder /app/apps/backend/prisma.config.ts ./apps/backend/prisma.config.ts

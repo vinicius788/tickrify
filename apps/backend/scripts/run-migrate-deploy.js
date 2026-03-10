@@ -6,7 +6,7 @@ const backendDir = path.resolve(__dirname, '..');
 // Chamar prisma via node diretamente (evita problema de symlink no Docker)
 const prismaEntry = path.resolve(
   backendDir,
-  '../../node_modules/prisma/build/index.js'
+  'node_modules/prisma/build/index.js'
 );
 
 try {

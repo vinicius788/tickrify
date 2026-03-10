@@ -46,11 +46,13 @@ echo ""
 render_set_env() {
   local KEY="$1"
   local VALUE="$2"
+  local payload
+  payload=$(printf '[{"key":"%s","value":"%s"}]' "$KEY" "$VALUE")
   curl -sf -X PUT \
     "https://api.render.com/v1/services/$RENDER_SERVICE_ID/env-vars" \
     -H "Authorization: Bearer $RENDER_API_KEY" \
     -H "Content-Type: application/json" \
-    --data-raw "{\"envVars\":[{\"key\":\"$KEY\",\"value\":\"$VALUE\"}]}" \
+    --data-raw "$payload" \
     > /dev/null \
     && ok "Render env: $KEY" \
     || fail "Falhou ao setar $KEY no Render"
@@ -104,7 +106,7 @@ for i in $(seq 1 60); do
     -H "Authorization: Bearer $RENDER_API_KEY" 2>/dev/null || echo '{"status":"unknown"}')
 
   DEPLOY_STATUS=$(echo "$STATUS_RESP" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
-  echo "  [${i}/${60}] Status: $DEPLOY_STATUS"
+  echo "  [${i}/60] Status: $DEPLOY_STATUS"
 
   if [ "$DEPLOY_STATUS" = "live" ]; then
     ok "Deploy live!"
