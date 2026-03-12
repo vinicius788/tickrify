@@ -61,3 +61,5 @@ apps/backend/.env.production
 **/.env.production
 **/.env.local
 apps/frontend/.env.production
+
+test-results/
