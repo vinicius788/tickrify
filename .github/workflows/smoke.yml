@@ -1,0 +1,15 @@
+name: Smoke Test Produção
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 9 * * *'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run smoke tests
+        env:
+          SMOKE_OPS_TOKEN: ${{ secrets.INTERNAL_OPS_TOKEN }}
+        run: bash scripts/smoke.sh https://tickrify.onrender.com https://tickrify.vercel.app
