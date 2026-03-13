@@ -29,7 +29,8 @@
     "vercel-build": "npm run build",
     "smoke:api": "node scripts/smoke-api.mjs",
     "smoke:e2e": "node scripts/e2e-staging.mjs",
-    "smoke": "bash scripts/smoke.sh"
+    "smoke": "bash scripts/smoke.sh",
+    "test": "npm test -w apps/backend -- --runInBand"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
