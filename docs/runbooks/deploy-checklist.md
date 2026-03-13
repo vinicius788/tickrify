@@ -14,3 +14,19 @@
 openssl rand -hex 32
 ```
 Configure no painel do Render/Railway/Vercel como variável de ambiente segura.
+
+## Frontend — Variáveis de Ambiente (Vercel)
+
+O arquivo `apps/frontend/.env.production` NÃO é versionado no repositório (está no .gitignore).
+As variáveis vivem no painel do Vercel em Settings → Environment Variables:
+
+| Variável | Ambiente | Descrição |
+|---|---|---|
+| `VITE_API_URL` | Production, Preview | URL do backend Render |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Production, Preview | Chave pública do Clerk |
+
+Para adicionar via CLI:
+```bash
+echo "https://tickrify.onrender.com" | vercel env add VITE_API_URL production
+echo "pk_live_..." | vercel env add VITE_CLERK_PUBLISHABLE_KEY production
+```
