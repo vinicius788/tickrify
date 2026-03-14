@@ -17,13 +17,13 @@ const RecentTickerSection = () => {
   const items = [...recentAnalyses, ...recentAnalyses];
 
   return (
-    <section className="border-y border-[var(--border-subtle)] bg-[var(--bg-elevated)] py-4">
+    <section className="border-y border-[var(--border)] bg-[var(--bg-surface)] py-4">
       <div className="container flex items-center gap-4">
-        <span className="shrink-0 font-terminal text-[11px] uppercase tracking-widest text-[var(--text-secondary)]">
+        <span className="shrink-0 font-terminal text-[11px] uppercase tracking-[0.1em] text-[var(--text-secondary)]">
           Análises recentes
         </span>
         <div className="min-w-0 flex-1 overflow-hidden">
-          <div className="marquee-track flex items-center gap-4 font-terminal text-xs">
+          <div className="ticker-track flex items-center gap-4 font-terminal text-xs">
             {items.map((item, index) => (
               <div key={`${item.symbol}-${index}`} className="inline-flex items-center gap-2 whitespace-nowrap">
                 <span className="text-[var(--text-primary)]">{item.symbol}</span>

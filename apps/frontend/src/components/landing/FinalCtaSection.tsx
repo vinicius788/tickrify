@@ -19,13 +19,13 @@ const FinalCtaSection = () => {
 
         <h2
           className="mb-4 text-[var(--text-primary)]"
-          style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'clamp(1.6rem, 2.2vw, 2rem)', lineHeight: 1.3 }}
+          style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'clamp(1.7rem, 2.4vw, 2.3rem)', lineHeight: 1.2, letterSpacing: '-0.02em' }}
         >
-          Comece sua primeira análise <span style={{ color: '#00D26A' }}>agora mesmo.</span>
+          Pronto para operar com <span style={{ color: 'var(--accent-green)' }}>precisão?</span>
         </h2>
 
         <p className="mx-auto mb-8 max-w-md text-sm text-[var(--text-secondary)]">
-          3 análises gratuitas. Sem cartão de crédito. Resultado em menos de 3 segundos.
+          Comece com 3 análises gratuitas e valide o fluxo em segundos.
         </p>
 
         <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -34,7 +34,7 @@ const FinalCtaSection = () => {
             className="rounded-lg px-8 py-3 font-semibold text-black transition-opacity hover:opacity-90"
             style={{ backgroundColor: '#00D26A' }}
           >
-            Começar grátis →
+            COMEÇAR GRÁTIS →
           </a>
           <a
             href="#preview-dashboard"
@@ -46,7 +46,7 @@ const FinalCtaSection = () => {
         </div>
 
         <p className="mt-6 font-terminal text-xs text-[var(--text-muted)]">
-          Sem compromisso • Cancele quando quiser • Dados não compartilhados
+          Sem cartão de crédito • 3 análises gratuitas
         </p>
       </div>
     </section>

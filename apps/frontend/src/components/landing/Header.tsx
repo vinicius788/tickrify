@@ -18,24 +18,24 @@ const Header = () => {
   const loginButton = (
     <Button
       size="sm"
-      className="rounded-md border border-[var(--signal-buy)] bg-transparent px-4 text-[var(--signal-buy)] hover:bg-[var(--signal-buy)] hover:text-black"
+      className="rounded-md border border-[var(--accent-green)] bg-transparent px-4 text-[var(--accent-green)] hover:bg-[var(--accent-green)] hover:text-black"
     >
       Login
     </Button>
   );
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-[var(--border-subtle)] bg-[rgba(10,11,13,0.74)] [backdrop-filter:blur(12px)]">
+    <header className="sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[rgba(8,8,8,0.72)] [backdrop-filter:blur(12px)]">
       <div className="container flex h-16 items-center justify-between gap-4">
         <a href="/" className="inline-flex items-center gap-2">
           <img src="/icon.png" alt="Tickrify" className="h-8 w-8" />
           <span
             style={{
               fontFamily: 'var(--font-display)',
-              fontWeight: 700,
-              fontSize: '1.1rem',
-              letterSpacing: '0.05em',
-              color: '#E8ECF4',
+              fontWeight: 800,
+              fontSize: '1.08rem',
+              letterSpacing: '-0.01em',
+              color: 'var(--text-primary)',
             }}
           >
             TICKRIFY
@@ -47,14 +47,14 @@ const Header = () => {
             <a
               key={link.href}
               href={link.href}
-              className="text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-              style={{
-                fontFamily: 'var(--font-sans)',
-                fontSize: '0.875rem',
-                fontWeight: 400,
-              }}
-            >
-              {link.label}
+                className="text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                style={{
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                }}
+              >
+                {link.label}
             </a>
           ))}
         </nav>
@@ -67,7 +67,7 @@ const Header = () => {
               </SignedOut>
               <SignedIn>
                 <Link to="/dashboard">
-                  <Button size="sm" className="rounded-md bg-[var(--signal-buy)] px-4 font-semibold text-black hover:opacity-90">
+                  <Button size="sm" className="rounded-md bg-[var(--accent-green)] px-4 font-semibold text-black hover:opacity-90">
                     Dashboard
                   </Button>
                 </Link>
@@ -86,7 +86,7 @@ const Header = () => {
               </SignedOut>
               <SignedIn>
                 <Link to="/dashboard">
-                  <Button size="sm" className="rounded-md bg-[var(--signal-buy)] px-3 text-black hover:opacity-90">
+                  <Button size="sm" className="rounded-md bg-[var(--accent-green)] px-3 text-black hover:opacity-90">
                     App
                   </Button>
                 </Link>
@@ -98,18 +98,18 @@ const Header = () => {
 
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="text-[var(--text-primary)] hover:bg-[var(--bg-overlay)]">
+              <Button variant="ghost" size="icon" className="text-[var(--text-primary)] hover:bg-[var(--bg-card)]">
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+            <SheetContent side="right" className="border-[var(--border)] bg-[var(--bg-surface)]">
               <SheetTitle className="sr-only">Menu principal</SheetTitle>
               <div className="mt-6 flex flex-col gap-4">
                 {navLinks.map((link) => (
                   <a
                     key={link.href}
                     href={link.href}
-                    className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-4 py-3 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                    className="rounded-md border border-[var(--border)] bg-[var(--bg-card)] px-4 py-3 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
                   >
                     {link.label}
                   </a>

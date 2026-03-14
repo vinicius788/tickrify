@@ -13,7 +13,7 @@ import FinalCtaSection from '@/components/landing/FinalCtaSection';
 
 const LandingPage = () => {
   return (
-    <div className="grain-overlay grid-background flex min-h-screen flex-col bg-[var(--bg-base)]">
+    <div className="grain-overlay grid-background flex min-h-screen flex-col bg-[var(--bg)]">
       <Header />
       <main className="flex-grow">
         <HeroSection />
