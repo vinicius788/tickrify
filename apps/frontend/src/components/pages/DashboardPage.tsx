@@ -13,11 +13,14 @@ import Watchlist from "../dashboard/Watchlist";
 import AnalysisResult from "../dashboard/AnalysisResult";
 import AnalysisLoading from "../dashboard/AnalysisLoading";
 import AnalysisCounter from "../dashboard/AnalysisCounter";
+import { TicksBadge } from "@/components/TicksBadge";
+import { BuyTicksModal } from "@/components/BuyTicksModal";
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
 import { APIError, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
 import { createCheckoutSession, type BillingCycle } from "@/lib/stripe";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
+import { useTicks } from "@/hooks/useTicks";
 
 type View = 'new-analysis' | 'my-trades' | 'watchlist' | 'analysis-result' | 'loading' | 'error';
 type RecentAnalysisItem = {
@@ -43,12 +46,15 @@ const DashboardPage = () => {
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showBuyTicksModal, setShowBuyTicksModal] = useState(false);
+  const [buyTicksModalReason, setBuyTicksModalReason] = useState<'insufficient' | 'topup'>('topup');
   const [isStartingCheckout, setIsStartingCheckout] = useState(false);
   const { plan, total, used, remaining, isUnlimited } = useAnalysisLimit();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
   const { getToken } = useAuth();
   const { toast } = useToast();
+  const { refetch: refetchTicks } = useTicks();
   const apiClient = useAPIClient();
   const isDemo = !user;
   const [isOnline, setIsOnline] = useState(
@@ -155,6 +161,32 @@ const DashboardPage = () => {
       window.removeEventListener('offline', goOffline);
     };
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ticksState = params.get('ticks');
+
+    if (ticksState === 'success') {
+      const amount = params.get('amount');
+      refetchTicks();
+      toast({
+        title: 'Ticks adicionados',
+        description: amount
+          ? `+${amount} Ticks adicionados à sua conta!`
+          : 'Ticks adicionados à sua conta!',
+      });
+      window.history.replaceState({}, '', '/dashboard');
+      return;
+    }
+
+    if (ticksState === 'cancelled') {
+      toast({
+        title: 'Compra cancelada',
+        description: 'Você pode tentar novamente quando quiser.',
+      });
+      window.history.replaceState({}, '', '/dashboard');
+    }
+  }, [refetchTicks, toast]);
 
   // Usar dados demo ou reais dependendo do modo
   const activeMarkets = isDemo ? demoActiveMarkets : realActiveMarkets;
@@ -263,6 +295,22 @@ const DashboardPage = () => {
     } catch (error) {
       console.error('[Dashboard] Erro ao criar análise:', error);
       if (error instanceof APIError) {
+        let parsedBody: Record<string, unknown> | null = null;
+        try {
+          parsedBody = JSON.parse(error.message) as Record<string, unknown>;
+        } catch {
+          parsedBody = null;
+        }
+
+        const apiCode = error.code || String(parsedBody?.code || '');
+        if (apiCode === 'INSUFFICIENT_TICKS') {
+          setBuyTicksModalReason('insufficient');
+          setShowBuyTicksModal(true);
+          setActiveView('new-analysis');
+          setErrorMessage('');
+          return;
+        }
+
         if (
           error.status === 402 ||
           error.status === 403 ||
@@ -373,6 +421,15 @@ const DashboardPage = () => {
               {isOnline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
               {isOnline ? 'Online' : 'Offline'}
             </span>
+
+            {user && (
+              <TicksBadge
+                onClick={() => {
+                  setBuyTicksModalReason('topup');
+                  setShowBuyTicksModal(true);
+                }}
+              />
+            )}
 
             {navbarUnlimited ? (
               <div className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1.5">
@@ -531,6 +588,12 @@ const DashboardPage = () => {
           </div>
         </div>
       </main>
+
+      <BuyTicksModal
+        open={showBuyTicksModal}
+        onClose={() => setShowBuyTicksModal(false)}
+        reason={buyTicksModalReason}
+      />
 
       {/* Modal de Upgrade */}
       <Dialog open={showUpgradeModal} onOpenChange={setShowUpgradeModal}>

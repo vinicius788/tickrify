@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ClerkProvider } from '@clerk/clerk-react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App.tsx';
 import './styles/trading-tokens.css';
 import './index.css';
@@ -9,6 +10,7 @@ const PUBLISHABLE_KEY = String(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '')
 const API_URL = String(import.meta.env.VITE_API_URL || '').trim();
 const rootElement = document.getElementById('root')!;
 const missingVars: string[] = [];
+const queryClient = new QueryClient();
 
 if (!PUBLISHABLE_KEY || PUBLISHABLE_KEY.includes('YOUR_CLERK')) {
   document.body.innerHTML = `
@@ -44,8 +46,10 @@ if (missingVars.length > 0) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/">
-      <App />
-    </ClerkProvider>
+    <QueryClientProvider client={queryClient}>
+      <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/">
+        <App />
+      </ClerkProvider>
+    </QueryClientProvider>
   </StrictMode>,
 );

@@ -83,6 +83,44 @@ model AnalysisUsage {
   @@schema("tickrify")
 }
 
+model UserTicks {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  balance   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions TickTransaction[]
+
+  @@map("user_ticks")
+  @@schema("tickrify")
+}
+
+model TickTransaction {
+  id                    String     @id @default(cuid())
+  userId                String
+  amount                Int // positivo = crédito, negativo = débito
+  type                  TickTxType
+  description           String
+  stripePaymentIntentId String?    @unique
+  metadata              Json?
+  createdAt             DateTime   @default(now())
+
+  userTicks UserTicks @relation(fields: [userId], references: [userId])
+
+  @@map("tick_transactions")
+  @@schema("tickrify")
+}
+
+enum TickTxType {
+  PURCHASE
+  USAGE
+  REFUND
+  BONUS
+
+  @@schema("tickrify")
+}
+
 model PromptConfig {
   id        String        @id @default(cuid())
   version   Int           @unique

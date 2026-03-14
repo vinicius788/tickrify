@@ -12,6 +12,7 @@ import { ImageStorageClient } from '../src/common/utils/image-storage';
 import { isProductionRuntime } from '../src/common/utils/runtime-env';
 import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-runtime';
 import { resolvePrismaDatasourceUrl } from '../src/modules/database/prisma.datasource';
+import { AnalysisType } from '../src/modules/ticks/tick-packages';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -30,6 +31,7 @@ interface JobData {
   promptOverride?: string;
   promptVersion?: number;
   userId?: string;
+  analysisType?: AnalysisType;
 }
 
 interface WorkerAnalysisMarketStructure {
@@ -484,9 +486,13 @@ async function persistAnnotatedImage(
   return payload;
 }
 
-async function resolveAiSource(imageUrl: string, prompt: string): Promise<unknown> {
+async function resolveAiSource(
+  imageUrl: string,
+  prompt: string,
+  analysisType: AnalysisType,
+): Promise<unknown> {
   if (hasValidOpenAiKey()) {
-    return aiAdapter.analyzeImage(imageUrl, prompt);
+    return aiAdapter.analyzeImage(imageUrl, prompt, analysisType);
   }
 
   if (canUseDemoFallback()) {
@@ -631,7 +637,15 @@ function extractRawContent(aiSource: unknown, parsed: WorkerAnalysisResult): str
 }
 
 async function processAnalysis(job: Job<JobData>) {
-  const { analysisId, imageUrl, promptOverride, promptVersion, userId } = job.data;
+  const {
+    analysisId,
+    imageUrl,
+    promptOverride,
+    promptVersion,
+    userId,
+    analysisType,
+  } = job.data;
+  const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
 
   console.log(`[Worker] Processing analysis ${analysisId}`);
 
@@ -644,7 +658,7 @@ async function processAnalysis(job: Job<JobData>) {
     });
 
     const prompt = await getPrompt(promptOverride, promptVersion);
-    const aiSource = await resolveAiSource(imageUrl, prompt);
+    const aiSource = await resolveAiSource(imageUrl, prompt, normalizedAnalysisType);
 
     const sourcePayload =
       aiSource &&

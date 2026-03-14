@@ -9,6 +9,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { AiModule } from './modules/ai/ai.module';
 import { PromptModule } from './modules/prompt/prompt.module';
 import { HealthModule } from './modules/health/health.module';
+import { TicksModule } from './modules/ticks/ticks.module';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { HttpLoggingInterceptor } from './common/interceptors/http-logging.interceptor';
 
@@ -32,6 +33,7 @@ import { HttpLoggingInterceptor } from './common/interceptors/http-logging.inter
     DatabaseModule,
     AuthModule,
     PaymentsModule,
+    TicksModule,
     AiModule,
     PromptModule,
     HealthModule,

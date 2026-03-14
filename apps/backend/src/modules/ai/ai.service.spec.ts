@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { AiService } from './ai.service';
 
 const VALID_PNG_DATA_URL = `data:image/png;base64,${Buffer.from([
@@ -8,6 +8,7 @@ const VALID_PNG_DATA_URL = `data:image/png;base64,${Buffer.from([
 describe('AiService access enforcement', () => {
   let service: AiService;
   let prisma: any;
+  let ticksService: any;
 
   beforeEach(() => {
     process.env.NODE_ENV = 'test';
@@ -46,22 +47,31 @@ describe('AiService access enforcement', () => {
       analyzeImage: jest.fn(),
     };
 
-    service = new AiService(prisma, aiAdapter as any);
+    ticksService = {
+      getBalance: jest.fn().mockResolvedValue(0),
+      debitTicks: jest
+        .fn()
+        .mockRejectedValue(
+          new BadRequestException(
+            JSON.stringify({
+              code: 'INSUFFICIENT_TICKS',
+              message: 'Ticks insuficientes',
+            }),
+          ),
+        ),
+    };
+
+    service = new AiService(prisma, aiAdapter as any, ticksService as any);
   });
 
-  it('blocks analysis creation when free quota is exhausted', async () => {
+  it('blocks analysis creation when free quota is exhausted and user has no ticks', async () => {
     try {
       await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL);
-      throw new Error('Expected quota_exceeded exception');
+      throw new Error('Expected INSUFFICIENT_TICKS exception');
     } catch (error) {
-      expect(error).toBeInstanceOf(HttpException);
-      const httpError = error as HttpException;
-      expect(httpError.getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
-      expect(httpError.getResponse()).toEqual(
-        expect.objectContaining({
-          code: 'quota_exceeded',
-        }),
-      );
+      expect(error).toBeInstanceOf(BadRequestException);
+      const response = (error as BadRequestException).getResponse() as { message?: string };
+      expect(String(response?.message || '')).toContain('INSUFFICIENT_TICKS');
     }
   });
 

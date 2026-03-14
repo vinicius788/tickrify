@@ -6,6 +6,7 @@ import {
   normalizeConfidence,
   parseJsonFromContent,
 } from '../../common/utils/analysis-normalizer';
+import { AnalysisType } from '../ticks/tick-packages';
 
 type SchemaRecommendation = 'COMPRA' | 'VENDA' | 'AGUARDAR';
 type SchemaMarketBias = 'bullish' | 'bearish' | 'neutral';
@@ -177,10 +178,17 @@ export class AIAdapter {
     this.openai = new OpenAI({ apiKey });
   }
 
-  async analyzeImage(imageUrl: string, prompt: string): Promise<AIAnalysisResponse> {
+  async analyzeImage(
+    imageUrl: string,
+    prompt: string,
+    analysisType: AnalysisType = 'quick',
+  ): Promise<AIAnalysisResponse> {
     try {
+      const model =
+        process.env.AI_MODEL ||
+        (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
       const response = await this.openai.chat.completions.create({
-        model: process.env.AI_MODEL || 'gpt-4o',
+        model,
         max_tokens: 2000,
         temperature: 0,
         response_format: {

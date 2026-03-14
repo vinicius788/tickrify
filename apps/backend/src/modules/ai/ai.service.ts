@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   HttpException,
-  HttpStatus,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -29,9 +28,11 @@ import {
   prepareIncomingImage,
 } from '../../common/utils/image-storage';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
+import { TICK_COSTS, AnalysisType } from '../ticks/tick-packages';
+import { TicksService } from '../ticks/ticks.service';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
-const DEFAULT_FREE_ANALYSIS_LIMIT = 0;
+const DEFAULT_FREE_ANALYSIS_LIMIT = 3;
 
 type ApiAnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
@@ -42,6 +43,7 @@ export class AiService {
   constructor(
     private prisma: PrismaService,
     private aiAdapter: AIAdapter,
+    private ticksService: TicksService,
   ) {}
 
   async createAnalysis(
@@ -49,6 +51,7 @@ export class AiService {
     imageFile?: UploadedFile,
     base64Image?: string,
     promptOverride?: string,
+    analysisType: AnalysisType = 'quick',
   ) {
     const preparedImage = this.prepareImagePayload(imageFile, base64Image);
     const queueReadiness = await getAiQueueReadiness();
@@ -113,8 +116,9 @@ export class AiService {
       });
     }
 
-    // Only consume free quota after infrastructure/storage prerequisites are validated.
-    await this.enforceAccess(userId);
+    // Only consume free quota / ticks after infrastructure/storage prerequisites are validated.
+    const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
+    await this.enforceAccess(userId, normalizedAnalysisType);
 
     const analysis = await this.prisma.analysis.create({
       data: {
@@ -134,6 +138,7 @@ export class AiService {
         promptOverride,
         promptVersion,
         userId,
+        analysisType: normalizedAnalysisType,
       });
 
       return {
@@ -167,6 +172,7 @@ export class AiService {
       promptOverride,
       promptVersion,
       userId,
+      analysisType: normalizedAnalysisType,
     });
   }
 
@@ -287,6 +293,8 @@ export class AiService {
     });
 
     const used = usageRow?.count ?? 0;
+    const tickBalance = await this.ticksService.getBalance(userId);
+    const canAnalyzeWithTicks = tickBalance >= TICK_COSTS.ANALYSIS_QUICK;
 
     return {
       plan: paidAccess ? 'pro' : 'free',
@@ -296,7 +304,8 @@ export class AiService {
       used,
       remaining: paidAccess || freeUnlimited ? null : Math.max(0, freeLimit - used),
       isUnlimited: paidAccess || freeUnlimited,
-      canAnalyze: paidAccess || freeUnlimited || used < freeLimit,
+      tickBalance,
+      canAnalyze: paidAccess || freeUnlimited || used < freeLimit || canAnalyzeWithTicks,
     };
   }
 
@@ -306,8 +315,9 @@ export class AiService {
     promptOverride?: string;
     promptVersion?: number;
     userId: string;
+    analysisType: AnalysisType;
   }) {
-    const { analysisId, imageUrl, promptOverride, promptVersion, userId } = params;
+    const { analysisId, imageUrl, promptOverride, promptVersion, userId, analysisType } = params;
 
     await this.prisma.analysis.update({
       where: { id: analysisId },
@@ -316,7 +326,7 @@ export class AiService {
 
     try {
       const prompt = await this.resolvePrompt(promptOverride, promptVersion);
-      const aiResponse = await this.aiAdapter.analyzeImage(imageUrl, prompt);
+      const aiResponse = await this.aiAdapter.analyzeImage(imageUrl, prompt, analysisType);
 
       let normalizedPayload = buildPersistedAnalysisPayload({
         source: (aiResponse.rawResponse as Record<string, any>) || {},
@@ -440,7 +450,7 @@ export class AiService {
     return latestPrompt?.prompt || TRADING_SYSTEM_PROMPT;
   }
 
-  private async enforceAccess(userId: string): Promise<void> {
+  private async enforceAccess(userId: string, analysisType: AnalysisType): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true },
@@ -458,7 +468,24 @@ export class AiService {
     if (freeLimit === null) {
       return;
     }
-    await this.consumeFreeQuotaSlot(userId, freeLimit);
+
+    const isQuickAnalysis = analysisType !== 'deep';
+    if (isQuickAnalysis) {
+      const consumed = await this.consumeFreeQuotaSlot(userId, freeLimit);
+      if (consumed) {
+        return;
+      }
+    }
+
+    const tickCost =
+      analysisType === 'deep' ? TICK_COSTS.ANALYSIS_DEEP : TICK_COSTS.ANALYSIS_QUICK;
+
+    await this.ticksService.debitTicks(
+      userId,
+      tickCost,
+      `Análise ${analysisType === 'deep' ? 'deep' : 'rápida'} de gráfico`,
+      { analysisType },
+    );
   }
 
   private async hasPaidAccess(userId: string): Promise<boolean> {
@@ -489,7 +516,7 @@ export class AiService {
     return normalized;
   }
 
-  private async consumeFreeQuotaSlot(userId: string, limit: number) {
+  private async consumeFreeQuotaSlot(userId: string, limit: number): Promise<boolean> {
     const periodStart = this.getCurrentUsagePeriodStart();
 
     const rows = await this.prisma.$queryRaw<Array<{ count: number }>>(Prisma.sql`
@@ -505,17 +532,7 @@ export class AiService {
       RETURNING "count"
     `);
 
-    if (rows.length === 0) {
-      throw new HttpException(
-        {
-          code: 'quota_exceeded',
-          message: 'Free tier monthly quota exceeded. Upgrade required to continue.',
-          limit,
-          period: 'monthly',
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
+    return rows.length > 0;
   }
 
   private getCurrentUsagePeriodStart(): Date {

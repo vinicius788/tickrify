@@ -9,6 +9,7 @@ const mockUseAuth = vi.fn();
 const mockUseAPIClient = vi.fn();
 const mockUseAnalysisLimit = vi.fn();
 const mockUseIncrementAnalysis = vi.fn();
+const mockUseTicks = vi.fn();
 const mockToast = vi.fn();
 
 vi.mock('@clerk/clerk-react', () => ({
@@ -34,6 +35,10 @@ vi.mock('@/lib/api', () => ({
 vi.mock('@/hooks/useAnalysisLimit', () => ({
   useAnalysisLimit: () => mockUseAnalysisLimit(),
   useIncrementAnalysis: () => mockUseIncrementAnalysis(),
+}));
+
+vi.mock('@/hooks/useTicks', () => ({
+  useTicks: () => mockUseTicks(),
 }));
 
 vi.mock('@/hooks/use-toast', () => ({
@@ -73,6 +78,16 @@ vi.mock('@/components/dashboard/AnalysisCounter', () => ({
   default: () => <div>Analysis counter</div>,
 }));
 
+vi.mock('@/components/TicksBadge', () => ({
+  TicksBadge: ({ onClick }: { onClick?: () => void }) => (
+    <button onClick={onClick}>ticks-badge</button>
+  ),
+}));
+
+vi.mock('@/components/BuyTicksModal', () => ({
+  BuyTicksModal: () => <div>BuyTicksModal</div>,
+}));
+
 function renderDashboard() {
   return render(
     <MemoryRouter>
@@ -87,6 +102,14 @@ describe('DashboardPage', () => {
     mockUseUser.mockReturnValue({ user: { id: 'default-user' } });
     mockUseAnalysisLimit.mockReturnValue({ plan: 'free' });
     mockUseIncrementAnalysis.mockReturnValue(vi.fn());
+    mockUseTicks.mockReturnValue({
+      balance: 0,
+      buyTicks: vi.fn(),
+      refetch: vi.fn(),
+      packages: [],
+      history: [],
+      loadingBalance: false,
+    });
     mockUseAuth.mockReturnValue({ getToken: vi.fn().mockResolvedValue('token') });
     mockUseAPIClient.mockReturnValue({
       createAnalysis: vi.fn(),

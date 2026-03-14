@@ -5,6 +5,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import Stripe from 'stripe';
 import { PrismaService } from '../database/prisma.service';
 import { getStripeConfig, PlanType, BillingCycle } from '../../config/stripe.config';
@@ -101,6 +102,60 @@ export class StripeService {
     } catch (error) {
       this.logger.error('Error creating checkout session:', error);
       this.rethrowCheckoutError(error);
+    }
+  }
+
+  async createTicksCheckout(params: {
+    userId: string;
+    userEmail: string;
+    packageId: string;
+    packageName: string;
+    ticks: number;
+    priceInCents: number;
+  }) {
+    try {
+      const stripe = this.getStripeClient();
+      const appBaseUrl = this.resolveAppBaseUrl();
+
+      const session = await stripe.checkout.sessions.create({
+        mode: 'payment',
+        customer_email: params.userEmail,
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: 'brl',
+              unit_amount: params.priceInCents,
+              product_data: {
+                name: `Tickrify — ${params.ticks} Ticks (${params.packageName})`,
+                description: `${params.ticks} Ticks para análises. Não expiram.`,
+              },
+            },
+          },
+        ],
+        metadata: {
+          type: 'ticks_purchase',
+          userId: params.userId,
+          packageId: params.packageId,
+          ticks: String(params.ticks),
+        },
+        success_url: `${appBaseUrl}/dashboard?ticks=success&package=${params.packageId}&amount=${params.ticks}`,
+        cancel_url: `${appBaseUrl}/dashboard?ticks=cancelled`,
+      });
+
+      if (!session.url) {
+        throw new InternalServerErrorException('Stripe checkout URL unavailable');
+      }
+
+      return session;
+    } catch (error) {
+      this.logger.error('Failed to create ticks checkout', {
+        userId: params.userId,
+        packageId: params.packageId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      this.rethrowStripeError(error, 'Falha ao criar checkout de Ticks no Stripe.');
     }
   }
 
@@ -470,6 +525,11 @@ export class StripeService {
    * Handler: Checkout session completed
    */
   private async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
+    if (session.metadata?.type === 'ticks_purchase') {
+      await this.creditTicksFromCompletedCheckout(session);
+      return;
+    }
+
     const stripe = this.getStripeClient();
     const userId = session.metadata?.userId;
 
@@ -488,6 +548,73 @@ export class StripeService {
     await this.upsertSubscriptionForUser(userId, subscription);
 
     this.logger.log(`User ${userId} subscription synchronized: ${subscription.id}`);
+  }
+
+  private async creditTicksFromCompletedCheckout(session: Stripe.Checkout.Session) {
+    const userId = String(session.metadata?.userId || '').trim();
+    const packageId = String(session.metadata?.packageId || '').trim();
+    const ticks = Number(session.metadata?.ticks || 0);
+    const paymentIntentId = String(session.payment_intent || '').trim() || null;
+
+    if (!userId || !Number.isFinite(ticks) || ticks <= 0) {
+      this.logger.error('[Ticks] Invalid checkout metadata for ticks purchase', {
+        sessionId: session.id,
+        userId,
+        packageId,
+        ticks: session.metadata?.ticks,
+      });
+      return;
+    }
+
+    if (paymentIntentId) {
+      const existing = await this.prisma.tickTransaction.findUnique({
+        where: { stripePaymentIntentId: paymentIntentId },
+        select: { id: true },
+      });
+      if (existing) {
+        this.logger.log(
+          `[Ticks] Duplicate webhook ignored for payment intent ${paymentIntentId}`,
+        );
+        return;
+      }
+    }
+
+    try {
+      await this.prisma.$transaction([
+        this.prisma.userTicks.upsert({
+          where: { userId },
+          create: { userId, balance: ticks },
+          update: { balance: { increment: ticks } },
+        }),
+        this.prisma.tickTransaction.create({
+          data: {
+            userId,
+            amount: ticks,
+            type: 'PURCHASE',
+            description: `Compra ${packageId} — ${ticks} Ticks`,
+            stripePaymentIntentId: paymentIntentId,
+            metadata: {
+              stripeCheckoutSessionId: session.id,
+              packageId,
+            },
+          },
+        }),
+      ]);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002' &&
+        paymentIntentId
+      ) {
+        this.logger.log(
+          `[Ticks] Duplicate purchase ignored by unique constraint for ${paymentIntentId}`,
+        );
+        return;
+      }
+      throw error;
+    }
+
+    this.logger.log(`[Ticks] +${ticks} creditados para ${userId}`);
   }
 
   /**

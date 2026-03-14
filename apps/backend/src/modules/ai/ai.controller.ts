@@ -63,6 +63,7 @@ export class AiController {
         file,
         body.base64Image,
         body.promptOverride,
+        body.analysisType,
       );
 
       this.logger.log(`Analysis created: ${result.id}`);

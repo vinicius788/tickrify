@@ -116,6 +116,7 @@ export interface CreateAnalysisPayload {
   imageFile?: File;
   base64Image?: string;
   promptOverride?: string;
+  analysisType?: 'quick' | 'deep';
 }
 
 export interface AnalysisUsageResponse {
@@ -127,6 +128,7 @@ export interface AnalysisUsageResponse {
   remaining: number | null;
   isUnlimited: boolean;
   canAnalyze: boolean;
+  tickBalance?: number;
 }
 
 class APIClient {
@@ -178,7 +180,9 @@ class APIClient {
 
   private async buildApiError(response: Response, fallbackMessage: string): Promise<APIError> {
     const error = await response.json().catch(() => ({}));
-    const message = error.message || fallbackMessage;
+    const rawMessage = error.message || fallbackMessage;
+    const message =
+      typeof rawMessage === 'string' ? rawMessage : JSON.stringify(rawMessage);
     const code = error.code || error.error || undefined;
     return new APIError(message, response.status, code);
   }
@@ -199,6 +203,10 @@ class APIClient {
 
     if (payload.promptOverride) {
       formData.append('promptOverride', payload.promptOverride);
+    }
+
+    if (payload.analysisType) {
+      formData.append('analysisType', payload.analysisType);
     }
 
     const response = await this.request(
