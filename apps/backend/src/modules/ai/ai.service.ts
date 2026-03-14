@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
@@ -199,12 +200,13 @@ export class AiService {
       take: safeLimit,
     });
 
-    return analyses.map((analysis) => {
-      const fullResponse = this.getStoredAnalysisPayload(analysis);
-      const analysisMeta =
-        fullResponse && typeof fullResponse.analysis === 'object'
-          ? (fullResponse.analysis as Record<string, unknown>)
-          : null;
+    return Promise.all(
+      analyses.map(async (analysis) => {
+        const fullResponse = this.getStoredAnalysisPayload(analysis);
+        const analysisMeta =
+          fullResponse && typeof fullResponse.analysis === 'object'
+            ? (fullResponse.analysis as Record<string, unknown>)
+            : null;
       const symbolFromAnalysis =
         analysisMeta && typeof analysisMeta.symbol === 'string'
           ? (analysisMeta.symbol as string)
@@ -246,15 +248,18 @@ export class AiService {
           '',
       ).trim() || 'N/A';
 
+      const rawImageUrl =
+        String(
+          analysis.imageUrl ||
+            (fullResponse?.original_image_url as string) ||
+            (fullResponse?.originalImageUrl as string) ||
+            '',
+        ).trim() || null;
+      const signedImageUrl = await this.getSignedImageUrl(rawImageUrl);
+
       return {
         id: analysis.id,
-        imageUrl:
-          String(
-            analysis.imageUrl ||
-              (fullResponse?.original_image_url as string) ||
-              (fullResponse?.originalImageUrl as string) ||
-              '',
-          ).trim() || null,
+        imageUrl: signedImageUrl,
         status: this.toApiStatus(analysis.status),
         recommendation,
         bias,
@@ -263,7 +268,8 @@ export class AiService {
         timeframe,
         createdAt: analysis.createdAt,
       };
-    });
+      }),
+    );
   }
 
   async getUsage(userId: string) {
@@ -540,7 +546,7 @@ export class AiService {
     return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
   }
 
-  private serializeAnalysis(analysis: {
+  private async serializeAnalysis(analysis: {
     id: string;
     imageUrl?: string | null;
     status: string;
@@ -554,24 +560,88 @@ export class AiService {
     updatedAt: Date;
   }) {
     const normalized = normalizeStoredAnalysis(analysis);
+    const signedOriginalImageUrl = await this.getSignedImageUrl(normalized.originalImageUrl);
+    const signedAnnotatedImageUrl = await this.getSignedImageUrl(normalized.annotatedImageUrl);
 
     return {
       id: analysis.id,
-      imageUrl: normalized.originalImageUrl,
+      imageUrl: signedOriginalImageUrl,
       status: this.toApiStatus(analysis.status),
       recommendation: normalized.recommendation,
       bias: normalized.bias,
       confidence: normalized.confidence,
       reasoning: analysis.errorMessage || normalized.reasoning,
       drawing_plan: normalized.drawingPlan,
-      original_image_url: normalized.originalImageUrl,
-      annotated_image_url: normalized.annotatedImageUrl,
+      original_image_url: signedOriginalImageUrl,
+      annotated_image_url: signedAnnotatedImageUrl,
       drawing_failed: normalized.drawingFailed,
       fullResponse: normalized.fullResponse,
       errorMessage: analysis.errorMessage || null,
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
     };
+  }
+
+  private async getSignedImageUrl(rawUrl: string | null): Promise<string | null> {
+    if (!rawUrl) {
+      return null;
+    }
+
+    if (rawUrl.startsWith('data:')) {
+      return rawUrl;
+    }
+
+    let storagePath = rawUrl.trim();
+    if (!storagePath) {
+      return null;
+    }
+
+    if (storagePath.startsWith('http')) {
+      const match = storagePath.match(/analysis-images\/(.+?)(\?|$)/);
+      if (match?.[1]) {
+        storagePath = decodeURIComponent(match[1]);
+      } else {
+        return storagePath;
+      }
+    }
+
+    const supabaseUrl = process.env.SUPABASE_URL?.trim() || '';
+    const supabaseServiceKey =
+      process.env.SUPABASE_SERVICE_KEY?.trim() ||
+      process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
+      '';
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      this.logger.warn('[AiService] Missing Supabase configuration while signing image URL.');
+      return null;
+    }
+
+    try {
+      const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+
+      const bucket = process.env.SUPABASE_STORAGE_BUCKET?.trim() || 'analysis-images';
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(storagePath, 3600);
+
+      if (error || !data?.signedUrl) {
+        this.logger.warn(
+          `[AiService] Failed to generate signed URL for ${storagePath}: ${
+            error?.message || 'signed URL unavailable'
+          }`,
+        );
+        return null;
+      }
+
+      return data.signedUrl;
+    } catch (error) {
+      this.logger.warn(
+        `[AiService] getSignedImageUrl error: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+      return null;
+    }
   }
 
   private getStoredAnalysisPayload(analysis: {
