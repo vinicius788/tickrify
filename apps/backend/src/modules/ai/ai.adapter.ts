@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AIAnalysisResponse } from '../../common/interfaces/ai-response.interface';
 import {
   Recommendation,
@@ -49,6 +50,11 @@ interface TradingAnalysisSchemaResult {
   recommendation: SchemaRecommendation;
   confidence: number;
   analysis: TradingAnalysisDetails;
+}
+
+interface SupabaseObjectReference {
+  bucket: string;
+  path: string;
 }
 
 function mapSchemaRecommendationToInternal(value: SchemaRecommendation): Recommendation {
@@ -165,9 +171,16 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
 export class AIAdapter {
   private readonly openai: OpenAI;
   private readonly logger = new Logger(AIAdapter.name);
+  private readonly supabaseClient: SupabaseClient | null;
+  private readonly defaultStorageBucket: string;
 
   constructor() {
     const apiKey = process.env.OPENAI_API_KEY || 'OPENAI_API_KEY_PLACEHOLDER';
+    const supabaseUrl = process.env.SUPABASE_URL?.trim() || '';
+    const supabaseServiceKey =
+      process.env.SUPABASE_SERVICE_KEY?.trim() ||
+      process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
+      '';
 
     if (!process.env.OPENAI_API_KEY) {
       this.logger.warn(
@@ -176,6 +189,88 @@ export class AIAdapter {
     }
 
     this.openai = new OpenAI({ apiKey });
+    this.defaultStorageBucket = process.env.SUPABASE_STORAGE_BUCKET?.trim() || 'analysis-images';
+    this.supabaseClient =
+      supabaseUrl && supabaseServiceKey
+        ? createClient(supabaseUrl, supabaseServiceKey, {
+            auth: { persistSession: false, autoRefreshToken: false },
+          })
+        : null;
+  }
+
+  private parseSupabaseObjectReference(imageUrl: string): SupabaseObjectReference | null {
+    let parsedUrl: URL;
+
+    try {
+      parsedUrl = new URL(imageUrl);
+    } catch {
+      return null;
+    }
+
+    const publicPathMatch = parsedUrl.pathname.match(
+      /^\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/,
+    );
+    if (publicPathMatch) {
+      return {
+        bucket: decodeURIComponent(publicPathMatch[1]),
+        path: decodeURIComponent(publicPathMatch[2]),
+      };
+    }
+
+    const signedPathMatch = parsedUrl.pathname.match(
+      /^\/storage\/v1\/object\/sign\/([^/]+)\/(.+)$/,
+    );
+    if (signedPathMatch) {
+      return {
+        bucket: decodeURIComponent(signedPathMatch[1]),
+        path: decodeURIComponent(signedPathMatch[2]),
+      };
+    }
+
+    const genericPathMatch = parsedUrl.pathname.match(/^\/storage\/v1\/object\/([^/]+)\/(.+)$/);
+    if (!genericPathMatch) {
+      return null;
+    }
+
+    const [bucket, ...pathParts] = genericPathMatch[2].split('/');
+    if (!bucket || pathParts.length === 0) {
+      return null;
+    }
+
+    return {
+      bucket: decodeURIComponent(bucket),
+      path: decodeURIComponent(pathParts.join('/')),
+    };
+  }
+
+  private async resolveImageUrlForOpenAi(imageUrl: string): Promise<string> {
+    if (!/^https?:\/\//i.test(imageUrl)) {
+      return imageUrl;
+    }
+
+    const objectReference = this.parseSupabaseObjectReference(imageUrl);
+    if (!objectReference) {
+      return imageUrl;
+    }
+
+    if (!this.supabaseClient) {
+      throw new Error(
+        'Supabase Storage credentials are missing. Unable to generate signed URL for AI analysis.',
+      );
+    }
+
+    const bucket = objectReference.bucket || this.defaultStorageBucket;
+    const { data, error } = await this.supabaseClient.storage
+      .from(bucket)
+      .createSignedUrl(objectReference.path, 300);
+
+    if (error || !data?.signedUrl) {
+      throw new Error(
+        `Failed to generate signed URL for image: ${error?.message || 'signed URL unavailable'}`,
+      );
+    }
+
+    return data.signedUrl;
   }
 
   async analyzeImage(
@@ -184,6 +279,7 @@ export class AIAdapter {
     analysisType: AnalysisType = 'quick',
   ): Promise<AIAnalysisResponse> {
     try {
+      const signedImageUrl = await this.resolveImageUrlForOpenAi(imageUrl);
       const model =
         process.env.AI_MODEL ||
         (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
@@ -300,7 +396,7 @@ export class AIAdapter {
               {
                 type: 'image_url',
                 image_url: {
-                  url: imageUrl,
+                  url: signedImageUrl,
                   detail: 'high',
                 },
               },
