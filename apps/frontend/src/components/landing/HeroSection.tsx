@@ -39,17 +39,28 @@ const HeroSection = () => {
           <h1
             className="fade-up-2"
             style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 'clamp(48px, 7vw, 96px)',
-              fontWeight: 800,
-              lineHeight: 1,
-              letterSpacing: '-0.03em',
+              fontSize: 'clamp(56px, 8vw, 104px)',
+              fontWeight: 900,
+              lineHeight: 0.95,
+              letterSpacing: '-0.04em',
+              fontFamily: 'var(--font-sans)',
               color: 'var(--text-primary)',
             }}
           >
             Pare de operar
             <br />
-            <span style={{ color: 'var(--accent-green)' }}>no escuro.</span>
+            <span
+              style={{
+                fontSize: 'clamp(56px, 8vw, 104px)',
+                fontWeight: 900,
+                lineHeight: 0.95,
+                letterSpacing: '-0.04em',
+                color: 'var(--accent)',
+                fontFamily: 'var(--font-sans)',
+              }}
+            >
+              no escuro.
+            </span>
           </h1>
 
           <p
