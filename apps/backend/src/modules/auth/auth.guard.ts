@@ -24,17 +24,50 @@ export class AuthGuard implements CanActivate {
       }
 
       const email = this.extractEmailFromClaims(claims);
-      let user = await this.prisma.user.upsert({
-        where: { clerkUserId },
-        create: {
-          clerkUserId,
-          email: email || undefined,
-          role: 'user',
-        },
-        update: {
-          ...(email ? { email } : {}),
-        },
-      });
+      let user: { id: string; clerkUserId: string; email: string | null; role: string } | null = null;
+
+      try {
+        user = await this.prisma.user.upsert({
+          where: { clerkUserId },
+          create: {
+            clerkUserId,
+            email: email || undefined,
+            role: 'user',
+          },
+          update: {
+            ...(email ? { email } : {}),
+          },
+          select: {
+            id: true,
+            clerkUserId: true,
+            email: true,
+            role: true,
+          },
+        });
+      } catch (error: unknown) {
+        const code =
+          error && typeof error === 'object' && 'code' in error
+            ? String((error as { code?: unknown }).code || '')
+            : '';
+
+        if (code === 'P2002') {
+          user = await this.prisma.user.findUnique({
+            where: { clerkUserId },
+            select: {
+              id: true,
+              clerkUserId: true,
+              email: true,
+              role: true,
+            },
+          });
+        } else {
+          throw error;
+        }
+      }
+
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
 
       if (email && this.shouldBootstrapAdmin(user.role, email)) {
         user = await this.promoteUserToAdmin(user.id, clerkUserId, email);
