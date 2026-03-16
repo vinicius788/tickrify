@@ -203,71 +203,78 @@ export class AiService {
     return Promise.all(
       analyses.map(async (analysis) => {
         const fullResponse = this.getStoredAnalysisPayload(analysis);
-        const analysisMeta =
-          fullResponse && typeof fullResponse.analysis === 'object'
-            ? (fullResponse.analysis as Record<string, unknown>)
+        const operationFields = this.extractOperationFields(fullResponse, analysis.reasoning ?? null);
+        const analysisMeta = operationFields.analysisMeta;
+
+        const symbolFromAnalysis =
+          analysisMeta && typeof analysisMeta.symbol === 'string'
+            ? (analysisMeta.symbol as string)
             : null;
-      const symbolFromAnalysis =
-        analysisMeta && typeof analysisMeta.symbol === 'string'
-          ? (analysisMeta.symbol as string)
-          : null;
-      const timeframeFromAnalysis =
-        analysisMeta && typeof analysisMeta.timeframe === 'string'
-          ? (analysisMeta.timeframe as string)
-          : null;
+        const timeframeFromAnalysis =
+          analysisMeta && typeof analysisMeta.timeframe === 'string'
+            ? (analysisMeta.timeframe as string)
+            : null;
 
-      const marketStructure =
-        analysisMeta && typeof analysisMeta.marketStructure === 'object'
-          ? (analysisMeta.marketStructure as Record<string, unknown>)
-          : null;
-      const recommendation = normalizeRecommendation(
-        analysis.recommendation ?? (fullResponse?.recommendation as string),
-      );
-      const bias = normalizeBias(
-        (fullResponse?.bias as string) ?? marketStructure?.bias,
-        recommendation,
-      );
-      const confidence = normalizeConfidence(
-        analysis.confidence ?? (fullResponse?.confidence as number),
-        50,
-      );
+        const recommendation = normalizeRecommendation(
+          analysis.recommendation ?? (fullResponse?.recommendation as string),
+        );
+        const bias = normalizeBias(
+          (fullResponse?.bias as string) ?? operationFields.marketStructure?.bias,
+          recommendation,
+        );
+        const confidence = normalizeConfidence(
+          analysis.confidence ?? (fullResponse?.confidence as number),
+          50,
+        );
 
-      const symbol = String(
-        symbolFromAnalysis ||
-          (fullResponse?.symbol as string) ||
-          (fullResponse?.ticker as string) ||
-          (fullResponse?.asset as string) ||
-          '',
-      ).trim() || 'N/A';
+        const symbol =
+          String(
+            symbolFromAnalysis ||
+              (fullResponse?.symbol as string) ||
+              (fullResponse?.ticker as string) ||
+              (fullResponse?.asset as string) ||
+              '',
+          ).trim() || 'N/A';
 
-      const timeframe = String(
-        timeframeFromAnalysis ||
-          (analysisMeta && typeof analysisMeta.period === 'string' ? analysisMeta.period : '') ||
-          (fullResponse?.timeframe as string) ||
-          (fullResponse?.period as string) ||
-          '',
-      ).trim() || 'N/A';
+        const timeframe =
+          String(
+            timeframeFromAnalysis ||
+              (analysisMeta && typeof analysisMeta.period === 'string' ? analysisMeta.period : '') ||
+              (fullResponse?.timeframe as string) ||
+              (fullResponse?.period as string) ||
+              '',
+          ).trim() || 'N/A';
 
-      const rawImageUrl =
-        String(
-          analysis.imageUrl ||
-            (fullResponse?.original_image_url as string) ||
-            (fullResponse?.originalImageUrl as string) ||
-            '',
-        ).trim() || null;
-      const signedImageUrl = await this.getSignedImageUrl(rawImageUrl);
+        const rawImageUrl =
+          String(
+            analysis.imageUrl ||
+              (fullResponse?.original_image_url as string) ||
+              (fullResponse?.originalImageUrl as string) ||
+              '',
+          ).trim() || null;
+        const signedImageUrl = await this.getSignedImageUrl(rawImageUrl);
 
-      return {
-        id: analysis.id,
-        imageUrl: signedImageUrl,
-        status: this.toApiStatus(analysis.status),
-        recommendation,
-        bias,
-        confidence,
-        symbol,
-        timeframe,
-        createdAt: analysis.createdAt,
-      };
+        return {
+          id: analysis.id,
+          imageUrl: signedImageUrl,
+          status: this.toApiStatus(analysis.status),
+          recommendation,
+          bias,
+          confidence,
+          symbol,
+          timeframe,
+          createdAt: analysis.createdAt,
+          entry: operationFields.entry,
+          stopLoss: operationFields.stopLoss,
+          stopLossPercent: operationFields.stopLossPercent,
+          takeProfit1: operationFields.takeProfit1,
+          takeProfit1Percent: operationFields.takeProfit1Percent,
+          takeProfit2: operationFields.takeProfit2,
+          takeProfit2Percent: operationFields.takeProfit2Percent,
+          reasoning: operationFields.reasoning,
+          riskReward: operationFields.riskReward,
+          riskRewardRatio: operationFields.riskReward,
+        };
       }),
     );
   }
@@ -562,6 +569,11 @@ export class AiService {
     const normalized = normalizeStoredAnalysis(analysis);
     const signedOriginalImageUrl = await this.getSignedImageUrl(normalized.originalImageUrl);
     const signedAnnotatedImageUrl = await this.getSignedImageUrl(normalized.annotatedImageUrl);
+    const storedPayload = this.getStoredAnalysisPayload(analysis);
+    const operationFields = this.extractOperationFields(
+      storedPayload ?? normalized.fullResponse,
+      analysis.errorMessage || normalized.reasoning,
+    );
 
     return {
       id: analysis.id,
@@ -576,6 +588,15 @@ export class AiService {
       annotated_image_url: signedAnnotatedImageUrl,
       drawing_failed: normalized.drawingFailed,
       fullResponse: normalized.fullResponse,
+      entry: operationFields.entry,
+      stopLoss: operationFields.stopLoss,
+      stopLossPercent: operationFields.stopLossPercent,
+      takeProfit1: operationFields.takeProfit1,
+      takeProfit1Percent: operationFields.takeProfit1Percent,
+      takeProfit2: operationFields.takeProfit2,
+      takeProfit2Percent: operationFields.takeProfit2Percent,
+      riskReward: operationFields.riskReward,
+      riskRewardRatio: operationFields.riskReward,
       errorMessage: analysis.errorMessage || null,
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
@@ -672,6 +693,121 @@ export class AiService {
     }
 
     return null;
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+    return value as Record<string, unknown>;
+  }
+
+  private toNullableNumber(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Number(value.trim());
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  private toNullableString(value: unknown): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const normalized = value.trim();
+    return normalized ? normalized : null;
+  }
+
+  private extractOperationFields(
+    fullResponse: Record<string, unknown> | null,
+    fallbackReasoning?: string | null,
+  ): {
+    analysisMeta: Record<string, unknown> | null;
+    marketStructure: Record<string, unknown> | null;
+    entry: number | null;
+    stopLoss: number | null;
+    stopLossPercent: number | null;
+    takeProfit1: number | null;
+    takeProfit1Percent: number | null;
+    takeProfit2: number | null;
+    takeProfit2Percent: number | null;
+    reasoning: string | null;
+    riskReward: string | null;
+  } {
+    const analysisMeta = this.asRecord(fullResponse?.analysis);
+    const marketStructure = this.asRecord(analysisMeta?.marketStructure);
+
+    const entry = this.toNullableNumber(
+      analysisMeta?.entry ??
+        analysisMeta?.entryPrice ??
+        analysisMeta?.entry_price ??
+        fullResponse?.entry ??
+        fullResponse?.entryPrice ??
+        fullResponse?.entry_price,
+    );
+    const stopLoss = this.toNullableNumber(
+      analysisMeta?.stopLoss ??
+        analysisMeta?.stop_loss ??
+        fullResponse?.stopLoss ??
+        fullResponse?.stop_loss,
+    );
+    const stopLossPercent = this.toNullableNumber(
+      analysisMeta?.stopLossPercent ?? analysisMeta?.stop_loss_percent ?? fullResponse?.stopLossPercent,
+    );
+    const takeProfit1 = this.toNullableNumber(
+      analysisMeta?.takeProfit1 ??
+        analysisMeta?.take_profit_1 ??
+        fullResponse?.takeProfit1 ??
+        fullResponse?.take_profit_1,
+    );
+    const takeProfit1Percent = this.toNullableNumber(
+      analysisMeta?.takeProfit1Percent ??
+        analysisMeta?.take_profit_1_percent ??
+        fullResponse?.takeProfit1Percent,
+    );
+    const takeProfit2 = this.toNullableNumber(
+      analysisMeta?.takeProfit2 ??
+        analysisMeta?.take_profit_2 ??
+        fullResponse?.takeProfit2 ??
+        fullResponse?.take_profit_2,
+    );
+    const takeProfit2Percent = this.toNullableNumber(
+      analysisMeta?.takeProfit2Percent ??
+        analysisMeta?.take_profit_2_percent ??
+        fullResponse?.takeProfit2Percent,
+    );
+    const reasoning =
+      this.toNullableString(fallbackReasoning) ??
+      this.toNullableString(analysisMeta?.reasoning) ??
+      this.toNullableString(fullResponse?.reasoning);
+    const riskReward =
+      this.toNullableString(
+        analysisMeta?.riskReward ?? analysisMeta?.risk_reward ?? analysisMeta?.riskRewardRatio,
+      ) ??
+      this.toNullableString(
+        fullResponse?.riskReward ?? fullResponse?.risk_reward ?? fullResponse?.riskRewardRatio,
+      );
+
+    return {
+      analysisMeta,
+      marketStructure,
+      entry,
+      stopLoss,
+      stopLossPercent,
+      takeProfit1,
+      takeProfit1Percent,
+      takeProfit2,
+      takeProfit2Percent,
+      reasoning,
+      riskReward,
+    };
   }
 
   private toApiStatus(status: string): ApiAnalysisStatus {
