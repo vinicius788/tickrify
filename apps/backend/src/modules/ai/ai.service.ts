@@ -34,6 +34,12 @@ import { TicksService } from '../ticks/ticks.service';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
 const DEFAULT_FREE_ANALYSIS_LIMIT = 3;
+const DETERMINISTIC_CONSISTENCY_INSTRUCTION = `
+# CONSISTÊNCIA OBRIGATÓRIA
+Seja determinístico. Para o mesmo gráfico, sempre gere a mesma análise.
+Não varie sua recomendação entre chamadas para a mesma imagem.
+Se a estrutura indica COMPRA, indique COMPRA. Não mude para AGUARDAR sem razão técnica clara.
+`.trim();
 
 type ApiAnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
@@ -443,7 +449,7 @@ export class AiService {
 
   private async resolvePrompt(promptOverride?: string, promptVersion?: number): Promise<string> {
     if (promptOverride) {
-      return promptOverride;
+      return this.withDeterministicConsistencyInstruction(promptOverride);
     }
 
     if (promptVersion) {
@@ -451,7 +457,7 @@ export class AiService {
         where: { version: promptVersion },
       });
       if (promptConfig?.prompt) {
-        return promptConfig.prompt;
+        return this.withDeterministicConsistencyInstruction(promptConfig.prompt);
       }
     }
 
@@ -460,7 +466,22 @@ export class AiService {
       orderBy: { version: 'desc' },
     });
 
-    return latestPrompt?.prompt || TRADING_SYSTEM_PROMPT;
+    return this.withDeterministicConsistencyInstruction(
+      latestPrompt?.prompt || TRADING_SYSTEM_PROMPT,
+    );
+  }
+
+  private withDeterministicConsistencyInstruction(prompt: string): string {
+    const normalizedPrompt = String(prompt || '').trim();
+    if (!normalizedPrompt) {
+      return DETERMINISTIC_CONSISTENCY_INSTRUCTION;
+    }
+
+    if (normalizedPrompt.includes('Seja determinístico. Para o mesmo gráfico')) {
+      return normalizedPrompt;
+    }
+
+    return `${normalizedPrompt}\n\n${DETERMINISTIC_CONSISTENCY_INSTRUCTION}`;
   }
 
   private async enforceAccess(userId: string, analysisType: AnalysisType): Promise<void> {
