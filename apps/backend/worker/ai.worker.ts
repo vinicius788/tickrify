@@ -554,8 +554,8 @@ function validateTradingLogic(result: WorkerAnalysisResult): string[] {
         errors.push('COMPRA: denominador inválido para cálculo de R:R');
       } else {
         const rr = (a.takeProfit1 - a.entry) / denominator;
-        if (!Number.isFinite(rr) || rr < 1.5) {
-          errors.push(`COMPRA: R:R muito baixo (${rr.toFixed(2)}) — mínimo 1.5`);
+        if (!Number.isFinite(rr) || rr <= 0) {
+          errors.push(`COMPRA: R:R inválido (${rr})`);
         }
       }
     }
@@ -585,8 +585,8 @@ function validateTradingLogic(result: WorkerAnalysisResult): string[] {
         errors.push('VENDA: denominador inválido para cálculo de R:R');
       } else {
         const rr = (a.entry - a.takeProfit1) / denominator;
-        if (!Number.isFinite(rr) || rr < 1.5) {
-          errors.push(`VENDA: R:R muito baixo (${rr.toFixed(2)}) — mínimo 1.5`);
+        if (!Number.isFinite(rr) || rr <= 0) {
+          errors.push(`VENDA: R:R inválido (${rr})`);
         }
       }
     }
