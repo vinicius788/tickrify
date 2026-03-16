@@ -83,32 +83,56 @@ const MyTrades = () => {
         {loading ? (
           <p className="text-center py-8 text-muted-foreground">Carregando análises...</p>
         ) : trades.length > 0 ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Data</TableHead>
-                <TableHead>Análise</TableHead>
-                <TableHead>Recomendação</TableHead>
-                <TableHead className="text-right">Resultado</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          <>
+            <div className="space-y-3 md:hidden">
               {trades.map((trade) => (
-                <TableRow key={trade.id}>
-                  <TableCell>{trade.date}</TableCell>
-                  <TableCell className="font-medium">{trade.symbol}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={signalToneClass(trade.type)}>
-                      {trade.bias} • {trade.type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className={`text-right font-mono ${signalToneClass(trade.type)}`}>
-                    {trade.result}
-                  </TableCell>
-                </TableRow>
+                <div
+                  key={trade.id}
+                  className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3"
+                >
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-[var(--text-secondary)]">{trade.date}</p>
+                      <p className="font-medium text-[var(--text-primary)]">{trade.symbol}</p>
+                    </div>
+                    <p className={`font-mono text-sm ${signalToneClass(trade.type)}`}>{trade.result}</p>
+                  </div>
+                  <Badge variant="outline" className={signalToneClass(trade.type)}>
+                    {trade.bias} • {trade.type}
+                  </Badge>
+                </div>
               ))}
-            </TableBody>
-          </Table>
+            </div>
+
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Data</TableHead>
+                    <TableHead>Análise</TableHead>
+                    <TableHead>Recomendação</TableHead>
+                    <TableHead className="text-right">Resultado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {trades.map((trade) => (
+                    <TableRow key={trade.id}>
+                      <TableCell>{trade.date}</TableCell>
+                      <TableCell className="font-medium">{trade.symbol}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={signalToneClass(trade.type)}>
+                          {trade.bias} • {trade.type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className={`text-right font-mono ${signalToneClass(trade.type)}`}>
+                        {trade.result}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         ) : (
           <p className="text-center py-8 text-muted-foreground">
             {isDemo ? "Dados de demonstração" : "Nenhuma análise ainda. Comece fazendo sua primeira análise!"}
