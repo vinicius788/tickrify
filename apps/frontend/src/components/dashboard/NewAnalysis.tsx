@@ -28,7 +28,7 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
       {...getRootProps()} 
       className={`surface-terminal-elevated flex min-h-[420px] flex-1 cursor-pointer flex-col items-center justify-center border-2 border-dashed p-8 text-center transition-all duration-300 hover:border-[var(--border-emphasis)] hover:bg-[var(--bg-overlay)] ${isDragActive ? 'border-[var(--signal-buy)] bg-[var(--signal-buy-bg)]' : 'border-[var(--border-default)]'}`}
     >
-      <input {...getInputProps({ capture: 'environment' })} />
+      <input {...getInputProps({ accept: 'image/*,image/png,image/jpeg,image/webp' })} />
       <div className="w-full max-w-2xl space-y-5">
         <div className="rounded-md border border-dashed border-[var(--border-default)] bg-[var(--bg-surface)] p-10 transition-all duration-300 hover:border-[var(--signal-buy-border)]">
           <div className="flex flex-col items-center justify-center gap-4">
