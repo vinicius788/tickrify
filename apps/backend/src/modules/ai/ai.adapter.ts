@@ -286,7 +286,9 @@ export class AIAdapter {
       const response = await this.openai.chat.completions.create({
         model,
         max_tokens: 2000,
-        temperature: 0,
+        temperature: 0.1,
+        top_p: 0.1,
+        seed: 42,
         response_format: {
           type: 'json_schema',
           json_schema: {
