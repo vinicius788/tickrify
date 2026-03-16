@@ -205,7 +205,7 @@ const DashboardPage = () => {
 
     try {
       setIsStartingCheckout(true);
-      const token = await getToken();
+      const token = await getToken({ skipCache: true });
 
       if (!token) {
         throw new Error('Não foi possível obter token de autenticação');

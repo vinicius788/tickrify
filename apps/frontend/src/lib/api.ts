@@ -333,28 +333,28 @@ export function useAPIClient() {
   const { getToken } = useAuth();
 
   const createAnalysis = useCallback(async (payload: CreateAnalysisPayload) => {
-    const token = await getToken();
+    const token = await getToken({ skipCache: true });
     return apiClient.createAnalysis(payload, token);
   }, [getToken]);
 
   const getAnalysis = useCallback(async (analysisId: string) => {
-    const token = await getToken();
+    const token = await getToken({ skipCache: true });
     return apiClient.getAnalysis(analysisId, token);
   }, [getToken]);
 
   const listAnalyses = useCallback(async (limit?: number) => {
-    const token = await getToken();
+    const token = await getToken({ skipCache: true });
     return apiClient.listAnalyses(token, limit);
   }, [getToken]);
 
   const getAnalysisUsage = useCallback(async () => {
-    const token = await getToken();
+    const token = await getToken({ skipCache: true });
     return apiClient.getAnalysisUsage(token);
   }, [getToken]);
 
   const waitForAnalysisCompletion = useCallback(
     async (analysisId: string, initialAnalysis?: AIAnalysisResponse) => {
-      const token = await getToken();
+      const token = await getToken({ skipCache: true });
       return apiClient.waitForAnalysisCompletion(analysisId, token, initialAnalysis);
     },
     [getToken],

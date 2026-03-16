@@ -57,7 +57,7 @@ export function PricingCards() {
     try {
       const normalizedCycle = normalizeCycle(cycle);
       setLoadingCycle(normalizedCycle);
-      const token = await getToken();
+      const token = await getToken({ skipCache: true });
       if (!token) {
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
         toast({

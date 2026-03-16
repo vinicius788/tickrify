@@ -32,7 +32,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
     }
 
     try {
-      const token = await getToken();
+      const token = await getToken({ skipCache: true });
 
       if (!token) {
         setUserPlan('free');
