@@ -42,6 +42,7 @@ const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'im
 
 const DashboardPage = () => {
   const [activeView, setActiveView] = useState<View>('new-analysis');
+  const [analysisKey, setAnalysisKey] = useState(0);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -228,6 +229,14 @@ const DashboardPage = () => {
     }
   }, [getToken, toast, user]);
 
+  const resetNewAnalysisView = useCallback(() => {
+    setActiveView('new-analysis');
+    setAnalysisKey((key) => key + 1);
+    setAnalysisData(null);
+    setErrorMessage('');
+    setUploadedImage(null);
+  }, []);
+
   const handleStartAnalysis = async (imageUrl: string | null = null, imageFile: File | null = null) => {
     // Modo DEMO: apenas simula, não faz análise real
     if (isDemo) {
@@ -306,8 +315,7 @@ const DashboardPage = () => {
         if (apiCode === 'INSUFFICIENT_TICKS') {
           setBuyTicksModalReason('insufficient');
           setShowBuyTicksModal(true);
-          setActiveView('new-analysis');
-          setErrorMessage('');
+          resetNewAnalysisView();
           return;
         }
 
@@ -332,15 +340,13 @@ const DashboardPage = () => {
   };
 
   const handleRetry = () => {
-    setActiveView('new-analysis');
-    setErrorMessage('');
-    setAnalysisData(null);
+    resetNewAnalysisView();
   };
 
   const renderContent = () => {
     switch (activeView) {
       case 'new-analysis':
-        return <NewAnalysis onStartAnalysis={handleStartAnalysis} />;
+        return <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} />;
       case 'my-trades':
         return <MyTrades />;
       case 'watchlist':
@@ -359,14 +365,14 @@ const DashboardPage = () => {
             </Alert>
             <div className="flex gap-2">
               <Button onClick={handleRetry}>Tentar Novamente</Button>
-              <Button variant="outline" onClick={() => setActiveView('new-analysis')}>
+              <Button variant="outline" onClick={resetNewAnalysisView}>
                 Nova Análise
               </Button>
             </div>
           </div>
         );
       default:
-        return <NewAnalysis onStartAnalysis={handleStartAnalysis} />;
+        return <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} />;
     }
   };
 
@@ -456,11 +462,7 @@ const DashboardPage = () => {
             value={activeView === 'new-analysis' || activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error' ? 'new-analysis' : activeView} 
             onValueChange={(value) => {
               if (value === 'new-analysis') {
-                // Resetar para nova análise quando clicar no tab
-                setActiveView('new-analysis');
-                setAnalysisData(null);
-                setErrorMessage('');
-                setUploadedImage(null);
+                resetNewAnalysisView();
               } else {
                 setActiveView(value as View);
               }
@@ -501,10 +503,10 @@ const DashboardPage = () => {
             
             <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
               <CardHeader className="px-4 pb-2 pt-4">
-                <CardTitle className={sidebarSectionTitleClass}>Ações rápidas</CardTitle>
+              <CardTitle className={sidebarSectionTitleClass}>Ações rápidas</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-2 p-4 pt-0">
-                <Button onClick={() => setActiveView('new-analysis')} variant={activeView.startsWith('analysis') || activeView === 'loading' || activeView === 'error' ? 'default' : 'outline'} className="justify-start"><PlusCircle className="mr-2 h-4 w-4" /> Nova Análise</Button>
+                <Button onClick={resetNewAnalysisView} variant={activeView.startsWith('analysis') || activeView === 'loading' || activeView === 'error' ? 'default' : 'outline'} className="justify-start"><PlusCircle className="mr-2 h-4 w-4" /> Nova Análise</Button>
                 <Button onClick={() => setActiveView('my-trades')} variant={activeView === 'my-trades' ? 'default' : 'outline'} className="justify-start"><History className="mr-2 h-4 w-4" /> Meus Trades</Button>
                 <Button onClick={() => setActiveView('watchlist')} variant={activeView === 'watchlist' ? 'default' : 'outline'} className="justify-start"><Star className="mr-2 h-4 w-4" /> Watchlist</Button>
                 {user && plan === 'free' && (
