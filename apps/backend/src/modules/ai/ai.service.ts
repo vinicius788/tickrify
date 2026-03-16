@@ -55,7 +55,7 @@ export class AiService {
     analysisType: AnalysisType = 'quick',
   ) {
     const preparedImage = this.prepareImagePayload(imageFile, base64Image);
-    const queueReadiness = await getAiQueueReadiness();
+    const queueReadiness = await this.waitForQueueReady(10_000);
 
     if (isProductionRuntime() && !queueReadiness.configured) {
       throw new ServiceUnavailableException({
@@ -663,6 +663,27 @@ export class AiService {
       );
       return null;
     }
+  }
+
+  private async waitForQueueReady(
+    timeoutMs: number,
+  ): Promise<Awaited<ReturnType<typeof getAiQueueReadiness>>> {
+    let last = await getAiQueueReadiness();
+    if (!isProductionRuntime()) {
+      return last;
+    }
+
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (last.configured && last.connected && last.hasWorkers) {
+        return last;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      last = await getAiQueueReadiness();
+    }
+
+    return last;
   }
 
   private getStoredAnalysisPayload(analysis: {
