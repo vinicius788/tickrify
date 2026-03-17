@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import {
   AlertCircle,
   ArrowDown,
@@ -232,9 +231,9 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const whyNotOpposite = String(analysis.whyNotOpposite || '').trim();
   const structureValidation = String(analysis.structureValidation || '').trim();
 
-  const patternItems = useMemo(() => splitItems(analysis.identifiedPatterns), [analysis.identifiedPatterns]);
-  const indicatorItems = useMemo(() => splitItems(analysis.keyIndicators), [analysis.keyIndicators]);
-  const riskItems = useMemo(() => normalizeRiskFactorsForView(analysis.riskFactors), [analysis.riskFactors]);
+  const patternItems = splitItems(analysis.identifiedPatterns);
+  const indicatorItems = splitItems(analysis.keyIndicators);
+  const riskItems = normalizeRiskFactorsForView(analysis.riskFactors);
 
   const headerIcon = recommendationMeta.tone === 'buy' ? ArrowUp : recommendationMeta.tone === 'sell' ? ArrowDown : Minus;
   const HeaderIcon = headerIcon;

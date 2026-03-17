@@ -50,7 +50,7 @@ const DashboardPage = () => {
   const [showBuyTicksModal, setShowBuyTicksModal] = useState(false);
   const [buyTicksModalReason, setBuyTicksModalReason] = useState<'insufficient' | 'topup'>('topup');
   const [isStartingCheckout, setIsStartingCheckout] = useState(false);
-  const { plan, total, used, remaining, isUnlimited } = useAnalysisLimit();
+  const { plan, total, used, isUnlimited } = useAnalysisLimit();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
   const { getToken } = useAuth();
