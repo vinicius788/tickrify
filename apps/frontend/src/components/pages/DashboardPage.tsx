@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical, Clock3, Wifi, WifiOff } from "lucide-react";
+import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical, Clock, Wifi, WifiOff } from "lucide-react";
 import { Link } from "react-router-dom";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -385,10 +384,14 @@ const DashboardPage = () => {
     total === -1 ||
     !Number.isFinite(total);
   const quotaText = safeTotal === null ? `${safeUsed}/-` : `${Math.min(safeUsed, safeTotal)}/${safeTotal}`;
+  const mobileActiveView =
+    activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error'
+      ? 'new-analysis'
+      : activeView;
   const sidebarSectionTitleClass = 'text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]';
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-background">
+    <div className="flex min-h-screen w-full flex-col overflow-x-hidden bg-background">
       {/* Banner de Demo */}
       {isDemo && (
         <div className="bg-primary/10 border-b border-primary/20 px-4 py-3 text-center font-medium sticky top-0 z-50 backdrop-blur-sm">
@@ -404,29 +407,30 @@ const DashboardPage = () => {
         </div>
       )}
       
-      <header className="sticky top-0 z-40 border-b border-[var(--border-subtle)] bg-[rgba(10,11,13,0.85)] backdrop-blur-md">
-        <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between gap-4 px-4 md:px-6">
-          <Link to={user ? "/dashboard" : "/"} className="flex items-center gap-3">
-            <img src="/icon.png" alt="Tickrify" className="h-8 w-8" />
-            <div className="leading-tight">
-              <p className="text-sm font-semibold tracking-[0.16em] text-[var(--text-primary)]">
-                TICKRIFY
-              </p>
-              <p className="text-[11px] text-[var(--text-secondary)]">Institutional Terminal</p>
+      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="flex h-12 items-center justify-between gap-2 px-3 md:h-14 md:px-6">
+          <Link to={user ? "/dashboard" : "/"} className="flex min-w-0 shrink-0 items-center gap-2">
+            <img src="/logo.png" alt="Tickrify" className="h-6 w-6 md:h-7 md:w-7" />
+            <div className="hidden flex-col leading-none md:flex">
+              <span className="text-sm font-bold tracking-wide">TICKRIFY</span>
+              <span className="text-xs text-muted-foreground">Institutional Terminal</span>
             </div>
           </Link>
 
-          <div className="flex items-center gap-3 text-xs">
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 ${
-                isOnline
-                  ? 'border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] text-[var(--signal-buy)]'
-                  : 'border-[var(--signal-sell-border)] bg-[var(--signal-sell-bg)] text-[var(--signal-sell)]'
-              }`}
-            >
-              {isOnline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-              {isOnline ? 'Online' : 'Offline'}
-            </span>
+          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-xs md:gap-3">
+            <div className="flex shrink-0 items-center gap-1 text-xs font-medium">
+              {isOnline ? (
+                <>
+                  <Wifi className="h-3 w-3 text-green-500" />
+                  <span className="hidden text-green-500 sm:inline">Online</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="h-3 w-3 text-red-500" />
+                  <span className="hidden text-red-500 sm:inline">Offline</span>
+                </>
+              )}
+            </div>
 
             {user && (
               <TicksBadge
@@ -437,73 +441,68 @@ const DashboardPage = () => {
               />
             )}
 
-            {navbarUnlimited ? (
-              <div className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1.5">
-                <span className="text-yellow-400">👑</span>
-                <span className="font-terminal text-xs font-medium text-yellow-400">PRO</span>
-                <span className="text-xs text-[var(--text-secondary)]">· Ilimitado</span>
-              </div>
-            ) : (
-              <div className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-3 py-1.5">
-                <Clock3 className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
-                <span className="font-terminal text-xs text-[var(--text-primary)]">{quotaText} análises</span>
+            <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs font-medium">
+              <Clock className="h-3 w-3 text-muted-foreground" />
+              <span className="whitespace-nowrap">{navbarUnlimited ? 'PRO' : quotaText}</span>
+              <span className="hidden whitespace-nowrap text-[var(--text-secondary)] md:inline">
+                {navbarUnlimited ? '· Ilimitado' : 'análises'}
+              </span>
+            </div>
+
+            {user && (
+              <div className="shrink-0">
+                <UserButton afterSignOutUrl="/" />
               </div>
             )}
-
-            {user && <UserButton afterSignOutUrl="/" />}
           </div>
         </div>
       </header>
-      <main className="flex flex-1 flex-col gap-4 p-4 md:gap-6 md:p-6">
-        
-        {/* Mobile Navigation */}
-        <div className="md:hidden">
-          <Tabs 
-            value={activeView === 'new-analysis' || activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error' ? 'new-analysis' : activeView} 
-            onValueChange={(value) => {
-              if (value === 'new-analysis') {
-                resetNewAnalysisView();
-              } else {
-                setActiveView(value as View);
-              }
-            }} 
-            className="w-full"
-          >
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="new-analysis">
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Análise
-              </TabsTrigger>
-              <TabsTrigger value="my-trades">
-                <History className="mr-2 h-4 w-4" />
-                Trades
-              </TabsTrigger>
-              <TabsTrigger value="watchlist">
-                <Star className="mr-2 h-4 w-4" />
-                Watchlist
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="border-b border-border md:hidden">
+          <div className="flex">
+            {(['new-analysis', 'my-trades', 'watchlist'] as const).map((view) => (
+              <button
+                key={view}
+                type="button"
+                onClick={() => {
+                  if (view === 'new-analysis') {
+                    resetNewAnalysisView();
+                  } else {
+                    setActiveView(view);
+                  }
+                }}
+                className={`flex-1 py-2 text-xs font-medium transition-colors ${
+                  mobileActiveView === view
+                    ? 'border-b-2 border-primary text-primary'
+                    : 'text-muted-foreground'
+                }`}
+              >
+                {view === 'new-analysis' ? '⊕ Análise' : view === 'my-trades' ? '↺ Trades' : '☆ Watchlist'}
+              </button>
+            ))}
+          </div>
           {user && plan === 'free' && (
-            <Button
-              className="w-full mt-3"
-              variant="outline"
-              onClick={() => setShowUpgradeModal(true)}
-            >
-              <Crown className="mr-2 h-4 w-4" />
-              Fazer Upgrade para Pro
-            </Button>
+            <div className="p-3">
+              <Button
+                className="w-full"
+                variant="outline"
+                onClick={() => setShowUpgradeModal(true)}
+              >
+                <Crown className="mr-2 h-4 w-4" />
+                Fazer Upgrade para Pro
+              </Button>
+            </div>
           )}
         </div>
 
-        <div className="grid gap-4 md:grid-cols-[280px_1fr] xl:grid-cols-[320px_1fr]">
-          <div className="hidden md:flex flex-col gap-4">
-            {/* Contador de Análises */}
+        <div className="flex flex-1 overflow-hidden">
+          <aside className="hidden w-[280px] min-w-0 flex-col gap-4 overflow-y-auto border-r border-border p-4 md:flex xl:w-[320px]">
             {user && <AnalysisCounter onUpgradeClick={() => setShowUpgradeModal(true)} />}
-            
+
             <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
               <CardHeader className="px-4 pb-2 pt-4">
-              <CardTitle className={sidebarSectionTitleClass}>Ações rápidas</CardTitle>
+                <CardTitle className={sidebarSectionTitleClass}>Ações rápidas</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-2 p-4 pt-0">
                 <Button onClick={resetNewAnalysisView} variant={activeView.startsWith('analysis') || activeView === 'loading' || activeView === 'error' ? 'default' : 'outline'} className="justify-start"><PlusCircle className="mr-2 h-4 w-4" /> Nova Análise</Button>
@@ -537,7 +536,7 @@ const DashboardPage = () => {
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-muted-foreground text-center py-2">
+                  <p className="py-2 text-center text-sm text-muted-foreground">
                     Sem mercados ativos nas últimas 8 horas.
                   </p>
                 )}
@@ -549,7 +548,7 @@ const DashboardPage = () => {
               </CardHeader>
               <CardContent className="p-4 pt-0">
                 {loadingAnalyses ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">Carregando...</p>
+                  <p className="py-4 text-center text-sm text-muted-foreground">Carregando...</p>
                 ) : displayRecentAnalyses.length > 0 ? (
                   <div className="overflow-hidden rounded-sm border border-[var(--border-subtle)]">
                     <div className="grid grid-cols-[1fr_58px_52px_62px] bg-[var(--bg-overlay)] px-2 py-1.5 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
@@ -580,16 +579,19 @@ const DashboardPage = () => {
                     })}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground text-center py-4">Nenhuma análise ainda. Faça sua primeira!</p>
+                  <p className="py-4 text-center text-sm text-muted-foreground">Nenhuma análise ainda. Faça sua primeira!</p>
                 )}
               </CardContent>
             </Card>
-          </div>
-          <div className="flex flex-col gap-8">
-            {renderContent()}
-          </div>
+          </aside>
+
+          <main className="min-w-0 flex-1 overflow-y-auto p-3 md:p-6">
+            <div className="flex flex-col gap-6 md:gap-8">
+              {renderContent()}
+            </div>
+          </main>
         </div>
-      </main>
+      </div>
 
       <BuyTicksModal
         open={showBuyTicksModal}
