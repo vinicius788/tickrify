@@ -407,26 +407,26 @@ const DashboardPage = () => {
         </div>
       )}
       
-      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-12 items-center justify-between gap-2 px-3 md:h-14 md:px-6">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
+        <div className="flex h-14 items-center justify-between gap-3 px-4 md:px-6">
           <Link to={user ? "/dashboard" : "/"} className="flex min-w-0 shrink-0 items-center gap-2">
-            <img src="/logo.png" alt="Tickrify" className="h-6 w-6 md:h-7 md:w-7" />
+            <img src="/logo.png" alt="Tickrify" className="h-7 w-7" />
             <div className="hidden flex-col leading-none md:flex">
               <span className="text-sm font-bold tracking-wide">TICKRIFY</span>
               <span className="text-xs text-muted-foreground">Institutional Terminal</span>
             </div>
           </Link>
 
-          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-xs md:gap-3">
-            <div className="flex shrink-0 items-center gap-1 text-xs font-medium">
+          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-sm md:gap-3">
+            <div className="flex shrink-0 items-center gap-1 text-sm font-medium">
               {isOnline ? (
                 <>
-                  <Wifi className="h-3 w-3 text-green-500" />
+                  <Wifi className="h-3.5 w-3.5 text-green-500" />
                   <span className="hidden text-green-500 sm:inline">Online</span>
                 </>
               ) : (
                 <>
-                  <WifiOff className="h-3 w-3 text-red-500" />
+                  <WifiOff className="h-3.5 w-3.5 text-red-500" />
                   <span className="hidden text-red-500 sm:inline">Offline</span>
                 </>
               )}
@@ -441,8 +441,8 @@ const DashboardPage = () => {
               />
             )}
 
-            <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs font-medium">
-              <Clock className="h-3 w-3 text-muted-foreground" />
+            <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium">
+              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="whitespace-nowrap">{navbarUnlimited ? 'PRO' : quotaText}</span>
               <span className="hidden whitespace-nowrap text-[var(--text-secondary)] md:inline">
                 {navbarUnlimited ? '· Ilimitado' : 'análises'}
