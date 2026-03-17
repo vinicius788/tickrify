@@ -177,7 +177,7 @@ function normalizeRiskFactors(value: unknown): string[] {
 
   if (typeof value === 'string') {
     const normalized = value
-      .split(/(?<=\.)\s+(?=[A-ZÁÉÍÓÚ])|[\n•\-]+/)
+      .split(/(?<=\.)\s+(?=[A-ZÁÉÍÓÚ])|[\n•-]+/)
       .map((item) => item.trim())
       .filter((item) => item.length > 10);
 
