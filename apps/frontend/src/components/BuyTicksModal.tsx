@@ -8,7 +8,6 @@ const FALLBACK_PACKAGES = [
     name: 'Starter',
     ticks: 20,
     price: 'R$19,90',
-    pricePerTick: 'R$0,995/Tick',
     usage: '20 análises rápidas',
   },
   {
@@ -16,7 +15,6 @@ const FALLBACK_PACKAGES = [
     name: 'Trader',
     ticks: 50,
     price: 'R$49,90',
-    pricePerTick: 'R$0,998/Tick',
     usage: '50 análises rápidas ou 16 deep',
     highlight: true,
   },
@@ -25,16 +23,15 @@ const FALLBACK_PACKAGES = [
     name: 'Pro',
     ticks: 150,
     price: 'R$129,90',
-    pricePerTick: 'R$0,866/Tick',
     usage: '150 análises rápidas ou 50 deep',
     badge: '-13%',
   },
 ] as const;
 
 const COSTS = [
-  { label: 'Análise rápida', cost: '1 Tick', model: 'GPT-4o-mini' },
-  { label: 'Análise deep', cost: '3 Ticks', model: 'GPT-4o' },
-  { label: 'Exportar PDF', cost: '2 Ticks', model: '—' },
+  { label: 'Análise rápida', cost: '1 Tick' },
+  { label: 'Análise deep', cost: '3 Ticks' },
+  { label: 'Exportar PDF', cost: '2 Ticks' },
 ] as const;
 
 function formatCurrency(valueInCents: number): string {
@@ -64,14 +61,12 @@ export function BuyTicksModal({
 
     return packages.map((pkg) => {
       const price = formatCurrency(pkg.priceInCents);
-      const pricePerTick = `R$${(pkg.priceInCents / Math.max(1, pkg.ticks) / 100).toFixed(3).replace('.', ',')}/Tick`;
 
       return {
         id: pkg.id,
         name: pkg.name,
         ticks: pkg.ticks,
         price,
-        pricePerTick,
         usage: `${pkg.ticks} análises rápidas ou ${Math.max(1, Math.floor(pkg.ticks / 3))} deep`,
         highlight: pkg.highlight,
         badge: pkg.discountLabel,
@@ -128,7 +123,6 @@ export function BuyTicksModal({
               <div key={cost.label} className="rounded-lg bg-[var(--bg-overlay)] p-2.5 text-center">
                 <p className="text-xs text-[var(--text-secondary)]">{cost.label}</p>
                 <p className="mt-0.5 text-sm font-medium text-[var(--text-primary)]">{cost.cost}</p>
-                <p className="text-xs text-[var(--text-secondary)]">{cost.model}</p>
               </div>
             ))}
           </div>
@@ -169,7 +163,6 @@ export function BuyTicksModal({
                 </div>
                 <div className="ml-4 shrink-0 text-right">
                   <p className="text-lg font-medium text-[var(--text-primary)]">{pkg.price}</p>
-                  <p className="text-xs text-[var(--text-secondary)]">{pkg.pricePerTick}</p>
                   {loading === pkg.id && (
                     <p className="mt-0.5 text-xs text-blue-500">redirecionando...</p>
                   )}
