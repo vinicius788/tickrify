@@ -152,11 +152,50 @@ class APIClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    try {
-      return await fetch(buildApiUrl(path), {
+    const buildRequestInit = async (): Promise<RequestInit> => {
+      const headers = new Headers(init.headers || {});
+
+      try {
+        if (typeof window !== 'undefined') {
+          const clerk = (
+            window as {
+              Clerk?: {
+                session?: {
+                  getToken?: (options?: { skipCache?: boolean }) => Promise<string | null>;
+                };
+              };
+            }
+          ).Clerk;
+          const freshToken = await clerk?.session?.getToken?.({ skipCache: true });
+          if (freshToken) {
+            headers.set('Authorization', `Bearer ${freshToken}`);
+          }
+        }
+      } catch {
+        // Fallback: mantém headers originais quando não for possível renovar token
+      }
+
+      return {
         ...init,
+        headers,
         signal: controller.signal,
-      });
+      };
+    };
+
+    try {
+      let response = await fetch(
+        buildApiUrl(path),
+        await buildRequestInit(),
+      );
+
+      if (response.status === 401) {
+        response = await fetch(
+          buildApiUrl(path),
+          await buildRequestInit(),
+        );
+      }
+
+      return response;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         throw new APIError(
