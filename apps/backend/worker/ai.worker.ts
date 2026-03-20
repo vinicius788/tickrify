@@ -105,6 +105,11 @@ function ensureNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+function normalizeConfidence(value: unknown): number {
+  const numeric = ensureNumber(value, 0);
+  return numeric > 1 ? numeric / 100 : numeric;
+}
+
 function ensureNumberOrNull(value: unknown): number | null {
   if (value === null || value === undefined || value === '') {
     return null;
@@ -197,7 +202,7 @@ function toWorkerAnalysisResult(value: unknown): WorkerAnalysisResult {
 
   return {
     recommendation: normalizeRecommendation(source.recommendation),
-    confidence: ensureNumber(source.confidence, 0),
+    confidence: normalizeConfidence(source.confidence),
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),
       timeframe: ensureString(analysisSource.timeframe ?? source.timeframe, 'UNKNOWN'),
@@ -517,12 +522,13 @@ function validateTradingLogic(result: WorkerAnalysisResult): string[] {
   const errors: string[] = [];
   const rec = result.recommendation;
   const a = result.analysis;
+  const normalizedConfidence = normalizeConfidence(result.confidence);
 
   if (!['COMPRA', 'VENDA', 'AGUARDAR'].includes(rec)) {
     errors.push(`recommendation inválido: ${rec}`);
   }
 
-  if (typeof result.confidence !== 'number' || result.confidence < 0 || result.confidence > 1) {
+  if (typeof normalizedConfidence !== 'number' || normalizedConfidence < 0 || normalizedConfidence > 1) {
     errors.push(`confidence inválido: ${result.confidence}`);
   }
 
