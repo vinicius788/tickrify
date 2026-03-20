@@ -25,6 +25,53 @@ function buildApiUrl(path: string): string {
   return `${API_BASE_URL}${normalizedPath}`;
 }
 
+type FreshTokenGetter = () => Promise<string | null>;
+
+async function resolveAuthHeaders(
+  headersInit: HeadersInit | undefined,
+  refreshToken?: FreshTokenGetter,
+): Promise<Headers> {
+  const headers = new Headers(headersInit || {});
+
+  if (!refreshToken) {
+    return headers;
+  }
+
+  try {
+    const token = await refreshToken();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+  } catch {
+    // Mantém os headers originais se a renovação do token falhar.
+  }
+
+  return headers;
+}
+
+export async function fetchWithAuthRetry(
+  url: string,
+  options: RequestInit,
+  refreshToken?: FreshTokenGetter,
+): Promise<Response> {
+  const runRequest = async () => {
+    const headers = await resolveAuthHeaders(options.headers, refreshToken);
+    return fetch(url, {
+      ...options,
+      headers,
+    });
+  };
+
+  const response = await runRequest();
+
+  if (response.status !== 401 || !refreshToken) {
+    return response;
+  }
+
+  console.warn('[Auth] Token expired, refreshing...');
+  return runRequest();
+}
+
 export type Recommendation =
   | 'BUY'
   | 'SELL'
@@ -143,59 +190,49 @@ class APIClient {
     return token ? { 'Authorization': `Bearer ${token}` } : {};
   }
 
+  private async getRuntimeFreshToken(): Promise<string | null> {
+    try {
+      if (typeof window === 'undefined') {
+        return null;
+      }
+
+      const clerk = (
+        window as {
+          Clerk?: {
+            session?: {
+              getToken?: (options?: { skipCache?: boolean }) => Promise<string | null>;
+            };
+          };
+        }
+      ).Clerk;
+
+      return clerk?.session?.getToken?.({ skipCache: true }) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   private async request(
     path: string,
     init: RequestInit,
     fallbackMessage: string,
     timeoutMs = APIClient.REQUEST_TIMEOUT_MS,
+    getFreshToken?: FreshTokenGetter,
   ): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    const buildRequestInit = async (): Promise<RequestInit> => {
-      const headers = new Headers(init.headers || {});
-
-      try {
-        if (typeof window !== 'undefined') {
-          const clerk = (
-            window as {
-              Clerk?: {
-                session?: {
-                  getToken?: (options?: { skipCache?: boolean }) => Promise<string | null>;
-                };
-              };
-            }
-          ).Clerk;
-          const freshToken = await clerk?.session?.getToken?.({ skipCache: true });
-          if (freshToken) {
-            headers.set('Authorization', `Bearer ${freshToken}`);
-          }
-        }
-      } catch {
-        // Fallback: mantém headers originais quando não for possível renovar token
-      }
-
-      return {
-        ...init,
-        headers,
-        signal: controller.signal,
-      };
-    };
-
     try {
-      let response = await fetch(
+      const tokenProvider = getFreshToken ?? (() => this.getRuntimeFreshToken());
+
+      return fetchWithAuthRetry(
         buildApiUrl(path),
-        await buildRequestInit(),
+        {
+          ...init,
+          signal: controller.signal,
+        },
+        tokenProvider,
       );
-
-      if (response.status === 401) {
-        response = await fetch(
-          buildApiUrl(path),
-          await buildRequestInit(),
-        );
-      }
-
-      return response;
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         throw new APIError(
@@ -229,6 +266,7 @@ class APIClient {
   async createAnalysis(
     payload: CreateAnalysisPayload,
     token: string | null,
+    getFreshToken?: FreshTokenGetter,
   ): Promise<AIAnalysisResponse> {
     const formData = new FormData();
 
@@ -259,6 +297,7 @@ class APIClient {
       },
       'Failed to create analysis',
       APIClient.ANALYZE_TIMEOUT_MS,
+      getFreshToken,
     );
 
     if (!response.ok) {
@@ -271,6 +310,7 @@ class APIClient {
   async getAnalysis(
     analysisId: string,
     token: string | null,
+    getFreshToken?: FreshTokenGetter,
   ): Promise<AIAnalysisResponse> {
     const response = await this.request(
       `/api/ai/analysis/${analysisId}`,
@@ -281,6 +321,8 @@ class APIClient {
         },
       },
       'Failed to get analysis',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
     );
 
     if (!response.ok) {
@@ -293,6 +335,7 @@ class APIClient {
   async listAnalyses(
     token: string | null,
     limit = 20,
+    getFreshToken?: FreshTokenGetter,
   ): Promise<AIAnalysisResponse[]> {
     const safeLimit = Math.max(1, Math.min(100, Math.floor(limit || 20)));
     const response = await this.request(
@@ -304,6 +347,8 @@ class APIClient {
         },
       },
       'Failed to list analyses',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
     );
 
     if (!response.ok) {
@@ -313,7 +358,10 @@ class APIClient {
     return response.json();
   }
 
-  async getAnalysisUsage(token: string | null): Promise<AnalysisUsageResponse> {
+  async getAnalysisUsage(
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<AnalysisUsageResponse> {
     const response = await this.request(
       '/api/ai/usage',
       {
@@ -323,6 +371,8 @@ class APIClient {
         },
       },
       'Failed to fetch analysis usage',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
     );
 
     if (!response.ok) {
@@ -336,8 +386,10 @@ class APIClient {
     analysisId: string,
     token: string | null,
     initialAnalysis?: AIAnalysisResponse,
+    getFreshToken?: FreshTokenGetter,
   ): Promise<AIAnalysisResponse> {
-    let analysis = initialAnalysis ?? (await this.getAnalysis(analysisId, token));
+    let analysis =
+      initialAnalysis ?? (await this.getAnalysis(analysisId, token, getFreshToken));
     const startedAt = Date.now();
     let attempts = 0;
 
@@ -358,7 +410,7 @@ class APIClient {
         APIClient.POLL_MAX_DELAY_MS,
       );
       await new Promise((resolve) => setTimeout(resolve, delayMs));
-      analysis = await this.getAnalysis(analysisId, token);
+      analysis = await this.getAnalysis(analysisId, token, getFreshToken);
     }
 
     return analysis;
@@ -370,33 +422,39 @@ export const apiClient = new APIClient();
 // React Hook for API calls with auth
 export function useAPIClient() {
   const { getToken } = useAuth();
+  const getFreshToken = useCallback(() => getToken({ skipCache: true }), [getToken]);
 
   const createAnalysis = useCallback(async (payload: CreateAnalysisPayload) => {
-    const token = await getToken({ skipCache: true });
-    return apiClient.createAnalysis(payload, token);
-  }, [getToken]);
+    const token = await getFreshToken();
+    return apiClient.createAnalysis(payload, token, getFreshToken);
+  }, [getFreshToken]);
 
   const getAnalysis = useCallback(async (analysisId: string) => {
-    const token = await getToken({ skipCache: true });
-    return apiClient.getAnalysis(analysisId, token);
-  }, [getToken]);
+    const token = await getFreshToken();
+    return apiClient.getAnalysis(analysisId, token, getFreshToken);
+  }, [getFreshToken]);
 
   const listAnalyses = useCallback(async (limit?: number) => {
-    const token = await getToken({ skipCache: true });
-    return apiClient.listAnalyses(token, limit);
-  }, [getToken]);
+    const token = await getFreshToken();
+    return apiClient.listAnalyses(token, limit, getFreshToken);
+  }, [getFreshToken]);
 
   const getAnalysisUsage = useCallback(async () => {
-    const token = await getToken({ skipCache: true });
-    return apiClient.getAnalysisUsage(token);
-  }, [getToken]);
+    const token = await getFreshToken();
+    return apiClient.getAnalysisUsage(token, getFreshToken);
+  }, [getFreshToken]);
 
   const waitForAnalysisCompletion = useCallback(
     async (analysisId: string, initialAnalysis?: AIAnalysisResponse) => {
-      const token = await getToken({ skipCache: true });
-      return apiClient.waitForAnalysisCompletion(analysisId, token, initialAnalysis);
+      const token = await getFreshToken();
+      return apiClient.waitForAnalysisCompletion(
+        analysisId,
+        token,
+        initialAnalysis,
+        getFreshToken,
+      );
     },
-    [getToken],
+    [getFreshToken],
   );
 
   return useMemo(() => ({

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { APIError, apiClient } from '@/lib/api';
+import { APIError, apiClient, fetchWithAuthRetry } from '@/lib/api';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -63,6 +63,40 @@ describe('apiClient', () => {
     );
 
     await expect(apiClient.getAnalysis('analysis-1', 'bad-token')).rejects.toBeInstanceOf(APIError);
+  });
+
+  it('fetchWithAuthRetry renova token e repete a chamada uma vez após 401', async () => {
+    const getToken = vi
+      .fn()
+      .mockResolvedValueOnce('expired-token')
+      .mockResolvedValueOnce('fresh-token');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await fetchWithAuthRetry(
+      'https://api.tickrify.test/api/ai/analyze',
+      {
+        method: 'POST',
+        headers: {
+          'X-Test': '1',
+        },
+      },
+      getToken,
+    );
+
+    expect(response.ok).toBe(true);
+    expect(getToken).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const firstHeaders = fetchMock.mock.calls[0][1]?.headers as Headers;
+    const secondHeaders = fetchMock.mock.calls[1][1]?.headers as Headers;
+
+    expect(firstHeaders.get('Authorization')).toBe('Bearer expired-token');
+    expect(secondHeaders.get('Authorization')).toBe('Bearer fresh-token');
   });
 
   it('getAnalysisUsage retorna uso da conta', async () => {

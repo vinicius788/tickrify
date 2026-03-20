@@ -9,7 +9,7 @@ import {
 } from '../../common/utils/analysis-normalizer';
 import { AnalysisType } from '../ticks/tick-packages';
 
-type SchemaRecommendation = 'COMPRA' | 'VENDA' | 'AGUARDAR';
+type SchemaRecommendation = 'BUY' | 'SELL' | 'HOLD' | 'COMPRA' | 'VENDA' | 'AGUARDAR';
 type SchemaMarketBias = 'bullish' | 'bearish' | 'neutral';
 
 interface TradingAnalysisMarketStructure {
@@ -58,11 +58,11 @@ interface SupabaseObjectReference {
 }
 
 function mapSchemaRecommendationToInternal(value: SchemaRecommendation): Recommendation {
-  if (value === 'COMPRA') {
+  if (value === 'BUY' || value === 'COMPRA') {
     return 'BUY';
   }
 
-  if (value === 'VENDA') {
+  if (value === 'SELL' || value === 'VENDA') {
     return 'SELL';
   }
 
@@ -91,13 +91,16 @@ function ensureNumberOrNull(value: unknown): number | null {
 function normalizeSchemaRecommendation(value: unknown): SchemaRecommendation {
   const recommendationRaw = String(value || '').trim().toUpperCase();
   if (
+    recommendationRaw === 'BUY' ||
+    recommendationRaw === 'SELL' ||
+    recommendationRaw === 'HOLD' ||
     recommendationRaw === 'COMPRA' ||
     recommendationRaw === 'VENDA' ||
     recommendationRaw === 'AGUARDAR'
   ) {
-    return recommendationRaw;
+    return recommendationRaw as SchemaRecommendation;
   }
-  return 'AGUARDAR';
+  return 'HOLD';
 }
 
 function normalizeSchemaBias(value: unknown): SchemaMarketBias {
@@ -299,7 +302,7 @@ export class AIAdapter {
               properties: {
                 recommendation: {
                   type: 'string',
-                  enum: ['COMPRA', 'VENDA', 'AGUARDAR'],
+                  enum: ['BUY', 'SELL', 'HOLD', 'COMPRA', 'VENDA', 'AGUARDAR'],
                 },
                 confidence: { type: 'number' },
                 analysis: {
