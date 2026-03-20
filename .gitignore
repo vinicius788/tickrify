@@ -63,3 +63,4 @@ apps/backend/.env.production
 apps/frontend/.env.production
 
 test-results/
+.vercel
