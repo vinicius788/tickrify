@@ -4,7 +4,6 @@ import {
   ArrowUp,
   CheckCircle2,
   CircleHelp,
-  Copy,
   Minus,
   ShieldAlert,
   SlidersVertical,
@@ -189,7 +188,6 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
     hour: '2-digit',
     minute: '2-digit',
   });
-  const isLive = Date.now() - timestamp.getTime() <= 5 * 60 * 1000;
 
   const imageUrl =
     analysisData.annotated_image_url ||
@@ -241,67 +239,28 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   return (
     <div className="space-y-5">
       <Card className="surface-terminal-elevated rounded-xl fade-in-stagger" style={{ animationDelay: '0ms' }}>
-        <CardContent className="space-y-4 p-5 md:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] pb-3 text-xs text-[var(--text-secondary)]">
-            <div className="flex items-center gap-2">
-              <span className="font-terminal font-semibold text-[var(--text-primary)]">{symbol}</span>
-              <span>•</span>
-              <span className="font-terminal">{timeframe}</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="font-terminal">{formattedTimestamp}</span>
-              <span className={`inline-flex items-center gap-1 ${isLive ? 'text-[var(--signal-buy)]' : 'text-[var(--text-secondary)]'}`}>
-                <span className={`h-2 w-2 rounded-full ${isLive ? 'animate-pulse bg-[var(--signal-buy)]' : 'bg-[var(--text-muted)]'}`} />
-                {isLive ? 'LIVE' : 'ARQUIVADO'}
-              </span>
-            </div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
-            <div>
-              <h2 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">Relatório Técnico Institucional</h2>
-              <p className="mt-1 text-sm text-[var(--text-secondary)]">Leitura de estrutura, confluência e gestão de risco.</p>
-            </div>
-
+        <CardContent className="p-5 md:p-6">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)] md:flex-nowrap md:items-center md:gap-4">
+            <span className="whitespace-nowrap font-terminal font-semibold text-[var(--text-primary)]">{symbol}</span>
+            <span className="whitespace-nowrap font-terminal">{timeframe}</span>
             <div className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${headerToneClasses}`}>
               <HeaderIcon className="h-4 w-4" />
               <span>{recommendationMeta.icon}</span>
               <span>{recommendationMeta.label}</span>
             </div>
-          </div>
-
-          <div className="mt-2 flex items-center gap-3 text-xs text-[var(--text-secondary)]">
             <span>
               BIAS:{' '}
-              <strong className="font-medium text-[var(--text-primary)]">
+              <strong className="whitespace-nowrap font-medium text-[var(--text-primary)]">
                 {String(analysisData.bias || marketStructure.bias || 'neutral').toUpperCase()}
               </strong>
             </span>
-            <span>•</span>
-            <div className="flex items-center gap-2">
-              <div className="h-1.5 w-24 overflow-hidden rounded-full bg-[var(--bg-overlay)]">
-                <div
-                  className="h-full rounded-full transition-all"
-                  style={{
-                    width: `${confidence}%`,
-                    backgroundColor:
-                      confidence >= 70
-                        ? 'var(--signal-buy)'
-                        : confidence >= 50
-                          ? 'var(--signal-hold)'
-                          : 'var(--signal-sell)',
-                  }}
-                />
-              </div>
-              <span className="font-terminal text-xs text-[var(--text-primary)]">{confidence}%</span>
-              <span className="text-xs text-[var(--text-secondary)]">{confidenceLabel}</span>
-            </div>
+            <span className="whitespace-nowrap font-terminal md:ml-auto">{formattedTimestamp}</span>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="space-y-5">
+      <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-6">
+        <div className="min-w-0 flex-1">
           <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '80ms' }}>
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold">Gráfico analisado</CardTitle>
@@ -318,12 +277,125 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               </div>
             </CardContent>
           </Card>
+        </div>
 
-          <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '140ms' }}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base font-semibold">Painel técnico</CardTitle>
-            </CardHeader>
-            <CardContent>
+        <Card
+          className="surface-terminal-elevated h-fit w-full rounded-xl fade-in-stagger md:sticky md:top-24 md:w-[300px] md:flex-none"
+          style={{ animationDelay: '200ms' }}
+        >
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base tracking-wide">NÍVEIS DE OPERAÇÃO</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-xs text-[var(--text-secondary)]">R/R</p>
+                  <p className={`font-terminal text-base font-semibold ${riskRewardTone}`}>
+                    {riskReward !== null ? `${riskReward.toFixed(1)} : 1` : String(riskRewardRatioRaw || 'N/A')}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-[var(--text-secondary)]">Confluência</p>
+                  <p className="font-terminal text-base font-semibold text-[var(--text-primary)]">
+                    {confluence ? confluence.display : 'N/A'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-3 border-t border-[var(--border-subtle)] pt-3">
+                <p className="text-xs text-[var(--text-secondary)]">Confiança</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--bg-base)]">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${confidence}%`,
+                        backgroundColor:
+                          confidence >= 70
+                            ? 'var(--signal-buy)'
+                            : confidence >= 50
+                              ? 'var(--signal-hold)'
+                              : 'var(--signal-sell)',
+                      }}
+                    />
+                  </div>
+                  <span className="font-terminal text-xs text-[var(--text-primary)]">{confidence}%</span>
+                  <span className="text-xs text-[var(--text-secondary)]">{confidenceLabel}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
+              <div className="flex items-center justify-between gap-3 rounded px-2 py-1">
+                <span className="text-[var(--text-secondary)]">PREÇO ATUAL</span>
+                <button
+                  type="button"
+                  className="font-terminal font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
+                  onClick={() => void copyValue('Preço atual', currentPrice)}
+                >
+                  {formatPrice(currentPrice)}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
+                <span className="text-[var(--text-secondary)]">● ENTRADA</span>
+                <button
+                  type="button"
+                  className="font-terminal font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
+                  onClick={() => void copyValue('Entrada', entry)}
+                >
+                  {formatPrice(entry)}
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
+                <span className="text-[var(--signal-sell)]">▼ STOP LOSS</span>
+                <button
+                  type="button"
+                  className="text-right font-terminal font-semibold text-[var(--signal-sell)] transition-opacity hover:opacity-80"
+                  onClick={() => void copyValue('Stop Loss', stopLoss)}
+                >
+                  {formatPrice(stopLoss)} <span className="font-terminal text-xs">{formatSignedPercent(stopPercent)}</span>
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
+                <span className="text-[var(--signal-buy)]">▲ TP1</span>
+                <button
+                  type="button"
+                  className="text-right font-terminal font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
+                  onClick={() => void copyValue('Take Profit 1', takeProfit1)}
+                >
+                  {formatPrice(takeProfit1)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit1Percent)}</span>
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
+                <span className="text-[var(--signal-buy)]">▲ TP2</span>
+                <button
+                  type="button"
+                  className="text-right font-terminal font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
+                  onClick={() => void copyValue('Take Profit 2', takeProfit2)}
+                >
+                  {formatPrice(takeProfit2)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit2Percent)}</span>
+                </button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '140ms' }}>
+        <Accordion type="single" collapsible className="w-full">
+          <AccordionItem value="technical-panel" className="border-none">
+            <AccordionTrigger className="px-5 py-4 text-base font-semibold hover:no-underline md:px-6">
+              <span className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-[var(--text-secondary)]" />
+                Painel técnico
+              </span>
+            </AccordionTrigger>
+            <AccordionContent className="px-5 pb-5 md:px-6 md:pb-6">
               <Accordion
                 type="multiple"
                 defaultValue={['market-structure', 'technical-analysis', 'risk-factors']}
@@ -467,91 +539,10 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   </p>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card className="surface-terminal-elevated sticky top-24 h-fit rounded-xl fade-in-stagger" style={{ animationDelay: '200ms' }}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base tracking-wide">NÍVEIS DE OPERAÇÃO</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <div className="grid grid-cols-2 gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3">
-              <div>
-                <p className="text-xs text-[var(--text-secondary)]">R/R</p>
-                <p className={`font-terminal text-base font-semibold ${riskRewardTone}`}>
-                  {riskReward !== null ? `${riskReward.toFixed(1)} : 1` : String(riskRewardRatioRaw || 'N/A')}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-[var(--text-secondary)]">Confluência</p>
-                <p className="font-terminal text-base font-semibold text-[var(--text-primary)]">{confluence ? confluence.display : 'N/A'}</p>
-              </div>
-            </div>
-
-            <div className="space-y-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded px-2 py-1 transition-colors hover:bg-[var(--bg-overlay)]"
-                onClick={() => void copyValue('Preço atual', currentPrice)}
-              >
-                <span className="text-[var(--text-secondary)]">PREÇO ATUAL</span>
-                <span className="font-terminal font-semibold text-[var(--text-primary)]">{formatPrice(currentPrice)}</span>
-              </button>
-
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded border-t border-[var(--border-subtle)] px-2 py-1 transition-colors hover:bg-[var(--bg-overlay)]"
-                onClick={() => void copyValue('Entrada', entry)}
-              >
-                <span className="text-[var(--text-secondary)]">● ENTRADA</span>
-                <span className="font-terminal font-semibold text-[var(--text-primary)]">{formatPrice(entry)}</span>
-              </button>
-
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded border-t border-[var(--border-subtle)] px-2 py-1 transition-colors hover:bg-[var(--bg-overlay)]"
-                onClick={() => void copyValue('Stop Loss', stopLoss)}
-              >
-                <span className="text-[var(--signal-sell)]">▼ STOP LOSS</span>
-                <span className="font-terminal font-semibold text-[var(--signal-sell)]">
-                  {formatPrice(stopLoss)}{' '}
-                  <span className="font-terminal text-xs">{formatSignedPercent(stopPercent)}</span>
-                </span>
-              </button>
-
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded border-t border-[var(--border-subtle)] px-2 py-1 transition-colors hover:bg-[var(--bg-overlay)]"
-                onClick={() => void copyValue('Take Profit 1', takeProfit1)}
-              >
-                <span className="text-[var(--signal-buy)]">▲ TP1</span>
-                <span className="font-terminal font-semibold text-[var(--signal-buy)]">
-                  {formatPrice(takeProfit1)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit1Percent)}</span>
-                </span>
-              </button>
-
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded border-t border-[var(--border-subtle)] px-2 py-1 transition-colors hover:bg-[var(--bg-overlay)]"
-                onClick={() => void copyValue('Take Profit 2', takeProfit2)}
-              >
-                <span className="text-[var(--signal-buy)]">▲ TP2</span>
-                <span className="font-terminal font-semibold text-[var(--signal-buy)]">
-                  {formatPrice(takeProfit2)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit2Percent)}</span>
-                </span>
-              </button>
-            </div>
-
-            <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3 text-xs text-[var(--text-secondary)]">
-              <div className="flex items-center gap-2">
-                <Copy className="h-3.5 w-3.5" />
-                Clique em qualquer nível para copiar o valor.
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </Card>
     </div>
   );
 };
