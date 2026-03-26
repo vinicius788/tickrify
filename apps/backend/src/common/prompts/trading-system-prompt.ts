@@ -328,36 +328,51 @@ If 3+ reversal categories confirmed AND price at major level:
 \`\`\`
 Identify current price (e.g., EURUSD = 1.0850)
 Identify ATR or use standard pip ranges:
-  - Scalp (1m-5m): SL = 10-20 pips
-  - Day trade (15m-1h): SL = 20-40 pips  
-  - Swing (4h-1d): SL = 50-100 pips
+  - Scalp (1m-5m): SL = 15-30 pips (minimum 15 pips absolute)
+  - Day trade (15m-1h): SL = 30-60 pips (minimum 25 pips absolute)
+  - Swing (4h-1d): SL = 60-120 pips (minimum 50 pips absolute)
+  - Position (1w+): SL = 100-200 pips (minimum 80 pips absolute)
 
-BUY example at 1.0850:
-  Entry: 1.0852 (+2 pips buffer)
-  SL: 1.0820 (30 pips below) = -0.028%
-  TP1: 1.0895 (45 pips) = R:R 1:1.5
-  TP2: 1.0920 (70 pips) = R:R 1:2.3
-  TP3: 1.0955 (103 pips) = R:R 1:3.4
+  BUY example at 1.0850:
+  Entry: 1.0853 (+3 pips buffer)
+  SL: 1.0803 (50 pips below) = -0.046%
+  TP1: 1.0928 (75 pips) = R:R 1:1.5
+  TP2: 1.0983 (130 pips) = R:R 1:2.6
+  TP3: 1.1053 (200 pips) = R:R 1:4.0
 
 ALWAYS output: entry_pips, sl_pips, tp1_pips, tp2_pips
 \`\`\`
 
 **For Crypto (Type A) — PERCENTAGE + ABSOLUTE:**
 \`\`\`
-BTC at $84,000:
+BTC at $84,000 (scalp/day):
   Entry: $84,168 (+0.2%)
-  SL: $82,740 (-1.5%) = -$1,260
-  TP1: $86,310 (+2.5%) = +$2,142 | R:R 1:1.7
-  TP2: $88,200 (+5.0%) = +$4,032 | R:R 1:3.2
+  SL: $81,852 (-2.5%) = -$2,148
+  TP1: $87,192 (+3.8%) = +$3,024 | R:R 1:1.4
+  TP2: $90,720 (+8.0%) = +$6,552 | R:R 1:3.0
+  TP3: $96,600 (+15.0%) = +$12,432 | R:R 1:5.8
+
+BTC at $84,000 (swing):
+  Entry: $84,168 (+0.2%)
+  SL: $80,640 (-4.0%) = -$3,360
+  TP1: $89,040 (+6.0%) = +$4,872 | R:R 1:1.5
+  TP2: $95,760 (+14.0%) = +$11,592 | R:R 1:3.5
 \`\`\`
 
 **For Equities (Type C) — PERCENTAGE + DOLLAR:**
 \`\`\`
-AAPL at $165:
+AAPL at $165 (day trade):
   Entry: $165.33 (+0.2%)
-  SL: $162.52 (-1.5%) = -$2.48
-  TP1: $168.54 (+2.0%) = +$3.21 | R:R 1:1.3
-  TP2: $171.60 (+3.8%) = +$6.27 | R:R 1:2.5
+  SL: $161.04 (-2.0%) = -$4.29
+  TP1: $169.62 (+3.2%) = +$4.29 | R:R 1:1.0 (min)
+  TP2: $173.25 (+5.0%) = +$7.92 | R:R 1:1.8
+  TP3: $178.20 (+8.0%) = +$12.87 | R:R 1:3.0
+
+AAPL at $165 (swing):
+  Entry: $165.33 (+0.2%)
+  SL: $159.87 (-3.0%) = -$5.46
+  TP1: $171.60 (+4.0%) = +$6.27 | R:R 1:1.1
+  TP2: $178.20 (+8.0%) = +$12.87 | R:R 1:2.4
 \`\`\`
 
 **SL Placement Rules:**
@@ -454,7 +469,7 @@ AAPL at $165:
 → Threshold reduced to 45-48 points
 
 **Momentum Override requires:**
-- Tight SL (0.5-1% or 10-15 pips for forex)
+- Tight SL (1.0-1.5% or 15-25 pips for forex)
 - Minimum R:R 1:2
 - Explicit mention in output
 
@@ -480,7 +495,7 @@ AAPL at $165:
 - Delta confirming if Footprint available
 
 **All Exceptions require:**
-- Very tight SL (half of standard)
+- Tight SL (60-70% of standard — never less than half the minimum pip range)
 - Minimum R:R 1:2
 - Explicit exception label in output
 - Clear justification
