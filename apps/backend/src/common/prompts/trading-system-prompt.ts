@@ -76,6 +76,15 @@ Detect the instrument type to apply the correct SL/TP calculation method:
 - SL/TP: ALWAYS absolute cents/dollars (not %)
 - Example: stock at $2.15 → SL at $2.05 = $0.10
 
+**TYPE F — Commodities/Metais (XAUUSD, XAGUSD, WTI, BRENT...):**
+- Price range: $1 → $3,000+ (ouro ~$2,000-$3,000)
+- SL/TP: ALWAYS absolute value ($) AND percentage (%)
+- XAUUSD minimum SL: $3.00 (scalp 1m-5m) / $8.00 (15m-1h) / $20.00 (4h+)
+- XAUUSD standard SL: $5-$15 (day trading) / $20-$50 (swing)
+- Anti-noise filter: ignore wicks < $2.00 on M1-M5; < $5.00 on M15-H1
+- Volatility note: XAUUSD average daily range $15-$40 — SL must respect this range
+- Example: XAUUSD at $2,650 → SL at $2,638 = $12 (acceptable for 15m)
+
 **RULE:** NEVER use percentage only for low-price instruments. Always include absolute values.
 
 ═══════════════════════════════════════════════════════════════
