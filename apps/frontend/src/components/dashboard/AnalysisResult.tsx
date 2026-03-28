@@ -88,9 +88,9 @@ function normalizeRiskFactorsForView(value: unknown): string[] {
       }
     }
 
-    return merged.filter((item, index) => {
+    return merged.map((item) => item.replace(/\s+\d+\.?\s*$/, '').trim()).filter((item, index) => {
       const normalized = item.trim();
-      if (normalized.length < 15) {
+      if (normalized.length < 15 || /^\d+\.?$/.test(item)) {
         return false;
       }
       if (index > 0 && /^[a-záéíóúãõàâêô]/.test(normalized)) {
@@ -350,7 +350,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               </div>
 
               <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
-                <span className="text-[var(--signal-sell)]">▼ STOP LOSS</span>
+                <span className="whitespace-nowrap text-[var(--signal-sell)]">▼ STOP LOSS</span>
                 <button
                   type="button"
                   className="text-right font-terminal font-semibold text-[var(--signal-sell)] transition-opacity hover:opacity-80"

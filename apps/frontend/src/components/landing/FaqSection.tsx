@@ -32,7 +32,7 @@ const faqs = [
   {
     question: 'Posso cancelar minha assinatura a qualquer momento?',
     answer:
-      'Sim, via portal de cobrança. Antes da contratação, revise os termos e políticas vigentes para entender regras de renovação e cancelamento.',
+      'Sim, via portal de cobrança. O cancelamento interrompe as próximas renovações, mas não gera reembolso, estorno ou crédito: todas as compras são finais e não reembolsáveis. Antes da contratação, revise os termos e políticas vigentes para entender as regras de renovação, cancelamento e Política Sem Reembolso.',
   },
 ];
 
