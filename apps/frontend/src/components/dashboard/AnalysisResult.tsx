@@ -162,6 +162,8 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
     analysis.symbol || analysis.ticker || analysis.asset || fullResponse.symbol || fullResponse.ticker || 'UNKNOWN',
   ).trim() || 'UNKNOWN';
   const timeframe = String(analysis.timeframe || analysis.period || fullResponse.timeframe || 'UNKNOWN').trim() || 'UNKNOWN';
+  const detectedSession = String(analysis.detectedSession || fullResponse.detectedSession || '').trim() || null;
+  const sessionNote = String(analysis.sessionNote || fullResponse.sessionNote || '').trim() || null;
 
   const currentPrice = toNumber(analysis.currentPrice);
   const entry = toNumber(analysis.entry);
@@ -255,6 +257,11 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               </strong>
             </span>
             <span className="whitespace-nowrap font-terminal md:ml-auto">{formattedTimestamp}</span>
+            {detectedSession && (
+              <span className="whitespace-nowrap rounded-sm border border-[var(--border-subtle)] px-2 py-0.5 font-terminal text-xs text-[var(--text-secondary)] uppercase">
+                {detectedSession.replace('_', ' ')}
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -381,6 +388,12 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   {formatPrice(takeProfit2)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit2Percent)}</span>
                 </button>
               </div>
+
+              {sessionNote && (
+                <p className="rounded-sm bg-[var(--bg-overlay)] px-2 py-1.5 text-xs text-[var(--text-secondary)]">
+                  {sessionNote}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

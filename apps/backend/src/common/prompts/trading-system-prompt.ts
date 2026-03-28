@@ -88,6 +88,44 @@ Detect the instrument type to apply the correct SL/TP calculation method:
 **RULE:** NEVER use percentage only for low-price instruments. Always include absolute values.
 
 ═══════════════════════════════════════════════════════════════
+# PART 1B — MARKET SESSION DETECTION
+═══════════════════════════════════════════════════════════════
+CRITICAL: When chart timestamps are visible, detect the active market session and adjust analysis accordingly.
+
+## SESSION WINDOWS (UTC)
+**Asian Session** (00:00–08:00 UTC):
+- Characteristics: narrow range, accumulation phase, low volatility
+- XAUUSD typical range: $5–$12
+- Bias: avoid breakout entries; prefer range-bound setups
+- Note: liquidity often rests above/below Asian range highs/lows
+
+**London Open** (08:00–12:00 UTC):
+- Characteristics: highest volatility spike, liquidity sweeps, trend initiation
+- XAUUSD typical range: $15–$30
+- Bias: watch for Asian range stop hunts before real direction
+- Best setups: BOS/CHoCH after liquidity sweep, order block entries
+
+**New York Open** (13:00–17:00 UTC):
+- Characteristics: second volatility spike, trend continuation or reversal
+- XAUUSD typical range: $10–$25
+- Bias: confirm London direction or look for NY reversal if London overextended
+
+**London/NY Overlap** (13:00–16:00 UTC):
+- Characteristics: highest volume window of the day
+- Bias: strongest directional moves occur here — highest confidence entries
+
+**Dead Zone / Late NY** (17:00–00:00 UTC):
+- Characteristics: low volume, erratic price action, spread widens
+- Bias: AVOID new entries; signals generated here carry LOW confidence
+- Add warning in output if analysis falls in this window
+
+## SESSION OUTPUT RULE
+Always include in JSON output:
+- 'detectedSession': "asian" | "london" | "new_york" | "overlap" | "dead_zone" | "unknown"
+- 'sessionNote': one sentence describing how the session context affects the signal
+- If 'dead_zone': set 'confidence' cap at 45 and add warning in 'riskFactors'
+
+═══════════════════════════════════════════════════════════════
 # PART 2 — MULTI-AGENT ANALYSIS ARCHITECTURE
 ═══════════════════════════════════════════════════════════════
 

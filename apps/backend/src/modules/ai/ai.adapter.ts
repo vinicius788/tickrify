@@ -23,6 +23,8 @@ interface TradingAnalysisMarketStructure {
 interface TradingAnalysisDetails {
   symbol: string;
   timeframe: string;
+  detectedSession: string;
+  sessionNote: string;
   currentPrice: number;
   entry: number | null;
   stopLoss: number | null;
@@ -136,6 +138,8 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
     analysis: {
       symbol: ensureString(parsedAnalysis.symbol, 'UNKNOWN'),
       timeframe: ensureString(parsedAnalysis.timeframe, 'UNKNOWN'),
+      detectedSession: ensureString(parsedAnalysis.detectedSession, 'unknown'),
+      sessionNote: ensureString(parsedAnalysis.sessionNote, 'Contexto de sessão não informado.'),
       currentPrice: ensureNumber(parsedAnalysis.currentPrice, 0),
       entry: ensureNumberOrNull(parsedAnalysis.entry),
       stopLoss: ensureNumberOrNull(parsedAnalysis.stopLoss),
@@ -310,6 +314,8 @@ export class AIAdapter {
                   properties: {
                     symbol: { type: 'string' },
                     timeframe: { type: 'string' },
+                    detectedSession: { type: 'string' },
+                    sessionNote: { type: 'string' },
                     currentPrice: { type: 'number' },
                     entry: { type: ['number', 'null'] },
                     stopLoss: { type: ['number', 'null'] },
@@ -355,6 +361,8 @@ export class AIAdapter {
                   required: [
                     'symbol',
                     'timeframe',
+                    'detectedSession',
+                    'sessionNote',
                     'currentPrice',
                     'entry',
                     'stopLoss',
