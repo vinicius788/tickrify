@@ -1,5 +1,6 @@
 import { Instagram, Linkedin } from 'lucide-react';
 import TermsOfServiceDialog from '@/components/landing/TermsOfServiceDialog';
+import officialLogo from '@/assets/tickrify-logo-official.png';
 
 const XBrandIcon = ({ className = 'h-5 w-5' }: { className?: string }) => (
   <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor" className={className}>
@@ -13,11 +14,8 @@ const Footer = () => {
       <div className="container py-12">
         <div className="grid gap-8 md:grid-cols-[1.2fr_1fr_1fr]">
           <div>
-            <a href="/" className="inline-flex items-center gap-2">
-              <img src="/icon.png" alt="Tickrify" className="h-8 w-8" />
-              <span className="font-display text-3xl font-semibold uppercase tracking-wide text-[var(--text-primary)]">
-                Tickrify
-              </span>
+            <a href="/" className="inline-flex items-center">
+              <img src={officialLogo} alt="Tickrify" className="h-14 w-auto object-contain" />
             </a>
             <p className="mt-3 text-sm text-[var(--text-secondary)]">Análise técnica institucional com IA</p>
 

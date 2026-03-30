@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import officialLogo from '@/assets/tickrify-logo-official.png';
 import { Menu } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { SignInButton, SignedIn, SignedOut, useUser } from '@clerk/clerk-react';
@@ -27,19 +28,8 @@ const Header = () => {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-[var(--border)] bg-[rgba(8,8,8,0.72)] [backdrop-filter:blur(12px)]">
       <div className="container flex h-16 items-center justify-between gap-4">
-        <a href="/" className="inline-flex items-center gap-2">
-          <img src="/icon.png" alt="Tickrify" className="h-8 w-8" />
-          <span
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 800,
-              fontSize: '1.08rem',
-              letterSpacing: '-0.01em',
-              color: 'var(--text-primary)',
-            }}
-          >
-            TICKRIFY
-          </span>
+        <a href="/" className="inline-flex items-center">
+          <img src={officialLogo} alt="Tickrify" className="h-12 w-auto object-contain" />
         </a>
 
         <nav className="hidden items-center gap-6 md:flex">

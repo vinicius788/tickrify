@@ -20,6 +20,7 @@ import { createCheckoutSession, type BillingCycle } from "@/lib/stripe";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
 import { useTicks } from "@/hooks/useTicks";
+import officialIcon from "@/assets/tickrify-icon-official.png";
 
 type View = 'new-analysis' | 'my-trades' | 'watchlist' | 'analysis-result' | 'loading' | 'error';
 type RecentAnalysisItem = {
@@ -410,7 +411,7 @@ const DashboardPage = () => {
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
         <div className="flex h-14 items-center justify-between gap-3 px-4 md:px-6">
           <Link to={user ? "/dashboard" : "/"} className="flex min-w-0 shrink-0 items-center gap-2">
-            <img src="/logo.png" alt="Tickrify" className="h-7 w-7" />
+            <img src={officialIcon} alt="Tickrify" className="h-8 w-auto shrink-0 object-contain" />
             <div className="hidden flex-col leading-none md:flex">
               <span className="text-sm font-bold tracking-wide">TICKRIFY</span>
               <span className="text-xs text-muted-foreground">Institutional Terminal</span>
