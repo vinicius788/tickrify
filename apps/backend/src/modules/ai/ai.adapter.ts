@@ -292,7 +292,7 @@ export class AIAdapter {
         (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
       const response = await this.openai.chat.completions.create({
         model,
-        max_tokens: 2000,
+        max_tokens: 4000,
         temperature: 0.1,
         top_p: 0.1,
         seed: 42,
@@ -314,7 +314,10 @@ export class AIAdapter {
                   properties: {
                     symbol: { type: 'string' },
                     timeframe: { type: 'string' },
-                    detectedSession: { type: 'string' },
+                    detectedSession: {
+                      type: 'string',
+                      enum: ['asian', 'london', 'new_york', 'overlap', 'dead_zone', 'unknown'],
+                    },
                     sessionNote: { type: 'string' },
                     currentPrice: { type: 'number' },
                     entry: { type: ['number', 'null'] },
