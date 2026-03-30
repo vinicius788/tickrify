@@ -59,6 +59,37 @@ interface SupabaseObjectReference {
   path: string;
 }
 
+export type AIAnalysisErrorCode =
+  | 'openai_empty_content'
+  | 'openai_invalid_json'
+  | 'openai_truncated_response'
+  | 'openai_refusal'
+  | 'openai_billing'
+  | 'openai_rate_limit'
+  | 'openai_request_failed';
+
+export class AIAnalysisError extends Error {
+  readonly code: AIAnalysisErrorCode;
+  readonly retriable: boolean;
+  readonly status?: number;
+  readonly rawContent?: string;
+
+  constructor(params: {
+    message: string;
+    code: AIAnalysisErrorCode;
+    retriable: boolean;
+    status?: number;
+    rawContent?: string;
+  }) {
+    super(params.message);
+    this.name = 'AIAnalysisError';
+    this.code = params.code;
+    this.retriable = params.retriable;
+    this.status = params.status;
+    this.rawContent = params.rawContent;
+  }
+}
+
 function mapSchemaRecommendationToInternal(value: SchemaRecommendation): Recommendation {
   if (value === 'BUY' || value === 'COMPRA') {
     return 'BUY';
@@ -111,6 +142,32 @@ function normalizeSchemaBias(value: unknown): SchemaMarketBias {
     return biasRaw;
   }
   return 'neutral';
+}
+
+function extractMessageContent(content: unknown): string {
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item;
+        }
+
+        if (item && typeof item === 'object' && 'text' in item) {
+          const text = (item as { text?: unknown }).text;
+          return typeof text === 'string' ? text : '';
+        }
+
+        return '';
+      })
+      .join('\n')
+      .trim();
+  }
+
+  return String(content || '').trim();
 }
 
 function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
@@ -421,12 +478,56 @@ export class AIAdapter {
         ],
       });
 
-      const content = String(response.choices[0]?.message?.content || '').trim();
-      if (!content) {
-        throw new Error('OpenAI retornou conteúdo vazio para análise.');
+      const choice = response.choices[0];
+      const finishReason = String(choice?.finish_reason || '').trim().toLowerCase();
+      const refusal =
+        choice?.message &&
+        typeof (choice.message as { refusal?: unknown }).refusal === 'string'
+          ? String((choice.message as { refusal?: string }).refusal || '').trim()
+          : '';
+      const content = extractMessageContent(choice?.message?.content);
+
+      if (refusal) {
+        throw new AIAnalysisError({
+          code: 'openai_refusal',
+          message: `OpenAI recusou a resposta estruturada: ${refusal}`,
+          retriable: false,
+          rawContent: refusal,
+        });
       }
 
-      const parsed = parseSchemaResult(content);
+      if (!content) {
+        throw new AIAnalysisError({
+          code: 'openai_empty_content',
+          message: 'OpenAI retornou conteúdo vazio para análise.',
+          retriable: false,
+        });
+      }
+
+      if (finishReason === 'length') {
+        throw new AIAnalysisError({
+          code: 'openai_truncated_response',
+          message: 'OpenAI truncou a resposta antes de concluir o JSON do schema.',
+          retriable: false,
+          rawContent: content,
+        });
+      }
+
+      let parsed: TradingAnalysisSchemaResult;
+      try {
+        parsed = parseSchemaResult(content);
+      } catch (error) {
+        throw new AIAnalysisError({
+          code: 'openai_invalid_json',
+          message:
+            error instanceof Error
+              ? error.message
+              : 'Resposta da OpenAI não retornou JSON válido.',
+          retriable: false,
+          rawContent: content,
+        });
+      }
+
       const recommendation = mapSchemaRecommendationToInternal(parsed.recommendation);
       const confidence = normalizeConfidence(parsed.confidence, 50);
 
@@ -442,10 +543,47 @@ export class AIAdapter {
         rawContent: content,
       };
     } catch (error) {
+      if (error instanceof AIAnalysisError) {
+        const details = [
+          `code=${error.code}`,
+          error.status ? `status=${error.status}` : null,
+          error.rawContent ? `raw=${error.rawContent.slice(0, 500)}` : null,
+        ]
+          .filter(Boolean)
+          .join(' ');
+
+        this.logger.error(`AI analysis failed: ${error.message}${details ? ` ${details}` : ''}`);
+        throw error;
+      }
+
+      const status =
+        typeof (error as { status?: unknown })?.status === 'number'
+          ? Number((error as { status?: number }).status)
+          : undefined;
+      const message = error instanceof Error ? error.message : 'unknown error';
+      const loweredMessage = message.toLowerCase();
+      const isBillingError =
+        status === 429 &&
+        (loweredMessage.includes('account is not active') ||
+          loweredMessage.includes('billing') ||
+          loweredMessage.includes('quota'));
+      const aiError = new AIAnalysisError({
+        code: isBillingError
+          ? 'openai_billing'
+          : status === 429
+            ? 'openai_rate_limit'
+            : 'openai_request_failed',
+        message,
+        retriable: status === 429 ? !isBillingError : Boolean(status && status >= 500),
+        status,
+      });
+
       this.logger.error(
-        `AI analysis failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+        `AI analysis failed: ${aiError.message} code=${aiError.code}${
+          aiError.status ? ` status=${aiError.status}` : ''
+        }`,
       );
-      throw new Error('Failed to analyze image with AI');
+      throw aiError;
     }
   }
 }
