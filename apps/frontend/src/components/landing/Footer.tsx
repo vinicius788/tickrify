@@ -1,4 +1,4 @@
-import { Instagram, Linkedin } from 'lucide-react';
+import { Instagram } from 'lucide-react';
 import TermsOfServiceDialog from '@/components/landing/TermsOfServiceDialog';
 import officialLogo from '@/assets/tickrify-logo-official.png';
 
@@ -30,9 +30,6 @@ const Footer = () => {
               </a>
               <a href="https://instagram.com/tickrify" target="_blank" rel="noreferrer" aria-label="Instagram" className="footer-social-link">
                 <Instagram className="h-5 w-5" />
-              </a>
-              <a href="https://linkedin.com" target="_blank" rel="noreferrer" aria-label="Linkedin" className="footer-social-link">
-                <Linkedin className="h-5 w-5" />
               </a>
             </div>
           </div>
