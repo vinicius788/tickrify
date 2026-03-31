@@ -10,7 +10,7 @@ type RealStat = {
 
 const REAL_STATS: RealStat[] = [
   {
-    value: '< 3s',
+    value: '16s',
     label: 'tempo médio de análise',
     sublabel: 'do upload ao resultado',
   },
@@ -53,6 +53,10 @@ const AnimatedMetricValue = ({ value }: { value: string }) => {
     const formatValue = (current: number) => {
       if (value.startsWith('<')) {
         return `< ${current}s`;
+      }
+
+      if (value.endsWith('s')) {
+        return `${current}s`;
       }
 
       if (value.endsWith('+')) {
