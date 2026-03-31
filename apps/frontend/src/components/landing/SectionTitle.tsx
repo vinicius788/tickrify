@@ -4,40 +4,36 @@ type SectionTitleProps = {
   highlight: string;
   align?: 'left' | 'center';
   subtitle?: string;
+  highlightClassName?: string;
 };
 
-export const SectionTitle = ({ label, title, highlight, align = 'left', subtitle }: SectionTitleProps) => {
+export const SectionTitle = ({
+  label,
+  title,
+  highlight,
+  align = 'left',
+  subtitle,
+  highlightClassName = '',
+}: SectionTitleProps) => {
   const isCentered = align === 'center';
 
   return (
     <div className={`mb-10 ${isCentered ? 'mx-auto text-center' : ''}`}>
-      <p
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: '0.7rem',
-          fontWeight: 500,
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          color: '#00D26A',
-          marginBottom: '10px',
-        }}
-      >
+      <p className="font-terminal text-[0.7rem] font-medium uppercase tracking-[0.12em] text-[var(--text-accent)]">
         {label}
       </p>
-      <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'clamp(1.6rem, 2.2vw, 2rem)', lineHeight: 1.3, color: '#E8ECF4' }}>
-        {title} <span className="text-[var(--signal-buy)]">{highlight}</span>
+      <h2
+        className="mt-3 text-[clamp(2rem,4vw,3.5rem)] font-bold leading-[1.04] tracking-[-0.03em] text-[var(--text-primary)]"
+        style={{ fontFamily: 'var(--font-display)' }}
+      >
+        {title} <span className={`hero-highlight ${highlightClassName}`.trim()}>{highlight}</span>
       </h2>
       {subtitle ? (
         <p
-          style={{
-            fontFamily: 'var(--font-sans)',
-            fontSize: '0.875rem',
-            color: '#8892A4',
-            marginTop: '10px',
-            lineHeight: 1.6,
-            maxWidth: '480px',
-            ...(isCentered ? { margin: '10px auto 0' } : {}),
-          }}
+          className={`mt-4 max-w-[560px] text-[0.95rem] leading-7 text-[var(--text-secondary)] ${
+            isCentered ? 'mx-auto' : ''
+          }`}
+          style={{ fontFamily: 'var(--font-sans)' }}
         >
           {subtitle}
         </p>

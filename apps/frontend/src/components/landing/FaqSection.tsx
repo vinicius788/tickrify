@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Plus } from 'lucide-react';
 import { useReveal } from '@/hooks/useReveal';
 import SectionTitle from '@/components/landing/SectionTitle';
 
@@ -41,35 +41,35 @@ const FaqSection = () => {
   const [openItem, setOpenItem] = useState<string>('item-0');
 
   return (
-    <section ref={revealRef} id="faq" className="reveal-on-scroll py-28">
+    <section ref={revealRef} id="faq" className="landing-section section-primary reveal-on-scroll">
       <div className="container max-w-4xl">
         <SectionTitle label="FAQ" title="Dúvidas de" highlight="traders profissionais." />
 
-        <Accordion type="single" collapsible value={openItem} onValueChange={(value) => setOpenItem(value || '')}>
+        <div>
           {faqs.map((faq, index) => {
             const value = `item-${index}`;
             const isOpen = openItem === value;
 
             return (
-              <AccordionItem
-                key={value}
-                value={value}
-                className={`border-[var(--border-subtle)] px-4 transition-colors ${
-                  isOpen
-                    ? 'border-l-2 border-l-[var(--signal-buy)] bg-[var(--signal-buy-bg)]'
-                    : 'bg-[var(--bg-elevated)]'
-                }`}
-              >
-                <AccordionTrigger className="text-base font-semibold text-[var(--text-primary)] hover:no-underline">
-                  {faq.question}
-                </AccordionTrigger>
-                <AccordionContent className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                  {faq.answer}
-                </AccordionContent>
-              </AccordionItem>
+              <div key={value} className="faq-item-shell" data-state={isOpen ? 'open' : 'closed'}>
+                <button
+                  type="button"
+                  className="faq-question-button"
+                  onClick={() => setOpenItem(isOpen ? '' : value)}
+                  aria-expanded={isOpen}
+                >
+                  <span>{faq.question}</span>
+                  <span className="faq-icon-shell">
+                    <Plus className="h-4 w-4" />
+                  </span>
+                </button>
+                <div className="faq-answer-shell">
+                  <p>{faq.answer}</p>
+                </div>
+              </div>
             );
           })}
-        </Accordion>
+        </div>
       </div>
     </section>
   );

@@ -32,16 +32,22 @@ const RECENT_ANALYSES = [
 ];
 
 const signalClass = (signal: string) => {
-  if (signal === 'COMPRA') return 'text-[var(--signal-buy)] border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)]';
-  if (signal === 'VENDA') return 'text-[var(--signal-sell)] border-[var(--signal-sell-border)] bg-[var(--signal-sell-bg)]';
-  return 'text-[var(--signal-hold)] border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)]';
+  if (signal === 'COMPRA') return 'badge-compra';
+  if (signal === 'VENDA') return 'badge-venda';
+  return 'badge-aguardar';
+};
+
+const toneClass = (signal: string) => {
+  if (signal === 'COMPRA') return 'compra';
+  if (signal === 'VENDA') return 'venda';
+  return 'aguardar';
 };
 
 const RecentAnalysesSection = () => {
   const revealRef = useReveal<HTMLElement>();
 
   return (
-    <section ref={revealRef} className="reveal-on-scroll py-28">
+    <section ref={revealRef} className="landing-section section-primary reveal-on-scroll">
       <div className="container">
         <SectionTitle
           label="Análises recentes"
@@ -54,32 +60,43 @@ const RecentAnalysesSection = () => {
           {RECENT_ANALYSES.map((analysis) => (
             <article
               key={`${analysis.asset}-${analysis.timeframe}-${analysis.signal}`}
-              className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-5"
+              className={`analysis-result-card ${toneClass(analysis.signal)}`}
             >
-              <div className="mb-3 flex items-center justify-between">
-                <p className="font-terminal text-sm text-[var(--text-primary)]">
-                  {analysis.asset} <span className="text-[var(--text-secondary)]">{analysis.timeframe}</span>
-                </p>
-                <span
-                  className={`rounded border px-2 py-1 font-terminal text-[10px] uppercase tracking-widest ${signalClass(analysis.signal)}`}
-                >
-                  {analysis.signal}
-                </span>
+              <div className="analysis-header">
+                <div>
+                  <p className="analysis-pair">{analysis.asset}</p>
+                  <p className="analysis-tf">{analysis.timeframe}</p>
+                </div>
+                <span className={signalClass(analysis.signal)}>{analysis.signal}</span>
               </div>
 
-              <div className="space-y-2 font-terminal text-xs text-[var(--text-secondary)]">
-                <p>
-                  Entry: <span className="text-[var(--text-primary)]">{analysis.entry}</span>
-                </p>
-                <p>
-                  Resultado: <span className="text-[var(--text-primary)]">{analysis.result}</span>
-                </p>
-                <p>
-                  Bias: <span className="text-[var(--text-primary)]">{analysis.bias}</span>
-                </p>
-                <p>
-                  Data: <span className="text-[var(--text-primary)]">{analysis.date}</span>
-                </p>
+              <div className="analysis-data">
+                <div className="analysis-row">
+                  <span>Entry</span>
+                  <span className="analysis-value">{analysis.entry}</span>
+                </div>
+                <div className="analysis-row">
+                  <span>Resultado</span>
+                  <span
+                    className={
+                      analysis.signal === 'VENDA'
+                        ? 'analysis-value-negative'
+                        : analysis.signal === 'AGUARDAR'
+                          ? 'analysis-value'
+                          : 'analysis-value-positive'
+                    }
+                  >
+                    {analysis.result}
+                  </span>
+                </div>
+                <div className="analysis-row">
+                  <span>Bias</span>
+                  <span className="analysis-value">{analysis.bias}</span>
+                </div>
+                <div className="analysis-row">
+                  <span>Data</span>
+                  <span className="analysis-value">{analysis.date}</span>
+                </div>
               </div>
             </article>
           ))}
