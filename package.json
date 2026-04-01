@@ -33,6 +33,7 @@
     "test": "npm test -w apps/backend -- --runInBand"
   },
   "devDependencies": {
+    "autoprefixer": "^10.4.27",
     "concurrently": "^8.2.2"
   },
   "overrides": {
