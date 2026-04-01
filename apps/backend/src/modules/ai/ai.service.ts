@@ -12,8 +12,8 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
 import { AIAdapter } from './ai.adapter';
-import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
 import { UploadedFile } from '../../common/interfaces/multer';
+import { PromptBuilderService } from '../prompt/prompt-builder.service';
 import {
   buildPersistedAnalysisPayload,
   normalizeStoredAnalysis,
@@ -31,15 +31,17 @@ import {
 import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { TICK_COSTS, AnalysisType } from '../ticks/tick-packages';
 import { TicksService } from '../ticks/ticks.service';
+import {
+  AnalysisContext,
+  validateImageHook,
+  cacheResultHook,
+  logMetricsHook,
+  runPreHooks,
+  runPostHooks,
+} from './analysis-pipeline';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
 const DEFAULT_FREE_ANALYSIS_LIMIT = 3;
-const DETERMINISTIC_CONSISTENCY_INSTRUCTION = `
-# CONSISTÊNCIA OBRIGATÓRIA
-Seja determinístico. Para o mesmo gráfico, sempre gere a mesma análise.
-Não varie sua recomendação entre chamadas para a mesma imagem.
-Se a estrutura indica COMPRA, indique COMPRA. Não mude para AGUARDAR sem razão técnica clara.
-`.trim();
 
 type ApiAnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
@@ -51,6 +53,7 @@ export class AiService {
     private prisma: PrismaService,
     private aiAdapter: AIAdapter,
     private ticksService: TicksService,
+    private promptBuilder: PromptBuilderService,
   ) {}
 
   async createAnalysis(
@@ -89,6 +92,7 @@ export class AiService {
       const latestPrompt = await this.prisma.promptConfig.findFirst({
         where: { isActive: true },
         orderBy: { version: 'desc' },
+        select: { version: true },
       });
       promptVersion = latestPrompt?.version;
     }
@@ -181,6 +185,163 @@ export class AiService {
       userId,
       analysisType: normalizedAnalysisType,
     });
+  }
+
+  /**
+   * Streaming analysis via Server-Sent Events.
+   * Emits: progress (phase/pct), chunk (text delta), result (full response), error.
+   * Does not use the queue — runs synchronously for immediate feedback.
+   */
+  async streamAnalysis(
+    userId: string,
+    imageFile: UploadedFile | undefined,
+    base64Image: string | undefined,
+    promptOverride: string | undefined,
+    analysisType: AnalysisType = 'quick',
+    sendEvent: (event: string, data: unknown) => void,
+  ): Promise<void> {
+    const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
+
+    sendEvent('progress', { phase: 'uploading', pct: 0 });
+
+    const preparedImage = this.prepareImagePayload(imageFile, base64Image);
+    const storage = new ImageStorageClient();
+    let imageUrl = preparedImage.dataUrl;
+
+    if (storage.isConfigured()) {
+      try {
+        imageUrl = await storage.uploadBuffer({
+          buffer: preparedImage.buffer,
+          mimeType: preparedImage.mimeType,
+          extension: preparedImage.extension,
+          pathPrefix: `analyses/${userId}/original`,
+        });
+      } catch (error) {
+        if (isProductionRuntime()) throw error;
+        imageUrl = preparedImage.dataUrl;
+      }
+    }
+
+    sendEvent('progress', { phase: 'uploading', pct: 20 });
+
+    await this.enforceAccess(userId, normalizedAnalysisType);
+
+    const promptVersion = promptOverride
+      ? undefined
+      : (await this.prisma.promptConfig.findFirst({
+          where: { isActive: true },
+          orderBy: { version: 'desc' },
+          select: { version: true },
+        }))?.version;
+
+    const analysis = await this.prisma.analysis.create({
+      data: { userId, imageUrl, status: 'processing', promptVer: promptVersion },
+    });
+
+    sendEvent('progress', { phase: 'analyzing', pct: 25 });
+
+    try {
+      const prompt = await this.promptBuilder.buildPromptByVersion(
+        normalizedAnalysisType,
+        promptVersion,
+        promptOverride,
+      );
+
+      let partialText = '';
+      let chunkCount = 0;
+      const totalEstimatedChunks = 80;
+
+      for await (const delta of this.aiAdapter.streamAnalyzeImage(
+        imageUrl,
+        prompt,
+        normalizedAnalysisType,
+      )) {
+        partialText += delta;
+        sendEvent('chunk', { text: delta });
+
+        chunkCount++;
+        const analyzingPct = Math.min(
+          79,
+          25 + Math.floor((chunkCount / totalEstimatedChunks) * 54),
+        );
+        sendEvent('progress', { phase: 'analyzing', pct: analyzingPct });
+      }
+
+      sendEvent('progress', { phase: 'structuring', pct: 80 });
+
+      // Parse final JSON from accumulated text (same logic as analyzeImage)
+      const { parseJsonFromContent } = await import('../../common/utils/analysis-normalizer');
+      const parsed = parseJsonFromContent(partialText);
+      if (!parsed) {
+        throw new Error('AI response did not contain valid JSON.');
+      }
+
+      // Build a minimal AIAnalysisResponse from parsed data
+      const { normalizeRecommendation, normalizeBias: normalizeBiasUtil, normalizeConfidence: normalizeConf } =
+        await import('../../common/utils/analysis-normalizer');
+      const recommendation = normalizeRecommendation(parsed.recommendation);
+      const bias = normalizeBiasUtil(parsed.analysis?.marketStructure?.bias, recommendation);
+      const confidence = normalizeConf(parsed.confidence, 50);
+
+      const aiResponse = {
+        recommendation,
+        bias,
+        confidence,
+        reasoning: String(parsed.analysis?.reasoning || ''),
+        analysis: parsed.analysis,
+        drawingPlan: null as null,
+        drawingFailed: true,
+        rawResponse: parsed,
+        rawContent: partialText,
+      };
+
+      let normalizedPayload = buildPersistedAnalysisPayload({
+        source: (parsed as Record<string, unknown>) || {},
+        recommendation,
+        bias,
+        confidence,
+        reasoning: aiResponse.reasoning,
+        analysis: aiResponse.analysis,
+        drawingPlan: null,
+        originalImageUrl: imageUrl,
+      });
+
+      normalizedPayload = await this.persistAnnotatedImage(normalizedPayload, userId);
+
+      const updated = await this.prisma.analysis.update({
+        where: { id: analysis.id },
+        data: {
+          status: 'completed',
+          recommendation: normalizedPayload.recommendation as any,
+          confidence: normalizedPayload.confidence,
+          reasoning: normalizedPayload.reasoning,
+          imageUrl: normalizedPayload.originalImageUrl,
+          result: normalizedPayload.fullResponse as any,
+          fullResponse: partialText,
+          errorMessage: null,
+        },
+      });
+
+      sendEvent('progress', { phase: 'structuring', pct: 100 });
+      sendEvent('result', await this.serializeAnalysis(updated));
+    } catch (error) {
+      const safeMessage = this.safeErrorMessage(error);
+      await this.prisma.analysis.update({
+        where: { id: analysis.id },
+        data: {
+          status: 'failed',
+          reasoning: safeMessage,
+          errorMessage: safeMessage,
+          result: Prisma.DbNull,
+        },
+      });
+
+      sendEvent('error', {
+        code: 'analysis_failed',
+        message: safeMessage,
+        retriable: false,
+      });
+    }
   }
 
   async getAnalysis(id: string, userId: string) {
@@ -337,14 +498,25 @@ export class AiService {
     analysisType: AnalysisType;
   }) {
     const { analysisId, imageUrl, promptOverride, promptVersion, userId, analysisType } = params;
+    const startedAt = Date.now();
 
     await this.prisma.analysis.update({
       where: { id: analysisId },
       data: { status: 'processing' },
     });
 
+    const tickBalance = await this.ticksService.getBalance(userId);
+    const pipelineCtx: AnalysisContext = { userId, imageUrl, analysisType, tickBalance };
+
+    // Pre-hooks (image validation only — access/tick checks already done in createAnalysis)
+    await runPreHooks(pipelineCtx, [validateImageHook()]);
+
     try {
-      const prompt = await this.resolvePrompt(promptOverride, promptVersion);
+      const prompt = await this.promptBuilder.buildPromptByVersion(
+        analysisType,
+        promptVersion,
+        promptOverride,
+      );
       const aiResponse = await this.aiAdapter.analyzeImage(imageUrl, prompt, analysisType);
 
       let normalizedPayload = buildPersistedAnalysisPayload({
@@ -377,6 +549,12 @@ export class AiService {
           errorMessage: null,
         },
       });
+
+      const model = process.env.AI_MODEL || (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
+      await runPostHooks(pipelineCtx, aiResponse, [
+        cacheResultHook({ ticksService: this.ticksService }),
+        logMetricsHook({ ticksService: this.ticksService, logger: this.logger }, startedAt, model),
+      ], this.logger);
 
       return this.serializeAnalysis(updated);
     } catch (error) {
@@ -445,43 +623,6 @@ export class AiService {
     }
 
     return payload;
-  }
-
-  private async resolvePrompt(promptOverride?: string, promptVersion?: number): Promise<string> {
-    if (promptOverride) {
-      return this.withDeterministicConsistencyInstruction(promptOverride);
-    }
-
-    if (promptVersion) {
-      const promptConfig = await this.prisma.promptConfig.findUnique({
-        where: { version: promptVersion },
-      });
-      if (promptConfig?.prompt) {
-        return this.withDeterministicConsistencyInstruction(promptConfig.prompt);
-      }
-    }
-
-    const latestPrompt = await this.prisma.promptConfig.findFirst({
-      where: { isActive: true },
-      orderBy: { version: 'desc' },
-    });
-
-    return this.withDeterministicConsistencyInstruction(
-      latestPrompt?.prompt || TRADING_SYSTEM_PROMPT,
-    );
-  }
-
-  private withDeterministicConsistencyInstruction(prompt: string): string {
-    const normalizedPrompt = String(prompt || '').trim();
-    if (!normalizedPrompt) {
-      return DETERMINISTIC_CONSISTENCY_INSTRUCTION;
-    }
-
-    if (normalizedPrompt.includes('Seja determinístico. Para o mesmo gráfico')) {
-      return normalizedPrompt;
-    }
-
-    return `${normalizedPrompt}\n\n${DETERMINISTIC_CONSISTENCY_INSTRUCTION}`;
   }
 
   private async enforceAccess(userId: string, analysisType: AnalysisType): Promise<void> {
