@@ -59,9 +59,10 @@ export function getAiQueue(): Queue | null {
       connection: redisConnection as any,
       defaultJobOptions: {
         attempts: 3,
+        // Backoff: attempt 1=5s, attempt 2=30s, attempt 3=120s
         backoff: {
-          type: 'exponential',
-          delay: 2000,
+          type: 'custom',
+          delay: 5000,
         },
         removeOnComplete: 100,
         removeOnFail: 100,

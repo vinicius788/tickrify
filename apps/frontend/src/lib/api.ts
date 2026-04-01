@@ -106,6 +106,8 @@ export interface AIAnalysisResponse {
   timeframe?: string | null;
   period?: string | null;
   reasoning?: string;
+  errorMessage?: string | null;
+  errorCode?: string | null;
   drawing_plan?: {
     elements: Array<Record<string, unknown>>;
   } | null;

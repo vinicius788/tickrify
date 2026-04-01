@@ -88,6 +88,33 @@ export class AIAnalysisError extends Error {
     this.status = params.status;
     this.rawContent = params.rawContent;
   }
+
+  static isRetryable(error: unknown): boolean {
+    return (
+      error instanceof AIAnalysisError &&
+      error.code === 'openai_rate_limit' &&
+      error.retriable === true
+    );
+  }
+
+  static toUserMessage(error: unknown): string {
+    if (!(error instanceof AIAnalysisError)) {
+      return 'Erro na análise. Tente novamente.';
+    }
+
+    switch (error.code) {
+      case 'openai_billing':
+        return 'Limite de análises atingido. Tente novamente mais tarde.';
+      case 'openai_rate_limit':
+        return 'Serviço temporariamente sobrecarregado. Aguarde alguns segundos.';
+      case 'openai_truncated_response':
+        return 'Análise incompleta. Tente com um gráfico mais simples.';
+      case 'openai_empty_content':
+        return 'Não foi possível analisar a imagem. Tente novamente.';
+      default:
+        return 'Erro na análise. Tente novamente.';
+    }
+  }
 }
 
 function mapSchemaRecommendationToInternal(value: SchemaRecommendation): Recommendation {
@@ -335,6 +362,45 @@ export class AIAdapter {
     }
 
     return data.signedUrl;
+  }
+
+  async *streamAnalyzeImage(
+    imageUrl: string,
+    prompt: string,
+    analysisType: AnalysisType = 'quick',
+  ): AsyncGenerator<string> {
+    const signedImageUrl = await this.resolveImageUrlForOpenAi(imageUrl);
+    const model =
+      process.env.AI_MODEL || (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
+
+    const stream = await this.openai.chat.completions.create({
+      model,
+      max_tokens: 4000,
+      temperature: 0.1,
+      top_p: 0.1,
+      seed: 42,
+      stream: true,
+      messages: [
+        { role: 'system', content: String(prompt || '').trim() },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: 'Analise o gráfico e responda exclusivamente no JSON do schema. Não escreva texto fora do JSON.',
+            },
+            { type: 'image_url', image_url: { url: signedImageUrl, detail: 'high' } },
+          ],
+        },
+      ],
+    });
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content;
+      if (delta) {
+        yield delta;
+      }
+    }
   }
 
   async analyzeImage(

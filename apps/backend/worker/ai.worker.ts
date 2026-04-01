@@ -755,13 +755,31 @@ async function processAnalysis(job: Job<JobData>) {
       throw new UnrecoverableError(error.message);
     }
 
+    // For retriable rate-limit errors, the job will be retried by BullMQ automatically.
+    // Update errorMessage with a friendly message so the frontend can show it while retrying.
+    if (AIAnalysisError.isRetryable(error)) {
+      await prisma.analysis.update({
+        where: { id: analysisId },
+        data: {
+          errorMessage: AIAnalysisError.toUserMessage(error),
+        },
+      });
+    }
+
     throw error;
   }
 }
 
+// Custom backoff: attempt 1→5s, 2→30s, 3→120s
+const RETRY_DELAYS_MS = [5_000, 30_000, 120_000];
+
 const worker = new Worker<JobData>('ai-analysis', processAnalysis, {
   connection: getRedisConnection() as any,
   concurrency: 3,
+  settings: {
+    backoffStrategy: (attemptsMade: number) =>
+      RETRY_DELAYS_MS[Math.min(attemptsMade, RETRY_DELAYS_MS.length) - 1] ?? 120_000,
+  },
 });
 
 worker.on('completed', (job) => {
