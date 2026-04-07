@@ -64,7 +64,7 @@ export class AiService {
     analysisType: AnalysisType = 'quick',
   ) {
     const preparedImage = this.prepareImagePayload(imageFile, base64Image);
-    const queueReadiness = await this.waitForQueueReady(10_000);
+    const queueReadiness = await getAiQueueReadiness();
 
     if (isProductionRuntime() && !queueReadiness.configured) {
       throw new ServiceUnavailableException({
@@ -87,48 +87,51 @@ export class AiService {
       });
     }
 
-    let promptVersion: number | undefined;
-    if (!promptOverride) {
-      const latestPrompt = await this.prisma.promptConfig.findFirst({
-        where: { isActive: true },
-        orderBy: { version: 'desc' },
-        select: { version: true },
-      });
-      promptVersion = latestPrompt?.version;
-    }
-
+    const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
     const storage = new ImageStorageClient();
-    let imageUrl = preparedImage.dataUrl;
 
-    if (storage.isConfigured()) {
-      try {
-        imageUrl = await storage.uploadBuffer({
-          buffer: preparedImage.buffer,
-          mimeType: preparedImage.mimeType,
-          extension: preparedImage.extension,
-          pathPrefix: `analyses/${userId}/original`,
-        });
-      } catch (error) {
-        if (isProductionRuntime()) {
-          throw error;
-        }
-
-        this.logger.warn(
-          `Storage upload failed in non-production, falling back to inline image payload: ${
-            error instanceof Error ? error.message : 'unknown error'
-          }`,
-        );
-        imageUrl = preparedImage.dataUrl;
-      }
-    } else if (storage.requiresRemoteStorage()) {
+    if (storage.requiresRemoteStorage() && !storage.isConfigured()) {
       throw new ServiceUnavailableException({
         code: 'storage_not_configured',
         message: 'Image storage is required in production.',
       });
     }
 
+    // Paraleliza: upload da imagem + busca da versão do prompt ao mesmo tempo
+    const [imageUrl, promptVersion] = await Promise.all([
+      (async (): Promise<string> => {
+        if (!storage.isConfigured()) {
+          return preparedImage.dataUrl;
+        }
+        try {
+          return await storage.uploadBuffer({
+            buffer: preparedImage.buffer,
+            mimeType: preparedImage.mimeType,
+            extension: preparedImage.extension,
+            pathPrefix: `analyses/${userId}/original`,
+          });
+        } catch (error) {
+          if (isProductionRuntime()) throw error;
+          this.logger.warn(
+            `Storage upload failed in non-production, falling back to inline image payload: ${
+              error instanceof Error ? error.message : 'unknown error'
+            }`,
+          );
+          return preparedImage.dataUrl;
+        }
+      })(),
+      (async (): Promise<number | undefined> => {
+        if (promptOverride) return undefined;
+        const latestPrompt = await this.prisma.promptConfig.findFirst({
+          where: { isActive: true },
+          orderBy: { version: 'desc' },
+          select: { version: true },
+        });
+        return latestPrompt?.version;
+      })(),
+    ]);
+
     // Only consume free quota / ticks after infrastructure/storage prerequisites are validated.
-    const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
     await this.enforceAccess(userId, normalizedAnalysisType);
 
     const analysis = await this.prisma.analysis.create({
@@ -825,27 +828,6 @@ export class AiService {
       );
       return null;
     }
-  }
-
-  private async waitForQueueReady(
-    timeoutMs: number,
-  ): Promise<Awaited<ReturnType<typeof getAiQueueReadiness>>> {
-    let last = await getAiQueueReadiness();
-    if (!isProductionRuntime()) {
-      return last;
-    }
-
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      if (last.configured && last.connected && last.hasWorkers) {
-        return last;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      last = await getAiQueueReadiness();
-    }
-
-    return last;
   }
 
   private getStoredAnalysisPayload(analysis: {

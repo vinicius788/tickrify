@@ -12,8 +12,19 @@ Se a estrutura indica COMPRA, indique COMPRA. Não mude para AGUARDAR sem razão
 
 const PARTS_SEPARATOR = '\n\n---\n\n';
 
+// Cache TTL: 60 segundos — evita DB round-trip em cada análise sem sacrificar atualizações
+const PROMPT_CACHE_TTL_MS = 60_000;
+
+interface PromptCacheEntry {
+  version: number | undefined;
+  prompt: string;
+  fetchedAt: number;
+}
+
 @Injectable()
 export class PromptBuilderService {
+  private promptCache: PromptCacheEntry | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -29,13 +40,27 @@ export class PromptBuilderService {
       return this.appendConsistencyInstruction(override);
     }
 
+    const base = await this.resolveActivePrompt();
+    return this.appendConsistencyInstruction(base);
+  }
+
+  private async resolveActivePrompt(): Promise<string> {
+    const now = Date.now();
+
+    if (this.promptCache && now - this.promptCache.fetchedAt < PROMPT_CACHE_TTL_MS) {
+      return this.promptCache.prompt;
+    }
+
     const activeConfig = await this.prisma.promptConfig.findFirst({
       where: { isActive: true },
       orderBy: { version: 'desc' },
     });
 
-    const base = activeConfig?.prompt || TRADING_SYSTEM_PROMPT;
-    return this.appendConsistencyInstruction(base);
+    const prompt = activeConfig?.prompt || TRADING_SYSTEM_PROMPT;
+
+    this.promptCache = { version: activeConfig?.version, prompt, fetchedAt: now };
+
+    return prompt;
   }
 
   /**
