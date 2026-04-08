@@ -106,6 +106,8 @@ export interface AIAnalysisResponse {
   timeframe?: string | null;
   period?: string | null;
   reasoning?: string;
+  errorMessage?: string | null;
+  errorCode?: string | null;
   drawing_plan?: {
     elements: Array<Record<string, unknown>>;
   } | null;
@@ -182,9 +184,13 @@ class APIClient {
   private static readonly REQUEST_TIMEOUT_MS = 15000;
   private static readonly ANALYZE_TIMEOUT_MS = 120000;
   private static readonly POLL_TIMEOUT_MS = 120000;
-  private static readonly POLL_MAX_ATTEMPTS = 60;
-  private static readonly POLL_INITIAL_DELAY_MS = 2000;
-  private static readonly POLL_MAX_DELAY_MS = 10000;
+  private static readonly POLL_MAX_ATTEMPTS = 90;
+  // Polling rápido: começa em 800ms, cresce 200ms por tentativa, cap de 3s
+  // Antes: 2000ms * attempts (chegava a 10s entre polls — responsável por até 30s de lag)
+  // Agora: análise concluída em 15s é detectada em ~15s (não em 22-30s)
+  private static readonly POLL_BASE_DELAY_MS = 800;
+  private static readonly POLL_DELAY_INCREMENT_MS = 200;
+  private static readonly POLL_MAX_DELAY_MS = 3000;
 
   private getAuthHeader(token: string | null): HeadersInit {
     return token ? { 'Authorization': `Bearer ${token}` } : {};
@@ -406,7 +412,7 @@ class APIClient {
       }
 
       const delayMs = Math.min(
-        APIClient.POLL_INITIAL_DELAY_MS * attempts,
+        APIClient.POLL_BASE_DELAY_MS + APIClient.POLL_DELAY_INCREMENT_MS * attempts,
         APIClient.POLL_MAX_DELAY_MS,
       );
       await new Promise((resolve) => setTimeout(resolve, delayMs));

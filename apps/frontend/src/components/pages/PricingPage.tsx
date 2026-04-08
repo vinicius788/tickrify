@@ -1,6 +1,21 @@
+import { useEffect } from 'react';
 import { PricingCards } from '../pricing/PricingCards';
+import { useToast } from '@/hooks/use-toast';
 
 export default function PricingPage() {
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('canceled') === 'true') {
+      toast({
+        title: 'Pagamento cancelado',
+        description: 'Nenhuma cobrança foi feita. Você pode assinar quando quiser.',
+      });
+      window.history.replaceState({}, '', '/pricing');
+    }
+  }, [toast]);
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-16">

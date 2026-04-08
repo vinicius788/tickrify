@@ -22,7 +22,7 @@ import { HttpLoggingInterceptor } from './common/interceptors/http-logging.inter
     ThrottlerModule.forRoot([
       {
         ttl: 60_000,
-        limit: 300,
+        limit: 150, // 150 req/min por usuário como safety net global (abuso)
       },
     ]),
     MulterModule.register({

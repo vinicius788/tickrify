@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react';
 import Header from '@/components/landing/Header';
 import HeroSection from '@/components/landing/HeroSection';
 import AnalysisPanelPreviewSection from '@/components/landing/AnalysisPanelPreviewSection';
@@ -12,16 +11,9 @@ import RecentTickerSection from '@/components/landing/RecentTickerSection';
 import RecentAnalysesSection from '@/components/landing/RecentAnalysesSection';
 import FinalCtaSection from '@/components/landing/FinalCtaSection';
 
-const landingVars = {
-  '--accent': '#00FF88',
-} as CSSProperties;
-
 const LandingPage = () => {
   return (
-    <div
-      className="grain-overlay grid-background flex min-h-screen flex-col bg-[var(--bg)]"
-      style={landingVars}
-    >
+    <div className="landing-shell grain-overlay grid-background flex min-h-screen flex-col overflow-x-clip bg-[var(--bg)]">
       <Header />
       <main className="flex-grow">
         <HeroSection />

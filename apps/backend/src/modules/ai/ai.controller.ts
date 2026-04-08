@@ -2,10 +2,12 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Logger,
   Param,
   Post,
   Query,
+  Res,
   UnauthorizedException,
   UseGuards,
   UseInterceptors,
@@ -13,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
+import { Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../../common/decorators/user.decorator';
 import { AiService } from './ai.service';
@@ -120,6 +123,57 @@ export class AiController {
     }
 
     return this.aiService.listAnalyses(dbUserId, query.limit ?? 20);
+  }
+
+  @Post('analyze/stream')
+  @UseGuards(AuthGuard)
+  @UseInterceptors(
+    FileInterceptor('image', { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  @Header('Content-Type', 'text/event-stream')
+  @Header('Cache-Control', 'no-cache, no-transform')
+  @Header('X-Accel-Buffering', 'no')
+  async analyzeStream(
+    @CurrentUser() user: { id?: string; clerkUserId: string; email?: string | null },
+    @UploadedFile() file: UploadedFileType,
+    @Body() body: CreateAnalysisDto,
+    @Res() res: Response,
+  ) {
+    let dbUserId = user.id;
+    if (!dbUserId) {
+      const dbUser = await this.prisma.user.findUnique({
+        where: { clerkUserId: user.clerkUserId },
+      });
+      dbUserId = dbUser?.id;
+    }
+
+    if (!dbUserId) {
+      res.status(401).end();
+      return;
+    }
+
+    res.flushHeaders();
+
+    const sendEvent = (event: string, data: unknown) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      await this.aiService.streamAnalysis(
+        dbUserId,
+        file,
+        body.base64Image,
+        body.promptOverride,
+        body.analysisType,
+        sendEvent,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro na análise.';
+      sendEvent('error', { code: 'analysis_failed', message, retriable: false });
+    } finally {
+      res.end();
+    }
   }
 
   @Get('usage')

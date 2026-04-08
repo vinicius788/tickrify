@@ -26,22 +26,24 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
   return (
     <Card
       {...getRootProps()}
-      className={`surface-terminal-elevated flex min-h-[60vh] flex-1 cursor-pointer flex-col items-center justify-center border-2 border-dashed p-8 text-center transition-all duration-300 hover:border-[var(--border-emphasis)] hover:bg-[var(--bg-overlay)] ${isDragActive ? 'border-[var(--signal-buy)] bg-[var(--signal-buy-bg)]' : 'border-[var(--border-default)]'}`}
+      className={`surface-terminal-elevated flex min-h-[560px] flex-1 cursor-pointer flex-col items-center justify-center border-2 border-dashed px-4 py-8 text-center transition-all duration-300 hover:border-[var(--border-emphasis)] hover:bg-[var(--bg-overlay)] md:min-h-[calc(100svh-11rem)] md:px-8 ${isDragActive ? 'border-[var(--signal-buy)] bg-[var(--signal-buy-bg)]' : 'border-[var(--border-default)]'}`}
     >
       <input {...getInputProps({ accept: 'image/*,image/png,image/jpeg,image/webp' })} />
-      <div className="w-full max-w-2xl space-y-5">
-        <div className="rounded-md border border-dashed border-[var(--border-default)] bg-[var(--bg-surface)] p-10 transition-all duration-300 hover:border-[var(--signal-buy-border)]">
+      <div className="w-full max-w-4xl space-y-5">
+        <div className="flex min-h-[320px] items-center justify-center rounded-md border border-dashed border-[var(--border-default)] bg-[var(--bg-surface)] px-6 py-10 transition-all duration-300 hover:border-[var(--signal-buy-border)] md:min-h-[360px] md:px-10 md:py-14">
           <div className="flex flex-col items-center justify-center gap-4">
             <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-[var(--bg-overlay)] text-[var(--text-secondary)]">
               <UploadCloud className="h-7 w-7" />
             </span>
-            <p className="whitespace-nowrap text-[13px] text-[var(--text-secondary)]">
+            <p className="text-[13px] text-[var(--text-secondary)]">
               PNG · JPG · WEBP · max 10MB
             </p>
-            <h3 className="text-xl font-semibold text-[var(--text-primary)]">
+            <h3 className="text-balance text-xl font-semibold text-[var(--text-primary)] md:text-2xl">
               {isDragActive ? 'Solte o gráfico aqui' : 'Arraste o gráfico aqui'}
             </h3>
-            <p className="text-sm text-[var(--text-secondary)]">ou clique para selecionar o arquivo</p>
+            <p className="text-pretty text-sm text-[var(--text-secondary)]">
+              ou clique para selecionar o arquivo
+            </p>
           </div>
         </div>
         <p className="text-xs text-[var(--text-secondary)]">

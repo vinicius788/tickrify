@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { Job, Worker } from 'bullmq';
+import { Job, UnrecoverableError, Worker } from 'bullmq';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { TRADING_SYSTEM_PROMPT } from '../src/common/prompts/trading-system-prompt';
@@ -7,7 +7,7 @@ import {
   buildPersistedAnalysisPayload,
   NormalizedPersistedAnalysis,
 } from '../src/common/utils/analysis-payload';
-import { AIAdapter } from '../src/modules/ai/ai.adapter';
+import { AIAdapter, AIAnalysisError } from '../src/modules/ai/ai.adapter';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
 import { isProductionRuntime } from '../src/common/utils/runtime-env';
 import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-runtime';
@@ -736,6 +736,9 @@ async function processAnalysis(job: Job<JobData>) {
     console.error(`[Worker] Error processing analysis ${analysisId}:`, error);
 
     const safeMessage = safeWorkerErrorMessage(error);
+    const failureRawContent =
+      rawContent ||
+      (error instanceof AIAnalysisError && error.rawContent ? error.rawContent : null);
 
     await prisma.analysis.update({
       where: { id: analysisId },
@@ -744,17 +747,39 @@ async function processAnalysis(job: Job<JobData>) {
         reasoning: safeMessage,
         errorMessage: safeMessage,
         result: Prisma.DbNull,
-        fullResponse: rawContent || null,
+        fullResponse: failureRawContent,
       },
     });
+
+    if (error instanceof AIAnalysisError && !error.retriable) {
+      throw new UnrecoverableError(error.message);
+    }
+
+    // For retriable rate-limit errors, the job will be retried by BullMQ automatically.
+    // Update errorMessage with a friendly message so the frontend can show it while retrying.
+    if (AIAnalysisError.isRetryable(error)) {
+      await prisma.analysis.update({
+        where: { id: analysisId },
+        data: {
+          errorMessage: AIAnalysisError.toUserMessage(error),
+        },
+      });
+    }
 
     throw error;
   }
 }
 
+// Custom backoff: attempt 1→5s, 2→30s, 3→120s
+const RETRY_DELAYS_MS = [5_000, 30_000, 120_000];
+
 const worker = new Worker<JobData>('ai-analysis', processAnalysis, {
   connection: getRedisConnection() as any,
   concurrency: 3,
+  settings: {
+    backoffStrategy: (attemptsMade: number) =>
+      RETRY_DELAYS_MS[Math.min(attemptsMade, RETRY_DELAYS_MS.length) - 1] ?? 120_000,
+  },
 });
 
 worker.on('completed', (job) => {

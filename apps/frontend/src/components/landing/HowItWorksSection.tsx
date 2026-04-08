@@ -1,3 +1,4 @@
+import { Crosshair, ScanSearch, UploadCloud } from 'lucide-react';
 import { useReveal } from '@/hooks/useReveal';
 import SectionTitle from '@/components/landing/SectionTitle';
 
@@ -5,7 +6,7 @@ type Step = {
   number: string;
   title: string;
   description: string;
-  icon: string;
+  icon: typeof UploadCloud;
 };
 
 const steps: Step[] = [
@@ -13,19 +14,19 @@ const steps: Step[] = [
     number: '01',
     title: 'Capture o gráfico',
     description: 'Print do seu setup. Qualquer ativo, qualquer timeframe.',
-    icon: '⬆',
+    icon: UploadCloud,
   },
   {
     number: '02',
     title: 'IA analisa',
     description: 'GPT-4o lê estrutura, zonas e confluências em segundos.',
-    icon: '⚡',
+    icon: ScanSearch,
   },
   {
     number: '03',
     title: 'Execute com precisão',
     description: 'Entrada, stop e alvos calculados. Sem achismo.',
-    icon: '▲',
+    icon: Crosshair,
   },
 ];
 
@@ -33,7 +34,7 @@ const HowItWorksSection = () => {
   const revealRef = useReveal<HTMLElement>();
 
   return (
-    <section ref={revealRef} id="como-funciona" className="reveal-on-scroll py-28">
+    <section ref={revealRef} id="como-funciona" className="landing-section section-primary reveal-on-scroll">
       <div className="container">
         <SectionTitle
           label="Como funciona"
@@ -43,31 +44,19 @@ const HowItWorksSection = () => {
         />
 
         <div className="relative mt-10 grid gap-4 md:grid-cols-3">
-          <div className="pointer-events-none absolute left-[16%] right-[16%] top-11 hidden border-t border-dashed border-[var(--signal-buy-border)] md:block" />
+          <div className="pointer-events-none absolute left-[16%] right-[16%] top-14 hidden border-t border-dashed border-[rgba(0,232,122,0.2)] md:block" />
 
           {steps.map((step, index) => (
-            <article
-              key={step.number}
-              className={`rounded-xl border bg-[var(--bg-card)] p-5 transition-colors duration-200 hover:border-[var(--border-hover)] ${
-                index === 1
-                  ? 'border-[var(--signal-buy-border)] border-l-2 border-l-[var(--accent-green)]'
-                  : 'border-[var(--border)]'
-              }`}
-            >
+            <article key={step.number} className={`step-card ${index === 1 ? 'step-card--active' : ''}`}>
               <div className="mb-4 flex items-center justify-between">
-                <span
-                  className="font-terminal"
-                  style={{ fontSize: '48px', lineHeight: 1, color: 'var(--text-muted)', fontWeight: 500 }}
-                >
-                  {step.number}
-                </span>
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-surface)] text-lg text-[var(--accent-green)]">
-                  {step.icon}
+                <span className="step-number">{step.number}</span>
+                <span className="step-icon">
+                  <step.icon className="h-5 w-5" />
                 </span>
               </div>
 
               <h3 className="text-lg font-semibold text-[var(--text-primary)]">{step.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">{step.description}</p>
+              <p className="mt-3 text-sm leading-7 text-[var(--text-secondary)]">{step.description}</p>
             </article>
           ))}
         </div>
