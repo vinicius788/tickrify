@@ -10,7 +10,7 @@
     "npm": ">=9.x"
   },
   "scripts": {
-    "dev": "concurrently \"npm run dev -w apps/frontend\" \"npm run dev -w apps/backend\"",
+    "dev": "concurrently -n web,api,worker -c cyan,magenta,yellow \"npm run dev -w apps/frontend\" \"npm run dev -w apps/backend\" \"npm run worker -w apps/backend\"",
     "dev:backend": "npm run dev -w apps/backend",
     "dev:frontend": "npm run dev -w apps/frontend",
     "build": "npm run build:backend && npm run build:frontend",
