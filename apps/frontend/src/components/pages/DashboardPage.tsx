@@ -166,6 +166,18 @@ const DashboardPage = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ticksState = params.get('ticks');
+    const successState = params.get('success');
+
+    if (successState === 'true') {
+      toast({
+        title: 'Assinatura Pro ativada!',
+        description: 'Bem-vindo ao Plano Pro. Suas análises ilimitadas já estão disponíveis.',
+      });
+      // Dispara re-fetch do limite para refletir o novo plano
+      window.dispatchEvent(new Event('tickrify:analysis-created'));
+      window.history.replaceState({}, '', '/dashboard');
+      return;
+    }
 
     if (ticksState === 'success') {
       const amount = params.get('amount');
