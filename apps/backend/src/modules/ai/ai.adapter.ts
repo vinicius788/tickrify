@@ -413,9 +413,9 @@ export class AIAdapter {
       const model =
         process.env.AI_MODEL ||
         (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
-      // Quick: 2000 tokens é suficiente para o JSON schema (~800-1200 tokens reais) — gera ~2x mais rápido
+      // Quick: 3000 tokens — margem segura para o JSON schema completo (~1500-2200 tokens reais)
       // Deep: 4000 tokens para análises mais detalhadas
-      const maxTokens = analysisType === 'deep' ? 4000 : 2000;
+      const maxTokens = analysisType === 'deep' ? 4000 : 3000;
       const response = await this.openai.chat.completions.create({
         model,
         max_tokens: maxTokens,
