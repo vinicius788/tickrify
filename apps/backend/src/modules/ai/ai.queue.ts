@@ -103,7 +103,12 @@ export async function getAiQueueReadiness(): Promise<QueueReadiness> {
   }
 
   try {
-    await queue.waitUntilReady();
+    await Promise.race([
+      queue.waitUntilReady(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Queue connection timeout after 30s')), 30_000),
+      ),
+    ]);
     const client = await queue.client;
     const pong = await client.ping();
     const connected = String(pong).toUpperCase() === 'PONG';
