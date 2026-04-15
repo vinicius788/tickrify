@@ -64,7 +64,7 @@ export class AiService {
     analysisType: AnalysisType = 'quick',
   ) {
     const preparedImage = this.prepareImagePayload(imageFile, base64Image);
-    const queueReadiness = await getAiQueueReadiness();
+    const queueReadiness = await this.waitForQueueReady(5_000);
 
     if (isProductionRuntime() && !queueReadiness.configured) {
       throw new ServiceUnavailableException({
@@ -573,6 +573,37 @@ export class AiService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Polls queue readiness until workers are detected or the timeout expires.
+   * Handles the Render.com startup race condition where the API process starts
+   * several seconds before the BullMQ worker process registers with Redis.
+   * On the happy path (workers already running) this returns on the first call with no delay.
+   */
+  private async waitForQueueReady(timeoutMs: number): Promise<import('./ai.queue').QueueReadiness> {
+    const deadline = Date.now() + timeoutMs;
+    const pollInterval = 500;
+
+    let readiness = await getAiQueueReadiness();
+
+    // Fast path: workers are already up — return immediately with no delay.
+    if (readiness.hasWorkers || !isProductionRuntime()) {
+      return readiness;
+    }
+
+    // Slow path: poll until workers appear or timeout is reached.
+    while (Date.now() < deadline) {
+      await new Promise<void>((resolve) => setTimeout(resolve, pollInterval));
+      readiness = await getAiQueueReadiness();
+      if (readiness.hasWorkers) {
+        this.logger.log(`[AiService] Worker became available after ${Date.now() - (deadline - timeoutMs)}ms`);
+        return readiness;
+      }
+    }
+
+    this.logger.warn(`[AiService] No workers detected after ${timeoutMs}ms — proceeding with last readiness state`);
+    return readiness;
   }
 
   private prepareImagePayload(imageFile?: UploadedFile, base64Image?: string) {
