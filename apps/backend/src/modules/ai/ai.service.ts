@@ -64,28 +64,7 @@ export class AiService {
     analysisType: AnalysisType = 'quick',
   ) {
     const preparedImage = this.prepareImagePayload(imageFile, base64Image);
-    const queueReadiness = await this.waitForQueueReady(5_000);
-
-    if (isProductionRuntime() && !queueReadiness.configured) {
-      throw new ServiceUnavailableException({
-        code: 'queue_required',
-        message: 'Redis queue is required in production.',
-      });
-    }
-
-    if (isProductionRuntime() && !queueReadiness.connected) {
-      throw new ServiceUnavailableException({
-        code: 'queue_unavailable',
-        message: 'Queue service is unavailable.',
-      });
-    }
-
-    if (isProductionRuntime() && !queueReadiness.hasWorkers) {
-      throw new ServiceUnavailableException({
-        code: 'worker_unavailable',
-        message: 'Queue worker is unavailable.',
-      });
-    }
+    const queueReadiness = await getAiQueueReadiness();
 
     const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
     const storage = new ImageStorageClient();
@@ -145,7 +124,8 @@ export class AiService {
 
     const queue = queueReadiness.connected ? getAiQueue() : null;
 
-    if (queue && (queueReadiness.hasWorkers || isProductionRuntime())) {
+    // Use queue when workers are available — async, fastest path.
+    if (queue && queueReadiness.hasWorkers) {
       await queue.add('process-analysis', {
         analysisId: analysis.id,
         imageUrl,
@@ -163,22 +143,11 @@ export class AiService {
       };
     }
 
-    if (isProductionRuntime()) {
-      await this.prisma.analysis.update({
-        where: { id: analysis.id },
-        data: {
-          status: 'failed',
-          reasoning: 'Queue service unavailable in production.',
-          errorMessage: 'Queue service unavailable in production.',
-          result: Prisma.DbNull,
-        },
-      });
-
-      throw new ServiceUnavailableException({
-        code: queueReadiness.configured ? 'worker_unavailable' : 'queue_required',
-        message: 'Queue processing is required in production.',
-      });
-    }
+    // No workers available (or no queue) — process synchronously.
+    // Keeps the app functional on Render Free where a separate worker service may be absent.
+    this.logger.warn(
+      `[AiService] No queue workers available — processing analysis ${analysis.id} synchronously.`,
+    );
 
     return this.processSynchronously({
       analysisId: analysis.id,
@@ -573,37 +542,6 @@ export class AiService {
       });
       throw error;
     }
-  }
-
-  /**
-   * Polls queue readiness until workers are detected or the timeout expires.
-   * Handles the Render.com startup race condition where the API process starts
-   * several seconds before the BullMQ worker process registers with Redis.
-   * On the happy path (workers already running) this returns on the first call with no delay.
-   */
-  private async waitForQueueReady(timeoutMs: number): Promise<import('./ai.queue').QueueReadiness> {
-    const deadline = Date.now() + timeoutMs;
-    const pollInterval = 500;
-
-    let readiness = await getAiQueueReadiness();
-
-    // Fast path: workers are already up — return immediately with no delay.
-    if (readiness.hasWorkers || !isProductionRuntime()) {
-      return readiness;
-    }
-
-    // Slow path: poll until workers appear or timeout is reached.
-    while (Date.now() < deadline) {
-      await new Promise<void>((resolve) => setTimeout(resolve, pollInterval));
-      readiness = await getAiQueueReadiness();
-      if (readiness.hasWorkers) {
-        this.logger.log(`[AiService] Worker became available after ${Date.now() - (deadline - timeoutMs)}ms`);
-        return readiness;
-      }
-    }
-
-    this.logger.warn(`[AiService] No workers detected after ${timeoutMs}ms — proceeding with last readiness state`);
-    return readiness;
   }
 
   private prepareImagePayload(imageFile?: UploadedFile, base64Image?: string) {
