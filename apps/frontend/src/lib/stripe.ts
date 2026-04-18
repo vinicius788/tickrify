@@ -1,7 +1,8 @@
 // Cliente Stripe para o frontend
 import { API_BASE_URL } from './api';
 
-export type BillingCycle = 'monthly' | 'annual';
+export type BillingCycle = 'monthly';
+export type PlanType = 'starter' | 'pro' | 'elite';
 
 export interface UserSubscription {
   id: string;
@@ -101,7 +102,7 @@ async function requestStripeApi<T>(
  * Criar sessão de checkout
  */
 export async function createCheckoutSession(
-  planType: 'pro',
+  planType: PlanType,
   token: string,
   billingCycle: BillingCycle = 'monthly',
 ) {
