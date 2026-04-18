@@ -1,19 +1,20 @@
 import { IsEnum, IsOptional } from 'class-validator';
-import { BillingCycle } from '../../../config/stripe.config';
+import { BillingCycle, PlanType } from '../../../config/stripe.config';
 
 enum PlanTypeDto {
+  STARTER = 'starter',
   PRO = 'pro',
+  ELITE = 'elite',
 }
 
 enum BillingCycleDto {
   MONTHLY = 'monthly',
-  ANNUAL = 'annual',
 }
 
 export class CreateCheckoutSessionDto {
   @IsOptional()
   @IsEnum(PlanTypeDto)
-  planType?: PlanTypeDto;
+  planType?: PlanType;
 
   @IsOptional()
   @IsEnum(BillingCycleDto)

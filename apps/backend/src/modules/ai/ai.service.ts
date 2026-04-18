@@ -607,10 +607,28 @@ export class AiService {
       throw new UnauthorizedException('Authenticated user not found');
     }
 
+    const tickCost =
+      analysisType === 'deep' ? TICK_COSTS.ANALYSIS_DEEP : TICK_COSTS.ANALYSIS_QUICK;
+
     if (await this.hasPaidAccess(userId)) {
+      // Assinante: consome ticks do plano mensal, mas não bloqueia se zerar.
+      // Os ticks são creditados automaticamente a cada renovação via webhook.
+      try {
+        await this.ticksService.debitTicks(
+          userId,
+          tickCost,
+          `Análise ${analysisType === 'deep' ? 'deep' : 'rápida'} de gráfico`,
+          { analysisType },
+        );
+      } catch {
+        this.logger.warn(
+          `[AiService] Assinante ${userId} sem ticks suficientes para análise ${analysisType} — permitido mesmo assim`,
+        );
+      }
       return;
     }
 
+    // Usuário gratuito: cota mensal + ticks com bloqueio rígido
     const freeLimit = this.getFreeLimit();
     if (freeLimit === null) {
       return;
@@ -623,9 +641,6 @@ export class AiService {
         return;
       }
     }
-
-    const tickCost =
-      analysisType === 'deep' ? TICK_COSTS.ANALYSIS_DEEP : TICK_COSTS.ANALYSIS_QUICK;
 
     await this.ticksService.debitTicks(
       userId,

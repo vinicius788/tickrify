@@ -39,8 +39,10 @@ export class StripeController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: CreateCheckoutSessionDto,
   ) {
-    const planType = 'pro' as const;
-    const billingCycle: BillingCycle = body.billingCycle === 'annual' ? 'annual' : 'monthly';
+    const planType = (body.planType && ['starter', 'pro', 'elite'].includes(body.planType))
+      ? body.planType
+      : 'pro' as const;
+    const billingCycle: BillingCycle = 'monthly';
 
     return this.stripeService.createCheckoutSession(user.clerkUserId, planType, billingCycle);
   }

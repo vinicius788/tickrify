@@ -8,7 +8,7 @@ import {
 import { Prisma } from '@prisma/client';
 import Stripe from 'stripe';
 import { PrismaService } from '../database/prisma.service';
-import { getStripeConfig, PlanType, BillingCycle } from '../../config/stripe.config';
+import { getStripeConfig, PlanType, BillingCycle, resolveTicksForPriceId } from '../../config/stripe.config';
 
 @Injectable()
 export class StripeService {
@@ -45,7 +45,7 @@ export class StripeService {
   ) {
     try {
       const stripeConfig = getStripeConfig();
-      if (planType !== 'pro') {
+      if (!['starter', 'pro', 'elite'].includes(planType)) {
         throw new Error(`Invalid plan type: ${planType}`);
       }
 
@@ -671,6 +671,7 @@ export class StripeService {
 
   /**
    * Handler: Invoice payment succeeded
+   * Atualiza status da assinatura e credita ticks mensais do plano.
    */
   private async handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
     const user = await this.resolveUserFromInvoiceCustomer(invoice);
@@ -684,10 +685,48 @@ export class StripeService {
 
     await this.prisma.subscription.updateMany({
       where: { userId: user.id },
-      data: {
-        status: 'active',
-      },
+      data: { status: 'active' },
     });
+
+    // Creditar ticks mensais com base no plano
+    const subscriptionId =
+      typeof invoice.subscription === 'string'
+        ? invoice.subscription
+        : (invoice.subscription as Stripe.Subscription | null)?.id;
+
+    if (!subscriptionId) return;
+
+    try {
+      const stripe = this.getStripeClient();
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      const priceId = subscription.items.data[0]?.price.id || '';
+      const { ticks, planName } = resolveTicksForPriceId(priceId);
+
+      if (ticks > 0) {
+        await this.prisma.$transaction([
+          this.prisma.userTicks.upsert({
+            where: { userId: user.id },
+            create: { userId: user.id, balance: ticks },
+            update: { balance: { increment: ticks } },
+          }),
+          this.prisma.tickTransaction.create({
+            data: {
+              userId: user.id,
+              amount: ticks,
+              type: 'BONUS',
+              description: `Recarga mensal — Plano ${planName} (${ticks} Ticks)`,
+              metadata: { invoiceId: invoice.id, subscriptionId, priceId },
+            },
+          }),
+        ]);
+        this.logger.log(`[Ticks] +${ticks} creditados para ${user.id} (plano ${planName})`);
+      } else {
+        this.logger.warn(`[Ticks] priceId ${priceId} não mapeado a nenhum plano — nenhum tick creditado`);
+      }
+    } catch (err) {
+      // Não falhar o webhook por erro de ticks — o pagamento já foi registrado
+      this.logger.error('[Ticks] Falha ao creditar ticks da assinatura', err);
+    }
   }
 
   /**
