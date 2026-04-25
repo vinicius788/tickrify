@@ -76,30 +76,32 @@ export class TicksService {
       throw new BadRequestException('amount must be greater than zero');
     }
 
-    const record = await this.prisma.userTicks.findUnique({
-      where: { userId },
-      select: { balance: true },
-    });
-
-    const balance = record?.balance ?? 0;
-
-    if (!record || balance < amount) {
-      throw new BadRequestException(
-        JSON.stringify({
-          code: 'INSUFFICIENT_TICKS',
-          message: `Ticks insuficientes. Necessário: ${amount}, disponível: ${balance}.`,
-          required: amount,
-          balance,
-        }),
-      );
-    }
-
-    await this.prisma.$transaction([
-      this.prisma.userTicks.update({
-        where: { userId },
+    // Atomic check-and-decrement: the WHERE balance >= amount condition makes this
+    // race-condition-proof — two concurrent requests cannot both "win" the same tick.
+    // If count === 0 the balance was insufficient (or row doesn't exist yet).
+    await this.prisma.$transaction(async (tx) => {
+      const result = await tx.userTicks.updateMany({
+        where: { userId, balance: { gte: amount } },
         data: { balance: { decrement: amount } },
-      }),
-      this.prisma.tickTransaction.create({
+      });
+
+      if (result.count === 0) {
+        const record = await tx.userTicks.findUnique({
+          where: { userId },
+          select: { balance: true },
+        });
+        const balance = record?.balance ?? 0;
+        throw new BadRequestException(
+          JSON.stringify({
+            code: 'INSUFFICIENT_TICKS',
+            message: `Ticks insuficientes. Necessário: ${amount}, disponível: ${balance}.`,
+            required: amount,
+            balance,
+          }),
+        );
+      }
+
+      await tx.tickTransaction.create({
         data: {
           userId,
           amount: -amount,
@@ -107,8 +109,8 @@ export class TicksService {
           description,
           metadata: (metadata ?? {}) as Prisma.InputJsonValue,
         },
-      }),
-    ]);
+      });
+    });
   }
 
   async getHistory(userId: string) {
