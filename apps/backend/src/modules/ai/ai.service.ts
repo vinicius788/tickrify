@@ -11,7 +11,7 @@ import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
-import { AIAdapter } from './ai.adapter';
+import { AIAdapter, AIAnalysisError } from './ai.adapter';
 import { UploadedFile } from '../../common/interfaces/multer';
 import { PromptBuilderService } from '../prompt/prompt-builder.service';
 import {
@@ -540,6 +540,11 @@ export class AiService {
           result: Prisma.DbNull,
         },
       });
+      // Convert non_chart_image to a 400 HTTP exception so the frontend receives
+      // a proper error code + user-friendly message instead of a generic 500.
+      if (error instanceof AIAnalysisError && error.code === 'non_chart_image') {
+        throw new BadRequestException({ code: 'non_chart_image', message: error.message });
+      }
       throw error;
     }
   }

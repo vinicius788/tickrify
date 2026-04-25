@@ -66,7 +66,8 @@ export type AIAnalysisErrorCode =
   | 'openai_refusal'
   | 'openai_billing'
   | 'openai_rate_limit'
-  | 'openai_request_failed';
+  | 'openai_request_failed'
+  | 'non_chart_image';
 
 export class AIAnalysisError extends Error {
   readonly code: AIAnalysisErrorCode;
@@ -103,6 +104,8 @@ export class AIAnalysisError extends Error {
     }
 
     switch (error.code) {
+      case 'non_chart_image':
+        return error.message;
       case 'openai_billing':
         return 'Limite de análises atingido. Tente novamente mais tarde.';
       case 'openai_rate_limit':
@@ -403,6 +406,46 @@ export class AIAdapter {
     }
   }
 
+  /**
+   * Verifica se a imagem é um gráfico financeiro válido antes de rodar a análise completa.
+   * Usa gpt-4o-mini com uma pergunta direta para economizar tokens.
+   */
+  private async assertIsFinancialChart(signedImageUrl: string): Promise<void> {
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        max_tokens: 10,
+        temperature: 0,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Is this image a financial trading chart (candlestick, line, bar, or similar price chart)? Answer only YES or NO.',
+              },
+              { type: 'image_url', image_url: { url: signedImageUrl, detail: 'low' } },
+            ],
+          },
+        ],
+      });
+
+      const answer = String(response.choices[0]?.message?.content || '').trim().toUpperCase();
+
+      if (!answer.startsWith('YES')) {
+        throw new AIAnalysisError({
+          code: 'non_chart_image',
+          message: 'Imagem não reconhecida como gráfico financeiro. Por favor, envie uma screenshot de um gráfico de trading (candlestick, linha ou barras).',
+          retriable: false,
+        });
+      }
+    } catch (error) {
+      if (error instanceof AIAnalysisError) throw error;
+      // Se a validação falhar por erro de rede/API, deixa passar e tenta a análise normal
+      this.logger.warn('[AIAdapter] Chart validation skipped due to error:', error instanceof Error ? error.message : String(error));
+    }
+  }
+
   async analyzeImage(
     imageUrl: string,
     prompt: string,
@@ -410,12 +453,15 @@ export class AIAdapter {
   ): Promise<AIAnalysisResponse> {
     try {
       const signedImageUrl = await this.resolveImageUrlForOpenAi(imageUrl);
+
+      // Valida se é um gráfico financeiro antes de gastar tokens na análise completa
+      await this.assertIsFinancialChart(signedImageUrl);
       const model =
         process.env.AI_MODEL ||
         (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
-      // Quick: 3000 tokens — margem segura para o JSON schema completo (~1500-2200 tokens reais)
-      // Deep: 4000 tokens para análises mais detalhadas
-      const maxTokens = analysisType === 'deep' ? 4000 : 3000;
+      // Quick: 4500 tokens — o campo reasoning do schema v4.0 pode ter 1500+ tokens sozinho
+      // Deep: 6000 tokens para análises mais detalhadas com CoT completo
+      const maxTokens = analysisType === 'deep' ? 6000 : 4500;
       const response = await this.openai.chat.completions.create({
         model,
         max_tokens: maxTokens,
