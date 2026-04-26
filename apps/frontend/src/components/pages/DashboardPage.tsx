@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical, Clock, Wifi, WifiOff } from "lucide-react";
 import { Link } from "react-router-dom";
-import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
+import { UserButton, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import NewAnalysis from "../dashboard/NewAnalysis";
 import MyTrades from "../dashboard/MyTrades";
@@ -16,7 +16,6 @@ import { TicksBadge } from "@/components/TicksBadge";
 import { BuyTicksModal } from "@/components/BuyTicksModal";
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
 import { APIError, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
-import { createCheckoutSession, type BillingCycle } from "@/lib/stripe";
 import { useToast } from "@/hooks/use-toast";
 import { normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
 import { useTicks } from "@/hooks/useTicks";
@@ -36,7 +35,6 @@ type ActiveMarketItem = {
   lastSeen: string;
 };
 
-const ENABLE_ANNUAL_BILLING = import.meta.env.VITE_ENABLE_ANNUAL_BILLING === "true";
 const MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
 
@@ -49,11 +47,9 @@ const DashboardPage = () => {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showBuyTicksModal, setShowBuyTicksModal] = useState(false);
   const [buyTicksModalReason, setBuyTicksModalReason] = useState<'insufficient' | 'topup'>('topup');
-  const [isStartingCheckout, setIsStartingCheckout] = useState(false);
   const { plan, total, used, isUnlimited } = useAnalysisLimit();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
-  const { getToken } = useAuth();
   const { toast } = useToast();
   const { refetch: refetchTicks } = useTicks();
   const apiClient = useAPIClient();
@@ -209,37 +205,10 @@ const DashboardPage = () => {
     return signalToneClass(recommendation);
   };
 
-  const startUpgradeCheckout = useCallback(async (billingCycle: BillingCycle = 'monthly') => {
-    if (!user) {
-      setShowUpgradeModal(false);
-      return;
-    }
-
-    try {
-      setIsStartingCheckout(true);
-      const token = await getToken({ skipCache: true });
-
-      if (!token) {
-        throw new Error('Não foi possível obter token de autenticação');
-      }
-
-      const { url } = await createCheckoutSession('pro', token, billingCycle);
-      window.location.href = url;
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : 'Falha ao iniciar checkout. Tente novamente.';
-
-      toast({
-        title: 'Erro ao iniciar pagamento',
-        description: errorMessage,
-        variant: 'destructive',
-      });
-    } finally {
-      setIsStartingCheckout(false);
-    }
-  }, [getToken, toast, user]);
+  const goToPricing = useCallback(() => {
+    setShowUpgradeModal(false);
+    window.location.href = '/pricing';
+  }, []);
 
   const resetNewAnalysisView = useCallback(() => {
     setActiveView('new-analysis');
@@ -618,70 +587,50 @@ const DashboardPage = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Crown className="h-5 w-5 text-primary" />
-              Assine o Plano Pro
+              Escolha seu plano
             </DialogTitle>
             <DialogDescription>
-              {ENABLE_ANNUAL_BILLING
-                ? 'Libere análises ilimitadas com IA e escolha entre cobrança mensal ou anual.'
-                : 'Libere análises ilimitadas com IA com cobrança mensal.'}
+              Ticks mensais renovados automaticamente. Sem surpresas.
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="bg-primary/10 rounded-lg p-4 border border-primary/20">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-lg">Plano Pro</h3>
+
+          <div className="space-y-3 py-2">
+            {[
+              { name: 'Starter', price: 'R$57/mês', ticks: '45 Ticks', highlight: false },
+              { name: 'Pro', price: 'R$147/mês', ticks: '150 Ticks', highlight: true },
+              { name: 'Elite', price: 'R$297/mês', ticks: '400 Ticks', highlight: false },
+            ].map((plan) => (
+              <div
+                key={plan.name}
+                className={`flex items-center justify-between rounded-lg px-4 py-3 border ${
+                  plan.highlight
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border bg-muted/30'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  {plan.highlight && <Crown className="h-4 w-4 text-primary flex-shrink-0" />}
+                  <div>
+                    <span className="font-semibold text-sm">{plan.name}</span>
+                    {plan.highlight && (
+                      <span className="ml-2 text-xs text-primary font-medium">Mais escolhido</span>
+                    )}
+                  </div>
+                </div>
                 <div className="text-right">
-                  <span className="text-3xl font-bold">R$80</span>
-                  <span className="text-muted-foreground">/mês</span>
+                  <div className="text-sm font-bold">{plan.price}</div>
+                  <div className="text-xs text-muted-foreground">{plan.ticks}</div>
                 </div>
               </div>
-              {ENABLE_ANNUAL_BILLING && (
-                <p className="text-xs text-muted-foreground mb-3">Ou R$960 no ciclo anual.</p>
-              )}
-              <ul className="space-y-2">
-                <li className="flex items-center text-sm">
-                  <Check className="h-4 w-4 text-primary mr-2 flex-shrink-0" />
-                  <span>Análises ilimitadas</span>
-                </li>
-                <li className="flex items-center text-sm">
-                  <Check className="h-4 w-4 text-primary mr-2 flex-shrink-0" />
-                  <span>Todos os timeframes</span>
-                </li>
-                <li className="flex items-center text-sm">
-                  <Check className="h-4 w-4 text-primary mr-2 flex-shrink-0" />
-                  <span>Alertas avançados</span>
-                </li>
-                <li className="flex items-center text-sm">
-                  <Check className="h-4 w-4 text-primary mr-2 flex-shrink-0" />
-                  <span>Suporte prioritário</span>
-                </li>
-              </ul>
-            </div>
+            ))}
           </div>
 
           <DialogFooter className="sm:flex-col gap-2">
-            <Button
-              className="w-full"
-              onClick={() => void startUpgradeCheckout('monthly')}
-              disabled={isStartingCheckout}
-            >
-              {isStartingCheckout ? (
-                'Redirecionando para pagamento...'
-              ) : (
-                <>
-                <Crown className="mr-2 h-4 w-4" />
-                Fazer Upgrade Agora
-                </>
-              )}
-            </Button>
-            <Button variant="outline" className="w-full" asChild onClick={() => setShowUpgradeModal(false)}>
-              <Link to="/pricing">
-                {ENABLE_ANNUAL_BILLING ? 'Ver plano mensal e anual' : 'Ver detalhes do plano'}
-              </Link>
+            <Button className="w-full" onClick={goToPricing}>
+              <Crown className="mr-2 h-4 w-4" />
+              Ver planos e assinar
             </Button>
             <Button variant="ghost" className="w-full" onClick={() => setShowUpgradeModal(false)}>
-              <Crown className="mr-2 h-4 w-4" />
               Continuar depois
             </Button>
           </DialogFooter>
