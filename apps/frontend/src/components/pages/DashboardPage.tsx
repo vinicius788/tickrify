@@ -257,15 +257,10 @@ const DashboardPage = () => {
       setActiveView('loading');
       setErrorMessage('');
 
-      // Chamar API real
-      console.log('[Dashboard] Iniciando análise...', { hasImageUrl: !!imageUrl, hasImageFile: !!imageFile });
-      
       const response = await apiClient.createAnalysis({
         imageFile: imageFile || undefined,
         base64Image: imageUrl || undefined,
       });
-
-      console.log('[Dashboard] Análise criada:', response);
 
       // Incrementar contador (apenas quando logado)
       incrementAnalysis();

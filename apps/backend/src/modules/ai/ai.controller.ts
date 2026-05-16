@@ -17,7 +17,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
-import { CurrentUser } from '../../common/decorators/user.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AiService } from './ai.service';
 import { PrismaService } from '../database/prisma.service';
 import { UploadedFile as UploadedFileType } from '../../common/interfaces/multer';
