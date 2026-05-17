@@ -1,8 +1,8 @@
-import { ThemeProvider } from "@/components/ThemeProvider";
+import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import LandingPage from "@/components/pages/LandingPage";
 import DashboardPage from "@/components/pages/DashboardPage";
 import PricingPage from "@/components/pages/PricingPage";
-import ProtectedRoute from "@/components/ProtectedRoute";
+import ProtectedRoute from "@/components/routing/ProtectedRoute";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { SignIn, SignUp } from "@clerk/clerk-react";

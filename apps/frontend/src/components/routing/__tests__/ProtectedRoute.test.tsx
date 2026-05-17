@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
-import ProtectedRoute from '@/components/ProtectedRoute';
+import ProtectedRoute from '@/components/routing/ProtectedRoute';
 import { useAuth } from '@clerk/clerk-react';
 
 vi.mock('@clerk/clerk-react', () => ({
