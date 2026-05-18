@@ -45,22 +45,17 @@ coverage/
 
 # Temporary files
 tmp/
+.tmp/
 temp/
 *.tmp
+.pids
 
-apps/frontend/.env.production
-apps/backend/.env
-apps/backend/.env.production
-apps/frontend/.env.production
-apps/backend/.env
-apps/backend/.env.production
-.env
+# pnpm store (quando dentro do projeto)
+.pnpm-store/
 
-.env
 **/.env
-**/.env.production
 **/.env.local
-apps/frontend/.env.production
+**/.env.production
 
 test-results/
 .vercel
