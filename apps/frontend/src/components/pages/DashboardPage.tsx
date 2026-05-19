@@ -56,7 +56,7 @@ const DashboardPage = () => {
   const { refetch: refetchTicks } = useTicks();
   const apiClient = useAPIClient();
   const isDemo = !user;
-  const { analyses: rawAnalyses, loading: loadingAnalyses } = useAnalyses(40);
+  const { analyses: rawAnalyses, loading: loadingAnalyses, refetch: refetchAnalyses } = useAnalyses(40);
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
@@ -241,7 +241,7 @@ const DashboardPage = () => {
       setAnalysisData(analysis);
       setActiveView('analysis-result');
       if (!isDemo && user) {
-        void fetchRecentAnalyses();
+        refetchAnalyses();
       }
     } catch (error) {
       console.error('[Dashboard] Erro ao criar análise:', error);
