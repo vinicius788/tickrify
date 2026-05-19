@@ -2,9 +2,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useUser } from "@clerk/clerk-react";
-import { useAPIClient, type AIAnalysisResponse } from "@/lib/api";
-import { useState, useEffect, useCallback } from "react";
-import { normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
+import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
+import { useAnalyses } from "@/hooks/useAnalyses";
 
 type TradeRow = {
   id: string;
@@ -15,39 +14,17 @@ type TradeRow = {
   result: string;
 };
 
+// Dados fake APENAS para modo demo
+const demoTrades = [
+  { date: "01/11/25", symbol: "BTC/USD", type: "COMPRA", bias: "BULLISH", result: "+3.2%" },
+  { date: "31/10/25", symbol: "EUR/USD", type: "VENDA", bias: "BEARISH", result: "-0.9%" },
+  { date: "30/10/25", symbol: "AAPL", type: "AGUARDAR", bias: "NEUTRAL", result: "+5.1%" },
+];
+
 const MyTrades = () => {
   const { user } = useUser();
-  const apiClient = useAPIClient();
   const isDemo = !user;
-  
-  const [analyses, setAnalyses] = useState<AIAnalysisResponse[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  // Dados fake APENAS para modo demo
-  const demoTrades = [
-    { date: "01/11/25", symbol: "BTC/USD", type: "COMPRA", bias: "BULLISH", result: "+3.2%", status: "WIN" },
-    { date: "31/10/25", symbol: "EUR/USD", type: "VENDA", bias: "BEARISH", result: "-0.9%", status: "LOSS" },
-    { date: "30/10/25", symbol: "AAPL", type: "AGUARDAR", bias: "NEUTRAL", result: "+5.1%", status: "WIN" },
-  ];
-
-  const fetchAnalyses = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await apiClient.listAnalyses();
-      setAnalyses(data);
-    } catch (error) {
-      console.error('Erro ao buscar análises:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [apiClient]);
-
-  // Buscar análises REAIS quando logado
-  useEffect(() => {
-    if (!isDemo && user) {
-      void fetchAnalyses();
-    }
-  }, [fetchAnalyses, isDemo, user]);
+  const { analyses, loading } = useAnalyses(20);
 
   const trades: TradeRow[] = isDemo
     ? demoTrades.map((trade) => ({
@@ -66,10 +43,7 @@ const MyTrades = () => {
         bias: String(analysis.bias || 'neutral').toUpperCase(),
         result:
           analysis.confidence !== null && analysis.confidence !== undefined
-            ? `${(Number(analysis.confidence) >= 0 && Number(analysis.confidence) <= 1
-                ? Number(analysis.confidence) * 100
-                : Number(analysis.confidence)
-              ).toFixed(2)}%`
+            ? `${confidenceToPercent(analysis.confidence).toFixed(2)}%`
             : '-',
       }));
 

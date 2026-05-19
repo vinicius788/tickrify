@@ -14,7 +14,7 @@ import {
 import { StripeService } from './stripe.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthGuard } from '../auth/auth.guard';
-import { BillingCycle } from '../../config/stripe.config';
+import { BillingCycle, Currency } from '../../config/stripe.config';
 import { Throttle } from '@nestjs/throttler';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto';
 
@@ -42,9 +42,12 @@ export class StripeController {
     const planType = (body.planType && ['starter', 'pro', 'elite'].includes(body.planType))
       ? body.planType
       : 'pro' as const;
-    const billingCycle: BillingCycle = 'monthly';
+    const billingCycle: BillingCycle = body.billingCycle === 'yearly' ? 'yearly' : 'monthly';
+    const currency: Currency = (['brl', 'usd', 'eur'] as Currency[]).includes(body.currency!)
+      ? body.currency!
+      : 'brl';
 
-    return this.stripeService.createCheckoutSession(user.clerkUserId, planType, billingCycle);
+    return this.stripeService.createCheckoutSession(user.clerkUserId, planType, billingCycle, currency);
   }
 
   /**

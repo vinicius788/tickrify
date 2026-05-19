@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -17,8 +17,10 @@ import { BuyTicksModal } from "@/components/dashboard/BuyTicksModal";
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
 import { APIError, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
+import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
 import { useTicks } from "@/hooks/useTicks";
+import { useAnalyses } from "@/hooks/useAnalyses";
+import { PLANS } from "@/components/pricing/PricingCards";
 import officialIcon from "@/assets/tickrify-icon-official.png";
 
 type View = 'new-analysis' | 'my-trades' | 'watchlist' | 'analysis-result' | 'loading' | 'error';
@@ -54,6 +56,7 @@ const DashboardPage = () => {
   const { refetch: refetchTicks } = useTicks();
   const apiClient = useAPIClient();
   const isDemo = !user;
+  const { analyses: rawAnalyses, loading: loadingAnalyses } = useAnalyses(40);
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
@@ -71,80 +74,47 @@ const DashboardPage = () => {
     { symbol: "XAU/USD", timeframe: "1H", recommendation: "VENDA", bias: "bearish", confidence: 77, createdAt: new Date().toISOString() },
   ];
 
-  // Estados para dados REAIS da API
-  const [recentAnalyses, setRecentAnalyses] = useState<RecentAnalysisItem[]>([]);
-  const [realActiveMarkets, setRealActiveMarkets] = useState<ActiveMarketItem[]>([]);
-  const [loadingAnalyses, setLoadingAnalyses] = useState(false);
-
-  const fetchRecentAnalyses = useCallback(async () => {
-    try {
-      setLoadingAnalyses(true);
-      const analyses = await apiClient.listAnalyses(40);
-
-      const now = Date.now();
-      const activeWindowMs = 8 * 60 * 60 * 1000; // 8 horas
-      const formatLastSeen = (dateIso: string) => {
-        const diffMs = Math.max(0, now - new Date(dateIso).getTime());
-        const minutes = Math.max(1, Math.floor(diffMs / (60 * 1000)));
-        if (minutes < 60) return `${minutes} min atrás`;
-        const hours = Math.floor(minutes / 60);
-        return `${hours}h atrás`;
-      };
-
-      const completedRecent: RecentAnalysisItem[] = analyses
-        .filter((a) => a.status === 'completed')
-        .map((a) => ({
+  // Derivar análises recentes e mercados ativos via useMemo (sem estado manual)
+  const recentAnalyses = useMemo<RecentAnalysisItem[]>(() => {
+    if (isDemo || rawAnalyses.length === 0) return [];
+    const completed = rawAnalyses
+      .filter((a) => a.status === 'completed')
+      .map((a) => ({
         symbol: String(a.symbol || '').trim() || 'N/A',
         timeframe: String(a.timeframe || '').trim() || 'N/A',
         recommendation: normalizeRecommendationLabel(a.recommendation) as Recommendation,
         bias: (a.bias || 'neutral') as Bias,
-        confidence:
-          Number(a.confidence) >= 0 && Number(a.confidence) <= 1
-            ? Number(a.confidence) * 100
-            : Number(a.confidence) || 0,
+        confidence: confidenceToPercent(a.confidence),
         createdAt: a.createdAt,
       }));
-      const withIdentity = completedRecent.filter(
-        (item) => item.symbol !== 'N/A' && item.timeframe !== 'N/A',
-      );
-      const recent = (withIdentity.length > 0 ? withIdentity : completedRecent).slice(0, 3);
-      setRecentAnalyses(recent);
+    const withIdentity = completed.filter((item) => item.symbol !== 'N/A' && item.timeframe !== 'N/A');
+    return (withIdentity.length > 0 ? withIdentity : completed).slice(0, 3);
+  }, [rawAnalyses, isDemo]);
 
-      // Mercados ativos = símbolos analisados nas últimas 8 horas
-      const recentMarketAnalyses = analyses
-        .filter((a) => {
-          if (!a.createdAt) return false;
-          return now - new Date(a.createdAt).getTime() <= activeWindowMs;
-        })
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-      const marketMap = new Map<string, ActiveMarketItem>();
-      for (const analysis of recentMarketAnalyses) {
-        const symbol = String(analysis.symbol || '').trim();
-        if (!symbol || symbol === 'N/A') continue;
-        if (!marketMap.has(symbol)) {
-          const timeframe = analysis.timeframe ? ` • ${analysis.timeframe}` : '';
-          marketMap.set(symbol, {
-            name: `${symbol}${timeframe}`,
-            lastSeen: formatLastSeen(analysis.createdAt),
-          });
-        }
+  const realActiveMarkets = useMemo<ActiveMarketItem[]>(() => {
+    if (isDemo || rawAnalyses.length === 0) return [];
+    const now = Date.now();
+    const activeWindowMs = 8 * 60 * 60 * 1000;
+    const formatLastSeen = (dateIso: string) => {
+      const diffMs = Math.max(0, now - new Date(dateIso).getTime());
+      const minutes = Math.max(1, Math.floor(diffMs / (60 * 1000)));
+      if (minutes < 60) return `${minutes} min atrás`;
+      return `${Math.floor(minutes / 60)}h atrás`;
+    };
+    const recent = rawAnalyses
+      .filter((a) => a.createdAt && now - new Date(a.createdAt).getTime() <= activeWindowMs)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const marketMap = new Map<string, ActiveMarketItem>();
+    for (const analysis of recent) {
+      const symbol = String(analysis.symbol || '').trim();
+      if (!symbol || symbol === 'N/A') continue;
+      if (!marketMap.has(symbol)) {
+        const timeframe = analysis.timeframe ? ` • ${analysis.timeframe}` : '';
+        marketMap.set(symbol, { name: `${symbol}${timeframe}`, lastSeen: formatLastSeen(analysis.createdAt) });
       }
-
-      setRealActiveMarkets(Array.from(marketMap.values()).slice(0, 6));
-    } catch (error) {
-      console.error('Erro ao buscar análises:', error);
-    } finally {
-      setLoadingAnalyses(false);
     }
-  }, [apiClient]);
-
-  // Buscar análises reais quando logado
-  useEffect(() => {
-    if (!isDemo && user) {
-      void fetchRecentAnalyses();
-    }
-  }, [fetchRecentAnalyses, isDemo, user]);
+    return Array.from(marketMap.values()).slice(0, 6);
+  }, [rawAnalyses, isDemo]);
 
   useEffect(() => {
     const goOnline = () => setIsOnline(true);
@@ -200,10 +170,6 @@ const DashboardPage = () => {
   // Usar dados demo ou reais dependendo do modo
   const activeMarkets = isDemo ? demoActiveMarkets : realActiveMarkets;
   const displayRecentAnalyses = isDemo ? demoRecentAnalyses : recentAnalyses;
-
-  const signalColor = (recommendation: Recommendation) => {
-    return signalToneClass(recommendation);
-  };
 
   const goToPricing = useCallback(() => {
     setShowUpgradeModal(false);
@@ -548,7 +514,7 @@ const DashboardPage = () => {
                           <span className="truncate font-terminal text-[var(--text-primary)]">
                             {analysis.symbol} <span className="font-terminal text-[var(--text-secondary)]">{analysis.timeframe}</span>
                           </span>
-                          <span className={`font-semibold ${signalColor(recLabel as Recommendation)}`}>{recLabel}</span>
+                          <span className={`font-semibold ${signalToneClass(recLabel as Recommendation)}`}>{recLabel}</span>
                           <span className="font-terminal text-[var(--text-secondary)]">{Math.round(Number(analysis.confidence) || 0)}%</span>
                           <span className="font-terminal text-[var(--text-secondary)]">{minutesAgo}m</span>
                         </div>
@@ -590,30 +556,26 @@ const DashboardPage = () => {
           </DialogHeader>
 
           <div className="space-y-3 py-2">
-            {[
-              { name: 'Starter', price: 'R$57/mês', ticks: '45 Ticks', highlight: false },
-              { name: 'Pro', price: 'R$147/mês', ticks: '150 Ticks', highlight: true },
-              { name: 'Elite', price: 'R$297/mês', ticks: '400 Ticks', highlight: false },
-            ].map((plan) => (
+            {PLANS.map((plan) => (
               <div
-                key={plan.name}
+                key={plan.id}
                 className={`flex items-center justify-between rounded-lg px-4 py-3 border ${
-                  plan.highlight
+                  plan.featured
                     ? 'border-primary bg-primary/10'
                     : 'border-border bg-muted/30'
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  {plan.highlight && <Crown className="h-4 w-4 text-primary flex-shrink-0" />}
+                  {plan.featured && <Crown className="h-4 w-4 text-primary flex-shrink-0" />}
                   <div>
                     <span className="font-semibold text-sm">{plan.name}</span>
-                    {plan.highlight && (
-                      <span className="ml-2 text-xs text-primary font-medium">Mais escolhido</span>
+                    {plan.featured && (
+                      <span className="ml-2 text-xs text-primary font-medium">{plan.badge}</span>
                     )}
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm font-bold">{plan.price}</div>
+                  <div className="text-sm font-bold">{plan.prices.monthly.brl}/mês</div>
                   <div className="text-xs text-muted-foreground">{plan.ticks}</div>
                 </div>
               </div>

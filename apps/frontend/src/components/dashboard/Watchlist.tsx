@@ -4,23 +4,22 @@ import { useUser } from "@clerk/clerk-react";
 import { ArrowRight, Target } from "lucide-react";
 import { normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
 
+// Dados fake APENAS para modo demo — definidos fora do componente para evitar recriação a cada render
+const demoOpportunities = [
+  { symbol: "BTC/USD", timeframe: "1H", confidence: "85%", recommendation: "COMPRA", bias: "BULLISH" },
+  { symbol: "AAPL", timeframe: "4H", confidence: "65%", recommendation: "AGUARDAR", bias: "NEUTRAL" },
+];
+
+const demoOtherAssets = [
+  { symbol: "EUR/USD", timeframe: "1H", status: "Sem setup claro" },
+  { symbol: "ETH/USD", timeframe: "4H", status: "Aguardando confirmação" },
+  { symbol: "TSLA", timeframe: "1D", status: "Em zona neutra" },
+];
+
 const Watchlist = () => {
   const { user } = useUser();
   const isDemo = !user;
 
-  // Dados fake APENAS para modo demo
-  const demoOpportunities = [
-    { symbol: "BTC/USD", timeframe: "1H", confidence: "85%", recommendation: "COMPRA", bias: "BULLISH" },
-    { symbol: "AAPL", timeframe: "4H", confidence: "65%", recommendation: "AGUARDAR", bias: "NEUTRAL" },
-  ];
-
-  const demoOtherAssets = [
-    { symbol: "EUR/USD", timeframe: "1H", status: "Sem setup claro" },
-    { symbol: "ETH/USD", timeframe: "4H", status: "Aguardando confirmação" },
-    { symbol: "TSLA", timeframe: "1D", status: "Em zona neutra" },
-  ];
-
-  // Quando logado, não mostra dados fake
   const opportunities = isDemo ? demoOpportunities : [];
   const otherAssets = isDemo ? demoOtherAssets : [];
 

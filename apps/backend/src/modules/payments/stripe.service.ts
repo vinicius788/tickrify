@@ -8,7 +8,15 @@ import {
 import { Prisma } from '@prisma/client';
 import Stripe from 'stripe';
 import { PrismaService } from '../database/prisma.service';
-import { getStripeConfig, PlanType, BillingCycle, resolveTicksForPriceId } from '../../config/stripe.config';
+import {
+  getStripeConfig,
+  getPriceId,
+  resolvePlanForPriceId,
+  resolveTicksForPriceId,
+  PlanType,
+  BillingCycle,
+  Currency,
+} from '../../config/stripe.config';
 
 @Injectable()
 export class StripeService {
@@ -42,9 +50,9 @@ export class StripeService {
     clerkUserId: string,
     planType: PlanType,
     billingCycle: BillingCycle,
+    currency: Currency = 'brl',
   ) {
     try {
-      const stripeConfig = getStripeConfig();
       if (!['starter', 'pro', 'elite'].includes(planType)) {
         throw new Error(`Invalid plan type: ${planType}`);
       }
@@ -57,14 +65,13 @@ export class StripeService {
         throw new Error('User not found');
       }
 
-      const plan = stripeConfig.plans[planType];
-      const selectedPrice = plan.prices[billingCycle];
+      const priceId = getPriceId(planType, billingCycle, currency);
       const appBaseUrl = this.resolveAppBaseUrl();
       const successUrl = `${appBaseUrl}/dashboard?success=true`;
       const cancelUrl = `${appBaseUrl}/pricing?canceled=true`;
 
-      if (!selectedPrice?.priceId) {
-        throw new Error(`Price ID not configured for plan: ${planType} (${billingCycle})`);
+      if (!priceId) {
+        throw new Error(`Price ID not configured for plan: ${planType} (${billingCycle}/${currency})`);
       }
 
       const customerId = await this.resolveOrCreateCustomerId(user);
@@ -77,7 +84,7 @@ export class StripeService {
         payment_method_types: ['card'],
         line_items: [
           {
-            price: selectedPrice.priceId,
+            price: priceId,
             quantity: 1,
           },
         ],
@@ -441,15 +448,17 @@ export class StripeService {
       let subscription = await stripe.subscriptions.retrieve(subscriptionRecord.stripeId);
       await this.upsertSubscriptionForUser(user.id, subscription);
 
+      const activePriceId = subscription.items.data[0]?.price.id ?? '';
+      const resolvedPlan = resolvePlanForPriceId(activePriceId);
+      const isActive = ['active', 'trialing'].includes(String(subscription.status).toLowerCase());
+
       return {
         id: subscription.id,
         status: subscription.status,
         currentPeriodStart: subscription.current_period_start,
         currentPeriodEnd: subscription.current_period_end,
         cancelAtPeriodEnd: subscription.cancel_at_period_end,
-        plan: ['active', 'trialing'].includes(String(subscription.status).toLowerCase())
-          ? 'pro'
-          : 'free',
+        plan: isActive ? (resolvedPlan ?? 'pro') : 'free',
       };
     } catch (error) {
       this.logger.error('Failed to get user subscription', {

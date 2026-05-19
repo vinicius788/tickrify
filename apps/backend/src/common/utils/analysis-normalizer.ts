@@ -31,7 +31,7 @@ export function normalizeRecommendation(value: unknown): Recommendation {
   return 'WAIT';
 }
 
-export function recommendationToBias(recommendation: Recommendation): Bias {
+function recommendationToBias(recommendation: Recommendation): Bias {
   if (recommendation === 'BUY') {
     return 'bullish';
   }

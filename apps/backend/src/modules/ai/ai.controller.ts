@@ -33,6 +33,15 @@ export class AiController {
     private prisma: PrismaService,
   ) {}
 
+  private async resolveDbUserId(user: { id?: string; clerkUserId: string }): Promise<string | undefined> {
+    if (user.id) return user.id;
+    const dbUser = await this.prisma.user.findUnique({
+      where: { clerkUserId: user.clerkUserId },
+      select: { id: true },
+    });
+    return dbUser?.id;
+  }
+
   @Post('analyze')
   @UseGuards(AuthGuard)
   @UseInterceptors(
@@ -49,17 +58,8 @@ export class AiController {
     @Body() body: CreateAnalysisDto,
   ) {
     try {
-      let dbUserId = user.id;
-      if (!dbUserId) {
-        const dbUser = await this.prisma.user.findUnique({
-          where: { clerkUserId: user.clerkUserId },
-        });
-        dbUserId = dbUser?.id;
-      }
-
-      if (!dbUserId) {
-        throw new UnauthorizedException('Authenticated user could not be resolved');
-      }
+      const dbUserId = await this.resolveDbUserId(user);
+      if (!dbUserId) throw new UnauthorizedException('Authenticated user could not be resolved');
 
       const result = await this.aiService.createAnalysis(
         dbUserId,
@@ -86,18 +86,8 @@ export class AiController {
     @CurrentUser() user: { id?: string; clerkUserId: string },
     @Param('id') id: string,
   ) {
-    const dbUserId =
-      user.id ||
-      (
-        await this.prisma.user.findUnique({
-          where: { clerkUserId: user.clerkUserId },
-          select: { id: true },
-        })
-      )?.id;
-
-    if (!dbUserId) {
-      throw new UnauthorizedException('Authenticated user not found');
-    }
+    const dbUserId = await this.resolveDbUserId(user);
+    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
 
     return this.aiService.getAnalysis(id, dbUserId);
   }
@@ -109,18 +99,8 @@ export class AiController {
     @CurrentUser() user: { id?: string; clerkUserId: string },
     @Query() query: ListAnalysesQueryDto,
   ) {
-    const dbUserId =
-      user.id ||
-      (
-        await this.prisma.user.findUnique({
-          where: { clerkUserId: user.clerkUserId },
-          select: { id: true },
-        })
-      )?.id;
-
-    if (!dbUserId) {
-      throw new UnauthorizedException('Authenticated user not found');
-    }
+    const dbUserId = await this.resolveDbUserId(user);
+    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
 
     return this.aiService.listAnalyses(dbUserId, query.limit ?? 20);
   }
@@ -140,14 +120,7 @@ export class AiController {
     @Body() body: CreateAnalysisDto,
     @Res() res: Response,
   ) {
-    let dbUserId = user.id;
-    if (!dbUserId) {
-      const dbUser = await this.prisma.user.findUnique({
-        where: { clerkUserId: user.clerkUserId },
-      });
-      dbUserId = dbUser?.id;
-    }
-
+    const dbUserId = await this.resolveDbUserId(user);
     if (!dbUserId) {
       res.status(401).end();
       return;
@@ -180,18 +153,8 @@ export class AiController {
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async getUsage(@CurrentUser() user: { id?: string; clerkUserId: string }) {
-    const dbUserId =
-      user.id ||
-      (
-        await this.prisma.user.findUnique({
-          where: { clerkUserId: user.clerkUserId },
-          select: { id: true },
-        })
-      )?.id;
-
-    if (!dbUserId) {
-      throw new UnauthorizedException('Authenticated user not found');
-    }
+    const dbUserId = await this.resolveDbUserId(user);
+    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
 
     return this.aiService.getUsage(dbUserId);
   }

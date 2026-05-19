@@ -6,7 +6,7 @@ services:
     region: oregon
     branch: main
     autoDeploy: true
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./infra/Dockerfile
     dockerContext: .
     healthCheckPath: /api/health/live
     envVars:
@@ -19,7 +19,7 @@ services:
     region: oregon
     branch: main
     autoDeploy: true
-    dockerfilePath: ./Dockerfile.worker
+    dockerfilePath: ./infra/Dockerfile.worker
     dockerContext: .
     envVars:
       - fromGroup: tickrify-production

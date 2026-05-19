@@ -22,17 +22,11 @@ import {
   getRecommendationMeta,
   normalizeConfluenceScore,
 } from '@/lib/trading-ui';
+import { asRecord } from '@/lib/utils';
 
 interface AnalysisResultProps {
   analysisData: AIAnalysisResponse | null;
   uploadedImage: string | null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return {};
 }
 
 function toNumber(value: unknown): number | null {

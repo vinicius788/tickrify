@@ -1,17 +1,16 @@
 // Cliente Stripe para o frontend
 import { API_BASE_URL } from './api';
 
-export type BillingCycle = 'monthly';
+export type BillingCycle = 'monthly' | 'yearly';
+export type Currency = 'brl' | 'usd' | 'eur';
 export type PlanType = 'starter' | 'pro' | 'elite';
 
-export interface UserSubscription {
-  id: string;
-  status: string;
-  plan?: string;
-  currentPeriodStart?: number;
-  currentPeriodEnd?: number;
-  cancelAtPeriodEnd?: boolean;
+export function detectCurrency(locale: string): Currency {
+  if (locale === 'pt-BR') return 'brl';
+  if (locale === 'en-US') return 'usd';
+  return 'eur';
 }
+
 
 function isLocalHostname(hostname: string) {
   return hostname === 'localhost' || hostname === '127.0.0.1';
@@ -105,6 +104,7 @@ export async function createCheckoutSession(
   planType: PlanType,
   token: string,
   billingCycle: BillingCycle = 'monthly',
+  currency: Currency = 'brl',
 ) {
   return requestStripeApi<{ sessionId: string; url: string }>(
     '/api/stripe/create-checkout-session',
@@ -114,80 +114,9 @@ export async function createCheckoutSession(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        planType,
-        billingCycle,
-      }),
+      body: JSON.stringify({ planType, billingCycle, currency }),
     },
     'Falha ao criar sessão de checkout.',
   );
 }
 
-/**
- * Criar portal do cliente
- */
-export async function createCustomerPortal(token: string) {
-  return requestStripeApi<{ url: string }>(
-    '/api/stripe/create-customer-portal',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({}),
-    },
-    'Falha ao abrir portal do cliente.',
-  );
-}
-
-/**
- * Cancelar assinatura
- */
-export async function cancelSubscription(token: string) {
-  return requestStripeApi(
-    '/api/stripe/cancel-subscription',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-    },
-    'Falha ao cancelar assinatura.',
-  );
-}
-
-/**
- * Reativar assinatura
- */
-export async function reactivateSubscription(token: string) {
-  return requestStripeApi(
-    '/api/stripe/reactivate-subscription',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-    },
-    'Falha ao reativar assinatura.',
-  );
-}
-
-/**
- * Obter assinatura do usuário
- */
-export async function getUserSubscription(token: string) {
-  return requestStripeApi<UserSubscription | null>(
-    '/api/stripe/subscription',
-    {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-    },
-    'Falha ao obter assinatura.',
-  );
-}
