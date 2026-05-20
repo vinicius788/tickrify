@@ -39,7 +39,7 @@ COPY --from=builder /app/apps/backend/prisma ./apps/backend/prisma
 COPY --from=builder /app/apps/backend/scripts ./apps/backend/scripts
 COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY infra/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 3001
