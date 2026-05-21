@@ -42,4 +42,5 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 EXPOSE 3001
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["pnpm", "run", "start:prod", "--filter", "ticrif-backend"]
+CMD ["node", "apps/backend/dist/src/main.js"]
+
