@@ -136,8 +136,8 @@ const DashboardPage = () => {
 
     if (successState === 'true') {
       toast({
-        title: 'Assinatura Pro ativada!',
-        description: 'Bem-vindo ao Plano Pro. Suas análises ilimitadas já estão disponíveis.',
+        title: 'Plano ativado!',
+        description: 'Bem-vindo ao Tickrify. Seus ticks já estão disponíveis.',
       });
       // Dispara re-fetch do limite para refletir o novo plano
       window.dispatchEvent(new Event('tickrify:analysis-created'));
@@ -386,9 +386,9 @@ const DashboardPage = () => {
 
             <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium">
               <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="whitespace-nowrap">{navbarUnlimited ? 'PRO' : quotaText}</span>
+              <span className="whitespace-nowrap">{navbarUnlimited ? plan.toUpperCase() : quotaText}</span>
               <span className="hidden whitespace-nowrap text-[var(--text-secondary)] md:inline">
-                {navbarUnlimited ? '· Ilimitado' : 'análises'}
+                {navbarUnlimited ? '· Ativo' : 'análises'}
               </span>
             </div>
 
@@ -441,7 +441,12 @@ const DashboardPage = () => {
 
         <div className="flex flex-1 overflow-hidden">
           <aside className="hidden w-[280px] min-w-0 flex-col gap-4 overflow-y-auto border-r border-border p-4 md:flex xl:w-[320px]">
-            {user && <AnalysisCounter onUpgradeClick={() => setShowUpgradeModal(true)} />}
+            {user && (
+              <AnalysisCounter
+                onUpgradeClick={() => setShowUpgradeModal(true)}
+                onBuyTicksClick={() => { setBuyTicksModalReason('topup'); setShowBuyTicksModal(true); }}
+              />
+            )}
 
             <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
               <CardHeader className="px-4 pb-2 pt-4">
@@ -540,6 +545,7 @@ const DashboardPage = () => {
         open={showBuyTicksModal}
         onClose={() => setShowBuyTicksModal(false)}
         reason={buyTicksModalReason}
+        isSubscriber={plan !== 'free'}
       />
 
       {/* Modal de Upgrade */}

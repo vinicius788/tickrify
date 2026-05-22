@@ -11,6 +11,7 @@ import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
+import { resolvePlanForPriceId } from '../../config/stripe.config';
 import { AIAdapter, AIAnalysisError } from './ai.adapter';
 import { UploadedFile } from '../../common/interfaces/multer';
 import { PromptBuilderService } from '../prompt/prompt-builder.service';
@@ -448,8 +449,20 @@ export class AiService {
     const tickBalance = await this.ticksService.getBalance(userId);
     const canAnalyzeWithTicks = tickBalance >= TICK_COSTS.ANALYSIS_QUICK;
 
+    // Resolve nome real do plano (starter/pro/elite) a partir da subscription ativa
+    let planName: string = 'free';
+    if (paidAccess) {
+      const activeSub = await this.prisma.subscription.findFirst({
+        where: { userId, status: { in: ACTIVE_SUBSCRIPTION_STATUSES } },
+        select: { priceId: true },
+        orderBy: { updatedAt: 'desc' },
+      });
+      const resolved = activeSub?.priceId ? resolvePlanForPriceId(activeSub.priceId) : null;
+      planName = resolved ?? 'pro';
+    }
+
     return {
-      plan: paidAccess ? 'pro' : 'free',
+      plan: planName,
       period: 'monthly',
       periodStart,
       total: paidAccess || freeUnlimited ? null : freeLimit,
@@ -616,20 +629,15 @@ export class AiService {
       analysisType === 'deep' ? TICK_COSTS.ANALYSIS_DEEP : TICK_COSTS.ANALYSIS_QUICK;
 
     if (await this.hasPaidAccess(userId)) {
-      // Assinante: consome ticks do plano mensal, mas não bloqueia se zerar.
-      // Os ticks são creditados automaticamente a cada renovação via webhook.
-      try {
-        await this.ticksService.debitTicks(
-          userId,
-          tickCost,
-          `Análise ${analysisType === 'deep' ? 'deep' : 'rápida'} de gráfico`,
-          { analysisType },
-        );
-      } catch {
-        this.logger.warn(
-          `[AiService] Assinante ${userId} sem ticks suficientes para análise ${analysisType} — permitido mesmo assim`,
-        );
-      }
+      // Assinante: consome ticks do plano mensal.
+      // Se zerar, lança INSUFFICIENT_TICKS — o usuário pode comprar mais ticks avulsos
+      // ou aguardar a renovação automática no próximo ciclo via webhook.
+      await this.ticksService.debitTicks(
+        userId,
+        tickCost,
+        `Análise ${analysisType === 'deep' ? 'deep' : 'rápida'} de gráfico`,
+        { analysisType },
+      );
       return;
     }
 

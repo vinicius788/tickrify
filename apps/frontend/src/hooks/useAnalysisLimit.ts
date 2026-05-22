@@ -2,13 +2,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { apiClient } from '@/lib/api';
 
+export type UserPlan = 'free' | 'starter' | 'pro' | 'elite';
+
 interface AnalysisLimitData {
   total: number;
   used: number;
   remaining: number;
   canAnalyze: boolean;
   isUnlimited: boolean;
-  plan: 'free' | 'pro';
+  plan: UserPlan;
 }
 
 const FREE_LIMIT = 3;
@@ -19,12 +21,12 @@ export function useAnalysisLimit(): AnalysisLimitData {
   const { getToken } = useAuth();
   const [analysisCount, setAnalysisCount] = useState(0);
   const [analysisLimit, setAnalysisLimit] = useState(FREE_LIMIT);
-  const [userPlan, setUserPlan] = useState<'free' | 'pro'>('free');
+  const [userPlan, setUserPlan] = useState<UserPlan>('free');
   const [backendUnlimited, setBackendUnlimited] = useState(false);
 
   // Verificar se está no modo demo (rota /demo sem usuário)
   const isDemo = !user;
-  const isUnlimited = userPlan === 'pro' || backendUnlimited;
+  const isUnlimited = userPlan !== 'free' || backendUnlimited;
 
   const refreshLimits = useCallback(async () => {
     if (!isLoaded || !user) {
@@ -44,7 +46,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
 
       const usage = await apiClient.getAnalysisUsage(token);
 
-      setUserPlan(usage.plan === 'pro' ? 'pro' : 'free');
+      const validPlans: UserPlan[] = ['free', 'starter', 'pro', 'elite'];
+      setUserPlan(validPlans.includes(usage.plan as UserPlan) ? (usage.plan as UserPlan) : 'free');
       setBackendUnlimited(Boolean(usage.isUnlimited));
       setAnalysisCount(usage.used);
       setAnalysisLimit(
@@ -91,7 +94,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       remaining: Infinity,
       canAnalyze: true,
       isUnlimited: true,
-      plan: 'pro',
+      plan: 'elite' as UserPlan,
     };
   }
 
