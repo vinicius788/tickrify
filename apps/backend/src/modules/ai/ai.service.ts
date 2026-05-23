@@ -657,10 +657,14 @@ export class AiService {
           in: ACTIVE_SUBSCRIPTION_STATUSES,
         },
       },
-      select: { id: true },
+      select: { id: true, priceId: true },
     });
 
-    if (activeSubscription) return true;
+    if (activeSubscription) {
+      // Ensure ticks are initialized — handles webhook-miss on first analysis
+      await this.stripeService.ensureTicksForActiveSubscriber(userId, activeSubscription.priceId);
+      return true;
+    }
 
     // Fallback: webhook may have been missed — check Stripe API directly
     const user = await this.prisma.user.findUnique({

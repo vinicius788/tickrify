@@ -6,11 +6,6 @@ import { Zap, Crown, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 
-interface AnalysisCounterProps {
-  onUpgradeClick?: () => void;
-  onBuyTicksClick?: () => void;
-}
-
 const PLAN_LABELS: Record<UserPlan, string> = {
   free: 'Gratuito',
   starter: 'Starter',
@@ -25,7 +20,7 @@ const PLAN_TICKS: Record<UserPlan, number> = {
   elite: 400,
 };
 
-const AnalysisCounter = ({ onBuyTicksClick }: AnalysisCounterProps) => {
+const AnalysisCounter = () => {
   const { isUnlimited, plan } = useAnalysisLimit();
   const { balance } = useTicks();
 
@@ -90,18 +85,10 @@ const AnalysisCounter = ({ onBuyTicksClick }: AnalysisCounterProps) => {
           )}
 
           {ticksLow && balance === 0 ? (
-            <div className="space-y-2">
-              <p className="text-xs text-destructive flex items-center gap-1.5">
-                <TriangleAlert className="h-3.5 w-3.5" />
-                Ticks esgotados. Compre mais ou aguarde renovação.
-              </p>
-              {onBuyTicksClick && (
-                <Button size="sm" className="w-full" onClick={onBuyTicksClick}>
-                  <Zap className="mr-2 h-4 w-4" />
-                  Comprar Ticks
-                </Button>
-              )}
-            </div>
+            <p className="text-xs text-amber-500 flex items-center gap-1.5">
+              <TriangleAlert className="h-3.5 w-3.5" />
+              Ticks esgotados. Renova automaticamente no próximo ciclo.
+            </p>
           ) : ticksLow ? (
             <p className="text-xs text-amber-500 flex items-center gap-1.5">
               <TriangleAlert className="h-3.5 w-3.5" />

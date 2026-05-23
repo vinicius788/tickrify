@@ -785,6 +785,43 @@ export class StripeService {
   }
 
   /**
+   * Ensures a subscriber has their tick allocation.
+   * Called whenever DB confirms an active subscription but balance may be 0 (webhook missed).
+   */
+  async ensureTicksForActiveSubscriber(userId: string, priceId: string | null): Promise<void> {
+    if (!priceId) return;
+
+    const currentBalance = await this.prisma.userTicks.findUnique({
+      where: { userId },
+      select: { balance: true },
+    });
+
+    if ((currentBalance?.balance ?? 0) > 0) return;
+
+    const { ticks, planName } = resolveTicksForPriceId(priceId);
+    if (ticks <= 0) return;
+
+    await this.prisma.$transaction([
+      this.prisma.userTicks.upsert({
+        where: { userId },
+        create: { userId, balance: ticks },
+        update: { balance: ticks },
+      }),
+      this.prisma.tickTransaction.create({
+        data: {
+          userId,
+          amount: ticks,
+          type: 'BONUS',
+          description: `Inicialização de ticks — Plano ${planName} (${ticks} Ticks)`,
+          metadata: { priceId, source: 'ensure_ticks' },
+        },
+      }),
+    ]);
+
+    this.logger.log(`[EnsureTicks] Credited ${ticks} ticks for user ${userId} (plan: ${planName})`);
+  }
+
+  /**
    * Lazy sync: fetch active subscriptions directly from Stripe and upsert to DB.
    * Used as fallback when webhook delivery fails.
    */

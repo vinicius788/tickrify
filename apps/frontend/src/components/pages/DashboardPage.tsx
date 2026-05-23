@@ -13,12 +13,10 @@ import AnalysisResult from "../dashboard/AnalysisResult";
 import AnalysisLoading from "../dashboard/AnalysisLoading";
 import AnalysisCounter from "../dashboard/AnalysisCounter";
 import { TicksBadge } from "@/components/dashboard/TicksBadge";
-import { BuyTicksModal } from "@/components/dashboard/BuyTicksModal";
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
 import { APIError, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
-import { useTicks } from "@/hooks/useTicks";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { PLANS } from "@/components/pricing/PricingCards";
 import officialIcon from "@/assets/tickrify-icon-official.png";
@@ -48,13 +46,10 @@ const DashboardPage = () => {
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [showBuyTicksModal, setShowBuyTicksModal] = useState(false);
-  const [buyTicksModalReason, setBuyTicksModalReason] = useState<'insufficient' | 'topup'>('topup');
   const { plan, total, used, isUnlimited } = useAnalysisLimit();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
   const { toast } = useToast();
-  const { refetch: refetchTicks } = useTicks();
   const apiClient = useAPIClient();
   const isDemo = !user;
   const { analyses: rawAnalyses, loading: loadingAnalyses, refetch: refetchAnalyses } = useAnalyses(40);
@@ -146,27 +141,7 @@ const DashboardPage = () => {
       return;
     }
 
-    if (ticksState === 'success') {
-      const amount = params.get('amount');
-      refetchTicks();
-      toast({
-        title: 'Ticks adicionados',
-        description: amount
-          ? `+${amount} Ticks adicionados à sua conta!`
-          : 'Ticks adicionados à sua conta!',
-      });
-      window.history.replaceState({}, '', '/dashboard');
-      return;
-    }
-
-    if (ticksState === 'cancelled') {
-      toast({
-        title: 'Compra cancelada',
-        description: 'Você pode tentar novamente quando quiser.',
-      });
-      window.history.replaceState({}, '', '/dashboard');
-    }
-  }, [refetchTicks, toast]);
+  }, [toast]);
 
   // Usar dados demo ou reais dependendo do modo
   const activeMarkets = isDemo ? demoActiveMarkets : realActiveMarkets;
@@ -256,8 +231,11 @@ const DashboardPage = () => {
 
         const apiCode = error.code || String(parsedBody?.code || '');
         if (apiCode === 'INSUFFICIENT_TICKS') {
-          setBuyTicksModalReason('insufficient');
-          setShowBuyTicksModal(true);
+          toast({
+            title: 'Ticks esgotados',
+            description: 'Seus ticks do plano se esgotaram. Eles renovam automaticamente no próximo ciclo.',
+            variant: 'destructive',
+          });
           resetNewAnalysisView();
           return;
         }
@@ -381,14 +359,7 @@ const DashboardPage = () => {
               )}
             </div>
 
-            {user && (
-              <TicksBadge
-                onClick={() => {
-                  setBuyTicksModalReason('topup');
-                  setShowBuyTicksModal(true);
-                }}
-              />
-            )}
+            {user && <TicksBadge />}
 
             <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium">
               <Clock className="h-3.5 w-3.5 text-muted-foreground" />
@@ -450,7 +421,6 @@ const DashboardPage = () => {
             {user && (
               <AnalysisCounter
                 onUpgradeClick={() => setShowUpgradeModal(true)}
-                onBuyTicksClick={() => { setBuyTicksModalReason('topup'); setShowBuyTicksModal(true); }}
               />
             )}
 
@@ -546,13 +516,6 @@ const DashboardPage = () => {
           </main>
         </div>
       </div>
-
-      <BuyTicksModal
-        open={showBuyTicksModal}
-        onClose={() => setShowBuyTicksModal(false)}
-        reason={buyTicksModalReason}
-        isSubscriber={plan !== 'free'}
-      />
 
       {/* Modal de Upgrade */}
       <Dialog open={showUpgradeModal} onOpenChange={setShowUpgradeModal}>
