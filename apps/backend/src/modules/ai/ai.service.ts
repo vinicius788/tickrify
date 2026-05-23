@@ -9,7 +9,6 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createClient } from '@supabase/supabase-js';
-import { randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
 import { resolvePlanForPriceId } from '../../config/stripe.config';
@@ -675,39 +674,6 @@ export class AiService {
     if (!user?.stripeCustomerId) return false;
 
     return this.stripeService.syncActiveSubscriptionFromStripe(userId, user.stripeCustomerId);
-  }
-
-  private getFreeLimit(): number | null {
-    const configured = Number(process.env.FREE_ANALYSIS_LIMIT_PER_MONTH || DEFAULT_FREE_ANALYSIS_LIMIT);
-    if (!Number.isFinite(configured)) {
-      return DEFAULT_FREE_ANALYSIS_LIMIT > 0 ? DEFAULT_FREE_ANALYSIS_LIMIT : null;
-    }
-
-    const normalized = Math.floor(configured);
-    if (normalized <= 0) {
-      return null;
-    }
-
-    return normalized;
-  }
-
-  private async consumeFreeQuotaSlot(userId: string, limit: number): Promise<boolean> {
-    const periodStart = this.getCurrentUsagePeriodStart();
-
-    const rows = await this.prisma.$queryRaw<Array<{ count: number }>>(Prisma.sql`
-      INSERT INTO "tickrify"."AnalysisUsage"
-        ("id", "userId", "periodType", "periodStart", "count", "createdAt", "updatedAt")
-      VALUES
-        (${randomUUID()}, ${userId}, 'MONTH', ${periodStart}, 1, NOW(), NOW())
-      ON CONFLICT ("userId", "periodType", "periodStart")
-      DO UPDATE SET
-        "count" = "AnalysisUsage"."count" + 1,
-        "updatedAt" = NOW()
-      WHERE "AnalysisUsage"."count" < ${limit}
-      RETURNING "count"
-    `);
-
-    return rows.length > 0;
   }
 
   private getCurrentUsagePeriodStart(): Date {

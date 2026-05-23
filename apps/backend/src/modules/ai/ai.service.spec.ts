@@ -69,7 +69,12 @@ describe('AiService access enforcement', () => {
       composePromptParts: jest.fn((parts: string[]) => parts.join('\n\n---\n\n')),
     };
 
-    service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any);
+    const stripeService = {
+      ensureTicksForActiveSubscriber: jest.fn().mockResolvedValue(undefined),
+      syncActiveSubscriptionFromStripe: jest.fn().mockResolvedValue(false),
+    };
+
+    service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any);
   });
 
   it('blocks analysis creation when free quota is exhausted and user has no ticks', async () => {
