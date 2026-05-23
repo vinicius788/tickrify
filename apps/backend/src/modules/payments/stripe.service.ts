@@ -92,6 +92,9 @@ export class StripeService {
         cancel_url: cancelUrl,
         allow_promotion_codes: true,
         billing_address_collection: 'required',
+        subscription_data: {
+          trial_period_days: 3,
+        },
         metadata: {
           userId: user.id,
           clerkUserId,

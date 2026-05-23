@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   HttpException,
   Injectable,
   Logger,
@@ -42,7 +43,6 @@ import {
 } from './analysis-pipeline';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
-const DEFAULT_FREE_ANALYSIS_LIMIT = 3;
 
 type ApiAnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
@@ -430,9 +430,7 @@ export class AiService {
     }
 
     const periodStart = this.getCurrentUsagePeriodStart();
-    const freeLimit = this.getFreeLimit();
     const paidAccess = await this.hasPaidAccess(userId);
-    const freeUnlimited = freeLimit === null;
 
     const usageRow = await this.prisma.analysisUsage.findUnique({
       where: {
@@ -447,7 +445,7 @@ export class AiService {
 
     const used = usageRow?.count ?? 0;
     const tickBalance = await this.ticksService.getBalance(userId);
-    const canAnalyzeWithTicks = tickBalance >= TICK_COSTS.ANALYSIS_QUICK;
+    const canAnalyzeWithTicks = paidAccess && tickBalance >= TICK_COSTS.ANALYSIS_QUICK;
 
     // Resolve nome real do plano (starter/pro/elite) a partir da subscription ativa
     let planName: string = 'free';
@@ -465,12 +463,12 @@ export class AiService {
       plan: planName,
       period: 'monthly',
       periodStart,
-      total: paidAccess || freeUnlimited ? null : freeLimit,
+      total: paidAccess ? null : 0,
       used,
-      remaining: paidAccess || freeUnlimited ? null : Math.max(0, freeLimit - used),
-      isUnlimited: paidAccess || freeUnlimited,
+      remaining: paidAccess ? null : 0,
+      isUnlimited: paidAccess,
       tickBalance,
-      canAnalyze: paidAccess || freeUnlimited || used < freeLimit || canAnalyzeWithTicks,
+      canAnalyze: paidAccess,
     };
   }
 
@@ -641,26 +639,12 @@ export class AiService {
       return;
     }
 
-    // Usuário gratuito: cota mensal + ticks com bloqueio rígido
-    const freeLimit = this.getFreeLimit();
-    if (freeLimit === null) {
-      return;
-    }
-
-    const isQuickAnalysis = analysisType !== 'deep';
-    if (isQuickAnalysis) {
-      const consumed = await this.consumeFreeQuotaSlot(userId, freeLimit);
-      if (consumed) {
-        return;
-      }
-    }
-
-    await this.ticksService.debitTicks(
-      userId,
-      tickCost,
-      `Análise ${analysisType === 'deep' ? 'deep' : 'rápida'} de gráfico`,
-      { analysisType },
-    );
+    // Usuário sem assinatura ativa: não há tier gratuito.
+    // Redirecionar para a página de planos.
+    throw new ForbiddenException({
+      code: 'SUBSCRIPTION_REQUIRED',
+      message: 'Uma assinatura ativa é necessária para realizar análises.',
+    });
   }
 
   private async hasPaidAccess(userId: string): Promise<boolean> {

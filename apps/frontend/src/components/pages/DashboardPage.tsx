@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical, Clock, Wifi, WifiOff } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { UserButton, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import NewAnalysis from "../dashboard/NewAnalysis";
@@ -41,6 +41,7 @@ const MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
 
 const DashboardPage = () => {
+  const navigate = useNavigate();
   const [activeView, setActiveView] = useState<View>('new-analysis');
   const [analysisKey, setAnalysisKey] = useState(0);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
@@ -261,9 +262,14 @@ const DashboardPage = () => {
           return;
         }
 
+        if (apiCode === 'SUBSCRIPTION_REQUIRED' || error.status === 403) {
+          // Sem assinatura ativa → redirecionar para página de planos
+          navigate('/pricing');
+          return;
+        }
+
         if (
           error.status === 402 ||
-          error.status === 403 ||
           error.status === 429 ||
           error.code === 'upgrade_required' ||
           error.code === 'quota_exceeded'
