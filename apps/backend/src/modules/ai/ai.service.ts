@@ -33,6 +33,7 @@ import {
 import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { TICK_COSTS, AnalysisType } from '../ticks/tick-packages';
 import { TicksService } from '../ticks/ticks.service';
+import { StripeService } from '../payments/stripe.service';
 import {
   AnalysisContext,
   validateImageHook,
@@ -55,6 +56,7 @@ export class AiService {
     private aiAdapter: AIAdapter,
     private ticksService: TicksService,
     private promptBuilder: PromptBuilderService,
+    private stripeService: StripeService,
   ) {}
 
   async createAnalysis(
@@ -658,7 +660,17 @@ export class AiService {
       select: { id: true },
     });
 
-    return Boolean(activeSubscription);
+    if (activeSubscription) return true;
+
+    // Fallback: webhook may have been missed — check Stripe API directly
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { stripeCustomerId: true },
+    });
+
+    if (!user?.stripeCustomerId) return false;
+
+    return this.stripeService.syncActiveSubscriptionFromStripe(userId, user.stripeCustomerId);
   }
 
   private getFreeLimit(): number | null {

@@ -784,6 +784,68 @@ export class StripeService {
     });
   }
 
+  /**
+   * Lazy sync: fetch active subscriptions directly from Stripe and upsert to DB.
+   * Used as fallback when webhook delivery fails.
+   */
+  async syncActiveSubscriptionFromStripe(userId: string, stripeCustomerId: string): Promise<boolean> {
+    try {
+      const stripe = this.getStripeClient();
+      const subscriptions = await stripe.subscriptions.list({
+        customer: stripeCustomerId,
+        status: 'all',
+        limit: 5,
+      });
+
+      const active = subscriptions.data.filter(s =>
+        ['active', 'trialing'].includes(s.status),
+      );
+
+      if (active.length === 0) return false;
+
+      for (const sub of active) {
+        await this.upsertSubscriptionForUser(userId, sub);
+      }
+
+      // Credit ticks if balance is 0 — webhook was missed, user never got their allocation
+      const currentBalance = await this.prisma.userTicks.findUnique({
+        where: { userId },
+        select: { balance: true },
+      });
+
+      if ((currentBalance?.balance ?? 0) === 0) {
+        const priceId = active[0].items.data[0]?.price.id ?? '';
+        const { ticks, planName } = resolveTicksForPriceId(priceId);
+
+        if (ticks > 0) {
+          await this.prisma.$transaction([
+            this.prisma.userTicks.upsert({
+              where: { userId },
+              create: { userId, balance: ticks },
+              update: { balance: ticks }, // SET not increment — idempotent on zero balance
+            }),
+            this.prisma.tickTransaction.create({
+              data: {
+                userId,
+                amount: ticks,
+                type: 'BONUS',
+                description: `Recarga mensal — Plano ${planName} (${ticks} Ticks) [lazy sync]`,
+                metadata: { subscriptionId: active[0].id, priceId, source: 'lazy_sync' },
+              },
+            }),
+          ]);
+          this.logger.log(`[LazySync] Credited ${ticks} ticks for user ${userId} (plan: ${planName})`);
+        }
+      }
+
+      this.logger.log(`[LazySync] Synced ${active.length} subscription(s) for user ${userId}`);
+      return true;
+    } catch (err) {
+      this.logger.error('[LazySync] Failed to sync from Stripe', err);
+      return false;
+    }
+  }
+
   private async upsertSubscriptionForUser(userId: string, subscription: Stripe.Subscription) {
     await this.prisma.subscription.upsert({
       where: { stripeId: subscription.id },
