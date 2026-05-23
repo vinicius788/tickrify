@@ -776,6 +776,7 @@ const RETRY_DELAYS_MS = [5_000, 30_000, 120_000];
 const worker = new Worker<JobData>('ai-analysis', processAnalysis, {
   connection: getRedisConnection() as any,
   concurrency: 3,
+  lockDuration: 300_000, // 5 minutes — prevents stalled jobs when OpenAI takes long
   settings: {
     backoffStrategy: (attemptsMade: number) =>
       RETRY_DELAYS_MS[Math.min(attemptsMade, RETRY_DELAYS_MS.length) - 1] ?? 120_000,

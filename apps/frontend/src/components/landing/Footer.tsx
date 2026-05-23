@@ -1,4 +1,5 @@
 import { Instagram } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import TermsOfServiceDialog from '@/components/landing/TermsOfServiceDialog';
 import officialLogo from '@/assets/tickrify-logo-official.png';
 
@@ -48,6 +49,9 @@ const Footer = () => {
             <ul className="mt-3 space-y-2 text-sm text-[var(--text-secondary)]">
               <li><a href="#faq" className="footer-nav-link">FAQ</a></li>
               <li><TermsOfServiceDialog /></li>
+              <li>
+                <Link to="/privacidade" className="footer-nav-link">Política de Privacidade</Link>
+              </li>
             </ul>
           </div>
         </div>
