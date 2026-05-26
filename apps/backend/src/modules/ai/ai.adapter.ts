@@ -376,7 +376,7 @@ export class AIAdapter {
     const model =
       process.env.AI_MODEL || (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
 
-    const streamMaxTokens = analysisType === 'deep' ? 10000 : 8000;
+    const streamMaxTokens = analysisType === 'deep' ? 16000 : 16000;
     const stream = await this.openai.chat.completions.create({
       model,
       max_tokens: streamMaxTokens,
@@ -460,9 +460,10 @@ export class AIAdapter {
       const model =
         process.env.AI_MODEL ||
         (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
-      // Quick: 8000 tokens — campo reasoning + análise em português pode ultrapassar 4500
-      // Deep: 10000 tokens para análises com CoT completo e campos detalhados
-      const maxTokens = analysisType === 'deep' ? 10000 : 8000;
+      // Quick: 16000 tokens — resposta em português com todos os campos pode ultrapassar 8000
+      // Deep: 16000 tokens para análises com CoT completo e campos detalhados
+      // gpt-4o e gpt-4o-mini suportam até 16384 tokens de output
+      const maxTokens = analysisType === 'deep' ? 16000 : 16000;
       const response = await this.openai.chat.completions.create({
         model,
         max_tokens: maxTokens,
