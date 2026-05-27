@@ -201,6 +201,21 @@ function extractMessageContent(content: unknown): string {
 }
 
 /**
+ * Garante que uma promise seja resolvida ou rejeitada em no máximo `ms` milissegundos.
+ * Mais confiável do que o timeout interno do SDK OpenAI, que pode não funcionar em todos
+ * os ambientes (ex.: quando o servidor aceita a conexão mas demora a enviar a resposta).
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => { clearTimeout(timeoutId); resolve(value); },
+      (error) => { clearTimeout(timeoutId); reject(error); },
+    );
+  });
+}
+
+/**
  * Tenta reparar JSON truncado fechando colchetes/chaves abertas.
  * O OpenAI às vezes atinge o limite de tokens com o JSON quase completo (faltando apenas `}`).
  * Se o reparo fechar o JSON e ele passar o parse, usamos o resultado em vez de jogar fora.
@@ -417,8 +432,8 @@ export class AIAdapter {
       process.env.AI_MODEL || (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
 
     const streamMaxTokens = 16384; // máximo absoluto do gpt-4o-mini
-    // 60s timeout para stream (ligeiramente maior pois o first token pode demorar)
-    const stream = await this.openai.chat.completions.create({
+    // withTimeout garante aborto em 60s via Promise.race
+    const stream = await withTimeout(this.openai.chat.completions.create({
       model,
       max_tokens: streamMaxTokens,
       temperature: 0.1,
@@ -438,7 +453,7 @@ export class AIAdapter {
           ],
         },
       ],
-    }, { timeout: 60_000 }); // 60s timeout para stream
+    }), 60_000, 'OpenAI stream timed out after 60s');
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta?.content;
@@ -454,23 +469,27 @@ export class AIAdapter {
    */
   private async assertIsFinancialChart(signedImageUrl: string): Promise<void> {
     try {
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        max_tokens: 10,
-        temperature: 0,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'Is this image a financial trading chart (candlestick, line, bar, or similar price chart)? Answer only YES or NO.',
-              },
-              { type: 'image_url', image_url: { url: signedImageUrl, detail: 'low' } },
-            ],
-          },
-        ],
-      }, { timeout: 15_000 }); // 15s max para validação rápida de imagem
+      const response = await withTimeout(
+        this.openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          max_tokens: 10,
+          temperature: 0,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Is this image a financial trading chart (candlestick, line, bar, or similar price chart)? Answer only YES or NO.',
+                },
+                { type: 'image_url', image_url: { url: signedImageUrl, detail: 'low' } },
+              ],
+            },
+          ],
+        }),
+        15_000,
+        'OpenAI chart validation timed out after 15s',
+      );
 
       const answer = String(response.choices[0]?.message?.content || '').trim().toUpperCase();
 
@@ -504,8 +523,9 @@ export class AIAdapter {
       // 16384 = limite máximo de output do gpt-4o-mini
       // Usar o máximo absoluto para eliminar truncação por limite de tokens
       const maxTokens = 16384;
-      // 55s timeout: se OpenAI travar, o job falha rápido em vez de ficar preso por minutos
-      const response = await this.openai.chat.completions.create({
+      // withTimeout garante aborto em exatamente 55s via Promise.race
+      // Mais confiável do que { timeout } do SDK (que pode não funcionar em todos os ambientes)
+      const response = await withTimeout(this.openai.chat.completions.create({
         model,
         max_tokens: maxTokens,
         temperature: 0.1,
@@ -634,7 +654,7 @@ export class AIAdapter {
             ],
           },
         ],
-      }, { timeout: 55_000 }); // 55s: se OpenAI travar, falha rápido
+      }), 55_000, 'OpenAI analysis timed out after 55s');
 
       const choice = response.choices[0];
       const finishReason = String(choice?.finish_reason || '').trim().toLowerCase();
