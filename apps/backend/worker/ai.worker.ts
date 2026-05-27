@@ -511,11 +511,15 @@ async function resolveAiSource(
 }
 
 function safeWorkerErrorMessage(error: unknown): string {
+  if (error instanceof AIAnalysisError) {
+    return AIAnalysisError.toUserMessage(error);
+  }
+
   if (!isProductionRuntime() && error instanceof Error) {
     return error.message;
   }
 
-  return 'Analysis processing failed. Please try again later.';
+  return 'Erro na análise. Tente novamente.';
 }
 
 function validateTradingLogic(result: WorkerAnalysisResult): string[] {

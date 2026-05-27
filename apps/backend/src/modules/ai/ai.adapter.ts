@@ -114,6 +114,8 @@ export class AIAnalysisError extends Error {
         return 'Análise incompleta. Tente com um gráfico mais simples.';
       case 'openai_empty_content':
         return 'Não foi possível analisar a imagem. Tente novamente.';
+      case 'openai_request_failed':
+        return 'O serviço de IA demorou demais para responder. Tente novamente em alguns instantes.';
       default:
         return 'Erro na análise. Tente novamente.';
     }
