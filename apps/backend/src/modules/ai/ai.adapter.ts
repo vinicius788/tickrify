@@ -200,6 +200,46 @@ function extractMessageContent(content: unknown): string {
   return String(content || '').trim();
 }
 
+/**
+ * Tenta reparar JSON truncado fechando colchetes/chaves abertas.
+ * O OpenAI às vezes atinge o limite de tokens com o JSON quase completo (faltando apenas `}`).
+ * Se o reparo fechar o JSON e ele passar o parse, usamos o resultado em vez de jogar fora.
+ */
+function repairTruncatedJson(content: string): string | null {
+  try {
+    let repaired = content.trimEnd();
+
+    // Remove trailing comma/whitespace antes de fechar estruturas
+    repaired = repaired.replace(/,\s*$/, '');
+
+    let openBraces = 0;
+    let openBrackets = 0;
+    let inString = false;
+    let escape = false;
+
+    for (const char of repaired) {
+      if (escape) { escape = false; continue; }
+      if (char === '\\' && inString) { escape = true; continue; }
+      if (char === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (char === '{') openBraces++;
+      else if (char === '}') openBraces--;
+      else if (char === '[') openBrackets++;
+      else if (char === ']') openBrackets--;
+    }
+
+    // Fecha estruturas abertas na ordem correta (primeiro arrays, depois objetos)
+    for (let i = 0; i < openBrackets; i++) repaired += ']';
+    for (let i = 0; i < openBraces; i++) repaired += '}';
+
+    // Valida que agora é JSON válido
+    JSON.parse(repaired);
+    return repaired;
+  } catch {
+    return null;
+  }
+}
+
 function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
   const parsed = parseJsonFromContent(content);
 
@@ -376,7 +416,8 @@ export class AIAdapter {
     const model =
       process.env.AI_MODEL || (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
 
-    const streamMaxTokens = analysisType === 'deep' ? 16000 : 16000;
+    const streamMaxTokens = 16384; // máximo absoluto do gpt-4o-mini
+    // 60s timeout para stream (ligeiramente maior pois o first token pode demorar)
     const stream = await this.openai.chat.completions.create({
       model,
       max_tokens: streamMaxTokens,
@@ -397,7 +438,7 @@ export class AIAdapter {
           ],
         },
       ],
-    });
+    }, { timeout: 60_000 }); // 60s timeout para stream
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta?.content;
@@ -429,7 +470,7 @@ export class AIAdapter {
             ],
           },
         ],
-      });
+      }, { timeout: 15_000 }); // 15s max para validação rápida de imagem
 
       const answer = String(response.choices[0]?.message?.content || '').trim().toUpperCase();
 
@@ -460,10 +501,10 @@ export class AIAdapter {
       const model =
         process.env.AI_MODEL ||
         (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
-      // Quick: 16000 tokens — resposta em português com todos os campos pode ultrapassar 8000
-      // Deep: 16000 tokens para análises com CoT completo e campos detalhados
-      // gpt-4o e gpt-4o-mini suportam até 16384 tokens de output
-      const maxTokens = analysisType === 'deep' ? 16000 : 16000;
+      // 16384 = limite máximo de output do gpt-4o-mini
+      // Usar o máximo absoluto para eliminar truncação por limite de tokens
+      const maxTokens = 16384;
+      // 55s timeout: se OpenAI travar, o job falha rápido em vez de ficar preso por minutos
       const response = await this.openai.chat.completions.create({
         model,
         max_tokens: maxTokens,
@@ -593,7 +634,7 @@ export class AIAdapter {
             ],
           },
         ],
-      });
+      }, { timeout: 55_000 }); // 55s: se OpenAI travar, falha rápido
 
       const choice = response.choices[0];
       const finishReason = String(choice?.finish_reason || '').trim().toLowerCase();
@@ -621,19 +662,33 @@ export class AIAdapter {
         });
       }
 
+      // Se truncado, tenta reparar o JSON antes de falhar
+      // O modelo às vezes gera todos os dados mas falta apenas o `}` final
+      let contentToParse = content;
       if (finishReason === 'length') {
-        throw new AIAnalysisError({
-          code: 'openai_truncated_response',
-          message: 'OpenAI truncou a resposta antes de concluir o JSON do schema.',
-          retriable: false,
-          rawContent: content,
-        });
+        const repaired = repairTruncatedJson(content);
+        if (repaired) {
+          contentToParse = repaired;
+          this.logger.warn('[AIAdapter] Resposta truncada pelo OpenAI — JSON reparado com sucesso');
+        }
       }
 
       let parsed: TradingAnalysisSchemaResult;
       try {
-        parsed = parseSchemaResult(content);
+        parsed = parseSchemaResult(contentToParse);
+        if (finishReason === 'length') {
+          this.logger.warn('[AIAdapter] Análise salva após reparação de JSON truncado');
+        }
       } catch (error) {
+        // Se truncado e reparo falhou → erro específico
+        if (finishReason === 'length') {
+          throw new AIAnalysisError({
+            code: 'openai_truncated_response',
+            message: 'OpenAI truncou a resposta antes de concluir o JSON do schema.',
+            retriable: false,
+            rawContent: content,
+          });
+        }
         throw new AIAnalysisError({
           code: 'openai_invalid_json',
           message:
@@ -684,13 +739,22 @@ export class AIAdapter {
         (loweredMessage.includes('account is not active') ||
           loweredMessage.includes('billing') ||
           loweredMessage.includes('quota'));
+      // Timeout do SDK OpenAI: APIConnectionTimeoutError (status undefined, message contém "timeout")
+      const isTimeoutError =
+        !status &&
+        (loweredMessage.includes('timeout') ||
+          loweredMessage.includes('timed out') ||
+          (error instanceof Error && error.constructor?.name === 'APIConnectionTimeoutError'));
       const aiError = new AIAnalysisError({
         code: isBillingError
           ? 'openai_billing'
           : status === 429
             ? 'openai_rate_limit'
             : 'openai_request_failed',
-        message,
+        message: isTimeoutError
+          ? 'OpenAI demorou demais para responder. Tente novamente em instantes.'
+          : message,
+        // Timeout é retriable=false: falha rápido, usuário tenta de novo manualmente
         retriable: status === 429 ? !isBillingError : Boolean(status && status >= 500),
         status,
       });
