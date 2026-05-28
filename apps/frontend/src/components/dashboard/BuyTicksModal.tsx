@@ -46,10 +46,12 @@ export function BuyTicksModal({
   open,
   onClose,
   reason,
+  isSubscriber = false,
 }: {
   open: boolean;
   onClose: () => void;
   reason?: 'insufficient' | 'topup';
+  isSubscriber?: boolean;
 }) {
   const { buyTicks, balance, packages } = useTicks();
   const [loading, setLoading] = useState<string | null>(null);
@@ -95,9 +97,15 @@ export function BuyTicksModal({
               <h2 className="text-lg font-medium text-[var(--text-primary)]">Comprar Ticks</h2>
             </div>
             {reason === 'insufficient' ? (
-              <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
-                Seu saldo atual é <strong>{balance} Ticks</strong>. Recarregue para continuar.
-              </p>
+              isSubscriber ? (
+                <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
+                  Seus ticks mensais acabaram. Compre mais ou aguarde a renovação do plano.
+                </p>
+              ) : (
+                <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
+                  Seu saldo atual é <strong>{balance} Ticks</strong>. Recarregue para continuar.
+                </p>
+              )
             ) : (
               <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
                 Ticks não expiram. Use quando quiser.
