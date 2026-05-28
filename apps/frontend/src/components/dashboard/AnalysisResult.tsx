@@ -211,13 +211,6 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
   const confidenceLabel = confidence >= 75 ? 'Alta' : confidence >= 50 ? 'Moderada' : 'Baixa';
 
-  const headerToneClasses =
-    recommendationMeta.tone === 'buy'
-      ? 'bg-[var(--signal-buy-bg)] border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
-      : recommendationMeta.tone === 'sell'
-        ? 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
-        : 'bg-[var(--signal-hold-bg)] border-[var(--signal-hold-border)] text-[var(--signal-hold)]';
-
   const copyValue = async (label: string, value: number | null) => {
     if (value === null) {
       return;
@@ -247,30 +240,101 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const headerIcon = recommendationMeta.tone === 'buy' ? ArrowUp : recommendationMeta.tone === 'sell' ? ArrowDown : Minus;
   const HeaderIcon = headerIcon;
 
+  const signalStrengthLabel =
+    confidence >= 75
+      ? recommendationMeta.tone === 'buy' ? 'COMPRA FORTE' : recommendationMeta.tone === 'sell' ? 'VENDA FORTE' : 'AGUARDAR'
+      : confidence >= 55
+        ? recommendationMeta.tone === 'buy' ? 'COMPRA' : recommendationMeta.tone === 'sell' ? 'VENDA' : 'AGUARDAR'
+        : 'AGUARDAR';
+
+  const signalBgClass =
+    recommendationMeta.tone === 'buy'
+      ? 'bg-[var(--signal-buy)] text-white'
+      : recommendationMeta.tone === 'sell'
+        ? 'bg-[var(--signal-sell)] text-white'
+        : 'bg-[var(--bg-elevated)] text-[var(--signal-hold)] border border-[var(--signal-hold-border)]';
+
+  const signalGlowStyle =
+    recommendationMeta.tone === 'buy'
+      ? { boxShadow: '0 0 24px 4px rgba(0,200,83,0.25)' }
+      : recommendationMeta.tone === 'sell'
+        ? { boxShadow: '0 0 24px 4px rgba(255,50,50,0.25)' }
+        : {};
+
   return (
     <div className="space-y-5">
-      <Card className="surface-terminal-elevated rounded-xl fade-in-stagger" style={{ animationDelay: '0ms' }}>
-        <CardContent className="p-5 md:p-6">
-          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)] md:flex-nowrap md:items-center md:gap-4">
-            <span className="whitespace-nowrap font-terminal font-semibold text-[var(--text-primary)]">{symbol}</span>
-            <span className="whitespace-nowrap font-terminal">{timeframe}</span>
-            <div className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold ${headerToneClasses}`}>
-              <HeaderIcon className="h-4 w-4" />
-              <span>{recommendationMeta.icon}</span>
-              <span>{recommendationMeta.label}</span>
+      {/* ── Signal Hero Card (trading-platform style) ─────────────────── */}
+      <Card
+        className="surface-terminal-elevated overflow-hidden rounded-xl fade-in-stagger"
+        style={{ animationDelay: '0ms' }}
+      >
+        <CardContent className="p-0">
+          <div className="flex flex-col sm:flex-row sm:items-stretch">
+            {/* LEFT — instrument meta */}
+            <div className="flex flex-col justify-center gap-1 px-5 py-4 sm:flex-1 sm:py-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-terminal text-lg font-bold text-[var(--text-primary)] tracking-wider">
+                  {symbol}
+                </span>
+                <span className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-1.5 py-0.5 font-terminal text-xs text-[var(--text-secondary)]">
+                  {timeframe}
+                </span>
+                {detectedSession && (
+                  <span className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-1.5 py-0.5 font-terminal text-xs text-[var(--text-secondary)] uppercase">
+                    {detectedSession.replace('_', ' ')}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-secondary)]">
+                <span>
+                  BIAS:{' '}
+                  <strong className="font-medium text-[var(--text-primary)]">
+                    {String(analysisData.bias || marketStructure.bias || 'neutral').toUpperCase()}
+                  </strong>
+                </span>
+                <span className="text-[var(--border-subtle)]">|</span>
+                <span>
+                  CONFIANÇA:{' '}
+                  <strong className="font-terminal font-semibold text-[var(--text-primary)]">{confidence}%</strong>
+                </span>
+                <span className="text-[var(--border-subtle)]">|</span>
+                <span className="font-terminal">{formattedTimestamp}</span>
+              </div>
+              {/* Confidence bar */}
+              <div className="mt-1 flex items-center gap-2">
+                <div className="h-1 flex-1 overflow-hidden rounded-full bg-[var(--bg-base)]">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${confidence}%`,
+                      backgroundColor:
+                        confidence >= 70
+                          ? 'var(--signal-buy)'
+                          : confidence >= 50
+                            ? 'var(--signal-hold)'
+                            : 'var(--signal-sell)',
+                    }}
+                  />
+                </div>
+                <span className="text-xs text-[var(--text-secondary)]">{confidenceLabel}</span>
+              </div>
             </div>
-            <span>
-              BIAS:{' '}
-              <strong className="whitespace-nowrap font-medium text-[var(--text-primary)]">
-                {String(analysisData.bias || marketStructure.bias || 'neutral').toUpperCase()}
-              </strong>
-            </span>
-            <span className="whitespace-nowrap font-terminal md:ml-auto">{formattedTimestamp}</span>
-            {detectedSession && (
-              <span className="whitespace-nowrap rounded-sm border border-[var(--border-subtle)] px-2 py-0.5 font-terminal text-xs text-[var(--text-secondary)] uppercase">
-                {detectedSession.replace('_', ' ')}
-              </span>
-            )}
+
+            {/* RIGHT — Big BUY / SELL signal badge */}
+            <div className="flex items-center justify-center border-t border-[var(--border-subtle)] px-6 py-4 sm:border-l sm:border-t-0 sm:px-8 sm:py-5">
+              <div
+                className={`flex flex-col items-center justify-center rounded-xl px-8 py-4 min-w-[130px] ${signalBgClass}`}
+                style={signalGlowStyle}
+              >
+                <HeaderIcon className="h-6 w-6 mb-1 opacity-90" strokeWidth={3} />
+                <span className="font-terminal text-2xl font-black tracking-widest leading-none">
+                  {recommendationMeta.tone === 'buy' ? 'BUY' : recommendationMeta.tone === 'sell' ? 'SELL' : 'HOLD'}
+                </span>
+                <span className="mt-1 text-[0.65rem] font-bold tracking-widest opacity-80 uppercase">
+                  {signalStrengthLabel}
+                </span>
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -303,42 +367,18 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
             <CardTitle className="text-base tracking-wide">NÍVEIS DE OPERAÇÃO</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <p className="text-xs text-[var(--text-secondary)]">R/R</p>
-                  <p className={`font-terminal text-base font-semibold ${riskRewardTone}`}>
-                    {riskReward !== null ? `${riskReward.toFixed(1)} : 1` : String(riskRewardRatioRaw || 'N/A')}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-[var(--text-secondary)]">Confluência</p>
-                  <p className="font-terminal text-base font-semibold text-[var(--text-primary)]">
-                    {confluence ? confluence.display : 'N/A'}
-                  </p>
-                </div>
+            <div className="grid grid-cols-2 gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3">
+              <div>
+                <p className="text-xs text-[var(--text-secondary)]">R/R</p>
+                <p className={`font-terminal text-base font-semibold ${riskRewardTone}`}>
+                  {riskReward !== null ? `${riskReward.toFixed(1)} : 1` : String(riskRewardRatioRaw || 'N/A')}
+                </p>
               </div>
-
-              <div className="mt-3 border-t border-[var(--border-subtle)] pt-3">
-                <p className="text-xs text-[var(--text-secondary)]">Confiança</p>
-                <div className="mt-2 flex items-center gap-2">
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--bg-base)]">
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{
-                        width: `${confidence}%`,
-                        backgroundColor:
-                          confidence >= 70
-                            ? 'var(--signal-buy)'
-                            : confidence >= 50
-                              ? 'var(--signal-hold)'
-                              : 'var(--signal-sell)',
-                      }}
-                    />
-                  </div>
-                  <span className="font-terminal text-xs text-[var(--text-primary)]">{confidence}%</span>
-                  <span className="text-xs text-[var(--text-secondary)]">{confidenceLabel}</span>
-                </div>
+              <div>
+                <p className="text-xs text-[var(--text-secondary)]">Confluência</p>
+                <p className="font-terminal text-base font-semibold text-[var(--text-primary)]">
+                  {confluence ? confluence.display : 'N/A'}
+                </p>
               </div>
             </div>
 
