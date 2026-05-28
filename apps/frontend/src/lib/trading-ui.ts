@@ -1,16 +1,16 @@
-export type RecommendationCanonical = 'COMPRA' | 'VENDA' | 'AGUARDAR';
+export type RecommendationCanonical = 'BUY' | 'SELL' | 'HOLD';
 
 export const RECOMMENDATION_LABELS: Record<
   string,
   { label: RecommendationCanonical; tone: 'buy' | 'sell' | 'hold'; icon: string }
 > = {
-  COMPRA: { label: 'COMPRA', tone: 'buy', icon: '↑' },
-  VENDA: { label: 'VENDA', tone: 'sell', icon: '↓' },
-  AGUARDAR: { label: 'AGUARDAR', tone: 'hold', icon: '⏸' },
-  BUY: { label: 'COMPRA', tone: 'buy', icon: '↑' },
-  SELL: { label: 'VENDA', tone: 'sell', icon: '↓' },
-  HOLD: { label: 'AGUARDAR', tone: 'hold', icon: '⏸' },
-  WAIT: { label: 'AGUARDAR', tone: 'hold', icon: '⏸' },
+  COMPRA: { label: 'BUY', tone: 'buy', icon: '↑' },
+  VENDA: { label: 'SELL', tone: 'sell', icon: '↓' },
+  AGUARDAR: { label: 'HOLD', tone: 'hold', icon: '⏸' },
+  BUY: { label: 'BUY', tone: 'buy', icon: '↑' },
+  SELL: { label: 'SELL', tone: 'sell', icon: '↓' },
+  HOLD: { label: 'HOLD', tone: 'hold', icon: '⏸' },
+  WAIT: { label: 'HOLD', tone: 'hold', icon: '⏸' },
 };
 
 export function normalizeRecommendationLabel(value: unknown): RecommendationCanonical {
