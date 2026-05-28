@@ -613,7 +613,7 @@ export class AIAdapter {
             ],
           },
         ],
-      }), 40_000, 'OpenAI analysis timed out after 40s');
+      }), 55_000, 'OpenAI analysis timed out after 55s');
 
       const choice = response.choices[0];
       const finishReason = String(choice?.finish_reason || '').trim().toLowerCase();
