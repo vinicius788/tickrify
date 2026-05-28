@@ -96,7 +96,7 @@ const AnalysisCounter = () => {
             </p>
           ) : (
             <p className="text-xs text-[var(--text-secondary)]">
-              Renova mensalmente · {Math.floor(balance)} análises rápidas ou {Math.floor(balance / 3)} deep
+              Renova mensalmente · {Math.floor(balance)} ticks disponíveis
             </p>
           )}
         </div>
