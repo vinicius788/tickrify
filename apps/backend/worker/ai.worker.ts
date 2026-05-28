@@ -744,28 +744,44 @@ async function processAnalysis(job: Job<JobData>) {
       rawContent ||
       (error instanceof AIAnalysisError && error.rawContent ? error.rawContent : null);
 
-    await prisma.analysis.update({
-      where: { id: analysisId },
-      data: {
-        status: 'failed',
-        reasoning: safeMessage,
-        errorMessage: safeMessage,
-        result: Prisma.DbNull,
-        fullResponse: failureRawContent,
-      },
-    });
-
+    // Non-retriable error → fail permanently and immediately
     if (error instanceof AIAnalysisError && !error.retriable) {
-      throw new UnrecoverableError(error.message);
-    }
-
-    // For retriable rate-limit errors, the job will be retried by BullMQ automatically.
-    // Update errorMessage with a friendly message so the frontend can show it while retrying.
-    if (AIAnalysisError.isRetryable(error)) {
       await prisma.analysis.update({
         where: { id: analysisId },
         data: {
-          errorMessage: AIAnalysisError.toUserMessage(error),
+          status: 'failed',
+          reasoning: safeMessage,
+          errorMessage: safeMessage,
+          result: Prisma.DbNull,
+          fullResponse: failureRawContent,
+        },
+      });
+      throw new UnrecoverableError(error.message);
+    }
+
+    // Retriable error — decide based on remaining attempts
+    const totalAttempts = job.opts.attempts ?? 3;
+    const attemptsDone = (job.attemptsMade ?? 0) + 1; // current attempt counts as done
+    const isLastAttempt = attemptsDone >= totalAttempts;
+
+    if (isLastAttempt) {
+      // Exhausted all retries — set final failure state
+      await prisma.analysis.update({
+        where: { id: analysisId },
+        data: {
+          status: 'failed',
+          reasoning: safeMessage,
+          errorMessage: safeMessage,
+          result: Prisma.DbNull,
+          fullResponse: failureRawContent,
+        },
+      });
+    } else {
+      // Intermediate retry — keep status=processing so the frontend keeps polling
+      await prisma.analysis.update({
+        where: { id: analysisId },
+        data: {
+          errorMessage: 'IA ocupada, tentando novamente em instantes…',
         },
       });
     }

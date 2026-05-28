@@ -183,7 +183,7 @@ export interface AnalysisUsageResponse {
 class APIClient {
   private static readonly REQUEST_TIMEOUT_MS = 15000;
   private static readonly ANALYZE_TIMEOUT_MS = 120000;
-  private static readonly POLL_TIMEOUT_MS = 55000; // 55s — backend tem timeout de 40s no OpenAI; se não voltou em 55s, algo travou
+  private static readonly POLL_TIMEOUT_MS = 180_000; // 3 min — cobre até 3 tentativas com backoff (timeout 55s + wait 5s + retry 55s + wait 30s + retry 55s)
   private static readonly POLL_MAX_ATTEMPTS = 90;
   // Polling rápido: começa em 800ms, cresce 200ms por tentativa, cap de 3s
   // Antes: 2000ms * attempts (chegava a 10s entre polls — responsável por até 30s de lag)

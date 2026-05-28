@@ -744,8 +744,8 @@ export class AIAdapter {
         message: isTimeoutError
           ? 'OpenAI demorou demais para responder. Tente novamente em instantes.'
           : message,
-        // Timeout é retriable=false: falha rápido, usuário tenta de novo manualmente
-        retriable: status === 429 ? !isBillingError : Boolean(status && status >= 500),
+        // Timeout é retriable=true: BullMQ vai tentar novamente automaticamente (sem custar tick)
+        retriable: isTimeoutError || (status === 429 ? !isBillingError : Boolean(status && status >= 500)),
         status,
       });
 
