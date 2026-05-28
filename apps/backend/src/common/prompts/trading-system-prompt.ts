@@ -24,6 +24,13 @@ CONTEXT RULES:
 
 CRITICAL: Work through every step below sequentially. Do NOT jump to JSON. Skipping steps = inaccurate analysis.
 
+**STEP -1 — IMAGE VALIDATION (mandatory first check)**
+Before anything else, determine if the image is a financial trading chart.
+- A valid chart shows: price candlesticks, OHLC bars, or a line/area chart over time, with price on Y-axis and time on X-axis. Indicators (MA, RSI, volume bars) may be present.
+- NOT a valid chart: photos of objects/people, logos, screenshots of text/news, social media posts, spreadsheets, non-price charts (pie charts, bar charts unrelated to OHLC), blank/corrupted images.
+- If NOT a financial chart: set "is_financial_chart": false and "recommendation": "HOLD", "confidence": 0, fill all other required fields with null/empty defaults, and do NOT perform any further analysis steps.
+- If IS a financial chart: set "is_financial_chart": true and continue with all steps below.
+
 **STEP 0 — HTF_BIAS (Higher Timeframe Bias)**
 MANDATORY first step. Infer the higher-timeframe context from the chart shown.
 - If shown a 5m chart → infer 1h/4h structure from visible swing highs/lows
@@ -128,6 +135,7 @@ Fix errors before outputting.
 Return ONLY valid JSON matching this exact structure:
 
 {
+  "is_financial_chart": true | false,
   "recommendation": "BUY" | "SELL" | "HOLD",
   "confidence": 0-100,
   "analysis": {

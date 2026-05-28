@@ -29,6 +29,20 @@ interface AnalysisResultProps {
   uploadedImage: string | null;
 }
 
+type MarketSession = { name: string; abbr: string; open: boolean };
+
+function getOpenSessions(date: Date): MarketSession[] {
+  const h = date.getUTCHours() + date.getUTCMinutes() / 60;
+  const inRange = (start: number, end: number) =>
+    start < end ? h >= start && h < end : h >= start || h < end;
+  return [
+    { name: 'Sydney',    abbr: 'SYD', open: inRange(22, 7)  },
+    { name: 'Tóquio',    abbr: 'TKY', open: inRange(0,  9)  },
+    { name: 'Londres',   abbr: 'LDN', open: inRange(7, 16)  },
+    { name: 'Nova York', abbr: 'NY',  open: inRange(13, 22) },
+  ];
+}
+
 function toNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -177,6 +191,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const riskRewardTone = riskReward !== null && riskReward >= 2 ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-hold)]';
 
   const timestamp = new Date(analysisData.createdAt);
+  const openSessions = getOpenSessions(timestamp);
   const formattedTimestamp = timestamp.toLocaleString('pt-BR', {
     day: '2-digit',
     month: '2-digit',
@@ -405,9 +420,41 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
             <AccordionContent className="px-5 pb-5 md:px-6 md:pb-6">
               <Accordion
                 type="multiple"
-                defaultValue={['market-structure', 'technical-analysis', 'risk-factors']}
+                defaultValue={['sessions', 'market-structure', 'technical-analysis', 'risk-factors']}
                 className="w-full"
               >
+                <AccordionItem value="sessions" className="border-[var(--border-subtle)]">
+                  <AccordionTrigger className="font-semibold hover:no-underline">
+                    <span className="flex items-center gap-2">
+                      <Minus className="h-4 w-4 text-[var(--text-secondary)]" />
+                      Sessões de Mercado
+                    </span>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-4">
+                      {openSessions.map((s) => (
+                        <div
+                          key={s.abbr}
+                          className={`flex flex-col items-center rounded-md border px-3 py-2 text-center text-xs ${
+                            s.open
+                              ? 'border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] text-[var(--signal-buy)]'
+                              : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] text-[var(--text-muted,var(--text-secondary))] opacity-50'
+                          }`}
+                        >
+                          <span className="font-terminal font-semibold">{s.abbr}</span>
+                          <span className="mt-0.5 truncate">{s.name}</span>
+                          <span className="mt-1 font-medium uppercase tracking-wider">
+                            {s.open ? 'Aberta' : 'Fechada'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-[var(--text-secondary)] opacity-60">
+                      Horário no momento da análise (UTC). London+NY abertas = maior liquidez.
+                    </p>
+                  </AccordionContent>
+                </AccordionItem>
+
                 <AccordionItem value="market-structure" className="border-[var(--border-subtle)]">
                   <AccordionTrigger className="font-semibold hover:no-underline">
                     <span className="flex items-center gap-2">

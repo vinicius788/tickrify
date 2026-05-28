@@ -49,6 +49,7 @@ interface TradingAnalysisDetails {
 }
 
 interface TradingAnalysisSchemaResult {
+  is_financial_chart?: boolean;
   recommendation: SchemaRecommendation;
   confidence: number;
   analysis: TradingAnalysisDetails;
@@ -498,6 +499,7 @@ export class AIAdapter {
             schema: {
               type: 'object',
               properties: {
+                is_financial_chart: { type: 'boolean' },
                 recommendation: {
                   type: 'string',
                   enum: ['BUY', 'SELL', 'HOLD', 'COMPRA', 'VENDA', 'AGUARDAR'],
@@ -585,7 +587,7 @@ export class AIAdapter {
                   additionalProperties: false,
                 },
               },
-              required: ['recommendation', 'confidence', 'analysis'],
+              required: ['is_financial_chart', 'recommendation', 'confidence', 'analysis'],
               additionalProperties: false,
             },
           },
@@ -676,6 +678,15 @@ export class AIAdapter {
               : 'Resposta da OpenAI não retornou JSON válido.',
           retriable: false,
           rawContent: content,
+        });
+      }
+
+      // Se a IA sinalizou que a imagem não é um gráfico financeiro → rejeitar imediatamente
+      if (parsed.is_financial_chart === false) {
+        throw new AIAnalysisError({
+          code: 'non_chart_image',
+          message: 'A imagem enviada não parece ser um gráfico financeiro. Envie um print do seu gráfico de trading.',
+          retriable: false,
         });
       }
 
