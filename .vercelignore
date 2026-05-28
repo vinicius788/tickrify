@@ -1,0 +1,61 @@
+# Dependências
+node_modules
+**/node_modules
+
+# Git
+.git
+.gitignore
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Ambiente
+.env
+.env.*
+!.env.example
+
+# Redis dumps
+dump*.rdb
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+
+# Build e cache (backend dist será reconstruído, frontend dist é necessário)
+.cache
+apps/backend/dist
+*.tsbuildinfo
+
+# Scripts locais
+*.sh
+!docker-entrypoint.sh
+
+# Documentação de desenvolvimento (manter apenas essenciais)
+VERIFICAR_IA.md
+VERIFICAR_IA.sh
+test-local.sh
+
+# Uploads locais
+uploads/
+apps/backend/uploads
+
+# Prisma migrations (serão aplicadas via migrate deploy)
+apps/backend/prisma/migrations
+
+# Arquivos de processo
+.pids
+
+# Vercel
+.vercel
+

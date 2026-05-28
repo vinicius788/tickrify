@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: tickrify-api
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    dockerfilePath: ./infra/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health/live
+    envVars:
+      - fromGroup: tickrify-production
+
+  - type: worker
+    name: tickrify-worker
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    dockerfilePath: ./infra/Dockerfile.worker
+    dockerContext: .
+    envVars:
+      - fromGroup: tickrify-production
+
+databases:
+  - name: tickrify-redis
+    plan: free
+    maxmemoryPolicy: noeviction
