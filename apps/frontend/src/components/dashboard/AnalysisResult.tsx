@@ -408,8 +408,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 className="w-full"
               >
                 {/* ── Eventos Econômicos ─────────────────────────────── */}
-                {(calLoading || calEvents.length > 0) && (
-                  <AccordionItem value="calendar" className="border-[var(--border-subtle)]">
+                <AccordionItem value="calendar" className="border-[var(--border-subtle)]">
                     <AccordionTrigger className="font-semibold hover:no-underline">
                       <span className="flex items-center gap-2">
                         <CalendarClock className="h-4 w-4 text-amber-400" />
@@ -424,6 +423,10 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                     <AccordionContent>
                       {calLoading ? (
                         <p className="text-xs text-[var(--text-secondary)]">Verificando calendário…</p>
+                      ) : calEvents.length === 0 ? (
+                        <p className="text-xs text-[var(--text-secondary)] opacity-60">
+                          ✅ Nenhum evento de alto impacto nas próximas 24h para este ativo.
+                        </p>
                       ) : (
                         <div className="space-y-2">
                           {calEvents.map((ev, i) => {
@@ -489,7 +492,6 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                       )}
                     </AccordionContent>
                   </AccordionItem>
-                )}
 
                 <AccordionItem value="sessions" className="border-[var(--border-subtle)]">
                   <AccordionTrigger className="font-semibold hover:no-underline">
