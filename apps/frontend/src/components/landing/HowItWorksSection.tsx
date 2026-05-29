@@ -19,7 +19,7 @@ const steps: Step[] = [
   {
     number: '02',
     title: 'IA analisa',
-    description: 'GPT-4o lê estrutura, zonas e confluências em segundos.',
+    description: 'Nossa IA lê estrutura, zonas e confluências em segundos.',
     icon: ScanSearch,
   },
   {

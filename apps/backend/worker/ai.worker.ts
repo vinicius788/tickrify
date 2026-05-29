@@ -790,8 +790,8 @@ async function processAnalysis(job: Job<JobData>) {
   }
 }
 
-// Custom backoff: attempt 1→5s, 2→30s, 3→120s
-const RETRY_DELAYS_MS = [5_000, 30_000, 120_000];
+/// Custom backoff: attempt 1→3s, 2→8s (curto para retentar rápido em caso de lentidão da IA)
+const RETRY_DELAYS_MS = [3_000, 8_000];
 
 const worker = new Worker<JobData>('ai-analysis', processAnalysis, {
   connection: getRedisConnection() as any,

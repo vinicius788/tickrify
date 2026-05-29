@@ -71,7 +71,7 @@ const PrivacyPolicyPage = () => {
           <ul className="ml-4 mt-2 list-disc space-y-1">
             <li><strong className="text-[var(--text-primary)]">Clerk</strong> — autenticação e gerenciamento de contas;</li>
             <li><strong className="text-[var(--text-primary)]">Stripe</strong> — processamento de pagamentos;</li>
-            <li><strong className="text-[var(--text-primary)]">OpenAI</strong> — processamento das imagens de gráficos para geração de análises;</li>
+            <li><strong className="text-[var(--text-primary)]">Provedor de IA</strong> — processamento das imagens de gráficos para geração de análises;</li>
             <li><strong className="text-[var(--text-primary)]">Supabase</strong> — banco de dados e armazenamento de arquivos;</li>
             <li><strong className="text-[var(--text-primary)]">Render</strong> — infraestrutura de servidores.</li>
           </ul>

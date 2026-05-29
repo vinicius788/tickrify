@@ -138,7 +138,7 @@ export class HealthController {
         required: runtimeProduction,
         configured: aiConfigured,
         ready: aiReady,
-        model: process.env.AI_MODEL || 'gpt-4o',
+        model: process.env.AI_MODEL ? 'configured' : 'default',
       },
       storage: {
         required: runtimeProduction,

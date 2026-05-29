@@ -483,7 +483,7 @@ export class AIAdapter {
       // 16384 = limite máximo de output do gpt-4o-mini
       // Usar o máximo absoluto para eliminar truncação por limite de tokens
       const maxTokens = 16384;
-      // withTimeout garante aborto em exatamente 55s via Promise.race
+      // withTimeout garante aborto em exatamente 25s via Promise.race
       // Mais confiável do que { timeout } do SDK (que pode não funcionar em todos os ambientes)
       const response = await withTimeout(this.openai.chat.completions.create({
         model,
@@ -615,7 +615,7 @@ export class AIAdapter {
             ],
           },
         ],
-      }), 55_000, 'OpenAI analysis timed out after 55s');
+      }), 25_000, 'OpenAI analysis timed out after 25s');
 
       const choice = response.choices[0];
       const finishReason = String(choice?.finish_reason || '').trim().toLowerCase();

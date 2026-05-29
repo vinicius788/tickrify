@@ -149,6 +149,40 @@ export class AiController {
     }
   }
 
+  /** Endpoint público — retorna as últimas 10 análises completadas, anonimizadas */
+  @Get('public-analyses')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async getPublicAnalyses() {
+    const rows = await this.prisma.analysis.findMany({
+      where: { status: 'completed', recommendation: { not: null } },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: {
+        id: true,
+        recommendation: true,
+        confidence: true,
+        createdAt: true,
+        result: true,
+      },
+    });
+
+    return rows.map((r) => {
+      const analysis = (r.result as Record<string, unknown> | null)?.analysis as Record<string, unknown> | undefined;
+      return {
+        id: r.id,
+        recommendation: r.recommendation,
+        confidence: r.confidence,
+        createdAt: r.createdAt,
+        symbol: String(analysis?.symbol || 'N/A').trim(),
+        timeframe: String(analysis?.timeframe || '').trim(),
+        entry: analysis?.entry ?? null,
+        stopLoss: analysis?.stopLoss ?? null,
+        takeProfit1: analysis?.takeProfit1 ?? null,
+        takeProfit2: analysis?.takeProfit2 ?? null,
+      };
+    });
+  }
+
   @Get('usage')
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
