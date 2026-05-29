@@ -1,7 +1,9 @@
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
+  CalendarClock,
   CheckCircle2,
   CircleHelp,
   Minus,
@@ -10,6 +12,7 @@ import {
   Target,
   Zap,
 } from 'lucide-react';
+import { useEconomicCalendar } from '@/hooks/useEconomicCalendar';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -192,6 +195,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
   const timestamp = new Date(analysisData.createdAt);
   const openSessions = getOpenSessions(timestamp);
+  const { events: calEvents, loading: calLoading } = useEconomicCalendar(symbol);
   const formattedTimestamp = timestamp.toLocaleString('pt-BR', {
     day: '2-digit',
     month: '2-digit',
@@ -400,9 +404,93 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
             <AccordionContent className="px-5 pb-5 md:px-6 md:pb-6">
               <Accordion
                 type="multiple"
-                defaultValue={['sessions', 'market-structure', 'technical-analysis', 'risk-factors']}
+                defaultValue={['calendar', 'sessions', 'market-structure', 'technical-analysis', 'risk-factors']}
                 className="w-full"
               >
+                {/* ── Eventos Econômicos ─────────────────────────────── */}
+                {(calLoading || calEvents.length > 0) && (
+                  <AccordionItem value="calendar" className="border-[var(--border-subtle)]">
+                    <AccordionTrigger className="font-semibold hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <CalendarClock className="h-4 w-4 text-amber-400" />
+                        Eventos Econômicos
+                        {calEvents.some((e) => e.impact === 'High' && (e.minutesUntil ?? 999) <= 60) && (
+                          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-terminal text-[10px] font-bold text-amber-400 uppercase">
+                            ⚠ Alto impacto
+                          </span>
+                        )}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      {calLoading ? (
+                        <p className="text-xs text-[var(--text-secondary)]">Verificando calendário…</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {calEvents.map((ev, i) => {
+                            const isHigh = ev.impact === 'High';
+                            const isSoon = (ev.minutesUntil ?? 999) <= 30;
+                            const isJustHappened = (ev.minutesUntil ?? 0) < 0;
+                            const borderColor = isHigh ? 'border-amber-500/40' : 'border-[var(--border-subtle)]';
+                            const bgColor = isHigh ? 'bg-amber-500/6' : 'bg-[var(--bg-elevated)]';
+
+                            let timeLabel = '';
+                            if (isJustHappened) {
+                              timeLabel = `Aconteceu há ${Math.abs(ev.minutesUntil ?? 0)}min`;
+                            } else if ((ev.minutesUntil ?? 0) < 60) {
+                              timeLabel = `Em ${ev.minutesUntil}min`;
+                            } else {
+                              const h = Math.floor((ev.minutesUntil ?? 0) / 60);
+                              const m = (ev.minutesUntil ?? 0) % 60;
+                              timeLabel = `Em ${h}h${m > 0 ? ` ${m}min` : ''}`;
+                            }
+
+                            return (
+                              <div
+                                key={i}
+                                className={`rounded-md border px-3 py-2 text-xs ${borderColor} ${bgColor}`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-1.5">
+                                    {isHigh && isSoon && <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" />}
+                                    <span className={`font-medium ${isHigh ? 'text-amber-300' : 'text-[var(--text-primary)]'}`}>
+                                      {ev.title}
+                                    </span>
+                                  </div>
+                                  <span className={`flex-shrink-0 rounded px-1.5 py-0.5 font-terminal font-semibold ${
+                                    isJustHappened
+                                      ? 'bg-[var(--bg-overlay)] text-[var(--text-secondary)]'
+                                      : isSoon && isHigh
+                                        ? 'bg-amber-500/20 text-amber-400'
+                                        : 'bg-[var(--bg-overlay)] text-[var(--text-secondary)]'
+                                  }`}>
+                                    {timeLabel}
+                                  </span>
+                                </div>
+                                <div className="mt-1 flex items-center gap-3 text-[var(--text-secondary)]">
+                                  <span className="rounded bg-[var(--bg-overlay)] px-1.5 py-0.5 font-terminal font-semibold">
+                                    {ev.country}
+                                  </span>
+                                  <span className={`font-medium ${isHigh ? 'text-amber-400' : 'text-[var(--text-secondary)]'}`}>
+                                    {ev.impact === 'High' ? '🔴 Alto impacto' : '🟡 Médio impacto'}
+                                  </span>
+                                  {ev.time && ev.time !== 'All Day' && (
+                                    <span>{ev.time} ET</span>
+                                  )}
+                                  {isHigh && !isJustHappened && (
+                                    <span className="text-amber-400/70">
+                                      Pode afetar a análise
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
+
                 <AccordionItem value="sessions" className="border-[var(--border-subtle)]">
                   <AccordionTrigger className="font-semibold hover:no-underline">
                     <span className="flex items-center gap-2">
