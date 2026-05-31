@@ -50,9 +50,14 @@ const AnalysisLoading = () => {
   return (
     <Card className="surface-terminal-elevated mx-auto w-full max-w-3xl rounded-xl">
       <CardHeader className="border-b border-[var(--border-subtle)] pb-3">
-        <CardTitle className="text-sm tracking-wider text-[var(--text-primary)]">
-          TICKRIFY AI · PROCESSANDO
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm tracking-wider text-[var(--text-primary)]">
+            TICKRIFY AI · PROCESSANDO
+          </CardTitle>
+          <span className="font-terminal text-xs text-[var(--text-secondary)]">
+            estimado: 20–30s
+          </span>
+        </div>
       </CardHeader>
       <CardContent className="space-y-6 p-5 md:p-6">
         <div className="space-y-2 text-sm">

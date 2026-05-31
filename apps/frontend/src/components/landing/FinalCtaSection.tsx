@@ -18,7 +18,7 @@ const FinalCtaSection = () => {
         </h2>
 
         <p className="mx-auto mb-8 max-w-md text-sm leading-7 text-[var(--text-secondary)]">
-          Comece com 3 análises gratuitas e valide o fluxo em segundos.
+          Escolha seu plano e comece a operar com precisão institucional em minutos.
         </p>
 
         <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
@@ -26,7 +26,7 @@ const FinalCtaSection = () => {
             href="/sign-in"
             className="landing-primary-button rounded-xl px-8 py-3 font-semibold"
           >
-            COMEÇAR GRÁTIS →
+            ASSINAR AGORA →
           </a>
           <a
             href="#preview-dashboard"
@@ -37,7 +37,7 @@ const FinalCtaSection = () => {
         </div>
 
         <p className="mt-6 font-terminal text-xs text-[var(--text-muted)]">
-          Sem cartão de crédito • 3 análises gratuitas
+          Cancele quando quiser · Renovação automática mensal
         </p>
       </div>
     </section>
