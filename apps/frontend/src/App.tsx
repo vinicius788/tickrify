@@ -14,7 +14,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/" element={<LandingPage />} />
-          <Route path="/demo" element={<DashboardPage />} />
+          <Route path="/demo" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/privacidade" element={<PrivacyPolicyPage />} />
           <Route

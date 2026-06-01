@@ -1,6 +1,5 @@
 import { SignInButton } from '@clerk/clerk-react';
 import { ArrowRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useReveal } from '@/hooks/useReveal';
 import SectionTitle from '@/components/landing/SectionTitle';
@@ -20,11 +19,11 @@ const AnalysisPanelPreviewSection = () => {
           />
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <Button asChild className="landing-primary-button h-12 rounded-xl px-6 font-semibold">
-              <Link to="/demo">
-                Ver painel completo <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
+            <SignInButton mode="modal" forceRedirectUrl="/dashboard">
+              <Button className="landing-primary-button h-12 rounded-xl px-6 font-semibold">
+                Testar agora <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </SignInButton>
             <SignInButton mode="modal" forceRedirectUrl="/dashboard">
               <Button variant="outline" className="btn-secondary landing-secondary-button h-12 rounded-xl px-6">
                 Testar com meu gráfico

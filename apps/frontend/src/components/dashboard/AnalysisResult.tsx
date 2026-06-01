@@ -251,8 +251,30 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
         ? 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
         : 'bg-[var(--signal-hold-bg)] border-[var(--signal-hold-border)] text-[var(--signal-hold)]';
 
+  const isDemo = Boolean(analysisData.isDemo);
+
   return (
     <div className="space-y-5">
+      {/* ── Demo banner ─────────────────────────────────────────────── */}
+      {isDemo && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/8 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="font-semibold text-amber-400 text-sm">⚠️ Análise Demonstrativa</p>
+              <p className="text-xs text-amber-400/70 mt-0.5">
+                Esta é uma análise de exemplo. Assine um plano para análises reais com IA.
+              </p>
+            </div>
+            <a
+              href="/pricing"
+              className="rounded-lg bg-amber-500 px-4 py-2 font-terminal text-xs font-bold text-black transition-opacity hover:opacity-90"
+            >
+              VER PLANOS →
+            </a>
+          </div>
+        </div>
+      )}
+
       <Card className="surface-terminal-elevated rounded-xl fade-in-stagger" style={{ animationDelay: '0ms' }}>
         <CardContent className="p-5 md:p-6">
           <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)] md:flex-nowrap md:items-center md:gap-4">

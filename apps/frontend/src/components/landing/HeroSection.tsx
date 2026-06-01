@@ -83,7 +83,7 @@ const HeroSection = () => {
           </div>
 
           <p className="mt-6 font-terminal text-xs uppercase tracking-[0.08em] text-[var(--text-secondary)]">
-            Sem cartão de crédito • 3 análises gratuitas
+            3 análises demonstrativas gratuitas • sem cartão de crédito
           </p>
         </div>
 

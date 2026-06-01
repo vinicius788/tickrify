@@ -32,7 +32,48 @@ interface JobData {
   promptVersion?: number;
   userId?: string;
   analysisType?: AnalysisType;
+  isDemo?: boolean;
 }
+
+// ─── Fixed demo response (no OpenAI call, no tick cost) ──────────────────────
+const DEMO_RESPONSE = {
+  is_financial_chart: true,
+  recommendation: 'BUY',
+  confidence: 72,
+  analysis: {
+    symbol: 'XAUUSD',
+    timeframe: '15M',
+    detectedSession: 'new_york',
+    sessionNote: 'Sessão de Nova York ativa — maior liquidez para ouro.',
+    currentPrice: 3310.50,
+    entry: 3312.00,
+    stopLoss: 3295.00,
+    stopLossPercent: -0.51,
+    takeProfit1: 3335.00,
+    takeProfit1Percent: 0.69,
+    takeProfit2: 3355.00,
+    takeProfit2Percent: 1.30,
+    riskRewardRatio: '1:2.1',
+    marketStructure: {
+      bias: 'bullish',
+      lastStructure: 'Higher Low confirmado em $3.295 — estrutura ascendente intacta.',
+      breakOfStructure: 'BOS bullish confirmado acima de $3.305',
+      priceZone: 'Zona de Desconto (abaixo de 50% do range — favorável para BUY)',
+      orderBlock: 'Bullish OB em $3.295–$3.302 (última vela bearish antes do impulso de alta)',
+    },
+    chartType: 'Candlestick',
+    confluenceScore: 67,
+    factorsPresent: 4,
+    technicalAnalysis: '⚠️ ANÁLISE DEMONSTRATIVA — Esta é uma análise de exemplo gerada automaticamente para demonstrar as capacidades da plataforma. Os níveis de entrada, stop e alvos são ilustrativos.\n\nO XAUUSD apresenta estrutura de mercado bullish no timeframe de 15 minutos, com sequência de topos e fundos ascendentes. O preço recuou até o Order Block em $3.295–$3.302 e mostrou rejeição com vela de reversão. A sessão de Nova York confere maior liquidez ao setup.',
+    keyIndicators: 'Análise de price action puro — sem indicadores visíveis na imagem demonstrativa.',
+    identifiedPatterns: 'Bullish Order Block ($3.295–$3.302), Fair Value Gap acima de $3.308, Liquidity Pool (equal highs) em $3.340.',
+    structureValidation: '✅ HTF bullish | ✅ Zona de Desconto | ✅ Bullish OB entry | ✅ Anti-retail (swept equal lows) | ❌ BOS não confirmado | ✅ R:R 1:2.1 → 4/6 → BUY moderado',
+    riskFactors: 'Esta é uma análise demonstrativa. Em operações reais: 1) Confirme o BOS antes de entrar. 2) Verifique o calendário econômico para eventos USD. 3) Gerencie o risco com no máximo 1-2% do capital por operação.',
+    whyNotOpposite: 'Estrutura HTF bullish e presença de Order Block de compra invalidam o cenário vendedor neste momento. Esta é uma análise demonstrativa.',
+    executiveSummary: '⚠️ ANÁLISE DEMONSTRATIVA — Gerada automaticamente para apresentar o formato da plataforma.\n\nO XAUUSD demonstra setup de compra com 4 de 6 fatores de confluência ICT/SMC presentes. Order Block bullish identificado em $3.295–$3.302 com rejeição confirmada.\n\nPara acessar análises reais com processamento completo de IA, assine um dos planos disponíveis.',
+    reasoning: '[HTF] Bias bullish — sequência de HH e HL no timeframe de 15M. [CHART] Candlestick padrão, sessão NY. [ICT] OB bullish $3.295–$3.302, FVG acima $3.308. [AVANÇADO] N/A. [ANTI-RETAIL] Equal lows varridos antes da reversão. [DECISÃO] 4/6 itens → BUY moderado. ⚠️ Análise Demonstrativa.',
+  },
+};
 
 interface WorkerAnalysisMarketStructure {
   bias: MarketBias;
@@ -654,10 +695,11 @@ async function processAnalysis(job: Job<JobData>) {
     promptVersion,
     userId,
     analysisType,
+    isDemo,
   } = job.data;
   const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
 
-  console.log(`[Worker] Processing analysis ${analysisId}`);
+  console.log(`[Worker] Processing analysis ${analysisId}${isDemo ? ' [DEMO]' : ''}`);
 
   let rawContent = '';
 
@@ -666,6 +708,59 @@ async function processAnalysis(job: Job<JobData>) {
       where: { id: analysisId },
       data: { status: 'processing', errorMessage: null },
     });
+
+    // ── Demo analysis: return fixed response instantly, no OpenAI call ──────
+    if (isDemo) {
+      const demoRaw = JSON.stringify(DEMO_RESPONSE);
+      const demoNormalized = buildPersistedAnalysisPayload({
+        source: DEMO_RESPONSE as unknown as Record<string, unknown>,
+        recommendation: 'BUY',
+        bias: 'bullish',
+        confidence: DEMO_RESPONSE.confidence,
+        reasoning: DEMO_RESPONSE.analysis.reasoning,
+        analysis: {
+          symbol: DEMO_RESPONSE.analysis.symbol,
+          timeframe: DEMO_RESPONSE.analysis.timeframe,
+          currentPrice: DEMO_RESPONSE.analysis.currentPrice,
+          entry: DEMO_RESPONSE.analysis.entry,
+          stopLoss: DEMO_RESPONSE.analysis.stopLoss,
+          stopLossPercent: DEMO_RESPONSE.analysis.stopLossPercent,
+          takeProfit1: DEMO_RESPONSE.analysis.takeProfit1,
+          takeProfit1Percent: DEMO_RESPONSE.analysis.takeProfit1Percent,
+          takeProfit2: DEMO_RESPONSE.analysis.takeProfit2,
+          takeProfit2Percent: DEMO_RESPONSE.analysis.takeProfit2Percent,
+          riskRewardRatio: DEMO_RESPONSE.analysis.riskRewardRatio,
+          confluenceScore: DEMO_RESPONSE.analysis.confluenceScore,
+          technicalAnalysis: DEMO_RESPONSE.analysis.technicalAnalysis,
+          keyIndicators: DEMO_RESPONSE.analysis.keyIndicators,
+          identifiedPatterns: DEMO_RESPONSE.analysis.identifiedPatterns,
+          structureValidation: DEMO_RESPONSE.analysis.structureValidation,
+          riskFactors: DEMO_RESPONSE.analysis.riskFactors,
+          whyNotOpposite: DEMO_RESPONSE.analysis.whyNotOpposite,
+          executiveSummary: DEMO_RESPONSE.analysis.executiveSummary,
+          marketStructure: DEMO_RESPONSE.analysis.marketStructure,
+        } as NormalizedPersistedAnalysis,
+        drawingPlan: null,
+        originalImageUrl: imageUrl,
+      });
+
+      await prisma.analysis.update({
+        where: { id: analysisId },
+        data: {
+          status: 'completed',
+          recommendation: demoNormalized.recommendation,
+          confidence: demoNormalized.confidence,
+          reasoning: demoNormalized.reasoning,
+          imageUrl: demoNormalized.originalImageUrl,
+          result: demoNormalized.fullResponse as any,
+          fullResponse: demoRaw,
+          errorMessage: null,
+        },
+      });
+
+      console.log(`[Worker] Demo analysis ${analysisId} completed instantly`);
+      return;
+    }
 
     const prompt = await getPrompt(promptOverride, promptVersion);
     const aiSource = await resolveAiSource(imageUrl, prompt, normalizedAnalysisType);

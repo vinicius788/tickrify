@@ -157,6 +157,7 @@ export interface AIAnalysisResponse {
     };
   };
   imageUrl?: string;
+  isDemo?: boolean;
   createdAt: string;
   updatedAt: string;
 }

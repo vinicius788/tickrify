@@ -113,7 +113,7 @@ export class AiService {
     ]);
 
     // Only consume free quota / ticks after infrastructure/storage prerequisites are validated.
-    await this.enforceAccess(userId, normalizedAnalysisType);
+    const { isDemo } = await this.enforceAccess(userId, normalizedAnalysisType);
 
     const analysis = await this.prisma.analysis.create({
       data: {
@@ -121,6 +121,7 @@ export class AiService {
         imageUrl,
         status: 'pending',
         promptVer: promptVersion,
+        isDemo,
       },
     });
 
@@ -135,6 +136,7 @@ export class AiService {
         promptVersion,
         userId,
         analysisType: normalizedAnalysisType,
+        isDemo,
       });
 
       return {
@@ -614,7 +616,17 @@ export class AiService {
     return payload;
   }
 
-  private async enforceAccess(userId: string, analysisType: AnalysisType): Promise<void> {
+  static readonly DEMO_ANALYSIS_LIMIT = 3;
+
+  /** Returns true if this request should be treated as a demo analysis (no tick cost, fixed response). */
+  async checkDemoEligibility(userId: string): Promise<boolean> {
+    const demoCount = await this.prisma.analysis.count({
+      where: { userId, isDemo: true },
+    });
+    return demoCount < AiService.DEMO_ANALYSIS_LIMIT;
+  }
+
+  private async enforceAccess(userId: string, analysisType: AnalysisType): Promise<{ isDemo: boolean }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true },
@@ -629,22 +641,25 @@ export class AiService {
 
     if (await this.hasPaidAccess(userId)) {
       // Assinante: consome ticks do plano mensal.
-      // Se zerar, lança INSUFFICIENT_TICKS — o usuário pode comprar mais ticks avulsos
-      // ou aguardar a renovação automática no próximo ciclo via webhook.
       await this.ticksService.debitTicks(
         userId,
         tickCost,
         `Análise ${analysisType === 'deep' ? 'deep' : 'rápida'} de gráfico`,
         { analysisType },
       );
-      return;
+      return { isDemo: false };
     }
 
-    // Usuário sem assinatura ativa: não há tier gratuito.
-    // Redirecionar para a página de planos.
+    // Sem assinatura: verificar se ainda tem análises demonstrativas
+    const demoEligible = await this.checkDemoEligibility(userId);
+    if (demoEligible) {
+      return { isDemo: true };
+    }
+
+    // Esgotou as 3 demos → exige assinatura
     throw new ForbiddenException({
-      code: 'SUBSCRIPTION_REQUIRED',
-      message: 'Uma assinatura ativa é necessária para realizar análises.',
+      code: 'DEMO_LIMIT_REACHED',
+      message: 'Suas 3 análises demonstrativas foram utilizadas. Assine um plano para continuar.',
     });
   }
 
