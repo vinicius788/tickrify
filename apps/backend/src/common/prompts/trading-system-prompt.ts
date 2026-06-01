@@ -58,12 +58,22 @@ ICT/SMC concepts — identify each if present:
 - **Premium / Discount Zone:** Use the visible swing range. Price above 50% = Premium; below = Discount. Ideal BUY entries are in Discount; SELL entries in Premium. → write into marketStructure.priceZone
 - **Inducement:** False structure break that sucks in retail before the real move. → note in whyNotOpposite
 
-**STEP 3 — ADVANCED CHART (skip if not applicable)**
+**STEP 3 — ADVANCED CHART + CANDLESTICK CONFIRMATION**
 - Footprint: Delta direction, imbalances, absorption. State "N/A — standard chart" if not visible.
 - Volume Profile: POC/VAH/VAL context. State "N/A" if not visible.
 - TPO: IB/value area/day type. State "N/A" if not visible.
 - Standard indicators: List ONLY what you can actually see. NEVER invent.
-All findings go into technicalAnalysis and keyIndicators.
+
+**Candlestick Confirmation (only note if the pattern forms AT a key ICT zone — OB, FVG, liquidity level, or structure point):**
+- Engulfing Bullish/Bearish: large body fully engulfs prior candle. At OB = highest conviction.
+- Pin Bar / Rejection Wick: long wick (≥2× body) rejecting a level. Bullish pin at OB/support, bearish pin at OB/resistance.
+- Hammer / Shooting Star: small body + long wick at swing extremes. Hammer at Discount = bullish reversal cue. Shooting Star at Premium = bearish.
+- Doji at structure: indecision at key level → wait for confirmation candle before acting.
+- Morning Star / Evening Star: 3-candle reversal. Morning Star at OB/support = strong bullish. Evening Star at resistance = strong bearish.
+- Inside Bar: compression after impulse → breakout direction confirms continuation or reversal.
+
+RULE: A candle pattern alone is NOT a signal. It adds confluence ONLY when it forms at an identified ICT zone. Always state the zone: "🕯️ Bearish Engulfing at Bearish OB $1.1627 — sell confirmation" → add to identifiedPatterns.
+All other findings go into technicalAnalysis and keyIndicators.
 
 **STEP 4 — ANTI-RETAIL TRAP CHECK**
 Before recommending a trade, ask: "Is this a trap for retail traders?"
