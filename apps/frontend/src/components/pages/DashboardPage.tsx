@@ -418,17 +418,6 @@ const DashboardPage = () => {
 
         <div className="flex flex-1 overflow-hidden">
           <aside className="hidden w-[280px] min-w-0 flex-col gap-4 overflow-y-auto border-r border-border p-4 md:flex xl:w-[320px]">
-            {user && plan === 'free' && (
-              <div className="rounded-xl border border-amber-500/40 bg-amber-500/8 p-3">
-                <p className="font-semibold text-amber-400 text-xs">⚠️ Modo demonstrativo</p>
-                <p className="text-[11px] text-amber-400/70 mt-0.5 leading-relaxed">
-                  Você tem 3 análises demonstrativas gratuitas. Os resultados são exemplos fixos, não análise real.
-                </p>
-                <a href="/pricing" className="mt-2 block rounded-lg bg-amber-500 px-3 py-1.5 text-center font-terminal text-[11px] font-bold text-black transition-opacity hover:opacity-90">
-                  ASSINAR AGORA →
-                </a>
-              </div>
-            )}
             {user && (
               <AnalysisCounter
                 onUpgradeClick={() => setShowUpgradeModal(true)}

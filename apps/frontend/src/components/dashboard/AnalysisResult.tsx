@@ -255,23 +255,13 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
   return (
     <div className="space-y-5">
-      {/* ── Demo banner ─────────────────────────────────────────────── */}
+      {/* ── Demo notice (subtle) ────────────────────────────────────── */}
       {isDemo && (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-500/8 px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-semibold text-amber-400 text-sm">⚠️ Análise Demonstrativa</p>
-              <p className="text-xs text-amber-400/70 mt-0.5">
-                Esta é uma análise de exemplo. Assine um plano para análises reais com IA.
-              </p>
-            </div>
-            <a
-              href="/pricing"
-              className="rounded-lg bg-amber-500 px-4 py-2 font-terminal text-xs font-bold text-black transition-opacity hover:opacity-90"
-            >
-              VER PLANOS →
-            </a>
-          </div>
+        <div className="flex items-center justify-between rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-4 py-2.5 text-xs text-[var(--text-secondary)]">
+          <span>⚠️ Análise demonstrativa — exemplo fixo, não análise real de IA.</span>
+          <a href="/pricing" className="ml-3 flex-shrink-0 font-semibold text-[var(--signal-buy)] hover:underline">
+            Ver planos →
+          </a>
         </div>
       )}
 
