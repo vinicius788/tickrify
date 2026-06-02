@@ -739,7 +739,7 @@ async function processAnalysis(job: Job<JobData>) {
           whyNotOpposite: DEMO_RESPONSE.analysis.whyNotOpposite,
           executiveSummary: DEMO_RESPONSE.analysis.executiveSummary,
           marketStructure: DEMO_RESPONSE.analysis.marketStructure,
-        } as NormalizedPersistedAnalysis,
+        } as unknown as NormalizedPersistedAnalysis,
         drawingPlan: null,
         originalImageUrl: imageUrl,
       });
