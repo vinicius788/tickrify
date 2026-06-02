@@ -156,7 +156,7 @@ export class AiController {
     const rows = await this.prisma.analysis.findMany({
       where: { status: 'completed', recommendation: { not: null } },
       orderBy: { createdAt: 'desc' },
-      take: 10,
+      take: 6,
       select: {
         id: true,
         recommendation: true,

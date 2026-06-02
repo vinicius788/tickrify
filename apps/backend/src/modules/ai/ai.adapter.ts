@@ -480,9 +480,9 @@ export class AIAdapter {
       const model =
         process.env.AI_MODEL ||
         (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
-      // 16384 = limite máximo de output do gpt-4o-mini
-      // Usar o máximo absoluto para eliminar truncação por limite de tokens
-      const maxTokens = 16384;
+      // quick: 6000 tokens é suficiente para a análise completa (~3500 tokens reais)
+      // deep: 12000 tokens para análise mais detalhada
+      const maxTokens = analysisType === 'deep' ? 12_000 : 6_000;
       // withTimeout garante aborto em exatamente 30s via Promise.race
       // Mais confiável do que { timeout } do SDK (que pode não funcionar em todos os ambientes)
       const response = await withTimeout(this.openai.chat.completions.create({

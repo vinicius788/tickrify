@@ -30,10 +30,12 @@ function timeAgo(dateStr: string) {
 }
 
 const FALLBACK: PublicAnalysis[] = [
-  { id: '1', recommendation: 'BUY',  confidence: 75, createdAt: new Date(Date.now() - 3_600_000).toISOString(),  symbol: 'XAUUSD', timeframe: '15M', entry: 3310.00, stopLoss: 3295.00, takeProfit1: 3340.00 },
-  { id: '2', recommendation: 'SELL', confidence: 70, createdAt: new Date(Date.now() - 7_200_000).toISOString(),  symbol: 'EURUSD', timeframe: '1H',  entry: 1.0820,  stopLoss: 1.0855,  takeProfit1: 1.0770 },
-  { id: '3', recommendation: 'BUY',  confidence: 80, createdAt: new Date(Date.now() - 14_400_000).toISOString(), symbol: 'BTCUSDT', timeframe: '4H', entry: 104500, stopLoss: 102000, takeProfit1: 109000 },
-  { id: '4', recommendation: 'SELL', confidence: 65, createdAt: new Date(Date.now() - 21_600_000).toISOString(), symbol: 'GBPUSD', timeframe: '30M', entry: 1.2710, stopLoss: 1.2745, takeProfit1: 1.2650 },
+  { id: '1', recommendation: 'BUY',  confidence: 75, createdAt: new Date(Date.now() - 3_600_000).toISOString(),   symbol: 'XAUUSD',  timeframe: '15M', entry: 3310.00, stopLoss: 3295.00, takeProfit1: 3340.00 },
+  { id: '2', recommendation: 'SELL', confidence: 70, createdAt: new Date(Date.now() - 7_200_000).toISOString(),   symbol: 'EURUSD',  timeframe: '1H',  entry: 1.0820,  stopLoss: 1.0855,  takeProfit1: 1.0770 },
+  { id: '3', recommendation: 'BUY',  confidence: 80, createdAt: new Date(Date.now() - 14_400_000).toISOString(),  symbol: 'BTCUSDT', timeframe: '4H',  entry: 104500,  stopLoss: 102000,  takeProfit1: 109000 },
+  { id: '4', recommendation: 'SELL', confidence: 65, createdAt: new Date(Date.now() - 21_600_000).toISOString(),  symbol: 'GBPUSD',  timeframe: '30M', entry: 1.2710,  stopLoss: 1.2745,  takeProfit1: 1.2650 },
+  { id: '5', recommendation: 'BUY',  confidence: 72, createdAt: new Date(Date.now() - 32_400_000).toISOString(),  symbol: 'USDJPY',  timeframe: '1H',  entry: 156.20,  stopLoss: 155.60,  takeProfit1: 157.40 },
+  { id: '6', recommendation: 'SELL', confidence: 68, createdAt: new Date(Date.now() - 43_200_000).toISOString(),  symbol: 'XAUUSD',  timeframe: '4H',  entry: 3285.00, stopLoss: 3305.00, takeProfit1: 3250.00 },
 ];
 
 const RecentAnalysesSection = () => {
@@ -45,7 +47,7 @@ const RecentAnalysesSection = () => {
     fetch(buildApiUrl('/api/ai/public-analyses'))
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: PublicAnalysis[]) => {
-        setAnalyses(Array.isArray(data) && data.length > 0 ? data.slice(0, 8) : FALLBACK);
+        setAnalyses(Array.isArray(data) && data.length > 0 ? data.slice(0, 6) : FALLBACK);
       })
       .catch(() => setAnalyses(FALLBACK))
       .finally(() => setLoading(false));

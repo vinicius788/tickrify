@@ -117,12 +117,18 @@ export class EconomicCalendarService {
     return results;
   }
 
-  /** Parse "8:30am" + date string → Date in UTC (assuming ET = UTC-5 for simplicity) */
-  private parseEventDate(dateStr: string, timeStr: string): Date | null {
+  /** Parse event date — ForexFactory now returns full ISO timestamps in the date field */
+  private parseEventDate(dateStr: string, timeStr?: string): Date | null {
     try {
-      // dateStr: "2026-06-05", timeStr: "8:30am" or "12:00pm" or "All Day" or "Tentative"
+      // New FF format: date is already a full ISO timestamp e.g. "2026-06-02T10:00:00-04:00"
+      if (dateStr && dateStr.includes('T')) {
+        const d = new Date(dateStr);
+        return Number.isFinite(d.getTime()) ? d : null;
+      }
+
+      // Legacy format: separate date "2026-06-05" + time "8:30am"
       if (!timeStr || timeStr === 'All Day' || timeStr === 'Tentative') {
-        return new Date(`${dateStr}T12:00:00-05:00`); // noon ET as approximation
+        return new Date(`${dateStr}T12:00:00-05:00`);
       }
       const match = timeStr.match(/^(\d{1,2}):(\d{2})(am|pm)$/i);
       if (!match) return new Date(`${dateStr}T12:00:00-05:00`);
