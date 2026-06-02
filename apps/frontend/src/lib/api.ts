@@ -146,11 +146,21 @@ export interface AIAnalysisResponse {
       takeProfit2Percent?: number;
       riskRewardRatio?: string;
       confluenceScore?: number;
+      factorsPresent?: number;
       technicalAnalysis?: string;
       keyIndicators?: string;
       identifiedPatterns?: string;
       riskFactors?: string;
       executiveSummary?: string;
+      invalidationLevel?: number | null;
+      invalidationNote?: string | null;
+      entryType?: 'market' | 'limit' | 'stop' | null;
+      entryCondition?: string | null;
+      partialExitStrategy?: string | null;
+      alternativeScenario?: string | null;
+      trendStrength?: 'strong' | 'moderate' | 'weak' | null;
+      trendStrengthNote?: string | null;
+      multiTimeframeAlignment?: string | null;
       marketStructure?: {
         bias?: Bias;
       };

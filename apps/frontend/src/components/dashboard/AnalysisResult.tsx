@@ -189,6 +189,17 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const confluenceRaw = toNumber(analysis.confluenceScore);
   const confluence = confluenceRaw !== null ? normalizeConfluenceScore(confluenceRaw, 8) : null;
 
+  // v7.0 new fields
+  const invalidationLevel = toNumber(analysis.invalidationLevel);
+  const invalidationNote = String(analysis.invalidationNote || '').trim() || null;
+  const entryType = String(analysis.entryType || '').trim() || null;
+  const entryCondition = String(analysis.entryCondition || '').trim() || null;
+  const partialExitStrategy = String(analysis.partialExitStrategy || '').trim() || null;
+  const alternativeScenario = String(analysis.alternativeScenario || '').trim() || null;
+  const trendStrength = String(analysis.trendStrength || '').trim() || null;
+  const trendStrengthNote = String(analysis.trendStrengthNote || '').trim() || null;
+  const multiTimeframeAlignment = String(analysis.multiTimeframeAlignment || '').trim() || null;
+
   const riskRewardRatioRaw = analysis.riskRewardRatio;
   const riskReward = parseRiskReward(riskRewardRatioRaw);
   const riskRewardTone = riskReward !== null && riskReward >= 2 ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-hold)]';
@@ -394,6 +405,22 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 </button>
               </div>
 
+              {entryType && (
+                <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1.5 text-xs">
+                  <span className="text-[var(--text-secondary)]">TIPO DE ENTRADA: </span>
+                  <span className="font-terminal font-semibold uppercase text-[var(--text-primary)]">{entryType}</span>
+                  {entryCondition && <p className="mt-0.5 text-[var(--text-secondary)]">{entryCondition}</p>}
+                </div>
+              )}
+
+              {invalidationLevel !== null && (
+                <div className="rounded border border-[var(--signal-sell)]/30 bg-[var(--signal-sell-bg)] px-2 py-1.5 text-xs">
+                  <span className="text-[var(--signal-sell)]">⚠ INVALIDAÇÃO: </span>
+                  <span className="font-terminal font-semibold text-[var(--signal-sell)]">{formatPrice(invalidationLevel)}</span>
+                  {invalidationNote && <p className="mt-0.5 text-[var(--signal-sell)]/70">{invalidationNote}</p>}
+                </div>
+              )}
+
               {sessionNote && (
                 <p className="rounded-sm bg-[var(--bg-overlay)] px-2 py-1.5 text-xs text-[var(--text-secondary)]">
                   {sessionNote}
@@ -542,28 +569,32 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="space-y-2 text-sm text-[var(--text-secondary)]">
-                    <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3">
-                      <p>
-                        Bias: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.bias || analysisData.bias || 'neutral')}</span>
-                      </p>
-                      <p>
-                        Estrutura: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.lastStructure || 'Não informado')}</span>
-                      </p>
+                    <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 space-y-1">
+                      <p>Bias: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.bias || analysisData.bias || 'neutral')}</span></p>
+                      <p>Estrutura: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.lastStructure || 'Não informado')}</span></p>
                       <p>
                         <abbr title="Break of Structure">BOS</abbr>/<abbr title="Change of Character">CHoCH</abbr>:{' '}
                         <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.breakOfStructure || 'Não informado')}</span>
                       </p>
-                      <p>
-                        Zona de preço: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.priceZone || 'Não informado')}</span>
-                      </p>
+                      <p>Zona de preço: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.priceZone || 'Não informado')}</span></p>
                       <p>
                         <abbr title="Order Block é uma região institucional de oferta/demanda.">Order Block</abbr>:{' '}
                         <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.orderBlock || 'Não informado')}</span>
                       </p>
-                      {structureValidation ? (
-                        <p className="mt-2 border-t border-[var(--border-subtle)] pt-2 text-[var(--text-secondary)]">
-                          {structureValidation}
+                      {trendStrength && (
+                        <p className="border-t border-[var(--border-subtle)] pt-1 mt-1">
+                          Força da tendência:{' '}
+                          <span className={`font-semibold ${trendStrength === 'strong' ? 'text-[var(--signal-buy)]' : trendStrength === 'weak' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}`}>
+                            {trendStrength === 'strong' ? 'Forte ↑' : trendStrength === 'weak' ? 'Fraca ↓' : 'Moderada →'}
+                          </span>
+                          {trendStrengthNote && <span className="text-[var(--text-secondary)]"> — {trendStrengthNote}</span>}
                         </p>
+                      )}
+                      {multiTimeframeAlignment && (
+                        <p>Alinhamento MTF: <span className="font-medium text-[var(--text-primary)]">{multiTimeframeAlignment}</span></p>
+                      )}
+                      {structureValidation ? (
+                        <p className="mt-2 border-t border-[var(--border-subtle)] pt-2 text-[var(--text-secondary)]">{structureValidation}</p>
                       ) : null}
                     </div>
                   </AccordionContent>
@@ -650,6 +681,38 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                     )}
                   </AccordionContent>
                 </AccordionItem>
+
+                {partialExitStrategy && (
+                  <AccordionItem value="exit-plan" className="border-[var(--border-subtle)]">
+                    <AccordionTrigger className="font-semibold hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <Target className="h-4 w-4 text-[var(--signal-buy)]" />
+                        Plano de Saída Parcial
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                      <div className="rounded-md border border-[var(--signal-buy)]/20 bg-[var(--signal-buy-bg)] p-3">
+                        {partialExitStrategy}
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
+
+                {alternativeScenario && (
+                  <AccordionItem value="plan-b" className="border-[var(--border-subtle)]">
+                    <AccordionTrigger className="font-semibold hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-amber-400" />
+                        Plano B — Cenário Alternativo
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                      <div className="rounded-md border border-amber-500/20 bg-amber-500/5 p-3">
+                        {alternativeScenario}
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
 
                 <AccordionItem value="opposite" className="border-[var(--border-subtle)]">
                   <AccordionTrigger className="font-semibold hover:no-underline">

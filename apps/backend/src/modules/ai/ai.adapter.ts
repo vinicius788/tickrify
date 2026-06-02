@@ -480,9 +480,9 @@ export class AIAdapter {
       const model =
         process.env.AI_MODEL ||
         (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
-      // quick: 6000 tokens é suficiente para a análise completa (~3500 tokens reais)
+      // quick: 8000 tokens cobre análise completa v7.0 com novos campos (~5000 tokens reais)
       // deep: 12000 tokens para análise mais detalhada
-      const maxTokens = analysisType === 'deep' ? 12_000 : 6_000;
+      const maxTokens = analysisType === 'deep' ? 12_000 : 8_000;
       // withTimeout garante aborto em exatamente 30s via Promise.race
       // Mais confiável do que { timeout } do SDK (que pode não funcionar em todos os ambientes)
       const response = await withTimeout(this.openai.chat.completions.create({
