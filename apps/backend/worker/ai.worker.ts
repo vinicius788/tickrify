@@ -107,6 +107,15 @@ interface WorkerAnalysisDetails {
   whyNotOpposite: string;
   executiveSummary: string;
   reasoning: string;
+  invalidationLevel: number | null;
+  invalidationNote: string | null;
+  entryType: string | null;
+  entryCondition: string | null;
+  partialExitStrategy: string | null;
+  alternativeScenario: string | null;
+  trendStrength: string | null;
+  trendStrengthNote: string | null;
+  multiTimeframeAlignment: string | null;
 }
 
 interface WorkerAnalysisResult {
@@ -297,6 +306,15 @@ function toWorkerAnalysisResult(value: unknown): WorkerAnalysisResult {
         'Resumo executivo indisponível.',
       ),
       reasoning: ensureString(analysisSource.reasoning ?? source.reasoning, 'Sem justificativa gerada.'),
+      invalidationLevel: analysisSource.invalidationLevel != null ? Number(analysisSource.invalidationLevel) : null,
+      invalidationNote: analysisSource.invalidationNote != null ? String(analysisSource.invalidationNote).trim() || null : null,
+      entryType: analysisSource.entryType != null ? String(analysisSource.entryType).trim() || null : null,
+      entryCondition: analysisSource.entryCondition != null ? String(analysisSource.entryCondition).trim() || null : null,
+      partialExitStrategy: analysisSource.partialExitStrategy != null ? String(analysisSource.partialExitStrategy).trim() || null : null,
+      alternativeScenario: analysisSource.alternativeScenario != null ? String(analysisSource.alternativeScenario).trim() || null : null,
+      trendStrength: analysisSource.trendStrength != null ? String(analysisSource.trendStrength).trim() || null : null,
+      trendStrengthNote: analysisSource.trendStrengthNote != null ? String(analysisSource.trendStrengthNote).trim() || null : null,
+      multiTimeframeAlignment: analysisSource.multiTimeframeAlignment != null ? String(analysisSource.multiTimeframeAlignment).trim() || null : null,
     },
   };
 }
