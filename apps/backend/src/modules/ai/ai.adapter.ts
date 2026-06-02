@@ -46,6 +46,15 @@ interface TradingAnalysisDetails {
   whyNotOpposite: string;
   executiveSummary: string;
   reasoning: string;
+  invalidationLevel: number | null;
+  invalidationNote: string | null;
+  entryType: string | null;
+  entryCondition: string | null;
+  partialExitStrategy: string | null;
+  alternativeScenario: string | null;
+  trendStrength: string | null;
+  trendStrengthNote: string | null;
+  multiTimeframeAlignment: string | null;
 }
 
 interface TradingAnalysisSchemaResult {
@@ -315,6 +324,15 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       whyNotOpposite: ensureString(parsedAnalysis.whyNotOpposite, 'Sem justificativa para o lado oposto.'),
       executiveSummary: ensureString(parsedAnalysis.executiveSummary, 'Resumo executivo indisponível.'),
       reasoning: ensureString(parsedAnalysis.reasoning, 'Sem justificativa gerada.'),
+      invalidationLevel: parsedAnalysis.invalidationLevel != null ? Number(parsedAnalysis.invalidationLevel) : null,
+      invalidationNote: parsedAnalysis.invalidationNote != null ? ensureString(parsedAnalysis.invalidationNote, '') || null : null,
+      entryType: parsedAnalysis.entryType != null ? ensureString(parsedAnalysis.entryType, '') || null : null,
+      entryCondition: parsedAnalysis.entryCondition != null ? ensureString(parsedAnalysis.entryCondition, '') || null : null,
+      partialExitStrategy: parsedAnalysis.partialExitStrategy != null ? ensureString(parsedAnalysis.partialExitStrategy, '') || null : null,
+      alternativeScenario: parsedAnalysis.alternativeScenario != null ? ensureString(parsedAnalysis.alternativeScenario, '') || null : null,
+      trendStrength: parsedAnalysis.trendStrength != null ? ensureString(parsedAnalysis.trendStrength, '') || null : null,
+      trendStrengthNote: parsedAnalysis.trendStrengthNote != null ? ensureString(parsedAnalysis.trendStrengthNote, '') || null : null,
+      multiTimeframeAlignment: parsedAnalysis.multiTimeframeAlignment != null ? ensureString(parsedAnalysis.multiTimeframeAlignment, '') || null : null,
     },
   };
 }
