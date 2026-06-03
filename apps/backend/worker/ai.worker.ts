@@ -398,6 +398,15 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
           'Ação recomendada: AGUARDAR. Monitorar rompimento válido com reteste e expansão de volume antes de nova decisão.',
         reasoning:
           'O preço permanece em região neutra, sem BOS/CHoCH confiável e sem desequilíbrio claro de fluxo. A leitura atual indica transição estrutural.\n\nAs confluências exigidas para COMPRA e VENDA não estão completas. Não há combinação robusta de zona, padrão de candle e contexto MTF alinhado.\n\nA invalidação desse cenário ocorre com rompimento limpo da congestão acompanhado de confirmação no reteste e aumento de volume.',
+        invalidationLevel: null,
+        invalidationNote: null,
+        entryType: null,
+        entryCondition: null,
+        partialExitStrategy: null,
+        alternativeScenario: null,
+        trendStrength: 'weak',
+        trendStrengthNote: 'Estrutura lateral sem momentum direcional.',
+        multiTimeframeAlignment: 'DEMO | DEMO | DEMO → 0/3 alinhados — aguardar',
       },
     };
   }
@@ -440,6 +449,15 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
           'Ação: COMPRA com entrada em desconto, stop técnico abaixo da estrutura e alvos em liquidez superior com R:R acima de 2:1.',
         reasoning:
           'A estrutura mostra sequência de fundos ascendentes e BOS bullish após reteste de zona de demanda. O contexto favorece continuidade de alta.\n\nAs confluências incluem posição em desconto, confirmação por padrão bullish e ausência de resistência imediata limitando o avanço inicial.\n\nA tese perde validade se houver fechamento abaixo do fundo estrutural que ancora o stop. O lado oposto não foi escolhido por falta de gatilho bearish consistente.',
+        invalidationLevel: null,
+        invalidationNote: 'Setup invalidado se preço fechar abaixo do fundo estrutural (análise demonstrativa).',
+        entryType: 'limit',
+        entryCondition: 'Aguarde reteste da zona de demanda antes de entrar (análise demonstrativa).',
+        partialExitStrategy: 'Feche 50% no TP1. Mova o stop para o ponto de entrada após confirmação. Deixe os 50% restantes correrem até TP2 (análise demonstrativa).',
+        alternativeScenario: 'Se o preço romper abaixo do suporte com fechamento, o setup inverte para VENDA (análise demonstrativa).',
+        trendStrength: 'moderate',
+        trendStrengthNote: 'Estrutura bullish com BOS confirmado.',
+        multiTimeframeAlignment: 'DEMO | DEMO | DEMO → 2/3 alinhados — setup moderado',
       },
     };
   }
@@ -481,6 +499,15 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
         'Ação: VENDA em zona de prêmio, stop acima da estrutura e alvos em liquidez inferior com R:R superior a 2:1.',
       reasoning:
         'A estrutura apresenta topos descendentes e CHoCH bearish, com contexto favorável à continuação da pressão vendedora.\n\nAs confluências incluem zona de prêmio, padrão bearish na oferta e ausência de suporte forte imediato abaixo da entrada.\n\nA tese invalida com fechamento acima da máxima estrutural usada no stop. O lado oposto não foi recomendado por ausência de confirmação bullish.',
+      invalidationLevel: null,
+      invalidationNote: 'Setup invalidado se preço fechar acima da máxima estrutural (análise demonstrativa).',
+      entryType: 'market',
+      entryCondition: 'Entre a mercado na zona de oferta identificada (análise demonstrativa).',
+      partialExitStrategy: 'Feche 50% no TP1. Mova o stop para o ponto de entrada após confirmação. Deixe os 50% restantes correrem até TP2 (análise demonstrativa).',
+      alternativeScenario: 'Se o preço romper acima da resistência com fechamento, o setup inverte para COMPRA (análise demonstrativa).',
+      trendStrength: 'strong',
+      trendStrengthNote: 'Estrutura bearish com CHoCH confirmado e fluxo vendedor dominante.',
+      multiTimeframeAlignment: 'DEMO | DEMO | DEMO → 3/3 alinhados — setup de alta convicção',
     },
   };
 }
