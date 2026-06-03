@@ -60,6 +60,18 @@ C) Trend Strength Assessment:
 - Session (Asian 00-08 UTC | London 08-12 | New York 13-17 | Overlap 13-16 | Dead Zone 17-24)
 - Image quality: OK | DEGRADED | UNUSABLE (return HOLD if unusable)
 
+**PRICE READING — CRITICAL RULES (read the Y-axis carefully)**
+- Read ALL digits on the Y-axis price scale. Never truncate or drop digits.
+- BTC/BTCUSD/BTCUSDT: price is typically $20,000–$120,000. If you read ~6,700 but the chart shows a 6-digit number, re-read — it is likely $106,700.
+- ETH/ETHUSDT: typically $1,500–$5,000.
+- Altcoins (SOL, BNB, etc.): can range from $1 to $700.
+- XAUUSD (Gold): typically $1,800–$3,500 per oz.
+- Forex (EURUSD, GBPUSD): typically 1.0000–1.5000. Read ALL 4–5 decimal places.
+- Forex JPY pairs (USDJPY): typically 100–160.
+- If the Y-axis shows comma-separated numbers (e.g. "106,500"), that is ONE price of 106500, not two separate values.
+- When in doubt about the magnitude: choose the value consistent with the known trading range of that asset.
+- NEVER report a price that is 10x smaller or larger than the asset's known range without explicit justification.
+
 **STEP 2 — STRUCTURE & ICT/SMC ANALYSIS**
 - Trend: UPTREND (HH+HL) | DOWNTREND (LH+LL) | SIDEWAYS
 - BOS (Break of Structure): trend continuation
@@ -96,11 +108,17 @@ RULE: Pattern alone ≠ signal. Note as: "🕯️ Bearish Engulfing at Bearish O
 Instrument SL/TP rules:
 - Crypto: SL/TP in % AND $. Min SL 1.5% scalp / 3% swing.
 - Forex Majors: ALWAYS pips + price. Scalp 15-30p | Day 30-60p | Swing 60-120p. JPY pip=0.01.
+- Forex Minors/Exotics (AUDCAD, NZDCHF, USDMXN, etc.): same pip rules. Be precise — note the exact price zone and pip distance.
 - Equities/ETFs: % AND $. SL 0.5-2%.
-- Futures/Indices: points/ticks AND $.
+- Futures/Indices (ES, NQ, DAX, etc.): points/ticks AND $. Name the specific point levels.
 - Metals/XAUUSD: $ AND %. Min SL $5 scalp / $12 day / $25 swing.
+- Metals/XAGUSD (Silver): $ per oz, typically $20–$35. SL min $0.30.
+- Crypto Majors (BTC, ETH): use exact $ levels from Y-axis. Never approximate.
+- Crypto Altcoins (SOL, BNB, AVAX, LINK, etc.): price can be $1–$700. Read the Y-axis precisely. SL/TP in both $ and %.
+- Crypto Micro-caps: price can be $0.001–$5. Use 4–6 decimal places when needed.
 
 SL: always beyond structural level or OB/FVG. Min R:R 1:1.5. Target 1:2+.
+PRECISION RULE: All price levels (entry, SL, TP1, TP2, invalidationLevel) must be exact numbers read from the chart Y-axis. Never round aggressively. Use the same decimal precision as visible on the chart.
 
 A) INVALIDATION LEVEL: Identify the specific price that definitively kills this setup.
 - For BUY: the price level that, if closed below, means the bullish structure is broken (usually below the key swing low or OB low)
