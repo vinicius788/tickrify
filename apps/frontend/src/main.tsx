@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { ClerkProvider } from '@clerk/clerk-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App.tsx';
+import { LanguageProvider } from './lib/i18n/LanguageContext.tsx';
 import './styles/trading-tokens.css';
 import './index.css';
 
@@ -48,7 +49,9 @@ createRoot(rootElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/">
-        <App />
+        <LanguageProvider>
+          <App />
+        </LanguageProvider>
       </ClerkProvider>
     </QueryClientProvider>
   </StrictMode>,

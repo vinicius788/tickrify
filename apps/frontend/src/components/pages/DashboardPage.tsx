@@ -15,6 +15,8 @@ import AnalysisCounter from "../dashboard/AnalysisCounter";
 import { TicksBadge } from "@/components/dashboard/TicksBadge";
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
 import { APIError, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
+import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
 import { useAnalyses } from "@/hooks/useAnalyses";
@@ -40,6 +42,7 @@ const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'im
 
 const DashboardPage = () => {
   const navigate = useNavigate();
+  const { t, language } = useLanguage();
   const [activeView, setActiveView] = useState<View>('new-analysis');
   const [analysisKey, setAnalysisKey] = useState(0);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
@@ -202,6 +205,7 @@ const DashboardPage = () => {
       const response = await apiClient.createAnalysis({
         imageFile: imageFile || undefined,
         base64Image: imageUrl || undefined,
+        userLanguage: language,
       });
 
       // Incrementar contador (apenas quando logado)
@@ -349,12 +353,12 @@ const DashboardPage = () => {
               {isOnline ? (
                 <>
                   <Wifi className="h-3.5 w-3.5 text-green-500" />
-                  <span className="hidden text-green-500 sm:inline">Online</span>
+                  <span className="hidden text-green-500 sm:inline">{t.common.online}</span>
                 </>
               ) : (
                 <>
                   <WifiOff className="h-3.5 w-3.5 text-red-500" />
-                  <span className="hidden text-red-500 sm:inline">Offline</span>
+                  <span className="hidden text-red-500 sm:inline">{t.common.offline}</span>
                 </>
               )}
             </div>
@@ -368,6 +372,8 @@ const DashboardPage = () => {
                 {navbarUnlimited ? '· Ativo' : 'análises'}
               </span>
             </div>
+
+            <LanguageSwitcher />
 
             {user && (
               <div className="shrink-0">
@@ -426,12 +432,12 @@ const DashboardPage = () => {
 
             <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
               <CardHeader className="px-4 pb-2 pt-4">
-                <CardTitle className={sidebarSectionTitleClass}>Ações rápidas</CardTitle>
+                <CardTitle className={sidebarSectionTitleClass}>{t.nav.newAnalysis.replace('Nova ', '').replace('New ', '').replace('Nuevo ', '').replace('Nouvelle ', '').replace('Neue ', '') === t.nav.newAnalysis ? 'Ações rápidas' : 'Quick actions'}</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-2 p-4 pt-0">
-                <Button onClick={resetNewAnalysisView} variant={activeView.startsWith('analysis') || activeView === 'loading' || activeView === 'error' ? 'default' : 'outline'} className="justify-start"><PlusCircle className="mr-2 h-4 w-4" /> Nova Análise</Button>
-                <Button onClick={() => setActiveView('my-trades')} variant={activeView === 'my-trades' ? 'default' : 'outline'} className="justify-start"><History className="mr-2 h-4 w-4" /> Meus Trades</Button>
-                <Button onClick={() => setActiveView('watchlist')} variant={activeView === 'watchlist' ? 'default' : 'outline'} className="justify-start"><Star className="mr-2 h-4 w-4" /> Watchlist</Button>
+                <Button onClick={resetNewAnalysisView} variant={activeView.startsWith('analysis') || activeView === 'loading' || activeView === 'error' ? 'default' : 'outline'} className="justify-start"><PlusCircle className="mr-2 h-4 w-4" /> {t.nav.newAnalysis}</Button>
+                <Button onClick={() => setActiveView('my-trades')} variant={activeView === 'my-trades' ? 'default' : 'outline'} className="justify-start"><History className="mr-2 h-4 w-4" /> {t.nav.myTrades}</Button>
+                <Button onClick={() => setActiveView('watchlist')} variant={activeView === 'watchlist' ? 'default' : 'outline'} className="justify-start"><Star className="mr-2 h-4 w-4" /> {t.nav.watchlist}</Button>
                 {user && plan === 'free' && (
                   <Button onClick={() => setShowUpgradeModal(true)} variant="outline" className="justify-start">
                     <Crown className="mr-2 h-4 w-4" />
@@ -442,7 +448,7 @@ const DashboardPage = () => {
             </Card>
             <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
               <CardHeader className="px-4 pb-2 pt-4">
-                <CardTitle className={sidebarSectionTitleClass}>Mercados ativos</CardTitle>
+                <CardTitle className={sidebarSectionTitleClass}>{t.nav.activeMarkets}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 p-4 pt-0 text-xs">
                 {isDemo ? (
@@ -468,18 +474,18 @@ const DashboardPage = () => {
             </Card>
             <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
               <CardHeader className="px-4 pb-2 pt-4">
-                <CardTitle className={sidebarSectionTitleClass}>Últimas análises</CardTitle>
+                <CardTitle className={sidebarSectionTitleClass}>{t.nav.recentAnalyses}</CardTitle>
               </CardHeader>
               <CardContent className="p-4 pt-0">
                 {loadingAnalyses ? (
-                  <p className="py-4 text-center text-sm text-muted-foreground">Carregando...</p>
+                  <p className="py-4 text-center text-sm text-muted-foreground">{t.common.loading}</p>
                 ) : displayRecentAnalyses.length > 0 ? (
                   <div className="overflow-hidden rounded-sm border border-[var(--border-subtle)]">
                     <div className="grid grid-cols-[1fr_58px_52px_62px] bg-[var(--bg-overlay)] px-2 py-1.5 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
-                      <span>Símbolo</span>
-                      <span>Signal</span>
-                      <span>Conf.</span>
-                      <span>Tempo</span>
+                      <span>{t.nav.symbol}</span>
+                      <span>{t.nav.signal}</span>
+                      <span>{t.nav.conf}</span>
+                      <span>{t.nav.time}</span>
                     </div>
                     {displayRecentAnalyses.map((analysis, idx) => {
                       const recLabel = normalizeRecommendationLabel(analysis.recommendation);

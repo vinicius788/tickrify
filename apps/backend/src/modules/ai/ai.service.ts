@@ -64,6 +64,7 @@ export class AiService {
     base64Image?: string,
     promptOverride?: string,
     analysisType: AnalysisType = 'quick',
+    userLanguage?: string,
   ) {
     const preparedImage = this.prepareImagePayload(imageFile, base64Image);
     const queueReadiness = await getAiQueueReadiness();
@@ -137,6 +138,7 @@ export class AiService {
         userId,
         analysisType: normalizedAnalysisType,
         isDemo,
+        userLanguage,
       });
 
       return {
@@ -160,6 +162,7 @@ export class AiService {
       promptVersion,
       userId,
       analysisType: normalizedAnalysisType,
+      userLanguage,
     });
   }
 
@@ -482,8 +485,9 @@ export class AiService {
     promptVersion?: number;
     userId: string;
     analysisType: AnalysisType;
+    userLanguage?: string;
   }) {
-    const { analysisId, imageUrl, promptOverride, promptVersion, userId, analysisType } = params;
+    const { analysisId, imageUrl, promptOverride, promptVersion, userId, analysisType, userLanguage } = params;
     const startedAt = Date.now();
 
     await this.prisma.analysis.update({
@@ -502,6 +506,7 @@ export class AiService {
         analysisType,
         promptVersion,
         promptOverride,
+        userLanguage,
       );
       const aiResponse = await this.aiAdapter.analyzeImage(imageUrl, prompt, analysisType);
 

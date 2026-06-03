@@ -15,4 +15,9 @@ export class CreateAnalysisDto {
   @IsOptional()
   @IsIn(['quick', 'deep'])
   analysisType?: AnalysisType;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  userLanguage?: string;
 }

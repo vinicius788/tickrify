@@ -71,9 +71,10 @@ export class PromptBuilderService {
     analysisType: AnalysisType,
     promptVersion?: number,
     override?: string,
+    userLanguage?: string,
   ): Promise<string> {
     if (override) {
-      return this.appendConsistencyInstruction(override);
+      return this.appendConsistencyInstruction(this.injectLanguage(override, userLanguage));
     }
 
     if (promptVersion) {
@@ -81,11 +82,26 @@ export class PromptBuilderService {
         where: { version: promptVersion },
       });
       if (config?.prompt) {
-        return this.appendConsistencyInstruction(config.prompt);
+        return this.appendConsistencyInstruction(this.injectLanguage(config.prompt, userLanguage));
       }
     }
 
-    return this.buildPrompt(analysisType);
+    const base = await this.resolveActivePrompt();
+    return this.appendConsistencyInstruction(this.injectLanguage(base, userLanguage));
+  }
+
+  private injectLanguage(prompt: string, userLanguage?: string): string {
+    const LANGUAGE_NAMES: Record<string, string> = {
+      pt: 'Portuguese (Brazil)',
+      en: 'English',
+      es: 'Spanish',
+      fr: 'French',
+      de: 'German',
+      ja: 'Japanese',
+    };
+    const langName = (userLanguage && LANGUAGE_NAMES[userLanguage]) ? LANGUAGE_NAMES[userLanguage] : 'Portuguese (Brazil)';
+    const languageContext = `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, trendStrengthNote, multiTimeframeAlignment, sessionNote, reasoning) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
+    return prompt.replace('{{USER_CONTEXT}}', languageContext);
   }
 
   /**

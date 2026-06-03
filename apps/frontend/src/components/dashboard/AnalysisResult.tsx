@@ -18,6 +18,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import type { AIAnalysisResponse } from '@/lib/api';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 import {
   calcStopPercent,
   calcTPPercent,
@@ -155,6 +156,7 @@ function parseRiskReward(value: unknown): number | null {
 
 const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) => {
   const { toast } = useToast();
+  const { t } = useLanguage();
 
   if (!analysisData) {
     return (
@@ -323,7 +325,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
         <div className="min-w-0 flex-1">
           <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '80ms' }}>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">Gráfico analisado</CardTitle>
+              <CardTitle className="text-base font-semibold">{t.analysis.chartAnalyzed}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="aspect-video overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)]">
@@ -344,7 +346,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
           style={{ animationDelay: '200ms' }}
         >
           <CardHeader className="pb-2">
-            <CardTitle className="text-base tracking-wide">NÍVEIS DE OPERAÇÃO</CardTitle>
+            <CardTitle className="text-base tracking-wide">{t.analysis.levels.toUpperCase()}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3">
@@ -364,7 +366,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
             <div className="space-y-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
               <div className="flex items-center justify-between gap-3 rounded px-2 py-1">
-                <span className="text-[var(--text-secondary)]">PREÇO ATUAL</span>
+                <span className="text-[var(--text-secondary)]">{t.analysis.currentPrice.toUpperCase()}</span>
                 <button
                   type="button"
                   className="font-terminal font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
@@ -375,7 +377,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               </div>
 
               <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
-                <span className="text-[var(--text-secondary)]">● ENTRADA</span>
+                <span className="text-[var(--text-secondary)]">● {t.analysis.entry.toUpperCase()}</span>
                 <button
                   type="button"
                   className="font-terminal font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
@@ -386,7 +388,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               </div>
 
               <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
-                <span className="whitespace-nowrap text-[var(--signal-sell)]">▼ STOP LOSS</span>
+                <span className="whitespace-nowrap text-[var(--signal-sell)]">▼ {t.analysis.stopLoss.toUpperCase()}</span>
                 <button
                   type="button"
                   className="text-right font-terminal font-semibold text-[var(--signal-sell)] transition-opacity hover:opacity-80"
@@ -420,7 +422,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
               {entryType && (
                 <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1.5 text-xs">
-                  <span className="text-[var(--text-secondary)]">TIPO DE ENTRADA: </span>
+                  <span className="text-[var(--text-secondary)]">{t.analysis.entryType.toUpperCase()}: </span>
                   <span className="font-terminal font-semibold uppercase text-[var(--text-primary)]">{entryType}</span>
                   {entryCondition && <p className="mt-0.5 text-[var(--text-secondary)]">{entryCondition}</p>}
                 </div>
@@ -428,7 +430,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
               {invalidationLevel !== null && (
                 <div className="rounded border border-[var(--signal-sell)]/30 bg-[var(--signal-sell-bg)] px-2 py-1.5 text-xs">
-                  <span className="text-[var(--signal-sell)]">⚠ INVALIDAÇÃO: </span>
+                  <span className="text-[var(--signal-sell)]">⚠ {t.analysis.invalidation.toUpperCase()}: </span>
                   <span className="font-terminal font-semibold text-[var(--signal-sell)]">{formatPrice(invalidationLevel)}</span>
                   {invalidationNote && <p className="mt-0.5 text-[var(--signal-sell)]/70">{invalidationNote}</p>}
                 </div>
@@ -450,7 +452,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
             <AccordionTrigger className="px-5 py-4 text-base font-semibold hover:no-underline md:px-6">
               <span className="flex items-center gap-2">
                 <Zap className="h-4 w-4 text-[var(--text-secondary)]" />
-                Painel técnico
+                {t.analysis.technicalPanel}
               </span>
             </AccordionTrigger>
             <AccordionContent className="px-5 pb-5 md:px-6 md:pb-6">
@@ -464,7 +466,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                     <AccordionTrigger className="font-semibold hover:no-underline">
                       <span className="flex items-center gap-2">
                         <CalendarClock className="h-4 w-4 text-amber-400" />
-                        Eventos Econômicos
+                        {t.analysis.economicEvents}
                         {calEvents.some((e) => e.impact === 'High' && (e.minutesUntil ?? 999) <= 60) && (
                           <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-terminal text-[10px] font-bold text-amber-400 uppercase">
                             ⚠ Alto impacto
@@ -477,7 +479,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                         <p className="text-xs text-[var(--text-secondary)]">Verificando calendário…</p>
                       ) : calEvents.length === 0 ? (
                         <p className="text-xs text-[var(--text-secondary)] opacity-60">
-                          ✅ Nenhum evento de alto impacto nas próximas 24h para este ativo.
+                          ✅ {t.analysis.noHighImpactEvents}
                         </p>
                       ) : (
                         <div className="space-y-2">
@@ -549,7 +551,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   <AccordionTrigger className="font-semibold hover:no-underline">
                     <span className="flex items-center gap-2">
                       <Minus className="h-4 w-4 text-[var(--text-secondary)]" />
-                      Sessões de Mercado
+                      {t.analysis.marketSessions}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent>
@@ -569,7 +571,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                       ))}
                     </div>
                     <p className="mt-2 text-xs text-[var(--text-secondary)] opacity-50">
-                      Horário da análise (UTC) · London+NY abertas = maior liquidez
+                      {t.analysis.sessionNote}
                     </p>
                   </AccordionContent>
                 </AccordionItem>
@@ -578,7 +580,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   <AccordionTrigger className="font-semibold hover:no-underline">
                     <span className="flex items-center gap-2">
                       <Target className="h-4 w-4 text-[var(--text-secondary)]" />
-                      Estrutura de Mercado
+                      {t.analysis.marketStructure}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="space-y-2 text-sm text-[var(--text-secondary)]">
@@ -596,15 +598,15 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                       </p>
                       {trendStrength && (
                         <p className="border-t border-[var(--border-subtle)] pt-1 mt-1">
-                          Força da tendência:{' '}
+                          {t.analysis.trendStrength}:{' '}
                           <span className={`font-semibold ${trendStrength === 'strong' ? 'text-[var(--signal-buy)]' : trendStrength === 'weak' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}`}>
-                            {trendStrength === 'strong' ? 'Forte ↑' : trendStrength === 'weak' ? 'Fraca ↓' : 'Moderada →'}
+                            {trendStrength === 'strong' ? t.analysis.strongTrend : trendStrength === 'weak' ? t.analysis.weakTrend : t.analysis.moderateTrend}
                           </span>
                           {trendStrengthNote && <span className="text-[var(--text-secondary)]"> — {trendStrengthNote}</span>}
                         </p>
                       )}
                       {multiTimeframeAlignment && (
-                        <p>Alinhamento MTF: <span className="font-medium text-[var(--text-primary)]">{multiTimeframeAlignment}</span></p>
+                        <p>{t.analysis.mtfAlignment}: <span className="font-medium text-[var(--text-primary)]">{multiTimeframeAlignment}</span></p>
                       )}
                       {structureValidation ? (
                         <p className="mt-2 border-t border-[var(--border-subtle)] pt-2 text-[var(--text-secondary)]">{structureValidation}</p>
@@ -617,7 +619,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   <AccordionTrigger className="font-semibold hover:no-underline">
                     <span className="flex items-center gap-2">
                       <Zap className="h-4 w-4 text-[var(--text-secondary)]" />
-                      Análise Técnica
+                      {t.analysis.technicalAnalysis}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-secondary)]">
@@ -629,7 +631,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   <AccordionTrigger className="font-semibold hover:no-underline">
                     <span className="flex items-center gap-2">
                       <CheckCircle2 className="h-4 w-4 text-[var(--text-secondary)]" />
-                      Padrões Identificados
+                      {t.analysis.identifiedPatterns}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent>
@@ -654,7 +656,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   <AccordionTrigger className="font-semibold hover:no-underline">
                     <span className="flex items-center gap-2">
                       <SlidersVertical className="h-4 w-4 text-[var(--text-secondary)]" />
-                      Indicadores-Chave
+                      {t.analysis.keyIndicators}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent>
@@ -676,7 +678,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   <AccordionTrigger className="font-semibold hover:no-underline">
                     <span className="flex items-center gap-2">
                       <ShieldAlert className="h-4 w-4 text-[var(--signal-sell)]" />
-                      Fatores de Risco
+                      {t.analysis.riskFactors}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent>
@@ -700,7 +702,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                     <AccordionTrigger className="font-semibold hover:no-underline">
                       <span className="flex items-center gap-2">
                         <Target className="h-4 w-4 text-[var(--signal-buy)]" />
-                        Plano de Saída Parcial
+                        {t.analysis.partialExit}
                       </span>
                     </AccordionTrigger>
                     <AccordionContent className="text-sm leading-relaxed text-[var(--text-secondary)]">
@@ -716,7 +718,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                     <AccordionTrigger className="font-semibold hover:no-underline">
                       <span className="flex items-center gap-2">
                         <AlertTriangle className="h-4 w-4 text-amber-400" />
-                        Plano B — Cenário Alternativo
+                        {t.analysis.planB}
                       </span>
                     </AccordionTrigger>
                     <AccordionContent className="text-sm leading-relaxed text-[var(--text-secondary)]">
@@ -731,7 +733,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   <AccordionTrigger className="font-semibold hover:no-underline">
                     <span className="flex items-center gap-2">
                       <CircleHelp className="h-4 w-4 text-[var(--text-secondary)]" />
-                      Por que não o oposto
+                      {t.analysis.whyNotOpposite}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="text-sm leading-relaxed text-[var(--text-secondary)]">
@@ -742,7 +744,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
               <div className="mt-4 border-t-2 border-[var(--border-emphasis)] pt-4">
                 <div className="rounded-md border border-[var(--border-emphasis)] bg-[var(--bg-overlay)] p-3">
-                  <h4 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">Resumo Executivo</h4>
+                  <h4 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">{t.analysis.executiveSummary}</h4>
                   <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-primary)]">
                     {executiveSummary || 'Resumo executivo não informado.'}
                   </p>

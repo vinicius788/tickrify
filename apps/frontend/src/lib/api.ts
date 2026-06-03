@@ -177,6 +177,7 @@ export interface CreateAnalysisPayload {
   base64Image?: string;
   promptOverride?: string;
   analysisType?: 'quick' | 'deep';
+  userLanguage?: string;
 }
 
 export interface AnalysisUsageResponse {
@@ -301,6 +302,10 @@ class APIClient {
 
     if (payload.analysisType) {
       formData.append('analysisType', payload.analysisType);
+    }
+
+    if (payload.userLanguage) {
+      formData.append('userLanguage', payload.userLanguage);
     }
 
     const response = await this.request(

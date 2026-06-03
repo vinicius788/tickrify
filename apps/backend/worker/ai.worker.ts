@@ -33,6 +33,7 @@ interface JobData {
   userId?: string;
   analysisType?: AnalysisType;
   isDemo?: boolean;
+  userLanguage?: string;
 }
 
 // ─── Fixed demo response (no OpenAI call, no tick cost) ──────────────────────
@@ -512,26 +513,44 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
   };
 }
 
-async function getPrompt(promptOverride?: string, promptVersion?: number): Promise<string> {
+const LANGUAGE_NAMES: Record<string, string> = {
+  pt: 'Portuguese (Brazil)',
+  en: 'English',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  ja: 'Japanese',
+};
+
+async function getPrompt(promptOverride?: string, promptVersion?: number, userLanguage?: string): Promise<string> {
   if (promptOverride) {
     return promptOverride;
   }
+
+  let basePrompt: string;
 
   if (promptVersion) {
     const promptConfig = await prisma.promptConfig.findUnique({
       where: { version: promptVersion },
     });
     if (promptConfig?.prompt) {
-      return promptConfig.prompt;
+      basePrompt = promptConfig.prompt;
+    } else {
+      basePrompt = TRADING_SYSTEM_PROMPT;
     }
+  } else {
+    const activePrompt = await prisma.promptConfig.findFirst({
+      where: { isActive: true },
+      orderBy: { version: 'desc' },
+    });
+    basePrompt = activePrompt?.prompt || TRADING_SYSTEM_PROMPT;
   }
 
-  const activePrompt = await prisma.promptConfig.findFirst({
-    where: { isActive: true },
-    orderBy: { version: 'desc' },
-  });
+  // Inject language into USER_CONTEXT placeholder
+  const langName = (userLanguage && LANGUAGE_NAMES[userLanguage]) ? LANGUAGE_NAMES[userLanguage] : 'Portuguese (Brazil)';
+  const languageContext = `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, trendStrengthNote, multiTimeframeAlignment, sessionNote, reasoning) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
 
-  return activePrompt?.prompt || TRADING_SYSTEM_PROMPT;
+  return basePrompt.replace('{{USER_CONTEXT}}', languageContext);
 }
 
 async function persistAnnotatedImage(
@@ -741,6 +760,7 @@ async function processAnalysis(job: Job<JobData>) {
     userId,
     analysisType,
     isDemo,
+    userLanguage,
   } = job.data;
   const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
 
@@ -807,7 +827,7 @@ async function processAnalysis(job: Job<JobData>) {
       return;
     }
 
-    const prompt = await getPrompt(promptOverride, promptVersion);
+    const prompt = await getPrompt(promptOverride, promptVersion, userLanguage);
     const aiSource = await resolveAiSource(imageUrl, prompt, normalizedAnalysisType);
 
     const sourcePayload =
