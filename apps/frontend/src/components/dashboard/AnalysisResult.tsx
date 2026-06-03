@@ -55,9 +55,22 @@ function formatPrice(value: number | null): string {
   if (value === null || !Number.isFinite(value)) {
     return 'N/A';
   }
+  // Detect decimal precision needed:
+  // Forex (< 500 and not integer): use 4-5 decimals (e.g. 1.1605, 149.85)
+  // Crypto/Gold (>= 500): use 2 decimals
+  // Very small values (< 1): use 5 decimals
+  let decimals = 2;
+  if (value < 1) {
+    decimals = 5;
+  } else if (value < 500) {
+    // Forex range — detect actual decimal places in the number
+    const str = value.toString();
+    const decPart = str.includes('.') ? str.split('.')[1] : '';
+    decimals = Math.min(Math.max(decPart.length, 4), 5);
+  }
   return `$ ${new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   }).format(value)}`;
 }
 

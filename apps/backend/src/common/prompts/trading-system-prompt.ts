@@ -107,8 +107,9 @@ RULE: Pattern alone ≠ signal. Note as: "🕯️ Bearish Engulfing at Bearish O
 **STEP 5 — ADAPTIVE RISK MANAGER + EXECUTION PLAN**
 Instrument SL/TP rules:
 - Crypto: SL/TP in % AND $. Min SL 1.5% scalp / 3% swing.
-- Forex Majors: ALWAYS pips + price. Scalp 15-30p | Day 30-60p | Swing 60-120p. JPY pip=0.01.
-- Forex Minors/Exotics (AUDCAD, NZDCHF, USDMXN, etc.): same pip rules. Be precise — note the exact price zone and pip distance.
+- Forex Majors (EURUSD, GBPUSD, AUDUSD, etc.): price MUST use 4–5 decimal places. EURUSD example: 1.1605, NOT 1.16. GBPUSD example: 1.2734, NOT 1.27. SL/TP must differ by at least 0.0010 (10 pips). Scalp 15-30p | Day 30-60p | Swing 60-120p.
+- Forex JPY pairs (USDJPY, EURJPY): 2–3 decimal places. Example: 149.85, NOT 149. pip=0.01.
+- Forex Minors/Exotics (AUDCAD, NZDCHF, USDMXN, etc.): same 4–5 decimal precision as majors.
 - Equities/ETFs: % AND $. SL 0.5-2%.
 - Futures/Indices (ES, NQ, DAX, etc.): points/ticks AND $. Name the specific point levels.
 - Metals/XAUUSD: $ AND %. Min SL $5 scalp / $12 day / $25 swing.
