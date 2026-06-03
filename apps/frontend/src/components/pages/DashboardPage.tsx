@@ -348,7 +348,7 @@ const DashboardPage = () => {
             </div>
           </Link>
 
-          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden text-sm md:gap-3">
+          <div className="flex min-w-0 items-center gap-1.5 overflow-visible text-sm md:gap-3">
             <div className="flex shrink-0 items-center gap-1 text-sm font-medium">
               {isOnline ? (
                 <>
