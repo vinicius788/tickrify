@@ -6,6 +6,9 @@ import {
   Recommendation,
   normalizeConfidence,
   parseJsonFromContent,
+  computeRiskReward,
+  formatRiskReward,
+  harmonizeConfidenceWithTrend,
 } from '../../common/utils/analysis-normalizer';
 import { AnalysisType } from '../ticks/tick-packages';
 
@@ -34,6 +37,8 @@ interface TradingAnalysisDetails {
   takeProfit2: number | null;
   takeProfit2Percent: number | null;
   riskRewardRatio: string | null;
+  riskRewardTp1: number | null;
+  riskRewardTp2: number | null;
   marketStructure: TradingAnalysisMarketStructure;
   chartType: string;
   confluenceScore: number;
@@ -51,9 +56,17 @@ interface TradingAnalysisDetails {
   entryType: string | null;
   entryCondition: string | null;
   partialExitStrategy: string | null;
+  tp1ClosePercent: number | null;
+  tp2ClosePercent: number | null;
+  breakevenTrigger: string | null;
+  probabilityTp1: number | null;
+  probabilityTp2: number | null;
+  probabilityStop: number | null;
   alternativeScenario: string | null;
   trendStrength: string | null;
   trendStrengthNote: string | null;
+  marketRegime: string | null;
+  marketRegimeNote: string | null;
   multiTimeframeAlignment: string | null;
 }
 
@@ -286,6 +299,24 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       ? (parsedAnalysis.marketStructure as Record<string, unknown>)
       : {};
 
+  // ── Níveis de preço (lidos uma vez para permitir R/R determinístico) ──────────
+  const entry = ensureNumberOrNull(parsedAnalysis.entry);
+  const stopLoss = ensureNumberOrNull(parsedAnalysis.stopLoss);
+  const takeProfit1 = ensureNumberOrNull(parsedAnalysis.takeProfit1);
+  const takeProfit2 = ensureNumberOrNull(parsedAnalysis.takeProfit2);
+
+  // R/R calculado a partir dos níveis (não confia no texto da IA, que pode divergir).
+  const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1);
+  const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2);
+
+  // riskRewardRatio: prioriza o valor calculado (alvo final); cai para o texto da IA se faltar.
+  const aiRiskRewardRatio =
+    parsedAnalysis.riskRewardRatio === null || parsedAnalysis.riskRewardRatio === undefined
+      ? null
+      : ensureString(parsedAnalysis.riskRewardRatio, '') || null;
+  const riskRewardRatio =
+    formatRiskReward(riskRewardTp2 ?? riskRewardTp1) ?? aiRiskRewardRatio;
+
   return {
     recommendation: normalizeSchemaRecommendation(parsed.recommendation),
     confidence: ensureNumber(parsed.confidence, 0),
@@ -295,17 +326,16 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       detectedSession: ensureString(parsedAnalysis.detectedSession, 'unknown'),
       sessionNote: ensureString(parsedAnalysis.sessionNote, 'Contexto de sessão não informado.'),
       currentPrice: ensureNumber(parsedAnalysis.currentPrice, 0),
-      entry: ensureNumberOrNull(parsedAnalysis.entry),
-      stopLoss: ensureNumberOrNull(parsedAnalysis.stopLoss),
+      entry,
+      stopLoss,
       stopLossPercent: ensureNumberOrNull(parsedAnalysis.stopLossPercent),
-      takeProfit1: ensureNumberOrNull(parsedAnalysis.takeProfit1),
+      takeProfit1,
       takeProfit1Percent: ensureNumberOrNull(parsedAnalysis.takeProfit1Percent),
-      takeProfit2: ensureNumberOrNull(parsedAnalysis.takeProfit2),
+      takeProfit2,
       takeProfit2Percent: ensureNumberOrNull(parsedAnalysis.takeProfit2Percent),
-      riskRewardRatio:
-        parsedAnalysis.riskRewardRatio === null || parsedAnalysis.riskRewardRatio === undefined
-          ? null
-          : ensureString(parsedAnalysis.riskRewardRatio, ''),
+      riskRewardRatio,
+      riskRewardTp1,
+      riskRewardTp2,
       marketStructure: {
         bias: normalizeSchemaBias(parsedMarketStructure.bias),
         lastStructure: ensureString(parsedMarketStructure.lastStructure, 'Não informado'),
@@ -329,9 +359,17 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       entryType: parsedAnalysis.entryType != null ? ensureString(parsedAnalysis.entryType, '') || null : null,
       entryCondition: parsedAnalysis.entryCondition != null ? ensureString(parsedAnalysis.entryCondition, '') || null : null,
       partialExitStrategy: parsedAnalysis.partialExitStrategy != null ? ensureString(parsedAnalysis.partialExitStrategy, '') || null : null,
+      tp1ClosePercent: ensureNumberOrNull(parsedAnalysis.tp1ClosePercent),
+      tp2ClosePercent: ensureNumberOrNull(parsedAnalysis.tp2ClosePercent),
+      breakevenTrigger: parsedAnalysis.breakevenTrigger != null ? ensureString(parsedAnalysis.breakevenTrigger, '') || null : null,
+      probabilityTp1: ensureNumberOrNull(parsedAnalysis.probabilityTp1),
+      probabilityTp2: ensureNumberOrNull(parsedAnalysis.probabilityTp2),
+      probabilityStop: ensureNumberOrNull(parsedAnalysis.probabilityStop),
       alternativeScenario: parsedAnalysis.alternativeScenario != null ? ensureString(parsedAnalysis.alternativeScenario, '') || null : null,
       trendStrength: parsedAnalysis.trendStrength != null ? ensureString(parsedAnalysis.trendStrength, '') || null : null,
       trendStrengthNote: parsedAnalysis.trendStrengthNote != null ? ensureString(parsedAnalysis.trendStrengthNote, '') || null : null,
+      marketRegime: parsedAnalysis.marketRegime != null ? ensureString(parsedAnalysis.marketRegime, '') || null : null,
+      marketRegimeNote: parsedAnalysis.marketRegimeNote != null ? ensureString(parsedAnalysis.marketRegimeNote, '') || null : null,
       multiTimeframeAlignment: parsedAnalysis.multiTimeframeAlignment != null ? ensureString(parsedAnalysis.multiTimeframeAlignment, '') || null : null,
     },
   };
@@ -579,9 +617,17 @@ export class AIAdapter {
                     entryType: { type: ['string', 'null'] },
                     entryCondition: { type: ['string', 'null'] },
                     partialExitStrategy: { type: ['string', 'null'] },
+                    tp1ClosePercent: { type: ['number', 'null'] },
+                    tp2ClosePercent: { type: ['number', 'null'] },
+                    breakevenTrigger: { type: ['string', 'null'] },
+                    probabilityTp1: { type: ['number', 'null'] },
+                    probabilityTp2: { type: ['number', 'null'] },
+                    probabilityStop: { type: ['number', 'null'] },
                     alternativeScenario: { type: ['string', 'null'] },
                     trendStrength: { type: ['string', 'null'] },
                     trendStrengthNote: { type: ['string', 'null'] },
+                    marketRegime: { type: ['string', 'null'] },
+                    marketRegimeNote: { type: ['string', 'null'] },
                     multiTimeframeAlignment: { type: ['string', 'null'] },
                   },
                   required: [
@@ -615,9 +661,17 @@ export class AIAdapter {
                     'entryType',
                     'entryCondition',
                     'partialExitStrategy',
+                    'tp1ClosePercent',
+                    'tp2ClosePercent',
+                    'breakevenTrigger',
+                    'probabilityTp1',
+                    'probabilityTp2',
+                    'probabilityStop',
                     'alternativeScenario',
                     'trendStrength',
                     'trendStrengthNote',
+                    'marketRegime',
+                    'marketRegimeNote',
                     'multiTimeframeAlignment',
                   ],
                   additionalProperties: false,
@@ -727,7 +781,10 @@ export class AIAdapter {
       }
 
       const recommendation = mapSchemaRecommendationToInternal(parsed.recommendation);
-      const confidence = normalizeConfidence(parsed.confidence, 50);
+      const confidence = harmonizeConfidenceWithTrend(
+        normalizeConfidence(parsed.confidence, 50),
+        parsed.analysis?.trendStrength,
+      );
 
       return {
         recommendation,

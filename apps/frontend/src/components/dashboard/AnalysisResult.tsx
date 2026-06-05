@@ -13,6 +13,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useEconomicCalendar } from '@/hooks/useEconomicCalendar';
+import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -210,13 +211,34 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const entryType = String(analysis.entryType || '').trim() || null;
   const entryCondition = String(analysis.entryCondition || '').trim() || null;
   const partialExitStrategy = String(analysis.partialExitStrategy || '').trim() || null;
+  const tp1ClosePercent = toNumber(analysis.tp1ClosePercent);
+  const tp2ClosePercent = toNumber(analysis.tp2ClosePercent);
+  const breakevenTrigger = String(analysis.breakevenTrigger || '').trim() || null;
+  const probabilityTp1 = toNumber(analysis.probabilityTp1);
+  const probabilityTp2 = toNumber(analysis.probabilityTp2);
+  const probabilityStop = toNumber(analysis.probabilityStop);
+  const hasProbabilities = probabilityTp1 !== null || probabilityTp2 !== null || probabilityStop !== null;
+  const hasStructuredExit = tp1ClosePercent !== null || tp2ClosePercent !== null || breakevenTrigger !== null;
   const alternativeScenario = String(analysis.alternativeScenario || '').trim() || null;
   const trendStrength = String(analysis.trendStrength || '').trim() || null;
   const trendStrengthNote = String(analysis.trendStrengthNote || '').trim() || null;
+  const marketRegime = String(analysis.marketRegime || '').trim().toLowerCase() || null;
+  const marketRegimeNote = String(analysis.marketRegimeNote || '').trim() || null;
   const multiTimeframeAlignment = String(analysis.multiTimeframeAlignment || '').trim() || null;
 
+  // R/R por alvo, calculado direto dos níveis (consistente e funciona em análises antigas).
+  const computeRR = (e: number | null, sl: number | null, tp: number | null): number | null => {
+    if (e === null || sl === null || tp === null) return null;
+    const risk = Math.abs(e - sl);
+    const reward = Math.abs(tp - e);
+    if (!(risk > 0) || !(reward > 0)) return null;
+    return Math.round((reward / risk) * 100) / 100;
+  };
+  const rrTp1 = computeRR(entry, stopLoss, takeProfit1);
+  const rrTp2 = computeRR(entry, stopLoss, takeProfit2);
   const riskRewardRatioRaw = analysis.riskRewardRatio;
-  const riskReward = parseRiskReward(riskRewardRatioRaw);
+  // valor principal exibido: alvo final (TP2) ou TP1; cai para o texto da IA se faltarem níveis.
+  const riskReward = rrTp2 ?? rrTp1 ?? parseRiskReward(riskRewardRatioRaw);
   const riskRewardTone = riskReward !== null && riskReward >= 2 ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-hold)]';
 
   const timestamp = new Date(analysisData.createdAt);
@@ -355,6 +377,13 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 <p className={`font-terminal text-base font-semibold ${riskRewardTone}`}>
                   {riskReward !== null ? `${riskReward.toFixed(1)} : 1` : String(riskRewardRatioRaw || 'N/A')}
                 </p>
+                {(rrTp1 !== null || rrTp2 !== null) && (
+                  <p className="font-terminal text-[10px] text-[var(--text-secondary)]">
+                    {rrTp1 !== null ? `TP1 ${rrTp1.toFixed(1)}` : ''}
+                    {rrTp1 !== null && rrTp2 !== null ? ' · ' : ''}
+                    {rrTp2 !== null ? `TP2 ${rrTp2.toFixed(1)}` : ''}
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-xs text-[var(--text-secondary)]">{t.analysis.confluence}</p>
@@ -420,6 +449,21 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 </button>
               </div>
 
+              {hasProbabilities && (
+                <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1.5 text-xs">
+                  <p className="mb-1 text-[var(--text-secondary)]">{t.analysis.outcomeProbabilities}</p>
+                  <div className="flex h-2 w-full overflow-hidden rounded-full bg-[var(--bg-surface)]">
+                    {probabilityTp1 !== null && <div className="h-full bg-[var(--signal-buy)]" style={{ width: `${Math.max(0, Math.min(100, probabilityTp1))}%` }} />}
+                    {probabilityStop !== null && <div className="h-full bg-[var(--signal-sell)]" style={{ width: `${Math.max(0, Math.min(100, probabilityStop))}%` }} />}
+                  </div>
+                  <div className="mt-1 flex justify-between font-terminal text-[11px]">
+                    {probabilityTp1 !== null && <span className="text-[var(--signal-buy)]">TP1 {Math.round(probabilityTp1)}%</span>}
+                    {probabilityTp2 !== null && <span className="text-[var(--signal-buy)]/80">TP2 {Math.round(probabilityTp2)}%</span>}
+                    {probabilityStop !== null && <span className="text-[var(--signal-sell)]">Stop {Math.round(probabilityStop)}%</span>}
+                  </div>
+                </div>
+              )}
+
               {entryType && (
                 <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1.5 text-xs">
                   <span className="text-[var(--text-secondary)]">{t.analysis.entryType.toUpperCase()}: </span>
@@ -435,6 +479,8 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   {invalidationNote && <p className="mt-0.5 text-[var(--signal-sell)]/70">{invalidationNote}</p>}
                 </div>
               )}
+
+              <PositionSizingCalculator entry={entry} stopLoss={stopLoss} />
 
               {sessionNote && (
                 <p className="rounded-sm bg-[var(--bg-overlay)] px-2 py-1.5 text-xs text-[var(--text-secondary)]">
@@ -605,6 +651,15 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                           {trendStrengthNote && <span className="text-[var(--text-secondary)]"> — {trendStrengthNote}</span>}
                         </p>
                       )}
+                      {marketRegime && (
+                        <p>
+                          {t.analysis.marketRegime}:{' '}
+                          <span className={`font-semibold ${marketRegime === 'trending' ? 'text-[var(--signal-buy)]' : marketRegime === 'volatile' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}`}>
+                            {marketRegime === 'trending' ? t.analysis.regimeTrending : marketRegime === 'volatile' ? t.analysis.regimeVolatile : t.analysis.regimeRanging}
+                          </span>
+                          {marketRegimeNote && <span className="text-[var(--text-secondary)]"> — {marketRegimeNote}</span>}
+                        </p>
+                      )}
                       {multiTimeframeAlignment && (
                         <p>{t.analysis.mtfAlignment}: <span className="font-medium text-[var(--text-primary)]">{multiTimeframeAlignment}</span></p>
                       )}
@@ -697,7 +752,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   </AccordionContent>
                 </AccordionItem>
 
-                {partialExitStrategy && (
+                {(partialExitStrategy || hasStructuredExit) && (
                   <AccordionItem value="exit-plan" className="border-[var(--border-subtle)]">
                     <AccordionTrigger className="font-semibold hover:no-underline">
                       <span className="flex items-center gap-2">
@@ -706,9 +761,30 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                       </span>
                     </AccordionTrigger>
                     <AccordionContent className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                      <div className="rounded-md border border-[var(--signal-buy)]/20 bg-[var(--signal-buy-bg)] p-3">
-                        {partialExitStrategy}
-                      </div>
+                      {hasStructuredExit && (
+                        <div className="mb-2 flex flex-wrap gap-2">
+                          {tp1ClosePercent !== null && (
+                            <span className="rounded-full border border-[var(--signal-buy)]/30 bg-[var(--signal-buy-bg)] px-2.5 py-1 font-terminal text-xs text-[var(--signal-buy)]">
+                              TP1: {Math.round(tp1ClosePercent)}%
+                            </span>
+                          )}
+                          {tp2ClosePercent !== null && (
+                            <span className="rounded-full border border-[var(--signal-buy)]/30 bg-[var(--signal-buy-bg)] px-2.5 py-1 font-terminal text-xs text-[var(--signal-buy)]">
+                              TP2: {Math.round(tp2ClosePercent)}%
+                            </span>
+                          )}
+                          {breakevenTrigger && (
+                            <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2.5 py-1 text-xs text-[var(--text-secondary)]">
+                              {t.analysis.breakeven}: {breakevenTrigger}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {partialExitStrategy && (
+                        <div className="rounded-md border border-[var(--signal-buy)]/20 bg-[var(--signal-buy-bg)] p-3">
+                          {partialExitStrategy}
+                        </div>
+                      )}
                     </AccordionContent>
                   </AccordionItem>
                 )}

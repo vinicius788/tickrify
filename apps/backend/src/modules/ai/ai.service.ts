@@ -24,6 +24,8 @@ import {
   normalizeBias,
   normalizeConfidence,
   normalizeRecommendation,
+  computeRiskReward,
+  formatRiskReward,
 } from '../../common/utils/analysis-normalizer';
 import {
   ImageStorageClient,
@@ -114,17 +116,13 @@ export class AiService {
     ]);
 
     // Only consume free quota / ticks after infrastructure/storage prerequisites are validated.
-    const { isDemo } = await this.enforceAccess(userId, normalizedAnalysisType);
-
-    const analysis = await this.prisma.analysis.create({
-      data: {
-        userId,
-        imageUrl,
-        status: 'pending',
-        promptVer: promptVersion,
-        isDemo,
-      },
-    });
+    // enforceAccessAndCreate conta a cota grátis e cria a análise na MESMA transação,
+    // evitando que requisições simultâneas ultrapassem o limite gratuito.
+    const { isDemo, analysis } = await this.enforceAccessAndCreate(
+      userId,
+      normalizedAnalysisType,
+      { imageUrl, promptVer: promptVersion, status: 'pending' },
+    );
 
     const queue = queueReadiness.connected ? getAiQueue() : null;
 
@@ -203,8 +201,6 @@ export class AiService {
 
     sendEvent('progress', { phase: 'uploading', pct: 20 });
 
-    await this.enforceAccess(userId, normalizedAnalysisType);
-
     const promptVersion = promptOverride
       ? undefined
       : (await this.prisma.promptConfig.findFirst({
@@ -213,9 +209,13 @@ export class AiService {
           select: { version: true },
         }))?.version;
 
-    const analysis = await this.prisma.analysis.create({
-      data: { userId, imageUrl, status: 'processing', promptVer: promptVersion },
-    });
+    // Mesma reserva atômica do fluxo normal. Importante: marca isDemo corretamente
+    // (antes o streaming criava a análise sem isDemo, permitindo grátis ilimitado).
+    const { analysis } = await this.enforceAccessAndCreate(
+      userId,
+      normalizedAnalysisType,
+      { imageUrl, promptVer: promptVersion, status: 'processing' },
+    );
 
     sendEvent('progress', { phase: 'analyzing', pct: 25 });
 
@@ -256,11 +256,18 @@ export class AiService {
       }
 
       // Build a minimal AIAnalysisResponse from parsed data
-      const { normalizeRecommendation, normalizeBias: normalizeBiasUtil, normalizeConfidence: normalizeConf } =
-        await import('../../common/utils/analysis-normalizer');
+      const {
+        normalizeRecommendation,
+        normalizeBias: normalizeBiasUtil,
+        normalizeConfidence: normalizeConf,
+        harmonizeConfidenceWithTrend: harmonizeConf,
+      } = await import('../../common/utils/analysis-normalizer');
       const recommendation = normalizeRecommendation(parsed.recommendation);
       const bias = normalizeBiasUtil(parsed.analysis?.marketStructure?.bias, recommendation);
-      const confidence = normalizeConf(parsed.confidence, 50);
+      const confidence = harmonizeConf(
+        normalizeConf(parsed.confidence, 50),
+        parsed.analysis?.trendStrength,
+      );
 
       const aiResponse = {
         recommendation,
@@ -420,6 +427,8 @@ export class AiService {
           reasoning: operationFields.reasoning,
           riskReward: operationFields.riskReward,
           riskRewardRatio: operationFields.riskReward,
+          riskRewardTp1: operationFields.riskRewardTp1,
+          riskRewardTp2: operationFields.riskRewardTp2,
         };
       }),
     );
@@ -623,15 +632,37 @@ export class AiService {
 
   static readonly DEMO_ANALYSIS_LIMIT = 3;
 
-  /** Returns true if this request should be treated as a demo analysis (no tick cost, fixed response). */
+  /**
+   * Returns true if the user still has free (demo) analyses available.
+   * Failed analyses (status='failed') are NOT counted, so a failed attempt never
+   * consumes one of the 3 free analyses.
+   */
   async checkDemoEligibility(userId: string): Promise<boolean> {
     const demoCount = await this.prisma.analysis.count({
-      where: { userId, isDemo: true },
+      where: { userId, isDemo: true, status: { not: 'failed' } },
     });
     return demoCount < AiService.DEMO_ANALYSIS_LIMIT;
   }
 
-  private async enforceAccess(userId: string, analysisType: AnalysisType): Promise<{ isDemo: boolean }> {
+  private readonly DEMO_LIMIT_ERROR = {
+    code: 'DEMO_LIMIT_REACHED',
+    message: 'Suas 3 análises demonstrativas foram utilizadas. Assine um plano para continuar.',
+  };
+
+  /**
+   * Enforces plan/quota access AND creates the Analysis row atomically.
+   *
+   * Paid users: debits ticks (already race-safe) and creates the row.
+   * Free users: counts non-failed demo analyses and creates the row inside a
+   * Serializable transaction, so two concurrent requests cannot both slip past
+   * the 3-free limit. Failed analyses don't count, so a failed attempt is never
+   * charged against the free quota.
+   */
+  private async enforceAccessAndCreate(
+    userId: string,
+    analysisType: AnalysisType,
+    rowData: { imageUrl: string; promptVer?: number; status: ApiAnalysisStatus },
+  ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true },
@@ -645,27 +676,72 @@ export class AiService {
       analysisType === 'deep' ? TICK_COSTS.ANALYSIS_DEEP : TICK_COSTS.ANALYSIS_QUICK;
 
     if (await this.hasPaidAccess(userId)) {
-      // Assinante: consome ticks do plano mensal.
+      // Assinante: consome ticks do plano mensal (débito atômico).
       await this.ticksService.debitTicks(
         userId,
         tickCost,
         `Análise ${analysisType === 'deep' ? 'deep' : 'rápida'} de gráfico`,
         { analysisType },
       );
-      return { isDemo: false };
+
+      const analysis = await this.prisma.analysis.create({
+        data: {
+          userId,
+          imageUrl: rowData.imageUrl,
+          status: rowData.status,
+          promptVer: rowData.promptVer,
+          isDemo: false,
+        },
+      });
+
+      return { isDemo: false, analysis };
     }
 
-    // Sem assinatura: verificar se ainda tem análises demonstrativas
-    const demoEligible = await this.checkDemoEligibility(userId);
-    if (demoEligible) {
-      return { isDemo: true };
-    }
+    // Sem assinatura: reserva atômica de UMA das análises grátis.
+    // Contagem + criação na mesma transação serializável garantem que requisições
+    // simultâneas não consigam ultrapassar o limite gratuito.
+    try {
+      const analysis = await this.prisma.$transaction(
+        async (tx) => {
+          const used = await tx.analysis.count({
+            where: { userId, isDemo: true, status: { not: 'failed' } },
+          });
 
-    // Esgotou as 3 demos → exige assinatura
-    throw new ForbiddenException({
-      code: 'DEMO_LIMIT_REACHED',
-      message: 'Suas 3 análises demonstrativas foram utilizadas. Assine um plano para continuar.',
-    });
+          if (used >= AiService.DEMO_ANALYSIS_LIMIT) {
+            throw new ForbiddenException(this.DEMO_LIMIT_ERROR);
+          }
+
+          return tx.analysis.create({
+            data: {
+              userId,
+              imageUrl: rowData.imageUrl,
+              status: rowData.status,
+              promptVer: rowData.promptVer,
+              isDemo: true,
+            },
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+
+      return { isDemo: true, analysis };
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+
+      // Conflito de serialização (P2034): uma requisição concorrente ficou com a
+      // última vaga grátis — tratamos como limite atingido.
+      const code =
+        error && typeof error === 'object' && 'code' in error
+          ? String((error as { code?: unknown }).code || '')
+          : '';
+      if (code === 'P2034') {
+        throw new ForbiddenException(this.DEMO_LIMIT_ERROR);
+      }
+
+      throw error;
+    }
   }
 
   private async hasPaidAccess(userId: string): Promise<boolean> {
@@ -745,6 +821,8 @@ export class AiService {
       takeProfit2Percent: operationFields.takeProfit2Percent,
       riskReward: operationFields.riskReward,
       riskRewardRatio: operationFields.riskReward,
+      riskRewardTp1: operationFields.riskRewardTp1,
+      riskRewardTp2: operationFields.riskRewardTp2,
       errorMessage: analysis.errorMessage || null,
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
@@ -888,6 +966,8 @@ export class AiService {
     takeProfit2Percent: number | null;
     reasoning: string | null;
     riskReward: string | null;
+    riskRewardTp1: number | null;
+    riskRewardTp2: number | null;
   } {
     const analysisMeta = this.asRecord(fullResponse?.analysis);
     const marketStructure = this.asRecord(analysisMeta?.marketStructure);
@@ -935,13 +1015,19 @@ export class AiService {
       this.toNullableString(fallbackReasoning) ??
       this.toNullableString(analysisMeta?.reasoning) ??
       this.toNullableString(fullResponse?.reasoning);
-    const riskReward =
+    // R/R recalculado a partir dos níveis (determinístico). Também corrige análises
+    // antigas retroativamente, pois recalcula a partir dos números já armazenados.
+    const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1);
+    const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2);
+
+    const aiRiskReward =
       this.toNullableString(
         analysisMeta?.riskReward ?? analysisMeta?.risk_reward ?? analysisMeta?.riskRewardRatio,
       ) ??
       this.toNullableString(
         fullResponse?.riskReward ?? fullResponse?.risk_reward ?? fullResponse?.riskRewardRatio,
       );
+    const riskReward = formatRiskReward(riskRewardTp2 ?? riskRewardTp1) ?? aiRiskReward;
 
     return {
       analysisMeta,
@@ -955,6 +1041,8 @@ export class AiService {
       takeProfit2Percent,
       reasoning,
       riskReward,
+      riskRewardTp1,
+      riskRewardTp2,
     };
   }
 

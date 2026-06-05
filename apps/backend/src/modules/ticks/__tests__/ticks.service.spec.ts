@@ -52,6 +52,25 @@ describe('TicksService', () => {
             return { userId: where.userId, balance: next };
           },
         ),
+        // Débito atômico (guard WHERE balance >= amount): retorna count 1 se houve
+        // saldo suficiente e decrementa; caso contrário count 0 (sem alterar saldo).
+        updateMany: jest.fn(
+          async ({
+            where,
+            data,
+          }: {
+            where: { userId: string; balance?: { gte: number } };
+            data: { balance: { decrement: number } };
+          }) => {
+            const current = balances.get(where.userId) ?? 0;
+            const required = where.balance?.gte ?? 0;
+            if (current < required) {
+              return { count: 0 };
+            }
+            balances.set(where.userId, current - data.balance.decrement);
+            return { count: 1 };
+          },
+        ),
       },
       tickTransaction: {
         findUnique: jest.fn(
@@ -72,9 +91,14 @@ describe('TicksService', () => {
           return transactions.filter((tx) => tx.userId === where.userId);
         }),
       },
-      $transaction: jest.fn(async (operations: Promise<unknown>[]) => {
+      // Suporta as duas formas: callback interativo ($transaction(async (tx) => ...))
+      // usado por debitTicks, e a forma de lista ($transaction([...])) usada por addTicks.
+      $transaction: jest.fn(async (arg: any) => {
+        if (typeof arg === 'function') {
+          return arg(prisma);
+        }
         const results: unknown[] = [];
-        for (const operation of operations) {
+        for (const operation of arg) {
           results.push(await operation);
         }
         return results;

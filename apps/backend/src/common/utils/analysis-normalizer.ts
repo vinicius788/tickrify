@@ -91,6 +91,76 @@ export function normalizeReasoning(value: unknown, fallback = 'Analise gerada se
   return text || fallback;
 }
 
+/**
+ * Calcula o risco/retorno (reward por 1 unidade de risco) a partir dos níveis de preço.
+ * Funciona para BUY (TP > entry > SL) e SELL (TP < entry < SL) — usa valores absolutos.
+ * Retorna null quando faltam dados, são inválidos, ou o risco é zero.
+ */
+export function computeRiskReward(
+  entry: number | null | undefined,
+  stopLoss: number | null | undefined,
+  takeProfit: number | null | undefined,
+): number | null {
+  if (entry == null || stopLoss == null || takeProfit == null) {
+    return null;
+  }
+
+  if (![entry, stopLoss, takeProfit].every((n) => Number.isFinite(n))) {
+    return null;
+  }
+
+  const risk = Math.abs(entry - stopLoss);
+  const reward = Math.abs(takeProfit - entry);
+
+  if (risk <= 0) {
+    return null;
+  }
+
+  const ratio = reward / risk;
+  if (!Number.isFinite(ratio) || ratio <= 0) {
+    return null;
+  }
+
+  // Arredonda para 2 casas para estabilidade de exibição.
+  return Math.round(ratio * 100) / 100;
+}
+
+/**
+ * Harmoniza a confiança com a força da tendência para evitar contradições visíveis
+ * ao usuário (ex.: "75% Alta" ao lado de "Força: Moderada").
+ * Tendência fraca/moderada limita o teto da confiança; tendência forte não altera.
+ * Conservador por design: só REDUZ a confiança, nunca aumenta.
+ *   weak     → teto 60
+ *   moderate → teto 74  (abaixo do limite de "Alta", que é 75)
+ *   strong   → sem teto
+ */
+export function harmonizeConfidenceWithTrend(
+  confidence: number,
+  trendStrength: unknown,
+): number {
+  if (!Number.isFinite(confidence)) {
+    return confidence;
+  }
+
+  const strength = String(trendStrength || '').trim().toLowerCase();
+  let cap = 100;
+  if (strength === 'weak' || strength.includes('frac')) {
+    cap = 60;
+  } else if (strength === 'moderate' || strength.includes('moder')) {
+    cap = 74;
+  }
+
+  return Math.min(confidence, cap);
+}
+
+/** Formata um R/R numérico como "1:X.X" (ex.: 2.3 -> "1:2.3"). */
+export function formatRiskReward(ratio: number | null | undefined): string | null {
+  if (ratio == null || !Number.isFinite(ratio)) {
+    return null;
+  }
+  return `1:${ratio.toFixed(1)}`;
+}
+
 export function parseJsonFromContent(content: string): Record<string, any> | null {
   const trimmed = String(content || '').trim();
   if (!trimmed) {

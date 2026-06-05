@@ -1,5 +1,32 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { AiService } from './ai.service';
+import { getAiQueue, getAiQueueReadiness } from './ai.queue';
+
+// Mocka a fila para isolar o gate de acesso do processamento real da análise.
+jest.mock('./ai.queue', () => ({
+  getAiQueue: jest.fn(),
+  getAiQueueReadiness: jest.fn(),
+}));
+
+const QUEUE_OFFLINE = {
+  required: false,
+  configured: false,
+  connected: false,
+  workersCount: 0,
+  hasWorkers: false,
+  ready: false,
+  reason: 'queue_unavailable' as const,
+};
+
+const QUEUE_ONLINE = {
+  required: false,
+  configured: true,
+  connected: true,
+  workersCount: 1,
+  hasWorkers: true,
+  ready: true,
+  reason: 'ok' as const,
+};
 
 const VALID_PNG_DATA_URL = `data:image/png;base64,${Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00,
@@ -14,7 +41,6 @@ describe('AiService access enforcement', () => {
   beforeEach(() => {
     process.env.NODE_ENV = 'test';
     process.env.APP_ENV = 'test';
-    process.env.FREE_ANALYSIS_LIMIT_PER_MONTH = '3';
     delete process.env.REDIS_URL;
     delete process.env.REDIS_HOST;
     delete process.env.REDIS_PORT;
@@ -25,6 +51,7 @@ describe('AiService access enforcement', () => {
 
     prisma = {
       user: {
+        // Sem stripeCustomerId → hasPaidAccess() retorna false (usuário free) por padrão.
         findUnique: jest.fn().mockResolvedValue({ id: 'usr_1' }),
       },
       analysisUsage: {
@@ -34,8 +61,15 @@ describe('AiService access enforcement', () => {
         findFirst: jest.fn().mockResolvedValue(null),
       },
       analysis: {
-        create: jest.fn(),
+        create: jest.fn().mockResolvedValue({
+          id: 'an_1',
+          status: 'pending',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
         update: jest.fn(),
+        // Contagem de análises demo "consumidas" (status != failed). 0 por padrão.
+        count: jest.fn().mockResolvedValue(0),
       },
       promptConfig: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -43,6 +77,15 @@ describe('AiService access enforcement', () => {
       },
       $queryRaw: jest.fn().mockResolvedValue([]),
     };
+
+    // Transação interativa: executa o callback usando o próprio mock como `tx`,
+    // assim os testes controlam o gate via prisma.analysis.count.
+    prisma.$transaction = jest.fn(async (cb: any) => cb(prisma));
+
+    // Por padrão a fila está offline; testes que precisam do caminho assíncrono
+    // sobrescrevem para QUEUE_ONLINE.
+    (getAiQueueReadiness as jest.Mock).mockResolvedValue(QUEUE_OFFLINE);
+    (getAiQueue as jest.Mock).mockReturnValue(null);
 
     const aiAdapter = {
       analyzeImage: jest.fn(),
@@ -77,7 +120,62 @@ describe('AiService access enforcement', () => {
     service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any);
   });
 
-  it('blocks analysis creation when free quota is exhausted and user has no ticks', async () => {
+  it('bloqueia a 4ª análise grátis: já usou as 3 demos → DEMO_LIMIT_REACHED', async () => {
+    // 3 demos já consumidas (status != failed)
+    prisma.analysis.count.mockResolvedValue(3);
+
+    try {
+      await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL);
+      throw new Error('Expected DEMO_LIMIT_REACHED exception');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ForbiddenException);
+      const response = (error as ForbiddenException).getResponse() as { code?: string };
+      expect(response?.code).toBe('DEMO_LIMIT_REACHED');
+    }
+
+    // Gate atômico: contagem + criação dentro da MESMA transação.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    // Não deve criar a análise quando o limite foi atingido.
+    expect(prisma.analysis.create).not.toHaveBeenCalled();
+  });
+
+  it('reserva a análise grátis dentro da transação quando ainda há cota', async () => {
+    // 2 demos usadas → a 3ª é permitida.
+    prisma.analysis.count.mockResolvedValue(2);
+    // Fila online: createAnalysis enfileira e retorna sem rodar o processamento.
+    (getAiQueueReadiness as jest.Mock).mockResolvedValue(QUEUE_ONLINE);
+    (getAiQueue as jest.Mock).mockReturnValue({ add: jest.fn().mockResolvedValue(undefined) });
+
+    await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.analysis.create).toHaveBeenCalledTimes(1);
+    // A análise é marcada como demo (isDemo=true).
+    expect(prisma.analysis.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ isDemo: true, userId: 'usr_1' }),
+      }),
+    );
+  });
+
+  it('não conta análises que falharam (status != failed) ao verificar a cota grátis', async () => {
+    prisma.analysis.count.mockResolvedValue(1);
+
+    await expect(service.checkDemoEligibility('usr_1')).resolves.toBe(true);
+    expect(prisma.analysis.count).toHaveBeenCalledWith({
+      where: { userId: 'usr_1', isDemo: true, status: { not: 'failed' } },
+    });
+  });
+
+  it('checkDemoEligibility retorna false quando as 3 demos já foram usadas', async () => {
+    prisma.analysis.count.mockResolvedValue(3);
+    await expect(service.checkDemoEligibility('usr_1')).resolves.toBe(false);
+  });
+
+  it('assinante sem ticks suficientes: bloqueia com INSUFFICIENT_TICKS (não cria a análise)', async () => {
+    // Assinatura ativa → caminho pago (debita ticks, que falham).
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', priceId: null });
+
     try {
       await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL);
       throw new Error('Expected INSUFFICIENT_TICKS exception');
@@ -86,9 +184,12 @@ describe('AiService access enforcement', () => {
       const response = (error as BadRequestException).getResponse() as { message?: string };
       expect(String(response?.message || '')).toContain('INSUFFICIENT_TICKS');
     }
+
+    expect(ticksService.debitTicks).toHaveBeenCalledTimes(1);
+    expect(prisma.analysis.create).not.toHaveBeenCalled();
   });
 
-  it('returns free-plan usage details when user has no active subscription', async () => {
+  it('getUsage: usuário free sem assinatura → cota paga zerada (as grátis são as demos)', async () => {
     prisma.analysisUsage.findUnique.mockResolvedValue({ count: 2 });
     prisma.subscription.findFirst.mockResolvedValue(null);
 
@@ -96,35 +197,20 @@ describe('AiService access enforcement', () => {
 
     expect(usage.plan).toBe('free');
     expect(usage.period).toBe('monthly');
-    expect(usage.total).toBe(3);
+    expect(usage.total).toBe(0);
     expect(usage.used).toBe(2);
-    expect(usage.remaining).toBe(1);
-    expect(usage.canAnalyze).toBe(true);
+    expect(usage.remaining).toBe(0);
+    expect(usage.canAnalyze).toBe(false);
     expect(usage.isUnlimited).toBe(false);
   });
 
-  it('returns pro-plan usage details when user has active subscription', async () => {
+  it('getUsage: assinante ativo → ilimitado', async () => {
     prisma.analysisUsage.findUnique.mockResolvedValue({ count: 99 });
     prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1' });
 
     const usage = await service.getUsage('usr_1');
 
     expect(usage.plan).toBe('pro');
-    expect(usage.total).toBeNull();
-    expect(usage.remaining).toBeNull();
-    expect(usage.used).toBe(99);
-    expect(usage.canAnalyze).toBe(true);
-    expect(usage.isUnlimited).toBe(true);
-  });
-
-  it('returns unlimited usage for free users when free limit is disabled', async () => {
-    process.env.FREE_ANALYSIS_LIMIT_PER_MONTH = '0';
-    prisma.analysisUsage.findUnique.mockResolvedValue({ count: 99 });
-    prisma.subscription.findFirst.mockResolvedValue(null);
-
-    const usage = await service.getUsage('usr_1');
-
-    expect(usage.plan).toBe('free');
     expect(usage.total).toBeNull();
     expect(usage.remaining).toBeNull();
     expect(usage.used).toBe(99);
@@ -238,7 +324,8 @@ describe('PromptBuilderService', () => {
 
     const result = await builder.buildPrompt('quick');
 
-    expect(result).toContain(TRADING_SYSTEM_PROMPT.slice(0, 40));
+    // buildPrompt normaliza (trim) o prompt base, então comparamos sem o espaço inicial.
+    expect(result).toContain(TRADING_SYSTEM_PROMPT.trim().slice(0, 40));
     expect(result).toContain('Seja determinístico');
   });
 
@@ -304,7 +391,7 @@ describe('AIAnalysisError static helpers', () => {
       ['openai_rate_limit', 'sobrecarregado'],
       ['openai_truncated_response', 'gráfico mais simples'],
       ['openai_empty_content', 'analisar a imagem'],
-      ['openai_request_failed', 'Erro na análise'],
+      ['openai_request_failed', 'demorou demais'],
     ];
 
     for (const [code, expectedSubstring] of cases) {
