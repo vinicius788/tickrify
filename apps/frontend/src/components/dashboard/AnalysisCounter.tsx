@@ -20,34 +20,63 @@ const PLAN_TICKS: Record<UserPlan, number> = {
   elite: 400,
 };
 
+const FREE_ANALYSES_TOTAL = 3;
+
 const AnalysisCounter = () => {
-  const { isUnlimited, plan } = useAnalysisLimit();
+  const { isUnlimited, plan, used, remaining } = useAnalysisLimit();
   const { balance } = useTicks();
 
-  // Usuário sem assinatura ativa: CTA para assinar
+  // Usuário sem assinatura: mostrar contador de análises grátis
   if (!isUnlimited) {
+    const freeUsed = Math.min(used, FREE_ANALYSES_TOTAL);
+    const freeRemaining = Math.max(0, FREE_ANALYSES_TOTAL - freeUsed);
+    const freePercent = (freeUsed / FREE_ANALYSES_TOTAL) * 100;
+    const exhausted = freeRemaining === 0;
+
     return (
       <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
         <CardContent className="p-4">
           <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Crown className="h-4 w-4 text-[var(--accent-green)]" />
-              <span className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                Plano necessário
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-[var(--accent-green)]" />
+                <span className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                  Análises Grátis
+                </span>
+              </div>
+              <span className="font-terminal text-sm font-bold text-[var(--text-primary)]">
+                {freeUsed}/{FREE_ANALYSES_TOTAL}
               </span>
             </div>
-            <p className="text-xs text-[var(--text-secondary)]">
-              Assine um plano para analisar gráficos com IA institucional.
-            </p>
-            <Link to="/pricing">
-              <Button size="sm" className="w-full">
-                <Crown className="mr-2 h-4 w-4" />
-                Ver planos
-              </Button>
-            </Link>
-            <p className="text-xs text-[var(--text-muted)] text-center">
-              3 dias grátis · Cancele quando quiser
-            </p>
+
+            <Progress value={freePercent} className="h-1.5 bg-[var(--bg-overlay)]" />
+
+            {exhausted ? (
+              <>
+                <p className="text-xs text-amber-500 flex items-center gap-1.5">
+                  <TriangleAlert className="h-3.5 w-3.5 flex-shrink-0" />
+                  Suas 3 análises grátis foram utilizadas.
+                </p>
+                <Link to="/pricing">
+                  <Button size="sm" className="w-full">
+                    <Crown className="mr-2 h-4 w-4" />
+                    Assinar para continuar
+                  </Button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  {freeRemaining} análise{freeRemaining !== 1 ? 's' : ''} grátis restante{freeRemaining !== 1 ? 's' : ''} · IA real
+                </p>
+                <Link to="/pricing">
+                  <Button size="sm" variant="outline" className="w-full">
+                    <Crown className="mr-2 h-4 w-4" />
+                    Ver planos
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>

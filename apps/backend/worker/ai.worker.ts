@@ -764,7 +764,7 @@ async function processAnalysis(job: Job<JobData>) {
   } = job.data;
   const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
 
-  console.log(`[Worker] Processing analysis ${analysisId}${isDemo ? ' [DEMO]' : ''}`);
+  console.log(`[Worker] Processing analysis ${analysisId}${isDemo ? ' [FREE]' : ''}`);
 
   let rawContent = '';
 
@@ -774,59 +774,7 @@ async function processAnalysis(job: Job<JobData>) {
       data: { status: 'processing', errorMessage: null },
     });
 
-    // ── Demo analysis: return fixed response instantly, no OpenAI call ──────
-    if (isDemo) {
-      const demoRaw = JSON.stringify(DEMO_RESPONSE);
-      const demoNormalized = buildPersistedAnalysisPayload({
-        source: DEMO_RESPONSE as unknown as Record<string, unknown>,
-        recommendation: 'BUY',
-        bias: 'bullish',
-        confidence: DEMO_RESPONSE.confidence,
-        reasoning: DEMO_RESPONSE.analysis.reasoning,
-        analysis: {
-          symbol: DEMO_RESPONSE.analysis.symbol,
-          timeframe: DEMO_RESPONSE.analysis.timeframe,
-          currentPrice: DEMO_RESPONSE.analysis.currentPrice,
-          entry: DEMO_RESPONSE.analysis.entry,
-          stopLoss: DEMO_RESPONSE.analysis.stopLoss,
-          stopLossPercent: DEMO_RESPONSE.analysis.stopLossPercent,
-          takeProfit1: DEMO_RESPONSE.analysis.takeProfit1,
-          takeProfit1Percent: DEMO_RESPONSE.analysis.takeProfit1Percent,
-          takeProfit2: DEMO_RESPONSE.analysis.takeProfit2,
-          takeProfit2Percent: DEMO_RESPONSE.analysis.takeProfit2Percent,
-          riskRewardRatio: DEMO_RESPONSE.analysis.riskRewardRatio,
-          confluenceScore: DEMO_RESPONSE.analysis.confluenceScore,
-          technicalAnalysis: DEMO_RESPONSE.analysis.technicalAnalysis,
-          keyIndicators: DEMO_RESPONSE.analysis.keyIndicators,
-          identifiedPatterns: DEMO_RESPONSE.analysis.identifiedPatterns,
-          structureValidation: DEMO_RESPONSE.analysis.structureValidation,
-          riskFactors: DEMO_RESPONSE.analysis.riskFactors,
-          whyNotOpposite: DEMO_RESPONSE.analysis.whyNotOpposite,
-          executiveSummary: DEMO_RESPONSE.analysis.executiveSummary,
-          marketStructure: DEMO_RESPONSE.analysis.marketStructure,
-        } as unknown as NormalizedPersistedAnalysis,
-        drawingPlan: null,
-        originalImageUrl: imageUrl,
-      });
-
-      await prisma.analysis.update({
-        where: { id: analysisId },
-        data: {
-          status: 'completed',
-          recommendation: demoNormalized.recommendation,
-          confidence: demoNormalized.confidence,
-          reasoning: demoNormalized.reasoning,
-          imageUrl: demoNormalized.originalImageUrl,
-          result: demoNormalized.fullResponse as any,
-          fullResponse: demoRaw,
-          errorMessage: null,
-        },
-      });
-
-      console.log(`[Worker] Demo analysis ${analysisId} completed instantly`);
-      return;
-    }
-
+    // ── Free analyses (isDemo=true) now run real AI — no tick cost, same pipeline ─
     const prompt = await getPrompt(promptOverride, promptVersion, userLanguage);
     const aiSource = await resolveAiSource(imageUrl, prompt, normalizedAnalysisType);
 
