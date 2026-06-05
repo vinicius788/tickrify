@@ -239,7 +239,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
     uploadedImage ||
     null;
 
-  const confidenceLabel = confidence >= 75 ? 'Alta' : confidence >= 50 ? 'Moderada' : 'Baixa';
+  const confidenceLabel = confidence >= 75 ? t.analysis.highConfidence : confidence >= 50 ? t.analysis.medConfidence : t.analysis.lowConfidence;
 
   const copyValue = async (label: string, value: number | null) => {
     if (value === null) {
@@ -301,13 +301,13 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               <span>{recommendationMeta.label}</span>
             </div>
             <span>
-              BIAS:{' '}
+              {t.analysis.bias.toUpperCase()}:{' '}
               <strong className="whitespace-nowrap font-medium text-[var(--text-primary)]">
                 {String(analysisData.bias || marketStructure.bias || 'neutral').toUpperCase()}
               </strong>
             </span>
             <span>
-              CONFIANÇA:{' '}
+              {t.analysis.confidence.toUpperCase()}:{' '}
               <strong className="font-terminal font-semibold text-[var(--text-primary)]">{confidence}%</strong>{' '}
               <span className="text-[var(--text-secondary)]">{confidenceLabel}</span>
             </span>
@@ -357,7 +357,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 </p>
               </div>
               <div>
-                <p className="text-xs text-[var(--text-secondary)]">Confluência</p>
+                <p className="text-xs text-[var(--text-secondary)]">{t.analysis.confluence}</p>
                 <p className="font-terminal text-base font-semibold text-[var(--text-primary)]">
                   {confluence ? confluence.display : 'N/A'}
                 </p>
@@ -585,16 +585,16 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   </AccordionTrigger>
                   <AccordionContent className="space-y-2 text-sm text-[var(--text-secondary)]">
                     <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 space-y-1">
-                      <p>Bias: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.bias || analysisData.bias || 'neutral')}</span></p>
-                      <p>Estrutura: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.lastStructure || 'Não informado')}</span></p>
+                      <p>{t.analysis.bias}: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.bias || analysisData.bias || 'neutral')}</span></p>
+                      <p>{t.analysis.structure}: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.lastStructure || t.analysis.notInformed)}</span></p>
                       <p>
                         <abbr title="Break of Structure">BOS</abbr>/<abbr title="Change of Character">CHoCH</abbr>:{' '}
-                        <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.breakOfStructure || 'Não informado')}</span>
+                        <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.breakOfStructure || t.analysis.notInformed)}</span>
                       </p>
-                      <p>Zona de preço: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.priceZone || 'Não informado')}</span></p>
+                      <p>{t.analysis.priceZone}: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.priceZone || t.analysis.notInformed)}</span></p>
                       <p>
                         <abbr title="Order Block é uma região institucional de oferta/demanda.">Order Block</abbr>:{' '}
-                        <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.orderBlock || 'Não informado')}</span>
+                        <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.orderBlock || t.analysis.notInformed)}</span>
                       </p>
                       {trendStrength && (
                         <p className="border-t border-[var(--border-subtle)] pt-1 mt-1">
