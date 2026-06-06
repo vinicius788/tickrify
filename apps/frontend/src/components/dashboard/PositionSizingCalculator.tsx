@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Calculator } from 'lucide-react';
+import { Calculator, ChevronDown } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface PositionSizingCalculatorProps {
@@ -16,6 +16,7 @@ export function PositionSizingCalculator({ entry, stopLoss }: PositionSizingCalc
   const { t } = useLanguage();
   const labels = t.analysis.positionSizing;
 
+  const [open, setOpen] = useState<boolean>(false);
   const [accountSize, setAccountSize] = useState<string>('');
   const [riskPercent, setRiskPercent] = useState<string>('1');
 
@@ -44,12 +45,24 @@ export function PositionSizingCalculator({ entry, stopLoss }: PositionSizingCalc
 
   return (
     <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-2 text-xs">
-      <p className="mb-2 flex items-center gap-1.5 font-semibold text-[var(--text-primary)]">
-        <Calculator className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
-        {labels.title}
-      </p>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-1.5 font-semibold text-[var(--text-primary)]"
+        aria-expanded={open}
+      >
+        <span className="flex items-center gap-1.5">
+          <Calculator className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
+          {labels.title}
+        </span>
+        <ChevronDown
+          className={`h-3.5 w-3.5 text-[var(--text-secondary)] transition-transform ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
 
-      <div className="grid grid-cols-2 gap-2">
+      {!open ? null : (
+      <>
+      <div className="mt-2 grid grid-cols-2 gap-2">
         <label className="block">
           <span className="text-[var(--text-secondary)]">{labels.accountSize}</span>
           <input
@@ -96,6 +109,8 @@ export function PositionSizingCalculator({ entry, stopLoss }: PositionSizingCalc
         </div>
       ) : (
         <p className="mt-2 text-[var(--text-secondary)]">{labels.hint}</p>
+      )}
+      </>
       )}
     </div>
   );
