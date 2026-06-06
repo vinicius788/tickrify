@@ -1,4 +1,5 @@
 import {
+  Activity,
   AlertCircle,
   AlertTriangle,
   ArrowDown,
@@ -13,6 +14,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useEconomicCalendar } from '@/hooks/useEconomicCalendar';
+import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -244,6 +246,13 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const timestamp = new Date(analysisData.createdAt);
   const openSessions = getOpenSessions(timestamp);
   const { events: calEvents, loading: calLoading } = useEconomicCalendar(symbol);
+  const { data: liveMarket } = useMarketContext(symbol);
+  const hasLiveMarket = !!liveMarket && (
+    liveMarket.fundingRatePercent !== null ||
+    liveMarket.openInterest !== null ||
+    liveMarket.longShortRatio !== null ||
+    liveMarket.fearGreedValue !== null
+  );
   const formattedTimestamp = timestamp.toLocaleString('pt-BR', {
     day: '2-digit',
     month: '2-digit',
@@ -504,9 +513,70 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
             <AccordionContent className="px-5 pb-5 md:px-6 md:pb-6">
               <Accordion
                 type="multiple"
-                defaultValue={['calendar', 'sessions', 'market-structure', 'technical-analysis', 'risk-factors']}
+                defaultValue={['live-market', 'calendar', 'sessions', 'market-structure', 'technical-analysis', 'risk-factors']}
                 className="w-full"
               >
+                {/* ── Contexto ao vivo (cripto) ──────────────────────── */}
+                {hasLiveMarket && liveMarket && (
+                  <AccordionItem value="live-market" className="border-[var(--border-subtle)]">
+                    <AccordionTrigger className="font-semibold hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <Activity className="h-4 w-4 text-[var(--signal-buy)]" />
+                        {t.analysis.liveMarket.title}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                        {liveMarket.fundingRatePercent !== null && (
+                          <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-2">
+                            <p className="text-[var(--text-secondary)]">{t.analysis.liveMarket.fundingRate}</p>
+                            <p className={`font-terminal font-semibold ${liveMarket.fundingRatePercent >= 0 ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'}`}>
+                              {liveMarket.fundingRatePercent >= 0 ? '+' : ''}{liveMarket.fundingRatePercent.toFixed(4)}%
+                            </p>
+                          </div>
+                        )}
+                        {liveMarket.longShortRatio !== null && (
+                          <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-2">
+                            <p className="text-[var(--text-secondary)]">{t.analysis.liveMarket.longShort}</p>
+                            <p className="font-terminal font-semibold text-[var(--text-primary)]">
+                              {liveMarket.longShortRatio.toFixed(2)}
+                              {liveMarket.longAccountPercent !== null && liveMarket.shortAccountPercent !== null && (
+                                <span className="ml-1 text-[10px] text-[var(--text-secondary)]">
+                                  ({liveMarket.longAccountPercent}% / {liveMarket.shortAccountPercent}%)
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        )}
+                        {liveMarket.openInterest !== null && (
+                          <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-2">
+                            <p className="text-[var(--text-secondary)]">{t.analysis.liveMarket.openInterest}</p>
+                            <p className="font-terminal font-semibold text-[var(--text-primary)]">
+                              {liveMarket.openInterest.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            </p>
+                          </div>
+                        )}
+                        {liveMarket.fearGreedValue !== null && (
+                          <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-2">
+                            <p className="text-[var(--text-secondary)]">{t.analysis.liveMarket.fearGreed}</p>
+                            <p className={`font-terminal font-semibold ${liveMarket.fearGreedValue >= 55 ? 'text-[var(--signal-buy)]' : liveMarket.fearGreedValue <= 45 ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}`}>
+                              {liveMarket.fearGreedValue}
+                              {liveMarket.fearGreedClassification && (
+                                <span className="ml-1 text-[10px] text-[var(--text-secondary)]">{liveMarket.fearGreedClassification}</span>
+                              )}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      {liveMarket.binanceSymbol && (
+                        <p className="mt-2 text-[10px] text-[var(--text-secondary)]">
+                          Binance {liveMarket.binanceSymbol} · alternative.me
+                        </p>
+                      )}
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
+
                 {/* ── Eventos Econômicos ─────────────────────────────── */}
                 <AccordionItem value="calendar" className="border-[var(--border-subtle)]">
                     <AccordionTrigger className="font-semibold hover:no-underline">
