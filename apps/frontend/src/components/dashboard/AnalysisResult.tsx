@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -6,6 +7,7 @@ import {
   ArrowUp,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   CircleHelp,
   Minus,
   ShieldAlert,
@@ -160,6 +162,7 @@ function parseRiskReward(value: unknown): number | null {
 const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) => {
   const { toast } = useToast();
   const { t } = useLanguage();
+  const [showInvalidation, setShowInvalidation] = useState(false);
 
   if (!analysisData) {
     return (
@@ -468,9 +471,25 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
               {invalidationLevel !== null && (
                 <div className="rounded border border-[var(--signal-sell)]/30 bg-[var(--signal-sell-bg)] px-2 py-1.5 text-xs">
-                  <span className="text-[var(--signal-sell)]">⚠ {t.analysis.invalidation.toUpperCase()}: </span>
-                  <span className="font-terminal font-semibold text-[var(--signal-sell)]">{formatPrice(invalidationLevel)}</span>
-                  {invalidationNote && <p className="mt-0.5 text-[var(--signal-sell)]/70">{invalidationNote}</p>}
+                  <button
+                    type="button"
+                    onClick={() => setShowInvalidation((v) => !v)}
+                    className="flex w-full items-center justify-between gap-2 text-left"
+                    aria-expanded={showInvalidation}
+                  >
+                    <span>
+                      <span className="text-[var(--signal-sell)]">⚠ {t.analysis.invalidation.toUpperCase()}: </span>
+                      <span className="font-terminal font-semibold text-[var(--signal-sell)]">{formatPrice(invalidationLevel)}</span>
+                    </span>
+                    {invalidationNote && (
+                      <ChevronDown
+                        className={`h-3.5 w-3.5 flex-shrink-0 text-[var(--signal-sell)] transition-transform ${showInvalidation ? 'rotate-180' : ''}`}
+                      />
+                    )}
+                  </button>
+                  {showInvalidation && invalidationNote && (
+                    <p className="mt-1 text-[var(--signal-sell)]/70">{invalidationNote}</p>
+                  )}
                 </div>
               )}
 

@@ -9,6 +9,7 @@ import {
   computeRiskReward,
   formatRiskReward,
   harmonizeConfidenceWithTrend,
+  correctPriceMagnitude,
 } from '../../common/utils/analysis-normalizer';
 import { AnalysisType } from '../ticks/tick-packages';
 
@@ -299,11 +300,22 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       ? (parsedAnalysis.marketStructure as Record<string, unknown>)
       : {};
 
-  // ── Níveis de preço (lidos uma vez para permitir R/R determinístico) ──────────
-  const entry = ensureNumberOrNull(parsedAnalysis.entry);
-  const stopLoss = ensureNumberOrNull(parsedAnalysis.stopLoss);
-  const takeProfit1 = ensureNumberOrNull(parsedAnalysis.takeProfit1);
-  const takeProfit2 = ensureNumberOrNull(parsedAnalysis.takeProfit2);
+  // ── Níveis de preço — com correção de ordem de grandeza (BTC lido 10x menor, etc.)
+  const rawSymbol = ensureString(parsedAnalysis.symbol, 'UNKNOWN');
+  const corrected = correctPriceMagnitude(rawSymbol, {
+    currentPrice: ensureNumber(parsedAnalysis.currentPrice, 0),
+    entry: ensureNumberOrNull(parsedAnalysis.entry),
+    stopLoss: ensureNumberOrNull(parsedAnalysis.stopLoss),
+    takeProfit1: ensureNumberOrNull(parsedAnalysis.takeProfit1),
+    takeProfit2: ensureNumberOrNull(parsedAnalysis.takeProfit2),
+    invalidationLevel: parsedAnalysis.invalidationLevel != null ? Number(parsedAnalysis.invalidationLevel) : null,
+  });
+  const currentPrice = corrected.currentPrice;
+  const entry = corrected.entry;
+  const stopLoss = corrected.stopLoss;
+  const takeProfit1 = corrected.takeProfit1;
+  const takeProfit2 = corrected.takeProfit2;
+  const invalidationLevel = corrected.invalidationLevel;
 
   // R/R calculado a partir dos níveis (não confia no texto da IA, que pode divergir).
   const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1);
@@ -325,7 +337,7 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       timeframe: ensureString(parsedAnalysis.timeframe, 'UNKNOWN'),
       detectedSession: ensureString(parsedAnalysis.detectedSession, 'unknown'),
       sessionNote: ensureString(parsedAnalysis.sessionNote, 'Contexto de sessão não informado.'),
-      currentPrice: ensureNumber(parsedAnalysis.currentPrice, 0),
+      currentPrice,
       entry,
       stopLoss,
       stopLossPercent: ensureNumberOrNull(parsedAnalysis.stopLossPercent),
@@ -354,7 +366,7 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       whyNotOpposite: ensureString(parsedAnalysis.whyNotOpposite, 'Sem justificativa para o lado oposto.'),
       executiveSummary: ensureString(parsedAnalysis.executiveSummary, 'Resumo executivo indisponível.'),
       reasoning: ensureString(parsedAnalysis.reasoning, 'Sem justificativa gerada.'),
-      invalidationLevel: parsedAnalysis.invalidationLevel != null ? Number(parsedAnalysis.invalidationLevel) : null,
+      invalidationLevel,
       invalidationNote: parsedAnalysis.invalidationNote != null ? ensureString(parsedAnalysis.invalidationNote, '') || null : null,
       entryType: parsedAnalysis.entryType != null ? ensureString(parsedAnalysis.entryType, '') || null : null,
       entryCondition: parsedAnalysis.entryCondition != null ? ensureString(parsedAnalysis.entryCondition, '') || null : null,

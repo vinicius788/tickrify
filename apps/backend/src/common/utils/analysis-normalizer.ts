@@ -153,6 +153,70 @@ export function harmonizeConfidenceWithTrend(
   return Math.min(confidence, cap);
 }
 
+export interface PriceLevels {
+  currentPrice: number;
+  entry: number | null;
+  stopLoss: number | null;
+  takeProfit1: number | null;
+  takeProfit2: number | null;
+  invalidationLevel: number | null;
+}
+
+// Faixas plausíveis por ativo. Só corrigimos erros ÓBVIOS de ordem de grandeza.
+const PRICE_RANGES: Array<{ test: (s: string) => boolean; min: number; max: number }> = [
+  { test: (s) => s.startsWith('BTC'), min: 10_000, max: 1_000_000 },
+  { test: (s) => s.startsWith('ETH'), min: 300, max: 50_000 },
+  { test: (s) => s.includes('XAU'), min: 800, max: 6_000 }, // ouro
+  { test: (s) => s.includes('XAG'), min: 3, max: 200 }, // prata
+  { test: (s) => s.startsWith('SOL'), min: 5, max: 5_000 },
+  { test: (s) => s.startsWith('BNB'), min: 30, max: 10_000 },
+];
+
+/**
+ * Corrige erros de ordem de grandeza na leitura de preço pela IA de visão
+ * (ex.: BTC lido como 6.356 quando o real é 63.560). Multiplica TODOS os níveis
+ * pelo mesmo fator de potência de 10 que traz o preço atual para a faixa plausível.
+ * Conservador: só age quando há um fator de 10 limpo; caso contrário, não mexe.
+ */
+export function correctPriceMagnitude<T extends PriceLevels>(symbol: string, levels: T): T {
+  const s = String(symbol || '').toUpperCase().replace(/[^A-Z]/g, '');
+  const range = PRICE_RANGES.find((r) => r.test(s));
+  const price = levels.currentPrice;
+
+  if (!range || !Number.isFinite(price) || price <= 0) {
+    return levels;
+  }
+  if (price >= range.min && price <= range.max) {
+    return levels; // já está na faixa correta
+  }
+
+  const candidates = [10, 100, 1000, 10_000, 0.1, 0.01, 0.001, 0.0001];
+  let factor: number | null = null;
+  for (const f of candidates) {
+    const p = price * f;
+    if (p >= range.min && p <= range.max) {
+      factor = f;
+      break;
+    }
+  }
+  if (factor === null) {
+    return levels; // não encaixou num fator limpo → não arrisca
+  }
+
+  const scale = (v: number | null): number | null =>
+    v == null || !Number.isFinite(v) ? v : Math.round(v * (factor as number) * 100) / 100;
+
+  return {
+    ...levels,
+    currentPrice: scale(price) as number,
+    entry: scale(levels.entry),
+    stopLoss: scale(levels.stopLoss),
+    takeProfit1: scale(levels.takeProfit1),
+    takeProfit2: scale(levels.takeProfit2),
+    invalidationLevel: scale(levels.invalidationLevel),
+  };
+}
+
 /** Formata um R/R numérico como "1:X.X" (ex.: 2.3 -> "1:2.3"). */
 export function formatRiskReward(ratio: number | null | undefined): string | null {
   if (ratio == null || !Number.isFinite(ratio)) {

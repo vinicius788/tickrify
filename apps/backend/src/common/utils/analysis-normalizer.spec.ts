@@ -2,7 +2,44 @@ import {
   computeRiskReward,
   formatRiskReward,
   harmonizeConfidenceWithTrend,
+  correctPriceMagnitude,
 } from './analysis-normalizer';
+
+describe('correctPriceMagnitude', () => {
+  it('corrige BTC lido 10x menor (6356 -> 63560) escalando todos os níveis', () => {
+    const out = correctPriceMagnitude('BTCUSD', {
+      currentPrice: 6356,
+      entry: 6360,
+      stopLoss: 6300,
+      takeProfit1: 6400,
+      takeProfit2: 6450,
+      invalidationLevel: 6300,
+    });
+    expect(out.currentPrice).toBe(63560);
+    expect(out.entry).toBe(63600);
+    expect(out.stopLoss).toBe(63000);
+    expect(out.takeProfit2).toBe(64500);
+    expect(out.invalidationLevel).toBe(63000);
+  });
+
+  it('não altera quando o preço já está na faixa correta', () => {
+    const levels = { currentPrice: 63560, entry: 63600, stopLoss: 63000, takeProfit1: 64000, takeProfit2: 64500, invalidationLevel: 63000 };
+    expect(correctPriceMagnitude('BTCUSD', levels)).toEqual(levels);
+  });
+
+  it('não mexe em ativos sem faixa conhecida (ex: forex)', () => {
+    const levels = { currentPrice: 1.0852, entry: 1.086, stopLoss: 1.082, takeProfit1: 1.09, takeProfit2: 1.095, invalidationLevel: 1.082 };
+    expect(correctPriceMagnitude('EURUSD', levels)).toEqual(levels);
+  });
+
+  it('corrige ouro (XAUUSD) lido 10x menor', () => {
+    const out = correctPriceMagnitude('XAUUSD', {
+      currentPrice: 331, entry: 332, stopLoss: 329, takeProfit1: 335, takeProfit2: 338, invalidationLevel: 329,
+    });
+    expect(out.currentPrice).toBe(3310);
+    expect(out.stopLoss).toBe(3290);
+  });
+});
 
 describe('computeRiskReward', () => {
   it('computes R/R for a SELL setup (TP < entry < SL)', () => {
