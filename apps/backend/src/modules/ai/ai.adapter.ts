@@ -583,7 +583,9 @@ export class AIAdapter {
           type: 'text',
           text: `Gráfico de timeframe MAIOR ${i + 1} (contexto top-down / HTF):`,
         });
-        content.push({ type: 'image_url', image_url: { url: signed, detail: 'high' } });
+        // 'low' detail: timeframes maiores são para contexto (bias/estrutura), não para
+        // leitura precisa de preço → ~85 tokens em vez de ~765+. Corta ~90% do custo extra.
+        content.push({ type: 'image_url', image_url: { url: signed, detail: 'low' } });
       } catch (err) {
         this.logger.warn(
           `Ignorando imagem HTF ${i + 1} (falha ao assinar): ${err instanceof Error ? err.message : err}`,
