@@ -200,6 +200,10 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
   const recommendationMeta = getRecommendationMeta(analysisData.recommendation);
   const confidence = confidenceToPercent(analysisData.confidence);
+  // #2 — calibração: taxa de acerto histórica de setups semelhantes.
+  const calibration = asRecord((analysisData as Record<string, unknown>).calibration);
+  const calSample = toNumber(calibration.sampleSize) ?? 0;
+  const calWinRate = toNumber(calibration.winRate);
 
   const symbol = String(
     analysis.symbol || analysis.ticker || analysis.asset || fullResponse.symbol || fullResponse.ticker || 'UNKNOWN',
@@ -401,6 +405,13 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               <strong className="font-terminal font-semibold text-[var(--text-primary)]">{confidence}%</strong>{' '}
               <span className="text-[var(--text-secondary)]">{confidenceLabel}</span>
             </span>
+            {calWinRate !== null && calSample >= 3 && (
+              <span className="whitespace-nowrap" title="Taxa de acerto histórica de setups semelhantes (sua) ">
+                📊 <span className="text-[var(--text-secondary)]">Histórico:</span>{' '}
+                <strong className={`font-terminal font-semibold ${calWinRate >= 50 ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'}`}>{calWinRate}%</strong>{' '}
+                <span className="text-[var(--text-secondary)]">acerto ({calSample})</span>
+              </span>
+            )}
             <span className="whitespace-nowrap font-terminal md:ml-auto">{formattedTimestamp}</span>
             {detectedSession && (
               <span className="whitespace-nowrap rounded-sm border border-[var(--border-subtle)] px-2 py-0.5 font-terminal text-xs text-[var(--text-secondary)] uppercase">

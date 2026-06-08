@@ -450,7 +450,13 @@ export class AiService implements OnModuleInit {
       throw new BadRequestException('Analysis not found');
     }
 
-    return this.serializeAnalysis(analysis);
+    const serialized = await this.serializeAnalysis(analysis);
+    const calibration = await this.getCalibration(
+      userId,
+      serialized.recommendation,
+      serialized.confidence,
+    );
+    return { ...serialized, calibration };
   }
 
   async listAnalyses(userId: string, limit = 20) {
@@ -652,6 +658,58 @@ export class AiService implements OnModuleInit {
       avgRiskReward: rrCount > 0 ? Math.round((rrSum / rrCount) * 100) / 100 : null,
       totalPnlPercent: pnlCount > 0 ? Math.round(pnlSum * 100) / 100 : null,
       pnlCount,
+    };
+  }
+
+  /**
+   * #2 — Calibração: taxa de acerto histórica de setups SEMELHANTES (mesma direção +
+   * faixa de confiança parecida), a partir dos resultados registrados pelo usuário.
+   * Transforma a confiança da IA em prova com dados. Nunca lança.
+   */
+  async getCalibration(
+    userId: string,
+    recommendation: string | null | undefined,
+    confidence: number | null | undefined,
+  ): Promise<{ sampleSize: number; winRate: number | null }> {
+    const rec = normalizeRecommendation(recommendation);
+    if (rec === 'WAIT') {
+      return { sampleSize: 0, winRate: null };
+    }
+
+    const outcomesMap = await this.getOutcomesMap(userId);
+    if (outcomesMap.size === 0) {
+      return { sampleSize: 0, winRate: null };
+    }
+
+    const analyses = await this.prisma.analysis.findMany({
+      where: { userId, status: 'completed' },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+      select: { id: true, confidence: true, recommendation: true },
+    });
+
+    let wins = 0;
+    let losses = 0;
+    for (const a of analyses) {
+      if (normalizeRecommendation(a.recommendation) !== rec) continue;
+      const outcome = outcomesMap.get(a.id)?.outcome;
+      if (outcome !== 'tp1' && outcome !== 'tp2' && outcome !== 'stop') continue;
+      // Faixa de confiança parecida (±12 pontos), quando ambos disponíveis.
+      if (
+        confidence != null &&
+        a.confidence != null &&
+        Math.abs(a.confidence - confidence) > 12
+      ) {
+        continue;
+      }
+      if (outcome === 'stop') losses += 1;
+      else wins += 1;
+    }
+
+    const decided = wins + losses;
+    return {
+      sampleSize: decided,
+      winRate: decided > 0 ? Math.round((wins / decided) * 100) : null,
     };
   }
 
