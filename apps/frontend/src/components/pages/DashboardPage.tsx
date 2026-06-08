@@ -163,7 +163,11 @@ const DashboardPage = () => {
     setUploadedImage(null);
   }, []);
 
-  const handleStartAnalysis = async (imageUrl: string | null = null, imageFile: File | null = null) => {
+  const handleStartAnalysis = async (
+    imageUrl: string | null = null,
+    imageFile: File | null = null,
+    htfBase64Images: string[] = [],
+  ) => {
     // Modo DEMO: apenas simula, não faz análise real
     if (isDemo) {
       setUploadedImage(imageUrl);
@@ -206,6 +210,7 @@ const DashboardPage = () => {
         imageFile: imageFile || undefined,
         base64Image: imageUrl || undefined,
         userLanguage: language,
+        htfBase64Images: htfBase64Images.length > 0 ? htfBase64Images : undefined,
       });
 
       // Incrementar contador (apenas quando logado)
