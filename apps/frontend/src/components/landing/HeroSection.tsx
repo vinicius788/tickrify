@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
-import { SignInButton } from '@clerk/clerk-react';
+import { SignUpButton, SignedIn, SignedOut } from '@clerk/clerk-react';
 import { ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useReveal } from '@/hooks/useReveal';
 
 const HeroSection = () => {
   const revealRef = useReveal<HTMLElement>();
+  const navigate = useNavigate();
   const nowLabel = useMemo(
     () =>
       new Date().toLocaleString('pt-BR', {
@@ -67,11 +69,22 @@ const HeroSection = () => {
           </p>
 
           <div className="fade-up-4 mt-9 flex flex-col gap-3 sm:flex-row">
-            <SignInButton mode="modal" forceRedirectUrl="/dashboard">
-              <Button className="landing-primary-button h-12 rounded-xl px-6 text-sm font-bold">
-                Começar grátis <ArrowRight className="ml-2 h-4 w-4" />
+            <SignedOut>
+              <SignUpButton mode="modal" forceRedirectUrl="/dashboard" signInForceRedirectUrl="/dashboard">
+                <Button className="landing-primary-button h-12 rounded-xl px-6 text-sm font-bold">
+                  Começar grátis <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </SignUpButton>
+            </SignedOut>
+            <SignedIn>
+              <Button
+                type="button"
+                onClick={() => navigate('/dashboard')}
+                className="landing-primary-button h-12 rounded-xl px-6 text-sm font-bold"
+              >
+                Ir para o painel <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-            </SignInButton>
+            </SignedIn>
             <Button
               type="button"
               onClick={scrollToPreview}

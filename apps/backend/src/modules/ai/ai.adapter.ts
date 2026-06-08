@@ -259,6 +259,17 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 }
 
 /**
+ * Timeout da chamada não-stream à OpenAI (visão).
+ * gpt-4o com imagem + tokens altos costuma levar 30-50s; 30s era curto demais e
+ * derrubava análises legítimas em produção. 55s casa com o orçamento do frontend
+ * (POLL_TIMEOUT_MS=180s ≈ 3 tentativas de 55s + backoff). Configurável por env.
+ */
+const ANALYZE_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.AI_ANALYZE_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw >= 20_000 && raw <= 120_000 ? raw : 55_000;
+})();
+
+/**
  * Tenta reparar JSON truncado fechando colchetes/chaves abertas.
  * O OpenAI às vezes atinge o limite de tokens com o JSON quase completo (faltando apenas `}`).
  * Se o reparo fechar o JSON e ele passar o parse, usamos o resultado em vez de jogar fora.
@@ -783,7 +794,7 @@ export class AIAdapter {
             content: userContent as any,
           },
         ],
-      }), 30_000, 'OpenAI analysis timed out after 30s');
+      }), ANALYZE_TIMEOUT_MS, `OpenAI analysis timed out after ${Math.round(ANALYZE_TIMEOUT_MS / 1000)}s`);
 
       const choice = response.choices[0];
       const finishReason = String(choice?.finish_reason || '').trim().toLowerCase();

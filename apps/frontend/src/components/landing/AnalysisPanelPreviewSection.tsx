@@ -1,11 +1,13 @@
-import { SignInButton } from '@clerk/clerk-react';
+import { SignUpButton, SignedIn, SignedOut } from '@clerk/clerk-react';
 import { ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useReveal } from '@/hooks/useReveal';
 import SectionTitle from '@/components/landing/SectionTitle';
 
 const AnalysisPanelPreviewSection = () => {
   const revealRef = useReveal<HTMLElement>();
+  const navigate = useNavigate();
 
   return (
     <section ref={revealRef} id="preview-dashboard" className="landing-section section-platform reveal-on-scroll">
@@ -19,16 +21,35 @@ const AnalysisPanelPreviewSection = () => {
           />
 
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-            <SignInButton mode="modal" forceRedirectUrl="/dashboard">
-              <Button className="landing-primary-button h-12 rounded-xl px-6 font-semibold">
+            <SignedOut>
+              <SignUpButton mode="modal" forceRedirectUrl="/dashboard" signInForceRedirectUrl="/dashboard">
+                <Button className="landing-primary-button h-12 rounded-xl px-6 font-semibold">
+                  Testar agora <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </SignUpButton>
+              <SignUpButton mode="modal" forceRedirectUrl="/dashboard" signInForceRedirectUrl="/dashboard">
+                <Button variant="outline" className="btn-secondary landing-secondary-button h-12 rounded-xl px-6">
+                  Testar com meu gráfico
+                </Button>
+              </SignUpButton>
+            </SignedOut>
+            <SignedIn>
+              <Button
+                type="button"
+                onClick={() => navigate('/dashboard')}
+                className="landing-primary-button h-12 rounded-xl px-6 font-semibold"
+              >
                 Testar agora <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-            </SignInButton>
-            <SignInButton mode="modal" forceRedirectUrl="/dashboard">
-              <Button variant="outline" className="btn-secondary landing-secondary-button h-12 rounded-xl px-6">
+              <Button
+                type="button"
+                onClick={() => navigate('/dashboard')}
+                variant="outline"
+                className="btn-secondary landing-secondary-button h-12 rounded-xl px-6"
+              >
                 Testar com meu gráfico
               </Button>
-            </SignInButton>
+            </SignedIn>
           </div>
         </div>
 
