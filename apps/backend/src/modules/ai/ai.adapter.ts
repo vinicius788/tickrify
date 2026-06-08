@@ -38,6 +38,10 @@ interface TradingAnalysisDetails {
   takeProfit1Percent: number | null;
   takeProfit2: number | null;
   takeProfit2Percent: number | null;
+  entryY: number | null;
+  stopY: number | null;
+  tp1Y: number | null;
+  tp2Y: number | null;
   riskRewardRatio: string | null;
   riskRewardTp1: number | null;
   riskRewardTp2: number | null;
@@ -362,6 +366,10 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       takeProfit1Percent: ensureNumberOrNull(parsedAnalysis.takeProfit1Percent),
       takeProfit2,
       takeProfit2Percent: ensureNumberOrNull(parsedAnalysis.takeProfit2Percent),
+      entryY: ensureNumberOrNull(parsedAnalysis.entryY),
+      stopY: ensureNumberOrNull(parsedAnalysis.stopY),
+      tp1Y: ensureNumberOrNull(parsedAnalysis.tp1Y),
+      tp2Y: ensureNumberOrNull(parsedAnalysis.tp2Y),
       riskRewardRatio,
       riskRewardTp1,
       riskRewardTp2,
@@ -654,6 +662,10 @@ export class AIAdapter {
                     takeProfit1Percent: { type: ['number', 'null'] },
                     takeProfit2: { type: ['number', 'null'] },
                     takeProfit2Percent: { type: ['number', 'null'] },
+                    entryY: { type: ['number', 'null'] },
+                    stopY: { type: ['number', 'null'] },
+                    tp1Y: { type: ['number', 'null'] },
+                    tp2Y: { type: ['number', 'null'] },
                     riskRewardRatio: { type: ['string', 'null'] },
                     marketStructure: {
                       type: 'object',
@@ -718,6 +730,10 @@ export class AIAdapter {
                     'takeProfit1Percent',
                     'takeProfit2',
                     'takeProfit2Percent',
+                    'entryY',
+                    'stopY',
+                    'tp1Y',
+                    'tp2Y',
                     'riskRewardRatio',
                     'marketStructure',
                     'chartType',

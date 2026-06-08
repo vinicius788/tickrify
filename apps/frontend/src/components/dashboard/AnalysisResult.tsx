@@ -214,6 +214,15 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const takeProfit1 = toNumber(analysis.takeProfit1);
   const takeProfit2 = toNumber(analysis.takeProfit2);
 
+  // #4 — Posições verticais (0..1) dos níveis na imagem, pra desenhar linhas sobre o gráfico.
+  const clamp01 = (v: number | null): number | null => (v === null ? null : Math.max(0, Math.min(1, v)));
+  const chartLines = [
+    { y: clamp01(toNumber(analysis.entryY)), label: 'Entrada', color: 'var(--text-primary)' },
+    { y: clamp01(toNumber(analysis.stopY)), label: 'Stop', color: 'var(--signal-sell)' },
+    { y: clamp01(toNumber(analysis.tp1Y)), label: 'TP1', color: 'var(--signal-buy)' },
+    { y: clamp01(toNumber(analysis.tp2Y)), label: 'TP2', color: 'var(--signal-buy)' },
+  ].filter((l): l is { y: number; label: string; color: string } => l.y !== null);
+
   const stopPercent = entry !== null && stopLoss !== null ? calcStopPercent(entry, stopLoss) : null;
   const takeProfit1Percent = entry !== null && takeProfit1 !== null ? calcTPPercent(entry, takeProfit1) : null;
   const takeProfit2Percent = entry !== null && takeProfit2 !== null ? calcTPPercent(entry, takeProfit2) : null;
@@ -409,15 +418,31 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               <CardTitle className="text-base font-semibold">{t.analysis.chartAnalyzed}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="aspect-video overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)]">
-                {imageUrl ? (
-                  <img src={String(imageUrl)} alt="Gráfico analisado" className="h-full w-full object-contain" />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-[var(--text-secondary)]">
-                    Imagem indisponível para esta análise.
-                  </div>
-                )}
-              </div>
+              {imageUrl ? (
+                <div className="relative overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)]">
+                  <img src={String(imageUrl)} alt="Gráfico analisado" className="block h-auto max-h-[70vh] w-full object-contain" />
+                  {/* #4 — linhas dos níveis sobre o gráfico */}
+                  {chartLines.map((line) => (
+                    <div
+                      key={line.label}
+                      className="pointer-events-none absolute left-0 right-0 flex items-center"
+                      style={{ top: `${line.y * 100}%` }}
+                    >
+                      <div className="h-px flex-1" style={{ backgroundColor: line.color, opacity: 0.85 }} />
+                      <span
+                        className="ml-1 rounded px-1 py-0.5 font-terminal text-[9px] font-semibold"
+                        style={{ backgroundColor: line.color, color: '#000' }}
+                      >
+                        {line.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex aspect-video items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] text-sm text-[var(--text-secondary)]">
+                  Imagem indisponível para esta análise.
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

@@ -141,6 +141,8 @@ Instrument SL/TP rules:
 SL: always beyond structural level or OB/FVG. Min R:R 1:1.5. Target 1:2+.
 PRECISION RULE: All price levels (entry, SL, TP1, TP2, invalidationLevel) must be exact numbers read from the chart Y-axis. Never round aggressively. Use the same decimal precision as visible on the chart.
 
+CHART OVERLAY (entryY/stopY/tp1Y/tp2Y): estimate WHERE each price level sits VERTICALLY on the image, as a fraction 0..1 (0 = very top of the image, 1 = very bottom). Use the Y-axis scale: find the price at the top and bottom of the visible chart, then place each level proportionally. Example: if the visible range is 60,000 (top) to 64,000 (bottom is lower price)… normally top = highest price. If a level is above the visible range, clamp to 0; if below, clamp to 1. Fill these for BUY/SELL when the levels are visible; null otherwise.
+
 A) INVALIDATION LEVEL: Identify the specific price that definitively kills this setup.
 - For BUY: the price level that, if closed below, means the bullish structure is broken (usually below the key swing low or OB low)
 - For SELL: the price level that, if closed above, means the bearish structure is broken
@@ -240,6 +242,10 @@ Return ONLY valid JSON:
     "takeProfit1Percent": positive number or null,
     "takeProfit2": number or null,
     "takeProfit2Percent": positive number or null,
+    "entryY": 0..1 vertical position of the ENTRY price line ON THE IMAGE (0=top edge, 1=bottom edge), or null,
+    "stopY": 0..1 vertical position of the STOP line on the image, or null,
+    "tp1Y": 0..1 vertical position of the TP1 line on the image, or null,
+    "tp2Y": 0..1 vertical position of the TP2 line on the image, or null,
     "riskRewardRatio": "e.g. 1:2.1" or null,
     "invalidationLevel": specific price number where setup is dead, or null,
     "invalidationNote": "Setup invalidado se preço fechar [acima/abaixo] de $X — [razão em português]" or null,

@@ -133,6 +133,10 @@ interface WorkerAnalysisDetails {
   breakevenTrigger?: string | null;
   riskRewardTp1?: number | null;
   riskRewardTp2?: number | null;
+  entryY?: number | null;
+  stopY?: number | null;
+  tp1Y?: number | null;
+  tp2Y?: number | null;
 }
 
 interface WorkerAnalysisResult {
@@ -356,6 +360,10 @@ function toWorkerAnalysisResult(value: unknown): WorkerAnalysisResult {
       tp1ClosePercent: ensureNumberOrNull(analysisSource.tp1ClosePercent),
       tp2ClosePercent: ensureNumberOrNull(analysisSource.tp2ClosePercent),
       breakevenTrigger: analysisSource.breakevenTrigger != null ? String(analysisSource.breakevenTrigger).trim() || null : null,
+      entryY: ensureNumberOrNull(analysisSource.entryY),
+      stopY: ensureNumberOrNull(analysisSource.stopY),
+      tp1Y: ensureNumberOrNull(analysisSource.tp1Y),
+      tp2Y: ensureNumberOrNull(analysisSource.tp2Y),
     },
   };
 }
