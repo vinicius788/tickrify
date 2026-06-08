@@ -39,11 +39,14 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
     maxSize: 10 * 1024 * 1024,
   });
 
-  const addHtf = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && htf.length < MAX_HTF) {
+  const pushHtf = (file: File | undefined | null) => {
+    if (file && file.type.startsWith('image/') && htf.length < MAX_HTF) {
       setHtf((prev) => [...prev, { file, url: URL.createObjectURL(file) }]);
     }
+  };
+
+  const addHtf = (e: ChangeEvent<HTMLInputElement>) => {
+    pushHtf(e.target.files?.[0]);
     e.target.value = '';
   };
 
@@ -150,9 +153,16 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
               </div>
             ))}
             {htf.length < MAX_HTF && (
-              <label className="flex h-20 w-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed border-[var(--border-default)] text-[var(--text-secondary)] transition-colors hover:border-[var(--signal-buy-border)] hover:text-[var(--text-primary)]">
+              <label
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  pushHtf(e.dataTransfer.files?.[0]);
+                }}
+                className="flex h-20 w-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed border-[var(--border-default)] text-[var(--text-secondary)] transition-colors hover:border-[var(--signal-buy-border)] hover:text-[var(--text-primary)]"
+              >
                 <Plus className="h-5 w-5" />
-                <span className="text-[10px]">Adicionar</span>
+                <span className="text-[10px]">Arraste ou clique</span>
                 <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={addHtf} />
               </label>
             )}

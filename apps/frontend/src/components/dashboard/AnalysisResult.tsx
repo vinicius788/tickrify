@@ -283,6 +283,26 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
     liveMarket.longShortRatio !== null ||
     liveMarket.fearGreedValue !== null
   );
+
+  // #3 — Leitura automática do contexto ao vivo (não muda o sinal; só interpreta os dados).
+  const liveReadings: string[] = [];
+  if (liveMarket) {
+    const f = liveMarket.fundingRatePercent;
+    if (f !== null) {
+      if (f >= 0.03) liveReadings.push('Funding alto — mercado muito comprado; cautela perto de resistências.');
+      else if (f <= -0.01) liveReadings.push('Funding negativo — mercado vendido; possível squeeze de alta.');
+    }
+    const ls = liveMarket.longShortRatio;
+    if (ls !== null) {
+      if (ls >= 2) liveReadings.push('Maioria comprada (long/short alto) — risco de liquidações se o preço cair.');
+      else if (ls <= 0.6) liveReadings.push('Maioria vendida — risco de short squeeze (alta rápida).');
+    }
+    const fg = liveMarket.fearGreedValue;
+    if (fg !== null) {
+      if (fg <= 25) liveReadings.push('Medo extremo — possível exaustão de venda (sinal contrário de alta).');
+      else if (fg >= 75) liveReadings.push('Ganância extrema — possível topo (sinal contrário de baixa).');
+    }
+  }
   const formattedTimestamp = timestamp.toLocaleString('pt-BR', {
     day: '2-digit',
     month: '2-digit',
@@ -605,6 +625,16 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                           </div>
                         )}
                       </div>
+                      {liveReadings.length > 0 && (
+                        <ul className="mt-2 space-y-1 border-t border-[var(--border-subtle)] pt-2">
+                          {liveReadings.map((r, i) => (
+                            <li key={i} className="flex items-start gap-1.5 text-[11px] text-[var(--text-secondary)]">
+                              <span className="mt-0.5 flex-shrink-0 text-[var(--signal-hold)]">▸</span>
+                              <span>{r}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       {liveMarket.binanceSymbol && (
                         <p className="mt-2 text-[10px] text-[var(--text-secondary)]">
                           Binance {liveMarket.binanceSymbol} · alternative.me
