@@ -18,7 +18,6 @@ import {
 import { useEconomicCalendar } from '@/hooks/useEconomicCalendar';
 import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
-import { TradeMap } from './TradeMap';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -430,14 +429,6 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               ) : (
                 <div className="flex aspect-video items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] text-sm text-[var(--text-secondary)]">
                   Imagem indisponível para esta análise.
-                </div>
-              )}
-
-              {/* Mapa da operação (gerado dos números — preciso) */}
-              {(entry !== null && stopLoss !== null) && (
-                <div className="mt-3">
-                  <p className="mb-1.5 text-xs font-semibold text-[var(--text-secondary)]">Mapa da operação</p>
-                  <TradeMap entry={entry} stopLoss={stopLoss} takeProfit1={takeProfit1} takeProfit2={takeProfit2} />
                 </div>
               )}
             </CardContent>
