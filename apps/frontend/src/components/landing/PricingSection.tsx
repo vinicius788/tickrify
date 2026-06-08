@@ -25,7 +25,7 @@ const plans: Plan[] = [
     price: 'R$ 57',
     priceNote: '/mês',
     ticks: '45 ticks/mês',
-    analyses: '~15 análises',
+    analyses: 'até 45 análises rápidas',
     features: [
       '45 Ticks mensais',
       'Análise rápida (1 Tick)',
@@ -41,7 +41,7 @@ const plans: Plan[] = [
     price: 'R$ 147',
     priceNote: '/mês',
     ticks: '150 ticks/mês',
-    analyses: '~50 análises',
+    analyses: 'até 150 análises rápidas',
     highlight: true,
     features: [
       '150 Ticks mensais',
@@ -59,7 +59,7 @@ const plans: Plan[] = [
     price: 'R$ 297',
     priceNote: '/mês',
     ticks: '400 ticks/mês',
-    analyses: '~150 análises',
+    analyses: 'até 400 análises rápidas',
     features: [
       '400 Ticks mensais',
       'IA nível institucional',

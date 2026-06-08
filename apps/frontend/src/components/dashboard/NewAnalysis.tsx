@@ -2,6 +2,7 @@ import { useDropzone } from 'react-dropzone';
 import { Card } from '@/components/ui/card';
 import { UploadCloud, X, Plus, Layers } from 'lucide-react';
 import { useCallback, useState, type ChangeEvent } from 'react';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface NewAnalysisProps {
   onStartAnalysis: (imageUrl: string | null, imageFile: File | null, htfBase64Images?: string[]) => void;
@@ -19,6 +20,8 @@ function fileToDataUrl(file: File): Promise<string> {
 }
 
 const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
+  const { t } = useLanguage();
+  const u = t.analysis.upload;
   const [mainFile, setMainFile] = useState<File | null>(null);
   const [mainPreview, setMainPreview] = useState<string | null>(null);
   const [htf, setHtf] = useState<Array<{ file: File; url: string }>>([]);
@@ -85,16 +88,16 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
               </span>
               <p className="text-[13px] text-[var(--text-secondary)]">PNG · JPG · WEBP · max 10MB</p>
               <h3 className="text-balance text-xl font-semibold text-[var(--text-primary)] md:text-2xl">
-                {isDragActive ? 'Solte o gráfico aqui' : 'Arraste o gráfico aqui'}
+                {isDragActive ? u.dropActive : u.dropHere}
               </h3>
-              <p className="text-pretty text-sm text-[var(--text-secondary)]">ou clique para selecionar o arquivo</p>
+              <p className="text-pretty text-sm text-[var(--text-secondary)]">{u.orClick}</p>
             </div>
           </div>
-          <p className="text-xs text-[var(--text-secondary)]">No celular, você pode usar a câmera.</p>
+          <p className="text-xs text-[var(--text-secondary)]">{u.mobileCamera}</p>
 
           <div className="flex flex-col items-center gap-2 pt-1">
             <p className="text-[11px] uppercase tracking-widest text-[var(--text-secondary)] opacity-50">
-              Compatível com qualquer plataforma
+              {u.compatible}
             </p>
             <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 opacity-40">
               <span className="text-[11px] font-medium text-[var(--text-secondary)]">TradingView</span>
@@ -115,13 +118,13 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
         {/* Gráfico principal */}
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-sm font-semibold text-[var(--text-primary)]">Gráfico principal (timeframe de execução)</span>
+          <span className="text-sm font-semibold text-[var(--text-primary)]">{u.mainChart}</span>
           <button
             type="button"
             onClick={reset}
             className="text-xs text-[var(--text-secondary)] underline-offset-2 hover:underline"
           >
-            Trocar
+            {u.change}
           </button>
         </div>
         <div className="overflow-hidden rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)]">
@@ -132,10 +135,10 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
         <div className="mt-5">
           <p className="flex items-center gap-1.5 text-sm font-semibold text-[var(--text-primary)]">
             <Layers className="h-4 w-4 text-[var(--signal-buy)]" />
-            Timeframes maiores <span className="font-normal text-[var(--text-secondary)]">(opcional · top-down)</span>
+            {u.higherTfs} <span className="font-normal text-[var(--text-secondary)]">({u.higherTfsTag})</span>
           </p>
           <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
-            Adicione 1-2 gráficos de tempo maior (ex: 1H, 4H) para a IA fazer a leitura top-down real.
+            {u.higherTfsHint}
           </p>
 
           <div className="mt-3 flex flex-wrap gap-3">
@@ -162,7 +165,7 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
                 className="flex h-20 w-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed border-[var(--border-default)] text-[var(--text-secondary)] transition-colors hover:border-[var(--signal-buy-border)] hover:text-[var(--text-primary)]"
               >
                 <Plus className="h-5 w-5" />
-                <span className="text-[10px]">Arraste ou clique</span>
+                <span className="text-[10px]">{u.dragOrClick}</span>
                 <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={addHtf} />
               </label>
             )}
@@ -177,12 +180,12 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
             disabled={submitting}
             className="w-full rounded-md bg-[var(--signal-buy)] px-4 py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-60"
           >
-            {submitting ? 'Analisando…' : 'Analisar gráfico'}
+            {submitting ? u.analyzing : u.analyze}
           </button>
           <p className="mt-2 text-center text-[11px] text-[var(--text-secondary)]">
             {htf.length > 0
-              ? `Análise top-down com ${htf.length + 1} gráficos`
-              : 'Análise de gráfico único · adicione timeframes maiores para top-down'}
+              ? `${u.topDownPrefix} ${htf.length + 1} ${u.charts}`
+              : u.singleHint}
           </p>
         </div>
       </div>
