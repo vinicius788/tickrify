@@ -3,7 +3,24 @@ import {
   formatRiskReward,
   harmonizeConfidenceWithTrend,
   correctPriceMagnitude,
+  deriveMarketRegime,
 } from './analysis-normalizer';
+
+describe('deriveMarketRegime', () => {
+  it('tendência de baixa moderada → "trending" (nunca "lateral")', () => {
+    expect(deriveMarketRegime('ranging', 'bearish', 'moderate')).toBe('trending');
+    expect(deriveMarketRegime('lateral', 'bullish', 'strong')).toBe('trending');
+  });
+
+  it('respeita "volatile" detectado pela IA', () => {
+    expect(deriveMarketRegime('volatile', 'bullish', 'moderate')).toBe('volatile');
+  });
+
+  it('bias neutro ou força fraca → "ranging"', () => {
+    expect(deriveMarketRegime('trending', 'neutral', 'moderate')).toBe('ranging');
+    expect(deriveMarketRegime('trending', 'bearish', 'weak')).toBe('ranging');
+  });
+});
 
 describe('correctPriceMagnitude', () => {
   it('corrige BTC lido 10x menor (6356 -> 63560) escalando todos os níveis', () => {

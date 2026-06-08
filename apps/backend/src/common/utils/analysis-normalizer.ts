@@ -240,6 +240,26 @@ export function correctPriceMagnitude<T extends PriceLevels>(symbol: string, lev
   };
 }
 
+/**
+ * Deriva o regime de mercado de forma determinística a partir do bias + força,
+ * para NUNCA contradizer (ex.: nunca mais "Lateral" num mercado em tendência de baixa).
+ * Respeita "volatile" quando a IA detecta volatilidade (estado distinto).
+ */
+export function deriveMarketRegime(aiRegime: unknown, bias: unknown, trendStrength: unknown): string {
+  const ai = String(aiRegime || '').trim().toLowerCase();
+  if (ai === 'volatile' || ai.includes('volát') || ai.includes('volat')) {
+    return 'volatile';
+  }
+  const b = String(bias || '').trim().toLowerCase();
+  const directional = b === 'bullish' || b === 'bearish' || b.includes('alta') || b.includes('baixa');
+  const s = String(trendStrength || '').trim().toLowerCase();
+  const weak = s === 'weak' || s.includes('frac');
+  if (directional && !weak) {
+    return 'trending';
+  }
+  return 'ranging';
+}
+
 /** Formata um R/R numérico como "1:X.X" (ex.: 2.3 -> "1:2.3"). */
 export function formatRiskReward(ratio: number | null | undefined): string | null {
   if (ratio == null || !Number.isFinite(ratio)) {

@@ -33,6 +33,7 @@ type MarketBias = 'bullish' | 'bearish' | 'neutral';
 interface JobData {
   analysisId: string;
   imageUrl: string;
+  htfImageUrls?: string[];
   promptOverride?: string;
   promptVersion?: number;
   userId?: string;
@@ -639,9 +640,10 @@ async function resolveAiSource(
   imageUrl: string,
   prompt: string,
   analysisType: AnalysisType,
+  htfImageUrls: string[] = [],
 ): Promise<unknown> {
   if (hasValidOpenAiKey()) {
-    return aiAdapter.analyzeImage(imageUrl, prompt, analysisType);
+    return aiAdapter.analyzeImage(imageUrl, prompt, analysisType, htfImageUrls);
   }
 
   if (canUseDemoFallback()) {
@@ -794,6 +796,7 @@ async function processAnalysis(job: Job<JobData>) {
   const {
     analysisId,
     imageUrl,
+    htfImageUrls,
     promptOverride,
     promptVersion,
     userId,
@@ -815,7 +818,7 @@ async function processAnalysis(job: Job<JobData>) {
 
     // ── Free analyses (isDemo=true) now run real AI — no tick cost, same pipeline ─
     const prompt = await getPrompt(promptOverride, promptVersion, userLanguage);
-    const aiSource = await resolveAiSource(imageUrl, prompt, normalizedAnalysisType);
+    const aiSource = await resolveAiSource(imageUrl, prompt, normalizedAnalysisType, htfImageUrls ?? []);
 
     const sourcePayload =
       aiSource &&

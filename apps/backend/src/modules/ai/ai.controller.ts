@@ -63,6 +63,10 @@ export class AiController {
       const dbUserId = await this.resolveDbUserId(user);
       if (!dbUserId) throw new UnauthorizedException('Authenticated user could not be resolved');
 
+      const htfImages = [body.htfBase64Image1, body.htfBase64Image2].filter(
+        (v): v is string => typeof v === 'string' && v.trim().length > 0,
+      );
+
       const result = await this.aiService.createAnalysis(
         dbUserId,
         file,
@@ -70,6 +74,7 @@ export class AiController {
         body.promptOverride,
         body.analysisType,
         body.userLanguage,
+        htfImages,
       );
 
       this.logger.log(`Analysis created: ${result.id}`);

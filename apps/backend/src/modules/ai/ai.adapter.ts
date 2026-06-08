@@ -10,6 +10,7 @@ import {
   formatRiskReward,
   harmonizeConfidenceWithTrend,
   correctPriceMagnitude,
+  deriveMarketRegime,
 } from '../../common/utils/analysis-normalizer';
 import { AnalysisType } from '../ticks/tick-packages';
 
@@ -396,7 +397,11 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       alternativeScenario: parsedAnalysis.alternativeScenario != null ? ensureString(parsedAnalysis.alternativeScenario, '') || null : null,
       trendStrength: parsedAnalysis.trendStrength != null ? ensureString(parsedAnalysis.trendStrength, '') || null : null,
       trendStrengthNote: parsedAnalysis.trendStrengthNote != null ? ensureString(parsedAnalysis.trendStrengthNote, '') || null : null,
-      marketRegime: parsedAnalysis.marketRegime != null ? ensureString(parsedAnalysis.marketRegime, '') || null : null,
+      marketRegime: deriveMarketRegime(
+        parsedAnalysis.marketRegime,
+        normalizeSchemaBias(parsedMarketStructure.bias),
+        parsedAnalysis.trendStrength,
+      ),
       marketRegimeNote: parsedAnalysis.marketRegimeNote != null ? ensureString(parsedAnalysis.marketRegimeNote, '') || null : null,
       multiTimeframeAlignment: parsedAnalysis.multiTimeframeAlignment != null ? ensureString(parsedAnalysis.multiTimeframeAlignment, '') || null : null,
     },
@@ -550,13 +555,53 @@ export class AIAdapter {
     }
   }
 
+  /**
+   * Monta o conteúdo da mensagem do usuário: gráfico principal + (opcional) gráficos
+   * de timeframes maiores para análise top-down REAL (não inferida de um único print).
+   * Cada imagem extra que falhar ao assinar é ignorada — nunca derruba a análise.
+   */
+  private async buildUserContent(
+    imageUrl: string,
+    extraImageUrls: string[],
+  ): Promise<Array<Record<string, unknown>>> {
+    const signedPrimary = await this.resolveImageUrlForOpenAi(imageUrl);
+    const content: Array<Record<string, unknown>> = [
+      {
+        type: 'text',
+        text:
+          extraImageUrls.length > 0
+            ? 'Análise TOP-DOWN. O 1º gráfico é o timeframe de EXECUÇÃO; os seguintes são timeframes MAIORES — use-os para o HTF bias e o alinhamento MTF de forma REAL (não inferida). Responda exclusivamente no JSON do schema.'
+            : 'Analise o gráfico e responda exclusivamente no JSON do schema. Não escreva texto fora do JSON.',
+      },
+      { type: 'image_url', image_url: { url: signedPrimary, detail: 'high' } },
+    ];
+
+    for (let i = 0; i < extraImageUrls.length; i++) {
+      try {
+        const signed = await this.resolveImageUrlForOpenAi(extraImageUrls[i]);
+        content.push({
+          type: 'text',
+          text: `Gráfico de timeframe MAIOR ${i + 1} (contexto top-down / HTF):`,
+        });
+        content.push({ type: 'image_url', image_url: { url: signed, detail: 'high' } });
+      } catch (err) {
+        this.logger.warn(
+          `Ignorando imagem HTF ${i + 1} (falha ao assinar): ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
+    return content;
+  }
+
   async analyzeImage(
     imageUrl: string,
     prompt: string,
     analysisType: AnalysisType = 'quick',
+    extraImageUrls: string[] = [],
   ): Promise<AIAnalysisResponse> {
     try {
-      const signedImageUrl = await this.resolveImageUrlForOpenAi(imageUrl);
+      const userContent = await this.buildUserContent(imageUrl, extraImageUrls);
 
       // assertIsFinancialChart removida: adicionava 5-15s de latência em CADA análise.
       // O prompt principal já rejeita imagens inválidas via campo "non_chart_image" implícito
@@ -717,20 +762,7 @@ export class AIAdapter {
           },
           {
             role: 'user',
-            content: [
-              {
-                type: 'text',
-                text:
-                  'Analise o gráfico e responda exclusivamente no JSON do schema. Não escreva texto fora do JSON.',
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: signedImageUrl,
-                  detail: 'high',
-                },
-              },
-            ],
+            content: userContent as any,
           },
         ],
       }), 30_000, 'OpenAI analysis timed out after 30s');

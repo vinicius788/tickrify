@@ -146,6 +146,7 @@ export class AiService implements OnModuleInit {
     promptOverride?: string,
     analysisType: AnalysisType = 'quick',
     userLanguage?: string,
+    htfBase64Images?: string[],
   ) {
     const preparedImage = this.prepareImagePayload(imageFile, base64Image);
     const queueReadiness = await getAiQueueReadiness();
@@ -194,6 +195,32 @@ export class AiService implements OnModuleInit {
       })(),
     ]);
 
+    // Upload das imagens de timeframe maior (top-down), se houver. Máx 2; falhas ignoradas.
+    const htfImageUrls: string[] = [];
+    if (Array.isArray(htfBase64Images) && htfBase64Images.length > 0) {
+      for (const b64 of htfBase64Images.slice(0, 2)) {
+        try {
+          const prepared = this.prepareImagePayload(undefined, b64);
+          if (!storage.isConfigured()) {
+            htfImageUrls.push(prepared.dataUrl);
+          } else {
+            htfImageUrls.push(
+              await storage.uploadBuffer({
+                buffer: prepared.buffer,
+                mimeType: prepared.mimeType,
+                extension: prepared.extension,
+                pathPrefix: `analyses/${userId}/htf`,
+              }),
+            );
+          }
+        } catch (err) {
+          this.logger.warn(
+            `[htf] Falha ao preparar imagem extra (ignorada): ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }
+    }
+
     // Only consume free quota / ticks after infrastructure/storage prerequisites are validated.
     // enforceAccessAndCreate conta a cota grátis e cria a análise na MESMA transação,
     // evitando que requisições simultâneas ultrapassem o limite gratuito.
@@ -210,6 +237,7 @@ export class AiService implements OnModuleInit {
       await queue.add('process-analysis', {
         analysisId: analysis.id,
         imageUrl,
+        htfImageUrls,
         promptOverride,
         promptVersion,
         userId,
@@ -235,6 +263,7 @@ export class AiService implements OnModuleInit {
     return this.processSynchronously({
       analysisId: analysis.id,
       imageUrl,
+      htfImageUrls,
       promptOverride,
       promptVersion,
       userId,
@@ -682,13 +711,14 @@ export class AiService implements OnModuleInit {
   private async processSynchronously(params: {
     analysisId: string;
     imageUrl: string;
+    htfImageUrls?: string[];
     promptOverride?: string;
     promptVersion?: number;
     userId: string;
     analysisType: AnalysisType;
     userLanguage?: string;
   }) {
-    const { analysisId, imageUrl, promptOverride, promptVersion, userId, analysisType, userLanguage } = params;
+    const { analysisId, imageUrl, htfImageUrls, promptOverride, promptVersion, userId, analysisType, userLanguage } = params;
     const startedAt = Date.now();
 
     await this.prisma.analysis.update({
@@ -709,7 +739,7 @@ export class AiService implements OnModuleInit {
         promptOverride,
         userLanguage,
       );
-      const aiResponse = await this.aiAdapter.analyzeImage(imageUrl, prompt, analysisType);
+      const aiResponse = await this.aiAdapter.analyzeImage(imageUrl, prompt, analysisType, htfImageUrls ?? []);
 
       let normalizedPayload = buildPersistedAnalysisPayload({
         source: (aiResponse.rawResponse as Record<string, any>) || {},

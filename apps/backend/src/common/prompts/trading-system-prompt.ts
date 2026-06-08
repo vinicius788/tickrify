@@ -33,6 +33,8 @@ Determine if the image is a valid financial trading chart.
 - If valid: set "is_financial_chart": true and continue.
 
 **STEP 0 — HTF BIAS + MULTI-TIMEFRAME ALIGNMENT**
+MULTI-CHART: If more than one chart image is provided, the FIRST is the execution timeframe and the OTHERS are higher timeframes. In that case, read the HTF bias and MTF alignment DIRECTLY from those higher-timeframe charts (REAL top-down), do NOT infer. Only infer (below) when a single chart is provided.
+
 A) Higher Timeframe Bias:
 - If 5m chart → infer 1H/4H structure from visible swings
 - If 15m chart → infer 1H/4H bias

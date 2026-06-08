@@ -20,4 +20,15 @@ export class CreateAnalysisDto {
   @IsString()
   @MaxLength(20)
   userLanguage?: string;
+
+  // Gráficos de timeframe maior (top-down) — opcionais.
+  @IsOptional()
+  @IsString()
+  @MaxLength(14_000_000)
+  htfBase64Image1?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(14_000_000)
+  htfBase64Image2?: string;
 }

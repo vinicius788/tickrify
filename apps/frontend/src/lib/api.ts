@@ -178,6 +178,8 @@ export interface CreateAnalysisPayload {
   promptOverride?: string;
   analysisType?: 'quick' | 'deep';
   userLanguage?: string;
+  /** Gráficos de timeframe maior (top-down) — opcionais, base64. */
+  htfBase64Images?: string[];
 }
 
 export interface AnalysisUsageResponse {
@@ -319,6 +321,11 @@ class APIClient {
 
     if (payload.userLanguage) {
       formData.append('userLanguage', payload.userLanguage);
+    }
+
+    if (payload.htfBase64Images && payload.htfBase64Images.length > 0) {
+      if (payload.htfBase64Images[0]) formData.append('htfBase64Image1', payload.htfBase64Images[0]);
+      if (payload.htfBase64Images[1]) formData.append('htfBase64Image2', payload.htfBase64Images[1]);
     }
 
     const response = await this.request(

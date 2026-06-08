@@ -263,7 +263,15 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const riskRewardRatioRaw = analysis.riskRewardRatio;
   // valor principal exibido: alvo final (TP2) ou TP1; cai para o texto da IA se faltarem níveis.
   const riskReward = rrTp2 ?? rrTp1 ?? parseRiskReward(riskRewardRatioRaw);
-  const riskRewardTone = riskReward !== null && riskReward >= 2 ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-hold)]';
+  // R/R baixo (< 1.5) = vermelho + aviso; >= 2 verde; entre = amarelo.
+  const riskRewardLow = riskReward !== null && riskReward < 1.5;
+  const riskRewardTone = riskReward === null
+    ? 'text-[var(--text-secondary)]'
+    : riskReward < 1.5
+      ? 'text-[var(--signal-sell)]'
+      : riskReward >= 2
+        ? 'text-[var(--signal-buy)]'
+        : 'text-[var(--signal-hold)]';
 
   const timestamp = new Date(analysisData.createdAt);
   const openSessions = getOpenSessions(timestamp);
@@ -413,6 +421,11 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                     {rrTp1 !== null ? `TP1 ${rrTp1.toFixed(1)}` : ''}
                     {rrTp1 !== null && rrTp2 !== null ? ' · ' : ''}
                     {rrTp2 !== null ? `TP2 ${rrTp2.toFixed(1)}` : ''}
+                  </p>
+                )}
+                {riskRewardLow && (
+                  <p className="mt-0.5 font-terminal text-[10px] font-semibold text-[var(--signal-sell)]">
+                    ⚠ R/R abaixo do ideal
                   </p>
                 )}
               </div>
