@@ -192,6 +192,19 @@ export interface AnalysisUsageResponse {
   tickBalance?: number;
 }
 
+export interface PerformanceResponse {
+  total: number;
+  wins: number;
+  losses: number;
+  breakeven: number;
+  open: number;
+  pending: number;
+  winRate: number | null;
+  avgRiskReward: number | null;
+  totalPnlPercent: number | null;
+  pnlCount: number;
+}
+
 class APIClient {
   private static readonly REQUEST_TIMEOUT_MS = 15000;
   private static readonly ANALYZE_TIMEOUT_MS = 120000;
@@ -404,6 +417,58 @@ class APIClient {
     return response.json();
   }
 
+  async setOutcome(
+    analysisId: string,
+    payload: { outcome: string | null; pnlPercent?: number | null; pnlAmount?: number | null },
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<{ id: string; outcome: string | null; pnlPercent: number | null; pnlAmount: number | null }> {
+    const response = await this.request(
+      `/api/ai/analysis/${analysisId}/outcome`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...this.getAuthHeader(token),
+        },
+        body: JSON.stringify(payload),
+      },
+      'Failed to set outcome',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
+    );
+
+    if (!response.ok) {
+      throw await this.buildApiError(response, 'Failed to set outcome');
+    }
+
+    return response.json();
+  }
+
+  async getPerformance(
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<PerformanceResponse> {
+    const response = await this.request(
+      '/api/ai/performance',
+      {
+        method: 'GET',
+        headers: {
+          ...this.getAuthHeader(token),
+        },
+      },
+      'Failed to fetch performance',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
+    );
+
+    if (!response.ok) {
+      throw await this.buildApiError(response, 'Failed to fetch performance');
+    }
+
+    return response.json();
+  }
+
   async waitForAnalysisCompletion(
     analysisId: string,
     token: string | null,
@@ -466,6 +531,19 @@ export function useAPIClient() {
     return apiClient.getAnalysisUsage(token, getFreshToken);
   }, [getFreshToken]);
 
+  const setOutcome = useCallback(async (
+    analysisId: string,
+    payload: { outcome: string | null; pnlPercent?: number | null; pnlAmount?: number | null },
+  ) => {
+    const token = await getFreshToken();
+    return apiClient.setOutcome(analysisId, payload, token, getFreshToken);
+  }, [getFreshToken]);
+
+  const getPerformance = useCallback(async () => {
+    const token = await getFreshToken();
+    return apiClient.getPerformance(token, getFreshToken);
+  }, [getFreshToken]);
+
   const waitForAnalysisCompletion = useCallback(
     async (analysisId: string, initialAnalysis?: AIAnalysisResponse) => {
       const token = await getFreshToken();
@@ -484,6 +562,8 @@ export function useAPIClient() {
     getAnalysis,
     listAnalyses,
     getAnalysisUsage,
+    setOutcome,
+    getPerformance,
     waitForAnalysisCompletion,
-  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, waitForAnalysisCompletion]);
+  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, setOutcome, getPerformance, waitForAnalysisCompletion]);
 }

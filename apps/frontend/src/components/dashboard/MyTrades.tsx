@@ -6,11 +6,33 @@ import { Badge } from '@/components/ui/badge';
 import { confidenceToPercent, getRecommendationMeta } from '@/lib/trading-ui';
 import { useAnalyses } from '@/hooks/useAnalyses';
 import { asRecord } from '@/lib/utils';
+import { useAPIClient } from '@/lib/api';
 import type { AIAnalysisResponse } from '@/lib/api';
 
-// ── Verdict stored in localStorage ──────────────────────────────────────────
+// ── Verdict (sincronizado com o backend; localStorage = fallback offline) ────
 type Verdict = 'TP1' | 'TP2' | 'SL' | 'OPEN' | null;
 const STORAGE_KEY = 'tickrify_verdicts';
+
+// Verdict (UI) ↔ outcome (backend)
+function verdictFromOutcome(o: unknown): Verdict {
+  switch (String(o || '')) {
+    case 'tp1': return 'TP1';
+    case 'tp2': return 'TP2';
+    case 'stop': return 'SL';
+    case 'open': return 'OPEN';
+    default: return null;
+  }
+}
+
+function outcomeFromVerdict(v: Verdict): string | null {
+  switch (v) {
+    case 'TP1': return 'tp1';
+    case 'TP2': return 'tp2';
+    case 'SL': return 'stop';
+    case 'OPEN': return 'open';
+    default: return null;
+  }
+}
 
 function loadVerdicts(): Record<string, Verdict> {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; }
@@ -72,12 +94,21 @@ const MyTrades = () => {
   const { user } = useUser();
   const isDemo = !user;
   const { analyses, loading } = useAnalyses(100);
+  const { setOutcome } = useAPIClient();
 
   const [verdicts, setVerdicts] = useState<Record<string, Verdict>>(loadVerdicts);
   const [filterSymbol, setFilterSymbol] = useState('');
   const [filterVerdict, setFilterVerdict] = useState<'all' | 'pending' | Verdict>('all');
 
   const rows = isDemo ? DEMO : analyses.filter((a) => a.status === 'completed');
+
+  // Verdict efetivo: estado local (alteração recente) tem prioridade; senão usa o do banco.
+  const getVerdict = (a: AIAnalysisResponse): Verdict => {
+    if (Object.prototype.hasOwnProperty.call(verdicts, a.id)) {
+      return verdicts[a.id] ?? null;
+    }
+    return verdictFromOutcome((a as Record<string, unknown>).outcome);
+  };
 
   // Unique symbols for filter dropdown
   const symbols = useMemo(() => {
@@ -89,16 +120,42 @@ const MyTrades = () => {
     return rows.filter((a) => {
       const { symbol } = extractLevels(a);
       if (filterSymbol && symbol !== filterSymbol) return false;
-      const v = verdicts[a.id] ?? null;
+      const v = getVerdict(a);
       if (filterVerdict === 'pending' && v !== null) return false;
       if (filterVerdict !== 'all' && filterVerdict !== 'pending' && v !== filterVerdict) return false;
       return true;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, verdicts, filterSymbol, filterVerdict]);
+
+  // Resumo de performance (a partir das análises carregadas).
+  const perf = useMemo(() => {
+    let wins = 0, losses = 0, open = 0, pending = 0, rrSum = 0, rrCount = 0;
+    for (const a of rows) {
+      const v = getVerdict(a);
+      if (v === 'TP1' || v === 'TP2') wins += 1;
+      else if (v === 'SL') losses += 1;
+      else if (v === 'OPEN') open += 1;
+      else pending += 1;
+      const rr = Number((a as Record<string, unknown>).riskRewardTp2 ?? (a as Record<string, unknown>).riskRewardTp1);
+      if (Number.isFinite(rr) && rr > 0) { rrSum += rr; rrCount += 1; }
+    }
+    const decided = wins + losses;
+    return {
+      wins, losses, open, pending,
+      winRate: decided > 0 ? Math.round((wins / decided) * 1000) / 10 : null,
+      avgRr: rrCount > 0 ? Math.round((rrSum / rrCount) * 100) / 100 : null,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, verdicts]);
 
   const handleVerdict = (id: string, v: Verdict) => {
     saveVerdict(id, v);
     setVerdicts((prev) => ({ ...prev, [id]: v }));
+    if (!isDemo) {
+      // Persiste no backend (sem bloquear a UI; falha silenciosa mantém o localStorage).
+      void setOutcome(id, { outcome: outcomeFromVerdict(v) }).catch(() => {});
+    }
   };
 
   return (
@@ -140,6 +197,33 @@ const MyTrades = () => {
       </CardHeader>
 
       <CardContent className="p-0">
+        {/* ── Resumo de performance ─────────────────────────────── */}
+        {rows.length > 0 && (
+          <div className="grid grid-cols-2 gap-px border-y border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-4">
+            <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
+              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">Win rate</p>
+              <p className="font-terminal text-lg font-semibold text-[var(--signal-buy)]">
+                {perf.winRate !== null ? `${perf.winRate}%` : '—'}
+              </p>
+              <p className="font-terminal text-[10px] text-[var(--text-secondary)]">{perf.wins}V / {perf.losses}D</p>
+            </div>
+            <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
+              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">R:R médio</p>
+              <p className="font-terminal text-lg font-semibold text-[var(--text-primary)]">
+                {perf.avgRr !== null ? `${perf.avgRr.toFixed(1)}:1` : '—'}
+              </p>
+            </div>
+            <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
+              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">Em aberto</p>
+              <p className="font-terminal text-lg font-semibold text-[var(--signal-hold)]">{perf.open}</p>
+            </div>
+            <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
+              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">Pendentes</p>
+              <p className="font-terminal text-lg font-semibold text-[var(--text-secondary)]">{perf.pending}</p>
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <p className="py-12 text-center text-sm text-[var(--text-secondary)]">Carregando análises…</p>
         ) : filtered.length === 0 ? (
@@ -152,7 +236,7 @@ const MyTrades = () => {
               const { symbol, timeframe, entry, stopLoss, takeProfit1, takeProfit2, confluence, factorsPresent } = extractLevels(a);
               const meta = getRecommendationMeta(a.recommendation);
               const confidence = confidenceToPercent(a.confidence);
-              const verdict = verdicts[a.id] ?? null;
+              const verdict = getVerdict(a);
               const vcfg = verdict ? VERDICT_CFG[verdict] : null;
 
               const signalBg = meta.tone === 'buy'

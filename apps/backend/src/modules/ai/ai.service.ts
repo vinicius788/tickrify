@@ -429,9 +429,118 @@ export class AiService {
           riskRewardRatio: operationFields.riskReward,
           riskRewardTp1: operationFields.riskRewardTp1,
           riskRewardTp2: operationFields.riskRewardTp2,
+          outcome: (analysis as Record<string, unknown>).outcome ?? null,
+          pnlPercent: (analysis as Record<string, unknown>).pnlPercent ?? null,
+          pnlAmount: (analysis as Record<string, unknown>).pnlAmount ?? null,
         };
       }),
     );
+  }
+
+  /**
+   * Registra o resultado de uma análise (TP1/TP2/Stop/BE/aberto + P&L manual).
+   * Owner-checked: só o dono pode alterar.
+   */
+  async setOutcome(
+    userId: string,
+    id: string,
+    input: { outcome: string | null; pnlPercent?: number | null; pnlAmount?: number | null },
+  ) {
+    const analysis = await this.prisma.analysis.findFirst({
+      where: { id, userId },
+      select: { id: true },
+    });
+    if (!analysis) {
+      throw new BadRequestException('Analysis not found');
+    }
+
+    const VALID = ['tp1', 'tp2', 'stop', 'breakeven', 'open'];
+    const outcome = input.outcome && VALID.includes(input.outcome) ? input.outcome : null;
+    const pnlPercent = Number.isFinite(Number(input.pnlPercent)) ? Number(input.pnlPercent) : null;
+    const pnlAmount = Number.isFinite(Number(input.pnlAmount)) ? Number(input.pnlAmount) : null;
+
+    await this.prisma.analysis.update({
+      where: { id },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: {
+        outcome,
+        pnlPercent,
+        pnlAmount,
+        closedAt: outcome ? new Date() : null,
+      } as any,
+    });
+
+    return { id, outcome, pnlPercent, pnlAmount };
+  }
+
+  /**
+   * Estatísticas de performance do usuário a partir dos resultados registrados.
+   */
+  async getPerformance(userId: string) {
+    const analyses = await this.prisma.analysis.findMany({
+      where: { userId, status: 'completed' },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+    });
+
+    let wins = 0;
+    let losses = 0;
+    let breakeven = 0;
+    let open = 0;
+    let pending = 0;
+    let pnlSum = 0;
+    let pnlCount = 0;
+    let rrSum = 0;
+    let rrCount = 0;
+
+    for (const a of analyses) {
+      const row = a as Record<string, unknown>;
+      const outcome = (row.outcome as string | null) ?? null;
+      const pnl = row.pnlPercent as number | null;
+      if (pnl != null && Number.isFinite(Number(pnl))) {
+        pnlSum += Number(pnl);
+        pnlCount += 1;
+      }
+
+      const operationFields = this.extractOperationFields(this.getStoredAnalysisPayload(a), null);
+      const rr = operationFields.riskRewardTp2 ?? operationFields.riskRewardTp1;
+      if (rr != null && Number.isFinite(rr)) {
+        rrSum += rr;
+        rrCount += 1;
+      }
+
+      switch (outcome) {
+        case 'tp1':
+        case 'tp2':
+          wins += 1;
+          break;
+        case 'stop':
+          losses += 1;
+          break;
+        case 'breakeven':
+          breakeven += 1;
+          break;
+        case 'open':
+          open += 1;
+          break;
+        default:
+          pending += 1;
+      }
+    }
+
+    const decided = wins + losses;
+    return {
+      total: analyses.length,
+      wins,
+      losses,
+      breakeven,
+      open,
+      pending,
+      winRate: decided > 0 ? Math.round((wins / decided) * 1000) / 10 : null,
+      avgRiskReward: rrCount > 0 ? Math.round((rrSum / rrCount) * 100) / 100 : null,
+      totalPnlPercent: pnlCount > 0 ? Math.round(pnlSum * 100) / 100 : null,
+      pnlCount,
+    };
   }
 
   async getUsage(userId: string) {
@@ -823,6 +932,9 @@ export class AiService {
       riskRewardRatio: operationFields.riskReward,
       riskRewardTp1: operationFields.riskRewardTp1,
       riskRewardTp2: operationFields.riskRewardTp2,
+      outcome: (analysis as Record<string, unknown>).outcome ?? null,
+      pnlPercent: (analysis as Record<string, unknown>).pnlPercent ?? null,
+      pnlAmount: (analysis as Record<string, unknown>).pnlAmount ?? null,
       errorMessage: analysis.errorMessage || null,
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
