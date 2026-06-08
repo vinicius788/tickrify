@@ -5,7 +5,6 @@ import {
   Header,
   Logger,
   Param,
-  Patch,
   Post,
   Query,
   Res,
@@ -24,7 +23,6 @@ import { PrismaService } from '../database/prisma.service';
 import { UploadedFile as UploadedFileType } from '../../common/interfaces/multer';
 import { CreateAnalysisDto } from './dto/create-analysis.dto';
 import { ListAnalysesQueryDto } from './dto/list-analyses-query.dto';
-import { SetOutcomeDto } from './dto/set-outcome.dto';
 
 @Controller('ai')
 export class AiController {
@@ -106,36 +104,6 @@ export class AiController {
     if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
 
     return this.aiService.listAnalyses(dbUserId, query.limit ?? 20);
-  }
-
-  @Patch('analysis/:id/outcome')
-  @UseGuards(AuthGuard)
-  @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  async setOutcome(
-    @CurrentUser() user: { id?: string; clerkUserId: string },
-    @Param('id') id: string,
-    @Body() body: SetOutcomeDto,
-  ) {
-    const dbUserId = await this.resolveDbUserId(user);
-    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
-
-    return this.aiService.setOutcome(dbUserId, id, {
-      outcome: body.outcome ?? null,
-      pnlPercent: body.pnlPercent ?? null,
-      pnlAmount: body.pnlAmount ?? null,
-    });
-  }
-
-  @Get('performance')
-  @UseGuards(AuthGuard)
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  async getPerformance(
-    @CurrentUser() user: { id?: string; clerkUserId: string },
-  ) {
-    const dbUserId = await this.resolveDbUserId(user);
-    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
-
-    return this.aiService.getPerformance(dbUserId);
   }
 
   @Post('analyze/stream')
