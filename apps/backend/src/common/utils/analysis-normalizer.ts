@@ -168,15 +168,30 @@ const isForexPair = (s: string): boolean =>
 
 // Faixas plausíveis por ativo. Só corrigimos erros ÓBVIOS de ordem de grandeza.
 const PRICE_RANGES: Array<{ test: (s: string) => boolean; min: number; max: number }> = [
+  // ── Cripto ──
   { test: (s) => s.startsWith('BTC'), min: 10_000, max: 1_000_000 },
   { test: (s) => s.startsWith('ETH'), min: 300, max: 50_000 },
-  { test: (s) => s.includes('XAU'), min: 800, max: 6_000 }, // ouro
-  { test: (s) => s.includes('XAG'), min: 3, max: 200 }, // prata
   { test: (s) => s.startsWith('SOL'), min: 5, max: 5_000 },
   { test: (s) => s.startsWith('BNB'), min: 30, max: 10_000 },
-  // Forex JPY (USDJPY ~150): real 90–160, faixa segura 50–300.
+  // ── Metais ──
+  { test: (s) => s.includes('XAU'), min: 800, max: 6_000 }, // ouro
+  { test: (s) => s.includes('XAG'), min: 3, max: 200 }, // prata
+  // ── Índices globais ──
+  { test: (s) => s.includes('NAS') || s === 'US100' || s.includes('NDX') || s.includes('USTEC'), min: 5_000, max: 40_000 }, // Nasdaq 100
+  { test: (s) => s === 'US30' || s.includes('DJI') || s.includes('DOW') || s.includes('WALL'), min: 15_000, max: 70_000 }, // Dow
+  { test: (s) => s.includes('SPX') || s === 'US500' || s.includes('SP500'), min: 1_500, max: 12_000 }, // S&P 500
+  { test: (s) => s.includes('GER') || s.includes('DAX') || s === 'DE40' || s === 'DE30', min: 8_000, max: 35_000 }, // DAX
+  { test: (s) => s.includes('UK100') || s.includes('FTSE'), min: 4_000, max: 15_000 }, // FTSE
+  { test: (s) => s.includes('JP225') || s.includes('NIKKEI') || s.includes('JPN'), min: 15_000, max: 70_000 }, // Nikkei
+  // ── Petróleo ──
+  { test: (s) => s.includes('OIL') || s.includes('WTI') || s.includes('BRENT') || s.includes('USOIL'), min: 15, max: 250 },
+  // ── B3 (Brasil) ──
+  { test: (s) => s.startsWith('WIN') || s.includes('IBOV'), min: 70_000, max: 250_000 }, // mini índice / Ibovespa
+  { test: (s) => s.startsWith('WDO') || s.startsWith('DOL'), min: 3_000, max: 9_000 }, // mini dólar
+  // ── Forex ──
+  // JPY (USDJPY ~150): real 90–160, faixa segura 50–300.
   { test: (s) => isForexPair(s) && s.endsWith('JPY'), min: 50, max: 300 },
-  // Forex demais majors (EURUSD ~1.08): real 0.5–2.0, faixa segura 0.3–3.0.
+  // demais majors (EURUSD ~1.08): real 0.5–2.0, faixa segura 0.3–3.0.
   { test: (s) => isForexPair(s) && !s.endsWith('JPY'), min: 0.3, max: 3 },
 ];
 
@@ -187,7 +202,7 @@ const PRICE_RANGES: Array<{ test: (s: string) => boolean; min: number; max: numb
  * Conservador: só age quando há um fator de 10 limpo; caso contrário, não mexe.
  */
 export function correctPriceMagnitude<T extends PriceLevels>(symbol: string, levels: T): T {
-  const s = String(symbol || '').toUpperCase().replace(/[^A-Z]/g, '');
+  const s = String(symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   const range = PRICE_RANGES.find((r) => r.test(s));
   const price = levels.currentPrice;
 

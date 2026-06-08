@@ -39,6 +39,24 @@ describe('correctPriceMagnitude', () => {
     expect(out.currentPrice).toBe(3310);
     expect(out.stopLoss).toBe(3290);
   });
+
+  it('distingue índices globais pelos dígitos (NAS100 vs US30)', () => {
+    // NAS100 lido 10x menor (1850 -> 18500)
+    const nas = correctPriceMagnitude('NAS100', {
+      currentPrice: 1850, entry: 1850, stopLoss: 1840, takeProfit1: 1870, takeProfit2: 1890, invalidationLevel: 1840,
+    });
+    expect(nas.currentPrice).toBe(18500);
+    // US30 já na faixa não muda
+    const us30 = { currentPrice: 42000, entry: 42000, stopLoss: 41800, takeProfit1: 42300, takeProfit2: 42600, invalidationLevel: 41800 };
+    expect(correctPriceMagnitude('US30', us30)).toEqual(us30);
+  });
+
+  it('corrige WIN (mini índice B3) lido 10x menor', () => {
+    const win = correctPriceMagnitude('WIN', {
+      currentPrice: 12800, entry: 12810, stopLoss: 12750, takeProfit1: 12900, takeProfit2: 12950, invalidationLevel: 12750,
+    });
+    expect(win.currentPrice).toBe(128000);
+  });
 });
 
 describe('computeRiskReward', () => {

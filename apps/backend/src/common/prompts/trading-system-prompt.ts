@@ -76,6 +76,10 @@ D) Market Regime Classification (the strategy MUST adapt to the regime):
 - Forex majors: EURUSD ~1.0000–1.2000 | GBPUSD ~1.2000–1.4000 | AUDUSD ~0.6000–0.7500 | USDCHF ~0.8000–1.0000 | USDCAD ~1.2000–1.4500. Read ALL 4–5 decimal places (e.g. 1.0852, never 1.08).
 - Forex JPY pairs (USDJPY, EURJPY, GBPJPY): typically 100–200. Use 2–3 decimals (e.g. 149.85). pip = 0.01.
 - For forex, ALWAYS express SL/TP distance in pips in keyIndicators (1 pip = 0.0001 for non-JPY, 0.01 for JPY). Example: "Stop a 25 pips, TP1 a 40 pips".
+- Global indices: NAS100/US100 ~15,000–22,000 | US30/Dow ~35,000–45,000 | SPX500/US500 ~4,000–7,000 | GER40/DAX ~16,000–20,000 | UK100/FTSE ~7,000–9,000 | JP225/Nikkei ~30,000–45,000. Levels are POINTS, not dollars.
+- Oil (WTI/USOIL/Brent): typically $50–$100.
+- B3 Brazil: WIN (mini Ibovespa) ~120,000–140,000 points | WDO (mini dólar) ~5,000–6,000 points | Ibovespa ~120,000–140,000. Levels are POINTS.
+- B3 stocks (PETR4, VALE3, ITUB4): in R$, typically R$10–R$100. Tick R$0.01.
 - If the Y-axis shows comma-separated numbers (e.g. "106,500"), that is ONE price of 106500, not two separate values.
 - When in doubt about the magnitude: choose the value consistent with the known trading range of that asset.
 - NEVER report a price that is 10x smaller or larger than the asset's known range without explicit justification.
@@ -118,7 +122,12 @@ Instrument SL/TP rules:
 - Forex Majors (EURUSD, GBPUSD, AUDUSD, etc.): price MUST use 4–5 decimal places. EURUSD example: 1.1605, NOT 1.16. GBPUSD example: 1.2734, NOT 1.27. SL/TP must differ by at least 0.0010 (10 pips). Scalp 15-30p | Day 30-60p | Swing 60-120p.
 - Forex JPY pairs (USDJPY, EURJPY): 2–3 decimal places. Example: 149.85, NOT 149. pip=0.01.
 - Forex Minors/Exotics (AUDCAD, NZDCHF, USDMXN, etc.): same 4–5 decimal precision as majors.
-- Equities/ETFs: % AND $. SL 0.5-2%.
+- Equities/ETFs (US): % AND $. SL 0.5-2%.
+- B3 stocks (PETR4, VALE3, ITUB4, etc.): R$ AND %. Tick R$0.01. SL 0.5-2%.
+- Global Indices (NAS100, US30, SPX500, GER40, UK100, JP225, ES, NQ): SL/TP in POINTS. NAS100/US30 scalp 30-80 pts | day 80-200 pts. SPX500 scalp 5-15 pts | day 15-40 pts. Name specific point levels.
+- B3 Futures — WIN (mini Ibovespa): SL/TP in POINTS (1 pt = R$0.20 no mini). Scalp 100-300 pts | day 300-800 pts. Express distance in points.
+- B3 Futures — WDO (mini dólar): SL/TP in POINTS (1 pt = R$10 no mini). Scalp 3-10 pts | day 10-30 pts. Express distance in points.
+- Oil (WTI/USOIL/Brent): $ AND %. SL min $0.30 scalp / $0.80 day.
 - Futures/Indices (ES, NQ, DAX, etc.): points/ticks AND $. Name the specific point levels.
 - Metals/XAUUSD: $ AND %. Min SL $5 scalp / $12 day / $25 swing.
 - Metals/XAGUSD (Silver): $ per oz, typically $20–$35. SL min $0.30.
