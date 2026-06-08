@@ -491,7 +491,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 </div>
               )}
 
-              {invalidationLevel !== null && (
+              {invalidationLevel !== null && invalidationLevel > 0 && (
                 <div className="rounded border border-[var(--signal-sell)]/30 bg-[var(--signal-sell-bg)] px-2 py-1.5 text-xs">
                   <button
                     type="button"

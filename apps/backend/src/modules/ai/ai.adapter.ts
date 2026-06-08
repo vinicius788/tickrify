@@ -327,7 +327,11 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
   const stopLoss = corrected.stopLoss;
   const takeProfit1 = corrected.takeProfit1;
   const takeProfit2 = corrected.takeProfit2;
-  const invalidationLevel = corrected.invalidationLevel;
+  // 0 ou negativo = a IA não informou → trata como ausente (evita "INVALIDAÇÃO: $0.00").
+  const invalidationLevel =
+    corrected.invalidationLevel != null && corrected.invalidationLevel > 0
+      ? corrected.invalidationLevel
+      : null;
 
   // R/R calculado a partir dos níveis (não confia no texto da IA, que pode divergir).
   const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1);
