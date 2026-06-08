@@ -741,28 +741,49 @@ export class AiService implements OnModuleInit {
     const tickBalance = await this.ticksService.getBalance(userId);
     const canAnalyzeWithTicks = paidAccess && tickBalance >= TICK_COSTS.ANALYSIS_QUICK;
 
+    // Usuário grátis: o contador exibido precisa refletir EXATAMENTE o que o paywall
+    // conta (análises demo não-falhas), senão fica eternamente em 0/3. A tabela
+    // analysisUsage só é usada por assinantes; para o grátis a fonte de verdade são
+    // as linhas Analysis isDemo=true (mesma usada em checkDemoEligibility).
+    if (!paidAccess) {
+      const demoUsed = await this.prisma.analysis.count({
+        where: { userId, isDemo: true, status: { not: 'failed' } },
+      });
+      const demoTotal = AiService.DEMO_ANALYSIS_LIMIT;
+      const demoRemaining = Math.max(0, demoTotal - demoUsed);
+      return {
+        plan: 'free',
+        period: 'monthly',
+        periodStart,
+        total: demoTotal,
+        used: demoUsed,
+        remaining: demoRemaining,
+        isUnlimited: false,
+        tickBalance,
+        canAnalyze: demoRemaining > 0,
+      };
+    }
+
     // Resolve nome real do plano (starter/pro/elite) a partir da subscription ativa
     let planName: string = 'free';
-    if (paidAccess) {
-      const activeSub = await this.prisma.subscription.findFirst({
-        where: { userId, status: { in: ACTIVE_SUBSCRIPTION_STATUSES } },
-        select: { priceId: true },
-        orderBy: { updatedAt: 'desc' },
-      });
-      const resolved = activeSub?.priceId ? resolvePlanForPriceId(activeSub.priceId) : null;
-      planName = resolved ?? 'pro';
-    }
+    const activeSub = await this.prisma.subscription.findFirst({
+      where: { userId, status: { in: ACTIVE_SUBSCRIPTION_STATUSES } },
+      select: { priceId: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+    const resolved = activeSub?.priceId ? resolvePlanForPriceId(activeSub.priceId) : null;
+    planName = resolved ?? 'pro';
 
     return {
       plan: planName,
       period: 'monthly',
       periodStart,
-      total: paidAccess ? null : 0,
+      total: null,
       used,
-      remaining: paidAccess ? null : 0,
-      isUnlimited: paidAccess,
+      remaining: null,
+      isUnlimited: true,
       tickBalance,
-      canAnalyze: paidAccess,
+      canAnalyze: canAnalyzeWithTicks,
     };
   }
 

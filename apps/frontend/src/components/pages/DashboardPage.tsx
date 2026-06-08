@@ -230,6 +230,9 @@ const DashboardPage = () => {
       }
     } catch (error) {
       console.error('[Dashboard] Erro ao criar análise:', error);
+      // Reconcilia o contador com o backend: falhas não consomem análise grátis,
+      // então o slot precisa voltar caso a IA tenha falhado.
+      incrementAnalysis();
       if (error instanceof APIError) {
         let parsedBody: Record<string, unknown> | null = null;
         try {
@@ -281,7 +284,7 @@ const DashboardPage = () => {
   const renderContent = () => {
     switch (activeView) {
       case 'new-analysis':
-        return <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} />;
+        return <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} allowHigherTimeframes={!isDemo && isUnlimited} />;
       case 'my-trades':
         return <MyTrades />;
       case 'watchlist':
@@ -307,7 +310,7 @@ const DashboardPage = () => {
           </div>
         );
       default:
-        return <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} />;
+        return <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} allowHigherTimeframes={!isDemo && isUnlimited} />;
     }
   };
 

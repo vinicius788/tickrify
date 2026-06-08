@@ -6,6 +6,8 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface NewAnalysisProps {
   onStartAnalysis: (imageUrl: string | null, imageFile: File | null, htfBase64Images?: string[]) => void;
+  /** Multi-timeframe (top-down) é recurso de assinante. No grátis/demo fica oculto. */
+  allowHigherTimeframes?: boolean;
 }
 
 const MAX_HTF = 2;
@@ -19,7 +21,7 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
+const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnalysisProps) => {
   const { t } = useLanguage();
   const u = t.analysis.upload;
   const [mainFile, setMainFile] = useState<File | null>(null);
@@ -131,7 +133,8 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
           {mainPreview && <img src={mainPreview} alt="Gráfico principal" className="max-h-[300px] w-full object-contain" />}
         </div>
 
-        {/* Timeframes maiores (top-down) */}
+        {/* Timeframes maiores (top-down) — somente assinante */}
+        {allowHigherTimeframes && (
         <div className="mt-5">
           <p className="flex items-center gap-1.5 text-sm font-semibold text-[var(--text-primary)]">
             <Layers className="h-4 w-4 text-[var(--signal-buy)]" />
@@ -171,6 +174,7 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
             )}
           </div>
         </div>
+        )}
 
         {/* Ação */}
         <div className="mt-auto pt-6">
@@ -182,11 +186,13 @@ const NewAnalysis = ({ onStartAnalysis }: NewAnalysisProps) => {
           >
             {submitting ? u.analyzing : u.analyze}
           </button>
-          <p className="mt-2 text-center text-[11px] text-[var(--text-secondary)]">
-            {htf.length > 0
-              ? `${u.topDownPrefix} ${htf.length + 1} ${u.charts}`
-              : u.singleHint}
-          </p>
+          {allowHigherTimeframes && (
+            <p className="mt-2 text-center text-[11px] text-[var(--text-secondary)]">
+              {htf.length > 0
+                ? `${u.topDownPrefix} ${htf.length + 1} ${u.charts}`
+                : u.singleHint}
+            </p>
+          )}
         </div>
       </div>
     </Card>
