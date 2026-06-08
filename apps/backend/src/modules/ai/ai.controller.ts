@@ -50,6 +50,9 @@ export class AiController {
     FileInterceptor('image', {
       limits: {
         fileSize: 10 * 1024 * 1024,
+        // base64 dos timeframes maiores (top-down) vai em campos de texto;
+        // ~10MB de imagem ≈ ~14MB em base64, então elevamos o limite por campo.
+        fieldSize: 20 * 1024 * 1024,
       },
     }),
   )
@@ -146,7 +149,7 @@ export class AiController {
   @Post('analyze/stream')
   @UseGuards(AuthGuard)
   @UseInterceptors(
-    FileInterceptor('image', { limits: { fileSize: 10 * 1024 * 1024 } }),
+    FileInterceptor('image', { limits: { fileSize: 10 * 1024 * 1024, fieldSize: 20 * 1024 * 1024 } }),
   )
   @Throttle({ default: { limit: 8, ttl: 60_000 } })
   @Header('Content-Type', 'text/event-stream')
