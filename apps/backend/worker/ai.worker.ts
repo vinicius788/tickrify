@@ -8,6 +8,11 @@ import {
   NormalizedPersistedAnalysis,
 } from '../src/common/utils/analysis-payload';
 import { AIAdapter, AIAnalysisError } from '../src/modules/ai/ai.adapter';
+import {
+  computeRiskReward,
+  formatRiskReward,
+  harmonizeConfidenceWithTrend,
+} from '../src/common/utils/analysis-normalizer';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
 import { isProductionRuntime } from '../src/common/utils/runtime-env';
 import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-runtime';
@@ -117,6 +122,16 @@ interface WorkerAnalysisDetails {
   trendStrength: string | null;
   trendStrengthNote: string | null;
   multiTimeframeAlignment: string | null;
+  marketRegime?: string | null;
+  marketRegimeNote?: string | null;
+  probabilityTp1?: number | null;
+  probabilityTp2?: number | null;
+  probabilityStop?: number | null;
+  tp1ClosePercent?: number | null;
+  tp2ClosePercent?: number | null;
+  breakevenTrigger?: string | null;
+  riskRewardTp1?: number | null;
+  riskRewardTp2?: number | null;
 }
 
 interface WorkerAnalysisResult {
@@ -251,29 +266,45 @@ function toWorkerAnalysisResult(value: unknown): WorkerAnalysisResult {
     : {};
   const riskFactorsList = normalizeRiskFactors(analysisSource.riskFactors ?? source.riskFactors);
 
+  // Níveis lidos uma vez para permitir R/R determinístico (idêntico ao caminho síncrono).
+  const entry = ensureNumberOrNull(analysisSource.entry ?? source.entry);
+  const stopLoss = ensureNumberOrNull(analysisSource.stopLoss ?? source.stopLoss);
+  const takeProfit1 = ensureNumberOrNull(analysisSource.takeProfit1 ?? source.takeProfit1);
+  const takeProfit2 = ensureNumberOrNull(analysisSource.takeProfit2 ?? source.takeProfit2);
+  const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1);
+  const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2);
+  const aiRiskRewardRatio =
+    (analysisSource.riskRewardRatio ?? source.riskRewardRatio) === null ||
+    (analysisSource.riskRewardRatio ?? source.riskRewardRatio) === undefined
+      ? null
+      : ensureString(analysisSource.riskRewardRatio ?? source.riskRewardRatio, '') || null;
+
+  // Confiança harmonizada com a força da tendência (teto: moderada 74, fraca 60).
+  // Mantém a escala 0-1 usada pelo worker.
+  const harmonizedConfidence01 =
+    harmonizeConfidenceWithTrend(normalizeConfidence(source.confidence) * 100, analysisSource.trendStrength) / 100;
+
   return {
     recommendation: normalizeRecommendation(source.recommendation),
-    confidence: normalizeConfidence(source.confidence),
+    confidence: harmonizedConfidence01,
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),
       timeframe: ensureString(analysisSource.timeframe ?? source.timeframe, 'UNKNOWN'),
       currentPrice: ensureNumber(analysisSource.currentPrice ?? source.currentPrice, 0),
-      entry: ensureNumberOrNull(analysisSource.entry ?? source.entry),
-      stopLoss: ensureNumberOrNull(analysisSource.stopLoss ?? source.stopLoss),
+      entry,
+      stopLoss,
       stopLossPercent: ensureNumberOrNull(analysisSource.stopLossPercent ?? source.stopLossPercent),
-      takeProfit1: ensureNumberOrNull(analysisSource.takeProfit1 ?? source.takeProfit1),
+      takeProfit1,
       takeProfit1Percent: ensureNumberOrNull(
         analysisSource.takeProfit1Percent ?? source.takeProfit1Percent,
       ),
-      takeProfit2: ensureNumberOrNull(analysisSource.takeProfit2 ?? source.takeProfit2),
+      takeProfit2,
       takeProfit2Percent: ensureNumberOrNull(
         analysisSource.takeProfit2Percent ?? source.takeProfit2Percent,
       ),
-      riskRewardRatio:
-        (analysisSource.riskRewardRatio ?? source.riskRewardRatio) === null ||
-        (analysisSource.riskRewardRatio ?? source.riskRewardRatio) === undefined
-          ? null
-          : ensureString(analysisSource.riskRewardRatio ?? source.riskRewardRatio, ''),
+      riskRewardRatio: formatRiskReward(riskRewardTp2 ?? riskRewardTp1) ?? aiRiskRewardRatio,
+      riskRewardTp1,
+      riskRewardTp2,
       marketStructure: {
         bias: normalizeMarketBias(marketStructureSource.bias ?? source.marketBias),
         lastStructure: ensureString(marketStructureSource.lastStructure, 'Não informado'),
@@ -316,6 +347,14 @@ function toWorkerAnalysisResult(value: unknown): WorkerAnalysisResult {
       trendStrength: analysisSource.trendStrength != null ? String(analysisSource.trendStrength).trim() || null : null,
       trendStrengthNote: analysisSource.trendStrengthNote != null ? String(analysisSource.trendStrengthNote).trim() || null : null,
       multiTimeframeAlignment: analysisSource.multiTimeframeAlignment != null ? String(analysisSource.multiTimeframeAlignment).trim() || null : null,
+      marketRegime: analysisSource.marketRegime != null ? String(analysisSource.marketRegime).trim() || null : null,
+      marketRegimeNote: analysisSource.marketRegimeNote != null ? String(analysisSource.marketRegimeNote).trim() || null : null,
+      probabilityTp1: ensureNumberOrNull(analysisSource.probabilityTp1),
+      probabilityTp2: ensureNumberOrNull(analysisSource.probabilityTp2),
+      probabilityStop: ensureNumberOrNull(analysisSource.probabilityStop),
+      tp1ClosePercent: ensureNumberOrNull(analysisSource.tp1ClosePercent),
+      tp2ClosePercent: ensureNumberOrNull(analysisSource.tp2ClosePercent),
+      breakevenTrigger: analysisSource.breakevenTrigger != null ? String(analysisSource.breakevenTrigger).trim() || null : null,
     },
   };
 }
@@ -548,7 +587,7 @@ async function getPrompt(promptOverride?: string, promptVersion?: number, userLa
 
   // Inject language into USER_CONTEXT placeholder
   const langName = (userLanguage && LANGUAGE_NAMES[userLanguage]) ? LANGUAGE_NAMES[userLanguage] : 'Portuguese (Brazil)';
-  const languageContext = `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, trendStrengthNote, multiTimeframeAlignment, sessionNote, reasoning) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
+  const languageContext = `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, breakevenTrigger, trendStrengthNote, marketRegimeNote, multiTimeframeAlignment, sessionNote, reasoning) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
 
   return basePrompt.replace('{{USER_CONTEXT}}', languageContext);
 }

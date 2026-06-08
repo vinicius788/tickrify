@@ -25,6 +25,15 @@ interface CacheEntry {
   fetchedAt: number;
 }
 
+interface DerivMetrics {
+  fundingRatePercent: number | null;
+  nextFundingTime: number | null;
+  openInterest: number | null;
+  longShortRatio: number | null;
+  longAccountPercent: number | null;
+  shortAccountPercent: number | null;
+}
+
 // Bases consideradas cripto (com derivativos perp na Binance). Forex/ouro ficam de fora.
 const CRYPTO_BASES = new Set([
   'BTC', 'ETH', 'SOL', 'BNB', 'XRP', 'ADA', 'DOGE', 'AVAX', 'LINK', 'MATIC',
@@ -117,7 +126,7 @@ export class MarketService {
    * SEMPRE resolve (nunca lança). Para não-cripto, retorna isCrypto=false e métricas nulas.
    */
   async getContext(symbol: string): Promise<MarketContext> {
-    const { isCrypto, binanceSymbol } = normalizeToBinancePerp(symbol);
+    const { isCrypto, binanceSymbol, base: baseAsset } = normalizeToBinancePerp(symbol);
     const base: MarketContext = {
       symbol: String(symbol || '').toUpperCase(),
       isCrypto,
@@ -144,7 +153,100 @@ export class MarketService {
       return cached.data;
     }
 
-    const [premium, oi, lsr, fng] = await Promise.all([
+    // OKX é acessível de servidores nos EUA (onde o Render roda). Binance costuma
+    // bloquear IPs dos EUA, então OKX é a fonte primária e Binance o fallback.
+    const [okxDerivs, fng] = await Promise.all([
+      this.fetchDerivsOkx(baseAsset || ''),
+      this.getFearGreed(),
+    ]);
+
+    let derivs = okxDerivs;
+    const okxEmpty =
+      derivs.fundingRatePercent === null &&
+      derivs.openInterest === null &&
+      derivs.longShortRatio === null;
+    if (okxEmpty) {
+      derivs = await this.fetchDerivsBinance(binanceSymbol);
+    }
+
+    base.fundingRatePercent = derivs.fundingRatePercent;
+    base.nextFundingTime = derivs.nextFundingTime;
+    base.openInterest = derivs.openInterest;
+    base.longShortRatio = derivs.longShortRatio;
+    base.longAccountPercent = derivs.longAccountPercent;
+    base.shortAccountPercent = derivs.shortAccountPercent;
+    if (fng) {
+      base.fearGreedValue = fng.value;
+      base.fearGreedClassification = fng.classification;
+    }
+
+    this.cache.set(binanceSymbol, { data: base, fetchedAt: Date.now() });
+    return base;
+  }
+
+  /** Derivativos via OKX (funding, OI, long/short). Nunca lança; nulls em falha. */
+  private async fetchDerivsOkx(base: string): Promise<DerivMetrics> {
+    const out: DerivMetrics = {
+      fundingRatePercent: null,
+      nextFundingTime: null,
+      openInterest: null,
+      longShortRatio: null,
+      longAccountPercent: null,
+      shortAccountPercent: null,
+    };
+    if (!base) {
+      return out;
+    }
+
+    const inst = `${base}-USDT-SWAP`;
+    const [fr, oi, lsr] = await Promise.all([
+      this.safeJson<{ data?: Array<{ fundingRate?: string; nextFundingTime?: string }> }>(
+        `https://www.okx.com/api/v5/public/funding-rate?instId=${inst}`,
+      ),
+      this.safeJson<{ data?: Array<{ oiCcy?: string; oi?: string }> }>(
+        `https://www.okx.com/api/v5/public/open-interest?instId=${inst}`,
+      ),
+      this.safeJson<{ data?: Array<[string, string]> }>(
+        `https://www.okx.com/api/v5/rubik/stat/contracts/long-short-account-ratio?ccy=${base}&period=5m`,
+      ),
+    ]);
+
+    const rate = Number(fr?.data?.[0]?.fundingRate);
+    if (Number.isFinite(rate)) {
+      out.fundingRatePercent = Math.round(rate * 100 * 10_000) / 10_000;
+    }
+    const nft = Number(fr?.data?.[0]?.nextFundingTime);
+    if (Number.isFinite(nft) && nft > 0) {
+      out.nextFundingTime = nft;
+    }
+    const oiv = Number(oi?.data?.[0]?.oiCcy);
+    if (Number.isFinite(oiv)) {
+      out.openInterest = oiv;
+    }
+    const ratio = Number(lsr?.data?.[0]?.[1]);
+    if (Number.isFinite(ratio) && ratio > 0) {
+      out.longShortRatio = Math.round(ratio * 100) / 100;
+      out.longAccountPercent = Math.round((ratio / (1 + ratio)) * 1000) / 10;
+      out.shortAccountPercent = Math.round((1 / (1 + ratio)) * 1000) / 10;
+    }
+    return out;
+  }
+
+  /** Derivativos via Binance (fallback). Nunca lança; nulls em falha. */
+  private async fetchDerivsBinance(binanceSymbol: string | null): Promise<DerivMetrics> {
+    const out: DerivMetrics = {
+      fundingRatePercent: null,
+      nextFundingTime: null,
+      openInterest: null,
+      longShortRatio: null,
+      longAccountPercent: null,
+      shortAccountPercent: null,
+    };
+    if (!binanceSymbol) {
+      return out;
+    }
+
+    const [premium, oi, lsr] = await Promise.all([
       this.safeJson<{ lastFundingRate?: string; nextFundingTime?: number }>(
         `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${binanceSymbol}`,
       ),
@@ -154,41 +256,28 @@ export class MarketService {
       this.safeJson<Array<{ longShortRatio?: string; longAccount?: string; shortAccount?: string }>>(
         `https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${binanceSymbol}&period=5m&limit=1`,
       ),
-      this.getFearGreed(),
     ]);
 
-    if (premium?.lastFundingRate != null) {
-      const rate = Number(premium.lastFundingRate);
-      if (Number.isFinite(rate)) {
-        base.fundingRatePercent = Math.round(rate * 100 * 10_000) / 10_000; // % com 4 casas
-      }
+    const rate = Number(premium?.lastFundingRate);
+    if (Number.isFinite(rate)) {
+      out.fundingRatePercent = Math.round(rate * 100 * 10_000) / 10_000;
     }
     if (premium?.nextFundingTime != null && Number.isFinite(Number(premium.nextFundingTime))) {
-      base.nextFundingTime = Number(premium.nextFundingTime);
+      out.nextFundingTime = Number(premium.nextFundingTime);
     }
-    if (oi?.openInterest != null) {
-      const v = Number(oi.openInterest);
-      if (Number.isFinite(v)) {
-        base.openInterest = v;
-      }
+    const oiv = Number(oi?.openInterest);
+    if (Number.isFinite(oiv)) {
+      out.openInterest = oiv;
     }
     const lsrEntry = Array.isArray(lsr) ? lsr[0] : null;
-    if (lsrEntry?.longShortRatio != null) {
-      const v = Number(lsrEntry.longShortRatio);
-      if (Number.isFinite(v)) {
-        base.longShortRatio = Math.round(v * 100) / 100;
-      }
-      const la = Number(lsrEntry.longAccount);
-      const sa = Number(lsrEntry.shortAccount);
-      if (Number.isFinite(la)) base.longAccountPercent = Math.round(la * 1000) / 10;
-      if (Number.isFinite(sa)) base.shortAccountPercent = Math.round(sa * 1000) / 10;
+    const ratio = Number(lsrEntry?.longShortRatio);
+    if (Number.isFinite(ratio)) {
+      out.longShortRatio = Math.round(ratio * 100) / 100;
     }
-    if (fng) {
-      base.fearGreedValue = fng.value;
-      base.fearGreedClassification = fng.classification;
-    }
-
-    this.cache.set(binanceSymbol, { data: base, fetchedAt: Date.now() });
-    return base;
+    const la = Number(lsrEntry?.longAccount);
+    const sa = Number(lsrEntry?.shortAccount);
+    if (Number.isFinite(la)) out.longAccountPercent = Math.round(la * 1000) / 10;
+    if (Number.isFinite(sa)) out.shortAccountPercent = Math.round(sa * 1000) / 10;
+    return out;
   }
 }
