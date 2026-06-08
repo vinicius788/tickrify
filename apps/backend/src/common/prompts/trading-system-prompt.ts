@@ -100,6 +100,7 @@ ICT/SMC — identify each if present:
 
 **STEP 3 — ADVANCED CHART + CANDLESTICK CONFIRMATION**
 - Footprint / Volume Profile / TPO: note if visible. State "N/A" if not.
+- VOLUME CONFIRMATION (when volume bars are visible on the chart): a breakout/impulse WITH rising volume = confirmed and higher conviction; a breakout on LOW/declining volume = suspect (possible fakeout) → lower confidence and mention it in riskFactors. A reversal with a volume spike at a key zone = stronger. If volume is not visible, state "Volume não visível" in keyIndicators and do NOT assume it.
 - Indicators: list ONLY what is visible. NEVER invent.
 
 Candlestick Confirmation (ONLY at key ICT zones — OB, FVG, liquidity, structure):
