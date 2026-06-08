@@ -458,21 +458,6 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 </button>
               </div>
 
-              {hasProbabilities && (
-                <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1.5 text-xs">
-                  <p className="mb-1 text-[var(--text-secondary)]">{t.analysis.outcomeProbabilities}</p>
-                  <div className="flex h-2 w-full overflow-hidden rounded-full bg-[var(--bg-surface)]">
-                    {probabilityTp1 !== null && <div className="h-full bg-[var(--signal-buy)]" style={{ width: `${Math.max(0, Math.min(100, probabilityTp1))}%` }} />}
-                    {probabilityStop !== null && <div className="h-full bg-[var(--signal-sell)]" style={{ width: `${Math.max(0, Math.min(100, probabilityStop))}%` }} />}
-                  </div>
-                  <div className="mt-1 flex justify-between font-terminal text-[11px]">
-                    {probabilityTp1 !== null && <span className="text-[var(--signal-buy)]">TP1 {Math.round(probabilityTp1)}%</span>}
-                    {probabilityTp2 !== null && <span className="text-[var(--signal-buy)]/80">TP2 {Math.round(probabilityTp2)}%</span>}
-                    {probabilityStop !== null && <span className="text-[var(--signal-sell)]">Stop {Math.round(probabilityStop)}%</span>}
-                  </div>
-                </div>
-              )}
-
               {entryType && (
                 <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1.5 text-xs">
                   <span className="text-[var(--text-secondary)]">{t.analysis.entryType.toUpperCase()}: </span>
@@ -488,8 +473,6 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   {invalidationNote && <p className="mt-0.5 text-[var(--signal-sell)]/70">{invalidationNote}</p>}
                 </div>
               )}
-
-              <PositionSizingCalculator entry={entry} stopLoss={stopLoss} />
 
               {sessionNote && (
                 <p className="rounded-sm bg-[var(--bg-overlay)] px-2 py-1.5 text-xs text-[var(--text-secondary)]">
@@ -573,6 +556,31 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                           Binance {liveMarket.binanceSymbol} · alternative.me
                         </p>
                       )}
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
+
+                {/* ── Probabilidades ─────────────────────────────────── */}
+                {hasProbabilities && (
+                  <AccordionItem value="probabilities" className="border-[var(--border-subtle)]">
+                    <AccordionTrigger className="font-semibold hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <SlidersVertical className="h-4 w-4 text-[var(--signal-buy)]" />
+                        {t.analysis.outcomeProbabilities}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3">
+                        <div className="flex h-2 w-full overflow-hidden rounded-full bg-[var(--bg-surface)]">
+                          {probabilityTp1 !== null && <div className="h-full bg-[var(--signal-buy)]" style={{ width: `${Math.max(0, Math.min(100, probabilityTp1))}%` }} />}
+                          {probabilityStop !== null && <div className="h-full bg-[var(--signal-sell)]" style={{ width: `${Math.max(0, Math.min(100, probabilityStop))}%` }} />}
+                        </div>
+                        <div className="mt-1.5 flex justify-between font-terminal text-xs">
+                          {probabilityTp1 !== null && <span className="text-[var(--signal-buy)]">TP1 {Math.round(probabilityTp1)}%</span>}
+                          {probabilityTp2 !== null && <span className="text-[var(--signal-buy)]/80">TP2 {Math.round(probabilityTp2)}%</span>}
+                          {probabilityStop !== null && <span className="text-[var(--signal-sell)]">Stop {Math.round(probabilityStop)}%</span>}
+                        </div>
+                      </div>
                     </AccordionContent>
                   </AccordionItem>
                 )}
@@ -887,6 +895,10 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
+
+              <div className="mt-4">
+                <PositionSizingCalculator entry={entry} stopLoss={stopLoss} />
+              </div>
 
               <div className="mt-4 border-t-2 border-[var(--border-emphasis)] pt-4">
                 <div className="rounded-md border border-[var(--border-emphasis)] bg-[var(--bg-overlay)] p-3">
