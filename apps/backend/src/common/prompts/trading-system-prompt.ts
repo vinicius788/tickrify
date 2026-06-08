@@ -57,6 +57,7 @@ D) Market Regime Classification (the strategy MUST adapt to the regime):
 - TRENDING: clear directional structure (HH+HL or LH+LL), price respecting a directional MA, expansion candles. Favor trend-continuation entries (pullback to OB/FVG).
 - RANGING: price oscillating between horizontal support/resistance, no clear HH/LL, MA flat. Favor fade-the-edges; be cautious with breakout signals (often false).
 - VOLATILE: large erratic candles, long wicks, gaps, news-driven whipsaw. Widen stops or reduce conviction; many setups fail here.
+- CONSISTENCY RULE: marketRegime MUST agree with the bias/trend. If bias is bullish/bearish with HH+HL or LH+LL → regime = "trending" (NOT "ranging"). Only use "ranging" when price truly moves sideways with no directional bias. The marketRegimeNote MUST describe the SAME regime word — never say "ranging/lateral" and then describe a downtrend/uptrend in the note.
 - → populate marketRegime ("trending" | "ranging" | "volatile") and marketRegimeNote (one sentence in the output language explaining the regime and how it affects this trade)
 
 **STEP 1 — CHART INSPECTOR**

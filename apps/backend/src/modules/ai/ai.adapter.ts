@@ -177,6 +177,18 @@ function ensureNumberOrNull(value: unknown): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+/**
+ * % de fechamento parcial: usa o valor da IA quando válido (>0); senão, quando há
+ * operação (entry presente), aplica um padrão sensato (evita "TP1: 0% TP2: 0%").
+ */
+function closePercentOrDefault(value: unknown, hasTrade: boolean, fallback: number): number | null {
+  const n = ensureNumberOrNull(value);
+  if (n != null && n > 0) {
+    return n;
+  }
+  return hasTrade ? fallback : null;
+}
+
 function normalizeSchemaRecommendation(value: unknown): SchemaRecommendation {
   const recommendationRaw = String(value || '').trim().toUpperCase();
   if (
@@ -371,8 +383,8 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       entryType: parsedAnalysis.entryType != null ? ensureString(parsedAnalysis.entryType, '') || null : null,
       entryCondition: parsedAnalysis.entryCondition != null ? ensureString(parsedAnalysis.entryCondition, '') || null : null,
       partialExitStrategy: parsedAnalysis.partialExitStrategy != null ? ensureString(parsedAnalysis.partialExitStrategy, '') || null : null,
-      tp1ClosePercent: ensureNumberOrNull(parsedAnalysis.tp1ClosePercent),
-      tp2ClosePercent: ensureNumberOrNull(parsedAnalysis.tp2ClosePercent),
+      tp1ClosePercent: closePercentOrDefault(parsedAnalysis.tp1ClosePercent, entry !== null, 50),
+      tp2ClosePercent: closePercentOrDefault(parsedAnalysis.tp2ClosePercent, entry !== null, 50),
       breakevenTrigger: parsedAnalysis.breakevenTrigger != null ? ensureString(parsedAnalysis.breakevenTrigger, '') || null : null,
       probabilityTp1: ensureNumberOrNull(parsedAnalysis.probabilityTp1),
       probabilityTp2: ensureNumberOrNull(parsedAnalysis.probabilityTp2),
