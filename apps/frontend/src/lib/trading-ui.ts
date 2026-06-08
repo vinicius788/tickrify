@@ -38,7 +38,9 @@ export function calcStopPercent(entry: number, stop: number): number {
   if (!Number.isFinite(entry) || entry === 0 || !Number.isFinite(stop)) {
     return 0;
   }
-  return ((stop - entry) / entry) * 100;
+  // O stop SEMPRE representa perda — exibe como negativo, seja compra ou venda.
+  // (Antes, em vendas o stop ficava acima da entrada e aparecia com "+", parecendo lucro.)
+  return -Math.abs(((stop - entry) / Math.abs(entry)) * 100);
 }
 
 export function calcTPPercent(entry: number, tp: number): number {
