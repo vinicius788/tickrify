@@ -4,6 +4,7 @@ import {
   HttpException,
   Injectable,
   Logger,
+  OnModuleInit,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -49,8 +50,10 @@ const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
 type ApiAnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 @Injectable()
-export class AiService {
+export class AiService implements OnModuleInit {
   private readonly logger = new Logger(AiService.name);
+  /** true quando as colunas de resultado existem no banco (verificado no boot). */
+  private outcomeColumnsReady = false;
 
   constructor(
     private prisma: PrismaService,
@@ -59,6 +62,82 @@ export class AiService {
     private promptBuilder: PromptBuilderService,
     private stripeService: StripeService,
   ) {}
+
+  /**
+   * Garante (de forma idempotente e isolada) que as colunas de resultado existam.
+   * Não depende do pipeline de migração e NUNCA derruba o boot: se falhar, o recurso
+   * de resultado fica indisponível, mas o resto da aplicação segue normal.
+   */
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "outcome" TEXT',
+      );
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "pnlPercent" DOUBLE PRECISION',
+      );
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "pnlAmount" DOUBLE PRECISION',
+      );
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "closedAt" TIMESTAMP(3)',
+      );
+      this.outcomeColumnsReady = true;
+      this.logger.log('[outcome] Colunas de resultado prontas.');
+    } catch (err) {
+      this.outcomeColumnsReady = false;
+      this.logger.warn(
+        `[outcome] Não foi possível garantir colunas de resultado (recurso ficará indisponível): ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+    }
+  }
+
+  /** Mapa id -> resultado, lido por SQL isolado. Nunca lança (retorna mapa vazio em falha). */
+  private async getOutcomesMap(
+    userId: string,
+  ): Promise<Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null }>> {
+    const map = new Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null }>();
+    if (!this.outcomeColumnsReady) {
+      return map;
+    }
+    try {
+      const rows = await this.prisma.$queryRaw<
+        Array<{ id: string; outcome: string | null; pnlPercent: number | null; pnlAmount: number | null }>
+      >`SELECT "id", "outcome", "pnlPercent", "pnlAmount" FROM "tickrify"."Analysis" WHERE "userId" = ${userId}`;
+      for (const r of rows) {
+        map.set(r.id, {
+          outcome: r.outcome ?? null,
+          pnlPercent: r.pnlPercent ?? null,
+          pnlAmount: r.pnlAmount ?? null,
+        });
+      }
+    } catch (err) {
+      this.logger.warn(`[outcome] Falha ao ler resultados: ${err instanceof Error ? err.message : err}`);
+    }
+    return map;
+  }
+
+  /** Resultado de uma única análise por id. Nunca lança (retorna null em falha). */
+  private async getOutcomeById(
+    id: string,
+  ): Promise<{ outcome: string | null; pnlPercent: number | null; pnlAmount: number | null } | null> {
+    if (!this.outcomeColumnsReady) {
+      return null;
+    }
+    try {
+      const rows = await this.prisma.$queryRaw<
+        Array<{ outcome: string | null; pnlPercent: number | null; pnlAmount: number | null }>
+      >`SELECT "outcome", "pnlPercent", "pnlAmount" FROM "tickrify"."Analysis" WHERE "id" = ${id} LIMIT 1`;
+      const r = rows[0];
+      return r
+        ? { outcome: r.outcome ?? null, pnlPercent: r.pnlPercent ?? null, pnlAmount: r.pnlAmount ?? null }
+        : null;
+    } catch {
+      return null;
+    }
+  }
 
   async createAnalysis(
     userId: string,
@@ -353,11 +432,14 @@ export class AiService {
       take: safeLimit,
     });
 
+    const outcomesMap = await this.getOutcomesMap(userId);
+
     return Promise.all(
       analyses.map(async (analysis) => {
         const fullResponse = this.getStoredAnalysisPayload(analysis);
         const operationFields = this.extractOperationFields(fullResponse, analysis.reasoning ?? null);
         const analysisMeta = operationFields.analysisMeta;
+        const outcomeData = outcomesMap.get(analysis.id) ?? null;
 
         const symbolFromAnalysis =
           analysisMeta && typeof analysisMeta.symbol === 'string'
@@ -429,9 +511,119 @@ export class AiService {
           riskRewardRatio: operationFields.riskReward,
           riskRewardTp1: operationFields.riskRewardTp1,
           riskRewardTp2: operationFields.riskRewardTp2,
+          outcome: outcomeData?.outcome ?? null,
+          pnlPercent: outcomeData?.pnlPercent ?? null,
+          pnlAmount: outcomeData?.pnlAmount ?? null,
         };
       }),
     );
+  }
+
+  /**
+   * Registra o resultado de uma análise (TP1/TP2/Stop/BE/aberto + P&L manual).
+   * Owner-checked. Usa SQL isolado e tolera a ausência das colunas (sem derrubar nada).
+   */
+  async setOutcome(
+    userId: string,
+    id: string,
+    input: { outcome: string | null; pnlPercent?: number | null; pnlAmount?: number | null },
+  ) {
+    // Ownership check usando o modelo Prisma padrão (colunas garantidas).
+    const analysis = await this.prisma.analysis.findFirst({
+      where: { id, userId },
+      select: { id: true },
+    });
+    if (!analysis) {
+      throw new BadRequestException('Analysis not found');
+    }
+
+    if (!this.outcomeColumnsReady) {
+      throw new ServiceUnavailableException(
+        'Registro de resultado temporariamente indisponível. Tente novamente em instantes.',
+      );
+    }
+
+    const VALID = ['tp1', 'tp2', 'stop', 'breakeven', 'open'];
+    const outcome = input.outcome && VALID.includes(input.outcome) ? input.outcome : null;
+    const pnlPercent = Number.isFinite(Number(input.pnlPercent)) ? Number(input.pnlPercent) : null;
+    const pnlAmount = Number.isFinite(Number(input.pnlAmount)) ? Number(input.pnlAmount) : null;
+    const closedAt = outcome ? new Date() : null;
+
+    await this.prisma.$executeRaw`
+      UPDATE "tickrify"."Analysis"
+      SET "outcome" = ${outcome}, "pnlPercent" = ${pnlPercent}, "pnlAmount" = ${pnlAmount}, "closedAt" = ${closedAt}
+      WHERE "id" = ${id} AND "userId" = ${userId}
+    `;
+
+    return { id, outcome, pnlPercent, pnlAmount };
+  }
+
+  /** Estatísticas de performance do usuário (win rate, R:R médio, contagens). */
+  async getPerformance(userId: string) {
+    const analyses = await this.prisma.analysis.findMany({
+      where: { userId, status: 'completed' },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+    });
+    const outcomesMap = await this.getOutcomesMap(userId);
+
+    let wins = 0;
+    let losses = 0;
+    let breakeven = 0;
+    let open = 0;
+    let pending = 0;
+    let pnlSum = 0;
+    let pnlCount = 0;
+    let rrSum = 0;
+    let rrCount = 0;
+
+    for (const a of analyses) {
+      const outcome = outcomesMap.get(a.id)?.outcome ?? null;
+      const pnl = outcomesMap.get(a.id)?.pnlPercent ?? null;
+      if (pnl != null && Number.isFinite(Number(pnl))) {
+        pnlSum += Number(pnl);
+        pnlCount += 1;
+      }
+
+      const operationFields = this.extractOperationFields(this.getStoredAnalysisPayload(a), null);
+      const rr = operationFields.riskRewardTp2 ?? operationFields.riskRewardTp1;
+      if (rr != null && Number.isFinite(rr)) {
+        rrSum += rr;
+        rrCount += 1;
+      }
+
+      switch (outcome) {
+        case 'tp1':
+        case 'tp2':
+          wins += 1;
+          break;
+        case 'stop':
+          losses += 1;
+          break;
+        case 'breakeven':
+          breakeven += 1;
+          break;
+        case 'open':
+          open += 1;
+          break;
+        default:
+          pending += 1;
+      }
+    }
+
+    const decided = wins + losses;
+    return {
+      total: analyses.length,
+      wins,
+      losses,
+      breakeven,
+      open,
+      pending,
+      winRate: decided > 0 ? Math.round((wins / decided) * 1000) / 10 : null,
+      avgRiskReward: rrCount > 0 ? Math.round((rrSum / rrCount) * 100) / 100 : null,
+      totalPnlPercent: pnlCount > 0 ? Math.round(pnlSum * 100) / 100 : null,
+      pnlCount,
+    };
   }
 
   async getUsage(userId: string) {
@@ -798,6 +990,7 @@ export class AiService {
       storedPayload ?? normalized.fullResponse,
       analysis.errorMessage || normalized.reasoning,
     );
+    const outcomeData = await this.getOutcomeById(analysis.id);
 
     return {
       id: analysis.id,
@@ -823,6 +1016,9 @@ export class AiService {
       riskRewardRatio: operationFields.riskReward,
       riskRewardTp1: operationFields.riskRewardTp1,
       riskRewardTp2: operationFields.riskRewardTp2,
+      outcome: outcomeData?.outcome ?? null,
+      pnlPercent: outcomeData?.pnlPercent ?? null,
+      pnlAmount: outcomeData?.pnlAmount ?? null,
       errorMessage: analysis.errorMessage || null,
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
