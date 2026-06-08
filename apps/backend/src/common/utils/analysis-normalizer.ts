@@ -162,6 +162,10 @@ export interface PriceLevels {
   invalidationLevel: number | null;
 }
 
+const FOREX_CODES = new Set(['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CAD', 'CHF']);
+const isForexPair = (s: string): boolean =>
+  s.length === 6 && FOREX_CODES.has(s.slice(0, 3)) && FOREX_CODES.has(s.slice(3, 6));
+
 // Faixas plausíveis por ativo. Só corrigimos erros ÓBVIOS de ordem de grandeza.
 const PRICE_RANGES: Array<{ test: (s: string) => boolean; min: number; max: number }> = [
   { test: (s) => s.startsWith('BTC'), min: 10_000, max: 1_000_000 },
@@ -170,6 +174,10 @@ const PRICE_RANGES: Array<{ test: (s: string) => boolean; min: number; max: numb
   { test: (s) => s.includes('XAG'), min: 3, max: 200 }, // prata
   { test: (s) => s.startsWith('SOL'), min: 5, max: 5_000 },
   { test: (s) => s.startsWith('BNB'), min: 30, max: 10_000 },
+  // Forex JPY (USDJPY ~150): real 90–160, faixa segura 50–300.
+  { test: (s) => isForexPair(s) && s.endsWith('JPY'), min: 50, max: 300 },
+  // Forex demais majors (EURUSD ~1.08): real 0.5–2.0, faixa segura 0.3–3.0.
+  { test: (s) => isForexPair(s) && !s.endsWith('JPY'), min: 0.3, max: 3 },
 ];
 
 /**

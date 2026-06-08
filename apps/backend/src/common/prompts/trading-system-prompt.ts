@@ -72,8 +72,9 @@ D) Market Regime Classification (the strategy MUST adapt to the regime):
 - ETH/ETHUSDT: typically $1,500–$5,000.
 - Altcoins (SOL, BNB, etc.): can range from $1 to $700.
 - XAUUSD (Gold): typically $1,800–$3,500 per oz.
-- Forex (EURUSD, GBPUSD): typically 1.0000–1.5000. Read ALL 4–5 decimal places.
-- Forex JPY pairs (USDJPY): typically 100–160.
+- Forex majors: EURUSD ~1.0000–1.2000 | GBPUSD ~1.2000–1.4000 | AUDUSD ~0.6000–0.7500 | USDCHF ~0.8000–1.0000 | USDCAD ~1.2000–1.4500. Read ALL 4–5 decimal places (e.g. 1.0852, never 1.08).
+- Forex JPY pairs (USDJPY, EURJPY, GBPJPY): typically 100–200. Use 2–3 decimals (e.g. 149.85). pip = 0.01.
+- For forex, ALWAYS express SL/TP distance in pips in keyIndicators (1 pip = 0.0001 for non-JPY, 0.01 for JPY). Example: "Stop a 25 pips, TP1 a 40 pips".
 - If the Y-axis shows comma-separated numbers (e.g. "106,500"), that is ONE price of 106500, not two separate values.
 - When in doubt about the magnitude: choose the value consistent with the known trading range of that asset.
 - NEVER report a price that is 10x smaller or larger than the asset's known range without explicit justification.

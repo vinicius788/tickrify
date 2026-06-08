@@ -57,6 +57,17 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+const FOREX_CODES = new Set(['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CAD', 'CHF']);
+
+/** Tamanho do pip se for par de forex (0.01 p/ JPY, 0.0001 demais); null se não for forex. */
+function forexPipSize(symbol: string): number | null {
+  const s = String(symbol || '').replace(/[^A-Za-z]/g, '').toUpperCase();
+  if (s.length === 6 && FOREX_CODES.has(s.slice(0, 3)) && FOREX_CODES.has(s.slice(3, 6))) {
+    return s.endsWith('JPY') ? 0.01 : 0.0001;
+  }
+  return null;
+}
+
 function formatPrice(value: number | null): string {
   if (value === null || !Number.isFinite(value)) {
     return 'N/A';
@@ -206,6 +217,14 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const stopPercent = entry !== null && stopLoss !== null ? calcStopPercent(entry, stopLoss) : null;
   const takeProfit1Percent = entry !== null && takeProfit1 !== null ? calcTPPercent(entry, takeProfit1) : null;
   const takeProfit2Percent = entry !== null && takeProfit2 !== null ? calcTPPercent(entry, takeProfit2) : null;
+
+  // Distância em pips (apenas forex). null em outros mercados.
+  const pipSize = forexPipSize(symbol);
+  const pipsBetween = (a: number | null, b: number | null): number | null =>
+    pipSize && a !== null && b !== null ? Math.round(Math.abs(a - b) / pipSize) : null;
+  const stopPips = pipsBetween(entry, stopLoss);
+  const tp1Pips = pipsBetween(entry, takeProfit1);
+  const tp2Pips = pipsBetween(entry, takeProfit2);
 
   const confluenceRaw = toNumber(analysis.confluenceScore);
   const confluence = confluenceRaw !== null ? normalizeConfluenceScore(confluenceRaw, 8) : null;
@@ -436,6 +455,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   onClick={() => void copyValue('Stop Loss', stopLoss)}
                 >
                   {formatPrice(stopLoss)} <span className="font-terminal text-xs">{formatSignedPercent(stopPercent)}</span>
+                  {stopPips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-sell)]/70">{stopPips}p</span>}
                 </button>
               </div>
 
@@ -447,6 +467,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   onClick={() => void copyValue('Take Profit 1', takeProfit1)}
                 >
                   {formatPrice(takeProfit1)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit1Percent)}</span>
+                  {tp1Pips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-buy)]/70">{tp1Pips}p</span>}
                 </button>
               </div>
 
@@ -458,6 +479,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   onClick={() => void copyValue('Take Profit 2', takeProfit2)}
                 >
                   {formatPrice(takeProfit2)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit2Percent)}</span>
+                  {tp2Pips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-buy)]/70">{tp2Pips}p</span>}
                 </button>
               </div>
 
