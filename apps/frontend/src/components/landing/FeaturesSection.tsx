@@ -1,53 +1,26 @@
 import { BarChart3, Bell, Bot, BrainCircuit, Globe2, ShieldCheck } from 'lucide-react';
 import { useReveal } from '@/hooks/useReveal';
 import SectionTitle from '@/components/landing/SectionTitle';
-
-const features = [
-  {
-    icon: Bot,
-    title: 'IA de Leitura Estrutural',
-    description: 'Interpreta BOS/CHoCH, contexto e probabilidade do setup em segundos.',
-    status: 'ready' as const,
-  },
-  {
-    icon: Globe2,
-    title: 'Multi-mercado',
-    description: 'Forex, Cripto, Índices, Ações BR e Commodities na mesma rotina.',
-    status: 'ready' as const,
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Gestão de risco objetiva',
-    description: 'Entrada, Stop e Take com lógica de estrutura e R/R mínimo validado.',
-    status: 'ready' as const,
-  },
-  {
-    icon: BarChart3,
-    title: 'Painel analítico completo',
-    description: 'Resumo executivo, fatores de risco, confluências e justificativa técnica.',
-    status: 'ready' as const,
-  },
-  {
-    icon: Bell,
-    title: 'Alertas em tempo real',
-    description: 'Notificações operacionais para setups com maior prioridade.',
-    status: 'soon' as const,
-  },
-  {
-    icon: BrainCircuit,
-    title: 'Educação contínua',
-    description: 'Aprendizado assistido com histórico comentado das análises.',
-    status: 'soon' as const,
-  },
-];
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const FeaturesSection = () => {
   const revealRef = useReveal<HTMLElement>();
+  const { t } = useLanguage();
+  const f = t.landing.features;
+
+  const features = [
+    { icon: Bot, title: f.f1t, description: f.f1d, status: 'ready' as const },
+    { icon: Globe2, title: f.f2t, description: f.f2d, status: 'ready' as const },
+    { icon: ShieldCheck, title: f.f3t, description: f.f3d, status: 'ready' as const },
+    { icon: BarChart3, title: f.f4t, description: f.f4d, status: 'ready' as const },
+    { icon: Bell, title: f.f5t, description: f.f5d, status: 'soon' as const },
+    { icon: BrainCircuit, title: f.f6t, description: f.f6d, status: 'soon' as const },
+  ];
 
   return (
     <section ref={revealRef} id="recursos" className="landing-section section-secondary reveal-on-scroll">
       <div className="container">
-        <SectionTitle label="Recursos" title="Ferramentas para" highlight="traders exigentes." />
+        <SectionTitle label={f.label} title={f.title} highlight={f.highlight} />
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {features.map((feature) => {
@@ -62,7 +35,7 @@ const FeaturesSection = () => {
                   <h3 className="text-base font-semibold text-[var(--text-primary)]">{feature.title}</h3>
                   {feature.status === 'soon' ? (
                     <span className="badge-soon px-2 py-0.5 font-terminal">
-                      Em breve
+                      {f.soon}
                     </span>
                   ) : null}
                 </div>

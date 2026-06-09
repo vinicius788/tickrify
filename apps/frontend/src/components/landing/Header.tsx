@@ -4,16 +4,20 @@ import officialLogo from '@/assets/tickrify-logo-official.png';
 import { Menu } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { SignInButton, SignedIn, SignedOut, useUser } from '@clerk/clerk-react';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 
 const Header = () => {
   const { isLoaded } = useUser();
+  const { t } = useLanguage();
+  const n = t.landing.nav;
 
   const navLinks = [
-    { href: '#recursos', label: 'Recursos' },
-    { href: '#como-funciona', label: 'Como Funciona' },
-    { href: '#preview-dashboard', label: 'Painel' },
-    { href: '#planos', label: 'Planos' },
-    { href: '#faq', label: 'FAQ' },
+    { href: '#recursos', label: n.features },
+    { href: '#como-funciona', label: n.how },
+    { href: '#preview-dashboard', label: n.panel },
+    { href: '#planos', label: n.plans },
+    { href: '#faq', label: n.faq },
   ];
 
   const loginButton = (
@@ -21,7 +25,7 @@ const Header = () => {
       size="sm"
       className="landing-login-button rounded-xl px-4 text-[13px] font-semibold"
     >
-      Login
+      {n.login}
     </Button>
   );
 
@@ -51,6 +55,7 @@ const Header = () => {
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
+          <LanguageSwitcher />
           {isLoaded ? (
             <>
               <SignedOut>
@@ -59,7 +64,7 @@ const Header = () => {
               <SignedIn>
                 <Link to="/dashboard">
                   <Button size="sm" className="landing-primary-button rounded-xl px-4 font-semibold">
-                    Dashboard
+                    {n.dashboard}
                   </Button>
                 </Link>
               </SignedIn>
@@ -70,6 +75,7 @@ const Header = () => {
         </div>
 
         <div className="flex items-center gap-2 md:hidden">
+          <LanguageSwitcher />
           {isLoaded ? (
             <>
               <SignedOut>
@@ -78,7 +84,7 @@ const Header = () => {
               <SignedIn>
                 <Link to="/dashboard">
                   <Button size="sm" className="landing-primary-button rounded-xl px-3">
-                    App
+                    {n.app}
                   </Button>
                 </Link>
               </SignedIn>
@@ -98,7 +104,7 @@ const Header = () => {
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="border-[var(--border-card)] bg-[rgba(12,13,20,0.96)]">
-              <SheetTitle className="sr-only">Menu principal</SheetTitle>
+              <SheetTitle className="sr-only">{n.menu}</SheetTitle>
               <div className="mt-6 flex flex-col gap-4">
                 {navLinks.map((link) => (
                   <a

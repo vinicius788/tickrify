@@ -1,46 +1,27 @@
 import { Crosshair, ScanSearch, UploadCloud } from 'lucide-react';
 import { useReveal } from '@/hooks/useReveal';
 import SectionTitle from '@/components/landing/SectionTitle';
-
-type Step = {
-  number: string;
-  title: string;
-  description: string;
-  icon: typeof UploadCloud;
-};
-
-const steps: Step[] = [
-  {
-    number: '01',
-    title: 'Capture o gráfico',
-    description: 'Print do seu setup. Qualquer ativo, qualquer timeframe.',
-    icon: UploadCloud,
-  },
-  {
-    number: '02',
-    title: 'IA analisa',
-    description: 'Nossa IA lê estrutura, zonas e confluências em segundos.',
-    icon: ScanSearch,
-  },
-  {
-    number: '03',
-    title: 'Execute com precisão',
-    description: 'Entrada, stop e alvos calculados. Sem achismo.',
-    icon: Crosshair,
-  },
-];
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const HowItWorksSection = () => {
   const revealRef = useReveal<HTMLElement>();
+  const { t } = useLanguage();
+  const hw = t.landing.how;
+
+  const steps = [
+    { number: '01', title: hw.s1t, description: hw.s1d, icon: UploadCloud },
+    { number: '02', title: hw.s2t, description: hw.s2d, icon: ScanSearch },
+    { number: '03', title: hw.s3t, description: hw.s3d, icon: Crosshair },
+  ];
 
   return (
     <section ref={revealRef} id="como-funciona" className="landing-section section-primary reveal-on-scroll">
       <div className="container">
         <SectionTitle
-          label="Como funciona"
-          title="Do gráfico ao sinal"
-          highlight="em segundos."
-          subtitle="Processo objetivo em três etapas para reduzir ruído e acelerar decisão operacional."
+          label={hw.label}
+          title={hw.title}
+          highlight={hw.highlight}
+          subtitle={hw.subtitle}
         />
 
         <div className="relative mt-10 grid gap-4 md:grid-cols-3">

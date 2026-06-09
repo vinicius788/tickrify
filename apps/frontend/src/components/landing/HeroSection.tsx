@@ -4,20 +4,27 @@ import { ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useReveal } from '@/hooks/useReveal';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+
+const DATE_LOCALES: Record<string, string> = {
+  pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
+};
 
 const HeroSection = () => {
   const revealRef = useReveal<HTMLElement>();
   const navigate = useNavigate();
+  const { t, language } = useLanguage();
+  const h = t.landing.hero;
   const nowLabel = useMemo(
     () =>
-      new Date().toLocaleString('pt-BR', {
+      new Date().toLocaleString(DATE_LOCALES[language] ?? 'en-US', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
       }),
-    [],
+    [language],
   );
 
   const scrollToPreview = () => {
@@ -32,7 +39,7 @@ const HeroSection = () => {
       <div className="container relative z-10 grid items-center gap-10 lg:grid-cols-[1.08fr_0.92fr]">
         <div className="max-w-3xl">
           <div className="fade-up-1 mb-8 landing-badge">
-            <span>Análise com IA • tempo real</span>
+            <span>{h.badge}</span>
           </div>
 
           <h1
@@ -46,13 +53,13 @@ const HeroSection = () => {
               color: 'var(--text-primary)',
             }}
           >
-            Pare de operar
+            {h.title1}
             <br />
             <span
               className="hero-highlight"
               style={{ fontSize: 'clamp(3.5rem, 8vw, 7rem)', fontWeight: 800, lineHeight: 0.95, letterSpacing: '-0.03em' }}
             >
-              no escuro.
+              {h.title2}
             </span>
           </h1>
 
@@ -65,14 +72,14 @@ const HeroSection = () => {
               color: 'var(--text-secondary)',
             }}
           >
-            A IA que lê seu gráfico, calcula o risco e diz exatamente onde entrar.
+            {h.subtitle}
           </p>
 
           <div className="fade-up-4 mt-9 flex flex-col gap-3 sm:flex-row">
             <SignedOut>
               <SignUpButton mode="modal" forceRedirectUrl="/dashboard" signInForceRedirectUrl="/dashboard">
                 <Button className="landing-primary-button h-12 rounded-xl px-6 text-sm font-bold">
-                  Começar grátis <ArrowRight className="ml-2 h-4 w-4" />
+                  {h.startFree} <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </SignUpButton>
             </SignedOut>
@@ -82,7 +89,7 @@ const HeroSection = () => {
                 onClick={() => navigate('/dashboard')}
                 className="landing-primary-button h-12 rounded-xl px-6 text-sm font-bold"
               >
-                Ir para o painel <ArrowRight className="ml-2 h-4 w-4" />
+                {h.goToPanel} <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </SignedIn>
             <Button
@@ -91,12 +98,12 @@ const HeroSection = () => {
               variant="outline"
               className="btn-secondary landing-secondary-button h-12 rounded-xl px-6 text-sm font-medium"
             >
-              Ver análise ao vivo
+              {h.seeLive}
             </Button>
           </div>
 
           <p className="mt-6 font-terminal text-xs uppercase tracking-[0.08em] text-[var(--text-secondary)]">
-            3 análises demonstrativas gratuitas • sem cartão de crédito
+            {h.freeNote}
           </p>
         </div>
 
@@ -109,20 +116,20 @@ const HeroSection = () => {
           <div className="mt-5 flex items-center justify-between gap-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] px-3 py-1.5 text-[var(--accent-green)]">
               <span className="text-sm">▲</span>
-              <span className="text-sm font-semibold tracking-[0.04em]">COMPRA</span>
+              <span className="text-sm font-semibold tracking-[0.04em]">{t.analysis.buy}</span>
             </div>
             <span className="text-xs text-[var(--text-secondary)]">
-              Confiança: <strong className="text-[var(--text-primary)]">80%</strong>
+              {t.analysis.confidence}: <strong className="text-[var(--text-primary)]">80%</strong>
             </span>
           </div>
 
           <div className="mt-4 rounded-2xl border border-[var(--border-card)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-[11px] text-[var(--text-secondary)]">
-            {nowLabel} • terminal institucional
+            {nowLabel} • {h.terminal}
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-3 text-xs sm:grid-cols-2">
             <div className="signal-subcard">
-              <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">ENTRADA</p>
+              <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{t.analysis.entry.toUpperCase()}</p>
               <p className="signal-price mt-2 text-[var(--text-primary)]">$ 4,261.40</p>
             </div>
             <div className="signal-subcard stop">
@@ -151,7 +158,7 @@ const HeroSection = () => {
             </span>
             <span className="mx-2 text-[var(--text-muted)]">|</span>
             <span>
-              Confluência <strong className="text-[var(--text-primary)]">4/8</strong>
+              {t.analysis.confluence} <strong className="text-[var(--text-primary)]">4/8</strong>
             </span>
             <span className="mx-2 text-[var(--text-muted)]">|</span>
             <span>
