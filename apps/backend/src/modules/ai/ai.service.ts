@@ -13,7 +13,7 @@ import { createClient } from '@supabase/supabase-js';
 import { PrismaService } from '../database/prisma.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
 import { resolvePlanForPriceId } from '../../config/stripe.config';
-import { AIAdapter, AIAnalysisError } from './ai.adapter';
+import { AIAdapter, AIAnalysisError, scrubPromptLeak } from './ai.adapter';
 import { UploadedFile } from '../../common/interfaces/multer';
 import { PromptBuilderService } from '../prompt/prompt-builder.service';
 import {
@@ -344,7 +344,9 @@ export class AiService implements OnModuleInit {
         normalizedAnalysisType,
       )) {
         partialText += delta;
-        sendEvent('chunk', { text: delta });
+        // Blindagem anti-extração: NÃO encaminhamos o texto bruto do modelo ao
+        // cliente. Só progresso. Isso impede que uma tentativa de extrair o
+        // system prompt apareça em tempo real no navegador.
 
         chunkCount++;
         const analyzingPct = Math.min(
@@ -361,6 +363,26 @@ export class AiService implements OnModuleInit {
       const parsed = parseJsonFromContent(partialText);
       if (!parsed) {
         throw new Error('AI response did not contain valid JSON.');
+      }
+
+      // Blindagem anti-extração: limpa qualquer campo de texto que tente ecoar o
+      // system prompt antes de persistir/serializar o resultado deste caminho.
+      if (parsed.analysis && typeof parsed.analysis === 'object') {
+        const a = parsed.analysis as Record<string, unknown>;
+        for (const field of [
+          'reasoning',
+          'executiveSummary',
+          'technicalAnalysis',
+          'keyIndicators',
+          'identifiedPatterns',
+          'structureValidation',
+          'riskFactors',
+          'whyNotOpposite',
+        ]) {
+          if (typeof a[field] === 'string') {
+            a[field] = scrubPromptLeak(a[field] as string, 'Conteúdo indisponível.');
+          }
+        }
       }
 
       // Build a minimal AIAnalysisResponse from parsed data
