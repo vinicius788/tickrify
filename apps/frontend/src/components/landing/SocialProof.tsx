@@ -1,35 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import SectionTitle from '@/components/landing/SectionTitle';
 import { useReveal } from '@/hooks/useReveal';
-
-type RealStat = {
-  value: string;
-  label: string;
-  sublabel: string;
-};
-
-const REAL_STATS: RealStat[] = [
-  {
-    value: '16s',
-    label: 'tempo médio de análise',
-    sublabel: 'do upload ao resultado',
-  },
-  {
-    value: '6+',
-    label: 'mercados suportados',
-    sublabel: 'Forex, Cripto, Ações BR, Índices',
-  },
-  {
-    value: '3',
-    label: 'análises gratuitas',
-    sublabel: 'sem cartão de crédito',
-  },
-  {
-    value: '2:1',
-    label: 'R/R mínimo validado',
-    sublabel: 'em todo sinal gerado',
-  },
-];
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const AnimatedMetricValue = ({ value }: { value: string }) => {
   const ref = useRef<HTMLParagraphElement | null>(null);
@@ -117,15 +89,23 @@ const AnimatedMetricValue = ({ value }: { value: string }) => {
 
 const SocialProof = () => {
   const revealRef = useReveal<HTMLElement>();
+  const { t } = useLanguage();
+  const s = t.landing.social;
+  const REAL_STATS = [
+    { value: '16s', label: s.s1label, sublabel: s.s1sub },
+    { value: '6+', label: s.s2label, sublabel: s.s2sub },
+    { value: '3', label: s.s3label, sublabel: s.s3sub },
+    { value: '2:1', label: s.s4label, sublabel: s.s4sub },
+  ];
 
   return (
     <section ref={revealRef} className="landing-section section-secondary reveal-on-scroll">
       <div className="container">
         <SectionTitle
-          label="Indicadores da plataforma"
-          title="Métricas"
-          highlight="verificáveis."
-          subtitle="Dados técnicos e regras operacionais utilizadas para orientar decisões."
+          label={s.label}
+          title={s.title}
+          highlight={s.highlight}
+          subtitle={s.subtitle}
           align="center"
         />
 
@@ -140,7 +120,7 @@ const SocialProof = () => {
         </div>
 
         <p className="mt-6 text-center font-terminal text-xs text-[var(--text-muted)]">
-          * Métricas baseadas na arquitetura e regras do sistema. Resultados de trading dependem do operador.
+          {s.footnote}
         </p>
       </div>
     </section>

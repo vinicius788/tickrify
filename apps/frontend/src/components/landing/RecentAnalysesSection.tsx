@@ -3,6 +3,7 @@ import { useReveal } from '@/hooks/useReveal';
 import SectionTitle from '@/components/landing/SectionTitle';
 import { getRecommendationMeta } from '@/lib/trading-ui';
 import { buildApiUrl } from '@/lib/api';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface PublicAnalysis {
   id: string;
@@ -21,12 +22,12 @@ function formatPrice(v: number | null) {
   return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 }).format(v);
 }
 
-function timeAgo(dateStr: string) {
+function timeAgo(dateStr: string, l: { now: string; mAgo: string; hAgo: string; dAgo: string }) {
   const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
-  if (diff < 60) return 'agora';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m atrás`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h atrás`;
-  return `${Math.floor(diff / 86400)}d atrás`;
+  if (diff < 60) return l.now;
+  if (diff < 3600) return `${Math.floor(diff / 60)}${l.mAgo}`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}${l.hAgo}`;
+  return `${Math.floor(diff / 86400)}${l.dAgo}`;
 }
 
 const FALLBACK: PublicAnalysis[] = [
@@ -40,6 +41,8 @@ const FALLBACK: PublicAnalysis[] = [
 
 const RecentAnalysesSection = () => {
   const revealRef = useReveal<HTMLElement>();
+  const { t } = useLanguage();
+  const r = t.landing.recent;
   const [analyses, setAnalyses] = useState<PublicAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -59,10 +62,10 @@ const RecentAnalysesSection = () => {
     <section ref={revealRef} className="landing-section section-primary reveal-on-scroll">
       <div className="container">
         <SectionTitle
-          label="Transparência total"
-          title="Sinais gerados"
-          highlight="em tempo real."
-          subtitle="Últimas análises processadas pela plataforma. Dados reais, sem filtro."
+          label={r.label}
+          title={r.title}
+          highlight={r.highlight}
+          subtitle={r.subtitle}
         />
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -97,11 +100,11 @@ const RecentAnalysesSection = () => {
                 {!isHold && (
                   <div className="mb-3 space-y-1 rounded-md border border-white/5 bg-black/20 px-3 py-2">
                     <div className="flex justify-between text-xs">
-                      <span className="text-white/40">Entrada</span>
+                      <span className="text-white/40">{r.entry}</span>
                       <span className="font-terminal text-white/80">{formatPrice(a.entry)}</span>
                     </div>
                     <div className="flex justify-between text-xs">
-                      <span className="text-[#FF4444]/70">Stop</span>
+                      <span className="text-[#FF4444]/70">{r.stop}</span>
                       <span className="font-terminal text-[#FF4444]/80">{formatPrice(a.stopLoss)}</span>
                     </div>
                     <div className="flex justify-between text-xs">
@@ -117,9 +120,9 @@ const RecentAnalysesSection = () => {
                     className="rounded px-1.5 py-0.5 font-terminal text-[10px] font-semibold"
                     style={{ color: signalColor, background: `${signalColor}12` }}
                   >
-                    {Math.round(a.confidence)}% conf.
+                    {Math.round(a.confidence)}% {r.conf}
                   </span>
-                  <span className="font-terminal text-[10px] text-white/30">{timeAgo(a.createdAt)}</span>
+                  <span className="font-terminal text-[10px] text-white/30">{timeAgo(a.createdAt, r)}</span>
                 </div>
               </article>
             );
@@ -127,7 +130,7 @@ const RecentAnalysesSection = () => {
         </div>
 
         <p className="mt-6 text-center font-terminal text-xs text-white/20">
-          Análises anonimizadas · Não constituem recomendação de investimento
+          {r.footnote}
         </p>
       </div>
     </section>

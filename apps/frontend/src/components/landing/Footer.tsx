@@ -2,6 +2,7 @@ import { Instagram } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import TermsOfServiceDialog from '@/components/landing/TermsOfServiceDialog';
 import officialLogo from '@/assets/tickrify-logo-official.png';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const XBrandIcon = ({ className = 'h-5 w-5' }: { className?: string }) => (
   <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor" className={className}>
@@ -10,6 +11,8 @@ const XBrandIcon = ({ className = 'h-5 w-5' }: { className?: string }) => (
 );
 
 const Footer = () => {
+  const { t } = useLanguage();
+  const f = t.landing.footer;
   return (
     <footer className="border-t border-[var(--border-subtle)] bg-[var(--bg-surface)]">
       <div className="container py-16">
@@ -23,7 +26,7 @@ const Footer = () => {
                 style={{ filter: 'drop-shadow(0 0 8px rgba(0,232,122,0.28))' }}
               />
             </a>
-            <p className="footer-logo-tagline">Análise técnica institucional com IA</p>
+            <p className="footer-logo-tagline">{f.tagline}</p>
 
             <div className="mt-5 flex items-center gap-3 text-[var(--text-secondary)]">
               <a href="https://x.com/tickrify" target="_blank" rel="noreferrer" aria-label="X" className="footer-social-link">
@@ -36,35 +39,33 @@ const Footer = () => {
           </div>
 
           <div>
-            <h4 className="font-semibold text-[var(--text-primary)]">Plataforma</h4>
+            <h4 className="font-semibold text-[var(--text-primary)]">{f.platform}</h4>
             <ul className="mt-3 space-y-2 text-sm text-[var(--text-secondary)]">
-              <li><a href="#recursos" className="footer-nav-link">Recursos</a></li>
-              <li><a href="#preview-dashboard" className="footer-nav-link">Painel</a></li>
-              <li><a href="#planos" className="footer-nav-link">Planos</a></li>
+              <li><a href="#recursos" className="footer-nav-link">{f.features}</a></li>
+              <li><a href="#preview-dashboard" className="footer-nav-link">{f.panel}</a></li>
+              <li><a href="#planos" className="footer-nav-link">{f.plans}</a></li>
             </ul>
           </div>
 
           <div>
-            <h4 className="font-semibold text-[var(--text-primary)]">Empresa</h4>
+            <h4 className="font-semibold text-[var(--text-primary)]">{f.company}</h4>
             <ul className="mt-3 space-y-2 text-sm text-[var(--text-secondary)]">
-              <li><a href="#faq" className="footer-nav-link">FAQ</a></li>
+              <li><a href="#faq" className="footer-nav-link">{f.faq}</a></li>
               <li><TermsOfServiceDialog /></li>
               <li>
-                <Link to="/privacidade" className="footer-nav-link">Política de Privacidade</Link>
+                <Link to="/privacidade" className="footer-nav-link">{f.privacy}</Link>
               </li>
             </ul>
           </div>
         </div>
 
         <p className="mt-12 border-t border-[var(--border-subtle)] pt-6 font-terminal text-xs text-[var(--text-muted)]">
-          © {new Date().getFullYear()} Tickrify. Todos os direitos reservados.
+          © {new Date().getFullYear()} Tickrify. {f.rights}
         </p>
 
         <div className="mt-8 border-t border-[var(--border-subtle)] pt-6">
           <p className="legal-disclaimer max-w-2xl">
-            ⚠️ As análises geradas pela Tickrify são produzidas por inteligência artificial com base em análise
-            técnica visual. Não constituem recomendação de investimento. Resultados passados não garantem resultados
-            futuros. Opere com responsabilidade e gestão de risco adequada.
+            {f.disclaimer}
           </p>
         </div>
       </div>

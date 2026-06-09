@@ -6,13 +6,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 const TermsOfServiceDialog = () => {
+  const { t } = useLanguage();
   return (
     <Dialog>
       <DialogTrigger asChild>
         <button type="button" className="text-muted-foreground hover:text-primary transition-colors">
-          Termos de Serviço
+          {t.landing.footer.terms}
         </button>
       </DialogTrigger>
 

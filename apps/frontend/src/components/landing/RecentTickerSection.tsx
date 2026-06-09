@@ -13,14 +13,17 @@ const signalClass = (signal: string) => {
   return 'tag-aguardar';
 };
 
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+
 const RecentTickerSection = () => {
+  const { t } = useLanguage();
   const items = [...recentAnalyses, ...recentAnalyses];
 
   return (
     <section className="border-y border-[var(--border-subtle)] bg-[rgba(5,5,8,0.9)] py-4 [backdrop-filter:blur(8px)]">
       <div className="container flex items-center gap-4">
         <span className="shrink-0 rounded-full border border-[var(--border-card)] bg-[rgba(255,255,255,0.03)] px-3 py-1 font-terminal text-[11px] uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-          Análises recentes
+          {t.landing.ticker.recent}
         </span>
         <div className="min-w-0 flex-1 overflow-hidden">
           <div className="ticker-track flex items-center gap-4 font-terminal text-xs">
