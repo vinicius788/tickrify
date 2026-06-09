@@ -827,10 +827,13 @@ export class AIAdapter {
     try {
       const userContent = await this.buildUserContent(imageUrl, extraImageUrls);
 
-      // Enriquecimento com dados reais de mercado — só DEEP, atrás de flag, best-effort.
-      // Qualquer falha/timeout: segue com o prompt original (degradação graciosa).
+      // Enriquecimento com dados reais de mercado — só DEEP, best-effort.
+      // LIGADO POR PADRÃO: roda sozinho quando a IA identifica o mercado.
+      // A env ENABLE_MARKET_ENRICHMENT='false' funciona como botão de emergência
+      // (kill-switch) para desligar na hora, sem redeploy. Qualquer falha/timeout
+      // simplesmente segue com o prompt original (degradação graciosa).
       let effectivePrompt = prompt;
-      if (analysisType === 'deep' && process.env.ENABLE_MARKET_ENRICHMENT === 'true') {
+      if (analysisType === 'deep' && process.env.ENABLE_MARKET_ENRICHMENT !== 'false') {
         try {
           const block = await withTimeout(
             this.buildMarketEnrichment(imageUrl),
