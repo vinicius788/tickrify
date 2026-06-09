@@ -14,6 +14,7 @@ import {
 } from '../../common/utils/analysis-normalizer';
 import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
+import { MarketService, normalizeToBinancePerp } from '../market/market.service';
 
 // ── Guard anti-extração de prompt ──────────────────────────────────────────
 // Defende contra a tentativa de extrair o system prompt via input (ex.: alguém
@@ -651,6 +652,70 @@ export class AIAdapter {
     return content;
   }
 
+  /**
+   * Passo barato (gpt-4o-mini) que só lê o símbolo e o timeframe do gráfico.
+   * Usado antes de buscar dados reais de mercado. Falha silenciosa → null.
+   */
+  private async extractSymbol(imageUrl: string): Promise<{ symbol: string; timeframe: string } | null> {
+    try {
+      const resp = await withTimeout(
+        this.openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          max_tokens: 60,
+          temperature: 0,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: 'Read this trading chart screenshot. Return ONLY JSON: {"symbol":"<ticker e.g. BTCUSDT, XAUUSD, EURUSD, or empty>","timeframe":"<e.g. 15m, 1h, 4h, or empty>"}. If you cannot read it clearly, use empty strings.',
+                },
+                { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } },
+              ] as any,
+            },
+          ],
+        }),
+        12_000,
+        'symbol extraction timed out',
+      );
+      const txt = extractMessageContent(resp.choices[0]?.message?.content);
+      const parsed = JSON.parse(txt || '{}');
+      const symbol = String(parsed.symbol || '').trim();
+      const timeframe = String(parsed.timeframe || '').trim();
+      return symbol ? { symbol, timeframe } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Monta um bloco de DADOS REAIS de mercado para injetar no prompt (só cripto nesta fase).
+   * Tudo é best-effort: qualquer falha retorna null e a análise segue sem o bloco.
+   */
+  private async buildMarketEnrichment(imageUrl: string): Promise<string | null> {
+    const extracted = await this.extractSymbol(imageUrl);
+    if (!extracted) return null;
+
+    const { isCrypto } = normalizeToBinancePerp(extracted.symbol);
+    if (!isCrypto) return null; // Fase 1: somente cripto
+
+    const ctx = await new MarketService().getContext(extracted.symbol);
+    const lines: string[] = [];
+    if (ctx.fundingRatePercent != null) lines.push(`Funding rate: ${ctx.fundingRatePercent}%`);
+    if (ctx.openInterest != null) lines.push(`Open interest: ${Math.round(ctx.openInterest).toLocaleString('en-US')}`);
+    if (ctx.longShortRatio != null) lines.push(`Long/Short ratio: ${ctx.longShortRatio}`);
+    if (ctx.fearGreedValue != null) lines.push(`Fear & Greed: ${ctx.fearGreedValue} (${ctx.fearGreedClassification ?? ''})`);
+    if (lines.length === 0) return null;
+
+    return [
+      `# DADOS REAIS DE MERCADO (${extracted.symbol})`,
+      'Os números abaixo são DADOS REAIS de mercado (não estimados do gráfico). Use-os no seu raciocínio e, ao citá-los, rotule explicitamente como "dado real". NÃO invente outros números além destes.',
+      ...lines.map((l) => `- ${l}`),
+    ].join('\n');
+  }
+
   async analyzeImage(
     imageUrl: string,
     prompt: string,
@@ -659,6 +724,24 @@ export class AIAdapter {
   ): Promise<AIAnalysisResponse> {
     try {
       const userContent = await this.buildUserContent(imageUrl, extraImageUrls);
+
+      // Enriquecimento com dados reais de mercado — só DEEP, atrás de flag, best-effort.
+      // Qualquer falha/timeout: segue com o prompt original (degradação graciosa).
+      let effectivePrompt = prompt;
+      if (analysisType === 'deep' && process.env.ENABLE_MARKET_ENRICHMENT === 'true') {
+        try {
+          const block = await withTimeout(
+            this.buildMarketEnrichment(imageUrl),
+            14_000,
+            'market enrichment timed out',
+          );
+          if (block) {
+            effectivePrompt = `${prompt}\n\n${block}`;
+          }
+        } catch {
+          // graceful: mantém o prompt original
+        }
+      }
 
       // assertIsFinancialChart removida: adicionava 5-15s de latência em CADA análise.
       // O prompt principal já rejeita imagens inválidas via campo "non_chart_image" implícito
@@ -823,7 +906,7 @@ export class AIAdapter {
         messages: [
           {
             role: 'system',
-            content: String(prompt || '').trim(),
+            content: String(effectivePrompt || '').trim(),
           },
           {
             role: 'user',
