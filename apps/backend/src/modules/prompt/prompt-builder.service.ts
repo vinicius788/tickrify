@@ -10,6 +10,19 @@ Não varie sua recomendação entre chamadas para a mesma imagem.
 Se a estrutura indica COMPRA, indique COMPRA. Não mude para AGUARDAR sem razão técnica clara.
 `.trim();
 
+// Apenas para análise DEEP. Enriquece o executiveSummary com leitura em camadas.
+// O executiveSummary é renderizado com quebras de linha (whitespace-pre-wrap),
+// então a estrutura rotulada abaixo aparece de forma escaneável sem mudar a UI.
+const DEEP_ENRICHMENT_INSTRUCTION = `
+# ANÁLISE DEEP — LEITURA EM CAMADAS
+Esta é uma análise DEEP. No campo "executiveSummary", entregue uma leitura COMPLETA e ESCANEÁVEL, em camadas, cada bloco em sua própria linha e com rótulo no idioma de saída:
+1) Leitura: estrutura e contexto do que está visível no gráfico.
+2) Volatilidade: classifique o regime (baixa / normal / alta / em expansão) com base no tamanho e na variação das velas visíveis, e relacione à distância de stop sugerida. Se não for possível inferir pelo gráfico, diga isso.
+3) Cenários: descreva o caminho de ALTA (se romper/sustentar tal nível), o caminho de BAIXA (se perder tal nível) e o nível de INVALIDAÇÃO. Mostre SEMPRE os dois lados.
+4) Multi-timeframe: dê um veredito de ALINHAMENTO ou CONFLITO entre o contexto maior e o timeframe do gráfico. Se só houver um timeframe na imagem, infira o contexto maior com cautela e rotule como inferência.
+REGRAS: comente APENAS o que está visível; NÃO invente volume, indicadores ou dados que não aparecem na imagem; todo número derivado visualmente é estimativa. Ao final, reforce em uma linha que a direção é uma HIPÓTESE e a decisão é do usuário.
+`.trim();
+
 const PARTS_SEPARATOR = '\n\n---\n\n';
 
 // Cache TTL: 60 segundos — evita DB round-trip em cada análise sem sacrificar atualizações
@@ -37,11 +50,11 @@ export class PromptBuilderService {
    */
   async buildPrompt(analysisType: AnalysisType, override?: string): Promise<string> {
     if (override) {
-      return this.appendConsistencyInstruction(override);
+      return this.appendDeepEnrichment(this.appendConsistencyInstruction(override), analysisType);
     }
 
     const base = await this.resolveActivePrompt();
-    return this.appendConsistencyInstruction(base);
+    return this.appendDeepEnrichment(this.appendConsistencyInstruction(base), analysisType);
   }
 
   private async resolveActivePrompt(): Promise<string> {
@@ -74,7 +87,7 @@ export class PromptBuilderService {
     userLanguage?: string,
   ): Promise<string> {
     if (override) {
-      return this.appendConsistencyInstruction(this.injectLanguage(override, userLanguage));
+      return this.appendDeepEnrichment(this.appendConsistencyInstruction(this.injectLanguage(override, userLanguage)), analysisType);
     }
 
     if (promptVersion) {
@@ -82,12 +95,12 @@ export class PromptBuilderService {
         where: { version: promptVersion },
       });
       if (config?.prompt) {
-        return this.appendConsistencyInstruction(this.injectLanguage(config.prompt, userLanguage));
+        return this.appendDeepEnrichment(this.appendConsistencyInstruction(this.injectLanguage(config.prompt, userLanguage)), analysisType);
       }
     }
 
     const base = await this.resolveActivePrompt();
-    return this.appendConsistencyInstruction(this.injectLanguage(base, userLanguage));
+    return this.appendDeepEnrichment(this.appendConsistencyInstruction(this.injectLanguage(base, userLanguage)), analysisType);
   }
 
   private injectLanguage(prompt: string, userLanguage?: string): string {
@@ -125,5 +138,21 @@ export class PromptBuilderService {
     }
 
     return `${normalized}\n\n${DETERMINISTIC_CONSISTENCY_INSTRUCTION}`;
+  }
+
+  /**
+   * Apenas para análise DEEP: anexa a instrução de leitura em camadas.
+   * Para quick (ou qualquer outro tipo) retorna o prompt inalterado — garante
+   * que o caminho rápido continue exatamente como hoje.
+   */
+  private appendDeepEnrichment(prompt: string, analysisType: AnalysisType): string {
+    if (analysisType !== 'deep') {
+      return prompt;
+    }
+    const normalized = String(prompt || '').trim();
+    if (normalized.includes('ANÁLISE DEEP — LEITURA EM CAMADAS')) {
+      return normalized;
+    }
+    return `${normalized}\n\n${DEEP_ENRICHMENT_INSTRUCTION}`;
   }
 }
