@@ -18,6 +18,7 @@ import { isProductionRuntime } from '../src/common/utils/runtime-env';
 import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-runtime';
 import { resolvePrismaDatasourceUrl } from '../src/modules/database/prisma.datasource';
 import { AnalysisType } from '../src/modules/ticks/tick-packages';
+import { DEEP_ENRICHMENT_INSTRUCTION } from '../src/modules/prompt/prompt-builder.service';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -570,9 +571,19 @@ const LANGUAGE_NAMES: Record<string, string> = {
   ja: 'Japanese',
 };
 
-async function getPrompt(promptOverride?: string, promptVersion?: number, userLanguage?: string): Promise<string> {
+async function getPrompt(
+  promptOverride?: string,
+  promptVersion?: number,
+  userLanguage?: string,
+  analysisType?: AnalysisType,
+): Promise<string> {
+  const withDeep = (p: string): string =>
+    analysisType === 'deep' && !p.includes('ANÁLISE DEEP — LEITURA EM CAMADAS')
+      ? `${p}\n\n${DEEP_ENRICHMENT_INSTRUCTION}`
+      : p;
+
   if (promptOverride) {
-    return promptOverride;
+    return withDeep(promptOverride);
   }
 
   let basePrompt: string;
@@ -598,7 +609,7 @@ async function getPrompt(promptOverride?: string, promptVersion?: number, userLa
   const langName = (userLanguage && LANGUAGE_NAMES[userLanguage]) ? LANGUAGE_NAMES[userLanguage] : 'Portuguese (Brazil)';
   const languageContext = `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, breakevenTrigger, trendStrengthNote, marketRegimeNote, multiTimeframeAlignment, sessionNote, reasoning) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
 
-  return basePrompt.replace('{{USER_CONTEXT}}', languageContext);
+  return withDeep(basePrompt.replace('{{USER_CONTEXT}}', languageContext));
 }
 
 async function persistAnnotatedImage(
@@ -825,7 +836,7 @@ async function processAnalysis(job: Job<JobData>) {
     });
 
     // ── Free analyses (isDemo=true) now run real AI — no tick cost, same pipeline ─
-    const prompt = await getPrompt(promptOverride, promptVersion, userLanguage);
+    const prompt = await getPrompt(promptOverride, promptVersion, userLanguage, normalizedAnalysisType);
     const aiSource = await resolveAiSource(imageUrl, prompt, normalizedAnalysisType, htfImageUrls ?? []);
 
     const sourcePayload =

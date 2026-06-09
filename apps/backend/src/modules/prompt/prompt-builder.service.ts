@@ -13,7 +13,7 @@ Se a estrutura indica COMPRA, indique COMPRA. Não mude para AGUARDAR sem razão
 // Apenas para análise DEEP. Enriquece o executiveSummary com leitura em camadas.
 // O executiveSummary é renderizado com quebras de linha (whitespace-pre-wrap),
 // então a estrutura rotulada abaixo aparece de forma escaneável sem mudar a UI.
-const DEEP_ENRICHMENT_INSTRUCTION = `
+export const DEEP_ENRICHMENT_INSTRUCTION = `
 # ANÁLISE DEEP — LEITURA EM CAMADAS
 Esta é uma análise DEEP. No campo "executiveSummary", entregue uma leitura COMPLETA e ESCANEÁVEL, em camadas, cada bloco em sua própria linha e com rótulo no idioma de saída:
 1) Leitura: estrutura e contexto do que está visível no gráfico.
