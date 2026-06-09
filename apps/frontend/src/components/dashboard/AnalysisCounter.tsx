@@ -5,9 +5,10 @@ import { useTicks } from "@/hooks/useTicks";
 import { Zap, Crown, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 const PLAN_LABELS: Record<UserPlan, string> = {
-  free: 'Gratuito',
+  free: 'Free',
   starter: 'Starter',
   pro: 'Pro',
   elite: 'Elite',
@@ -25,6 +26,8 @@ const FREE_ANALYSES_TOTAL = 3;
 const AnalysisCounter = () => {
   const { isUnlimited, plan, used, remaining } = useAnalysisLimit();
   const { balance } = useTicks();
+  const { t } = useLanguage();
+  const c = t.counter;
 
   // Usuário sem assinatura: mostrar contador de análises grátis
   if (!isUnlimited) {
@@ -41,7 +44,7 @@ const AnalysisCounter = () => {
               <div className="flex items-center gap-2">
                 <Zap className="h-4 w-4 text-[var(--accent-green)]" />
                 <span className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                  Análises Grátis
+                  {c.freeTitle}
                 </span>
               </div>
               <span className="font-terminal text-sm font-bold text-[var(--text-primary)]">
@@ -55,24 +58,24 @@ const AnalysisCounter = () => {
               <>
                 <p className="text-xs text-amber-500 flex items-center gap-1.5">
                   <TriangleAlert className="h-3.5 w-3.5 flex-shrink-0" />
-                  Suas 3 análises grátis foram utilizadas.
+                  {c.exhausted}
                 </p>
                 <Link to="/pricing">
                   <Button size="sm" className="w-full">
                     <Crown className="mr-2 h-4 w-4" />
-                    Assinar para continuar
+                    {c.subscribe}
                   </Button>
                 </Link>
               </>
             ) : (
               <>
                 <p className="text-xs text-[var(--text-secondary)]">
-                  {freeRemaining} análise{freeRemaining !== 1 ? 's' : ''} grátis restante{freeRemaining !== 1 ? 's' : ''} · IA real
+                  {freeRemaining} {c.remainingFree}
                 </p>
                 <Link to="/pricing">
                   <Button size="sm" variant="outline" className="w-full">
                     <Crown className="mr-2 h-4 w-4" />
-                    Ver planos
+                    {c.viewPlans}
                   </Button>
                 </Link>
               </>
@@ -97,7 +100,7 @@ const AnalysisCounter = () => {
             <div className="flex items-center gap-2">
               <Crown className="h-4 w-4 text-primary" />
               <span className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-                Plano {planLabel}
+                {c.planPrefix} {planLabel}
               </span>
             </div>
             <div className="flex items-center gap-1 text-sm font-bold text-[var(--text-primary)]">
@@ -116,16 +119,16 @@ const AnalysisCounter = () => {
           {ticksLow && balance === 0 ? (
             <p className="text-xs text-amber-500 flex items-center gap-1.5">
               <TriangleAlert className="h-3.5 w-3.5" />
-              Ticks esgotados. Renova automaticamente no próximo ciclo.
+              {c.ticksOut}
             </p>
           ) : ticksLow ? (
             <p className="text-xs text-amber-500 flex items-center gap-1.5">
               <TriangleAlert className="h-3.5 w-3.5" />
-              Poucos ticks restantes. Renova no próximo ciclo.
+              {c.ticksLow}
             </p>
           ) : (
             <p className="text-xs text-[var(--text-secondary)]">
-              Renova mensalmente · {Math.floor(balance)} ticks disponíveis
+              {c.renewsPrefix} {Math.floor(balance)} {c.renewsSuffix}
             </p>
           )}
         </div>

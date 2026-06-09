@@ -3,22 +3,25 @@ import { Button } from "@/components/ui/button";
 import { useUser } from "@clerk/clerk-react";
 import { ArrowRight, Target } from "lucide-react";
 import { normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
-// Dados fake APENAS para modo demo — definidos fora do componente para evitar recriação a cada render
+// Dados fake APENAS para modo demo
 const demoOpportunities = [
   { symbol: "BTC/USD", timeframe: "1H", confidence: "85%", recommendation: "COMPRA", bias: "BULLISH" },
   { symbol: "AAPL", timeframe: "4H", confidence: "65%", recommendation: "AGUARDAR", bias: "NEUTRAL" },
 ];
 
-const demoOtherAssets = [
-  { symbol: "EUR/USD", timeframe: "1H", status: "Sem setup claro" },
-  { symbol: "ETH/USD", timeframe: "4H", status: "Aguardando confirmação" },
-  { symbol: "TSLA", timeframe: "1D", status: "Em zona neutra" },
-];
-
 const Watchlist = () => {
   const { user } = useUser();
   const isDemo = !user;
+  const { t } = useLanguage();
+  const w = t.watchlist;
+
+  const demoOtherAssets = [
+    { symbol: "EUR/USD", timeframe: "1H", status: w.statusNoSetup },
+    { symbol: "ETH/USD", timeframe: "4H", status: w.statusWaiting },
+    { symbol: "TSLA", timeframe: "1D", status: w.statusNeutral },
+  ];
 
   const opportunities = isDemo ? demoOpportunities : [];
   const otherAssets = isDemo ? demoOtherAssets : [];
@@ -32,9 +35,9 @@ const Watchlist = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Target className="h-5 w-5 text-primary" />
-                Oportunidades Detectadas
+                {w.opportunities}
               </CardTitle>
-              <CardDescription>Ativos com setup de maior probabilidade no momento.</CardDescription>
+              <CardDescription>{w.opportunitiesDesc}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {opportunities.map((op, index) => (
@@ -46,7 +49,7 @@ const Watchlist = () => {
                     </p>
                   </div>
                   <Button variant="secondary">
-                    Ver Análise
+                    {w.viewAnalysis}
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Card>
@@ -56,8 +59,8 @@ const Watchlist = () => {
 
           <Card>
             <CardHeader>
-              <CardTitle>Outros Ativos</CardTitle>
-              <CardDescription>Monitorando outros ativos da sua lista.</CardDescription>
+              <CardTitle>{w.otherAssets}</CardTitle>
+              <CardDescription>{w.otherAssetsDesc}</CardDescription>
             </CardHeader>
             <CardContent>
               <ul className="space-y-3">
@@ -75,13 +78,13 @@ const Watchlist = () => {
         // Modo REAL - watchlist vazia (feature futura)
         <Card>
           <CardHeader>
-            <CardTitle>Watchlist</CardTitle>
-            <CardDescription>Adicione ativos para monitorar e receber alertas.</CardDescription>
+            <CardTitle>{w.title}</CardTitle>
+            <CardDescription>{w.realDesc}</CardDescription>
           </CardHeader>
           <CardContent className="py-12">
             <div className="text-center space-y-4">
-              <p className="text-muted-foreground">Sua watchlist está vazia</p>
-              <p className="text-sm text-muted-foreground">Em breve você poderá adicionar ativos para monitorar!</p>
+              <p className="text-muted-foreground">{w.empty}</p>
+              <p className="text-sm text-muted-foreground">{w.comingSoon}</p>
             </div>
           </CardContent>
         </Card>

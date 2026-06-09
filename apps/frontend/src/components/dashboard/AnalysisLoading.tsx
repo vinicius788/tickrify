@@ -1,15 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-
-const STEPS = [
-  'Classificando tipo de gráfico...',
-  'Analisando estrutura de mercado...',
-  'Validando zonas de demanda/oferta...',
-  'Calculando níveis de entry/stop/take...',
-  'Gerando relatório final...',
-];
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const AnalysisLoading = () => {
+  const { t } = useLanguage();
+  const STEPS = [t.loading.step1, t.loading.step2, t.loading.step3, t.loading.step4, t.loading.step5];
   const [activeStep, setActiveStep] = useState(0);
   const [progress, setProgress] = useState(8);
 
@@ -44,7 +39,8 @@ const AnalysisLoading = () => {
         }
         return { label, status: 'PENDING', marker: '○' };
       }),
-    [activeStep],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeStep, t],
   );
 
   return (
@@ -52,10 +48,10 @@ const AnalysisLoading = () => {
       <CardHeader className="border-b border-[var(--border-subtle)] pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm tracking-wider text-[var(--text-primary)]">
-            TICKRIFY AI · PROCESSANDO
+            {t.loading.title}
           </CardTitle>
           <span className="font-terminal text-xs text-[var(--text-secondary)]">
-            estimado: 20–30s
+            {t.loading.estimate}
           </span>
         </div>
       </CardHeader>
