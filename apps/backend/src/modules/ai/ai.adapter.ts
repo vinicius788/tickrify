@@ -713,6 +713,24 @@ export class AIAdapter {
     }
   }
 
+  /**
+   * Último valor de uma série da FRED (Federal Reserve, grátis com chave).
+   * Cobre juros (DGS10), dólar (DTWEXBGS) e VIX (VIXCLS) de forma confiável.
+   * Sem FRED_API_KEY configurada, retorna null (degrada para o proxy do ECB).
+   */
+  private async fetchFredLatest(seriesId: string): Promise<number | null> {
+    const key = process.env.FRED_API_KEY?.trim();
+    if (!key) return null;
+    try {
+      const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${key}&file_type=json&sort_order=desc&limit=1`;
+      const res = await fetch(url).then((r) => r.json());
+      const v = Number(res?.observations?.[0]?.value);
+      return Number.isFinite(v) ? v : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Bloco de dados reais para CRIPTO (funding/OI/long-short/fear&greed). */
   private async buildCryptoEnrichment(symbol: string): Promise<string | null> {
     const ctx = await new MarketService().getContext(symbol);
@@ -729,21 +747,44 @@ export class AIAdapter {
     ].join('\n');
   }
 
-  /** Bloco de dados reais para FOREX/OURO (driver do dólar). */
+  /** Bloco de dados reais para FOREX/OURO (driver do dólar + juros 10 anos). */
   private async buildFxEnrichment(symbol: string): Promise<string | null> {
-    const usd = await this.fetchUsdContext();
-    if (!usd) return null;
-    const trend =
-      usd.changePct <= -0.2
-        ? 'enfraquecendo (tende a favorecer ouro e moedas não-USD)'
-        : usd.changePct >= 0.2
-          ? 'fortalecendo (tende a pressionar ouro e moedas não-USD)'
-          : 'estável';
+    const [usd, dgs10] = await Promise.all([this.fetchUsdContext(), this.fetchFredLatest('DGS10')]);
+    const lines: string[] = [];
+    if (usd) {
+      const trend =
+        usd.changePct <= -0.2
+          ? 'enfraquecendo (tende a favorecer ouro e moedas não-USD)'
+          : usd.changePct >= 0.2
+            ? 'fortalecendo (tende a pressionar ouro e moedas não-USD)'
+            : 'estável';
+      lines.push(
+        `Dólar (proxy EUR/USD): ${usd.eurusd.toFixed(4)} · variação ~7d: ${usd.changePct >= 0 ? '+' : ''}${usd.changePct.toFixed(2)}% → dólar ${trend}`,
+      );
+    }
+    if (dgs10 != null) {
+      lines.push(`Treasury 10 anos (yield): ${dgs10}% — yields em alta tendem a pressionar ouro; em queda, a favorecer.`);
+    }
+    if (lines.length === 0) return null;
+    return [
+      `# DADOS REAIS DE MERCADO — INTERMARKET (${symbol})`,
+      'Os números abaixo são DADOS REAIS de mercado (não estimados do gráfico). Use-os no raciocínio e rotule como "dado real". NÃO invente outros números.',
+      ...lines.map((l) => `- ${l}`),
+      '- Correlação a considerar: ouro (XAU) costuma se mover inverso ao dólar e aos juros; em pares com USD, o lado do dólar pesa na direção.',
+    ].join('\n');
+  }
+
+  /** Bloco de dados reais para ÍNDICES de ações (regime de risco via VIX). */
+  private async buildIndexEnrichment(symbol: string): Promise<string | null> {
+    const vix = await this.fetchFredLatest('VIXCLS');
+    if (vix == null) return null;
+    const mood =
+      vix >= 25 ? 'medo/estresse elevado (risk-off)' : vix <= 15 ? 'ambiente calmo (risk-on)' : 'neutro';
     return [
       `# DADOS REAIS DE MERCADO — INTERMARKET (${symbol})`,
       'O número abaixo é DADO REAL de mercado (não estimado do gráfico). Use-o no raciocínio e rotule como "dado real". NÃO invente outros números.',
-      `- Dólar (proxy EUR/USD): ${usd.eurusd.toFixed(4)} · variação ~7d: ${usd.changePct >= 0 ? '+' : ''}${usd.changePct.toFixed(2)}% → dólar ${trend}`,
-      '- Correlação a considerar: ouro (XAU) costuma se mover inverso ao dólar; em pares com USD, o lado do dólar pesa na direção.',
+      `- VIX (volatilidade implícita / "índice do medo"): ${vix} → ${mood}`,
+      '- Correlação a considerar: VIX alto costuma coincidir com pressão de baixa em índices de ações; VIX baixo, ambiente de alta.',
     ].join('\n');
   }
 
@@ -768,7 +809,12 @@ export class AIAdapter {
       return this.buildFxEnrichment(sym);
     }
 
-    // Índices e ações: fases futuras.
+    // Fase 3: índices de ações (regime de risco via VIX).
+    if (/NAS100|US100|NDX|US30|DJI|US500|SPX|SPX500|DAX|GER40|UK100|FTSE|JP225|NKY|WIN|IBOV/.test(sym)) {
+      return this.buildIndexEnrichment(sym);
+    }
+
+    // Ações individuais: fase futura.
     return null;
   }
 
