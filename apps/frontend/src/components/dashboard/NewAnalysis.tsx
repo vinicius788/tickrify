@@ -5,7 +5,12 @@ import { useCallback, useState, type ChangeEvent } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 interface NewAnalysisProps {
-  onStartAnalysis: (imageUrl: string | null, imageFile: File | null, htfBase64Images?: string[]) => void;
+  onStartAnalysis: (
+    imageUrl: string | null,
+    imageFile: File | null,
+    htfBase64Images?: string[],
+    analysisType?: 'quick' | 'deep',
+  ) => void;
   /** Multi-timeframe (top-down) é recurso de assinante. No grátis/demo fica oculto. */
   allowHigherTimeframes?: boolean;
 }
@@ -28,6 +33,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
   const [mainPreview, setMainPreview] = useState<string | null>(null);
   const [htf, setHtf] = useState<Array<{ file: File; url: string }>>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [deep, setDeep] = useState(false);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
@@ -68,9 +74,9 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
     setSubmitting(true);
     try {
       const htfBase64 = await Promise.all(htf.map((h) => fileToDataUrl(h.file)));
-      onStartAnalysis(mainPreview, mainFile, htfBase64);
+      onStartAnalysis(mainPreview, mainFile, htfBase64, deep ? 'deep' : 'quick');
     } catch {
-      onStartAnalysis(mainPreview, mainFile, []);
+      onStartAnalysis(mainPreview, mainFile, [], deep ? 'deep' : 'quick');
     }
   };
 
@@ -178,6 +184,18 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
 
         {/* Ação */}
         <div className="mt-auto pt-6">
+          <label className="mb-3 flex cursor-pointer items-start gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={deep}
+              onChange={(e) => setDeep(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-[var(--signal-buy)]"
+            />
+            <span className="flex flex-col">
+              <span className="text-sm font-medium text-[var(--text-primary)]">{u.deepToggle}</span>
+              <span className="text-[11px] text-[var(--text-secondary)]">{u.deepHint}</span>
+            </span>
+          </label>
           <button
             type="button"
             onClick={() => void analyze()}

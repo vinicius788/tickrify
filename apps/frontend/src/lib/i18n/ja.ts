@@ -121,6 +121,8 @@ export default {
       singleHint: '単一チャート分析・トップダウンには上位時間足を追加',
       topDownPrefix: 'トップダウン分析：',
       charts: '枚',
+      deepToggle: 'ディープ分析',
+      deepHint: '完全な階層リーディング＋リアルデータ・3ティック',
     },
     result: {
       history: '履歴:',

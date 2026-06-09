@@ -130,6 +130,8 @@ export default {
       singleHint: 'Análise de gráfico único · adicione timeframes maiores para top-down',
       topDownPrefix: 'Análise top-down com',
       charts: 'gráficos',
+      deepToggle: 'Análise profunda (deep)',
+      deepHint: 'Leitura completa em camadas + dados reais · usa 3 ticks',
     },
     result: {
       history: 'Histórico:',

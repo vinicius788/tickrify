@@ -121,6 +121,8 @@ export default {
       singleHint: 'Einzel-Chart-Analyse · füge höhere Timeframes für Top-down hinzu',
       topDownPrefix: 'Top-down-Analyse mit',
       charts: 'Charts',
+      deepToggle: 'Tiefenanalyse (deep)',
+      deepHint: 'Vollständige Lesung in Ebenen + echte Daten · 3 Ticks',
     },
     result: {
       history: 'Verlauf:',

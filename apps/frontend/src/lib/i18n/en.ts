@@ -121,6 +121,8 @@ export default {
       singleHint: 'Single-chart analysis · add higher timeframes for top-down',
       topDownPrefix: 'Top-down analysis with',
       charts: 'charts',
+      deepToggle: 'Deep analysis',
+      deepHint: 'Full layered read + real market data · uses 3 ticks',
     },
     result: {
       history: 'History:',

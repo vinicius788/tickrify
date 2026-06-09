@@ -167,6 +167,7 @@ const DashboardPage = () => {
     imageUrl: string | null = null,
     imageFile: File | null = null,
     htfBase64Images: string[] = [],
+    analysisType: 'quick' | 'deep' = 'quick',
   ) => {
     // Modo DEMO: apenas simula, não faz análise real
     if (isDemo) {
@@ -211,6 +212,7 @@ const DashboardPage = () => {
         base64Image: imageUrl || undefined,
         userLanguage: language,
         htfBase64Images: htfBase64Images.length > 0 ? htfBase64Images : undefined,
+        analysisType,
       });
 
       // Incrementar contador (apenas quando logado)
