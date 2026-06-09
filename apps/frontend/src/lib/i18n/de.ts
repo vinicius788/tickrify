@@ -269,10 +269,10 @@ export default {
   landing: {
     nav: { features: 'Funktionen', how: 'So funktioniert\'s', panel: 'Panel', plans: 'Pläne', faq: 'FAQ', login: 'Anmelden', dashboard: 'Dashboard', app: 'App', menu: 'Hauptmenü' },
     hero: {
-      badge: 'KI-Analyse • Echtzeit',
+      badge: 'Trading-Copilot • Echtzeit',
       title1: 'Handeln Sie nicht mehr',
       title2: 'im Dunkeln.',
-      subtitle: 'Die KI, die Ihren Chart liest, das Risiko berechnet und Ihnen genau sagt, wo Sie einsteigen.',
+      subtitle: 'Ihr Trading-Copilot: liest den Chart, berechnet das Risiko und strukturiert die Entscheidung. Das letzte Wort haben Sie.',
       startFree: 'Kostenlos starten',
       goToPanel: 'Zum Dashboard',
       seeLive: 'Live-Analyse ansehen',
@@ -377,7 +377,7 @@ export default {
       a6: 'Ja, über das Abrechnungsportal. Die Kündigung stoppt künftige Verlängerungen, erzeugt aber keine Rückerstattung, Rückbuchung oder Gutschrift: Alle Käufe sind endgültig und nicht erstattungsfähig. Prüfen Sie vor dem Abschluss die geltenden Bedingungen und Richtlinien.',
     },
     footer: {
-      tagline: 'Institutionelle technische Analyse mit KI',
+      tagline: 'Copilot für technische Analyse mit KI',
       platform: 'Plattform', company: 'Unternehmen',
       features: 'Funktionen', panel: 'Panel', plans: 'Pläne', faq: 'FAQ',
       terms: 'Nutzungsbedingungen', privacy: 'Datenschutzrichtlinie',

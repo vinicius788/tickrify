@@ -269,10 +269,10 @@ export default {
   landing: {
     nav: { features: 'Funciones', how: 'Cómo Funciona', panel: 'Panel', plans: 'Planes', faq: 'FAQ', login: 'Entrar', dashboard: 'Panel', app: 'App', menu: 'Menú principal' },
     hero: {
-      badge: 'Análisis con IA • tiempo real',
+      badge: 'Copiloto de trading • tiempo real',
       title1: 'Deja de operar',
       title2: 'a ciegas.',
-      subtitle: 'La IA que lee tu gráfico, calcula el riesgo y te dice exactamente dónde entrar.',
+      subtitle: 'Tu copiloto de trading: lee el gráfico, calcula el riesgo y estructura la decisión. La última palabra es tuya.',
       startFree: 'Empezar gratis',
       goToPanel: 'Ir al panel',
       seeLive: 'Ver análisis en vivo',
@@ -377,7 +377,7 @@ export default {
       a6: 'Sí, vía el portal de facturación. La cancelación detiene las próximas renovaciones pero no genera reembolso, contracargo ni crédito: todas las compras son finales y no reembolsables. Antes de suscribirte, revisa los términos y políticas vigentes.',
     },
     footer: {
-      tagline: 'Análisis técnico institucional con IA',
+      tagline: 'Copiloto de análisis técnico con IA',
       platform: 'Plataforma', company: 'Empresa',
       features: 'Funciones', panel: 'Panel', plans: 'Planes', faq: 'FAQ',
       terms: 'Términos de Servicio', privacy: 'Política de Privacidad',

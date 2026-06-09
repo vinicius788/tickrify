@@ -269,10 +269,10 @@ export default {
   landing: {
     nav: { features: 'Features', how: 'How It Works', panel: 'Panel', plans: 'Plans', faq: 'FAQ', login: 'Login', dashboard: 'Dashboard', app: 'App', menu: 'Main menu' },
     hero: {
-      badge: 'AI analysis • real time',
+      badge: 'Trading copilot • real time',
       title1: 'Stop trading',
       title2: 'in the dark.',
-      subtitle: 'The AI that reads your chart, calculates the risk, and tells you exactly where to enter.',
+      subtitle: 'Your trading copilot: it reads the chart, calculates the risk and structures the decision. The final call is yours.',
       startFree: 'Start free',
       goToPanel: 'Go to dashboard',
       seeLive: 'See live analysis',
@@ -377,7 +377,7 @@ export default {
       a6: 'Yes, via the billing portal. Cancellation stops future renewals but does not generate a refund, chargeback or credit: all purchases are final and non-refundable. Before subscribing, review the current terms and policies.',
     },
     footer: {
-      tagline: 'Institutional technical analysis with AI',
+      tagline: 'Technical-analysis copilot powered by AI',
       platform: 'Platform', company: 'Company',
       features: 'Features', panel: 'Panel', plans: 'Plans', faq: 'FAQ',
       terms: 'Terms of Service', privacy: 'Privacy Policy',

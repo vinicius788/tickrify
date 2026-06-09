@@ -269,10 +269,10 @@ export default {
   landing: {
     nav: { features: 'Fonctionnalités', how: 'Comment ça marche', panel: 'Panneau', plans: 'Offres', faq: 'FAQ', login: 'Connexion', dashboard: 'Tableau de bord', app: 'App', menu: 'Menu principal' },
     hero: {
-      badge: 'Analyse par IA • temps réel',
+      badge: 'Copilote de trading • temps réel',
       title1: 'Arrêtez de trader',
       title2: 'à l\'aveugle.',
-      subtitle: 'L\'IA qui lit votre graphique, calcule le risque et vous dit exactement où entrer.',
+      subtitle: 'Votre copilote de trading : il lit le graphique, calcule le risque et structure la décision. Le dernier mot vous revient.',
       startFree: 'Commencer gratuitement',
       goToPanel: 'Aller au tableau de bord',
       seeLive: 'Voir l\'analyse en direct',
@@ -377,7 +377,7 @@ export default {
       a6: 'Oui, via le portail de facturation. L\'annulation arrête les prochains renouvellements mais ne génère ni remboursement, ni rétrofacturation, ni crédit : tous les achats sont définitifs et non remboursables. Avant de souscrire, consultez les conditions et politiques en vigueur.',
     },
     footer: {
-      tagline: 'Analyse technique institutionnelle par IA',
+      tagline: 'Copilote d\'analyse technique par IA',
       platform: 'Plateforme', company: 'Entreprise',
       features: 'Fonctionnalités', panel: 'Panneau', plans: 'Offres', faq: 'FAQ',
       terms: 'Conditions de Service', privacy: 'Politique de Confidentialité',

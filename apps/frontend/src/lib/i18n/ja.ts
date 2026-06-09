@@ -269,10 +269,10 @@ export default {
   landing: {
     nav: { features: '機能', how: '使い方', panel: 'パネル', plans: 'プラン', faq: 'FAQ', login: 'ログイン', dashboard: 'ダッシュボード', app: 'アプリ', menu: 'メインメニュー' },
     hero: {
-      badge: 'AI分析 • リアルタイム',
+      badge: 'トレードのコパイロット • リアルタイム',
       title1: '暗闇のトレードを',
       title2: 'やめよう。',
-      subtitle: 'チャートを読み、リスクを計算し、どこでエントリーすべきかを正確に教えるAI。',
+      subtitle: 'あなたのトレードのコパイロット：チャートを読み、リスクを計算し、意思決定を整理します。最終判断はあなた次第です。',
       startFree: '無料で始める',
       goToPanel: 'パネルへ',
       seeLive: 'ライブ分析を見る',
@@ -377,7 +377,7 @@ export default {
       a6: 'はい、請求ポータルから可能です。解約は今後の更新を停止しますが、返金・チャージバック・クレジットは発生しません。すべての購入は最終的で返金不可です。登録前に最新の規約とポリシーをご確認ください。',
     },
     footer: {
-      tagline: 'AIによる機関投資家レベルの技術分析',
+      tagline: 'AIによるテクニカル分析のコパイロット',
       platform: 'プラットフォーム', company: '会社',
       features: '機能', panel: 'パネル', plans: 'プラン', faq: 'FAQ',
       terms: '利用規約', privacy: 'プライバシーポリシー',
