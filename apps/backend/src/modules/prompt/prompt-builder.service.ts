@@ -20,6 +20,8 @@ Esta é uma análise DEEP. No campo "executiveSummary", entregue uma leitura COM
 2) Volatilidade: classifique o regime (baixa / normal / alta / em expansão) com base no tamanho e na variação das velas visíveis, e relacione à distância de stop sugerida. Se não for possível inferir pelo gráfico, diga isso.
 3) Cenários: descreva o caminho de ALTA (se romper/sustentar tal nível), o caminho de BAIXA (se perder tal nível) e o nível de INVALIDAÇÃO. Mostre SEMPRE os dois lados.
 4) Multi-timeframe: dê um veredito de ALINHAMENTO ou CONFLITO entre o contexto maior e o timeframe do gráfico. Se só houver um timeframe na imagem, infira o contexto maior com cautela e rotule como inferência.
+5) Fase de mercado (Wyckoff): identifique a fase provável — acumulação / distribuição / markup / markdown — e cite o sinal que a sustenta (ex.: spring, upthrust, teste de suporte/resistência, range). Se não for possível determinar, diga "fase indefinida".
+6) Volume / Área de valor: SE houver volume visível no gráfico, estime a zona de maior negociação (POC / área de valor) e trate-a como suporte/resistência dinâmico — rotule explicitamente como ESTIMATIVA. Se NÃO houver volume visível na imagem, diga "volume não visível" e não invente.
 REGRAS: comente APENAS o que está visível; NÃO invente volume, indicadores ou dados que não aparecem na imagem; todo número derivado visualmente é estimativa. Ao final, reforce em uma linha que a direção é uma HIPÓTESE e a decisão é do usuário.
 `.trim();
 
