@@ -692,29 +692,84 @@ export class AIAdapter {
   }
 
   /**
-   * Monta um bloco de DADOS REAIS de mercado para injetar no prompt (só cripto nesta fase).
-   * Tudo é best-effort: qualquer falha retorna null e a análise segue sem o bloco.
+   * Força do dólar via Frankfurter (dados do ECB, grátis, sem chave): EUR/USD agora
+   * vs ~7 dias atrás. Usado como driver intermarket para forex/ouro. Falha → null.
    */
-  private async buildMarketEnrichment(imageUrl: string): Promise<string | null> {
-    const extracted = await this.extractSymbol(imageUrl);
-    if (!extracted) return null;
+  private async fetchUsdContext(): Promise<{ eurusd: number; changePct: number } | null> {
+    try {
+      const past = new Date();
+      past.setDate(past.getDate() - 7);
+      const pastStr = past.toISOString().slice(0, 10);
+      const [latestRes, pastRes] = await Promise.all([
+        fetch('https://api.frankfurter.app/latest?from=EUR&to=USD').then((r) => r.json()),
+        fetch(`https://api.frankfurter.app/${pastStr}?from=EUR&to=USD`).then((r) => r.json()),
+      ]);
+      const latest = Number(latestRes?.rates?.USD);
+      const before = Number(pastRes?.rates?.USD);
+      if (!Number.isFinite(latest) || !Number.isFinite(before) || before === 0) return null;
+      return { eurusd: latest, changePct: ((latest - before) / before) * 100 };
+    } catch {
+      return null;
+    }
+  }
 
-    const { isCrypto } = normalizeToBinancePerp(extracted.symbol);
-    if (!isCrypto) return null; // Fase 1: somente cripto
-
-    const ctx = await new MarketService().getContext(extracted.symbol);
+  /** Bloco de dados reais para CRIPTO (funding/OI/long-short/fear&greed). */
+  private async buildCryptoEnrichment(symbol: string): Promise<string | null> {
+    const ctx = await new MarketService().getContext(symbol);
     const lines: string[] = [];
     if (ctx.fundingRatePercent != null) lines.push(`Funding rate: ${ctx.fundingRatePercent}%`);
     if (ctx.openInterest != null) lines.push(`Open interest: ${Math.round(ctx.openInterest).toLocaleString('en-US')}`);
     if (ctx.longShortRatio != null) lines.push(`Long/Short ratio: ${ctx.longShortRatio}`);
     if (ctx.fearGreedValue != null) lines.push(`Fear & Greed: ${ctx.fearGreedValue} (${ctx.fearGreedClassification ?? ''})`);
     if (lines.length === 0) return null;
-
     return [
-      `# DADOS REAIS DE MERCADO (${extracted.symbol})`,
+      `# DADOS REAIS DE MERCADO (${symbol})`,
       'Os números abaixo são DADOS REAIS de mercado (não estimados do gráfico). Use-os no seu raciocínio e, ao citá-los, rotule explicitamente como "dado real". NÃO invente outros números além destes.',
       ...lines.map((l) => `- ${l}`),
     ].join('\n');
+  }
+
+  /** Bloco de dados reais para FOREX/OURO (driver do dólar). */
+  private async buildFxEnrichment(symbol: string): Promise<string | null> {
+    const usd = await this.fetchUsdContext();
+    if (!usd) return null;
+    const trend =
+      usd.changePct <= -0.2
+        ? 'enfraquecendo (tende a favorecer ouro e moedas não-USD)'
+        : usd.changePct >= 0.2
+          ? 'fortalecendo (tende a pressionar ouro e moedas não-USD)'
+          : 'estável';
+    return [
+      `# DADOS REAIS DE MERCADO — INTERMARKET (${symbol})`,
+      'O número abaixo é DADO REAL de mercado (não estimado do gráfico). Use-o no raciocínio e rotule como "dado real". NÃO invente outros números.',
+      `- Dólar (proxy EUR/USD): ${usd.eurusd.toFixed(4)} · variação ~7d: ${usd.changePct >= 0 ? '+' : ''}${usd.changePct.toFixed(2)}% → dólar ${trend}`,
+      '- Correlação a considerar: ouro (XAU) costuma se mover inverso ao dólar; em pares com USD, o lado do dólar pesa na direção.',
+    ].join('\n');
+  }
+
+  /**
+   * Monta o bloco de DADOS REAIS de mercado conforme a classe do ativo.
+   * Best-effort: qualquer falha retorna null e a análise segue sem o bloco.
+   * Cripto → derivativos; Forex/Ouro → driver do dólar; índices/ações → (fases futuras).
+   */
+  private async buildMarketEnrichment(imageUrl: string): Promise<string | null> {
+    const extracted = await this.extractSymbol(imageUrl);
+    if (!extracted) return null;
+
+    const sym = extracted.symbol.toUpperCase();
+    const { isCrypto } = normalizeToBinancePerp(extracted.symbol);
+
+    if (isCrypto) {
+      return this.buildCryptoEnrichment(extracted.symbol);
+    }
+
+    // Fase 2: forex e metais (ouro/prata) — exige presença de moeda forte/metal no ticker.
+    if (/XAU|XAG|EUR|USD|GBP|JPY|AUD|NZD|CAD|CHF/.test(sym)) {
+      return this.buildFxEnrichment(sym);
+    }
+
+    // Índices e ações: fases futuras.
+    return null;
   }
 
   async analyzeImage(
