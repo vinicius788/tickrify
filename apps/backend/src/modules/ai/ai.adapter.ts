@@ -626,7 +626,7 @@ export class AIAdapter {
         type: 'text',
         text:
           extraImageUrls.length > 0
-            ? 'Análise TOP-DOWN. O 1º gráfico é o timeframe de EXECUÇÃO; os seguintes são timeframes MAIORES — use-os para o HTF bias e o alinhamento MTF de forma REAL (não inferida). Responda exclusivamente no JSON do schema.'
+            ? 'Análise TOP-DOWN com MÚLTIPLOS gráficos. O 1º gráfico é o timeframe de EXECUÇÃO; os SEGUINTES são timeframes MAIORES (HTF). Para CADA gráfico maior fornecido, descreva explicitamente a estrutura e o viés que VOCÊ REALMENTE VÊ nele (não invente, não infira de cabeça — leia a imagem). Em "multiTimeframeAlignment", conclua se há ALINHAMENTO ou CONFLITO citando o que viu em cada timeframe. É obrigatório comentar o(s) gráfico(s) secundário(s). Responda exclusivamente no JSON do schema.'
             : 'Analise o gráfico e responda exclusivamente no JSON do schema. Não escreva texto fora do JSON.',
       },
       { type: 'image_url', image_url: { url: signedPrimary, detail: 'high' } },
@@ -637,11 +637,12 @@ export class AIAdapter {
         const signed = await this.resolveImageUrlForOpenAi(extraImageUrls[i]);
         content.push({
           type: 'text',
-          text: `Gráfico de timeframe MAIOR ${i + 1} (contexto top-down / HTF):`,
+          text: `Gráfico de timeframe MAIOR ${i + 1} (contexto top-down / HTF) — leia e comente explicitamente este gráfico:`,
         });
-        // 'low' detail: timeframes maiores são para contexto (bias/estrutura), não para
-        // leitura precisa de preço → ~85 tokens em vez de ~765+. Corta ~90% do custo extra.
-        content.push({ type: 'image_url', image_url: { url: signed, detail: 'low' } });
+        // 'high' detail: o usuário subiu este HTF de propósito para um top-down REAL.
+        // Em 'low' a IA quase não lê o gráfico e só dá uma frase genérica de MTF.
+        // O custo extra (~700 tokens/imagem) só ocorre quando o usuário opta por enviar HTF.
+        content.push({ type: 'image_url', image_url: { url: signed, detail: 'high' } });
       } catch (err) {
         this.logger.warn(
           `Ignorando imagem HTF ${i + 1} (falha ao assinar): ${err instanceof Error ? err.message : err}`,
