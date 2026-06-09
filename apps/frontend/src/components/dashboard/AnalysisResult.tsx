@@ -173,6 +173,13 @@ function parseRiskReward(value: unknown): number | null {
 const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) => {
   const { toast } = useToast();
   const { t } = useLanguage();
+  const r = t.analysis.result;
+  const sessionLabels: Record<string, string> = {
+    SYD: t.analysis.sessions.sydney,
+    TKY: t.analysis.sessions.tokyo,
+    LDN: t.analysis.sessions.london,
+    NY: t.analysis.sessions.newYork,
+  };
   const [showInvalidation, setShowInvalidation] = useState(false);
 
   if (!analysisData) {
@@ -181,9 +188,9 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
         <CardContent className="space-y-4 p-6">
           <Alert className="border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)]">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Demonstração</AlertTitle>
+            <AlertTitle>{r.demoTitle}</AlertTitle>
             <AlertDescription>
-              Faça login para visualizar o resultado real de uma análise processada pela IA.
+              {r.demoDesc}
             </AlertDescription>
           </Alert>
           <div className="text-sm text-[var(--text-secondary)]">
@@ -293,18 +300,18 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   if (liveMarket) {
     const f = liveMarket.fundingRatePercent;
     if (f !== null) {
-      if (f >= 0.03) liveReadings.push('Funding alto — mercado muito comprado; cautela perto de resistências.');
-      else if (f <= -0.01) liveReadings.push('Funding negativo — mercado vendido; possível squeeze de alta.');
+      if (f >= 0.03) liveReadings.push(r.live.fundingHigh);
+      else if (f <= -0.01) liveReadings.push(r.live.fundingNeg);
     }
     const ls = liveMarket.longShortRatio;
     if (ls !== null) {
-      if (ls >= 2) liveReadings.push('Maioria comprada (long/short alto) — risco de liquidações se o preço cair.');
-      else if (ls <= 0.6) liveReadings.push('Maioria vendida — risco de short squeeze (alta rápida).');
+      if (ls >= 2) liveReadings.push(r.live.crowdLong);
+      else if (ls <= 0.6) liveReadings.push(r.live.crowdShort);
     }
     const fg = liveMarket.fearGreedValue;
     if (fg !== null) {
-      if (fg <= 25) liveReadings.push('Medo extremo — possível exaustão de venda (sinal contrário de alta).');
-      else if (fg >= 75) liveReadings.push('Ganância extrema — possível topo (sinal contrário de baixa).');
+      if (fg <= 25) liveReadings.push(r.live.fearExtreme);
+      else if (fg >= 75) liveReadings.push(r.live.greedExtreme);
     }
   }
   const formattedTimestamp = timestamp.toLocaleString('pt-BR', {
@@ -334,8 +341,8 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
     try {
       await navigator.clipboard.writeText(String(value));
       toast({
-        title: 'Copiado!',
-        description: `${label} copiado para a área de transferência.`,
+        title: r.copied,
+        description: `${label} ${r.copySuffix}`,
       });
     } catch (error) {
       console.error('Falha ao copiar valor:', error);
@@ -343,7 +350,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   };
 
   const technicalAnalysis =
-    String(analysis.technicalAnalysis || analysis.reasoning || analysisData.reasoning || 'Análise não disponível.').trim();
+    String(analysis.technicalAnalysis || analysis.reasoning || analysisData.reasoning || r.noAnalysis).trim();
   const executiveSummary = String(analysis.executiveSummary || analysis.technicalSummary || '').trim();
   const whyNotOpposite = String(analysis.whyNotOpposite || '').trim();
   const structureValidation = String(analysis.structureValidation || '').trim();
@@ -369,9 +376,9 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
       {/* ── Demo notice (subtle) ────────────────────────────────────── */}
       {isDemo && (
         <div className="flex items-center justify-between rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-4 py-2.5 text-xs text-[var(--text-secondary)]">
-          <span>⚠️ Análise demonstrativa — exemplo fixo, não análise real de IA.</span>
+          <span>{r.demoBanner}</span>
           <a href="/pricing" className="ml-3 flex-shrink-0 font-semibold text-[var(--signal-buy)] hover:underline">
-            Ver planos →
+            {r.viewPlans}
           </a>
         </div>
       )}
@@ -398,9 +405,9 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
             </span>
             {calWinRate !== null && calSample >= 3 && (
               <span className="whitespace-nowrap" title="Taxa de acerto histórica de setups semelhantes (sua) ">
-                📊 <span className="text-[var(--text-secondary)]">Histórico:</span>{' '}
+                📊 <span className="text-[var(--text-secondary)]">{r.history}</span>{' '}
                 <strong className={`font-terminal font-semibold ${calWinRate >= 50 ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'}`}>{calWinRate}%</strong>{' '}
-                <span className="text-[var(--text-secondary)]">acerto ({calSample})</span>
+                <span className="text-[var(--text-secondary)]">{r.hitRate} ({calSample})</span>
               </span>
             )}
             <span className="whitespace-nowrap font-terminal md:ml-auto">{formattedTimestamp}</span>
@@ -458,7 +465,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 )}
                 {riskRewardLow && (
                   <p className="mt-0.5 font-terminal text-[10px] font-semibold text-[var(--signal-sell)]">
-                    ⚠ R/R abaixo do ideal
+                    {r.rrBelowIdeal}
                   </p>
                 )}
               </div>
@@ -476,7 +483,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 <button
                   type="button"
                   className="font-terminal font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue('Preço atual', currentPrice)}
+                  onClick={() => void copyValue(t.analysis.currentPrice, currentPrice)}
                 >
                   {formatPrice(currentPrice)}
                 </button>
@@ -487,7 +494,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 <button
                   type="button"
                   className="font-terminal font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue('Entrada', entry)}
+                  onClick={() => void copyValue(t.analysis.entry, entry)}
                 >
                   {formatPrice(entry)}
                 </button>
@@ -498,7 +505,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 <button
                   type="button"
                   className="text-right font-terminal font-semibold text-[var(--signal-sell)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue('Stop Loss', stopLoss)}
+                  onClick={() => void copyValue(t.analysis.stopLoss, stopLoss)}
                 >
                   {formatPrice(stopLoss)} <span className="font-terminal text-xs">{formatSignedPercent(stopPercent)}</span>
                   {stopPips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-sell)]/70">{stopPips}p</span>}
@@ -510,7 +517,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 <button
                   type="button"
                   className="text-right font-terminal font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue('Take Profit 1', takeProfit1)}
+                  onClick={() => void copyValue(t.analysis.tp1, takeProfit1)}
                 >
                   {formatPrice(takeProfit1)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit1Percent)}</span>
                   {tp1Pips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-buy)]/70">{tp1Pips}p</span>}
@@ -522,7 +529,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 <button
                   type="button"
                   className="text-right font-terminal font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue('Take Profit 2', takeProfit2)}
+                  onClick={() => void copyValue(t.analysis.tp2, takeProfit2)}
                 >
                   {formatPrice(takeProfit2)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit2Percent)}</span>
                   {tp2Pips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-buy)]/70">{tp2Pips}p</span>}
@@ -749,7 +756,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                                     {ev.country}
                                   </span>
                                   <span className={`font-medium ${isHigh ? 'text-amber-400' : 'text-[var(--text-secondary)]'}`}>
-                                    {ev.impact === 'High' ? '🔴 Alto impacto' : '🟡 Médio impacto'}
+                                    {ev.impact === 'High' ? r.highImpact : r.medImpact}
                                   </span>
                                   {ev.time && ev.time !== 'All Day' && (
                                     <span>{ev.time} ET</span>
@@ -787,7 +794,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                           }`}
                         >
                           <span className={`h-1.5 w-1.5 rounded-full ${s.open ? 'bg-[var(--signal-buy)]' : 'bg-[var(--text-secondary)]'}`} />
-                          {s.abbr} · {s.name}
+                          {s.abbr} · {sessionLabels[s.abbr] ?? s.name}
                         </span>
                       ))}
                     </div>
@@ -814,7 +821,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                       </p>
                       <p>{t.analysis.priceZone}: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.priceZone || t.analysis.notInformed)}</span></p>
                       <p>
-                        <abbr title="Order Block é uma região institucional de oferta/demanda.">Order Block</abbr>:{' '}
+                        <abbr title={r.orderBlockTip}>Order Block</abbr>:{' '}
                         <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.orderBlock || t.analysis.notInformed)}</span>
                       </p>
                       {trendStrength && (
@@ -988,7 +995,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                    {whyNotOpposite || 'Justificativa não informada pelo modelo.'}
+                    {whyNotOpposite || r.noWhyNot}
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
@@ -1001,7 +1008,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 <div className="rounded-md border border-[var(--border-emphasis)] bg-[var(--bg-overlay)] p-3">
                   <h4 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">{t.analysis.executiveSummary}</h4>
                   <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-primary)]">
-                    {executiveSummary || 'Resumo executivo não informado.'}
+                    {executiveSummary || r.noSummary}
                   </p>
                 </div>
               </div>
