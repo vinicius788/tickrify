@@ -8,6 +8,11 @@ import { useAnalyses } from '@/hooks/useAnalyses';
 import { asRecord } from '@/lib/utils';
 import { useAPIClient } from '@/lib/api';
 import type { AIAnalysisResponse } from '@/lib/api';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+
+const DATE_LOCALES: Record<string, string> = {
+  pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
+};
 
 // ── Verdict (sincronizado com o backend; localStorage = fallback offline) ────
 type Verdict = 'TP1' | 'TP2' | 'SL' | 'OPEN' | null;
@@ -66,21 +71,13 @@ function extractLevels(a: AIAnalysisResponse) {
   };
 }
 
-// Verdict badge config
+// Verdict badge config (cores; rótulos vêm do i18n)
 const VERDICT_CFG = {
-  TP1:  { label: 'TP1 atingido', bg: 'rgba(0,255,127,0.12)',   border: 'rgba(0,255,127,0.4)',  text: '#00FF7F' },
-  TP2:  { label: 'TP2 atingido', bg: 'rgba(0,200,80,0.12)',    border: 'rgba(0,200,80,0.4)',   text: '#00C850' },
-  SL:   { label: 'Stop atingido', bg: 'rgba(255,68,68,0.12)',  border: 'rgba(255,68,68,0.4)',  text: '#FF4444' },
-  OPEN: { label: 'Em aberto',    bg: 'rgba(120,120,180,0.10)', border: 'rgba(120,120,180,0.3)', text: '#9999CC' },
+  TP1:  { bg: 'rgba(0,255,127,0.12)',   border: 'rgba(0,255,127,0.4)',  text: '#00FF7F' },
+  TP2:  { bg: 'rgba(0,200,80,0.12)',    border: 'rgba(0,200,80,0.4)',   text: '#00C850' },
+  SL:   { bg: 'rgba(255,68,68,0.12)',   border: 'rgba(255,68,68,0.4)',  text: '#FF4444' },
+  OPEN: { bg: 'rgba(120,120,180,0.10)', border: 'rgba(120,120,180,0.3)', text: '#9999CC' },
 } as const;
-
-const VERDICT_OPTIONS: Array<{ value: Verdict; label: string }> = [
-  { value: null,   label: 'Pendente' },
-  { value: 'TP1',  label: 'TP1 atingido' },
-  { value: 'TP2',  label: 'TP2 atingido' },
-  { value: 'SL',   label: 'Stop atingido' },
-  { value: 'OPEN', label: 'Em aberto' },
-];
 
 // ── Demo data ────────────────────────────────────────────────────────────────
 const DEMO: AIAnalysisResponse[] = [
@@ -95,6 +92,25 @@ const MyTrades = () => {
   const isDemo = !user;
   const { analyses, loading } = useAnalyses(100);
   const { setOutcome } = useAPIClient();
+  const { t, language } = useLanguage();
+  const tr = t.trades;
+  const dateLocale = DATE_LOCALES[language] ?? 'en-US';
+  const verdictLabel = (v: Verdict): string => {
+    switch (v) {
+      case 'TP1': return tr.tp1Hit;
+      case 'TP2': return tr.tp2Hit;
+      case 'SL': return tr.slHit;
+      case 'OPEN': return tr.open;
+      default: return tr.pending;
+    }
+  };
+  const verdictOptions: Array<{ value: Verdict; label: string }> = [
+    { value: null, label: tr.pending },
+    { value: 'TP1', label: tr.tp1Hit },
+    { value: 'TP2', label: tr.tp2Hit },
+    { value: 'SL', label: tr.slHit },
+    { value: 'OPEN', label: tr.open },
+  ];
 
   const [verdicts, setVerdicts] = useState<Record<string, Verdict>>(loadVerdicts);
   const [filterSymbol, setFilterSymbol] = useState('');
@@ -163,9 +179,9 @@ const MyTrades = () => {
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle className="text-base font-semibold">Meus Trades</CardTitle>
+            <CardTitle className="text-base font-semibold">{tr.title}</CardTitle>
             <CardDescription className="mt-0.5 text-xs">
-              {isDemo ? 'Dados demo — faça login para ver seu histórico real.' : `${filtered.length} análise${filtered.length !== 1 ? 's' : ''} encontradas`}
+              {isDemo ? tr.demoData : `${filtered.length} ${tr.found}`}
             </CardDescription>
           </div>
 
@@ -177,7 +193,7 @@ const MyTrades = () => {
               onChange={(e) => setFilterSymbol(e.target.value)}
               className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1 font-terminal text-xs text-[var(--text-primary)] outline-none"
             >
-              <option value="">Todos os ativos</option>
+              <option value="">{tr.allAssets}</option>
               {symbols.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
             <select
@@ -185,12 +201,12 @@ const MyTrades = () => {
               onChange={(e) => setFilterVerdict(e.target.value as typeof filterVerdict)}
               className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1 font-terminal text-xs text-[var(--text-primary)] outline-none"
             >
-              <option value="all">Todos os resultados</option>
-              <option value="pending">Pendente</option>
-              <option value="TP1">TP1 atingido</option>
-              <option value="TP2">TP2 atingido</option>
-              <option value="SL">Stop atingido</option>
-              <option value="OPEN">Em aberto</option>
+              <option value="all">{tr.allResults}</option>
+              <option value="pending">{tr.pending}</option>
+              <option value="TP1">{tr.tp1Hit}</option>
+              <option value="TP2">{tr.tp2Hit}</option>
+              <option value="SL">{tr.slHit}</option>
+              <option value="OPEN">{tr.open}</option>
             </select>
           </div>
         </div>
@@ -201,34 +217,34 @@ const MyTrades = () => {
         {rows.length > 0 && (
           <div className="grid grid-cols-2 gap-px border-y border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-4">
             <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
-              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">Win rate</p>
+              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.winRate}</p>
               <p className="font-terminal text-lg font-semibold text-[var(--signal-buy)]">
                 {perf.winRate !== null ? `${perf.winRate}%` : '—'}
               </p>
-              <p className="font-terminal text-[10px] text-[var(--text-secondary)]">{perf.wins}V / {perf.losses}D</p>
+              <p className="font-terminal text-[10px] text-[var(--text-secondary)]">{perf.wins}{tr.winShort} / {perf.losses}{tr.lossShort}</p>
             </div>
             <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
-              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">R:R médio</p>
+              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.avgRr}</p>
               <p className="font-terminal text-lg font-semibold text-[var(--text-primary)]">
                 {perf.avgRr !== null ? `${perf.avgRr.toFixed(1)}:1` : '—'}
               </p>
             </div>
             <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
-              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">Em aberto</p>
+              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.open}</p>
               <p className="font-terminal text-lg font-semibold text-[var(--signal-hold)]">{perf.open}</p>
             </div>
             <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
-              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">Pendentes</p>
+              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.pendingCount}</p>
               <p className="font-terminal text-lg font-semibold text-[var(--text-secondary)]">{perf.pending}</p>
             </div>
           </div>
         )}
 
         {loading ? (
-          <p className="py-12 text-center text-sm text-[var(--text-secondary)]">Carregando análises…</p>
+          <p className="py-12 text-center text-sm text-[var(--text-secondary)]">{tr.loadingAnalyses}</p>
         ) : filtered.length === 0 ? (
           <p className="py-12 text-center text-sm text-[var(--text-secondary)]">
-            {rows.length === 0 ? 'Nenhuma análise ainda. Comece pela Nova Análise!' : 'Nenhuma análise com esses filtros.'}
+            {rows.length === 0 ? tr.emptyNew : tr.emptyFilter}
           </p>
         ) : (
           <div className="divide-y divide-[var(--border-subtle)]">
@@ -261,11 +277,11 @@ const MyTrades = () => {
                         {meta.label}
                       </Badge>
                       {confidence > 0 && (
-                        <span className="text-xs text-[var(--text-secondary)]">{confidence}% conf.</span>
+                        <span className="text-xs text-[var(--text-secondary)]">{confidence}% {tr.conf}</span>
                       )}
                       {confluence !== null && (
                         <span className="text-xs text-[var(--text-secondary)]">
-                          {Number(factorsPresent)}/{6} fatores
+                          {Number(factorsPresent)}/{6} {tr.factors}
                         </span>
                       )}
                     </div>
@@ -274,7 +290,7 @@ const MyTrades = () => {
                     <div className="flex flex-wrap gap-x-4 gap-y-0.5 font-terminal text-xs">
                       {entry !== null && (
                         <span className="text-[var(--text-secondary)]">
-                          Entrada <span className="text-[var(--text-primary)]">{fmt(entry)}</span>
+                          {t.analysis.entry} <span className="text-[var(--text-primary)]">{fmt(entry)}</span>
                         </span>
                       )}
                       {stopLoss !== null && (
@@ -295,7 +311,7 @@ const MyTrades = () => {
                     </div>
 
                     <span className="font-terminal text-[10px] text-[var(--text-secondary)] opacity-60">
-                      {new Date(a.createdAt).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}
+                      {new Date(a.createdAt).toLocaleString(dateLocale, { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}
                     </span>
                   </div>
 
@@ -306,7 +322,7 @@ const MyTrades = () => {
                         className="rounded px-2 py-0.5 font-terminal text-xs font-semibold"
                         style={{ background: vcfg.bg, border: `1px solid ${vcfg.border}`, color: vcfg.text }}
                       >
-                        {vcfg.label}
+                        {verdictLabel(verdict)}
                       </span>
                     )}
                     <select
@@ -314,7 +330,7 @@ const MyTrades = () => {
                       onChange={(e) => handleVerdict(a.id, (e.target.value as Verdict) || null)}
                       className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1 font-terminal text-xs text-[var(--text-secondary)] outline-none"
                     >
-                      {VERDICT_OPTIONS.map((o) => (
+                      {verdictOptions.map((o) => (
                         <option key={String(o.value)} value={o.value ?? ''}>
                           {o.label}
                         </option>
