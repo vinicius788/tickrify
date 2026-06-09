@@ -293,6 +293,13 @@
   z-index: 1;
 }
 
+/* O header (e o dropdown do seletor de idioma) precisa ficar ACIMA do <main>.
+   Sem isto, o main (mesmo z-index, porém depois no DOM) cobre o dropdown e
+   intercepta os cliques — o menu de idioma aparece mas não clica. */
+.landing-shell > header {
+  z-index: 60;
+}
+
 .landing-shell header,
 .landing-shell nav {
   background: rgba(5, 5, 8, 0.6) !important;
