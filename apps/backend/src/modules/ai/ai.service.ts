@@ -151,7 +151,11 @@ export class AiService implements OnModuleInit {
     const preparedImage = this.prepareImagePayload(imageFile, base64Image);
     const queueReadiness = await getAiQueueReadiness();
 
-    const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
+    // Deep é recurso de assinante (gpt-4o, ~15x mais caro). Conta grátis/demo
+    // roda como 'quick' — mesma regra do multi-timeframe. Degradação graciosa:
+    // a análise segue normal, só sem o enriquecimento deep.
+    const normalizedAnalysisType: AnalysisType =
+      analysisType === 'deep' && (await this.hasPaidAccess(userId)) ? 'deep' : 'quick';
     const storage = new ImageStorageClient();
 
     if (storage.requiresRemoteStorage() && !storage.isConfigured()) {
@@ -285,7 +289,9 @@ export class AiService implements OnModuleInit {
     analysisType: AnalysisType = 'quick',
     sendEvent: (event: string, data: unknown) => void,
   ): Promise<void> {
-    const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
+    // Deep é recurso de assinante — mesma regra do caminho normal (createAnalysis).
+    const normalizedAnalysisType: AnalysisType =
+      analysisType === 'deep' && (await this.hasPaidAccess(userId)) ? 'deep' : 'quick';
 
     sendEvent('progress', { phase: 'uploading', pct: 0 });
 

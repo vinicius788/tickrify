@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { buildApiUrl } from '@/lib/api';
@@ -59,6 +60,16 @@ export function useTicks() {
     staleTime: 5 * 60_000,
     enabled,
   });
+
+  // Atualiza o saldo imediatamente quando uma análise é criada (o débito de
+  // ticks acontece na criação) — sem isso o header só atualizava no polling de 30s.
+  useEffect(() => {
+    const refresh = () => {
+      void queryClient.invalidateQueries({ queryKey: ['ticks-balance'] });
+    };
+    window.addEventListener('tickrify:analysis-created', refresh);
+    return () => window.removeEventListener('tickrify:analysis-created', refresh);
+  }, [queryClient]);
 
   const buyTicks = async (packageId: string) => {
     const token = await getToken({ skipCache: true });

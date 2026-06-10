@@ -23,6 +23,7 @@ Esta é uma análise DEEP. No campo "executiveSummary", entregue uma leitura COM
 5) Fase de mercado (Wyckoff): identifique a fase provável — acumulação / distribuição / markup / markdown — e cite o sinal que a sustenta (ex.: spring, upthrust, teste de suporte/resistência, range). Se não for possível determinar, diga "fase indefinida".
 6) Volume / Área de valor: SE houver volume visível no gráfico, estime a zona de maior negociação (POC / área de valor) e trate-a como suporte/resistência dinâmico — rotule explicitamente como ESTIMATIVA. Se NÃO houver volume visível na imagem, diga "volume não visível" e não invente.
 REGRAS: comente APENAS o que está visível; NÃO invente volume, indicadores ou dados que não aparecem na imagem; todo número derivado visualmente é estimativa. Ao final, reforce em uma linha que a direção é uma HIPÓTESE e a decisão é do usuário.
+IDIOMA: escreva TODO o executiveSummary — inclusive os RÓTULOS das camadas (Leitura/Reading, Volatilidade/Volatility, Cenários/Scenarios, Multi-timeframe, Fase de mercado/Market phase, Volume) — no OUTPUT LANGUAGE definido em USER_CONTEXT. Se houver DADOS REAIS no contexto, cite ao menos um número real no texto, rotulado como "dado real" (traduzido para o idioma de saída).
 `.trim();
 
 const PARTS_SEPARATOR = '\n\n---\n\n';
@@ -115,7 +116,7 @@ export class PromptBuilderService {
       ja: 'Japanese',
     };
     const langName = (userLanguage && LANGUAGE_NAMES[userLanguage]) ? LANGUAGE_NAMES[userLanguage] : 'Portuguese (Brazil)';
-    const languageContext = `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, breakevenTrigger, trendStrengthNote, marketRegimeNote, multiTimeframeAlignment, sessionNote, reasoning) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
+    const languageContext = `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, breakevenTrigger, trendStrengthNote, marketRegimeNote, multiTimeframeAlignment, sessionNote, reasoning, marketStructure.lastStructure, marketStructure.breakOfStructure, marketStructure.priceZone, marketStructure.orderBlock) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
     return prompt.replace('{{USER_CONTEXT}}', languageContext);
   }
 

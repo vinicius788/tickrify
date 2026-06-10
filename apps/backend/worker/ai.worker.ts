@@ -9,9 +9,12 @@ import {
 } from '../src/common/utils/analysis-payload';
 import { AIAdapter, AIAnalysisError } from '../src/modules/ai/ai.adapter';
 import {
+  applyRiskRewardGuard,
+  capConfidenceByConfluence,
   computeRiskReward,
   formatRiskReward,
   harmonizeConfidenceWithTrend,
+  normalizeTargetProbabilities,
 } from '../src/common/utils/analysis-normalizer';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
 import { isProductionRuntime } from '../src/common/utils/runtime-env';
@@ -290,9 +293,33 @@ function toWorkerAnalysisResult(value: unknown): WorkerAnalysisResult {
   const harmonizedConfidence01 =
     harmonizeConfidenceWithTrend(normalizeConfidence(source.confidence) * 100, analysisSource.trendStrength) / 100;
 
+  // Paridade com o adapter: cap por confluência + guard determinístico de R/R
+  // (BUY/SELL com R/R < 1.2 no TP1 vira WAIT; níveis preservados; ENABLE_RR_GUARD=false desliga).
+  const cappedConfidence01 =
+    capConfidenceByConfluence(harmonizedConfidence01 * 100, analysisSource.factorsPresent) / 100;
+  const workerRecommendation = normalizeRecommendation(source.recommendation);
+  const guardedSignal = applyRiskRewardGuard(
+    workerRecommendation === 'COMPRA' ? 'BUY' : workerRecommendation === 'VENDA' ? 'SELL' : 'WAIT',
+    Math.round(cappedConfidence01 * 100),
+    riskRewardTp1,
+  );
+  const finalRecommendation =
+    guardedSignal.downgraded ? ('AGUARDAR' as const) : workerRecommendation;
+
+  // Probabilidades por alvo — mesma regra do adapter (paridade worker/adapter):
+  // 0/inválido = ausente; default determinístico derivado da confiança.
+  const targetProbabilities = normalizeTargetProbabilities(
+    {
+      tp1: analysisSource.probabilityTp1,
+      tp2: analysisSource.probabilityTp2,
+      stop: analysisSource.probabilityStop,
+    },
+    { hasTradePlan: entry !== null, confidence: normalizeConfidence(source.confidence) },
+  );
+
   return {
-    recommendation: normalizeRecommendation(source.recommendation),
-    confidence: harmonizedConfidence01,
+    recommendation: finalRecommendation,
+    confidence: guardedSignal.confidence / 100,
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),
       timeframe: ensureString(analysisSource.timeframe ?? source.timeframe, 'UNKNOWN'),
@@ -355,9 +382,9 @@ function toWorkerAnalysisResult(value: unknown): WorkerAnalysisResult {
       multiTimeframeAlignment: analysisSource.multiTimeframeAlignment != null ? String(analysisSource.multiTimeframeAlignment).trim() || null : null,
       marketRegime: analysisSource.marketRegime != null ? String(analysisSource.marketRegime).trim() || null : null,
       marketRegimeNote: analysisSource.marketRegimeNote != null ? String(analysisSource.marketRegimeNote).trim() || null : null,
-      probabilityTp1: ensureNumberOrNull(analysisSource.probabilityTp1),
-      probabilityTp2: ensureNumberOrNull(analysisSource.probabilityTp2),
-      probabilityStop: ensureNumberOrNull(analysisSource.probabilityStop),
+      probabilityTp1: targetProbabilities.probabilityTp1,
+      probabilityTp2: targetProbabilities.probabilityTp2,
+      probabilityStop: targetProbabilities.probabilityStop,
       tp1ClosePercent: ensureNumberOrNull(analysisSource.tp1ClosePercent),
       tp2ClosePercent: ensureNumberOrNull(analysisSource.tp2ClosePercent),
       breakevenTrigger: analysisSource.breakevenTrigger != null ? String(analysisSource.breakevenTrigger).trim() || null : null,
@@ -607,7 +634,7 @@ async function getPrompt(
 
   // Inject language into USER_CONTEXT placeholder
   const langName = (userLanguage && LANGUAGE_NAMES[userLanguage]) ? LANGUAGE_NAMES[userLanguage] : 'Portuguese (Brazil)';
-  const languageContext = `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, breakevenTrigger, trendStrengthNote, marketRegimeNote, multiTimeframeAlignment, sessionNote, reasoning) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
+  const languageContext = `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, breakevenTrigger, trendStrengthNote, marketRegimeNote, multiTimeframeAlignment, sessionNote, reasoning, marketStructure.lastStructure, marketStructure.breakOfStructure, marketStructure.priceZone, marketStructure.orderBlock) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
 
   return withDeep(basePrompt.replace('{{USER_CONTEXT}}', languageContext));
 }

@@ -5,6 +5,9 @@ import { AIAnalysisResponse } from '../../common/interfaces/ai-response.interfac
 import {
   Recommendation,
   normalizeConfidence,
+  normalizeTargetProbabilities,
+  capConfidenceByConfluence,
+  applyRiskRewardGuard,
   parseJsonFromContent,
   computeRiskReward,
   formatRiskReward,
@@ -398,6 +401,17 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
   const riskRewardRatio =
     formatRiskReward(riskRewardTp2 ?? riskRewardTp1) ?? aiRiskRewardRatio;
 
+  // Probabilidades por alvo: trata 0/inválido como ausente e deriva default
+  // determinístico da confiança quando o modelo não preenche (fix do "0%/0%/0%").
+  const targetProbabilities = normalizeTargetProbabilities(
+    {
+      tp1: parsedAnalysis.probabilityTp1,
+      tp2: parsedAnalysis.probabilityTp2,
+      stop: parsedAnalysis.probabilityStop,
+    },
+    { hasTradePlan: entry !== null, confidence: normalizeConfidence(parsed.confidence) },
+  );
+
   return {
     recommendation: normalizeSchemaRecommendation(parsed.recommendation),
     confidence: ensureNumber(parsed.confidence, 0),
@@ -447,9 +461,9 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       tp1ClosePercent: closePercentOrDefault(parsedAnalysis.tp1ClosePercent, entry !== null, 50),
       tp2ClosePercent: closePercentOrDefault(parsedAnalysis.tp2ClosePercent, entry !== null, 50),
       breakevenTrigger: parsedAnalysis.breakevenTrigger != null ? ensureString(parsedAnalysis.breakevenTrigger, '') || null : null,
-      probabilityTp1: ensureNumberOrNull(parsedAnalysis.probabilityTp1),
-      probabilityTp2: ensureNumberOrNull(parsedAnalysis.probabilityTp2),
-      probabilityStop: ensureNumberOrNull(parsedAnalysis.probabilityStop),
+      probabilityTp1: targetProbabilities.probabilityTp1,
+      probabilityTp2: targetProbabilities.probabilityTp2,
+      probabilityStop: targetProbabilities.probabilityStop,
       alternativeScenario: parsedAnalysis.alternativeScenario != null ? ensureString(parsedAnalysis.alternativeScenario, '') || null : null,
       trendStrength: parsedAnalysis.trendStrength != null ? ensureString(parsedAnalysis.trendStrength, '') || null : null,
       trendStrengthNote: parsedAnalysis.trendStrengthNote != null ? ensureString(parsedAnalysis.trendStrengthNote, '') || null : null,
@@ -1093,11 +1107,30 @@ export class AIAdapter {
         });
       }
 
-      const recommendation = mapSchemaRecommendationToInternal(parsed.recommendation);
-      const confidence = harmonizeConfidenceWithTrend(
-        normalizeConfidence(parsed.confidence, 50),
-        parsed.analysis?.trendStrength,
+      const rawRecommendation = mapSchemaRecommendationToInternal(parsed.recommendation);
+      // Confiança: harmoniza com a força da tendência e depois com a confluência
+      // (checklist 0-7) — dois caps determinísticos, nunca aumentam o valor.
+      const harmonizedConfidence = capConfidenceByConfluence(
+        harmonizeConfidenceWithTrend(
+          normalizeConfidence(parsed.confidence, 50),
+          parsed.analysis?.trendStrength,
+        ),
+        parsed.analysis?.factorsPresent,
       );
+      // Guard de R/R: BUY/SELL com R/R calculado < 1.2 no TP1 vira WAIT
+      // (níveis preservados). Kill-switch: ENABLE_RR_GUARD=false.
+      const guarded = applyRiskRewardGuard(
+        rawRecommendation,
+        harmonizedConfidence,
+        parsed.analysis?.riskRewardTp1,
+      );
+      if (guarded.downgraded) {
+        this.logger.warn(
+          `RR guard: sinal ${rawRecommendation} rebaixado para WAIT (riskRewardTp1=${parsed.analysis?.riskRewardTp1})`,
+        );
+      }
+      const recommendation = guarded.recommendation;
+      const confidence = guarded.confidence;
 
       return {
         recommendation,

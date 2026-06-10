@@ -260,6 +260,107 @@ export function deriveMarketRegime(aiRegime: unknown, bias: unknown, trendStreng
   return 'ranging';
 }
 
+/**
+ * Cap determinístico de confiança pela confluência (checklist 0-7 do prompt).
+ * Evita contradições visíveis tipo "85% de confiança" com 4/7 fatores.
+ * Regra: ≤3 fatores → máx 50 | 4-5 → máx 74 | 6-7 → sem cap extra.
+ * Sem dado de confluência (0/ausente/inválido), não mexe — degradação graciosa.
+ */
+export function capConfidenceByConfluence(confidence: number, factorsPresent: unknown): number {
+  const f = Number(factorsPresent);
+  if (!Number.isFinite(f) || f <= 0 || f > 7) {
+    return confidence;
+  }
+  if (f <= 3) {
+    return Math.min(confidence, 50);
+  }
+  if (f <= 5) {
+    return Math.min(confidence, 74);
+  }
+  return confidence;
+}
+
+/**
+ * Guard determinístico de R/R: um BUY/SELL cujo R/R calculado no TP1 fica abaixo
+ * do mínimo objetivamente não compensa o risco — rebaixa para WAIT e limita a
+ * confiança a 45. Os níveis de preço NÃO são apagados (o usuário continua vendo
+ * a estrutura completa); muda apenas o sinal.
+ * Kill-switch: ENABLE_RR_GUARD=false desliga (default: ligado).
+ * Conservador: usa 1.2 como piso (o prompt pede ≥1.5) — só derruba o que é
+ * indefensável, sem virar censor de sinais razoáveis.
+ */
+export function applyRiskRewardGuard(
+  recommendation: Recommendation,
+  confidence: number,
+  riskRewardTp1: number | null | undefined,
+  minRatio = 1.2,
+): { recommendation: Recommendation; confidence: number; downgraded: boolean } {
+  if (process.env.ENABLE_RR_GUARD === 'false') {
+    return { recommendation, confidence, downgraded: false };
+  }
+  if (recommendation === 'WAIT' || riskRewardTp1 == null || !Number.isFinite(riskRewardTp1)) {
+    return { recommendation, confidence, downgraded: false };
+  }
+  if (riskRewardTp1 >= minRatio) {
+    return { recommendation, confidence, downgraded: false };
+  }
+  return {
+    recommendation: 'WAIT',
+    confidence: Math.min(confidence, 45),
+    downgraded: true,
+  };
+}
+
+export interface TargetProbabilities {
+  probabilityTp1: number | null;
+  probabilityTp2: number | null;
+  probabilityStop: number | null;
+}
+
+/**
+ * Normaliza as probabilidades por alvo (TP1/TP2/Stop) vindas do modelo.
+ *
+ * Regras:
+ * - Aceita escala 0..1 (probabilidade) ou 0..100 (pontos percentuais).
+ * - 0, negativo, >100 ou não-numérico = "não preenchido" (evita o bug "0%/0%/0%").
+ * - Sem plano de trade (entry ausente, ex.: HOLD/WAIT) → tudo null (a UI esconde a seção).
+ * - Quando o modelo não preenche, deriva um default determinístico da confiança:
+ *   TP1 ≈ 0.85×confiança (limitado a 25–80), Stop = 100−TP1 (20–75), TP2 ≈ 0.55×TP1 (10–60).
+ * - Coerência: TP2 nunca acima de TP1.
+ */
+export function normalizeTargetProbabilities(
+  raw: { tp1?: unknown; tp2?: unknown; stop?: unknown },
+  options: { hasTradePlan: boolean; confidence: number },
+): TargetProbabilities {
+  if (!options.hasTradePlan) {
+    return { probabilityTp1: null, probabilityTp2: null, probabilityStop: null };
+  }
+
+  const toPct = (value: unknown): number | null => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0 || n > 100) {
+      return null;
+    }
+    const pct = n <= 1 ? n * 100 : n;
+    return clamp(Math.round(pct), 1, 99);
+  };
+
+  const confidence = clamp(
+    Number.isFinite(options.confidence) ? options.confidence : 50,
+    0,
+    100,
+  );
+
+  const tp1 = toPct(raw.tp1) ?? clamp(Math.round(confidence * 0.85), 25, 80);
+  const stop = toPct(raw.stop) ?? clamp(100 - tp1, 20, 75);
+  let tp2 = toPct(raw.tp2) ?? clamp(Math.round(tp1 * 0.55), 10, 60);
+  if (tp2 > tp1) {
+    tp2 = tp1;
+  }
+
+  return { probabilityTp1: tp1, probabilityTp2: tp2, probabilityStop: stop };
+}
+
 /** Formata um R/R numérico como "1:X.X" (ex.: 2.3 -> "1:2.3"). */
 export function formatRiskReward(ratio: number | null | undefined): string | null {
   if (ratio == null || !Number.isFinite(ratio)) {

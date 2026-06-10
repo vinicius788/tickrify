@@ -51,7 +51,7 @@ export default {
     analyzing: 'Analisando...',
     selectImage: 'Selecione uma imagem para analisar',
     deepAnalysis: 'Análise Profunda',
-    deepAnalysisDesc: 'Análise mais detalhada, usa 2 ticks',
+    deepAnalysisDesc: 'Análise mais detalhada, usa 3 ticks',
   },
 
   // ── Analysis Result ───────────────────────────────────────────────────────────
@@ -170,6 +170,7 @@ export default {
     structure: 'Estrutura',
     priceZone: 'Zona de preço',
     notInformed: 'Não informado',
+    imageUnavailable: 'Imagem indisponível para esta análise.',
     demoNotice: '⚠️ ANÁLISE DEMONSTRATIVA',
     invalidAnalysis: 'Esta análise não está mais disponível.',
     processingAnalysis: 'Processando análise...',

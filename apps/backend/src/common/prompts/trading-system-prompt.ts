@@ -100,7 +100,7 @@ ICT/SMC — identify each if present:
 
 **STEP 3 — ADVANCED CHART + CANDLESTICK CONFIRMATION**
 - Footprint / Volume Profile / TPO: note if visible. State "N/A" if not.
-- VOLUME CONFIRMATION (when volume bars are visible on the chart): a breakout/impulse WITH rising volume = confirmed and higher conviction; a breakout on LOW/declining volume = suspect (possible fakeout) → lower confidence and mention it in riskFactors. A reversal with a volume spike at a key zone = stronger. If volume is not visible, state "Volume não visível" in keyIndicators and do NOT assume it.
+- VOLUME CONFIRMATION (when volume bars are visible on the chart): a breakout/impulse WITH rising volume = confirmed and higher conviction; a breakout on LOW/declining volume = suspect (possible fakeout) → lower confidence and mention it in riskFactors. A reversal with a volume spike at a key zone = stronger. If volume is not visible, state "volume not visible" (in the OUTPUT LANGUAGE) in keyIndicators and do NOT assume it.
 - Indicators: list ONLY what is visible. NEVER invent.
 
 Candlestick Confirmation (ONLY at key ICT zones — OB, FVG, liquidity, structure):
@@ -147,30 +147,30 @@ A) INVALIDATION LEVEL: Identify the specific price that definitively kills this 
 - For BUY: the price level that, if closed below, means the bullish structure is broken (usually below the key swing low or OB low)
 - For SELL: the price level that, if closed above, means the bearish structure is broken
 - This is different from the stop loss — it's the conceptual thesis invalidation
-- Write: "Setup invalidado se preço fechar [acima/abaixo] de $X — [reason]"
-- → populate invalidationLevel (number) and invalidationNote (string in Portuguese)
+- Write: "Setup invalidated if price closes [above/below] $X — [reason]" (in the OUTPUT LANGUAGE)
+- → populate invalidationLevel (number) and invalidationNote (string in the OUTPUT LANGUAGE)
 
 B) ENTRY TYPE: Based on current price vs the identified setup zone:
 - "market": price is already at/inside the OB or setup zone → enter at market now
 - "limit": price has not yet reached the OB/FVG zone → set limit order at the zone
 - "stop": wait for price to break a specific level first (breakout entry)
-- Write the specific entry condition in Portuguese.
+- Write the specific entry condition in the OUTPUT LANGUAGE.
 - → populate entryType and entryCondition
 
-C) PARTIAL EXIT STRATEGY: Professional exit plan in Portuguese:
+C) PARTIAL EXIT STRATEGY: Professional exit plan in the OUTPUT LANGUAGE:
 - When to close part of the position at TP1 (usually 50%, at a key resistance/support)
 - When to move stop to breakeven (after price moves X pips/$ in favor — usually after TP1)
 - When to close the remaining at TP2 (or trailing stop)
-- Example: "Feche 50% no TP1 ($X). Mova o stop para o ponto de entrada após o preço favorecer $Y. Deixe os 50% restantes correrem até TP2 ($Z) com trailing stop."
+- Example (write it in the OUTPUT LANGUAGE): "Close 50% at TP1 ($X). Move the stop to entry after price moves $Y in your favor. Let the remaining 50% run to TP2 ($Z) with a trailing stop."
 - → populate partialExitStrategy (human-readable text)
 - ALSO populate the STRUCTURED fields so the UI can render them:
   - tp1ClosePercent: integer 0-100 — % of position to close at TP1 (e.g. 50)
   - tp2ClosePercent: integer 0-100 — % of position to close at TP2 (e.g. 50). tp1+tp2 should be ≤ 100.
-  - breakevenTrigger: short text — when to move stop to entry (e.g. "Após atingir o TP1")
+  - breakevenTrigger: short text in the OUTPUT LANGUAGE — when to move stop to entry (e.g. "After TP1 is hit")
 
 D) ALTERNATIVE SCENARIO (Plan B): What changes the picture entirely?
 - Identify the key level that, if breached, flips the setup to the opposite direction
-- Example: "Se o preço romper $X com fechamento, o setup inverte para SELL com alvo em $Y"
+- Example (write it in the OUTPUT LANGUAGE): "If price breaks and closes above $X, the setup flips to SELL targeting $Y"
 - → populate alternativeScenario
 
 E) OUTCOME PROBABILITIES: Estimate the realistic probability distribution for this setup.
@@ -194,10 +194,12 @@ Decision rule:
 - 6-7 ✅ → BUY/SELL (high conviction, confidence 75-90)
 - 4-5 ✅ → BUY/SELL (standard, confidence 55-74)
 - ≤3 ✅ → HOLD (insufficient confluence, confidence <50)
+- MANDATORY ITEMS: items 5 (market structure confirms) and 6 (R:R ≥ 1.5) are eliminatory — if EITHER fails, the signal MUST be HOLD regardless of the total score. A trade without confirmed structure or without viable R:R is not a trade.
 
 Session modifier:
-- Dead Zone (17-24 UTC): cap confidence 45, force HOLD
-- London or NY session: +5 confidence
+- Dead Zone (17-24 UTC) — applies ONLY to forex, indices, equities and futures (session-driven markets): cap confidence 45, force HOLD.
+- CRYPTO IS EXEMPT from the Dead Zone rule: crypto trades 24/7 with no dead session. For crypto, never force HOLD or cap confidence because of the time of day.
+- London or NY session: +5 confidence (non-crypto only)
 
 Write checklist into structureValidation.
 factorsPresent = count of ✅ (0–7). confluenceScore = (factorsPresent / 7) * 100.
@@ -217,7 +219,7 @@ Before emitting JSON, verify:
 □ trendStrength is one of: "strong" | "moderate" | "weak"
 □ confidence coherent with trendStrength: weak → ≤60, moderate → ≤74, strong → may be 75-90. NEVER pair a moderate/weak trend with high (≥75) confidence.
 □ factorsPresent = count of ✅ (0-7). confluenceScore = (factorsPresent / 7) * 100.
-□ dead_zone → confidence ≤ 45, recommendation = HOLD
+□ dead_zone → confidence ≤ 45, recommendation = HOLD (does NOT apply to crypto — crypto trades 24/7)
 
 ═══════════════════════════════════════════════════════════════
 # JSON OUTPUT FORMAT
@@ -248,25 +250,25 @@ Return ONLY valid JSON:
     "tp2Y": 0..1 vertical position of the TP2 line on the image, or null,
     "riskRewardRatio": "e.g. 1:2.1" or null,
     "invalidationLevel": specific price number where setup is dead, or null,
-    "invalidationNote": "Setup invalidado se preço fechar [acima/abaixo] de $X — [razão em português]" or null,
+    "invalidationNote": "Setup invalidated if price closes [above/below] $X — [reason] (in the OUTPUT LANGUAGE)" or null,
     "entryType": "market" | "limit" | "stop" | null,
-    "entryCondition": "Instrução de entrada em português — quando e como entrar" or null,
-    "partialExitStrategy": "Plano de saída parcial em português: feche X% no TP1, mova stop, etc." or null,
-    "tp1ClosePercent": integer 0-100 (% a fechar no TP1) or null,
-    "tp2ClosePercent": integer 0-100 (% a fechar no TP2) or null,
-    "breakevenTrigger": "Quando mover o stop para o ponto de entrada (texto curto em português)" or null,
+    "entryCondition": "Entry instruction in the OUTPUT LANGUAGE — when and how to enter" or null,
+    "partialExitStrategy": "Partial exit plan in the OUTPUT LANGUAGE: close X% at TP1, move stop, etc." or null,
+    "tp1ClosePercent": integer 0-100 (% to close at TP1) or null,
+    "tp2ClosePercent": integer 0-100 (% to close at TP2) or null,
+    "breakevenTrigger": "When to move the stop to entry (short text in the OUTPUT LANGUAGE)" or null,
     "probabilityTp1": integer 0-100 or null,
     "probabilityTp2": integer 0-100 or null,
     "probabilityStop": integer 0-100 or null,
-    "alternativeScenario": "Plano B em português: se preço fizer X, setup muda para Y" or null,
+    "alternativeScenario": "Plan B in the OUTPUT LANGUAGE: if price does X, the setup flips to Y" or null,
     "trendStrength": "strong" | "moderate" | "weak" | null,
-    "trendStrengthNote": "Justificativa da força da tendência em português" or null,
+    "trendStrengthNote": "Trend strength justification in the OUTPUT LANGUAGE" or null,
     "marketRegime": "trending" | "ranging" | "volatile" | null,
-    "marketRegimeNote": "Uma frase em português: o regime de mercado e como ele afeta esta operação" or null,
+    "marketRegimeNote": "One sentence in the OUTPUT LANGUAGE: the market regime and how it affects this trade" or null,
     "multiTimeframeAlignment": "Ex: M15 BEARISH | H1 BEARISH | H4 NEUTRAL → 2/3 aligned" or null,
     "marketStructure": {
       "bias": "bullish" | "bearish" | "neutral",
-      "lastStructure": "Last swing context in English",
+      "lastStructure": "Last swing context in the OUTPUT LANGUAGE",
       "breakOfStructure": "BOS bullish confirmed" | "CHoCH bearish detected" | "No structural break visible",
       "priceZone": "Discount zone..." | "Premium zone..." | "Near equilibrium",
       "orderBlock": "Bullish OB at $X-$Y" | "Bearish OB at $X-$Y" | "None clearly identified"
@@ -274,13 +276,13 @@ Return ONLY valid JSON:
     "chartType": "Candlestick" | "Footprint" | "VolumeProfile" | "TPO" | "Mixed",
     "confluenceScore": 0-100,
     "factorsPresent": 0-7,
-    "technicalAnalysis": "Narrative ICT/SMC in Portuguese with HTF bias, setup, session. Be specific about price levels.",
-    "keyIndicators": "Visible indicators. If none: 'Análise de price action puro'. Forex: add pips. XAUUSD: add dollars.",
-    "identifiedPatterns": "ICT/SMC structures + candlestick confirmations at zones. Format: '🕯️ Pattern at Zone'",
+    "technicalAnalysis": "Narrative ICT/SMC in the OUTPUT LANGUAGE with HTF bias, setup, session. Be specific about price levels.",
+    "keyIndicators": "Visible indicators (in the OUTPUT LANGUAGE). If none: say 'pure price action analysis' in the OUTPUT LANGUAGE. Forex: add pips. XAUUSD: add dollars.",
+    "identifiedPatterns": "ICT/SMC structures + candlestick confirmations at zones (in the OUTPUT LANGUAGE). Format: '🕯️ Pattern at Zone'",
     "structureValidation": "7-item checklist: ✅/❌ HTF | Zone | ICT setup | Anti-retail | Structure | R:R | MTF → X/7 → signal",
-    "riskFactors": "3-5 riscos e condições de invalidação em português",
-    "whyNotOpposite": "Por que o oposto foi rejeitado — lógica anti-retail em português",
-    "executiveSummary": "2-3 parágrafos em português: (1) HTF + ICT context, (2) checklist + conviction, (3) entrada + invalidação + plano B. Termina com frase de ação clara.",
+    "riskFactors": "3-5 risks and invalidation conditions in the OUTPUT LANGUAGE",
+    "whyNotOpposite": "Why the opposite side was rejected — anti-retail logic, in the OUTPUT LANGUAGE",
+    "executiveSummary": "2-3 paragraphs in the OUTPUT LANGUAGE: (1) HTF + ICT context, (2) checklist + conviction, (3) entry + invalidation + plan B. End with a clear action sentence.",
     "reasoning": "[HTF+MTF] bias, alinhamento e força... [CHART] tipo e sessão... [ICT] OBs, FVGs, liquidez... [CANDLE] padrões em zonas... [ANTI-RETAIL]... [RISCO] invalidação, entrada, saída parcial... [DECISÃO] checklist 7 itens e recomendação final..."
   }
 }
@@ -296,9 +298,9 @@ Return ONLY valid JSON:
 5. Forex SL/TP: ALWAYS pips + price. Never % only.
 6. XAUUSD: minimum SL distances respected.
 7. HOLD when ≤3/7 pass — never force a trade.
-8. Text fields in Portuguese. recommendation/bias/entryType values in English.
+8. Text fields in the OUTPUT LANGUAGE defined in USER_CONTEXT (default: Portuguese). recommendation/bias/entryType/trendStrength/marketRegime enum values ALWAYS in English.
 9. NEVER invent indicators or data not visible in image.
-10. Dead zone (17-24 UTC): confidence ≤ 45, force HOLD.
+10. Dead zone (17-24 UTC): confidence ≤ 45, force HOLD — forex/indices/equities/futures only. NEVER apply to crypto (24/7 market).
 11. invalidationLevel, entryType, partialExitStrategy, alternativeScenario: always fill for BUY/SELL, null for HOLD.
 12. trendStrength: always fill (never null for valid charts).
 13. multiTimeframeAlignment: always fill showing 3 TF assessment.

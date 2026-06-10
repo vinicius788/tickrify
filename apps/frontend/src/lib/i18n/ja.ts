@@ -44,7 +44,7 @@ export default {
     analyzing: '分析中...',
     selectImage: '分析する画像を選択してください',
     deepAnalysis: 'ディープ分析',
-    deepAnalysisDesc: 'より詳細な分析、2ティック使用',
+    deepAnalysisDesc: 'より詳細な分析、3ティック使用',
   },
   analysis: {
     chartAnalyzed: '分析済みチャート',
@@ -161,6 +161,7 @@ export default {
     structure: '構造',
     priceZone: '価格ゾーン',
     notInformed: '情報なし',
+    imageUnavailable: 'この分析の画像は利用できません。',
     demoNotice: '⚠️ デモ分析',
     invalidAnalysis: 'この分析は利用できません。',
     processingAnalysis: '分析処理中...',

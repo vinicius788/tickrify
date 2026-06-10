@@ -68,6 +68,33 @@ function forexPipSize(symbol: string): number | null {
   return null;
 }
 
+/**
+ * Fallbacks em PT que o backend persiste quando a IA não preenche um campo.
+ * Para usuários em outros idiomas esses textos vazavam em português; aqui eles
+ * viram "ausente" ('') para que cada seção use seu próprio fallback i18n
+ * (notInformed / noAnalysis / noSummary / noPatterns) ou se oculte.
+ * Cobre análises antigas já persistidas — não exige reprocessar nada.
+ */
+const BACKEND_PT_FALLBACKS = new Set([
+  'Não informado',
+  'Contexto de sessão não informado.',
+  'Análise técnica indisponível.',
+  'Indicadores não informados.',
+  'Padrões não informados.',
+  'Padrões identificados não informados.',
+  'Validação estrutural não informada.',
+  'Fatores de risco não informados.',
+  'Sem justificativa para o lado oposto.',
+  'Resumo executivo indisponível.',
+  'Sem justificativa gerada.',
+  'Analise gerada sem justificativa detalhada.',
+]);
+
+function stripBackendFallback(value: unknown): string {
+  const text = String(value || '').trim();
+  return BACKEND_PT_FALLBACKS.has(text) ? '' : text;
+}
+
 function formatPrice(value: number | null): string {
   if (value === null || !Number.isFinite(value)) {
     return 'N/A';
@@ -217,13 +244,18 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   ).trim() || 'UNKNOWN';
   const timeframe = String(analysis.timeframe || analysis.period || fullResponse.timeframe || 'UNKNOWN').trim() || 'UNKNOWN';
   const detectedSession = String(analysis.detectedSession || fullResponse.detectedSession || '').trim() || null;
-  const sessionNote = String(analysis.sessionNote || fullResponse.sessionNote || '').trim() || null;
+  const sessionNote =
+    stripBackendFallback(analysis.sessionNote) || stripBackendFallback(fullResponse.sessionNote) || null;
 
-  const currentPrice = toNumber(analysis.currentPrice);
-  const entry = toNumber(analysis.entry);
-  const stopLoss = toNumber(analysis.stopLoss);
-  const takeProfit1 = toNumber(analysis.takeProfit1);
-  const takeProfit2 = toNumber(analysis.takeProfit2);
+  // Preço 0/negativo nunca é válido — significa "não informado" (ex.: HOLD sem
+  // plano de trade). Trata como ausente para exibir "N/A" em vez de "$ 0.00000".
+  const positivePriceOrNull = (v: number | null): number | null =>
+    v !== null && v > 0 ? v : null;
+  const currentPrice = positivePriceOrNull(toNumber(analysis.currentPrice));
+  const entry = positivePriceOrNull(toNumber(analysis.entry));
+  const stopLoss = positivePriceOrNull(toNumber(analysis.stopLoss));
+  const takeProfit1 = positivePriceOrNull(toNumber(analysis.takeProfit1));
+  const takeProfit2 = positivePriceOrNull(toNumber(analysis.takeProfit2));
 
   const stopPercent = entry !== null && stopLoss !== null ? calcStopPercent(entry, stopLoss) : null;
   const takeProfit1Percent = entry !== null && takeProfit1 !== null ? calcTPPercent(entry, takeProfit1) : null;
@@ -249,9 +281,12 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const tp1ClosePercent = toNumber(analysis.tp1ClosePercent);
   const tp2ClosePercent = toNumber(analysis.tp2ClosePercent);
   const breakevenTrigger = String(analysis.breakevenTrigger || '').trim() || null;
-  const probabilityTp1 = toNumber(analysis.probabilityTp1);
-  const probabilityTp2 = toNumber(analysis.probabilityTp2);
-  const probabilityStop = toNumber(analysis.probabilityStop);
+  // 0 = "não preenchido" (análises antigas persistiram 0/0/0) — trata como ausente
+  // para nunca exibir "TP1 0% · Stop 0%".
+  const positiveOrNull = (v: number | null): number | null => (v !== null && v > 0 ? v : null);
+  const probabilityTp1 = positiveOrNull(toNumber(analysis.probabilityTp1));
+  const probabilityTp2 = positiveOrNull(toNumber(analysis.probabilityTp2));
+  const probabilityStop = positiveOrNull(toNumber(analysis.probabilityStop));
   const hasProbabilities = probabilityTp1 !== null || probabilityTp2 !== null || probabilityStop !== null;
   const hasStructuredExit = tp1ClosePercent !== null || tp2ClosePercent !== null || breakevenTrigger !== null;
   const alternativeScenario = String(analysis.alternativeScenario || '').trim() || null;
@@ -350,14 +385,18 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   };
 
   const technicalAnalysis =
-    String(analysis.technicalAnalysis || analysis.reasoning || analysisData.reasoning || r.noAnalysis).trim();
-  const executiveSummary = String(analysis.executiveSummary || analysis.technicalSummary || '').trim();
-  const whyNotOpposite = String(analysis.whyNotOpposite || '').trim();
-  const structureValidation = String(analysis.structureValidation || '').trim();
+    stripBackendFallback(analysis.technicalAnalysis) ||
+    stripBackendFallback(analysis.reasoning) ||
+    stripBackendFallback(analysisData.reasoning) ||
+    r.noAnalysis;
+  const executiveSummary =
+    stripBackendFallback(analysis.executiveSummary) || stripBackendFallback(analysis.technicalSummary);
+  const whyNotOpposite = stripBackendFallback(analysis.whyNotOpposite);
+  const structureValidation = stripBackendFallback(analysis.structureValidation);
 
-  const patternItems = splitItems(analysis.identifiedPatterns);
-  const indicatorItems = splitItems(analysis.keyIndicators);
-  const riskItems = normalizeRiskFactorsForView(analysis.riskFactors);
+  const patternItems = splitItems(stripBackendFallback(analysis.identifiedPatterns));
+  const indicatorItems = splitItems(stripBackendFallback(analysis.keyIndicators));
+  const riskItems = normalizeRiskFactorsForView(stripBackendFallback(analysis.riskFactors));
 
   const headerIcon = recommendationMeta.tone === 'buy' ? ArrowUp : recommendationMeta.tone === 'sell' ? ArrowDown : Minus;
   const HeaderIcon = headerIcon;
@@ -435,7 +474,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 />
               ) : (
                 <div className="flex aspect-video items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] text-sm text-[var(--text-secondary)]">
-                  Imagem indisponível para esta análise.
+                  {t.analysis.imageUnavailable}
                 </div>
               )}
             </CardContent>
@@ -814,15 +853,15 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   <AccordionContent className="space-y-2 text-sm text-[var(--text-secondary)]">
                     <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 space-y-1">
                       <p>{t.analysis.bias}: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.bias || analysisData.bias || 'neutral')}</span></p>
-                      <p>{t.analysis.structure}: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.lastStructure || t.analysis.notInformed)}</span></p>
+                      <p>{t.analysis.structure}: <span className="font-medium text-[var(--text-primary)]">{stripBackendFallback(marketStructure.lastStructure) || t.analysis.notInformed}</span></p>
                       <p>
                         <abbr title="Break of Structure">BOS</abbr>/<abbr title="Change of Character">CHoCH</abbr>:{' '}
-                        <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.breakOfStructure || t.analysis.notInformed)}</span>
+                        <span className="font-medium text-[var(--text-primary)]">{stripBackendFallback(marketStructure.breakOfStructure) || t.analysis.notInformed}</span>
                       </p>
-                      <p>{t.analysis.priceZone}: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.priceZone || t.analysis.notInformed)}</span></p>
+                      <p>{t.analysis.priceZone}: <span className="font-medium text-[var(--text-primary)]">{stripBackendFallback(marketStructure.priceZone) || t.analysis.notInformed}</span></p>
                       <p>
                         <abbr title={r.orderBlockTip}>Order Block</abbr>:{' '}
-                        <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.orderBlock || t.analysis.notInformed)}</span>
+                        <span className="font-medium text-[var(--text-primary)]">{stripBackendFallback(marketStructure.orderBlock) || t.analysis.notInformed}</span>
                       </p>
                       {trendStrength && (
                         <p className="border-t border-[var(--border-subtle)] pt-1 mt-1">
@@ -884,7 +923,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-sm text-[var(--text-secondary)]">Nenhum padrão informado.</p>
+                      <p className="text-sm text-[var(--text-secondary)]">{t.analysis.noPatterns}</p>
                     )}
                   </AccordionContent>
                 </AccordionItem>

@@ -184,6 +184,8 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
 
         {/* Ação */}
         <div className="mt-auto pt-6">
+          {/* Deep é recurso de assinante (backend também valida) — mesma regra do multi-timeframe */}
+          {allowHigherTimeframes && (
           <label className="mb-3 flex cursor-pointer items-start gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2.5">
             <input
               type="checkbox"
@@ -196,6 +198,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
               <span className="text-[11px] text-[var(--text-secondary)]">{u.deepHint}</span>
             </span>
           </label>
+          )}
           <button
             type="button"
             onClick={() => void analyze()}

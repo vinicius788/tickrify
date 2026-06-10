@@ -44,7 +44,7 @@ export default {
     analyzing: 'Analyse läuft...',
     selectImage: 'Wählen Sie ein Bild zum Analysieren',
     deepAnalysis: 'Tiefenanalyse',
-    deepAnalysisDesc: 'Detailliertere Analyse, verbraucht 2 Ticks',
+    deepAnalysisDesc: 'Detailliertere Analyse, verbraucht 3 Ticks',
   },
   analysis: {
     chartAnalyzed: 'Analysierter Chart',
@@ -161,6 +161,7 @@ export default {
     structure: 'Struktur',
     priceZone: 'Preiszone',
     notInformed: 'Nicht angegeben',
+    imageUnavailable: 'Bild für diese Analyse nicht verfügbar.',
     demoNotice: '⚠️ DEMO-ANALYSE',
     invalidAnalysis: 'Diese Analyse ist nicht mehr verfügbar.',
     processingAnalysis: 'Analyse wird verarbeitet...',
