@@ -424,6 +424,34 @@ class APIClient {
     return response.json();
   }
 
+  async setFavorite(
+    analysisId: string,
+    isFavorite: boolean,
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<{ id: string; isFavorite: boolean }> {
+    const response = await this.request(
+      `/api/ai/analysis/${analysisId}/favorite`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...this.getAuthHeader(token),
+        },
+        body: JSON.stringify({ isFavorite }),
+      },
+      'Failed to set favorite',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
+    );
+
+    if (!response.ok) {
+      throw await this.buildApiError(response, 'Failed to set favorite');
+    }
+
+    return response.json();
+  }
+
   async setOutcome(
     analysisId: string,
     payload: { outcome: string | null; pnlPercent?: number | null; pnlAmount?: number | null },
@@ -546,6 +574,11 @@ export function useAPIClient() {
     return apiClient.setOutcome(analysisId, payload, token, getFreshToken);
   }, [getFreshToken]);
 
+  const setFavorite = useCallback(async (analysisId: string, isFavorite: boolean) => {
+    const token = await getFreshToken();
+    return apiClient.setFavorite(analysisId, isFavorite, token, getFreshToken);
+  }, [getFreshToken]);
+
   const getPerformance = useCallback(async () => {
     const token = await getFreshToken();
     return apiClient.getPerformance(token, getFreshToken);
@@ -570,7 +603,8 @@ export function useAPIClient() {
     listAnalyses,
     getAnalysisUsage,
     setOutcome,
+    setFavorite,
     getPerformance,
     waitForAnalysisCompletion,
-  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, setOutcome, getPerformance, waitForAnalysisCompletion]);
+  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, setOutcome, setFavorite, getPerformance, waitForAnalysisCompletion]);
 }

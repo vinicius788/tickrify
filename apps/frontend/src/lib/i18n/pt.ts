@@ -86,9 +86,9 @@ export default {
     whyNotOpposite: 'Por que não o oposto',
     executiveSummary: 'Resumo Executivo',
     structureValidation: 'Validação Estrutural',
-    strongTrend: 'Forte ↑',
-    weakTrend: 'Fraca ↓',
-    moderateTrend: 'Moderada →',
+    strongTrend: 'Forte',
+    weakTrend: 'Fraca',
+    moderateTrend: 'Moderada',
     marketRegime: 'Regime de mercado',
     regimeTrending: 'Tendência',
     regimeRanging: 'Lateral',
@@ -186,6 +186,8 @@ export default {
 
   // ── Trades ────────────────────────────────────────────────────────────────────
   trades: {
+    favorite: 'Adicionar à watchlist',
+    unfavorite: 'Remover da watchlist',
     title: 'Meus Trades',
     noTrades: 'Nenhum trade registrado ainda.',
     noTradesDesc: 'Seus trades aparecerão aqui quando você os registrar.',
@@ -212,6 +214,8 @@ export default {
 
   // ── Watchlist ──────────────────────────────────────────────────────────────────
   watchlist: {
+    favoritesTitle: 'Análises favoritas',
+    favHint: 'Toque na estrela em Meus Trades para fixar uma análise aqui.',
     title: 'Watchlist',
     empty: 'Sua watchlist está vazia',
     emptyDesc: 'Adicione ativos para acompanhar.',

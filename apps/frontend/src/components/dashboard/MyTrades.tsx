@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useUser } from '@clerk/clerk-react';
-import { Filter } from 'lucide-react';
+import { Filter, Star } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { confidenceToPercent, getRecommendationMeta } from '@/lib/trading-ui';
@@ -91,7 +91,7 @@ const MyTrades = () => {
   const { user } = useUser();
   const isDemo = !user;
   const { analyses, loading } = useAnalyses(100);
-  const { setOutcome } = useAPIClient();
+  const { setOutcome, setFavorite } = useAPIClient();
   const { t, language } = useLanguage();
   const tr = t.trades;
   const dateLocale = DATE_LOCALES[language] ?? 'en-US';
@@ -172,6 +172,24 @@ const MyTrades = () => {
       // Persiste no backend (sem bloquear a UI; falha silenciosa mantém o localStorage).
       void setOutcome(id, { outcome: outcomeFromVerdict(v) }).catch(() => {});
     }
+  };
+
+  // ── Favoritos (Watchlist) — otimista, com rollback se o backend falhar ──
+  const [favorites, setFavorites] = useState<Record<string, boolean>>({});
+  const getFavorite = (a: AIAnalysisResponse): boolean => {
+    if (Object.prototype.hasOwnProperty.call(favorites, a.id)) {
+      return favorites[a.id];
+    }
+    return (a as Record<string, unknown>).isFavorite === true;
+  };
+  const handleFavorite = (a: AIAnalysisResponse) => {
+    if (isDemo) return;
+    const next = !getFavorite(a);
+    setFavorites((prev) => ({ ...prev, [a.id]: next }));
+    void setFavorite(a.id, next).catch(() => {
+      // Rollback silencioso: backend indisponível, volta o estado anterior.
+      setFavorites((prev) => ({ ...prev, [a.id]: !next }));
+    });
   };
 
   return (
@@ -267,6 +285,19 @@ const MyTrades = () => {
                   {/* LEFT — signal + meta */}
                   <div className="flex min-w-0 flex-1 flex-col gap-1">
                     <div className="flex flex-wrap items-center gap-2">
+                      {!isDemo && (
+                        <button
+                          type="button"
+                          onClick={() => handleFavorite(a)}
+                          title={getFavorite(a) ? tr.unfavorite : tr.favorite}
+                          aria-label={getFavorite(a) ? tr.unfavorite : tr.favorite}
+                          className="shrink-0 rounded p-0.5 transition-colors hover:bg-[var(--bg-overlay)]"
+                        >
+                          <Star
+                            className={`h-4 w-4 ${getFavorite(a) ? 'fill-yellow-400 text-yellow-400' : 'text-[var(--text-secondary)]'}`}
+                          />
+                        </button>
+                      )}
                       <span className="font-terminal font-bold text-[var(--text-primary)]">{symbol}</span>
                       {timeframe && timeframe !== '—' && (
                         <span className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-1.5 py-0.5 font-terminal text-xs text-[var(--text-secondary)]">

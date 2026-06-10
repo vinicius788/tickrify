@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@clerk/clerk-react";
-import { ArrowRight, Target } from "lucide-react";
-import { normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
+import { ArrowRight, Star, Target } from "lucide-react";
+import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { useAnalyses } from "@/hooks/useAnalyses";
+import { useAPIClient, type AIAnalysisResponse } from "@/lib/api";
 
 // Dados fake APENAS para modo demo
 const demoOpportunities = [
@@ -16,6 +19,25 @@ const Watchlist = () => {
   const isDemo = !user;
   const { t } = useLanguage();
   const w = t.watchlist;
+
+  // Modo real: análises favoritadas (estrela em Meus Trades)
+  const { analyses, loading } = useAnalyses(100);
+  const { setFavorite } = useAPIClient();
+  const [removed, setRemoved] = useState<Record<string, boolean>>({});
+
+  const favorites = analyses.filter(
+    (a) =>
+      a.status === 'completed' &&
+      (a as Record<string, unknown>).isFavorite === true &&
+      !removed[a.id],
+  );
+
+  const handleRemove = (a: AIAnalysisResponse) => {
+    setRemoved((prev) => ({ ...prev, [a.id]: true }));
+    void setFavorite(a.id, false).catch(() => {
+      setRemoved((prev) => ({ ...prev, [a.id]: false }));
+    });
+  };
 
   const demoOtherAssets = [
     { symbol: "EUR/USD", timeframe: "1H", status: w.statusNoSetup },
@@ -75,17 +97,62 @@ const Watchlist = () => {
           </Card>
         </>
       ) : (
-        // Modo REAL - watchlist vazia (feature futura)
+        // Modo REAL — análises favoritadas via estrela em Meus Trades
         <Card>
           <CardHeader>
-            <CardTitle>{w.title}</CardTitle>
-            <CardDescription>{w.realDesc}</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
+              {w.favoritesTitle}
+            </CardTitle>
+            <CardDescription>{w.favHint}</CardDescription>
           </CardHeader>
-          <CardContent className="py-12">
-            <div className="text-center space-y-4">
-              <p className="text-muted-foreground">{w.empty}</p>
-              <p className="text-sm text-muted-foreground">{w.comingSoon}</p>
-            </div>
+          <CardContent>
+            {loading ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">…</p>
+            ) : favorites.length === 0 ? (
+              <div className="py-12 text-center space-y-2">
+                <p className="text-muted-foreground">{w.empty}</p>
+                <p className="text-sm text-muted-foreground">{w.favHint}</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-[var(--border-subtle)]">
+                {favorites.map((a) => {
+                  const rec = String(a.recommendation || '');
+                  const confidence = confidenceToPercent(a.confidence);
+                  const created = a.createdAt ? new Date(a.createdAt) : null;
+                  return (
+                    <div key={a.id} className="flex items-center justify-between gap-3 py-3">
+                      <div className="min-w-0">
+                        <p className="font-terminal font-bold text-[var(--text-primary)]">
+                          {String((a as Record<string, unknown>).symbol || 'N/A')}{' '}
+                          <span className="font-normal text-xs text-muted-foreground">
+                            {String((a as Record<string, unknown>).timeframe || '')}
+                          </span>
+                        </p>
+                        <p className={`text-sm font-semibold ${signalToneClass(rec)}`}>
+                          {normalizeRecommendationLabel(rec)}
+                          {confidence > 0 ? ` (${confidence}%)` : ''}
+                          {created ? (
+                            <span className="ml-2 font-normal text-xs text-muted-foreground">
+                              {created.toLocaleDateString()}
+                            </span>
+                          ) : null}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemove(a)}
+                        title={t.trades.unfavorite}
+                        aria-label={t.trades.unfavorite}
+                        className="shrink-0 rounded p-1 transition-colors hover:bg-[var(--bg-overlay)]"
+                      >
+                        <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

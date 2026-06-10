@@ -25,6 +25,7 @@ import { UploadedFile as UploadedFileType } from '../../common/interfaces/multer
 import { CreateAnalysisDto } from './dto/create-analysis.dto';
 import { ListAnalysesQueryDto } from './dto/list-analyses-query.dto';
 import { SetOutcomeDto } from './dto/set-outcome.dto';
+import { SetFavoriteDto } from './dto/set-favorite.dto';
 
 @Controller('ai')
 export class AiController {
@@ -132,6 +133,20 @@ export class AiController {
       pnlPercent: body.pnlPercent ?? null,
       pnlAmount: body.pnlAmount ?? null,
     });
+  }
+
+  @Patch('analysis/:id/favorite')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async setFavorite(
+    @CurrentUser() user: { id?: string; clerkUserId: string },
+    @Param('id') id: string,
+    @Body() body: SetFavoriteDto,
+  ) {
+    const dbUserId = await this.resolveDbUserId(user);
+    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
+
+    return this.aiService.setFavorite(dbUserId, id, body.isFavorite === true);
   }
 
   @Get('performance')

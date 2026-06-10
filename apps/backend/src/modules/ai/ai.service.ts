@@ -82,6 +82,10 @@ export class AiService implements OnModuleInit {
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "closedAt" TIMESTAMP(3)',
       );
+      // Watchlist: favorito por análise (mesmo padrão aditivo e idempotente).
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "isFavorite" BOOLEAN NOT NULL DEFAULT false',
+      );
       this.outcomeColumnsReady = true;
       this.logger.log('[outcome] Colunas de resultado prontas.');
     } catch (err) {
@@ -97,20 +101,21 @@ export class AiService implements OnModuleInit {
   /** Mapa id -> resultado, lido por SQL isolado. Nunca lança (retorna mapa vazio em falha). */
   private async getOutcomesMap(
     userId: string,
-  ): Promise<Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null }>> {
-    const map = new Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null }>();
+  ): Promise<Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean }>> {
+    const map = new Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean }>();
     if (!this.outcomeColumnsReady) {
       return map;
     }
     try {
       const rows = await this.prisma.$queryRaw<
-        Array<{ id: string; outcome: string | null; pnlPercent: number | null; pnlAmount: number | null }>
-      >`SELECT "id", "outcome", "pnlPercent", "pnlAmount" FROM "tickrify"."Analysis" WHERE "userId" = ${userId}`;
+        Array<{ id: string; outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean | null }>
+      >`SELECT "id", "outcome", "pnlPercent", "pnlAmount", "isFavorite" FROM "tickrify"."Analysis" WHERE "userId" = ${userId}`;
       for (const r of rows) {
         map.set(r.id, {
           outcome: r.outcome ?? null,
           pnlPercent: r.pnlPercent ?? null,
           pnlAmount: r.pnlAmount ?? null,
+          isFavorite: r.isFavorite === true,
         });
       }
     } catch (err) {
@@ -577,9 +582,39 @@ export class AiService implements OnModuleInit {
           outcome: outcomeData?.outcome ?? null,
           pnlPercent: outcomeData?.pnlPercent ?? null,
           pnlAmount: outcomeData?.pnlAmount ?? null,
+          isFavorite: outcomeData?.isFavorite ?? false,
         };
       }),
     );
+  }
+
+  /**
+   * Marca/desmarca uma análise como favorita (Watchlist). Owner-checked.
+   * Mesmo padrão tolerante do setOutcome: SQL isolado, nunca derruba nada.
+   */
+  async setFavorite(userId: string, id: string, isFavorite: boolean) {
+    const analysis = await this.prisma.analysis.findFirst({
+      where: { id, userId },
+      select: { id: true },
+    });
+    if (!analysis) {
+      throw new BadRequestException('Analysis not found');
+    }
+
+    if (!this.outcomeColumnsReady) {
+      throw new ServiceUnavailableException(
+        'Favoritos temporariamente indisponíveis. Tente novamente em instantes.',
+      );
+    }
+
+    const value = isFavorite === true;
+    await this.prisma.$executeRaw`
+      UPDATE "tickrify"."Analysis"
+      SET "isFavorite" = ${value}
+      WHERE "id" = ${id} AND "userId" = ${userId}
+    `;
+
+    return { id, isFavorite: value };
   }
 
   /**

@@ -95,6 +95,36 @@ function stripBackendFallback(value: unknown): string {
   return BACKEND_PT_FALLBACKS.has(text) ? '' : text;
 }
 
+/**
+ * Parser da leitura em camadas do deep. O modelo escreve o executiveSummary
+ * com blocos "Rótulo: texto" (um por linha, rótulo no idioma de saída).
+ * Detecta esses blocos para renderizar cards estruturados; linhas sem rótulo
+ * (ex.: o aviso final "a direção é uma hipótese") viram rodapé.
+ * Se houver menos de 2 blocos, a UI cai no texto corrido de sempre —
+ * análises quick e antigas continuam idênticas (zero risco de regressão).
+ */
+interface SummaryBlock {
+  label: string;
+  text: string;
+}
+
+function parseSummaryBlocks(summary: string): { blocks: SummaryBlock[]; footer: string[] } {
+  const blocks: SummaryBlock[] = [];
+  const footer: string[] = [];
+  for (const raw of String(summary || '').split(/\n+/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    // "Rótulo: texto" — rótulo curto (2-42 chars), opcionalmente numerado "1) "
+    const m = line.match(/^(?:\d+\)\s*)?([^:：]{2,42})[:：]\s+(.+)$/);
+    if (m && m[2]) {
+      blocks.push({ label: m[1].trim(), text: m[2].trim() });
+    } else {
+      footer.push(line);
+    }
+  }
+  return { blocks, footer };
+}
+
 function formatPrice(value: number | null): string {
   if (value === null || !Number.isFinite(value)) {
     return 'N/A';
@@ -1046,9 +1076,37 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               <div className="mt-4 border-t-2 border-[var(--border-emphasis)] pt-4">
                 <div className="rounded-md border border-[var(--border-emphasis)] bg-[var(--bg-overlay)] p-3">
                   <h4 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">{t.analysis.executiveSummary}</h4>
-                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-primary)]">
-                    {executiveSummary || r.noSummary}
-                  </p>
+                  {(() => {
+                    const { blocks, footer } = parseSummaryBlocks(executiveSummary);
+                    if (blocks.length < 2) {
+                      // Texto corrido (análise quick ou formato antigo) — render original.
+                      return (
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-primary)]">
+                          {executiveSummary || r.noSummary}
+                        </p>
+                      );
+                    }
+                    return (
+                      <div className="space-y-2">
+                        {blocks.map((b, i) => (
+                          <div
+                            key={i}
+                            className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2"
+                          >
+                            <p className="mb-0.5 font-terminal text-[10px] font-semibold uppercase tracking-wider text-[var(--signal-buy)]">
+                              {b.label}
+                            </p>
+                            <p className="text-sm leading-relaxed text-[var(--text-primary)]">{b.text}</p>
+                          </div>
+                        ))}
+                        {footer.length > 0 && (
+                          <p className="pt-1 text-xs italic leading-relaxed text-[var(--text-secondary)]">
+                            {footer.join(' ')}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </AccordionContent>
