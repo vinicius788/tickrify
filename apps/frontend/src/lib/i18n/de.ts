@@ -73,6 +73,7 @@ export default {
     keyIndicators: 'Wichtige Indikatoren',
     riskFactors: 'Risikofaktoren',
     partialExit: 'Teilausstiegsplan',
+    exitPlanOptional: 'Vorschlag, keine Pflicht: der Ausstieg ist deine Entscheidung — du kannst jederzeit Teil- oder Vollgewinne mitnehmen, auch vor den Zielen.',
     planB: 'Plan B — Alternativszenario',
     whyNotOpposite: 'Warum nicht das Gegenteil',
     executiveSummary: 'Zusammenfassung',

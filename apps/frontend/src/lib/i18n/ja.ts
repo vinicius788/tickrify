@@ -73,6 +73,7 @@ export default {
     keyIndicators: '主要指標',
     riskFactors: 'リスク要因',
     partialExit: '部分利確プラン',
+    exitPlanOptional: '推奨プランであり義務ではありません。決済はあなたの判断です — 目標到達前でも、いつでも一部または全部の利益確定ができます。',
     planB: 'プランB — 代替シナリオ',
     whyNotOpposite: '逆方向でない理由',
     executiveSummary: 'エグゼクティブサマリー',

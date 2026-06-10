@@ -1036,6 +1036,9 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                           {partialExitStrategy}
                         </div>
                       )}
+                      <p className="mt-2 text-xs italic text-[var(--text-secondary)]">
+                        {t.analysis.exitPlanOptional}
+                      </p>
                     </AccordionContent>
                   </AccordionItem>
                 )}

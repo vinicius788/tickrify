@@ -73,6 +73,7 @@ export default {
     keyIndicators: 'Indicadores Clave',
     riskFactors: 'Factores de Riesgo',
     partialExit: 'Plan de Salida Parcial',
+    exitPlanOptional: 'Plan sugerido, no obligatorio: la salida es tu decisión — puedes tomar ganancias parciales o totales en cualquier momento, antes de los objetivos.',
     planB: 'Plan B — Escenario Alternativo',
     whyNotOpposite: 'Por qué no el contrario',
     executiveSummary: 'Resumen Ejecutivo',

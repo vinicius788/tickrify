@@ -33,7 +33,7 @@ export const PLANS: Plan[] = [
       yearly:  { brl: "R$ 570", usd: "$120", eur: "€110" },
     },
     ticks: "45 ticks/mês",
-    analyses: "~15 análises",
+    analyses: "rápida 1 tick · deep 3 ticks",
     featured: false,
     icon: <Zap className="w-8 h-8 text-muted-foreground" />,
     features: [
@@ -53,7 +53,7 @@ export const PLANS: Plan[] = [
       yearly:  { brl: "R$ 1.470", usd: "$290", eur: "€270" },
     },
     ticks: "150 ticks/mês",
-    analyses: "~50 análises",
+    analyses: "rápida 1 tick · deep 3 ticks",
     featured: true,
     icon: <Star className="w-8 h-8 text-primary" />,
     features: [
@@ -74,7 +74,7 @@ export const PLANS: Plan[] = [
       yearly:  { brl: "R$ 2.970", usd: "$590", eur: "€550" },
     },
     ticks: "400 ticks/mês",
-    analyses: "~150 análises",
+    analyses: "rápida 1 tick · deep 3 ticks",
     featured: false,
     icon: <Trophy className="w-8 h-8 text-yellow-500" />,
     features: [
