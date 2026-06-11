@@ -19,6 +19,8 @@ export default {
     offline: 'オフライン',
   },
   nav: {
+    statusActive: '有効',
+    analysesWord: '分析',
     newAnalysis: '新しい分析',
     myTrades: 'マイトレード',
     watchlist: 'ウォッチリスト',
@@ -47,6 +49,13 @@ export default {
     deepAnalysisDesc: 'より詳細な分析、3ティック使用',
   },
   analysis: {
+    deepReading: '読み取り',
+    deepVolatility: 'ボラティリティ',
+    deepScenarios: 'シナリオ',
+    deepMtf: 'マルチタイムフレーム',
+    deepPhase: '市場フェーズ（ワイコフ）',
+    deepVolume: '出来高／バリューエリア',
+    deepReversalRisk: '反転リスク',
     chartAnalyzed: '分析済みチャート',
     bias: 'バイアス',
     confidence: '信頼度',

@@ -290,8 +290,11 @@ function toWorkerAnalysisResult(value: unknown): WorkerAnalysisResult {
 
   // Confiança harmonizada com a força da tendência (teto: moderada 74, fraca 60).
   // Mantém a escala 0-1 usada pelo worker.
+  // Piso de confiança em gráfico válido (paridade com o adapter): 0 vira 30.
+  const flooredConfidencePct =
+    normalizeConfidence(source.confidence) <= 0 ? 30 : normalizeConfidence(source.confidence);
   const harmonizedConfidence01 =
-    harmonizeConfidenceWithTrend(normalizeConfidence(source.confidence) * 100, analysisSource.trendStrength) / 100;
+    harmonizeConfidenceWithTrend(flooredConfidencePct * 100, analysisSource.trendStrength) / 100;
 
   // Paridade com o adapter: cap por confluência + guard determinístico de R/R
   // (BUY/SELL com R/R < 1.2 no TP1 vira WAIT; níveis preservados; ENABLE_RR_GUARD=false desliga).

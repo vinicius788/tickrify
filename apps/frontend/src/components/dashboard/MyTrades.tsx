@@ -90,7 +90,7 @@ const DEMO: AIAnalysisResponse[] = [
 const MyTrades = () => {
   const { user } = useUser();
   const isDemo = !user;
-  const { analyses, loading } = useAnalyses(100);
+  const { analyses, loading, refetch } = useAnalyses(100);
   const { setOutcome, setFavorite } = useAPIClient();
   const { t, language } = useLanguage();
   const tr = t.trades;
@@ -186,10 +186,15 @@ const MyTrades = () => {
     if (isDemo) return;
     const next = !getFavorite(a);
     setFavorites((prev) => ({ ...prev, [a.id]: next }));
-    void setFavorite(a.id, next).catch(() => {
-      // Rollback silencioso: backend indisponível, volta o estado anterior.
-      setFavorites((prev) => ({ ...prev, [a.id]: !next }));
-    });
+    void setFavorite(a.id, next)
+      .then(() => {
+        // Invalida o cache da lista para a Watchlist refletir na hora (sem esperar os 30s).
+        refetch();
+      })
+      .catch(() => {
+        // Rollback silencioso: backend indisponível, volta o estado anterior.
+        setFavorites((prev) => ({ ...prev, [a.id]: !next }));
+      });
   };
 
   return (

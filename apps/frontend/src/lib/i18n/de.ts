@@ -19,6 +19,8 @@ export default {
     offline: 'Offline',
   },
   nav: {
+    statusActive: 'Aktiv',
+    analysesWord: 'Analysen',
     newAnalysis: 'Neue Analyse',
     myTrades: 'Meine Trades',
     watchlist: 'Beobachtungsliste',
@@ -47,6 +49,13 @@ export default {
     deepAnalysisDesc: 'Detailliertere Analyse, verbraucht 3 Ticks',
   },
   analysis: {
+    deepReading: 'Marktlektüre',
+    deepVolatility: 'Volatilität',
+    deepScenarios: 'Szenarien',
+    deepMtf: 'Multi-Timeframe',
+    deepPhase: 'Marktphase (Wyckoff)',
+    deepVolume: 'Volumen / Value Area',
+    deepReversalRisk: 'Umkehrrisiko',
     chartAnalyzed: 'Analysierter Chart',
     bias: 'Tendenz',
     confidence: 'Konfidenz',

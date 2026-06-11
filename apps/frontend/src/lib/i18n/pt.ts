@@ -22,6 +22,8 @@ export default {
 
   // ── Navigation ───────────────────────────────────────────────────────────────
   nav: {
+    statusActive: 'Ativo',
+    analysesWord: 'análises',
     newAnalysis: 'Nova Análise',
     myTrades: 'Meus Trades',
     watchlist: 'Watchlist',
@@ -56,6 +58,13 @@ export default {
 
   // ── Analysis Result ───────────────────────────────────────────────────────────
   analysis: {
+    deepReading: 'Leitura',
+    deepVolatility: 'Volatilidade',
+    deepScenarios: 'Cenários',
+    deepMtf: 'Multi-timeframe',
+    deepPhase: 'Fase de mercado (Wyckoff)',
+    deepVolume: 'Volume / Área de valor',
+    deepReversalRisk: 'Risco de reversão',
     chartAnalyzed: 'Gráfico analisado',
     bias: 'Bias',
     confidence: 'Confiança',

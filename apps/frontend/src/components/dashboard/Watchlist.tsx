@@ -21,7 +21,7 @@ const Watchlist = () => {
   const w = t.watchlist;
 
   // Modo real: análises favoritadas (estrela em Meus Trades)
-  const { analyses, loading } = useAnalyses(100);
+  const { analyses, loading, refetch } = useAnalyses(100);
   const { setFavorite } = useAPIClient();
   const [removed, setRemoved] = useState<Record<string, boolean>>({});
 
@@ -34,9 +34,11 @@ const Watchlist = () => {
 
   const handleRemove = (a: AIAnalysisResponse) => {
     setRemoved((prev) => ({ ...prev, [a.id]: true }));
-    void setFavorite(a.id, false).catch(() => {
-      setRemoved((prev) => ({ ...prev, [a.id]: false }));
-    });
+    void setFavorite(a.id, false)
+      .then(() => refetch())
+      .catch(() => {
+        setRemoved((prev) => ({ ...prev, [a.id]: false }));
+      });
   };
 
   const demoOtherAssets = [

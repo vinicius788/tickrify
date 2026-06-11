@@ -1108,13 +1108,15 @@ export class AIAdapter {
       }
 
       const rawRecommendation = mapSchemaRecommendationToInternal(parsed.recommendation);
+      // Piso de confiança: 0 é reservado para imagem inválida (STEP -1). Em gráfico
+      // válido, o modelo às vezes devolve 0 num HOLD — vira 30 (baixa, mas plausível).
+      // (imagem inválida já foi rejeitada acima — aqui o gráfico é sempre válido)
+      const flooredConfidence =
+        normalizeConfidence(parsed.confidence, 50) <= 0 ? 30 : normalizeConfidence(parsed.confidence, 50);
       // Confiança: harmoniza com a força da tendência e depois com a confluência
       // (checklist 0-7) — dois caps determinísticos, nunca aumentam o valor.
       const harmonizedConfidence = capConfidenceByConfluence(
-        harmonizeConfidenceWithTrend(
-          normalizeConfidence(parsed.confidence, 50),
-          parsed.analysis?.trendStrength,
-        ),
+        harmonizeConfidenceWithTrend(flooredConfidence, parsed.analysis?.trendStrength),
         parsed.analysis?.factorsPresent,
       );
       // Guard de R/R: BUY/SELL com R/R calculado < 1.2 no TP1 vira WAIT

@@ -97,8 +97,8 @@ const DashboardPage = () => {
     const formatLastSeen = (dateIso: string) => {
       const diffMs = Math.max(0, now - new Date(dateIso).getTime());
       const minutes = Math.max(1, Math.floor(diffMs / (60 * 1000)));
-      if (minutes < 60) return `${minutes} min atrás`;
-      return `${Math.floor(minutes / 60)}h atrás`;
+      if (minutes < 60) return `${minutes} min ${t.nav.ago}`;
+      return `${Math.floor(minutes / 60)}h ${t.nav.ago}`;
     };
     const recent = rawAnalyses
       .filter((a) => a.createdAt && now - new Date(a.createdAt).getTime() <= activeWindowMs)
@@ -379,7 +379,7 @@ const DashboardPage = () => {
               <Clock className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="whitespace-nowrap">{navbarUnlimited ? plan.toUpperCase() : quotaText}</span>
               <span className="hidden whitespace-nowrap text-[var(--text-secondary)] md:inline">
-                {navbarUnlimited ? '· Ativo' : 'análises'}
+                {navbarUnlimited ? `· ${t.nav.statusActive}` : t.nav.analysesWord}
               </span>
             </div>
 

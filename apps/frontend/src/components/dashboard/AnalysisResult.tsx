@@ -108,6 +108,25 @@ interface SummaryBlock {
   text: string;
 }
 
+/**
+ * Rótulos canônicos que o modelo emite em inglês (contrato fixo do deep).
+ * A interface traduz via i18n; rótulos desconhecidos (análises antigas) passam como vieram.
+ */
+const CANONICAL_DEEP_LABELS: Record<string, string> = {
+  'READING': 'deepReading',
+  'VOLATILITY': 'deepVolatility',
+  'SCENARIOS': 'deepScenarios',
+  'MULTI-TIMEFRAME': 'deepMtf',
+  'MARKET PHASE': 'deepPhase',
+  'VOLUME': 'deepVolume',
+  'REVERSAL RISK': 'deepReversalRisk',
+};
+
+function localizeDeepLabel(label: string, dict: Record<string, string>): string {
+  const key = CANONICAL_DEEP_LABELS[label.trim().toUpperCase()];
+  return key && dict[key] ? dict[key] : label;
+}
+
 function parseSummaryBlocks(summary: string): { blocks: SummaryBlock[]; footer: string[] } {
   const blocks: SummaryBlock[] = [];
   const footer: string[] = [];
@@ -1097,7 +1116,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                             className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2"
                           >
                             <p className="mb-0.5 font-terminal text-[10px] font-semibold uppercase tracking-wider text-[var(--signal-buy)]">
-                              {b.label}
+                              {localizeDeepLabel(b.label, t.analysis as unknown as Record<string, string>)}
                             </p>
                             <p className="text-sm leading-relaxed text-[var(--text-primary)]">{b.text}</p>
                           </div>

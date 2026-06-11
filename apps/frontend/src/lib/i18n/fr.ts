@@ -19,6 +19,8 @@ export default {
     offline: 'Hors ligne',
   },
   nav: {
+    statusActive: 'Actif',
+    analysesWord: 'analyses',
     newAnalysis: 'Nouvelle Analyse',
     myTrades: 'Mes Trades',
     watchlist: 'Liste de Surveillance',
@@ -47,6 +49,13 @@ export default {
     deepAnalysisDesc: 'Analyse plus détaillée, utilise 3 ticks',
   },
   analysis: {
+    deepReading: 'Lecture',
+    deepVolatility: 'Volatilité',
+    deepScenarios: 'Scénarios',
+    deepMtf: 'Multi-timeframe',
+    deepPhase: 'Phase de marché (Wyckoff)',
+    deepVolume: 'Volume / Zone de valeur',
+    deepReversalRisk: 'Risque de retournement',
     chartAnalyzed: 'Graphique analysé',
     bias: 'Biais',
     confidence: 'Confiance',
