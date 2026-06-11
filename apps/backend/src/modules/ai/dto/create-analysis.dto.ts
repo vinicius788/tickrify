@@ -7,10 +7,9 @@ export class CreateAnalysisDto {
   @MaxLength(14_000_000)
   base64Image?: string;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(2_000)
-  promptOverride?: string;
+  // promptOverride foi REMOVIDO do contrato público de propósito: o prompt é
+  // segredo de backend e jamais deve ser controlável pelo cliente. O controller
+  // também força undefined; manter fora do DTO documenta e reforça a decisão.
 
   @IsOptional()
   @IsIn(['quick', 'deep'])

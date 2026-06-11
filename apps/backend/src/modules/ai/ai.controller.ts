@@ -75,7 +75,11 @@ export class AiController {
         dbUserId,
         file,
         body.base64Image,
-        body.promptOverride,
+        // SEGURANÇA: promptOverride NUNCA vem do cliente. Aceitá-lo permitiria
+        // trocar o system prompt da plataforma e usar a OpenAI como ChatGPT
+        // grátis (abuso de custo). O prompt é sempre resolvido server-side
+        // (banco → arquivo). Forçamos undefined aqui, ignorando o campo do body.
+        undefined,
         body.analysisType,
         body.userLanguage,
         htfImages,
@@ -193,7 +197,7 @@ export class AiController {
         dbUserId,
         file,
         body.base64Image,
-        body.promptOverride,
+        undefined, // SEGURANÇA: promptOverride nunca vem do cliente (ver endpoint analyze)
         body.analysisType,
         sendEvent,
       );
