@@ -8,6 +8,7 @@ import {
   normalizeTargetProbabilities,
   capConfidenceByConfluence,
   applyRiskRewardGuard,
+  reconcileConfluence,
   parseJsonFromContent,
   computeRiskReward,
   formatRiskReward,
@@ -444,8 +445,11 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
         orderBlock: ensureString(parsedMarketStructure.orderBlock, 'Não informado'),
       },
       chartType: ensureString(parsedAnalysis.chartType, 'Não informado'),
-      confluenceScore: ensureNumber(parsedAnalysis.confluenceScore, 0),
-      factorsPresent: ensureNumber(parsedAnalysis.factorsPresent, 0),
+      ...reconcileConfluence(
+        parsedAnalysis.structureValidation,
+        ensureNumber(parsedAnalysis.confluenceScore, 0),
+        ensureNumber(parsedAnalysis.factorsPresent, 0),
+      ),
       technicalAnalysis: scrubPromptLeak(ensureString(parsedAnalysis.technicalAnalysis, 'Análise técnica indisponível.'), 'Análise técnica indisponível.'),
       keyIndicators: scrubPromptLeak(ensureString(parsedAnalysis.keyIndicators, 'Indicadores não informados.'), 'Indicadores não informados.'),
       identifiedPatterns: scrubPromptLeak(ensureString(parsedAnalysis.identifiedPatterns, 'Padrões não informados.'), 'Padrões não informados.'),
@@ -1201,6 +1205,12 @@ export class AIAdapter {
         } catch {
           // segue normal — guard é proteção extra, nunca bloqueio
         }
+      }
+      // HOLD/WAIT com "confiança 100%" parece super-sinal e confunde o usuário
+      // (caso real em produção). Para WAIT, a confiança fala da leitura, não de
+      // um trade — teto de 60%.
+      if (finalRecommendation === 'WAIT') {
+        finalConfidence = Math.min(finalConfidence, 60);
       }
       const recommendation = finalRecommendation;
       const confidence = finalConfidence;

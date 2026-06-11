@@ -15,6 +15,7 @@ import {
   formatRiskReward,
   harmonizeConfidenceWithTrend,
   normalizeTargetProbabilities,
+  reconcileConfluence,
 } from '../src/common/utils/analysis-normalizer';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
 import { isProductionRuntime } from '../src/common/utils/runtime-env';
@@ -308,6 +309,11 @@ function toWorkerAnalysisResult(value: unknown): WorkerAnalysisResult {
   );
   const finalRecommendation =
     guardedSignal.downgraded ? ('AGUARDAR' as const) : workerRecommendation;
+  // Paridade com o adapter: teto de 60% de confiança para AGUARDAR.
+  const finalConfidencePct =
+    finalRecommendation === 'AGUARDAR'
+      ? Math.min(guardedSignal.confidence, 60)
+      : guardedSignal.confidence;
 
   // Probabilidades por alvo — mesma regra do adapter (paridade worker/adapter):
   // 0/inválido = ausente; default determinístico derivado da confiança.
@@ -322,7 +328,7 @@ function toWorkerAnalysisResult(value: unknown): WorkerAnalysisResult {
 
   return {
     recommendation: finalRecommendation,
-    confidence: guardedSignal.confidence / 100,
+    confidence: finalConfidencePct / 100,
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),
       timeframe: ensureString(analysisSource.timeframe ?? source.timeframe, 'UNKNOWN'),
@@ -349,8 +355,11 @@ function toWorkerAnalysisResult(value: unknown): WorkerAnalysisResult {
         orderBlock: ensureString(marketStructureSource.orderBlock, 'Não informado'),
       },
       chartType: ensureString(analysisSource.chartType, 'Não informado'),
-      confluenceScore: ensureNumber(analysisSource.confluenceScore, 0),
-      factorsPresent: ensureNumber(analysisSource.factorsPresent, 0),
+      ...reconcileConfluence(
+        analysisSource.structureValidation,
+        ensureNumber(analysisSource.confluenceScore, 0),
+        ensureNumber(analysisSource.factorsPresent, 0),
+      ),
       technicalAnalysis: ensureString(
         analysisSource.technicalAnalysis ?? analysisSource.technicalSummary ?? source.technicalSummary,
         'Análise técnica indisponível.',

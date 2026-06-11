@@ -311,6 +311,35 @@ export function applyRiskRewardGuard(
   };
 }
 
+/**
+ * Reconcilia a confluência numérica com o checklist textual. O modelo às vezes
+ * escreve "✅×7 → 7/7" no structureValidation mas zera confluenceScore/factorsPresent
+ * (visto em produção: painel "0/100" ao lado de checklist 7/7). Quando os números
+ * vêm zerados e o texto tem placar, o texto vence.
+ */
+export function reconcileConfluence(
+  structureValidation: unknown,
+  confluenceScore: number,
+  factorsPresent: number,
+): { confluenceScore: number; factorsPresent: number } {
+  if (factorsPresent > 0 || confluenceScore > 0) {
+    return { confluenceScore, factorsPresent };
+  }
+  const text = String(structureValidation || '');
+  const scored = text.match(/([0-7])\s*\/\s*7/);
+  let n = scored ? parseInt(scored[1], 10) : 0;
+  if (!n) {
+    const checks = (text.match(/✅/g) || []).length;
+    if (checks > 0) {
+      n = Math.min(checks, 7);
+    }
+  }
+  if (n > 0 && n <= 7) {
+    return { confluenceScore: Math.round((n / 7) * 100), factorsPresent: n };
+  }
+  return { confluenceScore, factorsPresent };
+}
+
 export interface TargetProbabilities {
   probabilityTp1: number | null;
   probabilityTp2: number | null;

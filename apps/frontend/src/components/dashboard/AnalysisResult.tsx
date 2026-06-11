@@ -327,12 +327,12 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const entryType = String(analysis.entryType || '').trim() || null;
   const entryCondition = String(analysis.entryCondition || '').trim() || null;
   const partialExitStrategy = String(analysis.partialExitStrategy || '').trim() || null;
-  const tp1ClosePercent = toNumber(analysis.tp1ClosePercent);
-  const tp2ClosePercent = toNumber(analysis.tp2ClosePercent);
-  const breakevenTrigger = String(analysis.breakevenTrigger || '').trim() || null;
-  // 0 = "não preenchido" (análises antigas persistiram 0/0/0) — trata como ausente
-  // para nunca exibir "TP1 0% · Stop 0%".
+  // 0 = "não preenchido" — trata como ausente para nunca exibir chips "0%"
+  // (vale para probabilidades e para o plano de saída em análises HOLD).
   const positiveOrNull = (v: number | null): number | null => (v !== null && v > 0 ? v : null);
+  const tp1ClosePercent = positiveOrNull(toNumber(analysis.tp1ClosePercent));
+  const tp2ClosePercent = positiveOrNull(toNumber(analysis.tp2ClosePercent));
+  const breakevenTrigger = String(analysis.breakevenTrigger || '').trim() || null;
   const probabilityTp1 = positiveOrNull(toNumber(analysis.probabilityTp1));
   const probabilityTp2 = positiveOrNull(toNumber(analysis.probabilityTp2));
   const probabilityStop = positiveOrNull(toNumber(analysis.probabilityStop));
