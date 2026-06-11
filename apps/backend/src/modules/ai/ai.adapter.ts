@@ -18,6 +18,7 @@ import {
 import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
 import { MarketService, normalizeToBinancePerp } from '../market/market.service';
+import { EconomicCalendarService } from '../calendar/calendar.service';
 
 // ── Guard anti-extração de prompt ──────────────────────────────────────────
 // Defende contra a tentativa de extrair o system prompt via input (ex.: alguém
@@ -807,6 +808,38 @@ export class AIAdapter {
    * Best-effort: qualquer falha retorna null e a análise segue sem o bloco.
    * Cripto → derivativos; Forex/Ouro → driver do dólar; índices/ações → (fases futuras).
    */
+  /**
+   * Bloco de CALENDÁRIO ECONÔMICO para o prompt (deep): eventos de impacto
+   * alto/médio nas próximas 12h para as moedas do ativo. Faz a IA considerar
+   * notícia agendada (CPI, decisão de juros, payroll) na leitura — caso real:
+   * SELL em EURUSD minutos antes de decisão do BCE. Best-effort.
+   */
+  private async buildCalendarEnrichment(symbol: string): Promise<string | null> {
+    try {
+      const events = await new EconomicCalendarService().getEventsForSymbol(symbol, new Date(), 12);
+      if (!events || events.length === 0) return null;
+      const lines = events.slice(0, 5).map((e) => {
+        const when =
+          typeof e.minutesUntil === 'number'
+            ? e.minutesUntil < 0
+              ? `saiu há ${Math.abs(e.minutesUntil)}min`
+              : `em ${e.minutesUntil}min`
+            : e.time;
+        const extra = [e.forecast ? `previsão ${e.forecast}` : null, e.previous ? `anterior ${e.previous}` : null]
+          .filter(Boolean)
+          .join(' · ');
+        return `- [${e.impact}] ${e.country} ${e.title} — ${when}${extra ? ` (${extra})` : ''}`;
+      });
+      return [
+        `# CALENDÁRIO ECONÔMICO (DADO REAL — eventos agendados p/ ${symbol}, próximas 12h)`,
+        'Considere estes eventos na leitura: evento de impacto High iminente = risco de movimento brusco que atropela a análise técnica — reduza convicção e diga isso explicitamente. Cite como "dado real".',
+        ...lines,
+      ].join('\n');
+    } catch {
+      return null;
+    }
+  }
+
   private async buildMarketEnrichment(imageUrl: string): Promise<string | null> {
     const extracted = await this.extractSymbol(imageUrl);
     if (!extracted) return null;
@@ -814,22 +847,22 @@ export class AIAdapter {
     const sym = extracted.symbol.toUpperCase();
     const { isCrypto } = normalizeToBinancePerp(extracted.symbol);
 
+    let classBlock: string | null = null;
     if (isCrypto) {
-      return this.buildCryptoEnrichment(extracted.symbol);
+      classBlock = await this.buildCryptoEnrichment(extracted.symbol);
+    } else if (/XAU|XAG|EUR|USD|GBP|JPY|AUD|NZD|CAD|CHF/.test(sym)) {
+      // Fase 2: forex e metais (ouro/prata).
+      classBlock = await this.buildFxEnrichment(sym);
+    } else if (/NAS100|US100|NDX|US30|DJI|US500|SPX|SPX500|DAX|GER40|UK100|FTSE|JP225|NKY|WIN|IBOV/.test(sym)) {
+      // Fase 3: índices de ações (regime de risco via VIX).
+      classBlock = await this.buildIndexEnrichment(sym);
     }
 
-    // Fase 2: forex e metais (ouro/prata) — exige presença de moeda forte/metal no ticker.
-    if (/XAU|XAG|EUR|USD|GBP|JPY|AUD|NZD|CAD|CHF/.test(sym)) {
-      return this.buildFxEnrichment(sym);
-    }
+    // Calendário econômico vale para TODAS as classes (cripto reage a CPI/Fed também).
+    const calendarBlock = await this.buildCalendarEnrichment(sym);
 
-    // Fase 3: índices de ações (regime de risco via VIX).
-    if (/NAS100|US100|NDX|US30|DJI|US500|SPX|SPX500|DAX|GER40|UK100|FTSE|JP225|NKY|WIN|IBOV/.test(sym)) {
-      return this.buildIndexEnrichment(sym);
-    }
-
-    // Ações individuais: fase futura.
-    return null;
+    const parts = [classBlock, calendarBlock].filter(Boolean) as string[];
+    return parts.length > 0 ? parts.join('\n\n') : null;
   }
 
   async analyzeImage(
@@ -1131,8 +1164,46 @@ export class AIAdapter {
           `RR guard: sinal ${rawRecommendation} rebaixado para WAIT (riskRewardTp1=${parsed.analysis?.riskRewardTp1})`,
         );
       }
-      const recommendation = guarded.recommendation;
-      const confidence = guarded.confidence;
+
+      // ── News guard: não se opera em cima de notícia ──────────────────────
+      // Evento de impacto ALTO para a(s) moeda(s) do ativo a ≤45min (ou que
+      // saiu há ≤15min) → BUY/SELL vira WAIT com confiança ≤45. Caso real:
+      // SELL 75% em EURUSD no dia de decisão do BCE — o preço estourou contra.
+      // Best-effort (falha do calendário não bloqueia nada).
+      // Kill-switch: ENABLE_NEWS_GUARD=false.
+      let finalRecommendation = guarded.recommendation;
+      let finalConfidence = guarded.confidence;
+      if (process.env.ENABLE_NEWS_GUARD !== 'false' && finalRecommendation !== 'WAIT') {
+        try {
+          const events = await withTimeout(
+            new EconomicCalendarService().getEventsForSymbol(
+              String(parsed.analysis?.symbol || ''),
+              new Date(),
+              2,
+            ),
+            6_000,
+            'calendar timed out',
+          );
+          const imminent = (events || []).find(
+            (e) =>
+              e.impact === 'High' &&
+              typeof e.minutesUntil === 'number' &&
+              e.minutesUntil >= -15 &&
+              e.minutesUntil <= 45,
+          );
+          if (imminent) {
+            this.logger.warn(
+              `News guard: sinal ${finalRecommendation} rebaixado para WAIT — evento High iminente: ${imminent.country} ${imminent.title} (${imminent.minutesUntil}min)`,
+            );
+            finalRecommendation = 'WAIT';
+            finalConfidence = Math.min(finalConfidence, 45);
+          }
+        } catch {
+          // segue normal — guard é proteção extra, nunca bloqueio
+        }
+      }
+      const recommendation = finalRecommendation;
+      const confidence = finalConfidence;
 
       return {
         recommendation,
