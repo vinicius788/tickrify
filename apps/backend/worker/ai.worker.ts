@@ -805,13 +805,12 @@ function validateTradingLogic(result: WorkerAnalysisResult): string[] {
     }
   }
 
-  if (rec === 'AGUARDAR') {
-    if (a.entry !== null) errors.push('AGUARDAR: entry deve ser null');
-    if (a.stopLoss !== null) errors.push('AGUARDAR: stopLoss deve ser null');
-    if (a.takeProfit1 !== null) errors.push('AGUARDAR: takeProfit1 deve ser null');
-    if (a.takeProfit2 !== null) errors.push('AGUARDAR: takeProfit2 deve ser null');
-    if (a.riskRewardRatio !== null) errors.push('AGUARDAR: riskRewardRatio deve ser null');
-  }
+  // AGUARDAR com níveis preenchidos é VÁLIDO: o guard determinístico de R/R
+  // rebaixa BUY/SELL→WAIT preservando os níveis de propósito (o usuário vê a
+  // estrutura, mas o sinal diz pra não operar). A regra antiga ("AGUARDAR →
+  // níveis null") derrubava essas análises legítimas como "dados inválidos"
+  // — era a causa do "Erro na Análise" em produção. A UI já exibe N/A quando
+  // os níveis vêm null/0, então níveis presentes nunca quebram nada.
 
   return errors;
 }
