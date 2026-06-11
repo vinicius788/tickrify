@@ -237,6 +237,7 @@ export default {
     step5: 'Abschlussbericht wird erstellt...',
   },
   counter: {
+    manageSubscription: 'Abo verwalten',
     freeTitle: 'Gratis-Analysen',
     exhausted: 'Ihre 3 Gratis-Analysen wurden verbraucht.',
     subscribe: 'Abonnieren, um fortzufahren',

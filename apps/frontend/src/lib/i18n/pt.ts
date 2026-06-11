@@ -250,6 +250,7 @@ export default {
     step5: 'Gerando relatório final...',
   },
   counter: {
+    manageSubscription: 'Gerenciar assinatura',
     freeTitle: 'Análises Grátis',
     exhausted: 'Suas 3 análises grátis foram utilizadas.',
     subscribe: 'Assinar para continuar',

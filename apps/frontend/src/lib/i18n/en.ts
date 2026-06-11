@@ -237,6 +237,7 @@ export default {
     step5: 'Generating final report...',
   },
   counter: {
+    manageSubscription: 'Manage subscription',
     freeTitle: 'Free Analyses',
     exhausted: 'Your 3 free analyses have been used.',
     subscribe: 'Subscribe to continue',

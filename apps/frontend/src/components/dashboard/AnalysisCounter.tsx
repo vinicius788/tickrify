@@ -1,10 +1,13 @@
+import { useState } from "react";
+import { useAuth } from "@clerk/clerk-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useAnalysisLimit, type UserPlan } from "@/hooks/useAnalysisLimit";
 import { useTicks } from "@/hooks/useTicks";
-import { Zap, Crown, TriangleAlert } from "lucide-react";
+import { Zap, Crown, TriangleAlert, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
+import { buildApiUrl } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 const PLAN_LABELS: Record<UserPlan, string> = {
@@ -27,7 +30,32 @@ const AnalysisCounter = () => {
   const { isUnlimited, plan, used, remaining } = useAnalysisLimit();
   const { balance } = useTicks();
   const { t } = useLanguage();
+  const { getToken } = useAuth();
   const c = t.counter;
+
+  // Portal do cliente Stripe (gerenciar/cancelar assinatura) — endpoint já existia
+  // no backend; este é o primeiro ponto da UI que o expõe.
+  const [portalLoading, setPortalLoading] = useState(false);
+  const openCustomerPortal = async () => {
+    if (portalLoading) return;
+    setPortalLoading(true);
+    try {
+      const token = await getToken({ skipCache: true });
+      const res = await fetch(buildApiUrl('/api/stripe/create-customer-portal'), {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) throw new Error('portal unavailable');
+      const data = (await res.json()) as { url?: string };
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+      throw new Error('portal url missing');
+    } catch {
+      setPortalLoading(false);
+    }
+  };
 
   // Usuário sem assinatura: mostrar contador de análises grátis
   if (!isUnlimited) {
@@ -131,6 +159,16 @@ const AnalysisCounter = () => {
               {c.renewsPrefix} {Math.floor(balance)} {c.renewsSuffix}
             </p>
           )}
+
+          <button
+            type="button"
+            onClick={() => void openCustomerPortal()}
+            disabled={portalLoading}
+            className="flex items-center gap-1 text-xs text-[var(--text-secondary)] underline-offset-2 transition-colors hover:text-[var(--text-primary)] hover:underline disabled:opacity-60"
+          >
+            <ExternalLink className="h-3 w-3" />
+            {portalLoading ? '…' : c.manageSubscription}
+          </button>
         </div>
       </CardContent>
     </Card>
