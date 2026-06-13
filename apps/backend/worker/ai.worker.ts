@@ -9,14 +9,12 @@ import {
 } from '../src/common/utils/analysis-payload';
 import { AIAdapter, AIAnalysisError } from '../src/modules/ai/ai.adapter';
 import {
-  applyRiskRewardGuard,
-  capConfidenceByConfluence,
   computeRiskReward,
   formatRiskReward,
-  harmonizeConfidenceWithTrend,
   normalizeTargetProbabilities,
   reconcileConfluence,
 } from '../src/common/utils/analysis-normalizer';
+import { decideSignal } from '../src/common/utils/signal-decision';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
 import { isProductionRuntime } from '../src/common/utils/runtime-env';
 import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-runtime';
@@ -268,7 +266,7 @@ function normalizeRiskFactors(value: unknown): string[] {
   return fallback;
 }
 
-function toWorkerAnalysisResult(value: unknown): WorkerAnalysisResult {
+async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisResult> {
   const source = isRecord(value) ? (value as Record<string, unknown>) : {};
   const analysisSource = isRecord(source.analysis) ? (source.analysis as Record<string, unknown>) : source;
   const marketStructureSource = isRecord(analysisSource.marketStructure)
@@ -289,31 +287,33 @@ function toWorkerAnalysisResult(value: unknown): WorkerAnalysisResult {
       ? null
       : ensureString(analysisSource.riskRewardRatio ?? source.riskRewardRatio, '') || null;
 
-  // Confiança harmonizada com a força da tendência (teto: moderada 74, fraca 60).
-  // Mantém a escala 0-1 usada pelo worker.
-  // Piso de confiança em gráfico válido (paridade com o adapter): 0 vira 30.
-  const flooredConfidencePct =
-    normalizeConfidence(source.confidence) <= 0 ? 30 : normalizeConfidence(source.confidence);
-  const harmonizedConfidence01 =
-    harmonizeConfidenceWithTrend(flooredConfidencePct * 100, analysisSource.trendStrength) / 100;
+  // Confiança em escala 0-100, com piso de 30 em gráfico válido (paridade com o
+  // adapter). normalizeConfidence devolve 0-1 aqui — convertemos para 0-100.
+  const rawConfidence01 = normalizeConfidence(source.confidence);
+  const flooredConfidence = rawConfidence01 <= 0 ? 30 : Math.round(rawConfidence01 * 100);
 
-  // Paridade com o adapter: cap por confluência + guard determinístico de R/R
-  // (BUY/SELL com R/R < 1.2 no TP1 vira WAIT; níveis preservados; ENABLE_RR_GUARD=false desliga).
-  const cappedConfidence01 =
-    capConfidenceByConfluence(harmonizedConfidence01 * 100, analysisSource.factorsPresent) / 100;
   const workerRecommendation = normalizeRecommendation(source.recommendation);
-  const guardedSignal = applyRiskRewardGuard(
-    workerRecommendation === 'COMPRA' ? 'BUY' : workerRecommendation === 'VENDA' ? 'SELL' : 'WAIT',
-    Math.round(cappedConfidence01 * 100),
+  const canonicalRecommendation =
+    workerRecommendation === 'COMPRA' ? 'BUY' : workerRecommendation === 'VENDA' ? 'SELL' : 'WAIT';
+
+  // Sequência determinística ÚNICA (mesma usada pelo adapter):
+  // caps de confiança → guard R/R → news guard → teto WAIT.
+  const decision = await decideSignal({
+    recommendation: canonicalRecommendation,
+    flooredConfidence,
+    trendStrength: analysisSource.trendStrength,
+    factorsPresent: analysisSource.factorsPresent,
     riskRewardTp1,
-  );
-  const finalRecommendation =
-    guardedSignal.downgraded ? ('AGUARDAR' as const) : workerRecommendation;
-  // Paridade com o adapter: teto de 60% de confiança para AGUARDAR.
-  const finalConfidencePct =
-    finalRecommendation === 'AGUARDAR'
-      ? Math.min(guardedSignal.confidence, 60)
-      : guardedSignal.confidence;
+    symbol: ensureString(analysisSource.symbol ?? source.symbol, ''),
+  });
+
+  const finalRecommendation: SchemaRecommendation =
+    decision.recommendation === 'BUY'
+      ? 'COMPRA'
+      : decision.recommendation === 'SELL'
+        ? 'VENDA'
+        : 'AGUARDAR';
+  const finalConfidencePct = decision.confidence;
 
   // Probabilidades por alvo — mesma regra do adapter (paridade worker/adapter):
   // 0/inválido = ausente; default determinístico derivado da confiança.
@@ -885,7 +885,7 @@ async function processAnalysis(job: Job<JobData>) {
         ? (aiSource as { rawResponse: unknown }).rawResponse
         : aiSource;
 
-    const parsed = toWorkerAnalysisResult(sourcePayload);
+    const parsed = await toWorkerAnalysisResult(sourcePayload);
     rawContent = extractRawContent(aiSource, parsed);
 
     const validationErrors = validateTradingLogic(parsed);

@@ -152,7 +152,7 @@ A) INVALIDATION LEVEL: Identify the specific price that definitively kills this 
 
 B) ENTRY TYPE: Based on current price vs the identified setup zone:
 - "market": price is already at/inside the OB or setup zone → enter at market now
-- "limit": price has not yet reached the OB/FVG zone → set limit order at the zone
+- "limit": price has not reached the OB/FVG zone YET, OR price has already run PAST the zone in the trade direction and needs a pullback → set a limit order AT the zone. This is the correct choice for a valid-but-extended directional setup — keep the BUY/SELL and use a limit; do NOT collapse it into a HOLD.
 - "stop": wait for price to break a specific level first (breakout entry)
 - Write the specific entry condition in the OUTPUT LANGUAGE.
 - → populate entryType and entryCondition
@@ -195,6 +195,13 @@ Decision rule:
 - 4-5 ✅ → BUY/SELL (standard, confidence 55-74)
 - ≤3 ✅ → HOLD (insufficient confluence, confidence <50)
 - MANDATORY ITEMS: items 5 (market structure confirms) and 6 (R:R ≥ 1.5) are eliminatory — if EITHER fails, the signal MUST be HOLD regardless of the total score. A trade without confirmed structure or without viable R:R is not a trade.
+
+- EXTENDED-PRICE RULE (avoid the false HOLD): if the DIRECTIONAL checklist is satisfied (HTF bias + structure + ICT setup all aligned for one side) but current price has already RUN AWAY from the entry zone (OB/FVG), do NOT downgrade to HOLD. The setup is still valid — it is simply not a market entry yet. Instead:
+  - Keep the directional recommendation (BUY or SELL).
+  - Set entryType = "limit" and place "entry" AT the OB/FVG zone (not at current price).
+  - Measure item 6 (R:R ≥ 1.5) from that PLANNED limit entry, NOT from the current extended price. A setup that gives poor R:R chasing the current price but good R:R on a pullback to the zone is a LIMIT trade, not a HOLD.
+  - In entryCondition, state clearly: wait for the pullback to $X (the zone) before entering.
+- Only use HOLD when: structure is NOT confirmed, there is NO valid OB/FVG zone to set a limit at, the two directions are genuinely balanced (chop/range with no edge), or even a limit entry at the zone cannot reach R:R ≥ 1.5. HOLD means "no valid setup", NOT "valid setup but price is extended".
 
 Session modifier:
 - Dead Zone (17-24 UTC) — applies ONLY to forex, indices, equities and futures (session-driven markets): cap confidence 45, force HOLD.

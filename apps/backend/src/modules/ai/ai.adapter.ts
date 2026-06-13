@@ -6,16 +6,14 @@ import {
   Recommendation,
   normalizeConfidence,
   normalizeTargetProbabilities,
-  capConfidenceByConfluence,
-  applyRiskRewardGuard,
   reconcileConfluence,
   parseJsonFromContent,
   computeRiskReward,
   formatRiskReward,
-  harmonizeConfidenceWithTrend,
   correctPriceMagnitude,
   deriveMarketRegime,
 } from '../../common/utils/analysis-normalizer';
+import { decideSignal } from '../../common/utils/signal-decision';
 import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
 import { MarketService, normalizeToBinancePerp } from '../market/market.service';
@@ -1150,70 +1148,38 @@ export class AIAdapter {
       // (imagem inválida já foi rejeitada acima — aqui o gráfico é sempre válido)
       const flooredConfidence =
         normalizeConfidence(parsed.confidence, 50) <= 0 ? 30 : normalizeConfidence(parsed.confidence, 50);
-      // Confiança: harmoniza com a força da tendência e depois com a confluência
-      // (checklist 0-7) — dois caps determinísticos, nunca aumentam o valor.
-      const harmonizedConfidence = capConfidenceByConfluence(
-        harmonizeConfidenceWithTrend(flooredConfidence, parsed.analysis?.trendStrength),
-        parsed.analysis?.factorsPresent,
+
+      // R/R calculado a partir dos NÍVEIS (entry/SL/TP1), não de um campo de texto
+      // da IA. Antes o guard lia parsed.analysis?.riskRewardTp1 — campo inexistente
+      // no schema — e por isso nunca disparava neste caminho. Agora dispara.
+      const decisionRiskRewardTp1 = computeRiskReward(
+        parsed.analysis?.entry,
+        parsed.analysis?.stopLoss,
+        parsed.analysis?.takeProfit1,
       );
-      // Guard de R/R: BUY/SELL com R/R calculado < 1.2 no TP1 vira WAIT
-      // (níveis preservados). Kill-switch: ENABLE_RR_GUARD=false.
-      const guarded = applyRiskRewardGuard(
-        rawRecommendation,
-        harmonizedConfidence,
-        parsed.analysis?.riskRewardTp1,
-      );
-      if (guarded.downgraded) {
+
+      // Sequência determinística ÚNICA (mesma usada pelo worker):
+      // caps de confiança → guard R/R → news guard → teto WAIT.
+      const decision = await decideSignal({
+        recommendation: rawRecommendation,
+        flooredConfidence,
+        trendStrength: parsed.analysis?.trendStrength,
+        factorsPresent: parsed.analysis?.factorsPresent,
+        riskRewardTp1: decisionRiskRewardTp1,
+        symbol: String(parsed.analysis?.symbol || ''),
+      });
+      if (decision.rrDowngraded) {
         this.logger.warn(
-          `RR guard: sinal ${rawRecommendation} rebaixado para WAIT (riskRewardTp1=${parsed.analysis?.riskRewardTp1})`,
+          `RR guard: sinal ${rawRecommendation} rebaixado para WAIT (riskRewardTp1=${decisionRiskRewardTp1})`,
         );
       }
-
-      // ── News guard: não se opera em cima de notícia ──────────────────────
-      // Evento de impacto ALTO para a(s) moeda(s) do ativo a ≤45min (ou que
-      // saiu há ≤15min) → BUY/SELL vira WAIT com confiança ≤45. Caso real:
-      // SELL 75% em EURUSD no dia de decisão do BCE — o preço estourou contra.
-      // Best-effort (falha do calendário não bloqueia nada).
-      // Kill-switch: ENABLE_NEWS_GUARD=false.
-      let finalRecommendation = guarded.recommendation;
-      let finalConfidence = guarded.confidence;
-      if (process.env.ENABLE_NEWS_GUARD !== 'false' && finalRecommendation !== 'WAIT') {
-        try {
-          const events = await withTimeout(
-            new EconomicCalendarService().getEventsForSymbol(
-              String(parsed.analysis?.symbol || ''),
-              new Date(),
-              2,
-            ),
-            6_000,
-            'calendar timed out',
-          );
-          const imminent = (events || []).find(
-            (e) =>
-              e.impact === 'High' &&
-              typeof e.minutesUntil === 'number' &&
-              e.minutesUntil >= -15 &&
-              e.minutesUntil <= 45,
-          );
-          if (imminent) {
-            this.logger.warn(
-              `News guard: sinal ${finalRecommendation} rebaixado para WAIT — evento High iminente: ${imminent.country} ${imminent.title} (${imminent.minutesUntil}min)`,
-            );
-            finalRecommendation = 'WAIT';
-            finalConfidence = Math.min(finalConfidence, 45);
-          }
-        } catch {
-          // segue normal — guard é proteção extra, nunca bloqueio
-        }
+      if (decision.newsDowngraded) {
+        this.logger.warn(
+          `News guard: sinal ${rawRecommendation} rebaixado para WAIT — evento High iminente: ${decision.newsEvent}`,
+        );
       }
-      // HOLD/WAIT com "confiança 100%" parece super-sinal e confunde o usuário
-      // (caso real em produção). Para WAIT, a confiança fala da leitura, não de
-      // um trade — teto de 60%.
-      if (finalRecommendation === 'WAIT') {
-        finalConfidence = Math.min(finalConfidence, 60);
-      }
-      const recommendation = finalRecommendation;
-      const confidence = finalConfidence;
+      const recommendation = decision.recommendation;
+      const confidence = decision.confidence;
 
       return {
         recommendation,
