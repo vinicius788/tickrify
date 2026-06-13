@@ -1157,6 +1157,11 @@ export class AIAdapter {
         parsed.analysis?.stopLoss,
         parsed.analysis?.takeProfit1,
       );
+      const decisionRiskRewardTp2 = computeRiskReward(
+        parsed.analysis?.entry,
+        parsed.analysis?.stopLoss,
+        parsed.analysis?.takeProfit2,
+      );
 
       // Sequência determinística ÚNICA (mesma usada pelo worker):
       // caps de confiança → guard R/R → news guard → teto WAIT.
@@ -1166,6 +1171,7 @@ export class AIAdapter {
         trendStrength: parsed.analysis?.trendStrength,
         factorsPresent: parsed.analysis?.factorsPresent,
         riskRewardTp1: decisionRiskRewardTp1,
+        riskRewardTp2: decisionRiskRewardTp2,
         symbol: String(parsed.analysis?.symbol || ''),
       });
       if (decision.rrDowngraded) {

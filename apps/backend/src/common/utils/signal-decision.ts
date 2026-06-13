@@ -28,6 +28,8 @@ export interface SignalDecisionInput {
   factorsPresent: unknown;
   /** R/R no TP1 calculado a partir dos níveis (entry/SL/TP1), não do texto da IA. */
   riskRewardTp1: number | null | undefined;
+  /** R/R no TP2 (alvo final). O guard usa o MELHOR alvo alcançável, não só o TP1. */
+  riskRewardTp2?: number | null | undefined;
   /** Símbolo para consulta do calendário econômico (news guard). */
   symbol: string;
 }
@@ -61,9 +63,14 @@ export async function decideSignal(
     input.factorsPresent,
   );
 
-  // 2) Guard de R/R — BUY/SELL com R/R < 1.2 no TP1 vira WAIT (níveis preservados).
-  //    Kill-switch: ENABLE_RR_GUARD=false.
-  const guarded = applyRiskRewardGuard(input.recommendation, harmonized, input.riskRewardTp1);
+  // 2) Guard de R/R — usa o MELHOR alvo alcançável (TP1 ou TP2). Um trade com
+  //    saída parcial é viável pelo alvo final: TP1 a 1.1R + TP2 a 2.3R NÃO deve
+  //    morrer só porque o primeiro alvo é curto. Só rebaixa quando NEM o melhor
+  //    alvo compensa o risco (< 1.2). Kill-switch: ENABLE_RR_GUARD=false.
+  const bestRiskReward = [input.riskRewardTp1, input.riskRewardTp2]
+    .filter((r): r is number => typeof r === 'number' && Number.isFinite(r))
+    .reduce<number | null>((best, r) => (best === null || r > best ? r : best), null);
+  const guarded = applyRiskRewardGuard(input.recommendation, harmonized, bestRiskReward);
 
   let recommendation = guarded.recommendation;
   let confidence = guarded.confidence;

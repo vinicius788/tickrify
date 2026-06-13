@@ -304,6 +304,7 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisRes
     trendStrength: analysisSource.trendStrength,
     factorsPresent: analysisSource.factorsPresent,
     riskRewardTp1,
+    riskRewardTp2,
     symbol: ensureString(analysisSource.symbol ?? source.symbol, ''),
   });
 
