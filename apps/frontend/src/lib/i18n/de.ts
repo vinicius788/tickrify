@@ -138,6 +138,7 @@ export default {
       history: 'Verlauf:',
       hitRate: 'Trefferquote',
       rrBelowIdeal: '⚠ R/R unter dem Ideal',
+      entryCautionRRLow: 'Warte auf einen Rücklauf in die Einstiegszone — Markt-R/R unter dem Ideal.',
       copied: 'Kopiert!',
       copySuffix: 'in die Zwischenablage kopiert.',
       highImpact: '🔴 Hohe Auswirkung',

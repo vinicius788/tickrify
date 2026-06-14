@@ -172,9 +172,10 @@ A) INVALIDATION LEVEL: Identify the specific price that definitively kills this 
 - → populate invalidationLevel (number) and invalidationNote (string in the OUTPUT LANGUAGE)
 
 B) ENTRY TYPE: Based on current price vs the identified setup zone:
-- "market": price is already at/inside the OB or setup zone → enter at market now
-- "limit": price has not reached the OB/FVG zone YET, OR price has already run PAST the zone in the trade direction and needs a pullback → set a limit order AT the zone. This is the correct choice for a valid-but-extended directional setup — keep the BUY/SELL and use a limit; do NOT collapse it into a HOLD.
+- "market": ONLY when price is at/inside the OB/FVG zone AND a market entry there yields R/R ≥ 1.5 to the final target. If a market entry at the current price would give R/R < 1.5 (price has extended past the zone), DO NOT use "market" — use "limit" at the zone instead. NEVER tell the user to "enter at market now" when the market R/R is below 1.5.
+- "limit": price has not reached the OB/FVG zone YET, OR price has already run PAST the zone in the trade direction and needs a pullback, OR a market entry would give R/R < 1.5 → set a limit order AT the zone (entry = the zone price, not the current price). A limit at the zone tightens the stop and restores R/R ≥ 1.5. This is the correct choice for a valid-but-extended directional setup — keep the BUY/SELL and use a limit; do NOT collapse it into a HOLD.
 - "stop": wait for price to break a specific level first (breakout entry)
+- COHERENCE RULE: the entryCondition text MUST match the R/R. If R/R is below the ideal (1.5), the entryCondition must instruct waiting for a pullback to the zone — it must NEVER say "enter now / a mercado agora".
 - Write the specific entry condition in the OUTPUT LANGUAGE.
 - → populate entryType and entryCondition
 

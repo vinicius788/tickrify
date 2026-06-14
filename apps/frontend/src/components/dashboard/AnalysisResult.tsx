@@ -628,7 +628,13 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1.5 text-xs">
                   <span className="text-[var(--text-secondary)]">{t.analysis.entryType.toUpperCase()}: </span>
                   <span className="font-terminal font-semibold uppercase text-[var(--text-primary)]">{entryType}</span>
-                  {entryCondition && <p className="mt-0.5 text-[var(--text-secondary)]">{entryCondition}</p>}
+                  {/* Trava de coerência: com R/R abaixo do ideal, não exibir "entrar a
+                      mercado agora" (contradiz o aviso). Mostra orientação de aguardar recuo. */}
+                  {riskRewardLow && entryType.toLowerCase() === 'market' ? (
+                    <p className="mt-0.5 text-[var(--signal-hold)]">⚠ {r.entryCautionRRLow}</p>
+                  ) : (
+                    entryCondition && <p className="mt-0.5 text-[var(--text-secondary)]">{entryCondition}</p>
+                  )}
                 </div>
               )}
 

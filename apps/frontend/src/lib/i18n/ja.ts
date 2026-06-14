@@ -138,6 +138,7 @@ export default {
       history: '履歴:',
       hitRate: '的中',
       rrBelowIdeal: '⚠ R/R が理想以下',
+      entryCautionRRLow: 'エントリーゾーンへの押し目を待ってください — 成行のR/Rが理想以下です。',
       copied: 'コピーしました!',
       copySuffix: 'をクリップボードにコピーしました。',
       highImpact: '🔴 高インパクト',

@@ -147,6 +147,7 @@ export default {
       history: 'Histórico:',
       hitRate: 'acerto',
       rrBelowIdeal: '⚠ R/R abaixo do ideal',
+      entryCautionRRLow: 'Aguarde um recuo à zona de entrada — R/R a mercado abaixo do ideal.',
       copied: 'Copiado!',
       copySuffix: 'copiado para a área de transferência.',
       highImpact: '🔴 Alto impacto',
