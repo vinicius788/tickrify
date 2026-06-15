@@ -512,7 +512,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
         <div className="min-w-0 flex-1">
           <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '80ms' }}>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">{t.analysis.chartAnalyzed}</CardTitle>
+              <CardTitle className="tk-display text-lg">{t.analysis.chartAnalyzed}</CardTitle>
             </CardHeader>
             <CardContent>
               {imageUrl ? (
@@ -535,7 +535,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
           style={{ animationDelay: '200ms' }}
         >
           <CardHeader className="pb-2">
-            <CardTitle className="text-base tracking-wide">{t.analysis.levels.toUpperCase()}</CardTitle>
+            <CardTitle className="tk-display text-lg tracking-wide">{t.analysis.levels.toUpperCase()}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3">
@@ -675,7 +675,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
       <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '140ms' }}>
         <Accordion type="single" collapsible className="w-full">
           <AccordionItem value="technical-panel" className="border-none">
-            <AccordionTrigger className="px-5 py-4 text-base font-semibold hover:no-underline md:px-6">
+            <AccordionTrigger className="px-5 py-4 tk-display text-lg hover:no-underline md:px-6">
               <span className="flex items-center gap-2">
                 <Zap className="h-4 w-4 text-[var(--text-secondary)]" />
                 {t.analysis.technicalPanel}
@@ -690,7 +690,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 {/* ── Contexto ao vivo (cripto) ──────────────────────── */}
                 {hasLiveMarket && liveMarket && (
                   <AccordionItem value="live-market" className="border-[var(--border-subtle)]">
-                    <AccordionTrigger className="font-semibold hover:no-underline">
+                    <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                       <span className="flex items-center gap-2">
                         <Activity className="h-4 w-4 text-[var(--signal-buy)]" />
                         {t.analysis.liveMarket.title}
@@ -761,7 +761,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 {/* ── Probabilidades ─────────────────────────────────── */}
                 {hasProbabilities && (
                   <AccordionItem value="probabilities" className="border-[var(--border-subtle)]">
-                    <AccordionTrigger className="font-semibold hover:no-underline">
+                    <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                       <span className="flex items-center gap-2">
                         <SlidersVertical className="h-4 w-4 text-[var(--signal-buy)]" />
                         {t.analysis.outcomeProbabilities}
@@ -785,7 +785,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
                 {/* ── Eventos Econômicos ─────────────────────────────── */}
                 <AccordionItem value="calendar" className="border-[var(--border-subtle)]">
-                    <AccordionTrigger className="font-semibold hover:no-underline">
+                    <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                       <span className="flex items-center gap-2">
                         <CalendarClock className="h-4 w-4 text-amber-400" />
                         {t.analysis.economicEvents}
@@ -870,7 +870,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   </AccordionItem>
 
                 <AccordionItem value="sessions" className="border-[var(--border-subtle)]">
-                  <AccordionTrigger className="font-semibold hover:no-underline">
+                  <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                     <span className="flex items-center gap-2">
                       <Minus className="h-4 w-4 text-[var(--text-secondary)]" />
                       {t.analysis.marketSessions}
@@ -899,7 +899,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 </AccordionItem>
 
                 <AccordionItem value="market-structure" className="border-[var(--border-subtle)]">
-                  <AccordionTrigger className="font-semibold hover:no-underline">
+                  <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                     <span className="flex items-center gap-2">
                       <Target className="h-4 w-4 text-[var(--text-secondary)]" />
                       {t.analysis.marketStructure}
@@ -947,7 +947,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 </AccordionItem>
 
                 <AccordionItem value="technical-analysis" className="border-[var(--border-subtle)]">
-                  <AccordionTrigger className="font-semibold hover:no-underline">
+                  <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                     <span className="flex items-center gap-2">
                       <Zap className="h-4 w-4 text-[var(--text-secondary)]" />
                       {t.analysis.technicalAnalysis}
@@ -959,7 +959,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 </AccordionItem>
 
                 <AccordionItem value="patterns" className="border-[var(--border-subtle)]">
-                  <AccordionTrigger className="font-semibold hover:no-underline">
+                  <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                     <span className="flex items-center gap-2">
                       <CheckCircle2 className="h-4 w-4 text-[var(--text-secondary)]" />
                       {t.analysis.identifiedPatterns}
@@ -984,7 +984,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 </AccordionItem>
 
                 <AccordionItem value="indicators" className="border-[var(--border-subtle)]">
-                  <AccordionTrigger className="font-semibold hover:no-underline">
+                  <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                     <span className="flex items-center gap-2">
                       <SlidersVertical className="h-4 w-4 text-[var(--text-secondary)]" />
                       {t.analysis.keyIndicators}
@@ -1006,7 +1006,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 </AccordionItem>
 
                 <AccordionItem value="risk-factors" className="border-[var(--border-subtle)]">
-                  <AccordionTrigger className="font-semibold hover:no-underline">
+                  <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                     <span className="flex items-center gap-2">
                       <ShieldAlert className="h-4 w-4 text-[var(--signal-sell)]" />
                       {t.analysis.riskFactors}
@@ -1030,7 +1030,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
                 {(partialExitStrategy || hasStructuredExit) && (
                   <AccordionItem value="exit-plan" className="border-[var(--border-subtle)]">
-                    <AccordionTrigger className="font-semibold hover:no-underline">
+                    <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                       <span className="flex items-center gap-2">
                         <Target className="h-4 w-4 text-[var(--signal-buy)]" />
                         {t.analysis.partialExit}
@@ -1070,7 +1070,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
                 {alternativeScenario && (
                   <AccordionItem value="plan-b" className="border-[var(--border-subtle)]">
-                    <AccordionTrigger className="font-semibold hover:no-underline">
+                    <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                       <span className="flex items-center gap-2">
                         <AlertTriangle className="h-4 w-4 text-amber-400" />
                         {t.analysis.planB}
@@ -1085,7 +1085,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 )}
 
                 <AccordionItem value="opposite" className="border-[var(--border-subtle)]">
-                  <AccordionTrigger className="font-semibold hover:no-underline">
+                  <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                     <span className="flex items-center gap-2">
                       <CircleHelp className="h-4 w-4 text-[var(--text-secondary)]" />
                       {t.analysis.whyNotOpposite}
@@ -1103,7 +1103,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
               <div className="mt-4 border-t-2 border-[var(--border-emphasis)] pt-4">
                 <div className="rounded-md border border-[var(--border-emphasis)] bg-[var(--bg-overlay)] p-3">
-                  <h4 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">{t.analysis.executiveSummary}</h4>
+                  <h4 className="tk-display mb-2 text-base text-[var(--text-primary)]">{t.analysis.executiveSummary}</h4>
                   {(() => {
                     const { blocks, footer } = parseSummaryBlocks(executiveSummary);
                     if (blocks.length < 2) {

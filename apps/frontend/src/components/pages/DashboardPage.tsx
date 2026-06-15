@@ -475,15 +475,15 @@ const DashboardPage = () => {
               <CardHeader className="px-4 pb-2 pt-4">
                 <CardTitle className={sidebarSectionTitleClass}>{t.nav.newAnalysis.replace('Nova ', '').replace('New ', '').replace('Nuevo ', '').replace('Nouvelle ', '').replace('Neue ', '') === t.nav.newAnalysis ? 'Ações rápidas' : 'Quick actions'}</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-2 p-4 pt-0">
-                <Button onClick={resetNewAnalysisView} variant={activeView.startsWith('analysis') || activeView === 'loading' || activeView === 'error' ? 'default' : 'outline'} className="justify-start"><PlusCircle className="mr-2 h-4 w-4" /> {t.nav.newAnalysis}</Button>
-                <Button onClick={() => setActiveView('my-trades')} variant={activeView === 'my-trades' ? 'default' : 'outline'} className="justify-start"><History className="mr-2 h-4 w-4" /> {t.nav.myTrades}</Button>
-                <Button onClick={() => setActiveView('watchlist')} variant={activeView === 'watchlist' ? 'default' : 'outline'} className="justify-start"><Star className="mr-2 h-4 w-4" /> {t.nav.watchlist}</Button>
+              <CardContent className="flex flex-col gap-1 p-2 pt-0">
+                <button type="button" onClick={resetNewAnalysisView} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView.startsWith('analysis') || activeView === 'loading' || activeView === 'error' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}><PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}</button>
+                <button type="button" onClick={() => setActiveView('my-trades')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'my-trades' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}><History className="h-4 w-4" /> {t.nav.myTrades}</button>
+                <button type="button" onClick={() => setActiveView('watchlist')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'watchlist' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}><Star className="h-4 w-4" /> {t.nav.watchlist}</button>
                 {user && plan === 'free' && (
-                  <Button onClick={() => setShowUpgradeModal(true)} variant="outline" className="justify-start">
-                    <Crown className="mr-2 h-4 w-4" />
+                  <button type="button" onClick={() => setShowUpgradeModal(true)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+                    <Crown className="h-4 w-4 text-[var(--accent-green)]" />
                     Fazer Upgrade para Pro
-                  </Button>
+                  </button>
                 )}
               </CardContent>
             </Card>
