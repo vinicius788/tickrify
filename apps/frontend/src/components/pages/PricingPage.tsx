@@ -21,7 +21,7 @@ export default function PricingPage() {
       <div className="container mx-auto px-4 py-16">
         {/* Header */}
         <div className="text-center mb-16">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4">
+          <h1 className="tk-display text-4xl md:text-5xl mb-4">
             Escolha seu plano Tickrify
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
@@ -34,7 +34,7 @@ export default function PricingPage() {
 
         {/* FAQ */}
         <div className="mt-24 max-w-3xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-12">
+          <h2 className="tk-display text-3xl text-center mb-12">
             Perguntas Frequentes
           </h2>
 
