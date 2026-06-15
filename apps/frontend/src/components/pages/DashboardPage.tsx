@@ -20,6 +20,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
 import { useAnalyses } from "@/hooks/useAnalyses";
+import { useTicks } from "@/hooks/useTicks";
 import { PLANS } from "@/components/pricing/PricingCards";
 import { PageHeader } from "@/components/ui/PageHeader";
 import officialIcon from "@/assets/tickrify-icon-official.png";
@@ -126,6 +127,23 @@ const DashboardPage = () => {
       ? Math.round(confidences.reduce((sum, n) => sum + n, 0) / confidences.length)
       : 0;
     return { total: completed.length, avgConfidence };
+  }, [rawAnalyses]);
+
+  const { balance: ticksBalance } = useTicks();
+
+  // Insight da semana — bullish vs bearish nas análises dos últimos 7 dias.
+  const weeklyInsight = useMemo(() => {
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    let bull = 0;
+    let bear = 0;
+    for (const a of rawAnalyses) {
+      if (a.status !== 'completed' || !a.createdAt) continue;
+      if (new Date(a.createdAt).getTime() < weekAgo) continue;
+      const r = String(a.recommendation || '').toUpperCase();
+      if (/BUY|COMPRA|BULL|ALTA/.test(r)) bull += 1;
+      else if (/SELL|VENDA|BEAR|BAIXA/.test(r)) bear += 1;
+    }
+    return { bull, bear, total: bull + bear };
   }, [rawAnalyses]);
 
   useEffect(() => {
@@ -559,20 +577,70 @@ const DashboardPage = () => {
                 />
               )}
               {activeView === 'new-analysis' && !isDemo && (
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
-                    <div className="tk-stat-label">{t.nav.analysesWord}</div>
-                    <div className="tk-stat mt-2 text-2xl md:text-3xl">{dashboardKpis.total}</div>
+                <>
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
+                      <div className="tk-stat-label">{t.nav.analysesWord}</div>
+                      <div className="tk-stat mt-2 text-2xl md:text-3xl">{dashboardKpis.total}</div>
+                    </div>
+                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
+                      <div className="tk-stat-label">{t.analysis.confidence}</div>
+                      <div className="tk-stat mt-2 text-2xl text-[var(--accent-green)] md:text-3xl">{dashboardKpis.avgConfidence}%</div>
+                    </div>
+                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
+                      <div className="tk-stat-label">{t.nav.activeMarkets}</div>
+                      <div className="tk-stat mt-2 text-2xl md:text-3xl">{realActiveMarkets.length}</div>
+                    </div>
+                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
+                      <div className="tk-stat-label">Ticks</div>
+                      <div className="tk-stat mt-2 text-2xl md:text-3xl">{Math.floor(Number(ticksBalance) || 0)}</div>
+                    </div>
                   </div>
-                  <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
-                    <div className="tk-stat-label">{t.analysis.confidence}</div>
-                    <div className="tk-stat mt-2 text-2xl text-[var(--accent-green)] md:text-3xl">{dashboardKpis.avgConfidence}%</div>
+                  <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr]">
+                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
+                      <div className="tk-stat-label mb-3">{t.nav.recentAnalyses}</div>
+                      {recentAnalyses.length > 0 ? (
+                        recentAnalyses.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between border-t border-[var(--border-subtle)] py-2 first:border-t-0"
+                          >
+                            <span className="font-terminal text-xs text-[var(--text-primary)]">
+                              {item.symbol} <span className="text-[var(--text-secondary)]">{item.timeframe}</span>
+                            </span>
+                            <span className={`font-terminal text-[11px] font-semibold ${signalToneClass(item.recommendation)}`}>
+                              {item.recommendation} {item.confidence}%
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="py-3 text-xs text-[var(--text-secondary)]">{loadingAnalyses ? t.common.loading : '—'}</p>
+                      )}
+                    </div>
+                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
+                      <div className="tk-stat-label">Insight da semana</div>
+                      <div className="mt-4 flex gap-6">
+                        <div>
+                          <div className="tk-stat text-2xl text-[var(--accent-green)]">{weeklyInsight.bull}</div>
+                          <div className="tk-stat-label mt-1">Bullish</div>
+                        </div>
+                        <div>
+                          <div className="tk-stat text-2xl text-[var(--signal-sell)]">{weeklyInsight.bear}</div>
+                          <div className="tk-stat-label mt-1">Bearish</div>
+                        </div>
+                      </div>
+                      <div className="mt-4 h-1.5 overflow-hidden rounded-full" style={{ background: 'rgba(248,113,113,0.25)' }}>
+                        <div
+                          className="h-full"
+                          style={{
+                            width: `${weeklyInsight.total > 0 ? Math.round((weeklyInsight.bull / weeklyInsight.total) * 100) : 0}%`,
+                            background: 'var(--accent-green)',
+                          }}
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
-                    <div className="tk-stat-label">{t.nav.activeMarkets}</div>
-                    <div className="tk-stat mt-2 text-2xl md:text-3xl">{realActiveMarkets.length}</div>
-                  </div>
-                </div>
+                </>
               )}
               {renderContent()}
             </div>
