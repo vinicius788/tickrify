@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { PLANS } from "@/components/pricing/PricingCards";
+import { PageHeader } from "@/components/ui/PageHeader";
 import officialIcon from "@/assets/tickrify-icon-official.png";
 
 type View = 'new-analysis' | 'my-trades' | 'watchlist' | 'analysis-result' | 'loading' | 'error';
@@ -527,6 +528,24 @@ const DashboardPage = () => {
 
           <main className="min-w-0 flex-1 overflow-y-auto p-3 md:p-6">
             <div className="flex flex-col gap-6 md:gap-8">
+              {(activeView === 'new-analysis' || activeView === 'my-trades' || activeView === 'watchlist') && (
+                <PageHeader
+                  size="md"
+                  eyebrow={
+                    <>
+                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
+                      Institutional Terminal
+                    </>
+                  }
+                  title={
+                    activeView === 'my-trades'
+                      ? t.nav.myTrades
+                      : activeView === 'watchlist'
+                        ? t.nav.watchlist
+                        : t.nav.newAnalysis
+                  }
+                />
+              )}
               {renderContent()}
             </div>
           </main>
