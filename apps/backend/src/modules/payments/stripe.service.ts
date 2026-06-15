@@ -81,7 +81,11 @@ export class StripeService {
       const session = await stripe.checkout.sessions.create({
         customer: customerId,
         mode: 'subscription',
-        payment_method_types: ['card'],
+        // NÃO fixar payment_method_types: ao omitir, a Stripe usa os métodos
+        // automáticos configurados no painel (por país) e habilita o Adaptive
+        // Pricing — cada cliente vê o preço e paga na MOEDA LOCAL dele (150+
+        // países), além de liberar métodos locais (Pix no BR, etc.). Fixar
+        // ['card'] travava tudo em cartão e atrapalhava a conversão de moeda.
         line_items: [
           {
             price: priceId,

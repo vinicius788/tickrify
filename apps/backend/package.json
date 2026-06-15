@@ -31,6 +31,7 @@
     "migrate:reset": "prisma migrate reset --force --config ./prisma.config.ts",
     "studio": "prisma studio --config ./prisma.config.ts",
     "seed": "ts-node prisma/seed.ts",
+    "metrics": "ts-node scripts/funnel-metrics.ts",
     "worker": "npm run worker:dev",
     "worker:dev": "ts-node -r tsconfig-paths/register worker/ai.worker.ts",
     "worker:prod": "node dist/worker/ai.worker.js"
