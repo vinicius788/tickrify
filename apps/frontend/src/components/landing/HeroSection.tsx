@@ -45,11 +45,11 @@ const HeroSection = () => {
           <h1
             className="fade-up-2"
             style={{
-              fontSize: 'clamp(3.5rem, 8vw, 7rem)',
-              fontWeight: 800,
-              lineHeight: 0.95,
-              letterSpacing: '-0.03em',
-              fontFamily: 'var(--font-display)',
+              fontSize: 'clamp(3.25rem, 7.5vw, 6.5rem)',
+              fontWeight: 500,
+              lineHeight: 0.98,
+              letterSpacing: '-0.02em',
+              fontFamily: 'var(--font-serif)',
               color: 'var(--text-primary)',
             }}
           >
@@ -57,7 +57,7 @@ const HeroSection = () => {
             <br />
             <span
               className="hero-highlight"
-              style={{ fontSize: 'clamp(3.5rem, 8vw, 7rem)', fontWeight: 800, lineHeight: 0.95, letterSpacing: '-0.03em' }}
+              style={{ fontSize: 'clamp(3.25rem, 7.5vw, 6.5rem)', fontWeight: 500, lineHeight: 0.98, letterSpacing: '-0.02em', fontFamily: 'var(--font-serif)' }}
             >
               {h.title2}
             </span>

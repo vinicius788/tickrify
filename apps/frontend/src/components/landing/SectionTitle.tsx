@@ -23,8 +23,8 @@ export const SectionTitle = ({
         {label}
       </p>
       <h2
-        className="mt-3 text-[clamp(2rem,4vw,3.5rem)] font-bold leading-[1.04] tracking-[-0.03em] text-[var(--text-primary)]"
-        style={{ fontFamily: 'var(--font-display)' }}
+        className="mt-3 text-[clamp(2rem,4vw,3.5rem)] font-medium leading-[1.04] tracking-[-0.02em] text-[var(--text-primary)]"
+        style={{ fontFamily: 'var(--font-serif)' }}
       >
         {title} <span className={`hero-highlight ${highlightClassName}`.trim()}>{highlight}</span>
       </h2>

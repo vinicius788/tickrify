@@ -14,8 +14,8 @@ const FinalCtaSection = () => {
         </div>
 
         <h2
-          className="mb-4 text-[clamp(2rem,4vw,3.4rem)] font-bold leading-[1.02] tracking-[-0.03em] text-[var(--text-primary)]"
-          style={{ fontFamily: 'var(--font-display)' }}
+          className="mb-4 text-[clamp(2rem,4vw,3.4rem)] font-medium leading-[1.04] tracking-[-0.02em] text-[var(--text-primary)]"
+          style={{ fontFamily: 'var(--font-serif)' }}
         >
           {c.title} <span className="hero-highlight">{c.highlight}</span>
         </h2>
