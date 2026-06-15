@@ -95,7 +95,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
                 <UploadCloud className="h-7 w-7" />
               </span>
               <p className="text-[13px] text-[var(--text-secondary)]">PNG · JPG · WEBP · max 10MB</p>
-              <h3 className="text-balance text-xl font-semibold text-[var(--text-primary)] md:text-2xl">
+              <h3 className="tk-display text-balance text-2xl text-[var(--text-primary)] md:text-3xl">
                 {isDragActive ? u.dropActive : u.dropHere}
               </h3>
               <p className="text-pretty text-sm text-[var(--text-secondary)]">{u.orClick}</p>
