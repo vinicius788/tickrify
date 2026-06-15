@@ -116,6 +116,18 @@ const DashboardPage = () => {
     return Array.from(marketMap.values()).slice(0, 6);
   }, [rawAnalyses, isDemo]);
 
+  // KPIs do cockpit — derivados das análises já carregadas (sem fetch novo).
+  const dashboardKpis = useMemo(() => {
+    const completed = rawAnalyses.filter((a) => a.status === 'completed');
+    const confidences = completed
+      .map((a) => confidenceToPercent(a.confidence))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    const avgConfidence = confidences.length
+      ? Math.round(confidences.reduce((sum, n) => sum + n, 0) / confidences.length)
+      : 0;
+    return { total: completed.length, avgConfidence };
+  }, [rawAnalyses]);
+
   useEffect(() => {
     const goOnline = () => setIsOnline(true);
     const goOffline = () => setIsOnline(false);
@@ -545,6 +557,22 @@ const DashboardPage = () => {
                         : t.nav.newAnalysis
                   }
                 />
+              )}
+              {activeView === 'new-analysis' && !isDemo && (
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
+                    <div className="tk-stat-label">{t.nav.analysesWord}</div>
+                    <div className="tk-stat mt-2 text-2xl md:text-3xl">{dashboardKpis.total}</div>
+                  </div>
+                  <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
+                    <div className="tk-stat-label">{t.analysis.confidence}</div>
+                    <div className="tk-stat mt-2 text-2xl text-[var(--accent-green)] md:text-3xl">{dashboardKpis.avgConfidence}%</div>
+                  </div>
+                  <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
+                    <div className="tk-stat-label">{t.nav.activeMarkets}</div>
+                    <div className="tk-stat mt-2 text-2xl md:text-3xl">{realActiveMarkets.length}</div>
+                  </div>
+                </div>
               )}
               {renderContent()}
             </div>
