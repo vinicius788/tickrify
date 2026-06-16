@@ -375,13 +375,15 @@ const DashboardPage = () => {
           </div>
         </div>
 
-        {/* KPIs */}
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {/* KPIs — painel único dividido */}
+        <div className="grid grid-cols-2 divide-x divide-y divide-[var(--border-subtle)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] md:grid-cols-4 md:divide-y-0">
           {kpis.map((k) => (
-            <div key={k.label} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 transition-colors hover:border-[var(--border-default)]">
+            <div key={k.label} className="p-5">
               <div className="flex items-start justify-between">
                 <div className="tk-stat-label">{k.label}</div>
-                <k.Icon className="h-4 w-4 text-[var(--text-secondary)] opacity-40" />
+                <span className="flex h-6 w-6 items-center justify-center rounded-md border border-[var(--border-subtle)]">
+                  <k.Icon className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
+                </span>
               </div>
               <div className={`tk-stat mt-3 text-3xl ${k.accent ? 'text-[var(--accent-green)]' : ''}`}>{k.value}</div>
               <div className="tk-stat-label mt-1 opacity-60">{k.sub}</div>
@@ -498,10 +500,77 @@ const DashboardPage = () => {
     activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error'
       ? 'new-analysis'
       : activeView;
+  const currentViewLabel =
+    activeView === 'my-trades'
+      ? t.nav.myTrades
+      : activeView === 'watchlist'
+        ? t.nav.watchlist
+        : activeView === 'dashboard'
+          ? t.nav.dashboard
+          : t.nav.newAnalysis;
   const sidebarSectionTitleClass = 'text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]';
 
   return (
-    <div className="relative z-10 flex min-h-screen w-full flex-col overflow-x-hidden bg-[#050508]">
+    <div className="relative z-10 flex min-h-screen w-full overflow-x-hidden bg-[#050508]">
+      {/* SIDEBAR (desktop) */}
+      <aside className="hidden w-[248px] shrink-0 flex-col border-r border-[var(--border-subtle)] md:flex">
+        <div className="flex items-center gap-2.5 px-4 pb-4 pt-4">
+          <img src={officialIcon} alt="Tickrify" className="h-8 w-auto shrink-0 object-contain" />
+          <div className="leading-none">
+            <div className="text-sm font-bold tracking-wide text-[var(--text-primary)]">TICKRIFY</div>
+            <div className="mt-1 font-terminal text-[8px] uppercase tracking-[0.14em] text-[var(--text-secondary)]">Institutional Terminal</div>
+          </div>
+        </div>
+
+        <div className="flex flex-1 flex-col overflow-y-auto px-3">
+          <div className={`${sidebarSectionTitleClass} px-2 pb-1 pt-2`}>{t.nav.workArea}</div>
+          <nav className="flex flex-col gap-0.5">
+            <button type="button" onClick={() => setActiveView('dashboard')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'dashboard' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+              <LayoutGrid className="h-4 w-4" /> {t.nav.dashboard}
+            </button>
+            <button type="button" onClick={resetNewAnalysisView} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'new-analysis' || activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+              <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
+            </button>
+            <button type="button" onClick={() => setActiveView('my-trades')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'my-trades' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+              <History className="h-4 w-4" /> {t.nav.myTrades}
+            </button>
+            <button type="button" onClick={() => setActiveView('watchlist')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'watchlist' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+              <Star className="h-4 w-4" /> {t.nav.watchlist}
+            </button>
+          </nav>
+
+          <div className={`${sidebarSectionTitleClass} px-2 pb-1 pt-5`}>{t.nav.account}</div>
+          <nav className="flex flex-col gap-0.5">
+            <Link to="/pricing" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+              <CreditCard className="h-4 w-4" /> {t.nav.plans}
+            </Link>
+            {user && plan === 'free' && (
+              <button type="button" onClick={() => setShowUpgradeModal(true)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+                <Crown className="h-4 w-4 text-[var(--accent-green)]" /> Fazer Upgrade para Pro
+              </button>
+            )}
+          </nav>
+
+          {user && plan === 'free' && (
+            <div className="mt-4">
+              <AnalysisCounter onUpgradeClick={() => setShowUpgradeModal(true)} />
+            </div>
+          )}
+        </div>
+
+        {user && (
+          <div className="flex items-center gap-2.5 border-t border-[var(--border-subtle)] p-3">
+            <UserButton afterSignOutUrl="/" />
+            <div className="min-w-0 leading-tight">
+              <div className="truncate text-xs text-[var(--text-primary)]">{user.firstName || user.fullName || 'Trader'}</div>
+              <div className="font-terminal text-[8px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{navbarUnlimited ? `${plan.toUpperCase()} · ${t.nav.statusActive}` : t.nav.analysesWord}</div>
+            </div>
+          </div>
+        )}
+      </aside>
+
+      {/* MAIN COLUMN */}
+      <div className="flex min-w-0 flex-1 flex-col">
       {/* Banner de Demo */}
       {isDemo && (
         <div className="bg-primary/10 border-b border-primary/20 px-4 py-3 text-center font-medium sticky top-0 z-50 backdrop-blur-sm">
@@ -517,49 +586,43 @@ const DashboardPage = () => {
         </div>
       )}
       
-      <header className="sticky top-0 z-40 border-b border-border bg-[#050508]/95 backdrop-blur">
-        <div className="flex h-14 items-center justify-between gap-3 px-4 md:px-6">
-          <Link to={user ? "/dashboard" : "/"} className="flex min-w-0 shrink-0 items-center gap-2">
-            <img src={officialIcon} alt="Tickrify" className="h-8 w-auto shrink-0 object-contain" />
-            <div className="hidden flex-col leading-none md:flex">
-              <span className="text-sm font-bold tracking-wide">TICKRIFY</span>
-              <span className="text-xs text-muted-foreground">Institutional Terminal</span>
-            </div>
+      <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[#050508]/95 px-4 backdrop-blur md:px-6">
+        <div className="flex min-w-0 items-center gap-2">
+          <Link to={user ? "/dashboard" : "/"} className="md:hidden">
+            <img src={officialIcon} alt="Tickrify" className="h-7 w-auto shrink-0 object-contain" />
           </Link>
+          <span className="hidden items-center gap-2 font-terminal text-[11px] uppercase tracking-[0.14em] md:flex">
+            <span className="text-[var(--text-secondary)]">{t.nav.workspace}</span>
+            <span className="text-[var(--text-muted)]">/</span>
+            <span className="text-[var(--text-primary)]">{currentViewLabel}</span>
+          </span>
+        </div>
 
-          <div className="flex min-w-0 items-center gap-1.5 overflow-visible text-sm md:gap-3">
-            <div className="flex shrink-0 items-center gap-1 text-sm font-medium">
-              {isOnline ? (
-                <>
-                  <Wifi className="h-3.5 w-3.5 text-green-500" />
-                  <span className="hidden text-green-500 sm:inline">{t.common.online}</span>
-                </>
-              ) : (
-                <>
-                  <WifiOff className="h-3.5 w-3.5 text-red-500" />
-                  <span className="hidden text-red-500 sm:inline">{t.common.offline}</span>
-                </>
-              )}
-            </div>
-
-            {user && <TicksBadge />}
-
-            <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium">
-              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="whitespace-nowrap">{navbarUnlimited ? plan.toUpperCase() : quotaText}</span>
-              <span className="hidden whitespace-nowrap text-[var(--text-secondary)] md:inline">
-                {navbarUnlimited ? `· ${t.nav.statusActive}` : t.nav.analysesWord}
-              </span>
-            </div>
-
-            <LanguageSwitcher />
-
-            {user && (
-              <div className="shrink-0">
-                <UserButton afterSignOutUrl="/" />
-              </div>
-            )}
+        <div className="flex min-w-0 items-center gap-1.5 overflow-visible text-sm md:gap-3">
+          <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
+            <span className={`inline-block h-1.5 w-1.5 rounded-full ${isOnline ? 'bg-[var(--accent-green)]' : 'bg-red-500'}`} />
+            <span className={`font-terminal text-[11px] ${isOnline ? 'text-[var(--accent-green)]' : 'text-red-500'}`}>
+              {isOnline ? t.common.online : t.common.offline}
+            </span>
           </div>
+
+          {user && <TicksBadge />}
+
+          <div className="flex shrink-0 items-center gap-1 rounded-lg border border-[var(--border-subtle)] px-2.5 py-1.5 text-sm font-medium">
+            <Zap className="h-3.5 w-3.5 text-[var(--accent-green)]" />
+            <span className="whitespace-nowrap">{navbarUnlimited ? plan.toUpperCase() : quotaText}</span>
+            <span className="hidden whitespace-nowrap text-[var(--text-secondary)] md:inline">
+              {navbarUnlimited ? `· ${t.nav.statusActive}` : t.nav.analysesWord}
+            </span>
+          </div>
+
+          <LanguageSwitcher />
+
+          {user && (
+            <div className="shrink-0 md:hidden">
+              <UserButton afterSignOutUrl="/" />
+            </div>
+          )}
         </div>
       </header>
 
@@ -604,48 +667,13 @@ const DashboardPage = () => {
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          <aside className="hidden w-[240px] min-w-0 shrink-0 flex-col overflow-y-auto border-r border-border p-3 md:flex">
-            <div className={`${sidebarSectionTitleClass} px-2 pb-1 pt-2`}>{t.nav.workArea}</div>
-            <nav className="flex flex-col gap-0.5">
-              <button type="button" onClick={() => setActiveView('dashboard')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'dashboard' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
-                <LayoutGrid className="h-4 w-4" /> {t.nav.dashboard}
-              </button>
-              <button type="button" onClick={resetNewAnalysisView} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'new-analysis' || activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
-                <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
-              </button>
-              <button type="button" onClick={() => setActiveView('my-trades')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'my-trades' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
-                <History className="h-4 w-4" /> {t.nav.myTrades}
-              </button>
-              <button type="button" onClick={() => setActiveView('watchlist')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'watchlist' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
-                <Star className="h-4 w-4" /> {t.nav.watchlist}
-              </button>
-            </nav>
-
-            <div className={`${sidebarSectionTitleClass} px-2 pb-1 pt-5`}>{t.nav.account}</div>
-            <nav className="flex flex-col gap-0.5">
-              <Link to="/pricing" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
-                <CreditCard className="h-4 w-4" /> {t.nav.plans}
-              </Link>
-              {user && plan === 'free' && (
-                <button type="button" onClick={() => setShowUpgradeModal(true)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
-                  <Crown className="h-4 w-4 text-[var(--accent-green)]" /> Fazer Upgrade para Pro
-                </button>
-              )}
-            </nav>
-
-            {user && plan === 'free' && (
-              <div className="mt-4">
-                <AnalysisCounter onUpgradeClick={() => setShowUpgradeModal(true)} />
-              </div>
-            )}
-          </aside>
-
           <main className="min-w-0 flex-1 overflow-y-auto p-3 md:p-6">
             <div className="flex flex-col gap-6 md:gap-8">
               {renderContent()}
             </div>
           </main>
         </div>
+      </div>
       </div>
 
       {/* Modal de Upgrade */}
