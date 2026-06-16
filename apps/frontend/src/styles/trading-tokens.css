@@ -22,8 +22,8 @@
   --bg-base: var(--bg);
   --bg-elevated: var(--bg-card);
   --bg-overlay: #101010;
-  --border-subtle: var(--border);
-  --border-default: var(--border);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-default: rgba(255, 255, 255, 0.08);
   --border-emphasis: var(--border-hover);
   --signal-buy: var(--accent-green);
   --signal-buy-bg: var(--accent-green-dim);
@@ -49,10 +49,10 @@
 
 .surface-terminal {
   background-color: var(--bg-surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
 }
 
 .surface-terminal-elevated {
   background-color: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
 }
