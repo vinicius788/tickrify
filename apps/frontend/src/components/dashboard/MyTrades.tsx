@@ -198,11 +198,11 @@ const MyTrades = () => {
   };
 
   return (
-    <Card className="surface-terminal rounded-xl">
+    <Card className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)]">
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <CardTitle className="text-base font-semibold">{tr.title}</CardTitle>
+            <CardTitle className="tk-display text-lg">{tr.title}</CardTitle>
             <CardDescription className="mt-0.5 text-xs">
               {isDemo ? tr.demoData : `${filtered.length} ${tr.found}`}
             </CardDescription>

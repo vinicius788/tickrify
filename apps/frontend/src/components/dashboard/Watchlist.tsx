@@ -100,9 +100,9 @@ const Watchlist = () => {
         </>
       ) : (
         // Modo REAL — análises favoritadas via estrela em Meus Trades
-        <Card>
+        <Card className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)]">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 tk-display text-lg">
               <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
               {w.favoritesTitle}
             </CardTitle>

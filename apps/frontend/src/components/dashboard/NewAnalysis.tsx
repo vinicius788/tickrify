@@ -137,7 +137,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
 
         <Card
           {...getRootProps()}
-          className={`surface-terminal-elevated cursor-pointer border border-[var(--border-subtle)] p-2 transition-all duration-300 hover:border-[var(--border-emphasis)] ${
+          className={`border border-[var(--border-subtle)] bg-[var(--bg-card)] cursor-pointer border border-[var(--border-subtle)] p-2 transition-all duration-300 hover:border-[var(--border-emphasis)] ${
             isDragActive ? 'border-[var(--signal-buy)] bg-[var(--signal-buy-bg)]' : ''
           }`}
         >
@@ -183,7 +183,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
         </Card>
 
         {/* Callout: o símbolo é lido automaticamente */}
-        <Card className="surface-terminal-elevated flex items-start gap-3 border border-[var(--border-subtle)] px-4 py-3.5">
+        <Card className="border border-[var(--border-subtle)] bg-[var(--bg-card)] flex items-start gap-3 border border-[var(--border-subtle)] px-4 py-3.5">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--signal-buy)]" />
           <div>
             <p className="text-[13px] font-semibold text-[var(--text-primary)]">{u.symbolAutoTitle}</p>
@@ -211,7 +211,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
   return (
     <div className="flex flex-col gap-4">
       <Stepper active={2} />
-      <Card className="surface-terminal-elevated flex min-h-[480px] flex-1 flex-col px-4 py-6 md:px-8">
+      <Card className="border border-[var(--border-subtle)] bg-[var(--bg-card)] flex min-h-[480px] flex-1 flex-col px-4 py-6 md:px-8">
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
           {/* Gráfico principal */}
           <div className="mb-2 flex items-center justify-between">
