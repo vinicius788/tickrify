@@ -31,6 +31,13 @@ export default {
     conf: 'Conf.',
     time: 'Tiempo',
     ago: 'hace',
+    dashboard: 'Panel',
+    history: 'Historial',
+    plans: 'Planes',
+    workspace: 'Workspace',
+    workArea: 'Área de trabajo',
+    account: 'Cuenta',
+    centralTitle: 'Central de análisis',
   },
   plan: {
     elite: 'Plan Elite',

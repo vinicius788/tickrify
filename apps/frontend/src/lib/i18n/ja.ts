@@ -31,6 +31,13 @@ export default {
     conf: '信頼度',
     time: '時間',
     ago: '前',
+    dashboard: 'ダッシュボード',
+    history: '履歴',
+    plans: 'プラン',
+    workspace: 'ワークスペース',
+    workArea: '作業エリア',
+    account: 'アカウント',
+    centralTitle: '分析センター',
   },
   plan: {
     elite: 'エリートプラン',

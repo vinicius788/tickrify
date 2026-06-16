@@ -31,6 +31,13 @@ export default {
     conf: 'Conf.',
     time: 'Temps',
     ago: 'il y a',
+    dashboard: 'Tableau',
+    history: 'Historique',
+    plans: 'Forfaits',
+    workspace: 'Workspace',
+    workArea: 'Espace de travail',
+    account: 'Compte',
+    centralTitle: "Centre d'analyse",
   },
   plan: {
     elite: 'Plan Elite',

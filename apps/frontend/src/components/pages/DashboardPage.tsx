@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical, Clock, Wifi, WifiOff } from "lucide-react";
+import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical, Clock, Wifi, WifiOff, LayoutGrid, CreditCard } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { UserButton, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import NewAnalysis from "../dashboard/NewAnalysis";
+import LiveTape from "../dashboard/LiveTape";
 import MyTrades from "../dashboard/MyTrades";
 import Watchlist from "../dashboard/Watchlist";
 import AnalysisResult from "../dashboard/AnalysisResult";
@@ -25,7 +26,7 @@ import { PLANS } from "@/components/pricing/PricingCards";
 import { PageHeader } from "@/components/ui/PageHeader";
 import officialIcon from "@/assets/tickrify-icon-official.png";
 
-type View = 'new-analysis' | 'my-trades' | 'watchlist' | 'analysis-result' | 'loading' | 'error';
+type View = 'dashboard' | 'new-analysis' | 'my-trades' | 'watchlist' | 'analysis-result' | 'loading' | 'error';
 type RecentAnalysisItem = {
   symbol: string;
   timeframe: string;
@@ -45,7 +46,7 @@ const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'im
 const DashboardPage = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
-  const [activeView, setActiveView] = useState<View>('new-analysis');
+  const [activeView, setActiveView] = useState<View>('dashboard');
   const [analysisKey, setAnalysisKey] = useState(0);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
@@ -314,10 +315,104 @@ const DashboardPage = () => {
     resetNewAnalysisView();
   };
 
+  const viewEyebrow = (label: string) => (
+    <div className="tk-eyebrow flex items-center gap-2 text-[11px]">
+      <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
+      {t.nav.workspace} / {label}
+    </div>
+  );
+
+  const renderDashboardHome = () => {
+    const titleWords = t.nav.centralTitle.split(' ');
+    const titleLast = titleWords.length > 1 ? titleWords.pop() : '';
+    const titleHead = titleWords.join(' ');
+    const bullPct = weeklyInsight.total > 0 ? Math.round((weeklyInsight.bull / weeklyInsight.total) * 100) : 0;
+    return (
+      <div className="flex flex-col gap-5">
+        <div>
+          {viewEyebrow(t.nav.dashboard)}
+          <h1 className="tk-display mt-2 text-3xl md:text-4xl">
+            {titleHead}{' '}
+            {titleLast && <em className="font-serif italic text-[var(--text-secondary)]">{titleLast}</em>}
+          </h1>
+          <p className="mt-1 max-w-[480px] text-sm text-[var(--text-secondary)]">{t.analysis.upload.subtitle}</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
+            <div className="tk-stat-label">{t.nav.analysesWord}</div>
+            <div className="tk-stat mt-2 text-2xl md:text-3xl">{dashboardKpis.total}</div>
+          </div>
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
+            <div className="tk-stat-label">{t.analysis.confidence}</div>
+            <div className="tk-stat mt-2 text-2xl text-[var(--accent-green)] md:text-3xl">{dashboardKpis.avgConfidence}%</div>
+          </div>
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
+            <div className="tk-stat-label">{t.nav.activeMarkets}</div>
+            <div className="tk-stat mt-2 text-2xl md:text-3xl">{realActiveMarkets.length}</div>
+          </div>
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
+            <div className="tk-stat-label">Ticks</div>
+            <div className="tk-stat mt-2 text-2xl md:text-3xl">{Math.floor(Number(ticksBalance) || 0)}</div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr]">
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
+            <div className="tk-stat-label mb-3">{t.nav.recentAnalyses}</div>
+            {displayRecentAnalyses.length > 0 ? (
+              displayRecentAnalyses.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between border-t border-[var(--border-subtle)] py-2 first:border-t-0"
+                >
+                  <span className="font-terminal text-xs text-[var(--text-primary)]">
+                    {item.symbol} <span className="text-[var(--text-secondary)]">{item.timeframe}</span>
+                  </span>
+                  <span className={`font-terminal text-[11px] font-semibold ${signalToneClass(item.recommendation)}`}>
+                    {item.recommendation} {item.confidence}%
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="py-3 text-xs text-[var(--text-secondary)]">{loadingAnalyses ? t.common.loading : '—'}</p>
+            )}
+          </div>
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
+            <div className="tk-stat-label">Insight da semana</div>
+            <div className="mt-4 flex gap-6">
+              <div>
+                <div className="tk-stat text-2xl text-[var(--accent-green)]">{weeklyInsight.bull}</div>
+                <div className="tk-stat-label mt-1">Bullish</div>
+              </div>
+              <div>
+                <div className="tk-stat text-2xl text-[var(--signal-sell)]">{weeklyInsight.bear}</div>
+                <div className="tk-stat-label mt-1">Bearish</div>
+              </div>
+            </div>
+            <div className="mt-4 h-1.5 overflow-hidden rounded-full" style={{ background: 'rgba(248,113,113,0.25)' }}>
+              <div className="h-full" style={{ width: `${bullPct}%`, background: 'var(--accent-green)' }} />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderContent = () => {
     switch (activeView) {
+      case 'dashboard':
+        return renderDashboardHome();
       case 'new-analysis':
-        return <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} allowHigherTimeframes={!isDemo && isUnlimited} />;
+        return (
+          <div className="flex flex-col gap-4">
+            <div>
+              {viewEyebrow(t.nav.newAnalysis)}
+              <h1 className="tk-display mt-2 text-3xl md:text-4xl">{t.nav.newAnalysis}</h1>
+            </div>
+            <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} allowHigherTimeframes={!isDemo && isUnlimited} />
+          </div>
+        );
       case 'my-trades':
         return <MyTrades />;
       case 'watchlist':
@@ -343,7 +438,7 @@ const DashboardPage = () => {
           </div>
         );
       default:
-        return <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} allowHigherTimeframes={!isDemo && isUnlimited} />;
+        return renderDashboardHome();
     }
   };
 
@@ -425,10 +520,12 @@ const DashboardPage = () => {
         </div>
       </header>
 
+      <LiveTape />
+
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border md:hidden">
           <div className="flex">
-            {(['new-analysis', 'my-trades', 'watchlist'] as const).map((view) => (
+            {(['dashboard', 'new-analysis', 'my-trades', 'watchlist'] as const).map((view) => (
               <button
                 key={view}
                 type="button"
@@ -445,7 +542,7 @@ const DashboardPage = () => {
                     : 'text-muted-foreground'
                 }`}
               >
-                {view === 'new-analysis' ? '⊕ Análise' : view === 'my-trades' ? '↺ Trades' : '☆ Watchlist'}
+                {view === 'dashboard' ? '▦ Painel' : view === 'new-analysis' ? '⊕ Análise' : view === 'my-trades' ? '↺ Trades' : '☆ Watchlist'}
               </button>
             ))}
           </div>
@@ -464,184 +561,44 @@ const DashboardPage = () => {
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          <aside className="hidden w-[280px] min-w-0 flex-col gap-4 overflow-y-auto border-r border-border p-4 md:flex xl:w-[320px]">
-            {user && (
-              <AnalysisCounter
-                onUpgradeClick={() => setShowUpgradeModal(true)}
-              />
-            )}
+          <aside className="hidden w-[240px] min-w-0 shrink-0 flex-col overflow-y-auto border-r border-border p-3 md:flex">
+            <div className={`${sidebarSectionTitleClass} px-2 pb-1 pt-2`}>{t.nav.workArea}</div>
+            <nav className="flex flex-col gap-0.5">
+              <button type="button" onClick={() => setActiveView('dashboard')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'dashboard' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+                <LayoutGrid className="h-4 w-4" /> {t.nav.dashboard}
+              </button>
+              <button type="button" onClick={resetNewAnalysisView} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'new-analysis' || activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+                <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
+              </button>
+              <button type="button" onClick={() => setActiveView('my-trades')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'my-trades' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+                <History className="h-4 w-4" /> {t.nav.myTrades}
+              </button>
+              <button type="button" onClick={() => setActiveView('watchlist')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'watchlist' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+                <Star className="h-4 w-4" /> {t.nav.watchlist}
+              </button>
+            </nav>
 
-            <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
-              <CardHeader className="px-4 pb-2 pt-4">
-                <CardTitle className={sidebarSectionTitleClass}>{t.nav.newAnalysis.replace('Nova ', '').replace('New ', '').replace('Nuevo ', '').replace('Nouvelle ', '').replace('Neue ', '') === t.nav.newAnalysis ? 'Ações rápidas' : 'Quick actions'}</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-1 p-2 pt-0">
-                <button type="button" onClick={resetNewAnalysisView} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView.startsWith('analysis') || activeView === 'loading' || activeView === 'error' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}><PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}</button>
-                <button type="button" onClick={() => setActiveView('my-trades')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'my-trades' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}><History className="h-4 w-4" /> {t.nav.myTrades}</button>
-                <button type="button" onClick={() => setActiveView('watchlist')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'watchlist' ? 'bg-white/[0.06] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}><Star className="h-4 w-4" /> {t.nav.watchlist}</button>
-                {user && plan === 'free' && (
-                  <button type="button" onClick={() => setShowUpgradeModal(true)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
-                    <Crown className="h-4 w-4 text-[var(--accent-green)]" />
-                    Fazer Upgrade para Pro
-                  </button>
-                )}
-              </CardContent>
-            </Card>
-            <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
-              <CardHeader className="px-4 pb-2 pt-4">
-                <CardTitle className={sidebarSectionTitleClass}>{t.nav.activeMarkets}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 p-4 pt-0 text-xs">
-                {isDemo ? (
-                  demoActiveMarkets.map((market) => (
-                    <div key={market.name} className="grid grid-cols-[1fr_auto] items-center rounded-sm border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 py-1.5">
-                      <span className="font-terminal font-medium">{market.name}</span>
-                      <span className={market.isUp ? "text-green-500" : "text-red-500"}>{market.change}</span>
-                    </div>
-                  ))
-                ) : activeMarkets.length > 0 ? (
-                  (activeMarkets as ActiveMarketItem[]).map((market) => (
-                    <div key={market.name} className="grid grid-cols-[1fr_auto] items-center rounded-sm border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 py-1.5">
-                      <span className="font-terminal font-medium text-[var(--text-primary)]">{market.name}</span>
-                      <span className="font-terminal text-[var(--text-secondary)]">{market.lastSeen}</span>
-                    </div>
-                  ))
-                ) : (
-                  <p className="py-2 text-center text-sm text-muted-foreground">
-                    Sem mercados ativos nas últimas 8 horas.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-            <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
-              <CardHeader className="px-4 pb-2 pt-4">
-                <CardTitle className={sidebarSectionTitleClass}>{t.nav.recentAnalyses}</CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 pt-0">
-                {loadingAnalyses ? (
-                  <p className="py-4 text-center text-sm text-muted-foreground">{t.common.loading}</p>
-                ) : displayRecentAnalyses.length > 0 ? (
-                  <div className="overflow-hidden rounded-sm border border-[var(--border-subtle)]">
-                    <div className="grid grid-cols-[1fr_58px_52px_62px] bg-[var(--bg-overlay)] px-2 py-1.5 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
-                      <span>{t.nav.symbol}</span>
-                      <span>{t.nav.signal}</span>
-                      <span>{t.nav.conf}</span>
-                      <span>{t.nav.time}</span>
-                    </div>
-                    {displayRecentAnalyses.map((analysis, idx) => {
-                      const recLabel = normalizeRecommendationLabel(analysis.recommendation);
-                      const minutesAgo = Math.max(
-                        1,
-                        Math.floor((Date.now() - new Date(analysis.createdAt).getTime()) / (1000 * 60)),
-                      );
-                      return (
-                        <div
-                          key={idx}
-                          className="grid grid-cols-[1fr_58px_52px_62px] items-center border-t border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 py-2 text-[11px]"
-                        >
-                          <span className="truncate font-terminal text-[var(--text-primary)]">
-                            {analysis.symbol} <span className="font-terminal text-[var(--text-secondary)]">{analysis.timeframe}</span>
-                          </span>
-                          <span className={`font-semibold ${signalToneClass(recLabel as Recommendation)}`}>{recLabel}</span>
-                          <span className="font-terminal text-[var(--text-secondary)]">{Math.round(Number(analysis.confidence) || 0)}%</span>
-                          <span className="font-terminal text-[var(--text-secondary)]">{minutesAgo}m</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="py-4 text-center text-sm text-muted-foreground">Nenhuma análise ainda. Faça sua primeira!</p>
-                )}
-              </CardContent>
-            </Card>
+            <div className={`${sidebarSectionTitleClass} px-2 pb-1 pt-5`}>{t.nav.account}</div>
+            <nav className="flex flex-col gap-0.5">
+              <Link to="/pricing" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+                <CreditCard className="h-4 w-4" /> {t.nav.plans}
+              </Link>
+              {user && plan === 'free' && (
+                <button type="button" onClick={() => setShowUpgradeModal(true)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+                  <Crown className="h-4 w-4 text-[var(--accent-green)]" /> Fazer Upgrade para Pro
+                </button>
+              )}
+            </nav>
+
+            {user && plan === 'free' && (
+              <div className="mt-4">
+                <AnalysisCounter onUpgradeClick={() => setShowUpgradeModal(true)} />
+              </div>
+            )}
           </aside>
 
           <main className="min-w-0 flex-1 overflow-y-auto p-3 md:p-6">
             <div className="flex flex-col gap-6 md:gap-8">
-              {(activeView === 'new-analysis' || activeView === 'my-trades' || activeView === 'watchlist') && (
-                <PageHeader
-                  size="md"
-                  eyebrow={
-                    <>
-                      <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
-                      Institutional Terminal
-                    </>
-                  }
-                  title={
-                    activeView === 'my-trades'
-                      ? t.nav.myTrades
-                      : activeView === 'watchlist'
-                        ? t.nav.watchlist
-                        : t.nav.newAnalysis
-                  }
-                />
-              )}
-              {activeView === 'new-analysis' && !isDemo && (
-                <>
-                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
-                      <div className="tk-stat-label">{t.nav.analysesWord}</div>
-                      <div className="tk-stat mt-2 text-2xl md:text-3xl">{dashboardKpis.total}</div>
-                    </div>
-                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
-                      <div className="tk-stat-label">{t.analysis.confidence}</div>
-                      <div className="tk-stat mt-2 text-2xl text-[var(--accent-green)] md:text-3xl">{dashboardKpis.avgConfidence}%</div>
-                    </div>
-                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
-                      <div className="tk-stat-label">{t.nav.activeMarkets}</div>
-                      <div className="tk-stat mt-2 text-2xl md:text-3xl">{realActiveMarkets.length}</div>
-                    </div>
-                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
-                      <div className="tk-stat-label">Ticks</div>
-                      <div className="tk-stat mt-2 text-2xl md:text-3xl">{Math.floor(Number(ticksBalance) || 0)}</div>
-                    </div>
-                  </div>
-                  <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr]">
-                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
-                      <div className="tk-stat-label mb-3">{t.nav.recentAnalyses}</div>
-                      {recentAnalyses.length > 0 ? (
-                        recentAnalyses.map((item, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-center justify-between border-t border-[var(--border-subtle)] py-2 first:border-t-0"
-                          >
-                            <span className="font-terminal text-xs text-[var(--text-primary)]">
-                              {item.symbol} <span className="text-[var(--text-secondary)]">{item.timeframe}</span>
-                            </span>
-                            <span className={`font-terminal text-[11px] font-semibold ${signalToneClass(item.recommendation)}`}>
-                              {item.recommendation} {item.confidence}%
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="py-3 text-xs text-[var(--text-secondary)]">{loadingAnalyses ? t.common.loading : '—'}</p>
-                      )}
-                    </div>
-                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
-                      <div className="tk-stat-label">Insight da semana</div>
-                      <div className="mt-4 flex gap-6">
-                        <div>
-                          <div className="tk-stat text-2xl text-[var(--accent-green)]">{weeklyInsight.bull}</div>
-                          <div className="tk-stat-label mt-1">Bullish</div>
-                        </div>
-                        <div>
-                          <div className="tk-stat text-2xl text-[var(--signal-sell)]">{weeklyInsight.bear}</div>
-                          <div className="tk-stat-label mt-1">Bearish</div>
-                        </div>
-                      </div>
-                      <div className="mt-4 h-1.5 overflow-hidden rounded-full" style={{ background: 'rgba(248,113,113,0.25)' }}>
-                        <div
-                          className="h-full"
-                          style={{
-                            width: `${weeklyInsight.total > 0 ? Math.round((weeklyInsight.bull / weeklyInsight.total) * 100) : 0}%`,
-                            background: 'var(--accent-green)',
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
               {renderContent()}
             </div>
           </main>

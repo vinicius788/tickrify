@@ -34,6 +34,13 @@ export default {
     conf: 'Conf.',
     time: 'Tempo',
     ago: 'atrás',
+    dashboard: 'Dashboard',
+    history: 'Histórico',
+    plans: 'Planos',
+    workspace: 'Workspace',
+    workArea: 'Área de trabalho',
+    account: 'Conta',
+    centralTitle: 'Central de análise',
   },
 
   // ── Plan ─────────────────────────────────────────────────────────────────────
