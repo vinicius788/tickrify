@@ -458,7 +458,7 @@ const DashboardPage = () => {
   const sidebarSectionTitleClass = 'text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]';
 
   return (
-    <div className="flex min-h-screen w-full flex-col overflow-x-hidden bg-background">
+    <div className="relative z-10 flex min-h-screen w-full flex-col overflow-x-hidden bg-[#050508]">
       {/* Banner de Demo */}
       {isDemo && (
         <div className="bg-primary/10 border-b border-primary/20 px-4 py-3 text-center font-medium sticky top-0 z-50 backdrop-blur-sm">
@@ -474,7 +474,7 @@ const DashboardPage = () => {
         </div>
       )}
       
-      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-border bg-[#050508]/95 backdrop-blur">
         <div className="flex h-14 items-center justify-between gap-3 px-4 md:px-6">
           <Link to={user ? "/dashboard" : "/"} className="flex min-w-0 shrink-0 items-center gap-2">
             <img src={officialIcon} alt="Tickrify" className="h-8 w-auto shrink-0 object-contain" />
