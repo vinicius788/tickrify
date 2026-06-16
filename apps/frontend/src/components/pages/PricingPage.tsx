@@ -17,7 +17,7 @@ export default function PricingPage() {
   }, [toast]);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="relative z-10 min-h-screen bg-[#050508]">
       <div className="container mx-auto px-4 py-16">
         {/* Header */}
         <div className="text-center mb-16">

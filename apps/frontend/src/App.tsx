@@ -20,7 +20,7 @@ function App() {
           <Route
             path="/sign-in/*"
             element={
-              <div className="flex items-center justify-center min-h-screen bg-background">
+              <div className="relative z-10 flex items-center justify-center min-h-screen bg-[#050508]">
                 <SignIn
                   routing="path"
                   path="/sign-in"
@@ -34,7 +34,7 @@ function App() {
           <Route
             path="/sign-up/*"
             element={
-              <div className="flex items-center justify-center min-h-screen bg-background">
+              <div className="relative z-10 flex items-center justify-center min-h-screen bg-[#050508]">
                 <SignUp
                   routing="path"
                   path="/sign-up"
