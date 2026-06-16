@@ -39,6 +39,10 @@ export default {
     account: 'アカウント',
     centralTitle: '分析センター',
     greeting: 'おかえりなさい',
+    kpiSubTotal: '累計',
+    kpiSubConf: '分析全体',
+    kpiSubMarkets: '直近8時間',
+    kpiSubTicks: '利用可能',
   },
   plan: {
     elite: 'エリートプラン',

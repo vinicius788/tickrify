@@ -39,6 +39,10 @@ export default {
     account: 'Cuenta',
     centralTitle: 'Central de análisis',
     greeting: 'Bienvenido de vuelta',
+    kpiSubTotal: 'en total',
+    kpiSubConf: 'en los análisis',
+    kpiSubMarkets: 'últimas 8h',
+    kpiSubTicks: 'disponibles',
   },
   plan: {
     elite: 'Plan Elite',

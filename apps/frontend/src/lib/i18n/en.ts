@@ -39,6 +39,10 @@ export default {
     account: 'Account',
     centralTitle: 'Analysis hub',
     greeting: 'Welcome back',
+    kpiSubTotal: 'all time',
+    kpiSubConf: 'across analyses',
+    kpiSubMarkets: 'last 8h',
+    kpiSubTicks: 'available',
   },
   plan: {
     elite: 'Elite Plan',

@@ -329,16 +329,19 @@ const DashboardPage = () => {
     const bullPct = weeklyInsight.total > 0 ? Math.round((weeklyInsight.bull / weeklyInsight.total) * 100) : 0;
     const firstName = user?.firstName || 'Trader';
     const ticksNum = Math.floor(Number(ticksBalance) || 0);
-    const kpis: Array<{ label: string; value: string; Icon: typeof BarChart3; accent?: boolean }> = [
-      { label: t.nav.analysesWord, value: String(dashboardKpis.total), Icon: BarChart3 },
-      { label: t.analysis.confidence, value: `${dashboardKpis.avgConfidence}%`, Icon: Target, accent: true },
-      { label: t.nav.activeMarkets, value: String(realActiveMarkets.length), Icon: Activity },
-      { label: 'Ticks', value: String(ticksNum), Icon: Zap },
+    const kpis: Array<{ label: string; value: string; sub: string; Icon: typeof BarChart3; accent?: boolean }> = [
+      { label: t.nav.analysesWord, value: String(dashboardKpis.total), sub: t.nav.kpiSubTotal, Icon: BarChart3 },
+      { label: t.analysis.confidence, value: `${dashboardKpis.avgConfidence}%`, sub: t.nav.kpiSubConf, Icon: Target, accent: true },
+      { label: t.nav.activeMarkets, value: String(realActiveMarkets.length), sub: t.nav.kpiSubMarkets, Icon: Activity },
+      { label: 'Ticks', value: String(ticksNum), sub: t.nav.kpiSubTicks, Icon: Zap },
     ];
     return (
       <div className="flex flex-col gap-4">
         {/* Cockpit hero */}
-        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-6 md:p-8">
+        <div
+          className="relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-6 md:p-8"
+          style={{ backgroundImage: 'radial-gradient(ellipse 720px 320px at 100% 0%, rgba(0,232,122,0.06), transparent 60%)' }}
+        >
           <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div className="min-w-0">
               <div className="tk-eyebrow flex items-center gap-2 text-[11px]">
@@ -375,12 +378,13 @@ const DashboardPage = () => {
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {kpis.map((k) => (
-            <div key={k.label} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3.5">
+            <div key={k.label} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 transition-colors hover:border-[var(--border-default)]">
               <div className="flex items-start justify-between">
                 <div className="tk-stat-label">{k.label}</div>
                 <k.Icon className="h-4 w-4 text-[var(--text-secondary)] opacity-40" />
               </div>
-              <div className={`tk-stat mt-2 text-2xl md:text-3xl ${k.accent ? 'text-[var(--accent-green)]' : ''}`}>{k.value}</div>
+              <div className={`tk-stat mt-3 text-3xl ${k.accent ? 'text-[var(--accent-green)]' : ''}`}>{k.value}</div>
+              <div className="tk-stat-label mt-1 opacity-60">{k.sub}</div>
             </div>
           ))}
         </div>
