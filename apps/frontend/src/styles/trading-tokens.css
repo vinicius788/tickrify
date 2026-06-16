@@ -16,6 +16,7 @@
   --font-display: 'Geist', sans-serif;
   --font-sans: 'Geist', sans-serif;
   --font-mono: 'Geist Mono', monospace;
+  --font-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
 
   /* Backward-compatible aliases used across app */
   --bg-base: var(--bg);

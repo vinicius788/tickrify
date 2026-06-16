@@ -563,7 +563,7 @@ const DashboardPage = () => {
             <UserButton afterSignOutUrl="/" />
             <div className="min-w-0 leading-tight">
               <div className="truncate text-xs text-[var(--text-primary)]">{user.firstName || user.fullName || 'Trader'}</div>
-              <div className="font-terminal text-[8px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{navbarUnlimited ? `${plan.toUpperCase()} · ${t.nav.statusActive}` : t.nav.analysesWord}</div>
+              <div className="font-terminal text-[8px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{plan.toUpperCase()}{navbarUnlimited ? ` · ${t.nav.statusActive}` : ''}</div>
             </div>
           </div>
         )}
