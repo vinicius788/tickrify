@@ -38,6 +38,7 @@ export default {
     workArea: 'Workspace',
     account: 'Account',
     centralTitle: 'Analysis hub',
+    greeting: 'Welcome back',
   },
   plan: {
     elite: 'Elite Plan',

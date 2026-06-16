@@ -38,6 +38,7 @@ export default {
     workArea: 'Espace de travail',
     account: 'Compte',
     centralTitle: "Centre d'analyse",
+    greeting: 'Bon retour',
   },
   plan: {
     elite: 'Plan Elite',

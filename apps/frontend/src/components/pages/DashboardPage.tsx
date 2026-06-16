@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical, Clock, Wifi, WifiOff, LayoutGrid, CreditCard } from "lucide-react";
+import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical, Clock, Wifi, WifiOff, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { UserButton, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -327,39 +327,78 @@ const DashboardPage = () => {
     const titleLast = titleWords.length > 1 ? titleWords.pop() : '';
     const titleHead = titleWords.join(' ');
     const bullPct = weeklyInsight.total > 0 ? Math.round((weeklyInsight.bull / weeklyInsight.total) * 100) : 0;
+    const firstName = user?.firstName || 'Trader';
+    const ticksNum = Math.floor(Number(ticksBalance) || 0);
+    const kpis: Array<{ label: string; value: string; Icon: typeof BarChart3; accent?: boolean }> = [
+      { label: t.nav.analysesWord, value: String(dashboardKpis.total), Icon: BarChart3 },
+      { label: t.analysis.confidence, value: `${dashboardKpis.avgConfidence}%`, Icon: Target, accent: true },
+      { label: t.nav.activeMarkets, value: String(realActiveMarkets.length), Icon: Activity },
+      { label: 'Ticks', value: String(ticksNum), Icon: Zap },
+    ];
     return (
-      <div className="flex flex-col gap-5">
-        <div>
-          {viewEyebrow(t.nav.dashboard)}
-          <h1 className="tk-display mt-2 text-3xl md:text-4xl">
-            {titleHead}{' '}
-            {titleLast && <em className="font-serif italic text-[var(--text-secondary)]">{titleLast}</em>}
-          </h1>
-          <p className="mt-1 max-w-[480px] text-sm text-[var(--text-secondary)]">{t.analysis.upload.subtitle}</p>
+      <div className="flex flex-col gap-4">
+        {/* Cockpit hero */}
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-6 md:p-8">
+          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+            <div className="min-w-0">
+              <div className="tk-eyebrow flex items-center gap-2 text-[11px]">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
+                {t.nav.greeting}, {firstName}
+              </div>
+              <h1 className="tk-display mt-2 text-4xl md:text-5xl">
+                {titleHead}{' '}
+                {titleLast && <em className="font-serif italic text-[var(--text-secondary)]">{titleLast}</em>}
+              </h1>
+              <p className="mt-3 font-terminal text-xs text-[var(--text-secondary)]">
+                {ticksNum} ticks · {dashboardKpis.total} {t.nav.analysesWord} · {t.analysis.confidence} {dashboardKpis.avgConfidence}%
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setActiveView('watchlist')}
+                className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-default)] px-4 py-2.5 text-sm text-[var(--text-primary)] transition-colors hover:bg-white/[0.04]"
+              >
+                <Star className="h-4 w-4" /> {t.nav.watchlist}
+              </button>
+              <button
+                type="button"
+                onClick={resetNewAnalysisView}
+                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#050508] transition-opacity hover:opacity-90"
+              >
+                <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
+              </button>
+            </div>
+          </div>
         </div>
 
+        {/* KPIs */}
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
-            <div className="tk-stat-label">{t.nav.analysesWord}</div>
-            <div className="tk-stat mt-2 text-2xl md:text-3xl">{dashboardKpis.total}</div>
-          </div>
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
-            <div className="tk-stat-label">{t.analysis.confidence}</div>
-            <div className="tk-stat mt-2 text-2xl text-[var(--accent-green)] md:text-3xl">{dashboardKpis.avgConfidence}%</div>
-          </div>
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
-            <div className="tk-stat-label">{t.nav.activeMarkets}</div>
-            <div className="tk-stat mt-2 text-2xl md:text-3xl">{realActiveMarkets.length}</div>
-          </div>
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3">
-            <div className="tk-stat-label">Ticks</div>
-            <div className="tk-stat mt-2 text-2xl md:text-3xl">{Math.floor(Number(ticksBalance) || 0)}</div>
-          </div>
+          {kpis.map((k) => (
+            <div key={k.label} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3.5">
+              <div className="flex items-start justify-between">
+                <div className="tk-stat-label">{k.label}</div>
+                <k.Icon className="h-4 w-4 text-[var(--text-secondary)] opacity-40" />
+              </div>
+              <div className={`tk-stat mt-2 text-2xl md:text-3xl ${k.accent ? 'text-[var(--accent-green)]' : ''}`}>{k.value}</div>
+            </div>
+          ))}
         </div>
 
+        {/* Recent + Insight */}
         <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr]">
           <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
-            <div className="tk-stat-label mb-3">{t.nav.recentAnalyses}</div>
+            <div className="mb-3 flex items-center justify-between">
+              <div className="tk-stat-label">{t.nav.recentAnalyses}</div>
+              <button
+                type="button"
+                onClick={() => setActiveView('my-trades')}
+                className="font-terminal text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                aria-label={t.nav.recentAnalyses}
+              >
+                →
+              </button>
+            </div>
             {displayRecentAnalyses.length > 0 ? (
               displayRecentAnalyses.map((item, idx) => (
                 <div

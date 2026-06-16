@@ -38,6 +38,7 @@ export default {
     workArea: '作業エリア',
     account: 'アカウント',
     centralTitle: '分析センター',
+    greeting: 'おかえりなさい',
   },
   plan: {
     elite: 'エリートプラン',

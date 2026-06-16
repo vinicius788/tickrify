@@ -41,6 +41,7 @@ export default {
     workArea: 'Área de trabalho',
     account: 'Conta',
     centralTitle: 'Central de análise',
+    greeting: 'Bem-vindo de volta',
   },
 
   // ── Plan ─────────────────────────────────────────────────────────────────────
