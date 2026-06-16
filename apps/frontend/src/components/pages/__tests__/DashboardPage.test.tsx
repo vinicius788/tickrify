@@ -108,6 +108,8 @@ function renderDashboard() {
 describe('DashboardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Idioma determinístico (pt) para os rótulos de navegação no teste.
+    window.localStorage.setItem('tickrify-language', 'pt');
     mockUseUser.mockReturnValue({ user: { id: 'default-user' } });
     mockUseAnalysisLimit.mockReturnValue({ plan: 'free' });
     mockUseIncrementAnalysis.mockReturnValue(vi.fn());
@@ -140,6 +142,8 @@ describe('DashboardPage', () => {
 
     renderDashboard();
 
+    // O dashboard abre na home; navega para "Nova Análise" antes de enviar.
+    await user.click(screen.getAllByRole('button', { name: 'Nova Análise' })[0]);
     await user.click(screen.getByRole('button', { name: 'start-with-image' }));
 
     expect(screen.getByText('Analysis loading')).toBeTruthy();
@@ -188,6 +192,7 @@ describe('DashboardPage', () => {
 
     renderDashboard();
 
+    await user.click(screen.getAllByRole('button', { name: 'Nova Análise' })[0]);
     await user.click(screen.getAllByRole('button', { name: 'start-without-image' })[0]);
 
     expect(
