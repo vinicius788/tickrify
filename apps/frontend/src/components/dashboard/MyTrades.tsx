@@ -123,7 +123,7 @@ const MyTrades = () => {
     if (Object.prototype.hasOwnProperty.call(verdicts, a.id)) {
       return verdicts[a.id] ?? null;
     }
-    return verdictFromOutcome((a as Record<string, unknown>).outcome);
+    return verdictFromOutcome((a as unknown as Record<string, unknown>).outcome);
   };
 
   // Unique symbols for filter dropdown
@@ -153,7 +153,7 @@ const MyTrades = () => {
       else if (v === 'SL') losses += 1;
       else if (v === 'OPEN') open += 1;
       else pending += 1;
-      const rr = Number((a as Record<string, unknown>).riskRewardTp2 ?? (a as Record<string, unknown>).riskRewardTp1);
+      const rr = Number((a as unknown as Record<string, unknown>).riskRewardTp2 ?? (a as unknown as Record<string, unknown>).riskRewardTp1);
       if (Number.isFinite(rr) && rr > 0) { rrSum += rr; rrCount += 1; }
     }
     const decided = wins + losses;
@@ -180,7 +180,7 @@ const MyTrades = () => {
     if (Object.prototype.hasOwnProperty.call(favorites, a.id)) {
       return favorites[a.id];
     }
-    return (a as Record<string, unknown>).isFavorite === true;
+    return (a as unknown as Record<string, unknown>).isFavorite === true;
   };
   const handleFavorite = (a: AIAnalysisResponse) => {
     if (isDemo) return;

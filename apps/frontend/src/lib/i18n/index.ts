@@ -30,7 +30,7 @@ const translations = { pt, en, es, fr, de, ja };
 export type Translations = typeof pt;
 
 export function getTranslations(lang: Language): Translations {
-  return translations[lang] ?? translations.pt;
+  return (translations[lang] ?? translations.pt) as Translations;
 }
 
 const STORAGE_KEY = 'tickrify-language';

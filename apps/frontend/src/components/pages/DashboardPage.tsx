@@ -553,7 +553,7 @@ const DashboardPage = () => {
 
           {user && plan === 'free' && (
             <div className="mt-4">
-              <AnalysisCounter onUpgradeClick={() => setShowUpgradeModal(true)} />
+              <AnalysisCounter />
             </div>
           )}
         </div>

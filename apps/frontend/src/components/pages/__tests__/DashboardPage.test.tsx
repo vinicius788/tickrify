@@ -1,8 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import DashboardPage from '@/components/pages/DashboardPage';
+import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 
 const mockUseUser = vi.fn();
 const mockUseAuth = vi.fn();
@@ -89,10 +91,17 @@ vi.mock('@/components/BuyTicksModal', () => ({
 }));
 
 function renderDashboard() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
-    <MemoryRouter>
-      <DashboardPage />
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <LanguageProvider>
+        <MemoryRouter>
+          <DashboardPage />
+        </MemoryRouter>
+      </LanguageProvider>
+    </QueryClientProvider>,
   );
 }
 

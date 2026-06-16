@@ -284,7 +284,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const recommendationMeta = getRecommendationMeta(analysisData.recommendation);
   const confidence = confidenceToPercent(analysisData.confidence);
   // #2 — calibração: taxa de acerto histórica de setups semelhantes.
-  const calibration = asRecord((analysisData as Record<string, unknown>).calibration);
+  const calibration = asRecord((analysisData as unknown as Record<string, unknown>).calibration);
   const calSample = toNumber(calibration.sampleSize) ?? 0;
   const calWinRate = toNumber(calibration.winRate);
 

@@ -28,7 +28,7 @@ const Watchlist = () => {
   const favorites = analyses.filter(
     (a) =>
       a.status === 'completed' &&
-      (a as Record<string, unknown>).isFavorite === true &&
+      (a as unknown as Record<string, unknown>).isFavorite === true &&
       !removed[a.id],
   );
 
@@ -126,9 +126,9 @@ const Watchlist = () => {
                     <div key={a.id} className="flex items-center justify-between gap-3 py-3">
                       <div className="min-w-0">
                         <p className="font-terminal font-bold text-[var(--text-primary)]">
-                          {String((a as Record<string, unknown>).symbol || 'N/A')}{' '}
+                          {String((a as unknown as Record<string, unknown>).symbol || 'N/A')}{' '}
                           <span className="font-normal text-xs text-muted-foreground">
-                            {String((a as Record<string, unknown>).timeframe || '')}
+                            {String((a as unknown as Record<string, unknown>).timeframe || '')}
                           </span>
                         </p>
                         <p className={`text-sm font-semibold ${signalToneClass(rec)}`}>
