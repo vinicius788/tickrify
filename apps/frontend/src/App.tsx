@@ -4,6 +4,7 @@ import DashboardPage from "@/components/pages/DashboardPage";
 import PricingPage from "@/components/pages/PricingPage";
 import PrivacyPolicyPage from "@/components/pages/PrivacyPolicyPage";
 import ProtectedRoute from "@/components/routing/ProtectedRoute";
+import { RouteAnalytics } from "@/components/providers/RouteAnalytics";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { SignIn, SignUp } from "@clerk/clerk-react";
@@ -12,6 +13,7 @@ function App() {
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <Router>
+        <RouteAnalytics />
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/demo" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />

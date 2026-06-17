@@ -1,11 +1,28 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import * as Sentry from '@sentry/react';
 import { ClerkProvider } from '@clerk/clerk-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App.tsx';
 import { LanguageProvider } from './lib/i18n/LanguageContext.tsx';
+import { initAnalytics } from './lib/analytics';
+import { AnalyticsIdentify } from './components/providers/AnalyticsIdentify';
 import './styles/trading-tokens.css';
 import './index.css';
+
+initAnalytics();
+
+const SENTRY_DSN = String(import.meta.env.VITE_SENTRY_DSN || '').trim();
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: String(import.meta.env.VITE_APP_ENV || import.meta.env.MODE || 'development'),
+    integrations: [Sentry.browserTracingIntegration(), Sentry.replayIntegration()],
+    tracesSampleRate: 0.2,
+    replaysOnErrorSampleRate: 1.0,
+    replaysSessionSampleRate: 0.0,
+  });
+}
 
 const PUBLISHABLE_KEY = String(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '').trim();
 const API_URL = String(import.meta.env.VITE_API_URL || '').trim();
@@ -47,12 +64,15 @@ if (missingVars.length > 0) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/">
-        <LanguageProvider>
-          <App />
-        </LanguageProvider>
-      </ClerkProvider>
-    </QueryClientProvider>
+    <Sentry.ErrorBoundary fallback={<div style={{ padding: 24, color: '#E8ECF4', background: '#0A0B0D', minHeight: '100vh' }}>Algo deu errado. Recarregue a página.</div>}>
+      <QueryClientProvider client={queryClient}>
+        <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/">
+          <LanguageProvider>
+            <AnalyticsIdentify />
+            <App />
+          </LanguageProvider>
+        </ClerkProvider>
+      </QueryClientProvider>
+    </Sentry.ErrorBoundary>
   </StrictMode>,
 );

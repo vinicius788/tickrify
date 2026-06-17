@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
+import { track } from "@/lib/analytics";
 import { PLANS } from "@/components/pricing/PricingCards";
 import { PageHeader } from "@/components/ui/PageHeader";
 import officialIcon from "@/assets/tickrify-icon-official.png";
@@ -166,6 +167,8 @@ const DashboardPage = () => {
     const successState = params.get('success');
 
     if (successState === 'true') {
+      // RECEITA: confirmação client-side (best effort). Fonte de verdade = webhook do Stripe.
+      track('subscription_activated', { source: 'redirect' });
       toast({
         title: 'Plano ativado!',
         description: 'Bem-vindo ao Tickrify. Seus ticks já estão disponíveis.',
@@ -178,6 +181,11 @@ const DashboardPage = () => {
 
   }, [toast]);
 
+  // Ativação do funil: usuário entrou no modo demo (sem login).
+  useEffect(() => {
+    if (isDemo) track('demo_opened');
+  }, [isDemo]);
+
   // Usar dados demo ou reais dependendo do modo
   const activeMarkets = isDemo ? demoActiveMarkets : realActiveMarkets;
   const displayRecentAnalyses = isDemo ? demoRecentAnalyses : recentAnalyses;
@@ -185,6 +193,11 @@ const DashboardPage = () => {
   const goToPricing = useCallback(() => {
     setShowUpgradeModal(false);
     window.location.href = '/pricing';
+  }, []);
+
+  const openUpgradeModal = useCallback((trigger: string) => {
+    track('upgrade_modal_viewed', { trigger });
+    setShowUpgradeModal(true);
   }, []);
 
   const resetNewAnalysisView = useCallback(() => {
@@ -239,6 +252,8 @@ const DashboardPage = () => {
       setActiveView('loading');
       setErrorMessage('');
 
+      track('analysis_started', { analysisType });
+
       const response = await apiClient.createAnalysis({
         imageFile: imageFile || undefined,
         base64Image: imageUrl || undefined,
@@ -259,11 +274,21 @@ const DashboardPage = () => {
       // Análise concluída
       setAnalysisData(analysis);
       setActiveView('analysis-result');
+      // ATIVAÇÃO: resultado renderizado com sucesso (apenas usuário logado).
+      track('analysis_completed', {
+        analysisType,
+        recommendation: analysis.recommendation ?? 'unknown',
+        confidence: analysis.confidence ?? null,
+        symbol: analysis.symbol ?? null,
+      });
       if (!isDemo && user) {
         refetchAnalyses();
       }
     } catch (error) {
       console.error('[Dashboard] Erro ao criar análise:', error);
+      track('analysis_failed', {
+        code: error instanceof APIError ? (error.code || error.status || 'api_error') : 'unknown',
+      });
       // Reconcilia o contador com o backend: falhas não consomem análise grátis,
       // então o slot precisa voltar caso a IA tenha falhado.
       incrementAnalysis();
@@ -277,6 +302,7 @@ const DashboardPage = () => {
 
         const apiCode = error.code || String(parsedBody?.code || '');
         if (apiCode === 'INSUFFICIENT_TICKS') {
+          track('free_limit_reached', { reason: 'insufficient_ticks' });
           toast({
             title: 'Ticks esgotados',
             description: 'Seus ticks do plano se esgotaram. Eles renovam automaticamente no próximo ciclo.',
@@ -288,6 +314,7 @@ const DashboardPage = () => {
 
         if (apiCode === 'SUBSCRIPTION_REQUIRED' || apiCode === 'DEMO_LIMIT_REACHED' || error.status === 403) {
           // Sem assinatura ativa ou demos esgotadas → redirecionar para página de planos
+          track('free_limit_reached', { reason: apiCode || 'forbidden' });
           navigate('/pricing');
           return;
         }
@@ -298,7 +325,7 @@ const DashboardPage = () => {
           error.code === 'upgrade_required' ||
           error.code === 'quota_exceeded'
         ) {
-          setShowUpgradeModal(true);
+          openUpgradeModal('quota');
         }
       }
 
@@ -545,7 +572,7 @@ const DashboardPage = () => {
               <CreditCard className="h-4 w-4" /> {t.nav.plans}
             </Link>
             {user && plan === 'free' && (
-              <button type="button" onClick={() => setShowUpgradeModal(true)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+              <button type="button" onClick={() => openUpgradeModal('sidebar')} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
                 <Crown className="h-4 w-4 text-[var(--accent-green)]" /> Fazer Upgrade para Pro
               </button>
             )}
@@ -657,7 +684,7 @@ const DashboardPage = () => {
               <Button
                 className="w-full"
                 variant="outline"
-                onClick={() => setShowUpgradeModal(true)}
+                onClick={() => openUpgradeModal('cta')}
               >
                 <Crown className="mr-2 h-4 w-4" />
                 Fazer Upgrade para Pro

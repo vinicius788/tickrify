@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { Check, Zap, Star, Trophy } from "lucide-react";
 import { createCheckoutSession, detectCurrency, type BillingCycle, type Currency, type PlanType } from "../../lib/stripe";
+import { track } from "../../lib/analytics";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../ui/card";
 import { useToast } from "../../hooks/use-toast";
@@ -119,6 +120,7 @@ export function PricingCards() {
           return;
         }
 
+        track('checkout_started', { plan: planType, billingCycle, currency });
         const { url } = await createCheckoutSession(planType, token, billingCycle, currency);
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
         window.location.href = url;
