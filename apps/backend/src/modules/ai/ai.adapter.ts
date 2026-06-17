@@ -576,15 +576,18 @@ export class AIAdapter {
     const bucket = objectReference.bucket || this.defaultStorageBucket;
     const { data, error } = await this.supabaseClient.storage
       .from(bucket)
-      .createSignedUrl(objectReference.path, 300);
+      .download(objectReference.path);
 
-    if (error || !data?.signedUrl) {
+    if (error || !data) {
       throw new Error(
-        `Failed to generate signed URL for image: ${error?.message || 'signed URL unavailable'}`,
+        `Failed to download image from Supabase: ${error?.message || 'no data returned'}`,
       );
     }
 
-    return data.signedUrl;
+    const arrayBuffer = await data.arrayBuffer();
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    const mimeType = data.type || 'image/png';
+    return `data:${mimeType};base64,${base64}`;
   }
 
   async *streamAnalyzeImage(
