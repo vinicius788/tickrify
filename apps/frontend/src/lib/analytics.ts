@@ -37,6 +37,7 @@ export type FunnelEvent =
   | 'free_limit_reached'
   | 'upgrade_modal_viewed'
   | 'pricing_viewed'
+  | 'upgrade_clicked'
   | 'checkout_started'
   | 'subscription_activated'
   | 'analysis_shared';

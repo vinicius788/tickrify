@@ -247,6 +247,7 @@ const DashboardPage = () => {
       }
     }
 
+    const startedAt = performance.now();
     try {
       setUploadedImage(imageUrl);
       setActiveView('loading');
@@ -280,6 +281,11 @@ const DashboardPage = () => {
         recommendation: analysis.recommendation ?? 'unknown',
         confidence: analysis.confidence ?? null,
         symbol: analysis.symbol ?? null,
+        plan,
+        // Posição da análise na escada grátis (1, 2 ou 3). null para plano pago/ilimitado.
+        // `used` vem do backend (count antes desta análise), então esta é a (used+1)-ésima.
+        analysisNumber: isUnlimited ? null : used + 1,
+        durationMs: Math.round(performance.now() - startedAt),
       });
       if (!isDemo && user) {
         refetchAnalyses();
@@ -288,6 +294,8 @@ const DashboardPage = () => {
       console.error('[Dashboard] Erro ao criar análise:', error);
       track('analysis_failed', {
         code: error instanceof APIError ? (error.code || error.status || 'api_error') : 'unknown',
+        analysisType,
+        durationMs: Math.round(performance.now() - startedAt),
       });
       // Reconcilia o contador com o backend: falhas não consomem análise grátis,
       // então o slot precisa voltar caso a IA tenha falhado.

@@ -102,6 +102,9 @@ export function PricingCards() {
 
   const handleUpgrade = useCallback(
     async (planType: PlanType) => {
+      // INTENÇÃO de compra: clicou num plano (antes de qualquer redirect).
+      // O gap entre este evento e checkout_started = não-logados + falhas de token/sessão.
+      track('upgrade_clicked', { plan: planType, signedIn: Boolean(isSignedIn) });
       if (!isSignedIn) {
         sessionStorage.setItem(SESSION_STORAGE_KEY, planType);
         window.location.href = "/sign-in";
