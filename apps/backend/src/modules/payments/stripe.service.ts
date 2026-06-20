@@ -8,6 +8,7 @@ import {
 import { Prisma } from '@prisma/client';
 import Stripe from 'stripe';
 import { PrismaService } from '../database/prisma.service';
+import { captureServer } from '../../common/analytics/posthog';
 import {
   getStripeConfig,
   getPriceId,
@@ -564,6 +565,18 @@ export class StripeService {
     await this.upsertSubscriptionForUser(userId, subscription);
 
     this.logger.log(`User ${userId} subscription synchronized: ${subscription.id}`);
+
+    // RECEITA (fonte de verdade): dispara na confirmação do pagamento, mesmo se
+    // o usuário fechar a aba. distinctId = id do Clerk (casa com o funil do frontend).
+    try {
+      captureServer(userId, 'subscription_activated', {
+        source: 'stripe_webhook',
+        subscriptionId: subscription.id,
+        priceId: subscription.items?.data?.[0]?.price?.id,
+      });
+    } catch {
+      /* analytics nunca pode quebrar o webhook */
+    }
   }
 
   private async creditTicksFromCompletedCheckout(session: Stripe.Checkout.Session) {
