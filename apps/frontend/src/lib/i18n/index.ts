@@ -30,7 +30,7 @@ const translations = { pt, en, es, fr, de, ja };
 export type Translations = typeof pt;
 
 export function getTranslations(lang: Language): Translations {
-  return (translations[lang] ?? translations.pt) as Translations;
+  return (translations[lang] ?? translations.en) as Translations;
 }
 
 const STORAGE_KEY = 'tickrify-language';
@@ -40,10 +40,9 @@ export function getStoredLanguage(): Language {
     const stored = localStorage.getItem(STORAGE_KEY) as Language | null;
     if (stored && stored in translations) return stored;
   } catch {}
-  // Auto-detect from browser
-  const browserLang = navigator.language?.slice(0, 2) as Language;
-  if (browserLang in translations) return browserLang;
-  return 'pt';
+  // Padrão: Inglês para todos os novos visitantes (trocável pelo seletor de idioma,
+  // e a escolha manual fica salva). Sem auto-detecção do navegador.
+  return 'en';
 }
 
 export function setStoredLanguage(lang: Language): void {
