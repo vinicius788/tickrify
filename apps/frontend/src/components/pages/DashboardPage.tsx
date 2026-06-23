@@ -187,6 +187,19 @@ const DashboardPage = () => {
     if (isDemo) track('demo_opened');
   }, [isDemo]);
 
+  // Ativação: usuário NOVO (logado, ainda sem nenhuma análise) cai direto na tela
+  // de subir o gráfico — não no painel vazio com KPIs zerados. Roteia uma única vez,
+  // e só para quem nunca fez uma análise (usuário recorrente continua caindo no painel).
+  const [autoRoutedNewUser, setAutoRoutedNewUser] = useState(false);
+  useEffect(() => {
+    if (autoRoutedNewUser || isDemo || !user || loadingAnalyses) return;
+    const hasAnalysis = rawAnalyses.some((a) => a.status === 'completed');
+    if (!hasAnalysis) {
+      setActiveView('new-analysis');
+    }
+    setAutoRoutedNewUser(true);
+  }, [autoRoutedNewUser, isDemo, user, loadingAnalyses, rawAnalyses]);
+
   // Usar dados demo ou reais dependendo do modo
   const activeMarkets = isDemo ? demoActiveMarkets : realActiveMarkets;
   const displayRecentAnalyses = isDemo ? demoRecentAnalyses : recentAnalyses;
@@ -508,8 +521,58 @@ const DashboardPage = () => {
         return <MyTrades />;
       case 'watchlist':
         return <Watchlist />;
-      case 'analysis-result':
-        return <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />;
+      case 'analysis-result': {
+        // Gancho de retorno: depois do resultado, dar um próximo passo claro
+        // (analisar outro / quantas grátis restam / assinar) — sem beco sem saída.
+        const freeLeftKnown = !isUnlimited && Number.isFinite(remaining);
+        const exhausted = freeLeftKnown && remaining <= 0;
+        return (
+          <div className="flex flex-col gap-4">
+            <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />
+            {!isDemo && (
+              <div className="flex flex-col gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  {freeLeftKnown && !exhausted && (
+                    <p className="text-sm text-[var(--text-primary)]">
+                      <span className="font-semibold text-[var(--accent-green)]">{remaining}</span>{' '}
+                      {t.counter.remainingFree}
+                    </p>
+                  )}
+                  {exhausted && <p className="text-sm text-amber-500">{t.counter.exhausted}</p>}
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  {exhausted ? (
+                    <Link to="/pricing">
+                      <Button size="sm">
+                        <Crown className="mr-2 h-4 w-4" />
+                        {t.counter.subscribe}
+                      </Button>
+                    </Link>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={resetNewAnalysisView}
+                        className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#050508] transition-opacity hover:opacity-90"
+                      >
+                        <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
+                      </button>
+                      {freeLeftKnown && (
+                        <Link
+                          to="/pricing"
+                          className="text-xs text-[var(--text-secondary)] underline-offset-2 transition-colors hover:text-[var(--text-primary)] hover:underline"
+                        >
+                          {t.counter.viewPlans}
+                        </Link>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      }
       case 'locked':
         return <LockedAnalysis onUnlock={() => navigate('/pricing')} />;
       case 'loading':

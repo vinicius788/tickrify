@@ -6,8 +6,115 @@ import { track } from "../../lib/analytics";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../ui/card";
 import { useToast } from "../../hooks/use-toast";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 const SESSION_STORAGE_KEY = "pendingPlanType";
+
+// Conteúdo visível dos cards — em inglês por padrão (público global), PT quando o
+// idioma for português. O array PLANS abaixo mantém os defaults em PT porque é
+// reutilizado pelo modal do dashboard; a renderização da página usa este mapa.
+type PlanCopy = { badge: string; ticks: string; analyses: string; features: string[]; cta: string };
+const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
+  en: {
+    starter: {
+      badge: "Entry",
+      ticks: "45 ticks/mo",
+      analyses: "quick 1 tick · deep 3 ticks",
+      features: ["45 monthly Ticks", "Quick analysis", "Deep analysis", "Full history"],
+      cta: "Get Starter",
+    },
+    pro: {
+      badge: "Most popular",
+      ticks: "150 ticks/mo",
+      analyses: "quick 1 tick · deep 3 ticks",
+      features: [
+        "150 monthly Ticks",
+        "Quick + full deep analysis",
+        "Best cost per analysis",
+        "Full history",
+        "Priority responses",
+      ],
+      cta: "Get Pro",
+    },
+    elite: {
+      badge: "Institutional",
+      ticks: "400 ticks/mo",
+      analyses: "quick 1 tick · deep 3 ticks",
+      features: [
+        "400 monthly Ticks",
+        "Institutional-grade AI",
+        "Priority execution",
+        "Full history",
+        "Priority support",
+      ],
+      cta: "Get Elite",
+    },
+  },
+  pt: {
+    starter: {
+      badge: "Entrada",
+      ticks: "45 ticks/mês",
+      analyses: "rápida 1 tick · deep 3 ticks",
+      features: ["45 Ticks mensais", "Análise rápida", "Análise deep", "Histórico completo"],
+      cta: "Assinar Starter",
+    },
+    pro: {
+      badge: "Mais escolhido",
+      ticks: "150 ticks/mês",
+      analyses: "rápida 1 tick · deep 3 ticks",
+      features: [
+        "150 Ticks mensais",
+        "Análise rápida + deep completa",
+        "Melhor custo por análise",
+        "Histórico completo",
+        "Prioridade nas respostas",
+      ],
+      cta: "Assinar Pro",
+    },
+    elite: {
+      badge: "Institucional",
+      ticks: "400 ticks/mês",
+      analyses: "rápida 1 tick · deep 3 ticks",
+      features: [
+        "400 Ticks mensais",
+        "IA nível institucional",
+        "Execução prioritária",
+        "Histórico completo",
+        "Suporte prioritário",
+      ],
+      cta: "Assinar Elite",
+    },
+  },
+};
+
+const CHROME_COPY = {
+  en: {
+    monthly: "Monthly",
+    yearly: "Yearly",
+    yearlyBadge: "2 months free",
+    perMonth: "/mo",
+    perYear: "/yr",
+    processing: "Processing...",
+    processingTitle: "Processing your subscription...",
+    processingSub: "Redirecting to payment",
+    errorTitle: "Error",
+    tokenError: "Could not get authentication token",
+    checkoutError: "Failed to create checkout session. Please try again.",
+  },
+  pt: {
+    monthly: "Mensal",
+    yearly: "Anual",
+    yearlyBadge: "2 meses grátis",
+    perMonth: "/mês",
+    perYear: "/ano",
+    processing: "Processando...",
+    processingTitle: "Processando sua assinatura...",
+    processingSub: "Redirecionando para pagamento",
+    errorTitle: "Erro",
+    tokenError: "Não foi possível obter token de autenticação",
+    checkoutError: "Falha ao criar sessão de checkout. Tente novamente.",
+  },
+};
 
 type PriceMap = Record<BillingCycle, Record<Currency, string>>;
 
@@ -92,6 +199,10 @@ export const PLANS: Plan[] = [
 export function PricingCards() {
   const { getToken, isSignedIn, isLoaded } = useAuth();
   const { toast } = useToast();
+  const { language } = useLanguage();
+  const lang = language === "pt" ? "pt" : "en";
+  const copy = CHROME_COPY[lang];
+  const planCopy = PLAN_COPY[lang];
   const [loadingPlan, setLoadingPlan] = useState<PlanType | null>(null);
   const [processingUpgrade, setProcessingUpgrade] = useState(false);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
@@ -116,8 +227,8 @@ export function PricingCards() {
         const token = await getToken({ skipCache: true });
         if (!token) {
           toast({
-            title: "Erro",
-            description: "Não foi possível obter token de autenticação",
+            title: copy.errorTitle,
+            description: copy.tokenError,
             variant: "destructive",
           });
           return;
@@ -130,11 +241,9 @@ export function PricingCards() {
       } catch (error) {
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
         toast({
-          title: "Erro",
+          title: copy.errorTitle,
           description:
-            error instanceof Error
-              ? error.message
-              : "Falha ao criar sessão de checkout. Tente novamente.",
+            error instanceof Error ? error.message : copy.checkoutError,
           variant: "destructive",
         });
       } finally {
@@ -142,7 +251,7 @@ export function PricingCards() {
         setProcessingUpgrade(false);
       }
     },
-    [getToken, isSignedIn, toast, billingCycle, currency],
+    [getToken, isSignedIn, toast, billingCycle, currency, copy],
   );
 
   useEffect(() => {
@@ -163,8 +272,8 @@ export function PricingCards() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
         <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-        <p className="text-lg text-muted-foreground">Processando sua assinatura...</p>
-        <p className="text-sm text-muted-foreground">Redirecionando para pagamento</p>
+        <p className="text-lg text-muted-foreground">{copy.processingTitle}</p>
+        <p className="text-sm text-muted-foreground">{copy.processingSub}</p>
       </div>
     );
   }
@@ -181,7 +290,7 @@ export function PricingCards() {
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          Mensal
+          {copy.monthly}
         </button>
         <button
           onClick={() => setBillingCycle("yearly")}
@@ -191,9 +300,9 @@ export function PricingCards() {
               : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          Anual
+          {copy.yearly}
           <span className="ml-1.5 text-xs bg-green-500/15 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded-full">
-            2 meses grátis
+            {copy.yearlyBadge}
           </span>
         </button>
       </div>
@@ -211,7 +320,7 @@ export function PricingCards() {
             {plan.featured && (
               <div className="absolute -top-4 left-1/2 -translate-x-1/2">
                 <span className="bg-primary text-primary-foreground px-4 py-1 rounded-full text-sm font-semibold whitespace-nowrap">
-                  {plan.badge}
+                  {planCopy[plan.id].badge}
                 </span>
               </div>
             )}
@@ -221,23 +330,23 @@ export function PricingCards() {
               <CardTitle className="text-xl">{plan.name}</CardTitle>
               {!plan.featured && (
                 <span className="inline-block text-xs text-muted-foreground border border-border rounded-full px-3 py-0.5 mt-1">
-                  {plan.badge}
+                  {planCopy[plan.id].badge}
                 </span>
               )}
               <div className="mt-4">
                 <span className="text-4xl font-bold">{plan.prices[billingCycle][currency]}</span>
                 <span className="text-muted-foreground">
-                  {billingCycle === "monthly" ? "/mês" : "/ano"}
+                  {billingCycle === "monthly" ? copy.perMonth : copy.perYear}
                 </span>
               </div>
               <p className="text-sm text-muted-foreground mt-1">
-                {plan.ticks} · {plan.analyses}
+                {planCopy[plan.id].ticks} · {planCopy[plan.id].analyses}
               </p>
             </CardHeader>
 
             <CardContent className="flex-1">
               <ul className="space-y-3">
-                {plan.features.map((feature) => (
+                {planCopy[plan.id].features.map((feature) => (
                   <li key={feature} className="flex items-start gap-2">
                     <Check className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
                     <span className="text-sm">{feature}</span>
@@ -257,10 +366,10 @@ export function PricingCards() {
                 {loadingPlan === plan.id ? (
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    Processando...
+                    {copy.processing}
                   </div>
                 ) : (
-                  plan.cta
+                  planCopy[plan.id].cta
                 )}
               </Button>
             </CardFooter>
