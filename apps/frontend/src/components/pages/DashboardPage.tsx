@@ -11,6 +11,7 @@ import LiveTape from "../dashboard/LiveTape";
 import MyTrades from "../dashboard/MyTrades";
 import Watchlist from "../dashboard/Watchlist";
 import AnalysisResult from "../dashboard/AnalysisResult";
+import LockedAnalysis from "../dashboard/LockedAnalysis";
 import AnalysisLoading from "../dashboard/AnalysisLoading";
 import AnalysisCounter from "../dashboard/AnalysisCounter";
 import { TicksBadge } from "@/components/dashboard/TicksBadge";
@@ -27,7 +28,7 @@ import { PLANS } from "@/components/pricing/PricingCards";
 import { PageHeader } from "@/components/ui/PageHeader";
 import officialIcon from "@/assets/tickrify-icon-official.png";
 
-type View = 'dashboard' | 'new-analysis' | 'my-trades' | 'watchlist' | 'analysis-result' | 'loading' | 'error';
+type View = 'dashboard' | 'new-analysis' | 'my-trades' | 'watchlist' | 'analysis-result' | 'loading' | 'error' | 'locked';
 type RecentAnalysisItem = {
   symbol: string;
   timeframe: string;
@@ -53,7 +54,7 @@ const DashboardPage = () => {
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const { plan, total, used, isUnlimited } = useAnalysisLimit();
+  const { plan, total, used, isUnlimited, remaining } = useAnalysisLimit();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
   const { toast } = useToast();
@@ -247,6 +248,15 @@ const DashboardPage = () => {
       }
     }
 
+    // Grátis sem análises restantes → mostra o valor trancado, sem gastar uma chamada de API.
+    if (!isDemo && !isUnlimited && Number.isFinite(remaining) && remaining <= 0) {
+      setUploadedImage(imageUrl);
+      track('free_limit_reached', { reason: 'no_free_left' });
+      track('upgrade_modal_viewed', { trigger: 'locked_value' });
+      setActiveView('locked');
+      return;
+    }
+
     const startedAt = performance.now();
     try {
       setUploadedImage(imageUrl);
@@ -321,9 +331,10 @@ const DashboardPage = () => {
         }
 
         if (apiCode === 'SUBSCRIPTION_REQUIRED' || apiCode === 'DEMO_LIMIT_REACHED' || error.status === 403) {
-          // Sem assinatura ativa ou demos esgotadas → redirecionar para página de planos
+          // Sem análises grátis restantes → mostra o valor trancado (paywall com preview borrado).
           track('free_limit_reached', { reason: apiCode || 'forbidden' });
-          navigate('/pricing');
+          track('upgrade_modal_viewed', { trigger: 'locked_value' });
+          setActiveView('locked');
           return;
         }
 
@@ -499,6 +510,8 @@ const DashboardPage = () => {
         return <Watchlist />;
       case 'analysis-result':
         return <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />;
+      case 'locked':
+        return <LockedAnalysis onUnlock={() => navigate('/pricing')} />;
       case 'loading':
         return <AnalysisLoading />;
       case 'error':
