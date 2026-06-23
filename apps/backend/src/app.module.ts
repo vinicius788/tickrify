@@ -12,6 +12,7 @@ import { HealthModule } from './modules/health/health.module';
 import { TicksModule } from './modules/ticks/ticks.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
 import { MarketModule } from './modules/market/market.module';
+import { MailModule } from './modules/mail/mail.module';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { HttpLoggingInterceptor } from './common/interceptors/http-logging.interceptor';
 
@@ -33,6 +34,7 @@ import { HttpLoggingInterceptor } from './common/interceptors/http-logging.inter
       },
     }),
     DatabaseModule,
+    MailModule,
     AuthModule,
     PaymentsModule,
     TicksModule,
