@@ -25,7 +25,53 @@ import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { track } from "@/lib/analytics";
 import { PLANS } from "@/components/pricing/PricingCards";
+import { detectCurrency } from "@/lib/stripe";
 import { PageHeader } from "@/components/ui/PageHeader";
+
+// Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
+// PT quando o idioma for português. Contido neste arquivo (sem mexer nos 6 locales).
+const DASH_COPY = {
+  en: {
+    planActivatedTitle: 'Plan activated!',
+    planActivatedDesc: 'Welcome to Tickrify. Your ticks are now available.',
+    uploadRequired: 'Please upload a chart image.',
+    invalidFormat: 'Invalid format. Upload a PNG, JPG/JPEG or WEBP image.',
+    tooLarge: 'File too large. The limit is 10MB.',
+    ticksOutTitle: 'Ticks used up',
+    ticksOutDesc: 'Your plan ticks are used up. They renew automatically next cycle.',
+    weeklyInsight: 'This week',
+    analysisError: 'Analysis error',
+    tryAgain: 'Try again',
+    upgradeToPro: 'Upgrade to Pro',
+    demoMode: 'Demo mode: exploring the interface without login',
+    demoLogin: 'Log in for real analyses',
+    choosePlan: 'Choose your plan',
+    planSub: 'Monthly ticks, renewed automatically. No surprises.',
+    seePlans: 'See plans & subscribe',
+    later: 'Maybe later',
+    perMonth: '/mo',
+  },
+  pt: {
+    planActivatedTitle: 'Plano ativado!',
+    planActivatedDesc: 'Bem-vindo ao Tickrify. Seus ticks já estão disponíveis.',
+    uploadRequired: 'Por favor, faça upload de uma imagem de gráfico.',
+    invalidFormat: 'Formato inválido. Envie uma imagem PNG, JPG/JPEG ou WEBP.',
+    tooLarge: 'Arquivo muito grande. O limite é de 10MB.',
+    ticksOutTitle: 'Ticks esgotados',
+    ticksOutDesc: 'Seus ticks do plano se esgotaram. Eles renovam automaticamente no próximo ciclo.',
+    weeklyInsight: 'Insight da semana',
+    analysisError: 'Erro na Análise',
+    tryAgain: 'Tentar Novamente',
+    upgradeToPro: 'Fazer Upgrade para Pro',
+    demoMode: 'Modo Demonstração: explorando a interface sem login',
+    demoLogin: 'Fazer Login para Análises Reais',
+    choosePlan: 'Escolha seu plano',
+    planSub: 'Ticks mensais renovados automaticamente. Sem surpresas.',
+    seePlans: 'Ver planos e assinar',
+    later: 'Continuar depois',
+    perMonth: '/mês',
+  },
+} as const;
 import officialIcon from "@/assets/tickrify-icon-official.png";
 
 type View = 'dashboard' | 'new-analysis' | 'my-trades' | 'watchlist' | 'analysis-result' | 'loading' | 'error' | 'locked';
@@ -48,6 +94,8 @@ const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'im
 const DashboardPage = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
+  const dc = language === 'pt' ? DASH_COPY.pt : DASH_COPY.en;
+  const modalCurrency = detectCurrency(typeof navigator !== 'undefined' ? navigator.language : 'en-US');
   const [activeView, setActiveView] = useState<View>('dashboard');
   const [analysisKey, setAnalysisKey] = useState(0);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
@@ -171,8 +219,8 @@ const DashboardPage = () => {
       // RECEITA: confirmação client-side (best effort). Fonte de verdade = webhook do Stripe.
       track('subscription_activated', { source: 'redirect' });
       toast({
-        title: 'Plano ativado!',
-        description: 'Bem-vindo ao Tickrify. Seus ticks já estão disponíveis.',
+        title: dc.planActivatedTitle,
+        description: dc.planActivatedDesc,
       });
       // Dispara re-fetch do limite para refletir o novo plano
       window.dispatchEvent(new Event('tickrify:analysis-created'));
@@ -180,7 +228,7 @@ const DashboardPage = () => {
       return;
     }
 
-  }, [toast]);
+  }, [toast, dc]);
 
   // Ativação do funil: usuário entrou no modo demo (sem login).
   useEffect(() => {
@@ -241,7 +289,7 @@ const DashboardPage = () => {
 
     // Validar se tem imagem
     if (!imageUrl && !imageFile) {
-      setErrorMessage('Por favor, faça upload de uma imagem de gráfico.');
+      setErrorMessage(dc.uploadRequired);
       setActiveView('error');
       return;
     }
@@ -249,13 +297,13 @@ const DashboardPage = () => {
     if (imageFile) {
       const normalizedType = String(imageFile.type || '').toLowerCase();
       if (!ALLOWED_IMAGE_TYPES.has(normalizedType)) {
-        setErrorMessage('Formato inválido. Envie uma imagem PNG, JPG/JPEG ou WEBP.');
+        setErrorMessage(dc.invalidFormat);
         setActiveView('error');
         return;
       }
 
       if (imageFile.size > MAX_IMAGE_FILE_SIZE) {
-        setErrorMessage('Arquivo muito grande. O limite é de 10MB.');
+        setErrorMessage(dc.tooLarge);
         setActiveView('error');
         return;
       }
@@ -335,8 +383,8 @@ const DashboardPage = () => {
         if (apiCode === 'INSUFFICIENT_TICKS') {
           track('free_limit_reached', { reason: 'insufficient_ticks' });
           toast({
-            title: 'Ticks esgotados',
-            description: 'Seus ticks do plano se esgotaram. Eles renovam automaticamente no próximo ciclo.',
+            title: dc.ticksOutTitle,
+            description: dc.ticksOutDesc,
             variant: 'destructive',
           });
           resetNewAnalysisView();
@@ -483,7 +531,7 @@ const DashboardPage = () => {
             )}
           </div>
           <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
-            <div className="tk-stat-label">Insight da semana</div>
+            <div className="tk-stat-label">{dc.weeklyInsight}</div>
             <div className="mt-4 flex gap-6">
               <div>
                 <div className="tk-stat text-2xl text-[var(--accent-green)]">{weeklyInsight.bull}</div>
@@ -582,13 +630,13 @@ const DashboardPage = () => {
           <div className="space-y-4">
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Erro na Análise</AlertTitle>
+              <AlertTitle>{dc.analysisError}</AlertTitle>
               <AlertDescription>{errorMessage}</AlertDescription>
             </Alert>
             <div className="flex gap-2">
-              <Button onClick={handleRetry}>Tentar Novamente</Button>
+              <Button onClick={handleRetry}>{dc.tryAgain}</Button>
               <Button variant="outline" onClick={resetNewAnalysisView}>
-                Nova Análise
+                {t.nav.newAnalysis}
               </Button>
             </div>
           </div>
@@ -657,7 +705,7 @@ const DashboardPage = () => {
             </Link>
             {user && plan === 'free' && (
               <button type="button" onClick={() => openUpgradeModal('sidebar')} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
-                <Crown className="h-4 w-4 text-[var(--accent-green)]" /> Fazer Upgrade para Pro
+                <Crown className="h-4 w-4 text-[var(--accent-green)]" /> {dc.upgradeToPro}
               </button>
             )}
           </nav>
@@ -689,9 +737,9 @@ const DashboardPage = () => {
             <span className="inline-flex items-center justify-center rounded-full bg-primary/15 p-1.5">
               <FlaskConical className="h-4 w-4 text-primary" />
             </span>
-            <span className="text-foreground">Modo Demonstração: explorando a interface sem login</span>
+            <span className="text-foreground">{dc.demoMode}</span>
             <Link to="/" className="text-primary underline underline-offset-2 hover:no-underline font-semibold">
-              Fazer Login para Análises Reais
+              {dc.demoLogin}
             </Link>
           </div>
         </div>
@@ -771,7 +819,7 @@ const DashboardPage = () => {
                 onClick={() => openUpgradeModal('cta')}
               >
                 <Crown className="mr-2 h-4 w-4" />
-                Fazer Upgrade para Pro
+                {dc.upgradeToPro}
               </Button>
             </div>
           )}
@@ -793,10 +841,10 @@ const DashboardPage = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Crown className="h-5 w-5 text-primary" />
-              Escolha seu plano
+              {dc.choosePlan}
             </DialogTitle>
             <DialogDescription>
-              Ticks mensais renovados automaticamente. Sem surpresas.
+              {dc.planSub}
             </DialogDescription>
           </DialogHeader>
 
@@ -820,7 +868,7 @@ const DashboardPage = () => {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-sm font-bold">{plan.prices.monthly.brl}/mês</div>
+                  <div className="text-sm font-bold">{plan.prices.monthly[modalCurrency]}{dc.perMonth}</div>
                   <div className="text-xs text-muted-foreground">{plan.ticks}</div>
                 </div>
               </div>
@@ -830,10 +878,10 @@ const DashboardPage = () => {
           <DialogFooter className="sm:flex-col gap-2">
             <Button className="w-full" onClick={goToPricing}>
               <Crown className="mr-2 h-4 w-4" />
-              Ver planos e assinar
+              {dc.seePlans}
             </Button>
             <Button variant="ghost" className="w-full" onClick={() => setShowUpgradeModal(false)}>
-              Continuar depois
+              {dc.later}
             </Button>
           </DialogFooter>
         </DialogContent>
