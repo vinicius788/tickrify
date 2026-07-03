@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useReveal } from '@/hooks/useReveal';
 import SectionTitle from '@/components/landing/SectionTitle';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { detectCurrency, type Currency } from '@/lib/stripe';
+import { type Currency } from '@/lib/stripe';
 
 // Display prices per currency — must match the Stripe price IDs in the backend.
 const PLAN_PRICES: Record<'starter' | 'pro' | 'elite', Record<Currency, string>> = {
@@ -18,12 +18,9 @@ const PricingSection = () => {
   const { t, language } = useLanguage();
   const pr = t.landing.pricing;
 
-  // Site language drives the displayed currency: PT → BRL; otherwise use the
-  // browser locale (USD default for the global/English audience).
-  const currency: Currency =
-    language === 'pt'
-      ? 'brl'
-      : detectCurrency(typeof navigator !== 'undefined' ? navigator.language : 'en-US');
+  // Site language drives the displayed currency: PT → BRL, everything else → USD.
+  // Traders think in USD; keeping it fixed avoids browser-locale surprises.
+  const currency: Currency = language === 'pt' ? 'brl' : 'usd';
 
   const ticksLine = (n: number) => `${n} ${pr.ticksMo} · ${pr.upTo} ${n} ${pr.analysesQuick}`;
 

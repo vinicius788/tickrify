@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { Check, Zap, Star, Trophy } from "lucide-react";
-import { createCheckoutSession, detectCurrency, type BillingCycle, type Currency, type PlanType } from "../../lib/stripe";
+import { createCheckoutSession, type BillingCycle, type Currency, type PlanType } from "../../lib/stripe";
 import { track } from "../../lib/analytics";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../ui/card";
@@ -207,12 +207,8 @@ export function PricingCards() {
   const [processingUpgrade, setProcessingUpgrade] = useState(false);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
 
-  // Site language drives the displayed currency: PT → BRL; otherwise use the
-  // browser locale (USD default for the global/English audience).
-  const currency: Currency =
-    language === "pt"
-      ? "brl"
-      : detectCurrency(typeof navigator !== "undefined" ? navigator.language : "en-US");
+  // Site language drives the displayed currency: PT → BRL, everything else → USD.
+  const currency: Currency = language === "pt" ? "brl" : "usd";
 
   const handleUpgrade = useCallback(
     async (planType: PlanType) => {

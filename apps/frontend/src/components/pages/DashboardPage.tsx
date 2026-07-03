@@ -25,7 +25,6 @@ import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { track } from "@/lib/analytics";
 import { PLANS } from "@/components/pricing/PricingCards";
-import { detectCurrency } from "@/lib/stripe";
 import { PageHeader } from "@/components/ui/PageHeader";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
@@ -101,11 +100,8 @@ const DashboardPage = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
   const dc = language === 'pt' ? DASH_COPY.pt : DASH_COPY.en;
-  // Site language drives the currency: PT → BRL; otherwise browser locale (USD default).
-  const modalCurrency =
-    language === 'pt'
-      ? 'brl'
-      : detectCurrency(typeof navigator !== 'undefined' ? navigator.language : 'en-US');
+  // Site language drives the currency: PT → BRL, everything else → USD.
+  const modalCurrency = language === 'pt' ? 'brl' : 'usd';
   const [activeView, setActiveView] = useState<View>('dashboard');
   const [analysisKey, setAnalysisKey] = useState(0);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);

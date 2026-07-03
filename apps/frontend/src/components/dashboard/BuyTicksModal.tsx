@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { TrendingUp, X, Zap } from 'lucide-react';
 import { useTicks } from '@/hooks/useTicks';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { detectCurrency, type Currency } from '@/lib/stripe';
+import { type Currency } from '@/lib/stripe';
 
 const FALLBACK_PRICES: Record<Currency, Record<string, number>> = {
   brl: { ticks_starter: 1990, ticks_trader: 4990, ticks_pro: 12990 },
@@ -47,11 +47,8 @@ export function BuyTicksModal({
   const m = t.ticksModal;
   const [loading, setLoading] = useState<string | null>(null);
 
-  // Site language drives the currency: PT → BRL; otherwise browser locale (USD default).
-  const currency: Currency =
-    language === 'pt'
-      ? 'brl'
-      : detectCurrency(typeof navigator !== 'undefined' ? navigator.language : 'en-US');
+  // Site language drives the currency: PT → BRL, everything else → USD.
+  const currency: Currency = language === 'pt' ? 'brl' : 'usd';
 
   const COSTS = [
     { label: m.costQuick, cost: m.quickTick },
