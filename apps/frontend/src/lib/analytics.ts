@@ -40,7 +40,8 @@ export type FunnelEvent =
   | 'upgrade_clicked'
   | 'checkout_started'
   | 'subscription_activated'
-  | 'analysis_shared';
+  | 'analysis_shared'
+  | 'founding_banner_clicked';
 
 export function track(event: FunnelEvent, props?: Record<string, unknown>): void {
   if (!ready) return;

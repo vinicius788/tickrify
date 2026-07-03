@@ -1,4 +1,5 @@
 import Header from '@/components/landing/Header';
+import FoundingTraderBanner from '@/components/landing/FoundingTraderBanner';
 import HeroSection from '@/components/landing/HeroSection';
 import AnalysisPanelPreviewSection from '@/components/landing/AnalysisPanelPreviewSection';
 import SocialProof from '@/components/landing/SocialProof';
@@ -14,6 +15,7 @@ import FinalCtaSection from '@/components/landing/FinalCtaSection';
 const LandingPage = () => {
   return (
     <div className="landing-shell grain-overlay grid-background flex min-h-screen flex-col overflow-x-clip bg-[var(--bg)]">
+      <FoundingTraderBanner />
       <Header />
       <main className="flex-grow">
         <HeroSection />
