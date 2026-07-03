@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /demo
+Disallow: /sign-in
+Disallow: /sign-up
+
+Sitemap: https://tickrify.com/sitemap.xml

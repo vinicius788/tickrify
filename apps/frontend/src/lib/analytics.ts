@@ -9,6 +9,7 @@ const HOST = String(import.meta.env.VITE_POSTHOG_HOST || 'https://us.i.posthog.c
 let ready = false;
 
 export function initAnalytics(): void {
+  initMetaPixel();
   if (ready || !KEY) return;
   try {
     posthog.init(KEY, {
@@ -22,6 +23,89 @@ export function initAnalytics(): void {
   } catch (err) {
     // Nunca deixar analytics derrubar o app.
     console.warn('[analytics] init falhou:', err);
+  }
+}
+
+// ─── Meta Pixel ───────────────────────────────────────────────────────────────
+// Fecha o loop Reels → site → conversão e habilita remarketing/lookalike no Meta.
+// No-op silencioso se VITE_META_PIXEL_ID não estiver configurado.
+const META_PIXEL_ID = String(import.meta.env.VITE_META_PIXEL_ID || '').trim();
+
+type Fbq = ((...args: unknown[]) => void) & {
+  callMethod?: (...args: unknown[]) => void;
+  queue: unknown[];
+  push: unknown;
+  loaded: boolean;
+  version: string;
+};
+
+declare global {
+  interface Window {
+    fbq?: Fbq;
+    _fbq?: Fbq;
+  }
+}
+
+function initMetaPixel(): void {
+  if (!META_PIXEL_ID || typeof window === 'undefined' || window.fbq) return;
+  try {
+    const fbq = function (...args: unknown[]) {
+      if (fbq.callMethod) {
+        fbq.callMethod(...args);
+      } else {
+        fbq.queue.push(args);
+      }
+    } as Fbq;
+    fbq.queue = [];
+    fbq.push = fbq;
+    fbq.loaded = true;
+    fbq.version = '2.0';
+    window.fbq = fbq;
+    if (!window._fbq) window._fbq = fbq;
+
+    const script = document.createElement('script');
+    script.async = true;
+    script.src = 'https://connect.facebook.net/en_US/fbevents.js';
+    document.head.appendChild(script);
+
+    window.fbq('init', META_PIXEL_ID);
+    window.fbq('track', 'PageView');
+  } catch (err) {
+    console.warn('[analytics] meta pixel init falhou:', err);
+  }
+}
+
+// Espelha eventos-chave do funil para o Meta Pixel (nomes padrão do Meta,
+// para o algoritmo de ads otimizar por conversão real).
+function trackMeta(event: FunnelEvent, props?: Record<string, unknown>): void {
+  if (typeof window === 'undefined' || !window.fbq) return;
+  try {
+    switch (event) {
+      case 'signup_completed':
+        window.fbq('track', 'CompleteRegistration');
+        break;
+      case 'pricing_viewed':
+        window.fbq('track', 'ViewContent', { content_name: 'pricing' });
+        break;
+      case 'checkout_started':
+        window.fbq('track', 'InitiateCheckout');
+        break;
+      case 'subscription_activated':
+        window.fbq('track', 'Purchase', {
+          currency: String(props?.currency || 'USD').toUpperCase(),
+          value: Number(props?.value) || 0,
+        });
+        break;
+      case 'analysis_completed':
+        window.fbq('trackCustom', 'AnalysisCompleted', {
+          analysisNumber: props?.analysisNumber ?? null,
+        });
+        break;
+      default:
+        break;
+    }
+  } catch {
+    /* noop */
   }
 }
 
@@ -44,6 +128,7 @@ export type FunnelEvent =
   | 'founding_banner_clicked';
 
 export function track(event: FunnelEvent, props?: Record<string, unknown>): void {
+  trackMeta(event, props);
   if (!ready) return;
   try {
     posthog.capture(event, props);
@@ -74,6 +159,13 @@ export function resetAnalytics(): void {
 
 // Pageview manual para a SPA (chamado a cada mudança de rota).
 export function trackPageview(path: string): void {
+  if (typeof window !== 'undefined' && window.fbq) {
+    try {
+      window.fbq('track', 'PageView');
+    } catch {
+      /* noop */
+    }
+  }
   if (!ready) return;
   try {
     posthog.capture('$pageview', {
