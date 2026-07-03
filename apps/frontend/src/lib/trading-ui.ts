@@ -15,7 +15,7 @@ export const RECOMMENDATION_LABELS: Record<
 
 export function normalizeRecommendationLabel(value: unknown): RecommendationCanonical {
   const key = String(value || '').trim().toUpperCase();
-  return RECOMMENDATION_LABELS[key]?.label || 'AGUARDAR';
+  return RECOMMENDATION_LABELS[key]?.label || 'HOLD';
 }
 
 export function getRecommendationMeta(value: unknown) {

@@ -55,11 +55,17 @@ export function getPriceId(plan: PlanType, interval: BillingCycle, currency: Cur
   return PRICES[plan][interval][currency];
 }
 
-// Maps locale string to Stripe currency code
+// Maps locale string to Stripe currency code.
+// Site is global/English-first → USD is the default. BRL only for Brazilian
+// locale; EUR only for eurozone locales. Everything else (US, UK, CA, AU, …) → USD.
+const EURO_LOCALE_PREFIXES = ['de', 'fr', 'es', 'it', 'nl', 'fi', 'el', 'et', 'lv', 'lt', 'sk', 'sl', 'ga', 'mt'];
+
 export function detectCurrency(locale: string): Currency {
-  if (locale === 'pt-BR') return 'brl';
-  if (locale === 'en-US') return 'usd';
-  return 'eur';
+  const normalized = String(locale || '').toLowerCase();
+  if (normalized === 'pt-br' || normalized === 'pt') return 'brl';
+  if (normalized === 'pt-pt') return 'eur';
+  if (EURO_LOCALE_PREFIXES.some((l) => normalized === l || normalized.startsWith(`${l}-`))) return 'eur';
+  return 'usd';
 }
 
 // Reverse-lookup: priceId → { plan, interval, ticks, planName }

@@ -207,9 +207,12 @@ export function PricingCards() {
   const [processingUpgrade, setProcessingUpgrade] = useState(false);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
 
-  const currency: Currency = detectCurrency(
-    typeof navigator !== "undefined" ? navigator.language : "pt-BR"
-  );
+  // Site language drives the displayed currency: PT → BRL; otherwise use the
+  // browser locale (USD default for the global/English audience).
+  const currency: Currency =
+    language === "pt"
+      ? "brl"
+      : detectCurrency(typeof navigator !== "undefined" ? navigator.language : "en-US");
 
   const handleUpgrade = useCallback(
     async (planType: PlanType) => {

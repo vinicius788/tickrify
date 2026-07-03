@@ -2,17 +2,31 @@ import { useMemo, useState } from 'react';
 import { TrendingUp, X, Zap } from 'lucide-react';
 import { useTicks } from '@/hooks/useTicks';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { detectCurrency, type Currency } from '@/lib/stripe';
+
+const FALLBACK_PRICES: Record<Currency, Record<string, number>> = {
+  brl: { ticks_starter: 1990, ticks_trader: 4990, ticks_pro: 12990 },
+  usd: { ticks_starter: 399, ticks_trader: 999, ticks_pro: 2599 },
+  eur: { ticks_starter: 379, ticks_trader: 929, ticks_pro: 2399 },
+};
 
 const FALLBACK_BASE = [
-  { id: 'ticks_starter', name: 'Starter', ticks: 20, price: 'R$19,90' },
-  { id: 'ticks_trader', name: 'Trader', ticks: 50, price: 'R$49,90', highlight: true },
-  { id: 'ticks_pro', name: 'Pro', ticks: 150, price: 'R$129,90', badge: '-13%' },
+  { id: 'ticks_starter', name: 'Starter', ticks: 20 },
+  { id: 'ticks_trader', name: 'Trader', ticks: 50, highlight: true },
+  { id: 'ticks_pro', name: 'Pro', ticks: 150, badge: '-13%' },
 ] as const;
 
-function formatCurrency(valueInCents: number): string {
-  return (valueInCents / 100).toLocaleString('pt-BR', {
+const CURRENCY_LOCALE: Record<Currency, { locale: string; code: string }> = {
+  brl: { locale: 'pt-BR', code: 'BRL' },
+  usd: { locale: 'en-US', code: 'USD' },
+  eur: { locale: 'en-IE', code: 'EUR' },
+};
+
+function formatCurrency(valueInCents: number, currency: Currency): string {
+  const { locale, code } = CURRENCY_LOCALE[currency];
+  return (valueInCents / 100).toLocaleString(locale, {
     style: 'currency',
-    currency: 'BRL',
+    currency: code,
     minimumFractionDigits: 2,
   });
 }
@@ -29,9 +43,15 @@ export function BuyTicksModal({
   isSubscriber?: boolean;
 }) {
   const { buyTicks, balance, packages } = useTicks();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const m = t.ticksModal;
   const [loading, setLoading] = useState<string | null>(null);
+
+  // Site language drives the currency: PT → BRL; otherwise browser locale (USD default).
+  const currency: Currency =
+    language === 'pt'
+      ? 'brl'
+      : detectCurrency(typeof navigator !== 'undefined' ? navigator.language : 'en-US');
 
   const COSTS = [
     { label: m.costQuick, cost: m.quickTick },
@@ -48,7 +68,7 @@ export function BuyTicksModal({
         id: p.id,
         name: p.name,
         ticks: p.ticks,
-        price: p.price,
+        price: formatCurrency(FALLBACK_PRICES[currency][p.id] ?? 0, currency),
         usage: usageText(p.ticks),
         highlight: 'highlight' in p ? p.highlight : undefined,
         badge: 'badge' in p ? p.badge : undefined,
@@ -59,20 +79,20 @@ export function BuyTicksModal({
       id: pkg.id,
       name: pkg.name,
       ticks: pkg.ticks,
-      price: formatCurrency(pkg.priceInCents),
+      price: formatCurrency(pkg.pricesInCents?.[currency] ?? pkg.priceInCents, currency),
       usage: usageText(pkg.ticks),
       highlight: pkg.highlight,
       badge: pkg.discountLabel,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [packages, m]);
+  }, [packages, m, currency]);
 
   if (!open) return null;
 
   const handleBuy = async (packageId: string) => {
     try {
       setLoading(packageId);
-      await buyTicks(packageId);
+      await buyTicks(packageId, currency);
     } finally {
       setLoading(null);
     }

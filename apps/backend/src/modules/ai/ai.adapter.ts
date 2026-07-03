@@ -169,24 +169,24 @@ export class AIAnalysisError extends Error {
 
   static toUserMessage(error: unknown): string {
     if (!(error instanceof AIAnalysisError)) {
-      return 'Erro na análise. Tente novamente.';
+      return 'Analysis failed. Please try again.';
     }
 
     switch (error.code) {
       case 'non_chart_image':
         return error.message;
       case 'openai_billing':
-        return 'Limite de análises atingido. Tente novamente mais tarde.';
+        return 'The analysis engine is temporarily unavailable. Your tick was not charged — please try again later.';
       case 'openai_rate_limit':
-        return 'Serviço temporariamente sobrecarregado. Aguarde alguns segundos.';
+        return 'Service is temporarily overloaded. Please wait a few seconds and try again.';
       case 'openai_truncated_response':
-        return 'Análise incompleta. Tente com um gráfico mais simples.';
+        return 'The analysis came back incomplete. Try a simpler chart.';
       case 'openai_empty_content':
-        return 'Não foi possível analisar a imagem. Tente novamente.';
+        return 'We could not read this image. Please try again with a clearer chart screenshot.';
       case 'openai_request_failed':
-        return 'O serviço de IA demorou demais para responder. Tente novamente em alguns instantes.';
+        return 'The AI service took too long to respond. Please try again in a moment.';
       default:
-        return 'Erro na análise. Tente novamente.';
+        return 'Analysis failed. Please try again.';
     }
   }
 }
@@ -1140,7 +1140,7 @@ export class AIAdapter {
       if (parsed.is_financial_chart === false) {
         throw new AIAnalysisError({
           code: 'non_chart_image',
-          message: 'A imagem enviada não parece ser um gráfico financeiro. Envie um print do seu gráfico de trading.',
+          message: 'This image does not look like a financial chart. Please upload a screenshot of your trading chart.',
           retriable: false,
         });
       }

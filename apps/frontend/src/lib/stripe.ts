@@ -5,10 +5,16 @@ export type BillingCycle = 'monthly' | 'yearly';
 export type Currency = 'brl' | 'usd' | 'eur';
 export type PlanType = 'starter' | 'pro' | 'elite';
 
+// Site is global/English-first → USD is the default. BRL only for Brazilian
+// locale; EUR only for eurozone locales. Everything else (US, UK, CA, AU, …) → USD.
+const EURO_LOCALE_PREFIXES = ['de', 'fr', 'es', 'it', 'nl', 'fi', 'el', 'et', 'lv', 'lt', 'sk', 'sl', 'ga', 'mt'];
+
 export function detectCurrency(locale: string): Currency {
-  if (locale === 'pt-BR') return 'brl';
-  if (locale === 'en-US') return 'usd';
-  return 'eur';
+  const normalized = String(locale || '').toLowerCase();
+  if (normalized === 'pt-br' || normalized === 'pt') return 'brl';
+  if (normalized === 'pt-pt') return 'eur';
+  if (EURO_LOCALE_PREFIXES.some((l) => normalized === l || normalized.startsWith(`${l}-`))) return 'eur';
+  return 'usd';
 }
 
 
@@ -104,7 +110,7 @@ export async function createCheckoutSession(
   planType: PlanType,
   token: string,
   billingCycle: BillingCycle = 'monthly',
-  currency: Currency = 'brl',
+  currency: Currency = 'usd',
 ) {
   return requestStripeApi<{ sessionId: string; url: string }>(
     '/api/stripe/create-checkout-session',

@@ -67,13 +67,15 @@ export class TicksController {
     }
 
     if (!user.email) {
-      throw new BadRequestException('Usuário sem e-mail para checkout Stripe');
+      throw new BadRequestException('User has no e-mail for Stripe checkout');
     }
 
     const pkg = TICK_PACKAGES.find((item) => item.id === body.packageId);
     if (!pkg) {
-      throw new BadRequestException('Pacote de Ticks inválido');
+      throw new BadRequestException('Invalid Ticks package');
     }
+
+    const currency = body.currency ?? 'usd';
 
     const session = await this.stripeService.createTicksCheckout({
       userId: user.id,
@@ -81,7 +83,8 @@ export class TicksController {
       packageId: pkg.id,
       packageName: pkg.name,
       ticks: pkg.ticks,
-      priceInCents: pkg.priceInCents,
+      priceInCents: pkg.pricesInCents[currency] ?? pkg.priceInCents,
+      currency,
     });
 
     return { url: session.url };

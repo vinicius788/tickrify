@@ -869,7 +869,8 @@
   border-radius: 24px;
   background: var(--bg-card);
   padding: 36px 32px;
-  overflow: hidden;
+  /* visible: o badge "MOST POPULAR" fica em top:-12px e era cortado com hidden */
+  overflow: visible;
   min-width: 0;
   transition: all 300ms ease;
 }
@@ -923,12 +924,11 @@
 .landing-shell .pricing-price {
   margin: 16px 0 4px;
   font-family: var(--font-display);
-  font-size: clamp(2rem, 4vw, 3.5rem);
+  /* Menor teto + sem ellipsis: um preço nunca pode ser truncado ("R$ 29…") */
+  font-size: clamp(1.75rem, 3.2vw, 2.75rem);
   font-weight: 800;
   line-height: 1;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 100%;
   display: block;
   color: var(--text-primary);

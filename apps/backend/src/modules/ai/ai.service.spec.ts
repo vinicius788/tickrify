@@ -383,15 +383,15 @@ describe('AIAnalysisError static helpers', () => {
     expect(AIAnalysisError.isRetryable(null)).toBe(false);
   });
 
-  it('toUserMessage maps known codes to Portuguese messages', async () => {
+  it('toUserMessage maps known codes to English messages', async () => {
     const { AIAnalysisError } = await import('./ai.adapter');
 
     const cases: Array<[import('./ai.adapter').AIAnalysisErrorCode, string]> = [
-      ['openai_billing', 'Limite de análises atingido'],
-      ['openai_rate_limit', 'sobrecarregado'],
-      ['openai_truncated_response', 'gráfico mais simples'],
-      ['openai_empty_content', 'analisar a imagem'],
-      ['openai_request_failed', 'demorou demais'],
+      ['openai_billing', 'temporarily unavailable'],
+      ['openai_rate_limit', 'overloaded'],
+      ['openai_truncated_response', 'simpler chart'],
+      ['openai_empty_content', 'could not read'],
+      ['openai_request_failed', 'took too long'],
     ];
 
     for (const [code, expectedSubstring] of cases) {
@@ -402,7 +402,7 @@ describe('AIAnalysisError static helpers', () => {
     }
 
     expect(AIAnalysisError.toUserMessage(new Error('generic'))).toBe(
-      'Erro na análise. Tente novamente.',
+      'Analysis failed. Please try again.',
     );
   });
 });

@@ -51,7 +51,7 @@ export class StripeService {
     clerkUserId: string,
     planType: PlanType,
     billingCycle: BillingCycle,
-    currency: Currency = 'brl',
+    currency: Currency = 'usd',
   ) {
     try {
       if (!['starter', 'pro', 'elite'].includes(planType)) {
@@ -127,6 +127,7 @@ export class StripeService {
     packageName: string;
     ticks: number;
     priceInCents: number;
+    currency?: Currency;
   }) {
     try {
       const stripe = this.getStripeClient();
@@ -139,11 +140,11 @@ export class StripeService {
           {
             quantity: 1,
             price_data: {
-              currency: 'brl',
+              currency: params.currency ?? 'usd',
               unit_amount: params.priceInCents,
               product_data: {
                 name: `Tickrify — ${params.ticks} Ticks (${params.packageName})`,
-                description: `${params.ticks} Ticks para análises. Não expiram.`,
+                description: `${params.ticks} Ticks for analyses. They never expire.`,
               },
             },
           },

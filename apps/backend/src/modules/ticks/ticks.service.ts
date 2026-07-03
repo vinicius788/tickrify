@@ -94,7 +94,7 @@ export class TicksService {
         throw new BadRequestException(
           JSON.stringify({
             code: 'INSUFFICIENT_TICKS',
-            message: `Ticks insuficientes. Necessário: ${amount}, disponível: ${balance}.`,
+            message: `Not enough ticks. Required: ${amount}, available: ${balance}.`,
             required: amount,
             balance,
           }),
@@ -108,6 +108,55 @@ export class TicksService {
           type: 'USAGE',
           description,
           metadata: (metadata ?? {}) as Prisma.InputJsonValue,
+        },
+      });
+    });
+  }
+
+  /**
+   * Refunds ticks after a failed analysis. Idempotent per analysisId: if a REFUND
+   * transaction for the same analysisId already exists, it is a no-op — retries or
+   * crash-redeliveries can never refund twice.
+   */
+  async refundTicks(
+    userId: string,
+    amount: number,
+    description: string,
+    analysisId?: string,
+  ): Promise<void> {
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (analysisId) {
+        const existing = await tx.tickTransaction.findFirst({
+          where: {
+            userId,
+            type: 'REFUND',
+            metadata: { path: ['analysisId'], equals: analysisId },
+          },
+          select: { id: true },
+        });
+
+        if (existing) {
+          return;
+        }
+      }
+
+      await tx.userTicks.upsert({
+        where: { userId },
+        create: { userId, balance: amount },
+        update: { balance: { increment: amount } },
+      });
+
+      await tx.tickTransaction.create({
+        data: {
+          userId,
+          amount,
+          type: 'REFUND',
+          description,
+          metadata: (analysisId ? { analysisId } : {}) as Prisma.InputJsonValue,
         },
       });
     });

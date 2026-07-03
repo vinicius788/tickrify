@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 /**
  * Fita de cotações ao vivo. Usa a API pública da Binance (sem chave, com CORS).
@@ -23,6 +24,7 @@ function fmtPrice(n: number): string {
 }
 
 export function LiveTape() {
+  const { language } = useLanguage();
   const [tickers, setTickers] = useState<Ticker[]>([]);
   const [live, setLive] = useState(false);
 
@@ -65,7 +67,7 @@ export function LiveTape() {
     <div className="flex items-center gap-5 overflow-x-auto whitespace-nowrap border-b border-[var(--border-subtle)] px-4 py-2 md:px-6">
       <span className="flex shrink-0 items-center gap-1.5 font-terminal text-[10px] uppercase tracking-wide text-[var(--accent-green)]">
         <span className={`inline-block h-1.5 w-1.5 rounded-full ${live ? 'bg-[var(--accent-green)]' : 'bg-[var(--text-secondary)]'}`} />
-        Ao vivo
+        {language === 'pt' ? 'Ao vivo' : 'Live'}
       </span>
       {tickers.map((tk) => {
         const up = Number.isFinite(tk.changePct) && tk.changePct >= 0;

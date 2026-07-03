@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -42,6 +42,9 @@ const DASH_COPY = {
     weeklyInsight: 'This week',
     analysisError: 'Analysis error',
     tryAgain: 'Try again',
+    analysisTimeout: 'The analysis took longer than expected. Please try again.',
+    analysisUnknownError: 'Unexpected error while processing the analysis.',
+    analysisFailed: 'The analysis could not be completed.',
     upgradeToPro: 'Upgrade to Pro',
     demoMode: 'Demo mode: exploring the interface without login',
     demoLogin: 'Log in for real analyses',
@@ -62,6 +65,9 @@ const DASH_COPY = {
     weeklyInsight: 'Insight da semana',
     analysisError: 'Erro na Análise',
     tryAgain: 'Tentar Novamente',
+    analysisTimeout: 'A análise demorou mais que o esperado, tente novamente.',
+    analysisUnknownError: 'Erro desconhecido ao processar análise.',
+    analysisFailed: 'Não foi possível concluir a análise.',
     upgradeToPro: 'Fazer Upgrade para Pro',
     demoMode: 'Modo Demonstração: explorando a interface sem login',
     demoLogin: 'Fazer Login para Análises Reais',
@@ -95,7 +101,11 @@ const DashboardPage = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
   const dc = language === 'pt' ? DASH_COPY.pt : DASH_COPY.en;
-  const modalCurrency = detectCurrency(typeof navigator !== 'undefined' ? navigator.language : 'en-US');
+  // Site language drives the currency: PT → BRL; otherwise browser locale (USD default).
+  const modalCurrency =
+    language === 'pt'
+      ? 'brl'
+      : detectCurrency(typeof navigator !== 'undefined' ? navigator.language : 'en-US');
   const [activeView, setActiveView] = useState<View>('dashboard');
   const [analysisKey, setAnalysisKey] = useState(0);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
@@ -270,6 +280,14 @@ const DashboardPage = () => {
     setUploadedImage(null);
   }, []);
 
+  // Guarda o último envio para o "Try again" refazer a análise sem perder o gráfico.
+  const lastAnalysisParamsRef = useRef<{
+    imageUrl: string | null;
+    imageFile: File | null;
+    htfBase64Images: string[];
+    analysisType: 'quick' | 'deep';
+  } | null>(null);
+
   const handleStartAnalysis = async (
     imageUrl: string | null = null,
     imageFile: File | null = null,
@@ -318,6 +336,9 @@ const DashboardPage = () => {
       return;
     }
 
+    // Memoriza o envio para o retry manter o mesmo gráfico e contexto.
+    lastAnalysisParamsRef.current = { imageUrl, imageFile, htfBase64Images, analysisType };
+
     const startedAt = performance.now();
     try {
       setUploadedImage(imageUrl);
@@ -340,7 +361,7 @@ const DashboardPage = () => {
       const analysis = await apiClient.waitForAnalysisCompletion(response.id, response);
 
       if (analysis.status === 'failed') {
-        throw new Error(analysis.reasoning || 'Falha ao processar análise');
+        throw new Error(analysis.reasoning || dc.analysisFailed);
       }
 
       // Análise concluída
@@ -410,15 +431,21 @@ const DashboardPage = () => {
       }
 
       if (error instanceof APIError && error.code === 'analysis_timeout') {
-        setErrorMessage('A análise demorou mais que o esperado, tente novamente.');
+        setErrorMessage(dc.analysisTimeout);
       } else {
-        setErrorMessage(error instanceof Error ? error.message : 'Erro desconhecido ao processar análise');
+        setErrorMessage(error instanceof Error ? error.message : dc.analysisUnknownError);
       }
       setActiveView('error');
     }
   };
 
   const handleRetry = () => {
+    const last = lastAnalysisParamsRef.current;
+    if (last && (last.imageUrl || last.imageFile)) {
+      // Reenvia a mesma análise — o usuário não perde o gráfico que subiu.
+      void handleStartAnalysis(last.imageUrl, last.imageFile, last.htfBase64Images, last.analysisType);
+      return;
+    }
     resetNewAnalysisView();
   };
 

@@ -645,8 +645,8 @@ async function getPrompt(
     basePrompt = activePrompt?.prompt || TRADING_SYSTEM_PROMPT;
   }
 
-  // Inject language into USER_CONTEXT placeholder
-  const langName = (userLanguage && LANGUAGE_NAMES[userLanguage]) ? LANGUAGE_NAMES[userLanguage] : 'Portuguese (Brazil)';
+  // Inject language into USER_CONTEXT placeholder — English by default (global product)
+  const langName = (userLanguage && LANGUAGE_NAMES[userLanguage]) ? LANGUAGE_NAMES[userLanguage] : 'English';
   const languageContext = `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, breakevenTrigger, trendStrengthNote, marketRegimeNote, multiTimeframeAlignment, sessionNote, reasoning, marketStructure.lastStructure, marketStructure.breakOfStructure, marketStructure.priceZone, marketStructure.orderBlock) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
 
   return withDeep(basePrompt.replace('{{USER_CONTEXT}}', languageContext));
@@ -724,7 +724,70 @@ function safeWorkerErrorMessage(error: unknown): string {
     return error.message;
   }
 
-  return 'Erro na análise. Tente novamente.';
+  return 'Analysis failed. Please try again.';
+}
+
+const WORKER_TICK_COSTS: Record<AnalysisType, number> = {
+  quick: 1,
+  deep: 3,
+};
+
+/**
+ * Refunds ticks after a permanently failed paid analysis. Idempotent per
+ * analysisId (guarded by an existing REFUND transaction), so retries or
+ * crash-redeliveries can never refund twice.
+ */
+async function refundTicksForFailedAnalysis(
+  userId: string | undefined,
+  isDemo: boolean | undefined,
+  analysisType: AnalysisType,
+  analysisId: string,
+): Promise<void> {
+  if (!userId || isDemo) {
+    return;
+  }
+
+  const amount = WORKER_TICK_COSTS[analysisType] ?? 1;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.tickTransaction.findFirst({
+        where: {
+          userId,
+          type: 'REFUND',
+          metadata: { path: ['analysisId'], equals: analysisId },
+        },
+        select: { id: true },
+      });
+
+      if (existing) {
+        return;
+      }
+
+      await tx.userTicks.upsert({
+        where: { userId },
+        create: { userId, balance: amount },
+        update: { balance: { increment: amount } },
+      });
+
+      await tx.tickTransaction.create({
+        data: {
+          userId,
+          amount,
+          type: 'REFUND',
+          description: 'Refund: analysis failed',
+          metadata: { analysisId },
+        },
+      });
+    });
+
+    console.log(`[Worker] Refunded ${amount} tick(s) to ${userId} for failed analysis ${analysisId}`);
+  } catch (refundError) {
+    console.error(
+      `[Worker] Failed to refund ticks for analysis ${analysisId}:`,
+      refundError instanceof Error ? refundError.message : refundError,
+    );
+  }
 }
 
 function validateTradingLogic(result: WorkerAnalysisResult): string[] {
@@ -964,6 +1027,7 @@ async function processAnalysis(job: Job<JobData>) {
           fullResponse: failureRawContent,
         },
       });
+      await refundTicksForFailedAnalysis(userId, isDemo, normalizedAnalysisType, analysisId);
       throw new UnrecoverableError(error.message);
     }
 
@@ -984,12 +1048,13 @@ async function processAnalysis(job: Job<JobData>) {
           fullResponse: failureRawContent,
         },
       });
+      await refundTicksForFailedAnalysis(userId, isDemo, normalizedAnalysisType, analysisId);
     } else {
       // Intermediate retry — keep status=processing so the frontend keeps polling
       await prisma.analysis.update({
         where: { id: analysisId },
         data: {
-          errorMessage: 'IA ocupada, tentando novamente em instantes…',
+          errorMessage: 'AI is busy — retrying in a moment…',
         },
       });
     }

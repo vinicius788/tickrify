@@ -4,11 +4,26 @@ import { Button } from '@/components/ui/button';
 import { useReveal } from '@/hooks/useReveal';
 import SectionTitle from '@/components/landing/SectionTitle';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { detectCurrency, type Currency } from '@/lib/stripe';
+
+// Display prices per currency — must match the Stripe price IDs in the backend.
+const PLAN_PRICES: Record<'starter' | 'pro' | 'elite', Record<Currency, string>> = {
+  starter: { brl: 'R$ 57', usd: '$12', eur: '€11' },
+  pro: { brl: 'R$ 147', usd: '$29', eur: '€27' },
+  elite: { brl: 'R$ 297', usd: '$59', eur: '€55' },
+};
 
 const PricingSection = () => {
   const revealRef = useReveal<HTMLElement>();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const pr = t.landing.pricing;
+
+  // Site language drives the displayed currency: PT → BRL; otherwise use the
+  // browser locale (USD default for the global/English audience).
+  const currency: Currency =
+    language === 'pt'
+      ? 'brl'
+      : detectCurrency(typeof navigator !== 'undefined' ? navigator.language : 'en-US');
 
   const ticksLine = (n: number) => `${n} ${pr.ticksMo} · ${pr.upTo} ${n} ${pr.analysesQuick}`;
 
@@ -17,7 +32,7 @@ const PricingSection = () => {
       icon: <Zap className="h-7 w-7 text-[var(--text-secondary)]" />,
       name: 'Starter',
       badge: pr.starterBadge,
-      price: 'R$ 57',
+      price: PLAN_PRICES.starter[currency],
       priceNote: pr.perMonth,
       ticksLine: ticksLine(45),
       features: [pr.fS1, pr.fS2, pr.fS3, pr.fS4],
@@ -27,7 +42,7 @@ const PricingSection = () => {
       icon: <Star className="h-7 w-7 text-[var(--accent-green)]" />,
       name: 'Pro',
       badge: pr.proBadge,
-      price: 'R$ 147',
+      price: PLAN_PRICES.pro[currency],
       priceNote: pr.perMonth,
       ticksLine: ticksLine(150),
       highlight: true,
@@ -38,7 +53,7 @@ const PricingSection = () => {
       icon: <Trophy className="h-7 w-7 text-yellow-500" />,
       name: 'Elite',
       badge: pr.eliteBadge,
-      price: 'R$ 297',
+      price: PLAN_PRICES.elite[currency],
       priceNote: pr.perMonth,
       ticksLine: ticksLine(400),
       features: [pr.fE1, pr.fE2, pr.fE3, pr.fE4, pr.fE5],

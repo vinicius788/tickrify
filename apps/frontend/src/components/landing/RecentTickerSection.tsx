@@ -1,22 +1,31 @@
-const recentAnalyses = [
-  { symbol: 'BTCUSDT', timeframe: 'H4', signal: 'COMPRA', confidence: '87%' },
-  { symbol: 'EURUSD', timeframe: 'M15', signal: 'VENDA', confidence: '74%' },
-  { symbol: 'XAUUSD', timeframe: 'M30', signal: 'COMPRA', confidence: '80%' },
-  { symbol: 'AAPL', timeframe: 'D1', signal: 'AGUARDAR', confidence: '61%' },
-  { symbol: 'PETR4', timeframe: 'H1', signal: 'COMPRA', confidence: '79%' },
-  { symbol: 'WINFUT', timeframe: 'M5', signal: 'VENDA', confidence: '71%' },
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+
+type Signal = 'BUY' | 'SELL' | 'WAIT';
+
+// Global symbols only — the site targets an international audience.
+const recentAnalyses: Array<{ symbol: string; timeframe: string; signal: Signal; confidence: string }> = [
+  { symbol: 'BTCUSDT', timeframe: 'H4', signal: 'BUY', confidence: '87%' },
+  { symbol: 'EURUSD', timeframe: 'M15', signal: 'SELL', confidence: '74%' },
+  { symbol: 'XAUUSD', timeframe: 'M30', signal: 'BUY', confidence: '80%' },
+  { symbol: 'AAPL', timeframe: 'D1', signal: 'WAIT', confidence: '61%' },
+  { symbol: 'NVDA', timeframe: 'H1', signal: 'BUY', confidence: '79%' },
+  { symbol: 'GBPUSD', timeframe: 'M5', signal: 'SELL', confidence: '71%' },
 ];
 
-const signalClass = (signal: string) => {
-  if (signal === 'COMPRA') return 'tag-compra';
-  if (signal === 'VENDA') return 'tag-venda';
+const SIGNAL_LABELS: Record<'pt' | 'en', Record<Signal, string>> = {
+  en: { BUY: 'BUY', SELL: 'SELL', WAIT: 'WAIT' },
+  pt: { BUY: 'COMPRA', SELL: 'VENDA', WAIT: 'AGUARDAR' },
+};
+
+const signalClass = (signal: Signal) => {
+  if (signal === 'BUY') return 'tag-compra';
+  if (signal === 'SELL') return 'tag-venda';
   return 'tag-aguardar';
 };
 
-import { useLanguage } from '@/lib/i18n/LanguageContext';
-
 const RecentTickerSection = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const labels = SIGNAL_LABELS[language === 'pt' ? 'pt' : 'en'];
   const items = [...recentAnalyses, ...recentAnalyses];
 
   return (
@@ -35,7 +44,7 @@ const RecentTickerSection = () => {
                 <span className="text-[var(--text-primary)]">{item.symbol}</span>
                 <span className="text-[var(--text-secondary)]">{item.timeframe}</span>
                 <span className={signalClass(item.signal)}>
-                  {item.signal === 'COMPRA' ? '▲' : item.signal === 'VENDA' ? '▼' : '—'} {item.signal}
+                  {item.signal === 'BUY' ? '▲' : item.signal === 'SELL' ? '▼' : '—'} {labels[item.signal]}
                 </span>
                 <span className="text-[var(--text-secondary)]">{item.confidence}</span>
                 <span className="text-[var(--text-muted)]">•</span>

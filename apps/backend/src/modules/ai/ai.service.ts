@@ -278,6 +278,7 @@ export class AiService implements OnModuleInit {
       userId,
       analysisType: normalizedAnalysisType,
       userLanguage,
+      isDemo,
     });
   }
 
@@ -330,7 +331,7 @@ export class AiService implements OnModuleInit {
 
     // Mesma reserva atômica do fluxo normal. Importante: marca isDemo corretamente
     // (antes o streaming criava a análise sem isDemo, permitindo grátis ilimitado).
-    const { analysis } = await this.enforceAccessAndCreate(
+    const { isDemo, analysis } = await this.enforceAccessAndCreate(
       userId,
       normalizedAnalysisType,
       { imageUrl, promptVer: promptVersion, status: 'processing' },
@@ -462,6 +463,26 @@ export class AiService implements OnModuleInit {
           result: Prisma.DbNull,
         },
       });
+
+      // Paid analysis failed → give the tick(s) back. Idempotent per analysisId.
+      if (!isDemo) {
+        const tickCost =
+          normalizedAnalysisType === 'deep' ? TICK_COSTS.ANALYSIS_DEEP : TICK_COSTS.ANALYSIS_QUICK;
+        try {
+          await this.ticksService.refundTicks(
+            userId,
+            tickCost,
+            'Refund: analysis failed',
+            analysis.id,
+          );
+        } catch (refundError) {
+          this.logger.error(
+            `[AiService] Failed to refund ticks for analysis ${analysis.id}: ${
+              refundError instanceof Error ? refundError.message : refundError
+            }`,
+          );
+        }
+      }
 
       sendEvent('error', {
         code: 'analysis_failed',
@@ -859,8 +880,9 @@ export class AiService implements OnModuleInit {
     userId: string;
     analysisType: AnalysisType;
     userLanguage?: string;
+    isDemo?: boolean;
   }) {
-    const { analysisId, imageUrl, htfImageUrls, promptOverride, promptVersion, userId, analysisType, userLanguage } = params;
+    const { analysisId, imageUrl, htfImageUrls, promptOverride, promptVersion, userId, analysisType, userLanguage, isDemo } = params;
     const startedAt = Date.now();
 
     await this.prisma.analysis.update({
@@ -932,6 +954,27 @@ export class AiService implements OnModuleInit {
           result: Prisma.DbNull,
         },
       });
+
+      // Paid analysis failed → give the tick(s) back. Idempotent per analysisId.
+      if (!isDemo) {
+        const tickCost =
+          analysisType === 'deep' ? TICK_COSTS.ANALYSIS_DEEP : TICK_COSTS.ANALYSIS_QUICK;
+        try {
+          await this.ticksService.refundTicks(
+            userId,
+            tickCost,
+            'Refund: analysis failed',
+            analysisId,
+          );
+        } catch (refundError) {
+          this.logger.error(
+            `[AiService] Failed to refund ticks for analysis ${analysisId}: ${
+              refundError instanceof Error ? refundError.message : refundError
+            }`,
+          );
+        }
+      }
+
       // Convert non_chart_image to a 400 HTTP exception so the frontend receives
       // a proper error code + user-friendly message instead of a generic 500.
       if (error instanceof AIAnalysisError && error.code === 'non_chart_image') {
@@ -1010,7 +1053,7 @@ export class AiService implements OnModuleInit {
 
   private readonly DEMO_LIMIT_ERROR = {
     code: 'DEMO_LIMIT_REACHED',
-    message: 'Suas 3 análises demonstrativas foram utilizadas. Assine um plano para continuar.',
+    message: 'You have used your 3 free analyses. Subscribe to a plan to continue.',
   };
 
   /**

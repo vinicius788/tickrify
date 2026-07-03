@@ -3,11 +3,14 @@ import { useAuth, useUser } from '@clerk/clerk-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { buildApiUrl } from '@/lib/api';
 
+import type { Currency } from '@/lib/stripe';
+
 export interface TickPackage {
   id: string;
   name: string;
   ticks: number;
   priceInCents: number;
+  pricesInCents?: Record<Currency, number>;
   highlight?: boolean;
   discountLabel?: string;
 }
@@ -71,7 +74,7 @@ export function useTicks() {
     return () => window.removeEventListener('tickrify:analysis-created', refresh);
   }, [queryClient]);
 
-  const buyTicks = async (packageId: string) => {
+  const buyTicks = async (packageId: string, currency?: Currency) => {
     const token = await getToken({ skipCache: true });
     const res = await fetch(buildApiUrl('/api/ticks/checkout'), {
       method: 'POST',
@@ -79,18 +82,18 @@ export function useTicks() {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ packageId }),
+      body: JSON.stringify({ packageId, ...(currency ? { currency } : {}) }),
     });
 
     if (!res.ok) {
       const errorBody = await res.json().catch(() => ({}));
-      throw new Error(String(errorBody?.message || 'Falha ao iniciar compra de Ticks'));
+      throw new Error(String(errorBody?.message || 'Could not start Ticks purchase'));
     }
 
     const data = (await res.json()) as { url?: string };
 
     if (!data?.url) {
-      throw new Error('Stripe checkout URL não disponível');
+      throw new Error('Stripe checkout URL unavailable');
     }
 
     window.location.href = data.url;

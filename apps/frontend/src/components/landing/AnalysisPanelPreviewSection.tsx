@@ -9,8 +9,11 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 const AnalysisPanelPreviewSection = () => {
   const revealRef = useReveal<HTMLElement>();
   const navigate = useNavigate();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const p = t.landing.preview;
+  const mock = language === 'pt'
+    ? { live: 'AO VIVO', signal: '▲ COMPRA 80%', confluence: 'Confluência' }
+    : { live: 'LIVE', signal: '▲ BUY 80%', confluence: 'Confluence' };
 
   return (
     <section ref={revealRef} id="preview-dashboard" className="landing-section section-platform reveal-on-scroll">
@@ -69,7 +72,7 @@ const AnalysisPanelPreviewSection = () => {
 
             <div className="relative p-4 md:p-5">
               <span className="absolute right-5 top-5 inline-flex items-center gap-1 rounded-full border border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] px-3 py-1 font-terminal text-[10px] uppercase tracking-widest text-[var(--signal-buy)]">
-                <span className="live-pulse h-1.5 w-1.5 rounded-full bg-[var(--signal-buy)]" /> AO VIVO
+                <span className="live-pulse h-1.5 w-1.5 rounded-full bg-[var(--signal-buy)]" /> {mock.live}
               </span>
 
               <div className="grid gap-4 lg:grid-cols-[200px_1fr]">
@@ -102,7 +105,7 @@ const AnalysisPanelPreviewSection = () => {
                   <div className="rounded-[20px] border border-[var(--border-card)] bg-[rgba(255,255,255,0.03)] p-4 text-xs">
                     <div className="mb-3 flex items-center justify-between font-terminal">
                       <span className="text-[var(--text-primary)]">XAUUSD • M30</span>
-                      <span className="tag-compra">▲ COMPRA 80%</span>
+                      <span className="tag-compra">{mock.signal}</span>
                     </div>
                     <div className="grid grid-cols-2 gap-3 font-terminal text-[var(--text-secondary)]">
                       <span className="rounded-xl border border-[var(--border-card)] bg-[rgba(255,255,255,0.02)] px-3 py-2 text-[var(--text-primary)]">
@@ -119,7 +122,7 @@ const AnalysisPanelPreviewSection = () => {
                       </span>
                     </div>
                     <div className="mt-3 border-t border-[var(--border-subtle)] pt-3 font-terminal text-[11px] text-[var(--text-secondary)]">
-                      R/R 2.0:1 • Confluência 4/8 • Bias BULLISH
+                      R/R 2.0:1 • {mock.confluence} 4/8 • Bias BULLISH
                     </div>
                   </div>
                 </div>

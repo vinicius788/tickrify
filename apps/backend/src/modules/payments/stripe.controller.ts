@@ -45,7 +45,7 @@ export class StripeController {
     const billingCycle: BillingCycle = body.billingCycle === 'yearly' ? 'yearly' : 'monthly';
     const currency: Currency = (['brl', 'usd', 'eur'] as Currency[]).includes(body.currency!)
       ? body.currency!
-      : 'brl';
+      : 'usd';
 
     return this.stripeService.createCheckoutSession(user.clerkUserId, planType, billingCycle, currency);
   }
