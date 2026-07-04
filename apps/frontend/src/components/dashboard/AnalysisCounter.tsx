@@ -33,6 +33,12 @@ const AnalysisCounter = () => {
   const { getToken } = useAuth();
   const c = t.counter;
 
+  // Portal do cliente Stripe (gerenciar/cancelar assinatura) — endpoint já existia
+  // no backend; este é o primeiro ponto da UI que o expõe.
+  // IMPORTANTE: todos os hooks (incl. este useState) precisam ser chamados ANTES
+  // de qualquer return condicional, senão React error #310 (hooks condicionais).
+  const [portalLoading, setPortalLoading] = useState(false);
+
   // Enquanto o backend não confirmou o plano (conta paga demora no cold start),
   // mostrar um estado neutro de carregamento — NUNCA "0/3 grátis", que confundia
   // o assinante e o fazia achar que perdeu o plano.
@@ -49,9 +55,6 @@ const AnalysisCounter = () => {
     );
   }
 
-  // Portal do cliente Stripe (gerenciar/cancelar assinatura) — endpoint já existia
-  // no backend; este é o primeiro ponto da UI que o expõe.
-  const [portalLoading, setPortalLoading] = useState(false);
   const openCustomerPortal = async () => {
     if (portalLoading) return;
     setPortalLoading(true);
