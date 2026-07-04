@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { Check, Zap, Star, Trophy } from "lucide-react";
 import { createCheckoutSession, type BillingCycle, type Currency, type PlanType } from "../../lib/stripe";
+import { warmupPaymentsApi } from "../../lib/api";
 import { track } from "../../lib/analytics";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../ui/card";
@@ -209,6 +210,12 @@ export function PricingCards() {
 
   // Site language drives the displayed currency: PT → BRL, everything else → USD.
   const currency: Currency = language === "pt" ? "brl" : "usd";
+
+  // Acorda a API de pagamentos assim que a página de planos monta, para que o
+  // clique em "Get Pro" segundos depois não caia no cold start do Render.
+  useEffect(() => {
+    warmupPaymentsApi();
+  }, []);
 
   const handleUpgrade = useCallback(
     async (planType: PlanType) => {

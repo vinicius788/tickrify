@@ -1,10 +1,12 @@
 import { Check, Zap, Star, Trophy } from 'lucide-react';
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useReveal } from '@/hooks/useReveal';
 import SectionTitle from '@/components/landing/SectionTitle';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { type Currency } from '@/lib/stripe';
+import { warmupPaymentsApi } from '@/lib/api';
 
 // Display prices per currency — must match the Stripe price IDs in the backend.
 const PLAN_PRICES: Record<'starter' | 'pro' | 'elite', Record<Currency, string>> = {
@@ -21,6 +23,11 @@ const PricingSection = () => {
   // Site language drives the displayed currency: PT → BRL, everything else → USD.
   // Traders think in USD; keeping it fixed avoids browser-locale surprises.
   const currency: Currency = language === 'pt' ? 'brl' : 'usd';
+
+  // Acorda a API de pagamentos (Render hiberna) já na landing, antes do clique.
+  useEffect(() => {
+    warmupPaymentsApi();
+  }, []);
 
   const ticksLine = (n: number) => `${n} ${pr.ticksMo} · ${pr.upTo} ${n} ${pr.analysesQuick}`;
 

@@ -75,6 +75,21 @@ async function readErrorMessage(response: Response, fallbackMessage: string) {
   return fallbackMessage;
 }
 
+// O backend hiberna no Render (plano free); o cold start pode levar até ~50s.
+// Damos um timeout longo e, se o 1º toque falhar por conexão (típico de API
+// ainda acordando), tentamos de novo uma vez após um respiro.
+const CHECKOUT_TIMEOUT_MS = 45_000;
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function requestStripeApi<T>(
   path: string,
   init: RequestInit,
@@ -83,8 +98,22 @@ async function requestStripeApi<T>(
   const baseUrl = getStripeApiBaseUrl();
   const targetUrl = `${baseUrl}${path}`;
 
+  const attempt = async (): Promise<Response> =>
+    fetchWithTimeout(targetUrl, init, CHECKOUT_TIMEOUT_MS);
+
   try {
-    const response = await fetch(targetUrl, init);
+    let response: Response;
+    try {
+      response = await attempt();
+    } catch (firstError) {
+      // Cold start: 1ª chamada abortou/caiu. Espera o boot e tenta uma vez mais.
+      if (firstError instanceof TypeError || (firstError as Error)?.name === 'AbortError') {
+        await new Promise((r) => setTimeout(r, 3_000));
+        response = await attempt();
+      } else {
+        throw firstError;
+      }
+    }
 
     if (!response.ok) {
       const message = await readErrorMessage(response, fallbackMessage);
@@ -93,9 +122,9 @@ async function requestStripeApi<T>(
 
     return response.json() as Promise<T>;
   } catch (error) {
-    if (error instanceof TypeError) {
+    if (error instanceof TypeError || (error as Error)?.name === 'AbortError') {
       throw new Error(
-        `Não foi possível conectar ao backend de pagamentos (${targetUrl}). Verifique VITE_API_URL e CORS.`,
+        'The payment service is waking up and took too long to respond. Please try again in a few seconds.',
       );
     }
 

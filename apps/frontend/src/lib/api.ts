@@ -25,6 +25,29 @@ export function buildApiUrl(path: string): string {
   return `${API_BASE_URL}${normalizedPath}`;
 }
 
+// O backend roda no Render (plano free) e hiberna após ~15 min ocioso. O 1º
+// request depois disso leva 15–50s (cold start) e pode estourar o timeout do
+// checkout — foi o "clico no plano, demora e dá erro" relatado. Chamar isto
+// quando a página de planos carrega acorda a API em background: quando o
+// usuário clica em "Get Pro" segundos depois, ela já está de pé.
+// Fire-and-forget e idempotente por sessão (não repete o ping).
+let warmupStarted = false;
+export function warmupPaymentsApi(): void {
+  if (warmupStarted || typeof window === 'undefined') return;
+  warmupStarted = true;
+  try {
+    void fetch(buildApiUrl('/api/health/live'), {
+      method: 'GET',
+      cache: 'no-store',
+      keepalive: true,
+    }).catch(() => {
+      /* cold start pode falhar no 1º toque; o importante é ter iniciado o boot */
+    });
+  } catch {
+    /* noop */
+  }
+}
+
 type FreshTokenGetter = () => Promise<string | null>;
 
 async function resolveAuthHeaders(
