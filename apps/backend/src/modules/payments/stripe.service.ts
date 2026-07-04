@@ -45,6 +45,62 @@ export class StripeService {
   }
 
   /**
+   * Descobre em qual moeda o cliente já tem compromisso ativo na Stripe.
+   * A Stripe proíbe misturar moedas no mesmo customer, então se ele já tem uma
+   * assinatura (qualquer status "vivo") ou um checkout aberto, precisamos reusar
+   * a mesma moeda no novo checkout. Retorna null se não houver nada — aí o novo
+   * checkout pode usar a moeda pedida (usuário novo).
+   */
+  private async detectExistingCustomerCurrency(customerId: string): Promise<Currency | null> {
+    const stripe = this.getStripeClient();
+    const supported: Currency[] = ['brl', 'usd', 'eur'];
+
+    try {
+      // 1) Assinaturas em qualquer estado "vivo".
+      const subs = await stripe.subscriptions.list({
+        customer: customerId,
+        status: 'all',
+        limit: 10,
+      });
+      const liveStatuses = new Set([
+        'active',
+        'trialing',
+        'past_due',
+        'unpaid',
+        'incomplete',
+      ]);
+      for (const sub of subs.data) {
+        if (liveStatuses.has(sub.status) && sub.currency) {
+          const cur = sub.currency.toLowerCase() as Currency;
+          if (supported.includes(cur)) return cur;
+        }
+      }
+
+      // 2) Checkout sessions abertas ainda seguram a moeda.
+      const sessions = await stripe.checkout.sessions.list({
+        customer: customerId,
+        limit: 10,
+      });
+      for (const s of sessions.data) {
+        if (s.status === 'open' && s.currency) {
+          const cur = s.currency.toLowerCase() as Currency;
+          if (supported.includes(cur)) return cur;
+        }
+      }
+    } catch (error) {
+      // Nunca deixar essa checagem derrubar o checkout — no pior caso segue com a
+      // moeda pedida (e a Stripe devolve o erro claro, que já tratamos no front).
+      this.logger.warn(
+        `[stripe] detectExistingCustomerCurrency falhou para ${customerId}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
+
+    return null;
+  }
+
+  /**
    * Criar sessão de checkout
    */
   async createCheckoutSession(
@@ -66,16 +122,23 @@ export class StripeService {
         throw new Error('User not found');
       }
 
-      const priceId = getPriceId(planType, billingCycle, currency);
+      const customerId = await this.resolveOrCreateCustomerId(user);
+
+      // A Stripe não deixa um mesmo cliente ter assinaturas em moedas diferentes.
+      // Se este cliente JÁ tem assinatura/checkout ativo em outra moeda (ex: assinou
+      // em BRL e agora o site mostra USD), forçar a MESMA moeda evita o erro
+      // "You cannot combine currencies on a single customer".
+      const existingCurrency = await this.detectExistingCustomerCurrency(customerId);
+      const effectiveCurrency: Currency = existingCurrency ?? currency;
+
+      const priceId = getPriceId(planType, billingCycle, effectiveCurrency);
       const appBaseUrl = this.resolveAppBaseUrl();
       const successUrl = `${appBaseUrl}/dashboard?success=true`;
       const cancelUrl = `${appBaseUrl}/pricing?canceled=true`;
 
       if (!priceId) {
-        throw new Error(`Price ID not configured for plan: ${planType} (${billingCycle}/${currency})`);
+        throw new Error(`Price ID not configured for plan: ${planType} (${billingCycle}/${effectiveCurrency})`);
       }
-
-      const customerId = await this.resolveOrCreateCustomerId(user);
 
       // Criar checkout session
       const stripe = this.getStripeClient();
@@ -105,10 +168,15 @@ export class StripeService {
           clerkUserId,
           planType,
           billingCycle,
+          currency: effectiveCurrency,
         },
       });
 
-      this.logger.log(`Checkout session created: ${session.id} for user: ${clerkUserId}`);
+      this.logger.log(
+        `Checkout session created: ${session.id} for user: ${clerkUserId} (${effectiveCurrency}${
+          existingCurrency ? ' — reused existing customer currency' : ''
+        })`,
+      );
 
       return {
         sessionId: session.id,
