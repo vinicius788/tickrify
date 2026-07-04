@@ -262,6 +262,7 @@ export default {
   },
   counter: {
     manageSubscription: 'Gestionar suscripción',
+    loadingPlan: 'Cargando tu plan…',
     freeTitle: 'Análisis Gratis',
     exhausted: 'Tus 3 análisis gratis han sido utilizados.',
     subscribe: 'Suscríbete para continuar',

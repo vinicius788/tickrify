@@ -262,6 +262,7 @@ export default {
   },
   counter: {
     manageSubscription: 'サブスクリプションを管理',
+    loadingPlan: 'プランを読み込み中…',
     freeTitle: '無料分析',
     exhausted: '無料分析3回を使い切りました。',
     subscribe: '続けるには登録',

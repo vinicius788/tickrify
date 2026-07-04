@@ -262,6 +262,7 @@ export default {
   },
   counter: {
     manageSubscription: 'Manage subscription',
+    loadingPlan: 'Loading your plan…',
     freeTitle: 'Free Analyses',
     exhausted: 'Your 3 free analyses are used up. No sense going back to trading blind.',
     subscribe: 'Go unlimited',

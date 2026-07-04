@@ -41,6 +41,8 @@ const DASH_COPY = {
     weeklyInsight: 'This week',
     analysisError: 'Analysis error',
     tryAgain: 'Try again',
+    loadingPlanTitle: 'Loading your plan…',
+    loadingPlanDesc: 'Confirming your subscription. This takes a couple of seconds — try again in a moment.',
     analysisTimeout: 'The analysis took longer than expected. Please try again.',
     analysisUnknownError: 'Unexpected error while processing the analysis.',
     analysisFailed: 'The analysis could not be completed.',
@@ -64,6 +66,8 @@ const DASH_COPY = {
     weeklyInsight: 'Insight da semana',
     analysisError: 'Erro na Análise',
     tryAgain: 'Tentar Novamente',
+    loadingPlanTitle: 'Carregando seu plano…',
+    loadingPlanDesc: 'Confirmando sua assinatura. Leva alguns segundos — tente de novo em instantes.',
     analysisTimeout: 'A análise demorou mais que o esperado, tente novamente.',
     analysisUnknownError: 'Erro desconhecido ao processar análise.',
     analysisFailed: 'Não foi possível concluir a análise.',
@@ -108,7 +112,7 @@ const DashboardPage = () => {
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const { plan, total, used, isUnlimited, remaining } = useAnalysisLimit();
+  const { plan, total, used, isUnlimited, remaining, isLoading: isPlanLoading } = useAnalysisLimit();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
   const { toast } = useToast();
@@ -298,6 +302,14 @@ const DashboardPage = () => {
         setAnalysisData(null);
         setActiveView('analysis-result');
       }, 2000); // Simulação mais rápida no demo
+      return;
+    }
+
+    // Plano ainda não confirmado pelo backend (conta paga demora a resolver no
+    // cold start do Render). Não deixa analisar até saber — senão assinante
+    // gastava uma análise grátis por engano.
+    if (isPlanLoading) {
+      toast({ title: dc.loadingPlanTitle, description: dc.loadingPlanDesc });
       return;
     }
 

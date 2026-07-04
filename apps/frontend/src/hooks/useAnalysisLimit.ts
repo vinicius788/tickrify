@@ -11,6 +11,9 @@ interface AnalysisLimitData {
   canAnalyze: boolean;
   isUnlimited: boolean;
   plan: UserPlan;
+  /** true enquanto o backend ainda não confirmou o plano/limite do usuário logado.
+   *  Durante esse tempo NÃO se deve tratar o usuário como "free 3 grátis". */
+  isLoading: boolean;
 }
 
 const FREE_LIMIT = 3;
@@ -23,10 +26,16 @@ export function useAnalysisLimit(): AnalysisLimitData {
   const [analysisLimit, setAnalysisLimit] = useState(FREE_LIMIT);
   const [userPlan, setUserPlan] = useState<UserPlan>('free');
   const [backendUnlimited, setBackendUnlimited] = useState(false);
+  // Começa carregando: o backend (Render hiberna) pode levar segundos a confirmar
+  // que a conta é paga. Sem isto, a tela mostrava "3 grátis" no meio-tempo e o
+  // assinante conseguia gastar análise grátis antes do plano ser reconhecido.
+  const [statusResolved, setStatusResolved] = useState(false);
 
   // Verificar se está no modo demo (rota /demo sem usuário)
   const isDemo = !user;
   const isUnlimited = userPlan !== 'free' || backendUnlimited;
+  // Logado mas ainda sem resposta do backend = carregando.
+  const isLoading = Boolean(user) && !statusResolved;
 
   const refreshLimits = useCallback(async () => {
     if (!isLoaded || !user) {
@@ -55,11 +64,17 @@ export function useAnalysisLimit(): AnalysisLimitData {
           ? usage.total
           : FREE_LIMIT,
       );
+      // Só marca resolvido em caso de sucesso — assim canAnalyze fica travado até
+      // termos a verdade do backend, evitando gastar grátis por engano.
+      setStatusResolved(true);
     } catch {
       setUserPlan('free');
       setAnalysisCount(0);
       setAnalysisLimit(FREE_LIMIT);
       setBackendUnlimited(false);
+      // Falha de rede: libera a UI para não travar pra sempre, mas o backend ainda
+      // é a fonte da verdade na hora de criar a análise (bloqueia grátis indevido).
+      setStatusResolved(true);
     }
   }, [getToken, isLoaded, user]);
 
@@ -83,6 +98,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setAnalysisLimit(FREE_LIMIT);
       setUserPlan('free');
       setBackendUnlimited(false);
+      setStatusResolved(false);
     }
   }, [user]);
 
@@ -95,10 +111,25 @@ export function useAnalysisLimit(): AnalysisLimitData {
       canAnalyze: true,
       isUnlimited: true,
       plan: 'elite' as UserPlan,
+      isLoading: false,
     };
   }
 
-  // Usuário logado
+  // Enquanto o backend não confirmou o plano: NÃO afirmar que é free/3 grátis e
+  // NÃO liberar análise. A UI mostra "carregando seu plano" (ver DashboardPage).
+  if (isLoading) {
+    return {
+      total: 0,
+      used: 0,
+      remaining: 0,
+      canAnalyze: false,
+      isUnlimited: false,
+      plan: userPlan,
+      isLoading: true,
+    };
+  }
+
+  // Usuário logado, plano confirmado
   const total = isUnlimited ? Infinity : analysisLimit;
   const used = analysisCount;
   const remaining = isUnlimited ? Infinity : Math.max(0, analysisLimit - used);
@@ -111,6 +142,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
     canAnalyze,
     isUnlimited,
     plan: userPlan,
+    isLoading: false,
   };
 }
 

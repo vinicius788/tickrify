@@ -8,8 +8,16 @@ import { RouteAnalytics } from "@/components/providers/RouteAnalytics";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { SignIn, SignUp, GoogleOneTap, SignedOut } from "@clerk/clerk-react";
+import { useEffect } from "react";
+import { warmupPaymentsApi } from "@/lib/api";
 
 function App() {
+  // Acorda o backend (Render hiberna) assim que o app carrega, em qualquer página.
+  // Reduz o cold start que fazia o dashboard demorar a confirmar a assinatura.
+  useEffect(() => {
+    warmupPaymentsApi();
+  }, []);
+
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <Router>

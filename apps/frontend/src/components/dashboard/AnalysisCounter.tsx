@@ -27,11 +27,27 @@ const PLAN_TICKS: Record<UserPlan, number> = {
 const FREE_ANALYSES_TOTAL = 3;
 
 const AnalysisCounter = () => {
-  const { isUnlimited, plan, used, remaining } = useAnalysisLimit();
+  const { isUnlimited, plan, used, remaining, isLoading } = useAnalysisLimit();
   const { balance } = useTicks();
   const { t } = useLanguage();
   const { getToken } = useAuth();
   const c = t.counter;
+
+  // Enquanto o backend não confirmou o plano (conta paga demora no cold start),
+  // mostrar um estado neutro de carregamento — NUNCA "0/3 grátis", que confundia
+  // o assinante e o fazia achar que perdeu o plano.
+  if (isLoading) {
+    return (
+      <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--text-secondary)] border-t-transparent" />
+            {c.loadingPlan ?? 'Loading your plan…'}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   // Portal do cliente Stripe (gerenciar/cancelar assinatura) — endpoint já existia
   // no backend; este é o primeiro ponto da UI que o expõe.

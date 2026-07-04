@@ -262,6 +262,7 @@ export default {
   },
   counter: {
     manageSubscription: 'Abo verwalten',
+    loadingPlan: 'Dein Tarif wird geladen…',
     freeTitle: 'Gratis-Analysen',
     exhausted: 'Ihre 3 Gratis-Analysen wurden verbraucht.',
     subscribe: 'Abonnieren, um fortzufahren',

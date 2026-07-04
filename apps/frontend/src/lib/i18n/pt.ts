@@ -275,6 +275,7 @@ export default {
   },
   counter: {
     manageSubscription: 'Gerenciar assinatura',
+    loadingPlan: 'Carregando seu plano…',
     freeTitle: 'Análises Grátis',
     exhausted: 'Suas 3 análises grátis foram utilizadas.',
     subscribe: 'Assinar para continuar',
