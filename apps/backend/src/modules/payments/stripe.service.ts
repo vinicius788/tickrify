@@ -160,9 +160,10 @@ export class StripeService {
         cancel_url: cancelUrl,
         allow_promotion_codes: true,
         billing_address_collection: 'required',
-        subscription_data: {
-          trial_period_days: 3,
-        },
+        // SEM trial: o "grátis" do Tickrify são as 3 análises gratuitas (freemium
+        // de uso). Um trial de tempo por cima seria redundante — não dá ticks a
+        // mais, só adiaria a receita e abriria churn involuntário. Cobra já; o
+        // incentivo de entrada fica no cupom EARLY50 (50% no 1º mês).
         metadata: {
           userId: user.id,
           clerkUserId,
