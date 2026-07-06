@@ -108,6 +108,7 @@ export class StripeService {
     planType: PlanType,
     billingCycle: BillingCycle,
     currency: Currency = 'usd',
+    couponId?: string,
   ) {
     try {
       if (!['starter', 'pro', 'elite'].includes(planType)) {
@@ -158,7 +159,13 @@ export class StripeService {
         ],
         success_url: successUrl,
         cancel_url: cancelUrl,
-        allow_promotion_codes: true,
+        client_reference_id: user.id,
+        // `discounts` e `allow_promotion_codes` são mutuamente exclusivos na
+        // Stripe. Com cupom whitelisted (paywall → EARLY50 pré-aplicado), o
+        // desconto já chega aplicado; sem cupom, o campo de código fica aberto.
+        ...(couponId
+          ? { discounts: [{ coupon: couponId }] }
+          : { allow_promotion_codes: true }),
         billing_address_collection: 'required',
         // SEM trial: o "grátis" do Tickrify são as 3 análises gratuitas (freemium
         // de uso). Um trial de tempo por cima seria redundante — não dá ticks a
@@ -289,6 +296,17 @@ export class StripeService {
           `Stripe customer ${customerId} not found for user ${user.id}. Recreating customer.`,
         );
         customerId = null;
+      } else if (user.email) {
+        // Best-effort: garante que o customer tem e-mail (pré-preenche o
+        // checkout e mantém recibos/webhooks casados com a conta certa).
+        try {
+          const existing = await stripe.customers.retrieve(customerId);
+          if (!('deleted' in existing && existing.deleted) && !existing.email) {
+            await stripe.customers.update(customerId, { email: user.email });
+          }
+        } catch {
+          /* nunca bloquear o checkout por causa disso */
+        }
       }
     }
 

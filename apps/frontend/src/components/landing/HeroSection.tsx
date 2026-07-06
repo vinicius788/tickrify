@@ -3,7 +3,6 @@ import { SignUpButton, SignedIn, SignedOut } from '@clerk/clerk-react';
 import { ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { useReveal } from '@/hooks/useReveal';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const DATE_LOCALES: Record<string, string> = {
@@ -11,7 +10,6 @@ const DATE_LOCALES: Record<string, string> = {
 };
 
 const HeroSection = () => {
-  const revealRef = useReveal<HTMLElement>();
   const navigate = useNavigate();
   const { t, language } = useLanguage();
   const h = t.landing.hero;
@@ -35,15 +33,15 @@ const HeroSection = () => {
   };
 
   return (
-    <section ref={revealRef} id="top" className="hero-section landing-hero section-primary reveal-on-scroll">
+    <section id="top" className="hero-section landing-hero section-primary">
       <div className="container relative z-10 grid items-center gap-10 lg:grid-cols-[1.08fr_0.92fr]">
         <div className="max-w-3xl">
-          <div className="fade-up-1 mb-8 landing-badge">
+          <div className="mb-8 landing-badge">
             <span>{h.badge}</span>
           </div>
 
           <h1
-            className="fade-up-2"
+            className=""
             style={{
               fontSize: 'clamp(3.25rem, 7.5vw, 6.5rem)',
               fontWeight: 500,
@@ -64,7 +62,7 @@ const HeroSection = () => {
           </h1>
 
           <p
-            className="fade-up-3 mt-6 max-w-[520px]"
+            className="mt-6 max-w-[520px]"
             style={{
               fontFamily: 'var(--font-sans)',
               fontSize: '1.05rem',
@@ -75,7 +73,7 @@ const HeroSection = () => {
             {h.subtitle}
           </p>
 
-          <div className="fade-up-4 mt-9 flex flex-col gap-3 sm:flex-row">
+          <div className="mt-9 flex flex-col gap-3 sm:flex-row">
             <SignedOut>
               <SignUpButton mode="modal" forceRedirectUrl="/dashboard" signInForceRedirectUrl="/dashboard">
                 <Button className="landing-primary-button h-12 rounded-xl px-6 text-sm font-bold">

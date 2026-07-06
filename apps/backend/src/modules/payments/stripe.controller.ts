@@ -47,7 +47,9 @@ export class StripeController {
       ? body.currency!
       : 'usd';
 
-    return this.stripeService.createCheckoutSession(user.clerkUserId, planType, billingCycle, currency);
+    const coupon = body.coupon === 'EARLY50' ? body.coupon : undefined;
+
+    return this.stripeService.createCheckoutSession(user.clerkUserId, planType, billingCycle, currency, coupon);
   }
 
   /**

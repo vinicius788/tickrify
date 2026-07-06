@@ -49,9 +49,60 @@
         }
       }
     </script>
+
+    <style>
+      /* Pre-hydration paint: avoids blank screen while the JS bundle loads */
+      html, body { background: #050508; margin: 0; }
+      #root:empty::before { content: ""; }
+      .prehydrate-hero {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 24px clamp(20px, 6vw, 96px);
+        font-family: Geist, system-ui, sans-serif;
+        color: #f5f6f8;
+        background: #050508;
+      }
+      .prehydrate-hero .ph-badge {
+        display: inline-block;
+        border: 1px solid rgba(94, 234, 138, 0.35);
+        border-radius: 999px;
+        padding: 8px 16px;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        color: #9aa3ae;
+        margin-bottom: 28px;
+        width: fit-content;
+      }
+      .prehydrate-hero h1 {
+        font-family: Fraunces, Georgia, serif;
+        font-size: clamp(3.25rem, 7.5vw, 6.5rem);
+        font-weight: 500;
+        line-height: 0.98;
+        letter-spacing: -0.02em;
+        margin: 0;
+      }
+      .prehydrate-hero h1 .ph-green { color: #5eea8a; }
+      .prehydrate-hero p {
+        max-width: 520px;
+        margin-top: 24px;
+        font-size: 1.05rem;
+        line-height: 1.75;
+        color: #9aa3ae;
+      }
+      .prehydrate-hero .ph-note {
+        margin-top: 28px;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #9aa3ae;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="prehydrate-hero"><span class="ph-badge">● TRADING COPILOT • REAL TIME</span><h1>Stop trading<br /><span class="ph-green">in the dark.</span></h1><p>Paste your chart. The AI reads the entry, stop, targets and risk — a second opinion that confirms or kills your read before you enter. The final call is always yours.</p><span class="ph-note">3 free analyses • No card needed • One-tap sign-in</span></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

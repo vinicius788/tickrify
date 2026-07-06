@@ -3,7 +3,7 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/s
 import officialLogo from '@/assets/tickrify-logo-official.png';
 import { Menu } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { SignInButton, SignedIn, SignedOut, useUser } from '@clerk/clerk-react';
+import { SignInButton, SignUpButton, SignedIn, SignedOut, useUser } from '@clerk/clerk-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 
@@ -60,6 +60,11 @@ const Header = () => {
             <>
               <SignedOut>
                 <SignInButton mode="modal">{loginButton}</SignInButton>
+                <SignUpButton mode="modal" forceRedirectUrl="/dashboard" signInForceRedirectUrl="/dashboard">
+                  <Button size="sm" className="landing-primary-button rounded-xl px-4 text-[13px] font-semibold">
+                    {t.landing.hero.startFree}
+                  </Button>
+                </SignUpButton>
               </SignedOut>
               <SignedIn>
                 <Link to="/dashboard">
@@ -79,7 +84,11 @@ const Header = () => {
           {isLoaded ? (
             <>
               <SignedOut>
-                <SignInButton mode="modal">{loginButton}</SignInButton>
+                <SignUpButton mode="modal" forceRedirectUrl="/dashboard" signInForceRedirectUrl="/dashboard">
+                  <Button size="sm" className="landing-primary-button rounded-xl px-3 text-[13px] font-semibold">
+                    {t.landing.hero.startFree}
+                  </Button>
+                </SignUpButton>
               </SignedOut>
               <SignedIn>
                 <Link to="/dashboard">

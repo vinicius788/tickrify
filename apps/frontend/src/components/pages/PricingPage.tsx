@@ -9,11 +9,15 @@ const PRICING_COPY = {
     canceledDesc: 'No charge was made. You can subscribe whenever you want.',
     title: 'Choose your Tickrify plan',
     subtitle: 'AI trading analysis. Every plan includes monthly Ticks that renew automatically.',
+    foundingTitle: 'Founding Trader offer',
+    foundingDesc: 'You’re early — and that counts. The first 50 subscribers lock this price forever: it never increases while your subscription stays active. Use code',
+    foundingCode: 'EARLY50',
+    foundingSuffix: 'at checkout for 50% off your first month.',
     faqTitle: 'Frequently asked questions',
     faq: [
       {
         q: 'Can I cancel anytime?',
-        a: 'Please review the Terms of Service before purchase. Contract and renewal conditions are defined at checkout and in Tickrify’s current policy.',
+        a: 'Yes — cancel in one click from your dashboard, no emails and no questions. You keep your Ticks and full access until the end of the period you already paid for.',
       },
       {
         q: 'How do Ticks work?',
@@ -33,7 +37,7 @@ const PRICING_COPY = {
       },
       {
         q: 'Is there a refund guarantee?',
-        a: 'Per the Terms of Service, purchases are final. If anything goes wrong with an analysis, reply to any email and we’ll make it right — we read every message.',
+        a: 'You never pay blind: 3 free analyses before any charge, and you can cancel anytime. Per the Terms of Service purchases are final — but if anything goes wrong with an analysis, reply to any email and we’ll make it right. We read every message.',
       },
     ],
   },
@@ -42,11 +46,15 @@ const PRICING_COPY = {
     canceledDesc: 'Nenhuma cobrança foi feita. Você pode assinar quando quiser.',
     title: 'Escolha seu plano Tickrify',
     subtitle: 'Análise de trading com IA. Cada plano inclui Ticks mensais renovados automaticamente.',
+    foundingTitle: 'Oferta Founding Trader',
+    foundingDesc: 'Você chegou cedo — e isso conta. Os primeiros 50 assinantes travam este preço para sempre: ele nunca sobe enquanto a assinatura estiver ativa. Use o código',
+    foundingCode: 'EARLY50',
+    foundingSuffix: 'no checkout para 50% de desconto no primeiro mês.',
     faqTitle: 'Perguntas Frequentes',
     faq: [
       {
         q: 'Posso cancelar a qualquer momento?',
-        a: 'Consulte os Termos de Serviço antes da compra. As condições contratuais e de renovação são definidas no checkout e na política vigente da Tickrify.',
+        a: 'Sim — cancele em um clique pelo seu dashboard, sem e-mails e sem perguntas. Você mantém seus Ticks e o acesso completo até o fim do período que já pagou.',
       },
       {
         q: 'Como funcionam os Ticks?',
@@ -66,7 +74,7 @@ const PRICING_COPY = {
       },
       {
         q: 'Há garantia de reembolso?',
-        a: 'Conforme os Termos de Serviço, as compras são finais. Se algo der errado em uma análise, responda qualquer e-mail que a gente resolve — lemos cada mensagem.',
+        a: 'Você nunca paga no escuro: são 3 análises grátis antes de qualquer cobrança, e dá para cancelar quando quiser. Pelos Termos de Serviço as compras são finais — mas se algo der errado em uma análise, responda qualquer e-mail que a gente resolve. Lemos cada mensagem.',
       },
     ],
   },
@@ -98,6 +106,20 @@ export default function PricingPage() {
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
             {copy.subtitle}
+          </p>
+        </div>
+
+        {/* Founding Trader — fecha a promessa do banner do topo do site */}
+        <div className="mx-auto mb-12 max-w-2xl rounded-2xl border border-[rgba(94,234,138,0.35)] bg-[rgba(94,234,138,0.06)] px-6 py-5 text-center">
+          <p className="font-terminal text-xs uppercase tracking-[0.12em] text-[#5eea8a]">
+            ⚡ {copy.foundingTitle}
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            {copy.foundingDesc}{' '}
+            <strong className="rounded-md border border-[rgba(94,234,138,0.4)] px-2 py-0.5 font-terminal text-[#5eea8a]">
+              {copy.foundingCode}
+            </strong>{' '}
+            {copy.foundingSuffix}
           </p>
         </div>
 

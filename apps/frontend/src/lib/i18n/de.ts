@@ -417,7 +417,7 @@ export default {
       q5: 'Wie berechnet das System Stop Loss und Take Profit?',
       a5: 'Die Niveaus werden aus der Marktstruktur abgeleitet (Swing Points, Zonen und Invalidierung), mit Risiko-/Ertragsvalidierung, um statistisch fragile Setups zu vermeiden.',
       q6: 'Kann ich mein Abo jederzeit kündigen?',
-      a6: 'Ja, über das Abrechnungsportal. Die Kündigung stoppt künftige Verlängerungen, erzeugt aber keine Rückerstattung, Rückbuchung oder Gutschrift: Alle Käufe sind endgültig und nicht erstattungsfähig. Prüfen Sie vor dem Abschluss die geltenden Bedingungen und Richtlinien.',
+      a6: 'Ja — kündigen Sie mit einem Klick direkt im Dashboard, ohne E-Mails und ohne Fragen. Ihre Ticks und der volle Zugriff bleiben bis zum Ende des bereits bezahlten Zeitraums erhalten.',
     },
     footer: {
       tagline: 'Copilot für technische Analyse mit KI',

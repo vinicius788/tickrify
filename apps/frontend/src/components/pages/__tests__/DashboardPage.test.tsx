@@ -49,6 +49,7 @@ vi.mock('@/hooks/use-toast', () => ({
 
 vi.mock('@/lib/stripe', () => ({
   createCheckoutSession: vi.fn(),
+  detectCurrency: vi.fn(() => 'usd'),
 }));
 
 vi.mock('@/components/dashboard/NewAnalysis', () => ({

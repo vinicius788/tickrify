@@ -417,7 +417,7 @@ export default {
       q5: '¿Cómo calcula el sistema el Stop Loss y el Take Profit?',
       a5: 'Los niveles se derivan de la estructura de mercado (swing points, zonas e invalidación), con validación de riesgo/beneficio para evitar setups estadísticamente frágiles.',
       q6: '¿Puedo cancelar mi suscripción en cualquier momento?',
-      a6: 'Sí, vía el portal de facturación. La cancelación detiene las próximas renovaciones pero no genera reembolso, contracargo ni crédito: todas las compras son finales y no reembolsables. Antes de suscribirte, revisa los términos y políticas vigentes.',
+      a6: 'Sí — cancela con un clic desde tu dashboard, sin correos ni preguntas. Mantienes tus Ticks y el acceso completo hasta el final del período que ya pagaste.',
     },
     footer: {
       tagline: 'Copiloto de análisis técnico con IA',

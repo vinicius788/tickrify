@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional } from 'class-validator';
+import { IsEnum, IsIn, IsOptional } from 'class-validator';
 import { BillingCycle, Currency, PlanType } from '../../../config/stripe.config';
 
 enum PlanTypeDto {
@@ -30,4 +30,13 @@ export class CreateCheckoutSessionDto {
   @IsOptional()
   @IsEnum(CurrencyDto)
   currency?: Currency;
+
+  /**
+   * Cupom pré-aplicado no checkout (whitelist — nunca aceitar cupom arbitrário
+   * do cliente). Usado pelo paywall "Unlock analysis" para chegar no Stripe com
+   * o EARLY50 já aplicado, sem o usuário precisar digitar nada.
+   */
+  @IsOptional()
+  @IsIn(['EARLY50'])
+  coupon?: string;
 }

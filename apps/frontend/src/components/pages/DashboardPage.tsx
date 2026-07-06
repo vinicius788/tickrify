@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical, Clock, Wifi, WifiOff, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { UserButton, useUser } from "@clerk/clerk-react";
+import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import NewAnalysis from "../dashboard/NewAnalysis";
 import LiveTape from "../dashboard/LiveTape";
@@ -24,6 +24,7 @@ import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } fr
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { track } from "@/lib/analytics";
+import { createCheckoutSession, detectCurrency } from "@/lib/stripe";
 import { PLANS } from "@/components/pricing/PricingCards";
 import { PageHeader } from "@/components/ui/PageHeader";
 
@@ -115,6 +116,7 @@ const DashboardPage = () => {
   const { plan, total, used, isUnlimited, remaining, isLoading: isPlanLoading } = useAnalysisLimit();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
+  const { getToken } = useAuth();
   const { toast } = useToast();
   const apiClient = useAPIClient();
   const isDemo = !user;
@@ -271,6 +273,33 @@ const DashboardPage = () => {
     track('upgrade_modal_viewed', { trigger });
     setShowUpgradeModal(true);
   }, []);
+
+  // Paywall → Stripe em 1 clique, com EARLY50 já aplicado. O momento de maior
+  // intenção do funil não pode passar pela página de pricing genérica.
+  const [unlockPending, setUnlockPending] = useState(false);
+  const handleUnlockCheckout = useCallback(async () => {
+    if (unlockPending) return;
+    setUnlockPending(true);
+    try {
+      const token = await getToken();
+      if (!token) {
+        navigate('/pricing');
+        return;
+      }
+      const currency = detectCurrency(
+        typeof navigator !== 'undefined' ? navigator.language : 'en-US',
+      );
+      track('upgrade_clicked', { source: 'locked_value', coupon: 'EARLY50' });
+      track('checkout_started', { plan: 'pro', billingCycle: 'monthly', currency, coupon: 'EARLY50' });
+      const { url } = await createCheckoutSession('pro', token, 'monthly', currency, 'EARLY50');
+      window.location.href = url;
+    } catch {
+      // Qualquer falha (cold start, rede): cai no caminho antigo, nunca num beco.
+      navigate('/pricing');
+    } finally {
+      setUnlockPending(false);
+    }
+  }, [unlockPending, getToken, navigate]);
 
   const resetNewAnalysisView = useCallback(() => {
     setActiveView('new-analysis');
@@ -657,7 +686,7 @@ const DashboardPage = () => {
         );
       }
       case 'locked':
-        return <LockedAnalysis onUnlock={() => navigate('/pricing')} />;
+        return <LockedAnalysis onUnlock={handleUnlockCheckout} unlockPending={unlockPending} />;
       case 'loading':
         return <AnalysisLoading />;
       case 'error':

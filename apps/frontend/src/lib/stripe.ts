@@ -140,6 +140,7 @@ export async function createCheckoutSession(
   token: string,
   billingCycle: BillingCycle = 'monthly',
   currency: Currency = 'usd',
+  coupon?: 'EARLY50',
 ) {
   return requestStripeApi<{ sessionId: string; url: string }>(
     '/api/stripe/create-checkout-session',
@@ -149,7 +150,7 @@ export async function createCheckoutSession(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ planType, billingCycle, currency }),
+      body: JSON.stringify({ planType, billingCycle, currency, ...(coupon ? { coupon } : {}) }),
     },
     'Falha ao criar sessão de checkout.',
   );

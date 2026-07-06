@@ -417,7 +417,7 @@ export default {
       q5: 'How does the system calculate Stop Loss and Take Profit?',
       a5: 'Levels are derived from market structure (swing points, zones and invalidation), with risk/reward validation to avoid statistically fragile setups.',
       q6: 'Can I cancel my subscription anytime?',
-      a6: 'Yes, via the billing portal. Cancellation stops future renewals but does not generate a refund, chargeback or credit: all purchases are final and non-refundable. Before subscribing, review the current terms and policies.',
+      a6: 'Yes — cancel in one click from your dashboard, no emails and no questions. You keep your Ticks and full access until the end of the period you already paid for.',
     },
     footer: {
       tagline: 'Technical-analysis copilot powered by AI',
