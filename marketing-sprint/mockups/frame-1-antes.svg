@@ -1,0 +1,48 @@
+<svg viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI',Arial,sans-serif">
+  <rect width="1080" height="1920" fill="#0A0E27"/>
+  <!-- hook text -->
+  <text x="540" y="180" text-anchor="middle" fill="#FFFFFF" font-size="76" font-weight="800">Olhei esse gráfico</text>
+  <text x="540" y="268" text-anchor="middle" fill="#FFFFFF" font-size="76" font-weight="800">por 20 minutos.</text>
+  <text x="540" y="372" text-anchor="middle" fill="#FF3B30" font-size="62" font-weight="800">Continuo sem saber:</text>
+  <text x="540" y="448" text-anchor="middle" fill="#FF3B30" font-size="62" font-weight="800">compro ou vendo?</text>
+
+  <!-- chaotic chart panel -->
+  <rect x="70" y="560" width="940" height="900" rx="28" fill="#0E1430" stroke="#242a3d" stroke-width="2"/>
+  <!-- grid -->
+  <g stroke="#1b2342" stroke-width="1">
+    <line x1="70" y1="700" x2="1010" y2="700"/><line x1="70" y1="850" x2="1010" y2="850"/>
+    <line x1="70" y1="1000" x2="1010" y2="1000"/><line x1="70" y1="1150" x2="1010" y2="1150"/>
+    <line x1="70" y1="1300" x2="1010" y2="1300"/>
+  </g>
+  <!-- candles (messy) -->
+  <g>
+    <rect x="130" y="900" width="26" height="120" fill="#00FF88"/><line x1="143" y1="860" x2="143" y2="1060" stroke="#00FF88" stroke-width="3"/>
+    <rect x="180" y="980" width="26" height="90" fill="#FF3B30"/><line x1="193" y1="940" x2="193" y2="1110" stroke="#FF3B30" stroke-width="3"/>
+    <rect x="230" y="940" width="26" height="60" fill="#00FF88"/><line x1="243" y1="900" x2="243" y2="1040" stroke="#00FF88" stroke-width="3"/>
+    <rect x="280" y="1010" width="26" height="120" fill="#FF3B30"/><line x1="293" y1="970" x2="293" y2="1170" stroke="#FF3B30" stroke-width="3"/>
+    <rect x="330" y="1040" width="26" height="70" fill="#00FF88"/><line x1="343" y1="1000" x2="343" y2="1150" stroke="#00FF88" stroke-width="3"/>
+    <rect x="380" y="960" width="26" height="100" fill="#FF3B30"/><line x1="393" y1="920" x2="393" y2="1100" stroke="#FF3B30" stroke-width="3"/>
+    <rect x="430" y="880" width="26" height="110" fill="#00FF88"/><line x1="443" y1="840" x2="443" y2="1030" stroke="#00FF88" stroke-width="3"/>
+    <rect x="480" y="930" width="26" height="80" fill="#FF3B30"/><line x1="493" y1="890" x2="493" y2="1050" stroke="#FF3B30" stroke-width="3"/>
+    <rect x="530" y="1000" width="26" height="130" fill="#FF3B30"/><line x1="543" y1="960" x2="543" y2="1170" stroke="#FF3B30" stroke-width="3"/>
+    <rect x="580" y="900" width="26" height="90" fill="#00FF88"/><line x1="593" y1="860" x2="593" y2="1030" stroke="#00FF88" stroke-width="3"/>
+    <rect x="630" y="950" width="26" height="110" fill="#00FF88"/><line x1="643" y1="910" x2="643" y2="1100" stroke="#00FF88" stroke-width="3"/>
+    <rect x="680" y="1020" width="26" height="100" fill="#FF3B30"/><line x1="693" y1="980" x2="693" y2="1160" stroke="#FF3B30" stroke-width="3"/>
+    <rect x="730" y="940" width="26" height="70" fill="#00FF88"/><line x1="743" y1="900" x2="743" y2="1050" stroke="#00FF88" stroke-width="3"/>
+    <rect x="780" y="990" width="26" height="120" fill="#FF3B30"/><line x1="793" y1="950" x2="793" y2="1150" stroke="#FF3B30" stroke-width="3"/>
+    <rect x="830" y="900" width="26" height="100" fill="#00FF88"/><line x1="843" y1="860" x2="843" y2="1040" stroke="#00FF88" stroke-width="3"/>
+    <rect x="880" y="960" width="26" height="90" fill="#FF3B30"/><line x1="893" y1="920" x2="893" y2="1090" stroke="#FF3B30" stroke-width="3"/>
+  </g>
+  <!-- confusing crossing trendlines -->
+  <line x1="120" y1="1300" x2="950" y2="820" stroke="#3B82F6" stroke-width="4" stroke-dasharray="14 10" opacity="0.9"/>
+  <line x1="120" y1="820" x2="950" y2="1280" stroke="#8B5CF6" stroke-width="4" stroke-dasharray="14 10" opacity="0.9"/>
+  <line x1="120" y1="1080" x2="950" y2="1000" stroke="#FFB800" stroke-width="4" stroke-dasharray="6 8" opacity="0.8"/>
+  <!-- scribbles / question marks -->
+  <text x="300" y="780" fill="#FF3B30" font-size="120" font-weight="900" opacity="0.85">?</text>
+  <text x="720" y="1240" fill="#FFB800" font-size="120" font-weight="900" opacity="0.8">?</text>
+  <text x="560" y="700" fill="#FFFFFF" font-size="100" font-weight="900" opacity="0.7">?</text>
+
+  <!-- footer disclaimer -->
+  <text x="540" y="1560" text-anchor="middle" fill="#6b7494" font-size="30">A maioria começa o prejuízo exatamente aqui: sem plano.</text>
+  <text x="540" y="1860" text-anchor="middle" fill="#4a5270" font-size="24">Conteúdo educacional · Trading envolve risco de perda · Não é recomendação.</text>
+</svg>

@@ -1,0 +1,71 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+**/dist/
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Uploads (local development)
+uploads/
+**/uploads/
+apps/backend/uploads/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Vercel
+.vercel/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+.tmp/
+temp/
+*.tmp
+.pids
+
+# pnpm store (quando dentro do projeto)
+.pnpm-store/
+
+**/.env
+
+# Documentos de estratégia/marketing (locais — não versionar no repositório)
+/*.md
+!README.md
+!CLAUDE.md
+!DEPLOY.md
+!ROADMAP.md
+/*.xlsx
+/*.pdf
+/*.mp4
+**/.env.local
+**/.env.production
+
+test-results/
+.vercel

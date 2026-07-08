@@ -1,0 +1,27 @@
+name: Keep API warm
+
+# Mantém o backend do Render (plano free) acordado, pra a PRIMEIRA análise
+# do usuário não pegar o "cold start" lento (~30-60s). Dá um ping no health
+# endpoint a cada ~10 minutos.
+#
+# Observação: o cron do GitHub Actions pode atrasar vários minutos sob carga
+# (às vezes é pulado). Por isso rodamos a cada 5 min pra dar margem contra a
+# hibernação do Render (15 min de inatividade). AINDA ASSIM o GitHub cron não é
+# 100% confiável — o fix robusto é um pinger externo (cron-job.org, a cada 2-3
+# min) ou o plano Render Starter ($7/mês, que não dorme). Ver README/notas.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *' # a cada 5 minutos (margem contra atrasos do GitHub)
+  workflow_dispatch: {} # permite rodar manualmente pelo botão "Run workflow"
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          echo "Pinging API health..."
+          curl -fsS --max-time 30 https://tickrify.onrender.com/api/health/live \
+            && echo "OK — API respondeu (acordada)." \
+            || echo "Ping falhou (provável cold start). O próximo ping reativa."
