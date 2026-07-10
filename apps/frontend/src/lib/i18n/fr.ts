@@ -1,4 +1,7 @@
 export default {
+  tryDemo: {
+    heroCta: 'Essai gratuit — sans inscription',
+  },
   common: {
     loading: 'Chargement...',
     error: 'Erreur',

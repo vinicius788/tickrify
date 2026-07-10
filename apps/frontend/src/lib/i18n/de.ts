@@ -1,4 +1,7 @@
 export default {
+  tryDemo: {
+    heroCta: 'Kostenlos testen — ohne Anmeldung',
+  },
   common: {
     loading: 'Laden...',
     error: 'Fehler',

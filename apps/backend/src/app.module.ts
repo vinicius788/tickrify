@@ -13,6 +13,7 @@ import { TicksModule } from './modules/ticks/ticks.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
 import { MarketModule } from './modules/market/market.module';
 import { MailModule } from './modules/mail/mail.module';
+import { DemoModule } from './modules/demo/demo.module';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { HttpLoggingInterceptor } from './common/interceptors/http-logging.interceptor';
 
@@ -39,6 +40,7 @@ import { HttpLoggingInterceptor } from './common/interceptors/http-logging.inter
     PaymentsModule,
     TicksModule,
     AiModule,
+    DemoModule,
     CalendarModule,
     MarketModule,
     PromptModule,

@@ -1,4 +1,7 @@
 export default {
+  tryDemo: {
+    heroCta: '無料で試す — 登録不要',
+  },
   common: {
     loading: '読み込み中...',
     error: 'エラー',

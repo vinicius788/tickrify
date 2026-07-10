@@ -1,4 +1,7 @@
 export default {
+  tryDemo: {
+    heroCta: 'Teste grátis — sem cadastro',
+  },
   // ── Common ──────────────────────────────────────────────────────────────────
   common: {
     loading: 'Carregando...',

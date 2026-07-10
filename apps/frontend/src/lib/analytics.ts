@@ -125,7 +125,13 @@ export type FunnelEvent =
   | 'checkout_started'
   | 'subscription_activated'
   | 'analysis_shared'
-  | 'founding_banner_clicked';
+  | 'founding_banner_clicked'
+  // Funil da demo anônima (/try) — Fase 0 de ativação:
+  | 'demo_page_view'
+  | 'demo_analysis_started'
+  | 'demo_analysis_completed'
+  | 'demo_limit_hit'
+  | 'signup_from_demo';
 
 export function track(event: FunnelEvent, props?: Record<string, unknown>): void {
   trackMeta(event, props);
