@@ -25,6 +25,7 @@ import {
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { warmupPaymentsApi } from '@/lib/api';
 import exampleChart from '@/assets/demo-example-chart.png';
+import afterChart from '@/assets/demo-after-chart.png';
 import logoOfficial from '@/assets/tickrify-logo-official.png';
 
 type PageState = 'ready' | 'analyzing' | 'done' | 'locked';
@@ -87,6 +88,9 @@ const TryPage = () => {
   const [result, setResult] = useState<DemoAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [customImage, setCustomImage] = useState<{ blob: Blob; previewUrl: string } | null>(null);
+  // Reveal "what happened next" — só existe pro gráfico de exemplo (caso histórico real).
+  const [showAfter, setShowAfter] = useState(false);
+  const [analyzedExample, setAnalyzedExample] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fingerprintRef = useRef<string | null>(null);
   const viewTracked = useRef(false);
@@ -145,6 +149,8 @@ const TryPage = () => {
     if (state === 'analyzing') return;
     setError(null);
     setState('analyzing');
+    setShowAfter(false);
+    setAnalyzedExample(!customImage);
     track('demo_analysis_started', { chart: customImage ? 'own' : 'example' });
 
     try {
@@ -380,6 +386,37 @@ const TryPage = () => {
             <p className="mt-3 text-center text-[11px] text-[var(--text-secondary)]">
               {result.disclaimer}
             </p>
+
+            {/* Reveal "what happened next" — só pro gráfico de exemplo, que é um caso
+                histórico real (XAUUSD 12/12/2025). Prova sem promessa: mostramos o que
+                o mercado fez e o visitante tira a própria conclusão. */}
+            {analyzedExample && !showAfter && (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAfter(true);
+                  track('demo_after_viewed');
+                }}
+                className="mt-5 w-full rounded-xl border border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] py-3.5 text-sm font-bold text-[var(--accent-green)] transition hover:brightness-110"
+              >
+                This chart is from Dec 12, 2025 — see what the market did next →
+              </button>
+            )}
+            {analyzedExample && showAfter && (
+              <div className="mt-5">
+                <div className="overflow-hidden rounded-xl border border-[var(--border-subtle)]">
+                  <img src={afterChart} alt="The same XAUUSD chart hours later" className="w-full" />
+                </div>
+                <p className="mt-2 text-center text-sm text-[var(--text-secondary)]">
+                  The same chart, hours later that day: gold ran from the 4,260s into the
+                  4,340s. <span className="text-[var(--text-primary)]">You decide what the read was worth.</span>
+                </p>
+                <p className="mt-1 text-center text-[11px] text-[var(--text-secondary)]">
+                  One hand-picked historical example, shown for illustration. Every market and
+                  moment is different — never a promise of results.
+                </p>
+              </div>
+            )}
 
             <SignupCta
               headline="Want to analyze more charts?"

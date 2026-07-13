@@ -130,6 +130,7 @@ export type FunnelEvent =
   | 'demo_page_view'
   | 'demo_analysis_started'
   | 'demo_analysis_completed'
+  | 'demo_after_viewed'
   | 'demo_limit_hit'
   | 'signup_from_demo';
 
