@@ -69,3 +69,11 @@ temp/
 
 test-results/
 .vercel
+
+# backtest cache (código versionado; dados/imagens/resultados não)
+scripts/backtest/data/
+scripts/backtest/charts/
+scripts/backtest/results/
+scripts/backtest/samples.json
+scripts/backtest/manifest.json
+/Tickrify_Backtest_Results*.csv

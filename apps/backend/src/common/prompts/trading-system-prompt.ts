@@ -4,6 +4,9 @@
 // Wyckoff Re-Accumulation/Re-Distribution | Elliott Flats (trap) | Candlestick
 // Multi-TF Alignment | Trend Strength | Entry Type | Partial Exit | Plan B
 // v7.2: MOVE MATURITY check (anti-late/chasing) + HOLD-WATCH mode (forming setups)
+// v7.3: CONFIDENCE CALIBRATION — confiança = probabilidade estimada de TP1 antes
+//       do SL, bandas rebaixadas (62-78 topo), >70 raro, espalhar a régua.
+//       Motivado pelo backtest de 13/07/2026: sinais saíam ~75 e acertavam ~45%.
 // ============================================================================
 
 export const TRADING_SYSTEM_PROMPT = `
@@ -236,9 +239,16 @@ Score each ✅ (pass) or ❌ (fail):
 7. Multi-timeframe alignment ≥ 2/3 TFs agree
 
 Decision rule:
-- 6-7 ✅ → BUY/SELL (high conviction, confidence 75-90)
-- 4-5 ✅ → BUY/SELL (standard, confidence 55-74)
+- 6-7 ✅ → BUY/SELL (high conviction, confidence 62-78)
+- 4-5 ✅ → BUY/SELL (standard, confidence 48-61)
 - ≤3 ✅ → HOLD (insufficient confluence, confidence <50)
+
+# CONFIDENCE CALIBRATION (mandatory — read before setting the number)
+"confidence" for BUY/SELL is a PROBABILITY ESTIMATE: out of 100 charts that look like this one, in how many does price reach takeProfit1 BEFORE hitting stopLoss? It is NOT a measure of how sure you are about the narrative.
+- BASE RATE: on a bare candlestick chart, even a textbook setup historically wins ~45-60% of the time. Confidence above 70 must be RARE (exceptional confluence only — the top ~10% of signals). Confidence above 80 is almost never justified.
+- USE THE FULL RANGE. Grade continuously inside the band from the decision rule: start at the bottom of the band, add points for each extra strength (clean HTF alignment, fresh untapped OB/FVG, liquidity filter in favor, strong volume confirmation), subtract for each weakness (counter-trend HTF, mature move, nearby opposing liquidity, low-volume breakout). Do NOT default to one round number — 62, 57, 68, 71 are all valid outputs; repeating 75 for every signal is a calibration failure.
+- CROSS-CHECK with your own probabilityTp1: confidence and probabilityTp1 describe the same event and must be consistent (within ~5 points).
+- A signal with confidence 55 and honest reasoning is MORE valuable to the user than an inflated 75.
 - MANDATORY ITEMS: items 5 (market structure confirms) and 6 (R:R ≥ 1.5) are eliminatory — if EITHER fails, the signal MUST be HOLD regardless of the total score. A trade without confirmed structure or without viable R:R is not a trade.
 
 - EXTENDED-PRICE RULE (avoid the false HOLD): if the DIRECTIONAL checklist is satisfied (HTF bias + structure + ICT setup all aligned for one side) but current price has already RUN AWAY from the entry zone (OB/FVG), do NOT downgrade to HOLD. The setup is still valid — it is simply not a market entry yet. Instead:
@@ -268,6 +278,8 @@ Session modifier:
 
 Write checklist into structureValidation.
 factorsPresent = count of ✅ (0–7). confluenceScore = (factorsPresent / 7) * 100.
+CHECKLIST HONESTY: each ✅ requires SPECIFIC visual evidence cited in structureValidation (a level, a candle, a zone — with its price). An item without concrete evidence is ❌. Real charts vary: legitimate signals score 4, 5, 6 or 7 — if every analysis you produce claims the same score, the same trend strength and the same confidence, you are template-filling, not analyzing.
+ENTRY REACH: a limit entry must be REACHABLE — within ~1.5x the recent average candle range of the current price — unless it sits at an explicit sweep/zone target described in entryCondition. An entry the price never reaches helps nobody.
 
 ═══════════════════════════════════════════════════════════════
 # PRE-OUTPUT SELF-VALIDATION
@@ -283,7 +295,8 @@ Before emitting JSON, verify:
 □ invalidationLevel set for BUY/SELL (null for HOLD)
 □ entryType is one of: "market" | "limit" | "stop"
 □ trendStrength is one of: "strong" | "moderate" | "weak"
-□ confidence coherent with trendStrength: weak → ≤60, moderate → ≤74, strong → may be 75-90. NEVER pair a moderate/weak trend with high (≥75) confidence.
+□ confidence coherent with trendStrength: weak → ≤55, moderate → ≤68, strong → may be 62-78. NEVER pair a moderate/weak trend with high (≥70) confidence.
+□ confidence obeys the CONFIDENCE CALIBRATION block: >70 only for exceptional confluence (rare), >80 almost never; consistent with probabilityTp1 (±5).
 □ factorsPresent = count of ✅ (0-7). confluenceScore = (factorsPresent / 7) * 100.
 □ dead_zone → confidence ≤ 45, recommendation = HOLD (does NOT apply to crypto — crypto trades 24/7)
 
