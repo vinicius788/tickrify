@@ -254,7 +254,7 @@ const TryPage = () => {
             <div className="relative overflow-hidden rounded-xl border border-[var(--border-subtle)]">
               <img
                 src={customImage?.previewUrl ?? exampleChart}
-                alt={customImage ? 'Your chart' : 'Example chart: BTC/USD 4H'}
+                alt={customImage ? 'Your chart' : 'Example chart: XAUUSD (Gold) M30'}
                 className="w-full"
               />
               {customImage && state === 'ready' && (
@@ -282,7 +282,7 @@ const TryPage = () => {
             </div>
 
             <p className="mt-2 text-center text-xs text-[var(--text-secondary)]">
-              {customImage ? 'Your chart, ready to analyze.' : 'Example loaded: BTC/USD · 4H — or use your own below.'}
+              {customImage ? 'Your chart, ready to analyze.' : 'Example loaded: XAUUSD (Gold) · M30 — a real trader chart. Or use your own below.'}
             </p>
 
             {error && (
