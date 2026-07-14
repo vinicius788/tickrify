@@ -28,6 +28,7 @@ import {
   calcStopPercent,
   calcTPPercent,
   confidenceToPercent,
+  getConvictionTier,
   getRecommendationMeta,
   normalizeConfluenceScore,
 } from '@/lib/trading-ui';
@@ -415,7 +416,9 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
     uploadedImage ||
     null;
 
-  const confidenceLabel = confidence >= 75 ? t.analysis.highConfidence : confidence >= 50 ? t.analysis.medConfidence : t.analysis.lowConfidence;
+  // v7.3: limiar de sinal alinhado à calibração medida (≥70 acertou ~56% no backtest)
+  const confidenceLabel = confidence >= 70 ? t.analysis.highConfidence : confidence >= 50 ? t.analysis.medConfidence : t.analysis.lowConfidence;
+  const convictionTier = getConvictionTier(analysisData.recommendation, analysisData.confidence);
 
   const copyValue = async (label: string, value: number | null) => {
     if (value === null) {
@@ -480,6 +483,18 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
               <span>{recommendationMeta.label}</span>
             </div>
+            {convictionTier && (
+              <span
+                title={convictionTier === 'read' ? t.analysis.tierReadNote : undefined}
+                className={`whitespace-nowrap rounded-sm border px-2 py-0.5 font-terminal text-[10px] font-semibold uppercase tracking-widest ${
+                  convictionTier === 'signal'
+                    ? 'border-[var(--border-accent)] text-[var(--text-primary)]'
+                    : 'border-[var(--border-subtle)] text-[var(--text-secondary)]'
+                }`}
+              >
+                {convictionTier === 'signal' ? t.analysis.tierSignal : t.analysis.tierRead}
+              </span>
+            )}
             <span>
               {t.analysis.bias.toUpperCase()}:{' '}
               <strong className="whitespace-nowrap font-medium text-[var(--text-primary)]">
