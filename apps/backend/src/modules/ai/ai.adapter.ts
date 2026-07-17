@@ -870,6 +870,184 @@ export class AIAdapter {
     return parts.length > 0 ? parts.join('\n\n') : null;
   }
 
+  // ── Grounding do caminho QUICK ─────────────────────────────────────────────
+  // Porta pro produto o que o backtest-runner faz com --ground: injeta candles
+  // REAIS (preço atual, ATR14, topos/fundos, últimos 12 OHLC) no prompt, para a
+  // IA ler NÚMEROS em vez de pixels. A matemática é IDÊNTICA à do runner
+  // (apps/backend/scripts/backtest-runner.ts → groundingBlock) de propósito:
+  // o que foi medido no backtest é o que roda em produção.
+  // Fontes: OKX primário (Binance bloqueia IPs dos EUA, onde o Render roda),
+  // Binance spot como fallback; XAU/EUR via Twelve Data se houver chave.
+  // Best-effort: qualquer falha → null e a análise segue sem o bloco.
+
+  /** GET JSON com timeout curto; nunca lança — null em qualquer falha. */
+  private async fetchJson<T>(url: string, timeoutMs = 4_000): Promise<T | null> {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'tickrify/1.0' },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Normaliza o timeframe lido do gráfico ("M30", "1H", "4h"…) para o intervalo canônico. */
+  private normalizeTimeframe(tf: string): string | null {
+    const t = String(tf || '').trim().toLowerCase().replace(/\s+/g, '');
+    const map: Record<string, string> = {
+      '1m': '1m', 'm1': '1m', '3m': '3m', '5m': '5m', 'm5': '5m',
+      '15m': '15m', 'm15': '15m', '30m': '30m', 'm30': '30m',
+      '1h': '1h', 'h1': '1h', '60m': '1h', '2h': '2h', 'h2': '2h',
+      '4h': '4h', 'h4': '4h', '1d': '1d', 'd1': '1d', 'd': '1d', 'daily': '1d',
+      '1w': '1w', 'w': '1w', 'weekly': '1w',
+    };
+    return map[t] ?? null;
+  }
+
+  /**
+   * Candles de CRIPTO no formato [ts, o, h, l, c] em ordem cronológica.
+   * OKX primário (acessível dos EUA); Binance spot como fallback.
+   */
+  private async fetchCryptoCandles(base: string, interval: string): Promise<number[][] | null> {
+    const okxBar: Record<string, string> = {
+      '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m', '30m': '30m',
+      '1h': '1H', '2h': '2H', '4h': '4H', '1d': '1D', '1w': '1W',
+    };
+    const bar = okxBar[interval];
+    if (bar) {
+      const okx = await this.fetchJson<{ data?: string[][] }>(
+        `https://www.okx.com/api/v5/market/candles?instId=${base}-USDT&bar=${bar}&limit=120`,
+      );
+      const rows = okx?.data;
+      if (Array.isArray(rows) && rows.length >= 30) {
+        // OKX devolve o mais recente primeiro; colunas [ts, o, h, l, c, ...]
+        const candles = rows
+          .map((r) => [Number(r[0]), Number(r[1]), Number(r[2]), Number(r[3]), Number(r[4])])
+          .reverse();
+        if (candles.every((c) => c.every((v) => Number.isFinite(v)))) return candles;
+      }
+    }
+    const bin = await this.fetchJson<Array<Array<string | number>>>(
+      `https://api.binance.com/api/v3/klines?symbol=${base}USDT&interval=${interval}&limit=120`,
+    );
+    if (Array.isArray(bin) && bin.length >= 30) {
+      const candles = bin.map((r) => [
+        Number(r[0]), Number(r[1]), Number(r[2]), Number(r[3]), Number(r[4]),
+      ]);
+      if (candles.every((c) => c.every((v) => Number.isFinite(v)))) return candles;
+    }
+    return null;
+  }
+
+  /**
+   * Candles de FOREX/METAIS via Twelve Data (mesma fonte do backtest).
+   * Só roda se TWELVE_DATA_API_KEY estiver no env; senão, degrada para null.
+   */
+  private async fetchFxCandles(symbol: string, interval: string): Promise<number[][] | null> {
+    const key = process.env.TWELVE_DATA_API_KEY?.trim();
+    if (!key) return null;
+    const tdInterval: Record<string, string> = {
+      '1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min',
+      '1h': '1h', '2h': '2h', '4h': '4h', '1d': '1day',
+    };
+    const itv = tdInterval[interval];
+    if (!itv) return null;
+    const m = symbol
+      .toUpperCase()
+      .replace(/[^A-Z]/g, '')
+      .match(/^(XAU|XAG|EUR|GBP|AUD|NZD|USD|CAD|CHF|JPY)(USD|JPY|CHF|CAD|GBP|EUR|AUD|NZD)$/);
+    if (!m) return null;
+    const td = await this.fetchJson<{
+      values?: Array<{ datetime: string; open: string; high: string; low: string; close: string }>;
+    }>(
+      `https://api.twelvedata.com/time_series?symbol=${m[1]}/${m[2]}&interval=${itv}&outputsize=120&apikey=${key}`,
+      6_000,
+    );
+    const values = td?.values;
+    if (!Array.isArray(values) || values.length < 30) return null;
+    // Twelve Data devolve o mais recente primeiro.
+    const candles = values
+      .map((v) => [Date.parse(v.datetime), Number(v.open), Number(v.high), Number(v.low), Number(v.close)])
+      .reverse();
+    return candles.every((c) => c.every((v) => Number.isFinite(v))) ? candles : null;
+  }
+
+  /**
+   * Bloco de dados reais dos candles — mesma matemática do groundingBlock do
+   * backtest-runner (ATR14 por true range, swings fractais de 3, últimos 12 OHLC).
+   * Não alterar sem re-medir: qualquer divergência invalida a comparação com o teste.
+   */
+  private buildCandleGroundingBlock(symbol: string, timeframe: string, candles: number[][]): string | null {
+    const win = candles.slice(-120);
+    if (win.length < 20) return null;
+    const highs = win.map((c) => c[2]);
+    const lows = win.map((c) => c[3]);
+    const last = win[win.length - 1];
+    const trs = win.slice(1).map((c, i) =>
+      Math.max(c[2] - c[3], Math.abs(c[2] - win[i][4]), Math.abs(c[3] - win[i][4])),
+    );
+    const atr = trs.slice(-14).reduce((a, b) => a + b, 0) / Math.min(14, trs.length);
+    const swingsH: number[] = [];
+    const swingsL: number[] = [];
+    for (let i = 3; i < win.length - 3; i++) {
+      if (highs[i] === Math.max(...highs.slice(i - 3, i + 4))) swingsH.push(highs[i]);
+      if (lows[i] === Math.min(...lows.slice(i - 3, i + 4))) swingsL.push(lows[i]);
+    }
+    const fmt = (n: number) => Number(n.toPrecision(6));
+    const last12 = win
+      .slice(-12)
+      .map((c) => `[o${fmt(c[1])} h${fmt(c[2])} l${fmt(c[3])} c${fmt(c[4])}]`)
+      .join(' ');
+    return [
+      '# REAL MARKET DATA (ground truth from the exchange feed — trust these numbers over pixel-reading)',
+      `- Symbol: ${symbol} · timeframe: ${timeframe} · current price (last close): ${fmt(last[4])}`,
+      `- Visible window high: ${fmt(Math.max(...highs))} · low: ${fmt(Math.min(...lows))} (last ${win.length} candles)`,
+      `- Average candle range (ATR14): ${fmt(atr)} — stops tighter than ~1 ATR sit inside noise; limit entries further than ~1.5 ATR from current price rarely fill.`,
+      `- Recent swing highs: ${swingsH.slice(-5).map(fmt).join(', ')}`,
+      `- Recent swing lows: ${swingsL.slice(-5).map(fmt).join(', ')}`,
+      `- Last 12 candles OHLC: ${last12}`,
+      'Set entry/stopLoss/takeProfits and judge structure using these EXACT values. Every level you output must be consistent with this data.',
+    ].join('\n');
+  }
+
+  /**
+   * Grounding completo do caminho quick: candles reais + contexto de mercado
+   * (funding/OI/long-short/F&G pra cripto; dólar/juros pra forex/ouro — os
+   * mesmos blocos que o deep já usa). Best-effort; falha → null.
+   */
+  private async buildQuickGrounding(imageUrl: string): Promise<string | null> {
+    const extracted = await this.extractSymbol(imageUrl);
+    if (!extracted) return null;
+
+    const sym = extracted.symbol.toUpperCase();
+    const interval = this.normalizeTimeframe(extracted.timeframe);
+    const { isCrypto, base } = normalizeToBinancePerp(extracted.symbol);
+
+    // Sem timeframe legível não dá pra calcular ATR/janela honestos — pula os
+    // candles (estatística no intervalo errado atrapalha mais do que ajuda).
+    let candleBlock: string | null = null;
+    if (interval) {
+      const candles =
+        isCrypto && base
+          ? await this.fetchCryptoCandles(base, interval)
+          : await this.fetchFxCandles(sym, interval);
+      if (candles) candleBlock = this.buildCandleGroundingBlock(sym, interval, candles);
+    }
+
+    let contextBlock: string | null = null;
+    if (isCrypto) {
+      contextBlock = await this.buildCryptoEnrichment(extracted.symbol);
+    } else if (/XAU|XAG|EUR|USD|GBP|JPY|AUD|NZD|CAD|CHF/.test(sym)) {
+      contextBlock = await this.buildFxEnrichment(sym);
+    }
+
+    const parts = [candleBlock, contextBlock].filter(Boolean) as string[];
+    return parts.length > 0 ? parts.join('\n\n') : null;
+  }
+
   async analyzeImage(
     imageUrl: string,
     prompt: string,
@@ -891,6 +1069,24 @@ export class AIAdapter {
             this.buildMarketEnrichment(imageUrl),
             14_000,
             'market enrichment timed out',
+          );
+          if (block) {
+            effectivePrompt = `${prompt}\n\n${block}`;
+          }
+        } catch {
+          // graceful: mantém o prompt original
+        }
+      } else if (analysisType === 'quick' && process.env.ENABLE_QUICK_GROUNDING === 'true') {
+        // Grounding do QUICK — DESLIGADO por padrão (só liga com
+        // ENABLE_QUICK_GROUNDING='true' no Render). Fica atrás de flag até o
+        // backtest isolado (v7.3 + --ground, 75 pareadas) dizer se ajuda.
+        // Custo quando ligado: +1 chamada gpt-4o-mini (extractSymbol, ~US$0,0001)
+        // e +alguns segundos de latência, com teto de 15s. Falha → segue sem o bloco.
+        try {
+          const block = await withTimeout(
+            this.buildQuickGrounding(imageUrl),
+            15_000,
+            'quick grounding timed out',
           );
           if (block) {
             effectivePrompt = `${prompt}\n\n${block}`;

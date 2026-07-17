@@ -46,6 +46,9 @@ Tickrify — SaaS freemium de **análise de gráficos com IA** para traders. O u
 - **Regras:** nenhum número vai pra marketing sem decisão explícita + metodologia + disclaimer. Posicionamento validado: "second opinion, not signals".
 - **Backlog barato:** testar grounding isolado (~US$0,75), testar deep/gpt-4o vs mini (~US$4), ampliar amostra XAU/EUR 4h.
 
+- **Grounding do quick (16/07/2026, local — aguardando commit):** `AIAdapter.buildQuickGrounding` injeta candles reais no prompt (OKX primário — Binance bloqueia IP dos EUA/Render —, Binance fallback, XAU/EUR via Twelve Data se `TWELVE_DATA_API_KEY` no env) + contexto do MarketService. Atrás de `ENABLE_QUICK_GROUNDING` (**default OFF** — só ligar depois do backtest isolado v7.3+ground aprovar). Matemática idêntica ao `--ground` do runner.
+- **Outcome tracking (16/07/2026, local — aguardando commit):** `worker/outcome.sweeper.ts` + migração `20260716120000_analysis_outcome` (campos `outcome/outcomeAt/outcomeDetail` no Analysis). A cada 1h avalia análises completadas há 48h+: fill no entry → corrida TP1×SL em candles 30m (regra idêntica ao `evaluate.py`; mesmo candle TP+SL = LOSS). Outcomes: WIN/LOSS/TIMEOUT/NO_FILL/ABSTAIN/INCOMPLETE/UNTRACKABLE. Kill-switch `ENABLE_OUTCOME_TRACKING='false'`. Cria o dataset proprietário; próximo passo: expor "taxa de acerto histórica" na UI quando houver volume.
+
 ## PENDENTE
 - **Verificação de domínio no Resend:** tickrify.com adicionado; DKIM + SPF(TXT) + DMARC adicionados no DNS da **Hostinger** (DKIM verificado). **MX** (`send` → `feedback-smtp.sa-east-1.amazonses.com`) **não** foi adicionado (form rápido da Hostinger não tem MX). Status: Pending. Quando verificar, setar no Render `MAIL_FROM = "Tickrify <noreply@tickrify.com>"`.
 - **E-mail de recuperação:** `sendRecovery()` já existe no MailService; falta **ligar o gatilho** (disparar quando bate o limite grátis sem assinar, com dedup). Fazer depois do domínio verificar.

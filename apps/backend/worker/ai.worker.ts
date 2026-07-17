@@ -21,6 +21,7 @@ import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-ru
 import { resolvePrismaDatasourceUrl } from '../src/modules/database/prisma.datasource';
 import { AnalysisType } from '../src/modules/ticks/tick-packages';
 import { DEEP_ENRICHMENT_INSTRUCTION } from '../src/modules/prompt/prompt-builder.service';
+import { startOutcomeSweeper } from './outcome.sweeper';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -1089,6 +1090,10 @@ worker.on('error', (err) => {
 });
 
 console.log('🚀 AI Worker started and listening for jobs...');
+
+// Outcome tracking: 48h após cada análise real, verifica nos candles se TP1
+// saiu antes do SL e grava WIN/LOSS no banco (kill-switch: ENABLE_OUTCOME_TRACKING='false').
+startOutcomeSweeper(prisma);
 
 async function shutdown() {
   await worker.close();
