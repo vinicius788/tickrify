@@ -1045,7 +1045,15 @@ export class AIAdapter {
     }
 
     const parts = [candleBlock, contextBlock].filter(Boolean) as string[];
-    return parts.length > 0 ? parts.join('\n\n') : null;
+    if (parts.length > 0) {
+      // Log de verificação: permite confirmar no Render que o grounding está
+      // ativo e com quais dados (sem vazar o conteúdo do prompt).
+      this.logger.log(
+        `[QuickGrounding] ${sym} ${interval ?? 'tf?'} — candles: ${candleBlock ? 'sim' : 'não'}, contexto: ${contextBlock ? 'sim' : 'não'}`,
+      );
+      return parts.join('\n\n');
+    }
+    return null;
   }
 
   async analyzeImage(
