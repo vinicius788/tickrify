@@ -117,7 +117,12 @@ describe('AiService access enforcement', () => {
       syncActiveSubscriptionFromStripe: jest.fn().mockResolvedValue(false),
     };
 
-    service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any);
+    const mailService = {
+      sendRecovery: jest.fn().mockResolvedValue(undefined),
+      sendWelcome: jest.fn().mockResolvedValue(undefined),
+    };
+
+    service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any, mailService as any);
   });
 
   it('bloqueia a 4ª análise grátis: já usou as 3 demos → DEMO_LIMIT_REACHED', async () => {
