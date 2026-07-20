@@ -806,14 +806,14 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                         {t.analysis.economicEvents}
                         {calEvents.some((e) => e.impact === 'High' && (e.minutesUntil ?? 999) <= 60) && (
                           <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-terminal text-[10px] font-bold text-amber-400 uppercase">
-                            ⚠ Alto impacto
+                            {r.calHighImpactBadge}
                           </span>
                         )}
                       </span>
                     </AccordionTrigger>
                     <AccordionContent>
                       {calLoading ? (
-                        <p className="text-xs text-[var(--text-secondary)]">Verificando calendário…</p>
+                        <p className="text-xs text-[var(--text-secondary)]">{r.calChecking}</p>
                       ) : calEvents.length === 0 ? (
                         <p className="text-xs text-[var(--text-secondary)] opacity-60">
                           ✅ {t.analysis.noHighImpactEvents}
@@ -829,13 +829,13 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
                             let timeLabel = '';
                             if (isJustHappened) {
-                              timeLabel = `Aconteceu há ${Math.abs(ev.minutesUntil ?? 0)}min`;
+                              timeLabel = r.calAgo.replace('{t}', `${Math.abs(ev.minutesUntil ?? 0)}min`);
                             } else if ((ev.minutesUntil ?? 0) < 60) {
-                              timeLabel = `Em ${ev.minutesUntil}min`;
+                              timeLabel = r.calIn.replace('{t}', `${ev.minutesUntil}min`);
                             } else {
                               const h = Math.floor((ev.minutesUntil ?? 0) / 60);
                               const m = (ev.minutesUntil ?? 0) % 60;
-                              timeLabel = `Em ${h}h${m > 0 ? ` ${m}min` : ''}`;
+                              timeLabel = r.calIn.replace('{t}', `${h}h${m > 0 ? ` ${m}min` : ''}`);
                             }
 
                             return (
@@ -872,7 +872,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                                   )}
                                   {isHigh && !isJustHappened && (
                                     <span className="text-amber-400/70">
-                                      Pode afetar a análise
+                                      {r.calMayAffect}
                                     </span>
                                   )}
                                 </div>
