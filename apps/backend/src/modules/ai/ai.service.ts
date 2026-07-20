@@ -35,6 +35,8 @@ import {
 import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { TICK_COSTS, AnalysisType } from '../ticks/tick-packages';
 import { TicksService } from '../ticks/ticks.service';
+import { MailService } from '../mail/mail.service';
+import { fetchClerkEmail } from '../../common/utils/clerk-email';
 import { StripeService } from '../payments/stripe.service';
 import {
   AnalysisContext,
@@ -61,6 +63,7 @@ export class AiService implements OnModuleInit {
     private ticksService: TicksService,
     private promptBuilder: PromptBuilderService,
     private stripeService: StripeService,
+    private mailService: MailService,
   ) {}
 
   /**
@@ -1057,6 +1060,56 @@ export class AiService implements OnModuleInit {
   };
 
   /**
+   * E-mail de recuperação: disparado quando o usuário grátis bate o limite.
+   * Dedup permanente via AdminAudit (action 'recovery_email_sent') — zero migração.
+   * Best-effort absoluto: fire-and-forget, nunca propaga erro nem atrasa a resposta.
+   */
+  private async triggerRecoveryEmail(userId: string): Promise<void> {
+    try {
+      const already = await this.prisma.adminAudit.findFirst({
+        where: { action: 'recovery_email_sent', targetUserId: userId },
+        select: { id: true },
+      });
+      if (already) return;
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, clerkUserId: true },
+      });
+      if (!user) return;
+
+      let email = user.email;
+      if (!email) {
+        // Token do Clerk não traz e-mail → busca na API e faz backfill.
+        email = await fetchClerkEmail(user.clerkUserId);
+        if (email) {
+          await this.prisma.user
+            .update({ where: { id: userId }, data: { email } })
+            .catch(() => undefined);
+        }
+      }
+      if (!email) return;
+
+      // Registra ANTES de enviar: numa corrida, melhor perder 1 e-mail que duplicar.
+      await this.prisma.adminAudit.create({
+        data: {
+          action: 'recovery_email_sent',
+          targetUserId: userId,
+          targetEmail: email,
+          details: { source: 'free_limit_reached' },
+        },
+      });
+
+      await this.mailService.sendRecovery(email);
+      this.logger.log(`[recovery] E-mail de recuperação enviado (userId=${userId}).`);
+    } catch (err) {
+      this.logger.warn(
+        `[recovery] Falha best-effort no e-mail de recuperação: ${(err as Error)?.message ?? err}`,
+      );
+    }
+  }
+
+  /**
    * Enforces plan/quota access AND creates the Analysis row atomically.
    *
    * Paid users: debits ticks (already race-safe) and creates the row.
@@ -1134,6 +1187,8 @@ export class AiService implements OnModuleInit {
       return { isDemo: true, analysis };
     } catch (error) {
       if (error instanceof ForbiddenException) {
+        // Limite grátis atingido → e-mail de recuperação (1x por usuário, fire-and-forget).
+        void this.triggerRecoveryEmail(userId);
         throw error;
       }
 
@@ -1144,6 +1199,7 @@ export class AiService implements OnModuleInit {
           ? String((error as { code?: unknown }).code || '')
           : '';
       if (code === 'P2034') {
+        void this.triggerRecoveryEmail(userId);
         throw new ForbiddenException(this.DEMO_LIMIT_ERROR);
       }
 

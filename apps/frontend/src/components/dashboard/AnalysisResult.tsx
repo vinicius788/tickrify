@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleHelp,
+  Lightbulb,
   Minus,
   ShieldAlert,
   SlidersVertical,
@@ -450,6 +451,26 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const indicatorItems = splitItems(stripBackendFallback(analysis.keyIndicators));
   const riskItems = normalizeRiskFactorsForView(stripBackendFallback(analysis.riskFactors));
 
+  // "What would change my mind": vira o WAIT/HOLD (o resultado mais comum do
+  // motor) em orientação acionável — composto SÓ de campos que o motor já
+  // devolve hoje (nenhuma mudança de prompt; regra: motor só muda com medição).
+  const recUpper = String(analysisData.recommendation || '').toUpperCase();
+  const isWaitVerdict = recUpper === 'WAIT' || recUpper === 'HOLD';
+  const waitFlipItems: Array<{ label: string; text: string }> = [];
+  if (isWaitVerdict) {
+    if (entryCondition) waitFlipItems.push({ label: r.flipEntry, text: entryCondition });
+    if (alternativeScenario) waitFlipItems.push({ label: r.flipAlt, text: alternativeScenario });
+    if (invalidationLevel !== null && invalidationLevel > 0) {
+      waitFlipItems.push({
+        label: r.flipInvalidation,
+        text: `${formatPrice(invalidationLevel)}${invalidationNote ? ` — ${invalidationNote}` : ''}`,
+      });
+    } else if (invalidationNote) {
+      waitFlipItems.push({ label: r.flipInvalidation, text: invalidationNote });
+    }
+    if (whyNotOpposite) waitFlipItems.push({ label: r.flipWhyNot, text: whyNotOpposite });
+  }
+
   const headerIcon = recommendationMeta.tone === 'buy' ? ArrowUp : recommendationMeta.tone === 'sell' ? ArrowDown : Minus;
   const HeaderIcon = headerIcon;
 
@@ -522,6 +543,30 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
           </div>
         </CardContent>
       </Card>
+
+      {isWaitVerdict && waitFlipItems.length > 0 && (
+        <Card
+          className="rounded-xl border border-amber-500/25 bg-amber-500/[0.04] fade-in-stagger"
+          style={{ animationDelay: '40ms' }}
+        >
+          <CardContent className="p-5 md:p-6">
+            <p className="tk-display mb-3 flex items-center gap-2 text-[15px]">
+              <Lightbulb className="h-4 w-4 text-amber-400" />
+              {r.flipTitle}
+            </p>
+            <div className="space-y-3 text-sm">
+              {waitFlipItems.map((item) => (
+                <div key={item.label}>
+                  <p className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-amber-400/90">
+                    {item.label}
+                  </p>
+                  <p className="mt-0.5 leading-relaxed text-[var(--text-primary)]/85">{item.text}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-6">
         <div className="min-w-0 flex-1">

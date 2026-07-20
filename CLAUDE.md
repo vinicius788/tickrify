@@ -52,8 +52,17 @@ Tickrify — SaaS freemium de **análise de gráficos com IA** para traders. O u
 - **19/07/2026 — grounding LIGADO em produção + incidente de migração resolvido:** `ENABLE_QUICK_GROUNDING=true` e `TWELVE_DATA_API_KEY` adicionadas no env do Render. Na sequência descobriu-se produção quebrada (P2022: colunas outcome/outcomeAt/outcomeDetail não existiam — a migração nunca rodou porque `RUN_MIGRATIONS_ON_START=false`, e ligar não resolve: `prisma migrate deploy` falha com P1001 porque `MIGRATIONS_DATABASE_URL` aponta pro host direto do Supabase, IPv6-only, inalcançável do Render). Correção: SQL da migração aplicado manualmente no SQL Editor do Supabase + INSERT no `public._prisma_migrations` com o checksum correto (sha256 do migration.sql). `RUN_MIGRATIONS_ON_START` voltou pra `false`. **REGRA: toda migração nova precisa ser aplicada manualmente no Supabase (SQL Editor) + registrada no `_prisma_migrations`, OU corrigir de vez `MIGRATIONS_DATABASE_URL` pro session pooler IPv4 do Supabase (aws-0-<região>.pooler.supabase.com:5432).**
 
 ## PENDENTE
-- **Verificação de domínio no Resend:** tickrify.com adicionado; DKIM + SPF(TXT) + DMARC adicionados no DNS da **Hostinger** (DKIM verificado). **MX** (`send` → `feedback-smtp.sa-east-1.amazonses.com`) **não** foi adicionado (form rápido da Hostinger não tem MX). Status: Pending. Quando verificar, setar no Render `MAIL_FROM = "Tickrify <noreply@tickrify.com>"`.
-- **E-mail de recuperação:** `sendRecovery()` já existe no MailService; falta **ligar o gatilho** (disparar quando bate o limite grátis sem assinar, com dedup). Fazer depois do domínio verificar.
+- ~~Verificação de domínio no Resend~~ **RESOLVIDO 20/07:** domínio verificou sozinho em 10/07 (DNS propagou). `MAIL_FROM = "Tickrify <noreply@tickrify.com>"` setado no Render em 20/07.
+- ~~E-mail de recuperação~~ **LIGADO 20/07:** gatilho em `ai.service.triggerRecoveryEmail` — dispara quando o free bate o limite, dedup permanente via AdminAudit (`action='recovery_email_sent'`). ⚠️ CONFERIR: o e-mail promete cupom **EARLY35**, mas o cupom documentado aqui é **EARLY50** — validar qual existe no Stripe e alinhar.
+- **Causa raiz dos e-mails que nunca saíam (corrigida 20/07):** o session token do Clerk NÃO inclui e-mail → `User.email` ficava NULL nos 27 usuários. Fix: `common/utils/clerk-email.ts` busca na API do Clerk + backfill no `auth.controller` (getMe) e no gatilho de recuperação.
+
+## 20/07/2026 — Sprint de fundação
+- Blog SEO estático no ar (`apps/frontend/public/blog/`, 4 artigos EN) + sitemap reenviado no Search Console (8 páginas encontradas).
+- i18n do Calendário Econômico corrigido (strings hardcoded PT → 6 línguas, chaves `cal*` em `analysis.result`).
+- **"What would change my mind"** no `AnalysisResult` para WAIT/HOLD (chaves `flip*`): compõe entryCondition/alternativeScenario/invalidation/whyNotOpposite — SÓ campos que o motor já devolve, zero mudança de prompt.
+- `MIGRATIONS_DATABASE_URL` corrigida no Render → session pooler IPv4 (`aws-0-us-west-2.pooler.supabase.com:5432`). `prisma migrate deploy` volta a funcionar; fim do SQL manual.
+- **v7.4 fora do working tree:** backup em `tmp/v74-playbooks-backup/` (gitignored), árvore limpa na v7.3. Restaurar do backup antes de medir (~US$1,50).
+- **Dado de tração:** 27 contas registradas (2 novas em 19/07), usuários reais analisando; usuários novos recebendo WAIT 30% nas 3 análises grátis → motivação direta do flip-card e do recovery email.
 
 ## Distribuição / conteúdo
 - **Estágio zero** (≈0 seguidores em tudo, jun/2026): IG @tickrify 53 seguidores (reels 1–2k views), YouTube 0 inscritos / 4,5k views em 28d, X @tickrify 4 seguidores (parado).
