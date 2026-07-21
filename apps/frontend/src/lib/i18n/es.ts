@@ -46,6 +46,9 @@ export default {
     kpiSubConf: 'en los análisis',
     kpiSubMarkets: 'últimas 8h',
     kpiSubTicks: 'disponibles',
+    heatTitle: 'Consistencia',
+    heatStreak: 'días seguidos',
+    heatBest: 'récord',
   },
   plan: {
     elite: 'Plan Elite',

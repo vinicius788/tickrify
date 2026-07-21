@@ -252,4 +252,15 @@ export class AiController {
 
     return this.aiService.getUsage(dbUserId);
   }
+
+  /** Heatmap de consistência: análises por dia (últimos ~119 dias) do usuário. */
+  @Get('activity')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async getActivity(@CurrentUser() user: { id?: string; clerkUserId: string }) {
+    const dbUserId = await this.resolveDbUserId(user);
+    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
+
+    return this.aiService.getActivityHeatmap(dbUserId);
+  }
 }

@@ -7,6 +7,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import NewAnalysis from "../dashboard/NewAnalysis";
+import ActivityHeatmap from "../dashboard/ActivityHeatmap";
 import LiveTape from "../dashboard/LiveTape";
 import MyTrades from "../dashboard/MyTrades";
 import Watchlist from "../dashboard/Watchlist";
@@ -611,6 +612,9 @@ const DashboardPage = () => {
             </div>
           </div>
         </div>
+
+        {/* Heatmap de consistência — mecânica de hábito + card "printável" */}
+        {!isDemo && <ActivityHeatmap />}
       </div>
     );
   };

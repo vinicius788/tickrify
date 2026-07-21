@@ -46,6 +46,9 @@ export default {
     kpiSubConf: '分析全体',
     kpiSubMarkets: '直近8時間',
     kpiSubTicks: '利用可能',
+    heatTitle: '継続記録',
+    heatStreak: '日連続',
+    heatBest: '最高',
   },
   plan: {
     elite: 'エリートプラン',

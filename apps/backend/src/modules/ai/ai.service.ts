@@ -1040,6 +1040,24 @@ export class AiService implements OnModuleInit {
     return payload;
   }
 
+  /**
+   * Heatmap de consistência: contagem de análises por dia (UTC) dos últimos
+   * ~119 dias (17 semanas, grade estilo GitHub). O dado já existe — só agrega.
+   */
+  async getActivityHeatmap(userId: string): Promise<{ days: Array<{ day: string; count: number }> }> {
+    const rows = await this.prisma.$queryRaw<Array<{ day: string; count: number }>>`
+      SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
+             COUNT(*)::int AS count
+      FROM "tickrify"."Analysis"
+      WHERE "userId" = ${userId}
+        AND "createdAt" > NOW() - INTERVAL '119 days'
+        AND status != 'failed'
+      GROUP BY 1
+      ORDER BY 1
+    `;
+    return { days: rows.map((r) => ({ day: r.day, count: Number(r.count) })) };
+  }
+
   static readonly DEMO_ANALYSIS_LIMIT = 3;
 
   /**
