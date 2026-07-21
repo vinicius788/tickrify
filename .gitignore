@@ -64,6 +64,13 @@ temp/
 /*.xlsx
 /*.pdf
 /*.mp4
+# Imagens e dados soltos na raiz — prints, screenshots, dumps (nunca vão pro repo)
+/*.png
+/*.jpg
+/*.jpeg
+/*.csv
+# Pasta pessoal de rascunhos/notas/prints — fica só na sua máquina
+/_local/
 **/.env.local
 **/.env.production
 
