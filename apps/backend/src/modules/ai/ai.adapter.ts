@@ -996,21 +996,68 @@ export class AIAdapter {
       if (highs[i] === Math.max(...highs.slice(i - 3, i + 4))) swingsH.push(highs[i]);
       if (lows[i] === Math.min(...lows.slice(i - 3, i + 4))) swingsL.push(lows[i]);
     }
+    const closes = win.map((c) => c[4]);
+
+    // RSI(14) com suavização de Wilder — momentum real, não estimado do pixel.
+    // Só é um CONTEXTO: em tendência forte o RSI fica esticado sem reverter,
+    // então >70/<30 não é gatilho de reversão sozinho (evita sinal contra-tendência).
+    const rsi14 = ((): number | null => {
+      const period = 14;
+      if (closes.length < period + 1) return null;
+      let avgG = 0;
+      let avgL = 0;
+      for (let i = 1; i <= period; i++) {
+        const d = closes[i] - closes[i - 1];
+        if (d >= 0) avgG += d;
+        else avgL -= d;
+      }
+      avgG /= period;
+      avgL /= period;
+      for (let i = period + 1; i < closes.length; i++) {
+        const d = closes[i] - closes[i - 1];
+        avgG = (avgG * (period - 1) + (d > 0 ? d : 0)) / period;
+        avgL = (avgL * (period - 1) + (d < 0 ? -d : 0)) / period;
+      }
+      if (avgL === 0) return 100;
+      return 100 - 100 / (1 + avgG / avgL);
+    })();
+
+    // Posição do preço atual dentro da faixa visível (0% = fundo, 100% = topo).
+    // Ajuda a IA a saber se está comprando perto do topo (chasing) ou do fundo.
+    const winHigh = Math.max(...highs);
+    const winLow = Math.min(...lows);
+    const rangePos = winHigh > winLow ? ((last[4] - winLow) / (winHigh - winLow)) * 100 : 50;
+
+    // Momentum de curto prazo: variação % dos últimos ~6 candles (maturidade do
+    // movimento — casa com a regra anti-chasing do prompt v7.2).
+    const lookback = Math.min(6, win.length - 1);
+    const refClose = closes[closes.length - 1 - lookback];
+    const momPct = refClose ? ((last[4] - refClose) / refClose) * 100 : 0;
+
     const fmt = (n: number) => Number(n.toPrecision(6));
     const last12 = win
       .slice(-12)
       .map((c) => `[o${fmt(c[1])} h${fmt(c[2])} l${fmt(c[3])} c${fmt(c[4])}]`)
       .join(' ');
+    const rsiLine =
+      rsi14 != null
+        ? `- Momentum (RSI14): ${Math.round(rsi14)} — ${rsi14 >= 70 ? 'overbought zone (in a strong uptrend it can stay high; not a sell trigger by itself)' : rsi14 <= 30 ? 'oversold zone (in a strong downtrend it can stay low; not a buy trigger by itself)' : 'neutral'}`
+        : null;
     return [
       '# REAL MARKET DATA (ground truth from the exchange feed — trust these numbers over pixel-reading)',
       `- Symbol: ${symbol} · timeframe: ${timeframe} · current price (last close): ${fmt(last[4])}`,
-      `- Visible window high: ${fmt(Math.max(...highs))} · low: ${fmt(Math.min(...lows))} (last ${win.length} candles)`,
+      `- Visible window high: ${fmt(winHigh)} · low: ${fmt(winLow)} (last ${win.length} candles)`,
+      `- Price sits at ${Math.round(rangePos)}% of the visible range (0%=low, 100%=high) — buying near 100% or selling near 0% is chasing.`,
+      `- Short-term momentum (~${lookback} candles): ${momPct >= 0 ? '+' : ''}${momPct.toFixed(2)}%`,
       `- Average candle range (ATR14): ${fmt(atr)} — stops tighter than ~1 ATR sit inside noise; limit entries further than ~1.5 ATR from current price rarely fill.`,
+      rsiLine,
       `- Recent swing highs: ${swingsH.slice(-5).map(fmt).join(', ')}`,
       `- Recent swing lows: ${swingsL.slice(-5).map(fmt).join(', ')}`,
       `- Last 12 candles OHLC: ${last12}`,
       'Set entry/stopLoss/takeProfits and judge structure using these EXACT values. Every level you output must be consistent with this data.',
-    ].join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   /**
