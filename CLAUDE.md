@@ -51,18 +51,23 @@ Tickrify — SaaS freemium de **análise de gráficos com IA** para traders. O u
 - **v7.4 (playbooks) segue LOCAL, não commitada** — `trading-system-prompt.ts` + `backtest-runner.ts` (strategyLine) + `evaluate.py`. Só sobe depois de medir (teste ~US$1,50). Pro teste de grounding isolado: `git stash push -- apps/backend/src/common/prompts/trading-system-prompt.ts` antes (volta pra v7.3), `git stash pop` depois.
 - **19/07/2026 — grounding LIGADO em produção + incidente de migração resolvido:** `ENABLE_QUICK_GROUNDING=true` e `TWELVE_DATA_API_KEY` adicionadas no env do Render. Na sequência descobriu-se produção quebrada (P2022: colunas outcome/outcomeAt/outcomeDetail não existiam — a migração nunca rodou porque `RUN_MIGRATIONS_ON_START=false`, e ligar não resolve: `prisma migrate deploy` falha com P1001 porque `MIGRATIONS_DATABASE_URL` aponta pro host direto do Supabase, IPv6-only, inalcançável do Render). Correção: SQL da migração aplicado manualmente no SQL Editor do Supabase + INSERT no `public._prisma_migrations` com o checksum correto (sha256 do migration.sql). `RUN_MIGRATIONS_ON_START` voltou pra `false`. **REGRA: toda migração nova precisa ser aplicada manualmente no Supabase (SQL Editor) + registrada no `_prisma_migrations`, OU corrigir de vez `MIGRATIONS_DATABASE_URL` pro session pooler IPv4 do Supabase (aws-0-<região>.pooler.supabase.com:5432).**
 
-## PENDENTE
-- ~~Verificação de domínio no Resend~~ **RESOLVIDO 20/07:** domínio verificou sozinho em 10/07 (DNS propagou). `MAIL_FROM = "Tickrify <noreply@tickrify.com>"` setado no Render em 20/07.
-- ~~E-mail de recuperação~~ **LIGADO 20/07:** gatilho em `ai.service.triggerRecoveryEmail` — dispara quando o free bate o limite, dedup permanente via AdminAudit (`action='recovery_email_sent'`). ⚠️ CONFERIR: o e-mail promete cupom **EARLY35**, mas o cupom documentado aqui é **EARLY50** — validar qual existe no Stripe e alinhar.
-- **Causa raiz dos e-mails que nunca saíam (corrigida 20/07):** o session token do Clerk NÃO inclui e-mail → `User.email` ficava NULL nos 27 usuários. Fix: `common/utils/clerk-email.ts` busca na API do Clerk + backfill no `auth.controller` (getMe) e no gatilho de recuperação.
+## Sprint 20–21/07/2026 (tudo NO AR salvo indicação)
+- **Migrações consertadas:** `MIGRATIONS_DATABASE_URL` no Render trocada pro session pooler IPv4 (`postgresql://postgres.xobqgbqemqsooabdwprg:<senha>@aws-0-us-west-2.pooler.supabase.com:5432/postgres`). `prisma migrate deploy` volta a funcionar do Render — fim do SQL manual. (Região real do Supabase = **us-west-2**, não sa-east-1.)
+- **E-mails 100% funcionando:** domínio Resend verificou sozinho em 10/07 (DNS propagou); `MAIL_FROM=Tickrify <noreply@tickrify.com>` setado no Render. **Causa raiz dos e-mails que nunca saíam:** o session token do Clerk NÃO traz e-mail → `User.email` ficava NULL. Fix: `common/utils/clerk-email.ts` (busca na API do Clerk) + backfill no `auth.controller` (getMe) e no gatilho de recuperação.
+- **E-mail de recuperação LIGADO:** `ai.service.triggerRecoveryEmail` dispara quando o free bate o limite; dedup permanente via `AdminAudit` (`action='recovery_email_sent'`, sem migração). Cupom do e-mail = **EARLY35** (35% 1º mês, confirmado vivo no Stripe 0/50; EARLY50 expirou em jun).
+- **"What would change my mind"** no `AnalysisResult` para WAIT/HOLD (chaves i18n `flip*`): compõe entryCondition/alternativeScenario/invalidation/whyNotOpposite — SÓ campos que o motor já devolve, zero mudança de prompt. Confirmado no ar.
+- **Calendário Econômico:** já estava implementado no `AnalysisResult` (accordion "Economic Events"); corrigido o bug de strings hardcoded em PT → 6 línguas (chaves `cal*` em `analysis.result`).
+- **Blog SEO** em `apps/frontend/public/blog/` (4 artigos EN + índice) + `sitemap.xml` reenviado no Search Console (8 páginas encontradas). Marketing, não commitado no motor.
+- **Heatmap de consistência** (`components/dashboard/ActivityHeatmap.tsx` + endpoint `GET /api/ai/activity` em ai.controller/ai.service): grade estilo GitHub dos últimos ~119 dias + streak atual/recorde. Mecânica de hábito + card "printável" pra conteúdo. i18n `heat*`. NO AR.
+- **Backup diário do banco:** `.github/workflows/backup.yml` — pg_dump 07:00 UTC + manual, artifact privado 30d, sem 2º repo. Secret `SUPABASE_DB_URL` (= a string do pooler) no GitHub. Testado verde. Plano free do Supabase não tem backup — isto protege o dataset de outcomes.
+- **Grounding do quick turbinado (21/07):** `buildCandleGroundingBlock` agora injeta **RSI(14) Wilder + posição no range (0–100%) + momentum ~6 candles**, tudo dos candles reais já buscados (zero API/dep nova), cada um com instrução de humildade (RSI extremo ≠ gatilho de reversão sozinho). Atrás da mesma flag `ENABLE_QUICK_GROUNDING`. Medir via outcome tracking; próximo candidato de indicador = **contexto HTF multi-timeframe** (maior salto, `extraImageUrls` já existe).
 
-## 20/07/2026 — Sprint de fundação
-- Blog SEO estático no ar (`apps/frontend/public/blog/`, 4 artigos EN) + sitemap reenviado no Search Console (8 páginas encontradas).
-- i18n do Calendário Econômico corrigido (strings hardcoded PT → 6 línguas, chaves `cal*` em `analysis.result`).
-- **"What would change my mind"** no `AnalysisResult` para WAIT/HOLD (chaves `flip*`): compõe entryCondition/alternativeScenario/invalidation/whyNotOpposite — SÓ campos que o motor já devolve, zero mudança de prompt.
-- `MIGRATIONS_DATABASE_URL` corrigida no Render → session pooler IPv4 (`aws-0-us-west-2.pooler.supabase.com:5432`). `prisma migrate deploy` volta a funcionar; fim do SQL manual.
-- **v7.4 fora do working tree:** backup em `tmp/v74-playbooks-backup/` (gitignored), árvore limpa na v7.3. Restaurar do backup antes de medir (~US$1,50).
-- **Dado de tração:** 27 contas registradas (2 novas em 19/07), usuários reais analisando; usuários novos recebendo WAIT 30% nas 3 análises grátis → motivação direta do flip-card e do recovery email.
+## PENDENTE (pós-sprint)
+- **Post 0 do relançamento de conteúdo** (só o dono grava) — kit pronto em `marketing-sprint/` e docs de estratégia. Estratégia nova = "The AI With Receipts" (SEG call / QUA your-chart / SEX receipt, 3x/semana).
+- **Render pago (~US$7):** decisão do dono — NÃO assinar até o Post 0 ir ao ar (cold start só machuca com tráfego). Gatilho: dia do 1º short OU 1º assinante.
+- **Confirmar `[QuickGrounding]` no log do worker** após uma análise real (verificação pendente do dono).
+- **Conta Stripe ainda chamada "WayPay"** — renomear pra Tickrify (aparece em recibos).
+- **v7.4 (playbooks)** continua fora da árvore (backup em `tmp/v74-playbooks-backup/`); medir ~US$1,50 antes de subir.
 
 ## Distribuição / conteúdo
 - **Estágio zero** (≈0 seguidores em tudo, jun/2026): IG @tickrify 53 seguidores (reels 1–2k views), YouTube 0 inscritos / 4,5k views em 28d, X @tickrify 4 seguidores (parado).
