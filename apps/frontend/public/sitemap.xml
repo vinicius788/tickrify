@@ -16,28 +16,34 @@
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://tickrify.com/blog/ai-chart-analysis/</loc>
-    <lastmod>2026-07-20</lastmod>
+    <loc>https://tickrify.com/blog/tickrify-vs-tradingview/</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://tickrify.com/blog/chatgpt-chart-analysis/</loc>
-    <lastmod>2026-07-20</lastmod>
+    <loc>https://tickrify.com/blog/tickrify-vs-chatgpt/</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://tickrify.com/blog/best-ai-chart-analysis-tools/</loc>
-    <lastmod>2026-07-20</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://tickrify.com/blog/chatgpt-chart-analysis/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://tickrify.com/blog/ai-chart-analysis/</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
     <loc>https://tickrify.com/blog/trading-second-opinion/</loc>
-    <lastmod>2026-07-20</lastmod>
     <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
+    <priority>0.6</priority>
   </url>
   <url>
     <loc>https://tickrify.com/privacidade</loc>
