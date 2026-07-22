@@ -20,8 +20,9 @@ const Watchlist = () => {
   const { t } = useLanguage();
   const w = t.watchlist;
 
-  // Modo real: análises favoritadas (estrela em Meus Trades)
-  const { analyses, loading, refetch } = useAnalyses(100);
+  // Modo real: análises favoritadas (estrela em Meus Trades).
+  // Mesmo limite do Dashboard/My Trades (40) → cache compartilhado: abre na hora.
+  const { analyses, loading, refetch } = useAnalyses(40);
   const { setFavorite } = useAPIClient();
   const [removed, setRemoved] = useState<Record<string, boolean>>({});
 
@@ -110,7 +111,7 @@ const Watchlist = () => {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">…</p>
+              <p className="py-8 text-center text-sm text-muted-foreground">{t.trades.loadingAnalyses}</p>
             ) : favorites.length === 0 ? (
               <div className="py-12 text-center space-y-2">
                 <p className="text-muted-foreground">{w.empty}</p>

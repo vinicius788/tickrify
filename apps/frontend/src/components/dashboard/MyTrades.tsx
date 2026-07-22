@@ -90,7 +90,10 @@ const DEMO: AIAnalysisResponse[] = [
 const MyTrades = () => {
   const { user } = useUser();
   const isDemo = !user;
-  const { analyses, loading, refetch } = useAnalyses(100);
+  // Mesmo limite do Dashboard (40) → as três telas compartilham UM único cache
+  // do React Query. Assim esta aba abre na hora (reaproveita o que já foi
+  // carregado) em vez de disparar uma nova busca de 100 registros no servidor.
+  const { analyses, loading, refetch } = useAnalyses(40);
   const { setOutcome, setFavorite } = useAPIClient();
   const { t, language } = useLanguage();
   const tr = t.trades;

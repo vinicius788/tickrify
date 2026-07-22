@@ -18,7 +18,10 @@ export function useAnalyses(limit = 40) {
   const query = useQuery<AIAnalysisResponse[]>({
     queryKey: ['analyses', limit],
     queryFn: () => apiClient.listAnalyses(limit),
-    staleTime: 30_000,
+    // Cache "fresco" por 2 min e sem refetch ao focar a janela → trocar de aba
+    // (Dashboard → My Trades → Watchlist) reaproveita os dados, sem nova busca.
+    staleTime: 120_000,
+    refetchOnWindowFocus: false,
     enabled,
   });
 
