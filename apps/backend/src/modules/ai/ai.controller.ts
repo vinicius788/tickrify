@@ -214,7 +214,8 @@ export class AiController {
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async getPublicAnalyses() {
     const rows = await this.prisma.analysis.findMany({
-      where: { status: 'completed', recommendation: { not: null } },
+      // isDemo: false → análises da demo anônima nunca vazam para a vitrine.
+      where: { status: 'completed', recommendation: { not: null }, isDemo: false },
       orderBy: { createdAt: 'desc' },
       take: 6,
       select: {

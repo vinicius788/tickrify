@@ -79,11 +79,12 @@ const VERDICT_CFG = {
   OPEN: { bg: 'rgba(120,120,180,0.10)', border: 'rgba(120,120,180,0.3)', text: '#9999CC' },
 } as const;
 
-// ── Demo data ────────────────────────────────────────────────────────────────
+// ── Demo data (rotulada como demo na UI; confiancas dentro da faixa real do
+// motor v7.3 — 62-78, >70 raro. Nao subir esses numeros.) ────────────────────────────────────────────────────────────────
 const DEMO: AIAnalysisResponse[] = [
-  { id: 'd1', status: 'completed', recommendation: 'BUY',  confidence: 75, symbol: 'XAUUSD', timeframe: '15M', createdAt: new Date(Date.now()-3600000).toISOString(), updatedAt: '', fullResponse: { recommendation:'BUY', bias:'bullish', confidence:75, reasoning:'', analysis:{ symbol:'XAUUSD', timeframe:'15M', entry:3310, stopLoss:3295, takeProfit1:3340, takeProfit2:3370, confluenceScore:83, factorsPresent:5 } } },
-  { id: 'd2', status: 'completed', recommendation: 'SELL', confidence: 70, symbol: 'EURUSD', timeframe: '1H',  createdAt: new Date(Date.now()-7200000).toISOString(), updatedAt: '', fullResponse: { recommendation:'SELL', bias:'bearish', confidence:70, reasoning:'', analysis:{ symbol:'EURUSD', timeframe:'1H', entry:1.0820, stopLoss:1.0855, takeProfit1:1.0770, takeProfit2:1.0730, confluenceScore:67, factorsPresent:4 } } },
-  { id: 'd3', status: 'completed', recommendation: 'BUY',  confidence: 80, symbol: 'BTCUSDT',timeframe: '4H', createdAt: new Date(Date.now()-86400000).toISOString(),updatedAt: '', fullResponse: { recommendation:'BUY',  bias:'bullish', confidence:80, reasoning:'', analysis:{ symbol:'BTCUSDT', timeframe:'4H', entry:104500, stopLoss:102000, takeProfit1:109000, takeProfit2:113000, confluenceScore:100, factorsPresent:6 } } },
+  { id: 'd1', status: 'completed', recommendation: 'BUY',  confidence: 68, symbol: 'XAUUSD', timeframe: '15M', createdAt: new Date(Date.now()-3600000).toISOString(), updatedAt: '', fullResponse: { recommendation:'BUY', bias:'bullish', confidence:68, reasoning:'', analysis:{ symbol:'XAUUSD', timeframe:'15M', entry:3310, stopLoss:3295, takeProfit1:3340, takeProfit2:3370, confluenceScore:83, factorsPresent:5 } } },
+  { id: 'd2', status: 'completed', recommendation: 'SELL', confidence: 72, symbol: 'EURUSD', timeframe: '1H',  createdAt: new Date(Date.now()-7200000).toISOString(), updatedAt: '', fullResponse: { recommendation:'SELL', bias:'bearish', confidence:72, reasoning:'', analysis:{ symbol:'EURUSD', timeframe:'1H', entry:1.0820, stopLoss:1.0855, takeProfit1:1.0770, takeProfit2:1.0730, confluenceScore:67, factorsPresent:4 } } },
+  { id: 'd3', status: 'completed', recommendation: 'BUY',  confidence: 66, symbol: 'BTCUSDT',timeframe: '4H', createdAt: new Date(Date.now()-86400000).toISOString(),updatedAt: '', fullResponse: { recommendation:'BUY',  bias:'bullish', confidence:66, reasoning:'', analysis:{ symbol:'BTCUSDT', timeframe:'4H', entry:104500, stopLoss:102000, takeProfit1:109000, takeProfit2:113000, confluenceScore:100, factorsPresent:6 } } },
 ];
 
 // ── Component ────────────────────────────────────────────────────────────────

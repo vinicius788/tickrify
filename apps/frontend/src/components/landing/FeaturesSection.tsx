@@ -1,4 +1,4 @@
-import { BarChart3, Bell, Bot, BrainCircuit, Globe2, ShieldCheck } from 'lucide-react';
+import { BarChart3, Bot, CalendarClock, CandlestickChart, Globe2, ShieldCheck } from 'lucide-react';
 import { useReveal } from '@/hooks/useReveal';
 import SectionTitle from '@/components/landing/SectionTitle';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
@@ -8,13 +8,23 @@ const FeaturesSection = () => {
   const { t } = useLanguage();
   const f = t.landing.features;
 
-  const features = [
-    { icon: Bot, title: f.f1t, description: f.f1d, status: 'ready' as const },
-    { icon: Globe2, title: f.f2t, description: f.f2d, status: 'ready' as const },
-    { icon: ShieldCheck, title: f.f3t, description: f.f3d, status: 'ready' as const },
-    { icon: BarChart3, title: f.f4t, description: f.f4d, status: 'ready' as const },
-    { icon: Bell, title: f.f5t, description: f.f5d, status: 'soon' as const },
-    { icon: BrainCircuit, title: f.f6t, description: f.f6d, status: 'soon' as const },
+  // REGRA (auditoria 24/07/2026): todo card aqui corresponde a codigo que esta
+  // no ar. Os antigos f5 "Real-time alerts" e f6 "Continuous education" nao
+  // existiam em lugar nenhum do codigo e foram trocados por diferenciais reais
+  // (grounding com candles ao vivo, guarda do calendario economico).
+  // Maximo de 1 card com badge "Soon", e so com entrega comprometida.
+  const features: Array<{
+    icon: typeof Bot;
+    title: string;
+    description: string;
+    status: 'ready' | 'soon';
+  }> = [
+    { icon: Bot, title: f.f1t, description: f.f1d, status: 'ready' },
+    { icon: Globe2, title: f.f2t, description: f.f2d, status: 'ready' },
+    { icon: ShieldCheck, title: f.f3t, description: f.f3d, status: 'ready' },
+    { icon: BarChart3, title: f.f4t, description: f.f4d, status: 'ready' },
+    { icon: CandlestickChart, title: f.f5t, description: f.f5d, status: 'ready' },
+    { icon: CalendarClock, title: f.f6t, description: f.f6d, status: 'ready' },
   ];
 
   return (

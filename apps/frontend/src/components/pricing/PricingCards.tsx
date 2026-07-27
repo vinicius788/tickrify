@@ -12,8 +12,15 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 const SESSION_STORAGE_KEY = "pendingPlanType";
 
 // Conteúdo visível dos cards — em inglês por padrão (público global), PT quando o
-// idioma for português. O array PLANS abaixo mantém os defaults em PT porque é
-// reutilizado pelo modal do dashboard; a renderização da página usa este mapa.
+// idioma for português. O array PLANS abaixo também usa inglês como default
+// (auditoria 24/07/2026: produto global; qualquer consumidor novo do PLANS,
+// como o modal do dashboard, herda inglês em vez de português).
+//
+// REGRA: nenhum bullet aqui pode descrever recurso que não existe no código.
+// Removidos em 24/07: "Priority responses", "Priority execution", "Priority
+// support" (a fila BullMQ é única, sem campo priority) e "Institutional-grade
+// AI" (o modelo é escolhido por tipo de análise, nunca por plano — todos os
+// planos rodam o mesmo motor).
 type PlanCopy = { badge: string; ticks: string; analyses: string; features: string[]; cta: string };
 const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
   en: {
@@ -21,7 +28,7 @@ const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
       badge: "Entry",
       ticks: "45 ticks/mo",
       analyses: "quick 1 tick · deep 3 ticks",
-      features: ["45 monthly Ticks", "Quick analysis", "Deep analysis", "Full history"],
+      features: ["45 monthly Ticks (~45 quick or 15 deep)", "Quick + deep analysis", "Full history", "$0.27 per quick analysis"],
       cta: "Get Starter",
     },
     pro: {
@@ -29,24 +36,24 @@ const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
       ticks: "150 ticks/mo",
       analyses: "quick 1 tick · deep 3 ticks",
       features: [
-        "150 monthly Ticks",
-        "Quick + full deep analysis",
-        "Best cost per analysis",
+        "150 monthly Ticks (~150 quick or 50 deep)",
+        "Quick + deep analysis",
         "Full history",
-        "Priority responses",
+        "$0.19 per quick analysis",
+        "Everything in Starter, 3.3x the volume",
       ],
       cta: "Get Pro",
     },
     elite: {
-      badge: "Institutional",
+      badge: "High volume",
       ticks: "400 ticks/mo",
       analyses: "quick 1 tick · deep 3 ticks",
       features: [
-        "400 monthly Ticks",
-        "Institutional-grade AI",
-        "Priority execution",
+        "400 monthly Ticks (~400 quick or 133 deep)",
+        "Quick + deep analysis",
         "Full history",
-        "Priority support",
+        "$0.15 per quick analysis — the lowest",
+        "Everything in Pro, 2.7x the volume",
       ],
       cta: "Get Elite",
     },
@@ -56,7 +63,7 @@ const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
       badge: "Entrada",
       ticks: "45 ticks/mês",
       analyses: "rápida 1 tick · deep 3 ticks",
-      features: ["45 Ticks mensais", "Análise rápida", "Análise deep", "Histórico completo"],
+      features: ["45 Ticks mensais (~45 rápidas ou 15 deep)", "Análise rápida + deep", "Histórico completo", "US$ 0,27 por análise rápida"],
       cta: "Assinar Starter",
     },
     pro: {
@@ -64,24 +71,24 @@ const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
       ticks: "150 ticks/mês",
       analyses: "rápida 1 tick · deep 3 ticks",
       features: [
-        "150 Ticks mensais",
-        "Análise rápida + deep completa",
-        "Melhor custo por análise",
+        "150 Ticks mensais (~150 rápidas ou 50 deep)",
+        "Análise rápida + deep",
         "Histórico completo",
-        "Prioridade nas respostas",
+        "US$ 0,19 por análise rápida",
+        "Tudo do Starter, 3,3x o volume",
       ],
       cta: "Assinar Pro",
     },
     elite: {
-      badge: "Institucional",
+      badge: "Alto volume",
       ticks: "400 ticks/mês",
       analyses: "rápida 1 tick · deep 3 ticks",
       features: [
-        "400 Ticks mensais",
-        "IA nível institucional",
-        "Execução prioritária",
+        "400 Ticks mensais (~400 rápidas ou 133 deep)",
+        "Análise rápida + deep",
         "Histórico completo",
-        "Suporte prioritário",
+        "US$ 0,15 por análise rápida — o menor",
+        "Tudo do Pro, 2,7x o volume",
       ],
       cta: "Assinar Elite",
     },
@@ -136,64 +143,64 @@ export const PLANS: Plan[] = [
   {
     id: "starter",
     name: "Starter",
-    badge: "Entrada",
+    badge: "Entry",
     prices: {
       monthly: { brl: "R$ 57", usd: "$12", eur: "€11" },
       yearly:  { brl: "R$ 570", usd: "$120", eur: "€110" },
     },
-    ticks: "45 ticks/mês",
-    analyses: "rápida 1 tick · deep 3 ticks",
+    ticks: "45 ticks/mo",
+    analyses: "quick 1 tick · deep 3 ticks",
     featured: false,
     icon: <Zap className="w-8 h-8 text-muted-foreground" />,
     features: [
-      "45 Ticks mensais",
-      "Análise rápida",
-      "Análise deep",
-      "Histórico completo",
+      "45 monthly Ticks (~45 quick or 15 deep)",
+      "Quick + deep analysis",
+      "Full history",
+      "$0.27 per quick analysis",
     ],
-    cta: "Assinar Starter",
+    cta: "Get Starter",
   },
   {
     id: "pro",
     name: "Pro",
-    badge: "Mais escolhido",
+    badge: "Most popular",
     prices: {
       monthly: { brl: "R$ 147", usd: "$29", eur: "€27" },
       yearly:  { brl: "R$ 1.470", usd: "$290", eur: "€270" },
     },
-    ticks: "150 ticks/mês",
-    analyses: "rápida 1 tick · deep 3 ticks",
+    ticks: "150 ticks/mo",
+    analyses: "quick 1 tick · deep 3 ticks",
     featured: true,
     icon: <Star className="w-8 h-8 text-primary" />,
     features: [
-      "150 Ticks mensais",
-      "Análise rápida + deep completa",
-      "Melhor custo por análise",
-      "Histórico completo",
-      "Prioridade nas respostas",
+      "150 monthly Ticks (~150 quick or 50 deep)",
+      "Quick + deep analysis",
+      "Full history",
+      "$0.19 per quick analysis",
+      "Everything in Starter, 3.3x the volume",
     ],
-    cta: "Assinar Pro",
+    cta: "Get Pro",
   },
   {
     id: "elite",
     name: "Elite",
-    badge: "Institucional",
+    badge: "High volume",
     prices: {
       monthly: { brl: "R$ 297", usd: "$59", eur: "€55" },
       yearly:  { brl: "R$ 2.970", usd: "$590", eur: "€550" },
     },
-    ticks: "400 ticks/mês",
-    analyses: "rápida 1 tick · deep 3 ticks",
+    ticks: "400 ticks/mo",
+    analyses: "quick 1 tick · deep 3 ticks",
     featured: false,
     icon: <Trophy className="w-8 h-8 text-yellow-500" />,
     features: [
-      "400 Ticks mensais",
-      "IA nível institucional",
-      "Execução prioritária",
-      "Histórico completo",
-      "Suporte prioritário",
+      "400 monthly Ticks (~400 quick or 133 deep)",
+      "Quick + deep analysis",
+      "Full history",
+      "$0.15 per quick analysis — the lowest",
+      "Everything in Pro, 2.7x the volume",
     ],
-    cta: "Assinar Elite",
+    cta: "Get Elite",
   },
 ];
 

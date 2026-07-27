@@ -1,597 +1,152 @@
-# 🎯 TICKRIFY
+# Tickrify
 
-> Sistema de Análise de Trading com IA de Nível Institucional v3.1
+SaaS freemium de **análise de gráficos com IA** para traders. O usuário sobe o print de um gráfico → a IA devolve uma leitura estruturada: entry, stop, targets, confiança, confluência, risco e cenários.
 
-Plataforma de análise técnica de gráficos de trading usando GPT-4 Vision, com sistema multi-agente adaptativo e análise em tempo real.
+Produto global, site em inglês por padrão (6 idiomas). Domínio: **tickrify.com**.
 
----
-
-## 🚀 INÍCIO RÁPIDO
-
-> **Status:** ✅ Projeto pronto para deploy
-
-### 📚 Guias Disponíveis
-
-| Guia | Descrição | Quando Usar |
-|------|-----------|-------------|
-| **[COMECE_AQUI.md](./docs/COMECE_AQUI.md)** | 🎯 Guia super rápido | Quer começar AGORA |
-| **[GUIA_FINAL_DEPLOYMENT.md](./docs/GUIA_FINAL_DEPLOYMENT.md)** | 📖 Guia completo passo a passo | Primeira vez fazendo deploy |
-| **[STATUS_PROJETO.md](./docs/STATUS_PROJETO.md)** | ✅ Status e arquitetura | Quer entender o projeto |
-| Este README | 📋 Visão geral técnica | Referência geral |
-
-### ⚡ TL;DR - Deploy em 1 hora
-
-```bash
-# 1. Criar contas (Supabase, Clerk, Stripe, OpenAI, Vercel)
-# 2. Configurar .env
-cd apps/backend && cp .env.example .env
-cd apps/frontend && cp .env.example .env
-
-# 3. Testar localmente
-npm install
-npm run build  # Deve funcionar sem erros ✅
-
-# 4. Deploy
-vercel --prod
-
-# 5. Configurar webhook do Stripe
-# URL: https://seu-backend.vercel.app/api/stripe/webhook
-```
-
-**Leia:** [COMECE_AQUI.md](./docs/COMECE_AQUI.md) para detalhes!
+> **Fonte de verdade do projeto: [`CLAUDE.md`](./CLAUDE.md).** Este README cobre stack, estrutura e deploy. Decisões, estado atual e pendências ficam no `CLAUDE.md`.
 
 ---
 
-## 🚀 FEATURES
+## Posicionamento (regra de produto, não de marketing)
 
-### ✨ Análise com IA Avançada
-- **GPT-4 Vision** para análise visual de gráficos
-- **Sistema Multi-Agente** (7 agentes especializados)
-- **Thresholds Adaptativos** por timeframe (5m, 15m, 1h, 4h, 1d)
-- **Momentum Override** para setups excepcionais
-- **Sistema de Exceções** para breakouts e rejeições extremas
+> *"A second opinion that confirms or kills your read."*
 
-### 📊 Análise Técnica Completa
-- Identificação de tendências e estrutura de mercado
-- Reconhecimento de padrões de candlestick e gráficos
-- Suporte/Resistência dinâmicos
-- Cálculo de confluência técnica (0-100)
-- Entry, Stop Loss, Take Profit (TP1, TP2, TP3)
-- Risk/Reward Ratio
+Não é serviço de sinais. A decisão é sempre do trader. Consequência prática, aplicada em toda a vitrine desde a auditoria de 24/07/2026:
 
-### 🔐 Sistema de Autenticação
-- Login via **Clerk** (Email, Google, GitHub)
-- Gerenciamento de usuários
-- Sistema de planos (Free, Pro, Premium)
-
-### 💳 Monetização
-- Integração com **Stripe**
-- 3 planos de assinatura
-- Limite de análises por plano
-- Webhooks para sincronização
+- **Nenhum número aparece no site sem ser verdadeiro e verificável** contra o backtest ou contra o banco de produção.
+- **Nenhum card de feature descreve algo que não está no ar.**
+- A palavra "sinal" só existe como rótulo técnico do tier ≥70 (`getConvictionTier`), nunca como promessa.
 
 ---
 
-## 🏗️ ARQUITETURA
+## Stack
+
+| Camada | Tecnologia | Deploy |
+|---|---|---|
+| Frontend | Vite + React 19 + TypeScript + Tailwind + Clerk + React Router 7 + TanStack Query | **Vercel** (`tickrify-frontend`) |
+| Backend | NestJS + Prisma | **Render** (`tickrify`, plano free — **hiberna**, ~30-50s de cold start) |
+| Worker | BullMQ + Redis | **Render** (`tickrify-worker`) |
+| Banco | Postgres (**Supabase**, região `us-west-2`) | — |
+| IA | OpenAI — `gpt-4o-mini` (quick) / `gpt-4o` (deep), via `AI_MODEL` | — |
+| Pagamento | Stripe (Checkout + webhooks) | — |
+| Observabilidade | PostHog (funil) + Sentry (frontend) | — |
+| E-mail | Resend | — |
+
+Monorepo **pnpm** (`pnpm-workspace.yaml`, `pnpm-lock.yaml`). Atenção: os scripts do root ainda usam `npm run -w` por herança — é assim que Vercel e Render buildam hoje, então **não mexa neles sem testar o deploy**.
+
+---
+
+## Estrutura
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    TICKRIFY STACK                       │
-├─────────────────────────────────────────────────────────┤
-│                                                          │
-│  ┌──────────────┐     ┌──────────────┐                 │
-│  │   FRONTEND   │────▶│   BACKEND    │                 │
-│  │    React     │     │   NestJS     │                 │
-│  │   Vite +     │     │  + Prisma    │                 │
-│  │  TailwindCSS │     │  + BullMQ    │                 │
-│  └──────────────┘     └──────────────┘                 │
-│                              │                           │
-│                              ▼                           │
-│                       ┌──────────────┐                  │
-│                       │ AI WORKER    │                  │
-│                       │   (GPT-4V)   │                  │
-│                       │Multi-Agent   │                  │
-│                       └──────────────┘                  │
-│                              │                           │
-│        ┌─────────────────────┼────────────────────┐    │
-│        ▼                     ▼                     ▼    │
-│  ┌──────────┐         ┌──────────┐         ┌──────────┐│
-│  │PostgreSQL│         │  Redis   │         │ OpenAI   ││
-│  │(Supabase)│         │ (BullMQ) │         │   API    ││
-│  └──────────┘         └──────────┘         └──────────┘│
-│                                                          │
-└─────────────────────────────────────────────────────────┘
+apps/
+  frontend/           Vite + React
+    src/components/landing/     vitrine (hero, features, pricing, FAQ...)
+    src/components/dashboard/   painel logado (AnalysisResult, MyTrades, heatmap...)
+    src/lib/i18n/               pt · en · es · fr · de · ja (o TIPO vem de pt.ts)
+    src/lib/trading-ui.ts       getConvictionTier, normalizações de recomendação
+    public/blog/                artigos de SEO (estáticos)
+  backend/            NestJS
+    src/modules/ai/             análise, fila, endpoints públicos
+    src/modules/ticks/          créditos ("Ticks")
+    src/modules/calendar/       calendário econômico
+    src/common/prompts/         trading-system-prompt.ts  ← o motor
+    src/worker/                 outcome.sweeper.ts (outcome tracking)
+    scripts/backtest-runner.ts  runner do backtest com o motor real
+scripts/backtest/     pipeline reprodutível (amostragem, render, evaluate.py)
+infra/ · docs/ · .github/workflows/
 ```
 
 ---
 
-## 📦 STACK TECNOLÓGICA
+## O motor de IA
 
-### Frontend
-- **React 19** + TypeScript
-- **Vite** para build
-- **TailwindCSS** + shadcn/ui
-- **React Router** para navegação
-- **Clerk** para autenticação
-- **Framer Motion** para animações
+Arquivo único: `apps/backend/src/common/prompts/trading-system-prompt.ts` — **prompt v7.3**.
 
-### Backend
-- **NestJS** framework
-- **Prisma** ORM
-- **PostgreSQL** database
-- **BullMQ** para filas
-- **Redis** para cache
-- **OpenAI GPT-4 Vision** para IA
+- **Núcleo ICT / Smart Money Concepts:** order blocks, fair value gaps, FVOB, mapa de liquidez, premium/discount, BOS/CHoCH.
+- **Wyckoff** para continuação (re-acumulação/re-distribuição, spring, LPS).
+- **Elliott** só para o padrão "flat A-B-C", como detector de armadilha de duplo stop.
+- **Calibração de confiança (v7.3):** bandas 62-78, `>70` é raro, confiança = probabilidade de TP1 antes do SL.
+- **Regra eliminatória de R:R ≥ 1.5.** (O normalizador usa 1.2 como piso conservador.)
 
-### DevOps
-- **Docker** ready
-- **Render** para backend/worker
-- **Vercel** para frontend
-- **GitHub Actions** CI/CD
+**Grounding com candles ao vivo** (`AIAdapter.buildQuickGrounding`, flag `ENABLE_QUICK_GROUNDING`, no ar desde 17/07/2026): injeta candles reais + RSI(14) Wilder + posição no range + momentum, de OKX (primário), Binance (fallback) e Twelve Data (XAU/EUR), **antes** de a IA ler o print.
 
----
+**Outcome tracking** (`src/worker/outcome.sweeper.ts`, no ar desde 17/07/2026): a cada hora avalia análises completadas há 48h+ — fill no entry → corrida TP1×SL em candles de 30m. Outcomes: `WIN / LOSS / TIMEOUT / NO_FILL / ABSTAIN / INCOMPLETE / UNTRACKABLE`.
 
-## 🛠️ INSTALAÇÃO LOCAL
+### Régua objetiva — o que foi medido
 
-### Pré-requisitos
-- Node.js 18+
-- PostgreSQL (ou Supabase)
-- Redis
-- OpenAI API Key
-- Clerk Account
+| | v1 (prompt v7.2) | v2 (v7.3 + grounding) |
+|---|---|---|
+| Amostra | 300 análises | 150 pareadas |
+| Win rate | 45,3% (IC 35-56) | ~37,5% |
+| Expectancy | +0,02R | −0,19R |
+| Taxa de WAIT | 68% | **72,7%** |
+| Confiança | "75" fixa, sem informação | **discrimina**: 60-70 → 25% real · ≥70 → **56%** real |
 
-### 1. Clone e Instale
-```bash
-git clone https://github.com/SEU_USUARIO/tickrify-novo.git
-cd tickrify-novo
-npm install
-```
+O limiar 70 da UI ("Read" abaixo, "Signal" acima) sai daí. Relatórios ficam locais e gitignored (`Tickrify_Backtest_Report*.md`).
 
-### 2. Configure Variáveis de Ambiente
-
-**Backend** (`apps/backend/.env`):
-```env
-DATABASE_URL="postgresql://..."
-MIGRATIONS_DATABASE_URL="postgresql://..."
-CLERK_PUBLISHABLE_KEY="YOUR_PUBLISHABLE_KEY_HERE"
-CLERK_SECRET_KEY="YOUR_SECRET_KEY_HERE"
-OPENAI_API_KEY="YOUR_OPENAI_API_KEY_HERE"
-AI_MODEL="gpt-4o"
-REDIS_URL="redis://localhost:6379"
-FRONTEND_URL="http://localhost:5173"
-CORS_ORIGINS="http://localhost:5173"
-NODE_ENV=development
-APP_ENV=dev
-PORT=3001
-```
-
-## ✅ Release Gate (RC)
-
-Antes de promover para produção:
-- CI verde (`lint`, `test`, `build`)
-- `prisma migrate status` e `migrate deploy` validados em staging
-- Smoke pós-deploy verde
-
-Criar tag RC:
-
-```bash
-git tag vX.Y.Z-rc1
-git push origin vX.Y.Z-rc1
-```
-
-Guia completo: [DEPLOY.md](./DEPLOY.md)
-
-## 🔐 Resposta a Vulnerabilidades
-
-Fluxo padrão para dependências vulneráveis (`high`/`critical`):
-
-```bash
-# 1) detectar
-npm audit --audit-level=high
-
-# 2) corrigir sem breaking changes quando possível
-npm audit fix
-
-# 3) se restar high/critical, aplicar update direcionado (dep direta/override)
-#    e registrar decisão no PR (pacote, risco, plano de remoção)
-
-# 4) validar novamente
-npm audit --audit-level=high
-```
-
-Política de release:
-- `high`/`critical` não justificados bloqueiam merge/release.
-- Exceções temporárias exigem justificativa técnica no PR e issue de acompanhamento com prazo.
-
-Estratégia aplicada no release atual (Mar/2026):
-- Backend atualizado para `@nestjs/platform-express@11.1.16` (Nest 11), removendo caminho vulnerável de `multer@2.0.2`.
-- `prisma`, `@prisma/client` e `@prisma/adapter-pg` fixados em `6.19.2`, removendo advisories `high` transitivos introduzidos na linha `7.x`.
-- Gate do CI permanece com `npm audit --audit-level=high` (sem `--omit=dev`), garantindo bloqueio para qualquer vulnerabilidade `high/critical` na árvore auditada.
-
-Status atual:
-- `npm audit --audit-level=high` retorna `0 high` e `0 critical` no monorepo.
-- Restam apenas advisories `moderate` de tooling de desenvolvimento.
-
-**Frontend** (`apps/frontend/.env`):
-```env
-VITE_API_URL=http://localhost:3001
-VITE_CLERK_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY_HERE
-```
-
-### 3. Setup Database
-```bash
-cd apps/backend
-npx prisma migrate dev
-npx prisma generate
-npm run seed  # Opcional: dados de teste
-```
-
-### 4. Inicie Redis
-```bash
-redis-server --daemonize yes
-```
-
-### 5. Inicie os Serviços
-
-**Opção A: Tudo de uma vez**
-```bash
-./INICIAR_TUDO.sh
-```
-
-**Opção B: Manualmente**
-```bash
-# Terminal 1: Backend
-cd apps/backend
-npm run dev
-
-# Terminal 2: Worker
-cd apps/backend
-npm run worker
-
-# Terminal 3: Frontend
-cd apps/frontend
-npm run dev
-```
-
-### 6. Acesse
-- Frontend: http://localhost:5173
-- Backend: http://localhost:3001
-- API Health: http://localhost:3001/api/health
+**Regra:** nenhum número vai para marketing sem decisão explícita + metodologia + disclaimer.
 
 ---
 
-## 🚀 DEPLOY EM PRODUÇÃO
+## Monetização
 
-### Deploy Rápido (Recomendado)
+**Ticks** = créditos internos. Análise rápida = 1 tick · profunda = 3 ticks · PDF = 2 ticks.
 
-Veja: **[DEPLOY_RAPIDO.md](./docs/DEPLOY_RAPIDO.md)**
-
-```bash
-# 1. Setup variáveis de ambiente
-./scripts/setup-env.sh
-
-# 2. Deploy backend + worker (Railway)
-./scripts/deploy-railway.sh
-
-# 3. Deploy frontend (Vercel)
-./scripts/deploy-vercel.sh
-
-# 4. Verificar deploy
-./scripts/check-deploy.sh https://seu-backend.railway.app https://seu-app.vercel.app
-
-# 5. Smoke test da API em produção (falha CI em erro)
-SMOKE_API_BASE_URL=https://seu-backend.railway.app npm run smoke:api
-```
-
-### Variáveis de Ambiente (Produção)
-
-Defina no **Railway (backend)**:
-
-```env
-NODE_ENV=production
-APP_ENV=production
-PORT=8080
-DATABASE_URL=postgresql://...
-DIRECT_URL=postgresql://...
-OPENAI_API_KEY=YOUR_OPENAI_API_KEY_HERE
-AI_MODEL=gpt-4o
-STRIPE_SECRET_KEY=YOUR_SECRET_KEY_HERE
-STRIPE_WEBHOOK_SECRET=YOUR_WEBHOOK_SECRET_HERE
-CLERK_SECRET_KEY=YOUR_SECRET_KEY_HERE
-CLERK_ISSUER=https://SEU_TENANT.clerk.accounts.dev
-CLERK_JWKS_URL=https://SEU_TENANT.clerk.accounts.dev/.well-known/jwks.json
-CLERK_AUTHORIZED_PARTIES=https://seu-frontend.vercel.app
-BOOTSTRAP_ADMIN_EMAILS=admin@suaempresa.com
-FRONTEND_URL=https://seu-frontend.vercel.app
-CORS_ORIGINS=https://seu-frontend.vercel.app
-SUPABASE_URL=https://xxxx.supabase.co
-SUPABASE_SERVICE_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=... # fallback aceito
-REDIS_URL=rediss://default:... # obrigatório para /ready=ok e processamento
-```
-
-No Railway, rode **dois serviços separados**:
-
-- `api`: `npm run migrate:deploy && npm run start:railway`
-- `worker`: `npm run worker:railway`
-
-Sem o serviço `worker`, `/api/health/ready` retorna 503 (`worker_unavailable`) e análises não são processadas.
-
-Defina no **Vercel (frontend)**:
-
-```env
-VITE_CLERK_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY_HERE
-# obrigatório em produção:
-VITE_API_URL=https://seu-backend.railway.app
-```
-`vercel.json` não usa mais rewrite externo para backend.
-O frontend deve chamar a URL pública do backend via `VITE_API_URL`.
-
-### Deploy Completo
-
-Veja: **[GUIA_DEPLOY_ATUALIZADO.md](./docs/GUIA_DEPLOY_ATUALIZADO.md)**
+- Free: **3 análises grátis** (só rápida — deep é travada para assinante), depois paywall com valor trancado (`LockedAnalysis`).
+- Planos: Starter $12 · Pro $29 · Elite $59 /mês. **Hoje os planos diferem apenas em volume de ticks** — nenhuma diferença de motor, fila ou suporte. Não vender o que não existe.
+- Ticks acumulam (`TicksService.addTicks` faz `increment`, sem reset mensal).
 
 ---
 
-## 📖 DOCUMENTAÇÃO
+## Rodar local
 
-Índice completo: **[docs/README.md](./docs/README.md)**
-
-### Estrutura do Projeto
-```
-tickrify-novo/
-├── apps/
-│   ├── backend/              # API NestJS
-│   │   ├── src/
-│   │   │   ├── modules/      # Módulos (AI, Auth, Storage, etc)
-│   │   │   ├── common/       # Prompts e utils
-│   │   │   └── main.ts
-│   │   ├── worker/           # AI Worker (BullMQ)
-│   │   ├── prisma/           # Database schema
-│   │   └── package.json
-│   │
-│   └── frontend/             # React + Vite
-│       ├── src/
-│       │   ├── components/   # UI Components
-│       │   ├── lib/          # API client e utils
-│       │   └── App.tsx
-│       └── package.json
-│
-├── scripts/                  # Scripts de deploy
-├── docs/                     # Toda documentação centralizada
-│   ├── backend/              # Documentação técnica do backend
-│   └── README.md             # Índice de documentação
-└── README.md                 # Este arquivo
-```
-
-### API Endpoints
-
-**Health Check**
 ```bash
-GET /api/health
+pnpm install
+cp .env.example .env      # preencher: DATABASE_URL, CLERK_*, OPENAI_API_KEY, STRIPE_*, REDIS_URL
+pnpm migrate
+pnpm dev                  # web + api + worker
 ```
 
-**Criar Análise**
+Frontend em `http://localhost:5173`, API em `http://localhost:3000`.
+
 ```bash
-POST /api/ai/analyze
-Content-Type: multipart/form-data
-
-Body: {
-  file: <image>
-}
-
-Response: {
-  id: "uuid",
-  status: "processing"
-}
-```
-
-**Obter Análise**
-```bash
-GET /api/ai/analyze/:id
-
-Response: {
-  id: "uuid",
-  status: "done",
-  recommendation: "BUY",
-  confidence: 75,
-  analysis: {
-    symbol: "BTCUSDT",
-    entry: 42200,
-    stopLoss: 41750,
-    ...
-  }
-}
-```
-
-**Listar Análises**
-```bash
-GET /api/ai/analyses
+pnpm test                 # testes do backend
+cd apps/frontend && ./node_modules/.bin/tsc --noEmit   # type-check do frontend
 ```
 
 ---
 
-## 🤖 SISTEMA DE IA v3.1
+## Deploy
 
-### Multi-Agent Architecture
+Frontend na **Vercel** e backend/worker no **Render** buildam sozinhos a partir do push na branch principal. Não há deploy manual.
 
-1. **CHART_INSPECTOR** - Validação de qualidade da imagem
-2. **STRUCTURE_ANALYST** - Análise de tendência e estrutura
-3. **PATTERN_RECOGNITION** - Identificação de padrões
-4. **PRICE_ACTION_ANALYST** - Análise pura de price action
-5. **RISK_MANAGER** - Cálculo de entry/stop/TP
-6. **CONFLUENCE_ENGINE** - Score de confluência (0-100)
-7. **DECISION_SYNTHESIZER** - Decisão final (BUY/SELL/HOLD)
+**Migrações:** `MIGRATIONS_DATABASE_URL` aponta para o session pooler IPv4 do Supabase (`aws-0-us-west-2.pooler.supabase.com:5432`) — `prisma migrate deploy` funciona a partir do Render. `RUN_MIGRATIONS_ON_START` fica em `false`; migrações são aplicadas de propósito, não no boot.
 
-### Thresholds Adaptativos
+**Anti-cold-start:** `.github/workflows/keep-warm.yml` pinga `/api/health/live` a cada 10 min.
+**Backup:** `.github/workflows/backup.yml` — `pg_dump` diário às 07:00 UTC, artifact privado por 30 dias (o plano free do Supabase não tem backup).
 
-| Timeframe | Threshold | Fatores Mínimos | Override |
-|-----------|-----------|-----------------|----------|
-| 1m-5m     | 50 pts    | 2               | ✅ Sim   |
-| 15m-1h    | 55 pts    | 2               | ✅ Sim   |
-| 4h-1d     | 60 pts    | 3               | ❌ Não   |
-| 1w+       | 65 pts    | 3               | ❌ Não   |
-
-### Momentum Override
-
-Para timeframes rápidos (1m-1h), se detectar **momentum forte**:
-- Threshold reduzido para 45-48 pontos
-- Stop loss apertado obrigatório
-- R/R mínimo 1:2
-
-**Critérios**:
-- 3+ candles grandes consecutivos
-- Aceleração visível
-- Breakout de nível relevante
-- Volume confirmando (se visível)
+Variáveis sensíveis vivem no env group do Render e no dashboard da Vercel. **Nunca commitar chave.**
 
 ---
 
-## 🧪 TESTES
+## Workflow (importante)
 
-```bash
-# Backend
-cd apps/backend
-npm run test
-npm run test:e2e
-
-# Frontend
-cd apps/frontend
-npm run test
-```
+- A máquina do dono não roda build local. Fluxo: **editar código → `git add/commit/push` → Vercel/Render buildam remoto**.
+- **Evitar dependências novas** (o lockfile não atualiza localmente).
+- Frontend é seguro de editar; backend é crítico (no sandbox só dá para checar sintaxe).
+- `.git/index.lock` travado → `rm -f .git/index.lock`.
 
 ---
 
-## 📊 MONITORAMENTO
+## Changelog resumido
 
-### Logs
-
-**Desenvolvimento**:
-```bash
-# Backend
-tail -f logs/backend.log
-
-# Worker
-tail -f logs/worker.log
-```
-
-**Produção**:
-```bash
-# Railway
-railway logs --service backend --tail
-railway logs --service worker --tail
-
-# Vercel
-vercel logs seu-app.vercel.app --follow
-```
-
-### Health Checks
-
-```bash
-# Backend health
-curl http://localhost:3000/api/health
-
-# Worker status (check logs)
-tail -f logs/worker.log | grep "started and listening"
-```
+- **24/07/2026** — Auditoria de claims. Removidos dados de análise fabricados da landing (fallback e esteira), o claim "2:1 validated minimum R/R", a confiança 80% e o badge "LIVE" dos mocks, os bullets de pricing inexistentes (priority/institutional) e os resíduos de "Ações BR" nos 6 idiomas.
+- **20-21/07/2026** — Migrações consertadas (session pooler), e-mails 100% funcionando, e-mail de recuperação, "What would change my mind" no WAIT, calendário econômico nos 6 idiomas, heatmap de consistência, backup diário, grounding turbinado (RSI + range + momentum).
+- **17-19/07/2026** — Grounding do quick e outcome tracking no ar.
+- **13/07/2026** — Prompt v7.3 (calibração de confiança) + UI de tier de convicção + primeiro backtest reprodutível.
 
 ---
 
-## 🤝 CONTRIBUINDO
-
-1. Fork o projeto
-2. Crie uma branch: `git checkout -b feature/nova-feature`
-3. Commit: `git commit -m 'Add nova feature'`
-4. Push: `git push origin feature/nova-feature`
-5. Abra um Pull Request
-
----
-
-## 📝 CHANGELOG
-
-### v3.1 (Novembro 2025) - OPTIMIZED
-- ✅ Thresholds adaptativos por timeframe
-- ✅ Momentum override para setups excepcionais
-- ✅ Sistema de exceções para breakouts
-- ✅ Justificativas adaptadas ao timeframe
-- ✅ Parser de JSON corrigido (remove markdown)
-
-### v3.0 (Novembro 2025) - BALANCED
-- ✅ Scoring reduzido (50+ pts para 5m)
-- ✅ Fatores mínimos reduzidos (2 vs 3)
-- ✅ Padrões >60% confiança válidos
-- ✅ Prompt mais proativo
-
-### v2.0 (Outubro 2025)
-- Sistema de planos implementado
-- Worker assíncrono com BullMQ
-- Clerk integration
-
-### v1.0 (Setembro 2025)
-- MVP inicial
-- Análise básica com GPT-4 Vision
-
----
-
-## 🐛 TROUBLESHOOTING
-
-### Worker não processa jobs
-```bash
-# Verificar Redis
-redis-cli ping
-
-# Checar logs
-tail -f logs/worker.log
-
-# Verificar OpenAI API Key
-curl https://api.openai.com/v1/models \
-  -H "Authorization: Bearer $OPENAI_API_KEY"
-```
-
-### Frontend não conecta ao backend
-```bash
-# Verificar CORS
-curl -H "Origin: http://localhost:5173" \
-  -v http://localhost:3000/api/health
-
-# Verificar variáveis de ambiente
-cat apps/frontend/.env
-```
-
-### Prisma não conecta ao banco
-```bash
-# Testar conexão
-cd apps/backend
-npx prisma db pull
-
-# Regenerar client
-npx prisma generate
-```
-
----
-
-## 📄 LICENÇA
-
-Este projeto é privado e proprietário.
-
----
-
-## 👨‍💻 AUTOR
-
-Desenvolvido com ❤️ para traders profissionais.
-
----
-
-## 📞 SUPORTE
-
-Para questões técnicas:
-1. Verifique [GUIA_DEPLOY_ATUALIZADO.md](./docs/GUIA_DEPLOY_ATUALIZADO.md)
-2. Consulte [DEPLOY_RAPIDO.md](./docs/DEPLOY_RAPIDO.md)
-3. Cheque os logs do sistema
-
----
-
-**🎯 TICKRIFY v3.1** - Análise de Trading com IA de Nível Institucional
-
-Última atualização: Novembro 2025
-# tickrify
+Repositório privado. Uso interno.

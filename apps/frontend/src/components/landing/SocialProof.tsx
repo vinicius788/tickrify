@@ -27,6 +27,10 @@ const AnimatedMetricValue = ({ value }: { value: string }) => {
         return `< ${current}s`;
       }
 
+      if (value.endsWith('%')) {
+        return `${current}%`;
+      }
+
       if (value.endsWith('s')) {
         return `${current}s`;
       }
@@ -95,7 +99,10 @@ const SocialProof = () => {
     { value: '16s', label: s.s1label, sublabel: s.s1sub },
     { value: '6+', label: s.s2label, sublabel: s.s2sub },
     { value: '3', label: s.s3label, sublabel: s.s3sub },
-    { value: '2:1', label: s.s4label, sublabel: s.s4sub },
+    // 73% = taxa de abstencao medida no backtest v2 (109 WAIT em 150 amostras
+    // cegas). Substituiu o antigo "2:1 R/R validado", que o proprio backtest
+    // desmente (R:R medio proposto no TP1 = 1.19; regra do motor = 1.5).
+    { value: '73%', label: s.s4label, sublabel: s.s4sub },
   ];
 
   return (

@@ -112,7 +112,8 @@ const HeroSection = () => {
         <aside className="signal-card-hero font-terminal p-5 md:p-6">
           <div className="flex items-center justify-between border-b border-[var(--border-subtle)] pb-4">
             <span className="text-xs uppercase tracking-[0.08em] text-[var(--text-secondary)]">XAUUSD M30</span>
-            <span className="live-dot inline-flex items-center gap-1 uppercase tracking-[0.08em]">● LIVE</span>
+            {/* Mock ilustrativo. NUNCA rotular como "LIVE" — nao e dado ao vivo. */}
+            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-card)] px-2 py-0.5 uppercase tracking-[0.08em] text-[var(--text-muted)]">{h.mockLabel}</span>
           </div>
 
           <div className="mt-5 flex items-center justify-between gap-4">
@@ -120,9 +121,16 @@ const HeroSection = () => {
               <span className="text-sm">▲</span>
               <span className="text-sm font-semibold tracking-[0.04em]">{t.analysis.buy}</span>
             </div>
-            <span className="text-xs text-[var(--text-secondary)]">
-              {t.analysis.confidence}: <strong className="text-[var(--text-primary)]">80%</strong>
-            </span>
+            <div className="flex items-center gap-2">
+              {/* Confianca 68 = dentro da banda real do motor (v7.3 calibra 62-78,
+                  >70 raro). Abaixo de 70 o produto mostra o chip "Read". */}
+              <span className="rounded-full border border-[var(--border-card)] px-2 py-0.5 text-[10px] uppercase tracking-[0.08em] text-[var(--text-secondary)]">
+                {t.analysis.tierRead}
+              </span>
+              <span className="text-xs text-[var(--text-secondary)]">
+                {t.analysis.confidence}: <strong className="text-[var(--text-primary)]">68%</strong>
+              </span>
+            </div>
           </div>
 
           <div className="mt-4 rounded-2xl border border-[var(--border-card)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-[11px] text-[var(--text-secondary)]">
@@ -143,7 +151,7 @@ const HeroSection = () => {
             <div className="signal-subcard tp">
               <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--signal-buy)]">TP1</p>
               <p className="signal-price mt-2 text-[var(--signal-buy)]">
-                $ 4,300.00 <small className="text-xs">+0.91%</small>
+                $ 4,295.50 <small className="text-xs">+0.80%</small>
               </p>
             </div>
             <div className="signal-subcard tp">
@@ -156,7 +164,7 @@ const HeroSection = () => {
 
           <div className="mt-4 rounded-2xl border border-[var(--border-card)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-[11px] text-[var(--text-secondary)]">
             <span>
-              R/R <strong className="text-[var(--text-primary)]">2.0:1</strong>
+              R/R <strong className="text-[var(--text-primary)]">1.6:1</strong>
             </span>
             <span className="mx-2 text-[var(--text-muted)]">|</span>
             <span>

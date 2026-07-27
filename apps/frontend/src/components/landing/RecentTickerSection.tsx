@@ -1,20 +1,15 @@
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { getRecommendationMeta } from '@/lib/trading-ui';
+import { useRecentPublicAnalyses } from '@/hooks/useRecentPublicAnalyses';
 
-type Signal = 'BUY' | 'SELL' | 'WAIT';
+type Signal = 'BUY' | 'SELL' | 'HOLD';
 
-// Global symbols only — the site targets an international audience.
-const recentAnalyses: Array<{ symbol: string; timeframe: string; signal: Signal; confidence: string }> = [
-  { symbol: 'BTCUSDT', timeframe: 'H4', signal: 'BUY', confidence: '87%' },
-  { symbol: 'EURUSD', timeframe: 'M15', signal: 'SELL', confidence: '74%' },
-  { symbol: 'XAUUSD', timeframe: 'M30', signal: 'BUY', confidence: '80%' },
-  { symbol: 'AAPL', timeframe: 'D1', signal: 'WAIT', confidence: '61%' },
-  { symbol: 'NVDA', timeframe: 'H1', signal: 'BUY', confidence: '79%' },
-  { symbol: 'GBPUSD', timeframe: 'M5', signal: 'SELL', confidence: '71%' },
-];
+/** Mínimo de análises reais para a esteira existir. Abaixo disso, não renderiza. */
+const MIN_ITEMS = 4;
 
 const SIGNAL_LABELS: Record<'pt' | 'en', Record<Signal, string>> = {
-  en: { BUY: 'BUY', SELL: 'SELL', WAIT: 'WAIT' },
-  pt: { BUY: 'COMPRA', SELL: 'VENDA', WAIT: 'AGUARDAR' },
+  en: { BUY: 'BUY', SELL: 'SELL', HOLD: 'WAIT' },
+  pt: { BUY: 'COMPRA', SELL: 'VENDA', HOLD: 'AGUARDAR' },
 };
 
 const signalClass = (signal: Signal) => {
@@ -25,8 +20,14 @@ const signalClass = (signal: Signal) => {
 
 const RecentTickerSection = () => {
   const { t, language } = useLanguage();
+  const { analyses, loading, failed } = useRecentPublicAnalyses();
   const labels = SIGNAL_LABELS[language === 'pt' ? 'pt' : 'en'];
-  const items = [...recentAnalyses, ...recentAnalyses];
+
+  // Dados reais ou nada. Nenhum símbolo/confiança hardcoded nesta vitrine.
+  if (loading || failed || analyses.length < MIN_ITEMS) return null;
+
+  // Duplicado só para o loop visual da esteira ser contínuo.
+  const items = [...analyses, ...analyses];
 
   return (
     <section className="border-y border-[var(--border-subtle)] bg-[rgba(5,5,8,0.9)] py-4 [backdrop-filter:blur(8px)]">
@@ -36,20 +37,23 @@ const RecentTickerSection = () => {
         </span>
         <div className="min-w-0 flex-1 overflow-hidden">
           <div className="ticker-track flex items-center gap-4 font-terminal text-xs">
-            {items.map((item, index) => (
-              <div
-                key={`${item.symbol}-${index}`}
-                className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[var(--border-card)] bg-[rgba(255,255,255,0.03)] px-3 py-1.5"
-              >
-                <span className="text-[var(--text-primary)]">{item.symbol}</span>
-                <span className="text-[var(--text-secondary)]">{item.timeframe}</span>
-                <span className={signalClass(item.signal)}>
-                  {item.signal === 'BUY' ? '▲' : item.signal === 'SELL' ? '▼' : '—'} {labels[item.signal]}
-                </span>
-                <span className="text-[var(--text-secondary)]">{item.confidence}</span>
-                <span className="text-[var(--text-muted)]">•</span>
-              </div>
-            ))}
+            {items.map((item, index) => {
+              const signal = getRecommendationMeta(item.recommendation).label as Signal;
+              return (
+                <div
+                  key={`${item.id}-${index}`}
+                  className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[var(--border-card)] bg-[rgba(255,255,255,0.03)] px-3 py-1.5"
+                >
+                  <span className="text-[var(--text-primary)]">{item.symbol}</span>
+                  {item.timeframe ? <span className="text-[var(--text-secondary)]">{item.timeframe}</span> : null}
+                  <span className={signalClass(signal)}>
+                    {signal === 'BUY' ? '▲' : signal === 'SELL' ? '▼' : '—'} {labels[signal]}
+                  </span>
+                  <span className="text-[var(--text-secondary)]">{Math.round(item.confidence)}%</span>
+                  <span className="text-[var(--text-muted)]">•</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

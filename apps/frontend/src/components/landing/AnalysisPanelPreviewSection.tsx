@@ -11,9 +11,14 @@ const AnalysisPanelPreviewSection = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
   const p = t.landing.preview;
-  const mock = language === 'pt'
-    ? { live: 'AO VIVO', signal: '▲ COMPRA 80%', confluence: 'Confluência' }
-    : { live: 'LIVE', signal: '▲ BUY 80%', confluence: 'Confluence' };
+  // Mock ILUSTRATIVO: numeros dentro da faixa que o motor v7.3 realmente
+  // produz (confianca 62-78, R/R exigido 1.5:1). Rotulado como exemplo — o
+  // antigo badge "LIVE"/"AO VIVO" era enganoso, nada aqui e dado ao vivo.
+  const mock = {
+    label: t.landing.hero.mockLabel,
+    signal: `▲ ${t.analysis.buy} 68%`,
+    confluence: language === 'pt' ? 'Confluência' : 'Confluence',
+  };
 
   return (
     <section ref={revealRef} id="preview-dashboard" className="landing-section section-platform reveal-on-scroll">
@@ -71,8 +76,8 @@ const AnalysisPanelPreviewSection = () => {
             </div>
 
             <div className="relative p-4 md:p-5">
-              <span className="absolute right-5 top-5 inline-flex items-center gap-1 rounded-full border border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] px-3 py-1 font-terminal text-[10px] uppercase tracking-widest text-[var(--signal-buy)]">
-                <span className="live-pulse h-1.5 w-1.5 rounded-full bg-[var(--signal-buy)]" /> {mock.live}
+              <span className="absolute right-5 top-5 inline-flex items-center gap-1 rounded-full border border-[var(--border-card)] bg-[rgba(255,255,255,0.03)] px-3 py-1 font-terminal text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+                {mock.label}
               </span>
 
               <div className="grid gap-4 lg:grid-cols-[200px_1fr]">
@@ -105,7 +110,12 @@ const AnalysisPanelPreviewSection = () => {
                   <div className="rounded-[20px] border border-[var(--border-card)] bg-[rgba(255,255,255,0.03)] p-4 text-xs">
                     <div className="mb-3 flex items-center justify-between font-terminal">
                       <span className="text-[var(--text-primary)]">XAUUSD • M30</span>
-                      <span className="tag-compra">{mock.signal}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="tag-compra">{mock.signal}</span>
+                        <span className="rounded-full border border-[var(--border-card)] px-2 py-0.5 text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+                          {t.analysis.tierRead}
+                        </span>
+                      </span>
                     </div>
                     <div className="grid grid-cols-2 gap-3 font-terminal text-[var(--text-secondary)]">
                       <span className="rounded-xl border border-[var(--border-card)] bg-[rgba(255,255,255,0.02)] px-3 py-2 text-[var(--text-primary)]">
@@ -115,14 +125,14 @@ const AnalysisPanelPreviewSection = () => {
                         Stop 4,240.00
                       </span>
                       <span className="rounded-xl border border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] px-3 py-2 text-[var(--signal-buy)]">
-                        TP1 4,300.00
+                        TP1 4,295.50
                       </span>
                       <span className="rounded-xl border border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] px-3 py-2 text-right text-[var(--signal-buy)]">
                         TP2 4,320.00
                       </span>
                     </div>
                     <div className="mt-3 border-t border-[var(--border-subtle)] pt-3 font-terminal text-[11px] text-[var(--text-secondary)]">
-                      R/R 2.0:1 • {mock.confluence} 4/8 • Bias BULLISH
+                      R/R 1.6:1 • {mock.confluence} 4/8 • Bias BULLISH
                     </div>
                   </div>
                 </div>
