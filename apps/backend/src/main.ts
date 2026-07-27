@@ -94,36 +94,6 @@ async function bootstrap() {
     console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🔗 Allowed origins: ${allowedOrigins.join(', ')}`);
 
-    // ── Outcome sweeper dentro da API (opcional, DESLIGADO por padrão) ──────
-    //
-    // Contexto (27/07/2026): o sweeper que alimenta a página /accuracy só é
-    // ligado por `worker/ai.worker.ts`, e o serviço `tickrify-worker` do
-    // render.yaml NUNCA foi criado no Render — o blueprint não foi aplicado.
-    // Resultado: o outcome tracking está parado e a /accuracy congelada.
-    //
-    // Como o caminho de análise do usuário é streaming (SSE) e não passa pela
-    // fila, um worker separado não é necessário — só o sweeper é. Rodá-lo aqui
-    // dentro custa zero (a API já fica de pé pelo keep-warm de 10 em 10 min).
-    //
-    // SEGURANÇA: só liga com ENABLE_SWEEPER_IN_API === 'true'. Sem a variável,
-    // este bloco não faz absolutamente nada e o comportamento é idêntico ao de
-    // antes. Para desligar: apague a variável no Render e reinicie. Não há
-    // rollback de código, migração nem serviço novo envolvido.
-    //
-    // ATENÇÃO: não ligue isto se algum dia o `tickrify-worker` voltar a
-    // existir — os dois rodando ao mesmo tempo fariam varredura duplicada.
-    if (String(process.env.ENABLE_SWEEPER_IN_API || '').trim() === 'true') {
-      try {
-        const { PrismaService } = await import('./modules/database/prisma.service');
-        const { startOutcomeSweeper } = await import('../worker/outcome.sweeper');
-        startOutcomeSweeper(app.get(PrismaService));
-        console.log('[Outcome] Sweeper iniciado DENTRO da API (ENABLE_SWEEPER_IN_API=true).');
-      } catch (err) {
-        // Nunca derruba o boot da API por causa do sweeper.
-        const message = err instanceof Error ? err.message : String(err);
-        console.warn(`[Outcome] Falha ao iniciar o sweeper na API: ${message}`);
-      }
-    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`❌ Failed to start application: ${message}`);
