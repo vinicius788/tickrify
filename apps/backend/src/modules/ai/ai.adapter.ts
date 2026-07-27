@@ -18,6 +18,7 @@ import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
 import { MarketService, normalizeToBinancePerp } from '../market/market.service';
 import { EconomicCalendarService } from '../calendar/calendar.service';
+import { buildSamplingParams } from './openai-params';
 
 // ── Guard anti-extração de prompt ──────────────────────────────────────────
 // Defende contra a tentativa de extrair o system prompt via input (ex.: alguém
@@ -603,10 +604,13 @@ export class AIAdapter {
     // withTimeout garante aborto em 60s via Promise.race
     const stream = await withTimeout(this.openai.chat.completions.create({
       model,
-      max_tokens: streamMaxTokens,
-      temperature: 0.1,
-      top_p: 0.1,
-      seed: 42,
+      // GPT-5+ exige max_completion_tokens e rejeita seed — ver openai-params.ts
+      ...buildSamplingParams(model, {
+        maxTokens: streamMaxTokens,
+        temperature: 0.1,
+        topP: 0.1,
+        seed: 42,
+      }),
       stream: true,
       messages: [
         { role: 'system', content: String(prompt || '').trim() },
@@ -1164,10 +1168,13 @@ export class AIAdapter {
       // Mais confiável do que { timeout } do SDK (que pode não funcionar em todos os ambientes)
       const response = await withTimeout(this.openai.chat.completions.create({
         model,
-        max_tokens: maxTokens,
-        temperature: 0.1,
-        top_p: 0.1,
-        seed: 42,
+        // GPT-5+ exige max_completion_tokens e rejeita seed — ver openai-params.ts
+        ...buildSamplingParams(model, {
+          maxTokens,
+          temperature: 0.1,
+          topP: 0.1,
+          seed: 42,
+        }),
         response_format: {
           type: 'json_schema',
           json_schema: {
