@@ -67,6 +67,12 @@ model Analysis {
   outcome        String?
   outcomeAt      DateTime?
   outcomeDetail  Json?
+  // Veredicto MANUAL do trader (My Trades): tp1 | tp2 | stop | breakeven | open.
+  // Coluna separada de propósito (27/07/2026): antes os dois moravam em
+  // `outcome` e se destruíam — o veredicto manual bloqueava o sweeper (que
+  // busca por outcome=null) e o sweeper apagava o veredicto do usuário.
+  // `outcome` = o que o mercado fez (medido). `userVerdict` = o que o trader diz.
+  userVerdict    String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)

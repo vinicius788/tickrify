@@ -90,6 +90,12 @@ export class AiService implements OnModuleInit {
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "isFavorite" BOOLEAN NOT NULL DEFAULT false',
       );
+      // Veredicto manual do trader, separado do outcome automático do sweeper.
+      // Existe também como migração Prisma; isto aqui é a rede de segurança
+      // (mesmo padrão das colunas acima) para o caso de a migração não rodar.
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "userVerdict" TEXT',
+      );
       this.outcomeColumnsReady = true;
       this.logger.log('[outcome] Colunas de resultado prontas.');
     } catch (err) {
@@ -113,7 +119,10 @@ export class AiService implements OnModuleInit {
     try {
       const rows = await this.prisma.$queryRaw<
         Array<{ id: string; outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean | null }>
-      >`SELECT "id", "outcome", "pnlPercent", "pnlAmount", "isFavorite" FROM "tickrify"."Analysis" WHERE "userId" = ${userId}`;
+      >`SELECT "id", "userVerdict" AS "outcome", "pnlPercent", "pnlAmount", "isFavorite" FROM "tickrify"."Analysis" WHERE "userId" = ${userId}`;
+      // O campo `outcome` da API é, e sempre foi, o veredicto do TRADER — agora
+      // lido da coluna certa. O outcome automático do sweeper não é exposto aqui
+      // (ele aparece agregado e anonimizado em GET /api/ai/accuracy).
       for (const r of rows) {
         map.set(r.id, {
           outcome: r.outcome ?? null,
@@ -138,7 +147,7 @@ export class AiService implements OnModuleInit {
     try {
       const rows = await this.prisma.$queryRaw<
         Array<{ outcome: string | null; pnlPercent: number | null; pnlAmount: number | null }>
-      >`SELECT "outcome", "pnlPercent", "pnlAmount" FROM "tickrify"."Analysis" WHERE "id" = ${id} LIMIT 1`;
+      >`SELECT "userVerdict" AS "outcome", "pnlPercent", "pnlAmount" FROM "tickrify"."Analysis" WHERE "id" = ${id} LIMIT 1`;
       const r = rows[0];
       return r
         ? { outcome: r.outcome ?? null, pnlPercent: r.pnlPercent ?? null, pnlAmount: r.pnlAmount ?? null }
@@ -674,7 +683,7 @@ export class AiService implements OnModuleInit {
 
     await this.prisma.$executeRaw`
       UPDATE "tickrify"."Analysis"
-      SET "outcome" = ${outcome}, "pnlPercent" = ${pnlPercent}, "pnlAmount" = ${pnlAmount}, "closedAt" = ${closedAt}
+      SET "userVerdict" = ${outcome}, "pnlPercent" = ${pnlPercent}, "pnlAmount" = ${pnlAmount}, "closedAt" = ${closedAt}
       WHERE "id" = ${id} AND "userId" = ${userId}
     `;
 
