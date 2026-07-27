@@ -15,15 +15,22 @@ import { warmupPaymentsApi } from '@/lib/api';
 // Starter a $0,267/análise era mais caro que o pacote avulso ($0,20), então
 // assinar era o pior negócio da própria loja.
 //
-// Agora: um plano só a $19/mês com 200 ticks = $0,095 por análise rápida,
-// metade do pacote avulso mais barato. A assinatura finalmente é o melhor
-// negócio, e a página de preço vira uma decisão binária (converte melhor
-// com tráfego baixo).
+// Agora: um plano só a $29/mês com 200 ticks = $0,145 por análise rápida,
+// ainda abaixo do pacote avulso mais barato ($0,173). A assinatura continua
+// sendo o melhor negócio da loja, e a página de preço vira uma decisão
+// binária (converte melhor com tráfego baixo).
+//
+// Por que $29 e não $19 (decisão de 27/07/2026): margem bruta é ~88% nos dois
+// casos, então preço aqui NÃO é decisão de custo — é de sinalização. Num nicho
+// onde ceticismo sobre golpe é a objeção nº 1, o produto mais barato da
+// prateleira lê como amador. E a assimetria decide: descer de $29 é fácil
+// (o cupom EARLY35 já existe), subir de $19 é constrangedor. Com 0 clientes,
+// escolher o preço alto custa zero.
 //
 // O preço no Stripe continua sendo o objeto `Starter-usd`
-// (price_1TRvEJB1hl0IoocUvbCyxkt5), cujo valor foi editado de $12 para $19 —
-// o ID não mudou, então o backend não precisou de novo price ID.
-const PLAN_PRICE: Record<Currency, string> = { brl: '$19', usd: '$19', eur: '$19' };
+// (price_1TRvEJB1hl0IoocUvbCyxkt5), editado $12 → $19 → $29 — o ID nunca
+// mudou, então o backend não precisa de novo price ID.
+const PLAN_PRICE: Record<Currency, string> = { brl: '$29', usd: '$29', eur: '$29' };
 const PLAN_TICKS = 200;
 
 const PricingSection = () => {

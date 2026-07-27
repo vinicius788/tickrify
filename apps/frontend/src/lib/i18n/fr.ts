@@ -417,7 +417,7 @@ export default {
       analysesQuick: 'analyses rapides',
       starterBadge: 'Tout inclus', proBadge: 'Le plus choisi', eliteBadge: 'Gros volume',
       starterCta: 'Commencer', proCta: 'Choisir Pro', eliteCta: 'Choisir Elite',
-      fS1: '200 Ticks mensuels (~200 rapides ou 66 deep)', fS2: 'Analyse rapide + deep, historique complet', fS3: 'Ancrage sur bougies en direct + calendrier économique', fS4: 'Moins de 0,10 $ par analyse rapide',
+      fS1: '200 Ticks mensuels (~200 rapides ou 66 deep)', fS2: 'Analyse rapide + deep, historique complet', fS3: 'Ancrage sur bougies en direct + calendrier économique', fS4: '0,145 $ par analyse rapide — moins cher qu\'à l\'unité',
       fP1: '150 Ticks mensuels (~150 rapides ou 50 deep)', fP2: 'Analyse rapide + deep', fP3: 'Historique complet', fP4: '0,19 $ par analyse rapide', fP5: 'Tout le Starter, 3,3× le volume',
       fE1: '400 Ticks mensuels (~400 rapides ou 133 deep)', fE2: 'Analyse rapide + deep', fE3: 'Historique complet', fE4: '0,15 $ par analyse rapide — le plus bas', fE5: 'Tout le Pro, 2,7× le volume',
       payPerUse: 'Vous préférez payer à l\'usage ?',

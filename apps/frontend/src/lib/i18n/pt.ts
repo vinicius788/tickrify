@@ -434,7 +434,7 @@ export default {
       analysesQuick: 'análises rápidas',
       starterBadge: 'Tudo incluído', proBadge: 'Mais escolhido', eliteBadge: 'Alto volume',
       starterCta: 'Começar', proCta: 'Assinar Pro', eliteCta: 'Assinar Elite',
-      fS1: '200 Ticks mensais (~200 rápidas ou 66 deep)', fS2: 'Análise rápida + deep, histórico completo', fS3: 'Grounding com candles ao vivo + calendário econômico', fS4: 'Menos de US$ 0,10 por análise rápida',
+      fS1: '200 Ticks mensais (~200 rápidas ou 66 deep)', fS2: 'Análise rápida + deep, histórico completo', fS3: 'Grounding com candles ao vivo + calendário econômico', fS4: 'US$ 0,145 por análise rápida — mais barato que Ticks avulsos',
       fP1: '150 Ticks mensais (~150 rápidas ou 50 deep)', fP2: 'Análise rápida + deep', fP3: 'Histórico completo', fP4: 'US$ 0,19 por análise rápida', fP5: 'Tudo do Starter, 3,3× o volume',
       fE1: '400 Ticks mensais (~400 rápidas ou 133 deep)', fE2: 'Análise rápida + deep', fE3: 'Histórico completo', fE4: 'US$ 0,15 por análise rápida — o menor', fE5: 'Tudo do Pro, 2,7× o volume',
       payPerUse: 'Prefere pagar por uso?',

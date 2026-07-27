@@ -417,7 +417,7 @@ export default {
       analysesQuick: 'quick analyses',
       starterBadge: 'Everything included', proBadge: 'Most popular', eliteBadge: 'High volume',
       starterCta: 'Get started', proCta: 'Get Pro', eliteCta: 'Get Elite',
-      fS1: '200 monthly Ticks (~200 quick or 66 deep)', fS2: 'Quick + deep analysis, full history', fS3: 'Live candle grounding + economic calendar', fS4: 'Under $0.10 per quick analysis',
+      fS1: '200 monthly Ticks (~200 quick or 66 deep)', fS2: 'Quick + deep analysis, full history', fS3: 'Live candle grounding + economic calendar', fS4: '$0.145 per quick analysis — beats one-off Ticks',
       fP1: '150 monthly Ticks (~150 quick or 50 deep)', fP2: 'Quick + deep analysis', fP3: 'Full history', fP4: '$0.19 per quick analysis', fP5: 'Everything in Starter, 3.3× the volume',
       fE1: '400 monthly Ticks (~400 quick or 133 deep)', fE2: 'Quick + deep analysis', fE3: 'Full history', fE4: '$0.15 per quick analysis — the lowest', fE5: 'Everything in Pro, 2.7× the volume',
       payPerUse: 'Prefer pay-as-you-go?',

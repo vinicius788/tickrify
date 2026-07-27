@@ -25,6 +25,9 @@ Tickrify — SaaS freemium de **análise de gráficos com IA** para traders. O u
 - **Nunca manusear chaves/segredos** (o usuário cola direto no Render/serviço).
 
 ## Modelo de monetização
+- **PLANO ÚNICO desde 27/07/2026: US$ 19/mês (ou US$ 190/ano) com 200 ticks mensais.** Substituiu os 3 tiers (Starter $12 / Pro $29 / Elite $59), que diferiam APENAS em volume — mesma fila, mesmo modelo, mesmo suporte. O Starter a $0,267/análise era mais caro que o pacote avulso ($0,20): assinar era o pior negócio da loja. Agora $0,095/análise, metade do avulso mais barato.
+  - No Stripe o valor foi **editado no objeto existente** (`Starter-usd` = `price_1TRvEJB1hl0IoocUvbCyxkt5`), então o price ID NÃO mudou. `pro` e `elite` seguem em `stripe.config.ts` como LEGADO — não apagar, assinaturas antigas resolvem por eles.
+  - Checkout sempre em **USD** (o frontend força). BRL/EUR do Starter ficaram nos valores antigos e estão dessincronizados — irrelevante hoje, cuidado se ligar multimoeda.
 - **"Ticks"** = créditos internos (nome pra casar com a marca). Análise rápida = 1 tick, profunda = 3 ticks, PDF = 2 ticks.
 - Free tier: 3 análises (só rápida — a profunda é travada pra assinante via `allowHigherTimeframes`).
 - Na UI, falar em **"analyses"** (manter "ticks" só como unidade de billing, deixando claro).
@@ -43,6 +46,7 @@ Tickrify — SaaS freemium de **análise de gráficos com IA** para traders. O u
 - **Pipeline reprodutível em `scripts/backtest/`** (README lá dentro): dados Binance (BTC/ETH 30m+4h, 12m) + Twelve Data (XAU/EUR; 30m só 60d), amostragem cega seed 20260713, render matplotlib estilo TradingView, runner com motor real (`apps/backend/scripts/backtest-runner.ts`, flags `--limit/--every/--ground/--out`), avaliação com Wilson/calibração/expectancy. Custo ~US$1/100 análises; API roda no terminal do usuário.
 - **Resultados v1 (prompt v7.2, 300 análises):** win rate 45,3% (IC 35–56), expectancy +0,02R, WAIT 68%, confiança "75" fixa (sem informação). Relatórios locais (gitignored): `Tickrify_Backtest_Report*.md`.
 - **v2 (v7.3 + grounding, 150 pareadas):** win rate bruto não melhorou (~37%), mas a confiança passou a DISCRIMINAR: conf 60–70 → 25% real, conf ≥70 → 56% real. Daí o limiar 70 na UI.
+- **⚠️ PRODUÇÃO NÃO REPRODUZ ESSA SEPARAÇÃO (medido 27/07/2026, n=103 outcomes conclusivos):** conf 60–69 → 36,8% (IC 23,4–52,7) vs conf ≥70 → 38,5% (IC 27,6–50,6). Os intervalos se sobrepõem quase inteiros — no tráfego real o score de confiança **não prevê nada** até agora. A página `/accuracy` publica isso explicitamente em vez de esconder. Se a separação não aparecer com amostra maior, quem muda é o score, não a página.
 - **Regras:** nenhum número vai pra marketing sem decisão explícita + metodologia + disclaimer. Posicionamento validado: "second opinion, not signals".
 - **Backlog barato:** testar grounding isolado (~US$0,75), testar deep/gpt-4o vs mini (~US$4), ampliar amostra XAU/EUR 4h.
 
@@ -66,7 +70,7 @@ Tickrify — SaaS freemium de **análise de gráficos com IA** para traders. O u
 - **Post 0 do relançamento de conteúdo** (só o dono grava) — kit pronto em `marketing-sprint/` e docs de estratégia. Estratégia nova = "The AI With Receipts" (SEG call / QUA your-chart / SEX receipt, 3x/semana).
 - **Render pago (~US$7):** decisão do dono — NÃO assinar até o Post 0 ir ao ar (cold start só machuca com tráfego). Gatilho: dia do 1º short OU 1º assinante.
 - **Confirmar `[QuickGrounding]` no log do worker** após uma análise real (verificação pendente do dono).
-- **Conta Stripe ainda chamada "WayPay"** — renomear pra Tickrify (aparece em recibos).
+- ~~Conta Stripe chamada "WayPay"~~ — **resolvido**: a conta já se chama `tickrify` (verificado no dashboard em 27/07). Falta só conferir o *statement descriptor* (nome na fatura do cartão), que é campo separado.
 - **v7.4 (playbooks)** continua fora da árvore (backup em `tmp/v74-playbooks-backup/`); medir ~US$1,50 antes de subir.
 
 ## Distribuição / conteúdo
@@ -80,3 +84,50 @@ Tickrify — SaaS freemium de **análise de gráficos com IA** para traders. O u
 - `Tickrify_Site_Copy_EN.md` (copy do site em inglês, com tradução)
 - `P4_copy_conversao.md` (copy das telas de conversão)
 - `Tickrify_Demo_16x9_HD.mp4`, `Tickrify_Demo_9x16_HD.mp4`, `Tickrify_Demo_9x16_v2.mp4` (vídeos de demo)
+
+## Sprint 27/07/2026 — auditoria de claims (Fases 0, 1, 2, 5 do plano de correção)
+
+**Princípio que governou tudo:** toda afirmação da vitrine precisa ser verdadeira ou verificável, porque a página `/accuracy` depende de a casa estar limpa. Commits: `1c209fa`, `ab4d36b`, `15a7f78`, `82373a1`.
+
+### Fase 0 — dados fabricados removidos
+- `RecentAnalysesSection`: array `FALLBACK` com 6 análises inventadas (preços defasados: BTC 104.500, XAU 3.310) **apagado**. Loading → skeleton; erro de fetch ou <3 análises reais → `return null`.
+- `RecentTickerSection`: esteira 100% hardcoded (com uma confiança de 87%, impossível no motor) trocada por dados reais.
+- Hook novo `useRecentPublicAnalyses` (TanStack Query, `staleTime` 60s) compartilhado pelas duas seções → uma requisição por carga.
+- `GET /api/ai/public-analyses` ganhou `isDemo: false` — análises da demo anônima estavam vazando pra vitrine.
+- **Regra permanente:** sem dado real, a seção não aparece. Nunca inventar para preencher.
+
+### Fase 1 — claims falsos corrigidos (6 idiomas)
+- Card **"2:1 validated minimum R/R · on every signal generated"** → morto. A regra do motor é 1.5, o piso do normalizador é 1.2, o R:R médio medido foi 1.19, e o guard está morto no adapter. Virou a taxa de abstenção.
+- Hero e preview: confiança **80% → 68%** + chip "Read", R/R **2.0:1 → 1.6:1** (números que fecham a conta), badge **`● LIVE` → "Example"**.
+- Features: `f5 "Real-time alerts"` e `f6 "Continuous education"` não existiam em lugar nenhum do código → trocados por **live candle grounding** e **economic calendar guard**, que estão no ar e não eram vendidos. Zero cards "Soon".
+- Pricing: removidos `Priority responses`, `Priority execution`, `Priority support` (a fila BullMQ não tem campo `priority`) e `Institutional-grade AI` (o modelo é escolhido por tipo de análise, nunca por plano). A palavra "institucional" saiu da vitrine inteira (fica só no `orderBlockTip`, terminologia ICT correta).
+- "Ações BR" saiu dos 5 idiomas; bloco `cta` alinhado ao inglês; `landing.how.*` reescrito ("From chart to a second opinion", "Confirm or kill your read") e FAQ `a2` reescrito para admitir o erro.
+- `README.md` reescrito (estava em nov/2025, anunciava "Nível Institucional", 7 agentes que não existem no prompt, e deploy no Railway).
+
+### Fase 3.1 — a hipótese do buraco de ativação foi DERRUBADA
+Medido no Supabase em 27/07:
+- Free users que esgotaram as 3 **sem ver nenhum sinal: 0** (de 4 que esgotaram, de 4 que já analisaram).
+- **Abstenção real em produção: 39,4%** (153 WAIT de 388 análises) — não os 72,7% do backtest. P(3 WAITs) cai de 38% para ~6%.
+- Motivo provável: o backtest sorteia gráficos às cegas; usuário real sobe print de gráfico em que já viu algo.
+- **Conclusão: não mexer no free tier nem devolver tick no WAIT.** O gargalo é que só 4 pessoas na vida completaram uma análise grátis. É tráfego, não ativação.
+
+### Fase 5 — página pública `/accuracy` NO AR
+- `accuracy.util.ts` (novo): Wilson 95%, bandas de confiança, lista explícita de outcomes automáticos.
+- `GET /api/ai/accuracy` no `ai.controller`, cache em memória de 1h (Render free), sem dep nova.
+- `AccuracyPage.tsx` em `/accuracy`, linkada no rodapé (i18n nos 6) e no FAQ. **Texto só em inglês** (regra: texto público é em inglês).
+- Números publicados hoje: acerto **37,9%** (IC 29,1–47,5, n=103), abstenção 39,4%.
+- Diz em voz alta o que ninguém diz: sem custos de operação, amostra pequena e enviesada, taxa de acerto ≠ lucratividade, e que a calibração não se reproduziu em produção.
+
+### ⚠️ Dois bugs de dados descobertos (não corrigidos ainda)
+1. **`Analysis.outcome` mistura duas fontes:** o sweeper grava MAIÚSCULAS (`WIN`/`LOSS`/`ABSTAIN`/...) e o veredicto manual do usuário no My Trades grava minúsculas (`tp1`/`tp2`/`stop`/`open`). São ~8 registros hoje. O endpoint `/accuracy` já filtra, mas **qualquer query nova precisa filtrar também** — ou separar em coluna própria.
+2. **O card "16s" da landing continua sem verificação e NÃO dá pra medir pelo banco:** a mediana de `updatedAt - createdAt` deu ~35 dias, porque o sweeper e o `setOutcome` reescrevem `updatedAt` muito depois. Precisa de log do worker ou de um campo dedicado de duração.
+
+### Outros achados
+- **As 2 "assinaturas ativas" no Stripe são do próprio dono** (`vm3441896@gmail.com`) — uma ativa, uma cancelando em 06/08. O MRR de R$ 297 no painel é a assinatura Elite de teste dele. **Não há cliente pagante real.**
+- **Em 10 dias de grounding no ar, nenhuma análise nova chegou a resolver** (o split antes/depois de 17/07 tem n=0 do lado "depois"). Prova concreta de volume ≈ 0.
+- O Prisma Client local está desatualizado (não conhece `outcome`) → `tsc` do backend acusa 7 erros que **não existem no build do Render** (que roda `prisma generate`). Rodar `npx prisma generate` em `apps/backend` para calar localmente.
+
+### O que ficou de fora de propósito
+- **Teto de rollover dos ticks** (Fase 2b): hoje acumulam pra sempre e a vitrine promete "Ticks never expire" — o que ainda é **verdade**, então não é claim falso. Mexer em `TicksService` é backend crítico; fazer em commit separado.
+- **Fase 4 (teste de modelo)** inteira: o motor roda `gpt-4o-mini`/`gpt-4o`, família de ~2 anos atrás. O harness já aceita `AI_MODEL` por env, o teste custa ~US$3-8, e responde se o teto é o prompt ou o modelo. **A chave da OpenAI é do dono — ele roda o comando.**
+- Tradução da `/accuracy` para os outros 5 idiomas.
