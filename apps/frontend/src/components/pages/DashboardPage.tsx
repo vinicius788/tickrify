@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical, Clock, Wifi, WifiOff, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap } from "lucide-react";
+import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical, Clock, Wifi, WifiOff, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap, Upload } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import NewAnalysis from "../dashboard/NewAnalysis";
+import EmptyState from '@/components/dashboard/EmptyState';
 import ActivityHeatmap from "../dashboard/ActivityHeatmap";
 import LiveTape from "../dashboard/LiveTape";
 import MyTrades from "../dashboard/MyTrades";
@@ -547,7 +548,21 @@ const DashboardPage = () => {
           </div>
         </div>
 
-        {/* KPIs — painel único dividido */}
+        {/* Usuário sem nenhuma análise: KPI zerado não ensina nada e ainda passa
+            a impressão de produto vazio. Troca por um estado que explica o que
+            a tela vira e oferece UMA ação. Também é aqui que a promessa do
+            "valor no minuto 1" se repete dentro do painel (Onda 1.2). */}
+        {!isDemo && dashboardKpis.total === 0 && !loadingAnalyses ? (
+          <div className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)]">
+            <EmptyState
+              icon={Upload}
+              title={t.empty.homeTitle}
+              description={t.empty.homeDesc}
+              ctaLabel={t.empty.homeCta}
+              onCta={resetNewAnalysisView}
+            />
+          </div>
+        ) : (
         <div className="grid grid-cols-2 divide-x divide-y divide-[var(--border-subtle)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] md:grid-cols-4 md:divide-y-0">
           {kpis.map((k) => (
             <div key={k.label} className="p-5">
@@ -562,6 +577,7 @@ const DashboardPage = () => {
             </div>
           ))}
         </div>
+        )}
 
         {/* Recent + Insight */}
         <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr]">
@@ -634,9 +650,9 @@ const DashboardPage = () => {
           </div>
         );
       case 'my-trades':
-        return <MyTrades />;
+        return <MyTrades onStartAnalysis={resetNewAnalysisView} />;
       case 'watchlist':
-        return <Watchlist />;
+        return <Watchlist onStartAnalysis={resetNewAnalysisView} />;
       case 'analysis-result': {
         // Gancho de retorno: depois do resultado, dar um próximo passo claro
         // (analisar outro / quantas grátis restam / assinar) — sem beco sem saída.

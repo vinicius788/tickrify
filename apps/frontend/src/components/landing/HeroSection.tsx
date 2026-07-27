@@ -104,7 +104,14 @@ const HeroSection = () => {
             </Button>
           </div>
 
-          <p className="mt-6 font-terminal text-xs uppercase tracking-[0.08em] text-[var(--text-secondary)]">
+          {/* Valor no minuto 1: o diferencial real contra os concorrentes de
+              diário de trading, cuja IA só funciona depois de 5-10 trades
+              registrados à mão. Aqui a primeira leitura sai no primeiro upload. */}
+          <p className="mt-6 max-w-[520px] text-sm leading-relaxed text-[var(--text-primary)]">
+            {h.valueNow}
+          </p>
+
+          <p className="mt-3 font-terminal text-xs uppercase tracking-[0.08em] text-[var(--text-secondary)]">
             {h.freeNote}
           </p>
         </div>

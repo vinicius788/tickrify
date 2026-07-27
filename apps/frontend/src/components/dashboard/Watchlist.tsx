@@ -7,6 +7,7 @@ import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } fr
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useAPIClient, type AIAnalysisResponse } from "@/lib/api";
+import EmptyState from "@/components/dashboard/EmptyState";
 
 // Dados fake APENAS para modo demo
 const demoOpportunities = [
@@ -14,7 +15,13 @@ const demoOpportunities = [
   { symbol: "AAPL", timeframe: "4H", confidence: "65%", recommendation: "AGUARDAR", bias: "NEUTRAL" },
 ];
 
-const Watchlist = () => {
+// onStartAnalysis: o DashboardPage passa o resetNewAnalysisView. Sem rota nova —
+// a navegação do painel é por `activeView`, não por router.
+interface WatchlistProps {
+  onStartAnalysis?: () => void;
+}
+
+const Watchlist = ({ onStartAnalysis }: WatchlistProps) => {
   const { user } = useUser();
   const isDemo = !user;
   const { t } = useLanguage();
@@ -113,10 +120,13 @@ const Watchlist = () => {
             {loading ? (
               <p className="py-8 text-center text-sm text-muted-foreground">{t.trades.loadingAnalyses}</p>
             ) : favorites.length === 0 ? (
-              <div className="py-12 text-center space-y-2">
-                <p className="text-muted-foreground">{w.empty}</p>
-                <p className="text-sm text-muted-foreground">{w.favHint}</p>
-              </div>
+              <EmptyState
+                icon={Star}
+                title={t.empty.watchTitle}
+                description={t.empty.watchDesc}
+                ctaLabel={t.empty.watchCta}
+                onCta={() => onStartAnalysis?.()}
+              />
             ) : (
               <div className="divide-y divide-[var(--border-subtle)]">
                 {favorites.map((a) => {

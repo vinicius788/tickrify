@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useUser } from '@clerk/clerk-react';
-import { Filter, Star } from 'lucide-react';
+import { Filter, Star, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { confidenceToPercent, getRecommendationMeta } from '@/lib/trading-ui';
@@ -9,6 +9,7 @@ import { asRecord } from '@/lib/utils';
 import { useAPIClient } from '@/lib/api';
 import type { AIAnalysisResponse } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import EmptyState from '@/components/dashboard/EmptyState';
 
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
@@ -88,7 +89,13 @@ const DEMO: AIAnalysisResponse[] = [
 ];
 
 // ── Component ────────────────────────────────────────────────────────────────
-const MyTrades = () => {
+// onStartAnalysis: o DashboardPage passa o resetNewAnalysisView (mesma navegação
+// por `activeView` usada no resto do painel — sem rota nova).
+interface MyTradesProps {
+  onStartAnalysis?: () => void;
+}
+
+const MyTrades = ({ onStartAnalysis }: MyTradesProps) => {
   const { user } = useUser();
   const isDemo = !user;
   // Mesmo limite do Dashboard (40) → as três telas compartilham UM único cache
@@ -269,9 +276,17 @@ const MyTrades = () => {
 
         {loading ? (
           <p className="py-12 text-center text-sm text-[var(--text-secondary)]">{tr.loadingAnalyses}</p>
+        ) : rows.length === 0 ? (
+          <EmptyState
+            icon={TrendingUp}
+            title={t.empty.tradesTitle}
+            description={t.empty.tradesDesc}
+            ctaLabel={t.empty.tradesCta}
+            onCta={() => onStartAnalysis?.()}
+          />
         ) : filtered.length === 0 ? (
           <p className="py-12 text-center text-sm text-[var(--text-secondary)]">
-            {rows.length === 0 ? tr.emptyNew : tr.emptyFilter}
+            {tr.emptyFilter}
           </p>
         ) : (
           <div className="divide-y divide-[var(--border-subtle)]">
