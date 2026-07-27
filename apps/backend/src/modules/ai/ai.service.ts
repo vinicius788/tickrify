@@ -96,6 +96,20 @@ export class AiService implements OnModuleInit {
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "userVerdict" TEXT',
       );
+      // Backfill idempotente: move para a coluna certa os veredictos manuais
+      // que ficaram presos em "outcome" antes da separação (27/07/2026).
+      // Só toca em valores MINÚSCULOS — os do sweeper são MAIÚSCULOS. Depois da
+      // primeira execução não há mais linhas elegíveis e isto vira no-op.
+      // Efeito desejado: essas análises voltam a ter outcome NULL e o sweeper
+      // as reavalia, recuperando pontos perdidos da amostra da /accuracy.
+      const moved = await this.prisma.$executeRawUnsafe(
+        `UPDATE "tickrify"."Analysis"
+         SET "userVerdict" = "outcome", "outcome" = NULL
+         WHERE "outcome" IN ('tp1', 'tp2', 'stop', 'breakeven', 'open')`,
+      );
+      if (Number(moved) > 0) {
+        this.logger.log(`[outcome] Backfill: ${moved} veredicto(s) manual(is) movido(s) para userVerdict.`);
+      }
       this.outcomeColumnsReady = true;
       this.logger.log('[outcome] Colunas de resultado prontas.');
     } catch (err) {
