@@ -199,8 +199,15 @@ const AccuracyPage = () => {
                 </table>
               </div>
               <p className="mt-3">
-                The product uses 70 as the threshold: below it a call is labelled "Read" (a market reading), at or
-                above it, "Signal". That threshold was not chosen by taste — it came out of this measurement.
+                The product uses 70 as its threshold: below it a call is labelled "Read" (a market reading), at or
+                above it, "Signal". That split came out of our blind backtest, where the two bands separated
+                sharply — 25% below versus 56% above.
+              </p>
+              <p className="mt-3">
+                <span className="text-[var(--text-primary)]">In production so far, they have not separated.</span>{' '}
+                The confidence intervals in the table above overlap almost entirely, which means we cannot yet
+                claim the score predicts anything on live traffic. We are publishing that instead of hiding it. If
+                the gap does not open as the sample grows, the score is what changes — not this page.
               </p>
             </Section>
 
@@ -210,10 +217,23 @@ const AccuracyPage = () => {
                 momentum pulled from live exchange feeds — before it reads your screenshot. We split the record on
                 that date so you can judge the change instead of taking our word for it.
               </p>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <Stat interval={data.byGrounding.before} label="Before grounding" />
-                <Stat interval={data.byGrounding.after} label="After grounding" />
-              </div>
+              {data.byGrounding.before.n > 0 && data.byGrounding.after.n > 0 ? (
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <Stat interval={data.byGrounding.before} label="Before grounding" />
+                  <Stat interval={data.byGrounding.after} label="After grounding" />
+                </div>
+              ) : (
+                <div className="mt-4 rounded-xl border border-[var(--border-card)] bg-[rgba(255,255,255,0.02)] p-5">
+                  <p className="font-terminal text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
+                    Comparison not available yet
+                  </p>
+                  <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                    {data.byGrounding.before.n} resolved before the change, {data.byGrounding.after.n} after. A
+                    trade needs 48 hours to resolve, and at our current volume that side of the split is still
+                    empty. We would rather leave a gap here than compute a comparison out of a handful of trades.
+                  </p>
+                </div>
+              )}
             </Section>
 
             <Section title="How every outcome resolved">
