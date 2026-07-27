@@ -5,8 +5,18 @@ export type BillingCycle = 'monthly' | 'yearly';
 export type Currency = 'brl' | 'usd' | 'eur';
 
 // Monthly ticks per plan. Yearly invoices fire once, so we credit 12× upfront.
+//
+// PLANO ÚNICO (27/07/2026, Fase 2 da auditoria): a vitrine passou a vender UM
+// plano só — a chave `starter`, cujo preço no Stripe foi editado de $12 para
+// $19/mês (o price ID NÃO mudou, o Stripe manteve o mesmo objeto). Os ticks
+// subiram de 45 para 200 → $0,095 por análise rápida, metade do pacote avulso
+// mais barato ($0,173). Antes disso assinar era pior negócio que comprar solto.
+//
+// `pro` e `elite` continuam aqui de propósito: são LEGADO. Não aparecem mais na
+// vitrine, mas assinaturas antigas ainda resolvem por estes price IDs e
+// precisam continuar creditando os ticks certos. Não apagar.
 export const PLAN_TICKS_PER_MONTH: Record<PlanType, number> = {
-  starter: 45,
+  starter: 200,
   pro: 150,
   elite: 400,
 };

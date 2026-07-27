@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
-import { Check, Zap, Star, Trophy } from "lucide-react";
+import { Check, Star } from "lucide-react";
 import { createCheckoutSession, type BillingCycle, type Currency, type PlanType } from "../../lib/stripe";
 import { warmupPaymentsApi } from "../../lib/api";
 import { track } from "../../lib/analytics";
@@ -25,11 +25,16 @@ type PlanCopy = { badge: string; ticks: string; analyses: string; features: stri
 const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
   en: {
     starter: {
-      badge: "Entry",
-      ticks: "45 ticks/mo",
+      badge: "Everything included",
+      ticks: "200 ticks/mo",
       analyses: "quick 1 tick · deep 3 ticks",
-      features: ["45 monthly Ticks (~45 quick or 15 deep)", "Quick + deep analysis", "Full history", "$0.27 per quick analysis"],
-      cta: "Get Starter",
+      features: [
+        "200 monthly Ticks (~200 quick or 66 deep)",
+        "Quick + deep analysis",
+        "Live candle grounding + economic calendar",
+        "Under $0.10 per quick analysis",
+      ],
+      cta: "Get started",
     },
     pro: {
       badge: "Most popular",
@@ -60,11 +65,16 @@ const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
   },
   pt: {
     starter: {
-      badge: "Entrada",
-      ticks: "45 ticks/mês",
+      badge: "Tudo incluído",
+      ticks: "200 ticks/mês",
       analyses: "rápida 1 tick · deep 3 ticks",
-      features: ["45 Ticks mensais (~45 rápidas ou 15 deep)", "Análise rápida + deep", "Histórico completo", "US$ 0,27 por análise rápida"],
-      cta: "Assinar Starter",
+      features: [
+        "200 Ticks mensais (~200 rápidas ou 66 deep)",
+        "Análise rápida + deep",
+        "Grounding com candles ao vivo + calendário econômico",
+        "Menos de US$ 0,10 por análise rápida",
+      ],
+      cta: "Começar",
     },
     pro: {
       badge: "Mais escolhido",
@@ -139,68 +149,31 @@ type Plan = {
   cta: string;
 };
 
+// PLANO ÚNICO. Os tiers Pro e Elite saíram da vitrine em 27/07/2026 — eles
+// diferiam só em volume e o Starter era mais caro por análise que o pacote
+// avulso. Os price IDs antigos continuam no backend para assinaturas legadas.
+// Checkout sempre em USD (ver `currency` abaixo), então os campos brl/eur são
+// só rótulo e repetem o valor em dólar de propósito.
 export const PLANS: Plan[] = [
   {
     id: "starter",
-    name: "Starter",
-    badge: "Entry",
+    name: "Tickrify",
+    badge: "Everything included",
     prices: {
-      monthly: { brl: "R$ 57", usd: "$12", eur: "€11" },
-      yearly:  { brl: "R$ 570", usd: "$120", eur: "€110" },
+      monthly: { brl: "$19", usd: "$19", eur: "$19" },
+      yearly:  { brl: "$190", usd: "$190", eur: "$190" },
     },
-    ticks: "45 ticks/mo",
-    analyses: "quick 1 tick · deep 3 ticks",
-    featured: false,
-    icon: <Zap className="w-8 h-8 text-muted-foreground" />,
-    features: [
-      "45 monthly Ticks (~45 quick or 15 deep)",
-      "Quick + deep analysis",
-      "Full history",
-      "$0.27 per quick analysis",
-    ],
-    cta: "Get Starter",
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    badge: "Most popular",
-    prices: {
-      monthly: { brl: "R$ 147", usd: "$29", eur: "€27" },
-      yearly:  { brl: "R$ 1.470", usd: "$290", eur: "€270" },
-    },
-    ticks: "150 ticks/mo",
+    ticks: "200 ticks/mo",
     analyses: "quick 1 tick · deep 3 ticks",
     featured: true,
     icon: <Star className="w-8 h-8 text-primary" />,
     features: [
-      "150 monthly Ticks (~150 quick or 50 deep)",
+      "200 monthly Ticks (~200 quick or 66 deep)",
       "Quick + deep analysis",
-      "Full history",
-      "$0.19 per quick analysis",
-      "Everything in Starter, 3.3x the volume",
+      "Live candle grounding + economic calendar",
+      "Under $0.10 per quick analysis",
     ],
-    cta: "Get Pro",
-  },
-  {
-    id: "elite",
-    name: "Elite",
-    badge: "High volume",
-    prices: {
-      monthly: { brl: "R$ 297", usd: "$59", eur: "€55" },
-      yearly:  { brl: "R$ 2.970", usd: "$590", eur: "€550" },
-    },
-    ticks: "400 ticks/mo",
-    analyses: "quick 1 tick · deep 3 ticks",
-    featured: false,
-    icon: <Trophy className="w-8 h-8 text-yellow-500" />,
-    features: [
-      "400 monthly Ticks (~400 quick or 133 deep)",
-      "Quick + deep analysis",
-      "Full history",
-      "$0.15 per quick analysis — the lowest",
-      "Everything in Pro, 2.7x the volume",
-    ],
-    cta: "Get Elite",
+    cta: "Get started",
   },
 ];
 
