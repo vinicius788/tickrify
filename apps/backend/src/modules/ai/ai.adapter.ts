@@ -18,7 +18,7 @@ import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
 import { MarketService, normalizeToBinancePerp } from '../market/market.service';
 import { EconomicCalendarService } from '../calendar/calendar.service';
-import { buildSamplingParams } from './openai-params';
+import { buildSamplingParams, resolveModel } from './openai-params';
 
 // ── Guard anti-extração de prompt ──────────────────────────────────────────
 // Defende contra a tentativa de extrair o system prompt via input (ex.: alguém
@@ -597,8 +597,7 @@ export class AIAdapter {
     analysisType: AnalysisType = 'quick',
   ): AsyncGenerator<string> {
     const signedImageUrl = await this.resolveImageUrlForOpenAi(imageUrl);
-    const model =
-      process.env.AI_MODEL || (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
+    const model = resolveModel(analysisType);
 
     const streamMaxTokens = 16384; // máximo absoluto do gpt-4o-mini
     // withTimeout garante aborto em 60s via Promise.race
@@ -1158,9 +1157,7 @@ export class AIAdapter {
       // assertIsFinancialChart removida: adicionava 5-15s de latência em CADA análise.
       // O prompt principal já rejeita imagens inválidas via campo "non_chart_image" implícito
       // no schema. A validação prévia custava mais em latência do que poupava em tokens.
-      const model =
-        process.env.AI_MODEL ||
-        (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
+      const model = resolveModel(analysisType);
       // quick: 8000 tokens cobre análise completa v7.0 com novos campos (~5000 tokens reais)
       // deep: 12000 tokens para análise mais detalhada
       const maxTokens = analysisType === 'deep' ? 12_000 : 8_000;

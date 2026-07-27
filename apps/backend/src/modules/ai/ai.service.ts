@@ -14,6 +14,7 @@ import { PrismaService } from '../database/prisma.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
 import { resolvePlanForPriceId } from '../../config/stripe.config';
 import { AIAdapter, AIAnalysisError, scrubPromptLeak } from './ai.adapter';
+import { resolveModel } from './openai-params';
 import { UploadedFile } from '../../common/interfaces/multer';
 import { PromptBuilderService } from '../prompt/prompt-builder.service';
 import {
@@ -939,7 +940,7 @@ export class AiService implements OnModuleInit {
         },
       });
 
-      const model = process.env.AI_MODEL || (analysisType === 'deep' ? 'gpt-4o' : 'gpt-4o-mini');
+      const model = resolveModel(analysisType);
       await runPostHooks(pipelineCtx, aiResponse, [
         cacheResultHook({ ticksService: this.ticksService }),
         logMetricsHook({ ticksService: this.ticksService, logger: this.logger }, startedAt, model),

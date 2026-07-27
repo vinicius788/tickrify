@@ -57,3 +57,26 @@ export function buildSamplingParams(
 
   return params;
 }
+
+/**
+ * Resolve o modelo por tipo de análise.
+ *
+ * Antes existia só `AI_MODEL`, que sobrescrevia quick E deep ao mesmo tempo —
+ * migrar o quick para GPT-5 achatava o deep junto e matava a diferença que
+ * justifica cobrar 3 ticks por ele.
+ *
+ * Ordem de precedência (a primeira que existir vence):
+ *   1. AI_MODEL_QUICK / AI_MODEL_DEEP  — controle por tipo (preferido)
+ *   2. AI_MODEL                        — override global (usado pelo backtest)
+ *   3. padrão histórico                — gpt-4o-mini (quick) / gpt-4o (deep)
+ *
+ * ATENÇÃO ao padrão do deep: `gpt-4o` tem shutdown marcado pela OpenAI para
+ * 23/10/2026. Migrar antes disso não é opcional.
+ */
+export function resolveModel(analysisType: 'quick' | 'deep' | string): string {
+  const isDeep = analysisType === 'deep';
+  const perType = isDeep ? process.env.AI_MODEL_DEEP : process.env.AI_MODEL_QUICK;
+  const chosen = (perType || process.env.AI_MODEL || '').trim();
+  if (chosen) return chosen;
+  return isDeep ? 'gpt-4o' : 'gpt-4o-mini';
+}
