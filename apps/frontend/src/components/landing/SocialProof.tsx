@@ -99,10 +99,12 @@ const SocialProof = () => {
     { value: '16s', label: s.s1label, sublabel: s.s1sub },
     { value: '6+', label: s.s2label, sublabel: s.s2sub },
     { value: '3', label: s.s3label, sublabel: s.s3sub },
-    // 73% = taxa de abstencao medida no backtest v2 (109 WAIT em 150 amostras
-    // cegas). Substituiu o antigo "2:1 R/R validado", que o proprio backtest
-    // desmente (R:R medio proposto no TP1 = 1.19; regra do motor = 1.5).
-    { value: '73%', label: s.s4label, sublabel: s.s4sub },
+    // 39% = taxa de abstencao REAL em producao (153 WAIT em 388 analises,
+    // medido em 27/07/2026). Comecou como 73% (o numero do backtest v2, em
+    // amostras cegas) e foi corrigido no mesmo dia: producao roda bem abaixo
+    // do backtest porque usuario sobe grafico em que ja viu algo acontecendo.
+    // A pagina /accuracy publica o numero vivo — este card e so a vitrine.
+    { value: '39%', label: s.s4label, sublabel: s.s4sub },
   ];
 
   return (

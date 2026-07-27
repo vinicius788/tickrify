@@ -443,7 +443,7 @@ export default {
       tagline: 'Copiloto de análisis técnico con IA',
       platform: 'Plataforma', company: 'Empresa',
       features: 'Funciones', panel: 'Panel', plans: 'Planes', faq: 'FAQ',
-      terms: 'Términos de Servicio', privacy: 'Política de Privacidad',
+      terms: 'Términos de Servicio', privacy: 'Política de Privacidad', accuracy: 'Precisión verificada',
       rights: 'Todos los derechos reservados.',
       disclaimer: '⚠️ Los análisis generados por Tickrify son producidos por inteligencia artificial con base en análisis técnico visual. No constituyen recomendación de inversión. Los resultados pasados no garantizan resultados futuros. Opera con responsabilidad y una gestión de riesgo adecuada.',
     },

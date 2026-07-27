@@ -3,6 +3,7 @@ import LandingPage from "@/components/pages/LandingPage";
 import DashboardPage from "@/components/pages/DashboardPage";
 import PricingPage from "@/components/pages/PricingPage";
 import PrivacyPolicyPage from "@/components/pages/PrivacyPolicyPage";
+import AccuracyPage from "@/components/pages/AccuracyPage";
 import TryPage from "@/components/pages/TryPage";
 import ProtectedRoute from "@/components/routing/ProtectedRoute";
 import { RouteAnalytics } from "@/components/providers/RouteAnalytics";
@@ -47,6 +48,8 @@ function App() {
           <Route path="/demo" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/privacidade" element={<PrivacyPolicyPage />} />
+          {/* Pagina publica de acuracia (Fase 5): o scoreboard do motor. */}
+          <Route path="/accuracy" element={<AccuracyPage />} />
           <Route
             path="/sign-in/*"
             element={

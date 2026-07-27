@@ -51,6 +51,9 @@ const Footer = () => {
             <h4 className="font-semibold text-[var(--text-primary)]">{f.company}</h4>
             <ul className="mt-3 space-y-2 text-sm text-[var(--text-secondary)]">
               <li><a href="#faq" className="footer-nav-link">{f.faq}</a></li>
+              <li>
+                <Link to="/accuracy" className="footer-nav-link">{f.accuracy}</Link>
+              </li>
               <li><TermsOfServiceDialog /></li>
               <li>
                 <Link to="/privacidade" className="footer-nav-link">{f.privacy}</Link>

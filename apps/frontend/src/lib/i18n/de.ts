@@ -443,7 +443,7 @@ export default {
       tagline: 'Copilot für technische Analyse mit KI',
       platform: 'Plattform', company: 'Unternehmen',
       features: 'Funktionen', panel: 'Panel', plans: 'Pläne', faq: 'FAQ',
-      terms: 'Nutzungsbedingungen', privacy: 'Datenschutzrichtlinie',
+      terms: 'Nutzungsbedingungen', privacy: 'Datenschutzrichtlinie', accuracy: 'Geprüfte Genauigkeit',
       rights: 'Alle Rechte vorbehalten.',
       disclaimer: '⚠️ Die von Tickrify erzeugten Analysen werden von künstlicher Intelligenz auf Basis visueller technischer Analyse erstellt. Sie stellen keine Anlageempfehlung dar. Vergangene Ergebnisse garantieren keine zukünftigen Ergebnisse. Handeln Sie verantwortungsvoll und mit angemessenem Risikomanagement.',
     },

@@ -26,6 +26,14 @@ import { CreateAnalysisDto } from './dto/create-analysis.dto';
 import { ListAnalysesQueryDto } from './dto/list-analyses-query.dto';
 import { SetOutcomeDto } from './dto/set-outcome.dto';
 import { SetFavoriteDto } from './dto/set-favorite.dto';
+import {
+  AUTOMATIC_OUTCOMES,
+  GROUNDING_LIVE_SINCE,
+  confidenceBand,
+  tally,
+  type ConfidenceBand,
+  type OutcomeRow,
+} from './accuracy.util';
 
 @Controller('ai')
 export class AiController {
@@ -242,6 +250,81 @@ export class AiController {
         takeProfit2: analysis?.takeProfit2 ?? null,
       };
     });
+  }
+
+  /**
+   * Relatorio publico de acuracia — Fase 5 da auditoria de 24/07/2026.
+   *
+   * "Medimos nossa propria IA e publicamos os numeros feios" so funciona se o
+   * numero for reproduzivel. Regras que este endpoint NAO pode quebrar:
+   *  - so outcomes do sweeper automatico (ver AUTOMATIC_OUTCOMES; o veredicto
+   *    manual do My Trades mora no mesmo campo em minusculas e e autorrelato);
+   *  - todo recorte sai com n e intervalo de Wilson, nunca so a taxa;
+   *  - recorte com n < 20 sai com publishable=false e o front mostra so o n.
+   *
+   * Cache em memoria de 1h: o Render roda no plano free, isto nao pode
+   * recalcular a cada request. Sem dependencia nova.
+   */
+  private accuracyCache: { at: number; payload: unknown } | null = null;
+
+  @Get('accuracy')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async getAccuracy() {
+    const ONE_HOUR = 3_600_000;
+    if (this.accuracyCache && Date.now() - this.accuracyCache.at < ONE_HOUR) {
+      return this.accuracyCache.payload;
+    }
+
+    // O select devolve exatamente o shape de OutcomeRow — sem cast.
+    const rows: OutcomeRow[] = await this.prisma.analysis.findMany({
+      where: { outcome: { in: [...AUTOMATIC_OUTCOMES] }, isDemo: false },
+      select: { outcome: true, confidence: true, createdAt: true },
+    });
+
+    const breakdown: Record<string, number> = {};
+    for (const row of rows) {
+      const key = String(row.outcome);
+      breakdown[key] = (breakdown[key] || 0) + 1;
+    }
+
+    const bands: ConfidenceBand[] = ['below60', 'band60to69', 'band70plus', 'unknown'];
+    const byConfidence = bands.map((band) => ({
+      band,
+      ...tally(rows.filter((r) => confidenceBand(r.confidence) === band)),
+    }));
+
+    // Split pela data do deploy do grounding: mostra que a Tickrify mede as
+    // proprias mudancas em vez de so anuncia-las.
+    const byGrounding = {
+      before: tally(rows.filter((r) => r.createdAt < GROUNDING_LIVE_SINCE)),
+      after: tally(rows.filter((r) => r.createdAt >= GROUNDING_LIVE_SINCE)),
+    };
+
+    const [waitCount, completedCount] = await Promise.all([
+      this.prisma.analysis.count({
+        where: { status: 'completed', isDemo: false, recommendation: { in: ['WAIT', 'HOLD', 'AGUARDAR'] } },
+      }),
+      this.prisma.analysis.count({
+        where: { status: 'completed', isDemo: false, recommendation: { not: null } },
+      }),
+    ]);
+
+    const payload = {
+      updatedAt: new Date().toISOString(),
+      groundingLiveSince: GROUNDING_LIVE_SINCE.toISOString(),
+      overall: tally(rows),
+      byConfidence,
+      byGrounding,
+      abstention: {
+        wait: waitCount,
+        total: completedCount,
+        rate: completedCount > 0 ? Math.round((waitCount / completedCount) * 1000) / 10 : null,
+      },
+      breakdown,
+    };
+
+    this.accuracyCache = { at: Date.now(), payload };
+    return payload;
   }
 
   @Get('usage')

@@ -443,7 +443,7 @@ export default {
       tagline: 'AIによるテクニカル分析のコパイロット',
       platform: 'プラットフォーム', company: '会社',
       features: '機能', panel: 'パネル', plans: 'プラン', faq: 'FAQ',
-      terms: '利用規約', privacy: 'プライバシーポリシー',
+      terms: '利用規約', privacy: 'プライバシーポリシー', accuracy: '検証済みの精度',
       rights: '無断複製を禁じます。',
       disclaimer: '⚠️ Tickrifyが生成する分析は、視覚的なテクニカル分析に基づきAIによって作成されます。投資助言ではありません。過去の結果は将来の結果を保証しません。責任を持ち、適切なリスク管理のもとでトレードしてください。',
     },
