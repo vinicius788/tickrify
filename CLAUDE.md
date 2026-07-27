@@ -69,7 +69,7 @@ Tickrify — SaaS freemium de **análise de gráficos com IA** para traders. O u
 ## PENDENTE (pós-sprint)
 - **Post 0 do relançamento de conteúdo** (só o dono grava) — kit pronto em `marketing-sprint/` e docs de estratégia. Estratégia nova = "The AI With Receipts" (SEG call / QUA your-chart / SEX receipt, 3x/semana).
 - **Render pago (~US$7):** decisão do dono — NÃO assinar até o Post 0 ir ao ar (cold start só machuca com tráfego). Gatilho: dia do 1º short OU 1º assinante.
-- **Confirmar `[QuickGrounding]` no log do worker** após uma análise real (verificação pendente do dono).
+- ~~Confirmar `[QuickGrounding]` no log do worker~~ — **resolvido em 27/07**: `ENABLE_QUICK_GROUNDING=true` conferido no env do Render, e `TWELVE_DATA_API_KEY` está lá. (A linha `[QuickGrounding]` em si não aparece porque **nenhuma análise rodou em produção nos últimos 7 dias** — não é bug, é falta de tráfego.)
 - ~~Conta Stripe chamada "WayPay"~~ — **resolvido**: a conta já se chama `tickrify` (verificado no dashboard em 27/07). Falta só conferir o *statement descriptor* (nome na fatura do cartão), que é campo separado.
 - **v7.4 (playbooks)** continua fora da árvore (backup em `tmp/v74-playbooks-backup/`); medir ~US$1,50 antes de subir.
 
@@ -131,3 +131,91 @@ Medido no Supabase em 27/07:
 - **Teto de rollover dos ticks** (Fase 2b): hoje acumulam pra sempre e a vitrine promete "Ticks never expire" — o que ainda é **verdade**, então não é claim falso. Mexer em `TicksService` é backend crítico; fazer em commit separado.
 - **Fase 4 (teste de modelo)** inteira: o motor roda `gpt-4o-mini`/`gpt-4o`, família de ~2 anos atrás. O harness já aceita `AI_MODEL` por env, o teste custa ~US$3-8, e responde se o teto é o prompt ou o modelo. **A chave da OpenAI é do dono — ele roda o comando.**
 - Tradução da `/accuracy` para os outros 5 idiomas.
+
+## ⚠️ INFRA REAL (leia antes de mexer em worker/deploy — 27/07/2026)
+
+**Este bloco existe porque eu (Claude) errei um diagnóstico por não saber disto.**
+O dashboard do Render mostra só DOIS recursos: o web service **`tickrify`** e o
+**`tickrify-redis`**. Não existe serviço `tickrify-worker`. É fácil concluir daí
+que o worker não roda. **Ele roda.**
+
+- O **`render.yaml` da raiz NÃO é o que está no ar.** Ele declara `tickrify-api`
+  + `tickrify-worker`, mas o blueprint nunca foi aplicado — o serviço foi criado
+  à mão e se chama `tickrify`. Não confie nesse arquivo para entender produção.
+- O `Dockerfile` da raiz também **não** é o usado. O Render builda
+  **`infra/Dockerfile`**, cujo `ENTRYPOINT` é `infra/docker-entrypoint.sh`.
+- Esse entrypoint sobe **três coisas no mesmo contêiner**: a API, as migrações
+  (se `RUN_MIGRATIONS_ON_START=true`) e o **worker embutido**:
+  ```sh
+  if [ "${RUN_EMBEDDED_WORKER:-true}" = "true" ]; then
+    npm run worker:prod -w apps/backend &
+  fi
+  ```
+  `RUN_EMBEDDED_WORKER` **não está no env** → default `true` → o worker roda.
+  É ele que chama `startOutcomeSweeper`. Prova no log, a cada boot:
+  `[Outcome] Outcome tracking ligado (varredura a cada 1h, maturidade 48h).`
+- **NUNCA inicie o sweeper em outro lugar** (ex.: dentro do `main.ts`) sem antes
+  desligar `RUN_EMBEDDED_WORKER` — dois sweepers no mesmo contêiner fazem
+  varredura duplicada. Uma flag `ENABLE_SWEEPER_IN_API` chegou a ser criada em
+  27/07 por causa do diagnóstico errado e foi **removida** no mesmo dia.
+
+**Migrações:** `RUN_MIGRATIONS_ON_START=false` no env → o `prisma migrate deploy`
+do entrypoint é pulado. Rodar `npm run migrate:deploy` na máquina do dono também
+falha (`.env` local vazio → `P1012: Environment variable not found: DIRECT_URL`).
+Na prática, **quem mantém o schema em dia hoje é o `ADD COLUMN IF NOT EXISTS` do
+`AiService.onModuleInit`**, que roda a cada boot. Isso cobre coluna aditiva e
+nada mais — índice, constraint ou rename vão exigir SQL manual no Supabase.
+
+## Sprint 27/07 — parte 2 (fases 6.2, 6.3, modelos e preço)
+
+- **Preço: US$ 29/mês e US$ 290/ano.** Subiu de $19 no mesmo dia, por sinalização
+  (a $19 o produto lia como "mais ou menos" num nicho onde barato = suspeito),
+  não por custo — a margem bruta é ~88% nos dois. Editado nos MESMOS price IDs
+  do Stripe (`price_1TRvEJ...` mensal, `price_1TRvKH...` anual); os IDs nunca
+  mudaram nas três edições ($12 → $19 → $29). 0 assinaturas afetadas.
+- **6.2 verificado, nada a corrigir:** `normalizedAnalysisType` degrada `deep`
+  para `quick` quando `hasPaidAccess` é falso, e é o valor NORMALIZADO que segue
+  para `enforceAccessAndCreate` (linhas 242 e 340). Free não queima 3 ticks num
+  `gpt-4o`. O débito só ocorre dentro do ramo pago.
+- **6.3 FEITO — coluna `userVerdict`:** `outcome` guardava dois fatos que se
+  destruíam. O sweeper busca `outcome IS NULL`, então trade marcado à mão nunca
+  era avaliado (sumia da /accuracy); e o `setOutcome` fazia UPDATE cru, apagando
+  WIN/LOSS já medido. Agora: `outcome` = o que o mercado fez (só o sweeper,
+  MAIÚSCULO), `userVerdict` = o que o trader diz (só o `setOutcome`, minúsculo).
+  O front não mudou: a API expõe `SELECT "userVerdict" AS "outcome"`.
+  Backfill idempotente no `onModuleInit` moveu os 8 registros presos (confirmado
+  no log: `[outcome] Backfill: 8 veredicto(s) manual(is) movido(s)`), e como o
+  `outcome` deles voltou a NULL, o sweeper os reavalia e eles entram na amostra.
+
+### Modelos de IA — o prazo que ninguém tinha visto
+- A família atual da OpenAI é **GPT-5.6** (`sol` $5/$30 · `terra` $2,50/$15 ·
+  `luna` $1/$6 por 1M tokens; input cacheado 10× mais barato).
+- **`gpt-4o` — usado no deep — tem shutdown marcado para 23/10/2026.** Migrar não
+  é opcional. Candidatos: `luna` no quick, `terra` no deep (mesmo preço de input
+  que o gpt-4o atual).
+- **Piloto de 10 análises custou US$ 0,00** (erro 400 não é cobrado) e achou a
+  incompatibilidade real: GPT-5 **rejeita `max_tokens`** (exige
+  `max_completion_tokens`) e **rejeita `seed`**. Corrigido em
+  `modules/ai/openai-params.ts` → `buildSamplingParams(model, opts)`, usado nos
+  dois call sites do adapter. Isso era dívida obrigatória pro deadline de outubro.
+- **`AI_MODEL_QUICK` / `AI_MODEL_DEEP`** criados (`resolveModel()`): antes só
+  existia `AI_MODEL`, que sobrescrevia quick E deep juntos — migrar o quick
+  achataria o deep e mataria a diferença que justifica cobrar 3 ticks.
+  Precedência: `AI_MODEL_QUICK|DEEP` → `AI_MODEL` → padrão histórico.
+  **Nenhuma das três está setada no Render** → produção roda mini/4o.
+- Custo por análise rápida: **~$0,003** no mini · **~$0,024** no luna ·
+  **~$0,06** no terra. O `COST_PER_ANALYSIS_USD = 0.01` do runner é a estimativa
+  antiga do mini — no luna, multiplique por ~2,4 o que ele imprime na tela.
+- **Saldo OpenAI em 27/07: US$ 2,42**, auto-recharge desligado. As 150 análises
+  do teste custam ~US$ 3,60. A perna baseline NÃO precisa ser refeita — o
+  backtest v2 já é ela (mesmas amostras, seed 20260713, mesmo prompt v7.3).
+- O runner é **retomável**: grava linha a linha e pula o que já analisou. Dá para
+  fatiar o teste conforme o caixa; o mesmo `--out` vai se completando.
+
+### Regra de experimento (custou caro aprender em outros projetos)
+**Trocar modelo e prompt ao mesmo tempo invalida o teste.** Ordem obrigatória:
+(1) v7.3 no modelo novo → isola o modelo; (2) só então v7.4 vs v7.3 no vencedor.
+E cuidado com a intuição de "prompt mais complexo": o problema medido é
+calibração, não cobertura. Mais estratégias dão mais formas de justificar setup
+mediano. Um prompt mais ENXUTO pode performar melhor num modelo mais capaz —
+boa parte da v7.3 é andaime para compensar limitação do mini de 2024.
