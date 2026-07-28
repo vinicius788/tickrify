@@ -948,7 +948,7 @@ const DashboardPage = () => {
           <img src={officialIcon} alt="Tickrify" className="h-8 w-auto shrink-0 object-contain" />
           <div className="leading-none">
             <div className="text-sm font-bold tracking-wide text-[var(--text-primary)]">TICKRIFY</div>
-            <div className="mt-1 font-terminal text-[8px] uppercase tracking-[0.14em] text-[var(--text-secondary)]">Institutional Terminal</div>
+            <div className="mt-1 font-terminal text-[8px] uppercase tracking-[0.14em] text-[var(--text-secondary)]">{t.landing.hero.terminal}</div>
           </div>
         </div>
 
