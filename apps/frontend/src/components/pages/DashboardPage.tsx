@@ -152,6 +152,11 @@ const DashboardPage = () => {
   const [verdicts, setVerdicts] = useState<Record<string, Verdict>>(loadVerdicts);
   const [verdictSnoozed, setVerdictSnoozed] = useState<boolean>(isVerdictPromptSnoozed);
   const [askDismissed, setAskDismissed] = useState(false);
+  // Id da análise que está sendo exibida no resultado. Vem do `createAnalysis`,
+  // que é a única fonte exata — não dá pra deduzir "a mais recente da lista",
+  // porque o refetch pode trocar quem é a mais recente no meio do caminho e a
+  // marcação cai na análise errada (aconteceu em produção em 28/07).
+  const [lastAnalysisId, setLastAnalysisId] = useState<string | null>(null);
 
   // Escrita otimista: grava local, atualiza a tela na hora e só depois tenta o
   // backend. Falha do backend é silenciosa — o localStorage segura o dado.
@@ -385,6 +390,8 @@ const DashboardPage = () => {
     setAnalysisData(null);
     setErrorMessage('');
     setUploadedImage(null);
+    setLastAnalysisId(null);
+    setAskDismissed(false);
   }, []);
 
   // Guarda o último envio para o "Try again" refazer a análise sem perder o gráfico.
@@ -473,6 +480,7 @@ const DashboardPage = () => {
       // Incrementar contador (apenas quando logado)
       incrementAnalysis();
 
+      setLastAnalysisId(response.id);
       const analysis = await apiClient.waitForAnalysisCompletion(response.id, response);
 
       if (analysis.status === 'failed') {
@@ -816,21 +824,17 @@ const DashboardPage = () => {
 
         // Qual análise a pergunta do veredito vai marcar.
         //
-        // Em 28/07 a pergunta não apareceu em produção mesmo com o bundle novo
-        // servindo (confirmado lendo a classe do card no DOM). A causa exata do
-        // `analysisData.id` vir vazio não foi isolada, então a resolução aqui é
-        // defensiva: se o objeto do resultado não trouxer id, cai para a análise
-        // completada mais recente da lista — que é justamente a que acabou de
-        // rodar, porque `refetchAnalyses()` roda ao fim de toda análise.
-        const resultAnalysis =
-          (analysisData && analysisData.id ? analysisData : null) ??
-          rawAnalyses.find((a) => a.status === 'completed') ??
-          null;
+        // O id vem do `createAnalysis` (guardado em lastAnalysisId) e só cai
+        // para o `analysisData` se aquele faltar. NUNCA deduzir pela lista:
+        // a primeira versão fazia `rawAnalyses.find(completed)` e, quando o
+        // refetch trocava quem era a mais recente, o clique marcava a análise
+        // ERRADA — bug real, visto em produção em 28/07.
+        const verdictTargetId = lastAnalysisId || analysisData?.id || null;
         const canAskVerdict =
           !isDemo &&
           !askDismissed &&
-          Boolean(resultAnalysis?.id) &&
-          resolveVerdict(resultAnalysis as { id: string; outcome?: unknown }, verdicts) === null;
+          Boolean(verdictTargetId) &&
+          resolveVerdict({ id: String(verdictTargetId), outcome: analysisData?.outcome }, verdicts) === null;
         return (
           <div className="flex flex-col gap-4">
             <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />
@@ -841,7 +845,7 @@ const DashboardPage = () => {
                     trade acabou de nascer, não há resposta possível, e cobrar
                     resultado agora ensina a ignorar o card. Só marcamos como
                     aberto — é isso que cria o pendente que cobramos depois. */}
-                {canAskVerdict && resultAnalysis && (
+                {canAskVerdict && verdictTargetId && (
                   <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] pb-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-[var(--text-primary)]">{t.verdict.askTitle}</p>
@@ -851,7 +855,7 @@ const DashboardPage = () => {
                       <Button
                         type="button"
                         size="sm"
-                        onClick={() => applyVerdict(String(resultAnalysis.id), 'OPEN')}
+                        onClick={() => applyVerdict(String(verdictTargetId), 'OPEN')}
                       >
                         {t.verdict.askYes}
                       </Button>
