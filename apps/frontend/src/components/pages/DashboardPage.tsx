@@ -8,6 +8,17 @@ import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import NewAnalysis from "../dashboard/NewAnalysis";
 import EmptyState from '@/components/dashboard/EmptyState';
+import {
+  VERDICT_MAX_ROWS,
+  VERDICT_MIN_AGE_MS,
+  isVerdictPromptSnoozed,
+  loadVerdicts,
+  outcomeFromVerdict,
+  resolveVerdict,
+  saveVerdict,
+  snoozeVerdictPrompt,
+  type Verdict,
+} from '@/lib/verdict';
 import ActivityHeatmap from "../dashboard/ActivityHeatmap";
 import LiveTape from "../dashboard/LiveTape";
 import MyTrades from "../dashboard/MyTrades";
@@ -86,6 +97,10 @@ const DASH_COPY = {
 } as const;
 import officialIcon from "@/assets/tickrify-icon-official.png";
 
+const DATE_LOCALES: Record<string, string> = {
+  pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
+};
+
 type View = 'dashboard' | 'new-analysis' | 'my-trades' | 'watchlist' | 'analysis-result' | 'loading' | 'error' | 'locked';
 type RecentAnalysisItem = {
   symbol: string;
@@ -123,6 +138,67 @@ const DashboardPage = () => {
   const apiClient = useAPIClient();
   const isDemo = !user;
   const { analyses: rawAnalyses, loading: loadingAnalyses, refetch: refetchAnalyses } = useAnalyses(40);
+
+  // ── Loop do veredito ────────────────────────────────────────────────────
+  // O produto precisa PEDIR o veredito na hora certa; ninguém volta sozinho
+  // numa aba secundária pra marcar como o trade terminou.
+  //
+  // A contagem é feita aqui, sobre a mesma lista do useAnalyses(40) que as
+  // outras telas usam — de propósito, e não via GET /api/ai/performance:
+  //   1. o Render hiberna, e a UI não pode depender de resposta pra renderizar;
+  //   2. o endpoint conta até 1000 análises e esta tela carrega 40 — os números
+  //      discordariam ("5 em aberto" com 2 linhas na lista);
+  //   3. mesma fonte de verdade do My Trades = os dois nunca divergem.
+  const [verdicts, setVerdicts] = useState<Record<string, Verdict>>(loadVerdicts);
+  const [verdictSnoozed, setVerdictSnoozed] = useState<boolean>(isVerdictPromptSnoozed);
+  const [askDismissed, setAskDismissed] = useState(false);
+
+  // Escrita otimista: grava local, atualiza a tela na hora e só depois tenta o
+  // backend. Falha do backend é silenciosa — o localStorage segura o dado.
+  const applyVerdict = useCallback((id: string, v: Verdict) => {
+    saveVerdict(id, v);
+    setVerdicts((prev) => ({ ...prev, [id]: v }));
+    if (!isDemo) {
+      void apiClient.setOutcome(id, { outcome: outcomeFromVerdict(v) })
+        .then(() => refetchAnalyses())
+        .catch(() => {});
+    }
+  }, [isDemo, apiClient, refetchAnalyses]);
+
+  // Só cobra o que o usuário marcou como "vou operar" E que já tem idade
+  // suficiente pra ter desfecho. Cobrar análise de 5 minutos atrás treina o
+  // usuário a ignorar o bloco.
+  const openVerdictRows = useMemo(() => {
+    if (isDemo) return [];
+    const cutoff = Date.now() - VERDICT_MIN_AGE_MS;
+    return rawAnalyses
+      .filter((a) => a.status === 'completed' && resolveVerdict(a, verdicts) === 'OPEN')
+      .filter((a) => {
+        const created = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        return created > 0 && created < cutoff;
+      })
+      .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+  }, [rawAnalyses, verdicts, isDemo]);
+
+  // Estatística só aparece com amostra mínima, e SEMPRE com o n visível.
+  const verdictStats = useMemo(() => {
+    let wins = 0, losses = 0, rrSum = 0, rrCount = 0;
+    for (const a of rawAnalyses) {
+      if (a.status !== 'completed') continue;
+      const v = resolveVerdict(a, verdicts);
+      if (v === 'TP1' || v === 'TP2') wins += 1;
+      else if (v === 'SL') losses += 1;
+      const raw = a as unknown as Record<string, unknown>;
+      const rr = Number(raw.riskRewardTp2 ?? raw.riskRewardTp1);
+      if (Number.isFinite(rr) && rr > 0) { rrSum += rr; rrCount += 1; }
+    }
+    const decided = wins + losses;
+    return {
+      decided,
+      winRate: decided > 0 ? Math.round((wins / decided) * 1000) / 10 : null,
+      avgRr: rrCount > 0 ? Math.round((rrSum / rrCount) * 100) / 100 : null,
+    };
+  }, [rawAnalyses, verdicts]);
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
@@ -510,6 +586,85 @@ const DashboardPage = () => {
     ];
     return (
       <div className="flex flex-col gap-4">
+        {/* Onda 2.3 — o motivo de voltar amanhã. Só aparece com trades que o
+            próprio usuário marcou como "vou operar" e que já passaram de 12h.
+            Nunca cobra análise WAIT: não houve trade pra fechar. */}
+        {!isDemo && !verdictSnoozed && openVerdictRows.length > 0 && (
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[var(--text-primary)]">
+                  {openVerdictRows.length} {t.verdict.chaseOpen}
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">{t.verdict.chaseDesc}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { snoozeVerdictPrompt(); setVerdictSnoozed(true); }}
+                className="shrink-0 rounded-lg px-2 py-1 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+              >
+                {t.verdict.notNow}
+              </button>
+            </div>
+
+            <div className="mt-4 divide-y divide-[var(--border-subtle)]">
+              {openVerdictRows.slice(0, VERDICT_MAX_ROWS).map((a) => {
+                const raw = a as unknown as Record<string, unknown>;
+                const created = a.createdAt ? new Date(a.createdAt) : null;
+                return (
+                  <div key={a.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="font-terminal text-sm text-[var(--text-primary)]">
+                        {String(raw.symbol || 'N/A')}{' '}
+                        <span className="text-xs text-[var(--text-secondary)]">{String(raw.timeframe || '')}</span>
+                      </p>
+                      {created && (
+                        <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
+                          {created.toLocaleDateString(DATE_LOCALES[language] ?? 'en-US')}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button type="button" onClick={() => applyVerdict(a.id, 'TP1')} className="rounded-lg border border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] px-2.5 py-1.5 text-xs font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80">{t.trades.tp1Hit}</button>
+                      <button type="button" onClick={() => applyVerdict(a.id, 'TP2')} className="rounded-lg border border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] px-2.5 py-1.5 text-xs font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80">{t.trades.tp2Hit}</button>
+                      <button type="button" onClick={() => applyVerdict(a.id, 'SL')} className="rounded-lg border border-[var(--signal-sell-border)] bg-[var(--signal-sell-bg)] px-2.5 py-1.5 text-xs font-semibold text-[var(--signal-sell)] transition-opacity hover:opacity-80">{t.trades.slHit}</button>
+                      <button type="button" onClick={() => applyVerdict(a.id, null)} className="rounded-lg border border-[var(--border-default)] px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]">{t.verdict.notTaken}</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {openVerdictRows.length > VERDICT_MAX_ROWS && (
+              <button
+                type="button"
+                onClick={() => setActiveView('my-trades')}
+                className="mt-3 font-terminal text-xs text-[var(--accent-green)] underline-offset-2 hover:underline"
+              >
+                {t.verdict.seeAll} ({openVerdictRows.length})
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Onda 2.4 — o dado devolvido pro usuário. Amostra SEMPRE visível;
+            abaixo de 5 decididos não mostramos nada, porque taxa de acerto com
+            2 trades não é informação, é ruído com cara de estatística. */}
+        {!isDemo && verdictStats.decided >= 5 && verdictStats.winRate !== null && (
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
+            <span className="text-sm text-[var(--text-secondary)]">{t.verdict.statsLabel}</span>
+            <span className="font-terminal text-xl font-semibold text-[var(--text-primary)]">{verdictStats.winRate}%</span>
+            {verdictStats.avgRr !== null && (
+              <span className="font-terminal text-xs text-[var(--text-secondary)]">
+                {t.verdict.statsRr} {verdictStats.avgRr.toFixed(1)}:1
+              </span>
+            )}
+            <span className="font-terminal text-xs text-[var(--text-muted)]">
+              {t.verdict.statsBasedOn} {verdictStats.decided} {t.verdict.statsSample}
+            </span>
+          </div>
+        )}
+
         {/* Cockpit hero */}
         <div
           className="relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-6 md:p-8"
@@ -650,7 +805,7 @@ const DashboardPage = () => {
           </div>
         );
       case 'my-trades':
-        return <MyTrades onStartAnalysis={resetNewAnalysisView} />;
+        return <MyTrades onStartAnalysis={resetNewAnalysisView} initialFilter={openVerdictRows.length > 0 ? 'OPEN' : undefined} />;
       case 'watchlist':
         return <Watchlist onStartAnalysis={resetNewAnalysisView} />;
       case 'analysis-result': {
@@ -662,7 +817,38 @@ const DashboardPage = () => {
           <div className="flex flex-col gap-4">
             <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />
             {!isDemo && (
-              <div className="flex flex-col gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
+                {/* Onda 2.2 — pergunta no único momento em que o usuário ainda
+                    está olhando pro setup. NÃO perguntamos TP1/TP2/SL aqui: o
+                    trade acabou de nascer, não há resposta possível, e cobrar
+                    resultado agora ensina a ignorar o card. Só marcamos como
+                    aberto — é isso que cria o pendente que cobramos depois. */}
+                {analysisData?.id && resolveVerdict(analysisData, verdicts) === null && !askDismissed && (
+                  <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] pb-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[var(--text-primary)]">{t.verdict.askTitle}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">{t.verdict.askHint}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => applyVerdict(String(analysisData.id), 'OPEN')}
+                      >
+                        {t.verdict.askYes}
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => setAskDismissed(true)}
+                        className="rounded-lg px-3 py-2 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                      >
+                        {t.verdict.askNo}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   {freeLeftKnown && !exhausted && (
                     <p className="text-sm text-[var(--text-primary)]">
@@ -699,6 +885,7 @@ const DashboardPage = () => {
                       )}
                     </>
                   )}
+                </div>
                 </div>
               </div>
             )}

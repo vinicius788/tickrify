@@ -10,46 +10,20 @@ import { useAPIClient } from '@/lib/api';
 import type { AIAnalysisResponse } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import EmptyState from '@/components/dashboard/EmptyState';
+import {
+  VERDICT_CFG,
+  loadVerdicts,
+  outcomeFromVerdict,
+  resolveVerdict,
+  saveVerdict,
+  type Verdict,
+} from '@/lib/verdict';
 
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
 };
 
 // ── Verdict (sincronizado com o backend; localStorage = fallback offline) ────
-type Verdict = 'TP1' | 'TP2' | 'SL' | 'OPEN' | null;
-const STORAGE_KEY = 'tickrify_verdicts';
-
-// Verdict (UI) ↔ outcome (backend)
-function verdictFromOutcome(o: unknown): Verdict {
-  switch (String(o || '')) {
-    case 'tp1': return 'TP1';
-    case 'tp2': return 'TP2';
-    case 'stop': return 'SL';
-    case 'open': return 'OPEN';
-    default: return null;
-  }
-}
-
-function outcomeFromVerdict(v: Verdict): string | null {
-  switch (v) {
-    case 'TP1': return 'tp1';
-    case 'TP2': return 'tp2';
-    case 'SL': return 'stop';
-    case 'OPEN': return 'open';
-    default: return null;
-  }
-}
-
-function loadVerdicts(): Record<string, Verdict> {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; }
-}
-
-function saveVerdict(id: string, verdict: Verdict) {
-  const all = loadVerdicts();
-  if (verdict === null) { delete all[id]; } else { all[id] = verdict; }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-}
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(v: unknown): string {
   const n = Number(v);
@@ -73,13 +47,6 @@ function extractLevels(a: AIAnalysisResponse) {
 }
 
 // Verdict badge config (cores; rótulos vêm do i18n)
-const VERDICT_CFG = {
-  TP1:  { bg: 'rgba(0,255,127,0.12)',   border: 'rgba(0,255,127,0.4)',  text: '#00FF7F' },
-  TP2:  { bg: 'rgba(0,200,80,0.12)',    border: 'rgba(0,200,80,0.4)',   text: '#00C850' },
-  SL:   { bg: 'rgba(255,68,68,0.12)',   border: 'rgba(255,68,68,0.4)',  text: '#FF4444' },
-  OPEN: { bg: 'rgba(120,120,180,0.10)', border: 'rgba(120,120,180,0.3)', text: '#9999CC' },
-} as const;
-
 // ── Demo data (rotulada como demo na UI; confiancas dentro da faixa real do
 // motor v7.3 — 62-78, >70 raro. Nao subir esses numeros.) ────────────────────────────────────────────────────────────────
 const DEMO: AIAnalysisResponse[] = [
@@ -93,9 +60,11 @@ const DEMO: AIAnalysisResponse[] = [
 // por `activeView` usada no resto do painel — sem rota nova).
 interface MyTradesProps {
   onStartAnalysis?: () => void;
+  /** Filtro pré-aplicado ao abrir — usado pelo "ver todas" do bloco de cobrança. */
+  initialFilter?: 'all' | 'pending' | Verdict;
 }
 
-const MyTrades = ({ onStartAnalysis }: MyTradesProps) => {
+const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
   const { user } = useUser();
   const isDemo = !user;
   // Mesmo limite do Dashboard (40) → as três telas compartilham UM único cache
@@ -125,17 +94,12 @@ const MyTrades = ({ onStartAnalysis }: MyTradesProps) => {
 
   const [verdicts, setVerdicts] = useState<Record<string, Verdict>>(loadVerdicts);
   const [filterSymbol, setFilterSymbol] = useState('');
-  const [filterVerdict, setFilterVerdict] = useState<'all' | 'pending' | Verdict>('all');
+  const [filterVerdict, setFilterVerdict] = useState<'all' | 'pending' | Verdict>(initialFilter ?? 'all');
 
   const rows = isDemo ? DEMO : analyses.filter((a) => a.status === 'completed');
 
-  // Verdict efetivo: estado local (alteração recente) tem prioridade; senão usa o do banco.
-  const getVerdict = (a: AIAnalysisResponse): Verdict => {
-    if (Object.prototype.hasOwnProperty.call(verdicts, a.id)) {
-      return verdicts[a.id] ?? null;
-    }
-    return verdictFromOutcome((a as unknown as Record<string, unknown>).outcome);
-  };
+  // Verdict efetivo — mesma função usada pelo Dashboard (lib/verdict.ts).
+  const getVerdict = (a: AIAnalysisResponse): Verdict => resolveVerdict(a, verdicts);
 
   // Unique symbols for filter dropdown
   const symbols = useMemo(() => {
