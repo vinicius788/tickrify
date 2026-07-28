@@ -157,6 +157,15 @@ const DashboardPage = () => {
   // porque o refetch pode trocar quem é a mais recente no meio do caminho e a
   // marcação cai na análise errada (aconteceu em produção em 28/07).
   const [lastAnalysisId, setLastAnalysisId] = useState<string | null>(null);
+  // Filtro com que o My Trades abre. Só é 'OPEN' quando o usuário chega pelo
+  // "ver todas" do bloco de cobrança; entrar pelo menu tem que mostrar TUDO.
+  // (Antes eu aplicava 'OPEN' sempre que existisse trade em aberto, o que
+  // escondia o histórico inteiro de quem clicasse em My Trades no menu.)
+  const [myTradesFilter, setMyTradesFilter] = useState<'all' | 'pending' | Verdict | undefined>(undefined);
+  const openMyTrades = useCallback((filter?: 'all' | 'pending' | Verdict) => {
+    setMyTradesFilter(filter);
+    setActiveView('my-trades');
+  }, []);
 
   // Escrita otimista: grava local, atualiza a tela na hora e só depois tenta o
   // backend. Falha do backend é silenciosa — o localStorage segura o dado.
@@ -646,7 +655,7 @@ const DashboardPage = () => {
             {openVerdictRows.length > VERDICT_MAX_ROWS && (
               <button
                 type="button"
-                onClick={() => setActiveView('my-trades')}
+                onClick={() => openMyTrades('OPEN')}
                 className="mt-3 font-terminal text-xs text-[var(--accent-green)] underline-offset-2 hover:underline"
               >
                 {t.verdict.seeAll} ({openVerdictRows.length})
@@ -749,7 +758,7 @@ const DashboardPage = () => {
               <div className="tk-stat-label">{t.nav.recentAnalyses}</div>
               <button
                 type="button"
-                onClick={() => setActiveView('my-trades')}
+                onClick={() => openMyTrades()}
                 className="font-terminal text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
                 aria-label={t.nav.recentAnalyses}
               >
@@ -813,7 +822,7 @@ const DashboardPage = () => {
           </div>
         );
       case 'my-trades':
-        return <MyTrades onStartAnalysis={resetNewAnalysisView} initialFilter={openVerdictRows.length > 0 ? 'OPEN' : undefined} />;
+        return <MyTrades onStartAnalysis={resetNewAnalysisView} initialFilter={myTradesFilter} />;
       case 'watchlist':
         return <Watchlist onStartAnalysis={resetNewAnalysisView} />;
       case 'analysis-result': {
@@ -983,7 +992,7 @@ const DashboardPage = () => {
             <button type="button" onClick={resetNewAnalysisView} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'new-analysis' || activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
               <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
             </button>
-            <button type="button" onClick={() => setActiveView('my-trades')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'my-trades' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+            <button type="button" onClick={() => openMyTrades()} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'my-trades' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
               <History className="h-4 w-4" /> {t.nav.myTrades}
             </button>
             <button type="button" onClick={() => setActiveView('watchlist')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'watchlist' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
