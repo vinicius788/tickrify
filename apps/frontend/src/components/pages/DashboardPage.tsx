@@ -813,6 +813,24 @@ const DashboardPage = () => {
         // (analisar outro / quantas grátis restam / assinar) — sem beco sem saída.
         const freeLeftKnown = !isUnlimited && Number.isFinite(remaining);
         const exhausted = freeLeftKnown && remaining <= 0;
+
+        // Qual análise a pergunta do veredito vai marcar.
+        //
+        // Em 28/07 a pergunta não apareceu em produção mesmo com o bundle novo
+        // servindo (confirmado lendo a classe do card no DOM). A causa exata do
+        // `analysisData.id` vir vazio não foi isolada, então a resolução aqui é
+        // defensiva: se o objeto do resultado não trouxer id, cai para a análise
+        // completada mais recente da lista — que é justamente a que acabou de
+        // rodar, porque `refetchAnalyses()` roda ao fim de toda análise.
+        const resultAnalysis =
+          (analysisData && analysisData.id ? analysisData : null) ??
+          rawAnalyses.find((a) => a.status === 'completed') ??
+          null;
+        const canAskVerdict =
+          !isDemo &&
+          !askDismissed &&
+          Boolean(resultAnalysis?.id) &&
+          resolveVerdict(resultAnalysis as { id: string; outcome?: unknown }, verdicts) === null;
         return (
           <div className="flex flex-col gap-4">
             <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />
@@ -823,7 +841,7 @@ const DashboardPage = () => {
                     trade acabou de nascer, não há resposta possível, e cobrar
                     resultado agora ensina a ignorar o card. Só marcamos como
                     aberto — é isso que cria o pendente que cobramos depois. */}
-                {analysisData?.id && resolveVerdict(analysisData, verdicts) === null && !askDismissed && (
+                {canAskVerdict && resultAnalysis && (
                   <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] pb-4 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-[var(--text-primary)]">{t.verdict.askTitle}</p>
@@ -833,7 +851,7 @@ const DashboardPage = () => {
                       <Button
                         type="button"
                         size="sm"
-                        onClick={() => applyVerdict(String(analysisData.id), 'OPEN')}
+                        onClick={() => applyVerdict(String(resultAnalysis.id), 'OPEN')}
                       >
                         {t.verdict.askYes}
                       </Button>
