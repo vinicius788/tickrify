@@ -84,3 +84,20 @@ scripts/backtest/results/
 scripts/backtest/samples.json
 scripts/backtest/manifest.json
 /Tickrify_Backtest_Results*.csv
+
+# ── REGRA PERMANENTE (28/07/2026) ────────────────────────────────────────────
+# Documento de estrategia, marketing, relatorio, plano ou handoff NAO entra no
+# repositorio. Se um chat gerar um documento, ele vai para _local/ (ignorado)
+# ou e entregue pelo chat. No git fica so codigo, config e doc tecnica em docs/.
+# Este bloco existe porque marketing-sprint/ (22 arquivos) e 9 .md na raiz
+# tinham escapado das regras anteriores.
+/marketing-sprint/
+/handoff/
+/planos/
+/relatorios/
+/prompts/
+# Documentos de escritorio em qualquer pasta do repo
+*.docx
+*.xlsx
+*.pptx
+*.pdf

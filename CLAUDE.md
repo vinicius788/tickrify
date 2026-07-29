@@ -25,7 +25,7 @@ Tickrify — SaaS freemium de **análise de gráficos com IA** para traders. O u
 - **Nunca manusear chaves/segredos** (o usuário cola direto no Render/serviço).
 
 ## Modelo de monetização
-- **PLANO ÚNICO desde 27/07/2026: US$ 19/mês (ou US$ 190/ano) com 200 ticks mensais.** Substituiu os 3 tiers (Starter $12 / Pro $29 / Elite $59), que diferiam APENAS em volume — mesma fila, mesmo modelo, mesmo suporte. O Starter a $0,267/análise era mais caro que o pacote avulso ($0,20): assinar era o pior negócio da loja. Agora $0,095/análise, metade do avulso mais barato.
+- **PLANO ÚNICO desde 27/07/2026: US$ 29/mês (ou US$ 290/ano) com 200 ticks mensais.** (Passou por $19 no mesmo dia; ver "Preço" na seção Sprint 27/07.) Substituiu os 3 tiers (Starter $12 / Pro $29 / Elite $59), que diferiam APENAS em volume — mesma fila, mesmo modelo, mesmo suporte. O Starter a $0,267/análise era mais caro que o pacote avulso ($0,20): assinar era o pior negócio da loja. Agora $0,095/análise, metade do avulso mais barato.
   - No Stripe o valor foi **editado no objeto existente** (`Starter-usd` = `price_1TRvEJB1hl0IoocUvbCyxkt5`), então o price ID NÃO mudou. `pro` e `elite` seguem em `stripe.config.ts` como LEGADO — não apagar, assinaturas antigas resolvem por eles.
   - Checkout sempre em **USD** (o frontend força). BRL/EUR do Starter ficaram nos valores antigos e estão dessincronizados — irrelevante hoje, cuidado se ligar multimoeda.
 - **"Ticks"** = créditos internos (nome pra casar com a marca). Análise rápida = 1 tick, profunda = 3 ticks, PDF = 2 ticks.
@@ -219,3 +219,90 @@ E cuidado com a intuição de "prompt mais complexo": o problema medido é
 calibração, não cobertura. Mais estratégias dão mais formas de justificar setup
 mediano. Um prompt mais ENXUTO pode performar melhor num modelo mais capaz —
 boa parte da v7.3 é andaime para compensar limitação do mini de 2024.
+
+## Sprint 28/07 — ativação + loop do veredito (Ondas 1 e 2)
+
+### Onda 1 — telas vazias que ensinam
+- `components/dashboard/EmptyState.tsx` (novo): componente ÚNICO usado em Watchlist,
+  My Trades e Dashboard. Props `icon/title/description/ctaLabel/onCta`.
+- `Watchlist` e `MyTrades` ganharam a prop `onStartAnalysis` (antes não recebiam
+  prop nenhuma); o `DashboardPage` passa o `resetNewAnalysisView`. Sem rota nova —
+  a navegação do painel é por `activeView`.
+- **No My Trades há DOIS estados vazios distintos.** Sem nenhuma análise → EmptyState.
+  Filtro sem resultado → linha simples. Unificar os dois faria quem filtra por "SL"
+  ler "seu histórico começa com um gráfico", o que é falso.
+- No Dashboard o EmptyState só troca os KPIs se `!isDemo && total === 0 && !loading`.
+  Sem o `!loading` ele pisca a cada abertura do painel.
+- Hero: chave `landing.hero.valueNow` — "sem histórico pra importar, sem 30 dias de
+  diário; sobe o gráfico e a IA lê agora". É o diferencial contra os concorrentes de
+  diário (a IA deles só funciona depois de 5-10 trades registrados à mão).
+
+### Onda 2 — o loop do veredito (pergunta → marcação → cobrança → número)
+- `lib/verdict.ts` (novo) é a **fonte única**: `Verdict`, `verdictFromOutcome`,
+  `outcomeFromVerdict`, `loadVerdicts`, `saveVerdict`, `VERDICT_CFG`, `resolveVerdict`,
+  `VERDICT_MIN_AGE_MS` (12h), `VERDICT_MAX_ROWS` (3), snooze de 24h.
+  Mesma chave de localStorage de sempre: `tickrify_verdicts`.
+- **2.2** — no `case 'analysis-result'`, dentro do card de gancho: "Taking this one?"
+  com "I am taking it" (grava `open`) e "Passing". NÃO pergunta TP1/TP2/SL aqui — o
+  trade acabou de nascer, não há resposta possível, e cobrar agora ensina a ignorar.
+- **2.3** — bloco no topo do dashboard com os trades `OPEN` com +12h, máx 3 linhas,
+  "ver todas", "agora não" (24h). Some sozinho quando o último é fechado.
+- **2.4** — linha de taxa de acerto só com **≥5 decididos**, sempre com o n visível,
+  e o R:R rotulado como **"proposto"** (vem da IA, não da execução do usuário).
+
+### ⚠️ Regras que nasceram de bugs REAIS (não desfazer)
+1. **O gatilho da cobrança é `open`, NUNCA `pending`.** O `pending` do
+   `GET /api/ai/performance` é o `default` de um switch sobre TODAS as análises
+   completadas — inclui WAIT. Na conta do dono isso daria "35 trades em aberto"
+   para trades que nunca existiram.
+2. **NUNCA deduzir qual análise marcar pela lista.** A 1ª versão usava
+   `rawAnalyses.find(completed)`; como o `refetchAnalyses()` roda ao fim da análise,
+   a lista trocava no meio e o clique marcava o trade ERRADO. Corrigido: o id vem do
+   `createAnalysis` (`lastAnalysisId`).
+3. **O filtro `OPEN` do My Trades só vem pré-aplicado pelo "ver todas".** A 1ª versão
+   aplicava sempre que houvesse trade aberto — quem clicasse em My Trades no menu via
+   1 análise em vez de 39. Usar `openMyTrades(filter?)`.
+- O `MyTrades` **não usa** `getPerformance()`; calcula tudo do `useAnalyses(40)` +
+  localStorage. O Dashboard faz igual, de propósito: o Render hiberna, o endpoint conta
+  até 1000 análises e a tela carrega 40 — os números discordariam.
+
+### Distribuição — números REAIS conferidos em 28/07 (os do CLAUDE.md estavam velhos)
+- **Instagram @tickrify: 82 seguidores · 5 posts · 0 seguindo · ZERO reels.**
+  (O registro antigo dizia 53 seguidores e "reels 1-2k views" — não há reels no perfil
+  hoje; ou foram arquivados ou viraram post de feed.) Bio já em inglês e com UTM.
+  Diagnóstico: conta não está morta, está **subalimentada** — e publicando no formato
+  que menos distribui (feed em vez de reel).
+- **Thread do X reescrita** em `_local/Thread_X_Receipts_2026-07.md` (fora do git).
+  A antiga (`marketing-sprint/EXECUTAR_AGORA_X_REDDIT_YT.md`) está OBSOLETA: em PT para
+  público BR, cupom FUNDADOR50 que não existe (o vivo é EARLY35), promete win rate
+  público que agora já É público, e cita "~30s" (não medível).
+- **A bio do Instagram diz "in 30s"** — mesmo claim não verificável do card 16s.
+- `marketing-sprint/` (22 arquivos) estava VERSIONADO no git — **resolvido em 28/07**,
+  movido para `_local/marketing-sprint/`. Varri o `CONTAS-E-CHAVES.md`: **não há segredo**.
+
+## 🚫 REGRA PERMANENTE — não encher o repo de arquivo (28/07/2026)
+
+O dono reclamou, com razão: **toda sessão de trabalho terminava com o projeto cheio de
+documento solto.** Chegou a 9 `.md` na raiz + `marketing-sprint/` (22 arquivos
+versionados) + 3 documentos de estratégia dentro de `docs/`.
+
+**A regra, sem exceção:**
+
+1. **Nenhuma sessão cria arquivo novo no repositório** a não ser que seja **código que
+   roda** (`.ts`, `.tsx`, `.sql`, config, migração). Se você acha que precisa de um
+   arquivo que não é código, a resposta padrão é: **não crie — pergunte.**
+2. **Documento (plano, relatório, prompt, thread, roteiro, análise, handoff) vai para
+   `_local/`**, que está no `.gitignore` — ou é entregue pelo chat. Nunca no git.
+3. **Nada de `RESUMO.md`, `HANDOFF.md`, `PLANO_X.md`, `README` novo, `NOTES.md`.** O
+   histórico do trabalho mora **aqui, no `CLAUDE.md`** — atualize este arquivo em vez de
+   criar outro. Um arquivo de contexto, não vinte.
+4. **Um arquivo de código novo precisa de justificativa** dita em voz alta antes de
+   criar: por que não cabe num arquivo existente. Preferir editar a criar.
+5. O `.gitignore` já bloqueia: `.md`/`.png`/`.csv`/`.xlsx`/`.pdf` na raiz, `_local/`,
+   `marketing-sprint/`, `handoff/`, `planos/`, `relatorios/`, `prompts/` e
+   `*.docx`/`*.xlsx`/`*.pptx`/`*.pdf` em qualquer pasta. **Se você precisar
+   desligar uma dessas regras, você está fazendo a coisa errada.**
+
+Limpeza de 28/07: 9 `.md`/`.csv` da raiz → `_local/arquivo/` · `marketing-sprint/` →
+`_local/marketing-sprint/` · os 3 `.docx`/`.xlsx` de `docs/` → `_local/arquivo/`.
+`docs/` continua no git só com doc **técnica** (ENV_VARIABLES, PROMPTS, runbooks).
