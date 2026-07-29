@@ -75,7 +75,12 @@ export class TicksController {
       throw new BadRequestException('Invalid Ticks package');
     }
 
-    const currency = body.currency ?? 'usd';
+    // MOEDA ÚNICA: USD, sempre (29/07/2026). Mesmo furo que o checkout de
+    // assinatura tinha: `body.currency` vinha do cliente e escolhia a linha de
+    // preço do pacote, então um POST com 'brl' comprava pelo valor BRL antigo.
+    // A tabela por moeda segue em TICK_PACKAGES para exibição/legado, mas quem
+    // cobra é sempre o USD.
+    const currency = 'usd' as const;
 
     const session = await this.stripeService.createTicksCheckout({
       userId: user.id,

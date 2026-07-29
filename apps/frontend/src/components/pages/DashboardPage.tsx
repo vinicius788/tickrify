@@ -37,7 +37,7 @@ import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } fr
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { track } from "@/lib/analytics";
-import { createCheckoutSession, detectCurrency } from "@/lib/stripe";
+import { createCheckoutSession } from "@/lib/stripe";
 import { PLANS } from "@/components/pricing/PricingCards";
 import { PageHeader } from "@/components/ui/PageHeader";
 
@@ -378,12 +378,14 @@ const DashboardPage = () => {
         navigate('/pricing');
         return;
       }
-      const currency = detectCurrency(
-        typeof navigator !== 'undefined' ? navigator.language : 'en-US',
-      );
+      // `starter` é o plano da vitrine (200 ticks). Este botão vendia `pro`
+      // (LEGADO, 150 ticks) pelo mesmo US$ 29 — quem entrasse pelo paywall
+      // pagava igual e recebia 50 ticks a menos que quem passou pelo /pricing.
+      // A moeda é USD fixo: o `detectCurrency` daqui mandava navegador pt-BR
+      // para o price BRL congelado em jun/2026.
       track('upgrade_clicked', { source: 'locked_value', coupon: 'EARLY35' });
-      track('checkout_started', { plan: 'pro', billingCycle: 'monthly', currency, coupon: 'EARLY35' });
-      const { url } = await createCheckoutSession('pro', token, 'monthly', currency, 'EARLY35');
+      track('checkout_started', { plan: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35' });
+      const { url } = await createCheckoutSession('starter', token, 'monthly', 'usd', 'EARLY35');
       window.location.href = url;
     } catch {
       // Qualquer falha (cold start, rede): cai no caminho antigo, nunca num beco.

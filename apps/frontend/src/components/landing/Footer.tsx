@@ -56,7 +56,7 @@ const Footer = () => {
               </li>
               <li><TermsOfServiceDialog /></li>
               <li>
-                <Link to="/privacidade" className="footer-nav-link">{f.privacy}</Link>
+                <Link to="/privacy" className="footer-nav-link">{f.privacy}</Link>
               </li>
             </ul>
           </div>

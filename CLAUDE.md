@@ -306,3 +306,73 @@ versionados) + 3 documentos de estratégia dentro de `docs/`.
 Limpeza de 28/07: 9 `.md`/`.csv` da raiz → `_local/arquivo/` · `marketing-sprint/` →
 `_local/marketing-sprint/` · os 3 `.docx`/`.xlsx` de `docs/` → `_local/arquivo/`.
 `docs/` continua no git só com doc **técnica** (ENV_VARIABLES, PROMPTS, runbooks).
+
+## Sprint 29/07 — bug de cobranca em moeda + politica de privacidade
+
+**Como apareceu:** a `/pricing` mostrava US$ 29 e o checkout da Stripe abria em
+**R$ 57,00/mes**. Achado a partir de print do dono. Nao era um bug — eram tres.
+
+### 1. A moeda do checkout era escolhida pelo cliente (bug de RECEITA + seguranca)
+- `PricingCards.tsx` fazia certo (`const currency: Currency = "usd"`), mas o
+  backend sobrescrevia: `stripe.service.createCheckoutSession` chamava
+  `detectExistingCustomerCurrency()` e fazia `existingCurrency ?? currency`. A
+  conta do dono tem assinatura de teste em BRL → todo checkout dele resolvia
+  para o price BRL.
+- **O price BRL do starter (`price_1TRv2f...`) esta congelado em R$ 57 desde
+  jun/2026**, quando o plano custava US$ 12. As tres edicoes de preco
+  ($12 → $19 → $29) foram feitas SO no objeto USD. Os 12 objetos BRL/EUR de
+  todos os planos seguem nos valores antigos.
+- Pior: `stripe.controller` aceitava `body.currency` do cliente. Um POST com
+  `currency:'brl'` assinava o plano de US$ 29 por ~US$ 10. Mesmo furo no
+  `ticks.controller` (`body.currency ?? 'usd'` escolhia a linha de preco do
+  pacote). **Sem trafego ninguem explorou, mas era porta aberta.**
+- `DashboardPage` (botao "Unlock analysis") usava
+  `detectCurrency(navigator.language)` → qualquer visitante com navegador pt-BR
+  caia em BRL.
+
+### 2. O paywall vendia outro plano
+`DashboardPage:386` chamava `createCheckoutSession('pro', ...)`. O `pro` e
+LEGADO e da **150 ticks**; o `starter` da **200**. Em USD os dois custam $29 —
+entao quem entrava pelo paywall pagava igual e levava 50 ticks a menos que quem
+passou pelo `/pricing`. O default do `stripe.controller` quando o body vinha sem
+`planType` tambem era `'pro'`.
+
+### Decisao do dono: MOEDA UNICA, USD, para todo mundo
+Manter 18 price IDs (3 planos × 2 ciclos × 3 moedas) sincronizados a mao foi o
+que criou o bug e o recriaria no proximo reajuste. Agora sobra 1 preco para
+manter, e a Stripe converte para a moeda local no checkout via **Adaptive
+Pricing** (ja ligado — o `checkout.sessions.create` omite `payment_method_types`
+de proposito, ver comentario no `stripe.service`).
+- `frontend/lib/stripe.ts`: `detectCurrency` virou casca `@deprecated` que
+  sempre devolve `'usd'`. **Nao foi apagada** so porque
+  `__tests__/DashboardPage.test.tsx` declara ela no mock e o export sumindo
+  daria erro de tipo. Apagar as duas juntas depois.
+- `stripe.controller` e `ticks.controller`: moeda fixa em `'usd'`, ignorando o
+  body. **Isso e fronteira de seguranca, nao preferencia — nao reverter.**
+- `stripe.service`: `detectExistingCustomerCurrency` virou DIAGNOSTICO. So loga
+  aviso; nao decide mais. Se sobrar cliente com compromisso legado em BRL/EUR, a
+  Stripe recusa o checkout com "You cannot combine currencies on a single
+  customer" — **falhar alto e o comportamento certo**, cobrar errado calado nao.
+- Os price IDs BRL/EUR ficam no `stripe.config.ts`: assinaturas legadas ainda
+  precisam deles para creditar os ticks certos. Nenhum checkout novo os alcanca.
+- **PENDENTE do dono:** cancelar as 2 assinaturas de teste em BRL no Stripe,
+  senao a propria conta dele bate no erro de moeda ao testar o checkout.
+
+### 3. Politica de privacidade
+- `PrivacyPolicyPage.tsx` estava **inteira em portugues** num site cujo padrao e
+  ingles desde jun/2026 — e o rodape rotulava o link como "Privacy Policy".
+  Reescrita em ingles.
+- **Claim falso da mesma familia dos que a auditoria de 27/07 matou:** o "Ultima
+  atualizacao" era `new Date().toLocaleDateString(...)`, ou seja, a pagina sempre
+  afirmava ter sido atualizada HOJE, em qualquer dia que o visitante abrisse.
+  Virou a constante `LAST_UPDATED`. **Ao editar o texto, atualize a data na mao.**
+- Rota canonica agora e `/privacy`; `/privacidade` continua respondendo (link
+  antigo/indexacao). Rodape aponta para `/privacy`.
+- Texto ganhou paragrafo sobre transferencia internacional de dados e sobre
+  usuarios fora do Brasil, ja que o produto vende global. **Nao houve revisao
+  juridica** — LGPD segue como lei regente porque a operacao e brasileira.
+- Nao existe pagina de Termos: o rodape usa `TermsOfServiceDialog` (modal).
+
+### Verificacao
+`tsc --noEmit` do frontend: **0 erros**. Backend: **7 erros**, todos do `outcome`
+(Prisma Client local desatualizado) — nenhum novo.

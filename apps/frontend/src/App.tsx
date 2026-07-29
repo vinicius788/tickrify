@@ -47,6 +47,11 @@ function App() {
           <Route path="/try" element={<TryPage />} />
           <Route path="/demo" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/pricing" element={<PricingPage />} />
+          {/* Política de privacidade. A rota canônica é /privacy (site global,
+              texto em inglês). /privacidade continua respondendo porque é o
+              endereço que já circula — links antigos e indexação — e quebrá-lo
+              devolveria 404 numa página legal. */}
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/privacidade" element={<PrivacyPolicyPage />} />
           {/* Pagina publica de acuracia (Fase 5): o scoreboard do motor. */}
           <Route path="/accuracy" element={<AccuracyPage />} />

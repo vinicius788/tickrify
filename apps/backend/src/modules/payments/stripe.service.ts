@@ -46,10 +46,17 @@ export class StripeService {
 
   /**
    * Descobre em qual moeda o cliente já tem compromisso ativo na Stripe.
-   * A Stripe proíbe misturar moedas no mesmo customer, então se ele já tem uma
-   * assinatura (qualquer status "vivo") ou um checkout aberto, precisamos reusar
-   * a mesma moeda no novo checkout. Retorna null se não houver nada — aí o novo
-   * checkout pode usar a moeda pedida (usuário novo).
+   *
+   * ATENÇÃO (29/07/2026): esta função virou DIAGNÓSTICO, não decisão. Ela já
+   * sobrescreveu a moeda do checkout — e por isso um cliente com assinatura
+   * antiga em BRL era cobrado R$ 57 (o price BRL congelado no tier de US$ 12)
+   * mesmo com a vitrine mostrando US$ 29 e o front mandando `usd`. Hoje só
+   * emitimos aviso no log; a moeda do checkout é sempre USD.
+   *
+   * A restrição da Stripe é real: um customer não pode ter assinaturas em moedas
+   * diferentes. Se isto retornar algo != 'usd', o checkout vai falhar com erro
+   * explícito da Stripe — que é o comportamento certo. Cobrar o preço errado em
+   * silêncio é pior que falhar.
    */
   private async detectExistingCustomerCurrency(customerId: string): Promise<Currency | null> {
     const stripe = this.getStripeClient();
@@ -125,20 +132,31 @@ export class StripeService {
 
       const customerId = await this.resolveOrCreateCustomerId(user);
 
-      // A Stripe não deixa um mesmo cliente ter assinaturas em moedas diferentes.
-      // Se este cliente JÁ tem assinatura/checkout ativo em outra moeda (ex: assinou
-      // em BRL e agora o site mostra USD), forçar a MESMA moeda evita o erro
-      // "You cannot combine currencies on a single customer".
+      // A moeda pedida MANDA. Antes, uma moeda legada detectada aqui
+      // sobrescrevia o `currency` — e como os price IDs BRL/EUR nunca foram
+      // atualizados nas três mudanças de preço ($12 → $19 → $29), o cliente era
+      // cobrado o valor de jun/2026 sem ninguém perceber.
+      //
+      // Se sobrar moeda legada, a Stripe recusa o checkout com
+      // "You cannot combine currencies on a single customer". É ruído
+      // conhecido e visível — e só atinge quem já assinou em BRL/EUR, que hoje
+      // é só a conta do dono. Falhar alto > cobrar errado calado.
       const existingCurrency = await this.detectExistingCustomerCurrency(customerId);
-      const effectiveCurrency: Currency = existingCurrency ?? currency;
+      if (existingCurrency && existingCurrency !== currency) {
+        this.logger.warn(
+          `[stripe] Cliente ${customerId} tem compromisso legado em ${existingCurrency.toUpperCase()}, ` +
+            `mas o checkout vai em ${currency.toUpperCase()}. A Stripe deve recusar. ` +
+            `Cancele a assinatura legada para destravar.`,
+        );
+      }
 
-      const priceId = getPriceId(planType, billingCycle, effectiveCurrency);
+      const priceId = getPriceId(planType, billingCycle, currency);
       const appBaseUrl = this.resolveAppBaseUrl();
       const successUrl = `${appBaseUrl}/dashboard?success=true`;
       const cancelUrl = `${appBaseUrl}/pricing?canceled=true`;
 
       if (!priceId) {
-        throw new Error(`Price ID not configured for plan: ${planType} (${billingCycle}/${effectiveCurrency})`);
+        throw new Error(`Price ID not configured for plan: ${planType} (${billingCycle}/${currency})`);
       }
 
       // Criar checkout session
@@ -176,13 +194,15 @@ export class StripeService {
           clerkUserId,
           planType,
           billingCycle,
-          currency: effectiveCurrency,
+          currency,
         },
       });
 
       this.logger.log(
-        `Checkout session created: ${session.id} for user: ${clerkUserId} (${effectiveCurrency}${
-          existingCurrency ? ' — reused existing customer currency' : ''
+        `Checkout session created: ${session.id} for user: ${clerkUserId} (${currency}${
+          existingCurrency && existingCurrency !== currency
+            ? ` — ATENÇÃO: cliente tem compromisso legado em ${existingCurrency}`
+            : ''
         })`,
       );
 

@@ -5,18 +5,28 @@ export type BillingCycle = 'monthly' | 'yearly';
 export type Currency = 'brl' | 'usd' | 'eur';
 export type PlanType = 'starter' | 'pro' | 'elite';
 
-// Site is global/English-first → USD is the default. BRL only for Brazilian
-// locale; EUR only for eurozone locales. Everything else (US, UK, CA, AU, …) → USD.
-const EURO_LOCALE_PREFIXES = ['de', 'fr', 'es', 'it', 'nl', 'fi', 'el', 'et', 'lv', 'lt', 'sk', 'sl', 'ga', 'mt'];
+// MOEDA ÚNICA: USD (29/07/2026).
+//
+// Existia aqui um `detectCurrency(locale)` que mandava navegador em pt-BR para
+// BRL e eurozona para EUR. Parecia gentileza e era bug de receita: os price IDs
+// BRL/EUR nunca foram atualizados nas três mudanças de preço ($12 → $19 → $29),
+// então um visitante brasileiro assinava o plano de US$ 29 por R$ 57 (~US$ 10).
+//
+// Manter 18 objetos de preço (3 planos × 2 ciclos × 3 moedas) sincronizados à
+// mão é o que criou o bug — e o recriaria no próximo reajuste. Com USD único
+// sobra 1 preço para manter, e a Stripe converte para a moeda local do cliente
+// no checkout via Adaptive Pricing, na cotação do dia. O tipo `Currency` segue
+// com as três moedas porque assinaturas LEGADAS ainda resolvem por elas.
 
-export function detectCurrency(locale: string): Currency {
-  const normalized = String(locale || '').toLowerCase();
-  if (normalized === 'pt-br' || normalized === 'pt') return 'brl';
-  if (normalized === 'pt-pt') return 'eur';
-  if (EURO_LOCALE_PREFIXES.some((l) => normalized === l || normalized.startsWith(`${l}-`))) return 'eur';
+/**
+ * @deprecated Sempre retorna 'usd'. Mantida como casca para não quebrar
+ * importações antigas — inclusive o mock em `__tests__/DashboardPage.test.tsx`,
+ * que declara `detectCurrency` e daria erro de tipo se o export sumisse.
+ * Pode ser apagada junto com o mock quando o build local voltar a rodar.
+ */
+export function detectCurrency(_locale?: string): Currency {
   return 'usd';
 }
-
 
 function isLocalHostname(hostname: string) {
   return hostname === 'localhost' || hostname === '127.0.0.1';
