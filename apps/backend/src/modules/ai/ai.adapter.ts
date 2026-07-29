@@ -659,7 +659,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
  */
 const ANALYZE_TIMEOUT_MS = (() => {
   const raw = Number(process.env.AI_ANALYZE_TIMEOUT_MS);
-  return Number.isFinite(raw) && raw >= 20_000 && raw <= 120_000 ? raw : 55_000;
+  // Teto ampliado para 180s: modelos de raciocínio (GPT-5+) pensam antes de
+  // escrever e passam de 120s com prompt longo. O DEFAULT continua 55s — isto só
+  // abre espaço para diagnóstico e para o caminho deep, nunca muda produção sozinho.
+  return Number.isFinite(raw) && raw >= 20_000 && raw <= 180_000 ? raw : 55_000;
 })();
 
 /**
@@ -1527,7 +1530,15 @@ export class AIAdapter {
       // longo consome a cota antes de escrever o JSON e a resposta volta truncada
       // (finish_reason "length"). O teto é limite, não consumo: elevá-lo não custa
       // nada enquanto não for usado. Ver openai-params.ts.
-      const baseMaxTokens = analysisType === 'deep' ? 12_000 : 8_000;
+      // 8000 no quick era o teto calibrado para o prompt curto. Com a decisão
+      // agora no FIM do schema (o modelo mede antes de decidir), truncar deixou
+      // de ser "resposta um pouco cortada" e passou a ser "veredito perdido": o
+      // reparador fecha o JSON e recommendation/confidence caem no padrão
+      // HOLD/0. Medido em 29/07 com o v9: completion parava em 8000 e o BUY que
+      // o modelo havia concluído no reasoning virava WAIT 30 na tela.
+      // 16000 é o teto de saída do gpt-4o-mini e do gpt-4o. Teto é limite, não
+      // consumo: elevá-lo não custa nada enquanto não for usado.
+      const baseMaxTokens = analysisType === 'deep' ? 16_000 : 16_000;
       const maxTokens = isNextGenModel(model) ? baseMaxTokens * 2 : baseMaxTokens;
       // withTimeout garante aborto em exatamente 30s via Promise.race
       // Mais confiável do que { timeout } do SDK (que pode não funcionar em todos os ambientes)
@@ -1549,14 +1560,10 @@ export class AIAdapter {
               type: 'object',
               properties: {
                 is_financial_chart: { type: 'boolean' },
-                recommendation: {
-                  type: 'string',
-                  enum: ['BUY', 'SELL', 'HOLD', 'COMPRA', 'VENDA', 'AGUARDAR'],
-                },
-                confidence: { type: 'number' },
                 analysis: {
                   type: 'object',
                   properties: {
+                    reasoning: { type: 'string' },
                     symbol: { type: 'string' },
                     timeframe: { type: 'string' },
                     detectedSession: {
@@ -1608,7 +1615,6 @@ export class AIAdapter {
                     riskFactors: { type: 'string' },
                     whyNotOpposite: { type: 'string' },
                     executiveSummary: { type: 'string' },
-                    reasoning: { type: 'string' },
                     invalidationLevel: { type: ['number', 'null'] },
                     invalidationNote: { type: ['string', 'null'] },
                     entryType: { type: ['string', 'null'] },
@@ -1628,6 +1634,7 @@ export class AIAdapter {
                     multiTimeframeAlignment: { type: ['string', 'null'] },
                   },
                   required: [
+                    'reasoning',
                     'symbol',
                     'timeframe',
                     'detectedSession',
@@ -1656,7 +1663,6 @@ export class AIAdapter {
                     'riskFactors',
                     'whyNotOpposite',
                     'executiveSummary',
-                    'reasoning',
                     'invalidationLevel',
                     'invalidationNote',
                     'entryType',
@@ -1677,8 +1683,13 @@ export class AIAdapter {
                   ],
                   additionalProperties: false,
                 },
+                recommendation: {
+                  type: 'string',
+                  enum: ['BUY', 'SELL', 'HOLD', 'COMPRA', 'VENDA', 'AGUARDAR'],
+                },
+                confidence: { type: 'number' },
               },
-              required: ['is_financial_chart', 'recommendation', 'confidence', 'analysis'],
+              required: ['is_financial_chart', 'analysis', 'recommendation', 'confidence'],
               additionalProperties: false,
             },
           },
@@ -1703,6 +1714,31 @@ export class AIAdapter {
           ? String((choice.message as { refusal?: string }).refusal || '').trim()
           : '';
       const content = extractMessageContent(choice?.message?.content);
+
+      // Diagnóstico (AI_DEBUG_DUMP_RAW=/caminho/arquivo.txt): grava a RESPOSTA
+      // crua do modelo e o uso de tokens. Serve para descobrir para onde vão os
+      // tokens quando a resposta volta truncada — sem isso a investigação é chute.
+      // Só a resposta é gravada; o prompt do sistema NUNCA vai para arquivo.
+      if (process.env.AI_DEBUG_DUMP_RAW) {
+        try {
+          const u: any = (response as any).usage || {};
+          require('fs').appendFileSync(
+            process.env.AI_DEBUG_DUMP_RAW,
+            [
+              '===== ' + new Date().toISOString() + ' =====',
+              'model=' + model + ' finish_reason=' + finishReason,
+              'tokens: prompt=' + u.prompt_tokens + ' completion=' + u.completion_tokens + ' total=' + u.total_tokens,
+              'completion_details=' + JSON.stringify(u.completion_tokens_details || null),
+              'content_length=' + String(content || '').length,
+              '--- RESPOSTA CRUA ---',
+              String(content || ''),
+              '',
+            ].join('\n'),
+          );
+        } catch {
+          /* diagnóstico é best-effort */
+        }
+      }
 
       if (refusal) {
         throw new AIAnalysisError({

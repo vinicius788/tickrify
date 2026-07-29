@@ -1,10 +1,15 @@
 /**
  * Compatibilidade de parâmetros entre famílias de modelo da OpenAI.
  *
- * Descoberto no piloto de 27/07/2026, ao testar `gpt-5.6-luna`:
+ * Dois erros 400 distintos foram descobertos testando `gpt-5.6-luna`:
  *
- *   400 Unsupported parameter: 'max_tokens' is not supported with this model.
- *       Use 'max_completion_tokens' instead.
+ *   (27/07) 400 Unsupported parameter: 'max_tokens' is not supported with this
+ *           model. Use 'max_completion_tokens' instead.
+ *   (29/07) 400 Unsupported value: 'temperature' does not support 0.1 with this
+ *           model. Only the default (1) value is supported.
+ *
+ * O segundo só apareceu depois de corrigir o primeiro — cada erro esconde o
+ * seguinte. Se aparecer um terceiro parâmetro incompatível, ele muda AQUI.
  *
  * A família GPT-5 renomeou o limite de saída (porque os modelos de raciocínio
  * gastam tokens internos invisíveis, então "max_tokens" deixou de descrever o
@@ -47,13 +52,21 @@ export function buildSamplingParams(
     // `seed` é rejeitado: a OpenAI não garante determinismo entre rotas nos
     // modelos de raciocínio. O pareamento do backtest não depende disso — ele
     // vem da amostragem (seed 20260713 no manifest), não da chamada de API.
+    //
+    // `temperature` e `top_p` TAMBÉM são rejeitados. Medido em 29/07/2026 com
+    // gpt-5.6-luna:
+    //   400 Unsupported value: 'temperature' does not support 0.1 with this
+    //       model. Only the default (1) value is supported.
+    // Ou seja: nesses modelos NÃO existe controle de sampling. A consistência
+    // entre análises tem de vir do PROMPT (regras determinísticas, aritmética
+    // declarada), não de temperatura baixa. Enviar qualquer um dos dois derruba
+    // 100% das chamadas — é falha total, não degradação.
   } else {
     params.max_tokens = opts.maxTokens;
     if (opts.seed !== undefined) params.seed = opts.seed;
+    if (opts.temperature !== undefined) params.temperature = opts.temperature;
+    if (opts.topP !== undefined) params.top_p = opts.topP;
   }
-
-  if (opts.temperature !== undefined) params.temperature = opts.temperature;
-  if (opts.topP !== undefined) params.top_p = opts.topP;
 
   return params;
 }

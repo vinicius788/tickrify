@@ -281,6 +281,26 @@ async function main() {
           trendStrength: a.trendStrength ?? null,
           marketRegime: a.marketRegime ?? null,
           identifiedPatterns: a.identifiedPatterns ?? null,
+          // Diagnóstico de verbosidade (BT_DEBUG_FIELDS=1): tamanho em caracteres
+          // de cada campo de texto. Sem isso não dá pra saber ONDE o modelo está
+          // gastando os tokens quando a resposta vem truncada.
+          fieldSizes: process.env.BT_DEBUG_FIELDS
+            ? Object.fromEntries(
+                Object.entries(a)
+                  .filter(([, v]) => typeof v === 'string')
+                  .map(([k, v]) => [k, (v as string).length])
+                  .sort((x, y) => (y[1] as number) - (x[1] as number)),
+              )
+            : undefined,
+          // Amostra do campo mais longo, para ver o QUE ele escreveu demais.
+          longestFieldSample: process.env.BT_DEBUG_FIELDS
+            ? (() => {
+                const entries = Object.entries(a).filter(([, v]) => typeof v === 'string') as Array<[string, string]>;
+                if (!entries.length) return null;
+                const [k, v] = entries.sort((x, y) => y[1].length - x[1].length)[0];
+                return { field: k, sample: v.slice(0, 1500) };
+              })()
+            : undefined,
           error: null,
         };
         ok++;
