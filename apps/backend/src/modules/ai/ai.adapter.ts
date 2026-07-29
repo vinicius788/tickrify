@@ -508,6 +508,135 @@ function buildEventMapLines(candles: number[][], fmt: (n: number) => number): st
 }
 
 /**
+ * Bloco de DADOS REAIS injetado no prompt (preco, ATR14, RSI14, posicao no
+ * range, volume relativo, mapa de volume, mapa de eventos, swings, ultimos
+ * candles).
+ *
+ * Exportado de proposito: o backtest-runner importa ESTA funcao em vez de ter
+ * a propria copia. Enquanto eram duas implementacoes, o runner ficou para tras
+ * (sem volume e sem mapa de eventos) e o backtest passou a medir um motor que
+ * nao era o de producao. Uma fonte da verdade, sem divergencia possivel.
+ */
+export function buildRealDataBlock(symbol: string, timeframe: string, candles: number[][]): string | null {
+  const win = candles.slice(-120);
+  if (win.length < 20) return null;
+  const highs = win.map((c) => c[2]);
+  const lows = win.map((c) => c[3]);
+  const last = win[win.length - 1];
+  const trs = win.slice(1).map((c, i) =>
+    Math.max(c[2] - c[3], Math.abs(c[2] - win[i][4]), Math.abs(c[3] - win[i][4])),
+  );
+  const atr = trs.slice(-14).reduce((a, b) => a + b, 0) / Math.min(14, trs.length);
+  const swingsH: number[] = [];
+  const swingsL: number[] = [];
+  for (let i = 3; i < win.length - 3; i++) {
+    if (highs[i] === Math.max(...highs.slice(i - 3, i + 4))) swingsH.push(highs[i]);
+    if (lows[i] === Math.min(...lows.slice(i - 3, i + 4))) swingsL.push(lows[i]);
+  }
+  const closes = win.map((c) => c[4]);
+
+  // RSI(14) com suavização de Wilder — momentum real, não estimado do pixel.
+  // Só é um CONTEXTO: em tendência forte o RSI fica esticado sem reverter,
+  // então >70/<30 não é gatilho de reversão sozinho (evita sinal contra-tendência).
+  const rsi14 = ((): number | null => {
+    const period = 14;
+    if (closes.length < period + 1) return null;
+    let avgG = 0;
+    let avgL = 0;
+    for (let i = 1; i <= period; i++) {
+      const d = closes[i] - closes[i - 1];
+      if (d >= 0) avgG += d;
+      else avgL -= d;
+    }
+    avgG /= period;
+    avgL /= period;
+    for (let i = period + 1; i < closes.length; i++) {
+      const d = closes[i] - closes[i - 1];
+      avgG = (avgG * (period - 1) + (d > 0 ? d : 0)) / period;
+      avgL = (avgL * (period - 1) + (d < 0 ? -d : 0)) / period;
+    }
+    if (avgL === 0) return 100;
+    return 100 - 100 / (1 + avgG / avgL);
+  })();
+
+  // Posição do preço atual dentro da faixa visível (0% = fundo, 100% = topo).
+  // Ajuda a IA a saber se está comprando perto do topo (chasing) ou do fundo.
+  const winHigh = Math.max(...highs);
+  const winLow = Math.min(...lows);
+  const rangePos = winHigh > winLow ? ((last[4] - winLow) / (winHigh - winLow)) * 100 : 50;
+
+  // Momentum de curto prazo: variação % dos últimos ~6 candles (maturidade do
+  // movimento — casa com a regra anti-chasing do prompt v7.2).
+  const lookback = Math.min(6, win.length - 1);
+  const refClose = closes[closes.length - 1 - lookback];
+  const momPct = refClose ? ((last[4] - refClose) / refClose) * 100 : 0;
+
+  const fmt = (n: number) => Number(n.toPrecision(6));
+
+  // ── Volume: esforço por trás do movimento ────────────────────────────────
+  // Volume relativo (vs média de 20) é o que importa, não o número absoluto:
+  // "2.4x" diz algo em qualquer ativo; "18734" não diz nada.
+  const vols = win.map((c) => (Number.isFinite(c[5]) ? c[5] : 0));
+  const hasVolume = vols.filter((v) => v > 0).length >= 20;
+  const avgVol = hasVolume
+    ? vols.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, vols.length)
+    : 0;
+  const relVol = (v: number) => (avgVol > 0 ? v / avgVol : 0);
+
+  const last12 = win
+    .slice(-12)
+    .map((c) => {
+      const base = `[o${fmt(c[1])} h${fmt(c[2])} l${fmt(c[3])} c${fmt(c[4])}`;
+      if (!hasVolume) return `${base}]`;
+      const rv = relVol(c[5]);
+      return `${base} v${rv.toFixed(1)}x${rv >= 2 ? ' SPIKE' : ''}]`;
+    })
+    .join(' ');
+
+  const volumeLines: string[] = [];
+  if (hasVolume) {
+    const profile = buildVolumeProfile(win);
+    volumeLines.push(
+      '- Volume is REAL (exchange feed), expressed as a multiple of the 20-candle average. 1.0x = typical, 2.0x+ = a spike (a decision point price tends to revisit), below 0.6x = no participation.',
+    );
+    if (profile) {
+      const gaps = profile.lowVolumeZones
+        .map(([a, b]) => `${fmt(a)}-${fmt(b)}`)
+        .join(', ');
+      volumeLines.push(
+        `- VOLUME MAP (approximate: each candle's volume spread evenly across its range) — acceptance zone (value area) ${fmt(profile.val)} to ${fmt(profile.vah)} · POC (most traded price, a magnet) ${fmt(profile.poc)}${gaps ? ` · low-volume gaps price crosses fast (bad target locations): ${gaps}` : ''}`,
+      );
+    }
+  } else {
+    volumeLines.push(
+      '- No usable volume data for this instrument (normal for forex spot: there is no central exchange). Run the pressure read in PRICE-ONLY mode and say so — do NOT estimate volume.',
+    );
+  }
+
+  const rsiLine =
+    rsi14 != null
+      ? `- Momentum (RSI14): ${Math.round(rsi14)} — ${rsi14 >= 70 ? 'overbought zone (in a strong uptrend it can stay high; not a sell trigger by itself)' : rsi14 <= 30 ? 'oversold zone (in a strong downtrend it can stay low; not a buy trigger by itself)' : 'neutral'}`
+      : null;
+  return [
+    '# REAL MARKET DATA (ground truth from the exchange feed — trust these numbers over pixel-reading)',
+    `- Symbol: ${symbol} · timeframe: ${timeframe} · current price (last close): ${fmt(last[4])}`,
+    `- Visible window high: ${fmt(winHigh)} · low: ${fmt(winLow)} (last ${win.length} candles)`,
+    `- Price sits at ${Math.round(rangePos)}% of the visible range (0%=low, 100%=high) — buying near 100% or selling near 0% is chasing.`,
+    `- Short-term momentum (~${lookback} candles): ${momPct >= 0 ? '+' : ''}${momPct.toFixed(2)}%`,
+    `- Average candle range (ATR14): ${fmt(atr)} — stops tighter than ~1 ATR sit inside noise; limit entries further than ~1.5 ATR from current price rarely fill.`,
+    rsiLine,
+    ...volumeLines,
+    ...buildEventMapLines(win, fmt),
+    `- Recent swing highs: ${swingsH.slice(-5).map(fmt).join(', ')}`,
+    `- Recent swing lows: ${swingsL.slice(-5).map(fmt).join(', ')}`,
+    `- Last 12 candles OHLC${hasVolume ? ' + relative volume' : ''}: ${last12}`,
+    'Set entry/stopLoss/takeProfits and judge structure using these EXACT values. Every level you output must be consistent with this data.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
  * Garante que uma promise seja resolvida ou rejeitada em no máximo `ms` milissegundos.
  * Mais confiável do que o timeout interno do SDK OpenAI, que pode não funcionar em todos
  * os ambientes (ex.: quando o servidor aceita a conexão mas demora a enviar a resposta).
@@ -1233,124 +1362,6 @@ export class AIAdapter {
    * backtest-runner (ATR14 por true range, swings fractais de 3, últimos 12 OHLC).
    * Não alterar sem re-medir: qualquer divergência invalida a comparação com o teste.
    */
-  private buildCandleGroundingBlock(symbol: string, timeframe: string, candles: number[][]): string | null {
-    const win = candles.slice(-120);
-    if (win.length < 20) return null;
-    const highs = win.map((c) => c[2]);
-    const lows = win.map((c) => c[3]);
-    const last = win[win.length - 1];
-    const trs = win.slice(1).map((c, i) =>
-      Math.max(c[2] - c[3], Math.abs(c[2] - win[i][4]), Math.abs(c[3] - win[i][4])),
-    );
-    const atr = trs.slice(-14).reduce((a, b) => a + b, 0) / Math.min(14, trs.length);
-    const swingsH: number[] = [];
-    const swingsL: number[] = [];
-    for (let i = 3; i < win.length - 3; i++) {
-      if (highs[i] === Math.max(...highs.slice(i - 3, i + 4))) swingsH.push(highs[i]);
-      if (lows[i] === Math.min(...lows.slice(i - 3, i + 4))) swingsL.push(lows[i]);
-    }
-    const closes = win.map((c) => c[4]);
-
-    // RSI(14) com suavização de Wilder — momentum real, não estimado do pixel.
-    // Só é um CONTEXTO: em tendência forte o RSI fica esticado sem reverter,
-    // então >70/<30 não é gatilho de reversão sozinho (evita sinal contra-tendência).
-    const rsi14 = ((): number | null => {
-      const period = 14;
-      if (closes.length < period + 1) return null;
-      let avgG = 0;
-      let avgL = 0;
-      for (let i = 1; i <= period; i++) {
-        const d = closes[i] - closes[i - 1];
-        if (d >= 0) avgG += d;
-        else avgL -= d;
-      }
-      avgG /= period;
-      avgL /= period;
-      for (let i = period + 1; i < closes.length; i++) {
-        const d = closes[i] - closes[i - 1];
-        avgG = (avgG * (period - 1) + (d > 0 ? d : 0)) / period;
-        avgL = (avgL * (period - 1) + (d < 0 ? -d : 0)) / period;
-      }
-      if (avgL === 0) return 100;
-      return 100 - 100 / (1 + avgG / avgL);
-    })();
-
-    // Posição do preço atual dentro da faixa visível (0% = fundo, 100% = topo).
-    // Ajuda a IA a saber se está comprando perto do topo (chasing) ou do fundo.
-    const winHigh = Math.max(...highs);
-    const winLow = Math.min(...lows);
-    const rangePos = winHigh > winLow ? ((last[4] - winLow) / (winHigh - winLow)) * 100 : 50;
-
-    // Momentum de curto prazo: variação % dos últimos ~6 candles (maturidade do
-    // movimento — casa com a regra anti-chasing do prompt v7.2).
-    const lookback = Math.min(6, win.length - 1);
-    const refClose = closes[closes.length - 1 - lookback];
-    const momPct = refClose ? ((last[4] - refClose) / refClose) * 100 : 0;
-
-    const fmt = (n: number) => Number(n.toPrecision(6));
-
-    // ── Volume: esforço por trás do movimento ────────────────────────────────
-    // Volume relativo (vs média de 20) é o que importa, não o número absoluto:
-    // "2.4x" diz algo em qualquer ativo; "18734" não diz nada.
-    const vols = win.map((c) => (Number.isFinite(c[5]) ? c[5] : 0));
-    const hasVolume = vols.filter((v) => v > 0).length >= 20;
-    const avgVol = hasVolume
-      ? vols.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, vols.length)
-      : 0;
-    const relVol = (v: number) => (avgVol > 0 ? v / avgVol : 0);
-
-    const last12 = win
-      .slice(-12)
-      .map((c) => {
-        const base = `[o${fmt(c[1])} h${fmt(c[2])} l${fmt(c[3])} c${fmt(c[4])}`;
-        if (!hasVolume) return `${base}]`;
-        const rv = relVol(c[5]);
-        return `${base} v${rv.toFixed(1)}x${rv >= 2 ? ' SPIKE' : ''}]`;
-      })
-      .join(' ');
-
-    const volumeLines: string[] = [];
-    if (hasVolume) {
-      const profile = buildVolumeProfile(win);
-      volumeLines.push(
-        '- Volume is REAL (exchange feed), expressed as a multiple of the 20-candle average. 1.0x = typical, 2.0x+ = a spike (a decision point price tends to revisit), below 0.6x = no participation.',
-      );
-      if (profile) {
-        const gaps = profile.lowVolumeZones
-          .map(([a, b]) => `${fmt(a)}-${fmt(b)}`)
-          .join(', ');
-        volumeLines.push(
-          `- VOLUME MAP (approximate: each candle's volume spread evenly across its range) — acceptance zone (value area) ${fmt(profile.val)} to ${fmt(profile.vah)} · POC (most traded price, a magnet) ${fmt(profile.poc)}${gaps ? ` · low-volume gaps price crosses fast (bad target locations): ${gaps}` : ''}`,
-        );
-      }
-    } else {
-      volumeLines.push(
-        '- No usable volume data for this instrument (normal for forex spot: there is no central exchange). Run the pressure read in PRICE-ONLY mode and say so — do NOT estimate volume.',
-      );
-    }
-
-    const rsiLine =
-      rsi14 != null
-        ? `- Momentum (RSI14): ${Math.round(rsi14)} — ${rsi14 >= 70 ? 'overbought zone (in a strong uptrend it can stay high; not a sell trigger by itself)' : rsi14 <= 30 ? 'oversold zone (in a strong downtrend it can stay low; not a buy trigger by itself)' : 'neutral'}`
-        : null;
-    return [
-      '# REAL MARKET DATA (ground truth from the exchange feed — trust these numbers over pixel-reading)',
-      `- Symbol: ${symbol} · timeframe: ${timeframe} · current price (last close): ${fmt(last[4])}`,
-      `- Visible window high: ${fmt(winHigh)} · low: ${fmt(winLow)} (last ${win.length} candles)`,
-      `- Price sits at ${Math.round(rangePos)}% of the visible range (0%=low, 100%=high) — buying near 100% or selling near 0% is chasing.`,
-      `- Short-term momentum (~${lookback} candles): ${momPct >= 0 ? '+' : ''}${momPct.toFixed(2)}%`,
-      `- Average candle range (ATR14): ${fmt(atr)} — stops tighter than ~1 ATR sit inside noise; limit entries further than ~1.5 ATR from current price rarely fill.`,
-      rsiLine,
-      ...volumeLines,
-      ...buildEventMapLines(win, fmt),
-      `- Recent swing highs: ${swingsH.slice(-5).map(fmt).join(', ')}`,
-      `- Recent swing lows: ${swingsL.slice(-5).map(fmt).join(', ')}`,
-      `- Last 12 candles OHLC${hasVolume ? ' + relative volume' : ''}: ${last12}`,
-      'Set entry/stopLoss/takeProfits and judge structure using these EXACT values. Every level you output must be consistent with this data.',
-    ]
-      .filter(Boolean)
-      .join('\n');
-  }
 
   /**
    * Grounding completo do caminho quick: candles reais + contexto de mercado
@@ -1377,7 +1388,7 @@ export class AIAdapter {
       if (candles) {
         staleReason = this.detectStaleChart(candles, extracted.lastPrice);
         if (!staleReason) {
-          candleBlock = this.buildCandleGroundingBlock(sym, interval, candles);
+          candleBlock = buildRealDataBlock(sym, interval, candles);
         }
       }
     }

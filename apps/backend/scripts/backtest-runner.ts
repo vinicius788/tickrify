@@ -32,7 +32,7 @@ process.env.ENABLE_NEWS_GUARD = 'false';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
-import { AIAdapter, AIAnalysisError } from '../src/modules/ai/ai.adapter';
+import { AIAdapter, AIAnalysisError, buildRealDataBlock } from '../src/modules/ai/ai.adapter';
 import { PromptBuilderService } from '../src/modules/prompt/prompt-builder.service';
 
 const BACKTEST_DIR = path.resolve(__dirname, '../../../scripts/backtest');
@@ -112,34 +112,13 @@ function loadSeries(symbol: string, interval: string): number[][] {
 function groundingBlock(e: ManifestEntry): string {
   const candles = loadSeries(e.symbol, e.interval);
   const win = candles.slice(e.cutIndex - 120, e.cutIndex); // só o que está no gráfico
-  const highs = win.map((c) => c[2]);
-  const lows = win.map((c) => c[3]);
-  const last = win[win.length - 1];
-  const trs = win.slice(1).map((c, i) =>
-    Math.max(c[2] - c[3], Math.abs(c[2] - win[i][4]), Math.abs(c[3] - win[i][4])),
-  );
-  const atr = trs.slice(-14).reduce((a, b) => a + b, 0) / Math.min(14, trs.length);
-  const swingsH: number[] = [];
-  const swingsL: number[] = [];
-  for (let i = 3; i < win.length - 3; i++) {
-    if (highs[i] === Math.max(...highs.slice(i - 3, i + 4))) swingsH.push(highs[i]);
-    if (lows[i] === Math.min(...lows.slice(i - 3, i + 4))) swingsL.push(lows[i]);
-  }
-  const fmt = (n: number) => Number(n.toPrecision(6));
-  const last12 = win
-    .slice(-12)
-    .map((c) => `[o${fmt(c[1])} h${fmt(c[2])} l${fmt(c[3])} c${fmt(c[4])}]`)
-    .join(' ');
-  return [
-    '# REAL MARKET DATA (ground truth from the exchange feed — trust these numbers over pixel-reading)',
-    `- Symbol: ${e.symbol} · timeframe: ${e.interval} · current price (last close): ${fmt(last[4])}`,
-    `- Visible window high: ${fmt(Math.max(...highs))} · low: ${fmt(Math.min(...lows))} (last 120 candles)`,
-    `- Average candle range (ATR14): ${fmt(atr)} — stops tighter than ~1 ATR sit inside noise; limit entries further than ~1.5 ATR from current price rarely fill.`,
-    `- Recent swing highs: ${swingsH.slice(-5).map(fmt).join(', ')}`,
-    `- Recent swing lows: ${swingsL.slice(-5).map(fmt).join(', ')}`,
-    `- Last 12 candles OHLC: ${last12}`,
-    'Set entry/stopLoss/takeProfits and judge structure using these EXACT values. Every level you output must be consistent with this data.',
-  ].join('\n');
+  // MESMA função que roda em produção (ai.adapter → buildRealDataBlock).
+  // Antes havia uma cópia local aqui, que ficou defasada: sem volume, sem mapa
+  // de volume e sem mapa de eventos. Medir com dados mais pobres do que os de
+  // produção invalida a comparação — por isso agora é uma fonte só.
+  // O dataset local traz volume em candles[i][5] (cripto tem; FX/metais vêm 0,
+  // e nesse caso o bloco de volume some sozinho, exatamente como em produção).
+  return buildRealDataBlock(e.symbol, e.interval, win) ?? '';
 }
 
 function loadDone(): Set<string> {
