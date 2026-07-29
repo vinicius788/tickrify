@@ -18,7 +18,7 @@ import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
 import { MarketService, normalizeToBinancePerp } from '../market/market.service';
 import { EconomicCalendarService } from '../calendar/calendar.service';
-import { buildSamplingParams, resolveModel } from './openai-params';
+import { buildSamplingParams, isNextGenModel, resolveModel } from './openai-params';
 
 // ── Guard anti-extração de prompt ──────────────────────────────────────────
 // Defende contra a tentativa de extrair o system prompt via input (ex.: alguém
@@ -282,6 +282,223 @@ function extractMessageContent(content: unknown): string {
   }
 
   return String(content || '').trim();
+}
+
+/**
+ * Volume vindo de API externa (string ou número) → número finito e não-negativo.
+ * Ausente/inválido vira 0, e 0 faz o bloco de volume ser omitido — nunca inventado.
+ */
+function safeVolume(raw: unknown): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * Perfil de volume por preço (aproximação de POC / área de valor).
+ *
+ * Distribui o volume de cada candle UNIFORMEMENTE pelo seu range e soma por
+ * faixa de preço. É aproximação — o volume real dentro do candle não é uniforme —
+ * mas é ordens de grandeza melhor do que a IA estimar zona de negociação olhando
+ * pixel, e o prompt exige que seja rotulado como aproximado.
+ *
+ * Devolve null quando não há volume utilizável (ex.: forex spot).
+ */
+function buildVolumeProfile(
+  candles: number[][],
+  bins = 40,
+): { poc: number; vah: number; val: number; lowVolumeZones: Array<[number, number]> } | null {
+  const usable = candles.filter((c) => Number.isFinite(c[5]) && c[5] > 0);
+  if (usable.length < 20) return null;
+
+  const high = Math.max(...usable.map((c) => c[2]));
+  const low = Math.min(...usable.map((c) => c[3]));
+  if (!(high > low)) return null;
+
+  const step = (high - low) / bins;
+  const buckets = new Array<number>(bins).fill(0);
+
+  for (const c of usable) {
+    const from = Math.max(0, Math.min(bins - 1, Math.floor((c[3] - low) / step)));
+    const to = Math.max(0, Math.min(bins - 1, Math.floor((c[2] - low) / step)));
+    const span = to - from + 1;
+    const share = c[5] / span;
+    for (let i = from; i <= to; i++) buckets[i] += share;
+  }
+
+  const total = buckets.reduce((a, b) => a + b, 0);
+  if (!(total > 0)) return null;
+
+  // POC = faixa de maior volume.
+  let pocIdx = 0;
+  for (let i = 1; i < bins; i++) if (buckets[i] > buckets[pocIdx]) pocIdx = i;
+
+  // Área de valor: cresce a partir do POC para o lado mais volumoso até 70%.
+  let lo = pocIdx;
+  let hi = pocIdx;
+  let acc = buckets[pocIdx];
+  while (acc < total * 0.7 && (lo > 0 || hi < bins - 1)) {
+    const below = lo > 0 ? buckets[lo - 1] : -1;
+    const above = hi < bins - 1 ? buckets[hi + 1] : -1;
+    if (above >= below) {
+      hi += 1;
+      acc += buckets[hi];
+    } else {
+      lo -= 1;
+      acc += buckets[lo];
+    }
+  }
+
+  // Zonas de baixo volume (gaps do leilão): faixas com menos de 20% do POC.
+  const threshold = buckets[pocIdx] * 0.2;
+  const lowVolumeZones: Array<[number, number]> = [];
+  let start: number | null = null;
+  for (let i = 0; i < bins; i++) {
+    if (buckets[i] < threshold) {
+      if (start === null) start = i;
+    } else if (start !== null) {
+      lowVolumeZones.push([low + start * step, low + i * step]);
+      start = null;
+    }
+  }
+  if (start !== null) lowVolumeZones.push([low + start * step, high]);
+
+  // Faixa larguíssima de baixo volume é só "a parte da tendência", não um gap de
+  // leilão — reportá-la como zona estreita enganaria. Só interessa o buraco real.
+  const maxGapWidth = (high - low) * 0.15;
+  const gaps = lowVolumeZones.filter(([a, b]) => b - a <= maxGapWidth).slice(0, 3);
+
+  return {
+    poc: low + (pocIdx + 0.5) * step,
+    vah: low + (hi + 1) * step,
+    val: low + lo * step,
+    lowVolumeZones: gaps,
+  };
+}
+
+/**
+ * MAPA DE EVENTOS — a arqueologia do gráfico, calculada em vez de estimada.
+ *
+ * Contar pernas, achar reversões e localizar bases é justamente o que o modelo
+ * de visão faz PIOR (ele lê forma, não conta candle). Aqui isso vira aritmética
+ * determinística sobre os mesmos 120 candles que já estão em memória, e sobra
+ * pro modelo a parte que ele faz bem: interpretar.
+ *
+ * Detecta: última perna de impulso, reversões recentes (fechamento além do swing
+ * oposto), base de acumulação/distribuição (compressão) e rompimento falho
+ * (spring/upthrust). Tudo com preço e "há N candles".
+ * Nada encontrado → a linha correspondente simplesmente não é emitida.
+ */
+function buildEventMapLines(candles: number[][], fmt: (n: number) => number): string[] {
+  const win = candles.slice(-120);
+  if (win.length < 40) return [];
+
+  const highs = win.map((c) => c[2]);
+  const lows = win.map((c) => c[3]);
+  const closes = win.map((c) => c[4]);
+  const n = win.length;
+
+  const trs = win
+    .slice(1)
+    .map((c, i) => Math.max(c[2] - c[3], Math.abs(c[2] - win[i][4]), Math.abs(c[3] - win[i][4])));
+  const atr = trs.slice(-14).reduce((a, b) => a + b, 0) / Math.min(14, trs.length);
+  if (!Number.isFinite(atr) || atr <= 0) return [];
+
+  const ago = (i: number) => n - 1 - i;
+  const lines: string[] = [];
+
+  // ── Swings fractais de 3, guardando o índice ────────────────────────────────
+  const swings: Array<{ i: number; price: number; kind: 'high' | 'low' }> = [];
+  for (let i = 3; i < n - 3; i++) {
+    if (highs[i] === Math.max(...highs.slice(i - 3, i + 4))) {
+      swings.push({ i, price: highs[i], kind: 'high' });
+    } else if (lows[i] === Math.min(...lows.slice(i - 3, i + 4))) {
+      swings.push({ i, price: lows[i], kind: 'low' });
+    }
+  }
+
+  // ── Última perna completa: do penúltimo swing ao último de tipo oposto ──────
+  for (let k = swings.length - 1; k > 0; k--) {
+    const end = swings[k];
+    const start = swings[k - 1];
+    if (start.kind === end.kind) continue;
+    const size = Math.abs(end.price - start.price);
+    if (size < atr) break;
+    lines.push(
+      `- Last completed leg: ${end.price > start.price ? 'UP' : 'DOWN'} from ${fmt(start.price)} (${ago(start.i)} candles ago) to ${fmt(end.price)} (${ago(end.i)} candles ago) — size ${(size / atr).toFixed(1)} ATR. Its ORIGIN (${fmt(start.price)}) is the zone that matters; its END is where profit-taking sits.`,
+    );
+    break;
+  }
+
+  // ── Reversões: fechamento além do swing oposto anterior (CHoCH) ─────────────
+  const reversals: string[] = [];
+  let refHigh: number | null = null;
+  let refLow: number | null = null;
+  let lastDir: 'up' | 'down' | null = null;
+  for (let i = 4; i < n; i++) {
+    const priorHighs = swings.filter((s) => s.kind === 'high' && s.i < i - 1);
+    const priorLows = swings.filter((s) => s.kind === 'low' && s.i < i - 1);
+    refHigh = priorHighs.length ? priorHighs[priorHighs.length - 1].price : null;
+    refLow = priorLows.length ? priorLows[priorLows.length - 1].price : null;
+    if (refHigh != null && closes[i] > refHigh && lastDir !== 'up') {
+      reversals.push(`bullish at ${fmt(refHigh)} (${ago(i)} candles ago)`);
+      lastDir = 'up';
+    } else if (refLow != null && closes[i] < refLow && lastDir !== 'down') {
+      reversals.push(`bearish at ${fmt(refLow)} (${ago(i)} candles ago)`);
+      lastDir = 'down';
+    }
+  }
+  if (reversals.length) {
+    lines.push(
+      `- Recent character changes (a close beyond the opposing swing): ${reversals.slice(-3).join(' · ')}. The most recent one defines the side currently in control.`,
+    );
+  }
+
+  // ── Base: janela longa e estreita (acumulação/distribuição/compressão) ──────
+  let base: { from: number; to: number; top: number; bottom: number } | null = null;
+  for (let len = 30; len >= 10 && !base; len--) {
+    for (let end = n - 1; end - len >= 0; end--) {
+      const from = end - len + 1;
+      const top = Math.max(...highs.slice(from, end + 1));
+      const bottom = Math.min(...lows.slice(from, end + 1));
+      if (top - bottom <= atr * 1.8) {
+        base = { from, to: end, top, bottom };
+        break;
+      }
+    }
+  }
+  if (base) {
+    const after = closes.slice(base.to + 1);
+    const mid = (base.top + base.bottom) / 2;
+    const exit =
+      after.length < 3
+        ? 'STILL LIVE (compression not resolved yet — this is a squeeze, not a signal)'
+        : after[after.length - 1] > mid
+          ? 'it resolved UP (accumulation — the range top and bottom are now support and liquidity)'
+          : 'it resolved DOWN (distribution)';
+    lines.push(
+      `- Base / trading range: ${fmt(base.bottom)} to ${fmt(base.top)}, ${base.to - base.from + 1} candles, ending ${ago(base.to)} candles ago — ${exit}. Range height ${((base.top - base.bottom) / atr).toFixed(1)} ATR (the "cause" behind the move that follows).`,
+    );
+  }
+
+  // ── Rompimento falho: extremo dos 20 anteriores rompido e recuperado ────────
+  let failed: string | null = null;
+  for (let i = n - 2; i >= 25; i--) {
+    const priorHigh = Math.max(...highs.slice(i - 20, i));
+    const priorLow = Math.min(...lows.slice(i - 20, i));
+    if (highs[i] > priorHigh && closes[i] < priorHigh) {
+      failed = `UPTHRUST: ${fmt(highs[i])} was taken out and immediately reclaimed from above (${ago(i)} candles ago) — buyers trapped there`;
+      break;
+    }
+    if (lows[i] < priorLow && closes[i] > priorLow) {
+      failed = `SPRING: ${fmt(lows[i])} was taken out and immediately reclaimed (${ago(i)} candles ago) — sellers trapped there`;
+      break;
+    }
+  }
+  if (failed) {
+    lines.push(`- Failed breakout — ${failed}. This is the highest-quality reference on the chart.`);
+  }
+
+  return lines.length ? ['- EVENT MAP (computed from the real candles, not estimated from pixels):', ...lines] : [];
 }
 
 /**
@@ -677,15 +894,23 @@ export class AIAdapter {
   }
 
   /**
-   * Passo barato (gpt-4o-mini) que só lê o símbolo e o timeframe do gráfico.
-   * Usado antes de buscar dados reais de mercado. Falha silenciosa → null.
+   * Passo barato (gpt-4o-mini) que lê o símbolo, o timeframe E o preço do último
+   * candle visível no gráfico. Usado antes de buscar dados reais de mercado.
+   *
+   * O `lastPrice` existe para a GUARDA DE PRINT VELHO (ver `buildQuickGrounding`):
+   * sem ele, um print de dias atrás faz o backend injetar "preço atual = X" e a
+   * IA constrói entrada/stop/alvo em cima de um preço que não é o do gráfico na
+   * tela — pior do que não ter dado nenhum, porque sai com cara de certo.
+   * Falha silenciosa → null.
    */
-  private async extractSymbol(imageUrl: string): Promise<{ symbol: string; timeframe: string } | null> {
+  private async extractSymbol(
+    imageUrl: string,
+  ): Promise<{ symbol: string; timeframe: string; lastPrice: number | null } | null> {
     try {
       const resp = await withTimeout(
         this.openai.chat.completions.create({
           model: 'gpt-4o-mini',
-          max_tokens: 60,
+          max_tokens: 80,
           temperature: 0,
           response_format: { type: 'json_object' },
           messages: [
@@ -694,7 +919,7 @@ export class AIAdapter {
               content: [
                 {
                   type: 'text',
-                  text: 'Read this trading chart screenshot. Return ONLY JSON: {"symbol":"<ticker e.g. BTCUSDT, XAUUSD, EURUSD, or empty>","timeframe":"<e.g. 15m, 1h, 4h, or empty>"}. If you cannot read it clearly, use empty strings.',
+                  text: 'Read this trading chart screenshot. Return ONLY JSON: {"symbol":"<ticker e.g. BTCUSDT, XAUUSD, EURUSD, or empty>","timeframe":"<e.g. 15m, 1h, 4h, or empty>","lastPrice":<the price of the most recent candle close, as a number read from the Y axis, or null>}. Read every digit of the price. If you cannot read something clearly, use an empty string or null.',
                 },
                 { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } },
               ] as any,
@@ -708,7 +933,9 @@ export class AIAdapter {
       const parsed = JSON.parse(txt || '{}');
       const symbol = String(parsed.symbol || '').trim();
       const timeframe = String(parsed.timeframe || '').trim();
-      return symbol ? { symbol, timeframe } : null;
+      const rawPrice = Number(parsed.lastPrice);
+      const lastPrice = Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : null;
+      return symbol ? { symbol, timeframe, lastPrice } : null;
     } catch {
       return null;
     }
@@ -911,8 +1138,13 @@ export class AIAdapter {
   }
 
   /**
-   * Candles de CRIPTO no formato [ts, o, h, l, c] em ordem cronológica.
+   * Candles de CRIPTO no formato [ts, o, h, l, c, v] em ordem cronológica.
    * OKX primário (acessível dos EUA); Binance spot como fallback.
+   *
+   * O volume (índice 5) já vinha nas duas APIs e era descartado. Ele alimenta o
+   * teste de esforço × resultado e o mapa de volume por preço — ler barra de
+   * volume em pixel é justamente o que o modelo de visão faz pior.
+   * Volume ausente/inválido vira 0 (o bloco de volume some sozinho).
    */
   private async fetchCryptoCandles(base: string, interval: string): Promise<number[][] | null> {
     const okxBar: Record<string, string> = {
@@ -926,9 +1158,12 @@ export class AIAdapter {
       );
       const rows = okx?.data;
       if (Array.isArray(rows) && rows.length >= 30) {
-        // OKX devolve o mais recente primeiro; colunas [ts, o, h, l, c, ...]
+        // OKX devolve o mais recente primeiro; colunas [ts, o, h, l, c, vol, ...]
         const candles = rows
-          .map((r) => [Number(r[0]), Number(r[1]), Number(r[2]), Number(r[3]), Number(r[4])])
+          .map((r) => [
+            Number(r[0]), Number(r[1]), Number(r[2]), Number(r[3]), Number(r[4]),
+            safeVolume(r[5]),
+          ])
           .reverse();
         if (candles.every((c) => c.every((v) => Number.isFinite(v)))) return candles;
       }
@@ -937,8 +1172,10 @@ export class AIAdapter {
       `https://api.binance.com/api/v3/klines?symbol=${base}USDT&interval=${interval}&limit=120`,
     );
     if (Array.isArray(bin) && bin.length >= 30) {
+      // Binance klines: [openTime, o, h, l, c, volume, ...]
       const candles = bin.map((r) => [
         Number(r[0]), Number(r[1]), Number(r[2]), Number(r[3]), Number(r[4]),
+        safeVolume(r[5]),
       ]);
       if (candles.every((c) => c.every((v) => Number.isFinite(v)))) return candles;
     }
@@ -964,16 +1201,23 @@ export class AIAdapter {
       .match(/^(XAU|XAG|EUR|GBP|AUD|NZD|USD|CAD|CHF|JPY)(USD|JPY|CHF|CAD|GBP|EUR|AUD|NZD)$/);
     if (!m) return null;
     const td = await this.fetchJson<{
-      values?: Array<{ datetime: string; open: string; high: string; low: string; close: string }>;
+      values?: Array<{
+        datetime: string; open: string; high: string; low: string; close: string; volume?: string;
+      }>;
     }>(
       `https://api.twelvedata.com/time_series?symbol=${m[1]}/${m[2]}&interval=${itv}&outputsize=120&apikey=${key}`,
       6_000,
     );
     const values = td?.values;
     if (!Array.isArray(values) || values.length < 30) return null;
-    // Twelve Data devolve o mais recente primeiro.
+    // Twelve Data devolve o mais recente primeiro. Forex spot NÃO tem volume
+    // centralizado — o campo costuma vir ausente ou zerado, e isso é correto:
+    // o bloco de volume simplesmente não é emitido (nada de inventar).
     const candles = values
-      .map((v) => [Date.parse(v.datetime), Number(v.open), Number(v.high), Number(v.low), Number(v.close)])
+      .map((v) => [
+        Date.parse(v.datetime), Number(v.open), Number(v.high), Number(v.low), Number(v.close),
+        safeVolume(v.volume),
+      ])
       .reverse();
     return candles.every((c) => c.every((v) => Number.isFinite(v))) ? candles : null;
   }
@@ -1038,10 +1282,47 @@ export class AIAdapter {
     const momPct = refClose ? ((last[4] - refClose) / refClose) * 100 : 0;
 
     const fmt = (n: number) => Number(n.toPrecision(6));
+
+    // ── Volume: esforço por trás do movimento ────────────────────────────────
+    // Volume relativo (vs média de 20) é o que importa, não o número absoluto:
+    // "2.4x" diz algo em qualquer ativo; "18734" não diz nada.
+    const vols = win.map((c) => (Number.isFinite(c[5]) ? c[5] : 0));
+    const hasVolume = vols.filter((v) => v > 0).length >= 20;
+    const avgVol = hasVolume
+      ? vols.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, vols.length)
+      : 0;
+    const relVol = (v: number) => (avgVol > 0 ? v / avgVol : 0);
+
     const last12 = win
       .slice(-12)
-      .map((c) => `[o${fmt(c[1])} h${fmt(c[2])} l${fmt(c[3])} c${fmt(c[4])}]`)
+      .map((c) => {
+        const base = `[o${fmt(c[1])} h${fmt(c[2])} l${fmt(c[3])} c${fmt(c[4])}`;
+        if (!hasVolume) return `${base}]`;
+        const rv = relVol(c[5]);
+        return `${base} v${rv.toFixed(1)}x${rv >= 2 ? ' SPIKE' : ''}]`;
+      })
       .join(' ');
+
+    const volumeLines: string[] = [];
+    if (hasVolume) {
+      const profile = buildVolumeProfile(win);
+      volumeLines.push(
+        '- Volume is REAL (exchange feed), expressed as a multiple of the 20-candle average. 1.0x = typical, 2.0x+ = a spike (a decision point price tends to revisit), below 0.6x = no participation.',
+      );
+      if (profile) {
+        const gaps = profile.lowVolumeZones
+          .map(([a, b]) => `${fmt(a)}-${fmt(b)}`)
+          .join(', ');
+        volumeLines.push(
+          `- VOLUME MAP (approximate: each candle's volume spread evenly across its range) — acceptance zone (value area) ${fmt(profile.val)} to ${fmt(profile.vah)} · POC (most traded price, a magnet) ${fmt(profile.poc)}${gaps ? ` · low-volume gaps price crosses fast (bad target locations): ${gaps}` : ''}`,
+        );
+      }
+    } else {
+      volumeLines.push(
+        '- No usable volume data for this instrument (normal for forex spot: there is no central exchange). Run the pressure read in PRICE-ONLY mode and say so — do NOT estimate volume.',
+      );
+    }
+
     const rsiLine =
       rsi14 != null
         ? `- Momentum (RSI14): ${Math.round(rsi14)} — ${rsi14 >= 70 ? 'overbought zone (in a strong uptrend it can stay high; not a sell trigger by itself)' : rsi14 <= 30 ? 'oversold zone (in a strong downtrend it can stay low; not a buy trigger by itself)' : 'neutral'}`
@@ -1054,9 +1335,11 @@ export class AIAdapter {
       `- Short-term momentum (~${lookback} candles): ${momPct >= 0 ? '+' : ''}${momPct.toFixed(2)}%`,
       `- Average candle range (ATR14): ${fmt(atr)} — stops tighter than ~1 ATR sit inside noise; limit entries further than ~1.5 ATR from current price rarely fill.`,
       rsiLine,
+      ...volumeLines,
+      ...buildEventMapLines(win, fmt),
       `- Recent swing highs: ${swingsH.slice(-5).map(fmt).join(', ')}`,
       `- Recent swing lows: ${swingsL.slice(-5).map(fmt).join(', ')}`,
-      `- Last 12 candles OHLC: ${last12}`,
+      `- Last 12 candles OHLC${hasVolume ? ' + relative volume' : ''}: ${last12}`,
       'Set entry/stopLoss/takeProfits and judge structure using these EXACT values. Every level you output must be consistent with this data.',
     ]
       .filter(Boolean)
@@ -1079,12 +1362,18 @@ export class AIAdapter {
     // Sem timeframe legível não dá pra calcular ATR/janela honestos — pula os
     // candles (estatística no intervalo errado atrapalha mais do que ajuda).
     let candleBlock: string | null = null;
+    let staleReason: string | null = null;
     if (interval) {
       const candles =
         isCrypto && base
           ? await this.fetchCryptoCandles(base, interval)
           : await this.fetchFxCandles(sym, interval);
-      if (candles) candleBlock = this.buildCandleGroundingBlock(sym, interval, candles);
+      if (candles) {
+        staleReason = this.detectStaleChart(candles, extracted.lastPrice);
+        if (!staleReason) {
+          candleBlock = this.buildCandleGroundingBlock(sym, interval, candles);
+        }
+      }
     }
 
     let contextBlock: string | null = null;
@@ -1094,14 +1383,69 @@ export class AIAdapter {
       contextBlock = await this.buildFxEnrichment(sym);
     }
 
-    const parts = [candleBlock, contextBlock].filter(Boolean) as string[];
+    // Print antigo/símbolo divergente: em vez de calar, AVISA a IA. Ela precisa
+    // saber que os números do gráfico não são os de agora — senão trata a leitura
+    // visual como se fosse ao vivo.
+    const staleBlock = staleReason
+      ? [
+          '# LIVE DATA WITHHELD',
+          `- Real-time candles for ${sym} were fetched but NOT injected: ${staleReason}`,
+          '- Treat this screenshot as a HISTORICAL chart. Read every level from the image itself, state that the analysis refers to the moment shown in the chart and not to the live market, and do not claim any number as real-time data.',
+        ].join('\n')
+      : null;
+
+    const parts = [candleBlock, staleBlock, contextBlock].filter(Boolean) as string[];
     if (parts.length > 0) {
       // Log de verificação: permite confirmar no Render que o grounding está
       // ativo e com quais dados (sem vazar o conteúdo do prompt).
       this.logger.log(
-        `[QuickGrounding] ${sym} ${interval ?? 'tf?'} — candles: ${candleBlock ? 'sim' : 'não'}, contexto: ${contextBlock ? 'sim' : 'não'}`,
+        `[QuickGrounding] ${sym} ${interval ?? 'tf?'} — candles: ${candleBlock ? 'sim' : 'não'}${staleReason ? ` (retido: ${staleReason})` : ''}, contexto: ${contextBlock ? 'sim' : 'não'}`,
       );
       return parts.join('\n\n');
+    }
+    return null;
+  }
+
+  /**
+   * GUARDA DE PRINT VELHO — a mitigação mais importante do grounding.
+   *
+   * O backend busca candles de AGORA. Se o usuário sobe um print de dias atrás,
+   * ou se o `extractSymbol` leu o ticker errado, injetar "preço atual = X" faz a
+   * IA montar entrada, stop e alvo em cima de um preço que não é o do gráfico na
+   * tela. É pior do que não ter dado: sai errado com cara de certo.
+   *
+   * Compara o preço do último candle visível (lido da imagem) com o último close
+   * real, em unidades de ATR14 — a única régua que funciona igual em BTC, EURUSD
+   * e WIN. Tolerância generosa (3 ATR) de propósito: a leitura da imagem é feita
+   * em `detail: 'low'` e erra dígito às vezes; queremos pegar print VELHO, não
+   * punir arredondamento.
+   *
+   * Devolve null quando está tudo certo (ou quando não dá pra verificar).
+   */
+  private detectStaleChart(candles: number[][], imagePrice: number | null): string | null {
+    if (imagePrice == null || candles.length < 20) return null;
+
+    const lastClose = candles[candles.length - 1][4];
+    if (!Number.isFinite(lastClose) || lastClose <= 0) return null;
+
+    // Ordem de grandeza diferente = ou o ticker está errado, ou a leitura do eixo
+    // falhou feio. Nos dois casos não dá pra confiar no cruzamento — melhor reter.
+    const ratio = imagePrice / lastClose;
+    if (ratio < 0.5 || ratio > 2) {
+      return 'the price read from the image is on a different order of magnitude than the live feed (wrong ticker or unreadable axis)';
+    }
+
+    const trs = candles
+      .slice(1)
+      .map((c, i) =>
+        Math.max(c[2] - c[3], Math.abs(c[2] - candles[i][4]), Math.abs(c[3] - candles[i][4])),
+      );
+    const atr = trs.slice(-14).reduce((a, b) => a + b, 0) / Math.min(14, trs.length);
+    if (!Number.isFinite(atr) || atr <= 0) return null;
+
+    const gapInAtr = Math.abs(imagePrice - lastClose) / atr;
+    if (gapInAtr > 3) {
+      return `the chart shows a price ${gapInAtr.toFixed(1)} ATR away from the live price (the screenshot is not from the current moment)`;
     }
     return null;
   }
@@ -1160,7 +1504,14 @@ export class AIAdapter {
       const model = resolveModel(analysisType);
       // quick: 8000 tokens cobre análise completa v7.0 com novos campos (~5000 tokens reais)
       // deep: 12000 tokens para análise mais detalhada
-      const maxTokens = analysisType === 'deep' ? 12_000 : 8_000;
+      //
+      // GPT-5+ : `max_completion_tokens` inclui os tokens de RACIOCÍNIO invisíveis,
+      // que não existiam no gpt-4o-mini. Com o mesmo teto de 8000, um raciocínio
+      // longo consome a cota antes de escrever o JSON e a resposta volta truncada
+      // (finish_reason "length"). O teto é limite, não consumo: elevá-lo não custa
+      // nada enquanto não for usado. Ver openai-params.ts.
+      const baseMaxTokens = analysisType === 'deep' ? 12_000 : 8_000;
+      const maxTokens = isNextGenModel(model) ? baseMaxTokens * 2 : baseMaxTokens;
       // withTimeout garante aborto em exatamente 30s via Promise.race
       // Mais confiável do que { timeout } do SDK (que pode não funcionar em todos os ambientes)
       const response = await withTimeout(this.openai.chat.completions.create({

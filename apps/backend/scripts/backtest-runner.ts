@@ -62,6 +62,7 @@ function parseArgs() {
   const args = process.argv.slice(2);
   const limitIdx = args.indexOf('--limit');
   const everyIdx = args.indexOf('--every');
+  const promptFileIdx = args.indexOf('--prompt-file');
   return {
     limit: limitIdx >= 0 ? Number(args[limitIdx + 1]) : Infinity,
     // --every N: processa 1 a cada N pendentes (subamostra estratificada barata)
@@ -69,8 +70,30 @@ function parseArgs() {
     // --ground: injeta DADOS REAIS (candles do dataset local) no prompt —
     // espelha a melhoria proposta pro backend (ler número, não pixel)
     ground: args.includes('--ground'),
+    // --prompt-file <caminho>: testa um prompt CANDIDATO sem tocar no oficial.
+    // Entra como `override` no PromptBuilderService — o mesmo caminho que o
+    // painel admin usa —, então o {{USER_CONTEXT}} e as instruções de
+    // consistência/deep continuam sendo aplicados igual a produção.
+    // Sem esta flag não dá pra rodar A/B: o runner só sabia resolver o prompt
+    // ativo, e trocar o ativo para testar coloca o candidato em produção.
+    promptFile: promptFileIdx >= 0 ? String(args[promptFileIdx + 1] || '') : null,
     yes: args.includes('--yes'),
   };
+}
+
+/**
+ * Lê um prompt candidato de arquivo. Aceita .md/.txt (conteúdo cru) e .ts
+ * (extrai o conteúdo do template literal, para apontar direto pro
+ * trading-system-prompt-v9.ts sem precisar copiar e colar).
+ */
+function readPromptFile(file: string): string {
+  const raw = fs.readFileSync(path.resolve(file), 'utf8');
+  if (!file.endsWith('.ts')) return raw.trim();
+  const m = raw.match(/=\s*`([\s\S]*)`\s*;/);
+  if (!m) {
+    throw new Error(`Não achei um template literal em ${file} — aponte para um .md ou .txt.`);
+  }
+  return m[1].trim();
 }
 
 // ── Grounding: bloco de dados reais calculado dos candles já baixados ──────
@@ -149,7 +172,22 @@ function confirm(question: string): Promise<boolean> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function buildOfficialPrompt(): Promise<{ prompt: string; source: string }> {
+async function buildOfficialPrompt(promptFile?: string | null): Promise<{ prompt: string; source: string }> {
+  // Prompt CANDIDATO (--prompt-file): não toca no banco nem no prompt ativo.
+  // Passa como override pelo mesmo builder de produção, então idioma,
+  // consistência determinística e enriquecimento continuam idênticos.
+  if (promptFile) {
+    const stubDb: any = { promptConfig: { findFirst: async () => null, findUnique: async () => null } };
+    const builder = new PromptBuilderService(stubDb);
+    const prompt = await builder.buildPromptByVersion(
+      'quick',
+      undefined,
+      readPromptFile(promptFile),
+      'en',
+    );
+    return { prompt, source: `arquivo candidato (${path.basename(promptFile)}) — prompt oficial NÃO foi tocado` };
+  }
+
   // Fidelidade máxima: se houver DATABASE_URL válido (env ou .env), resolve o
   // prompt ativo do banco (como produção). QUALQUER falha (credencial velha,
   // sem rede, etc.) cai no arquivo TRADING_SYSTEM_PROMPT — exatamente o
@@ -173,7 +211,7 @@ async function buildOfficialPrompt(): Promise<{ prompt: string; source: string }
 }
 
 async function main() {
-  const { limit, every, ground, yes } = parseArgs();
+  const { limit, every, ground, yes, promptFile } = parseArgs();
 
   if (!process.env.OPENAI_API_KEY) {
     console.error('OPENAI_API_KEY não está no ambiente. Rode: export OPENAI_API_KEY=... (a chave é sua, não sai do seu terminal).');
@@ -207,7 +245,7 @@ async function main() {
     }
   }
 
-  const { prompt, source } = await buildOfficialPrompt();
+  const { prompt, source } = await buildOfficialPrompt(promptFile);
   console.log(`Prompt oficial resolvido via: ${source} (${prompt.length} chars — não será gravado em nenhum arquivo)`);
 
   fs.mkdirSync(RESULTS_DIR, { recursive: true });
