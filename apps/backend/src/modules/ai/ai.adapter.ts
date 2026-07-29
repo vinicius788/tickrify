@@ -364,7 +364,7 @@ function buildVolumeProfile(
 
   // Faixa larguíssima de baixo volume é só "a parte da tendência", não um gap de
   // leilão — reportá-la como zona estreita enganaria. Só interessa o buraco real.
-  const maxGapWidth = (high - low) * 0.15;
+  const maxGapWidth = (high - low) * 0.1;
   const gaps = lowVolumeZones.filter(([a, b]) => b - a <= maxGapWidth).slice(0, 3);
 
   return {
@@ -422,7 +422,9 @@ function buildEventMapLines(candles: number[][], fmt: (n: number) => number): st
     const start = swings[k - 1];
     if (start.kind === end.kind) continue;
     const size = Math.abs(end.price - start.price);
-    if (size < atr) break;
+    // Perna precisa de tamanho E de duração: dois swings colados são um candle
+    // grande, não uma perna. Sem isso o bloco chamava um único candle de "perna".
+    if (size < atr || end.i - start.i < 3) break;
     lines.push(
       `- Last completed leg: ${end.price > start.price ? 'UP' : 'DOWN'} from ${fmt(start.price)} (${ago(start.i)} candles ago) to ${fmt(end.price)} (${ago(end.i)} candles ago) — size ${(size / atr).toFixed(1)} ATR. Its ORIGIN (${fmt(start.price)}) is the zone that matters; its END is where profit-taking sits.`,
     );
@@ -458,9 +460,13 @@ function buildEventMapLines(candles: number[][], fmt: (n: number) => number): st
   for (let len = 30; len >= 10 && !base; len--) {
     for (let end = n - 1; end - len >= 0; end--) {
       const from = end - len + 1;
+      // Recente o bastante para importar (base de 80 candles atrás já virou
+      // paisagem) e com altura de verdade: uma janela quase sem amplitude é
+      // dado parado/feriado, não acumulação — chamá-la de base é ruído.
+      if (n - 1 - end > 60) continue;
       const top = Math.max(...highs.slice(from, end + 1));
       const bottom = Math.min(...lows.slice(from, end + 1));
-      if (top - bottom <= atr * 1.8) {
+      if (top - bottom <= atr * 1.8 && top - bottom >= atr * 0.5) {
         base = { from, to: end, top, bottom };
         break;
       }
