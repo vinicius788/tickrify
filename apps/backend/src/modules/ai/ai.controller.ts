@@ -34,6 +34,7 @@ import {
   type ConfidenceBand,
   type OutcomeRow,
 } from './accuracy.util';
+import { AB_V9_PROMPT_VER } from './ai.service';
 
 @Controller('ai')
 export class AiController {
@@ -278,7 +279,7 @@ export class AiController {
     // O select devolve exatamente o shape de OutcomeRow — sem cast.
     const rows: OutcomeRow[] = await this.prisma.analysis.findMany({
       where: { outcome: { in: [...AUTOMATIC_OUTCOMES] }, isDemo: false },
-      select: { outcome: true, confidence: true, createdAt: true },
+      select: { outcome: true, confidence: true, createdAt: true, promptVer: true, model: true },
     });
 
     const breakdown: Record<string, number> = {};
@@ -300,6 +301,20 @@ export class AiController {
       after: tally(rows.filter((r) => r.createdAt >= GROUNDING_LIVE_SINCE)),
     };
 
+    // A/B de prompt medido em PRODUÇÃO, com print real de usuário — o backtest
+    // roda em gráfico renderizado, que é a limitação nº 1 do relatório interno.
+    // promptVer -9 = perna v9 (ver AB_V9_PROMPT_VER em ai.service.ts).
+    const withVer = rows as Array<(typeof rows)[number] & { promptVer: number | null; model: string | null }>;
+    const byPrompt = {
+      v9: tally(withVer.filter((r) => r.promptVer === AB_V9_PROMPT_VER)),
+      current: tally(withVer.filter((r) => r.promptVer !== AB_V9_PROMPT_VER)),
+    };
+
+    // Corte por modelo: a migração gpt-4o-mini → gpt-5.6 é obrigatória até
+    // 23/10/2026, e sem este corte não há como saber se a troca ajudou.
+    const models = [...new Set(withVer.map((r) => r.model).filter(Boolean))] as string[];
+    const byModel = models.map((m) => ({ model: m, ...tally(withVer.filter((r) => r.model === m)) }));
+
     const [waitCount, completedCount] = await Promise.all([
       this.prisma.analysis.count({
         where: { status: 'completed', isDemo: false, recommendation: { in: ['WAIT', 'HOLD', 'AGUARDAR'] } },
@@ -315,6 +330,8 @@ export class AiController {
       overall: tally(rows),
       byConfidence,
       byGrounding,
+      byPrompt,
+      byModel,
       abstention: {
         wait: waitCount,
         total: completedCount,

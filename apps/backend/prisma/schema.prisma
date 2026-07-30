@@ -60,6 +60,10 @@ model Analysis {
   fullResponse   String?  @db.Text
   errorMessage   String?  @db.Text
   promptVer      Int?
+  // Modelo da OpenAI que gerou a análise. Sem isto não é possível comparar
+  // calibração antes/depois de uma troca de modelo — e a troca gpt-4o-mini →
+  // gpt-5.6 é obrigatória (shutdown do gpt-4o em 23/10/2026).
+  model          String?
   isDemo         Boolean  @default(false)
   // ── Outcome tracking: 48h após a análise, o worker verifica nos candles reais
   // se TP1 saiu antes do SL (mesma régua do backtest — scripts/backtest/evaluate.py).
@@ -80,6 +84,7 @@ model Analysis {
   @@index([userId, createdAt])
   @@index([status])
   @@index([outcome, createdAt])
+  @@index([promptVer, outcome])
   @@schema("tickrify")
 }
 

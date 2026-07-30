@@ -284,6 +284,11 @@ async function main() {
           // Diagnóstico de verbosidade (BT_DEBUG_FIELDS=1): tamanho em caracteres
           // de cada campo de texto. Sem isso não dá pra saber ONDE o modelo está
           // gastando os tokens quando a resposta vem truncada.
+          // Texto integral dos campos que explicam a DECISÃO (BT_DEBUG_FIELDS=1).
+          // Sem eles não dá para saber QUAL portão vetou o trade.
+          structureValidationFull: process.env.BT_DEBUG_FIELDS ? (a.structureValidation ?? null) : undefined,
+          reasoningFull: process.env.BT_DEBUG_FIELDS ? (a.reasoning ?? null) : undefined,
+          entryConditionFull: process.env.BT_DEBUG_FIELDS ? (a.entryCondition ?? null) : undefined,
           fieldSizes: process.env.BT_DEBUG_FIELDS
             ? Object.fromEntries(
                 Object.entries(a)

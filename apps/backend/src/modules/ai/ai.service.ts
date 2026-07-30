@@ -15,6 +15,7 @@ import { getAiQueue, getAiQueueReadiness } from './ai.queue';
 import { resolvePlanForPriceId } from '../../config/stripe.config';
 import { AIAdapter, AIAnalysisError, scrubPromptLeak } from './ai.adapter';
 import { resolveModel } from './openai-params';
+import { TRADING_SYSTEM_PROMPT_V9 } from '../../common/prompts/trading-system-prompt-v9';
 import { UploadedFile } from '../../common/interfaces/multer';
 import { PromptBuilderService } from '../prompt/prompt-builder.service';
 import {
@@ -51,6 +52,43 @@ import {
 const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
 
 type ApiAnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+
+/**
+ * A/B DE PROMPT EM PRODUÇÃO — a medição que não custa API.
+ *
+ * Por que existe: o backtest usa gráficos renderizados (matplotlib, sem
+ * indicador, sem desenho, resolução uniforme). O usuário manda print do
+ * TradingView. A limitação nº 1 do próprio relatório de backtest é justamente
+ * essa: "gráfico renderizado ≠ print real de usuário". Já existe em produção o
+ * sweeper que 48h depois mede TP1-antes-do-SL nos candles reais — então basta
+ * marcar QUAL prompt gerou cada análise para a produção medir o A/B sozinha,
+ * com print de verdade e sem gastar um centavo em teste.
+ *
+ * Como ligar: AB_PROMPT_V9_PERCENT=20 no env → ~20% dos usuários recebem o v9.
+ * Default 0 (desligado). Qualquer valor fora de 0-100 é tratado como 0.
+ *
+ * Determinístico POR USUÁRIO, não por análise: o mesmo usuário fica sempre no
+ * mesmo lado. Se sorteássemos por análise, o mesmo print poderia dar leituras
+ * diferentes em dois cliques — e nos modelos GPT-5 não existe mais controle de
+ * temperatura para atenuar isso (temperature é forçada em 1).
+ *
+ * promptVer = -9 marca a perna B. Negativo de propósito: nunca colide com uma
+ * versão real de PromptConfig, e o /accuracy corta por esse valor.
+ */
+export const AB_V9_PROMPT_VER = -9;
+
+export function resolveAbPromptVariant(userId: string): 'A' | 'B' {
+  const pct = Number(process.env.AB_PROMPT_V9_PERCENT);
+  if (!Number.isFinite(pct) || pct <= 0 || pct > 100) return 'A';
+  // Hash estável (FNV-1a): mesmo userId → sempre o mesmo bucket, sem estado.
+  let h = 2166136261;
+  for (let i = 0; i < userId.length; i++) {
+    h ^= userId.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (Math.abs(h) % 100) < pct ? 'B' : 'A';
+}
 
 @Injectable()
 export class AiService implements OnModuleInit {
@@ -95,6 +133,17 @@ export class AiService implements OnModuleInit {
       // (mesmo padrão das colunas acima) para o caso de a migração não rodar.
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "userVerdict" TEXT',
+      );
+      // Modelo da OpenAI que gerou a análise. Sem esta coluna é impossível
+      // comparar calibração antes/depois de uma troca de modelo — e a migração
+      // gpt-4o-mini → gpt-5.6 é obrigatória (gpt-4o desliga em 23/10/2026).
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "model" TEXT',
+      );
+      // Índice para cortar a acurácia por versão de prompt sem varrer a tabela
+      // (o A/B de prompt em produção consulta exatamente por isto).
+      await this.prisma.$executeRawUnsafe(
+        'CREATE INDEX IF NOT EXISTS "Analysis_promptVer_outcome_idx" ON "tickrify"."Analysis"("promptVer", "outcome")',
       );
       // Backfill idempotente: move para a coluna certa os veredictos manuais
       // que ficaram presos em "outcome" antes da separação (27/07/2026).
@@ -197,6 +246,12 @@ export class AiService implements OnModuleInit {
       });
     }
 
+    // A/B de prompt em produção: fração determinística dos usuários recebe o v9.
+    // Desligado por default (AB_PROMPT_V9_PERCENT ausente ou 0).
+    const abVariant = promptOverride ? 'A' : resolveAbPromptVariant(userId);
+    const effectivePromptOverride =
+      promptOverride ?? (abVariant === 'B' ? TRADING_SYSTEM_PROMPT_V9 : undefined);
+
     // Paraleliza: upload da imagem + busca da versão do prompt ao mesmo tempo
     const [imageUrl, promptVersion] = await Promise.all([
       (async (): Promise<string> => {
@@ -222,6 +277,9 @@ export class AiService implements OnModuleInit {
       })(),
       (async (): Promise<number | undefined> => {
         if (promptOverride) return undefined;
+        // Perna B marcada com o sentinela negativo — é assim que o /accuracy
+        // separa v9 de v7.3 sem precisar de tabela nova.
+        if (abVariant === 'B') return AB_V9_PROMPT_VER;
         const latestPrompt = await this.prisma.promptConfig.findFirst({
           where: { isActive: true },
           orderBy: { version: 'desc' },
@@ -263,7 +321,7 @@ export class AiService implements OnModuleInit {
     const { isDemo, analysis } = await this.enforceAccessAndCreate(
       userId,
       normalizedAnalysisType,
-      { imageUrl, promptVer: promptVersion, status: 'pending' },
+      { imageUrl, promptVer: promptVersion, model: resolveModel(normalizedAnalysisType), status: 'pending' },
     );
 
     const queue = queueReadiness.connected ? getAiQueue() : null;
@@ -274,7 +332,7 @@ export class AiService implements OnModuleInit {
         analysisId: analysis.id,
         imageUrl,
         htfImageUrls,
-        promptOverride,
+        promptOverride: effectivePromptOverride,
         promptVersion,
         userId,
         analysisType: normalizedAnalysisType,
@@ -300,7 +358,7 @@ export class AiService implements OnModuleInit {
       analysisId: analysis.id,
       imageUrl,
       htfImageUrls,
-      promptOverride,
+      promptOverride: effectivePromptOverride,
       promptVersion,
       userId,
       analysisType: normalizedAnalysisType,
@@ -348,20 +406,27 @@ export class AiService implements OnModuleInit {
 
     sendEvent('progress', { phase: 'uploading', pct: 20 });
 
+    // Mesmo A/B do caminho normal — sem isto o streaming sempre usaria o v7.3
+    // e a perna B ficaria com amostra torta.
+    const abVariant = promptOverride ? 'A' : resolveAbPromptVariant(userId);
+    const effectivePromptOverride =
+      promptOverride ?? (abVariant === 'B' ? TRADING_SYSTEM_PROMPT_V9 : undefined);
     const promptVersion = promptOverride
       ? undefined
-      : (await this.prisma.promptConfig.findFirst({
-          where: { isActive: true },
-          orderBy: { version: 'desc' },
-          select: { version: true },
-        }))?.version;
+      : abVariant === 'B'
+        ? AB_V9_PROMPT_VER
+        : (await this.prisma.promptConfig.findFirst({
+            where: { isActive: true },
+            orderBy: { version: 'desc' },
+            select: { version: true },
+          }))?.version;
 
     // Mesma reserva atômica do fluxo normal. Importante: marca isDemo corretamente
     // (antes o streaming criava a análise sem isDemo, permitindo grátis ilimitado).
     const { isDemo, analysis } = await this.enforceAccessAndCreate(
       userId,
       normalizedAnalysisType,
-      { imageUrl, promptVer: promptVersion, status: 'processing' },
+      { imageUrl, promptVer: promptVersion, model: resolveModel(normalizedAnalysisType), status: 'processing' },
     );
 
     sendEvent('progress', { phase: 'analyzing', pct: 25 });
@@ -370,7 +435,7 @@ export class AiService implements OnModuleInit {
       const prompt = await this.promptBuilder.buildPromptByVersion(
         normalizedAnalysisType,
         promptVersion,
-        promptOverride,
+        effectivePromptOverride,
       );
 
       let partialText = '';
@@ -1163,7 +1228,7 @@ export class AiService implements OnModuleInit {
   private async enforceAccessAndCreate(
     userId: string,
     analysisType: AnalysisType,
-    rowData: { imageUrl: string; promptVer?: number; status: ApiAnalysisStatus },
+    rowData: { imageUrl: string; promptVer?: number; model?: string; status: ApiAnalysisStatus },
   ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -1192,6 +1257,7 @@ export class AiService implements OnModuleInit {
           imageUrl: rowData.imageUrl,
           status: rowData.status,
           promptVer: rowData.promptVer,
+          model: rowData.model,
           isDemo: false,
         },
       });
@@ -1219,6 +1285,7 @@ export class AiService implements OnModuleInit {
               imageUrl: rowData.imageUrl,
               status: rowData.status,
               promptVer: rowData.promptVer,
+              model: rowData.model,
               isDemo: true,
             },
           });
