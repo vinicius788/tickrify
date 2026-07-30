@@ -386,7 +386,7 @@ fluxo". O prompt v9 saiu (`common/prompts/trading-system-prompt-v9.ts`, ~64k cha
 arquivo separado — **não** importado por ninguém, portanto não vai a produção sozinho).
 Mas o que valeu mais foram os bugs achados no caminho.
 
-### 🔴 BUG 1 — GPT-5 rejeita `temperature` E `top_p` (produção 100% quebrada se luna estivesse setado)
+### 🔴 BUG 1 — GPT-5 rejeita `temperature` E `top_p` (produção NÃO foi afetada — verificado)
 
 ```
 400 Unsupported value: 'temperature' does not support 0.1 with this model.
@@ -396,6 +396,20 @@ Mas o que valeu mais foram os bugs achados no caminho.
 `openai-params.ts` só tratava `max_tokens` e `seed` (achados em 27/07). O erro do
 `temperature` estava **escondido atrás** do primeiro: só aparece depois de corrigir
 o anterior. Corrigido — `temperature`/`top_p` agora só vão para a família 4o.
+
+✅ **VERIFICADO no painel do Render em 30/07: NENHUMA das três variáveis
+(`AI_MODEL`, `AI_MODEL_QUICK`, `AI_MODEL_DEEP`) está setada.** A lista de env vars
+começa em `ALLOW_UNAUTHENTICATED` e é alfabética — `AI_*` viria antes e não está lá.
+Ou seja: produção continua rodando `gpt-4o-mini`/`gpt-4o` (o default do
+`resolveModel`) e **o bug nunca chegou ao usuário**. `ENABLE_QUICK_GROUNDING` está
+setada (grounding ligado, como esperado).
+
+**Consequência para o rollout do v9:** o v9 **não roda no mini** (nunca termina).
+Então a ordem obrigatória é: (1) setar `AI_MODEL_QUICK=gpt-5.6-luna` no Render —
+agora seguro, com o bug corrigido; (2) confirmar que as análises voltam e medir o
+custo real (~US$0,032 vs ~US$0,013 no mini, ~2,4x); (3) só então ligar
+`AB_PROMPT_V9_PERCENT`. Ligar o A/B antes da troca de modelo faria a perna B
+falhar 100%.
 
 **Consequência conceitual, não só técnica:** nos modelos GPT-5 **não existe controle
 de sampling**. A `temperature: 0.1` que o motor usava para forçar consistência
@@ -531,9 +545,9 @@ entrada/stop/alvo num preço que não é o do gráfico — errado com cara de ce
 
 ### ⚠️ Pendências que só o dono resolve
 
-1. **Conferir `AI_MODEL_QUICK`/`AI_MODEL` no Render.** Se estava com `luna` antes do
-   deploy de 29/07 à noite, TODA análise devolvia 400. Olhar o log e saber por quanto
-   tempo ficou quebrado.
+1. ~~Conferir `AI_MODEL_QUICK` no Render~~ — **FEITO em 30/07: não está setada,
+   produção nunca quebrou.** O que resta é a decisão de migrar para o luna (ver Bug 1),
+   que é pré-requisito do v9 e obrigatória até 23/10 por causa do shutdown do gpt-4o.
 2. `AB_PROMPT_V9_PERCENT` continua **desligada** — ligar em 20 é a decisão que
    transforma cada usuário real num ponto de medição.
 3. Um teste de win rate honesto custa ~US$5/perna no luna. Saldo era US$2,42. Com
