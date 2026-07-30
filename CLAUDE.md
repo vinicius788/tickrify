@@ -376,3 +376,165 @@ de proposito, ver comentario no `stripe.service`).
 ### Verificacao
 `tsc --noEmit` do frontend: **0 erros**. Backend: **7 erros**, todos do `outcome`
 (Prisma Client local desatualizado) — nenhum novo.
+
+---
+
+## Sprint 29-30/07 — motor v9 + dois bugs silenciosos que quebravam produção
+
+Objetivo do dono: um prompt novo, do zero, "com estratégias validadas e leitura de
+fluxo". O prompt v9 saiu (`common/prompts/trading-system-prompt-v9.ts`, ~64k chars,
+arquivo separado — **não** importado por ninguém, portanto não vai a produção sozinho).
+Mas o que valeu mais foram os bugs achados no caminho.
+
+### 🔴 BUG 1 — GPT-5 rejeita `temperature` E `top_p` (produção 100% quebrada se luna estivesse setado)
+
+```
+400 Unsupported value: 'temperature' does not support 0.1 with this model.
+    Only the default (1) value is supported.
+```
+
+`openai-params.ts` só tratava `max_tokens` e `seed` (achados em 27/07). O erro do
+`temperature` estava **escondido atrás** do primeiro: só aparece depois de corrigir
+o anterior. Corrigido — `temperature`/`top_p` agora só vão para a família 4o.
+
+**Consequência conceitual, não só técnica:** nos modelos GPT-5 **não existe controle
+de sampling**. A `temperature: 0.1` que o motor usava para forçar consistência
+sumiu. Confirmado na prática: o MESMO gráfico foi avaliado como compra numa rodada
+e como venda na seguinte. A consistência agora depende só do prompt — o
+`DETERMINISTIC_CONSISTENCY_INSTRUCTION` deixou de ser reforço e passou a ser a
+única linha de defesa. Isso é risco de produto real (usuário sobe o mesmo print
+duas vezes e vê leituras diferentes).
+
+### 🔴 BUG 2 — a ordem do `json_schema` fazia o modelo decidir ANTES de analisar
+
+Em structured outputs a ordem das chaves no schema **é** a ordem de geração. Estava:
+
+```
+is_financial_chart → recommendation → confidence → analysis (reasoning no fim)
+```
+
+Ou seja: o modelo escolhia BUY/SELL/HOLD e o número da confiança **sem ter escrito
+uma palavra de análise**. Todo o resto era racionalização do que já estava decidido.
+**Isso explica o mistério do backtest v2**: por que a confiança só saía 30, 45, 68
+ou 72 — não era análise, era pescar um número da memória antes de olhar o gráfico.
+
+Reordenado para `is_financial_chart → analysis (reasoning PRIMEIRO) → recommendation
+→ confidence`. Efeito medido no mini, mesmo gráfico: o `reasoning` saltou de 212
+chars de "not defined" para 965 chars com ARR, preços, playbook e a conta da
+confiança. **Vale para a v7.3 também**, não só para o v9.
+
+⚠️ Efeito colateral: com a decisão no fim, truncar deixou de ser "resposta cortada"
+e passou a ser "veredito perdido" (o `repairTruncatedJson` fecha o JSON e
+recommendation/confidence caem no padrão HOLD/0). Por isso o teto de saída do quick
+subiu de 8.000 para 16.000 e o teto de tempo permitido de 120s para 180s (default
+segue 55s).
+
+### 💡 A imagem sempre foi o custo, não o prompt
+
+Mesmo prompt + mesma imagem, tokens de ENTRADA cobrados:
+
+| | gpt-4o-mini | gpt-5.6-luna |
+|---|---|---|
+| entrada | **52.953** | **17.077** |
+| saída | 8.000 (truncado) | 2.422 (completo) |
+| tempo | nunca terminava | 18s |
+| custo/análise | ~US$0,013 | ~US$0,032 |
+
+O prompt em texto são ~15k tokens nos dois. **O mini cobra ~38k tokens só pela
+imagem em alta resolução**; o luna cobra ~2k. Conclusão: o medo de "prompt grande
+é caro" era falso — v9 e v7.3 custam praticamente o mesmo no luna (US$0,032 vs
+US$0,030), porque o prompt maior gasta na entrada o que o OUTPUT BUDGET economiza
+na saída. E **o v9 não roda no mini**: nunca termina (>120s, satura o teto de saída).
+
+### Veredito do v9 (medido, não opinado)
+
+10 amostras espalhadas (BTC/ETH/XAU/EUR, 30m e 4h), mesmo modelo, mesmos dados,
+só o prompt muda:
+
+| | v7.3 | v9 |
+|---|---|---|
+| sinais | 2/10 | **0-1/10** |
+| regimes distintos | trending 9, volatile 1 | ranging 4-6, trending 3-5, volatile 1 |
+| força de tendência | **moderate 10 de 10** | weak 4, moderate 6 |
+| confianças distintas | 6 de 10 | **8 de 10** |
+
+**O v9 é melhor analista e pior gerador de sinal.** Na leitura ele ganha claramente:
+discrimina regime onde a v7.3 escreve a mesma constante dez vezes, calcula a
+confiança (`base 45 −5 sem gatilho −5 pressão divergente = 35`) em vez de decorar
+quatro números, e acha spring/upthrust com preço.
+
+Abstenção de 90-100%. Diagnóstico pelos portões: G6 (geometria) reprova 9/10, mas
+**porque** G3 (playbook) e G4 (pressão) já reprovaram — em range com rotação de
+duas vias e preço no meio não existe pressão direcional, então nenhum plano é
+construído e não há geometria para avaliar. 6 dos 10 gráficos são exatamente isso.
+
+**Isso não é bug, é disciplina.** Um trader passaria batido em 9 desses 10. A v7.3
+chamou 9 de 10 de "tendência" — factualmente errado — e é assim que ela fabrica
+sinal. Cruzando com o que já estava medido (expectancy −0,19R, faixa 60-70 acertando
+25%), **a abstenção do v9 pode ser a resposta certa para o motivo pelo qual a v7.3
+perde dinheiro.**
+
+Quatro rodadas de ajuste (~US$1,20) não tiraram a abstenção de 90%. Parei de propósito:
+mais voltas seria esculpir o prompt em cima de dez gráficos (p-hacking).
+
+### ✅ A/B de prompt em PRODUÇÃO — a medição que não custa API
+
+Em vez de gastar ~US$5/perna no backtest, a produção mede sozinha:
+
+- **`AB_PROMPT_V9_PERCENT`** (default 0 = desligado). `20` → ~20% dos usuários recebem
+  o v9. Sorteio **por usuário** (hash FNV-1a estável), não por análise: o mesmo
+  usuário fica sempre do mesmo lado. Por análise seria pior justamente porque GPT-5
+  não tem mais temperatura para atenuar variação.
+- **`promptVer = -9`** marca a perna B. Negativo de propósito: nunca colide com versão
+  real de `PromptConfig` e não exige tabela nova.
+- **Coluna `Analysis.model`** — sem ela é impossível comparar calibração antes/depois
+  de trocar de modelo. Aplicada no Supabase em 30/07 (`ADD COLUMN IF NOT EXISTS` +
+  `Analysis_promptVer_outcome_idx`), e replicada no `onModuleInit` como rede.
+- **`/accuracy` agora devolve `byPrompt` (v9 vs current) e `byModel`**, reaproveitando
+  o mesmo `tally` com intervalo de Wilson.
+
+**Por que isso é melhor que o backtest:** a limitação nº 1 do relatório interno é
+*"gráfico renderizado ≠ print real de usuário"*. Os 300 gráficos do manifest são
+matplotlib sem indicador e sem desenho. A produção mede com print de verdade, de
+graça, e cresce sozinha — o `outcome.sweeper` já fecha TP1/SL 48h depois.
+
+### Grounding: o que passou a ir no prompt
+
+Os candles que o backend já baixava traziam **volume na coluna 5 e o código descartava**.
+Agora vai: volume relativo à média de 20 (`2.4x SPIKE`), **mapa de volume por preço**
+(POC + área de valor + gaps de baixo volume, aproximados distribuindo o volume no
+range do candle) e **mapa de eventos** calculado (última perna de impulso com origem,
+reversões recentes por CHoCH, base de acumulação e para que lado saiu, rompimento
+falho spring/upthrust). Contar e localizar é o que modelo de visão faz pior — virou
+aritmética determinística.
+
+**Guarda de print velho** (`detectStaleChart`): o `extractSymbol` passou a ler também
+o preço do último candle visível. Se ele divergir mais de 3 ATR do close real, o bloco
+de dados é **retido** e entra um aviso de que o print é histórico. Sem isso, um print
+de três dias atrás fazia o backend injetar "preço atual = X" e a IA montava
+entrada/stop/alvo num preço que não é o do gráfico — errado com cara de certo.
+
+### Backtest runner
+
+- **`--prompt-file <caminho>`**: testa um prompt candidato sem tocar no ativo. Aceita
+  `.ts` (extrai o template literal) ou `.md`/`.txt`.
+- **Uma fonte da verdade**: o runner tinha cópia própria do bloco de dados reais e
+  ficou defasada (sem volume, sem mapa de eventos) — passou a importar
+  `buildRealDataBlock` de `ai.adapter`. Antes, o backtest media um motor que não era
+  o de produção.
+- **`BT_DEBUG_FIELDS=1`** grava tamanho de cada campo, o checklist e o reasoning
+  íntegros. **`AI_DEBUG_DUMP_RAW=<arquivo>`** grava a resposta crua + tokens +
+  `finish_reason` (só a resposta; o prompt do sistema nunca vai para arquivo).
+- **`scripts/backtest/rodar-teste-v9.sh piloto|completo|avaliar [ambas|v73|v9]`**:
+  trava antes de gastar se `AI_MODEL*` estiver setado (o teste tem de rodar no modelo
+  da baseline) ou se `ENABLE_QUICK_GROUNDING=true` (injetaria dados em duplicidade).
+
+### ⚠️ Pendências que só o dono resolve
+
+1. **Conferir `AI_MODEL_QUICK`/`AI_MODEL` no Render.** Se estava com `luna` antes do
+   deploy de 29/07 à noite, TODA análise devolvia 400. Olhar o log e saber por quanto
+   tempo ficou quebrado.
+2. `AB_PROMPT_V9_PERCENT` continua **desligada** — ligar em 20 é a decisão que
+   transforma cada usuário real num ponto de medição.
+3. Um teste de win rate honesto custa ~US$5/perna no luna. Saldo era US$2,42. Com
+   n=25/perna o intervalo de confiança é largo demais para decidir nada.
