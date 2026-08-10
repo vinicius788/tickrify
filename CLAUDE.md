@@ -654,3 +654,83 @@ na única que o concorrente não copia sem se expor.
    US/UK), mantendo as traduções só como UX pós-login.
 6. **Zero imagens em todos os 7 arquivos do blog** — num produto que é literalmente
    ler gráficos. Print real de análise em cada post = prova de produto + image pack.
+
+### 10/08 — parte 2: profundidade nos dois posts que puxam o cluster
+
+Escolha deliberada de risco: aprofundar o blog é **zero risco pro app** (são
+arquivos estáticos em `public/`, fora do build do React), então veio antes da
+pré-renderização, que mexe no build.
+
+- **`best-ai-chart-analysis-tools`: 677 → 2.213 palavras.** O concorrente tem
+  ~5.500 na mesma query. Entrou: sumário navegável, os 4 critérios virando seção
+  cada, Tickrad na tabela (verificado no site deles em 10/08: "a partir de
+  US$29/mo", garantia de 7 dias, risk calculator + glossário + journal + strategy
+  lab), seção "como detectar um wrapper em 60s", seção de calibração com os
+  números reais, teste de 5 passos, seção "o que não podemos te dizer" e FAQ.
+- **`ai-chart-analysis` (pilar): 701 → 2.166 palavras.** Entrou: o pipeline de 5
+  passos entre upload e resposta, tabela "lê bem × não lê", 2 novos itens de onde
+  ajuda, **4º failure mode (inconsistência na mesma entrada)**, seção sobre o que
+  é grounding de verdade (incluindo a guarda de print velho) e workflow de 6
+  passos pra não terceirizar a decisão.
+- Ambos ganharam **FAQPage schema** e `dateModified: 2026-08-10` — aqui o
+  dateModified é legítimo, o conteúdo triplicou. Índice do blog e `lastmod` do
+  sitemap alinhados.
+
+**Claim corrigido de passagem:** o callout do post pilar dizia "a **calibrated**
+confidence tier". A `/accuracy` diz que a calibração NÃO se reproduziu em
+produção — então a vitrine estava afirmando o que a própria página de acurácia
+desmente. Virou "a confidence tier" com link pra `/accuracy`. Mesma família dos
+claims que a Fase 1 matou em 27/07; vale varrer o resto do site atrás de outros.
+
+**Ângulo novo que os dois posts passaram a usar:** ChartSnipe publica um ranking
+da categoria onde ele mesmo tira 47/50 e o segundo colocado 31/50 (lido em
+10/08). Não é acusação — é a prova concreta da tese de abertura do post, e
+justifica o Tickrify não pontuar ninguém. Combinado com a `/accuracy`, esse é o
+posicionamento inteiro em duas frases.
+
+### 10/08 — parte 3: pré-renderização do `<head>` (VERIFICADA COM BUILD REAL)
+
+**Como isto foi verificado, já que build local é inviável:** clonei o frontend
+pro sandbox da nuvem (tar via bridge → `_local/tmp-build/`), instalei e rodei
+`vite build` de verdade, Vite 6, mesma config. Todo achado abaixo é observado no
+output real, não deduzido.
+
+**O mecanismo:** `scripts/prerender.mjs` roda depois do `vite build` e clona o
+`dist/index.html` para `dist/<rota>/index.html` com title, description, canonical
+e og/twitter próprios. Mesmo bundle, mesmo app — só o `<head>` muda.
+
+**Não precisou tocar no `vercel.json`.** O `rewrites` do Vercel roda DEPOIS da
+checagem de filesystem: existindo `dist/pricing/index.html`, o Vercel serve o
+arquivo e o rewrite para `/index.html` nunca dispara. É o mesmo mecanismo pelo
+qual as páginas de `public/blog` já funcionam em produção — não é teoria.
+
+**Fonte única:** `src/lib/seo-routes.json`, lido pelo script (Node, no build) E
+pelo app via `seoFor()` no `useSeo` (`resolveJsonModule` ligado no
+`tsconfig.app.json`). Os títulos em dois lugares divergiriam na primeira edição,
+e a divergência seria invisível — cada metade só aparece pra um público.
+
+**Bug de sintaxe que só o build real pegaria:** `String.replace` com string de
+replacement interpreta `$` como sintaxe de grupo. O preço `$29` virava
+`grupo-2 + "9"` e a meta da /pricing saía anunciando **"9/mo"**. Todas as
+substituições passaram a usar FUNÇÃO de replacement. (O outro erro pego no
+caminho: `public/blog/*/index.html` dentro de bloco de comentário — o `*/` fecha
+o comentário e o Node não parseia o arquivo.)
+
+**Bug de UX consertado de brinde:** o `index.html` traz o hero da landing
+embutido como pintura pré-hidratação, então abrir /pricing piscava "Stop trading
+in the dark" antes do React montar. As rotas pré-renderizadas trazem um bloco
+neutro montado a partir do próprio title/description da rota — sem copy nova, pra
+não criar uma segunda cópia de texto de vitrine que divergiria da primeira.
+
+**Fail-safe testado nos 3 cenários** (JSON ausente, `dist/` ausente, `#root` não
+reconhecido): o script avisa e **sai com código 0**. Nenhum problema de SEO
+derruba deploy — sem os arquivos gerados, o Vercel volta ao fallback da SPA e o
+site se comporta como antes.
+
+⚠️ **Só o `<head>` é pré-renderizado, não o conteúdo.** Renderizar o corpo exige
+navegador headless no build (dependência nova, proibida). O que isto resolve:
+Bing, crawlers de IA e prévia de link de WhatsApp/Slack/X, que leem HTML cru.
+
+**Sobra pra limpar:** `_local/tmp-build/frontend*.tgz` (os tars da verificação).
+`_local/` é gitignored, então não suja o repo — mas o bridge não consegue apagar
+arquivo no Mac, então quem apaga é o dono.

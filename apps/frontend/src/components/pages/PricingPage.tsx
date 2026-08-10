@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { PricingCards } from '../pricing/PricingCards';
 import { useToast } from '@/hooks/use-toast';
-import { useJsonLd, useSeo } from '@/hooks/useSeo';
+import { seoFor, useJsonLd, useSeo } from '@/hooks/useSeo';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const PRICING_COPY = {
@@ -89,12 +89,7 @@ export default function PricingPage() {
   // Intenção transacional pura — e até 10/08/2026 esta página servia o title e
   // a description do home, então não podia rankear para "pricing" nem para o
   // preço. Conferido ao vivo antes da correção.
-  useSeo({
-    title: 'Pricing — $29/mo for 200 AI Chart Analyses | Tickrify',
-    description:
-      'One plan, $29/month: 200 Ticks, quick and deep analysis, live candle grounding. Start with 3 free analyses, no card needed. Cancel in one click.',
-    path: '/pricing',
-  });
+  useSeo(seoFor('/pricing'));
 
   // Schema montado a partir do MESMO objeto que a tela renderiza. Se a copy
   // mudar, o markup muda junto — nunca diverge do que o visitante lê (regra

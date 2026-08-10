@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
-import { useSeo } from '@/hooks/useSeo';
+import { seoFor, useSeo } from '@/hooks/useSeo';
 
 /**
  * Política de privacidade — EM INGLÊS (29/07/2026).
@@ -27,12 +27,7 @@ const PrivacyPolicyPage = () => {
   // O canonical é FIXO em /privacy mesmo quando a rota servida é /privacidade.
   // As duas rotas renderizam este mesmo componente, o que criava conteúdo
   // duplicado — e o sitemap listava justamente a versão não canônica.
-  useSeo({
-    title: 'Privacy Policy | Tickrify',
-    description:
-      'How Tickrify collects, uses and protects your data — chart uploads, account and payment information, and international data transfers.',
-    path: '/privacy',
-  });
+  useSeo(seoFor('/privacy'));
 
   return (
     <div className="min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)]">

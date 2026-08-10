@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import SEO_ROUTES from '@/lib/seo-routes.json';
 
 /**
  * SEO por rota — auditoria de 10/08/2026.
@@ -37,6 +38,25 @@ export interface SeoOptions {
   path: string;
   /** Página que responde mas não deve ser indexada. */
   noindex?: boolean;
+}
+
+export type SeoRoutePath = keyof typeof SEO_ROUTES;
+
+/**
+ * Meta de uma rota, lida do MESMO arquivo que `scripts/prerender.mjs` consome
+ * no build. Uma fonte só, de propósito: o script escreve o `<head>` que o
+ * crawler recebe e este hook escreve o que o usuário vê ao navegar dentro da
+ * SPA. Com os títulos em dois lugares, eles divergiriam na primeira edição —
+ * e a divergência seria invisível, porque cada metade só aparece pra um público.
+ */
+export function seoFor(path: SeoRoutePath): SeoOptions {
+  const entry = SEO_ROUTES[path];
+  return {
+    title: entry.title,
+    description: entry.description,
+    // /privacidade é rota legada e aponta o canonical para /privacy.
+    path: 'canonicalPath' in entry ? entry.canonicalPath : path,
+  };
 }
 
 function upsertMeta(attr: 'name' | 'property', key: string, content: string) {
