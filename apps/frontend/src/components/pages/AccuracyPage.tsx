@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { buildApiUrl } from '@/lib/api';
+import { useSeo } from '@/hooks/useSeo';
 
 /**
  * Página pública de acurácia — Fase 5 da auditoria de 24/07/2026.
@@ -80,6 +81,17 @@ const Stat = ({ interval, label }: { interval: Interval; label: string }) => (
 );
 
 const AccuracyPage = () => {
+  // Esta página era órfã até 10/08/2026: fora do sitemap, sem meta própria e
+  // sem link de lugar nenhum além do rodapé. É o ativo mais raro do site —
+  // nenhum concorrente do nicho publica acurácia medida — e o Google não
+  // sabia que ela existia.
+  useSeo({
+    title: 'Tickrify Accuracy — Our Real Win Rate, Published',
+    description:
+      'The measured hit rate of our AI, with sample size and 95% confidence intervals — including the numbers that look bad. Straight from live production data.',
+    path: '/accuracy',
+  });
+
   const { data, isLoading, isError } = useQuery<AccuracyPayload>({
     queryKey: ['accuracy'],
     queryFn: async () => {

@@ -24,6 +24,7 @@ import {
 } from '@/lib/demo-api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { warmupPaymentsApi } from '@/lib/api';
+import { useSeo } from '@/hooks/useSeo';
 import exampleChart from '@/assets/demo-example-chart.png';
 import afterChart from '@/assets/demo-after-chart.png';
 import logoOfficial from '@/assets/tickrify-logo-official.png';
@@ -82,6 +83,16 @@ const SignupCta = ({ headline, sub }: { headline: string; sub: string }) => (
 );
 
 const TryPage = () => {
+  // Página de maior conversão do funil (análise real sem cadastro) e a que
+  // melhor responde à busca "free ai chart analysis" — mas estava fora do
+  // sitemap e servindo o title do home.
+  useSeo({
+    title: 'Free AI Chart Analysis — No Signup Required | Tickrify',
+    description:
+      'Upload a chart screenshot and get a real AI analysis in seconds: entry, stop, targets and risk. No account, no card. One free analysis, right now.',
+    path: '/try',
+  });
+
   const { language } = useLanguage();
   const [state, setState] = useState<PageState>('ready');
   const [stepIndex, setStepIndex] = useState(0);

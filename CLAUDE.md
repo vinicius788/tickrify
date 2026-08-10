@@ -552,3 +552,105 @@ entrada/stop/alvo num preço que não é o do gráfico — errado com cara de ce
    transforma cada usuário real num ponto de medição.
 3. Um teste de win rate honesto custa ~US$5/perna no luna. Saldo era US$2,42. Com
    n=25/perna o intervalo de confiança é largo demais para decidir nada.
+
+---
+
+## Sprint 10/08/2026 — auditoria de SEO + card de preço desalinhado
+
+### O card de preço encostado na esquerda
+`PricingCards.tsx` tinha `grid-cols-1 md:grid-cols-3` FIXO, herdado de quando eram
+3 tiers. Desde o plano único (27/07) o card sozinho caía na **primeira coluna de
+três** — o título e o banner acima seguiam centralizados e só o card ficava torto.
+Agora a largura sai de `PLANS.length` (1 → `max-w-md`, 2 → `md:grid-cols-2`, 3+ →
+`md:grid-cols-3`), então não quebra de novo se um segundo plano voltar.
+
+### 🔴 O achado nº 1: todas as rotas serviam o mesmo `<title>`
+SPA Vite sem SSR e sem helmet → toda rota React devolvia o `index.html` único.
+**Verificado ao vivo antes da correção:** buscar `tickrify.com/pricing` devolvia
+`"Tickrify — AI chart analysis for traders"`, o título do home. `/pricing`,
+`/accuracy`, `/try` e `/privacy` eram a mesma página aos olhos do Google e nenhuma
+podia rankear para nada específico.
+
+**Correção:** `hooks/useSeo.ts` (arquivo novo, justificado: 5 páginas usam, não
+cabe dentro de nenhuma). ~40 linhas mexendo direto no `document.head`, **sem
+dependência nova** (`react-helmet-async` não entra — o lockfile não atualiza local).
+Exporta `useSeo` (title/description/canonical/og/twitter/robots) e `useJsonLd`.
+Ambos restauram o padrão no unmount: sem isso a meta de uma rota grudaria na
+seguinte, porque o Router não recarrega o documento.
+
+⚠️ **Isto resolve o Googlebot, que renderiza JS. NÃO resolve crawler que não
+executa JS** (Bing, crawlers de IA, prévia de link do WhatsApp/Slack) — a meta só
+existe depois da hidratação. A correção completa é **pré-renderizar as rotas
+públicas no build** (`vite-plugin-ssg` ou pré-render), que continua PENDENTE e é o
+item de maior retorno da lista inteira.
+
+### 🔴 A marca não aparece no Google
+Busquei `Tickrify` e `tickrify AI chart analysis` em 10/08: **o tickrify.com não
+apareceu em nenhuma das duas.** Voltaram Tickify (ingressos), Ticklify (cripto) e,
+na segunda, os concorrentes diretos. Ou o domínio não está indexado de verdade, ou
+está com autoridade zero sendo canibalizado por marcas foneticamente próximas.
+**PENDENTE DO DONO: abrir o Search Console (domínio já verificado via
+`google66729000cdbf71c6.html`) e conferir Cobertura + Inspeção de URL.** Se o site
+não estiver indexado, nenhuma outra recomendação de SEO importa.
+
+### A `/accuracy` era órfã
+Fora do sitemap, sem meta própria, e o único link era o do rodapé do app — que só
+existe depois do JS carregar. É o ativo mais raro do site: auditei SnappChart e
+Tickrad e **nenhum dos dois publica acurácia real**. Agora tem título próprio, está
+no sitemap e recebe link dos 6 posts do blog e do índice — o blog é a única parte
+estática e rastreável do site, então é de lá que o link precisa sair.
+
+### Demais correções deste commit
+- **sitemap.xml:** entraram `/try` e `/accuracy`; `/privacidade` saiu e virou
+  `/privacy`. Todas ganharam `<lastmod>` (único dos três campos opcionais que o
+  Google ainda usa); `changefreq` e `priority` saíram — são ignorados desde 2023.
+- **Duplicata de privacidade:** as duas rotas renderizam o mesmo componente, e o
+  sitemap listava justamente a NÃO canônica. O `useSeo` do `PrivacyPolicyPage` fixa
+  o canonical em `/privacy` independente da rota servida.
+- **Schema da /pricing:** `SoftwareApplication` + `Offer` ($29 USD) + `FAQPage`,
+  montados a partir do MESMO objeto `PRICING_COPY` que a tela renderiza — se a copy
+  mudar, o markup muda junto. Sem `aggregateRating`: não há avaliação real e
+  inventar uma seria o claim que a Fase 1 removeu.
+  ⚠️ **O FAQPage NÃO gera mais rich result** — o Google desativou FAQ rich results
+  em **07/05/2026**. Ficou porque ainda é assim que buscador de IA lê a página.
+- **og:image saiu do imgur** (`i.imgur.com/3Z3gY8A.png`, host de terceiros gratuito
+  segurando todos os cards de compartilhamento) para `/public/og.png`, 1200x630, na
+  identidade do site. Com `og:image:width/height` e alt corrigido.
+- **`maximum-scale=1.0`** removido do viewport (bloqueava zoom com pinça =
+  penalidade de acessibilidade e sinal negativo de mobile).
+- **Descriptions cortadas** para 130–150 chars em `vs-chatgpt` (era 225),
+  `vs-tradingview` (238), `best-ai-chart-analysis-tools` (178) e no `index.html` (171).
+- **Canonical no `index.html`** — sem ele, `/` e cada variação de UTM que o próprio
+  blog gera contavam como URLs distintas.
+
+**NÃO fiz de propósito:** `dateModified` nos posts do blog. Adicionar um link não é
+atualização de conteúdo, e carimbar "modificado hoje" por isso seria a mesma mentira
+do `new Date()` que foi removido da política de privacidade em 29/07. Entra quando o
+conteúdo for de fato aprofundado.
+
+### Concorrência (auditada em 10/08)
+| | Tickrify | SnappChart | Tickrad |
+|---|---|---|---|
+| páginas indexáveis | 7 (só o blog) | 25+ | ~10+ |
+| profundidade média | ~660 palavras | 2.500–3.000 | n/d |
+| landings plataforma/ativo | nenhuma | TradingView, cTrader, XAUUSD, forex, scalp/swing | TradingView, MT, Binance |
+| ferramentas grátis | **nenhuma** | position size, breakeven win rate | risk calc, glossário, journal |
+| **acurácia pública medida** | **sim** | não | não |
+
+Perde em toda dimensão de infraestrutura (corrigível com engenharia) e ganha sozinho
+na única que o concorrente não copia sem se expor.
+
+### PENDENTE de SEO (ordenado por retorno)
+1. **Search Console** — só o dono. Antes de tudo.
+2. **Pré-renderizar as rotas públicas** — a correção de verdade por baixo do `useSeo`.
+3. **Aprofundar os 6 posts** para 1.800–2.500 palavras (concorrente tem 5.500 na
+   mesma query). Sem página nova, sem rota nova.
+4. **3 calculadoras grátis** (position size, risk/reward, breakeven win rate) — é a
+   Fase 1 do plano de crescimento que nunca saiu, e o formato que mais atrai link
+   natural em finanças.
+5. **Decisão de i18n do dono:** as 6 traduções vivem em `localStorage`, sem URL e sem
+   `hreflang` → geram **zero** orgânico hoje. Ou rotas `/pt/`, `/es/`… com hreflang,
+   ou assumir inglês como único idioma indexável (mais barato e alinhado com a meta
+   US/UK), mantendo as traduções só como UX pós-login.
+6. **Zero imagens em todos os 7 arquivos do blog** — num produto que é literalmente
+   ler gráficos. Print real de análise em cada post = prova de produto + image pack.

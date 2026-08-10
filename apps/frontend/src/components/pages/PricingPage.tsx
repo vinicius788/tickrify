@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { PricingCards } from '../pricing/PricingCards';
 import { useToast } from '@/hooks/use-toast';
+import { useJsonLd, useSeo } from '@/hooks/useSeo';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const PRICING_COPY = {
@@ -84,6 +85,61 @@ export default function PricingPage() {
   const { toast } = useToast();
   const { language } = useLanguage();
   const copy = language === 'pt' ? PRICING_COPY.pt : PRICING_COPY.en;
+
+  // Intenção transacional pura — e até 10/08/2026 esta página servia o title e
+  // a description do home, então não podia rankear para "pricing" nem para o
+  // preço. Conferido ao vivo antes da correção.
+  useSeo({
+    title: 'Pricing — $29/mo for 200 AI Chart Analyses | Tickrify',
+    description:
+      'One plan, $29/month: 200 Ticks, quick and deep analysis, live candle grounding. Start with 3 free analyses, no card needed. Cancel in one click.',
+    path: '/pricing',
+  });
+
+  // Schema montado a partir do MESMO objeto que a tela renderiza. Se a copy
+  // mudar, o markup muda junto — nunca diverge do que o visitante lê (regra
+  // da auditoria de 27/07: nada afirmado que não seja verificável na página).
+  //
+  // ⚠️ O bloco FAQPage NÃO produz mais rich result: o Google desativou FAQ
+  // rich results em 07/05/2026. Ele fica porque ainda é assim que buscador de
+  // IA e agregador leem a página — não porque vai virar sanfona na SERP.
+  //
+  // Sem aggregateRating de propósito: não há avaliação real para declarar, e
+  // inventar uma seria exatamente o tipo de claim que a Fase 1 removeu.
+  const jsonLd = useMemo<Record<string, unknown>>(
+    () => ({
+      '@context': 'https://schema.org',
+      '@graph': [
+        {
+          '@type': 'SoftwareApplication',
+          name: 'Tickrify',
+          applicationCategory: 'FinanceApplication',
+          operatingSystem: 'Web',
+          url: 'https://tickrify.com',
+          description:
+            'AI chart analysis for traders: upload a chart screenshot and get entry, stop, targets, risk and confidence — a second opinion before you enter.',
+          offers: {
+            '@type': 'Offer',
+            price: '29',
+            priceCurrency: 'USD',
+            url: 'https://tickrify.com/pricing',
+            availability: 'https://schema.org/InStock',
+          },
+        },
+        {
+          '@type': 'FAQPage',
+          mainEntity: copy.faq.map((item) => ({
+            '@type': 'Question',
+            name: item.q,
+            acceptedAnswer: { '@type': 'Answer', text: item.a },
+          })),
+        },
+      ],
+    }),
+    [copy],
+  );
+
+  useJsonLd('pricing', jsonLd);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

@@ -293,7 +293,20 @@ export function PricingCards() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+      {/* Uma coluna POR PLANO. O `md:grid-cols-3` era fixo e, desde que a vitrine
+          virou plano único (27/07/2026), o card sozinho caía na primeira coluna
+          de três — a página inteira ficava encostada na esquerda enquanto o
+          título e o banner acima seguiam centralizados. Derivado de PLANS.length
+          para não quebrar de novo se um segundo plano voltar. */}
+      <div
+        className={`mx-auto grid grid-cols-1 gap-6 ${
+          PLANS.length === 1
+            ? "max-w-md"
+            : PLANS.length === 2
+              ? "max-w-3xl md:grid-cols-2"
+              : "max-w-5xl md:grid-cols-3"
+        }`}
+      >
         {PLANS.map((plan) => (
           <Card
             key={plan.id}
