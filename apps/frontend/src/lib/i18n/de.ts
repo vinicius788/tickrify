@@ -419,8 +419,8 @@ export default {
       s1label: 'durchschnittliche Analysezeit', s1sub: 'vom Upload bis zum Ergebnis',
       s2label: 'unterstützte Märkte', s2sub: 'Forex, Krypto, Aktien, Indizes',
       s3label: 'kostenlose Analysen', s3sub: 'keine Kreditkarte',
-      s4label: 'Setups, die die KI ablehnt', s4sub: 'Abstinenzquote, gemessen an 150 Blindstichproben',
-      footnote: '* Abstinenzquote gemessen an 150 Blindstichproben (BTC/ETH/XAU/EUR, 30m und 4h). Methodik auf Anfrage verfügbar. Vergangene Ergebnisse garantieren keine zukünftigen Ergebnisse.',
+      s4label: 'Setups, die die KI ablehnt', s4sub: 'Abstinenzquote bei 388 echten Analysen',
+      footnote: '* Abstinenzquote gemessen an 388 echten Analysen in der Produktion (Juli 2026). Live-Trefferquote, Kalibrierung und vollständige Methodik auf unserer Genauigkeitsseite. Vergangene Ergebnisse garantieren keine zukünftigen Ergebnisse.',
     },
     ticker: { recent: 'Letzte Analysen' },
     recent: {

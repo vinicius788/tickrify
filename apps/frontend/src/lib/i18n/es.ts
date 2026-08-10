@@ -419,8 +419,8 @@ export default {
       s1label: 'tiempo medio de análisis', s1sub: 'del envío al resultado',
       s2label: 'mercados soportados', s2sub: 'Forex, Cripto, Acciones, Índices',
       s3label: 'análisis gratis', s3sub: 'sin tarjeta de crédito',
-      s4label: 'setups que la IA se niega a operar', s4sub: 'tasa de abstención, medida en 150 muestras ciegas',
-      footnote: '* Tasa de abstención medida en 150 muestras ciegas (BTC/ETH/XAU/EUR, 30m y 4h). Metodología disponible a solicitud. Los resultados pasados no garantizan resultados futuros.',
+      s4label: 'setups que la IA se niega a operar', s4sub: 'tasa de abstención en 388 análisis reales',
+      footnote: '* Tasa de abstención medida en 388 análisis reales en producción (julio de 2026). Tasa de acierto en vivo, calibración y metodología completa en nuestra página de precisión. Los resultados pasados no garantizan resultados futuros.',
     },
     ticker: { recent: 'Análisis recientes' },
     recent: {

@@ -734,3 +734,73 @@ Bing, crawlers de IA e prévia de link de WhatsApp/Slack/X, que leem HTML cru.
 **Sobra pra limpar:** `_local/tmp-build/frontend*.tgz` (os tars da verificação).
 `_local/` é gitignored, então não suja o repo — mas o bridge não consegue apagar
 arquivo no Mac, então quem apaga é o dono.
+
+**✅ CONFIRMADO EM PRODUÇÃO (10/08, commit `96073c2`).** Lido do HTML cru, sem
+executar JS — que é exatamente o que Bing e crawler de IA enxergam:
+
+| rota | `<title>` servido |
+|---|---|
+| `/` | Tickrify — AI chart analysis for traders (home intacto) |
+| `/pricing` | Pricing — **$29**/mo for 200 AI Chart Analyses \| Tickrify |
+| `/accuracy` | Tickrify Accuracy — Our Real Win Rate, Published |
+| `/try` | Free AI Chart Analysis — No Signup Required \| Tickrify |
+
+O `$29` saiu correto (era o bug do `$` como sintaxe de replacement) e o home não
+regrediu. **O achado nº 1 da auditoria está fechado.**
+
+### 10/08 — parte 4: os 4 posts restantes + varredura de claims
+
+**Blog completo.** Os 4 que faltavam saíram de 540–730 para 1.386–1.688 palavras,
+todos com sumário navegável, FAQ e `FAQPage` schema. Detalhe do processo: **o
+schema é GERADO a partir do HTML visível** (o script extrai os pares h3/p da
+seção de FAQ), então é impossível o markup afirmar algo que a página não diz.
+
+- `chatgpt-chart-analysis` (1.688w): ganhou um **prompt copiável** que força
+  estrutura, exige invalidação e autoriza "NO TRADE" — é o que quem busca essa
+  query realmente quer; o teste de 30s que expõe o problema de preço; e uma
+  tabela de workarounds grátis pra cada limitação. Entregar isso reduz a
+  necessidade de pagar, e é justamente por isso que constrói confiança.
+- `tickrify-vs-chatgpt` (1.666w): conta de custo real (ninguém compara $29 com
+  grátis — compara com os ~$20 do Plus que já paga, ou seja ~$9 de diferença),
+  seção "quando somos a escolha errada" com 5 casos, e duas coisas que o ChatGPT
+  faz melhor que a gente (dá pra discutir com ele; e ele não tem interesse em
+  você operar).
+- `tickrify-vs-tradingview` (1.386w): "o que o TradingView faz que a gente nunca
+  vai fazer" (5 itens), o workflow concreto em 6 passos e a conta de empilhar as
+  duas assinaturas.
+- `trading-second-opinion` (1.679w): a **aritmética de não operar** (o custo fixo
+  por trade come a maior fatia justamente nos trades marginais), tabela
+  "checkpoint x teatro" e um roteiro de 6 passos pra montar o checkpoint de graça.
+
+#### 🔴 Varredura de claims — 4 achados
+
+1. **`chatgpt-chart-analysis` já tinha um `FAQPage` no head** que eu ia duplicar.
+   O antigo afirmava "calibrated confidence measured against real outcomes" —
+   removido, ficou só o novo.
+2. **Callouts de `chatgpt-chart-analysis` e `trading-second-opinion`** ainda
+   diziam "calibrated confidence tier". Viraram "confidence tier com track record
+   público" + link pra `/accuracy`.
+3. **`tickrify-vs-tradingview`** dizia "calibrated against outcomes we track".
+   Agora diz o que é verdade: a calibração medida no backtest **não se reproduziu
+   em produção até agora**.
+4. **⚠️ O pior: `es.ts`, `de.ts` e `ja.ts` estavam desatualizados.** O `39%` de
+   abstenção é **hardcoded no `SocialProof.tsx`** e vem de PRODUÇÃO. en/pt/fr
+   foram atualizados em julho para "388 análises reais em produção"; espanhol,
+   alemão e japonês continuaram atribuindo esse mesmo 39% à metodologia velha
+   ("150 amostras cegas de backtest"), cuja abstenção era outra. Três idiomas
+   afirmando algo factualmente errado sobre o número que está na tela. Corrigido
+   nos três.
+
+**Lição que vale virar regra:** número em componente + metodologia em 6 arquivos
+de i18n = divergência garantida. Quando um dado sai de produção, ele deveria vir
+da API junto com o rótulo, não ser hardcoded ao lado de seis traduções soltas.
+
+#### Pendências que a varredura levantou (NÃO corrigidas)
+
+- **`fP1`–`fP5` e `fE1`–`fE5` nos 6 idiomas são strings mortas** do tempo dos 3
+  tiers — falam de "150 Ticks" e "US$ 0,19 por análise", preço que não existe
+  mais. Confirmado que NÃO são renderizadas (`PricingSection` usa `fS1`–`fS4`).
+  Não removi pra não misturar limpeza com esta sprint, mas é lixo com preço
+  errado esperando alguém reutilizar sem olhar.
+- **O `388`/`39%` é um retrato de julho** e está congelado no código. Já deve ter
+  mudado. Ou vira dado vivo da API, ou o rótulo precisa de revisão mensal.
