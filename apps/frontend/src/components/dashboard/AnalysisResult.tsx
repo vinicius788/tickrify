@@ -545,10 +545,11 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
       </Card>
 
       {isWaitVerdict && waitFlipItems.length > 0 && (
-        <Card
-          className="rounded-xl border border-amber-500/25 bg-amber-500/[0.04] fade-in-stagger"
-          style={{ animationDelay: '40ms' }}
-        >
+        // O bloco usava borda + fundo ambar. Problema: o badge HOLD ja e ambar
+        // (--signal-hold), entao a tela tinha duas coisas ambar significando
+        // coisas diferentes, e em UI de trading ambar le como ALERTA. Isto aqui
+        // nao e alerta, e o raciocinio. Superficie neutra, igual aos outros cards.
+        <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '40ms' }}>
           <CardContent className="p-5 md:p-6">
             <p className="tk-display mb-3 flex items-center gap-2 text-[15px]">
               <Lightbulb className="h-4 w-4 text-amber-400" />
@@ -557,7 +558,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
             <div className="space-y-3 text-sm">
               {waitFlipItems.map((item) => (
                 <div key={item.label}>
-                  <p className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-amber-400/90">
+                  <p className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
                     {item.label}
                   </p>
                   <p className="mt-0.5 leading-relaxed text-[var(--text-primary)]/85">{item.text}</p>
