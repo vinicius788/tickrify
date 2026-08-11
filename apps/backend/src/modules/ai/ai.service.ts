@@ -9,7 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { PrismaService } from '../database/prisma.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
 import { resolvePlanForPriceId } from '../../config/stripe.config';
@@ -1405,6 +1405,32 @@ export class AiService implements OnModuleInit {
     };
   }
 
+  /**
+   * Cliente de storage reaproveitado.
+   *
+   * Antes, o `createClient` era chamado DENTRO do getSignedImageUrl — ou seja,
+   * uma vez por imagem. No `listAnalyses` com limit=40 isso construia 40
+   * clientes Supabase inteiros (cada um monta auth + realtime + postgrest) numa
+   * unica requisicao. Medido em producao em 11/08: GET /api/ai/analyses levou
+   * 3883ms, contra 60-100ms de todo o resto da API.
+   *
+   * A chave inclui url+key para que uma troca de credencial em runtime nao
+   * continue usando o cliente antigo.
+   */
+  private storageClientCache: { key: string; client: SupabaseClient } | null = null;
+
+  private getStorageClient(supabaseUrl: string, supabaseServiceKey: string): SupabaseClient {
+    const key = `${supabaseUrl}::${supabaseServiceKey}`;
+    if (this.storageClientCache && this.storageClientCache.key === key) {
+      return this.storageClientCache.client;
+    }
+    const client = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    this.storageClientCache = { key, client };
+    return client;
+  }
+
   private async getSignedImageUrl(rawUrl: string | null): Promise<string | null> {
     if (!rawUrl) {
       return null;
@@ -1440,9 +1466,7 @@ export class AiService implements OnModuleInit {
     }
 
     try {
-      const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
+      const supabase = this.getStorageClient(supabaseUrl, supabaseServiceKey);
 
       const bucket = process.env.SUPABASE_STORAGE_BUCKET?.trim() || 'analysis-images';
       const { data, error } = await supabase.storage.from(bucket).createSignedUrl(storagePath, 3600);
