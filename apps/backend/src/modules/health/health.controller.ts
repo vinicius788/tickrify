@@ -139,6 +139,14 @@ export class HealthController {
         configured: aiConfigured,
         ready: aiReady,
         model: process.env.AI_MODEL ? 'configured' : 'default',
+        modelQuick: process.env.AI_MODEL_QUICK?.trim() || 'default',
+        modelDeep: process.env.AI_MODEL_DEEP?.trim() || 'default',
+        // `quickGrounding` é a única flag aqui que a VITRINE VENDE: o card de
+        // preço lista "Live candle grounding" como feature paga. Se vier
+        // 'disabled', o site está afirmando algo que a produção não faz —
+        // trate como incidente de claim, não como config.
+        quickGrounding: process.env.ENABLE_QUICK_GROUNDING === 'true' ? 'enabled' : 'disabled',
+        abPromptV9Percent: Number(process.env.AB_PROMPT_V9_PERCENT) || 0,
       },
       storage: {
         required: runtimeProduction,

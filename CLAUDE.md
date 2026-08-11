@@ -804,3 +804,147 @@ da API junto com o rótulo, não ser hardcoded ao lado de seis traduções solta
   errado esperando alguém reutilizar sem olhar.
 - **O `388`/`39%` é um retrato de julho** e está congelado no código. Já deve ter
   mudado. Ou vira dado vivo da API, ou o rótulo precisa de revisão mensal.
+
+### 10/08 — parte 5: calculadoras, limpeza do i18n e as flags visíveis
+
+#### 🎯 As flags que a vitrine vende agora aparecem sozinhas
+O `ENABLE_QUICK_GROUNDING` era uma pendência de **17/07 nunca confirmada**, e
+isso deixou de ser detalhe de infra: o card de preço lista "Live candle
+grounding" como feature paga e os posts do blog usam grounding como A diferença
+entre a Tickrify e um wrapper de GPT. Se a flag estiver `false` no Render, a
+vitrine afirma algo que a produção não faz — e ninguém percebe.
+
+Em vez de continuar dependendo de alguém abrir o env group:
+- **Log no boot** (`main.ts`): `🎯 Quick grounding: ON|OFF ⚠️` e
+  `🧪 A/B prompt v9: X%`. Primeira tela do log de deploy no Render.
+- **`/health`** (protegido por ops token) passou a devolver `ai.quickGrounding`
+  (`enabled|disabled`), `ai.abPromptV9Percent`, `ai.modelQuick` e `ai.modelDeep`.
+
+Trate `quickGrounding: 'disabled'` como **incidente de claim**, não como config.
+
+#### 🧮 3 calculadoras grátis — `/tools/` (Fase 1 do plano, enfim)
+Estáticas em `public/tools/`, mesmo mecanismo do blog (filesystem antes do
+rewrite), então **zero risco pro app React**. Sem dependência, sem build:
+o JS roda no navegador e nada sai dele.
+
+- `/tools/position-size-calculator/` — tamanho, risco, distância do stop e a
+  alavancagem que os inputs implicam.
+- `/tools/risk-reward-calculator/` — razão + **o win rate de breakeven**, que é
+  o número que decide se a razão significa alguma coisa.
+- `/tools/breakeven-win-rate-calculator/` — breakeven **com custo por trade em
+  R** (a maioria das calculadoras omite) + expectancy em R no win rate real.
+- `/tools/` — índice, linkado dos 6 posts e do rodapé do blog. Todas no sitemap.
+
+**Matemática verificada, não confiada:** as funções são puras e exportadas com
+`module.exports`, então dá para testá-las no Node sem navegador. Rodei 39
+asserções — incluindo conferir que **todo número escrito no texto das páginas
+bate com o que o código calcula** (o "2.17", o "31.5%", o "+0.30R", e as 15
+células das duas tabelas). Interatividade conferida com Playwright.
+
+Fórmula que vale registrar, porque é o diferencial da terceira página:
+`breakeven = (1 + custo_em_R) / (1 + R)`, de `w·R − (1−w) − c = 0`.
+
+#### 🧹 i18n: 84 strings mortas removidas
+`fP1`–`fP5`, `fE1`–`fE5`, `proBadge`, `eliteBadge`, `proCta`, `eliteCta` — 14 por
+idioma, 6 idiomas. Restos dos 3 tiers, anunciando "150 Ticks" e "US$ 0,19 por
+análise", preço que não existe desde 27/07. Confirmado por grep que nenhuma era
+renderizada (`PricingSection` usa só `fS1`–`fS4`). Typecheck limpo depois.
+
+**Verificação:** build completo rodado na nuvem — frontend e backend com
+typecheck limpo, `dist/tools/` gerado, e as 5 rotas pré-renderizadas intactas.
+
+### 10/08 — parte 6: o que os painéis mostraram (lido no navegador, nada alterado)
+
+#### ✅ `ENABLE_QUICK_GROUNDING = true` — CONFIRMADO no Render
+A pendência aberta desde 17/07 está **resolvida e era falso alarme**: a flag está
+`true` no serviço. A promessa "Live candle grounding" do card de preço e dos posts
+do blog **é legítima**. Fechado.
+
+Detalhe que o CLAUDE.md registrava errado: **não existe env group** (Env Groups: 0).
+As variáveis vivem direto no serviço `tickrify` (`srv-d6o0b5nafjfc73ap4270`).
+
+Também confirmado pela lista (alfabética) de ~40 variáveis:
+- **`AB_PROMPT_V9_PERCENT` NÃO existe** → default 0 → o A/B do v9 segue desligado.
+- **`AI_MODEL_QUICK` e `AI_MODEL_DEEP` NÃO existem** → produção usa o default do
+  código (`gpt-4o-mini` no quick, `gpt-4o` no deep). Bate com o verificado em 30/07.
+
+#### 🔴 Search Console — o diagnóstico que faltava
+O site **ESTÁ indexado**. A hipótese de "não indexado" (10/08, parte 1) está
+**DERRUBADA**. O problema é *o que* está indexado — só 5 páginas:
+
+| página | último rastreamento |
+|---|---|
+| `tickrify.com/` | 03/08 |
+| `clerk.tickrify.com/` | 23/07 — subdomínio de auth, não deveria estar no índice |
+| `tickrify.com/privacidade` | 17/07 — a versão NÃO canônica |
+| `tickrify.com/sign-in` | 16/06 — está no `Disallow` do robots E MESMO ASSIM indexou |
+| `tickrify.com/pricing` | **16/06** |
+
+**O blog inteiro está fora do índice.** Nenhum dos 7 arquivos. E `/pricing` não é
+rastreado desde 16/06 — nada do trabalho de julho foi visto.
+Desempenho do período: **1 clique**.
+
+**CAUSA RAIZ ENCONTRADA:** sitemap enviado em 20/07, última leitura 20/07, **8 URLs**.
+Os posts do blog entraram em **22/07** — dois dias depois. O Google nunca viu essas
+URLs, e sem link externo apontando pra elas, elas não existiam pra ele.
+**Sitemap reenviado em 10/08: lido na hora, 8 → 12 URLs.** Gargalo destravado.
+
+Inspeção de URL manual não rolou — a ferramenta do Google estava com erro
+("tente novamente em algumas horas"). Refazer depois para `/accuracy`, `/try`,
+`/blog/` e os posts.
+
+#### 🆕 Lição técnica nova: `Disallow` ≠ `noindex`
+`/sign-in` está bloqueado no robots.txt e **mesmo assim foi indexado**. Isso é
+esperado: o robots impede RASTREAR, não INDEXAR — a URL entra no índice via link,
+sem conteúdo. A correção certa é `noindex`, que exige que a página NÃO esteja
+bloqueada (o Google precisa poder ler a meta). O `useSeo` criado hoje já tem o
+parâmetro `noindex`; falta ligá-lo nas rotas de auth e emitir os shells no
+pré-render. **PENDENTE.**
+
+#### Continua pendente e só o dono resolve
+- Ligar `AB_PROMPT_V9_PERCENT=20` (não fiz: altera produção e dispara redeploy).
+- Cancelar as 2 assinaturas de teste em BRL no Stripe (não fiz: irreversível e
+  mexe em cobrança).
+
+---
+
+### Sprint 11/08 — parte 7: fechamento das pendências de dono (Stripe + modelo)
+
+Executado com autorização explícita do Vini, no navegador dele.
+
+#### ✅ Stripe — pendência encerrada
+A nota da parte 6 dizia "cancelar as **2** assinaturas de teste". **Estava errada.**
+O filtro `?status=all` mostrou **5 assinaturas**: 4 já canceladas antes e **1 ativa**.
+
+A ativa era `sub_1TazIdB1hl0IoocUQeVHAzxe` — cliente `vm3441896@gmail.com` (o próprio
+Vini), produto **Tickrify • Elite** (tier removido da vitrine em 27/07), R$ 297,00/mês,
+criada em 25/05/2026, próxima fatura R$ 0,00 (zerada pelo cupom `dev.cupom`).
+
+**Cancelada em 11/08, imediatamente, sem reembolso** (a fatura mais recente era R$ 0,00,
+não havia o que reembolsar). O filtro "Ativas" agora retorna **nenhuma assinatura**.
+
+O loop fechou inteiro — o log do Render confirma que o webhook chegou e o backend
+processou: `[StripeService] Subscription sub_1TazIdB1hl0IoocUQeVHAzxe marked as canceled
+for user cmpkjptjh0003dl0767npi6w6`. Esse usuário voltou pro plano free.
+**Isso também é prova de que o webhook de cancelamento funciona em produção** — coisa
+que até hoje nunca tinha sido observada com um evento real.
+
+#### ✅ Modelo — `AI_MODEL_QUICK` agora existe
+A parte 6 registrava que `AI_MODEL_QUICK`/`AI_MODEL_DEEP` **não existiam** no Render e
+que produção rodava no default do código. Isso mudou:
+
+- `AI_MODEL_QUICK = gpt-5.6-luna` foi **criada** no Environment do serviço.
+- Deploy do commit `52db73d` disparado por essa mudança: **live em 11/08 08:59**.
+- Boot limpo: Nest subiu, Prisma conectou, `PromptSyncService` reportou `Prompt em dia (v10)`.
+- `AI_MODEL_DEEP` foi deixada **intocada** de propósito → o deep continua no `gpt-4o`.
+  A substituta sugerida pela OpenAI é `gpt-5.6-sol`, e trocar o deep é decisão separada,
+  com custo e latência diferentes.
+
+⚠️ **Ainda NÃO validado end-to-end.** O deploy subiu e o app está de pé, mas **nenhuma
+análise real rodou desde a troca** — não há uma linha de log sequer citando o modelo.
+Enquanto ninguém rodar uma análise de verdade, "luna está em produção" quer dizer só
+"a variável está setada". **Próximo passo obrigatório: rodar 1 análise e conferir o log.**
+
+🔒 **`AB_PROMPT_V9_PERCENT` continua em 0 e deve continuar** até essa validação passar.
+O v9 não roda no `mini` (>120s, satura o teto de saída); ligar o A/B antes de provar que
+o luna aguenta o prompt é empilhar duas variáveis não testadas de uma vez.

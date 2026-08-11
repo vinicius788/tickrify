@@ -131,6 +131,9 @@ export interface AIAnalysisResponse {
   reasoning?: string;
   errorMessage?: string | null;
   errorCode?: string | null;
+  // O backend devolve isto (ai.service.ts) desde a Onda 2.2, mas a interface
+  // nunca foi atualizada: o tsc quebrava em DashboardPage.tsx:848 desde 29/07.
+  outcome?: string | null;
   drawing_plan?: {
     elements: Array<Record<string, unknown>>;
   } | null;

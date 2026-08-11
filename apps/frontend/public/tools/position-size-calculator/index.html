@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Position Size Calculator — Risk a Fixed Amount Per Trade | Tickrify</title>
+  <meta name="description" content="Free position size calculator: enter balance, risk %, entry and stop to get the exact number of units, amount at risk and implied leverage. No signup." />
+  <link rel="canonical" href="https://tickrify.com/tools/position-size-calculator/" />
+  <link rel="icon" type="image/png" href="/icon.png?v=3" />
+  <meta property="og:title" content="Free Position Size Calculator for Traders" />
+  <meta property="og:description" content="Free position size calculator: enter balance, risk %, entry and stop to get the exact number of units, amount at risk and implied leverage. No signup." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://tickrify.com/tools/position-size-calculator/" />
+  <meta property="og:image" content="https://tickrify.com/og.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://tickrify.com/og.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "WebApplication", "name": "Position Size Calculator", "url": "https://tickrify.com/tools/position-size-calculator/", "applicationCategory": "FinanceApplication", "operatingSystem": "Web", "description": "Calculates position size from account balance, risk percentage, entry price and stop-loss price.", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}
+  </script>
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "What percentage should I risk per trade?", "acceptedAnswer": {"@type": "Answer", "text": "Common practice is 0.5% to 2% of account equity per trade, with most conservative guidance around 1%. What matters is deciding the number in advance rather than sizing by feel."}}, {"@type": "Question", "name": "Does this work for forex, crypto and stocks?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. The arithmetic is unit-agnostic — units means shares, coins or contracts depending on the market. For forex, convert the result to lots using your broker contract size."}}, {"@type": "Question", "name": "Should the stop be a percentage or a level?", "acceptedAnswer": {"@type": "Answer", "text": "A level. A stop placed below the structure that invalidates the idea is information; a stop placed at an arbitrary percentage is not. Position size adapts to the stop, not the other way round."}}, {"@type": "Question", "name": "Is my data stored?", "acceptedAnswer": {"@type": "Answer", "text": "No. The calculation runs entirely in the browser. Nothing is sent anywhere and nothing is saved."}}]}
+  </script>
+  <style>
+    :root{--bg:#050508;--fg:#f5f6f8;--muted:#9aa3ae;--green:#5eea8a;--red:#ff6b6b;--line:rgba(154,163,174,.18)}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family:Geist,system-ui,sans-serif;line-height:1.75}
+    .wrap{max-width:760px;margin:0 auto;padding:32px 20px 80px}
+    header.site{display:flex;justify-content:space-between;align-items:center;margin-bottom:44px}
+    header.site a.logo{color:var(--fg);text-decoration:none;font-weight:700;font-size:18px}
+    header.site a.logo span{color:var(--green)}
+    header.site a.cta{color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
+    .kicker{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--green)}
+    h1{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:clamp(2rem,4.5vw,2.9rem);line-height:1.1;letter-spacing:-.02em;margin:12px 0 12px}
+    h2{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.45rem;margin:44px 0 10px;line-height:1.3}
+    h3{font-size:1.02rem;margin:26px 0 6px;font-weight:650}
+    p,li{color:#c9cfd6;font-size:1.02rem}
+    ul,ol{padding-left:22px} li{margin-bottom:8px}
+    strong{color:var(--fg)} a{color:var(--green)}
+    .lede{color:var(--muted);font-size:1.06rem;margin-bottom:8px}
+    /* calculadora */
+    .calc{border:1px solid var(--line);border-radius:16px;padding:24px;margin:28px 0;background:#0b0c11}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;align-items:end}
+    .field label{display:block;font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.09em;
+      text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+    .field input,.field select{width:100%;background:#05060a;border:1px solid var(--line);border-radius:10px;
+      padding:11px 13px;color:var(--fg);font-size:1rem;font-family:"JetBrains Mono",monospace}
+    .field input:focus,.field select:focus{outline:none;border-color:rgba(94,234,138,.55)}
+    .out{margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
+    .rowout{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:9px 0}
+    .rowout + .rowout{border-top:1px dashed rgba(154,163,174,.13)}
+    .rowout .k{color:var(--muted);font-size:.9rem}
+    .rowout .v{font-family:"JetBrains Mono",monospace;font-size:1.12rem;font-weight:600;color:var(--fg);text-align:right}
+    .hero-out .v{font-size:1.85rem;color:var(--green)}
+    .err{color:var(--red);font-size:.92rem;margin-top:14px;display:none}
+    .hint{color:var(--muted);font-size:.85rem;margin-top:14px}
+    table{width:100%;border-collapse:collapse;margin:22px 0;font-size:.92rem}
+    th,td{border:1px solid var(--line);padding:9px 12px;text-align:left}
+    th{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+    td.num{font-family:"JetBrains Mono",monospace}
+    .callout{border:1px solid rgba(94,234,138,.32);border-radius:14px;padding:20px 24px;margin:36px 0;background:rgba(94,234,138,.04)}
+    .callout p{margin:0 0 12px}
+    .callout a.btn{display:inline-block;color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
+    .tools-nav{display:flex;flex-wrap:wrap;gap:10px;margin:28px 0}
+    .tools-nav a{border:1px solid var(--line);border-radius:999px;padding:7px 15px;text-decoration:none;
+      color:var(--muted);font-size:.87rem}
+    .tools-nav a.on{border-color:rgba(94,234,138,.5);color:var(--green)}
+    footer{margin-top:60px;border-top:1px solid var(--line);padding-top:22px;color:var(--muted);font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a class="logo" href="/">tickrify<span>.</span></a>
+      <a class="cta" href="/?utm_source=tools&amp;utm_medium=organic&amp;utm_campaign=position-size">Try 3 free analyses</a>
+    </header>
+    <div class="tools-nav">
+      <a href="/tools/" >All tools</a>
+      <a href="/tools/position-size-calculator/" class="on">Position size</a>
+      <a href="/tools/risk-reward-calculator/" >Risk / reward</a>
+      <a href="/tools/breakeven-win-rate-calculator/" >Breakeven win rate</a>
+    </div>
+    <span class="kicker">Free tool · No signup</span>
+    <h1>Position Size Calculator</h1>
+    <p class="lede">Work out exactly how many units to buy so a stop-loss hit costs you a fixed, pre-decided amount — not whatever the market feels like taking.</p>
+
+    <div class="calc">
+      <div class="grid">
+        <div class="field"><label for="balance">Account balance</label><input id="balance" type="number" inputmode="decimal" value="10000" min="0" step="any"></div>
+        <div class="field"><label for="riskPct">Risk per trade (%)</label><input id="riskPct" type="number" inputmode="decimal" value="1" min="0" step="any"></div>
+        <div class="field"><label for="entry">Entry price</label><input id="entry" type="number" inputmode="decimal" value="68400" min="0" step="any"></div>
+        <div class="field"><label for="stop">Stop-loss price</label><input id="stop" type="number" inputmode="decimal" value="67200" min="0" step="any"></div>
+      </div>
+      <div class="out" id="out">
+        <div class="rowout hero-out"><span class="k">Position size</span><span class="v" id="rUnits">—</span></div>
+        <div class="rowout"><span class="k">Amount at risk</span><span class="v" id="rRisk">—</span></div>
+        <div class="rowout"><span class="k">Risk per unit</span><span class="v" id="rPerUnit">—</span></div>
+        <div class="rowout"><span class="k">Stop distance</span><span class="v" id="rStopPct">—</span></div>
+        <div class="rowout"><span class="k">Position value</span><span class="v" id="rNotional">—</span></div>
+        <div class="rowout"><span class="k">Leverage needed</span><span class="v" id="rLev">—</span></div>
+      </div>
+      <p class="err" id="err"></p>
+      <p class="hint">Currency-agnostic: put your balance in whatever unit your account uses and the results come back in the same one. Nothing you type leaves your browser.</p>
+    </div>
+
+    <h2>The formula</h2>
+    <p>Position sizing is three lines of arithmetic that most blown accounts skipped:</p>
+    <ol>
+      <li><strong>Amount at risk</strong> = account balance × risk %</li>
+      <li><strong>Risk per unit</strong> = | entry price − stop price |</li>
+      <li><strong>Position size</strong> = amount at risk ÷ risk per unit</li>
+    </ol>
+    <p>Worked example, using the defaults above: a 10,000 account risking 1% is risking 100. Entry at 68,400 with a stop at 67,200 means each unit can lose 1,200. So 100 ÷ 1,200 = <strong>0.0833 units</strong>. If the stop is hit, you lose 100 — regardless of how big the position looks.</p>
+
+    <h2>Why the stop comes first, not the size</h2>
+    <p>The common failure is backwards: pick a position size that feels right, then place the stop wherever it fits. That makes your loss a function of your mood.</p>
+    <p>The correct order is the opposite. <strong>The stop belongs where the idea is proven wrong</strong> — a structural level, not a round number and not a comfortable distance. Then the size is derived from it. A wider stop doesn't mean more risk; it means a smaller position. This calculator only works if you decide the stop first.</p>
+
+    <h3>About the leverage line</h3>
+    <p>If the position value exceeds your balance, the calculator shows the leverage that implies. That's a consequence of your inputs, not a recommendation. A tight stop can produce a mathematically "safe" 1% risk that still needs 8× leverage to express — and leverage brings liquidation risk that sits outside this arithmetic entirely.</p>
+
+    <h2>What this calculator does not include</h2>
+    <ul>
+      <li><strong>Fees, spread and slippage.</strong> Real losses land slightly worse than the stop price suggests.</li>
+      <li><strong>Gap risk.</strong> A stop is an instruction, not a guarantee. Weekend gaps and news spikes can fill well past it.</li>
+      <li><strong>Correlation.</strong> Five 1% positions in five correlated instruments is one 5% position wearing a disguise.</li>
+      <li><strong>Whether the trade is any good.</strong> Perfect sizing on a bad setup is a slower way to lose.</li>
+    </ul>
+
+    <h2>FAQ</h2>
+    <h3>What percentage should I risk per trade?</h3>
+    <p>Common practice is 0.5%–2% of account equity per trade, with most conservative guidance clustering around 1%. The honest answer is that it depends on your edge, your drawdown tolerance and how correlated your positions are — but if you don't have a number decided in advance, you're sizing by feel.</p>
+
+    <h3>Does this work for forex, crypto and stocks?</h3>
+    <p>Yes — the arithmetic is unit-agnostic. "Units" means shares, coins, or contracts depending on your market. For forex, convert the result to lots using your broker's contract size.</p>
+
+    <h3>Should the stop be a percentage or a level?</h3>
+    <p>A level. A stop placed at "2% below entry" is arbitrary; a stop placed below the structure that invalidates your idea is information. Size adapts to the stop, not the other way round.</p>
+
+    <h3>Is my data stored?</h3>
+    <p>No. The calculation runs entirely in your browser — nothing is sent anywhere and nothing is saved.</p>
+    <div class="callout">
+      <p>These numbers tell you <em>how much</em> to risk. They can't tell you whether the setup is worth risking anything on — that's a different question, and it's the one we built Tickrify for: paste a chart, get entry, stop, targets and risk, or an honest "no trade". Three analyses free, no card.</p>
+      <a class="btn" href="/?utm_source=tools&amp;utm_medium=organic&amp;utm_campaign=position-size">Gut-check your next setup free</a>
+    </div>
+
+    <p>Related: <a href="/tools/risk-reward-calculator/">Risk / reward calculator</a> · <a href="/tools/breakeven-win-rate-calculator/">Breakeven win rate calculator</a> · <a href="/blog/trading-second-opinion/">Why a second opinion beats more signals</a></p>
+
+    <footer>Nothing on this page is financial advice. Trading involves substantial risk of loss. These calculators do arithmetic on numbers you supply — they don't know your market, your costs, or your strategy.</footer>
+  </div>
+  <script>
+    // Funções puras, separadas do DOM de propósito: dá para testar a matemática
+    // sem navegador (foi assim que ela foi conferida antes de subir).
+    function positionSize(i) {
+      if (!(i.balance > 0)) return { error: 'Account balance must be greater than zero.' };
+      if (!(i.riskPct > 0)) return { error: 'Risk per trade must be greater than zero.' };
+      if (!(i.entry > 0) || !(i.stop > 0)) return { error: 'Entry and stop must be positive prices.' };
+      var perUnit = Math.abs(i.entry - i.stop);
+      if (perUnit === 0) return { error: 'Entry and stop cannot be the same price — risk per unit would be zero.' };
+      var riskAmount = i.balance * (i.riskPct / 100);
+      var units = riskAmount / perUnit;
+      var notional = units * i.entry;
+      return {
+        riskAmount: riskAmount, perUnit: perUnit, units: units, notional: notional,
+        stopPct: (perUnit / i.entry) * 100,
+        leverage: notional / i.balance,
+        direction: i.stop < i.entry ? 'long' : 'short'
+      };
+    }
+    if (typeof module !== 'undefined') { module.exports = { positionSize: positionSize }; }
+
+    (function () {
+      if (typeof document === 'undefined') return;
+      var ids = ['balance', 'riskPct', 'entry', 'stop'];
+      var num = function (v) { return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(v); };
+      var prec = function (v) {
+        var d = Math.abs(v) >= 1 ? 4 : 8;
+        return new Intl.NumberFormat('en-US', { maximumFractionDigits: d }).format(v);
+      };
+      function run() {
+        var i = {};
+        ids.forEach(function (k) { i[k] = parseFloat(document.getElementById(k).value); });
+        var r = positionSize(i);
+        var err = document.getElementById('err');
+        var out = document.getElementById('out');
+        if (r.error) {
+          err.textContent = r.error; err.style.display = 'block'; out.style.opacity = '.35';
+          return;
+        }
+        err.style.display = 'none'; out.style.opacity = '1';
+        document.getElementById('rUnits').textContent = prec(r.units) + ' units';
+        document.getElementById('rRisk').textContent = num(r.riskAmount);
+        document.getElementById('rPerUnit').textContent = prec(r.perUnit) + ' per unit';
+        document.getElementById('rStopPct').textContent = r.stopPct.toFixed(2) + '% (' + r.direction + ')';
+        document.getElementById('rNotional').textContent = num(r.notional);
+        document.getElementById('rLev').textContent =
+          r.leverage <= 1 ? 'none (' + r.leverage.toFixed(2) + '×)' : r.leverage.toFixed(2) + '×';
+      }
+      ids.forEach(function (k) { document.getElementById(k).addEventListener('input', run); });
+      run();
+    })();
+  </script>
+
+</body>
+</html>

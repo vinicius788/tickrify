@@ -94,6 +94,19 @@ async function bootstrap() {
     console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🔗 Allowed origins: ${allowedOrigins.join(', ')}`);
 
+    // Flags que a VITRINE VENDE. O card de preço lista "Live candle grounding"
+    // como feature paga e os posts do blog usam grounding como a diferença
+    // entre a Tickrify e um wrapper de GPT — mas saber se a flag está de fato
+    // ligada exigia abrir o env group do Render. Se ela estiver `false`, o site
+    // está afirmando algo que a produção não faz, e ninguém percebe.
+    // Agora está na primeira tela do log de deploy. (10/08/2026)
+    const groundingOn = process.env.ENABLE_QUICK_GROUNDING === 'true';
+    const abPercent = Number(process.env.AB_PROMPT_V9_PERCENT) || 0;
+    console.log(
+      `🎯 Quick grounding: ${groundingOn ? 'ON' : 'OFF ⚠️  (a vitrine vende isto — ver ENABLE_QUICK_GROUNDING)'}`,
+    );
+    console.log(`🧪 A/B prompt v9: ${abPercent > 0 ? `${abPercent}% dos usuários` : 'OFF'}`);
+
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`❌ Failed to start application: ${message}`);
