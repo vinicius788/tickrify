@@ -429,3 +429,39 @@ export function parseJsonFromContent(content: string): Record<string, any> | nul
 
   return null;
 }
+
+/**
+ * Simbolos legados em portugues -> ticker padrao.
+ *
+ * Existe porque a vitrine publica mostrava **"Ouro/Dolar"** num site cujo idioma
+ * e ingles desde jun/2026 (achado em 17/08/2026, lendo a landing no navegador).
+ * O nome vem da epoca em que o produto era PT-BR e esta gravado DENTRO do JSON
+ * `Analysis.result` — nao ha coluna `symbol`, entao UPDATE em SQL exigiria
+ * reescrever JSON linha a linha. Normalizar na leitura resolve todos os
+ * registros antigos de uma vez e nao volta a acontecer.
+ *
+ * Chave sem acento e em minusculas; valor no formato que o mercado usa.
+ */
+const LEGACY_SYMBOLS: Record<string, string> = {
+  'ouro/dolar': 'XAUUSD',
+  ouro: 'XAUUSD',
+  'prata/dolar': 'XAGUSD',
+  prata: 'XAGUSD',
+  'euro/dolar': 'EURUSD',
+  'libra/dolar': 'GBPUSD',
+  'dolar/iene': 'USDJPY',
+  'bitcoin/dolar': 'BTCUSD',
+  bitcoin: 'BTCUSD',
+  petroleo: 'USOIL',
+};
+
+/** Devolve o ticker padrao. Simbolo desconhecido passa intacto; vazio vira 'N/A'. */
+export function normalizeSymbol(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 'N/A';
+  const chave = raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  return LEGACY_SYMBOLS[chave] ?? raw;
+}

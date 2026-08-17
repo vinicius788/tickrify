@@ -1,4 +1,5 @@
 import {
+  normalizeSymbol,
   computeRiskReward,
   formatRiskReward,
   harmonizeConfidenceWithTrend,
@@ -147,5 +148,31 @@ describe('formatRiskReward', () => {
     expect(formatRiskReward(null)).toBeNull();
     expect(formatRiskReward(undefined)).toBeNull();
     expect(formatRiskReward(NaN)).toBeNull();
+  });
+});
+
+describe('normalizeSymbol', () => {
+  it('traduz simbolo legado em portugues para o ticker padrao', () => {
+    expect(normalizeSymbol('Ouro/Dólar')).toBe('XAUUSD');
+  });
+
+  it('ignora acento e caixa — o dado antigo nao e consistente', () => {
+    expect(normalizeSymbol('ouro/dolar')).toBe('XAUUSD');
+    expect(normalizeSymbol('  OURO/DÓLAR  ')).toBe('XAUUSD');
+  });
+
+  it('deixa ticker padrao intacto', () => {
+    expect(normalizeSymbol('XAUUSD')).toBe('XAUUSD');
+    expect(normalizeSymbol('NAS100')).toBe('NAS100');
+  });
+
+  it('simbolo desconhecido passa intacto em vez de virar N/A', () => {
+    expect(normalizeSymbol('FOOBAR')).toBe('FOOBAR');
+  });
+
+  it('vazio ou nulo vira N/A', () => {
+    expect(normalizeSymbol('')).toBe('N/A');
+    expect(normalizeSymbol(null)).toBe('N/A');
+    expect(normalizeSymbol(undefined)).toBe('N/A');
   });
 });

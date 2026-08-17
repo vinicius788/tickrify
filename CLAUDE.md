@@ -1183,11 +1183,20 @@ no navegador:
 
 Tudo nos 6 idiomas, mesma chave, mesma posicao. `tsc --noEmit` do frontend: 0 erros.
 
-### ⚠️ Pendencia de DADO, nao de codigo: "Ouro/Dolar" na vitrine
-A esteira de analises recentes mostra um simbolo **"Ouro/Dolar"** — portugues,
-num site cujo idioma e ingles. Nao esta no codigo: vem da coluna `symbol` do
-`Analysis`, gravada na era PT. Corrigir no banco (ver SQL abaixo) e conferir se
-ha outros simbolos legados em portugues.
+### "Ouro/Dolar" na vitrine — RESOLVIDO no codigo (nao da para resolver em SQL)
+A esteira publica mostrava **"Ouro/Dolar"** num site em ingles. Primeira tentativa
+falhou com `ERROR 42703: column "symbol" does not exist`: **nao existe coluna
+`symbol`** no `Analysis` — o simbolo mora DENTRO do JSON `result` (em
+`result.analysis.symbol`, com fallbacks `symbol`/`ticker`/`asset` no payload
+completo). UPDATE em SQL exigiria reescrever JSON linha a linha, com caminho
+diferente por registro.
+
+Resolvido na LEITURA: `normalizeSymbol()` em `common/utils/analysis-normalizer.ts`
+mapeia legado PT -> ticker padrao (Ouro/Dolar -> XAUUSD, Euro/Dolar -> EURUSD,
+etc.), ignorando acento e caixa. Aplicado nos DOIS pontos que expoem simbolo:
+`ai.controller.getPublicAnalyses` (vitrine) e `ai.service.listAnalyses` (historico
+do usuario). Simbolo desconhecido passa intacto; vazio vira 'N/A'.
+5 testes novos em `analysis-normalizer.spec.ts`. Suite: 93/93.
 
 ### Contexto que nao pode ser esquecido ao mexer na landing
 **Nao existe diagnostico de conversao.** So 4 pessoas na vida completaram uma

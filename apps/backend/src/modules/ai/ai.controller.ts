@@ -36,6 +36,7 @@ import {
   type OutcomeRow,
 } from './accuracy.util';
 import { AB_V9_PROMPT_VER } from './ai.service';
+import { normalizeSymbol } from '../../common/utils/analysis-normalizer';
 
 @Controller('ai')
 export class AiController {
@@ -249,7 +250,7 @@ export class AiController {
         recommendation: r.recommendation,
         confidence: r.confidence,
         createdAt: r.createdAt,
-        symbol: String(analysis?.symbol || 'N/A').trim(),
+        symbol: normalizeSymbol(analysis?.symbol),
         timeframe: String(analysis?.timeframe || '').trim(),
         entry: analysis?.entry ?? null,
         stopLoss: analysis?.stopLoss ?? null,

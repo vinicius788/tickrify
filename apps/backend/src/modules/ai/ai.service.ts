@@ -27,6 +27,7 @@ import {
   normalizeBias,
   normalizeConfidence,
   normalizeRecommendation,
+  normalizeSymbol,
   computeRiskReward,
   formatRiskReward,
 } from '../../common/utils/analysis-normalizer';
@@ -662,14 +663,13 @@ export class AiService implements OnModuleInit {
           50,
         );
 
-        const symbol =
-          String(
-            symbolFromAnalysis ||
-              (fullResponse?.symbol as string) ||
-              (fullResponse?.ticker as string) ||
-              (fullResponse?.asset as string) ||
-              '',
-          ).trim() || 'N/A';
+        const symbol = normalizeSymbol(
+          symbolFromAnalysis ||
+            (fullResponse?.symbol as string) ||
+            (fullResponse?.ticker as string) ||
+            (fullResponse?.asset as string) ||
+            '',
+        );
 
         const timeframe =
           String(
