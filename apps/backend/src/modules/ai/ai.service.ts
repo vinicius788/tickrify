@@ -140,6 +140,25 @@ export class AiService implements OnModuleInit {
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "model" TEXT',
       );
+      // ⚠️ isDemo — DESCOBERTO EM 12/08/2026, e é o mais grave desta lista.
+      // Esta coluna é o portão da cota grátis inteira (enforceAccessAndCreate
+      // conta `isDemo: true`) e o filtro que impede análise de demo de vazar
+      // para a vitrine em /ai/public-analyses. Ela está no schema.prisma e é
+      // usada em 36 lugares do código — mas NÃO ERA CRIADA POR NENHUMA MIGRAÇÃO
+      // NEM POR ESTE HOOK. Só existia em produção porque foi adicionada à mão
+      // pelo SQL Editor em algum momento.
+      //
+      // Consequência: um banco criado do zero com `prisma migrate deploy`
+      // (staging, disaster recovery, ambiente novo) subia SEM a coluna, e a
+      // PRIMEIRA análise de qualquer usuário estourava. Descoberto ao executar
+      // as migrações do repo num Postgres limpo — não aparece de outro jeito,
+      // porque produção já tem a coluna e nunca reclama.
+      //
+      // Existe agora também como migração Prisma (20260812120000). Isto aqui é
+      // a rede de segurança, porque RUN_MIGRATIONS_ON_START=false em produção.
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "isDemo" BOOLEAN NOT NULL DEFAULT false',
+      );
       // Índice para cortar a acurácia por versão de prompt sem varrer a tabela
       // (o A/B de prompt em produção consulta exatamente por isto).
       await this.prisma.$executeRawUnsafe(

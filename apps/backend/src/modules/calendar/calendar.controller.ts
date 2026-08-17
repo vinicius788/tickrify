@@ -1,5 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { Public } from '../../common/decorators/public.decorator';
 import { EconomicCalendarService } from './calendar.service';
 
 @Controller('calendar')
@@ -14,6 +15,7 @@ export class CalendarController {
    * GET /api/calendar/events?symbol=XAUUSD
    * GET /api/calendar/events?symbol=EURUSD&hours=48
    */
+  @Public()
   @Get('events')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async getEvents(

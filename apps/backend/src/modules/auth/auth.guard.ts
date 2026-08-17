@@ -9,6 +9,18 @@ export class AuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
+
+    // Memoização por requisição (12/08/2026). O AuthGuard agora roda DUAS vezes
+    // na maioria das rotas: uma como GlobalAuthGuard (APP_GUARD) e outra pelo
+    // `@UseGuards(AuthGuard)` que continua no controller como defesa em
+    // profundidade. Sem isto, toda requisição autenticada faria dois
+    // `verifyToken` e dois `user.upsert` no Postgres — custo real no Render free
+    // + Supabase. Com isto, a redundância sai de graça.
+    if (request.__tickrifyAuthUser) {
+      request.user = request.__tickrifyAuthUser;
+      return true;
+    }
+
     const token = this.extractToken(request);
 
     if (!token) {
@@ -79,6 +91,7 @@ export class AuthGuard implements CanActivate {
         email: user.email,
         role: user.role,
       };
+      request.__tickrifyAuthUser = request.user;
 
       return true;
     } catch (error) {

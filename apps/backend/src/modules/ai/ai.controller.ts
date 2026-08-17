@@ -18,6 +18,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
+import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AiService } from './ai.service';
 import { PrismaService } from '../database/prisma.service';
@@ -218,7 +219,12 @@ export class AiController {
     }
   }
 
-  /** Endpoint público — retorna as últimas 10 análises completadas, anonimizadas */
+  /**
+   * Endpoint PÚBLICO — vitrine das últimas análises completadas, anonimizadas.
+   * Aberto porque a landing precisa dele para visitante deslogado. Não expõe
+   * usuário nem imagem, e filtra isDemo:false.
+   */
+  @Public()
   @Get('public-analyses')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async getPublicAnalyses() {
@@ -268,6 +274,12 @@ export class AiController {
    */
   private accuracyCache: { at: number; payload: unknown } | null = null;
 
+  /**
+   * Endpoint PÚBLICO — a página /accuracy é o diferencial do produto e precisa
+   * abrir para quem não tem conta. Devolve só agregado (Wilson 95%), nunca
+   * análise individual nem dado de usuário. Cache de 1h em memória.
+   */
+  @Public()
   @Get('accuracy')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async getAccuracy() {

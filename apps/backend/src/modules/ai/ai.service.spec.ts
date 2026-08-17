@@ -194,33 +194,80 @@ describe('AiService access enforcement', () => {
     expect(prisma.analysis.create).not.toHaveBeenCalled();
   });
 
-  it('getUsage: usuário free sem assinatura → cota paga zerada (as grátis são as demos)', async () => {
+  // ── getUsage ────────────────────────────────────────────────────────────────
+  // Estes testes estavam VERMELHOS no CI (corrigidos em 12/08/2026). Eles ainda
+  // descreviam o contrato antigo, de quando assinante era "ilimitado" e o
+  // contador do free vinha de analysisUsage. Duas mudanças deliberadas de
+  // produto passaram por cima disso e o spec nunca foi atualizado:
+  //
+  //   1. O contador do FREE passou a ler as linhas Analysis isDemo=true — a
+  //      MESMA fonte que o paywall usa. Antes lia analysisUsage, que só é
+  //      escrita por assinante, então o free ficava eternamente em 0/3.
+  //   2. Assinante deixou de ser "ilimitado" na prática: continua isUnlimited
+  //      (não há teto de análises), mas `canAnalyze` depende de ter tick para
+  //      gastar. Saldo zero = não pode analisar.
+  //
+  // Como o job `build` do ci.yml depende do job `test`, o CI vermelho significa
+  // que o build nunca rodou. Testes que ninguém conserta são pior que teste
+  // nenhum: ensinam a ignorar o vermelho.
+
+  it('getUsage free: conta as DEMOS, não a tabela analysisUsage', async () => {
+    // analysisUsage com 2 é ruído de propósito: para o free ela não é a fonte
+    // de verdade. Se alguém reverter a origem do contador, este teste pega.
     prisma.analysisUsage.findUnique.mockResolvedValue({ count: 2 });
     prisma.subscription.findFirst.mockResolvedValue(null);
+    prisma.analysis.count.mockResolvedValue(2);
 
     const usage = await service.getUsage('usr_1');
 
     expect(usage.plan).toBe('free');
     expect(usage.period).toBe('monthly');
-    expect(usage.total).toBe(0);
+    expect(usage.total).toBe(3);
     expect(usage.used).toBe(2);
-    expect(usage.remaining).toBe(0);
-    expect(usage.canAnalyze).toBe(false);
+    expect(usage.remaining).toBe(1);
+    expect(usage.canAnalyze).toBe(true);
     expect(usage.isUnlimited).toBe(false);
   });
 
-  it('getUsage: assinante ativo → ilimitado', async () => {
-    prisma.analysisUsage.findUnique.mockResolvedValue({ count: 99 });
-    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1' });
+  it('getUsage free: com as 3 demos usadas, bloqueia (mesma régua do paywall)', async () => {
+    prisma.subscription.findFirst.mockResolvedValue(null);
+    prisma.analysis.count.mockResolvedValue(3);
 
     const usage = await service.getUsage('usr_1');
 
-    expect(usage.plan).toBe('pro');
+    expect(usage.total).toBe(3);
+    expect(usage.used).toBe(3);
+    expect(usage.remaining).toBe(0);
+    expect(usage.canAnalyze).toBe(false);
+  });
+
+  it('getUsage assinante: sem análise limitada, mas SEM tick não pode analisar', async () => {
+    prisma.analysisUsage.findUnique.mockResolvedValue({ count: 99 });
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', priceId: null });
+    ticksService.getBalance.mockResolvedValue(0);
+
+    const usage = await service.getUsage('usr_1');
+
+    expect(usage.plan).toBe('pro'); // priceId nulo → cai no rótulo genérico
     expect(usage.total).toBeNull();
     expect(usage.remaining).toBeNull();
     expect(usage.used).toBe(99);
-    expect(usage.canAnalyze).toBe(true);
     expect(usage.isUnlimited).toBe(true);
+    expect(usage.tickBalance).toBe(0);
+    // O ponto do teste: isUnlimited não implica canAnalyze. Saldo zero bloqueia.
+    expect(usage.canAnalyze).toBe(false);
+  });
+
+  it('getUsage assinante: com saldo suficiente, pode analisar', async () => {
+    prisma.analysisUsage.findUnique.mockResolvedValue({ count: 4 });
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', priceId: null });
+    ticksService.getBalance.mockResolvedValue(10);
+
+    const usage = await service.getUsage('usr_1');
+
+    expect(usage.isUnlimited).toBe(true);
+    expect(usage.tickBalance).toBe(10);
+    expect(usage.canAnalyze).toBe(true);
   });
 });
 

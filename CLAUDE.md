@@ -948,3 +948,99 @@ Enquanto ninguém rodar uma análise de verdade, "luna está em produção" quer
 🔒 **`AB_PROMPT_V9_PERCENT` continua em 0 e deve continuar** até essa validação passar.
 O v9 não roda no `mini` (>120s, satura o teto de saída); ligar o A/B antes de provar que
 o luna aguenta o prompt é empilhar duas variáveis não testadas de uma vez.
+
+## Acesso do dono (comp) e um bug de e-mail suspeito — 17/08/2026
+
+### O dono tem acesso pago SEM assinatura no Stripe
+Ele queria usar o proprio produto de graca. O caminho do cupom (criou `TICKS`,
+100% vitalicio) foi **descartado**: cupom de 100% nao cria "acesso gratis", cria
+uma ASSINATURA REAL de valor zero no Stripe — e o Stripe acabou de chegar em
+**0 assinaturas ativas** (as 5 anteriores, todas dele, estao canceladas (conferido 29/07)). Assinar
+com o cupom devolveria "1 assinante ativo" falso justo na metrica que a auditoria
+de 27/07 limpou.
+
+O que destrava acesso pago e SO isto (`ai.service.hasPaidAccess`): uma linha em
+`Subscription` com status `active`/`trialing`. Nao existe flag no User, nao existe
+bypass por `role='admin'`, e cupom nao entra na conta.
+
+**Linha inserida a mao no Supabase (17/08/2026):**
+- `id='sub_owner_1'`, `stripeId='manual_owner_1'`, `status='active'`,
+  `priceId='price_1TRvEJB1hl0IoocUvbCyxkt5'` (starter mensal USD, 200 ticks)
+- `userId='cmpkjptjh0003dl0767npi6w6'` — a conta do dono, identificada por ter
+  **403 analises** contra 25 do segundo colocado.
+- Os ticks NAO entram no INSERT: `ensureTicksForActiveSubscriber` credita os 200
+  na primeira analise, e so se o saldo estiver zerado.
+- **Desfazer:** `DELETE FROM tickrify."Subscription" WHERE "stripeId" = 'manual_owner_1';`
+
+**⚠️ CONSEQUENCIA QUE PRECISA ESTAR NA CABECA DE QUEM LER ISTO:** o BANCO conta o
+dono como assinante ativo; o STRIPE nao. Qualquer contagem de "assinantes" tirada
+do banco esta +1 e nao ha cliente pagante real. Filtrar sempre com
+`WHERE "stripeId" NOT LIKE 'manual_%'`. O prefixo `manual_` existe exatamente pra
+isso.
+
+O cupom `TICKS` continua no Stripe, inofensivo: o DTO
+(`create-checkout-session.dto.ts`) tem `@IsIn(['EARLY35'])`, entao nenhum checkout
+consegue aplicar outro cupom programaticamente. Nunca se descobriu por que a
+Stripe recusava o TICKS digitado no checkout — ficou sem diagnostico.
+
+### ⚠️ SUSPEITA FORTE: `User.email` esta NULL em producao
+Ao procurar a conta do dono por e-mail, o INSERT nao achou NINGUEM. A consulta
+mostrou **`email` NULL nas 20 contas mais recentes** — por isso a primeira
+tentativa deu "Success. No rows returned" sem inserir nada.
+
+Isso contradiz a secao "Sprint 20-21/07", que declara **"E-mails 100%
+funcionando"** apos o fix do `clerk-email.ts` + backfill no `getMe`. Se `email`
+esta NULL, **o e-mail de boas-vindas e o de recuperacao nao tem destinatario** — e
+o de recuperacao e a peca de ativacao que dispara quando o free bate no limite.
+Pode estar falhando calado desde julho.
+
+**Nao confirmado.** Hipotese alternativa: o backfill so roda quando o usuario
+volta ao painel (`GET /api/auth/me`), e essas 20 contas seriam de gente que nunca
+voltou. Mas 20 de 20 e forte demais para ignorar. **Investigar:** ler o backfill
+do `auth.controller` + procurar no log do Render se ele executa.
+
+### Nota de operacao
+Escrever no banco de producao esta FORA do que o Claude consegue executar (o
+ambiente bloqueia o painel do Supabase). SQL de producao e sempre entregue pronto
+para o dono colar no SQL Editor — de preferencia com o id ja preenchido e com o
+comando de desfazer junto.
+
+### Auditoria de acesso de 12/08 — VERIFICADA em 17/08
+Trabalho de outra sessao, encontrado sem commit na arvore. Conferido antes de subir:
+- `GlobalAuthGuard` como APP_GUARD inverte o default do backend: rota sem
+  decorator agora FECHA (antes nascia publica). Escape so via `@Public()`.
+- `AuthGuard` ganhou memoizacao por request — sem ela, cada requisicao
+  autenticada faria 2x `verifyToken` + 2x `user.upsert` (o guard roda como
+  global E pelo `@UseGuards` que ficou nos controllers como defesa em profundidade).
+- **Superficie publica COMPLETA hoje (7 pontos, todos conferidos):** controller
+  `demo` inteiro · `POST /stripe/webhook` (HMAC) · `GET /calendar/events` ·
+  controller `health` (com `/health` e `/health/ready` ainda atras do
+  OpsTokenGuard) · `GET /ai/public-analyses` · `GET /ai/accuracy` ·
+  `GET /market/context`. Bate exatamente com o que o frontend chama deslogado.
+- `route-access.spec.ts` varre o FONTE e quebra o CI se alguma rota ficar sem
+  decisao explicita de acesso. 7 testes.
+- Migracao `20260812120000_analysis_isdemo_and_model`: `ADD COLUMN IF NOT EXISTS`
+  para `isDemo`/`model`. **NO-OP na producao atual** (as colunas ja existem);
+  conserta banco criado do zero.
+- Verificacao: **jest 88/88 passando** (16 suites) e **`tsc --noEmit` do backend
+  com 0 erros**.
+
+**⚠️ CORRECAO: os "7 erros conhecidos do `outcome`" NAO EXISTEM MAIS.** O Prisma
+Client local foi regenerado; o backend type-checa limpo. Se aparecer erro de
+`outcome` de novo, e Prisma Client desatualizado — rode `npx prisma generate` em
+`apps/backend`. Qualquer outro erro e problema real.
+
+### Por que o `.git/index.lock` fica preso quando o Claude mexe no repo
+O Claude opera o repo por um shell em sandbox que **nao tem permissao de apagar
+arquivo** (`rm`/`unlink` retornam "Operation not permitted"). Qualquer comando git
+que toque no index — `git status`, `git diff`, `git apply` — cria o
+`.git/index.lock` e depois **falha ao remove-lo**. O git segue funcionando na
+hora, mas o lock fica para tras e o SEU proximo `git commit` quebra com
+"Unable to create index.lock: File exists".
+
+Nao e corrupcao e nao ha risco: o arquivo tem 0 byte. Corrige com
+`rm -f ~/dev/tickrify/.git/index.lock` antes do commit.
+
+**Regra pratica:** o Claude deve evitar rodar `git status`/`git diff` na maquina
+do dono quando puder responder de outro jeito, e sempre avisar que o lock pode
+ter ficado. Ler arquivo com `grep`/`sed`/`python` nao cria lock — so comandos git.

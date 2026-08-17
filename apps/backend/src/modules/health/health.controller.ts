@@ -3,6 +3,7 @@ import { PrismaService } from '../database/prisma.service';
 import { getAiQueueReadiness } from '../ai/ai.queue';
 import { hasValidOpenAiKey } from '../../common/utils/ai-runtime';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
+import { Public } from '../../common/decorators/public.decorator';
 import { OpsTokenGuard } from './ops-token.guard';
 
 type ReadinessItem = {
@@ -11,6 +12,18 @@ type ReadinessItem = {
   ready: boolean;
 };
 
+/**
+ * @Public() no nível da CLASSE porque nenhuma rota de health usa sessão do
+ * Clerk — quem chama é infraestrutura, não usuário:
+ *   - /health/live  → aberto de propósito (keep-warm do GitHub Actions).
+ *   - /health/ready → fechado pelo OpsTokenGuard (INTERNAL_OPS_TOKEN).
+ *   - /health       → fechado pelo OpsTokenGuard.
+ *
+ * @Public() dispensa APENAS o AuthGuard global. O OpsTokenGuard continua
+ * rodando normalmente nas duas rotas que o declaram — não confundir "público"
+ * com "sem proteção".
+ */
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}

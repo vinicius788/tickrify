@@ -15,6 +15,7 @@ import { MarketModule } from './modules/market/market.module';
 import { MailModule } from './modules/mail/mail.module';
 import { DemoModule } from './modules/demo/demo.module';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
+import { GlobalAuthGuard } from './common/guards/global-auth.guard';
 import { HttpLoggingInterceptor } from './common/interceptors/http-logging.interceptor';
 
 @Module({
@@ -47,9 +48,24 @@ import { HttpLoggingInterceptor } from './common/interceptors/http-logging.inter
     HealthModule,
   ],
   providers: [
+    // ORDEM IMPORTA. O Nest executa os APP_GUARD na ordem em que são
+    // registrados: primeiro o rate limit (barato, rejeita abuso antes de tocar
+    // o banco), depois a autenticação.
     {
       provide: APP_GUARD,
       useClass: AppThrottlerGuard,
+    },
+    // NEGAR POR PADRÃO (12/08/2026). Sem este registro, rota nova sem
+    // `@UseGuards(AuthGuard)` nasce PÚBLICA — foi o achado principal da
+    // auditoria de acesso. Com ele, a omissão fecha, e abrir uma rota exige
+    // marcar `@Public()` explicitamente.
+    //
+    // ⚠️ NÃO REMOVER sem antes conferir que toda rota tem guard próprio. O teste
+    // common/guards/__tests__/route-access.spec.ts falha se alguma rota ficar
+    // sem decisão de acesso.
+    {
+      provide: APP_GUARD,
+      useClass: GlobalAuthGuard,
     },
     {
       provide: APP_INTERCEPTOR,

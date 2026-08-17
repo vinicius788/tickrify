@@ -11,6 +11,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { Request } from 'express';
+import { Public } from '../../common/decorators/public.decorator';
 import { DemoService } from './demo.service';
 import { DemoAnalyzeDto, DemoStatusDto } from './dto/demo-analyze.dto';
 import { UploadedFile as UploadedFileType } from '../../common/interfaces/multer';
@@ -23,6 +24,7 @@ import { UploadedFile as UploadedFileType } from '../../common/interfaces/multer
  * 3. Cota persistente de 1 análise concluída por fingerprint (Supabase).
  * 4. Teto persistente por IP em 24h (custo máximo de API por IP).
  */
+@Public()
 @Controller('demo')
 export class DemoController {
   constructor(private demoService: DemoService) {}

@@ -14,6 +14,7 @@ import {
 import { StripeService } from './stripe.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthGuard } from '../auth/auth.guard';
+import { Public } from '../../common/decorators/public.decorator';
 import { BillingCycle, Currency } from '../../config/stripe.config';
 import { Throttle } from '@nestjs/throttler';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto';
@@ -106,7 +107,13 @@ export class StripeController {
    * Webhook do Stripe
    * Retorna 2xx apenas quando o evento é processado com sucesso.
    * Em erro, o Stripe pode reenviar automaticamente.
+   *
+   * @Public() obrigatório: quem chama é o Stripe, que não tem sessão do Clerk.
+   * A autenticação aqui é a assinatura HMAC do corpo, verificada em
+   * handleWebhookEvent — rota aberta, corpo autenticado. Sem assinatura válida
+   * o serviço rejeita antes de tocar o banco.
    */
+  @Public()
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
   async handleWebhook(
