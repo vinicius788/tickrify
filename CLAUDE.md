@@ -1011,7 +1011,7 @@ O cupom `TICKS` continua no Stripe, inofensivo: o DTO
 consegue aplicar outro cupom programaticamente. Nunca se descobriu por que a
 Stripe recusava o TICKS digitado no checkout — ficou sem diagnostico.
 
-### ⚠️ SUSPEITA FORTE: `User.email` esta NULL em producao
+### ⚠️ `User.email` NULL em producao — CAUSA PROVAVEL ISOLADA (17/08)
 Ao procurar a conta do dono por e-mail, o INSERT nao achou NINGUEM. A consulta
 mostrou **`email` NULL nas 20 contas mais recentes** — por isso a primeira
 tentativa deu "Success. No rows returned" sem inserir nada.
@@ -1203,3 +1203,31 @@ do usuario). Simbolo desconhecido passa intacto; vazio vira 'N/A'.
 analise gratis. Com n=4, mudar a pagina e medir "melhora" e ruido. Estas
 correcoes foram feitas por serem FALSAS, nao por serem hipotese de conversao.
 O gargalo continua sendo trafego.
+
+### E-mail NULL — a armadilha do OR (17/08/2026)
+Investigado. O backfill esta CORRETO: `auth.controller.getMe` chama
+`backfillEmailAndWelcome` para todo usuario sem e-mail, novo ou antigo. O
+problema esta uma camada abaixo.
+
+**`fetchClerkEmail` exige `CLERK_SECRET_KEY`. O `AuthGuard` aceita
+`CLERK_SECRET_KEY` OU `CLERK_JWT_KEY`** (`auth.guard.ts` linhas 119-124: seta
+`secretKey` se existir, `jwtKey` se existir, e o `verifyToken` funciona com
+qualquer uma).
+
+Consequencia: com apenas a `CLERK_JWT_KEY` no ambiente, **o login funciona
+perfeitamente e todo e-mail fica NULL** — sem erro, sem log, sem sintoma. Bate
+exatamente com o observado (20 de 20 contas sem e-mail, produto funcionando).
+
+Pior: o proprio `/health/ready` escondia isso, porque reportava
+`clerkSecretOrJwtKey` — um OR que dizia "configured" mesmo faltando a SECRET.
+
+**Correcoes desta sessao (nao resolvem sozinhas — instrumentam):**
+- `clerk-email.ts` deixou de falhar calado: `logger.error` explicito quando a
+  SECRET_KEY falta, `warn` com status HTTP quando o Clerk recusa, `warn` quando
+  a conta nao tem endereco. Antes, os tres casos retornavam `null` identicos.
+- `/health/ready` agora reporta **`clerkSecretKeyForEmail`** separado do OR.
+
+**PENDENTE DO DONO — provavelmente o conserto inteiro:** conferir se
+`CLERK_SECRET_KEY` existe no Environment do servico `tickrify` no Render. Se nao
+existir, adicionar resolve tudo sem uma linha de codigo. Se existir, o log novo
+dira o motivo real na primeira visita ao painel.

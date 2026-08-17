@@ -1,3 +1,7 @@
+import { Logger } from '@nestjs/common';
+
+const logger = new Logger('ClerkEmail');
+
 /**
  * Busca o e-mail primário de um usuário direto na API do Clerk.
  *
@@ -11,14 +15,31 @@
 export async function fetchClerkEmail(clerkUserId: string): Promise<string | null> {
   const secretKey = String(process.env.CLERK_SECRET_KEY || '').trim();
   const id = String(clerkUserId || '').trim();
-  if (!secretKey || !id) return null;
+
+  // ⚠️ ARMADILHA REAL (17/08/2026): o AuthGuard aceita CLERK_SECRET_KEY **ou**
+  // CLERK_JWT_KEY. Esta função exige a SECRET_KEY especificamente (é chamada de
+  // API, não verificação de token). Com só a JWT_KEY no ambiente, o login
+  // funciona perfeitamente e TODO e-mail fica NULL — sem erro, sem log, sem
+  // sintoma visível. Foi o estado encontrado: `email` NULL nas 20 contas mais
+  // recentes, com login funcionando normalmente.
+  if (!secretKey) {
+    logger.error(
+      '[email] CLERK_SECRET_KEY ausente — impossivel resolver e-mail. ' +
+        'Boas-vindas e recuperacao NAO serao enviados. Setar no ambiente do Render.',
+    );
+    return null;
+  }
+  if (!id) return null;
 
   try {
     const res = await fetch(`https://api.clerk.com/v1/users/${encodeURIComponent(id)}`, {
       headers: { Authorization: `Bearer ${secretKey}` },
       signal: AbortSignal.timeout(5_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      logger.warn(`[email] Clerk respondeu ${res.status} para ${id} — e-mail nao resolvido.`);
+      return null;
+    }
 
     const data = (await res.json()) as {
       primary_email_address_id?: string | null;
@@ -28,8 +49,15 @@ export async function fetchClerkEmail(clerkUserId: string): Promise<string | nul
     const list = Array.isArray(data.email_addresses) ? data.email_addresses : [];
     const primary = list.find((e) => e?.id && e.id === data.primary_email_address_id);
     const email = String(primary?.email_address || list[0]?.email_address || '').trim();
-    return email || null;
-  } catch {
+    if (!email) {
+      logger.warn(`[email] Clerk nao devolveu endereco para ${id}.`);
+      return null;
+    }
+    return email;
+  } catch (err) {
+    logger.warn(
+      `[email] Falha ao consultar o Clerk para ${id}: ${err instanceof Error ? err.message : err}`,
+    );
     return null;
   }
 }

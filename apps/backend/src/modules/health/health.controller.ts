@@ -146,6 +146,10 @@ export class HealthController {
         ready: authReady,
         clerkIssuer: process.env.CLERK_ISSUER ? 'configured' : 'missing',
         clerkSecretOrJwtKey: authConfigured ? 'configured' : 'missing',
+        // Reportada SEPARADO de proposito: o campo acima e um OR e por isso
+        // dizia 'configured' mesmo sem a SECRET_KEY — escondendo justamente a
+        // causa de todo e-mail ficar NULL. So a SECRET_KEY resolve e-mail.
+        clerkSecretKeyForEmail: process.env.CLERK_SECRET_KEY ? 'configured' : 'MISSING',
       },
       ai: {
         required: runtimeProduction,
