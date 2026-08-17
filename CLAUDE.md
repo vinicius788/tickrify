@@ -1231,3 +1231,143 @@ Pior: o proprio `/health/ready` escondia isso, porque reportava
 `CLERK_SECRET_KEY` existe no Environment do servico `tickrify` no Render. Se nao
 existir, adicionar resolve tudo sem uma linha de codigo. Se existir, o log novo
 dira o motivo real na primeira visita ao painel.
+
+## Migracao do DEEP — a conta (17/08/2026)
+
+Estado: `AI_MODEL_QUICK=gpt-5.6-luna` (desde 11/08). **`AI_MODEL_DEEP` NAO esta
+setada** -> o deep cai no default do codigo, `gpt-4o`, que a OpenAI desliga em
+**23/10/2026**. Essa e a unica migracao que ainda falta.
+
+### Perfil de tokens do quick (derivado, nao medido)
+Resolvendo o sistema com os tres custos ja registrados no CLAUDE.md
+(mini $0,003 / luna $0,024 / terra $0,06 por analise rapida):
+**~12.000 tokens de entrada + ~2.000 de saida.** Os tres numeros fecham na mesma
+solucao, o que indica que sao coerentes entre si.
+
+### ⚠️ O QUE QUEBRA A CONTA INGENUA: tokens de raciocinio
+`ai.adapter.ts`: `maxTokens = isNextGenModel(model) ? baseMaxTokens * 2 : base`
+(16k -> **32k**). O teto foi dobrado porque modelo GPT-5 gasta tokens internos
+invisiveis — e eles sao **cobrados como saida**. Ou seja: "terra tem o mesmo
+preco de input que o gpt-4o" e verdade e e irrelevante, porque o custo migra
+para a saida, que e onde o terra e 50% mais caro E onde o volume infla.
+
+**Nao existe medicao do fator de inflacao.** Sem medir, qualquer numero de deep
+em GPT-5 e chute. Abaixo, faixa entre "sem raciocinio" e "3x de raciocinio".
+
+### Custo por analise DEEP (estimado; deep = 3 ticks)
+| Modelo | in/out por 1M | sem raciocinio | com 3x de raciocinio |
+|---|---|---|---|
+| `gpt-4o` (hoje) | $2,50 / $10 | ~$0,05-0,09 | nao se aplica |
+| `gpt-5.6-luna`  | $1 / $6     | ~$0,04 | ~$0,08 |
+| `gpt-5.6-terra` | $2,50 / $15 | ~$0,06-0,11 | ~$0,20 |
+| `gpt-5.6-sol`   | $5 / $30    | ~$0,12-0,21 | ~$0,39 |
+
+### Margem no pior caso (plano $29, 200 ticks = 66 deeps/mes)
+| Modelo no deep | 66 deeps custam | margem bruta |
+|---|---|---|
+| `gpt-4o` (hoje) | ~$4,60 | ~84% |
+| `luna` | ~$5,15 | ~82% |
+| `terra` | ~$13,20 | **~54%** |
+| `sol` | ~$25,74 | **~11%** ⚠️ |
+
+### ⚠️ A ARMADILHA ESTRATEGICA (mais importante que o custo)
+O quick JA e luna. **Se o deep tambem virar luna, os dois tiers rodam o MESMO
+modelo** — e cobrar 3 ticks pelo deep vira alegacao sem lastro, exatamente a
+classe de claim falso que a auditoria de julho existiu para matar. A diferenca
+passaria a ser so prompt/timeframes. Ou o deep ganha modelo melhor, ou o preco
+de 3 ticks precisa cair.
+
+### Decisao recomendada
+**`terra` no deep.** `sol` no pior caso come quase a assinatura inteira num plano
+de preco fixo, e `luna` destroi a justificativa do tier.
+
+### Medir antes de decidir — custa ~US$ 0,60
+Saldo atual: **US$ 10** (recarregado pelo dono em 17/08).
+1. Setar `AI_MODEL_DEEP=gpt-5.6-terra` no Render.
+2. Rodar **3 analises deep** pelo painel.
+3. Ler o consumo real no dashboard de uso da OpenAI e dividir por 3.
+Isso substitui a faixa estimada acima por um numero medido, e e a unica forma de
+saber o fator de raciocinio real. **Atualizar esta tabela com o valor medido.**
+
+### Risco de cauda que ninguem contabilizou
+Os ticks **nao expiram e acumulam para sempre** (registrado na auditoria de
+27/07 como "nao e claim falso, mas fica de fora"). Num plano de preco fixo, isso
+significa que o teto de 66 deeps/mes NAO e um teto de custo no longo prazo: um
+assinante antigo pode acumular centenas de ticks e gastar tudo em deep num mes
+so. Com `sol` isso seria prejuizo direto.
+
+## Verificacao de 17/08 (noite) — o que a coluna `model` provou
+
+Query em producao, 4 analises rodadas pelo dono entre 17:54 e 18:13 UTC:
+
+| createdAt | model | rec | email | ticks |
+|---|---|---|---|---|
+| 18:13:09 | **gpt-4o** | SELL | NULL | 358 |
+| 18:10:07 | gpt-5.6-luna | WAIT | NULL | 358 |
+| 17:57:39 | gpt-5.6-luna | BUY | NULL | 358 |
+| 17:54:17 | gpt-5.6-luna | BUY | NULL | 358 |
+
+### ✅ RESOLVIDO: `gpt-5.6-luna` VALIDADO end-to-end em producao
+A pendencia aberta em 11/08 ("a variavel esta setada mas nenhuma analise real
+rodou, entao 'luna em producao' quer dizer so 'a variavel esta setada'") esta
+**fechada**. Tres analises rapidas gravaram `gpt-5.6-luna` na coluna `model`.
+O motor roda GPT-5.6 no quick, com resposta valida — inclusive um WAIT, ou seja
+a abstencao sobreviveu a troca de modelo. **O `gpt-4o-mini` saiu do quick.**
+
+### ❌ NAO ACONTECEU: a medicao do `terra`
+A analise deep das 18:13 gravou **`gpt-4o`** — o default do codigo. Ou seja,
+`AI_MODEL_DEEP` estava VAZIA no momento da chamada (`resolveModel` so cai no
+default quando nem `AI_MODEL_DEEP` nem `AI_MODEL` existem). Causas possiveis:
+variavel nao salva, ou o redeploy do Render ainda nao tinha terminado quando a
+analise rodou. **Nao existe um unico token de `terra` consumido — a tabela de
+custo do deep continua 100% estimada.**
+
+Alem disso rodou **1 deep, nao 3**: mesmo com a variavel certa, uma amostra so
+nao separa custo fixo de variavel.
+
+### ❌ CONTINUA QUEBRADO: `email` NULL
+As 4 linhas saem com `email` NULL, inclusive a conta do dono. O commit `f2d8ab6`
+(log explicito no `clerk-email.ts`) ja deve estar no ar — entao **o log do Render
+agora diz o motivo**. Procurar por `[email]` ou `ClerkEmail` nos logs:
+- `CLERK_SECRET_KEY ausente` -> e so adicionar a variavel;
+- `Clerk respondeu 401/404` -> chave errada ou usuario inexistente;
+- silencio total -> o backfill nao esta sendo chamado (hipotese nova).
+
+### Nota sobre ticks: saldo 358, os 200 NAO foram creditados
+`ensureTicksForActiveSubscriber` so credita **se o saldo estiver zerado**. O dono
+ja tinha saldo acumulado de compras de teste antigas, entao os 200 do plano nunca
+entraram. Nao e bug — e a regra de nao empilhar. Irrelevante na pratica (358
+ticks e muito), mas explica por que o numero nao e 200.
+
+## 🔴 CAUSA RAIZ DO E-MAIL — achada em 17/08/2026
+
+**O frontend NUNCA chamou `GET /api/auth/me`.** Busca por `auth/me` no `src/`
+inteiro do frontend: **zero resultados**. E o `getMe` do `auth.controller` e o
+UNICO gatilho de `backfillEmailAndWelcome`.
+
+Consequencias, todas silenciosas desde julho:
+- `User.email` NULL para todo mundo (20 de 20 contas conferidas).
+- **O e-mail de boas-vindas nunca foi enviado a ninguem.** Ele foi escrito,
+  testado, o dominio do Resend verificado, `MAIL_FROM` setado no Render — e a
+  funcao que o dispara jamais foi chamada.
+- O e-mail de recuperacao tem gatilho proprio (`ai.service` linha ~1210), entao
+  nao depende disto — mas tambem nunca teve e-mail persistido para usar.
+
+**As hipoteses anteriores estavam ERRADAS e ficam registradas para nao voltarem:**
+- "CLERK_SECRET_KEY ausente" — plausivel, nao comprovada. Pode ate faltar, mas
+  nao era A causa: a funcao que a usa nunca era executada.
+- "O upsert do AuthGuard sobrescreve o e-mail com null" — **falso**, verificado
+  no codigo: `update: { ...(email ? { email } : {}) }` so escreve se existir.
+
+### Correcao
+- `lib/api.ts`: metodo `syncUserProfile()` + wrapper no `useAPIClient`.
+- `DashboardPage.tsx`: `useEffect` que chama uma vez por montagem, pula demo,
+  engole erro. Todo usuario autenticado passa pelo painel.
+- O backend NAO mudou — ele sempre esteve certo. Faltava alguem bater na porta.
+
+### Como validar (nao dar por resolvido antes)
+1. Deploy, abrir o painel logado.
+2. `SELECT email FROM tickrify."User" WHERE id = 'cmpkjptjh0003dl0767npi6w6';`
+   -> deve deixar de ser NULL.
+3. Se continuar NULL, AI o log `[email]` do `clerk-email.ts` (commit f2d8ab6)
+   diz o motivo real — e ai sim a hipotese da `CLERK_SECRET_KEY` volta a valer.

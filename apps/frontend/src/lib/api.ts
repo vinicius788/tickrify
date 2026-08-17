@@ -450,6 +450,37 @@ class APIClient {
     return response.json();
   }
 
+  /**
+   * Chama GET /api/auth/me.
+   *
+   * ⚠️ MOTIVO DE EXISTIR (17/08/2026): este endpoint NUNCA era chamado pelo
+   * frontend — busca por "auth/me" no `src/` inteiro devolvia ZERO resultados.
+   * E ele e o unico gatilho de `backfillEmailAndWelcome` no backend. Resultado:
+   * `User.email` ficava NULL para TODO mundo (20 de 20 contas conferidas em
+   * producao) e o **e-mail de boas-vindas nunca foi enviado a ninguem** desde
+   * que foi escrito, em julho. O backend estava certo; ninguem batia na porta.
+   *
+   * Best-effort: qualquer falha aqui e engolida por quem chama. Isto NAO pode
+   * quebrar o carregamento do painel.
+   */
+  async syncUserProfile(
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<void> {
+    await this.request(
+      '/api/auth/me',
+      {
+        method: 'GET',
+        headers: {
+          ...this.getAuthHeader(token),
+        },
+      },
+      'Failed to sync user profile',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
+    );
+  }
+
   async setFavorite(
     analysisId: string,
     isFavorite: boolean,
@@ -592,6 +623,11 @@ export function useAPIClient() {
     return apiClient.getAnalysisUsage(token, getFreshToken);
   }, [getFreshToken]);
 
+  const syncUserProfile = useCallback(async () => {
+    const token = await getFreshToken();
+    return apiClient.syncUserProfile(token, getFreshToken);
+  }, [getFreshToken]);
+
   const setOutcome = useCallback(async (
     analysisId: string,
     payload: { outcome: string | null; pnlPercent?: number | null; pnlAmount?: number | null },
@@ -628,9 +664,10 @@ export function useAPIClient() {
     getAnalysis,
     listAnalyses,
     getAnalysisUsage,
+    syncUserProfile,
     setOutcome,
     setFavorite,
     getPerformance,
     waitForAnalysisCompletion,
-  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, setOutcome, setFavorite, getPerformance, waitForAnalysisCompletion]);
+  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, syncUserProfile, setOutcome, setFavorite, getPerformance, waitForAnalysisCompletion]);
 }

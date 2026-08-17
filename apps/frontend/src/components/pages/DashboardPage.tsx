@@ -301,6 +301,21 @@ const DashboardPage = () => {
     return { bull, bear, total: bull + bear };
   }, [rawAnalyses]);
 
+  // Dispara o backfill de e-mail + boas-vindas no backend (GET /api/auth/me).
+  //
+  // ⚠️ Este efeito e a CORRECAO de um bug silencioso de julho: o endpoint existia,
+  // o backfill existia, o e-mail de boas-vindas existia — e NADA no frontend
+  // chamava a rota. Por isso `User.email` estava NULL em 20 de 20 contas de
+  // producao e nenhum e-mail jamais saiu. O painel e o lugar certo: todo usuario
+  // autenticado passa por aqui.
+  //
+  // Roda UMA vez por montagem, fora do caminho de render, e engole erro de
+  // proposito — o e-mail nunca pode atrapalhar o carregamento do painel.
+  useEffect(() => {
+    if (isDemo) return;
+    void apiClient.syncUserProfile().catch(() => undefined);
+  }, [isDemo, apiClient]);
+
   useEffect(() => {
     const goOnline = () => setIsOnline(true);
     const goOffline = () => setIsOnline(false);
