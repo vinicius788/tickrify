@@ -1,8 +1,9 @@
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { buildApiUrl } from '@/lib/api';
-import { seoFor, useSeo } from '@/hooks/useSeo';
+import { seoFor, useJsonLd, useSeo } from '@/hooks/useSeo';
 
 /**
  * Página pública de acurácia — Fase 5 da auditoria de 24/07/2026.
@@ -98,6 +99,55 @@ const AccuracyPage = () => {
     refetchOnWindowFocus: false,
     retry: 1,
   });
+
+  /**
+   * Dataset schema. Esta pagina publica numero medido, com n e intervalo de
+   * confianca — e Dataset e o tipo que descreve exatamente isso. Serve para o
+   * Google Dataset Search e, mais relevante hoje, para buscador de IA citar a
+   * fonte quando alguem pergunta "how accurate is AI chart analysis".
+   *
+   * Regra da propria pagina aplicada ao markup: nada declarado que a pagina
+   * nao mostre. dateModified e temporalCoverage so entram quando a API
+   * respondeu; sem `distribution`, porque o endpoint nao e um download publico
+   * documentado e declarar um seria afirmar o que nao da pra verificar.
+   */
+  const jsonLd = useMemo<Record<string, unknown>>(() => {
+    const base: Record<string, unknown> = {
+      '@context': 'https://schema.org',
+      '@type': 'Dataset',
+      name: 'Tickrify AI accuracy — measured hit rate',
+      description:
+        'The measured hit rate of Tickrify\u2019s AI chart analysis, published with sample size and 95% Wilson confidence intervals, including the results that look bad. Every analysis is re-checked against real market candles 48 hours after it was produced.',
+      url: 'https://tickrify.com/accuracy',
+      isAccessibleForFree: true,
+      creator: { '@type': 'Organization', name: 'Tickrify', url: 'https://tickrify.com' },
+      measurementTechnique:
+        'Each published analysis is scored automatically against real candles 48 hours later, with no human in the loop. Rates below n = 20 are shown as sample size only.',
+      variableMeasured: [
+        {
+          '@type': 'PropertyValue',
+          name: 'Hit rate',
+          description: 'Share of resolved analyses that reached target before stop, with a 95% Wilson confidence interval.',
+        },
+        {
+          '@type': 'PropertyValue',
+          name: 'Abstention rate',
+          description: 'Share of analyses where the model returned "wait" instead of a directional call.',
+        },
+        {
+          '@type': 'PropertyValue',
+          name: 'Sample size (n)',
+          description: 'Number of resolved analyses behind each published rate.',
+        },
+      ],
+    };
+    if (data?.updatedAt) base.dateModified = data.updatedAt;
+    if (data?.groundingLiveSince) base.temporalCoverage = `${data.groundingLiveSince.slice(0, 10)}/..`;
+    return base;
+  }, [data]);
+
+  useJsonLd('accuracy', jsonLd);
+
 
   return (
     <div className="min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)]">

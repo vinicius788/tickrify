@@ -1,8 +1,17 @@
 User-agent: *
 Allow: /
+
+# Rotas privadas / sem valor de indexacao.
+# A forma sem barra bloqueia a rota exata E tudo abaixo dela; a linha com barra
+# esta explicita para deixar claro que o subdiretorio inteiro cai junto e para
+# nao depender de interpretacao de prefixo por parte de crawler menos comum.
 Disallow: /dashboard
+Disallow: /dashboard/
 Disallow: /demo
+Disallow: /demo/
 Disallow: /sign-in
+Disallow: /sign-in/
 Disallow: /sign-up
+Disallow: /sign-up/
 
 Sitemap: https://tickrify.com/sitemap.xml

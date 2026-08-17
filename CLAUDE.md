@@ -1,6 +1,20 @@
 # Tickrify — Contexto para o Claude
 
 > Leia este arquivo no início de cada sessão. É a fonte única de verdade sobre a plataforma, decisões e estado atual.
+>
+> **Este arquivo e cronologico: secao antiga NAO foi corrigida quando o assunto
+> avancou, foi ANOTADA.** Antes de tratar qualquer item como pendente, procure
+> uma sprint mais recente sobre o mesmo assunto — ou uma tabela de estado.
+> Hoje existe uma: **`📊 ESTADO DO SEO — TABELA VIVA`, no fim do arquivo.**
+>
+> **Regra que nasceu de erro real (17/08/2026):** chegou uma auditoria externa
+> de SEO datada de 10/08 e a maioria dos achados dela **ja estava corrigida** —
+> pelas partes 2 a 6 da propria sprint de 10/08, escritas abaixo do trecho que a
+> auditoria leu. Uma sessao inteira foi gasta reconferindo trabalho pronto.
+> **Ao receber auditoria, relatorio ou plano — de fora ou de outra sessao —
+> cruze com o estado atual ANTES de abrir codigo, e desconfie de qualquer
+> documento com mais de alguns dias.** Ao fechar um item, mova a linha na tabela
+> de estado no MESMO commit; nao basta escrever uma sprint nova embaixo.
 
 ## O que é
 Tickrify — SaaS freemium de **análise de gráficos com IA** para traders. O usuário sobe/cola o print de um gráfico → a IA devolve uma leitura estruturada: **entry, stop, targets, confidence, confluence, risco e cenários**. North Star = **assinantes pagos / MRR**. Free tier = **3 análises grátis**, depois paywall.
@@ -585,6 +599,12 @@ públicas no build** (`vite-plugin-ssg` ou pré-render), que continua PENDENTE e
 item de maior retorno da lista inteira.
 
 ### 🔴 A marca não aparece no Google
+
+> ⚠️ **A CONCLUSAO DESTA SECAO FOI DERRUBADA NA PARTE 6 DA MESMA SPRINT.** O
+> Search Console mostrou que o site **ESTA indexado** — o problema e *o que* esta
+> indexado (5 paginas, o blog inteiro fora). Nao rankear para a propria marca e
+> autoridade zero, nao ausencia de indexacao. Leia a parte 6 antes de agir nisto.
+
 Busquei `Tickrify` e `tickrify AI chart analysis` em 10/08: **o tickrify.com não
 apareceu em nenhuma das duas.** Voltaram Tickify (ingressos), Ticklify (cripto) e,
 na segunda, os concorrentes diretos. Ou o domínio não está indexado de verdade, ou
@@ -641,13 +661,21 @@ Perde em toda dimensão de infraestrutura (corrigível com engenharia) e ganha s
 na única que o concorrente não copia sem se expor.
 
 ### PENDENTE de SEO (ordenado por retorno)
-1. **Search Console** — só o dono. Antes de tudo.
-2. **Pré-renderizar as rotas públicas** — a correção de verdade por baixo do `useSeo`.
-3. **Aprofundar os 6 posts** para 1.800–2.500 palavras (concorrente tem 5.500 na
-   mesma query). Sem página nova, sem rota nova.
-4. **3 calculadoras grátis** (position size, risk/reward, breakeven win rate) — é a
-   Fase 1 do plano de crescimento que nunca saiu, e o formato que mais atrai link
-   natural em finanças.
+
+> ⚠️ **ESTA LISTA ESTA HISTORICA — a versao viva e a `📊 ESTADO DO SEO — TABELA
+> VIVA` no fim do arquivo.** Ela ficou aqui, com os itens riscados, porque foi
+> exatamente lendo esta lista sem cruzar com as partes 2 a 6 da mesma sprint que
+> uma auditoria externa reportou como pendente coisa ja no ar.
+
+1. **Search Console** — só o dono. Antes de tudo. *(parcialmente resolvido em
+   10/08 parte 6: o site ESTA indexado, mas so 5 paginas; sitemap reenviado,
+   8 → 12 URLs. Falta reinspecionar URL por URL.)*
+2. ~~**Pré-renderizar as rotas públicas**~~ — **FEITO em 10/08 (parte 3)**,
+   `scripts/prerender.mjs`, confirmado em producao no commit `96073c2`.
+3. ~~**Aprofundar os 6 posts** para 1.800–2.500 palavras~~ — **FEITO em 10/08
+   (partes 2 e 4)**: os 6 estao entre 1.698 e 2.621 palavras.
+4. ~~**3 calculadoras grátis**~~ — **FEITO em 10/08 (parte 5)**: `public/tools/`,
+   as tres + indice, estaticas e no sitemap.
 5. **Decisão de i18n do dono:** as 6 traduções vivem em `localStorage`, sem URL e sem
    `hreflang` → geram **zero** orgânico hoje. Ou rotas `/pt/`, `/es/`… com hreflang,
    ou assumir inglês como único idioma indexável (mais barato e alinhado com a meta
@@ -1044,3 +1072,125 @@ Nao e corrupcao e nao ha risco: o arquivo tem 0 byte. Corrige com
 **Regra pratica:** o Claude deve evitar rodar `git status`/`git diff` na maquina
 do dono quando puder responder de outro jeito, e sempre avisar que o lock pode
 ter ficado. Ler arquivo com `grep`/`sed`/`python` nao cria lock — so comandos git.
+
+
+---
+
+## 📊 ESTADO DO SEO — TABELA VIVA (atualizada em 17/08/2026)
+
+> **LEIA ISTO ANTES DE AUDITAR SEO NESTE PROJETO.** Esta secao existe por um
+> motivo concreto: em 17/08 chegou um PDF de auditoria de SEO datado de
+> **10/08**, e ao reconferir item por item descobriu-se que **a maioria dos
+> achados ja tinha sido corrigida na propria semana de 10/08** — pelas partes
+> 1 a 6 daquela sprint, registradas acima. Gastou-se uma sessao inteira
+> reconferindo trabalho pronto.
+>
+> A auditoria nao estava errada; ela estava **desatualizada em uma semana**.
+> A diferenca entre "achado" e "achado ja resolvido" nao estava escrita em
+> lugar nenhum que se lesse rapido. Agora esta, aqui.
+>
+> **Regra:** ao receber uma auditoria (externa ou gerada por outra sessao),
+> cruze com esta tabela ANTES de abrir codigo. So investigue o que estiver
+> como PENDENTE. E ao corrigir qualquer item, mova a linha aqui no mesmo commit.
+
+### Resolvido — nao reabrir sem evidencia nova
+
+| Item | Onde vive hoje | Fechado em |
+|---|---|---|
+| Meta/title/description por rota | `hooks/useSeo.ts` + `lib/seo-routes.json` | 10/08 |
+| Pre-renderizacao do `<head>` das rotas publicas | `scripts/prerender.mjs` (roda no `build`) | 10/08 |
+| Canonical em todas as rotas React (inclusive home) | `useSeo` | 10/08 |
+| `/privacidade` duplicada da `/privacy` | canonical fixo em `/privacy` no `useSeo` | 10/08 |
+| Sitemap sem `/try`, `/accuracy`, sem `lastmod` | `public/sitemap.xml` (16 URLs) | 10/08 |
+| `/accuracy` orfa | rodape + link nos 6 posts + sitemap + meta propria | 10/08 |
+| `og:image` no imgur (host de terceiros) | `public/og.png`, 1200x630 | 10/08 |
+| `maximum-scale=1.0` bloqueando zoom | removido do viewport | 10/08 |
+| Descriptions de 178–238 chars | todas em 130–163 | 10/08 |
+| `FAQPage` + `SoftwareApplication` + `Offer` na `/pricing` | `PricingPage.tsx`, gerado do MESMO objeto que a tela renderiza | 10/08 |
+| Posts rasos (539–724 palavras) | os 6 estao entre 1.698 e 2.621 | 10/08 |
+| `dateModified` nos posts | schema `Article` dos 6 | 10/08 |
+| 3 calculadoras gratis | `public/tools/` (3 + indice), estaticas, no sitemap | 10/08 |
+| 3 requisicoes bloqueantes de Google Fonts | **1** requisicao multi-familia no `index.html` | 17/08 |
+| Sem `Organization` schema (logo + `sameAs`) | `@graph` no `index.html`, `sameAs` → X e Instagram | 17/08 |
+| Blog sem `og:image`/`og:url`/`twitter:*` | os 7 arquivos; `image` tambem no schema `Article` | 17/08 |
+| `/accuracy` sem structured data | `Dataset` schema com `variableMeasured` e `measurementTechnique` | 17/08 |
+| `<html lang>` fixo em `"en"` | segue o idioma escolhido (`LanguageContext`) | 17/08 |
+| `robots.txt` sem subdiretorio explicito | `Disallow` com e sem barra nas 4 rotas privadas | 17/08 |
+
+### ⚠️ FALSO POSITIVO — nao "corrigir"
+
+- **`&amp;` nas UTMs dos links do blog.** Auditoria marcou como sujeira. **Nao e.**
+  `&amp;` e a codificacao CORRETA de `&` dentro de um atributo HTML; o navegador
+  decodifica antes de montar a URL e o parametro chega limpo no analytics.
+  Trocar por `&` cru e que seria HTML invalido. **Deixe como esta.**
+
+### PENDENTE — e de quem e
+
+| Item | Por que nao foi feito | Quem resolve |
+|---|---|---|
+| **Reinspecionar URLs no Search Console** | Em 10/08 a ferramenta do Google estava com erro. O sitemap foi reenviado (8 → 12 URLs) e o gargalo real ja foi achado: o blog entrou em 22/07, dois dias DEPOIS da ultima leitura do sitemap. Falta so confirmar indexacao de `/accuracy`, `/try`, `/blog/` e os posts. | **so o dono** |
+| **`noindex` nas rotas de auth** | `/sign-in` esta no `Disallow` do robots **e mesmo assim foi indexado** — robots impede RASTREAR, nao INDEXAR. A correcao e `noindex` numa pagina que o Google POSSA ler (ou seja, tirar do Disallow). O parametro `noindex` ja existe no `useSeo`; falta ligar nas rotas e emitir os shells no pre-render. | Claude |
+| **Imagens reais nos 6 posts** | **Bloqueado por falta de asset.** Os dois PNGs do repo (`demo-example-chart.png`, `demo-after-chart.png`) sao prints CRUS de XAUUSD M30 **sem nenhuma analise sobreposta** — nao sao prova de produto, e reancoram o conteudo na geo que foi abandonada de proposito. Colocar seria pior que nao ter. Precisa de screenshot real de uma analise em NVDA/SPY/BTC. | **dono manda o print**, Claude liga |
+| **Autor pessoa (E-E-A-T)** | Schema `Article` usa `author: Organization`. Em YMYL financeiro o Google pesa autor pessoa com bio. Nao da pra inventar nome. | **dono define nome + bio** |
+| **Decisao de i18n** | As 6 traducoes vivem em `localStorage`, sem URL e sem `hreflang` → **zero** organico. Ou rotas `/pt/`, `/es/`… com `hreflang` + `x-default` (multi-dia), ou assumir ingles como unico idioma indexavel e manter traducao so como UX pos-login (1h, mais barato, alinhado com a meta US/UK). | **decisao do dono** |
+| **Pre-render do CORPO, nao so do `<head>`** | Renderizar o body exige navegador headless no build = dependencia nova, proibida (lockfile nao atualiza local). Hoje um crawler sem JS ve o `<head>` certo e um bloco neutro no corpo. | adiado por restricao |
+| Landings por plataforma (TradingView, MT) e por classe de ativo (NVDA/SPY, BTC) | Concorrente tem, nos nao. Meio dia por pagina. | Claude |
+| Glossario de padroes de candle | Cluster inteiro numa pagina. Multi-dia. | Claude |
+
+### Notas operacionais que custaram tempo (17/08)
+
+- **`vitest` e `vite build` NAO rodam no VM que o Claude usa na maquina do dono**
+  (`MODULE_NOT_FOUND` no binario nativo do `rollup`). `tsc --noEmit` e `eslint`
+  rodam normalmente via `./node_modules/.bin/`. Nao use `npx` la — o VM nao tem
+  rede e o npm tenta baixar o pacote (`403 Forbidden`).
+- **Como validar o `prerender.mjs` sem `vite build`:** copie `scripts/`,
+  `src/lib/seo-routes.json` e um `index.html` para uma pasta temporaria fora do
+  repo e rode `node scripts/prerender.mjs` la. Ele avisa
+  `bloco #root nao reconhecido` quando alimentado com o `index.html` FONTE — isso
+  e esperado e nao e bug: o Vite move o `<script type="module">` para o `<head>`
+  no build, e so ai o `</div>` fica colado no `</body>` que a regex ancora.
+- **A URL consolidada do Google Fonts nao pode ser validada do sandbox**
+  (o proxy bloqueia `fonts.googleapis.com`). A sintaxe multi-familia esta
+  confirmada na doc oficial e cada spec de peso/eixo foi copiada verbatim das
+  URLs antigas — mas **se as fontes quebrarem, e aqui que se olha primeiro.**
+
+## Sprint 17/08 — segunda auditoria de claims, agora na LANDING
+
+A auditoria de 27/07 limpou a vitrine, mas passaram batido tres alegacoes de
+TEMPO e uma secao inteira que se contradizia. Achados de uma leitura da pagina
+no navegador:
+
+1. **Secao "FULL TRANSPARENCY" se autodestruia.** Titulo dizia *"Signals
+   generated in real time"* e os cards logo abaixo mostravam "6d ago", "7d ago",
+   "19d ago". Alem de falso, contradizia o posicionamento central
+   ("nao e sinal, e segunda opiniao"). Virou *"The latest reads, unfiltered."*
+2. **Card "16s average analysis time"** — o unico numero NAO verificavel da
+   secao, embaixo de um titulo que diz literalmente **"Verifiable metrics"**.
+   O `CLAUDE.md` ja registrava que essa duracao NAO e medivel pelo banco (o
+   sweeper reescreve `updatedAt`). Trocado por **"104 trades scored
+   automatically / 48h after each call"**, que vem da mesma fonte da /accuracy.
+3. **Badge do hero `• real time`** e **CTA final "in 30 seconds"** — mortos.
+   Tambem `how.highlight` "in seconds" → "before you enter".
+4. **Rodape com 388 analises (julho)** → 395 (agosto). Numeros conferidos ao
+   vivo no `GET /api/ai/accuracy` em 17/08: n=104, acerto 37,5% (IC 28,8-47,1),
+   abstencao 39,2% (155 WAIT de 395).
+5. **`cta.badge` "Open beta now"** → "Open now". "Beta" ao lado de US$ 29 puxa
+   contra a disposicao de pagar.
+6. **A /accuracy so aparecia no rodape.** E o unico ativo que nenhum concorrente
+   tem e estava enterrado. Agora o primeiro card de metrica LINKA para ela
+   (`SocialProof.tsx`, campo `href` opcional no REAL_STATS — precisou de tipo
+   explicito no array, senao o TS reclama do opcional).
+
+Tudo nos 6 idiomas, mesma chave, mesma posicao. `tsc --noEmit` do frontend: 0 erros.
+
+### ⚠️ Pendencia de DADO, nao de codigo: "Ouro/Dolar" na vitrine
+A esteira de analises recentes mostra um simbolo **"Ouro/Dolar"** — portugues,
+num site cujo idioma e ingles. Nao esta no codigo: vem da coluna `symbol` do
+`Analysis`, gravada na era PT. Corrigir no banco (ver SQL abaixo) e conferir se
+ha outros simbolos legados em portugues.
+
+### Contexto que nao pode ser esquecido ao mexer na landing
+**Nao existe diagnostico de conversao.** So 4 pessoas na vida completaram uma
+analise gratis. Com n=4, mudar a pagina e medir "melhora" e ruido. Estas
+correcoes foram feitas por serem FALSAS, nao por serem hipotese de conversao.
+O gargalo continua sendo trafego.

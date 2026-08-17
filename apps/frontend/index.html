@@ -13,16 +13,11 @@
     <link rel="canonical" href="https://tickrify.com/" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Uma unica requisicao de fonte. Eram tres <link> separados = tres
+         idas ao fonts.googleapis.com bloqueando a primeira pintura. A API
+         css2 aceita varias familias na mesma URL, em ordem alfabetica. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    >
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap"
-      rel="stylesheet"
-    >
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&amp;family=Geist:wght@300;400;500;600;700;800;900&amp;family=Geist+Mono:wght@400;500&amp;family=JetBrains+Mono:wght@400;500&amp;family=Syne:wght@400;600;700;800&amp;display=swap"
       rel="stylesheet"
     >
     
@@ -43,14 +38,30 @@
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "WebSite",
-        "name": "Tickrify",
-        "url": "https://tickrify.com",
-        "description": "Paste your chart and AI reads the entry, stop, targets and risk — a second opinion that confirms or kills your read. The final call is yours.",
-        "publisher": {
-          "@type": "Organization",
-          "name": "Tickrify"
-        }
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://tickrify.com/#organization",
+            "name": "Tickrify",
+            "url": "https://tickrify.com",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://tickrify.com/logo.png"
+            },
+            "sameAs": [
+              "https://x.com/tickrify",
+              "https://instagram.com/tickrify"
+            ]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://tickrify.com/#website",
+            "name": "Tickrify",
+            "url": "https://tickrify.com",
+            "description": "Paste your chart and AI reads the entry, stop, targets and risk — a second opinion that confirms or kills your read. The final call is yours.",
+            "publisher": { "@id": "https://tickrify.com/#organization" }
+          }
+        ]
       }
     </script>
 
