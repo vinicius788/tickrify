@@ -974,6 +974,14 @@ Enquanto ninguém rodar uma análise de verdade, "luna está em produção" quer
 "a variável está setada". **Próximo passo obrigatório: rodar 1 análise e conferir o log.**
 
 🔒 **`AB_PROMPT_V9_PERCENT` continua em 0 e deve continuar** até essa validação passar.
+
+> ✅ **DESTRAVADO EM 17/08/2026.** A validação passou: tres analises reais gravaram
+> `gpt-5.6-luna` na coluna `model`, com resposta valida (inclusive um WAIT). O
+> motivo do bloqueio ("ligar o A/B antes de provar que o luna aguenta o prompt e
+> empilhar duas variaveis nao testadas") **deixou de existir**. Ligar o
+> `AB_PROMPT_V9_PERCENT` agora e uma decisao aberta, nao mais um risco empilhado.
+> Continua sendo decisao do dono — e, com trafego zero, o A/B levaria meses para
+> juntar amostra. Ligar faz sentido DEPOIS que o conteudo trouxer gente.
 O v9 não roda no `mini` (>120s, satura o teto de saída); ligar o A/B antes de provar que
 o luna aguenta o prompt é empilhar duas variáveis não testadas de uma vez.
 
@@ -1132,7 +1140,7 @@ ter ficado. Ler arquivo com `grep`/`sed`/`python` nao cria lock — so comandos 
 | **`noindex` nas rotas de auth** | `/sign-in` esta no `Disallow` do robots **e mesmo assim foi indexado** — robots impede RASTREAR, nao INDEXAR. A correcao e `noindex` numa pagina que o Google POSSA ler (ou seja, tirar do Disallow). O parametro `noindex` ja existe no `useSeo`; falta ligar nas rotas e emitir os shells no pre-render. | Claude |
 | **Imagens reais nos 6 posts** | **Bloqueado por falta de asset.** Os dois PNGs do repo (`demo-example-chart.png`, `demo-after-chart.png`) sao prints CRUS de XAUUSD M30 **sem nenhuma analise sobreposta** — nao sao prova de produto, e reancoram o conteudo na geo que foi abandonada de proposito. Colocar seria pior que nao ter. Precisa de screenshot real de uma analise em NVDA/SPY/BTC. | **dono manda o print**, Claude liga |
 | **Autor pessoa (E-E-A-T)** | Schema `Article` usa `author: Organization`. Em YMYL financeiro o Google pesa autor pessoa com bio. Nao da pra inventar nome. | **dono define nome + bio** |
-| **Decisao de i18n** | As 6 traducoes vivem em `localStorage`, sem URL e sem `hreflang` → **zero** organico. Ou rotas `/pt/`, `/es/`… com `hreflang` + `x-default` (multi-dia), ou assumir ingles como unico idioma indexavel e manter traducao so como UX pos-login (1h, mais barato, alinhado com a meta US/UK). | **decisao do dono** |
+| ~~**Decisao de i18n**~~ | **DECIDIDO em 17/08/2026: ingles e o unico idioma indexavel.** Ver secao propria abaixo. | ✅ fechado |
 | **Pre-render do CORPO, nao so do `<head>`** | Renderizar o body exige navegador headless no build = dependencia nova, proibida (lockfile nao atualiza local). Hoje um crawler sem JS ve o `<head>` certo e um bloco neutro no corpo. | adiado por restricao |
 | Landings por plataforma (TradingView, MT) e por classe de ativo (NVDA/SPY, BTC) | Concorrente tem, nos nao. Meio dia por pagina. | Claude |
 | Glossario de padroes de candle | Cluster inteiro numa pagina. Multi-dia. | Claude |
@@ -1371,3 +1379,78 @@ Consequencias, todas silenciosas desde julho:
    -> deve deixar de ser NULL.
 3. Se continuar NULL, AI o log `[email]` do `clerk-email.ts` (commit f2d8ab6)
    diz o motivo real — e ai sim a hipotese da `CLERK_SECRET_KEY` volta a valer.
+
+### ✅ E-MAIL RESOLVIDO E VERIFICADO EM PRODUCAO (17/08/2026, noite)
+Commit `dfa80ac` no ar. Verificacao feita chamando o endpoint com o token real da
+sessao do dono, pelo navegador dele:
+
+```
+GET /api/auth/me  ->  200
+{ "email": "vm3441896@gmail.com", ... }
+```
+
+O `getMe` devolve a linha do BANCO — logo o e-mail esta **persistido**. O campo
+saiu de NULL. O backfill roda.
+
+**Consequencias:**
+- Todo usuario existente ganha o e-mail preenchido na proxima visita ao painel.
+- O **e-mail de boas-vindas passa a ser enviado de verdade** para quem se
+  cadastrar. Ate hoje, nenhum usuario recebeu um.
+- O e-mail de recuperacao (free que bate no limite) agora tem destinatario.
+
+**Hipotese `CLERK_SECRET_KEY` DEFINITIVAMENTE DESCARTADA:** ela sempre esteve
+correta no Render. Se faltasse, `fetchClerkEmail` devolveria null e o campo
+continuaria NULL mesmo com a chamada nova. O problema era 100% a rota orfa.
+
+**Licao para as proximas investigacoes:** antes de suspeitar de ambiente,
+verificar se o codigo que usa aquele ambiente **chega a ser executado**. Duas
+hipoteses caras (variavel ausente, upsert sobrescrevendo) foram levantadas antes
+de alguem fazer o grep de 5 segundos que resolveu.
+
+## ✅ DECISAO DE i18n — ingles e o unico idioma indexavel (17/08/2026)
+
+Decidido pelo dono. **Nao reabrir sem evidencia nova.**
+
+### O que foi decidido
+O site indexa em **ingles, e so em ingles**. As 6 traducoes
+(`lib/i18n/{pt,en,es,fr,de,ja}.ts`) continuam existindo como **conforto de UX**
+para quem ja esta no produto — nao como canal de aquisicao.
+
+### Por que quase nao houve trabalho: ja era o estado de fato
+Verificado no codigo em 17/08, antes de decidir:
+- **Zero ocorrencias de `hreflang` ou `x-default`** no projeto inteiro.
+- **Zero `og:locale`, zero `<link rel="alternate">`, zero `Content-Language`.**
+- Canonical e UM por rota, sem variante de idioma (`useSeo`).
+- `sitemap.xml`: 16 URLs, nenhuma com prefixo de idioma.
+- O idioma vive em `localStorage` — e **o Googlebot nao tem localStorage**, entao
+  sempre recebe o padrao `'en'`.
+
+Ou seja: o crawler ja via um site monolingue em ingles. A decisao **formalizou o
+que ja acontecia**, em vez de construir seis portas para um produto que ainda nao
+ranqueia em uma.
+
+### Consequencias praticas
+- **Nao adicionar `hreflang`.** Sem URL por idioma, `hreflang` nao tem para onde
+  apontar — seria marcacao invalida. Se uma auditoria futura apontar "falta
+  hreflang", isso e **falso positivo neste setup**. Cruze com esta secao antes.
+- `document.documentElement.lang = language` (`LanguageContext`) **fica como
+  esta**: serve acessibilidade e leitor de tela do usuario real, e nao afeta
+  indexacao (o crawler nunca chega a trocar o idioma).
+- Texto publico continua sendo escrito em ingles primeiro (regra ja existente).
+
+### ⚠️ O risco que sobra, e que NAO foi resolvido por esta decisao
+Manter 6 idiomas continua custando **superficie de claim falso em idiomas que o
+dono nao le**. Ja aconteceu: numa revisao passada, alemao e japones continuaram
+atribuindo o numero de abstencao a uma metodologia velha depois que o portugues e
+o ingles foram corrigidos. Toda mudanca de copy repete esse risco.
+
+**Mitigacao acordada:** ao mudar qualquer string que contenha NUMERO ou
+AFIRMACAO VERIFICAVEL, mudar nos 6 no mesmo commit e conferir um a um — nunca so
+nos idiomas que o dono le. A alternativa mais forte (cortar para EN+PT) foi
+apresentada e **recusada**; fica registrada aqui caso o custo de manutencao
+volte a morder.
+
+### O que reabriria esta decisao
+Trafego organico relevante chegando em UM idioma. Enquanto o produto nao ranqueia
+em ingles, criar rotas localizadas e multiplicar por seis um canal que ainda vale
+zero.
