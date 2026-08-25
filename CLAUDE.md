@@ -84,6 +84,8 @@ Tickrify — SaaS freemium de **análise de gráficos com IA** para traders. O u
 - **Grounding do quick turbinado (21/07):** `buildCandleGroundingBlock` agora injeta **RSI(14) Wilder + posição no range (0–100%) + momentum ~6 candles**, tudo dos candles reais já buscados (zero API/dep nova), cada um com instrução de humildade (RSI extremo ≠ gatilho de reversão sozinho). Atrás da mesma flag `ENABLE_QUICK_GROUNDING`. Medir via outcome tracking; próximo candidato de indicador = **contexto HTF multi-timeframe** (maior salto, `extraImageUrls` já existe).
 
 ## PENDENTE (pós-sprint)
+- **Emoji do motor: limpar no PROMPT quando for mexer nele (25/08/2026).** O modelo decora a saída com emoji (`🎯 Bullish OB/FVG confluence`, `💧 Unswept liquidity`, `🕯️ Upper-wick rejection`) e usa travessão em quase toda frase. Os dois são removidos **na exibição**, pelo `cleanModelText` em `AnalysisResult.tsx`, e essa foi a escolha certa naquele momento por um motivo específico: limpa também as ~395 análises **já gravadas**, coisa que mudar o prompt nunca faria. O custo é que o motor segue gastando token escrevendo decoração que é jogada fora. **Quando for mexer no prompt por outro motivo** (medição, A/B, v9), acrescentar a instrução de não usar emoji nem travessão — aí é economia de token, não correção de bug, e a limpeza da exibição continua valendo como rede para o histórico. Regra do repo permanece: motor só muda com medição, então isto NÃO justifica um deploy próprio.
+  - Detalhe que não pode ser esquecido junto: os emoji do modelo hoje funcionam como **marcadores de lista** em `identifiedPatterns` (um por padrão) e os `✅/❌` são o que o `parseStructureChecklist` lê para saber o que passou. Tirar do prompt exige dar outro separador ao modelo, senão as duas seções voltam a virar parágrafo corrido.
 - **Post 0 do relançamento de conteúdo** (só o dono grava) — kit pronto em `marketing-sprint/` e docs de estratégia. Estratégia nova = "The AI With Receipts" (SEG call / QUA your-chart / SEX receipt, 3x/semana).
 - **Render pago (~US$7):** decisão do dono — NÃO assinar até o Post 0 ir ao ar (cold start só machuca com tráfego). Gatilho: dia do 1º short OU 1º assinante.
 - ~~Confirmar `[QuickGrounding]` no log do worker~~ — **resolvido em 27/07**: `ENABLE_QUICK_GROUNDING=true` conferido no env do Render, e `TWELVE_DATA_API_KEY` está lá. (A linha `[QuickGrounding]` em si não aparece porque **nenhuma análise rodou em produção nos últimos 7 dias** — não é bug, é falta de tráfego.)
@@ -1494,3 +1496,95 @@ construir nada.
 Mudar `reasoning_effort` degrada a qualidade da analise de forma dificil de
 prever, e o custo de uma analise ruim para o primeiro usuario influente e maior
 que o de dez segundos a mais de espera.
+
+---
+
+## Sprint 25/08/2026 — calendário econômico devolvendo vazio + aviso desatualizado
+
+**Como apareceu:** o dono perguntou pelo aviso de risco ("a IA não tem
+conhecimento de notícias") e se isso batia com a estratégia — a plataforma
+deveria trazer eventos/notícia de até 24h na análise.
+
+### O que já existia (achado ao investigar, não construído agora)
+O pipeline de **calendário econômico** (ForexFactory, `EconomicCalendarService`)
+já estava todo no ar desde 02/06: fonte, endpoint público
+`GET /api/calendar/events`, bloco no prompt do deep, guard que rebaixa sinal
+pra WAIT com evento High iminente, e accordion "Economic Events" na tela.
+**Isto NÃO é notícia/manchete** — é calendário de eventos AGENDADOS (CPI,
+payroll, decisão de juros). Não existe no projeto nenhuma fonte de manchete
+(procurado: NewsAPI, Finnhub, Marketaux, CryptoPanic, RSS — nada).
+
+### 🔴 Bug real: a fonte estava falhando calada e ninguém via
+Testado ao vivo em 25/08: `GET /api/calendar/events?symbol=XAUUSD&hours=168`
+em produção devolvia `{"events":[]}` — zero evento em 7 dias, o que não existe
+(a fonte ForexFactory tinha 79 eventos na semana, confirmado buscando o feed
+direto). Causa: `calendar.service.ts` gravava `this.cache = { data: [], ... }`
+mesmo quando as DUAS URLs falhavam — um array vazio por falha de rede ficava
+servido por 1h como se fosse "confirmado, sem notícia agendada". A causa raiz
+do fetch falhando (bloqueio de IP do Render? rate limit?) **não foi
+diagnosticada** — só o log novo (abaixo) vai revelar isso na próxima falha.
+
+**Agravantes encontrados:**
+- `AnalysisResult.tsx` mostrava **"✅ Nenhum evento de alto impacto"** sempre
+  que `events.length === 0` — inclusive quando a causa era falha de rede, não
+  ausência real de evento. Pior modo de falha possível num produto de trading:
+  a tela afirmava tranquilidade que ninguém checou.
+- `ai.adapter.ts` criava `new EconomicCalendarService()` a cada análise deep —
+  cache zerado toda vez, batendo na fonte externa sem necessidade.
+- Bloco do prompt usava janela de **12h**; a UI e o guard já usavam 24h.
+  Alinhado pra 24h nos três lugares.
+
+### Correção (commit: usuário ainda vai rodar `git add/commit/push`)
+- `calendar.service.ts`: `getEventsForSymbol` agora devolve
+  `{ events, degraded }`. **Nunca mais sobrescreve o cache num ciclo sem
+  sucesso** — se as duas fontes falharem, serve o cache velho (ou vazio, se
+  nunca teve sucesso) e marca `degraded: true`. Log separa HTTP não-ok, corpo
+  não-JSON (sintoma de bloqueio/challenge page) e falha de rede — antes os três
+  caíam no mesmo `catch` genérico. Novo `getFeedStatus()` para diagnóstico.
+- `calendar.controller.ts`: `GET /api/calendar/events` agora devolve
+  `{ symbol, events, degraded }`.
+- `useEconomicCalendar.ts` (frontend): novo campo `unreliable` (true em erro de
+  rede OU `degraded` do backend). `AnalysisResult.tsx` **para de mostrar
+  "✅ limpo" quando `unreliable`** — mostra aviso amarelo
+  "Couldn't check the economic calendar right now" em vez disso. Chave
+  `calUnavailable` nova nos 6 idiomas.
+- `ai.adapter.ts`: `buildCalendarEnrichment` passou a reaproveitar uma
+  instância única (mesmo padrão já usado em `signal-decision.ts`, cache de 1h
+  compartilhado) em vez de instanciar o serviço a cada chamada; janela 12h →
+  24h; se vier `degraded`, não injeta bloco nenhum (mais seguro que arriscar
+  vazio-por-falha lido como "sem evento").
+- `signal-decision.ts`: adaptado ao novo retorno `{ events }`. O guard
+  continua best-effort — `degraded` não muda o comportamento dele de propósito.
+- `/health` (`health.controller.ts`, protegido por ops token) ganhou o campo
+  `calendar: { status: 'ok'|'degraded'|'unavailable'|'unknown', lastSuccessAt,
+  lastAttemptAt, cachedEvents }` — mesmo padrão do `quickGrounding` já existente:
+  trate `degraded`/`unavailable` como **incidente de claim** (a vitrine vende
+  "Live candle grounding + economic calendar" e "Economic calendar guard"),
+  não como config. `HealthModule` passou a importar `CalendarModule`.
+- `RiskDisclosurePage.tsx`: o item "it has no knowledge of news, order flow…"
+  estava simplesmente errado sobre calendário — reescrito para "checks the
+  economic calendar for scheduled high/medium-impact events... best-effort —
+  but has no access to breaking news headlines, market sentiment, or order
+  flow". Só existe em inglês (página pública, regra de sempre).
+
+**Verificação:** `tsc --noEmit` do backend limpo, `tsc -b --force` do frontend
+limpo, `jest` do backend **150/150** (precisou atualizar
+`health.controller.spec.ts` e `health.security.spec.ts` pro novo parâmetro do
+construtor), `eslint` limpo nos arquivos tocados dos dois lados. `vitest` não
+roda neste sandbox (limitação de VM já registrada, `MODULE_NOT_FOUND` do
+rollup nativo) — não foi possível rodar a suíte de componente do frontend.
+
+### ⚠️ PENDENTE — o que isto NÃO resolve sozinho
+1. **A causa raiz do fetch falhando não foi diagnosticada.** O código agora
+   *revela* a falha (log distingue HTTP não-ok / corpo não-JSON / erro de rede,
+   e `/health` expõe o status) em vez de escondê-la. Only depois do próximo
+   deploy + próxima falha real é que o log do Render vai dizer qual dos três
+   casos é. Suspeito nº 1: bloqueio de IP de datacenter pela Cloudflare/origem
+   do ForexFactory — não confirmado.
+2. **Notícia/manchete de verdade (não calendário agendado) continua fora do
+   projeto.** Se a estratégia do dono depende de sentimento/manchete em tempo
+   real, isso é trabalho novo (fonte tipo NewsAPI/Finnhub/CryptoPanic — nenhuma
+   integrada hoje). Calendário agendado (o que existe) é uma coisa diferente e
+   mais estreita.
+3. Não commitado — os arquivos estão editados no working tree, esperando o
+   dono rodar `git add/commit/push` (fluxo padrão do projeto).
