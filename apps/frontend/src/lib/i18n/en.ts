@@ -174,7 +174,7 @@ export default {
       medImpact: '🟡 Medium impact',
       calHighImpactBadge: '⚠ High impact',
       calChecking: 'Checking calendar…',
-      calUnavailable: "Couldn't check the economic calendar right now — this isn't a confirmed all-clear.",
+      calUnavailable: "Couldn't check the economic calendar right now, and that is not a confirmed all-clear.",
       calIn: 'In {t}',
       calAgo: 'Happened {t} ago',
       calMayAffect: 'May affect this analysis',

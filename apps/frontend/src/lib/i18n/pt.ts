@@ -183,7 +183,7 @@ export default {
       medImpact: '🟡 Médio impacto',
       calHighImpactBadge: '⚠ Alto impacto',
       calChecking: 'Verificando calendário…',
-      calUnavailable: 'Não foi possível checar o calendário econômico agora — isto não é confirmação de que está tudo limpo.',
+      calUnavailable: 'Não foi possível checar o calendário econômico agora, e isso não é confirmação de que está tudo limpo.',
       calIn: 'Em {t}',
       calAgo: 'Aconteceu há {t}',
       calMayAffect: 'Pode afetar a análise',

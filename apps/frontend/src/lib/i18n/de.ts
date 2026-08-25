@@ -174,7 +174,7 @@ export default {
       medImpact: '🟡 Mittlere Auswirkung',
       calHighImpactBadge: '⚠ Hohe Auswirkung',
       calChecking: 'Kalender wird geprüft…',
-      calUnavailable: 'Der Wirtschaftskalender konnte gerade nicht geprüft werden — das ist keine Bestätigung, dass nichts ansteht.',
+      calUnavailable: 'Der Wirtschaftskalender konnte gerade nicht geprüft werden, was keine Bestätigung ist, dass nichts ansteht.',
       calIn: 'In {t}',
       calAgo: 'Vor {t}',
       calMayAffect: 'Kann diese Analyse beeinflussen',
