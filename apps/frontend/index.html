@@ -66,22 +66,8 @@
     </script>
 
     <style>
-      /* PINTURA PRÉ-HIDRATAÇÃO
-       *
-       * Isto é o que a pessoa vê enquanto o bundle carrega, e ele é servido
-       * para TODA rota (o Vercel devolve este HTML para /pricing, /terms,
-       * /dashboard e o que mais não for arquivo estático).
-       *
-       * Por isso ele não tem texto nenhum. Até 25/08/2026 ele trazia o hero
-       * antigo da landing embutido, em Fraunces 6.5rem e verde #5eea8a: quem
-       * abria o site via um lampejo do desenho ANTIGO e depois o novo, e quem
-       * abria /terms via "Stop trading in the dark" antes dos termos. Texto
-       * aqui é sempre texto que pode estar errado em algum lugar.
-       *
-       * O que ficou é só a barra do cabeçalho, nas MESMAS medidas da barra de
-       * verdade (68px de altura, mesma hairline, mesma caixa de 1240px). Assim
-       * o React monta por cima sem nada saltar de lugar.
-       */
+/* Casca pré-hidratação: só a barra do cabeçalho, sem texto.
+         Nas mesmas medidas da barra real. Ver CLAUDE.md, 25/08/2026. */
       html, body { background: #08090a; margin: 0; }
       .ph-bar {
         height: 68px;
