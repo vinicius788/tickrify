@@ -226,7 +226,7 @@ const TermsPage = () => {
           <h3>Contact</h3>
           <p>
             Questions about these Terms:{' '}
-            <a href="mailto:support@tickrify.com">support@tickrify.com</a>
+            <a href="mailto:tickrify@gmail.com">tickrify@gmail.com</a>
           </p>
         </>
       }

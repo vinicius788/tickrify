@@ -295,7 +295,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
         .trim() || null
     );
   })();
-  const { events: calEvents, loading: calLoading } = useEconomicCalendar(simboloParaContexto);
+  const { events: calEvents, loading: calLoading, unreliable: calUnreliable } = useEconomicCalendar(simboloParaContexto);
   const { data: liveMarket } = useMarketContext(simboloParaContexto);
 
   if (!analysisData) {
@@ -896,6 +896,12 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                     <AccordionContent>
                       {calLoading ? (
                         <p className="text-xs text-[var(--text-secondary)]">{r.calChecking}</p>
+                      ) : calUnreliable ? (
+                        // NUNCA mostrar o "✅ limpo" aqui: quando a fonte falhou,
+                        // events==[] não significa "sem notícia", significa "não
+                        // sabemos". Bug real encontrado em 25/08/2026 — a tela
+                        // afirmava tranquilidade que o backend não tinha checado.
+                        <p className="text-xs text-amber-400/80">⚠ {r.calUnavailable}</p>
                       ) : calEvents.length === 0 ? (
                         <p className="text-xs text-[var(--text-secondary)] opacity-60">
                           ✅ {t.analysis.noHighImpactEvents}

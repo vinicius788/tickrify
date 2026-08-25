@@ -151,7 +151,7 @@ const CookiePolicyPage = () => {
           <h3>Related</h3>
           <p>
             How we handle personal data is in the <Link to="/privacy">Privacy Policy</Link>. Questions:{' '}
-            <a href="mailto:support@tickrify.com">support@tickrify.com</a>
+            <a href="mailto:tickrify@gmail.com">tickrify@gmail.com</a>
           </p>
         </>
       }

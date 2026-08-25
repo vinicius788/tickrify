@@ -174,6 +174,7 @@ export default {
       medImpact: '🟡 中インパクト',
       calHighImpactBadge: '⚠ 高インパクト',
       calChecking: 'カレンダーを確認中…',
+      calUnavailable: '現在、経済カレンダーを確認できませんでした — イベントがないことの確認ではありません。',
       calIn: '{t}後',
       calAgo: '{t}前',
       calMayAffect: 'この分析に影響する可能性あり',

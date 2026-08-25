@@ -174,6 +174,7 @@ export default {
       medImpact: '🟡 Impact moyen',
       calHighImpactBadge: '⚠ Fort impact',
       calChecking: 'Vérification du calendrier…',
+      calUnavailable: "Impossible de vérifier le calendrier économique pour le moment — ce n'est pas une confirmation d'absence d'événement.",
       calIn: 'Dans {t}',
       calAgo: 'Il y a {t}',
       calMayAffect: 'Peut affecter cette analyse',

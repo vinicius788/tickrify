@@ -99,7 +99,7 @@ const SECTIONS: LegalSection[] = [
         <ul>
           <li>it can misread the instrument, the timeframe or the scale of a screenshot;</li>
           <li>it can produce a confident, well argued analysis that the market immediately invalidates;</li>
-          <li>it has no knowledge of news, order flow, or anything that is not on the chart or in the data it is given;</li>
+          <li>it checks the economic calendar for scheduled high/medium-impact events (rate decisions, CPI, payrolls) in the window around the chart, best-effort — but it has no access to breaking news headlines, market sentiment, or order flow, and no knowledge of anything that is not on the chart, in the data it is given, or on that calendar;</li>
           <li>the confidence score is a model output, not a probability we can promise you.</li>
         </ul>
         <p>
@@ -171,7 +171,7 @@ const RiskDisclosurePage = () => {
           <p>
             By using Tickrify you confirm that you have read this disclosure, that you understand the risks
             described, and that you accept sole responsibility for your trading decisions. Questions:{' '}
-            <a href="mailto:support@tickrify.com">support@tickrify.com</a>
+            <a href="mailto:tickrify@gmail.com">tickrify@gmail.com</a>
           </p>
         </>
       }
