@@ -93,9 +93,36 @@ const BACKEND_PT_FALLBACKS = new Set([
   'Analise gerada sem justificativa detalhada.',
 ]);
 
-function stripBackendFallback(value: unknown): string {
+/**
+ * Travessão fora do texto que o modelo escreve.
+ *
+ * O motor devolve "HTF bias — estrutura visível" e "3/3 aligned — strong
+ * setup". O travessão é a assinatura mais reconhecível de texto gerado por IA,
+ * e o produto inteiro já foi limpo dele: sem isto aqui, cada análise nova
+ * reintroduz o que o site levou um dia para tirar.
+ *
+ * SÓ o travessão cercado de espaço vira vírgula. Hífen de intervalo de preço
+ * (4230.20-4286.85) e de palavra composta (volume-confirmed) fica intocado —
+ * confundir os dois foi exatamente o que quebrou a lista de riscos.
+ */
+export function softenDashes(text: string): string {
+  return text.replace(/\s+[—–]\s+/g, ', ');
+}
+
+/**
+ * Funil ÚNICO de todo texto vindo do modelo antes de virar tela.
+ *
+ * Faz duas coisas: descarta os textos de fallback em português que o backend
+ * ainda emite (ver BACKEND_PT_FALLBACKS) e tira o travessão. Todo campo de
+ * prosa da análise passa por aqui — se um dia precisar de mais uma limpeza,
+ * ela entra NESTA função, não espalhada por 15 chamadas.
+ */
+function cleanModelText(value: unknown): string {
   const text = String(value || '').trim();
-  return BACKEND_PT_FALLBACKS.has(text) ? '' : text;
+  if (BACKEND_PT_FALLBACKS.has(text)) {
+    return '';
+  }
+  return softenDashes(text);
 }
 
 /**
@@ -192,46 +219,134 @@ function splitItems(text: unknown): string[] {
     .filter((item) => item.length > 0);
 }
 
-function normalizeRiskFactorsForView(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    const merged: string[] = [];
-    for (const item of value) {
-      const text = String(item || '').trim();
-      if (!text) {
-        continue;
-      }
+/**
+ * Fatores de risco do modelo, virando lista.
+ *
+ * O QUE ESTAVA ERRADO (achado em produção, 25/08/2026)
+ * A versão anterior quebrava o texto em `/[\n•-]+/`. O hífen ali dentro NÃO é
+ * marcador de lista: ele parte qualquer palavra composta. "Late-stage trend"
+ * virava "Late" + "stage trend"; "volume-confirmed" virava "volume" +
+ * "confirmed". E o filtro seguinte, que descartava pedaço curto ou iniciado em
+ * minúscula, APAGAVA a metade órfã. Na tela: um fator de risco começando no
+ * meio da palavra e outro terminando no meio da frase.
+ *
+ * Pior: `riskFactors` chega como ARRAY, e o chamador passava tudo por
+ * `String()` antes, o que junta os itens com vírgula. Os quatro riscos viravam
+ * um parágrafo só e depois eram recortados em lugar errado.
+ *
+ * REGRAS AGORA
+ * 1. Array é respeitado: cada elemento é um item.
+ * 2. Quebra só onde há marcador de verdade: quebra de linha, bullet no início,
+ *    ou numeração "1)" / "2." / "3]".
+ * 3. NUNCA descarta texto. Fragmento que começa em minúscula é continuação e
+ *    volta colado no item anterior. Perder metade de um aviso de risco é pior
+ *    do que mostrar um item mal formatado.
+ */
+export function normalizeRiskFactorsForView(value: unknown): string[] {
+  const chunks = Array.isArray(value)
+    ? value.map((item) => String(item ?? ''))
+    : [String(value ?? '')];
 
-      if (merged.length > 0 && /^[a-záéíóúãõàâêô,]/.test(text)) {
-        merged[merged.length - 1] = `${merged[merged.length - 1]} ${text}`;
-      } else {
-        merged.push(text);
+  const items: string[] = [];
+
+  for (const chunk of chunks) {
+    for (const line of chunk.split(/\r?\n+/)) {
+      // "1) ... 2) ..." na mesma linha: quebra ANTES do número, sem comê-lo.
+      for (const part of line.split(/(?=(?:^|\s)\d{1,2}\s*[).\]]\s+)/g)) {
+        const text = part
+          .replace(/^\s*[•*▪]\s*/, '')
+          .replace(/^\s*\d{1,2}\s*[).\]]\s*/, '')
+          .replace(/^\s*[-–—]\s+/, '')
+          .trim();
+
+        if (!text) {
+          continue;
+        }
+
+        if (items.length > 0 && /^[a-záéíóúãõàâêôç]/.test(text)) {
+          items[items.length - 1] = `${items[items.length - 1]} ${text}`;
+        } else {
+          items.push(text);
+        }
       }
     }
+  }
 
-    return merged.map((item) => item.replace(/\s+\d+\.?\s*$/, '').trim()).filter((item, index) => {
-      const normalized = item.trim();
-      if (normalized.length < 15 || /^\d+\.?$/.test(item)) {
-        return false;
-      }
-      if (index > 0 && /^[a-záéíóúãõàâêô]/.test(normalized)) {
-        return false;
-      }
-      return true;
+  return items;
+}
+
+interface ChecklistItem {
+  ok: boolean;
+  label: string;
+  detail: string;
+}
+
+interface StructureChecklist {
+  items: ChecklistItem[];
+  score: string | null;
+  verdict: string | null;
+}
+
+/**
+ * O checklist de critérios, que o modelo devolve como UM parágrafo:
+ *
+ *   "✅ HTF bias, estrutura visível. ✅ Premium/Discount zone, entrada abaixo
+ *    do meio. ❌ MTF inferido de um gráfico só. → 6/7 → BUY limit setup."
+ *
+ * Isto já É uma lista: sete critérios, cada um aprovado ou não, e um placar no
+ * fim. Entregar como prosa com emoji joga no leitor o trabalho de separar o que
+ * passou do que não passou — e num painel onde todo o resto é dado alinhado,
+ * era o único bloco que parecia saída de chat.
+ *
+ * Virando estrutura, o passa/não-passa vai para a COR (verde/vermelho), que é a
+ * mesma regra do resto do produto: cor é dado, nunca decoração.
+ *
+ * Se o formato do modelo mudar e a leitura render menos de dois critérios, o
+ * chamador volta a mostrar o parágrafo cru. Parser nunca some com texto.
+ */
+export function parseStructureChecklist(text: string): StructureChecklist {
+  if (!text) {
+    return { items: [], score: null, verdict: null };
+  }
+
+  let rest = text;
+  let score: string | null = null;
+  let verdict: string | null = null;
+
+  // Cauda "→ 6/7 → BUY limit setup."
+  const tail = rest.match(/→\s*(\d+\s*\/\s*\d+)\s*(?:→\s*(.+?))?\s*$/);
+  if (tail && typeof tail.index === 'number') {
+    score = tail[1].replace(/\s+/g, '');
+    verdict = (tail[2] || '').replace(/\.$/, '').trim() || null;
+    rest = rest.slice(0, tail.index).trim();
+  }
+
+  const items: ChecklistItem[] = [];
+
+  for (const raw of rest.split(/(?=[✅❌✔✖⚠])/u)) {
+    const chunk = raw.trim();
+    const marker = chunk.charAt(0);
+    if (!chunk || !'✅❌✔✖⚠'.includes(marker)) {
+      continue;
+    }
+
+    const body = chunk.slice(1).replace(/^\uFE0F/, '').trim().replace(/\.$/, '');
+    if (!body) {
+      continue;
+    }
+
+    // Rótulo curto + explicação. O separador exige ESPAÇO depois, senão o "R:R"
+    // seria cortado no próprio dois-pontos.
+    const split = body.match(/^(.{2,40}?)\s*[:,]\s+(.+)$/s);
+
+    items.push({
+      ok: marker === '✅' || marker === '✔',
+      label: split ? split[1].trim() : '',
+      detail: split ? split[2].trim() : body,
     });
   }
 
-  return String(value || '')
-    .split(/(?<=\.)\s+(?=[A-ZÁÉÍÓÚ])|[\n•-]+/)
-    .map((item) => item.trim())
-    .filter((item, index) => {
-      if (item.length < 15) {
-        return false;
-      }
-      if (index > 0 && /^[a-záéíóúãõàâêô]/.test(item)) {
-        return false;
-      }
-      return true;
-    });
+  return { items, score, verdict };
 }
 
 function parseRiskReward(value: unknown): number | null {
@@ -334,7 +449,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const timeframe = String(analysis.timeframe || analysis.period || fullResponse.timeframe || 'UNKNOWN').trim() || 'UNKNOWN';
   const detectedSession = String(analysis.detectedSession || fullResponse.detectedSession || '').trim() || null;
   const sessionNote =
-    stripBackendFallback(analysis.sessionNote) || stripBackendFallback(fullResponse.sessionNote) || null;
+    cleanModelText(analysis.sessionNote) || cleanModelText(fullResponse.sessionNote) || null;
 
   // Preço 0/negativo nunca é válido — significa "não informado" (ex.: HOLD sem
   // plano de trade). Trata como ausente para exibir "N/A" em vez de "$ 0.00000".
@@ -474,18 +589,69 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   };
 
   const technicalAnalysis =
-    stripBackendFallback(analysis.technicalAnalysis) ||
-    stripBackendFallback(analysis.reasoning) ||
-    stripBackendFallback(analysisData.reasoning) ||
+    cleanModelText(analysis.technicalAnalysis) ||
+    cleanModelText(analysis.reasoning) ||
+    cleanModelText(analysisData.reasoning) ||
     r.noAnalysis;
   const executiveSummary =
-    stripBackendFallback(analysis.executiveSummary) || stripBackendFallback(analysis.technicalSummary);
-  const whyNotOpposite = stripBackendFallback(analysis.whyNotOpposite);
-  const structureValidation = stripBackendFallback(analysis.structureValidation);
+    cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary);
+  const whyNotOpposite = cleanModelText(analysis.whyNotOpposite);
+  const structureValidation = cleanModelText(analysis.structureValidation);
+  const checklist = parseStructureChecklist(structureValidation);
 
-  const patternItems = splitItems(stripBackendFallback(analysis.identifiedPatterns));
-  const indicatorItems = splitItems(stripBackendFallback(analysis.keyIndicators));
-  const riskItems = normalizeRiskFactorsForView(stripBackendFallback(analysis.riskFactors));
+  // Linhas da estrutura de mercado. Montadas em dado, não em <p> soltos: assim
+  // a coluna de rótulos alinha igual à dos Operation Levels, e um campo vazio
+  // some da grade em vez de imprimir "Not informed" no meio da leitura.
+  const structureRows: Array<{ key: string; label: string; value: string; tone?: string }> = [
+    { key: 'bias', label: t.analysis.bias, value: String(marketStructure.bias || analysisData.bias || 'neutral') },
+    { key: 'structure', label: t.analysis.structure, value: cleanModelText(marketStructure.lastStructure) },
+    { key: 'bos', label: 'BOS / CHoCH', value: cleanModelText(marketStructure.breakOfStructure) },
+    { key: 'zone', label: t.analysis.priceZone, value: cleanModelText(marketStructure.priceZone) },
+    { key: 'ob', label: 'Order Block', value: cleanModelText(marketStructure.orderBlock) },
+    {
+      key: 'trend',
+      label: t.analysis.trendStrength,
+      value: trendStrength
+        ? [
+            trendStrength === 'strong'
+              ? t.analysis.strongTrend
+              : trendStrength === 'weak'
+                ? t.analysis.weakTrend
+                : t.analysis.moderateTrend,
+            trendStrengthNote,
+          ]
+            .filter(Boolean)
+            .join(', ')
+        : '',
+      tone: trendStrength === 'strong' ? 'buy' : trendStrength === 'weak' ? 'sell' : 'hold',
+    },
+    {
+      key: 'regime',
+      label: t.analysis.marketRegime,
+      value: marketRegime
+        ? [
+            marketRegime === 'trending'
+              ? t.analysis.regimeTrending
+              : marketRegime === 'volatile'
+                ? t.analysis.regimeVolatile
+                : t.analysis.regimeRanging,
+            marketRegimeNote,
+          ]
+            .filter(Boolean)
+            .join(', ')
+        : '',
+      tone: marketRegime === 'trending' ? 'buy' : marketRegime === 'volatile' ? 'sell' : 'hold',
+    },
+    { key: 'mtf', label: t.analysis.mtfAlignment, value: cleanModelText(multiTimeframeAlignment) },
+  ].filter((row) => row.value.length > 0);
+
+  const patternItems = splitItems(cleanModelText(analysis.identifiedPatterns));
+  const indicatorItems = splitItems(cleanModelText(analysis.keyIndicators));
+  // Valor CRU de propósito: `cleanModelText` devolve string e achatava o
+  // array de riscos numa linha só. A limpeza é aplicada item a item depois.
+  const riskItems = normalizeRiskFactorsForView(analysis.riskFactors)
+    .map((item) => cleanModelText(item))
+    .filter((item) => item.length > 0);
 
   // "What would change my mind": vira o WAIT/HOLD (o resultado mais comum do
   // motor) em orientação acionável — composto SÓ de campos que o motor já
@@ -1008,44 +1174,80 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                       {t.analysis.marketStructure}
                     </span>
                   </AccordionTrigger>
-                  <AccordionContent className="space-y-2 text-sm text-[var(--text-secondary)]">
-                    <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 space-y-1">
-                      <p>{t.analysis.bias}: <span className="font-medium text-[var(--text-primary)]">{String(marketStructure.bias || analysisData.bias || 'neutral')}</span></p>
-                      <p>{t.analysis.structure}: <span className="font-medium text-[var(--text-primary)]">{stripBackendFallback(marketStructure.lastStructure) || t.analysis.notInformed}</span></p>
-                      <p>
-                        <abbr title="Break of Structure">BOS</abbr>/<abbr title="Change of Character">CHoCH</abbr>:{' '}
-                        <span className="font-medium text-[var(--text-primary)]">{stripBackendFallback(marketStructure.breakOfStructure) || t.analysis.notInformed}</span>
-                      </p>
-                      <p>{t.analysis.priceZone}: <span className="font-medium text-[var(--text-primary)]">{stripBackendFallback(marketStructure.priceZone) || t.analysis.notInformed}</span></p>
-                      <p>
-                        <abbr title={r.orderBlockTip}>Order Block</abbr>:{' '}
-                        <span className="font-medium text-[var(--text-primary)]">{stripBackendFallback(marketStructure.orderBlock) || t.analysis.notInformed}</span>
-                      </p>
-                      {trendStrength && (
-                        <p className="border-t border-[var(--border-subtle)] pt-1 mt-1">
-                          {t.analysis.trendStrength}:{' '}
-                          <span className={`font-semibold ${trendStrength === 'strong' ? 'text-[var(--signal-buy)]' : trendStrength === 'weak' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}`}>
-                            {trendStrength === 'strong' ? t.analysis.strongTrend : trendStrength === 'weak' ? t.analysis.weakTrend : t.analysis.moderateTrend}
+                  <AccordionContent className="space-y-4">
+                    {/* Grade rótulo/valor, o mesmo desenho dos Operation Levels.
+                        Antes eram <p> soltos com "Rótulo: valor" no meio da
+                        frase: o olho não tinha coluna para descer. */}
+                    <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-2">
+                      {structureRows.map((row) => (
+                        <div key={row.key} className="bg-[var(--bg-elevated)] px-3 py-2.5">
+                          <dt className="font-terminal text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
+                            {row.label}
+                          </dt>
+                          <dd
+                            className={`mt-1 text-sm leading-relaxed ${
+                              row.tone === 'buy'
+                                ? 'text-[var(--signal-buy)]'
+                                : row.tone === 'sell'
+                                  ? 'text-[var(--signal-sell)]'
+                                  : row.tone === 'hold'
+                                    ? 'text-[var(--signal-hold)]'
+                                    : 'text-[var(--text-primary)]'
+                            }`}
+                          >
+                            {row.value}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+
+                    {/* Checklist. Dois critérios é o piso para valer a pena
+                        estruturar; abaixo disso o parágrafo cru é mais honesto
+                        do que uma lista de um item só. */}
+                    {checklist.items.length >= 2 ? (
+                      <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+                        <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-3 py-2">
+                          <span className="font-terminal text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
+                            {t.analysis.structureValidation}
                           </span>
-                          {trendStrengthNote && <span className="text-[var(--text-secondary)]">, {trendStrengthNote}</span>}
-                        </p>
-                      )}
-                      {marketRegime && (
-                        <p>
-                          {t.analysis.marketRegime}:{' '}
-                          <span className={`font-semibold ${marketRegime === 'trending' ? 'text-[var(--signal-buy)]' : marketRegime === 'volatile' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}`}>
-                            {marketRegime === 'trending' ? t.analysis.regimeTrending : marketRegime === 'volatile' ? t.analysis.regimeVolatile : t.analysis.regimeRanging}
-                          </span>
-                          {marketRegimeNote && <span className="text-[var(--text-secondary)]">, {marketRegimeNote}</span>}
-                        </p>
-                      )}
-                      {multiTimeframeAlignment && (
-                        <p>{t.analysis.mtfAlignment}: <span className="font-medium text-[var(--text-primary)]">{multiTimeframeAlignment}</span></p>
-                      )}
-                      {structureValidation ? (
-                        <p className="mt-2 border-t border-[var(--border-subtle)] pt-2 text-[var(--text-secondary)]">{structureValidation}</p>
-                      ) : null}
-                    </div>
+                          {checklist.score ? (
+                            <span className="font-terminal text-xs text-[var(--text-primary)]">
+                              {checklist.score}
+                              {checklist.verdict ? (
+                                <span className="text-[var(--text-secondary)]"> · {checklist.verdict}</span>
+                              ) : null}
+                            </span>
+                          ) : null}
+                        </div>
+                        <ul className="divide-y divide-[var(--border-subtle)]">
+                          {checklist.items.map((item, index) => (
+                            <li
+                              key={`${item.label}-${index}`}
+                              className="flex items-start gap-2.5 px-3 py-2.5 text-sm"
+                            >
+                              <span
+                                className={`mt-px flex-shrink-0 font-terminal text-xs ${
+                                  item.ok ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'
+                                }`}
+                              >
+                                {item.ok ? '✓' : '✕'}
+                              </span>
+                              <span className="text-[var(--text-secondary)] leading-relaxed">
+                                {item.label ? (
+                                  <strong className="font-medium text-[var(--text-primary)]">{item.label}</strong>
+                                ) : null}
+                                {item.label && item.detail ? ' ' : ''}
+                                {item.detail}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : structureValidation ? (
+                      <p className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-sm leading-relaxed text-[var(--text-secondary)]">
+                        {structureValidation}
+                      </p>
+                    ) : null}
                   </AccordionContent>
                 </AccordionItem>
 
@@ -1103,7 +1305,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-sm text-[var(--text-secondary)]">Sem indicadores detalhados.</p>
+                      <p className="text-sm text-[var(--text-secondary)]">{t.analysis.noIndicators}</p>
                     )}
                   </AccordionContent>
                 </AccordionItem>
@@ -1126,7 +1328,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                         ))}
                       </ul>
                     ) : (
-                      <p className="text-sm text-[var(--text-secondary)]">Sem fatores de risco detalhados.</p>
+                      <p className="text-sm text-[var(--text-secondary)]">{t.analysis.noRiskFactors}</p>
                     )}
                   </AccordionContent>
                 </AccordionItem>

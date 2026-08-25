@@ -215,6 +215,7 @@ export default {
     structure: 'Struktur',
     priceZone: 'Preiszone',
     notInformed: 'Nicht angegeben',
+      noIndicators: 'Keine detaillierten Indikatoren.', noRiskFactors: 'Keine detaillierten Risikofaktoren.',
     imageUnavailable: 'Bild für diese Analyse nicht verfügbar.',
     demoNotice: '⚠️ DEMO-ANALYSE',
     invalidAnalysis: 'Diese Analyse ist nicht mehr verfügbar.',

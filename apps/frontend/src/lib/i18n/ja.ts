@@ -215,6 +215,7 @@ export default {
     structure: '構造',
     priceZone: '価格ゾーン',
     notInformed: '情報なし',
+      noIndicators: '詳細な指標はありません。', noRiskFactors: '詳細なリスク要因はありません。',
     imageUnavailable: 'この分析の画像は利用できません。',
     demoNotice: '⚠️ デモ分析',
     invalidAnalysis: 'この分析は利用できません。',
