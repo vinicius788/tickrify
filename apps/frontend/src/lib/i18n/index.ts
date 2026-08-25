@@ -39,7 +39,10 @@ export function getStoredLanguage(): Language {
   try {
     const stored = localStorage.getItem(STORAGE_KEY) as Language | null;
     if (stored && stored in translations) return stored;
-  } catch {}
+  } catch {
+    // localStorage indisponível (navegação privada, cookies bloqueados).
+    // Cai no padrão em vez de quebrar a página inteira por causa do idioma.
+  }
   // Padrão: Inglês para todos os novos visitantes (trocável pelo seletor de idioma,
   // e a escolha manual fica salva). Sem auto-detecção do navegador.
   return 'en';
@@ -48,5 +51,7 @@ export function getStoredLanguage(): Language {
 export function setStoredLanguage(lang: Language): void {
   try {
     localStorage.setItem(STORAGE_KEY, lang);
-  } catch {}
+  } catch {
+    // Idem: não conseguir LEMBRAR o idioma não pode impedir de TROCAR o idioma.
+  }
 }

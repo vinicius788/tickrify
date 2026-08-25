@@ -20,7 +20,7 @@ const TermsOfServiceDialog = () => {
 
       <DialogContent className="sm:max-w-4xl max-h-[90vh]">
         <DialogHeader>
-          <DialogTitle>Termos de Serviço — Tickrify (versão final completa)</DialogTitle>
+          <DialogTitle>Termos de Serviço: Tickrify (versão final completa)</DialogTitle>
           <DialogDescription>Data de vigência: 19 de setembro de 2025</DialogDescription>
         </DialogHeader>
 
@@ -171,7 +171,7 @@ const TermsOfServiceDialog = () => {
 
           <section className="space-y-2">
             <h3 className="font-semibold">
-              15. Declaração Regulatória — Jurisdições com Restrições
+              15. Declaração Regulatória: jurisdições com restrições
             </h3>
             <p>
               A Tickrify não é licenciada por órgãos reguladores financeiros, incluindo, mas não se

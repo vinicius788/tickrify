@@ -11,14 +11,14 @@ const PRICING_COPY = {
     title: 'Choose your Tickrify plan',
     subtitle: 'AI trading analysis. Every plan includes monthly Ticks that renew automatically.',
     foundingTitle: 'Founding Trader offer',
-    foundingDesc: 'You’re early — and that counts. The first 50 subscribers lock this price forever: it never increases while your subscription stays active. Use code',
+    foundingDesc: 'You’re early, and that counts. The first 50 subscribers lock this price forever: it never increases while your subscription stays active. Use code',
     foundingCode: 'EARLY35',
     foundingSuffix: 'at checkout for 35% off your first month.',
     faqTitle: 'Frequently asked questions',
     faq: [
       {
         q: 'Can I cancel anytime?',
-        a: 'Yes — cancel in one click from your dashboard, no emails and no questions. You keep your Ticks and full access until the end of the period you already paid for.',
+        a: 'Yes, cancel in one click from your dashboard, no emails and no questions. You keep your Ticks and full access until the end of the period you already paid for.',
       },
       {
         q: 'How do Ticks work?',
@@ -38,7 +38,7 @@ const PRICING_COPY = {
       },
       {
         q: 'Is there a refund guarantee?',
-        a: 'You never pay blind: 3 free analyses before any charge, and you can cancel anytime. Per the Terms of Service purchases are final — but if anything goes wrong with an analysis, reply to any email and we’ll make it right. We read every message.',
+        a: 'You never pay blind: 3 free analyses before any charge, and you can cancel anytime. Per the Terms of Service purchases are final, but if anything goes wrong with an analysis, reply to any email and we’ll make it right. We read every message.',
       },
     ],
   },
@@ -48,14 +48,14 @@ const PRICING_COPY = {
     title: 'Escolha seu plano Tickrify',
     subtitle: 'Análise de trading com IA. Cada plano inclui Ticks mensais renovados automaticamente.',
     foundingTitle: 'Oferta Founding Trader',
-    foundingDesc: 'Você chegou cedo — e isso conta. Os primeiros 50 assinantes travam este preço para sempre: ele nunca sobe enquanto a assinatura estiver ativa. Use o código',
+    foundingDesc: 'Você chegou cedo, e isso conta. Os primeiros 50 assinantes travam este preço para sempre: ele nunca sobe enquanto a assinatura estiver ativa. Use o código',
     foundingCode: 'EARLY35',
     foundingSuffix: 'no checkout para 35% de desconto no primeiro mês.',
     faqTitle: 'Perguntas Frequentes',
     faq: [
       {
         q: 'Posso cancelar a qualquer momento?',
-        a: 'Sim — cancele em um clique pelo seu dashboard, sem e-mails e sem perguntas. Você mantém seus Ticks e o acesso completo até o fim do período que já pagou.',
+        a: 'Sim, cancele em um clique pelo seu dashboard, sem e-mails e sem perguntas. Você mantém seus Ticks e o acesso completo até o fim do período que já pagou.',
       },
       {
         q: 'Como funcionam os Ticks?',
@@ -75,7 +75,7 @@ const PRICING_COPY = {
       },
       {
         q: 'Há garantia de reembolso?',
-        a: 'Você nunca paga no escuro: são 3 análises grátis antes de qualquer cobrança, e dá para cancelar quando quiser. Pelos Termos de Serviço as compras são finais — mas se algo der errado em uma análise, responda qualquer e-mail que a gente resolve. Lemos cada mensagem.',
+        a: 'Você nunca paga no escuro: são 3 análises grátis antes de qualquer cobrança, e dá para cancelar quando quiser. Pelos Termos de Serviço as compras são finais, mas se algo der errado em uma análise, responda qualquer e-mail que a gente resolve. Lemos cada mensagem.',
       },
     ],
   },
@@ -86,18 +86,18 @@ export default function PricingPage() {
   const { language } = useLanguage();
   const copy = language === 'pt' ? PRICING_COPY.pt : PRICING_COPY.en;
 
-  // Intenção transacional pura — e até 10/08/2026 esta página servia o title e
+  // Intenção transacional pura, e até 10/08/2026 esta página servia o title e
   // a description do home, então não podia rankear para "pricing" nem para o
   // preço. Conferido ao vivo antes da correção.
   useSeo(seoFor('/pricing'));
 
   // Schema montado a partir do MESMO objeto que a tela renderiza. Se a copy
-  // mudar, o markup muda junto — nunca diverge do que o visitante lê (regra
+  // mudar, o markup muda junto, nunca diverge do que o visitante lê (regra
   // da auditoria de 27/07: nada afirmado que não seja verificável na página).
   //
   // ⚠️ O bloco FAQPage NÃO produz mais rich result: o Google desativou FAQ
   // rich results em 07/05/2026. Ele fica porque ainda é assim que buscador de
-  // IA e agregador leem a página — não porque vai virar sanfona na SERP.
+  // IA e agregador leem a página, não porque vai virar sanfona na SERP.
   //
   // Sem aggregateRating de propósito: não há avaliação real para declarar, e
   // inventar uma seria exatamente o tipo de claim que a Fase 1 removeu.
@@ -112,7 +112,7 @@ export default function PricingPage() {
           operatingSystem: 'Web',
           url: 'https://tickrify.com',
           description:
-            'AI chart analysis for traders: upload a chart screenshot and get entry, stop, targets, risk and confidence — a second opinion before you enter.',
+            'AI chart analysis for traders: upload a chart screenshot and get entry, stop, targets, risk and confidence, a second opinion before you enter.',
           offers: {
             '@type': 'Offer',
             price: '29',
@@ -160,7 +160,7 @@ export default function PricingPage() {
           </p>
         </div>
 
-        {/* Founding Trader — fecha a promessa do banner do topo do site */}
+        {/* Founding Trader, fecha a promessa do banner do topo do site */}
         <div className="mx-auto mb-12 max-w-2xl rounded-2xl border border-[rgba(94,234,138,0.35)] bg-[rgba(94,234,138,0.06)] px-6 py-5 text-center">
           <p className="font-terminal text-xs uppercase tracking-[0.12em] text-[#5eea8a]">
             ⚡ {copy.foundingTitle}

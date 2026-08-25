@@ -23,5 +23,10 @@
     "title": "Privacy Policy | Tickrify",
     "description": "How Tickrify collects, uses and protects your data — chart uploads, account and payment information, and international data transfers.",
     "canonicalPath": "/privacy"
+  },
+  "/admin": {
+    "title": "Admin · Tickrify",
+    "description": "Área interna.",
+    "noindex": true
   }
 }

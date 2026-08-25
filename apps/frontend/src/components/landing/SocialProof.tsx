@@ -1,160 +1,100 @@
-import { useEffect, useRef, useState } from 'react';
-import SectionTitle from '@/components/landing/SectionTitle';
-import { useReveal } from '@/hooks/useReveal';
-import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { Link } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
-const AnimatedMetricValue = ({ value }: { value: string }) => {
-  const ref = useRef<HTMLParagraphElement | null>(null);
-  const [displayValue, setDisplayValue] = useState(value);
+/** Plataformas de onde o print pode vir. Só o nome, nunca o logo: não existe
+ *  integração com nenhuma delas, e exibir a marca sugeriria parceria. */
+const PLATFORMS = ['TradingView', 'MetaTrader 4 / 5', 'Binance', 'Bybit', 'Profit', 'Coinbase'];
+
+/** Número que sobe ao entrar na tela. Uma vez só, e desliga em reduced-motion. */
+const CountUp = ({ value, suffix = '' }: { value: number; suffix?: string }) => {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [shown, setShown] = useState(0);
 
   useEffect(() => {
-    const element = ref.current;
-    if (!element) {
+    const el = ref.current;
+    if (!el) return;
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setShown(value);
       return;
     }
 
-    const numeric = Number(value.match(/\d+/)?.[0] || 0);
-    if (Number.isNaN(numeric) || numeric <= 0) {
-      setDisplayValue(value);
-      return;
-    }
-
-    let animationFrame = 0;
-    let hasAnimated = false;
-
-    const formatValue = (current: number) => {
-      if (value.startsWith('<')) {
-        return `< ${current}s`;
-      }
-
-      if (value.endsWith('%')) {
-        return `${current}%`;
-      }
-
-      if (value.endsWith('s')) {
-        return `${current}s`;
-      }
-
-      if (value.endsWith('+')) {
-        return `${current}+`;
-      }
-
-      if (value.includes(':1')) {
-        return `${current}:1`;
-      }
-
-      return String(current);
-    };
-
+    let frame = 0;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (!entry?.isIntersecting || hasAnimated) {
-          return;
-        }
-
-        hasAnimated = true;
-        const duration = 1200;
-        const start = performance.now();
-
-        const tick = (now: number) => {
-          const progress = Math.min((now - start) / duration, 1);
-          const eased = 1 - (1 - progress) * (1 - progress);
-          const nextValue = Math.max(1, Math.round(numeric * eased));
-
-          setDisplayValue(formatValue(nextValue));
-
-          if (progress < 1) {
-            animationFrame = window.requestAnimationFrame(tick);
-          }
-        };
-
-        animationFrame = window.requestAnimationFrame(tick);
+        if (!entry?.isIntersecting) return;
         observer.disconnect();
+        const start = performance.now();
+        const tick = (now: number) => {
+          const p = Math.min((now - start) / 1100, 1);
+          setShown(Math.round(value * (1 - Math.pow(1 - p, 4))));
+          if (p < 1) frame = window.requestAnimationFrame(tick);
+        };
+        frame = window.requestAnimationFrame(tick);
       },
-      { threshold: 0.45 },
+      { threshold: 0.4 },
     );
 
-    observer.observe(element);
-
+    observer.observe(el);
     return () => {
       observer.disconnect();
-      if (animationFrame) {
-        window.cancelAnimationFrame(animationFrame);
-      }
+      if (frame) window.cancelAnimationFrame(frame);
     };
   }, [value]);
 
-  return (
-    <p ref={ref} className="metric-number">
-      {displayValue}
-    </p>
-  );
+  return <div ref={ref} className="site-stat-n">{shown}{suffix}</div>;
 };
 
 const SocialProof = () => {
-  const revealRef = useReveal<HTMLElement>();
   const { t } = useLanguage();
   const s = t.landing.social;
-  const REAL_STATS: Array<{ value: string; label: string; sublabel: string; href?: string }> = [
-    // 104 = trades com desfecho JA MEDIDO pelo sweeper (17/08/2026). Substituiu
-    // um card "16s average analysis time" que era o unico numero NAO verificavel
-    // da secao — e estava sob um titulo que diz literalmente "Verifiable
-    // metrics". Nao da para medir duracao pelo banco: o sweeper reescreve o
-    // updatedAt horas depois. Este numero, ao contrario, vem do mesmo lugar que
-    // alimenta a /accuracy e sobe sozinho conforme os trades resolvem.
-    { value: '104', label: s.s1label, sublabel: s.s1sub, href: '/accuracy' },
-    { value: '6+', label: s.s2label, sublabel: s.s2sub },
-    { value: '3', label: s.s3label, sublabel: s.s3sub },
-    // 39% = taxa de abstencao REAL em producao (155 WAIT em 395 analises,
-    // medido em 17/08/2026). Comecou como 73% (o numero do backtest v2, em
-    // amostras cegas) e foi corrigido em 27/07: producao roda bem abaixo
-    // do backtest porque usuario sobe grafico em que ja viu algo acontecendo.
-    // A pagina /accuracy publica o numero vivo — este card e so a vitrine.
-    { value: '39%', label: s.s4label, sublabel: s.s4sub },
+
+  // 104 = trades com desfecho já medido pelo sweeper (17/08/2026), mesma fonte
+  // que alimenta a /accuracy. 39% = taxa de abstenção real em produção (155
+  // WAIT em 395 análises). Nenhum número aqui é estimado.
+  const stats = [
+    { value: 104, suffix: '', label: s.s1label, sub: s.s1sub, href: '/accuracy' },
+    { value: 39, suffix: '%', label: s.s4label, sub: s.s4sub },
+    { value: 6, suffix: '+', label: s.s2label, sub: s.s2sub },
+    { value: 3, suffix: '', label: s.s3label, sub: s.s3sub },
   ];
 
   return (
-    <section ref={revealRef} className="landing-section section-secondary reveal-on-scroll">
-      <div className="container">
-        <SectionTitle
-          label={s.label}
-          title={s.title}
-          highlight={s.highlight}
-          subtitle={s.subtitle}
-          align="center"
-        />
-
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {REAL_STATS.map((stat) => {
-            const body = (
-              <>
-                <AnimatedMetricValue value={stat.value} />
-                <p className="metric-label">{stat.label}</p>
-                <p className="metric-sublabel">{stat.sublabel}</p>
-              </>
-            );
-            return stat.href ? (
-              <Link
-                key={stat.label}
-                to={stat.href}
-                className="metric-card block transition-colors hover:border-[var(--accent-green)]"
-              >
-                {body}
-              </Link>
-            ) : (
-              <article key={stat.label} className="metric-card">
-                {body}
-              </article>
-            );
-          })}
+    <>
+      <section className="site-dark site-strip">
+        <div className="site-wrap">
+          <div className="site-strip-grid">
+            {stats.map((stat) => {
+              const body = (
+                <>
+                  <CountUp value={stat.value} suffix={stat.suffix} />
+                  <div className="site-stat-l">{stat.label}</div>
+                  <div className="site-stat-s">{stat.sub}</div>
+                </>
+              );
+              return stat.href ? (
+                <Link key={stat.label} to={stat.href} className="site-stat">{body}</Link>
+              ) : (
+                <div key={stat.label} className="site-stat">{body}</div>
+              );
+            })}
+          </div>
         </div>
+      </section>
 
-        <p className="mt-6 text-center font-terminal text-xs text-[var(--text-muted)]">
-          {s.footnote}
-        </p>
-      </div>
-    </section>
+      <section className="site-dark site-compat">
+        <div className="site-wrap">
+          <p className="site-compat-lab">{s.compat}</p>
+          <div className="site-compat-row">
+            {PLATFORMS.map((name) => <span key={name}>{name}</span>)}
+          </div>
+          <p className="site-compat-foot">
+            All trademarks belong to their owners. Tickrify is not affiliated with, or endorsed by, any of them.
+          </p>
+        </div>
+      </section>
+    </>
   );
 };
 

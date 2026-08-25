@@ -3,14 +3,14 @@ import { ArrowLeft } from 'lucide-react';
 import { seoFor, useSeo } from '@/hooks/useSeo';
 
 /**
- * Política de privacidade — EM INGLÊS (29/07/2026).
+ * Política de privacidade, EM INGLÊS (29/07/2026).
  *
  * Estava inteira em português num site cujo idioma padrão é inglês desde
  * jun/2026: o rodapé dizia "Privacy Policy" e a página abria em português.
  *
  * A data abaixo é uma CONSTANTE, de propósito. Antes era
  * `new Date().toLocaleDateString(...)`, ou seja, a página sempre afirmava ter
- * sido atualizada HOJE, qualquer que fosse o dia em que o visitante entrasse —
+ * sido atualizada HOJE, qualquer que fosse o dia em que o visitante entrasse,
  * uma alegação falsa da mesma família das que a auditoria de 27/07 removeu da
  * vitrine. Ao editar o texto desta página, atualize esta data na mão.
  */
@@ -26,7 +26,7 @@ const Section = ({ title, children }: { title: string; children: React.ReactNode
 const PrivacyPolicyPage = () => {
   // O canonical é FIXO em /privacy mesmo quando a rota servida é /privacidade.
   // As duas rotas renderizam este mesmo componente, o que criava conteúdo
-  // duplicado — e o sitemap listava justamente a versão não canônica.
+  // duplicado, e o sitemap listava justamente a versão não canônica.
   useSeo(seoFor('/privacy'));
 
   return (
@@ -86,11 +86,11 @@ const PrivacyPolicyPage = () => {
         <Section title="4. Who we share data with">
           <p>Your data is shared only with the providers the platform depends on to operate:</p>
           <ul className="ml-4 mt-2 list-disc space-y-1">
-            <li><strong className="text-[var(--text-primary)]">Clerk</strong> — authentication and account management;</li>
-            <li><strong className="text-[var(--text-primary)]">Stripe</strong> — payment processing;</li>
-            <li><strong className="text-[var(--text-primary)]">AI provider</strong> — processing chart images to generate analyses;</li>
-            <li><strong className="text-[var(--text-primary)]">Supabase</strong> — database and file storage;</li>
-            <li><strong className="text-[var(--text-primary)]">Render</strong> — server infrastructure.</li>
+            <li><strong className="text-[var(--text-primary)]">Clerk</strong>, authentication and account management;</li>
+            <li><strong className="text-[var(--text-primary)]">Stripe</strong>, payment processing;</li>
+            <li><strong className="text-[var(--text-primary)]">AI provider</strong>, processing chart images to generate analyses;</li>
+            <li><strong className="text-[var(--text-primary)]">Supabase</strong>, database and file storage;</li>
+            <li><strong className="text-[var(--text-primary)]">Render</strong>, server infrastructure.</li>
           </ul>
           <p className="mt-3">
             These providers operate in several countries, which means your data may be processed outside your country of
@@ -138,7 +138,7 @@ const PrivacyPolicyPage = () => {
         <Section title="7. Data retention">
           <p>
             We keep your data for as long as your account is active. After you close your account, personal data is
-            deleted within 90 days — except where retention is required by law (for example, tax records under Brazilian
+            deleted within 90 days, except where retention is required by law (for example, tax records under Brazilian
             tax legislation).
           </p>
         </Section>

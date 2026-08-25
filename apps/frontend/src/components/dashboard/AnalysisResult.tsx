@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { definirAnaliseAtual } from '@/lib/breadcrumbs';
+import { useState, useEffect } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -249,6 +250,13 @@ function parseRiskReward(value: unknown): number | null {
 }
 
 const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) => {
+  // Diz ao botão de reportar problema qual análise está na tela. Sem isto o
+  // relato chega sem o id e vira caça ao tesouro no histórico do usuário.
+  useEffect(() => {
+    definirAnaliseAtual(analysisData?.id ?? null);
+    return () => definirAnaliseAtual(null);
+  }, [analysisData?.id]);
+
   const { toast } = useToast();
   const { t } = useLanguage();
   const r = t.analysis.result;
@@ -259,6 +267,36 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
     NY: t.analysis.sessions.newYork,
   };
   const [showInvalidation, setShowInvalidation] = useState(false);
+
+  // ⚠️ ESTES DOIS HOOKS PRECISAM FICAR ACIMA DO `return` DE BAIXO.
+  //
+  // Bug real corrigido em 19/08/2026: eles eram chamados lá embaixo, DEPOIS do
+  // `if (!analysisData) return ...`. Isso muda a QUANTIDADE de hooks entre um
+  // render e outro — e o React exige que ela seja idêntica sempre. Na primeira
+  // vez que este componente renderizasse sem análise e depois com análise (ou
+  // vice-versa) sem desmontar no meio, o React quebraria com "Rendered more
+  // hooks than during the previous render". Hoje isso não acontece porque o pai
+  // não monta este componente sem dados — ou seja, era uma mina esperando uma
+  // mudança de renderização no dashboard.
+  //
+  // Os dois hooks já tratam símbolo nulo internamente (`if (!symbol ...) return`),
+  // então no caminho sem análise eles não disparam requisição nenhuma. O símbolo
+  // de verdade continua sendo calculado mais abaixo, para exibição.
+  const simboloParaContexto = (() => {
+    if (!analysisData) return null;
+    // Mesma origem do `symbol` calculado mais abaixo, só que resistente a
+    // analysisData nulo. Não reaproveita aquela variável de propósito: ela é
+    // declarada depois do early return e usa 'UNKNOWN' como último recurso —
+    // e 'UNKNOWN' é justamente o valor que os dois hooks tratam como "não busque".
+    const resposta = asRecord(analysisData.fullResponse);
+    const bloco = asRecord(resposta.analysis);
+    return (
+      String(bloco.symbol || bloco.ticker || bloco.asset || resposta.symbol || resposta.ticker || '')
+        .trim() || null
+    );
+  })();
+  const { events: calEvents, loading: calLoading } = useEconomicCalendar(simboloParaContexto);
+  const { data: liveMarket } = useMarketContext(simboloParaContexto);
 
   if (!analysisData) {
     return (
@@ -372,8 +410,6 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
   const timestamp = new Date(analysisData.createdAt);
   const openSessions = getOpenSessions(timestamp);
-  const { events: calEvents, loading: calLoading } = useEconomicCalendar(symbol);
-  const { data: liveMarket } = useMarketContext(symbol);
   const hasLiveMarket = !!liveMarket && (
     liveMarket.fundingRatePercent !== null ||
     liveMarket.openInterest !== null ||

@@ -1,3 +1,4 @@
+import { registrarMigalha } from './breadcrumbs';
 // API Client for Tickrify Backend
 import { useAuth } from '@clerk/clerk-react';
 import { useCallback, useMemo } from 'react';
@@ -284,6 +285,21 @@ class APIClient {
     try {
       const tokenProvider = getFreshToken ?? (() => this.getRuntimeFreshToken());
 
+      // ⚠️ SEM `await` AQUI, DE PROPÓSITO — não "arrume" isto sem ler o parágrafo.
+      //
+      // Retornar a promise sem aguardar faz o `finally` limpar o timer
+      // IMEDIATAMENTE, o que na prática deixa o AbortController inerte: o
+      // timeout de 15s nunca dispara. Isso é um bug ADORMECIDO e conhecido
+      // (anotado em 19/08/2026), mas acordá-lo agora quebraria produção: o
+      // Render é plano free e HIBERNA, com cold start de 30–60s. Com o timeout
+      // ativo, a primeira requisição depois da hibernação abortaria em 15s e o
+      // usuário veria "Timeout ao conectar no backend" — justamente na primeira
+      // impressão.
+      //
+      // Consertar de verdade exige, nesta ordem: subir REQUEST_TIMEOUT_MS acima
+      // do cold start (ou assinar o plano pago do Render) e SÓ ENTÃO adicionar
+      // o await. Enquanto isso, as migalhas são registradas por handlers
+      // encadeados, que não alteram o fluxo de controle em nada.
       return fetchWithAuthRetry(
         buildApiUrl(path),
         {
@@ -291,7 +307,24 @@ class APIClient {
           signal: controller.signal,
         },
         tokenProvider,
-      );
+      )
+        .then((resposta) => {
+          // Migalha só em FALHA: registrar toda chamada bem-sucedida encheria o
+          // anel de 30 posições com ruído e empurraria para fora justamente o
+          // erro que interessa. Nada do corpo entra — só rota e status.
+          if (!resposta.ok) {
+            registrarMigalha('api', `${init.method ?? 'GET'} ${path} → ${resposta.status}`);
+          }
+          return resposta;
+        })
+        .catch((erro: unknown) => {
+          registrarMigalha(
+            'erro',
+            `falha de rede em ${path}: ${erro instanceof Error ? erro.name : 'desconhecida'}`,
+          );
+          // Repropaga INTACTO: quem chama continua vendo exatamente o mesmo erro.
+          throw erro;
+        });
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         throw new APIError(

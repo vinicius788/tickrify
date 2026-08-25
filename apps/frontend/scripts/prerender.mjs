@@ -71,6 +71,27 @@ function replaceTitle(html, value) {
   return html.replace(/<title>[\s\S]*?<\/title>/i, () => `<title>${escapeHtml(value)}</title>`);
 }
 
+/**
+ * Injeta <meta name="robots" content="noindex,nofollow"> numa rota interna.
+ *
+ * Por que isto precisa existir no PRÉ-RENDER e não só no useSeo: o useSeo roda
+ * depois do JavaScript. Um rastreador que não executa JS vê só o shell — e o
+ * shell não diz nada sobre indexação. O /sign-in já foi parar no índice do
+ * Google exatamente assim.
+ *
+ * E por que noindex em vez de Disallow no robots.txt: `Disallow` impede
+ * RASTREAR, não INDEXAR. A URL entra no índice por link mesmo bloqueada, e
+ * bloqueada o Google nunca chega a LER o noindex. Para tirar do índice é
+ * preciso deixar rastrear e mandar noindex — os dois juntos se anulam.
+ */
+function applyNoindex(html) {
+  const re = /(<meta\s+name="robots"\s+content=")[^"]*(")/i;
+  if (re.test(html)) {
+    return html.replace(re, (_m, open, close) => open + 'noindex,nofollow' + close);
+  }
+  return html.replace(/<\/head>/i, () => '  <meta name="robots" content="noindex,nofollow" />\n  </head>');
+}
+
 function replaceCanonical(html, url) {
   const re = /(<link\s+rel="canonical"\s+href=")[^"]*(")/i;
   return re.test(html)
@@ -141,6 +162,7 @@ function main() {
     html = replaceMetaContent(html, 'name', 'twitter:description', meta.description);
     html = replaceCanonical(html, canonical);
     html = replacePrehydrate(html, meta);
+    if (meta.noindex) html = applyNoindex(html);
 
     const outDir = join(DIST, path.replace(/^\//, ''));
     mkdirSync(outDir, { recursive: true });

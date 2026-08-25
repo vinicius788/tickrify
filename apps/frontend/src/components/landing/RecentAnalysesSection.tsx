@@ -1,10 +1,10 @@
-import { useReveal } from '@/hooks/useReveal';
-import SectionTitle from '@/components/landing/SectionTitle';
-import { getRecommendationMeta } from '@/lib/trading-ui';
+import { Link } from 'react-router-dom';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { getRecommendationMeta } from '@/lib/trading-ui';
 import { useRecentPublicAnalyses } from '@/hooks/useRecentPublicAnalyses';
 
-/** Mínimo de análises reais para a seção existir. Abaixo disso, não renderiza. */
+/** Mínimo de análises reais para a seção existir. Abaixo disso, não renderiza.
+ *  Sem dado real não existe seção: nunca inventar análise para preencher. */
 const MIN_ITEMS = 3;
 
 function formatPrice(v: number | null) {
@@ -20,115 +20,80 @@ function timeAgo(dateStr: string, l: { now: string; mAgo: string; hAgo: string; 
   return `${Math.floor(diff / 86400)}${l.dAgo}`;
 }
 
-const SkeletonCard = () => (
-  <article className="animate-pulse rounded-xl border border-white/5 bg-white/[0.02] p-4">
-    <div className="mb-3 flex items-start justify-between gap-2">
-      <div className="space-y-1.5">
-        <div className="h-3.5 w-20 rounded bg-white/10" />
-        <div className="h-2.5 w-10 rounded bg-white/5" />
-      </div>
-      <div className="h-5 w-14 rounded bg-white/10" />
-    </div>
-    <div className="mb-3 space-y-2 rounded-md border border-white/5 bg-black/20 px-3 py-2">
-      <div className="h-2.5 w-full rounded bg-white/5" />
-      <div className="h-2.5 w-full rounded bg-white/5" />
-      <div className="h-2.5 w-full rounded bg-white/5" />
-    </div>
-    <div className="flex items-center justify-between">
-      <div className="h-3 w-16 rounded bg-white/5" />
-      <div className="h-3 w-10 rounded bg-white/5" />
-    </div>
-  </article>
-);
-
+/**
+ * As últimas leituras, em tabela.
+ *
+ * Antes eram duas seções: uma esteira rolando no topo e um grid de cartões
+ * embaixo, ambas alimentadas pelo mesmo endpoint. Virou uma tabela só, que é
+ * como um trader lê uma lista de calls, e as que disseram WAIT aparecem junto.
+ */
 const RecentAnalysesSection = () => {
-  const revealRef = useReveal<HTMLElement>();
   const { t } = useLanguage();
   const r = t.landing.recent;
+  const f = t.landing.footer;
   const { analyses, loading, failed } = useRecentPublicAnalyses();
 
-  // Sem dado real não existe seção. Nunca inventar análise para preencher.
   if (failed) return null;
   if (!loading && analyses.length < MIN_ITEMS) return null;
 
   const items = analyses.slice(0, 6);
 
   return (
-    <section ref={revealRef} className="landing-section section-primary reveal-on-scroll">
-      <div className="container">
-        <SectionTitle
-          label={r.label}
-          title={r.title}
-          highlight={r.highlight}
-          subtitle={r.subtitle}
-        />
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {loading
-            ? Array.from({ length: 4 }, (_, i) => <SkeletonCard key={`sk-${i}`} />)
-            : items.map((a) => {
-                const meta = getRecommendationMeta(a.recommendation);
-                const isHold = meta.tone === 'hold';
-                const signalColor = meta.tone === 'buy' ? '#00FF7F' : meta.tone === 'sell' ? '#FF4444' : '#888';
-                const signalBg  = meta.tone === 'buy' ? 'rgba(0,255,127,0.08)' : meta.tone === 'sell' ? 'rgba(255,68,68,0.08)' : 'rgba(136,136,136,0.06)';
-                const borderCol = meta.tone === 'buy' ? 'rgba(0,255,127,0.2)' : meta.tone === 'sell' ? 'rgba(255,68,68,0.2)'  : 'rgba(136,136,136,0.15)';
-
-                return (
-                  <article
-                    key={a.id}
-                    className="rounded-xl border p-4 transition-colors"
-                    style={{ background: signalBg, borderColor: borderCol }}
-                  >
-                    {/* Header */}
-                    <div className="mb-3 flex items-start justify-between gap-2">
-                      <div>
-                        <p className="font-terminal text-sm font-bold text-white">{a.symbol}</p>
-                        <p className="mt-0.5 font-terminal text-xs text-white/40">{a.timeframe || '—'}</p>
-                      </div>
-                      <span
-                        className="rounded px-2 py-0.5 font-terminal text-xs font-black tracking-widest"
-                        style={{ color: signalColor, background: `${signalColor}18`, border: `1px solid ${signalColor}40` }}
-                      >
-                        {isHold ? 'HOLD' : meta.label}
-                      </span>
-                    </div>
-
-                    {/* Levels */}
-                    {!isHold && (
-                      <div className="mb-3 space-y-1 rounded-md border border-white/5 bg-black/20 px-3 py-2">
-                        <div className="flex justify-between text-xs">
-                          <span className="text-white/40">{r.entry}</span>
-                          <span className="font-terminal text-white/80">{formatPrice(a.entry)}</span>
-                        </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-[#FF4444]/70">{r.stop}</span>
-                          <span className="font-terminal text-[#FF4444]/80">{formatPrice(a.stopLoss)}</span>
-                        </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-[#00FF7F]/70">TP1</span>
-                          <span className="font-terminal text-[#00FF7F]/80">{formatPrice(a.takeProfit1)}</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Footer */}
-                    <div className="flex items-center justify-between">
-                      <span
-                        className="rounded px-1.5 py-0.5 font-terminal text-[10px] font-semibold"
-                        style={{ color: signalColor, background: `${signalColor}12` }}
-                      >
-                        {Math.round(a.confidence)}% {r.conf}
-                      </span>
-                      <span className="font-terminal text-[10px] text-white/30">{timeAgo(a.createdAt, r)}</span>
-                    </div>
-                  </article>
-                );
-              })}
+    <section id="reads" className="site-dark">
+      <div className="site-wrap">
+        <div className="site-shead site-shead-btn">
+          <div className="site-scol">
+            <span className="site-eyebrow">{r.label}</span>
+            <h2>{r.title} {r.highlight}</h2>
+          </div>
+          <Link to="/accuracy" className="site-btn site-btn-ghost">{f.accuracy}</Link>
         </div>
 
-        <p className="mt-6 text-center font-terminal text-xs text-white/20">
-          {r.footnote}
-        </p>
+        <div className="site-tablewrap">
+          <table className="site-table">
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th>TF</th>
+                <th>Call</th>
+                <th>{r.entry}</th>
+                <th>{r.stop}</th>
+                <th>{r.conf}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading
+                ? Array.from({ length: 4 }, (_, i) => (
+                    <tr key={`sk-${i}`}>
+                      <td colSpan={6}>
+                        <span className="block h-3 w-full animate-pulse rounded bg-white/5" />
+                      </td>
+                    </tr>
+                  ))
+                : items.map((a) => {
+                    const meta = getRecommendationMeta(a.recommendation);
+                    const isHold = meta.tone === 'hold';
+                    const chip = meta.tone === 'buy' ? 'site-chip-long' : meta.tone === 'sell' ? 'site-chip-short' : 'site-chip-wait';
+                    const arrow = meta.tone === 'buy' ? '▲' : meta.tone === 'sell' ? '▼' : '—';
+
+                    return (
+                      <tr key={a.id}>
+                        <td className="site-sym-cell">{a.symbol}</td>
+                        <td>{a.timeframe || '—'}</td>
+                        <td>
+                          <span className={`site-chip ${chip}`}>{arrow} {isHold ? 'WAIT' : meta.label}</span>
+                        </td>
+                        <td>{isHold ? '—' : formatPrice(a.entry)}</td>
+                        <td className={isHold ? '' : 'site-short'}>{isHold ? '—' : formatPrice(a.stopLoss)}</td>
+                        <td>{Math.round(a.confidence)}% · {timeAgo(a.createdAt, r)}</td>
+                      </tr>
+                    );
+                  })}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="site-hero-note" style={{ marginTop: '20px' }}>{r.footnote}</p>
       </div>
     </section>
   );

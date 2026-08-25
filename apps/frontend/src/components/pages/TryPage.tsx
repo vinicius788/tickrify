@@ -1,4 +1,4 @@
-// /try — demo anônima de 1 tela (Fase 0 de ativação).
+// /try, demo anônima de 1 tela (Fase 0 de ativação).
 //
 // Princípio: valor primeiro, cadastro depois. O visitante chega, já existe um
 // gráfico de exemplo carregado e UM botão. Clica → recebe uma análise REAL do
@@ -38,7 +38,7 @@ const ANALYZING_STEPS = [
   'Building the trade plan…',
 ];
 
-/** Marca que o cadastro veio da demo — AnalyticsIdentify usa pra disparar signup_from_demo. */
+/** Marca que o cadastro veio da demo, AnalyticsIdentify usa pra disparar signup_from_demo. */
 function markDemoSource() {
   try {
     localStorage.setItem('tickrify_demo_source', String(Date.now()));
@@ -63,14 +63,14 @@ const SignupCta = ({ headline, sub }: { headline: string; sub: string }) => (
       <SignUpButton mode="modal" forceRedirectUrl="/dashboard" signInForceRedirectUrl="/dashboard">
         <Button
           onClick={markDemoSource}
-          className="landing-primary-button mt-4 h-12 rounded-xl px-8 text-sm font-bold"
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F7F7F5] font-medium text-[#08090A] transition-colors hover:bg-white mt-4 h-12 rounded-xl px-8 text-sm font-bold"
         >
           Create free account <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
       </SignUpButton>
     </SignedOut>
     <SignedIn>
-      <Button asChild className="landing-primary-button mt-4 h-12 rounded-xl px-8 text-sm font-bold">
+      <Button asChild className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F7F7F5] font-medium text-[#08090A] transition-colors hover:bg-white mt-4 h-12 rounded-xl px-8 text-sm font-bold">
         <Link to="/dashboard">
           Go to your dashboard <ArrowRight className="ml-2 h-4 w-4" />
         </Link>
@@ -84,7 +84,7 @@ const SignupCta = ({ headline, sub }: { headline: string; sub: string }) => (
 
 const TryPage = () => {
   // Página de maior conversão do funil (análise real sem cadastro) e a que
-  // melhor responde à busca "free ai chart analysis" — mas estava fora do
+  // melhor responde à busca "free ai chart analysis", mas estava fora do
   // sitemap e servindo o title do home.
   useSeo(seoFor('/try'));
 
@@ -94,7 +94,7 @@ const TryPage = () => {
   const [result, setResult] = useState<DemoAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [customImage, setCustomImage] = useState<{ blob: Blob; previewUrl: string } | null>(null);
-  // Reveal "what happened next" — só existe pro gráfico de exemplo (caso histórico real).
+  // Reveal "what happened next", só existe pro gráfico de exemplo (caso histórico real).
   const [showAfter, setShowAfter] = useState(false);
   const [analyzedExample, setAnalyzedExample] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -139,7 +139,7 @@ const TryPage = () => {
     });
   }, []);
 
-  // Colar print direto (Ctrl/Cmd+V) — atrito mínimo pra quem veio do TradingView.
+  // Colar print direto (Ctrl/Cmd+V), atrito mínimo pra quem veio do TradingView.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const item = Array.from(e.clipboardData?.items ?? []).find((i) =>
@@ -211,7 +211,7 @@ const TryPage = () => {
         }
       }
       setState('ready');
-      setError('The analysis failed — your free analysis was NOT used. Please try again.');
+      setError('The analysis failed. Your free analysis was NOT used. Please try again.');
     }
   };
 
@@ -255,7 +255,7 @@ const TryPage = () => {
             See a real AI chart analysis. Free. No signup.
           </h1>
           <p className="mx-auto mt-3 max-w-lg text-sm text-[var(--text-secondary)]">
-            One click. The same engine our subscribers use — entry, stop, targets,
+            One click. The same engine our subscribers use: entry, stop, targets,
             risk/reward and confidence on a real chart.
           </p>
         </div>
@@ -288,13 +288,13 @@ const TryPage = () => {
                   <p className="mt-4 text-sm font-medium text-white">
                     {ANALYZING_STEPS[stepIndex]}
                   </p>
-                  <p className="mt-1 text-xs text-white/60">Real analysis in progress — usually 10–30s</p>
+                  <p className="mt-1 text-xs text-white/60">Real analysis in progress, usually 10–30s</p>
                 </div>
               )}
             </div>
 
             <p className="mt-2 text-center text-xs text-[var(--text-secondary)]">
-              {customImage ? 'Your chart, ready to analyze.' : 'Example loaded: XAUUSD (Gold) · M30 — a real trader chart. Or use your own below.'}
+              {customImage ? 'Your chart, ready to analyze.' : 'Example loaded: XAUUSD (Gold) · M30, a real trader chart. Or use your own below.'}
             </p>
 
             {error && (
@@ -308,7 +308,7 @@ const TryPage = () => {
                 type="button"
                 onClick={runAnalysis}
                 disabled={state === 'analyzing'}
-                className="landing-primary-button h-14 w-full max-w-md rounded-xl text-base font-bold sm:text-lg"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F7F7F5] font-medium text-[#08090A] transition-colors hover:bg-white h-14 w-full max-w-md rounded-xl text-base font-bold sm:text-lg"
               >
                 {state === 'analyzing' ? 'Analyzing…' : 'Analyze this chart now'}
                 {state !== 'analyzing' && <ArrowRight className="ml-2 h-5 w-5" />}
@@ -393,7 +393,7 @@ const TryPage = () => {
               {result.disclaimer}
             </p>
 
-            {/* Reveal "what happened next" — só pro gráfico de exemplo, que é um caso
+            {/* Reveal "what happened next", só pro gráfico de exemplo, que é um caso
                 histórico real (XAUUSD 12/12/2025). Prova sem promessa: mostramos o que
                 o mercado fez e o visitante tira a própria conclusão. */}
             {analyzedExample && !showAfter && (
@@ -405,7 +405,7 @@ const TryPage = () => {
                 }}
                 className="mt-5 w-full rounded-xl border border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] py-3.5 text-sm font-bold text-[var(--accent-green)] transition hover:brightness-110"
               >
-                This chart is from Dec 12, 2025 — see what the market did next →
+                This chart is from Dec 12, 2025, see what the market did next →
               </button>
             )}
             {analyzedExample && showAfter && (
@@ -419,14 +419,14 @@ const TryPage = () => {
                 </p>
                 <p className="mt-1 text-center text-[11px] text-[var(--text-secondary)]">
                   One hand-picked historical example, shown for illustration. Every market and
-                  moment is different — never a promise of results.
+                  moment is different, never a promise of results.
                 </p>
               </div>
             )}
 
             <SignupCta
               headline="Want to analyze more charts?"
-              sub="Create your free account and get 3 more analyses — your charts, any market."
+              sub="Create your free account and get 3 more analyses, your charts, any market."
             />
           </div>
         )}
@@ -440,7 +440,7 @@ const TryPage = () => {
             </h2>
             <p className="mx-auto mt-2 max-w-md text-sm text-[var(--text-secondary)]">
               Good news: it doesn't stop here. Create a free account and get 3 more
-              analyses on your own charts — no credit card needed.
+              analyses on your own charts, no credit card needed.
             </p>
             <SignupCta
               headline="Keep analyzing for free"
@@ -450,7 +450,7 @@ const TryPage = () => {
         )}
 
         <p className="mt-10 text-center text-[11px] leading-relaxed text-[var(--text-secondary)]">
-          Tickrify provides educational analysis only — not financial advice. Trading involves
+          Tickrify provides educational analysis only, not financial advice. Trading involves
           risk. The decision is always yours.
         </p>
       </main>

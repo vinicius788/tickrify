@@ -1,9 +1,5 @@
-import { Check, Star } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { useReveal } from '@/hooks/useReveal';
-import SectionTitle from '@/components/landing/SectionTitle';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { type Currency } from '@/lib/stripe';
 import { warmupPaymentsApi } from '@/lib/api';
@@ -33,87 +29,65 @@ import { warmupPaymentsApi } from '@/lib/api';
 const PLAN_PRICE: Record<Currency, string> = { brl: '$29', usd: '$29', eur: '$29' };
 const PLAN_TICKS = 200;
 
+const Check = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+    <path d="M2.5 7.4 5.6 10.5 11.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 const PricingSection = () => {
-  const revealRef = useReveal<HTMLElement>();
   const { t } = useLanguage();
   const pr = t.landing.pricing;
 
-  // Global product: prices always in USD, regardless of site language.
-  // Traders think in USD; keeping it fixed avoids browser-locale surprises.
+  // Produto global: preço sempre em USD, independente do idioma do site.
+  // Trader pensa em dólar, e fixar evita surpresa com o locale do navegador.
   const currency: Currency = 'usd';
 
-  // Acorda a API de pagamentos (Render hiberna) já na landing, antes do clique.
+  // Acorda a API de pagamentos (o Render hiberna) já na landing, antes do clique.
   useEffect(() => {
     warmupPaymentsApi();
   }, []);
 
-  const plan = {
-    icon: <Star className="h-7 w-7 text-[var(--accent-green)]" />,
-    name: 'Tickrify',
-    badge: pr.starterBadge,
-    price: PLAN_PRICE[currency],
-    priceNote: pr.perMonth,
-    ticksLine: `${PLAN_TICKS} ${pr.ticksMo} · ${pr.upTo} ${PLAN_TICKS} ${pr.analysesQuick}`,
-    features: [pr.fS1, pr.fS2, pr.fS3, pr.fS4],
-    cta: pr.starterCta,
-  };
+  const features = [pr.fS1, pr.fS2, pr.fS3, pr.fS4];
 
   return (
-    <section ref={revealRef} id="planos" className="landing-section section-secondary reveal-on-scroll">
-      <div className="container">
-        <SectionTitle
-          align="center"
-          label={pr.label}
-          title={pr.title}
-          highlight={pr.highlight}
-          highlightClassName="pricing-heading-highlight"
-          subtitle={pr.subtitle}
-        />
-
-        <div className="mx-auto mt-10 grid max-w-md gap-4">
-          <article className="pricing-card featured">
-            <div className="mb-3 flex items-center gap-3">
-              {plan.icon}
-              <div>
-                <p className="font-terminal text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-                  {plan.badge}
-                </p>
-                <p className="text-lg font-bold text-[var(--text-primary)]">{plan.name}</p>
-              </div>
-            </div>
-
-            <p className="pricing-price">
-              {plan.price}
-              <span className="text-base font-normal text-[var(--text-secondary)]">{plan.priceNote}</span>
-            </p>
-            <p className="mt-1 font-terminal text-sm text-[var(--text-secondary)]">
-              {plan.ticksLine}
-            </p>
-
-            <ul className="mt-5 space-y-2 text-sm">
-              {plan.features.map((feature) => (
-                <li key={feature} className="pricing-feature included flex items-start gap-2">
-                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-green)]" />
-                  {feature}
-                </li>
-              ))}
-            </ul>
-
-            <div className="mt-6">
-              <Link to="/pricing">
-                <Button className="btn-pricing-primary w-full">{plan.cta}</Button>
-              </Link>
-            </div>
-          </article>
+    <section id="pricing" className="site-light">
+      <div className="site-wrap">
+        <div className="site-sblk site-sblk-center">
+          <span className="site-eyebrow">{pr.label}</span>
+          <h2>{pr.title} {pr.highlight}</h2>
         </div>
 
-        <p className="mt-8 text-center text-sm text-[var(--text-secondary)]">
-          {pr.payPerUse}{' '}
-          <Link to="/dashboard" className="text-[var(--accent-green)] underline underline-offset-2 hover:no-underline">
-            {pr.buyTicks}
+        <div className="site-price">
+          <span className="site-eyebrow">{pr.starterBadge}</span>
+          <div className="site-price-amt">
+            <b>{PLAN_PRICE[currency]}</b>
+            <span>{pr.perMonth}</span>
+          </div>
+          <p className="text-sm">
+            {PLAN_TICKS} {pr.ticksMo} · {pr.upTo} {PLAN_TICKS} {pr.analysesQuick}
+          </p>
+
+          <ul>
+            {features.map((feature) => (
+              <li key={feature}><Check />{feature}</li>
+            ))}
+          </ul>
+
+          <Link to="/pricing" className="site-btn site-btn-primary site-btn-block">
+            {pr.starterCta}
           </Link>
-          {' '}· {pr.neverExpire}
-        </p>
+
+          <p className="site-price-fine">
+            {pr.payPerUse} {pr.neverExpire}
+          </p>
+        </div>
+
+        <div className="site-trust">
+          <span><i />Payments secured by Stripe</span>
+          <span><i />Cancel in one click</span>
+          <span><i />No broker connection required</span>
+        </div>
       </div>
     </section>
   );

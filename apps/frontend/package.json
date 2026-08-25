@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/prerender.mjs",
-    "typecheck": "tsc --noEmit --skipLibCheck",
+    "typecheck": "tsc -b --force",
     "lint": "eslint .",
     "test": "vitest run --environment jsdom",
     "preview": "vite preview"

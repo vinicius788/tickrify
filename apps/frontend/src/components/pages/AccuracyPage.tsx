@@ -6,7 +6,7 @@ import { buildApiUrl } from '@/lib/api';
 import { seoFor, useJsonLd, useSeo } from '@/hooks/useSeo';
 
 /**
- * Página pública de acurácia — Fase 5 da auditoria de 24/07/2026.
+ * Página pública de acurácia, Fase 5 da auditoria de 24/07/2026.
  *
  * Esta é a página que o resto do site precisa poder sustentar. Nenhum
  * concorrente do nicho publica calibração real; publicar os números feios é o
@@ -14,7 +14,7 @@ import { seoFor, useJsonLd, useSeo } from '@/hooks/useSeo';
  *
  *  1. Nenhum número sem n e sem intervalo de confiança.
  *  2. Recorte com n < 20 mostra o n e diz que ainda não dá pra concluir.
- *  3. Se a API não responder, a página diz isso — nunca inventa número.
+ *  3. Se a API não responder, a página diz isso, nunca inventa número.
  *
  * O texto é em inglês (público global), como todo texto público do site.
  */
@@ -83,8 +83,8 @@ const Stat = ({ interval, label }: { interval: Interval; label: string }) => (
 
 const AccuracyPage = () => {
   // Esta página era órfã até 10/08/2026: fora do sitemap, sem meta própria e
-  // sem link de lugar nenhum além do rodapé. É o ativo mais raro do site —
-  // nenhum concorrente do nicho publica acurácia medida — e o Google não
+  // sem link de lugar nenhum além do rodapé. É o ativo mais raro do site,
+  // nenhum concorrente do nicho publica acurácia medida, e o Google não
   // sabia que ela existia.
   useSeo(seoFor('/accuracy'));
 
@@ -102,7 +102,7 @@ const AccuracyPage = () => {
 
   /**
    * Dataset schema. Esta pagina publica numero medido, com n e intervalo de
-   * confianca — e Dataset e o tipo que descreve exatamente isso. Serve para o
+   * confianca, e Dataset e o tipo que descreve exatamente isso. Serve para o
    * Google Dataset Search e, mais relevante hoje, para buscador de IA citar a
    * fonte quando alguem pergunta "how accurate is AI chart analysis".
    *
@@ -115,7 +115,7 @@ const AccuracyPage = () => {
     const base: Record<string, unknown> = {
       '@context': 'https://schema.org',
       '@type': 'Dataset',
-      name: 'Tickrify AI accuracy — measured hit rate',
+      name: 'Tickrify AI accuracy: measured hit rate',
       description:
         'The measured hit rate of Tickrify\u2019s AI chart analysis, published with sample size and 95% Wilson confidence intervals, including the results that look bad. Every analysis is re-checked against real market candles 48 hours after it was produced.',
       url: 'https://tickrify.com/accuracy',
@@ -168,7 +168,7 @@ const AccuracyPage = () => {
             We measure our own AI and publish the numbers.
           </h1>
           <p className="mt-4 text-sm leading-relaxed text-[var(--text-secondary)]">
-            Every analysis Tickrify produces is re-checked against real candles 48 hours later — automatically,
+            Every analysis Tickrify produces is re-checked against real candles 48 hours later, automatically,
             with no human in the loop. This page is that raw scoreboard. It is not a marketing number: it moves on
             its own, it includes the losses, and it is the same maths our internal backtest report uses.
           </p>
@@ -185,7 +185,7 @@ const AccuracyPage = () => {
           <div className="rounded-xl border border-[var(--border-card)] bg-[rgba(255,255,255,0.02)] p-6 text-sm text-[var(--text-secondary)]">
             <p className="font-semibold text-[var(--text-primary)]">The numbers are not loading right now.</p>
             <p className="mt-2">
-              Our API sleeps when idle and can take up to a minute to wake up. Refresh in a moment — we would
+              Our API sleeps when idle and can take up to a minute to wake up. Refresh in a moment, we would
               rather show you nothing than show you a number we did not measure.
             </p>
           </div>
@@ -210,7 +210,7 @@ const AccuracyPage = () => {
               </div>
               <p>
                 A hit is an analysis whose entry actually filled and then reached the first target before the stop.
-                Losses, unfilled entries and abstentions are all counted separately below — nothing is quietly
+                Losses, unfilled entries and abstentions are all counted separately below, nothing is quietly
                 dropped to make the number look better.
               </p>
             </Section>
@@ -258,20 +258,20 @@ const AccuracyPage = () => {
               <p className="mt-3">
                 The product uses 70 as its threshold: below it a call is labelled "Read" (a market reading), at or
                 above it, "Signal". That split came out of our blind backtest, where the two bands separated
-                sharply — 25% below versus 56% above.
+                sharply, 25% below versus 56% above.
               </p>
               <p className="mt-3">
                 <span className="text-[var(--text-primary)]">In production so far, they have not separated.</span>{' '}
                 The confidence intervals in the table above overlap almost entirely, which means we cannot yet
                 claim the score predicts anything on live traffic. We are publishing that instead of hiding it. If
-                the gap does not open as the sample grows, the score is what changes — not this page.
+                the gap does not open as the sample grows, the score is what changes, not this page.
               </p>
             </Section>
 
             <Section title="Before and after live candle grounding">
               <p>
-                On 17 July 2026 we started feeding the AI real candles — price, RSI(14), range position and
-                momentum pulled from live exchange feeds — before it reads your screenshot. We split the record on
+                On 17 July 2026 we started feeding the AI real candles, price, RSI(14), range position and
+                momentum pulled from live exchange feeds, before it reads your screenshot. We split the record on
                 that date so you can judge the change instead of taking our word for it.
               </p>
               {data.byGrounding.before.n > 0 && data.byGrounding.after.n > 0 ? (
@@ -323,7 +323,7 @@ const AccuracyPage = () => {
                 <li>
                   Resolution rule: the entry must fill first. Then the first target races the stop on 30-minute
                   candles. If a single candle contains both the target and the stop, it is recorded as a
-                  <span className="text-[var(--text-primary)]"> loss</span> — the pessimistic reading.
+                  <span className="text-[var(--text-primary)]"> loss</span>, the pessimistic reading.
                 </li>
                 <li>
                   Window: 48 hours. An analysis that has neither hit target nor stop by then is a TIMEOUT and is
@@ -335,7 +335,7 @@ const AccuracyPage = () => {
                 </li>
                 <li>
                   Only outcomes written by the automatic sweeper are counted. Verdicts users tag by hand in their
-                  own trade journal are excluded — self-reporting is not measurement.
+                  own trade journal are excluded. Self-reporting is not measurement.
                 </li>
                 <li>Demo and anonymous trial analyses are excluded entirely.</li>
               </ul>
@@ -360,7 +360,7 @@ const AccuracyPage = () => {
 
             <p className="border-t border-[var(--border-subtle)] pt-6 text-xs leading-relaxed text-[var(--text-muted)]">
               Past results do not guarantee future results. Nothing on this page is investment advice. Tickrify is a
-              second opinion on a chart you are already reading — the decision, the size and the risk are yours.
+              second opinion on a chart you are already reading, the decision, the size and the risk are yours.
               <br />
               <span className="font-terminal">
                 Last updated {new Date(data.updatedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · recalculated hourly

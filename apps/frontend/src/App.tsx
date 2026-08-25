@@ -1,10 +1,13 @@
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import LandingPage from "@/components/pages/LandingPage";
+import NotFoundPage from '@/components/pages/NotFoundPage';
 import DashboardPage from "@/components/pages/DashboardPage";
 import PricingPage from "@/components/pages/PricingPage";
 import PrivacyPolicyPage from "@/components/pages/PrivacyPolicyPage";
 import AccuracyPage from "@/components/pages/AccuracyPage";
 import TryPage from "@/components/pages/TryPage";
+import AdminPage from "@/components/pages/AdminPage";
+import ReportProblemButton from "@/components/ReportProblemButton";
 import ProtectedRoute from "@/components/routing/ProtectedRoute";
 import { RouteAnalytics } from "@/components/providers/RouteAnalytics";
 import { BrowserRouter as Router, Route, Routes, useLocation } from "react-router-dom";
@@ -91,7 +94,26 @@ function App() {
               </ProtectedRoute>
             }
           />
+          {/* Loja de apps interna. ProtectedRoute só garante "está logado" — quem
+              exige role=admin é o AdminGuard do backend, e a própria página
+              desenha "sem acesso" ao receber 403. Gate de UI nunca substitui
+              guard de servidor. A página se marca noindex (o /sign-in já foi
+              parar no Google porque Disallow impede rastrear, não indexar). */}
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <AdminPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Curinga: sem isto, link quebrado renderizava tela branca. */}
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
+        {/* Botão de reportar problema, montado UMA vez para o app inteiro.
+            Dentro do Router de propósito: ele lê a rota atual (useLocation) para
+            mandar junto com o relato. Só se desenha para quem está logado. */}
+        <ReportProblemButton />
       </Router>
       <Toaster />
     </ThemeProvider>

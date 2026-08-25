@@ -1,59 +1,39 @@
-import { BarChart3, Bot, CalendarClock, CandlestickChart, Globe2, ShieldCheck } from 'lucide-react';
-import { useReveal } from '@/hooks/useReveal';
-import SectionTitle from '@/components/landing/SectionTitle';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
+/**
+ * Recursos em lista de duas colunas separada por fio, sem cartão e sem ícone.
+ *
+ * REGRA (auditoria 24/07/2026): todo item aqui corresponde a código que está no
+ * ar. Nada de recurso prometido.
+ */
 const FeaturesSection = () => {
-  const revealRef = useReveal<HTMLElement>();
   const { t } = useLanguage();
   const f = t.landing.features;
 
-  // REGRA (auditoria 24/07/2026): todo card aqui corresponde a codigo que esta
-  // no ar. Os antigos f5 "Real-time alerts" e f6 "Continuous education" nao
-  // existiam em lugar nenhum do codigo e foram trocados por diferenciais reais
-  // (grounding com candles ao vivo, guarda do calendario economico).
-  // Maximo de 1 card com badge "Soon", e so com entrega comprometida.
-  const features: Array<{
-    icon: typeof Bot;
-    title: string;
-    description: string;
-    status: 'ready' | 'soon';
-  }> = [
-    { icon: Bot, title: f.f1t, description: f.f1d, status: 'ready' },
-    { icon: Globe2, title: f.f2t, description: f.f2d, status: 'ready' },
-    { icon: ShieldCheck, title: f.f3t, description: f.f3d, status: 'ready' },
-    { icon: BarChart3, title: f.f4t, description: f.f4d, status: 'ready' },
-    { icon: CandlestickChart, title: f.f5t, description: f.f5d, status: 'ready' },
-    { icon: CalendarClock, title: f.f6t, description: f.f6d, status: 'ready' },
+  const features = [
+    { title: f.f1t, desc: f.f1d },
+    { title: f.f3t, desc: f.f3d },
+    { title: f.f5t, desc: f.f5d },
+    { title: f.f6t, desc: f.f6d },
+    { title: f.f2t, desc: f.f2d },
+    { title: f.f4t, desc: f.f4d },
   ];
 
   return (
-    <section ref={revealRef} id="recursos" className="landing-section section-secondary reveal-on-scroll">
-      <div className="container">
-        <SectionTitle label={f.label} title={f.title} highlight={f.highlight} />
+    <section id="features" className="site-light">
+      <div className="site-wrap">
+        <div className="site-sblk">
+          <span className="site-eyebrow">{f.label}</span>
+          <h2>{f.title} {f.highlight}</h2>
+        </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {features.map((feature) => {
-            const Icon = feature.icon;
-            return (
-              <article key={feature.title} className="feature-card group">
-                <div className="feature-icon-wrapper transition-transform duration-200 group-hover:scale-110">
-                  <Icon className="h-5 w-5" />
-                </div>
-
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <h3 className="text-base font-semibold text-[var(--text-primary)]">{feature.title}</h3>
-                  {feature.status === 'soon' ? (
-                    <span className="badge-soon px-2 py-0.5 font-terminal">
-                      {f.soon}
-                    </span>
-                  ) : null}
-                </div>
-
-                <p className="text-sm leading-7 text-[var(--text-secondary)]">{feature.description}</p>
-              </article>
-            );
-          })}
+        <div className="site-feat">
+          {features.map((feature) => (
+            <div key={feature.title} className="site-f">
+              <h3>{feature.title}</h3>
+              <p>{feature.desc}</p>
+            </div>
+          ))}
         </div>
       </div>
     </section>

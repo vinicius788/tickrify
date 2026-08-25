@@ -1,8 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, Star, PlusCircle, Crown, Check, AlertCircle, FlaskConical, Clock, Wifi, WifiOff, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap, Upload } from "lucide-react";
+import { History, Star, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap, Upload } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -39,7 +38,6 @@ import { useTicks } from "@/hooks/useTicks";
 import { track } from "@/lib/analytics";
 import { createCheckoutSession } from "@/lib/stripe";
 import { PLANS } from "@/components/pricing/PricingCards";
-import { PageHeader } from "@/components/ui/PageHeader";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
 // PT quando o idioma for português. Contido neste arquivo (sem mexer nos 6 locales).
@@ -218,11 +216,9 @@ const DashboardPage = () => {
   );
 
   // Dados de exemplo APENAS para modo DEMO
-  const demoActiveMarkets = [
-    { name: "BTC/USD", change: "+2.5%", isUp: true },
-    { name: "EUR/USD", change: "-0.1%", isUp: false },
-    { name: "AAPL", change: "+1.2%", isUp: true },
-  ];
+  // (o array `demoActiveMarkets` foi removido em 19/08/2026: ficou órfão quando
+  //  o KPI passou a ler `realActiveMarkets` direto. Era dado inventado sem uso —
+  //  exatamente o tipo de coisa que já apareceu como número falso na vitrine.)
 
   const demoRecentAnalyses = [
     { symbol: "ETH/USD", timeframe: "4H", recommendation: "COMPRA", bias: "bullish", confidence: 82, createdAt: new Date().toISOString() },
@@ -331,7 +327,6 @@ const DashboardPage = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const ticksState = params.get('ticks');
     const successState = params.get('success');
 
     if (successState === 'true') {
@@ -368,7 +363,6 @@ const DashboardPage = () => {
   }, [autoRoutedNewUser, isDemo, user, loadingAnalyses, rawAnalyses]);
 
   // Usar dados demo ou reais dependendo do modo
-  const activeMarkets = isDemo ? demoActiveMarkets : realActiveMarkets;
   const displayRecentAnalyses = isDemo ? demoRecentAnalyses : recentAnalyses;
 
   const goToPricing = useCallback(() => {

@@ -20,7 +20,7 @@ export interface PublicAnalysis {
  * landing. Nada de fallback fabricado — se a API falhar, hibernar ou vier
  * vazia, as seções que consomem este hook simplesmente não renderizam.
  *
- * Cache compartilhado (mesma queryKey) entre RecentTickerSection e
+ * Cache compartilhado (mesma queryKey) usado por
  * RecentAnalysesSection → uma requisição só por carga de página.
  */
 export function useRecentPublicAnalyses() {

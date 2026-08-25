@@ -27,7 +27,7 @@ const PLAN_TICKS: Record<UserPlan, number> = {
 const FREE_ANALYSES_TOTAL = 3;
 
 const AnalysisCounter = () => {
-  const { isUnlimited, plan, used, remaining, isLoading } = useAnalysisLimit();
+  const { isUnlimited, plan, used, isLoading } = useAnalysisLimit();
   const { balance } = useTicks();
   const { t } = useLanguage();
   const { getToken } = useAuth();
