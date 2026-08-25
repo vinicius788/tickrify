@@ -53,6 +53,64 @@ jobs:
       - name: Lint frontend
         run: npm run -w apps/frontend lint
 
+  # O typecheck NÃO rodava no CI (descoberto em 19/08/2026). Pior: o script
+  # `typecheck` do frontend era `tsc --noEmit` num tsconfig com "files": [] e
+  # "references" — que não checa NADA e sai 0. Ou seja, existiam duas camadas de
+  # typecheck falso empilhadas. Agora roda de verdade, e o `build` depende disto.
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # O client do Prisma precisa existir antes do tsc: sem ele o backend não
+      # compila (`@prisma/client` não tem os tipos dos models).
+      - name: Gerar Prisma Client
+        run: npm run -w apps/backend postinstall
+
+      - name: Typecheck backend
+        run: npx --workspace apps/backend tsc --noEmit -p apps/backend/tsconfig.json
+
+      # `tsc -b` (build mode) é o ÚNICO que segue project references.
+      - name: Typecheck frontend
+        run: npm run -w apps/frontend typecheck
+
+  # PENTE FINO (item 10). Nada vai ao ar sem passar por aqui.
+  # A parte que precisa de produção no ar (HTTPS, HSTS, cabeçalhos entregues,
+  # rotas protegidas respondendo 401 de verdade) roda no auditoria-prod.yml,
+  # depois do deploy — porque cabeçalho configurado no código não é cabeçalho
+  # entregue ao navegador: Vercel, Render e Cloudflare ficam no meio.
+  auditoria:
+    name: Auditoria de segurança
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pente fino
+        run: node scripts/auditoria-seguranca.mjs
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -76,12 +134,22 @@ jobs:
       - name: Run frontend tests
         run: npm run -w apps/frontend test
 
+  # Espelha o job do secrets.yml para que o build DEPENDA da varredura de
+  # segredos. Sem isto os dois workflows correm em paralelo e um commit com
+  # chave vazada seria buildado e publicado antes de alguém ver o vermelho.
+  segredos:
+    name: Segredos
+    uses: ./.github/workflows/secrets.yml
+
   build:
     name: Build
     runs-on: ubuntu-latest
     needs:
       - lint
+      - typecheck
       - test
+      - segredos
+      - auditoria
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -1,0 +1,142 @@
+# ============================================================================
+#  Tickrify — configuração da varredura de segredos (gitleaks)
+#  Item 6 do plano de robustez · 12/08/2026
+#
+#  REGRA QUE ISTO IMPLEMENTA
+#  Nenhuma senha, chave ou token pode viver no código. Tudo vem de variável de
+#  ambiente, setada no painel do serviço. Esta config é o que faz a regra valer
+#  por máquina em vez de por disciplina.
+#
+#  COMO PENSAR NA ALLOWLIST
+#  Cada exceção é uma porta. A regra que segui: liberar pelo FORMATO DO
+#  PLACEHOLDER, nunca pelo caminho do arquivo — porque liberar `docs/**` deixaria
+#  a varredura cega para um segredo real colado num doc, que é exatamente como
+#  segredo vaza na vida real. As únicas exceções por caminho são os
+#  `.env.example`, cuja função é literalmente ser template.
+#
+#  Se a varredura reclamar de algo que NÃO é segredo, prefira trocar o texto por
+#  um placeholder óbvio (`<SENHA>`) a criar exceção nova aqui.
+# ============================================================================
+
+title = "Tickrify"
+
+[extend]
+useDefault = true   # ~170 detectores prontos: OpenAI, Stripe, Clerk, AWS, GitHub, JWT, chave privada...
+
+# ── Detectores próprios, para o que o default não cobre bem ──
+
+[[rules]]
+id = "tickrify-db-url-com-senha"
+description = "URL de banco/Redis com senha embutida"
+# A classe negada exclui <> e [] de propósito: `<SENHA>` e `[PASSWORD]` são as
+# duas formas de placeholder que a documentação do projeto já usa. Consertar o
+# DETECTOR é melhor que criar exceção — exceção libera a linha inteira.
+regex = '''(?i)\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?)://[^\s:/@"']+:[^\s:/@"'<>\[\]]{6,}@'''
+tags = ["database", "credencial"]
+
+[[rules]]
+id = "tickrify-turnstile-secret"
+description = "Chave secreta do Cloudflare Turnstile"
+regex = '''\b0x4[A-Za-z0-9_-]{25,}'''
+tags = ["cloudflare"]
+
+[[rules]]
+id = "tickrify-ops-token"
+description = "INTERNAL_OPS_TOKEN com valor literal"
+regex = '''(?i)INTERNAL_OPS_TOKEN\s*[:=]\s*["']?[A-Za-z0-9_\-]{16,}["']?'''
+tags = ["ops"]
+
+[[rules]]
+id = "tickrify-demo-hash-salt"
+description = "DEMO_HASH_SALT literal (quebra o anonimato dos hashes de IP/fingerprint da demo)"
+regex = '''(?i)DEMO_HASH_SALT\s*[:=]\s*["']?[A-Za-z0-9_\-]{12,}["']?'''
+tags = ["privacidade"]
+
+[[rules]]
+id = "tickrify-openai-key"
+description = "Chave da OpenAI (cobre os formatos sk- e sk-proj- novos)"
+regex = '''\bsk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,}'''
+tags = ["openai"]
+
+[[rules]]
+id = "tickrify-clerk-secret"
+description = "Chave secreta do Clerk"
+regex = '''\bsk_(?:live|test)_[A-Za-z0-9]{30,}'''
+tags = ["clerk"]
+
+[[rules]]
+id = "tickrify-stripe-webhook-secret"
+description = "Signing secret de webhook do Stripe"
+regex = '''\bwhsec_[A-Za-z0-9]{25,}'''
+tags = ["stripe"]
+
+[[rules]]
+id = "tickrify-resend-key"
+description = "Chave da API do Resend"
+regex = '''\bre_[A-Za-z0-9]{24,}'''
+tags = ["email"]
+
+# ─────────────────────────── ALLOWLIST ───────────────────────────
+#
+# Três listas separadas de propósito, porque o alvo do casamento muda o risco.
+#
+# `regexTarget` decide contra O QUE o regex é comparado:
+#   "secret" (padrão) → só o trecho que o detector capturou
+#   "line"            → a linha inteira
+#
+# Placeholder de documentação só dá para reconhecer olhando a linha inteira: o
+# `localhost` que prova ser o Postgres descartável do CI fica FORA do trecho
+# capturado. Mas liberar por linha é mais perigoso, porque a linha liberada
+# esconde qualquer segredo que esteja nela. Por isso a lista com alvo "line"
+# tem só 4 entradas, todas ancoradas em algo inconfundivelmente placeholder.
+
+[[allowlists]]
+description = "Templates: existem para ser copiados e preenchidos"
+paths = [
+  '''\.env\.example$''',
+  '''\.env\.production\.example$''',
+  '''\.gitleaks\.toml$''',
+]
+
+[[allowlists]]
+description = "Placeholders de documentação e fixtures de teste (casa a LINHA inteira)"
+regexTarget = "line"
+regexes = [
+  # Placeholder em <colchetes>: <PASSWORD>, <senha>, <USER>, <ref>.
+  # Cobre DEPLOY.md, CLAUDE.md e .github/workflows/backup.yml sem liberar o arquivo.
+  '''(?i)(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?)://[^\s"']*<[^>]+>''',
+
+  # Placeholder textual da documentação: a SENHA é a palavra "password"/"senha".
+  # Vale para qualquer usuário antes dos dois-pontos, porque a documentação usa
+  # tanto `user:password@` quanto `postgres.PROJECT_ID:PASSWORD@`.
+  '''(?i)://[^\s:"']+:(?:password|senha|pass|your[_-]?password|sua[_-]?senha|xxx+)@''',
+
+  # Postgres descartável do CI: container efêmero do runner, morre com o job.
+  # Ancorado em `localhost` de propósito — trocou por host real, volta a acusar.
+  '''postgres(?:ql)?://postgres:postgres@localhost''',
+
+  # Fixture de TESTE em scripts/deploy-prod.sh: JWT deliberadamente inválido,
+  # usado para provar que o AuthGuard rejeita token forjado. Termina em
+  # ".invalidsig" justamente para ser inconfundível.
+  '''eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.invalidsig''',
+]
+
+[[allowlists]]
+description = "Price IDs do Stripe são PÚBLICOS (vão no bundle do frontend)"
+# Alvo "secret" (padrão): casa só o price ID, não a linha inteira. Assim uma
+# linha que tenha um price ID E uma chave real continua sendo acusada.
+regexes = [
+  '''price_1[A-Za-z0-9]{20,}''',
+]
+
+[[allowlists]]
+description = "Placeholders de token nos exemplos de curl da documentação"
+regexTarget = "line"
+# Descobertos varrendo os 325 commits do histórico em 12/08/2026: 23 ocorrências,
+# TODAS placeholder. Ancorados em formas que um token real nunca tem —
+# ALL_CAPS_COM_UNDERSCORE, terminar em "...", ou vir entre <colchetes>.
+regexes = [
+  '''(?i)Bearer\s+(?:SEU|YOUR|MEU|TOKEN|JWT|TEST)[A-Z_]*\b''',
+  '''(?i)Bearer\s+[^\s"']*\.\.\.''',
+  '''(?i)Bearer\s+<[^>]+>''',
+]

@@ -1,0 +1,45 @@
+name: Auditoria de produção
+
+# O QUE O CI ESTÁTICO NÃO CONSEGUE PROVAR.
+#
+# Cabeçalho configurado no helmet não é cabeçalho entregue ao navegador: entre
+# os dois estão o Vercel, o Render e (em breve) a Cloudflare, e qualquer um deles
+# pode remover, sobrescrever ou não repassar. "Está no código" e "chega no
+# usuário" são afirmações diferentes — esta rotina verifica a segunda.
+#
+# Também é aqui que se prova, contra a produção REAL, que negar por padrão está
+# valendo: cada rota protegida tem que responder 401/403 sem credencial.
+#
+# Roda todo dia e sob demanda. Não roda em push porque bateria em produção a
+# cada commit — o gate de código é o ci.yml.
+
+on:
+  schedule:
+    - cron: '0 8 * * *' # 05:00 em Brasília
+  workflow_dispatch:
+    inputs:
+      api:
+        description: 'URL da API'
+        default: 'https://tickrify.onrender.com'
+      site:
+        description: 'URL do site'
+        default: 'https://tickrify.com'
+
+jobs:
+  auditar:
+    name: Pente fino em produção
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Auditar
+        env:
+          SMOKE_OPS_TOKEN: ${{ secrets.INTERNAL_OPS_TOKEN }}
+        run: |
+          node scripts/auditoria-producao.mjs \
+            "${{ inputs.api || 'https://tickrify.onrender.com' }}" \
+            "${{ inputs.site || 'https://tickrify.com' }}"
