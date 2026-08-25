@@ -659,8 +659,15 @@ a.site-stat:hover .site-stat-n { color: #fff; }
 .site-prose h2:first-child { margin-top: 0; }
 .site-prose h3 { margin: 24px 0 8px; }
 .site-prose p { font-size: 0.95rem; line-height: 1.8; margin-bottom: 14px; }
-.site-prose ul, .site-prose ol { margin: 0 0 16px 20px; display: grid; gap: 8px; }
-.site-prose li { font-size: 0.95rem; line-height: 1.75; color: var(--s-fg-2); }
+/* Sem `display: grid` aqui de propósito: um contêiner de grade transforma os
+   <li> em itens de grade e o navegador PARA de desenhar o marcador. As listas
+   das páginas legais ficaram sem bolinha nenhuma até 25/08/2026, conferido ao
+   vivo. O preflight do Tailwind zera `list-style`, então ele volta na mão. */
+.site-prose ul, .site-prose ol { margin: 0 0 16px; padding-left: 22px; }
+.site-prose ul { list-style: disc; }
+.site-prose ol { list-style: decimal; }
+.site-prose li { font-size: 0.95rem; line-height: 1.75; color: var(--s-fg-2); margin-bottom: 8px; }
+.site-prose li::marker { color: var(--s-fg-3); }
 .site-prose strong { color: var(--s-fg); font-weight: 500; }
 .tk-site .site-prose a { color: var(--s-fg); border-bottom: 1px solid var(--s-hair); }
 
@@ -675,8 +682,6 @@ a.site-stat:hover .site-stat-n { color: #fff; }
 .site-kpi .site-kpi-note { margin-top: 5px; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.6; color: var(--s-fg-3); }
 .site-callout { margin-top: 44px; border: 1px solid var(--s-hair); border-radius: 14px; padding: 26px; }
 .site-callout h3 { margin-bottom: 14px; }
-.site-callout ol { margin: 0; padding-left: 20px; display: grid; gap: 10px; }
-.site-callout li { font-size: 13.5px; line-height: 1.7; color: var(--s-fg-2); }
 
 /* ---- banner de cookies ---- */
 .site-cookie {
