@@ -1586,5 +1586,11 @@ rollup nativo) — não foi possível rodar a suíte de componente do frontend.
    real, isso é trabalho novo (fonte tipo NewsAPI/Finnhub/CryptoPanic — nenhuma
    integrada hoje). Calendário agendado (o que existe) é uma coisa diferente e
    mais estreita.
-3. Não commitado — os arquivos estão editados no working tree, esperando o
-   dono rodar `git add/commit/push` (fluxo padrão do projeto).
+3. ~~Não commitado~~ — **subiu em 25/08/2026**: backend em `bc25ad3`, frontend
+   em `8df5d8b`. Conferido ao vivo depois do deploy: `/api/calendar/events`
+   responde `{"symbol":"XAUUSD","events":[],"degraded":true}`, ou seja, a falha
+   da fonte está acontecendo AGORA e o front já mostra o aviso em vez do falso
+   "tudo limpo". Isso também estreita o item 1: a falha é **persistente**, não
+   intermitente, o que reforça a hipótese de bloqueio de origem e enfraquece a
+   de instabilidade de rede. `/api/health` exige o ops token, então quem tem o
+   segredo é que consegue ler qual dos três casos o log registrou.
