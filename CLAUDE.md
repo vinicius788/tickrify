@@ -36,6 +36,7 @@ Tickrify — SaaS freemium de **análise de gráficos com IA** para traders. O u
 - **Evitar dependências novas** (lockfile não atualiza local).
 - Frontend = seguro. Backend = crítico; no sandbox só dá pra **checar sintaxe** (não tipos completos). Build do Render que falha **não derruba** o app (mantém a última versão boa).
 - Às vezes aparece `.git/index.lock` travado → corrige com `rm -f .git/index.lock`.
+- **Portão antes de commitar o front: `pnpm check` na RAIZ** (24/08/2026). Roda typecheck + vitest + build do frontend de uma vez. `pnpm typecheck` na raiz também passou a existir; antes o script só morava em `apps/frontend` e rodar da raiz devolvia "Command not found". Não usar `npm run build:frontend` local: ele roda `npm install`, que existe pro Vercel e bagunça o `node_modules` pnpm da máquina.
 - **Nunca manusear chaves/segredos** (o usuário cola direto no Render/serviço).
 
 ## Modelo de monetização
@@ -1454,3 +1455,40 @@ volte a morder.
 Trafego organico relevante chegando em UM idioma. Enquanto o produto nao ranqueia
 em ingles, criar rotas localizadas e multiplicar por seis um canal que ainda vale
 zero.
+
+## ⏱️ Latencia da analise — a medicao EXISTE (corrige nota antiga)
+
+**Corrige o registro de 27/07** que dizia que a duracao "NAO da para medir pelo
+banco". Verdade pelo BANCO (o sweeper reescreve `updatedAt`), mas **existe
+medicao por LOG desde antes**: `analysis-pipeline.ts` → `logMetricsHook`
+emite, a cada analise concluida:
+
+```
+[Metrics] analysis completed | userId=<id> analysisType=<quick|deep> model=<modelo> latencyMs=<ms>
+```
+
+Chamado em `ai.service.runAnalysis` com `startedAt` capturado no inicio.
+**Para saber o tempo real: buscar `[Metrics]` no log do Render.** Nao precisa
+construir nada.
+
+### Timeouts (para nao confundir lentidao com falha)
+- `ANALYZE_TIMEOUT_MS`: **default 55s**, ajustavel por `AI_ANALYZE_TIMEOUT_MS`
+  entre 20s e 180s. O comentario do codigo avisa que modelo de raciocinio
+  (GPT-5+) passa de 120s com prompt longo — ou seja, **no limite atual uma
+  analise lenta VIRA ERRO, nao espera longa**.
+- Frontend: `POLL_TIMEOUT_MS=180s` (~3 tentativas de 55s + backoff).
+
+### Alavancas de velocidade, em ordem de risco
+1. **Ler o log primeiro.** Otimizar sem o numero e chute.
+2. `reasoning_effort` — **NAO esta implementado** em `openai-params.ts`. E a
+   alavanca real de latencia nos GPT-5: mandar `'low'`/`'minimal'` corta tempo
+   de forma significativa. **Troca velocidade por profundidade de raciocinio** —
+   exatamente o que o dono NAO quer perder. So mexer com medicao antes/depois.
+3. `maxTokens` (16k, dobrado para 32k em GPT-5) — **nao e alavanca**. O proprio
+   comentario do codigo diz: "Teto e limite, nao consumo".
+
+### ⚠️ Regra de momento
+**Nao mexer em parametro de modelo as vesperas de uma demo de alto risco.**
+Mudar `reasoning_effort` degrada a qualidade da analise de forma dificil de
+prever, e o custo de uma analise ruim para o primeiro usuario influente e maior
+que o de dez segundos a mais de espera.

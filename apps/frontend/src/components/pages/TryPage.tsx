@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SignUpButton, SignedOut, SignedIn } from '@clerk/clerk-react';
 import SiteLayout from '@/components/layout/SiteLayout';
+import AnalysisLoading from '@/components/dashboard/AnalysisLoading';
 import { track } from '@/lib/analytics';
 import { getDeviceFingerprint } from '@/lib/fingerprint';
 import { getTurnstileToken } from '@/lib/turnstile';
@@ -32,13 +33,6 @@ import exampleChart from '@/assets/demo-example-chart.png';
 import afterChart from '@/assets/demo-after-chart.png';
 
 type PageState = 'ready' | 'analyzing' | 'done' | 'locked';
-
-const ANALYZING_STEPS = [
-  'Reading the chart',
-  'Detecting market structure',
-  'Checking confluence',
-  'Building the trade plan',
-];
 
 /** Marca que o cadastro veio da demo, AnalyticsIdentify usa pra disparar signup_from_demo. */
 function markDemoSource() {
@@ -85,7 +79,6 @@ const TryPage = () => {
 
   const { language } = useLanguage();
   const [state, setState] = useState<PageState>('ready');
-  const [stepIndex, setStepIndex] = useState(0);
   const [result, setResult] = useState<DemoAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [customImage, setCustomImage] = useState<{ blob: Blob; previewUrl: string } | null>(null);
@@ -113,17 +106,6 @@ const TryPage = () => {
       }
     })();
   }, []);
-
-  // Passos animados enquanto a análise real roda (10 a 30s).
-  useEffect(() => {
-    if (state !== 'analyzing') return;
-    setStepIndex(0);
-    const timer = setInterval(
-      () => setStepIndex((i) => Math.min(i + 1, ANALYZING_STEPS.length - 1)),
-      6000,
-    );
-    return () => clearInterval(timer);
-  }, [state]);
 
   const handleFile = useCallback((file: File | undefined | null) => {
     if (!file || !file.type.startsWith('image/')) return;
@@ -233,14 +215,22 @@ const TryPage = () => {
 
       <section className="site-dark site-body-tight">
         <div className="site-wrap site-try">
-          {(state === 'ready' || state === 'analyzing') && (
+          {state === 'analyzing' && (
+            <div className="site-card">
+              {/* Mesma tela de espera do dashboard: o gráfico sendo varrido e as
+                  fases embaixo. Quem vê a demo da vitrine reconhece isto aqui. */}
+              <AnalysisLoading chart={customImage?.previewUrl ?? exampleChart} />
+            </div>
+          )}
+
+          {state === 'ready' && (
             <div className="site-card">
               <div className="site-try-shot">
                 <img
                   src={customImage?.previewUrl ?? exampleChart}
                   alt={customImage ? 'Your chart' : 'Example chart: XAUUSD (Gold) M30'}
                 />
-                {customImage && state === 'ready' && (
+                {customImage && (
                   <button
                     type="button"
                     onClick={() => {
@@ -252,13 +242,6 @@ const TryPage = () => {
                   >
                     Remove
                   </button>
-                )}
-                {state === 'analyzing' && (
-                  <div className="site-try-overlay">
-                    <span className="site-spin" aria-hidden="true" />
-                    <p>{ANALYZING_STEPS[stepIndex]}</p>
-                    <p className="site-try-fine">Real analysis in progress, usually 10 to 30 seconds</p>
-                  </div>
                 )}
               </div>
 
@@ -274,16 +257,14 @@ const TryPage = () => {
                 <button
                   type="button"
                   onClick={runAnalysis}
-                  disabled={state === 'analyzing'}
                   className="site-btn site-btn-primary site-btn-block"
                 >
-                  {state === 'analyzing' ? 'Analyzing' : 'Analyze this chart now'}
+                  Analyze this chart now
                 </button>
 
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={state === 'analyzing'}
                   className="site-try-upload"
                 >
                   {customImage ? 'Choose a different chart' : 'Or upload / paste your own chart screenshot'}

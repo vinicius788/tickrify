@@ -19,6 +19,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { SignIn, SignUp, GoogleOneTap, SignedOut } from "@clerk/clerk-react";
 import { useEffect } from "react";
 import { warmupPaymentsApi } from "@/lib/api";
+import { scrollToTop } from "@/lib/utils";
 
 // One Tap em toda página EXCETO /try: a demo é "valor antes do cadastro" —
 // um popup de login em cima dela passa a impressão de login obrigatório e
@@ -34,6 +35,27 @@ function OneTapOutsideTry() {
   );
 }
 
+/**
+ * Rolagem ao trocar de rota.
+ *
+ * O React Router não mexe no scroll, e o navegador só restaura posição em
+ * navegação de documento, que numa SPA não existe. Resultado: sair de /pricing
+ * rolado até o rodapé e clicar em "Termos" abria a página nova no fim dela.
+ *
+ * Âncora fica de fora: quem chega em /#platform quer justamente parar no meio,
+ * e quem cuida disso é o SiteLayout.
+ */
+function ScrollToTopOnRouteChange() {
+  const { pathname, hash } = useLocation();
+
+  useEffect(() => {
+    if (hash) return;
+    scrollToTop();
+  }, [pathname, hash]);
+
+  return null;
+}
+
 function App() {
   // Acorda o backend (Render hiberna) assim que o app carrega, em qualquer página.
   // Reduz o cold start que fazia o dashboard demorar a confirmar a assinatura.
@@ -45,6 +67,7 @@ function App() {
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <Router>
         <RouteAnalytics />
+        <ScrollToTopOnRouteChange />
         {/* Google One Tap: login em 1 toque para deslogados em qualquer página,
             EXCETO na demo /try (ver OneTapOutsideTry). */}
         <OneTapOutsideTry />

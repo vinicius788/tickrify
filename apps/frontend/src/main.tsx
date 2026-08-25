@@ -24,6 +24,15 @@ if (getConsent() === 'granted') {
  * cartão claro padrão em cima do site escuro: era a única superfície do
  * produto que não parecia da Tickrify, e aparecia justo no momento do
  * cadastro. Os valores são os mesmos tokens do .tk-site (index.css).
+ *
+ * `colorNeutral` é a chave e não é óbvia: o Clerk DERIVA quase toda a escala
+ * de cinza dele a partir dessa cor (texto secundário, bordas, rótulo de campo,
+ * texto do botão do Google). O padrão é preto, então num cartão escuro o
+ * "Continue with Google" saía preto sobre preto, praticamente invisível.
+ * Invertendo para branco, a escala inteira inverte junto.
+ *
+ * Os `elements` abaixo existem só onde a derivação não basta. Nada de cor
+ * chapada em cima do que já funciona.
  */
 const clerkAppearance = {
   variables: {
@@ -31,6 +40,8 @@ const clerkAppearance = {
     colorBackground: '#0e1012',
     colorText: '#f7f7f5',
     colorTextSecondary: '#8b9099',
+    colorTextOnPrimaryBackground: '#08090a',
+    colorNeutral: '#ffffff',
     colorInputBackground: '#08090a',
     colorInputText: '#f7f7f5',
     colorDanger: '#e5484d',
@@ -40,16 +51,40 @@ const clerkAppearance = {
   },
   elements: {
     card: { border: '1px solid rgba(255,255,255,0.09)', boxShadow: 'none' },
+    modalContent: { boxShadow: 'none' },
+    headerTitle: { color: '#f7f7f5', fontWeight: 500 },
+    headerSubtitle: { color: '#8b9099' },
+    socialButtonsBlockButton: {
+      border: '1px solid rgba(255,255,255,0.14)',
+      backgroundColor: 'rgba(255,255,255,0.03)',
+      color: '#f7f7f5',
+    },
+    socialButtonsBlockButtonText: { color: '#f7f7f5', fontWeight: 500 },
+    dividerLine: { backgroundColor: 'rgba(255,255,255,0.12)' },
+    dividerText: { color: '#8b9099' },
+    formFieldLabel: { color: '#8b9099' },
+    formFieldInput: { border: '1px solid rgba(255,255,255,0.12)', color: '#f7f7f5' },
+    formFieldInputShowPasswordButton: { color: '#8b9099' },
     formButtonPrimary: {
       backgroundColor: '#f7f7f5',
       color: '#08090a',
       textTransform: 'none',
       fontWeight: 500,
+      boxShadow: 'none',
     },
-    footerActionLink: { color: '#f7f7f5' },
+    footerActionText: { color: '#8b9099' },
+    footerActionLink: { color: '#f7f7f5', fontWeight: 500 },
+    identityPreviewText: { color: '#f7f7f5' },
+    identityPreviewEditButton: { color: '#8b9099' },
+    formResendCodeLink: { color: '#f7f7f5' },
+    otpCodeFieldInput: { border: '1px solid rgba(255,255,255,0.14)', color: '#f7f7f5' },
+    badge: { backgroundColor: 'rgba(255,255,255,0.08)', color: '#8b9099' },
+    userButtonPopoverCard: { border: '1px solid rgba(255,255,255,0.09)', boxShadow: 'none' },
+    userButtonPopoverActionButton: { color: '#f7f7f5' },
+    userButtonPopoverActionButtonText: { color: '#f7f7f5' },
+    userButtonPopoverFooter: { display: 'none' },
   },
 };
-
 const SENTRY_DSN = String(import.meta.env.VITE_SENTRY_DSN || '').trim();
 if (SENTRY_DSN) {
   Sentry.init({

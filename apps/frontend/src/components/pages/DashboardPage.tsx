@@ -30,6 +30,7 @@ import { TicksBadge } from "@/components/dashboard/TicksBadge";
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
 import { APIError, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
+import { scrollToTop } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
@@ -123,6 +124,14 @@ const DashboardPage = () => {
   // Produto global: preços sempre em USD, independente do idioma do site.
   const modalCurrency = 'usd' as const;
   const [activeView, setActiveView] = useState<View>('dashboard');
+
+  // O dashboard troca de tela sem trocar de rota, então o ScrollToTopOnRouteChange
+  // do App não alcança aqui: quem estava rolado no fim do histórico e pedia uma
+  // análise nova via o resultado aparecer fora da tela. Volta ao topo a cada
+  // troca de view.
+  useEffect(() => {
+    scrollToTop();
+  }, [activeView]);
   const [analysisKey, setAnalysisKey] = useState(0);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
@@ -937,7 +946,7 @@ const DashboardPage = () => {
       case 'locked':
         return <LockedAnalysis onUnlock={handleUnlockCheckout} unlockPending={unlockPending} />;
       case 'loading':
-        return <AnalysisLoading />;
+        return <AnalysisLoading chart={uploadedImage} />;
       case 'error':
         return (
           <div className="space-y-4">

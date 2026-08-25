@@ -91,6 +91,27 @@ vi.mock('@/components/BuyTicksModal', () => ({
   BuyTicksModal: () => <div>BuyTicksModal</div>,
 }));
 
+/**
+ * Fábrica do apiClient falso.
+ *
+ * Existe porque os testes montavam o objeto na mão em cada caso: quando o
+ * DashboardPage passou a chamar `syncUserProfile`, dois testes quebraram com
+ * "is not a function" e o motivo não tinha nada a ver com o que eles testam.
+ * Método novo no cliente entra AQUI, num lugar só.
+ */
+function makeApiClient(overrides: Record<string, unknown> = {}) {
+  return {
+    createAnalysis: vi.fn(),
+    getAnalysis: vi.fn(),
+    listAnalyses: vi.fn().mockResolvedValue([]),
+    getAnalysisUsage: vi.fn(),
+    setOutcome: vi.fn().mockResolvedValue(undefined),
+    syncUserProfile: vi.fn().mockResolvedValue(undefined),
+    waitForAnalysisCompletion: vi.fn().mockResolvedValue({ status: 'completed' }),
+    ...overrides,
+  };
+}
+
 function renderDashboard() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -123,13 +144,7 @@ describe('DashboardPage', () => {
       loadingBalance: false,
     });
     mockUseAuth.mockReturnValue({ getToken: vi.fn().mockResolvedValue('token') });
-    mockUseAPIClient.mockReturnValue({
-      createAnalysis: vi.fn(),
-      getAnalysis: vi.fn(),
-      listAnalyses: vi.fn().mockResolvedValue([]),
-      getAnalysisUsage: vi.fn(),
-      waitForAnalysisCompletion: vi.fn().mockResolvedValue({ status: 'completed' }),
-    });
+    mockUseAPIClient.mockReturnValue(makeApiClient());
   });
 
   afterEach(() => {
@@ -167,13 +182,7 @@ describe('DashboardPage', () => {
       },
     ]);
 
-    mockUseAPIClient.mockReturnValue({
-      createAnalysis: vi.fn(),
-      getAnalysis: vi.fn(),
-      listAnalyses,
-      getAnalysisUsage: vi.fn(),
-      waitForAnalysisCompletion: vi.fn().mockResolvedValue({ status: 'completed' }),
-    });
+    mockUseAPIClient.mockReturnValue(makeApiClient({ listAnalyses }));
 
     renderDashboard();
 
