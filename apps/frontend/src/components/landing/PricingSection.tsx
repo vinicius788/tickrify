@@ -79,7 +79,9 @@ const PricingSection = () => {
           </Link>
 
           <p className="site-price-fine">
-            {pr.payPerUse} {pr.neverExpire}
+            {pr.payPerUse}{' '}
+            <Link to="/dashboard" className="underline underline-offset-2">{pr.buyTicks}</Link>
+            {' '}· {pr.neverExpire}
           </p>
         </div>
 

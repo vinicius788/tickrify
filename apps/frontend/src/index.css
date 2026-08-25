@@ -335,13 +335,13 @@
   transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 .site-btn-sm { height: 36px; padding: 0 16px; font-size: 13px; }
-.site-btn-primary { background: var(--s-fg); color: var(--s-ink); }
-.site-btn-primary:hover { background: #fff; }
-.site-btn-ghost { border-color: var(--s-hair); color: var(--s-fg); }
-.site-btn-ghost:hover { border-color: rgba(255, 255, 255, 0.3); }
-.site-light .site-btn-primary { background: var(--s-on-light); color: var(--s-paper); }
+.tk-site .site-btn-primary { background: var(--s-fg); color: var(--s-ink); }
+.tk-site .site-btn-primary:hover { background: #fff; }
+.tk-site .site-btn-ghost { border-color: var(--s-hair); color: var(--s-fg); }
+.tk-site .site-btn-ghost:hover { border-color: rgba(255, 255, 255, 0.3); }
+.tk-site .site-light .site-btn-primary { background: var(--s-on-light); color: var(--s-paper); }
 .site-light .site-btn-primary:hover { background: #000; }
-.site-light .site-btn-ghost { border-color: var(--s-hair-l); color: var(--s-on-light); }
+.tk-site .site-light .site-btn-ghost { border-color: var(--s-hair-l); color: var(--s-on-light); }
 .site-light .site-btn-ghost:hover { border-color: rgba(0, 0, 0, 0.35); }
 .site-btn-block { width: 100%; }
 
@@ -363,13 +363,13 @@
 }
 .site-logo img { display: block; height: 30px; width: auto; }
 .site-nav { display: none; gap: 26px; }
-.site-nav a { font-size: 13.5px; color: var(--s-fg-2); transition: color 0.18s ease; }
+.tk-site .site-nav a { font-size: 13.5px; color: var(--s-fg-2); transition: color 0.18s ease; }
 .site-nav a:hover { color: var(--s-fg); }
 .site-nav a[aria-current='page'] { color: var(--s-fg); }
 .site-header-actions { display: flex; align-items: center; gap: 8px; }
 @media (min-width: 940px) { .site-nav { display: flex; } }
 
-.site-menu-link {
+.tk-site .site-menu-link {
   display: block;
   border: 1px solid var(--s-hair);
   border-radius: 14px;
@@ -419,7 +419,7 @@
   margin-bottom: 16px;
 }
 .site-footer-col ul { list-style: none; display: grid; gap: 11px; padding: 0; margin: 0; }
-.site-footer-col a { font-size: 13.5px; color: var(--s-fg-2); transition: color 0.18s ease; }
+.tk-site .site-footer-col a { font-size: 13.5px; color: var(--s-fg-2); transition: color 0.18s ease; }
 .site-footer-col a:hover { color: var(--s-fg); }
 .site-footer-legal {
   margin-top: clamp(40px, 6vw, 64px);
