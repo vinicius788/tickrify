@@ -173,7 +173,7 @@ export default function AdminPage() {
 
   if (semAcesso) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#050508] px-6">
+      <div className="flex min-h-screen items-center justify-center bg-[var(--bg-base)] px-6">
         <div className="max-w-sm text-center">
           <h1 className="text-lg font-semibold text-white">Sem acesso</h1>
           <p className="mt-2 text-sm text-zinc-400">
@@ -185,7 +185,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#050508] px-6 py-10">
+    <div className="min-h-screen bg-[var(--bg-base)] px-6 py-10">
       <div className="mx-auto max-w-3xl">
         <header className="mb-6">
           <h1 className="text-xl font-semibold text-white">Loja de apps</h1>

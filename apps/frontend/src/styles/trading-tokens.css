@@ -1,5 +1,11 @@
 :root {
-  --bg: #080808;
+  /* Preto do produto. Levemente azulado (B maior que R e G), o mesmo do site
+     público (--s-ink). Era #080808, um preto NEUTRO, enquanto a casca do
+     dashboard já pintava #050508 direto no className: duas pretas diferentes
+     na mesma tela. Não dava para ver como "mais claro" ou "mais escuro", dava
+     para ver como TEMPERATURA — o painel da análise parecia acinzentado sobre
+     uma página azulada. Conferido no navegador em 25/08/2026. */
+  --bg: #050508;
   --bg-surface: rgba(255, 255, 255, 0.02);
   --bg-card: rgba(255, 255, 255, 0.03);
   --border: rgba(255, 255, 255, 0.05);
@@ -21,7 +27,10 @@
   /* Backward-compatible aliases used across app */
   --bg-base: var(--bg);
   --bg-elevated: var(--bg-card);
-  --bg-overlay: #101010;
+  /* Continua OPACO de propósito: o botão de remover print, em NewAnalysis,
+     fica em cima da miniatura e precisa cobrir a imagem. Só mudou a
+     temperatura, para ficar na mesma família do --bg (mesmo desvio de azul). */
+  --bg-overlay: #101013;
   --border-subtle: rgba(255, 255, 255, 0.05);
   --border-default: rgba(255, 255, 255, 0.08);
   --border-emphasis: var(--border-hover);

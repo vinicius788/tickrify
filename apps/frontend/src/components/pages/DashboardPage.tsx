@@ -992,7 +992,7 @@ const DashboardPage = () => {
   const sidebarSectionTitleClass = 'text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]';
 
   return (
-    <div className="relative z-10 flex min-h-screen w-full overflow-x-hidden bg-[#050508]">
+    <div className="relative z-10 flex min-h-screen w-full overflow-x-hidden bg-[var(--bg-base)]">
       {/* SIDEBAR (desktop) */}
       <aside className="hidden w-[248px] shrink-0 flex-col border-r border-[var(--border-subtle)] md:flex">
         <div className="flex items-center gap-2.5 px-4 pb-4 pt-4">
