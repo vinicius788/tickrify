@@ -105,7 +105,7 @@ const Header = ({ active = null, minimal = false }: HeaderProps) => {
               <button
                 type="button"
                 aria-label={n.menu}
-                className="site-btn site-btn-ghost h-9 w-9 rounded-xl p-0 md:hidden"
+                className="site-btn site-btn-ghost site-btn-icon md:hidden"
               >
                 <Menu className="h-5 w-5" />
               </button>

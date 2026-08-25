@@ -346,6 +346,16 @@
 .tk-site .site-light .site-btn-ghost { border-color: var(--s-hair-l); color: var(--s-on-light); }
 .site-light .site-btn-ghost:hover { border-color: rgba(0, 0, 0, 0.35); }
 .site-btn-block { width: 100%; }
+/* Botão só de ícone (o menu sanduíche do celular).
+ *
+ * Precisa ser classe DO SISTEMA, e não `h-9 w-9 rounded-xl p-0` do Tailwind:
+ * no CSS final as utilidades saem ANTES do bloco .site-*, e com a mesma
+ * especificidade quem vem depois ganha. Ou seja, `.site-btn` sobrescrevia a
+ * altura, o padding e o raio, sobrando um botão de 36px de largura com 20px de
+ * padding de cada lado: o ícone era espremido a ZERO e o cabeçalho do celular
+ * mostrava um círculo vazio. Conferido no CSS servido em 25/08/2026 (.p-0 no
+ * byte 21828, .site-btn no 35955). */
+.site-btn-icon { width: 40px; height: 40px; padding: 0; border-radius: 12px; flex: 0 0 auto; }
 
 /* ---- header ---- */
 .site-header {
