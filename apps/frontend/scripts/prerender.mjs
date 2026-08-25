@@ -99,36 +99,15 @@ function replaceCanonical(html, url) {
     : html.replace(/<\/head>/i, () => `  <link rel="canonical" href="${escapeAttr(url)}" />\n  </head>`);
 }
 
-/**
- * Substitui a pintura pré-hidratação.
+/* A pintura pré-hidratação NÃO é mais reescrita aqui.
  *
- * Isto conserta um bug de verdade, não só SEO: o `index.html` traz o hero da
- * landing embutido, então abrir /pricing pintava "Stop trading in the dark" por
- * uma fração de segundo antes do React montar a página de preço.
- *
- * O bloco novo usa SÓ o title e a description da própria rota — que já vivem no
- * seo-routes.json. Nada de copy nova: uma segunda cópia de texto de vitrine
- * divergiria da primeira e viraria claim desencontrado (a auditoria de 27/07
- * existiu por causa disso).
- *
- * Ancoragem: casa do `<div id="root">` até o último `</div>` antes de `</body>`.
- * Conferido contra a saída real do Vite 6 — que, atenção, move o
- * `<script type="module">` para o `<head>`, então ancorar no script não serve.
+ * Existia uma `replacePrehydrate` que trocava o hero embutido pelo title e a
+ * description de cada rota, porque o index.html trazia o hero da landing e
+ * /pricing pintava "Stop trading in the dark" antes de montar. Em 25/08/2026 o
+ * bloco do index.html virou só a barra do cabeçalho, sem texto nenhum: já é
+ * correto em qualquer rota, e reescrever deixou de ter função. Ver o comentário
+ * no <style> do index.html.
  */
-function replacePrehydrate(html, { title, description }) {
-  const re = /<div id="root">[\s\S]*<\/div>(?=\s*<\/body>)/i;
-  if (!re.test(html)) {
-    console.warn('[prerender] aviso: bloco #root não reconhecido; mantendo o do index.html');
-    return html;
-  }
-  const block =
-    '<div id="root"><div class="prehydrate-hero">' +
-    `<span class="ph-badge">TICKRIFY</span>` +
-    `<h1 style="font-size:clamp(2rem,4.5vw,3.25rem);line-height:1.1">${escapeHtml(title)}</h1>` +
-    `<p>${escapeHtml(description)}</p>` +
-    '</div></div>';
-  return html.replace(re, () => block);
-}
 
 function main() {
   if (!existsSync(DIST)) bail('dist/ não existe — o vite build rodou?');
@@ -161,7 +140,6 @@ function main() {
     html = replaceMetaContent(html, 'name', 'twitter:title', meta.title);
     html = replaceMetaContent(html, 'name', 'twitter:description', meta.description);
     html = replaceCanonical(html, canonical);
-    html = replacePrehydrate(html, meta);
     if (meta.noindex) html = applyNoindex(html);
 
     const outDir = join(DIST, path.replace(/^\//, ''));
