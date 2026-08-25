@@ -234,38 +234,67 @@ function normalizeMarketBias(value: unknown): MarketBias {
   return 'neutral';
 }
 
+/**
+ * Fatores de risco do modelo, virando lista, ANTES de gravar no banco.
+ *
+ * O QUE ESTAVA ERRADO (conferido no dado gravado em produção, 25/08/2026)
+ * A versão anterior quebrava a string em `/[\n•-]+/`. O hífen ali dentro NÃO é
+ * marcador de lista: ele parte qualquer palavra composta e qualquer intervalo
+ * de preço. E como o resultado é gravado com `join('\n')`, o estrago fica
+ * PERMANENTE no banco — nenhum conserto de tela recupera.
+ *
+ * Foi exatamente o que aconteceu. O que o modelo escreveu:
+ *   "1) Late-stage trend ... 2) Sell-side liquidity ... 5) Failure to hold
+ *    the 4240.50-4255.95 demand zone could expose 4214.75..."
+ * o que ficou gravado:
+ *   "stage trend ...\nside liquidity ...\nterm volatility ...\n4255.95 demand
+ *    zone could expose 4214.75..."
+ * "1) Late" tinha 7 caracteres e caiu no filtro `length > 10`; o resto virou
+ * frase começando no meio da palavra. Num campo que é a lista de RISCOS.
+ *
+ * REGRAS AGORA
+ * 1. Array é respeitado: cada elemento é um item.
+ * 2. Quebra só em marcador de verdade: quebra de linha, bullet no início da
+ *    linha, ou numeração "1)" / "2." / "3]".
+ * 3. NUNCA descarta texto. Fragmento que começa em minúscula é continuação e
+ *    volta colado no item anterior.
+ *
+ * O front tem a mesma regra em `normalizeRiskFactorsForView`
+ * (components/dashboard/AnalysisResult.tsx), para as análises que já estão
+ * gravadas quebradas. Ao mexer aqui, olhe lá também.
+ */
 function normalizeRiskFactors(value: unknown): string[] {
   const fallback = ['Nenhum fator de risco identificado'];
 
-  if (Array.isArray(value)) {
-    const merged: string[] = [];
-    for (const item of value) {
-      const text = String(item || '').trim();
-      if (!text) {
-        continue;
-      }
+  const chunks = Array.isArray(value)
+    ? value.map((item) => String(item ?? ''))
+    : [String(value ?? '')];
 
-      if (merged.length > 0 && /^[a-záéíóúãõàâêô,]/.test(text)) {
-        merged[merged.length - 1] = `${merged[merged.length - 1]} ${text}`;
-      } else {
-        merged.push(text);
+  const items: string[] = [];
+
+  for (const chunk of chunks) {
+    for (const line of chunk.split(/\r?\n+/)) {
+      for (const part of line.split(/(?=(?:^|\s)\d{1,2}\s*[).\]]\s+)/g)) {
+        const text = part
+          .replace(/^\s*[•*▪]\s*/, '')
+          .replace(/^\s*\d{1,2}\s*[).\]]\s*/, '')
+          .replace(/^\s*[-–—]\s+/, '')
+          .trim();
+
+        if (!text) {
+          continue;
+        }
+
+        if (items.length > 0 && /^[a-záéíóúãõàâêôç]/.test(text)) {
+          items[items.length - 1] = `${items[items.length - 1]} ${text}`;
+        } else {
+          items.push(text);
+        }
       }
     }
-
-    const normalized = merged.filter((item) => item.length > 10);
-    return normalized.length > 0 ? normalized : fallback;
   }
 
-  if (typeof value === 'string') {
-    const normalized = value
-      .split(/(?<=\.)\s+(?=[A-ZÁÉÍÓÚ])|[\n•-]+/)
-      .map((item) => item.trim())
-      .filter((item) => item.length > 10);
-
-    return normalized.length > 0 ? normalized : fallback;
-  }
-
-  return fallback;
+  return items.length > 0 ? items : fallback;
 }
 
 async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisResult> {

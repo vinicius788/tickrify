@@ -110,6 +110,30 @@ export function softenDashes(text: string): string {
 }
 
 /**
+ * Emoji fora do texto do modelo.
+ *
+ * O motor decora a saída: "🎯 Bullish OB/FVG confluence", "💧 Unswept
+ * liquidity", "🕯️ Upper-wick rejection". Numa mesa de operação isso é ruído —
+ * emoji renderiza diferente em cada sistema e denuncia texto gerado. O mesmo
+ * argumento do travessão.
+ *
+ * Os marcadores do checklist (✅ ❌) NÃO passam por aqui: quem os consome é o
+ * `parseStructureChecklist`, que roda ANTES e os converte em ✓/✕ na cor do
+ * sistema. Ver a ordem em que os dois são chamados no componente.
+ */
+export function stripEmoji(text: string): string {
+  // Em `replace` separados de propósito: juntar tudo num conjunto de caracteres
+  // com o seletor de variação dentro dispara o no-misleading-character-class do
+  // ESLint, e a regra tem razão — o conjunto passaria a casar meio grafema.
+  return text
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/[\uFE0F\u200D]/gu, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/^[ \t]+/gm, '')
+    .trim();
+}
+
+/**
  * Funil ÚNICO de todo texto vindo do modelo antes de virar tela.
  *
  * Faz duas coisas: descarta os textos de fallback em português que o backend
@@ -117,12 +141,12 @@ export function softenDashes(text: string): string {
  * prosa da análise passa por aqui — se um dia precisar de mais uma limpeza,
  * ela entra NESTA função, não espalhada por 15 chamadas.
  */
-function cleanModelText(value: unknown): string {
+export function cleanModelText(value: unknown): string {
   const text = String(value || '').trim();
   if (BACKEND_PT_FALLBACKS.has(text)) {
     return '';
   }
-  return softenDashes(text);
+  return stripEmoji(softenDashes(text));
 }
 
 /**
@@ -212,11 +236,38 @@ function formatPositivePercent(value: number | null): string {
   return `+${Math.abs(value).toFixed(2)}%`;
 }
 
-function splitItems(text: unknown): string[] {
-  return String(text || '')
-    .split(/[\n;,]/)
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
+/**
+ * Quebra um campo do modelo em itens de lista.
+ *
+ * NÃO quebra em vírgula nem em ponto-e-vírgula, que era o que a versão
+ * anterior fazia (`/[\n;,]/`). O modelo escreve prosa, não CSV: "Bullish
+ * OB/FVG confluence at 4240.50-4255.95, preferred long limit zone" virava dois
+ * itens, um deles começando com letra minúscula no meio da frase. Conferido na
+ * tela em 25/08/2026.
+ *
+ * Quebra no marcador que o modelo de fato usa: emoji no início do item (ele
+ * decora cada padrão com um), quebra de linha, bullet ou numeração. O emoji é
+ * usado como fronteira e depois descartado pelo `cleanModelText`.
+ */
+export function splitItems(text: unknown): string[] {
+  const raw = String(text || '').trim();
+  if (!raw) {
+    return [];
+  }
+
+  const porEmoji = raw.split(/\s*(?=\p{Extended_Pictographic}\uFE0F?\s)/u);
+  const partes = porEmoji.length > 1 ? porEmoji : raw.split(/\r?\n+/);
+
+  return partes
+    .flatMap((parte) => parte.split(/(?=(?:^|\s)\d{1,2}\s*[).\]]\s+)/g))
+    .map((parte) =>
+      parte
+        .replace(/^\s*[•*▪]\s*/, '')
+        .replace(/^\s*\d{1,2}\s*[).\]]\s*/, '')
+        .replace(/^\s*[-–—]\s+/, '')
+        .trim(),
+    )
+    .filter((parte) => parte.length > 0);
 }
 
 /**
@@ -597,7 +648,12 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
     cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary);
   const whyNotOpposite = cleanModelText(analysis.whyNotOpposite);
   const structureValidation = cleanModelText(analysis.structureValidation);
-  const checklist = parseStructureChecklist(structureValidation);
+  // A ORDEM importa: o checklist precisa dos marcadores ✅/❌ para saber o que
+  // passou, e o cleanModelText remove emoji. Então ele lê a versão que ainda
+  // tem os marcadores, e o parágrafo de reserva usa a versão já limpa.
+  const checklist = parseStructureChecklist(
+    structureValidation ? softenDashes(String(analysis.structureValidation).trim()) : '',
+  );
 
   // Linhas da estrutura de mercado. Montadas em dado, não em <p> soltos: assim
   // a coluna de rótulos alinha igual à dos Operation Levels, e um campo vazio
@@ -645,8 +701,12 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
     { key: 'mtf', label: t.analysis.mtfAlignment, value: cleanModelText(multiTimeframeAlignment) },
   ].filter((row) => row.value.length > 0);
 
-  const patternItems = splitItems(cleanModelText(analysis.identifiedPatterns));
-  const indicatorItems = splitItems(cleanModelText(analysis.keyIndicators));
+  const patternItems = splitItems(analysis.identifiedPatterns).map((item) => cleanModelText(item)).filter(Boolean);
+  // Indicadores são PROSA, não lista: o prompt pede "no máximo 2 frases". A
+  // versão anterior picava no ponto-e-vírgula e na vírgula, e o painel exibia
+  // "supporting bullish momentum. Pure price action analysis is primary" como
+  // se fosse um item próprio. Parágrafo é a leitura honesta do campo.
+  const keyIndicatorsText = cleanModelText(analysis.keyIndicators);
   // Valor CRU de propósito: `cleanModelText` devolve string e achatava o
   // array de riscos numa linha só. A limpeza é aplicada item a item depois.
   const riskItems = normalizeRiskFactorsForView(analysis.riskFactors)
@@ -1271,17 +1331,18 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                     </span>
                   </AccordionTrigger>
                   <AccordionContent>
+                    {/* Lista, não etiqueta. Cada padrão é uma frase inteira, e
+                        etiqueta de largura variável com uma frase dentro vira
+                        colcha de retalhos — era o que estava na tela. */}
                     {patternItems.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {patternItems.map((item) => (
-                          <span
-                            key={item}
-                            className="rounded-sm border border-[var(--border-default)] bg-[var(--bg-overlay)] px-2 py-1 text-xs text-[var(--text-primary)]"
-                          >
-                            {item}
-                          </span>
+                      <ul className="space-y-2 text-sm text-[var(--text-secondary)]">
+                        {patternItems.map((item, index) => (
+                          <li key={`${item}-${index}`} className="flex items-start gap-2.5">
+                            <span className="mt-[7px] h-1 w-1 flex-shrink-0 rounded-full bg-[var(--text-muted)]" />
+                            <span className="leading-relaxed">{item}</span>
+                          </li>
                         ))}
-                      </div>
+                      </ul>
                     ) : (
                       <p className="text-sm text-[var(--text-secondary)]">{t.analysis.noPatterns}</p>
                     )}
@@ -1296,14 +1357,8 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                     </span>
                   </AccordionTrigger>
                   <AccordionContent>
-                    {indicatorItems.length > 0 ? (
-                      <ul className="space-y-1 text-sm text-[var(--text-secondary)]">
-                        {indicatorItems.map((item) => (
-                          <li key={item} className="border-b border-[var(--border-subtle)] pb-1 last:border-none">
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
+                    {keyIndicatorsText ? (
+                      <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{keyIndicatorsText}</p>
                     ) : (
                       <p className="text-sm text-[var(--text-secondary)]">{t.analysis.noIndicators}</p>
                     )}

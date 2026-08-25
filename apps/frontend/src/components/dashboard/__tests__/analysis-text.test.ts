@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cleanModelText,
   normalizeRiskFactorsForView,
   parseStructureChecklist,
   softenDashes,
+  splitItems,
 } from '@/components/dashboard/AnalysisResult';
 
 /**
@@ -119,5 +121,62 @@ describe('parseStructureChecklist', () => {
   it('devolve vazio quando o formato não é reconhecido, para o chamador cair no texto cru', () => {
     expect(parseStructureChecklist('').items).toEqual([]);
     expect(parseStructureChecklist('um parágrafo comum sem marcador').items).toEqual([]);
+  });
+});
+
+/**
+ * Segundo lote, do mesmo dia. Estes vêm do dado REAL gravado em produção, lido
+ * pela API antes de mexer em qualquer linha.
+ *
+ * `identifiedPatterns` chega decorado com emoji, um por padrão, e a versão
+ * anterior de `splitItems` quebrava em VÍRGULA e ponto-e-vírgula — prosa não é
+ * CSV. O resultado na tela eram etiquetas de tamanhos aleatórios, uma delas com
+ * a palavra "hesitation" sozinha.
+ */
+const PADROES_REAIS =
+  '🎯 Bullish OB/FVG confluence at 4240.50-4255.95 — preferred long limit zone. ' +
+  '🔹 Bullish BOS through the prior resistance area near 4230.20. ' +
+  '💧 Unswept buy-side liquidity at 4281.70-4286.85 above price. ' +
+  '🕯️ Upper-wick rejection and tight consolidation near 4281.70-4286.85 — hesitation, but no confirmed bearish CHoCH. ' +
+  '🔁 Bullish re-accumulation/continuation structure remains more likely than a reversal.';
+
+describe('splitItems', () => {
+  it('usa o emoji como fronteira do item, não a vírgula', () => {
+    const itens = splitItems(PADROES_REAIS);
+
+    expect(itens).toHaveLength(5);
+    expect(itens[3]).toContain('hesitation, but no confirmed bearish CHoCH');
+  });
+
+  it('não corta palavra composta nem intervalo de preço', () => {
+    const itens = splitItems(PADROES_REAIS).map((item) => cleanModelText(item));
+
+    expect(itens[0]).toContain('4240.50-4255.95');
+    expect(itens[2]).toContain('buy-side liquidity');
+  });
+
+  it('entrega o item já sem emoji depois do cleanModelText', () => {
+    const itens = splitItems(PADROES_REAIS).map((item) => cleanModelText(item));
+
+    expect(itens.join(' ')).not.toMatch(/\p{Extended_Pictographic}/u);
+    expect(itens[0].startsWith('Bullish OB/FVG confluence')).toBe(true);
+  });
+
+  it('sem emoji nenhum, devolve o texto inteiro como um item só', () => {
+    const prosa = 'Visible moving-average overlays are rising, supporting momentum.';
+
+    expect(splitItems(prosa)).toEqual([prosa]);
+  });
+});
+
+describe('stripEmoji via cleanModelText', () => {
+  it('tira decoração e mantém o conteúdo', () => {
+    expect(cleanModelText('💧 Unswept buy-side liquidity at 4281.70-4286.85')).toBe(
+      'Unswept buy-side liquidity at 4281.70-4286.85',
+    );
+  });
+
+  it('não come sinal de porcentagem, cifrão nem seta de texto', () => {
+    expect(cleanModelText('Risk $15.45 and 3.1:1 R/R at 62%')).toBe('Risk $15.45 and 3.1:1 R/R at 62%');
   });
 });
