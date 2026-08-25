@@ -1,3 +1,4 @@
+import { startFlagRefresh } from '../src/common/flags/feature-flags';
 import 'dotenv/config';
 import { Job, UnrecoverableError, Worker } from 'bullmq';
 import { Prisma, PrismaClient } from '@prisma/client';
@@ -1093,6 +1094,17 @@ console.log('🚀 AI Worker started and listening for jobs...');
 
 // Outcome tracking: 48h após cada análise real, verifica nos candles se TP1
 // saiu antes do SL e grava WIN/LOSS no banco (kill-switch: ENABLE_OUTCOME_TRACKING='false').
+// Loja de apps no WORKER. Processo separado da API, então tem o próprio cache:
+// uma mudança feita no painel /admin leva até 1 minuto para valer aqui. É o
+// custo de não ter pub/sub, e nenhuma destas flags precisa de propagação
+// instantânea. Sem isto, ligar/desligar pelo painel não afetaria a análise
+// (que roda no worker) — só a API, que é justamente onde a flag NÃO é usada.
+startFlagRefresh(async () =>
+  prisma.$queryRaw<Array<{ key: string; value: string }>>`
+    SELECT "key", "value" FROM "tickrify"."FeatureFlag"
+  `.catch(() => []),
+);
+
 startOutcomeSweeper(prisma);
 
 async function shutdown() {

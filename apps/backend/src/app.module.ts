@@ -14,6 +14,8 @@ import { CalendarModule } from './modules/calendar/calendar.module';
 import { MarketModule } from './modules/market/market.module';
 import { MailModule } from './modules/mail/mail.module';
 import { DemoModule } from './modules/demo/demo.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { GlobalAuthGuard } from './common/guards/global-auth.guard';
 import { HttpLoggingInterceptor } from './common/interceptors/http-logging.interceptor';
@@ -46,6 +48,8 @@ import { HttpLoggingInterceptor } from './common/interceptors/http-logging.inter
     MarketModule,
     PromptModule,
     HealthModule,
+    ReportsModule,
+    AdminModule,
   ],
   providers: [
     // ORDEM IMPORTA. O Nest executa os APP_GUARD na ordem em que são

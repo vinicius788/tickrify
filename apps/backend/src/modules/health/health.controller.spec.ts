@@ -41,7 +41,15 @@ describe('HealthController', () => {
     };
 
     queueReadinessMock.mockResolvedValue(READY_QUEUE);
-    controller = new HealthController(prisma as any);
+    const calendarServiceMock = {
+      getFeedStatus: jest.fn().mockReturnValue({
+        status: 'unknown',
+        lastSuccessAt: null,
+        lastAttemptAt: null,
+        cachedEvents: 0,
+      }),
+    };
+    controller = new HealthController(prisma as any, calendarServiceMock as any);
   });
 
   it('treats critical deps as ready in non-production runtime', async () => {

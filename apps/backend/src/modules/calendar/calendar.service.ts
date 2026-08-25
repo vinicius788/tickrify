@@ -14,6 +14,24 @@ export interface EconomicEvent {
   minutesUntil?: number;
 }
 
+export interface CalendarQueryResult {
+  events: EconomicEvent[];
+  /**
+   * true quando a busca na fonte (ForexFactory) falhou nesta tentativa —
+   * o array pode estar vazio, servido de cache velho, ou os dois. Quem
+   * consome isto NUNCA deve tratar degraded=true como "sem notícia
+   * confirmada"; é "não sabemos", que é uma coisa diferente.
+   */
+  degraded: boolean;
+}
+
+export interface CalendarFeedStatus {
+  status: 'ok' | 'degraded' | 'unavailable' | 'unknown';
+  lastSuccessAt: string | null;
+  lastAttemptAt: string | null;
+  cachedEvents: number;
+}
+
 interface FfEvent {
   title: string;
   country: string;
@@ -91,30 +109,81 @@ export class EconomicCalendarService {
   private cache: CacheEntry | null = null;
   private readonly CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-  private async fetchFfCalendar(): Promise<FfEvent[]> {
+  // Diagnóstico exposto via getFeedStatus() (consumido pelo /health) — nunca
+  // usado para decidir nada de produto, só para o operador enxergar quando a
+  // fonte externa está fora do ar. Achado em 25/08/2026: sem isso a falha era
+  // 100% silenciosa — o cache gravava vazio e a tela mostrava "sem eventos"
+  // como se fosse dado real.
+  private lastSuccessAt: number | null = null;
+  private lastAttemptAt: number | null = null;
+  private lastAttemptFailed = false;
+
+  private async fetchFfCalendar(): Promise<{ data: FfEvent[]; degraded: boolean }> {
     const now = Date.now();
     if (this.cache && now - this.cache.fetchedAt < this.CACHE_TTL_MS) {
-      return this.cache.data;
+      return { data: this.cache.data, degraded: false };
     }
 
+    this.lastAttemptAt = now;
     const results: FfEvent[] = [];
+    let anySucceeded = false;
+
     for (const url of FF_URLS) {
       try {
         const res = await fetch(url, {
-          headers: { 'User-Agent': 'Mozilla/5.0' },
+          headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
           signal: AbortSignal.timeout(8_000),
         });
-        if (res.ok) {
-          const data = await res.json() as FfEvent[];
-          results.push(...data);
+        if (!res.ok) {
+          this.logger.warn(`Calendar fetch ${url} -> HTTP ${res.status} ${res.statusText}`);
+          continue;
         }
+        const text = await res.text();
+        let data: unknown;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          // Fonte bloqueando por IP/rate-limit costuma devolver HTML (challenge
+          // page) com status 200 — .json() direto mascarava isso como erro
+          // genérico de rede. Logar os primeiros bytes ajuda a distinguir
+          // bloqueio de indisponibilidade real.
+          this.logger.warn(
+            `Calendar fetch ${url} devolveu corpo não-JSON (${text.length} bytes): "${text.slice(0, 120).replace(/\s+/g, ' ')}"`,
+          );
+          continue;
+        }
+        if (!Array.isArray(data)) {
+          this.logger.warn(`Calendar fetch ${url} devolveu JSON que não é array`);
+          continue;
+        }
+        results.push(...(data as FfEvent[]));
+        anySucceeded = true;
       } catch (err) {
-        this.logger.warn(`Failed to fetch ${url}: ${err instanceof Error ? err.message : err}`);
+        this.logger.warn(`Calendar fetch ${url} falhou: ${err instanceof Error ? err.message : err}`);
       }
     }
 
-    this.cache = { data: results, fetchedAt: now };
-    return results;
+    if (anySucceeded) {
+      this.cache = { data: results, fetchedAt: now };
+      this.lastSuccessAt = now;
+      this.lastAttemptFailed = false;
+      return { data: results, degraded: false };
+    }
+
+    // Todas as fontes falharam nesta tentativa. Bug real encontrado em
+    // 25/08/2026: a versão anterior gravava `this.cache = { data: [], ... }`
+    // aqui mesmo em falha total — um array vazio ficava servido por 1h
+    // como se fosse "nenhum evento agendado", quando na verdade era "não
+    // conseguimos checar". NUNCA sobrescrever o cache num ciclo sem sucesso.
+    this.lastAttemptFailed = true;
+    const cacheAgeMin = this.cache ? Math.round((now - this.cache.fetchedAt) / 60_000) : null;
+    this.logger.error(
+      `Calendar: as ${FF_URLS.length} fontes falharam nesta tentativa. ` +
+        (this.cache
+          ? `Servindo cache de ${cacheAgeMin}min atrás (degraded=true).`
+          : 'Sem cache anterior — devolvendo vazio (degraded=true).'),
+    );
+    return { data: this.cache?.data ?? [], degraded: true };
   }
 
   /** Parse event date — ForexFactory now returns full ISO timestamps in the date field */
@@ -151,9 +220,9 @@ export class EconomicCalendarService {
     symbol: string,
     referenceTime: Date = new Date(),
     windowHours = 24,
-  ): Promise<EconomicEvent[]> {
+  ): Promise<CalendarQueryResult> {
     const currencies = getCurrenciesForSymbol(symbol);
-    const allEvents = await this.fetchFfCalendar();
+    const { data: allEvents, degraded } = await this.fetchFfCalendar();
 
     const windowMs = windowHours * 60 * 60 * 1000;
     const refMs = referenceTime.getTime();
@@ -188,6 +257,23 @@ export class EconomicCalendarService {
       })
       .sort((a, b) => (a.minutesUntil ?? 0) - (b.minutesUntil ?? 0));
 
-    return events;
+    return { events, degraded };
+  }
+
+  /** Estado do feed para /health — nunca lança, best-effort. */
+  getFeedStatus(): CalendarFeedStatus {
+    const status: CalendarFeedStatus['status'] = this.lastAttemptFailed
+      ? this.cache
+        ? 'degraded'
+        : 'unavailable'
+      : this.lastSuccessAt
+        ? 'ok'
+        : 'unknown';
+    return {
+      status,
+      lastSuccessAt: this.lastSuccessAt ? new Date(this.lastSuccessAt).toISOString() : null,
+      lastAttemptAt: this.lastAttemptAt ? new Date(this.lastAttemptAt).toISOString() : null,
+      cachedEvents: this.cache?.data.length ?? 0,
+    };
   }
 }

@@ -31,6 +31,8 @@ model User {
   promptAudits  PromptAudit[]
   adminAudits   AdminAudit[] @relation("AdminAuditActor")
   adminTargets  AdminAudit[] @relation("AdminAuditTarget")
+  featureFlags  FeatureFlag[] @relation("FeatureFlagUpdatedBy")
+  problemReports ProblemReport[] @relation("ProblemReportAuthor")
 
   @@schema("tickrify")
 }
@@ -186,5 +188,52 @@ model AdminAudit {
   @@index([action, createdAt])
   @@index([actorUserId, createdAt])
   @@index([targetUserId, createdAt])
+  @@schema("tickrify")
+}
+
+/// Loja de apps interna: liga/desliga funções sem redeploy.
+///
+/// Antes disto, mudar qualquer flag exigia abrir o painel do Render, editar a
+/// variável de ambiente e esperar o redeploy — e não ficava registro nenhum de
+/// quem mexeu. Um `ENABLE_QUICK_GROUNDING` desligado por engano fazia a vitrine
+/// vender uma feature que a produção não entregava, sem ninguém saber desde quando.
+///
+/// Esta tabela guarda apenas os OVERRIDES. A ordem de resolução é
+/// banco → variável de ambiente → padrão do código, então uma linha ausente
+/// aqui significa "usa o que sempre usou". Banco fora do ar = tudo volta ao
+/// comportamento por env, sem quebrar nada.
+model FeatureFlag {
+  key         String   @id
+  value       String
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+  updatedBy   User?    @relation("FeatureFlagUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@schema("tickrify")
+}
+
+/// Relato de problema enviado pelo usuário, com o contexto técnico junto.
+///
+/// O campo `context` guarda o que o navegador sabia na hora: rota, tamanho de
+/// tela, idioma, fuso, e as últimas ações do usuário (migalhas). É o que
+/// transforma "não funcionou" em algo reproduzível.
+///
+/// `status` é máquina de estados fechada, garantida por CHECK no banco:
+/// aberto → investigando → resolvido | descartado.
+model ProblemReport {
+  id         String    @id @default(cuid())
+  userId     String?
+  message    String    @db.Text
+  route      String?
+  analysisId String?
+  context    Json?
+  status     String    @default("aberto")
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User? @relation("ProblemReportAuthor", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
   @@schema("tickrify")
 }

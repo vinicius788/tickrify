@@ -1,3 +1,4 @@
+import { flagBool } from '../flags/feature-flags';
 export type Recommendation = 'BUY' | 'SELL' | 'WAIT';
 export type Bias = 'bullish' | 'bearish' | 'neutral';
 
@@ -295,7 +296,7 @@ export function applyRiskRewardGuard(
   riskRewardTp1: number | null | undefined,
   minRatio = 1.2,
 ): { recommendation: Recommendation; confidence: number; downgraded: boolean } {
-  if (process.env.ENABLE_RR_GUARD === 'false') {
+  if (!flagBool('ENABLE_RR_GUARD')) {
     return { recommendation, confidence, downgraded: false };
   }
   if (recommendation === 'WAIT' || riskRewardTp1 == null || !Number.isFinite(riskRewardTp1)) {

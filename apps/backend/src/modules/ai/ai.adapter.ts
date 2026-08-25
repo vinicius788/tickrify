@@ -1,3 +1,4 @@
+import { flagBool } from '../../common/flags/feature-flags';
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -837,6 +838,13 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
   };
 }
 
+// Instância única: reaproveita o cache de 1h do calendário entre análises,
+// mesmo padrão de common/utils/signal-decision.ts. Antes, cada análise deep
+// criava `new EconomicCalendarService()` na hora — cache zerado toda vez,
+// batendo na fonte externa sem necessidade e multiplicando o risco de
+// bloqueio/rate-limit (achado em 25/08/2026, junto do bug do cache vazio).
+const calendarService = new EconomicCalendarService();
+
 @Injectable()
 export class AIAdapter {
   private readonly openai: OpenAI;
@@ -1189,7 +1197,16 @@ export class AIAdapter {
    */
   private async buildCalendarEnrichment(symbol: string): Promise<string | null> {
     try {
-      const events = await new EconomicCalendarService().getEventsForSymbol(symbol, new Date(), 12);
+      // Janela 24h (era 12h) para bater com o que a UI promete e com o que o
+      // hook do front já pede (`hours=24` em useEconomicCalendar.ts) — não
+      // fazia sentido o prompt enxergar metade da janela que a tela mostra.
+      const { events, degraded } = await calendarService.getEventsForSymbol(symbol, new Date(), 24);
+      if (degraded) {
+        // Fonte fora do ar nesta tentativa: melhor NÃO injetar bloco nenhum
+        // (a IA já foi instruída a não inventar dado) do que arriscar um
+        // array vazio-por-falha sendo lido como "não há evento agendado".
+        return null;
+      }
       if (!events || events.length === 0) return null;
       const lines = events.slice(0, 5).map((e) => {
         const when =
@@ -1204,7 +1221,7 @@ export class AIAdapter {
         return `- [${e.impact}] ${e.country} ${e.title} — ${when}${extra ? ` (${extra})` : ''}`;
       });
       return [
-        `# CALENDÁRIO ECONÔMICO (DADO REAL — eventos agendados p/ ${symbol}, próximas 12h)`,
+        `# CALENDÁRIO ECONÔMICO (DADO REAL — eventos agendados p/ ${symbol}, próximas 24h)`,
         'Considere estes eventos na leitura: evento de impacto High iminente = risco de movimento brusco que atropela a análise técnica — reduza convicção e diga isso explicitamente. Cite como "dado real".',
         ...lines,
       ].join('\n');
@@ -1485,7 +1502,7 @@ export class AIAdapter {
       // (kill-switch) para desligar na hora, sem redeploy. Qualquer falha/timeout
       // simplesmente segue com o prompt original (degradação graciosa).
       let effectivePrompt = prompt;
-      if (analysisType === 'deep' && process.env.ENABLE_MARKET_ENRICHMENT !== 'false') {
+      if (analysisType === 'deep' && flagBool('ENABLE_MARKET_ENRICHMENT')) {
         try {
           const block = await withTimeout(
             this.buildMarketEnrichment(imageUrl),
@@ -1498,7 +1515,7 @@ export class AIAdapter {
         } catch {
           // graceful: mantém o prompt original
         }
-      } else if (analysisType === 'quick' && process.env.ENABLE_QUICK_GROUNDING === 'true') {
+      } else if (analysisType === 'quick' && flagBool('ENABLE_QUICK_GROUNDING')) {
         // Grounding do QUICK — DESLIGADO por padrão (só liga com
         // ENABLE_QUICK_GROUNDING='true' no Render). Fica atrás de flag até o
         // backtest isolado (v7.3 + --ground, 75 pareadas) dizer se ajuda.

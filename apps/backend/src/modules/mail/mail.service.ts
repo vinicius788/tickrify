@@ -56,11 +56,32 @@ export class MailService {
 </body></html>`;
   }
 
+  /**
+   * Aviso de relato de problema para o admin.
+   *
+   * Não usa o wrap() das outras mensagens de propósito: aquele template tem
+   * CTA verde e disclaimer de produto, desenhado para o CLIENTE. Aqui o
+   * destinatário é operacional e o que importa é ler o relato rápido.
+   */
+  async sendProblemReport(to: string, corpoHtml: string): Promise<void> {
+    await this.send(
+      to,
+      '[Tickrify] Novo relato de problema',
+      `<!doctype html><html><body style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:15px;line-height:1.6;color:#16202a;">
+  <div style="max-width:560px;margin:0 auto;padding:24px;">
+    <div style="font-size:13px;color:#5b6b7a;margin-bottom:8px;">Tickrify · relato de problema</div>
+    ${corpoHtml}
+    <a href="${this.appUrl}/admin" style="display:inline-block;margin-top:16px;font-size:14px;">Abrir o painel</a>
+  </div>
+</body></html>`,
+    );
+  }
+
   /** Boas-vindas: disparado quando uma conta nova é criada. */
   async sendWelcome(to: string): Promise<void> {
     const html = this.wrap(
       'Your 3 free analyses are ready',
-      `Welcome to Tickrify. You've got <b>3 free analyses</b> — paste any chart and get the entry, stop, targets and risk in ~30 seconds.<br><br>Best way to start: run the next trade you're unsure about.`,
+      `Welcome to Tickrify. You've got <b>3 free analyses</b>. Paste any chart and get the entry, stop, targets and risk in ~30 seconds.<br><br>Best way to start: run the next trade you're unsure about.`,
       'Analyze a chart',
       `${this.appUrl}/dashboard`,
     );
@@ -70,11 +91,11 @@ export class MailService {
   /** Recuperação: créditos grátis acabaram e o usuário não assinou. */
   async sendRecovery(to: string): Promise<void> {
     const html = this.wrap(
-      "Your analyses ran out — your trades won't wait",
-      `You used your free analyses. Looks like the AI's been helping you confirm entries — so it makes no sense to go back to trading blind.<br><br>Go unlimited and keep this early-user code: <b>EARLY35</b> (35% off your first month).`,
+      "Your analyses ran out, and your trades will not wait",
+      `You used your free analyses. Looks like the AI's been helping you confirm entries, so it makes no sense to go back to trading blind.<br><br>Go unlimited and keep this early-user code: <b>EARLY35</b> (35% off your first month).`,
       'Go unlimited',
       `${this.appUrl}/pricing`,
     );
-    await this.send(to, "Your analyses ran out — your trades won't wait", html);
+    await this.send(to, "Your analyses ran out, and your trades will not wait", html);
   }
 }

@@ -1,3 +1,4 @@
+import { flagBool } from '../src/common/flags/feature-flags';
 /**
  * Outcome tracking — a régua objetiva do motor, em produção.
  *
@@ -294,7 +295,7 @@ async function sweepOnce(prisma: PrismaClient): Promise<void> {
 
 /** Liga o sweeper no processo do worker. Chamar uma vez, após o boot. */
 export function startOutcomeSweeper(prisma: PrismaClient): void {
-  if (process.env.ENABLE_OUTCOME_TRACKING === 'false') {
+  if (!flagBool('ENABLE_OUTCOME_TRACKING')) {
     console.log('[Outcome] Outcome tracking DESLIGADO via env.');
     return;
   }

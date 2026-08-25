@@ -23,7 +23,11 @@ export class CalendarController {
     @Query('hours') hours = '24',
   ) {
     const windowHours = Math.min(Math.max(parseInt(hours) || 24, 1), 168);
-    const events = await this.calendarService.getEventsForSymbol(symbol, new Date(), windowHours);
-    return { symbol: symbol.toUpperCase(), events };
+    const { events, degraded } = await this.calendarService.getEventsForSymbol(symbol, new Date(), windowHours);
+    // degraded=true = a busca na fonte falhou nesta tentativa (bug real em
+    // 25/08/2026: um array vazio saindo daqui era indistinguível de "sem
+    // evento agendado" e a tela mostrava um falso "tudo limpo"). O front
+    // precisa deste campo para não afirmar coisa que não checou.
+    return { symbol: symbol.toUpperCase(), events, degraded };
   }
 }

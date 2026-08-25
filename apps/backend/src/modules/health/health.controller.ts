@@ -1,5 +1,7 @@
+import { flagBool, flagNumber, resolveAllFlags } from '../../common/flags/feature-flags';
 import { Controller, Get, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { EconomicCalendarService } from '../calendar/calendar.service';
 import { getAiQueueReadiness } from '../ai/ai.queue';
 import { hasValidOpenAiKey } from '../../common/utils/ai-runtime';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
@@ -26,7 +28,10 @@ type ReadinessItem = {
 @Public()
 @Controller('health')
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly calendarService: EconomicCalendarService,
+  ) {}
 
   @Get('live')
   getLiveness() {
@@ -151,6 +156,15 @@ export class HealthController {
         // causa de todo e-mail ficar NULL. So a SECRET_KEY resolve e-mail.
         clerkSecretKeyForEmail: process.env.CLERK_SECRET_KEY ? 'configured' : 'MISSING',
       },
+      // Estado de TODAS as funções da loja de apps, com a origem de cada valor.
+      // "ligado, mas por env" e "ligado pelo painel" são situações operacionais
+      // diferentes: a segunda é uma decisão registrada, a primeira é herança.
+      funcoes: resolveAllFlags().map((f) => ({
+        chave: f.key,
+        valor: f.value,
+        origem: f.source,
+        vendidoNaVitrine: Boolean(f.definition.soldOnSite),
+      })),
       ai: {
         required: runtimeProduction,
         configured: aiConfigured,
@@ -162,9 +176,19 @@ export class HealthController {
         // preço lista "Live candle grounding" como feature paga. Se vier
         // 'disabled', o site está afirmando algo que a produção não faz —
         // trate como incidente de claim, não como config.
-        quickGrounding: process.env.ENABLE_QUICK_GROUNDING === 'true' ? 'enabled' : 'disabled',
-        abPromptV9Percent: Number(process.env.AB_PROMPT_V9_PERCENT) || 0,
+        // Lidos pela loja de apps (banco → env → padrão): o /health precisa dizer
+        // o que a produção REALMENTE faz. Agora que existe painel, o valor
+        // efetivo pode divergir da variável de ambiente do Render.
+        quickGrounding: flagBool('ENABLE_QUICK_GROUNDING') ? 'enabled' : 'disabled',
+        abPromptV9Percent: flagNumber('AB_PROMPT_V9_PERCENT'),
       },
+      // Feed de calendário econômico (ForexFactory) — vendido na vitrine como
+      // "Economic calendar guard" / "Live candle grounding + economic
+      // calendar". Achado em 25/08/2026: a fonte estava falhando calada e o
+      // endpoint público devolvia sempre `events: []`, indistinguível de "sem
+      // notícia agendada". 'degraded'/'unavailable' aqui = incidente de
+      // claim, exatamente como quickGrounding acima — trate igual.
+      calendar: this.calendarService.getFeedStatus(),
       storage: {
         required: runtimeProduction,
         configured: storageConfigured,

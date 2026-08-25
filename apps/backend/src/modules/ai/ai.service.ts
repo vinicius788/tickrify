@@ -1,3 +1,4 @@
+import { flagNumber } from '../../common/flags/feature-flags';
 import {
   BadRequestException,
   ForbiddenException,
@@ -80,7 +81,7 @@ type ApiAnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export const AB_V9_PROMPT_VER = -9;
 
 export function resolveAbPromptVariant(userId: string): 'A' | 'B' {
-  const pct = Number(process.env.AB_PROMPT_V9_PERCENT);
+  const pct = flagNumber('AB_PROMPT_V9_PERCENT');
   if (!Number.isFinite(pct) || pct <= 0 || pct > 100) return 'A';
   // Hash estável (FNV-1a): mesmo userId → sempre o mesmo bucket, sem estado.
   let h = 2166136261;

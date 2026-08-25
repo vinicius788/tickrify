@@ -1,4 +1,5 @@
 import { getAppEnv, isProductionRuntime } from './runtime-env';
+import { flagBool } from '../flags/feature-flags';
 
 const INVALID_OPENAI_KEYS = new Set([
   '',
@@ -17,7 +18,9 @@ export function hasValidOpenAiKey(): boolean {
 }
 
 export function isDemoModeEnabled(): boolean {
-  return String(process.env.DEMO_MODE || '').trim().toLowerCase() === 'true';
+  // Passa pela loja de apps (banco → env → padrão). Sem override no banco o
+  // resultado é idêntico ao `process.env.DEMO_MODE === 'true'` de antes.
+  return flagBool('DEMO_MODE');
 }
 
 export function canUseDemoFallback(): boolean {

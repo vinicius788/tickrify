@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { HealthController } from './health.controller';
 import { OpsTokenGuard } from './ops-token.guard';
 import { PrismaService } from '../database/prisma.service';
+import { EconomicCalendarService } from '../calendar/calendar.service';
 import { getAiQueueReadiness } from '../ai/ai.queue';
 
 const request = require('supertest');
@@ -19,6 +20,15 @@ describe('Health routes security', () => {
   const prismaMock = {
     isReady: jest.fn().mockReturnValue(true),
     checkConnection: jest.fn().mockResolvedValue(true),
+  };
+
+  const calendarServiceMock = {
+    getFeedStatus: jest.fn().mockReturnValue({
+      status: 'unknown',
+      lastSuccessAt: null,
+      lastAttemptAt: null,
+      cachedEvents: 0,
+    }),
   };
 
   beforeEach(async () => {
@@ -49,6 +59,10 @@ describe('Health routes security', () => {
         {
           provide: PrismaService,
           useValue: prismaMock,
+        },
+        {
+          provide: EconomicCalendarService,
+          useValue: calendarServiceMock,
         },
       ],
     }).compile();

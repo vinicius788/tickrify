@@ -28,7 +28,7 @@ function getClient(): PostHogLike | null {
   try {
     // require dinâmico: se posthog-node não estiver instalado, cai no catch
     // e vira no-op — sem quebrar o boot nem o fluxo de negócio.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const mod = require('posthog-node') as {
       PostHog: new (key: string, options: Record<string, unknown>) => PostHogLike;
     };

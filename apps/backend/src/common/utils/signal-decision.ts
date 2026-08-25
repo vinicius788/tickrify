@@ -1,3 +1,4 @@
+import { flagBool } from '../flags/feature-flags';
 import {
   Recommendation,
   harmonizeConfidenceWithTrend,
@@ -80,12 +81,15 @@ export async function decideSignal(
   // 3) News guard — não se opera em cima de notícia. Evento de impacto ALTO para
   //    a(s) moeda(s) do ativo a ≤45min (ou que saiu há ≤15min) → WAIT, confiança ≤45.
   //    Best-effort: falha do calendário nunca bloqueia. Kill-switch: ENABLE_NEWS_GUARD=false.
-  if (process.env.ENABLE_NEWS_GUARD !== 'false' && recommendation !== 'WAIT') {
+  if (flagBool('ENABLE_NEWS_GUARD') && recommendation !== 'WAIT') {
     try {
-      const events = await raceTimeout(
+      const { events } = await raceTimeout(
         calendar.getEventsForSymbol(String(input.symbol || ''), new Date(), 2),
         6_000,
       );
+      // degraded (fonte fora do ar) não é tratado aqui: o guard já é
+      // best-effort por design — se não dá pra checar, segue sem rebaixar.
+      // calendar.service.ts já loga a falha em si; não duplicar aqui.
       const imminent = (events || []).find(
         (e) =>
           e.impact === 'High' &&
