@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
-import { Check, Star } from "lucide-react";
 import { createCheckoutSession, type BillingCycle, type Currency, type PlanType } from "../../lib/stripe";
 import { warmupPaymentsApi } from "../../lib/api";
 import { track } from "../../lib/analytics";
-import { Button } from "../ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../ui/card";
 import { useToast } from "../../hooks/use-toast";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 const SESSION_STORAGE_KEY = "pendingPlanType";
+
+// Check desenhado à mão: o ícone da lucide vem em 24px e a lista do card pede 14.
+const Check = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+    <path d="M2.5 7.4 5.6 10.5 11.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
 // Conteúdo visível dos cards — em inglês por padrão (público global), PT quando o
 // idioma for português. O array PLANS abaixo também usa inglês como default
@@ -32,7 +36,7 @@ const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
         "200 monthly Ticks (~200 quick or 66 deep)",
         "Quick + deep analysis",
         "Live candle grounding + economic calendar",
-        "$0.145 per quick analysis — beats buying Ticks one by one",
+        "$0.145 per quick analysis, cheaper than buying Ticks one by one",
       ],
       cta: "Get started",
     },
@@ -57,7 +61,7 @@ const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
         "400 monthly Ticks (~400 quick or 133 deep)",
         "Quick + deep analysis",
         "Full history",
-        "$0.15 per quick analysis — the lowest",
+        "$0.15 per quick analysis, the lowest",
         "Everything in Pro, 2.7x the volume",
       ],
       cta: "Get Elite",
@@ -72,7 +76,7 @@ const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
         "200 Ticks mensais (~200 rápidas ou 66 deep)",
         "Análise rápida + deep",
         "Grounding com candles ao vivo + calendário econômico",
-        "US$ 0,145 por análise rápida — mais barato que Ticks avulsos",
+        "US$ 0,145 por análise rápida, mais barato que Ticks avulsos",
       ],
       cta: "Começar",
     },
@@ -97,7 +101,7 @@ const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
         "400 Ticks mensais (~400 rápidas ou 133 deep)",
         "Análise rápida + deep",
         "Histórico completo",
-        "US$ 0,15 por análise rápida — o menor",
+        "US$ 0,15 por análise rápida, o menor",
         "Tudo do Pro, 2,7x o volume",
       ],
       cta: "Assinar Elite",
@@ -142,15 +146,13 @@ type Plan = {
   badge: string;
   prices: PriceMap;
   ticks: string;
-  analyses: string;
   featured: boolean;
-  icon: React.ReactNode;
   features: string[];
   cta: string;
 };
 
 // PLANO ÚNICO. Os tiers Pro e Elite saíram da vitrine em 27/07/2026 — eles
-// diferiam só em volume e o Starter era mais caro por análise que o pacote
+// diferiam so em volume e o Starter era mais caro por analise que o pacote
 // avulso. Os price IDs antigos continuam no backend para assinaturas legadas.
 // Checkout sempre em USD (ver `currency` abaixo), então os campos brl/eur são
 // só rótulo e repetem o valor em dólar de propósito.
@@ -164,14 +166,12 @@ export const PLANS: Plan[] = [
       yearly:  { brl: "$290", usd: "$290", eur: "$290" },
     },
     ticks: "200 ticks/mo",
-    analyses: "quick 1 tick · deep 3 ticks",
     featured: true,
-    icon: <Star className="w-8 h-8 text-primary" />,
     features: [
       "200 monthly Ticks (~200 quick or 66 deep)",
       "Quick + deep analysis",
       "Live candle grounding + economic calendar",
-      "$0.145 per quick analysis — beats buying Ticks one by one",
+      "$0.145 per quick analysis, cheaper than buying Ticks one by one",
     ],
     cta: "Get started",
   },
@@ -256,123 +256,72 @@ export function PricingCards() {
 
   if (processingUpgrade) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-        <p className="text-lg text-muted-foreground">{copy.processingTitle}</p>
-        <p className="text-sm text-muted-foreground">{copy.processingSub}</p>
+      <div className="site-price site-price-busy">
+        <span className="site-spin" aria-hidden="true" />
+        <p>{copy.processingTitle}</p>
+        <p className="site-price-fine">{copy.processingSub}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8">
-      {/* Billing cycle toggle */}
-      <div className="flex items-center justify-center gap-3">
+    <div>
+      {/* Ciclo de cobrança. Dois botões com aria-pressed em vez de um switch:
+          o estado fica legível para leitor de tela e para quem só olha. */}
+      <div className="site-cycle" role="group" aria-label="Billing cycle">
         <button
+          type="button"
+          aria-pressed={billingCycle === "monthly"}
           onClick={() => setBillingCycle("monthly")}
-          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-            billingCycle === "monthly"
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
+          className={`site-btn site-btn-sm ${billingCycle === "monthly" ? "site-btn-primary" : "site-btn-ghost"}`}
         >
           {copy.monthly}
         </button>
         <button
+          type="button"
+          aria-pressed={billingCycle === "yearly"}
           onClick={() => setBillingCycle("yearly")}
-          className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-            billingCycle === "yearly"
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
+          className={`site-btn site-btn-sm ${billingCycle === "yearly" ? "site-btn-primary" : "site-btn-ghost"}`}
         >
-          {copy.yearly}
-          <span className="ml-1.5 text-xs bg-green-500/15 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded-full">
-            {copy.yearlyBadge}
-          </span>
+          {copy.yearly} · {copy.yearlyBadge}
         </button>
       </div>
 
       {/* Uma coluna POR PLANO. O `md:grid-cols-3` era fixo e, desde que a vitrine
           virou plano único (27/07/2026), o card sozinho caía na primeira coluna
-          de três — a página inteira ficava encostada na esquerda enquanto o
+          de três, e a página inteira ficava encostada na esquerda enquanto o
           título e o banner acima seguiam centralizados. Derivado de PLANS.length
           para não quebrar de novo se um segundo plano voltar. */}
-      <div
-        className={`mx-auto grid grid-cols-1 gap-6 ${
-          PLANS.length === 1
-            ? "max-w-md"
-            : PLANS.length === 2
-              ? "max-w-3xl md:grid-cols-2"
-              : "max-w-5xl md:grid-cols-3"
-        }`}
-      >
+      <div className={PLANS.length > 1 ? "site-plans" : undefined}>
         {PLANS.map((plan) => (
-          <Card
-            key={plan.id}
-            className={`relative flex flex-col ${
-              plan.featured
-                ? "border-2 border-primary shadow-xl scale-[1.03]"
-                : "border border-border"
-            }`}
-          >
-            {plan.featured && (
-              <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                <span className="bg-primary text-primary-foreground px-4 py-1 rounded-full text-sm font-semibold whitespace-nowrap">
-                  {planCopy[plan.id].badge}
-                </span>
-              </div>
-            )}
+          <div key={plan.id} className="site-price">
+            <span className="site-eyebrow">{planCopy[plan.id].badge}</span>
+            <div className="site-price-amt">
+              <b>{plan.prices[billingCycle][currency]}</b>
+              <span>{billingCycle === "monthly" ? copy.perMonth : copy.perYear}</span>
+            </div>
+            <p className="site-price-sub">
+              {planCopy[plan.id].ticks} · {planCopy[plan.id].analyses}
+            </p>
 
-            <CardHeader className="text-center pt-8">
-              <div className="mx-auto mb-3">{plan.icon}</div>
-              <CardTitle className="text-xl">{plan.name}</CardTitle>
-              {!plan.featured && (
-                <span className="inline-block text-xs text-muted-foreground border border-border rounded-full px-3 py-0.5 mt-1">
-                  {planCopy[plan.id].badge}
-                </span>
-              )}
-              <div className="mt-4">
-                <span className="text-4xl font-bold">{plan.prices[billingCycle][currency]}</span>
-                <span className="text-muted-foreground">
-                  {billingCycle === "monthly" ? copy.perMonth : copy.perYear}
-                </span>
-              </div>
-              <p className="text-sm text-muted-foreground mt-1">
-                {planCopy[plan.id].ticks} · {planCopy[plan.id].analyses}
-              </p>
-            </CardHeader>
+            <ul>
+              {planCopy[plan.id].features.map((feature) => (
+                <li key={feature}>
+                  <Check />
+                  {feature}
+                </li>
+              ))}
+            </ul>
 
-            <CardContent className="flex-1">
-              <ul className="space-y-3">
-                {planCopy[plan.id].features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2">
-                    <Check className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                    <span className="text-sm">{feature}</span>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-
-            <CardFooter>
-              <Button
-                className="w-full"
-                size="lg"
-                variant={plan.featured ? "default" : "outline"}
-                onClick={() => handleUpgrade(plan.id)}
-                disabled={loadingPlan !== null}
-              >
-                {loadingPlan === plan.id ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    {copy.processing}
-                  </div>
-                ) : (
-                  planCopy[plan.id].cta
-                )}
-              </Button>
-            </CardFooter>
-          </Card>
+            <button
+              type="button"
+              onClick={() => handleUpgrade(plan.id)}
+              disabled={loadingPlan !== null}
+              className="site-btn site-btn-primary site-btn-block"
+            >
+              {loadingPlan === plan.id ? copy.processing : planCopy[plan.id].cta}
+            </button>
+          </div>
         ))}
       </div>
     </div>

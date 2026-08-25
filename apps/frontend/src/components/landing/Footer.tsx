@@ -1,6 +1,5 @@
 import { Instagram } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import TermsOfServiceDialog from '@/components/landing/TermsOfServiceDialog';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import lockup from '@/assets/tickrify-lockup.svg';
 
@@ -68,10 +67,15 @@ const Footer = () => {
           <div className="site-footer-col">
             <h2>{f.legal}</h2>
             <ul>
-              {/* Termos continuam no diálogo (texto completo já existe).
-                  Viram página própria junto com /refund, /cookies e /risk. */}
-              <li><TermsOfServiceDialog /></li>
+              <li><Link to="/terms">{f.terms}</Link></li>
               <li><Link to="/privacy">{f.privacy}</Link></li>
+              <li><Link to="/cookies">{f.cookies}</Link></li>
+              <li><Link to="/risk">{f.risk}</Link></li>
+              {/* Cancelamento e reembolso são a cláusula 15 dos Termos, não uma
+                  página à parte: a Stripe exige a política acessível, não um
+                  arquivo próprio, e duplicar o texto seria criar duas versões
+                  que divergem na primeira edição. */}
+              <li><Link to="/terms#refunds">{f.refund}</Link></li>
             </ul>
           </div>
         </div>

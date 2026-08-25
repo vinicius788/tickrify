@@ -64,7 +64,7 @@ const LockedAnalysis = ({ onUnlock, unlockPending = false, symbolLabel }: Locked
           Your read is ready. Unlock to see it.
         </h2>
         <p className="max-w-[420px] text-sm text-[var(--text-secondary)]">
-          Entry, stop, targets and confidence — calculated for this chart. Your 3 free analyses are used up.
+          Entry, stop, targets and confidence, calculated for this chart. Your 3 free analyses are used up.
         </p>
         <button
           type="button"
@@ -77,7 +77,7 @@ const LockedAnalysis = ({ onUnlock, unlockPending = false, symbolLabel }: Locked
               <Loader2 className="h-4 w-4 animate-spin" /> Opening secure checkout…
             </>
           ) : (
-            <>Unlock analysis — 35% off applied →</>
+            <>Unlock analysis, 35% off applied →</>
           )}
         </button>
         <p className="font-terminal text-[11px] text-[var(--text-secondary)]">

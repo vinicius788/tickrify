@@ -419,8 +419,8 @@
   margin-bottom: 16px;
 }
 .site-footer-col ul { list-style: none; display: grid; gap: 11px; padding: 0; margin: 0; }
-.tk-site .site-footer-col a { font-size: 13.5px; color: var(--s-fg-2); transition: color 0.18s ease; }
-.site-footer-col a:hover { color: var(--s-fg); }
+.tk-site .site-footer-col a,
+.tk-site .site-footer-col a:hover,
 .site-footer-legal {
   margin-top: clamp(40px, 6vw, 64px);
   border-top: 1px solid var(--s-hair);
@@ -630,3 +630,136 @@ a.site-stat:hover .site-stat-n { color: #fff; }
   .site-demo-chart.is-reading .site-demo-scan { display: none; }
   .site-demo-prog { display: none; }
 }
+
+/* ---- cabeçalho padrão das páginas internas ---- */
+.tk-site .site-phead { padding: clamp(48px, 7vw, 84px) 0 clamp(32px, 4vw, 48px); }
+.site-phead h1 { margin-top: 14px; max-width: 18ch; }
+.site-phead p { margin-top: 16px; font-size: 1rem; line-height: 1.65; max-width: 54ch; }
+.site-updated {
+  display: inline-block; margin-top: 18px; border: 1px solid var(--s-hair);
+  border-radius: 100px; padding: 5px 12px; font-family: var(--font-mono);
+  font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--s-fg-3);
+}
+
+/* ---- páginas legais ---- */
+.site-legal { display: grid; gap: 36px; }
+@media (min-width: 960px) { .site-legal { grid-template-columns: 240px 1fr; gap: 64px; align-items: start; } }
+.site-toc { position: sticky; top: 88px; }
+.site-toc h2 {
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--s-fg-3); margin-bottom: 14px; font-weight: 400;
+}
+.site-toc ul { list-style: none; display: grid; gap: 10px; padding: 0; margin: 0; }
+.tk-site .site-toc a { font-size: 13px; color: var(--s-fg-2); transition: color 0.18s ease; }
+.tk-site .site-toc a:hover { color: var(--s-fg); }
+.site-prose { max-width: 74ch; }
+.site-prose h2 { font-size: 1.2rem; margin: 38px 0 12px; letter-spacing: -0.02em; scroll-margin-top: 90px; }
+.site-prose h2:first-child { margin-top: 0; }
+.site-prose h3 { margin: 24px 0 8px; }
+.site-prose p { font-size: 0.95rem; line-height: 1.8; margin-bottom: 14px; }
+.site-prose ul, .site-prose ol { margin: 0 0 16px 20px; display: grid; gap: 8px; }
+.site-prose li { font-size: 0.95rem; line-height: 1.75; color: var(--s-fg-2); }
+.site-prose strong { color: var(--s-fg); font-weight: 500; }
+.tk-site .site-prose a { color: var(--s-fg); border-bottom: 1px solid var(--s-hair); }
+
+/* ---- KPIs (acurácia) ---- */
+.site-kpis { display: grid; grid-template-columns: repeat(2, 1fr); border-top: 1px solid var(--s-hair); border-bottom: 1px solid var(--s-hair); }
+@media (min-width: 900px) { .site-kpis { grid-template-columns: repeat(4, 1fr); } }
+.site-kpi { padding: 28px 22px; border-right: 1px solid var(--s-hair); border-bottom: 1px solid var(--s-hair); }
+.site-kpi:last-child { border-right: 0; }
+@media (min-width: 900px) { .site-kpi { border-bottom: 0; } }
+.site-kpi b { display: block; font-size: 2.1rem; font-weight: 400; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; color: var(--s-fg); }
+.site-kpi .site-kpi-label { margin-top: 10px; font-size: 13px; color: var(--s-fg); }
+.site-kpi .site-kpi-note { margin-top: 5px; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.6; color: var(--s-fg-3); }
+.site-callout { margin-top: 44px; border: 1px solid var(--s-hair); border-radius: 14px; padding: 26px; }
+.site-callout h3 { margin-bottom: 14px; }
+.site-callout ol { margin: 0; padding-left: 20px; display: grid; gap: 10px; }
+.site-callout li { font-size: 13.5px; line-height: 1.7; color: var(--s-fg-2); }
+
+/* ---- banner de cookies ---- */
+.site-cookie {
+  position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 80;
+  max-width: 560px; margin: 0 auto; border: 1px solid var(--s-hair);
+  border-radius: 14px; background: rgba(14, 16, 18, 0.96);
+  backdrop-filter: blur(14px); padding: 20px 22px;
+}
+.site-cookie p { font-size: 13px; line-height: 1.65; }
+.tk-site .site-cookie a { color: var(--s-fg); border-bottom: 1px solid var(--s-hair); }
+.site-cookie-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+
+/* ---- utilitários das páginas internas ---- */
+/* Seção que continua a anterior: o .site-phead já deu o respiro do topo. */
+.tk-site .site-body-tight { padding-top: 0; }
+.site-note { font-size: 0.95rem; color: var(--s-fg-2); }
+.site-cell-note { display: block; font-size: 10.5px; color: var(--s-fg-3); margin-top: 4px; }
+.site-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+.site-chips span {
+  border: 1px solid var(--s-hair); border-radius: 100px; padding: 5px 12px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--s-fg-2);
+}
+.site-kpis-inline { margin: 0 0 20px; border: 1px solid var(--s-hair); border-radius: 14px; overflow: hidden; }
+@media (min-width: 900px) { .site-kpis-inline { grid-template-columns: repeat(2, 1fr); } }
+
+/* Indicador de carregamento. Único movimento contínuo do site, e existe porque
+   uma análise real leva de 10 a 30s: sem ele a tela parece travada. */
+.site-spin {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 1.5px solid var(--s-hair); border-top-color: var(--s-fg);
+  animation: site-spin 0.9s linear infinite;
+}
+@keyframes site-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .site-spin { animation: none; border-top-color: var(--s-fg-2); } }
+
+/* ---- /pricing ---- */
+.site-founding { border: 1px solid rgba(217, 162, 27, 0.28); border-radius: 14px; padding: 22px 24px; max-width: 640px; }
+.site-founding .site-eyebrow { color: var(--s-wait); }
+.site-founding p { margin-top: 10px; font-size: 13.5px; line-height: 1.7; color: var(--s-fg-2); }
+.site-founding b {
+  font-family: var(--font-mono); font-weight: 400; color: var(--s-wait);
+  border: 1px solid rgba(217, 162, 27, 0.34); border-radius: 6px; padding: 2px 7px;
+}
+.site-cycle { display: flex; justify-content: center; gap: 8px; margin-bottom: 34px; }
+.site-plans { display: grid; gap: 20px; }
+@media (min-width: 900px) { .site-plans { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); max-width: none; } }
+.site-price-sub { font-family: var(--font-mono); font-size: 11.5px; color: var(--s-on-light-2); }
+.site-price-busy { text-align: center; display: grid; justify-items: center; gap: 12px; }
+
+/* ---- /try ---- */
+.site-try { max-width: 760px; margin: 0 auto; }
+.site-try-head { max-width: 640px; }
+.site-try-shot { position: relative; border: 1px solid var(--s-hair); border-radius: 12px; overflow: hidden; }
+.site-try-shot img { display: block; width: 100%; }
+.site-try-remove {
+  position: absolute; right: 10px; top: 10px; background: rgba(8, 9, 10, 0.82);
+  border: 1px solid var(--s-hair); border-radius: 100px; padding: 5px 12px;
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--s-fg-2);
+}
+.site-try-remove:hover { color: var(--s-fg); }
+.site-try-overlay {
+  position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px;
+  background: rgba(8, 9, 10, 0.78); backdrop-filter: blur(2px); text-align: center; padding: 20px;
+}
+.site-try-overlay p { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; color: var(--s-fg); }
+.site-try-caption { margin-top: 12px; font-size: 13px; line-height: 1.6; color: var(--s-fg-2); text-align: center; }
+.site-try-caption strong { color: var(--s-fg); font-weight: 500; }
+.site-try-error {
+  margin-top: 14px; border: 1px solid rgba(229, 72, 77, 0.32); border-radius: 10px;
+  padding: 12px 14px; font-size: 13px; line-height: 1.6; color: var(--s-short); text-align: center;
+}
+.site-try-actions { display: grid; justify-items: center; gap: 14px; margin-top: 22px; }
+.site-try-actions > .site-btn-block { max-width: 420px; }
+.site-try-upload { font-size: 13px; color: var(--s-fg-2); text-decoration: underline; text-underline-offset: 4px; }
+.site-try-upload:hover { color: var(--s-fg); }
+.site-try-upload:disabled { opacity: 0.5; }
+.site-try-fine { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.07em; color: var(--s-fg-3); text-align: center; }
+.site-try-reveal { margin-top: 20px; }
+.site-try-after { margin-top: 20px; display: grid; gap: 4px; }
+.site-try-cta { margin-top: 26px; border-top: 1px solid var(--s-hair); padding-top: 24px; display: grid; justify-items: center; gap: 10px; text-align: center; }
+.site-try-cta p { font-size: 13.5px; color: var(--s-fg-2); max-width: 46ch; }
+.site-try-cta .site-btn { margin-top: 6px; }
+.site-try-locked { text-align: center; }
+.site-try-locked h2 { font-size: 1.5rem; }
+.site-try-locked > p { margin: 12px auto 0; max-width: 48ch; font-size: 14px; line-height: 1.7; color: var(--s-fg-2); }
+.site-try-legal { margin-top: 26px; font-size: 12px; line-height: 1.7; color: var(--s-fg-3); text-align: center; }
+.tk-site .site-try-legal a { color: var(--s-fg-2); border-bottom: 1px solid var(--s-hair); }

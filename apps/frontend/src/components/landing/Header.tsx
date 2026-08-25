@@ -10,6 +10,8 @@ import type { SiteSection } from '@/components/layout/SiteLayout';
 interface HeaderProps {
   /** Marca o item correspondente à página atual. */
   active?: SiteSection;
+  /** Sem navegação: só logo, idioma e entrar. Ver SiteLayout. */
+  minimal?: boolean;
 }
 
 /**
@@ -18,7 +20,7 @@ interface HeaderProps {
  * Os links de âncora apontam para "/#alvo" e não para "#alvo": assim funcionam
  * também a partir de /pricing ou /accuracy, onde a seção não existe na página.
  */
-const Header = ({ active = null }: HeaderProps) => {
+const Header = ({ active = null, minimal = false }: HeaderProps) => {
   const { isLoaded } = useUser();
   const { t } = useLanguage();
   const n = t.landing.nav;
@@ -40,6 +42,7 @@ const Header = ({ active = null }: HeaderProps) => {
           <img src={lockup} alt="Tickrify" width={116} height={30} />
         </a>
 
+        {minimal ? null : (
         <nav className="site-nav">
           {links.map((link) =>
             link.route ? (
@@ -57,6 +60,7 @@ const Header = ({ active = null }: HeaderProps) => {
             ),
           )}
         </nav>
+        )}
 
         <div className="site-header-actions">
           <div className="hidden md:block">
@@ -95,6 +99,7 @@ const Header = ({ active = null }: HeaderProps) => {
             </Link>
           )}
 
+          {minimal ? null : (
           <Sheet>
             <SheetTrigger asChild>
               <button
@@ -122,6 +127,7 @@ const Header = ({ active = null }: HeaderProps) => {
               </div>
             </SheetContent>
           </Sheet>
+          )}
         </div>
       </div>
     </header>

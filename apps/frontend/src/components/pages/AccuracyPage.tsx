@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import SiteLayout from '@/components/layout/SiteLayout';
 import { buildApiUrl } from '@/lib/api';
 import { seoFor, useJsonLd, useSeo } from '@/hooks/useSeo';
 
@@ -41,7 +41,7 @@ interface AccuracyPayload {
 
 const BAND_LABEL: Record<string, string> = {
   below60: 'Below 60',
-  band60to69: '60 – 69',
+  band60to69: '60 to 69',
   band70plus: '70 and above',
   unknown: 'Not recorded',
 };
@@ -53,33 +53,23 @@ const BAND_NOTE: Record<string, string> = {
   unknown: '',
 };
 
-const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <section className="mb-12">
-    <h2 className="mb-4 text-lg font-bold text-[var(--text-primary)]">{title}</h2>
-    <div className="space-y-3 text-sm leading-relaxed text-[var(--text-secondary)]">{children}</div>
-  </section>
-);
-
-const Stat = ({ interval, label }: { interval: Interval; label: string }) => (
-  <div className="rounded-xl border border-[var(--border-card)] bg-[rgba(255,255,255,0.02)] p-5">
-    <p className="font-terminal text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">{label}</p>
-    {interval.publishable && interval.rate !== null ? (
-      <>
-        <p className="mt-2 font-terminal text-3xl font-bold text-[var(--text-primary)]">{interval.rate}%</p>
-        <p className="mt-1 font-terminal text-xs text-[var(--text-secondary)]">
-          95% CI {interval.low}% – {interval.high}% · n = {interval.n}
-        </p>
-      </>
-    ) : (
-      <>
-        <p className="mt-2 font-terminal text-3xl font-bold text-[var(--text-muted)]">n = {interval.n}</p>
-        <p className="mt-1 font-terminal text-xs text-[var(--text-secondary)]">
-          Too few resolved trades to publish a rate yet.
-        </p>
-      </>
-    )}
-  </div>
-);
+/** Um número medido. Sem n suficiente, mostra o n, nunca uma taxa. */
+const Kpi = ({ interval, label }: { interval: Interval; label: string }) =>
+  interval.publishable && interval.rate !== null ? (
+    <div className="site-kpi">
+      <b>{interval.rate}%</b>
+      <div className="site-kpi-label">{label}</div>
+      <div className="site-kpi-note">
+        95% CI {interval.low}% to {interval.high}% · n = {interval.n}
+      </div>
+    </div>
+  ) : (
+    <div className="site-kpi">
+      <b>n = {interval.n}</b>
+      <div className="site-kpi-label">{label}</div>
+      <div className="site-kpi-note">Too few resolved trades to publish a rate yet</div>
+    </div>
+  );
 
 const AccuracyPage = () => {
   // Esta página era órfã até 10/08/2026: fora do sitemap, sem meta própria e
@@ -117,7 +107,7 @@ const AccuracyPage = () => {
       '@type': 'Dataset',
       name: 'Tickrify AI accuracy: measured hit rate',
       description:
-        'The measured hit rate of Tickrify\u2019s AI chart analysis, published with sample size and 95% Wilson confidence intervals, including the results that look bad. Every analysis is re-checked against real market candles 48 hours after it was produced.',
+        'The measured hit rate of Tickrify’s AI chart analysis, published with sample size and 95% Wilson confidence intervals, including the results that look bad. Every analysis is re-checked against real market candles 48 hours after it was produced.',
       url: 'https://tickrify.com/accuracy',
       isAccessibleForFree: true,
       creator: { '@type': 'Organization', name: 'Tickrify', url: 'https://tickrify.com' },
@@ -148,182 +138,175 @@ const AccuracyPage = () => {
 
   useJsonLd('accuracy', jsonLd);
 
-
   return (
-    <div className="min-h-screen bg-[var(--bg-base)] text-[var(--text-primary)]">
-      <div className="container max-w-3xl py-16">
-        <Link
-          to="/"
-          className="mb-10 inline-flex items-center gap-2 text-sm text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to home
-        </Link>
-
-        <header className="mb-12">
-          <p className="mb-2 font-terminal text-xs uppercase tracking-widest text-[var(--accent-green)]">
-            Verified accuracy
+    <SiteLayout active="accuracy">
+      <section className="site-dark site-phead">
+        <div className="site-wrap">
+          <span className="site-eyebrow">Measured, not claimed</span>
+          <h1>We score our own AI and publish the losses.</h1>
+          <p>
+            Every analysis Tickrify produces is re-checked against real candles 48 hours later, automatically, with
+            no human in the loop. This page is that raw scoreboard. It moves on its own, it includes the results
+            that look bad, and it uses the same maths as our internal backtest.
           </p>
-          <h1 className="text-3xl font-bold text-[var(--text-primary)]">
-            We measure our own AI and publish the numbers.
-          </h1>
-          <p className="mt-4 text-sm leading-relaxed text-[var(--text-secondary)]">
-            Every analysis Tickrify produces is re-checked against real candles 48 hours later, automatically,
-            with no human in the loop. This page is that raw scoreboard. It is not a marketing number: it moves on
-            its own, it includes the losses, and it is the same maths our internal backtest report uses.
-          </p>
-        </header>
+          {data ? (
+            <span className="site-updated">
+              Updated {new Date(data.updatedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · recalculated hourly
+            </span>
+          ) : null}
+        </div>
+      </section>
 
-        {isLoading && (
-          <div className="space-y-4">
-            <div className="h-28 animate-pulse rounded-xl border border-white/5 bg-white/[0.02]" />
-            <div className="h-28 animate-pulse rounded-xl border border-white/5 bg-white/[0.02]" />
+      {isLoading ? (
+        <section className="site-dark site-body-tight">
+          <div className="site-wrap">
+            <p className="site-note">Loading the scoreboard.</p>
           </div>
-        )}
+        </section>
+      ) : null}
 
-        {isError && (
-          <div className="rounded-xl border border-[var(--border-card)] bg-[rgba(255,255,255,0.02)] p-6 text-sm text-[var(--text-secondary)]">
-            <p className="font-semibold text-[var(--text-primary)]">The numbers are not loading right now.</p>
-            <p className="mt-2">
-              Our API sleeps when idle and can take up to a minute to wake up. Refresh in a moment, we would
-              rather show you nothing than show you a number we did not measure.
-            </p>
+      {isError ? (
+        <section className="site-dark site-body-tight">
+          <div className="site-wrap">
+            <div className="site-callout">
+              <h3>The numbers are not loading right now.</h3>
+              <p>
+                Our API sleeps when idle and can take up to a minute to wake up. Refresh in a moment. We would
+                rather show you nothing than show you a number we did not measure.
+              </p>
+            </div>
           </div>
-        )}
+        </section>
+      ) : null}
 
-        {data && (
-          <>
-            <Section title="Hit rate in production">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Stat interval={data.overall} label="Trades that reached target before stop" />
-                <div className="rounded-xl border border-[var(--border-card)] bg-[rgba(255,255,255,0.02)] p-5">
-                  <p className="font-terminal text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-                    Charts the AI refused to trade
-                  </p>
-                  <p className="mt-2 font-terminal text-3xl font-bold text-[var(--text-primary)]">
-                    {data.abstention.rate === null ? '—' : `${data.abstention.rate}%`}
-                  </p>
-                  <p className="mt-1 font-terminal text-xs text-[var(--text-secondary)]">
-                    {data.abstention.wait} of {data.abstention.total} analyses returned WAIT
-                  </p>
-                </div>
+      {data ? (
+        <>
+          <div className="site-kpis">
+            <Kpi interval={data.overall} label="Reached target before stop" />
+            <div className="site-kpi">
+              <b>{data.abstention.rate === null ? 'n/a' : `${data.abstention.rate}%`}</b>
+              <div className="site-kpi-label">Charts the AI refused to call</div>
+              <div className="site-kpi-note">
+                {data.abstention.wait} of {data.abstention.total} analyses returned WAIT
               </div>
+            </div>
+            <div className="site-kpi">
+              <b>{data.overall.wins}</b>
+              <div className="site-kpi-label">Wins counted</div>
+              <div className="site-kpi-note">Entry filled, then target before stop</div>
+            </div>
+            <div className="site-kpi">
+              <b>{data.overall.losses}</b>
+              <div className="site-kpi-label">Losses counted</div>
+              <div className="site-kpi-note">Nothing quietly dropped to flatter the rate</div>
+            </div>
+          </div>
+
+          <section className="site-dark">
+            <div className="site-wrap site-prose">
+              <h2 id="hit-rate">What counts as a hit</h2>
               <p>
                 A hit is an analysis whose entry actually filled and then reached the first target before the stop.
-                Losses, unfilled entries and abstentions are all counted separately below, nothing is quietly
-                dropped to make the number look better.
+                Losses, unfilled entries and abstentions are counted separately below. Nothing is quietly dropped to
+                make the number look better.
               </p>
-            </Section>
 
-            <Section title="Does the confidence score mean anything?">
+              <h2 id="confidence">Does the confidence score mean anything?</h2>
               <p>
                 This is the part that matters. If the number next to a call carries no information, the whole
                 product is theatre. Here is the hit rate split by the confidence the AI assigned at the time:
               </p>
-              <div className="mt-4 overflow-hidden rounded-xl border border-[var(--border-card)]">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-[rgba(255,255,255,0.03)] font-terminal text-xs uppercase tracking-wider text-[var(--text-secondary)]">
+
+              <div className="site-tablewrap">
+                <table className="site-table">
+                  <thead>
                     <tr>
-                      <th className="px-4 py-3">Confidence</th>
-                      <th className="px-4 py-3">Resolved</th>
-                      <th className="px-4 py-3">Hit rate</th>
-                      <th className="px-4 py-3">95% CI</th>
+                      <th>Confidence</th>
+                      <th>Resolved</th>
+                      <th>Hit rate</th>
+                      <th>95% CI</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.byConfidence
-                      .filter((b) => b.n > 0)
-                      .map((b) => (
-                        <tr key={b.band} className="border-t border-[var(--border-subtle)]">
-                          <td className="px-4 py-3">
-                            <span className="text-[var(--text-primary)]">{BAND_LABEL[b.band]}</span>
-                            {BAND_NOTE[b.band] ? (
-                              <span className="block font-terminal text-[11px] text-[var(--text-muted)]">
-                                {BAND_NOTE[b.band]}
-                              </span>
-                            ) : null}
+                      .filter((band) => band.n > 0)
+                      .map((band) => (
+                        <tr key={band.band}>
+                          <td className="site-sym-cell">
+                            {BAND_LABEL[band.band]}
+                            {BAND_NOTE[band.band] ? <span className="site-cell-note">{BAND_NOTE[band.band]}</span> : null}
                           </td>
-                          <td className="px-4 py-3 font-terminal">{b.n}</td>
-                          <td className="px-4 py-3 font-terminal text-[var(--text-primary)]">
-                            {b.publishable && b.rate !== null ? `${b.rate}%` : '—'}
-                          </td>
-                          <td className="px-4 py-3 font-terminal text-xs text-[var(--text-secondary)]">
-                            {b.publishable && b.low !== null ? `${b.low}% – ${b.high}%` : 'n too small'}
+                          <td>{band.n}</td>
+                          <td>{band.publishable && band.rate !== null ? `${band.rate}%` : 'n/a'}</td>
+                          <td>
+                            {band.publishable && band.low !== null ? `${band.low}% to ${band.high}%` : 'n too small'}
                           </td>
                         </tr>
                       ))}
                   </tbody>
                 </table>
               </div>
-              <p className="mt-3">
-                The product uses 70 as its threshold: below it a call is labelled "Read" (a market reading), at or
+
+              <p>
+                The product uses 70 as its threshold: below it a call is labelled "Read", a market reading; at or
                 above it, "Signal". That split came out of our blind backtest, where the two bands separated
                 sharply, 25% below versus 56% above.
               </p>
-              <p className="mt-3">
-                <span className="text-[var(--text-primary)]">In production so far, they have not separated.</span>{' '}
-                The confidence intervals in the table above overlap almost entirely, which means we cannot yet
-                claim the score predicts anything on live traffic. We are publishing that instead of hiding it. If
-                the gap does not open as the sample grows, the score is what changes, not this page.
-              </p>
-            </Section>
-
-            <Section title="Before and after live candle grounding">
               <p>
-                On 17 July 2026 we started feeding the AI real candles, price, RSI(14), range position and
-                momentum pulled from live exchange feeds, before it reads your screenshot. We split the record on
-                that date so you can judge the change instead of taking our word for it.
+                <strong>In production so far, they have not separated.</strong> The confidence intervals in the
+                table overlap almost entirely, which means we cannot yet claim the score predicts anything on live
+                traffic. We are publishing that instead of hiding it. If the gap does not open as the sample grows,
+                the score is what changes, not this page.
+              </p>
+
+              <h2 id="grounding">Before and after live candle grounding</h2>
+              <p>
+                On 17 July 2026 we started feeding the AI real candles, price, RSI(14), range position and momentum
+                pulled from live exchange feeds, before it reads your screenshot. We split the record on that date so
+                you can judge the change instead of taking our word for it.
               </p>
               {data.byGrounding.before.n > 0 && data.byGrounding.after.n > 0 ? (
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <Stat interval={data.byGrounding.before} label="Before grounding" />
-                  <Stat interval={data.byGrounding.after} label="After grounding" />
+                <div className="site-kpis site-kpis-inline">
+                  <Kpi interval={data.byGrounding.before} label="Before grounding" />
+                  <Kpi interval={data.byGrounding.after} label="After grounding" />
                 </div>
               ) : (
-                <div className="mt-4 rounded-xl border border-[var(--border-card)] bg-[rgba(255,255,255,0.02)] p-5">
-                  <p className="font-terminal text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-                    Comparison not available yet
-                  </p>
-                  <p className="mt-2 text-sm text-[var(--text-secondary)]">
-                    {data.byGrounding.before.n} resolved before the change, {data.byGrounding.after.n} after. A
-                    trade needs 48 hours to resolve, and at our current volume that side of the split is still
-                    empty. We would rather leave a gap here than compute a comparison out of a handful of trades.
+                <div className="site-callout">
+                  <h3>Comparison not available yet</h3>
+                  <p>
+                    {data.byGrounding.before.n} resolved before the change, {data.byGrounding.after.n} after. A trade
+                    needs 48 hours to resolve, and at our current volume that side of the split is still empty. We
+                    would rather leave a gap here than compute a comparison out of a handful of trades.
                   </p>
                 </div>
               )}
-            </Section>
 
-            <Section title="How every outcome resolved">
-              <div className="flex flex-wrap gap-2">
+              <h2 id="outcomes">How every outcome resolved</h2>
+              <div className="site-chips">
                 {Object.entries(data.breakdown)
                   .sort((a, b) => b[1] - a[1])
                   .map(([key, value]) => (
-                    <span
-                      key={key}
-                      className="rounded-full border border-[var(--border-card)] bg-[rgba(255,255,255,0.03)] px-3 py-1 font-terminal text-xs text-[var(--text-secondary)]"
-                    >
+                    <span key={key}>
                       {key} · {value}
                     </span>
                   ))}
               </div>
-              <p className="mt-3">
-                <span className="text-[var(--text-primary)]">NO_FILL</span> means price never reached the proposed
-                entry. <span className="text-[var(--text-primary)]">ABSTAIN</span> means the AI declined to call the
-                chart. <span className="text-[var(--text-primary)]">UNTRACKABLE</span> means we could not source
-                reliable candles for that symbol. None of these count as a win or a loss.
+              <p>
+                <strong>NO_FILL</strong> means price never reached the proposed entry. <strong>ABSTAIN</strong> means
+                the AI declined to call the chart. <strong>UNTRACKABLE</strong> means we could not source reliable
+                candles for that symbol. None of these count as a win or a loss.
               </p>
-            </Section>
 
-            <Section title="Methodology">
-              <ul className="list-disc space-y-2 pl-5">
+              <h2 id="method">Methodology</h2>
+              <ul>
                 <li>
                   A sweeper runs hourly and evaluates every analysis completed at least 48 hours earlier. No manual
                   selection, no cherry-picking of which trades get scored.
                 </li>
                 <li>
                   Resolution rule: the entry must fill first. Then the first target races the stop on 30-minute
-                  candles. If a single candle contains both the target and the stop, it is recorded as a
-                  <span className="text-[var(--text-primary)]"> loss</span>, the pessimistic reading.
+                  candles. If a single candle contains both the target and the stop, it is recorded as a{' '}
+                  <strong>loss</strong>, the pessimistic reading.
                 </li>
                 <li>
                   Window: 48 hours. An analysis that has neither hit target nor stop by then is a TIMEOUT and is
@@ -334,42 +317,41 @@ const AccuracyPage = () => {
                   uses. Any cut with fewer than 20 resolved trades shows its n instead of a rate.
                 </li>
                 <li>
-                  Only outcomes written by the automatic sweeper are counted. Verdicts users tag by hand in their
-                  own trade journal are excluded. Self-reporting is not measurement.
+                  Only outcomes written by the automatic sweeper are counted. Verdicts users tag by hand in their own
+                  trade journal are excluded. Self-reporting is not measurement.
                 </li>
                 <li>Demo and anonymous trial analyses are excluded entirely.</li>
               </ul>
-            </Section>
 
-            <Section title="What these numbers do not include">
-              <ul className="list-disc space-y-2 pl-5">
+              <h2 id="excluded">What these numbers do not include</h2>
+              <ul>
                 <li>
-                  <span className="text-[var(--text-primary)]">No trading costs.</span> Spread, slippage,
-                  commissions and funding are not deducted. Your real result will be worse than this page.
+                  <strong>No trading costs.</strong> Spread, slippage, commissions and funding are not deducted. Your
+                  real result will be worse than this page.
                 </li>
                 <li>
                   The sample is small and skewed toward the instruments our early users happen to chart. It is not a
                   representative sample of all markets.
                 </li>
                 <li>
-                  A hit rate is not profitability. Reward-to-risk matters as much, and Tickrify does not know
-                  whether you actually took the trade, at what size, or when you exited.
+                  A hit rate is not profitability. Reward-to-risk matters as much, and Tickrify does not know whether
+                  you actually took the trade, at what size, or when you exited.
                 </li>
               </ul>
-            </Section>
 
-            <p className="border-t border-[var(--border-subtle)] pt-6 text-xs leading-relaxed text-[var(--text-muted)]">
-              Past results do not guarantee future results. Nothing on this page is investment advice. Tickrify is a
-              second opinion on a chart you are already reading, the decision, the size and the risk are yours.
-              <br />
-              <span className="font-terminal">
-                Last updated {new Date(data.updatedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC · recalculated hourly
-              </span>
-            </p>
-          </>
-        )}
-      </div>
-    </div>
+              <div className="site-callout">
+                <h3>Read this next</h3>
+                <p>
+                  Past results do not guarantee future results. Nothing on this page is investment advice. Tickrify
+                  is a second opinion on a chart you are already reading: the decision, the size and the risk are
+                  yours. The full <Link to="/risk">risk disclosure</Link> spells out what can go wrong.
+                </p>
+              </div>
+            </div>
+          </section>
+        </>
+      ) : null}
+    </SiteLayout>
   );
 };
 

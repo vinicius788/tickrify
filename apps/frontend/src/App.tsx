@@ -1,6 +1,10 @@
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import LandingPage from "@/components/pages/LandingPage";
 import NotFoundPage from '@/components/pages/NotFoundPage';
+import TermsPage from "@/components/pages/TermsPage";
+import CookiePolicyPage from "@/components/pages/CookiePolicyPage";
+import RiskDisclosurePage from "@/components/pages/RiskDisclosurePage";
+import CookieConsent from "@/components/landing/CookieConsent";
 import DashboardPage from "@/components/pages/DashboardPage";
 import PricingPage from "@/components/pages/PricingPage";
 import PrivacyPolicyPage from "@/components/pages/PrivacyPolicyPage";
@@ -55,13 +59,19 @@ function App() {
               endereço que já circula — links antigos e indexação — e quebrá-lo
               devolveria 404 numa página legal. */}
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          {/* Legais com URL própria: a Stripe exige termos e política de
+              cancelamento acessíveis publicamente, e um diálogo no rodapé não
+              tem endereço para linkar nem para o buscador indexar. */}
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/cookies" element={<CookiePolicyPage />} />
+          <Route path="/risk" element={<RiskDisclosurePage />} />
           <Route path="/privacidade" element={<PrivacyPolicyPage />} />
           {/* Pagina publica de acuracia (Fase 5): o scoreboard do motor. */}
           <Route path="/accuracy" element={<AccuracyPage />} />
           <Route
             path="/sign-in/*"
             element={
-              <div className="relative z-10 flex items-center justify-center min-h-screen bg-[#050508]">
+              <div className="tk-site relative z-10 flex items-center justify-center min-h-screen">
                 <SignIn
                   routing="path"
                   path="/sign-in"
@@ -75,7 +85,7 @@ function App() {
           <Route
             path="/sign-up/*"
             element={
-              <div className="relative z-10 flex items-center justify-center min-h-screen bg-[#050508]">
+              <div className="tk-site relative z-10 flex items-center justify-center min-h-screen">
                 <SignUp
                   routing="path"
                   path="/sign-up"
@@ -114,6 +124,9 @@ function App() {
             Dentro do Router de propósito: ele lê a rota atual (useLocation) para
             mandar junto com o relato. Só se desenha para quem está logado. */}
         <ReportProblemButton />
+        {/* Banner de cookies, montado uma vez para o app inteiro (inclusive o
+            dashboard). Dentro do Router porque linka a política de cookies. */}
+        <CookieConsent />
       </Router>
       <Toaster />
     </ThemeProvider>

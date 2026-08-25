@@ -8,11 +8,14 @@
 // Esta página apenas coleta fingerprint + token e mostra o resultado.
 //
 // Copy em inglês de propósito: mercado-alvo é EUA/UK/EU (decisão jun/2026).
+//
+// 24/08/2026: passou a usar a casca do site em modo `minimal` — logo, idioma e
+// entrar, sem menu. Ganha rodapé (legal, que faltava numa página que pede
+// cadastro) sem ganhar as saídas de um menu completo antes do "aha".
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { SignUpButton, SignedOut, SignedIn } from '@clerk/clerk-react';
-import { ArrowRight, Lock, ShieldCheck, Upload, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import SiteLayout from '@/components/layout/SiteLayout';
 import { track } from '@/lib/analytics';
 import { getDeviceFingerprint } from '@/lib/fingerprint';
 import { getTurnstileToken } from '@/lib/turnstile';
@@ -27,15 +30,14 @@ import { warmupPaymentsApi } from '@/lib/api';
 import { seoFor, useSeo } from '@/hooks/useSeo';
 import exampleChart from '@/assets/demo-example-chart.png';
 import afterChart from '@/assets/demo-after-chart.png';
-import logoOfficial from '@/assets/tickrify-logo-official.png';
 
 type PageState = 'ready' | 'analyzing' | 'done' | 'locked';
 
 const ANALYZING_STEPS = [
-  'Reading the chart…',
-  'Detecting market structure…',
-  'Checking confluence…',
-  'Building the trade plan…',
+  'Reading the chart',
+  'Detecting market structure',
+  'Checking confluence',
+  'Building the trade plan',
 ];
 
 /** Marca que o cadastro veio da demo, AnalyticsIdentify usa pra disparar signup_from_demo. */
@@ -48,7 +50,7 @@ function markDemoSource() {
 }
 
 function formatPrice(value: number | null): string {
-  if (value == null || !Number.isFinite(value)) return '—';
+  if (value == null || !Number.isFinite(value)) return 'n/a';
   return value.toLocaleString('en-US', {
     minimumFractionDigits: value < 10 ? 4 : 2,
     maximumFractionDigits: value < 10 ? 4 : 2,
@@ -56,29 +58,22 @@ function formatPrice(value: number | null): string {
 }
 
 const SignupCta = ({ headline, sub }: { headline: string; sub: string }) => (
-  <div className="mt-6 rounded-2xl border border-[var(--border-subtle)] bg-[rgba(124,92,255,0.06)] p-6 text-center">
-    <p className="text-lg font-semibold text-[var(--text-primary)]">{headline}</p>
-    <p className="mt-1 text-sm text-[var(--text-secondary)]">{sub}</p>
+  <div className="site-try-cta">
+    <h3>{headline}</h3>
+    <p>{sub}</p>
     <SignedOut>
       <SignUpButton mode="modal" forceRedirectUrl="/dashboard" signInForceRedirectUrl="/dashboard">
-        <Button
-          onClick={markDemoSource}
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F7F7F5] font-medium text-[#08090A] transition-colors hover:bg-white mt-4 h-12 rounded-xl px-8 text-sm font-bold"
-        >
-          Create free account <ArrowRight className="ml-2 h-4 w-4" />
-        </Button>
+        <button type="button" onClick={markDemoSource} className="site-btn site-btn-primary">
+          Create free account
+        </button>
       </SignUpButton>
     </SignedOut>
     <SignedIn>
-      <Button asChild className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F7F7F5] font-medium text-[#08090A] transition-colors hover:bg-white mt-4 h-12 rounded-xl px-8 text-sm font-bold">
-        <Link to="/dashboard">
-          Go to your dashboard <ArrowRight className="ml-2 h-4 w-4" />
-        </Link>
-      </Button>
+      <Link to="/dashboard" className="site-btn site-btn-primary">
+        Go to your dashboard
+      </Link>
     </SignedIn>
-    <p className="mt-3 text-xs text-[var(--text-secondary)]">
-      Free account · 3 more analyses included · no credit card
-    </p>
+    <p className="site-try-fine">Free account · 3 more analyses included · no credit card</p>
   </div>
 );
 
@@ -119,7 +114,7 @@ const TryPage = () => {
     })();
   }, []);
 
-  // Passos animados enquanto a análise real roda (~10–30s).
+  // Passos animados enquanto a análise real roda (10 a 30s).
   useEffect(() => {
     if (state !== 'analyzing') return;
     setStepIndex(0);
@@ -215,246 +210,196 @@ const TryPage = () => {
     }
   };
 
-  const recColor =
+  // Cor = dado: verde, vermelho e âmbar só aparecem no veredito, nunca no resto.
+  const callClass =
     result?.recommendation === 'BUY'
-      ? 'text-[var(--accent-green)] border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)]'
+      ? 'site-chip-long'
       : result?.recommendation === 'SELL'
-        ? 'text-red-400 border-red-500/40 bg-red-500/10'
-        : 'text-amber-300 border-amber-400/40 bg-amber-400/10';
+        ? 'site-chip-short'
+        : 'site-chip-wait';
 
   return (
-    <div className="min-h-screen bg-[#050508] pb-16">
-      {/* Header mínimo: logo + login. Nada que distraia do botão único. */}
-      <header className="container flex items-center justify-between py-5">
-        <Link to="/" className="flex items-center gap-2">
-          <img src={logoOfficial} alt="Tickrify" className="h-8 w-auto" />
-        </Link>
-        <SignedOut>
-          <Link
-            to="/sign-in"
-            className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-          >
-            Sign in
-          </Link>
-        </SignedOut>
-      </header>
-
-      <main className="container max-w-3xl">
-        <div className="text-center">
-          <h1
-            className="mx-auto max-w-xl"
-            style={{
-              fontSize: 'clamp(2rem, 5vw, 3rem)',
-              fontWeight: 500,
-              lineHeight: 1.1,
-              letterSpacing: '-0.02em',
-              fontFamily: 'var(--font-serif)',
-              color: 'var(--text-primary)',
-            }}
-          >
-            See a real AI chart analysis. Free. No signup.
-          </h1>
-          <p className="mx-auto mt-3 max-w-lg text-sm text-[var(--text-secondary)]">
-            One click. The same engine our subscribers use: entry, stop, targets,
-            risk/reward and confidence on a real chart.
+    <SiteLayout minimal>
+      <section className="site-dark site-phead">
+        <div className="site-wrap site-try-head">
+          <span className="site-eyebrow">Free demo</span>
+          <h1>See a real AI chart analysis. No signup.</h1>
+          <p>
+            One click, and the same engine our subscribers use returns entry, stop, targets, risk and
+            confidence on a real chart.
           </p>
         </div>
+      </section>
 
-        {/* ── Estado: pronto / analisando ─────────────────────────────── */}
-        {(state === 'ready' || state === 'analyzing') && (
-          <div className="mt-8 rounded-2xl border border-[var(--border-subtle)] bg-[rgba(255,255,255,0.02)] p-4 sm:p-6">
-            <div className="relative overflow-hidden rounded-xl border border-[var(--border-subtle)]">
-              <img
-                src={customImage?.previewUrl ?? exampleChart}
-                alt={customImage ? 'Your chart' : 'Example chart: XAUUSD (Gold) M30'}
-                className="w-full"
-              />
-              {customImage && state === 'ready' && (
+      <section className="site-dark site-body-tight">
+        <div className="site-wrap site-try">
+          {(state === 'ready' || state === 'analyzing') && (
+            <div className="site-card">
+              <div className="site-try-shot">
+                <img
+                  src={customImage?.previewUrl ?? exampleChart}
+                  alt={customImage ? 'Your chart' : 'Example chart: XAUUSD (Gold) M30'}
+                />
+                {customImage && state === 'ready' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      URL.revokeObjectURL(customImage.previewUrl);
+                      setCustomImage(null);
+                    }}
+                    className="site-try-remove"
+                    aria-label="Remove uploaded chart"
+                  >
+                    Remove
+                  </button>
+                )}
+                {state === 'analyzing' && (
+                  <div className="site-try-overlay">
+                    <span className="site-spin" aria-hidden="true" />
+                    <p>{ANALYZING_STEPS[stepIndex]}</p>
+                    <p className="site-try-fine">Real analysis in progress, usually 10 to 30 seconds</p>
+                  </div>
+                )}
+              </div>
+
+              <p className="site-try-caption">
+                {customImage
+                  ? 'Your chart, ready to analyze.'
+                  : 'Example loaded: XAUUSD (Gold) · M30, a real trader chart. Or use your own below.'}
+              </p>
+
+              {error && <p className="site-try-error">{error}</p>}
+
+              <div className="site-try-actions">
+                <button
+                  type="button"
+                  onClick={runAnalysis}
+                  disabled={state === 'analyzing'}
+                  className="site-btn site-btn-primary site-btn-block"
+                >
+                  {state === 'analyzing' ? 'Analyzing' : 'Analyze this chart now'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={state === 'analyzing'}
+                  className="site-try-upload"
+                >
+                  {customImage ? 'Choose a different chart' : 'Or upload / paste your own chart screenshot'}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleFile(e.target.files?.[0])}
+                />
+
+                <p className="site-try-fine">1 free analysis per device · no account · no card</p>
+              </div>
+            </div>
+          )}
+
+          {state === 'done' && result && (
+            <div className="site-card">
+              <div className="site-card-head">
+                <span className="site-sym">
+                  {result.symbol} · {result.timeframe}
+                </span>
+                <span className="site-chip">Live analysis</span>
+              </div>
+
+              <div className="site-verdict">
+                <span className={`site-call ${callClass}`}>{result.recommendation}</span>
+                <span className="site-conf">
+                  Confidence <b>{result.confidence}%</b>
+                  {result.riskReward ? (
+                    <>
+                      {' '}
+                      · R:R <b>{result.riskReward}</b>
+                    </>
+                  ) : null}
+                </span>
+              </div>
+
+              <div className="site-levels">
+                {[
+                  { label: 'Entry', value: result.entry },
+                  { label: 'Stop', value: result.stopLoss },
+                  { label: 'Target 1', value: result.takeProfit1 },
+                  { label: 'Target 2', value: result.takeProfit2 },
+                ].map((item) => (
+                  <div key={item.label}>
+                    <span>{item.label}</span>
+                    <strong>{formatPrice(item.value)}</strong>
+                  </div>
+                ))}
+              </div>
+
+              {result.reasoning && <p className="site-demo-rationale">{result.reasoning}</p>}
+              <div className="site-demo-meta">{result.disclaimer}</div>
+
+              {/* Reveal "what happened next", só pro gráfico de exemplo, que é um caso
+                  histórico real (XAUUSD 12/12/2025). Prova sem promessa: mostramos o que
+                  o mercado fez e o visitante tira a própria conclusão. */}
+              {analyzedExample && !showAfter && (
                 <button
                   type="button"
                   onClick={() => {
-                    URL.revokeObjectURL(customImage.previewUrl);
-                    setCustomImage(null);
+                    setShowAfter(true);
+                    track('demo_after_viewed');
                   }}
-                  className="absolute right-2 top-2 rounded-full bg-black/70 p-1.5 text-white hover:bg-black"
-                  aria-label="Remove uploaded chart"
+                  className="site-btn site-btn-ghost site-btn-block site-try-reveal"
                 >
-                  <X className="h-4 w-4" />
+                  This chart is from Dec 12, 2025. See what the market did next.
                 </button>
               )}
-              {state === 'analyzing' && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 backdrop-blur-[2px]">
-                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--accent-green)] border-t-transparent" />
-                  <p className="mt-4 text-sm font-medium text-white">
-                    {ANALYZING_STEPS[stepIndex]}
+              {analyzedExample && showAfter && (
+                <div className="site-try-after">
+                  <div className="site-try-shot">
+                    <img src={afterChart} alt="The same XAUUSD chart hours later" />
+                  </div>
+                  <p className="site-try-caption">
+                    The same chart, hours later that day: gold ran from the 4,260s into the 4,340s.{' '}
+                    <strong>You decide what the read was worth.</strong>
                   </p>
-                  <p className="mt-1 text-xs text-white/60">Real analysis in progress, usually 10–30s</p>
+                  <p className="site-try-fine">
+                    One hand-picked historical example, shown for illustration. Every market and moment is
+                    different, never a promise of results.
+                  </p>
                 </div>
               )}
-            </div>
 
-            <p className="mt-2 text-center text-xs text-[var(--text-secondary)]">
-              {customImage ? 'Your chart, ready to analyze.' : 'Example loaded: XAUUSD (Gold) · M30, a real trader chart. Or use your own below.'}
-            </p>
-
-            {error && (
-              <p className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-center text-sm text-red-300">
-                {error}
-              </p>
-            )}
-
-            <div className="mt-4 flex flex-col items-center gap-3">
-              <Button
-                type="button"
-                onClick={runAnalysis}
-                disabled={state === 'analyzing'}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F7F7F5] font-medium text-[#08090A] transition-colors hover:bg-white h-14 w-full max-w-md rounded-xl text-base font-bold sm:text-lg"
-              >
-                {state === 'analyzing' ? 'Analyzing…' : 'Analyze this chart now'}
-                {state !== 'analyzing' && <ArrowRight className="ml-2 h-5 w-5" />}
-              </Button>
-
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={state === 'analyzing'}
-                className="inline-flex items-center gap-2 text-sm text-[var(--text-secondary)] underline-offset-4 hover:text-[var(--text-primary)] hover:underline disabled:opacity-50"
-              >
-                <Upload className="h-4 w-4" />
-                {customImage ? 'Choose a different chart' : 'Or upload / paste your own chart screenshot'}
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => handleFile(e.target.files?.[0])}
+              <SignupCta
+                headline="Want to analyze more charts?"
+                sub="Create your free account and get 3 more analyses, your charts, any market."
               />
+            </div>
+          )}
 
-              <p className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                1 free analysis per device · no account · no card
+          {state === 'locked' && (
+            <div className="site-card site-try-locked">
+              <h2>You already used your free analysis</h2>
+              <p>
+                It does not stop here. Create a free account and get 3 more analyses on your own charts, no
+                credit card needed.
               </p>
+              <SignupCta
+                headline="Keep analyzing for free"
+                sub="3 more analyses included with your free account."
+              />
             </div>
-          </div>
-        )}
+          )}
 
-        {/* ── Estado: resultado (o "aha") ─────────────────────────────── */}
-        {state === 'done' && result && (
-          <div className="mt-8 rounded-2xl border border-[var(--border-subtle)] bg-[rgba(255,255,255,0.02)] p-5 sm:p-7">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-                  {result.symbol} · {result.timeframe}
-                </p>
-                <span
-                  className={`mt-2 inline-flex items-center rounded-full border px-4 py-1.5 text-lg font-bold ${recColor}`}
-                >
-                  {result.recommendation}
-                </span>
-              </div>
-              <div className="text-right">
-                <p className="text-xs uppercase tracking-[0.1em] text-[var(--text-secondary)]">Confidence</p>
-                <p className="text-2xl font-bold text-[var(--text-primary)]">{result.confidence}%</p>
-                {result.riskReward && (
-                  <p className="text-xs text-[var(--text-secondary)]">R:R {result.riskReward}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {[
-                { label: 'ENTRY', value: result.entry },
-                { label: 'STOP LOSS', value: result.stopLoss },
-                { label: 'TARGET 1', value: result.takeProfit1 },
-                { label: 'TARGET 2', value: result.takeProfit2 },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className="rounded-xl border border-[var(--border-subtle)] bg-black/30 p-3 text-center"
-                >
-                  <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">
-                    {item.label}
-                  </p>
-                  <p className="mt-1 font-terminal text-sm font-semibold text-[var(--text-primary)]">
-                    {formatPrice(item.value)}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            {result.reasoning && (
-              <p className="mt-5 rounded-xl border border-[var(--border-subtle)] bg-black/20 p-4 text-sm leading-relaxed text-[var(--text-secondary)]">
-                {result.reasoning}
-              </p>
-            )}
-
-            <p className="mt-3 text-center text-[11px] text-[var(--text-secondary)]">
-              {result.disclaimer}
-            </p>
-
-            {/* Reveal "what happened next", só pro gráfico de exemplo, que é um caso
-                histórico real (XAUUSD 12/12/2025). Prova sem promessa: mostramos o que
-                o mercado fez e o visitante tira a própria conclusão. */}
-            {analyzedExample && !showAfter && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAfter(true);
-                  track('demo_after_viewed');
-                }}
-                className="mt-5 w-full rounded-xl border border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] py-3.5 text-sm font-bold text-[var(--accent-green)] transition hover:brightness-110"
-              >
-                This chart is from Dec 12, 2025, see what the market did next →
-              </button>
-            )}
-            {analyzedExample && showAfter && (
-              <div className="mt-5">
-                <div className="overflow-hidden rounded-xl border border-[var(--border-subtle)]">
-                  <img src={afterChart} alt="The same XAUUSD chart hours later" className="w-full" />
-                </div>
-                <p className="mt-2 text-center text-sm text-[var(--text-secondary)]">
-                  The same chart, hours later that day: gold ran from the 4,260s into the
-                  4,340s. <span className="text-[var(--text-primary)]">You decide what the read was worth.</span>
-                </p>
-                <p className="mt-1 text-center text-[11px] text-[var(--text-secondary)]">
-                  One hand-picked historical example, shown for illustration. Every market and
-                  moment is different, never a promise of results.
-                </p>
-              </div>
-            )}
-
-            <SignupCta
-              headline="Want to analyze more charts?"
-              sub="Create your free account and get 3 more analyses, your charts, any market."
-            />
-          </div>
-        )}
-
-        {/* ── Estado: limite atingido ─────────────────────────────────── */}
-        {state === 'locked' && (
-          <div className="mt-8 rounded-2xl border border-[var(--border-subtle)] bg-[rgba(255,255,255,0.02)] p-8 text-center">
-            <Lock className="mx-auto h-10 w-10 text-[var(--text-secondary)]" />
-            <h2 className="mt-4 text-xl font-semibold text-[var(--text-primary)]">
-              You already used your free analysis
-            </h2>
-            <p className="mx-auto mt-2 max-w-md text-sm text-[var(--text-secondary)]">
-              Good news: it doesn't stop here. Create a free account and get 3 more
-              analyses on your own charts, no credit card needed.
-            </p>
-            <SignupCta
-              headline="Keep analyzing for free"
-              sub="3 more analyses included with your free account."
-            />
-          </div>
-        )}
-
-        <p className="mt-10 text-center text-[11px] leading-relaxed text-[var(--text-secondary)]">
-          Tickrify provides educational analysis only, not financial advice. Trading involves
-          risk. The decision is always yours.
-        </p>
-      </main>
-    </div>
+          <p className="site-try-legal">
+            Tickrify provides educational analysis only, not financial advice. Trading involves risk and you
+            can lose your capital. The decision is always yours. Read the{' '}
+            <Link to="/risk">risk disclosure</Link>.
+          </p>
+        </div>
+      </section>
+    </SiteLayout>
   );
 };
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
-import { PricingCards } from '../pricing/PricingCards';
+import SiteLayout from '@/components/layout/SiteLayout';
+import { PricingCards } from '@/components/pricing/PricingCards';
 import { useToast } from '@/hooks/use-toast';
 import { seoFor, useJsonLd, useSeo } from '@/hooks/useSeo';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
@@ -8,13 +9,18 @@ const PRICING_COPY = {
   en: {
     canceledTitle: 'Payment canceled',
     canceledDesc: 'No charge was made. You can subscribe whenever you want.',
-    title: 'Choose your Tickrify plan',
-    subtitle: 'AI trading analysis. Every plan includes monthly Ticks that renew automatically.',
+    eyebrow: 'Pricing',
+    title: 'One plan. 200 analyses a month.',
+    subtitle:
+      'No tiers to compare and nothing held back for a higher price. Every subscriber runs the same engine, on the same queue, with the same models.',
     foundingTitle: 'Founding Trader offer',
-    foundingDesc: 'You’re early, and that counts. The first 50 subscribers lock this price forever: it never increases while your subscription stays active. Use code',
+    foundingDesc:
+      'You are early, and that counts. The first 50 subscribers lock this price for as long as the subscription stays active. Use code',
     foundingCode: 'EARLY35',
     foundingSuffix: 'at checkout for 35% off your first month.',
-    faqTitle: 'Frequently asked questions',
+    trust: ['Payments secured by Stripe', 'Cancel in one click', 'No broker connection required'],
+    faqTitle: 'Before you pay',
+    faqEyebrow: 'Questions',
     faq: [
       {
         q: 'Can I cancel anytime?',
@@ -45,13 +51,18 @@ const PRICING_COPY = {
   pt: {
     canceledTitle: 'Pagamento cancelado',
     canceledDesc: 'Nenhuma cobrança foi feita. Você pode assinar quando quiser.',
-    title: 'Escolha seu plano Tickrify',
-    subtitle: 'Análise de trading com IA. Cada plano inclui Ticks mensais renovados automaticamente.',
+    eyebrow: 'Preço',
+    title: 'Um plano só. 200 análises por mês.',
+    subtitle:
+      'Sem tiers para comparar e sem recurso escondido atrás de um preço maior. Todo assinante roda o mesmo motor, na mesma fila, com os mesmos modelos.',
     foundingTitle: 'Oferta Founding Trader',
-    foundingDesc: 'Você chegou cedo, e isso conta. Os primeiros 50 assinantes travam este preço para sempre: ele nunca sobe enquanto a assinatura estiver ativa. Use o código',
+    foundingDesc:
+      'Você chegou cedo, e isso conta. Os primeiros 50 assinantes travam este preço enquanto a assinatura estiver ativa. Use o código',
     foundingCode: 'EARLY35',
     foundingSuffix: 'no checkout para 35% de desconto no primeiro mês.',
-    faqTitle: 'Perguntas Frequentes',
+    trust: ['Pagamento protegido pela Stripe', 'Cancela em um clique', 'Não precisa conectar corretora'],
+    faqTitle: 'Antes de pagar',
+    faqEyebrow: 'Dúvidas',
     faq: [
       {
         q: 'Posso cancelar a qualquer momento?',
@@ -95,7 +106,7 @@ export default function PricingPage() {
   // mudar, o markup muda junto, nunca diverge do que o visitante lê (regra
   // da auditoria de 27/07: nada afirmado que não seja verificável na página).
   //
-  // ⚠️ O bloco FAQPage NÃO produz mais rich result: o Google desativou FAQ
+  // O bloco FAQPage NÃO produz mais rich result: o Google desativou FAQ
   // rich results em 07/05/2026. Ele fica porque ainda é assim que buscador de
   // IA e agregador leem a página, não porque vai virar sanfona na SERP.
   //
@@ -148,56 +159,60 @@ export default function PricingPage() {
   }, [toast, copy]);
 
   return (
-    <div className="relative z-10 min-h-screen bg-[#050508]">
-      <div className="container mx-auto px-4 py-16">
-        {/* Header */}
-        <div className="text-center mb-16">
-          <h1 className="tk-display text-4xl md:text-5xl mb-4">
-            {copy.title}
-          </h1>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            {copy.subtitle}
-          </p>
+    <SiteLayout active="pricing">
+      <section className="site-dark site-phead">
+        <div className="site-wrap">
+          <span className="site-eyebrow">{copy.eyebrow}</span>
+          <h1>{copy.title}</h1>
+          <p>{copy.subtitle}</p>
         </div>
+      </section>
 
-        {/* Founding Trader, fecha a promessa do banner do topo do site */}
-        <div className="mx-auto mb-12 max-w-2xl rounded-2xl border border-[rgba(94,234,138,0.35)] bg-[rgba(94,234,138,0.06)] px-6 py-5 text-center">
-          <p className="font-terminal text-xs uppercase tracking-[0.12em] text-[#5eea8a]">
-            ⚡ {copy.foundingTitle}
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            {copy.foundingDesc}{' '}
-            <strong className="rounded-md border border-[rgba(94,234,138,0.4)] px-2 py-0.5 font-terminal text-[#5eea8a]">
-              {copy.foundingCode}
-            </strong>{' '}
-            {copy.foundingSuffix}
-          </p>
+      {/* Fecha a promessa do banner do topo do site. Âmbar porque é status,
+          não decoração: é a mesma cor que o produto usa para AGUARDA. */}
+      <section className="site-dark site-body-tight">
+        <div className="site-wrap">
+          <div className="site-founding">
+            <span className="site-eyebrow">{copy.foundingTitle}</span>
+            <p>
+              {copy.foundingDesc} <b>{copy.foundingCode}</b> {copy.foundingSuffix}
+            </p>
+          </div>
         </div>
+      </section>
 
-        {/* Pricing Cards */}
-        <PricingCards />
-
-        {/* FAQ */}
-        <div className="mt-24 max-w-3xl mx-auto">
-          <h2 className="tk-display text-3xl text-center mb-12">
-            {copy.faqTitle}
-          </h2>
-
-          <div className="space-y-6">
-            {copy.faq.map((item) => (
-              <div key={item.q}>
-                <h3 className="text-lg font-semibold mb-2">
-                  {item.q}
-                </h3>
-                <p className="text-muted-foreground">
-                  {item.a}
-                </p>
-              </div>
+      <section className="site-light">
+        <div className="site-wrap">
+          <PricingCards />
+          <div className="site-trust">
+            {copy.trust.map((item) => (
+              <span key={item}>
+                <i />
+                {item}
+              </span>
             ))}
           </div>
         </div>
+      </section>
 
-      </div>
-    </div>
+      <section className="site-dark">
+        <div className="site-wrap site-faq">
+          <div className="site-sblk">
+            <span className="site-eyebrow">{copy.faqEyebrow}</span>
+            <h2>{copy.faqTitle}</h2>
+          </div>
+
+          {copy.faq.map((item, index) => (
+            <details key={item.q} open={index === 0}>
+              <summary>
+                {item.q}
+                <i aria-hidden="true" />
+              </summary>
+              <p className="site-answer">{item.a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+    </SiteLayout>
   );
 }

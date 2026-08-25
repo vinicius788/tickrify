@@ -4,23 +4,26 @@
      ambas orfas; /privacidade foi trocada por /privacy (a rota canonica — as
      duas servem o mesmo componente e o sitemap listava justamente a nao
      canonica); e todas ganharam <lastmod>, o unico dos tres campos opcionais
-     que o Google ainda usa. changefreq e priority sairam: sao ignorados. -->
+     que o Google ainda usa. changefreq e priority sairam: sao ignorados.
+
+     24/08/2026: entraram /terms, /cookies e /risk, que deixaram de ser
+     dialogo/rodape e viraram paginas com URL propria. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://tickrify.com/</loc>
-    <lastmod>2026-08-10</lastmod>
+    <lastmod>2026-08-24</lastmod>
   </url>
   <url>
     <loc>https://tickrify.com/try</loc>
-    <lastmod>2026-08-10</lastmod>
+    <lastmod>2026-08-24</lastmod>
   </url>
   <url>
     <loc>https://tickrify.com/pricing</loc>
-    <lastmod>2026-08-10</lastmod>
+    <lastmod>2026-08-24</lastmod>
   </url>
   <url>
     <loc>https://tickrify.com/accuracy</loc>
-    <lastmod>2026-08-10</lastmod>
+    <lastmod>2026-08-24</lastmod>
   </url>
   <url>
     <loc>https://tickrify.com/tools/</loc>
@@ -68,6 +71,18 @@
   </url>
   <url>
     <loc>https://tickrify.com/privacy</loc>
-    <lastmod>2026-08-10</lastmod>
+    <lastmod>2026-08-24</lastmod>
+  </url>
+  <url>
+    <loc>https://tickrify.com/terms</loc>
+    <lastmod>2026-08-24</lastmod>
+  </url>
+  <url>
+    <loc>https://tickrify.com/cookies</loc>
+    <lastmod>2026-08-24</lastmod>
+  </url>
+  <url>
+    <loc>https://tickrify.com/risk</loc>
+    <lastmod>2026-08-24</lastmod>
   </url>
 </urlset>

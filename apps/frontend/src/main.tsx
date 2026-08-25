@@ -6,11 +6,49 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App.tsx';
 import { LanguageProvider } from './lib/i18n/LanguageContext.tsx';
 import { initAnalytics } from './lib/analytics';
+import { getConsent } from './lib/consent';
 import { AnalyticsIdentify } from './components/providers/AnalyticsIdentify';
 import './styles/trading-tokens.css';
 import './index.css';
 
-initAnalytics();
+// PostHog e Meta Pixel só sobem com consentimento (ver lib/consent.ts). Sem
+// escolha registrada, nada de analytics carrega e o banner do CookieConsent
+// aparece; aceitar chama initAnalytics() na hora, sem recarregar a página.
+if (getConsent() === 'granted') {
+  initAnalytics();
+}
+
+/**
+ * Tema do Clerk, aplicado no provider para valer também nos modais de
+ * cadastro e login abertos pelo cabeçalho. Sem isto, o Clerk desenhava um
+ * cartão claro padrão em cima do site escuro: era a única superfície do
+ * produto que não parecia da Tickrify, e aparecia justo no momento do
+ * cadastro. Os valores são os mesmos tokens do .tk-site (index.css).
+ */
+const clerkAppearance = {
+  variables: {
+    colorPrimary: '#f7f7f5',
+    colorBackground: '#0e1012',
+    colorText: '#f7f7f5',
+    colorTextSecondary: '#8b9099',
+    colorInputBackground: '#08090a',
+    colorInputText: '#f7f7f5',
+    colorDanger: '#e5484d',
+    colorSuccess: '#34c77b',
+    colorWarning: '#d9a21b',
+    borderRadius: '12px',
+  },
+  elements: {
+    card: { border: '1px solid rgba(255,255,255,0.09)', boxShadow: 'none' },
+    formButtonPrimary: {
+      backgroundColor: '#f7f7f5',
+      color: '#08090a',
+      textTransform: 'none',
+      fontWeight: 500,
+    },
+    footerActionLink: { color: '#f7f7f5' },
+  },
+};
 
 const SENTRY_DSN = String(import.meta.env.VITE_SENTRY_DSN || '').trim();
 if (SENTRY_DSN) {
@@ -66,7 +104,7 @@ createRoot(rootElement).render(
   <StrictMode>
     <Sentry.ErrorBoundary fallback={<div style={{ padding: 24, color: '#E8ECF4', background: '#0A0B0D', minHeight: '100vh' }}>Algo deu errado. Recarregue a página.</div>}>
       <QueryClientProvider client={queryClient}>
-        <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/">
+        <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/" appearance={clerkAppearance}>
           <LanguageProvider>
             <AnalyticsIdentify />
             <App />

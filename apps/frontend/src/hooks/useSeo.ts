@@ -25,9 +25,9 @@ const SITE_URL = 'https://tickrify.com';
 // Espelham o `index.html`. Servem de estado de repouso: como o React Router
 // não recarrega o documento, sem restaurar no unmount a meta de uma página
 // ficaria grudada na próxima rota que não usa este hook.
-const DEFAULT_TITLE = 'Tickrify — AI chart analysis for traders';
+const DEFAULT_TITLE = 'Tickrify: AI chart analysis for traders';
 const DEFAULT_DESCRIPTION =
-  'Paste your chart — AI reads the entry, stop, targets and risk. A second opinion that confirms or kills your read before you enter. The final call is yours. 3 free analyses.';
+  'Paste your chart and AI reads the entry, stop, targets and risk. A second opinion that confirms or kills your read before you enter. The final call is yours.';
 
 export interface SeoOptions {
   /** Aparece na aba e como link azul na SERP. Mire 50–60 caracteres. */

@@ -1,28 +1,40 @@
 {
   "/": {
-    "title": "Tickrify — AI Chart Analysis for Traders",
-    "description": "Paste your chart and AI reads the entry, stop, targets and risk — a second opinion that confirms or kills your read. 3 free analyses, no card needed."
+    "title": "Tickrify: AI Chart Analysis for Traders",
+    "description": "Paste your chart and AI reads the entry, stop, targets and risk. A second opinion that confirms or kills your read. 3 free analyses, no card needed."
   },
   "/pricing": {
-    "title": "Pricing — $29/mo for 200 AI Chart Analyses | Tickrify",
+    "title": "Pricing: $29/mo for 200 AI Chart Analyses | Tickrify",
     "description": "One plan, $29/month: 200 Ticks, quick and deep analysis, live candle grounding. Start with 3 free analyses, no card needed. Cancel in one click."
   },
   "/accuracy": {
-    "title": "Tickrify Accuracy — Our Real Win Rate, Published",
-    "description": "The measured hit rate of our AI, with sample size and 95% confidence intervals — including the numbers that look bad. Straight from live production data."
+    "title": "Tickrify Accuracy: Our Real Win Rate, Published",
+    "description": "The measured hit rate of our AI, with sample size and 95% confidence intervals, including the numbers that look bad. Straight from live production data."
   },
   "/try": {
-    "title": "Free AI Chart Analysis — No Signup Required | Tickrify",
+    "title": "Free AI Chart Analysis, No Signup Required | Tickrify",
     "description": "Upload a chart screenshot and get a real AI analysis in seconds: entry, stop, targets and risk. No account, no card. One free analysis, right now."
   },
   "/privacy": {
     "title": "Privacy Policy | Tickrify",
-    "description": "How Tickrify collects, uses and protects your data — chart uploads, account and payment information, and international data transfers."
+    "description": "How Tickrify collects, uses and protects your data: chart uploads, account and payment information, and international data transfers."
   },
   "/privacidade": {
     "title": "Privacy Policy | Tickrify",
-    "description": "How Tickrify collects, uses and protects your data — chart uploads, account and payment information, and international data transfers.",
+    "description": "How Tickrify collects, uses and protects your data: chart uploads, account and payment information, and international data transfers.",
     "canonicalPath": "/privacy"
+  },
+  "/terms": {
+    "title": "Terms of Service | Tickrify",
+    "description": "The rules for using Tickrify: what the analysis is and is not, account and conduct rules, liability, restricted jurisdictions, cancellation and refunds."
+  },
+  "/cookies": {
+    "title": "Cookie Policy | Tickrify",
+    "description": "What Tickrify stores on your device and who puts it there. Analytics and marketing cookies load only after you accept, and you can change that at any time."
+  },
+  "/risk": {
+    "title": "Risk Disclosure | Tickrify",
+    "description": "Trading carries a high risk of loss. What Tickrify is, how its AI can be wrong, and why past results say nothing about future results. Read before you trade."
   },
   "/admin": {
     "title": "Admin · Tickrify",

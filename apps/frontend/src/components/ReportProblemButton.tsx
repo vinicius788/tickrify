@@ -5,11 +5,12 @@ import { buildApiUrl } from '@/lib/api';
 import { coletarContexto, lerAnaliseAtual } from '@/lib/breadcrumbs';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 /**
  * Botão de reportar problema.
  *
- * O QUE FAZ ELE VALER A PENA não é a caixa de texto — é o CONTEXTO que vai
+ * O QUE FAZ ELE VALER A PENA não é a caixa de texto, é o CONTEXTO que vai
  * junto sem o usuário precisar descrever nada. "Não funcionou" é irreprodutível;
  * "não funcionou" + rota + análise + as três últimas chamadas que falharam com
  * seus códigos de status é um bug que dá para caçar.
@@ -23,6 +24,11 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
   const { getToken, isSignedIn } = useAuth();
   const { pathname } = useLocation();
   const { toast } = useToast();
+  // O botão é montado no app inteiro, inclusive nas páginas públicas, e o
+  // texto estava fixo em português. Agora segue o idioma escolhido, como o
+  // resto do produto (t.report).
+  const { t } = useLanguage();
+  const r = t.report;
 
   // Montado globalmente, o botão não recebe a análise por prop. Ela vem do
   // registro que a tela de resultado alimenta (lib/breadcrumbs). A prop
@@ -37,7 +43,7 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
 
   const enviar = async () => {
     if (texto.trim().length < 5) {
-      toast({ title: 'Conta um pouco mais', description: 'Cinco caracteres, no mínimo.' });
+      toast({ title: r.shortTitle, description: r.shortDesc });
       return;
     }
 
@@ -61,25 +67,22 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
       if (res.status === 429) {
         // O limite é de 5 por hora. Dizer isso é melhor do que "erro 429":
         // quem está frustrado precisa saber que o primeiro relato chegou.
-        toast({
-          title: 'Já recebemos seus relatos',
-          description: 'Chegaram, sim. O limite é de 5 por hora para a lista continuar legível.',
-        });
+        toast({ title: r.rateTitle, description: r.rateDesc });
         return;
       }
-      if (!res.ok) throw new Error(`Falhou (${res.status})`);
+      if (!res.ok) throw new Error(`${res.status}`);
 
       const { id } = await res.json();
       setTexto('');
       setAberto(false);
       toast({
-        title: 'Relato enviado',
-        description: `Obrigado — isso ajuda de verdade. Protocolo ${String(id).slice(0, 8)}.`,
+        title: r.sentTitle,
+        description: r.sentDesc.replace('{id}', String(id).slice(0, 8)),
       });
     } catch (erro) {
       toast({
-        title: 'Não deu para enviar',
-        description: erro instanceof Error ? erro.message : 'Tente de novo em instantes.',
+        title: r.failTitle,
+        description: erro instanceof Error ? `${r.failDesc} (${erro.message})` : r.failDesc,
         variant: 'destructive',
       });
     } finally {
@@ -93,9 +96,9 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
         type="button"
         onClick={() => setAberto(true)}
         className="fixed bottom-4 right-4 z-40 rounded-full border border-white/10 bg-black/70 px-3.5 py-2 text-xs text-zinc-400 backdrop-blur transition-colors hover:border-white/20 hover:text-white"
-        aria-label="Reportar um problema"
+        aria-label={r.button}
       >
-        Reportar problema
+        {r.button}
       </button>
     );
   }
@@ -103,12 +106,12 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
   return (
     <div className="fixed bottom-4 right-4 z-40 w-[min(360px,calc(100vw-2rem))] rounded-xl border border-white/10 bg-[#0b0b12] p-4 shadow-2xl">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-white">O que aconteceu?</h2>
+        <h2 className="text-sm font-semibold text-white">{r.title}</h2>
         <button
           type="button"
           onClick={() => setAberto(false)}
           className="text-zinc-500 hover:text-white"
-          aria-label="Fechar"
+          aria-label={r.close}
         >
           ×
         </button>
@@ -120,22 +123,20 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
         maxLength={2000}
         rows={4}
         autoFocus
-        placeholder="Ex: cliquei em analisar e a tela ficou girando pra sempre."
+        placeholder={r.placeholder}
         className="w-full resize-none rounded-lg border border-white/10 bg-black/40 p-2.5 text-sm text-white placeholder:text-zinc-600 focus:border-white/25 focus:outline-none"
       />
 
       <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
-        Vai junto automaticamente: a página em que você está
-        {analysisId ? ', a análise aberta' : ''}, seu navegador e as últimas chamadas que
-        falharam. Nada do que você digitou em outros campos é enviado.
+        {r.context.replace('{analysis}', analysisId ? r.contextAnalysis : '')}
       </p>
 
       <div className="mt-3 flex justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={() => setAberto(false)} disabled={enviando}>
-          cancelar
+          {r.cancel}
         </Button>
         <Button size="sm" onClick={enviar} disabled={enviando}>
-          {enviando ? 'enviando…' : 'enviar'}
+          {enviando ? r.sending : r.send}
         </Button>
       </div>
     </div>

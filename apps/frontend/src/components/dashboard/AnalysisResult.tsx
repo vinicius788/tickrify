@@ -499,7 +499,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
     if (invalidationLevel !== null && invalidationLevel > 0) {
       waitFlipItems.push({
         label: r.flipInvalidation,
-        text: `${formatPrice(invalidationLevel)}${invalidationNote ? ` — ${invalidationNote}` : ''}`,
+        text: `${formatPrice(invalidationLevel)}${invalidationNote ? `: ${invalidationNote}` : ''}`,
       });
     } else if (invalidationNote) {
       waitFlipItems.push({ label: r.flipInvalidation, text: invalidationNote });
@@ -1021,7 +1021,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                           <span className={`font-semibold ${trendStrength === 'strong' ? 'text-[var(--signal-buy)]' : trendStrength === 'weak' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}`}>
                             {trendStrength === 'strong' ? t.analysis.strongTrend : trendStrength === 'weak' ? t.analysis.weakTrend : t.analysis.moderateTrend}
                           </span>
-                          {trendStrengthNote && <span className="text-[var(--text-secondary)]"> — {trendStrengthNote}</span>}
+                          {trendStrengthNote && <span className="text-[var(--text-secondary)]">, {trendStrengthNote}</span>}
                         </p>
                       )}
                       {marketRegime && (
@@ -1030,7 +1030,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                           <span className={`font-semibold ${marketRegime === 'trending' ? 'text-[var(--signal-buy)]' : marketRegime === 'volatile' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}`}>
                             {marketRegime === 'trending' ? t.analysis.regimeTrending : marketRegime === 'volatile' ? t.analysis.regimeVolatile : t.analysis.regimeRanging}
                           </span>
-                          {marketRegimeNote && <span className="text-[var(--text-secondary)]"> — {marketRegimeNote}</span>}
+                          {marketRegimeNote && <span className="text-[var(--text-secondary)]">, {marketRegimeNote}</span>}
                         </p>
                       )}
                       {multiTimeframeAlignment && (
