@@ -1164,7 +1164,7 @@ das listas de comparacao. Gargalo e trafego, nao SEO tecnico.
 
 | Item | Por que nao foi feito | Quem resolve |
 |---|---|---|
-| **Reenviar o sitemap depois do deploy do bloco `/for/`** | Feito o resto em 26/08 (abaixo). O sitemap passou de 19 para 24 URLs nesta sprint; a ultima leitura do Google foi 21/08 com 16 URLs. Depois do deploy, reenviar em Search Console > Sitemaps para forcar leitura nova. | Claude ou dono |
+| **Pedir indexacao de `/for/bitcoin/`, `/for/gold/` e `/for/metatrader/`** | A cota diaria da Inspecao de URL e de **10 pedidos por dia** e estourou em 26/08 no 11o (as 8 do blog/tools/try/privacy + `/for/` + `/for/tradingview/`). O proprio Google respondeu "A cota foi excedida. Tente novamente amanha". Nao ha urgencia: as tres estao no sitemap reenviado e linkadas das outras paginas. | Claude ou dono |
 | **Imagens reais nos 6 posts** | **Bloqueado por falta de asset.** Os dois PNGs do repo (`demo-example-chart.png`, `demo-after-chart.png`) sao prints CRUS de XAUUSD M30 **sem nenhuma analise sobreposta** — nao sao prova de produto, e reancoram o conteudo na geo que foi abandonada de proposito. Colocar seria pior que nao ter. Precisa de screenshot real de uma analise em NVDA/SPY/BTC. | **dono manda o print**, Claude liga |
 | **Autor pessoa (E-E-A-T)** | Schema `Article` usa `author: Organization`. Em YMYL financeiro o Google pesa autor pessoa com bio. Nao da pra inventar nome. | **dono define nome + bio** |
 | ~~**Decisao de i18n**~~ | **DECIDIDO em 17/08/2026: ingles e o unico idioma indexavel.** Ver secao propria abaixo. | ✅ fechado |
@@ -1206,6 +1206,29 @@ olhar e "Ultimo rastreamento" deixar de ser N/D.
 **"O Google nao reconhece o URL"** e "Nenhum sitemap de referencia foi detectado",
 mesmo estando no sitemap. E consequencia da leitura de 21/08 ser anterior a
 algumas dessas entradas. Reforca a pendencia de reenviar o sitemap pos-deploy.
+
+### 26/08, pos-deploy (commit `ca6bf8f`) — verificado ao vivo
+
+Conferido com `fetch` do HTML CRU (sem executar a SPA, ou seja o que Bing e
+crawler de IA enxergam), nao por screenshot:
+
+| rota | `<title>` servido | `robots` |
+|---|---|---|
+| `/sign-in` | Sign in \| Tickrify | **noindex,nofollow** |
+| `/sign-up` | Create your account \| Tickrify | **noindex,nofollow** |
+| `/pricing` | Pricing: $29/mo for 200 AI Chart Analyses | sem meta (indexavel) |
+| `/for/` e as 4 filhas | titulos proprios, canonical proprio | sem meta (indexavel) |
+
+`robots.txt` no ar sem o `Disallow` das rotas de auth; `sitemap.xml` no ar com
+as 24 URLs, incluindo o bloco `/for/`.
+
+**Sitemap reenviado em 26/08** (Search Console > Sitemaps). Atencao ao formato:
+em propriedade de DOMINIO o campo exige a **URL completa** — `sitemap.xml`
+sozinho e recusado com "Endereco do sitemap invalido". Enviar
+`https://tickrify.com/sitemap.xml`.
+
+**Cota da Inspecao de URL: 10 pedidos por dia.** Estourou no 11o. Ficou para
+outro dia o pedido de `/for/bitcoin/`, `/for/gold/` e `/for/metatrader/`.
 
 ### Notas operacionais que custaram tempo (17/08)
 
