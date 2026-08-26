@@ -17,9 +17,28 @@ import { RouteAnalytics } from "@/components/providers/RouteAnalytics";
 import { BrowserRouter as Router, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { SignIn, SignUp, GoogleOneTap, SignedOut } from "@clerk/clerk-react";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
+import { useSeo, seoFor } from "@/hooks/useSeo";
 import { warmupPaymentsApi } from "@/lib/api";
 import { scrollToTop } from "@/lib/utils";
+
+/**
+ * Casca das telas de autenticação do Clerk.
+ *
+ * Existe por SEO, não por layout. /sign-in estava no `Disallow` do robots.txt e
+ * mesmo assim foi indexado pelo Google, porque `Disallow` impede rastrear e não
+ * indexar. A correção é o contrário: deixar rastrear e mandar `noindex`. O
+ * pré-render já escreve a meta no HTML cru; sem um componente aqui não havia
+ * onde chamar o hook, e a hidratação apagava a meta ao navegar dentro da SPA.
+ */
+function AuthScreen({ seoPath, children }: { seoPath: "/sign-in" | "/sign-up"; children: ReactNode }) {
+  useSeo(seoFor(seoPath));
+  return (
+    <div className="tk-site relative z-10 flex items-center justify-center min-h-screen">
+      {children}
+    </div>
+  );
+}
 
 // One Tap em toda página EXCETO /try: a demo é "valor antes do cadastro" —
 // um popup de login em cima dela passa a impressão de login obrigatório e
@@ -94,7 +113,7 @@ function App() {
           <Route
             path="/sign-in/*"
             element={
-              <div className="tk-site relative z-10 flex items-center justify-center min-h-screen">
+              <AuthScreen seoPath="/sign-in">
                 <SignIn
                   routing="path"
                   path="/sign-in"
@@ -102,13 +121,13 @@ function App() {
                   afterSignInUrl="/dashboard"
                   afterSignUpUrl="/dashboard"
                 />
-              </div>
+              </AuthScreen>
             }
           />
           <Route
             path="/sign-up/*"
             element={
-              <div className="tk-site relative z-10 flex items-center justify-center min-h-screen">
+              <AuthScreen seoPath="/sign-up">
                 <SignUp
                   routing="path"
                   path="/sign-up"
@@ -116,7 +135,7 @@ function App() {
                   afterSignInUrl="/dashboard"
                   afterSignUpUrl="/dashboard"
                 />
-              </div>
+              </AuthScreen>
             }
           />
           <Route

@@ -40,5 +40,15 @@
     "title": "Admin · Tickrify",
     "description": "Área interna.",
     "noindex": true
+  },
+  "/sign-in": {
+    "title": "Sign in | Tickrify",
+    "description": "Sign in to your Tickrify account.",
+    "noindex": true
+  },
+  "/sign-up": {
+    "title": "Create your account | Tickrify",
+    "description": "Create a Tickrify account and get 3 free AI chart analyses.",
+    "noindex": true
   }
 }

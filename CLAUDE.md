@@ -1129,6 +1129,29 @@ ter ficado. Ler arquivo com `grep`/`sed`/`python` nao cria lock — so comandos 
 | `/accuracy` sem structured data | `Dataset` schema com `variableMeasured` e `measurementTechnique` | 17/08 |
 | `<html lang>` fixo em `"en"` | segue o idioma escolhido (`LanguageContext`) | 17/08 |
 | `robots.txt` sem subdiretorio explicito | `Disallow` com e sem barra nas 4 rotas privadas | 17/08 |
+| Sem landing por plataforma nem por classe de ativo | `public/for/`: hub de cobertura + `/for/tradingview/`, `/for/metatrader/`, `/for/bitcoin/`, `/for/gold/`. Estaticas, mesmo mecanismo do `/blog/` e do `/tools/` (o Vercel serve o arquivo antes do rewrite), 1.066 a 1.406 palavras visiveis, `FAQPage` gerado do MESMO texto que a pagina mostra, no sitemap, linkadas dos 6 posts e dos dois indices. **NVDA/SPY ficaram FORA de proposito:** acao e ETF nao tem grounding de candle (`normalizeToBinancePerp` cobre 40 bases de cripto, `fetchFxCandles` cobre XAU/XAG e majors de FX, e mais nada), entao uma landing de acoes venderia dado ao vivo que nao existe. O hub publica a tabela de cobertura com os NAOs, que e o oposto do que o concorrente faz. | 26/08 |
+| `/sign-in` indexado apesar do `Disallow` | `noindex` de verdade: as duas rotas de auth SAIRAM do `Disallow`, entraram no `seo-routes.json` com `noindex: true` (shell do `prerender.mjs`) e o `AuthScreen` do `App.tsx` chama o `useSeo` pos-hidratacao. `seoFor` passou a propagar o `noindex`, que ele descartava. | 26/08 |
+
+### ⚠️ Auditoria de SEO recebida em 26/08 — QUASE TODA desatualizada
+
+Chegou uma auditoria de fora (formato Perplexity, com fontes) dizendo que o
+Tickrify nao tem conteudo, nao tem meta title por rota, precisa de 10-15 posts e
+de um artigo "Tickrify vs ChatGPT". **Tudo isso ja existia**, feito em 10/08.
+Segunda vez que isto acontece (a primeira foi em 17/08 e originou esta tabela).
+
+Tres recomendacoes dela eram ativamente PERIGOSAS e ficam registradas para
+ninguem tentar de novo:
+1. **"Canal Telegram com sinais gratis"** — mata o posicionamento inteiro. O
+   produto nao e sinal, e segunda opiniao.
+2. **Pitch "temos X% de acuracia"** — e exatamente a classe de claim que a
+   auditoria de 27/07 passou uma sprint removendo. Numero so sai com
+   metodologia e disclaimer, e a /accuracy ja publica o real.
+3. **"Peca ao ChartSnipe para te incluir no ranking deles"** — o ChartSnipe e o
+   concorrente que se autopontua 47/50 no proprio ranking. Isso ja esta
+   documentado e e usado como argumento de abertura no nosso proprio post.
+
+Ela acertou o que o projeto ja sabia: zero backlink, zero prova social, ausencia
+das listas de comparacao. Gargalo e trafego, nao SEO tecnico.
 
 ### ⚠️ FALSO POSITIVO — nao "corrigir"
 
@@ -1141,14 +1164,48 @@ ter ficado. Ler arquivo com `grep`/`sed`/`python` nao cria lock — so comandos 
 
 | Item | Por que nao foi feito | Quem resolve |
 |---|---|---|
-| **Reinspecionar URLs no Search Console** | Em 10/08 a ferramenta do Google estava com erro. O sitemap foi reenviado (8 → 12 URLs) e o gargalo real ja foi achado: o blog entrou em 22/07, dois dias DEPOIS da ultima leitura do sitemap. Falta so confirmar indexacao de `/accuracy`, `/try`, `/blog/` e os posts. | **so o dono** |
-| **`noindex` nas rotas de auth** | `/sign-in` esta no `Disallow` do robots **e mesmo assim foi indexado** — robots impede RASTREAR, nao INDEXAR. A correcao e `noindex` numa pagina que o Google POSSA ler (ou seja, tirar do Disallow). O parametro `noindex` ja existe no `useSeo`; falta ligar nas rotas e emitir os shells no pre-render. | Claude |
+| **Reenviar o sitemap depois do deploy do bloco `/for/`** | Feito o resto em 26/08 (abaixo). O sitemap passou de 19 para 24 URLs nesta sprint; a ultima leitura do Google foi 21/08 com 16 URLs. Depois do deploy, reenviar em Search Console > Sitemaps para forcar leitura nova. | Claude ou dono |
 | **Imagens reais nos 6 posts** | **Bloqueado por falta de asset.** Os dois PNGs do repo (`demo-example-chart.png`, `demo-after-chart.png`) sao prints CRUS de XAUUSD M30 **sem nenhuma analise sobreposta** — nao sao prova de produto, e reancoram o conteudo na geo que foi abandonada de proposito. Colocar seria pior que nao ter. Precisa de screenshot real de uma analise em NVDA/SPY/BTC. | **dono manda o print**, Claude liga |
 | **Autor pessoa (E-E-A-T)** | Schema `Article` usa `author: Organization`. Em YMYL financeiro o Google pesa autor pessoa com bio. Nao da pra inventar nome. | **dono define nome + bio** |
 | ~~**Decisao de i18n**~~ | **DECIDIDO em 17/08/2026: ingles e o unico idioma indexavel.** Ver secao propria abaixo. | ✅ fechado |
 | **Pre-render do CORPO, nao so do `<head>`** | Renderizar o body exige navegador headless no build = dependencia nova, proibida (lockfile nao atualiza local). Hoje um crawler sem JS ve o `<head>` certo e um bloco neutro no corpo. | adiado por restricao |
-| Landings por plataforma (TradingView, MT) e por classe de ativo (NVDA/SPY, BTC) | Concorrente tem, nos nao. Meio dia por pagina. | Claude |
 | Glossario de padroes de candle | Cluster inteiro numa pagina. Multi-dia. | Claude |
+
+### ✅ Search Console reinspecionado em 26/08 — diagnostico novo
+
+Lido no navegador do dono. **O quadro mudou desde 10/08 e a causa raiz e outra.**
+
+- **11 paginas indexadas** (eram 5 em 10/08) e 11 fora. O sitemap FUNCIONA: enviado
+  em 10/08, ultima leitura **21/08**, status Processado, 16 URLs encontradas
+  (bate com o sitemap antes dos 3 legais de 24/08).
+- Das 11 fora: 3 "Pagina com redirecionamento", 8 **"Detectada, mas nao indexada"**
+  e 1 indexada **"sem conteudo"** (sintoma classico de SPA; nao identificada qual).
+- As 8 detectadas e nunca rastreadas (**Ultimo rastreamento: N/D** em todas):
+  `/blog/`, `/blog/ai-chart-analysis/`, `/blog/best-ai-chart-analysis-tools/`,
+  `/blog/chatgpt-chart-analysis/`, `/privacy`, `/tools/`,
+  `/tools/breakeven-win-rate-calculator/` e `/try`.
+
+**🔴 A causa raiz, lida na propria ficha de inspecao:** o campo *Pagina de
+referencia* do `/blog/` dizia **"Nenhuma pagina foi detectada"**. Ou seja: o
+Google so conhecia o indice do blog pelo sitemap, com **zero link apontando para
+ele**, e URL sem link e a primeira coisa que ele despriorizava na fila de
+rastreamento. Conferido no codigo depois: o unico link para `/blog/` no projeto
+inteiro estava no `Footer.tsx` do React, que so existe depois do JS. **Nenhum
+arquivo estatico linkava o indice do blog.**
+
+Corrigido no mesmo commit: os 6 posts, as 5 landings do `/for/` e o `tools/index.html`
+passaram a linkar `/blog/`. Os posts que JA tinham pagina de referencia
+(`ai-chart-analysis` vinha de `best-ai-chart-analysis-tools`) confirmam que o
+link interno e o que o Google segue.
+
+**Indexacao solicitada nas 8** em 26/08, uma a uma, na Inspecao de URL. Nao ha o
+que fazer alem disso: a fila e do Google. Reconferir em ~1 semana; o numero a
+olhar e "Ultimo rastreamento" deixar de ser N/D.
+
+⚠️ `/tools/breakeven-win-rate-calculator/`, `/try` e `/privacy` apareceram como
+**"O Google nao reconhece o URL"** e "Nenhum sitemap de referencia foi detectado",
+mesmo estando no sitemap. E consequencia da leitura de 21/08 ser anterior a
+algumas dessas entradas. Reforca a pendencia de reenviar o sitemap pos-deploy.
 
 ### Notas operacionais que custaram tempo (17/08)
 

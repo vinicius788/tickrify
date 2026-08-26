@@ -56,6 +56,11 @@ export function seoFor(path: SeoRoutePath): SeoOptions {
     description: entry.description,
     // /privacidade é rota legada e aponta o canonical para /privacy.
     path: 'canonicalPath' in entry ? entry.canonicalPath : path,
+    // Sem esta linha o `noindex` do JSON só valia no pré-render: a rota nascia
+    // noindex no HTML cru e a hidratação apagava a meta, porque o hook restaura
+    // o estado de repouso quando não recebe a flag. Um crawler que executa JS
+    // via a página como indexável.
+    noindex: 'noindex' in entry ? entry.noindex : false,
   };
 }
 

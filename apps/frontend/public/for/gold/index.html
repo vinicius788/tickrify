@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Gold Chart Analysis (XAUUSD) With Live Candles | Tickrify</title>
+  <meta name="description" content="Upload an XAUUSD chart and get an AI read checked against live gold candles, with entry, stop and targets sized in ATR instead of guessed by eye." />
+  <link rel="canonical" href="https://tickrify.com/for/gold/" />
+  <link rel="icon" type="image/png" href="/icon.png?v=3" />
+  <meta property="og:title" content="AI Gold Chart Analysis (XAUUSD)" />
+  <meta property="og:description" content="Gold has verified live candles and the dollar correlation written into the model&#x27;s instructions. Entry, stop and targets expressed in ATR, where gold trades are won or lost." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://tickrify.com/for/gold/" />
+  <meta property="og:site_name" content="Tickrify" />
+  <meta property="og:image" content="https://tickrify.com/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Tickrify, AI chart analysis for traders" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AI Gold Chart Analysis (XAUUSD)" />
+  <meta name="twitter:description" content="Gold has verified live candles and the dollar correlation written into the model&#x27;s instructions. Entry, stop and targets expressed in ATR, where gold trades are won or lost." />
+  <meta name="twitter:image" content="https://tickrify.com/og.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "WebPage", "name": "AI Gold Chart Analysis (XAUUSD)", "description": "Gold has verified live candles and the dollar correlation written into the model's instructions. Entry, stop and targets expressed in ATR, where gold trades are won or lost.", "url": "https://tickrify.com/for/gold/", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "name": "Tickrify", "url": "https://tickrify.com/"}, "publisher": {"@type": "Organization", "name": "Tickrify", "url": "https://tickrify.com/"}}
+  </script>
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Does it work with my broker's gold symbol?", "acceptedAnswer": {"@type": "Answer", "text": "Usually. XAUUSD, XAUUSD.m, XAUUSD.pro and GOLD all resolve to the same instrument. If the symbol cannot be identified, the analysis runs from the screenshot alone rather than substituting a different instrument."}}, {"@type": "Question", "name": "Why is the price slightly different from my platform?", "acceptedAnswer": {"@type": "Answer", "text": "Because the candles come from a reference feed rather than from your broker, and gold spreads vary a lot between brokers. Use the read for structure and place orders from your own chart."}}, {"@type": "Question", "name": "Does it account for news events?", "acceptedAnswer": {"@type": "Answer", "text": "No. It has no access to headlines, sentiment or order flow. On gold that is a real limitation, because news moves this instrument hard and fast. Check the calendar yourself before you enter."}}, {"@type": "Question", "name": "Which gold timeframes work best?", "acceptedAnswer": {"@type": "Answer", "text": "Any timeframe legible on your chart. If the timeframe label cannot be read, the live candle block is skipped on purpose, because ATR computed on the wrong interval is worse than no ATR at all."}}, {"@type": "Question", "name": "Will it give me a gold signal every time I ask?", "acceptedAnswer": {"@type": "Answer", "text": "No. A large share of reads come back as no trade, and on a range-bound gold chart that is the correct answer. If you want a tool that always finds a setup, this is not it."}}]}
+  </script>
+  <style>
+    :root{--bg:#050508;--fg:#f5f6f8;--muted:#9aa3ae;--green:#5eea8a;--line:rgba(154,163,174,.18)}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family:Geist,system-ui,sans-serif;line-height:1.8}
+    .wrap{max-width:760px;margin:0 auto;padding:32px 20px 80px}
+    header.site{display:flex;justify-content:space-between;align-items:center;margin-bottom:48px}
+    header.site a.logo{color:var(--fg);text-decoration:none;font-weight:700;font-size:18px}
+    header.site a.logo span{color:var(--green)}
+    header.site a.cta{color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
+    .kicker{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--green)}
+    h1{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:clamp(2rem,4.5vw,3rem);line-height:1.1;letter-spacing:-.02em;margin:12px 0 10px}
+    .meta{color:var(--muted);font-size:13px;margin-bottom:36px;font-family:"JetBrains Mono",monospace}
+    h2{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.5rem;margin:44px 0 12px;line-height:1.3}
+    h3{font-size:1.05rem;margin:28px 0 6px;color:var(--fg);font-weight:650}
+    p,li{color:#c9cfd6;font-size:1.02rem}
+    strong{color:var(--fg)}
+    a{color:var(--green)}
+    ul,ol{padding-left:22px}
+    li{margin-bottom:8px}
+    table{width:100%;border-collapse:collapse;margin:24px 0;font-size:.92rem}
+    th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}
+    th{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+    td strong{color:var(--fg)}
+    .yes{color:var(--green);font-weight:600}
+    .no{color:#f0a0a0;font-weight:600}
+    .callout{border:1px solid rgba(94,234,138,.35);border-radius:14px;padding:20px 24px;margin:36px 0;background:rgba(94,234,138,.04)}
+    .callout p{margin:0 0 12px}
+    .callout a.btn{display:inline-block;color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
+    .toc{border:1px solid var(--line);border-radius:14px;padding:18px 24px;margin:32px 0}
+    .toc p{margin:0 0 8px;font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+    .toc ol{margin:0;padding-left:20px}
+    .toc li{margin-bottom:4px;font-size:.95rem}
+    .card{display:block;border:1px solid var(--line);border-radius:14px;padding:20px 24px;margin:16px 0;text-decoration:none}
+    .card h3{margin:0 0 6px}
+    .card p{margin:0;font-size:.95rem}
+    footer{margin-top:64px;border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a class="logo" href="/">tickrify<span>.</span></a>
+      <a class="cta" href="/?utm_source=landing&amp;utm_medium=organic&amp;utm_campaign=gold">Try 3 free analyses</a>
+    </header>
+
+    <span class="kicker">For gold traders</span>
+    <h1>AI gold chart analysis (XAUUSD)</h1>
+    <p class="meta">Updated August 2026</p>
+
+    <p>Gold gets its own page for two reasons that are not marketing. The first is that <strong>XAUUSD has verified live candles</strong>, so an analysis of your gold chart is checked against real data rather than read off pixels. The second is that the dollar leg is written into the model's instructions: it is told to weigh the fact that gold typically moves inverse to the dollar and to rates, because a gold read that ignores the dollar is half a read.</p>
+    <p>Gold is also where a sloppy stop costs the most. The average true range on XAUUSD is large enough that a stop placed by eye rather than by volatility is the single most common way a correct directional call still loses money.</p>
+
+    <div class="toc">
+      <p>What's in here</p>
+      <ol>
+        <li><a href="#what">What happens when you upload a gold chart</a></li>
+        <li><a href="#atr">Why ATR is the whole game on XAUUSD</a></li>
+        <li><a href="#sessions">Sessions matter more on gold than the chart shows</a></li>
+        <li><a href="#coverage">Also covered on the same feed</a></li>
+        <li><a href="#stale">The stale screenshot guard</a></li>
+        <li><a href="#limits">What it does not know about gold</a></li>
+        <li><a href="#faq">Questions people actually ask</a></li>
+      </ol>
+    </div>
+
+    <h2 id="what">What happens when you upload a gold chart</h2>
+
+    <p>The symbol and timeframe get read off your screenshot first. Broker variants resolve, so XAUUSD, XAUUSD.m and GOLD land on the same instrument. Then the backend fetches the real data and puts it into the prompt as text.</p>
+
+    <ul>
+      <li><strong>Up to 120 recent candles</strong> on your timeframe, via Twelve Data.</li>
+      <li><strong>ATR14</strong>, which on gold is the number that decides the trade. Every distance in the output is expressed against it.</li>
+      <li><strong>Swing highs and lows</strong>, plus where price sits inside the visible range as a percentage.</li>
+      <li><strong>RSI(14) Wilder</strong>, with the explicit caveat that an extreme value is not a reversal trigger on its own.</li>
+      <li><strong>Volume against its 20-period average</strong>, and a volume-by-price map with point of control, value area and the low-volume gaps.</li>
+      <li><strong>An event map</strong>: last impulse leg and its origin, recent structure breaks, accumulation bases and which way they resolved, and failed breakouts of the spring and upthrust kind.</li>
+      <li><strong>The dollar and rates correlation</strong>, stated to the model as context it must weigh rather than as a rule it must obey.</li>
+    </ul>
+
+    <h2 id="atr">Why ATR is the whole game on XAUUSD</h2>
+
+    <p>Gold routinely travels more in a session than many pairs travel in a week. That has a specific, mechanical consequence: a stop that would be generous on EURUSD is noise-level on gold, and a stop that feels large in dollars can still sit inside a single normal candle.</p>
+
+    <p>So the analysis expresses entry distance, stop distance and target distance in ATR units, not just in price. An entry roughly one and a half ATRs away is reachable. A stop under half an ATR is going to get taken by ordinary movement regardless of whether the direction was right. Seeing those distances in volatility terms is often the moment a trader realizes the setup they liked has a risk-to-reward that never made sense.</p>
+
+    <p>If you want to run those numbers yourself, the <a href="/tools/position-size-calculator/">position size calculator</a> and the <a href="/tools/risk-reward-calculator/">risk to reward calculator</a> are free and need no account.</p>
+
+    <h2 id="sessions">Sessions matter more on gold than the chart shows</h2>
+
+    <p>The same pattern is not the same pattern at different hours, and gold makes this obvious.</p>
+
+    <ul>
+      <li><strong>The London and New York overlap</strong> carries most of the real participation. Structure formed there had size behind it.</li>
+      <li><strong>The Asian session</strong> is often a compression range that later gets swept. A breakout of it read in isolation is frequently the liquidity grab rather than the move.</li>
+      <li><strong>Around the New York close</strong> and into the rollover, spreads widen and wicks lengthen. Levels touched in that window are the weakest evidence on the chart.</li>
+    </ul>
+
+    <p>The model cannot see the clock on your broker's server, so give it the help it needs: keep the time axis visible in your screenshot, and prefer charts where the session context is legible.</p>
+
+    <h2 id="coverage">Also covered on the same feed</h2>
+
+    <p>Silver (XAGUSD) and forex pairs built from USD, EUR, GBP, JPY, AUD, NZD, CAD and CHF get the same verified candle treatment. Index CFDs and stock CFDs do not, and the analysis on those runs from your screenshot alone. The <a href="/for/">full coverage table is here</a>.</p>
+
+    <h2 id="stale">The stale screenshot guard</h2>
+
+    <p>Gold can move a full day's typical range in an hour. If you upload a chart you saved this morning and the backend injected the current price beside it, the model would build entry, stop and target on numbers that contradict the image, and the output would look authoritative and be wrong.</p>
+
+    <p>So the last visible close is read off your screenshot and compared to the live close. More than three ATRs apart and <strong>the live data is withheld</strong>. The model is told it is looking at a historical chart, that every level must come from the image, and that it must say so in the output.</p>
+
+    <h2 id="limits">What it does not know about gold</h2>
+
+    <ul>
+      <li><strong>No breaking news.</strong> Geopolitical headlines move gold faster than almost anything else, and the model has no access to them at all. This is the largest single blind spot on this instrument and we are not going to soften it.</li>
+      <li><strong>No central bank flows, no ETF holdings, no COT positioning.</strong></li>
+      <li><strong>No live dollar index reading.</strong> The correlation is given as context to weigh, not as a real-time DXY value.</li>
+      <li><strong>No execution.</strong> It cannot place, modify or close a trade.</li>
+    </ul>
+
+    <p>Treat it as a structural second opinion on the chart in front of you, and keep your own eye on the calendar and the wires. On our side, what the calls have actually been worth is published on <a href="/accuracy">the accuracy page</a>, with sample size and a 95% confidence interval, including the results that do not flatter us.</p>
+
+    <h2 id="faq">Questions people actually ask</h2>
+
+    <h3>Does it work with my broker&#x27;s gold symbol?</h3>
+    <p>Usually. XAUUSD, XAUUSD.m, XAUUSD.pro and GOLD all resolve to the same instrument. If the symbol cannot be identified, the analysis runs from the screenshot alone rather than substituting a different instrument.</p>
+
+    <h3>Why is the price slightly different from my platform?</h3>
+    <p>Because the candles come from a reference feed rather than from your broker, and gold spreads vary a lot between brokers. Use the read for structure and place orders from your own chart.</p>
+
+    <h3>Does it account for news events?</h3>
+    <p>No. It has no access to headlines, sentiment or order flow. On gold that is a real limitation, because news moves this instrument hard and fast. Check the calendar yourself before you enter.</p>
+
+    <h3>Which gold timeframes work best?</h3>
+    <p>Any timeframe legible on your chart. If the timeframe label cannot be read, the live candle block is skipped on purpose, because ATR computed on the wrong interval is worse than no ATR at all.</p>
+
+    <h3>Will it give me a gold signal every time I ask?</h3>
+    <p>No. A large share of reads come back as no trade, and on a range-bound gold chart that is the correct answer. If you want a tool that always finds a setup, this is not it.</p>
+
+    <div class="callout">
+      <p>You already have the chart open. Screenshot it, run it free, and see whether the AI confirms your read or tells you to skip it. Three analyses, no card.</p>
+      <a class="btn" href="/?utm_source=landing&amp;utm_medium=organic&amp;utm_campaign=gold_end">Gut-check your next setup free</a>
+    </div>
+
+    <p>Related: <a href="/for/metatrader/">AI chart analysis for MetaTrader</a> &middot; <a href="/for/">Full instrument coverage</a> &middot; <a href="/accuracy">Our measured accuracy</a> &middot; <a href="/tools/position-size-calculator/">Free position size calculator</a> &middot; <a href="/blog/">All posts</a></p>
+
+    <footer>Nothing on this page is financial advice. Trading involves substantial risk of loss and gold is a high-volatility instrument. Coverage reflects the production configuration as of August 2026 and can change.</footer>
+  </div>
+</body>
+</html>

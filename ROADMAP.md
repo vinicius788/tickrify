@@ -95,6 +95,23 @@ sem precisar tirar print e fazer upload manualmente.
 
 ---
 
+## 💡 Ideias futuras (não priorizadas, não iniciar sem sinal)
+
+### Aba dedicada a memecoins
+
+**Ideia (26/08/2026):** um produto/aba novo e separado do Painel Técnico atual,
+focado só em análise de gráfico de criptomoedas de meme (DOGE, SHIB, PEPE e
+similares). Racional: memecoin tem dinâmica de preço muito diferente de ativo
+tradicional (volatilidade extrema, pump and dump, pouco fundamento técnico
+clássico tipo ICT/SMC), então provavelmente precisaria de prompt/modelo de IA
+próprio em vez de reaproveitar a análise atual.
+
+Ainda sem estratégia definida (viabilidade, prompt, se é aba dentro do
+Tickrify ou produto à parte). Só para não esquecer — retomar quando ele der
+sinal.
+
+---
+
 ## ❌ Fora do roadmap (decisão tomada)
 
 - **Chat entre usuários** — substituído por comunidade no Twitter/X

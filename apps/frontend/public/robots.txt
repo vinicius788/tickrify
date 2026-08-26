@@ -9,9 +9,15 @@ Disallow: /dashboard
 Disallow: /dashboard/
 Disallow: /demo
 Disallow: /demo/
-Disallow: /sign-in
-Disallow: /sign-in/
-Disallow: /sign-up
-Disallow: /sign-up/
+
+# /sign-in e /sign-up saíram do Disallow DE PROPÓSITO, e isto não é descuido.
+# As duas estavam bloqueadas aqui e mesmo assim /sign-in foi parar no índice do
+# Google (conferido no Search Console em 10/08/2026, último rastreamento 16/06).
+# Disallow impede RASTREAR, não INDEXAR: a URL entra no índice por link, sem
+# conteúdo, e bloqueada o Google nunca chega a LER o noindex. Os dois juntos se
+# anulam. As duas rotas agora servem <meta name="robots" content="noindex,
+# nofollow"> no HTML cru (scripts/prerender.mjs) e depois da hidratação
+# (useSeo), que é o que de fato tira do índice. Recolocar o Disallow aqui
+# desfaz a correção.
 
 Sitemap: https://tickrify.com/sitemap.xml

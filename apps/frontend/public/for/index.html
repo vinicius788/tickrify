@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>What Tickrify Reads: Instrument and Platform Coverage | Tickrify</title>
+  <meta name="description" content="Exactly which instruments get live candle data and which do not: crypto, gold, forex, index CFDs and stocks, plus every platform whose screenshots work." />
+  <link rel="canonical" href="https://tickrify.com/for/" />
+  <link rel="icon" type="image/png" href="/icon.png?v=3" />
+  <meta property="og:title" content="What Tickrify Can Actually Read" />
+  <meta property="og:description" content="Which instruments get verified live candles, which get a screenshot-only read, and the guard that stops a stale chart from being analyzed as if it were live." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://tickrify.com/for/" />
+  <meta property="og:site_name" content="Tickrify" />
+  <meta property="og:image" content="https://tickrify.com/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Tickrify, AI chart analysis for traders" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="What Tickrify Can Actually Read" />
+  <meta name="twitter:description" content="Which instruments get verified live candles, which get a screenshot-only read, and the guard that stops a stale chart from being analyzed as if it were live." />
+  <meta name="twitter:image" content="https://tickrify.com/og.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "WebPage", "name": "What Tickrify Can Actually Read", "description": "Which instruments get verified live candles, which get a screenshot-only read, and the guard that stops a stale chart from being analyzed as if it were live.", "url": "https://tickrify.com/for/", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "name": "Tickrify", "url": "https://tickrify.com/"}, "publisher": {"@type": "Organization", "name": "Tickrify", "url": "https://tickrify.com/"}}
+  </script>
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Do I need to connect my broker or exchange?", "acceptedAnswer": {"@type": "Answer", "text": "No. Nothing connects. You upload an image, and the only outbound calls the backend makes are to public market data feeds for the instrument it read off your chart."}}, {"@type": "Question", "name": "What happens if it cannot identify my instrument?", "acceptedAnswer": {"@type": "Answer", "text": "It falls back to reading the screenshot alone and returns a structured read without live candles. It does not invent a price."}}, {"@type": "Question", "name": "Which timeframes work best?", "acceptedAnswer": {"@type": "Answer", "text": "Anything with a readable price axis and a legible timeframe label. If the timeframe cannot be read, the candle block is skipped on purpose, because statistics computed on the wrong interval hurt more than they help."}}, {"@type": "Question", "name": "Is this a signal service?", "acceptedAnswer": {"@type": "Answer", "text": "No. It is a second opinion on a setup you already have. It confirms your read or kills it, and the decision stays yours. If you want somebody to tell you what to buy, this is the wrong product."}}, {"@type": "Question", "name": "How much does it cost?", "acceptedAnswer": {"@type": "Answer", "text": "Three analyses are free with no card. After that it is one plan at $29 a month, detailed on the pricing page."}}]}
+  </script>
+  <style>
+    :root{--bg:#050508;--fg:#f5f6f8;--muted:#9aa3ae;--green:#5eea8a;--line:rgba(154,163,174,.18)}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family:Geist,system-ui,sans-serif;line-height:1.8}
+    .wrap{max-width:760px;margin:0 auto;padding:32px 20px 80px}
+    header.site{display:flex;justify-content:space-between;align-items:center;margin-bottom:48px}
+    header.site a.logo{color:var(--fg);text-decoration:none;font-weight:700;font-size:18px}
+    header.site a.logo span{color:var(--green)}
+    header.site a.cta{color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
+    .kicker{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--green)}
+    h1{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:clamp(2rem,4.5vw,3rem);line-height:1.1;letter-spacing:-.02em;margin:12px 0 10px}
+    .meta{color:var(--muted);font-size:13px;margin-bottom:36px;font-family:"JetBrains Mono",monospace}
+    h2{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.5rem;margin:44px 0 12px;line-height:1.3}
+    h3{font-size:1.05rem;margin:28px 0 6px;color:var(--fg);font-weight:650}
+    p,li{color:#c9cfd6;font-size:1.02rem}
+    strong{color:var(--fg)}
+    a{color:var(--green)}
+    ul,ol{padding-left:22px}
+    li{margin-bottom:8px}
+    table{width:100%;border-collapse:collapse;margin:24px 0;font-size:.92rem}
+    th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}
+    th{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+    td strong{color:var(--fg)}
+    .yes{color:var(--green);font-weight:600}
+    .no{color:#f0a0a0;font-weight:600}
+    .callout{border:1px solid rgba(94,234,138,.35);border-radius:14px;padding:20px 24px;margin:36px 0;background:rgba(94,234,138,.04)}
+    .callout p{margin:0 0 12px}
+    .callout a.btn{display:inline-block;color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
+    .toc{border:1px solid var(--line);border-radius:14px;padding:18px 24px;margin:32px 0}
+    .toc p{margin:0 0 8px;font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+    .toc ol{margin:0;padding-left:20px}
+    .toc li{margin-bottom:4px;font-size:.95rem}
+    .card{display:block;border:1px solid var(--line);border-radius:14px;padding:20px 24px;margin:16px 0;text-decoration:none}
+    .card h3{margin:0 0 6px}
+    .card p{margin:0;font-size:.95rem}
+    footer{margin-top:64px;border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a class="logo" href="/">tickrify<span>.</span></a>
+      <a class="cta" href="/?utm_source=landing&amp;utm_medium=organic&amp;utm_campaign=coverage_hub">Try 3 free analyses</a>
+    </header>
+
+    <span class="kicker">Coverage</span>
+    <h1>What Tickrify can actually read</h1>
+    <p class="meta">Updated August 2026</p>
+
+    <p>Every AI chart tool says it "analyzes any chart". Most of them mean the model looks at your image and guesses. <strong>Tickrify does something narrower and more checkable:</strong> it reads the instrument and timeframe off your screenshot, then goes and fetches the real candles for that instrument before saying anything about price.</p>
+    <p>That only works where a real feed exists. On this page we tell you exactly where it does and where it does not, because a tool that quietly guesses on the instruments it cannot verify is worse than one that admits the gap.</p>
+
+    <div class="toc">
+      <p>What's in here</p>
+      <ol>
+        <li><a href="#coverage">Instrument coverage, in full</a></li>
+        <li><a href="#platforms">Platform coverage</a></li>
+        <li><a href="#stale">The one guard worth knowing about</a></li>
+        <li><a href="#honest">What we do not claim</a></li>
+        <li><a href="#faq">Questions people actually ask</a></li>
+      </ol>
+    </div>
+
+    <h2 id="coverage">Instrument coverage, in full</h2>
+
+    <p>"Live candles" below means the same thing every time: the backend pulls up to 120 recent candles on your chart's timeframe, computes ATR14, swing highs and lows, RSI(14) Wilder, volume against its 20-period average, a volume-by-price map with the point of control and value area, and an event map of the last impulse leg, recent structure breaks and failed breakouts. Those numbers go into the prompt as text. The model reads arithmetic instead of pixels.</p>
+
+    <table>
+      <thead><tr><th>What you upload</th><th>Live candles</th><th>Source</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Crypto</strong> quoted in USDT, USDC or USD. 40 bases including BTC, ETH, SOL, XRP, BNB, ADA, DOGE, AVAX, LINK, DOT, LTC, TRX, ATOM, UNI, APT, ARB, OP, SUI, PEPE, NEAR, INJ, TIA, TON, HBAR, AAVE, RUNE</td><td class="yes">Yes</td><td>OKX first, Binance as fallback</td></tr>
+        <tr><td><strong>Gold and silver</strong>: XAUUSD, XAGUSD</td><td class="yes">Yes</td><td>Twelve Data</td></tr>
+        <tr><td><strong>Forex</strong> pairs built from USD, EUR, GBP, JPY, AUD, NZD, CAD, CHF</td><td class="yes">Yes</td><td>Twelve Data</td></tr>
+        <tr><td><strong>Index CFDs</strong>: NAS100, US100, US30, SPX500, DAX, FTSE, JP225, IBOV</td><td class="no">No</td><td>Deep analysis still adds a risk-regime read. Price levels come from your screenshot</td></tr>
+        <tr><td><strong>Single stocks and ETFs</strong>: NVDA, TSLA, AAPL, SPY, QQQ</td><td class="no">No</td><td>The model reads your screenshot and nothing else</td></tr>
+      </tbody>
+    </table>
+
+    <p>If your instrument is in the bottom two rows, Tickrify still returns a structured read: bias, structure, invalidation, scenarios. What it does not do is pretend it verified a price. That is a real difference in confidence, and you should weigh it.</p>
+
+    <h2 id="platforms">Platform coverage</h2>
+
+    <p>There is nothing to install. Tickrify never touches your broker, your account or your orders. It reads an image, so any platform that can produce a screenshot works: TradingView, MetaTrader 4 and 5, cTrader, Thinkorswim, exchange web interfaces, and the mobile apps for all of them.</p>
+
+    <a class="card" href="/for/tradingview/">
+      <h3>AI chart analysis for TradingView</h3>
+      <p>The most common setup. How to frame a screenshot the model can read, and what happens after you drop it in.</p>
+    </a>
+
+    <a class="card" href="/for/metatrader/">
+      <h3>AI chart analysis for MetaTrader 4 and MT5</h3>
+      <p>Broker symbol suffixes, why our reference feed can differ from your broker's by a few pips, and why there is no Expert Advisor.</p>
+    </a>
+
+    <a class="card" href="/for/bitcoin/">
+      <h3>AI Bitcoin and crypto chart analysis</h3>
+      <p>The best-covered class we have. Live candles on any of 40 bases, 24 hours a day, weekends included.</p>
+    </a>
+
+    <a class="card" href="/for/gold/">
+      <h3>AI gold chart analysis (XAUUSD)</h3>
+      <p>Why gold gets its own page: the dollar leg is written into the model's instructions, and the ATR is large enough that stop placement decides the trade.</p>
+    </a>
+
+    <h2 id="stale">The one guard worth knowing about</h2>
+
+    <p>Screenshots go stale. People save a chart, come back two days later and upload it. If Tickrify blindly injected "the current price is X" next to a chart drawn at a different price, the model would build an entry, a stop and a target around numbers that contradict the image, and the output would look confident and be wrong.</p>
+
+    <p>So before injecting anything, the backend compares the last visible close it read off your chart against the live close. If those two are more than three ATRs apart, <strong>the live data is withheld</strong> and the model is told in plain language that it is looking at a historical chart, that every level must come from the image, and that it must say so in the output. You get a slightly weaker analysis instead of a confidently wrong one.</p>
+
+    <h2 id="honest">What we do not claim</h2>
+
+    <ul>
+      <li><strong>No breaking news, no sentiment, no order flow.</strong> The model does not read headlines. If a story broke ten minutes ago, it has no idea.</li>
+      <li><strong>No execution.</strong> Tickrify cannot place, modify or close a trade, and will not. A tool that both advises and executes has an incentive problem we would rather not have.</li>
+      <li><strong>No promise that it is right.</strong> We publish the measured hit rate, the sample size and the 95% confidence interval on <a href="/accuracy">our accuracy page</a>, including the parts that look bad. As far as we can tell, no competitor publishes anything comparable.</li>
+      <li><strong>It abstains often.</strong> A large share of reads come back as "no trade". That is the product working, not failing.</li>
+    </ul>
+
+    <h2 id="faq">Questions people actually ask</h2>
+
+    <h3>Do I need to connect my broker or exchange?</h3>
+    <p>No. Nothing connects. You upload an image, and the only outbound calls the backend makes are to public market data feeds for the instrument it read off your chart.</p>
+
+    <h3>What happens if it cannot identify my instrument?</h3>
+    <p>It falls back to reading the screenshot alone and returns a structured read without live candles. It does not invent a price.</p>
+
+    <h3>Which timeframes work best?</h3>
+    <p>Anything with a readable price axis and a legible timeframe label. If the timeframe cannot be read, the candle block is skipped on purpose, because statistics computed on the wrong interval hurt more than they help.</p>
+
+    <h3>Is this a signal service?</h3>
+    <p>No. It is a second opinion on a setup you already have. It confirms your read or kills it, and the decision stays yours. If you want somebody to tell you what to buy, this is the wrong product.</p>
+
+    <h3>How much does it cost?</h3>
+    <p>Three analyses are free with no card. After that it is one plan at $29 a month, detailed on the <a href="/pricing">pricing page</a>.</p>
+
+    <div class="callout">
+      <p>You already have the chart open. Screenshot it, run it free, and see whether the AI confirms your read or tells you to skip it. Three analyses, no card.</p>
+      <a class="btn" href="/?utm_source=landing&amp;utm_medium=organic&amp;utm_campaign=coverage_hub_end">Gut-check your next setup free</a>
+    </div>
+
+    <p>Related: <a href="/accuracy">Our measured accuracy, published</a> &middot; <a href="/blog/ai-chart-analysis/">How AI chart analysis actually works</a> &middot; <a href="/tools/">Free trading calculators</a> &middot; <a href="/blog/">All posts</a></p>
+
+    <footer>Nothing on this page is financial advice. Trading involves substantial risk of loss. Coverage reflects the production configuration as of August 2026 and can change. Platform and exchange names are trademarks of their respective owners.</footer>
+  </div>
+</body>
+</html>

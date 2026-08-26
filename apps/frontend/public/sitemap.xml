@@ -7,7 +7,12 @@
      que o Google ainda usa. changefreq e priority sairam: sao ignorados.
 
      24/08/2026: entraram /terms, /cookies e /risk, que deixaram de ser
-     dialogo/rodape e viraram paginas com URL propria. -->
+     dialogo/rodape e viraram paginas com URL propria.
+
+     26/08/2026: entrou o bloco /for/ (hub de cobertura + TradingView,
+     MetaTrader, Bitcoin e ouro). Sao paginas estaticas em public/, mesmo
+     mecanismo do /blog/ e do /tools/: o Vercel serve o arquivo antes de cair
+     no rewrite da SPA, entao nao dependem do build do React. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://tickrify.com/</loc>
@@ -24,6 +29,26 @@
   <url>
     <loc>https://tickrify.com/accuracy</loc>
     <lastmod>2026-08-24</lastmod>
+  </url>
+  <url>
+    <loc>https://tickrify.com/for/</loc>
+    <lastmod>2026-08-26</lastmod>
+  </url>
+  <url>
+    <loc>https://tickrify.com/for/tradingview/</loc>
+    <lastmod>2026-08-26</lastmod>
+  </url>
+  <url>
+    <loc>https://tickrify.com/for/metatrader/</loc>
+    <lastmod>2026-08-26</lastmod>
+  </url>
+  <url>
+    <loc>https://tickrify.com/for/bitcoin/</loc>
+    <lastmod>2026-08-26</lastmod>
+  </url>
+  <url>
+    <loc>https://tickrify.com/for/gold/</loc>
+    <lastmod>2026-08-26</lastmod>
   </url>
   <url>
     <loc>https://tickrify.com/tools/</loc>

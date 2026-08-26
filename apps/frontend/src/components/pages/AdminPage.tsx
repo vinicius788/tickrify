@@ -4,7 +4,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { useSeo } from '@/hooks/useSeo';
+import { useSeo, seoFor } from '@/hooks/useSeo';
 import RelatosPainel from '@/components/admin/RelatosPainel';
 
 /**
@@ -151,7 +151,7 @@ function LinhaFlag({
 }
 
 export default function AdminPage() {
-  useSeo({ title: 'Admin · Tickrify', description: 'Área interna.', path: '/admin', noindex: true });
+  useSeo(seoFor('/admin'));
   const { flags, cache, isLoading, error, semAcesso, setFlag, clearFlag } = useFeatureFlags();
   const { toast } = useToast();
 

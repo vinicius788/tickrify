@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Chart Analysis for MetaTrader 4 and MT5 Screenshots | Tickrify</title>
+  <meta name="description" content="Screenshot an MT4 or MT5 chart and get an AI read checked against live forex and gold candles. No Expert Advisor, no broker login, no install." />
+  <link rel="canonical" href="https://tickrify.com/for/metatrader/" />
+  <link rel="icon" type="image/png" href="/icon.png?v=3" />
+  <meta property="og:title" content="AI Chart Analysis for MetaTrader 4 and MT5" />
+  <meta property="og:description" content="Forex and gold are the instruments we have the best live data for. Paste an MT screenshot and get entry, stop, targets and risk, with the feed caveats stated up front." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://tickrify.com/for/metatrader/" />
+  <meta property="og:site_name" content="Tickrify" />
+  <meta property="og:image" content="https://tickrify.com/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Tickrify, AI chart analysis for traders" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AI Chart Analysis for MetaTrader 4 and MT5" />
+  <meta name="twitter:description" content="Forex and gold are the instruments we have the best live data for. Paste an MT screenshot and get entry, stop, targets and risk, with the feed caveats stated up front." />
+  <meta name="twitter:image" content="https://tickrify.com/og.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "WebPage", "name": "AI Chart Analysis for MetaTrader 4 and MT5", "description": "Forex and gold are the instruments we have the best live data for. Paste an MT screenshot and get entry, stop, targets and risk, with the feed caveats stated up front.", "url": "https://tickrify.com/for/metatrader/", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "name": "Tickrify", "url": "https://tickrify.com/"}, "publisher": {"@type": "Organization", "name": "Tickrify", "url": "https://tickrify.com/"}}
+  </script>
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Do I need to install anything in MetaTrader?", "acceptedAnswer": {"@type": "Answer", "text": "No. No Expert Advisor, no indicator, no script, no DLL. You take a screenshot and paste it into a web page."}}, {"@type": "Question", "name": "Will it recognize my broker's symbol suffix?", "acceptedAnswer": {"@type": "Answer", "text": "Usually. The symbol string is stripped down to the underlying pair, so variants like EURUSD.m or XAUUSD.pro resolve. If the pair cannot be identified, the analysis runs from the screenshot alone rather than substituting something else."}}, {"@type": "Question", "name": "Why is the price it quotes slightly different from my platform?", "acceptedAnswer": {"@type": "Answer", "text": "Because the candles come from a reference feed, not from your broker. Spreads, liquidity providers and server time all differ. Use the read for structure and place orders from your own chart."}}, {"@type": "Question", "name": "Does it work with MT4 and MT5 both?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. It reads an image, so the platform version is irrelevant. The same is true of cTrader, Thinkorswim, NinjaTrader and any exchange interface."}}, {"@type": "Question", "name": "Can it analyze my strategy tester results or account history?", "acceptedAnswer": {"@type": "Answer", "text": "No. It reads one chart at a time. It is a checkpoint before a single trade, not a performance analytics tool."}}]}
+  </script>
+  <style>
+    :root{--bg:#050508;--fg:#f5f6f8;--muted:#9aa3ae;--green:#5eea8a;--line:rgba(154,163,174,.18)}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family:Geist,system-ui,sans-serif;line-height:1.8}
+    .wrap{max-width:760px;margin:0 auto;padding:32px 20px 80px}
+    header.site{display:flex;justify-content:space-between;align-items:center;margin-bottom:48px}
+    header.site a.logo{color:var(--fg);text-decoration:none;font-weight:700;font-size:18px}
+    header.site a.logo span{color:var(--green)}
+    header.site a.cta{color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
+    .kicker{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--green)}
+    h1{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:clamp(2rem,4.5vw,3rem);line-height:1.1;letter-spacing:-.02em;margin:12px 0 10px}
+    .meta{color:var(--muted);font-size:13px;margin-bottom:36px;font-family:"JetBrains Mono",monospace}
+    h2{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.5rem;margin:44px 0 12px;line-height:1.3}
+    h3{font-size:1.05rem;margin:28px 0 6px;color:var(--fg);font-weight:650}
+    p,li{color:#c9cfd6;font-size:1.02rem}
+    strong{color:var(--fg)}
+    a{color:var(--green)}
+    ul,ol{padding-left:22px}
+    li{margin-bottom:8px}
+    table{width:100%;border-collapse:collapse;margin:24px 0;font-size:.92rem}
+    th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}
+    th{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+    td strong{color:var(--fg)}
+    .yes{color:var(--green);font-weight:600}
+    .no{color:#f0a0a0;font-weight:600}
+    .callout{border:1px solid rgba(94,234,138,.35);border-radius:14px;padding:20px 24px;margin:36px 0;background:rgba(94,234,138,.04)}
+    .callout p{margin:0 0 12px}
+    .callout a.btn{display:inline-block;color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
+    .toc{border:1px solid var(--line);border-radius:14px;padding:18px 24px;margin:32px 0}
+    .toc p{margin:0 0 8px;font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+    .toc ol{margin:0;padding-left:20px}
+    .toc li{margin-bottom:4px;font-size:.95rem}
+    .card{display:block;border:1px solid var(--line);border-radius:14px;padding:20px 24px;margin:16px 0;text-decoration:none}
+    .card h3{margin:0 0 6px}
+    .card p{margin:0;font-size:.95rem}
+    footer{margin-top:64px;border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a class="logo" href="/">tickrify<span>.</span></a>
+      <a class="cta" href="/?utm_source=landing&amp;utm_medium=organic&amp;utm_campaign=metatrader">Try 3 free analyses</a>
+    </header>
+
+    <span class="kicker">For MetaTrader users</span>
+    <h1>AI chart analysis for MetaTrader 4 and MT5</h1>
+    <p class="meta">Updated August 2026</p>
+
+    <p>MetaTrader 4 and MT5 are still where a large share of forex and gold traders actually work, and they are the platform AI chart tools most often ignore. Tickrify does not ignore them, for a simple reason: <strong>the instruments MT traders live on are the ones we have the best live data for.</strong> Forex majors, crosses, gold and silver all get verified candles.</p>
+    <p>There is nothing to install. No Expert Advisor, no DLL, no broker credentials. You screenshot a chart and paste it.</p>
+
+    <div class="toc">
+      <p>What's in here</p>
+      <ol>
+        <li><a href="#how">The workflow</a></li>
+        <li><a href="#symbols">Broker symbol suffixes</a></li>
+        <li><a href="#feed">Your broker&#x27;s feed is not our feed</a></li>
+        <li><a href="#coverage">What gets live data on MetaTrader</a></li>
+        <li><a href="#screenshot">Framing an MT screenshot well</a></li>
+        <li><a href="#ea">Why there is no Expert Advisor</a></li>
+        <li><a href="#never">What it will not do</a></li>
+        <li><a href="#faq">Questions people actually ask</a></li>
+      </ol>
+    </div>
+
+    <h2 id="how">The workflow</h2>
+
+    <ol>
+      <li>Set your chart up in MT4 or MT5 the way you trade it. Objects and indicators can stay on.</li>
+      <li>Capture the chart window. On Windows, <strong>Alt+PrtScn</strong> captures the active window straight to the clipboard. On Mac, <strong>Cmd+Shift+4</strong> then space, then click the window.</li>
+      <li>Paste into Tickrify with Ctrl+V.</li>
+      <li>Read the structured output: bias, entry, stop, targets, confluence, risk, scenarios and the invalidation that would prove it wrong.</li>
+    </ol>
+
+    <h2 id="symbols">Broker symbol suffixes</h2>
+
+    <p>MetaTrader symbols are not standardized. Depending on your broker the same instrument shows up as <strong>EURUSD</strong>, <strong>EURUSD.m</strong>, <strong>EURUSDmicro</strong>, <strong>EURUSD_raw</strong>, <strong>XAUUSD.pro</strong> or a dozen other variants, and some brokers append a suffix to every symbol on the platform.</p>
+
+    <p>Tickrify reads the symbol string off your chart and strips it down to the underlying pair before looking for data. In practice that means the common suffixes resolve correctly. If your broker uses something unusual enough that the pair cannot be identified, the analysis still runs, it just runs from the screenshot alone without a verified candle block. It will not silently substitute a different instrument.</p>
+
+    <h2 id="feed">Your broker's feed is not our feed, and that matters</h2>
+
+    <p>This is the disclosure most tools skip and MT traders should insist on. <strong>The candles we fetch do not come from your broker.</strong> They come from a reference feed. Your broker's quotes are its own, built from its own liquidity providers, with its own spread and its own bar close times.</p>
+
+    <p>The practical consequences:</p>
+
+    <ul>
+      <li>The last price we verify can sit a few pips away from the last price on your screen. On gold it can be more.</li>
+      <li>Bar closes can differ, because broker server time is often not UTC and a daily or four-hour candle boundary shifts with it.</li>
+      <li>Structure, ranges and ATR are close enough to be useful. Exact levels are not, and you should place orders from your own chart, never from a number quoted back to you.</li>
+    </ul>
+
+    <p>We would rather say this on the page than have you discover it on a trade. Use the analysis for the read. Use your own platform for the price.</p>
+
+    <h2 id="coverage">What gets live data on MetaTrader</h2>
+
+    <table>
+      <thead><tr><th>Instrument on MT</th><th>Live candles</th></tr></thead>
+      <tbody>
+        <tr><td>Forex majors and crosses built from USD, EUR, GBP, JPY, AUD, NZD, CAD, CHF</td><td class="yes">Yes</td></tr>
+        <tr><td>Gold and silver: XAUUSD, XAGUSD</td><td class="yes">Yes</td></tr>
+        <tr><td>Crypto CFDs quoted against USD or USDT, on the 40 bases we cover</td><td class="yes">Yes</td></tr>
+        <tr><td>Index CFDs: NAS100, US30, SPX500, DAX, JP225</td><td class="no">No, screenshot read only</td></tr>
+        <tr><td>Stock CFDs and exotic pairs</td><td class="no">No, screenshot read only</td></tr>
+      </tbody>
+    </table>
+
+    <p>The <a href="/for/">full coverage table is here</a>, including what the analysis still gives you on the instruments without verified candles.</p>
+
+    <h2 id="screenshot">Framing an MT screenshot well</h2>
+
+    <ul>
+      <li><strong>Keep the price scale on.</strong> Without visible numbers the model has shapes and no anchors.</li>
+      <li><strong>Keep the symbol and period visible.</strong> MT shows them in the window title bar and the top-left label. Capture the window rather than a crop of the candles so both stay in frame.</li>
+      <li><strong>Show roughly 100 to 200 bars.</strong> MT often opens zoomed further in than is useful. Zoom out before capturing.</li>
+      <li><strong>Consider a lighter template.</strong> The default black background with thin green and red bars is legible, but a high-contrast template with thicker candles reads better than one buried under indicator subwindows.</li>
+      <li><strong>One chart per capture.</strong> A four-chart profile screenshot gives the model four half-legible charts instead of one clear one.</li>
+    </ul>
+
+    <h2 id="ea">Why there is no Expert Advisor</h2>
+
+    <p>An EA that read your charts and placed trades is technically buildable and we are not going to build it. Two reasons, and neither is about difficulty.</p>
+
+    <p>The first is that a tool which both advises and executes has an incentive problem. The moment we profit from your activity rather than your outcome, the honest answer of "no trade" becomes expensive for us to give, and that answer is the entire product.</p>
+
+    <p>The second is that the measured hit rate does not support automation. We publish it on <a href="/accuracy">the accuracy page</a>, with sample size and a 95% confidence interval, including the parts that look bad. Look at those numbers and then ask yourself whether you would hand them the keys to your account unattended. We would not, so we are not going to sell you the option.</p>
+
+    <h2 id="never">What it will not do</h2>
+
+    <ul>
+      <li>No trade placement, modification or closing. Ever.</li>
+      <li>No broker login, no investor password, no account number. It never asks and never needs one.</li>
+      <li>No news, sentiment or order flow. The model has no idea what happened in the last ten minutes.</li>
+      <li>No guarantee of a setup. Abstention is common and deliberate.</li>
+    </ul>
+
+    <h2 id="faq">Questions people actually ask</h2>
+
+    <h3>Do I need to install anything in MetaTrader?</h3>
+    <p>No. No Expert Advisor, no indicator, no script, no DLL. You take a screenshot and paste it into a web page.</p>
+
+    <h3>Will it recognize my broker&#x27;s symbol suffix?</h3>
+    <p>Usually. The symbol string is stripped down to the underlying pair, so variants like EURUSD.m or XAUUSD.pro resolve. If the pair cannot be identified, the analysis runs from the screenshot alone rather than substituting something else.</p>
+
+    <h3>Why is the price it quotes slightly different from my platform?</h3>
+    <p>Because the candles come from a reference feed, not from your broker. Spreads, liquidity providers and server time all differ. Use the read for structure and place orders from your own chart.</p>
+
+    <h3>Does it work with MT4 and MT5 both?</h3>
+    <p>Yes. It reads an image, so the platform version is irrelevant. The same is true of cTrader, Thinkorswim, NinjaTrader and any exchange interface.</p>
+
+    <h3>Can it analyze my strategy tester results or account history?</h3>
+    <p>No. It reads one chart at a time. It is a checkpoint before a single trade, not a performance analytics tool.</p>
+
+    <div class="callout">
+      <p>You already have the chart open. Screenshot it, run it free, and see whether the AI confirms your read or tells you to skip it. Three analyses, no card.</p>
+      <a class="btn" href="/?utm_source=landing&amp;utm_medium=organic&amp;utm_campaign=metatrader_end">Gut-check your next setup free</a>
+    </div>
+
+    <p>Related: <a href="/for/gold/">AI gold chart analysis (XAUUSD)</a> &middot; <a href="/for/">Full instrument coverage</a> &middot; <a href="/accuracy">Our measured accuracy</a> &middot; <a href="/tools/position-size-calculator/">Free position size calculator</a> &middot; <a href="/blog/">All posts</a></p>
+
+    <footer>Nothing on this page is financial advice. Trading involves substantial risk of loss. MetaTrader, MT4 and MT5 are trademarks of their respective owner and Tickrify is not affiliated with it; descriptions are based on public information as of August 2026.</footer>
+  </div>
+</body>
+</html>
