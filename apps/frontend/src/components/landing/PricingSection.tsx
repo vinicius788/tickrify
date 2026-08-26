@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { type Currency } from '@/lib/stripe';
 import { warmupPaymentsApi } from '@/lib/api';
+import { track } from '@/lib/analytics';
 
 // PLANO ÚNICO (decisão 27/07/2026, Fase 2 da auditoria).
 //
@@ -48,10 +49,33 @@ const PricingSection = () => {
     warmupPaymentsApi();
   }, []);
 
+  // `pricing_viewed` só disparava na rota /pricing. Desde que o preço passou a
+  // viver dentro da landing, quem vê o preço na home não contava no funil.
+  // Dispara uma vez por carga, quando a seção entra de fato na tela.
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const seenRef = useRef(false);
+  useEffect(() => {
+    const node = sectionRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (seenRef.current || !entries.some((entry) => entry.isIntersecting)) return;
+        seenRef.current = true;
+        track('pricing_viewed', { source: 'landing_section' });
+        observer.disconnect();
+      },
+      { threshold: 0.4 },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   const features = [pr.fS1, pr.fS2, pr.fS3, pr.fS4];
 
   return (
-    <section id="pricing" className="site-light">
+    <section id="pricing" ref={sectionRef} className="site-light">
       <div className="site-wrap">
         <div className="site-sblk site-sblk-center">
           <span className="site-eyebrow">{pr.label}</span>

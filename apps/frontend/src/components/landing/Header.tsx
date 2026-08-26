@@ -4,6 +4,7 @@ import { SignInButton, SignUpButton, SignedIn, SignedOut, useUser } from '@clerk
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { track } from '@/lib/analytics';
 import lockup from '@/assets/tickrify-lockup.svg';
 import type { SiteSection } from '@/components/layout/SiteLayout';
 
@@ -38,9 +39,9 @@ const Header = ({ active = null, minimal = false }: HeaderProps) => {
   return (
     <header className="site-header">
       <div className="site-wrap">
-        <a href="/" className="site-logo" aria-label="Tickrify">
+        <Link to="/" className="site-logo" aria-label="Tickrify">
           <img src={lockup} alt="Tickrify" width={116} height={30} />
-        </a>
+        </Link>
 
         {minimal ? null : (
         <nav className="site-nav">
@@ -82,7 +83,11 @@ const Header = ({ active = null, minimal = false }: HeaderProps) => {
                   forceRedirectUrl="/dashboard"
                   signInForceRedirectUrl="/dashboard"
                 >
-                  <button type="button" className="site-btn site-btn-primary site-btn-sm">
+                  <button
+                    type="button"
+                    onClick={() => track('signup_started', { source: 'header' })}
+                    className="site-btn site-btn-primary site-btn-sm"
+                  >
                     {t.landing.hero.startFree}
                   </button>
                 </SignUpButton>

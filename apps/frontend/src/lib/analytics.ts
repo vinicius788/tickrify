@@ -20,6 +20,7 @@ export function initAnalytics(): void {
       persistence: 'localStorage+cookie',
     });
     ready = true;
+    flushPending();
   } catch (err) {
     // Nunca deixar analytics derrubar o app.
     console.warn('[analytics] init falhou:', err);
@@ -124,7 +125,6 @@ export type FunnelEvent =
   | 'upgrade_clicked'
   | 'checkout_started'
   | 'subscription_activated'
-  | 'analysis_shared'
   | 'founding_banner_clicked'
   // Funil da demo anônima (/try) — Fase 0 de ativação:
   | 'demo_page_view'
@@ -134,9 +134,61 @@ export type FunnelEvent =
   | 'demo_limit_hit'
   | 'signup_from_demo';
 
+// ─── Fila de pré-consentimento ────────────────────────────────────────────────
+// O banner de cookies só é respondido DEPOIS que a rota já montou, e a rota que
+// monta é justamente a que dispara `landing_view` / `demo_page_view`. Sem esta
+// fila, o primeiro evento de todo visitante era descartado em silêncio e quem
+// chegava, usava a demo e saía não gerava evento nenhum. Agora o evento espera
+// a escolha: aceitar despeja a fila, recusar joga fora.
+type Pending = { event: FunnelEvent | '$pageview'; props?: Record<string, unknown> };
+
+const PENDING_MAX = 20;
+let pending: Pending[] = [];
+let pendingIdentify: { userId: string; traits?: Record<string, unknown> } | null = null;
+
+function enqueue(event: Pending['event'], props?: Record<string, unknown>): void {
+  if (pending.length >= PENDING_MAX) return;
+  pending.push({ event, props });
+}
+
+function flushPending(): void {
+  if (!ready) return;
+
+  if (pendingIdentify) {
+    const id = pendingIdentify;
+    pendingIdentify = null;
+    try {
+      posthog.identify(id.userId, id.traits);
+    } catch {
+      /* noop */
+    }
+  }
+
+  const queued = pending;
+  pending = [];
+  for (const item of queued) {
+    // O Meta Pixel também estava desligado quando o evento entrou na fila.
+    if (item.event !== '$pageview') trackMeta(item.event, item.props);
+    try {
+      posthog.capture(item.event, item.props);
+    } catch {
+      /* noop */
+    }
+  }
+}
+
+/** Recusa de cookies: o que estava na fila nunca vai ser enviado. */
+export function discardPendingAnalytics(): void {
+  pending = [];
+  pendingIdentify = null;
+}
+
 export function track(event: FunnelEvent, props?: Record<string, unknown>): void {
   trackMeta(event, props);
-  if (!ready) return;
+  if (!ready) {
+    enqueue(event, props);
+    return;
+  }
   try {
     posthog.capture(event, props);
   } catch {
@@ -146,7 +198,12 @@ export function track(event: FunnelEvent, props?: Record<string, unknown>): void
 
 // Liga o usuário anônimo ao usuário logado (Clerk). Chamar no signup/login.
 export function identifyUser(userId: string, traits?: Record<string, unknown>): void {
-  if (!ready) return;
+  if (!ready) {
+    // Sem isto, quem já estava logado quando aceitou os cookies ficava anônimo
+    // para sempre: o efeito que chama esta função não roda de novo.
+    pendingIdentify = { userId, traits };
+    return;
+  }
   try {
     posthog.identify(userId, traits);
   } catch {
@@ -173,12 +230,13 @@ export function trackPageview(path: string): void {
       /* noop */
     }
   }
-  if (!ready) return;
+  const props = { $current_url: window.location.origin + path, path };
+  if (!ready) {
+    enqueue('$pageview', props);
+    return;
+  }
   try {
-    posthog.capture('$pageview', {
-      $current_url: window.location.origin + path,
-      path,
-    });
+    posthog.capture('$pageview', props);
   } catch {
     /* noop */
   }

@@ -36,6 +36,9 @@ type PageState = 'ready' | 'analyzing' | 'done' | 'locked';
 
 /** Marca que o cadastro veio da demo, AnalyticsIdentify usa pra disparar signup_from_demo. */
 function markDemoSource() {
+  // O cadastro daqui abre num modal do Clerk, sem passar pela rota /sign-up:
+  // sem este track o funil da demo perdia o degrau do cadastro.
+  track('signup_started', { source: 'demo' });
   try {
     localStorage.setItem('tickrify_demo_source', String(Date.now()));
   } catch {

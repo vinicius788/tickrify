@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { initAnalytics } from '@/lib/analytics';
+import { discardPendingAnalytics, initAnalytics } from '@/lib/analytics';
 import { CONSENT_EVENT, getConsent, setConsent } from '@/lib/consent';
 
 /**
@@ -26,6 +26,7 @@ const CookieConsent = () => {
   const choose = useCallback((value: 'granted' | 'denied') => {
     setConsent(value);
     if (value === 'granted') initAnalytics();
+    else discardPendingAnalytics();
   }, []);
 
   if (!visible) return null;

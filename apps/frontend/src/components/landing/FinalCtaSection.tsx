@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const FinalCtaSection = () => {
@@ -9,7 +10,7 @@ const FinalCtaSection = () => {
       <div className="site-wrap">
         <h2>{c.title} {c.highlight}</h2>
         <p>{c.subtitle}</p>
-        <a href="/try" className="site-btn site-btn-primary">{c.primary}</a>
+        <Link to="/try" className="site-btn site-btn-primary">{c.primary}</Link>
         <p className="site-hero-note" style={{ marginTop: '24px' }}>{c.footnote}</p>
       </div>
     </section>
