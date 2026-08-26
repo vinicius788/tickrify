@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Forex Chart Analysis (EURUSD, GBPUSD and More) | Tickrify</title>
+  <meta name="description" content="Upload a forex chart and get an AI read checked against real candles, with entry, stop and targets sized in ATR instead of pips. Majors and crosses covered." />
+  <link rel="canonical" href="https://tickrify.com/for/forex/" />
+  <link rel="icon" type="image/png" href="/icon.png?v=3" />
+  <meta property="og:title" content="AI Forex Chart Analysis" />
+  <meta property="og:description" content="Real candles for every major and cross, distances sized in ATR instead of pips, and no invented volume profile. A second opinion before you enter, not a signal." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://tickrify.com/for/forex/" />
+  <meta property="og:site_name" content="Tickrify" />
+  <meta property="og:image" content="https://tickrify.com/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Tickrify, AI chart analysis for traders" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AI Forex Chart Analysis" />
+  <meta name="twitter:description" content="Real candles for every major and cross, distances sized in ATR instead of pips, and no invented volume profile. A second opinion before you enter, not a signal." />
+  <meta name="twitter:image" content="https://tickrify.com/og.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "WebPage", "name": "AI Forex Chart Analysis", "description": "Real candles for every major and cross, distances sized in ATR instead of pips, and no invented volume profile. A second opinion before you enter, not a signal.", "url": "https://tickrify.com/for/forex/", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "name": "Tickrify", "url": "https://tickrify.com/"}, "publisher": {"@type": "Organization", "name": "Tickrify", "url": "https://tickrify.com/"}}
+  </script>
+  <script type="application/ld+json">
+  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Which forex pairs work?", "acceptedAnswer": {"@type": "Answer", "text": "Any pair built from USD, EUR, GBP, JPY, AUD, NZD, CAD or CHF, plus gold and silver. Exotics such as USDTRY or USDZAR do not resolve, and on those the analysis runs from your screenshot alone."}}, {"@type": "Question", "name": "Does it show volume or a volume profile on forex?", "acceptedAnswer": {"@type": "Answer", "text": "No, and that is on purpose. Spot forex has no centralized volume, so the feed returns the field empty and both blocks are left out of the analysis rather than estimated. On crypto, where volume is real, they are included."}}, {"@type": "Question", "name": "Is this a forex signal service?", "acceptedAnswer": {"@type": "Answer", "text": "No. It is a second opinion on a setup you already have, and it comes with the case against your read and what would prove it wrong. The decision stays yours. If you want somebody to tell you what to buy, this is the wrong product."}}, {"@type": "Question", "name": "Does it account for news releases?", "acceptedAnswer": {"@type": "Answer", "text": "No. It has no access to headlines, sentiment or order flow. On forex that is the largest single limitation, because rate decisions and data prints move these pairs harder than any pattern. Check the calendar yourself."}}, {"@type": "Question", "name": "Why is the price different from my MetaTrader?", "acceptedAnswer": {"@type": "Answer", "text": "Because the candles come from a reference feed rather than your broker, and spreads and server time differ. Use the read for structure and place orders from your own chart."}}, {"@type": "Question", "name": "Do I need to install anything?", "acceptedAnswer": {"@type": "Answer", "text": "No. No Expert Advisor, no indicator, no broker login. You take a screenshot and paste it."}}]}
+  </script>
+  <style>
+    :root{--bg:#050508;--fg:#f5f6f8;--muted:#9aa3ae;--green:#5eea8a;--line:rgba(154,163,174,.18)}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family:Geist,system-ui,sans-serif;line-height:1.8}
+    .wrap{max-width:760px;margin:0 auto;padding:32px 20px 80px}
+    header.site{display:flex;justify-content:space-between;align-items:center;margin-bottom:48px}
+    header.site a.logo{color:var(--fg);text-decoration:none;font-weight:700;font-size:18px}
+    header.site a.logo span{color:var(--green)}
+    header.site a.cta{color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
+    .kicker{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--green)}
+    h1{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:clamp(2rem,4.5vw,3rem);line-height:1.1;letter-spacing:-.02em;margin:12px 0 10px}
+    .meta{color:var(--muted);font-size:13px;margin-bottom:36px;font-family:"JetBrains Mono",monospace}
+    h2{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.5rem;margin:44px 0 12px;line-height:1.3}
+    h3{font-size:1.05rem;margin:28px 0 6px;color:var(--fg);font-weight:650}
+    p,li{color:#c9cfd6;font-size:1.02rem}
+    strong{color:var(--fg)}
+    a{color:var(--green)}
+    ul,ol{padding-left:22px}
+    li{margin-bottom:8px}
+    table{width:100%;border-collapse:collapse;margin:24px 0;font-size:.92rem}
+    th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}
+    th{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+    td strong{color:var(--fg)}
+    .yes{color:var(--green);font-weight:600}
+    .no{color:#f0a0a0;font-weight:600}
+    .callout{border:1px solid rgba(94,234,138,.35);border-radius:14px;padding:20px 24px;margin:36px 0;background:rgba(94,234,138,.04)}
+    .callout p{margin:0 0 12px}
+    .callout a.btn{display:inline-block;color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
+    .toc{border:1px solid var(--line);border-radius:14px;padding:18px 24px;margin:32px 0}
+    .toc p{margin:0 0 8px;font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+    .toc ol{margin:0;padding-left:20px}
+    .toc li{margin-bottom:4px;font-size:.95rem}
+    .card{display:block;border:1px solid var(--line);border-radius:14px;padding:20px 24px;margin:16px 0;text-decoration:none}
+    .card h3{margin:0 0 6px}
+    .card p{margin:0;font-size:.95rem}
+    footer{margin-top:64px;border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="site">
+      <a class="logo" href="/">tickrify<span>.</span></a>
+      <a class="cta" href="/?utm_source=landing&amp;utm_medium=organic&amp;utm_campaign=forex">Try 3 free analyses</a>
+    </header>
+
+    <span class="kicker">For forex traders</span>
+    <h1>AI forex chart analysis</h1>
+    <p class="meta">Updated August 2026</p>
+
+    <p>Forex is one of the three instrument classes where Tickrify fetches <strong>real candles</strong> before it says anything about price. Upload a EURUSD chart and the backend reads the pair and the timeframe off your screenshot, pulls the actual recent bars for that pair, computes the structure numerically, and only then asks the model to read it.</p>
+    <p>What follows is what it does, what it refuses to fake, and the one blind spot that matters more on forex than anywhere else.</p>
+
+    <div class="toc">
+      <p>What's in here</p>
+      <ol>
+        <li><a href="#what">What happens when you upload a forex chart</a></li>
+        <li><a href="#volume">What it refuses to fake: volume</a></li>
+        <li><a href="#atr">Pips are the wrong unit, ATR is the right one</a></li>
+        <li><a href="#pairs">Which pairs are covered</a></li>
+        <li><a href="#feed">Your broker&#x27;s price is not the price we fetch</a></li>
+        <li><a href="#sessions">Sessions change what a pattern means</a></li>
+        <li><a href="#stale">The stale screenshot guard</a></li>
+        <li><a href="#limits">The blind spot that matters most on forex</a></li>
+        <li><a href="#abstain">It will often say no trade</a></li>
+        <li><a href="#faq">Questions people actually ask</a></li>
+      </ol>
+    </div>
+
+    <h2 id="what">What happens when you upload a forex chart</h2>
+
+    <ol>
+      <li>The pair and the timeframe are read off the image. Broker suffixes resolve, so EURUSD, EURUSD.m and EURUSDmicro all land on the same pair.</li>
+      <li>Up to 120 recent candles for that pair and that timeframe are fetched from a market data feed.</li>
+      <li><strong>ATR14</strong> is computed, plus swing highs and lows and where price sits inside the visible range as a percentage.</li>
+      <li><strong>RSI(14) Wilder</strong> is computed, and handed over with an explicit instruction that an extreme reading is not a reversal trigger on its own.</li>
+      <li>An <strong>event map</strong> is built: the last impulse leg and where it started, recent structure breaks, accumulation bases and which side they resolved to, and failed breakouts of the spring and upthrust kind.</li>
+      <li>All of that goes into the prompt as text. The model reads arithmetic instead of counting candles in an image, which is the thing vision models do worst.</li>
+    </ol>
+
+    <h2 id="volume">What it refuses to fake: volume</h2>
+
+    <p>Most tools that promise "volume profile on forex" are quietly showing you tick volume, or an estimate, or nothing at all with a chart drawn on top.</p>
+
+    <p><strong>Spot forex has no centralized volume.</strong> There is no single exchange to report it. The feed returns the field empty, and when it does, Tickrify leaves the volume block and the volume-by-price map out of the analysis entirely instead of substituting a guess. On crypto, where volume is real, both are included. On forex they are not, and the analysis does not pretend otherwise.</p>
+
+    <p>The practical version: on a forex chart the read is built on structure, range position and volatility, because that is what the data honestly supports.</p>
+
+    <h2 id="atr">Pips are the wrong unit, ATR is the right one</h2>
+
+    <p>A 20 pip stop is generous on EURUSD in a quiet Asian session and meaningless on GBPJPY during the London open. Same number, completely different trade. Sizing by pips is how a correct directional call still loses money.</p>
+
+    <p>So every distance in the output is expressed against ATR14 as well as in price: how far the entry sits, how far the stop sits, how far the targets sit. An entry roughly one and a half ATR away is reachable. A stop inside half an ATR is going to get taken by ordinary movement whether or not your direction was right.</p>
+
+    <p>That number is usually the moment a setup falls apart on its own. If you want to run it yourself, the <a href="/tools/position-size-calculator/">position size calculator</a> and the <a href="/tools/risk-reward-calculator/">risk to reward calculator</a> are free and need no account.</p>
+
+    <h2 id="pairs">Which pairs are covered</h2>
+
+    <p>Any pair built from these eight currencies: <strong>USD, EUR, GBP, JPY, AUD, NZD, CAD and CHF</strong>. That covers all the majors and the usual crosses, EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD, USDCHF, NZDUSD, EURJPY, GBPJPY, EURGBP and the rest of that family.</p>
+
+    <p>Gold and silver run on the same feed and get the same treatment, and gold has <a href="/for/gold/">its own page</a> because the dollar leg and the ATR change how you read it.</p>
+
+    <p><strong>Exotics are not covered.</strong> A pair with TRY, ZAR, MXN or similar will not resolve, and the analysis then runs from your screenshot alone without a verified candle block. It says so instead of inventing a price. The <a href="/for/">full coverage table is here</a>.</p>
+
+    <h2 id="feed">Your broker's price is not the price we fetch</h2>
+
+    <p>Worth stating plainly, because forex traders are the ones most likely to notice. The candles come from a reference feed, not from your broker. Your broker builds its quotes from its own liquidity providers, with its own spread, and its server time is often not UTC, which shifts where a four-hour or daily candle closes.</p>
+
+    <p>Structure, range and ATR are close enough to be useful. Exact levels are not. Read the analysis for the read, and place orders from your own chart. There is more on this on the <a href="/for/metatrader/">MetaTrader page</a>.</p>
+
+    <h2 id="sessions">Sessions change what a pattern means</h2>
+
+    <ul>
+      <li><strong>The London and New York overlap</strong> carries most of the real participation. Structure formed there had size behind it.</li>
+      <li><strong>The Asian session</strong> is often a compression range that gets swept later. A breakout of it read in isolation is frequently the liquidity grab rather than the move.</li>
+      <li><strong>Around the New York close</strong> spreads widen and wicks lengthen. Levels touched in that window are the weakest evidence on the chart.</li>
+    </ul>
+
+    <p>The model cannot see your broker's server clock, so keep the time axis visible in your screenshot.</p>
+
+    <h2 id="stale">The stale screenshot guard</h2>
+
+    <p>If you upload a chart you saved yesterday, injecting today's price next to it would make the model build entry, stop and target on numbers that contradict the image. The output would look authoritative and be wrong.</p>
+
+    <p>So the last visible close is read off your screenshot and compared to the live close. More than three ATR apart and <strong>the live data is withheld</strong>. The model is told it is looking at a historical chart, that every level must come from the image, and that the output must say so.</p>
+
+    <h2 id="limits">The blind spot that matters most on forex</h2>
+
+    <p><strong>The model does not read news, and forex is a news market.</strong> Central bank decisions, non-farm payrolls, CPI prints and the sentence a governor says at a press conference move these pairs harder and faster than any chart pattern. Tickrify has no access to headlines, to sentiment, or to order flow. If a release is fifteen minutes away, the analysis has no idea.</p>
+
+    <p>Also outside what it sees: interest rate differentials in real time, COT positioning, and your broker's spread. And it will never place, modify or close a trade. There is no broker connection and there will not be one.</p>
+
+    <p>Check the calendar yourself before you enter. The analysis is a structural second opinion on the chart in front of you, not a view on the macro.</p>
+
+    <h2 id="abstain">It will often say no trade</h2>
+
+    <p>A large share of reads come back as no trade. On a pair rotating inside a range with price in the middle there is no directional pressure to build a plan from, and saying so is the correct answer rather than manufacturing a setup.</p>
+
+    <p>What the calls have actually been worth is published on <a href="/accuracy">the accuracy page</a>, with sample size and a 95% confidence interval, including the results that do not flatter us.
+
+    <h2 id="faq">Questions people actually ask</h2>
+
+    <h3>Which forex pairs work?</h3>
+    <p>Any pair built from USD, EUR, GBP, JPY, AUD, NZD, CAD or CHF, plus gold and silver. Exotics such as USDTRY or USDZAR do not resolve, and on those the analysis runs from your screenshot alone.</p>
+
+    <h3>Does it show volume or a volume profile on forex?</h3>
+    <p>No, and that is on purpose. Spot forex has no centralized volume, so the feed returns the field empty and both blocks are left out of the analysis rather than estimated. On crypto, where volume is real, they are included.</p>
+
+    <h3>Is this a forex signal service?</h3>
+    <p>No. It is a second opinion on a setup you already have, and it comes with the case against your read and what would prove it wrong. The decision stays yours. If you want somebody to tell you what to buy, this is the wrong product.</p>
+
+    <h3>Does it account for news releases?</h3>
+    <p>No. It has no access to headlines, sentiment or order flow. On forex that is the largest single limitation, because rate decisions and data prints move these pairs harder than any pattern. Check the calendar yourself.</p>
+
+    <h3>Why is the price different from my MetaTrader?</h3>
+    <p>Because the candles come from a reference feed rather than your broker, and spreads and server time differ. Use the read for structure and place orders from your own chart.</p>
+
+    <h3>Do I need to install anything?</h3>
+    <p>No. No Expert Advisor, no indicator, no broker login. You take a screenshot and paste it.</p>
+
+    <div class="callout">
+      <p>You already have the chart open. Screenshot it, run it free, and see whether the AI confirms your read or tells you to skip it. Three analyses, no card.</p>
+      <a class="btn" href="/?utm_source=landing&amp;utm_medium=organic&amp;utm_campaign=forex_end">Gut-check your next setup free</a>
+    </div>
+
+    <p>Related: <a href="/for/metatrader/">AI chart analysis for MetaTrader</a> &middot; <a href="/for/gold/">AI gold chart analysis (XAUUSD)</a> &middot; <a href="/for/">Full instrument coverage</a> &middot; <a href="/accuracy">Our measured accuracy</a> &middot; <a href="/blog/">All posts</a></p>
+
+    <footer>Nothing on this page is financial advice. Forex trading involves substantial risk of loss and leverage magnifies it. Coverage reflects the production configuration as of August 2026 and can change.</footer>
+  </div>
+</body>
+</html>

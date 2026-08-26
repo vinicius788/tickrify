@@ -94,14 +94,16 @@
 
     <h2 id="coverage">Instrument coverage, in full</h2>
 
-    <p>"Live candles" below means the same thing every time: the backend pulls up to 120 recent candles on your chart's timeframe, computes ATR14, swing highs and lows, RSI(14) Wilder, volume against its 20-period average, a volume-by-price map with the point of control and value area, and an event map of the last impulse leg, recent structure breaks and failed breakouts. Those numbers go into the prompt as text. The model reads arithmetic instead of pixels.</p>
+    <p>"Live candles" below means the same thing every time: the backend pulls up to 120 recent candles on your chart's timeframe, computes ATR14, swing highs and lows, RSI(14) Wilder, and an event map of the last impulse leg, recent structure breaks and failed breakouts. Those numbers go into the prompt as text. The model reads arithmetic instead of pixels.</p>
+
+    <p>Two of those measures depend on volume, which not every market has. On crypto, where volume is real and centralized, the analysis also gets volume against its 20-period average and a volume-by-price map with the point of control and value area. <strong>On spot forex and metals there is no centralized volume, so those two blocks are left out entirely rather than estimated.</strong> That is a deliberate choice in the code, not an oversight: an invented point of control is worse than no point of control.</p>
 
     <table>
       <thead><tr><th>What you upload</th><th>Live candles</th><th>Source</th></tr></thead>
       <tbody>
         <tr><td><strong>Crypto</strong> quoted in USDT, USDC or USD. 40 bases including BTC, ETH, SOL, XRP, BNB, ADA, DOGE, AVAX, LINK, DOT, LTC, TRX, ATOM, UNI, APT, ARB, OP, SUI, PEPE, NEAR, INJ, TIA, TON, HBAR, AAVE, RUNE</td><td class="yes">Yes</td><td>OKX first, Binance as fallback</td></tr>
         <tr><td><strong>Gold and silver</strong>: XAUUSD, XAGUSD</td><td class="yes">Yes</td><td>Twelve Data</td></tr>
-        <tr><td><strong>Forex</strong> pairs built from USD, EUR, GBP, JPY, AUD, NZD, CAD, CHF</td><td class="yes">Yes</td><td>Twelve Data</td></tr>
+        <tr><td><strong><a href="/for/forex/">Forex</a></strong> pairs built from USD, EUR, GBP, JPY, AUD, NZD, CAD, CHF</td><td class="yes">Yes</td><td>Twelve Data. No volume: spot forex has none, so those blocks are omitted</td></tr>
         <tr><td><strong>Index CFDs</strong>: NAS100, US100, US30, SPX500, DAX, FTSE, JP225, IBOV</td><td class="no">No</td><td>Deep analysis still adds a risk-regime read. Price levels come from your screenshot</td></tr>
         <tr><td><strong>Single stocks and ETFs</strong>: NVDA, TSLA, AAPL, SPY, QQQ</td><td class="no">No</td><td>The model reads your screenshot and nothing else</td></tr>
       </tbody>
@@ -121,6 +123,11 @@
     <a class="card" href="/for/metatrader/">
       <h3>AI chart analysis for MetaTrader 4 and MT5</h3>
       <p>Broker symbol suffixes, why our reference feed can differ from your broker's by a few pips, and why there is no Expert Advisor.</p>
+    </a>
+
+    <a class="card" href="/for/forex/">
+      <h3>AI forex chart analysis</h3>
+      <p>Majors and crosses with real candles, distances sized in ATR instead of pips, and no invented volume profile.</p>
     </a>
 
     <a class="card" href="/for/bitcoin/">

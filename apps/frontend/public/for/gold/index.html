@@ -103,7 +103,7 @@
       <li><strong>ATR14</strong>, which on gold is the number that decides the trade. Every distance in the output is expressed against it.</li>
       <li><strong>Swing highs and lows</strong>, plus where price sits inside the visible range as a percentage.</li>
       <li><strong>RSI(14) Wilder</strong>, with the explicit caveat that an extreme value is not a reversal trigger on its own.</li>
-      <li><strong>Volume against its 20-period average</strong>, and a volume-by-price map with point of control, value area and the low-volume gaps.</li>
+      <li><strong>Volume, only when the feed actually has it.</strong> Spot gold has no centralized volume the way an exchange-traded instrument does, so the field usually comes back empty. When it does, the volume block and the volume-by-price map are simply left out of the analysis rather than filled with an estimate. This is deliberate: a made-up point of control is worse than no point of control.</li>
       <li><strong>An event map</strong>: last impulse leg and its origin, recent structure breaks, accumulation bases and which way they resolved, and failed breakouts of the spring and upthrust kind.</li>
       <li><strong>The dollar and rates correlation</strong>, stated to the model as context it must weigh rather than as a rule it must obey.</li>
     </ul>
@@ -171,7 +171,7 @@
       <a class="btn" href="/?utm_source=landing&amp;utm_medium=organic&amp;utm_campaign=gold_end">Gut-check your next setup free</a>
     </div>
 
-    <p>Related: <a href="/for/metatrader/">AI chart analysis for MetaTrader</a> &middot; <a href="/for/">Full instrument coverage</a> &middot; <a href="/accuracy">Our measured accuracy</a> &middot; <a href="/tools/position-size-calculator/">Free position size calculator</a> &middot; <a href="/blog/">All posts</a></p>
+    <p>Related: <a href="/for/forex/">AI forex chart analysis</a> &middot; <a href="/for/metatrader/">AI chart analysis for MetaTrader</a> &middot; <a href="/for/">Full instrument coverage</a> &middot; <a href="/accuracy">Our measured accuracy</a> &middot; <a href="/tools/position-size-calculator/">Free position size calculator</a> &middot; <a href="/blog/">All posts</a></p>
 
     <footer>Nothing on this page is financial advice. Trading involves substantial risk of loss and gold is a high-volatility instrument. Coverage reflects the production configuration as of August 2026 and can change.</footer>
   </div>

@@ -1129,7 +1129,7 @@ ter ficado. Ler arquivo com `grep`/`sed`/`python` nao cria lock — so comandos 
 | `/accuracy` sem structured data | `Dataset` schema com `variableMeasured` e `measurementTechnique` | 17/08 |
 | `<html lang>` fixo em `"en"` | segue o idioma escolhido (`LanguageContext`) | 17/08 |
 | `robots.txt` sem subdiretorio explicito | `Disallow` com e sem barra nas 4 rotas privadas | 17/08 |
-| Sem landing por plataforma nem por classe de ativo | `public/for/`: hub de cobertura + `/for/tradingview/`, `/for/metatrader/`, `/for/bitcoin/`, `/for/gold/`. Estaticas, mesmo mecanismo do `/blog/` e do `/tools/` (o Vercel serve o arquivo antes do rewrite), 1.066 a 1.406 palavras visiveis, `FAQPage` gerado do MESMO texto que a pagina mostra, no sitemap, linkadas dos 6 posts e dos dois indices. **NVDA/SPY ficaram FORA de proposito:** acao e ETF nao tem grounding de candle (`normalizeToBinancePerp` cobre 40 bases de cripto, `fetchFxCandles` cobre XAU/XAG e majors de FX, e mais nada), entao uma landing de acoes venderia dado ao vivo que nao existe. O hub publica a tabela de cobertura com os NAOs, que e o oposto do que o concorrente faz. | 26/08 |
+| Sem landing por plataforma nem por classe de ativo | `public/for/`: hub de cobertura + `/for/tradingview/`, `/for/metatrader/`, `/for/bitcoin/`, `/for/gold/`, `/for/forex/`. Estaticas, mesmo mecanismo do `/blog/` e do `/tools/` (o Vercel serve o arquivo antes do rewrite), 1.066 a 1.406 palavras visiveis, `FAQPage` gerado do MESMO texto que a pagina mostra, no sitemap, linkadas dos 6 posts e dos dois indices. **NVDA/SPY ficaram FORA de proposito:** acao e ETF nao tem grounding de candle (`normalizeToBinancePerp` cobre 40 bases de cripto, `fetchFxCandles` cobre XAU/XAG e majors de FX, e mais nada), entao uma landing de acoes venderia dado ao vivo que nao existe. O hub publica a tabela de cobertura com os NAOs, que e o oposto do que o concorrente faz. | 26/08 |
 | `/sign-in` indexado apesar do `Disallow` | `noindex` de verdade: as duas rotas de auth SAIRAM do `Disallow`, entraram no `seo-routes.json` com `noindex: true` (shell do `prerender.mjs`) e o `AuthScreen` do `App.tsx` chama o `useSeo` pos-hidratacao. `seoFor` passou a propagar o `noindex`, que ele descartava. | 26/08 |
 
 ### ⚠️ Auditoria de SEO recebida em 26/08 — QUASE TODA desatualizada
@@ -1229,6 +1229,32 @@ sozinho e recusado com "Endereco do sitemap invalido". Enviar
 
 **Cota da Inspecao de URL: 10 pedidos por dia.** Estourou no 11o. Ficou para
 outro dia o pedido de `/for/bitcoin/`, `/for/gold/` e `/for/metatrader/`.
+
+### 🔴 Claim corrigido antes de virar problema: VOLUME em forex e ouro (26/08)
+
+Ao escrever a landing de forex fui reler o `ai.adapter.ts` e achei uma coisa que
+eu mesmo tinha escrito errado horas antes, na primeira leva de paginas: a `/for/gold/`
+e o hub afirmavam que a analise traz **volume contra a media de 20 e mapa de
+volume por preco**. Isso e verdade em CRIPTO e **falso em forex e metais spot**.
+
+O codigo esta certo e e explicito sobre isso:
+- `safeVolume` (linha ~290): "Ausente/invalido vira 0, e 0 faz o bloco de volume
+  ser omitido — nunca inventado."
+- `buildVolumeProfile` (linha ~305): "Devolve null quando nao ha volume
+  utilizavel (ex.: forex spot)."
+- `fetchFxCandles` (linha ~1370): "Forex spot NAO tem volume centralizado — o
+  campo costuma vir ausente ou zerado, e isso e correto."
+
+Ou seja: quem construiu o motor tomou a decisao certa (nao inventar) e **a
+vitrine ia contar a historia errada**. Corrigido nas duas paginas, e a
+`/for/forex/` transformou isso em argumento de venda com uma secao propria
+("What it refuses to fake: volume"), porque concorrente que promete volume
+profile em forex esta mostrando tick volume ou estimativa.
+
+**Licao que vale repetir:** a regra de "so afirmar o que o codigo faz" nao vale
+so para auditoria de pagina velha. Vale para a pagina que voce esta escrevendo
+AGORA, e a unica forma de cumprir e abrir o arquivo do motor antes de escrever
+a frase, nao depois.
 
 ### Notas operacionais que custaram tempo (17/08)
 
