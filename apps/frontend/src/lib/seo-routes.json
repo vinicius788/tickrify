@@ -1,7 +1,7 @@
 {
   "/": {
     "title": "Tickrify: AI Chart Analysis for Traders",
-    "description": "Paste your chart and AI reads the entry, stop, targets and risk. A second opinion that confirms or kills your read. 3 free analyses, no card needed."
+    "description": "Paste any chart, marked up or bare. The AI reads it cold and returns entry, stop, targets and risk, or an explicit WAIT. 3 free analyses, no card."
   },
   "/pricing": {
     "title": "Pricing: $29/mo for 200 AI Chart Analyses | Tickrify",

@@ -1998,3 +1998,99 @@ medir o custo do deep real.
 Render, que exige rodar uma analise deep logado e ler o painel. **Esse e o unico
 passo que falta para fechar a conta de custo do deep** — hoje os ~$0,038 sao
 projecao, nao medicao.
+
+## Sprint 31/08 — parte 6: a vitrine parou de exigir que voce ja tenha uma leitura
+
+**O problema, achado ao reler a landing:** a copy vendia o produto como validador
+de uma tese que o usuario ja teria. `hero.subtitle` dizia "a second opinion that
+confirms or kills your read", `how.s1d` pedia "a screenshot of your setup", e as
+6 paginas `/for/` abriam o CTA com "You already have the chart open".
+
+**Isso e uma condicao de entrada FALSA.** Verificado no
+`common/prompts/trading-system-prompt.ts` (v7.3, o que roda em producao): zero
+ocorrencias de "your setup" ou "already have". O motor le a imagem do zero e nao
+assume nada. Quem abre um grafico sem tese lia a home e concluia que o produto
+nao era para ele. Cliente perdido por uma frase, nao pelo produto.
+
+**Enquadramento novo:** a IA le frio. Cole qualquer grafico, desenhado ou em
+branco. A frase que resolve, no passo 3 do "como funciona":
+"Arrive with a thesis and it is a second opinion. Arrive with none and it is the
+first one."
+
+### ⚠️ "second opinion" NAO foi removido, e isso e deliberado
+A expressao continua na vitrine e nas paginas `/for/`. Ela e keyword de SEO viva
+(existe um post inteiro em `/blog/trading-second-opinion/`) e continua sendo
+verdade. O que era falso e o **pre-requisito**: "on a setup you already have".
+**Se uma auditoria futura marcar "second opinion" como inconsistencia, e falso
+positivo.** Cruze com esta secao.
+
+### O que mudou
+- `landing.hero.subtitle`, `landing.how.{title,highlight,subtitle,s1d,s3t,s3d}` e
+  `landing.cta.{title,highlight,subtitle}` nos **6 idiomas**, mesmo commit.
+- Meta description da home em 5 lugares: `index.html` (meta, og, twitter e o
+  campo do JSON-LD) e `src/lib/seo-routes.json`. **Duas variantes**: a do JSON-LD
+  termina com "The final call is yours" e as outras tres com "3 free analyses, no
+  card". Substituicao cega quebraria uma.
+- As 6 paginas `public/for/`: o CTA final nas seis, a resposta de "is this a
+  signal service?" em `for/` e `for/forex/` (nas DUAS copias, texto visivel e
+  `FAQPage`), e a meta e o passo numerado do `for/tradingview/`.
+- `public/blog/index.html` e `public/llms.txt`, que de quebra tinham travessao.
+
+### O que NAO mudou, de proposito
+- **`landing.features` inteiro.** Reli os seis cards: nenhum afirma o
+  pre-requisito. `f1d` diz "before you enter", que e momento e nao condicao.
+  Mudar sem motivo abre superficie de claim novo em 6 idiomas sem ganho.
+- Os 6 posts do blog e o `/blog/trading-second-opinion/`. Conteudo longo
+  recem-indexado, e a tese do post continua valida.
+- "The final call is always yours", o WAIT explicito, o link para `/accuracy`.
+- **Os 6 posts em `public/blog/<slug>/` seguem com o enquadramento velho**, e isso
+  e divida NOMEADA, nao esquecimento: `tickrify-vs-tradingview` ("You already
+  have the chart open"), `ai-chart-analysis`, `best-ai-chart-analysis-tools` e
+  `trading-second-opinion`. Ficaram de fora porque sao conteudo longo
+  recem-indexado. **Auditoria futura que reportar isso esta certa, mas a decisao
+  foi deliberada.**
+- **⚠️ O prompt v9 ainda carrega o enquadramento ABANDONADO.**
+  `trading-system-prompt-v9.ts` instrui o modelo a ser "a second opinion that
+  confirms or kills the user's read". Hoje e inofensivo porque
+  `AB_PROMPT_V9_PERCENT` esta em 0. **No dia em que o A/B for ligado, o motor
+  passa a operar com o enquadramento que a vitrine acabou de abandonar.**
+  Corrigir o v9 ANTES de ligar o A/B, nao depois.
+
+### 🔎 Achado de i18n: o `hero.subtitle` ja estava divergido HA MESES
+Os 5 idiomas nao-ingleses NAO tinham a frase da segunda opiniao. Eles carregavam
+uma versao anterior ("Seu copiloto de trading: le o grafico, calcula o risco e
+estrutura a decisao"). Nao era claim falso, era atraso: o ingles avancou e os
+outros ficaram. Os 6 estao alinhados agora.
+
+Isto e a terceira vez que divergencia de i18n aparece (as anteriores: o numero de
+abstencao em es/de/ja em 10/08, e as 84 strings mortas dos 3 tiers). **O
+`tsc -b` pega chave AUSENTE e nao pega traducao DESATUALIZADA.** So conferencia
+manual chave a chave pega. Nao existe portao automatico para isto hoje.
+
+Tambem corrigido de passagem: `ja.ts` tinha virgula dupla ("、、") no
+`how.subtitle`, erro tipografico que sumiu com a reescrita da linha.
+
+### Verificacao
+`tsc -b` do frontend com 0 erros. `vitest` e `vite build` nao rodam no sandbox
+(limitacao de VM ja registrada). Varredura por `grep` do padrao "your read|your setup|already
+have" em `src/lib/i18n`, `seo-routes.json`, `index.html`, `public/for`,
+`public/llms.txt` e `public/blog/index.html`. Ela devolve TRES linhas, e as tres
+sao legitimas: `en.ts:371` ("We already have your reports", outra feature, fora
+do bloco landing), `llms.txt:6` (texto novo, numa frase que NEGA o
+pre-requisito) e `for/tradingview/index.html:101` (texto novo, que diz que
+desenhar e opcional). **O padrao e mais largo que o alvo, entao saida vazia NAO
+e o resultado esperado.** Quem repetir esta varredura no futuro deve conferir o
+contexto de cada linha, nao contar linhas. JSON-LD das 3 paginas editadas reparseado com `node`.
+
+**O padrao de varredura usado nesta sprint era ESTREITO DEMAIS.** Ele nao pegou
+`for/bitcoin/index.html`, que dizia "a setup you **brought**" nas duas copias
+(texto visivel e `FAQPage`). Achado so na revisao final, por leitura. Quem
+repetir esta checagem deve buscar tambem `setup you brought`, `second read on` e
+`confirms or kills`, e mesmo assim ler as paginas, porque o pre-requisito pode
+ser reescrito de infinitas formas e nenhum grep cobre todas.
+
+### Contexto que nao pode ser esquecido
+**Isto nao e hipotese de conversao e nao vai ser medido.** So 4 pessoas na vida
+completaram uma analise gratis; com n=4, medir "melhora" e ruido. A mudanca foi
+feita porque a frase era FALSA, mesmo criterio da auditoria de 27/07. O gargalo
+continua sendo trafego.

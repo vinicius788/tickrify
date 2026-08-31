@@ -2,9 +2,10 @@
 
 > AI chart analysis for traders. You upload a screenshot of a chart; the AI
 > returns a structured read: entry, stop, targets, confidence, confluence and
-> the scenario that would invalidate it. It is a second opinion that confirms
-> or kills a read you already have — not a signal service, and not financial
-> advice. The decision is always the trader's.
+> the scenario that would invalidate it. It reads the chart cold, with no
+> assumption that you already have a thesis. Arrive with one and it is a second
+> opinion. It is not a signal service and not financial advice. The decision is
+> always the trader's.
 
 ## What it actually does
 
