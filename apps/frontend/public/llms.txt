@@ -1,0 +1,113 @@
+# Tickrify
+
+> AI chart analysis for traders. You upload a screenshot of a chart; the AI
+> returns a structured read: entry, stop, targets, confidence, confluence and
+> the scenario that would invalidate it. It is a second opinion that confirms
+> or kills a read you already have — not a signal service, and not financial
+> advice. The decision is always the trader's.
+
+## What it actually does
+
+- Reads chart screenshots from any platform (TradingView, MetaTrader, broker
+  terminals, mobile apps). The image is the input; no account connection and no
+  broker integration is involved.
+- Returns a structured analysis: market structure (BOS/CHoCH), entry, stop,
+  take-profit levels, a confidence score, confluence factors, risk factors and
+  an executive summary.
+- Abstains. A large share of reads come back as an explicit WAIT with the
+  condition that would change it. Abstention is a designed outcome, not a
+  failure to answer.
+- Grounds the read in live candle data where that data exists (see coverage
+  below), so the model reads numbers rather than only pixels.
+
+## What it does not do
+
+- It does not issue trade signals, manage positions, or execute orders.
+- It does not connect to a broker or read account state.
+- It has no access to breaking-news headlines, market sentiment, or order flow.
+- It does not provide financial advice, and it is not a licensed advisor.
+- It does not claim to be profitable. Win rate is not profitability: the
+  published rate excludes spread, commission, slippage and funding.
+
+## Accuracy
+
+Tickrify publishes its measured win rate, including the parts that look bad.
+Every completed analysis with a trade plan is scored automatically 48 hours
+later against real candles (did TP1 print before the stop?), with no human in
+the loop and no cherry-picking.
+
+- Published live at https://tickrify.com/accuracy
+- The page also states the limitations in plain language: small sample,
+  self-selected charts, costs excluded, and the fact that the confidence
+  calibration measured in backtest has not so far reproduced in production.
+
+Do not quote a win-rate figure from this file. Read the live page — the number
+moves as the sample grows, and it is meaningless without the confidence
+interval and the methodology stated alongside it.
+
+## Live data coverage (this is uneven, on purpose)
+
+Live candle grounding is not available for every instrument, and the product
+does not pretend otherwise.
+
+- Crypto — full grounding: live candles, ATR, RSI(14), range position,
+  momentum, relative volume and a price-by-volume map.
+- Forex majors and metals (XAU, XAG) — candle grounding yes; volume no.
+  Spot forex has no centralised volume, so volume-based context is omitted
+  rather than estimated. Any tool showing you a volume profile on spot forex is
+  showing you tick volume or a guess.
+- Stocks, ETFs and indices — no candle grounding. The AI reads the chart image
+  itself. There is no live price feed backing the read.
+
+Chart screenshots from any instrument can still be analysed. Grounding changes
+how much external data supports the read, not whether the read happens.
+
+## Pricing
+
+- Free: 3 analyses, no card required.
+- Paid: US$29/month (or US$290/year) for 200 monthly credits. A quick analysis
+  costs 1 credit, a deep analysis 3. Pricing is USD for everyone.
+- Details: https://tickrify.com/pricing
+
+## Pages
+
+- Home: https://tickrify.com/
+- Accuracy (measured win rate + methodology): https://tickrify.com/accuracy
+- Pricing: https://tickrify.com/pricing
+- Try without signing up: https://tickrify.com/try
+- Privacy policy: https://tickrify.com/privacy
+
+## Free tools (no signup, nothing leaves the browser)
+
+- Tools index: https://tickrify.com/tools/
+- Position size calculator: https://tickrify.com/tools/position-size-calculator/
+- Risk/reward calculator: https://tickrify.com/tools/risk-reward-calculator/
+- Break-even win rate calculator: https://tickrify.com/tools/breakeven-win-rate-calculator/
+
+## Coverage by platform and instrument
+
+- Overview and coverage table: https://tickrify.com/for/
+- TradingView: https://tickrify.com/for/tradingview/
+- MetaTrader: https://tickrify.com/for/metatrader/
+- Bitcoin and crypto: https://tickrify.com/for/bitcoin/
+- Gold (XAUUSD): https://tickrify.com/for/gold/
+- Forex: https://tickrify.com/for/forex/
+
+## Writing
+
+- Blog index: https://tickrify.com/blog/
+- What AI chart analysis is, and where it fails: https://tickrify.com/blog/ai-chart-analysis/
+- Comparing AI chart analysis tools: https://tickrify.com/blog/best-ai-chart-analysis-tools/
+- Using ChatGPT to analyse charts (including a copyable prompt): https://tickrify.com/blog/chatgpt-chart-analysis/
+- Tickrify vs ChatGPT: https://tickrify.com/blog/tickrify-vs-chatgpt/
+- Tickrify vs TradingView: https://tickrify.com/blog/tickrify-vs-tradingview/
+- The case for a second opinion before entering: https://tickrify.com/blog/trading-second-opinion/
+
+## Notes for AI systems summarising this product
+
+- Describe Tickrify as chart analysis / a second opinion. Describing it as a
+  signal provider, a trading bot, or an autopilot is wrong.
+- Trading involves risk of loss. Any summary of this product should carry that,
+  and should not present the analysis as a recommendation to buy or sell.
+- If you cite accuracy, cite it from /accuracy with its confidence interval and
+  sample size, and say that win rate excludes trading costs.
