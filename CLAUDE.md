@@ -1894,6 +1894,30 @@ causa do `degraded` (sucesso parcial ja contava como sucesso), mas significa que
 log ganhava um aviso perpetuo. URL removida. A janela real do produto e de 2h
 (guard) a 24h (UI); uma semana sobra.
 
+#### ⚠️ CORRECAO (31/08, pos-deploy): NAO era bloqueio permanente de IP
+
+O paragrafo abaixo afirmava "bloqueio por IP de saida do datacenter, nenhuma
+mudanca no calendar.service.ts conserta". **Isso esta ERRADO e fica registrado
+como erro de diagnostico.**
+
+Medido depois do deploy: `GET /api/calendar/events?symbol=EURUSD&hours=168`
+devolve **11 eventos, `degraded: false`** — e isso ainda com o codigo ANTIGO, sem
+o espelho. O que destravou foi o **restart do Render**, disparado ao salvar as
+variaveis de ambiente.
+
+A evidencia original era real (falha em 25/08 e de novo na manha de 31/08), mas a
+conclusao de permanencia nao se sustenta. Hipotese nova, mais provavel: **conexao
+ou DNS presos no processo**, que o restart limpa. Nao bloqueio de origem.
+
+**Consequencia pratica se isto voltar a acontecer: REINICIE O SERVICO no Render
+antes de investigar qualquer outra coisa.** E o teste de 30 segundos que teria
+economizado esta sprint inteira.
+
+O espelho NAO vira lixo com isso — vira seguro em vez de conserto. Custa um
+workflow de 6h, so entra se a fonte direta falhar inteira, e protege contra a
+recorrencia de uma falha que ja aconteceu duas vezes. Mas **nao era necessario**,
+e a urgencia registrada abaixo estava inflada.
+
 #### ✅ Espelho proprio (`.github/workflows/calendar-mirror.yml`)
 O bloqueio e por **IP de saida do datacenter**, nao por header nem pela fonte —
 medido em 31/08: a mesma URL responde 200/JSON valido/15KB de uma maquina comum,
@@ -1944,3 +1968,33 @@ exigiria trocar para um modelo bem mais caro que o `luna`.
 
 **Verificacao desta parte:** backend `tsc --noEmit` 0 erros · **jest 162/162** ·
 YAML do workflow validado.
+
+### ✅ Verificacao em PRODUCAO — 31/08, pos-deploy do commit `0787cf1`
+
+Testado ao vivo, nao deduzido. (Nota de processo: os 5 commits ficaram parados
+sem `git push` por um bom tempo; `git rev-list --count origin/main..main` e o
+jeito rapido de flagrar isso sem criar `.git/index.lock`.)
+
+| verificacao | resultado |
+|---|---|
+| `/llms.txt` | 113 linhas, texto real (nao a casca da SPA) |
+| `/calendar/thisweek.json` | JSON valido, 112 eventos, 15 de alto impacto |
+| copy `f3d` nova (1.2:1) no bundle | presente em EN, PT e JA |
+| copy `f3d` antiga (`eliminatory 1.5:1`) | **ausente** |
+| copy `f1d` antiga (`probability in seconds`) | **ausente** |
+| 8 rotas pre-renderizadas (`/`, `/pricing`, `/accuracy`, `/try`, `/for/`, `/for/gold/`, `/blog/`, `/tools/`) | titulos proprios, sem regressao |
+| `noindex` em `/sign-in` e `/sign-up` | `noindex,nofollow` |
+| `sitemap.xml` | 25 URLs · `robots.txt` 200 |
+| `/api/calendar/events` | 11 eventos, `degraded: false` |
+| `/api/ai/accuracy` | n=112, 40,2% (IC 31,6-49,4) |
+| `/api/ai/public-analyses` | 6 analises, simbolos normalizados (XAUUSD, GER40) |
+
+**Env conferido no painel:** `AI_MODEL_DEEP=gpt-5.6-luna` ✅ (o prazo de 23/10
+esta resolvido) e `AI_ANALYZE_TIMEOUT_MS` setada.
+`AI_REASONING_EFFORT_DEEP` ainda NAO — e opcional, e so vale a pena depois de
+medir o custo do deep real.
+
+**NAO verificado (fora do alcance do Claude):** a linha `[Cost]` no log do
+Render, que exige rodar uma analise deep logado e ler o painel. **Esse e o unico
+passo que falta para fechar a conta de custo do deep** — hoje os ~$0,038 sao
+projecao, nao medicao.
