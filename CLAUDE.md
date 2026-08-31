@@ -1883,3 +1883,64 @@ ambiente que nao era verdade. Estado de env so vale se foi LIDO do painel, nunca
 "lembrado" de uma sprint anterior. As duas vezes anteriores foram a
 `CLERK_SECRET_KEY` (suspeita infundada) e o `ENABLE_QUICK_GROUNDING` (falso
 alarme). Agora foi o contrario: o arquivo dizia que estava e nao estava.
+
+### 31/08 — parte 5: espelho do calendario, e a URL morta que ninguem tinha visto
+
+#### 🔴 `ff_calendar_nextweek.json` responde 404 — e estava no codigo
+Medido em 31/08 (junto com `lastweek`, tambem 404): **so `thisweek` existe.** O
+`FF_URLS` pedia as duas a cada ciclo, e a segunda nunca funcionou. Nao era a
+causa do `degraded` (sucesso parcial ja contava como sucesso), mas significa que
+**nunca houve duas semanas de dados**, ao contrario do que o array sugeria — e o
+log ganhava um aviso perpetuo. URL removida. A janela real do produto e de 2h
+(guard) a 24h (UI); uma semana sobra.
+
+#### ✅ Espelho proprio (`.github/workflows/calendar-mirror.yml`)
+O bloqueio e por **IP de saida do datacenter**, nao por header nem pela fonte —
+medido em 31/08: a mesma URL responde 200/JSON valido/15KB de uma maquina comum,
+e o User-Agent nao e o gatilho (testado com o do codigo, `Mozilla/5.0`, e com um
+honesto: os dois passam). **Nenhuma mudanca no `calendar.service.ts` conserta
+isso.**
+
+Solucao com a infra que ja existe: workflow de 6 em 6h baixa o feed e commita em
+`apps/frontend/public/calendar/thisweek.json`, servido estaticamente pela Vercel
+(mesmo mecanismo do `/blog/` e do `/tools/`). O backend passa a ter fallback.
+
+- **Ordem: direto SEMPRE primeiro**, espelho so se a fonte direta falhar
+  INTEIRA. Nunca misturar as duas — as semanas se repetiriam e o mesmo evento
+  entraria duas vezes na janela do guard.
+- O workflow **valida com `jq` que a resposta e um array** antes de gravar. Sem
+  isso ele publicaria a challenge page (que vem com status 200) por cima de dado
+  bom — **pior que nao atualizar**, porque o backend leria "sem eventos" como
+  confirmado. Mesmo raciocinio do `degraded`.
+- Commita **so se mudou**, com `[skip ci]`. Falha de download mantem a copia
+  anterior.
+- `fetchFromUrls()` extraido; os tres modos de falha (HTTP nao-ok / corpo
+  nao-JSON / erro de rede) seguem logados separados, agora com a origem
+  (`[direto]` / `[espelho]`).
+- **O espelho ja foi populado a mao** (112 eventos, 15 de alto impacto) para
+  funcionar no primeiro deploy em vez de esperar o primeiro cron.
+
+#### ❌ Teto de rollover: DECIDIDO NAO FAZER (corrige a nota de 27/07 e a parte 2)
+Este arquivo registrava o rollover como "a unica exposicao sem teto". **A conta,
+com os custos MEDIDOS, desmente.** Um tick custa no maximo 19% da receita dele
+($0,0275 de custo no quick contra $0,145 de receita; no deep e 9%).
+
+Cenario extremo (assina 12 meses, acumula tudo, queima de uma vez):
+| | receita | custo | margem |
+|---|---|---|---|
+| 2.400 ticks em quick | $348 | $66 | **81%** |
+| 2.400 ticks em deep | $348 | $30 | **91%** |
+
+O motivo: **cada 200 ticks ja veio com $29 de receita.** Acumular nao cria custo
+sem receita — adia um custo ja pago. Era risco real com `terra`/`sol` (deep a
+$0,39); com `luna`, nao e.
+
+E o outro lado: capar tornaria **falso** o "Ticks never expire", que esta vivo em
+**3 lugares × 6 idiomas** (`topup`, `secure`, `neverExpire`). Seria construir
+algo desnecessario que quebraria um claim publicado.
+
+**So reabrir se o custo por tick passar de ~$0,07** (metade da receita) — o que
+exigiria trocar para um modelo bem mais caro que o `luna`.
+
+**Verificacao desta parte:** backend `tsc --noEmit` 0 erros · **jest 162/162** ·
+YAML do workflow validado.

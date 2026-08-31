@@ -93,10 +93,30 @@ function getCurrenciesForSymbol(symbol: string): string[] {
 
 // ─── ForexFactory fetch ───────────────────────────────────────────────────────
 
-const FF_URLS = [
-  'https://nfs.faireconomy.media/ff_calendar_thisweek.json',
-  'https://nfs.faireconomy.media/ff_calendar_nextweek.json',
-];
+// Só `thisweek` existe. `ff_calendar_nextweek.json` responde **404** (medido em
+// 31/08/2026, junto com `lastweek`) — a fonte mudou em algum momento e o código
+// seguia pedindo a URL morta a cada ciclo, poluindo o log com um aviso perpétuo.
+// Não era a causa do `degraded` (sucesso parcial já contava como sucesso), mas
+// também nunca houve duas semanas de dados, ao contrário do que este array
+// sugeria. A janela real do produto é de 2h (guard) a 24h (UI) — uma semana
+// sobra.
+const FF_URLS = ['https://nfs.faireconomy.media/ff_calendar_thisweek.json'];
+
+/**
+ * Espelho próprio, alimentado pelo workflow `.github/workflows/calendar-mirror.yml`
+ * e servido estaticamente pela Vercel.
+ *
+ * POR QUE: desde 25/08/2026 o feed direto falha de forma PERSISTENTE quando quem
+ * busca é o Render. Medido em 31/08: a mesma URL responde 200 com JSON válido de
+ * uma máquina comum, e o User-Agent não é o gatilho (testado com o do código e
+ * com um honesto). Sobra o IP de saída do datacenter. Nenhum ajuste de header
+ * resolve isso — a saída é buscar de outro lugar.
+ *
+ * Ordem: SEMPRE o feed direto primeiro. O espelho é rede de segurança, não
+ * fonte primária — ele pode estar até 6h desatualizado (cadência do workflow),
+ * e o guard olha 2h à frente. Preferir dado fresco quando ele existe.
+ */
+const MIRROR_URLS = ['https://tickrify.com/calendar/thisweek.json'];
 
 interface CacheEntry {
   data: FfEvent[];
@@ -118,24 +138,31 @@ export class EconomicCalendarService {
   private lastAttemptAt: number | null = null;
   private lastAttemptFailed = false;
 
-  private async fetchFfCalendar(): Promise<{ data: FfEvent[]; degraded: boolean }> {
-    const now = Date.now();
-    if (this.cache && now - this.cache.fetchedAt < this.CACHE_TTL_MS) {
-      return { data: this.cache.data, degraded: false };
-    }
+  /**
+   * Busca um conjunto de URLs. `ok` só é true se ao menos uma respondeu com um
+   * array JSON de verdade.
+   *
+   * Os três modos de falha são logados SEPARADOS de propósito (achado de
+   * 25/08/2026): HTTP não-ok, corpo não-JSON e erro de rede caíam todos no mesmo
+   * catch genérico, e sem distingui-los não dá para saber se a fonte está fora
+   * do ar ou se está devolvendo uma challenge page com status 200 — que é o
+   * sintoma de bloqueio por IP.
+   */
+  private async fetchFromUrls(
+    urls: string[],
+    origem: string,
+  ): Promise<{ ok: boolean; events: FfEvent[] }> {
+    const events: FfEvent[] = [];
+    let ok = false;
 
-    this.lastAttemptAt = now;
-    const results: FfEvent[] = [];
-    let anySucceeded = false;
-
-    for (const url of FF_URLS) {
+    for (const url of urls) {
       try {
         const res = await fetch(url, {
           headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
           signal: AbortSignal.timeout(8_000),
         });
         if (!res.ok) {
-          this.logger.warn(`Calendar fetch ${url} -> HTTP ${res.status} ${res.statusText}`);
+          this.logger.warn(`Calendar [${origem}] ${url} -> HTTP ${res.status} ${res.statusText}`);
           continue;
         }
         const text = await res.text();
@@ -143,31 +170,53 @@ export class EconomicCalendarService {
         try {
           data = JSON.parse(text);
         } catch {
-          // Fonte bloqueando por IP/rate-limit costuma devolver HTML (challenge
-          // page) com status 200 — .json() direto mascarava isso como erro
-          // genérico de rede. Logar os primeiros bytes ajuda a distinguir
-          // bloqueio de indisponibilidade real.
           this.logger.warn(
-            `Calendar fetch ${url} devolveu corpo não-JSON (${text.length} bytes): "${text.slice(0, 120).replace(/\s+/g, ' ')}"`,
+            `Calendar [${origem}] ${url} devolveu corpo não-JSON (${text.length} bytes): ` +
+              `"${text.slice(0, 120).replace(/\s+/g, ' ')}"`,
           );
           continue;
         }
         if (!Array.isArray(data)) {
-          this.logger.warn(`Calendar fetch ${url} devolveu JSON que não é array`);
+          this.logger.warn(`Calendar [${origem}] ${url} devolveu JSON que não é array`);
           continue;
         }
-        results.push(...(data as FfEvent[]));
-        anySucceeded = true;
+        events.push(...(data as FfEvent[]));
+        ok = true;
       } catch (err) {
-        this.logger.warn(`Calendar fetch ${url} falhou: ${err instanceof Error ? err.message : err}`);
+        this.logger.warn(
+          `Calendar [${origem}] ${url} falhou: ${err instanceof Error ? err.message : err}`,
+        );
       }
     }
 
-    if (anySucceeded) {
-      this.cache = { data: results, fetchedAt: now };
+    return { ok, events };
+  }
+
+  private async fetchFfCalendar(): Promise<{ data: FfEvent[]; degraded: boolean }> {
+    const now = Date.now();
+    if (this.cache && now - this.cache.fetchedAt < this.CACHE_TTL_MS) {
+      return { data: this.cache.data, degraded: false };
+    }
+
+    this.lastAttemptAt = now;
+
+    // Fonte direta primeiro; o espelho só entra se ela falhar INTEIRA. Nunca
+    // misturar as duas: as semanas se repetiriam e o mesmo evento entraria duas
+    // vezes na janela do guard.
+    let attempt = await this.fetchFromUrls(FF_URLS, 'direto');
+    if (!attempt.ok) {
+      this.logger.warn('Calendar: fonte direta falhou — tentando o espelho próprio.');
+      attempt = await this.fetchFromUrls(MIRROR_URLS, 'espelho');
+      if (attempt.ok) {
+        this.logger.log(`Calendar: servido pelo ESPELHO (${attempt.events.length} eventos).`);
+      }
+    }
+
+    if (attempt.ok) {
+      this.cache = { data: attempt.events, fetchedAt: now };
       this.lastSuccessAt = now;
       this.lastAttemptFailed = false;
-      return { data: results, degraded: false };
+      return { data: attempt.events, degraded: false };
     }
 
     // Todas as fontes falharam nesta tentativa. Bug real encontrado em
@@ -178,7 +227,7 @@ export class EconomicCalendarService {
     this.lastAttemptFailed = true;
     const cacheAgeMin = this.cache ? Math.round((now - this.cache.fetchedAt) / 60_000) : null;
     this.logger.error(
-      `Calendar: as ${FF_URLS.length} fontes falharam nesta tentativa. ` +
+      'Calendar: a fonte direta E o espelho falharam nesta tentativa. ' +
         (this.cache
           ? `Servindo cache de ${cacheAgeMin}min atrás (degraded=true).`
           : 'Sem cache anterior — devolvendo vazio (degraded=true).'),

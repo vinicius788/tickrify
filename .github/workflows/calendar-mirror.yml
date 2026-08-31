@@ -1,0 +1,92 @@
+# Espelho do calendário econômico (ForexFactory).
+#
+# POR QUE ISTO EXISTE
+# -------------------
+# O feed da faireconomy responde normalmente para máquinas comuns (medido em
+# 31/08/2026: HTTP 200, JSON válido, 15KB, 85ms) mas está falhando de forma
+# PERSISTENTE quando o backend no Render tenta buscá-lo — desde 25/08, seis dias
+# seguidos. Não é o User-Agent (testado com o do código e com um honesto: os dois
+# passam) e não é a fonte. Sobra o IP de saída do datacenter.
+#
+# Nenhuma mudança no calendar.service.ts conserta isso. A saída é buscar de um
+# lugar que não esteja bloqueado — e o runner do GitHub Actions é exatamente
+# isso, com a vantagem de já ser infra que este projeto usa (keep-warm, backup).
+#
+# O arquivo gerado é servido estaticamente pela Vercel em
+# https://tickrify.com/calendar/*.json — mesmo mecanismo do /blog/ e do /tools/,
+# em que o Vercel entrega o arquivo antes do rewrite da SPA.
+#
+# Isto NÃO é só higiene de infra: o card de preço vende "economic calendar" e a
+# landing vende "Economic calendar guard". Com o feed fora, é feature paga
+# inerte.
+
+name: calendar-mirror
+
+on:
+  schedule:
+    # De 6 em 6 horas. O calendário é de eventos AGENDADOS (CPI, payroll, juros),
+    # não de notícia — a semana inteira muda pouco, e o guard olha 2h à frente.
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: calendar-mirror
+  cancel-in-progress: true
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Baixar o feed
+        id: fetch
+        run: |
+          set -uo pipefail
+          mkdir -p apps/frontend/public/calendar
+          ok=0
+          # Só thisweek: ff_calendar_nextweek.json responde 404 (medido 31/08/2026).
+          for week in thisweek; do
+            src="https://nfs.faireconomy.media/ff_calendar_${week}.json"
+            dest="apps/frontend/public/calendar/${week}.json"
+            tmp="$(mktemp)"
+
+            if ! curl -sSfL --max-time 45 -H 'Accept: application/json' "$src" -o "$tmp"; then
+              echo "::warning::falha ao baixar $src — mantendo a cópia anterior"
+              continue
+            fi
+
+            # O feed devolve HTML (challenge page) com status 200 quando bloqueia.
+            # Sem esta checagem o espelho publicaria lixo por cima de dado bom, que
+            # é PIOR que não atualizar: o backend leria "sem eventos" como se fosse
+            # confirmado. Mesmo raciocínio do `degraded` no calendar.service.ts.
+            if ! jq -e 'type == "array"' "$tmp" > /dev/null 2>&1; then
+              echo "::warning::$src não devolveu um array JSON — mantendo a cópia anterior"
+              continue
+            fi
+
+            jq '.' "$tmp" > "$dest"
+            ok=$((ok + 1))
+            echo "$week: $(jq 'length' "$dest") eventos"
+          done
+
+          if [ "$ok" -eq 0 ]; then
+            echo "::error::nenhuma das duas semanas foi baixada"
+            exit 1
+          fi
+
+      - name: Commitar se mudou
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- apps/frontend/public/calendar; then
+            echo "Sem mudança no calendário — nada a commitar."
+            exit 0
+          fi
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add apps/frontend/public/calendar
+          git commit -m "calendario: espelho automatico do feed [skip ci]"
+          git push
