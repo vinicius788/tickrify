@@ -1840,3 +1840,46 @@ No Render: `AI_MODEL_DEEP=gpt-5.6-luna` + `AI_REASONING_EFFORT_DEEP=medium`.
 Isso fecha o prazo do `gpt-4o` (23/10) sem comer margem. **Nao setar `high`.**
 Falta so confirmar o custo do deep REAL depois (o runner so roda `quick`; a
 projecao de $0,038 assume entrada maior e mesma saida).
+
+### 31/08 — parte 4: timeout subido dos DOIS lados (estao acoplados)
+
+O `medium` medido roda ~26s no quick; o deep e mais pesado e o default de 55s
+fica apertado. Subir so o backend seria pior que nao subir:
+
+**O modo de falha e traicoeiro.** O worker CONCLUI a analise e grava no
+histórico, mas a tela ja desistiu e mostra erro. O usuario ve falha numa analise
+que existe e que ele pagou — e o tick foi debitado.
+
+- **Backend:** `AI_ANALYZE_TIMEOUT_MS=120000` (env no Render; o codigo ja aceita
+  de 20s a 180s, default 55s — nao precisa de deploy).
+- **Frontend (`lib/api.ts`, precisa de deploy):** `POLL_TIMEOUT_MS` 180s → 300s
+  e `ANALYZE_TIMEOUT_MS` 120s → 150s. Os 180s originais eram dimensionados para
+  `55 + 5 + 55 + 30 + 55`; com 120s no backend eles nao cobririam nem duas
+  tentativas.
+
+⚠️ **REGRA: nunca mexa em um sem o outro.** O comentario no `api.ts` diz isso.
+
+### 🔴 `RESEND_API_KEY` NAO EXISTE no Render (achado em 31/08)
+
+Lista completa do Environment conferida com o dono: existe `MAIL_FROM`, **nao
+existe `RESEND_API_KEY`** — e `mail.service.ts:10` le exatamente esse nome.
+Sem ela o servico loga "RESEND_API_KEY ausente — pulando envio" e **nao manda
+nada**.
+
+**Isto CORRIGE o registro de 20-21/07 deste arquivo, que afirma que a chave
+estava configurada no Render. Nao esta.**
+
+Consequencia: mesmo depois do conserto de 17/08 (a rota orfa do `auth/me`, que
+fazia `User.email` ficar NULL), **nenhum e-mail sai**. Consertou-se o
+destinatario e o envio segue morto por falta de chave. Vale para o de
+boas-vindas E para o de recuperacao — este ultimo e a unica peca de ativacao de
+quem esgotou as 3 analises gratis.
+
+Falha 100% silenciosa: nada quebra, o app funciona, ninguem recebe e-mail.
+**PENDENTE DO DONO:** pegar a chave em resend.com/api-keys e colar no Render.
+
+**Licao (a terceira vez que isto morde):** o CLAUDE.md afirmava um estado de
+ambiente que nao era verdade. Estado de env so vale se foi LIDO do painel, nunca
+"lembrado" de uma sprint anterior. As duas vezes anteriores foram a
+`CLERK_SECRET_KEY` (suspeita infundada) e o `ENABLE_QUICK_GROUNDING` (falso
+alarme). Agora foi o contrario: o arquivo dizia que estava e nao estava.

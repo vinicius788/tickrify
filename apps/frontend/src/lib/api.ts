@@ -236,8 +236,19 @@ export interface PerformanceResponse {
 
 class APIClient {
   private static readonly REQUEST_TIMEOUT_MS = 15000;
-  private static readonly ANALYZE_TIMEOUT_MS = 120000;
-  private static readonly POLL_TIMEOUT_MS = 180_000; // 3 min — cobre até 3 tentativas com backoff (timeout 55s + wait 5s + retry 55s + wait 30s + retry 55s)
+  private static readonly ANALYZE_TIMEOUT_MS = 150_000;
+  // 5 min. ESTE NÚMERO ESTÁ ACOPLADO AO BACKEND — não mexa em um sem o outro.
+  //
+  // Era 180s, dimensionado para AI_ANALYZE_TIMEOUT_MS=55s (55 + 5 + 55 + 30 + 55).
+  // Com modelo de raciocínio (GPT-5+) uma única tentativa passa de 55s, então o
+  // backend sobe para ~120s — e aí 180s aqui deixaria de cobrir sequer duas
+  // tentativas. O modo de falha é traiçoeiro: o worker CONCLUI a análise e grava
+  // no histórico, mas a tela já desistiu e mostra erro. O usuário vê falha numa
+  // análise que existe e que ele pagou.
+  //
+  // 300s cobre 2 tentativas de 120s com backoff. Três tentativas fariam o
+  // usuário esperar 6,5 min, o que não é aceitável de qualquer forma.
+  private static readonly POLL_TIMEOUT_MS = 300_000;
   private static readonly POLL_MAX_ATTEMPTS = 90;
   // Polling rápido: começa em 800ms, cresce 200ms por tentativa, cap de 3s
   // Antes: 2000ms * attempts (chegava a 10s entre polls — responsável por até 30s de lag)
