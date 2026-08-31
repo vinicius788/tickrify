@@ -172,6 +172,11 @@ export class HealthController {
         model: process.env.AI_MODEL ? 'configured' : 'default',
         modelQuick: process.env.AI_MODEL_QUICK?.trim() || 'default',
         modelDeep: process.env.AI_MODEL_DEEP?.trim() || 'default',
+        // Esforço de raciocínio: nos GPT-5 é o controle de CUSTO por análise
+        // (tokens de raciocínio são cobrados como saída). 'default' = padrão da
+        // OpenAI. Ver openai-params.ts e model-cost.ts.
+        reasoningEffortQuick: process.env.AI_REASONING_EFFORT_QUICK?.trim() || 'default',
+        reasoningEffortDeep: process.env.AI_REASONING_EFFORT_DEEP?.trim() || 'default',
         // `quickGrounding` é a única flag aqui que a VITRINE VENDE: o card de
         // preço lista "Live candle grounding" como feature paga. Se vier
         // 'disabled', o site está afirmando algo que a produção não faz —

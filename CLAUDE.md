@@ -1700,3 +1700,143 @@ rollup nativo) — não foi possível rodar a suíte de componente do frontend.
    intermitente, o que reforça a hipótese de bloqueio de origem e enfraquece a
    de instabilidade de rede. `/api/health` exige o ops token, então quem tem o
    segredo é que consegue ler qual dos três casos o log registrou.
+
+### 31/08 — parte 2: custo por analise medido, e `reasoning_effort` (passos 1 e 2)
+
+**Contexto:** o `gpt-4o` do deep morre em 23/10/2026. O `terra` foi RECUSADO
+pelo dono por custo, e a conta confirma que ele estava certo (abaixo). A saida e
+`luna` nos dois tiers, diferenciados por esforco de raciocinio — mas antes de
+gastar, instrumentar.
+
+#### O numero que decide tudo: receita por tick
+`$29 / 200 ticks = **$0,145 por tick**`. Quick = 1 tick = $0,145. Deep = 3 ticks
+= **$0,435**. Toda decisao de modelo se resolve contra esses dois numeros.
+
+**Por que o `terra` foi recusado, em uma linha:** o teto de custo de um deep no
+`terra` (~$0,53, com a saida saturando os 32k tokens) **passa da receita de um
+deep** ($0,435). O `terra` TEM cenario matematicamente perdedor. O `luna`
+(teto ~$0,21) nao tem. Isso esta travado por teste
+(`model-cost.spec.ts` → "o TETO do luna cabe na receita de um deep; o do terra NAO").
+
+**Por que os 200 ticks NAO devem ser cortados** (perguntado pelo dono em 31/08):
+os pacotes avulsos em USD sao 20/$3,99 · 50/$9,99 · 150/$25,99 → **$0,17 a $0,20
+por tick**. A assinatura a $0,145 e 16% mais barata que o maior pacote. Cortar
+para 150 ticks daria **$0,193/tick — MAIS CARO que o avulso**, recriando
+exatamente o bug de 27/07 ("assinar era o pior negocio da loja") que motivou o
+plano unico. **Piso: ~180 ticks.** A alavanca certa nao e o numero de ticks, e
+sim a razao do deep (3 ticks) e o teto de rollover.
+
+#### 🆕 `model-cost.ts` — o custo real, sempre logado
+O `usage` da OpenAI **ja chegava em toda resposta e era jogado fora**, exceto
+com `AI_DEBUG_DUMP_RAW` gravando em arquivo local (inutil no Render, disco
+efemero). O campo que importa e `completion_tokens_details.reasoning_tokens`:
+nos GPT-5 e o gasto INVISIVEL de raciocinio, **cobrado como saida**, e e a
+unica variavel que separa "usuario custa $5" de "custa $9".
+
+Agora toda analise emite, sem flag nenhuma:
+```
+[Cost] deep model=gpt-5.6-luna prompt=20000 completion=10000 reasoning=7500 \
+       cost=$0.0800 revenue=$0.4350 margin=81.6%
+```
+- **Grep `[Cost]` no log do Render** = custo real por tipo e por modelo.
+- `⚠️ CUSTO ACIMA DA RECEITA` aparece se custo > receita. **Nunca deveria
+  aparecer com `luna`** — se aparecer, e incidente, nao curiosidade.
+- **Armadilha travada por teste:** `reasoning_tokens` JA ESTA DENTRO de
+  `completion_tokens`. Somar por fora conta em dobro e inflaria o custo
+  justo no modelo onde a margem e mais apertada. NAO "corrija" isso.
+- Preco de modelo mora SO no `PRICING` do `model-cost.ts`. Modelo fora da
+  tabela devolve `costUsd: null` em vez de inventar preco.
+- Tudo dentro de try/catch: **instrumentacao nunca derruba a analise que ela
+  esta medindo.**
+
+#### 🆕 `reasoning_effort` — o controle de custo que nao existia
+`AI_REASONING_EFFORT_QUICK` / `AI_REASONING_EFFORT_DEEP`
+(`minimal|low|medium|high`), resolvidos por `resolveReasoningEffort()` em
+`openai-params.ts` e aplicados nos DOIS call sites do adapter.
+
+- **Nenhuma setada = `undefined` = padrao da OpenAI = comportamento de hoje.**
+  Nada muda em producao ate alguem decidir que muda.
+- **Valor invalido e IGNORADO, nao repassado.** Um typo no painel do Render
+  derrubaria 100% das analises com 400 — falha total por digitacao nao e modo
+  de falha aceitavel para uma variavel de ajuste fino. Travado por teste.
+- So vai para GPT-5+; mandar para a familia 4o da 400 (mesma logica ja usada
+  para `temperature`/`seed`).
+- ⚠️ **Troca velocidade por profundidade.** Esforco alto pode estourar o
+  `ANALYZE_TIMEOUT_MS` (default 55s) e virar **ERRO, nao espera**. Subir o
+  esforco sem subir o timeout junto e trocar qualidade por falha.
+- `/health` passou a reportar `reasoningEffortQuick`/`reasoningEffortDeep`.
+
+#### PENDENTE DO DONO — passo 3, o unico que gasta (~$0,30)
+1. No Render: `AI_MODEL_DEEP=gpt-5.6-luna` + `AI_REASONING_EFFORT_DEEP=medium`
+   (**medium, nao high** — ja diferencia do quick e custa bem menos).
+2. Rodar **3 analises deep** pelo painel.
+3. `grep '[Cost]'` no log do Render e ler o `reasoning=` real.
+4. Com o numero medido: decidir o teto de `maxTokens` (hoje 32k) que trava o
+   custo dentro do orcamento de ~$9/usuario, e decidir se o deep continua a 3
+   ticks ou vai para 4. **Atualizar esta secao com o valor medido.**
+
+Piso de seguranca do `maxTokens`: abaixo de ~16k o veredito comeca a se perder
+(medido em 29/07 — a resposta trunca e o BUY vira WAIT na tela, porque
+`recommendation` e gerado por ULTIMO desde a reordenacao do schema).
+
+**Verificacao desta parte:** backend `tsc --noEmit` 0 erros · **jest 162/162**
+(20 suites, 12 testes novos em `model-cost.spec.ts`) · frontend `tsc -b` 0 erros.
+
+### 31/08 — parte 3: o custo do raciocinio, MEDIDO (o passo 3 saiu)
+
+Rodado localmente pelo Claude com o `backtest-runner` (450 graficos de amostra
+ja existem em `scripts/backtest/charts/`, e o runner cai no fallback do prompt
+de arquivo quando o banco nao responde — **nao precisa de Render, nem de deploy,
+nem de painel**). 6 analises reais, ~US$ 0,18 do saldo do dono.
+
+Comando (a chave estava no `.env` local; ela nunca sai do terminal do dono):
+```
+cd apps/backend && AI_MODEL=gpt-5.6-luna AI_REASONING_EFFORT_QUICK=medium \
+  ./node_modules/.bin/ts-node --transpile-only scripts/backtest-runner.ts \
+  --limit 3 --yes --out custo-luna-medium.jsonl
+```
+
+| | `medium` | `high` |
+|---|---|---|
+| completaram | **3 de 3** | **1 de 3** ⚠️ |
+| tempo/analise | ~26s | varios minutos |
+| tokens de raciocinio | 346 · 1.024 · 1.255 (**~875**) | **4.096** |
+| custo/analise | **$0,0275** | $0,0465 |
+| margem no quick (1 tick) | **~81%** | 67,9% |
+
+#### 🔴 `high` e INUTILIZAVEL — nao e questao de custo, e de falha
+**2 de 3 analises morreram com `openai_request_failed`** (estouro do
+`ANALYZE_TIMEOUT_MS`, default 55s). O aviso escrito na parte 2 ("esforco alto
+vira ERRO, nao espera") esta agora MEDIDO. Nao usar `high` sem subir o timeout —
+e mesmo assim o usuario esperaria minutos. **Use `medium`.**
+
+#### ✅ O medo do raciocinio era infundado
+A analise de custo da parte 2 trabalhava com cenarios de 5.000 a 30.000 tokens
+de raciocinio. **O real no `medium` e ~875** — 6 a 30 vezes menor. A tabela de
+"pior caso" daquela secao continua valida como TETO matematico, mas nao descreve
+nada parecido com a operacao real.
+
+#### Custo por usuario que queima os 200 ticks — agora com numero medido
+- **200 quicks × $0,0275 = $5,50** ← este e o caminho MAIS caro do plano
+- 66 deeps × ~$0,038 (projetado: entrada maior com enriquecimento/HTF, mesma
+  saida) = **~$2,51**
+
+**Cabe no orcamento de $9/usuario do dono, e ate nos $6.** O quick custa mais que
+o deep no total do plano, o que confirma que a razao de 3 ticks para o deep esta
+generosa com a casa — **nao ha motivo para subir para 4 ticks.**
+
+#### ⚠️ Correcao de um numero que estava errado no proprio CLAUDE.md
+O quick no `luna` custa **~$0,028-0,032**, NAO os "~$0,024" que circulavam. A
+medicao de 29/07 ja dizia "~$0,032"; a derivacao otimista de $0,024 estava
+errada. Consequencia que ninguem tinha notado: **desde 11/08, quando o quick foi
+para o `luna`, o custo por analise rapida subiu 2,4x** (era $0,013 no
+`gpt-4o-mini`). Isso nunca entrou em nenhuma conta de margem.
+
+Observacao de qualidade: as 3 analises do `medium` voltaram **WAIT** (conf 42-44)
+— a abstencao sobrevive ao esforco de raciocinio.
+
+#### PENDENTE DO DONO (agora e so uma decisao, nao uma medicao)
+No Render: `AI_MODEL_DEEP=gpt-5.6-luna` + `AI_REASONING_EFFORT_DEEP=medium`.
+Isso fecha o prazo do `gpt-4o` (23/10) sem comer margem. **Nao setar `high`.**
+Falta so confirmar o custo do deep REAL depois (o runner so roda `quick`; a
+projecao de $0,038 assume entrada maior e mesma saida).

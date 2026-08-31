@@ -35,6 +35,24 @@ export interface SamplingOptions {
   topP?: number;
   /** Ignorado nos modelos GPT-5+, que rejeitam o parâmetro. */
   seed?: number;
+  /**
+   * SÓ GPT-5+. Quanto o modelo "pensa" antes de responder. Os tokens de
+   * raciocínio são invisíveis na resposta mas COBRADOS COMO SAÍDA, então este
+   * parâmetro é, na prática, o controle de custo por análise.
+   *
+   * É ele que permite diferenciar deep de quick sem trocar de modelo: rodar os
+   * dois no `luna` com esforços diferentes custa muito menos que subir o deep
+   * para o `terra` — cujo teto de custo (~US$ 0,53) passa da receita de um deep
+   * (3 ticks = US$ 0,435), ou seja, o `terra` TEM cenário de prejuízo e o
+   * `luna` não tem.
+   *
+   * Troca velocidade por profundidade: esforço alto pode estourar o
+   * ANALYZE_TIMEOUT_MS (default 55s) e virar ERRO, não espera. Subir o esforço
+   * sem subir o timeout junto é trocar qualidade por falha.
+   *
+   * Omitido = o padrão da OpenAI. É o comportamento de hoje.
+   */
+  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high';
 }
 
 /**
@@ -49,6 +67,8 @@ export function buildSamplingParams(
 
   if (isNextGenModel(model)) {
     params.max_completion_tokens = opts.maxTokens;
+    // Só existe nos modelos de raciocínio. Mandar para a família 4o dá 400.
+    if (opts.reasoningEffort) params.reasoning_effort = opts.reasoningEffort;
     // `seed` é rejeitado: a OpenAI não garante determinismo entre rotas nos
     // modelos de raciocínio. O pareamento do backtest não depende disso — ele
     // vem da amostragem (seed 20260713 no manifest), não da chamada de API.
@@ -86,6 +106,34 @@ export function buildSamplingParams(
  * ATENÇÃO ao padrão do deep: `gpt-4o` tem shutdown marcado pela OpenAI para
  * 23/10/2026. Migrar antes disso não é opcional.
  */
+/**
+ * Esforço de raciocínio por tipo de análise, via env.
+ *
+ *   AI_REASONING_EFFORT_QUICK / AI_REASONING_EFFORT_DEEP
+ *
+ * NENHUMA setada = undefined = padrão da OpenAI = exatamente o comportamento de
+ * hoje. Nada muda em produção até alguém decidir que muda.
+ *
+ * Valor inválido é IGNORADO em vez de repassado: um typo no painel do Render
+ * derrubaria 100% das análises com 400, e falha total por causa de digitação
+ * não é um modo de falha aceitável para uma variável de ajuste fino.
+ */
+const VALID_EFFORTS = ['minimal', 'low', 'medium', 'high'] as const;
+export type ReasoningEffort = (typeof VALID_EFFORTS)[number];
+
+export function resolveReasoningEffort(
+  analysisType: 'quick' | 'deep' | string,
+): ReasoningEffort | undefined {
+  const isDeep = analysisType === 'deep';
+  const raw = (isDeep
+    ? process.env.AI_REASONING_EFFORT_DEEP
+    : process.env.AI_REASONING_EFFORT_QUICK
+  )?.trim().toLowerCase();
+  return (VALID_EFFORTS as readonly string[]).includes(raw || '')
+    ? (raw as ReasoningEffort)
+    : undefined;
+}
+
 export function resolveModel(analysisType: 'quick' | 'deep' | string): string {
   const isDeep = analysisType === 'deep';
   const perType = isDeep ? process.env.AI_MODEL_DEEP : process.env.AI_MODEL_QUICK;

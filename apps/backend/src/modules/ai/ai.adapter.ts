@@ -15,11 +15,17 @@ import {
   deriveMarketRegime,
 } from '../../common/utils/analysis-normalizer';
 import { decideSignal } from '../../common/utils/signal-decision';
+import { computeCost, extractUsage, formatCostLog } from './model-cost';
 import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
 import { MarketService, normalizeToBinancePerp } from '../market/market.service';
 import { EconomicCalendarService } from '../calendar/calendar.service';
-import { buildSamplingParams, isNextGenModel, resolveModel } from './openai-params';
+import {
+  buildSamplingParams,
+  isNextGenModel,
+  resolveModel,
+  resolveReasoningEffort,
+} from './openai-params';
 
 // ── Guard anti-extração de prompt ──────────────────────────────────────────
 // Defende contra a tentativa de extrair o system prompt via input (ex.: alguém
@@ -972,6 +978,7 @@ export class AIAdapter {
         temperature: 0.1,
         topP: 0.1,
         seed: 42,
+        reasoningEffort: resolveReasoningEffort(analysisType),
       }),
       stream: true,
       messages: [
@@ -1567,6 +1574,7 @@ export class AIAdapter {
           temperature: 0.1,
           topP: 0.1,
           seed: 42,
+          reasoningEffort: resolveReasoningEffort(analysisType),
         }),
         response_format: {
           type: 'json_schema',
@@ -1731,6 +1739,19 @@ export class AIAdapter {
           ? String((choice.message as { refusal?: string }).refusal || '').trim()
           : '';
       const content = extractMessageContent(choice?.message?.content);
+
+      // Custo REAL desta análise, sempre (não atrás de flag de debug). O `usage`
+      // já vinha na resposta e era descartado fora do modo de debug, então o
+      // gasto de `reasoning_tokens` dos modelos GPT-5 — que é a maior incógnita
+      // da conta de margem — nunca foi observado em produção. Ver model-cost.ts.
+      // Instrumentação nunca pode derrubar a análise: tudo dentro de try/catch.
+      try {
+        const usage = extractUsage((response as any).usage);
+        const breakdown = computeCost(model, usage, analysisType === 'deep' ? 3 : 1);
+        this.logger.log(formatCostLog(model, analysisType, breakdown));
+      } catch {
+        /* medir nunca quebra o que está sendo medido */
+      }
 
       // Diagnóstico (AI_DEBUG_DUMP_RAW=/caminho/arquivo.txt): grava a RESPOSTA
       // crua do modelo e o uso de tokens. Serve para descobrir para onde vão os
