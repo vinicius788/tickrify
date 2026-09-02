@@ -119,6 +119,10 @@ export type FunnelEvent =
   | 'analysis_started'
   | 'analysis_completed'
   | 'analysis_failed'
+  // Card de compartilhamento: `step` diz onde a pessoa parou
+  // (opened | copied | downloaded | x_opened | native_shared). Sem isto não dá
+  // para saber se o card é gerado e nunca postado, que é a falha mais provável.
+  | 'analysis_shared'
   | 'free_limit_reached'
   | 'upgrade_modal_viewed'
   | 'pricing_viewed'

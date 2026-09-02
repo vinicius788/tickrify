@@ -20,6 +20,7 @@ import {
 import { useEconomicCalendar } from '@/hooks/useEconomicCalendar';
 import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
+import { ShareCardButton, type ShareCardData } from './ShareCard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -733,6 +734,49 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
     if (whyNotOpposite) waitFlipItems.push({ label: r.flipWhyNot, text: whyNotOpposite });
   }
 
+  /**
+   * Dados do card compartilhável.
+   *
+   * A LEITURA vem do executiveSummary quando existe. No deep ele é escrito em
+   * blocos "RÓTULO: texto" (um por linha) — jogar isso cru na imagem colocaria
+   * os rótulos do modelo dentro do card, então aqui pega-se o bloco READING
+   * (ou o primeiro) e usa-se só o texto.
+   *
+   * NÃO reaproveita a variável `technicalAnalysis`: ela já embute o fallback
+   * traduzido (`r.noAnalysis`), e o card não deve exibir texto de interface.
+   * Vazio é tratado dentro do `drawShareCard`.
+   *
+   * O card existe para TODO veredito, WAIT incluído — ver a justificativa no
+   * cabeçalho do ShareCard.tsx antes de restringir isto.
+   */
+  const shareRead = (() => {
+    if (executiveSummary) {
+      const { blocks } = parseSummaryBlocks(executiveSummary);
+      if (blocks.length >= 2) {
+        const reading = blocks.find((b) => b.label.trim().toUpperCase() === 'READING');
+        return (reading || blocks[0]).text;
+      }
+      return executiveSummary;
+    }
+    return (
+      cleanModelText(analysis.technicalAnalysis) ||
+      cleanModelText(analysis.reasoning) ||
+      cleanModelText(analysisData.reasoning)
+    );
+  })();
+
+  const shareData: ShareCardData = {
+    symbol,
+    timeframe,
+    verdict: recommendationMeta.label,
+    tone: recommendationMeta.tone,
+    tier: convictionTier,
+    confidence,
+    read: shareRead,
+    flip: waitFlipItems[0]?.text ?? null,
+    date: timestamp,
+  };
+
   const headerIcon = recommendationMeta.tone === 'buy' ? ArrowUp : recommendationMeta.tone === 'sell' ? ArrowDown : Minus;
   const HeaderIcon = headerIcon;
 
@@ -797,6 +841,11 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               </span>
             )}
             <span className="whitespace-nowrap font-terminal md:ml-auto">{formattedTimestamp}</span>
+            {/* Demo anônima não compartilha: o card leva a marca e o link da
+                /accuracy, e um print gerado a partir de dado de demonstração
+                circulando como leitura real é a mesma classe de problema que a
+                auditoria de 27/07 removeu da vitrine. */}
+            {!isDemo && <ShareCardButton data={shareData} />}
             {detectedSession && (
               <span className="whitespace-nowrap rounded-sm border border-[var(--border-subtle)] px-2 py-0.5 font-terminal text-xs text-[var(--text-secondary)] uppercase">
                 {detectedSession.replace('_', ' ')}

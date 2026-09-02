@@ -2094,3 +2094,85 @@ ser reescrito de infinitas formas e nenhum grep cobre todas.
 completaram uma analise gratis; com n=4, medir "melhora" e ruido. A mudanca foi
 feita porque a frase era FALSA, mesmo criterio da auditoria de 27/07. O gargalo
 continua sendo trafego.
+
+---
+
+## Sprint 01/09/2026 — card de compartilhamento da analise
+
+**Pedido do dono:** toda analise com um "compartilhar", para postar no X e no
+Reddit. Referencia visual: o card de posicao da fomo.family (print de +$1,1M de
+lucro). **O pedido veio ja corrigido pelo proprio dono:** "pode ser igual o da
+fomo, mas mais como explicacao, nao como lucro". Esse detalhe define tudo.
+
+### O que foi entregue
+`components/dashboard/ShareCard.tsx` (arquivo novo, justificativa no cabecalho
+dele): botao **Share** no cabecalho de TODA analise nao-demo. Gera um PNG
+1200x675 (@2x) com Canvas 2D nativo, abre um dialog com previa e quatro acoes —
+**Post on X** (copia a imagem e abre o compositor com o texto pronto),
+**Copy image**, **Download** e **More** (menu nativo do sistema, so onde
+`navigator.canShare({files})` existe; no celular e ele que abre Instagram,
+WhatsApp e Telegram).
+
+### As tres decisoes de PRODUTO que nao podem ser desfeitas sem pensar
+1. **O card NAO mostra entry, stop nem alvo.** Post com nivel de preco aberto le
+   como SINAL, e o posicionamento ("segunda opiniao, nao sinal") custou duas
+   sprints de auditoria de claim. O card mostra simbolo, timeframe, veredito,
+   chip Read/Signal, confianca e **a leitura em prosa** — o porque.
+2. **WAIT/HOLD ganha card igual aos outros.** ~39% das analises sao WAIT, e "a
+   IA mandou NAO operar, e aqui esta o porque" e o unico conteudo desta
+   categoria que nenhum concorrente publica. Esconder o WAIT transformaria isto
+   em maquina de print de sinal — o produto passaria a mentir por omissao.
+3. **O texto pre-preenchido do post e SEMPRE ingles e nao cita performance.**
+   Texto publico que a pessoa posta sem reler e o lugar mais provavel de uma
+   alegacao nao verificavel voltar a existir. Ele descreve o que a IA leu e
+   linka a `/accuracy` com UTM (`utm_source=x&utm_campaign=share_card`).
+
+### Decisoes tecnicas
+- **Zero dependencia nova** (`html2canvas`/`satori` fariam em menos linhas, mas o
+  lockfile nao atualiza na maquina do dono). Canvas 2D puro.
+- **O grafico do usuario NAO entra no card.** `Analysis.imageUrl` e opcional e o
+  backend parou de salvar a imagem para economizar espaco — um card com print
+  funcionaria na hora da analise e quebraria ao recompartilhar pelo historico.
+- **Zero backend, zero migracao, zero rota nova.** Tudo acontece no navegador.
+- `document.fonts.ready` antes de desenhar: sem isso o Canvas usa a fonte de
+  fallback se a Geist ainda nao chegou, e o card sai fora da identidade **sem
+  erro nenhum**.
+- Espacamento entre letras e feito caractere a caractere: `ctx.letterSpacing`
+  nao existe no Firefox e e ignorado em silencio.
+- A copia para o clipboard acontece ANTES do `window.open` do X. Depois dele o
+  documento perde o foco e o navegador recusa a escrita no clipboard.
+- O bloco de texto e **centralizado verticalmente** entre cabecalho e rodape,
+  com a altura medida antes de desenhar. Com `y` fixo, leitura curta deixava
+  ~180px de vazio no pe e o post parecia inacabado.
+- Evento novo no funil: **`analysis_shared`**, com `step` =
+  `opened | copied | downloaded | x_opened | native_shared`. Sem o `step` nao da
+  para distinguir "gerou o card" de "postou", que e a falha mais provavel.
+- i18n do BOTAO nos 6 idiomas (`analysis.share.*`). O texto DENTRO da imagem e
+  so ingles, de proposito: a imagem e artefato publico (mesma regra do site) e
+  vitrine em 6 idiomas ja produziu claim falso tres vezes neste projeto.
+
+### Como isto foi verificado (nao foi "parece certo")
+`vitest` e `vite build` continuam sem rodar no VM do sandbox (limitacao ja
+registrada). Entao: o codigo de desenho REAL foi extraido do `ShareCard.tsx`,
+transpilado com esbuild e executado num **Chromium headless com as fontes Geist
+de verdade**, e os PNGs resultantes foram olhados um a um em 7 cenarios —
+BUY/SIGNAL, SELL/READ, WAIT com "what would change it", simbolo longo demais,
+leitura longa demais (confirma as reticencias), leitura curta e analise vazia.
+Foi assim que o vazio no pe do card apareceu. `tsc -b` do frontend com 0 erros e
+`eslint` sem erro nos arquivos tocados (so os avisos de `react-refresh` que a
+pasta inteira ja tem).
+
+`__tests__/share-card.test.ts` trava as duas coisas que falham em SILENCIO:
+`wrapText` (texto que nao cabe e desenhado para fora da imagem e some, sem
+erro) e `buildShareText` (assercoes de que o texto do post nunca contem
+`entry`/`stop`/`target`/`$` nem `win rate`/`profit`/`guarantee`).
+
+### O que ficou FORA, e por que
+- **Link publico por analise (`/s/:token`)**: exigiria coluna nova, endpoint
+  publico e rota nova — e o preview do link no X sairia generico de qualquer
+  forma, porque o `prerender.mjs` roda no build e nao gera `og:image` por
+  analise. Imagem circula melhor que link em rede social; o card resolve o
+  pedido inteiro sem tocar no backend.
+- **Publicacao automatica no X**: exige conta de desenvolvedor, OAuth, chaves no
+  Render e um job. E o unico item que depende de aprovacao de terceiro e, com
+  trafego ~0, o de pior retorno por hora. Decisao do dono: depois.
