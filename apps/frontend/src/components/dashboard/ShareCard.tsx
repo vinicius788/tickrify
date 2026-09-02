@@ -96,6 +96,22 @@ export interface ShareCardData {
 }
 
 /**
+ * Rótulo do veredito como ele sai para o mundo.
+ *
+ * Dentro do produto o rótulo canônico é HOLD (é o que `getRecommendationMeta`
+ * devolve e o que o painel exibe). Mas "HOLD" não é palavra que trader use para
+ * "não opera agora" — quem lê o post entende WAIT na hora e HOLD com atraso.
+ *
+ * Isto existe porque a imagem e o texto do tweet DIVERGIAM: o card escrevia
+ * HOLD e o `buildShareText` escrevia "said WAIT", no mesmo post. Uma função só,
+ * usada nos dois lugares, torna essa divergência impossível de voltar.
+ */
+export function publicVerdict(verdict: string): string {
+  const value = String(verdict || '').trim().toUpperCase();
+  return value === 'HOLD' || value === 'WAIT' ? 'WAIT' : value || 'WAIT';
+}
+
+/**
  * Quebra texto em linhas que cabem em `maxWidth`, com no máximo `maxLines`.
  * Estourou? A última linha recebe reticências. Palavra maior que a linha
  * inteira é cortada no meio em vez de vazar para fora do card.
@@ -280,8 +296,9 @@ export async function drawShareCard(data: ShareCardData): Promise<Blob> {
   // ── Veredito + tier ──────────────────────────────────────────────────────
   const pillY = 206;
   const pillH = 58;
+  const verdictLabel = publicVerdict(data.verdict);
   ctx.font = `700 27px ${MONO}`;
-  const pillW = measureTracked(ctx, data.verdict, 3) + 52;
+  const pillW = measureTracked(ctx, verdictLabel, 3) + 52;
 
   roundedRect(ctx, PAD, pillY, pillW, pillH, 10);
   ctx.fillStyle = tone.bg;
@@ -291,7 +308,7 @@ export async function drawShareCard(data: ShareCardData): Promise<Blob> {
   ctx.stroke();
 
   ctx.fillStyle = tone.fg;
-  drawTracked(ctx, data.verdict, PAD + 26, pillY + 39, 3);
+  drawTracked(ctx, verdictLabel, PAD + 26, pillY + 39, 3);
 
   if (data.tier) {
     const chipText = data.tier === 'signal' ? 'SIGNAL' : 'READ';
@@ -337,47 +354,71 @@ export async function drawShareCard(data: ShareCardData): Promise<Blob> {
   const AREA_TOP = 320;
   const AREA_BOTTOM = H - 98;
 
+  // Quantas linhas cabem, em vez de um teto fixo. O teto era 4 e cortava a
+  // leitura com "…" deixando ~90px de vazio abaixo — visto no primeiro card
+  // real gerado (XAUUSD 5m, 02/09/2026): o corte comeu justamente a parte
+  // acionável da frase, com espaço sobrando na imagem.
+  //
+  // As constantes de altura moram aqui e não espalhadas pelo desenho: LABEL_H,
+  // READ_LH e as do flip são as MESMAS usadas para avançar o `y` mais abaixo.
+  // Se divergirem, o bloco é medido com um número e desenhado com outro, e o
+  // texto passa por cima do rodapé sem erro nenhum.
+  const LABEL_H = 30;
+  const READ_LH = 33;
+  const FLIP_GAP = 34;
+  const FLIP_LABEL_H = 26;
+  const FLIP_LH = 28;
+  const AREA_HEIGHT = AREA_BOTTOM - AREA_TOP;
+
   ctx.font = `400 21px ${SANS}`;
+  const maxReadLines = Math.max(1, Math.floor((AREA_HEIGHT - LABEL_H) / READ_LH));
   const readLines = wrapText(
     (text) => ctx.measureText(text).width,
     data.read || 'No written read available for this analysis.',
     bodyWidth,
-    4,
+    maxReadLines,
   );
 
-  // O "what would change it" só cabe quando a leitura usou até 3 linhas. A
-  // leitura é o conteúdo principal: ela nunca é encurtada para o bloco caber.
+  // A leitura tem prioridade e NUNCA é encurtada para o "what would change it"
+  // caber: ela é o motivo de o card existir. O flip entra com o que sobrou, e
+  // só se sobrar espaço para as DUAS linhas dele — flip de uma linha só sai
+  // truncado no meio da condição, o que é pior do que não ter flip nenhum.
   const flip = String(data.flip || '').trim();
+  const spaceLeft = AREA_HEIGHT - LABEL_H - readLines.length * READ_LH;
+  const flipFits = spaceLeft >= FLIP_GAP + FLIP_LABEL_H + FLIP_LH * 2;
+
   ctx.font = `400 18px ${SANS}`;
   const flipLines =
-    flip && readLines.length <= 3
+    flip && flipFits
       ? wrapText((text) => ctx.measureText(text).width, flip, bodyWidth, 2)
       : [];
 
   const blockHeight =
-    30 + readLines.length * 33 + (flipLines.length ? 34 + 26 + flipLines.length * 28 : 0);
-  let y = AREA_TOP + Math.max(0, (AREA_BOTTOM - AREA_TOP - blockHeight) / 2);
+    LABEL_H +
+    readLines.length * READ_LH +
+    (flipLines.length ? FLIP_GAP + FLIP_LABEL_H + flipLines.length * FLIP_LH : 0);
+  let y = AREA_TOP + Math.max(0, (AREA_HEIGHT - blockHeight) / 2);
 
   drawLabel(ctx, 'The read', PAD, y);
-  y += 30;
+  y += LABEL_H;
 
   ctx.font = `400 21px ${SANS}`;
   ctx.fillStyle = 'rgba(250, 250, 250, 0.90)';
   for (const line of readLines) {
     ctx.fillText(line, PAD, y + 16);
-    y += 33;
+    y += READ_LH;
   }
 
   if (flipLines.length) {
-    y += 34;
+    y += FLIP_GAP;
     drawLabel(ctx, 'What would change it', PAD, y);
-    y += 26;
+    y += FLIP_LABEL_H;
 
     ctx.font = `400 18px ${SANS}`;
     ctx.fillStyle = 'rgba(250, 250, 250, 0.62)';
     for (const line of flipLines) {
       ctx.fillText(line, PAD, y + 14);
-      y += 28;
+      y += FLIP_LH;
     }
   }
 
@@ -418,7 +459,8 @@ export async function drawShareCard(data: ShareCardData): Promise<Blob> {
  * Descreve o que a IA leu; não promete resultado.
  */
 export function buildShareText(data: ShareCardData): string {
-  const verdict = data.verdict === 'HOLD' ? 'said WAIT' : `read it as ${data.verdict}`;
+  const label = publicVerdict(data.verdict);
+  const verdict = label === 'WAIT' ? 'said WAIT' : `read it as ${label}`;
   return [
     `${data.symbol} ${data.timeframe}: the AI ${verdict}, at ${Math.round(data.confidence)}% confidence.`,
     '',

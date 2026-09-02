@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildShareText, wrapText, type ShareCardData } from '@/components/dashboard/ShareCard';
+import { buildShareText, publicVerdict, wrapText, type ShareCardData } from '@/components/dashboard/ShareCard';
 
 /**
  * O card de compartilhamento é a única superfície do produto que sai da tela e
@@ -59,6 +59,33 @@ describe('wrapText', () => {
   it('devolve lista vazia para texto ausente', () => {
     expect(wrapText(measure, '', 100, 4)).toEqual([]);
     expect(wrapText(measure, '   ', 100, 4)).toEqual([]);
+  });
+});
+
+describe('publicVerdict', () => {
+  /**
+   * Existe por causa de uma divergência que chegou na tela (02/09/2026): o card
+   * desenhava HOLD e o texto do tweet dizia "said WAIT", no MESMO post. Duas
+   * palavras para o mesmo veredito, uma ao lado da outra, em conteúdo público.
+   */
+  it('traduz HOLD para WAIT, que e a palavra que trader usa', () => {
+    expect(publicVerdict('HOLD')).toBe('WAIT');
+    expect(publicVerdict('WAIT')).toBe('WAIT');
+  });
+
+  it('nao mexe em BUY nem em SELL', () => {
+    expect(publicVerdict('BUY')).toBe('BUY');
+    expect(publicVerdict('SELL')).toBe('SELL');
+  });
+
+  it('cai em WAIT quando o veredito vem vazio: nunca uma pilula em branco', () => {
+    expect(publicVerdict('')).toBe('WAIT');
+  });
+
+  it('a palavra HOLD nunca sai no texto do post', () => {
+    const text = buildShareText({ ...baseData, verdict: 'HOLD', tone: 'hold', tier: null });
+    expect(text).not.toContain('HOLD');
+    expect(text).toContain('said WAIT');
   });
 });
 

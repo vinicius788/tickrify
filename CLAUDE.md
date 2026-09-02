@@ -2176,3 +2176,42 @@ erro) e `buildShareText` (assercoes de que o texto do post nunca contem
 - **Publicacao automatica no X**: exige conta de desenvolvedor, OAuth, chaves no
   Render e um job. E o unico item que depende de aprovacao de terceiro e, com
   trafego ~0, o de pior retorno por hora. Decisao do dono: depois.
+
+### Correcao 02/09/2026 — primeiro card real revelou dois defeitos
+O card foi ao ar e o PRIMEIRO gerado de verdade (XAUUSD 5m, HOLD 42%) mostrou o
+que 7 cenarios sinteticos nao mostraram:
+
+1. **Teto de 4 linhas cortava a leitura com espaco sobrando.** O corte caiu em
+   "Do not chase…" — comeu justo a parte acionavel, com ~90px de vazio abaixo.
+   Agora o numero de linhas e DERIVADO do espaco (`AREA_HEIGHT`, `LABEL_H`,
+   `READ_LH`): 6 linhas quando nao ha flip. O mesmo texto passou a caber
+   inteiro. **As constantes de altura sao usadas tanto para MEDIR o bloco
+   quanto para avancar o `y` ao desenhar** — se alguem mudar uma sem a outra, o
+   texto passa por cima do rodape sem erro nenhum.
+2. **A imagem dizia HOLD e o texto do tweet dizia "said WAIT", no mesmo post.**
+   Agora existe `publicVerdict()`, usada pelo desenho E pelo `buildShareText`:
+   uma funcao so, divergencia impossivel de voltar. Teste trava que a palavra
+   HOLD nunca sai no texto publico.
+
+**Prioridade quando os dois blocos disputam espaco:** a leitura ganha sempre. O
+"what would change it" entra com o que sobrou e SO se couberem as duas linhas
+dele — flip de uma linha sai truncado no meio da condicao, pior que nao ter.
+
+### Achado de claim que o dono precisa saber (nao resolvido, decisao consciente)
+O card nao tem campo de entry/stop/alvo, como projetado. **Mas a prosa da IA
+carrega niveis de preco** ("4.602,00-4.610,00", "4.586,38") — o modelo escreve
+os numeros dentro da leitura. A regra "sem nivel de preco" vale para a
+ESTRUTURA do card, nao para o texto do motor. Discutido com o dono em 02/09:
+filtrar numeros da prosa deixaria a leitura generica, e a diferenca entre "a IA
+viu um OB nessa regiao" e uma tabela de operacao continua real. **Mantido como
+esta, de propOsito.** Quem revisitar isto nao deve tratar como bug esquecido.
+
+### Nota de operacao: o bundle no ar so se confere com grep completo
+O botao "sumiu" em producao e foram tres rodadas ate achar que era **cache do
+navegador** (`Cmd+Shift+R` resolveu). Duas armadilhas no diagnostico, para nao
+repetir:
+- `WebFetch` num bundle de 1,4MB le so ~185KB e responde "ABSENT" para TUDO,
+  inclusive para a palavra `tickrify`. **Conclusao tirada dali e falsa.** Sempre
+  rodar uma string de controle antes de acreditar no resultado.
+- O jeito confiavel, do terminal do dono:
+  `curl -s "https://tickrify.com/assets/$(curl -s https://tickrify.com | grep -o 'index-[A-Za-z0-9_-]*\.js' | head -1)" | grep -c "<string>"`
