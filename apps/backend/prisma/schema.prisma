@@ -25,6 +25,10 @@ model User {
   stripeSubscriptionId String? @unique
   subscriptionStatus   String? // active, canceled, past_due, etc
 
+  // Perfil de estrategia do trader (recurso pago). Campos FECHADOS, validados
+  // por sanitizeStrategyProfile — nada que o usuario digitou chega ao prompt.
+  strategyProfile Json?
+
   subscriptions Subscription[]
   analyses      Analysis[]
   analysisUsage AnalysisUsage[]
@@ -66,6 +70,11 @@ model Analysis {
   // calibração antes/depois de uma troca de modelo — e a troca gpt-4o-mini →
   // gpt-5.6 é obrigatória (shutdown do gpt-4o em 23/10/2026).
   model          String?
+  // Hash do perfil de estrategia vigente quando esta analise rodou. NULL = sem
+  // estrategia. As quatro queries publicas (esteira da landing e as tres da
+  // /accuracy) filtram por NULL, para que preferencia de usuario nunca entre na
+  // amostra que o site publica. Mesma licao da separacao outcome/userVerdict.
+  strategyHash   String?
   isDemo         Boolean  @default(false)
   // ── Outcome tracking: 48h após a análise, o worker verifica nos candles reais
   // se TP1 saiu antes do SL (mesma régua do backtest — scripts/backtest/evaluate.py).

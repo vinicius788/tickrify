@@ -27,6 +27,12 @@ const HeroSection = () => {
             {h.title2}
           </h1>
 
+          {/* Linha semantica explicita. O H1 ("Stop trading in the dark.") e de
+              marca e nao contem nenhum termo de busca: sem esta frase, a
+              primeira ocorrencia de "AI chart analysis" na home so aparecia
+              no <head>. Auditoria de SEO, 02/09/2026. */}
+          <p className="site-hero-seo">{h.seoLine}</p>
+
           <p className="site-hero-sub">{h.subtitle}</p>
 
           <div className="site-hero-actions">
@@ -38,7 +44,7 @@ const HeroSection = () => {
                 onClick={() => navigate('/try')}
                 className="site-btn site-btn-primary"
               >
-                {t.tryDemo.heroCta} <ArrowRight className="h-4 w-4" />
+                {h.startFree} <ArrowRight className="h-4 w-4" />
               </button>
             </SignedOut>
             <SignedIn>

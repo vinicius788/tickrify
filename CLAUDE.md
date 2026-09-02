@@ -2215,3 +2215,136 @@ repetir:
   rodar uma string de controle antes de acreditar no resultado.
 - O jeito confiavel, do terminal do dono:
   `curl -s "https://tickrify.com/assets/$(curl -s https://tickrify.com | grep -o 'index-[A-Za-z0-9_-]*\.js' | head -1)" | grep -c "<string>"`
+
+### 02/09/2026 — link publico por analise: PROPOSTO E RECUSADO pelo dono
+O dono pediu "igual a fomo: a imagem aparece no X e clicar leva pro site".
+Descoberta importante: **a fomo NAO envia imagem para o X.** O que aparece na
+timeline e a PREVIA DO LINK (`og:image`), por isso clicar volta pro site deles.
+Uma coisa so, nao duas — e nao exige a API do X nem OAuth.
+
+Caminho levantado (nao construido): coluna de token publico + PNG do card
+subindo pelo `ImageStorageClient` (Supabase Storage, ja existe) + funcao
+serverless no **Vercel** servindo `/s/:token` com as tags og/twitter + pagina
+publica. A funcao TEM que ser no Vercel, nao no Render: o free do Render
+hiberna, e o crawler do X desiste no cold start — a previa nao aparece e nao ha
+erro nenhum para ver.
+
+**O dono decidiu NAO fazer:** quer so o card, sem tocar no backend. Quem
+revisitar isto nao deve tratar como pendencia esquecida — foi escolha, com o
+caminho ja mapeado acima caso mude de ideia.
+
+**Consequencia aceita:** no DESKTOP o fluxo continua sendo copiar + colar
+(Cmd+V) no compositor do X; nenhuma rede social aceita imagem por URL de
+intent. No CELULAR o botao "More" (`navigator.share({files})`) ja abre o app do
+X com a imagem ANEXADA, sem colar nada — esse caminho ja funciona hoje e e o
+mais parecido com o que o dono pediu.
+
+## Sprint 31/08 — parte 7: perfil de estrategia (recurso pago)
+
+O assinante declara a estrategia dele uma vez, em campos FECHADOS, e toda
+analise volta com um selo `ideal|good|poor|conflict` dizendo se aquele setup e
+do tipo que ele opera.
+
+### As duas travas, e por que elas existem
+
+**TRAVA 1 — a estrategia FILTRA, nunca CRIA.** Tres defesas, nao uma:
+1. **Ordem do `json_schema`.** Em structured outputs a ordem das chaves E a
+   ordem de geracao. `strategyFit` entra DEPOIS de `recommendation` e
+   `confidence`, entao quando o modelo chega nele o veredito ja esta escrito.
+   Mesma mecanica da correcao de 29/07. **Mover o campo para cima desfaz a
+   trava sem quebrar nenhum teste de tipo** — por isso existe um teste que le o
+   fonte e confere a ordem.
+2. **`recommendation` nunca muda por causa do selo.** Nem no backend nem na
+   tela. WAIT continua WAIT.
+3. **A regra vai escrita dentro do prompt.** As defesas estruturais impedem o
+   modelo de reordenar, nao de racionalizar.
+
+**Limite honesto:** numa chamada so, o texto da estrategia esta no contexto
+durante a leitura inteira. A ordenacao garante que o modelo ESCREVE a decisao
+antes, nao que nao foi influenciado ao forma-la. Isolamento real exigiria duas
+chamadas, que dobram custo e latencia. **O sinal de que isso virou problema e a
+abstencao de quem tem perfil cair em relacao a de quem nao tem** — o
+`strategyHash` permite medir exatamente isso.
+
+**TRAVA 2 — analise com estrategia fica FORA do que o site publica.** Coluna
+`Analysis.strategyHash`, NULL quando nao houve estrategia. **Sao QUATRO queries
+no `ai.controller.ts`, nao tres:** a esteira da landing (234), os outcomes do
+sweeper (294), a contagem de WAIT (333) e o total (336). A quarta quase passou
+batido porque nao e estatistica, e vitrine, e a secao dela se chama "The latest
+reads, unfiltered". `strategy-accuracy-guard.spec.ts` varre o fonte e quebra o
+CI se alguma perder o filtro.
+
+**⚠️ LIMITE DO GUARD, achado na revisao e que precisa estar escrito:** ele
+identifica "query publica" pelo marcador textual `isDemo: false` e **so varre o
+`ai.controller.ts`**. Uma query publica futura que filtre demo de outro jeito
+(outro nome de flag, `NOT isDemo`, SQL cru) ou que viva em outro arquivo
+**escapa da rede**. Ao criar rota publica nova, o filtro `strategyHash: null` e
+responsabilidade de quem escreve; o guard cobre as quatro de hoje, nao o futuro.
+
+Hash e nao booleano de proposito: booleano so permite excluir, hash permite
+excluir E segmentar depois.
+
+### Seguranca: zero texto livre, e isso nao e negociavel
+O perfil e formulario de campos fechados. `sanitizeStrategyProfile` trabalha por
+whitelist e descarta o que nao reconhece, inclusive chaves desconhecidas.
+**Texto livre do usuario dentro do prompt do motor e injecao de prompt, e o alvo
+mais valioso do ataque e a abstencao de 39,2% que sustenta a /accuracy.**
+Sanitizacao e delimitador nao sao defesa completa contra um modelo. Campo
+fechado e. Ha teste para o caso de ataque.
+
+### 🔎 Achado: `/api/ai/analyze/stream` NAO TEM NENHUM CHAMADOR
+O frontend so chama `/api/ai/analyze` (`lib/api.ts:402`). O caminho de streaming
+e um pipeline de analise paralelo COMPLETO, que persiste analise, **sem
+`json_schema` e sem grounding**, e o produto nunca o alcanca. A estrategia NAO
+foi implementada nele de proposito: e codigo morto, e a trava de ordenacao nem
+existiria la, porque ele parseia JSON de texto livre.
+
+**Isto e divida nomeada.** Ou o caminho e removido, ou ele precisa ganhar
+`json_schema` e grounding antes de qualquer uso. Hoje ele produziria analise
+com qualidade diferente da do caminho principal, sem ninguem perceber.
+
+### Colunas novas
+`User.strategyProfile` (JSONB) e `Analysis.strategyHash` (TEXT). **Sem indice
+em `strategyHash`, de proposito:** a coluna e NULL em quase 100% das linhas e as
+quatro queries filtram por NULL, entao um indice comum nao acelera e so custaria
+escrita. Se um dia houver volume, o indice certo e PARCIAL
+(`WHERE "strategyHash" IS NOT NULL`). Nos DOIS lugares, migracao Prisma e
+`ADD COLUMN IF NOT EXISTS` do `onModuleInit`, porque
+`RUN_MIGRATIONS_ON_START=false` em producao. Mesmo cuidado que faltou na
+`isDemo` e quebrou banco novo.
+
+### 🔴 O bug que quase passou: o worker descartava o perfil em silêncio
+A revisão da tarefa do adapter achou um Critical que o plano tinha deixado
+passar. O `ai.service` sincrono propagava o `strategyProfile` corretamente,
+mas **o `worker/ai.worker.ts` nao**: o tipo `JobData` declarava o campo, e o
+`processAnalysis` nao o extraia do `job.data`, e o `resolveAiSource` chamava
+`analyzeImage` com quatro argumentos em vez de cinco.
+
+**Por que isso seria devastador e invisível:** `RUN_EMBEDDED_WORKER` e `true`
+por padrao, entao **quase toda analise vai pela FILA**. O caminho sincrono, o
+unico que funcionava, e o caminho morto em producao. O assinante pagaria, o
+`strategyHash` seria gravado na analise, o bloco nunca entraria no prompt, o
+`strategyFit` nunca seria gerado, e a analise dele ainda sairia da amostra
+publica sem ter recebido tratamento nenhum diferente.
+
+**Licao:** ao acrescentar um parametro ao `analyzeImage`, ha DOIS caminhos de
+producao a alimentar, e o obvio e o errado. Existe agora um teste que exercita
+a fila e asserta o quinto argumento; o teste estatico do schema passava 13 de
+13 com o bug presente.
+
+### ⚠️ Limite do `strategy-accuracy-guard`, que precisa estar escrito
+Ele identifica "query publica" pelo marcador textual `isDemo: false` e **so
+varre o `ai.controller.ts`**. Uma query publica futura que filtre demo de outro
+jeito (outro nome de flag, `NOT isDemo`, SQL cru) ou que viva em outro arquivo
+**escapa da rede**. Ao criar rota publica nova, por o `strategyHash: null` e
+responsabilidade de quem escreve. O guard cobre as quatro de hoje, nao o futuro.
+
+### Achados preexistentes levantados de passagem (nao corrigidos)
+- **A barra de abas mobile do `DashboardPage` tem rotulos hardcoded em
+  PORTUGUES e com EMOJI** (`▦ Painel`, `⊕ Analise`, `↺ Trades`,
+  `☆ Watchlist`), num site cujo padrao e ingles desde jun/2026 e num projeto
+  que proibe emoji na interface. O item novo do perfil entrou usando a chave de
+  i18n e sem emoji, de proposito: o novo esta certo, os quatro vizinhos nao.
+  Nao foram reescritos por serem fora de escopo.
+- **`/blog/` e `/tools/` tem travessao no proprio `<title>`**, que e texto que
+  aparece no resultado de busca do Google.

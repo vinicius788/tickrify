@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, Star, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap, Upload } from "lucide-react";
+import { History, Star, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap, Upload, Sliders } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -22,6 +22,7 @@ import ActivityHeatmap from "../dashboard/ActivityHeatmap";
 import LiveTape from "../dashboard/LiveTape";
 import MyTrades from "../dashboard/MyTrades";
 import Watchlist from "../dashboard/Watchlist";
+import StrategyProfile from "../dashboard/StrategyProfile";
 import AnalysisResult from "../dashboard/AnalysisResult";
 import LockedAnalysis from "../dashboard/LockedAnalysis";
 import AnalysisLoading from "../dashboard/AnalysisLoading";
@@ -100,7 +101,7 @@ const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
 };
 
-type View = 'dashboard' | 'new-analysis' | 'my-trades' | 'watchlist' | 'analysis-result' | 'loading' | 'error' | 'locked';
+type View = 'dashboard' | 'new-analysis' | 'my-trades' | 'watchlist' | 'strategy' | 'analysis-result' | 'loading' | 'error' | 'locked';
 type RecentAnalysisItem = {
   symbol: string;
   timeframe: string;
@@ -845,6 +846,8 @@ const DashboardPage = () => {
         return <MyTrades onStartAnalysis={resetNewAnalysisView} initialFilter={myTradesFilter} />;
       case 'watchlist':
         return <Watchlist onStartAnalysis={resetNewAnalysisView} />;
+      case 'strategy':
+        return <StrategyProfile />;
       case 'analysis-result': {
         // Gancho de retorno: depois do resultado, dar um próximo passo claro
         // (analisar outro / quantas grátis restam / assinar) — sem beco sem saída.
@@ -986,9 +989,11 @@ const DashboardPage = () => {
       ? t.nav.myTrades
       : activeView === 'watchlist'
         ? t.nav.watchlist
-        : activeView === 'dashboard'
-          ? t.nav.dashboard
-          : t.nav.newAnalysis;
+        : activeView === 'strategy'
+          ? t.nav.strategy
+          : activeView === 'dashboard'
+            ? t.nav.dashboard
+            : t.nav.newAnalysis;
   const sidebarSectionTitleClass = 'text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]';
 
   return (
@@ -1017,6 +1022,9 @@ const DashboardPage = () => {
             </button>
             <button type="button" onClick={() => setActiveView('watchlist')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'watchlist' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
               <Star className="h-4 w-4" /> {t.nav.watchlist}
+            </button>
+            <button type="button" onClick={() => setActiveView('strategy')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'strategy' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+              <Sliders className="h-4 w-4" /> {t.nav.strategy}
             </button>
           </nav>
 
@@ -1112,7 +1120,7 @@ const DashboardPage = () => {
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border md:hidden">
           <div className="flex">
-            {(['dashboard', 'new-analysis', 'my-trades', 'watchlist'] as const).map((view) => (
+            {(['dashboard', 'new-analysis', 'my-trades', 'watchlist', 'strategy'] as const).map((view) => (
               <button
                 key={view}
                 type="button"
@@ -1123,13 +1131,21 @@ const DashboardPage = () => {
                     setActiveView(view);
                   }
                 }}
-                className={`flex-1 py-2 text-xs font-medium transition-colors ${
+                className={`min-w-0 flex-1 truncate px-1 py-2 text-[11px] font-medium leading-tight transition-colors ${
                   mobileActiveView === view
                     ? 'border-b-2 border-primary text-primary'
                     : 'text-muted-foreground'
                 }`}
               >
-                {view === 'dashboard' ? '▦ Painel' : view === 'new-analysis' ? '⊕ Análise' : view === 'my-trades' ? '↺ Trades' : '☆ Watchlist'}
+                {view === 'dashboard'
+                  ? t.nav.dashboard
+                  : view === 'new-analysis'
+                    ? t.nav.newAnalysisShort
+                    : view === 'my-trades'
+                      ? t.nav.myTrades
+                      : view === 'watchlist'
+                        ? t.nav.watchlistShort
+                        : t.nav.strategy}
               </button>
             ))}
           </div>

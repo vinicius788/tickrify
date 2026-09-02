@@ -624,6 +624,38 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const confidenceLabel = confidence >= 70 ? t.analysis.highConfidence : confidence >= 50 ? t.analysis.medConfidence : t.analysis.lowConfidence;
   const convictionTier = getConvictionTier(analysisData.recommendation, analysisData.confidence);
 
+  // Selo de encaixe com a estratégia do usuário (Tarefa 4 do backend).
+  // `strategyFit`/`strategyFitReason` vêm no TOPO do `fullResponse` (irmãos de
+  // `analysis`/`recommendation`, não dentro de `analysis`) — ver
+  // `strategyFitProps` em `ai.adapter.ts`. Nulos quando o usuário não tem
+  // perfil de estratégia; nesse caso o selo simplesmente não aparece.
+  //
+  // TRAVA 1, camada de apresentação: o selo é renderizado AO LADO do veredito
+  // (dentro do mesmo header, junto do chip de convicção), nunca no lugar dele,
+  // e `recommendationMeta`/`convictionTier` abaixo não leem `strategyFit` em
+  // nenhum momento. Um WAIT com `strategyFit: 'ideal'` continua WAIT.
+  const strategyFitValue = String(fullResponse.strategyFit || '').trim().toLowerCase();
+  const strategyFit =
+    strategyFitValue === 'ideal' || strategyFitValue === 'good' || strategyFitValue === 'poor' || strategyFitValue === 'conflict'
+      ? (strategyFitValue as 'ideal' | 'good' | 'poor' | 'conflict')
+      : null;
+  // Vem do modelo: precisa do MESMO funil de limpeza de emoji/travessão que
+  // todo o resto do texto gerado, senão o selo vira a única parte da tela com
+  // emoji sobrevivendo.
+  const strategyFitReason = cleanModelText(fullResponse.strategyFitReason);
+  const STRATEGY_FIT_LABEL: Record<'ideal' | 'good' | 'poor' | 'conflict', string> = {
+    ideal: r.strategyFitIdeal,
+    good: r.strategyFitGood,
+    poor: r.strategyFitPoor,
+    conflict: r.strategyFitConflict,
+  };
+  const STRATEGY_FIT_TONE: Record<'ideal' | 'good' | 'poor' | 'conflict', string> = {
+    ideal: 'bg-[var(--signal-buy-bg)] border-[var(--signal-buy-border)] text-[var(--signal-buy)]',
+    good: 'border-[var(--border-accent)] text-[var(--text-primary)]',
+    poor: 'bg-[var(--signal-hold-bg)] border-[var(--signal-hold-border)] text-[var(--signal-hold)]',
+    conflict: 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]',
+  };
+
   const copyValue = async (label: string, value: number | null) => {
     if (value === null) {
       return;
@@ -822,6 +854,14 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 {convictionTier === 'signal' ? t.analysis.tierSignal : t.analysis.tierRead}
               </span>
             )}
+            {strategyFit && (
+              <span
+                title={r.strategyFitNote}
+                className={`whitespace-nowrap rounded-sm border px-2 py-0.5 font-terminal text-[10px] font-semibold uppercase tracking-widest ${STRATEGY_FIT_TONE[strategyFit]}`}
+              >
+                {r.strategyFitTitle}: {STRATEGY_FIT_LABEL[strategyFit]}
+              </span>
+            )}
             <span>
               {t.analysis.bias.toUpperCase()}:{' '}
               <strong className="whitespace-nowrap font-medium text-[var(--text-primary)]">
@@ -852,6 +892,20 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               </span>
             )}
           </div>
+          {strategyFit && (
+            // Bloco visível (não só tooltip): a nota anti-claim precisa ser
+            // lida, não descoberta em hover. Nunca reescreve nem substitui o
+            // veredito acima — só complementa.
+            <div className="mt-3 flex flex-wrap items-start gap-x-2 gap-y-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-3 py-2 text-xs">
+              <span
+                className={`whitespace-nowrap rounded-sm border px-2 py-0.5 font-terminal text-[10px] font-semibold uppercase tracking-widest ${STRATEGY_FIT_TONE[strategyFit]}`}
+              >
+                {r.strategyFitTitle}: {STRATEGY_FIT_LABEL[strategyFit]}
+              </span>
+              {strategyFitReason && <span className="text-[var(--text-secondary)]">{strategyFitReason}</span>}
+              <span className="w-full text-[10px] italic text-[var(--text-secondary)]">{r.strategyFitNote}</span>
+            </div>
+          )}
         </CardContent>
       </Card>
 

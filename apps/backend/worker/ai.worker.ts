@@ -22,6 +22,7 @@ import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-ru
 import { resolvePrismaDatasourceUrl } from '../src/modules/database/prisma.datasource';
 import { AnalysisType } from '../src/modules/ticks/tick-packages';
 import { DEEP_ENRICHMENT_INSTRUCTION } from '../src/modules/prompt/prompt-builder.service';
+import { STRATEGY_FIT_VALUES, type StrategyProfile } from '../src/common/strategy/strategy-profile';
 import { startOutcomeSweeper } from './outcome.sweeper';
 
 const prisma = new PrismaClient({
@@ -45,6 +46,7 @@ interface JobData {
   analysisType?: AnalysisType;
   isDemo?: boolean;
   userLanguage?: string;
+  strategyProfile?: StrategyProfile | null;
 }
 
 // ─── Fixed demo response (no OpenAI call, no tick cost) ──────────────────────
@@ -731,9 +733,15 @@ async function resolveAiSource(
   prompt: string,
   analysisType: AnalysisType,
   htfImageUrls: string[] = [],
+  strategyProfile?: StrategyProfile | null,
 ): Promise<unknown> {
   if (hasValidOpenAiKey()) {
-    return aiAdapter.analyzeImage(imageUrl, prompt, analysisType, htfImageUrls);
+    // Caminho VIVO em produção (RUN_EMBEDDED_WORKER=true por padrão, então
+    // quase toda análise passa por aqui, não pelo ai.service síncrono).
+    // Esquecer de propagar strategyProfile aqui faz o perfil de estratégia
+    // pago virar no-op silencioso: o strategyHash é gravado, mas o bloco
+    // nunca entra no prompt e o strategyFit nunca é gerado.
+    return aiAdapter.analyzeImage(imageUrl, prompt, analysisType, htfImageUrls, strategyProfile);
   }
 
   if (canUseDemoFallback()) {
@@ -955,6 +963,7 @@ async function processAnalysis(job: Job<JobData>) {
     analysisType,
     isDemo,
     userLanguage,
+    strategyProfile,
   } = job.data;
   const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
 
@@ -970,7 +979,13 @@ async function processAnalysis(job: Job<JobData>) {
 
     // ── Free analyses (isDemo=true) now run real AI — no tick cost, same pipeline ─
     const prompt = await getPrompt(promptOverride, promptVersion, userLanguage, normalizedAnalysisType);
-    const aiSource = await resolveAiSource(imageUrl, prompt, normalizedAnalysisType, htfImageUrls ?? []);
+    const aiSource = await resolveAiSource(
+      imageUrl,
+      prompt,
+      normalizedAnalysisType,
+      htfImageUrls ?? [],
+      strategyProfile,
+    );
 
     const sourcePayload =
       aiSource &&

@@ -1,12 +1,14 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Header,
   Logger,
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UnauthorizedException,
@@ -27,6 +29,7 @@ import { CreateAnalysisDto } from './dto/create-analysis.dto';
 import { ListAnalysesQueryDto } from './dto/list-analyses-query.dto';
 import { SetOutcomeDto } from './dto/set-outcome.dto';
 import { SetFavoriteDto } from './dto/set-favorite.dto';
+import { SetStrategyDto } from './dto/set-strategy.dto';
 import {
   AUTOMATIC_OUTCOMES,
   GROUNDING_LIVE_SINCE,
@@ -164,6 +167,34 @@ export class AiController {
     return this.aiService.setFavorite(dbUserId, id, body.isFavorite === true);
   }
 
+  @Get('strategy')
+  @UseGuards(AuthGuard)
+  async getStrategy(
+    @CurrentUser() user: { id?: string; clerkUserId: string; email?: string | null },
+  ) {
+    const dbUserId = await this.resolveDbUserId(user);
+    if (!dbUserId) return { profile: null, paid: false };
+    const paid = await this.aiService.hasPaidAccess(dbUserId);
+    return { profile: await this.aiService.getStrategy(dbUserId), paid };
+  }
+
+  @Put('strategy')
+  @UseGuards(AuthGuard)
+  async setStrategy(
+    @CurrentUser() user: { id?: string; clerkUserId: string; email?: string | null },
+    @Body() body: SetStrategyDto,
+  ) {
+    const dbUserId = await this.resolveDbUserId(user);
+    if (!dbUserId) throw new UnauthorizedException();
+    // Recurso pago. A checagem fica aqui, na escrita, e de novo no adapter na
+    // hora de injetar: quem cancela a assinatura para de ter o bloco no prompt
+    // mesmo que a linha continue no banco.
+    if (!(await this.aiService.hasPaidAccess(dbUserId))) {
+      throw new ForbiddenException({ code: 'paid_feature', message: 'Strategy profile requires a subscription.' });
+    }
+    return this.aiService.setStrategy(dbUserId, body);
+  }
+
   @Get('performance')
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
@@ -231,7 +262,11 @@ export class AiController {
   async getPublicAnalyses() {
     const rows = await this.prisma.analysis.findMany({
       // isDemo: false → análises da demo anônima nunca vazam para a vitrine.
-      where: { status: 'completed', recommendation: { not: null }, isDemo: false },
+      // strategyHash: null — a seção da landing se chama "The latest reads,
+      // unfiltered" e promete que nada é escolhido a dedo. Uma leitura moldada
+      // pelo perfil de um usuário não é uma leitura crua do motor. Entra aqui
+      // pelo mesmo motivo que o isDemo: false já está.
+      where: { status: 'completed', recommendation: { not: null }, isDemo: false, strategyHash: null },
       orderBy: { createdAt: 'desc' },
       take: 6,
       select: {
@@ -291,7 +326,7 @@ export class AiController {
 
     // O select devolve exatamente o shape de OutcomeRow — sem cast.
     const rows: OutcomeRow[] = await this.prisma.analysis.findMany({
-      where: { outcome: { in: [...AUTOMATIC_OUTCOMES] }, isDemo: false },
+      where: { outcome: { in: [...AUTOMATIC_OUTCOMES] }, isDemo: false, strategyHash: null },
       select: { outcome: true, confidence: true, createdAt: true, promptVer: true, model: true },
     });
 
@@ -330,10 +365,10 @@ export class AiController {
 
     const [waitCount, completedCount] = await Promise.all([
       this.prisma.analysis.count({
-        where: { status: 'completed', isDemo: false, recommendation: { in: ['WAIT', 'HOLD', 'AGUARDAR'] } },
+        where: { status: 'completed', isDemo: false, strategyHash: null, recommendation: { in: ['WAIT', 'HOLD', 'AGUARDAR'] } },
       }),
       this.prisma.analysis.count({
-        where: { status: 'completed', isDemo: false, recommendation: { not: null } },
+        where: { status: 'completed', isDemo: false, strategyHash: null, recommendation: { not: null } },
       }),
     ]);
 

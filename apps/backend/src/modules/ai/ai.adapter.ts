@@ -20,6 +20,7 @@ import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
 import { MarketService, normalizeToBinancePerp } from '../market/market.service';
 import { EconomicCalendarService } from '../calendar/calendar.service';
+import { buildStrategyBlock, STRATEGY_FIT_VALUES, type StrategyProfile } from '../../common/strategy/strategy-profile';
 import {
   buildSamplingParams,
   isNextGenModel,
@@ -129,6 +130,11 @@ interface TradingAnalysisSchemaResult {
   recommendation: SchemaRecommendation;
   confidence: number;
   analysis: TradingAnalysisDetails;
+  // Só existem quando o schema foi montado com perfil de estrategia (ver
+  // strategyFitProps em analyzeImage). TRAVA 1: campos lidos, nunca usados
+  // para decidir recommendation/confidence.
+  strategyFit?: string;
+  strategyFitReason?: string;
 }
 
 interface SupabaseObjectReference {
@@ -1499,6 +1505,7 @@ export class AIAdapter {
     prompt: string,
     analysisType: AnalysisType = 'quick',
     extraImageUrls: string[] = [],
+    strategyProfile?: StrategyProfile | null,
   ): Promise<AIAnalysisResponse> {
     try {
       const userContent = await this.buildUserContent(imageUrl, extraImageUrls);
@@ -1542,6 +1549,14 @@ export class AIAdapter {
         }
       }
 
+      // Perfil de estrategia (recurso pago). Entra DEPOIS do grounding e do
+      // calendario, de proposito: os dois sao fato de mercado e devem ancorar a
+      // leitura; a estrategia e preferencia do usuario e so serve para avaliar
+      // o que ja foi lido. Ver TRAVA 1.
+      if (strategyProfile) {
+        effectivePrompt = `${effectivePrompt}\n\n${buildStrategyBlock(strategyProfile)}`;
+      }
+
       // assertIsFinancialChart removida: adicionava 5-15s de latência em CADA análise.
       // O prompt principal já rejeita imagens inválidas via campo "non_chart_image" implícito
       // no schema. A validação prévia custava mais em latência do que poupava em tokens.
@@ -1564,6 +1579,23 @@ export class AIAdapter {
       // consumo: elevá-lo não custa nada enquanto não for usado.
       const baseMaxTokens = analysisType === 'deep' ? 16_000 : 16_000;
       const maxTokens = isNextGenModel(model) ? baseMaxTokens * 2 : baseMaxTokens;
+
+      // TRAVA 1, defesa estrutural: em structured outputs a ordem das chaves E a
+      // ordem de geracao. strategyFit vem DEPOIS de recommendation e confidence,
+      // entao quando o modelo chega nele o veredito ja esta escrito e imutavel.
+      // Mover este bloco para cima desfaz a trava sem quebrar nenhum teste de
+      // tipo. Nao mova.
+      const strategyFitProps = strategyProfile
+        ? {
+            strategyFit: { type: 'string', enum: [...STRATEGY_FIT_VALUES] },
+            strategyFitReason: { type: 'string' },
+          }
+        : {};
+      // strict:true exige que TODO campo declarado esteja em required. Por isso
+      // o campo so existe no schema de quem tem perfil: sem isso o modelo seria
+      // obrigado a inventar um valor para quem nao tem estrategia nenhuma.
+      const strategyFitRequired = strategyProfile ? ['strategyFit', 'strategyFitReason'] : [];
+
       // withTimeout garante aborto em exatamente 30s via Promise.race
       // Mais confiável do que { timeout } do SDK (que pode não funcionar em todos os ambientes)
       const response = await withTimeout(this.openai.chat.completions.create({
@@ -1713,8 +1745,9 @@ export class AIAdapter {
                   enum: ['BUY', 'SELL', 'HOLD', 'COMPRA', 'VENDA', 'AGUARDAR'],
                 },
                 confidence: { type: 'number' },
+                ...strategyFitProps,
               },
-              required: ['is_financial_chart', 'analysis', 'recommendation', 'confidence'],
+              required: ['is_financial_chart', 'analysis', 'recommendation', 'confidence', ...strategyFitRequired],
               additionalProperties: false,
             },
           },
@@ -1843,6 +1876,13 @@ export class AIAdapter {
       }
 
       const rawRecommendation = mapSchemaRecommendationToInternal(parsed.recommendation);
+      // TRAVA 1: le e propaga, nunca decide. Se algum dia alguem escrever aqui
+      // algo como `if (strategyFit === 'ideal') recommendation = 'BUY'`, isso
+      // transforma preferencia do usuario em sinal, que e exatamente o que este
+      // recurso nao pode fazer.
+      const strategyFit = STRATEGY_FIT_VALUES.find((v) => v === parsed.strategyFit) ?? null;
+      const strategyFitReason =
+        typeof parsed.strategyFitReason === 'string' ? parsed.strategyFitReason.slice(0, 400) : null;
       // Piso de confiança: 0 é reservado para imagem inválida (STEP -1). Em gráfico
       // válido, o modelo às vezes devolve 0 num HOLD — vira 30 (baixa, mas plausível).
       // (imagem inválida já foi rejeitada acima — aqui o gráfico é sempre válido)
@@ -1897,6 +1937,8 @@ export class AIAdapter {
         drawingFailed: true,
         rawResponse: parsed,
         rawContent: content,
+        strategyFit,
+        strategyFitReason,
       };
     } catch (error) {
       if (error instanceof AIAnalysisError) {

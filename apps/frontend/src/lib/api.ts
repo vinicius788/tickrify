@@ -234,6 +234,23 @@ export interface PerformanceResponse {
   pnlCount: number;
 }
 
+/**
+ * Espelha `StrategyProfile` do backend (`common/strategy/strategy-profile.ts`).
+ * Os campos aqui são `string[]`/`string` propositalmente soltos (não os
+ * literais exatos da whitelist): a validação de verdade mora no backend
+ * (`sanitizeStrategyProfile`), que descarta em silêncio qualquer valor fora
+ * da lista. Duplicar os literais aqui só criaria dois lugares para
+ * divergirem sem nenhum ganho de segurança real.
+ */
+export interface StrategyProfileDto {
+  timeframes: string[];
+  sessions: string[];
+  instruments: string[];
+  setups: string[];
+  direction: string;
+  minRiskReward: number;
+}
+
 class APIClient {
   private static readonly REQUEST_TIMEOUT_MS = 15000;
   private static readonly ANALYZE_TIMEOUT_MS = 150_000;
@@ -605,6 +622,57 @@ class APIClient {
     return response.json();
   }
 
+  async getStrategy(
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<{ profile: StrategyProfileDto | null; paid: boolean }> {
+    const response = await this.request(
+      '/api/ai/strategy',
+      {
+        method: 'GET',
+        headers: {
+          ...this.getAuthHeader(token),
+        },
+      },
+      'Failed to fetch strategy profile',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
+    );
+
+    if (!response.ok) {
+      throw await this.buildApiError(response, 'Failed to fetch strategy profile');
+    }
+
+    return response.json();
+  }
+
+  async saveStrategy(
+    profile: StrategyProfileDto,
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<{ profile: StrategyProfileDto | null }> {
+    const response = await this.request(
+      '/api/ai/strategy',
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...this.getAuthHeader(token),
+        },
+        body: JSON.stringify(profile),
+      },
+      'Failed to save strategy profile',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
+    );
+
+    if (!response.ok) {
+      throw await this.buildApiError(response, 'Failed to save strategy profile');
+    }
+
+    return response.json();
+  }
+
   async waitForAnalysisCompletion(
     analysisId: string,
     token: string | null,
@@ -690,6 +758,16 @@ export function useAPIClient() {
     return apiClient.getPerformance(token, getFreshToken);
   }, [getFreshToken]);
 
+  const getStrategy = useCallback(async () => {
+    const token = await getFreshToken();
+    return apiClient.getStrategy(token, getFreshToken);
+  }, [getFreshToken]);
+
+  const saveStrategy = useCallback(async (profile: StrategyProfileDto) => {
+    const token = await getFreshToken();
+    return apiClient.saveStrategy(profile, token, getFreshToken);
+  }, [getFreshToken]);
+
   const waitForAnalysisCompletion = useCallback(
     async (analysisId: string, initialAnalysis?: AIAnalysisResponse) => {
       const token = await getFreshToken();
@@ -712,6 +790,8 @@ export function useAPIClient() {
     setOutcome,
     setFavorite,
     getPerformance,
+    getStrategy,
+    saveStrategy,
     waitForAnalysisCompletion,
-  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, syncUserProfile, setOutcome, setFavorite, getPerformance, waitForAnalysisCompletion]);
+  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, syncUserProfile, setOutcome, setFavorite, getPerformance, getStrategy, saveStrategy, waitForAnalysisCompletion]);
 }

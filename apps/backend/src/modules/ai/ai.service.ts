@@ -1,5 +1,10 @@
 import { flagNumber } from '../../common/flags/feature-flags';
 import {
+  sanitizeStrategyProfile,
+  strategyProfileHash,
+  type StrategyProfile,
+} from '../../common/strategy/strategy-profile';
+import {
   BadRequestException,
   ForbiddenException,
   HttpException,
@@ -161,6 +166,17 @@ export class AiService implements OnModuleInit {
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "isDemo" BOOLEAN NOT NULL DEFAULT false',
       );
+      // Perfil de estrategia (recurso pago). Mesmo padrao aditivo das colunas
+      // acima, pelo mesmo motivo: RUN_MIGRATIONS_ON_START=false em producao,
+      // entao a migracao Prisma sozinha nao chega la.
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "strategyProfile" JSONB',
+      );
+      // NULL = analise sem estrategia. E o filtro que mantem preferencia de
+      // usuario fora da amostra publica da /accuracy e da esteira da landing.
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "strategyHash" TEXT',
+      );
       // Índice para cortar a acurácia por versão de prompt sem varrer a tabela
       // (o A/B de prompt em produção consulta exatamente por isto).
       await this.prisma.$executeRawUnsafe(
@@ -258,6 +274,15 @@ export class AiService implements OnModuleInit {
     // a análise segue normal, só sem o enriquecimento deep.
     const normalizedAnalysisType: AnalysisType =
       analysisType === 'deep' && (await this.hasPaidAccess(userId)) ? 'deep' : 'quick';
+
+    // Perfil so vale para quem paga. A checagem se repete aqui, e nao so na
+    // rota de escrita, para que cancelar a assinatura pare de injetar o bloco
+    // mesmo com a linha ainda no banco.
+    const strategyProfile = (await this.hasPaidAccess(userId))
+      ? await this.getStrategy(userId)
+      : null;
+    const strategyHash = strategyProfile ? strategyProfileHash(strategyProfile) : null;
+
     const storage = new ImageStorageClient();
 
     if (storage.requiresRemoteStorage() && !storage.isConfigured()) {
@@ -342,7 +367,13 @@ export class AiService implements OnModuleInit {
     const { isDemo, analysis } = await this.enforceAccessAndCreate(
       userId,
       normalizedAnalysisType,
-      { imageUrl, promptVer: promptVersion, model: resolveModel(normalizedAnalysisType), status: 'pending' },
+      {
+        imageUrl,
+        promptVer: promptVersion,
+        model: resolveModel(normalizedAnalysisType),
+        status: 'pending',
+        strategyHash,
+      },
     );
 
     const queue = queueReadiness.connected ? getAiQueue() : null;
@@ -359,6 +390,7 @@ export class AiService implements OnModuleInit {
         analysisType: normalizedAnalysisType,
         isDemo,
         userLanguage,
+        strategyProfile,
       });
 
       return {
@@ -385,6 +417,7 @@ export class AiService implements OnModuleInit {
       analysisType: normalizedAnalysisType,
       userLanguage,
       isDemo,
+      strategyProfile,
     });
   }
 
@@ -789,6 +822,35 @@ export class AiService implements OnModuleInit {
     return { id, outcome, pnlPercent, pnlAmount };
   }
 
+  /**
+   * Perfil de estrategia do usuario, ou null.
+   *
+   * Passa pelo sanitize na LEITURA tambem, e nao so na escrita. Motivo: o
+   * conteudo da coluna pode ter sido gravado por uma versao anterior do
+   * formato, ou editado a mao no banco. Sanitizar na leitura garante que o
+   * que chega ao prompt sempre veio da whitelist vigente.
+   */
+  async getStrategy(userId: string): Promise<StrategyProfile | null> {
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { strategyProfile: true },
+    });
+    return sanitizeStrategyProfile(row?.strategyProfile ?? null);
+  }
+
+  /** Grava o perfil ja sanitizado. Perfil sem criterio nenhum vira NULL. */
+  async setStrategy(userId: string, input: unknown): Promise<{ profile: StrategyProfile | null }> {
+    const profile = sanitizeStrategyProfile(input);
+    await this.prisma.user.update({
+      where: { id: userId },
+      // Conversao explicita: StrategyProfile e uma interface sem index signature, e o Prisma exige
+      // InputJsonValue. E segura porque `profile` acabou de sair do sanitizeStrategyProfile acima,
+      // entao so contem valores da whitelist.
+      data: { strategyProfile: (profile as unknown as Prisma.InputJsonValue) ?? Prisma.DbNull },
+    });
+    return { profile };
+  }
+
   /** Estatísticas de performance do usuário (win rate, R:R médio, contagens). */
   async getPerformance(userId: string) {
     const analyses = await this.prisma.analysis.findMany({
@@ -993,8 +1055,20 @@ export class AiService implements OnModuleInit {
     analysisType: AnalysisType;
     userLanguage?: string;
     isDemo?: boolean;
+    strategyProfile?: StrategyProfile | null;
   }) {
-    const { analysisId, imageUrl, htfImageUrls, promptOverride, promptVersion, userId, analysisType, userLanguage, isDemo } = params;
+    const {
+      analysisId,
+      imageUrl,
+      htfImageUrls,
+      promptOverride,
+      promptVersion,
+      userId,
+      analysisType,
+      userLanguage,
+      isDemo,
+      strategyProfile,
+    } = params;
     const startedAt = Date.now();
 
     await this.prisma.analysis.update({
@@ -1015,7 +1089,13 @@ export class AiService implements OnModuleInit {
         promptOverride,
         userLanguage,
       );
-      const aiResponse = await this.aiAdapter.analyzeImage(imageUrl, prompt, analysisType, htfImageUrls ?? []);
+      const aiResponse = await this.aiAdapter.analyzeImage(
+        imageUrl,
+        prompt,
+        analysisType,
+        htfImageUrls ?? [],
+        strategyProfile,
+      );
 
       let normalizedPayload = buildPersistedAnalysisPayload({
         source: (aiResponse.rawResponse as Record<string, any>) || {},
@@ -1248,7 +1328,13 @@ export class AiService implements OnModuleInit {
   private async enforceAccessAndCreate(
     userId: string,
     analysisType: AnalysisType,
-    rowData: { imageUrl: string; promptVer?: number; model?: string; status: ApiAnalysisStatus },
+    rowData: {
+      imageUrl: string;
+      promptVer?: number;
+      model?: string;
+      status: ApiAnalysisStatus;
+      strategyHash?: string | null;
+    },
   ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -1279,6 +1365,7 @@ export class AiService implements OnModuleInit {
           promptVer: rowData.promptVer,
           model: rowData.model,
           isDemo: false,
+          strategyHash: rowData.strategyHash ?? null,
         },
       });
 
@@ -1336,7 +1423,8 @@ export class AiService implements OnModuleInit {
     }
   }
 
-  private async hasPaidAccess(userId: string): Promise<boolean> {
+  // Publico: a rota de estrategia (ai.controller) consome para checar acesso pago.
+  async hasPaidAccess(userId: string): Promise<boolean> {
     const activeSubscription = await this.prisma.subscription.findFirst({
       where: {
         userId,

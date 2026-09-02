@@ -55,6 +55,30 @@ const Footer = () => {
             </ul>
           </div>
 
+          {/* Coluna "Markets", 02/09/2026.
+              As paginas /for/ e /tools/ existiam desde agosto e o app React nao
+              linkava NENHUMA delas: os unicos referenciadores internos eram os
+              posts do blog. Aqui elas ganham link em toda pagina publica.
+
+              Rotulos em ingles de proposito, mesmo com o resto do rodape
+              traduzido: as paginas de destino sao escritas so em ingles, e um
+              rotulo em japones abrindo pagina em ingles engana mais do que
+              ajuda. O titulo da coluna, esse sim, e traduzido.
+
+              <a> e nao <Link>: sao arquivos estaticos de public/, servidos fora
+              do router (mesma razao do /blog/ logo abaixo). */}
+          <div className="site-footer-col">
+            <h2>{f.markets}</h2>
+            <ul>
+              <li><a href="/for/forex/">AI Forex chart analysis</a></li>
+              <li><a href="/for/gold/">AI Gold chart analysis (XAUUSD)</a></li>
+              <li><a href="/for/bitcoin/">AI crypto chart analysis</a></li>
+              <li><a href="/for/tradingview/">For TradingView</a></li>
+              <li><a href="/for/metatrader/">For MetaTrader</a></li>
+              <li><a href="/tools/">Free trading calculators</a></li>
+            </ul>
+          </div>
+
           <div className="site-footer-col">
             <h2>{f.company}</h2>
             <ul>

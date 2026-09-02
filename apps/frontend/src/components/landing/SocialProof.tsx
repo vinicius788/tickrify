@@ -20,6 +20,12 @@ const CountUp = ({ value, suffix = '' }: { value: number; suffix?: string }) => 
       return;
     }
 
+    // Sem IntersectionObserver, o numero aparece direto. Nunca fica em 0.
+    if (typeof IntersectionObserver === 'undefined') {
+      setShown(value);
+      return;
+    }
+
     let frame = 0;
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -33,7 +39,12 @@ const CountUp = ({ value, suffix = '' }: { value: number; suffix?: string }) => 
         };
         frame = window.requestAnimationFrame(tick);
       },
-      { threshold: 0.4 },
+      // threshold 0, nao 0.4. Com 0.4 a faixa precisava estar 40% visivel para
+      // o contador destravar: em viewport curta, ou com a faixa entrando so
+      // pela borda, ela ficava parada exibindo "0 trades scored automatically"
+      // e "0% setups the AI refuses to trade" — exatamente o contrario do que
+      // esta secao existe para provar. Corrigido em 02/09/2026.
+      { threshold: 0 },
     );
 
     observer.observe(el);

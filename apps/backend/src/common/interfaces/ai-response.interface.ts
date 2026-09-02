@@ -18,4 +18,8 @@ export interface AIAnalysisResponse {
   };
   rawResponse?: any;
   rawContent?: string;
+  // TRAVA 1: campo lido do modelo e propagado, nunca usado para decidir
+  // `recommendation`. Ver strategy-profile.ts e ai.adapter.ts.
+  strategyFit?: string | null;
+  strategyFitReason?: string | null;
 }

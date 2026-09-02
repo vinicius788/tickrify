@@ -400,7 +400,9 @@
 }
 .site-footer-grid { display: grid; gap: 40px; }
 @media (min-width: 900px) {
-  .site-footer-grid { grid-template-columns: 1.6fr 1fr 1fr 1fr; gap: 48px; }
+  /* 5 colunas desde 02/09/2026: entrou "Markets". Marca um pouco mais estreita
+     para as quatro listas caberem sem quebrar rotulo. */
+  .site-footer-grid { grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr; gap: 40px; }
 }
 .site-footer-brand img { display: block; height: 30px; width: auto; }
 .site-footer-brand p {
@@ -482,7 +484,14 @@
   text-transform: uppercase; color: var(--s-fg-2);
 }
 .site-tag i { width: 5px; height: 5px; border-radius: 50%; background: var(--s-long); display: block; }
-.site-hero h1 { margin: 26px 0 22px; }
+.site-hero h1 { margin: 26px 0 18px; }
+/* Linha semantica sob o H1. O titulo e de marca e nao carrega termo de busca
+   nenhum; esta frase carrega. Peso intermediario de proposito: fica acima do
+   subtitulo e abaixo do H1, sem virar um segundo titulo. */
+.site-hero-seo {
+  margin: 0 0 14px; max-width: 48ch;
+  font-size: 1.06rem; font-weight: 500; line-height: 1.5; color: var(--s-fg);
+}
 .site-hero-sub { font-size: 1.02rem; max-width: 46ch; line-height: 1.65; }
 .site-hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 32px 0 22px; }
 .site-hero-note { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--s-fg-3); }
