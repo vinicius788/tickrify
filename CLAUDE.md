@@ -2348,3 +2348,31 @@ responsabilidade de quem escreve. O guard cobre as quatro de hoje, nao o futuro.
   Nao foram reescritos por serem fora de escopo.
 - **`/blog/` e `/tools/` tem travessao no proprio `<title>`**, que e texto que
   aparece no resultado de busca do Google.
+
+### 🔴 O bug que chegou ao usuario: DTO sem decorator com `forbidNonWhitelisted`
+
+O salvar do perfil quebrava **100% das vezes** em producao, com
+`["property timeframes should not exist", ...]` para todos os seis campos. A
+tela montava, o backend estava correto, `tsc` e `jest` passavam.
+
+**Causa:** o `ValidationPipe` global (`main.ts`) roda com `whitelist: true` E
+`forbidNonWhitelisted: true`. Propriedade declarada sem decorator do
+`class-validator` **nao existe para o pipe**, e ele rejeita a requisicao
+inteira. O `SetStrategyDto` tinha os seis campos como propriedades TypeScript
+puras. Os DTOs vizinhos (`set-outcome`, `set-favorite`) sempre usaram decorator;
+so este nao usava.
+
+**Por que nenhum portao pegou:** typecheck nao sabe de decorator de runtime, e
+nao havia teste que exercitasse o pipe. Existe agora:
+`set-strategy.dto.spec.ts` instancia o `ValidationPipe` com a MESMA config do
+`main.ts` e passa um corpo igual ao que a tela envia. Provado em duas rodadas:
+com o DTO antigo, dois testes falham; com o novo, os quatro passam.
+
+**Regra que nasce disto:** DTO novo neste projeto precisa de decorator em TODO
+campo, e de um teste contra o pipe real. Sem o decorator o campo e invisivel;
+sem o teste, o unico lugar onde isso aparece e a requisicao de verdade.
+
+**Achado de brinde:** com `forbidNonWhitelisted`, chave desconhecida nao e
+descartada em silencio, e **rejeitada**. Isso e mais forte, e e a primeira
+barreira contra alguem tentar enfiar instrucao no perfil por um campo que nao
+existe no formulario. Esta travado por teste.
