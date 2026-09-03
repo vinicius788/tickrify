@@ -13,6 +13,8 @@ type TurnstileApi = {
       callback: (token: string) => void;
       'error-callback'?: () => void;
       'expired-callback'?: () => void;
+      'before-interactive-callback'?: () => void;
+      'after-interactive-callback'?: () => void;
       size?: 'normal' | 'compact' | 'invisible';
       execution?: 'render' | 'execute';
     },
@@ -26,6 +28,28 @@ declare global {
     turnstile?: TurnstileApi;
   }
 }
+
+/**
+ * O widget vive fora da tela enquanto o desafio e resolvido em silencio, que e
+ * o caso da maioria esmagadora dos visitantes.
+ *
+ * O que NAO da pra fazer: esconder com `z-index: -1`, como estava aqui ate
+ * 03/09/2026. Quando a Cloudflare decide que precisa de interacao humana —
+ * VPN, navegador com privacidade reforçada, rede corporativa, IP com
+ * reputacao ruim — o desafio renderiza ATRAS da pagina. A pessoa nao ve, nao
+ * tem como clicar, o callback nunca resolve, e ela recebe "Human verification
+ * failed. Refresh the page and try again." num loop sem saida. Na pagina de
+ * maior conversao do funil.
+ *
+ * Por isso o container comeca invisivel de verdade (sem area, sem eventos) e
+ * so vira sobreposicao clicavel no `before-interactive-callback`.
+ */
+const HIDDEN_STYLE =
+  'position:fixed;bottom:0;right:0;width:0;height:0;overflow:hidden;opacity:0;pointer-events:none;';
+
+const CHALLENGE_STYLE =
+  'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;' +
+  'background:rgba(5,5,8,0.82);z-index:2147483647;';
 
 export function isTurnstileEnabled(): boolean {
   return SITE_KEY.length > 0;
@@ -60,11 +84,10 @@ export async function getTurnstileToken(): Promise<string | null> {
   if (!api) return null;
 
   return new Promise((resolve) => {
+    // Fora da tela enquanto o desafio e silencioso, sobreposto e clicavel
+    // quando ele escala. Ver HIDDEN_STYLE/CHALLENGE_STYLE acima.
     const container = document.createElement('div');
-    container.style.position = 'fixed';
-    container.style.bottom = '0';
-    container.style.right = '0';
-    container.style.zIndex = '-1';
+    container.style.cssText = HIDDEN_STYLE;
     document.body.appendChild(container);
 
     let settled = false;
@@ -89,6 +112,15 @@ export async function getTurnstileToken(): Promise<string | null> {
         callback: (token) => finish(token),
         'error-callback': () => finish(null),
         'expired-callback': () => finish(null),
+        // A Cloudflare so chama isto quando decide que o desafio silencioso nao
+        // basta e precisa da pessoa. E o unico momento em que o widget PRECISA
+        // estar visivel.
+        'before-interactive-callback': () => {
+          container.style.cssText = CHALLENGE_STYLE;
+        },
+        'after-interactive-callback': () => {
+          container.style.cssText = HIDDEN_STYLE;
+        },
       });
     } catch {
       finish(null);
