@@ -219,6 +219,12 @@ export interface AnalysisUsageResponse {
   isUnlimited: boolean;
   canAnalyze: boolean;
   tickBalance?: number;
+  /**
+   * Contagem REAL de analises concluidas, de todos os tempos, vinda de um
+   * count() no banco. Opcional porque um backend mais antigo nao devolve.
+   * NAO confundir com `used`, que e o consumo do periodo.
+   */
+  analysesAllTime?: number;
 }
 
 export interface PerformanceResponse {

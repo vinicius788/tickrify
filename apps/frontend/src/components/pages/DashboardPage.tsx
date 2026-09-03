@@ -138,7 +138,7 @@ const DashboardPage = () => {
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const { plan, total, used, isUnlimited, remaining, isLoading: isPlanLoading } = useAnalysisLimit();
+  const { plan, total, used, isUnlimited, remaining, analysesAllTime, isLoading: isPlanLoading } = useAnalysisLimit();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
   const { getToken } = useAuth();
@@ -287,8 +287,19 @@ const DashboardPage = () => {
     const avgConfidence = confidences.length
       ? Math.round(confidences.reduce((sum, n) => sum + n, 0) / confidences.length)
       : 0;
-    return { total: completed.length, avgConfidence };
-  }, [rawAnalyses]);
+    // `total` do KPI: contagem REAL do banco quando ela chega, senao o que der
+    // para contar da lista carregada.
+    //
+    // O contador local sozinho era um numero FALSO: `rawAnalyses` vem de
+    // useAnalyses(40), entao uma conta com 403 analises exibia 38 para sempre,
+    // sob um rotulo que diz "all time". Analise nova entrava no topo e uma
+    // antiga saia embaixo, e o numero nunca se mexia.
+    //
+    // O fallback local continua existindo de proposito: o Render hiberna, e a
+    // tela precisa mostrar algo enquanto o /usage nao responde. Ele so nao pode
+    // ser a fonte final.
+    return { total: analysesAllTime ?? completed.length, avgConfidence };
+  }, [rawAnalyses, analysesAllTime]);
 
   const { balance: ticksBalance } = useTicks();
 
