@@ -2376,3 +2376,41 @@ sem o teste, o unico lugar onde isso aparece e a requisicao de verdade.
 descartada em silencio, e **rejeitada**. Isso e mais forte, e e a primeira
 barreira contra alguem tentar enfiar instrucao no perfil por um campo que nao
 existe no formulario. Esta travado por teste.
+
+### 🔴 O KPI de analises do painel era um numero FALSO (03/09/2026)
+
+Reportado pelo dono: "fiz seis analises e o painel continua em 38, e eu tenho
+essa conta ha muito tempo".
+
+**Causa:** `dashboardKpis.total` era `rawAnalyses.filter(completed).length`, e
+`rawAnalyses` vem de `useAnalyses(40)`. O painel nao contava as analises da
+conta, contava **quantas ele tinha carregado**. Analise nova entrava no topo da
+lista de 40 e uma antiga saia embaixo, entao o numero ficava preso em 38-40 para
+sempre. A conta do dono tem 403 analises e a tela exibia 38.
+
+Agravante: o rotulo embaixo do numero diz **"all time"**. Era claim falso dentro
+do produto, mesma familia dos que a auditoria de 27/07 removeu da vitrine.
+
+**Correcao:** `getUsage` passou a devolver `analysesAllTime`, de um
+`prisma.analysis.count({ where: { userId, status: 'completed' } })`. Escolhas:
+- **`/usage` e nao `/performance`**: o painel JA chama o `/usage` pelo
+  `useAnalysisLimit`, entao custa ZERO requisicao a mais. O `/performance` ainda
+  faz `findMany take:1000` so para contar, o que e caro e continua tendo teto.
+- **`count()` e nao lista**: nao carrega linha nenhuma e nao tem teto.
+- **O contador local continua como fallback**, de proposito: o Render hiberna e
+  a tela precisa mostrar algo enquanto o `/usage` nao responde. Ele so deixou de
+  ser a fonte final.
+
+Travado por teste em `ai.service.spec.ts`, que distingue as duas contagens do
+metodo pela clausula e nao pela ordem da chamada, e assere a clausula exata.
+Provado nas duas direcoes: com o numero preso, o teste falha.
+
+### ⚠️ PENDENTE, achado junto e NAO corrigido: o historico esta cortado em 40
+`listAnalyses` **nao tem paginacao**: sem cursor, sem offset, e o backend limita
+a 100 (`Math.min(100, ...)`). O frontend pede 40. Consequencia: das 403 analises
+da conta do dono, **363 nao sao alcancaveis por nenhuma tela**. Elas estao no
+banco e contam para a /accuracy, mas o usuario nao consegue ver.
+
+Isso e trabalho de verdade (endpoint, hook e tela), nao remendo, e ficou de fora
+de proposito. O conserto do numero foi feito primeiro porque era claim falso; o
+historico truncado e limitacao de produto, nao mentira.

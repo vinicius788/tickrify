@@ -996,6 +996,20 @@ export class AiService implements OnModuleInit {
     });
 
     const used = usageRow?.count ?? 0;
+    // Contagem REAL de analises concluidas, de todos os tempos.
+    //
+    // Existe porque o KPI do painel contava a LISTA CARREGADA (useAnalyses(40))
+    // e rotulava o numero como "all time": uma conta com 403 analises exibia 38
+    // para sempre, porque analise nova entrava no topo da lista e uma antiga
+    // saia embaixo. Era claim falso dentro do produto.
+    //
+    // `count()` nao carrega linha nenhuma, entao nao tem teto (ao contrario do
+    // getPerformance, que faz findMany take:1000 so para contar) e o custo e
+    // irrelevante. Vai junto no /usage porque o painel JA chama esse endpoint:
+    // zero requisicao a mais.
+    const analysesAllTime = await this.prisma.analysis.count({
+      where: { userId, status: 'completed' },
+    });
     const tickBalance = await this.ticksService.getBalance(userId);
     const canAnalyzeWithTicks = paidAccess && tickBalance >= TICK_COSTS.ANALYSIS_QUICK;
 
@@ -1019,6 +1033,7 @@ export class AiService implements OnModuleInit {
         isUnlimited: false,
         tickBalance,
         canAnalyze: demoRemaining > 0,
+        analysesAllTime,
       };
     }
 
@@ -1042,6 +1057,7 @@ export class AiService implements OnModuleInit {
       isUnlimited: true,
       tickBalance,
       canAnalyze: canAnalyzeWithTicks,
+      analysesAllTime,
     };
   }
 

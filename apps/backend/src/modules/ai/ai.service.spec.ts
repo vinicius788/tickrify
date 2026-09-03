@@ -229,6 +229,30 @@ describe('AiService access enforcement', () => {
     expect(usage.isUnlimited).toBe(false);
   });
 
+  // Este teste existe por causa de um bug que o dono viu na tela: o KPI de
+  // análises do painel contava a LISTA CARREGADA (useAnalyses(40)) e rotulava o
+  // número como "all time". Uma conta com 403 análises exibia 38, para sempre.
+  // A correção foi devolver uma contagem REAL daqui. Se alguém trocar este
+  // count() por algo derivado de uma lista com take, este teste pega.
+  it('getUsage devolve analysesAllTime a partir de um count() real, sem teto', async () => {
+    prisma.analysisUsage.findUnique.mockResolvedValue({ count: 2 });
+    prisma.subscription.findFirst.mockResolvedValue(null);
+    // Duas contagens diferentes no mesmo método: a do histórico completo e a das
+    // demos. Distinguidas pela cláusula, não pela ordem da chamada.
+    prisma.analysis.count.mockImplementation((args: { where?: Record<string, unknown> }) =>
+      Promise.resolve(args?.where?.status === 'completed' ? 403 : 2),
+    );
+
+    const usage = await service.getUsage('usr_1');
+
+    expect(usage.analysesAllTime).toBe(403);
+    // O contador do período continua sendo outra coisa, e não pode se misturar.
+    expect(usage.used).toBe(2);
+    expect(prisma.analysis.count).toHaveBeenCalledWith({
+      where: { userId: 'usr_1', status: 'completed' },
+    });
+  });
+
   it('getUsage free: com as 3 demos usadas, bloqueia (mesma régua do paywall)', async () => {
     prisma.subscription.findFirst.mockResolvedValue(null);
     prisma.analysis.count.mockResolvedValue(3);

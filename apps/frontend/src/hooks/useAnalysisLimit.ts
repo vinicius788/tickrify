@@ -11,6 +11,11 @@ interface AnalysisLimitData {
   canAnalyze: boolean;
   isUnlimited: boolean;
   plan: UserPlan;
+  /** Contagem REAL de análises concluídas, de todos os tempos, vinda de um
+   *  count() no banco. `null` enquanto o backend não respondeu, e nesse caso o
+   *  painel cai no contador local da lista carregada. NÃO confundir com `used`,
+   *  que é o consumo do período. */
+  analysesAllTime: number | null;
   /** true enquanto o backend ainda não confirmou o plano/limite do usuário logado.
    *  Durante esse tempo NÃO se deve tratar o usuário como "free 3 grátis". */
   isLoading: boolean;
@@ -26,6 +31,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
   const [analysisLimit, setAnalysisLimit] = useState(FREE_LIMIT);
   const [userPlan, setUserPlan] = useState<UserPlan>('free');
   const [backendUnlimited, setBackendUnlimited] = useState(false);
+  // null enquanto nao chegou do backend. O painel cai no contador local nesse caso.
+  const [analysesAllTime, setAnalysesAllTime] = useState<number | null>(null);
   // Começa carregando: o backend (Render hiberna) pode levar segundos a confirmar
   // que a conta é paga. Sem isto, a tela mostrava "3 grátis" no meio-tempo e o
   // assinante conseguia gastar análise grátis antes do plano ser reconhecido.
@@ -59,6 +66,11 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setUserPlan(validPlans.includes(usage.plan as UserPlan) ? (usage.plan as UserPlan) : 'free');
       setBackendUnlimited(Boolean(usage.isUnlimited));
       setAnalysisCount(usage.used);
+      setAnalysesAllTime(
+        typeof usage.analysesAllTime === 'number' && Number.isFinite(usage.analysesAllTime)
+          ? usage.analysesAllTime
+          : null,
+      );
       setAnalysisLimit(
         typeof usage.total === 'number' && Number.isFinite(usage.total) && usage.total > 0
           ? usage.total
@@ -111,6 +123,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       canAnalyze: true,
       isUnlimited: true,
       plan: 'elite' as UserPlan,
+      // Demo nao tem conta, entao nao ha historico para contar.
+      analysesAllTime: null,
       isLoading: false,
     };
   }
@@ -125,6 +139,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       canAnalyze: false,
       isUnlimited: false,
       plan: userPlan,
+      // Ainda nao chegou do backend; o painel usa o contador local ate chegar.
+      analysesAllTime: null,
       isLoading: true,
     };
   }
@@ -142,6 +158,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
     canAnalyze,
     isUnlimited,
     plan: userPlan,
+    analysesAllTime,
     isLoading: false,
   };
 }
