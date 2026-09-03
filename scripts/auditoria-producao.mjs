@@ -229,6 +229,89 @@ async function main() {
     );
   }
 
+  // ── A demo consegue começar? ──────────────────────────────────────────────
+  //
+  // POR QUE ESTA VERIFICAÇÃO EXISTE
+  // Em 03/09/2026 descobrimos que a VITE_TURNSTILE_SITE_KEY publicada tinha um
+  // "A" a mais. A Cloudflare devolvia 400020 (invalid sitekey), o front nunca
+  // conseguia token, e o backend recusava TODA requisição da demo com "Human
+  // verification failed". Cem por cento da conversão da página mais importante
+  // do funil, parada desde 12/07 — sete semanas.
+  //
+  // Nada quebrou de um jeito visível: o site respondia 200, o build passava, os
+  // testes passavam, e a landing continuou vendendo "3 free analyses" o tempo
+  // todo. Nenhum alerta existia porque nenhuma verificação olhava para a demo.
+  //
+  // Mesmo espírito da checagem de grounding acima: o que a vitrine vende, a
+  // produção precisa entregar. Esta existe para que o próximo silêncio dure um
+  // dia, não sete semanas.
+  if (SITE) {
+    const problemasChave = [];
+    let sitekey = null;
+    try {
+      const html = await (await buscar(SITE)).text();
+      const bundle = (html.match(/\/assets\/index-[A-Za-z0-9_-]+\.js/) || [])[0];
+      if (!bundle) {
+        problemasChave.push('não achei o bundle do app no HTML do site');
+      } else {
+        const js = await (await buscar(`${SITE}${bundle}`)).text();
+        sitekey = (js.match(/0x4[A-Za-z0-9_-]{18,30}/) || [])[0] || null;
+        if (!sitekey) {
+          problemasChave.push(
+            'o bundle publicado não tem sitekey do Turnstile — com o TURNSTILE_SECRET_KEY ligado no backend, a demo recusa todo visitante',
+          );
+        }
+      }
+    } catch (erro) {
+      problemasChave.push(`não consegui ler o bundle publicado: ${erro.message}`);
+    }
+
+    // Segunda fonte de verdade. Sem ela dá para detectar chave AUSENTE, nunca
+    // chave TROCADA — e trocada foi exatamente o caso. Defina a variável de
+    // repositório TURNSTILE_SITE_KEY_ESPERADA com a sitekey do widget em
+    // Cloudflare > Turnstile.
+    const esperada = (process.env.TURNSTILE_SITE_KEY_ESPERADA || '').trim();
+    if (esperada && sitekey && sitekey !== esperada) {
+      problemasChave.push(
+        `a sitekey publicada NÃO é a esperada (publicada: ${sitekey.length} caracteres; esperada: ${esperada.length}) — confira o widget em Cloudflare > Turnstile e a env na Vercel. Trocar o valor exige REBUILD, redeploy do mesmo artefato não adianta`,
+      );
+    }
+    registrar('Demo publica a sitekey certa do Turnstile', 'bloqueia', problemasChave);
+
+    if (!esperada) {
+      console.log(
+        '  (TURNSTILE_SITE_KEY_ESPERADA não definida — detecto sitekey ausente, mas não sitekey trocada)\n',
+      );
+    }
+  }
+
+  // O portão anti-bot está armado? Uma requisição sem token tem que ser
+  // recusada ANTES de qualquer custo — é o que protege a conta da OpenAI de
+  // quem varre. Esta sondagem não gasta nada: o serviço confere o Turnstile
+  // antes de olhar fingerprint, e sem imagem ele pararia em invalid_image de
+  // qualquer forma, antes da IA. A cota só é gravada após uma análise bem
+  // sucedida.
+  const portao = [];
+  try {
+    const corpo = new FormData();
+    corpo.set('fingerprint', 'auditoria-de-producao-sem-token');
+    const r = await buscar(`${API}/api/demo/analyze`, { method: 'POST', body: corpo });
+    const dados = await r.json().catch(() => ({}));
+    const codigo = dados?.code || dados?.message?.code || '';
+    if (r.status === 403 && codigo === 'bot_check_failed') {
+      // Esperado: portão armado e recusando.
+    } else if (r.status === 503) {
+      portao.push(`a demo respondeu 503 (${codigo || 'sem código'}) — está fora do ar`);
+    } else {
+      portao.push(
+        `requisição SEM token do Turnstile respondeu ${r.status} (${codigo || 'sem código'}) — esperado 403 bot_check_failed. Se o TURNSTILE_SECRET_KEY sumiu do backend, a demo está aberta a bot`,
+      );
+    }
+  } catch (erro) {
+    portao.push(`não consegui sondar o portão da demo: ${erro.message}`);
+  }
+  registrar('Demo recusa requisição sem prova anti-bot', 'bloqueia', portao);
+
   // ── Relatório ─────────────────────────────────────────────────────────────
   const bloqueantes = resultados.filter((r) => r.severidade === 'bloqueia' && !r.ok);
   const avisos = resultados.filter((r) => r.severidade === 'avisa' && !r.ok);
