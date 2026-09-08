@@ -267,20 +267,29 @@ export class AiService implements OnModuleInit {
     htfBase64Images?: string[],
   ) {
     const preparedImage = this.prepareImagePayload(imageFile, base64Image);
-    const queueReadiness = await getAiQueueReadiness();
+    // useCache: decidir fila-vs-sincrono aceita um readiness de ate 15s. Sao
+    // tres round-trips no Redis por analise que deixam de existir. O health
+    // check continua perguntando ao vivo.
+    const queueReadiness = await getAiQueueReadiness({ useCache: true });
+
+    // `hasPaidAccess` e caro: alem do findFirst em subscription, um usuario SEM
+    // assinatura ativa mas COM stripeCustomerId (todo ex-assinante e todo lead
+    // que abriu checkout) cai em `syncActiveSubscriptionFromStripe`, que faz uma
+    // chamada de REDE a API da Stripe. Isto era chamado TRES vezes por analise:
+    // aqui para o tipo, aqui para o perfil, e de novo dentro do
+    // `enforceAccessAndCreate`. Uma vez so, e o valor desce por parametro.
+    const paidAccess = await this.hasPaidAccess(userId);
 
     // Deep é recurso de assinante (gpt-4o, ~15x mais caro). Conta grátis/demo
     // roda como 'quick' — mesma regra do multi-timeframe. Degradação graciosa:
     // a análise segue normal, só sem o enriquecimento deep.
     const normalizedAnalysisType: AnalysisType =
-      analysisType === 'deep' && (await this.hasPaidAccess(userId)) ? 'deep' : 'quick';
+      analysisType === 'deep' && paidAccess ? 'deep' : 'quick';
 
     // Perfil so vale para quem paga. A checagem se repete aqui, e nao so na
     // rota de escrita, para que cancelar a assinatura pare de injetar o bloco
     // mesmo com a linha ainda no banco.
-    const strategyProfile = (await this.hasPaidAccess(userId))
-      ? await this.getStrategy(userId)
-      : null;
+    const strategyProfile = paidAccess ? await this.getStrategy(userId) : null;
     const strategyHash = strategyProfile ? strategyProfileHash(strategyProfile) : null;
 
     const storage = new ImageStorageClient();
@@ -336,30 +345,35 @@ export class AiService implements OnModuleInit {
     ]);
 
     // Upload das imagens de timeframe maior (top-down), se houver. Máx 2; falhas ignoradas.
-    const htfImageUrls: string[] = [];
-    if (Array.isArray(htfBase64Images) && htfBase64Images.length > 0) {
-      for (const b64 of htfBase64Images.slice(0, 2)) {
-        try {
-          const prepared = this.prepareImagePayload(undefined, b64);
-          if (!storage.isConfigured()) {
-            htfImageUrls.push(prepared.dataUrl);
-          } else {
-            htfImageUrls.push(
-              await storage.uploadBuffer({
+    // EM PARALELO: eram dois uploads em serie dentro de um `for`, somando o tempo
+    // de rede de ambos no caminho critico de toda analise top-down.
+    // `Promise.all` sobre um map que ja trata o proprio erro nunca rejeita, entao
+    // uma imagem que falha continua sendo ignorada sem derrubar a outra.
+    const htfImageUrls = (
+      await Promise.all(
+        (Array.isArray(htfBase64Images) ? htfBase64Images.slice(0, 2) : []).map(
+          async (b64): Promise<string | null> => {
+            try {
+              const prepared = this.prepareImagePayload(undefined, b64);
+              if (!storage.isConfigured()) {
+                return prepared.dataUrl;
+              }
+              return await storage.uploadBuffer({
                 buffer: prepared.buffer,
                 mimeType: prepared.mimeType,
                 extension: prepared.extension,
                 pathPrefix: `analyses/${userId}/htf`,
-              }),
-            );
-          }
-        } catch (err) {
-          this.logger.warn(
-            `[htf] Falha ao preparar imagem extra (ignorada): ${err instanceof Error ? err.message : err}`,
-          );
-        }
-      }
-    }
+              });
+            } catch (err) {
+              this.logger.warn(
+                `[htf] Falha ao preparar imagem extra (ignorada): ${err instanceof Error ? err.message : err}`,
+              );
+              return null;
+            }
+          },
+        ),
+      )
+    ).filter((url): url is string => typeof url === 'string' && url.length > 0);
 
     // Only consume free quota / ticks after infrastructure/storage prerequisites are validated.
     // enforceAccessAndCreate conta a cota grátis e cria a análise na MESMA transação,
@@ -374,6 +388,7 @@ export class AiService implements OnModuleInit {
         status: 'pending',
         strategyHash,
       },
+      paidAccess,
     );
 
     const queue = queueReadiness.connected ? getAiQueue() : null;
@@ -435,8 +450,10 @@ export class AiService implements OnModuleInit {
     sendEvent: (event: string, data: unknown) => void,
   ): Promise<void> {
     // Deep é recurso de assinante — mesma regra do caminho normal (createAnalysis).
+    // Uma chamada so, reaproveitada no enforceAccessAndCreate mais abaixo.
+    const paidAccess = await this.hasPaidAccess(userId);
     const normalizedAnalysisType: AnalysisType =
-      analysisType === 'deep' && (await this.hasPaidAccess(userId)) ? 'deep' : 'quick';
+      analysisType === 'deep' && paidAccess ? 'deep' : 'quick';
 
     sendEvent('progress', { phase: 'uploading', pct: 0 });
 
@@ -481,6 +498,7 @@ export class AiService implements OnModuleInit {
       userId,
       normalizedAnalysisType,
       { imageUrl, promptVer: promptVersion, model: resolveModel(normalizedAnalysisType), status: 'processing' },
+      paidAccess,
     );
 
     sendEvent('progress', { phase: 'analyzing', pct: 25 });
@@ -650,6 +668,32 @@ export class AiService implements OnModuleInit {
       throw new BadRequestException('Analysis not found');
     }
 
+    // CAMINHO RAPIDO DO POLLING.
+    //
+    // Este endpoint e chamado a cada 0,8-3s enquanto a analise roda: sao 10 a 14
+    // chamadas por analise. Rodar a serializacao completa nelas era desperdicio
+    // caro, porque enquanto o status e pending/processing NAO EXISTE nada para
+    // serializar — nao ha recomendacao, nem imagem anotada, nem outcome. O
+    // frontend (`waitForAnalysisCompletion`) so le `status` nessa fase.
+    //
+    // O que a serializacao completa cobrava por poll, sem entregar nada:
+    //   - 1 `createSignedUrl` no Supabase (round-trip de REDE) pela imagem
+    //     original, que ja existe desde a criacao;
+    //   - 1 query crua do outcome, que so pode existir depois de completed.
+    //
+    // Pior: o worker roda no MESMO processo Node (RUN_EMBEDDED_WORKER=true), num
+    // container de 0.1 CPU. O polling competia por CPU com a analise que ele
+    // estava esperando terminar. Quanto mais o usuario esperava, mais poll, e
+    // mais lento o worker ficava.
+    //
+    // O `getCalibration` ja tinha short-circuit por acidente
+    // (`normalizeRecommendation(null)` devolve 'WAIT'), entao ele nunca foi o
+    // problema. As duas chamadas acima eram.
+    const apiStatus = this.toApiStatus(analysis.status);
+    if (apiStatus === 'pending' || apiStatus === 'processing') {
+      return this.serializePendingAnalysis(analysis.id, apiStatus, analysis);
+    }
+
     const serialized = await this.serializeAnalysis(analysis);
     const calibration = await this.getCalibration(
       userId,
@@ -659,12 +703,46 @@ export class AiService implements OnModuleInit {
     return { ...serialized, calibration };
   }
 
-  async listAnalyses(userId: string, limit = 20) {
+  /**
+   * Historico do usuario, paginado por cursor.
+   *
+   * Antes de 03/09/2026 nao havia paginacao nenhuma: o frontend pedia 40, o
+   * backend limitava a 100, e o resto do historico era INALCANCAVEL por
+   * qualquer tela. Uma conta com 403 analises so conseguia abrir 40.
+   *
+   * `orderBy` leva `id` como desempate porque duas analises podem compartilhar
+   * o mesmo `createdAt`; sem isso a ordem nao e total e o cursor pode pular ou
+   * repetir uma linha na fronteira da pagina.
+   */
+  async listAnalyses(userId: string, limit = 20, cursor?: string | null) {
     const safeLimit = Math.max(1, Math.min(100, Math.floor(limit || 20)));
+    const safeCursor = typeof cursor === 'string' && cursor.trim() ? cursor.trim() : null;
+
+    // O cursor vem do CLIENTE, entao precisa ser validado antes de virar ancora
+    // de query. Duas coisas quebram sem isto:
+    //   1. o Prisma localiza a linha do cursor pelo id, ANTES de aplicar o
+    //      `where`. Um id de analise de outro usuario nao vaza conteudo (o
+    //      `where: { userId }` continua valendo), mas responde diferente de um
+    //      id inexistente, e isso e um oraculo de existencia entre contas.
+    //   2. id inexistente faz o Prisma lancar, e viraria 500 cru numa rota que
+    //      deveria simplesmente dizer "acabou o historico".
+    // Cursor que nao e do usuario encerra a paginacao devolvendo lista vazia.
+    // Devolver a primeira pagina seria pior: a tela concatena, e o usuario veria
+    // as mesmas analises duplicadas.
+    if (safeCursor) {
+      const owned = await this.prisma.analysis.findFirst({
+        where: { id: safeCursor, userId },
+        select: { id: true },
+      });
+      if (!owned) return [];
+    }
+
     const analyses = await this.prisma.analysis.findMany({
       where: { userId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: safeLimit,
+      // `skip: 1` pula a propria linha do cursor, que o cliente ja tem.
+      ...(safeCursor ? { cursor: { id: safeCursor }, skip: 1 } : {}),
     });
 
     const outcomesMap = await this.getOutcomesMap(userId);
@@ -1351,6 +1429,13 @@ export class AiService implements OnModuleInit {
       status: ApiAnalysisStatus;
       strategyHash?: string | null;
     },
+    /**
+     * Resultado de `hasPaidAccess` ja calculado pelo chamador nesta mesma
+     * requisicao. Opcional: quem nao passar mantem o comportamento antigo de
+     * consultar aqui (o `streamAnalysis` ainda faz isso). Passar evita uma
+     * chamada de rede a Stripe repetida no caminho critico.
+     */
+    knownPaidAccess?: boolean,
   ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -1364,7 +1449,10 @@ export class AiService implements OnModuleInit {
     const tickCost =
       analysisType === 'deep' ? TICK_COSTS.ANALYSIS_DEEP : TICK_COSTS.ANALYSIS_QUICK;
 
-    if (await this.hasPaidAccess(userId)) {
+    const paidAccess =
+      typeof knownPaidAccess === 'boolean' ? knownPaidAccess : await this.hasPaidAccess(userId);
+
+    if (paidAccess) {
       // Assinante: consome ticks do plano mensal (débito atômico).
       await this.ticksService.debitTicks(
         userId,
@@ -1471,6 +1559,54 @@ export class AiService implements OnModuleInit {
   private getCurrentUsagePeriodStart(): Date {
     const now = new Date();
     return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+  }
+
+  /**
+   * Payload da analise em andamento: MESMA FORMA do `serializeAnalysis`, com os
+   * campos derivados em null e zero I/O externo.
+   *
+   * A forma tem de bater chave por chave: o frontend tipa a resposta do poll com
+   * o mesmo `AIAnalysisResponse` da resposta final, entao devolver um objeto
+   * menor quebraria a tipagem no cliente. Se um campo novo entrar no
+   * `serializeAnalysis`, ele entra aqui tambem.
+   */
+  private serializePendingAnalysis(
+    id: string,
+    status: ApiAnalysisStatus,
+    analysis: { errorMessage?: string | null; createdAt: Date; updatedAt: Date },
+  ) {
+    return {
+      id,
+      imageUrl: null,
+      status,
+      recommendation: null,
+      bias: null,
+      confidence: null,
+      reasoning: analysis.errorMessage || null,
+      drawing_plan: null,
+      original_image_url: null,
+      annotated_image_url: null,
+      drawing_failed: false,
+      fullResponse: null,
+      entry: null,
+      stopLoss: null,
+      stopLossPercent: null,
+      takeProfit1: null,
+      takeProfit1Percent: null,
+      takeProfit2: null,
+      takeProfit2Percent: null,
+      riskReward: null,
+      riskRewardRatio: null,
+      riskRewardTp1: null,
+      riskRewardTp2: null,
+      outcome: null,
+      pnlPercent: null,
+      pnlAmount: null,
+      errorMessage: analysis.errorMessage || null,
+      createdAt: analysis.createdAt,
+      updatedAt: analysis.updatedAt,
+      calibration: { sampleSize: 0, winRate: null as number | null },
+    };
   }
 
   private async serializeAnalysis(analysis: {

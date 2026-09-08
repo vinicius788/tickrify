@@ -73,7 +73,33 @@ export function getAiQueue(): Queue | null {
   return queueInstance;
 }
 
-export async function getAiQueueReadiness(): Promise<QueueReadiness> {
+/**
+ * Cache curto do resultado do readiness, OPT-IN.
+ *
+ * `getAiQueueReadiness` e chamado em TODA criacao de analise e faz tres
+ * round-trips no Redis (waitUntilReady + ping + getWorkersCount) antes de a
+ * analise sequer comecar. A resposta praticamente nunca muda entre duas
+ * analises seguidas: worker cai ou sobe na escala de minutos, nao de segundos.
+ *
+ * O cache e opt-in de proposito. Quem pergunta para DECIDIR O CAMINHO da
+ * analise (`ai.service`) aceita um dado de ate 15s, porque o pior caso e cair
+ * no processamento sincrono, que e o fallback que ja existe. Quem pergunta
+ * para RESPONDER SE O SERVICO ESTA SAO (`health.controller`) nao aceita: um
+ * health check que responde com estado velho e um health check quebrado.
+ *
+ * Um resultado NEGATIVO nunca e cacheado, para que a volta do worker seja
+ * percebida na hora e ninguem fique preso no caminho lento.
+ */
+const READINESS_CACHE_TTL_MS = 15_000;
+let readinessCache: { value: QueueReadiness; at: number } | null = null;
+
+export async function getAiQueueReadiness(
+  options: { useCache?: boolean } = {},
+): Promise<QueueReadiness> {
+  if (options.useCache && readinessCache && Date.now() - readinessCache.at < READINESS_CACHE_TTL_MS) {
+    return readinessCache.value;
+  }
+
   const required = isProductionRuntime();
   const configured = isQueueConfigured();
 
@@ -123,7 +149,7 @@ export async function getAiQueueReadiness(): Promise<QueueReadiness> {
       reason = 'worker_unavailable';
     }
 
-    return {
+    const result: QueueReadiness = {
       required,
       configured,
       connected,
@@ -132,6 +158,14 @@ export async function getAiQueueReadiness(): Promise<QueueReadiness> {
       ready,
       reason,
     };
+
+    // So o estado saudavel entra no cache. Guardar "sem worker" faria o app
+    // insistir no caminho sincrono por 15s depois de o worker ja ter voltado.
+    if (result.ready) {
+      readinessCache = { value: result, at: Date.now() };
+    }
+
+    return result;
   } catch {
     return {
       required,

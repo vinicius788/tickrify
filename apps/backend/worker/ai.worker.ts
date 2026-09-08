@@ -952,6 +952,47 @@ function extractRawContent(aiSource: unknown, parsed: WorkerAnalysisResult): str
   return JSON.stringify(parsed);
 }
 
+interface AnalysisMetrics {
+  analysisId: string;
+  /** Opcional no JobData: jobs antigos na fila podem nao ter userId. */
+  userId: string | undefined;
+  analysisType: AnalysisType;
+  outcome: 'completed' | 'invalid' | 'failed' | 'retry';
+  attempt: number;
+  queueWaitMs: number;
+  promptMs: number;
+  aiMs: number;
+  parseMs: number;
+  annotateMs: number;
+  persistMs: number;
+  totalMs: number;
+  errorCode?: string;
+}
+
+/**
+ * Linha unica e grepavel com a latencia REAL de producao.
+ *
+ * Formato estavel de proposito: da para colar no `grep '\[Metrics\]'` do Render
+ * e jogar num CSV sem parser. Fases com -1 significam "nao chegou a rodar"
+ * (ex.: falhou na IA, entao annotate nunca aconteceu) — nao confundir com zero.
+ *
+ * Nunca pode derrubar a analise: tudo dentro de try/catch.
+ */
+function logAnalysisMetrics(m: AnalysisMetrics): void {
+  try {
+    console.log(
+      `[Metrics] analysis ${m.outcome} | analysisId=${m.analysisId} userId=${m.userId} ` +
+        `analysisType=${m.analysisType} attempt=${m.attempt} ` +
+        `queueWaitMs=${m.queueWaitMs} promptMs=${m.promptMs} aiMs=${m.aiMs} ` +
+        `parseMs=${m.parseMs} annotateMs=${m.annotateMs} persistMs=${m.persistMs} ` +
+        `latencyMs=${m.totalMs}` +
+        (m.errorCode ? ` errorCode=${m.errorCode}` : ''),
+    );
+  } catch {
+    /* medir nunca quebra o que esta sendo medido */
+  }
+}
+
 async function processAnalysis(job: Job<JobData>) {
   const {
     analysisId,
@@ -969,6 +1010,25 @@ async function processAnalysis(job: Job<JobData>) {
 
   console.log(`[Worker] Processing analysis ${analysisId}${isDemo ? ' [FREE]' : ''}`);
 
+  // Instrumentacao de latencia. ESTE e o caminho vivo em producao
+  // (RUN_EMBEDDED_WORKER=true), e ate 08/09/2026 ele nao media NADA: o
+  // `logMetricsHook` do analysis-pipeline so e chamado em
+  // `ai.service.processSynchronously`, que e o fallback sem fila. Ou seja,
+  // procurar `[Metrics]` no log do Render nunca devolveu uma linha sequer de
+  // uma analise real. Sem numero, otimizar latencia era chute.
+  //
+  // As fases sao separadas de proposito: a soma nao diz onde esta o problema.
+  // `ai` e a chamada a OpenAI (o grosso), `queue` e o tempo parado esperando
+  // um worker livre (sobe quando concurrency=3 satura), e `annotate` e outro
+  // upload de imagem que ninguem contava.
+  const t0 = Date.now();
+  const queueWaitMs = typeof job.timestamp === 'number' ? Math.max(0, t0 - job.timestamp) : -1;
+  let promptMs = -1;
+  let aiMs = -1;
+  let parseMs = -1;
+  let annotateMs = -1;
+  let persistMs = -1;
+
   let rawContent = '';
 
   try {
@@ -978,7 +1038,11 @@ async function processAnalysis(job: Job<JobData>) {
     });
 
     // ── Free analyses (isDemo=true) now run real AI — no tick cost, same pipeline ─
+    const tPrompt = Date.now();
     const prompt = await getPrompt(promptOverride, promptVersion, userLanguage, normalizedAnalysisType);
+    promptMs = Date.now() - tPrompt;
+
+    const tAi = Date.now();
     const aiSource = await resolveAiSource(
       imageUrl,
       prompt,
@@ -986,6 +1050,7 @@ async function processAnalysis(job: Job<JobData>) {
       htfImageUrls ?? [],
       strategyProfile,
     );
+    aiMs = Date.now() - tAi;
 
     const sourcePayload =
       aiSource &&
@@ -995,8 +1060,10 @@ async function processAnalysis(job: Job<JobData>) {
         ? (aiSource as { rawResponse: unknown }).rawResponse
         : aiSource;
 
+    const tParse = Date.now();
     const parsed = await toWorkerAnalysisResult(sourcePayload);
     rawContent = extractRawContent(aiSource, parsed);
+    parseMs = Date.now() - tParse;
 
     const validationErrors = validateTradingLogic(parsed);
 
@@ -1022,6 +1089,22 @@ async function processAnalysis(job: Job<JobData>) {
         },
       });
 
+      logAnalysisMetrics({
+        analysisId,
+        userId,
+        analysisType: normalizedAnalysisType,
+        outcome: 'invalid',
+        attempt: job.attemptsMade + 1,
+        queueWaitMs,
+        promptMs,
+        aiMs,
+        parseMs,
+        annotateMs,
+        persistMs,
+        totalMs: Date.now() - t0,
+        errorCode: 'validation_failed',
+      });
+
       return;
     }
 
@@ -1036,8 +1119,11 @@ async function processAnalysis(job: Job<JobData>) {
       originalImageUrl: imageUrl,
     });
 
+    const tAnnotate = Date.now();
     normalized = await persistAnnotatedImage(normalized, userId);
+    annotateMs = Date.now() - tAnnotate;
 
+    const tPersist = Date.now();
     await prisma.analysis.update({
       where: { id: analysisId },
       data: {
@@ -1051,10 +1137,54 @@ async function processAnalysis(job: Job<JobData>) {
         errorMessage: null,
       },
     });
+    persistMs = Date.now() - tPersist;
+
+    logAnalysisMetrics({
+      analysisId,
+      userId,
+      analysisType: normalizedAnalysisType,
+      outcome: 'completed',
+      attempt: job.attemptsMade + 1,
+      queueWaitMs,
+      promptMs,
+      aiMs,
+      parseMs,
+      annotateMs,
+      persistMs,
+      totalMs: Date.now() - t0,
+    });
 
     console.log(`[Worker] Analysis ${analysisId} completed`);
   } catch (error) {
     console.error(`[Worker] Error processing analysis ${analysisId}:`, error);
+
+    const totalAttemptsForMetrics = job.opts.attempts ?? 3;
+    const attemptsDoneForMetrics = (job.attemptsMade ?? 0) + 1;
+    logAnalysisMetrics({
+      analysisId,
+      userId,
+      analysisType: normalizedAnalysisType,
+      outcome:
+        error instanceof AIAnalysisError && !error.retriable
+          ? 'failed'
+          : attemptsDoneForMetrics >= totalAttemptsForMetrics
+            ? 'failed'
+            : 'retry',
+      attempt: attemptsDoneForMetrics,
+      queueWaitMs,
+      promptMs,
+      aiMs,
+      parseMs,
+      annotateMs,
+      persistMs,
+      totalMs: Date.now() - t0,
+      errorCode:
+        error instanceof AIAnalysisError
+          ? error.code
+          : error instanceof Error
+            ? error.message.slice(0, 60).replace(/\s+/g, '_')
+            : 'unknown',
+    });
 
     const safeMessage = safeWorkerErrorMessage(error);
     const failureRawContent =
