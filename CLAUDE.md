@@ -1566,40 +1566,75 @@ Trafego organico relevante chegando em UM idioma. Enquanto o produto nao ranquei
 em ingles, criar rotas localizadas e multiplicar por seis um canal que ainda vale
 zero.
 
-## ⏱️ Latencia da analise — a medicao EXISTE (corrige nota antiga)
+## ⏱️ Latencia da analise — CORRIGE a nota de 27/07 E a correcao dela
 
-**Corrige o registro de 27/07** que dizia que a duracao "NAO da para medir pelo
-banco". Verdade pelo BANCO (o sweeper reescreve `updatedAt`), mas **existe
-medicao por LOG desde antes**: `analysis-pipeline.ts` → `logMetricsHook`
-emite, a cada analise concluida:
+**A nota anterior desta secao estava errada** e mandou pelo menos uma sessao
+para um beco: dizia que bastava buscar `[Metrics]` no log do Render. Nao
+bastava, porque essa linha nunca existiu para uma analise real.
+
+`logMetricsHook` (analysis-pipeline.ts) e chamado em UM lugar so:
+`ai.service.processSynchronously`. Esse metodo e o **fallback sem fila**. Em
+producao `RUN_EMBEDDED_WORKER=true`, a fila existe e tem worker, entao toda
+analise passa por `worker/ai.worker.ts` — que ate 08/09/2026 nao media nada.
+`Date.now()` nao aparecia uma vez no caminho de analise.
+
+### Agora mede (08/09/2026)
+
+`worker/ai.worker.ts` emite, em sucesso, falha, retry e validacao invalida:
 
 ```
-[Metrics] analysis completed | userId=<id> analysisType=<quick|deep> model=<modelo> latencyMs=<ms>
+[Metrics] analysis <outcome> | analysisId=<id> userId=<id> analysisType=<quick|deep>
+  attempt=<n> queueWaitMs=<ms> promptMs=<ms> aiMs=<ms> parseMs=<ms>
+  annotateMs=<ms> persistMs=<ms> latencyMs=<ms> [errorCode=<code>]
 ```
 
-Chamado em `ai.service.runAnalysis` com `startedAt` capturado no inicio.
-**Para saber o tempo real: buscar `[Metrics]` no log do Render.** Nao precisa
-construir nada.
+- `aiMs` e a chamada a OpenAI, o grosso do tempo.
+- `queueWaitMs` e tempo parado esperando worker livre. Sobe quando
+  `concurrency: 3` satura. Se ele crescer, o gargalo e capacidade, nao modelo.
+- `annotateMs` e o upload da imagem anotada, que ninguem contava.
+- Fase com `-1` = nao chegou a rodar. Nao confundir com zero.
 
-### Timeouts (para nao confundir lentidao com falha)
-- `ANALYZE_TIMEOUT_MS`: **default 55s**, ajustavel por `AI_ANALYZE_TIMEOUT_MS`
-  entre 20s e 180s. O comentario do codigo avisa que modelo de raciocinio
-  (GPT-5+) passa de 120s com prompt longo — ou seja, **no limite atual uma
-  analise lenta VIRA ERRO, nao espera longa**.
-- Frontend: `POLL_TIMEOUT_MS=180s` (~3 tentativas de 55s + backoff).
+`[Cost]` (model-cost.ts) ja emitia `prompt=`, `completion=` e `reasoning=` em
+producao. Com as duas linhas juntas da para dividir tempo por token.
 
-### Alavancas de velocidade, em ordem de risco
-1. **Ler o log primeiro.** Otimizar sem o numero e chute.
-2. `reasoning_effort` — **NAO esta implementado** em `openai-params.ts`. E a
-   alavanca real de latencia nos GPT-5: mandar `'low'`/`'minimal'` corta tempo
-   de forma significativa. **Troca velocidade por profundidade de raciocinio** —
-   exatamente o que o dono NAO quer perder. So mexer com medicao antes/depois.
-3. `maxTokens` (16k, dobrado para 32k em GPT-5) — **nao e alavanca**. O proprio
-   comentario do codigo diz: "Teto e limite, nao consumo".
+### Numeros MEDIDOS (backtest, gráfico real, caminho de producao)
+
+De `scripts/backtest/results/*.jsonl`, campo `durationMs`:
+
+| Configuracao | n | p50 | p90 |
+|---|---|---|---|
+| gpt-4o-mini + v7.3 | 321 | **12,9s** | 18,6s |
+| gpt-5.6-luna + v9 | 50 | **18,9s** | 22,0s |
+| gpt-5.6-luna + v7.3 (= producao hoje) | 11 | **21,9s** | 23,9s |
+| luna + `reasoning_effort=medium` | 3 | 26,6s | 29,0s |
+| luna + `reasoning_effort=high` | 3 | 53,9s no unico que terminou; 2 de 3 estouraram | falha |
+
+**Trocar o quick para `gpt-5.6-luna` em 11/08 custou +9s de p50** (12,9 → 21,9).
+Foi setado sem validacao de qualidade (ver PRD linha 589). O v9, apesar de ter
+o dobro de texto, e 15% MAIS RAPIDO que o v7.3 no luna, porque faz o modelo
+escrever menos (6002 chars contra 7926 no mesmo grafico).
+
+De `tmp/raw-v73-luna.txt` (a chamada de 22,1s): `prompt=11998 completion=2962
+reasoning_tokens=1051`. Isso da 134 tok/s, e o orcamento fecha:
+**35% do tempo e raciocinio invisivel**, 60% e o texto do JSON, 5% e prefill.
+
+### Alavancas, em ordem de risco
+1. **Ler o log primeiro.** Agora existe.
+2. `reasoning_effort` — **ESTA implementado** (`resolveReasoningEffort` em
+   openai-params.ts, lido pelas duas rotas). A nota antiga dizia que nao. E a
+   alavanca mais direta que existe: `AI_REASONING_EFFORT_QUICK=low|minimal`,
+   env var, sem deploy, reversivel na hora. Ataca os 35% invisiveis.
+   `high` esta MEDIDO como inutilizavel: passa dos 55s do timeout.
+3. `AI_MODEL_QUICK=gpt-4o-mini` — devolve os 9s e corta o custo pela metade.
+   Custa qualidade de leitura. Decidir com o `evaluate.py`, nao no olho.
+4. Campos do schema: 46 required, e `reasoning` + `executiveSummary` +
+   `technicalAnalysis` + `structureValidation` sao 62% de tudo que o modelo
+   escreve (medido em `fieldSizes` de 50 respostas).
+5. `maxTokens` (16k / 32k) — **nao e alavanca**. Teto e limite, nao consumo.
 
 ### ⚠️ Regra de momento
 **Nao mexer em parametro de modelo as vesperas de uma demo de alto risco.**
-Mudar `reasoning_effort` degrada a qualidade da analise de forma dificil de
+Mudar `reasoning_effort` ou modelo degrada a analise de forma dificil de
 prever, e o custo de uma analise ruim para o primeiro usuario influente e maior
 que o de dez segundos a mais de espera.
 
@@ -2414,3 +2449,43 @@ banco e contam para a /accuracy, mas o usuario nao consegue ver.
 Isso e trabalho de verdade (endpoint, hook e tela), nao remendo, e ficou de fora
 de proposito. O conserto do numero foi feito primeiro porque era claim falso; o
 historico truncado e limitacao de produto, nao mentira.
+
+### ✅ RESOLVIDO no mesmo dia: o historico cortado em 40 (03/09/2026)
+
+Fecha a pendencia anotada na secao acima. `listAnalyses` ganhou **paginacao por
+cursor**, e as 363 analises inalcancaveis passaram a ser alcancaveis.
+
+**Cursor e nao offset, de proposito.** A lista e ordenada por data decrescente.
+Com offset, uma analise nova entrando no topo empurra tudo para baixo e a pagina
+seguinte passa a repetir ou pular linhas. O cursor e uma ancora por id e e imune
+a isso, inclusive quando o usuario esta paginando e uma analise nova chega.
+
+**`orderBy` levou `id` como desempate.** Duas analises podem compartilhar o
+mesmo `createdAt`; sem o desempate a ordem nao e total e o cursor fica ambiguo
+exatamente na fronteira entre paginas.
+
+**O hook virou `useInfiniteQuery` mas continua devolvendo array ACHATADO.** Isso
+e o que mantem o `DashboardPage` intocado: ele consome `analyses` como antes,
+nunca chama `loadMore`, e por isso continua recebendo so a primeira pagina. Quem
+quer o historico inteiro (`MyTrades`) usa `hasMore`/`loadMore`/`loadingMore`.
+
+#### 🔴 O achado da revisao: cursor do cliente nao pode ir cru para o Prisma
+A primeira versao mandava o cursor direto para o `findMany`. A query principal
+filtra por `userId`, entao **conteudo alheio nunca vazava**, mas sobravam dois
+problemas:
+1. o Prisma localiza a linha do cursor **pelo id, antes de aplicar o `where`**.
+   Um id de analise de outra conta respondia diferente de um id inexistente, o
+   que e um oraculo de existencia entre contas;
+2. id inexistente fazia o Prisma lancar, virando **500 cru** numa rota que
+   deveria apenas dizer "acabou o historico".
+
+Corrigido: o cursor so vira ancora depois de um `findFirst({ id, userId })`.
+Cursor que nao e do usuario **encerra a paginacao devolvendo lista vazia**.
+Devolver a primeira pagina seria pior, porque a tela concatena e o usuario veria
+as mesmas analises duplicadas. Travado por teste, provado nas duas direcoes.
+
+#### Limitacao conhecida e aceita
+`hasMore` e calculado por "a pagina veio cheia". Se o historico for multiplo
+exato do tamanho da pagina, o botao aparece uma vez a mais, o clique traz lista
+vazia e ele some. E o comportamento padrao desse tipo de paginacao e nao vale a
+complexidade de uma contagem extra por pagina para evitar um clique.

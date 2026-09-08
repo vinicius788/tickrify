@@ -654,9 +654,35 @@ export function buildRealDataBlock(symbol: string, timeframe: string, candles: n
  * Mais confiável do que o timeout interno do SDK OpenAI, que pode não funcionar em todos
  * os ambientes (ex.: quando o servidor aceita a conexão mas demora a enviar a resposta).
  */
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+/**
+ * Timeout com CANCELAMENTO REAL.
+ *
+ * Ate 08/09/2026 isto era um `Promise.race` puro: no timeout a promise era
+ * abandonada, mas a requisicao HTTP para a OpenAI continuava viva ate o fim —
+ * segurando socket, gastando CPU no parse e sendo COBRADA em tokens. Como o
+ * BullMQ retenta (`attempts: 3`), a segunda tentativa comecava com a primeira
+ * ainda em voo. Com `concurrency: 3` num container de 0.1 CPU isso empilhava
+ * ate 9 requisicoes orfas e era o mecanismo que fazia "lento" virar
+ * "muito mais lento" em cascata sob carga.
+ *
+ * Passando uma FUNCAO em vez de uma promise, o AbortSignal chega ao SDK da
+ * OpenAI e a conexao morre de verdade no timeout. As chamadas que ainda passam
+ * uma promise (enriquecimento, calendario) mantem o comportamento antigo: sao
+ * composicoes de varios fetches, onde nao existe um unico socket para abortar.
+ */
+function withTimeout<T>(
+  input: Promise<T> | ((signal: AbortSignal) => Promise<T>),
+  ms: number,
+  message: string,
+): Promise<T> {
+  const controller = typeof input === 'function' ? new AbortController() : null;
+  const promise = typeof input === 'function' ? input(controller!.signal) : input;
+
   return new Promise<T>((resolve, reject) => {
-    const timeoutId = setTimeout(() => reject(new Error(message)), ms);
+    const timeoutId = setTimeout(() => {
+      controller?.abort(new Error(message));
+      reject(new Error(message));
+    }, ms);
     promise.then(
       (value) => { clearTimeout(timeoutId); resolve(value); },
       (error) => { clearTimeout(timeoutId); reject(error); },
@@ -975,8 +1001,8 @@ export class AIAdapter {
     const model = resolveModel(analysisType);
 
     const streamMaxTokens = 16384; // máximo absoluto do gpt-4o-mini
-    // withTimeout garante aborto em 60s via Promise.race
-    const stream = await withTimeout(this.openai.chat.completions.create({
+    // withTimeout aborta a conexao de verdade no estouro (AbortSignal ao SDK)
+    const stream = await withTimeout((signal) => this.openai.chat.completions.create({
       model,
       // GPT-5+ exige max_completion_tokens e rejeita seed — ver openai-params.ts
       ...buildSamplingParams(model, {
@@ -1000,7 +1026,7 @@ export class AIAdapter {
           ],
         },
       ],
-    }), 60_000, 'OpenAI stream timed out after 60s');
+    }, { signal }), 60_000, 'OpenAI stream timed out after 60s');
 
     for await (const chunk of stream) {
       const delta = chunk.choices[0]?.delta?.content;
@@ -1067,7 +1093,7 @@ export class AIAdapter {
   ): Promise<{ symbol: string; timeframe: string; lastPrice: number | null } | null> {
     try {
       const resp = await withTimeout(
-        this.openai.chat.completions.create({
+        (signal) => this.openai.chat.completions.create({
           model: 'gpt-4o-mini',
           max_tokens: 80,
           temperature: 0,
@@ -1084,7 +1110,7 @@ export class AIAdapter {
               ] as any,
             },
           ],
-        }),
+        }, { signal }),
         12_000,
         'symbol extraction timed out',
       );
@@ -1596,9 +1622,10 @@ export class AIAdapter {
       // obrigado a inventar um valor para quem nao tem estrategia nenhuma.
       const strategyFitRequired = strategyProfile ? ['strategyFit', 'strategyFitReason'] : [];
 
-      // withTimeout garante aborto em exatamente 30s via Promise.race
-      // Mais confiável do que { timeout } do SDK (que pode não funcionar em todos os ambientes)
-      const response = await withTimeout(this.openai.chat.completions.create({
+      // withTimeout aborta a conexao de verdade no estouro, via AbortSignal
+      // repassado ao SDK. Antes era Promise.race, que abandonava a promise mas
+      // deixava a requisicao viva e cobrada. Ver withTimeout.
+      const response = await withTimeout((signal) => this.openai.chat.completions.create({
         model,
         // GPT-5+ exige max_completion_tokens e rejeita seed — ver openai-params.ts
         ...buildSamplingParams(model, {
@@ -1762,7 +1789,7 @@ export class AIAdapter {
             content: userContent as any,
           },
         ],
-      }), ANALYZE_TIMEOUT_MS, `OpenAI analysis timed out after ${Math.round(ANALYZE_TIMEOUT_MS / 1000)}s`);
+      }, { signal }), ANALYZE_TIMEOUT_MS, `OpenAI analysis timed out after ${Math.round(ANALYZE_TIMEOUT_MS / 1000)}s`);
 
       const choice = response.choices[0];
       const finishReason = String(choice?.finish_reason || '').trim().toLowerCase();
