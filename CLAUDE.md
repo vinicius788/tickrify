@@ -1638,6 +1638,60 @@ Mudar `reasoning_effort` ou modelo degrada a analise de forma dificil de
 prever, e o custo de uma analise ruim para o primeiro usuario influente e maior
 que o de dez segundos a mais de espera.
 
+### 09/09/2026 — o log foi lido. O Render esta inocente.
+
+Primeira linha `[Metrics]` de uma analise real em producao (deep, 09:25 BRT):
+
+```
+queueWaitMs=3 promptMs=10 aiMs=29832 parseMs=0 annotateMs=0 persistMs=36
+latencyMs=29900
+```
+
+**49ms de backend contra 29,8s de OpenAI.** Fila zerada, banco instantaneo,
+upload da imagem anotada em zero. Nao existe overhead de infra para cortar, e
+o plano pago de US$7 (`0.5c-512mb`, contratado 08/09 22:52) so comprou o fim do
+spin-down: os 8s que sumiram (39s -> 31s) eram cold start, nada mais.
+
+De 50 linhas `[Cost]` dos dias 07 a 09/09:
+
+| tier | n | completion (mediana) | reasoning | faixa |
+|---|---|---|---|---|
+| quick | 41 | 2517 | 763 | 730 a 4080 |
+| deep | 9 | 3040 | 898 | 2390 a 3993 |
+
+3040 tokens em 29,8s = **102 tok/s**. A conta fecha inteira: o tempo de espera
+E a velocidade de escrita do modelo. A variacao de 730 a 4080 tokens explica
+por que a mesma plataforma responde em 18s ou em 40s.
+
+**Correcao de duas notas erradas deste arquivo:**
+1. `AI_MODEL_DEEP` **esta setada** e vale `gpt-5.6-luna` (o log diz
+   `deep model=gpt-5.6-luna`). A nota que diz que ela nao existe e que o deep
+   roda `gpt-4o` esta desatualizada. Consequencia real: quick e deep rodam o
+   MESMO motor hoje, diferenciados so pelo prompt, e o deep cobra 3 ticks.
+2. `AI_REASONING_EFFORT_QUICK` / `_DEEP` nao existiam no Environment ate
+   09/09 (conferido pela ordem alfabetica da lista: pula de `AI_MODEL_QUICK`
+   direto para `ALLOW_UNAUTHENTICATED`). O dono setou `QUICK=low` em 09/09.
+
+**Prompt cache nao esta pegando.** 13322 x $1/1M + 3040 x $6/1M = $0,0315
+contra $0,0316 no log: nenhum token de entrada entrou como cacheado. Com uma
+analise a cada 30-60min o cache da OpenAI expira antes da proxima. Resolve
+sozinho quando o trafego subir; ate la sao ~$0,013 desperdicados por analise.
+
+**Feito em 09/09 (passo 2 da lista de alavancas):** limites de caracteres
+explicitos nos 17 campos de texto do contrato de saida do
+`trading-system-prompt.ts` + regra 20 (WORD BUDGET). Os quatro maiores
+(`reasoning` 1408 chars, `executiveSummary` 616, `technicalAnalysis` 454,
+`structureValidation` 362) sao 59% de tudo que o modelo escreve. O `reasoning`
+e o maior de todos e **so aparece na tela como fallback** quando
+technicalAnalysis e executiveSummary vem vazios (AnalysisResult.tsx:677 e 795),
+entao foi o corte mais agressivo: virou trilha de decisao em clausulas de ate
+12 palavras, teto de 500 chars. Esperado: -400 tokens = -4s. Medir na proxima
+analise pelo `completion=` do `[Cost]`, nao no olho.
+
+O `PromptSyncService` publica isso sozinho no boot do proximo deploy (cria v11
+e ativa). O v9 (`trading-system-prompt-v9.ts`) NAO recebeu os cortes: esta com
+A/B OFF e nao roda em producao.
+
 ---
 
 ## Sprint 25/08/2026 — calendário econômico devolvendo vazio + aviso desatualizado
