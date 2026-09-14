@@ -4,7 +4,7 @@ import * as Sentry from '@sentry/react';
 import { ClerkProvider } from '@clerk/clerk-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App.tsx';
-import { LanguageProvider } from './lib/i18n/LanguageContext.tsx';
+import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import { initAnalytics } from './lib/analytics';
 import { getConsent } from './lib/consent';
 import { AnalyticsIdentify } from './components/providers/AnalyticsIdentify';

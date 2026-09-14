@@ -15,7 +15,8 @@ type TurnstileApi = {
       'expired-callback'?: () => void;
       'before-interactive-callback'?: () => void;
       'after-interactive-callback'?: () => void;
-      size?: 'normal' | 'compact' | 'invisible';
+      size?: 'normal' | 'compact' | 'flexible';
+      appearance?: 'always' | 'execute' | 'interaction-only';
       execution?: 'render' | 'execute';
     },
   ) => string;
@@ -107,7 +108,11 @@ export async function getTurnstileToken(): Promise<string | null> {
     try {
       widgetId = api.render(container, {
         sitekey: SITE_KEY,
-        size: 'invisible',
+        // 'invisible' NAO e um valor valido de `size` — a Cloudflare aceita
+        // apenas 'normal' | 'compact' | 'flexible' e lanca TurnstileError com
+        // qualquer outro, o que fazia o render() estourar e o token vir null.
+        // O comportamento invisivel vem de `appearance`, nao de `size`.
+        appearance: 'interaction-only',
         execution: 'render',
         callback: (token) => finish(token),
         'error-callback': () => finish(null),
