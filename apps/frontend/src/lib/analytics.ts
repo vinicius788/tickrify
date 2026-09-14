@@ -10,6 +10,7 @@ let ready = false;
 
 export function initAnalytics(): void {
   initMetaPixel();
+  initGoogleTag();
   if (ready || !KEY) return;
   try {
     posthog.init(KEY, {
@@ -44,6 +45,8 @@ declare global {
   interface Window {
     fbq?: Fbq;
     _fbq?: Fbq;
+    dataLayer?: unknown[];
+    gtag?: Gtag;
   }
 }
 
@@ -99,6 +102,83 @@ function trackMeta(event: FunnelEvent, props?: Record<string, unknown>): void {
         break;
       case 'analysis_completed':
         window.fbq('trackCustom', 'AnalysisCompleted', {
+          analysisNumber: props?.analysisNumber ?? null,
+        });
+        break;
+      default:
+        break;
+    }
+  } catch {
+    /* noop */
+  }
+}
+
+// ─── Google tag (GA4) ──────────────────────────────────────────────────────
+// Mede o funil pro lado Google (canal de origem: orgânico, Instagram, direto...
+// dado que o PostHog não separa bem). No-op silencioso se VITE_GA_TRACKING_ID
+// não estiver configurado — sobe sem medo.
+const GA_ID = String(import.meta.env.VITE_GA_TRACKING_ID || '').trim();
+// Google Ads (AW-...) roda na MESMA gtag.js do GA4: um unico <script>, um
+// `config` por id. E o que habilita remarketing e atribuicao das campanhas
+// de Search. No-op silencioso se VITE_GOOGLE_ADS_ID nao estiver configurado.
+const ADS_ID = String(import.meta.env.VITE_GOOGLE_ADS_ID || '').trim();
+// Alvos ativos do gtag. Eventos vao para os dois ids quando ambos existem.
+const GOOGLE_TARGETS: string[] = [GA_ID, ADS_ID].filter(Boolean);
+
+type Gtag = ((...args: unknown[]) => void) & { q?: unknown[] };
+
+function initGoogleTag(): void {
+  if (GOOGLE_TARGETS.length === 0 || typeof window === 'undefined' || window.gtag) return;
+  try {
+    window.dataLayer = window.dataLayer || [];
+    const dataLayer = window.dataLayer;
+    const gtag: Gtag = (...args: unknown[]) => {
+      dataLayer.push(args);
+    };
+    window.gtag = gtag;
+    gtag('js', new Date());
+
+    const script = document.createElement('script');
+    script.async = true;
+    script.src = `https://www.googletagmanager.com/gtag/js?id=${GOOGLE_TARGETS[0]}`;
+    document.head.appendChild(script);
+
+    // SPA: pageview manual via React Router, igual PostHog/Meta — nunca o
+    // send_page_view automático do gtag (double counting).
+    for (const id of GOOGLE_TARGETS) {
+      gtag('config', id, { send_page_view: false });
+    }
+  } catch (err) {
+    console.warn('[analytics] google tag init falhou:', err);
+  }
+}
+
+// Espelha eventos-chave do funil pro GA4 (nomenclatura recomendada do Google:
+// sign_up, begin_checkout, purchase...).
+function trackGoogle(event: FunnelEvent, props?: Record<string, unknown>): void {
+  if (typeof window === 'undefined' || !window.gtag || GOOGLE_TARGETS.length === 0) return;
+  try {
+    switch (event) {
+      case 'signup_completed':
+        window.gtag('event', 'sign_up', { send_to: GOOGLE_TARGETS });
+        break;
+      case 'pricing_viewed':
+        window.gtag('event', 'view_item', { send_to: GOOGLE_TARGETS, item_name: 'pricing' });
+        break;
+      case 'checkout_started':
+        window.gtag('event', 'begin_checkout', { send_to: GOOGLE_TARGETS });
+        break;
+      case 'subscription_activated':
+        window.gtag('event', 'purchase', {
+          send_to: GOOGLE_TARGETS,
+          value: Number(props?.value) || 0,
+          currency: String(props?.currency || 'USD').toUpperCase(),
+          transaction_id: String(props?.subscriptionId ?? props?.userId ?? Date.now()),
+        });
+        break;
+      case 'analysis_completed':
+        window.gtag('event', 'analysis_completed', {
+          send_to: GOOGLE_TARGETS,
           analysisNumber: props?.analysisNumber ?? null,
         });
         break;
@@ -171,8 +251,11 @@ function flushPending(): void {
   const queued = pending;
   pending = [];
   for (const item of queued) {
-    // O Meta Pixel também estava desligado quando o evento entrou na fila.
-    if (item.event !== '$pageview') trackMeta(item.event, item.props);
+    // Meta Pixel e Google tag também estavam desligados quando o evento entrou na fila.
+    if (item.event !== '$pageview') {
+      trackMeta(item.event, item.props);
+      trackGoogle(item.event, item.props);
+    }
     try {
       posthog.capture(item.event, item.props);
     } catch {
@@ -189,6 +272,7 @@ export function discardPendingAnalytics(): void {
 
 export function track(event: FunnelEvent, props?: Record<string, unknown>): void {
   trackMeta(event, props);
+  trackGoogle(event, props);
   if (!ready) {
     enqueue(event, props);
     return;
@@ -230,6 +314,17 @@ export function trackPageview(path: string): void {
   if (typeof window !== 'undefined' && window.fbq) {
     try {
       window.fbq('track', 'PageView');
+    } catch {
+      /* noop */
+    }
+  }
+  if (typeof window !== 'undefined' && window.gtag && GOOGLE_TARGETS.length > 0) {
+    try {
+      window.gtag('event', 'page_view', {
+        send_to: GOOGLE_TARGETS,
+        page_location: window.location.origin + path,
+        page_path: path,
+      });
     } catch {
       /* noop */
     }
