@@ -132,7 +132,7 @@ export class AiController {
     const dbUserId = await this.resolveDbUserId(user);
     if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
 
-    return this.aiService.listAnalyses(dbUserId, query.limit ?? 20);
+    return this.aiService.listAnalyses(dbUserId, query.limit ?? 20, query.cursor ?? null);
   }
 
   @Patch('analysis/:id/outcome')

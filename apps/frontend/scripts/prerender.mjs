@@ -27,13 +27,19 @@
  * quebra por causa de SEO: sem os arquivos gerados, o Vercel volta a servir o
  * `index.html` pelo rewrite e o site se comporta exatamente como antes.
  *
- * ⚠️ Só o `<head>` é pré-renderizado, não o conteúdo. Renderizar o corpo exige
- * navegador headless no build (dependência nova, proibida aqui — ver CLAUDE.md).
+ * O CORPO TAMBÉM É PRÉ-RENDERIZADO desde 14/09/2026, dentro de `<noscript>`,
+ * pelo `geo-body.mjs` deste mesmo diretório. A nota anterior aqui dizia que
+ * renderizar o corpo exigia navegador headless no build: isso vale para
+ * renderizar o APP, e não para servir o texto da página. O texto sai do
+ * `en.ts` e da API de acurácia, sem navegador e sem dependência nova. Ver o
+ * cabeçalho do `geo-body.mjs` para o porquê de `<noscript>` e não `#root`.
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { buildBody, buildJsonLd, fetchAccuracy, jsonLdTag, loadEnglishCopy, readOffer } from './geo-body.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -109,7 +115,59 @@ function replaceCanonical(html, url) {
  * no <style> do index.html.
  */
 
-function main() {
+/**
+ * Injeta o JSON-LD da rota no `<head>`.
+ *
+ * Marcado com o mesmo id que o `useJsonLd` usa, e o hook passou a remover o
+ * elemento de mesmo id antes de inserir o dele: o React substitui este bloco
+ * em vez de empilhar um segundo. Sem isso, a página teria dois elementos com
+ * o mesmo id e schema duplicado.
+ */
+function injectJsonLd(html, tag) {
+  if (!tag) return html;
+  const cleaned = html.replace(/<script type="application\/ld\+json" id="ld-[^"]*">[\s\S]*?<\/script>\s*/i, () => '');
+  if (!/<\/head>/i.test(cleaned)) return cleaned;
+  return cleaned.replace(/<\/head>/i, () => `  ${tag}\n  </head>`);
+}
+
+/** Marcador do bloco gerado aqui. Só remove o que este script escreveu: um
+ *  `<noscript>` que alguém ponha à mão no index.html não é tocado. */
+const BODY_OPEN = '<noscript data-prerender="body">';
+const BODY_CLOSE = '</noscript>';
+
+/**
+ * Tira um corpo pré-renderizado que já esteja no HTML.
+ *
+ * Isto existe por um bug real, pego ao testar: o `base` é lido uma vez e
+ * reusado em todas as rotas. Rodando o script duas vezes sobre o mesmo `dist`,
+ * o `dist/index.html` já voltava com o corpo da HOME dentro, e como a injeção
+ * era idempotente por presença, TODA rota filha herdava o texto da home e não
+ * recebia o seu. A /pricing passava a servir "Stop trading in the dark" como
+ * h1. O Vercel builda do zero e nunca cairia nisso; um build repetido na mão,
+ * sim. Limpar antes de escrever torna o resultado o mesmo em qualquer ordem.
+ */
+function stripBody(html) {
+  const start = html.indexOf(BODY_OPEN);
+  if (start === -1) return html;
+  const end = html.indexOf(BODY_CLOSE, start);
+  if (end === -1) return html;
+  return (html.slice(0, start) + html.slice(end + BODY_CLOSE.length)).replace(/\n\s*\n(\s*<\/body>)/i, (_m, tail) => `\n${tail}`);
+}
+
+/**
+ * Injeta o corpo pré-renderizado antes de `</body>`.
+ *
+ * Substituição por FUNÇÃO, como todas as outras deste arquivo: o bloco contém
+ * `$29` e, numa string de replacement, `$2` é sintaxe de grupo. Foi assim que
+ * a meta da /pricing chegou a sair anunciando "9/mo".
+ */
+function injectBody(html, body) {
+  if (!body) return html;
+  if (!/<\/body>/i.test(html)) return html;
+  return stripBody(html).replace(/<\/body>/i, () => `${body}\n  </body>`);
+}
+
+async function main() {
   if (!existsSync(DIST)) bail('dist/ não existe — o vite build rodou?');
 
   const indexPath = join(DIST, 'index.html');
@@ -122,12 +180,39 @@ function main() {
     bail(`não consegui ler src/lib/seo-routes.json (${error.message})`);
   }
 
-  const base = readFileSync(indexPath, 'utf8');
+  const base = stripBody(readFileSync(indexPath, 'utf8'));
   const written = [];
 
+  /* As duas fontes do corpo. Qualquer uma pode falhar sem derrubar nada: sem
+   * `copy` as rotas caem no bloco genérico (h1 + description), sem `accuracy`
+   * a tabela de números simplesmente não é emitida. */
+  let copy = null;
+  try {
+    copy = await loadEnglishCopy(ROOT);
+  } catch (error) {
+    console.warn(`[prerender] en.ts não carregou (${error.message}); corpo sai reduzido.`);
+  }
+  if (!copy) console.warn('[prerender] AVISO: sem en.ts, o corpo pré-renderizado sai reduzido.');
+
+  const offer = readOffer(ROOT);
+  if (!offer) console.warn('[prerender] AVISO: preço não lido do PricingPage; /pricing sai sem Offer no schema.');
+
+  const accuracy = await fetchAccuracy();
+  if (!accuracy) console.warn('[prerender] AVISO: /api/ai/accuracy não respondeu; páginas saem sem a tabela de números.');
+
   for (const [path, meta] of Object.entries(routes)) {
-    // '/' já é o próprio dist/index.html, que o Vite acabou de gerar.
-    if (path === '/') continue;
+    /* O '/' não precisa de <head> novo (o index.html já nasce correto), mas
+     * precisa de corpo: ele era a única rota servindo zero palavra em HTML
+     * cru justamente por ser pulada aqui. */
+    if (path === '/') {
+      const homeBody = buildBody({ path, meta, copy, accuracy });
+      const homeLd = jsonLdTag(buildJsonLd({ path, copy, accuracy, offer }));
+      if (homeBody || homeLd) {
+        writeFileSync(indexPath, injectJsonLd(injectBody(base, homeBody), homeLd), 'utf8');
+        written.push('/ (corpo)');
+      }
+      continue;
+    }
 
     const canonical = `${SITE}${meta.canonicalPath ?? path}`;
     let html = base;
@@ -142,17 +227,17 @@ function main() {
     html = replaceCanonical(html, canonical);
     if (meta.noindex) html = applyNoindex(html);
 
+    html = injectBody(html, buildBody({ path, meta, copy, accuracy }));
+    html = injectJsonLd(html, jsonLdTag(buildJsonLd({ path, copy, accuracy, offer })));
+
     const outDir = join(DIST, path.replace(/^\//, ''));
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, 'index.html'), html, 'utf8');
     written.push(path);
   }
 
-  console.log(`[prerender] ${written.length} rota(s) com <head> próprio: ${written.join(', ')}`);
+  console.log(`[prerender] ${written.length} rota(s) publicadas: ${written.join(', ')}`);
+  console.log(`[prerender] corpo em <noscript>: ${copy ? 'completo (en.ts)' : 'reduzido'} · acurácia: ${accuracy ? 'com números do build' : 'sem números'}`);
 }
 
-try {
-  main();
-} catch (error) {
-  bail(error?.stack ?? String(error));
-}
+main().catch((error) => bail(error?.stack ?? String(error)));

@@ -20,4 +20,73 @@ Disallow: /demo/
 # (useSeo), que é o que de fato tira do índice. Recolocar o Disallow aqui
 # desfaz a correção.
 
+# ---------------------------------------------------------------------------
+# CRAWLERS DE IA , liberados EXPLICITAMENTE (14/09/2026)
+#
+# Por que existir, se o "User-agent: *" acima ja libera tudo: varios desses
+# agentes sao conservadores por padrao e alguns operadores de site os bloqueiam,
+# entao a ausencia de regra propria e ambigua. Regra nomeada e o sinal
+# inequivoco de que o conteudo pode ser lido e citado.
+#
+# CONTEXTO DE NEGOCIO: em 30 dias, 368 de 1017 pageviews chegaram com
+# utm_source=chatgpt.com , o maior canal de aquisicao do produto, e organico.
+# Pelo menos um assinante veio por ai. Bloquear qualquer um destes por descuido
+# custaria o unico canal que funciona hoje.
+#
+# Quem e quem (nao sao intercambiaveis):
+#   OAI-SearchBot  indexa para a busca do ChatGPT      -> citacao
+#   ChatGPT-User   busca ao vivo quando o usuario pede -> citacao na hora
+#   GPTBot         coleta para treino                  -> nao gera citacao
+#   Google-Extended  controla uso no Gemini/AI Overviews (nao afeta a Busca)
+#   PerplexityBot / Perplexity-User  indice e busca ao vivo da Perplexity
+#   ClaudeBot / Claude-SearchBot / Claude-User  Anthropic
+#   Bingbot        o ChatGPT depende MUITO do indice do Bing
+#   Applebot-Extended  Apple Intelligence
+# ---------------------------------------------------------------------------
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-SearchBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: meta-externalagent
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
 Sitemap: https://tickrify.com/sitemap.xml

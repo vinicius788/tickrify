@@ -14,10 +14,12 @@ import SEO_ROUTES from '@/lib/seo-routes.json';
  * entra (o lockfile não atualiza na máquina local — ver CLAUDE.md). Isto faz
  * o necessário em ~40 linhas mexendo direto no `document.head`.
  *
- * ⚠️ Isto resolve o Googlebot, que renderiza JS. NÃO resolve crawler que não
- * executa JS (Bing, crawlers de IA, prévia de link do WhatsApp/Slack), porque
- * a meta só existe depois da hidratação. A correção completa é pré-renderizar
- * as rotas públicas no build — próximo passo, maior e separado.
+ * O aviso que ficava aqui dizia que isto não resolvia crawler sem JS e que a
+ * correção seria pré-renderizar no build. Isso FOI FEITO: `scripts/prerender.mjs`
+ * escreve o `<head>` de cada rota desde 10/08/2026 e, desde 14/09/2026, também
+ * o corpo e o JSON-LD (`scripts/geo-body.mjs`). Este hook continua necessário
+ * porque a navegação dentro da SPA não recarrega o documento: ele é o que
+ * ajusta a meta quando o usuário vai de /pricing para /accuracy sem sair.
  */
 
 const SITE_URL = 'https://tickrify.com';
@@ -129,6 +131,11 @@ export function useSeo({ title, description, path, noindex = false }: SeoOptions
 export function useJsonLd(id: string, data: Record<string, unknown> | null) {
   useEffect(() => {
     if (!data) return;
+    // O pré-render (scripts/geo-body.mjs) já entrega este mesmo bloco no HTML
+    // cru, com este mesmo id, para o crawler que não executa JS. Sem remover o
+    // que veio de lá, a página passaria a ter dois elementos com o mesmo id e
+    // dois blocos de schema, que é HTML inválido e structured data duplicado.
+    document.getElementById(`ld-${id}`)?.remove();
     const el = document.createElement('script');
     el.type = 'application/ld+json';
     el.id = `ld-${id}`;

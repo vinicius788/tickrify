@@ -467,14 +467,20 @@ class APIClient {
     return response.json();
   }
 
+  /**
+   * Historico do usuario. `cursor` e o id da ULTIMA analise ja recebida; a
+   * pagina seguinte comeca depois dela. Sem cursor, volta a primeira pagina.
+   */
   async listAnalyses(
     token: string | null,
     limit = 20,
     getFreshToken?: FreshTokenGetter,
+    cursor?: string | null,
   ): Promise<AIAnalysisResponse[]> {
     const safeLimit = Math.max(1, Math.min(100, Math.floor(limit || 20)));
+    const cursorParam = cursor ? `&cursor=${encodeURIComponent(cursor)}` : '';
     const response = await this.request(
-      `/api/ai/analyses?limit=${safeLimit}`,
+      `/api/ai/analyses?limit=${safeLimit}${cursorParam}`,
       {
         method: 'GET',
         headers: {
@@ -731,9 +737,9 @@ export function useAPIClient() {
     return apiClient.getAnalysis(analysisId, token, getFreshToken);
   }, [getFreshToken]);
 
-  const listAnalyses = useCallback(async (limit?: number) => {
+  const listAnalyses = useCallback(async (limit?: number, cursor?: string | null) => {
     const token = await getFreshToken();
-    return apiClient.listAnalyses(token, limit, getFreshToken);
+    return apiClient.listAnalyses(token, limit, getFreshToken, cursor);
   }, [getFreshToken]);
 
   const getAnalysisUsage = useCallback(async () => {

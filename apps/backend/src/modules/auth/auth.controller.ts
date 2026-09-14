@@ -27,6 +27,12 @@ export class AuthController {
     });
 
     if (!dbUser) {
+      // Rede de segurança apenas: o AuthGuard roda antes deste handler em
+      // TODA requisição autenticada (incluindo esta) e já faz o
+      // find-then-create de verdade — é lá que mora a criação real do
+      // usuário e o disparo do e-mail de boas-vindas (ver auth.guard.ts,
+      // 14/09/2026). Se ainda assim chegarmos aqui sem dbUser, algo bem
+      // incomum aconteceu; criamos sem reenviar boas-vindas para não duplicar.
       dbUser = await this.prisma.user.create({
         data: {
           clerkUserId: user.clerkUserId,
@@ -37,15 +43,6 @@ export class AuthController {
           analyses: true
         },
       });
-
-      // Usuário novo → e-mail de boas-vindas (fire-and-forget; nunca quebra a resposta).
-      if (dbUser.email) {
-        void this.mail.sendWelcome(dbUser.email).catch(() => undefined);
-      } else {
-        // O session token do Clerk não inclui e-mail por padrão → busca na API
-        // do Clerk, persiste (backfill) e só então envia as boas-vindas.
-        void this.backfillEmailAndWelcome(dbUser.id, user.clerkUserId, true);
-      }
     } else if (!dbUser.email) {
       // Conta existente sem e-mail (criada antes do backfill existir) →
       // preenche silenciosamente, sem reenviar boas-vindas.

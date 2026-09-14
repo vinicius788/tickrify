@@ -1131,6 +1131,9 @@ ter ficado. Ler arquivo com `grep`/`sed`/`python` nao cria lock — so comandos 
 | `robots.txt` sem subdiretorio explicito | `Disallow` com e sem barra nas 4 rotas privadas | 17/08 |
 | Sem landing por plataforma nem por classe de ativo | `public/for/`: hub de cobertura + `/for/tradingview/`, `/for/metatrader/`, `/for/bitcoin/`, `/for/gold/`, `/for/forex/`. Estaticas, mesmo mecanismo do `/blog/` e do `/tools/` (o Vercel serve o arquivo antes do rewrite), 1.066 a 1.406 palavras visiveis, `FAQPage` gerado do MESMO texto que a pagina mostra, no sitemap, linkadas dos 6 posts e dos dois indices. **NVDA/SPY ficaram FORA de proposito:** acao e ETF nao tem grounding de candle (`normalizeToBinancePerp` cobre 40 bases de cripto, `fetchFxCandles` cobre XAU/XAG e majors de FX, e mais nada), entao uma landing de acoes venderia dado ao vivo que nao existe. O hub publica a tabela de cobertura com os NAOs, que e o oposto do que o concorrente faz. | 26/08 |
 | `/sign-in` indexado apesar do `Disallow` | `noindex` de verdade: as duas rotas de auth SAIRAM do `Disallow`, entraram no `seo-routes.json` com `noindex: true` (shell do `prerender.mjs`) e o `AuthScreen` do `App.tsx` chama o `useSeo` pos-hidratacao. `seoFor` passou a propagar o `noindex`, que ele descartava. | 26/08 |
+| Corpo das rotas React invisivel sem JS (ZERO palavra em `/`, `/pricing`, `/accuracy`, `/try`) | `scripts/geo-body.mjs` gera o corpo dentro de `<noscript>` a partir do PROPRIO `en.ts` e da API de acuracia, e o `prerender.mjs` injeta. Home passou de 0 para 876 palavras em HTML cru. A nota antiga dizia que isto exigia navegador headless: exige para renderizar o APP, nao para servir o TEXTO. | 14/09 |
+| JSON-LD so existia depois do JS (nenhum crawler de IA via schema) | `buildJsonLd` emite FAQPage na home, SoftwareApplication+Offer na /pricing e Dataset na /accuracy no HTML cru; `useJsonLd` passou a remover o bloco de mesmo id ao montar, entao o React substitui em vez de duplicar. | 14/09 |
+| robots.txt sem regra nomeada para crawler de IA | 15 agentes liberados explicitamente em `public/robots.txt` (OAI-SearchBot, ChatGPT-User, GPTBot, Google-Extended, PerplexityBot, ClaudeBot, Bingbot, Applebot-Extended e outros). | 14/09 |
 
 ### ⚠️ Auditoria de SEO recebida em 26/08 — QUASE TODA desatualizada
 
@@ -1168,7 +1171,6 @@ das listas de comparacao. Gargalo e trafego, nao SEO tecnico.
 | **Imagens reais nos 6 posts** | **Bloqueado por falta de asset.** Os dois PNGs do repo (`demo-example-chart.png`, `demo-after-chart.png`) sao prints CRUS de XAUUSD M30 **sem nenhuma analise sobreposta** — nao sao prova de produto, e reancoram o conteudo na geo que foi abandonada de proposito. Colocar seria pior que nao ter. Precisa de screenshot real de uma analise em NVDA/SPY/BTC. | **dono manda o print**, Claude liga |
 | **Autor pessoa (E-E-A-T)** | Schema `Article` usa `author: Organization`. Em YMYL financeiro o Google pesa autor pessoa com bio. Nao da pra inventar nome. | **dono define nome + bio** |
 | ~~**Decisao de i18n**~~ | **DECIDIDO em 17/08/2026: ingles e o unico idioma indexavel.** Ver secao propria abaixo. | ✅ fechado |
-| **Pre-render do CORPO, nao so do `<head>`** | Renderizar o body exige navegador headless no build = dependencia nova, proibida (lockfile nao atualiza local). Hoje um crawler sem JS ve o `<head>` certo e um bloco neutro no corpo. | adiado por restricao |
 | Glossario de padroes de candle | Cluster inteiro numa pagina. Multi-dia. | Claude |
 
 ### ✅ Search Console reinspecionado em 26/08 — diagnostico novo
@@ -1691,6 +1693,32 @@ analise pelo `completion=` do `[Cost]`, nao no olho.
 O `PromptSyncService` publica isso sozinho no boot do proximo deploy (cria v11
 e ativa). O v9 (`trading-system-prompt-v9.ts`) NAO recebeu os cortes: esta com
 A/B OFF e nao roda em producao.
+
+### RESULTADO MEDIDO (09/09, deploy ddc9840 as 10:23)
+
+Quatro analises quick reais depois do deploy, contra a mediana das 41 de antes:
+
+| | completion | reasoning | custo |
+|---|---|---|---|
+| antes (n=41) | 2517 | 763 | ~$0,0275 |
+| 10:30 | 1222 | 209 | $0,0208 |
+| 10:41 | 1106 | 134 | $0,0183 |
+| 10:59 | 1408 | 279 | $0,0199 |
+| 11:59 | 1285 | 233 | $0,0191 |
+| depois (mediana) | **1254** | **221** | **~$0,0195** |
+
+**Completion caiu 50%. Latencia na tela: 31,4s -> 18,5s (-41%).** Custo por
+analise quick caiu 29% e a margem foi de ~81% para ~86,5%.
+
+A conta fecha: -1263 tokens a 102 tok/s = -12,4s, e o dono cronometrou -12,9s.
+Credito dividido entre `AI_REASONING_EFFORT_QUICK=low` (-542 de reasoning) e os
+tetos de caracteres (-721 de texto visivel).
+
+**O que falta vigiar:** completion de 1106 e o menor ja registrado num caminho
+saudavel. O risco agora inverteu de lado: nao e mais lentidao, e resposta curta
+demais. Conferir na tela se `executiveSummary` e `structureValidation`
+continuam uteis; se ficarem rasos, o teto a afrouxar primeiro e o do
+`executiveSummary` (450 chars), nunca o do `reasoning`.
 
 ---
 
@@ -2543,3 +2571,145 @@ as mesmas analises duplicadas. Travado por teste, provado nas duas direcoes.
 exato do tamanho da pagina, o botao aparece uma vez a mais, o clique traz lista
 vazia e ele some. E o comportamento padrao desse tipo de paginacao e nao vale a
 complexidade de uma contagem extra por pagina para evitar um clique.
+
+---
+
+## Sprint 14/09/2026 — GEO/AEO: o corpo das paginas passou a existir sem JavaScript
+
+**Por que isto virou prioridade 1 (dado de negocio, nao de SEO):** o maior canal
+de aquisicao do produto e o **ChatGPT**. Em 30 dias, **368 de 1017 pageviews**
+chegaram com `utm_source=chatgpt.com`, contra 24 do Google organico, 14 do
+Instagram e 6 do Facebook. Pelo menos um dos 3 assinantes (Reino Unido, 08/09)
+veio por ai. Nenhum assinante veio de anuncio pago. O canal que funciona e
+organico, gratuito e ninguem tinha otimizado para ele.
+
+### 🔴 O ACHADO: as rotas React serviam ZERO palavra em HTML cru
+
+Medido no proprio codigo, nao deduzido. O `index.html` traz dentro do
+`<div id="root">` apenas a barra do cabecalho com o logo, **sem texto nenhum**
+(decisao correta de 25/08, ver aquela secao). O `prerender.mjs` consertava o
+`<head>` e **so o head**. Resultado: `/`, `/pricing`, `/accuracy` e `/try`
+entregavam zero palavra de conteudo para quem nao executa JavaScript.
+
+**Nenhum crawler de IA executa JavaScript.** OAI-SearchBot, PerplexityBot e
+ClaudeBot leem o HTML cru e vao embora. O **Googlebot executa JS**, e e por isso
+que este problema sobreviveu a duas auditorias de SEO: pelos olhos do Google o
+site estava certo. A `/accuracy`, que e o ativo mais raro do produto, era
+literalmente invisivel para o canal que mais traz gente.
+
+### A correcao: `scripts/geo-body.mjs` (arquivo novo, justificado)
+
+O `prerender.mjs` ja passava de 200 linhas e o corpo e outro assunto (carrega
+copy, busca API, monta HTML). Nao cabia la dentro.
+
+**Onde o corpo e injetado: dentro de `<noscript>`, e isso e deliberado.**
+Texto dentro do `#root` e pintado antes do React montar e some quando ele monta.
+Este projeto ja pagou por isso: o `index.html` trazia o hero embutido, `/terms`
+piscava "Stop trading in the dark", e em 25/08 a casca foi esvaziada por causa
+disso. Repetir aquilo para agradar crawler seria trocar um bug por outro.
+`<noscript>` nao tem esse custo: navegador com JS nunca renderiza (zero flash,
+zero regressao visual) e todo crawler que le HTML cru le o conteudo.
+
+**FONTE UNICA, que e o ponto inteiro.** Nada ali e copy escrita a mao:
+- texto: carregado do **proprio `src/lib/i18n/en.ts`**, o mesmo arquivo que a
+  tela renderiza;
+- numeros da acuracia: buscados da **mesma API** que a `AccuracyPage` consome,
+  no momento do build, e carimbados com a data (`Measured accuracy, as of ...`);
+- preco do schema: extraido do bloco `offers` do **proprio `PricingPage.tsx`**.
+  Mudou la e nao aqui, aqui **para de emitir o Offer** em vez de anunciar preco
+  velho. O valor ja passou por tres edicoes ($12, $19, $29).
+
+Divergencia entre uma segunda copia de texto e a tela ja aconteceu **tres vezes**
+neste projeto (abstencao em es/de/ja, as 84 strings mortas dos 3 tiers, o hero da
+casca). Copy escrita a mao aqui seria a quarta.
+
+**Como o `en.ts` e lido sem dependencia nova:** ele e um objeto literal e nada
+mais (`export default { ... } as const`, sem anotacao de tipo, sem import). Tirar
+o `as const` deixa um modulo ES valido que o Node importa por data URL. O esbuild
+(dependencia do Vite, resolvido por `createRequire`) fica como SEGUNDA tentativa,
+para o dia em que alguem puser TypeScript de verdade no arquivo.
+⚠️ **O binario do esbuild em `node_modules` e `darwin-arm64`**, entao ele NAO roda
+no VM Linux que o Claude usa na maquina do dono. O caminho sem transpilador foi
+escolhido justamente por poder ser verificado em qualquer maquina.
+
+### Resultado medido (com a API mockada em localhost, fluxo real do script)
+
+| rota | palavras em HTML cru, antes | depois |
+|---|---|---|
+| `/` | **0** | **876** |
+| `/pricing` | 0 | 419 |
+| `/try` | 0 | 320 |
+| `/accuracy` | 0 | 380 |
+| `/terms`, `/privacy`, `/cookies`, `/risk` | 0 | ~136 cada |
+| `/sign-in`, `/sign-up`, `/admin` | 0 | **0, de proposito** (noindex nao ganha corpo) |
+
+### 🔴 Bug pego no teste: rodar o script 2x contaminava todas as rotas
+
+O `base` e lido uma vez e reusado. Na segunda execucao sobre o mesmo `dist`, o
+`dist/index.html` ja voltava com o corpo da HOME dentro, e como a injecao era
+idempotente por presenca, **toda rota filha herdava o texto da home**. Reproduzido:
+a `/pricing` passou a servir `<h1>Stop trading in the dark.</h1>`. O Vercel builda
+do zero e nunca cairia nisso; um build repetido na mao, sim.
+
+Corrigido com `stripBody()` antes de escrever, ancorado no marcador
+`<noscript data-prerender="body">` (so remove o que o script gerou, nunca um
+`<noscript>` posto a mao). **Verificado estavel em 3 execucoes seguidas.**
+
+### JSON-LD tambem so existia depois do JS
+
+O `useJsonLd` injeta o schema na hidratacao, ou seja **nenhum crawler de IA viu
+um bloco de structured data sequer** ate hoje. Agora o HTML cru ja traz:
+`FAQPage` na home (que nao tinha schema em lugar nenhum), `SoftwareApplication` +
+`Offer` na `/pricing` e `Dataset` na `/accuracy`.
+
+⚠️ **`useJsonLd` passou a remover o elemento de mesmo id antes de inserir o dele.**
+Sem essa linha a pagina teria dois elementos com o mesmo id e schema duplicado.
+**Nao remover.** Os ids do pre-render batem de proposito com os das paginas
+(`ld-pricing`, `ld-accuracy`).
+
+### robots.txt: 15 crawlers de IA liberados por nome
+
+`User-agent: *` ja liberava, mas regra nomeada e o sinal inequivoco. Entraram
+OAI-SearchBot, ChatGPT-User, GPTBot, Google-Extended, PerplexityBot,
+Perplexity-User, ClaudeBot, Claude-SearchBot, Claude-User, Bingbot, Applebot,
+Applebot-Extended, Amazonbot, meta-externalagent e cohere-ai. Os comentarios
+explicam que os agentes **nao sao intercambiaveis** (GPTBot e treino e nao gera
+citacao; OAI-SearchBot e ChatGPT-User e que geram).
+
+### Travessao removido do texto publico (regra do dono, estava sendo violada)
+A meta description da home dizia "Try 3 analyses free — no card required" no
+`seo-routes.json` E em 3 metas do `index.html`. Mais 4 no `llms.txt`. Todos
+trocados. **Varredura do bloco gerado: 0 travessoes.**
+
+### `llms.txt`
+Ganhou `Last updated: 2026-09-14` e uma secao **"How to cite this product"**, que
+e o que aumenta chance de citacao: nome, descricao de uma linha, o motivo unico
+para citar (publica a propria acuracia com n e intervalo de confianca) e o pedido
+explicito de linkar `/accuracy` quando a pergunta for sobre quanto AI chart
+analysis funciona de verdade.
+
+### Verificacao
+`tsc -b --force` do frontend: **0 erros**. `eslint` nos 3 arquivos tocados:
+limpo. Script rodado em ambiente isolado fora do repo (`/tmp/pretest`, com
+symlink para o `node_modules`), 3 execucoes seguidas, HTML final reparseado com
+`HTMLParser`, JSON-LD reparseado com `json.loads`. O caminho da API foi validado
+ponta a ponta com um servidor mock em `127.0.0.1` (o VM do Claude nao tem rede),
+confirmando a tabela de numeros e o `dateModified` no schema.
+
+⚠️ **NAO foi possivel rodar `vite build`** (limitacao de VM ja registrada:
+`MODULE_NOT_FOUND` no binario nativo do rollup). O `prerender.mjs` foi exercitado
+contra um `dist/` montado a mao com o `index.html` real.
+
+### PENDENTE desta frente (ordenado por retorno)
+1. **Bing Webmaster Tools** (so o dono, exige login): cadastrar o site e enviar
+   `https://tickrify.com/sitemap.xml`. O ChatGPT depende muito do indice do Bing,
+   entao isto e o par obrigatorio do trabalho acima.
+2. **Conferir em producao depois do deploy**, lendo HTML CRU e nao screenshot:
+   `curl -s https://tickrify.com/ | grep -c "data-prerender"` deve dar 1.
+3. Reescrever as paginas publicas no formato que LLM cita (pergunta no H1,
+   resposta direta nos dois primeiros paragrafos, tabela comparativa). Isso mexe
+   na UI e foi deixado separado de proposito.
+4. Presenca em terceiros (Reddit, Product Hunt, AlternativeTo, G2, Capterra), que
+   e de onde nasce a maioria das citacoes.
+5. Dashboard no PostHog por `utm_source` e `$referring_domain` de IA. Nota tecnica:
+   `$initial_utm_source` e `$initial_referring_domain` estao VAZIAS no projeto 473872.

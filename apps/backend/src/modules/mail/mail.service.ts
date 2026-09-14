@@ -81,7 +81,7 @@ export class MailService {
   async sendWelcome(to: string): Promise<void> {
     const html = this.wrap(
       'Your 3 free analyses are ready',
-      `Welcome to Tickrify. You've got <b>3 free analyses</b>. Paste any chart and get the entry, stop, targets and risk in ~30 seconds.<br><br>Best way to start: run the next trade you're unsure about.`,
+      `Welcome to Tickrify. You've got <b>3 free analyses</b>. Paste any chart and get the entry, stop, targets and risk before you decide.<br><br>Best way to start: run the next trade you're already unsure about.`,
       'Analyze a chart',
       `${this.appUrl}/dashboard`,
     );

@@ -256,6 +256,8 @@ export default {
   },
   trades: {
     favorite: 'ウォッチリストに追加',
+    loadMore: 'もっと読み込む',
+    loadingMore: '読み込み中...',
     unfavorite: 'ウォッチリストから削除',
     title: 'マイトレード',
     noTrades: 'まだトレードは記録されていません。',

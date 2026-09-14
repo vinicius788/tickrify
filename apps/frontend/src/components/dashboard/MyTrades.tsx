@@ -70,7 +70,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
   // Mesmo limite do Dashboard (40) → as três telas compartilham UM único cache
   // do React Query. Assim esta aba abre na hora (reaproveita o que já foi
   // carregado) em vez de disparar uma nova busca de 100 registros no servidor.
-  const { analyses, loading, refetch } = useAnalyses(40);
+  const { analyses, loading, hasMore, loadingMore, loadMore, refetch } = useAnalyses(40);
   const { setOutcome, setFavorite } = useAPIClient();
   const { t, language } = useLanguage();
   const tr = t.trades;
@@ -360,6 +360,22 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Historico paginado. Sem isto o usuario so alcancava a primeira pagina:
+            uma conta com centenas de analises exibia 40 e o resto era invisivel.
+            O botao some sozinho quando a ultima pagina chega incompleta. */}
+        {hasMore && (
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)] disabled:opacity-50"
+            >
+              {loadingMore ? tr.loadingMore : tr.loadMore}
+            </button>
           </div>
         )}
       </CardContent>

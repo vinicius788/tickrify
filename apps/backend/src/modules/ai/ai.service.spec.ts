@@ -70,6 +70,8 @@ describe('AiService access enforcement', () => {
         update: jest.fn(),
         // Contagem de análises demo "consumidas" (status != failed). 0 por padrão.
         count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue({ id: 'an_123' }),
       },
       promptConfig: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -192,6 +194,63 @@ describe('AiService access enforcement', () => {
 
     expect(ticksService.debitTicks).toHaveBeenCalledTimes(1);
     expect(prisma.analysis.create).not.toHaveBeenCalled();
+  });
+
+  // ── listAnalyses: paginacao ──────────────────────────────────────────────────
+  // Existe porque ate 03/09/2026 nao havia paginacao NENHUMA: o backend limitava
+  // a 100 por requisicao e nao aceitava cursor, entao numa conta com 403
+  // analises as outras 363 eram inalcancaveis por qualquer tela.
+  describe('listAnalyses: paginacao por cursor', () => {
+    it('sem cursor, busca a primeira pagina e NAO manda cursor ao prisma', async () => {
+      await service.listAnalyses('usr_1', 40);
+      const args = prisma.analysis.findMany.mock.calls[0][0];
+      expect(args.take).toBe(40);
+      expect(args.cursor).toBeUndefined();
+      expect(args.skip).toBeUndefined();
+    });
+
+    it('com cursor, pula a propria linha do cursor', async () => {
+      await service.listAnalyses('usr_1', 40, 'an_123');
+      const args = prisma.analysis.findMany.mock.calls[0][0];
+      expect(args.cursor).toEqual({ id: 'an_123' });
+      // Sem skip:1 a pagina seguinte repetiria a ultima linha da anterior.
+      expect(args.skip).toBe(1);
+    });
+
+    it('ordena por data E por id, para o cursor nao pular linha na fronteira', async () => {
+      await service.listAnalyses('usr_1', 40);
+      const args = prisma.analysis.findMany.mock.calls[0][0];
+      // Duas analises podem ter o mesmo createdAt. Sem o desempate por id a
+      // ordem nao e total e o cursor fica ambiguo.
+      expect(args.orderBy).toEqual([{ createdAt: 'desc' }, { id: 'desc' }]);
+    });
+
+    it('confirma que o cursor e do proprio usuario antes de usar como ancora', async () => {
+      await service.listAnalyses('usr_1', 40, 'an_123');
+      expect(prisma.analysis.findFirst).toHaveBeenCalledWith({
+        where: { id: 'an_123', userId: 'usr_1' },
+        select: { id: true },
+      });
+    });
+
+    it('cursor que nao e do usuario encerra a paginacao em vez de vazar ou estourar', async () => {
+      // Cobre os dois casos de uma vez: id inexistente (que faria o Prisma
+      // lancar e virar 500) e id de analise de outra conta (oraculo de
+      // existencia). Devolver [] encerra; devolver a primeira pagina duplicaria
+      // linhas na tela, porque o front concatena.
+      prisma.analysis.findFirst.mockResolvedValue(null);
+
+      const out = await service.listAnalyses('usr_1', 40, 'an_de_outro');
+
+      expect(out).toEqual([]);
+      expect(prisma.analysis.findMany).not.toHaveBeenCalled();
+    });
+
+    it('ignora cursor vazio ou so com espaco, em vez de mandar lixo ao prisma', async () => {
+      await service.listAnalyses('usr_1', 40, '   ');
+      const args = prisma.analysis.findMany.mock.calls[0][0];
+      expect(args.cursor).toBeUndefined();
+    });
   });
 
   // ── getUsage ────────────────────────────────────────────────────────────────

@@ -267,6 +267,8 @@ export default {
   // ── Trades ────────────────────────────────────────────────────────────────────
   trades: {
     favorite: 'Adicionar à watchlist',
+    loadMore: 'Carregar mais',
+    loadingMore: 'Carregando...',
     unfavorite: 'Remover da watchlist',
     title: 'Meus Trades',
     noTrades: 'Nenhum trade registrado ainda.',
