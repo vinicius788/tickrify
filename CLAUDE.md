@@ -3295,3 +3295,20 @@ Os portoes que FUNCIONAM aqui e que devem ser usados antes de todo commit:
 pre-render, importar as funcoes do `geo-body.mjs` direto no node com um payload
 de acuracia de mentira e conferir o HTML de saida, inclusive o caminho "API
 caiu". Foi assim que esta mudanca foi verificada.
+
+### /pricing: o FAQ existia so depois do JavaScript
+A /pricing ja montava FAQPage com 6 perguntas, mas **via `useJsonLd`**, ou seja,
+so depois do JS. No HTML cru a rota servia **uma unica pergunta** (`faq.q6` da
+landing) e **nenhum FAQPage**. Para crawler de IA, que nao executa JS, o FAQ
+simplesmente nao existia.
+
+Corrigido com `readPricingFaq()`, que le as perguntas do **mesmo** lugar que a
+tela usa (`PRICING_COPY.en.faq`, dentro do `PricingPage.tsx`), pela mesma
+tecnica do `readOffer`. Nao e copia: se ele editar uma resposta la, o HTML cru
+acompanha; se a extracao falhar, o pre-render emite **nada** em vez de emitir
+resposta velha. O schema da rota virou `@graph` com SoftwareApplication +
+FAQPage, mesmo formato e mesmo id ('pricing') que o React publica, entao o
+React substitui em vez de duplicar.
+
+Isto **nao inventa conteudo**: iguala o HTML cru ao que o visitante ja le. Era
+o contrario disso que seria arriscado.

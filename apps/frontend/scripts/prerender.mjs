@@ -39,7 +39,15 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildBody, buildJsonLd, fetchAccuracy, jsonLdTag, loadEnglishCopy, readOffer } from './geo-body.mjs';
+import {
+  buildBody,
+  buildJsonLd,
+  fetchAccuracy,
+  jsonLdTag,
+  loadEnglishCopy,
+  readOffer,
+  readPricingFaq,
+} from './geo-body.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -197,6 +205,9 @@ async function main() {
   const offer = readOffer(ROOT);
   if (!offer) console.warn('[prerender] AVISO: preço não lido do PricingPage; /pricing sai sem Offer no schema.');
 
+  const pricingFaq = readPricingFaq(ROOT);
+  if (!pricingFaq) console.warn('[prerender] AVISO: FAQ não lido do PricingPage; /pricing sai sem FAQ no corpo e no schema.');
+
   const accuracy = await fetchAccuracy();
   if (!accuracy) console.warn('[prerender] AVISO: /api/ai/accuracy não respondeu; páginas saem sem a tabela de números.');
 
@@ -205,8 +216,8 @@ async function main() {
      * precisa de corpo: ele era a única rota servindo zero palavra em HTML
      * cru justamente por ser pulada aqui. */
     if (path === '/') {
-      const homeBody = buildBody({ path, meta, copy, accuracy });
-      const homeLd = jsonLdTag(buildJsonLd({ path, copy, accuracy, offer }));
+      const homeBody = buildBody({ path, meta, copy, accuracy, pricingFaq });
+      const homeLd = jsonLdTag(buildJsonLd({ path, copy, accuracy, offer, pricingFaq }));
       if (homeBody || homeLd) {
         writeFileSync(indexPath, injectJsonLd(injectBody(base, homeBody), homeLd), 'utf8');
         written.push('/ (corpo)');
@@ -227,8 +238,8 @@ async function main() {
     html = replaceCanonical(html, canonical);
     if (meta.noindex) html = applyNoindex(html);
 
-    html = injectBody(html, buildBody({ path, meta, copy, accuracy }));
-    html = injectJsonLd(html, jsonLdTag(buildJsonLd({ path, copy, accuracy, offer })));
+    html = injectBody(html, buildBody({ path, meta, copy, accuracy, pricingFaq }));
+    html = injectJsonLd(html, jsonLdTag(buildJsonLd({ path, copy, accuracy, offer, pricingFaq })));
 
     const outDir = join(DIST, path.replace(/^\//, ''));
     mkdirSync(outDir, { recursive: true });

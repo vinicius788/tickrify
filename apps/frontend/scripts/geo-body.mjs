@@ -263,6 +263,15 @@ function accuracyFaqBlock(data) {
   ].join('\n');
 }
 
+/** O FAQ da /pricing em HTML cru, das mesmas strings que viram FAQPage. */
+function pricingFaqBlock(items) {
+  if (!Array.isArray(items) || !items.length) return '';
+  return [
+    '<h2>Before you pay</h2>',
+    `<dl>${items.map((i) => `<dt>${esc(i.q)}</dt><dd>${esc(i.a)}</dd>`).join('')}</dl>`,
+  ].join('\n');
+}
+
 /** Links internos em HTML cru. Resolve, de passagem, um problema já diagnosticado:
  *  até hoje o único link para /blog/ vinha do Footer em React, ou seja, não
  *  existia para crawler nenhum, e o Search Console registrava "Nenhuma página
@@ -331,7 +340,7 @@ function headingFromTitle(title) {
  * Monta o corpo de uma rota. Devolve '' quando não há conteúdo a servir, e o
  * chamador então publica a rota só com o <head>.
  */
-export function buildBody({ path, meta, copy, accuracy }) {
+export function buildBody({ path, meta, copy, accuracy, pricingFaq }) {
   if (meta.noindex) return '';
 
   const l = copy?.landing ?? null;
@@ -356,7 +365,10 @@ export function buildBody({ path, meta, copy, accuracy }) {
       `<p>${esc(l.pricing.subtitle)}</p>`,
       `<ul>${['fS1', 'fS2', 'fS3', 'fS4'].map((k) => `<li>${esc(l.pricing[k])}</li>`).join('')}<li>${esc(l.pricing.neverExpire)}</li><li>${esc(l.pricing.payPerUse)} ${esc(l.pricing.buyTicks)}</li></ul>`,
       `<h2>${esc(l.faq.q6)}</h2><p>${esc(l.faq.a6)}</p>`,
-      accuracyBlock(accuracy)
+      accuracyBlock(accuracy),
+      /* As MESMAS perguntas que a tela mostra. Sem isto o crawler que não
+       * executa JS via uma pergunta só nesta rota. */
+      pricingFaqBlock(pricingFaq)
     );
   } else if (path === '/try' && l) {
     parts.push(
@@ -412,6 +424,46 @@ export function readOffer(root) {
 }
 
 /**
+ * As perguntas frequentes da /pricing, lidas do MESMO lugar que a tela usa.
+ *
+ * Mesma técnica do `readOffer` logo acima, e pelo mesmo motivo: a copy mora
+ * em `PRICING_COPY` dentro do `PricingPage.tsx`, e um script de build em Node
+ * não importa componente React. Copiar as perguntas para cá criaria duas
+ * versões que divergem na primeira vez que ele editar uma resposta, e o
+ * schema passaria a declarar texto que a página não mostra.
+ *
+ * Falhou a extração, devolve null e o pré-render simplesmente não emite FAQ,
+ * em vez de emitir uma resposta velha.
+ *
+ * Por que isso importa: o React já monta FAQPage nesta rota, mas só DEPOIS do
+ * JavaScript. Para o crawler que não executa JS, a /pricing tinha uma única
+ * pergunta no corpo e nenhum FAQPage. Isto não inventa conteúdo novo, iguala
+ * o HTML cru ao que o visitante lê.
+ */
+export function readPricingFaq(root) {
+  try {
+    const src = readFileSync(join(root, 'src/components/pages/PricingPage.tsx'), 'utf8');
+    const enStart = src.indexOf('en: {');
+    const ptStart = src.indexOf('pt: {', enStart);
+    if (enStart < 0 || ptStart < 0) return null;
+
+    const bloco = src.slice(enStart, ptStart);
+    const faqStart = bloco.indexOf('faq: [');
+    if (faqStart < 0) return null;
+
+    const lista = bloco.slice(faqStart);
+    const pares = [...lista.matchAll(/\{\s*q:\s*'((?:[^'\\]|\\.)*)',\s*a:\s*'((?:[^'\\]|\\.)*)',?\s*\}/g)].map((m) => ({
+      q: m[1].replace(/\\'/g, "'"),
+      a: m[2].replace(/\\'/g, "'"),
+    }));
+
+    return pares.length ? pares : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * JSON-LD no HTML cru.
  *
  * Até hoje o structured data das páginas React só existia DEPOIS do JavaScript
@@ -423,7 +475,7 @@ export function readOffer(root) {
  * A home ganha um FAQPage que ela não tinha em lugar nenhum, montado das
  * MESMAS perguntas que o corpo pré-renderizado mostra logo abaixo.
  */
-export function buildJsonLd({ path, copy, accuracy, offer }) {
+export function buildJsonLd({ path, copy, accuracy, offer, pricingFaq }) {
   const l = copy?.landing ?? null;
   let data = null;
 
@@ -441,8 +493,7 @@ export function buildJsonLd({ path, copy, accuracy, offer }) {
   }
 
   if (path === '/pricing' && offer) {
-    data = {
-      '@context': 'https://schema.org',
+    const app = {
       '@type': 'SoftwareApplication',
       name: 'Tickrify',
       applicationCategory: 'FinanceApplication',
@@ -458,6 +509,24 @@ export function buildJsonLd({ path, copy, accuracy, offer }) {
         availability: 'https://schema.org/InStock',
       },
     };
+
+    /* Mesmo formato que o React publica nesta rota: @graph com o app e o
+     * FAQPage, id 'pricing'. O FAQ só entra se foi possível ler do
+     * PricingPage.tsx; não lido, sai só o app. */
+    const perguntas = Array.isArray(pricingFaq) && pricingFaq.length
+      ? [
+          {
+            '@type': 'FAQPage',
+            mainEntity: pricingFaq.map((i) => ({
+              '@type': 'Question',
+              name: i.q,
+              acceptedAnswer: { '@type': 'Answer', text: i.a },
+            })),
+          },
+        ]
+      : [];
+
+    data = { '@context': 'https://schema.org', '@graph': [app, ...perguntas] };
     return { id: 'pricing', data };
   }
 
