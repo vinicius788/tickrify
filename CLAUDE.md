@@ -3133,3 +3133,52 @@ controller) e que nao ha nenhum outro erro. O dono resolve com
 
 Verificacao: frontend `tsc -b` 0 erros, `eslint` sem erro novo, backend
 **jest 190/190**.
+
+## 15/09 — ⚠️ CORRECAO: os dois checkouts perdidos foram FUNDOS INSUFICIENTES
+
+Abri os dois pagamentos cancelados no Stripe. **Os dois tem exatamente a mesma
+causa**, lida na ficha, nao inferida:
+
+| cliente | valor | erro | rejeicao da rede | risco |
+|---|---|---|---|---|
+| benniequltured@gmail.com | US$ 18,85 | `card_declined` | **51 (fundos insuficientes)** | Normal |
+| leaf-caretaker.h@i.softbank.jp | US$ 29,00 | `card_declined` | **51 (fundos insuficientes)** | Normal |
+
+### O que isso DERRUBA (analise minha que estava errada)
+Eu tinha lido "Cancelado" como abandono de checkout e concluido que havia
+**problema de UX ou friccao na tela de pagamento**, com perda de ~50% do funil.
+**Falso.** Nao houve abandono, nao houve bug de checkout, nao houve fraude
+(risco Normal nos dois). O cartao das duas pessoas nao tinha saldo.
+
+O `benniequltured` tentou **DUAS vezes em um minuto** (01:18 e 01:19), mesmo
+cartao. Isso e o oposto de desistencia: e alguem que queria pagar e nao
+conseguiu.
+
+### O que isso MANTEM, com ressalva
+A correcao do cupom na /pricing continua certa e necessaria, mas o japones
+**nao foi perdido pelo preco cheio em si**: ele foi recusado por saldo. O que
+se pode dizer com honestidade e que US$ 29,00 exige 54% mais saldo disponivel
+que US$ 18,85, e numa recusa por fundos insuficientes o valor entra na conta.
+Contribuiu, provavelmente; causou, nao da para afirmar.
+
+### 🔴 O achado ESTRATEGICO, que e maior que o bug
+**2 de 5 tentativas de assinatura (40%) foram recusadas por falta de saldo.**
+O normal em SaaS e 5 a 15% de `card_declined`, e boa parte por outros motivos.
+
+Isso nao e problema de produto nem de funil: e **capacidade de pagamento do
+publico que o produto esta atraindo**. E conversa direto com a decisao de
+mirar Filipinas, Malasia e Africa do Sul no Google Ads (geos escolhidas por
+serem baratas): para um produto de US$ 29/mes, clique barato e cliente que nao
+consegue pagar sao o mesmo fenomeno visto de dois lados.
+
+Tres saidas possiveis, nenhuma testada ainda:
+1. **Recuperacao de receita no Stripe** (a propria ficha sugere: "Otimize a
+   recuperacao de receitas"). Retentativa automatica em dia diferente pega
+   parte das recusas por saldo. E o de menor esforco e deveria ser o primeiro.
+2. **Preco regional / PPP.** Aumenta a base pagante nessas geos e reduz ARPU.
+3. **Mirar conteudo e anuncio em geo de maior poder aquisitivo.** Menos
+   trafego pelo mesmo dinheiro, mais conversao efetiva.
+
+**A pergunta que decide entre elas so tem resposta com o dado de origem** que
+passou a ser coletado hoje: se o publico de US/UK/EU converte em taxa normal e
+so as geos baratas recusam, a resposta e (3). Se recusa em todo lugar, e (2).
