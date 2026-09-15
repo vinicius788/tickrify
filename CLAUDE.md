@@ -3182,3 +3182,49 @@ Tres saidas possiveis, nenhuma testada ainda:
 **A pergunta que decide entre elas so tem resposta com o dado de origem** que
 passou a ser coletado hoje: se o publico de US/UK/EU converte em taxa normal e
 so as geos baratas recusam, a resposta e (3). Se recusa em todo lugar, e (2).
+
+## 15/09 — Stripe: cobranca e comunicacao de falha de pagamento
+
+### O que ESTAVA errado (lido no painel, nao suposto)
+**Todos os e-mails de cliente do Stripe estavam DESLIGADOS**, inclusive
+"enviar e-mails quando ocorrer falha nos pagamentos com cartao". Somado ao
+`RESEND_API_KEY` que nao existe no Render, o resultado e que **as duas pessoas
+recusadas por saldo nunca receberam contato nenhum**, de nenhum dos dois lados.
+O `benniequltured` tentou duas vezes em um minuto, falhou, e o silencio foi
+total.
+
+### ✅ Ligado em 15/09
+"Enviar e-mails quando ocorrer falha nos pagamentos com cartao". Confirmado
+apos recarregar a pagina. Os outros toggles seguem desligados de proposito
+(nao foram autorizados e nao resolvem nada hoje).
+
+Isso **nao recupera os dois casos passados** (falha na PRIMEIRA cobranca do
+Checkout nao gera fatura de assinatura), mas cobre toda renovacao daqui pra
+frente. A primeira renovacao dos tres assinantes cai em outubro; sem este
+e-mail, uma recusa por saldo derrubaria um terco da base em silencio.
+
+### ⚠️ CORRECAO de uma recomendacao minha
+Eu sugeri "ativar a recuperacao de receita". **Ela JA ESTAVA ativa**: Smart
+Retries, ate 8 tentativas em 2 semanas. E, mais importante, **ela nao cobre os
+dois casos**: Smart Retries age em renovacao que falha, e o que falhou ali foi
+a primeira cobranca dentro do Checkout, onde nao existe assinatura para
+retentar. Ativar aquilo teria dado sensacao de problema resolvido sem resolver
+nada.
+
+### 🚧 DECISAO PENDENTE DO DONO: para onde o e-mail de falha aponta
+Ao ligar o e-mail, aparece "Atualizacoes de formas de pagamento". Hoje esta em
+**"Use uma combinacao de ambos (herdado)"**, e os quatro links apontam para
+`https://tickrify.com`, a home. Ou seja: o cliente recebe "seu pagamento
+falhou", clica e cai na landing, nao numa tela onde atualize o cartao. Funciona
+de forma indireta (ele loga e usa "Manage subscription"), mas perde gente no
+caminho.
+
+A alternativa e **"Link para uma pagina hospedada da Stripe"**, que leva direto
+ao portal de atualizacao de cartao.
+
+**NAO FOI FEITO, e o motivo importa:** o Stripe avisa que a mudanca
+**"sera aplicada a todas as comunicacoes com o cliente e NAO PODE SER ANULADA"**.
+Confirmado na pratica: depois de selecionar a opcao nova, o radio "herdado"
+fica inacessivel. Eu havia dito ao dono que era reversivel, o que estava
+errado, entao cancelei e deixei a conta exatamente como estava. Sair do
+"herdado" e uma escolha de mao unica e e dele.
