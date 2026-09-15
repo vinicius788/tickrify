@@ -257,6 +257,13 @@ export interface StrategyProfileDto {
   minRiskReward: number;
 }
 
+/** Recorte do que o painel consome de `GET /api/auth/me`. */
+export interface UserProfile {
+  id?: string;
+  email?: string | null;
+  acquisitionSource?: string | null;
+}
+
 class APIClient {
   private static readonly REQUEST_TIMEOUT_MS = 15000;
   private static readonly ANALYZE_TIMEOUT_MS = 150_000;
@@ -539,8 +546,8 @@ class APIClient {
   async syncUserProfile(
     token: string | null,
     getFreshToken?: FreshTokenGetter,
-  ): Promise<void> {
-    await this.request(
+  ): Promise<UserProfile | null> {
+    const response = await this.request(
       '/api/auth/me',
       {
         method: 'GET',
@@ -549,6 +556,39 @@ class APIClient {
         },
       },
       'Failed to sync user profile',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
+    );
+    /* Passou a devolver o perfil para o painel saber se a pergunta de origem
+     * ja foi respondida. Quem ignora o retorno (o useEffect do DashboardPage)
+     * continua funcionando igual. */
+    return (await response.json().catch(() => null)) as UserProfile | null;
+  }
+
+  /**
+   * Origem declarada pela propria pessoa.
+   *
+   * Existe porque a atribuicao tecnica nao respondeu de onde vieram os tres
+   * primeiros assinantes: o PostHog so ve quem aceita cookies, o
+   * `$initial_utm_source` do projeto vem vazio, e UTM morre no primeiro
+   * retorno direto. Uma pergunta de um clique nao tem nenhum desses furos.
+   */
+  async setAcquisitionSource(
+    payload: { source: string; detail?: string },
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<void> {
+    await this.request(
+      '/api/auth/acquisition-source',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...this.getAuthHeader(token),
+        },
+        body: JSON.stringify(payload),
+      },
+      'Failed to save acquisition source',
       APIClient.REQUEST_TIMEOUT_MS,
       getFreshToken,
     );
@@ -752,6 +792,11 @@ export function useAPIClient() {
     return apiClient.syncUserProfile(token, getFreshToken);
   }, [getFreshToken]);
 
+  const setAcquisitionSource = useCallback(async (payload: { source: string; detail?: string }) => {
+    const token = await getFreshToken();
+    return apiClient.setAcquisitionSource(payload, token, getFreshToken);
+  }, [getFreshToken]);
+
   const setOutcome = useCallback(async (
     analysisId: string,
     payload: { outcome: string | null; pnlPercent?: number | null; pnlAmount?: number | null },
@@ -799,11 +844,12 @@ export function useAPIClient() {
     listAnalyses,
     getAnalysisUsage,
     syncUserProfile,
+    setAcquisitionSource,
     setOutcome,
     setFavorite,
     getPerformance,
     getStrategy,
     saveStrategy,
     waitForAnalysisCompletion,
-  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, syncUserProfile, setOutcome, setFavorite, getPerformance, getStrategy, saveStrategy, waitForAnalysisCompletion]);
+  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setOutcome, setFavorite, getPerformance, getStrategy, saveStrategy, waitForAnalysisCompletion]);
 }

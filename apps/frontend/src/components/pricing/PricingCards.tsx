@@ -220,8 +220,20 @@ export function PricingCards() {
           return;
         }
 
-        track('checkout_started', { plan: planType, billingCycle, currency });
-        const { url } = await createCheckoutSession(planType, token, billingCycle, currency);
+        /* EARLY35 pre-aplicado, igual ao paywall do painel.
+         *
+         * ⚠️ ISTO CUSTOU UMA VENDA, e o Stripe tem o recibo: em 12/09/2026 um
+         * cliente japones foi cobrado US$ 29,00 e nao concluiu, enquanto os
+         * tres assinantes que converteram pelo PAYWALL pagaram US$ 18,85
+         * (29 x 0,65). A diferenca nao era moeda nem pais: o paywall mandava
+         * o cupom e esta pagina nao, entao quem vinha por aqui tinha que
+         * DIGITAR "EARLY35" no checkout da Stripe para receber o desconto que
+         * a propria pagina anuncia. Quem nao digitava pagava 54% a mais.
+         *
+         * A copy da /pricing foi ajustada junto: ela nao pede mais o codigo,
+         * porque agora nao ha codigo para pedir. */
+        track('checkout_started', { plan: planType, billingCycle, currency, coupon: 'EARLY35' });
+        const { url } = await createCheckoutSession(planType, token, billingCycle, currency, 'EARLY35');
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
         window.location.href = url;
       } catch (error) {

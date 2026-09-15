@@ -29,6 +29,15 @@ model User {
   // por sanitizeStrategyProfile — nada que o usuario digitou chega ao prompt.
   strategyProfile Json?
 
+  // Como a pessoa descobriu o produto, perguntado no primeiro acesso ao painel.
+  // Existe porque a atribuicao por UTM/cookie nao respondeu: o PostHog so ve
+  // quem aceita cookies, $initial_utm_source vem vazio, e em 09/2026 os tres
+  // primeiros assinantes chegaram sem que desse para dizer de onde. Esta
+  // coluna e a unica fonte de primeiro toque que nao depende de cookie.
+  acquisitionSource   String?
+  acquisitionDetail   String?
+  acquisitionAnsweredAt DateTime?
+
   subscriptions Subscription[]
   analyses      Analysis[]
   analysisUsage AnalysisUsage[]

@@ -7,6 +7,7 @@ import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import NewAnalysis from "../dashboard/NewAnalysis";
 import EmptyState from '@/components/dashboard/EmptyState';
+import AcquisitionSurvey from '@/components/dashboard/AcquisitionSurvey';
 import {
   VERDICT_MAX_ROWS,
   VERDICT_MIN_AGE_MS,
@@ -221,6 +222,7 @@ const DashboardPage = () => {
       avgRr: rrCount > 0 ? Math.round((rrSum / rrCount) * 100) / 100 : null,
     };
   }, [rawAnalyses, verdicts]);
+  const [showAcquisitionSurvey, setShowAcquisitionSurvey] = useState(false);
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
@@ -330,7 +332,15 @@ const DashboardPage = () => {
   // proposito — o e-mail nunca pode atrapalhar o carregamento do painel.
   useEffect(() => {
     if (isDemo) return;
-    void apiClient.syncUserProfile().catch(() => undefined);
+    /* O sync ja existia (e o unico gatilho do backfill de e-mail). Agora ele
+     * tambem diz se a pergunta de origem ja foi respondida, sem custar uma
+     * requisicao a mais. */
+    void apiClient
+      .syncUserProfile()
+      .then((perfil) => {
+        if (perfil && !perfil.acquisitionSource) setShowAcquisitionSurvey(true);
+      })
+      .catch(() => undefined);
   }, [isDemo, apiClient]);
 
   useEffect(() => {
@@ -635,6 +645,22 @@ const DashboardPage = () => {
     ];
     return (
       <div className="flex flex-col gap-4">
+        {/* De onde a pessoa veio, perguntado a ela. A atribuicao tecnica
+            (PostHog + UTM) nao respondeu isso para os tres primeiros
+            assinantes; ver o cabecalho do AcquisitionSurvey. */}
+        {!isDemo && showAcquisitionSurvey && (
+          <AcquisitionSurvey
+            onAnswer={async (payload) => {
+              try {
+                await apiClient.setAcquisitionSource(payload);
+              } catch {
+                /* engolido de proposito: medicao nunca quebra o painel */
+              }
+            }}
+            onDismiss={() => setShowAcquisitionSurvey(false)}
+          />
+        )}
+
         {/* Onda 2.3 — o motivo de voltar amanhã. Só aparece com trades que o
             próprio usuário marcou como "vou operar" e que já passaram de 12h.
             Nunca cobra análise WAIT: não houve trade pra fechar. */}

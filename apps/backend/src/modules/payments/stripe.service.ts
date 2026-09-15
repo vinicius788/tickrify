@@ -161,7 +161,7 @@ export class StripeService {
 
       // Criar checkout session
       const stripe = this.getStripeClient();
-      const session = await stripe.checkout.sessions.create({
+      const baseParams: Stripe.Checkout.SessionCreateParams = {
         customer: customerId,
         mode: 'subscription',
         // NÃO fixar payment_method_types: ao omitir, a Stripe usa os métodos
@@ -178,12 +178,6 @@ export class StripeService {
         success_url: successUrl,
         cancel_url: cancelUrl,
         client_reference_id: user.id,
-        // `discounts` e `allow_promotion_codes` são mutuamente exclusivos na
-        // Stripe. Com cupom whitelisted (paywall → EARLY35 pré-aplicado), o
-        // desconto já chega aplicado; sem cupom, o campo de código fica aberto.
-        ...(couponId
-          ? { discounts: [{ coupon: couponId }] }
-          : { allow_promotion_codes: true }),
         billing_address_collection: 'required',
         // SEM trial: o "grátis" do Tickrify são as 3 análises gratuitas (freemium
         // de uso). Um trial de tempo por cima seria redundante — não dá ticks a
@@ -196,7 +190,46 @@ export class StripeService {
           billingCycle,
           currency,
         },
-      });
+      };
+
+      /**
+       * `discounts` e `allow_promotion_codes` sao MUTUAMENTE EXCLUSIVOS na
+       * Stripe: ou o desconto ja chega aplicado, ou o campo de codigo fica
+       * aberto no checkout.
+       *
+       * ⚠️ O RISCO QUE ESTE FALLBACK COBRE: cupom pre-aplicado que a Stripe
+       * recusa (esgotou os 50 usos, expirou, foi apagado) faz o
+       * `sessions.create` LANCAR, e o usuario nao ve checkout nenhum. Ou seja,
+       * o dia em que o EARLY35 acabar seria tambem o dia em que 100% dos
+       * checkouts parariam de abrir, sem ninguem relacionar as duas coisas.
+       * Com o fallback, o cupom morto apenas deixa de descontar.
+       */
+      const abrirCheckout = (comCupom: boolean) =>
+        stripe.checkout.sessions.create({
+          ...baseParams,
+          ...(comCupom && couponId
+            ? { discounts: [{ coupon: couponId }] }
+            : { allow_promotion_codes: true }),
+        });
+
+      let session: Stripe.Checkout.Session;
+      try {
+        session = await abrirCheckout(Boolean(couponId));
+      } catch (erroCupom) {
+        const recusouOCupom =
+          Boolean(couponId) &&
+          erroCupom instanceof Error &&
+          /coupon|promotion|discount/i.test(erroCupom.message);
+
+        if (!recusouOCupom) throw erroCupom;
+
+        this.logger.warn(
+          `[stripe] Cupom ${couponId} recusado pela Stripe (${erroCupom.message}). ` +
+            `Reabrindo o checkout SEM desconto para nao bloquear a compra. ` +
+            `Conferir se o cupom expirou ou esgotou os usos.`,
+        );
+        session = await abrirCheckout(false);
+      }
 
       this.logger.log(
         `Checkout session created: ${session.id} for user: ${clerkUserId} (${currency}${

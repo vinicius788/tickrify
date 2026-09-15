@@ -3049,3 +3049,87 @@ nunca ve a tag. Isso esta CORRETO do ponto de vista de privacidade, mas tem uma
 consequencia que precisa estar clara: **as conversoes so contam para quem
 aceita cookies**, e o numero do painel sera estruturalmente menor que o real.
 Reavaliar se o painel continuar dizendo "nao instalada" depois de 48h.
+
+## 15/09 — 🔴 O cupom nao era aplicado na /pricing (receita perdida, com recibo)
+
+### O achado
+O Stripe mostra os pagamentos de setembro:
+
+| e-mail | valor | status | data |
+|---|---|---|---|
+| pezhman.arwa@gmail.com | **US$ 18,85** | sucesso | 08/09 06:44 |
+| sandyvaishnav@gmail.com | **US$ 18,85** | sucesso | 08/09 21:02 |
+| buyamwahla@gmail.com | **US$ 18,85** | sucesso | 10/09 18:28 |
+| benniequltured@gmail.com | US$ 18,85 | cancelado | 08/09 01:19 |
+| leaf-caretaker.h@i.softbank.jp | **US$ 29,00** | cancelado | 12/09 02:16 |
+
+`18,85 = 29 x 0,65`, ou seja EARLY35 aplicado. **O japones foi o unico cobrado
+o valor CHEIO, e foi o unico que veio por outro caminho.**
+
+A causa nao era moeda nem pais (a nota antiga "checkout no Japao cobrando US$29"
+apontava para o lugar errado). Existiam DOIS caminhos de compra:
+
+- `DashboardPage.tsx:418` (paywall "Unlock analysis") passava `'EARLY35'` →
+  desconto pre-aplicado → US$ 18,85.
+- `PricingCards.tsx:224` (pagina de precos) **NAO passava cupom** → caia em
+  `allow_promotion_codes: true` → a pessoa tinha que **DIGITAR** "EARLY35" no
+  checkout da Stripe. Quem nao digitava pagava **54% a mais** pelo mesmo plano
+  que a propria pagina anunciava com desconto.
+
+### 🔑 O que isso revela sobre a JORNADA dos tres assinantes
+Os tres pagaram 18,85, o valor do caminho do paywall. Ou seja: **eles nao
+compraram pela pagina de precos. Eles usaram o produto, esgotaram as 3 analises
+gratis e converteram no paywall.** Isso e o dado de jornada mais solido que
+existe hoje sobre eles, e sai de aritmetica, nao de atribuicao.
+
+Consequencia estrategica: o que converte aqui e USO, nao vitrine. O funil que
+importa e `/try` → analise → limite → paywall.
+
+### Correcao
+- `PricingCards` passa `'EARLY35'`, igual ao paywall.
+- Copy da /pricing parou de pedir o codigo (EN e PT): "applied automatically".
+- **Fallback no `stripe.service`**, e ele importa mais que o resto: `discounts`
+  com cupom que a Stripe recusa (esgotou os 50 usos, expirou, foi apagado)
+  **faz o `sessions.create` LANCAR**. Sem o fallback, o dia em que o EARLY35
+  acabasse seria o dia em que 100% dos checkouts parariam de abrir, e ninguem
+  ligaria uma coisa na outra. Agora cupom morto so deixa de descontar.
+
+## 15/09 — pergunta de atribuicao no painel (`AcquisitionSurvey`)
+
+**Por que existe:** os tres primeiros assinantes chegaram e nao deu para dizer
+de onde. Nao por falta de ferramenta, mas porque as tres furam no mesmo ponto:
+o PostHog so inicializa apos aceite de cookies (quem recusa e invisivel do
+primeiro clique ao pagamento); `$initial_utm_source` e
+`$initial_referring_domain` vem VAZIOS neste projeto, entao nao ha primeiro
+toque; e UTM morre no primeiro retorno direto, que sempre acontece com quem
+pesquisa antes de comprar.
+
+Uma pergunta de um clique nao tem nenhum desses furos.
+
+- Colunas `acquisitionSource` / `acquisitionDetail` / `acquisitionAnsweredAt`
+  no `User`. Migracao Prisma **e** `ADD COLUMN IF NOT EXISTS` no
+  `onModuleInit` do `AuthController` (em producao `RUN_MIGRATIONS_ON_START=false`,
+  entao migracao sozinha nao basta).
+- `POST /api/auth/acquisition-source`, atras do `AuthGuard`. **Nao sobrescreve
+  resposta anterior**: a primeira vale, e reenvio nao corrompe o dado.
+- DTO com decorator em TODO campo. O `ValidationPipe` global roda com
+  `forbidNonWhitelisted`, e campo sem decorator faz a requisicao inteira ser
+  rejeitada. Foi assim que o salvar do perfil de estrategia quebrou 100% das
+  vezes em producao com typecheck e jest verdes.
+- `syncUserProfile` passou a DEVOLVER o perfil (antes era `Promise<void>`),
+  entao saber se a pergunta ja foi respondida custa ZERO requisicao a mais.
+- Card no fluxo, nao modal: bloquear o painel trocaria dado de atribuicao por
+  atrito no produto. Dispensar **nao grava nada** — resposta falsa e pior que
+  ausencia, porque entra na contagem.
+
+### ⚠️ `prisma generate` NAO roda no VM do Claude
+`Failed to fetch the engine file ... 403 Forbidden`: o VM nao tem rede para
+baixar o engine. Entao o `tsc --noEmit` do backend acusa **3 erros de
+`acquisitionSource` que sao do Prisma Client desatualizado, nao do codigo**.
+Conferido a mao que os nomes batem nos tres lugares (schema, migracao,
+controller) e que nao ha nenhum outro erro. O dono resolve com
+`npx prisma generate` na maquina dele, e o build do Render ja roda
+`prisma generate` antes do `nest build`.
+
+Verificacao: frontend `tsc -b` 0 erros, `eslint` sem erro novo, backend
+**jest 190/190**.
