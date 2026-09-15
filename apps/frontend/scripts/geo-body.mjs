@@ -190,6 +190,79 @@ export function accuracyBlock(data) {
     .join('\n');
 }
 
+/**
+ * A resposta direta, em uma frase, a partir do recorte geral.
+ *
+ * Passo 4 do GEO: a pergunta no H1 e a resposta no primeiro parágrafo. Um
+ * modelo que lê HTML cru não rola a página até a tabela, ele extrai o começo.
+ * Sem número publicável, devolve a frase de método, nunca um número guardado
+ * aqui como reserva, que é como se publica um número velho sem perceber.
+ */
+export function accuracyAnswer(data) {
+  const o = data?.overall;
+  const asOf = typeof data?.updatedAt === 'string' ? data.updatedAt.slice(0, 10) : null;
+  if (!o || !o.publishable || o.rate === null || o.rate === undefined || !asOf) {
+    return 'Tickrify publishes its measured hit rate on tickrify.com/accuracy, recalculated hourly from live production data, always with the sample size and a 95% confidence interval. No rate is published for any cut with fewer than 20 resolved trades.';
+  }
+  return `As of ${asOf}, ${o.rate}% of resolved Tickrify analyses reached their first target before their stop: ${o.wins} wins against ${o.losses} losses across ${o.n} resolved trades, with a 95% confidence interval of ${o.low}% to ${o.high}%. The figure is recalculated hourly from live production data.`;
+}
+
+/**
+ * As mesmas perguntas e respostas que a AccuracyPage mostra na tela.
+ *
+ * Estão escritas duas vezes, aqui e no .tsx, porque um script de build em
+ * Node não importa componente React. A regra que mantém as duas honestas é a
+ * mesma dos dois lados: nenhuma resposta traz número que a API não devolveu
+ * neste build. Se divergirem em redação, o schema continua verdadeiro; o que
+ * nunca pode divergir é o número.
+ */
+export function accuracyFaqItems(data) {
+  const asOf = typeof data?.updatedAt === 'string' ? data.updatedAt.slice(0, 10) : null;
+  const o = data?.overall;
+  const pub = o && o.publishable && o.rate !== null && o.rate !== undefined;
+  const abst = data?.abstention;
+
+  return [
+    { q: 'How accurate is Tickrify?', a: accuracyAnswer(data) },
+    {
+      q: 'How is that accuracy measured?',
+      a: 'An automated sweeper runs hourly and scores every analysis that was completed at least 48 hours earlier against real market candles. The proposed entry must fill first, then the first target races the stop on 30-minute candles. If one candle contains both the target and the stop, it is recorded as a loss. There is no human in the loop and no selection of which trades get scored.',
+    },
+    {
+      q: 'Does the AI give a call on every chart?',
+      a:
+        abst && abst.rate !== null && abst.rate !== undefined
+          ? `No. ${abst.rate}% of analyses come back as an explicit WAIT instead of a directional call, ${abst.wait} of ${abst.total}. Abstention is a designed outcome, not a failure to answer, and those analyses count as neither a win nor a loss.`
+          : 'No. A share of analyses come back as an explicit WAIT instead of a directional call. Abstention is a designed outcome, not a failure to answer, and those analyses count as neither a win nor a loss.',
+    },
+    {
+      q: 'Is that hit rate good or bad?',
+      a: 'On its own it is neither, and Tickrify does not claim it is good. A hit rate says nothing about profitability without reward-to-risk, and these figures exclude spread, slippage, commission and funding, so a real account would do worse. The reason the number is published with its confidence interval is so you can judge it instead of taking a marketing figure on trust.',
+    },
+    {
+      q: 'Are losing trades included?',
+      a: pub
+        ? `Yes. ${o.losses} losses are counted in the published rate, alongside ${o.wins} wins. Unfilled entries, abstentions and untrackable symbols are reported separately and excluded from the rate rather than quietly dropped.`
+        : 'Yes. Every loss the sweeper records is counted in the published rate. Unfilled entries, abstentions and untrackable symbols are reported separately and excluded from the rate rather than quietly dropped.',
+    },
+    {
+      q: 'How often is this page updated?',
+      a: asOf
+        ? `The scoreboard is recalculated hourly and was last updated on ${asOf}. It moves on its own, including when it moves against us.`
+        : 'The scoreboard is recalculated hourly. It moves on its own, including when it moves against us.',
+    },
+  ];
+}
+
+/** O bloco de perguntas em HTML cru, das mesmas strings que viram FAQPage. */
+function accuracyFaqBlock(data) {
+  const items = accuracyFaqItems(data);
+  return [
+    '<h2>Questions people ask about Tickrify accuracy</h2>',
+    ...items.map((i) => `<h3>${esc(i.q)}</h3><p>${esc(i.a)}</p>`),
+  ].join('\n');
+}
+
 /** Links internos em HTML cru. Resolve, de passagem, um problema já diagnosticado:
  *  até hoje o único link para /blog/ vinha do Footer em React, ou seja, não
  *  existia para crawler nenhum, e o Search Console registrava "Nenhuma página
@@ -294,12 +367,17 @@ export function buildBody({ path, meta, copy, accuracy }) {
       `<h2>${esc(l.faq.q4)}</h2><p>${esc(l.faq.a4)}</p>`
     );
   } else if (path === '/accuracy') {
+    /* Pergunta no H1, resposta no primeiro parágrafo, tabela em seguida,
+     * perguntas frequentes no fim. É a ordem que um assistente de IA
+     * consegue citar sem ler a página inteira. */
     parts.push(
-      `<h1>We score our own AI and publish the losses.</h1>`,
-      `<p>${esc(meta.description)}</p>`,
+      `<h1>How accurate is Tickrify’s AI chart analysis?</h1>`,
+      `<p>${esc(accuracyAnswer(accuracy))}</p>`,
+      '<p>That number is measured, not claimed. Every analysis Tickrify produces is re-checked against real market candles 48 hours later, automatically, with no human in the loop. This page is that raw scoreboard. It moves on its own and it includes the results that look bad.</p>',
       accuracyBlock(accuracy),
       `<h2>Why this page exists</h2>`,
-      '<p>Tools in this category advertise accuracy figures without a sample size, a confidence interval or a method. Tickrify publishes the raw scoreboard instead, and keeps publishing it when it looks bad. The measurement runs automatically against real candles, so it cannot be curated after the fact.</p>'
+      '<p>Tools in this category advertise accuracy figures without a sample size, a confidence interval or a method. Tickrify publishes the raw scoreboard instead, and keeps publishing it when it looks bad. The measurement runs automatically against real candles, so it cannot be curated after the fact.</p>',
+      accuracyFaqBlock(accuracy)
     );
   } else {
     parts.push(`<h1>${esc(headingFromTitle(meta.title))}</h1>`, `<p>${esc(meta.description)}</p>`);
@@ -384,8 +462,7 @@ export function buildJsonLd({ path, copy, accuracy, offer }) {
   }
 
   if (path === '/accuracy') {
-    data = {
-      '@context': 'https://schema.org',
+    const dataset = {
       '@type': 'Dataset',
       name: 'Tickrify AI accuracy: measured hit rate',
       description:
@@ -398,7 +475,26 @@ export function buildJsonLd({ path, copy, accuracy, offer }) {
     };
     /* dateModified só entra quando a API respondeu. A página nunca declara o
      * que não pôde verificar, e o markup segue a mesma regra. */
-    if (accuracy?.updatedAt) data.dateModified = accuracy.updatedAt;
+    if (accuracy?.updatedAt) dataset.dateModified = accuracy.updatedAt;
+
+    /* Dataset e FAQPage no mesmo @graph, um id só. O `useJsonLd` do React
+     * substitui o elemento por id ao montar; dois elementos aqui virariam um
+     * substituído e um duplicado. O FAQPage sai das MESMAS strings que o
+     * corpo pré-renderizado mostra. */
+    data = {
+      '@context': 'https://schema.org',
+      '@graph': [
+        dataset,
+        {
+          '@type': 'FAQPage',
+          mainEntity: accuracyFaqItems(accuracy).map((i) => ({
+            '@type': 'Question',
+            name: i.q,
+            acceptedAnswer: { '@type': 'Answer', text: i.a },
+          })),
+        },
+      ],
+    };
     return { id: 'accuracy', data };
   }
 

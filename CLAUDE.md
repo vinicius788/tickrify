@@ -3228,3 +3228,70 @@ Confirmado na pratica: depois de selecionar a opcao nova, o radio "herdado"
 fica inacessivel. Eu havia dito ao dono que era reversivel, o que estava
 errado, entao cancelei e deixei a conta exatamente como estava. Sair do
 "herdado" e uma escolha de mao unica e e dele.
+
+---
+
+## 15/09/2026 - Metricas dos anuncios e passo 4 do GEO
+
+### Numeros dos dois canais pagos, lidos no painel
+**Google Ads** "Tickrify | Search | Teste120 | SET26" (7 dias): 43 impressoes,
+4 cliques, CTR 9,30%, CPC medio R$ 2,27, gasto R$ 9,10, saldo R$ 30,90,
+**0 conversoes**. 100% dos cliques em celular.
+
+**Meta** "Tickrify | IG | Teste120 | SET26" (30 dias): R$ 31,67 gastos,
+9.843 impressoes, 8.697 de alcance, **205 landing page views a R$ 0,15**,
+termina 18/09, **0 assinantes**. A outra campanha esta OFF, R$ 0,00.
+
+Leitura: ~R$ 41 gastos, ~209 visitas, zero assinante. O Meta entrega clique 15x
+mais barato que o Google e mesmo assim **205 visitas nao produziram um cadastro**.
+Isso e amostra suficiente para dizer que trafego barato de Instagram nao e o
+gargalo. Os 4 cliques do Google ainda nao dizem nada, mas os termos que
+dispararam sao de intencao real ("ai chart scanner", "chart analyzer ai"); o
+problema la e volume de leilao, nao qualidade.
+
+### Tag de conversao do Google: pendente por falta de evento, nao por bug
+O painel mostra "acao de conversao criada, mas a tag ainda nao foi verificada".
+O codigo subiu em 14/09 e esta no ar. O Google so marca como verificada depois
+que a tag **dispara pelo menos uma vez**, e nao houve assinatura desde o deploy.
+Nao mexer nisso ate existir uma compra.
+
+### Passo 4 do GEO: /accuracy reescrita no formato que LLM cita
+Mudou a ORDEM, nao o conteudo nem as tres regras da pagina (nada sem n, nada
+sem intervalo, nada inventado se a API cair):
+
+- **H1 virou pergunta**: "How accurate is Tickrify's AI chart analysis?"
+- **Resposta direta no primeiro paragrafo**, com numero, data, n e intervalo,
+  montada de `data.overall`. Sem API, o paragrafo vira a frase de metodo. **Nao
+  existe numero de reserva escrito a mao em lugar nenhum**, que e como se
+  publica numero velho sem perceber.
+- **Tabela "at a glance"** logo abaixo dos KPIs (taxa, wins/losses, abstencao,
+  janela, custos, data), e **tabela comparativa** "How should you read an AI
+  accuracy claim?" com seis criterios.
+- **Bloco de FAQ** com 6 perguntas, e **FAQPage no schema** junto do Dataset,
+  num unico `@graph` com o id `accuracy`.
+
+O `@graph` com um id so e deliberado: o `useJsonLd` substitui o elemento **por
+id**, entao dois blocos separados virariam um substituido e um duplicado.
+
+O mesmo tratamento foi aplicado ao HTML cru em `scripts/geo-body.mjs`
+(`accuracyAnswer`, `accuracyFaqItems`, `accuracyFaqBlock`). As perguntas estao
+escritas **duas vezes**, no .tsx e no .mjs, porque um script de build em Node
+nao importa componente React. A regra dos dois lados e a mesma: nenhuma
+resposta traz numero que a API nao devolveu naquele build.
+
+Escopo, porque ha usuario pagante dentro da plataforma: mexeu **so em pagina
+publica** (`AccuracyPage.tsx`, `seo-routes.json`, `geo-body.mjs`). Nada de
+painel, motor de analise, auth ou pagamento. Nenhum CSS novo, so classes
+`site-*` que ja existiam.
+
+### ⚠️ Limite desta VM: nao da para rodar `vite build` aqui
+`node_modules` foi instalado no Mac; o binario nativo do **rollup** (e o do
+esbuild, ja visto em 14/09) nao existe para o Linux da VM, entao `vite build` e
+`vitest` quebram com MODULE_NOT_FOUND em `rollup/dist/native.js`. Alem disso a
+pasta montada **nao permite unlink**, entao o build nem consegue limpar `dist/`.
+
+Os portoes que FUNCIONAM aqui e que devem ser usados antes de todo commit:
+`./node_modules/.bin/tsc -b` e `./node_modules/.bin/eslint <arquivos>`. Para o
+pre-render, importar as funcoes do `geo-body.mjs` direto no node com um payload
+de acuracia de mentira e conferir o HTML de saida, inclusive o caminho "API
+caiu". Foi assim que esta mudanca foi verificada.
