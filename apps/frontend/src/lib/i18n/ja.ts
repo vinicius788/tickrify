@@ -76,7 +76,7 @@ export default {
     deepReading: '読み取り',
     deepVolatility: 'ボラティリティ',
     deepScenarios: 'シナリオ',
-    deepMtf: 'マルチタイムフレーム',
+    deepMtf: 'タイムフレームの整合性',
     deepPhase: '市場フェーズ（ワイコフ）',
     deepVolume: '出来高／バリューエリア',
     deepReversalRisk: '反転リスク',

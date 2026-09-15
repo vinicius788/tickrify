@@ -2959,10 +2959,24 @@ rotulo para duas coisas diferentes.
 entao o produto ja diz ao usuario que faltou HTF. O buraco e so o rotulo do
 RESULTADO.
 
-**Correcao proposta (NAO feita, decisao de produto + mexe em 6 idiomas):**
-rotular a secao conforme a origem — "Multi-timeframe" quando ha HTF enviado,
-algo como "Timeframe context (inferred)" quando e um grafico so. Exige passar a
-contagem de imagens ate o `AnalysisResult`.
+**RESOLVIDO no mesmo dia, por um caminho mais barato que o proposto.**
+
+A proposta original era rotular conforme a origem ("Multi-timeframe" com HTF,
+"inferred" sem), passando a contagem de imagens ate o `AnalysisResult`. **Nao
+da**, e o motivo importa: `MULTI-TIMEFRAME` e um rotulo que o **MODELO escreve**
+dentro do texto do resumo do deep, e o front so o TRADUZ
+(`CANONICAL_DEEP_LABELS` em `AnalysisResult.tsx:174`). O front nao tem a
+contagem de imagens, e obte-la exigiria coluna nova no banco ou mudanca no
+prompt — e mexer no prompt esbarra na regra do repo ("motor so muda com
+medicao").
+
+A saida foi um rotulo **preciso nos dois casos**. A secao responde sempre a
+mesma pergunta ("os timeframes concordam?"), com HTF lido OU inferido, entao
+`deepMtf` virou **"Timeframe alignment"** (e equivalente nos 6 idiomas). Diz o
+que a secao entrega sem prometer que varios graficos foram analisados.
+
+Uma chave de i18n, zero risco, zero toque no motor. A analise de custo mudou
+quando ficou claro que o rotulo vinha do modelo e nao do front.
 
 ### Verificacao
 `tsc -b --force` do frontend: 0 erros. Varredura de travessao nos 6 arquivos de

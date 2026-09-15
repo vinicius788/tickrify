@@ -76,7 +76,7 @@ export default {
     deepReading: 'Marktlektüre',
     deepVolatility: 'Volatilität',
     deepScenarios: 'Szenarien',
-    deepMtf: 'Multi-Timeframe',
+    deepMtf: 'Timeframe-Abgleich',
     deepPhase: 'Marktphase (Wyckoff)',
     deepVolume: 'Volumen / Value Area',
     deepReversalRisk: 'Umkehrrisiko',
