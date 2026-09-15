@@ -3312,3 +3312,62 @@ React substitui em vez de duplicar.
 
 Isto **nao inventa conteudo**: iguala o HTML cru ao que o visitante ja le. Era
 o contrario disso que seria arriscado.
+
+---
+
+## 15/09/2026 - GA4 ligado e uma correcao sobre o Resend
+
+### ⚠️ CORRECAO: o Resend JA ESTA FUNCIONANDO
+Eu vinha repetindo que "nenhum e-mail saiu desde julho porque falta
+RESEND_API_KEY no Render". **Errado, e verificado no painel do Resend:**
+
+- Dominio `tickrify.com`: **Verified** (ha 3 meses).
+- Chave de API "tickrify": criada ha 1 dia, **usada pela ultima vez ha 1 hora**.
+- **5 e-mails "Your 3 free analyses are ready" entregues nas ultimas 11 horas**,
+  todos com status Delivered.
+- Remetente: `Tickrify <noreply@tickrify.com>`, ou seja, `MAIL_FROM` tambem
+  esta configurado no dominio proprio, nao no `onboarding@resend.dev` do
+  fallback.
+
+Ou seja: `RESEND_API_KEY` e `MAIL_FROM` existem no Render e o fluxo de
+boas-vindas esta vivo. A licao: **conferir o painel do servico antes de
+repetir uma pendencia herdada**; esta ficou meia sessao no ar como "parada
+esperando o dono" quando ja estava resolvida.
+
+De quebra, o dado que aparece nesses envios: **5 cadastros novos em ~11 horas**.
+
+### GA4: a propriedade existia, o fluxo de dados NAO
+`VITE_GA_TRACKING_ID` nao estava na Vercel, mas o motivo de fundo era outro: a
+propriedade `tickrify-15e36` (a361552826 / p496881305) **nao tinha nenhum fluxo
+de dados**, entao nao existia Measurement ID nenhum para colocar na variavel.
+
+Feito:
+1. Criado o fluxo Web "Tickrify Web" (id 15784212373) para `https://tickrify.com`.
+2. **Measurement ID: `G-SME6X097T6`**.
+3. `VITE_GA_TRACKING_ID=G-SME6X097T6` na Vercel, tipo **Config** (nao Secret:
+   measurement ID viaja no bundle publico), ambiente **Production** apenas,
+   para nao sujar o GA com trafego de preview.
+4. Redeploy **sem build cache**.
+
+Verificado no ar: `gtag/js?id=G-SME6X097T6` carrega, e o dataLayer traz
+`config G-SME6X097T6`, `config AW-18439434622` e o `page_view` com
+`send_to: [G-..., AW-...]`. E exatamente o que o `GOOGLE_TARGETS` do
+`analytics.ts` foi escrito para fazer: **uma unica gtag.js servindo GA4 e Ads**.
+
+### 🚧 O que NAO foi feito de proposito
+O GA ofereceu "Usar a tag do Google do seu site", que ligaria o fluxo novo a
+tag AW ja instalada **sem mexer em codigo**. Recusado: o aviso em vermelho diz
+que "as definicoes de 'tickrify' vao substituir as atuais", ou seja, mexeria na
+tag do Google Ads que esta funcionando e cujas conversoes acabaram de ser
+ligadas. Trocar risco em sistema que funciona por conveniencia nao vale.
+Escolhido "Instalar manualmente" e a via da env var.
+
+### Estado real da medicao (conferido no ar, nao presumido)
+- **PostHog: funcionando** (eventos saindo para us.i.posthog.com). Eu quase
+  reportei que estava quebrado porque `window.posthog` e `undefined`; ele e
+  importado como modulo npm, nao expoe global. **Testar pelo trafego de rede
+  ou pela chave `ph_*` no localStorage, nunca pelo global.**
+- **Meta Pixel: funcionando** (`fbevents.js` carregado).
+- **Google Ads (AW): funcionando** desde 14/09.
+- **GA4: ligado hoje**, propriedade nova, pode levar alguns minutos ate o
+  Tempo real do painel mostrar o primeiro dado.
