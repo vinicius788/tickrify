@@ -37,6 +37,7 @@ describe('AiService access enforcement', () => {
   let prisma: any;
   let ticksService: any;
   let promptBuilder: any;
+  let mailService: any;
 
   beforeEach(() => {
     process.env.NODE_ENV = 'test';
@@ -52,7 +53,17 @@ describe('AiService access enforcement', () => {
     prisma = {
       user: {
         // Sem stripeCustomerId → hasPaidAccess() retorna false (usuário free) por padrão.
-        findUnique: jest.fn().mockResolvedValue({ id: 'usr_1' }),
+        // Com e-mail para que o caminho do e-mail de recuperação chegue até o fim
+        // sem precisar consultar a API do Clerk.
+        findUnique: jest.fn().mockResolvedValue({ id: 'usr_1', email: 'trader@example.com' }),
+        update: jest.fn().mockResolvedValue({ id: 'usr_1' }),
+      },
+      // O e-mail de recuperação faz dedup permanente aqui. Sem este mock o
+      // caminho inteiro morre silenciosamente no try/catch e o teste passaria
+      // sem testar nada.
+      adminAudit: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'aud_1' }),
       },
       analysisUsage: {
         findUnique: jest.fn().mockResolvedValue(null),
@@ -119,7 +130,7 @@ describe('AiService access enforcement', () => {
       syncActiveSubscriptionFromStripe: jest.fn().mockResolvedValue(false),
     };
 
-    const mailService = {
+    mailService = {
       sendRecovery: jest.fn().mockResolvedValue(undefined),
       sendWelcome: jest.fn().mockResolvedValue(undefined),
     };
@@ -352,6 +363,59 @@ describe('AiService access enforcement', () => {
     expect(usage.tickBalance).toBe(10);
     expect(usage.canAnalyze).toBe(true);
   });
+
+  /**
+   * Regressão de 15/09/2026. O e-mail de recuperação existia e estava ligado,
+   * mas SÓ no ForbiddenException da quarta tentativa. Quem usava as 3 análises
+   * e fechava a aba nunca tentava a quarta, então nunca recebia nada, e o
+   * painel do Resend confirmava: zero e-mails de recuperação enviados.
+   */
+  describe('e-mail de recuperação quando a cota grátis esgota', () => {
+    it('envia quando a ÚLTIMA análise grátis é concluída, sem precisar de uma 4ª tentativa', async () => {
+      prisma.analysis.count.mockResolvedValue(3);
+
+      await (service as any).notifyIfFreeQuotaExhausted('usr_1', true);
+
+      expect(mailService.sendRecovery).toHaveBeenCalledTimes(1);
+      expect(mailService.sendRecovery).toHaveBeenCalledWith('trader@example.com');
+    });
+
+    it('não envia enquanto ainda sobra cota', async () => {
+      prisma.analysis.count.mockResolvedValue(2);
+
+      await (service as any).notifyIfFreeQuotaExhausted('usr_1', true);
+
+      expect(mailService.sendRecovery).not.toHaveBeenCalled();
+    });
+
+    it('não envia para análise de assinante (isDemo=false)', async () => {
+      prisma.analysis.count.mockResolvedValue(3);
+
+      await (service as any).notifyIfFreeQuotaExhausted('usr_1', false);
+
+      expect(mailService.sendRecovery).not.toHaveBeenCalled();
+      expect(prisma.analysis.count).not.toHaveBeenCalled();
+    });
+
+    it('não envia para quem já assinou, mesmo com a cota grátis esgotada', async () => {
+      prisma.analysis.count.mockResolvedValue(3);
+      prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', priceId: 'price_1' });
+
+      await (service as any).notifyIfFreeQuotaExhausted('usr_1', true);
+
+      expect(mailService.sendRecovery).not.toHaveBeenCalled();
+    });
+
+    it('não envia duas vezes: a dedup por AdminAudit vale para os dois gatilhos', async () => {
+      prisma.analysis.count.mockResolvedValue(3);
+      prisma.adminAudit.findFirst.mockResolvedValue({ id: 'aud_ja_enviado' });
+
+      await (service as any).notifyIfFreeQuotaExhausted('usr_1', true);
+
+      expect(mailService.sendRecovery).not.toHaveBeenCalled();
+      expect(prisma.adminAudit.create).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('AiService pipeline hooks', () => {
@@ -540,4 +604,5 @@ describe('AIAnalysisError static helpers', () => {
       'Analysis failed. Please try again.',
     );
   });
+
 });

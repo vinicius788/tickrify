@@ -3386,3 +3386,57 @@ Escolhido "Instalar manualmente" e a via da env var.
   **Se em 24h o Tempo real continuar zerado**, investigar nesta ordem: filtros
   de dados da propriedade (trafego interno), se o fluxo 15784212373 e mesmo o
   dono do `G-SME6X097T6`, e o DebugView com `?_dbg=1`.
+
+---
+
+## 15/09/2026 - O e-mail de recuperacao existia mas nao podia disparar
+
+### O buraco
+`sendRecovery` ("Your analyses ran out") estava implementado, ligado e com
+dedup permanente por AdminAudit. Mas o **unico gatilho** era o
+`ForbiddenException` do `enforceAccessAndCreate`, ou seja, o e-mail so saia se a
+pessoa **voltasse e tentasse a QUARTA analise**.
+
+Quem usa as 3 analises e fecha a aba nunca tenta a quarta. Nunca recebia nada.
+
+O painel do Resend confirma: nos ultimos 15 dias, **5 e-mails de boas-vindas
+entregues e ZERO e-mails de recuperacao**. O caminho existia e nunca foi
+percorrido.
+
+Isso importa porque os 3 assinantes pagaram pelo caminho do **paywall**, usando
+o produto ate o limite. O momento em que a cota acaba e o unico momento provado
+de conversao deste produto, e era exatamente o momento em que nao saia nada.
+
+### O que foi feito
+Novo `notifyIfFreeQuotaExhausted(userId, isDemo)` no `AiService`, chamado nos
+**dois** pontos onde uma analise fica `completed` (o caminho SSE e o caminho da
+fila). Quando a contagem de demos nao falhadas atinge o limite, dispara o mesmo
+`triggerRecoveryEmail`.
+
+Decisoes que importam:
+- **Dispara na CONCLUSAO, nao na criacao da linha.** A contagem ignora
+  `failed`, entao uma analise que falha devolve a vaga. Disparar na criacao
+  mandaria "suas analises acabaram" para quem ainda tem uma.
+- **Dedup compartilhada.** Os dois gatilhos passam pelo mesmo
+  `triggerRecoveryEmail`, que so envia se nao houver AdminAudit
+  `recovery_email_sent` para aquele usuario. Nao existe caminho para dois
+  e-mails.
+- **Guarda de assinante nova, dentro do `triggerRecoveryEmail`:** se
+  `hasPaidAccess(userId)` for true, nao envia. O gatilho e fire-and-forget e a
+  pessoa pode assinar entre o disparo e o envio; sem isso, um assinante novo
+  receberia um e-mail pedindo que ele assine.
+- **Fire-and-forget nos dois pontos de chamada**, depois do resultado ja ter
+  sido entregue. E-mail nunca segura resposta de analise.
+
+### ⚠️ Esta mudanca NAO manda e-mail para a base existente
+So dispara quando uma **terceira analise nova e concluida agora**. Quem ja
+esgotou a cota no passado nao consegue concluir outra analise (fica bloqueado),
+entao nao ha disparo retroativo. Assinante tem `isDemo=false` e nem entra no
+caminho.
+
+### Testes
+5 testes novos em `ai.service.spec.ts` cobrindo: envia ao esgotar, nao envia com
+cota sobrando, nao envia para `isDemo=false`, nao envia para assinante, e nao
+envia duas vezes. **O mock de `adminAudit` precisou ser adicionado**: sem ele o
+caminho inteiro morria no try/catch do `triggerRecoveryEmail` e um teste
+passaria sem testar nada. Backend: `tsc --noEmit` limpo, **195/195** no jest.

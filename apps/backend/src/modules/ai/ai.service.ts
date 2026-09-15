@@ -616,6 +616,10 @@ export class AiService implements OnModuleInit {
 
       sendEvent('progress', { phase: 'structuring', pct: 100 });
       sendEvent('result', await this.serializeAnalysis(updated));
+
+      // Última análise grátis concluída → e-mail de recuperação. Fire-and-forget:
+      // o resultado já foi entregue e isto não pode segurar o stream.
+      void this.notifyIfFreeQuotaExhausted(userId, updated.isDemo);
     } catch (error) {
       const safeMessage = this.safeErrorMessage(error);
       await this.prisma.analysis.update({
@@ -1222,6 +1226,9 @@ export class AiService implements OnModuleInit {
         },
       });
 
+      // Última análise grátis concluída → e-mail de recuperação (ver o método).
+      void this.notifyIfFreeQuotaExhausted(userId, updated.isDemo);
+
       const model = resolveModel(analysisType);
       await runPostHooks(pipelineCtx, aiResponse, [
         cacheResultHook({ ticksService: this.ticksService }),
@@ -1373,6 +1380,12 @@ export class AiService implements OnModuleInit {
       });
       if (already) return;
 
+      /* Quem ja assinou nao recebe "suas analises acabaram". O gatilho e
+       * fire-and-forget e o usuario pode ter assinado entre o disparo e este
+       * ponto; sem esta checagem, um assinante novo recebe um e-mail pedindo
+       * que ele assine. */
+      if (await this.hasPaidAccess(userId)) return;
+
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
         select: { email: true, clerkUserId: true },
@@ -1406,6 +1419,41 @@ export class AiService implements OnModuleInit {
     } catch (err) {
       this.logger.warn(
         `[recovery] Falha best-effort no e-mail de recuperação: ${(err as Error)?.message ?? err}`,
+      );
+    }
+  }
+
+  /**
+   * Cota grátis esgotada: dispara o e-mail de recuperação quando o usuário
+   * TERMINA a última análise grátis, não só quando ele tenta a quarta.
+   *
+   * POR QUE ISTO EXISTE. O único gatilho até 15/09/2026 era o
+   * `ForbiddenException` do `enforceAccessAndCreate`, ou seja, o e-mail só
+   * saía se a pessoa voltasse e TENTASSE analisar de novo depois de esgotar.
+   * Quem usa as 3 análises e fecha a aba nunca tenta uma quarta, e portanto
+   * nunca recebia nada. Isso bate com o painel do Resend: nenhum e-mail de
+   * recuperação enviado, enquanto os de boas-vindas saíam normalmente.
+   *
+   * É chamado depois da análise ficar `completed`, e não na criação da linha,
+   * de propósito: a contagem ignora `failed`, então uma análise que falha
+   * devolve a vaga. Disparar na criação mandaria "suas análises acabaram"
+   * para alguém que ainda tem uma.
+   *
+   * Best-effort absoluto, igual ao `triggerRecoveryEmail`: nunca propaga erro,
+   * nunca atrasa a resposta, e a dedup permanente por AdminAudit garante que
+   * este caminho e o da quarta tentativa não mandem dois e-mails.
+   */
+  private async notifyIfFreeQuotaExhausted(userId: string, isDemo: boolean): Promise<void> {
+    if (!isDemo) return;
+    try {
+      const used = await this.prisma.analysis.count({
+        where: { userId, isDemo: true, status: { not: 'failed' } },
+      });
+      if (used < AiService.DEMO_ANALYSIS_LIMIT) return;
+      await this.triggerRecoveryEmail(userId);
+    } catch (err) {
+      this.logger.warn(
+        `[recovery] Falha ao checar cota grátis esgotada: ${(err as Error)?.message ?? err}`,
       );
     }
   }
