@@ -2767,3 +2767,69 @@ Conserto, e ele preserva trabalho nao commitado de outra sessao na arvore:
 O `--autostash` e a parte que importa: sem ele o git recusa o rebase com
 "cannot pull with rebase: You have unstaged changes". Conflito e improvavel
 porque o commit do workflow toca so `apps/frontend/public/calendar/thisweek.json`.
+
+## 15/09/2026 — o que o bundle de producao revelou (lido, nao suposto)
+
+Verificacao feita no navegador do dono, lendo o JS servido em producao
+(`assets/index-Bydxw76R.js`, 1.513 KB) e o `dataLayer` em runtime.
+
+### ✅ Corpo pre-renderizado CONFIRMADO em producao, rota a rota
+HTML cru, sem executar a SPA:
+
+| rota | palavras | h1 servido | JSON-LD | robots |
+|---|---|---|---|---|
+| `/` | **889** | Stop trading in the dark. | ld-home (FAQPage) | indexavel |
+| `/pricing` | 432 | Pricing: $29/mo for 200 AI Chart Analyses | ld-pricing | indexavel |
+| `/accuracy` | 393 | We score our own AI and publish the losses. | ld-accuracy (Dataset) | indexavel |
+| `/try` | 320 | Free AI Chart Analysis, No Signup Required | - | indexavel |
+| `/terms` | 136 | Terms of Service | - | indexavel |
+| `/sign-in` | **0** | (sem corpo, correto) | - | **noindex,nofollow** |
+
+A tabela da /accuracy saiu com numero real buscado no build:
+**38,8% (IC 30,4 a 47,9), n = 116**, sob o titulo `Measured accuracy, as of
+2026-09-14`. O `$29` do title da /pricing saiu certo (o bug do `$` como
+sintaxe de replacement nao voltou).
+
+### ✅ Tag do Google Ads confirmada no ar
+`dataLayer` de producao traz `config` para **AW-18439434622**. A pendencia
+"conferir se a tag carrega em producao" esta fechada.
+
+### 🔴 ACHADO: o GA4 NAO ESTA MEDINDO NADA
+No mesmo `dataLayer` existe **um unico id configurado, o AW**. Varredura do
+bundle inteiro: **zero ocorrencias de `G-XXXXXXX`**.
+
+O codigo esta correto (`analytics.ts` monta
+`GOOGLE_TARGETS = [GA_ID, ADS_ID].filter(Boolean)` e faz `config` em cada um).
+O que falta e a env var: **`VITE_GA_TRACKING_ID` nao esta setada na Vercel**.
+Como o Vite substitui `import.meta.env.*` por literal no build, uma env var
+ausente simplesmente nao deixa rastro, e o `filter(Boolean)` descarta em
+silencio. Nada quebra, nada loga, e o GA4 fica vazio.
+
+Consequencia pratica hoje e pequena (o funil de verdade e o PostHog), mas
+qualquer conclusao tirada do GA4 e sobre um conjunto vazio. **PENDENTE DO
+DONO:** setar `VITE_GA_TRACKING_ID` na Vercel, ou assumir o PostHog como
+unica fonte e parar de esperar dado no GA4.
+
+**Regra confirmada de novo:** env var ausente no Vite nao e erro, e ausencia
+silenciosa. Vale para `VITE_GA_TRACKING_ID` como valeu para
+`ENABLE_QUICK_GROUNDING` e `RESEND_API_KEY`.
+
+### Sentry: `environment` blindado e ruido filtrado
+O `environment` era `VITE_APP_ENV || MODE || 'development'` e o painel
+mostrava erro de producao como `development`. **Nao deu para ler o literal
+compilado** (o minificador dobrou a expressao), entao em vez de caçar a env
+var o codigo ficou imune: um build de producao nao consegue mais se rotular
+como development, porque a decisao passou a sair de `import.meta.env.PROD`,
+que o Vite resolve no build e nenhuma env var alcanca. Um valor proprio como
+`staging` continua valendo; so a combinacao "build de producao dizendo
+development" e corrigida.
+
+Ruido filtrado no cliente, nao por regra no painel (evento descartado no
+cliente nao gasta cota): as mensagens de `removeChild`/`NotFoundError` do
+**Google Translate** (58 eventos; ele reescreve os nos de texto por fora do
+React, e isso nao tem conserto do nosso lado) e as duas de `ResizeObserver`.
+O **WebView do Instagram** e apenas MARCADO com `tags.webview='instagram'`,
+nao descartado: o trafego de anuncio cai todo la dentro e um erro de conversao
+que so acontece nesse ambiente precisa continuar visivel.
+
+Verificacao: `tsc -b --force` e `eslint` do frontend, limpos.

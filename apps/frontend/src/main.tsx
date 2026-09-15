@@ -86,14 +86,79 @@ const clerkAppearance = {
   },
 };
 const SENTRY_DSN = String(import.meta.env.VITE_SENTRY_DSN || '').trim();
+
+/**
+ * O ambiente reportado ao Sentry.
+ *
+ * A versão anterior era `VITE_APP_ENV || MODE || 'development'`, e o painel
+ * do Sentry mostrava os erros de PRODUÇÃO marcados como `development`. Um
+ * erro de produção com esse rótulo é o mesmo que erro nenhum: ninguém filtra
+ * por esse ambiente ao investigar, e alertas por ambiente nunca disparam.
+ *
+ * Agora um build de produção NÃO CONSEGUE mais se rotular como development,
+ * qualquer que seja o valor da env var na Vercel. `import.meta.env.PROD` é
+ * resolvido pelo Vite no build, não lido do ambiente, então não há env var
+ * mal configurada capaz de mentir sobre isso.
+ *
+ * Um valor próprio continua valendo (`staging`, por exemplo): só a
+ * combinação "build de produção dizendo development" é corrigida.
+ */
+const APP_ENV = String(import.meta.env.VITE_APP_ENV || '').trim();
+const SENTRY_ENV = import.meta.env.PROD
+  ? APP_ENV && APP_ENV !== 'development'
+    ? APP_ENV
+    : 'production'
+  : APP_ENV || 'development';
+
+/**
+ * Ruído conhecido que não é bug do produto. Filtrado no cliente de propósito,
+ * e não por regra no painel: evento descartado aqui não gasta cota do plano.
+ *
+ * 1. Google Translate. Ele reescreve os nós de texto da página por fora do
+ *    React, e aí o React tenta remover um nó que não é mais filho do que ele
+ *    pensa. Rendeu 58 eventos de `removeChild`. É incompatibilidade conhecida
+ *    entre o Translate e qualquer app React, não tem conserto do nosso lado, e
+ *    o usuário sequer percebe.
+ * 2. WebView do Instagram. O navegador embutido do app quebra APIs que o
+ *    Chrome tem, e o tráfego de anúncio do Instagram cai todo lá dentro. Vale
+ *    reavaliar se um erro de conversão aparecer só nesse ambiente.
+ */
+const RUIDO_CONHECIDO = [
+  "Failed to execute 'removeChild' on 'Node'",
+  'The node to be removed is not a child of this node',
+  'NotFoundError: The object can not be found here',
+  'ResizeObserver loop completed with undelivered notifications',
+  'ResizeObserver loop limit exceeded',
+];
+
+function ehWebViewDoInstagram(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Instagram|FBAN|FBAV/i.test(navigator.userAgent);
+}
+
 if (SENTRY_DSN) {
   Sentry.init({
     dsn: SENTRY_DSN,
-    environment: String(import.meta.env.VITE_APP_ENV || import.meta.env.MODE || 'development'),
+    environment: SENTRY_ENV,
     integrations: [Sentry.browserTracingIntegration(), Sentry.replayIntegration()],
     tracesSampleRate: 0.2,
     replaysOnErrorSampleRate: 1.0,
     replaysSessionSampleRate: 0.0,
+    ignoreErrors: RUIDO_CONHECIDO,
+    beforeSend(event) {
+      /* A mensagem do Translate nem sempre chega no `message`: às vezes vem só
+       * no valor da exceção, e aí o `ignoreErrors` acima não pega. */
+      const valores = event.exception?.values ?? [];
+      const texto = [event.message, ...valores.map((v) => v.value)].filter(Boolean).join(' | ');
+      if (RUIDO_CONHECIDO.some((padrao) => texto.includes(padrao))) return null;
+
+      /* Marcado, não descartado: o volume do WebView some do ruído mas
+       * continua auditável pela tag quando alguém for investigar conversão. */
+      if (ehWebViewDoInstagram()) {
+        event.tags = { ...event.tags, webview: 'instagram' };
+      }
+      return event;
+    },
   });
 }
 
