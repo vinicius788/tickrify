@@ -340,7 +340,7 @@ export default {
   },
   loading: {
     title: 'TICKRIFY AI · VERARBEITUNG',
-    estimate: 'geschätzt: 20–30s',
+    estimate: 'geschätzt: 20-30s',
     step1: 'Charttyp wird klassifiziert...',
     step2: 'Marktstruktur wird analysiert...',
     step3: 'Angebots-/Nachfragezonen werden validiert...',
@@ -469,7 +469,7 @@ export default {
       highlight: 'anspruchsvolle Trader.',
       f1t: 'KI für Strukturanalyse', f1d: 'Interpretiert BOS/CHoCH, Kontext und Setup-Wahrscheinlichkeit, bevor du einsteigst.',
       f2t: 'Multi-Markt', f2d: 'Forex, Krypto, Indizes, Aktien und Rohstoffe in einer Routine.',
-      f3t: 'Objektives Risikomanagement', f3d: 'Entry, Stop und Take aus der Marktstruktur abgeleitet. Unter 1.2:1 R/R wird das Signal automatisch auf WAIT herabgestuft.',
+      f3t: 'Objektives Risikomanagement', f3d: 'Entry, Stop und Take aus der Marktstruktur abgeleitet. Wenn nicht einmal das beste Ziel 1.2:1 R/R erreicht, wird das Signal automatisch auf WAIT herabgestuft.',
       f4t: 'Vollständiges Analyse-Panel', f4d: 'Zusammenfassung, Risikofaktoren, Konfluenzen und technische Begründung.',
       f5t: 'Grounding mit Live-Kerzen', f5d: 'Die KI sieht echte Kerzen, nicht nur Ihren Screenshot: RSI(14), Position in der Range und Momentum aus Live-Feeds, bevor sie überhaupt liest.',
       f6t: 'Wirtschaftskalender-Schutz', f6d: 'Ereignisse mit hoher Wirkung werden vor jeder Lesung geprüft. NFP in 18 Minuten? Die KI sagt: warten.',

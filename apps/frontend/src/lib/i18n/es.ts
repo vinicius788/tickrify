@@ -340,7 +340,7 @@ export default {
   },
   loading: {
     title: 'TICKRIFY AI · PROCESANDO',
-    estimate: 'estimado: 20–30s',
+    estimate: 'estimado: 20-30s',
     step1: 'Clasificando tipo de gráfico...',
     step2: 'Analizando estructura de mercado...',
     step3: 'Validando zonas de oferta/demanda...',
@@ -469,7 +469,7 @@ export default {
       highlight: 'traders exigentes.',
       f1t: 'IA de Lectura Estructural', f1d: 'Interpreta BOS/CHoCH, contexto y probabilidad del setup antes de que entres.',
       f2t: 'Multimercado', f2d: 'Forex, Cripto, Índices, Acciones y Materias primas en la misma rutina.',
-      f3t: 'Gestión de riesgo objetiva', f3d: 'Entrada, Stop y Take derivados de la estructura de mercado. Por debajo de 1.2:1 de R/R, la señal baja a WAIT automáticamente.',
+      f3t: 'Gestión de riesgo objetiva', f3d: 'Entrada, Stop y Take derivados de la estructura de mercado. Cuando ni el mejor objetivo alcanza 1.2:1 de R/R, la señal baja a WAIT automáticamente.',
       f4t: 'Panel analítico completo', f4d: 'Resumen ejecutivo, factores de riesgo, confluencias y justificación técnica.',
       f5t: 'Grounding con velas en vivo', f5d: 'La IA ve velas reales, no solo tu captura: RSI(14), posición en el rango y momentum inyectados desde feeds en vivo antes de leer nada.',
       f6t: 'Guardia del calendario económico', f6d: 'Eventos de alto impacto revisados antes de cada lectura. ¿NFP en 18 minutos? La IA te dice que esperes.',

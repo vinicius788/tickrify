@@ -340,7 +340,7 @@ export default {
   },
   loading: {
     title: 'TICKRIFY AI · PROCESSING',
-    estimate: 'estimated: 20–30s',
+    estimate: 'estimated: 20-30s',
     step1: 'Classifying chart type...',
     step2: 'Analyzing market structure...',
     step3: 'Validating supply/demand zones...',
@@ -469,7 +469,7 @@ export default {
       highlight: 'demanding traders.',
       f1t: 'Structural Reading AI', f1d: 'Interprets BOS/CHoCH, context and setup probability before you enter.',
       f2t: 'Multi-market', f2d: 'Forex, Crypto, Indices, Stocks and Commodities in one routine.',
-      f3t: 'Objective risk management', f3d: 'Entry, Stop and Take derived from market structure. Anything below 1.2:1 R/R is automatically downgraded to WAIT.',
+      f3t: 'Objective risk management', f3d: 'Entry, Stop and Take derived from market structure. When not even the best target clears 1.2:1 R/R, the signal is automatically downgraded to WAIT.',
       f4t: 'Full analytics panel', f4d: 'Executive summary, risk factors, confluences and technical rationale.',
       f5t: 'Live candle grounding', f5d: 'The AI sees real candles, not just your screenshot: RSI(14), range position and momentum injected from live feeds before it reads anything.',
       f6t: 'Economic calendar guard', f6d: 'High-impact events checked before every read. NFP in 18 minutes? The AI tells you to wait.',

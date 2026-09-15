@@ -2907,3 +2907,63 @@ O menu do Bing Webmaster Tools tem uma secao **`/webmasters/aiperformance`**
 verificado ela ainda nao tem dado ("ate 48 horas para processar"), mas e
 exatamente a metrica que este projeto quer acompanhar. Conferir na semana que
 vem.
+
+## 15/09 — auditoria das promessas da landing contra o motor
+
+Pedido antigo do dono ("auditar promessas da landing contra o que o produto
+entrega de verdade, ex.: Multi-Timeframe Analysis"). Feita lendo o codigo do
+motor, nao a copy.
+
+### ✅ Confirmados VERDADEIROS (nao reabrir sem evidencia nova)
+- **f5d, live candle grounding** (RSI(14), posicao no range, momentum): existe,
+  `buildQuickGrounding` + `ENABLE_QUICK_GROUNDING=true` conferido no Render.
+- **f6d, economic calendar guard "checked before every read"**: VERDADE. O
+  `decideSignal` roda dentro do `analyzeImage`, que e o caminho unico de quick
+  E deep. O news guard rebaixa para WAIT com evento High entre -15min e +45min,
+  e `ENABLE_NEWS_GUARD` tem `defaultValue: 'true'`, entao vale mesmo sem env var
+  no Render. O exemplo da copy ("NFP in 18 minutes") cai dentro da janela.
+  Calendario conferido ao vivo em 15/09: `degraded: false`.
+- **Guard de R/R vivo**: `applyRiskRewardGuard` dentro do `decideSignal`,
+  `ENABLE_RR_GUARD` tambem com default `true`. (A nota de 27/07 dizia "o guard
+  esta morto no adapter" — isso foi CORRIGIDO desde entao; o guard dispara.)
+
+### 🔴 Claim impreciso CORRIGIDO nos 6 idiomas: o f3d
+Dizia **"Anything below 1.2:1 R/R is automatically downgraded to WAIT"**. O
+codigo nao faz isso: o guard usa o **MELHOR alvo** (maior entre TP1 e TP2) e so
+rebaixa quando NEM esse alcanca 1.2. Um setup com TP1 a 1.0R e TP2 a 2.5R passa
+liso.
+
+A copy prometia MAIS rigor do que o motor aplica, que e a mesma familia de
+claim que as auditorias de 27/07 e 17/08 removeram. Agora diz "when not even
+the best target clears 1.2:1". Corrigido nos 6, mesmo commit.
+
+### ⚠️ ACHADO NAO CORRIGIDO: "Multi-timeframe" com UM grafico so e INFERENCIA
+A suspeita do dono estava certa, mas o problema nao esta na landing (ela nao
+promete multi-timeframe em lugar nenhum; as 6 features sao outras). Esta DENTRO
+do produto:
+
+- Com 2+ imagens, o top-down e REAL: o adapter manda cada HTF com `detail:high`
+  e o prompt exige comentar cada grafico ("nao invente, leia a imagem").
+- **Com 1 imagem, o prompt manda INFERIR**: `trading-system-prompt.ts` linha 58,
+  "Multi-Timeframe Alignment (infer from the single chart visible)".
+- E o resultado exibe uma secao rotulada **`MULTI-TIMEFRAME`**
+  (`AnalysisResult.tsx:174` → chave i18n `deepMtf`), com o MESMO rotulo nos dois
+  casos.
+
+Ou seja: quem sobe um grafico so le "Multi-timeframe" numa secao que e
+extrapolacao a partir daquele unico grafico. Nao e mentira deliberada, e o mesmo
+rotulo para duas coisas diferentes.
+
+**Atenuante ja existente:** o uploader mostra
+`singleHint: 'Single-chart analysis · add higher timeframes for top-down'`,
+entao o produto ja diz ao usuario que faltou HTF. O buraco e so o rotulo do
+RESULTADO.
+
+**Correcao proposta (NAO feita, decisao de produto + mexe em 6 idiomas):**
+rotular a secao conforme a origem — "Multi-timeframe" quando ha HTF enviado,
+algo como "Timeframe context (inferred)" quando e um grafico so. Exige passar a
+contagem de imagens ate o `AnalysisResult`.
+
+### Verificacao
+`tsc -b --force` do frontend: 0 erros. Varredura de travessao nos 6 arquivos de
+i18n: 0 (de quebra saiu o `20–30s` do rotulo de estimativa, que usava en-dash).
