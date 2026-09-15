@@ -2713,3 +2713,57 @@ contra um `dist/` montado a mao com o `index.html` real.
    e de onde nasce a maioria das citacoes.
 5. Dashboard no PostHog por `utm_source` e `$referring_domain` de IA. Nota tecnica:
    `$initial_utm_source` e `$initial_referring_domain` estao VAZIAS no projeto 473872.
+
+### 🔴 14/09, commit a9ab59b: o backend subiu SEM COMPILAR
+
+O commit foi feito com `git add -A` e levou junto trabalho de backend que estava
+parado na arvore de outra sessao. Esse trabalho **nao type-checava**:
+
+```
+src/common/guards/global-auth.guard.ts(30,5): error TS2554: Expected 2 arguments, but got 1
+src/modules/auth/auth.guard.spec.ts(29,13): error TS2554
+src/modules/auth/__tests__/auth.guard.forged-token.spec.ts(29,13): error TS2554
+```
+
+O `AuthGuard` ganhou `MailService` como segundo parametro do construtor (para
+disparar o e-mail de boas-vindas no ponto onde o usuario e de fato criado) e os
+tres call sites nao foram atualizados. O `GlobalAuthGuard` **estende** o
+AuthGuard, e herdar um guard significa herdar as dependencias dele.
+
+**Consequencia:** o build do Render falhou. Nao derrubou o app (mantem a ultima
+versao boa), mas nada de backend foi ao ar ate o commit `6a5ddc5`. O Vercel nao
+foi afetado: o frontend compila, e o deploy do GEO saiu normalmente.
+
+Dois problemas de teste que so apareceram ao rodar o jest, ambos corrigidos:
+- o `auth.guard.spec.ts` ainda montava mock de `upsert`, e o guard tinha passado
+  para **find-then-create**. O teste falhava com "prisma.user.findUnique is not
+  a function", ou seja **estava falhando por motivo errado e nao cobria mais a
+  trava que ele existe para cobrir** (o `role` vem do banco, nunca do token do
+  Clerk, onde o proprio usuario consegue escrever via `unsafe_metadata`).
+  Reescrito, e ganhou um segundo caso cobrindo a criacao de usuario novo.
+- o mock do MailService precisa de `mockResolvedValue`, nao `jest.fn()` seco: o
+  guard faz `void this.mail.sendWelcome(...).catch(...)` e um mock que devolve
+  undefined derruba a autenticacao inteira no teste.
+
+Depois do conserto: `tsc --noEmit` do backend com 0 erros, **jest 190/190**.
+
+**Licao, e ja e a segunda vez:** `git add -A` num repo com trabalho de outra
+sessao parado na arvore commita esse trabalho junto, sem ninguem ter rodado
+portao nenhum nele. Antes de commitar com `-A`, rodar
+`git --no-optional-locks status --porcelain` e olhar o que vai junto. O
+`--no-optional-locks` tambem evita o `.git/index.lock` preso que o sandbox deixa.
+
+### Nota de operacao: o push pode ser rejeitado sem ninguem ter feito nada
+
+Aconteceu em 14/09 logo depois do `6a5ddc5`: `! [rejected] main -> main
+(non-fast-forward)`. **Nao era outra pessoa nem outra sessao.** O workflow
+`.github/workflows/calendar-mirror.yml` commita o espelho do ForexFactory a cada
+6 horas (`calendario: espelho automatico do feed [skip ci]`), entao o remoto
+anda sozinho varias vezes por dia.
+
+Conserto, e ele preserva trabalho nao commitado de outra sessao na arvore:
+`git pull --rebase --autostash origin main && git push`
+
+O `--autostash` e a parte que importa: sem ele o git recusa o rebase com
+"cannot pull with rebase: You have unstaged changes". Conflito e improvavel
+porque o commit do workflow toca so `apps/frontend/public/calendar/thisweek.json`.

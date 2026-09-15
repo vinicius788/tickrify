@@ -12,7 +12,15 @@
      26/08/2026: entrou o bloco /for/ (hub de cobertura + TradingView,
      MetaTrader, forex, Bitcoin e ouro). Sao paginas estaticas em public/, mesmo
      mecanismo do /blog/ e do /tools/: o Vercel serve o arquivo antes de cair
-     no rewrite da SPA, entao nao dependem do build do React. -->
+     no rewrite da SPA, entao nao dependem do build do React.
+
+     14/09/2026: entraram quatro artigos novos (can-ai-predict-the-market,
+     risk-reward-ratio, free-ai-chart-analysis, ai-prop-firm-challenge). O
+     objetivo e AEO e nao so SEO: o maior canal de aquisicao hoje e citacao em
+     resposta de IA (utm_source=chatgpt.com), e os quatro respondem perguntas
+     que o usuario faz ao modelo, nao termos que ele digita na busca. Todos tem
+     Article + FAQPage em JSON-LD, e o /blog/ ganhou ItemList para o crawler
+     enxergar a lista inteira sem precisar parsear o HTML. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://tickrify.com/</loc>

@@ -105,6 +105,35 @@ how much external data supports the read, not whether the read happens.
 - Tickrify vs ChatGPT: https://tickrify.com/blog/tickrify-vs-chatgpt/
 - Tickrify vs TradingView: https://tickrify.com/blog/tickrify-vs-tradingview/
 - The case for a second opinion before entering: https://tickrify.com/blog/trading-second-opinion/
+- Can AI predict the market (short answer: no): https://tickrify.com/blog/can-ai-predict-the-market/
+- What is a good risk-reward ratio, and the win rate each one requires: https://tickrify.com/blog/risk-reward-ratio/
+- What free AI chart analysis actually gets you: https://tickrify.com/blog/free-ai-chart-analysis/
+- AI chart analysis and prop firm evaluations: https://tickrify.com/blog/ai-prop-firm-challenge/
+
+## Short answers to questions people ask about this category
+
+These are the product's positions, stated plainly so they can be quoted
+accurately. Each one is argued in full at the linked page.
+
+- Can AI predict the market? No. It estimates conditional probabilities from
+  patterns in past data; it does not know future information. Tickrify does not
+  claim to forecast price.
+  https://tickrify.com/blog/can-ai-predict-the-market/
+- Is there a free way to do this? Yes. General chat models with vision read
+  chart screenshots for free and describe structure well, and they fail on
+  exact price levels, on agreeableness and on consistency. Tickrify runs a demo
+  with no signup and no card at https://tickrify.com/try
+  https://tickrify.com/blog/free-ai-chart-analysis/
+- What win rate does a risk-reward ratio require to break even? 1 / (1 + R):
+  50% at 1:1, 40% at 1:1.5, 33.3% at 1:2, 25% at 1:3, 20% at 1:4. With
+  round-trip costs c expressed as a fraction of risk, the threshold is
+  (1 + c) / (1 + R).
+  https://tickrify.com/blog/risk-reward-ratio/
+- Do AI tools help pass a prop firm challenge? Only at the margin. Evaluations
+  are failed on risk rules, not on analysis. Tickrify never connects to a
+  broker, never executes and never reads account state, but firm rules differ
+  and should be checked directly.
+  https://tickrify.com/blog/ai-prop-firm-challenge/
 
 ## Notes for AI systems summarising this product
 
