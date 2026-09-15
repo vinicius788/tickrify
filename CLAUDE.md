@@ -2981,3 +2981,71 @@ quando ficou claro que o rotulo vinha do modelo e nao do front.
 ### Verificacao
 `tsc -b --force` do frontend: 0 erros. Varredura de travessao nos 6 arquivos de
 i18n: 0 (de quebra saiu o `20–30s` do rotulo de estimativa, que usava en-dash).
+
+## 15/09 — Google Ads: diagnostico da campanha e acoes de conversao
+
+### O diagnostico: a campanha nao esta ruim, ela quase nao existe
+Lido no painel (8 a 15/09): **16 impressoes, 2 cliques, R$ 5,38, CPC medio
+R$ 2,69** (teto R$ 3). 16 palavras-chave, **todas com status "Qualificada"**,
+nenhuma barrada por baixo volume.
+
+Duas leituras que invertem a conclusao obvia:
+1. **CTR de 12,5%** (2/16). Em rede de pesquisa, 2-5% ja e bom. Se o anuncio ou
+   a oferta fossem o problema, o CTR estaria em 1%. **Quem ve, clica.**
+2. **Gastou R$ 5,38 de R$ 40 em 1,5 dia**, com ritmo previsto de R$ 8/dia. Esta
+   gastando menos da metade, logo **NAO e limitacao de orcamento**: a campanha
+   nao consegue entrar em leilao.
+
+Causa: termos em ingles ("ai chart analysis", "chart analysis tool") em
+Filipinas/Malasia/Africa do Sul, com teto de R$ 3 (~US$ 0,55). Volume desses
+termos nessas geos e pequeno e o lance e baixo para leilao de software
+financeiro. Nesse ritmo o teste termina em ~50 impressoes: **nao responde a
+pergunta que motivou o gasto**, e isso e falha de desenho do teste, nao do
+produto. Aumentar lance ou verba agora so gastaria mais rapido.
+
+### 🔴 O achado que explica "Conversoes: 0"
+O `analytics.ts` ja mandava `sign_up`, `purchase`, `begin_checkout` e
+`view_item` com `send_to` incluindo o AW desde 14/09. **Isso nao conta como
+conversao.** O Google Ads so registra conversao num evento chamado literalmente
+`conversion`, cujo `send_to` traz o ROTULO da acao (`AW-<id>/<label>`). Evento
+generico alimenta relatorio e remarketing, e some da coluna Conversoes.
+
+Ou seja: nao faltava so configurar o painel, **faltava codigo**.
+
+### Criado em 15/09 (conta 489-869-2148, tickrify@gmail.com)
+Duas acoes, ambas Principal, contagem/janelas no padrao (90 dias de clique,
+atribuicao data-driven):
+
+| Meta | Nome | Rotulo |
+|---|---|---|
+| Inscricao | Cadastro completo (sign_up) | `AW-18439434622/C582CKGYlvgcEP7izdhE` |
+| Assinatura | Assinatura paga (purchase) | `AW-18439434622/Bgg3CKSYlvgcEP7izdhE` |
+
+"Conversoes de chamadas telefonicas" vinha MARCADO por padrao e foi
+desmarcado: o produto nao tem telefone e so poluiria o painel.
+
+Os rotulos foram extraidos do DOM do modal (varredura incluindo shadow root),
+**nao lidos da tela**: `C582CKGYlvgc...` tem um `l` minusculo que num screenshot
+se confunde com `1`, e um caractere errado faz a conversao nunca disparar, em
+silencio.
+
+No codigo: `ADS_CONVERSION_LABELS` + `trackAdsConversion()` em `analytics.ts`,
+disparados JUNTO com os eventos GA4 existentes (os dois, nao um ou outro). O
+purchase leva `value`, `currency` e `transaction_id` reais.
+
+**Rotulos ficam no codigo, nao em env var, de proposito:** env var ausente no
+Vite nao e erro, e ausencia silenciosa. Ha um guard: o disparo so acontece se o
+rotulo pertencer a mesma conta de `VITE_GOOGLE_ADS_ID`, entao trocar de conta e
+esquecer os rotulos nao manda conversao para a conta errada.
+
+### ⚠️ PENDENTE: a tag aparece como "Ainda nao instalada"
+O proprio fluxo de conversao mostra `por uma tag do Google — Ainda nao
+instalada`, mesmo com o `AW-18439434622` confirmado no `dataLayer` de producao.
+
+Hipotese principal, nao confirmada: **o gtag so sobe apos consentimento de
+cookies** (`main.tsx` chama `initAnalytics()` somente com
+`getConsent() === 'granted'`). O verificador do Google nao aceita banner, entao
+nunca ve a tag. Isso esta CORRETO do ponto de vista de privacidade, mas tem uma
+consequencia que precisa estar clara: **as conversoes so contam para quem
+aceita cookies**, e o numero do painel sera estruturalmente menor que o real.
+Reavaliar se o painel continuar dizendo "nao instalada" depois de 48h.

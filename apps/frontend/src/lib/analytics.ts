@@ -125,6 +125,59 @@ const ADS_ID = String(import.meta.env.VITE_GOOGLE_ADS_ID || '').trim();
 // Alvos ativos do gtag. Eventos vao para os dois ids quando ambos existem.
 const GOOGLE_TARGETS: string[] = [GA_ID, ADS_ID].filter(Boolean);
 
+/**
+ * Rotulos de conversao do Google Ads (criados em 15/09/2026).
+ *
+ * POR QUE ISTO PRECISA EXISTIR, se os eventos `sign_up` e `purchase` abaixo
+ * ja vao para o AW: **nao contam como conversao**. O Google Ads so registra
+ * conversao num evento chamado literalmente `conversion` cujo `send_to` traz
+ * o ROTULO da acao (`AW-<id>/<label>`). Um `sign_up` generico alimenta
+ * relatorio e remarketing e some da coluna "Conversoes". Foi exatamente por
+ * isso que a campanha de 14/09 rodou com "Conversoes: 0" sem nada quebrado.
+ *
+ * Os rotulos ficam NO CODIGO, nao em env var, de proposito. Env var ausente
+ * no Vite nao e erro, e ausencia silenciosa: some do bundle e o disparo nunca
+ * acontece, sem log e sem sintoma. Este projeto ja foi mordido tres vezes
+ * assim (RESEND_API_KEY, ENABLE_QUICK_GROUNDING e o proprio
+ * VITE_GA_TRACKING_ID, que ate hoje nao existe na Vercel). Rotulo de conversao
+ * tambem nao e segredo: ele viaja no bundle publico de qualquer jeito.
+ *
+ * ⚠️ Se a conta de anuncios mudar, `VITE_GOOGLE_ADS_ID` E estes dois rotulos
+ * precisam ser trocados JUNTOS. O guard abaixo protege o caso de esquecer:
+ * rotulo de outra conta simplesmente nao dispara.
+ */
+const ADS_CONVERSION_LABELS = {
+  signup: 'AW-18439434622/C582CKGYlvgcEP7izdhE',
+  purchase: 'AW-18439434622/Bgg3CKSYlvgcEP7izdhE',
+} as const;
+
+/**
+ * Dispara uma conversao do Google Ads.
+ *
+ * So dispara quando o rotulo pertence a MESMA conta configurada em
+ * `VITE_GOOGLE_ADS_ID`. Sem isso, trocar de conta e esquecer os rotulos
+ * mandaria conversao para a conta antiga, que e pior que nao mandar: o numero
+ * aparece, no lugar errado, e ninguem desconfia.
+ */
+function trackAdsConversion(
+  label: keyof typeof ADS_CONVERSION_LABELS,
+  params?: { value?: number; currency?: string; transactionId?: string },
+): void {
+  if (!ADS_ID || typeof window === 'undefined' || !window.gtag) return;
+  const sendTo = ADS_CONVERSION_LABELS[label];
+  if (!sendTo.startsWith(`${ADS_ID}/`)) return;
+  try {
+    window.gtag('event', 'conversion', {
+      send_to: sendTo,
+      ...(typeof params?.value === 'number' ? { value: params.value } : {}),
+      ...(params?.currency ? { currency: params.currency } : {}),
+      ...(params?.transactionId ? { transaction_id: params.transactionId } : {}),
+    });
+  } catch {
+    /* noop */
+  }
+}
+
 type Gtag = ((...args: unknown[]) => void) & { q?: unknown[] };
 
 function initGoogleTag(): void {
@@ -161,6 +214,9 @@ function trackGoogle(event: FunnelEvent, props?: Record<string, unknown>): void 
     switch (event) {
       case 'signup_completed':
         window.gtag('event', 'sign_up', { send_to: GOOGLE_TARGETS });
+        // `sign_up` alimenta o GA4; a conversao do Ads exige o evento
+        // `conversion` com o rotulo. Os dois, nao um ou outro.
+        trackAdsConversion('signup');
         break;
       case 'pricing_viewed':
         window.gtag('event', 'view_item', { send_to: GOOGLE_TARGETS, item_name: 'pricing' });
@@ -168,14 +224,21 @@ function trackGoogle(event: FunnelEvent, props?: Record<string, unknown>): void 
       case 'checkout_started':
         window.gtag('event', 'begin_checkout', { send_to: GOOGLE_TARGETS });
         break;
-      case 'subscription_activated':
+      case 'subscription_activated': {
+        const value = Number(props?.value) || 0;
+        const currency = String(props?.currency || 'USD').toUpperCase();
+        const transactionId = String(props?.subscriptionId ?? props?.userId ?? Date.now());
         window.gtag('event', 'purchase', {
           send_to: GOOGLE_TARGETS,
-          value: Number(props?.value) || 0,
-          currency: String(props?.currency || 'USD').toUpperCase(),
-          transaction_id: String(props?.subscriptionId ?? props?.userId ?? Date.now()),
+          value,
+          currency,
+          transaction_id: transactionId,
         });
+        // Mesmo valor e mesma transacao na conversao do Ads: sem isso o painel
+        // conta a assinatura mas nao sabe quanto ela vale, e o ROAS fica cego.
+        trackAdsConversion('purchase', { value, currency, transactionId });
         break;
+      }
       case 'analysis_completed':
         window.gtag('event', 'analysis_completed', {
           send_to: GOOGLE_TARGETS,
