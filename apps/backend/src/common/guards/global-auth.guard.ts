@@ -2,6 +2,7 @@ import { ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '../../modules/auth/auth.guard';
 import { PrismaService } from '../../modules/database/prisma.service';
+import { MailService } from '../../modules/mail/mail.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 /**
@@ -23,11 +24,16 @@ import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
  */
 @Injectable()
 export class GlobalAuthGuard extends AuthGuard {
+  /* O `mail` não é usado aqui: ele existe só para ser repassado ao AuthGuard,
+   * que passou a disparar o e-mail de boas-vindas no backfill. Herdar um guard
+   * significa herdar as dependências dele, e esquecer de repassar uma quebra o
+   * build inteiro (foi o que aconteceu: TS2554 em 14/09/2026). */
   constructor(
     prisma: PrismaService,
+    mail: MailService,
     private readonly reflector: Reflector,
   ) {
-    super(prisma);
+    super(prisma, mail);
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {

@@ -1,6 +1,7 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { verifyToken } from '@clerk/backend';
 import { AuthGuard } from '../auth.guard';
+import { MailService } from '../../mail/mail.service';
 
 jest.mock('@clerk/backend', () => ({
   verifyToken: jest.fn(),
@@ -26,7 +27,17 @@ describe('AuthGuard — forged token must always be rejected', () => {
       $transaction: jest.fn(async (callback) => callback(prisma)),
     };
 
-    guard = new AuthGuard(prisma);
+    /* mockResolvedValue, nao jest.fn() seco: o guard faz
+     * `void this.mail.sendWelcome(...).catch(...)`, entao um mock que devolve
+     * undefined estoura com "Cannot read properties of undefined (reading
+     * 'catch')" e derruba a autenticacao inteira no teste. */
+    const mail = {
+      sendWelcome: jest.fn().mockResolvedValue(undefined),
+      sendRecovery: jest.fn().mockResolvedValue(undefined),
+      sendProblemReport: jest.fn().mockResolvedValue(undefined),
+    } as unknown as MailService;
+
+    guard = new AuthGuard(prisma, mail);
     verifyTokenMock.mockReset();
     verifyTokenMock.mockRejectedValue(new Error('invalid signature'));
   });
