@@ -3369,5 +3369,20 @@ Escolhido "Instalar manualmente" e a via da env var.
   ou pela chave `ph_*` no localStorage, nunca pelo global.**
 - **Meta Pixel: funcionando** (`fbevents.js` carregado).
 - **Google Ads (AW): funcionando** desde 14/09.
-- **GA4: ligado hoje**, propriedade nova, pode levar alguns minutos ate o
-  Tempo real do painel mostrar o primeiro dado.
+- **GA4: configurado hoje, ainda NAO confirmado no painel.** O lado do
+  navegador esta verificado: `gtag/js?id=G-SME6X097T6` carrega, o container
+  `G-SME6X097T6` aparece em `window.google_tag_manager`, e um POST manual para
+  `google-analytics.com/g/collect` com esse `tid` sai sem ser bloqueado
+  (resposta opaca, ou seja, chegou na rede). Mesmo assim o **Tempo real seguiu
+  em 0 depois de ~20 minutos**, inclusive para o evento de teste manual.
+  Propriedade e fluxo recem-criados costumam demorar para acender, entao a
+  leitura honesta e "configurado, propagacao pendente".
+
+  ⚠️ Nao da para verificar isso pelo inspetor de rede: o GA4 manda os hits por
+  `navigator.sendBeacon`, que **nao aparece** em PerformanceResourceTiming nem
+  na lista de requisicoes. Os unicos sinais confiaveis do lado do cliente sao o
+  container em `google_tag_manager` e o DebugView do proprio GA.
+
+  **Se em 24h o Tempo real continuar zerado**, investigar nesta ordem: filtros
+  de dados da propriedade (trafego interno), se o fluxo 15784212373 e mesmo o
+  dono do `G-SME6X097T6`, e o DebugView com `?_dbg=1`.
