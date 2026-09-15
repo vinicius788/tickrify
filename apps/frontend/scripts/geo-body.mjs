@@ -462,6 +462,8 @@ export function buildJsonLd({ path, copy, accuracy, offer }) {
   }
 
   if (path === '/accuracy') {
+    const o = accuracy?.overall;
+    const pubOverall = Boolean(o && o.publishable && o.rate !== null && o.rate !== undefined);
     const dataset = {
       '@type': 'Dataset',
       name: 'Tickrify AI accuracy: measured hit rate',
@@ -472,10 +474,37 @@ export function buildJsonLd({ path, copy, accuracy, offer }) {
       creator: { '@type': 'Organization', name: 'Tickrify', url: SITE },
       measurementTechnique:
         'Each published analysis is scored automatically against real candles 48 hours later, with no human in the loop. Rates below n = 20 are shown as sample size only.',
+      /* Os mesmos valores que o .tsx declara. Sem eles o Dataset descreve as
+       * variáveis mas não publica nenhuma medida, e é justamente a medida que
+       * um assistente de IA cita. Entram só quando a API respondeu e o recorte
+       * passou da regra de n mínimo: mesma regra da página. */
+      variableMeasured: [
+        {
+          '@type': 'PropertyValue',
+          name: 'Hit rate',
+          description: 'Share of resolved analyses that reached target before stop, with a 95% Wilson confidence interval.',
+          ...(pubOverall ? { value: accuracy.overall.rate, unitText: 'PERCENT' } : {}),
+        },
+        {
+          '@type': 'PropertyValue',
+          name: 'Abstention rate',
+          description: 'Share of analyses where the model returned "wait" instead of a directional call.',
+          ...(accuracy?.abstention && accuracy.abstention.rate !== null && accuracy.abstention.rate !== undefined
+            ? { value: accuracy.abstention.rate, unitText: 'PERCENT' }
+            : {}),
+        },
+        {
+          '@type': 'PropertyValue',
+          name: 'Sample size (n)',
+          description: 'Number of resolved analyses behind each published rate.',
+          ...(pubOverall ? { value: accuracy.overall.n } : {}),
+        },
+      ],
     };
     /* dateModified só entra quando a API respondeu. A página nunca declara o
      * que não pôde verificar, e o markup segue a mesma regra. */
     if (accuracy?.updatedAt) dataset.dateModified = accuracy.updatedAt;
+    if (accuracy?.groundingLiveSince) dataset.temporalCoverage = `${accuracy.groundingLiveSince.slice(0, 10)}/..`;
 
     /* Dataset e FAQPage no mesmo @graph, um id só. O `useJsonLd` do React
      * substitui o elemento por id ao montar; dois elementos aqui virariam um
