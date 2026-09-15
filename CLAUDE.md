@@ -2883,16 +2883,23 @@ de graca.
 **NAO REMOVER a meta.** O Bing revalida periodicamente depois de verificado, e
 tirar a tag derruba a propriedade. Ja tem comentario no `index.html` avisando.
 
-### PENDENTE: enviar o sitemap a mao (1 minuto)
-`bing.com/webmasters/sitemaps` > **Submit sitemap** > `https://tickrify.com/sitemap.xml`
+### ✅ Sitemap enviado (15/09)
+`https://tickrify.com/sitemap.xml` submetido em 15/09. Painel confirma
+**Known sitemaps: 1**, status `Submitted / Processing`, 0 erros, 0 avisos.
 
-**O modal de envio nao abre pelo navegador interno do Claude** (tentado 4 vezes,
-em 800px e em 1440x900; o clique registra e o dialogo nunca entra no DOM). Nao
-insistir por ali: e mais rapido na mao.
+**Como foi enviado, porque isto vai se repetir:** o modal de "Submit sitemap"
+**nao abre por clique** no navegador interno do Claude (tentado 4 vezes, em
+800px e em 1440x900; o clique registra e o dialogo nunca entra no DOM). O que
+funcionou foi JavaScript direto na pagina:
 
-Isso e ACELERACAO, nao bloqueio: o `robots.txt` ja declara
-`Sitemap: https://tickrify.com/sitemap.xml`, entao o Bing descobre sozinho ao
-rastrear. O envio manual so encurta a fila.
+1. `[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Submit sitemap').click()`
+2. preencher o input com o **setter nativo** do `HTMLInputElement` e disparar
+   `input`/`change` com `bubbles: true`. O Fluent UI do Bing e React: atribuir
+   `input.value` direto NAO funciona, o componente ignora e o botao Submit
+   continua desabilitado. Foi por isso que o `form_input` falhou antes.
+3. clicar no `Submit`.
+
+Mesmo padrao serve para qualquer formulario React que resista a automacao.
 
 ### Achado de brinde
 O menu do Bing Webmaster Tools tem uma secao **`/webmasters/aiperformance`**
