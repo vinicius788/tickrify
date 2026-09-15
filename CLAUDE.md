@@ -2730,9 +2730,31 @@ disparar o e-mail de boas-vindas no ponto onde o usuario e de fato criado) e os
 tres call sites nao foram atualizados. O `GlobalAuthGuard` **estende** o
 AuthGuard, e herdar um guard significa herdar as dependencias dele.
 
-**Consequencia:** o build do Render falhou. Nao derrubou o app (mantem a ultima
-versao boa), mas nada de backend foi ao ar ate o commit `6a5ddc5`. O Vercel nao
-foi afetado: o frontend compila, e o deploy do GEO saiu normalmente.
+**⚠️ CORRECAO (15/09, lido no painel do Render, nao inferido):** eu afirmei
+aqui que "o build do Render falhou". **ESTAVA ERRADO.** A lista de deploys
+mostra `a9ab59b` como **Deployed**, 28,8s, junto com todos os outros. O build
+do Render **NAO barrou** o erro de tipo.
+
+Ou seja, o oposto do que eu disse: o codigo que nao type-checa **FOI PARA
+PRODUCAO** e rodou por cerca de 3 horas, ate o `75784f1` (tambem Deployed)
+corrigir. Nao tentei reproduzir o comportamento do `nest build` aqui porque o
+sandbox nao consegue apagar o `dist/` (EPERM) e o teste fica inconclusivo.
+
+**O QUE ISSO SIGNIFICA PARA SEMPRE: o build do Render NAO e um portao de tipo.**
+Este arquivo dizia "build do Render que falha nao derruba o app". A verdade e
+pior: com erro de tipo ele nem falha. O unico portao real e o `pnpm check` na
+raiz, rodado ANTES do commit. Nao existe rede de seguranca depois.
+
+**Impacto do bug enquanto esteve no ar:** so o ramo de usuario NOVO.
+`GlobalAuthGuard` chamava `super(prisma)` sem o `mail`, entao `this.mail` ficava
+`undefined` e `this.mail.sendWelcome(...)` lancaria no cadastro de conta nova.
+Usuario existente passava normal (nao toca nesse ramo). O trafego do periodo e
+quase so health check, entao a chance de alguem ter sido afetado e baixa, **mas
+isso NAO foi confirmado no banco** (escrever/ler no Supabase esta fora do que o
+Claude alcanca). Se aparecer relato de cadastro que falhou na madrugada de
+14 para 15/09, a causa e esta.
+
+O Vercel nao foi afetado: o frontend compila, e o deploy do GEO saiu normalmente.
 
 Dois problemas de teste que so apareceram ao rodar o jest, ambos corrigidos:
 - o `auth.guard.spec.ts` ainda montava mock de `upsert`, e o guard tinha passado
@@ -2833,3 +2855,48 @@ nao descartado: o trafego de anuncio cai todo la dentro e um erro de conversao
 que so acontece nesse ambiente precisa continuar visivel.
 
 Verificacao: `tsc -b --force` e `eslint` do frontend, limpos.
+
+## 15/09/2026 — Bing Webmaster Tools cadastrado e verificado
+
+O par obrigatorio do trabalho de GEO: o indice do Bing e o que alimenta boa
+parte das respostas do ChatGPT, que hoje e o maior canal de aquisicao.
+
+**Conta: `tickrify@gmail.com`** (a conta da empresa, nao a pessoal).
+
+### ⚠️ O Search Console NAO esta na conta da empresa
+A importacao do Google Search Console (caminho que dispensaria verificacao)
+**foi tentada e abandonada**, e vale registrar por que, para ninguem repetir:
+a `tickrify@gmail.com` **nao tem acesso** a propriedade `tickrify.com` no GSC.
+O Google respondeu literalmente "voce nao tem acesso a esta propriedade". O
+Search Console esta na conta PESSOAL (`vm3441896@gmail.com`).
+
+Consequencia: a importacao teria voltado vazia. Foi conferido ANTES de conceder
+o OAuth, entao nenhum acesso a conta pessoal foi concedido ao Bing.
+
+### Verificacao: meta tag, nao arquivo XML
+`<meta name="msvalidate.01" content="70A5C858B0BB161FBE84C3D4F902E8E2" />` no
+`index.html` (commit `fac5235`). Escolhida em vez do `BingSiteAuth.xml` por
+dois motivos: edita arquivo existente em vez de jogar mais um arquivo solto no
+repo (regra de 28/07), e o `prerender.mjs` propaga a meta para todas as rotas
+de graca.
+
+**NAO REMOVER a meta.** O Bing revalida periodicamente depois de verificado, e
+tirar a tag derruba a propriedade. Ja tem comentario no `index.html` avisando.
+
+### PENDENTE: enviar o sitemap a mao (1 minuto)
+`bing.com/webmasters/sitemaps` > **Submit sitemap** > `https://tickrify.com/sitemap.xml`
+
+**O modal de envio nao abre pelo navegador interno do Claude** (tentado 4 vezes,
+em 800px e em 1440x900; o clique registra e o dialogo nunca entra no DOM). Nao
+insistir por ali: e mais rapido na mao.
+
+Isso e ACELERACAO, nao bloqueio: o `robots.txt` ja declara
+`Sitemap: https://tickrify.com/sitemap.xml`, entao o Bing descobre sozinho ao
+rastrear. O envio manual so encurta a fila.
+
+### Achado de brinde
+O menu do Bing Webmaster Tools tem uma secao **`/webmasters/aiperformance`**
+(AI Performance), que reporta desempenho em respostas de IA. Com o site recem
+verificado ela ainda nao tem dado ("ate 48 horas para processar"), mas e
+exatamente a metrica que este projeto quer acompanhar. Conferir na semana que
+vem.
