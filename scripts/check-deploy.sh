@@ -20,7 +20,7 @@ if [ $# -eq 0 ]; then
     echo "Uso: ./scripts/check-deploy.sh <BACKEND_URL> <FRONTEND_URL>"
     echo ""
     echo "Exemplo:"
-    echo "  ./scripts/check-deploy.sh https://tickrify-backend.up.railway.app https://tickrify.vercel.app"
+    echo "  ./scripts/check-deploy.sh https://tickrify.onrender.com https://tickrify.com"
     exit 1
 fi
 
@@ -216,9 +216,8 @@ echo "  3. Verificar se análise é gerada"
 echo "  4. Checar logs do worker"
 echo ""
 echo "📝 Logs:"
-echo "  Railway: railway logs --service backend"
-echo "           railway logs --service worker"
-echo "  Vercel:  vercel logs $FRONTEND_URL"
+echo "  Render: dashboard.render.com → serviço tickrify → Logs"
+echo "  Vercel: dashboard.vercel.com → projeto tickrify-frontend → Logs"
 
 echo ""
 echo "🧪 Smoke API:"

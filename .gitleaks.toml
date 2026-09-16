@@ -115,10 +115,6 @@ regexes = [
   # Ancorado em `localhost` de propósito — trocou por host real, volta a acusar.
   '''postgres(?:ql)?://postgres:postgres@localhost''',
 
-  # Fixture de TESTE em scripts/deploy-prod.sh: JWT deliberadamente inválido,
-  # usado para provar que o AuthGuard rejeita token forjado. Termina em
-  # ".invalidsig" justamente para ser inconfundível.
-  '''eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.invalidsig''',
 ]
 
 [[allowlists]]
