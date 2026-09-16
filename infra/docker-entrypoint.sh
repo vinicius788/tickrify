@@ -9,7 +9,7 @@ API_PID=$!
 # 2. Run migrations in background (don't block API startup).
 if [ "${RUN_MIGRATIONS_ON_START:-true}" = "true" ]; then
   echo "[entrypoint] Running migrations in background..."
-  npm run migrate:deploy -w apps/backend &
+  pnpm --dir apps/backend migrate:deploy &
   MIGRATE_PID=$!
   wait "$MIGRATE_PID" && echo "[entrypoint] Migrations done." \
     || echo "[entrypoint] WARNING: migrations failed, app already running"
@@ -20,7 +20,7 @@ fi
 # 3. Start worker in background after migrations.
 if [ "${RUN_EMBEDDED_WORKER:-true}" = "true" ]; then
   echo "[entrypoint] Starting embedded worker..."
-  npm run worker:prod -w apps/backend &
+  pnpm --dir apps/backend worker:prod &
 else
   echo "[entrypoint] Skipping embedded worker (RUN_EMBEDDED_WORKER=false)"
 fi

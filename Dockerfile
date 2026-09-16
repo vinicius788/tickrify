@@ -3,7 +3,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 RUN apk add --no-cache openssl && \
-    npm install -g pnpm
+    npm install -g pnpm@10.12.4
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/backend/package.json ./apps/backend/
@@ -21,7 +21,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 RUN apk add --no-cache openssl && \
-    npm install -g pnpm
+    npm install -g pnpm@10.12.4
 
 ENV NODE_ENV=production
 ENV PORT=3001
@@ -43,4 +43,3 @@ EXPOSE 3001
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "apps/backend/dist/src/main.js"]
-

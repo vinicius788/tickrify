@@ -112,7 +112,7 @@ if [[ "$MODO" != "avaliar" ]]; then
   if [[ "$PERNA" == "ambas" || "$PERNA" == "v73" ]]; then
     echo
     echo "── PERNA: prompt ATUAL (v7.3) ──────────────────────────────"
-    npx ts-node scripts/backtest-runner.ts \
+    pnpm exec ts-node scripts/backtest-runner.ts \
       --prompt-file "$V73" --ground --every 4 $EXTRA --out "$OUT_V73" --yes
   else
     echo
@@ -122,7 +122,7 @@ if [[ "$MODO" != "avaliar" ]]; then
   if [[ "$PERNA" == "ambas" || "$PERNA" == "v9" ]]; then
     echo
     echo "── PERNA: prompt NOVO (v9) ─────────────────────────────────"
-    npx ts-node scripts/backtest-runner.ts \
+    pnpm exec ts-node scripts/backtest-runner.ts \
       --prompt-file "$V9" --ground --every 4 $EXTRA --out "$OUT_V9" --yes
   else
     echo

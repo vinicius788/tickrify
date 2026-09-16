@@ -12,8 +12,8 @@
  *
  * Como rodar (na pasta apps/backend):
  *   export OPENAI_API_KEY=...        # você cola a chave, nunca o Claude
- *   npx ts-node scripts/backtest-runner.ts --limit 10        # piloto
- *   npx ts-node scripts/backtest-runner.ts --yes             # rodada completa
+ *   pnpm exec ts-node scripts/backtest-runner.ts --limit 10  # piloto
+ *   pnpm exec ts-node scripts/backtest-runner.ts --yes       # rodada completa
  *
  * Flags:
  *   --limit N   processa no máximo N amostras pendentes (piloto = 10)

@@ -12,15 +12,15 @@ Objetivo: número verdadeiro para calibração de produto — não marketing.
 | A2. XAUUSD + EURUSD (Yahoo: 4h=12m agregado de 1h, 30m=60d) | `node scripts/backtest/fetch-extra.mjs` | **seu terminal** |
 | B. Amostragem cega (seed 20260713) | `node scripts/backtest/sample.mjs` | qualquer um |
 | C1. Render dos gráficos | `python3 scripts/backtest/render.py` | sandbox do Claude (matplotlib) |
-| C2. Análises via motor real | `cd apps/backend && npx ts-node scripts/backtest-runner.ts --limit 10` | **seu terminal** (com `OPENAI_API_KEY` exportada) |
+| C2. Análises via motor real | `cd apps/backend && pnpm exec ts-node scripts/backtest-runner.ts --limit 10` | **seu terminal** (com `OPENAI_API_KEY` exportada) |
 | D. Avaliação + relatório | `python3 scripts/backtest/evaluate.py` | sandbox do Claude |
 
 ## Ordem de execução
 
 1. `node scripts/backtest/fetch-data.mjs` (você)
 2. Claude roda B + C1 e mostra a distribuição da amostra
-3. **Piloto:** `cd apps/backend && export OPENAI_API_KEY=... && npx ts-node scripts/backtest-runner.ts --limit 10` (você)
-4. Claude avalia o piloto → você aprova o custo (~US$3) → `npx ts-node scripts/backtest-runner.ts` (retomável; `--yes` pula a confirmação)
+3. **Piloto:** `cd apps/backend && export OPENAI_API_KEY=... && pnpm exec ts-node scripts/backtest-runner.ts --limit 10` (você)
+4. Depois de avaliar o piloto e aprovar o custo (~US$3), execute `pnpm exec ts-node scripts/backtest-runner.ts` (retomável; `--yes` pula a confirmação)
 5. Claude roda a avaliação final → `Tickrify_Backtest_Report.md` + `Tickrify_Backtest_Results.csv` na raiz
 
 ## Regras inegociáveis

@@ -5,8 +5,8 @@
  * plataforma JÁ guarda. Não toca em rotas, fluxos nem no app no ar.
  *
  * Como rodar (na pasta apps/backend):
- *   npx ts-node scripts/funnel-metrics.ts
- *   ou:  npm run metrics
+ *   pnpm metrics
+ *   ou, da raiz: pnpm --dir apps/backend metrics
  *
  * Lê DATABASE_URL do .env (mesma conexão do seed).
  */

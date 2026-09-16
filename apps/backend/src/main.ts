@@ -15,7 +15,7 @@ type GlobalWithNestApp = typeof globalThis & {
 
 /**
  * Bootstrap function for local development
- * This is used when running the server locally with `npm run dev` or `npm start`
+ * This is used when running the server locally with `pnpm dev` or `pnpm start`
  */
 async function bootstrap() {
   try {
