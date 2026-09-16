@@ -145,7 +145,6 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
 
   /** Recupera o processor real que o Worker do BullMQ chamaria por job. */
   function getProcessor(): (job: any) => Promise<unknown> {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { Worker } = require('bullmq');
     const WorkerCtor = Worker as jest.Mock;
     expect(WorkerCtor).toHaveBeenCalledTimes(1);
@@ -155,7 +154,6 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
   }
 
   it('repassa job.data.strategyProfile para analyzeImage como 5o argumento', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     require('../../worker/ai.worker');
     const processAnalysis = getProcessor();
 

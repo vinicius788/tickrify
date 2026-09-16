@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from 'fs';
-import { join, relative, resolve } from 'path';
+import { join, resolve } from 'path';
 
 /**
  * REDE DE SEGURANÇA DO CONTROLE DE ACESSO (12/08/2026).

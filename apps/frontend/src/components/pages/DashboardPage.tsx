@@ -329,7 +329,7 @@ const DashboardPage = () => {
       }
     }
     return Array.from(marketMap.values()).slice(0, 6);
-  }, [rawAnalyses, isDemo]);
+  }, [rawAnalyses, isDemo, t.nav.ago]);
 
   // KPIs do cockpit — derivados das análises já carregadas (sem fetch novo).
   const dashboardKpis = useMemo(() => {

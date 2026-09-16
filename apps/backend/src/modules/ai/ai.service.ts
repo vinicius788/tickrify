@@ -51,7 +51,6 @@ import { trackFreeAnalysisCompleted, trackFreeAnalysisStarted } from '../../comm
 import {
   AnalysisContext,
   validateImageHook,
-  cacheResultHook,
   logMetricsHook,
   runPreHooks,
   runPostHooks,
@@ -1271,8 +1270,7 @@ export class AiService implements OnModuleInit {
 
       const model = resolveModel(analysisType);
       await runPostHooks(pipelineCtx, aiResponse, [
-        cacheResultHook({ ticksService: this.ticksService }),
-        logMetricsHook({ ticksService: this.ticksService, logger: this.logger }, startedAt, model),
+        logMetricsHook(this.logger, startedAt, model),
       ], this.logger);
 
       return this.serializeAnalysis(updated);

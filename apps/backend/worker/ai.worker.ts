@@ -22,7 +22,7 @@ import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-ru
 import { resolvePrismaDatasourceUrl } from '../src/modules/database/prisma.datasource';
 import { AnalysisType } from '../src/modules/ticks/tick-packages';
 import { DEEP_ENRICHMENT_INSTRUCTION } from '../src/modules/prompt/prompt-builder.service';
-import { STRATEGY_FIT_VALUES, type StrategyProfile } from '../src/common/strategy/strategy-profile';
+import { type StrategyProfile } from '../src/common/strategy/strategy-profile';
 import { startOutcomeSweeper } from './outcome.sweeper';
 import { trackFreeAnalysisCompleted } from '../src/common/analytics/free-funnel';
 
@@ -49,46 +49,6 @@ interface JobData {
   userLanguage?: string;
   strategyProfile?: StrategyProfile | null;
 }
-
-// ─── Fixed demo response (no OpenAI call, no tick cost) ──────────────────────
-const DEMO_RESPONSE = {
-  is_financial_chart: true,
-  recommendation: 'BUY',
-  confidence: 72,
-  analysis: {
-    symbol: 'XAUUSD',
-    timeframe: '15M',
-    detectedSession: 'new_york',
-    sessionNote: 'Sessão de Nova York ativa — maior liquidez para ouro.',
-    currentPrice: 3310.50,
-    entry: 3312.00,
-    stopLoss: 3295.00,
-    stopLossPercent: -0.51,
-    takeProfit1: 3335.00,
-    takeProfit1Percent: 0.69,
-    takeProfit2: 3355.00,
-    takeProfit2Percent: 1.30,
-    riskRewardRatio: '1:2.1',
-    marketStructure: {
-      bias: 'bullish',
-      lastStructure: 'Higher Low confirmado em $3.295 — estrutura ascendente intacta.',
-      breakOfStructure: 'BOS bullish confirmado acima de $3.305',
-      priceZone: 'Zona de Desconto (abaixo de 50% do range — favorável para BUY)',
-      orderBlock: 'Bullish OB em $3.295–$3.302 (última vela bearish antes do impulso de alta)',
-    },
-    chartType: 'Candlestick',
-    confluenceScore: 67,
-    factorsPresent: 4,
-    technicalAnalysis: '⚠️ ANÁLISE DEMONSTRATIVA — Esta é uma análise de exemplo gerada automaticamente para demonstrar as capacidades da plataforma. Os níveis de entrada, stop e alvos são ilustrativos.\n\nO XAUUSD apresenta estrutura de mercado bullish no timeframe de 15 minutos, com sequência de topos e fundos ascendentes. O preço recuou até o Order Block em $3.295–$3.302 e mostrou rejeição com vela de reversão. A sessão de Nova York confere maior liquidez ao setup.',
-    keyIndicators: 'Análise de price action puro — sem indicadores visíveis na imagem demonstrativa.',
-    identifiedPatterns: 'Bullish Order Block ($3.295–$3.302), Fair Value Gap acima de $3.308, Liquidity Pool (equal highs) em $3.340.',
-    structureValidation: '✅ HTF bullish | ✅ Zona de Desconto | ✅ Bullish OB entry | ✅ Anti-retail (swept equal lows) | ❌ BOS não confirmado | ✅ R:R 1:2.1 → 4/6 → BUY moderado',
-    riskFactors: 'Esta é uma análise demonstrativa. Em operações reais: 1) Confirme o BOS antes de entrar. 2) Verifique o calendário econômico para eventos USD. 3) Gerencie o risco com no máximo 1-2% do capital por operação.',
-    whyNotOpposite: 'Estrutura HTF bullish e presença de Order Block de compra invalidam o cenário vendedor neste momento. Esta é uma análise demonstrativa.',
-    executiveSummary: '⚠️ ANÁLISE DEMONSTRATIVA — Gerada automaticamente para apresentar o formato da plataforma.\n\nO XAUUSD demonstra setup de compra com 4 de 6 fatores de confluência ICT/SMC presentes. Order Block bullish identificado em $3.295–$3.302 com rejeição confirmada.\n\nPara acessar análises reais com processamento completo de IA, assine um dos planos disponíveis.',
-    reasoning: '[HTF] Bias bullish — sequência de HH e HL no timeframe de 15M. [CHART] Candlestick padrão, sessão NY. [ICT] OB bullish $3.295–$3.302, FVG acima $3.308. [AVANÇADO] N/A. [ANTI-RETAIL] Equal lows varridos antes da reversão. [DECISÃO] 4/6 itens → BUY moderado. ⚠️ Análise Demonstrativa.',
-  },
-};
 
 interface WorkerAnalysisMarketStructure {
   bias: MarketBias;

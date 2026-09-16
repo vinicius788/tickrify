@@ -31,7 +31,6 @@ const AnalysisLoading = ({ chart = null }: AnalysisLoadingProps) => {
     );
     return () => clearInterval(timer);
     // steps é recriado a cada render (vem do idioma); o timer só depende do tamanho.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [steps.length]);
 
   return (

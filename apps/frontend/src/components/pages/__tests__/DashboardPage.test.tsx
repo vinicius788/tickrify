@@ -81,16 +81,6 @@ vi.mock('@/components/dashboard/AnalysisCounter', () => ({
   default: () => <div>Analysis counter</div>,
 }));
 
-vi.mock('@/components/TicksBadge', () => ({
-  TicksBadge: ({ onClick }: { onClick?: () => void }) => (
-    <button onClick={onClick}>ticks-badge</button>
-  ),
-}));
-
-vi.mock('@/components/BuyTicksModal', () => ({
-  BuyTicksModal: () => <div>BuyTicksModal</div>,
-}));
-
 /**
  * Fábrica do apiClient falso.
  *
@@ -190,7 +180,7 @@ describe('DashboardPage', () => {
       expect(screen.getAllByText('BTCUSD').length).toBeGreaterThan(0);
     });
 
-    expect(listAnalyses).toHaveBeenCalledWith(40);
+    expect(listAnalyses).toHaveBeenCalledWith(40, null);
   });
 
   it('trata erro de upload quando nenhuma imagem é enviada', async () => {

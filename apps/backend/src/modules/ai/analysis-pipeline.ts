@@ -1,6 +1,6 @@
 import { BadRequestException, Logger } from '@nestjs/common';
 import { AIAnalysisResponse } from '../../common/interfaces/ai-response.interface';
-import { AnalysisType, TICK_COSTS } from '../ticks/tick-packages';
+import { AnalysisType } from '../ticks/tick-packages';
 
 export interface AnalysisContext {
   userId: string;
@@ -18,17 +18,6 @@ export type PostAnalysisHook = (
   ctx: AnalysisContext,
   result: AIAnalysisResponse,
 ) => Promise<void>;
-
-export interface PipelineDependencies {
-  ticksService: {
-    getBalance(userId: string): Promise<number>;
-    debitTicks(userId: string, amount: number, description: string, metadata?: Record<string, unknown>): Promise<void>;
-  };
-  redis?: {
-    set(key: string, value: string, exSeconds: number): Promise<void>;
-  };
-  logger?: Logger;
-}
 
 /** Validates that the imageUrl has an acceptable scheme/format. */
 export function validateImageHook(): PreAnalysisHook {
@@ -64,117 +53,15 @@ export function validateImageHook(): PreAnalysisHook {
   };
 }
 
-/** Verifies the user has enough ticks (or free quota) before processing. */
-export function checkTickBalanceHook(deps: PipelineDependencies): PreAnalysisHook {
-  return async (ctx: AnalysisContext) => {
-    const cost =
-      ctx.analysisType === 'deep' ? TICK_COSTS.ANALYSIS_DEEP : TICK_COSTS.ANALYSIS_QUICK;
-
-    if (ctx.tickBalance < cost) {
-      // Don't block here — the enforceAccess in AiService already handles the exact
-      // quota/tick logic atomically. This hook only flags when we're clearly short.
-      // We only block if the user has 0 balance and is on a tick-based path.
-      // Returning void lets AiService's existing enforceAccess handle the real check.
-    }
-  };
-}
-
-/** Simple per-user rate limit check via Redis. */
-export function rateLimitCheckHook(
-  deps: PipelineDependencies,
-  windowSeconds = 60,
-  maxRequests = 10,
-): PreAnalysisHook {
-  return async (ctx: AnalysisContext) => {
-    if (!deps.redis) {
-      return;
-    }
-
-    const key = `ratelimit:analysis:${ctx.userId}`;
-
-    try {
-      // We use a simple counter stored in Redis.
-      // This is best-effort — if Redis is unavailable, we skip the check.
-      const redisClient = deps.redis as unknown as {
-        incr(key: string): Promise<number>;
-        expire(key: string, seconds: number): Promise<void>;
-        ttl(key: string): Promise<number>;
-      };
-
-      const current = await redisClient.incr(key);
-      if (current === 1) {
-        await redisClient.expire(key, windowSeconds);
-      }
-
-      if (current > maxRequests) {
-        return {
-          block: true,
-          reason: `Rate limit exceeded. Max ${maxRequests} analyses per ${windowSeconds}s.`,
-        };
-      }
-    } catch {
-      // Redis unavailable — fail open
-    }
-  };
-}
-
-/** Debits ticks after a successful analysis. */
-export function deductTicksHook(deps: PipelineDependencies): PostAnalysisHook {
-  return async (ctx: AnalysisContext) => {
-    const cost =
-      ctx.analysisType === 'deep' ? TICK_COSTS.ANALYSIS_DEEP : TICK_COSTS.ANALYSIS_QUICK;
-
-    try {
-      await deps.ticksService.debitTicks(
-        ctx.userId,
-        cost,
-        `Análise ${ctx.analysisType === 'deep' ? 'deep' : 'rápida'} de gráfico`,
-        { analysisType: ctx.analysisType },
-      );
-    } catch {
-      // Already deducted upstream by enforceAccess — log and skip
-      deps.logger?.warn(
-        `[Pipeline] deductTicksHook: debit skipped for ${ctx.userId} (already handled)`,
-      );
-    }
-  };
-}
-
-/** Caches a summary of the result in Redis with 1h TTL. */
-export function cacheResultHook(
-  deps: PipelineDependencies,
-  ttlSeconds = 3600,
-): PostAnalysisHook {
-  return async (ctx: AnalysisContext, result: AIAnalysisResponse) => {
-    if (!deps.redis) {
-      return;
-    }
-
-    const key = `analysis:${ctx.userId}`;
-    const summary = JSON.stringify({
-      recommendation: result.recommendation,
-      confidence: result.confidence,
-      bias: result.bias,
-      cachedAt: new Date().toISOString(),
-    });
-
-    try {
-      await deps.redis.set(key, summary, ttlSeconds);
-    } catch {
-      deps.logger?.warn(`[Pipeline] cacheResultHook: failed to cache for ${ctx.userId}`);
-    }
-  };
-}
-
 /** Logs latency and metadata metrics. */
 export function logMetricsHook(
-  deps: PipelineDependencies,
+  logger: Logger | undefined,
   startedAt: number,
   model: string,
 ): PostAnalysisHook {
   return async (ctx: AnalysisContext) => {
     const latencyMs = Date.now() - startedAt;
-    deps.logger?.log(
+    logger?.log(
       `[Metrics] analysis completed | userId=${ctx.userId} analysisType=${ctx.analysisType} model=${model} latencyMs=${latencyMs}`,
     );
   };
