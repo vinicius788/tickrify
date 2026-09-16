@@ -20,7 +20,7 @@ const PLAN_LABELS: Record<UserPlan, string> = {
 
 const PLAN_TICKS: Record<UserPlan, number> = {
   free: 0,
-  starter: 45,
+  starter: 200,
   pro: 150,
   elite: 400,
 };
