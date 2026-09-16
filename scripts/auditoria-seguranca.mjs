@@ -378,20 +378,20 @@ verificar('Typecheck e testes rodam no CI e bloqueiam o build', 'bloqueia', () =
 // primeira reação passa a ser desligá-la.
 verificar('Nenhuma vulnerabilidade crítica nas dependências', 'bloqueia', () => {
   try {
-    const saida = execSync('npm audit --json --audit-level=critical', {
+    const saida = execSync('pnpm audit --json --audit-level=critical', {
       cwd: RAIZ,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });
     const dados = JSON.parse(saida);
     const criticas = dados?.metadata?.vulnerabilities?.critical ?? 0;
-    return criticas > 0 ? [`${criticas} vulnerabilidade(s) crítica(s) — rode \`npm audit\` para ver`] : [];
+    return criticas > 0 ? [`${criticas} vulnerabilidade(s) crítica(s) — rode \`pnpm audit\` para ver`] : [];
   } catch (erro) {
-    // npm audit sai != 0 quando ACHA algo; o JSON vem no stdout mesmo assim.
+    // pnpm audit sai != 0 quando ACHA algo; o JSON vem no stdout mesmo assim.
     try {
       const dados = JSON.parse(erro.stdout || '{}');
       const criticas = dados?.metadata?.vulnerabilities?.critical ?? 0;
-      return criticas > 0 ? [`${criticas} vulnerabilidade(s) crítica(s) — rode \`npm audit\``] : [];
+      return criticas > 0 ? [`${criticas} vulnerabilidade(s) crítica(s) — rode \`pnpm audit\``] : [];
     } catch {
       return [];
     }
@@ -400,7 +400,7 @@ verificar('Nenhuma vulnerabilidade crítica nas dependências', 'bloqueia', () =
 
 verificar('Vulnerabilidades altas nas dependências', 'avisa', () => {
   try {
-    execSync('npm audit --json', { cwd: RAIZ, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    execSync('pnpm audit --json', { cwd: RAIZ, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     return [];
   } catch (erro) {
     try {
