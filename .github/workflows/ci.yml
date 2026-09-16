@@ -6,6 +6,7 @@ on:
 
 env:
   NODE_VERSION: "20"
+  PNPM_VERSION: "10.12.4"
   DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?schema=tickrify
   MIGRATIONS_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres?schema=tickrify
 
@@ -17,17 +18,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Security audit
-        run: npm audit --audit-level=high --omit=dev
+        run: pnpm audit --audit-level=high --prod
         continue-on-error: false
 
   lint:
@@ -38,20 +45,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Lint backend
-        run: npm run -w apps/backend lint
+        run: pnpm --dir apps/backend exec eslint "{src,apps,libs,test,worker}/**/*.ts"
 
       - name: Lint frontend
-        run: npm run -w apps/frontend lint
+        run: pnpm --dir apps/frontend lint
 
   # O typecheck NÃO rodava no CI (descoberto em 19/08/2026). Pior: o script
   # `typecheck` do frontend era `tsc --noEmit` num tsconfig com "files": [] e
@@ -65,26 +78,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       # O client do Prisma precisa existir antes do tsc: sem ele o backend não
       # compila (`@prisma/client` não tem os tipos dos models).
       - name: Gerar Prisma Client
-        run: npm run -w apps/backend postinstall
+        run: pnpm --dir apps/backend postinstall
 
       - name: Typecheck backend
-        run: npx --workspace apps/backend tsc --noEmit -p apps/backend/tsconfig.json
+        run: pnpm --dir apps/backend exec tsc --noEmit -p tsconfig.json
 
       # `tsc -b` (build mode) é o ÚNICO que segue project references.
       - name: Typecheck frontend
-        run: npm run -w apps/frontend typecheck
+        run: pnpm --dir apps/frontend typecheck
 
   # PENTE FINO (item 10). Nada vai ao ar sem passar por aqui.
   # A parte que precisa de produção no ar (HTTPS, HSTS, cabeçalhos entregues,
@@ -99,17 +118,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Pente fino
-        run: node scripts/auditoria-seguranca.mjs
+        run: pnpm auditoria
 
   test:
     name: Test
@@ -119,20 +144,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run backend tests
-        run: npm run -w apps/backend test -- --runInBand
+        run: pnpm --dir apps/backend exec jest --runInBand
 
       - name: Run frontend tests
-        run: npm run -w apps/frontend test
+        run: pnpm --dir apps/frontend test
 
   # Espelha o job do secrets.yml para que o build DEPENDA da varredura de
   # segredos. Sem isto os dois workflows correm em paralelo e um commit com
@@ -154,17 +185,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build backend
-        run: npm run -w apps/backend build
+        run: pnpm --dir apps/backend build
 
       - name: Build frontend
-        run: npm run -w apps/frontend build
+        run: pnpm --dir apps/frontend build
