@@ -28,6 +28,82 @@ export class SetAcquisitionSourceDto {
   detail?: string;
 }
 
+/**
+ * Atribuicao tecnica capturada no primeiro toque do browser (UTM/referrer).
+ * Campos fechados e curtos para caberem tambem em metadata da Stripe.
+ */
+export class SetTechnicalAttributionDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  utmSource?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  utmMedium?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  utmCampaign?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  utmContent?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  utmTerm?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  campaignId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  adsetId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  adId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(220)
+  clickId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(240)
+  landingPath?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  landingUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  referrer?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(180)
+  referrerDomain?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  capturedAt?: string;
+}
+
 @Controller('auth')
 export class AuthController implements OnModuleInit {
   constructor(
@@ -45,6 +121,10 @@ export class AuthController implements OnModuleInit {
       'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "acquisitionSource" TEXT',
       'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "acquisitionDetail" TEXT',
       'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "acquisitionAnsweredAt" TIMESTAMP(3)',
+      'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "firstTouchAttribution" JSONB',
+      'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "firstTouchAt" TIMESTAMP(3)',
+      'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "lastTouchAttribution" JSONB',
+      'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "lastTouchAt" TIMESTAMP(3)',
     ];
     for (const sql of colunas) {
       try {
@@ -82,6 +162,45 @@ export class AuthController implements OnModuleInit {
       },
     });
     return { ok: true };
+  }
+
+  /**
+   * Grava first-touch uma vez e last-touch sempre que houver novo dado tecnico.
+   * Isto cobre signup/checkout mesmo quando PostHog/Meta Pixel nao carregam por
+   * consentimento, sem depender de cookie de terceiro.
+   */
+  @Post('technical-attribution')
+  @UseGuards(AuthGuard)
+  async setTechnicalAttribution(
+    @CurrentUser() user: { id?: string; clerkUserId: string },
+    @Body() body: SetTechnicalAttributionDto,
+  ) {
+    const attribution = this.normalizeTechnicalAttribution(body);
+    if (!Object.keys(attribution).length) return { ok: true, empty: true };
+
+    const where = user.id ? { id: user.id } : { clerkUserId: user.clerkUserId };
+    const atual = await this.prisma.user.findUnique({
+      where,
+      select: { id: true, firstTouchAttribution: true },
+    });
+    if (!atual) return { ok: false };
+
+    const capturedAt = this.parseAttributionDate(body.capturedAt) ?? new Date();
+    await this.prisma.user.update({
+      where: { id: atual.id },
+      data: {
+        ...(atual.firstTouchAttribution
+          ? {}
+          : {
+              firstTouchAttribution: attribution,
+              firstTouchAt: capturedAt,
+            }),
+        lastTouchAttribution: attribution,
+        lastTouchAt: capturedAt,
+      },
+    });
+
+    return { ok: true, firstTouchSaved: !atual.firstTouchAttribution };
   }
 
   @Get('me')
@@ -122,6 +241,37 @@ export class AuthController implements OnModuleInit {
     }
 
     return dbUser;
+  }
+
+  private normalizeTechnicalAttribution(body: SetTechnicalAttributionDto): Record<string, string> {
+    const fields: Array<keyof SetTechnicalAttributionDto> = [
+      'utmSource',
+      'utmMedium',
+      'utmCampaign',
+      'utmContent',
+      'utmTerm',
+      'campaignId',
+      'adsetId',
+      'adId',
+      'clickId',
+      'landingPath',
+      'landingUrl',
+      'referrer',
+      'referrerDomain',
+    ];
+
+    const out: Record<string, string> = {};
+    for (const field of fields) {
+      const value = typeof body[field] === 'string' ? body[field]!.trim() : '';
+      if (value) out[field] = value;
+    }
+    return out;
+  }
+
+  private parseAttributionDate(value?: string): Date | null {
+    if (!value) return null;
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
 
   /**

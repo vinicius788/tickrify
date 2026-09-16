@@ -1,12 +1,16 @@
 // Liga a identidade do Clerk ao PostHog e dispara `signup_completed` para contas novas.
 // Renderizar uma vez, dentro do <ClerkProvider>.
 import { useEffect, useRef } from 'react';
-import { useUser } from '@clerk/clerk-react';
+import { useAuth, useUser } from '@clerk/clerk-react';
 import { identifyUser, track } from '@/lib/analytics';
+import { getTechnicalAttributionPayload, markTechnicalAttributionSynced } from '@/lib/attribution';
+import { apiClient } from '@/lib/api';
 
 export function AnalyticsIdentify() {
   const { isLoaded, isSignedIn, user } = useUser();
+  const { getToken } = useAuth();
   const signupTracked = useRef(false);
+  const attributionSynced = useRef(false);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !user) return;
@@ -15,6 +19,19 @@ export function AnalyticsIdentify() {
       email: user.primaryEmailAddress?.emailAddress,
       createdAt: user.createdAt,
     });
+
+    if (!attributionSynced.current) {
+      attributionSynced.current = true;
+      const attribution = getTechnicalAttributionPayload();
+      if (attribution) {
+        void getToken({ skipCache: true })
+          .then((token) => (token ? apiClient.setTechnicalAttribution(attribution, token) : undefined))
+          .then(() => markTechnicalAttributionSynced())
+          .catch(() => {
+            attributionSynced.current = false;
+          });
+      }
+    }
 
     // signup_completed: uma vez por usuário recém-criado (heurística: conta < 60s).
     // Fonte 100% confiável seria um webhook user.created do Clerk no backend.
@@ -37,7 +54,7 @@ export function AnalyticsIdentify() {
       }
       signupTracked.current = true;
     }
-  }, [isLoaded, isSignedIn, user]);
+  }, [getToken, isLoaded, isSignedIn, user]);
 
   return null;
 }

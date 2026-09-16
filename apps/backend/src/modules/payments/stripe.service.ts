@@ -19,6 +19,8 @@ import {
   Currency,
 } from '../../config/stripe.config';
 
+type AttributionRecord = Record<string, unknown>;
+
 @Injectable()
 export class StripeService {
   private readonly logger = new Logger(StripeService.name);
@@ -189,6 +191,7 @@ export class StripeService {
           planType,
           billingCycle,
           currency,
+          ...this.stripeAttributionMetadata(user),
         },
       };
 
@@ -704,20 +707,99 @@ export class StripeService {
 
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
     await this.upsertSubscriptionForUser(userId, subscription);
+    const analyticsUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        clerkUserId: true,
+        firstTouchAttribution: true,
+        firstTouchAt: true,
+        lastTouchAttribution: true,
+        lastTouchAt: true,
+      },
+    });
 
     this.logger.log(`User ${userId} subscription synchronized: ${subscription.id}`);
 
     // RECEITA (fonte de verdade): dispara na confirmação do pagamento, mesmo se
     // o usuário fechar a aba. distinctId = id do Clerk (casa com o funil do frontend).
     try {
-      captureServer(userId, 'subscription_activated', {
+      const distinctId = String(
+        analyticsUser?.clerkUserId || session.metadata?.clerkUserId || '',
+      ).trim();
+      captureServer(distinctId, 'subscription_activated', {
         source: 'stripe_webhook',
         subscriptionId: subscription.id,
         priceId: subscription.items?.data?.[0]?.price?.id,
+        ...this.posthogAttributionProperties(analyticsUser),
       });
     } catch {
       /* analytics nunca pode quebrar o webhook */
     }
+  }
+
+  private stripeAttributionMetadata(user: {
+    firstTouchAttribution?: Prisma.JsonValue | null;
+    lastTouchAttribution?: Prisma.JsonValue | null;
+  }): Record<string, string> {
+    return {
+      ...this.flattenAttributionForStripe('ft', this.asAttributionRecord(user.firstTouchAttribution)),
+      ...this.flattenAttributionForStripe('lt', this.asAttributionRecord(user.lastTouchAttribution)),
+    };
+  }
+
+  private posthogAttributionProperties(user?: {
+    firstTouchAttribution: Prisma.JsonValue | null;
+    firstTouchAt: Date | null;
+    lastTouchAttribution: Prisma.JsonValue | null;
+    lastTouchAt: Date | null;
+  } | null): Record<string, unknown> {
+    if (!user) return {};
+    const first = this.asAttributionRecord(user.firstTouchAttribution);
+    const last = this.asAttributionRecord(user.lastTouchAttribution);
+    return {
+      firstTouchAttribution: first,
+      firstTouchAt: user.firstTouchAt?.toISOString(),
+      lastTouchAttribution: last,
+      lastTouchAt: user.lastTouchAt?.toISOString(),
+      firstUtmSource: first?.utmSource,
+      firstUtmCampaign: first?.utmCampaign,
+      lastUtmSource: last?.utmSource,
+      lastUtmCampaign: last?.utmCampaign,
+    };
+  }
+
+  private flattenAttributionForStripe(
+    prefix: 'ft' | 'lt',
+    attribution: AttributionRecord | null,
+  ): Record<string, string> {
+    if (!attribution) return {};
+    const map: Array<[string, string]> = [
+      ['source', 'utmSource'],
+      ['medium', 'utmMedium'],
+      ['campaign', 'utmCampaign'],
+      ['content', 'utmContent'],
+      ['term', 'utmTerm'],
+      ['campaign_id', 'campaignId'],
+      ['adset_id', 'adsetId'],
+      ['ad_id', 'adId'],
+      ['click_id', 'clickId'],
+      ['landing', 'landingPath'],
+      ['ref_domain', 'referrerDomain'],
+    ];
+
+    const out: Record<string, string> = {};
+    for (const [stripeKey, sourceKey] of map) {
+      const value = attribution[sourceKey];
+      if (typeof value === 'string' && value.trim()) {
+        out[`${prefix}_${stripeKey}`] = value.trim().slice(0, 500);
+      }
+    }
+    return out;
+  }
+
+  private asAttributionRecord(value: Prisma.JsonValue | null | undefined): AttributionRecord | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    return value as AttributionRecord;
   }
 
   private async creditTicksFromCompletedCheckout(session: Stripe.Checkout.Session) {

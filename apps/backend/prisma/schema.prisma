@@ -38,6 +38,14 @@ model User {
   acquisitionDetail   String?
   acquisitionAnsweredAt DateTime?
 
+  // Atribuicao tecnica first/last-touch capturada de parametros UTM/referrer.
+  // Complementa a pergunta declarada acima: nao depende do PostHog aceitar
+  // cookies e acompanha o usuario ate o webhook da Stripe.
+  firstTouchAttribution Json?
+  firstTouchAt         DateTime?
+  lastTouchAttribution Json?
+  lastTouchAt          DateTime?
+
   subscriptions Subscription[]
   analyses      Analysis[]
   analysisUsage AnalysisUsage[]

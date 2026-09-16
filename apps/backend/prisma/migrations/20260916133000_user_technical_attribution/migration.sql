@@ -1,0 +1,5 @@
+ALTER TABLE "tickrify"."User"
+  ADD COLUMN IF NOT EXISTS "firstTouchAttribution" JSONB,
+  ADD COLUMN IF NOT EXISTS "firstTouchAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "lastTouchAttribution" JSONB,
+  ADD COLUMN IF NOT EXISTS "lastTouchAt" TIMESTAMP(3);

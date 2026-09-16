@@ -4,6 +4,7 @@ import { PrismaService } from '../database/prisma.service';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { MailService } from '../mail/mail.service';
 import { fetchClerkEmail } from '../../common/utils/clerk-email';
+import { captureServer } from '../../common/analytics/posthog';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -98,6 +99,15 @@ export class AuthGuard implements CanActivate {
       }
 
       if (isNewUser) {
+        // Cadastro confirmado pelo backend. Nao usamos `signup_completed` aqui
+        // para nao duplicar o evento que ja alimenta funis existentes no PostHog.
+        // Este evento paralelo serve para auditoria/diagnostico de tracking.
+        try {
+          captureServer(clerkUserId, 'signup_completed_server', { source: 'auth_guard' });
+        } catch {
+          /* analytics nunca pode quebrar auth */
+        }
+
         // Usuário novo → e-mail de boas-vindas (fire-and-forget; nunca quebra a resposta).
         if (user.email) {
           void this.mail.sendWelcome(user.email).catch(() => undefined);

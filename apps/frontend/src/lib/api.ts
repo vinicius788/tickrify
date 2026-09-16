@@ -2,6 +2,7 @@ import { registrarMigalha } from './breadcrumbs';
 // API Client for Tickrify Backend
 import { useAuth } from '@clerk/clerk-react';
 import { useCallback, useMemo } from 'react';
+import type { TechnicalAttributionPayload } from './attribution';
 
 const DEV_API_FALLBACK = 'http://localhost:3001';
 
@@ -594,6 +595,27 @@ class APIClient {
     );
   }
 
+  async setTechnicalAttribution(
+    payload: TechnicalAttributionPayload,
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<void> {
+    await this.request(
+      '/api/auth/technical-attribution',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...this.getAuthHeader(token),
+        },
+        body: JSON.stringify(payload),
+      },
+      'Failed to save technical attribution',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
+    );
+  }
+
   async setFavorite(
     analysisId: string,
     isFavorite: boolean,
@@ -797,6 +819,11 @@ export function useAPIClient() {
     return apiClient.setAcquisitionSource(payload, token, getFreshToken);
   }, [getFreshToken]);
 
+  const setTechnicalAttribution = useCallback(async (payload: TechnicalAttributionPayload) => {
+    const token = await getFreshToken();
+    return apiClient.setTechnicalAttribution(payload, token, getFreshToken);
+  }, [getFreshToken]);
+
   const setOutcome = useCallback(async (
     analysisId: string,
     payload: { outcome: string | null; pnlPercent?: number | null; pnlAmount?: number | null },
@@ -845,11 +872,12 @@ export function useAPIClient() {
     getAnalysisUsage,
     syncUserProfile,
     setAcquisitionSource,
+    setTechnicalAttribution,
     setOutcome,
     setFavorite,
     getPerformance,
     getStrategy,
     saveStrategy,
     waitForAnalysisCompletion,
-  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setOutcome, setFavorite, getPerformance, getStrategy, saveStrategy, waitForAnalysisCompletion]);
+  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setTechnicalAttribution, setOutcome, setFavorite, getPerformance, getStrategy, saveStrategy, waitForAnalysisCompletion]);
 }

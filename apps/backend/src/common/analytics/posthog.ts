@@ -19,6 +19,11 @@ let client: PostHogLike | null | undefined;
 function getClient(): PostHogLike | null {
   if (client !== undefined) return client;
 
+  if (process.env.NODE_ENV === 'test' && process.env.POSTHOG_ENABLE_IN_TEST !== 'true') {
+    client = null;
+    return null;
+  }
+
   const key = String(process.env.POSTHOG_KEY || '').trim();
   if (!key) {
     client = null;

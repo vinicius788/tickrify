@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { track, trackPageview, type FunnelEvent } from '@/lib/analytics';
+import { captureTechnicalAttribution } from '@/lib/attribution';
 
 // Mapa rota → evento de funil. Prefixo casa sub-rotas do Clerk (/sign-up/*).
 const ROUTE_EVENTS: Array<{ match: (p: string) => boolean; event: FunnelEvent }> = [
@@ -15,6 +16,7 @@ export function RouteAnalytics() {
   const { pathname } = useLocation();
 
   useEffect(() => {
+    captureTechnicalAttribution();
     trackPageview(pathname);
     const hit = ROUTE_EVENTS.find((r) => r.match(pathname));
     if (hit) track(hit.event);
