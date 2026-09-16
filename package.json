@@ -29,7 +29,6 @@
     "worker:railway": "npm run worker:prod -w apps/backend",
     "build:railway": "npm run build:backend",
     "studio": "npm run studio -w apps/backend",
-    "vercel-build": "npm run build",
     "smoke:api": "node scripts/smoke-api.mjs",
     "smoke:e2e": "node scripts/e2e-staging.mjs",
     "smoke": "bash scripts/smoke.sh",
