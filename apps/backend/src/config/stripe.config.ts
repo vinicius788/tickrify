@@ -6,11 +6,9 @@ export type Currency = 'brl' | 'usd' | 'eur';
 
 // Monthly ticks per plan. Yearly invoices fire once, so we credit 12× upfront.
 //
-// PLANO ÚNICO (27/07/2026, Fase 2 da auditoria): a vitrine passou a vender UM
-// plano só — a chave `starter`, cujo preço no Stripe foi editado de $12 para
-// $19/mês (o price ID NÃO mudou, o Stripe manteve o mesmo objeto). Os ticks
-// subiram de 45 para 200 → $0,095 por análise rápida, metade do pacote avulso
-// mais barato ($0,173). Antes disso assinar era pior negócio que comprar solto.
+// PLANO ÚNICO: a vitrine vende a chave `starter` por US$29/mês ou US$290/ano,
+// com 200 ticks mensais. O Stripe manteve os mesmos price IDs quando o valor
+// mudou; por isso o código não deve inferir preço pelo comentário ou pelo ID.
 //
 // `pro` e `elite` continuam aqui de propósito: são LEGADO. Não aparecem mais na
 // vitrine, mas assinaturas antigas ainda resolvem por estes price IDs e
@@ -25,57 +23,44 @@ export const PLAN_TICKS_PER_MONTH: Record<PlanType, number> = {
 export const PRICES: Record<PlanType, Record<BillingCycle, Record<Currency, string>>> = {
   starter: {
     monthly: {
-      brl: 'price_1TRv2fB1hl0IoocUolv3jJkh', // R$57
-      usd: 'price_1TRvEJB1hl0IoocUvbCyxkt5', // $12
-      eur: 'price_1TRvG0B1hl0IoocUKA6heI68', // €11
+      brl: 'price_1TRv2fB1hl0IoocUolv3jJkh',
+      usd: 'price_1TRvEJB1hl0IoocUvbCyxkt5',
+      eur: 'price_1TRvG0B1hl0IoocUKA6heI68',
     },
     yearly: {
-      brl: 'price_1TRvHnB1hl0IoocUq8N8ovfv', // R$570
-      usd: 'price_1TRvKHB1hl0IoocU3N7MMGcG', // $120
-      eur: 'price_1TRvM8B1hl0IoocUwcyW6U7d', // €110
+      brl: 'price_1TRvHnB1hl0IoocUq8N8ovfv',
+      usd: 'price_1TRvKHB1hl0IoocU3N7MMGcG',
+      eur: 'price_1TRvM8B1hl0IoocUwcyW6U7d',
     },
   },
   pro: {
     monthly: {
-      brl: 'price_1TRv5zB1hl0IoocU2Yj9jifa', // R$147
-      usd: 'price_1TRvEsB1hl0IoocUfoDgdHkD', // $29
-      eur: 'price_1TRvGQB1hl0IoocUW7feV7IY', // €27
+      brl: 'price_1TRv5zB1hl0IoocU2Yj9jifa',
+      usd: 'price_1TRvEsB1hl0IoocUfoDgdHkD',
+      eur: 'price_1TRvGQB1hl0IoocUW7feV7IY',
     },
     yearly: {
-      brl: 'price_1TRvIFB1hl0IoocUxl5udssL', // R$1470
-      usd: 'price_1TRvKvB1hl0IoocUeyKzAxFn', // $290
-      eur: 'price_1TRvMeB1hl0IoocU2UpTYf9w', // €270
+      brl: 'price_1TRvIFB1hl0IoocUxl5udssL',
+      usd: 'price_1TRvKvB1hl0IoocUeyKzAxFn',
+      eur: 'price_1TRvMeB1hl0IoocU2UpTYf9w',
     },
   },
   elite: {
     monthly: {
-      brl: 'price_1TRv6yB1hl0IoocU77HZPR1a', // R$297
-      usd: 'price_1TRvFCB1hl0IoocU2NlE5m2I', // $59
-      eur: 'price_1TRvGoB1hl0IoocUk1ojbWdf', // €55
+      brl: 'price_1TRv6yB1hl0IoocU77HZPR1a',
+      usd: 'price_1TRvFCB1hl0IoocU2NlE5m2I',
+      eur: 'price_1TRvGoB1hl0IoocUk1ojbWdf',
     },
     yearly: {
-      brl: 'price_1TRvIeB1hl0IoocUWcspSfuo', // R$2970
-      usd: 'price_1TRvLbB1hl0IoocU8iMAMuwl', // $590
-      eur: 'price_1TRvN7B1hl0IoocUu20gafjg', // €550
+      brl: 'price_1TRvIeB1hl0IoocUWcspSfuo',
+      usd: 'price_1TRvLbB1hl0IoocU8iMAMuwl',
+      eur: 'price_1TRvN7B1hl0IoocUu20gafjg',
     },
   },
 };
 
 export function getPriceId(plan: PlanType, interval: BillingCycle, currency: Currency): string {
   return PRICES[plan][interval][currency];
-}
-
-// Maps locale string to Stripe currency code.
-// Site is global/English-first → USD is the default. BRL only for Brazilian
-// locale; EUR only for eurozone locales. Everything else (US, UK, CA, AU, …) → USD.
-const EURO_LOCALE_PREFIXES = ['de', 'fr', 'es', 'it', 'nl', 'fi', 'el', 'et', 'lv', 'lt', 'sk', 'sl', 'ga', 'mt'];
-
-export function detectCurrency(locale: string): Currency {
-  const normalized = String(locale || '').toLowerCase();
-  if (normalized === 'pt-br' || normalized === 'pt') return 'brl';
-  if (normalized === 'pt-pt') return 'eur';
-  if (EURO_LOCALE_PREFIXES.some((l) => normalized === l || normalized.startsWith(`${l}-`))) return 'eur';
-  return 'usd';
 }
 
 // Reverse-lookup: priceId → { plan, interval, ticks, planName }
@@ -121,7 +106,6 @@ export function getStripeConfig() {
     webhookSecret: String(process.env.STRIPE_WEBHOOK_SECRET || '').trim(),
   };
 }
-
 
 export type StripeKeyMode = 'live' | 'test' | 'unknown';
 
