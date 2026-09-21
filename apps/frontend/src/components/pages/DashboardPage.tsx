@@ -174,6 +174,20 @@ const DashboardPage = () => {
     toast({ title: dc.allowanceNoticeTitle, description: dc.allowanceNoticeDesc });
   }, [isDemo, isPlanLoading, plan, toast, dc]);
 
+  // Aviso deixado por outra pagina antes de redirecionar para ca (ex.: "voce
+  // ja e assinante" vindo da /pricing). Mostra uma vez e apaga.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('tickrify_flash');
+      if (!raw) return;
+      sessionStorage.removeItem('tickrify_flash');
+      const flash = JSON.parse(raw) as { title?: string; description?: string };
+      if (flash?.title) toast({ title: flash.title, description: flash.description });
+    } catch {
+      /* noop */
+    }
+  }, [toast]);
+
   // Intencao de compra que se perdeu no login. O caminho normal volta direto
   // para /pricing?checkout=... pelo `redirect_url`; alguns nao carregam a URL
   // (One Tap, verificacao de e-mail aberta em outra aba no celular) e caem

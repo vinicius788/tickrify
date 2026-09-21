@@ -136,11 +136,33 @@ function ehWebViewDoInstagram(): boolean {
   return /Instagram|FBAN|FBAV/i.test(navigator.userAgent);
 }
 
+// Code splitting: paginas como o painel sao arquivos separados. Depois de um
+// deploy, uma aba aberta ainda tem o arquivo principal ANTIGO, que aponta para
+// pedacos que nao existem mais; abrir o painel falharia com tela em branco. O
+// Vite avisa com `vite:preloadError`: recarregamos UMA vez para pegar a versao
+// nova. A marca na sessao impede loop se o erro for outro (ex.: rede fora).
+window.addEventListener('vite:preloadError', (event) => {
+  try {
+    const key = 'tickrify_chunk_reload_at';
+    const last = Number(sessionStorage.getItem(key) || 0);
+    if (Date.now() - last < 60_000) return;
+    sessionStorage.setItem(key, String(Date.now()));
+  } catch {
+    return;
+  }
+  event.preventDefault();
+  window.location.reload();
+});
+
 if (SENTRY_DSN) {
   Sentry.init({
     dsn: SENTRY_DSN,
     environment: SENTRY_ENV,
-    integrations: [Sentry.browserTracingIntegration(), Sentry.replayIntegration()],
+    // Replay (gravacao so em sessao com erro) sai do arquivo principal: ~250 kB
+    // de codigo que todo visitante baixava antes de ver a pagina. Ele e
+    // carregado logo abaixo, depois do `load`. Erro antes disso nao tem
+    // gravacao, mas continua reportado normalmente.
+    integrations: [Sentry.browserTracingIntegration()],
     tracesSampleRate: 0.2,
     replaysOnErrorSampleRate: 1.0,
     replaysSessionSampleRate: 0.0,
@@ -160,6 +182,20 @@ if (SENTRY_DSN) {
       return event;
     },
   });
+
+  // Replay sob demanda (ver comentario em `integrations`). Mesmas taxas do
+  // init: a integracao le replaysOnErrorSampleRate/replaysSessionSampleRate
+  // da configuracao do cliente. Falha ao baixar = sem replay, nada mais.
+  const loadReplay = () => {
+    void Sentry.lazyLoadIntegration('replayIntegration')
+      .then((replayIntegration) => Sentry.addIntegration(replayIntegration()))
+      .catch(() => undefined);
+  };
+  if (document.readyState === 'complete') {
+    window.setTimeout(loadReplay, 2000);
+  } else {
+    window.addEventListener('load', () => window.setTimeout(loadReplay, 2000), { once: true });
+  }
 }
 
 const PUBLISHABLE_KEY = String(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '').trim();

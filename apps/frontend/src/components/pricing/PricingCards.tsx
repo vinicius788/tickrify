@@ -306,7 +306,16 @@ export function PricingCards() {
           message: error instanceof Error ? error.message.slice(0, 200) : 'unknown',
         });
         if (code === 'already_subscribed') {
-          toast({ title: copy.alreadySubscribedTitle, description: copy.alreadySubscribedDesc });
+          // O aviso vai junto para o painel: um toast aqui morria no
+          // recarregamento da pagina e a pessoa via so o painel, sem saber por que.
+          try {
+            sessionStorage.setItem(
+              "tickrify_flash",
+              JSON.stringify({ title: copy.alreadySubscribedTitle, description: copy.alreadySubscribedDesc }),
+            );
+          } catch {
+            toast({ title: copy.alreadySubscribedTitle, description: copy.alreadySubscribedDesc });
+          }
           redirecting = true;
           window.location.href = "/dashboard";
           return;

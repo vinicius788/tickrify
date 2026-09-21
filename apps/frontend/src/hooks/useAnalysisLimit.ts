@@ -24,6 +24,24 @@ interface AnalysisLimitData {
 const FREE_LIMIT = 3;
 const ANALYSIS_REFRESH_EVENT = 'tickrify:analysis-created';
 
+// O painel e o contador da barra lateral usam este hook ao mesmo tempo, e cada
+// um buscava /api/ai/usage: duas requisicoes identicas a cada abertura e a
+// cada analise (medido em producao em 21/09/2026). Pedidos que chegam juntos
+// agora dividem a MESMA requisicao. Janela curta: nao e cache, e deduplicacao.
+type UsageResponse = Awaited<ReturnType<typeof apiClient.getAnalysisUsage>>;
+const SHARE_WINDOW_MS = 1500;
+let sharedUsage: { promise: Promise<UsageResponse>; startedAt: number } | null = null;
+
+function fetchUsageShared(token: string): Promise<UsageResponse> {
+  if (sharedUsage && Date.now() - sharedUsage.startedAt < SHARE_WINDOW_MS) return sharedUsage.promise;
+  const promise = apiClient.getAnalysisUsage(token);
+  sharedUsage = { promise, startedAt: Date.now() };
+  promise.catch(() => {
+    sharedUsage = null;
+  });
+  return promise;
+}
+
 export function useAnalysisLimit(): AnalysisLimitData {
   const { user, isLoaded } = useUser();
   const { getToken } = useAuth();
@@ -60,7 +78,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
         return;
       }
 
-      const usage = await apiClient.getAnalysisUsage(token);
+      const usage = await fetchUsageShared(token);
 
       const validPlans: UserPlan[] = ['free', 'starter', 'pro', 'elite'];
       setUserPlan(validPlans.includes(usage.plan as UserPlan) ? (usage.plan as UserPlan) : 'free');

@@ -34,6 +34,8 @@ export function LiveTape() {
     const url = `https://api.binance.com/api/v3/ticker/24hr?symbols=${symbolsParam}`;
 
     const load = async () => {
+      // Aba escondida nao busca cotacao: ninguem esta vendo a faixa.
+      if (typeof document !== 'undefined' && document.hidden) return;
       try {
         const res = await fetch(url);
         if (!res.ok) throw new Error('bad response');
@@ -55,9 +57,15 @@ export function LiveTape() {
 
     load();
     const id = setInterval(load, 30000);
+    // Voltou para a aba: atualiza na hora em vez de esperar o proximo ciclo.
+    const onVisible = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       active = false;
       clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 

@@ -212,6 +212,8 @@ export class AiService implements OnModuleInit {
   /** Mapa id -> resultado, lido por SQL isolado. Nunca lança (retorna mapa vazio em falha). */
   private async getOutcomesMap(
     userId: string,
+    /** Se vier, le so estas analises (a pagina da lista). Sem ele, todas. */
+    ids?: string[],
   ): Promise<Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean }>> {
     const map = new Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean }>();
     if (!this.outcomeColumnsReady) {
@@ -220,7 +222,11 @@ export class AiService implements OnModuleInit {
     try {
       const rows = await this.prisma.$queryRaw<
         Array<{ id: string; outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean | null }>
-      >`SELECT "id", "userVerdict" AS "outcome", "pnlPercent", "pnlAmount", "isFavorite" FROM "tickrify"."Analysis" WHERE "userId" = ${userId}`;
+      >(ids
+        ? ids.length === 0
+          ? Prisma.sql`SELECT NULL::text AS "id" WHERE false`
+          : Prisma.sql`SELECT "id", "userVerdict" AS "outcome", "pnlPercent", "pnlAmount", "isFavorite" FROM "tickrify"."Analysis" WHERE "userId" = ${userId} AND "id" IN (${Prisma.join(ids)})`
+        : Prisma.sql`SELECT "id", "userVerdict" AS "outcome", "pnlPercent", "pnlAmount", "isFavorite" FROM "tickrify"."Analysis" WHERE "userId" = ${userId}`);
       // O campo `outcome` da API é, e sempre foi, o veredicto do TRADER — agora
       // lido da coluna certa. O outcome automático do sweeper não é exposto aqui
       // (ele aparece agregado e anonimizado em GET /api/ai/accuracy).
@@ -753,16 +759,47 @@ export class AiService implements OnModuleInit {
 
     const analyses = await this.prisma.analysis.findMany({
       where: { userId },
+      // So as colunas que o mapeamento abaixo le. Sem isto vinha a linha
+      // inteira, incluindo `fullResponse` (texto bruto da IA, varios kB por
+      // analise, x40), que neste caminho nunca e usado: getStoredAnalysisPayload
+      // so aproveita `fullResponse` se for objeto, e a coluna e texto.
+      select: {
+        id: true,
+        imageUrl: true,
+        status: true,
+        recommendation: true,
+        confidence: true,
+        reasoning: true,
+        result: true,
+        createdAt: true,
+      },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: safeLimit,
       // `skip: 1` pula a propria linha do cursor, que o cliente ja tem.
       ...(safeCursor ? { cursor: { id: safeCursor }, skip: 1 } : {}),
     });
 
-    const outcomesMap = await this.getOutcomesMap(userId);
+    // Veredito so das analises desta pagina (antes: TODAS as do usuario) e as
+    // imagens assinadas em UMA chamada ao Supabase (antes: uma por analise).
+    const [outcomesMap, signedUrls] = await Promise.all([
+      this.getOutcomesMap(userId, analyses.map((a) => a.id)),
+      this.signImagesBatch(
+        analyses.map((analysis) => {
+          const payload = this.getStoredAnalysisPayload(analysis);
+          return (
+            String(
+              analysis.imageUrl ||
+                (payload?.original_image_url as string) ||
+                (payload?.originalImageUrl as string) ||
+                '',
+            ).trim() || null
+          );
+        }),
+      ),
+    ]);
 
     return Promise.all(
-      analyses.map(async (analysis) => {
+      analyses.map(async (analysis, index) => {
         const fullResponse = this.getStoredAnalysisPayload(analysis);
         const operationFields = this.extractOperationFields(fullResponse, analysis.reasoning ?? null);
         const analysisMeta = operationFields.analysisMeta;
@@ -806,14 +843,7 @@ export class AiService implements OnModuleInit {
               '',
           ).trim() || 'N/A';
 
-        const rawImageUrl =
-          String(
-            analysis.imageUrl ||
-              (fullResponse?.original_image_url as string) ||
-              (fullResponse?.originalImageUrl as string) ||
-              '',
-          ).trim() || null;
-        const signedImageUrl = await this.getSignedImageUrl(rawImageUrl);
+        const signedImageUrl = signedUrls[index] ?? null;
 
         return {
           id: analysis.id,
@@ -1752,6 +1782,95 @@ export class AiService implements OnModuleInit {
     return client;
   }
 
+  /**
+   * URLs assinadas ja geradas, por caminho no bucket. A URL vale 60 min
+   * (createSignedUrl 3600); guardamos 50 para nunca entregar uma que expira em
+   * seguida. Antes cada abertura da lista pedia 40 assinaturas ao Supabase,
+   * uma por imagem, mesmo que tivessem sido geradas um minuto antes.
+   */
+  private readonly signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
+  private static readonly SIGNED_URL_TTL_MS = 50 * 60 * 1000;
+  private static readonly SIGNED_URL_CACHE_MAX = 5000;
+
+  private cacheSignedUrl(path: string, url: string): void {
+    if (this.signedUrlCache.size >= AiService.SIGNED_URL_CACHE_MAX) {
+      const oldest = this.signedUrlCache.keys().next().value;
+      if (oldest !== undefined) this.signedUrlCache.delete(oldest);
+    }
+    this.signedUrlCache.set(path, { url, expiresAt: Date.now() + AiService.SIGNED_URL_TTL_MS });
+  }
+
+  private cachedSignedUrl(path: string): string | null {
+    const hit = this.signedUrlCache.get(path);
+    if (!hit) return null;
+    if (hit.expiresAt <= Date.now()) {
+      this.signedUrlCache.delete(path);
+      return null;
+    }
+    return hit.url;
+  }
+
+  /** Caminho no bucket, ou URL a devolver como esta, ou nada. */
+  private resolveImageRef(rawUrl: string | null): { path: string } | { passthrough: string } | null {
+    if (!rawUrl) return null;
+    if (rawUrl.startsWith('data:')) return { passthrough: rawUrl };
+    const trimmed = rawUrl.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith('http')) {
+      const match = trimmed.match(/analysis-images\/(.+?)(\?|$)/);
+      return match?.[1] ? { path: decodeURIComponent(match[1]) } : { passthrough: trimmed };
+    }
+    return { path: trimmed };
+  }
+
+  /**
+   * Assina varias imagens de uma vez: o que ja esta no cache sai dele, o resto
+   * vai numa unica chamada `createSignedUrls`. Se o lote falhar, cai no
+   * caminho de uma por uma (o mesmo de antes), entao nada fica pior.
+   */
+  private async signImagesBatch(rawUrls: Array<string | null>): Promise<Array<string | null>> {
+    const refs = rawUrls.map((raw) => this.resolveImageRef(raw));
+    const missing = [
+      ...new Set(
+        refs
+          .filter((ref): ref is { path: string } => Boolean(ref && 'path' in ref))
+          .map((ref) => ref.path)
+          .filter((path) => !this.cachedSignedUrl(path)),
+      ),
+    ];
+
+    if (missing.length > 0) {
+      const supabaseUrl = process.env.SUPABASE_URL?.trim() || '';
+      const supabaseServiceKey =
+        process.env.SUPABASE_SERVICE_KEY?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || '';
+      if (supabaseUrl && supabaseServiceKey) {
+        try {
+          const bucket = process.env.SUPABASE_STORAGE_BUCKET?.trim() || 'analysis-images';
+          const { data, error } = await this.getStorageClient(supabaseUrl, supabaseServiceKey)
+            .storage.from(bucket)
+            .createSignedUrls(missing, 3600);
+          if (!error && Array.isArray(data)) {
+            for (const item of data) {
+              if (item?.path && item.signedUrl && !item.error) this.cacheSignedUrl(item.path, item.signedUrl);
+            }
+          }
+        } catch (error) {
+          this.logger.warn(
+            `[AiService] Lote de URLs assinadas falhou: ${error instanceof Error ? error.message : 'erro desconhecido'}`,
+          );
+        }
+      }
+    }
+
+    return Promise.all(
+      refs.map(async (ref, index) => {
+        if (!ref) return null;
+        if ('passthrough' in ref) return ref.passthrough;
+        return this.cachedSignedUrl(ref.path) ?? this.getSignedImageUrl(rawUrls[index]);
+      }),
+    );
+  }
+
   private async getSignedImageUrl(rawUrl: string | null): Promise<string | null> {
     if (!rawUrl) {
       return null;
@@ -1774,6 +1893,9 @@ export class AiService implements OnModuleInit {
         return storagePath;
       }
     }
+
+    const cached = this.cachedSignedUrl(storagePath);
+    if (cached) return cached;
 
     const supabaseUrl = process.env.SUPABASE_URL?.trim() || '';
     const supabaseServiceKey =
@@ -1801,6 +1923,7 @@ export class AiService implements OnModuleInit {
         return null;
       }
 
+      this.cacheSignedUrl(storagePath, data.signedUrl);
       return data.signedUrl;
     } catch (error) {
       this.logger.warn(

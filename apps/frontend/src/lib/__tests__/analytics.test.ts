@@ -24,7 +24,7 @@ describe('analytics', () => {
 
   it('conversao de anuncio NAO vai para o PostHog (cadastro e receita vem do backend)', async () => {
     const a = await freshAnalytics();
-    a.initAnalytics();
+    await a.initAnalytics();
 
     a.trackAdConversion('signup');
     a.trackAdConversion('purchase');
@@ -37,14 +37,14 @@ describe('analytics', () => {
     a.trackAdConversion('signup');
     a.track('landing_viewed');
 
-    a.initAnalytics();
+    await a.initAnalytics();
 
     expect(posthog.capture.mock.calls.map((c) => c[0])).toEqual(['landing_viewed']);
   });
 
   it('signup_started sai uma vez por sessao, venha de onde vier', async () => {
     const a = await freshAnalytics();
-    a.initAnalytics();
+    await a.initAnalytics();
 
     a.trackSignupStartedOnce('signup_route');
     a.trackSignupStartedOnce('signup_route'); // sub-rota do Clerk
@@ -62,7 +62,7 @@ describe('analytics', () => {
       { utmSource: 'chatgpt.com', referrerDomain: 'chatgpt.com' },
     );
 
-    a.initAnalytics(); // aplicado no init, quando o aceite chega
+    await a.initAnalytics(); // aplicado no init, quando o aceite chega
 
     expect(posthog.register).toHaveBeenCalledWith({ utm_source: 'chatgpt.com', referrer_domain: 'chatgpt.com' });
     expect(posthog.setPersonProperties).toHaveBeenCalledWith(
@@ -78,7 +78,7 @@ describe('Meta pixel: eventID para deduplicar com o servidor', () => {
     vi.stubGlobal('fbq', fbq);
     (window as unknown as { fbq?: unknown }).fbq = fbq;
     const a = await freshAnalytics();
-    a.initAnalytics();
+    await a.initAnalytics();
 
     a.track('checkout_started', { sessionId: 'cs_live_1' });
     a.trackAdConversion('purchase', { eventId: 'purchase_cs_live_1', value: 18.85, currency: 'usd' });

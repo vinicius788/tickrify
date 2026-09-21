@@ -21,6 +21,18 @@ export class AdsSignupDto {
   fbc?: string;
 }
 
+/** Campos do perfil que o GET /api/auth/me devolve (ver getMe). */
+const PROFILE_SELECT = {
+  id: true,
+  clerkUserId: true,
+  email: true,
+  name: true,
+  role: true,
+  plan: true,
+  createdAt: true,
+  acquisitionSource: true,
+} as const;
+
 /** Cadastro so conta como "novo" para o Meta nas primeiras 24h da conta. */
 const ADS_SIGNUP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -265,15 +277,12 @@ export class AuthController implements OnModuleInit {
   @Get('me')
   @UseGuards(AuthGuard)
   async getMe(@CurrentUser() user: { id?: string; clerkUserId: string; email?: string | null }) {
+    // So o perfil. Antes vinham junto as 10 ultimas analises com o JSON
+    // COMPLETO da IA (`result` + `fullResponse`): ~97 kB a cada abertura do
+    // painel, para um frontend que le 3 campos (id, email, acquisitionSource).
     let dbUser = await this.prisma.user.findUnique({
       where: user.id ? { id: user.id } : { clerkUserId: user.clerkUserId },
-      include: {
-        subscriptions: true,
-        analyses: {
-          orderBy: { createdAt: 'desc' },
-          take: 10
-        }
-      },
+      select: PROFILE_SELECT,
     });
 
     if (!dbUser) {
@@ -288,10 +297,7 @@ export class AuthController implements OnModuleInit {
           clerkUserId: user.clerkUserId,
           email: user.email || undefined,
         },
-        include: {
-          subscriptions: true,
-          analyses: true
-        },
+        select: PROFILE_SELECT,
       });
     } else if (!dbUser.email) {
       // Conta existente sem e-mail (criada antes do backfill existir) →

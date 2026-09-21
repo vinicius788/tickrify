@@ -42,7 +42,7 @@ export function BuyTicksModal({
   reason?: 'insufficient' | 'topup';
   isSubscriber?: boolean;
 }) {
-  const { buyTicks, balance, packages } = useTicks();
+  const { buyTicks, balance, packages } = useTicks({ withPackages: true });
   const { t } = useLanguage();
   const m = t.ticksModal;
   const [loading, setLoading] = useState<string | null>(null);

@@ -21,7 +21,12 @@ interface TickBalanceResponse {
   currency: 'ticks';
 }
 
-export function useTicks() {
+/**
+ * `withPackages`: so a tela de compra de pacotes precisa da lista. Antes todo
+ * uso do hook (cabecalho, contador, painel) buscava /api/ticks/packages em
+ * toda abertura do painel, para uma tela que nem esta no ar.
+ */
+export function useTicks(options: { withPackages?: boolean } = {}) {
   const { getToken } = useAuth();
   const { user, isLoaded } = useUser();
   const queryClient = useQueryClient();
@@ -41,7 +46,11 @@ export function useTicks() {
 
       return res.json() as Promise<TickBalanceResponse>;
     },
-    refetchInterval: 30_000,
+    // O saldo so muda numa analise (evento abaixo atualiza na hora) ou na
+    // virada do mes. 30s de polling eram 2 requisicoes/min por aba aberta ao
+    // Render; 2 min + atualizacao ao voltar para a aba (padrao do React
+    // Query) cobrem o resto. Aba escondida nao consulta.
+    refetchInterval: 120_000,
     staleTime: 10_000,
     enabled,
   });
@@ -61,7 +70,7 @@ export function useTicks() {
       return res.json() as Promise<TickPackage[]>;
     },
     staleTime: 5 * 60_000,
-    enabled,
+    enabled: enabled && Boolean(options.withPackages),
   });
 
   // Atualiza o saldo imediatamente quando uma análise é criada (o débito de

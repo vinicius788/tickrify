@@ -1,31 +1,45 @@
 // Wrapper fino de analytics (PostHog).
 // Centraliza init, identify e captura de eventos para que nenhum `posthog.capture`
 // cru seja espalhado pelo código. Trocar de ferramenta = mexer só aqui.
-import posthog from 'posthog-js';
+import type { PostHog } from 'posthog-js';
+
+// O pacote do PostHog (~300 kB de codigo) so e BAIXADO no aceite de cookies:
+// antes ia no arquivo principal e todo visitante pagava por ele, inclusive
+// quem recusa. Todo uso abaixo passa por `ready`, que so vira true depois que
+// ele chegou; ate la os eventos ficam na fila (ver enqueue/flushPending).
+let posthog = undefined as unknown as PostHog;
+let loading: Promise<void> | null = null;
 
 const KEY = String(import.meta.env.VITE_POSTHOG_KEY || '').trim();
 const HOST = String(import.meta.env.VITE_POSTHOG_HOST || 'https://us.i.posthog.com').trim();
 
 let ready = false;
 
-export function initAnalytics(): void {
+export function initAnalytics(): Promise<void> {
   initMetaPixel();
   initGoogleTag();
-  if (ready || !KEY) return;
-  try {
-    posthog.init(KEY, {
-      api_host: HOST,
-      capture_pageview: false, // SPA: controlamos pageview manualmente via React Router
-      capture_pageleave: true,
-      autocapture: false, // só eventos nomeados — menos ruído, menos cota
-      persistence: 'localStorage+cookie',
+  if (ready || !KEY) return Promise.resolve();
+  if (loading) return loading;
+  loading = import('posthog-js')
+    .then(({ default: ph }) => {
+      ph.init(KEY, {
+        api_host: HOST,
+        capture_pageview: false, // SPA: controlamos pageview manualmente via React Router
+        capture_pageleave: true,
+        autocapture: false, // só eventos nomeados — menos ruído, menos cota
+        persistence: 'localStorage+cookie',
+      });
+      posthog = ph;
+      ready = true;
+      flushPending();
+    })
+    .catch((err) => {
+      // Nunca deixar analytics derrubar o app. Sem `loading`, a proxima
+      // chamada tenta de novo (ex.: rede caiu no meio do download).
+      console.warn('[analytics] init falhou:', err);
+      loading = null;
     });
-    ready = true;
-    flushPending();
-  } catch (err) {
-    // Nunca deixar analytics derrubar o app.
-    console.warn('[analytics] init falhou:', err);
-  }
+  return loading;
 }
 
 // ─── Meta Pixel ───────────────────────────────────────────────────────────────

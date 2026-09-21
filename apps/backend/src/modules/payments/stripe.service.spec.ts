@@ -365,6 +365,57 @@ describe('StripeService webhooks', () => {
     });
   });
 
+  describe('recusa e abandono dentro do checkout (sem fatura)', () => {
+    it('payment_intent.payment_failed registra a recusa com o motivo, sem mexer em assinatura', async () => {
+      await expect(
+        deliver('payment_intent.payment_failed', {
+          id: 'pi_1',
+          customer: 'cus_1',
+          amount: 1885,
+          currency: 'usd',
+          last_payment_error: { code: 'card_declined', decline_code: 'insufficient_funds' },
+        }),
+      ).resolves.toEqual({ received: true });
+
+      expect(prisma.adminAudit.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'funnel:payment_failed',
+          targetUserId: 'usr_1',
+          details: expect.objectContaining({ code: 'card_declined', declineCode: 'insufficient_funds', reason: 'checkout_attempt' }),
+        }),
+      });
+      expect(prisma.subscription.upsert).not.toHaveBeenCalled();
+    });
+
+    it('checkout.session.expired registra o abandono no historico do usuario', async () => {
+      await deliver('checkout.session.expired', { id: 'cs_exp', status: 'expired', client_reference_id: 'usr_1', metadata: {} });
+
+      expect(prisma.adminAudit.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'funnel:checkout_returned',
+          targetUserId: 'usr_1',
+          details: expect.objectContaining({ outcome: 'expired', session: 'cs_exp' }),
+        }),
+      });
+    });
+
+    it('checkout.session.completed entregue DUAS vezes: a segunda nao faz nada', async () => {
+      prisma.$queryRaw.mockResolvedValueOnce([{ id: 'evt_dup' }]);
+      await deliver('checkout.session.completed', {
+        id: 'cs_1', mode: 'subscription', status: 'complete', payment_status: 'paid', subscription: 'sub_1',
+        customer: 'cus_1', client_reference_id: 'usr_1', metadata: { userId: 'usr_1', clerkUserId: 'clerk_1' },
+      }, 'evt_dup');
+      const upsertsAfterFirst = prisma.subscription.upsert.mock.calls.length;
+
+      prisma.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ status: 'processed' }]);
+      const second = await deliver('checkout.session.completed', { id: 'cs_1' }, 'evt_dup');
+
+      expect(second).toEqual({ received: true, duplicate: true });
+      expect(prisma.subscription.upsert.mock.calls.length).toBe(upsertsAfterFirst);
+      expect((captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'checkout_completed')).toHaveLength(1);
+    });
+  });
+
   describe('invoice.payment_failed', () => {
     it('grava o status real so desta assinatura e registra a falha no AdminAudit', async () => {
       stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'past_due' }));

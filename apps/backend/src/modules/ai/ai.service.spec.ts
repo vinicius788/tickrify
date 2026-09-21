@@ -257,6 +257,38 @@ describe('AiService access enforcement', () => {
       expect(prisma.analysis.findMany).not.toHaveBeenCalled();
     });
 
+    it('busca so as colunas usadas: nunca o fullResponse (texto bruto da IA)', async () => {
+      await service.listAnalyses('usr_1', 40);
+      const args = prisma.analysis.findMany.mock.calls[0][0];
+      expect(args.select).toBeDefined();
+      expect(args.select.fullResponse).toBeUndefined();
+      expect(args.select).toMatchObject({ id: true, result: true, imageUrl: true, status: true });
+    });
+
+    it('assina as imagens da pagina em UM lote e reaproveita na abertura seguinte', async () => {
+      process.env.SUPABASE_URL = 'https://x.supabase.co';
+      process.env.SUPABASE_SERVICE_KEY = 'service';
+      const createSignedUrls = jest.fn(async (paths: string[]) => ({
+        data: paths.map((path) => ({ path, signedUrl: `https://signed/${path}`, error: null })),
+        error: null,
+      }));
+      const createSignedUrl = jest.fn();
+      (service as any).getStorageClient = () => ({
+        storage: { from: () => ({ createSignedUrls, createSignedUrl }) },
+      });
+      prisma.analysis.findMany.mockResolvedValue([
+        { id: 'a1', imageUrl: 'u/1.png', status: 'completed', result: {}, createdAt: new Date() },
+        { id: 'a2', imageUrl: 'u/2.png', status: 'completed', result: {}, createdAt: new Date() },
+      ]);
+
+      const first = await service.listAnalyses('usr_1', 40);
+      await service.listAnalyses('usr_1', 40);
+
+      expect(first.map((a: any) => a.imageUrl)).toEqual(['https://signed/u/1.png', 'https://signed/u/2.png']);
+      expect(createSignedUrls).toHaveBeenCalledTimes(1); // segunda abertura saiu do cache
+      expect(createSignedUrl).not.toHaveBeenCalled();
+    });
+
     it('ignora cursor vazio ou so com espaco, em vez de mandar lixo ao prisma', async () => {
       await service.listAnalyses('usr_1', 40, '   ');
       const args = prisma.analysis.findMany.mock.calls[0][0];

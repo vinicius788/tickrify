@@ -1,27 +1,40 @@
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import LandingPage from "@/components/pages/LandingPage";
-import NotFoundPage from '@/components/pages/NotFoundPage';
-import TermsPage from "@/components/pages/TermsPage";
-import CookiePolicyPage from "@/components/pages/CookiePolicyPage";
-import RiskDisclosurePage from "@/components/pages/RiskDisclosurePage";
 import CookieConsent from "@/components/landing/CookieConsent";
-import DashboardPage from "@/components/pages/DashboardPage";
 import PricingPage from "@/components/pages/PricingPage";
-import PrivacyPolicyPage from "@/components/pages/PrivacyPolicyPage";
-import AccuracyPage from "@/components/pages/AccuracyPage";
-import TryPage from "@/components/pages/TryPage";
-import AdminPage from "@/components/pages/AdminPage";
 import ReportProblemButton from "@/components/ReportProblemButton";
 import ProtectedRoute from "@/components/routing/ProtectedRoute";
 import { RouteAnalytics } from "@/components/providers/RouteAnalytics";
 import { BrowserRouter as Router, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { SignIn, SignUp, GoogleOneTap, SignedOut } from "@clerk/clerk-react";
-import { useEffect, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, type ReactNode } from "react";
 import { useSeo, seoFor } from "@/hooks/useSeo";
 import { warmupPaymentsApi } from "@/lib/api";
 import { scrollToTop } from "@/lib/utils";
 import { checkoutTargetFromAuthSearch } from "@/lib/checkoutIntent";
+
+// ── Code splitting (21/09/2026) ─────────────────────────────────────────────
+// Antes TODAS as paginas iam num arquivo so (1,55 MB, 484 kB gzip): quem abria
+// a landing baixava o painel, o admin e as paginas legais junto. Landing e
+// /pricing continuam no arquivo principal (entrada e conversao, sem espera);
+// o resto baixa quando a rota abre. O painel e pre-baixado quando o navegador
+// fica ocioso (ver App), entao quem loga nao espera o arquivo dele.
+const loadDashboard = () => import("@/components/pages/DashboardPage");
+const DashboardPage = lazy(loadDashboard);
+const AdminPage = lazy(() => import("@/components/pages/AdminPage"));
+const AccuracyPage = lazy(() => import("@/components/pages/AccuracyPage"));
+const TryPage = lazy(() => import("@/components/pages/TryPage"));
+const TermsPage = lazy(() => import("@/components/pages/TermsPage"));
+const CookiePolicyPage = lazy(() => import("@/components/pages/CookiePolicyPage"));
+const RiskDisclosurePage = lazy(() => import("@/components/pages/RiskDisclosurePage"));
+const PrivacyPolicyPage = lazy(() => import("@/components/pages/PrivacyPolicyPage"));
+const NotFoundPage = lazy(() => import("@/components/pages/NotFoundPage"));
+
+/** Enquanto o arquivo da rota chega: so o fundo da pagina, sem texto nem salto de layout. */
+function RouteFallback() {
+  return <div className="min-h-screen" aria-busy="true" />;
+}
 
 /**
  * Casca das telas de autenticação do Clerk.
@@ -88,6 +101,19 @@ function App() {
     warmupPaymentsApi();
   }, []);
 
+  // Pre-baixa o painel quando o navegador fica ocioso: fora do caminho critico
+  // da landing, mas pronto quando a pessoa loga ou clica em "Dashboard".
+  useEffect(() => {
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+    const prefetch = () => void loadDashboard().catch(() => undefined);
+    if (idle) {
+      idle(prefetch);
+    } else {
+      const timer = window.setTimeout(prefetch, 3000);
+      return () => window.clearTimeout(timer);
+    }
+  }, []);
+
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <Router>
@@ -96,6 +122,7 @@ function App() {
         {/* Google One Tap: login em 1 toque para deslogados em qualquer página,
             EXCETO na demo /try (ver OneTapOutsideTry). */}
         <OneTapOutsideTry />
+        <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<LandingPage />} />
           {/* Demo anônima (Fase 0): análise real sem cadastro — valor antes do signup. */}
@@ -172,6 +199,7 @@ function App() {
           {/* Curinga: sem isto, link quebrado renderizava tela branca. */}
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
+        </Suspense>
         {/* Botão de reportar problema, montado UMA vez para o app inteiro.
             Dentro do Router de propósito: ele lê a rota atual (useLocation) para
             mandar junto com o relato. Só se desenha para quem está logado. */}
