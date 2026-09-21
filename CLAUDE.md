@@ -1166,6 +1166,9 @@ ter ficado. Ler arquivo com `grep`/`sed`/`python` nao cria lock — so comandos 
 | Corpo das rotas React invisivel sem JS (ZERO palavra em `/`, `/pricing`, `/accuracy`, `/try`) | `scripts/geo-body.mjs` gera o corpo dentro de `<noscript>` a partir do PROPRIO `en.ts` e da API de acuracia, e o `prerender.mjs` injeta. Home passou de 0 para 876 palavras em HTML cru. A nota antiga dizia que isto exigia navegador headless: exige para renderizar o APP, nao para servir o TEXTO. | 14/09 |
 | JSON-LD so existia depois do JS (nenhum crawler de IA via schema) | `buildJsonLd` emite FAQPage na home, SoftwareApplication+Offer na /pricing e Dataset na /accuracy no HTML cru; `useJsonLd` passou a remover o bloco de mesmo id ao montar, entao o React substitui em vez de duplicar. | 14/09 |
 | robots.txt sem regra nomeada para crawler de IA | 15 agentes liberados explicitamente em `public/robots.txt` (OAI-SearchBot, ChatGPT-User, GPTBot, Google-Extended, PerplexityBot, ClaudeBot, Bingbot, Applebot-Extended e outros). | 14/09 |
+| `<link>` do Google Fonts bloqueando a primeira pintura | `media="print" onload="this.media='all'"` + `<noscript>` no `index.html` e nas 21 paginas estaticas (`blog/`, `tools/`, `for/`). Medido: era 750ms dos 1.050ms de bloqueio no mobile, para 2,2 KB de CSS. | 21/09 |
+| Familia de fonte Syne baixada e nunca usada | fora da URL do css2. `grep` no repo inteiro: zero ocorrencia fora do proprio link. | 21/09 |
+| `llms.txt` reprovando na auditoria do Lighthouse | links convertidos para Markdown (`- [nome](url): nota`). O erro era literalmente "o arquivo nao parece conter links": a spec do llmstxt.org quer link Markdown, e o arquivo tinha URL crua. | 21/09 |
 
 ### ⚠️ Auditoria de SEO recebida em 26/08 — QUASE TODA desatualizada
 
@@ -3777,3 +3780,99 @@ assinatura `incomplete`, ela expira em ~23h e a Stripe NAO devolve o uso. Dos 5
 usos do EARLY35, 2 sao das duas tentativas recusadas do benniequltured. Nao da
 para aumentar o `max_redemptions` de cupom existente. Por isso a vitrine parou de
 prometer "os primeiros 50": virou "early subscribers / while this offer lasts".
+
+---
+
+## Sprint 21/09/2026 (noite) - PageSpeed medido e as duas correcoes obvias
+
+**Como comecou:** o dono viu um video sobre PageSpeed/Google Ads e perguntou se o
+Tickrify estava alinhado. Em vez de opinar, rodou-se a medicao.
+
+### Numeros REAIS (PageSpeed Insights, 21/09, tickrify.com/)
+
+| | Mobile | Desktop |
+|---|---|---|
+| Desempenho | **74** | 97 |
+| Acessibilidade | 97 | 97 |
+| Boas praticas | 96 | 96 |
+| SEO | **100** | 100 |
+
+Mobile: FCP 3,3s (reprova) - LCP 4,2s (reprova, limite 2,5s) - TBT 260ms (medio)
+- CLS 0,028 (passa) - SI 3,3s (passa). Desktop: FCP 0,7s, LCP 1,1s, CLS 0,005.
+
+⚠️ **A quota anonima da API do PageSpeed (`pagespeedonline.googleapis.com`)
+estoura facil e responde 429 para todo mundo.** O caminho que funcionou foi a
+INTERFACE (`pagespeed.web.dev/analysis?url=...&form_factor=mobile`) e ler os
+gauges do DOM. A analise leva varios minutos; "Executando analise" nao e travamento.
+
+### O achado nº1: 750ms dos 1.050ms de bloqueio eram a fonte do Google
+A tabela do audit de render-blocking, lida item a item:
+
+| recurso | transferencia | bloqueio |
+|---|---|---|
+| CSS proprio (`/assets/index-*.css`) | 15,3 KB | 300 ms |
+| `fonts.googleapis.com/css2?...` | **2,2 KB** | **750 ms** |
+
+Dois KB e meio de CSS custando tres quartos de segundo, porque e um dominio de
+terceiros no caminho critico. Corrigido com `media="print" onload` + `<noscript>`.
+Isso NAO muda o desenho: todas as familias ja usavam `display=swap`, entao o
+texto sempre pintou na fonte de fallback primeiro. O que muda e o navegador
+deixar de ESPERAR o arquivo para comecar a desenhar.
+
+Aplicado no `index.html` (propaga para as 12 rotas pelo `prerender.mjs`) E nas
+21 paginas estaticas de `public/blog`, `public/tools` e `public/for`, que tem
+`<link>` proprio e nao passam pelo pre-render.
+
+**Syne saiu junto:** 5 familias eram baixadas e uma delas nao aparece em lugar
+nenhum do codigo. `Fraunces` 69 usos, `Geist` 48, `JetBrains Mono` 91 (via
+`font-mono` do Tailwind), `Geist Mono` 43 (via `--font-mono`), **`Syne` zero**.
+
+### O achado nº2: o `llms.txt` REPROVA numa auditoria nova do Lighthouse
+O Lighthouse ganhou um audit de `llms.txt` e uma categoria **"Navegacao
+agentica"** (o Tickrify tira 2/3). O erro do arquivo era literal: *"o arquivo
+nao parece contem links"*. O conteudo estava certo e completo desde 14/09, mas
+as URLs eram **cruas**; a spec do llmstxt.org quer **link Markdown**
+(`- [nome](url): nota`). Reescrito: 37 links Markdown, H1 unico, blockquote de
+resumo. Conferido por `comm` que **nenhuma URL do arquivo antigo se perdeu**.
+
+### ⚠️ O dado que muda a conclusao sobre anuncio: NAO existe CrUX deste site
+Search Console > Core Web Vitals, lido em 21/09: *"Nao ha dados de uso
+suficientes nos ultimos 90 dias"*, **para celular E para computador**. Sem dado
+de campo, a velocidade nao esta encarecendo o clique hoje. O CPC de R$ 2,69 com
+CTR de 9,3% e leilao e geo, nao PageSpeed. Otimizar velocidade aqui e preparar
+o terreno para quando houver trafego, nao destravar o anuncio agora.
+
+**E o video estava errado no mecanismo:** o indice de qualidade do Google Ads
+tem **TRES** componentes (CTR esperado, relevancia do anuncio, experiencia na
+pagina de destino), nao cinco. Velocidade nao e pilar separado, entra dentro do
+terceiro. Nao reabrir essa conta achando que existem cinco notas.
+
+### Responsividade: medida, nao suposta
+Home e /pricing carregadas em iframe de 390px de largura, com leitura do DOM de
+dentro: `scrollWidth == innerWidth` nas duas, **zero rolagem horizontal, layout
+nao quebra**. Dois defeitos menores continuam: uma `<img>` de 400px estoura o
+viewport de 390 (`PlatformDemoSection`), e 8 de 43 links/botoes da home tem area
+de toque menor que 32px.
+
+⚠️ **`resize_window` do navegador NAO muda o `innerWidth` da pagina** nesse
+ambiente (mediu 1352 depois de pedir 400). O que funciona para testar
+responsividade daqui e o iframe de largura fixa: media query responde a largura
+do iframe.
+
+### PENDENTE desta frente, em ordem de retorno
+1. **416 KB de JavaScript nao usado** no carregamento inicial (o audit mede
+   isso na home). O bundle no ar e 836 KB cru, ~260 KB em Brotli. E o maior
+   ganho que sobrou e o de maior risco.
+2. **Imagens sem `width`/`height`** (audit reprova) e a `<img>` de 400px.
+3. **Contraste insuficiente** em algum par de cores (custa os 3 pontos de
+   acessibilidade) e **erros de browser no console** (custa em boas praticas).
+4. Pesos de `Geist` (sete: 300 a 900) nunca foram auditados um a um.
+
+### Verificacao desta sprint
+`tsc -b` do frontend: 0 erros. Os 22 HTML editados reparseados com `HTMLParser`
+e conferidos por `grep` (1 `media="print"`, 1 `onload`, 0 `Syne` em cada).
+`prerender.mjs` rodado **duas vezes seguidas** contra um `dist/` montado a mao
+em `/tmp` (receita da nota de 17/08): 12 rotas, titulo proprio em cada, corpo em
+`<noscript>` intacto (714 palavras na home sem a API de acuracia), `/sign-in`
+seguindo sem corpo, e **nenhuma contaminacao entre execucoes**.
+`vitest`/`vite build` seguem sem rodar no VM (limitacao ja registrada).
