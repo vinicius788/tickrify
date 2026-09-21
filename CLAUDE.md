@@ -3947,3 +3947,49 @@ numero velho. `s4sub` virou template `{n}` nos 6 idiomas. Removidas junto 5
 chaves mortas de `landing.social` em cada idioma (`label`, `title`, `highlight`,
 `subtitle`, `footnote`): a `footnote` ainda falava em "395 analises (agosto)" e
 nao era renderizada em lugar nenhum.
+
+### 21/09, parte 2: `width`/`height` nas imagens, e um "bug" que NAO era bug
+
+**⚠️ A `<img>` de 400px que estoura o viewport de 390 e DELIBERADA. Nao corrigir.**
+Eu mesmo a reportei como defeito na medicao da manha. Abrindo o CSS antes de
+mexer: `@media` do mobile tem `.site-demo-chart img { width: 121.8%; max-width:
+none; }` e o pai `.site-demo-chart` tem `overflow: hidden`. E zoom no grafico da
+demo, contido pelo pai. Medido no iframe de 390px: a imagem sai 400px de largura
+e o `scrollWidth` da pagina continua 390, ou seja **nao existe rolagem
+horizontal**. Quem "consertar" isso tira o zoom da demo no celular.
+Licao repetida pela enesima vez neste projeto: ler o CSS antes de acreditar num
+numero que um teste cuspiu.
+
+**O que foi feito:** `width`/`height` explicitos em duas imagens de pagina
+publica, com `height: auto` no CSS das tres regras que as governam.
+- `PlatformDemoSection`: `660x300`, a proporcao do `viewBox` dos tres SVG.
+- `TryPage` (grafico "depois"): `1400x812`, a dimensao real do PNG.
+- `index.css`: `height: auto` em `.site-demo-chart img` (desktop E a regra de
+  121.8% do mobile) e em `.site-try-shot img`.
+
+⚠️ **O `height: auto` NAO e detalhe de estilo, e o que impede a distorcao.** Com
+o atributo `height="300"` e sem ele, a altura vira 300px fixos em qualquer
+largura. Atributo = proporcao para o navegador reservar a caixa antes do
+download; CSS = tamanho real.
+
+Verificado em producao injetando exatamente a mudanca na pagina no ar: desktop
+651x296 antes e depois (proporcao 2.200 nos dois), mobile 400x182 antes e depois
+(2.200 nos dois), `aspect-ratio` computado virando `auto 660 / 300`. Zero
+distorcao, zero mudanca de tamanho.
+
+**NAO foi possivel reproduzir o CLS de 0,128 fora do Lighthouse.** Com cache
+quente e rede rapida, o `PerformanceObserver` de `layout-shift` devolve **0
+eventos**, tanto em desktop quanto no iframe de 390px. Entao esta correcao fecha
+o audit *"elementos de imagem nao tem width e height explicitas"*, que e um item
+real e barato, mas **nao esta provado que ela e a causa do 0,128** e ninguem
+deve escrever que resolveu ate ver a distribuicao de varios runs.
+
+⚠️ **Hipotese que precisa ser vigiada, e ela e sobre a correcao da fonte da parte
+1:** com o CSS do Google Fonts fora do caminho critico, a `@font-face` passa a
+chegar DEPOIS da primeira pintura. O texto pinta na fonte de fallback e troca
+quando a real chega, e troca de fonte desloca layout. Pode ser que a parte 1
+tenha comprado FCP pagando em CLS. Se o CLS passar de 0,1 de forma consistente
+em varios runs, o suspeito numero 1 e esse, e a saida e self-host das fontes ou
+um fallback com `size-adjust`, nao desfazer o `media="print"`.
+
+

@@ -342,7 +342,7 @@ const TryPage = () => {
               {analyzedExample && showAfter && (
                 <div className="site-try-after">
                   <div className="site-try-shot">
-                    <img src={afterChart} alt="The same XAUUSD chart hours later" loading="lazy" decoding="async" />
+                    <img src={afterChart} alt="The same XAUUSD chart hours later" loading="lazy" decoding="async" width={1400} height={812} />
                   </div>
                   <p className="site-try-caption">
                     The same chart, hours later that day: gold ran from the 4,260s into the 4,340s.{' '}

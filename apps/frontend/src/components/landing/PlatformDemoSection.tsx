@@ -182,7 +182,12 @@ const PlatformDemoSection = () => {
           <div className="site-demo-body">
             <div ref={chartRef} className={`site-demo-chart${reading ? ' is-reading' : ''}`}>
               <div className="site-demo-scan" />
-              <img src={current.chart} alt="" />
+              {/* width/height sao a PROPORCAO (viewBox 660x300 dos tres SVG), nao o
+                  tamanho na tela: o CSS manda em `width`, e o `height: auto` que
+                  acompanha impede a distorcao. Servem para o navegador reservar a
+                  caixa ANTES do download e nao empurrar a pagina depois (CLS).
+                  Trocar o SVG por um de outra proporcao exige mudar estes numeros. */}
+              <img src={current.chart} alt="" width={660} height={300} />
             </div>
 
             <aside className="site-demo-side">
