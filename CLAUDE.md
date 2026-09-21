@@ -332,6 +332,32 @@ Limpeza de 28/07: 9 `.md`/`.csv` da raiz → `_local/arquivo/` · `marketing-spr
 `_local/marketing-sprint/` · os 3 `.docx`/`.xlsx` de `docs/` → `_local/arquivo/`.
 `docs/` continua no git só com doc **técnica** (ENV_VARIABLES, PROMPTS, runbooks).
 
+## 🚫 REGRA PERMANENTE — nao deixar codigo morto para tras (21/09/2026)
+
+Pedido explicito do dono. Vale para TODA mudanca, grande ou pequena:
+
+1. **Quem tira o uso, tira o codigo.** Removeu a tela, a rota, o botao ou a
+   chamada? Na MESMA mudanca remova o que so existia para ela: endpoint, metodo
+   de service, hook, tipo, DTO, chave de i18n (nos 6 idiomas), mock de teste,
+   dependencia npm, variavel de ambiente documentada. Nada de "fica para depois".
+2. **Nada de casca "para nao quebrar import".** Se um export so sobrevive por
+   causa de um mock ou de um comentario, apague os dois juntos.
+3. **Codigo comentado, feature flag sem leitor, `console.log` de depuracao e
+   helper duplicado nao entram em commit.** Log de operacao (linha de boot,
+   `[funnel]`, `[Metrics]`) e intencional e fica.
+4. **Antes de apagar, confirme** — "parece nao usado" nao basta:
+   - busca no repo INTEIRO (frontend, backend, worker, scripts, `public/`,
+     `.github/workflows`, Dockerfile/entrypoint), incluindo imports dinamicos;
+   - rota de backend: conferir quem chama de FORA do site (Stripe/webhook,
+     crons, GitHub Actions, operacao manual documentada);
+   - dependencia: conferir se nao e peer/runtime de outra (ex.: `pg` do
+     adapter do Prisma) e se configs (postcss, nest-cli) nao a usam sem import;
+   - depois: typecheck, lint, testes e build dos DOIS lados. Mexeu em
+     dependencia ou em infra: build da imagem Docker a partir de `git archive`
+     e boot com Postgres/Redis descartaveis (receita na auditoria abaixo).
+5. **Variavel de ambiente sem uso no codigo** se lista para o dono remover no
+   painel; Claude nao remove sozinho (e config de producao).
+
 ## Sprint 29/07 — bug de cobranca em moeda + politica de privacidade
 
 **Como apareceu:** a `/pricing` mostrava US$ 29 e o checkout da Stripe abria em
@@ -3633,3 +3659,35 @@ corrida entre /ticks/balance e /usage; o saldo real ja era 200. Nao corrigido.
 exigiria fallback visivel); /api/ai/performance le 1000 linhas cheias mas
 nenhuma tela chama; DashboardPage (1200+ linhas) sem memoizacao estudada;
 imagem de exemplo da /try (378 kB) e entrada da IA, nao comprimir sem medir.
+
+## 21/09/2026 — auditoria de limpeza (continuacao da sessao Codex de 16/09)
+
+Os 10 commits locais do Codex (nunca enviados) foram reaplicados sobre
+producao e validados; a limpeza que faltava foi feita por cima.
+**Validacao que vale como receita:** imagem Docker de `git archive HEAD` (sem
+node_modules local) + Postgres/Redis descartaveis, `RUN_MIGRATIONS_ON_START=true`,
+URL do banco com `sslmode=disable` (so no teste: em producao o datasource
+forca SSL). Resultado: 14 migracoes do zero, worker e API no ar, rotas vivas
+200/401, removidas 404, webhook sem assinatura 400.
+
+🔴 **Achado que protege producao:** o Dockerfile antigo fazia
+`npm install -g pnpm` SEM versao. O pnpm atual recusa o install
+(`ERR_PNPM_IGNORED_BUILDS`): o proximo build sem cache no Render falharia e
+travaria todos os deploys. O commit do Codex que fixa `pnpm@10.12.4` corrige.
+
+**Removido (sem chamador, conferido):** `/api/ai/analyze/stream` +
+`streamAnalysis`; `/api/ai/performance` (back e front); `/stripe/cancel-` e
+`/reactivate-subscription` (cancelamento e pelo portal); pacotes avulsos
+(`/ticks/packages`, `/history`, `/checkout`, `createTicksCheckout`, ramo
+`ticks_purchase` do webhook, `TICK_PACKAGES`, DTO, `useTicks` packages/buyTicks,
+i18n `ticksModal`); helpers `detectCurrency`, `useTheme`, `limparMigalhas`,
+`LANGUAGE_AI_NAMES`, `isTurnstileEnabled`; deps `ioredis`, `pg`, `@types/pg`,
+`source-map-support`, `ts-loader` (backend), `dotenv`/`autoprefixer` (raiz).
+**Mantido de proposito:** endpoints de operacao (`/prompts/*/activate`,
+`/prompts/latest`, `/admin/flags/recarregar`), webhook, worker/scripts/prerender
+(pontos de entrada sem import), `pg`/`ioredis` agora vem pelas proprias libs.
+**Env vars no Render sem leitor no codigo (dono decide remover):**
+ALLOW_UNAUTHENTICATED, CLERK_PUBLISHABLE_KEY, CLERK_WEBHOOK_SECRET,
+FREE_ANALYSIS_LIMIT_PER_MONTH, STRIPE_PRICE_PRO, STRIPE_PRICE_PRO_MONTHLY,
+SUPABASE_ANON_KEY, SUPABASE_JWT_SECRET, VITE_GOOGLE_ADS_ID.
+
