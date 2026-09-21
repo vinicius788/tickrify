@@ -3701,3 +3701,28 @@ criado. Corrigido fixando `2.100.1` (a versao que ja rodava). **Regra:** o boot
 de teste no Docker precisa de TODAS as env que criam cliente no construtor
 (`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `OPENAI_API_KEY`), com valor falso, e
 subir dependencia exige conferir `engines.node` contra o `FROM` do Dockerfile.
+
+## 21/09/2026 — auditoria final pos-correcoes (estado verificado)
+
+Portoes na arvore de `dbbec80`: backend tsc 0, eslint 0, jest 268/268, build ok;
+frontend tsc 0, eslint 0 erros (12 avisos `react-refresh`), vitest 65/65, build +
+prerender ok; `pnpm audit` 0 vulnerabilidades; Docker de `git archive` com todas
+as env que criam cliente no construtor: migracoes do zero, API + worker sobem,
+rotas removidas 404, webhook sem/falsa assinatura 400, checkout sem login 401.
+Producao: 5 paginas publicas sem request falho nem chamada duplicada; console
+so com avisos do Google One Tap/FedCM (componente `GoogleOneTap` do Clerk).
+
+**Armadilha:** `vitest` chamado DIRETO roda sem jsdom e 17 testes falham com
+"window is not defined". O ambiente vem do script: use `pnpm test`.
+
+Removido: `prisma.config.ts` da RAIZ (nenhum comando o usava; todos rodam de
+`apps/backend`, e ele importava `dotenv`, que a raiz nao declara mais),
+`resolveTicksForPriceId` (regra ANTIGA de credito: 12x200 de uma vez no anual,
+substituida pelo teto mensal), `flagString` e `isMetaCapiEnabled` (sem uso).
+
+Aberto, conhecido e nao critico: e-mail de recuperacao so sai no caminho sem fila
+(decisao do dono, manda e-mail); preflight CORS de origem desconhecida responde
+500 em vez de negar sem erro; `setOutcome` do painel falha calado (o veredito
+fica no localStorage); drift cosmetico entre migracoes e schema (ordem de indice
+do ProblemReport, default do FeatureFlag; o indice `Analysis_promptVer_outcome`
+e criado no boot); i18n dos 6 idiomas no bundle principal (812 kB).

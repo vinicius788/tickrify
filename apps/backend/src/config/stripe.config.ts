@@ -63,27 +63,6 @@ export function getPriceId(plan: PlanType, interval: BillingCycle, currency: Cur
   return PRICES[plan][interval][currency];
 }
 
-// Reverse-lookup: priceId → { plan, interval, ticks, planName }
-// Yearly invoices fire once per year, so we credit the full 12-month allocation upfront.
-export function resolveTicksForPriceId(priceId: string): { ticks: number; planName: string } {
-  if (!priceId) return { ticks: 0, planName: '' };
-
-  for (const [planKey, intervals] of Object.entries(PRICES) as [PlanType, typeof PRICES[PlanType]][]) {
-    for (const [interval, currencies] of Object.entries(intervals) as [BillingCycle, Record<Currency, string>][]) {
-      for (const id of Object.values(currencies)) {
-        if (id === priceId) {
-          const monthly = PLAN_TICKS_PER_MONTH[planKey];
-          const ticks = interval === 'yearly' ? monthly * 12 : monthly;
-          const planName = planKey.charAt(0).toUpperCase() + planKey.slice(1);
-          return { ticks, planName };
-        }
-      }
-    }
-  }
-
-  return { ticks: 0, planName: '' };
-}
-
 // Reverse-lookup: priceId → plan name (or null if not found)
 export function resolvePlanForPriceId(priceId: string): PlanType | null {
   if (!priceId) return null;

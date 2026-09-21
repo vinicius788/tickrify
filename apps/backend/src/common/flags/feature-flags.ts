@@ -203,10 +203,6 @@ export function flagNumber(key: string): number {
   return Number(definition.defaultValue) || 0;
 }
 
-export function flagString(key: string): string {
-  return resolveFlag(key).value;
-}
-
 /** Estado de todas as flags — é o que o painel /admin renderiza. */
 export function resolveAllFlags(): ResolvedFlag[] {
   return FLAG_REGISTRY.map((definition) => resolveFlag(definition.key));

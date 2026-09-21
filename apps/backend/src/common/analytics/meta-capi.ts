@@ -68,11 +68,6 @@ function config() {
   };
 }
 
-export function isMetaCapiEnabled(): boolean {
-  const c = config();
-  return Boolean(c.pixelId && c.token);
-}
-
 /** Linha de boot: diz se esta ligado, sem revelar nada da chave. */
 export function describeMetaCapi(): string {
   const c = config();
