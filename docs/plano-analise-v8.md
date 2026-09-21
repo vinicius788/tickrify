@@ -1,5 +1,9 @@
 # Plano — Análise v8: leitura mais completa + dados reais
 
+> **Documento historico.** Este plano preserva a proposta original da evolucao
+> v8. Partes dele foram implementadas ou alteradas depois; nao o use como
+> backlog, especificacao atual ou instrucao de execucao.
+
 **Objetivo:** tornar a leitura do gráfico tão completa e ancorada em dado real que o valor da análise **independa do resultado do trade**. O usuário deve sentir "ele leu o gráfico direitinho e trouxe o contexto completo", mesmo quando o mercado reverte. A decisão de compra/venda é sempre do usuário — a plataforma entrega **leitura + contexto + cenários**, não promessa de acerto.
 
 **Princípio inegociável:** tudo aditivo. Nada pode quebrar o fluxo que já está em produção. Cada fase liga atrás de uma flag, degrada graciosamente e é validada antes de avançar.

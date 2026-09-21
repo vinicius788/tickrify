@@ -1,44 +1,23 @@
-# Documentacao do Tickrify
+# Documentação do Tickrify
 
-Toda a documentacao oficial do projeto fica centralizada nesta pasta `docs/`.
+Este índice lista somente documentos que existem e têm uma finalidade definida.
 
-## Comecar por aqui
+## Operação
 
-- [COMECE_AQUI.md](./COMECE_AQUI.md) - Guia rapido para colocar o projeto no ar.
-- [GUIA_FINAL_DEPLOYMENT.md](./GUIA_FINAL_DEPLOYMENT.md) - Fluxo completo de deployment.
-- [COMO_RODAR.md](./COMO_RODAR.md) - Execucao local passo a passo.
-- [STATUS_PROJETO.md](./STATUS_PROJETO.md) - Estado atual do projeto e arquitetura.
+- [`../README.md`](../README.md) — visão geral, arquitetura e execução local.
+- [`../DEPLOY.md`](../DEPLOY.md) — topologia verificada e processo de publicação.
+- [`runbooks/deploy-checklist.md`](./runbooks/deploy-checklist.md) — variáveis obrigatórias e checklist operacional.
+- [`backend/ENV_VARIABLES.md`](./backend/ENV_VARIABLES.md) — catálogo de variáveis do backend.
 
-## Deploy e troubleshooting
+## Motor de análise
 
-- [DEPLOY_RAPIDO.md](./DEPLOY_RAPIDO.md)
-- [GUIA_DEPLOY_ATUALIZADO.md](./GUIA_DEPLOY_ATUALIZADO.md)
-- [CHECKLIST_DEPLOY.md](./CHECKLIST_DEPLOY.md)
-- [CONFIGURAR_DATABASE.md](./CONFIGURAR_DATABASE.md)
-- [FIX_DEPLOY_BACKEND.md](./FIX_DEPLOY_BACKEND.md)
-- [SOLUCAO_ERRO_VERCEL.md](./SOLUCAO_ERRO_VERCEL.md)
-- [SOLUCAO_ERRO_VERCEL_BUILDS.md](./SOLUCAO_ERRO_VERCEL_BUILDS.md)
-- [SOLUCAO_ERRO_RUNTIME_VERCEL.md](./SOLUCAO_ERRO_RUNTIME_VERCEL.md)
+- [`backend/PROMPTS.md`](./backend/PROMPTS.md) — arquitetura dos prompts e regras de manutenção.
 
-## Relatorios e historico
+## Histórico
 
-- [RESUMO_EXECUTIVO.md](./RESUMO_EXECUTIVO.md)
-- [RELATORIO_FINAL.md](./RELATORIO_FINAL.md)
-- [ANALISE_PROBLEMAS.md](./ANALISE_PROBLEMAS.md)
-- [🚀_LEIA_ISTO_PRIMEIRO.txt](./🚀_LEIA_ISTO_PRIMEIRO.txt)
+- [`HANDOFF-TICKRIFY.md`](./HANDOFF-TICKRIFY.md) — fotografia histórica de um handoff antigo. Não é runbook atual.
+- [`plano-analise-v8.md`](./plano-analise-v8.md) — plano histórico da evolução v8; não representa backlog atual.
+- [`../CLAUDE.md`](../CLAUDE.md) — diário técnico acumulado; registros antigos podem ter sido superados.
+- [`../ROADMAP.md`](../ROADMAP.md) — planejamento histórico de produto.
 
-## Documentacao do backend
-
-- [backend/README.md](./backend/README.md) - Indice da documentacao tecnica do backend.
-- [backend/PROMPTS.md](./backend/PROMPTS.md)
-- [backend/API_EXAMPLES.md](./backend/API_EXAMPLES.md)
-- [backend/ENV_VARIABLES.md](./backend/ENV_VARIABLES.md)
-- [backend/README_VERCEL.md](./backend/README_VERCEL.md)
-- [backend/VERCEL_DEPLOY.md](./backend/VERCEL_DEPLOY.md)
-- [backend/DEPLOYMENT_CHECKLIST.md](./backend/DEPLOYMENT_CHECKLIST.md)
-
-## Convencao adotada
-
-- `README.md` na raiz: visao geral do produto.
-- `docs/`: documentacao funcional e operacional.
-- `docs/backend/`: documentacao tecnica especifica da API/backend.
+Ao documentar uma mudança operacional, atualize primeiro `README.md` ou `DEPLOY.md` e mantenha este índice sem links para arquivos inexistentes.

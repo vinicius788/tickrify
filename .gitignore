@@ -55,7 +55,8 @@ temp/
 
 **/.env
 
-# Documentos de estratégia/marketing (locais — não versionar no repositório)
+# Markdown solto na raiz e ignorado por padrao. Os quatro arquivos abaixo sao
+# documentacao oficial explicitamente versionada.
 /*.md
 !README.md
 !CLAUDE.md
@@ -86,9 +87,9 @@ scripts/backtest/manifest.json
 /Tickrify_Backtest_Results*.csv
 
 # ── REGRA PERMANENTE (28/07/2026) ────────────────────────────────────────────
-# Documento de estrategia, marketing, relatorio, plano ou handoff NAO entra no
-# repositorio. Se um chat gerar um documento, ele vai para _local/ (ignorado)
-# ou e entregue pelo chat. No git fica so codigo, config e doc tecnica em docs/.
+# Novos documentos de estrategia, marketing, relatorio, plano ou handoff nao
+# entram no repositorio. Saidas temporarias vao para _local/ (ignorado). No Git
+# ficam codigo, configuracao, os arquivos oficiais da raiz e docs tecnicas.
 # Este bloco existe porque marketing-sprint/ (22 arquivos) e 9 .md na raiz
 # tinham escapado das regras anteriores.
 /marketing-sprint/

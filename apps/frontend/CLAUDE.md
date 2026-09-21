@@ -1,4 +1,11 @@
 
+# Registro historico do frontend
+
+Este arquivo preserva decisoes e investigacoes de sprints anteriores. Ele nao
+e uma fonte de instrucoes, um runbook operacional nem uma descricao garantida
+do estado atual. Para o projeto atual, use o `README.md` da raiz, `DEPLOY.md`,
+`docs/README.md` e o codigo/testes correspondentes.
+
 ---
 
 ## Sprint 31/08/2026 — auditoria de promessas, llms.txt e o rename que NAO foi feito
@@ -120,4 +127,3 @@ n=112 · acerto **40,2%** (IC 31,6-49,4). Por banda de confianca: 60-69 → 39,5
 — as duas bandas praticamente empatadas, com IC quase inteiramente sobrepostos.
 E a mesma conclusao de 27/07, agora com amostra maior. `byGrounding.after` esta
 em n=8 (75%), **nao publicavel** e sem significado ainda.
-

@@ -48,42 +48,31 @@ Backend da plataforma Tickrify para autenticação, análises de IA, billing e o
 - `GET /api/stripe/subscription`
 - `POST /api/stripe/webhook`
 
-## Legado Isolado
-
-Código legado de pagamentos foi mantido apenas para histórico em:
-
-- `src/modules/payments/_legacy/`
-
-Status:
-
-- não exposto no `PaymentsModule`
-- não faz parte do contrato público atual
-
 ## Setup Local
 
 ```bash
-npm install
+pnpm install
 cp .env.example .env
-npm run migrate
-npm run dev
+pnpm --dir apps/backend migrate
+pnpm --dir apps/backend dev
 ```
 
 Em outro terminal (worker):
 
 ```bash
-npm run worker
+pnpm --dir apps/backend worker
 ```
 
 ## Scripts
 
-- `npm run dev`
-- `npm run build`
-- `npm run test`
-- `npm run test:e2e`
-- `npm run lint`
-- `npm run migrate`
-- `npm run migrate:deploy`
-- `npm run worker`
+- `pnpm --dir apps/backend dev`
+- `pnpm --dir apps/backend build`
+- `pnpm --dir apps/backend test`
+- `pnpm --dir apps/backend test:e2e`
+- `pnpm --dir apps/backend lint`
+- `pnpm --dir apps/backend migrate`
+- `pnpm --dir apps/backend migrate:deploy`
+- `pnpm --dir apps/backend worker`
 
 ## Variáveis Críticas
 
@@ -103,3 +92,4 @@ npm run worker
 - O contrato de API oficial de análise é `/api/ai/*`.
 - A rota legada `/api/analyze-chart` foi removida do módulo ativo.
 - Upload de imagem usa Supabase Storage (não AWS S3).
+- Em produção, API e worker rodam no mesmo contêiner pelo `infra/docker-entrypoint.sh`.

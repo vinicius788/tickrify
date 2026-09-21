@@ -1,474 +1,96 @@
-# 🤖 Sistema de Prompts de IA - TICRIF
+# Sistema de prompts de IA
 
-Este documento explica como funciona o sistema de versionamento de prompts e como gerenciá-lo.
+Este guia descreve o comportamento implementado atualmente. Ele nao define
+promessas de qualidade, tempo de resposta ou uma arquitetura de agentes.
 
-## 📋 Visão Geral
+## Fontes de verdade
 
-O TICRIF usa um sistema sofisticado de prompts versionados para a análise de IA. O prompt principal é um **sistema multi-agente** com 7 agentes especializados que analisam diferentes aspectos dos gráficos de trading.
+- Prompt canonico no codigo: `apps/backend/src/common/prompts/trading-system-prompt.ts`
+- Variante de experimento: `apps/backend/src/common/prompts/trading-system-prompt-v9.ts`
+- Composicao final: `apps/backend/src/modules/prompt/prompt-builder.service.ts`
+- Sincronizacao no boot: `apps/backend/src/modules/prompt/prompt-sync.service.ts`
+- Administracao de versoes: `apps/backend/src/modules/prompt/prompt.controller.ts`
+- Caminho assincrono: `apps/backend/worker/ai.worker.ts`
 
-### Arquitetura Multi-Agente
+Nao trate textos antigos em handoffs, sprints ou relatorios como prompts ativos.
 
-O sistema é composto por:
+## Como o prompt e resolvido
 
-1. **CHART_INSPECTOR** - Validação de qualidade da imagem
-2. **STRUCTURE_ANALYST** - Análise de estrutura de mercado
-3. **PATTERN_RECOGNITION** - Reconhecimento de padrões
-4. **PRICE_ACTION_ANALYST** - Análise de price action puro
-5. **RISK_MANAGER** - Gestão de risco técnico
-6. **CONFLUENCE_ENGINE** - Motor de confluência
-7. **DECISION_SYNTHESIZER** - Sintetizador de decisão final
+O prompt final segue esta ordem, conforme o caminho de execucao:
 
-## 🗂️ Versões de Prompt
+1. Override interno, quando fornecido pelo proprio backend.
+2. Versao persistida especifica, quando um job da fila carrega `promptVersion`.
+3. `PromptConfig` ativo mais recente no banco.
+4. `TRADING_SYSTEM_PROMPT` do codigo como fallback.
 
-### Versão 1 (Production) - ATIVO por padrão
+O backend acrescenta a instrucao de consistencia deterministica. Analises
+`deep` tambem recebem a instrucao de leitura em camadas. Nos caminhos que
+carregam o idioma do usuario, o contexto de idioma e injetado antes dessas
+instrucoes. O prompt ativo possui cache de 60 segundos no processo da API.
 
-**Arquivo:** `src/common/prompts/trading-system-prompt.ts`
+`promptOverride` nao faz parte do contrato publico de `/api/ai/analyze`. Essa
+restricao e intencional para impedir que clientes substituam as regras do
+sistema. O backend pode usa-lo internamente em testes e no experimento
+controlado por `AB_PROMPT_V9_PERCENT`, cuja distribuicao e estavel por usuario.
 
-**Descrição:** Sistema multi-agente completo de análise técnica avançada
+## Sincronizacao e versoes
 
-**Características:**
-- ✅ 7 agentes especializados trabalhando em conjunto
-- ✅ Análise adaptativa (com/sem indicadores)
-- ✅ Sistema de scoring de confluência (0-100 pontos)
-- ✅ Threshold de 60 pontos para operação
-- ✅ Gestão de risco integrada
-- ✅ Suporte para naked charts (price action puro)
-- ✅ Detecção automática de elementos visuais
-- ✅ Output JSON estruturado
+No boot, `PromptSyncService` compara o prompt canonico do codigo com a versao
+ativa no banco:
 
-**Tamanho:** ~50KB de texto
+- se forem iguais, nao grava nada;
+- se forem diferentes, desativa a versao ativa, cria uma nova versao e a ativa;
+- se a sincronizacao falhar, registra o erro e permite que a aplicacao suba;
+- `PROMPT_AUTO_SYNC=false` desliga esse comportamento.
 
-**Complexidade:** Alta - Análise profunda e completa
+O historico nao e apagado. Uma versao ativada manualmente no banco pode ser
+substituida no proximo boot se diferir do prompt do codigo e o auto-sync estiver
+ligado.
 
-**Tempo de resposta:** 5-15 segundos (dependendo da OpenAI)
+## Administracao
 
-**Ideal para:** 
-- Produção
-- Análises de alta qualidade
-- Traders profissionais
+Todas as rotas abaixo exigem `AuthGuard` e `AdminGuard`:
 
----
+| Metodo | Rota | Funcao |
+| --- | --- | --- |
+| `POST` | `/api/prompts/config` | Cria uma versao e, por padrao, a ativa. |
+| `GET` | `/api/prompts/latest` | Retorna a versao ativa mais recente. |
+| `GET` | `/api/prompts/list` | Lista o historico de versoes. |
+| `GET` | `/api/prompts/:version` | Busca uma versao numerica. |
+| `POST` | `/api/prompts/:version/activate` | Ativa uma versao existente. |
 
-### Versão 2 (Simplified) - INATIVO
+As rotas possuem rate limit. O teste de acesso em
+`apps/backend/src/common/guards/__tests__/route-access.spec.ts` protege esse
+contrato contra exposicao acidental.
 
-**Descrição:** Versão simplificada para testes rápidos
+## Alteracao segura
 
-**Características:**
-- ✅ Análise direta e objetiva
-- ✅ Output JSON simples
-- ✅ Foco em padrões básicos
-- ✅ Rápido de processar
+Para uma mudanca que deve acompanhar o codigo:
 
-**Tamanho:** ~1KB de texto
+1. Edite somente a fonte canonica e os testes relacionados.
+2. Preserve o contrato JSON consumido pelo normalizador e pela interface.
+3. Verifique os caminhos quick, deep, API direta e worker.
+4. Execute os testes e o build antes do deploy.
+5. Depois do deploy, confirme nos logs se a versao foi sincronizada ou ja estava em dia.
+6. Valide uma amostra controlada antes de ampliar qualquer experimento.
 
-**Complexidade:** Baixa - Análise básica
-
-**Tempo de resposta:** 3-7 segundos
-
-**Ideal para:**
-- Desenvolvimento e testes
-- Prototipagem
-- Análises rápidas
-
----
-
-## 🔧 Gerenciamento de Prompts
-
-### Listar todos os prompts
-
-```bash
-GET /api/prompts/list
-Authorization: Bearer TOKEN
-```
-
-**Response:**
-```json
-[
-  {
-    "id": "clxxx123",
-    "version": 1,
-    "prompt": "...",
-    "isActive": true,
-    "createdAt": "2024-01-01T00:00:00Z"
-  },
-  {
-    "id": "clxxx456",
-    "version": 2,
-    "prompt": "...",
-    "isActive": false,
-    "createdAt": "2024-01-01T00:00:00Z"
-  }
-]
-```
-
----
-
-### Buscar prompt ativo
+Comandos minimos:
 
 ```bash
-GET /api/prompts/latest
+pnpm --dir apps/backend exec tsc --noEmit -p tsconfig.json
+pnpm --dir apps/backend exec jest --runInBand
+pnpm --dir apps/backend build
+pnpm auditoria
 ```
 
-**Response:**
-```json
-{
-  "id": "clxxx123",
-  "version": 1,
-  "prompt": "...",
-  "isActive": true,
-  "createdAt": "2024-01-01T00:00:00Z"
-}
-```
-
----
-
-### Buscar por versão específica
-
-```bash
-GET /api/prompts/2
-```
-
-**Response:**
-```json
-{
-  "id": "clxxx456",
-  "version": 2,
-  "prompt": "...",
-  "isActive": false,
-  "createdAt": "2024-01-01T00:00:00Z"
-}
-```
-
----
-
-### Criar nova versão de prompt
-
-```bash
-POST /api/prompts/config
-Authorization: Bearer TOKEN
-Content-Type: application/json
-
-{
-  "prompt": "Seu novo prompt customizado aqui...",
-  "setActive": false
-}
-```
-
-**Response:**
-```json
-{
-  "id": "clxxx789",
-  "version": 3,
-  "prompt": "Seu novo prompt...",
-  "isActive": false,
-  "createdAt": "2024-01-01T12:00:00Z"
-}
-```
-
-**Nota:** Se `setActive: true`, todos os outros prompts serão desativados automaticamente.
-
----
-
-### Ativar uma versão específica
-
-```bash
-POST /api/prompts/2/activate
-Authorization: Bearer TOKEN
-```
-
-**Response:**
-```json
-{
-  "id": "clxxx456",
-  "version": 2,
-  "prompt": "...",
-  "isActive": true,
-  "createdAt": "2024-01-01T00:00:00Z"
-}
-```
-
-**Efeito:** Desativa todas as outras versões e ativa a versão 2.
-
----
-
-## 🧪 Testing de Prompts
-
-### Usar prompt override em análise
-
-Você pode testar um prompt específico sem criar uma versão nova:
-
-```bash
-POST /api/ai/analyze
-Authorization: Bearer TOKEN
-Content-Type: multipart/form-data
-
-image: [arquivo]
-promptOverride: "Seu prompt de teste aqui..."
-```
-
-**Vantagens:**
-- ✅ Não salva no banco
-- ✅ Teste rápido de variações
-- ✅ Não afeta outras análises
-- ✅ Ideal para experimentação
-
----
-
-## 📊 Comparação de Versões
-
-| Aspecto | v1 (Multi-Agent) | v2 (Simplified) |
-|---------|------------------|-----------------|
-| **Complexidade** | Alta | Baixa |
-| **Tempo Resposta** | 5-15s | 3-7s |
-| **Qualidade** | Excelente | Boa |
-| **Detalhamento** | Muito alto | Médio |
-| **Confluência** | Sistema completo | N/A |
-| **Gestão Risco** | Integrada | Básica |
-| **Custo OpenAI** | Maior (tokens) | Menor |
-| **Uso Recomendado** | Produção | Desenvolvimento |
-
----
-
-## 🎯 Recomendações
-
-### Quando usar v1 (Multi-Agent)
-
-✅ **USE v1 quando:**
-- Análises para clientes pagantes
-- Precisão é crítica
-- Necessita justificativa detalhada
-- Confluência técnica é importante
-- Gestão de risco deve ser precisa
-
-### Quando usar v2 (Simplified)
-
-✅ **USE v2 quando:**
-- Desenvolvimento local
-- Testes rápidos
-- Economia de custos OpenAI
-- Prototipagem de features
-- Demo/MVP
-
----
-
-## 🔄 Workflow de Atualização de Prompt
-
-### Cenário: Melhorar o prompt de produção
-
-1. **Criar nova versão (v3) INATIVA:**
-```bash
-POST /api/prompts/config
-{
-  "prompt": "Versão melhorada do sistema...",
-  "setActive": false
-}
-```
-
-2. **Testar com override:**
-```bash
-POST /api/ai/analyze
-promptOverride: "[conteúdo da v3]"
-```
-
-3. **Se aprovado, ativar:**
-```bash
-POST /api/prompts/3/activate
-```
-
-4. **Se problema, voltar para v1:**
-```bash
-POST /api/prompts/1/activate
-```
-
----
-
-## 🛠️ Estrutura do Prompt v1
-
-### Seções Principais
-
-```
-1. ARQUITETURA DO SISTEMA
-   ├── Descrição geral
-   └── Lista de agentes
-
-2. AGENTES ESPECIALIZADOS
-   ├── 1. CHART_INSPECTOR
-   ├── 2. STRUCTURE_ANALYST
-   ├── 3. PATTERN_RECOGNITION
-   ├── 4. PRICE_ACTION_ANALYST
-   ├── 5. RISK_MANAGER
-   ├── 6. CONFLUENCE_ENGINE
-   └── 7. DECISION_SYNTHESIZER
-
-3. PROTOCOLO DE RESPOSTA
-   └── Formato JSON obrigatório
-
-4. REGRAS CRÍTICAS
-   ├── O que SEMPRE fazer
-   └── O que NUNCA fazer
-
-5. PRINCÍPIOS DE TRADING
-   └── 10 princípios fundamentais
-
-6. GLOSSÁRIO TÉCNICO
-```
-
-### Sistema de Scoring
-
-**Confluência Adaptativa:**
-
-| Cenário | Estrutura | Padrões | Indicadores | Níveis | Contexto |
-|---------|-----------|---------|-------------|--------|----------|
-| **COM indicadores** | 30% | 25% | 20% | 15% | 10% |
-| **SEM indicadores** | 35% | 30% | 0% | 25% | 10% |
-
-**Threshold:**
-- ≥ 60 pontos = BUY/SELL
-- < 60 pontos = HOLD
-
----
-
-## 📝 Logs do Worker
-
-O worker loga qual versão de prompt está usando:
-
-```bash
-[Worker] Processing analysis clxxx123
-[Worker] Using prompt version: 1
-[Worker] Using active prompt version 1
-[Worker] Raw AI response: {...}
-[Worker] Analysis clxxx123 completed successfully
-✅ [Worker] Job 123 completed successfully
-```
-
----
-
-## 🚨 Troubleshooting
-
-### Problema: Worker usa prompt errado
-
-**Causa:** Cache ou versão não ativa
-
-**Solução:**
-```bash
-# Verificar qual está ativo
-GET /api/prompts/latest
-
-# Ativar a correta
-POST /api/prompts/1/activate
-
-# Reiniciar worker
-npm run worker
-```
-
----
-
-### Problema: Análise muito lenta
-
-**Causa:** Prompt v1 é muito grande (50KB)
-
-**Solução:** Ativar v2 temporariamente
-```bash
-POST /api/prompts/2/activate
-```
-
----
-
-### Problema: Qualidade baixa
-
-**Causa:** Prompt v2 é simplificado demais
-
-**Solução:** Voltar para v1
-```bash
-POST /api/prompts/1/activate
-```
-
----
-
-## 💡 Dicas Avançadas
-
-### 1. A/B Testing de Prompts
-
-Crie duas versões e alterne para comparar resultados:
-
-```bash
-# Criar v3 experimental
-POST /api/prompts/config
-{"prompt": "Variação experimental...", "setActive": false}
-
-# Testar manualmente
-POST /api/ai/analyze
-promptOverride: "[conteúdo v3]"
-
-# Se melhor, ativar
-POST /api/prompts/3/activate
-```
-
----
-
-### 2. Prompt Especializado por Mercado
-
-Crie versões específicas:
-- v1: Geral (ativo)
-- v3: Crypto (inativo)
-- v4: Forex (inativo)
-- v5: Stocks (inativo)
-
-Ative conforme necessidade.
-
----
-
-### 3. Monitoramento de Performance
-
-Compare versões:
-```sql
-SELECT 
-  promptVer,
-  AVG(confidence) as avg_confidence,
-  COUNT(*) as total_analyses,
-  COUNT(CASE WHEN recommendation != 'HOLD' THEN 1 END) as actionable
-FROM Analysis
-WHERE status = 'done'
-GROUP BY promptVer;
-```
-
----
-
-## 🔐 Segurança
-
-### Controle de Acesso
-
-**Endpoints de leitura:** Públicos ou autenticados básicos
-- GET /api/prompts/latest
-- GET /api/prompts/:version
-
-**Endpoints de escrita:** Requerem admin (TODO: implementar AdminGuard)
-- POST /api/prompts/config
-- POST /api/prompts/:version/activate
-
-**Recomendação:** Implementar role-based access control (RBAC).
-
----
-
-## 📚 Recursos Adicionais
-
-- **Código fonte do prompt:** `apps/backend/src/common/prompts/trading-system-prompt.ts`
-- **Seed database:** `apps/backend/prisma/seed.ts`
-- **Worker:** `apps/backend/worker/ai.worker.ts`
-- **API Examples:** `docs/backend/API_EXAMPLES.md`
-
----
-
-## 🎓 Referências Técnicas
-
-O sistema multi-agente foi baseado em:
-- Análise técnica profissional (price action, estrutura de mercado)
-- Pattern recognition clássico (candlesticks, chart patterns)
-- Risk management institucional (R:R ratios, position sizing)
-- Confluence trading (múltiplos timeframes, confirmações)
-
----
-
-**Mantido por:** Equipe de Desenvolvimento TICRIF
-**Última atualização:** Janeiro 2025
-
+Para uma alteracao operacional pelo painel/admin, crie uma nova versao em vez
+de editar registros existentes. Lembre que o auto-sync pode reativar a versao
+do codigo em um reinicio.
+
+## Cuidados
+
+- Nao registre prompt completo, imagens ou resposta crua da IA em producao.
+- `AI_DEBUG_DUMP_RAW` deve permanecer desligado em producao.
+- Nao altere ao mesmo tempo prompt, modelo e percentual de experimento; isso impede atribuir o efeito observado.
+- Nao use numeros de versao fixos em runbooks: as versoes crescem a cada mudanca real.
+- Nao presuma tempos de resposta fixos; eles dependem do modelo, da carga e dos provedores.

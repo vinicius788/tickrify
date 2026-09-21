@@ -1,32 +1,59 @@
-## Variáveis de Ambiente Obrigatórias (Backend)
+# Checklist de ambiente de producao
 
-| Variável | Obrigatório | Descrição |
-|---|---|---|
-| `APP_ENV` | ✅ Sim | Deve ser `production` em produção. Ausente = falha no bootstrap. |
-| `DATABASE_URL` | ✅ Sim | Connection string do Postgres (ou `DIRECT_URL` como fallback). |
-| `CORS_ORIGINS` | ✅ Sim em prod | Origens permitidas pelo CORS em produção (alternativamente `FRONTEND_URL`). |
-| `CLERK_SECRET_KEY` | ✅ Sim em prod | Chave secreta do Clerk para validação de JWT (ou `CLERK_JWT_KEY`). |
-| `INTERNAL_OPS_TOKEN` | ⚠️ Recomendado | Token para acessar health endpoints internos. Sem ele, `/health` e `/health/ready` retornam 403. Gere com `openssl rand -hex 32`. |
-| `ALLOW_LEGACY_AUTH_FALLBACK` | ❌ Nunca em prod | Se `true` em produção, o bootstrap falha por design (SEC-001). |
+A lista canonica de nomes e comentarios fica em
+[`apps/backend/.env.example`](../../apps/backend/.env.example). Valores reais
+vivem somente nos paineis dos provedores.
 
-## Como gerar INTERNAL_OPS_TOKEN
+## Backend no Render
+
+### Bootstrap obrigatorio
+
+| Variavel | Regra |
+| --- | --- |
+| `APP_ENV` | Deve existir; use `production` em producao. |
+| `DATABASE_URL` | Obrigatoria, com `DIRECT_URL` ou `DIRECT_DATABASE_URL` como fallbacks aceitos. |
+| `FRONTEND_URL` ou `CORS_ORIGINS` | Ao menos uma origem confiavel e obrigatoria em producao. |
+| `CLERK_SECRET_KEY` ou `CLERK_JWT_KEY` | Ao menos uma credencial de validacao e obrigatoria em producao. |
+| `ALLOW_LEGACY_AUTH_FALLBACK` | Nunca deve ser `true` em producao. |
+
+### Servicos da plataforma
+
+| Grupo | Variaveis principais | Necessidade |
+| --- | --- | --- |
+| Fila e worker | `REDIS_URL` | Necessaria para processar a fila BullMQ no worker embutido. |
+| IA | `OPENAI_API_KEY`, `AI_MODEL_*` | Necessaria para analises reais; modelos possuem fallbacks documentados. |
+| Imagens | `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` ou `SUPABASE_SERVICE_ROLE_KEY` | Necessaria para storage remoto em producao. |
+| Stripe | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY` | Necessaria para checkout, portal e webhooks. |
+| Operacoes | `INTERNAL_OPS_TOKEN` | Protege `/api/health` e `/api/health/ready`; sem token, o acesso e negado. |
+| Email | `RESEND_API_KEY`, `MAIL_FROM` | Necessaria para envio de email; o restante da aplicacao deve degradar sem derrubar o boot. |
+
+Gere um token operacional fora do repositorio:
+
 ```bash
 openssl rand -hex 32
 ```
-Configure no painel do Render/Railway/Vercel como variável de ambiente segura.
 
-## Frontend — Variáveis de Ambiente (Vercel)
+Configure o resultado diretamente no Render. Nao o inclua em comandos
+versionados, tickets ou documentacao.
 
-O arquivo `apps/frontend/.env.production` NÃO é versionado no repositório (está no .gitignore).
-As variáveis vivem no painel do Vercel em Settings → Environment Variables:
+## Frontend na Vercel
 
-| Variável | Ambiente | Descrição |
-|---|---|---|
-| `VITE_API_URL` | Production, Preview | URL do backend Render |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Production, Preview | Chave pública do Clerk |
+| Variavel | Necessidade |
+| --- | --- |
+| `VITE_API_URL` | URL publica do backend Render. |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Chave publica da aplicacao Clerk. |
+| `VITE_TURNSTILE_SITE_KEY` | Necessaria quando o backend exige Turnstile na demo. |
+| `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` | Opcionais para analytics. |
+| `VITE_SENTRY_DSN`, `VITE_APP_ENV` | Opcionais para observabilidade e identificacao do ambiente. |
+| `VITE_GA_TRACKING_ID`, `VITE_GOOGLE_ADS_ID`, `VITE_META_PIXEL_ID` | Opcionais para atribuicao e campanhas. |
 
-Para adicionar via CLI:
-```bash
-echo "https://tickrify.onrender.com" | vercel env add VITE_API_URL production
-echo "pk_live_..." | vercel env add VITE_CLERK_PUBLISHABLE_KEY production
-```
+Toda variavel `VITE_*` e publica no bundle. Nunca use esse prefixo para um
+segredo.
+
+## Antes do deploy
+
+1. Confira os nomes contra os dois arquivos `.env.example`.
+2. Rode os portoes locais descritos em [`DEPLOY.md`](../../DEPLOY.md).
+3. Verifique se uma nova migracao possui estrategia explicita de aplicacao.
+4. Nao altere flags, modelos e prompt simultaneamente sem um plano de medicao.
+5. Depois do deploy, valide health, login, saldo, uma analise e a conclusao pelo worker.

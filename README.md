@@ -4,7 +4,7 @@ SaaS freemium de **análise de gráficos com IA** para traders. O usuário sobe 
 
 Produto global, site em inglês por padrão (6 idiomas). Domínio: **tickrify.com**.
 
-> **Fonte de verdade do projeto: [`CLAUDE.md`](./CLAUDE.md).** Este README cobre stack, estrutura e deploy. Decisões, estado atual e pendências ficam no `CLAUDE.md`.
+> Este README descreve o estado operacional atual. O [`CLAUDE.md`](./CLAUDE.md) é um diário técnico extenso e pode conter registros históricos já superados. Para publicar, use o [`DEPLOY.md`](./DEPLOY.md).
 
 ---
 
@@ -25,15 +25,15 @@ Não é serviço de sinais. A decisão é sempre do trader. Consequência práti
 | Camada | Tecnologia | Deploy |
 |---|---|---|
 | Frontend | Vite + React 19 + TypeScript + Tailwind + Clerk + React Router 7 + TanStack Query | **Vercel** (`tickrify-frontend`) |
-| Backend | NestJS + Prisma | **Render** (`tickrify`, plano free — **hiberna**, ~30-50s de cold start) |
-| Worker | BullMQ + Redis | **Render** (`tickrify-worker`) |
+| Backend | NestJS + Prisma | **Render** (`tickrify`) |
+| Worker | BullMQ + Redis | Embutido no serviço Render `tickrify` |
 | Banco | Postgres (**Supabase**, região `us-west-2`) | — |
-| IA | OpenAI — `gpt-4o-mini` (quick) / `gpt-4o` (deep), via `AI_MODEL` | — |
+| IA | OpenAI — `gpt-4o-mini` (quick) / `gpt-4o` (deep), configuráveis por tipo | — |
 | Pagamento | Stripe (Checkout + webhooks) | — |
 | Observabilidade | PostHog (funil) + Sentry (frontend) | — |
 | E-mail | Resend | — |
 
-Monorepo **pnpm** (`pnpm-workspace.yaml`, `pnpm-lock.yaml`). Atenção: os scripts do root ainda usam `npm run -w` por herança — é assim que Vercel e Render buildam hoje, então **não mexa neles sem testar o deploy**.
+Monorepo **pnpm** (`pnpm-workspace.yaml`, `pnpm-lock.yaml`). O Render instala e compila com PNPM a partir do `Dockerfile` da raiz. A Vercel usa os comandos definidos em `apps/frontend/vercel.json`.
 
 ---
 
@@ -55,7 +55,8 @@ apps/
     src/worker/                 outcome.sweeper.ts (outcome tracking)
     scripts/backtest-runner.ts  runner do backtest com o motor real
 scripts/backtest/     pipeline reprodutível (amostragem, render, evaluate.py)
-infra/ · docs/ · .github/workflows/
+infra/docker-entrypoint.sh   inicializa API, migrações opcionais e worker embutido
+docs/ · .github/workflows/
 ```
 
 ---
@@ -95,7 +96,7 @@ O limiar 70 da UI ("Read" abaixo, "Signal" acima) sai daí. Relatórios ficam lo
 **Ticks** = créditos internos. Análise rápida = 1 tick · profunda = 3 ticks · PDF = 2 ticks.
 
 - Free: **3 análises grátis** (só rápida — deep é travada para assinante), depois paywall com valor trancado (`LockedAnalysis`).
-- Planos: Starter $12 · Pro $29 · Elite $59 /mês. **Hoje os planos diferem apenas em volume de ticks** — nenhuma diferença de motor, fila ou suporte. Não vender o que não existe.
+- Assinatura atual: **US$29/mês ou US$290/ano**, com 200 Ticks mensais. IDs antigos de Starter/Pro/Elite continuam no backend apenas para honrar assinaturas legadas.
 - Ticks acumulam (`TicksService.addTicks` faz `increment`, sem reset mensal).
 
 ---
@@ -104,39 +105,42 @@ O limiar 70 da UI ("Read" abaixo, "Signal" acima) sai daí. Relatórios ficam lo
 
 ```bash
 pnpm install
-cp .env.example .env      # preencher: DATABASE_URL, CLERK_*, OPENAI_API_KEY, STRIPE_*, REDIS_URL
+cp apps/backend/.env.example apps/backend/.env
+cp apps/frontend/.env.example apps/frontend/.env
 pnpm migrate
 pnpm dev                  # web + api + worker
 ```
 
-Frontend em `http://localhost:5173`, API em `http://localhost:3000`.
+Frontend em `http://localhost:5173`, API em `http://localhost:3001`.
 
 ```bash
-pnpm test                 # testes do backend
-cd apps/frontend && ./node_modules/.bin/tsc --noEmit   # type-check do frontend
+pnpm test                              # testes do backend
+pnpm --dir apps/frontend test          # testes do frontend
+pnpm --dir apps/frontend typecheck     # type-check do frontend
+pnpm build                             # builds dos dois aplicativos
 ```
 
 ---
 
 ## Deploy
 
-Frontend na **Vercel** e backend/worker no **Render** buildam sozinhos a partir do push na branch principal. Não há deploy manual.
+O frontend está no projeto Vercel `tickrify-frontend`, com raiz `apps/frontend`. O backend está no serviço Render `tickrify`, com contexto na raiz do repositório e `./Dockerfile`. Não existe um serviço de worker separado: `infra/docker-entrypoint.sh` inicia o worker no mesmo contêiner quando `RUN_EMBEDDED_WORKER` não é `false`.
 
-**Migrações:** `MIGRATIONS_DATABASE_URL` aponta para o session pooler IPv4 do Supabase (`aws-0-us-west-2.pooler.supabase.com:5432`) — `prisma migrate deploy` funciona a partir do Render. `RUN_MIGRATIONS_ON_START` fica em `false`; migrações são aplicadas de propósito, não no boot.
+**Migrações:** `MIGRATIONS_DATABASE_URL` deve apontar para o session pooler IPv4 do Supabase. O entrypoint executa `migrate:deploy` quando `RUN_MIGRATIONS_ON_START=true`; o valor real da variável deve ser conferido no painel antes de assumir o comportamento de produção.
 
 **Anti-cold-start:** `.github/workflows/keep-warm.yml` pinga `/api/health/live` a cada 10 min.
-**Backup:** `.github/workflows/backup.yml` — `pg_dump` diário às 07:00 UTC, artifact privado por 30 dias (o plano free do Supabase não tem backup).
+**Backup:** `.github/workflows/backup.yml` — `pg_dump` diário às 07:00 UTC, artifact privado por 30 dias.
 
 Variáveis sensíveis vivem no env group do Render e no dashboard da Vercel. **Nunca commitar chave.**
 
 ---
 
-## Workflow (importante)
+## Workflow
 
-- A máquina do dono não roda build local. Fluxo: **editar código → `git add/commit/push` → Vercel/Render buildam remoto**.
-- **Evitar dependências novas** (o lockfile não atualiza localmente).
-- Frontend é seguro de editar; backend é crítico (no sandbox só dá para checar sintaxe).
-- `.git/index.lock` travado → `rm -f .git/index.lock`.
+- Instale dependências com `pnpm install --frozen-lockfile`.
+- Antes de publicar, rode lint, typecheck, testes, builds e `pnpm auditoria` conforme [`DEPLOY.md`](./DEPLOY.md).
+- Não faça push ou deploy com arquivos não relacionados misturados no mesmo commit.
+- Variáveis sensíveis vivem nos painéis dos provedores e nunca entram no Git.
 
 ---
 

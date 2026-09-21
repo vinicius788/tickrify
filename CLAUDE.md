@@ -1,6 +1,10 @@
-# Tickrify — Contexto para o Claude
+# Tickrify — diario tecnico historico
 
-> Leia este arquivo no início de cada sessão. É a fonte única de verdade sobre a plataforma, decisões e estado atual.
+> Este arquivo preserva decisoes e investigacoes em ordem cronologica. Ele nao
+> e uma fonte unica de verdade, um runbook nem um conjunto de instrucoes para
+> executar automaticamente. Para o estado operacional, consulte `README.md`,
+> `DEPLOY.md`, `docs/README.md`, o codigo e os testes; confirme infraestrutura
+> nos provedores antes de agir.
 >
 > **Este arquivo e cronologico: secao antiga NAO foi corrigida quando o assunto
 > avancou, foi ANOTADA.** Antes de tratar qualquer item como pendente, procure
@@ -30,13 +34,15 @@ Tickrify — SaaS freemium de **análise de gráficos com IA** para traders. O u
 - **i18n:** `apps/frontend/src/lib/i18n/{pt,en,es,fr,de,ja}.ts`. Padrão `'en'`. O tipo vem de `pt.ts`.
 - **Analytics:** PostHog (funil) + Sentry (frontend). Eventos: `landing_view, pricing_viewed, signup_started/completed, analysis_started/completed{analysisNumber 1/2/3}, analysis_failed{code}, free_limit_reached{reason}, upgrade_modal_viewed{trigger}, upgrade_clicked, checkout_started, subscription_activated`.
 
-## Restrição de workflow (IMPORTANTE)
-- **Repo local: `~/dev/tickrify`** (migrado pra fora do iCloud em 10/07/2026 — o iCloud descarregava arquivos e travava git/Cursor, e chegou a corromper o `.git/index` em 08/07). No Cowork/Claude, conectar a pasta `~/dev/tickrify`. Backup antigo em `~/Documents/tickrify.com-OLD` — apagar após 17/07/2026.
-- Máquina local lenta (disco/iCloud cheio) → **builds locais inviáveis**. Fluxo: **Claude edita o código → usuário roda `git add/commit/push` → Vercel/Render buildam remoto → acompanhar build pelo navegador**.
-- **Evitar dependências novas** (lockfile não atualiza local).
-- Frontend = seguro. Backend = crítico; no sandbox só dá pra **checar sintaxe** (não tipos completos). Build do Render que falha **não derruba** o app (mantém a última versão boa).
-- Às vezes aparece `.git/index.lock` travado → corrige com `rm -f .git/index.lock`.
-- **Portão antes de commitar o front: `pnpm check` na RAIZ** (24/08/2026). Roda typecheck + vitest + build do frontend de uma vez. `pnpm typecheck` na raiz também passou a existir; antes o script só morava em `apps/frontend` e rodar da raiz devolvia "Command not found". Não usar `npm run build:frontend` local: ele roda `npm install`, que existe pro Vercel e bagunça o `node_modules` pnpm da máquina.
+## Workflow atual
+- Repositorio local: `~/dev/tickrify`.
+- O monorepo usa PNPM e o `pnpm-lock.yaml` deve permanecer sincronizado.
+- Antes de publicar, execute os portoes de lint, tipos, testes, builds, auditoria interna e auditoria de dependencias descritos em `DEPLOY.md`.
+- Commits devem ser pequenos e reversiveis. Push, deploy e alteracoes nos provedores exigem uma decisao consciente depois da validacao local.
+- Nunca manuseie ou registre chaves e segredos em documentacao, commits ou logs compartilhados.
+
+## Notas de implementacao preservadas
+- **Portão do frontend: `pnpm check` na raiz.** Roda typecheck, Vitest e build do frontend.
 - **Casca pré-hidratação do `index.html` (25/08/2026).** O bloco dentro de `<div id="root">` é o que a pessoa vê enquanto o bundle carrega, e é servido para TODA rota (o Vercel devolve este HTML para `/pricing`, `/terms`, `/dashboard` e tudo que não for arquivo estático). Por isso ele **não tem texto nenhum**: só a barra do cabeçalho com o logo, nas mesmas medidas da barra real (68px, mesma hairline, caixa de 1240px), pro React montar por cima sem nada saltar. Antes ele trazia o hero ANTIGO da landing embutido (Fraunces 6.5rem, verde `#5eea8a`), então abrir o site dava um lampejo do desenho velho e abrir `/terms` mostrava "Stop trading in the dark" antes dos termos. Texto duplicado fora do React é texto que diverge; já divergiu duas vezes. Isso matou a `replacePrehydrate` do `prerender.mjs`, removida junto. **Comentário dentro do `<style>` do `index.html` viaja pro navegador** em toda requisição, ao contrário dos comentários em `.tsx`: manter curto e explicar aqui.
 - **CSS do site público: `.tk-site`/`.site-*` GANHAM do Tailwind (25/08/2026).** No `index.css` final as utilidades do Tailwind saem ANTES do bloco `SITE PÚBLICO v2`, então com a mesma especificidade quem vem depois vence. Misturar `h-9 w-9 p-0 rounded-xl` num elemento `.site-btn` NÃO funciona: o `.site-btn` sobrescreve altura, padding e raio. Foi assim que o menu sanduíche do celular virou um círculo vazio (36px de largura contra 20px de padding de cada lado = ícone espremido a zero). **Regra: quando um elemento tem classe `.site-*`, o ajuste vem de outra classe `.site-*`, nunca de utilidade do Tailwind.** As exceções que funcionam são utilidades cujo seletor sai DEPOIS no arquivo, como as de breakpoint (`md:hidden`), e nelas não dá pra confiar sem conferir. Duas outras armadilhas do mesmo bloco, já corrigidas: `.tk-site section` (0,1,1) vence `.site-hero` (0,1,0), e `.tk-site a { color: inherit }` vence `.site-btn-primary` — regras que precisam ganhar têm que ser prefixadas com `.tk-site`.
 - **Nunca manusear chaves/segredos** (o usuário cola direto no Render/serviço).
@@ -151,18 +157,18 @@ Medido no Supabase em 27/07:
 - **Fase 4 (teste de modelo)** inteira: o motor roda `gpt-4o-mini`/`gpt-4o`, família de ~2 anos atrás. O harness já aceita `AI_MODEL` por env, o teste custa ~US$3-8, e responde se o teto é o prompt ou o modelo. **A chave da OpenAI é do dono — ele roda o comando.**
 - Tradução da `/accuracy` para os outros 5 idiomas.
 
-## ⚠️ INFRA REAL (leia antes de mexer em worker/deploy — 27/07/2026)
+## ⚠️ INFRA REAL (verificada nos painéis em 16/09/2026)
 
 **Este bloco existe porque eu (Claude) errei um diagnóstico por não saber disto.**
 O dashboard do Render mostra só DOIS recursos: o web service **`tickrify`** e o
 **`tickrify-redis`**. Não existe serviço `tickrify-worker`. É fácil concluir daí
 que o worker não roda. **Ele roda.**
 
-- O **`render.yaml` da raiz NÃO é o que está no ar.** Ele declara `tickrify-api`
-  + `tickrify-worker`, mas o blueprint nunca foi aplicado — o serviço foi criado
-  à mão e se chama `tickrify`. Não confie nesse arquivo para entender produção.
-- O `Dockerfile` da raiz também **não** é o usado. O Render builda
-  **`infra/Dockerfile`**, cujo `ENTRYPOINT` é `infra/docker-entrypoint.sh`.
+- O serviço foi criado manualmente e se chama `tickrify`; não usa Blueprint.
+- O Render usa o **`Dockerfile` da raiz**, com contexto `.` e sem comando Docker
+  sobrescrito. Esse Dockerfile usa `infra/docker-entrypoint.sh` como `ENTRYPOINT`.
+- Configurações antigas de Render, Railway e Vercel backend foram removidas em
+  setembro de 2026 depois da conferência direta dos dois painéis.
 - Esse entrypoint sobe **três coisas no mesmo contêiner**: a API, as migrações
   (se `RUN_MIGRATIONS_ON_START=true`) e o **worker embutido**:
   ```sh
@@ -3440,3 +3446,190 @@ cota sobrando, nao envia para `isDemo=false`, nao envia para assinante, e nao
 envia duas vezes. **O mock de `adminAudit` precisou ser adicionado**: sem ele o
 caminho inteiro morria no try/catch do `triggerRecoveryEmail` e um teste
 passaria sem testar nada. Backend: `tsc --noEmit` limpo, **195/195** no jest.
+
+## 21/09/2026 — "ninguem paga desde 12/09": o fluxo NAO esta quebrado
+
+Auditado lendo o codigo e o Workbench da Stripe (logs de API, eventos e
+`stripe checkout sessions list`), nao deduzido.
+
+- 18 `POST /v1/checkout/sessions` entre 13 e 20/09, **todas 200**, chave
+  `sk_live`, `livemode: true`, USD, US$ 29 -> US$ 18,85 com EARLY35,
+  `success_url`/`cancel_url` corretas.
+- A metadata de atribuicao das sessoes mostra `lt_ref_domain:
+  checkout.stripe.com` + `lt_landing: /pricing?canceled=true`: a pessoa CHEGA
+  na pagina da Stripe e volta pelo cancel_url. Um cliente fez isso 4x em 5 min.
+- Sessoes de 12/09 em diante: todas `expired`/`open`, `unpaid`. De 7 a 12/09,
+  5 de 7 clientes que abriram checkout tentaram pagar (3 pagos, 2 recusados por
+  saldo). De 13 a 20/09, ~11 abriram e **0** submeteram cartao.
+- **Customer novo na Stripe NAO e sinal de tentativa de compra:**
+  `resolveOrCreateCustomerId` cria o customer ANTES da sessao, no clique.
+- Hipotese (nao comprovada): mudou o publico, nao o codigo. Parte dos e-mails
+  novos tem nome persa e o Ira nao existe na lista de paises do checkout.
+
+**Instrumentacao corrigida no mesmo dia:** `checkout_started` passou a disparar
+DEPOIS de a API devolver a URL (antes saia no clique e contava falha como
+checkout); eventos novos `checkout_failed` (o catch do paywall era silencioso) e
+`checkout_canceled` (volta pelo cancel_url, disparado na `PricingPage`). Com isso
+o funil separa "nao chegou na Stripe" de "chegou e desistiu".
+
+Pendente, sem codigo: ligar `after_expiration.recovery` (e-mail de checkout
+abandonado) e cruzar os clientes perdidos com pais no PostHog. Menor: sessoes
+duplicadas no mesmo segundo indicam `handleUpgrade` rodando 2x apos o login.
+
+**Como subiu (21/09):** o `main` local estava 10 commits de 16/09 a frente do
+remoto, NUNCA enviados (pnpm no Dockerfile e no entrypoint, remocao de configs
+de deploy, patches de dependencia). Para nao arrastar isso junto, a
+instrumentacao foi reaplicada SOZINHA sobre `origin/main` numa worktree e
+enviada como `ccf0b33` (4 arquivos do frontend). O commit local `a2bf40b` tem o
+mesmo codigo MAIS 13 arquivos de doc de outra sessao.
+**PENDENTE:** os 10 commits de 16/09 continuam so no local. Antes de subir,
+conferir no Render que o entrypoint com `pnpm --dir` sobe o worker
+(`[entrypoint] Starting embedded worker...` e `[Outcome] Outcome tracking
+ligado`). No rebase, o trecho do `a2bf40b` que ja esta em `ccf0b33` some sozinho.
+
+## 21/09/2026 — checkout robusto, login preserva a compra, webhooks auditados
+
+Tudo feito sobre `origin/main` numa worktree (o `main` local segue com os 10
+commits de 16/09 nao enviados). Commits: `4eefa00` (checkout) no ar; login +
+webhooks aguardando push.
+
+### 🔴 O endpoint de webhook esta na API `2025-07-30.basil` (o SDK em `2023-10-16`)
+O payload chega na versao do ENDPOINT (`we_1S8uPUB1hl0IoocUR9wVdLKP`). Na basil
+a fatura NAO tem `subscription` no topo: mora em `parent.subscription_details`
+(conferido no evento real `in_1UEFUv...`, 10/09). O handler lia
+`invoice.subscription` -> undefined -> saia sem creditar. **O credito de ticks
+por fatura NUNCA funcionou em producao.** Os assinantes receberam ticks so pelo
+`ensureTicksForActiveSubscriber`, que por sua vez dava +200 TODA vez que o
+saldo zerava (tick infinito sem pagamento). `invoiceSubscriptionRef` le os dois
+formatos. **Qualquer campo novo lido do payload: conferir no formato basil.**
+
+### Webhooks (regras que nao podem ser desfeitas)
+- `StripeWebhookEvent` (tabela nova, criada no `onModuleInit` do StripeService):
+  cada `event.id` processa UMA vez; `failed` e `processing` parado >5min sao
+  retomados. Tabela fora do ar => processa sem ela (handlers sao idempotentes).
+- Estado da assinatura sempre RELIDO na Stripe, nunca do payload (ordem de
+  entrega nao e garantida).
+- Credito de ticks de assinatura: chave `subscription_invoice:<invoiceId>` na
+  coluna unica `stripePaymentIntentId`. Webhook, lazy sync e ensureTicks usam a
+  mesma chave. Acesso manual (`manual_*`): 1 pacote por mes-calendario.
+- Erro em handler = nao-2xx (Stripe reenvia). Nada mais responde 200 calado.
+- Falha de pagamento: AdminAudit `action='stripe_payment_failed'` + PostHog
+  `payment_failed`.
+- **NAO reenviar pelo painel eventos `invoice.payment_succeeded` antigos:** como
+  o credito antigo nunca rodou, reenviar credita 200 ticks de verdade.
+
+### Login antes do checkout
+`lib/checkoutIntent.ts`: Upgrade deslogado -> `/sign-in?redirect_url=/pricing?checkout=starter&cycle=..&source=..`
++ localStorage 30 min. SignIn/SignUp usam `fallbackRedirectUrl` (so vale sem
+`redirect_url`). O Clerk leva a intencao ao cadastro NO HASH e absoluta
+(`/sign-up#/?redirect_url=https://...`), conferido em producao, desktop e mobile.
+One Tap le query e hash. Painel redireciona intencao recente para o checkout.
+
+**Transicao dos 3 assinantes pagantes (commit `9df9e2b`, no ar 21/09):** as
+assinaturas criadas antes de 22/09/2026 (`LEGACY_REFILL_CUTOFF_MS` no
+stripe.service) mantem a recarga antiga (+200 quando o saldo zera) ATE A
+PRIMEIRA RENOVACAO (8 a 10/10/2026). Depois vale o plano: 200/mes pelo webhook
+da fatura. Pedido explicito do dono: "nao pode prejudicar os 3 pagantes".
+Para manter a regra antiga para sempre para eles: tirar a condicao de
+`current_period_start` em `isGrandfatheredPeriod`.
+
+**ATUALIZACAO (commit `2184091`, mesmo dia): a transicao acima foi SUBSTITUIDA.**
+Regra decidida pelo dono: assinante tem NO MAXIMO 200 ticks. No inicio de cada
+janela mensal (mensal = periodo de cobranca; anual = 12 janelas; manual =
+mes-calendario) o saldo passa a ser EXATAMENTE o pacote do plano: nao soma, nao
+acumula. Chave `allowance:<assinatura>:<inicio da janela>` na coluna unica
+`stripePaymentIntentId`, a mesma para webhook, lazy sync e checagem de acesso
+(`ensureTicksForActiveSubscriber`, chamado em todo /usage e toda analise).
+`Subscription.currentPeriodStart/End` guardam o periodo (ADD COLUMN no boot).
+Os 3 assinantes de setembro voltam para 200 na proxima abertura do painel.
+"Ticks never expire" SAIU da landing (6 idiomas + geo-body). Os pacotes avulsos
+nao estao a venda na UI (BuyTicksModal nao e renderizado); se voltarem a ser
+vendidos, o reset mensal APAGA ticks comprados — separar os saldos antes.
+
+## 21/09/2026 — tracking do PostHog auditado (mapa de quem emite o que)
+
+Medido no PostHog antes de mexer (30 dias): `signup_completed` do navegador 45
+eventos em 41 pessoas vs 45 cadastros reais no backend; `subscription_activated`
+23 eventos em 7 pessoas para 3 assinaturas (20 do webhook em 4 ids que NAO eram
+o do Clerk + 3 do navegador); 0 eventos com utm_source; 22 de 45 cadastros com
+origem no perfil. Ladder gratis 30d: 86 fizeram a 1a, 53 a 2a, 27 a 3a; das 27,
+15 nunca voltaram (o paywall so aparecia na 4a tentativa) e as 12 que voltaram
+clicaram upgrade e abriram checkout.
+
+**Backend (fonte da verdade, deduplicado por uuid deterministico, nao depende de cookie):**
+`signup_completed` (auth.guard, 1 por conta) · `free_analysis_started` /
+`free_analysis_completed` {analysisNumber, freeRemaining, isLastFree} /
+`free_quota_exhausted` (common/analytics/free-funnel.ts, chamado no worker e no
+AiService) · `checkout_completed` · `subscription_created` · `payment_succeeded` ·
+`payment_failed` (stripe.service). distinctId = id do Clerk.
+**Navegador:** `landing_viewed` (era landing_view) · `pricing_viewed {from}` ·
+`pricing_section_viewed` (secao da home; era pricing_viewed) · `signup_started`
+(1 por sessao) · `analysis_started/completed {analysisNumber}` · `upgrade_cta_viewed`
+/ `upgrade_cta_clicked {source}` · `upgrade_clicked` (botao de compra) ·
+`checkout_started/failed/canceled` · `checkout_success_viewed` (era o
+subscription_activated do navegador).
+**So pixels (Meta/Google Ads), nunca PostHog:** `trackAdConversion('signup'|'purchase')`.
+Origem: super propriedades `utm_*` (ultimo toque) + perfil `first_*`/`last_*`.
+Nomes antigos (landing_view, subscription_activated, signup_completed_server)
+ficam so no historico; montar funis novos com os nomes acima.
+
+⚠️ **ACHADO NAO CORRIGIDO (manda e-mail, precisa do dono):** o e-mail de
+recuperacao "cota gratis esgotada" so e disparado em `ai.service`
+(fallback sem fila); o worker da fila, caminho de producao, NAO chama
+`notifyIfFreeQuotaExhausted`. A nota de 15/09 que diz que ele dispara "nos dois
+caminhos" esta errada. Hoje ele so sai na 4a tentativa (ForbiddenException).
+
+## 21/09/2026 — Meta Pixel + Conversions API e observabilidade do funil de compra
+
+**Meta (dedup navegador/servidor pelo event_id):**
+| Evento | Navegador (pixel) | Servidor (CAPI) | event_id |
+|---|---|---|---|
+| CompleteRegistration | AnalyticsIdentify, conta nova | POST /api/auth/ads-signup | `signup_<id Clerk>` |
+| InitiateCheckout | `checkout_started` (so com a sessao criada) | createCheckoutSession | `checkout_<cs_...>` |
+| Purchase | success_url, SO depois do GET /api/stripe/checkout-status confirmar `paid` | webhook checkout.session.completed pago e ativo | `purchase_<cs_...>` |
+Tudo so com aceite de cookies (`adsConsent`). fbp/fbc validados no navegador e
+no DTO (formato fora = campo descartado, nunca 400 no checkout). Contexto do
+Meta (fbp/fbc/IP/UA) vai na metadata da sessao para o Purchase do webhook.
+Env no Render: `META_PIXEL_ID` + `META_CAPI_ACCESS_TOKEN` (sem elas = OFF, dito
+no boot: `📣 Meta CAPI: ...`), opcional `META_CAPI_TEST_EVENT_CODE`,
+`META_GRAPH_API_VERSION` (padrao v25.0). success_url agora leva
+`&session_id={CHECKOUT_SESSION_ID}`.
+
+**Funil de compra (`common/observability/funnel-log.ts`):** uma linha
+`[funnel] stage=...` por etapa (checkout_requested, checkout_session_created/
+reused, checkout_failed, checkout_returned {success|canceled|expired},
+webhook_received, webhook_failed, payment_succeeded, payment_failed {code,
+declineCode}, subscription_created, subscription_canceled {scheduled|ended}).
+So campos de lista fechada; chave e e-mail viram [redacted]. Etapas de usuario
+conhecido tambem vao para AdminAudit `funnel:<etapa>`:
+`SELECT "createdAt", action, details FROM tickrify."AdminAudit" WHERE "targetUserId"='<id>' AND action LIKE 'funnel:%' ORDER BY 1;`
+Recusa DENTRO do checkout e abandono so aparecem se o endpoint da Stripe
+tiver `payment_intent.payment_failed` e `checkout.session.expired` marcados.
+
+## 21/09/2026 — auditoria final do funil + auditoria de performance
+
+**Funil (verificado):** deslogado -> Upgrade -> /sign-in com intencao (plano
+anual preservado) em PRODUCAO; ja-assinante recusado em producao (conta do
+dono); PostHog em producao pos-deploy: free_analysis_* do servidor batem 6/6
+com o navegador, signup_completed 3/3 so do servidor. Pagamento real, recusa e
+webhook duplicado: so por teste automatizado (Claude nao cria conta nem paga).
+Primeira tela do painel apos o reset mensal mostrou o saldo antigo (219) por
+corrida entre /ticks/balance e /usage; o saldo real ja era 200. Nao corrigido.
+
+**Performance (medido antes/depois):**
+- JS inicial 1.549 kB (484 gzip) -> 816 kB (261 gzip), -46%: rotas lazy
+  (painel, admin, /try, /accuracy, legais; landing e /pricing continuam no
+  principal), posthog-js baixado so no aceite de cookies, Sentry Replay via
+  lazyLoadIntegration depois do `load`. `vite:preloadError` recarrega 1x.
+- /assets/* com Cache-Control 1 ano immutable (antes max-age=0: revalidava
+  1,5 MB a cada visita). So /assets: tudo la tem hash.
+- CORS maxAge 7200: tira o preflight de quase toda chamada (BR -> Oregon).
+- /api/ai/analyses (p50 791 ms no servidor): select sem fullResponse,
+  vereditos so da pagina, imagens assinadas em lote + cache de 50 min.
+- /api/auth/me: 97 kB -> so o perfil (o front le 3 campos).
+- /usage duplicado deduplicado; /ticks/packages so no modal de compra; saldo
+  30s -> 120s; ticker da Binance nao busca com aba escondida.
+**Pendente:** i18n dos 6 idiomas no bundle principal (~155 kB fonte; lazy
+exigiria fallback visivel); /api/ai/performance le 1000 linhas cheias mas
+nenhuma tela chama; DashboardPage (1200+ linhas) sem memoizacao estudada;
+imagem de exemplo da /try (378 kB) e entrada da IA, nao comprimir sem medir.

@@ -1,6 +1,6 @@
 # Tickrify — Roadmap de Lançamentos
 
-> Documento interno. Atualizado em 29/05/2026.
+> Documento histórico de planejamento, iniciado em 29/05/2026. Algumas entregas e prioridades abaixo já mudaram; não use este arquivo como estado operacional da plataforma.
 > Objetivo: validar o produto com usuários reais antes de escalar features sociais.
 
 ---

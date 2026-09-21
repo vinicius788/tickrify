@@ -1,7 +1,9 @@
 # Tickrify — Documento de Handoff Completo
 
-> Contexto para continuidade do desenvolvimento. Leia inteiro antes de mexer em qualquer coisa.
-> **Regra de ouro: a plataforma está NO AR com usuários reais pagantes. Nada pode quebrar. Toda mudança deve ser aditiva, validada e reversível.**
+> **Registro histórico.** Este documento retrata o projeto no momento do handoff e não deve ser usado como runbook atual. Consulte [`../README.md`](../README.md) e [`../DEPLOY.md`](../DEPLOY.md) para arquitetura e publicação verificadas.
+
+> As instrucoes, precos e estados descritos abaixo pertencem ao momento desse
+> handoff. Preserve o arquivo como evidencia historica, nao como estado atual.
 
 ---
 
@@ -27,7 +29,7 @@ Tickrify é uma **plataforma SaaS de análise de trading com IA**. O usuário en
 - **Backend:** NestJS + Prisma + PostgreSQL (Supabase, schema `tickrify`) + Redis/BullMQ (fila). Auth via **Clerk**. Pagamentos via **Stripe**. IA via **OpenAI** (gpt-4o / gpt-4o-mini, visão, saída em JSON estrito).
 - **Frontend:** React + Vite + TypeScript + Tailwind. i18n próprio (6 idiomas).
 - **Deploy:**
-  - **Render** roda o backend. ⚠️ O serviço web `tickrify` roda a **API e o worker EMBUTIDO no mesmo container** (`infra/docker-entrypoint.sh`, var `RUN_EMBEDDED_WORKER=true` por padrão). NÃO há serviço worker separado no painel atual. `render.yaml` prevê um, mas o deploy real usa o embutido. Redis = `tickrify-redis`.
+  - **Render** roda o backend. O serviço web `tickrify` usa o `Dockerfile` da raiz e executa a **API e o worker embutido no mesmo contêiner** por `infra/docker-entrypoint.sh`. Não há serviço worker separado. Redis = `tickrify-redis`.
   - **Vercel** roda o frontend (autodeploy do `main`, rápido).
   - **Git:** o dono dá `git push origin main`; o ambiente de dev do agente NÃO consegue commitar/buildar (validar só com `npx tsc --noEmit`).
 - **Idioma:** auto-detecta `navigator.language` (fallback PT), com seletor manual no dashboard e na landing.
