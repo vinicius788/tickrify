@@ -37,8 +37,8 @@ const HTTP_METHOD_DECORATORS = ['Get', 'Post', 'Put', 'Patch', 'Delete', 'Option
 
 /** Rotas públicas que legitimamente não têm @Throttle próprio. */
 const RATE_LIMIT_EXEMPT = new Set([
-  // Ping do keep-warm a cada 5 min. O teto global de 150/min já cobre, e
-  // limitar mais apertado derrubaria o próprio anti-hibernação.
+  // Chamada pelo site ao abrir (acorda a API cedo) e por health check. O teto
+  // global de 150/min já cobre.
   'health.controller.ts::getLiveness',
   // Fechadas pelo OpsTokenGuard: sem o INTERNAL_OPS_TOKEN nem chegam ao handler.
   'health.controller.ts::getReadiness',

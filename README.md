@@ -128,8 +128,8 @@ O frontend está no projeto Vercel `tickrify-frontend`, com raiz `apps/frontend`
 
 **Migrações:** `MIGRATIONS_DATABASE_URL` deve apontar para o session pooler IPv4 do Supabase. O entrypoint executa `migrate:deploy` quando `RUN_MIGRATIONS_ON_START=true`; o valor real da variável deve ser conferido no painel antes de assumir o comportamento de produção.
 
-**Anti-cold-start:** `.github/workflows/keep-warm.yml` pinga `/api/health/live` a cada 10 min.
-**Backup:** `.github/workflows/backup.yml` — `pg_dump` diário às 07:00 UTC, artifact privado por 30 dias.
+**Anti-cold-start:** o serviço está no plano pago do Render (`0.5c-512mb`), que não hiberna. O antigo `keep-warm.yml` foi removido em 21/09/2026: pingava a cada 5 min e esgotou os minutos gratuitos do GitHub Actions.
+**Backup:** `.github/workflows/backup.yml` — `pg_dump` diário às 07:00 UTC, artifact privado por 7 dias (44 MB cada; 30 dias estourava os 500 MB gratuitos).
 
 Variáveis sensíveis vivem no env group do Render e no dashboard da Vercel. **Nunca commitar chave.**
 

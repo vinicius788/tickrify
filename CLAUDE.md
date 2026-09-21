@@ -3920,3 +3920,21 @@ com os 8 de 43 alvos abaixo de 32px ja medidos). Entre a medicao antiga e esta
 entraram tres commits de outra sessao (`e7355c2`, `1171917`, `d38f9c8`, banner
 de oferta e cupom), entao nao da para dizer se e deles ou se ja estava la.
 
+
+## 21/09/2026 — GitHub Actions parado: minutos esgotados + backup sem espaco
+
+Achado pelo e-mail "Keep API warm: All jobs have failed". Anotacao do job:
+*"The job was not started because recent account payments have failed or your
+spending limit needs to be increased"*. Repo e PRIVADO (2.000 min/mes gratis).
+
+- **Minutos:** o `keep-warm.yml` rodava a cada 5 min = 288 jobs/dia, ~8.600
+  min/mes cobrados (job curto e arredondado para 1 min). Ultimo sucesso 21/09
+  03:19 UTC; dai em diante NENHUM workflow roda (CI, calendar-mirror, backup).
+  **Removido:** o Render esta no plano pago `0.5c-512mb` (conferido no painel
+  em 21/09), que nao hiberna. `/api/health/live` fica: o site a chama ao abrir.
+- **Backup:** falha desde **17/09** por outro motivo: "Artifact storage quota
+  has been hit". Dump de ~44 MB x retencao de 30 dias passa dos 500 MB gratis
+  em ~11 dias. **Ultimo backup valido: 16/09.** Retencao caiu para 7 dias.
+  Os 47 artifacts vivos (703 MB) so liberam espaco quando expirarem ou forem
+  apagados: apagar backup e acao do dono, nao do Claude.
+- Nota falsa corrigida junto: "O que JA ESTA NO AR" dizia keep-warm a cada 10 min.

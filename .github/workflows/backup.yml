@@ -4,8 +4,11 @@ name: Backup diário do banco (Supabase)
 # - Roda todo dia às 07:00 UTC (04:00 Brasília) + botão manual (workflow_dispatch).
 # - Usa o SESSION POOLER (IPv4) — o host direto do Supabase é IPv6-only e o
 #   GitHub Actions não alcança (mesma lição da MIGRATIONS_DATABASE_URL).
-# - O dump vai como ARTIFACT privado do repo, com retenção de 30 dias
+# - O dump vai como ARTIFACT privado do repo, com retenção de 7 dias
 #   (rotação automática, sem segundo repositório, sem token extra).
+#   7 e nao 30: cada dump tem ~44 MB e o armazenamento gratuito de artifacts
+#   de repo privado e 500 MB. Com 30 dias o espaco encheu em 16/09 e o backup
+#   parou de subir SEM ninguem perceber (o job falhava so no upload).
 # - Segredo necessário (criar em Settings → Secrets and variables → Actions):
 #     SUPABASE_DB_URL = a MESMA string da MIGRATIONS_DATABASE_URL do Render
 #     (postgresql://postgres.<ref>:<senha>@aws-0-us-west-2.pooler.supabase.com:5432/postgres)
@@ -43,10 +46,10 @@ jobs:
             --file="tickrify-${STAMP}.dump"
           ls -lh tickrify-*.dump
 
-      - name: Guardar backup (artifact privado, 30 dias)
+      - name: Guardar backup (artifact privado, 7 dias)
         uses: actions/upload-artifact@v4
         with:
           name: db-backup-${{ github.run_id }}
           path: tickrify-*.dump
-          retention-days: 30
+          retention-days: 7
           if-no-files-found: error

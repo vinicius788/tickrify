@@ -17,7 +17,7 @@ type ReadinessItem = {
 /**
  * @Public() no nível da CLASSE porque nenhuma rota de health usa sessão do
  * Clerk — quem chama é infraestrutura, não usuário:
- *   - /health/live  → aberto de propósito (keep-warm do GitHub Actions).
+ *   - /health/live  → aberto de propósito (o site chama ao abrir; health check).
  *   - /health/ready → fechado pelo OpsTokenGuard (INTERNAL_OPS_TOKEN).
  *   - /health       → fechado pelo OpsTokenGuard.
  *

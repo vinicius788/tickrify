@@ -10,7 +10,7 @@
 #
 # Nenhuma mudança no calendar.service.ts conserta isso. A saída é buscar de um
 # lugar que não esteja bloqueado — e o runner do GitHub Actions é exatamente
-# isso, com a vantagem de já ser infra que este projeto usa (keep-warm, backup).
+# isso, com a vantagem de já ser infra que este projeto usa (backup).
 #
 # O arquivo gerado é servido estaticamente pela Vercel em
 # https://tickrify.com/calendar/*.json — mesmo mecanismo do /blog/ e do /tools/,
