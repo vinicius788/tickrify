@@ -3876,3 +3876,47 @@ em `/tmp` (receita da nota de 17/08): 12 rotas, titulo proprio em cada, corpo em
 `<noscript>` intacto (714 palavras na home sem a API de acuracia), `/sign-in`
 seguindo sem corpo, e **nenhuma contaminacao entre execucoes**.
 `vitest`/`vite build` seguem sem rodar no VM (limitacao ja registrada).
+
+### RESULTADO MEDIDO em producao, e a armadilha que ele revelou (21/09, commit `2d7a5a3`)
+
+Tres medicoes do PageSpeed mobile na MESMA pagina, uma antes e duas depois:
+
+| | antes | depois, run 1 | depois, run 2 |
+|---|---|---|---|
+| Desempenho | 74 | **61** | **78** |
+| FCP | 3,3 s | 5,2 s | 2,4 s |
+| LCP | 4,2 s | 7,6 s | 4,3 s |
+| TBT | 260 ms | 120 ms | 20 ms |
+| CLS | 0,028 | 0 | 0,128 |
+| **bloqueio de renderizacao** | **1.050 ms** | **150 ms** | **60 ms** |
+
+⚠️ **A VARIANCIA DO PAGESPEED MOBILE NESTE SITE E DE ~17 PONTOS ENTRE RUNS
+CONSECUTIVOS, com a mesma pagina e o mesmo commit.** O run 1 sozinho diria que a
+mudanca piorou tudo; o run 2 sozinho diria que melhorou. Os dois sao o mesmo
+codigo. **Nunca aceitar um run unico do PSI como antes/depois neste projeto** -
+e a mesma disciplina que o backtest exige, e vale aqui igual. Rode 3 e olhe o
+que NAO se move.
+
+**O que nao se move, e por isso e o resultado real:** o bloqueio de renderizacao
+caiu de 1.050 ms para 60-150 ms nas duas medicoes, e **o `fonts.googleapis.com`
+sumiu da tabela do audit**. Sobrou so o CSS proprio, que e o que deve mesmo
+bloquear. Desktop foi de 97 para 98. Metrica derivada de uma unica amostra de
+laboratorio (FCP, LCP, o score) nao decide nada aqui; a tabela de recursos
+bloqueantes decide, porque ela e estrutural e nao estatistica.
+
+**✅ `llms.txt`: o audit passou.** O texto virou *"O arquivo llms.txt segue as
+recomendacoes"*, em mobile e desktop, e a categoria **Navegacao agentica chegou
+a 3/3**. Item fechado.
+
+**🔴 O CLS virou o achado novo: oscilou de 0 a 0,128 entre os dois runs** (o
+limite do Google e 0,1). Isso NAO e variancia de rede, e layout que se mexe
+dependendo do que carrega primeiro. Promove *"elementos de imagem sem width e
+height"* de item 3 para item 1 da fila: e barato, e deterministico, e e o unico
+dos pendentes que ataca uma metrica que ja esta reprovando.
+
+Observado junto, sem causa atribuida: acessibilidade foi de 97 para 94 e entrou
+o audit *"as areas de toque nao tem tamanho ou espacamento suficiente"* (bate
+com os 8 de 43 alvos abaixo de 32px ja medidos). Entre a medicao antiga e esta
+entraram tres commits de outra sessao (`e7355c2`, `1171917`, `d38f9c8`, banner
+de oferta e cupom), entao nao da para dizer se e deles ou se ja estava la.
+
