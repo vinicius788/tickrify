@@ -102,11 +102,10 @@ const PricingSection = () => {
             {pr.starterCta}
           </Link>
 
-          <p className="site-price-fine">
-            {pr.payPerUse}{' '}
-            <Link to="/dashboard" className="underline underline-offset-2">{pr.buyTicks}</Link>
-            {' '}· {pr.neverExpire}
-          </p>
+          {/* Era "compre Ticks avulsos no painel · Ticks nunca expiram": o painel
+              nao vende avulso e, desde 21/09/2026, o saldo do assinante volta
+              para 200 a cada mes (nao acumula). As duas partes eram falsas. */}
+          <p className="site-price-fine">{pr.monthlyReset}</p>
         </div>
 
         <div className="site-trust">

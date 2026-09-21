@@ -319,7 +319,7 @@ function pricingBlock(l) {
   return [
     `<h2>${esc(`${l.pricing.title} ${l.pricing.highlight}`)}</h2>`,
     `<p>${esc(l.pricing.subtitle)}</p>`,
-    `<ul>${items}<li>${esc(l.pricing.neverExpire)}</li></ul>`,
+    `<ul>${items}<li>${esc(l.pricing.monthlyReset)}</li></ul>`,
   ].join('\n');
 }
 
@@ -363,7 +363,7 @@ export function buildBody({ path, meta, copy, accuracy, pricingFaq }) {
       `<h1>${esc(headingFromTitle(meta.title))}</h1>`,
       `<p>${esc(meta.description)}</p>`,
       `<p>${esc(l.pricing.subtitle)}</p>`,
-      `<ul>${['fS1', 'fS2', 'fS3', 'fS4'].map((k) => `<li>${esc(l.pricing[k])}</li>`).join('')}<li>${esc(l.pricing.neverExpire)}</li><li>${esc(l.pricing.payPerUse)} ${esc(l.pricing.buyTicks)}</li></ul>`,
+      `<ul>${['fS1', 'fS2', 'fS3', 'fS4'].map((k) => `<li>${esc(l.pricing[k])}</li>`).join('')}<li>${esc(l.pricing.monthlyReset)}</li></ul>`,
       `<h2>${esc(l.faq.q6)}</h2><p>${esc(l.faq.a6)}</p>`,
       accuracyBlock(accuracy),
       /* As MESMAS perguntas que a tela mostra. Sem isto o crawler que não

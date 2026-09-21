@@ -64,6 +64,10 @@ model Subscription {
   stripeId  String   @unique
   status    String
   priceId   String?
+  /// Periodo de cobranca atual (da Stripe). Define a janela mensal de ticks
+  /// sem chamar a Stripe a cada analise. NULL no acesso manual.
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)

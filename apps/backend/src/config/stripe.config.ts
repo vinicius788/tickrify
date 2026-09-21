@@ -135,3 +135,38 @@ export function stripeKeyMode(secretKey: string): StripeKeyMode {
   if (/^(sk|rk)_test_/.test(secretKey)) return 'test';
   return 'unknown';
 }
+
+/**
+ * Pacote MENSAL do plano (mesmo no anual: o anual recebe 200 por mes, nao
+ * 2400 de uma vez). E o teto do saldo: o assinante nunca passa disto.
+ */
+export function monthlyTicksForPriceId(priceId: string | null | undefined): number {
+  const plan = priceId ? resolvePlanForPriceId(priceId) : null;
+  return plan ? PLAN_TICKS_PER_MONTH[plan] : 0;
+}
+
+function addMonthsUTC(date: Date, months: number): Date {
+  const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1,
+    date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds()));
+  // Dia 31 + 1 mes vira o ultimo dia do mes seguinte, como faz a Stripe.
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(date.getUTCDate(), lastDay));
+  return target;
+}
+
+/**
+ * Inicio da janela mensal de ticks em que `now` cai.
+ * Com periodo de cobranca: meses contados a partir do inicio do periodo (no
+ * mensal a janela E o periodo; no anual sao 12 janelas). Sem periodo (acesso
+ * manual): mes-calendario UTC.
+ */
+export function allowanceWindowStart(periodStart: Date | null | undefined, now: Date): Date {
+  if (!periodStart) return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  let start = periodStart;
+  for (let i = 1; i <= 24; i++) {
+    const next = addMonthsUTC(periodStart, i);
+    if (next.getTime() > now.getTime()) break;
+    start = next;
+  }
+  return start;
+}

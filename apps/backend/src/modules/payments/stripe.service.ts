@@ -16,7 +16,8 @@ import {
   getStripeConfig,
   getPriceId,
   resolvePlanForPriceId,
-  resolveTicksForPriceId,
+  monthlyTicksForPriceId,
+  allowanceWindowStart,
   PlanType,
   BillingCycle,
   Currency,
@@ -38,19 +39,6 @@ const BLOCKING_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due', 'unpai
 
 /** Sessao aberta so e reaproveitada se ainda tiver pelo menos isto de vida. */
 const REUSE_MIN_REMAINING_SECONDS = 10 * 60;
-
-/**
- * Assinaturas anteriores a esta data mantem, ATE A PROXIMA RENOVACAO, a regra
- * antiga de ticks: +1 pacote sempre que o saldo zera.
- *
- * Por que: a regra antiga era um bug (tick sem pagamento), mas os 3 assinantes
- * pagantes de setembro/2026 assinaram com ela valendo, e corta-la no meio do
- * mes que eles ja pagaram poderia trava-los. Na renovacao passa a valer o plano
- * como vendido (200/mes), agora creditado de verdade pelo webhook da fatura.
- * Para manter a regra antiga PARA SEMPRE para eles, basta tirar a condicao de
- * `current_period_start` em `isGrandfatheredPeriod`.
- */
-const LEGACY_REFILL_CUTOFF_MS = Date.UTC(2026, 8, 22); // 22/09/2026 00:00 UTC
 
 /** Validacao do price vale por 1h; mudar o price no painel reflete em ate 1h. */
 const PRICE_CHECK_TTL_MS = 60 * 60 * 1000;
@@ -106,6 +94,14 @@ export class StripeService implements OnModuleInit {
         )`);
       await this.prisma.$executeRawUnsafe(
         'CREATE INDEX IF NOT EXISTS "StripeWebhookEvent_status_updatedAt_idx" ON "tickrify"."StripeWebhookEvent"("status", "updatedAt")',
+      );
+      // Periodo de cobranca (janela mensal de ticks). Mesma logica: aditivo,
+      // idempotente, e a migracao nao roda no boot em producao.
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Subscription" ADD COLUMN IF NOT EXISTS "currentPeriodStart" TIMESTAMP(3)',
+      );
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Subscription" ADD COLUMN IF NOT EXISTS "currentPeriodEnd" TIMESTAMP(3)',
       );
       this.logger.log('[webhook] Registro de eventos pronto.');
     } catch (error) {
@@ -1218,31 +1214,25 @@ export class StripeService implements OnModuleInit {
     this.logger.log(`Payment succeeded for user: ${synced.userId} (invoice ${invoice.id})`);
 
     // Troca de plano/proration tambem gera fatura paga. So a criacao e a
-    // renovacao dao o pacote do periodo.
+    // renovacao abrem a janela do mes.
     const reason = invoice.billing_reason ?? '';
     if (!['subscription_create', 'subscription_cycle'].includes(reason)) {
-      this.logger.log(`[Ticks] Fatura ${invoice.id} (${reason}) nao da pacote de ticks.`);
-      return;
-    }
-
-    const priceId = synced.subscription.items.data[0]?.price.id || '';
-    const { ticks, planName } = resolveTicksForPriceId(priceId);
-    if (ticks <= 0) {
-      this.logger.warn(`[Ticks] priceId ${priceId} não mapeado a nenhum plano — nenhum tick creditado`);
+      this.logger.log(`[Ticks] Fatura ${invoice.id} (${reason}) nao abre janela de ticks.`);
       return;
     }
 
     // Erro aqui SOBE: antes era engolido e o assinante ficava sem os ticks do
-    // mes, com o webhook respondendo 200. A chave unica impede credito duplo
+    // mes, com o webhook respondendo 200. A chave da janela impede reset duplo
     // quando a Stripe reenviar.
-    await this.creditSubscriptionTicks({
-      userId: synced.userId,
-      ticks,
-      creditKey: this.invoiceCreditKey(invoice.id),
-      invoiceId: invoice.id,
-      description: `Monthly refill: ${planName} plan (${ticks} Ticks)`,
-      metadata: { invoiceId: invoice.id, subscriptionId, priceId, source: 'invoice_webhook' },
-    });
+    await this.applyMonthlyAllowance(
+      synced.userId,
+      {
+        stripeId: synced.subscription.id,
+        priceId: synced.subscription.items.data[0]?.price.id ?? null,
+        periodStart: new Date(synced.subscription.current_period_start * 1000),
+      },
+      'invoice_webhook',
+    );
   }
 
   /**
@@ -1322,63 +1312,79 @@ export class StripeService implements OnModuleInit {
   }
 
   /**
-   * Chave de credito de ticks de UMA fatura. Grava na coluna unica
-   * `stripePaymentIntentId` (que ja existia e ja e a trava dos pacotes
-   * avulsos): webhook, sync preguicoso e `ensureTicks` usam a mesma chave, e o
-   * banco recusa o segundo credito da mesma fatura.
+   * Saldo do mes: o assinante tem NO MAXIMO o pacote do plano (200 no
+   * starter). No inicio de cada janela mensal o saldo passa a ser exatamente o
+   * pacote: nao soma, nao acumula, sobra do mes anterior nao passa.
+   *
+   * Uma vez por janela: a chave `allowance:<assinatura>:<inicio da janela>`
+   * vai na coluna unica `stripePaymentIntentId` (a mesma trava dos pacotes
+   * avulsos). Webhook da fatura, sync preguicoso e a checagem da analise usam
+   * a mesma chave, entao chegam no mesmo reset e so um grava.
+   *
+   * Regra decidida pelo dono em 21/09/2026. Substitui o "+200 por fatura" e o
+   * "+200 sempre que o saldo zerava" (este ultimo era tick sem pagamento).
    */
-  private invoiceCreditKey(invoiceId: string): string {
-    return `subscription_invoice:${invoiceId}`;
-  }
-
-  private async creditSubscriptionTicks(params: {
-    userId: string;
-    ticks: number;
-    creditKey: string;
-    invoiceId: string | null;
-    description: string;
-    metadata: Record<string, unknown>;
-  }): Promise<boolean> {
-    // Creditos feitos antes desta chave existir guardavam so o invoiceId na
-    // metadata. Sem esta consulta, reprocessar uma fatura antiga creditaria de novo.
-    if (params.invoiceId) {
-      const legacy = await this.prisma.tickTransaction.findFirst({
-        where: { userId: params.userId, metadata: { path: ['invoiceId'], equals: params.invoiceId } },
-        select: { id: true },
-      });
-      if (legacy) {
-        this.logger.log(`[Ticks] Fatura ${params.invoiceId} ja creditada (registro antigo).`);
-        return false;
-      }
+  private async applyMonthlyAllowance(
+    userId: string,
+    subscription: { stripeId: string; priceId: string | null; periodStart: Date | null },
+    source: 'invoice_webhook' | 'lazy_sync' | 'access_check',
+    now = new Date(),
+  ): Promise<boolean> {
+    const allowance = monthlyTicksForPriceId(subscription.priceId);
+    if (allowance <= 0) {
+      this.logger.warn(`[Ticks] priceId ${subscription.priceId} nao mapeado a nenhum plano; saldo intocado.`);
+      return false;
     }
 
+    const windowStart = allowanceWindowStart(subscription.periodStart, now);
+    const key = `allowance:${subscription.stripeId}:${windowStart.toISOString().slice(0, 10)}`;
+
+    // Caminho de toda analise: uma consulta pela chave unica e acabou.
+    const applied = await this.prisma.tickTransaction.findUnique({
+      where: { stripePaymentIntentId: key },
+      select: { id: true },
+    });
+    if (applied) return false;
+
     try {
-      await this.prisma.$transaction([
-        this.prisma.userTicks.upsert({
-          where: { userId: params.userId },
-          create: { userId: params.userId, balance: params.ticks },
-          update: { balance: { increment: params.ticks } },
-        }),
-        this.prisma.tickTransaction.create({
+      await this.prisma.$transaction(async (tx) => {
+        const current = await tx.userTicks.findUnique({ where: { userId }, select: { balance: true } });
+        const previous = current?.balance ?? 0;
+        await tx.userTicks.upsert({
+          where: { userId },
+          create: { userId, balance: allowance },
+          update: { balance: allowance },
+        });
+        await tx.tickTransaction.create({
           data: {
-            userId: params.userId,
-            amount: params.ticks,
+            userId,
+            // Diferenca real no saldo (pode ser negativa: quem tinha mais que
+            // o teto volta para ele). O historico continua somando certo.
+            amount: allowance - previous,
             type: 'BONUS',
-            description: params.description,
-            stripePaymentIntentId: params.creditKey,
-            metadata: params.metadata as Prisma.InputJsonValue,
+            description: `Monthly allowance: saldo definido em ${allowance} Ticks`,
+            stripePaymentIntentId: key,
+            metadata: {
+              source,
+              reset: true,
+              previousBalance: previous,
+              allowance,
+              subscriptionId: subscription.stripeId,
+              priceId: subscription.priceId,
+              windowStart: windowStart.toISOString(),
+            },
           },
-        }),
-      ]);
+        });
+      });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        this.logger.log(`[Ticks] Credito ${params.creditKey} ja existe; ignorado.`);
+        this.logger.log(`[Ticks] Janela ${key} ja aplicada por outro caminho; ignorado.`);
         return false;
       }
       throw error;
     }
 
-    this.logger.log(`[Ticks] +${params.ticks} creditados para ${params.userId} (${params.creditKey})`);
+    this.logger.log(`[Ticks] Saldo de ${userId} definido em ${allowance} (${key}, ${source})`);
     return true;
   }
 
@@ -1482,90 +1488,52 @@ export class StripeService implements OnModuleInit {
   }
 
   /**
-   * Pacote de ticks para quem tem assinatura ativa e saldo zero, quando o
-   * webhook da fatura nao chegou.
+   * Chamado a cada verificacao de acesso pago (toda analise e toda abertura
+   * do painel, via /usage): garante que a janela mensal atual ja foi aplicada.
    *
-   * ⚠️ ANTES isto creditava 200 ticks TODA vez que o saldo zerava: quem gastava
-   * os 200 do mes ganhava mais 200 na analise seguinte, sem pagamento. Agora o
-   * credito e amarrado a ULTIMA FATURA PAGA, pela mesma chave do webhook, entao
-   * cada periodo pago rende um pacote so, venha por onde vier.
-   *
-   * Acesso manual (`manual_*`, sem Stripe) recebe um pacote por mes-calendario.
+   * O periodo vem do banco. So consulta a Stripe se ele estiver ausente ou
+   * vencido (renovacao cujo webhook ainda nao chegou), e grava o novo.
+   * Acesso manual (`manual_*`) usa o mes-calendario.
    */
   async ensureTicksForActiveSubscriber(
     userId: string,
-    subscription: { stripeId: string; priceId: string | null },
+    subscription: {
+      stripeId: string;
+      priceId: string | null;
+      currentPeriodStart?: Date | null;
+      currentPeriodEnd?: Date | null;
+    },
   ): Promise<void> {
-    const { priceId, stripeId } = subscription;
-    if (!priceId) return;
-
-    const currentBalance = await this.prisma.userTicks.findUnique({
-      where: { userId },
-      select: { balance: true },
-    });
-    if ((currentBalance?.balance ?? 0) > 0) return;
-
-    const { ticks, planName } = resolveTicksForPriceId(priceId);
-    if (ticks <= 0) return;
-
     try {
-      let creditKey: string;
-      let invoiceId: string | null = null;
+      let periodStart = subscription.currentPeriodStart ?? null;
+      let priceId = subscription.priceId;
 
-      let description = `Initial ticks: ${planName} plan (${ticks} Ticks)`;
-
-      if (stripeId.startsWith('sub_')) {
-        const live = await this.getStripeClient().subscriptions.retrieve(stripeId, {
-          expand: ['latest_invoice'],
-        });
-
-        if (this.isGrandfatheredPeriod(live)) {
-          // Regra antiga, preservada ate a renovacao (ver LEGACY_REFILL_CUTOFF_MS).
-          // A chave usa a ultima transacao do usuario: cada vez que o saldo
-          // zera ha um uso novo, logo uma chave nova; duas analises simultaneas
-          // no mesmo saldo zero geram a MESMA chave e so uma credita.
-          const last = await this.prisma.tickTransaction.findFirst({
-            where: { userId },
-            orderBy: { createdAt: 'desc' },
-            select: { id: true },
-          });
-          creditKey = `legacy_refill:${stripeId}:${last?.id ?? 'none'}`;
-          description = `Refill: ${planName} plan (${ticks} Ticks) [regra anterior, ate a renovacao]`;
-        } else {
-          const invoice = live.latest_invoice as Stripe.Invoice | null;
-          if (!invoice || typeof invoice === 'string' || invoice.status !== 'paid') return;
-          invoiceId = invoice.id;
-          creditKey = this.invoiceCreditKey(invoice.id);
+      if (subscription.stripeId.startsWith('sub_')) {
+        const stale =
+          !periodStart ||
+          !subscription.currentPeriodEnd ||
+          subscription.currentPeriodEnd.getTime() <= Date.now();
+        if (stale) {
+          const live = await this.getStripeClient().subscriptions.retrieve(subscription.stripeId);
+          await this.upsertSubscriptionForUser(userId, live);
+          if (!['active', 'trialing'].includes(live.status)) return;
+          periodStart = new Date(live.current_period_start * 1000);
+          priceId = live.items.data[0]?.price.id ?? priceId;
         }
       } else {
-        const month = new Date().toISOString().slice(0, 7);
-        creditKey = `manual_subscription:${stripeId}:${month}`;
+        periodStart = null;
       }
 
-      await this.creditSubscriptionTicks({
+      await this.applyMonthlyAllowance(
         userId,
-        ticks,
-        creditKey,
-        invoiceId,
-        description,
-        metadata: { priceId, subscriptionId: stripeId, invoiceId, source: 'ensure_ticks' },
-      });
+        { stripeId: subscription.stripeId, priceId, periodStart },
+        'access_check',
+      );
     } catch (error) {
       // Chamado dentro do fluxo de analise: nao pode derrubar a analise. O
-      // webhook da fatura segue sendo o caminho principal do credito.
-      this.logger.error(`[EnsureTicks] Falha ao verificar pacote de ${userId}`, error);
+      // webhook da fatura segue abrindo a janela de cada renovacao.
+      this.logger.error(`[Ticks] Falha ao verificar a janela mensal de ${userId}`, error);
     }
-  }
-
-  /**
-   * Assinatura criada antes do corte e ainda no MESMO periodo pago de entao.
-   * A primeira renovacao depois do corte encerra a transicao.
-   */
-  private isGrandfatheredPeriod(subscription: Stripe.Subscription): boolean {
-    return (
-      subscription.created * 1000 < LEGACY_REFILL_CUTOFF_MS &&
-      subscription.current_period_start * 1000 < LEGACY_REFILL_CUTOFF_MS
-    );
   }
 
   /**
@@ -1591,24 +1559,17 @@ export class StripeService implements OnModuleInit {
         await this.upsertSubscriptionForUser(userId, sub);
       }
 
-      // Mesma chave de fatura do webhook: se o webhook chegar depois (ou ja
-      // tiver chegado), o banco recusa o segundo credito.
+      // Mesma janela do webhook: se ele chegar depois, a chave ja existe.
       const first = active[0];
-      const latestInvoiceId =
-        typeof first.latest_invoice === 'string' ? first.latest_invoice : first.latest_invoice?.id;
-      const priceId = first.items.data[0]?.price.id ?? '';
-      const { ticks, planName } = resolveTicksForPriceId(priceId);
-
-      if (ticks > 0 && latestInvoiceId) {
-        await this.creditSubscriptionTicks({
-          userId,
-          ticks,
-          creditKey: this.invoiceCreditKey(latestInvoiceId),
-          invoiceId: latestInvoiceId,
-          description: `Monthly refill: ${planName} plan (${ticks} Ticks) [lazy sync]`,
-          metadata: { subscriptionId: first.id, invoiceId: latestInvoiceId, priceId, source: 'lazy_sync' },
-        });
-      }
+      await this.applyMonthlyAllowance(
+        userId,
+        {
+          stripeId: first.id,
+          priceId: first.items.data[0]?.price.id ?? null,
+          periodStart: new Date(first.current_period_start * 1000),
+        },
+        'lazy_sync',
+      );
 
       this.logger.log(`[LazySync] Synced ${active.length} subscription(s) for user ${userId}`);
       return true;
@@ -1626,12 +1587,23 @@ export class StripeService implements OnModuleInit {
         stripeId: subscription.id,
         status: subscription.status,
         priceId: subscription.items.data[0]?.price.id || null,
+        ...this.periodColumns(subscription),
       },
       update: {
         status: subscription.status,
         priceId: subscription.items.data[0]?.price.id || null,
+        ...this.periodColumns(subscription),
       },
     });
+  }
+
+  private periodColumns(subscription: Stripe.Subscription) {
+    const start = subscription.current_period_start;
+    const end = subscription.current_period_end;
+    return {
+      currentPeriodStart: typeof start === 'number' ? new Date(start * 1000) : null,
+      currentPeriodEnd: typeof end === 'number' ? new Date(end * 1000) : null,
+    };
   }
 
   private rethrowStripeError(error: unknown, fallbackMessage: string): never {

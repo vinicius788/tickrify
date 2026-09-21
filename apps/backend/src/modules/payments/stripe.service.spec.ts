@@ -50,7 +50,8 @@ describe('StripeService webhooks', () => {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'evt_1' }]),
       $executeRaw: jest.fn().mockResolvedValue(1),
       $executeRawUnsafe: jest.fn().mockResolvedValue(0),
-      $transaction: jest.fn(async (ops: Promise<unknown>[]) => Promise.all(ops)),
+      // Aceita os dois formatos do Prisma: lista de operacoes ou callback.
+      $transaction: jest.fn(async (arg: any) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg))),
       subscription: {
         findUnique: jest.fn().mockResolvedValue(null),
         upsert: jest.fn().mockResolvedValue({}),
@@ -223,72 +224,84 @@ describe('StripeService webhooks', () => {
   });
 
   describe('invoice.payment_succeeded', () => {
+    const PERIOD_START = Date.UTC(2026, 9, 8) / 1000; // 08/10/2026
     const invoice = (overrides: Record<string, unknown> = {}) => ({
       id: 'in_1',
       customer: 'cus_1',
-      subscription: 'sub_1',
       billing_reason: 'subscription_cycle',
+      parent: { subscription_details: { subscription: 'sub_1', metadata: {} }, type: 'subscription_details' },
       ...overrides,
     });
 
-    it('credita o pacote UMA vez, com a chave da fatura, e sincroniza so esta assinatura', async () => {
+    beforeEach(() => {
+      stripe.subscriptions.retrieve.mockResolvedValue(
+        subscription({ current_period_start: PERIOD_START, current_period_end: PERIOD_START + 30 * 86400 }),
+      );
+    });
+
+    it('renovacao DEFINE o saldo em 200 (nao soma) e grava a janela do mes', async () => {
+      prisma.userTicks.findUnique.mockResolvedValue({ balance: 57 });
+
       await deliver('invoice.payment_succeeded', invoice());
 
+      expect(prisma.userTicks.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ update: { balance: 200 }, create: { userId: 'usr_1', balance: 200 } }),
+      );
       expect(prisma.tickTransaction.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ amount: 200, stripePaymentIntentId: 'subscription_invoice:in_1' }),
+          data: expect.objectContaining({ amount: 143, stripePaymentIntentId: 'allowance:sub_1:2026-10-08' }),
         }),
-      );
-      expect(prisma.userTicks.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ update: { balance: { increment: 200 } } }),
       );
       // Antes: updateMany({ where: { userId } }) reativava ate as canceladas.
       expect(prisma.subscription.updateMany).not.toHaveBeenCalled();
     });
 
-    it('formato basil (API do endpoint em producao): assinatura em parent.subscription_details', async () => {
-      // Formato copiado do evento real in_1UEFUv... (10/09/2026): sem
-      // `subscription` no topo. O handler antigo saia daqui sem creditar.
-      await deliver('invoice.payment_succeeded', {
-        id: 'in_basil',
-        customer: 'cus_1',
-        billing_reason: 'subscription_create',
-        parent: {
-          quote_details: null,
-          subscription_details: { metadata: {}, subscription: 'sub_1' },
-          type: 'subscription_details',
-        },
-      });
+    it('saldo acima do teto volta para 200 (nunca mais de 200)', async () => {
+      prisma.userTicks.findUnique.mockResolvedValue({ balance: 358 });
 
-      expect(stripe.subscriptions.retrieve).toHaveBeenCalledWith('sub_1');
+      await deliver('invoice.payment_succeeded', invoice());
+
+      expect(prisma.userTicks.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { balance: 200 } }));
       expect(prisma.tickTransaction.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ amount: -158 }) }),
+      );
+    });
+
+    it('grava o periodo de cobranca na assinatura', async () => {
+      await deliver('invoice.payment_succeeded', invoice());
+
+      expect(prisma.subscription.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ amount: 200, stripePaymentIntentId: 'subscription_invoice:in_basil' }),
+          update: expect.objectContaining({ currentPeriodStart: new Date(PERIOD_START * 1000) }),
         }),
       );
     });
 
-    it('reentrega da mesma fatura bate na chave unica e nao credita de novo', async () => {
-      prisma.$transaction.mockRejectedValueOnce(duplicateKeyError());
+    it('janela ja aplicada (reentrega, ou o painel chegou antes) nao mexe no saldo', async () => {
+      prisma.tickTransaction.findUnique.mockResolvedValue({ id: 'tx_allowance' });
 
       await expect(deliver('invoice.payment_succeeded', invoice(), 'evt_2')).resolves.toEqual({ received: true });
+      expect(prisma.userTicks.upsert).not.toHaveBeenCalled();
+    });
+
+    it('corrida na mesma janela bate na chave unica e nao falha o webhook', async () => {
+      prisma.$transaction.mockRejectedValueOnce(duplicateKeyError());
+
+      await expect(deliver('invoice.payment_succeeded', invoice(), 'evt_3')).resolves.toEqual({ received: true });
       expect(ledgerStatus()).toBe('processed');
     });
 
-    it('fatura ja creditada pelo formato antigo nao e creditada de novo', async () => {
-      prisma.tickTransaction.findFirst.mockResolvedValue({ id: 'tx_old' });
-
-      await deliver('invoice.payment_succeeded', invoice());
-
-      expect(prisma.$transaction).not.toHaveBeenCalled();
+    it('formato antigo da API (subscription no topo) tambem funciona', async () => {
+      await deliver('invoice.payment_succeeded', { id: 'in_old', customer: 'cus_1', subscription: 'sub_1', billing_reason: 'subscription_create' });
+      expect(prisma.userTicks.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { balance: 200 } }));
     });
 
-    it('fatura de troca de plano nao da pacote', async () => {
+    it('fatura de troca de plano nao abre janela', async () => {
       await deliver('invoice.payment_succeeded', invoice({ billing_reason: 'subscription_update' }));
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it('erro ao creditar SOBE (Stripe reenvia) em vez de ser engolido', async () => {
+    it('erro ao aplicar o saldo SOBE (Stripe reenvia) em vez de ser engolido', async () => {
       prisma.$transaction.mockRejectedValueOnce(new Error('db down'));
 
       await expect(deliver('invoice.payment_succeeded', invoice())).rejects.toBeDefined();
@@ -327,123 +340,92 @@ describe('StripeService webhooks', () => {
     });
   });
 
-  describe('credito fora do webhook', () => {
-    it('ensureTicks credita o pacote da ultima fatura PAGA, com a mesma chave do webhook', async () => {
-      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ latest_invoice: { id: 'in_9', status: 'paid' } }));
+  describe('janela mensal fora do webhook (painel e analise)', () => {
+    const SEPT_10 = new Date(Date.UTC(2026, 8, 10, 18, 27));
+    const OCT_10 = new Date(Date.UTC(2026, 9, 10, 18, 27));
 
-      await service.ensureTicksForActiveSubscriber('usr_1', { stripeId: 'sub_1', priceId: STARTER_MONTHLY });
+    it('assinante atual (periodo 10/09): primeira checagem define o saldo em 200', async () => {
+      prisma.userTicks.findUnique.mockResolvedValue({ balance: 358 });
 
+      await service.ensureTicksForActiveSubscriber('usr_1', {
+        stripeId: 'sub_1',
+        priceId: STARTER_MONTHLY,
+        currentPeriodStart: SEPT_10,
+        currentPeriodEnd: new Date(Date.now() + 86400_000),
+      });
+
+      expect(stripe.subscriptions.retrieve).not.toHaveBeenCalled(); // periodo em dia no banco
+      expect(prisma.userTicks.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { balance: 200 } }));
       expect(prisma.tickTransaction.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ stripePaymentIntentId: 'subscription_invoice:in_9' }) }),
+        expect.objectContaining({ data: expect.objectContaining({ stripePaymentIntentId: 'allowance:sub_1:2026-09-10' }) }),
       );
     });
 
-    it('ensureTicks NAO recarrega o saldo zerado de um periodo ja creditado', async () => {
-      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ latest_invoice: { id: 'in_9', status: 'paid' } }));
-      prisma.$transaction.mockRejectedValueOnce(duplicateKeyError());
+    it('gastar tudo NAO recarrega no mesmo mes: a janela ja foi aplicada', async () => {
+      prisma.userTicks.findUnique.mockResolvedValue({ balance: 0 });
+      prisma.tickTransaction.findUnique.mockResolvedValue({ id: 'tx_allowance_sep' });
+
+      await service.ensureTicksForActiveSubscriber('usr_1', {
+        stripeId: 'sub_1',
+        priceId: STARTER_MONTHLY,
+        currentPeriodStart: SEPT_10,
+        currentPeriodEnd: new Date(Date.now() + 86400_000),
+      });
+
+      expect(prisma.userTicks.upsert).not.toHaveBeenCalled();
+    });
+
+    it('periodo ausente no banco (linhas antigas): busca na Stripe e grava', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(
+        subscription({ current_period_start: SEPT_10.getTime() / 1000, current_period_end: OCT_10.getTime() / 1000 }),
+      );
 
       await service.ensureTicksForActiveSubscriber('usr_1', { stripeId: 'sub_1', priceId: STARTER_MONTHLY });
 
-      expect(prisma.userTicks.upsert).toHaveBeenCalledTimes(1); // a tentativa, desfeita pela transacao
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(stripe.subscriptions.retrieve).toHaveBeenCalledWith('sub_1');
+      expect(prisma.subscription.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ update: expect.objectContaining({ currentPeriodStart: SEPT_10 }) }),
+      );
+      expect(prisma.tickTransaction.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ stripePaymentIntentId: 'allowance:sub_1:2026-09-10' }) }),
+      );
     });
 
-    describe('assinantes anteriores a 22/09/2026 (transicao)', () => {
-      const SEPT_8 = Date.UTC(2026, 8, 8) / 1000;
-      const OCT_8 = Date.UTC(2026, 9, 8) / 1000;
-
-      it('no periodo que ja pagaram: saldo zerado recebe o pacote, como antes', async () => {
-        stripe.subscriptions.retrieve.mockResolvedValue(
-          subscription({ created: SEPT_8, current_period_start: SEPT_8, latest_invoice: { id: 'in_sep', status: 'paid' } }),
-        );
-        prisma.tickTransaction.findFirst.mockImplementation(async (args: any) =>
-          args?.orderBy ? { id: 'tx_usage_42' } : null,
-        );
-
-        await service.ensureTicksForActiveSubscriber('usr_1', { stripeId: 'sub_1', priceId: STARTER_MONTHLY });
-
-        expect(prisma.tickTransaction.create).toHaveBeenCalledWith(
-          expect.objectContaining({
-            data: expect.objectContaining({ amount: 200, stripePaymentIntentId: 'legacy_refill:sub_1:tx_usage_42' }),
-          }),
-        );
-      });
-
-      it('duas analises no mesmo saldo zero creditam uma vez so (mesma chave)', async () => {
-        stripe.subscriptions.retrieve.mockResolvedValue(subscription({ created: SEPT_8, current_period_start: SEPT_8 }));
-        prisma.tickTransaction.findFirst.mockImplementation(async (args: any) =>
-          args?.orderBy ? { id: 'tx_usage_42' } : null,
-        );
-        prisma.$transaction.mockResolvedValueOnce([]).mockRejectedValueOnce(duplicateKeyError());
-
-        await service.ensureTicksForActiveSubscriber('usr_1', { stripeId: 'sub_1', priceId: STARTER_MONTHLY });
-        await service.ensureTicksForActiveSubscriber('usr_1', { stripeId: 'sub_1', priceId: STARTER_MONTHLY });
-
-        const keys = prisma.tickTransaction.create.mock.calls.map((c: any) => c[0].data.stripePaymentIntentId);
-        expect(keys).toEqual(['legacy_refill:sub_1:tx_usage_42', 'legacy_refill:sub_1:tx_usage_42']);
-      });
-
-      it('depois da renovacao vale o plano: um pacote por fatura paga', async () => {
-        stripe.subscriptions.retrieve.mockResolvedValue(
-          subscription({ created: SEPT_8, current_period_start: OCT_8, latest_invoice: { id: 'in_oct', status: 'paid' } }),
-        );
-
-        await service.ensureTicksForActiveSubscriber('usr_1', { stripeId: 'sub_1', priceId: STARTER_MONTHLY });
-
-        expect(prisma.tickTransaction.create).toHaveBeenCalledWith(
-          expect.objectContaining({ data: expect.objectContaining({ stripePaymentIntentId: 'subscription_invoice:in_oct' }) }),
-        );
-      });
-
-      it('assinatura nova (depois do corte) ja nasce na regra do plano', async () => {
-        const OCT_1 = Date.UTC(2026, 9, 1) / 1000;
-        stripe.subscriptions.retrieve.mockResolvedValue(
-          subscription({ created: OCT_1, current_period_start: OCT_1, latest_invoice: { id: 'in_new', status: 'paid' } }),
-        );
-
-        await service.ensureTicksForActiveSubscriber('usr_1', { stripeId: 'sub_1', priceId: STARTER_MONTHLY });
-
-        expect(prisma.tickTransaction.create).toHaveBeenCalledWith(
-          expect.objectContaining({ data: expect.objectContaining({ stripePaymentIntentId: 'subscription_invoice:in_new' }) }),
-        );
-      });
-    });
-
-    it('ensureTicks nao credita com a ultima fatura em aberto', async () => {
-      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ latest_invoice: { id: 'in_9', status: 'open' } }));
+    it('assinatura que deixou de estar ativa na Stripe nao recebe saldo', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'past_due', current_period_start: 1, current_period_end: 2 }));
 
       await service.ensureTicksForActiveSubscriber('usr_1', { stripeId: 'sub_1', priceId: STARTER_MONTHLY });
 
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it('ensureTicks com saldo nao chama a Stripe', async () => {
-      prisma.userTicks.findUnique.mockResolvedValue({ balance: 5 });
-
-      await service.ensureTicksForActiveSubscriber('usr_1', { stripeId: 'sub_1', priceId: STARTER_MONTHLY });
-
-      expect(stripe.subscriptions.retrieve).not.toHaveBeenCalled();
-    });
-
-    it('acesso manual recebe um pacote por mes-calendario', async () => {
+    it('acesso manual: janela por mes-calendario', async () => {
       await service.ensureTicksForActiveSubscriber('usr_1', { stripeId: 'manual_owner_1', priceId: STARTER_MONTHLY });
 
       const month = new Date().toISOString().slice(0, 7);
       expect(prisma.tickTransaction.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ stripePaymentIntentId: `manual_subscription:manual_owner_1:${month}` }),
-        }),
+        expect.objectContaining({ data: expect.objectContaining({ stripePaymentIntentId: `allowance:manual_owner_1:${month}-01` }) }),
       );
       expect(stripe.subscriptions.retrieve).not.toHaveBeenCalled();
     });
 
-    it('lazy sync usa a chave da ultima fatura, a mesma do webhook', async () => {
-      stripe.subscriptions.list.mockResolvedValue({ data: [subscription({ latest_invoice: 'in_7' })] });
+    it('falha aqui nao derruba a analise', async () => {
+      prisma.tickTransaction.findUnique.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        service.ensureTicksForActiveSubscriber('usr_1', { stripeId: 'manual_owner_1', priceId: STARTER_MONTHLY }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('lazy sync aplica a mesma janela do webhook', async () => {
+      stripe.subscriptions.list.mockResolvedValue({
+        data: [subscription({ current_period_start: SEPT_10.getTime() / 1000, current_period_end: OCT_10.getTime() / 1000 })],
+      });
 
       await expect(service.syncActiveSubscriptionFromStripe('usr_1', 'cus_1')).resolves.toBe(true);
 
       expect(prisma.tickTransaction.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ stripePaymentIntentId: 'subscription_invoice:in_7' }) }),
+        expect.objectContaining({ data: expect.objectContaining({ stripePaymentIntentId: 'allowance:sub_1:2026-09-10' }) }),
       );
     });
   });

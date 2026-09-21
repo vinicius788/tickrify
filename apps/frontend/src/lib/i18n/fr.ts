@@ -542,9 +542,7 @@ export default {
       starterBadge: 'Tout inclus',
       starterCta: 'Commencer',
       fS1: '200 Ticks mensuels (~200 rapides ou 66 deep)', fS2: 'Analyse rapide + deep, historique complet', fS3: 'Ancrage sur bougies en direct + calendrier économique', fS4: '0,145 $ par analyse rapide, moins cher qu\'à l\'unité',
-      payPerUse: 'Vous préférez payer à l\'usage ?',
-      buyTicks: 'Achetez des Ticks à l\'unité dans le tableau de bord',
-      neverExpire: 'Les Ticks n\'expirent jamais',
+      monthlyReset: 'Votre solde revient à 200 Ticks au début de chaque mois de facturation. Les Ticks non utilisés ne sont pas reportés.',
     },
     faq: {
       label: 'FAQ', title: 'Questions de', highlight: 'traders professionnels.',

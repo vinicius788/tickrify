@@ -49,6 +49,8 @@ const DASH_COPY = {
   en: {
     planActivatedTitle: 'Plan activated!',
     checkoutErrorTitle: 'Could not open checkout',
+    allowanceNoticeTitle: 'Your Ticks now reset every month',
+    allowanceNoticeDesc: 'At the start of each billing month your balance goes back to 200 Ticks. Unused Ticks do not carry over.',
     alreadySubscribedTitle: 'You are already subscribed',
     planActivatedDesc: 'Welcome to Tickrify. Your ticks are now available.',
     uploadRequired: 'Please upload a chart image.',
@@ -76,6 +78,8 @@ const DASH_COPY = {
   pt: {
     planActivatedTitle: 'Plano ativado!',
     checkoutErrorTitle: 'Não foi possível abrir o checkout',
+    allowanceNoticeTitle: 'Seus Ticks agora renovam todo mês',
+    allowanceNoticeDesc: 'No início de cada mês de cobrança seu saldo volta para 200 Ticks. Ticks não usados não acumulam.',
     alreadySubscribedTitle: 'Você já é assinante',
     planActivatedDesc: 'Bem-vindo ao Tickrify. Seus ticks já estão disponíveis.',
     uploadRequired: 'Por favor, faça upload de uma imagem de gráfico.',
@@ -152,6 +156,23 @@ const DashboardPage = () => {
   const apiClient = useAPIClient();
   const isDemo = !user;
   const { analyses: rawAnalyses, loading: loadingAnalyses, refetch: refetchAnalyses } = useAnalyses(40);
+
+  // Aviso da regra nova de ticks (21/09/2026): saldo volta para 200 a cada mes
+  // de cobranca, sem acumular. Os assinantes de setembro assinaram quando o
+  // saldo so crescia, entao eles precisam ser avisados. Uma vez por navegador,
+  // so para assinante, e so ate o fim de outubro (depois vira regra conhecida).
+  useEffect(() => {
+    if (isDemo || isPlanLoading || plan === 'free') return;
+    if (Date.now() > Date.UTC(2026, 9, 31, 23, 59)) return;
+    const key = 'tickrify_notice_monthly_allowance_v1';
+    try {
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, String(Date.now()));
+    } catch {
+      return;
+    }
+    toast({ title: dc.allowanceNoticeTitle, description: dc.allowanceNoticeDesc });
+  }, [isDemo, isPlanLoading, plan, toast, dc]);
 
   // Intencao de compra que se perdeu no login. O caminho normal volta direto
   // para /pricing?checkout=... pelo `redirect_url`; alguns nao carregam a URL

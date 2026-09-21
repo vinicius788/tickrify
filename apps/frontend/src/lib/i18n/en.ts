@@ -542,9 +542,7 @@ export default {
       starterBadge: 'Everything included',
       starterCta: 'Get started',
       fS1: '200 monthly Ticks (~200 quick or 66 deep)', fS2: 'Quick + deep analysis, full history', fS3: 'Live candle grounding + economic calendar', fS4: '$0.145 per quick analysis, beats one-off Ticks',
-      payPerUse: 'Prefer pay-as-you-go?',
-      buyTicks: 'Buy one-off Ticks in the dashboard',
-      neverExpire: 'Ticks never expire',
+      monthlyReset: 'Your balance resets to 200 Ticks at the start of each billing month. Unused Ticks don\'t carry over.',
     },
     faq: {
       label: 'FAQ', title: 'Questions from', highlight: 'professional traders.',

@@ -560,9 +560,7 @@ export default {
       starterBadge: 'Tudo incluído',
       starterCta: 'Começar',
       fS1: '200 Ticks mensais (~200 rápidas ou 66 deep)', fS2: 'Análise rápida + deep, histórico completo', fS3: 'Grounding com candles ao vivo + calendário econômico', fS4: 'US$ 0,145 por análise rápida, mais barato que Ticks avulsos',
-      payPerUse: 'Prefere pagar por uso?',
-      buyTicks: 'Compre Ticks avulsos no dashboard',
-      neverExpire: 'Ticks nunca expiram',
+      monthlyReset: 'Seu saldo volta para 200 Ticks no início de cada mês de cobrança. Ticks não usados não acumulam.',
     },
     faq: {
       label: 'FAQ', title: 'Dúvidas de', highlight: 'traders profissionais.',

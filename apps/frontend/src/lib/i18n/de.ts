@@ -542,9 +542,7 @@ export default {
       starterBadge: 'Alles inklusive',
       starterCta: 'Loslegen',
       fS1: '200 Ticks monatlich (~200 schnelle oder 66 Deep)', fS2: 'Schnell- + Deep-Analyse, vollständige Historie', fS3: 'Grounding mit Live-Kerzen + Wirtschaftskalender', fS4: '0,145 $ pro Schnellanalyse, günstiger als Einzel-Ticks',
-      payPerUse: 'Lieber pro Nutzung zahlen?',
-      buyTicks: 'Einzelne Ticks im Dashboard kaufen',
-      neverExpire: 'Ticks verfallen nie',
+      monthlyReset: 'Ihr Guthaben wird zu Beginn jedes Abrechnungsmonats auf 200 Ticks zurückgesetzt. Nicht genutzte Ticks verfallen.',
     },
     faq: {
       label: 'FAQ', title: 'Fragen von', highlight: 'professionellen Tradern.',

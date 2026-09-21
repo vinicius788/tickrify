@@ -1,5 +1,6 @@
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { StripeService } from './stripe.service';
+import { allowanceWindowStart, monthlyTicksForPriceId } from '../../config/stripe.config';
 
 const PRICE = 'price_1TRvEJB1hl0IoocUvbCyxkt5'; // starter mensal USD
 
@@ -183,5 +184,28 @@ describe('StripeService.createCheckoutSession', () => {
       response: { code: 'stripe_unavailable' },
     });
     expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('allowanceWindowStart', () => {
+  it('mensal: a janela e o proprio periodo', () => {
+    const start = new Date(Date.UTC(2026, 8, 10));
+    expect(allowanceWindowStart(start, new Date(Date.UTC(2026, 9, 1)))).toEqual(start);
+  });
+
+  it('anual: 200 por mes, janela avanca mes a mes a partir do inicio', () => {
+    const start = new Date(Date.UTC(2026, 0, 31));
+    expect(allowanceWindowStart(start, new Date(Date.UTC(2026, 2, 5)))).toEqual(new Date(Date.UTC(2026, 1, 28)));
+    expect(allowanceWindowStart(start, new Date(Date.UTC(2026, 3, 1)))).toEqual(new Date(Date.UTC(2026, 2, 31)));
+  });
+
+  it('sem periodo (acesso manual): mes-calendario', () => {
+    expect(allowanceWindowStart(null, new Date(Date.UTC(2026, 8, 21, 15)))).toEqual(new Date(Date.UTC(2026, 8, 1)));
+  });
+
+  it('o anual recebe o pacote MENSAL, nao 12x', () => {
+    expect(monthlyTicksForPriceId('price_1TRvKHB1hl0IoocU3N7MMGcG')).toBe(200); // starter anual
+    expect(monthlyTicksForPriceId('price_1TRvEJB1hl0IoocUvbCyxkt5')).toBe(200); // starter mensal
+    expect(monthlyTicksForPriceId('price_desconhecido')).toBe(0);
   });
 });

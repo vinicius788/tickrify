@@ -1584,11 +1584,11 @@ export class AiService implements OnModuleInit {
           in: ACTIVE_SUBSCRIPTION_STATUSES,
         },
       },
-      select: { id: true, priceId: true, stripeId: true },
+      select: { id: true, priceId: true, stripeId: true, currentPeriodStart: true, currentPeriodEnd: true },
     });
 
     if (activeSubscription) {
-      // Pacote do periodo pago, se o webhook da fatura ainda nao creditou.
+      // Janela mensal de ticks (saldo = pacote do plano no inicio de cada mes).
       await this.stripeService.ensureTicksForActiveSubscriber(userId, activeSubscription);
       return true;
     }
