@@ -3938,3 +3938,12 @@ spending limit needs to be increased"*. Repo e PRIVADO (2.000 min/mes gratis).
   Os 47 artifacts vivos (703 MB) so liberam espaco quando expirarem ou forem
   apagados: apagar backup e acao do dono, nao do Claude.
 - Nota falsa corrigida junto: "O que JA ESTA NO AR" dizia keep-warm a cada 10 min.
+
+**Numeros da faixa da home AO VIVO (21/09, pedido do dono).** `SocialProof.tsx`
+tinha 104 trades / 39% / 395 analises fixos no codigo (retrato de 17/08); a API
+ja dizia 123 / 47,5% / 533. Agora os dois cards leem `/api/ai/accuracy` com a
+MESMA `queryKey: ['accuracy']` da /accuracy; sem resposta, mostram "—", nunca
+numero velho. `s4sub` virou template `{n}` nos 6 idiomas. Removidas junto 5
+chaves mortas de `landing.social` em cada idioma (`label`, `title`, `highlight`,
+`subtitle`, `footnote`): a `footnote` ainda falava em "395 analises (agosto)" e
+nao era renderizada em lugar nenhum.

@@ -490,15 +490,10 @@ export default {
     },
     social: {
       compat: 'Lee gráficos de cualquier plataforma',
-      label: 'Indicadores de la plataforma',
-      title: 'Métricas',
-      highlight: 'verificables.',
-      subtitle: 'Datos técnicos y reglas operativas utilizadas para orientar decisiones.',
       s1label: 'trades evaluados automáticamente', s1sub: '48h después de cada lectura, marcador completo público',
       s2label: 'mercados soportados', s2sub: 'Forex, Cripto, Acciones, Índices',
       s3label: 'análisis gratis', s3sub: 'sin tarjeta de crédito',
-      s4label: 'setups que la IA se niega a operar', s4sub: 'tasa de abstención en 395 análisis reales',
-      footnote: '* Tasa de abstención medida en 395 análisis reales en producción (agosto de 2026). Tasa de acierto en vivo, calibración y metodología completa en nuestra página de precisión. Los resultados pasados no garantizan resultados futuros.',
+      s4label: 'setups que la IA se niega a operar', s4sub: 'tasa de abstención en {n} análisis reales',
     },
     ticker: { recent: 'Análisis recientes' },
     recent: {

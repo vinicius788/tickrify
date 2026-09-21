@@ -490,15 +490,10 @@ export default {
     },
     social: {
       compat: 'Lit les graphiques de toute plateforme',
-      label: 'Indicateurs de la plateforme',
-      title: 'Métriques',
-      highlight: 'vérifiables.',
-      subtitle: 'Données techniques et règles opérationnelles utilisées pour guider les décisions.',
       s1label: 'trades évalués automatiquement', s1sub: '48h après chaque lecture, tableau complet public',
       s2label: 'marchés pris en charge', s2sub: 'Forex, Crypto, Actions, Indices',
       s3label: 'analyses gratuites', s3sub: 'sans carte bancaire',
-      s4label: 'setups que l\'IA refuse de trader', s4sub: 'taux d\'abstention sur 395 analyses réelles',
-      footnote: '* Taux d\'abstention mesuré sur 395 analyses réelles en production (août 2026). Taux de réussite en direct, calibration et méthodologie complète sur notre page de précision. Les résultats passés ne garantissent pas les résultats futurs.',
+      s4label: 'setups que l\'IA refuse de trader', s4sub: 'taux d\'abstention sur {n} analyses réelles',
     },
     ticker: { recent: 'Analyses récentes' },
     recent: {

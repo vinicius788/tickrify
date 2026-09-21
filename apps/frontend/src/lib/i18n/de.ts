@@ -490,15 +490,10 @@ export default {
     },
     social: {
       compat: 'Liest Charts von jeder Plattform',
-      label: 'Plattform-Kennzahlen',
-      title: 'Überprüfbare',
-      highlight: 'Metriken.',
-      subtitle: 'Technische Daten und operative Regeln zur Entscheidungsunterstützung.',
       s1label: 'automatisch bewertete Trades', s1sub: '48h nach jeder Lesart, vollständige Bilanz öffentlich',
       s2label: 'unterstützte Märkte', s2sub: 'Forex, Krypto, Aktien, Indizes',
       s3label: 'kostenlose Analysen', s3sub: 'keine Kreditkarte',
-      s4label: 'Setups, die die KI ablehnt', s4sub: 'Abstinenzquote bei 395 echten Analysen',
-      footnote: '* Abstinenzquote gemessen an 395 echten Analysen in der Produktion (August 2026). Live-Trefferquote, Kalibrierung und vollständige Methodik auf unserer Genauigkeitsseite. Vergangene Ergebnisse garantieren keine zukünftigen Ergebnisse.',
+      s4label: 'Setups, die die KI ablehnt', s4sub: 'Abstinenzquote bei {n} echten Analysen',
     },
     ticker: { recent: 'Letzte Analysen' },
     recent: {

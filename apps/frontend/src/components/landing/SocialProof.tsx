@@ -1,19 +1,27 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { buildApiUrl } from '@/lib/api';
 
 /** Plataformas de onde o print pode vir. Só o nome, nunca o logo: não existe
  *  integração com nenhuma delas, e exibir a marca sugeriria parceria. */
 const PLATFORMS = ['TradingView', 'MetaTrader 4 / 5', 'Binance', 'Bybit', 'Profit', 'Coinbase'];
 
+/** O que esta faixa le da /api/ai/accuracy (o resto do payload e da /accuracy). */
+interface AccuracySummary {
+  overall?: { n?: number };
+  abstention?: { rate?: number | null; total?: number };
+}
+
 /** Número que sobe ao entrar na tela. Uma vez só, e desliga em reduced-motion. */
-const CountUp = ({ value, suffix = '' }: { value: number; suffix?: string }) => {
+const CountUp = ({ value, suffix = '' }: { value: number | null; suffix?: string }) => {
   const ref = useRef<HTMLDivElement | null>(null);
   const [shown, setShown] = useState(0);
 
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || value === null) return;
 
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       setShown(value);
@@ -54,19 +62,35 @@ const CountUp = ({ value, suffix = '' }: { value: number; suffix?: string }) => 
     };
   }, [value]);
 
-  return <div ref={ref} className="site-stat-n">{shown}{suffix}</div>;
+  // Sem dado ainda (ou API fora): travessao, nunca um numero velho ou inventado.
+  return <div ref={ref} className="site-stat-n">{value === null ? '—' : `${shown}${suffix}`}</div>;
 };
 
 const SocialProof = () => {
   const { t } = useLanguage();
   const s = t.landing.social;
 
-  // 104 = trades com desfecho já medido pelo sweeper (17/08/2026), mesma fonte
-  // que alimenta a /accuracy. 39% = taxa de abstenção real em produção (155
-  // WAIT em 395 análises). Nenhum número aqui é estimado.
+  // Trades pontuados e abstencao vem AO VIVO da mesma API da /accuracy (mesma
+  // queryKey, entao a pagina de acuracia reaproveita o cache). Eram numeros
+  // fixos no codigo (104 / 39% / 395) e ficaram velhos em um mes.
+  const { data } = useQuery<AccuracySummary>({
+    queryKey: ['accuracy'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl('/api/ai/accuracy'));
+      if (!res.ok) throw new Error(`accuracy: ${res.status}`);
+      return res.json();
+    },
+    staleTime: 600_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+  const scored = typeof data?.overall?.n === 'number' ? data.overall.n : null;
+  const abstention = typeof data?.abstention?.rate === 'number' ? Math.round(data.abstention.rate) : null;
+  const analysed = typeof data?.abstention?.total === 'number' ? String(data.abstention.total) : '—';
+
   const stats = [
-    { value: 104, suffix: '', label: s.s1label, sub: s.s1sub, href: '/accuracy' },
-    { value: 39, suffix: '%', label: s.s4label, sub: s.s4sub },
+    { value: scored, suffix: '', label: s.s1label, sub: s.s1sub, href: '/accuracy' },
+    { value: abstention, suffix: '%', label: s.s4label, sub: s.s4sub.replace('{n}', analysed) },
     { value: 6, suffix: '+', label: s.s2label, sub: s.s2sub },
     { value: 3, suffix: '', label: s.s3label, sub: s.s3sub },
   ];

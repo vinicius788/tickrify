@@ -490,15 +490,10 @@ export default {
     },
     social: {
       compat: 'Reads charts from any platform',
-      label: 'Platform indicators',
-      title: 'Verifiable',
-      highlight: 'metrics.',
-      subtitle: 'Technical data and operational rules used to guide decisions.',
       s1label: 'trades scored automatically', s1sub: '48h after each call, full scoreboard public',
       s2label: 'supported markets', s2sub: 'Forex, Crypto, Stocks, Indices',
       s3label: 'free analyses', s3sub: 'no credit card',
-      s4label: 'setups the AI refuses to trade', s4sub: 'abstention rate on 395 real analyses',
-      footnote: '* Abstention rate measured on 395 real analyses in production (August 2026). Live hit rate, calibration and full methodology on our accuracy page. Past results do not guarantee future results.',
+      s4label: 'setups the AI refuses to trade', s4sub: 'abstention rate on {n} real analyses',
     },
     ticker: { recent: 'Recent analyses' },
     recent: {
