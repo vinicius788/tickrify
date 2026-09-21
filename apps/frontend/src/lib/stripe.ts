@@ -172,6 +172,7 @@ export async function createCheckoutSession(
   billingCycle: BillingCycle = 'monthly',
   currency: Currency = 'usd',
   coupon?: 'EARLY35',
+  source?: 'pricing' | 'locked_value',
 ) {
   const session = await requestStripeApi<{ sessionId: string; url: string }>(
     '/api/stripe/create-checkout-session',
@@ -181,7 +182,13 @@ export async function createCheckoutSession(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ planType, billingCycle, currency, ...(coupon ? { coupon } : {}) }),
+      body: JSON.stringify({
+        planType,
+        billingCycle,
+        currency,
+        ...(coupon ? { coupon } : {}),
+        ...(source ? { source } : {}),
+      }),
     },
     'Could not start checkout. Please try again.',
   );

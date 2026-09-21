@@ -1,0 +1,80 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  CHECKOUT_INTENT_TTL_MS,
+  authUrlForCheckout,
+  checkoutReturnPath,
+  checkoutTargetFromAuthSearch,
+  clearCheckoutIntent,
+  loadCheckoutIntent,
+  parseCheckoutIntent,
+  saveCheckoutIntent,
+} from '@/lib/checkoutIntent';
+
+const ORIGIN = 'https://tickrify.com';
+
+describe('checkoutIntent', () => {
+  afterEach(() => clearCheckoutIntent());
+
+  it('preserva plano, ciclo e origem ida e volta pela URL de login', () => {
+    const intent = { plan: 'starter', cycle: 'yearly', source: 'locked_value' } as const;
+    const authUrl = authUrlForCheckout(intent);
+
+    expect(authUrl).toBe('/sign-in?redirect_url=%2Fpricing%3Fcheckout%3Dstarter%26cycle%3Dyearly%26source%3Dlocked_value');
+    const redirect = new URLSearchParams(authUrl.split('?')[1]).get('redirect_url')!;
+    expect(parseCheckoutIntent(new URL(redirect, ORIGIN).search)).toEqual(intent);
+  });
+
+  it('funciona tambem para a URL de cadastro', () => {
+    expect(authUrlForCheckout({ plan: 'starter', cycle: 'monthly', source: 'pricing' }, 'sign-up')).toMatch(/^\/sign-up\?redirect_url=/);
+  });
+
+  it('recusa plano legado ou inventado (so vende o da vitrine)', () => {
+    expect(parseCheckoutIntent('?checkout=pro')).toBeNull();
+    expect(parseCheckoutIntent('?checkout=elite')).toBeNull();
+    expect(parseCheckoutIntent('?checkout=<script>')).toBeNull();
+  });
+
+  it('ciclo ou origem invalidos caem no padrao em vez de vazar', () => {
+    expect(parseCheckoutIntent('?checkout=starter&cycle=weekly&source=evil')).toEqual({
+      plan: 'starter',
+      cycle: 'monthly',
+      source: 'pricing',
+    });
+  });
+
+  it('nao vira open redirect: so aceita /pricing deste mesmo site', () => {
+    const q = (target: string) => `?redirect_url=${encodeURIComponent(target)}`;
+
+    expect(checkoutTargetFromAuthSearch(q('/pricing?checkout=starter&cycle=yearly'), ORIGIN)).toBe(
+      '/pricing?checkout=starter&cycle=yearly&source=pricing',
+    );
+    expect(checkoutTargetFromAuthSearch(q('https://evil.com/pricing?checkout=starter'), ORIGIN)).toBeNull();
+    expect(checkoutTargetFromAuthSearch(q('//evil.com/pricing?checkout=starter'), ORIGIN)).toBeNull();
+    expect(checkoutTargetFromAuthSearch(q('/dashboard'), ORIGIN)).toBeNull();
+    expect(checkoutTargetFromAuthSearch(q('javascript:alert(1)'), ORIGIN)).toBeNull();
+    expect(checkoutTargetFromAuthSearch('', ORIGIN)).toBeNull();
+  });
+
+  it('le o redirect_url do hash, formato que o Clerk usa ao ir para o cadastro', () => {
+    // Link real de producao: "Sign up" na tela de login aberta pelo Upgrade.
+    const hash = '#/?redirect_url=https%3A%2F%2Ftickrify.com%2Fpricing%3Fcheckout%3Dstarter%26cycle%3Dyearly%26source%3Dpricing';
+
+    expect(checkoutTargetFromAuthSearch('', ORIGIN, hash)).toBe('/pricing?checkout=starter&cycle=yearly&source=pricing');
+    expect(checkoutTargetFromAuthSearch('', ORIGIN, '#/?redirect_url=https%3A%2F%2Fevil.com%2Fpricing%3Fcheckout%3Dstarter')).toBeNull();
+  });
+
+  it('o storage guarda a intencao por 30 min e depois esquece', () => {
+    const intent = { plan: 'starter', cycle: 'yearly', source: 'pricing' } as const;
+    saveCheckoutIntent(intent, 1_000);
+
+    expect(loadCheckoutIntent(1_000 + CHECKOUT_INTENT_TTL_MS - 1)).toEqual(intent);
+    expect(loadCheckoutIntent(1_000 + CHECKOUT_INTENT_TTL_MS + 1)).toBeNull();
+    expect(loadCheckoutIntent(1_000)).toBeNull(); // expirada ja foi apagada
+  });
+
+  it('o destino montado e sempre o mesmo caminho interno', () => {
+    expect(checkoutReturnPath({ plan: 'starter', cycle: 'monthly', source: 'pricing' })).toBe(
+      '/pricing?checkout=starter&cycle=monthly&source=pricing',
+    );
+  });
+});

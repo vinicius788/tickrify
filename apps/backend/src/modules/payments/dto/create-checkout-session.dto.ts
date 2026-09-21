@@ -39,4 +39,12 @@ export class CreateCheckoutSessionDto {
   @IsOptional()
   @IsIn(['EARLY35'])
   coupon?: string;
+
+  /**
+   * De onde veio o clique (card da /pricing ou paywall do painel). Lista
+   * fechada: vai para a metadata da sessao e da assinatura na Stripe.
+   */
+  @IsOptional()
+  @IsIn(['pricing', 'locked_value'])
+  source?: 'pricing' | 'locked_value';
 }

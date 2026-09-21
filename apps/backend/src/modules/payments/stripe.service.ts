@@ -5,6 +5,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -38,11 +39,24 @@ const BLOCKING_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due', 'unpai
 /** Sessao aberta so e reaproveitada se ainda tiver pelo menos isto de vida. */
 const REUSE_MIN_REMAINING_SECONDS = 10 * 60;
 
+/**
+ * Assinaturas anteriores a esta data mantem, ATE A PROXIMA RENOVACAO, a regra
+ * antiga de ticks: +1 pacote sempre que o saldo zera.
+ *
+ * Por que: a regra antiga era um bug (tick sem pagamento), mas os 3 assinantes
+ * pagantes de setembro/2026 assinaram com ela valendo, e corta-la no meio do
+ * mes que eles ja pagaram poderia trava-los. Na renovacao passa a valer o plano
+ * como vendido (200/mes), agora creditado de verdade pelo webhook da fatura.
+ * Para manter a regra antiga PARA SEMPRE para eles, basta tirar a condicao de
+ * `current_period_start` em `isGrandfatheredPeriod`.
+ */
+const LEGACY_REFILL_CUTOFF_MS = Date.UTC(2026, 8, 22); // 22/09/2026 00:00 UTC
+
 /** Validacao do price vale por 1h; mudar o price no painel reflete em ate 1h. */
 const PRICE_CHECK_TTL_MS = 60 * 60 * 1000;
 
 @Injectable()
-export class StripeService {
+export class StripeService implements OnModuleInit {
   private readonly logger = new Logger(StripeService.name);
   private stripe: Stripe | null;
 
@@ -68,6 +82,35 @@ export class StripeService {
       apiVersion: '2023-10-16',
     });
     this.logger.log(`Stripe configured in ${stripeKeyMode(stripeConfig.secretKey).toUpperCase()} mode`);
+  }
+
+  /**
+   * Garante a tabela de idempotencia dos webhooks. Em producao as migracoes
+   * nao rodam no boot (RUN_MIGRATIONS_ON_START=false), mesmo padrao dos
+   * `ADD COLUMN IF NOT EXISTS` do AiService. Falhar aqui nao derruba o app:
+   * sem a tabela o webhook processa sem o registro (ver claimWebhookEvent).
+   */
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "tickrify"."StripeWebhookEvent" (
+          "id" TEXT NOT NULL,
+          "type" TEXT NOT NULL,
+          "status" TEXT NOT NULL,
+          "attempts" INTEGER NOT NULL DEFAULT 1,
+          "error" TEXT,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "processedAt" TIMESTAMP(3),
+          CONSTRAINT "StripeWebhookEvent_pkey" PRIMARY KEY ("id")
+        )`);
+      await this.prisma.$executeRawUnsafe(
+        'CREATE INDEX IF NOT EXISTS "StripeWebhookEvent_status_updatedAt_idx" ON "tickrify"."StripeWebhookEvent"("status", "updatedAt")',
+      );
+      this.logger.log('[webhook] Registro de eventos pronto.');
+    } catch (error) {
+      this.logger.error('[webhook] Nao consegui garantir a tabela StripeWebhookEvent.', error);
+    }
   }
 
   private getStripeClient(): Stripe {
@@ -157,6 +200,7 @@ export class StripeService {
     billingCycle: BillingCycle,
     currency: Currency = 'usd',
     couponId?: string,
+    source?: 'pricing' | 'locked_value',
   ): Promise<CheckoutResult> {
     const inFlight = this.checkoutInFlight.get(clerkUserId);
     if (inFlight) {
@@ -164,7 +208,7 @@ export class StripeService {
       return inFlight;
     }
 
-    const run = this.createCheckoutSessionUnlocked(clerkUserId, planType, billingCycle, currency, couponId)
+    const run = this.createCheckoutSessionUnlocked(clerkUserId, planType, billingCycle, currency, couponId, source)
       .finally(() => this.checkoutInFlight.delete(clerkUserId));
     this.checkoutInFlight.set(clerkUserId, run);
     return run;
@@ -176,6 +220,7 @@ export class StripeService {
     billingCycle: BillingCycle,
     currency: Currency,
     couponId?: string,
+    source?: 'pricing' | 'locked_value',
   ): Promise<CheckoutResult> {
     try {
       if (!['starter', 'pro', 'elite'].includes(planType)) {
@@ -311,7 +356,17 @@ export class StripeService {
           currency,
           // `priceId` e `coupon` identificam a sessao para a Trava 3 acima.
           priceId,
+          checkoutSource: source ?? 'unknown',
           ...this.stripeAttributionMetadata(user),
+        },
+        // A assinatura nasce com o dono gravado nela. E o que permite ao
+        // webhook achar o usuario mesmo se o vinculo pelo customer se perder.
+        subscription_data: {
+          metadata: {
+            userId: user.id,
+            clerkUserId,
+            checkoutSource: source ?? 'unknown',
+          },
         },
       };
 
@@ -769,66 +824,140 @@ export class StripeService {
   }
 
   /**
-   * Processar evento de webhook do Stripe
+   * Webhook da Stripe.
+   *
+   * Tres garantias, nesta ordem:
+   * 1. So processa evento com assinatura HMAC valida (`constructEvent`).
+   * 2. Cada `event.id` e processado UMA vez (`claimWebhookEvent`). A Stripe
+   *    reenvia o mesmo evento em retry e as vezes entrega duplicado mesmo com
+   *    sucesso; antes disso uma fatura podia creditar os 200 ticks duas vezes.
+   * 3. Erro devolve nao-2xx e libera o evento, para a Stripe reenviar. Antes,
+   *    usuario nao encontrado ou falha ao creditar ticks respondia 200 e o
+   *    evento se perdia para sempre.
    */
   async handleWebhookEvent(signature: string, payload: Buffer) {
+    let event: Stripe.Event;
     try {
       const stripeConfig = getStripeConfig();
       if (!stripeConfig.webhookSecret) {
         throw new ServiceUnavailableException('Stripe webhook secret is not configured');
       }
-
-      const stripe = this.getStripeClient();
-      const event = stripe.webhooks.constructEvent(
+      event = this.getStripeClient().webhooks.constructEvent(
         payload,
         signature,
         stripeConfig.webhookSecret,
       );
-
-      this.logger.log(`Processing webhook event: ${event.type}`);
-
-      switch (event.type) {
-        case 'checkout.session.completed':
-          await this.handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session);
-          break;
-
-        case 'customer.subscription.created':
-          await this.handleSubscriptionCreated(event.data.object as Stripe.Subscription);
-          break;
-
-        case 'customer.subscription.updated':
-          await this.handleSubscriptionUpdated(event.data.object as Stripe.Subscription);
-          break;
-
-        case 'customer.subscription.deleted':
-          await this.handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
-          break;
-
-        case 'invoice.payment_succeeded':
-          await this.handleInvoicePaymentSucceeded(event.data.object as Stripe.Invoice);
-          break;
-
-        case 'invoice.payment_failed':
-          await this.handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
-          break;
-
-        default:
-          this.logger.log(`Unhandled event type: ${event.type}`);
-      }
-
-      return { received: true };
     } catch (error) {
-      this.logger.error('Error handling webhook event:', error);
-      const stripeError = error as { type?: string; message?: string };
+      this.logger.error('Error verifying webhook event:', error);
+      const stripeError = error as { type?: string };
       if (stripeError?.type === 'StripeSignatureVerificationError') {
         throw new BadRequestException('Invalid webhook signature');
       }
       this.rethrowStripeError(error, 'Falha ao processar webhook do Stripe.');
     }
+
+    const claim = await this.claimWebhookEvent(event);
+    if (claim === 'duplicate') {
+      this.logger.log(`[webhook] ${event.type} ${event.id} ja processado; ignorado.`);
+      return { received: true, duplicate: true };
+    }
+    if (claim === 'in_progress') {
+      // Outra entrega do mesmo evento esta rodando agora. Nao-2xx faz a Stripe
+      // tentar de novo mais tarde; 2xx aqui perderia o evento se a outra falhar.
+      throw new ConflictException('Webhook event is already being processed');
+    }
+
+    this.logger.log(`Processing webhook event: ${event.type} (${event.id})`);
+    try {
+      await this.dispatchWebhookEvent(event);
+      await this.finishWebhookEvent(event.id, 'processed');
+      return { received: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`[webhook] Falha em ${event.type} ${event.id}: ${message}`, error);
+      await this.finishWebhookEvent(event.id, 'failed', message);
+      this.rethrowStripeError(error, 'Falha ao processar webhook do Stripe.');
+    }
+  }
+
+  private async dispatchWebhookEvent(event: Stripe.Event): Promise<void> {
+    switch (event.type) {
+      case 'checkout.session.completed':
+        await this.handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session);
+        return;
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+        await this.handleSubscriptionChanged(event.data.object as Stripe.Subscription);
+        return;
+      case 'customer.subscription.deleted':
+        await this.handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
+        return;
+      case 'invoice.payment_succeeded':
+        await this.handleInvoicePaymentSucceeded(event.data.object as Stripe.Invoice);
+        return;
+      case 'invoice.payment_failed':
+        await this.handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
+        return;
+      default:
+        this.logger.log(`Unhandled event type: ${event.type}`);
+    }
   }
 
   /**
-   * Handler: Checkout session completed
+   * Reserva o evento. `claimed` = processar agora (evento novo, ou que falhou
+   * antes, ou preso em `processing` ha mais de 5 min por um processo que caiu).
+   * `unavailable` = a tabela nao respondeu: processa assim mesmo, porque os
+   * handlers sao idempotentes por conta propria (sync pela Stripe + chave
+   * unica nos creditos). O registro e a primeira linha, nao a unica.
+   */
+  private async claimWebhookEvent(
+    event: Stripe.Event,
+  ): Promise<'claimed' | 'duplicate' | 'in_progress' | 'unavailable'> {
+    try {
+      const claimed = await this.prisma.$queryRaw<Array<{ id: string }>>`
+        INSERT INTO "tickrify"."StripeWebhookEvent" ("id", "type", "status")
+        VALUES (${event.id}, ${event.type}, 'processing')
+        ON CONFLICT ("id") DO UPDATE
+          SET "status" = 'processing',
+              "attempts" = "StripeWebhookEvent"."attempts" + 1,
+              "error" = NULL,
+              "updatedAt" = CURRENT_TIMESTAMP
+          WHERE "StripeWebhookEvent"."status" = 'failed'
+             OR ("StripeWebhookEvent"."status" = 'processing'
+                 AND "StripeWebhookEvent"."updatedAt" < CURRENT_TIMESTAMP - INTERVAL '5 minutes')
+        RETURNING "id"`;
+      if (claimed.length > 0) return 'claimed';
+
+      const existing = await this.prisma.$queryRaw<Array<{ status: string }>>`
+        SELECT "status" FROM "tickrify"."StripeWebhookEvent" WHERE "id" = ${event.id}`;
+      return existing[0]?.status === 'processed' ? 'duplicate' : 'in_progress';
+    } catch (error) {
+      this.logger.error(
+        `[webhook] Registro de eventos indisponivel; processando ${event.id} sem ele.`,
+        error,
+      );
+      return 'unavailable';
+    }
+  }
+
+  private async finishWebhookEvent(eventId: string, status: 'processed' | 'failed', error?: string) {
+    try {
+      await this.prisma.$executeRaw`
+        UPDATE "tickrify"."StripeWebhookEvent"
+        SET "status" = ${status},
+            "error" = ${error ? error.slice(0, 1000) : null},
+            "updatedAt" = CURRENT_TIMESTAMP,
+            "processedAt" = ${status === 'processed' ? new Date() : null}
+        WHERE "id" = ${eventId}`;
+    } catch (updateError) {
+      this.logger.error(`[webhook] Nao consegui marcar ${eventId} como ${status}.`, updateError);
+    }
+  }
+
+  /**
+   * Checkout concluido. A assinatura so fica ativa pelo status REAL que a
+   * Stripe devolve (`active`/`trialing`), nunca por este evento sozinho: com
+   * pagamento pendente a sessao completa e a assinatura nasce `incomplete`.
    */
   private async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
     if (session.metadata?.type === 'ticks_purchase') {
@@ -836,45 +965,61 @@ export class StripeService {
       return;
     }
 
-    const stripe = this.getStripeClient();
-    const userId = session.metadata?.userId;
-
-    if (!userId) {
-      this.logger.error('Missing metadata in checkout session');
+    if (session.mode !== 'subscription') {
+      this.logger.log(`[webhook] Checkout ${session.id} em modo ${session.mode}; nada a sincronizar.`);
       return;
     }
 
-    const subscriptionId = session.subscription as string;
+    const subscriptionId =
+      typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
     if (!subscriptionId) {
-      this.logger.warn(`Checkout session ${session.id} has no subscription id`);
-      return;
+      throw new Error(`Checkout session ${session.id} completed without subscription id`);
     }
 
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    await this.upsertSubscriptionForUser(userId, subscription);
-    const analyticsUser = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        clerkUserId: true,
-        firstTouchAttribution: true,
-        firstTouchAt: true,
-        lastTouchAttribution: true,
-        lastTouchAt: true,
-      },
-    });
+    // `client_reference_id` e o id do usuario desde a criacao da sessao; a
+    // metadata e a primeira fonte, ele e a segunda.
+    const userIdHint = session.metadata?.userId || session.client_reference_id || null;
+    const synced = await this.syncSubscriptionFromStripe(subscriptionId, { userIdHint });
+    if (!synced) {
+      throw new Error(`Could not resolve user for checkout session ${session.id}`);
+    }
 
-    this.logger.log(`User ${userId} subscription synchronized: ${subscription.id}`);
+    await this.linkCustomerIfMissing(synced.userId, session.customer);
+    this.logger.log(
+      `User ${synced.userId} subscription synchronized: ${synced.subscription.id} (${synced.subscription.status})`,
+    );
+
+    const paid = session.payment_status === 'paid' || session.payment_status === 'no_payment_required';
+    if (!paid || !['active', 'trialing'].includes(synced.subscription.status)) {
+      this.logger.warn(
+        `[webhook] Checkout ${session.id} completo mas assinatura ${synced.subscription.status} ` +
+          `(payment_status=${session.payment_status}). Acesso so libera quando ficar ativa.`,
+      );
+      return;
+    }
 
     // RECEITA (fonte de verdade): dispara na confirmação do pagamento, mesmo se
     // o usuário fechar a aba. distinctId = id do Clerk (casa com o funil do frontend).
+    // O registro de eventos garante que isto sai UMA vez por checkout.
     try {
+      const analyticsUser = await this.prisma.user.findUnique({
+        where: { id: synced.userId },
+        select: {
+          clerkUserId: true,
+          firstTouchAttribution: true,
+          firstTouchAt: true,
+          lastTouchAttribution: true,
+          lastTouchAt: true,
+        },
+      });
       const distinctId = String(
         analyticsUser?.clerkUserId || session.metadata?.clerkUserId || '',
       ).trim();
       captureServer(distinctId, 'subscription_activated', {
         source: 'stripe_webhook',
-        subscriptionId: subscription.id,
-        priceId: subscription.items?.data?.[0]?.price?.id,
+        checkoutSource: session.metadata?.checkoutSource,
+        subscriptionId: synced.subscription.id,
+        priceId: synced.subscription.items?.data?.[0]?.price?.id,
         ...this.posthogAttributionProperties(analyticsUser),
       });
     } catch {
@@ -1015,195 +1160,412 @@ export class StripeService {
   }
 
   /**
-   * Handler: Subscription created
+   * `created` e `updated` fazem a mesma coisa: releem a assinatura na Stripe e
+   * gravam o estado ATUAL. A Stripe nao garante ordem de entrega; gravar o
+   * payload deixava um `updated` atrasado reativar uma assinatura ja cancelada.
    */
-  private async handleSubscriptionCreated(subscription: Stripe.Subscription) {
-    const user = await this.resolveUserFromSubscriptionCustomer(subscription);
-
-    if (!user) {
-      this.logger.error(`User not found for customer: ${String(subscription.customer || '')}`);
-      return;
+  private async handleSubscriptionChanged(subscription: Stripe.Subscription) {
+    const synced = await this.syncSubscriptionFromStripe(subscription.id, {
+      userIdHint: subscription.metadata?.userId ?? null,
+    });
+    if (!synced) {
+      throw new Error(
+        `User not found for subscription ${subscription.id} (customer ${String(subscription.customer || '')})`,
+      );
     }
-
-    await this.upsertSubscriptionForUser(user.id, subscription);
   }
 
   /**
-   * Handler: Subscription updated
-   */
-  private async handleSubscriptionUpdated(subscription: Stripe.Subscription) {
-    const user = await this.resolveUserFromSubscriptionCustomer(subscription);
-
-    if (!user) {
-      this.logger.error(`User not found for customer: ${String(subscription.customer || '')}`);
-      return;
-    }
-
-    await this.upsertSubscriptionForUser(user.id, subscription);
-  }
-
-  /**
-   * Handler: Subscription deleted
+   * Cancelamento. Relido na Stripe tambem: o status vem `canceled`. Sem
+   * usuario conhecido nao ha o que liberar, entao so marca a linha, se houver.
    */
   private async handleSubscriptionDeleted(subscription: Stripe.Subscription) {
-    const user = await this.resolveUserFromSubscriptionCustomer(subscription);
+    const synced = await this.syncSubscriptionFromStripe(subscription.id, {
+      userIdHint: subscription.metadata?.userId ?? null,
+    });
 
-    if (!user) {
-      this.logger.error(`User not found for customer: ${String(subscription.customer || '')}`);
+    if (!synced) {
+      await this.prisma.subscription.updateMany({
+        where: { stripeId: subscription.id },
+        data: { status: 'canceled' },
+      });
+      this.logger.warn(`[webhook] Assinatura ${subscription.id} cancelada sem usuario conhecido.`);
       return;
     }
 
-    await this.prisma.subscription.updateMany({
-      where: {
-        userId: user.id,
-        stripeId: subscription.id,
-      },
-      data: {
-        status: 'canceled',
-      },
-    });
-
-    this.logger.log(`Subscription ${subscription.id} marked as canceled for user ${user.id}`);
+    this.logger.log(
+      `Subscription ${subscription.id} marked as ${synced.subscription.status} for user ${synced.userId}`,
+    );
   }
 
   /**
-   * Handler: Invoice payment succeeded
-   * Atualiza status da assinatura e credita ticks mensais do plano.
+   * Fatura paga: sincroniza SO a assinatura desta fatura (antes era
+   * `updateMany` em todas as do usuario, o que reativava as canceladas) e
+   * credita os ticks do periodo UMA vez, pela chave da fatura.
    */
   private async handleInvoicePaymentSucceeded(invoice: Stripe.Invoice) {
-    const user = await this.resolveUserFromInvoiceCustomer(invoice);
-
-    if (!user) {
-      this.logger.error(`User not found for customer: ${String(invoice.customer || '')}`);
+    const { subscriptionId, userIdHint } = this.invoiceSubscriptionRef(invoice);
+    if (!subscriptionId) {
+      this.logger.log(`[webhook] Fatura ${invoice.id} sem assinatura; nada a fazer.`);
       return;
     }
 
-    this.logger.log(`Payment succeeded for user: ${user.id}`);
-
-    await this.prisma.subscription.updateMany({
-      where: { userId: user.id },
-      data: { status: 'active' },
-    });
-
-    // Creditar ticks mensais com base no plano
-    const subscriptionId =
-      typeof invoice.subscription === 'string'
-        ? invoice.subscription
-        : (invoice.subscription as Stripe.Subscription | null)?.id;
-
-    if (!subscriptionId) return;
-
-    try {
-      const stripe = this.getStripeClient();
-      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-      const priceId = subscription.items.data[0]?.price.id || '';
-      const { ticks, planName } = resolveTicksForPriceId(priceId);
-
-      if (ticks > 0) {
-        await this.prisma.$transaction([
-          this.prisma.userTicks.upsert({
-            where: { userId: user.id },
-            create: { userId: user.id, balance: ticks },
-            update: { balance: { increment: ticks } },
-          }),
-          this.prisma.tickTransaction.create({
-            data: {
-              userId: user.id,
-              amount: ticks,
-              type: 'BONUS',
-              description: `Monthly refill: ${planName} plan (${ticks} Ticks)`,
-              metadata: { invoiceId: invoice.id, subscriptionId, priceId },
-            },
-          }),
-        ]);
-        this.logger.log(`[Ticks] +${ticks} creditados para ${user.id} (plano ${planName})`);
-      } else {
-        this.logger.warn(`[Ticks] priceId ${priceId} não mapeado a nenhum plano — nenhum tick creditado`);
-      }
-    } catch (err) {
-      // Não falhar o webhook por erro de ticks — o pagamento já foi registrado
-      this.logger.error('[Ticks] Falha ao creditar ticks da assinatura', err);
+    const synced = await this.syncSubscriptionFromStripe(subscriptionId, { userIdHint });
+    if (!synced) {
+      throw new Error(`User not found for invoice ${invoice.id} (subscription ${subscriptionId})`);
     }
+
+    this.logger.log(`Payment succeeded for user: ${synced.userId} (invoice ${invoice.id})`);
+
+    // Troca de plano/proration tambem gera fatura paga. So a criacao e a
+    // renovacao dao o pacote do periodo.
+    const reason = invoice.billing_reason ?? '';
+    if (!['subscription_create', 'subscription_cycle'].includes(reason)) {
+      this.logger.log(`[Ticks] Fatura ${invoice.id} (${reason}) nao da pacote de ticks.`);
+      return;
+    }
+
+    const priceId = synced.subscription.items.data[0]?.price.id || '';
+    const { ticks, planName } = resolveTicksForPriceId(priceId);
+    if (ticks <= 0) {
+      this.logger.warn(`[Ticks] priceId ${priceId} não mapeado a nenhum plano — nenhum tick creditado`);
+      return;
+    }
+
+    // Erro aqui SOBE: antes era engolido e o assinante ficava sem os ticks do
+    // mes, com o webhook respondendo 200. A chave unica impede credito duplo
+    // quando a Stripe reenviar.
+    await this.creditSubscriptionTicks({
+      userId: synced.userId,
+      ticks,
+      creditKey: this.invoiceCreditKey(invoice.id),
+      invoiceId: invoice.id,
+      description: `Monthly refill: ${planName} plan (${ticks} Ticks)`,
+      metadata: { invoiceId: invoice.id, subscriptionId, priceId, source: 'invoice_webhook' },
+    });
   }
 
   /**
-   * Handler: Invoice payment failed
+   * Falha de pagamento: o status vem da Stripe (`past_due`, `incomplete`...)
+   * so para a assinatura desta fatura, e a falha fica REGISTRADA no
+   * AdminAudit, alem do log. Antes marcava todas as assinaturas do usuario
+   * como `past_due`, inclusive as canceladas, e nao guardava nada.
    */
   private async handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
-    const user = await this.resolveUserFromInvoiceCustomer(invoice);
+    const { subscriptionId, userIdHint } = this.invoiceSubscriptionRef(invoice);
+    const synced = subscriptionId
+      ? await this.syncSubscriptionFromStripe(subscriptionId, { userIdHint })
+      : null;
 
-    if (!user) {
-      this.logger.error(`User not found for customer: ${String(invoice.customer || '')}`);
-      return;
-    }
+    const userId = synced?.userId ?? (await this.findUserIdByCustomer(invoice.customer));
+    const details = {
+      invoiceId: invoice.id,
+      subscriptionId,
+      subscriptionStatus: synced?.subscription.status ?? null,
+      amountDue: invoice.amount_due,
+      currency: invoice.currency,
+      attemptCount: invoice.attempt_count,
+      billingReason: invoice.billing_reason,
+      nextPaymentAttempt: invoice.next_payment_attempt
+        ? new Date(invoice.next_payment_attempt * 1000).toISOString()
+        : null,
+      customerId: String(invoice.customer || ''),
+    };
 
-    this.logger.warn(`Payment failed for user: ${user.id}`);
+    this.logger.warn(`Payment failed for user: ${userId ?? 'desconhecido'} ${JSON.stringify(details)}`);
 
-    await this.prisma.subscription.updateMany({
-      where: { userId: user.id },
+    await this.prisma.adminAudit.create({
       data: {
-        status: 'past_due',
+        action: 'stripe_payment_failed',
+        targetUserId: userId,
+        targetEmail: invoice.customer_email ?? null,
+        details,
       },
     });
+
+    try {
+      const clerk = userId
+        ? await this.prisma.user.findUnique({ where: { id: userId }, select: { clerkUserId: true } })
+        : null;
+      if (clerk?.clerkUserId) captureServer(clerk.clerkUserId, 'payment_failed', details);
+    } catch {
+      /* analytics nunca pode quebrar o webhook */
+    }
   }
 
-  private async resolveUserFromSubscriptionCustomer(subscription: Stripe.Subscription) {
-    const customerId = String(subscription.customer || '').trim();
-    if (!customerId) {
-      return null;
+  /**
+   * Assinatura e dono da fatura, nos DOIS formatos da API.
+   *
+   * ⚠️ O endpoint de webhook esta na API `2025-07-30.basil` (conferido no
+   * painel da Stripe em 21/09/2026), e o payload vem na versao do ENDPOINT, nao
+   * na do SDK (`2023-10-16`). Desde a basil a fatura nao tem mais
+   * `subscription` no topo: o id mora em `parent.subscription_details`. O
+   * handler antigo lia so `invoice.subscription`, recebia undefined e saia sem
+   * creditar os ticks: o credito por fatura nunca funcionou em producao.
+   */
+  private invoiceSubscriptionRef(invoice: Stripe.Invoice): {
+    subscriptionId: string | null;
+    userIdHint: string | null;
+  } {
+    type Ref = string | { id: string } | null | undefined;
+    const raw = invoice as unknown as {
+      subscription?: Ref;
+      subscription_details?: { metadata?: Record<string, string> | null } | null;
+      parent?: {
+        subscription_details?: { subscription?: Ref; metadata?: Record<string, string> | null } | null;
+      } | null;
+    };
+    const ref = raw.parent?.subscription_details?.subscription ?? raw.subscription ?? null;
+    const subscriptionId = typeof ref === 'string' ? ref : ref?.id ?? null;
+    const metadata = raw.parent?.subscription_details?.metadata ?? raw.subscription_details?.metadata ?? null;
+    return { subscriptionId, userIdHint: metadata?.userId ?? null };
+  }
+
+  /**
+   * Chave de credito de ticks de UMA fatura. Grava na coluna unica
+   * `stripePaymentIntentId` (que ja existia e ja e a trava dos pacotes
+   * avulsos): webhook, sync preguicoso e `ensureTicks` usam a mesma chave, e o
+   * banco recusa o segundo credito da mesma fatura.
+   */
+  private invoiceCreditKey(invoiceId: string): string {
+    return `subscription_invoice:${invoiceId}`;
+  }
+
+  private async creditSubscriptionTicks(params: {
+    userId: string;
+    ticks: number;
+    creditKey: string;
+    invoiceId: string | null;
+    description: string;
+    metadata: Record<string, unknown>;
+  }): Promise<boolean> {
+    // Creditos feitos antes desta chave existir guardavam so o invoiceId na
+    // metadata. Sem esta consulta, reprocessar uma fatura antiga creditaria de novo.
+    if (params.invoiceId) {
+      const legacy = await this.prisma.tickTransaction.findFirst({
+        where: { userId: params.userId, metadata: { path: ['invoiceId'], equals: params.invoiceId } },
+        select: { id: true },
+      });
+      if (legacy) {
+        this.logger.log(`[Ticks] Fatura ${params.invoiceId} ja creditada (registro antigo).`);
+        return false;
+      }
     }
-    return this.prisma.user.findFirst({
+
+    try {
+      await this.prisma.$transaction([
+        this.prisma.userTicks.upsert({
+          where: { userId: params.userId },
+          create: { userId: params.userId, balance: params.ticks },
+          update: { balance: { increment: params.ticks } },
+        }),
+        this.prisma.tickTransaction.create({
+          data: {
+            userId: params.userId,
+            amount: params.ticks,
+            type: 'BONUS',
+            description: params.description,
+            stripePaymentIntentId: params.creditKey,
+            metadata: params.metadata as Prisma.InputJsonValue,
+          },
+        }),
+      ]);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        this.logger.log(`[Ticks] Credito ${params.creditKey} ja existe; ignorado.`);
+        return false;
+      }
+      throw error;
+    }
+
+    this.logger.log(`[Ticks] +${params.ticks} creditados para ${params.userId} (${params.creditKey})`);
+    return true;
+  }
+
+  /**
+   * Rele a assinatura na Stripe e grava o estado atual. Assinatura que a
+   * Stripe nao conhece mais (`resource_missing`) vira `canceled`.
+   */
+  private async syncSubscriptionFromStripe(
+    subscriptionId: string,
+    options: { userIdHint?: string | null } = {},
+  ): Promise<{ userId: string; subscription: Stripe.Subscription } | null> {
+    let subscription: Stripe.Subscription;
+    try {
+      subscription = await this.getStripeClient().subscriptions.retrieve(subscriptionId);
+    } catch (error) {
+      if ((error as { code?: string })?.code === 'resource_missing') {
+        await this.prisma.subscription.updateMany({
+          where: { stripeId: subscriptionId },
+          data: { status: 'canceled' },
+        });
+        this.logger.warn(`[webhook] Assinatura ${subscriptionId} nao existe mais na Stripe; marcada canceled.`);
+        return null;
+      }
+      throw error;
+    }
+
+    // Sem dono: devolve null e QUEM CHAMOU decide. created/updated/paga lancam
+    // (a Stripe reenvia); cancelamento e falha de pagamento seguem sem usuario.
+    const userId = await this.resolveUserIdForSubscription(subscription, options.userIdHint);
+    if (!userId) return null;
+
+    await this.upsertSubscriptionForUser(userId, subscription);
+    return { userId, subscription };
+  }
+
+  /**
+   * Dono da assinatura, da fonte mais confiavel para a menos: a linha que ja
+   * existe no banco, a pista do evento, o customer vinculado ao usuario, e a
+   * metadata gravada na assinatura e no customer na criacao.
+   */
+  private async resolveUserIdForSubscription(
+    subscription: Stripe.Subscription,
+    userIdHint?: string | null,
+  ): Promise<string | null> {
+    const existing = await this.prisma.subscription.findUnique({
+      where: { stripeId: subscription.id },
+      select: { userId: true },
+    });
+    if (existing) return existing.userId;
+
+    const candidates = [userIdHint, subscription.metadata?.userId].filter(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    );
+    for (const candidate of candidates) {
+      const user = await this.prisma.user.findUnique({ where: { id: candidate }, select: { id: true } });
+      if (user) return user.id;
+    }
+
+    const byCustomer = await this.findUserIdByCustomer(subscription.customer);
+    if (byCustomer) return byCustomer;
+
+    const customerId = typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id;
+    if (!customerId) return null;
+    try {
+      const customer = await this.getStripeClient().customers.retrieve(customerId);
+      const metaUserId = 'deleted' in customer && customer.deleted ? null : customer.metadata?.userId;
+      if (metaUserId) {
+        const user = await this.prisma.user.findUnique({ where: { id: metaUserId }, select: { id: true } });
+        if (user) {
+          await this.linkCustomerIfMissing(user.id, customerId);
+          return user.id;
+        }
+      }
+    } catch (error) {
+      if ((error as { code?: string })?.code !== 'resource_missing') throw error;
+    }
+    return null;
+  }
+
+  private async findUserIdByCustomer(customer: string | Stripe.Customer | Stripe.DeletedCustomer | null): Promise<string | null> {
+    const customerId = typeof customer === 'string' ? customer : customer?.id;
+    if (!customerId) return null;
+    const user = await this.prisma.user.findFirst({
       where: { stripeCustomerId: customerId },
       select: { id: true },
     });
+    return user?.id ?? null;
   }
 
-  private async resolveUserFromInvoiceCustomer(invoice: Stripe.Invoice) {
-    const customerId = String(invoice.customer || '').trim();
-    if (!customerId) {
-      return null;
-    }
-    return this.prisma.user.findFirst({
-      where: { stripeCustomerId: customerId },
-      select: { id: true },
+  /** Grava o customer no usuario so se ele ainda nao tiver um. */
+  private async linkCustomerIfMissing(
+    userId: string,
+    customer: string | Stripe.Customer | Stripe.DeletedCustomer | null,
+  ) {
+    const customerId = typeof customer === 'string' ? customer : customer?.id;
+    if (!customerId) return;
+    await this.prisma.user.updateMany({
+      where: { id: userId, stripeCustomerId: null },
+      data: { stripeCustomerId: customerId },
     });
   }
 
   /**
-   * Ensures a subscriber has their tick allocation.
-   * Called whenever DB confirms an active subscription but balance may be 0 (webhook missed).
+   * Pacote de ticks para quem tem assinatura ativa e saldo zero, quando o
+   * webhook da fatura nao chegou.
+   *
+   * ⚠️ ANTES isto creditava 200 ticks TODA vez que o saldo zerava: quem gastava
+   * os 200 do mes ganhava mais 200 na analise seguinte, sem pagamento. Agora o
+   * credito e amarrado a ULTIMA FATURA PAGA, pela mesma chave do webhook, entao
+   * cada periodo pago rende um pacote so, venha por onde vier.
+   *
+   * Acesso manual (`manual_*`, sem Stripe) recebe um pacote por mes-calendario.
    */
-  async ensureTicksForActiveSubscriber(userId: string, priceId: string | null): Promise<void> {
+  async ensureTicksForActiveSubscriber(
+    userId: string,
+    subscription: { stripeId: string; priceId: string | null },
+  ): Promise<void> {
+    const { priceId, stripeId } = subscription;
     if (!priceId) return;
 
     const currentBalance = await this.prisma.userTicks.findUnique({
       where: { userId },
       select: { balance: true },
     });
-
     if ((currentBalance?.balance ?? 0) > 0) return;
 
     const { ticks, planName } = resolveTicksForPriceId(priceId);
     if (ticks <= 0) return;
 
-    await this.prisma.$transaction([
-      this.prisma.userTicks.upsert({
-        where: { userId },
-        create: { userId, balance: ticks },
-        update: { balance: ticks },
-      }),
-      this.prisma.tickTransaction.create({
-        data: {
-          userId,
-          amount: ticks,
-          type: 'BONUS',
-          description: `Initial ticks: ${planName} plan (${ticks} Ticks)`,
-          metadata: { priceId, source: 'ensure_ticks' },
-        },
-      }),
-    ]);
+    try {
+      let creditKey: string;
+      let invoiceId: string | null = null;
 
-    this.logger.log(`[EnsureTicks] Credited ${ticks} ticks for user ${userId} (plan: ${planName})`);
+      let description = `Initial ticks: ${planName} plan (${ticks} Ticks)`;
+
+      if (stripeId.startsWith('sub_')) {
+        const live = await this.getStripeClient().subscriptions.retrieve(stripeId, {
+          expand: ['latest_invoice'],
+        });
+
+        if (this.isGrandfatheredPeriod(live)) {
+          // Regra antiga, preservada ate a renovacao (ver LEGACY_REFILL_CUTOFF_MS).
+          // A chave usa a ultima transacao do usuario: cada vez que o saldo
+          // zera ha um uso novo, logo uma chave nova; duas analises simultaneas
+          // no mesmo saldo zero geram a MESMA chave e so uma credita.
+          const last = await this.prisma.tickTransaction.findFirst({
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true },
+          });
+          creditKey = `legacy_refill:${stripeId}:${last?.id ?? 'none'}`;
+          description = `Refill: ${planName} plan (${ticks} Ticks) [regra anterior, ate a renovacao]`;
+        } else {
+          const invoice = live.latest_invoice as Stripe.Invoice | null;
+          if (!invoice || typeof invoice === 'string' || invoice.status !== 'paid') return;
+          invoiceId = invoice.id;
+          creditKey = this.invoiceCreditKey(invoice.id);
+        }
+      } else {
+        const month = new Date().toISOString().slice(0, 7);
+        creditKey = `manual_subscription:${stripeId}:${month}`;
+      }
+
+      await this.creditSubscriptionTicks({
+        userId,
+        ticks,
+        creditKey,
+        invoiceId,
+        description,
+        metadata: { priceId, subscriptionId: stripeId, invoiceId, source: 'ensure_ticks' },
+      });
+    } catch (error) {
+      // Chamado dentro do fluxo de analise: nao pode derrubar a analise. O
+      // webhook da fatura segue sendo o caminho principal do credito.
+      this.logger.error(`[EnsureTicks] Falha ao verificar pacote de ${userId}`, error);
+    }
+  }
+
+  /**
+   * Assinatura criada antes do corte e ainda no MESMO periodo pago de entao.
+   * A primeira renovacao depois do corte encerra a transicao.
+   */
+  private isGrandfatheredPeriod(subscription: Stripe.Subscription): boolean {
+    return (
+      subscription.created * 1000 < LEGACY_REFILL_CUTOFF_MS &&
+      subscription.current_period_start * 1000 < LEGACY_REFILL_CUTOFF_MS
+    );
   }
 
   /**
@@ -1229,35 +1591,23 @@ export class StripeService {
         await this.upsertSubscriptionForUser(userId, sub);
       }
 
-      // Credit ticks if balance is 0 — webhook was missed, user never got their allocation
-      const currentBalance = await this.prisma.userTicks.findUnique({
-        where: { userId },
-        select: { balance: true },
-      });
+      // Mesma chave de fatura do webhook: se o webhook chegar depois (ou ja
+      // tiver chegado), o banco recusa o segundo credito.
+      const first = active[0];
+      const latestInvoiceId =
+        typeof first.latest_invoice === 'string' ? first.latest_invoice : first.latest_invoice?.id;
+      const priceId = first.items.data[0]?.price.id ?? '';
+      const { ticks, planName } = resolveTicksForPriceId(priceId);
 
-      if ((currentBalance?.balance ?? 0) === 0) {
-        const priceId = active[0].items.data[0]?.price.id ?? '';
-        const { ticks, planName } = resolveTicksForPriceId(priceId);
-
-        if (ticks > 0) {
-          await this.prisma.$transaction([
-            this.prisma.userTicks.upsert({
-              where: { userId },
-              create: { userId, balance: ticks },
-              update: { balance: ticks }, // SET not increment — idempotent on zero balance
-            }),
-            this.prisma.tickTransaction.create({
-              data: {
-                userId,
-                amount: ticks,
-                type: 'BONUS',
-                description: `Monthly refill: ${planName} plan (${ticks} Ticks) [lazy sync]`,
-                metadata: { subscriptionId: active[0].id, priceId, source: 'lazy_sync' },
-              },
-            }),
-          ]);
-          this.logger.log(`[LazySync] Credited ${ticks} ticks for user ${userId} (plan: ${planName})`);
-        }
+      if (ticks > 0 && latestInvoiceId) {
+        await this.creditSubscriptionTicks({
+          userId,
+          ticks,
+          creditKey: this.invoiceCreditKey(latestInvoiceId),
+          invoiceId: latestInvoiceId,
+          description: `Monthly refill: ${planName} plan (${ticks} Ticks) [lazy sync]`,
+          metadata: { subscriptionId: first.id, invoiceId: latestInvoiceId, priceId, source: 'lazy_sync' },
+        });
       }
 
       this.logger.log(`[LazySync] Synced ${active.length} subscription(s) for user ${userId}`);

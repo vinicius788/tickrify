@@ -1584,12 +1584,12 @@ export class AiService implements OnModuleInit {
           in: ACTIVE_SUBSCRIPTION_STATUSES,
         },
       },
-      select: { id: true, priceId: true },
+      select: { id: true, priceId: true, stripeId: true },
     });
 
     if (activeSubscription) {
-      // Ensure ticks are initialized — handles webhook-miss on first analysis
-      await this.stripeService.ensureTicksForActiveSubscriber(userId, activeSubscription.priceId);
+      // Pacote do periodo pago, se o webhook da fatura ainda nao creditou.
+      await this.stripeService.ensureTicksForActiveSubscriber(userId, activeSubscription);
       return true;
     }
 

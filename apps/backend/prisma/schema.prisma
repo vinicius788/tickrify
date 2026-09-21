@@ -263,3 +263,22 @@ model ProblemReport {
   @@index([userId, createdAt])
   @@schema("tickrify")
 }
+
+/// Registro dos webhooks da Stripe: cada `id` de evento e processado UMA vez.
+/// status: processing | processed | failed. `failed` e retomado no proximo
+/// reenvio da Stripe; `processing` parado ha mais de 5 min tambem.
+/// Em producao a tabela nasce pelo `CREATE TABLE IF NOT EXISTS` do
+/// StripeService.onModuleInit (RUN_MIGRATIONS_ON_START=false).
+model StripeWebhookEvent {
+  id          String    @id
+  type        String
+  status      String
+  attempts    Int       @default(1)
+  error       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([status, updatedAt])
+  @@schema("tickrify")
+}

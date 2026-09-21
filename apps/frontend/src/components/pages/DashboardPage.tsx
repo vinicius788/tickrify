@@ -40,6 +40,7 @@ import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { track } from "@/lib/analytics";
 import { CheckoutError, createCheckoutSession } from "@/lib/stripe";
+import { checkoutReturnPath, loadCheckoutIntent } from "@/lib/checkoutIntent";
 import { PLANS } from "@/components/pricing/PricingCards";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
@@ -151,6 +152,17 @@ const DashboardPage = () => {
   const apiClient = useAPIClient();
   const isDemo = !user;
   const { analyses: rawAnalyses, loading: loadingAnalyses, refetch: refetchAnalyses } = useAnalyses(40);
+
+  // Intencao de compra que se perdeu no login. O caminho normal volta direto
+  // para /pricing?checkout=... pelo `redirect_url`; alguns nao carregam a URL
+  // (One Tap, verificacao de e-mail aberta em outra aba no celular) e caem
+  // aqui. Com intencao recente (30 min) no storage, segue para o checkout em
+  // vez de largar a pessoa no painel.
+  useEffect(() => {
+    if (!user) return;
+    const intent = loadCheckoutIntent();
+    if (intent) navigate(checkoutReturnPath(intent), { replace: true });
+  }, [user, navigate]);
 
   // ── Loop do veredito ────────────────────────────────────────────────────
   // O produto precisa PEDIR o veredito na hora certa; ninguém volta sozinho
@@ -429,7 +441,7 @@ const DashboardPage = () => {
       // A moeda é USD fixo: o `detectCurrency` daqui mandava navegador pt-BR
       // para o price BRL congelado em jun/2026.
       track('upgrade_clicked', { source: 'locked_value', coupon: 'EARLY35' });
-      const { url } = await createCheckoutSession('starter', token, 'monthly', 'usd', 'EARLY35');
+      const { url } = await createCheckoutSession('starter', token, 'monthly', 'usd', 'EARLY35', 'locked_value');
       track('checkout_started', { plan: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35', source: 'locked_value' });
       window.location.href = url;
     } catch (error) {

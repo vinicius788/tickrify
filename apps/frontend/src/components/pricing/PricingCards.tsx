@@ -5,8 +5,15 @@ import { warmupPaymentsApi } from "../../lib/api";
 import { track } from "../../lib/analytics";
 import { useToast } from "../../hooks/use-toast";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
-
-const SESSION_STORAGE_KEY = "pendingPlanType";
+import {
+  authUrlForCheckout,
+  clearCheckoutIntent,
+  loadCheckoutIntent,
+  parseCheckoutIntent,
+  saveCheckoutIntent,
+  type CheckoutIntent,
+  type CheckoutSource,
+} from "@/lib/checkoutIntent";
 
 // Check desenhado à mão: o ícone da lucide vem em 24px e a lista do card pede 14.
 const Check = () => (
@@ -219,13 +226,24 @@ export function PricingCards() {
   }, []);
 
   const handleUpgrade = useCallback(
-    async (planType: PlanType) => {
-      // INTENÇÃO de compra: clicou num plano (antes de qualquer redirect).
-      // O gap entre este evento e checkout_started = não-logados + falhas de token/sessão.
-      track('upgrade_clicked', { plan: planType, signedIn: Boolean(isSignedIn) });
+    async (
+      planType: PlanType,
+      options: { cycle?: BillingCycle; source?: CheckoutSource; resumed?: boolean } = {},
+    ) => {
+      const cycle = options.cycle ?? billingCycle;
+      const source = options.source ?? "pricing";
+      // INTENÇÃO de compra. `resumed` = voltou do login e seguiu sozinho; nao e
+      // um segundo clique, entao nao conta outro upgrade_clicked.
+      if (!options.resumed) {
+        track('upgrade_clicked', { plan: planType, cycle, source, signedIn: Boolean(isSignedIn) });
+      }
       if (!isSignedIn) {
-        sessionStorage.setItem(SESSION_STORAGE_KEY, planType);
-        window.location.href = "/sign-in";
+        // Login/cadastro devolve para /pricing?checkout=... e o efeito abaixo
+        // retoma a compra. Antes ia para /sign-in sem destino e o Clerk
+        // mandava todo mundo para o /dashboard: a intencao morria ali.
+        const intent: CheckoutIntent = { plan: planType, cycle, source };
+        saveCheckoutIntent(intent);
+        window.location.href = authUrlForCheckout(intent);
         return;
       }
 
@@ -239,7 +257,7 @@ export function PricingCards() {
         setLoadingPlan(planType);
         const token = await getToken({ skipCache: true });
         if (!token) {
-          track('checkout_failed', { source: 'pricing', plan: planType, code: 'no_token' });
+          track('checkout_failed', { source, plan: planType, code: 'no_token' });
           toast({
             title: copy.errorTitle,
             description: copy.tokenError,
@@ -260,19 +278,29 @@ export function PricingCards() {
          *
          * A copy da /pricing foi ajustada junto: ela nao pede mais o codigo,
          * porque agora nao ha codigo para pedir. */
-        const { url } = await createCheckoutSession(planType, token, billingCycle, currency, 'EARLY35');
+        const { url } = await createCheckoutSession(planType, token, cycle, currency, 'EARLY35', source);
         // Dispara SO com a URL da Stripe em maos: antes saia antes da chamada a
         // API e contava clique como checkout, inclusive quando a sessao falhava.
-        track('checkout_started', { plan: planType, billingCycle, currency, coupon: 'EARLY35', source: 'pricing' });
-        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        track('checkout_started', {
+          plan: planType,
+          billingCycle: cycle,
+          currency,
+          coupon: 'EARLY35',
+          source,
+          resumedAfterAuth: Boolean(options.resumed),
+        });
+        clearCheckoutIntent();
         redirecting = true;
         window.location.href = url;
       } catch (error) {
-        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        // Falhou: a intencao sai do storage para nao reabrir o checkout sozinha
+        // na proxima visita. O botao continua na tela para tentar de novo.
+        clearCheckoutIntent();
         const code = error instanceof CheckoutError ? error.code : undefined;
         track('checkout_failed', {
-          source: 'pricing',
+          source,
           plan: planType,
+          resumedAfterAuth: Boolean(options.resumed),
           code: code ?? 'unknown',
           message: error instanceof Error ? error.message.slice(0, 200) : 'unknown',
         });
@@ -299,19 +327,26 @@ export function PricingCards() {
     [getToken, isSignedIn, toast, billingCycle, currency, copy],
   );
 
+  // Retomada depois do login/cadastro: a URL traz a intencao (caminho normal) e
+  // o localStorage cobre quem chegou sem ela (One Tap, e-mail em outra aba).
+  // Roda UMA vez por montagem, e so com o Clerk carregado e a sessao valida.
+  const resumeAttempted = useRef(false);
   useEffect(() => {
-    const processUpgrade = async () => {
-      if (isLoaded && isSignedIn && !processingUpgrade) {
-        const pending = sessionStorage.getItem(SESSION_STORAGE_KEY) as PlanType | null;
-        if (pending && ["starter", "pro", "elite"].includes(pending)) {
-          setProcessingUpgrade(true);
-          await handleUpgrade(pending);
-        }
-      }
-    };
+    if (!isLoaded || !isSignedIn || resumeAttempted.current) return;
+    const intent = parseCheckoutIntent(window.location.search) ?? loadCheckoutIntent();
+    if (!intent) return;
+    resumeAttempted.current = true;
 
-    void processUpgrade();
-  }, [handleUpgrade, isLoaded, isSignedIn, processingUpgrade]);
+    // Tira os parametros da barra: recarregar a pagina nao pode abrir outro
+    // checkout, e o botao voltar da Stripe nao deve cair num loop.
+    const url = new URL(window.location.href);
+    ["checkout", "cycle", "source"].forEach((key) => url.searchParams.delete(key));
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+
+    setBillingCycle(intent.cycle);
+    setProcessingUpgrade(true);
+    void handleUpgrade(intent.plan, { cycle: intent.cycle, source: intent.source, resumed: true });
+  }, [handleUpgrade, isLoaded, isSignedIn]);
 
   if (processingUpgrade) {
     return (

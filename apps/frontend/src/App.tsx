@@ -21,6 +21,7 @@ import { useEffect, type ReactNode } from "react";
 import { useSeo, seoFor } from "@/hooks/useSeo";
 import { warmupPaymentsApi } from "@/lib/api";
 import { scrollToTop } from "@/lib/utils";
+import { checkoutTargetFromAuthSearch } from "@/lib/checkoutIntent";
 
 /**
  * Casca das telas de autenticação do Clerk.
@@ -44,12 +45,17 @@ function AuthScreen({ seoPath, children }: { seoPath: "/sign-in" | "/sign-up"; c
 // um popup de login em cima dela passa a impressão de login obrigatório e
 // mata exatamente a conversão que a página existe pra destravar. O CTA de
 // cadastro da /try aparece DEPOIS do resultado (momento certo).
+//
+// O destino e FORCADO (One Tap nao le `redirect_url`), entao na tela de login
+// aberta pelo Upgrade ele segue a intencao de compra em vez do /dashboard.
+// `checkoutTargetFromAuthSearch` so aceita /pricing?checkout=... deste site.
 function OneTapOutsideTry() {
-  const { pathname } = useLocation();
+  const { pathname, search, hash } = useLocation();
   if (pathname.startsWith("/try")) return null;
+  const target = checkoutTargetFromAuthSearch(search, window.location.origin, hash) ?? "/dashboard";
   return (
     <SignedOut>
-      <GoogleOneTap signInForceRedirectUrl="/dashboard" signUpForceRedirectUrl="/dashboard" />
+      <GoogleOneTap signInForceRedirectUrl={target} signUpForceRedirectUrl={target} />
     </SignedOut>
   );
 }
@@ -118,8 +124,12 @@ function App() {
                   routing="path"
                   path="/sign-in"
                   signUpUrl="/sign-up"
-                  afterSignInUrl="/dashboard"
-                  afterSignUpUrl="/dashboard"
+                  // FALLBACK, nao destino fixo: so vale sem `redirect_url` na
+                  // URL. O Upgrade deslogado manda `redirect_url` para o
+                  // checkout, e o Clerk o carrega tambem na troca para o
+                  // cadastro. `afterSignInUrl` (legado) nao garantia isso.
+                  fallbackRedirectUrl="/dashboard"
+                  signUpFallbackRedirectUrl="/dashboard"
                 />
               </AuthScreen>
             }
@@ -132,8 +142,8 @@ function App() {
                   routing="path"
                   path="/sign-up"
                   signInUrl="/sign-in"
-                  afterSignInUrl="/dashboard"
-                  afterSignUpUrl="/dashboard"
+                  fallbackRedirectUrl="/dashboard"
+                  signInFallbackRedirectUrl="/dashboard"
                 />
               </AuthScreen>
             }

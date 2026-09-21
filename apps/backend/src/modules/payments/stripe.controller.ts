@@ -60,7 +60,7 @@ export class StripeController {
 
     const coupon = body.coupon === 'EARLY35' ? body.coupon : undefined;
 
-    return this.stripeService.createCheckoutSession(user.clerkUserId, planType, billingCycle, currency, coupon);
+    return this.stripeService.createCheckoutSession(user.clerkUserId, planType, billingCycle, currency, coupon, body.source);
   }
 
   /**
