@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
-import { createCheckoutSession, type BillingCycle, type Currency, type PlanType } from "../../lib/stripe";
+import { CheckoutError, createCheckoutSession, type BillingCycle, type Currency, type PlanType } from "../../lib/stripe";
 import { warmupPaymentsApi } from "../../lib/api";
 import { track } from "../../lib/analytics";
 import { useToast } from "../../hooks/use-toast";
@@ -122,6 +122,8 @@ const CHROME_COPY = {
     errorTitle: "Error",
     tokenError: "Could not get authentication token",
     checkoutError: "Failed to create checkout session. Please try again.",
+    alreadySubscribedTitle: "You are already subscribed",
+    alreadySubscribedDesc: "Your plan is active. Manage it from your dashboard.",
   },
   pt: {
     monthly: "Mensal",
@@ -135,6 +137,8 @@ const CHROME_COPY = {
     errorTitle: "Erro",
     tokenError: "Não foi possível obter token de autenticação",
     checkoutError: "Falha ao criar sessão de checkout. Tente novamente.",
+    alreadySubscribedTitle: "Você já é assinante",
+    alreadySubscribedDesc: "Seu plano está ativo. Gerencie pelo painel.",
   },
 };
 
@@ -187,6 +191,23 @@ export function PricingCards() {
   const [loadingPlan, setLoadingPlan] = useState<PlanType | null>(null);
   const [processingUpgrade, setProcessingUpgrade] = useState(false);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+  // Trava sincrona: o `loadingPlan` e estado e so vale no proximo render, entao
+  // clique duplo ou o useEffect de retomada chegavam juntos e abriam duas
+  // sessoes (visto na Stripe: pares no mesmo segundo).
+  const checkoutInFlight = useRef(false);
+
+  // Voltar da Stripe pelo botao do navegador restaura a pagina do bfcache com
+  // a trava ligada e o botao girando para sempre. Destrava nesse caso.
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      checkoutInFlight.current = false;
+      setLoadingPlan(null);
+      setProcessingUpgrade(false);
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
 
   // Global product: prices always in USD, regardless of site language.
   const currency: Currency = "usd";
@@ -208,10 +229,17 @@ export function PricingCards() {
         return;
       }
 
+      if (checkoutInFlight.current) return;
+      checkoutInFlight.current = true;
+      // Com o redirect ja disparado a trava fica ligada: o navegador ainda leva
+      // um instante para sair da pagina e o botao nao pode voltar a ser clicavel.
+      let redirecting = false;
+
       try {
         setLoadingPlan(planType);
         const token = await getToken({ skipCache: true });
         if (!token) {
+          track('checkout_failed', { source: 'pricing', plan: planType, code: 'no_token' });
           toast({
             title: copy.errorTitle,
             description: copy.tokenError,
@@ -237,14 +265,23 @@ export function PricingCards() {
         // API e contava clique como checkout, inclusive quando a sessao falhava.
         track('checkout_started', { plan: planType, billingCycle, currency, coupon: 'EARLY35', source: 'pricing' });
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        redirecting = true;
         window.location.href = url;
       } catch (error) {
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        const code = error instanceof CheckoutError ? error.code : undefined;
         track('checkout_failed', {
           source: 'pricing',
           plan: planType,
+          code: code ?? 'unknown',
           message: error instanceof Error ? error.message.slice(0, 200) : 'unknown',
         });
+        if (code === 'already_subscribed') {
+          toast({ title: copy.alreadySubscribedTitle, description: copy.alreadySubscribedDesc });
+          redirecting = true;
+          window.location.href = "/dashboard";
+          return;
+        }
         toast({
           title: copy.errorTitle,
           description:
@@ -252,8 +289,11 @@ export function PricingCards() {
           variant: "destructive",
         });
       } finally {
-        setLoadingPlan(null);
-        setProcessingUpgrade(false);
+        if (!redirecting) {
+          checkoutInFlight.current = false;
+          setLoadingPlan(null);
+          setProcessingUpgrade(false);
+        }
       }
     },
     [getToken, isSignedIn, toast, billingCycle, currency, copy],

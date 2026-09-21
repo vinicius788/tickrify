@@ -50,7 +50,25 @@ function getStripeApiBaseUrl() {
   return API_BASE_URL;
 }
 
-async function readErrorMessage(response: Response, fallbackMessage: string) {
+/**
+ * Erro do checkout com o `code` que o backend manda (ex.: `already_subscribed`,
+ * `stripe_unavailable`). A tela decide o que fazer pelo codigo, nao pelo texto.
+ */
+export class CheckoutError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = 'CheckoutError';
+  }
+}
+
+async function readError(
+  response: Response,
+  fallbackMessage: string,
+): Promise<{ message: string; code?: string }> {
   const contentType = response.headers.get('content-type') || '';
 
   if (contentType.includes('application/json')) {
@@ -58,18 +76,20 @@ async function readErrorMessage(response: Response, fallbackMessage: string) {
       message?: string | string[];
       error?: string;
       details?: string;
+      code?: string;
     } | null;
+    const code = typeof payload?.code === 'string' ? payload.code : undefined;
 
     const message = payload?.message || payload?.error || payload?.details;
     if (Array.isArray(message)) {
       const joined = message.map((item) => String(item)).join(', ').trim();
       if (joined) {
-        return joined;
+        return { message: joined, code };
       }
     }
 
     if (typeof message === 'string' && message.trim()) {
-      return message.trim();
+      return { message: message.trim(), code };
     }
   }
 
@@ -77,12 +97,12 @@ async function readErrorMessage(response: Response, fallbackMessage: string) {
   if (textBody) {
     const isHtmlError = textBody.includes('<!doctype') || textBody.includes('<html');
     if (isHtmlError) {
-      return `${fallbackMessage} Verifique se VITE_API_URL aponta para o backend.`;
+      return { message: `${fallbackMessage} Verifique se VITE_API_URL aponta para o backend.` };
     }
-    return textBody.slice(0, 220);
+    return { message: textBody.slice(0, 220) };
   }
 
-  return fallbackMessage;
+  return { message: fallbackMessage };
 }
 
 // O backend hiberna no Render (plano free); o cold start pode levar até ~50s.
@@ -126,15 +146,16 @@ async function requestStripeApi<T>(
     }
 
     if (!response.ok) {
-      const message = await readErrorMessage(response, fallbackMessage);
-      throw new Error(message);
+      const { message, code } = await readError(response, fallbackMessage);
+      throw new CheckoutError(message, code, response.status);
     }
 
     return response.json() as Promise<T>;
   } catch (error) {
     if (error instanceof TypeError || (error as Error)?.name === 'AbortError') {
-      throw new Error(
+      throw new CheckoutError(
         'The payment service is waking up and took too long to respond. Please try again in a few seconds.',
+        'network_timeout',
       );
     }
 
@@ -152,7 +173,7 @@ export async function createCheckoutSession(
   currency: Currency = 'usd',
   coupon?: 'EARLY35',
 ) {
-  return requestStripeApi<{ sessionId: string; url: string }>(
+  const session = await requestStripeApi<{ sessionId: string; url: string }>(
     '/api/stripe/create-checkout-session',
     {
       method: 'POST',
@@ -162,7 +183,23 @@ export async function createCheckoutSession(
       },
       body: JSON.stringify({ planType, billingCycle, currency, ...(coupon ? { coupon } : {}) }),
     },
-    'Falha ao criar sessão de checkout.',
+    'Could not start checkout. Please try again.',
   );
+
+  // Nunca redirecionar para "undefined" ou para uma URL que nao seja https:
+  // resposta sem URL valida e erro, nao checkout.
+  if (!isHttpsUrl(session?.url)) {
+    throw new CheckoutError('Could not open checkout. Please try again.', 'invalid_checkout_url');
+  }
+  return session;
+}
+
+function isHttpsUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || !value) return false;
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 

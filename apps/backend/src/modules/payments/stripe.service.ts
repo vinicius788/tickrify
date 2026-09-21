@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  ConflictException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -17,14 +19,42 @@ import {
   PlanType,
   BillingCycle,
   Currency,
+  stripeKeyMode,
 } from '../../config/stripe.config';
 
 type AttributionRecord = Record<string, unknown>;
+
+type CheckoutResult = { sessionId: string; url: string; reused: boolean };
+
+/**
+ * Status em que o cliente JA TEM assinatura viva. Abrir outro checkout nesse
+ * estado cria uma segunda assinatura cobrada em paralelo: `past_due`/`unpaid`
+ * entram de proposito, porque o caminho certo ali e atualizar o cartao no
+ * portal, nao assinar de novo. `incomplete` fica de fora: o Checkout so cria a
+ * assinatura quando o pagamento passa, entao ela nao vem deste fluxo.
+ */
+const BLOCKING_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due', 'unpaid'];
+
+/** Sessao aberta so e reaproveitada se ainda tiver pelo menos isto de vida. */
+const REUSE_MIN_REMAINING_SECONDS = 10 * 60;
+
+/** Validacao do price vale por 1h; mudar o price no painel reflete em ate 1h. */
+const PRICE_CHECK_TTL_MS = 60 * 60 * 1000;
 
 @Injectable()
 export class StripeService {
   private readonly logger = new Logger(StripeService.name);
   private stripe: Stripe | null;
+
+  /**
+   * Checkout em andamento por usuario. Clique duplo, o useEffect que retoma o
+   * upgrade depois do login e o retry do frontend no cold start chegavam aqui
+   * ao mesmo tempo e cada um criava uma sessao (visto na Stripe: pares de
+   * sessoes no mesmo segundo). O segundo pedido agora recebe a MESMA promessa.
+   * Um processo so no Render, entao um Map em memoria basta.
+   */
+  private readonly checkoutInFlight = new Map<string, Promise<CheckoutResult>>();
+  private readonly priceCheckedAt = new Map<string, number>();
 
   constructor(private prisma: PrismaService) {
     const stripeConfig = getStripeConfig();
@@ -37,6 +67,7 @@ export class StripeService {
     this.stripe = new Stripe(stripeConfig.secretKey, {
       apiVersion: '2023-10-16',
     });
+    this.logger.log(`Stripe configured in ${stripeKeyMode(stripeConfig.secretKey).toUpperCase()} mode`);
   }
 
   private getStripeClient(): Stripe {
@@ -47,70 +78,78 @@ export class StripeService {
   }
 
   /**
-   * Descobre em qual moeda o cliente já tem compromisso ativo na Stripe.
-   *
-   * ATENÇÃO (29/07/2026): esta função virou DIAGNÓSTICO, não decisão. Ela já
-   * sobrescreveu a moeda do checkout — e por isso um cliente com assinatura
-   * antiga em BRL era cobrado R$ 57 (o price BRL congelado no tier de US$ 12)
-   * mesmo com a vitrine mostrando US$ 29 e o front mandando `usd`. Hoje só
-   * emitimos aviso no log; a moeda do checkout é sempre USD.
-   *
-   * A restrição da Stripe é real: um customer não pode ter assinaturas em moedas
-   * diferentes. Se isto retornar algo != 'usd', o checkout vai falhar com erro
-   * explícito da Stripe — que é o comportamento certo. Cobrar o preço errado em
-   * silêncio é pior que falhar.
+   * Producao so vende com chave live. Chave de teste em producao abriria um
+   * checkout que aceita o cartao 4242 e nao cobra ninguem, sem erro nenhum.
    */
-  private async detectExistingCustomerCurrency(customerId: string): Promise<Currency | null> {
-    const stripe = this.getStripeClient();
-    const supported: Currency[] = ['brl', 'usd', 'eur'];
-
-    try {
-      // 1) Assinaturas em qualquer estado "vivo".
-      const subs = await stripe.subscriptions.list({
-        customer: customerId,
-        status: 'all',
-        limit: 10,
+  private assertLiveModeInProduction(): void {
+    const mode = stripeKeyMode(getStripeConfig().secretKey);
+    if (process.env.NODE_ENV === 'production' && mode !== 'live') {
+      this.logger.error(`[stripe] STRIPE_SECRET_KEY em modo ${mode} com NODE_ENV=production. Checkout bloqueado.`);
+      throw new ServiceUnavailableException({
+        code: 'stripe_not_live',
+        message: 'Payments are temporarily unavailable. Please try again later.',
       });
-      const liveStatuses = new Set([
-        'active',
-        'trialing',
-        'past_due',
-        'unpaid',
-        'incomplete',
-      ]);
-      for (const sub of subs.data) {
-        if (liveStatuses.has(sub.status) && sub.currency) {
-          const cur = sub.currency.toLowerCase() as Currency;
-          if (supported.includes(cur)) return cur;
-        }
-      }
-
-      // 2) Checkout sessions abertas ainda seguram a moeda.
-      const sessions = await stripe.checkout.sessions.list({
-        customer: customerId,
-        limit: 10,
-      });
-      for (const s of sessions.data) {
-        if (s.status === 'open' && s.currency) {
-          const cur = s.currency.toLowerCase() as Currency;
-          if (supported.includes(cur)) return cur;
-        }
-      }
-    } catch (error) {
-      // Nunca deixar essa checagem derrubar o checkout — no pior caso segue com a
-      // moeda pedida (e a Stripe devolve o erro claro, que já tratamos no front).
-      this.logger.warn(
-        `[stripe] detectExistingCustomerCurrency falhou para ${customerId}: ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
     }
-
-    return null;
   }
 
   /**
-   * Criar sessão de checkout
+   * Confere que o price existe, esta ativo, e recorrente, na moeda pedida e no
+   * MESMO modo da chave (price de teste com chave live, ou o contrario, e o
+   * erro classico de trocar as chaves no painel). Falha alto em vez de deixar a
+   * Stripe devolver um erro generico no meio do checkout.
+   */
+  private async assertPriceUsable(priceId: string, currency: Currency): Promise<void> {
+    const checkedAt = this.priceCheckedAt.get(priceId);
+    if (checkedAt && Date.now() - checkedAt < PRICE_CHECK_TTL_MS) return;
+
+    const stripe = this.getStripeClient();
+    let price: Stripe.Price;
+    try {
+      price = await stripe.prices.retrieve(priceId);
+    } catch (error) {
+      const stripeError = error as { code?: string };
+      if (stripeError?.code === 'resource_missing') {
+        this.logger.error(`[stripe] Price ${priceId} nao existe nesta conta/modo.`);
+        throw new ServiceUnavailableException({
+          code: 'price_not_found',
+          message: 'This plan is temporarily unavailable. Please contact support.',
+        });
+      }
+      throw error;
+    }
+
+    const expectedLive = stripeKeyMode(getStripeConfig().secretKey) === 'live';
+    const problems: string[] = [];
+    if (!price.active) problems.push('inativo');
+    if (price.type !== 'recurring') problems.push(`tipo ${price.type}`);
+    if (price.currency !== currency) problems.push(`moeda ${price.currency} != ${currency}`);
+    if (price.livemode !== expectedLive) problems.push(`livemode=${price.livemode} com chave ${expectedLive ? 'live' : 'test'}`);
+
+    if (problems.length > 0) {
+      this.logger.error(`[stripe] Price ${priceId} inutilizavel: ${problems.join(', ')}.`);
+      throw new ServiceUnavailableException({
+        code: 'price_invalid',
+        message: 'This plan is temporarily unavailable. Please contact support.',
+      });
+    }
+
+    this.priceCheckedAt.set(priceId, Date.now());
+  }
+
+  private alreadySubscribed(userId: string, status: string, source: 'db' | 'stripe'): ConflictException {
+    this.logger.warn(`[stripe] Checkout recusado: usuario ${userId} ja tem assinatura ${status} (${source}).`);
+    return new ConflictException({
+      code: 'already_subscribed',
+      message: 'You already have an active Tickrify subscription. Manage it from your dashboard.',
+    });
+  }
+
+  /**
+   * Criar sessão de checkout.
+   *
+   * Pedidos simultaneos do mesmo usuario sao fundidos num so (ver
+   * `checkoutInFlight`): o segundo recebe a mesma sessao, e nao cria outra
+   * sessao nem outro customer.
    */
   async createCheckoutSession(
     clerkUserId: string,
@@ -118,51 +157,130 @@ export class StripeService {
     billingCycle: BillingCycle,
     currency: Currency = 'usd',
     couponId?: string,
-  ) {
+  ): Promise<CheckoutResult> {
+    const inFlight = this.checkoutInFlight.get(clerkUserId);
+    if (inFlight) {
+      this.logger.log(`[stripe] Checkout de ${clerkUserId} ja em andamento; reaproveitando o mesmo pedido.`);
+      return inFlight;
+    }
+
+    const run = this.createCheckoutSessionUnlocked(clerkUserId, planType, billingCycle, currency, couponId)
+      .finally(() => this.checkoutInFlight.delete(clerkUserId));
+    this.checkoutInFlight.set(clerkUserId, run);
+    return run;
+  }
+
+  private async createCheckoutSessionUnlocked(
+    clerkUserId: string,
+    planType: PlanType,
+    billingCycle: BillingCycle,
+    currency: Currency,
+    couponId?: string,
+  ): Promise<CheckoutResult> {
     try {
       if (!['starter', 'pro', 'elite'].includes(planType)) {
-        throw new Error(`Invalid plan type: ${planType}`);
+        throw new BadRequestException({ code: 'invalid_plan', message: `Invalid plan type: ${planType}` });
       }
+
+      this.assertLiveModeInProduction();
 
       const user = await this.prisma.user.findUnique({
         where: { clerkUserId },
       });
 
       if (!user) {
-        throw new Error('User not found');
+        throw new BadRequestException({
+          code: 'user_not_found',
+          message: 'Account not found. Please sign out and sign in again.',
+        });
       }
 
-      const customerId = await this.resolveOrCreateCustomerId(user);
-
-      // A moeda pedida MANDA. Antes, uma moeda legada detectada aqui
-      // sobrescrevia o `currency` — e como os price IDs BRL/EUR nunca foram
-      // atualizados nas três mudanças de preço ($12 → $19 → $29), o cliente era
-      // cobrado o valor de jun/2026 sem ninguém perceber.
-      //
-      // Se sobrar moeda legada, a Stripe recusa o checkout com
-      // "You cannot combine currencies on a single customer". É ruído
-      // conhecido e visível — e só atinge quem já assinou em BRL/EUR, que hoje
-      // é só a conta do dono. Falhar alto > cobrar errado calado.
-      const existingCurrency = await this.detectExistingCustomerCurrency(customerId);
-      if (existingCurrency && existingCurrency !== currency) {
-        this.logger.warn(
-          `[stripe] Cliente ${customerId} tem compromisso legado em ${existingCurrency.toUpperCase()}, ` +
-            `mas o checkout vai em ${currency.toUpperCase()}. A Stripe deve recusar. ` +
-            `Cancele a assinatura legada para destravar.`,
-        );
+      // Trava 1, banco: barata e cobre tambem o acesso manual do dono
+      // (`manual_owner_1`), que nao existe na Stripe.
+      const dbSubscription = await this.prisma.subscription.findFirst({
+        where: { userId: user.id, status: { in: BLOCKING_SUBSCRIPTION_STATUSES } },
+        select: { status: true },
+      });
+      if (dbSubscription) {
+        throw this.alreadySubscribed(user.id, dbSubscription.status, 'db');
       }
 
       const priceId = getPriceId(planType, billingCycle, currency);
+      if (!priceId) {
+        this.logger.error(`[stripe] Price ID ausente para ${planType}/${billingCycle}/${currency}.`);
+        throw new ServiceUnavailableException({
+          code: 'price_not_configured',
+          message: 'This plan is temporarily unavailable. Please contact support.',
+        });
+      }
+      await this.assertPriceUsable(priceId, currency);
+
+      const customerId = await this.resolveOrCreateCustomerId(user);
+      const stripe = this.getStripeClient();
+
+      // Trava 2, Stripe: cobre o intervalo entre o pagamento e o webhook, em
+      // que o banco ainda nao sabe da assinatura. Se esta consulta falhar, o
+      // checkout falha junto: seguir sem saber arriscaria cobrar em dobro.
+      const subscriptions = await stripe.subscriptions.list({
+        customer: customerId,
+        status: 'all',
+        limit: 20,
+      });
+      const liveSubscription = subscriptions.data.find((sub) =>
+        BLOCKING_SUBSCRIPTION_STATUSES.includes(sub.status),
+      );
+      if (liveSubscription) {
+        throw this.alreadySubscribed(user.id, liveSubscription.status, 'stripe');
+      }
+
+      // Diagnostico de moeda legada (ver nota de 29/07 no CLAUDE.md): so avisa.
+      const legacyCurrency = subscriptions.data.find(
+        (sub) => sub.currency && sub.currency.toLowerCase() !== currency,
+      )?.currency;
+      if (legacyCurrency) {
+        this.logger.warn(
+          `[stripe] Cliente ${customerId} tem historico em ${legacyCurrency.toUpperCase()}; checkout vai em ${currency.toUpperCase()}.`,
+        );
+      }
+
+      // Trava 3, sessoes abertas: no maximo UMA por cliente. Duas sessoes
+      // abertas em abas diferentes podiam ser pagas as duas e virar duas
+      // assinaturas. A equivalente e reaproveitada; as outras sao expiradas.
+      const openSessions = await stripe.checkout.sessions.list({
+        customer: customerId,
+        status: 'open',
+        limit: 20,
+      });
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      let reusable: Stripe.Checkout.Session | null = null;
+      for (const open of openSessions.data) {
+        const equivalent =
+          open.mode === 'subscription' &&
+          open.metadata?.priceId === priceId &&
+          (open.metadata?.coupon ?? '') === (couponId ?? '') &&
+          Boolean(open.url) &&
+          open.expires_at - nowSeconds > REUSE_MIN_REMAINING_SECONDS;
+
+        if (equivalent && !reusable) {
+          reusable = open;
+          continue;
+        }
+
+        // Se nao der para expirar, nao abre outra: o erro sobe e o usuario
+        // tenta de novo, em vez de ficar com duas sessoes pagaveis.
+        await stripe.checkout.sessions.expire(open.id);
+        this.logger.log(`[stripe] Sessao aberta ${open.id} expirada antes de criar outra para ${customerId}.`);
+      }
+
+      if (reusable?.url) {
+        this.logger.log(`Checkout session reused: ${reusable.id} for user: ${clerkUserId}`);
+        return { sessionId: reusable.id, url: reusable.url, reused: true };
+      }
+
       const appBaseUrl = this.resolveAppBaseUrl();
       const successUrl = `${appBaseUrl}/dashboard?success=true`;
       const cancelUrl = `${appBaseUrl}/pricing?canceled=true`;
 
-      if (!priceId) {
-        throw new Error(`Price ID not configured for plan: ${planType} (${billingCycle}/${currency})`);
-      }
-
-      // Criar checkout session
-      const stripe = this.getStripeClient();
       const baseParams: Stripe.Checkout.SessionCreateParams = {
         customer: customerId,
         mode: 'subscription',
@@ -191,6 +309,8 @@ export class StripeService {
           planType,
           billingCycle,
           currency,
+          // `priceId` e `coupon` identificam a sessao para a Trava 3 acima.
+          priceId,
           ...this.stripeAttributionMetadata(user),
         },
       };
@@ -210,6 +330,7 @@ export class StripeService {
       const abrirCheckout = (comCupom: boolean) =>
         stripe.checkout.sessions.create({
           ...baseParams,
+          metadata: { ...baseParams.metadata, coupon: comCupom && couponId ? couponId : '' },
           ...(comCupom && couponId
             ? { discounts: [{ coupon: couponId }] }
             : { allow_promotion_codes: true }),
@@ -234,17 +355,22 @@ export class StripeService {
         session = await abrirCheckout(false);
       }
 
-      this.logger.log(
-        `Checkout session created: ${session.id} for user: ${clerkUserId} (${currency}${
-          existingCurrency && existingCurrency !== currency
-            ? ` — ATENÇÃO: cliente tem compromisso legado em ${existingCurrency}`
-            : ''
-        })`,
-      );
+      // Em modo subscription hospedado a Stripe sempre devolve `url`; se nao
+      // vier, o frontend redirecionaria para "undefined". Falha alto aqui.
+      if (!session.url) {
+        this.logger.error(`[stripe] Sessao ${session.id} criada sem url.`);
+        throw new InternalServerErrorException({
+          code: 'checkout_url_missing',
+          message: 'Could not open checkout. Please try again.',
+        });
+      }
+
+      this.logger.log(`Checkout session created: ${session.id} for user: ${clerkUserId} (${currency})`);
 
       return {
         sessionId: session.id,
         url: session.url,
+        reused: false,
       };
     } catch (error) {
       this.logger.error('Error creating checkout session:', error);
@@ -308,7 +434,9 @@ export class StripeService {
   }
 
   private rethrowCheckoutError(error: unknown): never {
-    if (error instanceof BadRequestException || error instanceof InternalServerErrorException) {
+    // Erro ja classificado (Conflict, BadRequest, ServiceUnavailable...) sobe
+    // intacto, com o `code` que o frontend usa para decidir o que mostrar.
+    if (error instanceof HttpException) {
       throw error;
     }
 
@@ -318,22 +446,32 @@ export class StripeService {
       message?: string;
     };
 
-    const message = stripeError?.message || 'Falha ao criar sessão de checkout no Stripe.';
-
+    // Chave invalida, sem permissao, Stripe fora ou rate limit: nao e culpa de
+    // quem clicou, e a mensagem crua da Stripe nao serve para o usuario.
     if (
-      stripeError?.type === 'StripeInvalidRequestError' ||
       stripeError?.type === 'StripeAuthenticationError' ||
       stripeError?.type === 'StripePermissionError' ||
-      stripeError?.code === 'resource_missing'
+      stripeError?.type === 'StripeAPIError' ||
+      stripeError?.type === 'StripeConnectionError' ||
+      stripeError?.type === 'StripeRateLimitError'
     ) {
-      throw new BadRequestException(message);
+      throw new ServiceUnavailableException({
+        code: 'stripe_unavailable',
+        message: 'The payment provider is unavailable right now. Please try again in a moment.',
+      });
     }
 
-    if (error instanceof Error && error.message) {
-      throw new BadRequestException(error.message);
+    if (stripeError?.type === 'StripeInvalidRequestError' || stripeError?.code === 'resource_missing') {
+      throw new BadRequestException({
+        code: 'stripe_rejected',
+        message: stripeError.message || 'The payment provider rejected the checkout request.',
+      });
     }
 
-    throw new InternalServerErrorException('Erro interno ao processar checkout.');
+    throw new InternalServerErrorException({
+      code: 'checkout_failed',
+      message: 'Could not start checkout. Please try again.',
+    });
   }
 
   private async resolveOrCreateCustomerId(user: {
@@ -367,13 +505,20 @@ export class StripeService {
     }
 
     if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: user.email || undefined,
-        metadata: {
-          userId: user.id,
-          clerkId: user.clerkUserId,
+      // Chave de idempotencia: dois pedidos que escapem do lock (ex.: dois
+      // processos num deploy) recebem o MESMO customer da Stripe. O id antigo
+      // entra na chave para que recriar um customer apagado nao devolva o
+      // apagado (a Stripe guarda a resposta da chave por 24h).
+      const customer = await stripe.customers.create(
+        {
+          email: user.email || undefined,
+          metadata: {
+            userId: user.id,
+            clerkId: user.clerkUserId,
+          },
         },
-      });
+        { idempotencyKey: `customer-create:${user.id}:${user.stripeCustomerId ?? 'none'}` },
+      );
 
       customerId = customer.id;
 

@@ -39,7 +39,7 @@ import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } fr
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { track } from "@/lib/analytics";
-import { createCheckoutSession } from "@/lib/stripe";
+import { CheckoutError, createCheckoutSession } from "@/lib/stripe";
 import { PLANS } from "@/components/pricing/PricingCards";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
@@ -47,6 +47,8 @@ import { PLANS } from "@/components/pricing/PricingCards";
 const DASH_COPY = {
   en: {
     planActivatedTitle: 'Plan activated!',
+    checkoutErrorTitle: 'Could not open checkout',
+    alreadySubscribedTitle: 'You are already subscribed',
     planActivatedDesc: 'Welcome to Tickrify. Your ticks are now available.',
     uploadRequired: 'Please upload a chart image.',
     invalidFormat: 'Invalid format. Upload a PNG, JPG/JPEG or WEBP image.',
@@ -72,6 +74,8 @@ const DASH_COPY = {
   },
   pt: {
     planActivatedTitle: 'Plano ativado!',
+    checkoutErrorTitle: 'Não foi possível abrir o checkout',
+    alreadySubscribedTitle: 'Você já é assinante',
     planActivatedDesc: 'Bem-vindo ao Tickrify. Seus ticks já estão disponíveis.',
     uploadRequired: 'Por favor, faça upload de uma imagem de gráfico.',
     invalidFormat: 'Formato inválido. Envie uma imagem PNG, JPG/JPEG ou WEBP.',
@@ -415,6 +419,7 @@ const DashboardPage = () => {
     try {
       const token = await getToken();
       if (!token) {
+        track('checkout_failed', { source: 'locked_value', plan: 'starter', code: 'no_token' });
         navigate('/pricing');
         return;
       }
@@ -428,19 +433,29 @@ const DashboardPage = () => {
       track('checkout_started', { plan: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35', source: 'locked_value' });
       window.location.href = url;
     } catch (error) {
-      // Registrado porque este catch era silencioso: a falha virava um desvio
-      // para /pricing sem deixar rastro no funil.
+      // Este catch era silencioso: a falha virava um desvio para /pricing sem
+      // aviso na tela e sem rastro no funil.
+      const code = error instanceof CheckoutError ? error.code : undefined;
+      const message = error instanceof Error ? error.message : '';
       track('checkout_failed', {
         source: 'locked_value',
         plan: 'starter',
-        message: error instanceof Error ? error.message.slice(0, 200) : 'unknown',
+        code: code ?? 'unknown',
+        message: message.slice(0, 200) || 'unknown',
       });
-      // Qualquer falha (cold start, rede): cai no caminho antigo, nunca num beco.
+      if (code === 'already_subscribed') {
+        // Ja paga: mandar para a pagina de precos seria vender de novo. O
+        // painel ja e o lugar certo, entao so avisa.
+        toast({ title: dc.alreadySubscribedTitle, description: message });
+        return;
+      }
+      toast({ title: dc.checkoutErrorTitle, description: message, variant: 'destructive' });
+      // Cai no caminho antigo, nunca num beco: a /pricing tem o mesmo botao.
       navigate('/pricing');
     } finally {
       setUnlockPending(false);
     }
-  }, [unlockPending, getToken, navigate]);
+  }, [unlockPending, getToken, navigate, toast, dc]);
 
   const resetNewAnalysisView = useCallback(() => {
     setActiveView('new-analysis');

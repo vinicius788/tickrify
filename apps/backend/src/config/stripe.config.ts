@@ -122,3 +122,16 @@ export function getStripeConfig() {
   };
 }
 
+
+export type StripeKeyMode = 'live' | 'test' | 'unknown';
+
+/**
+ * Modo da chave secreta, lido do prefixo (`sk_live_`/`rk_live_` vs
+ * `sk_test_`/`rk_test_`). A Stripe nao expoe isso de outro jeito sem uma
+ * chamada de rede, e o prefixo e contrato estavel da propria Stripe.
+ */
+export function stripeKeyMode(secretKey: string): StripeKeyMode {
+  if (/^(sk|rk)_live_/.test(secretKey)) return 'live';
+  if (/^(sk|rk)_test_/.test(secretKey)) return 'test';
+  return 'unknown';
+}
