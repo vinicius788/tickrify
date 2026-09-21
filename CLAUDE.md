@@ -3691,3 +3691,13 @@ ALLOW_UNAUTHENTICATED, CLERK_PUBLISHABLE_KEY, CLERK_WEBHOOK_SECRET,
 FREE_ANALYSIS_LIMIT_PER_MONTH, STRIPE_PRICE_PRO, STRIPE_PRICE_PRO_MONTHLY,
 SUPABASE_ANON_KEY, SUPABASE_JWT_SECRET, VITE_GOOGLE_ADS_ID.
 
+
+**Incidente do deploy da limpeza (21/09):** o `4e2f5bd` nao subiu no Render. O
+`@supabase/supabase-js` 2.116 (vindo do commit de vulnerabilidades) exige
+Node 22 e a imagem e `node:20-alpine`: `createClient` lanca "native WebSocket
+not found" no boot. O Render manteve a instancia anterior, sem queda. O teste de
+Docker nao pegou porque rodou sem `SUPABASE_URL`, e sem ela o cliente nunca e
+criado. Corrigido fixando `2.100.1` (a versao que ja rodava). **Regra:** o boot
+de teste no Docker precisa de TODAS as env que criam cliente no construtor
+(`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `OPENAI_API_KEY`), com valor falso, e
+subir dependencia exige conferir `engines.node` contra o `FROM` do Dockerfile.
