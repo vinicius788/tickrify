@@ -123,6 +123,7 @@ function buildSnapshot(): TechnicalAttributionPayload | null {
 }
 
 export function captureTechnicalAttribution(): void {
+  captureFbclid();
   const snapshot = buildSnapshot();
   if (!snapshot) return;
   const stored = readStored();
@@ -151,4 +152,68 @@ export function markTechnicalAttributionSynced(): void {
   const stored = readStored();
   if (!stored.first && !stored.last) return;
   writeStored({ ...stored, syncedAt: new Date().toISOString() });
+}
+
+// ─── Meta: fbclid, fbp e fbc ────────────────────────────────────────────────
+// O `fbclid` fica numa chave PROPRIA, fora do payload tecnico: o endpoint de
+// atribuicao do backend rejeita campo desconhecido (forbidNonWhitelisted), e
+// misturar quebraria a sincronizacao da origem. So com aceite de cookies.
+const FBCLID_KEY = 'tickrify_fbclid_v1';
+
+export function captureFbclid(): void {
+  if (typeof window === 'undefined' || !durableAllowed()) return;
+  try {
+    const fbclid = new URL(window.location.href).searchParams.get('fbclid');
+    if (!fbclid || !/^[A-Za-z0-9_-]{8,500}$/.test(fbclid)) return;
+    window.localStorage.setItem(FBCLID_KEY, JSON.stringify({ fbclid, capturedAt: Date.now() }));
+  } catch {
+    /* noop */
+  }
+}
+
+function readCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+/**
+ * Identificadores do Meta para a Conversions API. `_fbp`/`_fbc` sao os cookies
+ * do proprio pixel; se o `_fbc` nao existir (o pixel carregou depois que a URL
+ * perdeu o fbclid), monta no formato do Meta a partir do fbclid guardado.
+ * Sem aceite de cookies: nada.
+ */
+export function getMetaIds(): { fbp?: string; fbc?: string } {
+  if (typeof window === 'undefined' || !durableAllowed()) return {};
+  const out: { fbp?: string; fbc?: string } = {};
+  try {
+    const fbp = readCookie('_fbp');
+    if (fbp) out.fbp = fbp;
+    const fbc = readCookie('_fbc');
+    if (fbc) {
+      out.fbc = fbc;
+    } else {
+      const stored = JSON.parse(window.localStorage.getItem(FBCLID_KEY) || 'null') as { fbclid?: string; capturedAt?: number } | null;
+      if (stored?.fbclid && stored.capturedAt) out.fbc = `fb.1.${stored.capturedAt}.${stored.fbclid}`;
+    }
+  } catch {
+    /* noop */
+  }
+  return out;
+}
+
+// MESMAS regras dos DTOs do backend. Mandar valor fora do formato faria o
+// ValidationPipe recusar a requisicao inteira: um cookie estranho do pixel
+// derrubaria o CHECKOUT. Fora do formato, o campo simplesmente nao vai.
+const FBP_RE = /^fb\.\d\.\d{10,13}\.\d{3,20}$/;
+const FBC_RE = /^fb\.\d\.\d{10,13}\.[A-Za-z0-9_-]{8,500}$/;
+
+/** Corpo que o backend espera para eventos do Meta (ver DTOs do checkout e do ads-signup). */
+export function getAdsPayload(): { adsConsent: boolean; fbp?: string; fbc?: string } {
+  if (!durableAllowed()) return { adsConsent: false };
+  const { fbp, fbc } = getMetaIds();
+  return {
+    adsConsent: true,
+    ...(fbp && FBP_RE.test(fbp) ? { fbp } : {}),
+    ...(fbc && FBC_RE.test(fbc) ? { fbc } : {}),
+  };
 }

@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Post,
+  Query,
   Headers,
   RawBodyRequest,
   Req,
@@ -18,6 +19,22 @@ import { Public } from '../../common/decorators/public.decorator';
 import { BillingCycle, Currency } from '../../config/stripe.config';
 import { Throttle } from '@nestjs/throttler';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto';
+import type { MetaAdsContext } from '../../common/analytics/meta-capi';
+
+type RequestLike = { ip?: string; headers?: Record<string, string | string[] | undefined> };
+
+/** IP e user agent da propria requisicao (trust proxy=1 no main.ts). So vao ao Meta com aceite. */
+function adsContextFrom(body: CreateCheckoutSessionDto, req: RequestLike): MetaAdsContext {
+  const consent = body.adsConsent === true;
+  const ua = req.headers?.['user-agent'];
+  return {
+    consent,
+    fbp: consent ? body.fbp ?? null : null,
+    fbc: consent ? body.fbc ?? null : null,
+    ip: consent ? req.ip ?? null : null,
+    userAgent: consent ? (Array.isArray(ua) ? ua[0] : ua) ?? null : null,
+  };
+}
 
 type AuthenticatedUser = {
   id?: string;
@@ -39,6 +56,7 @@ export class StripeController {
   async createCheckoutSession(
     @CurrentUser() user: AuthenticatedUser,
     @Body() body: CreateCheckoutSessionDto,
+    @Req() req: RequestLike,
   ) {
     // Default = `starter`, o ÚNICO plano da vitrine. Era `pro` (LEGADO, 150
     // ticks): requisição sem planType vendia o plano errado pelo mesmo preço.
@@ -60,7 +78,37 @@ export class StripeController {
 
     const coupon = body.coupon === 'EARLY35' ? body.coupon : undefined;
 
-    return this.stripeService.createCheckoutSession(user.clerkUserId, planType, billingCycle, currency, coupon, body.source);
+    return this.stripeService.createCheckoutSession(
+      user.clerkUserId,
+      planType,
+      billingCycle,
+      currency,
+      coupon,
+      body.source,
+      adsContextFrom(body, req),
+    );
+  }
+
+  /**
+   * Retorno da Stripe. Com `session_id` (success_url): confirma NO SERVIDOR se
+   * a sessao e desta pessoa e se foi paga, e so entao o navegador dispara o
+   * Purchase do pixel, com o valor real. Com `outcome=canceled` (cancel_url):
+   * so registra que a pessoa voltou sem pagar.
+   */
+  @Get('checkout-status')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async getCheckoutStatus(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('session_id') sessionId?: string,
+    @Query('outcome') outcome?: string,
+  ) {
+    const safeId = typeof sessionId === 'string' && /^cs_(live|test)_[A-Za-z0-9]+$/.test(sessionId) ? sessionId : null;
+    return this.stripeService.getCheckoutStatus(
+      user.clerkUserId,
+      safeId,
+      outcome === 'canceled' ? 'canceled' : 'success',
+    );
   }
 
   /**

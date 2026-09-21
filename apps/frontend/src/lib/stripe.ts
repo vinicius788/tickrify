@@ -1,5 +1,6 @@
 // Cliente Stripe para o frontend
 import { API_BASE_URL } from './api';
+import { getAdsPayload } from './attribution';
 
 export type BillingCycle = 'monthly' | 'yearly';
 export type Currency = 'brl' | 'usd' | 'eur';
@@ -188,6 +189,9 @@ export async function createCheckoutSession(
         currency,
         ...(coupon ? { coupon } : {}),
         ...(source ? { source } : {}),
+        // Contexto do Meta (so com aceite de cookies). O servidor usa no
+        // InitiateCheckout e guarda na sessao para o Purchase do webhook.
+        ...getAdsPayload(),
       }),
     },
     'Could not start checkout. Please try again.',
@@ -210,3 +214,26 @@ function isHttpsUrl(value: unknown): value is string {
   }
 }
 
+
+/**
+ * Retorno da Stripe. Com `sessionId` (success_url) o servidor confirma se a
+ * sessao e desta pessoa e se foi paga; so com `paid: true` o painel dispara o
+ * Purchase do pixel. Com `outcome: 'canceled'` so registra o retorno.
+ * Nunca lanca: e observabilidade e confirmacao, nao pode quebrar a tela.
+ */
+export async function getCheckoutStatus(
+  token: string,
+  params: { sessionId?: string | null; outcome: 'success' | 'canceled' },
+): Promise<{ sessionId: string | null; paid: boolean; value: number | null; currency: string | null } | null> {
+  try {
+    const query = new URLSearchParams({ outcome: params.outcome });
+    if (params.sessionId) query.set('session_id', params.sessionId);
+    return await requestStripeApi(
+      `/api/stripe/checkout-status?${query.toString()}`,
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } },
+      'Could not confirm checkout.',
+    );
+  } catch {
+    return null;
+  }
+}

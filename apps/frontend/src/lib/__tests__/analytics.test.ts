@@ -71,3 +71,25 @@ describe('analytics', () => {
     );
   });
 });
+
+describe('Meta pixel: eventID para deduplicar com o servidor', () => {
+  it('InitiateCheckout, Purchase e CompleteRegistration saem com o event_id do servidor', async () => {
+    const fbq = vi.fn();
+    vi.stubGlobal('fbq', fbq);
+    (window as unknown as { fbq?: unknown }).fbq = fbq;
+    const a = await freshAnalytics();
+    a.initAnalytics();
+
+    a.track('checkout_started', { sessionId: 'cs_live_1' });
+    a.trackAdConversion('purchase', { eventId: 'purchase_cs_live_1', value: 18.85, currency: 'usd' });
+    a.trackAdConversion('signup', { eventId: 'signup_user_1' });
+
+    expect(fbq).toHaveBeenCalledWith('track', 'InitiateCheckout', {}, { eventID: 'checkout_cs_live_1' });
+    expect(fbq).toHaveBeenCalledWith('track', 'Purchase', { currency: 'USD', value: 18.85 }, { eventID: 'purchase_cs_live_1' });
+    expect(fbq).toHaveBeenCalledWith('track', 'CompleteRegistration', {}, { eventID: 'signup_user_1' });
+    // Nenhum Purchase ao iniciar checkout.
+    expect(fbq.mock.calls.filter((c) => c[1] === 'Purchase')).toHaveLength(1);
+    delete (window as unknown as { fbq?: unknown }).fbq;
+    vi.unstubAllGlobals();
+  });
+});

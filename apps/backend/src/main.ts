@@ -7,6 +7,7 @@ import { attachRequestContext } from './common/middleware/request-context.middle
 import { validateStartupEnv } from './common/utils/env-validation';
 import { isProductionRuntime } from './common/utils/runtime-env';
 import { buildHelmetConfig } from './common/utils/security-headers';
+import { describeMetaCapi } from './common/analytics/meta-capi';
 
 type GlobalWithNestApp = typeof globalThis & {
   __tickrifyNestApp?: INestApplication;
@@ -106,6 +107,7 @@ async function bootstrap() {
       `🎯 Quick grounding: ${groundingOn ? 'ON' : 'OFF ⚠️  (a vitrine vende isto — ver ENABLE_QUICK_GROUNDING)'}`,
     );
     console.log(`🧪 A/B prompt v9: ${abPercent > 0 ? `${abPercent}% dos usuários` : 'OFF'}`);
+    console.log(`📣 ${describeMetaCapi()}`);
 
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

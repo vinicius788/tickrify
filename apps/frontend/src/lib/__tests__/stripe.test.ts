@@ -23,8 +23,29 @@ describe('createCheckoutSession', () => {
 
     expect(result.url).toBe('https://checkout.stripe.com/c/pay/cs_1');
     const [, init] = fetchMock.mock.calls[0];
-    expect(JSON.parse(init.body)).toEqual({ planType: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35' });
+    // Sem aceite de cookies: `adsConsent: false` e nenhum fbp/fbc.
+    expect(JSON.parse(init.body)).toEqual({
+      planType: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35', adsConsent: false,
+    });
     expect(init.headers.Authorization).toBe('Bearer tok');
+  });
+
+  it('com aceite de cookies manda fbp/fbc validos e descarta cookie fora do formato', async () => {
+    localStorage.setItem('tickrify_cookie_consent', 'granted');
+    document.cookie = '_fbp=fb.1.1789000000000.123456789';
+    document.cookie = '_fbc=lixo-que-derrubaria-o-checkout';
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ sessionId: 'cs_1', url: 'https://checkout.stripe.com/c/pay/cs_1' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await createCheckoutSession('starter', 'tok');
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.adsConsent).toBe(true);
+    expect(body.fbp).toBe('fb.1.1789000000000.123456789');
+    expect(body.fbc).toBeUndefined();
+    localStorage.removeItem('tickrify_cookie_consent');
+    document.cookie = '_fbp=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    document.cookie = '_fbc=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
   });
 
   it('rejeita resposta sem URL em vez de redirecionar para "undefined"', async () => {

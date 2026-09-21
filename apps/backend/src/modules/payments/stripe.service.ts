@@ -12,6 +12,8 @@ import { Prisma } from '@prisma/client';
 import Stripe from 'stripe';
 import { PrismaService } from '../database/prisma.service';
 import { captureServer, type CaptureOptions } from '../../common/analytics/posthog';
+import { sendMetaEvent, type MetaAdsContext } from '../../common/analytics/meta-capi';
+import { funnelLog, safeErrorFields } from '../../common/observability/funnel-log';
 import {
   getStripeConfig,
   getPriceId,
@@ -197,6 +199,7 @@ export class StripeService implements OnModuleInit {
     currency: Currency = 'usd',
     couponId?: string,
     source?: 'pricing' | 'locked_value' | 'last_free_result',
+    ads: MetaAdsContext = { consent: false },
   ): Promise<CheckoutResult> {
     const inFlight = this.checkoutInFlight.get(clerkUserId);
     if (inFlight) {
@@ -204,7 +207,7 @@ export class StripeService implements OnModuleInit {
       return inFlight;
     }
 
-    const run = this.createCheckoutSessionUnlocked(clerkUserId, planType, billingCycle, currency, couponId, source)
+    const run = this.createCheckoutSessionUnlocked(clerkUserId, planType, billingCycle, currency, couponId, source, ads)
       .finally(() => this.checkoutInFlight.delete(clerkUserId));
     this.checkoutInFlight.set(clerkUserId, run);
     return run;
@@ -217,7 +220,12 @@ export class StripeService implements OnModuleInit {
     currency: Currency,
     couponId?: string,
     source?: 'pricing' | 'locked_value' | 'last_free_result',
+    ads: MetaAdsContext = { consent: false },
   ): Promise<CheckoutResult> {
+    const startedAt = Date.now();
+    // Resolvido logo que o usuario e lido; os logs de erro usam o que houver.
+    let funnelUser: string = clerkUserId;
+    funnelLog('checkout_requested', { user: clerkUserId, plan: planType, cycle: billingCycle, source });
     try {
       if (!['starter', 'pro', 'elite'].includes(planType)) {
         throw new BadRequestException({ code: 'invalid_plan', message: `Invalid plan type: ${planType}` });
@@ -229,6 +237,7 @@ export class StripeService implements OnModuleInit {
         where: { clerkUserId },
       });
 
+      if (user) funnelUser = user.id;
       if (!user) {
         throw new BadRequestException({
           code: 'user_not_found',
@@ -314,12 +323,19 @@ export class StripeService implements OnModuleInit {
       }
 
       if (reusable?.url) {
-        this.logger.log(`Checkout session reused: ${reusable.id} for user: ${clerkUserId}`);
+        funnelLog(
+          'checkout_session_reused',
+          { user: user.id, session: reusable.id, plan: planType, cycle: billingCycle, source, durationMs: Date.now() - startedAt },
+          { persist: this.prisma },
+        );
         return { sessionId: reusable.id, url: reusable.url, reused: true };
       }
 
       const appBaseUrl = this.resolveAppBaseUrl();
-      const successUrl = `${appBaseUrl}/dashboard?success=true`;
+      // `{CHECKOUT_SESSION_ID}` a Stripe troca pelo id real. E com ele que o
+      // painel confirma no servidor que a sessao foi paga antes de disparar o
+      // Purchase do pixel (com o mesmo event_id do servidor, para deduplicar).
+      const successUrl = `${appBaseUrl}/dashboard?success=true&session_id={CHECKOUT_SESSION_ID}`;
       const cancelUrl = `${appBaseUrl}/pricing?canceled=true`;
 
       const baseParams: Stripe.Checkout.SessionCreateParams = {
@@ -354,6 +370,18 @@ export class StripeService implements OnModuleInit {
           priceId,
           checkoutSource: source ?? 'unknown',
           ...this.stripeAttributionMetadata(user),
+          // Contexto do Meta, SO com aceite de cookies. E o que permite ao
+          // webhook mandar o Purchase pela Conversions API com boa
+          // correspondencia, horas depois, sem o navegador por perto.
+          ...(ads.consent
+            ? {
+                ads_consent: '1',
+                ...(ads.fbp ? { ads_fbp: ads.fbp } : {}),
+                ...(ads.fbc ? { ads_fbc: ads.fbc.slice(0, 500) } : {}),
+                ...(ads.ip ? { ads_ip: ads.ip.slice(0, 100) } : {}),
+                ...(ads.userAgent ? { ads_ua: ads.userAgent.slice(0, 500) } : {}),
+              }
+            : {}),
         },
         // A assinatura nasce com o dono gravado nela. E o que permite ao
         // webhook achar o usuario mesmo se o vinculo pelo customer se perder.
@@ -416,7 +444,31 @@ export class StripeService implements OnModuleInit {
         });
       }
 
-      this.logger.log(`Checkout session created: ${session.id} for user: ${clerkUserId} (${currency})`);
+      funnelLog(
+        'checkout_session_created',
+        {
+          user: user.id,
+          session: session.id,
+          plan: planType,
+          cycle: billingCycle,
+          source,
+          amount: (session.amount_total ?? 0) / 100,
+          currency,
+          durationMs: Date.now() - startedAt,
+        },
+        { persist: this.prisma },
+      );
+
+      // InitiateCheckout pelo servidor, com o mesmo event_id do pixel
+      // (checkout_<sessao>): o Meta fica com um so. Fire-and-forget.
+      void sendMetaEvent({
+        eventName: 'InitiateCheckout',
+        eventId: `checkout_${session.id}`,
+        eventSourceUrl: `${appBaseUrl}/pricing`,
+        user: { externalId: clerkUserId, email: user.email },
+        ads,
+        customData: { value: (session.amount_total ?? 0) / 100, currency, contentName: planType },
+      });
 
       return {
         sessionId: session.id,
@@ -424,8 +476,64 @@ export class StripeService implements OnModuleInit {
         reused: false,
       };
     } catch (error) {
-      this.logger.error('Error creating checkout session:', error);
+      // O objeto de erro da Stripe carrega corpo e cabecalhos da resposta:
+      // loga so o essencial (tipo, codigo, requestId, mensagem sanitizada).
+      const httpError = error as { response?: { code?: string } };
+      funnelLog(
+        'checkout_failed',
+        {
+          user: funnelUser,
+          plan: planType,
+          source,
+          ...safeErrorFields(error),
+          ...(httpError?.response?.code ? { code: httpError.response.code } : {}),
+          durationMs: Date.now() - startedAt,
+        },
+        { level: 'error', persist: funnelUser !== clerkUserId ? this.prisma : undefined },
+      );
       this.rethrowCheckoutError(error);
+    }
+  }
+
+  /**
+   * Retorno da Stripe (ver StripeController.getCheckoutStatus). So confirma
+   * sessao da PROPRIA pessoa: `client_reference_id` e o id dela no banco.
+   */
+  async getCheckoutStatus(
+    clerkUserId: string,
+    sessionId: string | null,
+    outcome: 'success' | 'canceled',
+  ): Promise<{ sessionId: string | null; paid: boolean; value: number | null; currency: string | null }> {
+    const user = await this.prisma.user.findUnique({ where: { clerkUserId }, select: { id: true } });
+    const userId = user?.id ?? clerkUserId;
+
+    if (!sessionId) {
+      funnelLog('checkout_returned', { user: userId, outcome }, { persist: user ? this.prisma : undefined });
+      return { sessionId: null, paid: false, value: null, currency: null };
+    }
+
+    try {
+      const session = await this.getStripeClient().checkout.sessions.retrieve(sessionId);
+      const mine = Boolean(user) && (session.client_reference_id === user!.id || session.metadata?.userId === user!.id);
+      if (!mine) {
+        funnelLog('checkout_returned', { user: userId, session: sessionId, outcome, reason: 'not_owner' }, { level: 'warn' });
+        return { sessionId, paid: false, value: null, currency: null };
+      }
+      const paid = session.payment_status === 'paid' || session.payment_status === 'no_payment_required';
+      funnelLog(
+        'checkout_returned',
+        { user: userId, session: sessionId, outcome, status: session.status, paymentStatus: session.payment_status, paid },
+        { persist: this.prisma },
+      );
+      return {
+        sessionId,
+        paid,
+        value: paid ? (session.amount_total ?? 0) / 100 : null,
+        currency: paid ? String(session.currency || 'usd').toUpperCase() : null,
+      };
+    } catch (error) {
+      funnelLog('checkout_returned', { user: userId, session: sessionId, outcome, ...safeErrorFields(error) }, { level: 'warn' });
+      return { sessionId, paid: false, value: null, currency: null };
     }
   }
 
@@ -628,6 +736,14 @@ export class StripeService implements OnModuleInit {
         stack: error instanceof Error ? error.stack : undefined,
       });
       this.rethrowStripeError(error, 'Falha ao criar portal do cliente no Stripe.');
+    }
+  }
+
+  private safeAppUrl(path: string): string | undefined {
+    try {
+      return `${this.resolveAppBaseUrl()}${path}`;
+    } catch {
+      return undefined;
     }
   }
 
@@ -844,7 +960,9 @@ export class StripeService implements OnModuleInit {
         stripeConfig.webhookSecret,
       );
     } catch (error) {
-      this.logger.error('Error verifying webhook event:', error);
+      // NAO logar o erro cru: o de assinatura invalida carrega o corpo inteiro
+      // do evento (e-mail, nome, endereco de cobranca) em `payload`.
+      funnelLog('webhook_failed', { reason: 'verification', ...safeErrorFields(error) }, { level: 'warn' });
       const stripeError = error as { type?: string };
       if (stripeError?.type === 'StripeSignatureVerificationError') {
         throw new BadRequestException('Invalid webhook signature');
@@ -863,14 +981,14 @@ export class StripeService implements OnModuleInit {
       throw new ConflictException('Webhook event is already being processed');
     }
 
-    this.logger.log(`Processing webhook event: ${event.type} (${event.id})`);
+    funnelLog('webhook_received', { event: event.id, eventType: event.type });
     try {
       await this.dispatchWebhookEvent(event);
       await this.finishWebhookEvent(event.id, 'processed');
       return { received: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`[webhook] Falha em ${event.type} ${event.id}: ${message}`, error);
+      funnelLog('webhook_failed', { event: event.id, eventType: event.type, ...safeErrorFields(error), message }, { level: 'error' });
       await this.finishWebhookEvent(event.id, 'failed', message);
       this.rethrowStripeError(error, 'Falha ao processar webhook do Stripe.');
     }
@@ -883,7 +1001,11 @@ export class StripeService implements OnModuleInit {
         return;
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
-        await this.handleSubscriptionChanged(event.data.object as Stripe.Subscription, event.type);
+        await this.handleSubscriptionChanged(
+          event.data.object as Stripe.Subscription,
+          event.type,
+          (event.data as { previous_attributes?: Record<string, unknown> }).previous_attributes,
+        );
         return;
       case 'customer.subscription.deleted':
         await this.handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
@@ -894,6 +1016,23 @@ export class StripeService implements OnModuleInit {
       case 'invoice.payment_failed':
         await this.handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
         return;
+      // Os dois abaixo so chegam se estiverem marcados no endpoint da Stripe.
+      // Recusa DENTRO da pagina de checkout nao gera fatura: sem este evento,
+      // "cartao sem saldo" (os 2 casos de setembro) era invisivel no log.
+      case 'payment_intent.payment_failed':
+        await this.handlePaymentIntentFailed(event.data.object as Stripe.PaymentIntent);
+        return;
+      // Sessao aberta que ninguem pagou em 24h: o abandono, com data e sessao.
+      case 'checkout.session.expired': {
+        const expired = event.data.object as Stripe.Checkout.Session;
+        const expiredUser = expired.client_reference_id || expired.metadata?.userId || null;
+        funnelLog(
+          'checkout_returned',
+          { user: expiredUser, session: expired.id, outcome: 'expired', status: expired.status },
+          { persist: expiredUser ? this.prisma : undefined },
+        );
+        return;
+      }
       default:
         this.logger.log(`Unhandled event type: ${event.type}`);
     }
@@ -1030,6 +1169,37 @@ export class StripeService implements OnModuleInit {
         },
         { dedupeKey: `checkout_completed:${session.id}`, timestamp: new Date(session.created * 1000) },
       );
+    } catch {
+      /* analytics nunca pode quebrar o webhook */
+    }
+
+    // Purchase pela Conversions API: SO aqui, com pagamento confirmado e
+    // assinatura ativa. Mesmo event_id do pixel (purchase_<sessao>), que so
+    // dispara depois que o servidor confirma a sessao paga (checkout-status).
+    try {
+      const meta = session.metadata ?? {};
+      const clerkId = String(session.metadata?.clerkUserId || '').trim();
+      if (clerkId) {
+        void sendMetaEvent({
+          eventName: 'Purchase',
+          eventId: `purchase_${session.id}`,
+          // URL e opcional para o Meta: nunca pode ser o motivo de o Purchase nao sair.
+          eventSourceUrl: this.safeAppUrl('/dashboard'),
+          user: { externalId: clerkId, email: session.customer_details?.email ?? null },
+          ads: {
+            consent: meta.ads_consent === '1',
+            fbp: meta.ads_fbp ?? null,
+            fbc: meta.ads_fbc ?? null,
+            ip: meta.ads_ip ?? null,
+            userAgent: meta.ads_ua ?? null,
+          },
+          customData: {
+            value: (session.amount_total ?? 0) / 100,
+            currency: String(session.currency || 'usd'),
+            contentName: meta.planType,
+          },
+        });
+      }
     } catch {
       /* analytics nunca pode quebrar o webhook */
     }
@@ -1172,7 +1342,11 @@ export class StripeService implements OnModuleInit {
    * gravam o estado ATUAL. A Stripe nao garante ordem de entrega; gravar o
    * payload deixava um `updated` atrasado reativar uma assinatura ja cancelada.
    */
-  private async handleSubscriptionChanged(subscription: Stripe.Subscription, eventType?: string) {
+  private async handleSubscriptionChanged(
+    subscription: Stripe.Subscription,
+    eventType?: string,
+    previous?: Record<string, unknown>,
+  ) {
     const synced = await this.syncSubscriptionFromStripe(subscription.id, {
       userIdHint: subscription.metadata?.userId ?? null,
     });
@@ -1182,7 +1356,38 @@ export class StripeService implements OnModuleInit {
       );
     }
 
+    // Cancelamento agendado (fica ativa ate o fim do periodo). O cancelamento
+    // de fato chega depois como customer.subscription.deleted.
+    if (
+      eventType === 'customer.subscription.updated' &&
+      previous &&
+      'cancel_at_period_end' in previous &&
+      synced.subscription.cancel_at_period_end !== previous.cancel_at_period_end
+    ) {
+      funnelLog(
+        'subscription_canceled',
+        {
+          user: synced.userId,
+          subscription: synced.subscription.id,
+          status: synced.subscription.status,
+          cancelAtPeriodEnd: synced.subscription.cancel_at_period_end,
+          reason: synced.subscription.cancel_at_period_end ? 'scheduled' : 'reactivated',
+        },
+        { persist: this.prisma },
+      );
+    }
+
     if (eventType === 'customer.subscription.created') {
+      funnelLog(
+        'subscription_created',
+        {
+          user: synced.userId,
+          subscription: synced.subscription.id,
+          status: synced.subscription.status,
+          source: synced.subscription.metadata?.checkoutSource ?? null,
+        },
+        { persist: this.prisma },
+      );
       await this.captureForUser(
         synced.userId,
         'subscription_created',
@@ -1254,8 +1459,28 @@ export class StripeService implements OnModuleInit {
       return;
     }
 
-    this.logger.log(
-      `Subscription ${subscription.id} marked as ${synced.subscription.status} for user ${synced.userId}`,
+    funnelLog(
+      'subscription_canceled',
+      { user: synced.userId, subscription: subscription.id, status: synced.subscription.status, reason: 'ended' },
+      { persist: this.prisma },
+    );
+  }
+
+  /** Recusa dentro da pagina de checkout (sem fatura): so observabilidade. */
+  private async handlePaymentIntentFailed(intent: Stripe.PaymentIntent) {
+    const userId = await this.findUserIdByCustomer(intent.customer as string | Stripe.Customer | null);
+    const error = intent.last_payment_error;
+    funnelLog(
+      'payment_failed',
+      {
+        user: userId,
+        amount: (intent.amount ?? 0) / 100,
+        currency: intent.currency,
+        code: error?.code ?? null,
+        declineCode: error?.decline_code ?? null,
+        reason: 'checkout_attempt',
+      },
+      { level: 'warn', persist: userId ? this.prisma : undefined },
     );
   }
 
@@ -1276,7 +1501,18 @@ export class StripeService implements OnModuleInit {
       throw new Error(`User not found for invoice ${invoice.id} (subscription ${subscriptionId})`);
     }
 
-    this.logger.log(`Payment succeeded for user: ${synced.userId} (invoice ${invoice.id})`);
+    funnelLog(
+      'payment_succeeded',
+      {
+        user: synced.userId,
+        invoice: invoice.id,
+        subscription: subscriptionId,
+        billingReason: invoice.billing_reason ?? null,
+        amount: (invoice.amount_paid ?? 0) / 100,
+        currency: invoice.currency,
+      },
+      { persist: this.prisma },
+    );
 
     // Receita confirmada (primeira cobranca e renovacoes). So o backend emite.
     const paidAt = invoice.status_transitions?.paid_at ?? invoice.created;
@@ -1342,7 +1578,36 @@ export class StripeService implements OnModuleInit {
       customerId: String(invoice.customer || ''),
     };
 
-    this.logger.warn(`Payment failed for user: ${userId ?? 'desconhecido'} ${JSON.stringify(details)}`);
+    // Motivo da recusa (codigo e decline_code da Stripe, nunca dado de cartao).
+    // Uma chamada a mais, so em falha, e nunca derruba o webhook.
+    let declineCode: string | null = null;
+    let failureCode: string | null = null;
+    try {
+      const expanded = await this.getStripeClient().invoices.retrieve(invoice.id, { expand: ['payment_intent'] });
+      const pi = expanded.payment_intent as Stripe.PaymentIntent | string | null;
+      if (pi && typeof pi !== 'string') {
+        declineCode = pi.last_payment_error?.decline_code ?? null;
+        failureCode = pi.last_payment_error?.code ?? null;
+      }
+    } catch {
+      /* sem motivo detalhado; o resto do registro segue */
+    }
+    funnelLog(
+      'payment_failed',
+      {
+        user: userId,
+        invoice: invoice.id,
+        subscription: subscriptionId,
+        status: details.subscriptionStatus,
+        amount: (invoice.amount_due ?? 0) / 100,
+        currency: invoice.currency,
+        attempt: invoice.attempt_count ?? null,
+        billingReason: invoice.billing_reason ?? null,
+        code: failureCode,
+        declineCode,
+      },
+      { level: 'warn' },
+    );
 
     await this.prisma.adminAudit.create({
       data: {

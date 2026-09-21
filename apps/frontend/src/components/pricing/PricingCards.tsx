@@ -278,7 +278,7 @@ export function PricingCards() {
          *
          * A copy da /pricing foi ajustada junto: ela nao pede mais o codigo,
          * porque agora nao ha codigo para pedir. */
-        const { url } = await createCheckoutSession(planType, token, cycle, currency, 'EARLY35', source);
+        const { url, sessionId } = await createCheckoutSession(planType, token, cycle, currency, 'EARLY35', source);
         // Dispara SO com a URL da Stripe em maos: antes saia antes da chamada a
         // API e contava clique como checkout, inclusive quando a sessao falhava.
         track('checkout_started', {
@@ -287,6 +287,7 @@ export function PricingCards() {
           currency,
           coupon: 'EARLY35',
           source,
+          sessionId,
           resumedAfterAuth: Boolean(options.resumed),
         });
         clearCheckoutIntent();

@@ -616,6 +616,26 @@ class APIClient {
     );
   }
 
+  /** CompleteRegistration pela Conversions API (o backend confere conta nova e aceite). */
+  async sendAdsSignup(
+    payload: { adsConsent: boolean; fbp?: string; fbc?: string },
+    token: string | null,
+  ): Promise<void> {
+    await this.request(
+      '/api/auth/ads-signup',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...this.getAuthHeader(token),
+        },
+        body: JSON.stringify(payload),
+      },
+      'Failed to send signup signal',
+      APIClient.REQUEST_TIMEOUT_MS,
+    );
+  }
+
   async setFavorite(
     analysisId: string,
     isFavorite: boolean,

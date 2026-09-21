@@ -1,10 +1,28 @@
-import { Body, Controller, Get, OnModuleInit, Post, UseGuards } from '@nestjs/common';
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Body, Controller, Get, OnModuleInit, Post, Req, UseGuards } from '@nestjs/common';
+import { IsBoolean, IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { AuthGuard } from './auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../database/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { fetchClerkEmail } from '../../common/utils/clerk-email';
+import { sendMetaEvent } from '../../common/analytics/meta-capi';
+
+/** Sinal de cadastro para o Meta. Todo campo com decorator: o ValidationPipe rejeita o resto. */
+export class AdsSignupDto {
+  @IsBoolean()
+  adsConsent!: boolean;
+
+  @IsOptional()
+  @Matches(/^fb\.\d\.\d{10,13}\.\d{3,20}$/)
+  fbp?: string;
+
+  @IsOptional()
+  @Matches(/^fb\.\d\.\d{10,13}\.[A-Za-z0-9_-]{8,500}$/)
+  fbc?: string;
+}
+
+/** Cadastro so conta como "novo" para o Meta nas primeiras 24h da conta. */
+const ADS_SIGNUP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Origem declarada pelo proprio usuario.
@@ -201,6 +219,47 @@ export class AuthController implements OnModuleInit {
     });
 
     return { ok: true, firstTouchSaved: !atual.firstTouchAttribution };
+  }
+
+  /**
+   * CompleteRegistration pela Conversions API. O navegador chama UMA vez,
+   * logo depois do cadastro e so com aceite de cookies; o servidor confere que
+   * a conta existe e e recente, e manda com o MESMO event_id do pixel
+   * (signup_<id do Clerk>), entao o Meta conta um so.
+   *
+   * Por que nao no auth.guard, na criacao do usuario: la nao ha como saber se
+   * a pessoa aceitou cookies de marketing, nem o fbp/fbc do navegador.
+   */
+  @Post('ads-signup')
+  @UseGuards(AuthGuard)
+  async adsSignup(
+    @CurrentUser() user: { id?: string; clerkUserId: string },
+    @Body() body: AdsSignupDto,
+    @Req() req: { ip?: string; headers?: Record<string, string | string[] | undefined> },
+  ) {
+    if (!body.adsConsent) return { sent: false, reason: 'no_consent' };
+    const dbUser = await this.prisma.user.findUnique({
+      where: user.id ? { id: user.id } : { clerkUserId: user.clerkUserId },
+      select: { clerkUserId: true, email: true, createdAt: true },
+    });
+    if (!dbUser) return { sent: false, reason: 'unknown_user' };
+    if (Date.now() - dbUser.createdAt.getTime() > ADS_SIGNUP_WINDOW_MS) return { sent: false, reason: 'not_new' };
+
+    const ua = req.headers?.['user-agent'];
+    const sent = await sendMetaEvent({
+      eventName: 'CompleteRegistration',
+      eventId: `signup_${dbUser.clerkUserId}`,
+      eventTime: dbUser.createdAt,
+      user: { externalId: dbUser.clerkUserId, email: dbUser.email },
+      ads: {
+        consent: true,
+        fbp: body.fbp ?? null,
+        fbc: body.fbc ?? null,
+        ip: req.ip ?? null,
+        userAgent: (Array.isArray(ua) ? ua[0] : ua) ?? null,
+      },
+    });
+    return { sent };
   }
 
   @Get('me')

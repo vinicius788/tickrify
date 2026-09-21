@@ -4,6 +4,8 @@ import { StripeService } from './stripe.service';
 import { captureServer } from '../../common/analytics/posthog';
 
 jest.mock('../../common/analytics/posthog', () => ({ captureServer: jest.fn() }));
+jest.mock('../../common/analytics/meta-capi', () => ({ sendMetaEvent: jest.fn().mockResolvedValue(true) }));
+import { sendMetaEvent } from '../../common/analytics/meta-capi';
 
 const STARTER_MONTHLY = 'price_1TRvEJB1hl0IoocUvbCyxkt5'; // 200 ticks
 
@@ -45,6 +47,7 @@ describe('StripeService webhooks', () => {
     process.env.STRIPE_SECRET_KEY = 'sk_test_x';
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_x';
     (captureServer as jest.Mock).mockClear();
+    (sendMetaEvent as jest.Mock).mockClear();
 
     prisma = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'evt_1' }]),
@@ -160,6 +163,29 @@ describe('StripeService webhooks', () => {
       expect(captureServer).not.toHaveBeenCalledWith('clerk_1', 'subscription_activated', expect.anything(), expect.anything());
     });
 
+    it('Purchase no Meta SO com pagamento confirmado, com o event_id do pixel e o contexto da sessao', async () => {
+      (sendMetaEvent as jest.Mock).mockClear();
+      await deliver(
+        'checkout.session.completed',
+        session({
+          amount_total: 1885,
+          currency: 'usd',
+          customer_details: { email: 'a@b.com' },
+          metadata: { userId: 'usr_1', clerkUserId: 'clerk_1', ads_consent: '1', ads_fbp: 'fb.1.1789000000000.123456789' },
+        }),
+      );
+
+      expect(sendMetaEvent).toHaveBeenCalledTimes(1);
+      expect(sendMetaEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventName: 'Purchase',
+          eventId: 'purchase_cs_1',
+          ads: expect.objectContaining({ consent: true, fbp: 'fb.1.1789000000000.123456789' }),
+          customData: expect.objectContaining({ value: 18.85, currency: 'usd' }),
+        }),
+      );
+    });
+
     it('pagamento pendente grava `incomplete` e NAO libera acesso nem conta receita', async () => {
       stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'incomplete' }));
 
@@ -169,6 +195,7 @@ describe('StripeService webhooks', () => {
         expect.objectContaining({ create: expect.objectContaining({ status: 'incomplete' }) }),
       );
       expect(captureServer).not.toHaveBeenCalled();
+      expect(sendMetaEvent).not.toHaveBeenCalledWith(expect.objectContaining({ eventName: 'Purchase' }));
     });
 
     it('sem metadata usa o client_reference_id para achar o usuario', async () => {

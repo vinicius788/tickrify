@@ -39,7 +39,7 @@ import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } fr
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { track, trackAdConversion } from "@/lib/analytics";
-import { CheckoutError, createCheckoutSession } from "@/lib/stripe";
+import { CheckoutError, createCheckoutSession, getCheckoutStatus } from "@/lib/stripe";
 import { checkoutReturnPath, loadCheckoutIntent } from "@/lib/checkoutIntent";
 import { PLANS } from "@/components/pricing/PricingCards";
 
@@ -403,8 +403,23 @@ const DashboardPage = () => {
       // chamava `subscription_activated`, o mesmo nome do backend, e a receita
       // contava em dobro. Os pixels de anuncio so existem no navegador, entao
       // a conversao de compra deles continua saindo daqui.
-      track('checkout_success_viewed');
-      trackAdConversion('purchase');
+      const sessionId = params.get('session_id');
+      track('checkout_success_viewed', { sessionId });
+      // Purchase do pixel SO depois que o servidor confirma a sessao paga (e
+      // desta pessoa), com o valor real e o mesmo event_id do servidor. Voltar
+      // para esta URL sem ter pago nao conta compra.
+      void getToken().then(async (token) => {
+        if (!token) return;
+        const status = await getCheckoutStatus(token, { sessionId, outcome: 'success' });
+        if (status?.paid && status.sessionId) {
+          trackAdConversion('purchase', {
+            eventId: `purchase_${status.sessionId}`,
+            transactionId: status.sessionId,
+            value: status.value ?? 0,
+            currency: status.currency ?? 'USD',
+          });
+        }
+      });
       toast({
         title: dc.planActivatedTitle,
         description: dc.planActivatedDesc,
@@ -415,7 +430,7 @@ const DashboardPage = () => {
       return;
     }
 
-  }, [toast, dc]);
+  }, [toast, dc, getToken]);
 
   // Ativação do funil: usuário entrou no modo demo (sem login).
   useEffect(() => {
@@ -471,8 +486,8 @@ const DashboardPage = () => {
       // A moeda é USD fixo: o `detectCurrency` daqui mandava navegador pt-BR
       // para o price BRL congelado em jun/2026.
       track('upgrade_clicked', { source, coupon: 'EARLY35' });
-      const { url } = await createCheckoutSession('starter', token, 'monthly', 'usd', 'EARLY35', source);
-      track('checkout_started', { plan: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35', source });
+      const { url, sessionId } = await createCheckoutSession('starter', token, 'monthly', 'usd', 'EARLY35', source);
+      track('checkout_started', { plan: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35', source, sessionId });
       window.location.href = url;
     } catch (error) {
       // Este catch era silencioso: a falha virava um desvio para /pricing sem

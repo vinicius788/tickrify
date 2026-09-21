@@ -9,6 +9,7 @@ import { useEffect, useRef } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { identifyUser, resetAnalytics, track, trackAdConversion } from '@/lib/analytics';
 import {
+  getAdsPayload,
   getAttributionTouches,
   getTechnicalAttributionPayload,
   markTechnicalAttributionSynced,
@@ -88,7 +89,16 @@ export function AnalyticsIdentify() {
         } catch {
           /* noop */
         }
-        trackAdConversion('signup');
+        // Mesmo event_id do servidor (signup_<id do Clerk>): o Meta conta um so.
+        trackAdConversion('signup', { eventId: `signup_${user.id}` });
+        // Servidor manda o mesmo evento pela Conversions API (com IP/UA/fbp/fbc
+        // da propria requisicao). So com aceite: sem ele o payload diz que nao.
+        const ads = getAdsPayload();
+        if (ads.adsConsent) {
+          void getToken({ skipCache: true })
+            .then((token) => (token ? apiClient.sendAdsSignup(ads, token) : undefined))
+            .catch(() => undefined);
+        }
 
         // Funil da demo (/try): se o cadastro veio de lá, fecha o loop.
         // A flag é marcada no clique do CTA da demo e vale por 24h.

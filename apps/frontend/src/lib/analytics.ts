@@ -81,24 +81,43 @@ function initMetaPixel(): void {
 
 // Espelha eventos-chave do funil para o Meta Pixel (nomes padrão do Meta,
 // para o algoritmo de ads otimizar por conversão real).
+// `eventID` = o mesmo `event_id` que o servidor manda pela Conversions API
+// (meta-capi.ts no backend). O Meta junta os dois e conta um so:
+//   CompleteRegistration signup_<id do Clerk> · InitiateCheckout checkout_<sessao> · Purchase purchase_<sessao>
+function metaEventOptions(eventId: unknown): { eventID: string } | undefined {
+  return typeof eventId === 'string' && eventId ? { eventID: eventId } : undefined;
+}
+
 function trackMeta(event: FunnelEvent | AdEvent, props?: Record<string, unknown>): void {
   if (typeof window === 'undefined' || !window.fbq) return;
   try {
     switch (event) {
       case 'ad_signup':
-        window.fbq('track', 'CompleteRegistration');
+        window.fbq('track', 'CompleteRegistration', {}, metaEventOptions(props?.eventId));
         break;
       case 'pricing_viewed':
         window.fbq('track', 'ViewContent', { content_name: 'pricing' });
         break;
       case 'checkout_started':
-        window.fbq('track', 'InitiateCheckout');
+        // So existe DEPOIS que a Stripe devolveu a sessao (nunca no clique).
+        window.fbq(
+          'track',
+          'InitiateCheckout',
+          {},
+          metaEventOptions(props?.sessionId ? `checkout_${String(props.sessionId)}` : undefined),
+        );
         break;
       case 'ad_purchase':
-        window.fbq('track', 'Purchase', {
-          currency: String(props?.currency || 'USD').toUpperCase(),
-          value: Number(props?.value) || 0,
-        });
+        // So chamado com pagamento CONFIRMADO pelo servidor (checkout-status).
+        window.fbq(
+          'track',
+          'Purchase',
+          {
+            currency: String(props?.currency || 'USD').toUpperCase(),
+            value: Number(props?.value) || 0,
+          },
+          metaEventOptions(props?.eventId),
+        );
         break;
       case 'analysis_completed':
         window.fbq('trackCustom', 'AnalysisCompleted', {
@@ -227,7 +246,7 @@ function trackGoogle(event: FunnelEvent | AdEvent, props?: Record<string, unknow
       case 'ad_purchase': {
         const value = Number(props?.value) || 0;
         const currency = String(props?.currency || 'USD').toUpperCase();
-        const transactionId = String(props?.subscriptionId ?? props?.userId ?? Date.now());
+        const transactionId = String(props?.transactionId ?? props?.subscriptionId ?? props?.userId ?? Date.now());
         window.gtag('event', 'purchase', {
           send_to: GOOGLE_TARGETS,
           value,

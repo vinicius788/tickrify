@@ -1,4 +1,6 @@
 import { useEffect, useMemo } from 'react';
+import { useAuth } from '@clerk/clerk-react';
+import { getCheckoutStatus } from '@/lib/stripe';
 import SiteLayout from '@/components/layout/SiteLayout';
 import { PricingCards } from '@/components/pricing/PricingCards';
 import { useToast } from '@/hooks/use-toast';
@@ -95,6 +97,7 @@ const PRICING_COPY = {
 
 export default function PricingPage() {
   const { toast } = useToast();
+  const { getToken } = useAuth();
   const { language } = useLanguage();
   const copy = language === 'pt' ? PRICING_COPY.pt : PRICING_COPY.en;
 
@@ -154,13 +157,16 @@ export default function PricingPage() {
       // A pessoa chegou na pagina da Stripe e voltou sem pagar. Sem este
       // evento o funil nao separava "abandonou no checkout" de "nunca chegou".
       track('checkout_canceled', { source: 'stripe_cancel_url' });
+      // Registro no servidor (log [funnel] + historico do usuario): sem isto,
+      // "voltou da Stripe sem pagar" so existia para quem aceitou cookies.
+      void getToken().then((token) => (token ? getCheckoutStatus(token, { outcome: 'canceled' }) : null));
       toast({
         title: copy.canceledTitle,
         description: copy.canceledDesc,
       });
       window.history.replaceState({}, '', '/pricing');
     }
-  }, [toast, copy]);
+  }, [toast, copy, getToken]);
 
   return (
     <SiteLayout active="pricing">

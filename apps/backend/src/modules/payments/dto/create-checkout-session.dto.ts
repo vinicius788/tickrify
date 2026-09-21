@@ -1,4 +1,4 @@
-import { IsEnum, IsIn, IsOptional } from 'class-validator';
+import { IsBoolean, IsEnum, IsIn, IsOptional, Matches } from 'class-validator';
 import { BillingCycle, Currency, PlanType } from '../../../config/stripe.config';
 
 enum PlanTypeDto {
@@ -47,4 +47,20 @@ export class CreateCheckoutSessionDto {
   @IsOptional()
   @IsIn(['pricing', 'locked_value', 'last_free_result'])
   source?: 'pricing' | 'locked_value' | 'last_free_result';
+
+  /**
+   * Meta (anuncios). So vem preenchido quando o navegador aceitou cookies de
+   * marketing. Formatos validados aqui E de novo no meta-capi antes de sair.
+   */
+  @IsOptional()
+  @IsBoolean()
+  adsConsent?: boolean;
+
+  @IsOptional()
+  @Matches(/^fb\.\d\.\d{10,13}\.\d{3,20}$/)
+  fbp?: string;
+
+  @IsOptional()
+  @Matches(/^fb\.\d\.\d{10,13}\.[A-Za-z0-9_-]{8,500}$/)
+  fbc?: string;
 }
