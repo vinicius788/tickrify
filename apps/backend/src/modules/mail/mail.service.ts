@@ -93,10 +93,18 @@ export class MailService {
   }
 
   /** Recuperação: créditos grátis acabaram e o usuário não assinou. */
-  async sendRecovery(to: string): Promise<void> {
+  /**
+   * `offer`: o cupom so entra no texto se ainda estiver ativo na Stripe.
+   * Prometer desconto esgotado e cobrar cheio e exatamente o que isto evita.
+   */
+  async sendRecovery(to: string, offer?: { code: string; percentOff: number | null } | null): Promise<void> {
+    const oferta =
+      offer && offer.percentOff
+        ? ` and keep this early-user code: <b>${offer.code}</b> (${offer.percentOff}% off your first month)`
+        : '';
     const html = this.wrap(
       "Your analyses ran out, and your trades will not wait",
-      `You used your free analyses. Looks like the AI's been helping you confirm entries, so it makes no sense to go back to trading blind.<br><br>Subscribe for 200 analyses a month and keep this early-user code: <b>EARLY35</b> (35% off your first month).`,
+      `You used your free analyses. Looks like the AI's been helping you confirm entries, so it makes no sense to go back to trading blind.<br><br>Subscribe for 200 analyses a month${oferta}.`,
       'Subscribe',
       `${this.appUrl}/pricing`,
     );

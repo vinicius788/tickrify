@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useState } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
+import { useFoundingOffer } from '@/hooks/useFoundingOffer';
 
 // Founding Trader: os primeiros 50 travam o preço de lançamento.
 // Era uma faixa verde neon com texto preto, a primeira coisa que a página
@@ -16,8 +17,10 @@ const FoundingTraderBanner = () => {
   const { language } = useLanguage();
   const [dismissed, setDismissed] = useState(false);
   const copy = language === 'pt' ? COPY.pt : COPY.en;
+  // Sem cupom ativo na Stripe a oferta acabou: a faixa some junto.
+  const offer = useFoundingOffer();
 
-  if (dismissed) return null;
+  if (dismissed || !offer) return null;
 
   return (
     <div className="site-banner">

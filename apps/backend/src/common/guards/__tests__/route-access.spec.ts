@@ -260,6 +260,7 @@ describe('controle de acesso das rotas', () => {
         'health.controller.ts::getLiveness',
         'health.controller.ts::getReadiness',
         'market.controller.ts::getContext',
+        'stripe.controller.ts::getOffer',
         'stripe.controller.ts::handleWebhook',
       ].sort(),
     );

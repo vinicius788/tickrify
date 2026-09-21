@@ -14,6 +14,7 @@ import { PrismaService } from '../database/prisma.service';
 import { captureServer, type CaptureOptions } from '../../common/analytics/posthog';
 import { sendMetaEvent, type MetaAdsContext } from '../../common/analytics/meta-capi';
 import { funnelLog, safeErrorFields } from '../../common/observability/funnel-log';
+import { FOUNDING_COUPON_ID, getFoundingOffer, type FoundingOffer } from './founding-offer';
 import {
   getStripeConfig,
   getPriceId,
@@ -109,6 +110,11 @@ export class StripeService implements OnModuleInit {
     } catch (error) {
       this.logger.error('[webhook] Nao consegui garantir a tabela StripeWebhookEvent.', error);
     }
+  }
+
+  /** Oferta EARLY35 como a Stripe a ve agora (cache de 10 min). */
+  getFoundingOffer(): Promise<FoundingOffer> {
+    return getFoundingOffer(this.stripe);
   }
 
   private getStripeClient(): Stripe {
@@ -267,6 +273,14 @@ export class StripeService implements OnModuleInit {
 
       const customerId = await this.resolveOrCreateCustomerId(user);
       const stripe = this.getStripeClient();
+
+      // Cupom esgotado ou expirado nao vai para a sessao: a vitrine ja parou de
+      // anuncia-lo, e a sessao sem ele abre de primeira em vez de depender do
+      // fallback de erro mais abaixo.
+      if (couponId === FOUNDING_COUPON_ID && !(await this.getFoundingOffer()).active) {
+        this.logger.warn(`[stripe] ${FOUNDING_COUPON_ID} sem usos ou expirado; checkout sem desconto.`);
+        couponId = undefined;
+      }
 
       // Trava 2, Stripe: cobre o intervalo entre o pagamento e o webhook, em
       // que o banco ainda nao sabe da assinatura. Se esta consulta falhar, o

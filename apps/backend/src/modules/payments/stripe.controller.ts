@@ -141,6 +141,18 @@ export class StripeController {
    * handleWebhookEvent — rota aberta, corpo autenticado. Sem assinatura válida
    * o serviço rejeita antes de tocar o banco.
    */
+  /**
+   * Oferta Founding Trader para a vitrine. Publica porque a /pricing e a home
+   * mostram (ou escondem) a oferta para quem nao esta logado. Nao expoe nada
+   * alem de "existe, qual codigo, quantos por cento".
+   */
+  @Public()
+  @Get('offer')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  getOffer() {
+    return this.stripeService.getFoundingOffer();
+  }
+
   @Public()
   @Post('webhook')
   @HttpCode(HttpStatus.OK)

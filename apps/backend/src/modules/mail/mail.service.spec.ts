@@ -21,4 +21,19 @@ describe('MailService', () => {
     expect(body.to).toBe('ana@example.com');
     expect(body.reply_to).toBe('support@tickrify.com');
   });
+
+  it('recuperacao so cita o cupom quando a oferta vem ativa', async () => {
+    process.env.RESEND_API_KEY = 're_test';
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '' });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await new MailService().sendRecovery('ana@example.com', { code: 'EARLY35', percentOff: 35 });
+    await new MailService().sendRecovery('ana@example.com', null);
+
+    const [comOferta, semOferta] = fetchMock.mock.calls.map((c) => JSON.parse(c[1].body).html as string);
+    expect(comOferta).toContain('EARLY35');
+    expect(comOferta).toContain('35% off');
+    expect(semOferta).not.toContain('EARLY35');
+    expect(semOferta).not.toMatch(/% off/);
+  });
 });

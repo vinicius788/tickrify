@@ -1,5 +1,6 @@
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { StripeService } from './stripe.service';
+import { resetFoundingOfferCache } from './founding-offer';
 import { allowanceWindowStart, monthlyTicksForPriceId } from '../../config/stripe.config';
 
 const PRICE = 'price_1TRvEJB1hl0IoocUvbCyxkt5'; // starter mensal USD
@@ -42,6 +43,11 @@ describe('StripeService.createCheckoutSession', () => {
         update: jest.fn(),
       },
       subscriptions: { list: jest.fn().mockResolvedValue({ data: [] }) },
+      coupons: {
+        retrieve: jest.fn().mockResolvedValue({
+          id: 'EARLY35', valid: true, percent_off: 35, max_redemptions: 50, times_redeemed: 5, redeem_by: null,
+        }),
+      },
       checkout: {
         sessions: {
           list: jest.fn().mockResolvedValue({ data: [] }),
@@ -51,10 +57,24 @@ describe('StripeService.createCheckoutSession', () => {
       },
     };
     (service as any).stripe = stripe;
+    resetFoundingOfferCache();
   });
 
   afterEach(() => {
     process.env = { ...originalEnv };
+  });
+
+  it('EARLY35 esgotado: a sessao abre sem desconto, com o campo de codigo', async () => {
+    stripe.coupons.retrieve.mockResolvedValue({
+      id: 'EARLY35', valid: true, percent_off: 35, max_redemptions: 50, times_redeemed: 50, redeem_by: null,
+    });
+    await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
+
+    expect(stripe.checkout.sessions.create).toHaveBeenCalledTimes(1);
+    const params = stripe.checkout.sessions.create.mock.calls[0][0];
+    expect(params.discounts).toBeUndefined();
+    expect(params.allow_promotion_codes).toBe(true);
+    expect(params.metadata.coupon).toBe('');
   });
 
   it('cria a sessao com o price, as URLs de retorno e o cupom certos', async () => {

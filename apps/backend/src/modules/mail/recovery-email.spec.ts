@@ -4,7 +4,7 @@ jest.mock('../../common/utils/clerk-email', () => ({
 
 import { notifyIfFreeQuotaExhausted, type RecoveryEmailDeps } from './recovery-email';
 
-function makeDeps(opts: { used: number; alreadySent?: boolean; paid?: boolean; email?: string | null }) {
+function makeDeps(opts: { used: number; alreadySent?: boolean; paid?: boolean; email?: string | null; offerActive?: boolean }) {
   const sendRecovery = jest.fn().mockResolvedValue(undefined);
   const auditCreate = jest.fn().mockResolvedValue({});
   const deps = {
@@ -21,6 +21,7 @@ function makeDeps(opts: { used: number; alreadySent?: boolean; paid?: boolean; e
     },
     mail: { sendRecovery },
     hasPaidAccess: jest.fn().mockResolvedValue(Boolean(opts.paid)),
+    foundingOffer: jest.fn().mockResolvedValue({ active: opts.offerActive ?? true, code: 'EARLY35', percentOff: 35 }),
     log: jest.fn(),
   } as unknown as RecoveryEmailDeps;
   return { deps, sendRecovery, auditCreate };
@@ -32,7 +33,22 @@ describe('notifyIfFreeQuotaExhausted', () => {
     await notifyIfFreeQuotaExhausted(deps, 'u1');
     expect(auditCreate).toHaveBeenCalledTimes(1);
     expect(auditCreate.mock.calls[0][0].data.action).toBe('recovery_email_sent');
-    expect(sendRecovery).toHaveBeenCalledWith('ana@example.com');
+    expect(sendRecovery).toHaveBeenCalledWith('ana@example.com', expect.objectContaining({ code: 'EARLY35' }));
+  });
+
+  it('cupom esgotado: o e-mail sai sem oferta', async () => {
+    const { deps, sendRecovery } = makeDeps({ used: 3, offerActive: false });
+    await notifyIfFreeQuotaExhausted(deps, 'u1');
+    expect(sendRecovery).toHaveBeenCalledWith('ana@example.com', null);
+  });
+
+  it('consulta da oferta quebra: o e-mail sai mesmo assim, sem oferta', async () => {
+    const { deps, sendRecovery } = makeDeps({ used: 3 });
+    (deps as any).foundingOffer = () => {
+      throw new Error('stripe fora do ar');
+    };
+    await notifyIfFreeQuotaExhausted(deps, 'u1');
+    expect(sendRecovery).toHaveBeenCalledWith('ana@example.com', null);
   });
 
   it('ainda tem gratis: nao envia', async () => {

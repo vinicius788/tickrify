@@ -16,10 +16,13 @@
 import type { PrismaClient } from '@prisma/client';
 import { fetchClerkEmail } from '../../common/utils/clerk-email';
 import { FREE_ANALYSIS_LIMIT } from '../../common/analytics/free-funnel';
+import type { FoundingOffer } from '../payments/founding-offer';
 
 export type RecoveryEmailDeps = {
   prisma: Pick<PrismaClient, 'adminAudit' | 'user' | 'analysis'>;
-  mail: { sendRecovery(to: string): Promise<void> };
+  mail: { sendRecovery(to: string, offer?: FoundingOffer | null): Promise<void> };
+  /** Oferta EARLY35 no momento do envio; o cupom so entra no e-mail se ativo. */
+  foundingOffer(): Promise<FoundingOffer>;
   hasPaidAccess(userId: string): Promise<boolean>;
   log(level: 'log' | 'warn', message: string): void;
 };
@@ -59,7 +62,11 @@ export async function sendRecoveryEmailOnce(deps: RecoveryEmailDeps, userId: str
       },
     });
 
-    await deps.mail.sendRecovery(email);
+    // Falha ao consultar a oferta tira so a oferta, nunca o e-mail.
+    const offer = await Promise.resolve()
+      .then(() => deps.foundingOffer())
+      .catch(() => null);
+    await deps.mail.sendRecovery(email, offer?.active ? offer : null);
     deps.log('log', `[recovery] E-mail de recuperação enviado (userId=${userId}).`);
   } catch (err) {
     deps.log('warn', `[recovery] Falha best-effort no e-mail de recuperação: ${(err as Error)?.message ?? err}`);

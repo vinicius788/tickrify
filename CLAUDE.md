@@ -3755,3 +3755,19 @@ contador em memoria). O limite por rota (5/h) conta por IP, porque o throttler
 roda antes da autenticacao; muitas contas + troca de IP passariam dele e
 queimariam a cota do Resend, levando junto boas-vindas e recuperacao. Acima do
 teto o relato e gravado e so o e-mail deixa de sair.
+
+## 21/09/2026 — oferta EARLY35 some sozinha quando o cupom acaba + TICKS desligado
+
+- **Codigo promocional TICKS (100% vitalicio) ARQUIVADO na Stripe** (autorizado
+  pelo dono). Com o EARLY35 pre-aplicado o campo de codigo fica escondido, mas
+  quando o cupom esgotasse o checkout abriria com `allow_promotion_codes` e
+  "TICKS" daria assinatura gratis para sempre. Continua ATIVO: o codigo
+  **EARLY50** (50% 1o mes, coupon `EARLY50`), decisao do dono.
+- `modules/payments/founding-offer.ts`: fonte unica do estado do EARLY35
+  (`coupons.retrieve`, cache 10 min; esgotado/expirado/apagado = desligado;
+  falha de rede usa o ultimo valor bom, sem historico = desligado). Usado pelo
+  checkout (nao manda cupom morto), por `GET /api/stripe/offer` (publica,
+  throttle 60/min) e pelo e-mail de recuperacao (so cita o cupom se ativo).
+- Front: `useFoundingOffer` esconde a faixa da home, a secao da /pricing e o
+  texto de desconto do paywall quando a oferta nao esta ativa (tambem enquanto
+  carrega). Em 21/09: 5 de 50 usos.

@@ -1,7 +1,8 @@
 import { Loader2, Lock } from 'lucide-react';
+import { useFoundingOffer } from '@/hooks/useFoundingOffer';
 
 interface LockedAnalysisProps {
-  /** Chamado quando o usuário clica em destravar (vai direto ao checkout com EARLY35). */
+  /** Chamado quando o usuário clica em destravar (checkout; o EARLY35 entra se ainda estiver ativo). */
   onUnlock: () => void;
   /** True enquanto a sessão de checkout está sendo criada (cold start pode demorar). */
   unlockPending?: boolean;
@@ -22,6 +23,8 @@ const PREVIEW_ROWS: Array<{ label: string; value: string }> = [
 ];
 
 const LockedAnalysis = ({ onUnlock, unlockPending = false, symbolLabel }: LockedAnalysisProps) => {
+  // O desconto so e anunciado com o cupom ativo na Stripe.
+  const offer = useFoundingOffer();
   return (
     <div className="relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)]">
       {/* Camada borrada (preview estático) */}
@@ -77,12 +80,14 @@ const LockedAnalysis = ({ onUnlock, unlockPending = false, symbolLabel }: Locked
               <Loader2 className="h-4 w-4 animate-spin" /> Opening secure checkout…
             </>
           ) : (
-            <>Unlock analysis, 35% off applied →</>
+            <>{offer?.percentOff ? `Unlock analysis, ${offer.percentOff}% off applied →` : 'Unlock analysis →'}</>
           )}
         </button>
-        <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
-          Early user: your EARLY35 discount (35% off the first month) is applied automatically.
-        </p>
+        {offer?.percentOff ? (
+          <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
+            Early user: your {offer.code} discount ({offer.percentOff}% off the first month) is applied automatically.
+          </p>
+        ) : null}
       </div>
     </div>
   );

@@ -27,6 +27,8 @@ import { startOutcomeSweeper } from './outcome.sweeper';
 import { trackFreeAnalysisCompleted } from '../src/common/analytics/free-funnel';
 import { MailService } from '../src/modules/mail/mail.service';
 import { notifyIfFreeQuotaExhausted, type RecoveryEmailDeps } from '../src/modules/mail/recovery-email';
+import Stripe from 'stripe';
+import { getFoundingOffer } from '../src/modules/payments/founding-offer';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -35,6 +37,11 @@ const prisma = new PrismaClient({
 });
 const aiAdapter = new AIAdapter();
 const storage = new ImageStorageClient();
+
+// So consulta cupom; sem chave, a oferta fica desligada no e-mail.
+const workerStripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2023-10-16' })
+  : null;
 
 // E-mail de recuperacao quando a ultima analise gratis termina. Sem o
 // StripeService aqui, "ja assina?" e a mesma checagem de banco que libera o
@@ -49,6 +56,7 @@ const recoveryDeps: RecoveryEmailDeps = {
         select: { id: true },
       }),
     ),
+  foundingOffer: () => getFoundingOffer(workerStripe),
   log: (level, message) => (level === 'warn' ? console.warn(message) : console.log(message)),
 };
 
