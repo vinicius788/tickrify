@@ -84,7 +84,7 @@ const Footer = () => {
             <ul>
               <li><a href="/blog/">{f.blog}</a></li>
               <li><a href="/#faq">{f.faq}</a></li>
-              <li><a href="mailto:tickrify@gmail.com">{f.support}</a></li>
+              <li><a href="mailto:support@tickrify.com">{f.support}</a></li>
             </ul>
           </div>
 

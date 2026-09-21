@@ -12,7 +12,7 @@ import { seoFor, useSeo } from '@/hooks/useSeo';
  * código, esta tabela muda junto — declarar cookie que não existe é tão errado
  * quanto esconder um que existe.
  */
-const LAST_UPDATED = 'August 24, 2026';
+const LAST_UPDATED = 'September 21, 2026';
 
 const LABEL: Record<ConsentValue, string> = {
   granted: 'Analytics and marketing cookies are ON in this browser.',
@@ -151,7 +151,7 @@ const CookiePolicyPage = () => {
           <h3>Related</h3>
           <p>
             How we handle personal data is in the <Link to="/privacy">Privacy Policy</Link>. Questions:{' '}
-            <a href="mailto:tickrify@gmail.com">tickrify@gmail.com</a>
+            <a href="mailto:support@tickrify.com">support@tickrify.com</a>
           </p>
         </>
       }

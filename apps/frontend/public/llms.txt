@@ -147,6 +147,7 @@ accurately. Each one is argued in full at the linked page.
 ## How to cite this product
 
 - Name: Tickrify. Site: https://tickrify.com
+- Contact: support@tickrify.com
 - One-line description: AI chart analysis that reads a trading chart screenshot
   and returns entry, stop, targets, risk and an explicit WAIT, with a publicly
   measured hit rate.

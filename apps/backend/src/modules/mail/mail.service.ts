@@ -13,6 +13,8 @@ export class MailService {
   // "Tickrify <noreply@tickrify.com>".
   private readonly from = process.env.MAIL_FROM || 'Tickrify <onboarding@resend.dev>';
   private readonly appUrl = process.env.FRONTEND_URL || 'https://tickrify.com';
+  // O remetente e noreply@; sem isto, quem responde ao e-mail fala com ninguem.
+  private readonly replyTo = process.env.MAIL_REPLY_TO || 'support@tickrify.com';
 
   private async send(to: string, subject: string, html: string): Promise<void> {
     if (!this.apiKey) {
@@ -28,7 +30,7 @@ export class MailService {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ from: this.from, to, subject, html }),
+        body: JSON.stringify({ from: this.from, to, subject, html, reply_to: this.replyTo }),
       });
 
       if (!res.ok) {

@@ -14,7 +14,7 @@ import { seoFor, useSeo } from '@/hooks/useSeo';
  * a cláusula. Nada foi acrescentado nem retirado: mudar o que os Termos dizem é
  * decisão do dono do produto, não de quem redesenha o site.
  */
-const LAST_UPDATED = 'September 19, 2025';
+const LAST_UPDATED = 'September 21, 2026';
 
 const SECTIONS: LegalSection[] = [
   {
@@ -226,7 +226,7 @@ const TermsPage = () => {
           <h3>Contact</h3>
           <p>
             Questions about these Terms:{' '}
-            <a href="mailto:tickrify@gmail.com">tickrify@gmail.com</a>
+            <a href="mailto:support@tickrify.com">support@tickrify.com</a>
           </p>
         </>
       }

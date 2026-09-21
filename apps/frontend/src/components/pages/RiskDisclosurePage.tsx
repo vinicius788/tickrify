@@ -14,7 +14,7 @@ import { seoFor, useSeo } from '@/hooks/useSeo';
  * bonito do que a realidade medida. É por isso que ela manda o leitor para o
  * placar de acurácia em vez de prometer resultado.
  */
-const LAST_UPDATED = 'August 24, 2026';
+const LAST_UPDATED = 'September 21, 2026';
 
 const SECTIONS: LegalSection[] = [
   {
@@ -171,7 +171,7 @@ const RiskDisclosurePage = () => {
           <p>
             By using Tickrify you confirm that you have read this disclosure, that you understand the risks
             described, and that you accept sole responsibility for your trading decisions. Questions:{' '}
-            <a href="mailto:tickrify@gmail.com">tickrify@gmail.com</a>
+            <a href="mailto:support@tickrify.com">support@tickrify.com</a>
           </p>
         </>
       }

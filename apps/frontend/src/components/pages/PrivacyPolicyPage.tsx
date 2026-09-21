@@ -18,12 +18,12 @@ import { seoFor, useSeo } from '@/hooks/useSeo';
  * como as outras legais) e a seção de cookies passou a apontar para a política
  * própria, que descreve consentimento de verdade.
  *
- * O contato é tickrify@gmail.com, o MESMO das outras páginas legais e do
- * rodapé (decisão do dono, 25/08/2026). Antes esta página dizia
- * contato@tickrify.com, os Termos diziam outra coisa e o rodapé uma terceira:
- * três endereços para o mesmo pedido. Ao trocar, trocar nos quatro lugares.
+ * O contato é support@tickrify.com (desde 21/09/2026; antes tickrify@gmail.com),
+ * o MESMO das outras páginas legais e do rodapé. Antes de 25/08 esta página
+ * dizia um endereço, os Termos outro e o rodapé um terceiro. Ao trocar, trocar
+ * no rodapé e nas quatro páginas legais.
  */
-const LAST_UPDATED = 'August 24, 2026';
+const LAST_UPDATED = 'September 21, 2026';
 
 const SECTIONS: LegalSection[] = [
   {
@@ -32,7 +32,7 @@ const SECTIONS: LegalSection[] = [
     body: (
       <p>
         <strong>Tickrify</strong> is an AI powered technical chart analysis platform, operated from Brazil. For any
-        question about this policy, contact us at <a href="mailto:tickrify@gmail.com">tickrify@gmail.com</a>.
+        question about this policy, contact us at <a href="mailto:support@tickrify.com">support@tickrify.com</a>.
       </p>
     ),
   },
@@ -128,7 +128,7 @@ const SECTIONS: LegalSection[] = [
           address below and we will handle your request under whichever rules give you the stronger protection.
         </p>
         <p>
-          To exercise any of these rights, email <a href="mailto:tickrify@gmail.com">tickrify@gmail.com</a>. We
+          To exercise any of these rights, email <a href="mailto:support@tickrify.com">support@tickrify.com</a>. We
           respond within 15 business days.
         </p>
       </>
@@ -197,7 +197,7 @@ const PrivacyPolicyPage = () => {
           <h3>Contact and jurisdiction</h3>
           <p>
             For anything related to this policy or to how we handle your personal data, write to{' '}
-            <a href="mailto:tickrify@gmail.com">tickrify@gmail.com</a>.
+            <a href="mailto:support@tickrify.com">support@tickrify.com</a>.
           </p>
           <p>
             This policy is governed by the laws of the Federative Republic of Brazil. Any dispute relating to the

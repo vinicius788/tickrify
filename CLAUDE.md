@@ -3738,3 +3738,11 @@ job ate o fim (analise demo) e falha se a chamada sair do worker.
 De brinde: `raceTimeout` (signal-decision.ts) nao cancelava o timer do calendario;
 cada analise deixava um timer vivo ate o prazo. Isso tambem era parte do aviso
 intermitente "worker process has failed to exit" no jest.
+
+**Contato oficial: `support@tickrify.com` (21/09/2026, pedido do dono).** Trocou o
+`tickrify@gmail.com` no rodape e nas 4 paginas legais (datas `LAST_UPDATED` para
+21/09/2026, porque o texto mudou), entrou no schema `Organization` do
+`index.html` (`email` + `contactPoint`) e no `llms.txt`, e virou o `reply_to` de
+todo e-mail do Resend (`MAIL_REPLY_TO` sobrescreve). O dominio recebe pelo Zoho
+Mail (MX conferido). Fora do codigo, so o dono troca: e-mail de suporte nos
+dados publicos da Stripe (aparece no recibo e no checkout) e no Clerk.
