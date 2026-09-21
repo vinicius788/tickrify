@@ -4,7 +4,7 @@ import { SignInButton, SignUpButton, SignedIn, SignedOut, useUser } from '@clerk
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { track } from '@/lib/analytics';
+import { trackSignupStartedOnce } from '@/lib/analytics';
 import lockup from '@/assets/tickrify-lockup.svg';
 import type { SiteSection } from '@/components/layout/SiteLayout';
 
@@ -85,7 +85,7 @@ const Header = ({ active = null, minimal = false }: HeaderProps) => {
                 >
                   <button
                     type="button"
-                    onClick={() => track('signup_started', { source: 'header' })}
+                    onClick={() => trackSignupStartedOnce('header')}
                     className="site-btn site-btn-primary site-btn-sm"
                   >
                     {t.landing.hero.startFree}

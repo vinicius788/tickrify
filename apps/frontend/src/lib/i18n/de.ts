@@ -24,6 +24,7 @@ export default {
   nav: {
     statusActive: 'Aktiv',
     analysesWord: 'Analysen',
+    freeLeft: 'gratis übrig',
     newAnalysis: 'Neue Analyse',
     myTrades: 'Meine Trades',
     watchlist: 'Beobachtungsliste',

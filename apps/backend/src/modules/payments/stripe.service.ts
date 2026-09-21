@@ -11,7 +11,7 @@ import {
 import { Prisma } from '@prisma/client';
 import Stripe from 'stripe';
 import { PrismaService } from '../database/prisma.service';
-import { captureServer } from '../../common/analytics/posthog';
+import { captureServer, type CaptureOptions } from '../../common/analytics/posthog';
 import {
   getStripeConfig,
   getPriceId,
@@ -196,7 +196,7 @@ export class StripeService implements OnModuleInit {
     billingCycle: BillingCycle,
     currency: Currency = 'usd',
     couponId?: string,
-    source?: 'pricing' | 'locked_value',
+    source?: 'pricing' | 'locked_value' | 'last_free_result',
   ): Promise<CheckoutResult> {
     const inFlight = this.checkoutInFlight.get(clerkUserId);
     if (inFlight) {
@@ -216,7 +216,7 @@ export class StripeService implements OnModuleInit {
     billingCycle: BillingCycle,
     currency: Currency,
     couponId?: string,
-    source?: 'pricing' | 'locked_value',
+    source?: 'pricing' | 'locked_value' | 'last_free_result',
   ): Promise<CheckoutResult> {
     try {
       if (!['starter', 'pro', 'elite'].includes(planType)) {
@@ -883,7 +883,7 @@ export class StripeService implements OnModuleInit {
         return;
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
-        await this.handleSubscriptionChanged(event.data.object as Stripe.Subscription);
+        await this.handleSubscriptionChanged(event.data.object as Stripe.Subscription, event.type);
         return;
       case 'customer.subscription.deleted':
         await this.handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
@@ -1011,13 +1011,25 @@ export class StripeService implements OnModuleInit {
       const distinctId = String(
         analyticsUser?.clerkUserId || session.metadata?.clerkUserId || '',
       ).trim();
-      captureServer(distinctId, 'subscription_activated', {
-        source: 'stripe_webhook',
-        checkoutSource: session.metadata?.checkoutSource,
-        subscriptionId: synced.subscription.id,
-        priceId: synced.subscription.items?.data?.[0]?.price?.id,
-        ...this.posthogAttributionProperties(analyticsUser),
-      });
+      // Era `subscription_activated`, com o MESMO nome do evento do navegador
+      // no retorno do checkout: a receita contava em dobro (medido: 20 eventos
+      // do webhook em 4 ids + 3 do navegador para 3 assinaturas reais).
+      captureServer(
+        distinctId,
+        'checkout_completed',
+        {
+          source: 'stripe_webhook',
+          checkoutSource: session.metadata?.checkoutSource,
+          sessionId: session.id,
+          subscriptionId: synced.subscription.id,
+          priceId: synced.subscription.items?.data?.[0]?.price?.id,
+          value: (session.amount_total ?? 0) / 100,
+          currency: String(session.currency || 'usd').toUpperCase(),
+          coupon: session.metadata?.coupon || null,
+          ...this.posthogAttributionProperties(analyticsUser),
+        },
+        { dedupeKey: `checkout_completed:${session.id}`, timestamp: new Date(session.created * 1000) },
+      );
     } catch {
       /* analytics nunca pode quebrar o webhook */
     }
@@ -1160,7 +1172,7 @@ export class StripeService implements OnModuleInit {
    * gravam o estado ATUAL. A Stripe nao garante ordem de entrega; gravar o
    * payload deixava um `updated` atrasado reativar uma assinatura ja cancelada.
    */
-  private async handleSubscriptionChanged(subscription: Stripe.Subscription) {
+  private async handleSubscriptionChanged(subscription: Stripe.Subscription, eventType?: string) {
     const synced = await this.syncSubscriptionFromStripe(subscription.id, {
       userIdHint: subscription.metadata?.userId ?? null,
     });
@@ -1168,6 +1180,59 @@ export class StripeService implements OnModuleInit {
       throw new Error(
         `User not found for subscription ${subscription.id} (customer ${String(subscription.customer || '')})`,
       );
+    }
+
+    if (eventType === 'customer.subscription.created') {
+      await this.captureForUser(
+        synced.userId,
+        'subscription_created',
+        {
+          subscriptionId: synced.subscription.id,
+          status: synced.subscription.status,
+          priceId: synced.subscription.items.data[0]?.price.id ?? null,
+          checkoutSource: synced.subscription.metadata?.checkoutSource ?? null,
+        },
+        {
+          dedupeKey: `subscription_created:${synced.subscription.id}`,
+          timestamp: new Date(synced.subscription.created * 1000),
+        },
+        true,
+      );
+    }
+  }
+
+  /**
+   * Evento de produto para o dono de uma assinatura/fatura. distinctId = id do
+   * Clerk (o mesmo do identify do navegador). Nunca quebra o webhook.
+   */
+  private async captureForUser(
+    userId: string | null,
+    event: string,
+    properties: Record<string, unknown>,
+    options: CaptureOptions,
+    withAttribution = false,
+  ): Promise<void> {
+    if (!userId) return;
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          clerkUserId: true,
+          firstTouchAttribution: true,
+          firstTouchAt: true,
+          lastTouchAttribution: true,
+          lastTouchAt: true,
+        },
+      });
+      if (!user?.clerkUserId) return;
+      captureServer(
+        user.clerkUserId,
+        event,
+        { ...properties, ...(withAttribution ? this.posthogAttributionProperties(user) : {}) },
+        options,
+      );
+    } catch {
+      /* analytics nunca pode quebrar o webhook */
     }
   }
 
@@ -1212,6 +1277,21 @@ export class StripeService implements OnModuleInit {
     }
 
     this.logger.log(`Payment succeeded for user: ${synced.userId} (invoice ${invoice.id})`);
+
+    // Receita confirmada (primeira cobranca e renovacoes). So o backend emite.
+    const paidAt = invoice.status_transitions?.paid_at ?? invoice.created;
+    await this.captureForUser(
+      synced.userId,
+      'payment_succeeded',
+      {
+        invoiceId: invoice.id,
+        subscriptionId,
+        billingReason: invoice.billing_reason ?? null,
+        value: (invoice.amount_paid ?? 0) / 100,
+        currency: String(invoice.currency || 'usd').toUpperCase(),
+      },
+      { dedupeKey: `payment_succeeded:${invoice.id}`, timestamp: new Date(paidAt * 1000) },
+    );
 
     // Troca de plano/proration tambem gera fatura paga. So a criacao e a
     // renovacao abrem a janela do mes.
@@ -1273,14 +1353,12 @@ export class StripeService implements OnModuleInit {
       },
     });
 
-    try {
-      const clerk = userId
-        ? await this.prisma.user.findUnique({ where: { id: userId }, select: { clerkUserId: true } })
-        : null;
-      if (clerk?.clerkUserId) captureServer(clerk.clerkUserId, 'payment_failed', details);
-    } catch {
-      /* analytics nunca pode quebrar o webhook */
-    }
+    // Uma por tentativa de cobranca: a Stripe tenta de novo em outros dias, e
+    // cada tentativa falha e um fato proprio. Reenvio do MESMO evento nao duplica.
+    await this.captureForUser(userId, 'payment_failed', details, {
+      dedupeKey: `payment_failed:${invoice.id}:${invoice.attempt_count ?? 0}`,
+      timestamp: new Date(invoice.created * 1000),
+    });
   }
 
   /**

@@ -99,11 +99,19 @@ export class AuthGuard implements CanActivate {
       }
 
       if (isNewUser) {
-        // Cadastro confirmado pelo backend. Nao usamos `signup_completed` aqui
-        // para nao duplicar o evento que ja alimenta funis existentes no PostHog.
-        // Este evento paralelo serve para auditoria/diagnostico de tracking.
+        // `signup_completed` e SO do backend desde 21/09/2026. O do navegador
+        // dependia de "conta com menos de 60s" e do aceite de cookies: medido
+        // de 16 a 21/09, 45 eventos em 41 pessoas contra 45 cadastros reais
+        // aqui (duplicava uns, perdia outros). Aqui a linha do usuario acabou
+        // de nascer, entao e exatamente um por conta; a chave garante isso
+        // mesmo em corrida. `$set_once` grava a data no perfil.
         try {
-          captureServer(clerkUserId, 'signup_completed_server', { source: 'auth_guard' });
+          captureServer(
+            clerkUserId,
+            'signup_completed',
+            { source: 'auth_guard', $set_once: { signed_up_at: new Date().toISOString() } },
+            { dedupeKey: `signup_completed:${clerkUserId}` },
+          );
         } catch {
           /* analytics nunca pode quebrar auth */
         }

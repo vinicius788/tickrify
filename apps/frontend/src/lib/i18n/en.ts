@@ -24,6 +24,7 @@ export default {
   nav: {
     statusActive: 'Active',
     analysesWord: 'analyses',
+    freeLeft: 'free left',
     newAnalysis: 'New Analysis',
     myTrades: 'My Trades',
     watchlist: 'Watchlist',
@@ -394,7 +395,7 @@ export default {
     loadingPlan: 'Loading your plan…',
     freeTitle: 'Free Analyses',
     exhausted: 'Your 3 free analyses are used up. No sense going back to trading blind.',
-    subscribe: 'Go unlimited',
+    subscribe: 'Subscribe to continue',
     remainingFree: 'free analyses left · real AI',
     viewPlans: 'View plans',
     planPrefix: 'Plan',

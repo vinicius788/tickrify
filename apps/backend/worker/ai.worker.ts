@@ -24,6 +24,7 @@ import { AnalysisType } from '../src/modules/ticks/tick-packages';
 import { DEEP_ENRICHMENT_INSTRUCTION } from '../src/modules/prompt/prompt-builder.service';
 import { STRATEGY_FIT_VALUES, type StrategyProfile } from '../src/common/strategy/strategy-profile';
 import { startOutcomeSweeper } from './outcome.sweeper';
+import { trackFreeAnalysisCompleted } from '../src/common/analytics/free-funnel';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -1155,6 +1156,13 @@ async function processAnalysis(job: Job<JobData>) {
     });
 
     console.log(`[Worker] Analysis ${analysisId} completed`);
+
+    // Funil gratis: este e o caminho de PRODUCAO. Antes ele nao emitia nada,
+    // entao a conclusao da analise 1/2/3 so existia se o navegador aceitasse
+    // cookies. Fire-and-forget: analytics nunca derruba o job.
+    if (isDemo && userId) {
+      void trackFreeAnalysisCompleted(prisma, { userId, analysisId, completedAt: new Date() });
+    }
   } catch (error) {
     console.error(`[Worker] Error processing analysis ${analysisId}:`, error);
 

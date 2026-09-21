@@ -47,6 +47,7 @@ import { TicksService } from '../ticks/ticks.service';
 import { MailService } from '../mail/mail.service';
 import { fetchClerkEmail } from '../../common/utils/clerk-email';
 import { StripeService } from '../payments/stripe.service';
+import { trackFreeAnalysisCompleted, trackFreeAnalysisStarted } from '../../common/analytics/free-funnel';
 import {
   AnalysisContext,
   validateImageHook,
@@ -391,6 +392,15 @@ export class AiService implements OnModuleInit {
       paidAccess,
     );
 
+    // Funil gratis (fonte: banco). Fire-and-forget: nunca segura a analise.
+    if (isDemo) {
+      void trackFreeAnalysisStarted(this.prisma, {
+        userId,
+        analysisId: analysis.id,
+        createdAt: analysis.createdAt,
+      });
+    }
+
     const queue = queueReadiness.connected ? getAiQueue() : null;
 
     // Use queue when workers are available — async, fastest path.
@@ -619,7 +629,7 @@ export class AiService implements OnModuleInit {
 
       // Última análise grátis concluída → e-mail de recuperação. Fire-and-forget:
       // o resultado já foi entregue e isto não pode segurar o stream.
-      void this.notifyIfFreeQuotaExhausted(userId, updated.isDemo);
+      void this.notifyIfFreeQuotaExhausted(userId, updated.isDemo, updated.id);
     } catch (error) {
       const safeMessage = this.safeErrorMessage(error);
       await this.prisma.analysis.update({
@@ -1227,7 +1237,7 @@ export class AiService implements OnModuleInit {
       });
 
       // Última análise grátis concluída → e-mail de recuperação (ver o método).
-      void this.notifyIfFreeQuotaExhausted(userId, updated.isDemo);
+      void this.notifyIfFreeQuotaExhausted(userId, updated.isDemo, updated.id);
 
       const model = resolveModel(analysisType);
       await runPostHooks(pipelineCtx, aiResponse, [
@@ -1443,8 +1453,11 @@ export class AiService implements OnModuleInit {
    * nunca atrasa a resposta, e a dedup permanente por AdminAudit garante que
    * este caminho e o da quarta tentativa não mandem dois e-mails.
    */
-  private async notifyIfFreeQuotaExhausted(userId: string, isDemo: boolean): Promise<void> {
+  private async notifyIfFreeQuotaExhausted(userId: string, isDemo: boolean, analysisId?: string): Promise<void> {
     if (!isDemo) return;
+    if (analysisId) {
+      void trackFreeAnalysisCompleted(this.prisma, { userId, analysisId, completedAt: new Date() });
+    }
     try {
       const used = await this.prisma.analysis.count({
         where: { userId, isDemo: true, status: { not: 'failed' } },

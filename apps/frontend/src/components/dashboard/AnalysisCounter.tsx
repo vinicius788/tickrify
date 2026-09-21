@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { buildApiUrl } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { track } from "@/lib/analytics";
 
 const PLAN_LABELS: Record<UserPlan, string> = {
   free: 'Free',
@@ -107,7 +108,10 @@ const AnalysisCounter = () => {
                   <TriangleAlert className="h-3.5 w-3.5 flex-shrink-0" />
                   {c.exhausted}
                 </p>
-                <Link to="/pricing">
+                <Link
+                  to="/pricing"
+                  onClick={() => track('upgrade_cta_clicked', { source: 'counter_exhausted', destination: 'pricing' })}
+                >
                   <Button size="sm" className="w-full">
                     <Crown className="mr-2 h-4 w-4" />
                     {c.subscribe}
@@ -119,7 +123,12 @@ const AnalysisCounter = () => {
                 <p className="text-xs text-[var(--text-secondary)]">
                   {freeRemaining} {c.remainingFree}
                 </p>
-                <Link to="/pricing">
+                <Link
+                  to="/pricing"
+                  onClick={() =>
+                    track('upgrade_cta_clicked', { source: 'counter_view_plans', destination: 'pricing', freeRemaining })
+                  }
+                >
                   <Button size="sm" variant="outline" className="w-full">
                     <Crown className="mr-2 h-4 w-4" />
                     {c.viewPlans}

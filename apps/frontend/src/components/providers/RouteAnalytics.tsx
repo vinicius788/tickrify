@@ -1,25 +1,33 @@
 // Captura pageviews da SPA e dispara os eventos de funil que dependem só da rota.
 // Renderizar uma vez, DENTRO do <Router> (precisa de useLocation).
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { track, trackPageview, type FunnelEvent } from '@/lib/analytics';
-import { captureTechnicalAttribution } from '@/lib/attribution';
-
-// Mapa rota → evento de funil. Prefixo casa sub-rotas do Clerk (/sign-up/*).
-const ROUTE_EVENTS: Array<{ match: (p: string) => boolean; event: FunnelEvent }> = [
-  { match: (p) => p === '/', event: 'landing_view' },
-  { match: (p) => p === '/pricing', event: 'pricing_viewed' },
-  { match: (p) => p.startsWith('/sign-up'), event: 'signup_started' },
-];
+import { setAttributionContext, track, trackPageview, trackSignupStartedOnce } from '@/lib/analytics';
+import { captureTechnicalAttribution, getAttributionTouches } from '@/lib/attribution';
 
 export function RouteAnalytics() {
   const { pathname } = useLocation();
+  // Rota anterior dentro da SPA: diz de onde a pessoa chegou na /pricing
+  // (painel, landing, blog...). Sem isto "quem foi para pricing" nao tinha origem.
+  const previousPath = useRef<string | null>(null);
 
   useEffect(() => {
     captureTechnicalAttribution();
+    const { first, last } = getAttributionTouches();
+    setAttributionContext(first, last);
     trackPageview(pathname);
-    const hit = ROUTE_EVENTS.find((r) => r.match(pathname));
-    if (hit) track(hit.event);
+
+    if (pathname === '/') {
+      track('landing_viewed');
+    } else if (pathname === '/pricing') {
+      track('pricing_viewed', { from: previousPath.current ?? 'direct_or_external' });
+    } else if (pathname.startsWith('/sign-up')) {
+      // /sign-up/verify-email-address e outras sub-rotas do Clerk trocam o
+      // pathname: sem o "uma vez", um cadastro contava 2 ou 3 inicios.
+      trackSignupStartedOnce('signup_route');
+    }
+
+    previousPath.current = pathname;
   }, [pathname]);
 
   return null;

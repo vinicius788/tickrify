@@ -6,13 +6,39 @@
  * então a ausência do pacote NUNCA derruba o boot da aplicação — só na primeira
  * captura (quando um webhook chega), e mesmo aí qualquer erro é engolido.
  */
+import { createHash } from 'crypto';
+
 type PostHogLike = {
   capture: (args: {
     distinctId: string;
     event: string;
     properties?: Record<string, unknown>;
+    uuid?: string;
+    timestamp?: Date;
   }) => void;
 };
+
+export type CaptureOptions = {
+  /**
+   * Identifica o FATO, nao a chamada (ex.: `payment_succeeded:in_123`). Vira o
+   * uuid do evento. O PostHog descarta evento repetido com o mesmo uuid e o
+   * mesmo timestamp, entao webhook reenviado ou worker que roda duas vezes
+   * nao conta em dobro. Sem isto, 20 `subscription_activated` viraram 4
+   * assinaturas no painel (medido em 21/09/2026).
+   */
+  dedupeKey?: string;
+  /** Momento do fato. Obrigatorio para a deduplicacao valer: tem de ser estavel. */
+  timestamp?: Date;
+};
+
+/** UUID deterministico (formato v5) a partir de uma chave de texto. */
+export function uuidFromKey(key: string): string {
+  const hex = createHash('sha1').update(`tickrify:${key}`).digest('hex').slice(0, 32).split('');
+  hex[12] = '5';
+  hex[16] = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
+  const h = hex.join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
 
 let client: PostHogLike | null | undefined;
 
@@ -55,11 +81,18 @@ export function captureServer(
   distinctId: string,
   event: string,
   properties?: Record<string, unknown>,
+  options: CaptureOptions = {},
 ): void {
   try {
     const c = getClient();
     if (!c || !distinctId) return;
-    c.capture({ distinctId, event, properties });
+    c.capture({
+      distinctId,
+      event,
+      properties: { ...properties, tracked_by: 'server' },
+      ...(options.dedupeKey ? { uuid: uuidFromKey(options.dedupeKey) } : {}),
+      ...(options.timestamp ? { timestamp: options.timestamp } : {}),
+    });
   } catch {
     /* analytics nunca pode quebrar o fluxo de negócio */
   }

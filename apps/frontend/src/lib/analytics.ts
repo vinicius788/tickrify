@@ -81,11 +81,11 @@ function initMetaPixel(): void {
 
 // Espelha eventos-chave do funil para o Meta Pixel (nomes padrão do Meta,
 // para o algoritmo de ads otimizar por conversão real).
-function trackMeta(event: FunnelEvent, props?: Record<string, unknown>): void {
+function trackMeta(event: FunnelEvent | AdEvent, props?: Record<string, unknown>): void {
   if (typeof window === 'undefined' || !window.fbq) return;
   try {
     switch (event) {
-      case 'signup_completed':
+      case 'ad_signup':
         window.fbq('track', 'CompleteRegistration');
         break;
       case 'pricing_viewed':
@@ -94,7 +94,7 @@ function trackMeta(event: FunnelEvent, props?: Record<string, unknown>): void {
       case 'checkout_started':
         window.fbq('track', 'InitiateCheckout');
         break;
-      case 'subscription_activated':
+      case 'ad_purchase':
         window.fbq('track', 'Purchase', {
           currency: String(props?.currency || 'USD').toUpperCase(),
           value: Number(props?.value) || 0,
@@ -208,11 +208,11 @@ function initGoogleTag(): void {
 
 // Espelha eventos-chave do funil pro GA4 (nomenclatura recomendada do Google:
 // sign_up, begin_checkout, purchase...).
-function trackGoogle(event: FunnelEvent, props?: Record<string, unknown>): void {
+function trackGoogle(event: FunnelEvent | AdEvent, props?: Record<string, unknown>): void {
   if (typeof window === 'undefined' || !window.gtag || GOOGLE_TARGETS.length === 0) return;
   try {
     switch (event) {
-      case 'signup_completed':
+      case 'ad_signup':
         window.gtag('event', 'sign_up', { send_to: GOOGLE_TARGETS });
         // `sign_up` alimenta o GA4; a conversao do Ads exige o evento
         // `conversion` com o rotulo. Os dois, nao um ou outro.
@@ -224,7 +224,7 @@ function trackGoogle(event: FunnelEvent, props?: Record<string, unknown>): void 
       case 'checkout_started':
         window.gtag('event', 'begin_checkout', { send_to: GOOGLE_TARGETS });
         break;
-      case 'subscription_activated': {
+      case 'ad_purchase': {
         const value = Number(props?.value) || 0;
         const currency = String(props?.currency || 'USD').toUpperCase();
         const transactionId = String(props?.subscriptionId ?? props?.userId ?? Date.now());
@@ -253,12 +253,19 @@ function trackGoogle(event: FunnelEvent, props?: Record<string, unknown>): void 
   }
 }
 
+/**
+ * Conversoes que so existem para os pixels de anuncio (Meta, Google Ads). NAO
+ * vao para o PostHog: la, cadastro e receita vem do BACKEND
+ * (`signup_completed`, `checkout_completed`, `payment_succeeded`...). Antes o
+ * navegador mandava os mesmos nomes e o PostHog contava em dobro.
+ */
+type AdEvent = 'ad_signup' | 'ad_purchase';
+
 // União fechada de eventos do funil: o TypeScript impede inventar nome errado.
 export type FunnelEvent =
-  | 'landing_view'
+  | 'landing_viewed'
   | 'demo_opened'
   | 'signup_started'
-  | 'signup_completed'
   | 'analysis_started'
   | 'analysis_completed'
   | 'analysis_failed'
@@ -269,6 +276,14 @@ export type FunnelEvent =
   | 'free_limit_reached'
   | 'upgrade_modal_viewed'
   | 'pricing_viewed'
+  // Secao de precos da landing entrou na tela. Era `pricing_viewed` e inflava
+  // "quem foi para pricing" com quem so rolou a home.
+  | 'pricing_section_viewed'
+  // CTA de assinatura visto/clicado dentro do produto (contador, resultado da
+  // ultima gratis, menu). `source` diz qual. O clique no BOTAO DE COMPRA em si
+  // continua sendo `upgrade_clicked`.
+  | 'upgrade_cta_viewed'
+  | 'upgrade_cta_clicked'
   | 'upgrade_clicked'
   // Disparado quando a Stripe DEVOLVEU a URL do checkout, nao no clique.
   | 'checkout_started'
@@ -276,7 +291,9 @@ export type FunnelEvent =
   | 'checkout_failed'
   // Voltou da Stripe pelo cancel_url sem pagar.
   | 'checkout_canceled'
-  | 'subscription_activated'
+  // Voltou da Stripe na success_url. So UX: a confirmacao de pagamento e o
+  // `checkout_completed` do backend.
+  | 'checkout_success_viewed'
   | 'founding_banner_clicked'
   // Funil da demo anônima (/try) — Fase 0 de ativação:
   | 'demo_page_view'
@@ -292,19 +309,21 @@ export type FunnelEvent =
 // fila, o primeiro evento de todo visitante era descartado em silêncio e quem
 // chegava, usava a demo e saía não gerava evento nenhum. Agora o evento espera
 // a escolha: aceitar despeja a fila, recusar joga fora.
-type Pending = { event: FunnelEvent | '$pageview'; props?: Record<string, unknown> };
+type Pending = { event: FunnelEvent | AdEvent | '$pageview'; props?: Record<string, unknown>; adsOnly?: boolean };
 
 const PENDING_MAX = 20;
 let pending: Pending[] = [];
 let pendingIdentify: { userId: string; traits?: Record<string, unknown> } | null = null;
 
-function enqueue(event: Pending['event'], props?: Record<string, unknown>): void {
+function enqueue(event: Pending['event'], props?: Record<string, unknown>, adsOnly = false): void {
   if (pending.length >= PENDING_MAX) return;
-  pending.push({ event, props });
+  pending.push({ event, props, adsOnly });
 }
 
 function flushPending(): void {
   if (!ready) return;
+
+  applyAttributionContext();
 
   if (pendingIdentify) {
     const id = pendingIdentify;
@@ -324,6 +343,7 @@ function flushPending(): void {
       trackMeta(item.event, item.props);
       trackGoogle(item.event, item.props);
     }
+    if (item.adsOnly) continue;
     try {
       posthog.capture(item.event, item.props);
     } catch {
@@ -352,7 +372,90 @@ export function track(event: FunnelEvent, props?: Record<string, unknown>): void
   }
 }
 
+/**
+ * `signup_started` uma vez por sessao do navegador. Ele nasce em tres lugares
+ * (rota /sign-up, botao do cabecalho, CTA da /try) e as sub-rotas do Clerk
+ * repetiam o da rota: o mesmo cadastro contava 2 ou 3 inicios.
+ */
+export function trackSignupStartedOnce(source: string): void {
+  const key = 'tickrify_signup_started_sent';
+  try {
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, source);
+  } catch {
+    /* storage bloqueado: melhor contar uma vez a mais do que nenhuma */
+  }
+  track('signup_started', { source });
+}
+
+/** Conversao so para Meta/Google Ads (ver AdEvent). Espera o consentimento como o resto. */
+export function trackAdConversion(kind: 'signup' | 'purchase', props?: Record<string, unknown>): void {
+  const event: AdEvent = kind === 'signup' ? 'ad_signup' : 'ad_purchase';
+  trackMeta(event, props);
+  trackGoogle(event, props);
+  if (!ready) enqueue(event, props, true);
+}
+
+// ─── Origem (UTM/referrer) no PostHog ────────────────────────────────────────
+// O PostHog so descobre UTM sozinho na URL do primeiro pageview DEPOIS do init,
+// e o init espera o aceite de cookies: quando ele liga, a SPA ja trocou de rota
+// e a UTM sumiu da barra. Medido em 21/09/2026: 0 eventos com utm_source e so
+// 22 de 45 cadastros com origem no perfil. Agora a origem capturada pelo
+// attribution.ts vai para o PostHog de duas formas:
+//   - super propriedades (`utm_source`...): todo evento carrega o ultimo toque;
+//   - perfil: `first_*` com $set_once (primeiro toque) e `last_*` com $set.
+export type AttributionTouch = {
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  utmTerm?: string;
+  clickId?: string;
+  referrerDomain?: string;
+  landingPath?: string;
+};
+let attributionContext: { first: AttributionTouch | null; last: AttributionTouch | null } | null = null;
+
+function touchProps(touch: AttributionTouch | null, prefix: string): Record<string, string> {
+  if (!touch) return {};
+  const map: Array<[keyof AttributionTouch, string]> = [
+    ['utmSource', 'utm_source'],
+    ['utmMedium', 'utm_medium'],
+    ['utmCampaign', 'utm_campaign'],
+    ['utmContent', 'utm_content'],
+    ['utmTerm', 'utm_term'],
+    ['clickId', 'click_id'],
+    ['referrerDomain', 'referrer_domain'],
+    ['landingPath', 'landing_path'],
+  ];
+  const out: Record<string, string> = {};
+  for (const [key, name] of map) {
+    const value = touch[key];
+    if (value) out[`${prefix}${name}`] = value;
+  }
+  return out;
+}
+
+function applyAttributionContext(): void {
+  if (!ready || !attributionContext) return;
+  const { first, last } = attributionContext;
+  try {
+    const current = touchProps(last ?? first, '');
+    if (Object.keys(current).length > 0) posthog.register(current);
+    posthog.setPersonProperties(touchProps(last, 'last_'), touchProps(first ?? last, 'first_'));
+  } catch {
+    /* noop */
+  }
+}
+
+export function setAttributionContext(first: AttributionTouch | null, last: AttributionTouch | null): void {
+  if (!first && !last) return;
+  attributionContext = { first, last };
+  applyAttributionContext();
+}
+
 // Liga o usuário anônimo ao usuário logado (Clerk). Chamar no signup/login.
+
 export function identifyUser(userId: string, traits?: Record<string, unknown>): void {
   if (!ready) {
     // Sem isto, quem já estava logado quando aceitou os cookies ficava anônimo

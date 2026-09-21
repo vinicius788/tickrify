@@ -1,3 +1,5 @@
+import { getConsent } from './consent';
+
 const STORAGE_KEY = 'tickrify_attribution_v1';
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -36,10 +38,21 @@ const PARAM_MAP: Array<[keyof TechnicalAttributionPayload, string[]]> = [
   ['clickId', ['fbclid', 'gclid', 'ttclid']],
 ];
 
+// Onde a origem mora: sempre na aba (sessionStorage) e, SO com aceite de
+// cookies, tambem no localStorage. Antes era so a aba: quem verificava o
+// e-mail em outra aba, ou voltava no dia seguinte, chegava sem origem. Sem
+// aceite continua so na aba, porque guardar fbclid/gclid de forma duravel e
+// exatamente o que o consentimento existe para autorizar.
+function durableAllowed(): boolean {
+  return getConsent() === 'granted';
+}
+
 function readStored(): StoredAttribution {
   if (typeof window === 'undefined') return {};
   try {
-    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    const raw =
+      window.sessionStorage.getItem(STORAGE_KEY) ??
+      (durableAllowed() ? window.localStorage.getItem(STORAGE_KEY) : null);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as StoredAttribution;
     const capturedAt = parsed.first?.capturedAt ? new Date(parsed.first.capturedAt).getTime() : 0;
@@ -53,7 +66,9 @@ function readStored(): StoredAttribution {
 function writeStored(value: StoredAttribution): void {
   if (typeof window === 'undefined') return;
   try {
-    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+    const serialized = JSON.stringify(value);
+    window.sessionStorage.setItem(STORAGE_KEY, serialized);
+    if (durableAllowed()) window.localStorage.setItem(STORAGE_KEY, serialized);
   } catch {
     /* storage indisponivel: atribuicao tecnica simplesmente nao persiste */
   }
@@ -116,6 +131,15 @@ export function captureTechnicalAttribution(): void {
     last: snapshot,
     syncedAt: stored.syncedAt,
   });
+}
+
+/** Primeiro e ultimo toque, para o PostHog (ver setAttributionContext). */
+export function getAttributionTouches(): {
+  first: TechnicalAttributionPayload | null;
+  last: TechnicalAttributionPayload | null;
+} {
+  const stored = readStored();
+  return { first: stored.first ?? null, last: stored.last ?? null };
 }
 
 export function getTechnicalAttributionPayload(): TechnicalAttributionPayload | null {

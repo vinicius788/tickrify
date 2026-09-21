@@ -139,7 +139,7 @@ describe('StripeService webhooks', () => {
       ...overrides,
     });
 
-    it('ativa pelo status REAL da Stripe e dispara subscription_activated uma vez', async () => {
+    it('ativa pelo status REAL da Stripe e dispara checkout_completed uma vez, deduplicado', async () => {
       await expect(deliver('checkout.session.completed', session())).resolves.toEqual({ received: true });
 
       expect(stripe.subscriptions.retrieve).toHaveBeenCalledWith('sub_1');
@@ -150,7 +150,14 @@ describe('StripeService webhooks', () => {
         }),
       );
       expect(captureServer).toHaveBeenCalledTimes(1);
-      expect(captureServer).toHaveBeenCalledWith('clerk_1', 'subscription_activated', expect.objectContaining({ checkoutSource: 'pricing' }));
+      expect(captureServer).toHaveBeenCalledWith(
+        'clerk_1',
+        'checkout_completed',
+        expect.objectContaining({ checkoutSource: 'pricing', sessionId: 'cs_1' }),
+        expect.objectContaining({ dedupeKey: 'checkout_completed:cs_1' }),
+      );
+      // O nome antigo contava a receita em dobro com o do navegador.
+      expect(captureServer).not.toHaveBeenCalledWith('clerk_1', 'subscription_activated', expect.anything(), expect.anything());
     });
 
     it('pagamento pendente grava `incomplete` e NAO libera acesso nem conta receita', async () => {
@@ -203,6 +210,17 @@ describe('StripeService webhooks', () => {
       expect(prisma.subscription.upsert).toHaveBeenCalledWith(
         expect.objectContaining({ create: expect.objectContaining({ userId: 'usr_1' }) }),
       );
+    });
+
+    it('created emite subscription_created uma vez; updated nao emite', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ created: 1789000000, metadata: { checkoutSource: 'pricing' } }));
+
+      await deliver('customer.subscription.created', subscription());
+      await deliver('customer.subscription.updated', subscription(), 'evt_2');
+
+      const created = (captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'subscription_created');
+      expect(created).toHaveLength(1);
+      expect(created[0][3]).toEqual({ dedupeKey: 'subscription_created:sub_1', timestamp: new Date(1789000000 * 1000) });
     });
 
     it('deleted grava canceled', async () => {
@@ -264,6 +282,17 @@ describe('StripeService webhooks', () => {
       expect(prisma.userTicks.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { balance: 200 } }));
       expect(prisma.tickTransaction.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ amount: -158 }) }),
+      );
+    });
+
+    it('emite payment_succeeded com valor e chave da fatura (so o backend)', async () => {
+      await deliver('invoice.payment_succeeded', invoice({ amount_paid: 1885, currency: 'usd', created: 1789075629 }));
+
+      expect(captureServer).toHaveBeenCalledWith(
+        'clerk_1',
+        'payment_succeeded',
+        expect.objectContaining({ invoiceId: 'in_1', value: 18.85, currency: 'USD', billingReason: 'subscription_cycle' }),
+        expect.objectContaining({ dedupeKey: 'payment_succeeded:in_1' }),
       );
     });
 
@@ -336,7 +365,12 @@ describe('StripeService webhooks', () => {
           details: expect.objectContaining({ invoiceId: 'in_2', amountDue: 2900, subscriptionStatus: 'past_due' }),
         }),
       });
-      expect(captureServer).toHaveBeenCalledWith('clerk_1', 'payment_failed', expect.any(Object));
+      expect(captureServer).toHaveBeenCalledWith(
+        'clerk_1',
+        'payment_failed',
+        expect.objectContaining({ invoiceId: 'in_2' }),
+        expect.objectContaining({ dedupeKey: 'payment_failed:in_2:1' }),
+      );
     });
   });
 

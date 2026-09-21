@@ -1,16 +1,42 @@
-// Liga a identidade do Clerk ao PostHog e dispara `signup_completed` para contas novas.
+// Liga a identidade do Clerk ao PostHog, sincroniza a origem com o backend e
+// dispara a conversao de cadastro para os pixels de anuncio.
 // Renderizar uma vez, dentro do <ClerkProvider>.
+//
+// `signup_completed` NAO sai daqui desde 21/09/2026: o backend emite no momento
+// em que cria o usuario (auth.guard), um por conta. O daqui dependia de "conta
+// com menos de 60s" e do aceite de cookies, e divergia do real.
 import { useEffect, useRef } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
-import { identifyUser, track } from '@/lib/analytics';
-import { getTechnicalAttributionPayload, markTechnicalAttributionSynced } from '@/lib/attribution';
+import { identifyUser, resetAnalytics, track, trackAdConversion } from '@/lib/analytics';
+import {
+  getAttributionTouches,
+  getTechnicalAttributionPayload,
+  markTechnicalAttributionSynced,
+} from '@/lib/attribution';
 import { apiClient } from '@/lib/api';
+
+// Janela para considerar a conta "recem-criada" do ponto de vista do navegador.
+// Larga de proposito (verificacao de e-mail pode levar minutos); o que impede
+// contar duas vezes e a marca por usuario no localStorage, nao a janela.
+const NEW_ACCOUNT_WINDOW_MS = 15 * 60 * 1000;
 
 export function AnalyticsIdentify() {
   const { isLoaded, isSignedIn, user } = useUser();
   const { getToken } = useAuth();
-  const signupTracked = useRef(false);
   const attributionSynced = useRef(false);
+  const wasSignedIn = useRef(false);
+
+  // Logout: encerra a identidade no PostHog. Sem isto, a proxima pessoa no
+  // mesmo navegador herdava o perfil da anterior (resetAnalytics existia e
+  // nunca era chamado).
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (wasSignedIn.current && !isSignedIn) {
+      resetAnalytics();
+      attributionSynced.current = false;
+    }
+    wasSignedIn.current = Boolean(isSignedIn);
+  }, [isLoaded, isSignedIn]);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !user) return;
@@ -22,10 +48,23 @@ export function AnalyticsIdentify() {
 
     if (!attributionSynced.current) {
       attributionSynced.current = true;
-      const attribution = getTechnicalAttributionPayload();
-      if (attribution) {
+      // O backend guarda o primeiro toque so se ainda nao tiver um. Antes ia
+      // so o ULTIMO toque, e ele virava "primeiro" no banco. Agora vai o
+      // primeiro e, se for diferente, o ultimo.
+      const { first } = getAttributionTouches();
+      const last = getTechnicalAttributionPayload();
+      const payloads = [first, last].filter(
+        (item, index, all): item is NonNullable<typeof item> =>
+          Boolean(item) && (index === 0 || JSON.stringify(item) !== JSON.stringify(all[0])),
+      );
+      if (payloads.length > 0) {
         void getToken({ skipCache: true })
-          .then((token) => (token ? apiClient.setTechnicalAttribution(attribution, token) : undefined))
+          .then(async (token) => {
+            if (!token) return;
+            for (const payload of payloads) {
+              await apiClient.setTechnicalAttribution(payload, token);
+            }
+          })
           .then(() => markTechnicalAttributionSynced())
           .catch(() => {
             attributionSynced.current = false;
@@ -33,12 +72,23 @@ export function AnalyticsIdentify() {
       }
     }
 
-    // signup_completed: uma vez por usuário recém-criado (heurística: conta < 60s).
-    // Fonte 100% confiável seria um webhook user.created do Clerk no backend.
-    if (!signupTracked.current && user.createdAt) {
+    // Conversao de cadastro para Meta/Google Ads: uma vez por conta, neste navegador.
+    if (user.createdAt) {
       const ageMs = Date.now() - new Date(user.createdAt).getTime();
-      if (ageMs >= 0 && ageMs < 60_000) {
-        track('signup_completed');
+      const markKey = `tickrify_signup_conversion_${user.id}`;
+      let alreadySent = false;
+      try {
+        alreadySent = Boolean(localStorage.getItem(markKey));
+      } catch {
+        /* noop */
+      }
+      if (!alreadySent && ageMs >= 0 && ageMs < NEW_ACCOUNT_WINDOW_MS) {
+        try {
+          localStorage.setItem(markKey, String(Date.now()));
+        } catch {
+          /* noop */
+        }
+        trackAdConversion('signup');
 
         // Funil da demo (/try): se o cadastro veio de lá, fecha o loop.
         // A flag é marcada no clique do CTA da demo e vale por 24h.
@@ -52,7 +102,6 @@ export function AnalyticsIdentify() {
           /* noop */
         }
       }
-      signupTracked.current = true;
     }
   }, [getToken, isLoaded, isSignedIn, user]);
 

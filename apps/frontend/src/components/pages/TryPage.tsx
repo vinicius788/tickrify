@@ -17,7 +17,7 @@ import { Link } from 'react-router-dom';
 import { SignUpButton, SignedOut, SignedIn } from '@clerk/clerk-react';
 import SiteLayout from '@/components/layout/SiteLayout';
 import AnalysisLoading from '@/components/dashboard/AnalysisLoading';
-import { track } from '@/lib/analytics';
+import { track, trackSignupStartedOnce } from '@/lib/analytics';
 import { getDeviceFingerprint } from '@/lib/fingerprint';
 import { getTurnstileToken } from '@/lib/turnstile';
 import {
@@ -38,7 +38,7 @@ type PageState = 'ready' | 'analyzing' | 'done' | 'locked';
 function markDemoSource() {
   // O cadastro daqui abre num modal do Clerk, sem passar pela rota /sign-up:
   // sem este track o funil da demo perdia o degrau do cadastro.
-  track('signup_started', { source: 'demo' });
+  trackSignupStartedOnce('demo');
   try {
     localStorage.setItem('tickrify_demo_source', String(Date.now()));
   } catch {

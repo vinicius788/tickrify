@@ -62,7 +62,7 @@ const PricingSection = () => {
       (entries) => {
         if (seenRef.current || !entries.some((entry) => entry.isIntersecting)) return;
         seenRef.current = true;
-        track('pricing_viewed', { source: 'landing_section' });
+        track('pricing_section_viewed', { source: 'landing_section' });
         observer.disconnect();
       },
       { threshold: 0.4 },

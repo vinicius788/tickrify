@@ -38,7 +38,7 @@ import { useToast } from "@/hooks/use-toast";
 import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
-import { track } from "@/lib/analytics";
+import { track, trackAdConversion } from "@/lib/analytics";
 import { CheckoutError, createCheckoutSession } from "@/lib/stripe";
 import { checkoutReturnPath, loadCheckoutIntent } from "@/lib/checkoutIntent";
 import { PLANS } from "@/components/pricing/PricingCards";
@@ -398,8 +398,13 @@ const DashboardPage = () => {
     const successState = params.get('success');
 
     if (successState === 'true') {
-      // RECEITA: confirmação client-side (best effort). Fonte de verdade = webhook do Stripe.
-      track('subscription_activated', { source: 'redirect' });
+      // Volta da Stripe. No PostHog e so UX (`checkout_success_viewed`): a receita
+      // confirmada e o `checkout_completed` do backend. Antes este evento se
+      // chamava `subscription_activated`, o mesmo nome do backend, e a receita
+      // contava em dobro. Os pixels de anuncio so existem no navegador, entao
+      // a conversao de compra deles continua saindo daqui.
+      track('checkout_success_viewed');
+      trackAdConversion('purchase');
       toast({
         title: dc.planActivatedTitle,
         description: dc.planActivatedDesc,
@@ -446,13 +451,17 @@ const DashboardPage = () => {
   // Paywall → Stripe em 1 clique, com EARLY35 já aplicado. O momento de maior
   // intenção do funil não pode passar pela página de pricing genérica.
   const [unlockPending, setUnlockPending] = useState(false);
-  const handleUnlockCheckout = useCallback(async () => {
+  // `source` diz de onde veio o clique: paywall da 4a tentativa
+  // (`locked_value`) ou o CTA no resultado da ultima gratis (`last_free_result`).
+  // Os dois abrem o MESMO checkout: foi o paywall que converteu 12 de 12 em
+  // setembro, e 15 de 27 pessoas que usaram a 3a gratis nunca chegaram a ve-lo.
+  const startCheckout = useCallback(async (source: 'locked_value' | 'last_free_result') => {
     if (unlockPending) return;
     setUnlockPending(true);
     try {
       const token = await getToken();
       if (!token) {
-        track('checkout_failed', { source: 'locked_value', plan: 'starter', code: 'no_token' });
+        track('checkout_failed', { source, plan: 'starter', code: 'no_token' });
         navigate('/pricing');
         return;
       }
@@ -461,9 +470,9 @@ const DashboardPage = () => {
       // pagava igual e recebia 50 ticks a menos que quem passou pelo /pricing.
       // A moeda é USD fixo: o `detectCurrency` daqui mandava navegador pt-BR
       // para o price BRL congelado em jun/2026.
-      track('upgrade_clicked', { source: 'locked_value', coupon: 'EARLY35' });
-      const { url } = await createCheckoutSession('starter', token, 'monthly', 'usd', 'EARLY35', 'locked_value');
-      track('checkout_started', { plan: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35', source: 'locked_value' });
+      track('upgrade_clicked', { source, coupon: 'EARLY35' });
+      const { url } = await createCheckoutSession('starter', token, 'monthly', 'usd', 'EARLY35', source);
+      track('checkout_started', { plan: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35', source });
       window.location.href = url;
     } catch (error) {
       // Este catch era silencioso: a falha virava um desvio para /pricing sem
@@ -471,7 +480,7 @@ const DashboardPage = () => {
       const code = error instanceof CheckoutError ? error.code : undefined;
       const message = error instanceof Error ? error.message : '';
       track('checkout_failed', {
-        source: 'locked_value',
+        source,
         plan: 'starter',
         code: code ?? 'unknown',
         message: message.slice(0, 200) || 'unknown',
@@ -489,6 +498,24 @@ const DashboardPage = () => {
       setUnlockPending(false);
     }
   }, [unlockPending, getToken, navigate, toast, dc]);
+
+  const handleUnlockCheckout = useCallback(() => void startCheckout('locked_value'), [startCheckout]);
+
+  // A pessoa VIU a oferta depois da ultima gratis? Uma vez por analise. Sem
+  // isto so dava para medir o clique, nunca quem viu e ignorou.
+  const lastFreeCtaSeenFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeView !== 'analysis-result' || isDemo || isUnlimited) return;
+    if (!Number.isFinite(remaining) || remaining > 0) return;
+    const key = lastAnalysisId || 'unknown';
+    if (lastFreeCtaSeenFor.current === key) return;
+    lastFreeCtaSeenFor.current = key;
+    track('upgrade_cta_viewed', { source: 'last_free_result' });
+  }, [activeView, isDemo, isUnlimited, remaining, lastAnalysisId]);
+  const handleLastFreeCheckout = useCallback(() => {
+    track('upgrade_cta_clicked', { source: 'last_free_result', destination: 'checkout' });
+    void startCheckout('last_free_result');
+  }, [startCheckout]);
 
   const resetNewAnalysisView = useCallback(() => {
     setActiveView('new-analysis');
@@ -573,7 +600,15 @@ const DashboardPage = () => {
       setActiveView('loading');
       setErrorMessage('');
 
-      track('analysis_started', { analysisType });
+      track('analysis_started', {
+        analysisType,
+        plan,
+        // Qual gratis esta comecando (1, 2 ou 3). O backend emite o mesmo fato
+        // como `free_analysis_started`, numerado pelo banco e sem depender de
+        // cookie; este serve para ver o funil no navegador lado a lado.
+        analysisNumber: isUnlimited ? null : used + 1,
+        freeRemainingBefore: isUnlimited || !Number.isFinite(remaining) ? null : remaining,
+      });
 
       const response = await apiClient.createAnalysis({
         imageFile: imageFile || undefined,
@@ -1006,12 +1041,21 @@ const DashboardPage = () => {
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   {exhausted ? (
-                    <Link to="/pricing">
-                      <Button size="sm">
+                    <>
+                      {/* Mesmo checkout do paywall (EARLY35 aplicado). Antes ia
+                          para /pricing e exigia mais um clique. */}
+                      <Button size="sm" onClick={handleLastFreeCheckout} disabled={unlockPending}>
                         <Crown className="mr-2 h-4 w-4" />
                         {t.counter.subscribe}
                       </Button>
-                    </Link>
+                      <Link
+                        to="/pricing"
+                        onClick={() => track('upgrade_cta_clicked', { source: 'last_free_result', destination: 'pricing' })}
+                        className="text-xs text-[var(--text-secondary)] underline-offset-2 transition-colors hover:text-[var(--text-primary)] hover:underline"
+                      >
+                        {t.counter.viewPlans}
+                      </Link>
+                    </>
                   ) : (
                     <>
                       <button
@@ -1024,6 +1068,7 @@ const DashboardPage = () => {
                       {freeLeftKnown && (
                         <Link
                           to="/pricing"
+                          onClick={() => track('upgrade_cta_clicked', { source: 'result_free_left', destination: 'pricing', freeRemaining: remaining })}
                           className="text-xs text-[var(--text-secondary)] underline-offset-2 transition-colors hover:text-[var(--text-primary)] hover:underline"
                         >
                           {t.counter.viewPlans}
@@ -1071,7 +1116,13 @@ const DashboardPage = () => {
     total === undefined ||
     total === -1 ||
     !Number.isFinite(total);
-  const quotaText = safeTotal === null ? `${safeUsed}/-` : `${Math.min(safeUsed, safeTotal)}/${safeTotal}`;
+  // Plano gratis: o chip mostra quantas RESTAM ("2 free left"). Antes era
+  // "1/3" e, no celular, sem a palavra ao lado: nao dava para saber se era
+  // usadas ou restantes. O contador detalhado so existe na barra lateral, que
+  // nao aparece no celular.
+  const freeRemainingChip = safeTotal === null ? null : Math.max(0, safeTotal - safeUsed);
+  const quotaText =
+    freeRemainingChip === null ? `${safeUsed}/-` : `${freeRemainingChip} ${t.nav.freeLeft}`;
   const mobileActiveView =
     activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error'
       ? 'new-analysis'
@@ -1193,7 +1244,7 @@ const DashboardPage = () => {
             <Zap className="h-3.5 w-3.5 text-[var(--accent-green)]" />
             <span className="whitespace-nowrap">{navbarUnlimited ? plan.toUpperCase() : quotaText}</span>
             <span className="hidden whitespace-nowrap text-[var(--text-secondary)] md:inline">
-              {navbarUnlimited ? `· ${t.nav.statusActive}` : t.nav.analysesWord}
+              {navbarUnlimited ? `· ${t.nav.statusActive}` : ''}
             </span>
           </div>
 
