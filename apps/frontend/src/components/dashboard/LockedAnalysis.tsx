@@ -85,7 +85,7 @@ const LockedAnalysis = ({ onUnlock, unlockPending = false, symbolLabel }: Locked
         </button>
         {offer?.percentOff ? (
           <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
-            Early user: your {offer.code} discount ({offer.percentOff}% off the first month) is applied automatically.
+            Early user: your {offer.code} discount ({offer.percentOff}% off the first month, then $29/month) is applied automatically.
           </p>
         ) : null}
       </div>

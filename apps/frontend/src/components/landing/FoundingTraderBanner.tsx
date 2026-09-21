@@ -11,8 +11,8 @@ import { useFoundingOffer } from '@/hooks/useFoundingOffer';
 // Era uma faixa verde neon com texto preto, a primeira coisa que a página
 // gritava. Agora é uma linha discreta: a oferta continua lá, sem berrar.
 const COPY = {
-  en: { text: 'Founding Trader: early subscribers lock this price while they stay subscribed.', cta: 'Claim your spot' },
-  pt: { text: 'Founding Trader: os primeiros assinantes travam este preço enquanto mantiverem a assinatura.', cta: 'Garantir vaga' },
+  en: { text: 'Founding Trader: early subscribers lock the $29/month price while they stay subscribed.', cta: 'Claim your spot' },
+  pt: { text: 'Founding Trader: os primeiros assinantes travam o preço de US$ 29/mês enquanto mantiverem a assinatura.', cta: 'Garantir vaga' },
 } as const;
 
 const FoundingTraderBanner = () => {

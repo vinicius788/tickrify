@@ -100,7 +100,7 @@ export class MailService {
   async sendRecovery(to: string, offer?: { code: string; percentOff: number | null } | null): Promise<void> {
     const oferta =
       offer && offer.percentOff
-        ? ` and keep this early-user code: <b>${offer.code}</b> (${offer.percentOff}% off your first month)`
+        ? ` and keep this early-user code: <b>${offer.code}</b> (${offer.percentOff}% off your first month, then $29/month)`
         : '';
     const html = this.wrap(
       "Your analyses ran out, and your trades will not wait",
