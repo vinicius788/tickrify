@@ -3750,3 +3750,8 @@ Relatos do botao "reportar problema" passam a ir SEMPRE para `support@tickrify.c
 (`SUPPORT_EMAIL` sobrescreve) alem dos `BOOTSTRAP_ADMIN_EMAILS`, sem repetir
 endereco, com `reply_to` = e-mail de quem reportou. E o e-mail de recuperacao
 parou de dizer "Go unlimited" (o plano e 200/mes): virou "Subscribe".
+Relatos tem teto GLOBAL de 20 e-mails/hora (`ReportsService.MAX_REPORT_EMAILS_PER_HOUR`,
+contador em memoria). O limite por rota (5/h) conta por IP, porque o throttler
+roda antes da autenticacao; muitas contas + troca de IP passariam dele e
+queimariam a cota do Resend, levando junto boas-vindas e recuperacao. Acima do
+teto o relato e gravado e so o e-mail deixa de sair.

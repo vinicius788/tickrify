@@ -129,6 +129,19 @@ describe('ReportsService', () => {
       delete process.env.BOOTSTRAP_ADMIN_EMAILS;
     });
 
+    it('rajada de relatos: grava todos, mas para de mandar e-mail no teto por hora', async () => {
+      delete process.env.BOOTSTRAP_ADMIN_EMAILS; // 1 destino (suporte) por relato
+      const teto = ReportsService.MAX_REPORT_EMAILS_PER_HOUR;
+      for (let i = 0; i < teto + 5; i++) {
+        await expect(service.criar({ userId: `u${i}`, message: 'rajada de teste' })).resolves.toMatchObject({
+          status: 'aberto',
+        });
+      }
+      await new Promise((r) => setImmediate(r));
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(teto + 5);
+      expect(mail.sendProblemReport).toHaveBeenCalledTimes(teto);
+    });
+
     it('escapa HTML do relato antes de montar o e-mail do admin', async () => {
       process.env.BOOTSTRAP_ADMIN_EMAILS = 'dono@tickrify.com';
       await service.criar({ userId: 'u1', message: '<img src=x onerror=alert(1)>' });

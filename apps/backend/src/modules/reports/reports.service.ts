@@ -46,6 +46,29 @@ export class ReportsService implements OnModuleInit {
   private static readonly MAX_CONTEXT_BYTES = 8_000;
   private static readonly MAX_CONTEXT_KEYS = 40;
 
+  /**
+   * Teto GLOBAL de e-mails de relato por hora, somando todos os usuarios. O
+   * limite por usuario (5/h) nao segura quem cria varias contas e troca de IP,
+   * e cada relato vira um e-mail por destino. Sem este teto, uma rajada gasta a
+   * cota diaria do Resend e derruba junto os e-mails de boas-vindas e de
+   * recuperacao. Passando do teto o relato continua GRAVADO (aparece no /admin);
+   * so o aviso por e-mail fica de fora ate a janela virar.
+   */
+  static readonly MAX_REPORT_EMAILS_PER_HOUR = 20;
+  private emailWindowStart = 0;
+  private emailsInWindow = 0;
+
+  /** Reserva `n` envios na janela atual; false se passaria do teto. */
+  private reservarEmails(n: number, agora = Date.now()): boolean {
+    if (agora - this.emailWindowStart >= 3_600_000) {
+      this.emailWindowStart = agora;
+      this.emailsInWindow = 0;
+    }
+    if (this.emailsInWindow + n > ReportsService.MAX_REPORT_EMAILS_PER_HOUR) return false;
+    this.emailsInWindow += n;
+    return true;
+  }
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
@@ -191,6 +214,13 @@ export class ReportsService implements OnModuleInit {
     const replyTo = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(params.userEmail || '')
       ? String(params.userEmail)
       : undefined;
+
+    if (!this.reservarEmails(destinos.length)) {
+      this.logger.warn(
+        `[relatos] Teto de ${ReportsService.MAX_REPORT_EMAILS_PER_HOUR} e-mails/hora atingido; relato ${id} gravado sem aviso por e-mail.`,
+      );
+      return;
+    }
 
     const escapar = (texto: string) =>
       texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
