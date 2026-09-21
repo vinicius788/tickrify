@@ -5,12 +5,14 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import { useFoundingOffer } from '@/hooks/useFoundingOffer';
 
-// Founding Trader: os primeiros 50 travam o preço de lançamento.
+// Founding Trader: os primeiros assinantes travam o preço de lançamento.
+// Sem número de vagas: pagamento recusado também consome um uso do cupom na
+// Stripe, então "os primeiros 50" prometia uma quantidade que ela não garante.
 // Era uma faixa verde neon com texto preto, a primeira coisa que a página
 // gritava. Agora é uma linha discreta: a oferta continua lá, sem berrar.
 const COPY = {
-  en: { text: 'Founding Trader: the first 50 users lock this price forever.', cta: 'Claim your spot' },
-  pt: { text: 'Founding Trader: os primeiros 50 usuários travam este preço para sempre.', cta: 'Garantir vaga' },
+  en: { text: 'Founding Trader: early subscribers lock this price while they stay subscribed.', cta: 'Claim your spot' },
+  pt: { text: 'Founding Trader: os primeiros assinantes travam este preço enquanto mantiverem a assinatura.', cta: 'Garantir vaga' },
 } as const;
 
 const FoundingTraderBanner = () => {

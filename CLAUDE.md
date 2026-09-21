@@ -3771,3 +3771,9 @@ teto o relato e gravado e so o e-mail deixa de sair.
 - Front: `useFoundingOffer` esconde a faixa da home, a secao da /pricing e o
   texto de desconto do paywall quando a oferta nao esta ativa (tambem enquanto
   carrega). Em 21/09: 5 de 50 usos.
+**Uso do cupom gasto por pagamento recusado (conferido 21/09):** o Checkout cria a
+assinatura ao tentar cobrar e ja aplica o cupom; cartao recusado deixa a
+assinatura `incomplete`, ela expira em ~23h e a Stripe NAO devolve o uso. Dos 5
+usos do EARLY35, 2 sao das duas tentativas recusadas do benniequltured. Nao da
+para aumentar o `max_redemptions` de cupom existente. Por isso a vitrine parou de
+prometer "os primeiros 50": virou "early subscribers / while this offer lasts".
