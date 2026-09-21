@@ -33,7 +33,6 @@
     "auditoria:prod": "node scripts/auditoria-producao.mjs"
   },
   "devDependencies": {
-    "autoprefixer": "^10.6.1",
     "concurrently": "^8.2.2"
   },
   "pnpm": {
@@ -63,8 +62,5 @@
       "uuid": "11.1.1",
       "ws": "8.21.0"
     }
-  },
-  "dependencies": {
-    "dotenv": "^17.2.3"
   }
 }

@@ -162,11 +162,4 @@ export class TicksService {
     });
   }
 
-  async getHistory(userId: string) {
-    return this.prisma.tickTransaction.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
-  }
 }

@@ -1,18 +1,7 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  Post,
-  UnauthorizedException,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthGuard } from '../auth/auth.guard';
-import { StripeService } from '../payments/stripe.service';
-import { CreateTicksCheckoutDto } from './dto/create-ticks-checkout.dto';
-import { TICK_PACKAGES } from './tick-packages';
 import { TicksService } from './ticks.service';
 
 type AuthUser = {
@@ -21,13 +10,13 @@ type AuthUser = {
   email?: string | null;
 };
 
+// So o saldo. Pacotes avulsos (listar, comprar, historico) sairam em 21/09/2026:
+// nenhuma tela os chamava desde que o modal de compra foi removido, e com o
+// saldo mensal fixo em 200 um pacote comprado seria apagado na virada do mes.
 @Controller('ticks')
 @UseGuards(AuthGuard)
 export class TicksController {
-  constructor(
-    private readonly ticksService: TicksService,
-    private readonly stripeService: StripeService,
-  ) {}
+  constructor(private readonly ticksService: TicksService) {}
 
   @Get('balance')
   @Throttle({ default: { limit: 40, ttl: 60_000 } })
@@ -38,60 +27,5 @@ export class TicksController {
 
     const balance = await this.ticksService.getBalance(user.id);
     return { balance, currency: 'ticks' as const };
-  }
-
-  @Get('packages')
-  @Throttle({ default: { limit: 80, ttl: 60_000 } })
-  getPackages() {
-    return TICK_PACKAGES;
-  }
-
-  @Get('history')
-  @Throttle({ default: { limit: 40, ttl: 60_000 } })
-  async getHistory(@CurrentUser() user: AuthUser) {
-    if (!user?.id) {
-      throw new UnauthorizedException('Authenticated user not found');
-    }
-
-    return this.ticksService.getHistory(user.id);
-  }
-
-  @Post('checkout')
-  @Throttle({ default: { limit: 12, ttl: 60_000 } })
-  async createCheckout(
-    @CurrentUser() user: AuthUser,
-    @Body() body: CreateTicksCheckoutDto,
-  ) {
-    if (!user?.id) {
-      throw new UnauthorizedException('Authenticated user not found');
-    }
-
-    if (!user.email) {
-      throw new BadRequestException('User has no e-mail for Stripe checkout');
-    }
-
-    const pkg = TICK_PACKAGES.find((item) => item.id === body.packageId);
-    if (!pkg) {
-      throw new BadRequestException('Invalid Ticks package');
-    }
-
-    // MOEDA ÚNICA: USD, sempre (29/07/2026). Mesmo furo que o checkout de
-    // assinatura tinha: `body.currency` vinha do cliente e escolhia a linha de
-    // preço do pacote, então um POST com 'brl' comprava pelo valor BRL antigo.
-    // A tabela por moeda segue em TICK_PACKAGES para exibição/legado, mas quem
-    // cobra é sempre o USD.
-    const currency = 'usd' as const;
-
-    const session = await this.stripeService.createTicksCheckout({
-      userId: user.id,
-      userEmail: user.email,
-      packageId: pkg.id,
-      packageName: pkg.name,
-      ticks: pkg.ticks,
-      priceInCents: pkg.pricesInCents[currency] ?? pkg.priceInCents,
-      currency,
-    });
-
-    return { url: session.url };
   }
 }

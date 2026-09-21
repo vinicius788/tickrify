@@ -49,7 +49,6 @@ vi.mock('@/hooks/use-toast', () => ({
 
 vi.mock('@/lib/stripe', () => ({
   createCheckoutSession: vi.fn(),
-  detectCurrency: vi.fn(() => 'usd'),
 }));
 
 vi.mock('@/components/dashboard/NewAnalysis', () => ({
@@ -127,9 +126,7 @@ describe('DashboardPage', () => {
     mockUseIncrementAnalysis.mockReturnValue(vi.fn());
     mockUseTicks.mockReturnValue({
       balance: 0,
-      buyTicks: vi.fn(),
       refetch: vi.fn(),
-      packages: [],
       history: [],
       loadingBalance: false,
     });

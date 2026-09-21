@@ -16,15 +16,6 @@ export const LANGUAGES: { code: Language; label: string; flag: string }[] = [
   { code: 'ja', label: '日本語', flag: '🇯🇵' },
 ];
 
-export const LANGUAGE_AI_NAMES: Record<Language, string> = {
-  pt: 'Portuguese (Brazil)',
-  en: 'English',
-  es: 'Spanish',
-  fr: 'French',
-  de: 'German',
-  ja: 'Japanese',
-};
-
 const translations = { pt, en, es, fr, de, ja };
 
 export type Translations = typeof pt;

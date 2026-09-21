@@ -537,61 +537,6 @@ export class StripeService implements OnModuleInit {
     }
   }
 
-  async createTicksCheckout(params: {
-    userId: string;
-    userEmail: string;
-    packageId: string;
-    packageName: string;
-    ticks: number;
-    priceInCents: number;
-    currency?: Currency;
-  }) {
-    try {
-      const stripe = this.getStripeClient();
-      const appBaseUrl = this.resolveAppBaseUrl();
-
-      const session = await stripe.checkout.sessions.create({
-        mode: 'payment',
-        customer_email: params.userEmail,
-        line_items: [
-          {
-            quantity: 1,
-            price_data: {
-              currency: params.currency ?? 'usd',
-              unit_amount: params.priceInCents,
-              product_data: {
-                name: `Tickrify ${params.ticks} Ticks (${params.packageName})`,
-                description: `${params.ticks} Ticks for analyses. They never expire.`,
-              },
-            },
-          },
-        ],
-        metadata: {
-          type: 'ticks_purchase',
-          userId: params.userId,
-          packageId: params.packageId,
-          ticks: String(params.ticks),
-        },
-        success_url: `${appBaseUrl}/dashboard?ticks=success&package=${params.packageId}&amount=${params.ticks}`,
-        cancel_url: `${appBaseUrl}/dashboard?ticks=cancelled`,
-      });
-
-      if (!session.url) {
-        throw new InternalServerErrorException('Stripe checkout URL unavailable');
-      }
-
-      return session;
-    } catch (error) {
-      this.logger.error('Failed to create ticks checkout', {
-        userId: params.userId,
-        packageId: params.packageId,
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      this.rethrowStripeError(error, 'Falha ao criar checkout de Ticks no Stripe.');
-    }
-  }
-
   private rethrowCheckoutError(error: unknown): never {
     // Erro ja classificado (Conflict, BadRequest, ServiceUnavailable...) sobe
     // intacto, com o `code` que o frontend usa para decidir o que mostrar.
@@ -771,115 +716,6 @@ export class StripeService implements OnModuleInit {
     throw new Error(
       'Missing APP_URL/FRONTEND_URL. Stripe redirect allowlist could not be resolved.',
     );
-  }
-
-  /**
-   * Cancelar assinatura
-   */
-  async cancelSubscription(clerkUserId: string) {
-    try {
-      const stripe = this.getStripeClient();
-      const user = await this.prisma.user.findUnique({
-        where: { clerkUserId },
-        select: { id: true },
-      });
-
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      const subscriptionRecord = await this.prisma.subscription.findFirst({
-        where: {
-          userId: user.id,
-          status: {
-            in: ['active', 'trialing', 'past_due', 'unpaid', 'incomplete'],
-          },
-        },
-        orderBy: { updatedAt: 'desc' },
-      });
-
-      if (!subscriptionRecord?.stripeId) {
-        throw new Error('User does not have an active subscription');
-      }
-
-      const subscription = await stripe.subscriptions.update(
-        subscriptionRecord.stripeId,
-        {
-          cancel_at_period_end: true,
-        },
-      );
-
-      await this.upsertSubscriptionForUser(user.id, subscription);
-
-      this.logger.log(`Subscription cancelled: ${subscription.id} for user: ${clerkUserId}`);
-
-      return {
-        subscriptionId: subscription.id,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end,
-        currentPeriodEnd: subscription.current_period_end,
-      };
-    } catch (error) {
-      this.logger.error('Failed to cancel subscription', {
-        clerkUserId,
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      this.rethrowStripeError(error, 'Falha ao cancelar assinatura no Stripe.');
-    }
-  }
-
-  /**
-   * Reativar assinatura
-   */
-  async reactivateSubscription(clerkUserId: string) {
-    try {
-      const stripe = this.getStripeClient();
-      const user = await this.prisma.user.findUnique({
-        where: { clerkUserId },
-        select: { id: true },
-      });
-
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      const subscriptionRecord = await this.prisma.subscription.findFirst({
-        where: {
-          userId: user.id,
-          status: {
-            in: ['active', 'trialing', 'past_due', 'unpaid', 'incomplete', 'canceled'],
-          },
-        },
-        orderBy: { updatedAt: 'desc' },
-      });
-
-      if (!subscriptionRecord?.stripeId) {
-        throw new Error('User does not have a subscription');
-      }
-
-      const subscription = await stripe.subscriptions.update(
-        subscriptionRecord.stripeId,
-        {
-          cancel_at_period_end: false,
-        },
-      );
-
-      await this.upsertSubscriptionForUser(user.id, subscription);
-
-      this.logger.log(`Subscription reactivated: ${subscription.id} for user: ${clerkUserId}`);
-
-      return {
-        subscriptionId: subscription.id,
-        status: subscription.status,
-      };
-    } catch (error) {
-      this.logger.error('Failed to reactivate subscription', {
-        clerkUserId,
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      this.rethrowStripeError(error, 'Falha ao reativar assinatura no Stripe.');
-    }
   }
 
   /**
@@ -1095,11 +931,6 @@ export class StripeService implements OnModuleInit {
    * pagamento pendente a sessao completa e a assinatura nasce `incomplete`.
    */
   private async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
-    if (session.metadata?.type === 'ticks_purchase') {
-      await this.creditTicksFromCompletedCheckout(session);
-      return;
-    }
-
     if (session.mode !== 'subscription') {
       this.logger.log(`[webhook] Checkout ${session.id} em modo ${session.mode}; nada a sincronizar.`);
       return;
@@ -1268,73 +1099,6 @@ export class StripeService implements OnModuleInit {
   private asAttributionRecord(value: Prisma.JsonValue | null | undefined): AttributionRecord | null {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     return value as AttributionRecord;
-  }
-
-  private async creditTicksFromCompletedCheckout(session: Stripe.Checkout.Session) {
-    const userId = String(session.metadata?.userId || '').trim();
-    const packageId = String(session.metadata?.packageId || '').trim();
-    const ticks = Number(session.metadata?.ticks || 0);
-    const paymentIntentId = String(session.payment_intent || '').trim() || null;
-
-    if (!userId || !Number.isFinite(ticks) || ticks <= 0) {
-      this.logger.error('[Ticks] Invalid checkout metadata for ticks purchase', {
-        sessionId: session.id,
-        userId,
-        packageId,
-        ticks: session.metadata?.ticks,
-      });
-      return;
-    }
-
-    if (paymentIntentId) {
-      const existing = await this.prisma.tickTransaction.findUnique({
-        where: { stripePaymentIntentId: paymentIntentId },
-        select: { id: true },
-      });
-      if (existing) {
-        this.logger.log(
-          `[Ticks] Duplicate webhook ignored for payment intent ${paymentIntentId}`,
-        );
-        return;
-      }
-    }
-
-    try {
-      await this.prisma.$transaction([
-        this.prisma.userTicks.upsert({
-          where: { userId },
-          create: { userId, balance: ticks },
-          update: { balance: { increment: ticks } },
-        }),
-        this.prisma.tickTransaction.create({
-          data: {
-            userId,
-            amount: ticks,
-            type: 'PURCHASE',
-            description: `Purchase: ${packageId}, ${ticks} Ticks`,
-            stripePaymentIntentId: paymentIntentId,
-            metadata: {
-              stripeCheckoutSessionId: session.id,
-              packageId,
-            },
-          },
-        }),
-      ]);
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002' &&
-        paymentIntentId
-      ) {
-        this.logger.log(
-          `[Ticks] Duplicate purchase ignored by unique constraint for ${paymentIntentId}`,
-        );
-        return;
-      }
-      throw error;
-    }
-
-    this.logger.log(`[Ticks] +${ticks} creditados para ${userId}`);
   }
 
   /**

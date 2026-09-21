@@ -228,19 +228,6 @@ export interface AnalysisUsageResponse {
   analysesAllTime?: number;
 }
 
-export interface PerformanceResponse {
-  total: number;
-  wins: number;
-  losses: number;
-  breakeven: number;
-  open: number;
-  pending: number;
-  winRate: number | null;
-  avgRiskReward: number | null;
-  totalPnlPercent: number | null;
-  pnlCount: number;
-}
-
 /**
  * Espelha `StrategyProfile` do backend (`common/strategy/strategy-profile.ts`).
  * Os campos aqui são `string[]`/`string` propositalmente soltos (não os
@@ -692,30 +679,6 @@ class APIClient {
     return response.json();
   }
 
-  async getPerformance(
-    token: string | null,
-    getFreshToken?: FreshTokenGetter,
-  ): Promise<PerformanceResponse> {
-    const response = await this.request(
-      '/api/ai/performance',
-      {
-        method: 'GET',
-        headers: {
-          ...this.getAuthHeader(token),
-        },
-      },
-      'Failed to fetch performance',
-      APIClient.REQUEST_TIMEOUT_MS,
-      getFreshToken,
-    );
-
-    if (!response.ok) {
-      throw await this.buildApiError(response, 'Failed to fetch performance');
-    }
-
-    return response.json();
-  }
-
   async getStrategy(
     token: string | null,
     getFreshToken?: FreshTokenGetter,
@@ -857,11 +820,6 @@ export function useAPIClient() {
     return apiClient.setFavorite(analysisId, isFavorite, token, getFreshToken);
   }, [getFreshToken]);
 
-  const getPerformance = useCallback(async () => {
-    const token = await getFreshToken();
-    return apiClient.getPerformance(token, getFreshToken);
-  }, [getFreshToken]);
-
   const getStrategy = useCallback(async () => {
     const token = await getFreshToken();
     return apiClient.getStrategy(token, getFreshToken);
@@ -895,9 +853,8 @@ export function useAPIClient() {
     setTechnicalAttribution,
     setOutcome,
     setFavorite,
-    getPerformance,
     getStrategy,
     saveStrategy,
     waitForAnalysisCompletion,
-  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setTechnicalAttribution, setOutcome, setFavorite, getPerformance, getStrategy, saveStrategy, waitForAnalysisCompletion]);
+  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setTechnicalAttribution, setOutcome, setFavorite, getStrategy, saveStrategy, waitForAnalysisCompletion]);
 }

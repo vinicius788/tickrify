@@ -3,14 +3,12 @@ import {
   Controller,
   ForbiddenException,
   Get,
-  Header,
   Logger,
   Param,
   Patch,
   Post,
   Put,
   Query,
-  Res,
   UnauthorizedException,
   UseGuards,
   UseInterceptors,
@@ -18,7 +16,6 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
-import { Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -193,62 +190,6 @@ export class AiController {
       throw new ForbiddenException({ code: 'paid_feature', message: 'Strategy profile requires a subscription.' });
     }
     return this.aiService.setStrategy(dbUserId, body);
-  }
-
-  @Get('performance')
-  @UseGuards(AuthGuard)
-  @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  async getPerformance(
-    @CurrentUser() user: { id?: string; clerkUserId: string },
-  ) {
-    const dbUserId = await this.resolveDbUserId(user);
-    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
-
-    return this.aiService.getPerformance(dbUserId);
-  }
-
-  @Post('analyze/stream')
-  @UseGuards(AuthGuard)
-  @UseInterceptors(
-    FileInterceptor('image', { limits: { fileSize: 10 * 1024 * 1024, fieldSize: 20 * 1024 * 1024 } }),
-  )
-  @Throttle({ default: { limit: 8, ttl: 60_000 } })
-  @Header('Content-Type', 'text/event-stream')
-  @Header('Cache-Control', 'no-cache, no-transform')
-  @Header('X-Accel-Buffering', 'no')
-  async analyzeStream(
-    @CurrentUser() user: { id?: string; clerkUserId: string; email?: string | null },
-    @UploadedFile() file: UploadedFileType,
-    @Body() body: CreateAnalysisDto,
-    @Res() res: Response,
-  ) {
-    const dbUserId = await this.resolveDbUserId(user);
-    if (!dbUserId) {
-      res.status(401).end();
-      return;
-    }
-
-    res.flushHeaders();
-
-    const sendEvent = (event: string, data: unknown) => {
-      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    };
-
-    try {
-      await this.aiService.streamAnalysis(
-        dbUserId,
-        file,
-        body.base64Image,
-        undefined, // SEGURANÇA: promptOverride nunca vem do cliente (ver endpoint analyze)
-        body.analysisType,
-        sendEvent,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erro na análise.';
-      sendEvent('error', { code: 'analysis_failed', message, retriable: false });
-    } finally {
-      res.end();
-    }
   }
 
   /**

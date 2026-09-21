@@ -52,10 +52,6 @@ const CHALLENGE_STYLE =
   'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;' +
   'background:rgba(5,5,8,0.82);z-index:2147483647;';
 
-export function isTurnstileEnabled(): boolean {
-  return SITE_KEY.length > 0;
-}
-
 let scriptPromise: Promise<TurnstileApi | null> | null = null;
 
 function loadScript(): Promise<TurnstileApi | null> {

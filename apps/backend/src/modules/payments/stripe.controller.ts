@@ -122,26 +122,6 @@ export class StripeController {
   }
 
   /**
-   * Cancelar assinatura
-   */
-  @Post('cancel-subscription')
-  @UseGuards(AuthGuard)
-  @Throttle({ default: { limit: 8, ttl: 60_000 } })
-  async cancelSubscription(@CurrentUser() user: AuthenticatedUser) {
-    return this.stripeService.cancelSubscription(user.clerkUserId);
-  }
-
-  /**
-   * Reativar assinatura
-   */
-  @Post('reactivate-subscription')
-  @UseGuards(AuthGuard)
-  @Throttle({ default: { limit: 8, ttl: 60_000 } })
-  async reactivateSubscription(@CurrentUser() user: AuthenticatedUser) {
-    return this.stripeService.reactivateSubscription(user.clerkUserId);
-  }
-
-  /**
    * Obter assinatura do usuário
    */
   @Get('subscription')

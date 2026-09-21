@@ -40,10 +40,6 @@ export function lerMigalhas(): string[] {
   });
 }
 
-export function limparMigalhas(): void {
-  anel.length = 0;
-}
-
 /**
  * Contexto técnico do navegador no momento do relato.
  *

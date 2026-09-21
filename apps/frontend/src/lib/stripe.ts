@@ -19,16 +19,6 @@ export type PlanType = 'starter' | 'pro' | 'elite';
 // no checkout via Adaptive Pricing, na cotação do dia. O tipo `Currency` segue
 // com as três moedas porque assinaturas LEGADAS ainda resolvem por elas.
 
-/**
- * @deprecated Sempre retorna 'usd'. Mantida como casca para não quebrar
- * importações antigas — inclusive o mock em `__tests__/DashboardPage.test.tsx`,
- * que declara `detectCurrency` e daria erro de tipo se o export sumisse.
- * Pode ser apagada junto com o mock quando o build local voltar a rodar.
- */
-export function detectCurrency(_locale?: string): Currency {
-  return 'usd';
-}
-
 function isLocalHostname(hostname: string) {
   return hostname === 'localhost' || hostname === '127.0.0.1';
 }

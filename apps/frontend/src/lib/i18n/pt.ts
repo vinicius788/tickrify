@@ -417,26 +417,6 @@ export default {
     renewsPrefix: 'Renova mensalmente ·',
     renewsSuffix: 'ticks disponíveis',
   },
-  ticksModal: {
-    title: 'Comprar Ticks',
-    insuffSub: 'Seus ticks mensais acabaram. Compre mais ou aguarde a renovação do plano.',
-    insuffPrefix: 'Seu saldo atual é',
-    insuffSuffix: 'Ticks. Recarregue para continuar.',
-    topup: 'Ticks não expiram. Use quando quiser.',
-    close: 'Fechar',
-    costsTitle: 'quanto custa cada ação',
-    costQuick: 'Análise rápida',
-    costDeep: 'Análise deep',
-    costPdf: 'Exportar PDF',
-    quickTick: '1 Tick',
-    deepTicks: '3 Ticks',
-    pdfTicks: '2 Ticks',
-    popular: 'popular',
-    redirecting: 'redirecionando...',
-    secure: 'Pagamento seguro via Stripe · Ticks nunca expiram',
-    rapidAnalyses: 'análises rápidas',
-    or: 'ou',
-  },
 
   // ── Errors ────────────────────────────────────────────────────────────────────
   errors: {
