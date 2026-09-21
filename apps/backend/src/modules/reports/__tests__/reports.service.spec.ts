@@ -111,11 +111,22 @@ describe('ReportsService', () => {
       delete process.env.BOOTSTRAP_ADMIN_EMAILS;
     });
 
-    it('sem allowlist de admin configurada, não tenta enviar e-mail', async () => {
+    it('sem allowlist de admin, o relato ainda chega no suporte', async () => {
       delete process.env.BOOTSTRAP_ADMIN_EMAILS;
       await service.criar({ userId: 'u1', message: 'teste' });
       await new Promise((r) => setImmediate(r));
-      expect(mail.sendProblemReport).not.toHaveBeenCalled();
+      expect(mail.sendProblemReport).toHaveBeenCalledTimes(1);
+      expect(mail.sendProblemReport.mock.calls[0][0]).toBe('support@tickrify.com');
+    });
+
+    it('suporte e admins recebem uma vez cada, e responder vai para quem reportou', async () => {
+      process.env.BOOTSTRAP_ADMIN_EMAILS = 'dono@tickrify.com, Support@tickrify.com';
+      await service.criar({ userId: 'u1', userEmail: 'ana@example.com', message: 'teste' });
+      await new Promise((r) => setImmediate(r));
+      const destinos = mail.sendProblemReport.mock.calls.map((c: unknown[]) => c[0]);
+      expect(destinos).toEqual(['support@tickrify.com', 'dono@tickrify.com']);
+      expect(mail.sendProblemReport.mock.calls.every((c: unknown[]) => c[2] === 'ana@example.com')).toBe(true);
+      delete process.env.BOOTSTRAP_ADMIN_EMAILS;
     });
 
     it('escapa HTML do relato antes de montar o e-mail do admin', async () => {

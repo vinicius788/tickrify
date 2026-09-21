@@ -3746,3 +3746,7 @@ intermitente "worker process has failed to exit" no jest.
 todo e-mail do Resend (`MAIL_REPLY_TO` sobrescreve). O dominio recebe pelo Zoho
 Mail (MX conferido). Fora do codigo, so o dono troca: e-mail de suporte nos
 dados publicos da Stripe (aparece no recibo e no checkout) e no Clerk.
+Relatos do botao "reportar problema" passam a ir SEMPRE para `support@tickrify.com`
+(`SUPPORT_EMAIL` sobrescreve) alem dos `BOOTSTRAP_ADMIN_EMAILS`, sem repetir
+endereco, com `reply_to` = e-mail de quem reportou. E o e-mail de recuperacao
+parou de dizer "Go unlimited" (o plano e 200/mes): virou "Subscribe".

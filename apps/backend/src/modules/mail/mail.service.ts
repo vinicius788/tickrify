@@ -16,7 +16,7 @@ export class MailService {
   // O remetente e noreply@; sem isto, quem responde ao e-mail fala com ninguem.
   private readonly replyTo = process.env.MAIL_REPLY_TO || 'support@tickrify.com';
 
-  private async send(to: string, subject: string, html: string): Promise<void> {
+  private async send(to: string, subject: string, html: string, replyTo?: string): Promise<void> {
     if (!this.apiKey) {
       this.logger.warn('RESEND_API_KEY ausente — pulando envio de e-mail.');
       return;
@@ -30,7 +30,7 @@ export class MailService {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ from: this.from, to, subject, html, reply_to: this.replyTo }),
+        body: JSON.stringify({ from: this.from, to, subject, html, reply_to: replyTo || this.replyTo }),
       });
 
       if (!res.ok) {
@@ -65,7 +65,8 @@ export class MailService {
    * CTA verde e disclaimer de produto, desenhado para o CLIENTE. Aqui o
    * destinatário é operacional e o que importa é ler o relato rápido.
    */
-  async sendProblemReport(to: string, corpoHtml: string): Promise<void> {
+  /** `replyTo`: e-mail de quem reportou, para o "responder" ir direto a ela. */
+  async sendProblemReport(to: string, corpoHtml: string, replyTo?: string): Promise<void> {
     await this.send(
       to,
       '[Tickrify] Novo relato de problema',
@@ -76,6 +77,7 @@ export class MailService {
     <a href="${this.appUrl}/admin" style="display:inline-block;margin-top:16px;font-size:14px;">Abrir o painel</a>
   </div>
 </body></html>`,
+      replyTo,
     );
   }
 
@@ -94,8 +96,8 @@ export class MailService {
   async sendRecovery(to: string): Promise<void> {
     const html = this.wrap(
       "Your analyses ran out, and your trades will not wait",
-      `You used your free analyses. Looks like the AI's been helping you confirm entries, so it makes no sense to go back to trading blind.<br><br>Go unlimited and keep this early-user code: <b>EARLY35</b> (35% off your first month).`,
-      'Go unlimited',
+      `You used your free analyses. Looks like the AI's been helping you confirm entries, so it makes no sense to go back to trading blind.<br><br>Subscribe for 200 analyses a month and keep this early-user code: <b>EARLY35</b> (35% off your first month).`,
+      'Subscribe',
       `${this.appUrl}/pricing`,
     );
     await this.send(to, "Your analyses ran out, and your trades will not wait", html);

@@ -177,14 +177,20 @@ export class ReportsService implements OnModuleInit {
     id: string,
     params: { userEmail?: string | null; message: string; route?: string; analysisId?: string },
   ): Promise<void> {
-    // Reaproveita a mesma allowlist que define quem é admin: quem pode
-    // consertar é quem precisa ser avisado.
-    const destinos = String(process.env.BOOTSTRAP_ADMIN_EMAILS || '')
-      .split(',')
-      .map((e) => e.trim())
-      .filter(Boolean);
-
-    if (destinos.length === 0) return;
+    // Vai para a caixa do suporte e para os admins (a mesma allowlist que
+    // define quem e admin), sem repetir endereco.
+    const suporte = String(process.env.SUPPORT_EMAIL || 'support@tickrify.com').trim();
+    const destinos = [
+      ...new Set(
+        [suporte, ...String(process.env.BOOTSTRAP_ADMIN_EMAILS || '').split(',')]
+          .map((e) => e.trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    ];
+    // "Responder" vai direto para quem reportou, quando o e-mail e conhecido.
+    const replyTo = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(params.userEmail || '')
+      ? String(params.userEmail)
+      : undefined;
 
     const escapar = (texto: string) =>
       texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -199,7 +205,7 @@ export class ReportsService implements OnModuleInit {
       </p>`;
 
     for (const destino of destinos) {
-      await this.mail.sendProblemReport(destino, corpo);
+      await this.mail.sendProblemReport(destino, corpo, replyTo);
     }
   }
 
