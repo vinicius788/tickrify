@@ -3726,3 +3726,15 @@ Aberto, conhecido e nao critico: e-mail de recuperacao so sai no caminho sem fil
 fica no localStorage); drift cosmetico entre migracoes e schema (ordem de indice
 do ProblemReport, default do FeatureFlag; o indice `Analysis_promptVer_outcome`
 e criado no boot); i18n dos 6 idiomas no bundle principal (812 kB).
+
+**E-mail de recuperacao LIGADO no worker (21/09, mesmo dia, autorizado pelo
+dono).** A regra saiu do `AiService` para `modules/mail/recovery-email.ts`
+(`sendRecoveryEmailOnce` + `notifyIfFreeQuotaExhausted`), usada pelos DOIS
+caminhos. O worker chama ao concluir analise gratis; "ja assina?" la e a checagem
+de banco (active/trialing), porque o worker nao tem StripeService. Dedup,
+assinante e cota iguais aos de antes. Corrige a nota "ACHADO NAO CORRIGIDO" da
+secao do PostHog. Teste: `src/__tests__/ai-worker-recovery-email.spec.ts` roda um
+job ate o fim (analise demo) e falha se a chamada sair do worker.
+De brinde: `raceTimeout` (signal-decision.ts) nao cancelava o timer do calendario;
+cada analise deixava um timer vivo ate o prazo. Isso tambem era parte do aviso
+intermitente "worker process has failed to exit" no jest.

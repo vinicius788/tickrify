@@ -45,7 +45,11 @@ import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { TICK_COSTS, AnalysisType } from '../ticks/tick-packages';
 import { TicksService } from '../ticks/ticks.service';
 import { MailService } from '../mail/mail.service';
-import { fetchClerkEmail } from '../../common/utils/clerk-email';
+import {
+  notifyIfFreeQuotaExhausted as notifyFreeQuotaExhausted,
+  sendRecoveryEmailOnce,
+  type RecoveryEmailDeps,
+} from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
 import { trackFreeAnalysisCompleted, trackFreeAnalysisStarted } from '../../common/analytics/free-funnel';
 import {
@@ -1124,56 +1128,19 @@ export class AiService implements OnModuleInit {
    * Dedup permanente via AdminAudit (action 'recovery_email_sent') — zero migração.
    * Best-effort absoluto: fire-and-forget, nunca propaga erro nem atrasa a resposta.
    */
-  private async triggerRecoveryEmail(userId: string): Promise<void> {
-    try {
-      const already = await this.prisma.adminAudit.findFirst({
-        where: { action: 'recovery_email_sent', targetUserId: userId },
-        select: { id: true },
-      });
-      if (already) return;
-
-      /* Quem ja assinou nao recebe "suas analises acabaram". O gatilho e
-       * fire-and-forget e o usuario pode ter assinado entre o disparo e este
-       * ponto; sem esta checagem, um assinante novo recebe um e-mail pedindo
-       * que ele assine. */
-      if (await this.hasPaidAccess(userId)) return;
-
-      const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { email: true, clerkUserId: true },
-      });
-      if (!user) return;
-
-      let email = user.email;
-      if (!email) {
-        // Token do Clerk não traz e-mail → busca na API e faz backfill.
-        email = await fetchClerkEmail(user.clerkUserId);
-        if (email) {
-          await this.prisma.user
-            .update({ where: { id: userId }, data: { email } })
-            .catch(() => undefined);
-        }
-      }
-      if (!email) return;
-
-      // Registra ANTES de enviar: numa corrida, melhor perder 1 e-mail que duplicar.
-      await this.prisma.adminAudit.create({
-        data: {
-          action: 'recovery_email_sent',
-          targetUserId: userId,
-          targetEmail: email,
-          details: { source: 'free_limit_reached' },
-        },
-      });
-
-      await this.mailService.sendRecovery(email);
-      this.logger.log(`[recovery] E-mail de recuperação enviado (userId=${userId}).`);
-    } catch (err) {
-      this.logger.warn(
-        `[recovery] Falha best-effort no e-mail de recuperação: ${(err as Error)?.message ?? err}`,
-      );
-    }
+  private triggerRecoveryEmail(userId: string): Promise<void> {
+    return sendRecoveryEmailOnce(this.recoveryDeps(), userId);
   }
+
+  private recoveryDeps(): RecoveryEmailDeps {
+    return {
+      prisma: this.prisma,
+      mail: this.mailService,
+      hasPaidAccess: (id) => this.hasPaidAccess(id),
+      log: (level, message) => (level === 'warn' ? this.logger.warn(message) : this.logger.log(message)),
+    };
+  }
+
 
   /**
    * Cota grátis esgotada: dispara o e-mail de recuperação quando o usuário
@@ -1200,18 +1167,9 @@ export class AiService implements OnModuleInit {
     if (analysisId) {
       void trackFreeAnalysisCompleted(this.prisma, { userId, analysisId, completedAt: new Date() });
     }
-    try {
-      const used = await this.prisma.analysis.count({
-        where: { userId, isDemo: true, status: { not: 'failed' } },
-      });
-      if (used < AiService.DEMO_ANALYSIS_LIMIT) return;
-      await this.triggerRecoveryEmail(userId);
-    } catch (err) {
-      this.logger.warn(
-        `[recovery] Falha ao checar cota grátis esgotada: ${(err as Error)?.message ?? err}`,
-      );
-    }
+    await notifyFreeQuotaExhausted(this.recoveryDeps(), userId);
   }
+
 
   /**
    * Enforces plan/quota access AND creates the Analysis row atomically.

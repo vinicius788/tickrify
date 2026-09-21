@@ -48,10 +48,15 @@ export interface SignalDecisionResult {
 const calendar = new EconomicCalendarService();
 
 function raceTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  // O timer e cancelado quando o calendario responde antes; sem isso cada
+  // analise deixava um timer vivo ate estourar o prazo.
+  let timer: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([
     promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('calendar timed out')), ms)),
-  ]);
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('calendar timed out')), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 export async function decideSignal(

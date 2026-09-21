@@ -25,6 +25,8 @@ import { DEEP_ENRICHMENT_INSTRUCTION } from '../src/modules/prompt/prompt-builde
 import { type StrategyProfile } from '../src/common/strategy/strategy-profile';
 import { startOutcomeSweeper } from './outcome.sweeper';
 import { trackFreeAnalysisCompleted } from '../src/common/analytics/free-funnel';
+import { MailService } from '../src/modules/mail/mail.service';
+import { notifyIfFreeQuotaExhausted, type RecoveryEmailDeps } from '../src/modules/mail/recovery-email';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -33,6 +35,22 @@ const prisma = new PrismaClient({
 });
 const aiAdapter = new AIAdapter();
 const storage = new ImageStorageClient();
+
+// E-mail de recuperacao quando a ultima analise gratis termina. Sem o
+// StripeService aqui, "ja assina?" e a mesma checagem de banco que libera o
+// acesso pago (assinatura active/trialing).
+const recoveryDeps: RecoveryEmailDeps = {
+  prisma,
+  mail: new MailService(),
+  hasPaidAccess: async (userId) =>
+    Boolean(
+      await prisma.subscription.findFirst({
+        where: { userId, status: { in: ['active', 'trialing'] } },
+        select: { id: true },
+      }),
+    ),
+  log: (level, message) => (level === 'warn' ? console.warn(message) : console.log(message)),
+};
 
 type SchemaRecommendation = 'COMPRA' | 'VENDA' | 'AGUARDAR';
 type MarketBias = 'bullish' | 'bearish' | 'neutral';
@@ -1122,6 +1140,7 @@ async function processAnalysis(job: Job<JobData>) {
     // cookies. Fire-and-forget: analytics nunca derruba o job.
     if (isDemo && userId) {
       void trackFreeAnalysisCompleted(prisma, { userId, analysisId, completedAt: new Date() });
+      void notifyIfFreeQuotaExhausted(recoveryDeps, userId);
     }
   } catch (error) {
     console.error(`[Worker] Error processing analysis ${analysisId}:`, error);
