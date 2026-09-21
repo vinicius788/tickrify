@@ -232,12 +232,19 @@ export function PricingCards() {
          *
          * A copy da /pricing foi ajustada junto: ela nao pede mais o codigo,
          * porque agora nao ha codigo para pedir. */
-        track('checkout_started', { plan: planType, billingCycle, currency, coupon: 'EARLY35' });
         const { url } = await createCheckoutSession(planType, token, billingCycle, currency, 'EARLY35');
+        // Dispara SO com a URL da Stripe em maos: antes saia antes da chamada a
+        // API e contava clique como checkout, inclusive quando a sessao falhava.
+        track('checkout_started', { plan: planType, billingCycle, currency, coupon: 'EARLY35', source: 'pricing' });
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
         window.location.href = url;
       } catch (error) {
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        track('checkout_failed', {
+          source: 'pricing',
+          plan: planType,
+          message: error instanceof Error ? error.message.slice(0, 200) : 'unknown',
+        });
         toast({
           title: copy.errorTitle,
           description:

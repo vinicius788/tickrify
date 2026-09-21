@@ -270,7 +270,12 @@ export type FunnelEvent =
   | 'upgrade_modal_viewed'
   | 'pricing_viewed'
   | 'upgrade_clicked'
+  // Disparado quando a Stripe DEVOLVEU a URL do checkout, nao no clique.
   | 'checkout_started'
+  // A criacao da sessao falhou (API fora, cold start, erro da Stripe).
+  | 'checkout_failed'
+  // Voltou da Stripe pelo cancel_url sem pagar.
+  | 'checkout_canceled'
   | 'subscription_activated'
   | 'founding_banner_clicked'
   // Funil da demo anônima (/try) — Fase 0 de ativação:

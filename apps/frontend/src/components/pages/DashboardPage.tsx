@@ -424,10 +424,17 @@ const DashboardPage = () => {
       // A moeda é USD fixo: o `detectCurrency` daqui mandava navegador pt-BR
       // para o price BRL congelado em jun/2026.
       track('upgrade_clicked', { source: 'locked_value', coupon: 'EARLY35' });
-      track('checkout_started', { plan: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35' });
       const { url } = await createCheckoutSession('starter', token, 'monthly', 'usd', 'EARLY35');
+      track('checkout_started', { plan: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35', source: 'locked_value' });
       window.location.href = url;
-    } catch {
+    } catch (error) {
+      // Registrado porque este catch era silencioso: a falha virava um desvio
+      // para /pricing sem deixar rastro no funil.
+      track('checkout_failed', {
+        source: 'locked_value',
+        plan: 'starter',
+        message: error instanceof Error ? error.message.slice(0, 200) : 'unknown',
+      });
       // Qualquer falha (cold start, rede): cai no caminho antigo, nunca num beco.
       navigate('/pricing');
     } finally {

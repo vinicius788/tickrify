@@ -4,6 +4,7 @@ import { PricingCards } from '@/components/pricing/PricingCards';
 import { useToast } from '@/hooks/use-toast';
 import { seoFor, useJsonLd, useSeo } from '@/hooks/useSeo';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { track } from '@/lib/analytics';
 
 const PRICING_COPY = {
   en: {
@@ -150,6 +151,9 @@ export default function PricingPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('canceled') === 'true') {
+      // A pessoa chegou na pagina da Stripe e voltou sem pagar. Sem este
+      // evento o funil nao separava "abandonou no checkout" de "nunca chegou".
+      track('checkout_canceled', { source: 'stripe_cancel_url' });
       toast({
         title: copy.canceledTitle,
         description: copy.canceledDesc,
