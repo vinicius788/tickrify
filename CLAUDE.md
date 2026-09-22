@@ -4017,3 +4017,16 @@ Portoes: backend `tsc --noEmit` 0 erros, `eslint` limpo no arquivo,
 **Como conferir depois do deploy:** abrir um checkout de teste, deixar expirar
 (24h) e ver o e-mail chegar; ou no painel da Stripe, Pagamentos > sessoes de
 Checkout expiradas, conferir se aparece o status de recuperacao.
+
+**⚠️ CORRECAO (22/09, mesmo dia): a recuperacao de checkout acima foi REMOVIDA.**
+A premissa estava errada. Pela doc oficial (`payments/checkout/abandoned-carts`),
+a Stripe **nao envia** e-mail nenhum: `after_expiration.recovery` so gera um
+link no evento `checkout.session.expired`, e quem manda o e-mail e o nosso
+servidor. E o caminho que a doc indica, `consent_collection[promotions]`, e
+**"disponivel apenas se sua empresa e seus clientes estiverem nos EUA"**: numa
+conta brasileira, liga-lo arrisca a Stripe recusar a criacao da sessao, ou seja
+derrubar TODOS os checkouts. O bloco ficou no ar algumas horas gerando um link
+que ninguem consumia; saiu pela regra de codigo morto.
+Caminho que ficou mapeado e NAO foi feito (decisao do dono): e-mail proprio via
+Resend para quem tem conta e abandonou, uma vez por pessoa, com link de
+descadastro, e o evento `checkout.session.expired` marcado no webhook da Stripe.

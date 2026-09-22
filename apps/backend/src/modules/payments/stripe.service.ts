@@ -406,23 +406,6 @@ export class StripeService implements OnModuleInit {
             checkoutSource: source ?? 'unknown',
           },
         },
-        /**
-         * RECUPERACAO DE CHECKOUT ABANDONADO (22/09/2026).
-         * Quando a sessao expira (24h), a propria Stripe manda um e-mail com
-         * link para a pessoa voltar de onde parou. Sem este bloco ela nao
-         * manda nada, e o dado que motivou isto e duro: entre 13 e 20/09 eram
-         * 11 sessoes abertas e ZERO cartao submetido, sem nenhum contato
-         * depois. E o publico mais quente que existe e ninguem falava com ele.
-         * `allow_promotion_codes` fica ligado na volta porque o EARLY35 nao
-         * viaja pelo link de recuperacao: sem isso a pessoa volta e ve o preco
-         * cheio, que e mais caro do que o que ela tinha visto ao desistir.
-         */
-        after_expiration: {
-          recovery: {
-            enabled: true,
-            allow_promotion_codes: true,
-          },
-        },
       };
 
       /**
