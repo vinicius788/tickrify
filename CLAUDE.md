@@ -3993,3 +3993,27 @@ em varios runs, o suspeito numero 1 e esse, e a saida e self-host das fontes ou
 um fallback com `size-adjust`, nao desfazer o `media="print"`.
 
 
+
+
+## 22/09/2026 - recuperacao de checkout abandonado LIGADA
+
+`stripe.service.ts`, no `baseParams` do `sessions.create`: bloco
+`after_expiration.recovery` com `enabled: true` e `allow_promotion_codes: true`.
+Sem ele a Stripe NAO manda nada quando a sessao expira, e nao existe
+configuracao de painel para isso: e parametro de API, so no codigo.
+
+**O dado que motivou:** entre 13 e 20/09 foram 11 sessoes de checkout abertas e
+ZERO cartao submetido. Ninguem falou com essas pessoas depois. E o publico mais
+quente que o produto tem.
+
+`allow_promotion_codes` fica ligado na recuperacao de proposito: o EARLY35 vai
+pre-aplicado na sessao original mas NAO viaja pelo link de recuperacao. Sem o
+campo de codigo aberto, quem volta ve US$ 29 em vez dos US$ 18,85 que viu ao
+desistir, ou seja, a recuperacao apresentaria um preco MAIOR que o do abandono.
+
+Portoes: backend `tsc --noEmit` 0 erros, `eslint` limpo no arquivo,
+`jest src/modules/payments` 64/64.
+
+**Como conferir depois do deploy:** abrir um checkout de teste, deixar expirar
+(24h) e ver o e-mail chegar; ou no painel da Stripe, Pagamentos > sessoes de
+Checkout expiradas, conferir se aparece o status de recuperacao.
