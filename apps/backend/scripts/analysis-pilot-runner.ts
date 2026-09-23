@@ -22,6 +22,7 @@ interface Case {
 }
 interface Options {
   promptFile: string;
+  promptFileDeep?: string;
   promptOrigin: 'active-snapshot' | 'versioned-reference';
   modelQuick: string;
   modelDeep: string;
@@ -57,7 +58,7 @@ function parseArgs(args: string[]): Options {
       continue;
     }
     const key = args[i];
-    if (!['--prompt-file', '--prompt-origin', '--model-quick', '--model-deep', '--out',
+    if (!['--prompt-file', '--prompt-file-deep', '--prompt-origin', '--model-quick', '--model-deep', '--out',
     '--effort-quick', '--effort-deep', '--case-offset', '--max-calls', '--max-estimated-usd', '--reserve-per-call-usd'].includes(key) ||
         !args[i + 1] || pairs[key]) throw new Error(`Argumento inválido: ${key}`);
     pairs[key] = args[++i];
@@ -78,10 +79,15 @@ function parseArgs(args: string[]): Options {
   if (!/^[A-Za-z0-9._-]{1,80}\.jsonl$/.test(out)) throw new Error('--out deve ser nome .jsonl, sem caminho');
   const promptFile = path.resolve(pairs['--prompt-file']);
   if (!/\.(txt|md)$/i.test(promptFile)) throw new Error('Prompt deve ser arquivo .txt ou .md local');
+  const promptFileDeep = pairs['--prompt-file-deep'] ? path.resolve(pairs['--prompt-file-deep']) : undefined;
+  if (promptFileDeep && !/\.(txt|md)$/i.test(promptFileDeep)) {
+    throw new Error('Prompt deep deve ser arquivo .txt ou .md local');
+  }
   const caseOffset = Number(pairs['--case-offset']);
   if (!Number.isSafeInteger(caseOffset) || caseOffset < 0) throw new Error('--case-offset deve ser inteiro não negativo');
   return {
     promptFile,
+    promptFileDeep,
     promptOrigin: pairs['--prompt-origin'] as Options['promptOrigin'],
     modelQuick: pairs['--model-quick'],
     modelDeep: pairs['--model-deep'],
@@ -104,9 +110,11 @@ async function main() {
   const manifestBytes = fs.readFileSync(path.join(BACKTEST, 'pilot-manifest.json'));
   const manifest = JSON.parse(manifestBytes.toString('utf8')) as { cases: Case[] };
   if (preflight.manifestSha256 !== sha256(manifestBytes)) throw new Error('Manifesto mudou após preflight');
-  const prompt = fs.readFileSync(opts.promptFile, 'utf8').trim();
-  if (prompt.length < 1000) throw new Error('Prompt local vazio ou incompleto');
-  const promptSha256 = sha256(prompt);
+  const promptQuick = fs.readFileSync(opts.promptFile, 'utf8').trim();
+  const promptDeep = opts.promptFileDeep ? fs.readFileSync(opts.promptFileDeep, 'utf8').trim() : promptQuick;
+  if (promptQuick.length < 1000 || promptDeep.length < 1000) throw new Error('Prompt local vazio ou incompleto');
+  const promptSha256Quick = sha256(promptQuick);
+  const promptSha256Deep = sha256(promptDeep);
   const output = path.join(RESULTS, opts.out);
   if (fs.existsSync(output) || fs.existsSync(`${output}.meta.json`)) {
     throw new Error('Saída já existe; cada rodada usa nome novo para não misturar versões');
@@ -115,6 +123,17 @@ async function main() {
     throw new Error('Faixa de casos excede o manifesto');
   }
   const selected = manifest.cases.slice(opts.caseOffset, opts.caseOffset + opts.maxCalls);
+  // Override local: prepara os prompts finais também no dry-run, sem banco/API.
+  const { PromptBuilderService } = require('../src/modules/prompt/prompt-builder.service');
+  const builder = new PromptBuilderService({ promptConfig: {
+    findFirst: async () => { throw new Error('Acesso ao banco proibido neste piloto'); },
+    findUnique: async () => { throw new Error('Acesso ao banco proibido neste piloto'); },
+  } });
+  const prompts: Record<Mode, string> = {
+    quick: await builder.buildPromptByVersion('quick', undefined, promptQuick, 'en'),
+    deep: await builder.buildPromptByVersion('deep', undefined, promptDeep, 'en'),
+  };
+  const effectivePromptSha256 = { quick: sha256(prompts.quick), deep: sha256(prompts.deep) };
   const plan = {
     mode: opts.execute ? 'execute' : 'dry-run',
     inputCases: manifest.cases.length,
@@ -124,7 +143,11 @@ async function main() {
       deep: selected.filter((c) => c.mode === 'deep').length,
     },
     manifestSha256: preflight.manifestSha256,
-    promptSha256,
+    promptSha256: promptSha256Quick === promptSha256Deep ? promptSha256Quick : null,
+    promptSha256Quick,
+    promptSha256Deep,
+    effectivePromptSha256Quick: effectivePromptSha256.quick,
+    effectivePromptSha256Deep: effectivePromptSha256.deep,
     promptOrigin: opts.promptOrigin,
     modelQuick: opts.modelQuick,
     modelDeep: opts.modelDeep,
@@ -162,7 +185,6 @@ async function main() {
   // Dynamic require após fixar as flags; nenhum Prisma é instanciado.
   const OpenAI = require('openai').default;
   const { AIAdapter, AIAnalysisError } = require('../src/modules/ai/ai.adapter');
-  const { PromptBuilderService } = require('../src/modules/prompt/prompt-builder.service');
   const { computeCost, extractUsage } = require('../src/modules/ai/model-cost');
   const adapter = new AIAdapter();
   const sdk = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 0 });
@@ -177,14 +199,6 @@ async function main() {
     return response;
   };
   (adapter as any).openai = sdk;
-  const builder = new PromptBuilderService({ promptConfig: {
-    findFirst: async () => { throw new Error('Acesso ao banco proibido neste piloto'); },
-    findUnique: async () => { throw new Error('Acesso ao banco proibido neste piloto'); },
-  } });
-  const prompts: Record<Mode, string> = {
-    quick: await builder.buildPromptByVersion('quick', undefined, prompt, 'en'),
-    deep: await builder.buildPromptByVersion('deep', undefined, prompt, 'en'),
-  };
   fs.mkdirSync(RESULTS, { recursive: true });
   fs.writeFileSync(`${output}.meta.json`, JSON.stringify(plan, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   fs.writeFileSync(output, '', { flag: 'wx', mode: 0o600 });
@@ -201,7 +215,9 @@ async function main() {
       const response = await adapter.analyzeImage(`data:image/png;base64,${chart.toString('base64')}`, prompts[c.mode], c.mode);
       record = {
         id: c.id, symbol: c.symbol, interval: c.interval, assetClass: c.assetClass,
-        analysisType: c.mode, chartSha256: c.chartSha256, promptSha256,
+        analysisType: c.mode, chartSha256: c.chartSha256,
+        promptSha256: c.mode === 'quick' ? promptSha256Quick : promptSha256Deep,
+        effectivePromptSha256: effectivePromptSha256[c.mode],
         model: c.mode === 'quick' ? opts.modelQuick : opts.modelDeep,
         recommendation: response.recommendation,
         rawRecommendation: response.rawResponse?.recommendation ?? null,
@@ -216,7 +232,9 @@ async function main() {
     } catch (error) {
       record = {
         id: c.id, symbol: c.symbol, interval: c.interval, assetClass: c.assetClass,
-        analysisType: c.mode, chartSha256: c.chartSha256, promptSha256,
+        analysisType: c.mode, chartSha256: c.chartSha256,
+        promptSha256: c.mode === 'quick' ? promptSha256Quick : promptSha256Deep,
+        effectivePromptSha256: effectivePromptSha256[c.mode],
         model: c.mode === 'quick' ? opts.modelQuick : opts.modelDeep,
         error: error instanceof AIAnalysisError ? String((error as { code: unknown }).code) : 'unclassified',
       };
