@@ -16,6 +16,7 @@ const SAFE_ERROR_CODES = new Set([
   'openai_rate_limit',
   'openai_request_failed',
   'non_chart_image',
+  'processing_unclassified',
 ]);
 
 function finiteNonnegative(value) {

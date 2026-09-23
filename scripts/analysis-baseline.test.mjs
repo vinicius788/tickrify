@@ -9,6 +9,7 @@ test('lê os formatos reais e trata -1 como indisponível', () => {
   assert.deepEqual(parseMetric(metric('completed', 'a', 2, 100)).queueWaitMs, null);
   assert.equal(parseMetric(metric('failed', 'a', 2, 100)).errorCode, 'unclassified');
   assert.equal(parseMetric(metric('failed', 'a', 2, 100).replace('PRIVATE_ERROR', 'openai_rate_limit')).errorCode, 'openai_rate_limit');
+  assert.equal(parseMetric(metric('failed', 'a', 2, 100).replace('PRIVATE_ERROR', 'processing_unclassified')).errorCode, 'processing_unclassified');
   assert.equal(parseCost('[Cost] quick model=gpt-5.6-luna prompt=100 completion=40 reasoning=20 cost=$0.0003 revenue=$0.1450 margin=99.8%').costUsd, 0.0003);
   assert.equal(parseCost('[Cost] deep model=new-model prompt=100 completion=40 reasoning=20 cost=unknown revenue=$0.4350 margin=n/a').costUsd, null);
   assert.equal(parseMetric('[Metrics] analysis completed | sem campos'), null);

@@ -25,7 +25,7 @@ import { DEEP_ENRICHMENT_INSTRUCTION } from '../src/modules/prompt/prompt-builde
 import { type StrategyProfile } from '../src/common/strategy/strategy-profile';
 import { startOutcomeSweeper } from './outcome.sweeper';
 import { trackFreeAnalysisCompleted } from '../src/common/analytics/free-funnel';
-import { trackAnalysisExecutionFailed } from '../src/common/analytics/analysis-failure';
+import { safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../src/common/analytics/analysis-failure';
 import { MailService } from '../src/modules/mail/mail.service';
 import { notifyIfFreeQuotaExhausted, type RecoveryEmailDeps } from '../src/modules/mail/recovery-email';
 import Stripe from 'stripe';
@@ -1022,7 +1022,7 @@ async function processAnalysis(job: Job<JobData>) {
   try {
     await prisma.analysis.update({
       where: { id: analysisId },
-      data: { status: 'processing', errorMessage: null },
+      data: { status: 'processing', errorMessage: null, errorCode: null },
     });
 
     // ── Free analyses (isDemo=true) now run real AI — no tick cost, same pipeline ─
@@ -1072,6 +1072,7 @@ async function processAnalysis(job: Job<JobData>) {
           confidence: null,
           reasoning: validationMessage,
           errorMessage: validationMessage,
+          errorCode: 'validation_failed',
           result: Prisma.DbNull,
           fullResponse: rawContent,
         },
@@ -1131,6 +1132,7 @@ async function processAnalysis(job: Job<JobData>) {
         result: normalized.fullResponse as any,
         fullResponse: rawContent,
         errorMessage: null,
+        errorCode: null,
       },
     });
     persistMs = Date.now() - tPersist;
@@ -1182,12 +1184,7 @@ async function processAnalysis(job: Job<JobData>) {
       annotateMs,
       persistMs,
       totalMs: Date.now() - t0,
-      errorCode:
-        error instanceof AIAnalysisError
-          ? error.code
-          : error instanceof Error
-            ? error.message.slice(0, 60).replace(/\s+/g, '_')
-            : 'unknown',
+      errorCode: safeAnalysisFailureCode(error instanceof AIAnalysisError ? error.code : null),
     });
 
     const safeMessage = safeWorkerErrorMessage(error);
@@ -1203,6 +1200,7 @@ async function processAnalysis(job: Job<JobData>) {
           status: 'failed',
           reasoning: safeMessage,
           errorMessage: safeMessage,
+          errorCode: safeAnalysisFailureCode(error.code),
           result: Prisma.DbNull,
           fullResponse: failureRawContent,
         },
@@ -1231,6 +1229,7 @@ async function processAnalysis(job: Job<JobData>) {
           status: 'failed',
           reasoning: safeMessage,
           errorMessage: safeMessage,
+          errorCode: safeAnalysisFailureCode(error instanceof AIAnalysisError ? error.code : null),
           result: Prisma.DbNull,
           fullResponse: failureRawContent,
         },

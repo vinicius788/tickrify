@@ -139,6 +139,33 @@ describe('AiService access enforcement', () => {
     service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any, mailService as any);
   });
 
+  it('returns the persisted safe code on a failed analysis and tolerates old rows', async () => {
+    const row = {
+      id: 'an_failed', status: 'failed', recommendation: null, confidence: null,
+      reasoning: 'Try again', errorMessage: 'Try again', errorCode: 'openai_rate_limit',
+      result: null, fullResponse: null, imageUrl: null,
+      createdAt: new Date('2026-09-23T00:00:00Z'), updatedAt: new Date('2026-09-23T00:00:01Z'),
+    };
+    prisma.analysis.findFirst.mockResolvedValue(row);
+    (service as any).getSignedImageUrl = jest.fn().mockResolvedValue(null);
+    (service as any).getOutcomeById = jest.fn().mockResolvedValue(null);
+    (service as any).getCalibration = jest.fn().mockResolvedValue({ sampleSize: 0, winRate: null });
+
+    expect((await service.getAnalysis(row.id, 'usr_1')).errorCode).toBe('openai_rate_limit');
+    prisma.analysis.findFirst.mockResolvedValue({ ...row, errorCode: null });
+    expect((await service.getAnalysis(row.id, 'usr_1')).errorCode).toBeNull();
+  });
+
+  it('never leaks a prior error code while polling an analysis in progress', async () => {
+    prisma.analysis.findFirst.mockResolvedValue({
+      id: 'an_processing', status: 'processing', errorCode: 'openai_rate_limit',
+      errorMessage: 'Retrying', createdAt: new Date(), updatedAt: new Date(),
+    });
+    const response = await service.getAnalysis('an_processing', 'usr_1');
+    expect(response.status).toBe('processing');
+    expect(response.errorCode).toBeNull();
+  });
+
   it('bloqueia a 4ª análise grátis: já usou as 3 demos → DEMO_LIMIT_REACHED', async () => {
     // 3 demos já consumidas (status != failed)
     prisma.analysis.count.mockResolvedValue(3);

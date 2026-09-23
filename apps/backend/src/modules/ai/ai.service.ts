@@ -52,7 +52,7 @@ import {
 } from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
 import { trackFreeAnalysisCompleted, trackFreeAnalysisStarted } from '../../common/analytics/free-funnel';
-import { trackAnalysisExecutionFailed } from '../../common/analytics/analysis-failure';
+import { analysisFailureCodeForResponse, safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../../common/analytics/analysis-failure';
 import {
   AnalysisContext,
   validateImageHook,
@@ -981,6 +981,7 @@ export class AiService implements OnModuleInit {
           result: normalizedPayload.fullResponse as any,
           fullResponse: rawContent,
           errorMessage: null,
+          errorCode: null,
         },
       });
 
@@ -1001,6 +1002,7 @@ export class AiService implements OnModuleInit {
           status: 'failed',
           reasoning: safeMessage,
           errorMessage: safeMessage,
+          errorCode: safeAnalysisFailureCode(error instanceof AIAnalysisError ? error.code : null),
           result: Prisma.DbNull,
         },
       });
@@ -1374,6 +1376,7 @@ export class AiService implements OnModuleInit {
       pnlPercent: null,
       pnlAmount: null,
       errorMessage: analysis.errorMessage || null,
+      errorCode: null,
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
       calibration: { sampleSize: 0, winRate: null as number | null },
@@ -1390,6 +1393,7 @@ export class AiService implements OnModuleInit {
     result?: unknown;
     fullResponse?: unknown;
     errorMessage?: string | null;
+    errorCode?: string | null;
     createdAt: Date;
     updatedAt: Date;
   }) {
@@ -1431,6 +1435,7 @@ export class AiService implements OnModuleInit {
       pnlPercent: outcomeData?.pnlPercent ?? null,
       pnlAmount: outcomeData?.pnlAmount ?? null,
       errorMessage: analysis.errorMessage || null,
+      errorCode: analysisFailureCodeForResponse(analysis.status, analysis.errorCode),
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
     };

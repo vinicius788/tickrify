@@ -55,8 +55,15 @@ jest.mock('@prisma/client', () => {
   }
 
   class MockPrismaClient {
+    static lastClient: any;
     constructor(..._args: unknown[]) {
-      return createAutoMock();
+      const client = createAutoMock();
+      const analysis = createAutoMock();
+      // Uma atualização Prisma devolve a linha, usada pelo evento de falha definitiva.
+      analysis.update = jest.fn().mockResolvedValue({ createdAt: new Date('2026-09-23T00:00:00Z') });
+      client.analysis = analysis;
+      MockPrismaClient.lastClient = client;
+      return client;
     }
   }
 
@@ -175,5 +182,10 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     expect(call[1]).toBe('PROMPT DE TESTE');
     expect(call[2]).toBe('quick');
     expect(call[4]).toEqual(strategyProfile);
+
+    const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
+    expect(prismaClient.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'failed', errorCode: 'processing_unclassified' }),
+    }));
   });
 });

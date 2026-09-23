@@ -1,4 +1,4 @@
-import { trackAnalysisExecutionFailed } from '../analysis-failure';
+import { analysisFailureCodeForResponse, safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../analysis-failure';
 import { captureServer } from '../posthog';
 
 jest.mock('../posthog', () => ({ captureServer: jest.fn() }));
@@ -44,5 +44,21 @@ describe('trackAnalysisExecutionFailed', () => {
       userId: 'u', analysisId: 'a', analysisType: 'quick', code: 'validation_failed', createdAt: new Date(0),
     });
     expect(captureServer).not.toHaveBeenCalled();
+  });
+});
+
+describe('failure code stored and returned to the browser', () => {
+  it('keeps only the bounded category, never an exception message', () => {
+    expect(safeAnalysisFailureCode('openai_rate_limit')).toBe('openai_rate_limit');
+    expect(safeAnalysisFailureCode('email=user@example.com')).toBe('processing_unclassified');
+    expect(safeAnalysisFailureCode(null)).toBe('processing_unclassified');
+  });
+
+  it('returns a code only for a definitive failure and tolerates old rows', () => {
+    expect(analysisFailureCodeForResponse('failed', 'validation_failed')).toBe('validation_failed');
+    expect(analysisFailureCodeForResponse('failed', 'sensitive raw text')).toBe('processing_unclassified');
+    expect(analysisFailureCodeForResponse('failed', null)).toBeNull();
+    expect(analysisFailureCodeForResponse('processing', 'openai_rate_limit')).toBeNull();
+    expect(analysisFailureCodeForResponse('completed', 'openai_rate_limit')).toBeNull();
   });
 });

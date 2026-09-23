@@ -77,6 +77,13 @@ linha `[Metrics]`, porém o código não é persistido nem incluído na resposta
 final de uma análise falha. As 27 falhas históricas não podem ser
 reclassificadas só pelo evento.
 
+No branch isolado, uma migração aditiva e mudanças no worker/API já foram
+preparadas para persistir um código de lista fixa e devolvê-lo no polling de
+falhas futuras. A migração não foi executada e nenhum serviço foi implantado;
+o histórico anterior a ela permanece sem código recuperável na resposta.
+O campo `errorCode` do log `[Metrics]` também foi limitado à mesma lista; uma
+mensagem livre de exceção não será usada como categoria ou copiada ao extrator.
+
 Após autorização explícita do responsável, foi preparado na branch isolada um
 evento server-side separado, `analysis_execution_failed`, para falhas
 **definitivas** do worker e do processamento síncrono de reserva. O wrapper

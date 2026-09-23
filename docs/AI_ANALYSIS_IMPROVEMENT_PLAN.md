@@ -180,4 +180,7 @@ dry-run por padrão, verifica hashes, modo, esforço e teto de chamadas antes de
 candidata MTF) foram executados localmente, com custo calculado pelo uso
 retornado de cerca de US$ 0,105 no total. Isso não é a fatura nem um teto de
 faturamento do provedor. A instrumentação categórica de cobertura de dados foi
-preparada atrás de `AI_DATA_COVERAGE_LOG=false`; não foi implantada ou ativada.
+preparada atrás de `AI_DATA_COVERAGE_LOG=false`, com agregador local de logs.
+Uma migração aditiva e código de worker/API para devolver causas tipadas de
+falhas definitivas também estão preparados. Nada disso foi implantado, a
+migração não foi executada e a flag não foi ativada.

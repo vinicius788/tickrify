@@ -17,7 +17,21 @@ const CODES = new Set([
   'openai_rate_limit',
   'openai_request_failed',
   'non_chart_image',
+  'processing_unclassified',
 ]);
+
+/** Nunca persiste ou envia uma mensagem de exceção como código analítico. */
+export function safeAnalysisFailureCode(code: unknown): string {
+  return typeof code === 'string' && CODES.has(code)
+    ? code
+    : 'processing_unclassified';
+}
+
+export function analysisFailureCodeForResponse(status: string, code: unknown): string | null {
+  return status.toLowerCase() === 'failed' && typeof code === 'string' && code.length > 0
+    ? safeAnalysisFailureCode(code)
+    : null;
+}
 
 export async function trackAnalysisExecutionFailed(
   prisma: PrismaLike,
@@ -41,9 +55,7 @@ export async function trackAnalysisExecutionFailed(
       'analysis_execution_failed',
       {
         analysisType: params.analysisType,
-        code: typeof params.code === 'string' && CODES.has(params.code)
-          ? params.code
-          : 'processing_unclassified',
+        code: safeAnalysisFailureCode(params.code),
       },
       {
         dedupeKey: `analysis_execution_failed:${params.analysisId}`,
