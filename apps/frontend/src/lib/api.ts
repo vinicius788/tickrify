@@ -261,6 +261,15 @@ export interface AnalysisUsageResponse {
    * NAO confundir com `used`, que e o consumo do periodo.
    */
   analysesAllTime?: number;
+  /**
+   * Cota gratis (so plano free): 3 analises com sinal (BUY/SELL) ou 10 no total.
+   * `total`/`used`/`remaining` acima falam dos SINAIS; o total de 10 vem aqui.
+   * Opcionais porque um backend mais antigo nao devolve.
+   */
+  signalsUsed?: number;
+  signalsLimit?: number;
+  totalUsed?: number;
+  totalLimit?: number;
 }
 
 /**

@@ -238,6 +238,23 @@ function formatPositivePercent(value: number | null): string {
 }
 
 /**
+ * Gatilho do plano condicional de um WAIT, lido do TEXTO do motor.
+ *
+ * No WAIT o motor deixa entry/stop/alvos em null e escreve o gatilho em prosa
+ * ("If price closes above $X... becomes BUY"). Devolve `null` quando o texto
+ * nao traz preco nenhum: sem nivel, nao ha plano para mostrar. O lado so e
+ * dado quando o texto aponta UM lado; os dois ou nenhum = `neutral`. Nada e
+ * extraido nem calculado: o que a tela mostra continua sendo o texto inteiro.
+ */
+export function classifyWaitTrigger(text: string | null): 'buy' | 'sell' | 'neutral' | null {
+  if (!text || !/\d[\d.,]*\d/.test(text)) return null;
+  // BUY/SELL/LONG/SHORT so em maiuscula: "long wick" e "short-term" sao prosa.
+  const buy = /\b(BUY|LONG)\b/.test(text) || /\b(compra|achat|kauf)\b/i.test(text) || text.includes('買い');
+  const sell = /\b(SELL|SHORT)\b/.test(text) || /\b(venda|venta|vente|verkauf)\b/i.test(text) || text.includes('売り');
+  return buy === sell ? 'neutral' : buy ? 'buy' : 'sell';
+}
+
+/**
  * Quebra um campo do modelo em itens de lista.
  *
  * NÃO quebra em vírgula nem em ponto-e-vírgula, que era o que a versão
@@ -751,10 +768,20 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   // devolve hoje (nenhuma mudança de prompt; regra: motor só muda com medição).
   const recUpper = String(analysisData.recommendation || '').toUpperCase();
   const isWaitVerdict = recUpper === 'WAIT' || recUpper === 'HOLD';
+  // Quando o gatilho traz preco, o card vira "No entry yet. Here is the plan:"
+  // e o gatilho ganha o lado (ver `classifyWaitTrigger`). Sem preco, fica o
+  // card antigo, com o titulo antigo.
+  const triggerLabel = (text: string, fallback: string) => {
+    const side = classifyWaitTrigger(text);
+    if (side === null) return fallback;
+    return side === 'buy' ? r.planBuyTrigger : side === 'sell' ? r.planSellTrigger : r.planTrigger;
+  };
   const waitFlipItems: Array<{ label: string; text: string }> = [];
+  const waitHasPlan =
+    isWaitVerdict && (classifyWaitTrigger(entryCondition) !== null || classifyWaitTrigger(alternativeScenario) !== null);
   if (isWaitVerdict) {
-    if (entryCondition) waitFlipItems.push({ label: r.flipEntry, text: entryCondition });
-    if (alternativeScenario) waitFlipItems.push({ label: r.flipAlt, text: alternativeScenario });
+    if (entryCondition) waitFlipItems.push({ label: triggerLabel(entryCondition, r.flipEntry), text: entryCondition });
+    if (alternativeScenario) waitFlipItems.push({ label: triggerLabel(alternativeScenario, r.flipAlt), text: alternativeScenario });
     if (invalidationLevel !== null && invalidationLevel > 0) {
       waitFlipItems.push({
         label: r.flipInvalidation,
@@ -914,15 +941,18 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
         // (--signal-hold), entao a tela tinha duas coisas ambar significando
         // coisas diferentes, e em UI de trading ambar le como ALERTA. Isto aqui
         // nao e alerta, e o raciocinio. Superficie neutra, igual aos outros cards.
-        <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '40ms' }}>
+        <Card
+          className={`surface-terminal rounded-xl fade-in-stagger ${waitHasPlan ? 'border border-[var(--border-accent)]' : ''}`}
+          style={{ animationDelay: '40ms' }}
+        >
           <CardContent className="p-5 md:p-6">
             <p className="tk-display mb-3 flex items-center gap-2 text-[15px]">
               <Lightbulb className="h-4 w-4 text-amber-400" />
-              {r.flipTitle}
+              {waitHasPlan ? r.planTitle : r.flipTitle}
             </p>
             <div className="space-y-3 text-sm">
-              {waitFlipItems.map((item) => (
-                <div key={item.label}>
+              {waitFlipItems.map((item, idx) => (
+                <div key={`${idx}-${item.label}`}>
                   <p className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
                     {item.label}
                   </p>

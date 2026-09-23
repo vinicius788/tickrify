@@ -15,7 +15,7 @@
  */
 import type { PrismaClient } from '@prisma/client';
 import { fetchClerkEmail } from '../../common/utils/clerk-email';
-import { FREE_ANALYSIS_LIMIT } from '../../common/analytics/free-funnel';
+import { getFreeQuota } from '../../common/free-quota';
 import type { FoundingOffer } from '../payments/founding-offer';
 
 export type RecoveryEmailDeps = {
@@ -76,14 +76,13 @@ export async function sendRecoveryEmailOnce(deps: RecoveryEmailDeps, userId: str
 /**
  * Chamado quando uma analise GRATIS termina. Dispara na conclusao, nao na
  * criacao: falha nao conta na cota, e disparar na criacao mandaria "acabou"
- * para quem ainda tem uma.
+ * para quem ainda tem uma. Pelo mesmo motivo usa `settledExhausted`: analise
+ * ainda em andamento pode terminar em WAIT e nao consumir sinal.
  */
 export async function notifyIfFreeQuotaExhausted(deps: RecoveryEmailDeps, userId: string): Promise<void> {
   try {
-    const used = await deps.prisma.analysis.count({
-      where: { userId, isDemo: true, status: { not: 'failed' } },
-    });
-    if (used < FREE_ANALYSIS_LIMIT) return;
+    const quota = await getFreeQuota(deps.prisma, userId);
+    if (!quota.settledExhausted) return;
     await sendRecoveryEmailOnce(deps, userId);
   } catch (err) {
     deps.log('warn', `[recovery] Falha ao checar cota grátis esgotada: ${(err as Error)?.message ?? err}`);

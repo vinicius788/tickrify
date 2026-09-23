@@ -67,7 +67,7 @@ const LockedAnalysis = ({ onUnlock, unlockPending = false, symbolLabel }: Locked
           Your read is ready. Unlock to see it.
         </h2>
         <p className="max-w-[420px] text-sm text-[var(--text-secondary)]">
-          Entry, stop, targets and confidence, calculated for this chart. Your 3 free analyses are used up.
+          Entry, stop, targets and confidence, calculated for this chart. Your free analyses are used up.
         </p>
         <button
           type="button"

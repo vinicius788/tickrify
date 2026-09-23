@@ -42,6 +42,7 @@ import {
   prepareIncomingImage,
 } from '../../common/utils/image-storage';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
+import { getFreeQuota } from '../../common/free-quota';
 import { TICK_COSTS, AnalysisType } from '../ticks/tick-packages';
 import { TicksService } from '../ticks/ticks.service';
 import { MailService } from '../mail/mail.service';
@@ -853,26 +854,27 @@ export class AiService implements OnModuleInit {
     const canAnalyzeWithTicks = paidAccess && tickBalance >= TICK_COSTS.ANALYSIS_QUICK;
 
     // Usuário grátis: o contador exibido precisa refletir EXATAMENTE o que o paywall
-    // conta (análises demo não-falhas), senão fica eternamente em 0/3. A tabela
-    // analysisUsage só é usada por assinantes; para o grátis a fonte de verdade são
-    // as linhas Analysis isDemo=true (mesma usada em checkDemoEligibility).
+    // conta, senão fica eternamente em 0/3. A tabela analysisUsage só é usada por
+    // assinantes; para o grátis a fonte de verdade é `getFreeQuota`, a mesma regra
+    // do `enforceAccessAndCreate`. `total`/`used`/`remaining` seguem falando de
+    // SINAIS (BUY/SELL), para o front antigo continuar coerente.
     if (!paidAccess) {
-      const demoUsed = await this.prisma.analysis.count({
-        where: { userId, isDemo: true, status: { not: 'failed' } },
-      });
-      const demoTotal = AiService.DEMO_ANALYSIS_LIMIT;
-      const demoRemaining = Math.max(0, demoTotal - demoUsed);
+      const quota = await getFreeQuota(this.prisma, userId);
       return {
         plan: 'free',
         period: 'monthly',
         periodStart,
-        total: demoTotal,
-        used: demoUsed,
-        remaining: demoRemaining,
+        total: quota.signalsLimit,
+        used: quota.signalsUsed,
+        remaining: quota.remaining,
         isUnlimited: false,
         tickBalance,
-        canAnalyze: demoRemaining > 0,
+        canAnalyze: !quota.exhausted,
         analysesAllTime,
+        signalsUsed: quota.signalsUsed,
+        signalsLimit: quota.signalsLimit,
+        totalUsed: quota.totalUsed,
+        totalLimit: quota.totalLimit,
       };
     }
 
@@ -1104,23 +1106,9 @@ export class AiService implements OnModuleInit {
     return { days: rows.map((r) => ({ day: r.day, count: Number(r.count) })) };
   }
 
-  static readonly DEMO_ANALYSIS_LIMIT = 3;
-
-  /**
-   * Returns true if the user still has free (demo) analyses available.
-   * Failed analyses (status='failed') are NOT counted, so a failed attempt never
-   * consumes one of the 3 free analyses.
-   */
-  async checkDemoEligibility(userId: string): Promise<boolean> {
-    const demoCount = await this.prisma.analysis.count({
-      where: { userId, isDemo: true, status: { not: 'failed' } },
-    });
-    return demoCount < AiService.DEMO_ANALYSIS_LIMIT;
-  }
-
   private readonly DEMO_LIMIT_ERROR = {
     code: 'DEMO_LIMIT_REACHED',
-    message: 'You have used your 3 free analyses. Subscribe to a plan to continue.',
+    message: 'You have used your free analyses. Subscribe to a plan to continue.',
   };
 
   /**
@@ -1176,10 +1164,10 @@ export class AiService implements OnModuleInit {
    * Enforces plan/quota access AND creates the Analysis row atomically.
    *
    * Paid users: debits ticks (already race-safe) and creates the row.
-   * Free users: counts non-failed demo analyses and creates the row inside a
-   * Serializable transaction, so two concurrent requests cannot both slip past
-   * the 3-free limit. Failed analyses don't count, so a failed attempt is never
-   * charged against the free quota.
+   * Free users: reads the free quota (`getFreeQuota`: 3 BUY/SELL or 10 in total,
+   * in-flight rows counted) and creates the row inside a Serializable
+   * transaction, so two concurrent requests cannot both slip past the limit.
+   * Failed analyses don't count, and a completed WAIT doesn't use a signal.
    */
   private async enforceAccessAndCreate(
     userId: string,
@@ -1244,11 +1232,9 @@ export class AiService implements OnModuleInit {
     try {
       const analysis = await this.prisma.$transaction(
         async (tx) => {
-          const used = await tx.analysis.count({
-            where: { userId, isDemo: true, status: { not: 'failed' } },
-          });
+          const quota = await getFreeQuota(tx, userId);
 
-          if (used >= AiService.DEMO_ANALYSIS_LIMIT) {
+          if (quota.exhausted) {
             throw new ForbiddenException(this.DEMO_LIMIT_ERROR);
           }
 

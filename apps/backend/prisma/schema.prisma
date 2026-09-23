@@ -45,6 +45,9 @@ model User {
   firstTouchAt         DateTime?
   lastTouchAttribution Json?
   lastTouchAt          DateTime?
+  // Reset unico da cota gratis: preenchido a mao (SQL), a contagem so considera
+  // analises criadas depois dele. Ver common/free-quota.ts.
+  freeQuotaResetAt     DateTime?
 
   subscriptions Subscription[]
   analyses      Analysis[]

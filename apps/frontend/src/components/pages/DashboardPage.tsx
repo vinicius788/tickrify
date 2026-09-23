@@ -169,7 +169,7 @@ const DashboardPage = () => {
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const { plan, total, used, isUnlimited, remaining, analysesAllTime, isLoading: isPlanLoading } = useAnalysisLimit();
+  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, isLoading: isPlanLoading } = useAnalysisLimit();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
   const { getToken } = useAuth();
@@ -1090,8 +1090,17 @@ const DashboardPage = () => {
                 <div className="min-w-0">
                   {freeLeftKnown && !exhausted && (
                     <p className="text-sm text-[var(--text-primary)]">
-                      <span className="font-semibold text-[var(--accent-green)]">{remaining}</span>{' '}
-                      {t.counter.remainingFree}
+                      {t.counter.tradeCallsLeft.replace('{left}', String(remaining)).replace('{limit}', String(total))}
+                    </p>
+                  )}
+                  {/* WAIT não consome análise com sinal: dizer isso no momento em
+                      que a pessoa recebe um, senão ela lê o WAIT como gasto. */}
+                  {freeLeftKnown && !exhausted && ['WAIT', 'HOLD'].includes(String(analysisData?.recommendation || '').toUpperCase()) && (
+                    <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">{t.counter.waitFreeNote}</p>
+                  )}
+                  {freeLeftKnown && !exhausted && totalUsed !== null && totalLimit !== null && (
+                    <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                      {t.counter.totalCapNote.replace('{limit}', String(totalLimit)).replace('{left}', String(Math.max(0, totalLimit - totalUsed)))}
                     </p>
                   )}
                   {exhausted && <p className="text-sm text-amber-500">{t.counter.exhausted}</p>}
@@ -1177,7 +1186,8 @@ const DashboardPage = () => {
   // "1/3" e, no celular, sem a palavra ao lado: nao dava para saber se era
   // usadas ou restantes. O contador detalhado so existe na barra lateral, que
   // nao aparece no celular.
-  const freeRemainingChip = safeTotal === null ? null : Math.max(0, safeTotal - safeUsed);
+  // `remaining` ja considera o teto de 10 no total; `total - used` nao.
+  const freeRemainingChip = safeTotal === null ? null : Number.isFinite(remaining) ? Math.max(0, remaining) : Math.max(0, safeTotal - safeUsed);
   const quotaText =
     freeRemainingChip === null ? `${safeUsed}/-` : `${freeRemainingChip} ${t.nav.freeLeft}`;
   const mobileActiveView =

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  classifyWaitTrigger,
   cleanModelText,
   normalizeRiskFactorsForView,
   parseStructureChecklist,
@@ -178,5 +179,36 @@ describe('stripEmoji via cleanModelText', () => {
 
   it('não come sinal de porcentagem, cifrão nem seta de texto', () => {
     expect(cleanModelText('Risk $15.45 and 3.1:1 R/R at 62%')).toBe('Risk $15.45 and 3.1:1 R/R at 62%');
+  });
+});
+
+/**
+ * Plano condicional do WAIT (23/09/2026). A regra que importa: sem preco no
+ * texto do motor, nao ha plano (o card nao pode inventar nivel).
+ */
+describe('classifyWaitTrigger', () => {
+  it('sem preco no texto: nao ha plano', () => {
+    expect(classifyWaitTrigger('Wait for a clean break of structure before entering.')).toBeNull();
+    expect(classifyWaitTrigger(null)).toBeNull();
+    expect(classifyWaitTrigger('')).toBeNull();
+  });
+
+  it('gatilho de compra com preco', () => {
+    expect(
+      classifyWaitTrigger('If price closes above 4,352.50 (confirming BOS), the setup becomes BUY with entry near 4,350.'),
+    ).toBe('buy');
+  });
+
+  it('gatilho de venda com preco, inclusive no idioma de saida', () => {
+    expect(classifyWaitTrigger('If price closes below 1.0840, the setup becomes SELL.')).toBe('sell');
+    expect(classifyWaitTrigger('Se o preço fechar abaixo de 1,0840, o setup vira VENDA.')).toBe('sell');
+  });
+
+  it('prosa com "long wick" ou "short-term" nao vira lado', () => {
+    expect(classifyWaitTrigger('A long wick rejected 4,360; short-term structure is unclear.')).toBe('neutral');
+  });
+
+  it('texto que cita os dois lados fica neutro', () => {
+    expect(classifyWaitTrigger('BUY above 4,360 or SELL below 4,330.')).toBe('neutral');
   });
 });
