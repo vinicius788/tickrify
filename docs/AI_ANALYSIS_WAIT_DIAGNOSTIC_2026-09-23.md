@@ -98,3 +98,40 @@ fixadas para o piloto; o total de 96 acima só conta a análise principal. O
 prompt ativo da plataforma deve ser congelado em uma cópia local identificada
 por hash antes de chamar de “baseline atual” qualquer resultado. O preflight
 não substitui esses dois bloqueios nem autoriza a execução paga.
+
+## Executor isolado preparado, ainda sem chamadas pagas
+
+O novo [runner do piloto](../apps/backend/scripts/analysis-pilot-runner.ts)
+faz **dry-run por padrão**. Ele exige um arquivo local de prompt, origem
+declarada, modelos quick/deep, nome novo de saída, teto de chamadas e orçamento
+estimado com reserva por chamada. Reexecuta o preflight, grava hashes e passa
+o modo correto a cada caso. Em execução paga, desliga retries automáticos do
+SDK, grounding quick, enriquecimento deep e calendário atual; mantém o guard de
+R:R. Não instancia Prisma nem busca o prompt ativo. Registra resposta e uso/
+custo estimado apenas no cache local ignorado pelo Git. Para na primeira falha,
+uso ausente ou custo desconhecido. A contagem de chamadas é um limite no
+processo; o limite USD usa a tabela local de preços (última revisão registrada
+em 31/08/2026) e **não é um teto de cobrança do provedor**.
+
+Exemplo de conferência **sem API** com a candidata gerada a partir do prompt
+versionado; os modelos e valores abaixo são apenas argumentos ilustrativos,
+não uma afirmação sobre a configuração atual ou o orçamento aprovado:
+
+```bash
+cd apps/backend
+pnpm exec ts-node scripts/analysis-pilot-runner.ts \
+  --prompt-file ../../scripts/backtest/results/candidate-wait-actionable-v1.txt \
+  --prompt-origin versioned-reference \
+  --model-quick gpt-5.6-luna --model-deep gpt-4o \
+  --out candidate-dry-run.jsonl \
+  --max-calls 2 --max-estimated-usd 1 --reserve-per-call-usd 0.25
+```
+
+O dry-run conferiu 48 entradas, selecionou um caso quick e um deep e não criou
+JSONL. Uma tentativa controlada com `--execute` e sem `OPENAI_API_KEY` foi
+bloqueada antes de criar arquivos ou chamar a API. **Não acrescentar
+`--execute` só com base neste documento.** Antes, conferir o prompt ativo por
+leitura, as flags/modelos de produção, a tabela de preço vigente, a reserva de
+custo por chamada e um limite de gasto externo à aplicação. O piloto com
+calendário e grounding desligados mede leitura de gráfico em condições
+controladas; não reproduz toda a experiência atual de um usuário.

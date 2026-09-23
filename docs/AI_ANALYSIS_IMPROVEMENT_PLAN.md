@@ -171,3 +171,11 @@ de três timeframes inferido de uma única imagem. Também identificou que WAIT
 nem sempre traz uma condição observável. Uma primeira candidata **offline**
 melhora apenas a explicação do WAIT, sem alterar limiares de BUY/SELL; precisa
 ser comparada com o prompt efetivamente ativo antes de qualquer uso real.
+
+O [runner isolado do piloto](../apps/backend/scripts/analysis-pilot-runner.ts)
+já faz dry-run verificando os 48 gráficos, quick/deep, hash do prompt e teto
+de chamadas. Uma simulação com dois casos passou sem chamar a API; a tentativa
+sem chave foi bloqueada antes de gravar resultados. Ainda não há baseline
+executado nem custo deep medido. A estimativa em dólares do runner não é teto
+de faturamento; validar preço vigente e orçamento externo antes de usar
+`--execute`.
