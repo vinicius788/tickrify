@@ -41,19 +41,19 @@ describe('computeCost', () => {
 
   it('NÃO conta os reasoning_tokens duas vezes', () => {
     const c = computeCost('gpt-5.6-luna', usage, 3);
-    expect(c.costUsd).toBeCloseTo(0.08, 6);
+    expect(c.costUsd).toBeCloseTo(0.016, 6);
     expect(
       computeCost('gpt-5.6-luna', { ...usage, reasoningTokens: 0 }, 3).costUsd,
     ).toBeCloseTo(c.costUsd!, 6);
   });
 
-  it('deep a 3 ticks tem receita de $0.435 e fica lucrativo no luna', () => {
+  it('deep a 3 ticks tem receita teórica de $0.435 acima do custo de API estimado no luna', () => {
     const c = computeCost('gpt-5.6-luna', usage, 3);
     expect(c.revenueUsd).toBeCloseTo(0.435, 6);
     expect(c.overBudget).toBe(false);
   });
 
-  it('o TETO do luna cabe na receita de um deep; o do terra NÃO', () => {
+  it('o teto configurado de 32K de saída cabe por pouco na receita de um deep no terra', () => {
     const ceiling = {
       promptTokens: 20_000,
       completionTokens: 32_000,
@@ -61,7 +61,8 @@ describe('computeCost', () => {
       totalTokens: 52_000,
     };
     expect(computeCost('gpt-5.6-luna', ceiling, 3).overBudget).toBe(false);
-    expect(computeCost('gpt-5.6-terra', ceiling, 3).overBudget).toBe(true);
+    expect(computeCost('gpt-5.6-terra', ceiling, 3).costUsd).toBeCloseTo(0.424, 6);
+    expect(computeCost('gpt-5.6-terra', ceiling, 3).overBudget).toBe(false);
   });
 
   it('modelo desconhecido devolve custo null em vez de inventar preço', () => {

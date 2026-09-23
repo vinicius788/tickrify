@@ -1800,7 +1800,7 @@ export class AIAdapter {
           : '';
       const content = extractMessageContent(choice?.message?.content);
 
-      // Custo REAL desta análise, sempre (não atrás de flag de debug). O `usage`
+      // Uso real e custo ESTIMADO desta análise, sempre (não atrás de flag de debug). O `usage`
       // já vinha na resposta e era descartado fora do modo de debug, então o
       // gasto de `reasoning_tokens` dos modelos GPT-5 — que é a maior incógnita
       // da conta de margem — nunca foi observado em produção. Ver model-cost.ts.

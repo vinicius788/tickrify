@@ -31,13 +31,22 @@ No painel **tickrify → Logs → Application logs → Last 7 days**, a busca `[
 
 A busca separada `[Cost]` exibiu 50 chamadas quick com `gpt-5.6-luna`: custo estimado médio **US$ 0,0193**, p95 **US$ 0,0215**, soma das 50 linhas **US$ 0,9671**. Médias aproximadas: 12.340 tokens de entrada, 1.167 de saída (incluindo 171 de raciocínio). Esses logs podem incluir análises demo e não têm `analysisId`; **não correspondem necessariamente às mesmas 50 linhas de `[Metrics]`**.
 
+**Correção da estimativa em 23/09:** esses valores foram calculados pela tabela
+local antiga de US$ 1/6 por milhão de tokens para luna. A
+[página oficial do GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna)
+agora lista US$ 0,20/1,20 no preço Standard. Aplicar apenas essa correção às
+mesmas linhas dá aproximadamente **US$ 0,00386 de média, US$ 0,00430 de p95 e
+US$ 0,1934 de soma**. Os números originais acima ficam preservados como
+registro do que os logs mostraram; nenhum deles é fatura conferida. Cache,
+serviço contratado e outros encargos podem alterar a cobrança efetiva.
+
 Períodos personalizados anteriores também exibiram 50 linhas, indicando limite de resultados por consulta. Estas são **linhas exibidas**, não a semana inteira nem uma amostra aleatória. Não usar 1/50 como taxa de falha real, US$ 0,9671 como gasto semanal ou a margem teórica do log como lucro. Um export completo ou consultas por janelas curtas, sem sobreposição, ainda são necessários para fechar a linha de base de custo e confiabilidade.
 
 O diagnóstico de `UNTRACKABLE` já foi separado por classe de ativo. Ainda faltam provedor, motivo técnico e disponibilidade histórica, que não são registrados de forma estruturada hoje. Novas consultas devem continuar **agregadas e somente leitura**, sem prints, prompts ou dados identificáveis.
 
 ### Mapa de fontes e hipótese verificável
 
-- O caminho **quick** extrai símbolo e timeframe do print. Se não consegue ler o período, não injeta candles; quando consegue, tenta OKX/Binance para cripto e Twelve Data para forex/metais. Candles incompatíveis com o preço visível são retidos para não misturar um print histórico com preço atual. Uma falha de grounding reduz evidência disponível, mas não interrompe a análise.
+- O caminho **quick**, **se `ENABLE_QUICK_GROUNDING` estiver ligado**, extrai símbolo e timeframe do print. Se não consegue ler o período, não injeta candles; quando consegue, tenta OKX/Binance para cripto e Twelve Data para forex/metais. Candles incompatíveis com o preço visível são retidos para não misturar um print histórico com preço atual. Uma falha de grounding reduz evidência disponível, mas não interrompe a análise. A flag vem desligada por padrão no código; seu estado efetivo em produção não foi confirmado nesta auditoria.
 - O enriquecimento **deep** escolhe contexto por classe de ativo e calendário econômico. Ausência ou degradação da fonte volta como `null`; não equivale a comprovação de que nenhum evento existe. O resultado final não armazena um campo estruturado dizendo quais fontes chegaram ao prompt.
 - O avaliador de resultados espera 48 horas, busca candles de 30 minutos e classifica `WAIT` como `ABSTAIN`. Para trades, tenta OKX/Binance em cripto e Twelve Data em forex/metais. **Índices não têm uma fonte de candles no avaliador atual**: passam pelo caminho forex, cujo filtro de símbolos os rejeita. Sete dos 92 casos históricos são índices. Ausência histórica de chave Twelve Data, símbolo fora do filtro ou indisponibilidade temporária das fontes também podem produzir `UNTRACKABLE`, mas não é possível distinguir essas causas no registro atual. O resultado é marcado de forma definitiva com razão genérica.
 

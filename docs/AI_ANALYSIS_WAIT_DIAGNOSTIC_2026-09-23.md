@@ -76,7 +76,9 @@ node --test scripts/analysis-pilot-preflight.test.mjs
 O `apps/backend/scripts/backtest-runner.ts` existente não deve ser usado para
 esta comparação sem ajuste: chama `analyzeImage(..., 'quick')` em todos os
 casos; o custo exibido é uma constante de US$ 0,01 por análise, inferior à
-média de **US$ 0,0193** observada nas 50 linhas quick recentes de `[Cost]`;
+média de **US$ 0,0193** registrada nas 50 linhas quick recentes de `[Cost]`
+pela tabela local antiga (a [correção de preço](AI_ANALYSIS_BASELINE_2026-09-23.md)
+reduz a estimativa dessas linhas para cerca de US$ 0,00386 por chamada);
 permite até quatro chamadas por caso devido a retries; pode consultar o
 PromptConfig ativo se houver conexão ao banco; e não registra no JSONL o
 modo ou hash do PNG recebido. A média observada não é teto nem orçamento,
@@ -110,8 +112,8 @@ SDK, grounding quick, enriquecimento deep e calendário atual; mantém o guard d
 R:R. Não instancia Prisma nem busca o prompt ativo. Registra resposta e uso/
 custo estimado apenas no cache local ignorado pelo Git. Para na primeira falha,
 uso ausente ou custo desconhecido. A contagem de chamadas é um limite no
-processo; o limite USD usa a tabela local de preços (última revisão registrada
-em 31/08/2026) e **não é um teto de cobrança do provedor**.
+processo; o limite USD usa a tabela local de preços atualizada em 23/09/2026
+segundo a documentação oficial, e **não é um teto de cobrança do provedor**.
 
 Exemplo de conferência **sem API** com a candidata gerada a partir do prompt
 versionado; os modelos e valores abaixo são apenas argumentos ilustrativos,
