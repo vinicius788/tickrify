@@ -1,5 +1,9 @@
 # Linha de base da análise — 23/09/2026
 
+O [recorte de ativação e falhas informado a partir do PostHog](AI_ANALYSIS_POSTHOG_BASELINE_2026-09-23.md)
+usa outra fonte e outros filtros; suas taxas de WAIT devem ser comparadas
+separadamente desta API pública.
+
 Fonte: [endpoint público de acurácia](https://tickrify.onrender.com/api/ai/accuracy), consultado em 23/09/2026. O [snapshot agregado](AI_ANALYSIS_BASELINE_SNAPSHOT_2026-09-23.json) preserva a resposta recebida (`updatedAt`: 2026-09-23T03:20:07.952Z). Não contém dados de usuário ou análises individuais. O endpoint tem cache de uma hora.
 
 ## O que os números permitem dizer

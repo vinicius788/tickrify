@@ -6,6 +6,17 @@ import { pathToFileURL } from 'node:url';
 
 const TYPES = ['quick', 'deep', 'unknown'];
 const OUTCOMES = ['completed', 'invalid', 'failed', 'retry'];
+const SAFE_ERROR_CODES = new Set([
+  'validation_failed',
+  'openai_empty_content',
+  'openai_invalid_json',
+  'openai_truncated_response',
+  'openai_refusal',
+  'openai_billing',
+  'openai_rate_limit',
+  'openai_request_failed',
+  'non_chart_image',
+]);
 
 function finiteNonnegative(value) {
   const n = Number(value);
@@ -37,6 +48,8 @@ export function parseMetric(line) {
     latencyMs: finiteNonnegative(f.latencyMs),
     queueWaitMs: finiteNonnegative(f.queueWaitMs),
     aiMs: finiteNonnegative(f.aiMs),
+    errorCode: match[1] === 'completed' ? null :
+      (SAFE_ERROR_CODES.has(f.errorCode) ? f.errorCode : 'unclassified'),
   };
 }
 
@@ -156,6 +169,15 @@ export function renderReport({ accuracy = null, logs = null, source = 'arquivo J
       if (!rows.length) continue;
       const complete = rows.filter((a) => a.outcome === 'completed');
       out.push(`| ${type} | ${rows.length} | ${complete.length} | ${rows.filter((a) => a.outcome === 'invalid').length} | ${rows.filter((a) => a.outcome === 'failed').length} | ${rows.filter((a) => a.outcome === 'retry').length} | ${countBy(rows, 'retried')} | ${fmt(percentile(complete.map((a) => a.latencyMs), 50))}/${fmt(percentile(complete.map((a) => a.latencyMs), 95))} | ${fmt(percentile(complete.map((a) => a.aiMs), 95))} |`);
+    }
+    const terminalFailures = logs.analyses.filter((a) => a.outcome === 'invalid' || a.outcome === 'failed');
+    if (terminalFailures.length) {
+      out.push('', '| Código conhecido da falha terminal | Análises no export |', '| --- | ---: |');
+      const codes = [...new Set(terminalFailures.map((a) => a.errorCode))].sort();
+      for (const code of codes) {
+        out.push(`| ${code} | ${terminalFailures.filter((a) => a.errorCode === code).length} |`);
+      }
+      out.push('', '`unclassified` reúne código ausente ou não reconhecido; não contém texto livre. A tabela depende da cobertura do export e não reclassifica falhas históricas do PostHog.', '');
     }
     out.push('', '| Tipo | Modelo | Chamadas de custo | Preço conhecido | Custo médio/p95 conhecido (USD) | Tokens entrada/saída/raciocínio médios |', '| --- | --- | ---: | ---: | --- | --- |');
     const groups = new Map();

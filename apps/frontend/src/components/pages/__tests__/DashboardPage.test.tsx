@@ -13,6 +13,12 @@ const mockUseAnalysisLimit = vi.fn();
 const mockUseIncrementAnalysis = vi.fn();
 const mockUseTicks = vi.fn();
 const mockToast = vi.fn();
+const mockTrack = vi.fn();
+
+vi.mock('@/lib/analytics', () => ({
+  track: (...args: unknown[]) => mockTrack(...args),
+  trackAdConversion: vi.fn(),
+}));
 
 vi.mock('@clerk/clerk-react', () => ({
   useUser: () => mockUseUser(),
@@ -195,5 +201,30 @@ describe('DashboardPage', () => {
     expect(
       await screen.findByText('Por favor, faça upload de uma imagem de gráfico.'),
     ).toBeTruthy();
+  });
+
+  it('registra falha de processamento sem code unknown nem mensagem privada', async () => {
+    const user = userEvent.setup();
+    mockUseAPIClient.mockReturnValue(makeApiClient({
+      createAnalysis: vi.fn().mockResolvedValue({ id: 'analysis-failed', status: 'pending' }),
+      waitForAnalysisCompletion: vi.fn().mockResolvedValue({
+        id: 'analysis-failed',
+        status: 'failed',
+        errorMessage: 'Detalhe privado da falha',
+      }),
+    }));
+
+    renderDashboard();
+    await user.click(screen.getAllByRole('button', { name: 'Nova Análise' })[0]);
+    await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+    await waitFor(() => {
+      expect(mockTrack).toHaveBeenCalledWith('analysis_failed', expect.objectContaining({
+        code: 'processing_failed_unclassified',
+        stage: 'processing',
+      }));
+    });
+    const event = mockTrack.mock.calls.find(([name]) => name === 'analysis_failed')?.[1];
+    expect(JSON.stringify(event)).not.toContain('Detalhe privado');
   });
 });

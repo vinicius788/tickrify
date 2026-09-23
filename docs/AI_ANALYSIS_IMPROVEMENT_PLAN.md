@@ -149,3 +149,9 @@ já prepara B para leitura cega: 24 quick e 24 deep, hashes e corte temporal
 verificados, sem executar a IA. Ele cobre apenas BTC/ETH; forex, metais e
 índices ainda não estão representados. Sem essas fontes e respostas reais,
 números de ganho ou custo total seriam especulação.
+
+O [recorte de PostHog informado em 23/09](AI_ANALYSIS_POSTHOG_BASELINE_2026-09-23.md)
+acrescenta duas métricas de ativação para a comparação pós-mudança: WAIT na
+primeira análise e usuários grátis que veem ao menos um BUY/SELL nas três
+análises. A taxa de falha e os outcomes continuam guardrails; reduzir WAIT
+sem melhorar a qualidade da leitura não é objetivo suficiente.

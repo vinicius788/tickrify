@@ -31,6 +31,7 @@ import AnalysisCounter from "../dashboard/AnalysisCounter";
 import { TicksBadge } from "@/components/dashboard/TicksBadge";
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
 import { APIError, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
+import { AnalysisProcessingError, analysisFailureTelemetry } from "@/lib/analysis-failure";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { scrollToTop } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -656,7 +657,10 @@ const DashboardPage = () => {
       const analysis = await apiClient.waitForAnalysisCompletion(response.id, response);
 
       if (analysis.status === 'failed') {
-        throw new Error(analysis.reasoning || dc.analysisFailed);
+        throw new AnalysisProcessingError(
+          analysis.errorMessage || analysis.reasoning || dc.analysisFailed,
+          analysis.errorCode,
+        );
       }
 
       // Análise concluída
@@ -680,7 +684,7 @@ const DashboardPage = () => {
     } catch (error) {
       console.error('[Dashboard] Erro ao criar análise:', error);
       track('analysis_failed', {
-        code: error instanceof APIError ? (error.code || error.status || 'api_error') : 'unknown',
+        ...analysisFailureTelemetry(error),
         analysisType,
         durationMs: Math.round(performance.now() - startedAt),
       });
