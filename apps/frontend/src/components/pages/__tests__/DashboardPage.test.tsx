@@ -13,6 +13,7 @@ const mockUseAnalysisLimit = vi.fn();
 const mockUseIncrementAnalysis = vi.fn();
 const mockUseTicks = vi.fn();
 const mockToast = vi.fn();
+const mockTrack = vi.fn();
 
 vi.mock('@clerk/clerk-react', () => ({
   useUser: () => mockUseUser(),
@@ -24,14 +25,22 @@ vi.mock('@/lib/api', () => ({
   APIError: class MockAPIError extends Error {
     status: number;
     code?: string;
+    cause?: unknown;
 
-    constructor(message: string, status: number, code?: string) {
+    constructor(message: string, status: number, code?: string, cause?: unknown) {
       super(message);
+      this.name = 'APIError';
       this.status = status;
       this.code = code;
+      this.cause = cause;
     }
   },
   useAPIClient: () => mockUseAPIClient(),
+}));
+
+vi.mock('@/lib/analytics', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/analytics')>()),
+  track: (...args: unknown[]) => mockTrack(...args),
 }));
 
 vi.mock('@/hooks/useAnalysisLimit', () => ({
@@ -195,5 +204,59 @@ describe('DashboardPage', () => {
     expect(
       await screen.findByText('Por favor, faça upload de uma imagem de gráfico.'),
     ).toBeTruthy();
+  });
+
+  it('falha de rede vira analysis_failed com code, errorName e errorMessage, e mensagem clara na tela', async () => {
+    const user = userEvent.setup();
+    const { APIError } = await import('@/lib/api');
+
+    mockUseUser.mockReturnValue({ user: { id: 'user-1' } });
+    mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 0, remaining: 3, isUnlimited: false, isLoading: false });
+    const createAnalysis = vi.fn().mockRejectedValue(
+      new APIError('mensagem tecnica com VITE_API_URL', 0, 'network_error', new TypeError('Failed to fetch')),
+    );
+    mockUseAPIClient.mockReturnValue(makeApiClient({ createAnalysis }));
+
+    renderDashboard();
+
+    await user.click(screen.getAllByRole('button', { name: 'Nova Análise' })[0]);
+    await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+    expect(
+      await screen.findByText('Não foi possível conectar ao Tickrify. Confira sua internet e tente novamente.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/VITE_API_URL/)).toBeNull();
+
+    const failed = mockTrack.mock.calls.find(([event]) => event === 'analysis_failed');
+    expect(failed?.[1]).toMatchObject({
+      code: 'network_error',
+      errorName: 'TypeError',
+      errorMessage: 'Failed to fetch',
+      analysisType: 'quick',
+    });
+    expect(typeof failed?.[1].durationMs).toBe('number');
+  });
+
+  it('falha de token mostra a mensagem de sessao e corta errorMessage em 200 caracteres', async () => {
+    const user = userEvent.setup();
+    const { APIError } = await import('@/lib/api');
+
+    mockUseUser.mockReturnValue({ user: { id: 'user-1' } });
+    mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 0, remaining: 3, isUnlimited: false, isLoading: false });
+    const createAnalysis = vi.fn().mockRejectedValue(
+      new APIError('token', 0, 'auth_token_failed', new Error('x'.repeat(500))),
+    );
+    mockUseAPIClient.mockReturnValue(makeApiClient({ createAnalysis }));
+
+    renderDashboard();
+
+    await user.click(screen.getAllByRole('button', { name: 'Nova Análise' })[0]);
+    await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+    expect(await screen.findByText(/Não conseguimos confirmar sua sessão/)).toBeTruthy();
+
+    const failed = mockTrack.mock.calls.find(([event]) => event === 'analysis_failed');
+    expect(failed?.[1]).toMatchObject({ code: 'auth_token_failed', errorName: 'Error' });
+    expect(failed?.[1].errorMessage).toHaveLength(200);
   });
 });

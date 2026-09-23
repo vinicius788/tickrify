@@ -110,13 +110,48 @@ export type Bias = 'bullish' | 'bearish' | 'neutral';
 export class APIError extends Error {
   status: number;
   code?: string;
+  /**
+   * Erro original, quando este APIError so classifica uma falha que nasceu
+   * fora da API (rede, abort, token do Clerk). A telemetria le daqui o nome e
+   * a mensagem reais ("Failed to fetch", "Load failed"...), que a mensagem
+   * deste objeto esconderia.
+   */
+  cause?: unknown;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, cause?: unknown) {
     super(message);
     this.name = 'APIError';
     this.status = status;
     this.code = code;
+    this.cause = cause;
   }
+}
+
+/**
+ * Converte a falha de transporte do `fetch` em APIError com codigo.
+ * TypeError = a requisicao nao chegou a ter resposta (rede, CORS, DNS);
+ * AbortError = o AbortController cortou. Qualquer outro erro volta intacto.
+ */
+function classifyTransportError(error: unknown, path: string): unknown {
+  // Pelo nome, nao por `instanceof Error`: DOMException nem sempre herda de
+  // Error (jsdom e navegadores mais antigos), e o abort chegaria cru.
+  if ((error as { name?: unknown } | null)?.name === 'AbortError') {
+    return new APIError(
+      `Timeout ao conectar no backend (${API_BASE_URL}) em ${path}. Verifique se a API está online e tente novamente.`,
+      0,
+      'timeout',
+      error,
+    );
+  }
+  if (error instanceof TypeError) {
+    return new APIError(
+      `Não foi possível conectar ao backend (${API_BASE_URL}). Verifique VITE_API_URL, CORS e status da API.`,
+      0,
+      'network_error',
+      error,
+    );
+  }
+  return error;
 }
 
 export interface AIAnalysisResponse {
@@ -351,25 +386,17 @@ class APIClient {
             'erro',
             `falha de rede em ${path}: ${erro instanceof Error ? erro.name : 'desconhecida'}`,
           );
-          // Repropaga INTACTO: quem chama continua vendo exatamente o mesmo erro.
-          throw erro;
+          // Sem o `await` acima, o catch deste metodo nunca ve erro assincrono:
+          // a classificacao tem de acontecer AQUI, senao TypeError de rede sobe
+          // cru e o painel registra `analysis_failed { code: "unknown" }`.
+          // Erro que nao e de transporte segue intacto.
+          throw classifyTransportError(erro, path);
         });
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        throw new APIError(
-          `Timeout ao conectar no backend (${API_BASE_URL}) em ${path}. Verifique se a API está online e tente novamente.`,
-          0,
-          'timeout',
-        );
-      }
-      if (error instanceof TypeError) {
-        throw new APIError(
-          `Não foi possível conectar ao backend (${API_BASE_URL}). Verifique VITE_API_URL, CORS e status da API.`,
-          0,
-          'network_error',
-        );
-      }
-      throw new APIError(fallbackMessage, 0);
+      const classified = classifyTransportError(error, path);
+      throw classified instanceof APIError
+        ? classified
+        : new APIError(fallbackMessage, 0, undefined, error);
     } finally {
       clearTimeout(timer);
     }
@@ -772,67 +799,77 @@ export function useAPIClient() {
   const { getToken } = useAuth();
   const getFreshToken = useCallback(() => getToken({ skipCache: true }), [getToken]);
 
-  const createAnalysis = useCallback(async (payload: CreateAnalysisPayload) => {
-    const token = await getFreshToken();
-    return apiClient.createAnalysis(payload, token, getFreshToken);
+  // Token inicial de cada chamada. Se o Clerk lancar aqui, a requisicao nem sai
+  // do navegador; sem esta conversao a falha chegava ao painel como "unknown".
+  const getInitialToken = useCallback(async () => {
+    try {
+      return await getFreshToken();
+    } catch (error) {
+      throw new APIError('Could not get the session token', 0, 'auth_token_failed', error);
+    }
   }, [getFreshToken]);
+
+  const createAnalysis = useCallback(async (payload: CreateAnalysisPayload) => {
+    const token = await getInitialToken();
+    return apiClient.createAnalysis(payload, token, getFreshToken);
+  }, [getFreshToken, getInitialToken]);
 
   const getAnalysis = useCallback(async (analysisId: string) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.getAnalysis(analysisId, token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const listAnalyses = useCallback(async (limit?: number, cursor?: string | null) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.listAnalyses(token, limit, getFreshToken, cursor);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const getAnalysisUsage = useCallback(async () => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.getAnalysisUsage(token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const syncUserProfile = useCallback(async () => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.syncUserProfile(token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const setAcquisitionSource = useCallback(async (payload: { source: string; detail?: string }) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.setAcquisitionSource(payload, token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const setTechnicalAttribution = useCallback(async (payload: TechnicalAttributionPayload) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.setTechnicalAttribution(payload, token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const setOutcome = useCallback(async (
     analysisId: string,
     payload: { outcome: string | null; pnlPercent?: number | null; pnlAmount?: number | null },
   ) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.setOutcome(analysisId, payload, token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const setFavorite = useCallback(async (analysisId: string, isFavorite: boolean) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.setFavorite(analysisId, isFavorite, token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const getStrategy = useCallback(async () => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.getStrategy(token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const saveStrategy = useCallback(async (profile: StrategyProfileDto) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.saveStrategy(profile, token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const waitForAnalysisCompletion = useCallback(
     async (analysisId: string, initialAnalysis?: AIAnalysisResponse) => {
-      const token = await getFreshToken();
+      const token = await getInitialToken();
       return apiClient.waitForAnalysisCompletion(
         analysisId,
         token,
@@ -840,7 +877,7 @@ export function useAPIClient() {
         getFreshToken,
       );
     },
-    [getFreshToken],
+    [getFreshToken, getInitialToken],
   );
 
   return useMemo(() => ({

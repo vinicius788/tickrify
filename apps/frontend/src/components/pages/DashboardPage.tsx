@@ -66,6 +66,8 @@ const DASH_COPY = {
     analysisTimeout: 'The analysis took longer than expected. Please try again.',
     analysisUnknownError: 'Unexpected error while processing the analysis.',
     analysisFailed: 'The analysis could not be completed.',
+    networkError: 'Could not reach Tickrify. Check your internet connection and try again.',
+    authTokenFailed: 'We could not confirm your session. Reload the page and try again. If it keeps happening, sign out and sign in again.',
     upgradeToPro: 'Upgrade to Pro',
     demoMode: 'Demo mode: exploring the interface without login',
     demoLogin: 'Log in for real analyses',
@@ -95,6 +97,8 @@ const DASH_COPY = {
     analysisTimeout: 'A análise demorou mais que o esperado, tente novamente.',
     analysisUnknownError: 'Erro desconhecido ao processar análise.',
     analysisFailed: 'Não foi possível concluir a análise.',
+    networkError: 'Não foi possível conectar ao Tickrify. Confira sua internet e tente novamente.',
+    authTokenFailed: 'Não conseguimos confirmar sua sessão. Recarregue a página e tente novamente. Se continuar, saia e entre de novo na conta.',
     upgradeToPro: 'Fazer Upgrade para Pro',
     demoMode: 'Modo Demonstração: explorando a interface sem login',
     demoLogin: 'Fazer Login para Análises Reais',
@@ -106,6 +110,23 @@ const DASH_COPY = {
   },
 } as const;
 import officialIcon from "@/assets/tickrify-icon-official.png";
+
+/**
+ * Nome e mensagem do erro para a telemetria de `analysis_failed`, no mesmo
+ * padrao do `checkout_failed`. Quando o APIError so classifica uma falha de
+ * fora (rede, token), o que interessa e o erro original em `cause`.
+ * Nunca leva token, e-mail nem imagem: so `name` e `message` cortada.
+ */
+function describeErrorForTelemetry(error: unknown): { errorName: string; errorMessage: string } {
+  // Leitura por propriedade, nao por `instanceof Error`: DOMException nem
+  // sempre herda de Error e sumiria da telemetria.
+  const cause = error instanceof APIError ? error.cause : undefined;
+  const root = (cause ?? error) as { name?: unknown; message?: unknown } | null;
+  if (root && typeof root === 'object' && typeof root.name === 'string') {
+    return { errorName: root.name, errorMessage: String(root.message ?? '').slice(0, 200) };
+  }
+  return { errorName: typeof root, errorMessage: String(root).slice(0, 200) };
+}
 
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
@@ -679,6 +700,7 @@ const DashboardPage = () => {
       console.error('[Dashboard] Erro ao criar análise:', error);
       track('analysis_failed', {
         code: error instanceof APIError ? (error.code || error.status || 'api_error') : 'unknown',
+        ...describeErrorForTelemetry(error),
         analysisType,
         durationMs: Math.round(performance.now() - startedAt),
       });
@@ -725,6 +747,12 @@ const DashboardPage = () => {
 
       if (error instanceof APIError && error.code === 'analysis_timeout') {
         setErrorMessage(dc.analysisTimeout);
+      } else if (error instanceof APIError && (error.code === 'network_error' || error.code === 'timeout')) {
+        // A mensagem do APIError e tecnica (fala de VITE_API_URL e CORS): serve
+        // para o console e a telemetria, nao para a pessoa.
+        setErrorMessage(dc.networkError);
+      } else if (error instanceof APIError && error.code === 'auth_token_failed') {
+        setErrorMessage(dc.authTokenFailed);
       } else {
         setErrorMessage(error instanceof Error ? error.message : dc.analysisUnknownError);
       }
