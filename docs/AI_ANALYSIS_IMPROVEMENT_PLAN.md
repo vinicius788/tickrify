@@ -155,3 +155,8 @@ acrescenta duas métricas de ativação para a comparação pós-mudança: WAIT 
 primeira análise e usuários grátis que veem ao menos um BUY/SELL nas três
 análises. A taxa de falha e os outcomes continuam guardrails; reduzir WAIT
 sem melhorar a qualidade da leitura não é objetivo suficiente.
+
+O [mapa de causas possíveis de WAIT e o diagnóstico offline](AI_ANALYSIS_WAIT_DIAGNOSTIC_2026-09-23.md)
+separam resposta crua do modelo de rebaixamentos posteriores. Ainda não há
+respostas reais no piloto; o runner legado precisa de modo quick/deep, entrada
+verificada e limite de chamadas antes de qualquer execução paga.

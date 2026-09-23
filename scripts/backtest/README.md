@@ -1,5 +1,13 @@
 # Backtest estatístico do motor Tickrify (análise quick)
 
+> **Atenção para a avaliação de melhoria de IA (23/09/2026):** este runner é
+> legado e não está pronto para a comparação quick/deep do
+> [piloto congelado](../../docs/AI_ANALYSIS_PILOT_2026-09-23.md). Ele exibe
+> custo fixo desatualizado, pode fazer retries e buscar prompt do banco.
+> Consulte o [diagnóstico de WAIT](../../docs/AI_ANALYSIS_WAIT_DIAGNOSTIC_2026-09-23.md)
+> antes de disparar chamadas pagas. Nenhum resultado desse runner isolado deve
+> ser apresentado como comparação da plataforma atual com uma candidata.
+
 Mede o win rate REAL do motor em dados históricos, com amostragem cega e
 regras de avaliação fixadas antes de rodar (ver docstring de `evaluate.py`).
 Objetivo: número verdadeiro para calibração de produto — não marketing.
