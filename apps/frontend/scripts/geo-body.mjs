@@ -176,7 +176,7 @@ export function accuracyBlock(data) {
 
   const abst =
     data.abstention && data.abstention.rate !== null && data.abstention.rate !== undefined
-      ? `<p>Abstention rate: ${esc(data.abstention.rate)}% of analyses come back as an explicit WAIT instead of a directional call (${esc(data.abstention.wait)} of ${esc(data.abstention.total)} analyses). Abstention is a designed outcome, not a failure to answer.</p>`
+      ? `<p>Abstention rate: ${esc(data.abstention.rate)}% of analyses return a WAIT action rather than BUY or SELL (${esc(data.abstention.wait)} of ${esc(data.abstention.total)} analyses). A WAIT can still describe a bullish or bearish market scenario. Waiting is a designed outcome, not a failure to answer.</p>`
       : '';
 
   return [
@@ -229,11 +229,11 @@ export function accuracyFaqItems(data) {
       a: 'An automated sweeper runs hourly and scores every analysis that was completed at least 48 hours earlier against real market candles. The proposed entry must fill first, then the first target races the stop on 30-minute candles. If one candle contains both the target and the stop, it is recorded as a loss. There is no human in the loop and no selection of which trades get scored.',
     },
     {
-      q: 'Does the AI give a call on every chart?',
+      q: 'Does the AI suggest a trade on every chart?',
       a:
         abst && abst.rate !== null && abst.rate !== undefined
-          ? `No. ${abst.rate}% of analyses come back as an explicit WAIT instead of a directional call, ${abst.wait} of ${abst.total}. Abstention is a designed outcome, not a failure to answer, and those analyses count as neither a win nor a loss.`
-          : 'No. A share of analyses come back as an explicit WAIT instead of a directional call. Abstention is a designed outcome, not a failure to answer, and those analyses count as neither a win nor a loss.',
+          ? `No. ${abst.rate}% of analyses (${abst.wait} of ${abst.total}) return a WAIT action rather than BUY or SELL. A WAIT can still describe a bullish or bearish market scenario. Waiting is a designed outcome, not a failure to answer, and those analyses count as neither a win nor a loss.`
+          : 'No. A share of analyses return a WAIT action rather than BUY or SELL. A WAIT can still describe a bullish or bearish market scenario. Waiting is a designed outcome, not a failure to answer, and those analyses count as neither a win nor a loss.',
     },
     {
       q: 'Is that hit rate good or bad?',
@@ -557,7 +557,7 @@ export function buildJsonLd({ path, copy, accuracy, offer, pricingFaq }) {
         {
           '@type': 'PropertyValue',
           name: 'Abstention rate',
-          description: 'Share of analyses where the model returned "wait" instead of a directional call.',
+          description: 'Share of analyses with a WAIT action rather than BUY or SELL; the market scenario may still be directional.',
           ...(accuracy?.abstention && accuracy.abstention.rate !== null && accuracy.abstention.rate !== undefined
             ? { value: accuracy.abstention.rate, unitText: 'PERCENT' }
             : {}),

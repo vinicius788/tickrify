@@ -33,6 +33,7 @@ import {
   confidenceToPercent,
   getConvictionTier,
   getRecommendationMeta,
+  getScenarioMeta,
   normalizeConfluenceScore,
 } from '@/lib/trading-ui';
 import { asRecord } from '@/lib/utils';
@@ -489,6 +490,12 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const marketStructure = asRecord(analysis.marketStructure);
 
   const recommendationMeta = getRecommendationMeta(analysisData.recommendation);
+  const scenarioMeta = getScenarioMeta(analysisData.bias || marketStructure.bias, analysisData.recommendation);
+  const actionLabel = recommendationMeta.tone === 'buy'
+    ? t.analysis.buy
+    : recommendationMeta.tone === 'sell'
+      ? t.analysis.sell
+      : t.analysis.hold;
   const confidence = confidenceToPercent(analysisData.confidence);
   // #2 — calibração: taxa de acerto histórica de setups semelhantes.
   const calibration = asRecord((analysisData as unknown as Record<string, unknown>).calibration);
@@ -692,7 +699,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   // a coluna de rótulos alinha igual à dos Operation Levels, e um campo vazio
   // some da grade em vez de imprimir "Not informed" no meio da leitura.
   const structureRows: Array<{ key: string; label: string; value: string; tone?: string }> = [
-    { key: 'bias', label: t.analysis.bias, value: String(marketStructure.bias || analysisData.bias || 'neutral') },
+    { key: 'bias', label: t.analysis.bias, value: scenarioMeta.label },
     { key: 'structure', label: t.analysis.structure, value: cleanModelText(marketStructure.lastStructure) },
     { key: 'bos', label: 'BOS / CHoCH', value: cleanModelText(marketStructure.breakOfStructure) },
     { key: 'zone', label: t.analysis.priceZone, value: cleanModelText(marketStructure.priceZone) },
@@ -800,8 +807,9 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const shareData: ShareCardData = {
     symbol,
     timeframe,
-    verdict: recommendationMeta.label,
-    tone: recommendationMeta.tone,
+    scenario: scenarioMeta.label,
+    action: recommendationMeta.label,
+    tone: scenarioMeta.tone,
     tier: convictionTier,
     confidence,
     read: shareRead,
@@ -809,15 +817,21 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
     date: timestamp,
   };
 
-  const headerIcon = recommendationMeta.tone === 'buy' ? ArrowUp : recommendationMeta.tone === 'sell' ? ArrowDown : Minus;
+  const headerIcon = scenarioMeta.tone === 'buy' ? ArrowUp : scenarioMeta.tone === 'sell' ? ArrowDown : Minus;
   const HeaderIcon = headerIcon;
 
   const signalToneClasses =
-    recommendationMeta.tone === 'buy'
+    scenarioMeta.tone === 'buy'
       ? 'bg-[var(--signal-buy-bg)] border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
-      : recommendationMeta.tone === 'sell'
+      : scenarioMeta.tone === 'sell'
         ? 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
         : 'bg-[var(--signal-hold-bg)] border-[var(--signal-hold-border)] text-[var(--signal-hold)]';
+  const actionToneClasses =
+    recommendationMeta.tone === 'buy'
+      ? 'border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
+      : recommendationMeta.tone === 'sell'
+        ? 'border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
+        : 'border-[var(--signal-hold-border)] text-[var(--signal-hold)]';
 
   const isDemo = Boolean(analysisData.isDemo);
 
@@ -835,12 +849,12 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
       <Card className="surface-terminal-elevated rounded-xl fade-in-stagger" style={{ animationDelay: '0ms' }}>
         <CardContent className="p-5 md:p-6">
-          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)] md:flex-nowrap md:items-center md:gap-4">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)] md:gap-4">
             <span className="whitespace-nowrap font-terminal font-semibold text-[var(--text-primary)]">{symbol}</span>
             <span className="whitespace-nowrap font-terminal">{timeframe}</span>
             <div className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold tracking-widest ${signalToneClasses}`}>
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{recommendationMeta.label}</span>
+              <span>{scenarioMeta.label}</span>
             </div>
             {convictionTier && (
               <span
@@ -862,11 +876,9 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 {r.strategyFitTitle}: {STRATEGY_FIT_LABEL[strategyFit]}
               </span>
             )}
-            <span>
-              {t.analysis.bias.toUpperCase()}:{' '}
-              <strong className="whitespace-nowrap font-medium text-[var(--text-primary)]">
-                {String(analysisData.bias || marketStructure.bias || 'neutral').toUpperCase()}
-              </strong>
+            <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border px-2 py-1 ${actionToneClasses}`}>
+              {t.analysis.action.toUpperCase()}:{' '}
+              <strong className="font-semibold">{actionLabel}</strong>
             </span>
             <span>
               {t.analysis.confidence.toUpperCase()}:{' '}

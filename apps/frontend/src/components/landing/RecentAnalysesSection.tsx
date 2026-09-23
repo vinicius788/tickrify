@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { getRecommendationMeta } from '@/lib/trading-ui';
+import { getRecommendationMeta, getScenarioMeta } from '@/lib/trading-ui';
 import { useRecentPublicAnalyses } from '@/hooks/useRecentPublicAnalyses';
 
 /** Mínimo de análises reais para a seção existir. Abaixo disso, não renderiza.
@@ -55,7 +55,7 @@ const RecentAnalysesSection = () => {
               <tr>
                 <th>Asset</th>
                 <th>TF</th>
-                <th>Call</th>
+                <th>{t.analysis.bias} / {t.analysis.action}</th>
                 <th>{r.entry}</th>
                 <th>{r.stop}</th>
                 <th>{r.conf}</th>
@@ -72,16 +72,24 @@ const RecentAnalysesSection = () => {
                   ))
                 : items.map((a) => {
                     const meta = getRecommendationMeta(a.recommendation);
+                    const scenario = getScenarioMeta(a.bias, a.recommendation);
                     const isHold = meta.tone === 'hold';
-                    const chip = meta.tone === 'buy' ? 'site-chip-long' : meta.tone === 'sell' ? 'site-chip-short' : 'site-chip-wait';
-                    const arrow = meta.tone === 'buy' ? '▲' : meta.tone === 'sell' ? '▼' : '—';
+                    const chip = scenario.tone === 'buy' ? 'site-chip-long' : scenario.tone === 'sell' ? 'site-chip-short' : 'site-chip-wait';
+                    const actionLabel = meta.tone === 'buy'
+                      ? t.analysis.buy
+                      : meta.tone === 'sell'
+                        ? t.analysis.sell
+                        : t.analysis.hold;
 
                     return (
                       <tr key={a.id}>
                         <td className="site-sym-cell">{a.symbol}</td>
                         <td>{a.timeframe || '—'}</td>
                         <td>
-                          <span className={`site-chip ${chip}`}>{arrow} {isHold ? 'WAIT' : meta.label}</span>
+                          <div className="flex flex-col items-start gap-1">
+                            <span className={`site-chip ${chip}`}>{scenario.icon} {scenario.label}</span>
+                            <span className="site-hero-note">{t.analysis.action}: {actionLabel}</span>
+                          </div>
                         </td>
                         <td>{isHold ? '—' : formatPrice(a.entry)}</td>
                         <td className={isHold ? '' : 'site-short'}>{isHold ? '—' : formatPrice(a.stopLoss)}</td>

@@ -3,7 +3,7 @@ import { useUser } from '@clerk/clerk-react';
 import { Filter, Star, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { confidenceToPercent, getRecommendationMeta } from '@/lib/trading-ui';
+import { confidenceToPercent, getRecommendationMeta, getScenarioMeta } from '@/lib/trading-ui';
 import { useAnalyses } from '@/hooks/useAnalyses';
 import { asRecord } from '@/lib/utils';
 import { useAPIClient } from '@/lib/api';
@@ -257,13 +257,19 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
             {filtered.map((a) => {
               const { symbol, timeframe, entry, stopLoss, takeProfit1, takeProfit2, confluence, factorsPresent } = extractLevels(a);
               const meta = getRecommendationMeta(a.recommendation);
+              const scenario = getScenarioMeta(a.bias ?? asRecord(a.fullResponse).bias, a.recommendation);
+              const actionLabel = meta.tone === 'buy'
+                ? t.analysis.buy
+                : meta.tone === 'sell'
+                  ? t.analysis.sell
+                  : t.analysis.hold;
               const confidence = confidenceToPercent(a.confidence);
               const verdict = getVerdict(a);
               const vcfg = verdict ? VERDICT_CFG[verdict] : null;
 
-              const signalBg = meta.tone === 'buy'
+              const signalBg = scenario.tone === 'buy'
                 ? 'bg-[var(--signal-buy-bg)] border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
-                : meta.tone === 'sell'
+                : scenario.tone === 'sell'
                   ? 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
                   : 'bg-[var(--signal-hold-bg)] border-[var(--signal-hold-border)] text-[var(--signal-hold)]';
 
@@ -293,8 +299,11 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                         </span>
                       )}
                       <Badge variant="outline" className={`border text-xs font-bold tracking-widest ${signalBg}`}>
-                        {meta.label}
+                        {scenario.label}
                       </Badge>
+                      <span className="text-xs text-[var(--text-secondary)]">
+                        {t.analysis.action}: <span className="font-semibold text-[var(--text-primary)]">{actionLabel}</span>
+                      </span>
                       {confidence > 0 && (
                         <span className="text-xs text-[var(--text-secondary)]">{confidence}% {tr.conf}</span>
                       )}

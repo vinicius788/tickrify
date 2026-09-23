@@ -1,4 +1,11 @@
 export type RecommendationCanonical = 'BUY' | 'SELL' | 'HOLD';
+export type ScenarioCanonical = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+
+const SCENARIO_META: Record<ScenarioCanonical, { label: ScenarioCanonical; tone: 'buy' | 'sell' | 'hold'; icon: string }> = {
+  BULLISH: { label: 'BULLISH', tone: 'buy', icon: '↑' },
+  BEARISH: { label: 'BEARISH', tone: 'sell', icon: '↓' },
+  NEUTRAL: { label: 'NEUTRAL', tone: 'hold', icon: '—' },
+};
 
 export const RECOMMENDATION_LABELS: Record<
   string,
@@ -21,6 +28,22 @@ export function normalizeRecommendationLabel(value: unknown): RecommendationCano
 export function getRecommendationMeta(value: unknown) {
   const key = String(value || '').trim().toUpperCase();
   return RECOMMENDATION_LABELS[key] || RECOMMENDATION_LABELS.AGUARDAR;
+}
+
+/** Cenário de mercado. A ação WAIT pode coexistir com viés bullish ou bearish. */
+export function getScenarioMeta(bias: unknown, recommendation?: unknown) {
+  const key = String(bias || '').trim().toUpperCase();
+  if (key === 'BULLISH' || key === 'BEARISH' || key === 'NEUTRAL') {
+    return SCENARIO_META[key];
+  }
+
+  // Compatibilidade com registros antigos sem bias persistido.
+  const actionTone = getRecommendationMeta(recommendation).tone;
+  return actionTone === 'buy'
+    ? SCENARIO_META.BULLISH
+    : actionTone === 'sell'
+      ? SCENARIO_META.BEARISH
+      : SCENARIO_META.NEUTRAL;
 }
 
 export function confidenceToPercent(value: unknown): number {

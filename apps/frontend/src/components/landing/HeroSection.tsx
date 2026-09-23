@@ -74,7 +74,7 @@ const HeroSection = () => {
           </div>
 
           <div className="site-verdict">
-            <span className="site-call site-long">▲ {t.analysis.buy}</span>
+            <span className="site-call site-long">▲ BULLISH</span>
             <span className="site-conf">
               {t.analysis.confidence}: <b>68%</b> · {t.analysis.tierRead}
             </span>
@@ -102,7 +102,7 @@ const HeroSection = () => {
           <div className="site-card-foot">
             <span>R/R <b>1.6:1</b></span>
             <span>{t.analysis.confluence} <b>4/8</b></span>
-            <span>Bias <b className="site-long">BULLISH</b></span>
+            <span>{t.analysis.action} <b className="site-long">{t.analysis.buy}</b></span>
           </div>
         </aside>
       </div>

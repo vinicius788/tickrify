@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { buildShareText, publicVerdict, wrapText, type ShareCardData } from '@/components/dashboard/ShareCard';
+import { describe, expect, it, vi } from 'vitest';
+import { buildShareText, drawShareCard, publicAction, publicScenario, wrapText, type ShareCardData } from '@/components/dashboard/ShareCard';
 
 /**
  * O card de compartilhamento é a única superfície do produto que sai da tela e
@@ -21,7 +21,8 @@ const measure = (text: string) => text.length * 10;
 const baseData: ShareCardData = {
   symbol: 'BTCUSDT',
   timeframe: '4H',
-  verdict: 'BUY',
+  scenario: 'BULLISH',
+  action: 'BUY',
   tone: 'buy',
   tier: 'signal',
   confidence: 74,
@@ -62,42 +63,41 @@ describe('wrapText', () => {
   });
 });
 
-describe('publicVerdict', () => {
-  /**
-   * Existe por causa de uma divergência que chegou na tela (02/09/2026): o card
-   * desenhava HOLD e o texto do tweet dizia "said WAIT", no MESMO post. Duas
-   * palavras para o mesmo veredito, uma ao lado da outra, em conteúdo público.
-   */
-  it('traduz HOLD para WAIT, que e a palavra que trader usa', () => {
-    expect(publicVerdict('HOLD')).toBe('WAIT');
-    expect(publicVerdict('WAIT')).toBe('WAIT');
+describe('rótulos públicos de cenário e ação', () => {
+  it('mantém o cenário separado da recomendação operacional', () => {
+    expect(publicScenario('bullish')).toBe('BULLISH');
+    expect(publicScenario('bearish')).toBe('BEARISH');
+    expect(publicScenario('neutral')).toBe('NEUTRAL');
+    expect(publicScenario('')).toBe('NEUTRAL');
   });
 
-  it('nao mexe em BUY nem em SELL', () => {
-    expect(publicVerdict('BUY')).toBe('BUY');
-    expect(publicVerdict('SELL')).toBe('SELL');
+  it('usa WAIT como ação pública para HOLD, sem alterar BUY e SELL', () => {
+    expect(publicAction('HOLD')).toBe('WAIT');
+    expect(publicAction('WAIT')).toBe('WAIT');
+    expect(publicAction('BUY')).toBe('BUY');
+    expect(publicAction('SELL')).toBe('SELL');
   });
 
-  it('cai em WAIT quando o veredito vem vazio: nunca uma pilula em branco', () => {
-    expect(publicVerdict('')).toBe('WAIT');
+  it('cai em WAIT quando a ação vem vazia', () => {
+    expect(publicAction('')).toBe('WAIT');
   });
 
-  it('a palavra HOLD nunca sai no texto do post', () => {
-    const text = buildShareText({ ...baseData, verdict: 'HOLD', tone: 'hold', tier: null });
+  it('preserva o cenário bullish mesmo quando a ação é aguardar', () => {
+    const text = buildShareText({ ...baseData, action: 'HOLD', tone: 'buy', tier: null });
     expect(text).not.toContain('HOLD');
-    expect(text).toContain('said WAIT');
+    expect(text).toContain('read BULLISH and advised waiting');
   });
 });
 
 describe('buildShareText', () => {
-  it('diz WAIT quando o veredito é HOLD, porque "HOLD" não é palavra de trader', () => {
-    expect(buildShareText({ ...baseData, verdict: 'HOLD', tone: 'hold', tier: null })).toContain(
-      'said WAIT',
+  it('distingue cenário neutro de ação de aguardar', () => {
+    expect(buildShareText({ ...baseData, scenario: 'NEUTRAL', action: 'HOLD', tone: 'hold', tier: null })).toContain(
+      'read NEUTRAL and advised waiting',
     );
   });
 
   it('nomeia a direção quando existe', () => {
-    expect(buildShareText(baseData)).toContain('read it as BUY');
+    expect(buildShareText(baseData)).toContain('read BULLISH and outlined a buy setup');
   });
 
   it('leva o link da /accuracy com UTM, que é o motivo de o card existir', () => {
@@ -121,6 +121,41 @@ describe('buildShareText', () => {
     const text = buildShareText(baseData).toLowerCase();
     for (const forbidden of ['win rate', 'accurate', 'profit', 'guarantee', 'roi']) {
       expect(text).not.toContain(forbidden);
+    }
+  });
+});
+
+describe('drawShareCard', () => {
+  it('desenha o mesmo cenário e a mesma ação do texto, inclusive WAIT com viés bullish', async () => {
+    const written: string[] = [];
+    const noop = () => {};
+    const ctx = {
+      scale: noop,
+      fillRect: noop,
+      fillText: (value: string) => { written.push(value); },
+      measureText: (value: string) => ({ width: value.length * 10 }),
+      createRadialGradient: () => ({ addColorStop: noop }),
+      beginPath: noop,
+      moveTo: noop,
+      arcTo: noop,
+      closePath: noop,
+      fill: noop,
+      stroke: noop,
+    } as unknown as CanvasRenderingContext2D;
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx);
+    const toBlob = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => {
+      callback(new Blob(['image'], { type: 'image/png' }));
+    });
+    const data = { ...baseData, action: 'WAIT', tier: null } as ShareCardData;
+
+    try {
+      await drawShareCard(data);
+      expect(written.join('')).toContain('BULLISH');
+      expect(written).toContain('ACTION: WAIT');
+      expect(buildShareText(data)).toContain('read BULLISH and advised waiting');
+    } finally {
+      getContext.mockRestore();
+      toBlob.mockRestore();
     }
   });
 });

@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { useUser } from "@clerk/clerk-react";
 import { ArrowRight, Star, Target } from "lucide-react";
-import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
+import { confidenceToPercent, getRecommendationMeta, getScenarioMeta } from "@/lib/trading-ui";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useAPIClient, type AIAnalysisResponse } from "@/lib/api";
@@ -72,20 +72,30 @@ const Watchlist = ({ onStartAnalysis }: WatchlistProps) => {
               <CardDescription>{w.opportunitiesDesc}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {opportunities.map((op, index) => (
-                <Card key={index} className="p-4 flex items-center justify-between">
-                  <div>
-                    <p className="font-bold">{op.symbol} <span className="font-normal text-muted-foreground">{op.timeframe}</span></p>
-                    <p className={`text-sm font-semibold ${signalToneClass(op.recommendation)}`}>
-                      {op.bias} | {normalizeRecommendationLabel(op.recommendation)} ({op.confidence})
-                    </p>
-                  </div>
-                  <Button variant="secondary">
-                    {w.viewAnalysis}
-                    <ArrowRight className="h-4 w-4" />
-                  </Button>
-                </Card>
-              ))}
+              {opportunities.map((op, index) => {
+                const scenario = getScenarioMeta(op.bias, op.recommendation);
+                const action = getRecommendationMeta(op.recommendation);
+                const actionLabel = action.tone === 'buy'
+                  ? t.analysis.buy
+                  : action.tone === 'sell'
+                    ? t.analysis.sell
+                    : t.analysis.hold;
+                return (
+                  <Card key={index} className="p-4 flex items-center justify-between">
+                    <div>
+                      <p className="font-bold">{op.symbol} <span className="font-normal text-muted-foreground">{op.timeframe}</span></p>
+                      <p className="text-sm font-semibold">
+                        <span className={scenario.tone === 'buy' ? 'text-[var(--signal-buy)]' : scenario.tone === 'sell' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}>{scenario.label}</span>
+                        <span className="font-normal text-[var(--text-secondary)]"> · {t.analysis.action}: {actionLabel} ({op.confidence})</span>
+                      </p>
+                    </div>
+                    <Button variant="secondary">
+                      {w.viewAnalysis}
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  </Card>
+                );
+              })}
             </CardContent>
           </Card>
 
@@ -131,6 +141,13 @@ const Watchlist = ({ onStartAnalysis }: WatchlistProps) => {
               <div className="divide-y divide-[var(--border-subtle)]">
                 {favorites.map((a) => {
                   const rec = String(a.recommendation || '');
+                  const action = getRecommendationMeta(rec);
+                  const scenario = getScenarioMeta(a.bias ?? a.fullResponse?.bias, rec);
+                  const actionLabel = action.tone === 'buy'
+                    ? t.analysis.buy
+                    : action.tone === 'sell'
+                      ? t.analysis.sell
+                      : t.analysis.hold;
                   const confidence = confidenceToPercent(a.confidence);
                   const created = a.createdAt ? new Date(a.createdAt) : null;
                   return (
@@ -142,9 +159,10 @@ const Watchlist = ({ onStartAnalysis }: WatchlistProps) => {
                             {String((a as unknown as Record<string, unknown>).timeframe || '')}
                           </span>
                         </p>
-                        <p className={`text-sm font-semibold ${signalToneClass(rec)}`}>
-                          {normalizeRecommendationLabel(rec)}
-                          {confidence > 0 ? ` (${confidence}%)` : ''}
+                        <p className="text-sm font-semibold">
+                          <span className={scenario.tone === 'buy' ? 'text-[var(--signal-buy)]' : scenario.tone === 'sell' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}>{scenario.label}</span>
+                          <span className="font-normal text-[var(--text-secondary)]"> · {t.analysis.action}: {actionLabel}</span>
+                          {confidence > 0 ? <span className="font-normal text-[var(--text-secondary)]"> ({confidence}%)</span> : null}
                           {created ? (
                             <span className="ml-2 font-normal text-xs text-muted-foreground">
                               {created.toLocaleDateString()}

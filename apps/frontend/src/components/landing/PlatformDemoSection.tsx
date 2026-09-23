@@ -24,7 +24,8 @@ type Level = { label: string; value: string; delta?: string; tone?: 'long' | 'sh
 type Case = {
   sym: string;
   chart: string;
-  side: string;
+  scenario: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  action: 'BUY' | 'SELL' | 'WAIT';
   arrow: string;
   tone: 'long' | 'short' | 'wait';
   conf: number;
@@ -37,7 +38,7 @@ type Case = {
 
 const CASES: Case[] = [
   {
-    sym: 'XAUUSD · M30', chart: chartLong, side: 'LONG', arrow: '▲', tone: 'long', conf: 68, tier: 'Read',
+    sym: 'XAUUSD · M30', chart: chartLong, scenario: 'BULLISH', action: 'BUY', arrow: '▲', tone: 'long', conf: 68, tier: 'Read',
     levels: [
       { label: 'Entry', value: '4,261.40' },
       { label: 'Stop', value: '4,240.00', delta: '-0.50%', tone: 'short' },
@@ -45,10 +46,10 @@ const CASES: Case[] = [
       { label: 'Target 2', value: '4,320.00', delta: '+1.38%', tone: 'long' },
     ],
     rationale: 'Higher low confirmed after the sweep, and the demand zone held on the retest.',
-    meta: 'R/R 1.6:1 · Confluence 4/8 · Bias BULLISH',
+    meta: 'R/R 1.6:1 · Confluence 4/8',
   },
   {
-    sym: 'EURUSD · 15M', chart: chartShort, side: 'SHORT', arrow: '▼', tone: 'short', conf: 61, tier: 'Read',
+    sym: 'EURUSD · 15M', chart: chartShort, scenario: 'BEARISH', action: 'SELL', arrow: '▼', tone: 'short', conf: 61, tier: 'Read',
     levels: [
       { label: 'Entry', value: '1.0842' },
       { label: 'Stop', value: '1.0861', delta: '+0.18%', tone: 'short' },
@@ -56,16 +57,16 @@ const CASES: Case[] = [
       { label: 'Target 2', value: '1.0784', delta: '-0.53%', tone: 'long' },
     ],
     rationale: 'Rally straight into prior supply with momentum fading and a change of character on the 5-minute.',
-    meta: 'R/R 1.8:1 · Confluence 5/8 · Bias BEARISH',
+    meta: 'R/R 1.8:1 · Confluence 5/8',
   },
   {
-    sym: 'BTCUSD · 1H', chart: chartWait, side: 'WAIT', arrow: '—', tone: 'wait', conf: 42, tier: 'No trade',
+    sym: 'BTCUSD · 1H', chart: chartWait, scenario: 'NEUTRAL', action: 'WAIT', arrow: '—', tone: 'wait', conf: 42, tier: 'No trade',
     changes: [
       'An hourly close above 64,180 with volume behind it.',
       'A clean rejection wick at 61,900.',
     ],
     rationale: 'Price is sitting mid-range with no displacement. Entering here pays the spread on noise.',
-    meta: 'R/R n/a · Confluence 2/8 · Bias NEUTRAL',
+    meta: 'R/R n/a · Confluence 2/8',
   },
 ];
 
@@ -202,8 +203,8 @@ const PlatformDemoSection = () => {
                 ) : (
                   <>
                     <div className="site-verdict">
-                      <span className={`site-call ${toneClass}`}>{current.arrow} {current.side}</span>
-                      <span className="site-conf">Confidence <b>{current.conf}%</b> · tier <b>{current.tier}</b></span>
+                      <span className={`site-call ${toneClass}`}>{current.arrow} {current.scenario}</span>
+                      <span className="site-conf">Action <b className={toneClass}>{current.action}</b> · Confidence <b>{current.conf}%</b> · tier <b>{current.tier}</b></span>
                     </div>
 
                     {current.levels ? (

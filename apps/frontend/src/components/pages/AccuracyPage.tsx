@@ -139,11 +139,11 @@ const AccuracyPage = () => {
     });
 
     items.push({
-      q: 'Does the AI give a call on every chart?',
+      q: 'Does the AI suggest a trade on every chart?',
       a:
         data && data.abstention.rate !== null
-          ? `No. ${data.abstention.rate}% of analyses come back as an explicit WAIT instead of a directional call, ${data.abstention.wait} of ${data.abstention.total}. Abstention is a designed outcome, not a failure to answer, and those analyses count as neither a win nor a loss.`
-          : 'No. A share of analyses come back as an explicit WAIT instead of a directional call. Abstention is a designed outcome, not a failure to answer, and those analyses count as neither a win nor a loss.',
+          ? `No. ${data.abstention.rate}% of analyses (${data.abstention.wait} of ${data.abstention.total}) return a WAIT action rather than BUY or SELL. A WAIT can still describe a bullish or bearish market scenario. Waiting is a designed outcome, not a failure to answer, and those analyses count as neither a win nor a loss.`
+          : 'No. A share of analyses return a WAIT action rather than BUY or SELL. A WAIT can still describe a bullish or bearish market scenario. Waiting is a designed outcome, not a failure to answer, and those analyses count as neither a win nor a loss.',
     });
 
     items.push({
@@ -202,7 +202,7 @@ const AccuracyPage = () => {
         {
           '@type': 'PropertyValue',
           name: 'Abstention rate',
-          description: 'Share of analyses where the model returned "wait" instead of a directional call.',
+          description: 'Share of analyses with a WAIT action rather than BUY or SELL; the market scenario may still be directional.',
           ...(data && data.abstention.rate !== null ? { value: data.abstention.rate, unitText: 'PERCENT' } : {}),
         },
         {
