@@ -71,6 +71,14 @@ describe('loja de apps — resolução de flags', () => {
       expect(flagBool('ENABLE_QUICK_GROUNDING')).toBe(true);
     });
 
+    it('a guarda temporal experimental do deep cripto permanece desligada por padrão', () => {
+      expect(flagBool('ENABLE_DEEP_CRYPTO_GROUNDING')).toBe(false);
+      process.env.ENABLE_DEEP_CRYPTO_GROUNDING = 'true';
+      expect(flagBool('ENABLE_DEEP_CRYPTO_GROUNDING')).toBe(true);
+      process.env.ENABLE_DEEP_CRYPTO_GROUNDING = 'false';
+      expect(flagBool('ENABLE_DEEP_CRYPTO_GROUNDING')).toBe(false);
+    });
+
     it.each(['ENABLE_RR_GUARD', 'ENABLE_NEWS_GUARD', 'ENABLE_MARKET_ENRICHMENT', 'ENABLE_OUTCOME_TRACKING'])(
       '%s continua LIGADO por padrão (era !== "false")',
       (chave) => {

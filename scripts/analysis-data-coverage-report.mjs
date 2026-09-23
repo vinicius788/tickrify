@@ -10,11 +10,11 @@ const CLASSES = new Set(['crypto', 'forex', 'metal', 'index', 'other', 'unknown'
 const CANDLES = new Set([
   'disabled', 'not_attempted', 'symbol_unreadable', 'timeframe_unreadable',
   'unsupported_asset', 'provider_unconfigured', 'source_unavailable',
-  'stale_withheld', 'block_unavailable', 'injected', 'timeout', 'error',
+  'stale_withheld', 'unverified_withheld', 'block_unavailable', 'injected', 'timeout', 'error',
 ]);
-const CONTEXT = new Set(['disabled', 'not_attempted', 'unavailable', 'stale_withheld', 'injected', 'timeout', 'error']);
+const CONTEXT = new Set(['disabled', 'not_attempted', 'unavailable', 'stale_withheld', 'unverified_withheld', 'injected', 'timeout', 'error']);
 const CALENDAR = new Set([
-  'disabled', 'not_attempted', 'symbol_unreadable', 'events_injected',
+  'disabled', 'not_attempted', 'symbol_unreadable', 'stale_withheld', 'unverified_withheld', 'events_injected',
   'no_events_returned', 'source_degraded', 'timeout', 'error',
 ]);
 
@@ -104,7 +104,7 @@ export function renderCoverageReport(text) {
       if (n) out.push(`| ${mode} | ${state} | ${n} |`);
     }
   }
-  out.push('', 'O estado `injected` significa que o bloco foi anexado ao prompt, não que os valores ou a análise final estejam corretos. `no_events_returned` significa apenas que a fonte não devolveu eventos nessa consulta, não que não existam eventos. O deep não tenta o bloco OHLCV/RSI quick. Falhas antes da montagem do conteúdo não geram esta linha.', '');
+  out.push('', 'O estado `injected` significa que o bloco foi anexado ao prompt, não que os valores ou a análise final estejam corretos. `no_events_returned` significa apenas que a fonte não devolveu eventos nessa consulta, não que não existam eventos. Candles no deep cripto dependem de uma flag experimental. Falhas antes da montagem do conteúdo não geram esta linha.', '');
   return out.join('\n');
 }
 

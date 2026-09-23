@@ -86,6 +86,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'ENABLE_DEEP_CRYPTO_GROUNDING',
+    type: 'boolean',
+    label: 'Candles e guarda temporal do deep cripto (experimental)',
+    description:
+      'Anexa OHLCV e indicadores ao deep cripto somente após comparar preço visível e candles recentes. Se não puder verificar, retém também contexto e calendário atuais. Desligado até avaliação pareada.',
+    defaultValue: 'false',
+    risk: 'alto',
+  },
+  {
     key: 'ENABLE_NEWS_GUARD',
     type: 'boolean',
     label: 'Guarda de evento econômico',

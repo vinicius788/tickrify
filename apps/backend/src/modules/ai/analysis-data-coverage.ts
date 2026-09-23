@@ -8,13 +8,14 @@ export type CandleCoverage =
   | 'provider_unconfigured'
   | 'source_unavailable'
   | 'stale_withheld'
+  | 'unverified_withheld'
   | 'block_unavailable'
   | 'injected'
   | 'timeout'
   | 'error';
 
-export type ContextCoverage = 'disabled' | 'not_attempted' | 'unavailable' | 'stale_withheld' | 'injected' | 'timeout' | 'error';
-export type CalendarCoverage = 'disabled' | 'not_attempted' | 'symbol_unreadable' | 'events_injected' | 'no_events_returned' | 'source_degraded' | 'timeout' | 'error';
+export type ContextCoverage = 'disabled' | 'not_attempted' | 'unavailable' | 'stale_withheld' | 'unverified_withheld' | 'injected' | 'timeout' | 'error';
+export type CalendarCoverage = 'disabled' | 'not_attempted' | 'symbol_unreadable' | 'stale_withheld' | 'unverified_withheld' | 'events_injected' | 'no_events_returned' | 'source_degraded' | 'timeout' | 'error';
 export type CoverageAssetClass = 'crypto' | 'forex' | 'metal' | 'index' | 'other' | 'unknown';
 
 export interface AnalysisDataCoverage {
@@ -30,13 +31,13 @@ export interface AnalysisDataCoverage {
 const CANDLE_VALUES = new Set<CandleCoverage>([
   'disabled', 'not_attempted', 'symbol_unreadable', 'timeframe_unreadable',
   'unsupported_asset', 'provider_unconfigured', 'source_unavailable',
-  'stale_withheld', 'block_unavailable', 'injected', 'timeout', 'error',
+  'stale_withheld', 'unverified_withheld', 'block_unavailable', 'injected', 'timeout', 'error',
 ]);
 const CONTEXT_VALUES = new Set<ContextCoverage>([
-  'disabled', 'not_attempted', 'unavailable', 'stale_withheld', 'injected', 'timeout', 'error',
+  'disabled', 'not_attempted', 'unavailable', 'stale_withheld', 'unverified_withheld', 'injected', 'timeout', 'error',
 ]);
 const CALENDAR_VALUES = new Set<CalendarCoverage>([
-  'disabled', 'not_attempted', 'symbol_unreadable', 'events_injected',
+  'disabled', 'not_attempted', 'symbol_unreadable', 'stale_withheld', 'unverified_withheld', 'events_injected',
   'no_events_returned', 'source_degraded', 'timeout', 'error',
 ]);
 const ASSET_VALUES = new Set<CoverageAssetClass>([

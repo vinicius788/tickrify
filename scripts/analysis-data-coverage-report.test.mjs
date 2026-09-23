@@ -33,6 +33,20 @@ test('accepts the bounded schema and discards additional sensitive fields', () =
   });
 });
 
+test('accepts a deep crypto verification failure without treating it as injected data', () => {
+  const row = parseCoverageLine(logLine(coverage({
+    analysisType: 'deep', candles: 'unverified_withheld',
+    marketContext: 'unverified_withheld', calendar: 'unverified_withheld',
+  })));
+  assert.equal(row?.candles, 'unverified_withheld');
+  const report = renderCoverageReport(logLine(coverage({
+    analysisType: 'deep', candles: 'unverified_withheld',
+    marketContext: 'unverified_withheld', calendar: 'unverified_withheld',
+  })));
+  assert.match(report, /\| deep \| unverified_withheld \| 1 \|/);
+  assert.match(report, /\| Todas \| 1 \| 0\/0 \(n\/d\) \| 0\/1 \(0\.0%\) \|/);
+});
+
 test('rejects malformed, unknown, or inconsistent coverage records', () => {
   assert.equal(parseCoverageLine('unrelated log'), null);
   assert.equal(parseCoverageLine('[AnalysisDataCoverage] {bad json'), null);

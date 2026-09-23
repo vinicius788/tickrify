@@ -186,3 +186,5 @@ um bloco de calendário sozinho não infle a cobertura de contexto de mercado.
 Uma migração aditiva e código de worker/API para devolver causas tipadas de
 falhas definitivas também estão preparados. Nada disso foi implantado, a
 migração não foi executada e a flag não foi ativada.
+
+Uma candidata de [candles/indicadores no deep cripto com guarda temporal](AI_ANALYSIS_DATA_COVERAGE_AND_MTF_2026-09-23.md#protótipo-de-candles-e-guarda-temporal-do-deep-cripto) também foi preparada com flag própria desligada por padrão. O próximo passo é avaliar prints de épocas conhecidas e medir falsos bloqueios, falsos passes, custo de latência e mudança nas respostas antes de considerar ativação. O código permanece no branch isolado; não há mudança em produção.

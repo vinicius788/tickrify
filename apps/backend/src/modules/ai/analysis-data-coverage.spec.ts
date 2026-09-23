@@ -1,9 +1,30 @@
-import { AIAdapter } from './ai.adapter';
+import { AIAdapter, hasRecentComparableCryptoCandles } from './ai.adapter';
 import { classifyCoverageAsset, formatAnalysisDataCoverage } from './analysis-data-coverage';
 import { EconomicCalendarService } from '../calendar/calendar.service';
 
 describe('analysis data coverage', () => {
-  afterEach(() => jest.restoreAllMocks());
+  const originalDeepGuard = process.env.ENABLE_DEEP_CRYPTO_GROUNDING;
+  afterEach(() => {
+    jest.restoreAllMocks();
+    if (originalDeepGuard === undefined) delete process.env.ENABLE_DEEP_CRYPTO_GROUNDING;
+    else process.env.ENABLE_DEEP_CRYPTO_GROUNDING = originalDeepGuard;
+  });
+
+  const cryptoCandles = (now: number) => Array.from({ length: 30 }, (_, index) => [
+    now - (30 - index) * 1_800_000, 100, 102, 98, 100, 1,
+  ]);
+
+  it('accepts only recent and comparable crypto candles for a temporal check', () => {
+    const now = Date.now();
+    const valid = cryptoCandles(now);
+    expect(hasRecentComparableCryptoCandles(valid, '30m', now)).toBe(true);
+    expect(hasRecentComparableCryptoCandles(valid, 'unknown', now)).toBe(false);
+    expect(hasRecentComparableCryptoCandles(cryptoCandles(now - 4 * 3_600_000), '30m', now)).toBe(false);
+    expect(hasRecentComparableCryptoCandles(cryptoCandles(now + 40 * 60_000), '30m', now)).toBe(false);
+    expect(hasRecentComparableCryptoCandles([...valid.slice(0, -1), [now + 60_000, 100, 102, 98, 100, 1]], '30m', now)).toBe(false);
+    expect(hasRecentComparableCryptoCandles([...valid.slice(0, -1), [valid.at(-1)![0], 100, 90, 98, 100, 1]], '30m', now)).toBe(false);
+    expect(hasRecentComparableCryptoCandles([[valid[0][0], 100, 90, 98, 100, 1], ...valid.slice(1)], '30m', now)).toBe(false);
+  });
 
   it('records only bounded categories and counts', () => {
     const line = formatAnalysisDataCoverage({
@@ -71,7 +92,7 @@ describe('analysis data coverage', () => {
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue('MARKET BLOCK');
     adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: null, status: 'no_events_returned' });
     expect(await adapter.buildMarketEnrichment('chart')).toEqual({
-      block: 'MARKET BLOCK', assetClass: 'crypto', marketContext: 'injected', calendar: 'no_events_returned',
+      block: 'MARKET BLOCK', assetClass: 'crypto', candles: 'not_attempted', marketContext: 'injected', calendar: 'no_events_returned',
     });
   });
 
@@ -81,8 +102,77 @@ describe('analysis data coverage', () => {
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue(null);
     adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: 'CALENDAR BLOCK', status: 'events_injected' });
     expect(await adapter.buildMarketEnrichment('chart')).toEqual({
-      block: 'CALENDAR BLOCK', assetClass: 'crypto', marketContext: 'unavailable', calendar: 'events_injected',
+      block: 'CALENDAR BLOCK', assetClass: 'crypto', candles: 'not_attempted', marketContext: 'unavailable', calendar: 'events_injected',
     });
+  });
+
+  it('keeps existing deep enrichment and avoids extra candle calls with the guard off', async () => {
+    process.env.ENABLE_DEEP_CRYPTO_GROUNDING = 'false';
+    const adapter = new AIAdapter() as any;
+    adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
+    adapter.fetchCryptoCandles = jest.fn();
+    adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue('MARKET BLOCK');
+    adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: 'CALENDAR BLOCK', status: 'events_injected' });
+    const result = await adapter.buildMarketEnrichment('chart');
+    expect(result.block).toBe('MARKET BLOCK\n\nCALENDAR BLOCK');
+    expect(adapter.fetchCryptoCandles).not.toHaveBeenCalled();
+  });
+
+  it('does not change non-crypto deep enrichment when the crypto guard is on', async () => {
+    process.env.ENABLE_DEEP_CRYPTO_GROUNDING = 'true';
+    const adapter = new AIAdapter() as any;
+    adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'EURUSD', timeframe: '30m', lastPrice: 1.2 });
+    adapter.fetchCryptoCandles = jest.fn();
+    adapter.buildFxEnrichment = jest.fn().mockResolvedValue('FX BLOCK');
+    adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: 'CALENDAR BLOCK', status: 'events_injected' });
+    expect(await adapter.buildMarketEnrichment('chart')).toEqual({
+      block: 'FX BLOCK\n\nCALENDAR BLOCK',
+      assetClass: 'forex', candles: 'not_attempted', marketContext: 'injected', calendar: 'events_injected',
+    });
+    expect(adapter.fetchCryptoCandles).not.toHaveBeenCalled();
+  });
+
+  it('withholds current deep crypto context and calendar for stale or unverified charts', async () => {
+    process.env.ENABLE_DEEP_CRYPTO_GROUNDING = 'true';
+    const adapter = new AIAdapter() as any;
+    const now = Date.now();
+    adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
+    adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(cryptoCandles(now));
+    adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue('MARKET BLOCK');
+    adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: 'CALENDAR BLOCK', status: 'events_injected' });
+
+    const current = await adapter.buildMarketEnrichment('chart');
+    expect(current.block).toContain('# REAL MARKET DATA');
+    expect(current.block).toContain('MARKET BLOCK\n\nCALENDAR BLOCK');
+    expect(current.candles).toBe('injected');
+    expect(current.marketContext).toBe('injected');
+    expect(current.calendar).toBe('events_injected');
+
+    adapter.buildCryptoEnrichment.mockClear();
+    adapter.buildCalendarEnrichment.mockClear();
+    adapter.extractSymbol.mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 70 });
+    const old = await adapter.buildMarketEnrichment('chart');
+    expect(old.marketContext).toBe('stale_withheld');
+    expect(old.calendar).toBe('stale_withheld');
+    expect(old.candles).toBe('stale_withheld');
+    expect(old.block).toContain('CURRENT MARKET DATA WITHHELD');
+    expect(adapter.buildCryptoEnrichment).not.toHaveBeenCalled();
+    expect(adapter.buildCalendarEnrichment).not.toHaveBeenCalled();
+
+    adapter.fetchCryptoCandles.mockClear();
+    adapter.extractSymbol.mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: null });
+    const unreadable = await adapter.buildMarketEnrichment('chart');
+    expect(unreadable.marketContext).toBe('unverified_withheld');
+    expect(unreadable.calendar).toBe('unverified_withheld');
+    expect(unreadable.candles).toBe('unverified_withheld');
+    expect(adapter.fetchCryptoCandles).not.toHaveBeenCalled();
+
+    adapter.extractSymbol.mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
+    adapter.fetchCryptoCandles.mockResolvedValue(cryptoCandles(now - 4 * 3_600_000));
+    const staleFeed = await adapter.buildMarketEnrichment('chart');
+    expect(staleFeed.marketContext).toBe('unverified_withheld');
+    expect(staleFeed.calendar).toBe('unverified_withheld');
+    expect(staleFeed.candles).toBe('source_unavailable');
   });
 
   it('distinguishes calendar events, no returned events and degraded source', async () => {

@@ -66,3 +66,5 @@ mercado deep e calendário deep; ela continua desligada até uma etapa operacion
 separada. Essa separação mede **presença de blocos**, não sua exatidão ou
 sincronia temporal. Não usar a taxa de blocos anexados como prova de que uma
 análise histórica recebeu dados da mesma época do gráfico.
+
+Uma [candidata experimental para candles no deep cripto](AI_ANALYSIS_DATA_COVERAGE_AND_MTF_2026-09-23.md#protótipo-de-candles-e-guarda-temporal-do-deep-cripto) foi preparada **desligada por padrão**. Se ativada após avaliação, ela anexa OHLCV/RSI ao deep apenas quando o preço do print combina com candles recentes. Se a comparação falha, retém também contexto e calendário atuais. Ainda não cobre todas as classes de ativo nem prova contemporaneidade quando o preço de um gráfico antigo coincide com o atual. Não altera a conclusão da auditoria nem a promessa pública nesta etapa.
