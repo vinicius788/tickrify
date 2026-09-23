@@ -29,19 +29,29 @@ A busca separada `[Cost]` exibiu 50 chamadas quick com `gpt-5.6-luna`: custo est
 
 Períodos personalizados anteriores também exibiram 50 linhas, indicando limite de resultados por consulta. Estas são **linhas exibidas**, não a semana inteira nem uma amostra aleatória. Não usar 1/50 como taxa de falha real, US$ 0,9671 como gasto semanal ou a margem teórica do log como lucro. Um export completo ou consultas por janelas curtas, sem sobreposição, ainda são necessários para fechar a linha de base de custo e confiabilidade.
 
-O próximo diagnóstico deve separar `UNTRACKABLE` por classe de ativo, símbolo, período, provedor de candles e motivo técnico, em consulta **agregada e somente leitura**. Antes, conferir a cobertura dos campos e não incluir prints, prompts ou dados identificáveis em exportações.
+O diagnóstico de `UNTRACKABLE` já foi separado por classe de ativo. Ainda faltam provedor, motivo técnico e disponibilidade histórica, que não são registrados de forma estruturada hoje. Novas consultas devem continuar **agregadas e somente leitura**, sem prints, prompts ou dados identificáveis.
 
 ### Mapa de fontes e hipótese verificável
 
 - O caminho **quick** extrai símbolo e timeframe do print. Se não consegue ler o período, não injeta candles; quando consegue, tenta OKX/Binance para cripto e Twelve Data para forex/metais. Candles incompatíveis com o preço visível são retidos para não misturar um print histórico com preço atual. Uma falha de grounding reduz evidência disponível, mas não interrompe a análise.
 - O enriquecimento **deep** escolhe contexto por classe de ativo e calendário econômico. Ausência ou degradação da fonte volta como `null`; não equivale a comprovação de que nenhum evento existe. O resultado final não armazena um campo estruturado dizendo quais fontes chegaram ao prompt.
-- O avaliador de resultados espera 48 horas, busca candles de 30 minutos e classifica `WAIT` como `ABSTAIN`. Para trades, tenta OKX/Binance em cripto e Twelve Data em forex/metais. **Índices não têm uma fonte de candles no avaliador atual**: passam pelo caminho forex, cujo filtro de símbolos os rejeita. Assim, trades de índices ficam `UNTRACKABLE` pela lógica atual; ainda não sabemos quantos dos 92 são índices. Ausência de chave Twelve Data, símbolo fora do filtro ou indisponibilidade temporária das fontes também podem produzir o mesmo resultado. O registro marca `UNTRACKABLE` de forma definitiva e grava uma razão genérica, sem distinguir essas causas.
+- O avaliador de resultados espera 48 horas, busca candles de 30 minutos e classifica `WAIT` como `ABSTAIN`. Para trades, tenta OKX/Binance em cripto e Twelve Data em forex/metais. **Índices não têm uma fonte de candles no avaliador atual**: passam pelo caminho forex, cujo filtro de símbolos os rejeita. Sete dos 92 casos históricos são índices. Ausência histórica de chave Twelve Data, símbolo fora do filtro ou indisponibilidade temporária das fontes também podem produzir `UNTRACKABLE`, mas não é possível distinguir essas causas no registro atual. O resultado é marcado de forma definitiva com razão genérica.
 
-Ordem de investigação: (1) contar os 92 por classe de ativo e símbolo normalizado, sempre agregado; (2) verificar se a chave Twelve Data **existe**, sem revelar seu valor, e as taxas de sucesso/falha por fonte; (3) separar falhas permanentes de indisponibilidade temporária; (4) só então decidir entre ampliar cobertura de dados, ajustar o avaliador ou mudar a forma de apresentar a métrica. Não preencher resultados ausentes como LOSS nem somar `UNTRACKABLE` ao denominador de acerto.
+Próxima investigação: medir daqui em diante as taxas de sucesso/falha por fonte e distinguir ausência permanente de indisponibilidade temporária. A chave Twelve Data existe atualmente, sem que isso prove sua disponibilidade histórica. Não preencher resultados ausentes como LOSS nem somar `UNTRACKABLE` ao denominador de acerto.
 
-A [consulta de cobertura por classe](../scripts/analysis-outcome-coverage.sql) já está preparada com os mesmos filtros do endpoint público. Ela retorna apenas contagens, sem IDs, imagens, respostas ou símbolos individuais, em transação somente leitura. Ainda **não foi executada contra o banco**: a credencial local existente falhou na autenticação. Será preciso acesso de leitura válido para confirmar quantos `UNTRACKABLE` pertencem a índices e às outras classes.
+A [consulta de cobertura por classe](../scripts/analysis-outcome-coverage.sql) está preparada com os mesmos filtros do endpoint público. Consultas agregadas equivalentes foram executadas em **transação somente leitura** pelo terminal do serviço no Render, sem retornar IDs, imagens ou respostas individuais. A credencial local continua inválida; isso não impediu a leitura pela conexão já configurada no serviço.
 
-Para medir operação, exportar 2–4 semanas de linhas `[Metrics]` e `[Cost]` do serviço de worker para arquivo local fora do Git; executar:
+| `UNTRACKABLE` histórico por símbolo normalizado | Casos |
+| --- | ---: |
+| Metais (`XAU`/`XAG`) | **63** |
+| Forex (pares suportados pelo avaliador) | **13** |
+| Índices conhecidos | **7** |
+| Demais ou sem símbolo reconhecido nessas classes | **9** |
+| Total | **92** |
+
+O serviço tem uma chave Twelve Data configurada atualmente; a presença da chave **não demonstra** que ela existia ou funcionava quando os 63 casos históricos de metais foram avaliados. Nos **14 dias anteriores à consulta de 23/09/2026**, houve apenas **1 `UNTRACKABLE`** em todas as classes, e ele era de índice. Para metais nesse mesmo período: 0 `UNTRACKABLE`, 4 `NO_FILL`, 3 `WIN`, 1 `LOSS` e 9 `ABSTAIN`. O problema histórico de metais não aparece nessa janela recente; a lacuna atual comprovada é a ausência de candles de índices no avaliador. Não reclassificar nem recalcular outcomes históricos sem regras e dados que permitam fazê-lo corretamente.
+
+O plano atual do Render permite consultar até **7 dias de logs**. Para montar uma linha de base de 2–4 semanas, coletar agregados por janelas curtas e repetir semanalmente; não há como recuperar semanas anteriores que já saíram da retenção. Se houver exportação das linhas `[Metrics]` e `[Cost]`, guardar o arquivo bruto localmente fora do Git e executar:
 
 ```bash
 node scripts/analysis-baseline.mjs --accuracy docs/AI_ANALYSIS_BASELINE_SNAPSHOT_2026-09-23.json --logs /caminho/local/worker.log --out /caminho/local/relatorio.md
@@ -52,4 +62,4 @@ O script emite apenas agregados; IDs, `userId`, códigos de erro e linhas brutas
 
 ## Decisão para a próxima etapa
 
-Priorizar cobertura de outcomes e a avaliação cega da leitura de gráficos, usando a [rubrica congelada](AI_ANALYSIS_EVAL_RUBRIC.md). O candidato deve ser medido na mesma amostra do motor atual. Por ora, nenhuma alteração de prompt, modelo, cobrança, fila, API ou produção decorre destes números.
+Priorizar a **avaliação cega da leitura de gráficos**, usando a [rubrica congelada](AI_ANALYSIS_EVAL_RUBRIC.md), e fechar a linha de base operacional com exportações completas. Documentar a falta de candles para índices; só decidir uma nova fonte após medir volume recente e custo. O candidato deve ser medido na mesma amostra do motor atual. Por ora, nenhuma alteração de prompt, modelo, cobrança, fila, API ou produção decorre destes números.

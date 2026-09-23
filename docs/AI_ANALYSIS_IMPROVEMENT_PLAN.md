@@ -134,12 +134,14 @@ experimento. Nenhum gasto de treinamento ou GPU é necessário na Etapa A.
 [snapshot agregado da API pública](AI_ANALYSIS_BASELINE_2026-09-23.md),
 [extrator local de logs](../scripts/analysis-baseline.mjs), testes sintéticos e
 uma amostra limitada de 50 linhas de métricas/custo observadas no Render.
-A3 tem [mapa das fontes no código](AI_ANALYSIS_BASELINE_2026-09-23.md), ainda
-sem confirmação das taxas reais de disponibilidade; a
+A3 tem [mapa das fontes e distribuição histórica/recente](AI_ANALYSIS_BASELINE_2026-09-23.md):
+63 dos 92 `UNTRACKABLE` históricos são de metais, mas nenhum ocorreu em metais
+nos 14 dias anteriores a 23/09; o único recente era de índice. A
 [consulta agregada de cobertura](../scripts/analysis-outcome-coverage.sql) está
-preparada. A [rubrica offline](AI_ANALYSIS_EVAL_RUBRIC.md) está congelada e o
+preparada para repetição. A [rubrica offline](AI_ANALYSIS_EVAL_RUBRIC.md) está congelada e o
 [comparador pareado](../scripts/analysis-eval.mjs) foi testado com casos
-sintéticos. Faltam export de logs de 2–4 semanas, executar a consulta com
-acesso somente leitura válido, e imagens autorizadas para fechar A2/A3 e
-executar B com dados reais.
+sintéticos. Faltam agregados completos de logs em janelas menores que o limite
+de 50 linhas da tela, repetidos semanalmente porque o plano do Render retém só
+7 dias, diagnóstico dos motivos técnicos por fonte e imagens autorizadas para
+fechar A2/A3 e executar B com dados reais.
 Sem essas fontes, números de ganho ou custo total seriam especulação.
