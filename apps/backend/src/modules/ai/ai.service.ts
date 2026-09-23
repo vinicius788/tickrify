@@ -52,6 +52,7 @@ import {
 } from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
 import { trackFreeAnalysisCompleted, trackFreeAnalysisStarted } from '../../common/analytics/free-funnel';
+import { trackAnalysisExecutionFailed } from '../../common/analytics/analysis-failure';
 import {
   AnalysisContext,
   validateImageHook,
@@ -994,7 +995,7 @@ export class AiService implements OnModuleInit {
       return this.serializeAnalysis(updated);
     } catch (error) {
       const safeMessage = this.safeErrorMessage(error);
-      await this.prisma.analysis.update({
+      const failedAnalysis = await this.prisma.analysis.update({
         where: { id: analysisId },
         data: {
           status: 'failed',
@@ -1023,6 +1024,14 @@ export class AiService implements OnModuleInit {
           );
         }
       }
+
+      await trackAnalysisExecutionFailed(this.prisma, {
+        userId,
+        analysisId,
+        analysisType,
+        code: error instanceof AIAnalysisError ? error.code : 'processing_unclassified',
+        createdAt: failedAnalysis.createdAt,
+      });
 
       // Convert non_chart_image to a 400 HTTP exception so the frontend receives
       // a proper error code + user-friendly message instead of a generic 500.

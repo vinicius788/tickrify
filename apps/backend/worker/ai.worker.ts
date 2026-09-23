@@ -25,6 +25,7 @@ import { DEEP_ENRICHMENT_INSTRUCTION } from '../src/modules/prompt/prompt-builde
 import { type StrategyProfile } from '../src/common/strategy/strategy-profile';
 import { startOutcomeSweeper } from './outcome.sweeper';
 import { trackFreeAnalysisCompleted } from '../src/common/analytics/free-funnel';
+import { trackAnalysisExecutionFailed } from '../src/common/analytics/analysis-failure';
 import { MailService } from '../src/modules/mail/mail.service';
 import { notifyIfFreeQuotaExhausted, type RecoveryEmailDeps } from '../src/modules/mail/recovery-email';
 import Stripe from 'stripe';
@@ -1063,7 +1064,7 @@ async function processAnalysis(job: Job<JobData>) {
         raw: rawContent.slice(0, 500),
       });
 
-      await prisma.analysis.update({
+      const failedAnalysis = await prisma.analysis.update({
         where: { id: analysisId },
         data: {
           status: 'failed',
@@ -1090,6 +1091,14 @@ async function processAnalysis(job: Job<JobData>) {
         persistMs,
         totalMs: Date.now() - t0,
         errorCode: 'validation_failed',
+      });
+
+      await trackAnalysisExecutionFailed(prisma, {
+        userId,
+        analysisId,
+        analysisType: normalizedAnalysisType,
+        code: 'validation_failed',
+        createdAt: failedAnalysis.createdAt,
       });
 
       return;
@@ -1188,7 +1197,7 @@ async function processAnalysis(job: Job<JobData>) {
 
     // Non-retriable error → fail permanently and immediately
     if (error instanceof AIAnalysisError && !error.retriable) {
-      await prisma.analysis.update({
+      const failedAnalysis = await prisma.analysis.update({
         where: { id: analysisId },
         data: {
           status: 'failed',
@@ -1199,6 +1208,13 @@ async function processAnalysis(job: Job<JobData>) {
         },
       });
       await refundTicksForFailedAnalysis(userId, isDemo, normalizedAnalysisType, analysisId);
+      await trackAnalysisExecutionFailed(prisma, {
+        userId,
+        analysisId,
+        analysisType: normalizedAnalysisType,
+        code: error.code,
+        createdAt: failedAnalysis.createdAt,
+      });
       throw new UnrecoverableError(error.message);
     }
 
@@ -1209,7 +1225,7 @@ async function processAnalysis(job: Job<JobData>) {
 
     if (isLastAttempt) {
       // Exhausted all retries — set final failure state
-      await prisma.analysis.update({
+      const failedAnalysis = await prisma.analysis.update({
         where: { id: analysisId },
         data: {
           status: 'failed',
@@ -1220,6 +1236,13 @@ async function processAnalysis(job: Job<JobData>) {
         },
       });
       await refundTicksForFailedAnalysis(userId, isDemo, normalizedAnalysisType, analysisId);
+      await trackAnalysisExecutionFailed(prisma, {
+        userId,
+        analysisId,
+        analysisType: normalizedAnalysisType,
+        code: error instanceof AIAnalysisError ? error.code : 'processing_unclassified',
+        createdAt: failedAnalysis.createdAt,
+      });
     } else {
       // Intermediate retry — keep status=processing so the frontend keeps polling
       await prisma.analysis.update({

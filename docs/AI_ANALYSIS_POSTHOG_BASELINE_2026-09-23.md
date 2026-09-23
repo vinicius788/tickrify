@@ -74,9 +74,21 @@ esse caminho e a separar falhas de requisição HTTP de erros inesperados do
 cliente, sem enviar texto da falha ao PostHog. Isso melhora a localização da
 falha, mas **não descobre sua causa interna**. O worker registra `errorCode` na
 linha `[Metrics]`, porém o código não é persistido nem incluído na resposta
-final de uma análise falha. A instrumentação estruturada desse código no
-backend, sem expor prompt ou imagem, continua necessária para diagnóstico por
-causa. As 27 falhas históricas não podem ser reclassificadas só pelo evento.
+final de uma análise falha. As 27 falhas históricas não podem ser
+reclassificadas só pelo evento.
+
+Após autorização explícita do responsável, foi preparado na branch isolada um
+evento server-side separado, `analysis_execution_failed`, para falhas
+**definitivas** do worker e do processamento síncrono de reserva. O wrapper
+existente associa o evento ao identificador Clerk do usuário; as propriedades
+enviadas são apenas `analysisType` (`quick`/`deep`) e `code` de uma lista fixa
+(`validation_failed`, códigos tipados do adaptador de IA ou
+`processing_unclassified`). Não entram análise ID, texto do erro, prompt,
+imagem ou resposta bruta nas propriedades. A chave de deduplicação deriva do
+ID da análise e usa um timestamp estável de criação, portanto o horário do
+evento representa o **início** da análise, não o instante exato da falha.
+Retentativas intermediárias não geram esse evento. Ele só começará a aparecer
+depois de um deploy autorizado; esta branch não foi publicada.
 
 Como alternativa local sem novo envio a terceiros, o
 [extrator de logs](../scripts/analysis-baseline.mjs) agora agrupa códigos
@@ -84,7 +96,11 @@ conhecidos das falhas terminais `[Metrics]`; códigos ausentes ou inesperados
 viram `unclassified`, sem copiar mensagens livres. Isso só cobre logs ainda
 disponíveis ou exportados: a retenção atual do Render é de sete dias.
 
-Após a instrumentação, comparar a taxa total de falhas com a linha de base;
-**não** comparar a distribuição de códigos antiga (`unknown`) com a nova como
-se fosse melhora de confiabilidade. A mudança de código altera apenas a
-observabilidade, não o resultado da análise nem o consumo de Ticks.
+Após eventual implantação, comparar `analysis_failed` do navegador com a linha
+de base **usando os mesmos filtros e consentimento**. Medir
+`analysis_execution_failed` separadamente: ele vem do servidor e pode cobrir
+usuários que não enviam evento pelo navegador. Não somar os dois eventos como
+se fossem falhas distintas. **Não** comparar a distribuição de códigos antiga
+(`unknown`) com a nova como se fosse melhora de confiabilidade. A mudança de
+instrumentação altera a observabilidade, não o resultado da análise nem o
+consumo de Ticks.
