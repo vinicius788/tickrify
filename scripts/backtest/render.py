@@ -137,7 +137,7 @@ def render(sample, data):
     import datetime as dt
 
     labels = [
-        dt.datetime.utcfromtimestamp(window[t][0] / 1000).strftime(fmt) for t in tick_idx
+        dt.datetime.fromtimestamp(window[t][0] / 1000, dt.timezone.utc).strftime(fmt) for t in tick_idx
     ]
     time_ax = axv if axv is not None else ax
     time_ax.set_xticks(tick_idx)
@@ -175,6 +175,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--start", type=int, default=0)
     ap.add_argument("--end", type=int, default=10**9)
+    ap.add_argument("--selection", help="JSON de pilot-selection.json para renderizar só os casos selecionados")
     args = ap.parse_args()
 
     os.makedirs(CHARTS_DIR, exist_ok=True)
@@ -187,7 +188,17 @@ def main():
         with open(MANIFEST) as fh:
             entries = {e["id"]: e for e in json.load(fh)["entries"]}
 
-    batch = samples[args.start : args.end]
+    if args.selection:
+        with open(args.selection) as fh:
+            selected = json.load(fh)["selection"]
+        indices = [item["sampleIndex"] for item in selected]
+        if len(indices) != len(set(indices)) or any(i < 0 or i >= len(samples) for i in indices):
+            raise ValueError("Seleção contém índice duplicado ou fora da amostra")
+        if any(samples[i]["id"] != item["id"] for i, item in zip(indices, selected)):
+            raise ValueError("Seleção não corresponde a samples.json")
+        batch = [samples[i] for i in indices]
+    else:
+        batch = samples[args.start : args.end]
     for n, s in enumerate(batch):
         entries[s["id"]] = render(s, series[(s["symbol"], s["interval"])])
         if (n + 1) % 25 == 0:

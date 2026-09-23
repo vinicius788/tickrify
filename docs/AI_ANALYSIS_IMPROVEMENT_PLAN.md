@@ -144,4 +144,8 @@ sintéticos. Faltam agregados completos de logs em janelas menores que o limite
 de 50 linhas da tela, repetidos semanalmente porque o plano do Render retém só
 7 dias, diagnóstico dos motivos técnicos por fonte e imagens autorizadas para
 fechar A2/A3 e executar B com dados reais.
-Sem essas fontes, números de ganho ou custo total seriam especulação.
+Um [piloto local de 48 gráficos históricos](AI_ANALYSIS_PILOT_2026-09-23.md)
+já prepara B para leitura cega: 24 quick e 24 deep, hashes e corte temporal
+verificados, sem executar a IA. Ele cobre apenas BTC/ETH; forex, metais e
+índices ainda não estão representados. Sem essas fontes e respostas reais,
+números de ganho ou custo total seriam especulação.
