@@ -44,6 +44,17 @@ O agregador local `scripts/analysis-data-coverage-report.mjs` lê um **arquivo e
 
 O gerador `scripts/analysis-mtf-candidate.mjs` parte do prompt ativo v11 congelado e altera nove trechos ligados à leitura de períodos. Com uma imagem, ele manda descrever somente a estrutura visível, deixar `multiTimeframeAlignment=null` e marcar o item MTF do checklist como não avaliável e sem ponto. Com imagens extras legíveis, permite alinhamento apenas entre os períodos realmente fornecidos. As bandas de decisão 6–7, 4–5 e ≤3 não mudaram.
 
+O mesmo gerador agora inclui `buildMtfDeepInstructionCandidate`, que corrige **separadamente** a linha 4 do sufixo DEEP: uma imagem não permite veredito de alinhamento entre períodos; imagens adicionais só contam quando o período e a estrutura são legíveis. O teste estrutural exige que a antiga ordem de inferir contexto maior desapareça. Foram gerados dois arquivos locais ignorados pelo Git, `candidate-active-v11-mtf-evidence-v2-base.txt` e `candidate-active-v11-mtf-evidence-v2-deep.txt`, a partir do snapshot v11 verificado por SHA-256. O segundo é o prompt base candidato com o sufixo DEEP corrigido, SHA-256 `706b90c701c2fb7c16804d0faf1d404f77464564d0cf29776b10dba6460a56a6`. **Esta nova combinação base + sufixo DEEP ainda não foi executada no modelo**; nos oito pares abaixo, o deep recebeu o sufixo antigo. Nenhum dos dois textos candidatos foi ligado ao runtime ou à configuração ativa.
+
+```bash
+node scripts/analysis-mtf-candidate.mjs \
+  --baseline-file scripts/backtest/results/active-prompt-v11-2026-09-23.txt \
+  --out scripts/backtest/results/candidate-active-v11-mtf-evidence-v2-base.txt \
+  --deep-out scripts/backtest/results/candidate-active-v11-mtf-evidence-v2-deep.txt
+```
+
+O gerador se recusa a sobrescrever esses artefatos. Para uma nova rodada, use nomes de saída novos.
+
 SHA-256 do baseline: `00783ace62ae49315d8c33648d834c9475f428f00361c9d08f24cc85540a78bb`. SHA-256 da variante: `43881a9266aa94ceb98511a2b4506062b1b5e89cebbc0176e2decb5a9cef2fd9`. A saída local é `scripts/backtest/results/candidate-active-v11-mtf-evidence-v1.txt`; o runner a usou nos mesmos oito casos e com o mesmo modelo `gpt-5.6-luna`, quick `low`, deep no esforço padrão, grounding/enriquecimento/news guard desligados apenas no piloto histórico.
 
 | Medida nos oito casos | Prompt ativo | Variante MTF |

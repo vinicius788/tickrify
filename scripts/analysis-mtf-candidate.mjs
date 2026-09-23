@@ -9,6 +9,7 @@ import { extractPrompt } from './analysis-wait-candidate.mjs';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_BASELINE = path.resolve(ROOT, '../apps/backend/src/common/prompts/trading-system-prompt.ts');
 const DEFAULT_OUTPUT = path.join(ROOT, 'backtest/results/candidate-mtf-evidence-v1.txt');
+const DEEP_SOURCE = path.resolve(ROOT, '../apps/backend/src/modules/prompt/prompt-builder.service.ts');
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
 const edits = [
@@ -63,22 +64,53 @@ export function buildMtfCandidate(baseline) {
   return candidate;
 }
 
+/** O bloco DEEP é anexado depois do prompt base; ambos devem usar a mesma regra de evidência. */
+export function buildMtfDeepInstructionCandidate(baseline) {
+  const before = '4) Multi-timeframe: dê um veredito de ALINHAMENTO ou CONFLITO entre o contexto maior e o timeframe do gráfico. Se só houver um timeframe na imagem, infira o contexto maior com cautela e rotule como inferência.';
+  const after = '4) Multi-timeframe: com uma única imagem, diga que o alinhamento entre períodos não é verificável e descreva apenas a estrutura visível, sem atribuí-la a H1/H4/D1. Com imagens adicionais, cite somente os períodos legíveis nelas e dê um veredito de ALINHAMENTO ou CONFLITO apoiado nesses gráficos. Se o período adicional não for legível, diga que não foi confirmado.';
+  if (baseline.split(before).length !== 2) {
+    throw new Error('Instrução DEEP incompatível com a variante MTF');
+  }
+  return baseline.replace(before, after);
+}
+
+export function extractDeepInstruction(source) {
+  const match = source.match(/export const DEEP_ENRICHMENT_INSTRUCTION = `([\s\S]*?)`\.trim\(\);/);
+  if (!match) throw new Error('Arquivo TS sem DEEP_ENRICHMENT_INSTRUCTION literal');
+  return match[1].trim();
+}
+
 function cli(args) {
   const opts = {};
   for (let i = 0; i < args.length; i += 2) {
-    if (!['--baseline-file', '--out'].includes(args[i]) || !args[i + 1]) {
-      throw new Error('Uso: node scripts/analysis-mtf-candidate.mjs [--baseline-file prompt.ts|prompt.txt] [--out candidato.txt]');
+    if (!['--baseline-file', '--out', '--deep-out'].includes(args[i]) || !args[i + 1]) {
+      throw new Error('Uso: node scripts/analysis-mtf-candidate.mjs [--baseline-file prompt.ts|prompt.txt] [--out candidato.txt] [--deep-out candidato-deep.txt]');
     }
     opts[args[i]] = args[i + 1];
   }
   const sourceFile = path.resolve(opts['--baseline-file'] || DEFAULT_BASELINE);
   const outputFile = path.resolve(opts['--out'] || DEFAULT_OUTPUT);
   if (sourceFile === outputFile || fs.existsSync(outputFile)) throw new Error('Saída inválida ou existente');
+  const deepOutputFile = opts['--deep-out'] ? path.resolve(opts['--deep-out']) : null;
+  if (deepOutputFile && [sourceFile, outputFile, DEEP_SOURCE].includes(deepOutputFile)) {
+    throw new Error('Saída DEEP inválida');
+  }
+  if (deepOutputFile && fs.existsSync(deepOutputFile)) throw new Error('Saída DEEP já existe');
   const baseline = extractPrompt(fs.readFileSync(sourceFile, 'utf8'), sourceFile);
   const candidate = buildMtfCandidate(baseline);
+  const deepBaseline = deepOutputFile ? extractDeepInstruction(fs.readFileSync(DEEP_SOURCE, 'utf8')) : null;
+  const deepCandidate = deepBaseline ? `${candidate}\n\n${buildMtfDeepInstructionCandidate(deepBaseline)}` : null;
   fs.mkdirSync(path.dirname(outputFile), { recursive: true });
   fs.writeFileSync(outputFile, candidate + '\n', { flag: 'wx', mode: 0o600 });
-  process.stdout.write(JSON.stringify({ baselineSha256: sha256(baseline), candidateSha256: sha256(candidate), edits: edits.length, output: outputFile, apiCalls: 0 }, null, 2) + '\n');
+  if (deepOutputFile && deepCandidate) {
+    fs.mkdirSync(path.dirname(deepOutputFile), { recursive: true });
+    fs.writeFileSync(deepOutputFile, deepCandidate + '\n', { flag: 'wx', mode: 0o600 });
+  }
+  process.stdout.write(JSON.stringify({
+    baselineSha256: sha256(baseline), candidateSha256: sha256(candidate), edits: edits.length,
+    output: outputFile, deepCandidateSha256: deepCandidate ? sha256(deepCandidate) : null,
+    deepOutput: deepOutputFile, apiCalls: 0,
+  }, null, 2) + '\n');
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
