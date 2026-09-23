@@ -954,7 +954,10 @@ export class AiService implements OnModuleInit {
       );
 
       let normalizedPayload = buildPersistedAnalysisPayload({
-        source: (aiResponse.rawResponse as Record<string, any>) || {},
+        source: {
+          ...((aiResponse.rawResponse as Record<string, any>) || {}),
+          ...(aiResponse.evidence ? { evidence: aiResponse.evidence } : {}),
+        },
         recommendation: aiResponse.recommendation,
         bias: aiResponse.bias,
         confidence: aiResponse.confidence,

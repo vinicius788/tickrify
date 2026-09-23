@@ -1,3 +1,5 @@
+import type { AnalysisEvidence } from '../../common/interfaces/ai-response.interface';
+
 /** Categorias de cobertura do contexto enviado ao modelo; nunca recebem texto do usuário. */
 export type CandleCoverage =
   | 'disabled'
@@ -56,6 +58,18 @@ export function classifyCoverageAsset(symbol: string, isCrypto: boolean): Covera
 
 function boundedImageCount(value: number): number {
   return Number.isSafeInteger(value) ? Math.min(2, Math.max(0, value)) : 0;
+}
+
+export function toAnalysisEvidence(value: AnalysisDataCoverage): AnalysisEvidence {
+  return {
+    version: 1,
+    additionalChartsDelivered: boundedImageCount(value.htfImagesDelivered),
+    candleFeedAttached: value.candles === 'injected',
+    marketContextAttached: value.marketContext === 'injected',
+    calendar: value.calendar === 'events_injected'
+      ? 'events_attached'
+      : value.calendar === 'no_events_returned' ? 'no_events_returned' : 'not_confirmed',
+  };
 }
 
 /** Uma linha agregável nos logs, sem símbolo, preço, imagem, prompt, id ou erro bruto. */

@@ -24,6 +24,7 @@ import { buildStrategyBlock, STRATEGY_FIT_VALUES, type StrategyProfile } from '.
 import {
   classifyCoverageAsset,
   formatAnalysisDataCoverage,
+  toAnalysisEvidence,
   type AnalysisDataCoverage,
   type CandleCoverage,
   type CoverageAssetClass,
@@ -2055,6 +2056,7 @@ export class AIAdapter {
         confidence,
         reasoning: parsed.analysis.reasoning,
         analysis: parsed.analysis,
+        evidence: toAnalysisEvidence(coverage),
         drawingPlan: null,
         drawingFailed: true,
         rawResponse: parsed,

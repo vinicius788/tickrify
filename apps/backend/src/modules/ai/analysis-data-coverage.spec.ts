@@ -1,6 +1,7 @@
 import { AIAdapter } from './ai.adapter';
-import { classifyCoverageAsset, formatAnalysisDataCoverage } from './analysis-data-coverage';
+import { classifyCoverageAsset, formatAnalysisDataCoverage, toAnalysisEvidence } from './analysis-data-coverage';
 import { EconomicCalendarService } from '../calendar/calendar.service';
+import { buildPersistedAnalysisPayload, normalizeStoredAnalysis } from '../../common/utils/analysis-payload';
 
 describe('analysis data coverage', () => {
   afterEach(() => jest.restoreAllMocks());
@@ -32,6 +33,40 @@ describe('analysis data coverage', () => {
     expect(classifyCoverageAsset('XAUUSD', false)).toBe('metal');
     expect(classifyCoverageAsset('EURUSD', false)).toBe('forex');
     expect(classifyCoverageAsset('NAS100', false)).toBe('index');
+  });
+
+  it('persists only delivered evidence and distinguishes no events from no confirmation', () => {
+    const base = {
+      analysisType: 'deep' as const,
+      htfImagesRequested: 2,
+      htfImagesDelivered: 1,
+      assetClass: 'crypto' as const,
+      candles: 'not_attempted' as const,
+      marketContext: 'injected' as const,
+      calendar: 'no_events_returned' as const,
+    };
+    expect(toAnalysisEvidence(base)).toEqual({
+      version: 1, additionalChartsDelivered: 1, candleFeedAttached: false,
+      marketContextAttached: true, calendar: 'no_events_returned',
+    });
+    expect(toAnalysisEvidence({ ...base, marketContext: 'timeout', calendar: 'source_degraded' })).toEqual({
+      version: 1, additionalChartsDelivered: 1, candleFeedAttached: false,
+      marketContextAttached: false, calendar: 'not_confirmed',
+    });
+  });
+
+  it('keeps the evidence summary through persisted analysis normalization', () => {
+    const evidence = toAnalysisEvidence({
+      analysisType: 'quick', htfImagesRequested: 1, htfImagesDelivered: 0,
+      assetClass: 'crypto', candles: 'injected', marketContext: 'timeout', calendar: 'not_attempted',
+    });
+    const persisted = buildPersistedAnalysisPayload({
+      source: { evidence }, recommendation: 'WAIT', bias: 'neutral',
+      confidence: 50, reasoning: 'Sem entrada confirmada',
+    });
+    const readBack = normalizeStoredAnalysis({ result: persisted.fullResponse });
+    expect(readBack.fullResponse.evidence).toEqual(evidence);
+    expect(readBack.recommendation).toBe('WAIT');
   });
 
   it('does not claim multiple timeframes when every extra image fails', async () => {

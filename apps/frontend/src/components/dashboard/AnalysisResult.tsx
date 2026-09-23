@@ -20,6 +20,7 @@ import {
 import { useEconomicCalendar } from '@/hooks/useEconomicCalendar';
 import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
+import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { ShareCardButton, type ShareCardData } from './ShareCard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -964,6 +965,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   {t.analysis.imageUnavailable}
                 </div>
               )}
+              <AnalysisEvidencePanel evidence={fullResponse.evidence} />
             </CardContent>
           </Card>
         </div>
