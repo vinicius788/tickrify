@@ -19,7 +19,15 @@ Depois da data de grounding, há 12/19 resultados conclusivos (63,2%; IC 41,0–
 
 ## O que ainda falta medir
 
-O endpoint não publica volume por quick/deep, ativo, período, latência, erros ou custo. O backend emite `[Metrics]` e `[Cost]`, mas não há exportação desses logs neste checkout. Portanto **não há número honesto de gasto médio, custo mensal, p95 ou taxa de falha** nesta linha de base. Os preços na tabela interna do backend são estimativas datadas, não fatura. Logs de custo não têm `analysisId`, logo não se pode atribuir custo a acerto/erro de uma análise individual. Também não há amostra de imagens autorizadas para avaliar qualidade visual das respostas.
+O endpoint não publica volume por quick/deep, ativo, período, latência, erros ou custo. O backend emite `[Metrics]` e `[Cost]`, mas não há exportação desses logs neste checkout. Os preços na tabela interna do backend são estimativas datadas, não fatura. Logs de custo não têm `analysisId`, logo não se pode atribuir custo a acerto/erro de uma análise individual. Também não há amostra de imagens autorizadas para avaliar qualidade visual das respostas.
+
+### Amostra operacional consultada no Render em 23/09/2026
+
+No painel **tickrify → Logs → Application logs → Last 7 days**, a busca `[Metrics]` exibiu 50 linhas de 20 a 23/09: 49 análises quick concluídas e 1 inválida, todas com identificador de análise distinto. Nas 49 concluídas, latência total p50 **11.354 ms** e p95 **15.054 ms**; tempo de IA p50 **11.293 ms** e p95 **14.986 ms**; espera na fila p50 **4 ms** e p95 **8 ms**. A maior parte do tempo observado ficou na chamada de IA, não na fila.
+
+A busca separada `[Cost]` exibiu 50 chamadas quick com `gpt-5.6-luna`: custo estimado médio **US$ 0,0193**, p95 **US$ 0,0215**, soma das 50 linhas **US$ 0,9671**. Médias aproximadas: 12.340 tokens de entrada, 1.167 de saída (incluindo 171 de raciocínio). Esses logs podem incluir análises demo e não têm `analysisId`; **não correspondem necessariamente às mesmas 50 linhas de `[Metrics]`**.
+
+Períodos personalizados anteriores também exibiram 50 linhas, indicando limite de resultados por consulta. Estas são **linhas exibidas**, não a semana inteira nem uma amostra aleatória. Não usar 1/50 como taxa de falha real, US$ 0,9671 como gasto semanal ou a margem teórica do log como lucro. Um export completo ou consultas por janelas curtas, sem sobreposição, ainda são necessários para fechar a linha de base de custo e confiabilidade.
 
 O próximo diagnóstico deve separar `UNTRACKABLE` por classe de ativo, símbolo, período, provedor de candles e motivo técnico, em consulta **agregada e somente leitura**. Antes, conferir a cobertura dos campos e não incluir prints, prompts ou dados identificáveis em exportações.
 

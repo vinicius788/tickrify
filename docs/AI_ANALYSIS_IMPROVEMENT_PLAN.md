@@ -132,7 +132,8 @@ experimento. Nenhum gasto de treinamento ou GPU é necessário na Etapa A.
 
 **Andamento em 23/09/2026:** A1 concluída na branch isolada; A2 iniciada com
 [snapshot agregado da API pública](AI_ANALYSIS_BASELINE_2026-09-23.md),
-[extrator local de logs](../scripts/analysis-baseline.mjs) e testes sintéticos.
+[extrator local de logs](../scripts/analysis-baseline.mjs), testes sintéticos e
+uma amostra limitada de 50 linhas de métricas/custo observadas no Render.
 A3 tem [mapa das fontes no código](AI_ANALYSIS_BASELINE_2026-09-23.md), ainda
 sem confirmação das taxas reais de disponibilidade; a
 [consulta agregada de cobertura](../scripts/analysis-outcome-coverage.sql) está
