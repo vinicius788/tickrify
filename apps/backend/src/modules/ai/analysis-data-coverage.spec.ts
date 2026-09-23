@@ -80,13 +80,19 @@ describe('analysis data coverage', () => {
 
     adapter.fetchCryptoCandles.mockResolvedValue(Array.from({ length: 30 }, (_, i) => [i, 100, 102, 98, 100, 1]));
     adapter.detectStaleChart = jest.fn().mockReturnValue('chart differs from current feed');
+    adapter.buildCryptoEnrichment.mockClear().mockResolvedValue('LIVE CONTEXT');
     const stale = await adapter.buildQuickGrounding('chart');
     expect(stale.candles).toBe('stale_withheld');
+    expect(stale.marketContext).toBe('stale_withheld');
     expect(stale.block).toContain('# LIVE DATA WITHHELD');
+    expect(stale.block).not.toContain('LIVE CONTEXT');
+    expect(adapter.buildCryptoEnrichment).not.toHaveBeenCalled();
 
     adapter.detectStaleChart.mockReturnValue(null);
     const injected = await adapter.buildQuickGrounding('chart');
     expect(injected.candles).toBe('injected');
+    expect(injected.marketContext).toBe('injected');
     expect(injected.block).toContain('BTCUSDT');
+    expect(injected.block).toContain('LIVE CONTEXT');
   });
 });

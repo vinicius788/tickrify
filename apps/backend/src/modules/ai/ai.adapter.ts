@@ -1491,11 +1491,16 @@ export class AIAdapter {
       }
     }
 
+    // O contexto abaixo descreve o mercado de AGORA. Se o preço da imagem
+    // denuncia um print antigo, injetá-lo junto do aviso de print histórico
+    // mistura épocas e pode produzir uma tese aparentemente fundamentada.
     let contextBlock: string | null = null;
-    if (isCrypto) {
-      contextBlock = await this.buildCryptoEnrichment(extracted.symbol);
-    } else if (/XAU|XAG|EUR|USD|GBP|JPY|AUD|NZD|CAD|CHF/.test(sym)) {
-      contextBlock = await this.buildFxEnrichment(sym);
+    if (!staleReason) {
+      if (isCrypto) {
+        contextBlock = await this.buildCryptoEnrichment(extracted.symbol);
+      } else if (/XAU|XAG|EUR|USD|GBP|JPY|AUD|NZD|CAD|CHF/.test(sym)) {
+        contextBlock = await this.buildFxEnrichment(sym);
+      }
     }
 
     // Print antigo/símbolo divergente: em vez de calar, AVISA a IA. Ela precisa
@@ -1518,7 +1523,7 @@ export class AIAdapter {
       );
       return {
         block: parts.join('\n\n'), candles: candleCoverage,
-        marketContext: contextBlock ? 'injected' : 'unavailable',
+        marketContext: staleReason ? 'stale_withheld' : contextBlock ? 'injected' : 'unavailable',
         assetClass,
       };
     }

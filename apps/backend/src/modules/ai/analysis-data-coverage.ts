@@ -13,7 +13,7 @@ export type CandleCoverage =
   | 'timeout'
   | 'error';
 
-export type ContextCoverage = 'disabled' | 'not_attempted' | 'unavailable' | 'injected' | 'timeout' | 'error';
+export type ContextCoverage = 'disabled' | 'not_attempted' | 'unavailable' | 'stale_withheld' | 'injected' | 'timeout' | 'error';
 export type CoverageAssetClass = 'crypto' | 'forex' | 'metal' | 'index' | 'other' | 'unknown';
 
 export interface AnalysisDataCoverage {
@@ -31,7 +31,7 @@ const CANDLE_VALUES = new Set<CandleCoverage>([
   'stale_withheld', 'block_unavailable', 'injected', 'timeout', 'error',
 ]);
 const CONTEXT_VALUES = new Set<ContextCoverage>([
-  'disabled', 'not_attempted', 'unavailable', 'injected', 'timeout', 'error',
+  'disabled', 'not_attempted', 'unavailable', 'stale_withheld', 'injected', 'timeout', 'error',
 ]);
 const ASSET_VALUES = new Set<CoverageAssetClass>([
   'crypto', 'forex', 'metal', 'index', 'other', 'unknown',
