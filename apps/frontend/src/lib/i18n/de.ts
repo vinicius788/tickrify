@@ -95,6 +95,7 @@ export default {
     evidenceNotConfirmed: 'Nicht bestätigt',
     evidenceTimeNote: 'Aktuelle Daten belegen nicht, wann der Screenshot erstellt wurde.',
     evidenceLegacy: 'Für diese Analyse wurde die Datenabdeckung nicht erfasst.',
+    checklistScoreMismatch: 'Checklisten-Zählung widersprüchlich',
     bias: 'Szenario',
     action: 'Aktion',
     confidence: 'Konfidenz',

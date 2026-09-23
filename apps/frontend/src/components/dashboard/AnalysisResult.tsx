@@ -331,6 +331,7 @@ export function normalizeRiskFactorsForView(value: unknown): string[] {
 
 interface ChecklistItem {
   ok: boolean;
+  notApplicable?: boolean;
   label: string;
   detail: string;
 }
@@ -339,6 +340,7 @@ interface StructureChecklist {
   items: ChecklistItem[];
   score: string | null;
   verdict: string | null;
+  scoreMismatch: boolean;
 }
 
 /**
@@ -360,7 +362,7 @@ interface StructureChecklist {
  */
 export function parseStructureChecklist(text: string): StructureChecklist {
   if (!text) {
-    return { items: [], score: null, verdict: null };
+    return { items: [], score: null, verdict: null, scoreMismatch: false };
   }
 
   let rest = text;
@@ -368,7 +370,7 @@ export function parseStructureChecklist(text: string): StructureChecklist {
   let verdict: string | null = null;
 
   // Cauda "→ 6/7 → BUY limit setup."
-  const tail = rest.match(/→\s*(\d+\s*\/\s*\d+)\s*(?:→\s*(.+?))?\s*$/);
+  const tail = rest.match(/→\s*(\d+\s*\/\s*\d+)\s*(?:passes)?\s*(?:→\s*(.+?))?\s*$/i);
   if (tail && typeof tail.index === 'number') {
     score = tail[1].replace(/\s+/g, '');
     verdict = (tail[2] || '').replace(/\.$/, '').trim() || null;
@@ -377,14 +379,17 @@ export function parseStructureChecklist(text: string): StructureChecklist {
 
   const items: ChecklistItem[] = [];
 
-  for (const raw of rest.split(/(?=[✅❌✔✖⚠])/u)) {
+  // O modelo usa "| N/A ..." para critérios sem dado. Preserve o item como
+  // não avaliável; não o cole ao ❌ anterior nem pinte de reprovação.
+  const separated = rest.replace(/\|\s*(N\/A)\b/giu, ' ⚪ $1');
+  for (const raw of separated.split(/(?=[✅❌✔✖⚠⚪])/u)) {
     const chunk = raw.trim();
     const marker = chunk.charAt(0);
-    if (!chunk || !'✅❌✔✖⚠'.includes(marker)) {
+    if (!chunk || !'✅❌✔✖⚠⚪'.includes(marker)) {
       continue;
     }
 
-    const body = chunk.slice(1).replace(/^\uFE0F/, '').trim().replace(/\.$/, '');
+    const body = chunk.slice(1).replace(/^\uFE0F/, '').trim().replace(/\s*\|\s*$/, '').replace(/\.$/, '');
     if (!body) {
       continue;
     }
@@ -395,12 +400,18 @@ export function parseStructureChecklist(text: string): StructureChecklist {
 
     items.push({
       ok: marker === '✅' || marker === '✔',
+      notApplicable: marker === '⚪',
       label: split ? split[1].trim() : '',
       detail: split ? split[2].trim() : body,
     });
   }
 
-  return { items, score, verdict };
+  // Só confira quando os sete itens aparecem: uma resposta antiga pode trazer
+  // um resumo parcial, com placar do checklist completo.
+  const reported = score?.match(/^([0-7])\/7$/);
+  const scoreMismatch = items.length === 7 && reported != null &&
+    Number(reported[1]) !== items.filter((item) => item.ok).length;
+  return { items, score: scoreMismatch ? null : score, verdict, scoreMismatch };
 }
 
 function parseRiskReward(value: unknown): number | null {
@@ -1387,7 +1398,11 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                           <span className="font-terminal text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
                             {t.analysis.structureValidation}
                           </span>
-                          {checklist.score ? (
+                          {checklist.scoreMismatch ? (
+                            <span className="font-terminal text-xs text-[var(--signal-hold)]">
+                              {t.analysis.checklistScoreMismatch}
+                            </span>
+                          ) : checklist.score ? (
                             <span className="font-terminal text-xs text-[var(--text-primary)]">
                               {checklist.score}
                               {checklist.verdict ? (
@@ -1404,10 +1419,10 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                             >
                               <span
                                 className={`mt-px flex-shrink-0 font-terminal text-xs ${
-                                  item.ok ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'
+                                  item.notApplicable ? 'text-[var(--text-muted)]' : item.ok ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'
                                 }`}
                               >
-                                {item.ok ? '✓' : '✕'}
+                                {item.notApplicable ? '—' : item.ok ? '✓' : '✕'}
                               </span>
                               <span className="text-[var(--text-secondary)] leading-relaxed">
                                 {item.label ? (

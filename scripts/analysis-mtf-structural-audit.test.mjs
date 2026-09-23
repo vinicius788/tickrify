@@ -39,3 +39,13 @@ test('rejects unpaired or different charts before comparing variants', () => {
   assert.throws(() => auditPair([row()], []), /Pares ausentes/);
   assert.equal(auditPair([row()], [row()]).baseline.cases, 1);
 });
+
+test('counts only complete checklists whose seven marks disagree with the stated score', () => {
+  const result = auditRows([
+    row({ analysis: { structureValidation: '✅ A | ✅ B | ✅ C | ✅ D | ✅ E | ❌ F | N/A G → 4/7 passes → WAIT' } }),
+    row({ id: 'case-2', analysis: { structureValidation: '✅ A | ✅ B | ❌ C | ❌ D | ❌ E | ❌ F | N/A G → 2/7 → WAIT' } }),
+    row({ id: 'case-3', analysis: { structureValidation: '✅ A | ❌ B → 1/7 → WAIT' } }),
+  ]);
+  assert.equal(result.checklistScoreMismatch, 1);
+  assert.equal(result.checklistScoreNotVerifiable, 1);
+});

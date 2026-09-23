@@ -31,6 +31,7 @@ export function auditRows(rows) {
     cases: rows.length, failed: 0, wait: 0, buy: 0, sell: 0,
     mtfFieldFilledWithoutHtf: 0, namedHtfInProseNeedsReview: 0,
     alignmentRatioNeedsReview: 0, checklistAwardsMtfWithoutHtf: 0,
+    checklistScoreMismatch: 0, checklistScoreNotVerifiable: 0,
     tradePlanMissingLevels: 0, tradePlanWrongSide: 0, waitHasActiveLevels: 0,
   };
   for (const row of rows) {
@@ -48,6 +49,14 @@ export function auditRows(rows) {
       counts.alignmentRatioNeedsReview++;
     }
     if (passedMtf.test(String(a.structureValidation || ''))) counts.checklistAwardsMtfWithoutHtf++;
+    const checklist = String(a.structureValidation || '');
+    const markedPasses = (checklist.match(/✅|✔/gu) || []).length;
+    const markedFails = (checklist.match(/❌|✖/gu) || []).length;
+    const notApplicable = (checklist.match(/\bN\/A\b/gi) || []).length;
+    const reportedScore = checklist.match(/\b([0-7])\s*\/\s*7\b/);
+    if (markedPasses + markedFails + notApplicable === 7 && reportedScore) {
+      if (markedPasses !== Number(reportedScore[1])) counts.checklistScoreMismatch++;
+    } else counts.checklistScoreNotVerifiable++;
     const levels = [a.entry, a.stopLoss, a.takeProfit1];
     if (action === 'WAIT' && levels.some(positive)) counts.waitHasActiveLevels++;
     if (action === 'BUY' || action === 'SELL') {

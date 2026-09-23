@@ -122,6 +122,26 @@ describe('parseStructureChecklist', () => {
     expect(parseStructureChecklist('').items).toEqual([]);
     expect(parseStructureChecklist('um parágrafo comum sem marcador').items).toEqual([]);
   });
+
+  it('não exibe placar divergente e mantém N/A como não avaliável', () => {
+    const text = '✅ Visible bias | ✅ Zone | ✅ ICT setup | ✅ Anti-retail | ✅ Structure | ❌ R:R | N/A verified MTF → 4/7 passes → HOLD-WATCH';
+    const out = parseStructureChecklist(text);
+    expect(out.items).toHaveLength(7);
+    expect(out.items.filter((item) => item.ok)).toHaveLength(5);
+    expect(out.items[6]).toMatchObject({ ok: false, notApplicable: true, detail: 'N/A verified MTF' });
+    expect(out.score).toBeNull();
+    expect(out.scoreMismatch).toBe(true);
+    expect(out.verdict).toBe('HOLD-WATCH');
+  });
+
+  it('mantém o placar quando os sete critérios concordam', () => {
+    const text = '✅ Bias | ✅ Zone | ✅ ICT | ❌ Anti-retail | ❌ Structure | ❌ R:R | N/A MTF → 3/7 passes → WAIT';
+    const out = parseStructureChecklist(text);
+    expect(out.items).toHaveLength(7);
+    expect(out.score).toBe('3/7');
+    expect(out.scoreMismatch).toBe(false);
+    expect(out.items[6].notApplicable).toBe(true);
+  });
 });
 
 /**

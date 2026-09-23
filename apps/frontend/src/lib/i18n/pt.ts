@@ -104,6 +104,7 @@ export default {
     evidenceNotConfirmed: 'Não confirmado',
     evidenceTimeNote: 'Dados atuais não comprovam quando o print foi capturado.',
     evidenceLegacy: 'Os dados entregues não foram registrados para esta análise.',
+    checklistScoreMismatch: 'Contagem do checklist inconsistente',
     bias: 'Cenário',
     action: 'Ação',
     confidence: 'Confiança',

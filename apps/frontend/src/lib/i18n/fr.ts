@@ -95,6 +95,7 @@ export default {
     evidenceNotConfirmed: 'Non confirmé',
     evidenceTimeNote: 'Les données actuelles ne prouvent pas quand la capture a été faite.',
     evidenceLegacy: 'Les données reçues n’ont pas été enregistrées pour cette analyse.',
+    checklistScoreMismatch: 'Décompte de la liste incohérent',
     bias: 'Scénario',
     action: 'Action',
     confidence: 'Confiance',

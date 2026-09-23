@@ -95,6 +95,7 @@ export default {
     evidenceNotConfirmed: '確認できず',
     evidenceTimeNote: '現在のデータだけでは画像の撮影時刻を確認できません。',
     evidenceLegacy: 'この分析では入力データの記録がありません。',
+    checklistScoreMismatch: 'チェックリストの件数が一致しません',
     bias: '市場シナリオ',
     action: '行動',
     confidence: '信頼度',

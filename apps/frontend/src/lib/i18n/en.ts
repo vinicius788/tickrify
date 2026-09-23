@@ -95,6 +95,7 @@ export default {
     evidenceNotConfirmed: 'Not confirmed',
     evidenceTimeNote: 'Current data does not establish when the screenshot was captured.',
     evidenceLegacy: 'Input coverage was not recorded for this analysis.',
+    checklistScoreMismatch: 'Checklist count inconsistent',
     bias: 'Scenario',
     action: 'Action',
     confidence: 'Confidence',
