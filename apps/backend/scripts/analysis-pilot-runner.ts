@@ -25,7 +25,10 @@ interface Options {
   promptOrigin: 'active-snapshot' | 'versioned-reference';
   modelQuick: string;
   modelDeep: string;
+  effortQuick: 'default' | 'minimal' | 'low' | 'medium' | 'high';
+  effortDeep: 'default' | 'minimal' | 'low' | 'medium' | 'high';
   out: string;
+  caseOffset: number;
   maxCalls: number;
   maxEstimatedUsd: number;
   reservePerCallUsd: number;
@@ -55,12 +58,12 @@ function parseArgs(args: string[]): Options {
     }
     const key = args[i];
     if (!['--prompt-file', '--prompt-origin', '--model-quick', '--model-deep', '--out',
-      '--max-calls', '--max-estimated-usd', '--reserve-per-call-usd'].includes(key) ||
+    '--effort-quick', '--effort-deep', '--case-offset', '--max-calls', '--max-estimated-usd', '--reserve-per-call-usd'].includes(key) ||
         !args[i + 1] || pairs[key]) throw new Error(`Argumento inválido: ${key}`);
     pairs[key] = args[++i];
   }
   const required = ['--prompt-file', '--prompt-origin', '--model-quick', '--model-deep', '--out',
-    '--max-calls', '--max-estimated-usd', '--reserve-per-call-usd'];
+    '--effort-quick', '--effort-deep', '--case-offset', '--max-calls', '--max-estimated-usd', '--reserve-per-call-usd'];
   for (const key of required) if (!pairs[key]) throw new Error(`Falta ${key}`);
   if (!['active-snapshot', 'versioned-reference'].includes(pairs['--prompt-origin'])) {
     throw new Error('--prompt-origin inválido');
@@ -68,16 +71,24 @@ function parseArgs(args: string[]): Options {
   for (const key of ['--model-quick', '--model-deep']) {
     if (!/^[A-Za-z0-9._-]{1,80}$/.test(pairs[key])) throw new Error(`${key} inválido`);
   }
+  for (const key of ['--effort-quick', '--effort-deep']) {
+    if (!['default', 'minimal', 'low', 'medium', 'high'].includes(pairs[key])) throw new Error(`${key} inválido`);
+  }
   const out = pairs['--out'];
   if (!/^[A-Za-z0-9._-]{1,80}\.jsonl$/.test(out)) throw new Error('--out deve ser nome .jsonl, sem caminho');
   const promptFile = path.resolve(pairs['--prompt-file']);
   if (!/\.(txt|md)$/i.test(promptFile)) throw new Error('Prompt deve ser arquivo .txt ou .md local');
+  const caseOffset = Number(pairs['--case-offset']);
+  if (!Number.isSafeInteger(caseOffset) || caseOffset < 0) throw new Error('--case-offset deve ser inteiro não negativo');
   return {
     promptFile,
     promptOrigin: pairs['--prompt-origin'] as Options['promptOrigin'],
     modelQuick: pairs['--model-quick'],
     modelDeep: pairs['--model-deep'],
+    effortQuick: pairs['--effort-quick'] as Options['effortQuick'],
+    effortDeep: pairs['--effort-deep'] as Options['effortDeep'],
     out,
+    caseOffset,
     maxCalls: positiveInt(pairs['--max-calls'], '--max-calls'),
     maxEstimatedUsd: positiveUsd(pairs['--max-estimated-usd'], '--max-estimated-usd'),
     reservePerCallUsd: positiveUsd(pairs['--reserve-per-call-usd'], '--reserve-per-call-usd'),
@@ -100,7 +111,10 @@ async function main() {
   if (fs.existsSync(output) || fs.existsSync(`${output}.meta.json`)) {
     throw new Error('Saída já existe; cada rodada usa nome novo para não misturar versões');
   }
-  const selected = manifest.cases.slice(0, opts.maxCalls);
+  if (opts.caseOffset + opts.maxCalls > manifest.cases.length) {
+    throw new Error('Faixa de casos excede o manifesto');
+  }
+  const selected = manifest.cases.slice(opts.caseOffset, opts.caseOffset + opts.maxCalls);
   const plan = {
     mode: opts.execute ? 'execute' : 'dry-run',
     inputCases: manifest.cases.length,
@@ -114,7 +128,10 @@ async function main() {
     promptOrigin: opts.promptOrigin,
     modelQuick: opts.modelQuick,
     modelDeep: opts.modelDeep,
+    effortQuick: opts.effortQuick,
+    effortDeep: opts.effortDeep,
     maxCalls: opts.maxCalls,
+    caseOffset: opts.caseOffset,
     maxEstimatedUsd: opts.maxEstimatedUsd,
     reservePerCallUsd: opts.reservePerCallUsd,
     flags: { quickGrounding: false, marketEnrichment: false, newsGuard: false, rrGuard: true },
@@ -124,7 +141,6 @@ async function main() {
   if (!opts.execute) return;
 
   if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY ausente');
-  if (opts.maxCalls > manifest.cases.length) throw new Error('max-calls excede os casos do manifesto');
   if (opts.reservePerCallUsd > opts.maxEstimatedUsd) throw new Error('Reserva por chamada excede teto estimado');
   // Os gráficos são históricos. Impede vazamento de calendário/dados de hoje,
   // chamadas auxiliares e dumps de resposta definidos no ambiente do operador.
@@ -134,6 +150,10 @@ async function main() {
   process.env.ENABLE_RR_GUARD = 'true';
   process.env.AI_MODEL_QUICK = opts.modelQuick;
   process.env.AI_MODEL_DEEP = opts.modelDeep;
+  if (opts.effortQuick === 'default') delete process.env.AI_REASONING_EFFORT_QUICK;
+  else process.env.AI_REASONING_EFFORT_QUICK = opts.effortQuick;
+  if (opts.effortDeep === 'default') delete process.env.AI_REASONING_EFFORT_DEEP;
+  else process.env.AI_REASONING_EFFORT_DEEP = opts.effortDeep;
   delete process.env.AI_DEBUG_DUMP_RAW;
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_SERVICE_KEY;
