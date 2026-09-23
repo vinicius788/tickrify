@@ -27,6 +27,7 @@ import {
   type AnalysisDataCoverage,
   type CandleCoverage,
   type CoverageAssetClass,
+  type CalendarCoverage,
 } from './analysis-data-coverage';
 import {
   buildSamplingParams,
@@ -1244,11 +1245,14 @@ export class AIAdapter {
    */
   /**
    * Bloco de CALENDÁRIO ECONÔMICO para o prompt (deep): eventos de impacto
-   * alto/médio nas próximas 12h para as moedas do ativo. Faz a IA considerar
+   * alto/médio nas próximas 24h para as moedas do ativo. Faz a IA considerar
    * notícia agendada (CPI, decisão de juros, payroll) na leitura — caso real:
    * SELL em EURUSD minutos antes de decisão do BCE. Best-effort.
    */
-  private async buildCalendarEnrichment(symbol: string): Promise<string | null> {
+  private async buildCalendarEnrichment(symbol: string): Promise<{
+    block: string | null;
+    status: CalendarCoverage;
+  }> {
     try {
       // Janela 24h (era 12h) para bater com o que a UI promete e com o que o
       // hook do front já pede (`hours=24` em useEconomicCalendar.ts) — não
@@ -1258,9 +1262,9 @@ export class AIAdapter {
         // Fonte fora do ar nesta tentativa: melhor NÃO injetar bloco nenhum
         // (a IA já foi instruída a não inventar dado) do que arriscar um
         // array vazio-por-falha sendo lido como "não há evento agendado".
-        return null;
+        return { block: null, status: 'source_degraded' };
       }
-      if (!events || events.length === 0) return null;
+      if (!events || events.length === 0) return { block: null, status: 'no_events_returned' };
       const lines = events.slice(0, 5).map((e) => {
         const when =
           typeof e.minutesUntil === 'number'
@@ -1273,22 +1277,26 @@ export class AIAdapter {
           .join(' · ');
         return `- [${e.impact}] ${e.country} ${e.title} — ${when}${extra ? ` (${extra})` : ''}`;
       });
-      return [
+      return { block: [
         `# CALENDÁRIO ECONÔMICO (DADO REAL — eventos agendados p/ ${symbol}, próximas 24h)`,
         'Considere estes eventos na leitura: evento de impacto High iminente = risco de movimento brusco que atropela a análise técnica — reduza convicção e diga isso explicitamente. Cite como "dado real".',
         ...lines,
-      ].join('\n');
+      ].join('\n'), status: 'events_injected' };
     } catch {
-      return null;
+      return { block: null, status: 'error' };
     }
   }
 
   private async buildMarketEnrichment(imageUrl: string): Promise<{
     block: string | null;
     assetClass: CoverageAssetClass;
+    marketContext: AnalysisDataCoverage['marketContext'];
+    calendar: CalendarCoverage;
   }> {
     const extracted = await this.extractSymbol(imageUrl);
-    if (!extracted) return { block: null, assetClass: 'unknown' };
+    if (!extracted) return {
+      block: null, assetClass: 'unknown', marketContext: 'unavailable', calendar: 'symbol_unreadable',
+    };
 
     const sym = extracted.symbol.toUpperCase();
     const { isCrypto } = normalizeToBinancePerp(extracted.symbol);
@@ -1306,10 +1314,15 @@ export class AIAdapter {
     }
 
     // Calendário econômico vale para TODAS as classes (cripto reage a CPI/Fed também).
-    const calendarBlock = await this.buildCalendarEnrichment(sym);
+    const calendar = await this.buildCalendarEnrichment(sym);
 
-    const parts = [classBlock, calendarBlock].filter(Boolean) as string[];
-    return { block: parts.length > 0 ? parts.join('\n\n') : null, assetClass };
+    const parts = [classBlock, calendar.block].filter(Boolean) as string[];
+    return {
+      block: parts.length > 0 ? parts.join('\n\n') : null,
+      assetClass,
+      marketContext: classBlock ? 'injected' : 'unavailable',
+      calendar: calendar.status,
+    };
   }
 
   // ── Grounding do caminho QUICK ─────────────────────────────────────────────
@@ -1591,6 +1604,7 @@ export class AIAdapter {
         assetClass: 'unknown',
         candles: analysisType === 'deep' ? 'not_attempted' : 'disabled',
         marketContext: 'disabled',
+        calendar: analysisType === 'deep' ? 'disabled' : 'not_attempted',
       };
 
       // Enriquecimento com dados reais de mercado — só DEEP, best-effort.
@@ -1610,10 +1624,13 @@ export class AIAdapter {
           if (enrichment.block) {
             effectivePrompt = `${prompt}\n\n${enrichment.block}`;
           }
-          coverage.marketContext = enrichment.block ? 'injected' : 'unavailable';
+          coverage.marketContext = enrichment.marketContext;
+          coverage.calendar = enrichment.calendar;
         } catch (error) {
-          coverage.marketContext = error instanceof Error && error.message === 'market enrichment timed out'
+          const failure = error instanceof Error && error.message === 'market enrichment timed out'
             ? 'timeout' : 'error';
+          coverage.marketContext = failure;
+          coverage.calendar = failure;
           // graceful: mantém o prompt original
         }
       } else if (analysisType === 'quick' && flagBool('ENABLE_QUICK_GROUNDING')) {

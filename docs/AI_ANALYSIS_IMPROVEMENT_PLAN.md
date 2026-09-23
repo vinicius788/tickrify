@@ -181,6 +181,8 @@ candidata MTF) foram executados localmente, com custo calculado pelo uso
 retornado de cerca de US$ 0,105 no total. Isso não é a fatura nem um teto de
 faturamento do provedor. A instrumentação categórica de cobertura de dados foi
 preparada atrás de `AI_DATA_COVERAGE_LOG=false`, com agregador local de logs.
+O registro separa candles, contexto de mercado e calendário do deep, para que
+um bloco de calendário sozinho não infle a cobertura de contexto de mercado.
 Uma migração aditiva e código de worker/API para devolver causas tipadas de
 falhas definitivas também estão preparados. Nada disso foi implantado, a
 migração não foi executada e a flag não foi ativada.

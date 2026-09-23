@@ -14,6 +14,7 @@ export type CandleCoverage =
   | 'error';
 
 export type ContextCoverage = 'disabled' | 'not_attempted' | 'unavailable' | 'stale_withheld' | 'injected' | 'timeout' | 'error';
+export type CalendarCoverage = 'disabled' | 'not_attempted' | 'symbol_unreadable' | 'events_injected' | 'no_events_returned' | 'source_degraded' | 'timeout' | 'error';
 export type CoverageAssetClass = 'crypto' | 'forex' | 'metal' | 'index' | 'other' | 'unknown';
 
 export interface AnalysisDataCoverage {
@@ -23,6 +24,7 @@ export interface AnalysisDataCoverage {
   assetClass: CoverageAssetClass;
   candles: CandleCoverage;
   marketContext: ContextCoverage;
+  calendar: CalendarCoverage;
 }
 
 const CANDLE_VALUES = new Set<CandleCoverage>([
@@ -32,6 +34,10 @@ const CANDLE_VALUES = new Set<CandleCoverage>([
 ]);
 const CONTEXT_VALUES = new Set<ContextCoverage>([
   'disabled', 'not_attempted', 'unavailable', 'stale_withheld', 'injected', 'timeout', 'error',
+]);
+const CALENDAR_VALUES = new Set<CalendarCoverage>([
+  'disabled', 'not_attempted', 'symbol_unreadable', 'events_injected',
+  'no_events_returned', 'source_degraded', 'timeout', 'error',
 ]);
 const ASSET_VALUES = new Set<CoverageAssetClass>([
   'crypto', 'forex', 'metal', 'index', 'other', 'unknown',
@@ -55,12 +61,13 @@ function boundedImageCount(value: number): number {
 /** Uma linha agregável nos logs, sem símbolo, preço, imagem, prompt, id ou erro bruto. */
 export function formatAnalysisDataCoverage(value: AnalysisDataCoverage): string {
   return `[AnalysisDataCoverage] ${JSON.stringify({
-    schema: 1,
+    schema: 2,
     analysisType: value.analysisType === 'deep' ? 'deep' : 'quick',
     htfImagesRequested: boundedImageCount(value.htfImagesRequested),
     htfImagesDelivered: boundedImageCount(value.htfImagesDelivered),
     assetClass: ASSET_VALUES.has(value.assetClass) ? value.assetClass : 'unknown',
     candles: CANDLE_VALUES.has(value.candles) ? value.candles : 'error',
     marketContext: CONTEXT_VALUES.has(value.marketContext) ? value.marketContext : 'error',
+    calendar: CALENDAR_VALUES.has(value.calendar) ? value.calendar : 'error',
   })}`;
 }

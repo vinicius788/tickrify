@@ -1,7 +1,10 @@
 import { AIAdapter } from './ai.adapter';
 import { classifyCoverageAsset, formatAnalysisDataCoverage } from './analysis-data-coverage';
+import { EconomicCalendarService } from '../calendar/calendar.service';
 
 describe('analysis data coverage', () => {
+  afterEach(() => jest.restoreAllMocks());
+
   it('records only bounded categories and counts', () => {
     const line = formatAnalysisDataCoverage({
       analysisType: 'quick',
@@ -10,15 +13,17 @@ describe('analysis data coverage', () => {
       assetClass: 'crypto',
       candles: 'stale_withheld',
       marketContext: 'unavailable',
+      calendar: 'not_attempted',
     });
     expect(line).toBe('[AnalysisDataCoverage] ' + JSON.stringify({
-      schema: 1,
+      schema: 2,
       analysisType: 'quick',
       htfImagesRequested: 2,
       htfImagesDelivered: 1,
       assetClass: 'crypto',
       candles: 'stale_withheld',
       marketContext: 'unavailable',
+      calendar: 'not_attempted',
     }));
   });
 
@@ -64,10 +69,33 @@ describe('analysis data coverage', () => {
     const adapter = new AIAdapter() as any;
     adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue('MARKET BLOCK');
-    adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue(null);
+    adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: null, status: 'no_events_returned' });
     expect(await adapter.buildMarketEnrichment('chart')).toEqual({
-      block: 'MARKET BLOCK', assetClass: 'crypto',
+      block: 'MARKET BLOCK', assetClass: 'crypto', marketContext: 'injected', calendar: 'no_events_returned',
     });
+  });
+
+  it('does not count a calendar-only block as market context', async () => {
+    const adapter = new AIAdapter() as any;
+    adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
+    adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue(null);
+    adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: 'CALENDAR BLOCK', status: 'events_injected' });
+    expect(await adapter.buildMarketEnrichment('chart')).toEqual({
+      block: 'CALENDAR BLOCK', assetClass: 'crypto', marketContext: 'unavailable', calendar: 'events_injected',
+    });
+  });
+
+  it('distinguishes calendar events, no returned events and degraded source', async () => {
+    const getEvents = jest.spyOn(EconomicCalendarService.prototype, 'getEventsForSymbol');
+    const adapter = new AIAdapter() as any;
+    getEvents.mockResolvedValueOnce({ events: [], degraded: false });
+    expect(await adapter.buildCalendarEnrichment('EURUSD')).toEqual({ block: null, status: 'no_events_returned' });
+    getEvents.mockResolvedValueOnce({ events: [], degraded: true });
+    expect(await adapter.buildCalendarEnrichment('EURUSD')).toEqual({ block: null, status: 'source_degraded' });
+    getEvents.mockResolvedValueOnce({ events: [{ title: 'CPI', country: 'USD', date: '2026-09-23', time: '8:30am', impact: 'High' }], degraded: false });
+    const result = await adapter.buildCalendarEnrichment('EURUSD');
+    expect(result.status).toBe('events_injected');
+    expect(result.block).toContain('CPI');
   });
 
   it('distinguishes missing candles from a stale chart without network calls', async () => {

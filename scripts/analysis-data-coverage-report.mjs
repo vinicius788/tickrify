@@ -13,6 +13,10 @@ const CANDLES = new Set([
   'stale_withheld', 'block_unavailable', 'injected', 'timeout', 'error',
 ]);
 const CONTEXT = new Set(['disabled', 'not_attempted', 'unavailable', 'stale_withheld', 'injected', 'timeout', 'error']);
+const CALENDAR = new Set([
+  'disabled', 'not_attempted', 'symbol_unreadable', 'events_injected',
+  'no_events_returned', 'source_degraded', 'timeout', 'error',
+]);
 
 function validCount(value) {
   return Number.isInteger(value) && value >= 0 && value <= 2;
@@ -24,9 +28,10 @@ export function parseCoverageLine(line) {
   let value;
   try { value = JSON.parse(line.slice(at + PREFIX.length)); }
   catch { return null; }
-  if (!value || value.schema !== 1 || !MODES.has(value.analysisType) ||
+  if (!value || value.schema !== 2 || !MODES.has(value.analysisType) ||
       !CLASSES.has(value.assetClass) || !CANDLES.has(value.candles) ||
-      !CONTEXT.has(value.marketContext) || !validCount(value.htfImagesRequested) ||
+      !CONTEXT.has(value.marketContext) || !CALENDAR.has(value.calendar) ||
+      !validCount(value.htfImagesRequested) ||
       !validCount(value.htfImagesDelivered) || value.htfImagesDelivered > value.htfImagesRequested) {
     return null;
   }
@@ -35,6 +40,7 @@ export function parseCoverageLine(line) {
     assetClass: value.assetClass,
     candles: value.candles,
     marketContext: value.marketContext,
+    calendar: value.calendar,
     htfImagesRequested: value.htfImagesRequested,
     htfImagesDelivered: value.htfImagesDelivered,
   };
@@ -51,9 +57,11 @@ function lineFor(name, rows) {
   const quickCandles = quick.filter((x) => x.candles === 'injected').length;
   const deepCandles = deep.filter((x) => x.candles === 'injected').length;
   const context = rows.filter((x) => x.marketContext === 'injected').length;
+  const calendarAnswered = deep.filter((x) =>
+    x.calendar === 'events_injected' || x.calendar === 'no_events_returned').length;
   const htfRequested = rows.filter((x) => x.htfImagesRequested > 0).length;
   const htfDelivered = rows.filter((x) => x.htfImagesDelivered > 0).length;
-  return `| ${name} | ${n} | ${quickCandles}/${quick.length} (${percent(quickCandles, quick.length)}) | ${deepCandles}/${deep.length} (${percent(deepCandles, deep.length)}) | ${context}/${n} (${percent(context, n)}) | ${htfDelivered}/${htfRequested} (${percent(htfDelivered, htfRequested)}) |`;
+  return `| ${name} | ${n} | ${quickCandles}/${quick.length} (${percent(quickCandles, quick.length)}) | ${deepCandles}/${deep.length} (${percent(deepCandles, deep.length)}) | ${context}/${n} (${percent(context, n)}) | ${calendarAnswered}/${deep.length} (${percent(calendarAnswered, deep.length)}) | ${htfDelivered}/${htfRequested} (${percent(htfDelivered, htfRequested)}) |`;
 }
 
 export function renderCoverageReport(text) {
@@ -63,8 +71,8 @@ export function renderCoverageReport(text) {
     '# Cobertura de dados da análise', '',
     `Registros válidos: ${rows.length}. Denominador = linhas de cobertura observadas, não todas as análises iniciadas.`, '',
     `Linhas de cobertura inválidas ou com esquema desconhecido: ${coverageLines.length - rows.length}.`, '',
-    '| Classe | Registros | Candles quick | Candles deep | Contexto injetado | HTF entregue quando solicitado |',
-    '| --- | ---: | ---: | ---: | ---: | ---: |',
+    '| Classe | Registros | Candles quick | Candles deep | Contexto de mercado injetado | Calendário: fonte respondeu no deep | HTF entregue quando solicitado |',
+    '| --- | ---: | ---: | ---: | ---: | ---: | ---: |',
     lineFor('Todas', rows),
     ...['crypto', 'forex', 'metal', 'index', 'other', 'unknown']
       .map((name) => [name, rows.filter((x) => x.assetClass === name)])
@@ -88,7 +96,15 @@ export function renderCoverageReport(text) {
       if (n) out.push(`| ${mode} | ${state} | ${n} |`);
     }
   }
-  out.push('', 'O estado `injected` significa que o bloco foi anexado ao prompt, não que os valores ou a análise final estejam corretos. O deep não tenta o bloco OHLCV/RSI quick. Falhas antes da montagem do conteúdo não geram esta linha.', '');
+  out.push('', '## Calendário por modo', '',
+    '| Modo | Estado do calendário | Casos |', '| --- | --- | ---: |');
+  for (const mode of ['quick', 'deep']) {
+    for (const state of CALENDAR) {
+      const n = rows.filter((x) => x.analysisType === mode && x.calendar === state).length;
+      if (n) out.push(`| ${mode} | ${state} | ${n} |`);
+    }
+  }
+  out.push('', 'O estado `injected` significa que o bloco foi anexado ao prompt, não que os valores ou a análise final estejam corretos. `no_events_returned` significa apenas que a fonte não devolveu eventos nessa consulta, não que não existam eventos. O deep não tenta o bloco OHLCV/RSI quick. Falhas antes da montagem do conteúdo não geram esta linha.', '');
   return out.join('\n');
 }
 
