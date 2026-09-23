@@ -163,3 +163,11 @@ verificou os 48 gráficos e suas fontes (24 quick, 24 deep); baseline e
 candidata exigiriam no mínimo 96 chamadas principais. O runner legado ainda
 precisa ser substituído por uma execução com modo correto, prompt congelado e
 limite de chamadas antes de qualquer gasto.
+
+A [auditoria das promessas da página e do contrato real da análise](AI_ANALYSIS_PRODUCT_PROMISE_AUDIT_2026-09-23.md)
+encontrou três lacunas a testar: grounding quick depende de flag e pode falhar;
+deep não injeta o mesmo bloco OHLCV/RSI; o prompt pode apresentar alinhamento
+de três timeframes inferido de uma única imagem. Também identificou que WAIT
+nem sempre traz uma condição observável. Uma primeira candidata **offline**
+melhora apenas a explicação do WAIT, sem alterar limiares de BUY/SELL; precisa
+ser comparada com o prompt efetivamente ativo antes de qualquer uso real.
