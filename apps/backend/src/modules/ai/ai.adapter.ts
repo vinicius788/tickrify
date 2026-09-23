@@ -805,15 +805,15 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
   const riskRewardRatio =
     formatRiskReward(riskRewardTp2 ?? riskRewardTp1) ?? aiRiskRewardRatio;
 
-  // Probabilidades por alvo: trata 0/inválido como ausente e deriva default
-  // determinístico da confiança quando o modelo não preenche (fix do "0%/0%/0%").
+  // Probabilidades por alvo: só publica um trio completo; confiança não
+  // substitui valores que o modelo não forneceu.
   const targetProbabilities = normalizeTargetProbabilities(
     {
       tp1: parsedAnalysis.probabilityTp1,
       tp2: parsedAnalysis.probabilityTp2,
       stop: parsedAnalysis.probabilityStop,
     },
-    { hasTradePlan: entry !== null, confidence: normalizeConfidence(parsed.confidence) },
+    { hasTradePlan: entry !== null && stopLoss !== null && takeProfit1 !== null },
   );
 
   return {

@@ -135,6 +135,7 @@ export default {
     regimeRanging: 'Lateral',
     regimeVolatile: 'Volátil',
     outcomeProbabilities: 'Probabilidades',
+    probabilityEstimateNote: 'Estimaciones de la IA, no tasas históricas medidas.',
     breakeven: 'Break-even',
     positionSizing: {
       title: 'Calculadora de posición',

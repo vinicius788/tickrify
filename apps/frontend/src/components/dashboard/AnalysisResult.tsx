@@ -429,6 +429,23 @@ function parseRiskReward(value: unknown): number | null {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+/** Esconde trios incompletos/incoerentes também em análises antigas já salvas. */
+export function parseTargetProbabilities(analysis: Record<string, unknown>, hasTradePlan: boolean): {
+  tp1: number; tp2: number; stop: number;
+} | null {
+  if (!hasTradePlan) return null;
+  const percentage = (value: unknown): number | null => {
+    const n = toNumber(value);
+    if (n === null || n <= 0 || n > 100) return null;
+    return Math.min(99, Math.max(1, Math.round(n <= 1 ? n * 100 : n)));
+  };
+  const tp1 = percentage(analysis.probabilityTp1);
+  const tp2 = percentage(analysis.probabilityTp2);
+  const stop = percentage(analysis.probabilityStop);
+  if (tp1 === null || tp2 === null || stop === null || tp2 > tp1 || tp1 + stop > 101) return null;
+  return { tp1, tp2, stop };
+}
+
 const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) => {
   // Diz ao botão de reportar problema qual análise está na tela. Sem isto o
   // relato chega sem o id e vira caça ao tesouro no histórico do usuário.
@@ -559,10 +576,15 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const tp1ClosePercent = positiveOrNull(toNumber(analysis.tp1ClosePercent));
   const tp2ClosePercent = positiveOrNull(toNumber(analysis.tp2ClosePercent));
   const breakevenTrigger = String(analysis.breakevenTrigger || '').trim() || null;
-  const probabilityTp1 = positiveOrNull(toNumber(analysis.probabilityTp1));
-  const probabilityTp2 = positiveOrNull(toNumber(analysis.probabilityTp2));
-  const probabilityStop = positiveOrNull(toNumber(analysis.probabilityStop));
-  const hasProbabilities = probabilityTp1 !== null || probabilityTp2 !== null || probabilityStop !== null;
+  const probabilities = parseTargetProbabilities(
+    analysis,
+    (recommendationMeta.tone === 'buy' || recommendationMeta.tone === 'sell') &&
+      entry !== null && stopLoss !== null && takeProfit1 !== null,
+  );
+  const probabilityTp1 = probabilities?.tp1 ?? null;
+  const probabilityTp2 = probabilities?.tp2 ?? null;
+  const probabilityStop = probabilities?.stop ?? null;
+  const hasProbabilities = probabilities !== null;
   const hasStructuredExit = tp1ClosePercent !== null || tp2ClosePercent !== null || breakevenTrigger !== null;
   const alternativeScenario = String(analysis.alternativeScenario || '').trim() || null;
   const trendStrength = String(analysis.trendStrength || '').trim() || null;
@@ -1229,6 +1251,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                           {probabilityTp2 !== null && <span className="text-[var(--signal-buy)]/80">TP2 {Math.round(probabilityTp2)}%</span>}
                           {probabilityStop !== null && <span className="text-[var(--signal-sell)]">Stop {Math.round(probabilityStop)}%</span>}
                         </div>
+                        <p className="mt-2 text-xs text-[var(--text-muted)]">{t.analysis.probabilityEstimateNote}</p>
                       </div>
                     </AccordionContent>
                   </AccordionItem>

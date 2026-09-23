@@ -135,6 +135,7 @@ export default {
     regimeRanging: 'レンジ',
     regimeVolatile: 'ボラティリティ',
     outcomeProbabilities: '確率',
+    probabilityEstimateNote: 'AIによる推定値であり、実測の過去勝率ではありません。',
     breakeven: 'ブレークイーブン',
     positionSizing: {
       title: 'ポジション計算',

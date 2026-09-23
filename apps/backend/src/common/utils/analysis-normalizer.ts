@@ -354,16 +354,17 @@ export interface TargetProbabilities {
  * - Aceita escala 0..1 (probabilidade) ou 0..100 (pontos percentuais).
  * - 0, negativo, >100 ou não-numérico = "não preenchido" (evita o bug "0%/0%/0%").
  * - Sem plano de trade (entry ausente, ex.: HOLD/WAIT) → tudo null (a UI esconde a seção).
- * - Quando o modelo não preenche, deriva um default determinístico da confiança:
- *   TP1 ≈ 0.85×confiança (limitado a 25–80), Stop = 100−TP1 (20–75), TP2 ≈ 0.55×TP1 (10–60).
- * - Coerência: TP2 nunca acima de TP1.
+ * - Não fabrica probabilidades a partir de confiança: se algum campo falta, omite o trio.
+ * - TP2 é subconjunto de TP1; TP1 e Stop são eventos exclusivos. Omite trios
+ *   que violam essas relações, com 1 ponto de tolerância para arredondamento.
  */
 export function normalizeTargetProbabilities(
   raw: { tp1?: unknown; tp2?: unknown; stop?: unknown },
-  options: { hasTradePlan: boolean; confidence: number },
+  options: { hasTradePlan: boolean },
 ): TargetProbabilities {
+  const unavailable = { probabilityTp1: null, probabilityTp2: null, probabilityStop: null };
   if (!options.hasTradePlan) {
-    return { probabilityTp1: null, probabilityTp2: null, probabilityStop: null };
+    return unavailable;
   }
 
   const toPct = (value: unknown): number | null => {
@@ -375,18 +376,10 @@ export function normalizeTargetProbabilities(
     return clamp(Math.round(pct), 1, 99);
   };
 
-  const confidence = clamp(
-    Number.isFinite(options.confidence) ? options.confidence : 50,
-    0,
-    100,
-  );
-
-  const tp1 = toPct(raw.tp1) ?? clamp(Math.round(confidence * 0.85), 25, 80);
-  const stop = toPct(raw.stop) ?? clamp(100 - tp1, 20, 75);
-  let tp2 = toPct(raw.tp2) ?? clamp(Math.round(tp1 * 0.55), 10, 60);
-  if (tp2 > tp1) {
-    tp2 = tp1;
-  }
+  const tp1 = toPct(raw.tp1);
+  const stop = toPct(raw.stop);
+  const tp2 = toPct(raw.tp2);
+  if (tp1 === null || tp2 === null || stop === null || tp2 > tp1 || tp1 + stop > 101) return unavailable;
 
   return { probabilityTp1: tp1, probabilityTp2: tp2, probabilityStop: stop };
 }

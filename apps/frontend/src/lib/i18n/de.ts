@@ -135,6 +135,7 @@ export default {
     regimeRanging: 'Seitwärts',
     regimeVolatile: 'Volatil',
     outcomeProbabilities: 'Wahrscheinlichkeiten',
+    probabilityEstimateNote: 'KI-Schätzungen, keine gemessenen historischen Trefferquoten.',
     breakeven: 'Break-even',
     positionSizing: {
       title: 'Positionsrechner',

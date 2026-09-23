@@ -135,6 +135,7 @@ export default {
     regimeRanging: 'Range',
     regimeVolatile: 'Volatil',
     outcomeProbabilities: 'Probabilités',
+    probabilityEstimateNote: 'Estimations de l’IA, pas des taux historiques mesurés.',
     breakeven: 'Break-even',
     positionSizing: {
       title: 'Calculateur de position',

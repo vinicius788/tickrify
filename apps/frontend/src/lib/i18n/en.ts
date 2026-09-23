@@ -135,6 +135,7 @@ export default {
     regimeRanging: 'Ranging',
     regimeVolatile: 'Volatile',
     outcomeProbabilities: 'Probabilities',
+    probabilityEstimateNote: 'AI estimates, not measured historical win rates.',
     breakeven: 'Break-even',
     positionSizing: {
       title: 'Position calculator',

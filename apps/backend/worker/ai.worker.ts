@@ -338,14 +338,14 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisRes
   const finalConfidencePct = decision.confidence;
 
   // Probabilidades por alvo — mesma regra do adapter (paridade worker/adapter):
-  // 0/inválido = ausente; default determinístico derivado da confiança.
+  // sem trio completo ou plano de trade, não publica estimativas fabricadas.
   const targetProbabilities = normalizeTargetProbabilities(
     {
       tp1: analysisSource.probabilityTp1,
       tp2: analysisSource.probabilityTp2,
       stop: analysisSource.probabilityStop,
     },
-    { hasTradePlan: entry !== null, confidence: normalizeConfidence(source.confidence) },
+    { hasTradePlan: entry !== null && stopLoss !== null && takeProfit1 !== null },
   );
 
   return {
