@@ -16,6 +16,8 @@ O caminho quick pode acrescentar candles atuais, RSI e contexto de mercado, mas 
 
 O uso futuro do registro deve separar quick/deep e classe de ativo, medir denominadores e comparar cobertura ao longo de dias. A ativação em produção, a consulta aos logs e qualquer mudança de texto público ou no motor exigem etapa operacional separada. **Nada foi ativado ou implantado nesta etapa.**
 
+O agregador local `scripts/analysis-data-coverage-report.mjs` lê um **arquivo exportado de logs** e imprime uma tabela por modo/classe, estados de candles e estados do contexto: `node scripts/analysis-data-coverage-report.mjs caminho/para/logs-exportados.txt`. Ele conta e ignora linhas inválidas, descarta qualquer campo além das categorias permitidas, não grava outro arquivo e não imprime linhas brutas. O denominador é o número de linhas válidas no arquivo, não o total de análises iniciadas ou concluídas. Uma amostra real só será interpretável se o período, o percentual de instâncias com a flag ligada e a completude da exportação forem conhecidos. O arquivo bruto deve permanecer fora do Git e ser tratado conforme o acesso normal aos logs da plataforma.
+
 ## Variante offline de evidência MTF
 
 O gerador `scripts/analysis-mtf-candidate.mjs` parte do prompt ativo v11 congelado e altera nove trechos ligados à leitura de períodos. Com uma imagem, ele manda descrever somente a estrutura visível, deixar `multiTimeframeAlignment=null` e marcar o item MTF do checklist como não avaliável e sem ponto. Com imagens extras legíveis, permite alinhamento apenas entre os períodos realmente fornecidos. As bandas de decisão 6–7, 4–5 e ≤3 não mudaram.
@@ -32,11 +34,15 @@ SHA-256 do baseline: `00783ace62ae49315d8c33648d834c9475f428f00361c9d08f24cc8554
 
 A variante retirou as oito alegações sem fonte nesta amostra, mas transformou o SELL de 17/07/2026 em WAIT. O modelo é não determinístico: uma única chamada por variante e caso não separa o efeito do prompt da variância natural. Todos os gráficos são da mesma classe/período e o piloto não incluiu o grounding de produção, outros ativos nem resultado financeiro adjudicado. **Não promover a variante a partir deste teste.**
 
+Como inspeção exploratória, apliquei aos três sinais do baseline e aos dois da variante a regra já descrita em `scripts/backtest/evaluate.py`: 96 candles de 30m após o corte, entrada só se tocada, TP1 antes do stop e empate intrabar contado como perda. No corte de 14/01, ambos os BUY ficaram `NO_FILL`; no de 21/06, o BUY do baseline foi `LOSS` e o da variante `WIN`; no de 17/07, o SELL do baseline foi `LOSS` e a variante aguardou. São **apenas três sinais efetivamente preenchidos** entre as variantes, sem spread, slippage ou taxas. Este resultado não demonstra acerto superior da variante e não entra na regra de promoção.
+
 ## Próxima avaliação necessária
 
 1. Rodar a rubrica cega já definida em `docs/AI_ANALYSIS_EVAL_RUBRIC.md` para o baseline e a variante, destacando erro crítico de dado/HTF inventado, qualidade do plano e mudança BUY/SELL/WAIT.
 2. Adicionar gráficos de forex, metais e índices e casos com duas ou três imagens reais; nesses casos, verificar se a variante continua usando HTF quando ele foi fornecido. Repetir pelo menos alguns casos para medir a variância do modelo.
 3. Medir cobertura efetiva de candles/contexto por modo e classe antes de alterar promessa ou ampliar o grounding. Avaliar separadamente uma forma de fornecer OHLCV/RSI também ao deep, com fonte, frescor, timeout e fallback explícitos.
 4. Comparar eventual mudança de produto com os marcos de 23/09 do PostHog: WAIT na primeira análise, ao menos um BUY/SELL nas três grátis, falhas com código e outcome maduro. Menos WAIT sozinho não é critério de aprovação.
+
+O `analysis_failed` do navegador ainda receberá `processing_failed_unclassified` quando o processamento assíncrono falhar: o worker conhece a causa, mas `Analysis.errorMessage` é texto para exibição e a tabela não tem uma coluna de código estável. O evento server-side `analysis_execution_failed`, já preparado no branch, cobre a investigação de causas futuras sem tentar reinterpretar as 27 falhas antigas. Para devolver a mesma causa ao navegador, a próxima mudança deve acrescentar um campo nullable de código com migração aditiva, preenchê-lo **somente em falha definitiva** (limpando-o em retry/sucesso), expor um valor de lista fixa no polling e testar compatibilidade com análises antigas sem código. Migração, worker, API e frontend precisam ser verificados juntos antes de qualquer rollout; nenhuma migração foi executada.
 
 Arquivos JSONL do piloto ficam ignorados pelo Git em `scripts/backtest/results/`. O código e este relatório permanecem apenas no worktree `codex/analise-cenario-seguro`; não houve push, deploy ou escrita em produção.
