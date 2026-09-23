@@ -31,3 +31,15 @@ Fixar previamente regra de entrada/fill, TP e SL, desempate intrabar, janela de 
 ## Regra de decisão inicial
 
 Não declarar vitória por poucos exemplos, uma única taxa de acerto ou diferença não pareada. Exigir que o candidato reduza erros críticos e melhore a nota de leitura na mesma amostra, sem piora material de falhas, latência, custo ou cobertura. Os limites numéricos de aceitação e o teto de gasto devem ser registrados **antes** de executar o candidato, quando a linha de base operacional estiver disponível. Qualquer experimento em produção exige etapa separada de rollout pequeno e rollback por flag.
+
+## Formato de avaliação e relatório
+
+Depois de duas revisões cegas e adjudicação, registrar **somente notas e metadados não identificáveis** no formato do [exemplo sintético](../scripts/analysis-eval.example.json). A ordem das sete posições em `assessable` e `scores` é a ordem dos itens da tabela acima. `false` em `assessable` exige `null` na nota das duas variantes. `critical` indica erro crítico de leitura/plano, não falha técnica. Para JSON inválido, falha ou timeout, usar `status` correspondente e omitir `scores`; isso contará como zero no indicador principal, sem sumir da amostra. Guardar imagens e respostas originais separadamente, em local autorizado; o arquivo de notas não aceita esses campos.
+
+```bash
+node scripts/analysis-eval.mjs scripts/analysis-eval.example.json
+node scripts/analysis-eval.mjs /caminho/local/notas-adjudicadas.json --out /caminho/local/comparacao.md
+node --test scripts/analysis-eval.test.mjs
+```
+
+O relatório traz diferença **pareada** por caso, por quick/deep e por classe de ativo, além de erros críticos, falhas, latência e custo com a cobertura observada. A nota principal inclui todas as falhas como zero; a nota apenas das respostas concluídas aparece como diagnóstico para evitar que uma variante pareça melhor por falhar nos casos difíceis. Não há chamadas de IA nesse script.

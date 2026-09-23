@@ -31,6 +31,8 @@ O próximo diagnóstico deve separar `UNTRACKABLE` por classe de ativo, símbolo
 
 Ordem de investigação: (1) contar os 92 por classe de ativo e símbolo normalizado, sempre agregado; (2) verificar se a chave Twelve Data **existe**, sem revelar seu valor, e as taxas de sucesso/falha por fonte; (3) separar falhas permanentes de indisponibilidade temporária; (4) só então decidir entre ampliar cobertura de dados, ajustar o avaliador ou mudar a forma de apresentar a métrica. Não preencher resultados ausentes como LOSS nem somar `UNTRACKABLE` ao denominador de acerto.
 
+A [consulta de cobertura por classe](../scripts/analysis-outcome-coverage.sql) já está preparada com os mesmos filtros do endpoint público. Ela retorna apenas contagens, sem IDs, imagens, respostas ou símbolos individuais, em transação somente leitura. Ainda **não foi executada contra o banco**: a credencial local existente falhou na autenticação. Será preciso acesso de leitura válido para confirmar quantos `UNTRACKABLE` pertencem a índices e às outras classes.
+
 Para medir operação, exportar 2–4 semanas de linhas `[Metrics]` e `[Cost]` do serviço de worker para arquivo local fora do Git; executar:
 
 ```bash

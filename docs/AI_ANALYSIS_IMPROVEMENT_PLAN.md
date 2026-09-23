@@ -134,8 +134,11 @@ experimento. Nenhum gasto de treinamento ou GPU é necessário na Etapa A.
 [snapshot agregado da API pública](AI_ANALYSIS_BASELINE_2026-09-23.md),
 [extrator local de logs](../scripts/analysis-baseline.mjs) e testes sintéticos.
 A3 tem [mapa das fontes no código](AI_ANALYSIS_BASELINE_2026-09-23.md), ainda
-sem confirmação das taxas reais de disponibilidade. A
-[rubrica offline](AI_ANALYSIS_EVAL_RUBRIC.md) está congelada antes de testar
-candidatos. Faltam export de logs de 2–4 semanas, diagnóstico agregado dos 92
-outcomes `UNTRACKABLE` e imagens autorizadas para fechar A2/A3 e executar B.
+sem confirmação das taxas reais de disponibilidade; a
+[consulta agregada de cobertura](../scripts/analysis-outcome-coverage.sql) está
+preparada. A [rubrica offline](AI_ANALYSIS_EVAL_RUBRIC.md) está congelada e o
+[comparador pareado](../scripts/analysis-eval.mjs) foi testado com casos
+sintéticos. Faltam export de logs de 2–4 semanas, executar a consulta com
+acesso somente leitura válido, e imagens autorizadas para fechar A2/A3 e
+executar B com dados reais.
 Sem essas fontes, números de ganho ou custo total seriam especulação.
