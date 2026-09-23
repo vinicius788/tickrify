@@ -314,37 +314,6 @@ function safeVolume(raw: unknown): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-const CRYPTO_INTERVAL_MS: Record<string, number> = {
-  '1m': 60_000, '3m': 180_000, '5m': 300_000, '15m': 900_000,
-  '30m': 1_800_000, '1h': 3_600_000, '2h': 7_200_000,
-  '4h': 14_400_000, '1d': 86_400_000, '1w': 604_800_000,
-};
-
-/** Só compara print e feed cripto contínuo quando os candles são plausíveis e recentes. */
-export function hasRecentComparableCryptoCandles(
-  candles: number[][] | null,
-  interval: string,
-  nowMs = Date.now(),
-): boolean {
-  const duration = CRYPTO_INTERVAL_MS[interval];
-  if (!duration || !Number.isFinite(nowMs) || !candles || candles.length < 20) return false;
-  // O bloco OHLCV usa até 120 candles; valide a mesma janela inteira.
-  const recent = candles.slice(-120);
-  for (let i = 0; i < recent.length; i++) {
-    const row = recent[i];
-    if (!Array.isArray(row) || row.length < 5 || !row.slice(0, 5).every(Number.isFinite)) return false;
-    const [time, open, high, low, close] = row;
-    if (time <= 0 || low <= 0 || high < Math.max(open, close, low) || low > Math.min(open, close, high)) return false;
-    if (i > 0 && (time <= recent[i - 1][0] || time - recent[i - 1][0] > 2 * duration)) return false;
-  }
-  const latestOpen = recent[recent.length - 1][0];
-  const age = nowMs - latestOpen;
-  if (age < -300_000 || age > Math.max(2 * duration + 90_000, 300_000)) return false;
-  const trueRanges = recent.slice(1).map((row, i) =>
-    Math.max(row[2] - row[3], Math.abs(row[2] - recent[i][4]), Math.abs(row[3] - recent[i][4])));
-  return trueRanges.some((value) => value > 0 && Number.isFinite(value));
-}
-
 /**
  * Perfil de volume por preço (aproximação de POC / área de valor).
  *
@@ -1321,60 +1290,17 @@ export class AIAdapter {
   private async buildMarketEnrichment(imageUrl: string): Promise<{
     block: string | null;
     assetClass: CoverageAssetClass;
-    candles: CandleCoverage;
     marketContext: AnalysisDataCoverage['marketContext'];
     calendar: CalendarCoverage;
   }> {
     const extracted = await this.extractSymbol(imageUrl);
     if (!extracted) return {
-      block: null, assetClass: 'unknown', candles: 'symbol_unreadable',
-      marketContext: 'unavailable', calendar: 'symbol_unreadable',
+      block: null, assetClass: 'unknown', marketContext: 'unavailable', calendar: 'symbol_unreadable',
     };
 
     const sym = extracted.symbol.toUpperCase();
-    const { isCrypto, base } = normalizeToBinancePerp(extracted.symbol);
+    const { isCrypto } = normalizeToBinancePerp(extracted.symbol);
     const assetClass = classifyCoverageAsset(sym, isCrypto);
-
-    // Candidata experimental (off por padrão): só anexa candles e contexto de
-    // AGORA ao deep cripto quando o print combina com um feed recente.
-    let candleBlock: string | null = null;
-    let candleCoverage: CandleCoverage = 'not_attempted';
-    if (isCrypto && flagBool('ENABLE_DEEP_CRYPTO_GROUNDING')) {
-      const interval = this.normalizeTimeframe(extracted.timeframe);
-      let comparableCandles: number[][] | null = null;
-      candleCoverage = !interval ? 'timeframe_unreadable'
-        : extracted.lastPrice == null ? 'unverified_withheld' : 'source_unavailable';
-      if (base && interval && extracted.lastPrice != null) {
-        try {
-          const fetched = await this.fetchCryptoCandles(base, interval);
-          if (hasRecentComparableCryptoCandles(fetched, interval)) comparableCandles = fetched;
-        } catch {
-          // Fonte/parse indisponível: não assume que o print é contemporâneo.
-        }
-      }
-      const staleReason = comparableCandles
-        ? this.detectStaleChart(comparableCandles, extracted.lastPrice)
-        : null;
-      if (!comparableCandles || staleReason) {
-        const state = staleReason ? 'stale_withheld' : 'unverified_withheld';
-        if (staleReason) candleCoverage = 'stale_withheld';
-        return {
-          block: [
-            '# CURRENT MARKET DATA WITHHELD',
-            staleReason
-              ? '- The chart price does not match the current crypto feed closely enough; this may be an old screenshot or an unreadable ticker/axis.'
-              : '- The screenshot could not be matched to a recent, valid crypto feed.',
-            '- No current market metrics or upcoming calendar events were attached. Use only evidence visible in the chart for levels and direction; do not claim that no events exist.',
-          ].join('\n'),
-          assetClass,
-          candles: candleCoverage,
-          marketContext: state,
-          calendar: state,
-        };
-      }
-      candleBlock = buildRealDataBlock(sym, interval!, comparableCandles);
-      candleCoverage = candleBlock ? 'injected' : 'block_unavailable';
-    }
 
     let classBlock: string | null = null;
     if (isCrypto) {
@@ -1390,11 +1316,10 @@ export class AIAdapter {
     // Calendário econômico vale para TODAS as classes (cripto reage a CPI/Fed também).
     const calendar = await this.buildCalendarEnrichment(sym);
 
-    const parts = [candleBlock, classBlock, calendar.block].filter(Boolean) as string[];
+    const parts = [classBlock, calendar.block].filter(Boolean) as string[];
     return {
       block: parts.length > 0 ? parts.join('\n\n') : null,
       assetClass,
-      candles: candleCoverage,
       marketContext: classBlock ? 'injected' : 'unavailable',
       calendar: calendar.status,
     };
@@ -1696,7 +1621,6 @@ export class AIAdapter {
             'market enrichment timed out',
           );
           coverage.assetClass = enrichment.assetClass;
-          coverage.candles = enrichment.candles;
           if (enrichment.block) {
             effectivePrompt = `${prompt}\n\n${enrichment.block}`;
           }
