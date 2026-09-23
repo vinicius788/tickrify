@@ -36,6 +36,19 @@ Não declarar vitória por poucos exemplos, uma única taxa de acerto ou diferen
 
 Depois de duas revisões cegas e adjudicação, registrar **somente notas e metadados não identificáveis** no formato do [exemplo sintético](../scripts/analysis-eval.example.json). A ordem das sete posições em `assessable` e `scores` é a ordem dos itens da tabela acima. `false` em `assessable` exige `null` na nota das duas variantes. `critical` indica erro crítico de leitura/plano, não falha técnica. Para JSON inválido, falha ou timeout, usar `status` correspondente e omitir `scores`; isso contará como zero no indicador principal, sem sumir da amostra. Guardar imagens e respostas originais separadamente, em local autorizado; o arquivo de notas não aceita esses campos.
 
+Para os oito gráficos históricos do piloto MTF, `scripts/analysis-blind-packet.mjs` prepara cartões A/B com ordem sorteada por caso e verifica que cada par usa o mesmo hash de imagem, modo e classe. O pacote para revisores contém caminho local do gráfico e a resposta, sem hash de prompt, nome de variante, custo ou latência. A chave A/B fica em **outro arquivo local ignorado pelo Git**, que não deve ser entregue aos revisores antes da adjudicação. O gerador não dá notas e não chama IA. Exemplo:
+
+```bash
+node scripts/analysis-blind-packet.mjs \
+  --baseline pilot-active-v11-baseline-2.jsonl \
+  --baseline pilot-active-v11-baseline-next6.jsonl \
+  --candidate pilot-active-v11-mtf-candidate-8.jsonl \
+  --out mtf-evidence-8
+node --test scripts/analysis-blind-packet.test.mjs
+```
+
+As saídas ficam em `scripts/backtest/results/mtf-evidence-8.review.json` e `mtf-evidence-8.key.json`, com acesso local restrito. Elas usam só gráficos históricos públicos do piloto; não contêm respostas de usuários. Os oito casos são úteis para testar a rubrica e encontrar problemas evidentes, não para estimar qualidade geral do produto. Os dois revisores ainda precisam pontuar independentemente e indicar evidência visível para cada nota; ninguém deve preencher notas automaticamente com base no nome da variante.
+
 ```bash
 node scripts/analysis-eval.mjs scripts/analysis-eval.example.json
 node scripts/analysis-eval.mjs /caminho/local/notas-adjudicadas.json --out /caminho/local/comparacao.md

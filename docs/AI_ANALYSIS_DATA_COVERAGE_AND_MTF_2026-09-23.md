@@ -38,7 +38,7 @@ Como inspeção exploratória, apliquei aos três sinais do baseline e aos dois 
 
 ## Próxima avaliação necessária
 
-1. Rodar a rubrica cega já definida em `docs/AI_ANALYSIS_EVAL_RUBRIC.md` para o baseline e a variante, destacando erro crítico de dado/HTF inventado, qualidade do plano e mudança BUY/SELL/WAIT.
+1. O pacote A/B local dos oito casos já foi montado com rótulos sorteados e chave separada. Dois revisores ainda devem pontuar independentemente a rubrica de `docs/AI_ANALYSIS_EVAL_RUBRIC.md`, destacando erro crítico de dado/HTF inventado, qualidade do plano e mudança BUY/SELL/WAIT. A chave só entra após a adjudicação.
 2. Adicionar gráficos de forex, metais e índices e casos com duas ou três imagens reais; nesses casos, verificar se a variante continua usando HTF quando ele foi fornecido. Repetir pelo menos alguns casos para medir a variância do modelo.
 3. Medir cobertura efetiva de candles/contexto por modo e classe antes de alterar promessa ou ampliar o grounding. Avaliar separadamente uma forma de fornecer OHLCV/RSI também ao deep, com fonte, frescor, timeout e fallback explícitos.
 4. Comparar eventual mudança de produto com os marcos de 23/09 do PostHog: WAIT na primeira análise, ao menos um BUY/SELL nas três grátis, falhas com código e outcome maduro. Menos WAIT sozinho não é critério de aprovação.
