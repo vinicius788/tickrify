@@ -130,7 +130,12 @@ experimento. Nenhum gasto de treinamento ou GPU é necessário na Etapa A.
 - Deploy backend antes de frontend quando houver campo novo na API; só depois
   validar resultados em amostra controlada e acompanhar logs/outcomes.
 
-**Próximo trabalho técnico após esta entrega:** produzir a linha de base
-agregada e a rubrica de avaliação, sem alterar a resposta do modelo. Sem acesso
-aos dados de produção e a um conjunto autorizado de imagens, números de ganho
-ou custo total seriam especulação.
+**Andamento em 23/09/2026:** A1 concluída na branch isolada; A2 iniciada com
+[snapshot agregado da API pública](AI_ANALYSIS_BASELINE_2026-09-23.md),
+[extrator local de logs](../scripts/analysis-baseline.mjs) e testes sintéticos.
+A3 tem [mapa das fontes no código](AI_ANALYSIS_BASELINE_2026-09-23.md), ainda
+sem confirmação das taxas reais de disponibilidade. A
+[rubrica offline](AI_ANALYSIS_EVAL_RUBRIC.md) está congelada antes de testar
+candidatos. Faltam export de logs de 2–4 semanas, diagnóstico agregado dos 92
+outcomes `UNTRACKABLE` e imagens autorizadas para fechar A2/A3 e executar B.
+Sem essas fontes, números de ganho ou custo total seriam especulação.
