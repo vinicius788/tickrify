@@ -22,6 +22,13 @@ import { MarketService, normalizeToBinancePerp } from '../market/market.service'
 import { EconomicCalendarService } from '../calendar/calendar.service';
 import { buildStrategyBlock, STRATEGY_FIT_VALUES, type StrategyProfile } from '../../common/strategy/strategy-profile';
 import {
+  classifyCoverageAsset,
+  formatAnalysisDataCoverage,
+  type AnalysisDataCoverage,
+  type CandleCoverage,
+  type CoverageAssetClass,
+} from './analysis-data-coverage';
+import {
   buildSamplingParams,
   isNextGenModel,
   resolveModel,
@@ -1060,9 +1067,10 @@ export class AIAdapter {
     for (let i = 0; i < extraImageUrls.length; i++) {
       try {
         const signed = await this.resolveImageUrlForOpenAi(extraImageUrls[i]);
+        const deliveredNumber = content.filter((part) => part.type === 'image_url').length;
         content.push({
           type: 'text',
-          text: `Gráfico de timeframe MAIOR ${i + 1} (contexto top-down / HTF) — leia e comente explicitamente este gráfico:`,
+          text: `Gráfico de timeframe MAIOR ${deliveredNumber} (contexto top-down / HTF) — leia e comente explicitamente este gráfico:`,
         });
         // 'high' detail: o usuário subiu este HTF de propósito para um top-down REAL.
         // Em 'low' a IA quase não lê o gráfico e só dá uma frase genérica de MTF.
@@ -1073,6 +1081,12 @@ export class AIAdapter {
           `Ignorando imagem HTF ${i + 1} (falha ao assinar): ${err instanceof Error ? err.message : err}`,
         );
       }
+    }
+
+    // A instrução inicial deve refletir as imagens que realmente chegaram ao
+    // modelo, não as URLs solicitadas: assinatura de HTF pode falhar sem abortar.
+    if (!content.some((part, index) => index > 1 && part.type === 'image_url')) {
+      content[0].text = 'Analise o gráfico e responda exclusivamente no JSON do schema. Não escreva texto fora do JSON.';
     }
 
     return content;
@@ -1269,12 +1283,16 @@ export class AIAdapter {
     }
   }
 
-  private async buildMarketEnrichment(imageUrl: string): Promise<string | null> {
+  private async buildMarketEnrichment(imageUrl: string): Promise<{
+    block: string | null;
+    assetClass: CoverageAssetClass;
+  }> {
     const extracted = await this.extractSymbol(imageUrl);
-    if (!extracted) return null;
+    if (!extracted) return { block: null, assetClass: 'unknown' };
 
     const sym = extracted.symbol.toUpperCase();
     const { isCrypto } = normalizeToBinancePerp(extracted.symbol);
+    const assetClass = classifyCoverageAsset(sym, isCrypto);
 
     let classBlock: string | null = null;
     if (isCrypto) {
@@ -1291,7 +1309,7 @@ export class AIAdapter {
     const calendarBlock = await this.buildCalendarEnrichment(sym);
 
     const parts = [classBlock, calendarBlock].filter(Boolean) as string[];
-    return parts.length > 0 ? parts.join('\n\n') : null;
+    return { block: parts.length > 0 ? parts.join('\n\n') : null, assetClass };
   }
 
   // ── Grounding do caminho QUICK ─────────────────────────────────────────────
@@ -1427,27 +1445,48 @@ export class AIAdapter {
    * (funding/OI/long-short/F&G pra cripto; dólar/juros pra forex/ouro — os
    * mesmos blocos que o deep já usa). Best-effort; falha → null.
    */
-  private async buildQuickGrounding(imageUrl: string): Promise<string | null> {
+  private async buildQuickGrounding(imageUrl: string): Promise<{
+    block: string | null;
+    candles: CandleCoverage;
+    marketContext: AnalysisDataCoverage['marketContext'];
+    assetClass: CoverageAssetClass;
+  }> {
     const extracted = await this.extractSymbol(imageUrl);
-    if (!extracted) return null;
+    if (!extracted) return {
+      block: null, candles: 'symbol_unreadable', marketContext: 'unavailable', assetClass: 'unknown',
+    };
 
     const sym = extracted.symbol.toUpperCase();
     const interval = this.normalizeTimeframe(extracted.timeframe);
     const { isCrypto, base } = normalizeToBinancePerp(extracted.symbol);
+    const assetClass = classifyCoverageAsset(sym, isCrypto);
 
     // Sem timeframe legível não dá pra calcular ATR/janela honestos — pula os
     // candles (estatística no intervalo errado atrapalha mais do que ajuda).
     let candleBlock: string | null = null;
     let staleReason: string | null = null;
+    let candleCoverage: CandleCoverage = 'timeframe_unreadable';
     if (interval) {
-      const candles =
-        isCrypto && base
+      const fxSupported = /^(XAU|XAG|EUR|GBP|AUD|NZD|USD|CAD|CHF|JPY)(USD|JPY|CHF|CAD|GBP|EUR|AUD|NZD)$/.test(
+        sym.replace(/[^A-Z]/g, ''),
+      );
+      if (!isCrypto && !fxSupported) {
+        candleCoverage = 'unsupported_asset';
+      } else if (!isCrypto && !process.env.TWELVE_DATA_API_KEY?.trim()) {
+        candleCoverage = 'provider_unconfigured';
+      } else {
+        const candles = isCrypto && base
           ? await this.fetchCryptoCandles(base, interval)
           : await this.fetchFxCandles(sym, interval);
-      if (candles) {
-        staleReason = this.detectStaleChart(candles, extracted.lastPrice);
-        if (!staleReason) {
-          candleBlock = buildRealDataBlock(sym, interval, candles);
+        candleCoverage = 'source_unavailable';
+        if (candles) {
+          staleReason = this.detectStaleChart(candles, extracted.lastPrice);
+          if (staleReason) {
+            candleCoverage = 'stale_withheld';
+          } else {
+            candleBlock = buildRealDataBlock(sym, interval, candles);
+            candleCoverage = candleBlock ? 'injected' : 'block_unavailable';
+          }
         }
       }
     }
@@ -1477,9 +1516,13 @@ export class AIAdapter {
       this.logger.log(
         `[QuickGrounding] ${sym} ${interval ?? 'tf?'} — candles: ${candleBlock ? 'sim' : 'não'}${staleReason ? ` (retido: ${staleReason})` : ''}, contexto: ${contextBlock ? 'sim' : 'não'}`,
       );
-      return parts.join('\n\n');
+      return {
+        block: parts.join('\n\n'), candles: candleCoverage,
+        marketContext: contextBlock ? 'injected' : 'unavailable',
+        assetClass,
+      };
     }
-    return null;
+    return { block: null, candles: candleCoverage, marketContext: 'unavailable', assetClass };
   }
 
   /**
@@ -1535,6 +1578,15 @@ export class AIAdapter {
   ): Promise<AIAnalysisResponse> {
     try {
       const userContent = await this.buildUserContent(imageUrl, extraImageUrls);
+      const deliveredHtfImages = Math.max(0, userContent.filter((part) => part.type === 'image_url').length - 1);
+      const coverage: AnalysisDataCoverage = {
+        analysisType: analysisType === 'deep' ? 'deep' : 'quick',
+        htfImagesRequested: extraImageUrls.length,
+        htfImagesDelivered: deliveredHtfImages,
+        assetClass: 'unknown',
+        candles: analysisType === 'deep' ? 'not_attempted' : 'disabled',
+        marketContext: 'disabled',
+      };
 
       // Enriquecimento com dados reais de mercado — só DEEP, best-effort.
       // LIGADO POR PADRÃO: roda sozinho quando a IA identifica o mercado.
@@ -1544,15 +1596,19 @@ export class AIAdapter {
       let effectivePrompt = prompt;
       if (analysisType === 'deep' && flagBool('ENABLE_MARKET_ENRICHMENT')) {
         try {
-          const block = await withTimeout(
+          const enrichment = await withTimeout(
             this.buildMarketEnrichment(imageUrl),
             14_000,
             'market enrichment timed out',
           );
-          if (block) {
-            effectivePrompt = `${prompt}\n\n${block}`;
+          coverage.assetClass = enrichment.assetClass;
+          if (enrichment.block) {
+            effectivePrompt = `${prompt}\n\n${enrichment.block}`;
           }
-        } catch {
+          coverage.marketContext = enrichment.block ? 'injected' : 'unavailable';
+        } catch (error) {
+          coverage.marketContext = error instanceof Error && error.message === 'market enrichment timed out'
+            ? 'timeout' : 'error';
           // graceful: mantém o prompt original
         }
       } else if (analysisType === 'quick' && flagBool('ENABLE_QUICK_GROUNDING')) {
@@ -1562,16 +1618,33 @@ export class AIAdapter {
         // Custo quando ligado: +1 chamada gpt-4o-mini (extractSymbol, ~US$0,0001)
         // e +alguns segundos de latência, com teto de 15s. Falha → segue sem o bloco.
         try {
-          const block = await withTimeout(
+          const grounding = await withTimeout(
             this.buildQuickGrounding(imageUrl),
             15_000,
             'quick grounding timed out',
           );
-          if (block) {
-            effectivePrompt = `${prompt}\n\n${block}`;
+          coverage.candles = grounding.candles;
+          coverage.marketContext = grounding.marketContext;
+          coverage.assetClass = grounding.assetClass;
+          if (grounding.block) {
+            effectivePrompt = `${prompt}\n\n${grounding.block}`;
           }
-        } catch {
+        } catch (error) {
+          const failure = error instanceof Error && error.message === 'quick grounding timed out'
+            ? 'timeout' : 'error';
+          coverage.candles = failure;
+          coverage.marketContext = failure;
           // graceful: mantém o prompt original
+        }
+      }
+
+      // Opt-in e sem conteúdo do usuário. Mede o que foi entregue ao modelo,
+      // inclusive quando o enriquecimento falha e a análise segue normalmente.
+      if (process.env.AI_DATA_COVERAGE_LOG === 'true') {
+        try {
+          this.logger.log(formatAnalysisDataCoverage(coverage));
+        } catch {
+          // Observabilidade nunca pode interromper uma análise paga.
         }
       }
 

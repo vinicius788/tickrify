@@ -130,25 +130,25 @@ experimento. Nenhum gasto de treinamento ou GPU é necessário na Etapa A.
 - Deploy backend antes de frontend quando houver campo novo na API; só depois
   validar resultados em amostra controlada e acompanhar logs/outcomes.
 
-**Andamento em 23/09/2026:** A1 concluída na branch isolada; A2 iniciada com
+**Andamento em 23/09/2026:** A1 concluída na branch isolada. A2 possui
 [snapshot agregado da API pública](AI_ANALYSIS_BASELINE_2026-09-23.md),
-[extrator local de logs](../scripts/analysis-baseline.mjs), testes sintéticos e
-uma amostra limitada de 50 linhas de métricas/custo observadas no Render.
-A3 tem [mapa das fontes e distribuição histórica/recente](AI_ANALYSIS_BASELINE_2026-09-23.md):
+[extrator local de logs](../scripts/analysis-baseline.mjs) e uma amostra
+limitada de 50 linhas de métricas/custo do Render. A3 tem
+[mapa de fontes e distribuição histórica/recente](AI_ANALYSIS_BASELINE_2026-09-23.md):
 63 dos 92 `UNTRACKABLE` históricos são de metais, mas nenhum ocorreu em metais
 nos 14 dias anteriores a 23/09; o único recente era de índice. A
-[consulta agregada de cobertura](../scripts/analysis-outcome-coverage.sql) está
-preparada para repetição. A [rubrica offline](AI_ANALYSIS_EVAL_RUBRIC.md) está congelada e o
-[comparador pareado](../scripts/analysis-eval.mjs) foi testado com casos
-sintéticos. Faltam agregados completos de logs em janelas menores que o limite
-de 50 linhas da tela, repetidos semanalmente porque o plano do Render retém só
-7 dias, diagnóstico dos motivos técnicos por fonte e imagens autorizadas para
-fechar A2/A3 e executar B com dados reais.
-Um [piloto local de 48 gráficos históricos](AI_ANALYSIS_PILOT_2026-09-23.md)
-já prepara B para leitura cega: 24 quick e 24 deep, hashes e corte temporal
-verificados, sem executar a IA. Ele cobre apenas BTC/ETH; forex, metais e
-índices ainda não estão representados. Sem essas fontes e respostas reais,
-números de ganho ou custo total seriam especulação.
+[consulta agregada de cobertura](../scripts/analysis-outcome-coverage.sql), a
+[rubrica offline](AI_ANALYSIS_EVAL_RUBRIC.md) e o
+[comparador pareado](../scripts/analysis-eval.mjs) estão preparados. Ainda
+faltam logs agregados completos, diagnóstico operacional de cada fonte e
+revisão cega dos casos.
+
+O [piloto local](AI_ANALYSIS_PILOT_2026-09-23.md) preserva 48 gráficos
+históricos (24 quick, 24 deep), hashes e cortes temporais. Seus oito primeiros
+casos, todos BTCUSDT 30m, foram usados em
+[duas comparações offline](AI_ANALYSIS_PAIRED_PILOT_2026-09-23.md) com o
+prompt ativo v11 congelado. Forex, metais, índices e prints reais autorizados
+continuam ausentes; nenhum ganho de produto ou de rentabilidade está provado.
 
 O [recorte de PostHog informado em 23/09](AI_ANALYSIS_POSTHOG_BASELINE_2026-09-23.md)
 acrescenta duas métricas de ativação para a comparação pós-mudança: WAIT na
@@ -156,26 +156,28 @@ primeira análise e usuários grátis que veem ao menos um BUY/SELL nas três
 análises. A taxa de falha e os outcomes continuam guardrails; reduzir WAIT
 sem melhorar a qualidade da leitura não é objetivo suficiente.
 
-O [mapa de causas possíveis de WAIT e o diagnóstico offline](AI_ANALYSIS_WAIT_DIAGNOSTIC_2026-09-23.md)
-separam resposta crua do modelo de rebaixamentos posteriores. Ainda não há
-respostas reais no piloto. O [preflight offline](../scripts/analysis-pilot-preflight.mjs)
-verificou os 48 gráficos e suas fontes (24 quick, 24 deep); baseline e
-candidata exigiriam no mínimo 96 chamadas principais. O runner legado ainda
-precisa ser substituído por uma execução com modo correto, prompt congelado e
-limite de chamadas antes de qualquer gasto.
+O [mapa de causas possíveis de WAIT](AI_ANALYSIS_WAIT_DIAGNOSTIC_2026-09-23.md)
+separa resposta crua do modelo de rebaixamentos posteriores. O
+[preflight offline](../scripts/analysis-pilot-preflight.mjs) verificou os 48
+gráficos; o runner isolado já executou 8 casos pareados em cada variante com
+modelo, esforço e orçamento locais explícitos. A comparação completa dos 48
+exigiria pelo menos 96 chamadas por candidata e ainda não foi feita.
 
 A [auditoria das promessas da página e do contrato real da análise](AI_ANALYSIS_PRODUCT_PROMISE_AUDIT_2026-09-23.md)
 encontrou três lacunas a testar: grounding quick depende de flag e pode falhar;
 deep não injeta o mesmo bloco OHLCV/RSI; o prompt pode apresentar alinhamento
-de três timeframes inferido de uma única imagem. Também identificou que WAIT
-nem sempre traz uma condição observável. Uma primeira candidata **offline**
-melhora apenas a explicação do WAIT, sem alterar limiares de BUY/SELL; precisa
-ser comparada com o prompt efetivamente ativo antes de qualquer uso real.
+de três timeframes inferido de uma única imagem. O
+[piloto WAIT](AI_ANALYSIS_PAIRED_PILOT_2026-09-23.md) não mostrou ganho de
+explicação: o baseline já trazia condição observável nos cinco WAIT. A
+[segunda avaliação](AI_ANALYSIS_DATA_COVERAGE_AND_MTF_2026-09-23.md) encontrou
+8/8 alegações MTF sem imagem correspondente no baseline; a variante offline
+retirou as oito, mas também mudou um SELL para WAIT. Nenhuma variante foi
+promovida.
 
-O [runner isolado do piloto](../apps/backend/scripts/analysis-pilot-runner.ts)
-já faz dry-run verificando os 48 gráficos, quick/deep, hash do prompt e teto
-de chamadas. Uma simulação com dois casos passou sem chamar a API; a tentativa
-sem chave foi bloqueada antes de gravar resultados. Ainda não há baseline
-executado nem custo deep medido. A estimativa em dólares do runner não é teto
-de faturamento; validar preço vigente e orçamento externo antes de usar
-`--execute`.
+O [runner isolado](../apps/backend/scripts/analysis-pilot-runner.ts) faz
+dry-run por padrão, verifica hashes, modo, esforço e teto de chamadas antes de
+`--execute`. Três lotes de oito respostas (baseline ativo, candidata WAIT e
+candidata MTF) foram executados localmente, com custo calculado pelo uso
+retornado de cerca de US$ 0,105 no total. Isso não é a fatura nem um teto de
+faturamento do provedor. A instrumentação categórica de cobertura de dados foi
+preparada atrás de `AI_DATA_COVERAGE_LOG=false`; não foi implantada ou ativada.

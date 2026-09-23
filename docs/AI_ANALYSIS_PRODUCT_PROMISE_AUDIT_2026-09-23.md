@@ -17,7 +17,10 @@ As promessas foram lidas nas traduções da landing (`pt.ts`, `en.ts` e demais
 idiomas) e o fluxo foi conferido em `ai.adapter.ts`, `signal-decision.ts` e
 `feature-flags.ts`. A auditoria aponta divergências **de contrato e de
 evidência**, não afirma que determinada resposta de um usuário foi errada.
-Não há amostras reais de resposta no piloto para concluir taxa de erro.
+Esta leitura inicial precedeu os pilotos. As amostras posteriores estão em
+[WAIT](AI_ANALYSIS_PAIRED_PILOT_2026-09-23.md) e
+[MTF/cobertura](AI_ANALYSIS_DATA_COVERAGE_AND_MTF_2026-09-23.md); ainda são
+pequenas, só BTCUSDT 30m, e não permitem concluir taxa de erro do produto.
 
 ## Primeira candidata de análise, sem trocar a ação
 
@@ -36,21 +39,21 @@ congelada. A primeira saída local foi criada a partir do prompt **versionado**
 `00783ace62ae49315d8c33648d834c9475f428f00361c9d08f24cc85540a78bb`;
 hash da candidata
 `984c28b0a6b48237c6ae286b8f26f96ebc147246a75e835f8756855fbc85c83d`.
-Essa base **não foi verificada contra o PromptConfig ativo**. A saída completa
-fica no cache ignorado pelo Git em `scripts/backtest/results/`.
+Na auditoria inicial, essa base ainda não havia sido verificada contra o
+`PromptConfig` ativo. A leitura posterior confirmou o mesmo SHA-256 na versão
+ativa 11 e a [comparação pareada](AI_ANALYSIS_PAIRED_PILOT_2026-09-23.md)
+não sustentou promoção da candidata WAIT. A saída completa fica no cache
+ignorado pelo Git em `scripts/backtest/results/`.
 
 ```bash
 node scripts/analysis-wait-candidate.mjs
 node --test scripts/analysis-wait-candidate.test.mjs
 ```
 
-Para comparar com o sistema atual, primeiro congelar por leitura o prompt
-efetivamente ativo, os modelos, esforços de raciocínio e flags; registrar
-origem/hash sem publicar segredo. Se o prompt ativo diferir, gerar a candidata
-a partir dessa cópia local. Depois, executar **baseline e candidata nos mesmos
-gráficos** com um único fator alterado, medir explicações de WAIT na rubrica,
-erros críticos, sinais, falhas, latência e custo. Não promover essa variante
-com base só no texto do prompt ou em queda de WAIT.
+O prompt ativo, modelos, esforços e flags foram congelados por leitura antes
+das chamadas pagas. A comparação usou os mesmos oito gráficos e um fator
+alterado, mas ainda falta pontuação cega da rubrica e cobertura de outros
+ativos. Não promover a variante com base só no texto ou na taxa de WAIT.
 
 Em uma trilha separada, tratar a promessa de candles e calendário: medir
 cobertura real e ajustar capacidade ou texto público conforme o que puder ser
