@@ -158,5 +158,8 @@ sem melhorar a qualidade da leitura não é objetivo suficiente.
 
 O [mapa de causas possíveis de WAIT e o diagnóstico offline](AI_ANALYSIS_WAIT_DIAGNOSTIC_2026-09-23.md)
 separam resposta crua do modelo de rebaixamentos posteriores. Ainda não há
-respostas reais no piloto; o runner legado precisa de modo quick/deep, entrada
-verificada e limite de chamadas antes de qualquer execução paga.
+respostas reais no piloto. O [preflight offline](../scripts/analysis-pilot-preflight.mjs)
+verificou os 48 gráficos e suas fontes (24 quick, 24 deep); baseline e
+candidata exigiriam no mínimo 96 chamadas principais. O runner legado ainda
+precisa ser substituído por uma execução com modo correto, prompt congelado e
+limite de chamadas antes de qualquer gasto.

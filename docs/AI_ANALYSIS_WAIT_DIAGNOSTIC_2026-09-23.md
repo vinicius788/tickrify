@@ -56,6 +56,21 @@ Portanto, a origem do WAIT permanece indeterminada. O piloto cobre apenas
 BTC/ETH e tem 24 casos quick + 24 deep; não permite inferir comportamento de
 forex, metais, índices ou da interface real dos usuários.
 
+O [preflight offline](../scripts/analysis-pilot-preflight.mjs) confere os hashes
+do manifesto, da seleção, das amostras, de cada PNG e dos dados de cada série;
+recusa arquivo fora dos diretórios previstos, PNG inválido, caso repetido e
+modo ausente. A execução em 23/09 verificou os 48 casos: 24 quick, 24 deep,
+quatro séries e 1.634.160 bytes de gráficos. Baseline + uma candidata exigem
+**pelo menos 96 chamadas principais**, sem contar falhas, retries ou chamadas
+auxiliares. É uma quantidade de requisições, **não uma estimativa de custo**.
+O comando abaixo apenas lê arquivos locais; não importa o backend nem usa
+credenciais:
+
+```bash
+node scripts/analysis-pilot-preflight.mjs
+node --test scripts/analysis-pilot-preflight.test.mjs
+```
+
 ## Bloqueios para uma rodada paga comparável
 
 O `apps/backend/scripts/backtest-runner.ts` existente não deve ser usado para
@@ -76,3 +91,10 @@ falhas. Só então calcular e aprovar um limite financeiro para uma rodada
 pequena. A primeira variante deve mudar **um fator** em relação ao baseline;
 os resultados serão julgados pela [rubrica cega](AI_ANALYSIS_EVAL_RUBRIC.md),
 não apenas pelo percentual de WAIT.
+
+O motor também pode fazer chamadas extras quando o grounding quick ou o
+enriquecimento deep estão ligados. Essas opções terão de ficar explicitamente
+fixadas para o piloto; o total de 96 acima só conta a análise principal. O
+prompt ativo da plataforma deve ser congelado em uma cópia local identificada
+por hash antes de chamar de “baseline atual” qualquer resultado. O preflight
+não substitui esses dois bloqueios nem autoriza a execução paga.
