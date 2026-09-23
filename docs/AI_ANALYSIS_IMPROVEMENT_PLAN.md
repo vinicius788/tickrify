@@ -188,3 +188,5 @@ falhas definitivas também estão preparados. Nada disso foi implantado, a
 migração não foi executada e a flag não foi ativada.
 
 Uma candidata de [candles/indicadores no deep cripto com guarda temporal](AI_ANALYSIS_DATA_COVERAGE_AND_MTF_2026-09-23.md#protótipo-de-candles-e-guarda-temporal-do-deep-cripto) também foi preparada com flag própria desligada por padrão. O próximo passo é avaliar prints de épocas conhecidas e medir falsos bloqueios, falsos passes, custo de latência e mudança nas respostas antes de considerar ativação. O código permanece no branch isolado; não há mudança em produção.
+
+Para a lacuna MTF, o [auditor estrutural offline](../scripts/analysis-mtf-structural-audit.mjs) confirmou que apagar só o campo de alinhamento não basta: o baseline também citou HTF na prosa e premiou MTF no checklist sem imagem adicional. A candidata de prompt zerou esses marcadores nos oito casos, mas continua sem revisão cega e mudou um sinal. A ampliação do teste pago aguarda uma chave local; não se deve colocar a credencial na documentação ou na conversa. Nenhum prompt foi promovido.

@@ -43,6 +43,18 @@ SHA-256 do baseline: `00783ace62ae49315d8c33648d834c9475f428f00361c9d08f24cc8554
 
 A variante retirou as oito alegações sem fonte nesta amostra, mas transformou o SELL de 17/07/2026 em WAIT. O modelo é não determinístico: uma única chamada por variante e caso não separa o efeito do prompt da variância natural. Todos os gráficos são da mesma classe/período e o piloto não incluiu o grounding de produção, outros ativos nem resultado financeiro adjudicado. **Não promover a variante a partir deste teste.**
 
+O auditor estrutural local `scripts/analysis-mtf-structural-audit.mjs` reproduz contagens objetivas nos oito pares, sem imprimir respostas brutas. Com **uma imagem por caso**, o baseline preencheu `multiTimeframeAlignment` em 8/8, exibiu nome de período maior em prosa em 6/8 e deu um check positivo de MTF em 3/8. A variante marcou 0/8 nos três itens. Nenhuma das duas teve níveis de BUY/SELL do lado errado ou níveis ativos no WAIT nessa amostra. Termos como “HTF não fornecido” são legítimos; a contagem de nomes de período em prosa é um **sinal para revisão**, não uma nota automática. O checklist positivo e o campo preenchido não têm evidência de imagem HTF neste piloto. Limpar apenas `multiTimeframeAlignment` deixaria alegações nos outros campos, por isso não foi adotado como correção superficial.
+
+```bash
+node scripts/analysis-mtf-structural-audit.mjs \
+  --baseline pilot-active-v11-baseline-2.jsonl \
+  --baseline pilot-active-v11-baseline-next6.jsonl \
+  --candidate pilot-active-v11-mtf-candidate-8.jsonl
+node --test scripts/analysis-mtf-structural-audit.test.mjs
+```
+
+O runner pago está pronto para ampliar o piloto aos 40 gráficos restantes (BTC/ETH, 30m/4h), com teto local de chamadas/custo. Nesta sessão, `OPENAI_API_KEY` não está disponível no worktree; nenhuma chamada adicional foi feita. Mesmo com 48 casos, ainda faltariam forex, metais, índices, prints reais variados e revisão humana independente.
+
 Como inspeção exploratória, apliquei aos três sinais do baseline e aos dois da variante a regra já descrita em `scripts/backtest/evaluate.py`: 96 candles de 30m após o corte, entrada só se tocada, TP1 antes do stop e empate intrabar contado como perda. No corte de 14/01, ambos os BUY ficaram `NO_FILL`; no de 21/06, o BUY do baseline foi `LOSS` e o da variante `WIN`; no de 17/07, o SELL do baseline foi `LOSS` e a variante aguardou. São **apenas três sinais efetivamente preenchidos** entre as variantes, sem spread, slippage ou taxas. Este resultado não demonstra acerto superior da variante e não entra na regra de promoção.
 
 ## Próxima avaliação necessária
