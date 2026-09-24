@@ -30,12 +30,11 @@ export default {
     freeLeft: 'grátis restantes',
     newAnalysis: 'Nova Análise',
     myTrades: 'Meus Trades',
-    watchlist: 'Watchlist',
+    journal: 'Diário',
     // Rotulos curtos usados SO na barra de abas do celular. Os longos
-    // ('Lista de Seguimiento', 'Beobachtungsliste') truncam antes da palavra
-    // que identifica a aba, em 5 abas numa tela de 375px.
+    // truncam antes da palavra que identifica a aba, em 5 abas numa tela de 375px.
     newAnalysisShort: 'Analisar',
-    watchlistShort: 'Watchlist',
+    journalShort: 'Diário',
     strategy: 'Estratégia',
     activeMarkets: 'Mercados Ativos',
     recentAnalyses: 'Últimas Análises',
@@ -271,10 +270,10 @@ export default {
 
   // ── Trades ────────────────────────────────────────────────────────────────────
   trades: {
-    favorite: 'Adicionar à watchlist',
+    favorite: 'Adicionar aos favoritos',
     loadMore: 'Carregar mais',
     loadingMore: 'Carregando...',
-    unfavorite: 'Remover da watchlist',
+    unfavorite: 'Remover dos favoritos',
     title: 'Meus Trades',
     noTrades: 'Nenhum trade registrado ainda.',
     noTradesDesc: 'Seus trades aparecerão aqui quando você os registrar.',
@@ -282,6 +281,7 @@ export default {
     found: 'análises encontradas',
     allAssets: 'Todos os ativos',
     allResults: 'Todos os resultados',
+    favorites: 'Favoritas',
     pending: 'Pendente',
     tp1Hit: 'TP1 atingido',
     tp2Hit: 'TP2 atingido',
@@ -298,6 +298,8 @@ export default {
     winShort: 'V',
     lossShort: 'D',
     markResult: 'Como terminou?',
+    noTrade: 'Sem operação (aguardar)',
+    noTradeHint: 'Aguardar não é operação. Não há o que marcar.',
     clearResult: 'Limpar resultado',
     markOpen: 'Ainda aberta',
     logTitle: 'Registre o resultado',
@@ -321,23 +323,32 @@ export default {
     resultSaveFailed: 'Não foi possível salvar o resultado no servidor. Ele fica neste dispositivo.',
   },
 
-  // ── Watchlist ──────────────────────────────────────────────────────────────────
-  watchlist: {
-    favoritesTitle: 'Análises favoritas',
-    favHint: 'Toque na estrela em Meus Trades para fixar uma análise aqui.',
-    title: 'Watchlist',
-    empty: 'Sua watchlist está vazia',
-    emptyDesc: 'Adicione ativos para acompanhar.',
-    opportunities: 'Oportunidades Detectadas',
-    opportunitiesDesc: 'Ativos com setup de maior probabilidade no momento.',
-    viewAnalysis: 'Ver Análise',
-    otherAssets: 'Outros Ativos',
-    otherAssetsDesc: 'Monitorando outros ativos da sua lista.',
-    realDesc: 'Adicione ativos para monitorar e receber alertas.',
-    comingSoon: 'Em breve você poderá adicionar ativos para monitorar!',
-    statusNoSetup: 'Sem setup claro',
-    statusWaiting: 'Aguardando confirmação',
-    statusNeutral: 'Em zona neutra',
+  // ── Diario (calendario do mes) ──────────────────────────────────────────────────────────────────
+  journal: {
+    title: 'Diário de trades',
+    subtitle: 'Cada análise e cada resultado que você registra, dia a dia.',
+    prev: 'Mês anterior',
+    next: 'Próximo mês',
+    today: 'Hoje',
+    analyses: 'Análises',
+    pnl: 'P&L registrado',
+    activeDays: 'Dias ativos',
+    winRate: 'Taxa de acerto',
+    dayAnalyses: '{n} análises',
+    dayAnalysis: '1 análise',
+    emptyMonth: 'Nenhuma análise neste mês ainda.',
+    emptyDay: 'Nenhuma análise neste dia.',
+    selectDay: 'Escolha um dia para ver as análises dele.',
+    loading: 'Carregando seu mês...',
+    error: 'Não foi possível carregar este mês. Tente de novo.',
+    retry: 'Tentar de novo',
+    truncated: 'Este mês tem mais análises do que o calendário mostra. Os totais contam só as primeiras 500.',
+    pnlHint: 'Registre o valor de cada trade em Meus Trades e ele aparece aqui, dia a dia.',
+    noResult: 'Sem resultado registrado',
+    viewChart: 'Ver gráfico',
+    openFull: 'Abrir em tamanho real',
+    cta: 'Analisar um gráfico',
+    byDateNote: 'Cada análise conta no dia em que foi feita.',
   },
 
   // ── Strategy profile ─────────────────────────────────────────────────────────
@@ -403,9 +414,6 @@ export default {
     statsSample: 'trades fechados',
   },
   empty: {
-    watchTitle: 'Seus setups salvos moram aqui',
-    watchDesc: 'Marque qualquer análise com a estrela e ela fica neste quadro, pra você acompanhar como o nível realmente se resolve em vez de reler o gráfico do zero amanhã.',
-    watchCta: 'Analisar um gráfico',
     tradesTitle: 'Seu histórico começa com um gráfico',
     tradesDesc: 'Toda análise que você roda cai aqui. Marque como cada uma terminou e a Tickrify passa a te mostrar a sua taxa de acerto. A sua, não a nossa.',
     tradesCta: 'Analisar um gráfico',

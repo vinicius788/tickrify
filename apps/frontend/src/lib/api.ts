@@ -538,6 +538,33 @@ class APIClient {
     return response.json();
   }
 
+  /** Diario: analises concluidas em [from, to), no mesmo formato da lista. */
+  async getJournal(
+    token: string | null,
+    from: string,
+    to: string,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<{ items: AIAnalysisResponse[]; truncated: boolean }> {
+    const response = await this.request(
+      `/api/ai/journal?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      {
+        method: 'GET',
+        headers: {
+          ...this.getAuthHeader(token),
+        },
+      },
+      'Failed to load journal',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
+    );
+
+    if (!response.ok) {
+      throw await this.buildApiError(response, 'Failed to load journal');
+    }
+
+    return response.json();
+  }
+
   async getAnalysisUsage(
     token: string | null,
     getFreshToken?: FreshTokenGetter,
@@ -844,6 +871,11 @@ export function useAPIClient() {
     return apiClient.listAnalyses(token, limit, getFreshToken, cursor);
   }, [getFreshToken, getInitialToken]);
 
+  const getJournal = useCallback(async (from: string, to: string) => {
+    const token = await getInitialToken();
+    return apiClient.getJournal(token, from, to, getFreshToken);
+  }, [getFreshToken, getInitialToken]);
+
   const getAnalysisUsage = useCallback(async () => {
     const token = await getInitialToken();
     return apiClient.getAnalysisUsage(token, getFreshToken);
@@ -904,6 +936,7 @@ export function useAPIClient() {
     createAnalysis,
     getAnalysis,
     listAnalyses,
+    getJournal,
     getAnalysisUsage,
     syncUserProfile,
     setAcquisitionSource,
@@ -913,5 +946,5 @@ export function useAPIClient() {
     getStrategy,
     saveStrategy,
     waitForAnalysisCompletion,
-  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setTechnicalAttribution, setOutcome, setFavorite, getStrategy, saveStrategy, waitForAnalysisCompletion]);
+  }), [createAnalysis, getAnalysis, listAnalyses, getJournal, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setTechnicalAttribution, setOutcome, setFavorite, getStrategy, saveStrategy, waitForAnalysisCompletion]);
 }

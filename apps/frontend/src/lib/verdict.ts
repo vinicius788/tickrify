@@ -12,7 +12,19 @@
  * A API expõe o userVerdict no campo `outcome` da resposta, por retrocompat.
  */
 
+import { getRecommendationMeta } from '@/lib/trading-ui';
+
 export type Verdict = 'TP1' | 'TP2' | 'SL' | 'OPEN' | null;
+
+/**
+ * A analise propos uma operacao? BUY/SELL sim; WAIT/HOLD nao (24/09/2026,
+ * pedido do dono). Aguardar nao e trade: nao tem entrada, entao nao tem TP,
+ * Stop nem valor a marcar, e nao pode aparecer como "pendente" esperando um
+ * resultado que nunca vai existir. Continua contando como ANALISE feita.
+ */
+export function isTradeCall(recommendation: unknown): boolean {
+  return getRecommendationMeta(recommendation).tone !== 'hold';
+}
 
 /** Mesma chave de sempre — trocar aqui apagaria o histórico local de todo mundo. */
 export const VERDICT_STORAGE_KEY = 'tickrify_verdicts';

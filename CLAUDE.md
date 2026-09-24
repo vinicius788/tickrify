@@ -4204,3 +4204,30 @@ componente precisa fazer o mesmo.** Os cliques em "Nova Análise" passaram a
 `224099c`). O teste novo do fim das 3 gratis (de outra sessao) esperava a frase
 "Suas 3 análises grátis..."; a real e "Suas análises grátis foram utilizadas."
 Resultado: 82/82 em 5 rodadas seguidas.
+
+## 24/09/2026 — aba Watchlist removida, Diario (calendario) no lugar
+
+Decisao do dono: a Watchlist so listava as analises com estrela (as secoes
+"oportunidades" e "outros ativos" eram dado de exemplo, so no modo demo).
+
+- **Favoritos viraram filtro** "Favoritas" no My Trades (a estrela no card
+  continua). `Watchlist.tsx`, as chaves `watchlist.*`, `nav.watchlist*` e
+  `empty.watch*` sairam dos 6 idiomas. O filtro e local sobre as paginas ja
+  carregadas (a lista pagina de 40 em 40); favorita mais antiga aparece com
+  "carregar mais", mesmo limite que a Watchlist ja tinha.
+- **Aba Diario** (`JournalCalendar.tsx`, conta em `lib/journal.ts` com teste):
+  calendario do mes; cada dia mostra P&L registrado, analises e ganhos/perdas;
+  clicar no dia lista as analises com a print. **Regra: a analise conta no dia
+  em que foi FEITA, no fuso do navegador**, nao no dia em que o resultado foi
+  marcado. Valor so soma de trade fechado; dia sem valor mostra "sem valor",
+  nunca 0. Testado em 5 fusos (inclusive UTC+14).
+- **`GET /api/ai/journal?from&to`** (ISO, maximo 45 dias, 500 linhas com aviso
+  `truncated`). O navegador manda o mes JA no fuso dele; o backend so filtra.
+  `listAnalyses` e o journal passaram a usar o mesmo `mapAnalysisRows`, para o
+  formato nunca divergir entre as duas rotas.
+- **Aguardar (WAIT/HOLD) nao e operacao** (`isTradeCall` em `lib/verdict.ts`):
+  sem botoes TP/Stop no My Trades (mostra "Sem operacao"), fora da contagem e
+  do filtro "Pendente", "sem operacao" no Diario, e a pergunta "Vai entrar
+  nesta?" do resultado nao aparece para WAIT. WAIT que ja tinha resultado
+  marcado antes desta regra mantem os botoes, para poder limpar.
+- A grade de atividade do painel (`ActivityHeatmap`) ficou como estava.

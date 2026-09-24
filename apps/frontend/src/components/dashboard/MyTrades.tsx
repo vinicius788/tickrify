@@ -17,6 +17,7 @@ import {
   VERDICT_CFG,
   loadVerdicts,
   outcomeFromVerdict,
+  isTradeCall,
   resolveVerdict,
   saveVerdict,
   type Verdict,
@@ -217,10 +218,13 @@ const DEMO: AIAnalysisResponse[] = [
 // ── Component ────────────────────────────────────────────────────────────────
 // onStartAnalysis: o DashboardPage passa o resetNewAnalysisView (mesma navegação
 // por `activeView` usada no resto do painel — sem rota nova).
+/** 'favorites' mostra so as analises com estrela (antes era a aba Watchlist). */
+type TradesFilter = 'all' | 'pending' | 'favorites' | Verdict;
+
 interface MyTradesProps {
   onStartAnalysis?: () => void;
   /** Filtro pré-aplicado ao abrir — usado pelo "ver todas" do bloco de cobrança. */
-  initialFilter?: 'all' | 'pending' | Verdict;
+  initialFilter?: TradesFilter;
 }
 
 const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
@@ -243,7 +247,8 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
 
   const [verdicts, setVerdicts] = useState<Record<string, Verdict>>(loadVerdicts);
   const [filterSymbol, setFilterSymbol] = useState('');
-  const [filterVerdict, setFilterVerdict] = useState<'all' | 'pending' | Verdict>(initialFilter ?? 'all');
+  const [filterVerdict, setFilterVerdict] = useState<TradesFilter>(initialFilter ?? 'all');
+  const [favorites, setFavorites] = useState<Record<string, boolean>>({});
   // Valor da operacao alterado nesta tela (sobrepoe o que veio do banco ate o refetch).
   const [pnls, setPnls] = useState<Record<string, number | null>>({});
   const [calcOpen, setCalcOpen] = useState<Record<string, boolean>>({});
@@ -261,6 +266,14 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
   // Verdict efetivo — mesma função usada pelo Dashboard (lib/verdict.ts).
   const getVerdict = (a: AIAnalysisResponse): Verdict => resolveVerdict(a, verdicts);
 
+  // Estrela alterada nesta tela vale ate o refetch confirmar; depois, a do banco.
+  const getFavorite = (a: AIAnalysisResponse): boolean => {
+    if (Object.prototype.hasOwnProperty.call(favorites, a.id)) {
+      return favorites[a.id];
+    }
+    return (a as unknown as Record<string, unknown>).isFavorite === true;
+  };
+
   // Unique symbols for filter dropdown
   const symbols = useMemo(() => {
     const set = new Set(rows.map((a) => extractLevels(a).symbol).filter((s) => s !== 'N/A'));
@@ -271,13 +284,14 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
     return rows.filter((a) => {
       const { symbol } = extractLevels(a);
       if (filterSymbol && symbol !== filterSymbol) return false;
+      if (filterVerdict === 'favorites') return getFavorite(a);
       const v = getVerdict(a);
-      if (filterVerdict === 'pending' && v !== null) return false;
+      if (filterVerdict === 'pending' && (v !== null || !isTradeCall(a.recommendation))) return false;
       if (filterVerdict !== 'all' && filterVerdict !== 'pending' && v !== filterVerdict) return false;
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, verdicts, filterSymbol, filterVerdict]);
+  }, [rows, verdicts, favorites, filterSymbol, filterVerdict]);
 
   // Resumo de performance (a partir das análises carregadas).
   const perf = useMemo(() => {
@@ -289,7 +303,8 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
       if (v === 'TP1' || v === 'TP2') wins += 1;
       else if (v === 'SL') losses += 1;
       else if (v === 'OPEN') open += 1;
-      else pending += 1;
+      // Aguardar (WAIT/HOLD) nao e operacao: nunca fica "pendente" de resultado.
+      else if (isTradeCall(a.recommendation)) pending += 1;
       const rr = Number((a as unknown as Record<string, unknown>).riskRewardTp2 ?? (a as unknown as Record<string, unknown>).riskRewardTp1);
       if (Number.isFinite(rr) && rr > 0) { rrSum += rr; rrCount += 1; }
     }
@@ -334,21 +349,15 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
     setPnls((prev) => ({ ...prev, [a.id]: amount }));
   };
 
-  // ── Favoritos (Watchlist) — otimista, com rollback se o backend falhar ──
-  const [favorites, setFavorites] = useState<Record<string, boolean>>({});
-  const getFavorite = (a: AIAnalysisResponse): boolean => {
-    if (Object.prototype.hasOwnProperty.call(favorites, a.id)) {
-      return favorites[a.id];
-    }
-    return (a as unknown as Record<string, unknown>).isFavorite === true;
-  };
+  // ── Favoritos: estrela no card + filtro "Favoritas" (substituiu a aba
+  // Watchlist em 24/09/2026). Otimista, com rollback se o backend falhar.
   const handleFavorite = (a: AIAnalysisResponse) => {
     if (isDemo) return;
     const next = !getFavorite(a);
     setFavorites((prev) => ({ ...prev, [a.id]: next }));
     void setFavorite(a.id, next)
       .then(() => {
-        // Invalida o cache da lista para a Watchlist refletir na hora (sem esperar os 30s).
+        // Invalida o cache da lista para o filtro de favoritas e o painel refletirem na hora.
         refetch();
       })
       .catch(() => {
@@ -385,6 +394,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
               className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1 font-terminal text-base text-[var(--text-primary)] outline-none sm:text-xs"
             >
               <option value="all">{tr.allResults}</option>
+              <option value="favorites">{tr.favorites}</option>
               <option value="pending">{tr.pending}</option>
               <option value="TP1">{tr.tp1Hit}</option>
               <option value="TP2">{tr.tp2Hit}</option>
@@ -461,6 +471,10 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
               const confidence = confidenceToPercent(a.confidence);
               const verdict = getVerdict(a);
               const closed = isClosed(verdict);
+              // Aguardar sem resultado marcado: nada a marcar. Se um WAIT ja tiver
+              // resultado (marcado antes desta regra), os botoes seguem visiveis
+              // para a pessoa poder limpar.
+              const noTrade = !isTradeCall(a.recommendation) && verdict === null;
               const hasLevels = entry !== null && stopLoss !== null && entry !== stopLoss;
               const showCalc = hasLevels && calcOpen[a.id] === true;
               const imageUrl = typeof a.imageUrl === 'string' && a.imageUrl.trim() ? a.imageUrl : null;
@@ -588,55 +602,64 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                     </div>
 
                     {/* DIREITA — resultado: TP1 / TP2 / Stop */}
-                    <div className="flex flex-shrink-0 flex-col gap-1.5 sm:items-end">
-                      <span className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.markResult}</span>
-                      <div className="flex gap-1.5">
-                        {resultButtons.map((b) => {
-                          const active = verdict === b.value;
-                          const c = VERDICT_CFG[b.value];
-                          return (
-                            <button
-                              key={b.value}
-                              type="button"
-                              data-active={active}
-                              aria-pressed={active}
-                              aria-label={b.label}
-                              title={b.label}
-                              onClick={() => handleVerdict(a, active ? null : b.value)}
-                              className="tk-verdict-btn inline-flex flex-1 items-center justify-center gap-1 rounded-lg border px-3 py-1.5 font-terminal text-xs font-semibold sm:flex-none"
-                              style={
-                                active
-                                  ? { background: c.bg, borderColor: c.border, color: c.text, boxShadow: `0 0 16px ${c.border}` }
-                                  : { background: 'var(--bg-overlay)', borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }
-                              }
-                            >
-                              {active && <Check className="h-3 w-3" />}
-                              {b.short}
-                            </button>
-                          );
-                        })}
+                    {noTrade ? (
+                      <div className="flex flex-shrink-0 flex-col gap-1 sm:items-end">
+                        <span className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-3 py-1.5 font-terminal text-xs text-[var(--text-secondary)]">
+                          {tr.noTrade}
+                        </span>
+                        <span className="text-[11px] text-[var(--text-secondary)] opacity-70 sm:text-right">{tr.noTradeHint}</span>
                       </div>
-                      <div className="flex gap-3 text-[11px]">
-                        <button
-                          type="button"
-                          onClick={() => handleVerdict(a, verdict === 'OPEN' ? null : 'OPEN')}
-                          aria-pressed={verdict === 'OPEN'}
-                          className="transition-colors hover:text-[var(--text-primary)]"
-                          style={{ color: verdict === 'OPEN' ? VERDICT_CFG.OPEN.text : 'var(--text-secondary)' }}
-                        >
-                          {verdict === 'OPEN' ? `● ${tr.open}` : tr.markOpen}
-                        </button>
-                        {verdict !== null && (
+                    ) : (
+                      <div className="flex flex-shrink-0 flex-col gap-1.5 sm:items-end">
+                        <span className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.markResult}</span>
+                        <div className="flex gap-1.5">
+                          {resultButtons.map((b) => {
+                            const active = verdict === b.value;
+                            const c = VERDICT_CFG[b.value];
+                            return (
+                              <button
+                                key={b.value}
+                                type="button"
+                                data-active={active}
+                                aria-pressed={active}
+                                aria-label={b.label}
+                                title={b.label}
+                                onClick={() => handleVerdict(a, active ? null : b.value)}
+                                className="tk-verdict-btn inline-flex flex-1 items-center justify-center gap-1 rounded-lg border px-3 py-1.5 font-terminal text-xs font-semibold sm:flex-none"
+                                style={
+                                  active
+                                    ? { background: c.bg, borderColor: c.border, color: c.text, boxShadow: `0 0 16px ${c.border}` }
+                                    : { background: 'var(--bg-overlay)', borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }
+                                }
+                              >
+                                {active && <Check className="h-3 w-3" />}
+                                {b.short}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex gap-3 text-[11px]">
                           <button
                             type="button"
-                            onClick={() => handleVerdict(a, null)}
-                            className="text-[var(--text-secondary)] opacity-70 transition-opacity hover:opacity-100"
+                            onClick={() => handleVerdict(a, verdict === 'OPEN' ? null : 'OPEN')}
+                            aria-pressed={verdict === 'OPEN'}
+                            className="transition-colors hover:text-[var(--text-primary)]"
+                            style={{ color: verdict === 'OPEN' ? VERDICT_CFG.OPEN.text : 'var(--text-secondary)' }}
                           >
-                            {tr.clearResult}
+                            {verdict === 'OPEN' ? `● ${tr.open}` : tr.markOpen}
                           </button>
-                        )}
+                          {verdict !== null && (
+                            <button
+                              type="button"
+                              onClick={() => handleVerdict(a, null)}
+                              className="text-[var(--text-secondary)] opacity-70 transition-opacity hover:opacity-100"
+                            >
+                              {tr.clearResult}
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Painel: valor da operacao + calculadora de posicao */}

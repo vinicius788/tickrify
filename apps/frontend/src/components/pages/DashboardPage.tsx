@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, Star, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap, Upload, Sliders } from "lucide-react";
+import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap, Upload, Sliders } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -14,6 +14,7 @@ import {
   isVerdictPromptSnoozed,
   loadVerdicts,
   outcomeFromVerdict,
+  isTradeCall,
   resolveVerdict,
   saveVerdict,
   snoozeVerdictPrompt,
@@ -22,7 +23,7 @@ import {
 import ActivityHeatmap from "../dashboard/ActivityHeatmap";
 import LiveTape from "../dashboard/LiveTape";
 import MyTrades from "../dashboard/MyTrades";
-import Watchlist from "../dashboard/Watchlist";
+import JournalCalendar from "../dashboard/JournalCalendar";
 import StrategyProfile from "../dashboard/StrategyProfile";
 import AnalysisResult from "../dashboard/AnalysisResult";
 import LockedAnalysis from "../dashboard/LockedAnalysis";
@@ -133,7 +134,7 @@ const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
 };
 
-type View = 'dashboard' | 'new-analysis' | 'my-trades' | 'watchlist' | 'strategy' | 'analysis-result' | 'loading' | 'error' | 'locked';
+type View = 'dashboard' | 'new-analysis' | 'my-trades' | 'journal' | 'strategy' | 'analysis-result' | 'loading' | 'error' | 'locked';
 type RecentAnalysisItem = {
   symbol: string;
   timeframe: string;
@@ -255,8 +256,8 @@ const DashboardPage = () => {
   // "ver todas" do bloco de cobrança; entrar pelo menu tem que mostrar TUDO.
   // (Antes eu aplicava 'OPEN' sempre que existisse trade em aberto, o que
   // escondia o histórico inteiro de quem clicasse em My Trades no menu.)
-  const [myTradesFilter, setMyTradesFilter] = useState<'all' | 'pending' | Verdict | undefined>(undefined);
-  const openMyTrades = useCallback((filter?: 'all' | 'pending' | Verdict) => {
+  const [myTradesFilter, setMyTradesFilter] = useState<'all' | 'pending' | 'favorites' | Verdict | undefined>(undefined);
+  const openMyTrades = useCallback((filter?: 'all' | 'pending' | 'favorites' | Verdict) => {
     setMyTradesFilter(filter);
     setActiveView('my-trades');
   }, []);
@@ -922,10 +923,10 @@ const DashboardPage = () => {
             <div className="flex shrink-0 flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={() => setActiveView('watchlist')}
+                onClick={() => setActiveView('journal')}
                 className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-default)] px-4 py-2.5 text-sm text-[var(--text-primary)] transition-colors hover:bg-white/[0.04]"
               >
-                <Star className="h-4 w-4" /> {t.nav.watchlist}
+                <CalendarDays className="h-4 w-4" /> {t.nav.journal}
               </button>
               <button
                 type="button"
@@ -1041,8 +1042,8 @@ const DashboardPage = () => {
         );
       case 'my-trades':
         return <MyTrades onStartAnalysis={resetNewAnalysisView} initialFilter={myTradesFilter} />;
-      case 'watchlist':
-        return <Watchlist onStartAnalysis={resetNewAnalysisView} />;
+      case 'journal':
+        return <JournalCalendar onStartAnalysis={resetNewAnalysisView} />;
       case 'strategy':
         return <StrategyProfile />;
       case 'analysis-result': {
@@ -1063,6 +1064,9 @@ const DashboardPage = () => {
           !isDemo &&
           !askDismissed &&
           Boolean(verdictTargetId) &&
+          // Aguardar nao e operacao: "vai entrar nesta?" nao faz sentido e
+          // marcar "vou entrar" criaria um trade aberto que nunca existiu.
+          isTradeCall(analysisData?.recommendation) &&
           resolveVerdict({ id: String(verdictTargetId), outcome: analysisData?.outcome }, verdicts) === null;
         return (
           <div className="flex flex-col gap-4">
@@ -1210,8 +1214,8 @@ const DashboardPage = () => {
   const currentViewLabel =
     activeView === 'my-trades'
       ? t.nav.myTrades
-      : activeView === 'watchlist'
-        ? t.nav.watchlist
+      : activeView === 'journal'
+        ? t.nav.journal
         : activeView === 'strategy'
           ? t.nav.strategy
           : activeView === 'dashboard'
@@ -1249,8 +1253,8 @@ const DashboardPage = () => {
             <button type="button" onClick={() => openMyTrades()} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'my-trades' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
               <History className="h-4 w-4" /> {t.nav.myTrades}
             </button>
-            <button type="button" onClick={() => setActiveView('watchlist')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'watchlist' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
-              <Star className="h-4 w-4" /> {t.nav.watchlist}
+            <button type="button" onClick={() => setActiveView('journal')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'journal' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+              <CalendarDays className="h-4 w-4" /> {t.nav.journal}
             </button>
             <button type="button" onClick={() => setActiveView('strategy')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'strategy' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
               <Sliders className="h-4 w-4" /> {t.nav.strategy}
@@ -1349,7 +1353,7 @@ const DashboardPage = () => {
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border md:hidden">
           <div className="flex">
-            {(['dashboard', 'new-analysis', 'my-trades', 'watchlist', 'strategy'] as const).map((view) => (
+            {(['dashboard', 'new-analysis', 'my-trades', 'journal', 'strategy'] as const).map((view) => (
               <button
                 key={view}
                 type="button"
@@ -1372,8 +1376,8 @@ const DashboardPage = () => {
                     ? t.nav.newAnalysisShort
                     : view === 'my-trades'
                       ? t.nav.myTrades
-                      : view === 'watchlist'
-                        ? t.nav.watchlistShort
+                      : view === 'journal'
+                        ? t.nav.journalShort
                         : t.nav.strategy}
               </button>
             ))}

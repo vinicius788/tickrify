@@ -329,6 +329,51 @@ describe('AiService access enforcement', () => {
     });
   });
 
+  // ── listAnalysesInRange (Diario) ──────────────────────────────────────────────
+  // O calendario do mes agrupa por dia no navegador; aqui so se filtra o
+  // intervalo. Os testes travam o filtro por usuario/status/data, os tetos e o
+  // aviso de mes cortado (sem ele a soma do mes sairia menor que a real, calada).
+  describe('listAnalysesInRange: Diario', () => {
+    const from = new Date('2026-09-01T03:00:00.000Z');
+    const to = new Date('2026-10-01T03:00:00.000Z');
+
+    it('filtra por usuario, so concluidas, no intervalo [from, to)', async () => {
+      await service.listAnalysesInRange('usr_1', from, to);
+      const args = prisma.analysis.findMany.mock.calls[0][0];
+      expect(args.where).toEqual({ userId: 'usr_1', status: 'completed', createdAt: { gte: from, lt: to } });
+      expect(args.select.fullResponse).toBeUndefined();
+    });
+
+    it('recusa intervalo invertido e maior que 45 dias, sem tocar no banco', async () => {
+      await expect(service.listAnalysesInRange('usr_1', to, from)).rejects.toThrow();
+      await expect(
+        service.listAnalysesInRange('usr_1', from, new Date(from.getTime() + 46 * 86_400_000)),
+      ).rejects.toThrow();
+      await expect(service.listAnalysesInRange('usr_1', new Date('x'), to)).rejects.toThrow();
+      expect(prisma.analysis.findMany).not.toHaveBeenCalled();
+    });
+
+    it('avisa quando o teto de 500 corta o mes', async () => {
+      const rows = Array.from({ length: 501 }, (_, i) => ({
+        id: `a${i}`, imageUrl: null, status: 'completed', result: {}, createdAt: new Date(),
+      }));
+      prisma.analysis.findMany.mockResolvedValue(rows);
+      const out = await service.listAnalysesInRange('usr_1', from, to);
+      expect(prisma.analysis.findMany.mock.calls[0][0].take).toBe(501);
+      expect(out.truncated).toBe(true);
+      expect(out.items).toHaveLength(500);
+    });
+
+    it('mes pequeno volta inteiro e sem aviso, no mesmo formato da lista', async () => {
+      prisma.analysis.findMany.mockResolvedValue([
+        { id: 'a1', imageUrl: null, status: 'completed', result: {}, createdAt: new Date() },
+      ]);
+      const out = await service.listAnalysesInRange('usr_1', from, to);
+      expect(out.truncated).toBe(false);
+      expect(out.items[0]).toMatchObject({ id: 'a1', status: 'completed', pnlAmount: null });
+    });
+  });
+
   // ── getUsage ────────────────────────────────────────────────────────────────
   // Estes testes estavam VERMELHOS no CI (corrigidos em 12/08/2026). Eles ainda
   // descreviam o contrato antigo, de quando assinante era "ilimitado" e o

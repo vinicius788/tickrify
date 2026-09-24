@@ -81,8 +81,8 @@ vi.mock('@/components/dashboard/MyTrades', () => ({
   default: () => <div>My trades</div>,
 }));
 
-vi.mock('@/components/dashboard/Watchlist', () => ({
-  default: () => <div>Watchlist</div>,
+vi.mock('@/components/dashboard/JournalCalendar', () => ({
+  default: () => <div>Journal</div>,
 }));
 
 vi.mock('@/components/dashboard/AnalysisCounter', () => ({

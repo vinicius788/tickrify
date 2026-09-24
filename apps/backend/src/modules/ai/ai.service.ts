@@ -136,7 +136,7 @@ export class AiService implements OnModuleInit {
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "closedAt" TIMESTAMP(3)',
       );
-      // Watchlist: favorito por análise (mesmo padrão aditivo e idempotente).
+      // Favoritos: estrela por análise (mesmo padrão aditivo e idempotente).
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "isFavorite" BOOLEAN NOT NULL DEFAULT false',
       );
@@ -564,6 +564,67 @@ export class AiService implements OnModuleInit {
       ...(safeCursor ? { cursor: { id: safeCursor }, skip: 1 } : {}),
     });
 
+    return this.mapAnalysisRows(userId, analyses);
+  }
+
+  /**
+   * Busca do Diario (calendario do mes): analises CONCLUIDAS criadas em
+   * [from, to). O dia de cada uma e decidido no navegador, no fuso do trader;
+   * por isso o cliente manda o intervalo ja no fuso dele, e aqui so se filtra.
+   *
+   * Teto de 45 dias por chamada (um mes cheio + folga de fuso) e de 500 linhas.
+   * `truncated` avisa a tela quando o teto corta o mes, para ela dizer que o
+   * total esta incompleto em vez de exibir uma soma menor como se fosse a real.
+   */
+  async listAnalysesInRange(userId: string, from: Date, to: Date) {
+    const MAX_SPAN_MS = 45 * 24 * 60 * 60 * 1000;
+    const MAX_ROWS = 500;
+    if (!(from instanceof Date) || !(to instanceof Date) || Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      throw new BadRequestException('Invalid date range');
+    }
+    if (to.getTime() <= from.getTime() || to.getTime() - from.getTime() > MAX_SPAN_MS) {
+      throw new BadRequestException('Date range must be positive and at most 45 days');
+    }
+
+    const analyses = await this.prisma.analysis.findMany({
+      where: { userId, status: 'completed', createdAt: { gte: from, lt: to } },
+      select: {
+        id: true,
+        imageUrl: true,
+        status: true,
+        recommendation: true,
+        confidence: true,
+        reasoning: true,
+        result: true,
+        createdAt: true,
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: MAX_ROWS + 1,
+    });
+
+    const truncated = analyses.length > MAX_ROWS;
+    const items = await this.mapAnalysisRows(userId, truncated ? analyses.slice(0, MAX_ROWS) : analyses);
+    return { items, truncated };
+  }
+
+  /**
+   * Linha do banco -> item da API. Fonte UNICA do formato devolvido pela lista
+   * paginada e pelo Diario: se cada rota tivesse o seu mapeamento, um campo
+   * novo apareceria numa tela e sumiria na outra.
+   */
+  private async mapAnalysisRows(
+    userId: string,
+    analyses: Array<{
+      id: string;
+      imageUrl: string | null;
+      status: string;
+      recommendation: string | null;
+      confidence: number | null;
+      reasoning: string | null;
+      result: Prisma.JsonValue;
+      createdAt: Date;
+    }>,
+  ) {
     // Veredito so das analises desta pagina (antes: TODAS as do usuario) e as
     // imagens assinadas em UMA chamada ao Supabase (antes: uma por analise).
     const [outcomesMap, signedUrls] = await Promise.all([
@@ -662,7 +723,7 @@ export class AiService implements OnModuleInit {
   }
 
   /**
-   * Marca/desmarca uma análise como favorita (Watchlist). Owner-checked.
+   * Marca/desmarca uma análise como favorita (filtro Favoritas do My Trades). Owner-checked.
    * Mesmo padrão tolerante do setOutcome: SQL isolado, nunca derruba nada.
    */
   async setFavorite(userId: string, id: string, isFavorite: boolean) {

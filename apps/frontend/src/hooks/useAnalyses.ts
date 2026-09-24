@@ -34,7 +34,7 @@ export function useAnalyses(limit = 40) {
     getNextPageParam: (lastPage) =>
       lastPage.length < limit ? undefined : (lastPage[lastPage.length - 1]?.id ?? undefined),
     // Cache "fresco" por 2 min e sem refetch ao focar a janela → trocar de aba
-    // (Dashboard → My Trades → Watchlist) reaproveita os dados, sem nova busca.
+    // (Dashboard → My Trades) reaproveita os dados, sem nova busca.
     staleTime: 120_000,
     refetchOnWindowFocus: false,
     enabled,
