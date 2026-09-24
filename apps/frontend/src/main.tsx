@@ -5,18 +5,27 @@ import { ClerkProvider } from '@clerk/clerk-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App.tsx';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
-import { initAnalytics } from './lib/analytics';
-import { getConsent } from './lib/consent';
+import { initAnalytics, initAnonymousAnalytics, revokeAnalyticsConsent } from './lib/analytics';
+import { CONSENT_EVENT, getConsent } from './lib/consent';
 import { AnalyticsIdentify } from './components/providers/AnalyticsIdentify';
 import './styles/trading-tokens.css';
 import './index.css';
 
-// PostHog e Meta Pixel só sobem com consentimento (ver lib/consent.ts). Sem
-// escolha registrada, nada de analytics carrega e o banner do CookieConsent
-// aparece; aceitar chama initAnalytics() na hora, sem recarregar a página.
+// Com aceite: PostHog completo, Meta Pixel e Google tag. Sem aceite: só o
+// PostHog em modo sem cookies, depois do `load` para não pesar na primeira
+// pintura (ver lib/analytics.ts). Aceitar no banner chama initAnalytics() na
+// hora, sem recarregar a página.
 if (getConsent() === 'granted') {
   initAnalytics();
+} else {
+  const loadAnonymous = () => window.setTimeout(() => void initAnonymousAnalytics(), 1000);
+  if (document.readyState === 'complete') loadAnonymous();
+  else window.addEventListener('load', loadAnonymous, { once: true });
 }
+// Recusa no banner ou "Change my choice" na /cookies: volta ao modo sem cookies.
+window.addEventListener(CONSENT_EVENT, () => {
+  if (getConsent() !== 'granted') revokeAnalyticsConsent();
+});
 
 /**
  * Tema do Clerk, aplicado no provider para valer também nos modais de

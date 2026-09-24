@@ -4076,3 +4076,34 @@ entao `promptVer` separa antes e depois):
 Alvo: WAIT entre 35% e 55% (a producao ficou em ~39% por meses). Abaixo de 25%,
 o prompt afrouxou demais e o win rate da `/accuracy` precisa ser olhado antes de
 qualquer outra coisa. Rollback: `git revert` do commit; o sync publica a volta.
+
+## 24/09/2026 — PostHog sem cookies antes do aceite
+
+**Por que:** a campanha do Meta teve 19 cliques no link em 22-24/09, o Meta
+registrou 4 landing page views e o PostHog mostrou ZERO visitas vindas do
+anuncio. O PostHog e o Meta Pixel so ligavam depois do aceite no banner, e
+quem chega de anuncio nos EUA/Europa costuma ignorar ou recusar o banner:
+o funil pago era invisivel.
+
+**O que mudou (`lib/analytics.ts`, `main.tsx`):**
+- Sem aceite (pendente ou recusado): PostHog carrega depois do `load` com
+  `cookieless_mode: 'on_reject'` + `opt_out_capturing_by_default: true`.
+  Nada gravado no navegador; identidade = hash diario no servidor do PostHog.
+  Sem `identify`, sem propriedades de pessoa, sem `click_id` (fbclid/gclid).
+- Aceite: `opt_in_capturing` e volta o modo completo; o identify pendente sai.
+- Recusa ou "Change my choice": `revokeAnalyticsConsent()` (via CONSENT_EVENT
+  no main.tsx) volta ao modo sem cookies. `discardPendingAnalytics` saiu.
+- Meta Pixel e Google tag continuam SO com aceite. Conversao de anuncio
+  (adsOnly) fica na fila ate o aceite.
+- `/cookies` reescrita para dizer isso (LAST_UPDATED 24/09/2026).
+
+**⚠️ Depende de configuracao no PostHog:** "Enable cookieless tracking" em
+Settings > Web analytics esta LIGADO (24/09). Desligar faz o servidor
+descartar todos os eventos sem cookie, em silencio.
+
+**⚠️ Evento sem cookie NAO tem pais (GeoIP):** o PostHog faz hash do IP e o
+remove antes do enriquecimento. Para regiao, usar `$timezone`, que o
+posthog-js manda em todo evento.
+
+Verificacao: `tsc -b --force` 0 erros, eslint limpo, vitest 70/70 (2 testes
+novos em `analytics.test.ts`). `vitest` roda na VM com `--environment jsdom`.

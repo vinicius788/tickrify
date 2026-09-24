@@ -8,11 +8,11 @@ import { seoFor, useSeo } from '@/hooks/useSeo';
  * Política de cookies, /cookies. Página nova de 24/08/2026.
  *
  * A lista abaixo descreve o que o site CARREGA DE VERDADE: Clerk, Stripe,
- * Turnstile, PostHog e Meta Pixel. Ao acrescentar ou remover um provedor no
+ * Turnstile, PostHog (sem cookies antes do aceite, completo depois) e Meta Pixel. Ao acrescentar ou remover um provedor no
  * código, esta tabela muda junto — declarar cookie que não existe é tão errado
  * quanto esconder um que existe.
  */
-const LAST_UPDATED = 'September 21, 2026';
+const LAST_UPDATED = 'September 24, 2026';
 
 const LABEL: Record<ConsentValue, string> = {
   granted: 'Analytics and marketing cookies are ON in this browser.',
@@ -58,7 +58,8 @@ const SECTIONS: LegalSection[] = [
           you across unrelated websites.
         </p>
         <p>
-          Nothing beyond the essential list below loads until you accept. Refusing costs you nothing: every part
+          Nothing beyond the essential list below is stored on your device until you accept. Before that, we only
+          count visits anonymously, without cookies (see Analytics below). Refusing costs you nothing: every part
           of the product works the same either way.
         </p>
       </>
@@ -97,15 +98,20 @@ const SECTIONS: LegalSection[] = [
   },
   {
     id: 'analytics',
-    title: 'Analytics, only with your permission',
+    title: 'Analytics',
     body: (
       <>
         <p>
           <strong>PostHog</strong> records which pages are visited and which steps of signup and checkout people
-          complete. We use it to find where the product loses people, not to profile you. It stores an anonymous
-          identifier in a cookie and in local storage.
+          complete. We use it to find where the product loses people, not to profile you.
         </p>
-        <p>It does not load at all until you accept, and it stops if you change your choice above.</p>
+        <p>
+          Without your permission it runs in cookieless mode: nothing is stored on your device, and visits are
+          counted with a daily anonymous hash computed on PostHog&apos;s servers, which cannot be linked to you or
+          followed across days. With your permission it also stores an anonymous identifier in a cookie and in
+          local storage, so a visit today and a signup tomorrow count as the same journey. Changing your choice
+          above switches it back to cookieless mode.
+        </p>
       </>
     ),
   },
@@ -119,7 +125,7 @@ const SECTIONS: LegalSection[] = [
           subscription, which is how the ad budget gets pointed at what works. It sets identifiers such as
           <code> _fbp</code> and <code> _fbc</code>.
         </p>
-        <p>Like analytics, it does not load until you accept.</p>
+        <p>It does not load at all until you accept.</p>
       </>
     ),
   },

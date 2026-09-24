@@ -7,8 +7,9 @@
 // consentimento ANTES de gravar. Até aqui o `initAnalytics()` rodava no
 // main.tsx, sem perguntar nada.
 //
-// Como funciona: sem escolha registrada, nada de analytics carrega e o banner
-// aparece. Depois da escolha, ela vale para sempre naquele navegador.
+// Como funciona: sem escolha registrada o banner aparece, e até o aceite só
+// roda a contagem anônima do PostHog SEM cookies (24/09/2026, ver
+// lib/analytics.ts). Depois da escolha, ela vale para sempre naquele navegador.
 //
 // A escolha mora no localStorage e não num cookie de propósito: gravar um
 // cookie para decidir se pode gravar cookie é exatamente o que a regra evita.
