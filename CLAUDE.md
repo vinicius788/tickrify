@@ -4107,3 +4107,27 @@ posthog-js manda em todo evento.
 
 Verificacao: `tsc -b --force` 0 erros, eslint limpo, vitest 70/70 (2 testes
 novos em `analytics.test.ts`). `vitest` roda na VM com `--environment jsdom`.
+
+## 24/09/2026 — My Trades: print do grafico, botoes de resultado e valor da operacao
+
+- **A print JA era salva** (Supabase Storage, `analyses/<userId>/original`) e o
+  `GET /api/ai/analyses` ja devolvia `imageUrl` assinada (1h). O comentario do
+  `schema.prisma` ("imagem nao e mais salva") esta DESATUALIZADO. A tela so nao
+  mostrava. Agora: miniatura por linha + visualizador (Dialog) com "abrir em
+  tamanho real". URL expirada cai no `onError` e mostra "Print indisponivel".
+- O `<select>` de veredito virou botoes animados TP1 / TP2 / Stop
+  (`.tk-verdict-*` no `index.css`, respeita `prefers-reduced-motion`), mais
+  "Ainda aberta" e "Limpar". Clicar no ativo desmarca.
+- **Valor da operacao** (`PnlField` no `MyTrades.tsx`): Ganho (+) ou Perda (−),
+  pre-selecionado pelo resultado (TP = ganho, Stop = perda) mas trocavel;
+  digitar "-" vira perda. Sem simbolo de moeda de proposito (moeda da conta do
+  trader). KPI novo "Logged P&L" no topo. Backend nao mudou: `setOutcome` ja
+  aceitava `pnlAmount`. **Ele sobrescreve resultado E valor juntos**, entao
+  toda escrita manda o par; voltar para aberto/pendente zera o valor.
+- Calculadora de posicao (`PositionSizingCalculator`, prop nova `defaultOpen`)
+  abre dentro da linha, pelo atalho da linha ou pelo convite abaixo do valor.
+- **Bug antigo corrigido junto:** `extractLevels` so lia `fullResponse.analysis`,
+  e a lista NAO manda `fullResponse` (os niveis vem no topo da linha). Toda
+  analise real aparecia sem entrada/stop/alvos; so o DEMO mostrava.
+- Sem evento de analytics novo: `FunnelEvent` mora no `analytics.ts`, que tinha
+  mudanca de outra sessao nao commitada. Candidato: `trade_result_logged`.

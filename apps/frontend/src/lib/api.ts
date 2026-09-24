@@ -171,6 +171,9 @@ export interface AIAnalysisResponse {
   // O backend devolve isto (ai.service.ts) desde a Onda 2.2, mas a interface
   // nunca foi atualizada: o tsc quebrava em DashboardPage.tsx:848 desde 29/07.
   outcome?: string | null;
+  /** Valor da operacao informado pelo trader no My Trades (moeda da conta dele). */
+  pnlAmount?: number | null;
+  pnlPercent?: number | null;
   drawing_plan?: {
     elements: Array<Record<string, unknown>>;
   } | null;

@@ -5,6 +5,8 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 interface PositionSizingCalculatorProps {
   entry: number | null;
   stopLoss: number | null;
+  /** Abre ja expandida (usado no My Trades, onde o clique ja foi o pedido). */
+  defaultOpen?: boolean;
 }
 
 /**
@@ -12,11 +14,11 @@ interface PositionSizingCalculatorProps {
  * A partir do tamanho da conta e do risco por trade (%), calcula o tamanho
  * da posição usando a distância até o stop (|entry - stopLoss|).
  */
-export function PositionSizingCalculator({ entry, stopLoss }: PositionSizingCalculatorProps) {
+export function PositionSizingCalculator({ entry, stopLoss, defaultOpen = false }: PositionSizingCalculatorProps) {
   const { t } = useLanguage();
   const labels = t.analysis.positionSizing;
 
-  const [open, setOpen] = useState<boolean>(false);
+  const [open, setOpen] = useState<boolean>(defaultOpen);
   const [accountSize, setAccountSize] = useState<string>('');
   const [riskPercent, setRiskPercent] = useState<string>('1');
 
