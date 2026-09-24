@@ -105,6 +105,35 @@ describe('apiClient', () => {
     expect(secondHeaders.get('Authorization')).toBe('Bearer fresh-token');
   });
 
+  // 24/09/2026: pedir token novo na 1a tentativa custava idas ao Clerk em serie
+  // antes de toda chamada e atrasava o painel. Token novo SO depois de 401.
+  it('fetchWithAuthRetry usa o token que veio na chamada e so pede outro depois de 401', async () => {
+    const getToken = vi.fn().mockResolvedValue('fresh-token');
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const ok = await fetchWithAuthRetry(
+      'https://api.tickrify.test/api/ai/usage',
+      { headers: { Authorization: 'Bearer cached-token' } },
+      getToken,
+    );
+    expect(ok.ok).toBe(true);
+    expect(getToken).not.toHaveBeenCalled();
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).get('Authorization')).toBe('Bearer cached-token');
+
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const retried = await fetchWithAuthRetry(
+      'https://api.tickrify.test/api/ai/usage',
+      { headers: { Authorization: 'Bearer cached-token' } },
+      getToken,
+    );
+    expect(retried.ok).toBe(true);
+    expect(getToken).toHaveBeenCalledTimes(1);
+    expect((fetchMock.mock.calls[2][1]?.headers as Headers).get('Authorization')).toBe('Bearer fresh-token');
+  });
+
   it('getAnalysisUsage retorna uso da conta', async () => {
     vi.stubGlobal(
       'fetch',

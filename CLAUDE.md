@@ -4166,3 +4166,28 @@ filtros no celular (`text-base sm:text-xs`). O botao Salvar ganhou largura
 minima, para "Saving..." nao empurrar o campo. **Regra: campo de digitar no
 painel nunca abaixo de 16px** (nao da para resolver com `maximum-scale` no
 viewport: isso foi removido em 10/08 por bloquear zoom de acessibilidade).
+
+### 24/09 — painel aparecia vazio 1-3 s depois da logo
+
+A logo nova sumia e o painel ficava sem dados por 1 a 3 s (pior no celular).
+Tres esperas em serie, todas corrigidas:
+
+1. **Duas idas ao Clerk antes de TODA chamada ao backend.** O `useAPIClient`
+   pedia token novo (`skipCache`) e o `fetchWithAuthRetry` pedia outro na 1a
+   tentativa, antes do fetch. Medido: ~0,25 s por ida no desktop. Agora a 1a
+   tentativa usa o token do cache do Clerk (ele renova sozinho antes de
+   vencer) e token novo so depois de 401. Mesmo ajuste no `useAnalysisLimit`
+   e no `useTicks` (com repeticao propria no 401). Teste em `api.test.ts`.
+   **Nao voltar o `skipCache` para a 1a tentativa**: os commits antigos que o
+   puseram ("force token refresh on every API call") sao de antes da
+   repeticao no 401 existir.
+2. **O arquivo do painel so comecava a baixar depois do login confirmar**
+   (o `ProtectedRoute` segura o filho ate o Clerk carregar). O `App.tsx` agora
+   dispara o `import` do DashboardPage no carregamento do modulo quando a URL
+   e `/dashboard` ou `/demo`.
+3. **O painel abria vazio e se completava depois.** O `DashboardPage` mostra a
+   `BrandLoader` ate plano (`/usage`) e lista (`/analyses`) chegarem, com teto
+   de 4 s. Trava por ref: so na abertura, refetch nunca volta a esconder a tela.
+
+Os outros `skipCache` (portal, checkout, reportar problema, atribuicao,
+admin) ficaram: sao acao do usuario ou segundo plano, nao atrasam a abertura.

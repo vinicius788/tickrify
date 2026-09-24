@@ -79,22 +79,27 @@ export async function fetchWithAuthRetry(
   options: RequestInit,
   refreshToken?: FreshTokenGetter,
 ): Promise<Response> {
-  const runRequest = async () => {
-    const headers = await resolveAuthHeaders(options.headers, refreshToken);
-    return fetch(url, {
-      ...options,
-      headers,
-    });
-  };
+  // 1a tentativa: usa o token que a chamada JA trouxe (o do cache do Clerk, que
+  // o proprio Clerk renova antes de vencer). Token novo so se nao veio nenhum,
+  // ou depois de um 401.
+  //
+  // Ate 24/09/2026 as duas tentativas pediam token novo (`skipCache`), e quem
+  // chamava ja tinha pedido outro: DUAS idas ao Clerk em serie (~0,25 s cada no
+  // desktop, bem mais no 4G) antes de toda chamada ao backend. Era o grosso da
+  // espera do painel carregar depois da logo.
+  const initial = new Headers(options.headers || {});
+  const firstHeaders = initial.has('Authorization')
+    ? initial
+    : await resolveAuthHeaders(options.headers, refreshToken);
 
-  const response = await runRequest();
+  const response = await fetch(url, { ...options, headers: firstHeaders });
 
   if (response.status !== 401 || !refreshToken) {
     return response;
   }
 
   console.warn('[Auth] Token expired, refreshing...');
-  return runRequest();
+  return fetch(url, { ...options, headers: await resolveAuthHeaders(options.headers, refreshToken) });
 }
 
 export type Recommendation =
@@ -811,15 +816,18 @@ export function useAPIClient() {
   const { getToken } = useAuth();
   const getFreshToken = useCallback(() => getToken({ skipCache: true }), [getToken]);
 
-  // Token inicial de cada chamada. Se o Clerk lancar aqui, a requisicao nem sai
-  // do navegador; sem esta conversao a falha chegava ao painel como "unknown".
+  // Token inicial de cada chamada: o do CACHE do Clerk (instantaneo; ele renova
+  // sozinho antes de vencer). O token forcado (`getFreshToken`) fica so para a
+  // repeticao depois de um 401, em fetchWithAuthRetry.
+  // Se o Clerk lancar aqui, a requisicao nem sai do navegador; sem esta
+  // conversao a falha chegava ao painel como "unknown".
   const getInitialToken = useCallback(async () => {
     try {
-      return await getFreshToken();
+      return await getToken();
     } catch (error) {
       throw new APIError('Could not get the session token', 0, 'auth_token_failed', error);
     }
-  }, [getFreshToken]);
+  }, [getToken]);
 
   const createAnalysis = useCallback(async (payload: CreateAnalysisPayload) => {
     const token = await getInitialToken();

@@ -23,6 +23,12 @@ import { checkoutTargetFromAuthSearch } from "@/lib/checkoutIntent";
 // fica ocioso (ver App), entao quem loga nao espera o arquivo dele.
 const loadDashboard = () => import("@/components/pages/DashboardPage");
 const DashboardPage = lazy(loadDashboard);
+// Quem abre/recarrega o painel direto: comeca a baixar o arquivo dele JA, em
+// paralelo com o login do Clerk. Sem isto o download so comecava depois que o
+// ProtectedRoute confirmava a sessao (uma espera depois da outra).
+if (typeof window !== "undefined" && /^\/(dashboard|demo)(\/|$)/.test(window.location.pathname)) {
+  void loadDashboard().catch(() => undefined);
+}
 const AdminPage = lazy(() => import("@/components/pages/AdminPage"));
 const AccuracyPage = lazy(() => import("@/components/pages/AccuracyPage"));
 const TryPage = lazy(() => import("@/components/pages/TryPage"));

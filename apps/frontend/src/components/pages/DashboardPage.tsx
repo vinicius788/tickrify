@@ -110,6 +110,7 @@ const DASH_COPY = {
   },
 } as const;
 import officialIcon from "@/assets/tickrify-icon-official.png";
+import BrandLoader from "../ui/BrandLoader";
 
 /**
  * Nome e mensagem do erro para a telemetria de `analysis_failed`, no mesmo
@@ -177,6 +178,18 @@ const DashboardPage = () => {
   const apiClient = useAPIClient();
   const isDemo = !user;
   const { analyses: rawAnalyses, loading: loadingAnalyses, refetch: refetchAnalyses } = useAnalyses(40);
+
+  // Logo de carregamento ate o plano e a lista chegarem, para o painel abrir ja
+  // preenchido em vez de aparecer vazio e se completar 1-2 s depois (24/09/2026).
+  // Teto de 4 s: se o backend demorar, abre o painel com o que tiver. A trava
+  // `bootDone` garante que isto so vale na ABERTURA; um refetch depois nunca
+  // volta a esconder o painel atras da logo.
+  const [bootTimedOut, setBootTimedOut] = useState(false);
+  const bootDone = useRef(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setBootTimedOut(true), 4000);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // Aviso da regra nova de ticks (21/09/2026): saldo volta para 200 a cada mes
   // de cobranca, sem acumular. Os assinantes de setembro assinaram quando o
@@ -1205,6 +1218,12 @@ const DashboardPage = () => {
             ? t.nav.dashboard
             : t.nav.newAnalysis;
   const sidebarSectionTitleClass = 'text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]';
+
+  if (!bootDone.current) {
+    const waiting = Boolean(user) && !bootTimedOut && (isPlanLoading || loadingAnalyses);
+    if (waiting) return <BrandLoader />;
+    bootDone.current = true;
+  }
 
   return (
     <div className="relative z-10 flex min-h-screen w-full overflow-x-hidden bg-[var(--bg-base)]">

@@ -18,10 +18,16 @@ export function useTicks() {
   const balanceQuery = useQuery<TickBalanceResponse>({
     queryKey: ['ticks-balance'],
     queryFn: async () => {
-      const token = await getToken({ skipCache: true });
-      const res = await fetch(buildApiUrl('/api/ticks/balance'), {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
+      // Token do cache primeiro (instantaneo); token novo so se o backend
+      // recusar. Pedir token novo sempre custava uma ida ao Clerk na abertura.
+      const load = (token: string | null) =>
+        fetch(buildApiUrl('/api/ticks/balance'), {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+      let res = await load(await getToken());
+      if (res.status === 401) {
+        res = await load(await getToken({ skipCache: true }));
+      }
 
       if (!res.ok) {
         return { balance: 0, currency: 'ticks' };

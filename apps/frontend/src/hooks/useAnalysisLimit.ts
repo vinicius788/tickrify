@@ -74,7 +74,9 @@ export function useAnalysisLimit(): AnalysisLimitData {
     }
 
     try {
-      const token = await getToken({ skipCache: true });
+      // Token do cache (instantaneo). Se estiver vencido, o 401 e repetido com
+      // token novo dentro do apiClient (fetchWithAuthRetry).
+      const token = await getToken();
 
       if (!token) {
         setUserPlan('free');
