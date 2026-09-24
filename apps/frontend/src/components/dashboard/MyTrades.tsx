@@ -175,11 +175,13 @@ function PnlField({ verdict, saved, labels, onSave }: PnlFieldProps) {
       <div className="flex gap-2">
         <label className="flex min-w-0 flex-1 items-center rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 focus-within:border-[var(--signal-buy)]">
           <span
-            className="font-terminal text-sm font-semibold"
+            className="font-terminal text-base font-semibold"
             style={{ color: side === 'loss' ? 'var(--signal-sell)' : 'var(--signal-buy)' }}
           >
             {side === 'loss' ? '−' : '+'}
           </span>
+          {/* 16px de proposito: abaixo disso o iPhone da zoom no campo ao digitar
+              e a pagina inteira balanca. Nao voltar para text-sm. */}
           <input
             type="text"
             inputMode="decimal"
@@ -188,14 +190,14 @@ function PnlField({ verdict, saved, labels, onSave }: PnlFieldProps) {
             onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
             placeholder="0.00"
             aria-label={labels.amountLabel}
-            className="w-full bg-transparent px-1.5 py-1.5 font-terminal text-sm text-[var(--text-primary)] outline-none"
+            className="w-full bg-transparent px-1.5 py-1.5 font-terminal text-base text-[var(--text-primary)] outline-none"
           />
         </label>
         <button
           type="button"
           onClick={() => void submit()}
           disabled={!valid || busy}
-          className="tk-verdict-btn rounded-md bg-white px-4 py-1.5 text-xs font-semibold text-[#050508] disabled:opacity-40"
+          className="tk-verdict-btn min-w-[88px] shrink-0 rounded-md bg-white px-4 py-1.5 text-xs font-semibold text-[#050508] disabled:opacity-40"
         >
           {busy ? labels.saving : labels.save}
         </button>
@@ -372,7 +374,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
             <select
               value={filterSymbol}
               onChange={(e) => setFilterSymbol(e.target.value)}
-              className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1 font-terminal text-xs text-[var(--text-primary)] outline-none"
+              className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1 font-terminal text-base text-[var(--text-primary)] outline-none sm:text-xs"
             >
               <option value="">{tr.allAssets}</option>
               {symbols.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -380,7 +382,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
             <select
               value={filterVerdict ?? 'all'}
               onChange={(e) => setFilterVerdict(e.target.value as typeof filterVerdict)}
-              className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1 font-terminal text-xs text-[var(--text-primary)] outline-none"
+              className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1 font-terminal text-base text-[var(--text-primary)] outline-none sm:text-xs"
             >
               <option value="all">{tr.allResults}</option>
               <option value="pending">{tr.pending}</option>

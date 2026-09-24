@@ -4154,3 +4154,15 @@ logo animada, centralizada no mesmo ponto, entao a troca entre elas nao pula.
   continua sendo a barra do cabecalho. O `<img>` tem `loading="lazy"`, entao
   fora dessas rotas o arquivo nem e baixado (a home nao paga nada no PageSpeed).
 - `prefers-reduced-motion`: sem montagem, so um pulso de opacidade.
+
+### 24/09 — campo de valor do My Trades balancava ao digitar (iPhone)
+
+O campo de valor, as entradas da calculadora de posicao e os filtros usavam
+letra de 14px/12px. **O Safari do iPhone da zoom automatico em qualquer campo
+com letra abaixo de 16px** ao focar, e a pagina inteira se mexe enquanto a
+pessoa digita. No computador nao acontece (medido: zero layout shift), por
+isso passou no teste. Agora: 16px no valor e na calculadora (sempre) e nos
+filtros no celular (`text-base sm:text-xs`). O botao Salvar ganhou largura
+minima, para "Saving..." nao empurrar o campo. **Regra: campo de digitar no
+painel nunca abaixo de 16px** (nao da para resolver com `maximum-scale` no
+viewport: isso foi removido em 10/08 por bloquear zoom de acessibilidade).
