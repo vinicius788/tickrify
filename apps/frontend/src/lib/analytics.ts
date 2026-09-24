@@ -26,11 +26,18 @@ const KEY = String(import.meta.env.VITE_POSTHOG_KEY || '').trim();
 const HOST = String(import.meta.env.VITE_POSTHOG_HOST || 'https://us.i.posthog.com').trim();
 
 let ready = false;
+/**
+ * Servidor local de desenvolvimento (`vite`, localhost:5173) nao manda nada:
+ * usa a mesma chave do PostHog/Meta de producao, e cada teste local virava
+ * visita "real" no painel (visto em 24/09/2026, logo apos o modo sem cookies).
+ * Build de producao e testes (MODE 'test') seguem normais.
+ */
+const TRACKING_ENABLED = import.meta.env.MODE !== 'development';
 /** true = a pessoa aceitou cookies nesta sessao ou numa anterior. */
 let fullConsent = false;
 
 function loadPostHog(): Promise<void> {
-  if (ready || !KEY) return Promise.resolve();
+  if (ready || !KEY || !TRACKING_ENABLED) return Promise.resolve();
   if (loading) return loading;
   loading = import('posthog-js')
     .then(({ default: ph }) => {
@@ -123,7 +130,7 @@ declare global {
 }
 
 function initMetaPixel(): void {
-  if (!META_PIXEL_ID || typeof window === 'undefined' || window.fbq) return;
+  if (!TRACKING_ENABLED || !META_PIXEL_ID || typeof window === 'undefined' || window.fbq) return;
   try {
     const fbq = function (...args: unknown[]) {
       if (fbq.callMethod) {
@@ -272,7 +279,7 @@ function trackAdsConversion(
 type Gtag = ((...args: unknown[]) => void) & { q?: unknown[] };
 
 function initGoogleTag(): void {
-  if (GOOGLE_TARGETS.length === 0 || typeof window === 'undefined' || window.gtag) return;
+  if (!TRACKING_ENABLED || GOOGLE_TARGETS.length === 0 || typeof window === 'undefined' || window.gtag) return;
   try {
     window.dataLayer = window.dataLayer || [];
     const dataLayer = window.dataLayer;
