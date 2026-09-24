@@ -4030,3 +4030,49 @@ que ninguem consumia; saiu pela regra de codigo morto.
 Caminho que ficou mapeado e NAO foi feito (decisao do dono): e-mail proprio via
 Resend para quem tem conta e abandonou, uma vez por pessoa, com link de
 descadastro, e o evento `checkout.session.expired` marcado no webhook da Stripe.
+
+## 24/09/2026 — o motor so dizia WAIT: diagnostico medido e prompt v7.5
+
+**Sintoma (dono):** quase tudo saia WAIT, inclusive graficos salvos que antes davam
+BUY/SELL, e as 3 analises gratis viravam 3 WAITs.
+
+**Medido no banco (SQL Editor, so leitura):**
+| periodo / modelo | WAIT |
+|---|---|
+| pv4 (mai-jun) | ~5% |
+| gpt-4o-mini, pv10 (jul) | ~50% |
+| gpt-4o no deep (ago) | 3 de 10 |
+| **gpt-5.6-luna (11/08 em diante)** | **312 de 382 (82%)**; gratis na semana de 31/08: 40 de 42 |
+
+A virada foi a TROCA DE MODELO para o luna, nao o corte de texto de 09/09 (a
+semana de 31/08, ainda pv10 e sem `reasoning_effort=low`, ja estava em 95% nos
+gratis). O luna segue a v7.3 ao pe da letra, e a v7.3 tinha regras escritas para
+o mini que, lidas literalmente, se anulam.
+
+**Por que os 312 WAITs aconteceram (contagem no `structureValidation`):**
+- **R:R ❌ em 262 (84%), 80 deles "unconfirmed".** Circular: o HOLD-WATCH mandava
+  deixar entry/stop/alvo nulos, sem plano o R:R nao pode passar, e o R:R e item
+  eliminatorio. O modelo decidia HOLD e o checklist so confirmava.
+- **MTF ❌ em 270 (87%).** Com um grafico so, "H4 neutral" nunca confirma.
+- **Estrutura ❌ em 269 (86%).** Exigia CHoCH novo ate em trade de continuacao.
+- **Filtro de liquidez AGAINST em 201 (64%)**, que virava WAIT em vez de ordem
+  pos-varrida. Quase sempre existe liquidez nao varrida de um lado.
+- Dead zone citada em 67 (o modelo nem sabe a hora atual; chuta pelo eixo).
+- 108 WAITs tinham 4+ ✅, que pela regra do proprio prompt ja e BUY/SELL.
+- **Guards do backend: 1 de 312.** R/R guard e news guard NAO sao a causa.
+
+**v7.5 (so `trading-system-prompt.ts`, nada de backend):** plano primeiro,
+checklist depois; item 5 aceita o ultimo BOS da tendencia em continuacao; item 6
+e medido do plano e nunca e "unconfirmed"; item 7 com grafico unico so reprova
+com conflito visivel; setup alinhado esperando gatilho vira BUY/SELL com entrada
+`stop`/`limit` no gatilho (ordem pendente, o sweeper ja trata NO_FILL); filtro
+de liquidez contra vira limit pos-varrida; dead zone nao forca mais HOLD.
+Itens 5 e 6 continuam eliminatorios, ≤3 ✅ continua HOLD, e o texto da ordem
+pendente diz "sem gatilho, sem trade", entao nada disso manda perseguir preco.
+
+**Medicao depois do deploy** (o `PromptSyncService` publica como nova versao,
+entao `promptVer` separa antes e depois):
+`select "promptVer", count(*), round(100.0*avg((recommendation='WAIT')::int)) pct_wait from tickrify."Analysis" where status='completed' and model='gpt-5.6-luna' group by 1 order by 1;`
+Alvo: WAIT entre 35% e 55% (a producao ficou em ~39% por meses). Abaixo de 25%,
+o prompt afrouxou demais e o win rate da `/accuracy` precisa ser olhado antes de
+qualquer outra coisa. Rollback: `git revert` do commit; o sync publica a volta.
