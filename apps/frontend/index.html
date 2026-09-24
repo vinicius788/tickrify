@@ -107,6 +107,10 @@
         padding: 0 clamp(20px, 5vw, 64px);
       }
       .ph-bar img { display: block; height: 30px; width: auto; }
+      .ph-load { display: none; }
+      .tk-boot .ph-bar { display: none; }
+      .tk-boot .ph-load { display: flex; position: fixed; inset: 0; align-items: center; justify-content: center; }
+      .ph-load img { width: 64px; height: 77px; }
 
       /* Corpo pre-renderizado (scripts/geo-body.mjs). So aparece sem JS.
          Existe para o crawler, mas se uma pessoa cair aqui tem que dar pra ler:
@@ -132,7 +136,8 @@
     </style>
   </head>
   <body>
-    <div id="root"><div class="ph-bar"><span><img src="/tickrify-lockup.svg" alt="Tickrify" width="116" height="30" /></span></div></div>
+    <script>if(/^\/(dashboard|demo|admin)(\/|$)/.test(location.pathname))document.documentElement.classList.add('tk-boot')</script>
+    <div id="root"><div class="ph-load"><img src="/tickrify-mark-loader.svg" alt="" width="64" height="77" loading="lazy" /></div><div class="ph-bar"><span><img src="/tickrify-lockup.svg" alt="Tickrify" width="116" height="30" /></span></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

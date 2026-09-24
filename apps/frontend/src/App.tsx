@@ -9,6 +9,7 @@ import { BrowserRouter as Router, Route, Routes, useLocation } from "react-route
 import { Toaster } from "@/components/ui/toaster";
 import { SignIn, SignUp, GoogleOneTap, SignedOut } from "@clerk/clerk-react";
 import { Suspense, lazy, useEffect, type ReactNode } from "react";
+import BrandLoader from "./components/ui/BrandLoader";
 import { useSeo, seoFor } from "@/hooks/useSeo";
 import { warmupPaymentsApi } from "@/lib/api";
 import { scrollToTop } from "@/lib/utils";
@@ -33,7 +34,7 @@ const NotFoundPage = lazy(() => import("@/components/pages/NotFoundPage"));
 
 /** Enquanto o arquivo da rota chega: so o fundo da pagina, sem texto nem salto de layout. */
 function RouteFallback() {
-  return <div className="min-h-screen" aria-busy="true" />;
+  return <BrandLoader />;
 }
 
 /**

@@ -4131,3 +4131,26 @@ novos em `analytics.test.ts`). `vitest` roda na VM com `--environment jsdom`.
   analise real aparecia sem entrada/stop/alvos; so o DEMO mostrava.
 - Sem evento de analytics novo: `FunnelEvent` mora no `analytics.ts`, que tinha
   mudanca de outra sessao nao commitada. Candidato: `trade_result_logged`.
+
+## 24/09/2026 — logo animada no lugar da tela preta do carregamento
+
+Recarregar o painel passava por tres telas vazias: a casca do `index.html`
+(barra do cabecalho e fundo preto enquanto baixa o bundle), o fallback do
+`Suspense` das rotas lazy (`<div>` vazio) e a espera do Clerk no
+`ProtectedRoute` (um spinner generico de 128px). As tres agora mostram a MESMA
+logo animada, centralizada no mesmo ponto, entao a troca entre elas nao pula.
+
+- **A animacao mora num arquivo so:** `public/tickrify-mark-loader.svg` (o
+  icone do lockup, sem o nome, com o CSS da animacao dentro). O `index.html` e
+  o `components/ui/BrandLoader.tsx` usam por `<img>`. Sequencia copiada do
+  video de marca: telhado desce, vela azul e vela verde sobem, o check se
+  desenha, loop de 2,4s.
+- **Camada fraca (opacidade .14) sempre visivel por baixo.** Sem ela, animacao
+  congelada no quadro 0 (aba em segundo plano, webview restrito) era tela
+  preta de novo, que e exatamente o que isto veio tirar. Visto no teste: a
+  primeira versao sem a camada aparecia invisivel em alguns quadros.
+- **Na casca so aparece em `/dashboard`, `/demo` e `/admin`**, por um script de
+  uma linha que poe `tk-boot` no `<html>`. Nas paginas publicas a casca
+  continua sendo a barra do cabecalho. O `<img>` tem `loading="lazy"`, entao
+  fora dessas rotas o arquivo nem e baixado (a home nao paga nada no PageSpeed).
+- `prefers-reduced-motion`: sem montagem, so um pulso de opacidade.
