@@ -4191,3 +4191,16 @@ Tres esperas em serie, todas corrigidas:
 
 Os outros `skipCache` (portal, checkout, reportar problema, atribuicao,
 admin) ficaram: sao acao do usuario ou segundo plano, nao atrasam a abertura.
+
+### 24/09 — testes do painel se empilhavam (e o teste do fim das 3 gratis)
+
+O `DashboardPage.test.tsx` oscilava (passava 1 de 3 vezes). Causa: o frontend
+nao tem config do Vitest (`globals: false`), e sem ela a Testing Library **nao
+desmonta a tela entre testes**. Os paineis se empilhavam no `document.body` e
+o `getAllByRole('Nova Análise')[0]` clicava no painel do teste ANTERIOR. Agora
+o arquivo chama `cleanup()` no `afterEach`. **Arquivo de teste novo que monte
+componente precisa fazer o mesmo.** Os cliques em "Nova Análise" passaram a
+`findAllByRole`, porque a logo segura o painel ate a lista chegar (commit
+`224099c`). O teste novo do fim das 3 gratis (de outra sessao) esperava a frase
+"Suas 3 análises grátis..."; a real e "Suas análises grátis foram utilizadas."
+Resultado: 82/82 em 5 rodadas seguidas.

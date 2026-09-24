@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -144,6 +144,10 @@ describe('DashboardPage', () => {
   });
 
   afterEach(() => {
+    // Sem config do Vitest (globals: false) a Testing Library NAO desmonta a
+    // tela sozinha entre testes: os paineis se empilhavam e o clique em
+    // "Nova Analise"[0] caia no painel do teste ANTERIOR.
+    cleanup();
     vi.useRealTimers();
   });
 
@@ -155,7 +159,7 @@ describe('DashboardPage', () => {
     renderDashboard();
 
     // O dashboard abre na home; navega para "Nova Análise" antes de enviar.
-    await user.click(screen.getAllByRole('button', { name: 'Nova Análise' })[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
     await user.click(screen.getByRole('button', { name: 'start-with-image' }));
 
     expect(screen.getByText('Analysis loading')).toBeTruthy();
@@ -198,7 +202,7 @@ describe('DashboardPage', () => {
 
     renderDashboard();
 
-    await user.click(screen.getAllByRole('button', { name: 'Nova Análise' })[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
     await user.click(screen.getAllByRole('button', { name: 'start-without-image' })[0]);
 
     expect(
@@ -219,7 +223,7 @@ describe('DashboardPage', () => {
 
     renderDashboard();
 
-    await user.click(screen.getAllByRole('button', { name: 'Nova Análise' })[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
     await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
 
     expect(
@@ -250,7 +254,7 @@ describe('DashboardPage', () => {
 
     renderDashboard();
 
-    await user.click(screen.getAllByRole('button', { name: 'Nova Análise' })[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
     await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
 
     expect(await screen.findByText(/Não conseguimos confirmar sua sessão/)).toBeTruthy();
@@ -258,5 +262,75 @@ describe('DashboardPage', () => {
     const failed = mockTrack.mock.calls.find(([event]) => event === 'analysis_failed');
     expect(failed?.[1]).toMatchObject({ code: 'auth_token_failed', errorName: 'Error' });
     expect(failed?.[1].errorMessage).toHaveLength(200);
+  });
+
+  describe('fim das 3 gratis', () => {
+    const freeLimit = (used: number) => ({
+      plan: 'free',
+      total: 3,
+      used,
+      remaining: Math.max(0, 3 - used),
+      isUnlimited: false,
+      analysesAllTime: used,
+      isLoading: false,
+    });
+
+    it('na 3a gratis mostra o resultado e, logo abaixo, o CTA de assinar (sem botao de nova analise)', async () => {
+      const user = userEvent.setup();
+      let used = 2;
+      mockUseAnalysisLimit.mockImplementation(() => freeLimit(used));
+      // Igual a producao: o /usage e relido logo depois de criar a analise e o
+      // backend ja conta a linha nova (status != failed), entao used vira 3.
+      mockUseIncrementAnalysis.mockReturnValue(() => {
+        used = 3;
+      });
+      const createAnalysis = vi.fn().mockResolvedValue({ id: 'a-3', status: 'pending' });
+      mockUseAPIClient.mockReturnValue(
+        makeApiClient({
+          createAnalysis,
+          waitForAnalysisCompletion: vi.fn().mockResolvedValue({ id: 'a-3', status: 'completed' }),
+        }),
+      );
+
+      renderDashboard();
+      await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+      await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+      expect(await screen.findByText('Analysis result')).toBeTruthy();
+      expect(createAnalysis).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Suas análises grátis foram utilizadas.')).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Assinar para continuar/ })).toBeTruthy();
+      expect(screen.queryByText(/Unlock to see it/)).toBeNull();
+    });
+
+    it('com a cota esgotada, a proxima tentativa cai direto no paywall sem chamar a API', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockImplementation(() => freeLimit(3));
+      const createAnalysis = vi.fn();
+      mockUseAPIClient.mockReturnValue(makeApiClient({ createAnalysis }));
+
+      renderDashboard();
+      await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+      await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+      expect(await screen.findByText(/Unlock to see it/)).toBeTruthy();
+      expect(createAnalysis).not.toHaveBeenCalled();
+    });
+
+    it('se o contador do navegador estiver defasado, o 403 do backend tambem leva ao paywall', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockImplementation(() => freeLimit(2));
+      const { APIError } = await import('@/lib/api');
+      const createAnalysis = vi
+        .fn()
+        .mockRejectedValue(new (APIError as unknown as new (m: string, s: number, c?: string) => Error)('limit', 403, 'DEMO_LIMIT_REACHED'));
+      mockUseAPIClient.mockReturnValue(makeApiClient({ createAnalysis }));
+
+      renderDashboard();
+      await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+      await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+      expect(await screen.findByText(/Unlock to see it/)).toBeTruthy();
+    });
   });
 });
