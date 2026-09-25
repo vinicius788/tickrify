@@ -45,7 +45,6 @@ export default {
     plans: 'Forfaits',
     workspace: 'Workspace',
     workArea: 'Espace de travail',
-    account: 'Compte',
     centralTitle: "Centre d'analyse",
     greeting: 'Bon retour',
     kpiSubTotal: 'au total',

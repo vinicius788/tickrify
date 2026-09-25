@@ -4231,3 +4231,24 @@ Decisao do dono: a Watchlist so listava as analises com estrela (as secoes
   nesta?" do resultado nao aparece para WAIT. WAIT que ja tinha resultado
   marcado antes desta regra mantem os botoes, para poder limpar.
 - A grade de atividade do painel (`ActivityHeatmap`) ficou como estava.
+
+### 24/09 — perfil de estrategia NAO funcionava (selo perdido na fila) + Plans no rodape
+
+**Bug:** o assinante preenchia o perfil, o worker mandava o perfil a IA (isso
+o teste de 31/08 cobria), a IA gerava o selo `strategyFit`, e o worker o
+**descartava ao salvar**: `buildPersistedAnalysisPayload` recebia o `parsed`
+de `toWorkerAnalysisResult`, que so carrega recomendacao, confianca e analise.
+O selo vem no TOPO da resposta do adapter. Resultado: o selo nunca apareceu
+para ninguem em producao (fila), e a IA gastava token gerando-o. O caminho
+sincrono salvava o valor CRU do modelo, sem validar.
+**Correcao:** `strategyFitFields()` em `common/strategy/strategy-profile.ts`
+copia o selo VALIDADO pelo adapter para o resultado, usado nos dois caminhos.
+Teste novo em `ai-worker-strategy-profile.spec.ts` roda o job ate o fim e
+confere o que e GRAVADO (falha sem a correcao, conferido). Analises antigas
+continuam sem selo: a leitura prefere a coluna `result`, que nao o tem.
+**Licao:** teste de "o parametro chega" nao prova que o recurso funciona;
+tem que conferir o que sai do outro lado.
+
+**Plans** saiu da lista de abas (parecia mais uma aba, mas abre /pricing) e foi
+para o rodape do menu, acima da conta, junto do "assinar" do plano gratis. A
+chave `nav.account` saiu dos 6 idiomas (sem outro uso).

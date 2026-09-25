@@ -1261,23 +1261,26 @@ const DashboardPage = () => {
             </button>
           </nav>
 
-          <div className={`${sidebarSectionTitleClass} px-2 pb-1 pt-5`}>{t.nav.account}</div>
-          <nav className="flex flex-col gap-0.5">
-            <Link to="/pricing" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
-              <CreditCard className="h-4 w-4" /> {t.nav.plans}
-            </Link>
-            {user && plan === 'free' && (
-              <button type="button" onClick={() => openUpgradeModal('sidebar')} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
-                <Crown className="h-4 w-4 text-[var(--accent-green)]" /> {dc.upgradeToPro}
-              </button>
-            )}
-          </nav>
 
           {user && plan === 'free' && (
             <div className="mt-4">
               <AnalysisCounter />
             </div>
           )}
+        </div>
+
+        {/* Plano e assinatura ficam no rodape, junto da conta, e nao na lista de
+            abas: "Plans" abre outra pagina (/pricing), nao uma aba do painel, e
+            no meio do menu parecia mais uma. */}
+        <div className="flex flex-col gap-0.5 border-t border-[var(--border-subtle)] px-3 py-2">
+          {user && plan === 'free' && (
+            <button type="button" onClick={() => openUpgradeModal('sidebar')} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+              <Crown className="h-4 w-4 text-[var(--accent-green)]" /> {dc.upgradeToPro}
+            </button>
+          )}
+          <Link to="/pricing" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+            <CreditCard className="h-3.5 w-3.5" /> {t.nav.plans}
+          </Link>
         </div>
 
         {user && (

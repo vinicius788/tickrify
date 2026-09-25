@@ -45,7 +45,6 @@ export default {
     plans: 'Planes',
     workspace: 'Workspace',
     workArea: 'Área de trabajo',
-    account: 'Cuenta',
     centralTitle: 'Central de análisis',
     greeting: 'Bienvenido de vuelta',
     kpiSubTotal: 'en total',

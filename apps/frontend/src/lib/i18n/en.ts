@@ -45,7 +45,6 @@ export default {
     plans: 'Plans',
     workspace: 'Workspace',
     workArea: 'Workspace',
-    account: 'Account',
     centralTitle: 'Analysis hub',
     greeting: 'Welcome back',
     kpiSubTotal: 'all time',

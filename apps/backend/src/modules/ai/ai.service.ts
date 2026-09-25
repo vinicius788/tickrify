@@ -1,6 +1,7 @@
 import { flagNumber } from '../../common/flags/feature-flags';
 import {
   sanitizeStrategyProfile,
+  strategyFitFields,
   strategyProfileHash,
   type StrategyProfile,
 } from '../../common/strategy/strategy-profile';
@@ -1016,7 +1017,8 @@ export class AiService implements OnModuleInit {
       );
 
       let normalizedPayload = buildPersistedAnalysisPayload({
-        source: (aiResponse.rawResponse as Record<string, any>) || {},
+        // Selo de estrategia: o VALIDADO pelo adapter, por cima do cru do modelo.
+        source: { ...((aiResponse.rawResponse as Record<string, any>) || {}), ...strategyFitFields(aiResponse) },
         recommendation: aiResponse.recommendation,
         bias: aiResponse.bias,
         confidence: aiResponse.confidence,

@@ -45,7 +45,6 @@ export default {
     plans: 'Tarife',
     workspace: 'Workspace',
     workArea: 'Arbeitsbereich',
-    account: 'Konto',
     centralTitle: 'Analyse-Zentrale',
     greeting: 'Willkommen zurück',
     kpiSubTotal: 'insgesamt',

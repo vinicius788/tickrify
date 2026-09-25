@@ -131,3 +131,31 @@ export function buildStrategyBlock(p: StrategyProfile): string {
     '   describes the absent setup, not a hypothetical one.',
   ].join('\n');
 }
+
+/**
+ * Selo de estrategia ja VALIDADO pelo adapter (enum fechado, motivo cortado em
+ * 400), no formato em que ele entra no resultado salvo. Vazio quando a analise
+ * nao teve perfil ou o modelo devolveu valor fora do enum.
+ *
+ * Existe porque o selo se PERDIA na fila (24/09/2026): o adapter o devolve no
+ * TOPO da resposta, mas o worker salva a partir do `rawResponse` remontado por
+ * `toWorkerAnalysisResult`, que so carrega recomendacao, confianca e analise.
+ * O assinante preenchia o perfil, a IA gastava token gerando o selo e a tela
+ * nunca o mostrava. Os dois caminhos (fila e sincrono) salvam por aqui.
+ *
+ * TRAVA 1 continua valendo: isto so COPIA o selo para o resultado. Nada aqui
+ * pode ler o selo para mudar recomendacao ou confianca.
+ */
+export function strategyFitFields(
+  aiResponse: unknown,
+): { strategyFit?: StrategyFit; strategyFitReason?: string | null } {
+  if (!aiResponse || typeof aiResponse !== 'object') return {};
+  const source = aiResponse as { strategyFit?: unknown; strategyFitReason?: unknown };
+  const fit = STRATEGY_FIT_VALUES.find((v) => v === source.strategyFit);
+  if (!fit) return {};
+  const reason =
+    typeof source.strategyFitReason === 'string' && source.strategyFitReason.trim()
+      ? source.strategyFitReason.slice(0, 400)
+      : null;
+  return { strategyFit: fit, strategyFitReason: reason };
+}

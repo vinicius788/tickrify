@@ -22,7 +22,7 @@ import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-ru
 import { resolvePrismaDatasourceUrl } from '../src/modules/database/prisma.datasource';
 import { AnalysisType } from '../src/modules/ticks/tick-packages';
 import { DEEP_ENRICHMENT_INSTRUCTION } from '../src/modules/prompt/prompt-builder.service';
-import { type StrategyProfile } from '../src/common/strategy/strategy-profile';
+import { strategyFitFields, type StrategyProfile } from '../src/common/strategy/strategy-profile';
 import { startOutcomeSweeper } from './outcome.sweeper';
 import { trackFreeAnalysisCompleted } from '../src/common/analytics/free-funnel';
 import { MailService } from '../src/modules/mail/mail.service';
@@ -1096,7 +1096,10 @@ async function processAnalysis(job: Job<JobData>) {
     }
 
     let normalized = buildPersistedAnalysisPayload({
-      source: parsed as unknown as Record<string, unknown>,
+      // O selo do perfil de estrategia vem do TOPO da resposta do adapter
+      // (aiSource), nao do `parsed`, que so carrega recomendacao, confianca e
+      // analise. Sem este spread ele se perdia aqui (bug ate 24/09/2026).
+      source: { ...(parsed as unknown as Record<string, unknown>), ...strategyFitFields(aiSource) },
       recommendation: parsed.recommendation,
       bias: parsed.analysis.marketStructure.bias,
       confidence: parsed.confidence,

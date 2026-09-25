@@ -45,7 +45,6 @@ export default {
     plans: 'プラン',
     workspace: 'ワークスペース',
     workArea: '作業エリア',
-    account: 'アカウント',
     centralTitle: '分析センター',
     greeting: 'おかえりなさい',
     kpiSubTotal: '累計',
