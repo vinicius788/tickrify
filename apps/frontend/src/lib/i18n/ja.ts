@@ -308,7 +308,7 @@ export default {
     calcToggle: 'ポジション計算機',
     calcNudge: '次のエントリーはポジション計算機でストップから数量を決めましょう。',
     saveFailed: '金額を保存できませんでした。もう一度お試しください。',
-    resultSaveFailed: '結果をサーバーに保存できませんでした。この端末には残ります。',
+    resultSaveFailed: '結果を保存できませんでした。もう一度お試しください。',
   },
   journal: {
     title: 'トレードジャーナル',

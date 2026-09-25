@@ -308,7 +308,7 @@ export default {
     calcToggle: 'Calculadora de posición',
     calcNudge: 'Dimensiona tu próxima entrada desde el stop con la calculadora de posición.',
     saveFailed: 'No se pudo guardar el monto. Inténtalo de nuevo.',
-    resultSaveFailed: 'No se pudo guardar el resultado en el servidor. Queda en este dispositivo.',
+    resultSaveFailed: 'No se pudo guardar el resultado. Inténtalo de nuevo.',
   },
   journal: {
     title: 'Diario de trading',

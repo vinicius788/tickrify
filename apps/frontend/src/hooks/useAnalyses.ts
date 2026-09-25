@@ -40,9 +40,9 @@ export function useAnalyses(limit = 40) {
     enabled,
   });
 
-  const refetch = () => {
-    void queryClient.invalidateQueries({ queryKey: ['analyses'] });
-  };
+  // Devolve a promessa: quem marca resultado espera a lista relida para so
+  // entao tirar a marcacao otimista (sem isso a tela piscaria o valor antigo).
+  const refetch = () => queryClient.invalidateQueries({ queryKey: ['analyses'] });
 
   return {
     analyses: (query.data?.pages ?? []).flat(),

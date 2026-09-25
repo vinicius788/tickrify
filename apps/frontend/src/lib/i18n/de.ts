@@ -308,7 +308,7 @@ export default {
     calcToggle: 'Positionsrechner',
     calcNudge: 'Bemiss deinen nächsten Einstieg vom Stop aus mit dem Positionsrechner.',
     saveFailed: 'Betrag konnte nicht gespeichert werden. Versuch es erneut.',
-    resultSaveFailed: 'Ergebnis konnte nicht auf dem Server gespeichert werden. Es bleibt auf diesem Gerät.',
+    resultSaveFailed: 'Ergebnis konnte nicht gespeichert werden. Versuch es erneut.',
   },
   journal: {
     title: 'Trading-Journal',

@@ -15,11 +15,10 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { useToast } from '@/hooks/use-toast';
 import {
   VERDICT_CFG,
-  loadVerdicts,
   outcomeFromVerdict,
   isTradeCall,
   resolveVerdict,
-  saveVerdict,
+  withoutPending,
   type Verdict,
 } from '@/lib/verdict';
 
@@ -62,6 +61,13 @@ function extractLevels(a: AIAnalysisResponse) {
 
 type ClosedVerdict = 'TP1' | 'TP2' | 'SL';
 const isClosed = (v: Verdict): v is ClosedVerdict => v === 'TP1' || v === 'TP2' || v === 'SL';
+
+function omitKey<T>(map: Record<string, T>, key: string): Record<string, T> {
+  if (!Object.prototype.hasOwnProperty.call(map, key)) return map;
+  const next = { ...map };
+  delete next[key];
+  return next;
+}
 
 function fmtPnl(n: number): string {
   const abs = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(n));
@@ -245,7 +251,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
     { value: 'SL', short: 'Stop', label: tr.slHit },
   ];
 
-  const [verdicts, setVerdicts] = useState<Record<string, Verdict>>(loadVerdicts);
+  const [verdicts, setVerdicts] = useState<Record<string, Verdict>>({});
   const [filterSymbol, setFilterSymbol] = useState('');
   const [filterVerdict, setFilterVerdict] = useState<TradesFilter>(initialFilter ?? 'all');
   const [favorites, setFavorites] = useState<Record<string, boolean>>({});
@@ -324,15 +330,22 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
   // voltar para aberto/pendente o apaga, porque trade sem fechamento nao tem P&L.
   const handleVerdict = (a: AIAnalysisResponse, v: Verdict) => {
     const nextPnl = isClosed(v) ? getPnl(a) : null;
-    saveVerdict(a.id, v);
     setVerdicts((prev) => ({ ...prev, [a.id]: v }));
     setPnls((prev) => ({ ...prev, [a.id]: nextPnl }));
-    if (!isDemo) {
-      void setOutcome(a.id, { outcome: outcomeFromVerdict(v), pnlAmount: nextPnl }).catch(() => {
-        // O veredito continua no localStorage; so o servidor ficou para tras.
+    if (isDemo) return;
+    // Servidor e a fonte da verdade (lib/verdict.ts): confirmada a gravacao e
+    // relida a lista, a marcacao otimista sai; se ele recusar, a tela desfaz.
+    const settle = () => {
+      setVerdicts((prev) => withoutPending(prev, a.id));
+      setPnls((prev) => omitKey(prev, a.id));
+    };
+    void setOutcome(a.id, { outcome: outcomeFromVerdict(v), pnlAmount: nextPnl })
+      .then(() => refetch())
+      .then(settle)
+      .catch(() => {
+        settle();
         toast({ title: tr.resultSaveFailed, variant: 'destructive' });
       });
-    }
   };
 
   const handleSavePnl = async (a: AIAnalysisResponse, amount: number | null) => {
@@ -344,7 +357,11 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
         toast({ title: tr.saveFailed, variant: 'destructive' });
         throw err;
       }
-      refetch();
+      // So devolve depois da lista relida: o campo fecha ja mostrando o valor
+      // que o servidor gravou.
+      await refetch();
+      setPnls((prev) => omitKey(prev, a.id));
+      return;
     }
     setPnls((prev) => ({ ...prev, [a.id]: amount }));
   };

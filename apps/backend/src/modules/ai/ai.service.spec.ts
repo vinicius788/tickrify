@@ -329,6 +329,38 @@ describe('AiService access enforcement', () => {
     });
   });
 
+  // ── setOutcome ────────────────────────────────────────────────────────────────
+  // `Number(null)` e 0: ate 25/09/2026 "sem valor" era gravado como 0, e um trade
+  // sem valor aparecia como +0.00 e entrava na soma do Diario.
+  describe('setOutcome: valor da operacao', () => {
+    function valuesOfUpdate() {
+      const call = (prisma.$executeRaw as jest.Mock).mock.calls.at(-1);
+      return call.slice(1) as unknown[];
+    }
+
+    beforeEach(() => {
+      prisma.$executeRaw = jest.fn().mockResolvedValue(1);
+      prisma.analysis.findFirst.mockResolvedValue({ id: 'an_1' });
+      (service as any).outcomeColumnsReady = true;
+    });
+
+    it('sem valor grava NULL, nunca 0', async () => {
+      await service.setOutcome('usr_1', 'an_1', { outcome: 'tp1', pnlAmount: null });
+      await service.setOutcome('usr_1', 'an_1', { outcome: 'tp1' });
+      const [verdict, pnlPercent, pnlAmount] = valuesOfUpdate();
+      expect(verdict).toBe('tp1');
+      expect(pnlPercent).toBeNull();
+      expect(pnlAmount).toBeNull();
+    });
+
+    it('valor informado, inclusive negativo e zero de verdade, vai como numero', async () => {
+      await service.setOutcome('usr_1', 'an_1', { outcome: 'stop', pnlAmount: -40.25 });
+      expect(valuesOfUpdate()[2]).toBe(-40.25);
+      await service.setOutcome('usr_1', 'an_1', { outcome: 'tp1', pnlAmount: 0 });
+      expect(valuesOfUpdate()[2]).toBe(0);
+    });
+  });
+
   // ── listAnalysesInRange (Diario) ──────────────────────────────────────────────
   // O calendario do mes agrupa por dia no navegador; aqui so se filtra o
   // intervalo. Os testes travam o filtro por usuario/status/data, os tetos e o

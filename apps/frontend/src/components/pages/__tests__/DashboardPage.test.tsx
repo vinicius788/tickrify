@@ -333,4 +333,51 @@ describe('DashboardPage', () => {
       expect(await screen.findByText(/Unlock to see it/)).toBeTruthy();
     });
   });
+  // ── Cobranca de trades em aberto (25/09/2026) ─────────────────────────────
+  // Bug real: o aviso "1 trades ainda em aberto" nunca sumia. A marcacao local
+  // (localStorage) valia para SEMPRE acima do servidor, entao um "aberto"
+  // antigo guardado no aparelho escondia o TP/Stop ja gravado no servidor.
+  describe('trades em aberto no painel', () => {
+    const old = new Date(Date.now() - 3 * 86_400_000).toISOString();
+    const row = (outcome: string | null) => [
+      { id: 'a1', status: 'completed', recommendation: 'BUY', confidence: 62, symbol: 'XAUUSD', timeframe: '5M', createdAt: old, outcome },
+    ];
+
+    it('marcou TP1: o aviso some e nao volta depois que o servidor confirma', async () => {
+      const user = userEvent.setup();
+      const listAnalyses = vi.fn().mockResolvedValueOnce(row('open')).mockResolvedValue(row('tp1'));
+      const setOutcome = vi.fn().mockResolvedValue({});
+      mockUseAPIClient.mockReturnValue(makeApiClient({ listAnalyses, setOutcome }));
+
+      renderDashboard();
+      await user.click(await screen.findByRole('button', { name: 'TP1 atingido' }));
+
+      expect(setOutcome).toHaveBeenCalledWith('a1', { outcome: 'tp1' });
+      await waitFor(() => expect(listAnalyses.mock.calls.length).toBeGreaterThan(1));
+      await waitFor(() => expect(screen.queryByText(/trades ainda em aberto/)).toBeNull());
+    });
+
+    it('servidor recusou: a tela desfaz e avisa, em vez de fingir que gravou', async () => {
+      const user = userEvent.setup();
+      const listAnalyses = vi.fn().mockResolvedValue(row('open'));
+      const setOutcome = vi.fn().mockRejectedValue(new Error('500'));
+      mockUseAPIClient.mockReturnValue(makeApiClient({ listAnalyses, setOutcome }));
+
+      renderDashboard();
+      await user.click(await screen.findByRole('button', { name: 'TP1 atingido' }));
+
+      await waitFor(() => expect(mockToast).toHaveBeenCalled());
+      expect(await screen.findByText(/trades ainda em aberto/)).toBeTruthy();
+    });
+
+    it('"aberto" antigo guardado no aparelho nao esconde o TP1 que esta no servidor', async () => {
+      window.localStorage.setItem('tickrify_verdicts', JSON.stringify({ a1: 'OPEN' }));
+      mockUseAPIClient.mockReturnValue(makeApiClient({ listAnalyses: vi.fn().mockResolvedValue(row('tp1')) }));
+
+      renderDashboard();
+      await screen.findAllByRole('button', { name: 'Nova Análise' });
+      expect(screen.queryByText(/trades ainda em aberto/)).toBeNull();
+      window.localStorage.removeItem('tickrify_verdicts');
+    });
+  });
 });

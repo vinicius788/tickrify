@@ -308,7 +308,7 @@ export default {
     calcToggle: 'Position calculator',
     calcNudge: 'Size your next entry from the stop with the position calculator.',
     saveFailed: 'Could not save the amount. Try again.',
-    resultSaveFailed: 'Could not save the result on the server. It stays on this device.',
+    resultSaveFailed: 'Could not save the result. Try again.',
   },
   journal: {
     title: 'Trading journal',

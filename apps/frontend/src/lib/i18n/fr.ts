@@ -308,7 +308,7 @@ export default {
     calcToggle: 'Calculateur de position',
     calcNudge: 'Dimensionnez votre prochaine entrée depuis le stop avec le calculateur de position.',
     saveFailed: "Impossible d'enregistrer le montant. Réessayez.",
-    resultSaveFailed: "Impossible d'enregistrer le résultat sur le serveur. Il reste sur cet appareil.",
+    resultSaveFailed: 'Impossible d’enregistrer le résultat. Réessayez.',
   },
   journal: {
     title: 'Journal de trading',

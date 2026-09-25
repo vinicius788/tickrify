@@ -319,7 +319,7 @@ export default {
     calcToggle: 'Calculadora de posição',
     calcNudge: 'Dimensione a próxima entrada a partir do stop com a calculadora de posição.',
     saveFailed: 'Não foi possível salvar o valor. Tente de novo.',
-    resultSaveFailed: 'Não foi possível salvar o resultado no servidor. Ele fica neste dispositivo.',
+    resultSaveFailed: 'Não foi possível salvar o resultado. Tente de novo.',
   },
 
   // ── Diario (calendario do mes) ──────────────────────────────────────────────────────────────────

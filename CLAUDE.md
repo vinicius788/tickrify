@@ -356,6 +356,12 @@ Vale para TODA mudanca, grande ou pequena:
 - A `<img>` de 400px na demo mobile (`.site-demo-chart`) e zoom DELIBERADO, contido
   por `overflow: hidden`. Nao "corrigir". Imagens publicas levam `width`/`height`
   e `height: auto` no CSS.
+- **Resultado do trade (TP1/TP2/Stop/aberto): o SERVIDOR e a fonte da verdade.**
+  A marcacao local e so otimista e sai quando o servidor confirma e a lista e
+  relida; se ele recusar, a tela desfaz e avisa. Nunca voltar a persistir o
+  veredito no localStorage acima do servidor (25/09: um "aberto" antigo guardado
+  no aparelho fazia o aviso "trade still open" voltar para sempre). `setOutcome`
+  grava resultado E valor juntos; valor vazio e NULL, nunca 0.
 - `useAPIClient`: 1a tentativa com o token do cache do Clerk; `skipCache` so
   depois de 401. Nao voltar o `skipCache` para a 1a tentativa.
 - Teste que monta componente: `cleanup()` no `afterEach` (nao ha config global do
@@ -446,7 +452,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 | 21/09 | **CLS oscilou de 0 a 0,128** no PageSpeed mobile. Suspeito nº1: troca de fonte depois do `media="print"`. Se passar de 0,1 em varios runs: self-host das fontes ou fallback com `size-adjust`, sem desfazer o `media="print"`. | Claude |
 | 21/09 | Performance: 416 KB de JS nao usado na home; i18n dos 6 idiomas no bundle principal; `DashboardPage` (1.200+ linhas) sem memoizacao estudada; contraste; erros de console; 8 de 43 alvos de toque abaixo de 32px; pesos da Geist nunca auditados. | Claude |
 | 21/09 | Reset mensal: a primeira tela do painel mostrou o saldo antigo (corrida entre `/ticks/balance` e `/usage`). Nao corrigido. | Claude |
-| 21/09 | Abertos nao criticos: preflight CORS de origem desconhecida responde 500 em vez de negar; `setOutcome` do painel falha calado (veredito fica so no localStorage); drift cosmetico entre migracoes e schema. | Claude |
+| 21/09 | Abertos nao criticos: preflight CORS de origem desconhecida responde 500 em vez de negar; drift cosmetico entre migracoes e schema. | Claude |
 | 21/09 | Env vars no Render sem leitor no codigo (dono decide remover): `ALLOW_UNAUTHENTICATED`, `CLERK_PUBLISHABLE_KEY`, `CLERK_WEBHOOK_SECRET`, `FREE_ANALYSIS_LIMIT_PER_MONTH`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_PRO_MONTHLY`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET`, `VITE_GOOGLE_ADS_ID`. | dono |
 | 21/09 | Trocar o e-mail de suporte para `support@tickrify.com` nos dados publicos da Stripe (recibo e checkout) e no Clerk. | dono |
 | 21/09 | Checkout: de 13 a 20/09, ~11 sessoes abertas e 0 cartao submetido (fluxo conferido, NAO esta quebrado). Cruzar os clientes perdidos com pais no PostHog. Sessoes duplicadas no mesmo segundo sugerem `handleUpgrade` rodando 2x apos o login. E-mail proprio de checkout abandonado via Resend: caminho mapeado, NAO feito (decisao do dono). | Claude / dono |
@@ -495,7 +501,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **21/09:** checkout conferido na Stripe (nao estava quebrado); eventos `checkout_*`; login preserva a compra; webhooks no formato basil + idempotencia + teto de 200 ticks por janela ("Ticks never expire" saiu); tracking do PostHog auditado; Meta CAPI; `[funnel]`; -46% de JS inicial e cache immutable; e-mail de recuperacao ligado no worker; contato `support@`; oferta EARLY35 automatica e TICKS arquivado; PageSpeed (fonte fora do caminho critico, `llms.txt`); keep-warm removido e backup com retencao de 7 dias; numeros da home ao vivo; `width`/`height` nas imagens.
 - **22/09:** `after_expiration.recovery` ligado e removido no mesmo dia (a Stripe nao manda e-mail; so gera link).
 - **24/09:** prompt v7.5 contra o WAIT de 82% do luna; PostHog cookieless; My Trades com print, botoes TP/Stop e P&L; logo animada no carregamento; painel abre mais rapido (token do cache, preload); testes estaveis (`cleanup`); Watchlist virou filtro "Favoritas" + aba Diario (`/api/ai/journal`); WAIT nao e operacao; selo de estrategia corrigido no worker; Plans no rodape do menu; `og.png` novo.
-- **25/09:** este arquivo reorganizado.
+- **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---
 

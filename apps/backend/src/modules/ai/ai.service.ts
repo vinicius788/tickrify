@@ -778,8 +778,12 @@ export class AiService implements OnModuleInit {
 
     const VALID = ['tp1', 'tp2', 'stop', 'breakeven', 'open'];
     const outcome = input.outcome && VALID.includes(input.outcome) ? input.outcome : null;
-    const pnlPercent = Number.isFinite(Number(input.pnlPercent)) ? Number(input.pnlPercent) : null;
-    const pnlAmount = Number.isFinite(Number(input.pnlAmount)) ? Number(input.pnlAmount) : null;
+    // `Number(null)` e 0, entao "sem valor" virava 0 gravado (um trade sem valor
+    // aparecia como +0.00 e entrava na soma do Diario). Vazio fica vazio.
+    const toAmount = (v: unknown): number | null =>
+      v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v);
+    const pnlPercent = toAmount(input.pnlPercent);
+    const pnlAmount = toAmount(input.pnlAmount);
     const closedAt = outcome ? new Date() : null;
 
     await this.prisma.$executeRaw`

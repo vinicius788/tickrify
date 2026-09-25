@@ -12,11 +12,10 @@ import {
   VERDICT_MAX_ROWS,
   VERDICT_MIN_AGE_MS,
   isVerdictPromptSnoozed,
-  loadVerdicts,
   outcomeFromVerdict,
   isTradeCall,
   resolveVerdict,
-  saveVerdict,
+  withoutPending,
   snoozeVerdictPrompt,
   type Verdict,
 } from '@/lib/verdict';
@@ -244,7 +243,7 @@ const DashboardPage = () => {
   //   2. o endpoint conta até 1000 análises e esta tela carrega 40 — os números
   //      discordariam ("5 em aberto" com 2 linhas na lista);
   //   3. mesma fonte de verdade do My Trades = os dois nunca divergem.
-  const [verdicts, setVerdicts] = useState<Record<string, Verdict>>(loadVerdicts);
+  const [verdicts, setVerdicts] = useState<Record<string, Verdict>>({});
   const [verdictSnoozed, setVerdictSnoozed] = useState<boolean>(isVerdictPromptSnoozed);
   const [askDismissed, setAskDismissed] = useState(false);
   // Id da análise que está sendo exibida no resultado. Vem do `createAnalysis`,
@@ -262,17 +261,22 @@ const DashboardPage = () => {
     setActiveView('my-trades');
   }, []);
 
-  // Escrita otimista: grava local, atualiza a tela na hora e só depois tenta o
-  // backend. Falha do backend é silenciosa — o localStorage segura o dado.
+  // Escrita otimista: a tela muda no clique e o servidor grava em seguida. O
+  // servidor e a fonte da verdade (lib/verdict.ts): depois que ele confirma e a
+  // lista e relida, a marcacao otimista sai. Se ele recusar, a tela desfaz e
+  // avisa, em vez de fingir que gravou (antes a falha era calada e o aviso de
+  // "trade aberto" voltava sozinho).
   const applyVerdict = useCallback((id: string, v: Verdict) => {
-    saveVerdict(id, v);
     setVerdicts((prev) => ({ ...prev, [id]: v }));
-    if (!isDemo) {
-      void apiClient.setOutcome(id, { outcome: outcomeFromVerdict(v) })
-        .then(() => refetchAnalyses())
-        .catch(() => {});
-    }
-  }, [isDemo, apiClient, refetchAnalyses]);
+    if (isDemo) return;
+    void apiClient.setOutcome(id, { outcome: outcomeFromVerdict(v) })
+      .then(() => refetchAnalyses())
+      .then(() => setVerdicts((prev) => withoutPending(prev, id)))
+      .catch(() => {
+        setVerdicts((prev) => withoutPending(prev, id));
+        toast({ title: t.trades.resultSaveFailed, variant: 'destructive' });
+      });
+  }, [isDemo, apiClient, refetchAnalyses, toast, t]);
 
   // Só cobra o que o usuário marcou como "vou operar" E que já tem idade
   // suficiente pra ter desfecho. Cobrar análise de 5 minutos atrás treina o

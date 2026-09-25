@@ -19,7 +19,7 @@ import EmptyState from '@/components/dashboard/EmptyState';
 import { useAPIClient, type AIAnalysisResponse } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { getRecommendationMeta } from '@/lib/trading-ui';
-import { VERDICT_CFG, isTradeCall, loadVerdicts, resolveVerdict, type Verdict } from '@/lib/verdict';
+import { VERDICT_CFG, isTradeCall, verdictFromOutcome, type Verdict } from '@/lib/verdict';
 import { buildMonthGrid, dayKey, monthRange, summarizeByDay, weekStartFor } from '@/lib/journal';
 
 const DATE_LOCALES: Record<string, string> = {
@@ -60,9 +60,6 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
   const [selected, setSelected] = useState<string | null>(dayKey(now));
   const [viewer, setViewer] = useState<{ url: string; title: string } | null>(null);
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
-  // Veredito marcado neste aparelho e ainda nao confirmado pelo servidor vale
-  // aqui tambem, pela MESMA regra do My Trades (lib/verdict.ts).
-  const [localVerdicts] = useState(loadVerdicts);
 
   const { from, to } = monthRange(cursor.year, cursor.month);
   const isCurrentMonth = cursor.year === now.getFullYear() && cursor.month === now.getMonth();
@@ -78,13 +75,13 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
   });
 
   const items = useMemo(() => query.data?.items ?? [], [query.data]);
-  const verdictOf = (a: AIAnalysisResponse): Verdict => resolveVerdict(a, localVerdicts);
+  // O Diario so le: o resultado e o do servidor (lib/verdict.ts).
+  const verdictOf = (a: AIAnalysisResponse): Verdict => verdictFromOutcome(a.outcome);
   const pnlOf = (a: AIAnalysisResponse): number | null => {
     const n = Number(a.pnlAmount);
     return a.pnlAmount === null || a.pnlAmount === undefined || !Number.isFinite(n) ? null : n;
   };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const { days, totals } = useMemo(() => summarizeByDay(items, verdictOf, pnlOf), [items, localVerdicts]);
+  const { days, totals } = useMemo(() => summarizeByDay(items, verdictOf, pnlOf), [items]);
 
   const weekStart = weekStartFor(language);
   const grid = useMemo(() => buildMonthGrid(cursor.year, cursor.month, weekStart), [cursor, weekStart]);
