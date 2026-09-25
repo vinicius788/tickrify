@@ -4252,3 +4252,16 @@ tem que conferir o que sai do outro lado.
 **Plans** saiu da lista de abas (parecia mais uma aba, mas abre /pricing) e foi
 para o rodape do menu, acima da conta, junto do "assinar" do plano gratis. A
 chave `nav.account` saiu dos 6 idiomas (sem outro uso).
+
+### 24/09 — imagem de previa de link (og.png) refeita
+
+A previa do link no WhatsApp/Instagram/X mostrava o `og.png` de 10/08, na
+identidade ANTIGA (serifada, verde `#5eea8a`, texto com travessao). Refeito na
+identidade atual: fundo `#050508`, Geist, mono nos detalhes, verde `#00ff88`
+so em ponto, e o MESMO cartao "Example" da landing (XAUUSD M30, BUY 68% Read,
+mesmos niveis), entao nenhum numero novo entrou na vitrine. 1200x630, 130 KB.
+Gerado por HTML + Chrome headless (`--screenshot`), sem dependencia nova.
+**Cache:** WhatsApp e Facebook guardam a imagem por URL por semanas, entao as
+54 referencias (index.html + 21 paginas estaticas) viraram `og.png?v=2`. Na
+PROXIMA troca da arte, subir para `?v=3`, senao ninguem ve a nova. Os 6
+`og:image:alt` com travessao foram alinhados.
