@@ -2,6 +2,11 @@ import { UnauthorizedException } from '@nestjs/common';
 import { verifyToken } from '@clerk/backend';
 import { AuthGuard } from './auth.guard';
 import { MailService } from '../mail/mail.service';
+import { fetchClerkProfile } from '../../common/utils/clerk-email';
+
+jest.mock('../../common/utils/clerk-email', () => ({
+  fetchClerkProfile: jest.fn().mockResolvedValue({ email: null, firstName: 'Ana' }),
+}));
 
 jest.mock('@clerk/backend', () => ({
   verifyToken: jest.fn(),
@@ -11,6 +16,7 @@ describe('AuthGuard', () => {
   const verifyTokenMock = verifyToken as jest.Mock;
   let guard: AuthGuard;
   let prisma: any;
+  let mail: { sendWelcome: jest.Mock };
 
   beforeEach(() => {
     process.env.NODE_ENV = 'test';
@@ -33,13 +39,13 @@ describe('AuthGuard', () => {
      * `void this.mail.sendWelcome(...).catch(...)`, entao um mock que devolve
      * undefined estoura com "Cannot read properties of undefined (reading
      * 'catch')" e derruba a autenticacao inteira no teste. */
-    const mail = {
+    mail = {
       sendWelcome: jest.fn().mockResolvedValue(undefined),
       sendRecovery: jest.fn().mockResolvedValue(undefined),
       sendProblemReport: jest.fn().mockResolvedValue(undefined),
-    } as unknown as MailService;
+    } as unknown as typeof mail;
 
-    guard = new AuthGuard(prisma, mail);
+    guard = new AuthGuard(prisma, mail as unknown as MailService);
     verifyTokenMock.mockReset();
   });
 
@@ -121,5 +127,102 @@ describe('AuthGuard', () => {
       }),
     );
     expect(request.user.role).toBe('user');
+  });
+
+  it('envia boas-vindas uma vez para conta nova, com o primeiro nome', async () => {
+    verifyTokenMock.mockResolvedValue({ sub: 'clerk_user_3', email: 'nova@tickrify.com' });
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.user.create.mockResolvedValue({
+      id: 'usr_3',
+      clerkUserId: 'clerk_user_3',
+      email: 'nova@tickrify.com',
+      role: 'user',
+    });
+    const request: any = { headers: { authorization: 'Bearer fake.jwt.token' } };
+    const context = { switchToHttp: () => ({ getRequest: () => request }) } as any;
+
+    await guard.canActivate(context);
+    // Segunda passada na mesma requisicao (GlobalAuthGuard + guard do controller): memoizada.
+    await guard.canActivate(context);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mail.sendWelcome).toHaveBeenCalledTimes(1);
+    expect(mail.sendWelcome).toHaveBeenCalledWith('nova@tickrify.com', 'Ana');
+  });
+
+  it('login comum de usuario existente nao envia boas-vindas', async () => {
+    verifyTokenMock.mockResolvedValue({ sub: 'clerk_user_1', email: 'trader@tickrify.com' });
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'usr_1',
+      clerkUserId: 'clerk_user_1',
+      email: 'trader@tickrify.com',
+      role: 'user',
+    });
+    const request: any = { headers: { authorization: 'Bearer fake.jwt.token' } };
+    const context = { switchToHttp: () => ({ getRequest: () => request }) } as any;
+
+    await guard.canActivate(context);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(prisma.user.create).not.toHaveBeenCalled();
+    expect(mail.sendWelcome).not.toHaveBeenCalled();
+  });
+
+  it('quem perde a corrida de criacao (P2002) nao recebe boas-vindas duplicada', async () => {
+    verifyTokenMock.mockResolvedValue({ sub: 'clerk_user_4', email: 'corrida@tickrify.com' });
+    prisma.user.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'usr_4',
+        clerkUserId: 'clerk_user_4',
+        email: 'corrida@tickrify.com',
+        role: 'user',
+      });
+    prisma.user.create.mockRejectedValue({ code: 'P2002' });
+    const request: any = { headers: { authorization: 'Bearer fake.jwt.token' } };
+    const context = { switchToHttp: () => ({ getRequest: () => request }) } as any;
+
+    await guard.canActivate(context);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mail.sendWelcome).not.toHaveBeenCalled();
+  });
+
+  it('conta nova: a autenticacao conclui mesmo com o Clerk pendurado e a Resend falhando', async () => {
+    verifyTokenMock.mockResolvedValue({ sub: 'clerk_user_5', email: 'lenta@tickrify.com' });
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.user.create.mockResolvedValue({
+      id: 'usr_5',
+      clerkUserId: 'clerk_user_5',
+      email: 'lenta@tickrify.com',
+      role: 'user',
+    });
+    // Clerk que nunca responde: se o guard desse await nele, este teste estouraria o timeout.
+    (fetchClerkProfile as jest.Mock).mockReturnValueOnce(new Promise(() => undefined));
+    mail.sendWelcome.mockRejectedValue(new Error('resend fora do ar'));
+    const request: any = { headers: { authorization: 'Bearer fake.jwt.token' } };
+    const context = { switchToHttp: () => ({ getRequest: () => request }) } as any;
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(request.user.id).toBe('usr_5');
+    expect(mail.sendWelcome).not.toHaveBeenCalled();
+  });
+
+  it('Resend falhando depois do Clerk nao gera erro nao tratado', async () => {
+    verifyTokenMock.mockResolvedValue({ sub: 'clerk_user_6', email: 'falha@tickrify.com' });
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.user.create.mockResolvedValue({
+      id: 'usr_6',
+      clerkUserId: 'clerk_user_6',
+      email: 'falha@tickrify.com',
+      role: 'user',
+    });
+    mail.sendWelcome.mockRejectedValue(new Error('resend fora do ar'));
+    const request: any = { headers: { authorization: 'Bearer fake.jwt.token' } };
+    const context = { switchToHttp: () => ({ getRequest: () => request }) } as any;
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mail.sendWelcome).toHaveBeenCalledTimes(1);
   });
 });

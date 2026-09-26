@@ -36,4 +36,25 @@ describe('MailService', () => {
     expect(semOferta).not.toContain('EARLY35');
     expect(semOferta).not.toMatch(/% off/);
   });
+
+  it('boas-vindas: assunto, remetente configurado, reply-to do suporte e logo HTTPS absoluta', async () => {
+    process.env.RESEND_API_KEY = 're_test';
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '' });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await new MailService().sendWelcome('ana@example.com', 'Ana');
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.subject).toBe('Your 3 free Tickrify analyses are ready');
+    expect(body.reply_to).toBe('support@tickrify.com');
+    expect(body.html).toContain('src="https://tickrify.com/logo.png"');
+    expect(body.html).toContain('Hi Ana,');
+  });
+
+  it('boas-vindas: falha da Resend nao lanca erro', async () => {
+    process.env.RESEND_API_KEY = 're_test';
+    global.fetch = jest.fn().mockRejectedValue(new Error('rede caiu')) as unknown as typeof fetch;
+
+    await expect(new MailService().sendWelcome('ana@example.com')).resolves.toBeUndefined();
+  });
 });
