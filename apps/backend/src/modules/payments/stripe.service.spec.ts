@@ -260,6 +260,19 @@ describe('StripeService webhooks', () => {
       );
     });
 
+    it('deleted desmarca a pessoa como assinante no PostHog', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'canceled' }));
+
+      await deliver('customer.subscription.deleted', subscription({ status: 'canceled' }));
+
+      expect(captureServer).toHaveBeenCalledWith(
+        'clerk_1',
+        'subscription_ended',
+        expect.objectContaining({ $set: { is_subscriber: false } }),
+        expect.anything(),
+      );
+    });
+
     it('deleted de assinatura que a Stripe ja apagou marca canceled pelo id', async () => {
       stripe.subscriptions.retrieve.mockRejectedValue(Object.assign(new Error('gone'), { code: 'resource_missing' }));
 
@@ -318,7 +331,13 @@ describe('StripeService webhooks', () => {
       expect(captureServer).toHaveBeenCalledWith(
         'clerk_1',
         'payment_succeeded',
-        expect.objectContaining({ invoiceId: 'in_1', value: 18.85, currency: 'USD', billingReason: 'subscription_cycle' }),
+        expect.objectContaining({
+          invoiceId: 'in_1',
+          value: 18.85,
+          currency: 'USD',
+          billingReason: 'subscription_cycle',
+          $set: { is_subscriber: true },
+        }),
         expect.objectContaining({ dedupeKey: 'payment_succeeded:in_1' }),
       );
     });

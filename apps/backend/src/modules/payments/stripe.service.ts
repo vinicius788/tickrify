@@ -1174,6 +1174,8 @@ export class StripeService implements OnModuleInit {
           status: synced.subscription.status,
           priceId: synced.subscription.items.data[0]?.price.id ?? null,
           checkoutSource: synced.subscription.metadata?.checkoutSource ?? null,
+          // Marca a pessoa no PostHog: sem isto, assinante e gratis ficam iguais na lista de eventos.
+          $set: { is_subscriber: true },
         },
         {
           dedupeKey: `subscription_created:${synced.subscription.id}`,
@@ -1242,6 +1244,15 @@ export class StripeService implements OnModuleInit {
       { user: synced.userId, subscription: subscription.id, status: synced.subscription.status, reason: 'ended' },
       { persist: this.prisma },
     );
+    const endedAt = synced.subscription.ended_at ?? synced.subscription.canceled_at;
+    await this.captureForUser(
+      synced.userId,
+      'subscription_ended',
+      { subscriptionId: subscription.id, $set: { is_subscriber: false } },
+      endedAt
+        ? { dedupeKey: `subscription_ended:${subscription.id}`, timestamp: new Date(endedAt * 1000) }
+        : {},
+    );
   }
 
   /** Recusa dentro da pagina de checkout (sem fatura): so observabilidade. */
@@ -1303,6 +1314,7 @@ export class StripeService implements OnModuleInit {
         billingReason: invoice.billing_reason ?? null,
         value: (invoice.amount_paid ?? 0) / 100,
         currency: String(invoice.currency || 'usd').toUpperCase(),
+        $set: { is_subscriber: true },
       },
       { dedupeKey: `payment_succeeded:${invoice.id}`, timestamp: new Date(paidAt * 1000) },
     );
