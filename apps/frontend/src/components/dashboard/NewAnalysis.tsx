@@ -128,12 +128,31 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
   const [submitting, setSubmitting] = useState(false);
   const [deep, setDeep] = useState(false);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      const file = acceptedFiles[0];
-      setMainFile(file);
-      setMainPreview(URL.createObjectURL(file));
+  const [readError, setReadError] = useState(false);
+
+  // Copia a imagem para a memoria no momento da escolha. No Android, o arquivo
+  // escolhido do Google Fotos ou de pasta na nuvem pode deixar de ser legivel
+  // ate o envio: o fetch falha em ~70 ms com "Failed to fetch", a tela diz
+  // "sem internet" e o reenvio usa o mesmo arquivo quebrado (27/09/2026: um
+  // usuario tentou 4 vezes e desistiu). Lendo aqui, o envio usa a copia, e se
+  // nem aqui der para ler, a pessoa recebe o motivo certo.
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    const file = acceptedFiles[0];
+    if (!file) return;
+    let copy: File;
+    try {
+      const bytes = await file.arrayBuffer();
+      copy = new File([bytes], file.name || 'chart.png', {
+        type: file.type || 'image/png',
+        lastModified: file.lastModified,
+      });
+    } catch {
+      setReadError(true);
+      return;
     }
+    setReadError(false);
+    setMainFile(copy);
+    setMainPreview(URL.createObjectURL(copy));
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -280,6 +299,23 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
               {u.pasteHint}
             </p>
             <p className="mt-3 text-xs text-[var(--text-secondary)]">{u.mobileCamera}</p>
+          </div>
+        </Card>
+
+        {readError && (
+          <p role="alert" className="text-sm leading-relaxed text-[var(--signal-sell)]">
+            {u.readError}
+          </p>
+        )}
+
+        {/* O WAIT e o resultado mais comum. Quem nao sabe disso antes le o
+            primeiro WAIT como "nao funcionou" e vai embora (medido 21 a 27/09:
+            40% fazem uma 2a analise depois de um WAIT, 75% depois de um SELL). */}
+        <Card className="border border-[var(--border-subtle)] bg-[var(--bg-card)] flex items-start gap-3 px-4 py-3.5">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--signal-buy)]" />
+          <div>
+            <p className="text-[13px] font-semibold text-[var(--text-primary)]">{u.outcomesTitle}</p>
+            <p className="mt-0.5 text-[13px] leading-relaxed text-[var(--text-secondary)]">{u.outcomesText}</p>
           </div>
         </Card>
 

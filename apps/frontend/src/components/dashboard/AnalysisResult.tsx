@@ -919,6 +919,14 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               </span>
             )}
           </div>
+          {isWaitVerdict && (
+            // Explica o WAIT onde ele aparece: sem isto a pessoa le so a
+            // palavra e entende que a ferramenta nao respondeu.
+            <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
+              {r.waitExplain}
+              {waitFlipItems.length > 0 && <> {r.waitExplainPlan}</>}
+            </p>
+          )}
           {strategyFit && (
             // Bloco visível (não só tooltip): a nota anti-claim precisa ser
             // lida, não descoberta em hover. Nunca reescreve nem substitui o
