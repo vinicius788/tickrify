@@ -928,18 +928,19 @@ export class AiService implements OnModuleInit {
     } = params;
     const startedAt = Date.now();
 
-    await this.prisma.analysis.update({
-      where: { id: analysisId },
-      data: { status: 'processing' },
-    });
-
-    const tickBalance = await this.ticksService.getBalance(userId);
-    const pipelineCtx: AnalysisContext = { userId, imageUrl, analysisType, tickBalance };
-
-    // Pre-hooks (image validation only — access/tick checks already done in createAnalysis)
-    await runPreHooks(pipelineCtx, [validateImageHook()]);
-
     try {
+      await this.prisma.analysis.update({
+        where: { id: analysisId },
+        data: { status: 'processing' },
+      });
+
+      const tickBalance = await this.ticksService.getBalance(userId);
+      const pipelineCtx: AnalysisContext = { userId, imageUrl, analysisType, tickBalance };
+
+      // The analysis row and paid debit already exist. Pre-hook failures must
+      // enter the same failure/refund path as model failures.
+      await runPreHooks(pipelineCtx, [validateImageHook()]);
+
       const prompt = await this.promptBuilder.buildPromptByVersion(
         analysisType,
         promptVersion,
@@ -1230,24 +1231,27 @@ export class AiService implements OnModuleInit {
       typeof knownPaidAccess === 'boolean' ? knownPaidAccess : await this.hasPaidAccess(userId);
 
     if (paidAccess) {
-      // Assinante: consome ticks do plano mensal (débito atômico).
-      await this.ticksService.debitTicks(
-        userId,
-        tickCost,
-        `Análise ${analysisType === 'deep' ? 'deep' : 'rápida'} de gráfico`,
-        { analysisType },
-      );
-
-      const analysis = await this.prisma.analysis.create({
-        data: {
+      // Debit and create must commit together. A separate successful debit
+      // followed by a failed Analysis insert would charge the user for no job.
+      const analysis = await this.prisma.$transaction(async (tx) => {
+        await this.ticksService.debitTicks(
           userId,
-          imageUrl: rowData.imageUrl,
-          status: rowData.status,
-          promptVer: rowData.promptVer,
-          model: rowData.model,
-          isDemo: false,
-          strategyHash: rowData.strategyHash ?? null,
-        },
+          tickCost,
+          `Análise ${analysisType === 'deep' ? 'deep' : 'rápida'} de gráfico`,
+          { analysisType },
+          tx,
+        );
+        return tx.analysis.create({
+          data: {
+            userId,
+            imageUrl: rowData.imageUrl,
+            status: rowData.status,
+            promptVer: rowData.promptVer,
+            model: rowData.model,
+            isDemo: false,
+            strategyHash: rowData.strategyHash ?? null,
+          },
+        });
       });
 
       return { isDemo: false, analysis };

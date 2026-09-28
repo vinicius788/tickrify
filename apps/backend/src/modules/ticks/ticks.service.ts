@@ -71,6 +71,7 @@ export class TicksService {
     amount: number,
     description: string,
     metadata?: Record<string, unknown>,
+    transaction?: Prisma.TransactionClient,
   ): Promise<void> {
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException('amount must be greater than zero');
@@ -79,7 +80,7 @@ export class TicksService {
     // Atomic check-and-decrement: the WHERE balance >= amount condition makes this
     // race-condition-proof — two concurrent requests cannot both "win" the same tick.
     // If count === 0 the balance was insufficient (or row doesn't exist yet).
-    await this.prisma.$transaction(async (tx) => {
+    const debit = async (tx: Prisma.TransactionClient) => {
       const result = await tx.userTicks.updateMany({
         where: { userId, balance: { gte: amount } },
         data: { balance: { decrement: amount } },
@@ -110,7 +111,15 @@ export class TicksService {
           metadata: (metadata ?? {}) as Prisma.InputJsonValue,
         },
       });
-    });
+    };
+
+    // The caller may need the debit and another write (the Analysis row) to
+    // commit together. Keep standalone debits in their existing transaction.
+    if (transaction) {
+      await debit(transaction);
+    } else {
+      await this.prisma.$transaction(debit);
+    }
   }
 
   /**

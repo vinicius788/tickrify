@@ -235,6 +235,64 @@ describe('AiService access enforcement', () => {
     expect(prisma.analysis.create).not.toHaveBeenCalled();
   });
 
+  it('cria a análise paga e debita ticks na mesma transação', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', priceId: null });
+    ticksService.debitTicks.mockResolvedValue(undefined);
+    (getAiQueueReadiness as jest.Mock).mockResolvedValue(QUEUE_ONLINE);
+    (getAiQueue as jest.Mock).mockReturnValue({ add: jest.fn().mockResolvedValue(undefined) });
+
+    await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(ticksService.debitTicks).toHaveBeenCalledWith(
+      'usr_1', 1, expect.any(String), { analysisType: 'quick' }, prisma,
+    );
+    expect(prisma.analysis.create).toHaveBeenCalledTimes(1);
+    expect(prisma.analysis.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ userId: 'usr_1', isDemo: false, status: 'pending' }),
+    }));
+  });
+
+  it('não conclui a transação paga se a criação da análise falhar', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', priceId: null });
+    ticksService.debitTicks.mockResolvedValue(undefined);
+    prisma.analysis.create.mockRejectedValueOnce(new Error('insert failed'));
+    let committed = false;
+    prisma.$transaction.mockImplementation(async (callback: (tx: any) => Promise<unknown>) => {
+      const result = await callback(prisma);
+      committed = true;
+      return result;
+    });
+
+    await expect(service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL))
+      .rejects.toThrow('insert failed');
+
+    expect(ticksService.debitTicks).toHaveBeenCalledWith(
+      'usr_1', 1, expect.any(String), { analysisType: 'quick' }, prisma,
+    );
+    expect(committed).toBe(false);
+  });
+
+  it('falha e reembolsa quando a validação prévia do caminho síncrono bloqueia', async () => {
+    prisma.analysis.update
+      .mockResolvedValueOnce({ id: 'an_1', status: 'processing' })
+      .mockResolvedValueOnce({ id: 'an_1', status: 'failed', createdAt: new Date() });
+    ticksService.refundTicks = jest.fn().mockResolvedValue(undefined);
+
+    await expect((service as any).processSynchronously({
+      analysisId: 'an_1', imageUrl: 'invalid-image-url', userId: 'usr_1',
+      analysisType: 'quick', isDemo: false,
+    })).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'failed', errorCode: 'processing_unclassified' }),
+    }));
+    expect(ticksService.refundTicks).toHaveBeenCalledWith(
+      'usr_1', 1, 'Refund: analysis failed', 'an_1',
+    );
+    expect(promptBuilder.buildPromptByVersion).not.toHaveBeenCalled();
+  });
+
   // ── listAnalyses: paginacao ──────────────────────────────────────────────────
   // Existe porque ate 03/09/2026 nao havia paginacao NENHUMA: o backend limitava
   // a 100 por requisicao e nao aceitava cursor, entao numa conta com 403
