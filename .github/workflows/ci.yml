@@ -2,7 +2,10 @@ name: CI
 
 on:
   pull_request:
+  # push so na main: branch com PR ja roda pelo `pull_request`; rodar nos dois
+  # gastava o dobro de minuto de Actions (repo privado, cota estourou em 09/2026).
   push:
+    branches: [main]
 
 env:
   NODE_VERSION: "20"
