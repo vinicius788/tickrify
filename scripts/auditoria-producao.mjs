@@ -256,6 +256,18 @@ async function main() {
       } else {
         const js = await (await buscar(`${SITE}${bundle}`)).text();
         sitekey = (js.match(/0x4[A-Za-z0-9_-]{18,30}/) || [])[0] || null;
+        // A rota /try e lazy: sua sitekey pode estar fora do bundle principal.
+        // Leia apenas chunks da demo referenciados pelo proprio entrypoint.
+        const demoChunks = [...new Set(
+          js.match(/(?:assets\/)?(?:TryPage|turnstile)-[A-Za-z0-9_-]+\.js/g) || [],
+        )].map((path) => path.replace(/^assets\//, ''));
+        for (const chunk of [...new Set(demoChunks)]) {
+          if (sitekey) break;
+          const response = await buscar(`${SITE}/assets/${chunk}`);
+          if (!response.ok) throw new Error(`chunk da demo respondeu ${response.status}`);
+          const demoJs = await response.text();
+          sitekey = (demoJs.match(/0x4[A-Za-z0-9_-]{18,30}/) || [])[0] || null;
+        }
         if (!sitekey) {
           problemasChave.push(
             'o bundle publicado não tem sitekey do Turnstile — com o TURNSTILE_SECRET_KEY ligado no backend, a demo recusa todo visitante',
