@@ -57,3 +57,24 @@ segredo.
 3. Verifique se uma nova migracao possui estrategia explicita de aplicacao.
 4. Nao altere flags, modelos e prompt simultaneamente sem um plano de medicao.
 5. Depois do deploy, valide health, login, saldo, uma analise e a conclusao pelo worker.
+
+## Protecoes que falham fechadas
+
+- Banco: API e worker usam `sslmode=verify-full` por padrao e atualizam o
+  legado `sslmode=require` para esse modo. Em producao, outros modos sao
+  rejeitados. Confira certificado, hostname e CA do banco antes de publicar;
+  uma CA privada deve ser fornecida via `sslrootcert`, sem desativar TLS.
+  No Render, monte o certificado oficial Supabase como Secret File
+  `supabase-ca.crt` e inclua `sslrootcert=/etc/secrets/supabase-ca.crt` na
+  `DATABASE_URL`, preservando host, usuario, senha e demais parametros.
+  Obtenha a CA no painel do proprio projeto Supabase; valide uma consulta
+  com `verify-full` antes de publicar API e worker.
+- Demo: configure `TURNSTILE_SECRET_KEY` no backend e a sitekey correspondente
+  no frontend. Sem chave ou com o verificador indisponivel, `/api/demo/analyze`
+  retorna 503 antes da IA. Token ausente/rejeitado retorna 403. Configure
+  `DEMO_HASH_SALT` ou mantenha `CLERK_SECRET_KEY` para o hash das cotas.
+- IP: rate limit e cota da demo usam `req.ip`. O `trust proxy=1` pressupoe um
+  unico ingresso confiavel (Render) antes da API, que acrescente/sobrescreva o
+  IP real no `X-Forwarded-For`. O processo Node nao deve ficar acessivel por um
+  caminho mais curto. Reavalie essa configuracao ao mudar a cadeia de proxies;
+  `CF-Connecting-IP` enviado pelo cliente nunca substitui o IP resolvido.

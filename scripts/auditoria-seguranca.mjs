@@ -2,8 +2,8 @@
 /**
  * AUDITORIA DE SEGURANÇA — o pente fino antes de ir ao ar (item 10).
  *
- * Roda no CI a cada push e BLOQUEIA o build. Não precisa de rede nem de banco:
- * tudo aqui é leitura de arquivo, para poder rodar em qualquer lugar e sempre.
+ * Roda no CI a cada push e BLOQUEIA o build. As verificações locais não precisam
+ * de banco; a consulta de vulnerabilidades de dependências exige rede.
  *
  * A parte que precisa de produção no ar (HTTPS, HSTS, cabeçalhos, se o /health
  * está mesmo fechado) vive em scripts/auditoria-producao.mjs.
@@ -379,41 +379,48 @@ verificar('Typecheck e testes rodam no CI e bloqueiam o build', 'bloqueia', () =
 // Só `critical` bloqueia. `high` avisa: em projeto com dependência transitiva
 // funda, bloquear em high transforma a auditoria em obstáculo permanente e a
 // primeira reação passa a ser desligá-la.
-verificar('Nenhuma vulnerabilidade crítica nas dependências', 'bloqueia', () => {
+// pnpm sai != 0 tanto quando encontra vulnerabilidades quanto quando a consulta
+// falha. Só um resultado com contagens válidas pode atestar ausência de achados.
+let dependencyAudit;
+let dependencyAuditError;
+function dependencyVulnerabilities() {
+  if (dependencyAudit) return dependencyAudit;
+  if (dependencyAuditError) throw dependencyAuditError;
+  let output;
   try {
-    const saida = execSync('pnpm audit --json --audit-level=critical', {
+    output = execSync('pnpm audit --json', {
       cwd: RAIZ,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 45_000,
     });
-    const dados = JSON.parse(saida);
-    const criticas = dados?.metadata?.vulnerabilities?.critical ?? 0;
-    return criticas > 0 ? [`${criticas} vulnerabilidade(s) crítica(s) — rode \`pnpm audit\` para ver`] : [];
   } catch (erro) {
-    // pnpm audit sai != 0 quando ACHA algo; o JSON vem no stdout mesmo assim.
-    try {
-      const dados = JSON.parse(erro.stdout || '{}');
-      const criticas = dados?.metadata?.vulnerabilities?.critical ?? 0;
-      return criticas > 0 ? [`${criticas} vulnerabilidade(s) crítica(s) — rode \`pnpm audit\``] : [];
-    } catch {
-      return [];
-    }
+    output = erro.stdout;
   }
+  try {
+    const data = JSON.parse(output || '{}');
+    const counts = data?.metadata?.vulnerabilities;
+    if (data.error || !counts || !['critical', 'high'].every(
+      (key) => Number.isInteger(counts[key]) && counts[key] >= 0,
+    )) {
+      throw new Error('Missing audit counts');
+    }
+    dependencyAudit = counts;
+    return counts;
+  } catch {
+    dependencyAuditError = new Error('Consulta de dependências inconclusiva. Confira acesso ao registry e rode pnpm audit novamente.');
+    throw dependencyAuditError;
+  }
+}
+
+verificar('Nenhuma vulnerabilidade crítica nas dependências', 'bloqueia', () => {
+  const { critical } = dependencyVulnerabilities();
+  return critical > 0 ? [`${critical} vulnerabilidade(s) crítica(s) — rode \`pnpm audit\` para ver`] : [];
 });
 
 verificar('Vulnerabilidades altas nas dependências', 'avisa', () => {
-  try {
-    execSync('pnpm audit --json', { cwd: RAIZ, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    return [];
-  } catch (erro) {
-    try {
-      const dados = JSON.parse(erro.stdout || '{}');
-      const altas = dados?.metadata?.vulnerabilities?.high ?? 0;
-      return altas > 0 ? [`${altas} vulnerabilidade(s) alta(s) — avalie, não bloqueia`] : [];
-    } catch {
-      return [];
-    }
-  }
+  const { high } = dependencyVulnerabilities();
+  return high > 0 ? [`${high} vulnerabilidade(s) alta(s) — avalie, não bloqueia`] : [];
 });
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -29,12 +29,8 @@ import { UploadedFile as UploadedFileType } from '../../common/interfaces/multer
 export class DemoController {
   constructor(private demoService: DemoService) {}
 
-  /** Primeiro valor do X-Forwarded-For (trust proxy=1 já popula req.ips). */
+  /** Mesma identidade do rate limit, resolvida pelo trust proxy do Express. */
   private resolveIp(req: Request): string {
-    if (Array.isArray(req.ips) && req.ips.length > 0) {
-      const first = String(req.ips[0] || '').trim();
-      if (first) return first;
-    }
     return String(req.ip || req.socket?.remoteAddress || 'unknown');
   }
 
