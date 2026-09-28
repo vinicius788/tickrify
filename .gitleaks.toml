@@ -136,3 +136,18 @@ regexes = [
   '''(?i)Bearer\s+[^\s"']*\.\.\.''',
   '''(?i)Bearer\s+<[^>]+>''',
 ]
+
+[[allowlists]]
+description = "Valores exatos revisados: nomes publicos e fixtures sem credenciais reais"
+regexTarget = "secret"
+regexes = [
+  # Chaves publicas de localStorage e identificador de feature flag.
+  '^tickrify_(?:attribution|fbclid|referral)_v1$',
+  '^AB_PROMPT_V9_PERCENT$',
+  # Credenciais ficticias usadas exclusivamente em testes.
+  '^sk_live_51ABCdef$',
+  '^postgresql://audit:test-only@$',
+  "^DEMO_HASH_SALT: 'test-only-salt'$",
+  # Token deliberadamente forjado do smoke antigo: sub=forged, iat=1700.
+  '\QeyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmb3JnZWQiLCJpYXQiOjE3MDB9.invalidsig\E',
+]
