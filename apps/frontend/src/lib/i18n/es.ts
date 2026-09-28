@@ -95,6 +95,7 @@ export default {
     evidenceNotConfirmed: 'No confirmado',
     evidenceTimeNote: 'Los datos actuales no prueban cuándo se capturó la imagen.',
     evidenceLegacy: 'No se registraron los datos recibidos para este análisis.',
+    mtfEvidenceWarning: 'La alineación entre marcos temporales no está verificada: solo se proporcionó el gráfico principal. No tome las menciones a marcos mayores como observaciones confirmadas.',
     checklistScoreMismatch: 'Recuento de la lista inconsistente',
     bias: 'Escenario',
     action: 'Acción',

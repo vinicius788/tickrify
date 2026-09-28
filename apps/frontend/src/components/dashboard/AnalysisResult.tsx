@@ -583,6 +583,9 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const marketRegime = String(analysis.marketRegime || '').trim().toLowerCase() || null;
   const marketRegimeNote = String(analysis.marketRegimeNote || '').trim() || null;
   const multiTimeframeAlignment = String(analysis.multiTimeframeAlignment || '').trim() || null;
+  const evidence = asRecord(fullResponse.evidence);
+  const unverifiedMtfAlignment = Boolean(multiTimeframeAlignment) && evidence.version === 1 &&
+    evidence.additionalChartsDelivered === 0;
 
   // R/R por alvo, calculado direto dos níveis (consistente e funciona em análises antigas).
   // Sem plano direcional verificável, não mostra razão fornecida só em texto.
@@ -753,7 +756,11 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
         : '',
       tone: marketRegime === 'trending' ? 'buy' : marketRegime === 'volatile' ? 'sell' : 'hold',
     },
-    { key: 'mtf', label: t.analysis.mtfAlignment, value: cleanModelText(multiTimeframeAlignment) },
+    {
+      key: 'mtf', label: t.analysis.mtfAlignment,
+      value: unverifiedMtfAlignment ? t.analysis.mtfEvidenceWarning : cleanModelText(multiTimeframeAlignment),
+      tone: unverifiedMtfAlignment ? 'hold' : undefined,
+    },
   ].filter((row) => row.value.length > 0);
 
   const patternItems = splitItems(analysis.identifiedPatterns).map((item) => cleanModelText(item)).filter(Boolean);
@@ -941,6 +948,15 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
           <AlertTriangle className="h-4 w-4 text-[var(--signal-sell)]" />
           <AlertDescription className="font-semibold text-[var(--signal-sell)]">
             {r.invalidTradePlan}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {unverifiedMtfAlignment && (
+        <Alert className="border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)]" role="alert">
+          <AlertTriangle className="h-4 w-4 text-[var(--signal-hold)]" />
+          <AlertDescription className="text-[var(--signal-hold)]">
+            {t.analysis.mtfEvidenceWarning}
           </AlertDescription>
         </Alert>
       )}

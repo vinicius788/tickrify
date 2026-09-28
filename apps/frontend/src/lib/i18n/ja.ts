@@ -95,6 +95,7 @@ export default {
     evidenceNotConfirmed: '確認できず',
     evidenceTimeNote: '現在のデータだけでは画像の撮影時刻を確認できません。',
     evidenceLegacy: 'この分析では入力データの記録がありません。',
+    mtfEvidenceWarning: '時間足の整合性は未確認です。提供されたのは主チャートのみです。上位足への言及を確認済みの観測として扱わないでください。',
     checklistScoreMismatch: 'チェックリストの件数が一致しません',
     bias: '市場シナリオ',
     action: '行動',

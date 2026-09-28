@@ -104,6 +104,7 @@ export default {
     evidenceNotConfirmed: 'Não confirmado',
     evidenceTimeNote: 'Dados atuais não comprovam quando o print foi capturado.',
     evidenceLegacy: 'Os dados entregues não foram registrados para esta análise.',
+    mtfEvidenceWarning: 'Alinhamento entre timeframes não verificado: apenas o gráfico principal foi enviado. Não trate menções a períodos maiores como leitura confirmada.',
     checklistScoreMismatch: 'Contagem do checklist inconsistente',
     bias: 'Cenário',
     action: 'Ação',

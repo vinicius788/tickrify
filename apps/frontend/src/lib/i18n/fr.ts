@@ -95,6 +95,7 @@ export default {
     evidenceNotConfirmed: 'Non confirmé',
     evidenceTimeNote: 'Les données actuelles ne prouvent pas quand la capture a été faite.',
     evidenceLegacy: 'Les données reçues n’ont pas été enregistrées pour cette analyse.',
+    mtfEvidenceWarning: 'L’alignement entre unités de temps n’est pas vérifié : seul le graphique principal a été fourni. Les mentions d’unités supérieures ne sont pas des observations confirmées.',
     checklistScoreMismatch: 'Décompte de la liste incohérent',
     bias: 'Scénario',
     action: 'Action',

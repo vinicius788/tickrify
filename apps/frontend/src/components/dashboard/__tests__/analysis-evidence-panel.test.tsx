@@ -37,7 +37,7 @@ describe('AnalysisEvidencePanel', () => {
       'evidenceTitle', 'evidenceCharts', 'evidenceAdditionalCharts', 'evidenceCandles',
       'evidenceMarketContext', 'evidenceCalendar', 'evidenceAttached', 'evidenceNotAttached',
       'evidenceEventsAttached', 'evidenceNoEventsReturned', 'evidenceNotConfirmed',
-      'evidenceTimeNote', 'evidenceLegacy',
+      'evidenceTimeNote', 'evidenceLegacy', 'mtfEvidenceWarning',
     ] as const;
     for (const language of ['pt', 'en', 'es', 'fr', 'de', 'ja'] as Language[]) {
       const translations = getTranslations(language).analysis;

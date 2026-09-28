@@ -95,6 +95,7 @@ export default {
     evidenceNotConfirmed: 'Not confirmed',
     evidenceTimeNote: 'Current data does not establish when the screenshot was captured.',
     evidenceLegacy: 'Input coverage was not recorded for this analysis.',
+    mtfEvidenceWarning: 'Timeframe alignment is unverified: only the main chart was provided. Do not treat references to higher timeframes as confirmed observations.',
     checklistScoreMismatch: 'Checklist count inconsistent',
     bias: 'Scenario',
     action: 'Action',

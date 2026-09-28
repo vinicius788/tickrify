@@ -95,6 +95,7 @@ export default {
     evidenceNotConfirmed: 'Nicht bestätigt',
     evidenceTimeNote: 'Aktuelle Daten belegen nicht, wann der Screenshot erstellt wurde.',
     evidenceLegacy: 'Für diese Analyse wurde die Datenabdeckung nicht erfasst.',
+    mtfEvidenceWarning: 'Die Ausrichtung mehrerer Zeitrahmen ist nicht bestätigt: Nur der Hauptchart wurde bereitgestellt. Aussagen zu höheren Zeitrahmen sind keine verifizierten Beobachtungen.',
     checklistScoreMismatch: 'Checklisten-Zählung widersprüchlich',
     bias: 'Szenario',
     action: 'Aktion',
