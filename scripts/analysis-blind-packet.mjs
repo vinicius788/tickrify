@@ -47,10 +47,13 @@ export function buildBlindPacket({ baselineRows, candidateRows, manifestCases, r
   const candidate = uniqueById(candidateRows, 'candidate');
   const manifest = uniqueById(manifestCases, 'manifesto');
   assert(baseline.size > 0 && baseline.size === candidate.size, 'Variantes com tamanho diferente ou vazias');
-  const basePrompts = new Set(baselineRows.map((row) => row.promptSha256));
-  const candidatePrompts = new Set(candidateRows.map((row) => row.promptSha256));
-  assert(basePrompts.size === 1 && candidatePrompts.size === 1 &&
-    !basePrompts.has([...candidatePrompts][0]), 'Cada variante precisa ter um hash de prompt único e diferente');
+  for (const mode of new Set(baselineRows.map((row) => row.analysisType))) {
+    const basePrompts = new Set(baselineRows.filter((row) => row.analysisType === mode).map((row) => row.promptSha256));
+    const candidatePrompts = new Set(candidateRows.filter((row) => row.analysisType === mode).map((row) => row.promptSha256));
+    assert(basePrompts.size === 1 && candidatePrompts.size === 1 &&
+      !basePrompts.has([...candidatePrompts][0]),
+    `Cada variante precisa ter um hash de prompt único e diferente no modo ${mode}`);
+  }
 
   const cards = [];
   const key = [];

@@ -47,6 +47,7 @@ test('dry-run pins different quick/deep prompts without creating results or usin
     assert.equal(plan.promptSha256Quick, sha256(quick));
     assert.equal(plan.promptSha256Deep, sha256(deep));
     assert.notEqual(plan.effectivePromptSha256Quick, plan.effectivePromptSha256Deep);
+    assert.equal(plan.deepEnrichmentInstructionCount, 1);
     assert.equal(existsSync(path.join(results, out)), false);
     assert.equal(existsSync(path.join(results, `${out}.meta.json`)), false);
   } finally {

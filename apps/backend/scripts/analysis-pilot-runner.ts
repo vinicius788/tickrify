@@ -113,6 +113,10 @@ async function main() {
   const promptQuick = fs.readFileSync(opts.promptFile, 'utf8').trim();
   const promptDeep = opts.promptFileDeep ? fs.readFileSync(opts.promptFileDeep, 'utf8').trim() : promptQuick;
   if (promptQuick.length < 1000 || promptDeep.length < 1000) throw new Error('Prompt local vazio ou incompleto');
+  const deepMarker = '# ANÁLISE DEEP — LEITURA EM CAMADAS';
+  if (opts.promptFileDeep && !promptDeep.includes(deepMarker)) {
+    throw new Error('--prompt-file-deep deve conter a instrução DEEP completa');
+  }
   const promptSha256Quick = sha256(promptQuick);
   const promptSha256Deep = sha256(promptDeep);
   const output = path.join(RESULTS, opts.out);
@@ -131,8 +135,14 @@ async function main() {
   } });
   const prompts: Record<Mode, string> = {
     quick: await builder.buildPromptByVersion('quick', undefined, promptQuick, 'en'),
-    deep: await builder.buildPromptByVersion('deep', undefined, promptDeep, 'en'),
+    // O arquivo DEEP separado já inclui sua instrução completa. Usar o modo
+    // quick aqui só para idioma/consistência evita anexar a instrução antiga.
+    deep: await builder.buildPromptByVersion(opts.promptFileDeep ? 'quick' : 'deep', undefined, promptDeep, 'en'),
   };
+  const deepEnrichmentInstructionCount = prompts.deep.split(deepMarker).length - 1;
+  if (deepEnrichmentInstructionCount !== 1) {
+    throw new Error('Prompt DEEP efetivo deve ter exatamente uma instrução de enriquecimento');
+  }
   const effectivePromptSha256 = { quick: sha256(prompts.quick), deep: sha256(prompts.deep) };
   const plan = {
     mode: opts.execute ? 'execute' : 'dry-run',
@@ -149,6 +159,7 @@ async function main() {
     effectivePromptSha256Quick: effectivePromptSha256.quick,
     effectivePromptSha256Deep: effectivePromptSha256.deep,
     promptOrigin: opts.promptOrigin,
+    deepEnrichmentInstructionCount,
     modelQuick: opts.modelQuick,
     modelDeep: opts.modelDeep,
     effortQuick: opts.effortQuick,

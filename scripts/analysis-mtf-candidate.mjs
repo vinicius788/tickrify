@@ -44,14 +44,20 @@ B) Multi-Timeframe Alignment:
 - Never turn an inference from a single image into a measured HTF fact.`,
   ],
   ['1. HTF bias aligns with trade direction', '1. Visible larger-swing bias aligns with trade direction; if HTF images exist, note their verified bias separately'],
-  ['7. Multi-timeframe alignment ≥ 2/3 TFs agree', '7. Verified alignment between execution chart and at least one supplied, legible HTF chart; if no HTF image is supplied, mark N/A and count zero passes'],
   ['□ marketStructure.bias reflects HTF bias from Step 0', '□ marketStructure.bias reflects the visible chart; any HTF claim requires a supplied HTF image'],
   ['"multiTimeframeAlignment": "Ex: M15 BEARISH | H1 BEARISH | H4 NEUTRAL → 2/3 aligned" or null,', '"multiTimeframeAlignment": "Only verified supplied charts: M15 BEARISH | H1 BEARISH → 2/2 aligned" or null when one chart or HTF unreadable,'],
   ['"technicalAnalysis": "Narrative ICT/SMC in the OUTPUT LANGUAGE with HTF bias, setup, session. Be specific about price levels. MAX 350 characters, no repetition of what other fields already say."', '"technicalAnalysis": "Narrative ICT/SMC in the OUTPUT LANGUAGE with visible-chart bias, verified HTF context only if supplied, setup and session. Be specific about price levels. MAX 350 characters, no repetition."'],
   ['"structureValidation": "7-item checklist on a SINGLE line, each item is a mark plus its price evidence in at most 6 words: ✅/❌ HTF | Zone | ICT setup | Anti-retail | Structure | R:R | MTF → X/7 → signal. MAX 300 characters."', '"structureValidation": "7-item checklist on a SINGLE line: ✅/❌ Visible bias | Zone | ICT setup | Anti-retail | Structure | R:R | ✅/❌/N/A verified MTF → X/7 passes → signal. With one chart, MTF is N/A and counts zero. MAX 300 characters."'],
   ['"executiveSummary": "3 short blocks in the OUTPUT LANGUAGE, one or two sentences each: (1) HTF + ICT context, (2) checklist + conviction, (3) entry + invalidation + plan B. End with a clear action sentence. MAX 450 characters total."', '"executiveSummary": "3 short blocks in the OUTPUT LANGUAGE: (1) visible structure + ICT context, noting when HTF images were not supplied, (2) checklist + conviction, (3) entry + invalidation + plan B. End with a clear action sentence. MAX 450 characters total."'],
   ['1. HTF bias + MTF alignment mandatory — never skip Step 0.', '1. Visible-chart structure mandatory. Claim HTF bias or MTF alignment only from additional supplied, legible charts; otherwise state that HTF is unavailable.'],
+  ['13. multiTimeframeAlignment: always fill showing 3 TF assessment.', '13. multiTimeframeAlignment: null when only one chart is supplied; otherwise describe only the supplied, legible timeframes.'],
 ];
+
+const mtfChecklistVariants = [
+  '7. Multi-timeframe alignment ≥ 2/3 TFs agree',
+  '7. Multi-timeframe alignment. With higher-timeframe charts provided, ≥ 2/3 must agree. With a SINGLE chart, the higher timeframes are INFERRED from the larger swings on the same chart: pass unless that inferred structure visibly CONFLICTS with the trade (e.g. a long straight into a clear higher-timeframe downtrend). "Not visible" or "neutral" is not a conflict.',
+];
+const mtfChecklistReplacement = '7. Verified alignment between execution chart and at least one supplied, legible HTF chart; if no HTF image is supplied, mark N/A and count zero passes';
 
 export function buildMtfCandidate(baseline) {
   let candidate = baseline;
@@ -61,6 +67,9 @@ export function buildMtfCandidate(baseline) {
     }
     candidate = candidate.replace(before, after);
   }
+  const matchedChecklistRules = mtfChecklistVariants.filter((before) => candidate.split(before).length === 2);
+  if (matchedChecklistRules.length !== 1) throw new Error('Baseline incompatível com a regra MTF do checklist');
+  candidate = candidate.replace(matchedChecklistRules[0], mtfChecklistReplacement);
   return candidate;
 }
 
@@ -107,7 +116,7 @@ function cli(args) {
     fs.writeFileSync(deepOutputFile, deepCandidate + '\n', { flag: 'wx', mode: 0o600 });
   }
   process.stdout.write(JSON.stringify({
-    baselineSha256: sha256(baseline), candidateSha256: sha256(candidate), edits: edits.length,
+    baselineSha256: sha256(baseline), candidateSha256: sha256(candidate), edits: edits.length + 1,
     output: outputFile, deepCandidateSha256: deepCandidate ? sha256(deepCandidate) : null,
     deepOutput: deepOutputFile, apiCalls: 0,
   }, null, 2) + '\n');
