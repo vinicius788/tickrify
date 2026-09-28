@@ -28,7 +28,7 @@ export type CheckoutIntent = {
 // So o plano vendido na vitrine. `pro`/`elite` sao legado: aceitar aqui
 // deixaria uma URL montada a mao vender o plano de 150 ticks.
 const PLANS: readonly PlanType[] = ['starter'];
-const CYCLES: readonly BillingCycle[] = ['monthly', 'yearly'];
+const CYCLES: readonly BillingCycle[] = ['monthly', 'yearly', 'weekly'];
 const SOURCES: readonly CheckoutSource[] = ['pricing', 'locked_value'];
 
 const STORAGE_KEY = 'tickrify_checkout_intent';

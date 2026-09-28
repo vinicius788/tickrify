@@ -2,7 +2,7 @@
 import { API_BASE_URL } from './api';
 import { getAdsPayload, getReferralPayload } from './attribution';
 
-export type BillingCycle = 'monthly' | 'yearly';
+export type BillingCycle = 'monthly' | 'yearly' | 'weekly';
 export type Currency = 'brl' | 'usd' | 'eur';
 export type PlanType = 'starter' | 'pro' | 'elite';
 

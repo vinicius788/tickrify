@@ -63,7 +63,8 @@ export class StripeController {
     const planType = (body.planType && ['starter', 'pro', 'elite'].includes(body.planType))
       ? body.planType
       : 'starter' as const;
-    const billingCycle: BillingCycle = body.billingCycle === 'yearly' ? 'yearly' : 'monthly';
+    const billingCycle: BillingCycle =
+      body.billingCycle === 'yearly' || body.billingCycle === 'weekly' ? body.billingCycle : 'monthly';
 
     // MOEDA ÚNICA: USD, sempre, ignorando o que o cliente mandar (29/07/2026).
     //

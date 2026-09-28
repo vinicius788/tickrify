@@ -1,7 +1,9 @@
 // Stripe billing configuration — plans, prices, and helpers
 
 export type PlanType = 'starter' | 'pro' | 'elite';
-export type BillingCycle = 'monthly' | 'yearly';
+export type BillingCycle = 'monthly' | 'yearly' | 'weekly';
+/** Ciclos que existem para todos os planos. O semanal e so do starter em USD. */
+type PlanCycle = 'monthly' | 'yearly';
 export type Currency = 'brl' | 'usd' | 'eur';
 
 // Monthly ticks per plan. Yearly invoices fire once, so we credit 12× upfront.
@@ -20,7 +22,7 @@ export const PLAN_TICKS_PER_MONTH: Record<PlanType, number> = {
 };
 
 // All Stripe price IDs — one per plan × interval × currency
-export const PRICES: Record<PlanType, Record<BillingCycle, Record<Currency, string>>> = {
+export const PRICES: Record<PlanType, Record<PlanCycle, Record<Currency, string>>> = {
   starter: {
     monthly: {
       brl: 'price_1TRv2fB1hl0IoocUolv3jJkh',
@@ -59,13 +61,30 @@ export const PRICES: Record<PlanType, Record<BillingCycle, Record<Currency, stri
   },
 };
 
+/**
+ * Plano SEMANAL (28/09/2026): US$ 7,99 por semana, saldo de 25 ticks a cada
+ * semana (mesma regra do mensal: volta para o teto, nao acumula). Mesmo produto
+ * e mesmos recursos do starter; muda so o ciclo e o tamanho do pacote. Existe
+ * para baixar a entrada de quem nao consegue pagar US$ 29 de uma vez. So USD
+ * (a moeda e fixa no servidor) e sem o cupom EARLY35, que e do primeiro MES.
+ */
+export const WEEKLY_PRICE_ID = 'price_1UKeWPB1hl0IoocUjsQNv9BG';
+export const WEEKLY_TICKS = 25;
+
+export function isWeeklyPriceId(priceId: string | null | undefined): boolean {
+  return priceId === WEEKLY_PRICE_ID;
+}
+
+/** String vazia = combinacao sem preco (o checkout responde price_not_configured). */
 export function getPriceId(plan: PlanType, interval: BillingCycle, currency: Currency): string {
+  if (interval === 'weekly') return plan === 'starter' && currency === 'usd' ? WEEKLY_PRICE_ID : '';
   return PRICES[plan][interval][currency];
 }
 
 // Reverse-lookup: priceId → plan name (or null if not found)
 export function resolvePlanForPriceId(priceId: string): PlanType | null {
   if (!priceId) return null;
+  if (isWeeklyPriceId(priceId)) return 'starter';
 
   for (const [planKey, intervals] of Object.entries(PRICES) as [PlanType, typeof PRICES[PlanType]][]) {
     for (const currencies of Object.values(intervals)) {
@@ -100,12 +119,20 @@ export function stripeKeyMode(secretKey: string): StripeKeyMode {
 }
 
 /**
- * Pacote MENSAL do plano (mesmo no anual: o anual recebe 200 por mes, nao
- * 2400 de uma vez). E o teto do saldo: o assinante nunca passa disto.
+ * Pacote de cada janela (mesmo no anual: o anual recebe 200 por mes, nao
+ * 2400 de uma vez; no semanal, 25 por semana). E o teto do saldo: o assinante
+ * nunca passa disto.
  */
-export function monthlyTicksForPriceId(priceId: string | null | undefined): number {
+export function allowanceForPriceId(priceId: string | null | undefined): number {
+  if (isWeeklyPriceId(priceId)) return WEEKLY_TICKS;
   const plan = priceId ? resolvePlanForPriceId(priceId) : null;
   return plan ? PLAN_TICKS_PER_MONTH[plan] : 0;
+}
+
+export type AllowanceCadence = 'month' | 'week';
+
+export function allowanceCadenceForPriceId(priceId: string | null | undefined): AllowanceCadence {
+  return isWeeklyPriceId(priceId) ? 'week' : 'month';
 }
 
 function addMonthsUTC(date: Date, months: number): Date {
@@ -117,13 +144,24 @@ function addMonthsUTC(date: Date, months: number): Date {
   return target;
 }
 
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
- * Inicio da janela mensal de ticks em que `now` cai.
+ * Inicio da janela de ticks em que `now` cai.
  * Com periodo de cobranca: meses contados a partir do inicio do periodo (no
- * mensal a janela E o periodo; no anual sao 12 janelas). Sem periodo (acesso
- * manual): mes-calendario UTC.
+ * mensal a janela E o periodo; no anual sao 12 janelas). No semanal, blocos de
+ * 7 dias a partir do inicio do periodo, igual ao mes contado no anual. Sem
+ * periodo (acesso manual): mes-calendario UTC.
  */
-export function allowanceWindowStart(periodStart: Date | null | undefined, now: Date): Date {
+export function allowanceWindowStart(
+  periodStart: Date | null | undefined,
+  now: Date,
+  cadence: AllowanceCadence = 'month',
+): Date {
+  if (cadence === 'week' && periodStart) {
+    const weeks = Math.max(0, Math.floor((now.getTime() - periodStart.getTime()) / WEEK_MS));
+    return new Date(periodStart.getTime() + weeks * WEEK_MS);
+  }
   if (!periodStart) return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   let start = periodStart;
   for (let i = 1; i <= 24; i++) {

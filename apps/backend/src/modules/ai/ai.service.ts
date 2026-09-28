@@ -19,7 +19,7 @@ import { Prisma } from '@prisma/client';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { PrismaService } from '../database/prisma.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
-import { resolvePlanForPriceId } from '../../config/stripe.config';
+import { isWeeklyPriceId, resolvePlanForPriceId } from '../../config/stripe.config';
 import { AIAdapter, AIAnalysisError } from './ai.adapter';
 import { resolveModel } from './openai-params';
 import { TRADING_SYSTEM_PROMPT_V9 } from '../../common/prompts/trading-system-prompt-v9';
@@ -952,11 +952,14 @@ export class AiService implements OnModuleInit {
       orderBy: { updatedAt: 'desc' },
     });
     const resolved = activeSub?.priceId ? resolvePlanForPriceId(activeSub.priceId) : null;
-    planName = resolved ?? 'pro';
+    // O semanal e o starter cobrado por semana: o painel precisa saber para
+    // mostrar o teto de 25 e "por semana" em vez de 200 por mes.
+    const weekly = isWeeklyPriceId(activeSub?.priceId);
+    planName = weekly ? 'weekly' : resolved ?? 'pro';
 
     return {
       plan: planName,
-      period: 'monthly',
+      period: weekly ? 'weekly' : 'monthly',
       periodStart,
       total: null,
       used,

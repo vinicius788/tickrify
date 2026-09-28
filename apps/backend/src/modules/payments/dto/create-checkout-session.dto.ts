@@ -10,6 +10,7 @@ enum PlanTypeDto {
 enum BillingCycleDto {
   MONTHLY = 'monthly',
   YEARLY = 'yearly',
+  WEEKLY = 'weekly',
 }
 
 enum CurrencyDto {

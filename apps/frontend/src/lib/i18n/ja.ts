@@ -440,6 +440,7 @@ export default {
     ticksOut: 'ティックを使い切りました。次のサイクルで自動更新されます。',
     ticksLow: 'ティック残量わずか。次のサイクルで更新されます。',
     renewsPrefix: '毎月更新 ·',
+    renewsWeeklyPrefix: '毎週更新 ·',
     renewsSuffix: 'ティック利用可能',
     tradeCallsLeft: 'エントリー付き分析 残り {left} / {limit}',
     totalCapNote: 'WAIT の結果は無料です（合計 {limit} 回まで、残り {left} 回）。',

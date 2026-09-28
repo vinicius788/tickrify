@@ -440,6 +440,7 @@ export default {
     ticksOut: 'Ticks aufgebraucht. Erneuert sich automatisch im nächsten Zyklus.',
     ticksLow: 'Wenige Ticks übrig. Erneuert sich im nächsten Zyklus.',
     renewsPrefix: 'Monatliche Erneuerung ·',
+    renewsWeeklyPrefix: 'Wöchentliche Erneuerung ·',
     renewsSuffix: 'Ticks verfügbar',
     tradeCallsLeft: '{left} von {limit} Analysen mit Einstieg übrig',
     totalCapNote: 'WAIT-Ergebnisse sind kostenlos, bis zu {limit} Analysen insgesamt ({left} übrig).',

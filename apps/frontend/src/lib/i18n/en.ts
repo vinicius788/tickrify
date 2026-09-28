@@ -440,6 +440,7 @@ export default {
     ticksOut: 'Ticks exhausted. Renews automatically next cycle.',
     ticksLow: 'Few ticks left. Renews next cycle.',
     renewsPrefix: 'Renews monthly ·',
+    renewsWeeklyPrefix: 'Renews weekly ·',
     renewsSuffix: 'ticks available',
     tradeCallsLeft: '{left} of {limit} trade calls left',
     totalCapNote: 'WAIT results are free, up to {limit} analyses in total ({left} left).',
