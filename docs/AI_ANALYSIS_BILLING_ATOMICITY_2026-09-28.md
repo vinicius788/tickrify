@@ -12,6 +12,6 @@ No caminho pago, `enforceAccessAndCreate` debitava os ticks numa transação e s
 
 ## Verificação e limite
 
-Os testes exercitam a transação compartilhada, a falha do insert, saldo insuficiente e reembolso após bloqueio no pre-hook. A suíte completa do backend passou com **36 suítes / 324 testes**; TypeScript e build do backend/worker passaram. O teste unitário simula a transação; a atomicidade real do banco ainda precisa ser confirmada em staging antes de qualquer implantação.
+Os testes exercitam a transação compartilhada, a falha do insert, saldo insuficiente e reembolso após bloqueio no pre-hook. A suíte completa do backend passou com **36 suítes / 324 testes**; TypeScript e build do backend/worker passaram. Em 28/09, uma verificação adicional com PostgreSQL 18.3 local e descartável confirmou que a falha do insert desfaz o débito e a transação de uso; o caminho bem-sucedido gravou os três registros juntos. Os serviços temporários foram encerrados. Ainda falta validar o fluxo completo em staging antes de qualquer implantação.
 
 Este ajuste cobre a criação da linha e o processamento síncrono. O despacho posterior para a fila (`queue.add`) ainda pode falhar depois de uma criação paga confirmada. O [ID estável e a auditoria somente de leitura](AI_ANALYSIS_DISPATCH_AUDIT_2026-09-28.md) ajudam a identificar esse caso, mas a recuperação automática precisa de um desenho separado, testado contra Redis e banco em staging. Não houve push, migração aplicada nem alteração em produção.
