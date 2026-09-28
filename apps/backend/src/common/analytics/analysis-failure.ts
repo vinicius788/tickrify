@@ -17,6 +17,7 @@ const CODES = new Set([
   'openai_rate_limit',
   'openai_request_failed',
   'non_chart_image',
+  'invalid_trade_plan',
   'processing_unclassified',
 ]);
 

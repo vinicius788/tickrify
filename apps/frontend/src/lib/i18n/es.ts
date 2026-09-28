@@ -190,6 +190,7 @@ export default {
       history: 'Histórico:',
       hitRate: 'acierto',
       rrBelowIdeal: '⚠ R/R por debajo de lo ideal',
+      invalidTradePlan: 'Niveles incoherentes: el stop o el objetivo está del lado incorrecto de la entrada. No ejecutes este plan.',
       entryCautionRRLow: 'Espera un retroceso a la zona de entrada, R/R a mercado por debajo de lo ideal.',
       copied: '¡Copiado!',
       copySuffix: 'copiado al portapapeles.',

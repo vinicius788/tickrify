@@ -654,6 +654,7 @@ describe('AIAnalysisError static helpers', () => {
       ['openai_truncated_response', 'simpler chart'],
       ['openai_empty_content', 'could not read'],
       ['openai_request_failed', 'took too long'],
+      ['invalid_trade_plan', 'inconsistent entry'],
     ];
 
     for (const [code, expectedSubstring] of cases) {

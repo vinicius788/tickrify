@@ -50,6 +50,7 @@ describe('trackAnalysisExecutionFailed', () => {
 describe('failure code stored and returned to the browser', () => {
   it('keeps only the bounded category, never an exception message', () => {
     expect(safeAnalysisFailureCode('openai_rate_limit')).toBe('openai_rate_limit');
+    expect(safeAnalysisFailureCode('invalid_trade_plan')).toBe('invalid_trade_plan');
     expect(safeAnalysisFailureCode('email=user@example.com')).toBe('processing_unclassified');
     expect(safeAnalysisFailureCode(null)).toBe('processing_unclassified');
   });

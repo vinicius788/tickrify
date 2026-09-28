@@ -35,6 +35,7 @@ import {
   normalizeRecommendation,
   normalizeSymbol,
   computeRiskReward,
+  hasInvalidTradePlanLevels,
   formatRiskReward,
 } from '../../common/utils/analysis-normalizer';
 import {
@@ -1749,17 +1750,13 @@ export class AiService implements OnModuleInit {
       this.toNullableString(fullResponse?.reasoning);
     // R/R recalculado a partir dos níveis (determinístico). Também corrige análises
     // antigas retroativamente, pois recalcula a partir dos números já armazenados.
-    const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1);
-    const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2);
+    const side = normalizeRecommendation(fullResponse?.recommendation);
+    const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1, side);
+    const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2, side);
+    const invalidTradePlan = hasInvalidTradePlanLevels(side, entry, stopLoss, takeProfit1, takeProfit2);
 
-    const aiRiskReward =
-      this.toNullableString(
-        analysisMeta?.riskReward ?? analysisMeta?.risk_reward ?? analysisMeta?.riskRewardRatio,
-      ) ??
-      this.toNullableString(
-        fullResponse?.riskReward ?? fullResponse?.risk_reward ?? fullResponse?.riskRewardRatio,
-      );
-    const riskReward = formatRiskReward(riskRewardTp2 ?? riskRewardTp1) ?? aiRiskReward;
+    const riskReward = invalidTradePlan || side === 'WAIT'
+      ? null : formatRiskReward(riskRewardTp2 ?? riskRewardTp1);
 
     return {
       analysisMeta,
@@ -1773,8 +1770,8 @@ export class AiService implements OnModuleInit {
       takeProfit2Percent,
       reasoning,
       riskReward,
-      riskRewardTp1,
-      riskRewardTp2,
+      riskRewardTp1: invalidTradePlan || side === 'WAIT' ? null : riskRewardTp1,
+      riskRewardTp2: invalidTradePlan || side === 'WAIT' ? null : riskRewardTp2,
     };
   }
 

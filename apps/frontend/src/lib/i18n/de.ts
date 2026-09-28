@@ -190,6 +190,7 @@ export default {
       history: 'Verlauf:',
       hitRate: 'Trefferquote',
       rrBelowIdeal: '⚠ R/R unter dem Ideal',
+      invalidTradePlan: 'Widersprüchliche Niveaus: Stop oder Ziel liegt auf der falschen Seite des Einstiegs. Diesen Plan nicht ausführen.',
       entryCautionRRLow: 'Warte auf einen Rücklauf in die Einstiegszone, Markt-R/R unter dem Ideal.',
       copied: 'Kopiert!',
       copySuffix: 'in die Zwischenablage kopiert.',

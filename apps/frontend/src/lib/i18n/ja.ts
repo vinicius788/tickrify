@@ -190,6 +190,7 @@ export default {
       history: '履歴:',
       hitRate: '的中',
       rrBelowIdeal: '⚠ R/R が理想以下',
+      invalidTradePlan: '価格水準に矛盾があります。損切りまたは目標がエントリーの反対側にありません。この取引計画は実行しないでください。',
       entryCautionRRLow: 'エントリーゾーンへの押し目を待ってください、成行のR/Rが理想以下です。',
       copied: 'コピーしました!',
       copySuffix: 'をクリップボードにコピーしました。',

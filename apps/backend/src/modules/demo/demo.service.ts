@@ -14,6 +14,7 @@ import { UploadedFile } from '../../common/interfaces/multer';
 import { prepareIncomingImage } from '../../common/utils/image-storage';
 import {
   computeRiskReward,
+  hasInvalidTradePlanLevels,
   formatRiskReward,
   normalizeBias,
   normalizeConfidence,
@@ -295,8 +296,9 @@ export class DemoService implements OnModuleInit {
     const stopLoss = num(analysis.stopLoss);
     const takeProfit1 = num(analysis.takeProfit1);
     const takeProfit2 = num(analysis.takeProfit2);
-    const rrTp1 = computeRiskReward(entry, stopLoss, takeProfit1);
-    const rrTp2 = computeRiskReward(entry, stopLoss, takeProfit2);
+    const rrTp1 = computeRiskReward(entry, stopLoss, takeProfit1, recommendation);
+    const rrTp2 = computeRiskReward(entry, stopLoss, takeProfit2, recommendation);
+    const invalidTradePlan = hasInvalidTradePlanLevels(recommendation, entry, stopLoss, takeProfit1, takeProfit2);
 
     const reasoning = scrubPromptLeak(
       str(aiResponse.reasoning) ?? str(analysis.reasoning) ?? '',
@@ -315,7 +317,7 @@ export class DemoService implements OnModuleInit {
       stopLoss,
       takeProfit1,
       takeProfit2,
-      riskReward: formatRiskReward(rrTp2 ?? rrTp1),
+      riskReward: invalidTradePlan || recommendation === 'WAIT' ? null : formatRiskReward(rrTp2 ?? rrTp1),
       reasoning,
       // Aviso legal: a demo é pública — reforçar caráter educacional na própria resposta.
       disclaimer:

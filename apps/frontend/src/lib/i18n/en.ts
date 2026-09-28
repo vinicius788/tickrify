@@ -190,6 +190,7 @@ export default {
       history: 'History:',
       hitRate: 'hit rate',
       rrBelowIdeal: '⚠ R/R below ideal',
+      invalidTradePlan: 'Inconsistent levels: the stop or target is on the wrong side of entry. Do not execute this plan.',
       entryCautionRRLow: 'Wait for a pullback to the entry zone, market R/R below ideal.',
       copied: 'Copied!',
       copySuffix: 'copied to clipboard.',

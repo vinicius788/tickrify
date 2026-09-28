@@ -1,6 +1,7 @@
 import {
   normalizeSymbol,
   computeRiskReward,
+  hasInvalidTradePlanLevels,
   formatRiskReward,
   harmonizeConfidenceWithTrend,
   correctPriceMagnitude,
@@ -129,6 +130,23 @@ describe('computeRiskReward', () => {
   it('returns null for non-finite inputs', () => {
     expect(computeRiskReward(NaN, 95, 110)).toBeNull();
     expect(computeRiskReward(Infinity, 95, 110)).toBeNull();
+    expect(computeRiskReward(100, 95, -110, 'BUY')).toBeNull();
+  });
+
+  it('does not turn an inverted stop or target into positive reward', () => {
+    expect(computeRiskReward(100, 95, 90, 'BUY')).toBeNull();
+    expect(computeRiskReward(100, 105, 110, 'SELL')).toBeNull();
+    expect(computeRiskReward(100, 105, 90, 'BUY')).toBeNull();
+    expect(computeRiskReward(100, 95, 110, 'SELL')).toBeNull();
+    expect(computeRiskReward(100, 95, 110, 'BUY')).toBe(2);
+    expect(computeRiskReward(100, 105, 90, 'SELL')).toBe(2);
+  });
+
+  it('rejects a plan if either supplied target contradicts its direction', () => {
+    expect(hasInvalidTradePlanLevels('BUY', 100, 95, 110, 90)).toBe(true);
+    expect(hasInvalidTradePlanLevels('SELL', 100, 105, 90, 110)).toBe(true);
+    expect(hasInvalidTradePlanLevels('BUY', 100, 95, 110, null)).toBe(false);
+    expect(hasInvalidTradePlanLevels('WAIT', 100, 95, 90, 110)).toBe(false);
   });
 });
 

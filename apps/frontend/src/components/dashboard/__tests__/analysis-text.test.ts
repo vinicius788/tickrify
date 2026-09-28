@@ -7,6 +7,18 @@ import {
   softenDashes,
   splitItems,
 } from '@/components/dashboard/AnalysisResult';
+import { computeDirectionalRiskReward } from '@/lib/trade-plan';
+
+describe('risk/reward shown for trade levels', () => {
+  it('keeps valid long/short plans and refuses contradictory ones', () => {
+    expect(computeDirectionalRiskReward(100, 95, 110, 'buy')).toBe(2);
+    expect(computeDirectionalRiskReward(100, 105, 90, 'sell')).toBe(2);
+    expect(computeDirectionalRiskReward(100, 95, 90, 'buy')).toBeNull();
+    expect(computeDirectionalRiskReward(100, 105, 110, 'sell')).toBeNull();
+    expect(computeDirectionalRiskReward(100, 105, 90, 'buy')).toBeNull();
+    expect(computeDirectionalRiskReward(100, 95, 110, 'sell')).toBeNull();
+  });
+});
 
 describe('parseTargetProbabilities', () => {
   it('preserves nested TP2 estimates instead of treating all three as exclusive outcomes', () => {

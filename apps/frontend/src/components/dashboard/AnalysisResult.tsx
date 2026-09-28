@@ -38,6 +38,7 @@ import {
   normalizeConfluenceScore,
 } from '@/lib/trading-ui';
 import { asRecord } from '@/lib/utils';
+import { computeDirectionalRiskReward } from '@/lib/trade-plan';
 
 interface AnalysisResultProps {
   analysisData: AIAnalysisResponse | null;
@@ -414,21 +415,6 @@ export function parseStructureChecklist(text: string): StructureChecklist {
   return { items, score: scoreMismatch ? null : score, verdict, scoreMismatch };
 }
 
-function parseRiskReward(value: unknown): number | null {
-  const text = String(value || '').trim();
-  if (!text) {
-    return null;
-  }
-
-  const colonMatch = text.match(/1\s*:\s*(\d+(?:\.\d+)?)/);
-  if (colonMatch) {
-    return Number(colonMatch[1]);
-  }
-
-  const numeric = Number(text);
-  return Number.isFinite(numeric) ? numeric : null;
-}
-
 /** Esconde trios incompletos/incoerentes também em análises antigas já salvas. */
 export function parseTargetProbabilities(analysis: Record<string, unknown>, hasTradePlan: boolean): {
   tp1: number; tp2: number; stop: number;
@@ -576,10 +562,15 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const tp1ClosePercent = positiveOrNull(toNumber(analysis.tp1ClosePercent));
   const tp2ClosePercent = positiveOrNull(toNumber(analysis.tp2ClosePercent));
   const breakevenTrigger = String(analysis.breakevenTrigger || '').trim() || null;
+  const tradeTone = recommendationMeta.tone;
+  const rrTp1 = computeDirectionalRiskReward(entry, stopLoss, takeProfit1, tradeTone);
+  const rrTp2 = computeDirectionalRiskReward(entry, stopLoss, takeProfit2, tradeTone);
+  const invalidTradePlan = (tradeTone === 'buy' || tradeTone === 'sell') &&
+    entry !== null && stopLoss !== null &&
+    ((takeProfit1 !== null && rrTp1 === null) || (takeProfit2 !== null && rrTp2 === null));
   const probabilities = parseTargetProbabilities(
     analysis,
-    (recommendationMeta.tone === 'buy' || recommendationMeta.tone === 'sell') &&
-      entry !== null && stopLoss !== null && takeProfit1 !== null,
+    !invalidTradePlan && (tradeTone === 'buy' || tradeTone === 'sell') && rrTp1 !== null,
   );
   const probabilityTp1 = probabilities?.tp1 ?? null;
   const probabilityTp2 = probabilities?.tp2 ?? null;
@@ -594,18 +585,8 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const multiTimeframeAlignment = String(analysis.multiTimeframeAlignment || '').trim() || null;
 
   // R/R por alvo, calculado direto dos níveis (consistente e funciona em análises antigas).
-  const computeRR = (e: number | null, sl: number | null, tp: number | null): number | null => {
-    if (e === null || sl === null || tp === null) return null;
-    const risk = Math.abs(e - sl);
-    const reward = Math.abs(tp - e);
-    if (!(risk > 0) || !(reward > 0)) return null;
-    return Math.round((reward / risk) * 100) / 100;
-  };
-  const rrTp1 = computeRR(entry, stopLoss, takeProfit1);
-  const rrTp2 = computeRR(entry, stopLoss, takeProfit2);
-  const riskRewardRatioRaw = analysis.riskRewardRatio;
-  // valor principal exibido: alvo final (TP2) ou TP1; cai para o texto da IA se faltarem níveis.
-  const riskReward = rrTp2 ?? rrTp1 ?? parseRiskReward(riskRewardRatioRaw);
+  // Sem plano direcional verificável, não mostra razão fornecida só em texto.
+  const riskReward = invalidTradePlan || tradeTone === 'hold' ? null : rrTp2 ?? rrTp1;
   // R/R baixo (< 1.5) = vermelho + aviso; >= 2 verde; entre = amarelo.
   const riskRewardLow = riskReward !== null && riskReward < 1.5;
   const riskRewardTone = riskReward === null
@@ -931,7 +912,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 /accuracy, e um print gerado a partir de dado de demonstração
                 circulando como leitura real é a mesma classe de problema que a
                 auditoria de 27/07 removeu da vitrine. */}
-            {!isDemo && <ShareCardButton data={shareData} />}
+            {!isDemo && !invalidTradePlan && <ShareCardButton data={shareData} />}
             {detectedSession && (
               <span className="whitespace-nowrap rounded-sm border border-[var(--border-subtle)] px-2 py-0.5 font-terminal text-xs text-[var(--text-secondary)] uppercase">
                 {detectedSession.replace('_', ' ')}
@@ -954,6 +935,15 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
           )}
         </CardContent>
       </Card>
+
+      {invalidTradePlan && (
+        <Alert className="border-[var(--signal-sell)] bg-[var(--signal-sell-bg)]" role="alert">
+          <AlertTriangle className="h-4 w-4 text-[var(--signal-sell)]" />
+          <AlertDescription className="font-semibold text-[var(--signal-sell)]">
+            {r.invalidTradePlan}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {isWaitVerdict && waitFlipItems.length > 0 && (
         // O bloco usava borda + fundo ambar. Problema: o badge HOLD ja e ambar
@@ -1015,9 +1005,9 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               <div>
                 <p className="text-xs text-[var(--text-secondary)]">R/R</p>
                 <p className={`font-terminal text-base font-semibold ${riskRewardTone}`}>
-                  {riskReward !== null ? `${riskReward.toFixed(1)} : 1` : String(riskRewardRatioRaw || 'N/A')}
+                  {riskReward !== null ? `${riskReward.toFixed(1)} : 1` : 'N/A'}
                 </p>
-                {(rrTp1 !== null || rrTp2 !== null) && (
+                {!invalidTradePlan && tradeTone !== 'hold' && (rrTp1 !== null || rrTp2 !== null) && (
                   <p className="font-terminal text-[10px] text-[var(--text-secondary)]">
                     {rrTp1 !== null ? `TP1 ${rrTp1.toFixed(1)}` : ''}
                     {rrTp1 !== null && rrTp2 !== null ? ' · ' : ''}
@@ -1103,7 +1093,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   <span className="font-terminal font-semibold uppercase text-[var(--text-primary)]">{entryType}</span>
                   {/* Trava de coerência: com R/R abaixo do ideal, não exibir "entrar a
                       mercado agora" (contradiz o aviso). Mostra orientação de aguardar recuo. */}
-                  {riskRewardLow && entryType.toLowerCase() === 'market' ? (
+                  {invalidTradePlan ? null : riskRewardLow && entryType.toLowerCase() === 'market' ? (
                     <p className="mt-0.5 text-[var(--signal-hold)]">⚠ {r.entryCautionRRLow}</p>
                   ) : (
                     entryCondition && <p className="mt-0.5 text-[var(--text-secondary)]">{entryCondition}</p>
@@ -1613,7 +1603,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               </Accordion>
 
               <div className="mt-4">
-                <PositionSizingCalculator entry={entry} stopLoss={stopLoss} />
+                {!invalidTradePlan && tradeTone !== 'hold' && <PositionSizingCalculator entry={entry} stopLoss={stopLoss} />}
               </div>
 
               <div className="mt-4 border-t-2 border-[var(--border-emphasis)] pt-4">

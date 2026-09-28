@@ -101,6 +101,7 @@ export function computeRiskReward(
   entry: number | null | undefined,
   stopLoss: number | null | undefined,
   takeProfit: number | null | undefined,
+  side?: Recommendation,
 ): number | null {
   if (entry == null || stopLoss == null || takeProfit == null) {
     return null;
@@ -109,11 +110,18 @@ export function computeRiskReward(
   if (![entry, stopLoss, takeProfit].every((n) => Number.isFinite(n))) {
     return null;
   }
+  if (entry <= 0 || stopLoss <= 0 || takeProfit <= 0) return null;
 
   const risk = Math.abs(entry - stopLoss);
   const reward = Math.abs(takeProfit - entry);
 
-  if (risk <= 0) {
+  // Um alvo do mesmo lado do stop não oferece recompensa na direção do trade.
+  // A distância absoluta, sozinha, produziria um R/R falso para esse plano.
+  if (risk <= 0 || reward <= 0 || (stopLoss - entry) * (takeProfit - entry) >= 0) {
+    return null;
+  }
+  if ((side === 'BUY' && !(stopLoss < entry && takeProfit > entry)) ||
+      (side === 'SELL' && !(stopLoss > entry && takeProfit < entry))) {
     return null;
   }
 
@@ -124,6 +132,20 @@ export function computeRiskReward(
 
   // Arredonda para 2 casas para estabilidade de exibição.
   return Math.round(ratio * 100) / 100;
+}
+
+/** Níveis completos em direção oposta ao sinal ou com alvo do lado do stop. */
+export function hasInvalidTradePlanLevels(
+  side: Recommendation,
+  entry: number | null | undefined,
+  stopLoss: number | null | undefined,
+  takeProfit1: number | null | undefined,
+  takeProfit2: number | null | undefined,
+): boolean {
+  if (side === 'WAIT' || entry == null || stopLoss == null) return false;
+  return [takeProfit1, takeProfit2].some(
+    (target) => target != null && computeRiskReward(entry, stopLoss, target, side) === null,
+  );
 }
 
 /**

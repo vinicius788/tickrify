@@ -10,6 +10,7 @@ import {
   reconcileConfluence,
   parseJsonFromContent,
   computeRiskReward,
+  hasInvalidTradePlanLevels,
   formatRiskReward,
   correctPriceMagnitude,
   deriveMarketRegime,
@@ -159,7 +160,8 @@ export type AIAnalysisErrorCode =
   | 'openai_billing'
   | 'openai_rate_limit'
   | 'openai_request_failed'
-  | 'non_chart_image';
+  | 'non_chart_image'
+  | 'invalid_trade_plan';
 
 export class AIAnalysisError extends Error {
   readonly code: AIAnalysisErrorCode;
@@ -206,6 +208,8 @@ export class AIAnalysisError extends Error {
         return 'The analysis came back incomplete. Try a simpler chart.';
       case 'openai_empty_content':
         return 'We could not read this image. Please try again with a clearer chart screenshot.';
+      case 'invalid_trade_plan':
+        return 'The analysis returned inconsistent entry, stop or target levels. Your tick will be refunded. Please try again.';
       case 'openai_request_failed':
         return 'The AI service took too long to respond. Please try again in a moment.';
       default:
@@ -794,16 +798,14 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       : null;
 
   // R/R calculado a partir dos níveis (não confia no texto da IA, que pode divergir).
-  const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1);
-  const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2);
+  const side = mapSchemaRecommendationToInternal(normalizeSchemaRecommendation(parsed.recommendation));
+  const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1, side);
+  const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2, side);
+  const invalidTradePlan = hasInvalidTradePlanLevels(side, entry, stopLoss, takeProfit1, takeProfit2);
 
-  // riskRewardRatio: prioriza o valor calculado (alvo final); cai para o texto da IA se faltar.
-  const aiRiskRewardRatio =
-    parsedAnalysis.riskRewardRatio === null || parsedAnalysis.riskRewardRatio === undefined
-      ? null
-      : ensureString(parsedAnalysis.riskRewardRatio, '') || null;
-  const riskRewardRatio =
-    formatRiskReward(riskRewardTp2 ?? riskRewardTp1) ?? aiRiskRewardRatio;
+  // Sem níveis verificáveis, texto de R/R do modelo não é uma medida calculada.
+  const riskRewardRatio = invalidTradePlan || side === 'WAIT'
+    ? null : formatRiskReward(riskRewardTp2 ?? riskRewardTp1);
 
   // Probabilidades por alvo: só publica um trio completo; confiança não
   // substitui valores que o modelo não forneceu.
@@ -813,7 +815,7 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       tp2: parsedAnalysis.probabilityTp2,
       stop: parsedAnalysis.probabilityStop,
     },
-    { hasTradePlan: entry !== null && stopLoss !== null && takeProfit1 !== null },
+    { hasTradePlan: !invalidTradePlan && side !== 'WAIT' && riskRewardTp1 !== null },
   );
 
   return {
@@ -837,8 +839,8 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       tp1Y: ensureNumberOrNull(parsedAnalysis.tp1Y),
       tp2Y: ensureNumberOrNull(parsedAnalysis.tp2Y),
       riskRewardRatio,
-      riskRewardTp1,
-      riskRewardTp2,
+      riskRewardTp1: invalidTradePlan || side === 'WAIT' ? null : riskRewardTp1,
+      riskRewardTp2: invalidTradePlan || side === 'WAIT' ? null : riskRewardTp2,
       marketStructure: {
         bias: normalizeSchemaBias(parsedMarketStructure.bias),
         lastStructure: ensureString(parsedMarketStructure.lastStructure, 'Não informado'),
@@ -1999,6 +2001,22 @@ export class AIAdapter {
       }
 
       const rawRecommendation = mapSchemaRecommendationToInternal(parsed.recommendation);
+      // Não entregar BUY/SELL com stop/alvo invertidos. O fluxo de falha
+      // definitiva reembolsa o tick; corrigir a direção por conta própria
+      // transformaria um erro do modelo em uma operação não avaliada.
+      if (hasInvalidTradePlanLevels(
+        rawRecommendation,
+        parsed.analysis?.entry,
+        parsed.analysis?.stopLoss,
+        parsed.analysis?.takeProfit1,
+        parsed.analysis?.takeProfit2,
+      )) {
+        throw new AIAnalysisError({
+          code: 'invalid_trade_plan',
+          message: 'A IA retornou níveis incoerentes de entrada, stop ou alvo.',
+          retriable: false,
+        });
+      }
       // TRAVA 1: le e propaga, nunca decide. Se algum dia alguem escrever aqui
       // algo como `if (strategyFit === 'ideal') recommendation = 'BUY'`, isso
       // transforma preferencia do usuario em sinal, que e exatamente o que este
@@ -2019,11 +2037,13 @@ export class AIAdapter {
         parsed.analysis?.entry,
         parsed.analysis?.stopLoss,
         parsed.analysis?.takeProfit1,
+        rawRecommendation,
       );
       const decisionRiskRewardTp2 = computeRiskReward(
         parsed.analysis?.entry,
         parsed.analysis?.stopLoss,
         parsed.analysis?.takeProfit2,
+        rawRecommendation,
       );
 
       // Sequência determinística ÚNICA (mesma usada pelo worker):
