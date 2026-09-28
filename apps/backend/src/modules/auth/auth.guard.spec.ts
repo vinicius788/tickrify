@@ -3,6 +3,8 @@ import { verifyToken } from '@clerk/backend';
 import { AuthGuard } from './auth.guard';
 import { MailService } from '../mail/mail.service';
 import { fetchClerkProfile } from '../../common/utils/clerk-email';
+import { Reflector } from '@nestjs/core';
+import { GlobalAuthGuard } from '../../common/guards/global-auth.guard';
 
 jest.mock('../../common/utils/clerk-email', () => ({
   fetchClerkProfile: jest.fn().mockResolvedValue({ email: null, firstName: 'Ana' }),
@@ -57,6 +59,41 @@ describe('AuthGuard', () => {
     } as any;
 
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it.each([undefined, 'false', 'true'])('global auth stays closed with REQUIRE_AUTH=%s', async (value) => {
+    const previous = process.env.REQUIRE_AUTH;
+    try {
+      if (value === undefined) delete process.env.REQUIRE_AUTH;
+      else process.env.REQUIRE_AUTH = value;
+      const globalGuard = new GlobalAuthGuard(prisma, mail as unknown as MailService, new Reflector());
+      const context = {
+        getHandler: () => function protectedRoute() {},
+        getClass: () => class ProtectedController {},
+        switchToHttp: () => ({ getRequest: () => ({ headers: {} }) }),
+      } as any;
+      await expect(globalGuard.canActivate(context)).rejects.toMatchObject({ status: 401 });
+      expect(verifyTokenMock).not.toHaveBeenCalled();
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.REQUIRE_AUTH;
+      else process.env.REQUIRE_AUTH = previous;
+    }
+  });
+
+  it.each(['token', 'database'])('does not expose internal %s errors', async (source) => {
+    const detail = 'internal driver/provider detail with sensitive data';
+    if (source === 'token') verifyTokenMock.mockRejectedValue(new Error(detail));
+    else {
+      verifyTokenMock.mockResolvedValue({ sub: 'clerk_user_1' });
+      prisma.user.findUnique.mockRejectedValue(new Error(detail));
+    }
+    const request = { headers: { authorization: 'Bearer test-token' } };
+    const context = { switchToHttp: () => ({ getRequest: () => request }) } as any;
+    await expect(guard.canActivate(context)).rejects.toMatchObject({
+      status: 401,
+      response: { message: 'Invalid authentication token' },
+    });
   });
 
   /**

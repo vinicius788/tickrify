@@ -1,29 +1,30 @@
+import { isProductionRuntime } from '../../common/utils/runtime-env';
+
 function withRequiredSslMode(value?: string): string | undefined {
   if (!value) {
     return value;
   }
 
+  let url: URL;
   try {
-    const url = new URL(value);
-    if (!['postgres:', 'postgresql:'].includes(url.protocol)) {
-      return value;
-    }
-
-    if (!url.searchParams.has('sslmode')) {
-      url.searchParams.set('sslmode', 'require');
-    }
-
-    if (
-      String(url.searchParams.get('sslmode') || '').toLowerCase() === 'require' &&
-      !url.searchParams.has('uselibpqcompat')
-    ) {
-      url.searchParams.set('uselibpqcompat', 'true');
-    }
-
-    return url.toString();
+    url = new URL(value);
   } catch {
-    return value;
+    throw new Error('Invalid PostgreSQL datasource URL.');
   }
+
+  if (!['postgres:', 'postgresql:'].includes(url.protocol)) {
+    throw new Error('Datasource URL must use postgres:// or postgresql://.');
+  }
+
+  const mode = String(url.searchParams.get('sslmode') || '').trim().toLowerCase();
+  // `require` with libpq compatibility encrypts but does not authenticate the
+  // server. Upgrade legacy URLs as well as the unconfigured default.
+  const secureMode = !mode || mode === 'require' ? 'verify-full' : mode;
+  if (isProductionRuntime() && secureMode !== 'verify-full') {
+    throw new Error('PostgreSQL requires sslmode=verify-full in production.');
+  }
+  url.searchParams.set('sslmode', secureMode);
+  return url.toString();
 }
 
 export function normalizePrismaDatabaseEnv(): {

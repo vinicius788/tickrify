@@ -34,7 +34,7 @@ um exemplo separado em `apps/frontend/.env.example`.
 | URLs e CORS | `APP_URL`, `FRONTEND_URL`, `CORS_ORIGINS` | Devem conter apenas origens confiaveis em producao. |
 | Operacoes | `INTERNAL_OPS_TOKEN` | Protege os endpoints internos de health e readiness. |
 | Flags | `ENABLE_*`, `AB_PROMPT_V9_PERCENT`, `PROMPT_AUTO_SYNC` | Overrides salvos no painel admin prevalecem sobre os valores de ambiente. |
-| Demo e dados | `DEMO_*`, `TURNSTILE_SECRET_KEY`, `TWELVE_DATA_API_KEY`, `FRED_API_KEY` | Recursos opcionais degradam de forma controlada quando documentado no codigo. |
+| Demo e dados | `DEMO_*`, `TURNSTILE_SECRET_KEY`, `TWELVE_DATA_API_KEY`, `FRED_API_KEY` | Demo retorna 503 sem chave Turnstile, sem verificador disponivel ou sem segredo para hash. Dados de mercado opcionais degradam conforme documentado no codigo. |
 | Email e telemetria | `RESEND_API_KEY`, `MAIL_FROM`, `POSTHOG_*` | Nao habilite telemetria em testes sem intencao explicita. |
 | Backtest | `BT_DEBUG_FIELDS` | Usado apenas por scripts locais. |
 

@@ -139,10 +139,9 @@ export class AuthGuard implements CanActivate {
       request.__tickrifyAuthUser = request.user;
 
       return true;
-    } catch (error) {
-      throw new UnauthorizedException(
-        error instanceof Error ? error.message : 'Invalid authentication token',
-      );
+    } catch {
+      // Provider/driver messages may contain tokens, database details or paths.
+      throw new UnauthorizedException('Invalid authentication token');
     }
   }
 

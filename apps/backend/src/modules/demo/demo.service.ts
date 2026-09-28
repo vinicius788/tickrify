@@ -94,48 +94,55 @@ export class DemoService implements OnModuleInit {
   private hashIdentifier(value: string): string {
     const salt =
       process.env.DEMO_HASH_SALT?.trim() ||
-      process.env.CLERK_SECRET_KEY?.trim() ||
-      'tickrify-demo-dev-salt';
+      process.env.CLERK_SECRET_KEY?.trim();
+    if (!salt) {
+      throw new ServiceUnavailableException({
+        code: 'demo_unavailable',
+        message: 'Free demo is temporarily unavailable. Please try again shortly.',
+      });
+    }
     return createHash('sha256').update(`${salt}|${value}`).digest('hex');
   }
 
   /**
    * Verifica o token do Cloudflare Turnstile no servidor.
-   * - Sem TURNSTILE_SECRET_KEY configurada: passa (permite deploy antes das
-   *   chaves existirem), com aviso no log.
-   * - Com chave: token ausente/inválido bloqueia. Indisponibilidade de rede da
-   *   Cloudflare NÃO bloqueia (fail-open só em outage, nunca em token inválido).
+   * Sem chave ou sem resposta confiável, a demo fica indisponível (503).
+   * Token ausente ou rejeitado bloqueia a análise (403), antes de gerar custo.
    */
   private async verifyTurnstile(token: string | undefined, ip: string): Promise<boolean> {
     const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
     if (!secret) {
-      this.logger.warn('[demo] TURNSTILE_SECRET_KEY ausente — desafio anti-bot desativado.');
-      return true;
+      this.logger.warn('[demo] TURNSTILE_SECRET_KEY ausente — demo indisponível.');
+      throw this.botCheckUnavailable();
     }
     if (!token || !token.trim()) {
       return false;
     }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8_000);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8_000);
       const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ secret, response: token, remoteip: ip }).toString(),
         signal: controller.signal,
       });
-      clearTimeout(timer);
+      if (!res.ok) throw new Error('Turnstile returned a non-success HTTP status');
       const data = (await res.json()) as { success?: boolean };
       return data?.success === true;
-    } catch (err) {
-      // Outage da Cloudflare: não derruba a conversão inteira por causa disso.
-      this.logger.warn(
-        `[demo] Verificação Turnstile indisponível (fail-open): ${
-          err instanceof Error ? err.message : err
-        }`,
-      );
-      return true;
+    } catch {
+      this.logger.warn('[demo] Verificação Turnstile indisponível — análise bloqueada.');
+      throw this.botCheckUnavailable();
+    } finally {
+      clearTimeout(timer);
     }
+  }
+
+  private botCheckUnavailable(): ServiceUnavailableException {
+    return new ServiceUnavailableException({
+      code: 'bot_check_unavailable',
+      message: 'Verification is temporarily unavailable. Please try again shortly.',
+    });
   }
 
   /** true se este fingerprint JÁ consumiu a análise grátis. */
