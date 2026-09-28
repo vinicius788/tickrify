@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { useSeo, seoFor } from '@/hooks/useSeo';
 import RelatosPainel from '@/components/admin/RelatosPainel';
+import AfiliadosPainel from '@/components/admin/AfiliadosPainel';
 
 /**
  * Loja de apps interna — liga e desliga funções sem redeploy.
@@ -228,6 +229,8 @@ export default function AdminPage() {
         </div>
 
         <RelatosPainel />
+
+        <AfiliadosPainel />
 
         <p className="mt-6 text-xs leading-relaxed text-zinc-600">
           A análise roda no worker, que é um processo separado com o próprio cache: mudanças levam

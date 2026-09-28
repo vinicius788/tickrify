@@ -57,6 +57,8 @@ model User {
   adminTargets  AdminAudit[] @relation("AdminAuditTarget")
   featureFlags  FeatureFlag[] @relation("FeatureFlagUpdatedBy")
   problemReports ProblemReport[] @relation("ProblemReportAuthor")
+  affiliate      Affiliate?
+  referredBy     AffiliateReferral?
 
   @@schema("tickrify")
 }
@@ -287,5 +289,125 @@ model StripeWebhookEvent {
   processedAt DateTime?
 
   @@index([status, updatedAt])
+  @@schema("tickrify")
+}
+
+/// Programa de afiliados. Dinheiro SEMPRE em centavos de USD (Int) e taxa em
+/// pontos-base (2000 = 20%): nada de ponto flutuante em valor financeiro.
+/// Em producao as tabelas nascem pelo `CREATE TABLE IF NOT EXISTS` do
+/// AffiliatesService.onModuleInit (RUN_MIGRATIONS_ON_START=false).
+///
+/// status: PENDING (pedido) -> ACTIVE (aprovado) | REJECTED; ACTIVE <-> SUSPENDED.
+/// So ACTIVE gera atribuicao, comissao e saque. `commissionRateBps` acima do padrao e acordo
+/// individual feito pelo admin; nunca aparece em pagina publica.
+model Affiliate {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  referralCode          String   @unique
+  couponCode            String   @unique
+  commissionRateBps     Int      @default(2000)
+  status                String   @default("PENDING")
+  /// Promotion code da Stripe que carrega o `couponCode` (sobre o cupom de
+  /// STRIPE_AFFILIATE_COUPON_ID). NULL = cupom da Stripe nao configurado.
+  stripePromotionCodeId String?  @unique
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clicks      AffiliateClick[]
+  referrals   AffiliateReferral[]
+  commissions AffiliateCommission[]
+  payouts     AffiliatePayout[]
+
+  @@schema("tickrify")
+}
+
+/// Clique num link ?ref=. Sem IP nem dado pessoal: so conta e ancora a janela
+/// de 30 dias (o servidor confere a data do clique, nao o navegador).
+model AffiliateClick {
+  id          String   @id @default(cuid())
+  affiliateId String
+  landingPath String?
+  createdAt   DateTime @default(now())
+
+  affiliate Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+
+  @@index([affiliateId, createdAt])
+  @@schema("tickrify")
+}
+
+/// Quem indicou quem. Um por usuario indicado. `source` = link | coupon (o
+/// cupom tem prioridade e substitui o link enquanto nao houve pagamento).
+/// `firstPaidAt` trava o vinculo e abre os 12 meses de comissao.
+model AffiliateReferral {
+  id               String    @id @default(cuid())
+  affiliateId      String
+  userId           String    @unique
+  source           String
+  clickId          String?
+  firstPaidAt      DateTime?
+  commissionEndsAt DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  affiliate   Affiliate             @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  commissions AffiliateCommission[]
+
+  @@index([affiliateId, createdAt])
+  @@schema("tickrify")
+}
+
+/// Uma comissao por fatura paga da Stripe (`stripeInvoiceId` unico = sem
+/// duplicidade em reenvio de webhook).
+/// status: PENDING (30 dias) -> AVAILABLE -> PAID; refund/disputa -> CANCELLED.
+model AffiliateCommission {
+  id                    String    @id @default(cuid())
+  affiliateId           String
+  referralId            String?
+  referredUserId        String
+  stripeInvoiceId       String    @unique
+  stripeChargeId        String?
+  stripePaymentIntentId String?
+  amountPaidCents       Int
+  commissionCents       Int
+  rateBps               Int
+  status                String    @default("PENDING")
+  availableAt           DateTime
+  payoutId              String?
+  cancelledReason       String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  affiliate Affiliate          @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  referral  AffiliateReferral? @relation(fields: [referralId], references: [id], onDelete: SetNull)
+  payout    AffiliatePayout?   @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+
+  @@index([affiliateId, status])
+  @@index([status, availableAt])
+  @@index([stripeChargeId])
+  @@index([stripePaymentIntentId])
+  @@schema("tickrify")
+}
+
+/// Saque manual. status: REQUESTED -> APPROVED -> PAID, ou REJECTED.
+/// As comissoes AVAILABLE entram no pedido (payoutId) e so viram PAID junto.
+model AffiliatePayout {
+  id           String    @id @default(cuid())
+  affiliateId  String
+  amountCents  Int
+  status       String    @default("REQUESTED")
+  method       String
+  adminNote    String?
+  requestedAt  DateTime  @default(now())
+  decidedAt    DateTime?
+  paidAt       DateTime?
+  decidedById  String?
+
+  affiliate   Affiliate             @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  commissions AffiliateCommission[]
+
+  @@index([affiliateId, status])
+  @@index([status, requestedAt])
   @@schema("tickrify")
 }

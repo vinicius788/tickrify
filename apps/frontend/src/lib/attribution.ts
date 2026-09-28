@@ -1,4 +1,5 @@
 import { getConsent } from './consent';
+import { buildApiUrl } from './api';
 
 const STORAGE_KEY = 'tickrify_attribution_v1';
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -216,4 +217,125 @@ export function getAdsPayload(): { adsConsent: boolean; fbp?: string; fbc?: stri
     ...(fbp && FBP_RE.test(fbp) ? { fbp } : {}),
     ...(fbc && FBC_RE.test(fbc) ? { fbc } : {}),
   };
+}
+
+// ─── Afiliados: ?ref= e cupom de parceiro ───────────────────────────────────
+// Guardado SEM depender do aceite de cookies: e o que entrega ao visitante o
+// desconto do link em que ele clicou (servico pedido por ele), e o conteudo e
+// so o codigo publico do parceiro e o id aleatorio do clique, nada que
+// identifique a pessoa. A janela de 30 dias vale no SERVIDOR (data do clique
+// gravada la); o prazo daqui so evita mandar clique velho.
+const REFERRAL_KEY = 'tickrify_referral_v1';
+const REFERRAL_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const REFERRAL_RECOUNT_MS = 24 * 60 * 60 * 1000;
+const AFFILIATE_CODE_RE = /^[A-Za-z0-9]{4,20}$/;
+let referralInFlight: string | null = null;
+
+export type ReferralKind = 'link' | 'coupon';
+
+interface StoredReferral {
+  code: string;
+  kind: ReferralKind;
+  clickId?: string;
+  at: number;
+  /** Usuarios (id do Clerk) para quem este vinculo ja foi enviado ao backend. */
+  claimedBy?: string[];
+}
+
+function readReferral(): StoredReferral | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(REFERRAL_KEY) || 'null') as StoredReferral | null;
+    if (!parsed || !AFFILIATE_CODE_RE.test(parsed.code)) return null;
+    if (Date.now() - parsed.at > REFERRAL_MAX_AGE_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeReferral(value: StoredReferral): void {
+  try {
+    window.localStorage.setItem(REFERRAL_KEY, JSON.stringify(value));
+  } catch {
+    /* storage indisponivel: o vinculo fica so para o checkout desta visita */
+  }
+}
+
+export function isAffiliateCode(value: string): boolean {
+  return AFFILIATE_CODE_RE.test(value.trim());
+}
+
+/**
+ * Visitante chegou com ?ref=CODIGO: o servidor valida o codigo, grava o
+ * clique e devolve o id. Um cupom digitado antes vence o link (mesma regra do
+ * backend), e o mesmo link reaberto no mesmo dia nao conta outro clique.
+ */
+export function captureReferral(pathname: string): void {
+  if (typeof window === 'undefined') return;
+  let ref: string | null = null;
+  try {
+    ref = new URL(window.location.href).searchParams.get('ref');
+  } catch {
+    return;
+  }
+  if (!ref || !isAffiliateCode(ref)) return;
+  const code = ref.trim().toUpperCase();
+  const current = readReferral();
+  if (current?.kind === 'coupon') return;
+  if (current?.code === code && Date.now() - current.at < REFERRAL_RECOUNT_MS) return;
+  // Trocar de pagina antes da resposta nao conta um segundo clique.
+  if (referralInFlight === code) return;
+  referralInFlight = code;
+
+  void fetch(buildApiUrl('/api/affiliates/track'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, kind: 'link', landingPath: pathname.slice(0, 240) }),
+  })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data: { valid?: boolean; clickId?: string } | null) => {
+      if (data?.valid && data.clickId) writeReferral({ code, kind: 'link', clickId: data.clickId, at: Date.now() });
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      referralInFlight = null;
+    });
+}
+
+/** Cupom de parceiro digitado no site (ja validado). Vence qualquer link. */
+export function saveReferralCoupon(code: string): void {
+  writeReferral({ code: code.trim().toUpperCase(), kind: 'coupon', at: Date.now() });
+}
+
+export function getReferralCoupon(): string | null {
+  const stored = readReferral();
+  return stored?.kind === 'coupon' ? stored.code : null;
+}
+
+/** Corpo que o checkout manda (so identificacao; o desconto e o servidor que decide). */
+export function getReferralPayload(): { affiliateCode?: string; affiliateKind?: ReferralKind; affiliateClickId?: string } {
+  const stored = readReferral();
+  if (!stored) return {};
+  return {
+    affiliateCode: stored.code,
+    affiliateKind: stored.kind,
+    ...(stored.kind === 'link' && stored.clickId ? { affiliateClickId: stored.clickId } : {}),
+  };
+}
+
+/**
+ * Depois do login: vincula a conta ao afiliado guardado. Uma vez por conta
+ * neste navegador; falha de rede tenta de novo no proximo login.
+ */
+export async function claimReferral(userId: string, token: string): Promise<void> {
+  const stored = readReferral();
+  if (!stored || stored.claimedBy?.includes(userId)) return;
+  const res = await fetch(buildApiUrl('/api/affiliates/claim'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ code: stored.code, kind: stored.kind, ...(stored.clickId ? { clickId: stored.clickId } : {}) }),
+  });
+  if (!res.ok) return;
+  writeReferral({ ...stored, claimedBy: [...(stored.claimedBy ?? []), userId] });
 }

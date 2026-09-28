@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { setAttributionContext, track, trackPageview, trackSignupStartedOnce } from '@/lib/analytics';
-import { captureTechnicalAttribution, getAttributionTouches } from '@/lib/attribution';
+import { captureReferral, captureTechnicalAttribution, getAttributionTouches } from '@/lib/attribution';
 
 export function RouteAnalytics() {
   const { pathname } = useLocation();
@@ -13,6 +13,7 @@ export function RouteAnalytics() {
 
   useEffect(() => {
     captureTechnicalAttribution();
+    captureReferral(pathname);
     const { first, last } = getAttributionTouches();
     setAttributionContext(first, last);
     trackPageview(pathname);

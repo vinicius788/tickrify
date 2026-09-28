@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap, Upload, Sliders } from "lucide-react";
+import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap, Upload, Sliders, Handshake } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -721,6 +721,10 @@ const DashboardPage = () => {
         ...describeErrorForTelemetry(error),
         analysisType,
         durationMs: Math.round(performance.now() - startedAt),
+        // Separa "sem internet" de "arquivo ilegivel" nas falhas de rede.
+        online: typeof navigator !== 'undefined' ? navigator.onLine : null,
+        fileBytes: imageFile?.size ?? null,
+        fileType: imageFile?.type || null,
       });
       // Reconcilia o contador com o backend: falhas não consomem análise grátis,
       // então o slot precisa voltar caso a IA tenha falhado.
@@ -1284,6 +1288,9 @@ const DashboardPage = () => {
           )}
           <Link to="/pricing" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
             <CreditCard className="h-3.5 w-3.5" /> {t.nav.plans}
+          </Link>
+          <Link to="/affiliate" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+            <Handshake className="h-3.5 w-3.5" /> {t.nav.affiliates}
           </Link>
         </div>
 

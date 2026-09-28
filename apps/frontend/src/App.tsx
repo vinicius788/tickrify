@@ -31,6 +31,8 @@ if (typeof window !== "undefined" && /^\/(dashboard|demo)(\/|$)/.test(window.loc
 }
 const AdminPage = lazy(() => import("@/components/pages/AdminPage"));
 const AccuracyPage = lazy(() => import("@/components/pages/AccuracyPage"));
+const AffiliatesPage = lazy(() => import("@/components/pages/AffiliatesPage"));
+const AffiliateDashboardPage = lazy(() => import("@/components/pages/AffiliateDashboardPage"));
 const TryPage = lazy(() => import("@/components/pages/TryPage"));
 const TermsPage = lazy(() => import("@/components/pages/TermsPage"));
 const CookiePolicyPage = lazy(() => import("@/components/pages/CookiePolicyPage"));
@@ -150,6 +152,17 @@ function App() {
           <Route path="/privacidade" element={<PrivacyPolicyPage />} />
           {/* Pagina publica de acuracia (Fase 5): o scoreboard do motor. */}
           <Route path="/accuracy" element={<AccuracyPage />} />
+          {/* Programa de afiliados: /affiliates e a vitrine publica (so as regras
+              padrao); /affiliate e o painel de quem ja participa. */}
+          <Route path="/affiliates" element={<AffiliatesPage />} />
+          <Route
+            path="/affiliate"
+            element={
+              <ProtectedRoute>
+                <AffiliateDashboardPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/sign-in/*"
             element={

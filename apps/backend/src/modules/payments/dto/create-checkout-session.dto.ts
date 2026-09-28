@@ -63,4 +63,21 @@ export class CreateCheckoutSessionDto {
   @IsOptional()
   @Matches(/^fb\.\d\.\d{10,13}\.[A-Za-z0-9_-]{8,500}$/)
   fbc?: string;
+
+  /**
+   * Link ou cupom de afiliado guardado no navegador. So identifica QUEM
+   * indicou: o servidor confere o codigo, a janela de 30 dias do clique e o
+   * self-referral, e decide o desconto sozinho.
+   */
+  @IsOptional()
+  @Matches(/^[A-Za-z0-9]{4,20}$/)
+  affiliateCode?: string;
+
+  @IsOptional()
+  @IsIn(['link', 'coupon'])
+  affiliateKind?: 'link' | 'coupon';
+
+  @IsOptional()
+  @Matches(/^[a-z0-9]{20,40}$/)
+  affiliateClickId?: string;
 }

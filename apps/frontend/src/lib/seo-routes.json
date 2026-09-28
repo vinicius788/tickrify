@@ -11,6 +11,10 @@
     "title": "How Accurate Is Tickrify's AI Chart Analysis? | Tickrify",
     "description": "Our measured hit rate, updated hourly from live data, with sample size and 95% confidence intervals, including the numbers that look bad."
   },
+  "/affiliates": {
+    "title": "Affiliate Program: Recurring Commissions | Tickrify",
+    "description": "Earn recurring commissions by referring traders to Tickrify, the AI chart analysis tool. Apply with your account and get reviewed by our team."
+  },
   "/try": {
     "title": "Free AI Chart Analysis, No Signup Required | Tickrify",
     "description": "Upload a chart screenshot and get a real AI analysis in seconds: entry, stop, targets and risk. No account, no card. One free analysis, right now."
@@ -49,6 +53,11 @@
   "/sign-up": {
     "title": "Create your account | Tickrify",
     "description": "Create a Tickrify account and get 3 free AI chart analyses.",
+    "noindex": true
+  },
+  "/affiliate": {
+    "title": "Affiliate dashboard | Tickrify",
+    "description": "Your Tickrify referral link, coupon code, commissions and payouts.",
     "noindex": true
   }
 }

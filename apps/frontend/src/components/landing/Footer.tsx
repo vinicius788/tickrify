@@ -85,6 +85,8 @@ const Footer = () => {
               <li><a href="/blog/">{f.blog}</a></li>
               <li><a href="/#faq">{f.faq}</a></li>
               <li><a href="mailto:support@tickrify.com">{f.support}</a></li>
+              {/* Rotulo em ingles, como a coluna Markets: a pagina e so em ingles. */}
+              <li><Link to="/affiliates">Affiliate program</Link></li>
             </ul>
           </div>
 
