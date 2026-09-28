@@ -135,7 +135,7 @@ const AccuracyPage = () => {
 
     items.push({
       q: 'How is that accuracy measured?',
-      a: 'An automated sweeper runs hourly and scores every analysis that was completed at least 48 hours earlier against real market candles. The proposed entry must fill first, then the first target races the stop on 30-minute candles. If one candle contains both the target and the stop, it is recorded as a loss. There is no human in the loop and no selection of which trades get scored.',
+      a: 'An automated sweeper runs hourly and attempts to evaluate completed analyses after 48 hours. BUY and SELL plans with available candles are scored: the entry must fill first, then the first target races the stop on 30-minute candles. A candle touching both is recorded as a loss. WAIT, incomplete plans and cases without reliable candles are reported separately rather than counted as wins or losses.',
     });
 
     items.push({
@@ -186,12 +186,12 @@ const AccuracyPage = () => {
       '@type': 'Dataset',
       name: 'Tickrify AI accuracy: measured hit rate',
       description:
-        'The measured hit rate of Tickrify’s AI chart analysis, published with sample size and 95% Wilson confidence intervals, including the results that look bad. Every analysis is re-checked against real market candles 48 hours after it was produced.',
+        'The measured hit rate of Tickrify’s AI chart analysis, published with sample size and 95% Wilson confidence intervals. Eligible trade plans are evaluated against real market candles after 48 hours; abstentions and cases without sufficient data are reported separately.',
       url: 'https://tickrify.com/accuracy',
       isAccessibleForFree: true,
       creator: { '@type': 'Organization', name: 'Tickrify', url: 'https://tickrify.com' },
       measurementTechnique:
-        'Each published analysis is scored automatically against real candles 48 hours later, with no human in the loop. Rates below n = 20 are shown as sample size only.',
+        'Eligible trade plans are scored automatically against real candles after 48 hours, with no human in the loop. Abstentions and untrackable cases are shown separately. Rates below n = 20 are shown as sample size only.',
       variableMeasured: [
         {
           '@type': 'PropertyValue',
@@ -260,10 +260,10 @@ const AccuracyPage = () => {
             </p>
           )}
           <p>
-            That number is measured, not claimed. Every analysis Tickrify produces is re-checked against real market
-            candles 48 hours later, automatically, with no human in the loop. This page is that raw scoreboard. It
-            moves on its own, it includes the results that look bad, and it uses the same maths as our internal
-            backtest.
+            That number is measured, not claimed. After 48 hours, an automated process attempts to evaluate each
+            completed analysis. Trade plans with available candles can be scored; abstentions, incomplete plans and
+            cases without reliable candles appear separately. This page includes the results that look bad and uses
+            the same maths as our internal backtest.
           </p>
           {data ? (
             <span className="site-updated">
@@ -522,8 +522,8 @@ const AccuracyPage = () => {
               <h2 id="method">How is this measured?</h2>
               <ul>
                 <li>
-                  A sweeper runs hourly and evaluates every analysis completed at least 48 hours earlier. No manual
-                  selection, no cherry-picking of which trades get scored.
+                  A sweeper runs hourly and attempts to evaluate analyses completed at least 48 hours earlier. Data
+                  gaps and incomplete plans are reported separately; no manual selection of trades.
                 </li>
                 <li>
                   Resolution rule: the entry must fill first. Then the first target races the stop on 30-minute

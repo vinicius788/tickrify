@@ -32,7 +32,7 @@
   {"@context": "https://schema.org", "@type": "WebPage", "name": "What Tickrify Can Actually Read", "description": "Which instruments get verified live candles, which get a screenshot-only read, and the guard that stops a stale chart from being analyzed as if it were live.", "url": "https://tickrify.com/for/", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "name": "Tickrify", "url": "https://tickrify.com/"}, "publisher": {"@type": "Organization", "name": "Tickrify", "url": "https://tickrify.com/"}}
   </script>
   <script type="application/ld+json">
-  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Do I need to connect my broker or exchange?", "acceptedAnswer": {"@type": "Answer", "text": "No. Nothing connects. You upload an image, and the only outbound calls the backend makes are to public market data feeds for the instrument it read off your chart."}}, {"@type": "Question", "name": "What happens if it cannot identify my instrument?", "acceptedAnswer": {"@type": "Answer", "text": "It falls back to reading the screenshot alone and returns a structured read without live candles. It does not invent a price."}}, {"@type": "Question", "name": "Which timeframes work best?", "acceptedAnswer": {"@type": "Answer", "text": "Anything with a readable price axis and a legible timeframe label. If the timeframe cannot be read, the candle block is skipped on purpose, because statistics computed on the wrong interval hurt more than they help."}}, {"@type": "Question", "name": "Is this a signal service?", "acceptedAnswer": {"@type": "Answer", "text": "No. It reads the chart cold and tells you what it sees, including when the answer is to do nothing. Arrive with a thesis and it works as a second opinion. Arrive with none and it is the first one. The decision stays yours. If you want somebody to tell you what to buy, this is the wrong product."}}, {"@type": "Question", "name": "How much does it cost?", "acceptedAnswer": {"@type": "Answer", "text": "Three analyses are free with no card. After that it is one plan at $29 a month, detailed on the pricing page."}}]}
+  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Do I need to connect my broker or exchange?", "acceptedAnswer": {"@type": "Answer", "text": "No. Nothing connects. You upload an image, and the backend uses an AI provider for analysis and may call public market data feeds for an eligible quick read."}}, {"@type": "Question", "name": "What happens if it cannot identify my instrument?", "acceptedAnswer": {"@type": "Answer", "text": "It falls back to reading the screenshot alone and returns a structured read without live candles. Check any proposed price level against your chart before trading."}}, {"@type": "Question", "name": "Which timeframes work best?", "acceptedAnswer": {"@type": "Answer", "text": "Anything with a readable price axis and a legible timeframe label. If the timeframe cannot be read, the candle block is skipped on purpose, because statistics computed on the wrong interval hurt more than they help."}}, {"@type": "Question", "name": "Is this a signal service?", "acceptedAnswer": {"@type": "Answer", "text": "No. It reads the chart cold and tells you what it sees, including when the answer is to do nothing. Arrive with a thesis and it works as a second opinion. Arrive with none and it is the first one. The decision stays yours. If you want somebody to tell you what to buy, this is the wrong product."}}, {"@type": "Question", "name": "How much does it cost?", "acceptedAnswer": {"@type": "Answer", "text": "Three analyses are free with no card. After that it is one plan at $29 a month, detailed on the pricing page."}}]}
   </script>
   <style>
     :root{--bg:#050508;--fg:#f5f6f8;--muted:#9aa3ae;--green:#5eea8a;--line:rgba(154,163,174,.18)}
@@ -83,7 +83,7 @@
     <h1>What Tickrify can actually read</h1>
     <p class="meta">Updated August 2026</p>
 
-    <p>Every AI chart tool says it "analyzes any chart". Most of them mean the model looks at your image and guesses. <strong>Tickrify does something narrower and more checkable:</strong> it reads the instrument and timeframe off your screenshot, then goes and fetches the real candles for that instrument before saying anything about price.</p>
+    <p>Every AI chart tool says it "analyzes any chart". Most of them mean the model looks at your image and guesses. <strong>Tickrify does something narrower and more checkable:</strong> for eligible quick analyses, it attempts to identify the instrument and timeframe, fetch candles and verify that the feed agrees with your screenshot. When that check fails, the read uses the image alone and reports the missing data.</p>
     <p>That only works where a real feed exists. On this page we tell you exactly where it does and where it does not, because a tool that quietly guesses on the instruments it cannot verify is worse than one that admits the gap.</p>
 
     <div class="toc">
@@ -163,10 +163,10 @@
     <h2 id="faq">Questions people actually ask</h2>
 
     <h3>Do I need to connect my broker or exchange?</h3>
-    <p>No. Nothing connects. You upload an image, and the only outbound calls the backend makes are to public market data feeds for the instrument it read off your chart.</p>
+    <p>No. Nothing connects. You upload an image, and the backend uses an AI provider for analysis and may call public market data feeds for an eligible quick read.</p>
 
     <h3>What happens if it cannot identify my instrument?</h3>
-    <p>It falls back to reading the screenshot alone and returns a structured read without live candles. It does not invent a price.</p>
+    <p>It falls back to reading the screenshot alone and returns a structured read without live candles. Check any proposed price level against your chart before trading.</p>
 
     <h3>Which timeframes work best?</h3>
     <p>Anything with a readable price axis and a legible timeframe label. If the timeframe cannot be read, the candle block is skipped on purpose, because statistics computed on the wrong interval hurt more than they help.</p>

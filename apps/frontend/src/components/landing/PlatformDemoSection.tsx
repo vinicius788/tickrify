@@ -72,7 +72,7 @@ const CASES: Case[] = [
 
 const HOLD = 6200;
 const READ = 780;
-const PHASES = ['Reading structure', 'Pulling live candles', 'Scoring risk'];
+const PHASES = ['Reading structure', 'Checking available data', 'Scoring risk'];
 
 const PlatformDemoSection = () => {
   const { t } = useLanguage();

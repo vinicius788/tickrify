@@ -105,7 +105,7 @@
       <tr><th>&nbsp;</th><th>TradingView</th><th>Tickrify (us)</th></tr>
       <tr><td><strong>Category</strong></td><td>Full charting + data platform</td><td>Single-setup AI second opinion</td></tr>
       <tr><td><strong>Core job</strong></td><td>Watch, draw, alert, screen the whole market</td><td>Confirm or kill one specific trade idea</td></tr>
-      <tr><td><strong>Live data</strong></td><td>Yes — it's a data platform</td><td>Yes — real candles injected into every read (OKX/Binance, plus FX &amp; metals feeds)</td></tr>
+      <tr><td><strong>Live data</strong></td><td>Yes — it's a data platform</td><td>Verified candles for eligible quick reads when a feed is available and agrees with the screenshot</td></tr>
       <tr><td><strong>Forced structure</strong></td><td>You draw your own conclusion</td><td>Every read commits: entry / stop / targets / invalidation, or WAIT</td></tr>
       <tr><td><strong>Says "no trade"</strong></td><td>Not its job — it shows you everything</td><td>Yes — it would rather return WAIT than invent a signal</td></tr>
       <tr><td><strong>AI assistant</strong></td><td>Yes, native to the chart; reviewers note it can be slow and is locked to the platform</td><td>The entire product is the AI read</td></tr>
@@ -159,7 +159,7 @@
     <p>Two things: it's willing to return "no trade", and its results are published with sample sizes and confidence intervals. If you're happy with the in-chart copilot, you may not need us.</p>
 
     <h3>Does Tickrify work with screenshots from other platforms?</h3>
-    <p>Yes — MetaTrader, exchange interfaces, mobile apps. It reads the instrument and timeframe from the chart and fetches real candles for it.</p>
+    <p>Yes — MetaTrader, exchange interfaces, mobile apps. For eligible quick reads, it attempts to identify the instrument and timeframe and attach verified candles. If that fails, it reads the screenshot without a verified candle block.</p>
 
     <h3>Can Tickrify place trades for me?</h3>
     <p>No, and it won't. A tool that both advises and executes has an incentive problem we'd rather not have.</p>
