@@ -20,6 +20,7 @@ import {
 import { useEconomicCalendar } from '@/hooks/useEconomicCalendar';
 import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
+import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { ShareCardButton, type ShareCardData } from './ShareCard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -33,9 +34,11 @@ import {
   confidenceToPercent,
   getConvictionTier,
   getRecommendationMeta,
+  getScenarioMeta,
   normalizeConfluenceScore,
 } from '@/lib/trading-ui';
 import { asRecord } from '@/lib/utils';
+import { computeDirectionalRiskReward } from '@/lib/trade-plan';
 
 interface AnalysisResultProps {
   analysisData: AIAnalysisResponse | null;
@@ -346,6 +349,7 @@ export function normalizeRiskFactorsForView(value: unknown): string[] {
 
 interface ChecklistItem {
   ok: boolean;
+  notApplicable?: boolean;
   label: string;
   detail: string;
 }
@@ -354,6 +358,7 @@ interface StructureChecklist {
   items: ChecklistItem[];
   score: string | null;
   verdict: string | null;
+  scoreMismatch: boolean;
 }
 
 /**
@@ -375,7 +380,7 @@ interface StructureChecklist {
  */
 export function parseStructureChecklist(text: string): StructureChecklist {
   if (!text) {
-    return { items: [], score: null, verdict: null };
+    return { items: [], score: null, verdict: null, scoreMismatch: false };
   }
 
   let rest = text;
@@ -383,7 +388,7 @@ export function parseStructureChecklist(text: string): StructureChecklist {
   let verdict: string | null = null;
 
   // Cauda "→ 6/7 → BUY limit setup."
-  const tail = rest.match(/→\s*(\d+\s*\/\s*\d+)\s*(?:→\s*(.+?))?\s*$/);
+  const tail = rest.match(/→\s*(\d+\s*\/\s*\d+)\s*(?:passes)?\s*(?:→\s*(.+?))?\s*$/i);
   if (tail && typeof tail.index === 'number') {
     score = tail[1].replace(/\s+/g, '');
     verdict = (tail[2] || '').replace(/\.$/, '').trim() || null;
@@ -392,14 +397,17 @@ export function parseStructureChecklist(text: string): StructureChecklist {
 
   const items: ChecklistItem[] = [];
 
-  for (const raw of rest.split(/(?=[✅❌✔✖⚠])/u)) {
+  // O modelo usa "| N/A ..." para critérios sem dado. Preserve o item como
+  // não avaliável; não o cole ao ❌ anterior nem pinte de reprovação.
+  const separated = rest.replace(/\|\s*(N\/A)\b/giu, ' ⚪ $1');
+  for (const raw of separated.split(/(?=[✅❌✔✖⚠⚪])/u)) {
     const chunk = raw.trim();
     const marker = chunk.charAt(0);
-    if (!chunk || !'✅❌✔✖⚠'.includes(marker)) {
+    if (!chunk || !'✅❌✔✖⚠⚪'.includes(marker)) {
       continue;
     }
 
-    const body = chunk.slice(1).replace(/^\uFE0F/, '').trim().replace(/\.$/, '');
+    const body = chunk.slice(1).replace(/^\uFE0F/, '').trim().replace(/\s*\|\s*$/, '').replace(/\.$/, '');
     if (!body) {
       continue;
     }
@@ -410,27 +418,35 @@ export function parseStructureChecklist(text: string): StructureChecklist {
 
     items.push({
       ok: marker === '✅' || marker === '✔',
+      notApplicable: marker === '⚪',
       label: split ? split[1].trim() : '',
       detail: split ? split[2].trim() : body,
     });
   }
 
-  return { items, score, verdict };
+  // Só confira quando os sete itens aparecem: uma resposta antiga pode trazer
+  // um resumo parcial, com placar do checklist completo.
+  const reported = score?.match(/^([0-7])\/7$/);
+  const scoreMismatch = items.length === 7 && reported != null &&
+    Number(reported[1]) !== items.filter((item) => item.ok).length;
+  return { items, score: scoreMismatch ? null : score, verdict, scoreMismatch };
 }
 
-function parseRiskReward(value: unknown): number | null {
-  const text = String(value || '').trim();
-  if (!text) {
-    return null;
-  }
-
-  const colonMatch = text.match(/1\s*:\s*(\d+(?:\.\d+)?)/);
-  if (colonMatch) {
-    return Number(colonMatch[1]);
-  }
-
-  const numeric = Number(text);
-  return Number.isFinite(numeric) ? numeric : null;
+/** Esconde trios incompletos/incoerentes também em análises antigas já salvas. */
+export function parseTargetProbabilities(analysis: Record<string, unknown>, hasTradePlan: boolean): {
+  tp1: number; tp2: number; stop: number;
+} | null {
+  if (!hasTradePlan) return null;
+  const percentage = (value: unknown): number | null => {
+    const n = toNumber(value);
+    if (n === null || n <= 0 || n > 100) return null;
+    return Math.min(99, Math.max(1, Math.round(n <= 1 ? n * 100 : n)));
+  };
+  const tp1 = percentage(analysis.probabilityTp1);
+  const tp2 = percentage(analysis.probabilityTp2);
+  const stop = percentage(analysis.probabilityStop);
+  if (tp1 === null || tp2 === null || stop === null || tp2 > tp1 || tp1 + stop > 101) return null;
+  return { tp1, tp2, stop };
 }
 
 const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) => {
@@ -506,6 +522,12 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const marketStructure = asRecord(analysis.marketStructure);
 
   const recommendationMeta = getRecommendationMeta(analysisData.recommendation);
+  const scenarioMeta = getScenarioMeta(analysisData.bias || marketStructure.bias, analysisData.recommendation);
+  const actionLabel = recommendationMeta.tone === 'buy'
+    ? t.analysis.buy
+    : recommendationMeta.tone === 'sell'
+      ? t.analysis.sell
+      : t.analysis.hold;
   const confidence = confidenceToPercent(analysisData.confidence);
   // #2 — calibração: taxa de acerto histórica de setups semelhantes.
   const calibration = asRecord((analysisData as unknown as Record<string, unknown>).calibration);
@@ -557,10 +579,20 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const tp1ClosePercent = positiveOrNull(toNumber(analysis.tp1ClosePercent));
   const tp2ClosePercent = positiveOrNull(toNumber(analysis.tp2ClosePercent));
   const breakevenTrigger = String(analysis.breakevenTrigger || '').trim() || null;
-  const probabilityTp1 = positiveOrNull(toNumber(analysis.probabilityTp1));
-  const probabilityTp2 = positiveOrNull(toNumber(analysis.probabilityTp2));
-  const probabilityStop = positiveOrNull(toNumber(analysis.probabilityStop));
-  const hasProbabilities = probabilityTp1 !== null || probabilityTp2 !== null || probabilityStop !== null;
+  const tradeTone = recommendationMeta.tone;
+  const rrTp1 = computeDirectionalRiskReward(entry, stopLoss, takeProfit1, tradeTone);
+  const rrTp2 = computeDirectionalRiskReward(entry, stopLoss, takeProfit2, tradeTone);
+  const invalidTradePlan = (tradeTone === 'buy' || tradeTone === 'sell') &&
+    entry !== null && stopLoss !== null &&
+    ((takeProfit1 !== null && rrTp1 === null) || (takeProfit2 !== null && rrTp2 === null));
+  const probabilities = parseTargetProbabilities(
+    analysis,
+    !invalidTradePlan && (tradeTone === 'buy' || tradeTone === 'sell') && rrTp1 !== null,
+  );
+  const probabilityTp1 = probabilities?.tp1 ?? null;
+  const probabilityTp2 = probabilities?.tp2 ?? null;
+  const probabilityStop = probabilities?.stop ?? null;
+  const hasProbabilities = probabilities !== null;
   const hasStructuredExit = tp1ClosePercent !== null || tp2ClosePercent !== null || breakevenTrigger !== null;
   const alternativeScenario = String(analysis.alternativeScenario || '').trim() || null;
   const trendStrength = String(analysis.trendStrength || '').trim() || null;
@@ -568,20 +600,13 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const marketRegime = String(analysis.marketRegime || '').trim().toLowerCase() || null;
   const marketRegimeNote = String(analysis.marketRegimeNote || '').trim() || null;
   const multiTimeframeAlignment = String(analysis.multiTimeframeAlignment || '').trim() || null;
+  const evidence = asRecord(fullResponse.evidence);
+  const unverifiedMtfAlignment = Boolean(multiTimeframeAlignment) && evidence.version === 1 &&
+    evidence.additionalChartsDelivered === 0;
 
   // R/R por alvo, calculado direto dos níveis (consistente e funciona em análises antigas).
-  const computeRR = (e: number | null, sl: number | null, tp: number | null): number | null => {
-    if (e === null || sl === null || tp === null) return null;
-    const risk = Math.abs(e - sl);
-    const reward = Math.abs(tp - e);
-    if (!(risk > 0) || !(reward > 0)) return null;
-    return Math.round((reward / risk) * 100) / 100;
-  };
-  const rrTp1 = computeRR(entry, stopLoss, takeProfit1);
-  const rrTp2 = computeRR(entry, stopLoss, takeProfit2);
-  const riskRewardRatioRaw = analysis.riskRewardRatio;
-  // valor principal exibido: alvo final (TP2) ou TP1; cai para o texto da IA se faltarem níveis.
-  const riskReward = rrTp2 ?? rrTp1 ?? parseRiskReward(riskRewardRatioRaw);
+  // Sem plano direcional verificável, não mostra razão fornecida só em texto.
+  const riskReward = invalidTradePlan || tradeTone === 'hold' ? null : rrTp2 ?? rrTp1;
   // R/R baixo (< 1.5) = vermelho + aviso; >= 2 verde; entre = amarelo.
   const riskRewardLow = riskReward !== null && riskReward < 1.5;
   const riskRewardTone = riskReward === null
@@ -709,7 +734,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   // a coluna de rótulos alinha igual à dos Operation Levels, e um campo vazio
   // some da grade em vez de imprimir "Not informed" no meio da leitura.
   const structureRows: Array<{ key: string; label: string; value: string; tone?: string }> = [
-    { key: 'bias', label: t.analysis.bias, value: String(marketStructure.bias || analysisData.bias || 'neutral') },
+    { key: 'bias', label: t.analysis.bias, value: scenarioMeta.label },
     { key: 'structure', label: t.analysis.structure, value: cleanModelText(marketStructure.lastStructure) },
     { key: 'bos', label: 'BOS / CHoCH', value: cleanModelText(marketStructure.breakOfStructure) },
     { key: 'zone', label: t.analysis.priceZone, value: cleanModelText(marketStructure.priceZone) },
@@ -748,7 +773,11 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
         : '',
       tone: marketRegime === 'trending' ? 'buy' : marketRegime === 'volatile' ? 'sell' : 'hold',
     },
-    { key: 'mtf', label: t.analysis.mtfAlignment, value: cleanModelText(multiTimeframeAlignment) },
+    {
+      key: 'mtf', label: t.analysis.mtfAlignment,
+      value: unverifiedMtfAlignment ? t.analysis.mtfEvidenceWarning : cleanModelText(multiTimeframeAlignment),
+      tone: unverifiedMtfAlignment ? 'hold' : undefined,
+    },
   ].filter((row) => row.value.length > 0);
 
   const patternItems = splitItems(analysis.identifiedPatterns).map((item) => cleanModelText(item)).filter(Boolean);
@@ -827,8 +856,9 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   const shareData: ShareCardData = {
     symbol,
     timeframe,
-    verdict: recommendationMeta.label,
-    tone: recommendationMeta.tone,
+    scenario: scenarioMeta.label,
+    action: recommendationMeta.label,
+    tone: scenarioMeta.tone,
     tier: convictionTier,
     confidence,
     read: shareRead,
@@ -836,15 +866,21 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
     date: timestamp,
   };
 
-  const headerIcon = recommendationMeta.tone === 'buy' ? ArrowUp : recommendationMeta.tone === 'sell' ? ArrowDown : Minus;
+  const headerIcon = scenarioMeta.tone === 'buy' ? ArrowUp : scenarioMeta.tone === 'sell' ? ArrowDown : Minus;
   const HeaderIcon = headerIcon;
 
   const signalToneClasses =
-    recommendationMeta.tone === 'buy'
+    scenarioMeta.tone === 'buy'
       ? 'bg-[var(--signal-buy-bg)] border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
-      : recommendationMeta.tone === 'sell'
+      : scenarioMeta.tone === 'sell'
         ? 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
         : 'bg-[var(--signal-hold-bg)] border-[var(--signal-hold-border)] text-[var(--signal-hold)]';
+  const actionToneClasses =
+    recommendationMeta.tone === 'buy'
+      ? 'border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
+      : recommendationMeta.tone === 'sell'
+        ? 'border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
+        : 'border-[var(--signal-hold-border)] text-[var(--signal-hold)]';
 
   const isDemo = Boolean(analysisData.isDemo);
 
@@ -900,12 +936,12 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
       <Card className="surface-terminal-elevated rounded-xl fade-in-stagger" style={{ animationDelay: '0ms' }}>
         <CardContent className="p-5 md:p-6">
-          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)] md:flex-nowrap md:items-center md:gap-4">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)] md:gap-4">
             <span className="whitespace-nowrap font-terminal font-semibold text-[var(--text-primary)]">{symbol}</span>
             <span className="whitespace-nowrap font-terminal">{timeframe}</span>
             <div className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold tracking-widest ${signalToneClasses}`}>
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{recommendationMeta.label}</span>
+              <span>{scenarioMeta.label}</span>
             </div>
             {convictionTier && (
               <span
@@ -927,11 +963,9 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 {r.strategyFitTitle}: {STRATEGY_FIT_LABEL[strategyFit]}
               </span>
             )}
-            <span>
-              {t.analysis.bias.toUpperCase()}:{' '}
-              <strong className="whitespace-nowrap font-medium text-[var(--text-primary)]">
-                {String(analysisData.bias || marketStructure.bias || 'neutral').toUpperCase()}
-              </strong>
+            <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border px-2 py-1 ${actionToneClasses}`}>
+              {t.analysis.action.toUpperCase()}:{' '}
+              <strong className="font-semibold">{actionLabel}</strong>
             </span>
             <span>
               {t.analysis.confidence.toUpperCase()}:{' '}
@@ -950,7 +984,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 /accuracy, e um print gerado a partir de dado de demonstração
                 circulando como leitura real é a mesma classe de problema que a
                 auditoria de 27/07 removeu da vitrine. */}
-            {!isDemo && <ShareCardButton data={shareData} />}
+            {!isDemo && !invalidTradePlan && <ShareCardButton data={shareData} />}
             {detectedSession && (
               <span className="whitespace-nowrap rounded-sm border border-[var(--border-subtle)] px-2 py-0.5 font-terminal text-xs text-[var(--text-secondary)] uppercase">
                 {detectedSession.replace('_', ' ')}
@@ -981,6 +1015,24 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
           )}
         </CardContent>
       </Card>
+
+      {invalidTradePlan && (
+        <Alert className="border-[var(--signal-sell)] bg-[var(--signal-sell-bg)]" role="alert">
+          <AlertTriangle className="h-4 w-4 text-[var(--signal-sell)]" />
+          <AlertDescription className="font-semibold text-[var(--signal-sell)]">
+            {r.invalidTradePlan}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {unverifiedMtfAlignment && (
+        <Alert className="border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)]" role="alert">
+          <AlertTriangle className="h-4 w-4 text-[var(--signal-hold)]" />
+          <AlertDescription className="text-[var(--signal-hold)]">
+            {t.analysis.mtfEvidenceWarning}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {isWaitVerdict && waitFlipItems.length > 0 && (
         // O bloco usava borda + fundo ambar. Problema: o badge HOLD ja e ambar
@@ -1034,6 +1086,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   {t.analysis.imageUnavailable}
                 </div>
               )}
+              <AnalysisEvidencePanel evidence={fullResponse.evidence} />
             </CardContent>
           </Card>
         </div>
@@ -1055,9 +1108,9 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               <div>
                 <p className="text-xs text-[var(--text-secondary)]">R/R</p>
                 <p className={`font-terminal text-base font-semibold ${riskRewardTone}`}>
-                  {riskReward !== null ? `${riskReward.toFixed(1)} : 1` : String(riskRewardRatioRaw || 'N/A')}
+                  {riskReward !== null ? `${riskReward.toFixed(1)} : 1` : 'N/A'}
                 </p>
-                {(rrTp1 !== null || rrTp2 !== null) && (
+                {!invalidTradePlan && tradeTone !== 'hold' && (rrTp1 !== null || rrTp2 !== null) && (
                   <p className="font-terminal text-[10px] text-[var(--text-secondary)]">
                     {rrTp1 !== null ? `TP1 ${rrTp1.toFixed(1)}` : ''}
                     {rrTp1 !== null && rrTp2 !== null ? ' · ' : ''}
@@ -1143,7 +1196,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                   <span className="font-terminal font-semibold uppercase text-[var(--text-primary)]">{entryType}</span>
                   {/* Trava de coerência: com R/R abaixo do ideal, não exibir "entrar a
                       mercado agora" (contradiz o aviso). Mostra orientação de aguardar recuo. */}
-                  {riskRewardLow && entryType.toLowerCase() === 'market' ? (
+                  {invalidTradePlan ? null : riskRewardLow && entryType.toLowerCase() === 'market' ? (
                     <p className="mt-0.5 text-[var(--signal-hold)]">⚠ {r.entryCautionRRLow}</p>
                   ) : (
                     entryCondition && <p className="mt-0.5 text-[var(--text-secondary)]">{entryCondition}</p>
@@ -1292,6 +1345,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                           {probabilityTp2 !== null && <span className="text-[var(--signal-buy)]/80">TP2 {Math.round(probabilityTp2)}%</span>}
                           {probabilityStop !== null && <span className="text-[var(--signal-sell)]">Stop {Math.round(probabilityStop)}%</span>}
                         </div>
+                        <p className="mt-2 text-xs text-[var(--text-muted)]">{t.analysis.probabilityEstimateNote}</p>
                       </div>
                     </AccordionContent>
                   </AccordionItem>
@@ -1461,7 +1515,11 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                           <span className="font-terminal text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
                             {t.analysis.structureValidation}
                           </span>
-                          {checklist.score ? (
+                          {checklist.scoreMismatch ? (
+                            <span className="font-terminal text-xs text-[var(--signal-hold)]">
+                              {t.analysis.checklistScoreMismatch}
+                            </span>
+                          ) : checklist.score ? (
                             <span className="font-terminal text-xs text-[var(--text-primary)]">
                               {checklist.score}
                               {checklist.verdict ? (
@@ -1478,10 +1536,10 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                             >
                               <span
                                 className={`mt-px flex-shrink-0 font-terminal text-xs ${
-                                  item.ok ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'
+                                  item.notApplicable ? 'text-[var(--text-muted)]' : item.ok ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'
                                 }`}
                               >
-                                {item.ok ? '✓' : '✕'}
+                                {item.notApplicable ? '—' : item.ok ? '✓' : '✕'}
                               </span>
                               <span className="text-[var(--text-secondary)] leading-relaxed">
                                 {item.label ? (
@@ -1653,7 +1711,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               {!isWaitVerdict && (
                 <>
                   <div className="mt-4">
-                    <PositionSizingCalculator entry={entry} stopLoss={stopLoss} />
+                    {!invalidTradePlan && tradeTone !== 'hold' && <PositionSizingCalculator entry={entry} stopLoss={stopLoss} />}
                   </div>
 
                   <div className="mt-4 border-t-2 border-[var(--border-emphasis)] pt-4">{summaryBlock}</div>

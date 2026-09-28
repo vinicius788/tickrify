@@ -210,7 +210,32 @@ describe('DashboardPage', () => {
     ).toBeTruthy();
   });
 
-  it('falha de rede vira analysis_failed com code, errorName e errorMessage, e mensagem clara na tela', async () => {
+  it('registra falha de processamento sem code unknown nem mensagem privada', async () => {
+    const user = userEvent.setup();
+    mockUseAPIClient.mockReturnValue(makeApiClient({
+      createAnalysis: vi.fn().mockResolvedValue({ id: 'analysis-failed', status: 'pending' }),
+      waitForAnalysisCompletion: vi.fn().mockResolvedValue({
+        id: 'analysis-failed',
+        status: 'failed',
+        errorMessage: 'Detalhe privado da falha',
+      }),
+    }));
+
+    renderDashboard();
+    await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+    await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+    await waitFor(() => {
+      expect(mockTrack).toHaveBeenCalledWith('analysis_failed', expect.objectContaining({
+        code: 'processing_failed_unclassified',
+        stage: 'processing',
+      }));
+    });
+    const event = mockTrack.mock.calls.find(([name]) => name === 'analysis_failed')?.[1];
+    expect(JSON.stringify(event)).not.toContain('Detalhe privado');
+  });
+
+  it('falha de rede envia código estável sem mensagem privada e mostra mensagem clara na tela', async () => {
     const user = userEvent.setup();
     const { APIError } = await import('@/lib/api');
 
@@ -232,16 +257,12 @@ describe('DashboardPage', () => {
     expect(screen.queryByText(/VITE_API_URL/)).toBeNull();
 
     const failed = mockTrack.mock.calls.find(([event]) => event === 'analysis_failed');
-    expect(failed?.[1]).toMatchObject({
-      code: 'network_error',
-      errorName: 'TypeError',
-      errorMessage: 'Failed to fetch',
-      analysisType: 'quick',
-    });
+    expect(failed?.[1]).toMatchObject({ code: 'network_error', stage: 'request', analysisType: 'quick' });
+    expect(failed?.[1].errorMessage).toBeUndefined();
     expect(typeof failed?.[1].durationMs).toBe('number');
   });
 
-  it('falha de token mostra a mensagem de sessao e corta errorMessage em 200 caracteres', async () => {
+  it('falha de token mostra a mensagem de sessão sem enviar o erro bruto à telemetria', async () => {
     const user = userEvent.setup();
     const { APIError } = await import('@/lib/api');
 
@@ -260,8 +281,8 @@ describe('DashboardPage', () => {
     expect(await screen.findByText(/Não conseguimos confirmar sua sessão/)).toBeTruthy();
 
     const failed = mockTrack.mock.calls.find(([event]) => event === 'analysis_failed');
-    expect(failed?.[1]).toMatchObject({ code: 'auth_token_failed', errorName: 'Error' });
-    expect(failed?.[1].errorMessage).toHaveLength(200);
+    expect(failed?.[1]).toMatchObject({ code: 'auth_token_failed', stage: 'request' });
+    expect(failed?.[1].errorMessage).toBeUndefined();
   });
 
   describe('fim das 3 gratis', () => {

@@ -12,6 +12,7 @@ import { AIAdapter, AIAnalysisError } from '../src/modules/ai/ai.adapter';
 import {
   computeRiskReward,
   formatRiskReward,
+  hasInvalidTradePlanLevels,
   normalizeTargetProbabilities,
   reconcileConfluence,
 } from '../src/common/utils/analysis-normalizer';
@@ -25,6 +26,7 @@ import { DEEP_ENRICHMENT_INSTRUCTION } from '../src/modules/prompt/prompt-builde
 import { strategyFitFields, type StrategyProfile } from '../src/common/strategy/strategy-profile';
 import { startOutcomeSweeper } from './outcome.sweeper';
 import { trackFreeAnalysisCompleted } from '../src/common/analytics/free-funnel';
+import { safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../src/common/analytics/analysis-failure';
 import { MailService } from '../src/modules/mail/mail.service';
 import { notifyIfFreeQuotaExhausted, type RecoveryEmailDeps } from '../src/modules/mail/recovery-email';
 import Stripe from 'stripe';
@@ -299,13 +301,6 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisRes
   const stopLoss = ensureNumberOrNull(analysisSource.stopLoss ?? source.stopLoss);
   const takeProfit1 = ensureNumberOrNull(analysisSource.takeProfit1 ?? source.takeProfit1);
   const takeProfit2 = ensureNumberOrNull(analysisSource.takeProfit2 ?? source.takeProfit2);
-  const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1);
-  const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2);
-  const aiRiskRewardRatio =
-    (analysisSource.riskRewardRatio ?? source.riskRewardRatio) === null ||
-    (analysisSource.riskRewardRatio ?? source.riskRewardRatio) === undefined
-      ? null
-      : ensureString(analysisSource.riskRewardRatio ?? source.riskRewardRatio, '') || null;
 
   // Confiança em escala 0-100, com piso de 30 em gráfico válido (paridade com o
   // adapter). normalizeConfidence devolve 0-1 aqui — convertemos para 0-100.
@@ -315,6 +310,15 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisRes
   const workerRecommendation = normalizeRecommendation(source.recommendation);
   const canonicalRecommendation =
     workerRecommendation === 'COMPRA' ? 'BUY' : workerRecommendation === 'VENDA' ? 'SELL' : 'WAIT';
+  if (hasInvalidTradePlanLevels(canonicalRecommendation, entry, stopLoss, takeProfit1, takeProfit2)) {
+    throw new AIAnalysisError({
+      code: 'invalid_trade_plan',
+      message: 'A IA retornou níveis incoerentes de entrada, stop ou alvo.',
+      retriable: false,
+    });
+  }
+  const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1, canonicalRecommendation);
+  const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2, canonicalRecommendation);
 
   // Sequência determinística ÚNICA (mesma usada pelo adapter):
   // caps de confiança → guard R/R → news guard → teto WAIT.
@@ -337,14 +341,14 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisRes
   const finalConfidencePct = decision.confidence;
 
   // Probabilidades por alvo — mesma regra do adapter (paridade worker/adapter):
-  // 0/inválido = ausente; default determinístico derivado da confiança.
+  // sem trio completo ou plano de trade, não publica estimativas fabricadas.
   const targetProbabilities = normalizeTargetProbabilities(
     {
       tp1: analysisSource.probabilityTp1,
       tp2: analysisSource.probabilityTp2,
       stop: analysisSource.probabilityStop,
     },
-    { hasTradePlan: entry !== null, confidence: normalizeConfidence(source.confidence) },
+    { hasTradePlan: finalRecommendation !== 'AGUARDAR' && riskRewardTp1 !== null },
   );
 
   return {
@@ -365,9 +369,10 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisRes
       takeProfit2Percent: ensureNumberOrNull(
         analysisSource.takeProfit2Percent ?? source.takeProfit2Percent,
       ),
-      riskRewardRatio: formatRiskReward(riskRewardTp2 ?? riskRewardTp1) ?? aiRiskRewardRatio,
-      riskRewardTp1,
-      riskRewardTp2,
+      riskRewardRatio: finalRecommendation === 'AGUARDAR'
+        ? null : formatRiskReward(riskRewardTp2 ?? riskRewardTp1),
+      riskRewardTp1: finalRecommendation === 'AGUARDAR' ? null : riskRewardTp1,
+      riskRewardTp2: finalRecommendation === 'AGUARDAR' ? null : riskRewardTp2,
       marketStructure: {
         bias: normalizeMarketBias(marketStructureSource.bias ?? source.marketBias),
         lastStructure: ensureString(marketStructureSource.lastStructure, 'Não informado'),
@@ -1021,7 +1026,7 @@ async function processAnalysis(job: Job<JobData>) {
   try {
     await prisma.analysis.update({
       where: { id: analysisId },
-      data: { status: 'processing', errorMessage: null },
+      data: { status: 'processing', errorMessage: null, errorCode: null },
     });
 
     // ── Free analyses (isDemo=true) now run real AI — no tick cost, same pipeline ─
@@ -1063,7 +1068,7 @@ async function processAnalysis(job: Job<JobData>) {
         raw: rawContent.slice(0, 500),
       });
 
-      await prisma.analysis.update({
+      const failedAnalysis = await prisma.analysis.update({
         where: { id: analysisId },
         data: {
           status: 'failed',
@@ -1071,6 +1076,7 @@ async function processAnalysis(job: Job<JobData>) {
           confidence: null,
           reasoning: validationMessage,
           errorMessage: validationMessage,
+          errorCode: 'validation_failed',
           result: Prisma.DbNull,
           fullResponse: rawContent,
         },
@@ -1092,6 +1098,15 @@ async function processAnalysis(job: Job<JobData>) {
         errorCode: 'validation_failed',
       });
 
+      await refundTicksForFailedAnalysis(userId, isDemo, normalizedAnalysisType, analysisId);
+      await trackAnalysisExecutionFailed(prisma, {
+        userId,
+        analysisId,
+        analysisType: normalizedAnalysisType,
+        code: 'validation_failed',
+        createdAt: failedAnalysis.createdAt,
+      });
+
       return;
     }
 
@@ -1099,7 +1114,13 @@ async function processAnalysis(job: Job<JobData>) {
       // O selo do perfil de estrategia vem do TOPO da resposta do adapter
       // (aiSource), nao do `parsed`, que so carrega recomendacao, confianca e
       // analise. Sem este spread ele se perdia aqui (bug ate 24/09/2026).
-      source: { ...(parsed as unknown as Record<string, unknown>), ...strategyFitFields(aiSource) },
+      source: {
+        ...(parsed as unknown as Record<string, unknown>),
+        ...(aiSource && typeof aiSource === 'object' && 'evidence' in aiSource && aiSource.evidence
+          ? { evidence: aiSource.evidence }
+          : {}),
+        ...strategyFitFields(aiSource),
+      },
       recommendation: parsed.recommendation,
       bias: parsed.analysis.marketStructure.bias,
       confidence: parsed.confidence,
@@ -1125,6 +1146,7 @@ async function processAnalysis(job: Job<JobData>) {
         result: normalized.fullResponse as any,
         fullResponse: rawContent,
         errorMessage: null,
+        errorCode: null,
       },
     });
     persistMs = Date.now() - tPersist;
@@ -1176,12 +1198,7 @@ async function processAnalysis(job: Job<JobData>) {
       annotateMs,
       persistMs,
       totalMs: Date.now() - t0,
-      errorCode:
-        error instanceof AIAnalysisError
-          ? error.code
-          : error instanceof Error
-            ? error.message.slice(0, 60).replace(/\s+/g, '_')
-            : 'unknown',
+      errorCode: safeAnalysisFailureCode(error instanceof AIAnalysisError ? error.code : null),
     });
 
     const safeMessage = safeWorkerErrorMessage(error);
@@ -1191,17 +1208,25 @@ async function processAnalysis(job: Job<JobData>) {
 
     // Non-retriable error → fail permanently and immediately
     if (error instanceof AIAnalysisError && !error.retriable) {
-      await prisma.analysis.update({
+      const failedAnalysis = await prisma.analysis.update({
         where: { id: analysisId },
         data: {
           status: 'failed',
           reasoning: safeMessage,
           errorMessage: safeMessage,
+          errorCode: safeAnalysisFailureCode(error.code),
           result: Prisma.DbNull,
           fullResponse: failureRawContent,
         },
       });
       await refundTicksForFailedAnalysis(userId, isDemo, normalizedAnalysisType, analysisId);
+      await trackAnalysisExecutionFailed(prisma, {
+        userId,
+        analysisId,
+        analysisType: normalizedAnalysisType,
+        code: error.code,
+        createdAt: failedAnalysis.createdAt,
+      });
       throw new UnrecoverableError(error.message);
     }
 
@@ -1212,17 +1237,25 @@ async function processAnalysis(job: Job<JobData>) {
 
     if (isLastAttempt) {
       // Exhausted all retries — set final failure state
-      await prisma.analysis.update({
+      const failedAnalysis = await prisma.analysis.update({
         where: { id: analysisId },
         data: {
           status: 'failed',
           reasoning: safeMessage,
           errorMessage: safeMessage,
+          errorCode: safeAnalysisFailureCode(error instanceof AIAnalysisError ? error.code : null),
           result: Prisma.DbNull,
           fullResponse: failureRawContent,
         },
       });
       await refundTicksForFailedAnalysis(userId, isDemo, normalizedAnalysisType, analysisId);
+      await trackAnalysisExecutionFailed(prisma, {
+        userId,
+        analysisId,
+        analysisType: normalizedAnalysisType,
+        code: error instanceof AIAnalysisError ? error.code : 'processing_unclassified',
+        createdAt: failedAnalysis.createdAt,
+      });
     } else {
       // Intermediate retry — keep status=processing so the frontend keeps polling
       await prisma.analysis.update({

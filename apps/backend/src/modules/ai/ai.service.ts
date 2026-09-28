@@ -36,6 +36,7 @@ import {
   normalizeRecommendation,
   normalizeSymbol,
   computeRiskReward,
+  hasInvalidTradePlanLevels,
   formatRiskReward,
 } from '../../common/utils/analysis-normalizer';
 import {
@@ -54,6 +55,7 @@ import {
 } from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
 import { trackFreeAnalysisCompleted, trackFreeAnalysisStarted } from '../../common/analytics/free-funnel';
+import { analysisFailureCodeForResponse, safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../../common/analytics/analysis-failure';
 import {
   AnalysisContext,
   validateImageHook,
@@ -125,6 +127,12 @@ export class AiService implements OnModuleInit {
    */
   async onModuleInit(): Promise<void> {
     try {
+      // Produção usa RUN_MIGRATIONS_ON_START=false. Criar a coluna opcional
+      // antes de qualquer leitura Prisma de Analysis evita indisponibilidade
+      // durante o primeiro boot desta versão; a migração formal cobre bancos novos.
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "errorCode" TEXT',
+      );
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "outcome" TEXT',
       );
@@ -427,7 +435,7 @@ export class AiService implements OnModuleInit {
         isDemo,
         userLanguage,
         strategyProfile,
-      });
+      }, { jobId: analysis.id });
 
       return {
         id: analysis.id,
@@ -997,18 +1005,19 @@ export class AiService implements OnModuleInit {
     } = params;
     const startedAt = Date.now();
 
-    await this.prisma.analysis.update({
-      where: { id: analysisId },
-      data: { status: 'processing' },
-    });
-
-    const tickBalance = await this.ticksService.getBalance(userId);
-    const pipelineCtx: AnalysisContext = { userId, imageUrl, analysisType, tickBalance };
-
-    // Pre-hooks (image validation only — access/tick checks already done in createAnalysis)
-    await runPreHooks(pipelineCtx, [validateImageHook()]);
-
     try {
+      await this.prisma.analysis.update({
+        where: { id: analysisId },
+        data: { status: 'processing' },
+      });
+
+      const tickBalance = await this.ticksService.getBalance(userId);
+      const pipelineCtx: AnalysisContext = { userId, imageUrl, analysisType, tickBalance };
+
+      // The analysis row and paid debit already exist. Pre-hook failures must
+      // enter the same failure/refund path as model failures.
+      await runPreHooks(pipelineCtx, [validateImageHook()]);
+
       const prompt = await this.promptBuilder.buildPromptByVersion(
         analysisType,
         promptVersion,
@@ -1024,8 +1033,12 @@ export class AiService implements OnModuleInit {
       );
 
       let normalizedPayload = buildPersistedAnalysisPayload({
-        // Selo de estrategia: o VALIDADO pelo adapter, por cima do cru do modelo.
-        source: { ...((aiResponse.rawResponse as Record<string, any>) || {}), ...strategyFitFields(aiResponse) },
+        source: {
+          ...((aiResponse.rawResponse as Record<string, any>) || {}),
+          ...(aiResponse.evidence ? { evidence: aiResponse.evidence } : {}),
+          // Selo de estrategia: o VALIDADO pelo adapter, por cima do cru do modelo.
+          ...strategyFitFields(aiResponse),
+        },
         recommendation: aiResponse.recommendation,
         bias: aiResponse.bias,
         confidence: aiResponse.confidence,
@@ -1052,6 +1065,7 @@ export class AiService implements OnModuleInit {
           result: normalizedPayload.fullResponse as any,
           fullResponse: rawContent,
           errorMessage: null,
+          errorCode: null,
         },
       });
 
@@ -1066,12 +1080,13 @@ export class AiService implements OnModuleInit {
       return this.serializeAnalysis(updated);
     } catch (error) {
       const safeMessage = this.safeErrorMessage(error);
-      await this.prisma.analysis.update({
+      const failedAnalysis = await this.prisma.analysis.update({
         where: { id: analysisId },
         data: {
           status: 'failed',
           reasoning: safeMessage,
           errorMessage: safeMessage,
+          errorCode: safeAnalysisFailureCode(error instanceof AIAnalysisError ? error.code : null),
           result: Prisma.DbNull,
         },
       });
@@ -1095,6 +1110,14 @@ export class AiService implements OnModuleInit {
           );
         }
       }
+
+      await trackAnalysisExecutionFailed(this.prisma, {
+        userId,
+        analysisId,
+        analysisType,
+        code: error instanceof AIAnalysisError ? error.code : 'processing_unclassified',
+        createdAt: failedAnalysis.createdAt,
+      });
 
       // Convert non_chart_image to a 400 HTTP exception so the frontend receives
       // a proper error code + user-friendly message instead of a generic 500.
@@ -1273,24 +1296,27 @@ export class AiService implements OnModuleInit {
       typeof knownPaidAccess === 'boolean' ? knownPaidAccess : await this.hasPaidAccess(userId);
 
     if (paidAccess) {
-      // Assinante: consome ticks do plano mensal (débito atômico).
-      await this.ticksService.debitTicks(
-        userId,
-        tickCost,
-        `Análise ${analysisType === 'deep' ? 'deep' : 'rápida'} de gráfico`,
-        { analysisType },
-      );
-
-      const analysis = await this.prisma.analysis.create({
-        data: {
+      // Debit and create must commit together. A separate successful debit
+      // followed by a failed Analysis insert would charge the user for no job.
+      const analysis = await this.prisma.$transaction(async (tx) => {
+        await this.ticksService.debitTicks(
           userId,
-          imageUrl: rowData.imageUrl,
-          status: rowData.status,
-          promptVer: rowData.promptVer,
-          model: rowData.model,
-          isDemo: false,
-          strategyHash: rowData.strategyHash ?? null,
-        },
+          tickCost,
+          `Análise ${analysisType === 'deep' ? 'deep' : 'rápida'} de gráfico`,
+          { analysisType },
+          tx,
+        );
+        return tx.analysis.create({
+          data: {
+            userId,
+            imageUrl: rowData.imageUrl,
+            status: rowData.status,
+            promptVer: rowData.promptVer,
+            model: rowData.model,
+            isDemo: false,
+            strategyHash: rowData.strategyHash ?? null,
+          },
+        });
       });
 
       return { isDemo: false, analysis };
@@ -1421,6 +1447,7 @@ export class AiService implements OnModuleInit {
       pnlPercent: null,
       pnlAmount: null,
       errorMessage: analysis.errorMessage || null,
+      errorCode: null,
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
       calibration: { sampleSize: 0, winRate: null as number | null },
@@ -1437,6 +1464,7 @@ export class AiService implements OnModuleInit {
     result?: unknown;
     fullResponse?: unknown;
     errorMessage?: string | null;
+    errorCode?: string | null;
     createdAt: Date;
     updatedAt: Date;
   }) {
@@ -1478,6 +1506,7 @@ export class AiService implements OnModuleInit {
       pnlPercent: outcomeData?.pnlPercent ?? null,
       pnlAmount: outcomeData?.pnlAmount ?? null,
       errorMessage: analysis.errorMessage || null,
+      errorCode: analysisFailureCodeForResponse(analysis.status, analysis.errorCode),
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
     };
@@ -1788,17 +1817,13 @@ export class AiService implements OnModuleInit {
       this.toNullableString(fullResponse?.reasoning);
     // R/R recalculado a partir dos níveis (determinístico). Também corrige análises
     // antigas retroativamente, pois recalcula a partir dos números já armazenados.
-    const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1);
-    const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2);
+    const side = normalizeRecommendation(fullResponse?.recommendation);
+    const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1, side);
+    const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2, side);
+    const invalidTradePlan = hasInvalidTradePlanLevels(side, entry, stopLoss, takeProfit1, takeProfit2);
 
-    const aiRiskReward =
-      this.toNullableString(
-        analysisMeta?.riskReward ?? analysisMeta?.risk_reward ?? analysisMeta?.riskRewardRatio,
-      ) ??
-      this.toNullableString(
-        fullResponse?.riskReward ?? fullResponse?.risk_reward ?? fullResponse?.riskRewardRatio,
-      );
-    const riskReward = formatRiskReward(riskRewardTp2 ?? riskRewardTp1) ?? aiRiskReward;
+    const riskReward = invalidTradePlan || side === 'WAIT'
+      ? null : formatRiskReward(riskRewardTp2 ?? riskRewardTp1);
 
     return {
       analysisMeta,
@@ -1812,8 +1837,8 @@ export class AiService implements OnModuleInit {
       takeProfit2Percent,
       reasoning,
       riskReward,
-      riskRewardTp1,
-      riskRewardTp2,
+      riskRewardTp1: invalidTradePlan || side === 'WAIT' ? null : riskRewardTp1,
+      riskRewardTp2: invalidTradePlan || side === 'WAIT' ? null : riskRewardTp2,
     };
   }
 

@@ -42,9 +42,10 @@ export interface SamplingOptions {
    *
    * É ele que permite diferenciar deep de quick sem trocar de modelo: rodar os
    * dois no `luna` com esforços diferentes custa muito menos que subir o deep
-   * para o `terra` — cujo teto de custo (~US$ 0,53) passa da receita de um deep
-   * (3 ticks = US$ 0,435), ou seja, o `terra` TEM cenário de prejuízo e o
-   * `luna` não tem.
+   * para o `terra` — o teto local de 32K tokens de saída custa até ~US$ 0,424
+   * com 20K tokens de entrada nos preços Standard de 23/09/2026, muito perto
+   * da receita teórica de um deep (3 ticks = US$ 0,435), antes de outros custos.
+   * Isso não é margem validada; conferir tokens reais e preço vigente.
    *
    * Troca velocidade por profundidade: esforço alto pode estourar o
    * ANALYZE_TIMEOUT_MS (default 55s) e virar ERRO, não espera. Subir o esforço

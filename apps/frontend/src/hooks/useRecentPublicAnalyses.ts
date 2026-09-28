@@ -4,6 +4,7 @@ import { buildApiUrl } from '@/lib/api';
 export interface PublicAnalysis {
   id: string;
   recommendation: string;
+  bias?: 'bullish' | 'bearish' | 'neutral' | null;
   confidence: number;
   createdAt: string;
   symbol: string;

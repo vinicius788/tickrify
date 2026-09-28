@@ -239,10 +239,17 @@ export class AiController {
     });
 
     return rows.map((r) => {
-      const analysis = (r.result as Record<string, unknown> | null)?.analysis as Record<string, unknown> | undefined;
+      const result = r.result as Record<string, unknown> | null;
+      const analysis = result?.analysis as Record<string, unknown> | undefined;
+      const marketStructure = analysis?.marketStructure as Record<string, unknown> | undefined;
+      const rawBias = result?.bias ?? marketStructure?.bias;
+      const bias = typeof rawBias === 'string' && ['bullish', 'bearish', 'neutral'].includes(rawBias.toLowerCase())
+        ? rawBias.toLowerCase()
+        : null;
       return {
         id: r.id,
         recommendation: r.recommendation,
+        bias,
         confidence: r.confidence,
         createdAt: r.createdAt,
         symbol: normalizeSymbol(analysis?.symbol),

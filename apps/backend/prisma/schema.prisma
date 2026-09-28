@@ -91,6 +91,7 @@ model Analysis {
   result         Json?
   fullResponse   String?  @db.Text
   errorMessage   String?  @db.Text
+  errorCode      String? // Categoria estável da falha definitiva; nunca mensagem livre
   promptVer      Int?
   // Modelo da OpenAI que gerou a análise. Sem isto não é possível comparar
   // calibração antes/depois de uma troca de modelo — e a troca gpt-4o-mini →

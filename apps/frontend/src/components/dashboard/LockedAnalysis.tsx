@@ -16,7 +16,7 @@ interface LockedAnalysisProps {
 // O objetivo é mostrar que existe uma análise pronta ali, criando desejo de destravar.
 // IMPORTANTE: nada legível aqui pode contradizer o gráfico que o usuário subiu.
 const PREVIEW_ROWS: Array<{ label: string; value: string }> = [
-  { label: 'Recommendation', value: 'BUY' },
+  { label: 'Scenario', value: '•••••••' },
   { label: 'Entry', value: '$ 4,261.40' },
   { label: 'Stop loss', value: '$ 4,240.00' },
   { label: 'Target 1', value: '$ 4,300.00' },

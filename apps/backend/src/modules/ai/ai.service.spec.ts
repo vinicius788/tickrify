@@ -158,6 +158,33 @@ describe('AiService access enforcement', () => {
     service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any, mailService as any);
   });
 
+  it('returns the persisted safe code on a failed analysis and tolerates old rows', async () => {
+    const row = {
+      id: 'an_failed', status: 'failed', recommendation: null, confidence: null,
+      reasoning: 'Try again', errorMessage: 'Try again', errorCode: 'openai_rate_limit',
+      result: null, fullResponse: null, imageUrl: null,
+      createdAt: new Date('2026-09-23T00:00:00Z'), updatedAt: new Date('2026-09-23T00:00:01Z'),
+    };
+    prisma.analysis.findFirst.mockResolvedValue(row);
+    (service as any).getSignedImageUrl = jest.fn().mockResolvedValue(null);
+    (service as any).getOutcomeById = jest.fn().mockResolvedValue(null);
+    (service as any).getCalibration = jest.fn().mockResolvedValue({ sampleSize: 0, winRate: null });
+
+    expect((await service.getAnalysis(row.id, 'usr_1')).errorCode).toBe('openai_rate_limit');
+    prisma.analysis.findFirst.mockResolvedValue({ ...row, errorCode: null });
+    expect((await service.getAnalysis(row.id, 'usr_1')).errorCode).toBeNull();
+  });
+
+  it('never leaks a prior error code while polling an analysis in progress', async () => {
+    prisma.analysis.findFirst.mockResolvedValue({
+      id: 'an_processing', status: 'processing', errorCode: 'openai_rate_limit',
+      errorMessage: 'Retrying', createdAt: new Date(), updatedAt: new Date(),
+    });
+    const response = await service.getAnalysis('an_processing', 'usr_1');
+    expect(response.status).toBe('processing');
+    expect(response.errorCode).toBeNull();
+  });
+
   it('bloqueia depois de 3 sinais (BUY/SELL) grátis → DEMO_LIMIT_REACHED', async () => {
     setFreeQuota(prisma, { signals: 3 });
 
@@ -209,7 +236,8 @@ describe('AiService access enforcement', () => {
     setFreeQuota(prisma, { signals: 2 });
     // Fila online: createAnalysis enfileira e retorna sem rodar o processamento.
     (getAiQueueReadiness as jest.Mock).mockResolvedValue(QUEUE_ONLINE);
-    (getAiQueue as jest.Mock).mockReturnValue({ add: jest.fn().mockResolvedValue(undefined) });
+    const add = jest.fn().mockResolvedValue(undefined);
+    (getAiQueue as jest.Mock).mockReturnValue({ add });
 
     await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL);
 
@@ -221,6 +249,9 @@ describe('AiService access enforcement', () => {
         data: expect.objectContaining({ isDemo: true, userId: 'usr_1' }),
       }),
     );
+    expect(add).toHaveBeenCalledWith('process-analysis', expect.objectContaining({
+      analysisId: 'an_1', userId: 'usr_1', isDemo: true,
+    }), { jobId: 'an_1' });
   });
 
   it('assinante sem ticks suficientes: bloqueia com INSUFFICIENT_TICKS (não cria a análise)', async () => {
@@ -238,6 +269,64 @@ describe('AiService access enforcement', () => {
 
     expect(ticksService.debitTicks).toHaveBeenCalledTimes(1);
     expect(prisma.analysis.create).not.toHaveBeenCalled();
+  });
+
+  it('cria a análise paga e debita ticks na mesma transação', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', priceId: null });
+    ticksService.debitTicks.mockResolvedValue(undefined);
+    (getAiQueueReadiness as jest.Mock).mockResolvedValue(QUEUE_ONLINE);
+    (getAiQueue as jest.Mock).mockReturnValue({ add: jest.fn().mockResolvedValue(undefined) });
+
+    await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(ticksService.debitTicks).toHaveBeenCalledWith(
+      'usr_1', 1, expect.any(String), { analysisType: 'quick' }, prisma,
+    );
+    expect(prisma.analysis.create).toHaveBeenCalledTimes(1);
+    expect(prisma.analysis.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ userId: 'usr_1', isDemo: false, status: 'pending' }),
+    }));
+  });
+
+  it('não conclui a transação paga se a criação da análise falhar', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', priceId: null });
+    ticksService.debitTicks.mockResolvedValue(undefined);
+    prisma.analysis.create.mockRejectedValueOnce(new Error('insert failed'));
+    let committed = false;
+    prisma.$transaction.mockImplementation(async (callback: (tx: any) => Promise<unknown>) => {
+      const result = await callback(prisma);
+      committed = true;
+      return result;
+    });
+
+    await expect(service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL))
+      .rejects.toThrow('insert failed');
+
+    expect(ticksService.debitTicks).toHaveBeenCalledWith(
+      'usr_1', 1, expect.any(String), { analysisType: 'quick' }, prisma,
+    );
+    expect(committed).toBe(false);
+  });
+
+  it('falha e reembolsa quando a validação prévia do caminho síncrono bloqueia', async () => {
+    prisma.analysis.update
+      .mockResolvedValueOnce({ id: 'an_1', status: 'processing' })
+      .mockResolvedValueOnce({ id: 'an_1', status: 'failed', createdAt: new Date() });
+    ticksService.refundTicks = jest.fn().mockResolvedValue(undefined);
+
+    await expect((service as any).processSynchronously({
+      analysisId: 'an_1', imageUrl: 'invalid-image-url', userId: 'usr_1',
+      analysisType: 'quick', isDemo: false,
+    })).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(prisma.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'failed', errorCode: 'processing_unclassified' }),
+    }));
+    expect(ticksService.refundTicks).toHaveBeenCalledWith(
+      'usr_1', 1, 'Refund: analysis failed', 'an_1',
+    );
+    expect(promptBuilder.buildPromptByVersion).not.toHaveBeenCalled();
   });
 
   // ── listAnalyses: paginacao ──────────────────────────────────────────────────
@@ -762,6 +851,7 @@ describe('AIAnalysisError static helpers', () => {
       ['openai_truncated_response', 'simpler chart'],
       ['openai_empty_content', 'could not read'],
       ['openai_request_failed', 'took too long'],
+      ['invalid_trade_plan', 'inconsistent entry'],
     ];
 
     for (const [code, expectedSubstring] of cases) {

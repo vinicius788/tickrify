@@ -1,12 +1,12 @@
 /**
- * Custo real por análise, calculado a partir do `usage` que a OpenAI já devolve
- * em toda resposta.
+ * Estimativa de custo por análise, calculada a partir do `usage` da resposta e
+ * da tabela pública. A fatura pode variar por cache, tier e descontos.
  *
  * POR QUE ISTO EXISTE
  * -------------------
  * O plano é US$ 29 por 200 ticks, ou seja **US$ 0,145 de receita por tick**.
  * Um deep custa 3 ticks (US$ 0,435 de receita). Saber se isso fecha exige o
- * custo REAL, e até 31/08/2026 ele nunca foi medido em produção: o `usage`
+ * uso real, e até 31/08/2026 ele nunca foi medido em produção: o `usage`
  * chegava na resposta e era descartado, exceto quando `AI_DEBUG_DUMP_RAW`
  * gravava num arquivo local — inútil no Render, cujo disco é efêmero.
  *
@@ -26,14 +26,20 @@ interface ModelPricing {
   output: number;
 }
 
-// Fonte: tabela pública da OpenAI, conferida em 31/08/2026.
+// Fonte: documentação oficial da OpenAI, conferida em 23/09/2026.
+// https://developers.openai.com/api/docs/models/gpt-5.6-luna
+// https://developers.openai.com/api/docs/models/gpt-5.6-terra
+// https://developers.openai.com/api/docs/models/gpt-5.6-sol
+// https://developers.openai.com/api/docs/models/gpt-4o
+// https://developers.openai.com/api/docs/models/gpt-4o-mini
+// Valores Standard sem desconto de cache; revisar antes de orçar nova rodada.
 // `gpt-4o` está aqui porque o deep ainda roda nele — shutdown em 23/10/2026.
 const PRICING: Record<string, ModelPricing> = {
   'gpt-4o': { input: 2.5, output: 10 },
   'gpt-4o-mini': { input: 0.15, output: 0.6 },
-  'gpt-5.6-luna': { input: 1, output: 6 },
-  'gpt-5.6-terra': { input: 2.5, output: 15 },
-  'gpt-5.6-sol': { input: 5, output: 30 },
+  'gpt-5.6-luna': { input: 0.2, output: 1.2 },
+  'gpt-5.6-terra': { input: 2, output: 12 },
+  'gpt-5.6-sol': { input: 4, output: 20 },
 };
 
 /** Receita por tick: US$ 29 / 200 ticks. Usada para o alerta de margem. */
@@ -76,7 +82,7 @@ export function extractUsage(usage: unknown): TokenUsage {
 }
 
 /**
- * Custo em dólares. `reasoning_tokens` NÃO é somado à parte: a OpenAI já o
+ * Estimativa em dólares. `reasoning_tokens` NÃO é somado à parte: a OpenAI já o
  * inclui dentro de `completion_tokens`. Somar de novo contaria em dobro — é o
  * erro fácil de cometer aqui, e ele inflaria o custo justamente no modelo onde
  * a decisão de preço é mais apertada.

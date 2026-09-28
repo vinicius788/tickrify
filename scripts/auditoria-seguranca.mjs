@@ -278,7 +278,10 @@ verificar('Moeda de cobrança nunca vem do cliente', 'bloqueia', () => {
     const conteudo = semComentarios(ler(arquivo));
     if (/body\.currency/.test(conteudo))
       problemas.push(`${nome}: lê body.currency — a moeda tem que ser fixada no servidor`);
-    if (!/currency(?::\s*Currency)?\s*=\s*['"]usd['"]/.test(conteudo))
+    // O controller de ticks hoje só retorna saldo em "ticks"; não cria checkout.
+    // Se um checkout voltar a existir ali, a exigência de USD volta a valer.
+    const criaCheckout = /createCheckoutSession\s*\(|create-checkout-session/.test(conteudo);
+    if (criaCheckout && !/currency(?::\s*Currency)?\s*=\s*['"]usd['"]/.test(conteudo))
       problemas.push(`${nome}: não fixa a moeda em 'usd'`);
   }
   return problemas;

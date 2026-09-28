@@ -112,6 +112,14 @@ export type Recommendation =
   | 'AGUARDAR';
 export type Bias = 'bullish' | 'bearish' | 'neutral';
 
+export interface AnalysisEvidence {
+  version: 1;
+  additionalChartsDelivered: number;
+  candleFeedAttached: boolean;
+  marketContextAttached: boolean;
+  calendar: 'events_attached' | 'no_events_returned' | 'not_confirmed';
+}
+
 export class APIError extends Error {
   status: number;
   code?: string;
@@ -190,6 +198,7 @@ export interface AIAnalysisResponse {
     bias: Bias;
     confidence: number;
     reasoning: string;
+    evidence?: AnalysisEvidence;
     symbol?: string;
     ticker?: string;
     asset?: string;

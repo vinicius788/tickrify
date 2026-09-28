@@ -84,6 +84,8 @@ scripts/backtest/charts/
 scripts/backtest/results/
 scripts/backtest/samples.json
 scripts/backtest/manifest.json
+scripts/backtest/pilot-selection.json
+scripts/backtest/pilot-manifest.json
 /Tickrify_Backtest_Results*.csv
 
 # ── REGRA PERMANENTE (28/07/2026) ────────────────────────────────────────────

@@ -31,11 +31,12 @@ import AnalysisCounter from "../dashboard/AnalysisCounter";
 import { TicksBadge } from "@/components/dashboard/TicksBadge";
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
 import { APIError, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
+import { AnalysisProcessingError, analysisFailureTelemetry } from "@/lib/analysis-failure";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { scrollToTop } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
-import { confidenceToPercent, normalizeRecommendationLabel, signalToneClass } from "@/lib/trading-ui";
+import { confidenceToPercent, getRecommendationMeta, getScenarioMeta, normalizeRecommendationLabel } from "@/lib/trading-ui";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { track, trackAdConversion } from "@/lib/analytics";
@@ -114,23 +115,6 @@ const DASH_COPY = {
 import officialIcon from "@/assets/tickrify-icon-official.png";
 import BrandLoader from "../ui/BrandLoader";
 
-/**
- * Nome e mensagem do erro para a telemetria de `analysis_failed`, no mesmo
- * padrao do `checkout_failed`. Quando o APIError so classifica uma falha de
- * fora (rede, token), o que interessa e o erro original em `cause`.
- * Nunca leva token, e-mail nem imagem: so `name` e `message` cortada.
- */
-function describeErrorForTelemetry(error: unknown): { errorName: string; errorMessage: string } {
-  // Leitura por propriedade, nao por `instanceof Error`: DOMException nem
-  // sempre herda de Error e sumiria da telemetria.
-  const cause = error instanceof APIError ? error.cause : undefined;
-  const root = (cause ?? error) as { name?: unknown; message?: unknown } | null;
-  if (root && typeof root === 'object' && typeof root.name === 'string') {
-    return { errorName: root.name, errorMessage: String(root.message ?? '').slice(0, 200) };
-  }
-  return { errorName: typeof root, errorMessage: String(root).slice(0, 200) };
-}
-
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
 };
@@ -140,7 +124,7 @@ type RecentAnalysisItem = {
   symbol: string;
   timeframe: string;
   recommendation: Recommendation;
-  bias: Bias;
+  bias?: Bias;
   confidence: number;
   createdAt: string;
 };
@@ -339,7 +323,7 @@ const DashboardPage = () => {
         symbol: String(a.symbol || '').trim() || 'N/A',
         timeframe: String(a.timeframe || '').trim() || 'N/A',
         recommendation: normalizeRecommendationLabel(a.recommendation) as Recommendation,
-        bias: (a.bias || 'neutral') as Bias,
+        bias: a.bias,
         confidence: confidenceToPercent(a.confidence),
         createdAt: a.createdAt,
       }));
@@ -397,19 +381,21 @@ const DashboardPage = () => {
 
   const { balance: ticksBalance } = useTicks();
 
-  // Insight da semana — bullish vs bearish nas análises dos últimos 7 dias.
+  // Insight da semana: cenário de mercado, inclusive WAIT com viés direcional.
   const weeklyInsight = useMemo(() => {
     const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     let bull = 0;
     let bear = 0;
+    let neutral = 0;
     for (const a of rawAnalyses) {
       if (a.status !== 'completed' || !a.createdAt) continue;
       if (new Date(a.createdAt).getTime() < weekAgo) continue;
-      const r = String(a.recommendation || '').toUpperCase();
-      if (/BUY|COMPRA|BULL|ALTA/.test(r)) bull += 1;
-      else if (/SELL|VENDA|BEAR|BAIXA/.test(r)) bear += 1;
+      const scenario = getScenarioMeta(a.bias, a.recommendation).label;
+      if (scenario === 'BULLISH') bull += 1;
+      else if (scenario === 'BEARISH') bear += 1;
+      else neutral += 1;
     }
-    return { bull, bear, total: bull + bear };
+    return { bull, bear, neutral, total: bull + bear + neutral };
   }, [rawAnalyses]);
 
   // Dispara o backfill de e-mail + boas-vindas no backend (GET /api/auth/me).
@@ -702,7 +688,10 @@ const DashboardPage = () => {
       const analysis = await apiClient.waitForAnalysisCompletion(response.id, response);
 
       if (analysis.status === 'failed') {
-        throw new Error(analysis.reasoning || dc.analysisFailed);
+        throw new AnalysisProcessingError(
+          analysis.errorMessage || analysis.reasoning || dc.analysisFailed,
+          analysis.errorCode,
+        );
       }
 
       // Análise concluída
@@ -726,8 +715,7 @@ const DashboardPage = () => {
     } catch (error) {
       console.error('[Dashboard] Erro ao criar análise:', error);
       track('analysis_failed', {
-        code: error instanceof APIError ? (error.code || error.status || 'api_error') : 'unknown',
-        ...describeErrorForTelemetry(error),
+        ...analysisFailureTelemetry(error),
         analysisType,
         durationMs: Math.round(performance.now() - startedAt),
         // Separa "sem internet" de "arquivo ilegivel" nas falhas de rede.
@@ -812,7 +800,9 @@ const DashboardPage = () => {
     const titleWords = t.nav.centralTitle.split(' ');
     const titleLast = titleWords.length > 1 ? titleWords.pop() : '';
     const titleHead = titleWords.join(' ');
-    const bullPct = weeklyInsight.total > 0 ? Math.round((weeklyInsight.bull / weeklyInsight.total) * 100) : 0;
+    const bullPct = weeklyInsight.total > 0 ? (weeklyInsight.bull / weeklyInsight.total) * 100 : 0;
+    const bearPct = weeklyInsight.total > 0 ? (weeklyInsight.bear / weeklyInsight.total) * 100 : 0;
+    const neutralPct = weeklyInsight.total > 0 ? (weeklyInsight.neutral / weeklyInsight.total) * 100 : 0;
     const firstName = user?.firstName || 'Trader';
     const ticksNum = Math.floor(Number(ticksBalance) || 0);
     const kpis: Array<{ label: string; value: string; sub: string; Icon: typeof BarChart3; accent?: boolean }> = [
@@ -1002,19 +992,29 @@ const DashboardPage = () => {
               </button>
             </div>
             {displayRecentAnalyses.length > 0 ? (
-              displayRecentAnalyses.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between border-t border-[var(--border-subtle)] py-2 first:border-t-0"
-                >
-                  <span className="font-terminal text-xs text-[var(--text-primary)]">
-                    {item.symbol} <span className="text-[var(--text-secondary)]">{item.timeframe}</span>
-                  </span>
-                  <span className={`font-terminal text-[11px] font-semibold ${signalToneClass(item.recommendation)}`}>
-                    {item.recommendation} {item.confidence}%
-                  </span>
-                </div>
-              ))
+              displayRecentAnalyses.map((item, idx) => {
+                const scenario = getScenarioMeta(item.bias, item.recommendation);
+                const action = getRecommendationMeta(item.recommendation);
+                const actionLabel = action.tone === 'buy'
+                  ? t.analysis.buy
+                  : action.tone === 'sell'
+                    ? t.analysis.sell
+                    : t.analysis.hold;
+                return (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between gap-2 border-t border-[var(--border-subtle)] py-2 first:border-t-0"
+                  >
+                    <span className="font-terminal text-xs text-[var(--text-primary)]">
+                      {item.symbol} <span className="text-[var(--text-secondary)]">{item.timeframe}</span>
+                    </span>
+                    <span className="text-right font-terminal text-[11px] text-[var(--text-secondary)]">
+                      <span className={`font-semibold ${scenario.tone === 'buy' ? 'text-[var(--signal-buy)]' : scenario.tone === 'sell' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}`}>{scenario.label}</span>
+                      {' · '}{t.analysis.action}: {actionLabel} · {item.confidence}%
+                    </span>
+                  </div>
+                );
+              })
             ) : (
               <p className="py-3 text-xs text-[var(--text-secondary)]">{loadingAnalyses ? t.common.loading : '—'}</p>
             )}
@@ -1030,9 +1030,15 @@ const DashboardPage = () => {
                 <div className="tk-stat text-2xl text-[var(--signal-sell)]">{weeklyInsight.bear}</div>
                 <div className="tk-stat-label mt-1">Bearish</div>
               </div>
+              <div>
+                <div className="tk-stat text-2xl text-[var(--text-secondary)]">{weeklyInsight.neutral}</div>
+                <div className="tk-stat-label mt-1">Neutral</div>
+              </div>
             </div>
-            <div className="mt-4 h-1.5 overflow-hidden rounded-full" style={{ background: 'rgba(248,113,113,0.25)' }}>
+            <div className="mt-4 flex h-1.5 overflow-hidden rounded-full bg-[var(--bg-overlay)]">
               <div className="h-full" style={{ width: `${bullPct}%`, background: 'var(--accent-green)' }} />
+              <div className="h-full" style={{ width: `${bearPct}%`, background: 'var(--signal-sell)' }} />
+              <div className="h-full" style={{ width: `${neutralPct}%`, background: 'var(--text-secondary)' }} />
             </div>
           </div>
         </div>

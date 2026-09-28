@@ -1,11 +1,33 @@
 import {
   normalizeSymbol,
   computeRiskReward,
+  hasInvalidTradePlanLevels,
   formatRiskReward,
   harmonizeConfidenceWithTrend,
   correctPriceMagnitude,
   deriveMarketRegime,
+  normalizeTargetProbabilities,
 } from './analysis-normalizer';
+
+describe('normalizeTargetProbabilities', () => {
+  const absent = { probabilityTp1: null, probabilityTp2: null, probabilityStop: null };
+
+  it('keeps a complete model estimate without forcing three nested events to sum to 100', () => {
+    expect(normalizeTargetProbabilities({ tp1: 58, tp2: 43, stop: 42 }, { hasTradePlan: true })).toEqual({
+      probabilityTp1: 58, probabilityTp2: 43, probabilityStop: 42,
+    });
+  });
+
+  it('does not invent probabilities when the model omits a field or has no trade plan', () => {
+    expect(normalizeTargetProbabilities({ tp1: 58, stop: 42 }, { hasTradePlan: true })).toEqual(absent);
+    expect(normalizeTargetProbabilities({ tp1: 58, tp2: 43, stop: 42 }, { hasTradePlan: false })).toEqual(absent);
+  });
+
+  it('does not silently repair a TP2 estimate above TP1', () => {
+    expect(normalizeTargetProbabilities({ tp1: 40, tp2: 65, stop: 60 }, { hasTradePlan: true })).toEqual(absent);
+    expect(normalizeTargetProbabilities({ tp1: 70, tp2: 30, stop: 50 }, { hasTradePlan: true })).toEqual(absent);
+  });
+});
 
 describe('deriveMarketRegime', () => {
   it('tendência de baixa moderada → "trending" (nunca "lateral")', () => {
@@ -108,6 +130,23 @@ describe('computeRiskReward', () => {
   it('returns null for non-finite inputs', () => {
     expect(computeRiskReward(NaN, 95, 110)).toBeNull();
     expect(computeRiskReward(Infinity, 95, 110)).toBeNull();
+    expect(computeRiskReward(100, 95, -110, 'BUY')).toBeNull();
+  });
+
+  it('does not turn an inverted stop or target into positive reward', () => {
+    expect(computeRiskReward(100, 95, 90, 'BUY')).toBeNull();
+    expect(computeRiskReward(100, 105, 110, 'SELL')).toBeNull();
+    expect(computeRiskReward(100, 105, 90, 'BUY')).toBeNull();
+    expect(computeRiskReward(100, 95, 110, 'SELL')).toBeNull();
+    expect(computeRiskReward(100, 95, 110, 'BUY')).toBe(2);
+    expect(computeRiskReward(100, 105, 90, 'SELL')).toBe(2);
+  });
+
+  it('rejects a plan if either supplied target contradicts its direction', () => {
+    expect(hasInvalidTradePlanLevels('BUY', 100, 95, 110, 90)).toBe(true);
+    expect(hasInvalidTradePlanLevels('SELL', 100, 105, 90, 110)).toBe(true);
+    expect(hasInvalidTradePlanLevels('BUY', 100, 95, 110, null)).toBe(false);
+    expect(hasInvalidTradePlanLevels('WAIT', 100, 95, 90, 110)).toBe(false);
   });
 });
 

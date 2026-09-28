@@ -27,6 +27,7 @@ import {
   requestDemoAnalysis,
 } from '@/lib/demo-api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { getScenarioMeta } from '@/lib/trading-ui';
 import { warmupPaymentsApi } from '@/lib/api';
 import { seoFor, useSeo } from '@/hooks/useSeo';
 import exampleChart from '@/assets/demo-example-chart.png';
@@ -207,13 +208,19 @@ const TryPage = () => {
     }
   };
 
-  // Cor = dado: verde, vermelho e âmbar só aparecem no veredito, nunca no resto.
+  // A cor principal acompanha o cenário; a ação continua explícita e separada.
+  const scenario = result ? getScenarioMeta(result.bias, result.recommendation) : null;
   const callClass =
-    result?.recommendation === 'BUY'
+    scenario?.tone === 'buy'
       ? 'site-chip-long'
-      : result?.recommendation === 'SELL'
+      : scenario?.tone === 'sell'
         ? 'site-chip-short'
         : 'site-chip-wait';
+  const actionClass = result?.recommendation === 'BUY'
+    ? 'site-chip-long'
+    : result?.recommendation === 'SELL'
+      ? 'site-chip-short'
+      : 'site-chip-wait';
 
   return (
     <SiteLayout minimal>
@@ -306,8 +313,11 @@ const TryPage = () => {
                 <span className="site-chip">Live analysis</span>
               </div>
 
-              <div className="site-verdict">
-                <span className={`site-call ${callClass}`}>{result.recommendation}</span>
+              <div className="site-verdict flex-wrap">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className={`site-call ${callClass}`}>{scenario?.icon} {scenario?.label}</span>
+                  <span className={`site-chip ${actionClass}`}>Action: {result.recommendation}</span>
+                </div>
                 <span className="site-conf">
                   Confidence <b>{result.confidence}%</b>
                   {result.riskReward && result.recommendation !== 'WAIT' ? (

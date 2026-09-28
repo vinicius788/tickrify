@@ -1,0 +1,100 @@
+# Cobertura de dados e evidência de múltiplos períodos — 23/09/2026
+
+## O que foi encontrado
+
+Nos oito casos BTCUSDT 30m do [piloto pareado](AI_ANALYSIS_PAIRED_PILOT_2026-09-23.md), o modelo recebeu **uma imagem por caso**. Mesmo assim, o prompt ativo produziu em 8/8 um `multiTimeframeAlignment` com H1/H4 ou “2/3”/“3/3”. O campo descrevia inferências do próprio gráfico de 30m como se fossem leituras de períodos adicionais. Isso é uma lacuna de evidência, independentemente de o sinal final ter sido BUY, SELL ou WAIT.
+
+Há duas instruções ativas que contribuem para isso: o prompt base manda inferir H1/H4/D1 e preencher `multiTimeframeAlignment` sempre; o sufixo específico do **deep** (`DEEP_ENRICHMENT_INSTRUCTION`) ainda manda dar veredito de alinhamento/conflito com um único gráfico, rotulando a leitura maior como inferência. O piloto da variante MTF recebeu esse sufixo no deep e, mesmo assim, deixou o campo nulo nos quatro casos deep. Isso mostra o comportamento observado da amostra, não elimina a contradição entre instruções. Antes de promover qualquer variante, o contrato do prompt base e do sufixo deep precisa concordar explicitamente sobre o que é verificável com uma imagem.
+
+O caminho quick pode acrescentar candles atuais, RSI e contexto de mercado, mas o bloco é best-effort. Antes desta mudança, o log `[QuickGrounding]` só aparecia quando algum bloco era montado; a ausência de log não distinguia flag desligada, símbolo ilegível, período desconhecido, fonte indisponível, print antigo e timeout. O deep acrescenta contexto/calendário, **não** o bloco OHLCV/RSI do quick. Portanto, a cobertura real da promessa “candles antes de cada leitura” ainda precisa ser medida e, no deep, implementada ou descrita corretamente antes de qualquer afirmação universal.
+
+## Preparação segura no branch isolado
+
+- `AI_DATA_COVERAGE_LOG=true` habilita **uma linha categórica por análise**, antes da chamada principal ao modelo. O padrão é desligado. O esquema 2 da linha contém modo, classe ampla do ativo, número limitado de imagens HTF solicitadas/entregues e estados separados de candles, contexto de mercado e calendário. Não contém ID, símbolo, preço, prompt, imagem, resposta ou erro bruto. Não há nova chamada de rede nem alteração de decisão.
+- Estados de candles quick: `injected`, `symbol_unreadable`, `timeframe_unreadable`, `unsupported_asset`, `provider_unconfigured`, `source_unavailable`, `stale_withheld`, `block_unavailable`, `timeout` ou `error`. `disabled` indica flag desligada; `not_attempted` identifica o deep. O bloco de contexto tem estados separados.
+- A mensagem enviada ao modelo só diz que há **múltiplos gráficos** quando ao menos uma imagem extra realmente foi preparada. Se todas falharem, usa a instrução de gráfico único. Isso corrige uma afirmação factual sem mudar a decisão por regra.
+- A guarda de print antigo já retinha candles atuais, mas ainda acrescentava **contexto de mercado atual** ao mesmo prompt histórico. O branch isolado agora retém ambos quando detecta divergência de preço; o estado do contexto vira `stale_withheld`. É uma mudança de comportamento que deve ser avaliada antes de qualquer deploy, pois a leitura de preço da imagem pode ocasionalmente errar.
+- O registro agora distingue calendário com eventos anexados, consulta sem eventos retornados, fonte degradada, erro e ausência de símbolo. O estado de contexto de mercado já não conta **só calendário** como enriquecimento de preço/intermarket. `no_events_returned` não prova que não havia eventos no mundo, e o registro não prova correção dos candles recebidos. A própria análise pode falhar antes da montagem do conteúdo; falhas continuam na trilha de erros. Não se deve interpretar ausência de linha como ausência de análise.
+- Esse estado de calendário representa somente o enriquecimento do prompt **deep**. A guarda de notícias que roda após uma proposta BUY/SELL é uma etapa diferente e ainda precisa de medição própria.
+
+### Resumo de evidências no resultado (preparado no branch)
+
+Cada nova resposta concluída leva um objeto pequeno `evidence` dentro do `result` JSON já existente: quantidade de imagens adicionais realmente entregues, presença ou ausência de candles e contexto atual anexados ao prompt, e estado do calendário (`eventos anexados`, `fonte sem eventos retornados` ou `não confirmado`). A interface mostra também a imagem principal, totalizando `1 + imagens adicionais entregues`. Elas foram enviadas como contexto HTF pelo usuário, mas o sistema não confirma que o período exibido nelas seja maior; por isso o painel as chama apenas de “gráficos adicionais”. O resumo é produzido a partir dos estados do adapter **após** montar a entrada do modelo; não inclui ticker, preço, conteúdo da imagem, prompt ou resposta bruta adicional. Não exige migração e não participa da decisão BUY/SELL/WAIT.
+
+Uma análise sem esse objeto (inclusive as anteriores) mostra “cobertura não registrada”, sem inferir o que recebeu. O painel diz expressamente que dados atuais não comprovam quando o print foi capturado. `Anexado` significa apenas que o bloco foi entregue ao modelo, **não** que seus números estejam corretos, que o modelo os tenha usado ou que correspondam temporalmente ao gráfico. O estado “fonte não retornou eventos” também não garante inexistência de eventos. A guarda de notícias posterior à resposta não é representada nesse painel. O resumo não substitui os logs categóricos para medir frequência por modo/classe nem resolve a lacuna de proveniência temporal.
+
+### Simulação da guarda temporal antes de levar candles ao deep cripto
+
+Foi construída no branch uma candidata que acrescentaria ao deep cripto o bloco OHLCV/ATR/RSI/volume usado pelo quick, condicionando-o à comparação do preço do print com candles recentes. Ela ficou desligada por padrão durante os testes. A hipótese de segurança foi **reprovada** na simulação abaixo; a candidata e sua flag foram então **retiradas do código de runtime do branch**. O deep continua sem injeção desse bloco de candles. Esta pesquisa não mudou o produto em produção.
+
+A verificação por preço **não autentica a data do print**. O bloco de candles instrui a IA a usar seus níveis, então um falso passe poderia misturar níveis atuais com uma imagem histórica. Uma nova solução precisa obter tempo/proveniência confiável do gráfico ou separar de modo verificável a análise histórica de informações de mercado atuais. A guarda de notícias posterior à resposta é outra etapa.
+
+`scripts/analysis-time-guard-simulation.mjs` usa o preço **verdadeiro** do último candle visível dos 48 gráficos históricos congelados e o último conjunto local de 120 candles da mesma série, com hash verificado. Pela mesma regra de diferença de até 3 ATR usada pelo quick, **4/48 prints antigos passariam**: 3 BTCUSDT 4h e 1 ETHUSDT 4h. Esses quatro prints tinham aproximadamente **236, 273, 274 e 303 dias** de diferença para o feed. O teste não depende de erro de OCR. Não é uma taxa de falso passe em produção, pois a amostra é pequena, só cripto e gerada de gráficos padronizados. Ela basta para rejeitar a hipótese de que concordância de preço comprova atualidade. O fluxo atual recebe uma imagem enviada pelo usuário e registra a hora da análise/upload, mas não recebe um carimbo confiável da época do último candle do gráfico. O mesmo limite conceitual afeta a comparação de preço do quick já existente; esta simulação não mede sua incidência entre usuários.
+
+```bash
+node scripts/analysis-time-guard-simulation.mjs
+node --test scripts/analysis-time-guard-simulation.test.mjs
+```
+
+O uso futuro do registro deve separar quick/deep e classe de ativo, medir denominadores e comparar cobertura ao longo de dias. A ativação em produção, a consulta aos logs e qualquer mudança de texto público ou no motor exigem etapa operacional separada. **Nada foi ativado ou implantado nesta etapa.**
+
+O agregador local `scripts/analysis-data-coverage-report.mjs` lê um **arquivo exportado de logs** e imprime uma tabela por modo/classe, estados de candles, contexto de mercado e calendário: `node scripts/analysis-data-coverage-report.mjs caminho/para/logs-exportados.txt`. Ele conta e ignora linhas inválidas ou de esquema anterior, descarta qualquer campo além das categorias permitidas, não grava outro arquivo e não imprime linhas brutas. O denominador é o número de linhas válidas no arquivo, não o total de análises iniciadas ou concluídas. Uma amostra real só será interpretável se o período, o percentual de instâncias com a flag ligada e a completude da exportação forem conhecidos. O arquivo bruto deve permanecer fora do Git e ser tratado conforme o acesso normal aos logs da plataforma.
+
+## Variante offline de evidência MTF
+
+O gerador `scripts/analysis-mtf-candidate.mjs` parte do prompt ativo v11 congelado e altera nove trechos ligados à leitura de períodos. Com uma imagem, ele manda descrever somente a estrutura visível, deixar `multiTimeframeAlignment=null` e marcar o item MTF do checklist como não avaliável e sem ponto. Com imagens extras legíveis, permite alinhamento apenas entre os períodos realmente fornecidos. As bandas de decisão 6–7, 4–5 e ≤3 não mudaram.
+
+O mesmo gerador agora inclui `buildMtfDeepInstructionCandidate`, que corrige **separadamente** a linha 4 do sufixo DEEP: uma imagem não permite veredito de alinhamento entre períodos; imagens adicionais só contam quando o período e a estrutura são legíveis. O teste estrutural exige que a antiga ordem de inferir contexto maior desapareça. Foram gerados dois arquivos locais ignorados pelo Git, `candidate-active-v11-mtf-evidence-v2-base.txt` e `candidate-active-v11-mtf-evidence-v2-deep.txt`, a partir do snapshot v11 verificado por SHA-256. O segundo é o prompt base candidato com o sufixo DEEP corrigido, SHA-256 `706b90c701c2fb7c16804d0faf1d404f77464564d0cf29776b10dba6460a56a6`. **Esta nova combinação base + sufixo DEEP ainda não foi executada no modelo**; nos oito pares abaixo, o deep recebeu o sufixo antigo. Nenhum dos dois textos candidatos foi ligado ao runtime ou à configuração ativa.
+
+```bash
+node scripts/analysis-mtf-candidate.mjs \
+  --baseline-file scripts/backtest/results/active-prompt-v11-2026-09-23.txt \
+  --out scripts/backtest/results/candidate-active-v11-mtf-evidence-v2-base.txt \
+  --deep-out scripts/backtest/results/candidate-active-v11-mtf-evidence-v2-deep.txt
+```
+
+O gerador se recusa a sobrescrever esses artefatos. Para uma nova rodada, use nomes de saída novos.
+
+SHA-256 do baseline: `00783ace62ae49315d8c33648d834c9475f428f00361c9d08f24cc85540a78bb`. SHA-256 da variante: `43881a9266aa94ceb98511a2b4506062b1b5e89cebbc0176e2decb5a9cef2fd9`. A saída local é `scripts/backtest/results/candidate-active-v11-mtf-evidence-v1.txt`; o runner a usou nos mesmos oito casos e com o mesmo modelo `gpt-5.6-luna`, quick `low`, deep no esforço padrão, grounding/enriquecimento/news guard desligados apenas no piloto histórico.
+
+| Medida nos oito casos | Prompt ativo | Variante MTF |
+| --- | ---: | ---: |
+| `multiTimeframeAlignment` preenchido sem imagem HTF | 8/8 | 0/8 |
+| Alegação H1/H4/D1 ou 2/3/3/3 nos campos principais | 8/8 | 0/8 |
+| BUY / SELL / WAIT | 2 / 1 / 5 | 2 / 0 / 6 |
+| Falhas | 0 | 0 |
+| Custo estimado do lote pelos tokens retornados | US$ 0,03553 | US$ 0,03469 |
+
+A variante retirou as oito alegações sem fonte nesta amostra, mas transformou o SELL de 17/07/2026 em WAIT. O modelo é não determinístico: uma única chamada por variante e caso não separa o efeito do prompt da variância natural. Todos os gráficos são da mesma classe/período e o piloto não incluiu o grounding de produção, outros ativos nem resultado financeiro adjudicado. **Não promover a variante a partir deste teste.**
+
+O auditor estrutural local `scripts/analysis-mtf-structural-audit.mjs` reproduz contagens objetivas nos oito pares, sem imprimir respostas brutas. Com **uma imagem por caso**, o baseline preencheu `multiTimeframeAlignment` em 8/8, exibiu nome de período maior em prosa em 6/8 e deu um check positivo de MTF em 3/8. A variante marcou 0/8 nos três itens. Nenhuma das duas teve níveis de BUY/SELL do lado errado ou níveis ativos no WAIT nessa amostra. Termos como “HTF não fornecido” são legítimos; a contagem de nomes de período em prosa é um **sinal para revisão**, não uma nota automática. O checklist positivo e o campo preenchido não têm evidência de imagem HTF neste piloto. Limpar apenas `multiTimeframeAlignment` deixaria alegações nos outros campos, por isso não foi adotado como correção superficial.
+
+Uma segunda passagem no mesmo pacote revelou uma inconsistência independente: em checklists completos de sete itens, o número de ✅ não coincide com o placar declarado em **3/8 respostas baseline e 4/8 da candidata**. O auditor agora reproduz essas contagens. Os campos numéricos `factorsPresent` e `confluenceScore` acompanham o placar declarado nesses sete casos, não os marcadores visíveis. Portanto, alterar silenciosamente esses campos no backend poderia mudar a confiança e, em outros casos, o sinal, sem saber quais critérios o modelo avaliou corretamente. A candidata MTF v1 **não está pronta para promoção** com essa divergência.
+
+No branch isolado, o parser do checklist da interface passou a reconhecer `N/A` como não avaliável, em vez de colá-lo ao critério anterior ou pintá-lo como falha. Quando todos os sete itens estão presentes e a contagem diverge, a interface oculta o placar textual e avisa “Contagem do checklist inconsistente”; mantém os critérios e a recomendação originais. Isso é uma correção de apresentação, não uma recalibração da IA. O próximo experimento deve produzir sete critérios estruturados e testar uma reconciliação determinística, com avaliação pareada da ação/confiança antes de substituir a fonte de decisão.
+
+```bash
+node scripts/analysis-mtf-structural-audit.mjs \
+  --baseline pilot-active-v11-baseline-2.jsonl \
+  --baseline pilot-active-v11-baseline-next6.jsonl \
+  --candidate pilot-active-v11-mtf-candidate-8.jsonl
+node --test scripts/analysis-mtf-structural-audit.test.mjs
+```
+
+O runner pago está pronto para ampliar o piloto aos 40 gráficos restantes (BTC/ETH, 30m/4h), com teto local de chamadas/custo. Nesta sessão, `OPENAI_API_KEY` não está disponível no worktree; nenhuma chamada adicional foi feita. Mesmo com 48 casos, ainda faltariam forex, metais, índices, prints reais variados e revisão humana independente.
+
+Como inspeção exploratória, apliquei aos três sinais do baseline e aos dois da variante a regra já descrita em `scripts/backtest/evaluate.py`: 96 candles de 30m após o corte, entrada só se tocada, TP1 antes do stop e empate intrabar contado como perda. No corte de 14/01, ambos os BUY ficaram `NO_FILL`; no de 21/06, o BUY do baseline foi `LOSS` e o da variante `WIN`; no de 17/07, o SELL do baseline foi `LOSS` e a variante aguardou. São **apenas três sinais efetivamente preenchidos** entre as variantes, sem spread, slippage ou taxas. Este resultado não demonstra acerto superior da variante e não entra na regra de promoção.
+
+## Próxima avaliação necessária
+
+1. O pacote A/B local dos oito casos já foi montado com rótulos sorteados e chave separada. Dois revisores ainda devem pontuar independentemente a rubrica de `docs/AI_ANALYSIS_EVAL_RUBRIC.md`, destacando erro crítico de dado/HTF inventado, qualidade do plano e mudança BUY/SELL/WAIT. A chave só entra após a adjudicação.
+2. Adicionar gráficos de forex, metais e índices e casos com duas ou três imagens reais; nesses casos, verificar se a variante continua usando HTF quando ele foi fornecido. Repetir pelo menos alguns casos para medir a variância do modelo.
+3. Medir cobertura efetiva de candles/contexto por modo e classe antes de alterar promessa ou ampliar o grounding. Avaliar separadamente uma forma de fornecer OHLCV/RSI também ao deep, com fonte, frescor, timeout e fallback explícitos.
+   O deep em produção não faz a checagem de idade/preço do gráfico usada pelo quick antes de acrescentar dados de mercado atuais; a amostra histórica desligou esse enriquecimento e não testa esse risco. A simulação acima mostrou que copiar a checagem de preço do quick não resolveria o problema. A próxima candidata exige proveniência temporal ou apresentação separada dos dados de hoje.
+4. Comparar eventual mudança de produto com os marcos de 23/09 do PostHog: WAIT na primeira análise, ao menos um BUY/SELL nas três grátis, falhas com código e outcome maduro. Menos WAIT sozinho não é critério de aprovação.
+
+O `analysis_failed` do navegador recebia `processing_failed_unclassified` quando o processamento assíncrono falhava: o worker conhecia a causa, mas `Analysis.errorMessage` era texto para exibição e a tabela não tinha coluna de código estável. O evento server-side `analysis_execution_failed`, já preparado no branch, cobre a investigação de causas futuras sem tentar reinterpretar as 27 falhas antigas. Também foi preparada uma **migração aditiva não executada** com `Analysis.errorCode` nullable: o worker grava só categorias de lista fixa em falha definitiva, limpa o campo em retry/sucesso, e o polling o devolve apenas quando `status=failed`. Análises antigas sem código continuam aceitas e o frontend conserva o fallback `processing_failed_unclassified`. Uma implantação futura precisa aplicar a migração **antes** de iniciar API/worker novos; a passagem entre versões deve ser verificada em staging, com rollback operacional definido. Nada disso rodou em produção.
+
+Validação local: esquema Prisma válido; cliente gerado somente no worktree; TypeScript sem erros; 35 suítes/308 testes do backend e, após a correção de checklist, 12 suítes/78 testes do frontend passaram. O build Vite passou. A suíte de health do backend precisa de permissão para abrir porta local, concedida somente para o teste. Os testes locais de cobertura, auditoria MTF e simulação temporal também passaram. Nenhum desses testes substitui avaliação pareada, verificação da migração em staging ou medição de falhas reais após um rollout.
+
+Arquivos JSONL do piloto ficam ignorados pelo Git em `scripts/backtest/results/`. O código e este relatório permanecem apenas no worktree `codex/analise-cenario-seguro`; não houve push, deploy ou escrita em produção.

@@ -10,6 +10,7 @@ import {
   reconcileConfluence,
   parseJsonFromContent,
   computeRiskReward,
+  hasInvalidTradePlanLevels,
   formatRiskReward,
   correctPriceMagnitude,
   deriveMarketRegime,
@@ -21,6 +22,15 @@ import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-promp
 import { MarketService, normalizeToBinancePerp } from '../market/market.service';
 import { EconomicCalendarService } from '../calendar/calendar.service';
 import { buildStrategyBlock, STRATEGY_FIT_VALUES, type StrategyProfile } from '../../common/strategy/strategy-profile';
+import {
+  classifyCoverageAsset,
+  formatAnalysisDataCoverage,
+  toAnalysisEvidence,
+  type AnalysisDataCoverage,
+  type CandleCoverage,
+  type CoverageAssetClass,
+  type CalendarCoverage,
+} from './analysis-data-coverage';
 import {
   buildSamplingParams,
   isNextGenModel,
@@ -150,7 +160,8 @@ export type AIAnalysisErrorCode =
   | 'openai_billing'
   | 'openai_rate_limit'
   | 'openai_request_failed'
-  | 'non_chart_image';
+  | 'non_chart_image'
+  | 'invalid_trade_plan';
 
 export class AIAnalysisError extends Error {
   readonly code: AIAnalysisErrorCode;
@@ -197,6 +208,8 @@ export class AIAnalysisError extends Error {
         return 'The analysis came back incomplete. Try a simpler chart.';
       case 'openai_empty_content':
         return 'We could not read this image. Please try again with a clearer chart screenshot.';
+      case 'invalid_trade_plan':
+        return 'The analysis returned inconsistent entry, stop or target levels. Your tick will be refunded. Please try again.';
       case 'openai_request_failed':
         return 'The AI service took too long to respond. Please try again in a moment.';
       default:
@@ -785,26 +798,24 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       : null;
 
   // R/R calculado a partir dos níveis (não confia no texto da IA, que pode divergir).
-  const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1);
-  const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2);
+  const side = mapSchemaRecommendationToInternal(normalizeSchemaRecommendation(parsed.recommendation));
+  const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1, side);
+  const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2, side);
+  const invalidTradePlan = hasInvalidTradePlanLevels(side, entry, stopLoss, takeProfit1, takeProfit2);
 
-  // riskRewardRatio: prioriza o valor calculado (alvo final); cai para o texto da IA se faltar.
-  const aiRiskRewardRatio =
-    parsedAnalysis.riskRewardRatio === null || parsedAnalysis.riskRewardRatio === undefined
-      ? null
-      : ensureString(parsedAnalysis.riskRewardRatio, '') || null;
-  const riskRewardRatio =
-    formatRiskReward(riskRewardTp2 ?? riskRewardTp1) ?? aiRiskRewardRatio;
+  // Sem níveis verificáveis, texto de R/R do modelo não é uma medida calculada.
+  const riskRewardRatio = invalidTradePlan || side === 'WAIT'
+    ? null : formatRiskReward(riskRewardTp2 ?? riskRewardTp1);
 
-  // Probabilidades por alvo: trata 0/inválido como ausente e deriva default
-  // determinístico da confiança quando o modelo não preenche (fix do "0%/0%/0%").
+  // Probabilidades por alvo: só publica um trio completo; confiança não
+  // substitui valores que o modelo não forneceu.
   const targetProbabilities = normalizeTargetProbabilities(
     {
       tp1: parsedAnalysis.probabilityTp1,
       tp2: parsedAnalysis.probabilityTp2,
       stop: parsedAnalysis.probabilityStop,
     },
-    { hasTradePlan: entry !== null, confidence: normalizeConfidence(parsed.confidence) },
+    { hasTradePlan: !invalidTradePlan && side !== 'WAIT' && riskRewardTp1 !== null },
   );
 
   return {
@@ -828,8 +839,8 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       tp1Y: ensureNumberOrNull(parsedAnalysis.tp1Y),
       tp2Y: ensureNumberOrNull(parsedAnalysis.tp2Y),
       riskRewardRatio,
-      riskRewardTp1,
-      riskRewardTp2,
+      riskRewardTp1: invalidTradePlan || side === 'WAIT' ? null : riskRewardTp1,
+      riskRewardTp2: invalidTradePlan || side === 'WAIT' ? null : riskRewardTp2,
       marketStructure: {
         bias: normalizeSchemaBias(parsedMarketStructure.bias),
         lastStructure: ensureString(parsedMarketStructure.lastStructure, 'Não informado'),
@@ -1060,9 +1071,10 @@ export class AIAdapter {
     for (let i = 0; i < extraImageUrls.length; i++) {
       try {
         const signed = await this.resolveImageUrlForOpenAi(extraImageUrls[i]);
+        const deliveredNumber = content.filter((part) => part.type === 'image_url').length;
         content.push({
           type: 'text',
-          text: `Gráfico de timeframe MAIOR ${i + 1} (contexto top-down / HTF) — leia e comente explicitamente este gráfico:`,
+          text: `Gráfico de timeframe MAIOR ${deliveredNumber} (contexto top-down / HTF) — leia e comente explicitamente este gráfico:`,
         });
         // 'high' detail: o usuário subiu este HTF de propósito para um top-down REAL.
         // Em 'low' a IA quase não lê o gráfico e só dá uma frase genérica de MTF.
@@ -1073,6 +1085,12 @@ export class AIAdapter {
           `Ignorando imagem HTF ${i + 1} (falha ao assinar): ${err instanceof Error ? err.message : err}`,
         );
       }
+    }
+
+    // A instrução inicial deve refletir as imagens que realmente chegaram ao
+    // modelo, não as URLs solicitadas: assinatura de HTF pode falhar sem abortar.
+    if (!content.some((part, index) => index > 1 && part.type === 'image_url')) {
+      content[0].text = 'Analise o gráfico e responda exclusivamente no JSON do schema. Não escreva texto fora do JSON.';
     }
 
     return content;
@@ -1230,11 +1248,14 @@ export class AIAdapter {
    */
   /**
    * Bloco de CALENDÁRIO ECONÔMICO para o prompt (deep): eventos de impacto
-   * alto/médio nas próximas 12h para as moedas do ativo. Faz a IA considerar
+   * alto/médio nas próximas 24h para as moedas do ativo. Faz a IA considerar
    * notícia agendada (CPI, decisão de juros, payroll) na leitura — caso real:
    * SELL em EURUSD minutos antes de decisão do BCE. Best-effort.
    */
-  private async buildCalendarEnrichment(symbol: string): Promise<string | null> {
+  private async buildCalendarEnrichment(symbol: string): Promise<{
+    block: string | null;
+    status: CalendarCoverage;
+  }> {
     try {
       // Janela 24h (era 12h) para bater com o que a UI promete e com o que o
       // hook do front já pede (`hours=24` em useEconomicCalendar.ts) — não
@@ -1244,9 +1265,9 @@ export class AIAdapter {
         // Fonte fora do ar nesta tentativa: melhor NÃO injetar bloco nenhum
         // (a IA já foi instruída a não inventar dado) do que arriscar um
         // array vazio-por-falha sendo lido como "não há evento agendado".
-        return null;
+        return { block: null, status: 'source_degraded' };
       }
-      if (!events || events.length === 0) return null;
+      if (!events || events.length === 0) return { block: null, status: 'no_events_returned' };
       const lines = events.slice(0, 5).map((e) => {
         const when =
           typeof e.minutesUntil === 'number'
@@ -1259,22 +1280,30 @@ export class AIAdapter {
           .join(' · ');
         return `- [${e.impact}] ${e.country} ${e.title} — ${when}${extra ? ` (${extra})` : ''}`;
       });
-      return [
+      return { block: [
         `# CALENDÁRIO ECONÔMICO (DADO REAL — eventos agendados p/ ${symbol}, próximas 24h)`,
         'Considere estes eventos na leitura: evento de impacto High iminente = risco de movimento brusco que atropela a análise técnica — reduza convicção e diga isso explicitamente. Cite como "dado real".',
         ...lines,
-      ].join('\n');
+      ].join('\n'), status: 'events_injected' };
     } catch {
-      return null;
+      return { block: null, status: 'error' };
     }
   }
 
-  private async buildMarketEnrichment(imageUrl: string): Promise<string | null> {
+  private async buildMarketEnrichment(imageUrl: string): Promise<{
+    block: string | null;
+    assetClass: CoverageAssetClass;
+    marketContext: AnalysisDataCoverage['marketContext'];
+    calendar: CalendarCoverage;
+  }> {
     const extracted = await this.extractSymbol(imageUrl);
-    if (!extracted) return null;
+    if (!extracted) return {
+      block: null, assetClass: 'unknown', marketContext: 'unavailable', calendar: 'symbol_unreadable',
+    };
 
     const sym = extracted.symbol.toUpperCase();
     const { isCrypto } = normalizeToBinancePerp(extracted.symbol);
+    const assetClass = classifyCoverageAsset(sym, isCrypto);
 
     let classBlock: string | null = null;
     if (isCrypto) {
@@ -1288,10 +1317,15 @@ export class AIAdapter {
     }
 
     // Calendário econômico vale para TODAS as classes (cripto reage a CPI/Fed também).
-    const calendarBlock = await this.buildCalendarEnrichment(sym);
+    const calendar = await this.buildCalendarEnrichment(sym);
 
-    const parts = [classBlock, calendarBlock].filter(Boolean) as string[];
-    return parts.length > 0 ? parts.join('\n\n') : null;
+    const parts = [classBlock, calendar.block].filter(Boolean) as string[];
+    return {
+      block: parts.length > 0 ? parts.join('\n\n') : null,
+      assetClass,
+      marketContext: classBlock ? 'injected' : 'unavailable',
+      calendar: calendar.status,
+    };
   }
 
   // ── Grounding do caminho QUICK ─────────────────────────────────────────────
@@ -1427,36 +1461,62 @@ export class AIAdapter {
    * (funding/OI/long-short/F&G pra cripto; dólar/juros pra forex/ouro — os
    * mesmos blocos que o deep já usa). Best-effort; falha → null.
    */
-  private async buildQuickGrounding(imageUrl: string): Promise<string | null> {
+  private async buildQuickGrounding(imageUrl: string): Promise<{
+    block: string | null;
+    candles: CandleCoverage;
+    marketContext: AnalysisDataCoverage['marketContext'];
+    assetClass: CoverageAssetClass;
+  }> {
     const extracted = await this.extractSymbol(imageUrl);
-    if (!extracted) return null;
+    if (!extracted) return {
+      block: null, candles: 'symbol_unreadable', marketContext: 'unavailable', assetClass: 'unknown',
+    };
 
     const sym = extracted.symbol.toUpperCase();
     const interval = this.normalizeTimeframe(extracted.timeframe);
     const { isCrypto, base } = normalizeToBinancePerp(extracted.symbol);
+    const assetClass = classifyCoverageAsset(sym, isCrypto);
 
     // Sem timeframe legível não dá pra calcular ATR/janela honestos — pula os
     // candles (estatística no intervalo errado atrapalha mais do que ajuda).
     let candleBlock: string | null = null;
     let staleReason: string | null = null;
+    let candleCoverage: CandleCoverage = 'timeframe_unreadable';
     if (interval) {
-      const candles =
-        isCrypto && base
+      const fxSupported = /^(XAU|XAG|EUR|GBP|AUD|NZD|USD|CAD|CHF|JPY)(USD|JPY|CHF|CAD|GBP|EUR|AUD|NZD)$/.test(
+        sym.replace(/[^A-Z]/g, ''),
+      );
+      if (!isCrypto && !fxSupported) {
+        candleCoverage = 'unsupported_asset';
+      } else if (!isCrypto && !process.env.TWELVE_DATA_API_KEY?.trim()) {
+        candleCoverage = 'provider_unconfigured';
+      } else {
+        const candles = isCrypto && base
           ? await this.fetchCryptoCandles(base, interval)
           : await this.fetchFxCandles(sym, interval);
-      if (candles) {
-        staleReason = this.detectStaleChart(candles, extracted.lastPrice);
-        if (!staleReason) {
-          candleBlock = buildRealDataBlock(sym, interval, candles);
+        candleCoverage = 'source_unavailable';
+        if (candles) {
+          staleReason = this.detectStaleChart(candles, extracted.lastPrice);
+          if (staleReason) {
+            candleCoverage = 'stale_withheld';
+          } else {
+            candleBlock = buildRealDataBlock(sym, interval, candles);
+            candleCoverage = candleBlock ? 'injected' : 'block_unavailable';
+          }
         }
       }
     }
 
+    // O contexto abaixo descreve o mercado de AGORA. Se o preço da imagem
+    // denuncia um print antigo, injetá-lo junto do aviso de print histórico
+    // mistura épocas e pode produzir uma tese aparentemente fundamentada.
     let contextBlock: string | null = null;
-    if (isCrypto) {
-      contextBlock = await this.buildCryptoEnrichment(extracted.symbol);
-    } else if (/XAU|XAG|EUR|USD|GBP|JPY|AUD|NZD|CAD|CHF/.test(sym)) {
-      contextBlock = await this.buildFxEnrichment(sym);
+    if (!staleReason) {
+      if (isCrypto) {
+        contextBlock = await this.buildCryptoEnrichment(extracted.symbol);
+      } else if (/XAU|XAG|EUR|USD|GBP|JPY|AUD|NZD|CAD|CHF/.test(sym)) {
+        contextBlock = await this.buildFxEnrichment(sym);
+      }
     }
 
     // Print antigo/símbolo divergente: em vez de calar, AVISA a IA. Ela precisa
@@ -1477,9 +1537,13 @@ export class AIAdapter {
       this.logger.log(
         `[QuickGrounding] ${sym} ${interval ?? 'tf?'} — candles: ${candleBlock ? 'sim' : 'não'}${staleReason ? ` (retido: ${staleReason})` : ''}, contexto: ${contextBlock ? 'sim' : 'não'}`,
       );
-      return parts.join('\n\n');
+      return {
+        block: parts.join('\n\n'), candles: candleCoverage,
+        marketContext: staleReason ? 'stale_withheld' : contextBlock ? 'injected' : 'unavailable',
+        assetClass,
+      };
     }
-    return null;
+    return { block: null, candles: candleCoverage, marketContext: 'unavailable', assetClass };
   }
 
   /**
@@ -1535,6 +1599,16 @@ export class AIAdapter {
   ): Promise<AIAnalysisResponse> {
     try {
       const userContent = await this.buildUserContent(imageUrl, extraImageUrls);
+      const deliveredHtfImages = Math.max(0, userContent.filter((part) => part.type === 'image_url').length - 1);
+      const coverage: AnalysisDataCoverage = {
+        analysisType: analysisType === 'deep' ? 'deep' : 'quick',
+        htfImagesRequested: extraImageUrls.length,
+        htfImagesDelivered: deliveredHtfImages,
+        assetClass: 'unknown',
+        candles: analysisType === 'deep' ? 'not_attempted' : 'disabled',
+        marketContext: 'disabled',
+        calendar: analysisType === 'deep' ? 'disabled' : 'not_attempted',
+      };
 
       // Enriquecimento com dados reais de mercado — só DEEP, best-effort.
       // LIGADO POR PADRÃO: roda sozinho quando a IA identifica o mercado.
@@ -1544,15 +1618,22 @@ export class AIAdapter {
       let effectivePrompt = prompt;
       if (analysisType === 'deep' && flagBool('ENABLE_MARKET_ENRICHMENT')) {
         try {
-          const block = await withTimeout(
+          const enrichment = await withTimeout(
             this.buildMarketEnrichment(imageUrl),
             14_000,
             'market enrichment timed out',
           );
-          if (block) {
-            effectivePrompt = `${prompt}\n\n${block}`;
+          coverage.assetClass = enrichment.assetClass;
+          if (enrichment.block) {
+            effectivePrompt = `${prompt}\n\n${enrichment.block}`;
           }
-        } catch {
+          coverage.marketContext = enrichment.marketContext;
+          coverage.calendar = enrichment.calendar;
+        } catch (error) {
+          const failure = error instanceof Error && error.message === 'market enrichment timed out'
+            ? 'timeout' : 'error';
+          coverage.marketContext = failure;
+          coverage.calendar = failure;
           // graceful: mantém o prompt original
         }
       } else if (analysisType === 'quick' && flagBool('ENABLE_QUICK_GROUNDING')) {
@@ -1562,16 +1643,33 @@ export class AIAdapter {
         // Custo quando ligado: +1 chamada gpt-4o-mini (extractSymbol, ~US$0,0001)
         // e +alguns segundos de latência, com teto de 15s. Falha → segue sem o bloco.
         try {
-          const block = await withTimeout(
+          const grounding = await withTimeout(
             this.buildQuickGrounding(imageUrl),
             15_000,
             'quick grounding timed out',
           );
-          if (block) {
-            effectivePrompt = `${prompt}\n\n${block}`;
+          coverage.candles = grounding.candles;
+          coverage.marketContext = grounding.marketContext;
+          coverage.assetClass = grounding.assetClass;
+          if (grounding.block) {
+            effectivePrompt = `${prompt}\n\n${grounding.block}`;
           }
-        } catch {
+        } catch (error) {
+          const failure = error instanceof Error && error.message === 'quick grounding timed out'
+            ? 'timeout' : 'error';
+          coverage.candles = failure;
+          coverage.marketContext = failure;
           // graceful: mantém o prompt original
+        }
+      }
+
+      // Opt-in e sem conteúdo do usuário. Mede o que foi entregue ao modelo,
+      // inclusive quando o enriquecimento falha e a análise segue normalmente.
+      if (process.env.AI_DATA_COVERAGE_LOG === 'true') {
+        try {
+          this.logger.log(formatAnalysisDataCoverage(coverage));
+        } catch {
+          // Observabilidade nunca pode interromper uma análise paga.
         }
       }
 
@@ -1800,7 +1898,7 @@ export class AIAdapter {
           : '';
       const content = extractMessageContent(choice?.message?.content);
 
-      // Custo REAL desta análise, sempre (não atrás de flag de debug). O `usage`
+      // Uso real e custo ESTIMADO desta análise, sempre (não atrás de flag de debug). O `usage`
       // já vinha na resposta e era descartado fora do modo de debug, então o
       // gasto de `reasoning_tokens` dos modelos GPT-5 — que é a maior incógnita
       // da conta de margem — nunca foi observado em produção. Ver model-cost.ts.
@@ -1903,6 +2001,22 @@ export class AIAdapter {
       }
 
       const rawRecommendation = mapSchemaRecommendationToInternal(parsed.recommendation);
+      // Não entregar BUY/SELL com stop/alvo invertidos. O fluxo de falha
+      // definitiva reembolsa o tick; corrigir a direção por conta própria
+      // transformaria um erro do modelo em uma operação não avaliada.
+      if (hasInvalidTradePlanLevels(
+        rawRecommendation,
+        parsed.analysis?.entry,
+        parsed.analysis?.stopLoss,
+        parsed.analysis?.takeProfit1,
+        parsed.analysis?.takeProfit2,
+      )) {
+        throw new AIAnalysisError({
+          code: 'invalid_trade_plan',
+          message: 'A IA retornou níveis incoerentes de entrada, stop ou alvo.',
+          retriable: false,
+        });
+      }
       // TRAVA 1: le e propaga, nunca decide. Se algum dia alguem escrever aqui
       // algo como `if (strategyFit === 'ideal') recommendation = 'BUY'`, isso
       // transforma preferencia do usuario em sinal, que e exatamente o que este
@@ -1923,11 +2037,13 @@ export class AIAdapter {
         parsed.analysis?.entry,
         parsed.analysis?.stopLoss,
         parsed.analysis?.takeProfit1,
+        rawRecommendation,
       );
       const decisionRiskRewardTp2 = computeRiskReward(
         parsed.analysis?.entry,
         parsed.analysis?.stopLoss,
         parsed.analysis?.takeProfit2,
+        rawRecommendation,
       );
 
       // Sequência determinística ÚNICA (mesma usada pelo worker):
@@ -1960,6 +2076,7 @@ export class AIAdapter {
         confidence,
         reasoning: parsed.analysis.reasoning,
         analysis: parsed.analysis,
+        evidence: toAnalysisEvidence(coverage),
         drawingPlan: null,
         drawingFailed: true,
         rawResponse: parsed,

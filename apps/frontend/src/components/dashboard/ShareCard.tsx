@@ -82,8 +82,10 @@ const SCALE = 2; // 2400x1350 — nítido em tela retina e no feed do X.
 export interface ShareCardData {
   symbol: string;
   timeframe: string;
-  /** Rótulo já normalizado pelo `getRecommendationMeta`: BUY | SELL | HOLD. */
-  verdict: string;
+  /** Leitura direcional mostrada no card, independente da ação. */
+  scenario: string;
+  /** Ação operacional separada: BUY | SELL | HOLD/WAIT. */
+  action: string;
   tone: 'buy' | 'sell' | 'hold';
   /** 'signal' (conf >= 70) | 'read' | null (HOLD não tem tier). */
   tier: 'signal' | 'read' | null;
@@ -96,19 +98,17 @@ export interface ShareCardData {
 }
 
 /**
- * Rótulo do veredito como ele sai para o mundo.
- *
- * Dentro do produto o rótulo canônico é HOLD (é o que `getRecommendationMeta`
- * devolve e o que o painel exibe). Mas "HOLD" não é palavra que trader use para
- * "não opera agora" — quem lê o post entende WAIT na hora e HOLD com atraso.
- *
- * Isto existe porque a imagem e o texto do tweet DIVERGIAM: o card escrevia
- * HOLD e o `buildShareText` escrevia "said WAIT", no mesmo post. Uma função só,
- * usada nos dois lugares, torna essa divergência impossível de voltar.
+ * O cenário e a ação são conceitos distintos: WAIT pode ter viés comprador.
+ * Ambos os rótulos são compartilhados entre a imagem e o texto do post.
  */
-export function publicVerdict(verdict: string): string {
-  const value = String(verdict || '').trim().toUpperCase();
-  return value === 'HOLD' || value === 'WAIT' ? 'WAIT' : value || 'WAIT';
+export function publicScenario(scenario: string): string {
+  const value = String(scenario || '').trim().toUpperCase();
+  return value === 'BULLISH' || value === 'BEARISH' ? value : 'NEUTRAL';
+}
+
+export function publicAction(action: string): string {
+  const value = String(action || '').trim().toUpperCase();
+  return value === 'BUY' || value === 'SELL' ? value : 'WAIT';
 }
 
 /**
@@ -296,7 +296,7 @@ export async function drawShareCard(data: ShareCardData): Promise<Blob> {
   // ── Veredito + tier ──────────────────────────────────────────────────────
   const pillY = 206;
   const pillH = 58;
-  const verdictLabel = publicVerdict(data.verdict);
+  const verdictLabel = publicScenario(data.scenario);
   ctx.font = `700 27px ${MONO}`;
   const pillW = measureTracked(ctx, verdictLabel, 3) + 52;
 
@@ -309,6 +309,11 @@ export async function drawShareCard(data: ShareCardData): Promise<Blob> {
 
   ctx.fillStyle = tone.fg;
   drawTracked(ctx, verdictLabel, PAD + 26, pillY + 39, 3);
+
+  const action = publicAction(data.action);
+  ctx.font = `600 16px ${MONO}`;
+  ctx.fillStyle = action === 'BUY' ? TONE.buy.fg : action === 'SELL' ? TONE.sell.fg : TONE.hold.fg;
+  ctx.fillText(`ACTION: ${action}`, PAD, pillY + pillH + 25);
 
   if (data.tier) {
     const chipText = data.tier === 'signal' ? 'SIGNAL' : 'READ';
@@ -459,10 +464,11 @@ export async function drawShareCard(data: ShareCardData): Promise<Blob> {
  * Descreve o que a IA leu; não promete resultado.
  */
 export function buildShareText(data: ShareCardData): string {
-  const label = publicVerdict(data.verdict);
-  const verdict = label === 'WAIT' ? 'said WAIT' : `read it as ${label}`;
+  const scenario = publicScenario(data.scenario);
+  const action = publicAction(data.action);
+  const plan = action === 'WAIT' ? 'advised waiting' : `outlined a ${action.toLowerCase()} setup`;
   return [
-    `${data.symbol} ${data.timeframe}: the AI ${verdict}, at ${Math.round(data.confidence)}% confidence.`,
+    `${data.symbol} ${data.timeframe}: the AI read ${scenario} and ${plan}, at ${Math.round(data.confidence)}% confidence.`,
     '',
     'Not a signal, a second read before I commit. Its real hit rate is published:',
     'https://tickrify.com/accuracy?utm_source=x&utm_medium=social&utm_campaign=share_card',
@@ -505,7 +511,7 @@ export function ShareCardButton({ data }: { data: ShareCardData }) {
       setPreview(previewUrl.current);
       setBlob(png);
       setOpen(true);
-      track('analysis_shared', { step: 'opened', verdict: data.verdict, tier: data.tier });
+      track('analysis_shared', { step: 'opened', verdict: data.action, tier: data.tier });
     } catch {
       toast({ title: s.failed, variant: 'destructive' });
     } finally {
@@ -530,8 +536,8 @@ export function ShareCardButton({ data }: { data: ShareCardData }) {
 
   const handleCopy = useCallback(async () => {
     await copyToClipboard(s.copied);
-    track('analysis_shared', { step: 'copied', verdict: data.verdict });
-  }, [copyToClipboard, data.verdict, s.copied]);
+    track('analysis_shared', { step: 'copied', verdict: data.action });
+  }, [copyToClipboard, data.action, s.copied]);
 
   const handleDownload = useCallback(() => {
     if (!preview) return;
@@ -539,8 +545,8 @@ export function ShareCardButton({ data }: { data: ShareCardData }) {
     link.href = preview;
     link.download = `tickrify-${slugify(data.symbol)}-${slugify(data.timeframe)}.png`;
     link.click();
-    track('analysis_shared', { step: 'downloaded', verdict: data.verdict });
-  }, [preview, data.symbol, data.timeframe, data.verdict]);
+    track('analysis_shared', { step: 'downloaded', verdict: data.action });
+  }, [preview, data.symbol, data.timeframe, data.action]);
 
   const handleX = useCallback(async () => {
     // Nenhuma rede social aceita imagem por URL de intent. O fluxo que funciona
@@ -553,7 +559,7 @@ export function ShareCardButton({ data }: { data: ShareCardData }) {
       '_blank',
       'noopener,noreferrer',
     );
-    track('analysis_shared', { step: 'x_opened', verdict: data.verdict });
+    track('analysis_shared', { step: 'x_opened', verdict: data.action });
   }, [copyToClipboard, data, s.copiedPaste]);
 
   const handleNativeShare = useCallback(async () => {
@@ -561,7 +567,7 @@ export function ShareCardButton({ data }: { data: ShareCardData }) {
     const file = new File([blob], 'tickrify-analysis.png', { type: 'image/png' });
     try {
       await navigator.share({ files: [file], text: buildShareText(data) });
-      track('analysis_shared', { step: 'native_shared', verdict: data.verdict });
+      track('analysis_shared', { step: 'native_shared', verdict: data.action });
     } catch {
       /* Cancelar o menu do sistema rejeita a promise. Não é erro. */
     }

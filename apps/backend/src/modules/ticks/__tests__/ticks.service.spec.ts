@@ -129,6 +129,22 @@ describe('TicksService', () => {
     expect(await service.getBalance('user-3')).toBe(7);
   });
 
+  it('participa da transação do chamador sem abrir outra transação', async () => {
+    await service.addTicks('user-transaction', 2, 'Setup');
+    prisma.$transaction.mockClear();
+
+    await service.debitTicks('user-transaction', 1, 'Análise rápida', { analysisType: 'quick' }, prisma);
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(await service.getBalance('user-transaction')).toBe(1);
+    expect(prisma.tickTransaction.create).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({
+        userId: 'user-transaction', amount: -1, type: 'USAGE',
+        metadata: { analysisType: 'quick' },
+      }),
+    });
+  });
+
   it('lança INSUFFICIENT_TICKS com saldo insuficiente', async () => {
     await expect(service.debitTicks('user-sem-ticks', 1, 'Análise')).rejects.toThrow(
       'INSUFFICIENT_TICKS',
