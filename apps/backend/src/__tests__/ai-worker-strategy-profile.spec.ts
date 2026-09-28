@@ -116,7 +116,7 @@ jest.mock('../modules/ai/ai.adapter', () => {
   };
 });
 
-import { AIAdapter } from '../modules/ai/ai.adapter';
+import { AIAdapter, AIAnalysisError } from '../modules/ai/ai.adapter';
 import type { StrategyProfile } from '../common/strategy/strategy-profile';
 
 describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () => {
@@ -186,6 +186,147 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
     expect(prismaClient.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: 'failed', errorCode: 'processing_unclassified' }),
+    }));
+  });
+
+  function mockPaidRefund() {
+    const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
+    const tx = {
+      tickTransaction: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'refund-1' }),
+      },
+      userTicks: { upsert: jest.fn().mockResolvedValue({ balance: 1 }) },
+    };
+    prismaClient.$transaction = jest.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx));
+    prismaClient.analysis.update.mockClear();
+    return { prismaClient, tx };
+  }
+
+  it('reembolsa o tick e preserva o codigo quando o adapter recusa um plano incoerente', async () => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const { prismaClient, tx } = mockPaidRefund();
+    analyzeImageMock.mockRejectedValueOnce(new AIAnalysisError({
+      code: 'invalid_trade_plan', message: 'Inconsistent levels', retriable: false,
+    }));
+
+    await expect(processAnalysis(makeJob({
+      analysisId: 'analysis-invalid-plan', imageUrl: 'https://example.com/chart.png',
+      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+    }))).rejects.toThrow('Inconsistent levels');
+
+    expect(prismaClient.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'failed', errorCode: 'invalid_trade_plan' }),
+    }));
+    expect(tx.userTicks.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.tickTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ type: 'REFUND', amount: 1, metadata: { analysisId: 'analysis-invalid-plan' } }),
+    }));
+  });
+
+  it('reembolsa uma analise paga rejeitada pela validacao final do worker', async () => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const { prismaClient, tx } = mockPaidRefund();
+    analyzeImageMock.mockResolvedValueOnce({
+      recommendation: 'WAIT', confidence: 50,
+      analysis: { symbol: 'TEST', timeframe: '30m', currentPrice: 0 },
+    });
+
+    await processAnalysis(makeJob({
+      analysisId: 'analysis-validation-failed', imageUrl: 'https://example.com/chart.png',
+      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+    }));
+
+    expect(prismaClient.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'failed', errorCode: 'validation_failed' }),
+    }));
+    expect(tx.userTicks.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.tickTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ type: 'REFUND', amount: 1, metadata: { analysisId: 'analysis-validation-failed' } }),
+    }));
+  });
+
+  it('recusa niveis contraditorios mesmo se a fonte alternativa contornar o adapter', async () => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const { prismaClient, tx } = mockPaidRefund();
+    analyzeImageMock.mockResolvedValueOnce({
+      recommendation: 'BUY', confidence: 75,
+      analysis: {
+        symbol: 'TEST', timeframe: '30m', currentPrice: 100,
+        entry: 100, stopLoss: 95, takeProfit1: 90, takeProfit2: 120,
+      },
+    });
+
+    await expect(processAnalysis(makeJob({
+      analysisId: 'analysis-worker-invalid-plan', imageUrl: 'https://example.com/chart.png',
+      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+    }))).rejects.toThrow('níveis incoerentes');
+
+    expect(prismaClient.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'failed', errorCode: 'invalid_trade_plan' }),
+    }));
+    expect(tx.tickTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ type: 'REFUND', amount: 1, metadata: { analysisId: 'analysis-worker-invalid-plan' } }),
+    }));
+  });
+
+  it('reembolsa tres ticks no deep e nao duplica um reembolso ja registrado', async () => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const { tx } = mockPaidRefund();
+    analyzeImageMock.mockRejectedValueOnce(new AIAnalysisError({
+      code: 'invalid_trade_plan', message: 'Inconsistent levels', retriable: false,
+    }));
+
+    await expect(processAnalysis(makeJob({
+      analysisId: 'analysis-deep-invalid', imageUrl: 'https://example.com/chart.png',
+      promptOverride: 'PROMPT DE TESTE', analysisType: 'deep', userId: 'user-1', isDemo: false,
+    }))).rejects.toThrow('Inconsistent levels');
+    expect(tx.tickTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ type: 'REFUND', amount: 3, metadata: { analysisId: 'analysis-deep-invalid' } }),
+    }));
+
+    tx.tickTransaction.findFirst.mockResolvedValue({ id: 'refund-1' });
+    analyzeImageMock.mockRejectedValueOnce(new AIAnalysisError({
+      code: 'invalid_trade_plan', message: 'Inconsistent levels', retriable: false,
+    }));
+    await expect(processAnalysis(makeJob({
+      analysisId: 'analysis-deep-invalid', imageUrl: 'https://example.com/chart.png',
+      promptOverride: 'PROMPT DE TESTE', analysisType: 'deep', userId: 'user-1', isDemo: false,
+    }))).rejects.toThrow('Inconsistent levels');
+    expect(tx.userTicks.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.tickTransaction.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('nao publica R:R escrito pelo modelo em uma resposta WAIT concluida', async () => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
+    prismaClient.analysis.update.mockClear();
+    analyzeImageMock.mockResolvedValueOnce({
+      recommendation: 'WAIT', confidence: 50,
+      analysis: {
+        symbol: 'TEST', timeframe: '30m', currentPrice: 100,
+        entry: 100, stopLoss: 95, takeProfit1: 110, takeProfit2: 120,
+        riskRewardRatio: '1:99',
+      },
+    });
+
+    await processAnalysis(makeJob({
+      analysisId: 'analysis-wait-rr', imageUrl: 'https://example.com/chart.png',
+      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+    }));
+
+    const completed = prismaClient.analysis.update.mock.calls.find(
+      ([args]: any[]) => args.data.status === 'completed',
+    );
+    expect(completed).toBeDefined();
+    expect(completed[0].data.result.analysis).toEqual(expect.objectContaining({
+      riskRewardRatio: null, riskRewardTp1: null, riskRewardTp2: null,
+      probabilityTp1: null, probabilityTp2: null, probabilityStop: null,
     }));
   });
 });
