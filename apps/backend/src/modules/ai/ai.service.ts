@@ -427,7 +427,7 @@ export class AiService implements OnModuleInit {
         isDemo,
         userLanguage,
         strategyProfile,
-      });
+      }, { jobId: analysis.id });
 
       return {
         id: analysis.id,

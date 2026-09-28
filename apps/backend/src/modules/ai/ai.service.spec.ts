@@ -190,7 +190,8 @@ describe('AiService access enforcement', () => {
     prisma.analysis.count.mockResolvedValue(2);
     // Fila online: createAnalysis enfileira e retorna sem rodar o processamento.
     (getAiQueueReadiness as jest.Mock).mockResolvedValue(QUEUE_ONLINE);
-    (getAiQueue as jest.Mock).mockReturnValue({ add: jest.fn().mockResolvedValue(undefined) });
+    const add = jest.fn().mockResolvedValue(undefined);
+    (getAiQueue as jest.Mock).mockReturnValue({ add });
 
     await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL);
 
@@ -202,6 +203,9 @@ describe('AiService access enforcement', () => {
         data: expect.objectContaining({ isDemo: true, userId: 'usr_1' }),
       }),
     );
+    expect(add).toHaveBeenCalledWith('process-analysis', expect.objectContaining({
+      analysisId: 'an_1', userId: 'usr_1', isDemo: true,
+    }), { jobId: 'an_1' });
   });
 
   it('não conta análises que falharam (status != failed) ao verificar a cota grátis', async () => {
