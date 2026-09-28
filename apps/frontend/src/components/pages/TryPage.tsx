@@ -110,12 +110,24 @@ const TryPage = () => {
     })();
   }, []);
 
-  const handleFile = useCallback((file: File | undefined | null) => {
+  // Copia a imagem para a memoria na escolha, como no painel (NewAnalysis):
+  // no Android, arquivo do Google Fotos ou de pasta na nuvem pode ficar
+  // ilegivel ate o envio, e o erro saia como falha de rede.
+  const handleFile = useCallback(async (file: File | undefined | null) => {
     if (!file || !file.type.startsWith('image/')) return;
+    let copy: Blob;
+    try {
+      copy = new Blob([await file.arrayBuffer()], { type: file.type });
+    } catch {
+      setError(
+        "We couldn't open this image. If it came from Google Photos or a cloud folder, save it to your device or take a new screenshot, then try again.",
+      );
+      return;
+    }
     setError(null);
     setCustomImage((prev) => {
       if (prev) URL.revokeObjectURL(prev.previewUrl);
-      return { blob: file, previewUrl: URL.createObjectURL(file) };
+      return { blob: copy, previewUrl: URL.createObjectURL(copy) };
     });
   }, []);
 
@@ -125,7 +137,7 @@ const TryPage = () => {
       const item = Array.from(e.clipboardData?.items ?? []).find((i) =>
         i.type.startsWith('image/'),
       );
-      if (item) handleFile(item.getAsFile());
+      if (item) void handleFile(item.getAsFile());
     };
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
@@ -277,7 +289,7 @@ const TryPage = () => {
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={(e) => handleFile(e.target.files?.[0])}
+                  onChange={(e) => void handleFile(e.target.files?.[0])}
                 />
 
                 <p className="site-try-fine">1 free analysis per device · no account · no card</p>
@@ -298,7 +310,7 @@ const TryPage = () => {
                 <span className={`site-call ${callClass}`}>{result.recommendation}</span>
                 <span className="site-conf">
                   Confidence <b>{result.confidence}%</b>
-                  {result.riskReward ? (
+                  {result.riskReward && result.recommendation !== 'WAIT' ? (
                     <>
                       {' '}
                       · R:R <b>{result.riskReward}</b>
@@ -307,6 +319,14 @@ const TryPage = () => {
                 </span>
               </div>
 
+              {/* WAIT sem niveis: entrada, stop e alvos de um trade que o veredito
+                  manda nao fazer contradizem a resposta (mesma regra do painel). */}
+              {result.recommendation === 'WAIT' ? (
+                <p className="site-demo-rationale">
+                  WAIT means the AI found no clean entry on this chart right now. Staying out of a bad trade is part of
+                  the job.
+                </p>
+              ) : (
               <div className="site-levels">
                 {[
                   { label: 'Entry', value: result.entry },
@@ -320,6 +340,7 @@ const TryPage = () => {
                   </div>
                 ))}
               </div>
+              )}
 
               {result.reasoning && <p className="site-demo-rationale">{result.reasoning}</p>}
               <div className="site-demo-meta">{result.disclaimer}</div>

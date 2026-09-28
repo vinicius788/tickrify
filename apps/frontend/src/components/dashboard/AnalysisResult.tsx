@@ -848,6 +848,44 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
 
   const isDemo = Boolean(analysisData.isDemo);
 
+  /** A leitura (executiveSummary). No WAIT sobe para logo abaixo do plano. */
+  const summaryBlock = (
+    <div className="rounded-md border border-[var(--border-emphasis)] bg-[var(--bg-overlay)] p-3">
+      <h4 className="tk-display mb-2 text-base text-[var(--text-primary)]">{t.analysis.executiveSummary}</h4>
+      {(() => {
+        const { blocks, footer } = parseSummaryBlocks(executiveSummary);
+        if (blocks.length < 2) {
+          // Texto corrido (análise quick ou formato antigo) — render original.
+          return (
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-primary)]">
+              {executiveSummary || r.noSummary}
+            </p>
+          );
+        }
+        return (
+          <div className="space-y-2">
+            {blocks.map((b, i) => (
+              <div
+                key={i}
+                className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2"
+              >
+                <p className="mb-0.5 font-terminal text-[10px] font-semibold uppercase tracking-wider text-[var(--signal-buy)]">
+                  {localizeDeepLabel(b.label, t.analysis as unknown as Record<string, string>)}
+                </p>
+                <p className="text-sm leading-relaxed text-[var(--text-primary)]">{b.text}</p>
+              </div>
+            ))}
+            {footer.length > 0 && (
+              <p className="pt-1 text-xs italic leading-relaxed text-[var(--text-secondary)]">
+                {footer.join(' ')}
+              </p>
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  );
+
   return (
     <div className="space-y-5">
       {/* ── Demo notice (subtle) ────────────────────────────────────── */}
@@ -972,6 +1010,12 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
         </Card>
       )}
 
+      {isWaitVerdict && (
+        <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '60ms' }}>
+          <CardContent className="p-5 md:p-6">{summaryBlock}</CardContent>
+        </Card>
+      )}
+
       <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-6">
         <div className="min-w-0 flex-1">
           <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '80ms' }}>
@@ -994,7 +1038,12 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
           </Card>
         </div>
 
+        {/* Card de niveis so em BUY/SELL. No WAIT ele contradizia o veredito
+            (entrada, stop e alvos de um trade que a IA manda nao fazer) e alguem
+            podia operar esses precos. O plano de gatilhos acima substitui. */}
+        {!isWaitVerdict && (
         <Card
+          data-testid="levels-card"
           className="surface-terminal-elevated h-fit w-full rounded-xl fade-in-stagger md:sticky md:top-24 md:w-[300px] md:flex-none"
           style={{ animationDelay: '200ms' }}
         >
@@ -1134,6 +1183,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
             </div>
           </CardContent>
         </Card>
+        )}
       </div>
 
       <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '140ms' }}>
@@ -1598,46 +1648,17 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 </AccordionItem>
               </Accordion>
 
-              <div className="mt-4">
-                <PositionSizingCalculator entry={entry} stopLoss={stopLoss} />
-              </div>
+              {/* No WAIT a calculadora sairia com a entrada e o stop de um trade
+                  que o veredito manda NAO fazer; e a leitura ja subiu para o topo. */}
+              {!isWaitVerdict && (
+                <>
+                  <div className="mt-4">
+                    <PositionSizingCalculator entry={entry} stopLoss={stopLoss} />
+                  </div>
 
-              <div className="mt-4 border-t-2 border-[var(--border-emphasis)] pt-4">
-                <div className="rounded-md border border-[var(--border-emphasis)] bg-[var(--bg-overlay)] p-3">
-                  <h4 className="tk-display mb-2 text-base text-[var(--text-primary)]">{t.analysis.executiveSummary}</h4>
-                  {(() => {
-                    const { blocks, footer } = parseSummaryBlocks(executiveSummary);
-                    if (blocks.length < 2) {
-                      // Texto corrido (análise quick ou formato antigo) — render original.
-                      return (
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-primary)]">
-                          {executiveSummary || r.noSummary}
-                        </p>
-                      );
-                    }
-                    return (
-                      <div className="space-y-2">
-                        {blocks.map((b, i) => (
-                          <div
-                            key={i}
-                            className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2"
-                          >
-                            <p className="mb-0.5 font-terminal text-[10px] font-semibold uppercase tracking-wider text-[var(--signal-buy)]">
-                              {localizeDeepLabel(b.label, t.analysis as unknown as Record<string, string>)}
-                            </p>
-                            <p className="text-sm leading-relaxed text-[var(--text-primary)]">{b.text}</p>
-                          </div>
-                        ))}
-                        {footer.length > 0 && (
-                          <p className="pt-1 text-xs italic leading-relaxed text-[var(--text-secondary)]">
-                            {footer.join(' ')}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
+                  <div className="mt-4 border-t-2 border-[var(--border-emphasis)] pt-4">{summaryBlock}</div>
+                </>
+              )}
             </AccordionContent>
           </AccordionItem>
         </Accordion>
