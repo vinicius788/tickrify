@@ -22,6 +22,14 @@ export type CommissionStatus = 'PENDING' | 'AVAILABLE' | 'PAID' | 'CANCELLED';
 export type PayoutStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'PAID';
 export type AffiliateStatus = 'PENDING' | 'ACTIVE' | 'REJECTED' | 'SUSPENDED';
 
+/** Pedido de entrada: onde esta a audiencia e como pretende divulgar (mesmas listas do JoinAffiliateDto). */
+export interface AffiliateApplication {
+  platform: 'youtube' | 'instagram' | 'tiktok' | 'x' | 'telegram' | 'discord' | 'website' | 'other';
+  url: string;
+  audience: 'under_1k' | '1k_10k' | '10k_50k' | '50k_plus';
+  note: string;
+}
+
 export interface AffiliateDashboard {
   /** PENDING/REJECTED chegam so com status e data (sem codigos nem taxa). */
   affiliate: null | {
@@ -61,6 +69,8 @@ export interface AdminAffiliate {
   commissionRateBps: number;
   status: AffiliateStatus;
   stripePromotionCodeId: string | null;
+  /** Pedido de entrada. null = entrou antes do formulario existir. */
+  application: AffiliateApplication | null;
   createdAt: string;
   clicks: number;
   signups: number;
@@ -161,8 +171,9 @@ export function useAffiliateDashboard() {
     queryFn: () => authed('/api/affiliates/me', {}, 'Could not load your affiliate dashboard'),
   });
 
-  const join = useMutation<AffiliateDashboard, Error>({
-    mutationFn: () => authed('/api/affiliates/join', { method: 'POST' }, 'Could not join the program'),
+  const join = useMutation<AffiliateDashboard, Error, AffiliateApplication>({
+    mutationFn: (application) =>
+      authed('/api/affiliates/join', { method: 'POST', body: JSON.stringify(application) }, 'Could not send your application'),
     onSuccess: (data) => queryClient.setQueryData(['affiliate-me'], data),
   });
 

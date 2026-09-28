@@ -42,6 +42,27 @@ const COMISSAO: Record<string, string> = {
   CANCELLED: 'cancelada',
 };
 
+const CANAL: Record<string, string> = {
+  youtube: 'YouTube',
+  instagram: 'Instagram',
+  tiktok: 'TikTok',
+  x: 'X (Twitter)',
+  telegram: 'Telegram',
+  discord: 'Discord',
+  website: 'Site ou blog',
+  other: 'Outro',
+};
+
+const AUDIENCIA: Record<string, string> = {
+  under_1k: 'menos de 1 mil',
+  '1k_10k': '1 mil a 10 mil',
+  '10k_50k': '10 mil a 50 mil',
+  '50k_plus': 'mais de 50 mil',
+};
+
+/** Link do pedido so vira clicavel se for https (o servidor ja exige; aqui e a segunda trava). */
+const linkSeguro = (url: string) => (/^https:\/\//i.test(url) ? url : null);
+
 const dia = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-BR') : '');
 const campo = 'w-full rounded border border-white/10 bg-black/40 px-2 py-1.5 text-base text-white sm:w-32 sm:text-sm';
 
@@ -103,10 +124,41 @@ function PedidoAfiliado({
   const quem = afiliado.email ?? afiliado.referralCode;
   return (
     <Card className="border-amber-500/30 bg-amber-500/[0.04] p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-white">{quem}</p>
           <p className="mt-0.5 text-xs text-zinc-400">Pediu para ser afiliado em {dia(afiliado.createdAt)}</p>
+          {afiliado.application ? (
+            <div className="mt-3 space-y-1.5 text-sm text-zinc-300">
+              <p>
+                <span className="text-zinc-500">Canal:</span> {CANAL[afiliado.application.platform] ?? afiliado.application.platform}
+                {' · '}
+                <span className="text-zinc-500">Audiência:</span>{' '}
+                {AUDIENCIA[afiliado.application.audience] ?? afiliado.application.audience}
+              </p>
+              <p className="break-all">
+                <span className="text-zinc-500">Link:</span>{' '}
+                {linkSeguro(afiliado.application.url) ? (
+                  <a
+                    href={afiliado.application.url}
+                    target="_blank"
+                    rel="noopener noreferrer nofollow"
+                    className="text-sky-300 underline underline-offset-2"
+                  >
+                    {afiliado.application.url}
+                  </a>
+                ) : (
+                  afiliado.application.url
+                )}
+              </p>
+              <p className="whitespace-pre-wrap">
+                <span className="text-zinc-500">Como vai divulgar:</span> {afiliado.application.note}
+              </p>
+              <p className="text-xs text-zinc-500">Abra o link e confira se a comunidade existe e combina com a Tickrify antes de aprovar.</p>
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-zinc-500">Pediu antes do formulário existir: sem canal nem link informados.</p>
+          )}
         </div>
         <div className="flex gap-2">
           <Button size="sm" disabled={ocupado} onClick={() => onSalvar({ status: 'ACTIVE' })}>

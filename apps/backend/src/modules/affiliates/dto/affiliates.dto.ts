@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, IsUrl, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 /**
  * ⚠️ TODO campo com decorator: o ValidationPipe global roda com `whitelist` e
@@ -35,6 +35,28 @@ export class ClaimAffiliateDto {
   @IsOptional()
   @Matches(CUID)
   clickId?: string;
+}
+
+/**
+ * Pedido de entrada. Tudo obrigatorio: sem canal e audiencia o admin nao tem
+ * como decidir. Link so https (vira link clicavel no /admin). O texto livre
+ * so aparece para o admin, nunca perto do prompt do motor.
+ */
+export class JoinAffiliateDto {
+  @IsIn(['youtube', 'instagram', 'tiktok', 'x', 'telegram', 'discord', 'website', 'other'])
+  platform!: string;
+
+  @IsUrl({ protocols: ['https'], require_protocol: true })
+  @MaxLength(300)
+  url!: string;
+
+  @IsIn(['under_1k', '1k_10k', '10k_50k', '50k_plus'])
+  audience!: string;
+
+  @IsString()
+  @MinLength(20)
+  @MaxLength(500)
+  note!: string;
 }
 
 export class RequestPayoutDto {

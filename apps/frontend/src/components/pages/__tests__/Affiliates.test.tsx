@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -21,7 +21,7 @@ function json(body: unknown) {
 function renderWith(ui: ReactNode, routes: Record<string, unknown>) {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (url: string) => {
+    vi.fn(async (url: string, _init?: RequestInit) => {
       const key = Object.keys(routes).find((k) => String(url).includes(k));
       return json(key ? routes[key] : {});
     }),
@@ -65,6 +65,34 @@ describe('programa de afiliados na tela', () => {
     });
     await screen.findByText(/Your commission: 25%/);
     expect(document.body.textContent?.match(/\d+%/g)).toEqual(['25%']);
+  });
+
+  it('pedido de entrada: so envia com link https e plano, e manda o que foi preenchido', async () => {
+    renderWith(<AffiliateDashboardPage />, { '/api/affiliates/me': { affiliate: null, program: PROGRAM } });
+    const send = await screen.findByRole('button', { name: 'Send application' });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Where is your audience?'), { target: { value: 'telegram' } });
+    fireEvent.change(screen.getByLabelText(/Link to your profile/), {
+      target: { value: 'https://t.me/tradersgroup' },
+    });
+    fireEvent.change(screen.getByLabelText('How many followers or members?'), { target: { value: '10k_50k' } });
+    fireEvent.change(screen.getByLabelText(/How would you share Tickrify/), {
+      target: { value: 'Grupo de sinais de ouro, mostraria nas analises da semana.' },
+    });
+    expect((send as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(send);
+
+    await waitFor(() => {
+      const call = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(([u]) => String(u).includes('/api/affiliates/join'));
+      expect(call).toBeTruthy();
+      expect(JSON.parse(call![1].body)).toEqual({
+        platform: 'telegram',
+        url: 'https://t.me/tradersgroup',
+        audience: '10k_50k',
+        note: 'Grupo de sinais de ouro, mostraria nas analises da semana.',
+      });
+    });
   });
 
   it('afiliado PENDING ve so o aviso de analise, sem link nem cupom', async () => {

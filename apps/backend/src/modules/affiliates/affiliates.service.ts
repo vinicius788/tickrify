@@ -179,6 +179,11 @@ const BOOT_SQL = [
   'ALTER TABLE "tickrify"."Affiliate" ALTER COLUMN "status" SET DEFAULT \'PENDING\'',
   'ALTER TABLE "tickrify"."Affiliate" DROP CONSTRAINT IF EXISTS "Affiliate_status_check"',
   'ALTER TABLE "tickrify"."Affiliate" ADD CONSTRAINT "Affiliate_status_check" CHECK ("status" IN (\'PENDING\', \'ACTIVE\', \'REJECTED\', \'SUSPENDED\'))',
+  // Pedido de entrada (28/09): canal, link, tamanho da audiencia e plano.
+  'ALTER TABLE "tickrify"."Affiliate" ADD COLUMN IF NOT EXISTS "applicationPlatform" TEXT',
+  'ALTER TABLE "tickrify"."Affiliate" ADD COLUMN IF NOT EXISTS "applicationUrl" TEXT',
+  'ALTER TABLE "tickrify"."Affiliate" ADD COLUMN IF NOT EXISTS "applicationAudience" TEXT',
+  'ALTER TABLE "tickrify"."Affiliate" ADD COLUMN IF NOT EXISTS "applicationNote" TEXT',
   'CREATE UNIQUE INDEX IF NOT EXISTS "Affiliate_userId_key" ON "tickrify"."Affiliate"("userId")',
   'CREATE UNIQUE INDEX IF NOT EXISTS "Affiliate_referralCode_key" ON "tickrify"."Affiliate"("referralCode")',
   'CREATE UNIQUE INDEX IF NOT EXISTS "Affiliate_couponCode_key" ON "tickrify"."Affiliate"("couponCode")',
@@ -196,6 +201,14 @@ const BOOT_SQL = [
 ];
 
 type ClaimResult = { attributed: boolean; reason?: string };
+
+/** O que a pessoa conta ao pedir para entrar (validado no DTO). */
+export type AffiliateApplication = {
+  platform: string;
+  url: string;
+  audience: string;
+  note: string;
+};
 
 export type CheckoutDiscount = {
   affiliateId: string;
@@ -615,8 +628,11 @@ export class AffiliatesService implements OnModuleInit {
 
   // ── Painel do afiliado ────────────────────────────────────────────────────
 
-  /** Entra no programa. Idempotente: quem ja e afiliado recebe o mesmo perfil. */
-  async join(userId: string) {
+  /**
+   * Pede entrada no programa, com o que o admin precisa para decidir (canal,
+   * link, audiencia, plano). Idempotente: quem ja pediu recebe o mesmo perfil.
+   */
+  async join(userId: string, application: AffiliateApplication) {
     const existing = await this.prisma.affiliate.findUnique({ where: { userId } });
     if (existing) return existing;
 
@@ -636,6 +652,10 @@ export class AffiliatesService implements OnModuleInit {
             couponCode: code,
             commissionRateBps: AFFILIATE_RULES.defaultRateBps,
             status: 'PENDING',
+            applicationPlatform: application.platform,
+            applicationUrl: application.url.trim().slice(0, 300),
+            applicationAudience: application.audience,
+            applicationNote: application.note.trim().slice(0, 500),
           },
         });
         await this.syncPromotionCode(created);
@@ -800,6 +820,14 @@ export class AffiliatesService implements OnModuleInit {
       commissionRateBps: a.commissionRateBps,
       status: a.status,
       stripePromotionCodeId: a.stripePromotionCodeId,
+      application: a.applicationUrl
+        ? {
+            platform: a.applicationPlatform,
+            url: a.applicationUrl,
+            audience: a.applicationAudience,
+            note: a.applicationNote,
+          }
+        : null,
       createdAt: a.createdAt,
       clicks: a._count.clicks,
       signups: a._count.referrals,

@@ -76,7 +76,10 @@ const AffiliatesPage = () => {
                 <div className="site-step">
                   <span className="site-step-n">01</span>
                   <h3>Apply with your Tickrify account</h3>
-                  <p>It is free. We review every application; once approved, you get a personal referral link and a coupon code.</p>
+                  <p>
+                    It is free. Tell us where your audience is and how you would share Tickrify. We review every
+                    application; once approved, you get a personal referral link and a coupon code.
+                  </p>
                 </div>
                 <div className="site-step">
                   <span className="site-step-n">02</span>

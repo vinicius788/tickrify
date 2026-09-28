@@ -5,7 +5,7 @@ import { AffiliatesService, addMonths, commissionFor } from './affiliates.servic
 import { AffiliatesAdminController } from './affiliates-admin.controller';
 import { AdminGuard } from '../auth/admin.guard';
 import { AuthGuard } from '../auth/auth.guard';
-import { AdminUpdateAffiliateDto, ClaimAffiliateDto, RequestPayoutDto } from './dto/affiliates.dto';
+import { AdminUpdateAffiliateDto, ClaimAffiliateDto, JoinAffiliateDto, RequestPayoutDto } from './dto/affiliates.dto';
 import { CreateCheckoutSessionDto } from '../payments/dto/create-checkout-session.dto';
 
 // ── Prisma em memoria: so o que o servico usa, com chave unica de verdade ────
@@ -108,6 +108,13 @@ function fakePrisma() {
 // ── Cenario ──────────────────────────────────────────────────────────────────
 
 const NOW = new Date('2026-09-26T12:00:00Z');
+/** Pedido de entrada valido (o que o formulario manda). */
+const APP = {
+  platform: 'youtube',
+  url: 'https://youtube.com/@tradercanal',
+  audience: '10k_50k',
+  note: 'Canal de price action, 2 lives por semana analisando ouro.',
+};
 const DAY = 24 * 60 * 60 * 1000;
 
 describe('AffiliatesService', () => {
@@ -121,7 +128,7 @@ describe('AffiliatesService', () => {
 
   /** Pede entrada e o admin aprova (novo afiliado nasce PENDING). */
   const joinApproved = async (userId: string) => {
-    const affiliate = await service.join(userId);
+    const affiliate = await service.join(userId, APP);
     await service.adminUpdate(affiliate.id, { status: 'ACTIVE' }, 'admin_1');
     return db.affiliate.find((a) => a.id === affiliate.id)!;
   };
@@ -298,7 +305,7 @@ describe('AffiliatesService', () => {
     it('com cupom configurado, entrar no programa cria o promotion code (1o pagamento, metadata do afiliado)', async () => {
       process.env.STRIPE_AFFILIATE_COUPON_ID = 'AFF10';
       seedUser('partner');
-      const aff = await service.join('partner');
+      const aff = await service.join('partner', APP);
       expect(stripe.promotionCodes.create).toHaveBeenCalledWith(
         expect.objectContaining({
           coupon: 'AFF10',
@@ -610,10 +617,33 @@ describe('AffiliatesService', () => {
       expect((await service.getDashboard('other', NOW)).affiliate).toMatchObject({ commissionPercent: 30 });
     });
 
+    it('o pedido guarda canal, link, audiencia e plano, e o admin ve tudo', async () => {
+      seedUser('partner');
+      await service.join('partner', APP);
+      expect(db.affiliate[0]).toMatchObject({
+        status: 'PENDING',
+        applicationPlatform: 'youtube',
+        applicationUrl: 'https://youtube.com/@tradercanal',
+        applicationAudience: '10k_50k',
+        applicationNote: APP.note,
+      });
+      db.affiliate[0].user = undefined;
+      prisma.affiliate.findMany = async () =>
+        db.affiliate.map((a) => ({ ...a, user: { email: 'partner@mail.com' }, _count: { clicks: 0, referrals: 0 } }));
+      prisma.affiliateCommission.groupBy = async () => [];
+      const [row] = await service.adminList(NOW);
+      expect(row.application).toEqual({
+        platform: 'youtube',
+        url: 'https://youtube.com/@tradercanal',
+        audience: '10k_50k',
+        note: APP.note,
+      });
+    });
+
     it('entrar duas vezes devolve o mesmo perfil', async () => {
       seedUser('partner');
-      const a = await service.join('partner');
-      const b = await service.join('partner');
+      const a = await service.join('partner', APP);
+      const b = await service.join('partner', APP);
       expect(a.id).toBe(b.id);
       expect(db.affiliate).toHaveLength(1);
     });
@@ -628,7 +658,7 @@ describe('AffiliatesService', () => {
     const pendingPartner = async () => {
       seedUser('partner');
       seedUser('buyer');
-      const aff = await service.join('partner');
+      const aff = await service.join('partner', APP);
       db.affiliate[0].referralCode = 'PARTNER1';
       db.affiliate[0].couponCode = 'SAVE10';
       return aff;
@@ -698,7 +728,7 @@ describe('AffiliatesService', () => {
     it('aprovar ativa o promotion code na Stripe (nasce inativo)', async () => {
       process.env.STRIPE_AFFILIATE_COUPON_ID = 'AFF10';
       seedUser('partner');
-      const aff = await service.join('partner');
+      const aff = await service.join('partner', APP);
       stripe.promotionCodes.retrieve.mockResolvedValue({ id: db.affiliate[0].stripePromotionCodeId, code: aff.couponCode, active: false });
       await service.adminUpdate(aff.id, { status: 'ACTIVE' }, 'admin_1');
       expect(stripe.promotionCodes.update).toHaveBeenCalledWith(db.affiliate[0].stripePromotionCodeId, { active: true });
@@ -757,6 +787,22 @@ describe('DTOs de afiliado contra o ValidationPipe real', () => {
     await expect(run(ClaimAffiliateDto, { code: 'SAVE10', kind: 'coupon' })).resolves.toBeDefined();
     await expect(run(ClaimAffiliateDto, { code: 'PARTNER1', kind: 'link', clickId: 'ckabcdefghijklmnopqrst' })).resolves.toBeDefined();
     await expect(run(ClaimAffiliateDto, { code: 'a b;', kind: 'link' })).rejects.toBeDefined();
+  });
+
+  it('pedido de entrada exige canal, link https, audiencia e um plano de verdade', async () => {
+    const ok = {
+      platform: 'instagram',
+      url: 'https://instagram.com/trader',
+      audience: '1k_10k',
+      note: 'Posto analises diarias de cripto nos stories.',
+    };
+    await expect(run(JoinAffiliateDto, ok)).resolves.toBeDefined();
+    await expect(run(JoinAffiliateDto, {})).rejects.toBeDefined();
+    await expect(run(JoinAffiliateDto, { ...ok, url: 'http://instagram.com/trader' })).rejects.toBeDefined();
+    await expect(run(JoinAffiliateDto, { ...ok, url: 'javascript:alert(1)' })).rejects.toBeDefined();
+    await expect(run(JoinAffiliateDto, { ...ok, note: 'quero' })).rejects.toBeDefined();
+    await expect(run(JoinAffiliateDto, { ...ok, platform: 'myspace' })).rejects.toBeDefined();
+    await expect(run(JoinAffiliateDto, { ...ok, audience: '1000000' })).rejects.toBeDefined();
   });
 
   it('o navegador nao consegue mandar valor de saque nem de comissao', async () => {

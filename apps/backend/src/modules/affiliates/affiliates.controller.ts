@@ -4,7 +4,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AffiliatesService } from './affiliates.service';
-import { ClaimAffiliateDto, RequestPayoutDto, TrackAffiliateDto } from './dto/affiliates.dto';
+import { ClaimAffiliateDto, JoinAffiliateDto, RequestPayoutDto, TrackAffiliateDto } from './dto/affiliates.dto';
 
 type AuthenticatedUser = { id?: string; clerkUserId: string };
 
@@ -55,8 +55,8 @@ export class AffiliatesController {
   @Post('join')
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async join(@CurrentUser() user: AuthenticatedUser) {
-    await this.affiliates.join(this.requireId(user));
+  async join(@CurrentUser() user: AuthenticatedUser, @Body() body: JoinAffiliateDto) {
+    await this.affiliates.join(this.requireId(user), body);
     return this.affiliates.getDashboard(this.requireId(user));
   }
 

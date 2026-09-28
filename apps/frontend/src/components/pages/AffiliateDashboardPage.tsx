@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import SiteLayout from '@/components/layout/SiteLayout';
 import { seoFor, useSeo } from '@/hooks/useSeo';
 import { useToast } from '@/hooks/use-toast';
-import { formatUsd, useAffiliateDashboard, type CommissionStatus } from '@/hooks/useAffiliates';
+import { formatUsd, useAffiliateDashboard, type AffiliateApplication, type CommissionStatus } from '@/hooks/useAffiliates';
 
 /**
  * Painel do afiliado (/affiliate, logado, noindex).
@@ -21,6 +21,98 @@ const STATUS_LABEL: Record<CommissionStatus, string> = {
   PAID: 'Paid',
   CANCELLED: 'Cancelled',
 };
+
+const PLATFORMS: Array<{ value: AffiliateApplication['platform']; label: string }> = [
+  { value: 'youtube', label: 'YouTube' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'tiktok', label: 'TikTok' },
+  { value: 'x', label: 'X (Twitter)' },
+  { value: 'telegram', label: 'Telegram' },
+  { value: 'discord', label: 'Discord' },
+  { value: 'website', label: 'Website or blog' },
+  { value: 'other', label: 'Other' },
+];
+
+const AUDIENCES: Array<{ value: AffiliateApplication['audience']; label: string }> = [
+  { value: 'under_1k', label: 'Under 1,000' },
+  { value: '1k_10k', label: '1,000 to 10,000' },
+  { value: '10k_50k', label: '10,000 to 50,000' },
+  { value: '50k_plus', label: 'More than 50,000' },
+];
+
+const inputClass =
+  'w-full rounded-lg border border-[var(--s-hair)] bg-transparent px-3 py-2 text-base text-[var(--s-fg)]';
+
+/**
+ * Pedido de entrada. Tudo obrigatorio: o admin aprova a mao e precisa ver onde
+ * esta a audiencia. As mesmas regras sao conferidas no servidor (JoinAffiliateDto).
+ */
+function ApplicationForm({ sending, onSubmit }: { sending: boolean; onSubmit: (a: AffiliateApplication) => void }) {
+  const [platform, setPlatform] = useState<AffiliateApplication['platform']>('youtube');
+  const [url, setUrl] = useState('');
+  const [audience, setAudience] = useState<AffiliateApplication['audience']>('under_1k');
+  const [note, setNote] = useState('');
+  const urlOk = /^https:\/\/[^\s.]+\.[^\s]{2,}$/.test(url.trim());
+  const noteOk = note.trim().length >= 20;
+
+  return (
+    <form
+      className="mt-4 space-y-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (urlOk && noteOk) onSubmit({ platform, url: url.trim(), audience, note: note.trim() });
+      }}
+    >
+      <label className="block text-sm">
+        <span className="mb-1 block text-[var(--s-fg)]">Where is your audience?</span>
+        <select value={platform} onChange={(e) => setPlatform(e.target.value as AffiliateApplication['platform'])} className={inputClass}>
+          {PLATFORMS.map((p) => (
+            <option key={p.value} value={p.value}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block text-[var(--s-fg)]">Link to your profile, channel or community</span>
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://"
+          maxLength={300}
+          className={inputClass}
+        />
+        {url && !urlOk ? <span className="mt-1 block text-xs text-[var(--s-fg-3)]">Use the full link, starting with https://</span> : null}
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block text-[var(--s-fg)]">How many followers or members?</span>
+        <select value={audience} onChange={(e) => setAudience(e.target.value as AffiliateApplication['audience'])} className={inputClass}>
+          {AUDIENCES.map((a) => (
+            <option key={a.value} value={a.value}>
+              {a.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block text-sm">
+        <span className="mb-1 block text-[var(--s-fg)]">How would you share Tickrify with them?</span>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          maxLength={500}
+          rows={3}
+          placeholder="For example: I post daily gold analysis and would show Tickrify in my weekly live."
+          className={inputClass}
+        />
+        <span className="mt-1 block text-xs text-[var(--s-fg-3)]">At least 20 characters.</span>
+      </label>
+      <button type="submit" disabled={sending || !urlOk || !noteOk} className="site-btn site-btn-primary">
+        {sending ? 'Sending...' : 'Send application'}
+      </button>
+    </form>
+  );
+}
 
 const date = (iso: string | null) => (iso ? new Date(iso).toISOString().slice(0, 10) : '');
 
@@ -55,9 +147,9 @@ const AffiliateDashboardPage = () => {
   const data = query.data;
   const program = data?.program;
 
-  const onJoin = () =>
-    join.mutate(undefined, {
-      onError: (e) => toast({ title: 'Could not join', description: e.message, variant: 'destructive' }),
+  const onJoin = (application: AffiliateApplication) =>
+    join.mutate(application, {
+      onError: (e) => toast({ title: 'Could not send your application', description: e.message, variant: 'destructive' }),
     });
 
   const onPayout = () =>
@@ -86,12 +178,11 @@ const AffiliateDashboardPage = () => {
             <div className="site-callout">
               <h3>You are not in the affiliate program yet</h3>
               <p>
-                Apply to earn recurring commissions on the traders you refer. Every application is reviewed.{' '}
+                Tell us about your audience. We review every application by hand and approve partners whose
+                community is a good fit for Tickrify.{' '}
                 <Link to="/affiliates">Read the program details.</Link>
               </p>
-              <button type="button" onClick={onJoin} disabled={join.isPending} className="site-btn site-btn-primary">
-                {join.isPending ? 'Sending...' : 'Apply to join'}
-              </button>
+              <ApplicationForm sending={join.isPending} onSubmit={onJoin} />
             </div>
           </div>
         </section>

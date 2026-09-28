@@ -311,6 +311,12 @@ model Affiliate {
   /// Promotion code da Stripe que carrega o `couponCode` (sobre o cupom de
   /// STRIPE_AFFILIATE_COUPON_ID). NULL = cupom da Stripe nao configurado.
   stripePromotionCodeId String?  @unique
+  /// Pedido de entrada: onde esta a audiencia e como pretende divulgar. So o
+  /// admin ve. NULL = entrou antes do formulario (28/09/2026).
+  applicationPlatform   String?
+  applicationUrl        String?
+  applicationAudience   String?
+  applicationNote       String?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
