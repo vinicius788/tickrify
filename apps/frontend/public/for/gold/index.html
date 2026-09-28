@@ -4,11 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI Gold Chart Analysis (XAUUSD) With Live Candles | Tickrify</title>
-  <meta name="description" content="Upload an XAUUSD chart and get an AI read checked against live gold candles, with entry, stop and targets sized in ATR instead of guessed by eye." />
+  <meta name="description" content="Upload an XAUUSD chart and get a structured AI read; eligible quick analyses can use verified gold candles and ATR." />
   <link rel="canonical" href="https://tickrify.com/for/gold/" />
   <link rel="icon" type="image/png" href="/icon.png?v=3" />
   <meta property="og:title" content="AI Gold Chart Analysis (XAUUSD)" />
-  <meta property="og:description" content="Gold has verified live candles and the dollar correlation written into the model&#x27;s instructions. Entry, stop and targets expressed in ATR, where gold trades are won or lost." />
+  <meta property="og:description" content="Eligible quick reads of gold can use verified live candles when the feed agrees with the chart; the model also considers the dollar relationship." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://tickrify.com/for/gold/" />
   <meta property="og:site_name" content="Tickrify" />
@@ -18,7 +18,7 @@
   <meta property="og:image:alt" content="Tickrify, AI chart analysis for traders" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="AI Gold Chart Analysis (XAUUSD)" />
-  <meta name="twitter:description" content="Gold has verified live candles and the dollar correlation written into the model&#x27;s instructions. Entry, stop and targets expressed in ATR, where gold trades are won or lost." />
+  <meta name="twitter:description" content="Eligible quick reads of gold can use verified live candles when the feed agrees with the chart; the model also considers the dollar relationship." />
   <meta name="twitter:image" content="https://tickrify.com/og.png?v=2" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -29,10 +29,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
   <noscript><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet"></noscript>
   <script type="application/ld+json">
-  {"@context": "https://schema.org", "@type": "WebPage", "name": "AI Gold Chart Analysis (XAUUSD)", "description": "Gold has verified live candles and the dollar correlation written into the model's instructions. Entry, stop and targets expressed in ATR, where gold trades are won or lost.", "url": "https://tickrify.com/for/gold/", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "name": "Tickrify", "url": "https://tickrify.com/"}, "publisher": {"@type": "Organization", "name": "Tickrify", "url": "https://tickrify.com/"}}
+  {"@context": "https://schema.org", "@type": "WebPage", "name": "AI Gold Chart Analysis (XAUUSD)", "description": "Eligible quick reads of gold can use verified live candles when the feed agrees with the chart; the model also considers the dollar relationship.", "url": "https://tickrify.com/for/gold/", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "name": "Tickrify", "url": "https://tickrify.com/"}, "publisher": {"@type": "Organization", "name": "Tickrify", "url": "https://tickrify.com/"}}
   </script>
   <script type="application/ld+json">
-  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Does it work with my broker's gold symbol?", "acceptedAnswer": {"@type": "Answer", "text": "Usually. XAUUSD, XAUUSD.m, XAUUSD.pro and GOLD all resolve to the same instrument. If the symbol cannot be identified, the analysis runs from the screenshot alone rather than substituting a different instrument."}}, {"@type": "Question", "name": "Why is the price slightly different from my platform?", "acceptedAnswer": {"@type": "Answer", "text": "Because the candles come from a reference feed rather than from your broker, and gold spreads vary a lot between brokers. Use the read for structure and place orders from your own chart."}}, {"@type": "Question", "name": "Does it account for news events?", "acceptedAnswer": {"@type": "Answer", "text": "No. It has no access to headlines, sentiment or order flow. On gold that is a real limitation, because news moves this instrument hard and fast. Check the calendar yourself before you enter."}}, {"@type": "Question", "name": "Which gold timeframes work best?", "acceptedAnswer": {"@type": "Answer", "text": "Any timeframe legible on your chart. If the timeframe label cannot be read, the live candle block is skipped on purpose, because ATR computed on the wrong interval is worse than no ATR at all."}}, {"@type": "Question", "name": "Will it give me a gold signal every time I ask?", "acceptedAnswer": {"@type": "Answer", "text": "No. A large share of reads come back as no trade, and on a range-bound gold chart that is the correct answer. If you want a tool that always finds a setup, this is not it."}}]}
+  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Does it work with my broker's gold symbol?", "acceptedAnswer": {"@type": "Answer", "text": "Usually. XAUUSD, XAUUSD.m, XAUUSD.pro and GOLD all resolve to the same instrument. If the symbol cannot be identified, the analysis runs from the screenshot alone rather than substituting a different instrument."}}, {"@type": "Question", "name": "Why is the price slightly different from my platform?", "acceptedAnswer": {"@type": "Answer", "text": "Because the candles come from a reference feed rather than from your broker, and gold spreads vary a lot between brokers. Use the read for structure and place orders from your own chart."}}, {"@type": "Question", "name": "Does it account for news events?", "acceptedAnswer": {"@type": "Answer", "text": "It does not read headlines, sentiment or order flow. When calendar data is available, a nearby high-impact event can downgrade a trade signal to WAIT. Check the calendar yourself before you enter."}}, {"@type": "Question", "name": "Which gold timeframes work best?", "acceptedAnswer": {"@type": "Answer", "text": "Any timeframe legible on your chart. If the timeframe label cannot be read, the live candle block is skipped on purpose, because ATR computed on the wrong interval is worse than no ATR at all."}}, {"@type": "Question", "name": "Will it give me a gold signal every time I ask?", "acceptedAnswer": {"@type": "Answer", "text": "No. A large share of reads come back as no trade, and on a range-bound gold chart that is the correct answer. If you want a tool that always finds a setup, this is not it."}}]}
   </script>
   <style>
     :root{--bg:#050508;--fg:#f5f6f8;--muted:#9aa3ae;--green:#5eea8a;--line:rgba(154,163,174,.18)}
@@ -83,7 +83,7 @@
     <h1>AI gold chart analysis (XAUUSD)</h1>
     <p class="meta">Updated August 2026</p>
 
-    <p>Gold gets its own page for two reasons that are not marketing. The first is that <strong>XAUUSD has verified live candles</strong>, so an analysis of your gold chart is checked against real data rather than read off pixels. The second is that the dollar leg is written into the model's instructions: it is told to weigh the fact that gold typically moves inverse to the dollar and to rates, because a gold read that ignores the dollar is half a read.</p>
+    <p>Gold gets its own page for two reasons that are not marketing. The first is that <strong>XAUUSD can use verified live candles in eligible quick analyses</strong> when the feed agrees with the chart; otherwise the read relies on the screenshot. The second is that the dollar leg is written into the model's instructions: it is told to weigh the fact that gold typically moves inverse to the dollar and to rates, because a gold read that ignores the dollar is half a read.</p>
     <p>Gold is also where a sloppy stop costs the most. The average true range on XAUUSD is large enough that a stop placed by eye rather than by volatility is the single most common way a correct directional call still loses money.</p>
 
     <div class="toc">
@@ -163,7 +163,7 @@
     <p>Because the candles come from a reference feed rather than from your broker, and gold spreads vary a lot between brokers. Use the read for structure and place orders from your own chart.</p>
 
     <h3>Does it account for news events?</h3>
-    <p>No. It has no access to headlines, sentiment or order flow. On gold that is a real limitation, because news moves this instrument hard and fast. Check the calendar yourself before you enter.</p>
+    <p>It does not read headlines, sentiment or order flow. When calendar data is available, a nearby high-impact event can downgrade a trade signal to WAIT. Check the calendar yourself before you enter.</p>
 
     <h3>Which gold timeframes work best?</h3>
     <p>Any timeframe legible on your chart. If the timeframe label cannot be read, the live candle block is skipped on purpose, because ATR computed on the wrong interval is worse than no ATR at all.</p>

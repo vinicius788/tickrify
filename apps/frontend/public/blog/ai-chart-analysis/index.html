@@ -37,7 +37,7 @@
     {"@type":"Question","name":"Can AI predict the market?","acceptedAnswer":{"@type":"Answer","text":"No. A chart image contains no information about upcoming news, order flow, resting liquidity or funding. AI chart analysis is pattern recognition over past price, not prediction. Its useful role is as a structured second opinion that confirms or kills a read you already have."}},
     {"@type":"Question","name":"How accurate is AI chart analysis?","acceptedAnswer":{"@type":"Answer","text":"No AI chart tool has demonstrated a profitable edge on raw signals after spreads, slippage and fees. Tickrify publishes its measured hit rate with sample size and 95% confidence intervals at tickrify.com/accuracy, including results that are unflattering. Treat any advertised accuracy above 80% without published methodology as marketing."}},
     {"@type":"Question","name":"Why does AI hallucinate price levels on charts?","acceptedAnswer":{"@type":"Answer","text":"A vision model reading only a screenshot does not know the current price — it estimates from pixels. Without a live data feed it cannot know a level was already swept minutes ago, so it builds an entry, stop and target around a price that no longer exists. Tools that inject real current candle data anchor the read; tools that do not are guessing."}},
-    {"@type":"Question","name":"Is AI chart analysis worth it for beginners?","acceptedAnswer":{"@type":"Answer","text":"It can be, but not as an autopilot. Its most valuable output for a beginner is the structure it forces — entry, stop, targets and an invalidation condition on every read — and its willingness to say there is no trade. Start with a free option before paying for anything."}}
+    {"@type":"Question","name":"Is AI chart analysis worth it for beginners?","acceptedAnswer":{"@type":"Answer","text":"It can be, but not as an autopilot. A structured read can help a beginner consider entry, stop, targets and invalidation when a trade plan is available, and it may say there is no trade. Check every level on your chart and start with a free option before paying for anything."}}
   ]}
   </script>
   <style>
@@ -146,7 +146,7 @@
     <h2 id="helps">Where it genuinely helps</h2>
     <p><strong>1. It kills bad setups before you take them.</strong> The most valuable output of a well-calibrated AI analysis isn't the buy signal — it's the WAIT. In our own backtesting across BTC, ETH, gold and EURUSD, the engine declined to trade the majority of charts it saw. That's a feature. Most losing trades retail traders take are trades that never should have been entered.</p>
     <p><strong>2. It's an emotion-free checkpoint.</strong> After two red trades, your brain wants revenge. The AI doesn't know you're tilted. Running your read past a model that has no P&amp;L and no ego is the cheapest discipline tool that exists.</p>
-    <p><strong>3. It structures your thinking.</strong> Entry, stop, targets, risk-reward, invalidation — every analysis forces the full checklist. Many traders enter positions without ever defining where they're wrong. A structured second opinion makes that impossible to skip.</p>
+    <p><strong>3. It structures your thinking.</strong> A trade plan can put entry, stop, targets, risk-reward and invalidation in one place. When the tool returns WAIT or cannot read reliable levels, some of those fields may be absent. Check any proposed level against your own chart.</p>
     <p><strong>4. It gives you a disagreement to think about.</strong> This is underrated. The value isn't the tool being right; it's the tool being <em>different</em>. When a read contradicts yours, you're forced to articulate why you disagree — and half the time, writing that sentence is what reveals you didn't have a reason.</p>
     <p><strong>5. It's fast enough to fit in the gap.</strong> The window between "I see something" and "I clicked buy" is where discipline is won or lost. A checkpoint that takes seconds gets used. One that takes ten minutes gets skipped exactly when you most need it.</p>
 
@@ -196,7 +196,7 @@
     <p>No tool has shown a profitable edge on raw signals after costs. We publish ours — with sample size and 95% confidence intervals, including the unflattering parts — on our <a href="/accuracy">accuracy page</a>.</p>
 
     <h3>Is it worth it for beginners?</h3>
-    <p>It can be, but not as an autopilot. The most valuable thing it gives a beginner is the structure it forces on every read, and its willingness to say there's no trade. Start free before you pay for anything.</p>
+    <p>It can be, but not as an autopilot. A structured read can help a beginner review a trade plan when one is available, and the tool can say there is no trade. Start free before you pay for anything.</p>
 
     <h3>Why does the AI hallucinate price levels?</h3>
     <p>Because without a live data feed it estimates price from pixels, and a screenshot doesn't say when it was taken. See failure mode 1 and the grounding section above.</p>
