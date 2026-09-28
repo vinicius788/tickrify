@@ -301,6 +301,14 @@ export const PLANS: Plan[] = [
   },
 ];
 
+const CYCLES_FROM_URL: readonly BillingCycle[] = ["weekly", "monthly", "yearly"];
+
+function cycleFromUrl(): BillingCycle | null {
+  if (typeof window === "undefined") return null;
+  const value = new URLSearchParams(window.location.search).get("cycle");
+  return (CYCLES_FROM_URL as readonly string[]).includes(value ?? "") ? (value as BillingCycle) : null;
+}
+
 export function PricingCards() {
   const { getToken, isSignedIn, isLoaded } = useAuth();
   const { toast } = useToast();
@@ -311,7 +319,14 @@ export function PricingCards() {
   const weeklyCopy = WEEKLY_COPY[lang];
   const [loadingPlan, setLoadingPlan] = useState<PlanType | null>(null);
   const [processingUpgrade, setProcessingUpgrade] = useState(false);
-  const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+  // `?cycle=weekly` (link do e-mail do plano semanal) abre a pagina ja no
+  // ciclo pedido e rola ate os cards: sem isso a pessoa caia no mensal e o
+  // semanal ficava escondido abaixo da dobra.
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>(() => cycleFromUrl() ?? "monthly");
+  const cycleRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (cycleFromUrl()) cycleRef.current?.scrollIntoView?.({ block: "start" });
+  }, []);
   // Trava sincrona: o `loadingPlan` e estado e so vale no proximo render, entao
   // clique duplo ou o useEffect de retomada chegavam juntos e abriam duas
   // sessoes (visto na Stripe: pares no mesmo segundo).
@@ -487,7 +502,7 @@ export function PricingCards() {
     <div>
       {/* Ciclo de cobrança. Dois botões com aria-pressed em vez de um switch:
           o estado fica legível para leitor de tela e para quem só olha. */}
-      <div className="site-cycle" role="group" aria-label="Billing cycle">
+      <div ref={cycleRef} className="site-cycle" role="group" aria-label="Billing cycle">
         <button
           type="button"
           aria-pressed={billingCycle === "weekly"}
