@@ -79,22 +79,27 @@ export async function fetchWithAuthRetry(
   options: RequestInit,
   refreshToken?: FreshTokenGetter,
 ): Promise<Response> {
-  const runRequest = async () => {
-    const headers = await resolveAuthHeaders(options.headers, refreshToken);
-    return fetch(url, {
-      ...options,
-      headers,
-    });
-  };
+  // 1a tentativa: usa o token que a chamada JA trouxe (o do cache do Clerk, que
+  // o proprio Clerk renova antes de vencer). Token novo so se nao veio nenhum,
+  // ou depois de um 401.
+  //
+  // Ate 24/09/2026 as duas tentativas pediam token novo (`skipCache`), e quem
+  // chamava ja tinha pedido outro: DUAS idas ao Clerk em serie (~0,25 s cada no
+  // desktop, bem mais no 4G) antes de toda chamada ao backend. Era o grosso da
+  // espera do painel carregar depois da logo.
+  const initial = new Headers(options.headers || {});
+  const firstHeaders = initial.has('Authorization')
+    ? initial
+    : await resolveAuthHeaders(options.headers, refreshToken);
 
-  const response = await runRequest();
+  const response = await fetch(url, { ...options, headers: firstHeaders });
 
   if (response.status !== 401 || !refreshToken) {
     return response;
   }
 
   console.warn('[Auth] Token expired, refreshing...');
-  return runRequest();
+  return fetch(url, { ...options, headers: await resolveAuthHeaders(options.headers, refreshToken) });
 }
 
 export type Recommendation =
@@ -118,13 +123,48 @@ export interface AnalysisEvidence {
 export class APIError extends Error {
   status: number;
   code?: string;
+  /**
+   * Erro original, quando este APIError so classifica uma falha que nasceu
+   * fora da API (rede, abort, token do Clerk). A telemetria le daqui o nome e
+   * a mensagem reais ("Failed to fetch", "Load failed"...), que a mensagem
+   * deste objeto esconderia.
+   */
+  cause?: unknown;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, cause?: unknown) {
     super(message);
     this.name = 'APIError';
     this.status = status;
     this.code = code;
+    this.cause = cause;
   }
+}
+
+/**
+ * Converte a falha de transporte do `fetch` em APIError com codigo.
+ * TypeError = a requisicao nao chegou a ter resposta (rede, CORS, DNS);
+ * AbortError = o AbortController cortou. Qualquer outro erro volta intacto.
+ */
+function classifyTransportError(error: unknown, path: string): unknown {
+  // Pelo nome, nao por `instanceof Error`: DOMException nem sempre herda de
+  // Error (jsdom e navegadores mais antigos), e o abort chegaria cru.
+  if ((error as { name?: unknown } | null)?.name === 'AbortError') {
+    return new APIError(
+      `Timeout ao conectar no backend (${API_BASE_URL}) em ${path}. Verifique se a API está online e tente novamente.`,
+      0,
+      'timeout',
+      error,
+    );
+  }
+  if (error instanceof TypeError) {
+    return new APIError(
+      `Não foi possível conectar ao backend (${API_BASE_URL}). Verifique VITE_API_URL, CORS e status da API.`,
+      0,
+      'network_error',
+      error,
+    );
+  }
+  return error;
 }
 
 export interface AIAnalysisResponse {
@@ -144,6 +184,9 @@ export interface AIAnalysisResponse {
   // O backend devolve isto (ai.service.ts) desde a Onda 2.2, mas a interface
   // nunca foi atualizada: o tsc quebrava em DashboardPage.tsx:848 desde 29/07.
   outcome?: string | null;
+  /** Valor da operacao informado pelo trader no My Trades (moeda da conta dele). */
+  pnlAmount?: number | null;
+  pnlPercent?: number | null;
   drawing_plan?: {
     elements: Array<Record<string, unknown>>;
   } | null;
@@ -235,6 +278,15 @@ export interface AnalysisUsageResponse {
    * NAO confundir com `used`, que e o consumo do periodo.
    */
   analysesAllTime?: number;
+  /**
+   * Cota gratis (so plano free): 3 analises com sinal (BUY/SELL) ou 10 no total.
+   * `total`/`used`/`remaining` acima falam dos SINAIS; o total de 10 vem aqui.
+   * Opcionais porque um backend mais antigo nao devolve.
+   */
+  signalsUsed?: number;
+  signalsLimit?: number;
+  totalUsed?: number;
+  totalLimit?: number;
 }
 
 /**
@@ -360,25 +412,17 @@ class APIClient {
             'erro',
             `falha de rede em ${path}: ${erro instanceof Error ? erro.name : 'desconhecida'}`,
           );
-          // Repropaga INTACTO: quem chama continua vendo exatamente o mesmo erro.
-          throw erro;
+          // Sem o `await` acima, o catch deste metodo nunca ve erro assincrono:
+          // a classificacao tem de acontecer AQUI, senao TypeError de rede sobe
+          // cru e o painel registra `analysis_failed { code: "unknown" }`.
+          // Erro que nao e de transporte segue intacto.
+          throw classifyTransportError(erro, path);
         });
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        throw new APIError(
-          `Timeout ao conectar no backend (${API_BASE_URL}) em ${path}. Verifique se a API está online e tente novamente.`,
-          0,
-          'timeout',
-        );
-      }
-      if (error instanceof TypeError) {
-        throw new APIError(
-          `Não foi possível conectar ao backend (${API_BASE_URL}). Verifique VITE_API_URL, CORS e status da API.`,
-          0,
-          'network_error',
-        );
-      }
-      throw new APIError(fallbackMessage, 0);
+      const classified = classifyTransportError(error, path);
+      throw classified instanceof APIError
+        ? classified
+        : new APIError(fallbackMessage, 0, undefined, error);
     } finally {
       clearTimeout(timer);
     }
@@ -498,6 +542,33 @@ class APIClient {
 
     if (!response.ok) {
       throw await this.buildApiError(response, 'Failed to list analyses');
+    }
+
+    return response.json();
+  }
+
+  /** Diario: analises concluidas em [from, to), no mesmo formato da lista. */
+  async getJournal(
+    token: string | null,
+    from: string,
+    to: string,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<{ items: AIAnalysisResponse[]; truncated: boolean }> {
+    const response = await this.request(
+      `/api/ai/journal?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+      {
+        method: 'GET',
+        headers: {
+          ...this.getAuthHeader(token),
+        },
+      },
+      'Failed to load journal',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
+    );
+
+    if (!response.ok) {
+      throw await this.buildApiError(response, 'Failed to load journal');
     }
 
     return response.json();
@@ -781,67 +852,85 @@ export function useAPIClient() {
   const { getToken } = useAuth();
   const getFreshToken = useCallback(() => getToken({ skipCache: true }), [getToken]);
 
+  // Token inicial de cada chamada: o do CACHE do Clerk (instantaneo; ele renova
+  // sozinho antes de vencer). O token forcado (`getFreshToken`) fica so para a
+  // repeticao depois de um 401, em fetchWithAuthRetry.
+  // Se o Clerk lancar aqui, a requisicao nem sai do navegador; sem esta
+  // conversao a falha chegava ao painel como "unknown".
+  const getInitialToken = useCallback(async () => {
+    try {
+      return await getToken();
+    } catch (error) {
+      throw new APIError('Could not get the session token', 0, 'auth_token_failed', error);
+    }
+  }, [getToken]);
+
   const createAnalysis = useCallback(async (payload: CreateAnalysisPayload) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.createAnalysis(payload, token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const getAnalysis = useCallback(async (analysisId: string) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.getAnalysis(analysisId, token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const listAnalyses = useCallback(async (limit?: number, cursor?: string | null) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.listAnalyses(token, limit, getFreshToken, cursor);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
+
+  const getJournal = useCallback(async (from: string, to: string) => {
+    const token = await getInitialToken();
+    return apiClient.getJournal(token, from, to, getFreshToken);
+  }, [getFreshToken, getInitialToken]);
 
   const getAnalysisUsage = useCallback(async () => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.getAnalysisUsage(token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const syncUserProfile = useCallback(async () => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.syncUserProfile(token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const setAcquisitionSource = useCallback(async (payload: { source: string; detail?: string }) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.setAcquisitionSource(payload, token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const setTechnicalAttribution = useCallback(async (payload: TechnicalAttributionPayload) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.setTechnicalAttribution(payload, token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const setOutcome = useCallback(async (
     analysisId: string,
     payload: { outcome: string | null; pnlPercent?: number | null; pnlAmount?: number | null },
   ) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.setOutcome(analysisId, payload, token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const setFavorite = useCallback(async (analysisId: string, isFavorite: boolean) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.setFavorite(analysisId, isFavorite, token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const getStrategy = useCallback(async () => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.getStrategy(token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const saveStrategy = useCallback(async (profile: StrategyProfileDto) => {
-    const token = await getFreshToken();
+    const token = await getInitialToken();
     return apiClient.saveStrategy(profile, token, getFreshToken);
-  }, [getFreshToken]);
+  }, [getFreshToken, getInitialToken]);
 
   const waitForAnalysisCompletion = useCallback(
     async (analysisId: string, initialAnalysis?: AIAnalysisResponse) => {
-      const token = await getFreshToken();
+      const token = await getInitialToken();
       return apiClient.waitForAnalysisCompletion(
         analysisId,
         token,
@@ -849,13 +938,14 @@ export function useAPIClient() {
         getFreshToken,
       );
     },
-    [getFreshToken],
+    [getFreshToken, getInitialToken],
   );
 
   return useMemo(() => ({
     createAnalysis,
     getAnalysis,
     listAnalyses,
+    getJournal,
     getAnalysisUsage,
     syncUserProfile,
     setAcquisitionSource,
@@ -865,5 +955,5 @@ export function useAPIClient() {
     getStrategy,
     saveStrategy,
     waitForAnalysisCompletion,
-  }), [createAnalysis, getAnalysis, listAnalyses, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setTechnicalAttribution, setOutcome, setFavorite, getStrategy, saveStrategy, waitForAnalysisCompletion]);
+  }), [createAnalysis, getAnalysis, listAnalyses, getJournal, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setTechnicalAttribution, setOutcome, setFavorite, getStrategy, saveStrategy, waitForAnalysisCompletion]);
 }

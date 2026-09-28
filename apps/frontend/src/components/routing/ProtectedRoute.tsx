@@ -1,6 +1,7 @@
 import { useAuth } from "@clerk/clerk-react";
 import { Navigate } from "react-router-dom";
 import { ReactNode } from "react";
+import BrandLoader from "../ui/BrandLoader";
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -10,11 +11,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const { isLoaded, isSignedIn } = useAuth();
 
   if (!isLoaded) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
-      </div>
-    );
+    return <BrandLoader />;
   }
 
   if (!isSignedIn) {

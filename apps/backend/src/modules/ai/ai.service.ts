@@ -1,6 +1,7 @@
 import { flagNumber } from '../../common/flags/feature-flags';
 import {
   sanitizeStrategyProfile,
+  strategyFitFields,
   strategyProfileHash,
   type StrategyProfile,
 } from '../../common/strategy/strategy-profile';
@@ -43,6 +44,7 @@ import {
   prepareIncomingImage,
 } from '../../common/utils/image-storage';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
+import { getFreeQuota } from '../../common/free-quota';
 import { TICK_COSTS, AnalysisType } from '../ticks/tick-packages';
 import { TicksService } from '../ticks/ticks.service';
 import { MailService } from '../mail/mail.service';
@@ -137,7 +139,7 @@ export class AiService implements OnModuleInit {
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "closedAt" TIMESTAMP(3)',
       );
-      // Watchlist: favorito por análise (mesmo padrão aditivo e idempotente).
+      // Favoritos: estrela por análise (mesmo padrão aditivo e idempotente).
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "isFavorite" BOOLEAN NOT NULL DEFAULT false',
       );
@@ -565,6 +567,67 @@ export class AiService implements OnModuleInit {
       ...(safeCursor ? { cursor: { id: safeCursor }, skip: 1 } : {}),
     });
 
+    return this.mapAnalysisRows(userId, analyses);
+  }
+
+  /**
+   * Busca do Diario (calendario do mes): analises CONCLUIDAS criadas em
+   * [from, to). O dia de cada uma e decidido no navegador, no fuso do trader;
+   * por isso o cliente manda o intervalo ja no fuso dele, e aqui so se filtra.
+   *
+   * Teto de 45 dias por chamada (um mes cheio + folga de fuso) e de 500 linhas.
+   * `truncated` avisa a tela quando o teto corta o mes, para ela dizer que o
+   * total esta incompleto em vez de exibir uma soma menor como se fosse a real.
+   */
+  async listAnalysesInRange(userId: string, from: Date, to: Date) {
+    const MAX_SPAN_MS = 45 * 24 * 60 * 60 * 1000;
+    const MAX_ROWS = 500;
+    if (!(from instanceof Date) || !(to instanceof Date) || Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      throw new BadRequestException('Invalid date range');
+    }
+    if (to.getTime() <= from.getTime() || to.getTime() - from.getTime() > MAX_SPAN_MS) {
+      throw new BadRequestException('Date range must be positive and at most 45 days');
+    }
+
+    const analyses = await this.prisma.analysis.findMany({
+      where: { userId, status: 'completed', createdAt: { gte: from, lt: to } },
+      select: {
+        id: true,
+        imageUrl: true,
+        status: true,
+        recommendation: true,
+        confidence: true,
+        reasoning: true,
+        result: true,
+        createdAt: true,
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: MAX_ROWS + 1,
+    });
+
+    const truncated = analyses.length > MAX_ROWS;
+    const items = await this.mapAnalysisRows(userId, truncated ? analyses.slice(0, MAX_ROWS) : analyses);
+    return { items, truncated };
+  }
+
+  /**
+   * Linha do banco -> item da API. Fonte UNICA do formato devolvido pela lista
+   * paginada e pelo Diario: se cada rota tivesse o seu mapeamento, um campo
+   * novo apareceria numa tela e sumiria na outra.
+   */
+  private async mapAnalysisRows(
+    userId: string,
+    analyses: Array<{
+      id: string;
+      imageUrl: string | null;
+      status: string;
+      recommendation: string | null;
+      confidence: number | null;
+      reasoning: string | null;
+      result: Prisma.JsonValue;
+      createdAt: Date;
+    }>,
+  ) {
     // Veredito so das analises desta pagina (antes: TODAS as do usuario) e as
     // imagens assinadas em UMA chamada ao Supabase (antes: uma por analise).
     const [outcomesMap, signedUrls] = await Promise.all([
@@ -663,7 +726,7 @@ export class AiService implements OnModuleInit {
   }
 
   /**
-   * Marca/desmarca uma análise como favorita (Watchlist). Owner-checked.
+   * Marca/desmarca uma análise como favorita (filtro Favoritas do My Trades). Owner-checked.
    * Mesmo padrão tolerante do setOutcome: SQL isolado, nunca derruba nada.
    */
   async setFavorite(userId: string, id: string, isFavorite: boolean) {
@@ -717,8 +780,12 @@ export class AiService implements OnModuleInit {
 
     const VALID = ['tp1', 'tp2', 'stop', 'breakeven', 'open'];
     const outcome = input.outcome && VALID.includes(input.outcome) ? input.outcome : null;
-    const pnlPercent = Number.isFinite(Number(input.pnlPercent)) ? Number(input.pnlPercent) : null;
-    const pnlAmount = Number.isFinite(Number(input.pnlAmount)) ? Number(input.pnlAmount) : null;
+    // `Number(null)` e 0, entao "sem valor" virava 0 gravado (um trade sem valor
+    // aparecia como +0.00 e entrava na soma do Diario). Vazio fica vazio.
+    const toAmount = (v: unknown): number | null =>
+      v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v);
+    const pnlPercent = toAmount(input.pnlPercent);
+    const pnlAmount = toAmount(input.pnlAmount);
     const closedAt = outcome ? new Date() : null;
 
     await this.prisma.$executeRaw`
@@ -855,26 +922,27 @@ export class AiService implements OnModuleInit {
     const canAnalyzeWithTicks = paidAccess && tickBalance >= TICK_COSTS.ANALYSIS_QUICK;
 
     // Usuário grátis: o contador exibido precisa refletir EXATAMENTE o que o paywall
-    // conta (análises demo não-falhas), senão fica eternamente em 0/3. A tabela
-    // analysisUsage só é usada por assinantes; para o grátis a fonte de verdade são
-    // as linhas Analysis isDemo=true (mesma usada em checkDemoEligibility).
+    // conta, senão fica eternamente em 0/3. A tabela analysisUsage só é usada por
+    // assinantes; para o grátis a fonte de verdade é `getFreeQuota`, a mesma regra
+    // do `enforceAccessAndCreate`. `total`/`used`/`remaining` seguem falando de
+    // SINAIS (BUY/SELL), para o front antigo continuar coerente.
     if (!paidAccess) {
-      const demoUsed = await this.prisma.analysis.count({
-        where: { userId, isDemo: true, status: { not: 'failed' } },
-      });
-      const demoTotal = AiService.DEMO_ANALYSIS_LIMIT;
-      const demoRemaining = Math.max(0, demoTotal - demoUsed);
+      const quota = await getFreeQuota(this.prisma, userId);
       return {
         plan: 'free',
         period: 'monthly',
         periodStart,
-        total: demoTotal,
-        used: demoUsed,
-        remaining: demoRemaining,
+        total: quota.signalsLimit,
+        used: quota.signalsUsed,
+        remaining: quota.remaining,
         isUnlimited: false,
         tickBalance,
-        canAnalyze: demoRemaining > 0,
+        canAnalyze: !quota.exhausted,
         analysesAllTime,
+        signalsUsed: quota.signalsUsed,
+        signalsLimit: quota.signalsLimit,
+        totalUsed: quota.totalUsed,
+        totalLimit: quota.totalLimit,
       };
     }
 
@@ -959,6 +1027,8 @@ export class AiService implements OnModuleInit {
         source: {
           ...((aiResponse.rawResponse as Record<string, any>) || {}),
           ...(aiResponse.evidence ? { evidence: aiResponse.evidence } : {}),
+          // Selo de estrategia: o VALIDADO pelo adapter, por cima do cru do modelo.
+          ...strategyFitFields(aiResponse),
         },
         recommendation: aiResponse.recommendation,
         bias: aiResponse.bias,
@@ -1120,23 +1190,9 @@ export class AiService implements OnModuleInit {
     return { days: rows.map((r) => ({ day: r.day, count: Number(r.count) })) };
   }
 
-  static readonly DEMO_ANALYSIS_LIMIT = 3;
-
-  /**
-   * Returns true if the user still has free (demo) analyses available.
-   * Failed analyses (status='failed') are NOT counted, so a failed attempt never
-   * consumes one of the 3 free analyses.
-   */
-  async checkDemoEligibility(userId: string): Promise<boolean> {
-    const demoCount = await this.prisma.analysis.count({
-      where: { userId, isDemo: true, status: { not: 'failed' } },
-    });
-    return demoCount < AiService.DEMO_ANALYSIS_LIMIT;
-  }
-
   private readonly DEMO_LIMIT_ERROR = {
     code: 'DEMO_LIMIT_REACHED',
-    message: 'You have used your 3 free analyses. Subscribe to a plan to continue.',
+    message: 'You have used your free analyses. Subscribe to a plan to continue.',
   };
 
   /**
@@ -1192,10 +1248,10 @@ export class AiService implements OnModuleInit {
    * Enforces plan/quota access AND creates the Analysis row atomically.
    *
    * Paid users: debits ticks (already race-safe) and creates the row.
-   * Free users: counts non-failed demo analyses and creates the row inside a
-   * Serializable transaction, so two concurrent requests cannot both slip past
-   * the 3-free limit. Failed analyses don't count, so a failed attempt is never
-   * charged against the free quota.
+   * Free users: reads the free quota (`getFreeQuota`: 3 BUY/SELL or 10 in total,
+   * in-flight rows counted) and creates the row inside a Serializable
+   * transaction, so two concurrent requests cannot both slip past the limit.
+   * Failed analyses don't count, and a completed WAIT doesn't use a signal.
    */
   private async enforceAccessAndCreate(
     userId: string,
@@ -1263,11 +1319,9 @@ export class AiService implements OnModuleInit {
     try {
       const analysis = await this.prisma.$transaction(
         async (tx) => {
-          const used = await tx.analysis.count({
-            where: { userId, isDemo: true, status: { not: 'failed' } },
-          });
+          const quota = await getFreeQuota(tx, userId);
 
-          if (used >= AiService.DEMO_ANALYSIS_LIMIT) {
+          if (quota.exhausted) {
             throw new ForbiddenException(this.DEMO_LIMIT_ERROR);
           }
 

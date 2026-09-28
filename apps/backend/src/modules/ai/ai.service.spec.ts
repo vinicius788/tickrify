@@ -32,6 +32,25 @@ const VALID_PNG_DATA_URL = `data:image/png;base64,${Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00,
 ]).toString('base64')}`;
 
+/**
+ * Cota gratis no mock: `analysis.count` responde pela clausula, na mesma forma
+ * que `getFreeQuota` pergunta. Sem `isDemo` na clausula e a contagem de todos
+ * os tempos do /usage.
+ */
+function setFreeQuota(
+  prisma: any,
+  q: { signals: number; total?: number; inFlight?: number; allTime?: number },
+) {
+  const inFlight = q.inFlight ?? 0;
+  const total = q.total ?? q.signals + inFlight;
+  prisma.analysis.count.mockImplementation(async ({ where }: { where: Record<string, any> }) => {
+    if (where?.isDemo === undefined) return q.allTime ?? 0;
+    if (where.status === 'completed') return q.signals;
+    if (where.status && typeof where.status === 'object' && 'notIn' in where.status) return inFlight;
+    return total;
+  });
+}
+
 describe('AiService access enforcement', () => {
   let service: AiService;
   let prisma: any;
@@ -166,9 +185,8 @@ describe('AiService access enforcement', () => {
     expect(response.errorCode).toBeNull();
   });
 
-  it('bloqueia a 4ª análise grátis: já usou as 3 demos → DEMO_LIMIT_REACHED', async () => {
-    // 3 demos já consumidas (status != failed)
-    prisma.analysis.count.mockResolvedValue(3);
+  it('bloqueia depois de 3 sinais (BUY/SELL) grátis → DEMO_LIMIT_REACHED', async () => {
+    setFreeQuota(prisma, { signals: 3 });
 
     try {
       await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL);
@@ -185,9 +203,37 @@ describe('AiService access enforcement', () => {
     expect(prisma.analysis.create).not.toHaveBeenCalled();
   });
 
+  it('bloqueia com 10 análises grátis no total, mesmo sem nenhum sinal', async () => {
+    setFreeQuota(prisma, { signals: 0, total: 10 });
+
+    await expect(service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(prisma.analysis.create).not.toHaveBeenCalled();
+  });
+
+  it('análise em andamento conta: 2 sinais + 1 rodando bloqueiam a próxima', async () => {
+    setFreeQuota(prisma, { signals: 2, inFlight: 1 });
+
+    await expect(service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(prisma.analysis.create).not.toHaveBeenCalled();
+  });
+
+  it('WAIT não consome: com 3 WAITs concluídos a próxima análise é liberada', async () => {
+    setFreeQuota(prisma, { signals: 0, total: 3 });
+    (getAiQueueReadiness as jest.Mock).mockResolvedValue(QUEUE_ONLINE);
+    (getAiQueue as jest.Mock).mockReturnValue({ add: jest.fn().mockResolvedValue(undefined) });
+
+    await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL);
+
+    expect(prisma.analysis.create).toHaveBeenCalledTimes(1);
+  });
+
   it('reserva a análise grátis dentro da transação quando ainda há cota', async () => {
-    // 2 demos usadas → a 3ª é permitida.
-    prisma.analysis.count.mockResolvedValue(2);
+    // 2 sinais usados → o 3º é permitido.
+    setFreeQuota(prisma, { signals: 2 });
     // Fila online: createAnalysis enfileira e retorna sem rodar o processamento.
     (getAiQueueReadiness as jest.Mock).mockResolvedValue(QUEUE_ONLINE);
     const add = jest.fn().mockResolvedValue(undefined);
@@ -206,20 +252,6 @@ describe('AiService access enforcement', () => {
     expect(add).toHaveBeenCalledWith('process-analysis', expect.objectContaining({
       analysisId: 'an_1', userId: 'usr_1', isDemo: true,
     }), { jobId: 'an_1' });
-  });
-
-  it('não conta análises que falharam (status != failed) ao verificar a cota grátis', async () => {
-    prisma.analysis.count.mockResolvedValue(1);
-
-    await expect(service.checkDemoEligibility('usr_1')).resolves.toBe(true);
-    expect(prisma.analysis.count).toHaveBeenCalledWith({
-      where: { userId: 'usr_1', isDemo: true, status: { not: 'failed' } },
-    });
-  });
-
-  it('checkDemoEligibility retorna false quando as 3 demos já foram usadas', async () => {
-    prisma.analysis.count.mockResolvedValue(3);
-    await expect(service.checkDemoEligibility('usr_1')).resolves.toBe(false);
   });
 
   it('assinante sem ticks suficientes: bloqueia com INSUFFICIENT_TICKS (não cria a análise)', async () => {
@@ -386,6 +418,83 @@ describe('AiService access enforcement', () => {
     });
   });
 
+  // ── setOutcome ────────────────────────────────────────────────────────────────
+  // `Number(null)` e 0: ate 25/09/2026 "sem valor" era gravado como 0, e um trade
+  // sem valor aparecia como +0.00 e entrava na soma do Diario.
+  describe('setOutcome: valor da operacao', () => {
+    function valuesOfUpdate() {
+      const call = (prisma.$executeRaw as jest.Mock).mock.calls.at(-1);
+      return call.slice(1) as unknown[];
+    }
+
+    beforeEach(() => {
+      prisma.$executeRaw = jest.fn().mockResolvedValue(1);
+      prisma.analysis.findFirst.mockResolvedValue({ id: 'an_1' });
+      (service as any).outcomeColumnsReady = true;
+    });
+
+    it('sem valor grava NULL, nunca 0', async () => {
+      await service.setOutcome('usr_1', 'an_1', { outcome: 'tp1', pnlAmount: null });
+      await service.setOutcome('usr_1', 'an_1', { outcome: 'tp1' });
+      const [verdict, pnlPercent, pnlAmount] = valuesOfUpdate();
+      expect(verdict).toBe('tp1');
+      expect(pnlPercent).toBeNull();
+      expect(pnlAmount).toBeNull();
+    });
+
+    it('valor informado, inclusive negativo e zero de verdade, vai como numero', async () => {
+      await service.setOutcome('usr_1', 'an_1', { outcome: 'stop', pnlAmount: -40.25 });
+      expect(valuesOfUpdate()[2]).toBe(-40.25);
+      await service.setOutcome('usr_1', 'an_1', { outcome: 'tp1', pnlAmount: 0 });
+      expect(valuesOfUpdate()[2]).toBe(0);
+    });
+  });
+
+  // ── listAnalysesInRange (Diario) ──────────────────────────────────────────────
+  // O calendario do mes agrupa por dia no navegador; aqui so se filtra o
+  // intervalo. Os testes travam o filtro por usuario/status/data, os tetos e o
+  // aviso de mes cortado (sem ele a soma do mes sairia menor que a real, calada).
+  describe('listAnalysesInRange: Diario', () => {
+    const from = new Date('2026-09-01T03:00:00.000Z');
+    const to = new Date('2026-10-01T03:00:00.000Z');
+
+    it('filtra por usuario, so concluidas, no intervalo [from, to)', async () => {
+      await service.listAnalysesInRange('usr_1', from, to);
+      const args = prisma.analysis.findMany.mock.calls[0][0];
+      expect(args.where).toEqual({ userId: 'usr_1', status: 'completed', createdAt: { gte: from, lt: to } });
+      expect(args.select.fullResponse).toBeUndefined();
+    });
+
+    it('recusa intervalo invertido e maior que 45 dias, sem tocar no banco', async () => {
+      await expect(service.listAnalysesInRange('usr_1', to, from)).rejects.toThrow();
+      await expect(
+        service.listAnalysesInRange('usr_1', from, new Date(from.getTime() + 46 * 86_400_000)),
+      ).rejects.toThrow();
+      await expect(service.listAnalysesInRange('usr_1', new Date('x'), to)).rejects.toThrow();
+      expect(prisma.analysis.findMany).not.toHaveBeenCalled();
+    });
+
+    it('avisa quando o teto de 500 corta o mes', async () => {
+      const rows = Array.from({ length: 501 }, (_, i) => ({
+        id: `a${i}`, imageUrl: null, status: 'completed', result: {}, createdAt: new Date(),
+      }));
+      prisma.analysis.findMany.mockResolvedValue(rows);
+      const out = await service.listAnalysesInRange('usr_1', from, to);
+      expect(prisma.analysis.findMany.mock.calls[0][0].take).toBe(501);
+      expect(out.truncated).toBe(true);
+      expect(out.items).toHaveLength(500);
+    });
+
+    it('mes pequeno volta inteiro e sem aviso, no mesmo formato da lista', async () => {
+      prisma.analysis.findMany.mockResolvedValue([
+        { id: 'a1', imageUrl: null, status: 'completed', result: {}, createdAt: new Date() },
+      ]);
+      const out = await service.listAnalysesInRange('usr_1', from, to);
+      expect(out.truncated).toBe(false);
+      expect(out.items[0]).toMatchObject({ id: 'a1', status: 'completed', pnlAmount: null });
+    });
+  });
+
   // ── getUsage ────────────────────────────────────────────────────────────────
   // Estes testes estavam VERMELHOS no CI (corrigidos em 12/08/2026). Eles ainda
   // descreviam o contrato antigo, de quando assinante era "ilimitado" e o
@@ -408,17 +517,29 @@ describe('AiService access enforcement', () => {
     // de verdade. Se alguém reverter a origem do contador, este teste pega.
     prisma.analysisUsage.findUnique.mockResolvedValue({ count: 2 });
     prisma.subscription.findFirst.mockResolvedValue(null);
-    prisma.analysis.count.mockResolvedValue(2);
+    setFreeQuota(prisma, { signals: 2, total: 5 });
 
     const usage = await service.getUsage('usr_1');
 
     expect(usage.plan).toBe('free');
     expect(usage.period).toBe('monthly');
+    // total/used/remaining seguem falando de sinais (compatibilidade do front).
     expect(usage.total).toBe(3);
     expect(usage.used).toBe(2);
     expect(usage.remaining).toBe(1);
     expect(usage.canAnalyze).toBe(true);
     expect(usage.isUnlimited).toBe(false);
+    expect(usage).toMatchObject({ signalsUsed: 2, signalsLimit: 3, totalUsed: 5, totalLimit: 10 });
+  });
+
+  it('getUsage free: 10 no total bloqueia mesmo com sinais sobrando', async () => {
+    prisma.subscription.findFirst.mockResolvedValue(null);
+    setFreeQuota(prisma, { signals: 1, total: 10 });
+
+    const usage = await service.getUsage('usr_1');
+
+    expect(usage.remaining).toBe(0);
+    expect(usage.canAnalyze).toBe(false);
   });
 
   // Este teste existe por causa de um bug que o dono viu na tela: o KPI de
@@ -429,11 +550,9 @@ describe('AiService access enforcement', () => {
   it('getUsage devolve analysesAllTime a partir de um count() real, sem teto', async () => {
     prisma.analysisUsage.findUnique.mockResolvedValue({ count: 2 });
     prisma.subscription.findFirst.mockResolvedValue(null);
-    // Duas contagens diferentes no mesmo método: a do histórico completo e a das
-    // demos. Distinguidas pela cláusula, não pela ordem da chamada.
-    prisma.analysis.count.mockImplementation((args: { where?: Record<string, unknown> }) =>
-      Promise.resolve(args?.where?.status === 'completed' ? 403 : 2),
-    );
+    // Contagens diferentes no mesmo método: a do histórico completo e as da
+    // cota grátis. Distinguidas pela cláusula, não pela ordem da chamada.
+    setFreeQuota(prisma, { signals: 2, allTime: 403 });
 
     const usage = await service.getUsage('usr_1');
 
@@ -445,9 +564,9 @@ describe('AiService access enforcement', () => {
     });
   });
 
-  it('getUsage free: com as 3 demos usadas, bloqueia (mesma régua do paywall)', async () => {
+  it('getUsage free: com os 3 sinais usados, bloqueia (mesma régua do paywall)', async () => {
     prisma.subscription.findFirst.mockResolvedValue(null);
-    prisma.analysis.count.mockResolvedValue(3);
+    setFreeQuota(prisma, { signals: 3 });
 
     const usage = await service.getUsage('usr_1');
 
@@ -494,7 +613,7 @@ describe('AiService access enforcement', () => {
    */
   describe('e-mail de recuperação quando a cota grátis esgota', () => {
     it('envia quando a ÚLTIMA análise grátis é concluída, sem precisar de uma 4ª tentativa', async () => {
-      prisma.analysis.count.mockResolvedValue(3);
+      setFreeQuota(prisma, { signals: 3 });
 
       await (service as any).notifyIfFreeQuotaExhausted('usr_1', true);
 
@@ -506,15 +625,31 @@ describe('AiService access enforcement', () => {
     });
 
     it('não envia enquanto ainda sobra cota', async () => {
-      prisma.analysis.count.mockResolvedValue(2);
+      setFreeQuota(prisma, { signals: 2 });
 
       await (service as any).notifyIfFreeQuotaExhausted('usr_1', true);
 
       expect(mailService.sendRecovery).not.toHaveBeenCalled();
     });
 
+    it('não envia com WAIT/WAIT/WAIT: WAIT não esgota a cota', async () => {
+      setFreeQuota(prisma, { signals: 0, total: 3 });
+
+      await (service as any).notifyIfFreeQuotaExhausted('usr_1', true);
+
+      expect(mailService.sendRecovery).not.toHaveBeenCalled();
+    });
+
+    it('envia quando o total de 10 é atingido', async () => {
+      setFreeQuota(prisma, { signals: 1, total: 10 });
+
+      await (service as any).notifyIfFreeQuotaExhausted('usr_1', true);
+
+      expect(mailService.sendRecovery).toHaveBeenCalledTimes(1);
+    });
+
     it('não envia para análise de assinante (isDemo=false)', async () => {
-      prisma.analysis.count.mockResolvedValue(3);
+      setFreeQuota(prisma, { signals: 3 });
 
       await (service as any).notifyIfFreeQuotaExhausted('usr_1', false);
 
@@ -523,7 +658,7 @@ describe('AiService access enforcement', () => {
     });
 
     it('não envia para quem já assinou, mesmo com a cota grátis esgotada', async () => {
-      prisma.analysis.count.mockResolvedValue(3);
+      setFreeQuota(prisma, { signals: 3 });
       prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', priceId: 'price_1' });
 
       await (service as any).notifyIfFreeQuotaExhausted('usr_1', true);
@@ -532,7 +667,7 @@ describe('AiService access enforcement', () => {
     });
 
     it('não envia duas vezes: a dedup por AdminAudit vale para os dois gatilhos', async () => {
-      prisma.analysis.count.mockResolvedValue(3);
+      setFreeQuota(prisma, { signals: 3 });
       prisma.adminAudit.findFirst.mockResolvedValue({ id: 'aud_ja_enviado' });
 
       await (service as any).notifyIfFreeQuotaExhausted('usr_1', true);

@@ -41,15 +41,20 @@ jest.mock('@prisma/client', () => {
   // uma funcao que resolve `undefined`. Cobre analysis.update,
   // tickTransaction.findFirst/create, userTicks.upsert, $transaction etc.
   // sem precisar listar cada chamada usada por processAnalysis.
-  function createAutoMock(): any {
-    const target: any = function autoMockFn() {
+  // Cada chamada fica registrada com o caminho (ex.: "analysis.update"), para o
+  // teste de persistencia conferir o que o worker GRAVA, nao so o que ele pede.
+  const calls: Array<{ path: string; args: unknown[] }> = [];
+  (globalThis as any).__prismaCalls = calls;
+  function createAutoMock(path: string[] = []): any {
+    const target: any = function autoMockFn(...args: unknown[]) {
+      calls.push({ path: path.join('.'), args });
       return Promise.resolve(undefined);
     };
     return new Proxy(target, {
       get(obj, prop) {
         if (prop === 'then') return undefined; // nunca parece um thenable
         if (prop in obj) return obj[prop];
-        return createAutoMock();
+        return createAutoMock([...path, String(prop)]);
       },
     });
   }
@@ -106,6 +111,13 @@ jest.mock('../common/utils/ai-runtime', () => {
 
 jest.mock('../../worker/outcome.sweeper', () => ({
   startOutcomeSweeper: jest.fn(),
+}));
+
+// O guard de noticias roda na conclusao e buscaria o feed real.
+jest.mock('../modules/calendar/calendar.service', () => ({
+  EconomicCalendarService: jest.fn().mockImplementation(() => ({
+    getEventsForSymbol: jest.fn().mockResolvedValue({ events: [], degraded: false }),
+  })),
 }));
 
 jest.mock('../modules/ai/ai.adapter', () => {
@@ -328,5 +340,61 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       riskRewardRatio: null, riskRewardTp1: null, riskRewardTp2: null,
       probabilityTp1: null, probabilityTp2: null, probabilityStop: null,
     }));
+  });
+
+  // Segundo bug do mesmo recurso (24/09/2026): o perfil chegava a IA, a IA
+  // devolvia o selo, e o worker o descartava ao montar o resultado salvo. O
+  // teste acima passava; nenhum conferia o que era GRAVADO.
+  it('grava o selo validado (strategyFit) no resultado salvo da analise', async () => {
+    const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
+    prismaClient.analysis.update.mockClear();
+    analyzeImageMock.mockResolvedValueOnce({
+      recommendation: 'WAIT',
+      confidence: 42,
+      rawResponse: {
+        is_financial_chart: true,
+        recommendation: 'HOLD',
+        confidence: 42,
+        analysis: {
+          symbol: 'EURUSD',
+          timeframe: '1H',
+          currentPrice: 1.08,
+          reasoning: 'Range, no trigger.',
+          marketStructure: { bias: 'neutral' },
+        },
+      },
+      rawContent: '{}',
+      strategyFit: 'poor',
+      strategyFitReason: 'Range setup; the profile trades breakouts.',
+      evidence: {
+        version: 1, additionalChartsDelivered: 0, candleFeedAttached: false,
+        marketContextAttached: false, calendar: 'not_confirmed',
+      },
+    });
+
+    const processAnalysis = getProcessor();
+    await processAnalysis(
+      makeJob({
+        analysisId: 'analysis-2',
+        imageUrl: 'https://example.com/chart.png',
+        promptOverride: 'PROMPT DE TESTE',
+        analysisType: 'quick',
+        userId: 'user-1',
+        isDemo: false,
+        strategyProfile,
+      }),
+    );
+
+    const saved = prismaClient.analysis.update.mock.calls.find(
+      ([args]: any[]) => args.data.status === 'completed',
+    );
+    expect(saved).toBeDefined();
+    expect(saved![0].data.result).toMatchObject({
+      strategyFit: 'poor',
+      strategyFitReason: 'Range setup; the profile trades breakouts.',
+      evidence: { version: 1, additionalChartsDelivered: 0 },
+    });
+    // TRAVA 1: o selo nunca muda a recomendacao.
+    expect(saved![0].data.recommendation).toBe('WAIT');
   });
 });

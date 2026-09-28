@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useAffiliateAdmin } from '@/hooks/useAffiliates';
+import { useProblemReports } from '@/hooks/useProblemReports';
 import { useFeatureFlags, type ResolvedFlag } from '@/hooks/useFeatureFlags';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -6,9 +8,12 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { useSeo, seoFor } from '@/hooks/useSeo';
 import RelatosPainel from '@/components/admin/RelatosPainel';
+import AfiliadosPainel from '@/components/admin/AfiliadosPainel';
 
 /**
- * Loja de apps interna — liga e desliga funções sem redeploy.
+ * Painel do dono. Em cima, o que pede acao (pedidos de afiliado, saques,
+ * relatos); embaixo, abas com uma coisa por vez. As chaves do motor (a antiga
+ * "Loja de apps") ficam na ultima aba, porque quase nunca se mexe nelas.
  *
  * PÁGINA INTERNA, NÃO PÚBLICA. `noindex` obrigatório: o /sign-in já foi parar
  * no índice do Google porque `Disallow` no robots.txt impede RASTREAR, não
@@ -150,10 +155,45 @@ function LinhaFlag({
   );
 }
 
+type Aba = 'afiliados' | 'relatos' | 'config';
+
+/** Contador do topo. Zero fica apagado; acima de zero chama atencao e leva a aba. */
+function Pendencia({ n, rotulo, onClick }: { n: number | null; rotulo: string; onClick: () => void }) {
+  const ativo = (n ?? 0) > 0;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex-1 rounded-xl border px-4 py-3 text-left transition-colors ${
+        ativo ? 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15' : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.04]'
+      }`}
+    >
+      <div className={`text-2xl font-semibold ${ativo ? 'text-amber-300' : 'text-zinc-500'}`}>{n ?? '·'}</div>
+      <div className="mt-0.5 text-xs text-zinc-400">{rotulo}</div>
+    </button>
+  );
+}
+
+const ABAS: Array<{ chave: Aba; rotulo: string }> = [
+  { chave: 'afiliados', rotulo: 'Afiliados' },
+  { chave: 'relatos', rotulo: 'Relatos de problema' },
+  { chave: 'config', rotulo: 'Configurações avançadas' },
+];
+
 export default function AdminPage() {
   useSeo(seoFor('/admin'));
   const { flags, cache, isLoading, error, semAcesso, setFlag, clearFlag } = useFeatureFlags();
   const { toast } = useToast();
+  const [aba, setAba] = useState<Aba>('afiliados');
+  const { affiliates, payouts } = useAffiliateAdmin();
+  const { contagem } = useProblemReports('aberto');
+
+  const pedidosAfiliado = affiliates.data ? affiliates.data.filter((a) => a.status === 'PENDING').length : null;
+  const saquesAbertos = payouts.data
+    ? payouts.data.filter((p) => p.status === 'REQUESTED' || p.status === 'APPROVED').length
+    : null;
+  const relatosAbertos = contagem.aberto ?? 0;
+  const nadaPendente = pedidosAfiliado === 0 && saquesAbertos === 0 && relatosAbertos === 0;
 
   const salvando = setFlag.isPending || clearFlag.isPending;
 
@@ -187,53 +227,80 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-[var(--bg-base)] px-6 py-10">
       <div className="mx-auto max-w-3xl">
-        <header className="mb-6">
-          <h1 className="text-xl font-semibold text-white">Loja de apps</h1>
-          <p className="mt-1 text-sm text-zinc-400">
-            Liga e desliga funções sem redeploy. Toda mudança fica registrada com autor e horário.
-          </p>
+        <header className="mb-4">
+          <h1 className="text-xl font-semibold text-white">Painel</h1>
+          <p className="mt-1 text-sm text-zinc-400">O que precisa de você:</p>
         </header>
 
-        {cache && (
-          <div className="mb-5 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 text-xs text-zinc-400">
-            {cache.ultimoErro ? (
-              <span className="text-amber-300">
-                Banco de flags indisponível — tudo está resolvendo pela variável de ambiente.
-                Nada quebrou, mas mudanças feitas aqui não vão valer até voltar. ({cache.ultimoErro})
-              </span>
-            ) : (
-              <>
-                {cache.overridesNoBanco} função(ões) definida(s) por este painel; o resto vem do
-                Render ou do padrão do código.
-              </>
-            )}
+        {nadaPendente ? (
+          <div className="mb-8 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+            Nada pendente. Tudo em dia.
+          </div>
+        ) : (
+          <div className="mb-8 flex flex-col gap-3 sm:flex-row">
+            <Pendencia n={pedidosAfiliado} rotulo="pedidos de afiliado para aprovar" onClick={() => setAba('afiliados')} />
+            <Pendencia n={saquesAbertos} rotulo="saques de afiliado para pagar" onClick={() => setAba('afiliados')} />
+            <Pendencia n={relatosAbertos} rotulo="relatos de problema abertos" onClick={() => setAba('relatos')} />
           </div>
         )}
 
-        {isLoading && <p className="text-sm text-zinc-500">Carregando…</p>}
-        {error && !semAcesso && (
-          <p className="text-sm text-red-400">Não deu para carregar: {error.message}</p>
-        )}
-
-        <div className="space-y-3">
-          {flags.map((flag) => (
-            <LinhaFlag
-              key={flag.key}
-              flag={flag}
-              salvando={salvando}
-              onSalvar={(valor) => salvar(flag.key, valor)}
-              onLimpar={() => clearFlag.mutate(flag.key)}
-            />
+        <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-white/10" role="tablist">
+          {ABAS.map((a) => (
+            <button
+              key={a.chave}
+              type="button"
+              role="tab"
+              aria-selected={aba === a.chave}
+              onClick={() => setAba(a.chave)}
+              className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors ${
+                aba === a.chave ? 'border-white text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              {a.rotulo}
+            </button>
           ))}
-        </div>
+        </nav>
 
-        <RelatosPainel />
+        {aba === 'afiliados' && <AfiliadosPainel />}
 
-        <p className="mt-6 text-xs leading-relaxed text-zinc-600">
-          A análise roda no worker, que é um processo separado com o próprio cache: mudanças levam
-          até 1 minuto para valer lá. O <code>/api/health</code> mostra o valor efetivo de cada
-          função e de onde ele veio.
-        </p>
+        {aba === 'relatos' && <RelatosPainel />}
+
+        {aba === 'config' && (
+          <>
+            <div className="mb-5 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-300">
+              Você não precisa mexer aqui no dia a dia. Estas chaves ligam e desligam partes do motor de análise, e
+              está tudo configurado. Desligar algo marcado como &quot;vendida na vitrine&quot; torna falsa uma promessa
+              do site.
+              {cache?.ultimoErro && (
+                <span className="mt-2 block text-amber-300">
+                  O banco destas chaves não respondeu, então vale o que está no Render. Nada quebrou, mas mudanças feitas
+                  aqui só valem quando ele voltar.
+                </span>
+              )}
+            </div>
+
+            {isLoading && <p className="text-sm text-zinc-500">Carregando…</p>}
+            {error && !semAcesso && (
+              <p className="text-sm text-red-400">Não deu para carregar: {error.message}</p>
+            )}
+
+            <div className="space-y-3">
+              {flags.map((flag) => (
+                <LinhaFlag
+                  key={flag.key}
+                  flag={flag}
+                  salvando={salvando}
+                  onSalvar={(valor) => salvar(flag.key, valor)}
+                  onLimpar={() => clearFlag.mutate(flag.key)}
+                />
+              ))}
+            </div>
+
+            <p className="mt-6 text-xs leading-relaxed text-zinc-600">
+              Mudanças valem na hora para o site e em até 1 minuto para a análise.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

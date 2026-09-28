@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
  * vai virar e oferece UMA ação. "Nenhum favorito ainda" não ajuda ninguém;
  * "seus setups salvos moram aqui" explica o valor antes de existir dado.
  *
- * Único componente para os três lugares (Watchlist, My Trades, Dashboard) —
+ * Único componente para os três lugares (Diário, My Trades, Dashboard) —
  * se cada tela inventar o seu, elas divergem na primeira mudança de copy.
  */
 interface EmptyStateProps {

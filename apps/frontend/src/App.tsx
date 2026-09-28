@@ -9,6 +9,7 @@ import { BrowserRouter as Router, Route, Routes, useLocation } from "react-route
 import { Toaster } from "@/components/ui/toaster";
 import { SignIn, SignUp, GoogleOneTap, SignedOut } from "@clerk/clerk-react";
 import { Suspense, lazy, useEffect, type ReactNode } from "react";
+import BrandLoader from "./components/ui/BrandLoader";
 import { useSeo, seoFor } from "@/hooks/useSeo";
 import { warmupPaymentsApi } from "@/lib/api";
 import { scrollToTop } from "@/lib/utils";
@@ -22,8 +23,16 @@ import { checkoutTargetFromAuthSearch } from "@/lib/checkoutIntent";
 // fica ocioso (ver App), entao quem loga nao espera o arquivo dele.
 const loadDashboard = () => import("@/components/pages/DashboardPage");
 const DashboardPage = lazy(loadDashboard);
+// Quem abre/recarrega o painel direto: comeca a baixar o arquivo dele JA, em
+// paralelo com o login do Clerk. Sem isto o download so comecava depois que o
+// ProtectedRoute confirmava a sessao (uma espera depois da outra).
+if (typeof window !== "undefined" && /^\/(dashboard|demo)(\/|$)/.test(window.location.pathname)) {
+  void loadDashboard().catch(() => undefined);
+}
 const AdminPage = lazy(() => import("@/components/pages/AdminPage"));
 const AccuracyPage = lazy(() => import("@/components/pages/AccuracyPage"));
+const AffiliatesPage = lazy(() => import("@/components/pages/AffiliatesPage"));
+const AffiliateDashboardPage = lazy(() => import("@/components/pages/AffiliateDashboardPage"));
 const TryPage = lazy(() => import("@/components/pages/TryPage"));
 const TermsPage = lazy(() => import("@/components/pages/TermsPage"));
 const CookiePolicyPage = lazy(() => import("@/components/pages/CookiePolicyPage"));
@@ -33,7 +42,7 @@ const NotFoundPage = lazy(() => import("@/components/pages/NotFoundPage"));
 
 /** Enquanto o arquivo da rota chega: so o fundo da pagina, sem texto nem salto de layout. */
 function RouteFallback() {
-  return <div className="min-h-screen" aria-busy="true" />;
+  return <BrandLoader />;
 }
 
 /**
@@ -143,6 +152,17 @@ function App() {
           <Route path="/privacidade" element={<PrivacyPolicyPage />} />
           {/* Pagina publica de acuracia (Fase 5): o scoreboard do motor. */}
           <Route path="/accuracy" element={<AccuracyPage />} />
+          {/* Programa de afiliados: /affiliates e a vitrine publica (so as regras
+              padrao); /affiliate e o painel de quem ja participa. */}
+          <Route path="/affiliates" element={<AffiliatesPage />} />
+          <Route
+            path="/affiliate"
+            element={
+              <ProtectedRoute>
+                <AffiliateDashboardPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/sign-in/*"
             element={

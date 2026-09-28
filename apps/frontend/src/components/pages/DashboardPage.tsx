@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, Star, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap, Upload, Sliders } from "lucide-react";
+import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap, Upload, Sliders, Handshake } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -12,17 +12,17 @@ import {
   VERDICT_MAX_ROWS,
   VERDICT_MIN_AGE_MS,
   isVerdictPromptSnoozed,
-  loadVerdicts,
   outcomeFromVerdict,
+  isTradeCall,
   resolveVerdict,
-  saveVerdict,
+  withoutPending,
   snoozeVerdictPrompt,
   type Verdict,
 } from '@/lib/verdict';
 import ActivityHeatmap from "../dashboard/ActivityHeatmap";
 import LiveTape from "../dashboard/LiveTape";
 import MyTrades from "../dashboard/MyTrades";
-import Watchlist from "../dashboard/Watchlist";
+import JournalCalendar from "../dashboard/JournalCalendar";
 import StrategyProfile from "../dashboard/StrategyProfile";
 import AnalysisResult from "../dashboard/AnalysisResult";
 import LockedAnalysis from "../dashboard/LockedAnalysis";
@@ -67,6 +67,8 @@ const DASH_COPY = {
     analysisTimeout: 'The analysis took longer than expected. Please try again.',
     analysisUnknownError: 'Unexpected error while processing the analysis.',
     analysisFailed: 'The analysis could not be completed.',
+    networkError: 'Could not reach Tickrify. Check your internet connection and try again.',
+    authTokenFailed: 'We could not confirm your session. Reload the page and try again. If it keeps happening, sign out and sign in again.',
     upgradeToPro: 'Upgrade to Pro',
     demoMode: 'Demo mode: exploring the interface without login',
     demoLogin: 'Log in for real analyses',
@@ -96,6 +98,8 @@ const DASH_COPY = {
     analysisTimeout: 'A análise demorou mais que o esperado, tente novamente.',
     analysisUnknownError: 'Erro desconhecido ao processar análise.',
     analysisFailed: 'Não foi possível concluir a análise.',
+    networkError: 'Não foi possível conectar ao Tickrify. Confira sua internet e tente novamente.',
+    authTokenFailed: 'Não conseguimos confirmar sua sessão. Recarregue a página e tente novamente. Se continuar, saia e entre de novo na conta.',
     upgradeToPro: 'Fazer Upgrade para Pro',
     demoMode: 'Modo Demonstração: explorando a interface sem login',
     demoLogin: 'Fazer Login para Análises Reais',
@@ -107,12 +111,13 @@ const DASH_COPY = {
   },
 } as const;
 import officialIcon from "@/assets/tickrify-icon-official.png";
+import BrandLoader from "../ui/BrandLoader";
 
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
 };
 
-type View = 'dashboard' | 'new-analysis' | 'my-trades' | 'watchlist' | 'strategy' | 'analysis-result' | 'loading' | 'error' | 'locked';
+type View = 'dashboard' | 'new-analysis' | 'my-trades' | 'journal' | 'strategy' | 'analysis-result' | 'loading' | 'error' | 'locked';
 type RecentAnalysisItem = {
   symbol: string;
   timeframe: string;
@@ -149,7 +154,7 @@ const DashboardPage = () => {
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const { plan, total, used, isUnlimited, remaining, analysesAllTime, isLoading: isPlanLoading } = useAnalysisLimit();
+  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, isLoading: isPlanLoading } = useAnalysisLimit();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
   const { getToken } = useAuth();
@@ -157,6 +162,18 @@ const DashboardPage = () => {
   const apiClient = useAPIClient();
   const isDemo = !user;
   const { analyses: rawAnalyses, loading: loadingAnalyses, refetch: refetchAnalyses } = useAnalyses(40);
+
+  // Logo de carregamento ate o plano e a lista chegarem, para o painel abrir ja
+  // preenchido em vez de aparecer vazio e se completar 1-2 s depois (24/09/2026).
+  // Teto de 4 s: se o backend demorar, abre o painel com o que tiver. A trava
+  // `bootDone` garante que isto so vale na ABERTURA; um refetch depois nunca
+  // volta a esconder o painel atras da logo.
+  const [bootTimedOut, setBootTimedOut] = useState(false);
+  const bootDone = useRef(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setBootTimedOut(true), 4000);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // Aviso da regra nova de ticks (21/09/2026): saldo volta para 200 a cada mes
   // de cobranca, sem acumular. Os assinantes de setembro assinaram quando o
@@ -210,7 +227,7 @@ const DashboardPage = () => {
   //   2. o endpoint conta até 1000 análises e esta tela carrega 40 — os números
   //      discordariam ("5 em aberto" com 2 linhas na lista);
   //   3. mesma fonte de verdade do My Trades = os dois nunca divergem.
-  const [verdicts, setVerdicts] = useState<Record<string, Verdict>>(loadVerdicts);
+  const [verdicts, setVerdicts] = useState<Record<string, Verdict>>({});
   const [verdictSnoozed, setVerdictSnoozed] = useState<boolean>(isVerdictPromptSnoozed);
   const [askDismissed, setAskDismissed] = useState(false);
   // Id da análise que está sendo exibida no resultado. Vem do `createAnalysis`,
@@ -222,23 +239,28 @@ const DashboardPage = () => {
   // "ver todas" do bloco de cobrança; entrar pelo menu tem que mostrar TUDO.
   // (Antes eu aplicava 'OPEN' sempre que existisse trade em aberto, o que
   // escondia o histórico inteiro de quem clicasse em My Trades no menu.)
-  const [myTradesFilter, setMyTradesFilter] = useState<'all' | 'pending' | Verdict | undefined>(undefined);
-  const openMyTrades = useCallback((filter?: 'all' | 'pending' | Verdict) => {
+  const [myTradesFilter, setMyTradesFilter] = useState<'all' | 'pending' | 'favorites' | Verdict | undefined>(undefined);
+  const openMyTrades = useCallback((filter?: 'all' | 'pending' | 'favorites' | Verdict) => {
     setMyTradesFilter(filter);
     setActiveView('my-trades');
   }, []);
 
-  // Escrita otimista: grava local, atualiza a tela na hora e só depois tenta o
-  // backend. Falha do backend é silenciosa — o localStorage segura o dado.
+  // Escrita otimista: a tela muda no clique e o servidor grava em seguida. O
+  // servidor e a fonte da verdade (lib/verdict.ts): depois que ele confirma e a
+  // lista e relida, a marcacao otimista sai. Se ele recusar, a tela desfaz e
+  // avisa, em vez de fingir que gravou (antes a falha era calada e o aviso de
+  // "trade aberto" voltava sozinho).
   const applyVerdict = useCallback((id: string, v: Verdict) => {
-    saveVerdict(id, v);
     setVerdicts((prev) => ({ ...prev, [id]: v }));
-    if (!isDemo) {
-      void apiClient.setOutcome(id, { outcome: outcomeFromVerdict(v) })
-        .then(() => refetchAnalyses())
-        .catch(() => {});
-    }
-  }, [isDemo, apiClient, refetchAnalyses]);
+    if (isDemo) return;
+    void apiClient.setOutcome(id, { outcome: outcomeFromVerdict(v) })
+      .then(() => refetchAnalyses())
+      .then(() => setVerdicts((prev) => withoutPending(prev, id)))
+      .catch(() => {
+        setVerdicts((prev) => withoutPending(prev, id));
+        toast({ title: t.trades.resultSaveFailed, variant: 'destructive' });
+      });
+  }, [isDemo, apiClient, refetchAnalyses, toast, t]);
 
   // Só cobra o que o usuário marcou como "vou operar" E que já tem idade
   // suficiente pra ter desfecho. Cobrar análise de 5 minutos atrás treina o
@@ -687,6 +709,10 @@ const DashboardPage = () => {
         ...analysisFailureTelemetry(error),
         analysisType,
         durationMs: Math.round(performance.now() - startedAt),
+        // Separa "sem internet" de "arquivo ilegivel" nas falhas de rede.
+        online: typeof navigator !== 'undefined' ? navigator.onLine : null,
+        fileBytes: imageFile?.size ?? null,
+        fileType: imageFile?.type || null,
       });
       // Reconcilia o contador com o backend: falhas não consomem análise grátis,
       // então o slot precisa voltar caso a IA tenha falhado.
@@ -731,6 +757,12 @@ const DashboardPage = () => {
 
       if (error instanceof APIError && error.code === 'analysis_timeout') {
         setErrorMessage(dc.analysisTimeout);
+      } else if (error instanceof APIError && (error.code === 'network_error' || error.code === 'timeout')) {
+        // A mensagem do APIError e tecnica (fala de VITE_API_URL e CORS): serve
+        // para o console e a telemetria, nao para a pessoa.
+        setErrorMessage(dc.networkError);
+      } else if (error instanceof APIError && error.code === 'auth_token_failed') {
+        setErrorMessage(dc.authTokenFailed);
       } else {
         setErrorMessage(error instanceof Error ? error.message : dc.analysisUnknownError);
       }
@@ -889,10 +921,10 @@ const DashboardPage = () => {
             <div className="flex shrink-0 flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={() => setActiveView('watchlist')}
+                onClick={() => setActiveView('journal')}
                 className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-default)] px-4 py-2.5 text-sm text-[var(--text-primary)] transition-colors hover:bg-white/[0.04]"
               >
-                <Star className="h-4 w-4" /> {t.nav.watchlist}
+                <CalendarDays className="h-4 w-4" /> {t.nav.journal}
               </button>
               <button
                 type="button"
@@ -1024,8 +1056,8 @@ const DashboardPage = () => {
         );
       case 'my-trades':
         return <MyTrades onStartAnalysis={resetNewAnalysisView} initialFilter={myTradesFilter} />;
-      case 'watchlist':
-        return <Watchlist onStartAnalysis={resetNewAnalysisView} />;
+      case 'journal':
+        return <JournalCalendar onStartAnalysis={resetNewAnalysisView} />;
       case 'strategy':
         return <StrategyProfile />;
       case 'analysis-result': {
@@ -1046,6 +1078,9 @@ const DashboardPage = () => {
           !isDemo &&
           !askDismissed &&
           Boolean(verdictTargetId) &&
+          // Aguardar nao e operacao: "vai entrar nesta?" nao faz sentido e
+          // marcar "vou entrar" criaria um trade aberto que nunca existiu.
+          isTradeCall(analysisData?.recommendation) &&
           resolveVerdict({ id: String(verdictTargetId), outcome: analysisData?.outcome }, verdicts) === null;
         return (
           <div className="flex flex-col gap-4">
@@ -1086,8 +1121,17 @@ const DashboardPage = () => {
                 <div className="min-w-0">
                   {freeLeftKnown && !exhausted && (
                     <p className="text-sm text-[var(--text-primary)]">
-                      <span className="font-semibold text-[var(--accent-green)]">{remaining}</span>{' '}
-                      {t.counter.remainingFree}
+                      {t.counter.tradeCallsLeft.replace('{left}', String(remaining)).replace('{limit}', String(total))}
+                    </p>
+                  )}
+                  {/* WAIT não consome análise com sinal: dizer isso no momento em
+                      que a pessoa recebe um, senão ela lê o WAIT como gasto. */}
+                  {freeLeftKnown && !exhausted && ['WAIT', 'HOLD'].includes(String(analysisData?.recommendation || '').toUpperCase()) && (
+                    <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">{t.counter.waitFreeNote}</p>
+                  )}
+                  {freeLeftKnown && !exhausted && totalUsed !== null && totalLimit !== null && (
+                    <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                      {t.counter.totalCapNote.replace('{limit}', String(totalLimit)).replace('{left}', String(Math.max(0, totalLimit - totalUsed)))}
                     </p>
                   )}
                   {exhausted && <p className="text-sm text-amber-500">{t.counter.exhausted}</p>}
@@ -1173,7 +1217,8 @@ const DashboardPage = () => {
   // "1/3" e, no celular, sem a palavra ao lado: nao dava para saber se era
   // usadas ou restantes. O contador detalhado so existe na barra lateral, que
   // nao aparece no celular.
-  const freeRemainingChip = safeTotal === null ? null : Math.max(0, safeTotal - safeUsed);
+  // `remaining` ja considera o teto de 10 no total; `total - used` nao.
+  const freeRemainingChip = safeTotal === null ? null : Number.isFinite(remaining) ? Math.max(0, remaining) : Math.max(0, safeTotal - safeUsed);
   const quotaText =
     freeRemainingChip === null ? `${safeUsed}/-` : `${freeRemainingChip} ${t.nav.freeLeft}`;
   const mobileActiveView =
@@ -1183,14 +1228,20 @@ const DashboardPage = () => {
   const currentViewLabel =
     activeView === 'my-trades'
       ? t.nav.myTrades
-      : activeView === 'watchlist'
-        ? t.nav.watchlist
+      : activeView === 'journal'
+        ? t.nav.journal
         : activeView === 'strategy'
           ? t.nav.strategy
           : activeView === 'dashboard'
             ? t.nav.dashboard
             : t.nav.newAnalysis;
   const sidebarSectionTitleClass = 'text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]';
+
+  if (!bootDone.current) {
+    const waiting = Boolean(user) && !bootTimedOut && (isPlanLoading || loadingAnalyses);
+    if (waiting) return <BrandLoader />;
+    bootDone.current = true;
+  }
 
   return (
     <div className="relative z-10 flex min-h-screen w-full overflow-x-hidden bg-[var(--bg-base)]">
@@ -1216,31 +1267,37 @@ const DashboardPage = () => {
             <button type="button" onClick={() => openMyTrades()} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'my-trades' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
               <History className="h-4 w-4" /> {t.nav.myTrades}
             </button>
-            <button type="button" onClick={() => setActiveView('watchlist')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'watchlist' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
-              <Star className="h-4 w-4" /> {t.nav.watchlist}
+            <button type="button" onClick={() => setActiveView('journal')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'journal' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+              <CalendarDays className="h-4 w-4" /> {t.nav.journal}
             </button>
             <button type="button" onClick={() => setActiveView('strategy')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'strategy' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
               <Sliders className="h-4 w-4" /> {t.nav.strategy}
             </button>
           </nav>
 
-          <div className={`${sidebarSectionTitleClass} px-2 pb-1 pt-5`}>{t.nav.account}</div>
-          <nav className="flex flex-col gap-0.5">
-            <Link to="/pricing" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
-              <CreditCard className="h-4 w-4" /> {t.nav.plans}
-            </Link>
-            {user && plan === 'free' && (
-              <button type="button" onClick={() => openUpgradeModal('sidebar')} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
-                <Crown className="h-4 w-4 text-[var(--accent-green)]" /> {dc.upgradeToPro}
-              </button>
-            )}
-          </nav>
 
           {user && plan === 'free' && (
             <div className="mt-4">
               <AnalysisCounter />
             </div>
           )}
+        </div>
+
+        {/* Plano e assinatura ficam no rodape, junto da conta, e nao na lista de
+            abas: "Plans" abre outra pagina (/pricing), nao uma aba do painel, e
+            no meio do menu parecia mais uma. */}
+        <div className="flex flex-col gap-0.5 border-t border-[var(--border-subtle)] px-3 py-2">
+          {user && plan === 'free' && (
+            <button type="button" onClick={() => openUpgradeModal('sidebar')} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+              <Crown className="h-4 w-4 text-[var(--accent-green)]" /> {dc.upgradeToPro}
+            </button>
+          )}
+          <Link to="/pricing" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+            <CreditCard className="h-3.5 w-3.5" /> {t.nav.plans}
+          </Link>
+          <Link to="/affiliate" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+            <Handshake className="h-3.5 w-3.5" /> {t.nav.affiliates}
+          </Link>
         </div>
 
         {user && (
@@ -1316,7 +1373,7 @@ const DashboardPage = () => {
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border md:hidden">
           <div className="flex">
-            {(['dashboard', 'new-analysis', 'my-trades', 'watchlist', 'strategy'] as const).map((view) => (
+            {(['dashboard', 'new-analysis', 'my-trades', 'journal', 'strategy'] as const).map((view) => (
               <button
                 key={view}
                 type="button"
@@ -1339,8 +1396,8 @@ const DashboardPage = () => {
                     ? t.nav.newAnalysisShort
                     : view === 'my-trades'
                       ? t.nav.myTrades
-                      : view === 'watchlist'
-                        ? t.nav.watchlistShort
+                      : view === 'journal'
+                        ? t.nav.journalShort
                         : t.nav.strategy}
               </button>
             ))}

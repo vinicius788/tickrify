@@ -1,6 +1,6 @@
 // Cliente Stripe para o frontend
 import { API_BASE_URL } from './api';
-import { getAdsPayload } from './attribution';
+import { getAdsPayload, getReferralPayload } from './attribution';
 
 export type BillingCycle = 'monthly' | 'yearly';
 export type Currency = 'brl' | 'usd' | 'eur';
@@ -182,6 +182,8 @@ export async function createCheckoutSession(
         // Contexto do Meta (so com aceite de cookies). O servidor usa no
         // InitiateCheckout e guarda na sessao para o Purchase do webhook.
         ...getAdsPayload(),
+        // Link/cupom de afiliado guardado: o servidor confere e decide o desconto.
+        ...getReferralPayload(),
       }),
     },
     'Could not start checkout. Please try again.',

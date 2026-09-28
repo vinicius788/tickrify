@@ -7,6 +7,8 @@ const posthog = {
   reset: vi.fn(),
   register: vi.fn(),
   setPersonProperties: vi.fn(),
+  opt_in_capturing: vi.fn(),
+  opt_out_capturing: vi.fn(),
 };
 vi.mock('posthog-js', () => ({ default: posthog }));
 
@@ -69,6 +71,42 @@ describe('analytics', () => {
       { last_utm_source: 'chatgpt.com', last_referrer_domain: 'chatgpt.com' },
       { first_utm_source: 'instagram', first_utm_campaign: 'teste120', first_landing_path: '/?utm_source=instagram' },
     );
+  });
+});
+
+describe('sem aceite de cookies', () => {
+  beforeEach(() => {
+    Object.values(posthog).forEach((fn) => fn.mockClear());
+  });
+
+  it('PostHog sobe sem cookies, conta a visita, nao identifica e segura a conversao de anuncio', async () => {
+    const a = await freshAnalytics();
+    a.trackPageview('/try');
+    a.trackAdConversion('signup');
+    a.identifyUser('user_1');
+
+    await a.initAnonymousAnalytics();
+
+    expect(posthog.init.mock.calls[0][1]).toMatchObject({
+      cookieless_mode: 'on_reject',
+      opt_out_capturing_by_default: true,
+    });
+    expect(posthog.capture.mock.calls.map((c) => c[0])).toEqual(['$pageview']);
+    expect(posthog.identify).not.toHaveBeenCalled();
+    expect(posthog.opt_in_capturing).not.toHaveBeenCalled();
+
+    // Aceite no meio da sessao: vira modo completo e o identify pendente sai.
+    await a.initAnalytics();
+    expect(posthog.opt_in_capturing).toHaveBeenCalledWith({ captureEventName: false });
+    expect(posthog.identify).toHaveBeenCalledWith('user_1', undefined);
+    expect(posthog.capture.mock.calls.map((c) => c[0])).toEqual(['$pageview']);
+  });
+
+  it('recusa volta ao modo sem cookies e descarta a conversao de anuncio na fila', async () => {
+    const a = await freshAnalytics();
+    await a.initAnalytics();
+    a.revokeAnalyticsConsent();
+    expect(posthog.opt_out_capturing).toHaveBeenCalled();
   });
 });
 

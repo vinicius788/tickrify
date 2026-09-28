@@ -25,10 +25,8 @@ const PLAN_TICKS: Record<UserPlan, number> = {
   elite: 400,
 };
 
-const FREE_ANALYSES_TOTAL = 3;
-
 const AnalysisCounter = () => {
-  const { isUnlimited, plan, used, isLoading } = useAnalysisLimit();
+  const { isUnlimited, plan, total, used, remaining, totalUsed, totalLimit, isLoading } = useAnalysisLimit();
   const { balance } = useTicks();
   const { t } = useLanguage();
   const { getToken } = useAuth();
@@ -77,12 +75,15 @@ const AnalysisCounter = () => {
     }
   };
 
-  // Usuário sem assinatura: mostrar contador de análises grátis
+  // Usuário sem assinatura: contador das análises grátis COM SINAL (BUY/SELL).
+  // WAIT não consome sinal; só conta no teto de análises no total.
   if (!isUnlimited) {
-    const freeUsed = Math.min(used, FREE_ANALYSES_TOTAL);
-    const freeRemaining = Math.max(0, FREE_ANALYSES_TOTAL - freeUsed);
-    const freePercent = (freeUsed / FREE_ANALYSES_TOTAL) * 100;
+    const signalsLimit = total > 0 ? total : 3;
+    const freeRemaining = Math.max(0, remaining);
+    const freeUsed = Math.min(used, signalsLimit);
+    const freePercent = (freeUsed / signalsLimit) * 100;
     const exhausted = freeRemaining === 0;
+    const totalLeft = totalUsed !== null && totalLimit !== null ? Math.max(0, totalLimit - totalUsed) : null;
 
     return (
       <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
@@ -96,7 +97,7 @@ const AnalysisCounter = () => {
                 </span>
               </div>
               <span className="font-terminal text-sm font-bold text-[var(--text-primary)]">
-                {freeUsed}/{FREE_ANALYSES_TOTAL}
+                {freeUsed}/{signalsLimit}
               </span>
             </div>
 
@@ -121,8 +122,13 @@ const AnalysisCounter = () => {
             ) : (
               <>
                 <p className="text-xs text-[var(--text-secondary)]">
-                  {freeRemaining} {c.remainingFree}
+                  {c.tradeCallsLeft.replace('{left}', String(freeRemaining)).replace('{limit}', String(signalsLimit))}
                 </p>
+                {totalLeft !== null && totalLimit !== null && (
+                  <p className="text-[11px] leading-relaxed text-[var(--text-secondary)]">
+                    {c.totalCapNote.replace('{limit}', String(totalLimit)).replace('{left}', String(totalLeft))}
+                  </p>
+                )}
                 <Link
                   to="/pricing"
                   onClick={() =>

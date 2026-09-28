@@ -24,6 +24,7 @@ import { PrismaService } from '../database/prisma.service';
 import { UploadedFile as UploadedFileType } from '../../common/interfaces/multer';
 import { CreateAnalysisDto } from './dto/create-analysis.dto';
 import { ListAnalysesQueryDto } from './dto/list-analyses-query.dto';
+import { JournalQueryDto } from './dto/journal-query.dto';
 import { SetOutcomeDto } from './dto/set-outcome.dto';
 import { SetFavoriteDto } from './dto/set-favorite.dto';
 import { SetStrategyDto } from './dto/set-strategy.dto';
@@ -130,6 +131,24 @@ export class AiController {
     if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
 
     return this.aiService.listAnalyses(dbUserId, query.limit ?? 20, query.cursor ?? null);
+  }
+
+  /**
+   * Diario (calendario do mes): analises concluidas no intervalo pedido, no
+   * MESMO formato da lista paginada. O agrupamento por dia e feito no navegador,
+   * no fuso do trader.
+   */
+  @Get('journal')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async getJournal(
+    @CurrentUser() user: { id?: string; clerkUserId: string },
+    @Query() query: JournalQueryDto,
+  ) {
+    const dbUserId = await this.resolveDbUserId(user);
+    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
+
+    return this.aiService.listAnalysesInRange(dbUserId, new Date(query.from), new Date(query.to));
   }
 
   @Patch('analysis/:id/outcome')

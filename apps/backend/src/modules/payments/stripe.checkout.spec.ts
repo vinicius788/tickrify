@@ -9,6 +9,7 @@ describe('StripeService.createCheckoutSession', () => {
   let service: StripeService;
   let prisma: any;
   let stripe: any;
+  let affiliates: any;
   const originalEnv = { ...process.env };
 
   const user = {
@@ -29,7 +30,11 @@ describe('StripeService.createCheckoutSession', () => {
       user: { findUnique: jest.fn().mockResolvedValue({ ...user }), update: jest.fn() },
       subscription: { findFirst: jest.fn().mockResolvedValue(null) },
     };
-    service = new StripeService(prisma);
+    affiliates = {
+      claim: jest.fn().mockResolvedValue({ attributed: false }),
+      checkoutDiscountFor: jest.fn().mockResolvedValue(null),
+    };
+    service = new StripeService(prisma, affiliates);
 
     stripe = {
       prices: {
@@ -62,6 +67,81 @@ describe('StripeService.createCheckoutSession', () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+  });
+
+  describe('afiliados', () => {
+    const affiliateDiscount = { affiliateId: 'aff_1', discount: { promotion_code: 'promo_1' } };
+
+    it('indicado sem EARLY35: desconto do afiliado pre-aplicado e carimbado na sessao', async () => {
+      affiliates.checkoutDiscountFor.mockResolvedValue(affiliateDiscount);
+      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd');
+
+      const params = stripe.checkout.sessions.create.mock.calls[0][0];
+      expect(params.discounts).toEqual([{ promotion_code: 'promo_1' }]);
+      expect(params.allow_promotion_codes).toBeUndefined();
+      expect(params.metadata).toMatchObject({ coupon: 'aff:aff_1', affiliateId: 'aff_1' });
+      expect(params.subscription_data.metadata.affiliateId).toBe('aff_1');
+    });
+
+    it('EARLY35 ativo ganha dos 10% do afiliado (a vitrine promete os 35%)', async () => {
+      affiliates.checkoutDiscountFor.mockResolvedValue(affiliateDiscount);
+      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
+
+      const params = stripe.checkout.sessions.create.mock.calls[0][0];
+      expect(params.discounts).toEqual([{ coupon: 'EARLY35' }]);
+      expect(affiliates.checkoutDiscountFor).not.toHaveBeenCalled();
+    });
+
+    it('EARLY35 aplicado NAO perde a atribuicao: o vinculo do afiliado e gravado igual', async () => {
+      affiliates.checkoutDiscountFor.mockResolvedValue(affiliateDiscount);
+      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35', 'pricing', { consent: false }, {
+        code: 'SAVE10', kind: 'coupon', clickId: null,
+      });
+      expect(affiliates.claim).toHaveBeenCalledWith('usr_1', { code: 'SAVE10', kind: 'coupon', clickId: null });
+      expect(stripe.checkout.sessions.create.mock.calls[0][0].discounts).toEqual([{ coupon: 'EARLY35' }]);
+    });
+
+    it('EARLY35 esgotado: volta o desconto padrao do afiliado', async () => {
+      stripe.coupons.retrieve.mockResolvedValue({
+        id: 'EARLY35', valid: true, percent_off: 35, max_redemptions: 50, times_redeemed: 50, redeem_by: null,
+      });
+      affiliates.checkoutDiscountFor.mockResolvedValue(affiliateDiscount);
+      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
+      const params = stripe.checkout.sessions.create.mock.calls[0][0];
+      expect(params.discounts).toEqual([{ promotion_code: 'promo_1' }]);
+      expect(params.metadata.coupon).toBe('aff:aff_1');
+    });
+
+    it('confere o vinculo do navegador ANTES de decidir o desconto', async () => {
+      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', undefined, 'pricing', { consent: false }, {
+        code: 'PARTNER1', kind: 'coupon', clickId: null,
+      });
+      expect(affiliates.claim).toHaveBeenCalledWith('usr_1', { code: 'PARTNER1', kind: 'coupon', clickId: null });
+      expect(affiliates.claim.mock.invocationCallOrder[0]).toBeLessThan(
+        affiliates.checkoutDiscountFor.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('falha na atribuicao nunca bloqueia a compra', async () => {
+      affiliates.claim.mockRejectedValue(new Error('db down'));
+      affiliates.checkoutDiscountFor.mockRejectedValue(new Error('db down'));
+      const result = await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', undefined, 'pricing', { consent: false }, {
+        code: 'PARTNER1', kind: 'link', clickId: 'ckabcdefghijklmnopqrst',
+      });
+      expect(result.url).toContain('checkout.stripe.com');
+      expect(stripe.checkout.sessions.create.mock.calls[0][0].allow_promotion_codes).toBe(true);
+    });
+
+    it('promotion code recusado pela Stripe: reabre sem desconto', async () => {
+      affiliates.checkoutDiscountFor.mockResolvedValue(affiliateDiscount);
+      stripe.checkout.sessions.create
+        .mockRejectedValueOnce(new Error('This promotion code cannot be redeemed'))
+        .mockResolvedValueOnce({ id: 'cs_2', url: 'https://checkout.stripe.com/c/pay/cs_2' });
+      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd');
+      const second = stripe.checkout.sessions.create.mock.calls[1][0];
+      expect(second.discounts).toBeUndefined();
+      expect(second.metadata.coupon).toBe('');
+    });
   });
 
   it('EARLY35 esgotado: a sessao abre sem desconto, com o campo de codigo', async () => {

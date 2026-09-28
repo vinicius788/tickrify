@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { discardPendingAnalytics, initAnalytics } from '@/lib/analytics';
+import { initAnalytics } from '@/lib/analytics';
 import { CONSENT_EVENT, getConsent, setConsent } from '@/lib/consent';
 
 /**
  * Banner de consentimento, montado uma vez para o app inteiro (App.tsx).
  *
- * Só aparece para quem ainda não escolheu. Aceitar liga o PostHog e o Meta
- * Pixel na hora, sem recarregar a página; recusar deixa os dois desligados
- * naquele navegador. Ver lib/consent.ts para o porquê.
+ * Só aparece para quem ainda não escolheu. Aceitar liga o PostHog completo, o
+ * Meta Pixel e o Google tag na hora, sem recarregar a página; recusar mantém
+ * só a contagem anônima sem cookies. Ver lib/consent.ts e lib/analytics.ts.
  *
  * Recusar é um botão de verdade, do mesmo tamanho do aceitar: banner que
  * esconde a recusa não vale como consentimento.
@@ -25,8 +25,8 @@ const CookieConsent = () => {
 
   const choose = useCallback((value: 'granted' | 'denied') => {
     setConsent(value);
+    // Recusa: o main.tsx escuta o CONSENT_EVENT e desliga o que dependia do aceite.
     if (value === 'granted') initAnalytics();
-    else discardPendingAnalytics();
   }, []);
 
   if (!visible) return null;

@@ -86,6 +86,9 @@ export class StripeController {
       coupon,
       body.source,
       adsContextFrom(body, req),
+      body.affiliateCode && body.affiliateKind
+        ? { code: body.affiliateCode, kind: body.affiliateKind, clickId: body.affiliateClickId ?? null }
+        : undefined,
     );
   }
 

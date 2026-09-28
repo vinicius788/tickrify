@@ -7,7 +7,7 @@
 > opinion. It is not a signal service and not financial advice. The decision is
 > always the trader's.
 
-Last updated: 2026-09-21. Canonical location: [https://tickrify.com/llms.txt](https://tickrify.com/llms.txt)
+Last updated: 2026-09-23. Canonical location: [https://tickrify.com/llms.txt](https://tickrify.com/llms.txt)
 
 ## What it actually does
 
@@ -70,7 +70,9 @@ how much external data supports the read, not whether the read happens.
 
 - [Pricing](https://tickrify.com/pricing): US$29/month or US$290/year for 200
   monthly credits. A quick analysis costs 1 credit, a deep analysis 3. Pricing
-  is USD for everyone. The free tier is 3 analyses with no card required.
+  is USD for everyone. The free tier is 3 analyses that return a trade call
+  (BUY or SELL), no card required. A WAIT does not use one of the 3; the free
+  tier stops at 10 analyses in total.
 
 ## Pages
 

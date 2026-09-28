@@ -3,10 +3,22 @@
 // cru seja espalhado pelo código. Trocar de ferramenta = mexer só aqui.
 import type { PostHog } from 'posthog-js';
 
-// O pacote do PostHog (~300 kB de codigo) so e BAIXADO no aceite de cookies:
-// antes ia no arquivo principal e todo visitante pagava por ele, inclusive
-// quem recusa. Todo uso abaixo passa por `ready`, que so vira true depois que
-// ele chegou; ate la os eventos ficam na fila (ver enqueue/flushPending).
+// O pacote do PostHog (~300 kB de codigo) e baixado DEPOIS da pagina carregar,
+// fora do caminho critico. Todo uso abaixo passa por `ready`, que so vira true
+// depois que ele chegou; ate la os eventos ficam na fila (ver enqueue/flushPending).
+//
+// DOIS MODOS (24/09/2026):
+// - Sem aceite de cookies (recusou ou ainda nao escolheu): PostHog em modo SEM
+//   COOKIES (`cookieless_mode: 'on_reject'`). Nada e gravado no navegador; a
+//   identidade vira um hash diario calculado no servidor do PostHog. Conta
+//   visita, pagina, origem (UTM) e pais, e nunca identifica a pessoa.
+// - Com aceite: modo completo, como antes (cookie + identify no login).
+// Antes o PostHog nem carregava sem aceite, e quem chegava pelo anuncio e
+// ignorava o banner era invisivel: 19 cliques no Meta em 22-24/09 e zero
+// visitas no PostHog. Meta Pixel e Google tag continuam SO com aceite.
+//
+// ⚠️ O modo sem cookies exige a opcao "Cookieless server hash mode" ligada nas
+// configuracoes do projeto no PostHog; sem ela o servidor descarta esses eventos.
 let posthog = undefined as unknown as PostHog;
 let loading: Promise<void> | null = null;
 
@@ -14,11 +26,18 @@ const KEY = String(import.meta.env.VITE_POSTHOG_KEY || '').trim();
 const HOST = String(import.meta.env.VITE_POSTHOG_HOST || 'https://us.i.posthog.com').trim();
 
 let ready = false;
+/**
+ * Servidor local de desenvolvimento (`vite`, localhost:5173) nao manda nada:
+ * usa a mesma chave do PostHog/Meta de producao, e cada teste local virava
+ * visita "real" no painel (visto em 24/09/2026, logo apos o modo sem cookies).
+ * Build de producao e testes (MODE 'test') seguem normais.
+ */
+const TRACKING_ENABLED = import.meta.env.MODE !== 'development';
+/** true = a pessoa aceitou cookies nesta sessao ou numa anterior. */
+let fullConsent = false;
 
-export function initAnalytics(): Promise<void> {
-  initMetaPixel();
-  initGoogleTag();
-  if (ready || !KEY) return Promise.resolve();
+function loadPostHog(): Promise<void> {
+  if (ready || !KEY || !TRACKING_ENABLED) return Promise.resolve();
   if (loading) return loading;
   loading = import('posthog-js')
     .then(({ default: ph }) => {
@@ -28,9 +47,12 @@ export function initAnalytics(): Promise<void> {
         capture_pageleave: true,
         autocapture: false, // só eventos nomeados — menos ruído, menos cota
         persistence: 'localStorage+cookie',
+        cookieless_mode: 'on_reject',
+        opt_out_capturing_by_default: true,
       });
       posthog = ph;
       ready = true;
+      if (fullConsent) optIn();
       flushPending();
     })
     .catch((err) => {
@@ -40,6 +62,49 @@ export function initAnalytics(): Promise<void> {
       loading = null;
     });
   return loading;
+}
+
+function optIn(): void {
+  try {
+    posthog.opt_in_capturing({ captureEventName: false });
+  } catch {
+    /* noop */
+  }
+}
+
+/** Aceite de cookies: modo completo do PostHog + Meta Pixel + Google tag. */
+export function initAnalytics(): Promise<void> {
+  initMetaPixel();
+  initGoogleTag();
+  const wasAnonymous = !fullConsent;
+  fullConsent = true;
+  if (ready) {
+    if (wasAnonymous) optIn();
+    flushPending();
+    return Promise.resolve();
+  }
+  return loadPostHog();
+}
+
+/** Sem aceite: so o PostHog, sem cookies. Chamado pelo main.tsx depois do `load`. */
+export function initAnonymousAnalytics(): Promise<void> {
+  return loadPostHog();
+}
+
+/**
+ * Recusa de cookies. O PostHog segue contando sem cookies; o que sai e tudo
+ * que dependia do aceite: conversoes de anuncio na fila e o identify.
+ */
+export function revokeAnalyticsConsent(): void {
+  fullConsent = false;
+  pendingIdentify = null;
+  pending = pending.filter((item) => !item.adsOnly);
+  if (!ready) return;
+  try {
+    posthog.opt_out_capturing();
+  } catch {
+    /* noop */
+  }
 }
 
 // ─── Meta Pixel ───────────────────────────────────────────────────────────────
@@ -65,7 +130,7 @@ declare global {
 }
 
 function initMetaPixel(): void {
-  if (!META_PIXEL_ID || typeof window === 'undefined' || window.fbq) return;
+  if (!TRACKING_ENABLED || !META_PIXEL_ID || typeof window === 'undefined' || window.fbq) return;
   try {
     const fbq = function (...args: unknown[]) {
       if (fbq.callMethod) {
@@ -214,7 +279,7 @@ function trackAdsConversion(
 type Gtag = ((...args: unknown[]) => void) & { q?: unknown[] };
 
 function initGoogleTag(): void {
-  if (GOOGLE_TARGETS.length === 0 || typeof window === 'undefined' || window.gtag) return;
+  if (!TRACKING_ENABLED || GOOGLE_TARGETS.length === 0 || typeof window === 'undefined' || window.gtag) return;
   try {
     window.dataLayer = window.dataLayer || [];
     const dataLayer = window.dataLayer;
@@ -341,7 +406,8 @@ export type FunnelEvent =
 // monta é justamente a que dispara `landing_view` / `demo_page_view`. Sem esta
 // fila, o primeiro evento de todo visitante era descartado em silêncio e quem
 // chegava, usava a demo e saía não gerava evento nenhum. Agora o evento espera
-// a escolha: aceitar despeja a fila, recusar joga fora.
+// o PostHog carregar (com ou sem cookies). Conversão de anúncio (adsOnly) fica
+// na fila até o aceite e sai dela na recusa.
 type Pending = { event: FunnelEvent | AdEvent | '$pageview'; props?: Record<string, unknown>; adsOnly?: boolean };
 
 const PENDING_MAX = 20;
@@ -358,7 +424,7 @@ function flushPending(): void {
 
   applyAttributionContext();
 
-  if (pendingIdentify) {
+  if (pendingIdentify && fullConsent) {
     const id = pendingIdentify;
     pendingIdentify = null;
     try {
@@ -371,6 +437,11 @@ function flushPending(): void {
   const queued = pending;
   pending = [];
   for (const item of queued) {
+    // Conversão de anúncio só existe com aceite: sem ele, continua esperando.
+    if (item.adsOnly && !fullConsent) {
+      pending.push(item);
+      continue;
+    }
     // Meta Pixel e Google tag também estavam desligados quando o evento entrou na fila.
     if (item.event !== '$pageview') {
       trackMeta(item.event, item.props);
@@ -383,12 +454,6 @@ function flushPending(): void {
       /* noop */
     }
   }
-}
-
-/** Recusa de cookies: o que estava na fila nunca vai ser enviado. */
-export function discardPendingAnalytics(): void {
-  pending = [];
-  pendingIdentify = null;
 }
 
 export function track(event: FunnelEvent, props?: Record<string, unknown>): void {
@@ -474,8 +539,12 @@ function applyAttributionContext(): void {
   const { first, last } = attributionContext;
   try {
     const current = touchProps(last ?? first, '');
+    // Sem aceite: origem sim (UTM, referrer), identificador de clique nao.
+    if (!fullConsent) delete current.click_id;
     if (Object.keys(current).length > 0) posthog.register(current);
-    posthog.setPersonProperties(touchProps(last, 'last_'), touchProps(first ?? last, 'first_'));
+    if (fullConsent) {
+      posthog.setPersonProperties(touchProps(last, 'last_'), touchProps(first ?? last, 'first_'));
+    }
   } catch {
     /* noop */
   }
@@ -490,9 +559,10 @@ export function setAttributionContext(first: AttributionTouch | null, last: Attr
 // Liga o usuário anônimo ao usuário logado (Clerk). Chamar no signup/login.
 
 export function identifyUser(userId: string, traits?: Record<string, unknown>): void {
-  if (!ready) {
+  if (!ready || !fullConsent) {
     // Sem isto, quem já estava logado quando aceitou os cookies ficava anônimo
-    // para sempre: o efeito que chama esta função não roda de novo.
+    // para sempre: o efeito que chama esta função não roda de novo. Sem aceite
+    // o identify espera: o modo sem cookies nunca liga visita a pessoa.
     pendingIdentify = { userId, traits };
     return;
   }

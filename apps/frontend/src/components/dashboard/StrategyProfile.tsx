@@ -12,7 +12,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
  *
  * Arquivo próprio, não dentro do `DashboardPage.tsx`: o painel já passa de
  * mil linhas, e um formulário com seis grupos de campos só pioraria isso.
- * Mesmo padrão de `MyTrades.tsx`/`Watchlist.tsx` (componente próprio em
+ * Mesmo padrão de `MyTrades.tsx`/`JournalCalendar.tsx` (componente próprio em
  * `components/dashboard/`, navegação por `activeView`, sem rota nova).
  *
  * REGRA DE SEGURANÇA (não é preferência de interface): nenhum campo de texto

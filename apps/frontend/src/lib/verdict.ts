@@ -12,10 +12,19 @@
  * A API expõe o userVerdict no campo `outcome` da resposta, por retrocompat.
  */
 
+import { getRecommendationMeta } from '@/lib/trading-ui';
+
 export type Verdict = 'TP1' | 'TP2' | 'SL' | 'OPEN' | null;
 
-/** Mesma chave de sempre — trocar aqui apagaria o histórico local de todo mundo. */
-export const VERDICT_STORAGE_KEY = 'tickrify_verdicts';
+/**
+ * A analise propos uma operacao? BUY/SELL sim; WAIT/HOLD nao (24/09/2026,
+ * pedido do dono). Aguardar nao e trade: nao tem entrada, entao nao tem TP,
+ * Stop nem valor a marcar, e nao pode aparecer como "pendente" esperando um
+ * resultado que nunca vai existir. Continua contando como ANALISE feita.
+ */
+export function isTradeCall(recommendation: unknown): boolean {
+  return getRecommendationMeta(recommendation).tone !== 'hold';
+}
 
 /** Converte o valor do backend para o rótulo da UI. */
 export function verdictFromOutcome(o: unknown): Verdict {
@@ -39,30 +48,35 @@ export function outcomeFromVerdict(v: Verdict): string | null {
   }
 }
 
-export function loadVerdicts(): Record<string, Verdict> {
-  try { return JSON.parse(localStorage.getItem(VERDICT_STORAGE_KEY) || '{}'); } catch { return {}; }
-}
-
-export function saveVerdict(id: string, verdict: Verdict) {
-  const all = loadVerdicts();
-  if (verdict === null) { delete all[id]; } else { all[id] = verdict; }
-  localStorage.setItem(VERDICT_STORAGE_KEY, JSON.stringify(all));
-}
-
 /**
- * Veredito efetivo de uma análise: o estado local (alteração recente, ainda
- * não confirmada pelo backend) tem prioridade sobre o que veio do banco.
- * É o que faz a escrita otimista parecer instantânea mesmo com o Render
- * hibernando e levando 30-50s para responder.
+ * Veredito efetivo de uma analise. O SERVIDOR e a fonte da verdade; `pending`
+ * e so a marcacao otimista desta tela, enquanto o servidor ainda nao confirmou
+ * (a tela muda no clique, sem esperar a rede). Quem escreve tira a entrada de
+ * `pending` depois que a gravacao confirma e a lista e relida.
+ *
+ * Ate 25/09/2026 o `pending` vinha do localStorage e VALIA PARA SEMPRE, acima
+ * do servidor. Resultado real: "Vou entrar" clicado num aparelho gravava
+ * "aberto" ali para sempre; marcar TP/Stop em outro aparelho, ou na aba My
+ * Trades (que tinha copia propria), corrigia o servidor, mas aquele aparelho
+ * continuava cobrando "1 trade still open" indefinidamente. Nao voltar a
+ * persistir a marcacao local.
  */
 export function resolveVerdict(
   analysis: { id: string; outcome?: unknown },
-  local: Record<string, Verdict>,
+  pending: Record<string, Verdict>,
 ): Verdict {
-  if (Object.prototype.hasOwnProperty.call(local, analysis.id)) {
-    return local[analysis.id] ?? null;
+  if (Object.prototype.hasOwnProperty.call(pending, analysis.id)) {
+    return pending[analysis.id] ?? null;
   }
   return verdictFromOutcome((analysis as unknown as Record<string, unknown>).outcome);
+}
+
+/** Tira uma analise do mapa de marcacoes pendentes (depois de confirmada ou desfeita). */
+export function withoutPending(pending: Record<string, Verdict>, id: string): Record<string, Verdict> {
+  if (!Object.prototype.hasOwnProperty.call(pending, id)) return pending;
+  const next = { ...pending };
+  delete next[id];
+  return next;
 }
 
 export const VERDICT_CFG = {

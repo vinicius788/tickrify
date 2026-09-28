@@ -15,6 +15,7 @@ import { captureServer, type CaptureOptions } from '../../common/analytics/posth
 import { sendMetaEvent, type MetaAdsContext } from '../../common/analytics/meta-capi';
 import { funnelLog, safeErrorFields } from '../../common/observability/funnel-log';
 import { FOUNDING_COUPON_ID, getFoundingOffer, type FoundingOffer } from './founding-offer';
+import { AffiliatesService, type ReferralKind } from '../affiliates/affiliates.service';
 import {
   getStripeConfig,
   getPriceId,
@@ -30,6 +31,9 @@ import {
 type AttributionRecord = Record<string, unknown>;
 
 type CheckoutResult = { sessionId: string; url: string; reused: boolean };
+
+/** Link/cupom de afiliado guardado no navegador, conferido no servidor antes do checkout. */
+export type CheckoutReferral = { code: string; kind: ReferralKind; clickId?: string | null };
 
 /**
  * Status em que o cliente JA TEM assinatura viva. Abrir outro checkout nesse
@@ -61,7 +65,10 @@ export class StripeService implements OnModuleInit {
   private readonly checkoutInFlight = new Map<string, Promise<CheckoutResult>>();
   private readonly priceCheckedAt = new Map<string, number>();
 
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private affiliates: AffiliatesService,
+  ) {
     const stripeConfig = getStripeConfig();
     if (!stripeConfig.secretKey) {
       this.stripe = null;
@@ -206,6 +213,7 @@ export class StripeService implements OnModuleInit {
     couponId?: string,
     source?: 'pricing' | 'locked_value' | 'last_free_result',
     ads: MetaAdsContext = { consent: false },
+    referral?: CheckoutReferral,
   ): Promise<CheckoutResult> {
     const inFlight = this.checkoutInFlight.get(clerkUserId);
     if (inFlight) {
@@ -213,7 +221,7 @@ export class StripeService implements OnModuleInit {
       return inFlight;
     }
 
-    const run = this.createCheckoutSessionUnlocked(clerkUserId, planType, billingCycle, currency, couponId, source, ads)
+    const run = this.createCheckoutSessionUnlocked(clerkUserId, planType, billingCycle, currency, couponId, source, ads, referral)
       .finally(() => this.checkoutInFlight.delete(clerkUserId));
     this.checkoutInFlight.set(clerkUserId, run);
     return run;
@@ -227,6 +235,7 @@ export class StripeService implements OnModuleInit {
     couponId?: string,
     source?: 'pricing' | 'locked_value' | 'last_free_result',
     ads: MetaAdsContext = { consent: false },
+    referral?: CheckoutReferral,
   ): Promise<CheckoutResult> {
     const startedAt = Date.now();
     // Resolvido logo que o usuario e lido; os logs de erro usam o que houver.
@@ -282,6 +291,35 @@ export class StripeService implements OnModuleInit {
         couponId = undefined;
       }
 
+      // Afiliado: o vinculo e conferido AQUI (clique de ate 30 dias, sem
+      // self-referral), porque a retomada do checkout depois do login pode
+      // chegar antes da chamada de atribuicao do navegador. Nunca bloqueia.
+      if (referral) {
+        try {
+          await this.affiliates.claim(user.id, referral);
+        } catch (error) {
+          this.logger.warn(`[affiliate] Atribuicao no checkout falhou: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      // UM desconto por sessao: vale o maior. O EARLY35 (35%) ganha dos 10% do
+      // afiliado enquanto existir, porque a /pricing e o paywall prometem os
+      // 35% "aplicados automaticamente" e a promessa tem que valer para todos.
+      // A comissao sai sobre o valor pago de fato, entao o afiliado segue
+      // recebendo pela indicacao (vinculo no banco, nao no cupom).
+      let discount: Stripe.Checkout.SessionCreateParams.Discount | undefined =
+        couponId ? { coupon: couponId } : undefined;
+      let discountLabel = couponId ?? '';
+      let affiliateId: string | null = null;
+      if (!discount) {
+        const affiliateDiscount = await this.affiliates.checkoutDiscountFor(user.id).catch(() => null);
+        if (affiliateDiscount) {
+          discount = affiliateDiscount.discount;
+          affiliateId = affiliateDiscount.affiliateId;
+          discountLabel = `aff:${affiliateDiscount.affiliateId}`;
+        }
+      }
+
       // Trava 2, Stripe: cobre o intervalo entre o pagamento e o webhook, em
       // que o banco ainda nao sabe da assinatura. Se esta consulta falhar, o
       // checkout falha junto: seguir sem saber arriscaria cobrar em dobro.
@@ -321,7 +359,7 @@ export class StripeService implements OnModuleInit {
         const equivalent =
           open.mode === 'subscription' &&
           open.metadata?.priceId === priceId &&
-          (open.metadata?.coupon ?? '') === (couponId ?? '') &&
+          (open.metadata?.coupon ?? '') === discountLabel &&
           Boolean(open.url) &&
           open.expires_at - nowSeconds > REUSE_MIN_REMAINING_SECONDS;
 
@@ -383,6 +421,7 @@ export class StripeService implements OnModuleInit {
           // `priceId` e `coupon` identificam a sessao para a Trava 3 acima.
           priceId,
           checkoutSource: source ?? 'unknown',
+          ...(affiliateId ? { affiliateId } : {}),
           ...this.stripeAttributionMetadata(user),
           // Contexto do Meta, SO com aceite de cookies. E o que permite ao
           // webhook mandar o Purchase pela Conversions API com boa
@@ -404,6 +443,7 @@ export class StripeService implements OnModuleInit {
             userId: user.id,
             clerkUserId,
             checkoutSource: source ?? 'unknown',
+            ...(affiliateId ? { affiliateId } : {}),
           },
         },
       };
@@ -418,30 +458,31 @@ export class StripeService implements OnModuleInit {
        * `sessions.create` LANCAR, e o usuario nao ve checkout nenhum. Ou seja,
        * o dia em que o EARLY35 acabar seria tambem o dia em que 100% dos
        * checkouts parariam de abrir, sem ninguem relacionar as duas coisas.
-       * Com o fallback, o cupom morto apenas deixa de descontar.
+       * Com o fallback, o cupom morto apenas deixa de descontar. Vale igual para
+       * o desconto de afiliado.
        */
       const abrirCheckout = (comCupom: boolean) =>
         stripe.checkout.sessions.create({
           ...baseParams,
-          metadata: { ...baseParams.metadata, coupon: comCupom && couponId ? couponId : '' },
-          ...(comCupom && couponId
-            ? { discounts: [{ coupon: couponId }] }
+          metadata: { ...baseParams.metadata, coupon: comCupom && discount ? discountLabel : '' },
+          ...(comCupom && discount
+            ? { discounts: [discount] }
             : { allow_promotion_codes: true }),
         });
 
       let session: Stripe.Checkout.Session;
       try {
-        session = await abrirCheckout(Boolean(couponId));
+        session = await abrirCheckout(Boolean(discount));
       } catch (erroCupom) {
         const recusouOCupom =
-          Boolean(couponId) &&
+          Boolean(discount) &&
           erroCupom instanceof Error &&
           /coupon|promotion|discount/i.test(erroCupom.message);
 
         if (!recusouOCupom) throw erroCupom;
 
         this.logger.warn(
-          `[stripe] Cupom ${couponId} recusado pela Stripe (${erroCupom.message}). ` +
+          `[stripe] Desconto ${discountLabel} recusado pela Stripe (${erroCupom.message}). ` +
             `Reabrindo o checkout SEM desconto para nao bloquear a compra. ` +
             `Conferir se o cupom expirou ou esgotou os usos.`,
         );
@@ -872,6 +913,26 @@ export class StripeService implements OnModuleInit {
       case 'payment_intent.payment_failed':
         await this.handlePaymentIntentFailed(event.data.object as Stripe.PaymentIntent);
         return;
+      // Afiliados: refund ou disputa cancela a comissao ainda nao paga. So
+      // chegam se estiverem marcados no endpoint da Stripe.
+      case 'charge.refunded': {
+        const charge = event.data.object as Stripe.Charge;
+        if ((charge.amount_refunded ?? 0) > 0) {
+          await this.affiliates.cancelForCharge(
+            { chargeId: charge.id, paymentIntentId: this.refId(charge.payment_intent) },
+            'refund',
+          );
+        }
+        return;
+      }
+      case 'charge.dispute.created': {
+        const dispute = event.data.object as Stripe.Dispute;
+        await this.affiliates.cancelForCharge(
+          { chargeId: this.refId(dispute.charge), paymentIntentId: this.refId(dispute.payment_intent) },
+          'dispute',
+        );
+        return;
+      }
       // Sessao aberta que ninguem pagou em 24h: o abandono, com data e sessao.
       case 'checkout.session.expired': {
         const expired = event.data.object as Stripe.Checkout.Session;
@@ -1174,6 +1235,8 @@ export class StripeService implements OnModuleInit {
           status: synced.subscription.status,
           priceId: synced.subscription.items.data[0]?.price.id ?? null,
           checkoutSource: synced.subscription.metadata?.checkoutSource ?? null,
+          // Marca a pessoa no PostHog: sem isto, assinante e gratis ficam iguais na lista de eventos.
+          $set: { is_subscriber: true },
         },
         {
           dedupeKey: `subscription_created:${synced.subscription.id}`,
@@ -1242,6 +1305,15 @@ export class StripeService implements OnModuleInit {
       { user: synced.userId, subscription: subscription.id, status: synced.subscription.status, reason: 'ended' },
       { persist: this.prisma },
     );
+    const endedAt = synced.subscription.ended_at ?? synced.subscription.canceled_at;
+    await this.captureForUser(
+      synced.userId,
+      'subscription_ended',
+      { subscriptionId: subscription.id, $set: { is_subscriber: false } },
+      endedAt
+        ? { dedupeKey: `subscription_ended:${subscription.id}`, timestamp: new Date(endedAt * 1000) }
+        : {},
+    );
   }
 
   /** Recusa dentro da pagina de checkout (sem fatura): so observabilidade. */
@@ -1303,6 +1375,7 @@ export class StripeService implements OnModuleInit {
         billingReason: invoice.billing_reason ?? null,
         value: (invoice.amount_paid ?? 0) / 100,
         currency: String(invoice.currency || 'usd').toUpperCase(),
+        $set: { is_subscriber: true },
       },
       { dedupeKey: `payment_succeeded:${invoice.id}`, timestamp: new Date(paidAt * 1000) },
     );
@@ -1327,6 +1400,16 @@ export class StripeService implements OnModuleInit {
       },
       'invoice_webhook',
     );
+
+    // Comissao de afiliado DEPOIS dos ticks: se falhar, o erro sobe e a Stripe
+    // reenvia; os ticks ja aplicados nao repetem (chave da janela) e a
+    // comissao e unica por fatura.
+    await this.affiliates.recordInvoiceCommission(invoice, synced.userId);
+  }
+
+  private refId(ref: string | { id: string } | null | undefined): string | null {
+    if (!ref) return null;
+    return typeof ref === 'string' ? ref : ref.id ?? null;
   }
 
   /**

@@ -16,6 +16,11 @@ interface AnalysisLimitData {
    *  painel cai no contador local da lista carregada. NÃO confundir com `used`,
    *  que é o consumo do período. */
   analysesAllTime: number | null;
+  /** Cota gratis: analises no total (WAIT incluido) e o teto de 10. `null`
+   *  para assinante ou enquanto o backend nao respondeu. `total`/`used`/
+   *  `remaining` falam das analises com SINAL (BUY/SELL). */
+  totalUsed: number | null;
+  totalLimit: number | null;
   /** true enquanto o backend ainda não confirmou o plano/limite do usuário logado.
    *  Durante esse tempo NÃO se deve tratar o usuário como "free 3 grátis". */
   isLoading: boolean;
@@ -51,6 +56,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
   const [backendUnlimited, setBackendUnlimited] = useState(false);
   // null enquanto nao chegou do backend. O painel cai no contador local nesse caso.
   const [analysesAllTime, setAnalysesAllTime] = useState<number | null>(null);
+  const [freeTotal, setFreeTotal] = useState<{ used: number; limit: number } | null>(null);
   // Começa carregando: o backend (Render hiberna) pode levar segundos a confirmar
   // que a conta é paga. Sem isto, a tela mostrava "3 grátis" no meio-tempo e o
   // assinante conseguia gastar análise grátis antes do plano ser reconhecido.
@@ -68,7 +74,9 @@ export function useAnalysisLimit(): AnalysisLimitData {
     }
 
     try {
-      const token = await getToken({ skipCache: true });
+      // Token do cache (instantaneo). Se estiver vencido, o 401 e repetido com
+      // token novo dentro do apiClient (fetchWithAuthRetry).
+      const token = await getToken();
 
       if (!token) {
         setUserPlan('free');
@@ -94,6 +102,11 @@ export function useAnalysisLimit(): AnalysisLimitData {
           ? usage.total
           : FREE_LIMIT,
       );
+      setFreeTotal(
+        typeof usage.totalUsed === 'number' && typeof usage.totalLimit === 'number'
+          ? { used: usage.totalUsed, limit: usage.totalLimit }
+          : null,
+      );
       // Só marca resolvido em caso de sucesso — assim canAnalyze fica travado até
       // termos a verdade do backend, evitando gastar grátis por engano.
       setStatusResolved(true);
@@ -101,6 +114,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setUserPlan('free');
       setAnalysisCount(0);
       setAnalysisLimit(FREE_LIMIT);
+      setFreeTotal(null);
       setBackendUnlimited(false);
       // Falha de rede: libera a UI para não travar pra sempre, mas o backend ainda
       // é a fonte da verdade na hora de criar a análise (bloqueia grátis indevido).
@@ -126,6 +140,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
     if (!user) {
       setAnalysisCount(0);
       setAnalysisLimit(FREE_LIMIT);
+      setFreeTotal(null);
       setUserPlan('free');
       setBackendUnlimited(false);
       setStatusResolved(false);
@@ -143,6 +158,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       plan: 'elite' as UserPlan,
       // Demo nao tem conta, entao nao ha historico para contar.
       analysesAllTime: null,
+      totalUsed: null,
+      totalLimit: null,
       isLoading: false,
     };
   }
@@ -159,6 +176,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       plan: userPlan,
       // Ainda nao chegou do backend; o painel usa o contador local ate chegar.
       analysesAllTime: null,
+      totalUsed: null,
+      totalLimit: null,
       isLoading: true,
     };
   }
@@ -166,7 +185,9 @@ export function useAnalysisLimit(): AnalysisLimitData {
   // Usuário logado, plano confirmado
   const total = isUnlimited ? Infinity : analysisLimit;
   const used = analysisCount;
-  const remaining = isUnlimited ? Infinity : Math.max(0, analysisLimit - used);
+  // Bater o teto de 10 no total zera o que resta, mesmo com sinal sobrando.
+  const totalCapHit = !isUnlimited && freeTotal !== null && freeTotal.used >= freeTotal.limit;
+  const remaining = isUnlimited ? Infinity : totalCapHit ? 0 : Math.max(0, analysisLimit - used);
   const canAnalyze = isUnlimited || remaining > 0;
 
   return {
@@ -177,6 +198,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
     isUnlimited,
     plan: userPlan,
     analysesAllTime,
+    totalUsed: isUnlimited ? null : freeTotal?.used ?? null,
+    totalLimit: isUnlimited ? null : freeTotal?.limit ?? null,
     isLoading: false,
   };
 }

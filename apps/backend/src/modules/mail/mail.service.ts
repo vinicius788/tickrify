@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { renderWelcomeEmail, welcomeSubject } from './welcome-email';
 
 /**
  * Serviço de e-mail isolado, usando a API HTTP do Resend (sem dependência nova).
@@ -16,7 +17,14 @@ export class MailService {
   // O remetente e noreply@; sem isto, quem responde ao e-mail fala com ninguem.
   private readonly replyTo = process.env.MAIL_REPLY_TO || 'support@tickrify.com';
 
-  private async send(to: string, subject: string, html: string, replyTo?: string): Promise<void> {
+  /** `from` e `replyTo` sao opcionais: sem eles valem MAIL_FROM e MAIL_REPLY_TO. */
+  private async send(
+    to: string,
+    subject: string,
+    html: string,
+    replyTo?: string,
+    from?: string,
+  ): Promise<void> {
     if (!this.apiKey) {
       this.logger.warn('RESEND_API_KEY ausente — pulando envio de e-mail.');
       return;
@@ -30,7 +38,7 @@ export class MailService {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ from: this.from, to, subject, html, reply_to: replyTo || this.replyTo }),
+        body: JSON.stringify({ from: from || this.from, to, subject, html, reply_to: replyTo || this.replyTo }),
       });
 
       if (!res.ok) {
@@ -81,15 +89,9 @@ export class MailService {
     );
   }
 
-  /** Boas-vindas: disparado quando uma conta nova é criada. */
-  async sendWelcome(to: string): Promise<void> {
-    const html = this.wrap(
-      'Your 3 free analyses are ready',
-      `Welcome to Tickrify. You've got <b>3 free analyses</b>. Paste any chart and get the entry, stop, targets and risk before you decide.<br><br>Best way to start: run the next trade you're already unsure about.`,
-      'Analyze a chart',
-      `${this.appUrl}/dashboard`,
-    );
-    await this.send(to, 'Your 3 free analyses are ready', html);
+  /** Boas-vindas: disparado uma unica vez, quando a conta nova e criada. `firstName` e opcional. */
+  async sendWelcome(to: string, firstName?: string | null): Promise<void> {
+    await this.send(to, welcomeSubject(), renderWelcomeEmail({ appUrl: this.appUrl, firstName }));
   }
 
   /** Recuperação: créditos grátis acabaram e o usuário não assinou. */

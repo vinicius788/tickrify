@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { CheckoutError, createCheckoutSession, type BillingCycle, type Currency, type PlanType } from "../../lib/stripe";
-import { warmupPaymentsApi } from "../../lib/api";
+import { buildApiUrl, warmupPaymentsApi } from "../../lib/api";
+import { getReferralCoupon, isAffiliateCode, saveReferralCoupon } from "../../lib/attribution";
 import { track } from "../../lib/analytics";
 import { useToast } from "../../hooks/use-toast";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -131,6 +132,10 @@ const CHROME_COPY = {
     checkoutError: "Failed to create checkout session. Please try again.",
     alreadySubscribedTitle: "You are already subscribed",
     alreadySubscribedDesc: "Your plan is active. Manage it from your dashboard.",
+    partnerAsk: "Have a partner code?",
+    partnerApply: "Apply",
+    partnerApplied: (code: string) => `Partner code ${code} applied. Checkout uses the best discount available to you.`,
+    partnerInvalid: "That code is not valid.",
   },
   pt: {
     monthly: "Mensal",
@@ -146,10 +151,81 @@ const CHROME_COPY = {
     checkoutError: "Falha ao criar sessão de checkout. Tente novamente.",
     alreadySubscribedTitle: "Você já é assinante",
     alreadySubscribedDesc: "Seu plano está ativo. Gerencie pelo painel.",
+    partnerAsk: "Tem um código de parceiro?",
+    partnerApply: "Aplicar",
+    partnerApplied: (code: string) => `Código de parceiro ${code} aplicado. O checkout usa o maior desconto disponível para você.`,
+    partnerInvalid: "Esse código não é válido.",
   },
 };
 
 type PriceMap = Record<BillingCycle, Record<Currency, string>>;
+
+/**
+ * Cupom de parceiro digitado no site. So identifica o afiliado: o servidor
+ * valida o codigo aqui e de novo no checkout, e decide sozinho o desconto (o
+ * EARLY35 ganha enquanto existir, porque e maior). Fica guardado e vai junto
+ * no pedido de checkout, inclusive depois do login.
+ */
+function PartnerCode({ copy }: { copy: (typeof CHROME_COPY)["en"] }) {
+  const [applied, setApplied] = useState<string | null>(() => getReferralCoupon());
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [status, setStatus] = useState<"idle" | "checking" | "invalid">("idle");
+
+  const apply = async () => {
+    const code = value.trim().toUpperCase();
+    if (!isAffiliateCode(code)) {
+      setStatus("invalid");
+      return;
+    }
+    setStatus("checking");
+    try {
+      const res = await fetch(buildApiUrl("/api/affiliates/track"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, kind: "coupon" }),
+      });
+      const data = res.ok ? ((await res.json()) as { valid?: boolean }) : null;
+      if (!data?.valid) {
+        setStatus("invalid");
+        return;
+      }
+      saveReferralCoupon(code);
+      setApplied(code);
+      setStatus("idle");
+    } catch {
+      setStatus("invalid");
+    }
+  };
+
+  if (applied) return <p className="site-price-fine">{copy.partnerApplied(applied)}</p>;
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="site-price-fine underline underline-offset-2">
+        {copy.partnerAsk}
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-2">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+          setStatus("idle");
+        }}
+        maxLength={20}
+        aria-label={copy.partnerAsk}
+        className="w-40 rounded-lg border border-[var(--s-hair-l)] bg-transparent px-3 py-2 text-base uppercase text-[var(--s-on-light)]"
+      />
+      <button type="button" onClick={apply} disabled={status === "checking"} className="site-btn site-btn-sm site-btn-ghost">
+        {copy.partnerApply}
+      </button>
+      {status === "invalid" ? <p className="site-price-fine w-full">{copy.partnerInvalid}</p> : null}
+    </div>
+  );
+}
 
 type Plan = {
   id: PlanType;
@@ -427,6 +503,10 @@ export function PricingCards() {
             </button>
           </div>
         ))}
+      </div>
+
+      <div className="mt-4 text-center">
+        <PartnerCode copy={copy} />
       </div>
     </div>
   );

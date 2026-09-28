@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -15,11 +15,6 @@ const mockUseTicks = vi.fn();
 const mockToast = vi.fn();
 const mockTrack = vi.fn();
 
-vi.mock('@/lib/analytics', () => ({
-  track: (...args: unknown[]) => mockTrack(...args),
-  trackAdConversion: vi.fn(),
-}));
-
 vi.mock('@clerk/clerk-react', () => ({
   useUser: () => mockUseUser(),
   useAuth: () => mockUseAuth(),
@@ -30,14 +25,22 @@ vi.mock('@/lib/api', () => ({
   APIError: class MockAPIError extends Error {
     status: number;
     code?: string;
+    cause?: unknown;
 
-    constructor(message: string, status: number, code?: string) {
+    constructor(message: string, status: number, code?: string, cause?: unknown) {
       super(message);
+      this.name = 'APIError';
       this.status = status;
       this.code = code;
+      this.cause = cause;
     }
   },
   useAPIClient: () => mockUseAPIClient(),
+}));
+
+vi.mock('@/lib/analytics', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/analytics')>()),
+  track: (...args: unknown[]) => mockTrack(...args),
 }));
 
 vi.mock('@/hooks/useAnalysisLimit', () => ({
@@ -78,8 +81,8 @@ vi.mock('@/components/dashboard/MyTrades', () => ({
   default: () => <div>My trades</div>,
 }));
 
-vi.mock('@/components/dashboard/Watchlist', () => ({
-  default: () => <div>Watchlist</div>,
+vi.mock('@/components/dashboard/JournalCalendar', () => ({
+  default: () => <div>Journal</div>,
 }));
 
 vi.mock('@/components/dashboard/AnalysisCounter', () => ({
@@ -141,6 +144,10 @@ describe('DashboardPage', () => {
   });
 
   afterEach(() => {
+    // Sem config do Vitest (globals: false) a Testing Library NAO desmonta a
+    // tela sozinha entre testes: os paineis se empilhavam e o clique em
+    // "Nova Analise"[0] caia no painel do teste ANTERIOR.
+    cleanup();
     vi.useRealTimers();
   });
 
@@ -152,7 +159,7 @@ describe('DashboardPage', () => {
     renderDashboard();
 
     // O dashboard abre na home; navega para "Nova Análise" antes de enviar.
-    await user.click(screen.getAllByRole('button', { name: 'Nova Análise' })[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
     await user.click(screen.getByRole('button', { name: 'start-with-image' }));
 
     expect(screen.getByText('Analysis loading')).toBeTruthy();
@@ -195,7 +202,7 @@ describe('DashboardPage', () => {
 
     renderDashboard();
 
-    await user.click(screen.getAllByRole('button', { name: 'Nova Análise' })[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
     await user.click(screen.getAllByRole('button', { name: 'start-without-image' })[0]);
 
     expect(
@@ -215,7 +222,7 @@ describe('DashboardPage', () => {
     }));
 
     renderDashboard();
-    await user.click(screen.getAllByRole('button', { name: 'Nova Análise' })[0]);
+    await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
     await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
 
     await waitFor(() => {
@@ -226,5 +233,172 @@ describe('DashboardPage', () => {
     });
     const event = mockTrack.mock.calls.find(([name]) => name === 'analysis_failed')?.[1];
     expect(JSON.stringify(event)).not.toContain('Detalhe privado');
+  });
+
+  it('falha de rede envia código estável sem mensagem privada e mostra mensagem clara na tela', async () => {
+    const user = userEvent.setup();
+    const { APIError } = await import('@/lib/api');
+
+    mockUseUser.mockReturnValue({ user: { id: 'user-1' } });
+    mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 0, remaining: 3, isUnlimited: false, isLoading: false });
+    const createAnalysis = vi.fn().mockRejectedValue(
+      new APIError('mensagem tecnica com VITE_API_URL', 0, 'network_error', new TypeError('Failed to fetch')),
+    );
+    mockUseAPIClient.mockReturnValue(makeApiClient({ createAnalysis }));
+
+    renderDashboard();
+
+    await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+    await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+    expect(
+      await screen.findByText('Não foi possível conectar ao Tickrify. Confira sua internet e tente novamente.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/VITE_API_URL/)).toBeNull();
+
+    const failed = mockTrack.mock.calls.find(([event]) => event === 'analysis_failed');
+    expect(failed?.[1]).toMatchObject({ code: 'network_error', stage: 'request', analysisType: 'quick' });
+    expect(failed?.[1].errorMessage).toBeUndefined();
+    expect(typeof failed?.[1].durationMs).toBe('number');
+  });
+
+  it('falha de token mostra a mensagem de sessão sem enviar o erro bruto à telemetria', async () => {
+    const user = userEvent.setup();
+    const { APIError } = await import('@/lib/api');
+
+    mockUseUser.mockReturnValue({ user: { id: 'user-1' } });
+    mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 0, remaining: 3, isUnlimited: false, isLoading: false });
+    const createAnalysis = vi.fn().mockRejectedValue(
+      new APIError('token', 0, 'auth_token_failed', new Error('x'.repeat(500))),
+    );
+    mockUseAPIClient.mockReturnValue(makeApiClient({ createAnalysis }));
+
+    renderDashboard();
+
+    await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+    await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+    expect(await screen.findByText(/Não conseguimos confirmar sua sessão/)).toBeTruthy();
+
+    const failed = mockTrack.mock.calls.find(([event]) => event === 'analysis_failed');
+    expect(failed?.[1]).toMatchObject({ code: 'auth_token_failed', stage: 'request' });
+    expect(failed?.[1].errorMessage).toBeUndefined();
+  });
+
+  describe('fim das 3 gratis', () => {
+    const freeLimit = (used: number) => ({
+      plan: 'free',
+      total: 3,
+      used,
+      remaining: Math.max(0, 3 - used),
+      isUnlimited: false,
+      analysesAllTime: used,
+      isLoading: false,
+    });
+
+    it('na 3a gratis mostra o resultado e, logo abaixo, o CTA de assinar (sem botao de nova analise)', async () => {
+      const user = userEvent.setup();
+      let used = 2;
+      mockUseAnalysisLimit.mockImplementation(() => freeLimit(used));
+      // Igual a producao: o /usage e relido logo depois de criar a analise e o
+      // backend ja conta a linha nova (status != failed), entao used vira 3.
+      mockUseIncrementAnalysis.mockReturnValue(() => {
+        used = 3;
+      });
+      const createAnalysis = vi.fn().mockResolvedValue({ id: 'a-3', status: 'pending' });
+      mockUseAPIClient.mockReturnValue(
+        makeApiClient({
+          createAnalysis,
+          waitForAnalysisCompletion: vi.fn().mockResolvedValue({ id: 'a-3', status: 'completed' }),
+        }),
+      );
+
+      renderDashboard();
+      await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+      await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+      expect(await screen.findByText('Analysis result')).toBeTruthy();
+      expect(createAnalysis).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Suas análises grátis foram utilizadas.')).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Assinar para continuar/ })).toBeTruthy();
+      expect(screen.queryByText(/Unlock to see it/)).toBeNull();
+    });
+
+    it('com a cota esgotada, a proxima tentativa cai direto no paywall sem chamar a API', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockImplementation(() => freeLimit(3));
+      const createAnalysis = vi.fn();
+      mockUseAPIClient.mockReturnValue(makeApiClient({ createAnalysis }));
+
+      renderDashboard();
+      await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+      await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+      expect(await screen.findByText(/Unlock to see it/)).toBeTruthy();
+      expect(createAnalysis).not.toHaveBeenCalled();
+    });
+
+    it('se o contador do navegador estiver defasado, o 403 do backend tambem leva ao paywall', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockImplementation(() => freeLimit(2));
+      const { APIError } = await import('@/lib/api');
+      const createAnalysis = vi
+        .fn()
+        .mockRejectedValue(new (APIError as unknown as new (m: string, s: number, c?: string) => Error)('limit', 403, 'DEMO_LIMIT_REACHED'));
+      mockUseAPIClient.mockReturnValue(makeApiClient({ createAnalysis }));
+
+      renderDashboard();
+      await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+      await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+      expect(await screen.findByText(/Unlock to see it/)).toBeTruthy();
+    });
+  });
+  // ── Cobranca de trades em aberto (25/09/2026) ─────────────────────────────
+  // Bug real: o aviso "1 trades ainda em aberto" nunca sumia. A marcacao local
+  // (localStorage) valia para SEMPRE acima do servidor, entao um "aberto"
+  // antigo guardado no aparelho escondia o TP/Stop ja gravado no servidor.
+  describe('trades em aberto no painel', () => {
+    const old = new Date(Date.now() - 3 * 86_400_000).toISOString();
+    const row = (outcome: string | null) => [
+      { id: 'a1', status: 'completed', recommendation: 'BUY', confidence: 62, symbol: 'XAUUSD', timeframe: '5M', createdAt: old, outcome },
+    ];
+
+    it('marcou TP1: o aviso some e nao volta depois que o servidor confirma', async () => {
+      const user = userEvent.setup();
+      const listAnalyses = vi.fn().mockResolvedValueOnce(row('open')).mockResolvedValue(row('tp1'));
+      const setOutcome = vi.fn().mockResolvedValue({});
+      mockUseAPIClient.mockReturnValue(makeApiClient({ listAnalyses, setOutcome }));
+
+      renderDashboard();
+      await user.click(await screen.findByRole('button', { name: 'TP1 atingido' }));
+
+      expect(setOutcome).toHaveBeenCalledWith('a1', { outcome: 'tp1' });
+      await waitFor(() => expect(listAnalyses.mock.calls.length).toBeGreaterThan(1));
+      await waitFor(() => expect(screen.queryByText(/trades ainda em aberto/)).toBeNull());
+    });
+
+    it('servidor recusou: a tela desfaz e avisa, em vez de fingir que gravou', async () => {
+      const user = userEvent.setup();
+      const listAnalyses = vi.fn().mockResolvedValue(row('open'));
+      const setOutcome = vi.fn().mockRejectedValue(new Error('500'));
+      mockUseAPIClient.mockReturnValue(makeApiClient({ listAnalyses, setOutcome }));
+
+      renderDashboard();
+      await user.click(await screen.findByRole('button', { name: 'TP1 atingido' }));
+
+      await waitFor(() => expect(mockToast).toHaveBeenCalled());
+      expect(await screen.findByText(/trades ainda em aberto/)).toBeTruthy();
+    });
+
+    it('"aberto" antigo guardado no aparelho nao esconde o TP1 que esta no servidor', async () => {
+      window.localStorage.setItem('tickrify_verdicts', JSON.stringify({ a1: 'OPEN' }));
+      mockUseAPIClient.mockReturnValue(makeApiClient({ listAnalyses: vi.fn().mockResolvedValue(row('tp1')) }));
+
+      renderDashboard();
+      await screen.findAllByRole('button', { name: 'Nova Análise' });
+      expect(screen.queryByText(/trades ainda em aberto/)).toBeNull();
+      window.localStorage.removeItem('tickrify_verdicts');
+    });
   });
 });

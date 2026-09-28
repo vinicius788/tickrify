@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { APIError, apiClient, fetchWithAuthRetry } from '@/lib/api';
+import { renderHook } from '@testing-library/react';
+import { APIError, apiClient, fetchWithAuthRetry, useAPIClient } from '@/lib/api';
+
+const mockGetToken = vi.fn();
+vi.mock('@clerk/clerk-react', () => ({
+  useAuth: () => ({ getToken: mockGetToken }),
+}));
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -99,6 +105,35 @@ describe('apiClient', () => {
     expect(secondHeaders.get('Authorization')).toBe('Bearer fresh-token');
   });
 
+  // 24/09/2026: pedir token novo na 1a tentativa custava idas ao Clerk em serie
+  // antes de toda chamada e atrasava o painel. Token novo SO depois de 401.
+  it('fetchWithAuthRetry usa o token que veio na chamada e so pede outro depois de 401', async () => {
+    const getToken = vi.fn().mockResolvedValue('fresh-token');
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const ok = await fetchWithAuthRetry(
+      'https://api.tickrify.test/api/ai/usage',
+      { headers: { Authorization: 'Bearer cached-token' } },
+      getToken,
+    );
+    expect(ok.ok).toBe(true);
+    expect(getToken).not.toHaveBeenCalled();
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).get('Authorization')).toBe('Bearer cached-token');
+
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const retried = await fetchWithAuthRetry(
+      'https://api.tickrify.test/api/ai/usage',
+      { headers: { Authorization: 'Bearer cached-token' } },
+      getToken,
+    );
+    expect(retried.ok).toBe(true);
+    expect(getToken).toHaveBeenCalledTimes(1);
+    expect((fetchMock.mock.calls[2][1]?.headers as Headers).get('Authorization')).toBe('Bearer fresh-token');
+  });
+
   it('getAnalysisUsage retorna uso da conta', async () => {
     vi.stubGlobal(
       'fetch',
@@ -121,5 +156,57 @@ describe('apiClient', () => {
     expect(usage.plan).toBe('free');
     expect(usage.used).toBe(1);
     expect(usage.remaining).toBe(2);
+  });
+
+  // Caso real de 22/09/2026: falha de rede no navegador chegava ao painel como
+  // TypeError cru e virava `analysis_failed { code: "unknown" }`.
+  it('TypeError do fetch vira APIError network_error, com o erro original em cause', async () => {
+    const original = new TypeError('Failed to fetch');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(original));
+
+    const error = await apiClient
+      .createAnalysis({ base64Image: 'data:image/png;base64,AAAA' }, 'valid-token')
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(APIError);
+    expect((error as APIError).code).toBe('network_error');
+    expect((error as APIError).status).toBe(0);
+    expect((error as APIError).cause).toBe(original);
+  });
+
+  it('AbortError do fetch vira APIError timeout', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new DOMException('The operation was aborted.', 'AbortError')),
+    );
+
+    const error = await apiClient.getAnalysis('analysis-1', 'valid-token').catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(APIError);
+    expect((error as APIError).code).toBe('timeout');
+  });
+
+  it('erro que nao e de transporte segue intacto', async () => {
+    const original = new RangeError('outra coisa');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(original));
+
+    await expect(apiClient.getAnalysis('analysis-1', 'valid-token')).rejects.toBe(original);
+  });
+
+  it('falha ao obter o token do Clerk vira APIError auth_token_failed, sem chamar a API', async () => {
+    const original = new Error('ClerkJS: session not loaded');
+    mockGetToken.mockRejectedValueOnce(original);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useAPIClient());
+    const error = await result.current
+      .createAnalysis({ base64Image: 'data:image/png;base64,AAAA' })
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(APIError);
+    expect((error as APIError).code).toBe('auth_token_failed');
+    expect((error as APIError).cause).toBe(original);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -251,6 +251,9 @@ describe('controle de acesso das rotas', () => {
 
     expect(publicas).toEqual(
       [
+        // Afiliados: regras publicas do programa e clique/validacao de codigo.
+        'affiliates.controller.ts::getProgram',
+        'affiliates.controller.ts::track',
         'ai.controller.ts::getAccuracy',
         'ai.controller.ts::getPublicAnalyses',
         'calendar.controller.ts::getEvents',

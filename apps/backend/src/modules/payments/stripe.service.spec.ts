@@ -31,6 +31,7 @@ describe('StripeService webhooks', () => {
   let service: StripeService;
   let prisma: any;
   let stripe: any;
+  let affiliates: any;
 
   const deliver = (type: string, object: Record<string, unknown>, id = 'evt_1') => {
     stripe.webhooks.constructEvent.mockReturnValue({ id, type, data: { object } });
@@ -77,7 +78,11 @@ describe('StripeService webhooks', () => {
       adminAudit: { create: jest.fn().mockResolvedValue({}) },
     };
 
-    service = new StripeService(prisma);
+    affiliates = {
+      recordInvoiceCommission: jest.fn().mockResolvedValue(undefined),
+      cancelForCharge: jest.fn().mockResolvedValue(0),
+    };
+    service = new StripeService(prisma, affiliates);
     stripe = {
       webhooks: { constructEvent: jest.fn() },
       subscriptions: {
@@ -260,6 +265,19 @@ describe('StripeService webhooks', () => {
       );
     });
 
+    it('deleted desmarca a pessoa como assinante no PostHog', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'canceled' }));
+
+      await deliver('customer.subscription.deleted', subscription({ status: 'canceled' }));
+
+      expect(captureServer).toHaveBeenCalledWith(
+        'clerk_1',
+        'subscription_ended',
+        expect.objectContaining({ $set: { is_subscriber: false } }),
+        expect.anything(),
+      );
+    });
+
     it('deleted de assinatura que a Stripe ja apagou marca canceled pelo id', async () => {
       stripe.subscriptions.retrieve.mockRejectedValue(Object.assign(new Error('gone'), { code: 'resource_missing' }));
 
@@ -318,7 +336,13 @@ describe('StripeService webhooks', () => {
       expect(captureServer).toHaveBeenCalledWith(
         'clerk_1',
         'payment_succeeded',
-        expect.objectContaining({ invoiceId: 'in_1', value: 18.85, currency: 'USD', billingReason: 'subscription_cycle' }),
+        expect.objectContaining({
+          invoiceId: 'in_1',
+          value: 18.85,
+          currency: 'USD',
+          billingReason: 'subscription_cycle',
+          $set: { is_subscriber: true },
+        }),
         expect.objectContaining({ dedupeKey: 'payment_succeeded:in_1' }),
       );
     });
@@ -362,6 +386,41 @@ describe('StripeService webhooks', () => {
 
       await expect(deliver('invoice.payment_succeeded', invoice())).rejects.toBeDefined();
       expect(ledgerStatus()).toBe('failed');
+    });
+
+    it('fatura paga gera a comissao do afiliado DEPOIS dos ticks, com o dono da assinatura', async () => {
+      await deliver('invoice.payment_succeeded', invoice({ amount_paid: 2610 }));
+
+      expect(affiliates.recordInvoiceCommission).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'in_1', amount_paid: 2610 }),
+        'usr_1',
+      );
+      expect(affiliates.recordInvoiceCommission.mock.invocationCallOrder[0]).toBeGreaterThan(
+        prisma.userTicks.upsert.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('erro na comissao SOBE para a Stripe reenviar', async () => {
+      affiliates.recordInvoiceCommission.mockRejectedValueOnce(new Error('db down'));
+      await expect(deliver('invoice.payment_succeeded', invoice())).rejects.toBeDefined();
+      expect(ledgerStatus()).toBe('failed');
+    });
+  });
+
+  describe('afiliados: refund e disputa', () => {
+    it('charge.refunded cancela pela charge e pelo payment intent', async () => {
+      await deliver('charge.refunded', { id: 'ch_1', payment_intent: 'pi_1', amount_refunded: 2610 });
+      expect(affiliates.cancelForCharge).toHaveBeenCalledWith({ chargeId: 'ch_1', paymentIntentId: 'pi_1' }, 'refund');
+    });
+
+    it('charge.refunded sem valor devolvido nao cancela nada', async () => {
+      await deliver('charge.refunded', { id: 'ch_1', payment_intent: 'pi_1', amount_refunded: 0 });
+      expect(affiliates.cancelForCharge).not.toHaveBeenCalled();
+    });
+
+    it('charge.dispute.created cancela a comissao da charge disputada', async () => {
+      await deliver('charge.dispute.created', { id: 'dp_1', charge: 'ch_9', payment_intent: { id: 'pi_9' } });
+      expect(affiliates.cancelForCharge).toHaveBeenCalledWith({ chargeId: 'ch_9', paymentIntentId: 'pi_9' }, 'dispute');
     });
   });
 

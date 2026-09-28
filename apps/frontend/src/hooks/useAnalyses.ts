@@ -34,15 +34,15 @@ export function useAnalyses(limit = 40) {
     getNextPageParam: (lastPage) =>
       lastPage.length < limit ? undefined : (lastPage[lastPage.length - 1]?.id ?? undefined),
     // Cache "fresco" por 2 min e sem refetch ao focar a janela → trocar de aba
-    // (Dashboard → My Trades → Watchlist) reaproveita os dados, sem nova busca.
+    // (Dashboard → My Trades) reaproveita os dados, sem nova busca.
     staleTime: 120_000,
     refetchOnWindowFocus: false,
     enabled,
   });
 
-  const refetch = () => {
-    void queryClient.invalidateQueries({ queryKey: ['analyses'] });
-  };
+  // Devolve a promessa: quem marca resultado espera a lista relida para so
+  // entao tirar a marcacao otimista (sem isso a tela piscaria o valor antigo).
+  const refetch = () => queryClient.invalidateQueries({ queryKey: ['analyses'] });
 
   return {
     analyses: (query.data?.pages ?? []).flat(),

@@ -155,6 +155,9 @@ export class AuthController implements OnModuleInit {
       'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "firstTouchAt" TIMESTAMP(3)',
       'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "lastTouchAttribution" JSONB',
       'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "lastTouchAt" TIMESTAMP(3)',
+      // Reset unico da cota gratis (common/free-quota.ts). Nao e de origem, mas
+      // e coluna do User e precisa existir antes da primeira leitura da cota.
+      'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "freeQuotaResetAt" TIMESTAMP(3)',
     ];
     for (const sql of colunas) {
       try {

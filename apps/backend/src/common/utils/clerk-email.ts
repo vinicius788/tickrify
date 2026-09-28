@@ -13,6 +13,14 @@ const logger = new Logger('ClerkEmail');
  * Sem dependência nova — usa o `fetch` global (Node 18+).
  */
 export async function fetchClerkEmail(clerkUserId: string): Promise<string | null> {
+  return (await fetchClerkProfile(clerkUserId)).email;
+}
+
+/** Igual a fetchClerkEmail, mas devolve tambem o primeiro nome (para o e-mail de boas-vindas). */
+export async function fetchClerkProfile(
+  clerkUserId: string,
+): Promise<{ email: string | null; firstName: string | null }> {
+  const none = { email: null, firstName: null };
   const secretKey = String(process.env.CLERK_SECRET_KEY || '').trim();
   const id = String(clerkUserId || '').trim();
 
@@ -27,9 +35,9 @@ export async function fetchClerkEmail(clerkUserId: string): Promise<string | nul
       '[email] CLERK_SECRET_KEY ausente — impossivel resolver e-mail. ' +
         'Boas-vindas e recuperacao NAO serao enviados. Setar no ambiente do Render.',
     );
-    return null;
+    return none;
   }
-  if (!id) return null;
+  if (!id) return none;
 
   try {
     const res = await fetch(`https://api.clerk.com/v1/users/${encodeURIComponent(id)}`, {
@@ -38,12 +46,13 @@ export async function fetchClerkEmail(clerkUserId: string): Promise<string | nul
     });
     if (!res.ok) {
       logger.warn(`[email] Clerk respondeu ${res.status} para ${id} — e-mail nao resolvido.`);
-      return null;
+      return none;
     }
 
     const data = (await res.json()) as {
       primary_email_address_id?: string | null;
       email_addresses?: Array<{ id?: string; email_address?: string }>;
+      first_name?: string | null;
     };
 
     const list = Array.isArray(data.email_addresses) ? data.email_addresses : [];
@@ -51,13 +60,14 @@ export async function fetchClerkEmail(clerkUserId: string): Promise<string | nul
     const email = String(primary?.email_address || list[0]?.email_address || '').trim();
     if (!email) {
       logger.warn(`[email] Clerk nao devolveu endereco para ${id}.`);
-      return null;
+      return none;
     }
-    return email;
+    const firstName = String(data.first_name || '').trim() || null;
+    return { email, firstName };
   } catch (err) {
     logger.warn(
       `[email] Falha ao consultar o Clerk para ${id}: ${err instanceof Error ? err.message : err}`,
     );
-    return null;
+    return none;
   }
 }

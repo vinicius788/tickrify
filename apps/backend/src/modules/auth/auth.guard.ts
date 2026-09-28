@@ -1,13 +1,15 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, Logger, UnauthorizedException } from '@nestjs/common';
 import { verifyToken } from '@clerk/backend';
 import { PrismaService } from '../database/prisma.service';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { MailService } from '../mail/mail.service';
-import { fetchClerkEmail } from '../../common/utils/clerk-email';
+import { fetchClerkProfile } from '../../common/utils/clerk-email';
 import { captureServer } from '../../common/analytics/posthog';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
+  private readonly logger = new Logger(AuthGuard.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
@@ -117,13 +119,11 @@ export class AuthGuard implements CanActivate {
         }
 
         // Usuário novo → e-mail de boas-vindas (fire-and-forget; nunca quebra a resposta).
-        if (user.email) {
-          void this.mail.sendWelcome(user.email).catch(() => undefined);
-        } else {
-          // O session token do Clerk não inclui e-mail por padrão → busca na
-          // API do Clerk, persiste (backfill) e só então envia as boas-vindas.
-          void this.backfillEmailAndWelcome(user.id, clerkUserId, true);
-        }
+        // So este ramo dispara: `isNewUser` so vale para quem CRIOU a linha
+        // (quem perde a corrida P2002 ou apenas faz login nao passa aqui).
+        // NAO usar await: Clerk (ate 5s) e Resend nunca entram no caminho da
+        // autenticacao. O metodo captura todo erro sozinho.
+        void this.welcomeNewUser(user.id, clerkUserId, user.email);
       }
 
       if (email && this.shouldBootstrapAdmin(user.role, email)) {
@@ -147,26 +147,29 @@ export class AuthGuard implements CanActivate {
   }
 
   /**
-   * Busca o e-mail na API do Clerk e persiste no User. Fire-and-forget:
-   * roda fora do caminho da resposta e nunca propaga erro (e-mail jamais
-   * pode quebrar o fluxo de auth).
+   * Boas-vindas do usuario recem-criado. Consulta o Clerk (primeiro nome e, se
+   * o token nao trouxe, o e-mail, que entao e persistido). Fire-and-forget:
+   * roda fora do caminho da resposta e nunca propaga erro (e-mail jamais pode
+   * quebrar o fluxo de auth). Falha do Clerk so tira o nome, nao o e-mail.
    */
-  private async backfillEmailAndWelcome(
+  private async welcomeNewUser(
     userId: string,
     clerkUserId: string,
-    isNewUser: boolean,
+    knownEmail: string | null,
   ): Promise<void> {
     try {
-      const email = await fetchClerkEmail(clerkUserId);
+      const profile = await fetchClerkProfile(clerkUserId);
+      const email = knownEmail || profile.email;
       if (!email) return;
 
-      await this.prisma.user.update({ where: { id: userId }, data: { email } });
-
-      if (isNewUser) {
-        await this.mail.sendWelcome(email);
+      if (!knownEmail) {
+        await this.prisma.user.update({ where: { id: userId }, data: { email } });
       }
-    } catch {
-      // best-effort — sem log barulhento; o MailService já loga falha de envio
+
+      await this.mail.sendWelcome(email, profile.firstName);
+    } catch (err) {
+      // Nunca propaga: e-mail e best-effort. Loga so a mensagem (sem token nem e-mail).
+      this.logger.warn(`[welcome] Falha ao preparar boas-vindas (userId=${userId}): ${err instanceof Error ? err.message : 'erro desconhecido'}`);
     }
   }
 

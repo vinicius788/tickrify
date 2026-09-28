@@ -9,6 +9,7 @@ import { useEffect, useRef } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { identifyUser, resetAnalytics, track, trackAdConversion } from '@/lib/analytics';
 import {
+  claimReferral,
   getAdsPayload,
   getAttributionTouches,
   getTechnicalAttributionPayload,
@@ -72,6 +73,12 @@ export function AnalyticsIdentify() {
           });
       }
     }
+
+    // Afiliado: liga a conta ao link/cupom de parceiro guardado neste navegador.
+    // O servidor confere a janela de 30 dias, o self-referral e se ja pagou.
+    void getToken()
+      .then((token) => (token ? claimReferral(user.id, token) : undefined))
+      .catch(() => undefined);
 
     // Conversao de cadastro para Meta/Google Ads: uma vez por conta, neste navegador.
     if (user.createdAt) {
