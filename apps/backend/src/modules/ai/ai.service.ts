@@ -127,6 +127,12 @@ export class AiService implements OnModuleInit {
    */
   async onModuleInit(): Promise<void> {
     try {
+      // Produção usa RUN_MIGRATIONS_ON_START=false. Criar a coluna opcional
+      // antes de qualquer leitura Prisma de Analysis evita indisponibilidade
+      // durante o primeiro boot desta versão; a migração formal cobre bancos novos.
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "errorCode" TEXT',
+      );
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "outcome" TEXT',
       );
