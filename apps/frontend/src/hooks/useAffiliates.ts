@@ -175,7 +175,7 @@ export function useAffiliateDashboard() {
   return { query, join, requestPayout };
 }
 
-export function useAffiliateAdmin(payoutFilter: PayoutStatus | 'ALL') {
+export function useAffiliateAdmin() {
   const { isSignedIn } = useAuth();
   const authed = useAuthedFetch();
   const queryClient = useQueryClient();
@@ -189,15 +189,10 @@ export function useAffiliateAdmin(payoutFilter: PayoutStatus | 'ALL') {
   });
 
   const payouts = useQuery<AdminPayout[], Error>({
-    queryKey: ['admin-affiliates', 'payouts', payoutFilter],
+    queryKey: ['admin-affiliates', 'payouts'],
     enabled: Boolean(isSignedIn),
     retry: false,
-    queryFn: () =>
-      authed(
-        `/api/admin/affiliates/payouts${payoutFilter === 'ALL' ? '' : `?status=${payoutFilter}`}`,
-        {},
-        'Falha ao carregar saques',
-      ),
+    queryFn: () => authed('/api/admin/affiliates/payouts', {}, 'Falha ao carregar saques'),
   });
 
   const update = useMutation<

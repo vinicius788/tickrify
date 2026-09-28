@@ -899,9 +899,9 @@ export class AffiliatesService implements OnModuleInit {
     return { affiliate: updated, stripeSync };
   }
 
-  async adminListPayouts(status?: PayoutStatus) {
+  /** Todos os saques (os 200 mais recentes); a tela separa pendentes de historico. */
+  async adminListPayouts() {
     return this.prisma.affiliatePayout.findMany({
-      where: status ? { status } : {},
       orderBy: { requestedAt: 'desc' },
       take: 200,
       include: { affiliate: { select: { id: true, referralCode: true, user: { select: { email: true } } } } },

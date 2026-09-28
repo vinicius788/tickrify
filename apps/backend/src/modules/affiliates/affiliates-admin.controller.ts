@@ -1,12 +1,10 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { AffiliatesService, type PayoutStatus } from './affiliates.service';
+import { AffiliatesService } from './affiliates.service';
 import { AdminPayoutActionDto, AdminUpdateAffiliateDto } from './dto/affiliates.dto';
-
-const PAYOUT_STATUSES: PayoutStatus[] = ['REQUESTED', 'APPROVED', 'REJECTED', 'PAID'];
 
 /**
  * Admin dos afiliados. Guardas na CLASSE, igual ao AdminController: metodo
@@ -25,9 +23,8 @@ export class AffiliatesAdminController {
 
   @Get('payouts')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  listPayouts(@Query('status') status?: string) {
-    const filter = PAYOUT_STATUSES.includes(status as PayoutStatus) ? (status as PayoutStatus) : undefined;
-    return this.affiliates.adminListPayouts(filter);
+  listPayouts() {
+    return this.affiliates.adminListPayouts();
   }
 
   @Patch('payouts/:id')
