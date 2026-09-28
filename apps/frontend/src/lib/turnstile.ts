@@ -1,6 +1,6 @@
 // Cloudflare Turnstile (anti-bot invisível) para a demo anônima.
 // Sem VITE_TURNSTILE_SITE_KEY configurada, tudo vira no-op (retorna null) —
-// o backend também só exige o token quando TURNSTILE_SECRET_KEY existe lá.
+// o backend falha fechado: sem chave configurada, a demo fica indisponível.
 
 const SITE_KEY = String(import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim();
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
