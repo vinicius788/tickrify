@@ -4,6 +4,8 @@ import { useFoundingOffer } from '@/hooks/useFoundingOffer';
 interface LockedAnalysisProps {
   /** Chamado quando o usuário clica em destravar (checkout; o EARLY35 entra se ainda estiver ativo). */
   onUnlock: () => void;
+  /** Checkout do plano semanal (US$ 7,99, 25 analises por semana), sem cupom. */
+  onUnlockWeekly?: () => void;
   /** True enquanto a sessão de checkout está sendo criada (cold start pode demorar). */
   unlockPending?: boolean;
   /** Rótulo do gráfico enviado (ex.: "BTCUSDT · 1H"). Sem valor, usa um genérico honesto. */
@@ -22,7 +24,7 @@ const PREVIEW_ROWS: Array<{ label: string; value: string }> = [
   { label: 'Confidence', value: '80%' },
 ];
 
-const LockedAnalysis = ({ onUnlock, unlockPending = false, symbolLabel }: LockedAnalysisProps) => {
+const LockedAnalysis = ({ onUnlock, onUnlockWeekly, unlockPending = false, symbolLabel }: LockedAnalysisProps) => {
   // O desconto so e anunciado com o cupom ativo na Stripe.
   const offer = useFoundingOffer();
   return (
@@ -87,6 +89,16 @@ const LockedAnalysis = ({ onUnlock, unlockPending = false, symbolLabel }: Locked
           <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
             Early user: your {offer.code} discount ({offer.percentOff}% off the first month, then $29/month) is applied automatically.
           </p>
+        ) : null}
+        {onUnlockWeekly ? (
+          <button
+            type="button"
+            onClick={onUnlockWeekly}
+            disabled={unlockPending}
+            className="text-sm text-[var(--text-primary)] underline underline-offset-4 transition-opacity hover:opacity-80 disabled:opacity-60"
+          >
+            Or start with one week: $7.99 for 25 analyses
+          </button>
         ) : null}
       </div>
     </div>

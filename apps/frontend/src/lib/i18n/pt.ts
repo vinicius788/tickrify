@@ -471,6 +471,7 @@ export default {
     ticksOut: 'Ticks esgotados. Renova automaticamente no próximo ciclo.',
     ticksLow: 'Poucos ticks restantes. Renova no próximo ciclo.',
     renewsPrefix: 'Renova mensalmente ·',
+    renewsWeeklyPrefix: 'Renova toda semana ·',
     renewsSuffix: 'ticks disponíveis',
     tradeCallsLeft: '{left} de {limit} análises com entrada restantes',
     totalCapNote: 'Resultados WAIT são grátis, até {limit} análises no total (restam {left}).',

@@ -35,9 +35,17 @@ describe('checkoutIntent', () => {
   });
 
   it('ciclo ou origem invalidos caem no padrao em vez de vazar', () => {
-    expect(parseCheckoutIntent('?checkout=starter&cycle=weekly&source=evil')).toEqual({
+    expect(parseCheckoutIntent('?checkout=starter&cycle=daily&source=evil')).toEqual({
       plan: 'starter',
       cycle: 'monthly',
+      source: 'pricing',
+    });
+  });
+
+  it('o semanal sobrevive ao login', () => {
+    expect(parseCheckoutIntent('?checkout=starter&cycle=weekly&source=pricing')).toEqual({
+      plan: 'starter',
+      cycle: 'weekly',
       source: 'pricing',
     });
   });

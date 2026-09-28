@@ -154,6 +154,14 @@ Vale para TODA mudanca, grande ou pequena:
   quick (deep so para assinante). Na UI se fala em "analyses"; "ticks" e so
   unidade de cobranca. Checkout sempre em USD (Adaptive Pricing da Stripe
   converte).
+- **Semanal (28/09):** o mesmo plano por US$ 7,99/semana, saldo volta a 25
+  ticks a cada 7 dias (`WEEKLY_PRICE_ID` e `WEEKLY_TICKS` em
+  `config/stripe.config.ts`; price `price_1UKeWPB1hl0IoocUjsQNv9BG`). Sem
+  EARLY35 (o cupom e do 1o mes; o servidor descarta). No `/usage` o plano vem
+  `weekly`. Motivo: 17 checkouts abertos de 11 a 27/09 sem ninguem digitar o
+  cartao, publico quase todo de pais onde US$ 29 de uma vez nao fecha.
+- Checkout com `billing_address_collection: 'auto'` desde 28/09 (era
+  `required`: formulario de endereco inteiro no celular).
 - **Cupons:** EARLY35 (35% no 1o mes) pre-aplicado no paywall e na /pricing; o
   estado e lido da Stripe (`founding-offer.ts`) e a oferta some sozinha quando o
   cupom acaba (5 de 50 usos em 21/09; tentativa recusada tambem gasta uso). O DTO
@@ -503,6 +511,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **22/09:** `after_expiration.recovery` ligado e removido no mesmo dia (a Stripe nao manda e-mail; so gera link).
 - **24/09:** prompt v7.5 contra o WAIT de 82% do luna; PostHog cookieless; My Trades com print, botoes TP/Stop e P&L; logo animada no carregamento; painel abre mais rapido (token do cache, preload); testes estaveis (`cleanup`); Watchlist virou filtro "Favoritas" + aba Diario (`/api/ai/journal`); WAIT nao e operacao; selo de estrategia corrigido no worker; Plans no rodape do menu; `og.png` novo.
 - **28/09:** programa de afiliados (`modules/affiliates`, migracao `20260926120000_affiliates`, `/affiliates`, `/affiliate`, secao no `/admin`): entrada por aprovacao manual (PENDING -> ACTIVE/REJECTED, ACTIVE <-> SUSPENDED; so ACTIVE atribui, comissiona e saca), taxa padrao 20% por 12 meses que NUNCA aparece na pagina publica (so no painel do proprio afiliado e no admin), comissao por fatura relida na Stripe, PENDING 30 dias, saque manual a partir de US$ 50, refund/disputa cancela. No checkout vale UM desconto, o maior (EARLY35 ganha dos 10% enquanto existir, porque a vitrine promete os 35%).
+- **28/09 (tarde):** plano semanal US$ 7,99 / 25 ticks (pricing, paywall, modal, contador); checkout sem endereco obrigatorio.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

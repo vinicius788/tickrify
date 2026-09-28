@@ -16,6 +16,7 @@ const PLAN_LABELS: Record<UserPlan, string> = {
   starter: 'Starter',
   pro: 'Pro',
   elite: 'Elite',
+  weekly: 'Weekly',
 };
 
 const PLAN_TICKS: Record<UserPlan, number> = {
@@ -23,6 +24,7 @@ const PLAN_TICKS: Record<UserPlan, number> = {
   starter: 200,
   pro: 150,
   elite: 400,
+  weekly: 25,
 };
 
 const AnalysisCounter = () => {
@@ -190,7 +192,7 @@ const AnalysisCounter = () => {
             </p>
           ) : (
             <p className="text-xs text-[var(--text-secondary)]">
-              {c.renewsPrefix} {Math.floor(balance)} {c.renewsSuffix}
+              {plan === 'weekly' ? c.renewsWeeklyPrefix : c.renewsPrefix} {Math.floor(balance)} {c.renewsSuffix}
             </p>
           )}
 

@@ -1,7 +1,14 @@
 import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { StripeService } from './stripe.service';
 import { resetFoundingOfferCache } from './founding-offer';
-import { allowanceWindowStart, monthlyTicksForPriceId } from '../../config/stripe.config';
+import {
+  WEEKLY_PRICE_ID,
+  allowanceCadenceForPriceId,
+  allowanceForPriceId,
+  allowanceWindowStart,
+  getPriceId,
+  resolvePlanForPriceId,
+} from '../../config/stripe.config';
 
 const PRICE = 'price_1TRvEJB1hl0IoocUvbCyxkt5'; // starter mensal USD
 
@@ -142,6 +149,17 @@ describe('StripeService.createCheckoutSession', () => {
       expect(second.discounts).toBeUndefined();
       expect(second.metadata.coupon).toBe('');
     });
+  });
+
+  it('semanal: preco semanal, sem EARLY35 e sem endereco obrigatorio', async () => {
+    await service.createCheckoutSession('clerk_1', 'starter', 'weekly', 'usd', 'EARLY35');
+
+    expect(stripe.prices.retrieve).toHaveBeenCalledWith(WEEKLY_PRICE_ID);
+    const params = stripe.checkout.sessions.create.mock.calls[0][0];
+    expect(params.line_items).toEqual([{ price: WEEKLY_PRICE_ID, quantity: 1 }]);
+    expect(params.discounts).toBeUndefined();
+    expect(params.metadata).toMatchObject({ billingCycle: 'weekly', priceId: WEEKLY_PRICE_ID, coupon: '' });
+    expect(params.billing_address_collection).toBe('auto');
   });
 
   it('EARLY35 esgotado: a sessao abre sem desconto, com o campo de codigo', async () => {
@@ -364,8 +382,26 @@ describe('allowanceWindowStart', () => {
   });
 
   it('o anual recebe o pacote MENSAL, nao 12x', () => {
-    expect(monthlyTicksForPriceId('price_1TRvKHB1hl0IoocU3N7MMGcG')).toBe(200); // starter anual
-    expect(monthlyTicksForPriceId('price_1TRvEJB1hl0IoocUvbCyxkt5')).toBe(200); // starter mensal
-    expect(monthlyTicksForPriceId('price_desconhecido')).toBe(0);
+    expect(allowanceForPriceId('price_1TRvKHB1hl0IoocU3N7MMGcG')).toBe(200); // starter anual
+    expect(allowanceForPriceId('price_1TRvEJB1hl0IoocUvbCyxkt5')).toBe(200); // starter mensal
+    expect(allowanceForPriceId('price_desconhecido')).toBe(0);
+  });
+
+  it('semanal: 25 por semana, janela avanca de 7 em 7 dias', () => {
+    expect(allowanceForPriceId(WEEKLY_PRICE_ID)).toBe(25);
+    expect(allowanceCadenceForPriceId(WEEKLY_PRICE_ID)).toBe('week');
+    expect(allowanceCadenceForPriceId('price_1TRvEJB1hl0IoocUvbCyxkt5')).toBe('month');
+    const start = new Date(Date.UTC(2026, 8, 28, 12));
+    expect(allowanceWindowStart(start, new Date(Date.UTC(2026, 9, 1)), 'week')).toEqual(start);
+    expect(allowanceWindowStart(start, new Date(Date.UTC(2026, 9, 5, 12)), 'week')).toEqual(new Date(Date.UTC(2026, 9, 5, 12)));
+    expect(allowanceWindowStart(start, new Date(Date.UTC(2026, 9, 11)), 'week')).toEqual(new Date(Date.UTC(2026, 9, 5, 12)));
+    expect(allowanceWindowStart(start, new Date(Date.UTC(2026, 9, 13)), 'week')).toEqual(new Date(Date.UTC(2026, 9, 12, 12)));
+  });
+
+  it('semanal existe so no starter em USD e conta como starter', () => {
+    expect(getPriceId('starter', 'weekly', 'usd')).toBe(WEEKLY_PRICE_ID);
+    expect(getPriceId('starter', 'weekly', 'brl')).toBe('');
+    expect(getPriceId('pro', 'weekly', 'usd')).toBe('');
+    expect(resolvePlanForPriceId(WEEKLY_PRICE_ID)).toBe('starter');
   });
 });

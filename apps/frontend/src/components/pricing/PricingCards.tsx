@@ -117,11 +117,45 @@ const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
   },
 };
 
+// Plano SEMANAL (28/09/2026): o mesmo plano cobrado por semana, com 25 Ticks
+// que voltam a 25 a cada semana. Entrada menor para quem nao paga US$ 29 de uma
+// vez. Sem o EARLY35 (o cupom e do primeiro mes), entao nada aqui fala dele.
+const WEEKLY_COPY: Record<"en" | "pt", PlanCopy & { note: string }> = {
+  en: {
+    badge: "Start small",
+    ticks: "25 ticks/wk",
+    analyses: "quick 1 tick · deep 3 ticks",
+    features: [
+      "25 Ticks every week (~25 quick or 8 deep)",
+      "Quick + deep analysis",
+      "Live candle grounding + economic calendar",
+      "Renews weekly, cancel anytime",
+    ],
+    cta: "Start weekly",
+    note: "Billed $7.99 every 7 days. Your balance resets to 25 Ticks each week.",
+  },
+  pt: {
+    badge: "Comece pequeno",
+    ticks: "25 ticks/sem",
+    analyses: "rápida 1 tick · deep 3 ticks",
+    features: [
+      "25 Ticks por semana (~25 rápidas ou 8 deep)",
+      "Análise rápida + deep",
+      "Grounding com candles ao vivo + calendário econômico",
+      "Renova toda semana, cancele quando quiser",
+    ],
+    cta: "Assinar semanal",
+    note: "Cobrado US$ 7,99 a cada 7 dias. O saldo volta para 25 Ticks toda semana.",
+  },
+};
+
 const CHROME_COPY = {
   en: {
+    weekly: "Weekly",
     monthly: "Monthly",
     yearly: "Yearly",
     yearlyBadge: "2 months free",
+    perWeek: "/wk",
     perMonth: "/mo",
     perYear: "/yr",
     processing: "Processing...",
@@ -138,9 +172,11 @@ const CHROME_COPY = {
     partnerInvalid: "That code is not valid.",
   },
   pt: {
+    weekly: "Semanal",
     monthly: "Mensal",
     yearly: "Anual",
     yearlyBadge: "2 meses grátis",
+    perWeek: "/sem",
     perMonth: "/mês",
     perYear: "/ano",
     processing: "Processando...",
@@ -249,6 +285,7 @@ export const PLANS: Plan[] = [
     name: "Tickrify",
     badge: "Everything included",
     prices: {
+      weekly:  { brl: "$7.99", usd: "$7.99", eur: "$7.99" },
       monthly: { brl: "$29", usd: "$29", eur: "$29" },
       yearly:  { brl: "$290", usd: "$290", eur: "$290" },
     },
@@ -271,6 +308,7 @@ export function PricingCards() {
   const lang = language === "pt" ? "pt" : "en";
   const copy = CHROME_COPY[lang];
   const planCopy = PLAN_COPY[lang];
+  const weeklyCopy = WEEKLY_COPY[lang];
   const [loadingPlan, setLoadingPlan] = useState<PlanType | null>(null);
   const [processingUpgrade, setProcessingUpgrade] = useState(false);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
@@ -354,14 +392,15 @@ export function PricingCards() {
          *
          * A copy da /pricing foi ajustada junto: ela nao pede mais o codigo,
          * porque agora nao ha codigo para pedir. */
-        const { url, sessionId } = await createCheckoutSession(planType, token, cycle, currency, 'EARLY35', source);
+        const coupon = cycle === "weekly" ? undefined : "EARLY35";
+        const { url, sessionId } = await createCheckoutSession(planType, token, cycle, currency, coupon, source);
         // Dispara SO com a URL da Stripe em maos: antes saia antes da chamada a
         // API e contava clique como checkout, inclusive quando a sessao falhava.
         track('checkout_started', {
           plan: planType,
           billingCycle: cycle,
           currency,
-          coupon: 'EARLY35',
+          coupon: coupon ?? null,
           source,
           sessionId,
           resumedAfterAuth: Boolean(options.resumed),
@@ -451,6 +490,14 @@ export function PricingCards() {
       <div className="site-cycle" role="group" aria-label="Billing cycle">
         <button
           type="button"
+          aria-pressed={billingCycle === "weekly"}
+          onClick={() => setBillingCycle("weekly")}
+          className={`site-btn site-btn-sm ${billingCycle === "weekly" ? "site-btn-primary" : "site-btn-ghost"}`}
+        >
+          {copy.weekly}
+        </button>
+        <button
+          type="button"
           aria-pressed={billingCycle === "monthly"}
           onClick={() => setBillingCycle("monthly")}
           className={`site-btn site-btn-sm ${billingCycle === "monthly" ? "site-btn-primary" : "site-btn-ghost"}`}
@@ -473,19 +520,23 @@ export function PricingCards() {
           título e o banner acima seguiam centralizados. Derivado de PLANS.length
           para não quebrar de novo se um segundo plano voltar. */}
       <div className={PLANS.length > 1 ? "site-plans" : undefined}>
-        {PLANS.map((plan) => (
+        {PLANS.map((plan) => {
+          const cardCopy = billingCycle === "weekly" ? weeklyCopy : planCopy[plan.id];
+          const perCycle =
+            billingCycle === "weekly" ? copy.perWeek : billingCycle === "monthly" ? copy.perMonth : copy.perYear;
+          return (
           <div key={plan.id} className="site-price">
-            <span className="site-eyebrow">{planCopy[plan.id].badge}</span>
+            <span className="site-eyebrow">{cardCopy.badge}</span>
             <div className="site-price-amt">
               <b>{plan.prices[billingCycle][currency]}</b>
-              <span>{billingCycle === "monthly" ? copy.perMonth : copy.perYear}</span>
+              <span>{perCycle}</span>
             </div>
             <p className="site-price-sub">
-              {planCopy[plan.id].ticks} · {planCopy[plan.id].analyses}
+              {cardCopy.ticks} · {cardCopy.analyses}
             </p>
 
             <ul>
-              {planCopy[plan.id].features.map((feature) => (
+              {cardCopy.features.map((feature) => (
                 <li key={feature}>
                   <Check />
                   {feature}
@@ -499,10 +550,12 @@ export function PricingCards() {
               disabled={loadingPlan !== null}
               className="site-btn site-btn-primary site-btn-block"
             >
-              {loadingPlan === plan.id ? copy.processing : planCopy[plan.id].cta}
+              {loadingPlan === plan.id ? copy.processing : cardCopy.cta}
             </button>
+            {billingCycle === "weekly" ? <p className="site-price-fine">{weeklyCopy.note}</p> : null}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="mt-4 text-center">

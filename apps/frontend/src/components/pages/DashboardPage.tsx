@@ -77,6 +77,7 @@ const DASH_COPY = {
     seePlans: 'See plans & subscribe',
     later: 'Maybe later',
     perMonth: '/mo',
+    weeklyOption: 'Or start with one week: $7.99 for 25 analyses.',
   },
   pt: {
     planActivatedTitle: 'Plano ativado!',
@@ -108,6 +109,7 @@ const DASH_COPY = {
     seePlans: 'Ver planos e assinar',
     later: 'Continuar depois',
     perMonth: '/mês',
+    weeklyOption: 'Ou comece com uma semana: US$ 7,99 por 25 análises.',
   },
 } as const;
 import officialIcon from "@/assets/tickrify-icon-official.png";
@@ -180,7 +182,7 @@ const DashboardPage = () => {
   // saldo so crescia, entao eles precisam ser avisados. Uma vez por navegador,
   // so para assinante, e so ate o fim de outubro (depois vira regra conhecida).
   useEffect(() => {
-    if (isDemo || isPlanLoading || plan === 'free') return;
+    if (isDemo || isPlanLoading || plan === 'free' || plan === 'weekly') return;
     if (Date.now() > Date.UTC(2026, 9, 31, 23, 59)) return;
     const key = 'tickrify_notice_monthly_allowance_v1';
     try {
@@ -509,7 +511,12 @@ const DashboardPage = () => {
   // (`locked_value`) ou o CTA no resultado da ultima gratis (`last_free_result`).
   // Os dois abrem o MESMO checkout: foi o paywall que converteu 12 de 12 em
   // setembro, e 15 de 27 pessoas que usaram a 3a gratis nunca chegaram a ve-lo.
-  const startCheckout = useCallback(async (source: 'locked_value' | 'last_free_result') => {
+  // `cycle`: o semanal (US$ 7,99, 25 ticks) sai sem o EARLY35, que e do
+  // primeiro MES; o servidor tambem descarta o cupom nesse caso.
+  const startCheckout = useCallback(async (
+    source: 'locked_value' | 'last_free_result',
+    cycle: 'monthly' | 'weekly' = 'monthly',
+  ) => {
     if (unlockPending) return;
     setUnlockPending(true);
     try {
@@ -524,9 +531,10 @@ const DashboardPage = () => {
       // pagava igual e recebia 50 ticks a menos que quem passou pelo /pricing.
       // A moeda é USD fixo: o `detectCurrency` daqui mandava navegador pt-BR
       // para o price BRL congelado em jun/2026.
-      track('upgrade_clicked', { source, coupon: 'EARLY35' });
-      const { url, sessionId } = await createCheckoutSession('starter', token, 'monthly', 'usd', 'EARLY35', source);
-      track('checkout_started', { plan: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35', source, sessionId });
+      const coupon = cycle === 'weekly' ? undefined : 'EARLY35';
+      track('upgrade_clicked', { source, cycle, coupon: coupon ?? null });
+      const { url, sessionId } = await createCheckoutSession('starter', token, cycle, 'usd', coupon, source);
+      track('checkout_started', { plan: 'starter', billingCycle: cycle, currency: 'usd', coupon: coupon ?? null, source, sessionId });
       window.location.href = url;
     } catch (error) {
       // Este catch era silencioso: a falha virava um desvio para /pricing sem
@@ -554,6 +562,7 @@ const DashboardPage = () => {
   }, [unlockPending, getToken, navigate, toast, dc]);
 
   const handleUnlockCheckout = useCallback(() => void startCheckout('locked_value'), [startCheckout]);
+  const handleUnlockWeekly = useCallback(() => void startCheckout('locked_value', 'weekly'), [startCheckout]);
 
   // A pessoa VIU a oferta depois da ultima gratis? Uma vez por analise. Sem
   // isto so dava para medir o clique, nunca quem viu e ignorou.
@@ -1181,7 +1190,13 @@ const DashboardPage = () => {
         );
       }
       case 'locked':
-        return <LockedAnalysis onUnlock={handleUnlockCheckout} unlockPending={unlockPending} />;
+        return (
+          <LockedAnalysis
+            onUnlock={handleUnlockCheckout}
+            onUnlockWeekly={handleUnlockWeekly}
+            unlockPending={unlockPending}
+          />
+        );
       case 'loading':
         return <AnalysisLoading chart={uploadedImage} />;
       case 'error':
@@ -1465,6 +1480,8 @@ const DashboardPage = () => {
               </div>
             ))}
           </div>
+
+          <p className="text-center text-xs text-muted-foreground">{dc.weeklyOption}</p>
 
           <DialogFooter className="sm:flex-col gap-2">
             <Button className="w-full" onClick={goToPricing}>

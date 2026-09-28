@@ -20,7 +20,8 @@ import {
   getStripeConfig,
   getPriceId,
   resolvePlanForPriceId,
-  monthlyTicksForPriceId,
+  allowanceForPriceId,
+  allowanceCadenceForPriceId,
   allowanceWindowStart,
   PlanType,
   BillingCycle,
@@ -286,6 +287,9 @@ export class StripeService implements OnModuleInit {
       // Cupom esgotado ou expirado nao vai para a sessao: a vitrine ja parou de
       // anuncia-lo, e a sessao sem ele abre de primeira em vez de depender do
       // fallback de erro mais abaixo.
+      // EARLY35 e "35% no primeiro MES": no semanal viraria 35% da primeira
+      // semana, o que nenhuma pagina promete. O semanal sai sem ele.
+      if (billingCycle === 'weekly') couponId = undefined;
       if (couponId === FOUNDING_COUPON_ID && !(await this.getFoundingOffer()).active) {
         this.logger.warn(`[stripe] ${FOUNDING_COUPON_ID} sem usos ou expirado; checkout sem desconto.`);
         couponId = undefined;
@@ -407,7 +411,9 @@ export class StripeService implements OnModuleInit {
         success_url: successUrl,
         cancel_url: cancelUrl,
         client_reference_id: user.id,
-        billing_address_collection: 'required',
+        // 'auto': a Stripe pede so o que o cartao exige (pais, as vezes CEP).
+        // 'required' abria o formulario de endereco inteiro no celular.
+        billing_address_collection: 'auto',
         // SEM trial: o "grátis" do Tickrify são as 3 análises gratuitas (freemium
         // de uso). Um trial de tempo por cima seria redundante — não dá ticks a
         // mais, só adiaria a receita e abriria churn involuntário. Cobra já; o
@@ -1534,13 +1540,17 @@ export class StripeService implements OnModuleInit {
     source: 'invoice_webhook' | 'lazy_sync' | 'access_check',
     now = new Date(),
   ): Promise<boolean> {
-    const allowance = monthlyTicksForPriceId(subscription.priceId);
+    const allowance = allowanceForPriceId(subscription.priceId);
     if (allowance <= 0) {
       this.logger.warn(`[Ticks] priceId ${subscription.priceId} nao mapeado a nenhum plano; saldo intocado.`);
       return false;
     }
 
-    const windowStart = allowanceWindowStart(subscription.periodStart, now);
+    const windowStart = allowanceWindowStart(
+      subscription.periodStart,
+      now,
+      allowanceCadenceForPriceId(subscription.priceId),
+    );
     const key = `allowance:${subscription.stripeId}:${windowStart.toISOString().slice(0, 10)}`;
 
     // Caminho de toda analise: uma consulta pela chave unica e acabou.
@@ -1566,7 +1576,7 @@ export class StripeService implements OnModuleInit {
             // o teto volta para ele). O historico continua somando certo.
             amount: allowance - previous,
             type: 'BONUS',
-            description: `Monthly allowance: saldo definido em ${allowance} Ticks`,
+            description: `Allowance: saldo definido em ${allowance} Ticks`,
             stripePaymentIntentId: key,
             metadata: {
               source,

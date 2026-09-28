@@ -32,7 +32,7 @@ const PRICING_COPY = {
       },
       {
         q: 'How do Ticks work?',
-        a: 'Ticks are Tickrify’s analysis credits. Each plan renews your Ticks automatically every month. A quick analysis uses 1 Tick; a deep analysis uses 3 Ticks.',
+        a: 'Ticks are Tickrify’s analysis credits. The monthly plan resets your balance to 200 Ticks every billing month, and the weekly plan ($7.99) resets it to 25 Ticks every week. A quick analysis uses 1 Tick; a deep analysis uses 3 Ticks.',
       },
       {
         q: 'Can I switch plans later?',
@@ -74,7 +74,7 @@ const PRICING_COPY = {
       },
       {
         q: 'Como funcionam os Ticks?',
-        a: 'Ticks são os créditos de análise da Tickrify. Cada plano renova automaticamente seus Ticks todo mês. Uma análise rápida consome 1 Tick; uma análise deep consome 3 Ticks.',
+        a: 'Ticks são os créditos de análise da Tickrify. O plano mensal volta seu saldo para 200 Ticks a cada mês de cobrança, e o plano semanal (US$ 7,99) volta para 25 Ticks toda semana. Uma análise rápida consome 1 Tick; uma análise deep consome 3 Ticks.',
       },
       {
         q: 'Posso trocar de plano depois?',

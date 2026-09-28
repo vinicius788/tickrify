@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { apiClient } from '@/lib/api';
 
-export type UserPlan = 'free' | 'starter' | 'pro' | 'elite';
+export type UserPlan = 'free' | 'starter' | 'pro' | 'elite' | 'weekly';
 
 interface AnalysisLimitData {
   total: number;
@@ -88,7 +88,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
 
       const usage = await fetchUsageShared(token);
 
-      const validPlans: UserPlan[] = ['free', 'starter', 'pro', 'elite'];
+      const validPlans: UserPlan[] = ['free', 'starter', 'pro', 'elite', 'weekly'];
       setUserPlan(validPlans.includes(usage.plan as UserPlan) ? (usage.plan as UserPlan) : 'free');
       setBackendUnlimited(Boolean(usage.isUnlimited));
       setAnalysisCount(usage.used);

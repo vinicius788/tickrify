@@ -263,8 +263,9 @@ export interface CreateAnalysisPayload {
 }
 
 export interface AnalysisUsageResponse {
-  plan: 'free' | 'pro';
-  period: 'monthly';
+  /** 'free' ou o plano do assinante (starter, weekly, e os legados pro/elite). */
+  plan: string;
+  period: 'monthly' | 'weekly';
   periodStart: string;
   total: number | null;
   used: number;
