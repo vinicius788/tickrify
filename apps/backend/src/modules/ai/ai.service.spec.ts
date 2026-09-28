@@ -448,6 +448,11 @@ describe('AiService access enforcement', () => {
       await service.setOutcome('usr_1', 'an_1', { outcome: 'tp1', pnlAmount: 0 });
       expect(valuesOfUpdate()[2]).toBe(0);
     });
+
+    it('entrada nao atingida (no_fill) e gravada como veredito', async () => {
+      await service.setOutcome('usr_1', 'an_1', { outcome: 'no_fill' });
+      expect(valuesOfUpdate()[0]).toBe('no_fill');
+    });
   });
 
   // ── listAnalysesInRange (Diario) ──────────────────────────────────────────────

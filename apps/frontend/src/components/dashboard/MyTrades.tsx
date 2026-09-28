@@ -310,7 +310,8 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
       else if (v === 'SL') losses += 1;
       else if (v === 'OPEN') open += 1;
       // Aguardar (WAIT/HOLD) nao e operacao: nunca fica "pendente" de resultado.
-      else if (isTradeCall(a.recommendation)) pending += 1;
+      // Entrada nao atingida tambem nao: nao houve trade, nao entra em nada.
+      else if (v === null && isTradeCall(a.recommendation)) pending += 1;
       const rr = Number((a as unknown as Record<string, unknown>).riskRewardTp2 ?? (a as unknown as Record<string, unknown>).riskRewardTp1);
       if (Number.isFinite(rr) && rr > 0) { rrSum += rr; rrCount += 1; }
     }
@@ -417,6 +418,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
               <option value="TP2">{tr.tp2Hit}</option>
               <option value="SL">{tr.slHit}</option>
               <option value="OPEN">{tr.open}</option>
+              <option value="NO_FILL">{tr.noFill}</option>
             </select>
           </div>
         </div>
@@ -673,6 +675,15 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                             style={{ color: verdict === 'OPEN' ? VERDICT_CFG.OPEN.text : 'var(--text-secondary)' }}
                           >
                             {verdict === 'OPEN' ? `● ${tr.open}` : tr.markOpen}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleVerdict(a, verdict === 'NO_FILL' ? null : 'NO_FILL')}
+                            aria-pressed={verdict === 'NO_FILL'}
+                            className="transition-colors hover:text-[var(--text-primary)]"
+                            style={{ color: verdict === 'NO_FILL' ? VERDICT_CFG.NO_FILL.text : 'var(--text-secondary)' }}
+                          >
+                            {verdict === 'NO_FILL' ? `● ${tr.noFill}` : tr.noFill}
                           </button>
                           {verdict !== null && (
                             <button

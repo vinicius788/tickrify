@@ -314,6 +314,7 @@ export default {
     noTradeHint: 'Attendre n’est pas un trade. Rien à marquer.',
     clearResult: 'Effacer le résultat',
     markOpen: 'Toujours ouverte',
+    noFill: 'Entrée non atteinte',
     logTitle: 'Enregistrez le résultat',
     logDesc: 'Indiquez ce que ce trade a gagné ou perdu. Votre P&L réel se construit ici, trade après trade.',
     amountLabel: 'Montant',

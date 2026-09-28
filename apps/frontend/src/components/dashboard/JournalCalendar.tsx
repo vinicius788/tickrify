@@ -109,6 +109,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
   // que registrar, mesma regra do My Trades (isTradeCall em lib/verdict.ts).
   const verdictLabel = (v: Verdict, recommendation: unknown): string =>
     v === 'TP1' ? tr.tp1Hit : v === 'TP2' ? tr.tp2Hit : v === 'SL' ? tr.slHit : v === 'OPEN' ? tr.open
+      : v === 'NO_FILL' ? tr.noFill
       : isTradeCall(recommendation) ? j.noResult : tr.noTrade;
 
   const navBtn =

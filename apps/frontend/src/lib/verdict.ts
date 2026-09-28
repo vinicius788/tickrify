@@ -14,7 +14,12 @@
 
 import { getRecommendationMeta } from '@/lib/trading-ui';
 
-export type Verdict = 'TP1' | 'TP2' | 'SL' | 'OPEN' | null;
+/**
+ * `NO_FILL` = o preco nunca chegou na entrada proposta (28/09/2026, pedido do
+ * dono). Fecha a cobranca, mas nao e trade: fica fora do win rate e do P&L,
+ * igual ao WAIT. Diferente de "Did not take it", que so apaga a marcacao.
+ */
+export type Verdict = 'TP1' | 'TP2' | 'SL' | 'OPEN' | 'NO_FILL' | null;
 
 /**
  * A analise propos uma operacao? BUY/SELL sim; WAIT/HOLD nao (24/09/2026,
@@ -33,6 +38,7 @@ export function verdictFromOutcome(o: unknown): Verdict {
     case 'tp2': return 'TP2';
     case 'stop': return 'SL';
     case 'open': return 'OPEN';
+    case 'no_fill': return 'NO_FILL';
     default: return null;
   }
 }
@@ -44,6 +50,7 @@ export function outcomeFromVerdict(v: Verdict): string | null {
     case 'TP2': return 'tp2';
     case 'SL': return 'stop';
     case 'OPEN': return 'open';
+    case 'NO_FILL': return 'no_fill';
     default: return null;
   }
 }
@@ -84,6 +91,7 @@ export const VERDICT_CFG = {
   TP2:  { bg: 'rgba(0,200,80,0.12)',    border: 'rgba(0,200,80,0.4)',   text: '#00C850' },
   SL:   { bg: 'rgba(255,68,68,0.12)',   border: 'rgba(255,68,68,0.4)',  text: '#FF4444' },
   OPEN: { bg: 'rgba(120,120,180,0.10)', border: 'rgba(120,120,180,0.3)', text: '#9999CC' },
+  NO_FILL: { bg: 'rgba(140,140,140,0.10)', border: 'rgba(140,140,140,0.3)', text: '#A0A0A0' },
 } as const;
 
 // ── Cobrança do fechamento (bloco do dashboard) ────────────────────────────

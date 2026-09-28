@@ -314,6 +314,7 @@ export default {
     noTradeHint: 'A wait call is not a trade. Nothing to mark.',
     clearResult: 'Clear result',
     markOpen: 'Still open',
+    noFill: 'Entry not reached',
     logTitle: 'Log the result',
     logDesc: 'Add what this trade made or lost. Your real P&L builds here, one trade at a time.',
     amountLabel: 'Amount',

@@ -314,6 +314,7 @@ export default {
     noTradeHint: '様子見は取引ではありません。記録するものはありません。',
     clearResult: '結果をクリア',
     markOpen: '保有中',
+    noFill: 'エントリー未到達',
     logTitle: '結果を記録',
     logDesc: 'このトレードの損益額を入力しましょう。実際のP&Lがトレードごとにここに積み上がります。',
     amountLabel: '金額',

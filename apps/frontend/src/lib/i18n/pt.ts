@@ -325,6 +325,7 @@ export default {
     noTradeHint: 'Aguardar não é operação. Não há o que marcar.',
     clearResult: 'Limpar resultado',
     markOpen: 'Ainda aberta',
+    noFill: 'Entrada não atingida',
     logTitle: 'Registre o resultado',
     logDesc: 'Coloque quanto essa operação rendeu ou perdeu. Seu P&L real se monta aqui, trade por trade.',
     amountLabel: 'Valor',

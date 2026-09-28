@@ -784,7 +784,7 @@ export class AiService implements OnModuleInit {
       );
     }
 
-    const VALID = ['tp1', 'tp2', 'stop', 'breakeven', 'open'];
+    const VALID = ['tp1', 'tp2', 'stop', 'breakeven', 'open', 'no_fill'];
     const outcome = input.outcome && VALID.includes(input.outcome) ? input.outcome : null;
     // `Number(null)` e 0, entao "sem valor" virava 0 gravado (um trade sem valor
     // aparecia como +0.00 e entrava na soma do Diario). Vazio fica vazio.

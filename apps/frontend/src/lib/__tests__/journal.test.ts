@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildMonthGrid, dayKey, monthRange, summarizeByDay, weekStartFor } from '@/lib/journal';
-import type { Verdict } from '@/lib/verdict';
+import { outcomeFromVerdict, verdictFromOutcome, type Verdict } from '@/lib/verdict';
 
 type Row = { id: string; createdAt: string; verdict: Verdict; pnl: number | null };
 const row = (id: string, createdAt: Date, verdict: Verdict, pnl: number | null = null): Row => ({
@@ -81,5 +81,18 @@ describe('journal: soma por dia', () => {
 
   it('mes vazio: tudo zerado e P&L nulo', () => {
     expect(summarize([]).totals).toEqual({ count: 0, wins: 0, losses: 0, pnl: null, activeDays: 0 });
+  });
+
+  it('entrada nao atingida conta como analise, mas nao e ganho, perda nem P&L', () => {
+    const d = new Date(2026, 8, 10, 12);
+    const { totals } = summarize([row('a', d, 'NO_FILL', 50), row('b', d, 'TP1', 20)]);
+    expect(totals).toMatchObject({ count: 2, wins: 1, losses: 0, pnl: 20 });
+  });
+});
+
+describe('verdict: entrada nao atingida', () => {
+  it('ida e volta com o valor do backend', () => {
+    expect(outcomeFromVerdict('NO_FILL')).toBe('no_fill');
+    expect(verdictFromOutcome('no_fill')).toBe('NO_FILL');
   });
 });
