@@ -117,23 +117,33 @@ export class MailService {
     await this.send(to, welcomeSubject(), renderWelcomeEmail({ appUrl: this.appUrl, firstName }), { kind: 'welcome' });
   }
 
-  /** Recuperação: créditos grátis acabaram e o usuário não assinou. */
   /**
+   * Recuperação: a cota grátis acabou e a pessoa não assinou.
+   *
    * `offer`: o cupom so entra no texto se ainda estiver ativo na Stripe.
    * Prometer desconto esgotado e cobrar cheio e exatamente o que isto evita.
+   *
+   * Texto de 29/09 (aprovado pelo dono): o anterior presumia uso ("Looks like
+   * the AI's been helping you confirm entries") e so oferecia o mensal. Agora
+   * so afirma o que e verdade para todos e mostra o semanal primeiro, porque o
+   * publico e quase todo de pais onde US$ 29 de uma vez nao fecha.
    */
   async sendRecovery(to: string, offer?: { code: string; percentOff: number | null } | null): Promise<void> {
     const oferta =
       offer && offer.percentOff
-        ? ` and keep this early-user code: <b>${offer.code}</b> (${offer.percentOff}% off your first month, then $29/month)`
+        ? `, or use code <b>${offer.code}</b> for ${offer.percentOff}% off the first month`
         : '';
+    const subject = 'Your free Tickrify analyses are used up';
     const html = this.wrap(
-      "Your analyses ran out, and your trades will not wait",
-      `You used your free analyses. Looks like the AI's been helping you confirm entries, so it makes no sense to go back to trading blind.<br><br>Subscribe for 200 analyses a month${oferta}.`,
-      'Subscribe',
+      subject,
+      `To keep getting entry, stop and targets on your charts, pick a plan:<br><br>` +
+        `<b>One week:</b> $7.99 for 25 analyses.<br>` +
+        `<b>Monthly:</b> $29 for 200 analyses${oferta}.<br><br>` +
+        `Both renew automatically and you can cancel anytime.`,
+      'See plans',
       `${this.appUrl}/pricing`,
     );
-    await this.send(to, "Your analyses ran out, and your trades will not wait", html, { kind: 'recovery' });
+    await this.send(to, subject, html, { kind: 'recovery' });
   }
 
   /**

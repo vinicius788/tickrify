@@ -77,4 +77,18 @@ describe('MailService', () => {
     expect(body.headers['List-Unsubscribe']).toBe('<https://tickrify.onrender.com/api/email/unsubscribe?u=u1&t=abc>');
     expect(body.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
   });
+
+  it('recuperacao: mostra o semanal e nao presume que a pessoa usou a IA', async () => {
+    process.env.RESEND_API_KEY = 're_test';
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '' });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await new MailService().sendRecovery('ana@example.com', null);
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.subject).toBe('Your free Tickrify analyses are used up');
+    expect(body.html).toContain('$7.99 for 25 analyses');
+    expect(body.html).not.toMatch(/confirm entries|trading blind/);
+    expect(body.html + body.subject).not.toMatch(/\u2014/);
+  });
 });
