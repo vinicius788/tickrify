@@ -255,6 +255,20 @@ describe('StripeService webhooks', () => {
       expect(created[0][3]).toEqual({ dedupeKey: 'subscription_created:sub_1', timestamp: new Date(1789000000 * 1000) });
     });
 
+    it('created marca assinante no PostHog so quando a assinatura nasce paga', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'active' }));
+      await deliver('customer.subscription.created', subscription());
+      const paid = (captureServer as jest.Mock).mock.calls.find((c) => c[1] === 'subscription_created');
+      expect(paid[2]).toEqual(expect.objectContaining({ $set: { is_subscriber: true } }));
+
+      (captureServer as jest.Mock).mockClear();
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ id: 'sub_2', status: 'incomplete' }));
+      await deliver('customer.subscription.created', subscription({ id: 'sub_2', status: 'incomplete' }), 'evt_3');
+      const declined = (captureServer as jest.Mock).mock.calls.find((c) => c[1] === 'subscription_created');
+      expect(declined).toBeDefined();
+      expect(declined[2]).not.toHaveProperty('$set');
+    });
+
     it('deleted grava canceled', async () => {
       stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'canceled' }));
 

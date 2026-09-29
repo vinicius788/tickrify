@@ -1241,8 +1241,13 @@ export class StripeService implements OnModuleInit {
           status: synced.subscription.status,
           priceId: synced.subscription.items.data[0]?.price.id ?? null,
           checkoutSource: synced.subscription.metadata?.checkoutSource ?? null,
-          // Marca a pessoa no PostHog: sem isto, assinante e gratis ficam iguais na lista de eventos.
-          $set: { is_subscriber: true },
+          // Marca a pessoa no PostHog so se a assinatura ja nasceu paga. Com o
+          // cartao recusado ela nasce `incomplete` e expira sem evento de fim
+          // (29/09: cartao recusado ficou marcado como assinante). Quem paga
+          // depois e marcado pelo `payment_succeeded`.
+          ...(['active', 'trialing'].includes(synced.subscription.status)
+            ? { $set: { is_subscriber: true } }
+            : {}),
         },
         {
           dedupeKey: `subscription_created:${synced.subscription.id}`,
