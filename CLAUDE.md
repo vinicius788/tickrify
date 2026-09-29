@@ -208,7 +208,21 @@ Vale para TODA mudanca, grande ou pequena:
   nos DOIS caminhos (`modules/mail/recovery-email.ts`), uma vez por pessoa, e nao
   para quem ja assina. A Stripe manda o e-mail de falha de pagamento (ligado
   15/09). Relatos do botao "reportar problema" vao para `support@` (teto global
-  de 20 e-mails/hora).
+  de 20 e-mails/hora). Todo envio aceito deixa `[mail] Enviado kind=<tipo>
+  id=<id Resend>` no Render (desde 29/09; antes so a falha logava).
+- **E-mails de ciclo de vida (29/09, DESLIGADOS ate o dono aprovar o texto):**
+  `modules/mail/lifecycle-email.ts`, varredura no worker a cada 15 min.
+  `activation_1` (1h a 6h apos cadastro sem analise), `activation_2` (20h a 48h),
+  `checkout_recovery` (1h a 24h apos `funnel:checkout_session_created` sem
+  assinatura; texto de recusa se houver `funnel:payment_failed`). Chaves no
+  /admin: `EMAIL_ACTIVATION_NUDGE` e `EMAIL_CHECKOUT_RECOVERY`. Desligadas, o
+  worker so loga `[lifecycle] dry-run kind=... user=...`. Uma vez por pessoa
+  (AdminAudit `lifecycle:<tipo>`), nunca para assinante nem para quem saiu
+  (`email_unsubscribed`, rota publica `/api/email/unsubscribe` com HMAC do id;
+  segredo `EMAIL_UNSUBSCRIBE_SECRET` ou, na falta, `CLERK_SECRET_KEY`). Remetente
+  `LIFECYCLE_MAIL_FROM` (padrao `Vini from Tickrify <vinicius@tickrify.com>`),
+  resposta em `LIFECYCLE_MAIL_REPLY_TO`; links de descadastro em `PUBLIC_API_URL`
+  ou `RENDER_EXTERNAL_URL`.
 - **GitHub Actions:** CI, `calendar-mirror.yml` (a cada 6h), `backup.yml` (diario,
   retencao 7 dias). O `keep-warm` foi removido em 21/09 (o Render pago nao
   hiberna). Ver pendencia de 21/09 sobre Actions parado.
@@ -294,6 +308,17 @@ Vale para TODA mudanca, grande ou pequena:
   marcado (`tags.webview`), nao descartado.
 - Pergunta de atribuicao no painel (`AcquisitionSurvey`): a primeira resposta
   vale, dispensar nao grava nada.
+- **Medir ativacao com o navegador E o servidor.** `free_analysis_started/completed`
+  so existem desde 21/09: contar so eles deu "metade dos cadastros nunca analisa"
+  quando o real era 83% (80 de 96, 29/09). Usar `analysis_started` OU
+  `free_analysis_started`, ou recortar o periodo a partir de 21/09.
+- **Paginas estaticas (blog/tools/for) medidas desde 29/09** por
+  `public/static-analytics.js` (sem biblioteca, cookieless, `$lib=tickrify-static`):
+  `$pageview`, `static_cta_clicked { href }`, `static_video_played { video }`.
+  Pagina estatica nova precisa da tag `<script src="/static-analytics.js" defer>`.
+- Eventos de 29/09: `wait_nudge_viewed/clicked`, `upgrade_video_played/completed
+  { surface }`, `example_cta_clicked`, `demo_analysis_failed { code, chart,
+  signedIn }`; checkout com `source=upgrade_modal`.
 
 ---
 
@@ -454,6 +479,11 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 29/09 | **Aprovar os 4 textos de ciclo de vida e ligar** `EMAIL_ACTIVATION_NUDGE` / `EMAIL_CHECKOUT_RECOVERY` no /admin. Antes, olhar no Render quantos `[lifecycle] dry-run` aparecem por dia. Conferir que `vinicius@tickrify.com` recebe resposta (Zoho). | dono |
+| 29/09 | **Ligar Google Pay** na Stripe (Configuracoes > Formas de pagamento > Default). Estava desligado com 75% do trafego no celular. Apple Pay e Link ligados; Adaptive Pricing ligado (NGN fora da lista da Stripe). | dono |
+| 29/09 | Texto do e-mail de recuperacao presume uso ("Looks like the AI's been helping you confirm entries") e so oferece o mensal: proposta nova entregue no chat, trocar so com aprovacao. | dono aprova, Claude troca |
+| 29/09 | Decidir se o teto de 10 analises gratis cai (ninguem passou de 5 em set/26; 65% das gratis sao WAIT e so 9 de 80 esgotaram a cota). Decisao de preco, nao mexido. | dono |
+| 29/09 | Medir 7 dias depois do deploy: `wait_nudge_clicked / wait_nudge_viewed`, 2a analise de quem tomou WAIT na 1a (era ~50%), `upgrade_video_played`, `checkout_started source=upgrade_modal`, `$pageview` com `$lib=tickrify-static` por `$pathname`. | Claude |
 | 28/09 | **Afiliados: configuracao manual na Stripe antes de divulgar.** (1) Criar cupom 10%, `duration: once`, e pôr o id em `STRIPE_AFFILIATE_COUPON_ID` no Render (sem ele: sem desconto para indicado e sem promotion code; a comissao funciona igual). (2) Marcar `charge.refunded` e `charge.dispute.created` no endpoint do webhook. (3) Afiliados que entraram ANTES do (1) ficam "sem promotion code" no admin: salvar o perfil deles de novo cria o codigo. Conferir no boot log `[affiliate] Tabelas prontas. Cupom da Stripe: configurado`. | dono |
 | 24/09 | **Medir o WAIT% do prompt v7.5** por versao: `select "promptVer", count(*), round(100.0*avg((recommendation='WAIT')::int)) pct_wait from tickrify."Analysis" where status='completed' and model='gpt-5.6-luna' group by 1 order by 1;` Alvo 35 a 55%. Abaixo de 25%: olhar o win rate da `/accuracy` antes de qualquer coisa. Rollback = `git revert` do commit (o sync publica a volta). | dono roda o SQL, Claude le |
 | 24/09 | Comentario do `schema.prisma` diz que a imagem "nao e mais salva": errado, a print e salva no Supabase Storage. Corrigir na proxima mudanca de schema. Evento candidato no funil: `trade_result_logged`. | Claude |
@@ -464,7 +494,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 | 21/09 | Abertos nao criticos: preflight CORS de origem desconhecida responde 500 em vez de negar; drift cosmetico entre migracoes e schema. | Claude |
 | 21/09 | Env vars no Render sem leitor no codigo (dono decide remover): `ALLOW_UNAUTHENTICATED`, `CLERK_PUBLISHABLE_KEY`, `CLERK_WEBHOOK_SECRET`, `FREE_ANALYSIS_LIMIT_PER_MONTH`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_PRO_MONTHLY`, `SUPABASE_ANON_KEY`, `SUPABASE_JWT_SECRET`, `VITE_GOOGLE_ADS_ID`. | dono |
 | 21/09 | Trocar o e-mail de suporte para `support@tickrify.com` nos dados publicos da Stripe (recibo e checkout) e no Clerk. | dono |
-| 21/09 | Checkout: de 13 a 20/09, ~11 sessoes abertas e 0 cartao submetido (fluxo conferido, NAO esta quebrado). Cruzar os clientes perdidos com pais no PostHog. Sessoes duplicadas no mesmo segundo sugerem `handleUpgrade` rodando 2x apos o login. E-mail proprio de checkout abandonado via Resend: caminho mapeado, NAO feito (decisao do dono). | Claude / dono |
+| 21/09 | Checkout: 15 a 29/09, 12 pessoas abriram, 11 nunca enviaram cartao, 1 recusa (`do_not_honor`). E-mail de checkout abandonado feito e DESLIGADO (29/09, ver 3.1). Sessoes duplicadas no mesmo segundo sugerem `handleUpgrade` rodando 2x apos o login. | Claude / dono |
 | 21/09 | Conferir se o endpoint do webhook tem `payment_intent.payment_failed` e `checkout.session.expired` marcados (sem eles, recusa e abandono nao aparecem no `[funnel]`). Conferir no boot log se `📣 Meta CAPI` esta ON (`META_PIXEL_ID` + `META_CAPI_ACCESS_TOKEN`). | dono / Claude |
 | 15/09 | **40% das tentativas de assinatura foram recusadas por falta de saldo** (codigo 51). Decidir entre preco regional, mirar geo de maior renda, ou nada, usando o dado de origem do `AcquisitionSurvey`. | dono |
 | 15/09 | O link do e-mail de falha de pagamento da Stripe aponta para a home. Trocar para "pagina hospedada da Stripe" e IRREVERSIVEL (a Stripe avisa). | dono |
@@ -518,6 +548,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **29/09 (PostHog assinante):** `subscription_created` so marca `is_subscriber: true` quando a assinatura nasce `active`/`trialing`; cartao recusado nasce `incomplete` e nao marca (quem paga depois e marcado pelo `payment_succeeded`). Os 3 assinantes reais foram marcados a mao no PostHog.
 - **29/09 (rastreio do pagante):** todo evento do navegador leva `plan`, `billing_cycle` e `is_subscriber` (super propriedade vinda do /usage, que agora devolve `billingCycle`). Backend emite `paid_analysis_started { analysisType, ticksCost, ticksLeft, plan, billingCycle }` (e grava `plan`, `billing_cycle`, `ticks_left`, `last_paid_analysis_at` no perfil), `trade_outcome_set` e `strategy_saved` (`common/analytics/user-activity.ts`). Navegador: `feature_opened { feature }` para My Trades/Journal/Strategy; `analysis_completed` passou a mandar par e timeframe de verdade. Painel "Assinantes" no PostHog (dashboard 2149207) le tudo isso.
 - **29/09 (demos em video):** `/blog/how-tickrify-works/` com os 5 filmes (01 conceito, 02 fluxo, 03 WAIT, 04 multi-timeframe, 05 celular, com versao vertical no mobile), comprimidos para ~1 MB cada, carregam so ao entrar na tela. VideoObject + FAQPage em JSON-LD; entrou no indice do blog, sitemap e llms.txt. CTAs com `utm_campaign=demo_videos`.
+- **29/09 (conversao):** varredura do funil (ativacao real 83%, nao 48%: evento do servidor so desde 21/09; 53 de 80 tomaram WAIT na 1a analise; 11 de 12 checkouts sem cartao; Google Pay desligado). Barra no topo do resultado WAIT para o gratis ("nao gastou, restam N", outro grafico, video do WAIT). Paywall com texto honesto (dizia "Your read is ready" sem analise nenhuma), preco do 1o mes, semanal em botao e filme 04; janela de upgrade com checkout direto mensal/semanal e filme 04 (`source=upgrade_modal`). Exemplo em um clique para quem nunca analisou (`POST /api/demo/example`, autenticado, hash do grafico, 1 vez por conta, fora da cota/historico/accuracy; o /try roda sozinho com `?example=1`). E-mails de ciclo de vida desligados + descadastro. PostHog nas 22 paginas estaticas. `demo_analysis_failed`. Log de sucesso de todo e-mail. Emoji do resultado removido.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

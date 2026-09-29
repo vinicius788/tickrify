@@ -321,7 +321,7 @@ describe('DashboardPage', () => {
       expect(createAnalysis).toHaveBeenCalledTimes(1);
       expect(screen.getByText('Suas análises grátis foram utilizadas.')).toBeTruthy();
       expect(screen.getByRole('button', { name: /Assinar para continuar/ })).toBeTruthy();
-      expect(screen.queryByText(/Unlock to see it/)).toBeNull();
+      expect(screen.queryByText(/Your free trade calls are used up/)).toBeNull();
     });
 
     it('com a cota esgotada, a proxima tentativa cai direto no paywall sem chamar a API', async () => {
@@ -334,8 +334,71 @@ describe('DashboardPage', () => {
       await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
       await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
 
-      expect(await screen.findByText(/Unlock to see it/)).toBeTruthy();
+      expect(await screen.findByText(/Your free trade calls are used up/)).toBeTruthy();
       expect(createAnalysis).not.toHaveBeenCalled();
+    });
+
+    it('WAIT no gratis: a barra do topo diz que nao gastou e leva a outro grafico', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockImplementation(() => freeLimit(1));
+      mockUseAPIClient.mockReturnValue(
+        makeApiClient({
+          createAnalysis: vi.fn().mockResolvedValue({ id: 'a-w', status: 'pending' }),
+          waitForAnalysisCompletion: vi.fn().mockResolvedValue({ id: 'a-w', status: 'completed', recommendation: 'WAIT' }),
+        }),
+      );
+
+      renderDashboard();
+      await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+      await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+      expect(await screen.findByText('Este WAIT não gastou uma análise com entrada. Você ainda tem 2 de 3.')).toBeTruthy();
+      expect(mockTrack).toHaveBeenCalledWith('wait_nudge_viewed', { freeRemaining: 2 });
+
+      await user.click(screen.getByRole('button', { name: /Analisar outro gráfico/ }));
+      expect(mockTrack).toHaveBeenCalledWith('wait_nudge_clicked', { freeRemaining: 2 });
+      expect(screen.getAllByRole('button', { name: 'start-with-image' }).length).toBeGreaterThan(0);
+    });
+
+    it('BUY no gratis nao mostra a barra do WAIT', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockImplementation(() => freeLimit(1));
+      mockUseAPIClient.mockReturnValue(
+        makeApiClient({
+          createAnalysis: vi.fn().mockResolvedValue({ id: 'a-b', status: 'pending' }),
+          waitForAnalysisCompletion: vi.fn().mockResolvedValue({ id: 'a-b', status: 'completed', recommendation: 'BUY' }),
+        }),
+      );
+
+      renderDashboard();
+      await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+      await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+      expect(await screen.findByText('Analysis result')).toBeTruthy();
+      expect(screen.queryByText(/Este WAIT não gastou/)).toBeNull();
+    });
+
+    it('paywall nao afirma que existe uma analise pronta do grafico', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockImplementation(() => freeLimit(3));
+      mockUseAPIClient.mockReturnValue(makeApiClient({ createAnalysis: vi.fn() }));
+
+      renderDashboard();
+      await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+      await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+      expect(await screen.findByText(/Your free trade calls are used up/)).toBeTruthy();
+      expect(screen.queryByText(/is ready/i)).toBeNull();
+      expect(screen.queryByText(/calculated for this chart/i)).toBeNull();
+      expect(screen.getByRole('button', { name: /one week: \$7\.99/ })).toBeTruthy();
+    });
+
+    it('quem nunca analisou ve o exemplo em um clique', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockImplementation(() => freeLimit(0));
+      renderDashboard();
+      await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+      expect(await screen.findByRole('button', { name: /Testar com um gráfico de exemplo/ })).toBeTruthy();
     });
 
     it('se o contador do navegador estiver defasado, o 403 do backend tambem leva ao paywall', async () => {
@@ -351,7 +414,7 @@ describe('DashboardPage', () => {
       await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
       await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
 
-      expect(await screen.findByText(/Unlock to see it/)).toBeTruthy();
+      expect(await screen.findByText(/Your free trade calls are used up/)).toBeTruthy();
     });
   });
   // ── Cobranca de trades em aberto (25/09/2026) ─────────────────────────────

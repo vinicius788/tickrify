@@ -38,3 +38,11 @@ export class DemoStatusDto {
   @MaxLength(128)
   fingerprint!: string;
 }
+
+/** Analise do grafico de exemplo por quem ja tem conta (so o idioma; a imagem vem como arquivo). */
+export class ExampleAnalyzeDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  userLanguage?: string;
+}

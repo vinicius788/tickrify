@@ -57,4 +57,24 @@ describe('MailService', () => {
 
     await expect(new MailService().sendWelcome('ana@example.com')).resolves.toBeUndefined();
   });
+
+  it('ciclo de vida: sai em nome do fundador e com descadastro de um clique', async () => {
+    process.env.RESEND_API_KEY = 're_test';
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '{"id":"re_1"}' });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const ok = await new MailService().sendLifecycle('ana@example.com', {
+      kind: 'activation_1',
+      subject: 'S',
+      html: '<p>x</p>',
+      unsubscribeUrl: 'https://tickrify.onrender.com/api/email/unsubscribe?u=u1&t=abc',
+    });
+
+    expect(ok).toBe(true);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.from).toBe('Vini from Tickrify <vinicius@tickrify.com>');
+    expect(body.reply_to).toBe('vinicius@tickrify.com');
+    expect(body.headers['List-Unsubscribe']).toBe('<https://tickrify.onrender.com/api/email/unsubscribe?u=u1&t=abc>');
+    expect(body.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
+  });
 });

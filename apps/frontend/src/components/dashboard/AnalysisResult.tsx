@@ -973,8 +973,8 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
               <span className="text-[var(--text-secondary)]">{confidenceLabel}</span>
             </span>
             {calWinRate !== null && calSample >= 3 && (
-              <span className="whitespace-nowrap" title="Taxa de acerto histórica de setups semelhantes (sua) ">
-                📊 <span className="text-[var(--text-secondary)]">{r.history}</span>{' '}
+              <span className="whitespace-nowrap" title="Your historical hit rate on similar setups">
+                <span className="text-[var(--text-secondary)]">{r.history}</span>{' '}
                 <strong className={`font-terminal font-semibold ${calWinRate >= 50 ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'}`}>{calWinRate}%</strong>{' '}
                 <span className="text-[var(--text-secondary)]">{r.hitRate} ({calSample})</span>
               </span>

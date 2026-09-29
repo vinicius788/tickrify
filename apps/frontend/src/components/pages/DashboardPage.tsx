@@ -42,7 +42,9 @@ import { useTicks } from "@/hooks/useTicks";
 import { track, trackAdConversion } from "@/lib/analytics";
 import { CheckoutError, createCheckoutSession, getCheckoutStatus } from "@/lib/stripe";
 import { checkoutReturnPath, loadCheckoutIntent } from "@/lib/checkoutIntent";
-import { PLANS } from "@/components/pricing/PricingCards";
+import { useFoundingOffer } from "@/hooks/useFoundingOffer";
+import UpgradeVideo from "../dashboard/UpgradeVideo";
+import { EXAMPLE_USED_KEY } from "@/lib/demo-api";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
 // PT quando o idioma for português. Contido neste arquivo (sem mexer nos 6 locales).
@@ -73,11 +75,21 @@ const DASH_COPY = {
     demoMode: 'Demo mode: exploring the interface without login',
     demoLogin: 'Log in for real analyses',
     choosePlan: 'Choose your plan',
-    planSub: 'Monthly ticks, renewed automatically. No surprises.',
-    seePlans: 'See plans & subscribe',
+    planSub: 'Start with one week or go monthly. Cancel anytime.',
     later: 'Maybe later',
     perMonth: '/mo',
-    weeklyOption: 'Or start with one week: $7.99 for 25 analyses.',
+    modalMonthly: 'Monthly, 200 analyses',
+    modalMonthlyOffer: '{price} first month, then $29/month',
+    modalWeekly: 'One week, 25 analyses',
+    modalCompare: 'Compare all plans',
+    modalVideoCaption: 'What subscribers get: the entry chart plus up to two higher timeframes, read as one market. 20 seconds.',
+    waitNudge: 'This WAIT did not use a trade call. You still have {left} of {limit}.',
+    waitNudgeHint: 'Try another pair or a different timeframe.',
+    waitNudgeCta: 'Analyze another chart',
+    waitNudgeWhy: 'Why WAIT? (22 s video)',
+    exampleTitle: 'No chart at hand?',
+    exampleDesc: 'Run a real analysis on an example gold chart in one click. It does not use your free analyses.',
+    exampleCta: 'Try it with an example chart',
   },
   pt: {
     planActivatedTitle: 'Plano ativado!',
@@ -105,11 +117,21 @@ const DASH_COPY = {
     demoMode: 'Modo Demonstração: explorando a interface sem login',
     demoLogin: 'Fazer Login para Análises Reais',
     choosePlan: 'Escolha seu plano',
-    planSub: 'Ticks mensais renovados automaticamente. Sem surpresas.',
-    seePlans: 'Ver planos e assinar',
+    planSub: 'Comece com uma semana ou vá de mensal. Cancele quando quiser.',
     later: 'Continuar depois',
     perMonth: '/mês',
-    weeklyOption: 'Ou comece com uma semana: US$ 7,99 por 25 análises.',
+    modalMonthly: 'Mensal, 200 análises',
+    modalMonthlyOffer: '{price} no primeiro mês, depois US$ 29/mês',
+    modalWeekly: 'Uma semana, 25 análises',
+    modalCompare: 'Comparar todos os planos',
+    modalVideoCaption: 'O que o assinante recebe: o gráfico de entrada mais até dois tempos maiores, lidos como um mercado só. 20 segundos.',
+    waitNudge: 'Este WAIT não gastou uma análise com entrada. Você ainda tem {left} de {limit}.',
+    waitNudgeHint: 'Tente outro par ou outro tempo gráfico.',
+    waitNudgeCta: 'Analisar outro gráfico',
+    waitNudgeWhy: 'Por que WAIT? (vídeo de 22 s)',
+    exampleTitle: 'Sem gráfico à mão?',
+    exampleDesc: 'Rode uma análise real num gráfico de ouro de exemplo, em um clique. Não gasta suas análises grátis.',
+    exampleCta: 'Testar com um gráfico de exemplo',
   },
 } as const;
 import officialIcon from "@/assets/tickrify-icon-official.png";
@@ -140,8 +162,9 @@ const DashboardPage = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
   const dc = language === 'pt' ? DASH_COPY.pt : DASH_COPY.en;
-  // Produto global: preços sempre em USD, independente do idioma do site.
-  const modalCurrency = 'usd' as const;
+  // Preço do 1º mês com o EARLY35, só quando a Stripe diz que o cupom está ativo.
+  const foundingOffer = useFoundingOffer();
+  const modalFirstMonth = foundingOffer?.percentOff ? (29 * (1 - foundingOffer.percentOff / 100)).toFixed(2) : null;
   const [activeView, setActiveView] = useState<View>('dashboard');
 
   // O dashboard troca de tela sem trocar de rota, então o ScrollToTopOnRouteChange
@@ -498,6 +521,20 @@ const DashboardPage = () => {
     setAutoRoutedNewUser(true);
   }, [autoRoutedNewUser, isDemo, user, loadingAnalyses, rawAnalyses]);
 
+  const exampleAlreadyUsed = useMemo(() => {
+    try {
+      return localStorage.getItem(EXAMPLE_USED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }, []);
+  const showExampleCta =
+    !isDemo &&
+    Boolean(user) &&
+    !exampleAlreadyUsed &&
+    !loadingAnalyses &&
+    !rawAnalyses.some((a) => a.status === 'completed');
+
   // Usar dados demo ou reais dependendo do modo
   const displayRecentAnalyses = isDemo ? demoRecentAnalyses : recentAnalyses;
 
@@ -521,7 +558,7 @@ const DashboardPage = () => {
   // `cycle`: o semanal (US$ 7,99, 25 ticks) sai sem o EARLY35, que e do
   // primeiro MES; o servidor tambem descarta o cupom nesse caso.
   const startCheckout = useCallback(async (
-    source: 'locked_value' | 'last_free_result',
+    source: 'locked_value' | 'last_free_result' | 'upgrade_modal',
     cycle: 'monthly' | 'weekly' = 'monthly',
   ) => {
     if (unlockPending) return;
@@ -570,6 +607,10 @@ const DashboardPage = () => {
 
   const handleUnlockCheckout = useCallback(() => void startCheckout('locked_value'), [startCheckout]);
   const handleUnlockWeekly = useCallback(() => void startCheckout('locked_value', 'weekly'), [startCheckout]);
+  // Janela de upgrade: checkout direto, como no paywall. Antes o unico botao
+  // levava para a /pricing (um passo a mais) e so mostrava o mensal de US$ 29.
+  const handleModalMonthly = useCallback(() => void startCheckout('upgrade_modal'), [startCheckout]);
+  const handleModalWeekly = useCallback(() => void startCheckout('upgrade_modal', 'weekly'), [startCheckout]);
 
   // A pessoa VIU a oferta depois da ultima gratis? Uma vez por analise. Sem
   // isto so dava para medir o clique, nunca quem viu e ignorou.
@@ -582,6 +623,18 @@ const DashboardPage = () => {
     lastFreeCtaSeenFor.current = key;
     track('upgrade_cta_viewed', { source: 'last_free_result' });
   }, [activeView, isDemo, isUnlimited, remaining, lastAnalysisId]);
+  // Barra do WAIT (topo do resultado): vista uma vez por analise.
+  const isWaitResult = ['WAIT', 'HOLD'].includes(String(analysisData?.recommendation || '').toUpperCase());
+  const waitNudgeSeenFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeView !== 'analysis-result' || isDemo || isUnlimited || !isWaitResult) return;
+    if (!Number.isFinite(remaining) || remaining <= 0) return;
+    const key = lastAnalysisId || 'unknown';
+    if (waitNudgeSeenFor.current === key) return;
+    waitNudgeSeenFor.current = key;
+    track('wait_nudge_viewed', { freeRemaining: remaining });
+  }, [activeView, isDemo, isUnlimited, isWaitResult, remaining, lastAnalysisId]);
+
   const handleLastFreeCheckout = useCallback(() => {
     track('upgrade_cta_clicked', { source: 'last_free_result', destination: 'checkout' });
     void startCheckout('last_free_result');
@@ -1080,6 +1133,27 @@ const DashboardPage = () => {
               <h1 className="tk-display mt-2 text-3xl md:text-4xl">{t.nav.newAnalysis}</h1>
             </div>
             <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} allowHigherTimeframes={!isDemo && isUnlimited} />
+            {/* Quem nunca analisou: uma analise real em um clique, num grafico
+                de exemplo, sem gastar a cota (o servidor so aceita o grafico
+                de exemplo e uma vez por conta; ver DemoService). */}
+            {showExampleCta && (
+              <div className="flex flex-col gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">{dc.exampleTitle}</p>
+                  <p className="mt-0.5 text-xs text-[var(--text-secondary)]">{dc.exampleDesc}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    track('example_cta_clicked', { surface: 'dashboard' });
+                    navigate('/try?example=1');
+                  }}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-[var(--border-default)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-white/[0.04]"
+                >
+                  <FlaskConical className="h-4 w-4" /> {dc.exampleCta}
+                </button>
+              </div>
+            )}
           </div>
         );
       case 'my-trades':
@@ -1093,6 +1167,7 @@ const DashboardPage = () => {
         // (analisar outro / quantas grátis restam / assinar) — sem beco sem saída.
         const freeLeftKnown = !isUnlimited && Number.isFinite(remaining);
         const exhausted = freeLeftKnown && remaining <= 0;
+        const showWaitNudge = !isDemo && freeLeftKnown && !exhausted && isWaitResult;
 
         // Qual análise a pergunta do veredito vai marcar.
         //
@@ -1112,6 +1187,43 @@ const DashboardPage = () => {
           resolveVerdict({ id: String(verdictTargetId), outcome: analysisData?.outcome }, verdicts) === null;
         return (
           <div className="flex flex-col gap-4">
+            {/* WAIT no plano gratis: o proximo passo vai para o TOPO. A mesma
+                nota existia so no fim da pagina, e no celular (75% do trafego)
+                ninguem chegava la: em set/26, 53 de 80 pessoas receberam WAIT
+                na primeira analise e 25 viram um unico WAIT e nunca voltaram. */}
+            {showWaitNudge && (
+              <div
+                role="status"
+                className="flex flex-col gap-3 rounded-xl border border-[var(--border-accent)] bg-[var(--bg-card)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">
+                    {dc.waitNudge.replace('{left}', String(remaining)).replace('{limit}', String(total))}
+                  </p>
+                  <p className="mt-0.5 text-xs text-[var(--text-secondary)]">
+                    {dc.waitNudgeHint}{' '}
+                    <a
+                      href="/blog/how-tickrify-works/#wait"
+                      target="_blank"
+                      rel="noopener"
+                      className="underline underline-offset-2 hover:text-[var(--text-primary)]"
+                    >
+                      {dc.waitNudgeWhy}
+                    </a>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    track('wait_nudge_clicked', { freeRemaining: remaining });
+                    resetNewAnalysisView();
+                  }}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#050508] transition-opacity hover:opacity-90"
+                >
+                  <PlusCircle className="h-4 w-4" /> {dc.waitNudgeCta}
+                </button>
+              </div>
+            )}
             <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />
             {!isDemo && (
               <div className="flex flex-col gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
@@ -1473,39 +1585,37 @@ const DashboardPage = () => {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 py-2">
-            {PLANS.map((plan) => (
-              <div
-                key={plan.id}
-                className={`flex items-center justify-between rounded-lg px-4 py-3 border ${
-                  plan.featured
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border bg-muted/30'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  {plan.featured && <Crown className="h-4 w-4 text-primary flex-shrink-0" />}
-                  <div>
-                    <span className="font-semibold text-sm">{plan.name}</span>
-                    {plan.featured && (
-                      <span className="ml-2 text-xs text-primary font-medium">{plan.badge}</span>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-bold">{plan.prices.monthly[modalCurrency]}{dc.perMonth}</div>
-                  <div className="text-xs text-muted-foreground">{plan.ticks}</div>
-                </div>
-              </div>
-            ))}
+          <div className="space-y-2 py-2">
+            <button
+              type="button"
+              onClick={handleModalMonthly}
+              disabled={unlockPending}
+              className="flex w-full items-center justify-between rounded-lg border border-primary bg-primary/10 px-4 py-3 text-left transition-opacity hover:opacity-90 disabled:opacity-60"
+            >
+              <span className="flex items-center gap-3">
+                <Crown className="h-4 w-4 flex-shrink-0 text-primary" />
+                <span className="text-sm font-semibold">{dc.modalMonthly}</span>
+              </span>
+              <span className="text-right text-xs font-semibold">
+                {modalFirstMonth ? dc.modalMonthlyOffer.replace('{price}', `$${modalFirstMonth}`) : `$29${dc.perMonth}`}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={handleModalWeekly}
+              disabled={unlockPending}
+              className="flex w-full items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3 text-left transition-colors hover:bg-muted/50 disabled:opacity-60"
+            >
+              <span className="text-sm font-semibold">{dc.modalWeekly}</span>
+              <span className="text-right text-xs font-semibold">$7.99</span>
+            </button>
           </div>
 
-          <p className="text-center text-xs text-muted-foreground">{dc.weeklyOption}</p>
+          <UpgradeVideo surface="upgrade_modal" caption={dc.modalVideoCaption} />
 
           <DialogFooter className="sm:flex-col gap-2">
-            <Button className="w-full" onClick={goToPricing}>
-              <Crown className="mr-2 h-4 w-4" />
-              {dc.seePlans}
+            <Button variant="outline" className="w-full" onClick={goToPricing}>
+              {dc.modalCompare}
             </Button>
             <Button variant="ghost" className="w-full" onClick={() => setShowUpgradeModal(false)}>
               {dc.later}

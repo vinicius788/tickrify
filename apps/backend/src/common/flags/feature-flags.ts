@@ -113,6 +113,24 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'alto',
   },
   {
+    key: 'EMAIL_ACTIVATION_NUDGE',
+    type: 'boolean',
+    label: 'E-mails para quem nao analisou',
+    description:
+      'Dois e-mails para quem criou conta e nao analisou: 1h depois ("send a screenshot") e no dia seguinte (video do celular). DESLIGADO: o worker so loga quem receberia ([lifecycle] dry-run). Ligar so com o texto aprovado.',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
+    key: 'EMAIL_CHECKOUT_RECOVERY',
+    type: 'boolean',
+    label: 'E-mail de checkout abandonado',
+    description:
+      'Um e-mail, uma vez por pessoa, 1h a 24h depois de abrir o checkout sem assinar: link do semanal e, se o banco recusou, a dica de outro cartao ou de liberar compra internacional. DESLIGADO: so loga quem receberia.',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
     key: 'AB_PROMPT_V9_PERCENT',
     type: 'number',
     label: 'A/B do prompt v9 (% de usuários)',

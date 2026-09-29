@@ -22,6 +22,18 @@ import {
 } from '../../common/utils/analysis-normalizer';
 
 /**
+ * sha256 do grafico de exemplo (`apps/frontend/src/assets/demo-example-chart.png`,
+ * XAUUSD M30 de 12/12/2025). O Vite copia o arquivo sem reprocessar, entao o
+ * navegador envia exatamente estes bytes. Trocar a imagem = trocar este hash
+ * no mesmo commit, senao o botao "Try it with an example chart" passa a
+ * responder `not_example_chart`.
+ */
+export const EXAMPLE_CHART_SHA256 = '967b7687e904bd13b9e644865257b7a79d8f808ddee2227c16ae17a492e2514b';
+
+/** AdminAudit que marca a conta que ja rodou o exemplo (uma vez por conta). */
+export const EXAMPLE_ANALYSIS_AUDIT_ACTION = 'example_analysis_used';
+
+/**
  * Demo anônima (sem cadastro) — o "aha moment" antes do sign-up.
  *
  * Regras de negócio (não-negociáveis):
@@ -223,19 +235,7 @@ export class DemoService implements OnModuleInit {
     // 5) Análise REAL — mesmo motor 'quick' da plataforma, prompt resolvido
     //    server-side (banco → arquivo). Nada do prompt/modelo sai daqui.
     try {
-      const latestPrompt = await this.prisma.promptConfig.findFirst({
-        where: { isActive: true },
-        orderBy: { version: 'desc' },
-        select: { version: true },
-      });
-      const prompt = await this.promptBuilder.buildPromptByVersion(
-        'quick',
-        latestPrompt?.version,
-        undefined,
-        params.userLanguage,
-      );
-
-      const aiResponse = await this.aiAdapter.analyzeImage(dataUrl, prompt, 'quick');
+      const aiResponse = await this.runQuickAnalysis(dataUrl, params.userLanguage);
 
       // 6) Sucesso → AGORA a cota é gasta (contabilização justa). ON CONFLICT
       //    cobre corrida entre requisições simultâneas do mesmo device.
@@ -265,6 +265,92 @@ export class DemoService implements OnModuleInit {
       throw new ServiceUnavailableException({
         code: 'analysis_failed',
         message: 'Analysis failed. Your free analysis was not used — please try again.',
+      });
+    }
+  }
+
+  /** Motor 'quick' com o prompt ativo, sem grounding e sem gravar nada. */
+  private async runQuickAnalysis(dataUrl: string, userLanguage?: string) {
+    const latestPrompt = await this.prisma.promptConfig.findFirst({
+      where: { isActive: true },
+      orderBy: { version: 'desc' },
+      select: { version: true },
+    });
+    const prompt = await this.promptBuilder.buildPromptByVersion(
+      'quick',
+      latestPrompt?.version,
+      undefined,
+      userLanguage,
+    );
+    return this.aiAdapter.analyzeImage(dataUrl, prompt, 'quick');
+  }
+
+  /**
+   * "Try it with an example chart" do painel, para quem ja tem conta.
+   *
+   * Por que NAO gasta a cota gratis: o servidor so aceita o grafico de exemplo
+   * (hash conferido aqui, nao no navegador), uma vez por conta, e o resultado
+   * nao e gravado em Analysis. Entao nao da para usar isto para analisar o
+   * grafico da propria pessoa, e a leitura fica fora do historico, da cota e da
+   * /accuracy (o mesmo grafico repetido distorceria o acerto publicado). Cobrar
+   * 1 das 3 analises com entrada por um grafico que a pessoa nao opera puniria
+   * justamente quem ainda nao viu o produto funcionar. Custo: ~US$ 0,02 por conta.
+   *
+   * Sem Turnstile nem fingerprint: a rota exige login (AuthGuard) e tem teto
+   * de tentativas por hora no controller.
+   */
+  async analyzeExampleForUser(params: { userId: string; file?: UploadedFile; userLanguage?: string }) {
+    const buffer = params.file?.buffer;
+    if (!buffer || buffer.length === 0) {
+      throw new BadRequestException({ code: 'invalid_image', message: 'Missing example chart.' });
+    }
+    const digest = createHash('sha256').update(buffer).digest('hex');
+    if (digest !== EXAMPLE_CHART_SHA256) {
+      throw new BadRequestException({
+        code: 'not_example_chart',
+        message: 'Only the example chart can be analyzed here. Use New analysis for your own charts.',
+      });
+    }
+
+    const already = await this.prisma.adminAudit.findFirst({
+      where: { action: EXAMPLE_ANALYSIS_AUDIT_ACTION, targetUserId: params.userId },
+      select: { id: true },
+    });
+    if (already) {
+      throw new ForbiddenException({
+        code: 'example_used',
+        message: 'You already ran the example chart. Analyze your own chart from the dashboard.',
+      });
+    }
+
+    let dataUrl: string;
+    try {
+      dataUrl = prepareIncomingImage(params.file, undefined).dataUrl;
+    } catch (error) {
+      throw new BadRequestException({
+        code: 'invalid_image',
+        message: error instanceof Error ? error.message : 'Invalid image payload.',
+      });
+    }
+
+    try {
+      const aiResponse = await this.runQuickAnalysis(dataUrl, params.userLanguage);
+      // Marca so depois do sucesso: falha do provedor deixa tentar de novo.
+      await this.prisma.adminAudit.create({
+        data: {
+          action: EXAMPLE_ANALYSIS_AUDIT_ACTION,
+          targetUserId: params.userId,
+          details: { chart: 'example_xauusd_m30' },
+        },
+      });
+      return this.serializeSafeResult(aiResponse);
+    } catch (error) {
+      this.logger.warn(
+        `[demo] Analise do exemplo falhou (userId=${params.userId}): ${error instanceof Error ? error.message : error}`,
+      );
+      throw new ServiceUnavailableException({
+        code: 'analysis_failed',
+        message: 'Analysis failed. Please try again.',
       });
     }
   }

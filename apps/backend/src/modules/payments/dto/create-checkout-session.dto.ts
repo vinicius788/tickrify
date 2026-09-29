@@ -46,8 +46,8 @@ export class CreateCheckoutSessionDto {
    * fechada: vai para a metadata da sessao e da assinatura na Stripe.
    */
   @IsOptional()
-  @IsIn(['pricing', 'locked_value', 'last_free_result'])
-  source?: 'pricing' | 'locked_value' | 'last_free_result';
+  @IsIn(['pricing', 'locked_value', 'last_free_result', 'upgrade_modal'])
+  source?: 'pricing' | 'locked_value' | 'last_free_result' | 'upgrade_modal';
 
   /**
    * Meta (anuncios). So vem preenchido quando o navegador aceitou cookies de

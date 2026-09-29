@@ -17,19 +17,24 @@ export class MailService {
   // O remetente e noreply@; sem isto, quem responde ao e-mail fala com ninguem.
   private readonly replyTo = process.env.MAIL_REPLY_TO || 'support@tickrify.com';
 
-  /** `from` e `replyTo` sao opcionais: sem eles valem MAIL_FROM e MAIL_REPLY_TO. */
+  /**
+   * `from` e `replyTo` sao opcionais: sem eles valem MAIL_FROM e MAIL_REPLY_TO.
+   * `kind` so serve para o log: todo envio aceito pela Resend deixa
+   * `[mail] Enviado kind=<tipo> id=<id da Resend>` no Render (sem o endereco).
+   * Ate 29/09 so a falha deixava rastro e o boas-vindas era invisivel.
+   * Devolve true quando a Resend aceitou.
+   */
   private async send(
     to: string,
     subject: string,
     html: string,
-    replyTo?: string,
-    from?: string,
-  ): Promise<void> {
+    options: { kind: string; replyTo?: string; from?: string; headers?: Record<string, string> },
+  ): Promise<boolean> {
     if (!this.apiKey) {
       this.logger.warn('RESEND_API_KEY ausente — pulando envio de e-mail.');
-      return;
+      return false;
     }
-    if (!to) return;
+    if (!to) return false;
 
     try {
       const res = await fetch('https://api.resend.com/emails', {
@@ -38,15 +43,33 @@ export class MailService {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ from: from || this.from, to, subject, html, reply_to: replyTo || this.replyTo }),
+        body: JSON.stringify({
+          from: options.from || this.from,
+          to,
+          subject,
+          html,
+          reply_to: options.replyTo || this.replyTo,
+          ...(options.headers ? { headers: options.headers } : {}),
+        }),
       });
 
       if (!res.ok) {
         const body = await res.text().catch(() => '');
-        this.logger.error(`Resend falhou (${res.status}): ${body}`);
+        this.logger.error(`Resend falhou (${res.status}) kind=${options.kind}: ${body}`);
+        return false;
       }
+      const raw = await res.text().catch(() => '');
+      let id = 'n/a';
+      try {
+        id = String((JSON.parse(raw) as { id?: string })?.id || 'n/a');
+      } catch {
+        /* corpo sem JSON: o envio foi aceito do mesmo jeito */
+      }
+      this.logger.log(`[mail] Enviado kind=${options.kind} id=${id}`);
+      return true;
     } catch (err) {
-      this.logger.error(`Erro ao enviar e-mail: ${(err as Error)?.message ?? err}`);
+      this.logger.error(`Erro ao enviar e-mail kind=${options.kind}: ${(err as Error)?.message ?? err}`);
+      return false;
     }
   }
 
@@ -85,13 +108,13 @@ export class MailService {
     <a href="${this.appUrl}/admin" style="display:inline-block;margin-top:16px;font-size:14px;">Abrir o painel</a>
   </div>
 </body></html>`,
-      replyTo,
+      { kind: 'problem_report', replyTo },
     );
   }
 
   /** Boas-vindas: disparado uma unica vez, quando a conta nova e criada. `firstName` e opcional. */
   async sendWelcome(to: string, firstName?: string | null): Promise<void> {
-    await this.send(to, welcomeSubject(), renderWelcomeEmail({ appUrl: this.appUrl, firstName }));
+    await this.send(to, welcomeSubject(), renderWelcomeEmail({ appUrl: this.appUrl, firstName }), { kind: 'welcome' });
   }
 
   /** Recuperação: créditos grátis acabaram e o usuário não assinou. */
@@ -110,6 +133,28 @@ export class MailService {
       'Subscribe',
       `${this.appUrl}/pricing`,
     );
-    await this.send(to, "Your analyses ran out, and your trades will not wait", html);
+    await this.send(to, "Your analyses ran out, and your trades will not wait", html, { kind: 'recovery' });
+  }
+
+  /**
+   * E-mails de ciclo de vida (ativacao e checkout abandonado). Saem em nome do
+   * fundador (LIFECYCLE_MAIL_FROM; resposta cai na caixa dele) e levam o
+   * cabecalho de descadastro de um clique que Gmail e Yahoo exigem.
+   */
+  async sendLifecycle(
+    to: string,
+    email: { kind: string; subject: string; html: string; unsubscribeUrl: string },
+  ): Promise<boolean> {
+    const from = process.env.LIFECYCLE_MAIL_FROM || 'Vini from Tickrify <vinicius@tickrify.com>';
+    const replyTo = process.env.LIFECYCLE_MAIL_REPLY_TO || 'vinicius@tickrify.com';
+    return this.send(to, email.subject, email.html, {
+      kind: email.kind,
+      from,
+      replyTo,
+      headers: {
+        'List-Unsubscribe': `<${email.unsubscribeUrl}>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
+    });
   }
 }

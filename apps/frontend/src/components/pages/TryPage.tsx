@@ -13,8 +13,8 @@
 // entrar, sem menu. Ganha rodapé (legal, que faltava numa página que pede
 // cadastro) sem ganhar as saídas de um menu completo antes do "aha".
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { SignUpButton, SignedOut, SignedIn } from '@clerk/clerk-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { SignUpButton, SignedOut, SignedIn, useAuth } from '@clerk/clerk-react';
 import SiteLayout from '@/components/layout/SiteLayout';
 import AnalysisLoading from '@/components/dashboard/AnalysisLoading';
 import { track, trackSignupStartedOnce } from '@/lib/analytics';
@@ -25,6 +25,8 @@ import {
   DemoAnalysisResult,
   fetchDemoStatus,
   requestDemoAnalysis,
+  requestExampleAnalysis,
+  EXAMPLE_USED_KEY,
 } from '@/lib/demo-api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { getScenarioMeta } from '@/lib/trading-ui';
@@ -71,7 +73,9 @@ const SignupCta = ({ headline, sub }: { headline: string; sub: string }) => (
         Go to your dashboard
       </Link>
     </SignedIn>
-    <p className="site-try-fine">Free account · 3 more analyses included · no credit card</p>
+    <SignedOut>
+      <p className="site-try-fine">Free account · 3 more analyses included · no credit card</p>
+    </SignedOut>
   </div>
 );
 
@@ -82,6 +86,14 @@ const TryPage = () => {
   useSeo(seoFor('/try'));
 
   const { language } = useLanguage();
+  // Com conta (botao "Try it with an example chart" do painel): o exemplo roda
+  // pela rota autenticada, sem fingerprint e sem gastar a cota gratis.
+  // `?example=1` roda sozinho, para ser mesmo um clique so.
+  const { isLoaded: authLoaded, isSignedIn, getToken } = useAuth();
+  const signedIn = Boolean(isSignedIn);
+  const [searchParams] = useSearchParams();
+  const autoRunExample = searchParams.get('example') === '1';
+  const autoRanRef = useRef(false);
   const [state, setState] = useState<PageState>('ready');
   const [result, setResult] = useState<DemoAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -93,13 +105,19 @@ const TryPage = () => {
   const fingerprintRef = useRef<string | null>(null);
   const viewTracked = useRef(false);
 
-  // Chegou na demo: evento + acorda o backend (Render hiberna) + cota do device.
+  // Chegou na demo: evento + acorda o backend (Render hiberna).
   useEffect(() => {
     if (!viewTracked.current) {
       viewTracked.current = true;
       track('demo_page_view');
     }
     warmupPaymentsApi();
+  }, []);
+
+  // Cota do device: so vale para quem NAO tem conta (quem tem conta usa a
+  // rota do exemplo, que nao olha fingerprint).
+  useEffect(() => {
+    if (!authLoaded || isSignedIn) return;
     void (async () => {
       const fp = await getDeviceFingerprint();
       fingerprintRef.current = fp;
@@ -109,7 +127,7 @@ const TryPage = () => {
         track('demo_limit_hit', { source: 'status_check' });
       }
     })();
-  }, []);
+  }, [authLoaded, isSignedIn]);
 
   // Copia a imagem para a memoria na escolha, como no painel (NewAnalysis):
   // no Android, arquivo do Google Fotos ou de pasta na nuvem pode ficar
@@ -139,7 +157,9 @@ const TryPage = () => {
   }, []);
 
   // Colar print direto (Ctrl/Cmd+V), atrito mínimo pra quem veio do TradingView.
+  // Com conta, aqui so roda o exemplo: o grafico proprio vai pelo painel.
   useEffect(() => {
+    if (signedIn) return;
     const onPaste = (e: ClipboardEvent) => {
       const item = Array.from(e.clipboardData?.items ?? []).find((i) =>
         i.type.startsWith('image/'),
@@ -148,46 +168,80 @@ const TryPage = () => {
     };
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
-  }, [handleFile]);
+  }, [handleFile, signedIn]);
 
   const runAnalysis = async () => {
     if (state === 'analyzing') return;
     setError(null);
     setState('analyzing');
     setShowAfter(false);
-    setAnalyzedExample(!customImage);
-    track('demo_analysis_started', { chart: customImage ? 'own' : 'example' });
+    // Com conta, so o exemplo roda aqui (o upload proprio fica no painel).
+    const ownChart = Boolean(customImage) && !signedIn;
+    setAnalyzedExample(!ownChart);
+    const chart = ownChart ? 'own' : 'example';
+    track('demo_analysis_started', { chart, signedIn });
 
     try {
-      const fingerprint = fingerprintRef.current ?? (await getDeviceFingerprint());
-      fingerprintRef.current = fingerprint;
-
       // Gráfico do usuário, ou o exemplo pré-carregado (zero decisão).
       let image: Blob;
-      if (customImage) {
+      if (ownChart && customImage) {
         image = customImage.blob;
       } else {
         const exampleResponse = await fetch(exampleChart);
         image = await exampleResponse.blob();
       }
 
-      const turnstileToken = await getTurnstileToken();
-      const analysis = await requestDemoAnalysis({
-        image,
-        fingerprint,
-        turnstileToken,
-        userLanguage: language,
-      });
+      let analysis: DemoAnalysisResult;
+      if (signedIn) {
+        const token = await getToken();
+        if (!token) throw new DemoApiError('analysis_failed', 'Session expired.');
+        analysis = await requestExampleAnalysis({ image, token, userLanguage: language });
+      } else {
+        const fingerprint = fingerprintRef.current ?? (await getDeviceFingerprint());
+        fingerprintRef.current = fingerprint;
+        const turnstileToken = await getTurnstileToken();
+        analysis = await requestDemoAnalysis({
+          image,
+          fingerprint,
+          turnstileToken,
+          userLanguage: language,
+        });
+      }
 
       setResult(analysis);
       setState('done');
+      if (signedIn) {
+        // O painel esconde o botao do exemplo depois do uso (o servidor libera
+        // uma vez por conta; sem isto o segundo clique so daria erro).
+        try {
+          localStorage.setItem(EXAMPLE_USED_KEY, '1');
+        } catch {
+          /* noop */
+        }
+      }
       track('demo_analysis_completed', {
         recommendation: analysis.recommendation,
         confidence: analysis.confidence,
-        chart: customImage ? 'own' : 'example',
+        chart,
+        signedIn,
       });
     } catch (err) {
+      track('demo_analysis_failed', {
+        code: err instanceof DemoApiError ? err.code : 'client_error',
+        chart,
+        signedIn,
+      });
       if (err instanceof DemoApiError) {
+        if (err.code === 'example_used') {
+          try {
+            localStorage.setItem(EXAMPLE_USED_KEY, '1');
+          } catch {
+            /* noop */
+          }
+          setState('ready');
+          setError('You already ran the example chart. Analyze your own chart from your dashboard.');
+          return;
+        }
         if (err.code === 'demo_limit_reached') {
           setState('locked');
           track('demo_limit_hit', { source: 'analyze' });
@@ -213,6 +267,15 @@ const TryPage = () => {
       setError('The analysis failed. Your free analysis was NOT used. Please try again.');
     }
   };
+
+  // Um clique no painel: chega com ?example=1 e ja roda.
+  useEffect(() => {
+    if (!autoRunExample || !authLoaded || !isSignedIn || autoRanRef.current) return;
+    autoRanRef.current = true;
+    void runAnalysis();
+    // runAnalysis muda a cada render; o ref garante uma execucao so.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRunExample, authLoaded, isSignedIn]);
 
   // A cor principal acompanha o cenário; a ação continua explícita e separada.
   const scenario = result ? getScenarioMeta(result.bias, result.recommendation) : null;
@@ -290,22 +353,33 @@ const TryPage = () => {
                   Analyze this chart now
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="site-try-upload"
-                >
-                  {customImage ? 'Choose a different chart' : 'Or upload / paste your own chart screenshot'}
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => void handleFile(e.target.files?.[0])}
-                />
+                {signedIn ? (
+                  <>
+                    <Link to="/dashboard" className="site-try-upload">
+                      Or analyze your own chart in your dashboard
+                    </Link>
+                    <p className="site-try-fine">Example chart · does not use your free analyses</p>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="site-try-upload"
+                    >
+                      {customImage ? 'Choose a different chart' : 'Or upload / paste your own chart screenshot'}
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => void handleFile(e.target.files?.[0])}
+                    />
 
-                <p className="site-try-fine">1 free analysis per device · no account · no card</p>
+                    <p className="site-try-fine">1 free analysis per device · no account · no card</p>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -392,10 +466,17 @@ const TryPage = () => {
                 </div>
               )}
 
-              <SignupCta
-                headline="Want to analyze more charts?"
-                sub="Create your free account and get 3 more analyses, your charts, any market."
-              />
+              {signedIn ? (
+                <SignupCta
+                  headline="Now run your own chart"
+                  sub="Upload a screenshot of the chart you are watching. That is all it takes."
+                />
+              ) : (
+                <SignupCta
+                  headline="Want to analyze more charts?"
+                  sub="Create your free account and get 3 more analyses, your charts, any market."
+                />
+              )}
             </div>
           )}
 

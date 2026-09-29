@@ -212,7 +212,7 @@ export class StripeService implements OnModuleInit {
     billingCycle: BillingCycle,
     currency: Currency = 'usd',
     couponId?: string,
-    source?: 'pricing' | 'locked_value' | 'last_free_result',
+    source?: 'pricing' | 'locked_value' | 'last_free_result' | 'upgrade_modal',
     ads: MetaAdsContext = { consent: false },
     referral?: CheckoutReferral,
   ): Promise<CheckoutResult> {
@@ -234,7 +234,7 @@ export class StripeService implements OnModuleInit {
     billingCycle: BillingCycle,
     currency: Currency,
     couponId?: string,
-    source?: 'pricing' | 'locked_value' | 'last_free_result',
+    source?: 'pricing' | 'locked_value' | 'last_free_result' | 'upgrade_modal',
     ads: MetaAdsContext = { consent: false },
     referral?: CheckoutReferral,
   ): Promise<CheckoutResult> {

@@ -1,4 +1,4 @@
-import { startFlagRefresh } from '../src/common/flags/feature-flags';
+import { flagBool, startFlagRefresh } from '../src/common/flags/feature-flags';
 import 'dotenv/config';
 import { Job, UnrecoverableError, Worker } from 'bullmq';
 import { Prisma, PrismaClient } from '@prisma/client';
@@ -29,6 +29,7 @@ import { trackFreeAnalysisCompleted } from '../src/common/analytics/free-funnel'
 import { safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../src/common/analytics/analysis-failure';
 import { MailService } from '../src/modules/mail/mail.service';
 import { notifyIfFreeQuotaExhausted, type RecoveryEmailDeps } from '../src/modules/mail/recovery-email';
+import { LIFECYCLE_FLAG, publicUrl, runLifecycleSweep } from '../src/modules/mail/lifecycle-email';
 import Stripe from 'stripe';
 import { getFoundingOffer } from '../src/modules/payments/founding-offer';
 
@@ -48,9 +49,10 @@ const workerStripe = process.env.STRIPE_SECRET_KEY
 // E-mail de recuperacao quando a ultima analise gratis termina. Sem o
 // StripeService aqui, "ja assina?" e a mesma checagem de banco que libera o
 // acesso pago (assinatura active/trialing).
+const workerMail = new MailService();
 const recoveryDeps: RecoveryEmailDeps = {
   prisma,
-  mail: new MailService(),
+  mail: workerMail,
   hasPaidAccess: async (userId) =>
     Boolean(
       await prisma.subscription.findFirst({
@@ -1311,6 +1313,31 @@ startFlagRefresh(async () =>
 );
 
 startOutcomeSweeper(prisma);
+
+// E-mails de ciclo de vida (lifecycle-email.ts): a cada 15 min, primeira volta
+// 5 min depois do boot. Com as chaves do /admin desligadas (padrao), so loga
+// `[lifecycle] dry-run ...`: quem receberia, sem enviar e sem gravar.
+const LIFECYCLE_INTERVAL_MS = 15 * 60 * 1000;
+const lifecycleTick = async () => {
+  const counts = await runLifecycleSweep({
+    prisma,
+    mail: workerMail,
+    isEnabled: (kind) => flagBool(LIFECYCLE_FLAG[kind]),
+    appUrl: publicUrl(process.env.FRONTEND_URL, 'https://tickrify.com'),
+    apiBaseUrl: publicUrl(process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL, 'https://tickrify.onrender.com'),
+    log: (level, message) => (level === 'warn' ? console.warn(message) : console.log(message)),
+  }).catch((err) => {
+    console.warn(`[lifecycle] Varredura falhou: ${(err as Error)?.message ?? err}`);
+    return null;
+  });
+  if (counts && Object.values(counts).some((n) => n > 0)) {
+    console.log(`[lifecycle] Volta: ${JSON.stringify(counts)}`);
+  }
+};
+setTimeout(() => {
+  void lifecycleTick();
+  setInterval(() => void lifecycleTick(), LIFECYCLE_INTERVAL_MS);
+}, 5 * 60 * 1000);
 
 async function shutdown() {
   await worker.close();

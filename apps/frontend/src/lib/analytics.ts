@@ -400,10 +400,22 @@ export type FunnelEvent =
   // `checkout_completed` do backend.
   | 'checkout_success_viewed'
   | 'founding_banner_clicked'
+  // Filme 04 no paywall/janela de upgrade (`surface`: locked | upgrade_modal).
+  | 'upgrade_video_played'
+  | 'upgrade_video_completed'
+  // Barra do topo do resultado WAIT para o plano gratis (29/09): 65% das
+  // analises gratis dao WAIT e metade das pessoas saia depois da primeira.
+  | 'wait_nudge_viewed'
+  | 'wait_nudge_clicked'
+  // "Try it with an example chart" no painel de quem nunca analisou.
+  | 'example_cta_clicked'
   // Funil da demo anônima (/try) — Fase 0 de ativação:
   | 'demo_page_view'
   | 'demo_analysis_started'
   | 'demo_analysis_completed'
+  // Falha da demo com o motivo (`code`). Antes so o limite era rastreado e 20
+  // de 83 demos iniciadas em set/26 sumiam sem explicacao.
+  | 'demo_analysis_failed'
   | 'demo_after_viewed'
   | 'demo_limit_hit'
   | 'signup_from_demo';

@@ -262,6 +262,10 @@ describe('controle de acesso das rotas', () => {
         'health.controller.ts::getHealth',
         'health.controller.ts::getLiveness',
         'health.controller.ts::getReadiness',
+        // Descadastro dos e-mails de ciclo de vida: quem clica no link do
+        // e-mail nao esta logado. Protegido por HMAC do id (lifecycle-email.ts).
+        'mail.controller.ts::unsubscribeOneClick',
+        'mail.controller.ts::unsubscribePage',
         'market.controller.ts::getContext',
         'stripe.controller.ts::getOffer',
         'stripe.controller.ts::handleWebhook',

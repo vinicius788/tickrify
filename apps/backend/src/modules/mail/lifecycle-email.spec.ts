@@ -1,0 +1,242 @@
+import {
+  LifecycleDeps,
+  LifecycleKind,
+  lifecycleAuditAction,
+  publicUrl,
+  renderLifecycleEmail,
+  runLifecycleSweep,
+  UNSUBSCRIBE_AUDIT_ACTION,
+  unsubscribeToken,
+  verifyUnsubscribeToken,
+} from './lifecycle-email';
+
+const NOW = new Date('2026-10-01T12:00:00Z');
+
+function makeDeps(opts: {
+  enabled?: boolean;
+  users?: Array<{ id: string; email: string | null; name: string | null }>;
+  audits?: Array<{ action: string; targetUserId: string; createdAt?: Date }>;
+  paying?: string[];
+  checkoutSessions?: Array<{ targetUserId: string; createdAt: Date }>;
+}) {
+  const audits = [...(opts.audits ?? [])];
+  const created: Array<{ action: string; targetUserId: string }> = [];
+  const sent: Array<{ to: string; kind: string; subject: string; unsubscribeUrl: string }> = [];
+  const order: string[] = [];
+  const logs: string[] = [];
+  const prisma = {
+    user: {
+      findMany: jest.fn(async () => opts.users ?? []),
+      findUnique: jest.fn(async ({ where }: any) => (opts.users ?? []).find((u) => u.id === where.id) ?? null),
+    },
+    subscription: {
+      findFirst: jest.fn(async ({ where }: any) => ((opts.paying ?? []).includes(where.userId) ? { id: 's' } : null)),
+    },
+    adminAudit: {
+      findMany: jest.fn(async () => opts.checkoutSessions ?? []),
+      findFirst: jest.fn(async ({ where }: any) => {
+        const hit = audits.find(
+          (a) =>
+            a.action === where.action &&
+            a.targetUserId === where.targetUserId &&
+            (!where.createdAt?.gt || (a.createdAt && a.createdAt > where.createdAt.gt)) &&
+            (!where.createdAt?.gte || (a.createdAt && a.createdAt >= where.createdAt.gte)),
+        );
+        return hit ? { id: 'x' } : null;
+      }),
+      create: jest.fn(async ({ data }: any) => {
+        order.push('audit');
+        created.push(data);
+        audits.push(data);
+        return data;
+      }),
+    },
+  };
+  const deps: LifecycleDeps = {
+    prisma: prisma as any,
+    mail: {
+      sendLifecycle: jest.fn(async (to, email) => {
+        order.push('send');
+        sent.push({ to, kind: email.kind, subject: email.subject, unsubscribeUrl: email.unsubscribeUrl });
+        return true;
+      }),
+    },
+    isEnabled: () => opts.enabled ?? false,
+    appUrl: 'https://tickrify.com',
+    apiBaseUrl: 'https://tickrify.onrender.com',
+    now: () => NOW,
+    log: (_l, m) => logs.push(m),
+  };
+  return { deps, prisma, created, sent, order, logs };
+}
+
+describe('lifecycle emails', () => {
+  const env = { ...process.env };
+  beforeEach(() => {
+    process.env.EMAIL_UNSUBSCRIBE_SECRET = 'test-only-secret';
+  });
+  afterEach(() => {
+    process.env = { ...env };
+  });
+
+  it('switched off (default): only logs a dry run, writes and sends nothing', async () => {
+    const { deps, created, sent, logs } = makeDeps({
+      users: [{ id: 'u1', email: 'ana@example.com', name: 'Ana Silva' }],
+    });
+    const counts = await runLifecycleSweep(deps);
+    expect(counts.activation_1).toBe(1);
+    expect(created).toEqual([]);
+    expect(sent).toEqual([]);
+    expect(logs.some((l) => l.includes('dry-run kind=activation_1 user=u1'))).toBe(true);
+    expect(logs.join('\n')).not.toContain('ana@example.com');
+  });
+
+  it('switched on: records before sending, once, with a working unsubscribe link', async () => {
+    const { deps, sent, order, created } = makeDeps({
+      enabled: true,
+      users: [{ id: 'u1', email: 'ana@example.com', name: 'Ana Silva' }],
+    });
+    await runLifecycleSweep(deps);
+    const first = sent.filter((s) => s.kind === 'activation_1');
+    expect(first).toHaveLength(1);
+    expect(order.slice(0, 2)).toEqual(['audit', 'send']);
+    expect(created[0]).toMatchObject({ action: lifecycleAuditAction('activation_1'), targetUserId: 'u1' });
+    const url = new URL(first[0].unsubscribeUrl);
+    expect(url.origin).toBe('https://tickrify.onrender.com');
+    expect(verifyUnsubscribeToken(url.searchParams.get('u')!, url.searchParams.get('t')!)).toBe(true);
+
+    // Segunda volta: ja registrado, nao manda de novo.
+    sent.length = 0;
+    await runLifecycleSweep(deps);
+    expect(sent.filter((s) => s.kind === 'activation_1')).toHaveLength(0);
+  });
+
+  it('never emails subscribers or people who unsubscribed', async () => {
+    const { deps, sent } = makeDeps({
+      enabled: true,
+      users: [
+        { id: 'paid', email: 'p@example.com', name: null },
+        { id: 'out', email: 'o@example.com', name: null },
+      ],
+      paying: ['paid'],
+      audits: [{ action: UNSUBSCRIBE_AUDIT_ACTION, targetUserId: 'out' }],
+    });
+    await runLifecycleSweep(deps);
+    expect(sent).toEqual([]);
+  });
+
+  it('without an unsubscribe secret nothing goes out', async () => {
+    delete process.env.EMAIL_UNSUBSCRIBE_SECRET;
+    delete process.env.CLERK_SECRET_KEY;
+    const { deps, sent, created } = makeDeps({
+      enabled: true,
+      users: [{ id: 'u1', email: 'ana@example.com', name: null }],
+    });
+    await runLifecycleSweep(deps);
+    expect(sent).toEqual([]);
+    expect(created).toEqual([]);
+  });
+
+  it('abandoned checkout: bank decline gets the card tip subject, otherwise the weekly plan', async () => {
+    const sessionAt = new Date(NOW.getTime() - 3 * 3600_000);
+    const { deps, sent } = makeDeps({
+      enabled: true,
+      users: [
+        { id: 'declined', email: 'd@example.com', name: 'Leo' },
+        { id: 'left', email: 'l@example.com', name: null },
+      ],
+      checkoutSessions: [
+        { targetUserId: 'declined', createdAt: sessionAt },
+        { targetUserId: 'left', createdAt: sessionAt },
+      ],
+      audits: [{ action: 'funnel:payment_failed', targetUserId: 'declined', createdAt: new Date(sessionAt.getTime() + 60_000) }],
+    });
+    // Sem usuarios nas janelas de ativacao nesta volta.
+    (deps.prisma.user.findMany as jest.Mock).mockResolvedValue([]);
+    await runLifecycleSweep(deps);
+    const bySubject = Object.fromEntries(sent.map((s) => [s.to, s.subject]));
+    expect(bySubject['d@example.com']).toBe('Your payment did not go through');
+    expect(bySubject['l@example.com']).toBe('You left your Tickrify checkout');
+  });
+
+  it('abandoned checkout waits while a newer checkout is still fresh', async () => {
+    const { deps, sent } = makeDeps({
+      enabled: true,
+      users: [{ id: 'u1', email: 'a@example.com', name: null }],
+      checkoutSessions: [{ targetUserId: 'u1', createdAt: new Date(NOW.getTime() - 5 * 3600_000) }],
+      audits: [{ action: 'funnel:checkout_session_created', targetUserId: 'u1', createdAt: new Date(NOW.getTime() - 10 * 60_000) }],
+    });
+    (deps.prisma.user.findMany as jest.Mock).mockResolvedValue([]);
+    await runLifecycleSweep(deps);
+    expect(sent).toEqual([]);
+  });
+
+  it('tokens: a tampered token or another user id is refused', () => {
+    const t = unsubscribeToken('u1')!;
+    expect(verifyUnsubscribeToken('u1', t)).toBe(true);
+    expect(verifyUnsubscribeToken('u2', t)).toBe(false);
+    expect(verifyUnsubscribeToken('u1', t.replace(/.$/, t.endsWith('a') ? 'b' : 'a'))).toBe(false);
+    expect(verifyUnsubscribeToken('u1', '')).toBe(false);
+  });
+
+  it('links never point to localhost', () => {
+    expect(publicUrl('http://localhost:5173', 'https://tickrify.com')).toBe('https://tickrify.com');
+    expect(publicUrl('https://tickrify.com/', 'x')).toBe('https://tickrify.com');
+  });
+
+  it.each<[LifecycleKind, boolean]>([
+    ['activation_1', false],
+    ['activation_2', false],
+    ['checkout_recovery', false],
+    ['checkout_recovery', true],
+  ])('%s (declined=%s): no em dash, no emoji, has unsubscribe and the right link', (kind, declined) => {
+    const email = renderLifecycleEmail(kind, {
+      appUrl: 'https://tickrify.com',
+      firstName: 'Ana',
+      unsubscribeUrl: 'https://tickrify.onrender.com/api/email/unsubscribe?u=u1&t=abc',
+      declined,
+    });
+    expect(email.html + email.subject).not.toMatch(/—/);
+    expect(email.html + email.subject).not.toMatch(/\p{Extended_Pictographic}/u);
+    expect(email.html).toContain('Unsubscribe from these emails');
+    expect(email.html).toContain('Hi Ana,');
+    if (kind === 'checkout_recovery') expect(email.html).toContain('https://tickrify.com/pricing?cycle=weekly');
+    if (kind === 'activation_2') expect(email.html).toContain('https://tickrify.com/blog/how-tickrify-works/#phone');
+  });
+});
+
+describe('unsubscribe endpoint', () => {
+  // Import tardio: o controller le o segredo do ambiente na hora da chamada.
+  const { MailController } = jest.requireActual('./mail.controller');
+  const env = { ...process.env };
+  afterEach(() => {
+    process.env = { ...env };
+  });
+
+  function controllerWith(existing: boolean) {
+    const prisma = {
+      adminAudit: {
+        findFirst: jest.fn().mockResolvedValue(existing ? { id: 'a' } : null),
+        create: jest.fn().mockResolvedValue({}),
+      },
+    };
+    return { controller: new MailController(prisma as any), prisma };
+  }
+
+  it('valid link records the opt-out once and confirms', async () => {
+    process.env.EMAIL_UNSUBSCRIBE_SECRET = 'test-only-secret';
+    const { controller, prisma } = controllerWith(false);
+    const html = await controller.unsubscribePage({ u: 'u1', t: unsubscribeToken('u1')! });
+    expect(html).toContain('You are unsubscribed');
+    expect(prisma.adminAudit.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ action: UNSUBSCRIBE_AUDIT_ACTION, targetUserId: 'u1' }),
+    });
+  });
+
+  it('forged link changes nothing', async () => {
+    process.env.EMAIL_UNSUBSCRIBE_SECRET = 'test-only-secret';
+    const { controller, prisma } = controllerWith(false);
+    await expect(controller.unsubscribeOneClick({ u: 'u1', t: 'f'.repeat(32) })).resolves.toEqual({ ok: false });
+    expect(prisma.adminAudit.create).not.toHaveBeenCalled();
+  });
+});
