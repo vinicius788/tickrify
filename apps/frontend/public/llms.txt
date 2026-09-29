@@ -105,6 +105,8 @@ how much external data supports the read, not whether the read happens.
 ## Writing
 
 - [Blog index](https://tickrify.com/blog/): every article below.
+- [How Tickrify works, in 5 short demos](https://tickrify.com/blog/how-tickrify-works/):
+  videos of the chart read, the workflow, WAIT, multi-timeframe and phone analysis.
 - [What AI chart analysis is, and where it fails](https://tickrify.com/blog/ai-chart-analysis/)
 - [Comparing AI chart analysis tools](https://tickrify.com/blog/best-ai-chart-analysis-tools/)
 - [Using ChatGPT to analyse charts](https://tickrify.com/blog/chatgpt-chart-analysis/):
