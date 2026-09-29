@@ -6,6 +6,7 @@ const posthog = {
   identify: vi.fn(),
   reset: vi.fn(),
   register: vi.fn(),
+  unregister: vi.fn(),
   setPersonProperties: vi.fn(),
   opt_in_capturing: vi.fn(),
   opt_out_capturing: vi.fn(),
@@ -42,6 +43,19 @@ describe('analytics', () => {
     await a.initAnalytics();
 
     expect(posthog.capture.mock.calls.map((c) => c[0])).toEqual(['landing_viewed']);
+  });
+
+  it('plano vira super propriedade, inclusive se chegar antes do PostHog carregar', async () => {
+    const a = await freshAnalytics();
+    a.setPlanContext({ plan: 'weekly', billingCycle: 'weekly', isSubscriber: true });
+    expect(posthog.register).not.toHaveBeenCalled();
+
+    await a.initAnalytics();
+    expect(posthog.register).toHaveBeenCalledWith({ plan: 'weekly', billing_cycle: 'weekly', is_subscriber: true });
+
+    a.setPlanContext(null);
+    expect(posthog.unregister).toHaveBeenCalledWith('plan');
+    expect(posthog.unregister).toHaveBeenCalledWith('is_subscriber');
   });
 
   it('signup_started sai uma vez por sessao, venha de onde vier', async () => {

@@ -1,8 +1,16 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
+import { captureServer as captureServerMock } from '../../common/analytics/posthog';
+
+const captureServer = captureServerMock as jest.Mock;
 
 // Mocka a fila para isolar o gate de acesso do processamento real da análise.
+jest.mock('../../common/analytics/posthog', () => ({
+  ...jest.requireActual('../../common/analytics/posthog'),
+  captureServer: jest.fn(),
+}));
+
 jest.mock('./ai.queue', () => ({
   getAiQueue: jest.fn(),
   getAiQueueReadiness: jest.fn(),
@@ -449,6 +457,19 @@ describe('AiService access enforcement', () => {
       expect(valuesOfUpdate()[2]).toBe(0);
     });
 
+    it('registrar resultado vira trade_outcome_set no PostHog', async () => {
+      captureServer.mockClear();
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', clerkUserId: 'clerk_1' });
+      await service.setOutcome('usr_1', 'an_1', { outcome: 'tp2', pnlAmount: 80 });
+      await new Promise((r) => setImmediate(r));
+      expect(captureServer).toHaveBeenCalledWith(
+        'clerk_1',
+        'trade_outcome_set',
+        { analysisId: 'an_1', outcome: 'tp2', hasPnl: true },
+        {},
+      );
+    });
+
     it('entrada nao atingida (no_fill) e gravada como veredito', async () => {
       await service.setOutcome('usr_1', 'an_1', { outcome: 'no_fill' });
       expect(valuesOfUpdate()[0]).toBe('no_fill');
@@ -596,6 +617,42 @@ describe('AiService access enforcement', () => {
     expect(usage.tickBalance).toBe(0);
     // O ponto do teste: isUnlimited não implica canAnalyze. Saldo zero bloqueia.
     expect(usage.canAnalyze).toBe(false);
+  });
+
+  it('getUsage assinante semanal: plano weekly e ciclo weekly', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', priceId: 'price_1UKeWPB1hl0IoocUjsQNv9BG' });
+    ticksService.getBalance.mockResolvedValue(25);
+
+    const usage = await service.getUsage('usr_1');
+
+    expect(usage.plan).toBe('weekly');
+    expect(usage.billingCycle).toBe('weekly');
+    expect(usage.period).toBe('weekly');
+  });
+
+  it('analise paga manda custo, saldo e plano para o PostHog (evento e perfil)', async () => {
+    captureServer.mockClear();
+    prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', clerkUserId: 'clerk_1' });
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', priceId: 'price_1UKeWPB1hl0IoocUjsQNv9BG' });
+    ticksService.getBalance.mockResolvedValue(22);
+    const createdAt = new Date('2026-09-29T12:00:00Z');
+
+    await (service as any).trackPaidAnalysisStarted('usr_1', { id: 'an_9', createdAt }, 'deep');
+
+    expect(captureServer).toHaveBeenCalledWith(
+      'clerk_1',
+      'paid_analysis_started',
+      expect.objectContaining({
+        analysisId: 'an_9',
+        analysisType: 'deep',
+        ticksCost: 3,
+        ticksLeft: 22,
+        plan: 'weekly',
+        billingCycle: 'weekly',
+        $set: expect.objectContaining({ plan: 'weekly', billing_cycle: 'weekly', ticks_left: 22 }),
+      }),
+      { dedupeKey: 'paid_analysis_started:an_9', timestamp: createdAt },
+    );
   });
 
   it('getUsage assinante: com saldo suficiente, pode analisar', async () => {

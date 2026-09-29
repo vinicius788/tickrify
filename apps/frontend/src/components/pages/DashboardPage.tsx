@@ -33,7 +33,7 @@ import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit
 import { APIError, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
 import { AnalysisProcessingError, analysisFailureTelemetry } from "@/lib/analysis-failure";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
-import { scrollToTop } from "@/lib/utils";
+import { asRecord, scrollToTop } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import { confidenceToPercent, getRecommendationMeta, getScenarioMeta, normalizeRecommendationLabel } from "@/lib/trading-ui";
@@ -150,6 +150,13 @@ const DashboardPage = () => {
   // troca de view.
   useEffect(() => {
     scrollToTop();
+  }, [activeView]);
+  // Abas que so existem dentro do painel (a rota continua /dashboard): sem
+  // isto o PostHog nao mostrava o que o assinante usa depois de analisar.
+  useEffect(() => {
+    if (activeView === 'my-trades' || activeView === 'journal' || activeView === 'strategy') {
+      track('feature_opened', { feature: activeView });
+    }
   }, [activeView]);
   const [analysisKey, setAnalysisKey] = useState(0);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
@@ -702,7 +709,18 @@ const DashboardPage = () => {
         analysisType,
         recommendation: analysis.recommendation ?? 'unknown',
         confidence: analysis.confidence ?? null,
-        symbol: analysis.symbol ?? null,
+        // O par e o timeframe vem dentro de fullResponse.analysis; o topo da
+        // resposta costuma vir sem eles (o PostHog recebia symbol: null sempre).
+        ...(() => {
+          const resposta = asRecord(analysis.fullResponse);
+          const bloco = asRecord(resposta.analysis);
+          const pick = (...values: unknown[]) =>
+            String(values.find((v) => typeof v === 'string' && v.trim()) ?? '').trim() || null;
+          return {
+            symbol: pick(analysis.symbol, bloco.symbol, bloco.ticker, bloco.asset, resposta.symbol, resposta.ticker),
+            timeframe: pick(analysis.timeframe, bloco.timeframe, bloco.period, resposta.timeframe),
+          };
+        })(),
         plan,
         // Posição da análise na escada grátis (1, 2 ou 3). null para plano pago/ilimitado.
         // `used` vem do backend (count antes desta análise), então esta é a (used+1)-ésima.

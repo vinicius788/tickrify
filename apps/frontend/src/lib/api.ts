@@ -266,6 +266,8 @@ export interface AnalysisUsageResponse {
   /** 'free' ou o plano do assinante (starter, weekly, e os legados pro/elite). */
   plan: string;
   period: 'monthly' | 'weekly';
+  /** Ciclo de cobranca do assinante; null no gratis e no acesso manual. */
+  billingCycle?: 'weekly' | 'monthly' | 'yearly' | null;
   periodStart: string;
   total: number | null;
   used: number;

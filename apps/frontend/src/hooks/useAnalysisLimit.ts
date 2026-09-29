@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { apiClient } from '@/lib/api';
+import { setPlanContext } from '@/lib/analytics';
 
 export type UserPlan = 'free' | 'starter' | 'pro' | 'elite' | 'weekly';
 
@@ -90,6 +91,11 @@ export function useAnalysisLimit(): AnalysisLimitData {
 
       const validPlans: UserPlan[] = ['free', 'starter', 'pro', 'elite', 'weekly'];
       setUserPlan(validPlans.includes(usage.plan as UserPlan) ? (usage.plan as UserPlan) : 'free');
+      setPlanContext({
+        plan: usage.plan,
+        billingCycle: usage.billingCycle ?? null,
+        isSubscriber: usage.plan !== 'free',
+      });
       setBackendUnlimited(Boolean(usage.isUnlimited));
       setAnalysisCount(usage.used);
       setAnalysesAllTime(
@@ -138,6 +144,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
 
   useEffect(() => {
     if (!user) {
+      setPlanContext(null);
       setAnalysisCount(0);
       setAnalysisLimit(FREE_LIMIT);
       setFreeTotal(null);

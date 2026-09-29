@@ -371,6 +371,9 @@ export type FunnelEvent =
   // pasta na nuvem). A pessoa ve o aviso na tela; sem este evento, nao vemos.
   // `surface`: dashboard | try.
   | 'upload_read_failed'
+  // Aba do painel aberta (my-trades | journal | strategy). Sem isto o PostHog
+  // so via `/dashboard` e nao dava para saber o que o assinante usa la dentro.
+  | 'feature_opened'
   // Card de compartilhamento: `step` diz onde a pessoa parou
   // (opened | copied | downloaded | x_opened | native_shared). Sem isto não dá
   // para saber se o card é gerado e nunca postado, que é a falha mais provável.
@@ -437,6 +440,8 @@ function flushPending(): void {
       /* noop */
     }
   }
+
+  applyPlanContext();
 
   const queued = pending;
   pending = [];
@@ -558,6 +563,35 @@ export function setAttributionContext(first: AttributionTouch | null, last: Attr
   if (!first && !last) return;
   attributionContext = { first, last };
   applyAttributionContext();
+}
+
+// Plano de quem esta logado, em TODO evento do navegador (super propriedade):
+// sem isto, pagante e gratis faziam "a mesma coisa" na lista do PostHog e so o
+// `analysis_completed` dizia o plano. Vem do /usage (useAnalysisLimit).
+export type PlanContext = { plan: string; billingCycle: string | null; isSubscriber: boolean };
+let planContext: PlanContext | null = null;
+const PLAN_KEYS = ['plan', 'billing_cycle', 'is_subscriber'] as const;
+
+function applyPlanContext(): void {
+  if (!ready) return;
+  try {
+    if (!planContext) {
+      for (const key of PLAN_KEYS) posthog.unregister(key);
+      return;
+    }
+    posthog.register({
+      plan: planContext.plan,
+      billing_cycle: planContext.billingCycle,
+      is_subscriber: planContext.isSubscriber,
+    });
+  } catch {
+    /* noop */
+  }
+}
+
+export function setPlanContext(context: PlanContext | null): void {
+  planContext = context;
+  applyPlanContext();
 }
 
 // Liga o usuário anônimo ao usuário logado (Clerk). Chamar no signup/login.

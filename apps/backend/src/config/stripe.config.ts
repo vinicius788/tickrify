@@ -97,6 +97,18 @@ export function resolvePlanForPriceId(priceId: string): PlanType | null {
   return null;
 }
 
+/** Ciclo de cobranca de um preco nosso, ou null (acesso manual, preco desconhecido). */
+export function billingCycleForPriceId(priceId: string | null | undefined): BillingCycle | null {
+  if (!priceId) return null;
+  if (isWeeklyPriceId(priceId)) return 'weekly';
+  for (const intervals of Object.values(PRICES)) {
+    for (const [cycle, currencies] of Object.entries(intervals) as [PlanCycle, Record<Currency, string>][]) {
+      if (Object.values(currencies).includes(priceId)) return cycle;
+    }
+  }
+  return null;
+}
+
 export function getStripeConfig() {
   return {
     secretKey: String(process.env.STRIPE_SECRET_KEY || '').trim(),

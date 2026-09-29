@@ -19,7 +19,8 @@ import { Prisma } from '@prisma/client';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { PrismaService } from '../database/prisma.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
-import { isWeeklyPriceId, resolvePlanForPriceId } from '../../config/stripe.config';
+import { billingCycleForPriceId, isWeeklyPriceId, resolvePlanForPriceId } from '../../config/stripe.config';
+import { trackUserActivity } from '../../common/analytics/user-activity';
 import { AIAdapter, AIAnalysisError } from './ai.adapter';
 import { resolveModel } from './openai-params';
 import { TRADING_SYSTEM_PROMPT_V9 } from '../../common/prompts/trading-system-prompt-v9';
@@ -418,6 +419,8 @@ export class AiService implements OnModuleInit {
         analysisId: analysis.id,
         createdAt: analysis.createdAt,
       });
+    } else {
+      void this.trackPaidAnalysisStarted(userId, analysis, normalizedAnalysisType);
     }
 
     const queue = queueReadiness.connected ? getAiQueue() : null;
@@ -800,6 +803,12 @@ export class AiService implements OnModuleInit {
       WHERE "id" = ${id} AND "userId" = ${userId}
     `;
 
+    void trackUserActivity(this.prisma, userId, 'trade_outcome_set', {
+      analysisId: id,
+      outcome,
+      hasPnl: pnlAmount !== null || pnlPercent !== null,
+    });
+
     return { id, outcome, pnlPercent, pnlAmount };
   }
 
@@ -829,6 +838,7 @@ export class AiService implements OnModuleInit {
       // entao so contem valores da whitelist.
       data: { strategyProfile: (profile as unknown as Prisma.InputJsonValue) ?? Prisma.DbNull },
     });
+    void trackUserActivity(this.prisma, userId, 'strategy_saved', { hasProfile: profile !== null });
     return { profile };
   }
 
@@ -952,21 +962,12 @@ export class AiService implements OnModuleInit {
       };
     }
 
-    // Resolve nome real do plano (starter/pro/elite) a partir da subscription ativa
-    let planName: string = 'free';
-    const activeSub = await this.prisma.subscription.findFirst({
-      where: { userId, status: { in: ACTIVE_SUBSCRIPTION_STATUSES } },
-      select: { priceId: true },
-      orderBy: { updatedAt: 'desc' },
-    });
-    const resolved = activeSub?.priceId ? resolvePlanForPriceId(activeSub.priceId) : null;
-    // O semanal e o starter cobrado por semana: o painel precisa saber para
-    // mostrar o teto de 25 e "por semana" em vez de 200 por mes.
-    const weekly = isWeeklyPriceId(activeSub?.priceId);
-    planName = weekly ? 'weekly' : resolved ?? 'pro';
+    const { plan: planName, billingCycle } = await this.resolvePaidPlan(userId);
+    const weekly = billingCycle === 'weekly';
 
     return {
       plan: planName,
+      billingCycle,
       period: weekly ? 'weekly' : 'monthly',
       periodStart,
       total: null,
@@ -1252,6 +1253,64 @@ export class AiService implements OnModuleInit {
     await notifyFreeQuotaExhausted(this.recoveryDeps(), userId);
   }
 
+
+  /**
+   * Nome do plano pago (starter/pro/elite, ou weekly) e o ciclo de cobranca,
+   * a partir da assinatura ativa. Acesso manual sem preco nosso vira 'pro'
+   * e ciclo null.
+   */
+  private async resolvePaidPlan(userId: string): Promise<{ plan: string; billingCycle: string | null }> {
+    const activeSub = await this.prisma.subscription.findFirst({
+      where: { userId, status: { in: ACTIVE_SUBSCRIPTION_STATUSES } },
+      select: { priceId: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+    const resolved = activeSub?.priceId ? resolvePlanForPriceId(activeSub.priceId) : null;
+    // O semanal e o starter cobrado por semana: o painel precisa saber para
+    // mostrar o teto de 25 e "por semana" em vez de 200 por mes.
+    const weekly = isWeeklyPriceId(activeSub?.priceId);
+    return {
+      plan: weekly ? 'weekly' : resolved ?? 'pro',
+      billingCycle: billingCycleForPriceId(activeSub?.priceId),
+    };
+  }
+
+  /** Analise paga criada: custo, saldo que sobrou e plano, no evento e no perfil. */
+  private async trackPaidAnalysisStarted(
+    userId: string,
+    analysis: { id: string; createdAt: Date },
+    analysisType: AnalysisType,
+  ): Promise<void> {
+    try {
+      const [{ plan, billingCycle }, ticksLeft] = await Promise.all([
+        this.resolvePaidPlan(userId),
+        this.ticksService.getBalance(userId),
+      ]);
+      const ticksCost = analysisType === 'deep' ? TICK_COSTS.ANALYSIS_DEEP : TICK_COSTS.ANALYSIS_QUICK;
+      await trackUserActivity(
+        this.prisma,
+        userId,
+        'paid_analysis_started',
+        {
+          analysisId: analysis.id,
+          analysisType,
+          ticksCost,
+          ticksLeft,
+          plan,
+          billingCycle,
+          $set: {
+            plan,
+            billing_cycle: billingCycle,
+            ticks_left: ticksLeft,
+            last_paid_analysis_at: analysis.createdAt.toISOString(),
+          },
+        },
+        { dedupeKey: `paid_analysis_started:${analysis.id}`, timestamp: analysis.createdAt },
+      );
+    } catch {
+      /* analytics nunca derruba a analise */
+    }
+  }
 
   /**
    * Enforces plan/quota access AND creates the Analysis row atomically.
