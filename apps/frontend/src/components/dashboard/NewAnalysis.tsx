@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/card';
 import { UploadCloud, X, Plus, Layers, Info } from 'lucide-react';
 import { useCallback, useState, type ChangeEvent } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { track } from '@/lib/analytics';
 
 interface NewAnalysisProps {
   onStartAnalysis: (
@@ -146,7 +147,13 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
         type: file.type || 'image/png',
         lastModified: file.lastModified,
       });
-    } catch {
+    } catch (err) {
+      track('upload_read_failed', {
+        surface: 'dashboard',
+        fileType: file.type || null,
+        fileBytes: file.size ?? null,
+        errorName: err instanceof Error ? err.name : null,
+      });
       setReadError(true);
       return;
     }

@@ -119,7 +119,13 @@ const TryPage = () => {
     let copy: Blob;
     try {
       copy = new Blob([await file.arrayBuffer()], { type: file.type });
-    } catch {
+    } catch (err) {
+      track('upload_read_failed', {
+        surface: 'try',
+        fileType: file.type || null,
+        fileBytes: file.size ?? null,
+        errorName: err instanceof Error ? err.name : null,
+      });
       setError(
         "We couldn't open this image. If it came from Google Photos or a cloud folder, save it to your device or take a new screenshot, then try again.",
       );

@@ -367,6 +367,10 @@ export type FunnelEvent =
   | 'analysis_started'
   | 'analysis_completed'
   | 'analysis_failed'
+  // A imagem escolhida nao pôde ser lida no aparelho (Android + Google Fotos ou
+  // pasta na nuvem). A pessoa ve o aviso na tela; sem este evento, nao vemos.
+  // `surface`: dashboard | try.
+  | 'upload_read_failed'
   // Card de compartilhamento: `step` diz onde a pessoa parou
   // (opened | copied | downloaded | x_opened | native_shared). Sem isto não dá
   // para saber se o card é gerado e nunca postado, que é a falha mais provável.

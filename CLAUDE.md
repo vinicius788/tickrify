@@ -514,6 +514,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **28/09 (tarde):** plano semanal US$ 7,99 / 25 ticks (pricing, paywall, modal, contador); checkout sem endereco obrigatorio.
 - **28/09 (seguranca):** TLS do runtime exige `verify-full`; demo bloqueia sem Turnstile/verificador/segredo de hash; rate limit usa `req.ip`; auth oculta erros internos; auditoria de dependencias bloqueia consulta inconclusiva. Gate validado na base atual: 473 testes backend, 128 frontend, builds e auditoria sem bloqueadores. CA Supabase conferida em preflight no Render; requisitos operacionais no runbook de deploy.
 - **28/09 (resultado):** veredito `no_fill` ("Entry not reached") no painel, My Trades e Diario: fecha a cobranca, fica fora do win rate e do P&L; "Did not take it" continua so apagando a marcacao.
+- **28/09 (upload Android):** imagem copiada para a memoria na escolha (painel e `/try`); se nem ai der para ler, a tela avisa e sai `upload_read_failed { surface, fileType, fileBytes, errorName }` no PostHog. Antes o erro virava `analysis_failed network_error` em ~70 ms.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---
