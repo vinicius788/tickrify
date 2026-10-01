@@ -256,7 +256,22 @@ Vale para TODA mudanca, grande ou pequena:
   cobrado.
 - **`/accuracy`** publica o acerto com n e intervalo de Wilson; a home le os
   numeros ao vivo da mesma API (sem resposta mostra um traco, nunca numero velho). O
-  score de confianca NAO mostrou poder preditivo em producao (27/07).
+  score de confianca NAO mostrou poder preditivo em producao (27/07; 30/09: 39,6% na
+  faixa 60-69 x 39,7% na 70+, n=116, confianca media 69,6 contra 40% de acerto).
+- **Confianca fora da tela desde 30/09.** O prompt pede `confidence` como chance de
+  bater o TP1 (deve bater com `probabilityTp1`), entao ela E probabilidade, e
+  descalibrada em ~30 pontos. Saiu do resultado, card de compartilhamento, painel,
+  My Trades, /try, paywall e home, junto com o selo Signal/Read e o bloco
+  "Probabilities". O motor continua gravando; a /accuracy continua mostrando a
+  tabela por faixa. Nao voltar a exibir sem calibracao medida.
+- **R/R principal = TP1 (30/09)** no painel e no /try (era o TP2). E o alvo que a
+  /accuracy mede; o TP2 fica na linha de baixo.
+- **Expectancy medida (30/09, 127 trades WIN/LOSS):** R medio ate o TP1 1,23,
+  expectancy -0,105R antes de custos, 25% chegam ao TP2. Por faixa de R do TP1:
+  abaixo de 1,2R n=72, 43,1%, -0,195R; 1,2 a 1,5R n=15, 26,7%, -0,374R; 1,5R ou
+  mais n=40, 40%, +0,159R (Wilson do acerto 26% a 55%: ainda nao prova edge).
+  O R/R guard atual (rebaixa so se nem o MELHOR alvo passa de 1,2) deixa passar
+  57% dos trades com TP1 abaixo de 1,2R. Decisao pendente na secao 6.
 - **Perfil de estrategia (pago):** campos fechados, selo `strategyFit`
   (`ideal|good|poor|conflict`) que nunca muda a recomendacao; analise com
   estrategia fica fora de tudo que e publico (`strategyHash`).
@@ -495,6 +510,8 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 30/09 | **Decidir o R/R guard pelo TP1.** Trocar "melhor alvo >= 1,2" por "TP1 >= 1,5R" seria a unica faixa com expectancy positiva (ver 3.2), mas viraria WAIT ~87 de 127 BUY/SELL (WAIT% de ~48% para ~80%), o que pesa na ativacao do gratis. Alternativa: so medir mais (n=40 nao fecha). Expectancy na /accuracy so depois dessa decisao (e publico). | dono decide, Claude implementa |
+| 30/09 | Medir a tabela "48 hours later" da home (`/api/ai/public-analyses/scored`): cliques para `/accuracy` e `/try` a partir de `#reads`. Hash diario publico das analises (repo publico ou OpenTimestamps) ainda nao feito. | Claude |
 | 29/09 | Primeiros envios dos e-mails de ciclo de vida: conferir no Render (`[lifecycle] kind=... sent=1`) e na Resend que sairam e se alguem respondeu em `vinicius@tickrify.com`. | Claude |
 | 29/09 | Teto de 10 analises gratis: MANTIDO de proposito. A barra do WAIT (29/09) empurra a pessoa a tentar outro grafico ate achar um BUY/SELL; baixar o teto agora cortaria justamente isso e mandaria ao paywall quem nunca viu um plano de trade. Reavaliar com os 7 dias de `wait_nudge_clicked`: se a 2a analise subir e mesmo assim poucos esgotarem, testar 6. | Claude |
 | 29/09 | Medir 7 dias depois do deploy: `wait_nudge_clicked / wait_nudge_viewed`, 2a analise de quem tomou WAIT na 1a (era ~50%), `upgrade_video_played`, `checkout_started source=upgrade_modal`, `$pageview` com `$lib=tickrify-static` por `$pathname`. | Claude |
@@ -566,6 +583,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **29/09 (ligado pelo dono):** texto dos 4 e-mails de ciclo de vida aprovado e chaves `EMAIL_ACTIVATION_NUDGE` e `EMAIL_CHECKOUT_RECOVERY` LIGADAS no /admin (antes: 1 dry-run por volta, o leopeter com recusa). Google Pay ligado na Stripe (config Default; lido no painel depois). Resend lido no painel: 369 e-mails em 15 dias, 99,19% entregues, 0,81% bounce, 0 reclamacao; uma automacao vazia e desligada da Resend sem uso.
 - **29/09 (recuperacao):** texto novo do e-mail "cota gratis esgotada" aprovado pelo dono: assunto "Your free Tickrify analyses are used up", semanal primeiro, mensal com o EARLY35 so se ativo, sem presumir uso.
 - **30/09:** 3 analises de exemplo fixas no painel antes das gratis (otimista, pessimista, neutra, com o depois), sem IA e sem cota (ver 3.5); o exemplo em um clique (`/api/demo/example`) saiu.
+- **30/09 (confianca e recibos):** confianca, Signal/Read e "Probabilities" fora de todas as telas (card mostra a hora da leitura em UTC); R/R principal pelo TP1; rota publica `/api/ai/public-analyses/scored` e tabela "What the market did 48 hours later" na home (WIN, LOSS, NO_FILL, TIMEOUT, ordem do sweeper); semanal na secao de preco da home; textos falsos corrigidos nos 6 idiomas e no corpo pre-renderizado ("one-off Ticks", "See live analysis", "API sleeps", FAQ "professional traders", "3 free analyses" virou "3 free trade plans, WAIT doesn't count"); blog, `llms.txt` e /pricing sem "confidence score/tier". `confidenceToPercent` e `getConvictionTier` removidos.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

@@ -24,8 +24,6 @@ const baseData: ShareCardData = {
   scenario: 'BULLISH',
   action: 'BUY',
   tone: 'buy',
-  tier: 'signal',
-  confidence: 74,
   read: 'Reclaim of the 4H order block with volume.',
   date: new Date('2026-09-01T12:00:00Z'),
 };
@@ -83,7 +81,7 @@ describe('rótulos públicos de cenário e ação', () => {
   });
 
   it('preserva o cenário bullish mesmo quando a ação é aguardar', () => {
-    const text = buildShareText({ ...baseData, action: 'HOLD', tone: 'buy', tier: null });
+    const text = buildShareText({ ...baseData, action: 'HOLD', tone: 'buy' });
     expect(text).not.toContain('HOLD');
     expect(text).toContain('read BULLISH and advised waiting');
   });
@@ -91,7 +89,7 @@ describe('rótulos públicos de cenário e ação', () => {
 
 describe('buildShareText', () => {
   it('distingue cenário neutro de ação de aguardar', () => {
-    expect(buildShareText({ ...baseData, scenario: 'NEUTRAL', action: 'HOLD', tone: 'hold', tier: null })).toContain(
+    expect(buildShareText({ ...baseData, scenario: 'NEUTRAL', action: 'HOLD', tone: 'hold' })).toContain(
       'read NEUTRAL and advised waiting',
     );
   });
@@ -115,6 +113,12 @@ describe('buildShareText', () => {
     for (const forbidden of ['entry', 'stop', 'target', 'take profit', '$']) {
       expect(text).not.toContain(forbidden);
     }
+  });
+
+  it('NÃO cita confiança: o score saiu do produto em 30/09/2026 por não prever nada', () => {
+    const text = buildShareText(baseData).toLowerCase();
+    expect(text).not.toContain('confidence');
+    expect(text).not.toContain('%');
   });
 
   it('NÃO promete resultado nem cita taxa de acerto: número só sai da /accuracy', () => {
@@ -146,7 +150,7 @@ describe('drawShareCard', () => {
     const toBlob = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => {
       callback(new Blob(['image'], { type: 'image/png' }));
     });
-    const data = { ...baseData, action: 'WAIT', tier: null } as ShareCardData;
+    const data = { ...baseData, action: 'WAIT' } as ShareCardData;
 
     try {
       await drawShareCard(data);

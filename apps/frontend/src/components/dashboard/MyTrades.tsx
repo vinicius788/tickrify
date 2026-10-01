@@ -3,7 +3,7 @@ import { useUser } from '@clerk/clerk-react';
 import { Calculator, Check, ExternalLink, Filter, ImageOff, Maximize2, Star, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { confidenceToPercent, getRecommendationMeta, getScenarioMeta } from '@/lib/trading-ui';
+import { getRecommendationMeta, getScenarioMeta } from '@/lib/trading-ui';
 import { useAnalyses } from '@/hooks/useAnalyses';
 import { asRecord } from '@/lib/utils';
 import { useAPIClient } from '@/lib/api';
@@ -493,7 +493,6 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                 : meta.tone === 'sell'
                   ? t.analysis.sell
                   : t.analysis.hold;
-              const confidence = confidenceToPercent(a.confidence);
               const verdict = getVerdict(a);
               const closed = isClosed(verdict);
               // Aguardar sem resultado marcado: nada a marcar. Se um WAIT ja tiver
@@ -577,9 +576,6 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                         <span className="text-xs text-[var(--text-secondary)]">
                           {t.analysis.action}: <span className="font-semibold text-[var(--text-primary)]">{actionLabel}</span>
                         </span>
-                        {confidence > 0 && (
-                          <span className="text-xs text-[var(--text-secondary)]">{confidence}% {tr.conf}</span>
-                        )}
                         {confluence !== null && (
                           <span className="text-xs text-[var(--text-secondary)]">
                             {Number(factorsPresent)}/{6} {tr.factors}

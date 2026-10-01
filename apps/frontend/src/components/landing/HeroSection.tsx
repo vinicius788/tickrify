@@ -56,7 +56,7 @@ const HeroSection = () => {
                 {h.goToPanel} <ArrowRight className="h-4 w-4" />
               </button>
             </SignedIn>
-            <a href="#platform" className="site-btn site-btn-ghost">{h.seeLive}</a>
+            <a href="#platform" className="site-btn site-btn-ghost">{h.seeExample}</a>
           </div>
 
           {/* Diferencial real contra os concorrentes de diário de trading, cuja
@@ -75,9 +75,7 @@ const HeroSection = () => {
 
           <div className="site-verdict">
             <span className="site-call site-long">▲ BULLISH</span>
-            <span className="site-conf">
-              {t.analysis.confidence}: <b>68%</b> · {t.analysis.tierRead}
-            </span>
+            <span className="site-conf">{h.mockScored}</span>
           </div>
 
           <div className="site-levels">
@@ -100,7 +98,7 @@ const HeroSection = () => {
           </div>
 
           <div className="site-card-foot">
-            <span>R/R <b>1.6:1</b></span>
+            <span>{h.mockRr} <b>1.6:1</b></span>
             <span>{t.analysis.confluence} <b>4/8</b></span>
             <span>{t.analysis.action} <b className="site-long">{t.analysis.buy}</b></span>
           </div>

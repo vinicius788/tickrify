@@ -46,32 +46,6 @@ export function getScenarioMeta(bias: unknown, recommendation?: unknown) {
       : SCENARIO_META.NEUTRAL;
 }
 
-export function confidenceToPercent(value: unknown): number {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return 0;
-  }
-  if (numeric >= 0 && numeric <= 1) {
-    return Math.round(numeric * 100);
-  }
-  return Math.max(0, Math.min(100, Math.round(numeric)));
-}
-
-/**
- * Tier de convicção (calibração v7.3, medida em backtest 13/07/2026):
- * sinais com confiança ≥70 acertaram ~56%; abaixo disso, ~25%.
- * <70 = "leitura de mercado" (informativa) · ≥70 = "sinal" · HOLD = null.
- */
-export function getConvictionTier(
-  recommendation: unknown,
-  confidence: unknown,
-): 'signal' | 'read' | null {
-  if (getRecommendationMeta(recommendation).tone === 'hold') {
-    return null;
-  }
-  return confidenceToPercent(confidence) >= 70 ? 'signal' : 'read';
-}
-
 export function calcStopPercent(entry: number, stop: number): number {
   if (!Number.isFinite(entry) || entry === 0 || !Number.isFinite(stop)) {
     return 0;

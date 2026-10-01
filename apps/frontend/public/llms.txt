@@ -1,13 +1,13 @@
 # Tickrify
 
 > AI chart analysis for traders. You upload a screenshot of a chart; the AI
-> returns a structured read: entry, stop, targets, confidence, confluence and
+> returns a structured read: entry, stop, targets, risk-to-reward, confluence and
 > the scenario that would invalidate it. It reads the chart cold, with no
 > assumption that you already have a thesis. Arrive with one and it is a second
 > opinion. It is not a signal service and not financial advice. The decision is
 > always the trader's.
 
-Last updated: 2026-09-23. Canonical location: [https://tickrify.com/llms.txt](https://tickrify.com/llms.txt)
+Last updated: 2026-09-30. Canonical location: [https://tickrify.com/llms.txt](https://tickrify.com/llms.txt)
 
 ## What it actually does
 
@@ -15,7 +15,7 @@ Last updated: 2026-09-23. Canonical location: [https://tickrify.com/llms.txt](ht
   terminals, mobile apps). The image is the input; no account connection and no
   broker integration is involved.
 - Returns a structured analysis: market structure (BOS/CHoCH), entry, stop,
-  take-profit levels, a confidence score, confluence factors, risk factors and
+  take-profit levels, risk-to-reward per target, confluence factors, risk factors and
   an executive summary.
 - Abstains. A large share of reads come back as an explicit WAIT with the
   condition that would change it. Abstention is a designed outcome, not a

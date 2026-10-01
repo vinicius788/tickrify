@@ -151,8 +151,8 @@ function metricRow(label, interval) {
 
 const BAND_LABEL = {
   below60: 'Confidence below 60',
-  band60to69: 'Confidence 60 to 69, shown as "Read"',
-  band70plus: 'Confidence 70 and above, shown as "Signal"',
+  band60to69: 'Confidence 60 to 69 (score no longer shown in the product)',
+  band70plus: 'Confidence 70 and above (score no longer shown in the product)',
   unknown: 'Confidence not recorded',
 };
 
@@ -319,7 +319,7 @@ function pricingBlock(l) {
   return [
     `<h2>${esc(`${l.pricing.title} ${l.pricing.highlight}`)}</h2>`,
     `<p>${esc(l.pricing.subtitle)}</p>`,
-    `<ul>${items}<li>${esc(l.pricing.monthlyReset)}</li></ul>`,
+    `<ul>${items}<li>${esc(l.pricing.monthlyReset)}</li><li>${esc(l.pricing.weeklyLine)}</li></ul>`,
   ].join('\n');
 }
 
@@ -363,7 +363,7 @@ export function buildBody({ path, meta, copy, accuracy, pricingFaq }) {
       `<h1>${esc(headingFromTitle(meta.title))}</h1>`,
       `<p>${esc(meta.description)}</p>`,
       `<p>${esc(l.pricing.subtitle)}</p>`,
-      `<ul>${['fS1', 'fS2', 'fS3', 'fS4'].map((k) => `<li>${esc(l.pricing[k])}</li>`).join('')}<li>${esc(l.pricing.monthlyReset)}</li></ul>`,
+      `<ul>${['fS1', 'fS2', 'fS3', 'fS4'].map((k) => `<li>${esc(l.pricing[k])}</li>`).join('')}<li>${esc(l.pricing.monthlyReset)}</li><li>${esc(l.pricing.weeklyLine)}</li></ul>`,
       `<h2>${esc(l.faq.q6)}</h2><p>${esc(l.faq.a6)}</p>`,
       accuracyBlock(accuracy),
       /* As MESMAS perguntas que a tela mostra. Sem isto o crawler que não
@@ -500,7 +500,7 @@ export function buildJsonLd({ path, copy, accuracy, offer, pricingFaq }) {
       operatingSystem: 'Web',
       url: `${SITE}`,
       description:
-        'AI chart analysis for traders: upload a chart screenshot and get entry, stop, targets, risk and confidence, a second opinion before you enter.',
+        'AI chart analysis for traders: upload a chart screenshot and get entry, stop, targets and risk, or a WAIT, as a second opinion before you enter.',
       offers: {
         '@type': 'Offer',
         price: offer.price,

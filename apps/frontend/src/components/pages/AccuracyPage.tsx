@@ -61,8 +61,8 @@ const BAND_LABEL: Record<string, string> = {
 
 const BAND_NOTE: Record<string, string> = {
   below60: 'Low conviction',
-  band60to69: 'Shown as "Read" in the product',
-  band70plus: 'Shown as "Signal" in the product',
+  band60to69: 'Was labelled "Read" until 30 Sep 2026',
+  band70plus: 'Was labelled "Signal" until 30 Sep 2026',
   unknown: '',
 };
 
@@ -287,8 +287,7 @@ const AccuracyPage = () => {
             <div className="site-callout">
               <h3>The numbers are not loading right now.</h3>
               <p>
-                Our API sleeps when idle and can take up to a minute to wake up. Refresh in a moment. We would
-                rather show you nothing than show you a number we did not measure.
+                Refresh in a moment. We would rather show you nothing than show you a number we did not measure.
               </p>
             </div>
           </div>
@@ -417,15 +416,16 @@ const AccuracyPage = () => {
               </div>
 
               <p>
-                The product uses 70 as its threshold: below it a call is labelled "Read", a market reading; at or
+                The product used 70 as its threshold: below it a call was labelled "Read", a market reading; at or
                 above it, "Signal". That split came out of our blind backtest, where the two bands separated
                 sharply, 25% below versus 56% above.
               </p>
               <p>
-                <strong>In production so far, they have not separated.</strong> The confidence intervals in the
-                table overlap almost entirely, which means we cannot yet claim the score predicts anything on live
-                traffic. We are publishing that instead of hiding it. If the gap does not open as the sample grows,
-                the score is what changes, not this page.
+                <strong>In production, they never separated.</strong> The confidence intervals in the table overlap
+                almost entirely, so the score does not predict anything on live traffic. We said that if the gap did
+                not open, the score would change and not this page. On 30 September 2026 we removed the score and the
+                Read/Signal labels from the product. The engine still records it, and this table keeps showing it, so
+                you can check that the decision was right.
               </p>
 
               <h2 id="compare">How should you read an AI accuracy claim?</h2>

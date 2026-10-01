@@ -324,7 +324,9 @@ export class DemoService implements OnModuleInit {
       stopLoss,
       takeProfit1,
       takeProfit2,
-      riskReward: invalidTradePlan || recommendation === 'WAIT' ? null : formatRiskReward(rrTp2 ?? rrTp1),
+      // TP1 primeiro (30/09/2026): é o alvo que a /accuracy mede, e a tela do
+      // /try rotula o número como "R:R to TP1".
+      riskReward: invalidTradePlan || recommendation === 'WAIT' ? null : formatRiskReward(rrTp1 ?? rrTp2),
       reasoning,
       // Aviso legal: a demo é pública — reforçar caráter educacional na própria resposta.
       disclaimer:

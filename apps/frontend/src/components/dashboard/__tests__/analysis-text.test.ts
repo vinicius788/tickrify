@@ -4,7 +4,6 @@ import {
   cleanModelText,
   normalizeRiskFactorsForView,
   parseStructureChecklist,
-  parseTargetProbabilities,
   softenDashes,
   splitItems,
 } from '@/components/dashboard/AnalysisResult';
@@ -18,24 +17,6 @@ describe('risk/reward shown for trade levels', () => {
     expect(computeDirectionalRiskReward(100, 105, 110, 'sell')).toBeNull();
     expect(computeDirectionalRiskReward(100, 105, 90, 'buy')).toBeNull();
     expect(computeDirectionalRiskReward(100, 95, 110, 'sell')).toBeNull();
-  });
-});
-
-describe('parseTargetProbabilities', () => {
-  it('preserves nested TP2 estimates instead of treating all three as exclusive outcomes', () => {
-    expect(parseTargetProbabilities({ probabilityTp1: 58, probabilityTp2: 43, probabilityStop: 42 }, true)).toEqual({
-      tp1: 58, tp2: 43, stop: 42,
-    });
-    expect(parseTargetProbabilities({ probabilityTp1: 0.58, probabilityTp2: 0.43, probabilityStop: 0.42 }, true)).toEqual({
-      tp1: 58, tp2: 43, stop: 42,
-    });
-  });
-
-  it('hides incomplete or contradictory estimates from stored analyses', () => {
-    expect(parseTargetProbabilities({ probabilityTp1: 58, probabilityStop: 42 }, true)).toBeNull();
-    expect(parseTargetProbabilities({ probabilityTp1: 40, probabilityTp2: 65, probabilityStop: 60 }, true)).toBeNull();
-    expect(parseTargetProbabilities({ probabilityTp1: 70, probabilityTp2: 30, probabilityStop: 50 }, true)).toBeNull();
-    expect(parseTargetProbabilities({ probabilityTp1: 58, probabilityTp2: 43, probabilityStop: 42 }, false)).toBeNull();
   });
 });
 

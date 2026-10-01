@@ -31,6 +31,7 @@ import { SetStrategyDto } from './dto/set-strategy.dto';
 import {
   AUTOMATIC_OUTCOMES,
   GROUNDING_LIVE_SINCE,
+  PUBLIC_SCORED_OUTCOMES,
   confidenceBand,
   tally,
   type ConfidenceBand,
@@ -258,6 +259,50 @@ export class AiController {
         stopLoss: analysis?.stopLoss ?? null,
         takeProfit1: analysis?.takeProfit1 ?? null,
         takeProfit2: analysis?.takeProfit2 ?? null,
+      };
+    });
+  }
+
+  /**
+   * Endpoint PÚBLICO — os últimos planos de trade que o sweeper já pontuou
+   * (30/09/2026). É o recibo da vitrine: a lista "latest reads" só mostra
+   * leituras com menos de 48h, que ainda não têm resultado; esta mostra o que o
+   * mercado fez depois, na ordem em que foram pontuadas, ganhos e perdas juntos.
+   *
+   * Mesmas regras da vitrine e da /accuracy: só o outcome automático (nunca o
+   * veredito do usuário), isDemo:false, strategyHash:null, sem usuário e sem
+   * imagem. WAIT/ABSTAIN, UNTRACKABLE e INCOMPLETE ficam de fora porque não são
+   * trade pontuável; NO_FILL e TIMEOUT entram, porque esconder isso seria
+   * escolher a dedo.
+   */
+  @Public()
+  @Get('public-analyses/scored')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async getScoredPublicAnalyses() {
+    const rows = await this.prisma.analysis.findMany({
+      where: { outcome: { in: [...PUBLIC_SCORED_OUTCOMES] }, isDemo: false, strategyHash: null },
+      orderBy: [{ outcomeAt: 'desc' }, { id: 'desc' }],
+      take: 6,
+      select: { id: true, recommendation: true, createdAt: true, outcome: true, outcomeAt: true, outcomeDetail: true, result: true },
+    });
+
+    return rows.map((r) => {
+      const detail = (r.outcomeDetail ?? {}) as Record<string, unknown>;
+      const result = r.result as Record<string, unknown> | null;
+      const analysis = result?.analysis as Record<string, unknown> | undefined;
+      const level = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+      return {
+        id: r.id,
+        recommendation: r.recommendation,
+        createdAt: r.createdAt,
+        outcome: r.outcome,
+        outcomeAt: r.outcomeAt,
+        symbol: normalizeSymbol(detail.symbol ?? analysis?.symbol),
+        timeframe: String(analysis?.timeframe || '').trim(),
+        // Os níveis vêm do outcomeDetail: são exatamente os que o sweeper usou.
+        entry: level(detail.entry),
+        stopLoss: level(detail.stopLoss),
+        takeProfit1: level(detail.takeProfit1),
       };
     });
   }

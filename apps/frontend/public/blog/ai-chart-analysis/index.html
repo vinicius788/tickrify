@@ -112,7 +112,7 @@
       <li><strong>Symbol and timeframe detection.</strong> The tool reads what instrument and timeframe your screenshot is showing — usually from the chart's own labels.</li>
       <li><strong>Live data lookup.</strong> With the instrument identified, the tool can fetch actual recent candles from an exchange or data provider, rather than relying on what the image appears to show.</li>
       <li><strong>Deterministic maths.</strong> Anything that is arithmetic gets computed in code, not guessed by the model — volatility ranges, indicator values, volume relative to its average, where price sits inside its recent range. Counting and locating are exactly what vision models do worst.</li>
-      <li><strong>The structured prompt.</strong> Image plus computed context goes to the model with a schema it must fill: direction, entry, stop, targets, invalidation, confidence, reasoning.</li>
+      <li><strong>The structured prompt.</strong> Image plus computed context goes to the model with a schema it must fill: direction, entry, stop, targets, invalidation, reasoning.</li>
       <li><strong>Validation.</strong> The output gets checked for internal consistency — a stop on the wrong side of entry, a target that implies a nonsensical risk-reward, a level far outside the visible range.</li>
     </ol>
     <p>A tool that skips steps 2 and 3 is a chat interface with a trading-themed prompt. It will still produce confident, well-written output. That's the problem.</p>
@@ -184,7 +184,7 @@
     <p>And there's a cheap way to find out. Every serious tool in this category has a free tier or a trial. Run your own charts through one for a week alongside free ChatGPT, and see whether the structure changes your decisions. If it doesn't, you've learned something valuable for the price of a week's attention. <a href="/blog/best-ai-chart-analysis-tools/">We compared the options here</a>, including the ones that compete with us.</p>
 
     <div class="callout">
-      <p>Tickrify reads your chart with live market data behind it, gives you entry, stop, targets and a confidence tier — and tells you to wait when the setup isn't there. Our measured hit rate is <a href="/accuracy">public, with sample sizes and confidence intervals</a>.</p>
+      <p>Tickrify reads your chart with live market data behind it, gives you entry, stop, targets and the risk-to-reward of each, and tells you to wait when the setup isn't there. Our measured hit rate is <a href="/accuracy">public, with sample sizes and confidence intervals</a>.</p>
       <a class="btn" href="/try?utm_source=blog&amp;utm_medium=organic&amp;utm_campaign=ai-chart-analysis">Analyze your chart free — no card needed</a>
     </div>
 

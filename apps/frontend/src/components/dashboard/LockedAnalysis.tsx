@@ -21,7 +21,7 @@ const PREVIEW_ROWS: Array<{ label: string; value: string }> = [
   { label: 'Stop loss', value: '$ 4,240.00' },
   { label: 'Target 1', value: '$ 4,300.00' },
   { label: 'Target 2', value: '$ 4,320.00' },
-  { label: 'Confidence', value: '80%' },
+  { label: 'R/R to TP1', value: '1.8 : 1' },
 ];
 
 const MONTHLY_PRICE_USD = 29;
@@ -75,7 +75,7 @@ const LockedAnalysis = ({ onUnlock, onUnlockWeekly, unlockPending = false }: Loc
             Your free trade calls are used up
           </h2>
           <p className="max-w-[420px] text-sm text-[var(--text-secondary)]">
-            Subscribe to analyze this chart and the next ones: entry, stop, targets, risk and confidence on every read.
+            Subscribe to analyze this chart and the next ones: entry, stop, targets, risk and the reasoning on every read.
           </p>
           <button
             type="button"

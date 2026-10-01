@@ -102,6 +102,13 @@ const PricingSection = () => {
             {pr.starterCta}
           </Link>
 
+          {/* Semanal na vitrine (30/09/2026). Ele existe porque US$ 29 de uma vez
+              nao fecha para boa parte do publico (11 de 12 checkouts sem cartao
+              ate 29/09), e a home so mostrava o mensal. */}
+          <p className="site-price-fine">
+            <Link to="/pricing">{pr.weeklyLine}</Link>
+          </p>
+
           {/* Era "compre Ticks avulsos no painel · Ticks nunca expiram": o painel
               nao vende avulso e, desde 21/09/2026, o saldo do assinante volta
               para 200 a cada mes (nao acumula). As duas partes eram falsas. */}

@@ -31,8 +31,6 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import {
   calcStopPercent,
   calcTPPercent,
-  confidenceToPercent,
-  getConvictionTier,
   getRecommendationMeta,
   getScenarioMeta,
   normalizeConfluenceScore,
@@ -438,23 +436,6 @@ export function parseStructureChecklist(text: string): StructureChecklist {
   return { items, score: scoreMismatch ? null : score, verdict, scoreMismatch };
 }
 
-/** Esconde trios incompletos/incoerentes também em análises antigas já salvas. */
-export function parseTargetProbabilities(analysis: Record<string, unknown>, hasTradePlan: boolean): {
-  tp1: number; tp2: number; stop: number;
-} | null {
-  if (!hasTradePlan) return null;
-  const percentage = (value: unknown): number | null => {
-    const n = toNumber(value);
-    if (n === null || n <= 0 || n > 100) return null;
-    return Math.min(99, Math.max(1, Math.round(n <= 1 ? n * 100 : n)));
-  };
-  const tp1 = percentage(analysis.probabilityTp1);
-  const tp2 = percentage(analysis.probabilityTp2);
-  const stop = percentage(analysis.probabilityStop);
-  if (tp1 === null || tp2 === null || stop === null || tp2 > tp1 || tp1 + stop > 101) return null;
-  return { tp1, tp2, stop };
-}
-
 const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: AnalysisResultProps) => {
   // Diz ao botão de reportar problema qual análise está na tela. Sem isto o
   // relato chega sem o id e vira caça ao tesouro no histórico do usuário.
@@ -534,7 +515,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
     : recommendationMeta.tone === 'sell'
       ? t.analysis.sell
       : t.analysis.hold;
-  const confidence = confidenceToPercent(analysisData.confidence);
   // #2 — calibração: taxa de acerto histórica de setups semelhantes.
   const calibration = asRecord((analysisData as unknown as Record<string, unknown>).calibration);
   const calSample = toNumber(calibration.sampleSize) ?? 0;
@@ -591,14 +571,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   const invalidTradePlan = (tradeTone === 'buy' || tradeTone === 'sell') &&
     entry !== null && stopLoss !== null &&
     ((takeProfit1 !== null && rrTp1 === null) || (takeProfit2 !== null && rrTp2 === null));
-  const probabilities = parseTargetProbabilities(
-    analysis,
-    !invalidTradePlan && (tradeTone === 'buy' || tradeTone === 'sell') && rrTp1 !== null,
-  );
-  const probabilityTp1 = probabilities?.tp1 ?? null;
-  const probabilityTp2 = probabilities?.tp2 ?? null;
-  const probabilityStop = probabilities?.stop ?? null;
-  const hasProbabilities = probabilities !== null;
   const hasStructuredExit = tp1ClosePercent !== null || tp2ClosePercent !== null || breakevenTrigger !== null;
   const alternativeScenario = String(analysis.alternativeScenario || '').trim() || null;
   const trendStrength = String(analysis.trendStrength || '').trim() || null;
@@ -612,7 +584,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
 
   // R/R por alvo, calculado direto dos níveis (consistente e funciona em análises antigas).
   // Sem plano direcional verificável, não mostra razão fornecida só em texto.
-  const riskReward = invalidTradePlan || tradeTone === 'hold' ? null : rrTp2 ?? rrTp1;
+  // O número principal é o do TP1 (30/09/2026): é o alvo que a /accuracy mede.
+  // Era o do TP2, e quem lia "R/R 2.1" ao lado de um acerto medido no TP1
+  // multiplicava as duas coisas e superestimava o resultado.
+  const riskReward = invalidTradePlan || tradeTone === 'hold' ? null : rrTp1 ?? rrTp2;
   // R/R baixo (< 1.5) = vermelho + aviso; >= 2 verde; entre = amarelo.
   const riskRewardLow = riskReward !== null && riskReward < 1.5;
   const riskRewardTone = riskReward === null
@@ -668,9 +643,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
     uploadedImage ||
     null;
 
-  // v7.3: limiar de sinal alinhado à calibração medida (≥70 acertou ~56% no backtest)
-  const confidenceLabel = confidence >= 70 ? t.analysis.highConfidence : confidence >= 50 ? t.analysis.medConfidence : t.analysis.lowConfidence;
-  const convictionTier = getConvictionTier(analysisData.recommendation, analysisData.confidence);
 
   // Selo de encaixe com a estratégia do usuário (Tarefa 4 do backend).
   // `strategyFit`/`strategyFitReason` vêm no TOPO do `fullResponse` (irmãos de
@@ -865,8 +837,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
     scenario: scenarioMeta.label,
     action: recommendationMeta.label,
     tone: scenarioMeta.tone,
-    tier: convictionTier,
-    confidence,
     read: shareRead,
     flip: waitFlipItems[0]?.text ?? null,
     date: timestamp,
@@ -949,18 +919,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
               <span>{scenarioMeta.label}</span>
             </div>
-            {convictionTier && (
-              <span
-                title={convictionTier === 'read' ? t.analysis.tierReadNote : undefined}
-                className={`whitespace-nowrap rounded-sm border px-2 py-0.5 font-terminal text-[10px] font-semibold uppercase tracking-widest ${
-                  convictionTier === 'signal'
-                    ? 'border-[var(--border-accent)] text-[var(--text-primary)]'
-                    : 'border-[var(--border-subtle)] text-[var(--text-secondary)]'
-                }`}
-              >
-                {convictionTier === 'signal' ? t.analysis.tierSignal : t.analysis.tierRead}
-              </span>
-            )}
             {strategyFit && (
               <span
                 title={r.strategyFitNote}
@@ -972,11 +930,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
             <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border px-2 py-1 ${actionToneClasses}`}>
               {t.analysis.action.toUpperCase()}:{' '}
               <strong className="font-semibold">{actionLabel}</strong>
-            </span>
-            <span>
-              {t.analysis.confidence.toUpperCase()}:{' '}
-              <strong className="font-terminal font-semibold text-[var(--text-primary)]">{confidence}%</strong>{' '}
-              <span className="text-[var(--text-secondary)]">{confidenceLabel}</span>
             </span>
             {calWinRate !== null && calSample >= 3 && (
               <span className="whitespace-nowrap" title="Your historical hit rate on similar setups">
@@ -1112,7 +1065,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
           <CardContent className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3">
               <div>
-                <p className="text-xs text-[var(--text-secondary)]">R/R</p>
+                <p className="text-xs text-[var(--text-secondary)]">{r.rrTp1Label}</p>
                 <p className={`font-terminal text-base font-semibold ${riskRewardTone}`}>
                   {riskReward !== null ? `${riskReward.toFixed(1)} : 1` : 'N/A'}
                 </p>
@@ -1327,32 +1280,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                           Binance {liveMarket.binanceSymbol} · alternative.me
                         </p>
                       )}
-                    </AccordionContent>
-                  </AccordionItem>
-                )}
-
-                {/* ── Probabilidades ─────────────────────────────────── */}
-                {hasProbabilities && (
-                  <AccordionItem value="probabilities" className="border-[var(--border-subtle)]">
-                    <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
-                      <span className="flex items-center gap-2">
-                        <SlidersVertical className="h-4 w-4 text-[var(--signal-buy)]" />
-                        {t.analysis.outcomeProbabilities}
-                      </span>
-                    </AccordionTrigger>
-                    <AccordionContent>
-                      <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3">
-                        <div className="flex h-2 w-full overflow-hidden rounded-full bg-[var(--bg-surface)]">
-                          {probabilityTp1 !== null && <div className="h-full bg-[var(--signal-buy)]" style={{ width: `${Math.max(0, Math.min(100, probabilityTp1))}%` }} />}
-                          {probabilityStop !== null && <div className="h-full bg-[var(--signal-sell)]" style={{ width: `${Math.max(0, Math.min(100, probabilityStop))}%` }} />}
-                        </div>
-                        <div className="mt-1.5 flex justify-between font-terminal text-xs">
-                          {probabilityTp1 !== null && <span className="text-[var(--signal-buy)]">TP1 {Math.round(probabilityTp1)}%</span>}
-                          {probabilityTp2 !== null && <span className="text-[var(--signal-buy)]/80">TP2 {Math.round(probabilityTp2)}%</span>}
-                          {probabilityStop !== null && <span className="text-[var(--signal-sell)]">Stop {Math.round(probabilityStop)}%</span>}
-                        </div>
-                        <p className="mt-2 text-xs text-[var(--text-muted)]">{t.analysis.probabilityEstimateNote}</p>
-                      </div>
                     </AccordionContent>
                   </AccordionItem>
                 )}

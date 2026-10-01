@@ -242,8 +242,8 @@ const TryPage = () => {
           <span className="site-eyebrow">Free demo</span>
           <h1>See a real AI chart analysis. No signup.</h1>
           <p>
-            One click, and the same engine our subscribers use returns entry, stop, targets, risk and
-            confidence on a real chart.
+            One click, and the same engine our subscribers use returns entry, stop, targets and risk on a
+            real chart, or a WAIT with what would have to change.
           </p>
         </div>
       </section>
@@ -331,15 +331,11 @@ const TryPage = () => {
                   <span className={`site-call ${callClass}`}>{scenario?.icon} {scenario?.label}</span>
                   <span className={`site-chip ${actionClass}`}>Action: {result.recommendation}</span>
                 </div>
-                <span className="site-conf">
-                  Confidence <b>{result.confidence}%</b>
-                  {result.riskReward && result.recommendation !== 'WAIT' ? (
-                    <>
-                      {' '}
-                      · R:R <b>{result.riskReward}</b>
-                    </>
-                  ) : null}
-                </span>
+                {result.riskReward && result.recommendation !== 'WAIT' ? (
+                  <span className="site-conf">
+                    R:R to TP1 <b>{result.riskReward}</b>
+                  </span>
+                ) : null}
               </div>
 
               {/* WAIT sem niveis: entrada, stop e alvos de um trade que o veredito

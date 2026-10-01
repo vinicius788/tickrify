@@ -24,6 +24,13 @@ export const AUTOMATIC_OUTCOMES = [
   'TIMEOUT',
 ] as const;
 
+/**
+ * Outcomes que a vitrine "48 hours later" mostra: todo plano de trade que o
+ * sweeper conseguiu avaliar, inclusive os que não preencheram ou não
+ * resolveram em 48h. Fora: ABSTAIN (WAIT), UNTRACKABLE e INCOMPLETE.
+ */
+export const PUBLIC_SCORED_OUTCOMES = ['WIN', 'LOSS', 'NO_FILL', 'TIMEOUT'] as const;
+
 /** Só WIN e LOSS entram no cálculo de acerto. O resto é contexto. */
 export const CONCLUSIVE_OUTCOMES = ['WIN', 'LOSS'] as const;
 
@@ -78,10 +85,10 @@ export function wilson(wins: number, losses: number): Interval {
 export type ConfidenceBand = 'below60' | 'band60to69' | 'band70plus' | 'unknown';
 
 /**
- * Bandas alinhadas ao limiar 70 da UI (`getConvictionTier`), que veio do
- * backtest v2: abaixo de 70 o produto chama de "Read", acima chama de "Signal".
- * Esta quebra é a joia da página — é ela que prova que o número de confiança
- * carrega informação, que é exatamente o que o cético duvida.
+ * Bandas no limiar 70 que veio do backtest v2 (acima dele o produto chamava a
+ * leitura de "Signal"). Em producao as bandas nao separaram (39,6% x 39,7% em
+ * 30/09/2026, n=116) e o score saiu da tela nesse dia. A quebra continua
+ * publicada na /accuracy como prova de que ele nao carrega informacao.
  */
 export function confidenceBand(confidence: number | null | undefined): ConfidenceBand {
   if (confidence === null || confidence === undefined || !Number.isFinite(Number(confidence))) {

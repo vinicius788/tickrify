@@ -5,7 +5,6 @@ export interface PublicAnalysis {
   id: string;
   recommendation: string;
   bias?: 'bullish' | 'bearish' | 'neutral' | null;
-  confidence: number;
   createdAt: string;
   symbol: string;
   timeframe: string;
@@ -40,6 +39,46 @@ export function useRecentPublicAnalyses() {
 
   return {
     analyses: query.data ?? [],
+    loading: query.isLoading,
+    failed: query.isError,
+  };
+}
+
+/** Um plano de trade que o sweeper já pontuou, com os níveis que ele usou. */
+export interface ScoredPublicAnalysis {
+  id: string;
+  recommendation: string;
+  createdAt: string;
+  outcome: 'WIN' | 'LOSS' | 'NO_FILL' | 'TIMEOUT';
+  outcomeAt: string | null;
+  symbol: string;
+  timeframe: string;
+  entry: number | null;
+  stopLoss: number | null;
+  takeProfit1: number | null;
+}
+
+/**
+ * Os últimos planos já pontuados 48h depois (30/09/2026). É o recibo da lista
+ * de leituras recentes: mesma regra de nunca inventar, se a API falhar a
+ * parte some.
+ */
+export function useScoredPublicAnalyses() {
+  const query = useQuery<ScoredPublicAnalysis[]>({
+    queryKey: ['public-analyses-scored'],
+    queryFn: async () => {
+      const res = await fetch(buildApiUrl('/api/ai/public-analyses/scored'));
+      if (!res.ok) throw new Error(`public-analyses/scored: ${res.status}`);
+      const data: unknown = await res.json();
+      return Array.isArray(data) ? (data as ScoredPublicAnalysis[]) : [];
+    },
+    staleTime: 600_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+
+  return {
+    scored: query.data ?? [],
     loading: query.isLoading,
     failed: query.isError,
   };

@@ -256,6 +256,8 @@ describe('controle de acesso das rotas', () => {
         'affiliates.controller.ts::track',
         'ai.controller.ts::getAccuracy',
         'ai.controller.ts::getPublicAnalyses',
+        // Recibo da vitrine: planos ja pontuados pelo sweeper, sem usuario nem imagem.
+        'ai.controller.ts::getScoredPublicAnalyses',
         'calendar.controller.ts::getEvents',
         'demo.controller.ts::analyze',
         'demo.controller.ts::status',

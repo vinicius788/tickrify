@@ -36,7 +36,7 @@ import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { asRecord, scrollToTop } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
-import { confidenceToPercent, getRecommendationMeta, getScenarioMeta, normalizeRecommendationLabel } from "@/lib/trading-ui";
+import { getRecommendationMeta, getScenarioMeta, normalizeRecommendationLabel } from "@/lib/trading-ui";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { track, trackAdConversion } from "@/lib/analytics";
@@ -142,7 +142,6 @@ type RecentAnalysisItem = {
   timeframe: string;
   recommendation: Recommendation;
   bias?: Bias;
-  confidence: number;
   createdAt: string;
 };
 type ActiveMarketItem = {
@@ -346,9 +345,9 @@ const DashboardPage = () => {
   //  exatamente o tipo de coisa que já apareceu como número falso na vitrine.)
 
   const demoRecentAnalyses = [
-    { symbol: "ETH/USD", timeframe: "4H", recommendation: "COMPRA", bias: "bullish", confidence: 82, createdAt: new Date().toISOString() },
-    { symbol: "TSLA", timeframe: "1D", recommendation: "AGUARDAR", bias: "neutral", confidence: 58, createdAt: new Date().toISOString() },
-    { symbol: "XAU/USD", timeframe: "1H", recommendation: "VENDA", bias: "bearish", confidence: 77, createdAt: new Date().toISOString() },
+    { symbol: "ETH/USD", timeframe: "4H", recommendation: "COMPRA", bias: "bullish", createdAt: new Date().toISOString() },
+    { symbol: "TSLA", timeframe: "1D", recommendation: "AGUARDAR", bias: "neutral", createdAt: new Date().toISOString() },
+    { symbol: "XAU/USD", timeframe: "1H", recommendation: "VENDA", bias: "bearish", createdAt: new Date().toISOString() },
   ];
 
   // Derivar análises recentes e mercados ativos via useMemo (sem estado manual)
@@ -361,7 +360,6 @@ const DashboardPage = () => {
         timeframe: String(a.timeframe || '').trim() || 'N/A',
         recommendation: normalizeRecommendationLabel(a.recommendation) as Recommendation,
         bias: a.bias,
-        confidence: confidenceToPercent(a.confidence),
         createdAt: a.createdAt,
       }));
     const withIdentity = completed.filter((item) => item.symbol !== 'N/A' && item.timeframe !== 'N/A');
@@ -396,12 +394,14 @@ const DashboardPage = () => {
   // KPIs do cockpit — derivados das análises já carregadas (sem fetch novo).
   const dashboardKpis = useMemo(() => {
     const completed = rawAnalyses.filter((a) => a.status === 'completed');
-    const confidences = completed
-      .map((a) => confidenceToPercent(a.confidence))
-      .filter((n) => Number.isFinite(n) && n > 0);
-    const avgConfidence = confidences.length
-      ? Math.round(confidences.reduce((sum, n) => sum + n, 0) / confidences.length)
-      : 0;
+    // Era a "confiança média". Saiu em 30/09/2026 junto com o score: a
+    // confiança era pedida ao modelo como chance de bater o TP1 e, medida em
+    // produção, não separou acerto de erro. No lugar, quantas das leituras
+    // recentes viraram plano de trade (BUY/SELL) e quantas foram WAIT.
+    const tradePlans = completed.filter((a) => {
+      const tone = getRecommendationMeta(a.recommendation).tone;
+      return tone === 'buy' || tone === 'sell';
+    }).length;
     // `total` do KPI: contagem REAL do banco quando ela chega, senao o que der
     // para contar da lista carregada.
     //
@@ -413,7 +413,7 @@ const DashboardPage = () => {
     // O fallback local continua existindo de proposito: o Render hiberna, e a
     // tela precisa mostrar algo enquanto o /usage nao responde. Ele so nao pode
     // ser a fonte final.
-    return { total: analysesAllTime ?? completed.length, avgConfidence };
+    return { total: analysesAllTime ?? completed.length, tradePlans, recentCount: completed.length };
   }, [rawAnalyses, analysesAllTime]);
 
   const { balance: ticksBalance } = useTicks();
@@ -904,7 +904,13 @@ const DashboardPage = () => {
     const ticksNum = Math.floor(Number(ticksBalance) || 0);
     const kpis: Array<{ label: string; value: string; sub: string; Icon: typeof BarChart3; accent?: boolean }> = [
       { label: t.nav.analysesWord, value: String(dashboardKpis.total), sub: t.nav.kpiSubTotal, Icon: BarChart3 },
-      { label: t.analysis.confidence, value: `${dashboardKpis.avgConfidence}%`, sub: t.nav.kpiSubConf, Icon: Target, accent: true },
+      {
+        label: t.nav.kpiTradePlans,
+        value: String(dashboardKpis.tradePlans),
+        sub: t.nav.kpiSubTradePlans.replace('{n}', String(dashboardKpis.recentCount)),
+        Icon: Target,
+        accent: true,
+      },
       { label: t.nav.activeMarkets, value: String(realActiveMarkets.length), sub: t.nav.kpiSubMarkets, Icon: Activity },
       { label: 'Ticks', value: String(ticksNum), sub: t.nav.kpiSubTicks, Icon: Zap },
     ];
@@ -1022,7 +1028,7 @@ const DashboardPage = () => {
                 {titleLast && <em className="font-serif italic text-[var(--text-secondary)]">{titleLast}</em>}
               </h1>
               <p className="mt-3 font-terminal text-xs text-[var(--text-secondary)]">
-                {ticksNum} ticks · {dashboardKpis.total} {t.nav.analysesWord} · {t.analysis.confidence} {dashboardKpis.avgConfidence}%
+                {ticksNum} ticks · {dashboardKpis.total} {t.nav.analysesWord}
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-3">
@@ -1108,7 +1114,7 @@ const DashboardPage = () => {
                     </span>
                     <span className="text-right font-terminal text-[11px] text-[var(--text-secondary)]">
                       <span className={`font-semibold ${scenario.tone === 'buy' ? 'text-[var(--signal-buy)]' : scenario.tone === 'sell' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}`}>{scenario.label}</span>
-                      {' · '}{t.analysis.action}: {actionLabel} · {item.confidence}%
+                      {' · '}{t.analysis.action}: {actionLabel}
                     </span>
                   </div>
                 );

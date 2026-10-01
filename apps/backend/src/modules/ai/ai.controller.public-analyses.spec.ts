@@ -47,3 +47,49 @@ describe('GET /api/ai/public-analyses', () => {
     }));
   });
 });
+
+describe('GET /api/ai/public-analyses/scored', () => {
+  it('mostra só o outcome automático, com os níveis que o sweeper usou, sem usuário nem imagem', async () => {
+    const createdAt = new Date('2026-09-20T12:00:00.000Z');
+    const outcomeAt = new Date('2026-09-22T13:00:00.000Z');
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'win',
+        recommendation: 'BUY',
+        createdAt,
+        outcome: 'WIN',
+        outcomeAt,
+        outcomeDetail: { symbol: 'BTCUSDT', entry: 100, stopLoss: 95, takeProfit1: 110 },
+        result: { analysis: { symbol: 'BTCUSDT', timeframe: '1H', entry: 999 } },
+      },
+      {
+        id: 'nofill',
+        recommendation: 'SELL',
+        createdAt,
+        outcome: 'NO_FILL',
+        outcomeAt,
+        outcomeDetail: null,
+        result: { analysis: { symbol: 'XAUUSD', timeframe: '15M' } },
+      },
+    ]);
+    const prisma = { analysis: { findMany } } as unknown as PrismaService;
+    const controller = new AiController({} as AiService, prisma);
+
+    const rows = await controller.getScoredPublicAnalyses();
+
+    expect(rows[0]).toEqual({
+      id: 'win', recommendation: 'BUY', createdAt, outcome: 'WIN', outcomeAt,
+      symbol: 'BTCUSDT', timeframe: '1H', entry: 100, stopLoss: 95, takeProfit1: 110,
+    });
+    expect(rows[1]).toMatchObject({ outcome: 'NO_FILL', entry: null, stopLoss: null, takeProfit1: null });
+    for (const row of rows) {
+      expect(row).not.toHaveProperty('userId');
+      expect(row).not.toHaveProperty('imageUrl');
+      expect(row).not.toHaveProperty('userVerdict');
+    }
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { outcome: { in: ['WIN', 'LOSS', 'NO_FILL', 'TIMEOUT'] }, isDemo: false, strategyHash: null },
+      take: 6,
+    }));
+  });
+});

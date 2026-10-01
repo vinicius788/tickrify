@@ -87,9 +87,6 @@ export interface ShareCardData {
   /** Ação operacional separada: BUY | SELL | HOLD/WAIT. */
   action: string;
   tone: 'buy' | 'sell' | 'hold';
-  /** 'signal' (conf >= 70) | 'read' | null (HOLD não tem tier). */
-  tier: 'signal' | 'read' | null;
-  confidence: number;
   /** A leitura em prosa — o "porquê". É o que o card existe para mostrar. */
   read: string;
   /** Só em WAIT: o que faria a IA mudar de ideia. Omitido se não houver. */
@@ -293,7 +290,7 @@ export async function drawShareCard(data: ShareCardData): Promise<Blob> {
   ctx.fillStyle = C.muted;
   ctx.fillText(data.timeframe.slice(0, 10), PAD + symbolWidth + 18, 172);
 
-  // ── Veredito + tier ──────────────────────────────────────────────────────
+  // ── Veredito ──────────────────────────────────────────────────────
   const pillY = 206;
   const pillH = 58;
   const verdictLabel = publicScenario(data.scenario);
@@ -315,40 +312,22 @@ export async function drawShareCard(data: ShareCardData): Promise<Blob> {
   ctx.fillStyle = action === 'BUY' ? TONE.buy.fg : action === 'SELL' ? TONE.sell.fg : TONE.hold.fg;
   ctx.fillText(`ACTION: ${action}`, PAD, pillY + pillH + 25);
 
-  if (data.tier) {
-    const chipText = data.tier === 'signal' ? 'SIGNAL' : 'READ';
-    ctx.font = `500 12px ${MONO}`;
-    const chipW = measureTracked(ctx, chipText, 1.8) + 26;
-    const chipY = pillY + (pillH - 30) / 2;
-
-    roundedRect(ctx, PAD + pillW + 14, chipY, chipW, 30, 6);
-    ctx.strokeStyle = data.tier === 'signal' ? 'rgba(255, 255, 255, 0.28)' : C.line;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    ctx.fillStyle = data.tier === 'signal' ? C.text : C.muted;
-    drawTracked(ctx, chipText, PAD + pillW + 27, chipY + 20, 1.8);
-  }
-
-  // ── Confiança ────────────────────────────────────────────────────────────
-  const confidence = Math.max(0, Math.min(100, Math.round(data.confidence)));
-  const barW = 190;
-  const barX = W - PAD - barW;
+  // ── Hora da leitura ──────────────────────────────────────────────────────
+  // Era a "confiança" em %, que saiu do produto em 30/09/2026: ela era pedida
+  // ao modelo como chance de bater o TP1 e, medida em produção, não separou
+  // nada (39,6% x 39,7%). No lugar vai a hora exata da leitura, em UTC: é o
+  // que deixa quem vê o post conferir depois o que o mercado fez.
+  const readAt = `${data.date.toISOString().slice(11, 16)} UTC`;
 
   ctx.font = `500 11px ${MONO}`;
   ctx.fillStyle = C.muted;
-  drawTracked(ctx, 'CONFIDENCE', W - PAD - measureTracked(ctx, 'CONFIDENCE', 1.6), pillY + 12, 1.6);
+  drawTracked(ctx, 'READ AT', W - PAD - measureTracked(ctx, 'READ AT', 1.6), pillY + 12, 1.6);
 
   ctx.textAlign = 'right';
   ctx.font = `700 38px ${SANS}`;
   ctx.fillStyle = C.text;
-  ctx.fillText(`${confidence}%`, W - PAD, pillY + 56);
+  ctx.fillText(readAt, W - PAD, pillY + 56);
   ctx.textAlign = 'left';
-
-  ctx.fillStyle = C.track;
-  ctx.fillRect(barX, pillY + 70, barW, 4);
-  ctx.fillStyle = tone.fg;
-  ctx.fillRect(barX, pillY + 70, (barW * confidence) / 100, 4);
 
   // ── A leitura ────────────────────────────────────────────────────────────
   // Mede tudo ANTES de desenhar para centralizar o bloco entre o cabeçalho e o
@@ -468,7 +447,7 @@ export function buildShareText(data: ShareCardData): string {
   const action = publicAction(data.action);
   const plan = action === 'WAIT' ? 'advised waiting' : `outlined a ${action.toLowerCase()} setup`;
   return [
-    `${data.symbol} ${data.timeframe}: the AI read ${scenario} and ${plan}, at ${Math.round(data.confidence)}% confidence.`,
+    `${data.symbol} ${data.timeframe}: the AI read ${scenario} and ${plan}.`,
     '',
     'Not a signal, a second read before I commit. Its real hit rate is published:',
     'https://tickrify.com/accuracy?utm_source=x&utm_medium=social&utm_campaign=share_card',
@@ -511,7 +490,7 @@ export function ShareCardButton({ data }: { data: ShareCardData }) {
       setPreview(previewUrl.current);
       setBlob(png);
       setOpen(true);
-      track('analysis_shared', { step: 'opened', verdict: data.action, tier: data.tier });
+      track('analysis_shared', { step: 'opened', verdict: data.action });
     } catch {
       toast({ title: s.failed, variant: 'destructive' });
     } finally {
