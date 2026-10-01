@@ -39,6 +39,8 @@ function analysis(recommendation: 'BUY' | 'WAIT'): AIAnalysisResponse {
   };
 }
 
+const at = (text: string, s: string) => text.indexOf(s);
+
 function renderResult(rec: 'BUY' | 'WAIT') {
   return render(
     <LanguageProvider>
@@ -59,16 +61,41 @@ describe('resultado WAIT', () => {
     }
   });
 
-  it('WAIT mostra a explicacao, o plano e a leitura logo abaixo do veredito', () => {
+  it('WAIT mostra a acao, a explicacao de risco, a leitura e depois o plano, tudo antes do grafico', () => {
     renderResult('WAIT');
     const text = document.body.textContent ?? '';
-    expect(text).toContain('WAIT means the AI found no clean entry on this chart right now.');
-    expect(text).toContain('A close above 2365 would set up a long.');
+    expect(screen.getByTestId('verdict-action').textContent).toBe('WAIT');
+    expect(text).toContain('Waiting is a risk decision, not a forecast.');
     expect(text).toContain('Price is stuck mid range with no confirmation.');
-    // Ordem: explicacao, depois plano, depois leitura, tudo antes do grafico.
+    expect(text).toContain('A close above 2365 would set up a long.');
+    // Ordem: acao, explicacao, leitura, plano, grafico.
     const at = (s: string) => text.indexOf(s);
-    expect(at('WAIT means')).toBeLessThan(at('A close above 2365'));
-    expect(at('A close above 2365')).toBeLessThan(at('Price is stuck mid range'));
+    expect(at('Waiting is a risk decision')).toBeLessThan(at('Price is stuck mid range'));
+    expect(at('Price is stuck mid range')).toBeLessThan(at('A close above 2365'));
+    expect(at('A close above 2365')).toBeLessThan(at('Analyzed chart'));
+    // A explicacao aparece uma vez so, e "Por que nao o outro lado" nao se
+    // repete no painel tecnico (ja esta no plano).
+    expect(text.split('Waiting is a risk decision').length).toBe(2);
+    expect(text.split('No bearish structure break yet.').length).toBe(2);
+  });
+
+  it('acao e vies ficam separados: a acao e o destaque, o vies e secundario', () => {
+    renderResult('WAIT');
+    expect(screen.getByTestId('verdict-action').textContent).toBe('WAIT');
+    expect(document.body.textContent).toContain('Current bias: Neutral');
+    // Nenhum selo de cenario em maiusculas competindo com a acao.
+    expect(screen.queryByText('NEUTRAL')).toBeNull();
+    expect(screen.queryByText('HOLD')).toBeNull();
+  });
+
+  it('preco sai sem cifrao fixo e a ordem limitada explica a espera pela entrada', () => {
+    renderResult('BUY');
+    const text = document.body.textContent ?? '';
+    expect(text).not.toContain('$');
+    expect(text).toContain('Limit order: the trade only exists if price reaches 2,350.50.');
+    expect(at(text, 'BUY')).toBeLessThan(at(text, 'Operation Levels'));
+    expect(at(text, 'Operation Levels')).toBeLessThan(at(text, 'Risk and reward'));
+    expect(at(text, 'Risk and reward')).toBeLessThan(at(text, 'Analyzed chart'));
   });
 
   it('BUY continua com o card de niveis', () => {

@@ -1,4 +1,5 @@
-// Tres analises de exemplo antes das gratis: otimista, pessimista e neutra.
+// Tres analises de exemplo antes das gratis: uma de compra, uma de venda e
+// uma de espera. Textos em `t.samples` (6 idiomas).
 //
 // Por que existe: 53 de 80 pessoas tomaram WAIT na primeira analise em set/26
 // e muitas leram isso como "a ferramenta nao respondeu". Ver antes um BUY, um
@@ -11,53 +12,8 @@
 import { ArrowDown, ArrowLeft, ArrowUp, Check, Minus, PlusCircle } from 'lucide-react';
 import AnalysisResult from './AnalysisResult';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { getRecommendationMeta } from '@/lib/trading-ui';
 import type { SampleAnalysis, SampleKind } from '@/lib/sample-analyses';
-
-const COPY = {
-  en: {
-    pickerTitle: 'See 3 real example analyses first',
-    pickerDesc: 'Real reads from the Tickrify engine, saved with what the market did next. Open as many as you like: they do not use your free analyses.',
-    kind: { bullish: 'Bullish', bearish: 'Bearish', neutral: 'Neutral' },
-    viewed: 'Viewed',
-    turnTitle: "Now it's your turn.",
-    turnDesc: 'You have {left} free analyses to test with your own charts.',
-    turnCta: 'Analyze my chart',
-    eyebrow: 'Example analysis',
-    title: { bullish: 'Bullish example', bearish: 'Bearish example', neutral: 'Neutral example' },
-    banner: 'A real analysis from the Tickrify engine, saved on {date}. It is a fixed example: nothing is sent to the AI and it does not use your free analyses.',
-    back: 'Back to examples',
-    neutralTitle: 'No trade is also an answer',
-    neutralDesc: 'Tickrify does not force a buy or a sell. When the chart has no clean setup, it tells you to stay out and shows what would have to change first. Every result depends on the real conditions of the chart.',
-    afterTitle: 'What happened next',
-    afterFine: 'One historical example, shown for illustration. Every market and moment is different. Never a promise of results.',
-    otherExamples: 'Other examples',
-  },
-  pt: {
-    pickerTitle: 'Veja antes 3 análises reais de exemplo',
-    pickerDesc: 'Leituras reais do motor da Tickrify, guardadas com o que o mercado fez depois. Abra quantas quiser: elas não gastam suas análises grátis.',
-    kind: { bullish: 'Otimista', bearish: 'Pessimista', neutral: 'Neutro' },
-    viewed: 'Vista',
-    turnTitle: 'Agora é sua vez.',
-    turnDesc: 'Você tem {left} análises grátis para testar com seus próprios gráficos.',
-    turnCta: 'Analisar meu gráfico',
-    eyebrow: 'Análise de exemplo',
-    title: { bullish: 'Exemplo otimista', bearish: 'Exemplo pessimista', neutral: 'Exemplo neutro' },
-    banner: 'Uma análise real do motor da Tickrify, feita em {date}. É um exemplo fixo: nada é enviado para a IA e não gasta suas análises grátis.',
-    back: 'Voltar aos exemplos',
-    neutralTitle: 'Não entrar também é uma resposta',
-    neutralDesc: 'A Tickrify não força compra nem venda. Quando o gráfico não tem um setup limpo, ela diz para ficar de fora e mostra o que precisaria mudar antes. Todo resultado depende das condições reais do gráfico.',
-    afterTitle: 'O que aconteceu depois',
-    afterFine: 'Um exemplo histórico, mostrado para ilustrar. Cada mercado e momento é diferente. Nunca uma promessa de resultado.',
-    otherExamples: 'Outros exemplos',
-  },
-} as const;
-
-type Copy = (typeof COPY)[keyof typeof COPY];
-
-function useSampleCopy(): Copy {
-  const { language } = useLanguage();
-  return language === 'pt' ? COPY.pt : COPY.en;
-}
 
 const KIND_ICON = { bullish: ArrowUp, bearish: ArrowDown, neutral: Minus } as const;
 const KIND_TONE = {
@@ -74,13 +30,18 @@ function sampleLabel(sample: SampleAnalysis): string {
   return [symbol, timeframe].filter(Boolean).join(' · ');
 }
 
-function actionOf(sample: SampleAnalysis): string {
-  const rec = String(sample.analysis.recommendation || '').toUpperCase();
-  return rec === 'HOLD' ? 'WAIT' : rec;
+/** Rotulo da ACAO no idioma da tela, o mesmo do resultado (nunca BUY cru em pt). */
+function useActionLabel() {
+  const { t } = useLanguage();
+  return (sample: SampleAnalysis): string => {
+    const tone = getRecommendationMeta(sample.analysis.recommendation).tone;
+    return tone === 'buy' ? t.analysis.buy : tone === 'sell' ? t.analysis.sell : t.analysis.hold;
+  };
 }
 
 const TurnCta = ({ freeLeft, onAnalyze }: { freeLeft: number; onAnalyze: () => void }) => {
-  const c = useSampleCopy();
+  const { t } = useLanguage();
+  const c = t.samples;
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-[var(--border-accent)] bg-[var(--bg-card)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
@@ -110,7 +71,9 @@ const SampleButtons = ({
   current?: SampleKind;
   onOpen: (kind: SampleKind) => void;
 }) => {
-  const c = useSampleCopy();
+  const { t } = useLanguage();
+  const c = t.samples;
+  const actionOf = useActionLabel();
   return (
     <div className="grid grid-cols-3 gap-2">
       {samples.map((sample) => {
@@ -132,7 +95,6 @@ const SampleButtons = ({
               <Icon className="h-3 w-3" strokeWidth={2.5} />
               {actionOf(sample)}
             </span>
-            <span className="w-full truncate text-sm font-semibold text-[var(--text-primary)]">{c.kind[sample.kind]}</span>
             <span className="w-full break-words font-terminal text-[11px] leading-tight text-[var(--text-secondary)]">{sampleLabel(sample)}</span>
             {viewed.has(sample.kind) && (
               <span className="inline-flex items-center gap-1 text-[11px] text-[var(--text-secondary)]">
@@ -160,7 +122,8 @@ export const SamplePicker = ({
   onOpen: (kind: SampleKind) => void;
   onAnalyze: () => void;
 }) => {
-  const c = useSampleCopy();
+  const { t } = useLanguage();
+  const c = t.samples;
   return (
     <div className="flex flex-col gap-3">
       <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4">
@@ -191,9 +154,10 @@ export const SampleAnalysisView = ({
   onBack: () => void;
   onAnalyze: () => void;
 }) => {
-  const c = useSampleCopy();
-  const { language } = useLanguage();
-  const date = new Date(sample.analysis.createdAt).toLocaleDateString(language === 'pt' ? 'pt-BR' : 'en-US', {
+  const { t, language } = useLanguage();
+  const c = t.samples;
+  const after = c.after[sample.kind];
+  const date = new Date(sample.analysis.createdAt).toLocaleDateString(language === 'pt' ? 'pt-BR' : language, {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -219,28 +183,12 @@ export const SampleAnalysisView = ({
 
       <SampleButtons samples={samples} viewed={viewed} current={sample.kind} onOpen={onOpen} />
 
-      {sample.kind === 'neutral' && (
-        <div className="rounded-xl border border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)] px-4 py-3">
-          <p className="text-sm font-semibold text-[var(--signal-hold)]">{c.neutralTitle}</p>
-          <p className="mt-1 text-sm leading-relaxed text-[var(--text-primary)]">{c.neutralDesc}</p>
-        </div>
-      )}
-
       <AnalysisResult analysisData={sample.analysis} uploadedImage={null} sample />
 
       <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
         <h2 className="tk-display text-lg text-[var(--text-primary)]">{c.afterTitle}</h2>
-        <p className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{sample.after.headline}</p>
-        <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">{sample.after.detail}</p>
-        {sample.after.chart && (
-          <img
-            src={sample.after.chart}
-            alt={sample.after.chartAlt ?? ''}
-            loading="lazy"
-            decoding="async"
-            className="mt-3 block h-auto w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] object-contain"
-          />
-        )}
+        <p className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{after.headline}</p>
+        <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">{after.detail}</p>
         <p className="mt-3 text-xs text-[var(--text-muted)]">{c.afterFine}</p>
       </section>
 

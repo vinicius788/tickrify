@@ -4,12 +4,14 @@
 // analise real da conta do dono (manual_owner_1), copiada sem editar (so as
 // URLs do Storage, que sao privadas, viraram o print no bundle). Os campos do
 // topo seguem as colunas da linha, como o `serializeAnalysis` devolve.
-// O "depois" so afirma o que foi medido: `outcomeDetail` do sweeper (candles
-// de 30m, 48h) nos dois com entrada; candles BTCUSDT 5m da Binance no WAIT.
+// O "depois" mora em `t.samples.after` (6 idiomas) e so afirma o que foi
+// medido: `outcomeDetail` do sweeper (candles de 30m, 48h) nos dois com
+// entrada; candles BTCUSDT 5m da Binance no WAIT.
 // Nada aqui chama a IA nem passa pela cota: e so dado no bundle.
 //
-// Trocar um exemplo = trocar a analise inteira (texto, grafico e depois)
-// por outra real. Nunca editar o texto do motor nem inventar o resultado.
+// Trocar um exemplo = trocar a analise inteira (texto, grafico e o "depois"
+// nos 6 idiomas) por outra real. Nunca editar o texto do motor nem inventar
+// o resultado.
 import type { AIAnalysisResponse } from './api';
 import bullishChart from '@/assets/sample-bullish-eurjpy.png';
 import bearishChart from '@/assets/sample-bearish-xauusd.png';
@@ -20,13 +22,6 @@ export type SampleKind = 'bullish' | 'bearish' | 'neutral';
 export interface SampleAnalysis {
   kind: SampleKind;
   analysis: AIAnalysisResponse;
-  after: {
-    /** Uma frase, so fato medido. */
-    headline: string;
-    detail: string;
-    chart?: string;
-    chartAlt?: string;
-  };
 }
 
 /** Analysis cmu6aeuiz000nl407swre06nq (18/09/2026), outcome WIN, tp2Hit true. */
@@ -299,28 +294,13 @@ export const SAMPLE_ANALYSES: SampleAnalysis[] = [
   {
     kind: 'bullish',
     analysis: asApiResponse('sample-bullish', '2026-09-18T01:36:06.155Z', bullishChart, BULLISH_EURJPY, 58),
-    after: {
-      headline: 'The limit buy at 179.25 filled, then Target 1 and Target 2 were both reached before the stop.',
-      detail:
-        "Measured by Tickrify's outcome tracker on 30-minute candles over the 48 hours after the analysis: the entry at 179.25 filled within the first hour, Target 1 (179.50) was reached in that same 30-minute window, and Target 2 (179.65) came later, with the stop at 179.08 never touched in between.",
-    },
   },
   {
     kind: 'bearish',
     analysis: asApiResponse('sample-bearish', '2026-09-14T15:57:16.777Z', bearishChart, BEARISH_XAUUSD, 63),
-    after: {
-      headline: 'The limit sell at 4,308 filled, and Target 1 was reached before the stop. Target 2 was not.',
-      detail:
-        "Measured by Tickrify's outcome tracker on 30-minute candles over the 48 hours after the analysis: the entry at 4,308 filled within the first hour, and Target 1 (4,280) was reached about 16 hours after the analysis, before the stop at 4,330. Target 2 (4,258) did not count: it was not reached before the stop or the end of the 48 hours.",
-    },
   },
   {
     kind: 'neutral',
     analysis: asApiResponse('sample-neutral', '2026-09-28T16:43:59.342Z', neutralChart, NEUTRAL_BTCUSD, 42),
-    after: {
-      headline: 'No trade was opened. Price swung to both sides of the range before picking a direction.',
-      detail:
-        'Binance BTCUSDT 5-minute candles after the analysis: within the first hour price spiked to 84,381 and turned back, then fell to 82,776 overnight, right through the middle the read said not to trade. Neither trigger in the plan fired: 82,600 was never swept or broken. The next morning (UTC) BTC broke above 84,200 and reached 85,650 within 48 hours. Waiting meant no position either way: no loss in the chop, and no part of the later move.',
-    },
   },
 ];

@@ -82,8 +82,8 @@ function forexPipSize(symbol: string): number | null {
 /**
  * Fallbacks em PT que o backend persiste quando a IA não preenche um campo.
  * Para usuários em outros idiomas esses textos vazavam em português; aqui eles
- * viram "ausente" ('') para que cada seção use seu próprio fallback i18n
- * (notInformed / noAnalysis / noSummary / noPatterns) ou se oculte.
+ * viram "ausente" ('') e a seção correspondente some da tela (bloco vazio
+ * com "não informado" não diz nada a quem lê).
  * Cobre análises antigas já persistidas — não exige reprocessar nada.
  */
 const BACKEND_PT_FALLBACKS = new Set([
@@ -223,10 +223,12 @@ function formatPrice(value: number | null): string {
     const decPart = str.includes('.') ? str.split('.')[1] : '';
     decimals = Math.min(Math.max(decPart.length, 4), 5);
   }
-  return `$ ${new Intl.NumberFormat('en-US', {
+  // Sem símbolo de moeda: o preço está na moeda de cotação do ativo (iene no
+  // EURJPY, dólar no BTCUSD), e o "$" fixo mentia em metade dos pares.
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
-  }).format(value)}`;
+  }).format(value);
 }
 
 function formatSignedPercent(value: number | null): string {
@@ -259,6 +261,18 @@ export function classifyWaitTrigger(text: string | null): 'buy' | 'sell' | 'neut
   const buy = /\b(BUY|LONG)\b/.test(text) || /\b(compra|achat|kauf)\b/i.test(text) || text.includes('買い');
   const sell = /\b(SELL|SHORT)\b/.test(text) || /\b(venda|venta|vente|verkauf)\b/i.test(text) || text.includes('売り');
   return buy === sell ? 'neutral' : buy ? 'buy' : 'sell';
+}
+
+/**
+ * Separa um gatilho em frases, uma por linha, quando cada frase traz preço
+ * ("If price sweeps below 82,600... If price closes below 82,600..."). Se
+ * alguma frase não tiver número, devolve o texto inteiro numa linha só: a
+ * quebra é só de layout e nunca descarta texto.
+ */
+export function splitTriggerSentences(text: string): string[] {
+  const parts = text.split(/(?<=[.!?])\s+(?=\p{Lu})/u).map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2 || !parts.every((part) => /\d/.test(part))) return [text];
+  return parts;
 }
 
 /**
@@ -445,7 +459,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   }, [analysisData?.id, sample]);
 
   const { toast } = useToast();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const r = t.analysis.result;
   const sessionLabels: Record<string, string> = {
     SYD: t.analysis.sessions.sydney,
@@ -510,11 +524,19 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
 
   const recommendationMeta = getRecommendationMeta(analysisData.recommendation);
   const scenarioMeta = getScenarioMeta(analysisData.bias || marketStructure.bias, analysisData.recommendation);
+  // AÇÃO (comprar/vender/esperar) e VIÉS (alta/baixa/neutro) são coisas
+  // diferentes e aparecem separadas: viés de alta com ESPERAR é comum e não é
+  // contradição. WAIT e HOLD do motor viram o mesmo rótulo (ESPERAR).
   const actionLabel = recommendationMeta.tone === 'buy'
     ? t.analysis.buy
     : recommendationMeta.tone === 'sell'
       ? t.analysis.sell
       : t.analysis.hold;
+  const scenarioLabel = scenarioMeta.tone === 'buy'
+    ? t.analysis.bullish
+    : scenarioMeta.tone === 'sell'
+      ? t.analysis.bearish
+      : t.analysis.neutral;
   // #2 — calibração: taxa de acerto histórica de setups semelhantes.
   const calibration = asRecord((analysisData as unknown as Record<string, unknown>).calibration);
   const calSample = toNumber(calibration.sampleSize) ?? 0;
@@ -557,6 +579,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   const invalidationLevel = toNumber(analysis.invalidationLevel);
   const invalidationNote = String(analysis.invalidationNote || '').trim() || null;
   const entryType = String(analysis.entryType || '').trim() || null;
+  const isLimitEntry = entryType?.toLowerCase() === 'limit';
   const entryCondition = String(analysis.entryCondition || '').trim() || null;
   const partialExitStrategy = String(analysis.partialExitStrategy || '').trim() || null;
   // 0 = "não preenchido" — trata como ausente para nunca exibir chips "0%"
@@ -579,6 +602,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   const marketRegimeNote = String(analysis.marketRegimeNote || '').trim() || null;
   const multiTimeframeAlignment = String(analysis.multiTimeframeAlignment || '').trim() || null;
   const evidence = asRecord(fullResponse.evidence);
+  const hasEvidence = evidence.version === 1;
   const unverifiedMtfAlignment = Boolean(multiTimeframeAlignment) && evidence.version === 1 &&
     evidence.additionalChartsDelivered === 0;
 
@@ -695,8 +719,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   const technicalAnalysis =
     cleanModelText(analysis.technicalAnalysis) ||
     cleanModelText(analysis.reasoning) ||
-    cleanModelText(analysisData.reasoning) ||
-    r.noAnalysis;
+    cleanModelText(analysisData.reasoning);
   const executiveSummary =
     cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary);
   const whyNotOpposite = cleanModelText(analysis.whyNotOpposite);
@@ -712,7 +735,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   // a coluna de rótulos alinha igual à dos Operation Levels, e um campo vazio
   // some da grade em vez de imprimir "Not informed" no meio da leitura.
   const structureRows: Array<{ key: string; label: string; value: string; tone?: string }> = [
-    { key: 'bias', label: t.analysis.bias, value: scenarioMeta.label },
+    { key: 'bias', label: t.analysis.bias, value: scenarioLabel },
     { key: 'structure', label: t.analysis.structure, value: cleanModelText(marketStructure.lastStructure) },
     { key: 'bos', label: 'BOS / CHoCH', value: cleanModelText(marketStructure.breakOfStructure) },
     { key: 'zone', label: t.analysis.priceZone, value: cleanModelText(marketStructure.priceZone) },
@@ -783,21 +806,22 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
     if (side === null) return fallback;
     return side === 'buy' ? r.planBuyTrigger : side === 'sell' ? r.planSellTrigger : r.planTrigger;
   };
-  const waitFlipItems: Array<{ label: string; text: string }> = [];
+  // `lines`: o motor costuma escrever os dois gatilhos num parágrafo só ("If
+  // price sweeps... reassess a long. If price closes below..."). Cada frase
+  // com preço vira uma linha; o texto continua o do motor, sem cortes.
+  const waitFlipItems: Array<{ label: string; text: string; lines: string[] }> = [];
+  const pushFlip = (label: string, text: string) => waitFlipItems.push({ label, text, lines: splitTriggerSentences(text) });
   const waitHasPlan =
     isWaitVerdict && (classifyWaitTrigger(entryCondition) !== null || classifyWaitTrigger(alternativeScenario) !== null);
   if (isWaitVerdict) {
-    if (entryCondition) waitFlipItems.push({ label: triggerLabel(entryCondition, r.flipEntry), text: entryCondition });
-    if (alternativeScenario) waitFlipItems.push({ label: triggerLabel(alternativeScenario, r.flipAlt), text: alternativeScenario });
+    if (entryCondition) pushFlip(triggerLabel(entryCondition, r.flipEntry), entryCondition);
+    if (alternativeScenario) pushFlip(triggerLabel(alternativeScenario, r.flipAlt), alternativeScenario);
     if (invalidationLevel !== null && invalidationLevel > 0) {
-      waitFlipItems.push({
-        label: r.flipInvalidation,
-        text: `${formatPrice(invalidationLevel)}${invalidationNote ? `: ${invalidationNote}` : ''}`,
-      });
+      pushFlip(r.flipInvalidation, `${formatPrice(invalidationLevel)}${invalidationNote ? `: ${invalidationNote}` : ''}`);
     } else if (invalidationNote) {
-      waitFlipItems.push({ label: r.flipInvalidation, text: invalidationNote });
+      pushFlip(r.flipInvalidation, invalidationNote);
     }
-    if (whyNotOpposite) waitFlipItems.push({ label: r.flipWhyNot, text: whyNotOpposite });
+    if (whyNotOpposite) pushFlip(r.flipWhyNot, whyNotOpposite);
   }
 
   /**
@@ -808,8 +832,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
    * os rótulos do modelo dentro do card, então aqui pega-se o bloco READING
    * (ou o primeiro) e usa-se só o texto.
    *
-   * NÃO reaproveita a variável `technicalAnalysis`: ela já embute o fallback
-   * traduzido (`r.noAnalysis`), e o card não deve exibir texto de interface.
    * Vazio é tratado dentro do `drawShareCard`.
    *
    * O card existe para TODO veredito, WAIT incluído — ver a justificativa no
@@ -842,61 +864,39 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
     date: timestamp,
   };
 
-  const headerIcon = scenarioMeta.tone === 'buy' ? ArrowUp : scenarioMeta.tone === 'sell' ? ArrowDown : Minus;
-  const HeaderIcon = headerIcon;
-
-  const signalToneClasses =
-    scenarioMeta.tone === 'buy'
+  const ActionIcon = recommendationMeta.tone === 'buy' ? ArrowUp : recommendationMeta.tone === 'sell' ? ArrowDown : Minus;
+  const actionBoxClasses =
+    recommendationMeta.tone === 'buy'
       ? 'bg-[var(--signal-buy-bg)] border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
-      : scenarioMeta.tone === 'sell'
+      : recommendationMeta.tone === 'sell'
         ? 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
         : 'bg-[var(--signal-hold-bg)] border-[var(--signal-hold-border)] text-[var(--signal-hold)]';
-  const actionToneClasses =
-    recommendationMeta.tone === 'buy'
-      ? 'border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
-      : recommendationMeta.tone === 'sell'
-        ? 'border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
-        : 'border-[var(--signal-hold-border)] text-[var(--signal-hold)]';
 
   const isDemo = Boolean(analysisData.isDemo);
 
-  /** A leitura (executiveSummary). No WAIT sobe para logo abaixo do plano. */
-  const summaryBlock = (
-    <div className="rounded-md border border-[var(--border-emphasis)] bg-[var(--bg-overlay)] p-3">
-      <h4 className="tk-display mb-2 text-base text-[var(--text-primary)]">{t.analysis.executiveSummary}</h4>
-      {(() => {
-        const { blocks, footer } = parseSummaryBlocks(executiveSummary);
-        if (blocks.length < 2) {
-          // Texto corrido (análise quick ou formato antigo) — render original.
-          return (
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-primary)]">
-              {executiveSummary || r.noSummary}
+  /** A leitura (executiveSummary), logo abaixo da ação, em todo veredito. */
+  const summaryContent = (() => {
+    const { blocks, footer } = parseSummaryBlocks(executiveSummary);
+    if (blocks.length < 2) {
+      // Texto corrido (análise quick ou formato antigo).
+      return <p className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-primary)]">{executiveSummary}</p>;
+    }
+    return (
+      <div className="space-y-2">
+        {blocks.map((b, i) => (
+          <div key={i} className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2">
+            <p className="mb-0.5 font-terminal text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+              {localizeDeepLabel(b.label, t.analysis as unknown as Record<string, string>)}
             </p>
-          );
-        }
-        return (
-          <div className="space-y-2">
-            {blocks.map((b, i) => (
-              <div
-                key={i}
-                className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2"
-              >
-                <p className="mb-0.5 font-terminal text-[10px] font-semibold uppercase tracking-wider text-[var(--signal-buy)]">
-                  {localizeDeepLabel(b.label, t.analysis as unknown as Record<string, string>)}
-                </p>
-                <p className="text-sm leading-relaxed text-[var(--text-primary)]">{b.text}</p>
-              </div>
-            ))}
-            {footer.length > 0 && (
-              <p className="pt-1 text-xs italic leading-relaxed text-[var(--text-secondary)]">
-                {footer.join(' ')}
-              </p>
-            )}
+            <p className="text-sm leading-relaxed text-[var(--text-primary)]">{b.text}</p>
           </div>
-        );
-      })()}
-    </div>
-  );
+        ))}
+        {footer.length > 0 && (
+          <p className="pt-1 text-xs italic leading-relaxed text-[var(--text-secondary)]">{footer.join(' ')}</p>
+        )}
+      </div>
+    );
+  })();
 
   return (
     <div className="space-y-5">
@@ -910,27 +910,21 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
         </div>
       )}
 
+      {/* ── 1. Ação, e logo abaixo o resumo curto da leitura ─────────────
+          A AÇÃO é o destaque; o viés fica numa linha secundária. Eram dois
+          selos do mesmo tamanho (BULLISH ao lado de AÇÃO: AGUARDAR), e "alta"
+          com "esperar" parecia contradição. */}
       <Card className="surface-terminal-elevated rounded-xl fade-in-stagger" style={{ animationDelay: '0ms' }}>
         <CardContent className="p-5 md:p-6">
-          <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)] md:gap-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-[var(--text-secondary)]">
             <span className="whitespace-nowrap font-terminal font-semibold text-[var(--text-primary)]">{symbol}</span>
             <span className="whitespace-nowrap font-terminal">{timeframe}</span>
-            <div className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold tracking-widest ${signalToneClasses}`}>
-              <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{scenarioMeta.label}</span>
-            </div>
-            {strategyFit && (
-              <span
-                title={r.strategyFitNote}
-                className={`whitespace-nowrap rounded-sm border px-2 py-0.5 font-terminal text-[10px] font-semibold uppercase tracking-widest ${STRATEGY_FIT_TONE[strategyFit]}`}
-              >
-                {r.strategyFitTitle}: {STRATEGY_FIT_LABEL[strategyFit]}
+            <span className="whitespace-nowrap font-terminal">{formattedTimestamp}</span>
+            {detectedSession && (
+              <span className="whitespace-nowrap rounded-sm border border-[var(--border-subtle)] px-2 py-0.5 font-terminal text-xs uppercase text-[var(--text-secondary)]">
+                {detectedSession.replace('_', ' ')}
               </span>
             )}
-            <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border px-2 py-1 ${actionToneClasses}`}>
-              {t.analysis.action.toUpperCase()}:{' '}
-              <strong className="font-semibold">{actionLabel}</strong>
-            </span>
             {calWinRate !== null && calSample >= 3 && (
               <span className="whitespace-nowrap" title="Your historical hit rate on similar setups">
                 <span className="text-[var(--text-secondary)]">{r.history}</span>{' '}
@@ -938,26 +932,36 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                 <span className="text-[var(--text-secondary)]">{r.hitRate} ({calSample})</span>
               </span>
             )}
-            <span className="whitespace-nowrap font-terminal md:ml-auto">{formattedTimestamp}</span>
             {/* Demo anônima não compartilha: o card leva a marca e o link da
                 /accuracy, e um print gerado a partir de dado de demonstração
                 circulando como leitura real é a mesma classe de problema que a
                 auditoria de 27/07 removeu da vitrine. */}
-            {!isDemo && !sample && !invalidTradePlan && <ShareCardButton data={shareData} />}
-            {detectedSession && (
-              <span className="whitespace-nowrap rounded-sm border border-[var(--border-subtle)] px-2 py-0.5 font-terminal text-xs text-[var(--text-secondary)] uppercase">
-                {detectedSession.replace('_', ' ')}
+            {!isDemo && !sample && !invalidTradePlan && (
+              <span className="sm:ml-auto">
+                <ShareCardButton data={shareData} />
               </span>
             )}
           </div>
-          {isWaitVerdict && (
-            // Explica o WAIT onde ele aparece: sem isto a pessoa le so a
-            // palavra e entende que a ferramenta nao respondeu.
-            <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
-              {r.waitExplain}
-              {waitFlipItems.length > 0 && <> {r.waitExplainPlan}</>}
+
+          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+            <div
+              data-testid="verdict-action"
+              className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 ${actionBoxClasses}`}
+            >
+              <ActionIcon className="h-6 w-6" strokeWidth={2.5} />
+              <span className="tk-display text-3xl font-bold tracking-wide md:text-4xl">{actionLabel}</span>
+            </div>
+            <p className="text-sm text-[var(--text-secondary)]">
+              {t.analysis.biasNow}: <strong className="font-semibold text-[var(--text-primary)]">{scenarioLabel}</strong>
             </p>
+          </div>
+
+          {isWaitVerdict && (
+            // Uma explicação só. Ela existia três vezes seguidas (caixa do
+            // exemplo, linha do veredito e título do plano).
+            <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">{r.waitExplain}</p>
           )}
+
           {strategyFit && (
             // Bloco visível (não só tooltip): a nota anti-claim precisa ser
             // lida, não descoberta em hover. Nunca reescreve nem substitui o
@@ -970,6 +974,18 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
               </span>
               {strategyFitReason && <span className="text-[var(--text-secondary)]">{strategyFitReason}</span>}
               <span className="w-full text-[10px] italic text-[var(--text-secondary)]">{r.strategyFitNote}</span>
+            </div>
+          )}
+
+          {executiveSummary && (
+            <div className="mt-4 border-t border-[var(--border-subtle)] pt-4">
+              <h4 className="mb-2 font-terminal text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
+                {t.analysis.executiveSummary}
+              </h4>
+              {summaryContent}
+              {sample && language !== 'en' && (
+                <p className="mt-2 text-xs italic text-[var(--text-muted)]">{t.samples.modelTextNote}</p>
+              )}
             </div>
           )}
         </CardContent>
@@ -993,18 +1009,17 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
         </Alert>
       )}
 
+      {/* ── 2. Plano ─────────────────────────────────────────────────────
+          No WAIT, os gatilhos. Superfície neutra de propósito: âmbar é a cor
+          do veredito ESPERAR e, em tela de trading, lê como alerta. */}
       {isWaitVerdict && waitFlipItems.length > 0 && (
-        // O bloco usava borda + fundo ambar. Problema: o badge HOLD ja e ambar
-        // (--signal-hold), entao a tela tinha duas coisas ambar significando
-        // coisas diferentes, e em UI de trading ambar le como ALERTA. Isto aqui
-        // nao e alerta, e o raciocinio. Superficie neutra, igual aos outros cards.
         <Card
           className={`surface-terminal rounded-xl fade-in-stagger ${waitHasPlan ? 'border border-[var(--border-accent)]' : ''}`}
           style={{ animationDelay: '40ms' }}
         >
           <CardContent className="p-5 md:p-6">
             <p className="tk-display mb-3 flex items-center gap-2 text-[15px]">
-              <Lightbulb className="h-4 w-4 text-amber-400" />
+              <Lightbulb className="h-4 w-4 text-[var(--text-secondary)]" />
               {waitHasPlan ? r.planTitle : r.flipTitle}
             </p>
             <div className="space-y-3 text-sm">
@@ -1013,7 +1028,9 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                   <p className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
                     {item.label}
                   </p>
-                  <p className="mt-0.5 leading-relaxed text-[var(--text-primary)]/85">{item.text}</p>
+                  {item.lines.map((line, lineIdx) => (
+                    <p key={lineIdx} className="mt-0.5 leading-relaxed text-[var(--text-primary)]/85">{line}</p>
+                  ))}
                 </div>
               ))}
             </div>
@@ -1021,150 +1038,102 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
         </Card>
       )}
 
-      {isWaitVerdict && (
-        <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '60ms' }}>
-          <CardContent className="p-5 md:p-6">{summaryBlock}</CardContent>
-        </Card>
-      )}
-
-      <div className="flex flex-col gap-5 md:flex-row md:items-start md:gap-6">
-        <div className="min-w-0 flex-1">
-          <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '80ms' }}>
-            <CardHeader className="pb-3">
-              <CardTitle className="tk-display text-lg">{t.analysis.chartAnalyzed}</CardTitle>
+      {/* Card de niveis so em BUY/SELL. No WAIT ele contradizia o veredito
+          (entrada, stop e alvos de um trade que a IA manda nao fazer) e alguem
+          podia operar esses precos. O plano de gatilhos acima substitui. */}
+      {!isWaitVerdict && (
+        <div className={`grid gap-5 ${riskReward !== null ? 'md:grid-cols-[minmax(0,1fr)_300px]' : ''}`}>
+          <Card data-testid="levels-card" className="surface-terminal-elevated rounded-xl fade-in-stagger" style={{ animationDelay: '40ms' }}>
+            <CardHeader className="pb-2">
+              <CardTitle className="tk-display text-lg tracking-wide">{t.analysis.levels}</CardTitle>
             </CardHeader>
-            <CardContent>
-              {imageUrl ? (
-                <img
-                  src={String(imageUrl)}
-                  alt="Gráfico analisado"
-                  className="block h-auto max-h-[70vh] w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] object-contain"
-                />
-              ) : (
-                <div className="flex aspect-video items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] text-sm text-[var(--text-secondary)]">
-                  {t.analysis.imageUnavailable}
+            <CardContent className="space-y-3 text-sm">
+              <div className="space-y-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
+                {currentPrice !== null && (
+                  <div className="flex items-center justify-between gap-3 rounded px-2 py-1">
+                    <span className="text-[var(--text-secondary)]">{t.analysis.currentPrice}</span>
+                    <button
+                      type="button"
+                      className="font-terminal font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
+                      onClick={() => void copyValue(t.analysis.currentPrice, currentPrice)}
+                    >
+                      {formatPrice(currentPrice)}
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
+                  <span className="text-[var(--text-secondary)]">● {t.analysis.entry}</span>
+                  <button
+                    type="button"
+                    className="font-terminal font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
+                    onClick={() => void copyValue(t.analysis.entry, entry)}
+                  >
+                    {formatPrice(entry)}
+                  </button>
                 </div>
-              )}
-              <AnalysisEvidencePanel evidence={fullResponse.evidence} />
-            </CardContent>
-          </Card>
-        </div>
 
-        {/* Card de niveis so em BUY/SELL. No WAIT ele contradizia o veredito
-            (entrada, stop e alvos de um trade que a IA manda nao fazer) e alguem
-            podia operar esses precos. O plano de gatilhos acima substitui. */}
-        {!isWaitVerdict && (
-        <Card
-          data-testid="levels-card"
-          className="surface-terminal-elevated h-fit w-full rounded-xl fade-in-stagger md:sticky md:top-24 md:w-[300px] md:flex-none"
-          style={{ animationDelay: '200ms' }}
-        >
-          <CardHeader className="pb-2">
-            <CardTitle className="tk-display text-lg tracking-wide">{t.analysis.levels.toUpperCase()}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="grid grid-cols-2 gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3">
-              <div>
-                <p className="text-xs text-[var(--text-secondary)]">{r.rrTp1Label}</p>
-                <p className={`font-terminal text-base font-semibold ${riskRewardTone}`}>
-                  {riskReward !== null ? `${riskReward.toFixed(1)} : 1` : 'N/A'}
-                </p>
-                {!invalidTradePlan && tradeTone !== 'hold' && (rrTp1 !== null || rrTp2 !== null) && (
-                  <p className="font-terminal text-[10px] text-[var(--text-secondary)]">
-                    {rrTp1 !== null ? `TP1 ${rrTp1.toFixed(1)}` : ''}
-                    {rrTp1 !== null && rrTp2 !== null ? ' · ' : ''}
-                    {rrTp2 !== null ? `TP2 ${rrTp2.toFixed(1)}` : ''}
-                  </p>
+                <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
+                  <span className="whitespace-nowrap text-[var(--signal-sell)]">▼ {t.analysis.stopLoss}</span>
+                  <button
+                    type="button"
+                    className="text-right font-terminal font-semibold text-[var(--signal-sell)] transition-opacity hover:opacity-80"
+                    onClick={() => void copyValue(t.analysis.stopLoss, stopLoss)}
+                  >
+                    {formatPrice(stopLoss)} <span className="font-terminal text-xs">{formatSignedPercent(stopPercent)}</span>
+                    {stopPips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-sell)]/70">{stopPips}p</span>}
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
+                  <span className="text-[var(--signal-buy)]">▲ TP1</span>
+                  <button
+                    type="button"
+                    className="text-right font-terminal font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
+                    onClick={() => void copyValue(t.analysis.tp1, takeProfit1)}
+                  >
+                    {formatPrice(takeProfit1)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit1Percent)}</span>
+                    {tp1Pips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-buy)]/70">{tp1Pips}p</span>}
+                  </button>
+                </div>
+
+                {takeProfit2 !== null && (
+                  <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
+                    <span className="text-[var(--signal-buy)]">▲ TP2</span>
+                    <button
+                      type="button"
+                      className="text-right font-terminal font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
+                      onClick={() => void copyValue(t.analysis.tp2, takeProfit2)}
+                    >
+                      {formatPrice(takeProfit2)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit2Percent)}</span>
+                      {tp2Pips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-buy)]/70">{tp2Pips}p</span>}
+                    </button>
+                  </div>
                 )}
-                {riskRewardLow && (
-                  <p className="mt-0.5 font-terminal text-[10px] font-semibold text-[var(--signal-sell)]">
-                    {r.rrBelowIdeal}
-                  </p>
-                )}
-              </div>
-              <div>
-                <p className="text-xs text-[var(--text-secondary)]">{t.analysis.confluence}</p>
-                <p className="font-terminal text-base font-semibold text-[var(--text-primary)]">
-                  {confluence ? confluence.display : 'N/A'}
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
-              <div className="flex items-center justify-between gap-3 rounded px-2 py-1">
-                <span className="text-[var(--text-secondary)]">{t.analysis.currentPrice.toUpperCase()}</span>
-                <button
-                  type="button"
-                  className="font-terminal font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue(t.analysis.currentPrice, currentPrice)}
-                >
-                  {formatPrice(currentPrice)}
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
-                <span className="text-[var(--text-secondary)]">● {t.analysis.entry.toUpperCase()}</span>
-                <button
-                  type="button"
-                  className="font-terminal font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue(t.analysis.entry, entry)}
-                >
-                  {formatPrice(entry)}
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
-                <span className="whitespace-nowrap text-[var(--signal-sell)]">▼ {t.analysis.stopLoss.toUpperCase()}</span>
-                <button
-                  type="button"
-                  className="text-right font-terminal font-semibold text-[var(--signal-sell)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue(t.analysis.stopLoss, stopLoss)}
-                >
-                  {formatPrice(stopLoss)} <span className="font-terminal text-xs">{formatSignedPercent(stopPercent)}</span>
-                  {stopPips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-sell)]/70">{stopPips}p</span>}
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
-                <span className="text-[var(--signal-buy)]">▲ TP1</span>
-                <button
-                  type="button"
-                  className="text-right font-terminal font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue(t.analysis.tp1, takeProfit1)}
-                >
-                  {formatPrice(takeProfit1)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit1Percent)}</span>
-                  {tp1Pips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-buy)]/70">{tp1Pips}p</span>}
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
-                <span className="text-[var(--signal-buy)]">▲ TP2</span>
-                <button
-                  type="button"
-                  className="text-right font-terminal font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue(t.analysis.tp2, takeProfit2)}
-                >
-                  {formatPrice(takeProfit2)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit2Percent)}</span>
-                  {tp2Pips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-buy)]/70">{tp2Pips}p</span>}
-                </button>
               </div>
 
               {entryType && (
-                <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1.5 text-xs">
-                  <span className="text-[var(--text-secondary)]">{t.analysis.entryType.toUpperCase()}: </span>
+                <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-3 py-2 text-xs">
+                  <span className="text-[var(--text-secondary)]">{t.analysis.entryType}: </span>
                   <span className="font-terminal font-semibold uppercase text-[var(--text-primary)]">{entryType}</span>
+                  {/* Ordem limitada com veredito COMPRAR/VENDER: o texto do motor
+                      costuma dizer "wait for the pullback". Sem esta linha, a
+                      tela parecia mandar comprar e esperar ao mesmo tempo. */}
+                  {!invalidTradePlan && isLimitEntry && entry !== null && (
+                    <p className="mt-1 text-[var(--text-primary)]">{r.limitEntryNote.replace('{price}', formatPrice(entry))}</p>
+                  )}
                   {/* Trava de coerência: com R/R abaixo do ideal, não exibir "entrar a
                       mercado agora" (contradiz o aviso). Mostra orientação de aguardar recuo. */}
                   {invalidTradePlan ? null : riskRewardLow && entryType.toLowerCase() === 'market' ? (
-                    <p className="mt-0.5 text-[var(--signal-hold)]">⚠ {r.entryCautionRRLow}</p>
+                    <p className="mt-1 text-[var(--signal-hold)]">⚠ {r.entryCautionRRLow}</p>
                   ) : (
-                    entryCondition && <p className="mt-0.5 text-[var(--text-secondary)]">{entryCondition}</p>
+                    entryCondition && <p className="mt-1 text-[var(--text-secondary)]">{entryCondition}</p>
                   )}
                 </div>
               )}
 
               {invalidationLevel !== null && invalidationLevel > 0 && (
-                <div className="rounded border border-[var(--signal-sell)]/30 bg-[var(--signal-sell-bg)] px-2 py-1.5 text-xs">
+                <div className="rounded border border-[var(--signal-sell)]/30 bg-[var(--signal-sell-bg)] px-3 py-2 text-xs">
                   <button
                     type="button"
                     onClick={() => setShowInvalidation((v) => !v)}
@@ -1172,7 +1141,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                     aria-expanded={showInvalidation}
                   >
                     <span>
-                      <span className="text-[var(--signal-sell)]">⚠ {t.analysis.invalidation.toUpperCase()}: </span>
+                      <span className="text-[var(--signal-sell)]">⚠ {t.analysis.invalidation}: </span>
                       <span className="font-terminal font-semibold text-[var(--signal-sell)]">{formatPrice(invalidationLevel)}</span>
                     </span>
                     {invalidationNote && (
@@ -1192,12 +1161,60 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                   {sessionNote}
                 </p>
               )}
-            </div>
-          </CardContent>
-        </Card>
-        )}
-      </div>
+            </CardContent>
+          </Card>
 
+          {/* ── 3. R ─────────────────────────────────────────────────── */}
+          {riskReward !== null && (
+            <Card data-testid="rr-card" className="surface-terminal rounded-xl fade-in-stagger h-fit" style={{ animationDelay: '60ms' }}>
+              <CardHeader className="pb-2">
+                <CardTitle className="tk-display text-lg tracking-wide">{r.rrTitle}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <p className="text-xs text-[var(--text-secondary)]">{r.rrTp1Label}</p>
+                {/* Duas casas: 1.47 arredondado para "1.5" em vermelho, com o
+                    aviso de abaixo de 1.5, parecia erro da tela. */}
+                <p className={`font-terminal text-2xl font-semibold ${riskRewardTone}`}>{`${riskReward.toFixed(2)} : 1`}</p>
+                {rrTp2 !== null && (
+                  <p className="font-terminal text-xs text-[var(--text-secondary)]">TP2 {rrTp2.toFixed(2)} : 1</p>
+                )}
+                {riskRewardLow && (
+                  <p className="font-terminal text-xs font-semibold text-[var(--signal-sell)]">{r.rrBelowIdeal}</p>
+                )}
+                <p className="text-xs leading-relaxed text-[var(--text-secondary)]">{r.rrExplain}</p>
+                {confluence && (
+                  <p className="border-t border-[var(--border-subtle)] pt-2 text-xs text-[var(--text-secondary)]">
+                    {t.analysis.confluence}:{' '}
+                    <span className="font-terminal font-semibold text-[var(--text-primary)]">{confluence.display}</span>
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* ── 4. Gráfico ───────────────────────────────────────────────── */}
+      <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '80ms' }}>
+        <CardHeader className="pb-3">
+          <CardTitle className="tk-display text-lg">{t.analysis.chartAnalyzed}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {imageUrl ? (
+            <img
+              src={String(imageUrl)}
+              alt={t.analysis.chartAnalyzed}
+              className="block h-auto max-h-[70vh] w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] object-contain"
+            />
+          ) : (
+            <div className="flex aspect-video items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] text-sm text-[var(--text-secondary)]">
+              {t.analysis.imageUnavailable}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── 5. Painel técnico, recolhido ─────────────────────────────── */}
       <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '140ms' }}>
         <Accordion type="single" collapsible className="w-full">
           <AccordionItem value="technical-panel" className="border-none">
@@ -1210,7 +1227,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
             <AccordionContent className="px-5 pb-5 md:px-6 md:pb-6">
               <Accordion
                 type="multiple"
-                defaultValue={['live-market', 'calendar', 'sessions', 'market-structure', 'technical-analysis', 'risk-factors']}
+                defaultValue={['live-market', 'calendar', 'sessions', 'market-structure', 'technical-analysis', 'risk-factors', 'evidence']}
                 className="w-full"
               >
                 {/* ── Contexto ao vivo (cripto) ──────────────────────── */}
@@ -1495,6 +1512,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                   </AccordionContent>
                 </AccordionItem>
 
+                {technicalAnalysis && (
                 <AccordionItem value="technical-analysis" className="border-[var(--border-subtle)]">
                   <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                     <span className="flex items-center gap-2">
@@ -1506,7 +1524,9 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                     {technicalAnalysis}
                   </AccordionContent>
                 </AccordionItem>
+                )}
 
+                {patternItems.length > 0 && (
                 <AccordionItem value="patterns" className="border-[var(--border-subtle)]">
                   <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                     <span className="flex items-center gap-2">
@@ -1518,8 +1538,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                     {/* Lista, não etiqueta. Cada padrão é uma frase inteira, e
                         etiqueta de largura variável com uma frase dentro vira
                         colcha de retalhos — era o que estava na tela. */}
-                    {patternItems.length > 0 ? (
-                      <ul className="space-y-2 text-sm text-[var(--text-secondary)]">
+                    <ul className="space-y-2 text-sm text-[var(--text-secondary)]">
                         {patternItems.map((item, index) => (
                           <li key={`${item}-${index}`} className="flex items-start gap-2.5">
                             <span className="mt-[7px] h-1 w-1 flex-shrink-0 rounded-full bg-[var(--text-muted)]" />
@@ -1527,12 +1546,11 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                           </li>
                         ))}
                       </ul>
-                    ) : (
-                      <p className="text-sm text-[var(--text-secondary)]">{t.analysis.noPatterns}</p>
-                    )}
                   </AccordionContent>
                 </AccordionItem>
+                )}
 
+                {keyIndicatorsText && (
                 <AccordionItem value="indicators" className="border-[var(--border-subtle)]">
                   <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                     <span className="flex items-center gap-2">
@@ -1541,14 +1559,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                     </span>
                   </AccordionTrigger>
                   <AccordionContent>
-                    {keyIndicatorsText ? (
-                      <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{keyIndicatorsText}</p>
-                    ) : (
-                      <p className="text-sm text-[var(--text-secondary)]">{t.analysis.noIndicators}</p>
-                    )}
+                    <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{keyIndicatorsText}</p>
                   </AccordionContent>
                 </AccordionItem>
+                )}
 
+                {riskItems.length > 0 && (
                 <AccordionItem value="risk-factors" className="border-[var(--border-subtle)]">
                   <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                     <span className="flex items-center gap-2">
@@ -1557,8 +1573,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                     </span>
                   </AccordionTrigger>
                   <AccordionContent>
-                    {riskItems.length > 0 ? (
-                      <ul className="space-y-2 text-sm text-[var(--text-secondary)]">
+                    <ul className="space-y-2 text-sm text-[var(--text-secondary)]">
                         {riskItems.map((item, index) => (
                           <li key={`${item}-${index}`} className="flex items-start gap-2">
                             <span className="mt-0.5 flex-shrink-0 text-[var(--signal-sell)]">●</span>
@@ -1566,11 +1581,9 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                           </li>
                         ))}
                       </ul>
-                    ) : (
-                      <p className="text-sm text-[var(--text-secondary)]">{t.analysis.noRiskFactors}</p>
-                    )}
                   </AccordionContent>
                 </AccordionItem>
+                )}
 
                 {(partialExitStrategy || hasStructuredExit) && (
                   <AccordionItem value="exit-plan" className="border-[var(--border-subtle)]">
@@ -1612,7 +1625,9 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                   </AccordionItem>
                 )}
 
-                {alternativeScenario && (
+                {/* No WAIT, plano B e "por que não o outro lado" já estão no
+                    card do plano, lá em cima: aqui seriam repetição. */}
+                {alternativeScenario && !isWaitVerdict && (
                   <AccordionItem value="plan-b" className="border-[var(--border-subtle)]">
                     <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                       <span className="flex items-center gap-2">
@@ -1628,6 +1643,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                   </AccordionItem>
                 )}
 
+                {whyNotOpposite && !isWaitVerdict && (
                 <AccordionItem value="opposite" className="border-[var(--border-subtle)]">
                   <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                     <span className="flex items-center gap-2">
@@ -1636,21 +1652,35 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                    {whyNotOpposite || r.noWhyNot}
+                    {whyNotOpposite}
                   </AccordionContent>
                 </AccordionItem>
+                )}
+
+                {/* Dados entregues ao motor. Saiu de baixo do gráfico: é
+                    metadado de auditoria, não leitura. Exemplo sem o registro
+                    não mostra o quadro vazio. */}
+                {!(sample && !hasEvidence) && (
+                  <AccordionItem value="evidence" className="border-[var(--border-subtle)]">
+                    <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <CircleHelp className="h-4 w-4 text-[var(--text-secondary)]" />
+                        {t.analysis.evidenceTitle}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <AnalysisEvidencePanel evidence={fullResponse.evidence} />
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
               </Accordion>
 
               {/* No WAIT a calculadora sairia com a entrada e o stop de um trade
-                  que o veredito manda NAO fazer; e a leitura ja subiu para o topo. */}
-              {!isWaitVerdict && (
-                <>
-                  <div className="mt-4">
-                    {!invalidTradePlan && tradeTone !== 'hold' && <PositionSizingCalculator entry={entry} stopLoss={stopLoss} />}
-                  </div>
-
-                  <div className="mt-4 border-t-2 border-[var(--border-emphasis)] pt-4">{summaryBlock}</div>
-                </>
+                  que o veredito manda NAO fazer. */}
+              {!isWaitVerdict && !invalidTradePlan && tradeTone !== 'hold' && (
+                <div className="mt-4">
+                  <PositionSizingCalculator entry={entry} stopLoss={stopLoss} />
+                </div>
               )}
             </AccordionContent>
           </AccordionItem>

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import DashboardPage from '@/components/pages/DashboardPage';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
+import pt from '@/lib/i18n/pt';
 
 const mockUseUser = vi.fn();
 const mockUseAuth = vi.fn();
@@ -88,7 +89,6 @@ vi.mock('@/lib/sample-analyses', () => {
       createdAt: '2026-09-01T12:00:00.000Z',
       fullResponse: { analysis: { symbol, timeframe: '1H' } },
     },
-    after: { headline: `after ${kind}`, detail: 'detail' },
   });
   return {
     SAMPLE_ANALYSES: [make('bullish', 'BUY', 'BTCUSDT'), make('bearish', 'SELL', 'ETHUSDT'), make('neutral', 'WAIT', 'SOLUSDT')],
@@ -500,18 +500,21 @@ describe('DashboardPage', () => {
 
       renderDashboard();
       // Quem nunca analisou cai direto em "Nova analise", com os exemplos em cima.
-      await user.click(await screen.findByRole('button', { name: /Otimista/ }));
+      // O botao mostra a ACAO no idioma da tela (COMPRAR, nunca BUY cru em pt).
+      await user.click(await screen.findByRole('button', { name: /COMPRAR/ }));
       expect(await screen.findByText('Analysis result (sample)')).toBeTruthy();
-      expect(screen.getByText('Exemplo otimista')).toBeTruthy();
-      expect(screen.getByText('after bullish')).toBeTruthy();
+      expect(screen.getByText('Exemplo de compra')).toBeTruthy();
+      expect(screen.getByText(pt.samples.after.bullish.headline)).toBeTruthy();
 
-      await user.click(screen.getByRole('button', { name: /Neutro/ }));
-      expect(screen.getByText('Exemplo neutro')).toBeTruthy();
-      expect(screen.getByText('Não entrar também é uma resposta')).toBeTruthy();
+      // O "depois" do WAIT diz que esperar foi decisao de risco, nao previsao.
+      await user.click(screen.getByRole('button', { name: /ESPERAR/ }));
+      expect(screen.getByText('Exemplo de espera')).toBeTruthy();
+      expect(screen.getByText(pt.samples.after.neutral.headline)).toBeTruthy();
+      expect(pt.samples.after.neutral.headline).toContain('decisão de risco');
 
-      await user.click(screen.getByRole('button', { name: /Pessimista/ }));
-      expect(screen.getByText('Exemplo pessimista')).toBeTruthy();
-      expect(screen.queryByText('Não entrar também é uma resposta')).toBeNull();
+      await user.click(screen.getByRole('button', { name: /VENDER/ }));
+      expect(screen.getByText('Exemplo de venda')).toBeTruthy();
+      expect(screen.queryByText(pt.samples.after.neutral.headline)).toBeNull();
 
       expect(screen.getByText('Agora é sua vez.')).toBeTruthy();
       expect(screen.getByText('Você tem 3 análises grátis para testar com seus próprios gráficos.')).toBeTruthy();
@@ -533,7 +536,7 @@ describe('DashboardPage', () => {
       mockUseAnalysisLimit.mockReturnValue(newFreeUser);
 
       renderDashboard();
-      await user.click(await screen.findByRole('button', { name: /Pessimista/ }));
+      await user.click(await screen.findByRole('button', { name: /VENDER/ }));
       await user.click(screen.getByRole('button', { name: /Voltar aos exemplos/ }));
 
       expect(screen.getByRole('button', { name: 'start-with-image' })).toBeTruthy();

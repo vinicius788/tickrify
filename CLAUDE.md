@@ -347,6 +347,21 @@ Vale para TODA mudanca, grande ou pequena:
   analises da conta `manual_owner_1`), print do Supabase Storage e resultado
   medido pelo sweeper + candles publicos. Nada chama a API: nao toca na cota (ha
   teste). Trocar um exemplo = trocar a analise inteira por outra real.
+- **Tela de resultado desde 01/10** (vale para TODA analise, nao so exemplo):
+  ordem acao → resumo da leitura → plano (niveis ou gatilhos do WAIT) → R
+  (TP1 com duas casas, TP2 embaixo) → grafico → painel tecnico recolhido →
+  "o que aconteceu depois" (so exemplo). A ACAO (COMPRAR/VENDER/ESPERAR,
+  `t.analysis.buy/sell/hold`) e o destaque; o vies vai numa linha
+  "Vies atual: Alta" (`t.analysis.bullish/...`). Nunca dois selos do mesmo
+  tamanho para vies e acao (alta + esperar parecia contradicao). WAIT e HOLD
+  do motor viram o mesmo rotulo. Preco sem `$` (moeda de cotacao do ativo).
+  Bloco sem conteudo some (nada de "nao informado"). Ordem limitada ganha a
+  linha "a operacao so existe se o preco chegar a X".
+- Textos dos exemplos e o "depois" moram em `t.samples` (6 idiomas). O texto
+  do motor fica em ingles, como foi gerado, com nota na tela.
+- **Vitrine BUY/SELL so com R do TP1 >= 1,5 e checklist consistente** (decisao
+  do dono, 01/10). Os dois atuais (EURJPY 1,47; XAUUSD 1,27; EURJPY com
+  checklist 5/7 contra 6 marcas) vao ser trocados: ver secao 6.
 - Substituiu o "Try it with an example chart" (que rodava a IA via
   `POST /api/demo/example`): rota, DTO, metodo do service, caminho logado do
   `/try` e evento `example_cta_clicked` removidos. O `/try` anonimo nao mudou.
@@ -510,6 +525,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 01/10 | **Trocar os exemplos BUY e SELL do painel** (R do TP1 abaixo de 1,5; EURJPY com checklist inconsistente). Dono roda o SELECT de candidatos (conta `manual_owner_1`, WIN/LOSS, R TP1 >= 1,5 pelos niveis do sweeper, 7 marcas com placar batendo, vies igual a direcao, MTF sem "conflict", com print) e escolhe; Claude troca a analise inteira (resultado, print, "depois" nos 6 idiomas). Nunca editar o texto do motor. | dono escolhe, Claude troca |
 | 30/09 | **Decidir o R/R guard pelo TP1.** Trocar "melhor alvo >= 1,2" por "TP1 >= 1,5R" seria a unica faixa com expectancy positiva (ver 3.2), mas viraria WAIT ~87 de 127 BUY/SELL (WAIT% de ~48% para ~80%), o que pesa na ativacao do gratis. Alternativa: so medir mais (n=40 nao fecha). Expectancy na /accuracy so depois dessa decisao (e publico). | dono decide, Claude implementa |
 | 30/09 | Medir a tabela "48 hours later" da home (`/api/ai/public-analyses/scored`): cliques para `/accuracy` e `/try` a partir de `#reads`. Hash diario publico das analises (repo publico ou OpenTimestamps) ainda nao feito. | Claude |
 | 29/09 | Primeiros envios dos e-mails de ciclo de vida: conferir no Render (`[lifecycle] kind=... sent=1`) e na Resend que sairam e se alguem respondeu em `vinicius@tickrify.com`. | Claude |
@@ -584,6 +600,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **29/09 (recuperacao):** texto novo do e-mail "cota gratis esgotada" aprovado pelo dono: assunto "Your free Tickrify analyses are used up", semanal primeiro, mensal com o EARLY35 so se ativo, sem presumir uso.
 - **30/09:** 3 analises de exemplo fixas no painel antes das gratis (otimista, pessimista, neutra, com o depois), sem IA e sem cota (ver 3.5); o exemplo em um clique (`/api/demo/example`) saiu.
 - **30/09 (confianca e recibos):** confianca, Signal/Read e "Probabilities" fora de todas as telas (card mostra a hora da leitura em UTC); R/R principal pelo TP1; rota publica `/api/ai/public-analyses/scored` e tabela "What the market did 48 hours later" na home (WIN, LOSS, NO_FILL, TIMEOUT, ordem do sweeper); semanal na secao de preco da home; textos falsos corrigidos nos 6 idiomas e no corpo pre-renderizado ("one-off Ticks", "See live analysis", "API sleeps", FAQ "professional traders", "3 free analyses" virou "3 free trade plans, WAIT doesn't count"); blog, `llms.txt` e /pricing sem "confidence score/tier". `confidenceToPercent` e `getConvictionTier` removidos.
+- **01/10:** tela de resultado reorganizada (acao em destaque, vies secundario, resumo no topo, plano, R, grafico, painel recolhido); WAIT explicado uma vez so como decisao de risco; `$` fixo, blocos vazios e chaves `no*`/`waitExplainPlan` removidos; textos dos exemplos para `t.samples`.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

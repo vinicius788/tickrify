@@ -49,10 +49,11 @@ describe('stored trade-plan integrity', () => {
     fireEvent.click(screen.getByRole('button', { name: t.technicalPanel }));
     expect(screen.queryByText(t.result.invalidTradePlan)).toBeNull();
     expect(screen.getByText(t.positionSizing.title)).toBeTruthy();
-    // O R/R principal é o do TP1 (alvo que a /accuracy mede): 10 / 5 = 2.0,
-    // não o do TP2 (20 / 5 = 4.0), que fica só na linha de baixo.
+    // O R/R principal é o do TP1 (alvo que a /accuracy mede): 10 / 5 = 2.00,
+    // e o do TP2 (20 / 5 = 4.00) fica só na linha de baixo, marcado como TP2.
     expect(screen.getByText(t.result.rrTp1Label)).toBeTruthy();
-    expect(screen.getByText('2.0 : 1')).toBeTruthy();
-    expect(screen.queryByText('4.0 : 1')).toBeNull();
+    expect(screen.getByText('2.00 : 1')).toBeTruthy();
+    expect(screen.queryByText('4.00 : 1')).toBeNull();
+    expect(screen.getByText('TP2 4.00 : 1')).toBeTruthy();
   });
 });

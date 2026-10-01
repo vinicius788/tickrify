@@ -16,7 +16,7 @@ interface LockedAnalysisProps {
 // "calculated for this chart" até 29/09, e nenhuma análise rodava). O rótulo
 // diz o que é: o formato da leitura que o assinante recebe.
 const PREVIEW_ROWS: Array<{ label: string; value: string }> = [
-  { label: 'Scenario', value: '•••••••' },
+  { label: 'Bias', value: '•••••••' },
   { label: 'Entry', value: '$ 4,261.40' },
   { label: 'Stop loss', value: '$ 4,240.00' },
   { label: 'Target 1', value: '$ 4,300.00' },
