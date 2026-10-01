@@ -407,8 +407,11 @@ export type FunnelEvent =
   // analises gratis dao WAIT e metade das pessoas saia depois da primeira.
   | 'wait_nudge_viewed'
   | 'wait_nudge_clicked'
-  // "Try it with an example chart" no painel de quem nunca analisou.
-  | 'example_cta_clicked'
+  // Tres analises de exemplo fixas no painel de quem ainda nao analisou
+  // (`sample`: bullish | bearish | neutral). Nada chama a IA nem gasta cota.
+  | 'sample_analysis_opened'
+  // "Agora e sua vez" depois dos exemplos (`viewed`: quantos a pessoa abriu).
+  | 'sample_cta_clicked'
   // Funil da demo anônima (/try) — Fase 0 de ativação:
   | 'demo_page_view'
   | 'demo_analysis_started'

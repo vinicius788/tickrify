@@ -317,8 +317,24 @@ Vale para TODA mudanca, grande ou pequena:
   `$pageview`, `static_cta_clicked { href }`, `static_video_played { video }`.
   Pagina estatica nova precisa da tag `<script src="/static-analytics.js" defer>`.
 - Eventos de 29/09: `wait_nudge_viewed/clicked`, `upgrade_video_played/completed
-  { surface }`, `example_cta_clicked`, `demo_analysis_failed { code, chart,
-  signedIn }`; checkout com `source=upgrade_modal`.
+  { surface }`, `demo_analysis_failed { code, chart }`; checkout com
+  `source=upgrade_modal`. De 30/09: `sample_analysis_opened { sample }` e
+  `sample_cta_clicked { viewed, surface }` (exemplos fixos do painel, 3.5).
+
+### 3.5 Analises de exemplo do painel (30/09)
+
+- Quem esta no plano gratis e ainda nao concluiu nenhuma analise ve, em "Nova
+  analise", 3 exemplos fixos (otimista BUY, pessimista SELL, neutro WAIT) acima
+  do envio do grafico. Abre um por vez, no MESMO `AnalysisResult` (prop
+  `sample`: sem calendario/contexto ao vivo, sem compartilhar, sem id no relato
+  de problema), com "o que aconteceu depois" e o CTA "Agora e sua vez".
+- Dados em `lib/sample-analyses.ts`: saida REAL do motor (coluna `result` de
+  analises da conta `manual_owner_1`), print do Supabase Storage e resultado
+  medido pelo sweeper + candles publicos. Nada chama a API: nao toca na cota (ha
+  teste). Trocar um exemplo = trocar a analise inteira por outra real.
+- Substituiu o "Try it with an example chart" (que rodava a IA via
+  `POST /api/demo/example`): rota, DTO, metodo do service, caminho logado do
+  `/try` e evento `example_cta_clicked` removidos. O `/try` anonimo nao mudou.
 
 ---
 
@@ -549,6 +565,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **29/09 (conversao):** varredura do funil (ativacao real 83%, nao 48%: evento do servidor so desde 21/09; 53 de 80 tomaram WAIT na 1a analise; 11 de 12 checkouts sem cartao; Google Pay desligado). Barra no topo do resultado WAIT para o gratis ("nao gastou, restam N", outro grafico, video do WAIT). Paywall com texto honesto (dizia "Your read is ready" sem analise nenhuma), preco do 1o mes, semanal em botao e filme 04; janela de upgrade com checkout direto mensal/semanal e filme 04 (`source=upgrade_modal`). Exemplo em um clique para quem nunca analisou (`POST /api/demo/example`, autenticado, hash do grafico, 1 vez por conta, fora da cota/historico/accuracy; o /try roda sozinho com `?example=1`). E-mails de ciclo de vida desligados + descadastro. PostHog nas 22 paginas estaticas. `demo_analysis_failed`. Log de sucesso de todo e-mail. Emoji do resultado removido.
 - **29/09 (ligado pelo dono):** texto dos 4 e-mails de ciclo de vida aprovado e chaves `EMAIL_ACTIVATION_NUDGE` e `EMAIL_CHECKOUT_RECOVERY` LIGADAS no /admin (antes: 1 dry-run por volta, o leopeter com recusa). Google Pay ligado na Stripe (config Default; lido no painel depois). Resend lido no painel: 369 e-mails em 15 dias, 99,19% entregues, 0,81% bounce, 0 reclamacao; uma automacao vazia e desligada da Resend sem uso.
 - **29/09 (recuperacao):** texto novo do e-mail "cota gratis esgotada" aprovado pelo dono: assunto "Your free Tickrify analyses are used up", semanal primeiro, mensal com o EARLY35 so se ativo, sem presumir uso.
+- **30/09:** 3 analises de exemplo fixas no painel antes das gratis (otimista, pessimista, neutra, com o depois), sem IA e sem cota (ver 3.5); o exemplo em um clique (`/api/demo/example`) saiu.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

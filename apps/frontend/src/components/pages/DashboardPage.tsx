@@ -44,7 +44,8 @@ import { CheckoutError, createCheckoutSession, getCheckoutStatus } from "@/lib/s
 import { checkoutReturnPath, loadCheckoutIntent } from "@/lib/checkoutIntent";
 import { useFoundingOffer } from "@/hooks/useFoundingOffer";
 import UpgradeVideo from "../dashboard/UpgradeVideo";
-import { EXAMPLE_USED_KEY } from "@/lib/demo-api";
+import { SampleAnalysisView, SamplePicker } from "../dashboard/SampleAnalyses";
+import { SAMPLE_ANALYSES, type SampleKind } from "@/lib/sample-analyses";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
 // PT quando o idioma for português. Contido neste arquivo (sem mexer nos 6 locales).
@@ -87,9 +88,6 @@ const DASH_COPY = {
     waitNudgeHint: 'Try another pair or a different timeframe.',
     waitNudgeCta: 'Analyze another chart',
     waitNudgeWhy: 'Why WAIT? (22 s video)',
-    exampleTitle: 'No chart at hand?',
-    exampleDesc: 'Run a real analysis on an example gold chart in one click. It does not use your free analyses.',
-    exampleCta: 'Try it with an example chart',
   },
   pt: {
     planActivatedTitle: 'Plano ativado!',
@@ -129,9 +127,6 @@ const DASH_COPY = {
     waitNudgeHint: 'Tente outro par ou outro tempo gráfico.',
     waitNudgeCta: 'Analisar outro gráfico',
     waitNudgeWhy: 'Por que WAIT? (vídeo de 22 s)',
-    exampleTitle: 'Sem gráfico à mão?',
-    exampleDesc: 'Rode uma análise real num gráfico de ouro de exemplo, em um clique. Não gasta suas análises grátis.',
-    exampleCta: 'Testar com um gráfico de exemplo',
   },
 } as const;
 import officialIcon from "@/assets/tickrify-icon-official.png";
@@ -141,7 +136,7 @@ const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
 };
 
-type View = 'dashboard' | 'new-analysis' | 'my-trades' | 'journal' | 'strategy' | 'analysis-result' | 'loading' | 'error' | 'locked';
+type View = 'dashboard' | 'new-analysis' | 'sample' | 'my-trades' | 'journal' | 'strategy' | 'analysis-result' | 'loading' | 'error' | 'locked';
 type RecentAnalysisItem = {
   symbol: string;
   timeframe: string;
@@ -154,6 +149,18 @@ type ActiveMarketItem = {
   name: string;
   lastSeen: string;
 };
+
+/** Exemplos que a pessoa ja abriu, para o "Vista" sobreviver a recarga. */
+const SAMPLES_VIEWED_KEY = 'tickrify_samples_viewed';
+
+function loadViewedSamples(): Set<SampleKind> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SAMPLES_VIEWED_KEY) || '[]');
+    return new Set(Array.isArray(raw) ? raw.filter((k): k is SampleKind => SAMPLE_ANALYSES.some((s) => s.kind === k)) : []);
+  } catch {
+    return new Set();
+  }
+}
 
 const MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
@@ -521,19 +528,38 @@ const DashboardPage = () => {
     setAutoRoutedNewUser(true);
   }, [autoRoutedNewUser, isDemo, user, loadingAnalyses, rawAnalyses]);
 
-  const exampleAlreadyUsed = useMemo(() => {
-    try {
-      return localStorage.getItem(EXAMPLE_USED_KEY) === '1';
-    } catch {
-      return false;
-    }
-  }, []);
-  const showExampleCta =
+  // Tres analises de exemplo fixas antes das gratis, so para quem esta no
+  // plano gratis e ainda nao concluiu nenhuma. Sao dados do bundle: abrir nao
+  // chama a API e nao mexe na cota (ver SampleAnalyses.tsx).
+  const showSamples =
     !isDemo &&
     Boolean(user) &&
-    !exampleAlreadyUsed &&
+    !isUnlimited &&
+    SAMPLE_ANALYSES.length > 0 &&
     !loadingAnalyses &&
     !rawAnalyses.some((a) => a.status === 'completed');
+  const [openSample, setOpenSample] = useState<SampleKind | null>(null);
+  const [viewedSamples, setViewedSamples] = useState<Set<SampleKind>>(loadViewedSamples);
+  const openSampleAnalysis = useCallback((kind: SampleKind) => {
+    track('sample_analysis_opened', { sample: kind });
+    setOpenSample(kind);
+    setActiveView('sample');
+    // Trocar de um exemplo para outro nao muda a view: sem isto a tela nova
+    // abriria na altura em que a anterior estava.
+    scrollToTop();
+    setViewedSamples((prev) => {
+      if (prev.has(kind)) return prev;
+      const next = new Set(prev).add(kind);
+      try {
+        localStorage.setItem(SAMPLES_VIEWED_KEY, JSON.stringify([...next]));
+      } catch {
+        /* noop */
+      }
+      return next;
+    });
+  }, []);
+  // Sinais gratis que ainda restam (o /usage ja desconta); 3 enquanto carrega.
+  const samplesFreeLeft = Number.isFinite(remaining) ? Math.max(0, remaining) : (total ?? 3);
 
   // Usar dados demo ou reais dependendo do modo
   const displayRecentAnalyses = isDemo ? demoRecentAnalyses : recentAnalyses;
@@ -1132,30 +1158,41 @@ const DashboardPage = () => {
               {viewEyebrow(t.nav.newAnalysis)}
               <h1 className="tk-display mt-2 text-3xl md:text-4xl">{t.nav.newAnalysis}</h1>
             </div>
-            <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} allowHigherTimeframes={!isDemo && isUnlimited} />
-            {/* Quem nunca analisou: uma analise real em um clique, num grafico
-                de exemplo, sem gastar a cota (o servidor so aceita o grafico
-                de exemplo e uma vez por conta; ver DemoService). */}
-            {showExampleCta && (
-              <div className="flex flex-col gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-[var(--text-primary)]">{dc.exampleTitle}</p>
-                  <p className="mt-0.5 text-xs text-[var(--text-secondary)]">{dc.exampleDesc}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    track('example_cta_clicked', { surface: 'dashboard' });
-                    navigate('/try?example=1');
-                  }}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-[var(--border-default)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-white/[0.04]"
-                >
-                  <FlaskConical className="h-4 w-4" /> {dc.exampleCta}
-                </button>
-              </div>
+            {showSamples && (
+              <SamplePicker
+                samples={SAMPLE_ANALYSES}
+                viewed={viewedSamples}
+                freeLeft={samplesFreeLeft}
+                onOpen={openSampleAnalysis}
+                onAnalyze={() => {
+                  track('sample_cta_clicked', { viewed: viewedSamples.size, surface: 'picker' });
+                  document.getElementById('new-analysis-upload')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+              />
             )}
+            <div id="new-analysis-upload" className="scroll-mt-24">
+              <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} allowHigherTimeframes={!isDemo && isUnlimited} />
+            </div>
           </div>
         );
+      case 'sample': {
+        const sample = SAMPLE_ANALYSES.find((s) => s.kind === openSample);
+        if (!sample) return null;
+        return (
+          <SampleAnalysisView
+            sample={sample}
+            samples={SAMPLE_ANALYSES}
+            viewed={viewedSamples}
+            freeLeft={samplesFreeLeft}
+            onOpen={openSampleAnalysis}
+            onBack={() => setActiveView('new-analysis')}
+            onAnalyze={() => {
+              track('sample_cta_clicked', { viewed: viewedSamples.size, surface: 'sample' });
+              resetNewAnalysisView();
+            }}
+          />
+        );
+      }
       case 'my-trades':
         return <MyTrades onStartAnalysis={resetNewAnalysisView} initialFilter={myTradesFilter} />;
       case 'journal':
@@ -1368,7 +1405,7 @@ const DashboardPage = () => {
   const quotaText =
     freeRemainingChip === null ? `${safeUsed}/-` : `${freeRemainingChip} ${t.nav.freeLeft}`;
   const mobileActiveView =
-    activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error'
+    activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error' || activeView === 'sample'
       ? 'new-analysis'
       : activeView;
   const currentViewLabel =
@@ -1407,7 +1444,7 @@ const DashboardPage = () => {
             <button type="button" onClick={() => setActiveView('dashboard')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'dashboard' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
               <LayoutGrid className="h-4 w-4" /> {t.nav.dashboard}
             </button>
-            <button type="button" onClick={resetNewAnalysisView} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'new-analysis' || activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+            <button type="button" onClick={resetNewAnalysisView} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'new-analysis' || activeView === 'sample' || activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
               <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
             </button>
             <button type="button" onClick={() => openMyTrades()} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'my-trades' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>

@@ -2,9 +2,6 @@
 // Mantido fora do api.ts para não misturar com o cliente autenticado.
 import { buildApiUrl } from './api';
 
-/** Marca no aparelho que a conta ja rodou o exemplo (TryPage grava, DashboardPage le). */
-export const EXAMPLE_USED_KEY = 'tickrify_example_used';
-
 export interface DemoAnalysisResult {
   status: 'completed';
   recommendation: 'BUY' | 'SELL' | 'WAIT';
@@ -31,10 +28,7 @@ export type DemoErrorCode =
   | 'analysis_failed'
   | 'demo_unavailable'
   | 'rate_limited'
-  | 'network_error'
-  // So na rota do exemplo para quem tem conta (/api/demo/example):
-  | 'not_example_chart'
-  | 'example_used';
+  | 'network_error';
 
 export class DemoApiError extends Error {
   readonly code: DemoErrorCode;
@@ -55,9 +49,7 @@ async function parseErrorCode(response: Response): Promise<DemoErrorCode> {
       code === 'bot_check_failed' ||
       code === 'non_chart_image' ||
       code === 'invalid_image' ||
-      code === 'demo_unavailable' ||
-      code === 'not_example_chart' ||
-      code === 'example_used'
+      code === 'demo_unavailable'
     ) {
       return code;
     }
@@ -108,39 +100,6 @@ export async function requestDemoAnalysis(params: {
   if (!response.ok) {
     const code = await parseErrorCode(response);
     throw new DemoApiError(code, 'Demo analysis request failed.');
-  }
-
-  return (await response.json()) as DemoAnalysisResult;
-}
-
-/**
- * Grafico de exemplo para quem JA tem conta (botao do painel). Autenticado,
- * sem fingerprint nem Turnstile; o servidor confere que a imagem e o exemplo e
- * libera uma vez por conta, sem gastar a cota gratis.
- */
-export async function requestExampleAnalysis(params: {
-  image: Blob;
-  token: string;
-  userLanguage?: string;
-}): Promise<DemoAnalysisResult> {
-  const form = new FormData();
-  form.append('image', params.image, 'chart.png');
-  if (params.userLanguage) form.append('userLanguage', params.userLanguage);
-
-  let response: Response;
-  try {
-    response = await fetch(buildApiUrl('/api/demo/example'), {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${params.token}` },
-      body: form,
-    });
-  } catch {
-    throw new DemoApiError('network_error', 'Network error. Please try again.');
-  }
-
-  if (!response.ok) {
-    const code = await parseErrorCode(response);
-    throw new DemoApiError(code, 'Example analysis request failed.');
   }
 
   return (await response.json()) as DemoAnalysisResult;

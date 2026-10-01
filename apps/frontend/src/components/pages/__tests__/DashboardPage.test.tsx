@@ -74,8 +74,26 @@ vi.mock('@/components/dashboard/AnalysisLoading', () => ({
 }));
 
 vi.mock('@/components/dashboard/AnalysisResult', () => ({
-  default: () => <div>Analysis result</div>,
+  default: ({ sample }: { sample?: boolean }) => <div>{sample ? 'Analysis result (sample)' : 'Analysis result'}</div>,
 }));
+
+// Exemplos minimos: o teste confere o fluxo, nao o texto do motor.
+vi.mock('@/lib/sample-analyses', () => {
+  const make = (kind: string, recommendation: string, symbol: string) => ({
+    kind,
+    analysis: {
+      id: `sample-${kind}`,
+      status: 'completed',
+      recommendation,
+      createdAt: '2026-09-01T12:00:00.000Z',
+      fullResponse: { analysis: { symbol, timeframe: '1H' } },
+    },
+    after: { headline: `after ${kind}`, detail: 'detail' },
+  });
+  return {
+    SAMPLE_ANALYSES: [make('bullish', 'BUY', 'BTCUSDT'), make('bearish', 'SELL', 'ETHUSDT'), make('neutral', 'WAIT', 'SOLUSDT')],
+  };
+});
 
 vi.mock('@/components/dashboard/MyTrades', () => ({
   default: () => <div>My trades</div>,
@@ -393,14 +411,6 @@ describe('DashboardPage', () => {
       expect(screen.getByRole('button', { name: /one week: \$7\.99/ })).toBeTruthy();
     });
 
-    it('quem nunca analisou ve o exemplo em um clique', async () => {
-      const user = userEvent.setup();
-      mockUseAnalysisLimit.mockImplementation(() => freeLimit(0));
-      renderDashboard();
-      await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
-      expect(await screen.findByRole('button', { name: /Testar com um gráfico de exemplo/ })).toBeTruthy();
-    });
-
     it('se o contador do navegador estiver defasado, o 403 do backend tambem leva ao paywall', async () => {
       const user = userEvent.setup();
       mockUseAnalysisLimit.mockImplementation(() => freeLimit(2));
@@ -462,6 +472,98 @@ describe('DashboardPage', () => {
       await screen.findAllByRole('button', { name: 'Nova Análise' });
       expect(screen.queryByText(/trades ainda em aberto/)).toBeNull();
       window.localStorage.removeItem('tickrify_verdicts');
+    });
+  });
+
+  describe('analises de exemplo', () => {
+    const newFreeUser = {
+      plan: 'free',
+      total: 3,
+      used: 0,
+      remaining: 3,
+      isUnlimited: false,
+      analysesAllTime: 0,
+      isLoading: false,
+    };
+
+    beforeEach(() => {
+      window.localStorage.removeItem('tickrify_samples_viewed');
+    });
+
+    it('abre os 3 exemplos, um por vez, sem chamar a API nem mexer na cota', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockReturnValue(newFreeUser);
+      const increment = vi.fn();
+      mockUseIncrementAnalysis.mockReturnValue(increment);
+      const api = makeApiClient();
+      mockUseAPIClient.mockReturnValue(api);
+
+      renderDashboard();
+      // Quem nunca analisou cai direto em "Nova analise", com os exemplos em cima.
+      await user.click(await screen.findByRole('button', { name: /Otimista/ }));
+      expect(await screen.findByText('Analysis result (sample)')).toBeTruthy();
+      expect(screen.getByText('Exemplo otimista')).toBeTruthy();
+      expect(screen.getByText('after bullish')).toBeTruthy();
+
+      await user.click(screen.getByRole('button', { name: /Neutro/ }));
+      expect(screen.getByText('Exemplo neutro')).toBeTruthy();
+      expect(screen.getByText('Não entrar também é uma resposta')).toBeTruthy();
+
+      await user.click(screen.getByRole('button', { name: /Pessimista/ }));
+      expect(screen.getByText('Exemplo pessimista')).toBeTruthy();
+      expect(screen.queryByText('Não entrar também é uma resposta')).toBeNull();
+
+      expect(screen.getByText('Agora é sua vez.')).toBeTruthy();
+      expect(screen.getByText('Você tem 3 análises grátis para testar com seus próprios gráficos.')).toBeTruthy();
+      expect(api.createAnalysis).not.toHaveBeenCalled();
+      expect(api.getAnalysis).not.toHaveBeenCalled();
+      expect(api.getAnalysisUsage).not.toHaveBeenCalled();
+      expect(increment).not.toHaveBeenCalled();
+      expect(mockTrack).toHaveBeenCalledWith('sample_analysis_opened', { sample: 'neutral' });
+
+      // "Agora e sua vez" leva ao envio do grafico, com os tres marcados.
+      await user.click(screen.getByRole('button', { name: /Analisar meu gráfico/ }));
+      expect(screen.getByRole('button', { name: 'start-with-image' })).toBeTruthy();
+      expect(screen.getAllByText('Vista')).toHaveLength(3);
+      expect(mockTrack).toHaveBeenCalledWith('sample_cta_clicked', { viewed: 3, surface: 'sample' });
+    });
+
+    it('voltar aos exemplos mantem a pessoa na tela de nova analise', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockReturnValue(newFreeUser);
+
+      renderDashboard();
+      await user.click(await screen.findByRole('button', { name: /Pessimista/ }));
+      await user.click(screen.getByRole('button', { name: /Voltar aos exemplos/ }));
+
+      expect(screen.getByRole('button', { name: 'start-with-image' })).toBeTruthy();
+      expect(screen.getByText('Veja antes 3 análises reais de exemplo')).toBeTruthy();
+      expect(screen.getByText('Agora é sua vez.')).toBeTruthy();
+    });
+
+    it('nao aparece para assinante', async () => {
+      mockUseAnalysisLimit.mockReturnValue({ ...newFreeUser, plan: 'pro', total: -1, remaining: Infinity, isUnlimited: true });
+
+      renderDashboard();
+      expect(await screen.findByRole('button', { name: 'start-with-image' })).toBeTruthy();
+      expect(screen.queryByText('Veja antes 3 análises reais de exemplo')).toBeNull();
+    });
+
+    it('nao aparece para quem ja concluiu uma analise', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockReturnValue(newFreeUser);
+      mockUseAPIClient.mockReturnValue(
+        makeApiClient({
+          listAnalyses: vi.fn().mockResolvedValue([
+            { id: 'a-1', status: 'completed', recommendation: 'WAIT', createdAt: new Date().toISOString() },
+          ]),
+        }),
+      );
+
+      renderDashboard();
+      await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
+      expect(screen.getByRole('button', { name: 'start-with-image' })).toBeTruthy();
+      expect(screen.queryByText('Veja antes 3 análises reais de exemplo')).toBeNull();
     });
   });
 });

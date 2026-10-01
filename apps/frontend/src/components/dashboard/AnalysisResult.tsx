@@ -43,6 +43,12 @@ import { computeDirectionalRiskReward } from '@/lib/trade-plan';
 interface AnalysisResultProps {
   analysisData: AIAnalysisResponse | null;
   uploadedImage: string | null;
+  /**
+   * Analise de exemplo fixa (SampleAnalyses): mesma tela, sem nada "de agora".
+   * Calendario e contexto ao vivo seriam de hoje, nao do dia do grafico; o
+   * card de compartilhar e o relato de problema sao de analise da pessoa.
+   */
+  sample?: boolean;
 }
 
 type MarketSession = { name: string; abbr: string; open: boolean };
@@ -449,13 +455,13 @@ export function parseTargetProbabilities(analysis: Record<string, unknown>, hasT
   return { tp1, tp2, stop };
 }
 
-const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) => {
+const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: AnalysisResultProps) => {
   // Diz ao botão de reportar problema qual análise está na tela. Sem isto o
   // relato chega sem o id e vira caça ao tesouro no histórico do usuário.
   useEffect(() => {
-    definirAnaliseAtual(analysisData?.id ?? null);
+    definirAnaliseAtual(sample ? null : analysisData?.id ?? null);
     return () => definirAnaliseAtual(null);
-  }, [analysisData?.id]);
+  }, [analysisData?.id, sample]);
 
   const { toast } = useToast();
   const { t } = useLanguage();
@@ -483,7 +489,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
   // então no caminho sem análise eles não disparam requisição nenhuma. O símbolo
   // de verdade continua sendo calculado mais abaixo, para exibição.
   const simboloParaContexto = (() => {
-    if (!analysisData) return null;
+    if (!analysisData || sample) return null;
     // Mesma origem do `symbol` calculado mais abaixo, só que resistente a
     // analysisData nulo. Não reaproveita aquela variável de propósito: ela é
     // declarada depois do early return e usa 'UNKNOWN' como último recurso —
@@ -984,7 +990,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 /accuracy, e um print gerado a partir de dado de demonstração
                 circulando como leitura real é a mesma classe de problema que a
                 auditoria de 27/07 removeu da vitrine. */}
-            {!isDemo && !invalidTradePlan && <ShareCardButton data={shareData} />}
+            {!isDemo && !sample && !invalidTradePlan && <ShareCardButton data={shareData} />}
             {detectedSession && (
               <span className="whitespace-nowrap rounded-sm border border-[var(--border-subtle)] px-2 py-0.5 font-terminal text-xs text-[var(--text-secondary)] uppercase">
                 {detectedSession.replace('_', ' ')}
@@ -1352,6 +1358,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                 )}
 
                 {/* ── Eventos Econômicos ─────────────────────────────── */}
+                {!sample && (
                 <AccordionItem value="calendar" className="border-[var(--border-subtle)]">
                     <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                       <span className="flex items-center gap-2">
@@ -1442,6 +1449,7 @@ const AnalysisResult = ({ analysisData, uploadedImage }: AnalysisResultProps) =>
                       )}
                     </AccordionContent>
                   </AccordionItem>
+                )}
 
                 <AccordionItem value="sessions" className="border-[var(--border-subtle)]">
                   <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
