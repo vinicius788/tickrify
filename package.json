@@ -26,7 +26,7 @@
     "worker": "pnpm --dir apps/backend worker",
     "studio": "pnpm --dir apps/backend studio",
     "smoke:api": "node scripts/smoke-api.mjs",
-    "smoke:e2e": "node scripts/e2e-staging.mjs",
+    "e2e:payment": "node scripts/e2e-payment.mjs",
     "smoke": "bash scripts/smoke.sh",
     "test": "pnpm --dir apps/backend exec jest --runInBand",
     "auditoria": "node scripts/auditoria-seguranca.mjs",
