@@ -358,7 +358,7 @@ export default {
     byDateNote: '各分析は作成した日に計上されます。',
     statsTitle: '今月のパフォーマンス',
     equity: '損益曲線（記録した損益）',
-    equityHint: 'My Trades で決済済みトレードを2件以上金額付きで記録すると曲線が表示されます。',
+    equityHint: 'My Trades で決済済みトレードの金額を記録すると曲線が表示されます。',
     avgR: '平均R',
     avgRSub: '決済済みトレードあたりの計画R（{n}件）',
     profitFactor: 'プロフィットファクター',

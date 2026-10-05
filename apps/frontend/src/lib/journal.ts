@@ -131,8 +131,8 @@ export interface MonthStats {
   profitFactor: number | null;
   /** Maior queda da curva, do pico ao fundo (<= 0). null sem curva. */
   maxDrawdown: number | null;
-  /** P&L acumulado no fim de cada dia com valor registrado, em ordem. */
-  equity: Array<{ day: string; value: number }>;
+  /** P&L acumulado trade a trade (fechados com valor), em ordem de criacao. */
+  equity: Array<{ at: string; value: number }>;
   bestDay: { day: string; pnl: number } | null;
   worstDay: { day: string; pnl: number } | null;
   bySymbol: GroupRow[];
@@ -158,6 +158,7 @@ export function computeMonthStats<T extends { createdAt: string; symbol?: string
     byWeekday: new Map<string, GroupRow>(),
   };
   const dayPnl = new Map<string, number>();
+  const trades: Array<{ at: number; iso: string; amount: number }> = [];
   let closed = 0;
   let rSum = 0;
   let rTrades = 0;
@@ -191,6 +192,7 @@ export function computeMonthStats<T extends { createdAt: string; symbol?: string
     if (amount !== null) {
       const key = dayKey(created);
       dayPnl.set(key, (dayPnl.get(key) ?? 0) + amount);
+      trades.push({ at: created.getTime(), iso: item.createdAt, amount });
       if (amount > 0) gross += amount;
       if (amount < 0) loss += -amount;
     }
@@ -204,17 +206,21 @@ export function computeMonthStats<T extends { createdAt: string; symbol?: string
     add(groups.byWeekday, String(created.getDay()), win, amount);
   }
 
-  const days = [...dayPnl.keys()].sort();
-  const equity: Array<{ day: string; value: number }> = [];
+  // Trade a trade, nao dia a dia: dois trades no mesmo dia ja formam curva, e
+  // a queda dentro do dia aparece na maior queda.
+  trades.sort((a, b) => a.at - b.at);
+  const equity: Array<{ at: string; value: number }> = [];
   let running = 0;
   let peak = 0;
   let maxDrawdown = 0;
-  for (const day of days) {
-    running += dayPnl.get(day) ?? 0;
-    equity.push({ day, value: round2(running) });
+  for (const trade of trades) {
+    running += trade.amount;
+    equity.push({ at: trade.iso, value: round2(running) });
     peak = Math.max(peak, running);
     maxDrawdown = Math.min(maxDrawdown, running - peak);
   }
+
+  const days = [...dayPnl.keys()].sort();
 
   let bestDay: MonthStats['bestDay'] = null;
   let worstDay: MonthStats['worstDay'] = null;

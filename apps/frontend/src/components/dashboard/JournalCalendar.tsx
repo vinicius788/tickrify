@@ -156,7 +156,7 @@ function JournalStats({ stats, j, locale }: { stats: MonthStats; j: JournalCopy;
 
       <div className="mt-3 rounded-lg border border-[var(--border-subtle)] p-3">
         <p className="mb-1 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.equity}</p>
-        {stats.equity.length >= 2 ? (
+        {stats.equity.length > 0 ? (
           <EquityCurve points={stats.equity} />
         ) : (
           <p className="py-4 text-center text-xs text-[var(--text-secondary)]">{j.equityHint}</p>

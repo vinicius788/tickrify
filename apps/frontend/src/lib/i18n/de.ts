@@ -358,7 +358,7 @@ export default {
     byDateNote: 'Jede Analyse zählt an dem Tag, an dem sie erstellt wurde.',
     statsTitle: 'Performance dieses Monats',
     equity: 'Ergebniskurve (erfasster P&L)',
-    equityHint: 'Erfasse den Betrag von mindestens zwei geschlossenen Trades in My Trades, um die Kurve zu sehen.',
+    equityHint: 'Erfasse den Betrag deiner geschlossenen Trades in My Trades, um die Kurve zu sehen.',
     avgR: 'Durchschnittliches R',
     avgRSub: 'geplantes R pro geschlossenem Trade ({n})',
     profitFactor: 'Profitfaktor',

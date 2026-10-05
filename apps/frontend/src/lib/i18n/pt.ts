@@ -371,7 +371,7 @@ export default {
     byDateNote: 'Cada análise conta no dia em que foi feita.',
     statsTitle: 'Desempenho do mês',
     equity: 'Curva de resultado (P&L registrado)',
-    equityHint: 'Registre o valor de pelo menos dois trades fechados no My Trades para ver a curva.',
+    equityHint: 'Registre o valor dos seus trades fechados no My Trades para ver a curva.',
     avgR: 'R médio',
     avgRSub: 'R planejado por trade fechado ({n})',
     profitFactor: 'Fator de lucro',

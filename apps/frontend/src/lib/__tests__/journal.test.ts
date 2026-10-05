@@ -128,12 +128,8 @@ describe('journal: desempenho do mes', () => {
   it('fator de lucro, curva, maior queda, melhor e pior dia saem so dos valores registrados', () => {
     const s = stats(rows);
     expect(s.profitFactor).toBe(Math.round((900 / 250) * 100) / 100);
-    expect(s.equity).toEqual([
-      { day: '2026-10-01', value: 500 },
-      { day: '2026-10-02', value: 350 },
-      { day: '2026-10-05', value: 250 },
-      { day: '2026-10-06', value: 650 },
-    ]);
+    // Trade a trade: 300, 500, 350, 250, 650 (o TP1 do dia 8 nao tem valor).
+    expect(s.equity.map((p) => p.value)).toEqual([300, 500, 350, 250, 650]);
     expect(s.maxDrawdown).toBe(-250);
     expect(s.bestDay).toEqual({ day: '2026-10-01', pnl: 500 });
     expect(s.worstDay).toEqual({ day: '2026-10-02', pnl: -150 });

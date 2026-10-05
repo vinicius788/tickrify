@@ -358,7 +358,7 @@ export default {
     byDateNote: 'Chaque analyse compte le jour où elle a été faite.',
     statsTitle: 'Performance du mois',
     equity: 'Courbe de résultat (P&L enregistré)',
-    equityHint: 'Enregistrez le montant d\'au moins deux trades clôturés dans My Trades pour voir la courbe.',
+    equityHint: 'Enregistrez le montant de vos trades clôturés dans My Trades pour voir la courbe.',
     avgR: 'R moyen',
     avgRSub: 'R prévu par trade clôturé ({n})',
     profitFactor: 'Facteur de profit',

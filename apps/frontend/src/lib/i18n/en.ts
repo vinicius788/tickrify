@@ -358,7 +358,7 @@ export default {
     byDateNote: 'Each analysis counts on the day it was made.',
     statsTitle: 'Performance this month',
     equity: 'Equity curve (logged P&L)',
-    equityHint: 'Log the amount on at least two closed trades in My Trades to see the curve.',
+    equityHint: 'Log the amount on your closed trades in My Trades to see the curve.',
     avgR: 'Avg R',
     avgRSub: 'planned R per closed trade ({n})',
     profitFactor: 'Profit factor',

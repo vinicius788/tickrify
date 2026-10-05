@@ -50,8 +50,9 @@ describe('Diario: desempenho do mes', () => {
     expect(screen.getByText('3.00')).toBeTruthy();
     expect(screen.getByText('By asset')).toBeTruthy();
     expect(screen.getByText('Buy vs sell')).toBeTruthy();
-    // So um dia com valor: a curva pede mais registros em vez de desenhar um ponto.
-    expect(screen.getByText('Log the amount on at least two closed trades in My Trades to see the curve.')).toBeTruthy();
+    // Curva trade a trade: dois trades no mesmo dia ja desenham a linha.
+    expect(screen.getByText('Equity curve (logged P&L)')).toBeTruthy();
+    expect(screen.queryByText('Log the amount on your closed trades in My Trades to see the curve.')).toBeNull();
   });
 
   it('mes sem trade fechado: explica como preencher, sem numero inventado', async () => {
