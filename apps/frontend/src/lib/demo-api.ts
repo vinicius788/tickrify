@@ -104,3 +104,46 @@ export async function requestDemoAnalysis(params: {
 
   return (await response.json()) as DemoAnalysisResult;
 }
+
+/**
+ * A leitura da demo do /try sobrevive ao cadastro (05/10/2026). Antes, criar a
+ * conta pelo CTA da demo levava ao painel e a analise que a pessoa acabou de
+ * ver sumia. Fica so neste aparelho (sem backend): o painel mostra enquanto a
+ * conta ainda nao tem analise propria.
+ */
+const DEMO_RESULT_KEY = 'tickrify_demo_result';
+const DEMO_RESULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export type SavedDemoResult = Pick<
+  DemoAnalysisResult,
+  'recommendation' | 'symbol' | 'timeframe' | 'entry' | 'stopLoss' | 'takeProfit1' | 'riskReward'
+> & { savedAt: number };
+
+export function saveDemoResult(result: DemoAnalysisResult, now = Date.now()): void {
+  const saved: SavedDemoResult = {
+    recommendation: result.recommendation,
+    symbol: result.symbol,
+    timeframe: result.timeframe,
+    entry: result.entry,
+    stopLoss: result.stopLoss,
+    takeProfit1: result.takeProfit1,
+    riskReward: result.riskReward,
+    savedAt: now,
+  };
+  try {
+    localStorage.setItem(DEMO_RESULT_KEY, JSON.stringify(saved));
+  } catch {
+    /* modo privado: a demo continua funcionando, so nao atravessa o cadastro */
+  }
+}
+
+export function loadSavedDemoResult(now = Date.now()): SavedDemoResult | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DEMO_RESULT_KEY) || 'null') as SavedDemoResult | null;
+    if (!parsed || typeof parsed.savedAt !== 'number' || now - parsed.savedAt > DEMO_RESULT_TTL_MS) return null;
+    if (!['BUY', 'SELL', 'WAIT'].includes(parsed.recommendation)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}

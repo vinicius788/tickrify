@@ -340,6 +340,14 @@ function headingFromTitle(title) {
  * Monta o corpo de uma rota. Devolve '' quando não há conteúdo a servir, e o
  * chamador então publica a rota só com o <head>.
  */
+/**
+ * Home e /pricing citam o METODO e apontam para a /accuracy, sem a taxa de
+ * acerto (05/10/2026): numero de desempenho so na /accuracy, com n, intervalo
+ * e metodologia, ate a amostra sustentar. Mesma regra da faixa da home.
+ */
+const ACCURACY_POINTER =
+  '<p>Every eligible trade plan is checked against real market candles 48 hours later, automatically. The full scoreboard, with sample size, 95% confidence intervals and the results that look bad, is published at <a href="https://tickrify.com/accuracy">tickrify.com/accuracy</a>.</p>';
+
 export function buildBody({ path, meta, copy, accuracy, pricingFaq }) {
   if (meta.noindex) return '';
 
@@ -354,7 +362,7 @@ export function buildBody({ path, meta, copy, accuracy, pricingFaq }) {
       `<p>${esc(l.hero.valueNow)}</p>`,
       howBlock(l),
       featuresBlock(l),
-      accuracyBlock(accuracy),
+      ACCURACY_POINTER,
       pricingBlock(l),
       faqBlock(l)
     );
@@ -365,7 +373,7 @@ export function buildBody({ path, meta, copy, accuracy, pricingFaq }) {
       `<p>${esc(l.pricing.subtitle)}</p>`,
       `<ul>${['fS1', 'fS2', 'fS3', 'fS4'].map((k) => `<li>${esc(l.pricing[k])}</li>`).join('')}<li>${esc(l.pricing.monthlyReset)}</li><li>${esc(l.pricing.weeklyLine)}</li></ul>`,
       `<h2>${esc(l.faq.q6)}</h2><p>${esc(l.faq.a6)}</p>`,
-      accuracyBlock(accuracy),
+      ACCURACY_POINTER,
       /* As MESMAS perguntas que a tela mostra. Sem isto o crawler que não
        * executa JS via uma pergunta só nesta rota. */
       pricingFaqBlock(pricingFaq)

@@ -69,7 +69,8 @@ how much external data supports the read, not whether the read happens.
 ## Pricing
 
 - [Pricing](https://tickrify.com/pricing): US$29/month or US$290/year for 200
-  monthly credits. A quick analysis costs 1 credit, a deep analysis 3. Pricing
+  monthly credits, or US$7.99/week for 25 credits a week. A quick analysis
+  costs 1 credit, a deep analysis 3. Pricing
   is USD for everyone. The free tier is 3 analyses that return a trade call
   (BUY or SELL), no card required. A WAIT does not use one of the 3; the free
   tier stops at 10 analyses in total.

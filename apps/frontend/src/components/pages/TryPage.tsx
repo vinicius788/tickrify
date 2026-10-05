@@ -25,6 +25,7 @@ import {
   DemoAnalysisResult,
   fetchDemoStatus,
   requestDemoAnalysis,
+  saveDemoResult,
 } from '@/lib/demo-api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { getScenarioMeta } from '@/lib/trading-ui';
@@ -72,7 +73,7 @@ const SignupCta = ({ headline, sub }: { headline: string; sub: string }) => (
       </Link>
     </SignedIn>
     <SignedOut>
-      <p className="site-try-fine">Free account · 3 more analyses included · no credit card</p>
+      <p className="site-try-fine">Free account · 3 free trade plans · WAIT reads don't count · no credit card</p>
     </SignedOut>
   </div>
 );
@@ -184,6 +185,7 @@ const TryPage = () => {
 
       setResult(analysis);
       setState('done');
+      saveDemoResult(analysis);
       track('demo_analysis_completed', {
         recommendation: analysis.recommendation,
         confidence: analysis.confidence,
@@ -313,6 +315,7 @@ const TryPage = () => {
                 />
 
                 <p className="site-try-fine">1 free analysis per device · no account · no card</p>
+                <p className="site-try-fine">After that, a free account adds 3 trade plans on your own charts.</p>
               </div>
             </div>
           )}
@@ -323,7 +326,7 @@ const TryPage = () => {
                 <span className="site-sym">
                   {result.symbol} · {result.timeframe}
                 </span>
-                <span className="site-chip">Live analysis</span>
+                <span className="site-chip">Real analysis</span>
               </div>
 
               <div className="site-verdict flex-wrap">
@@ -360,6 +363,12 @@ const TryPage = () => {
                 ))}
               </div>
               )}
+              {result.recommendation !== 'WAIT' ? (
+                <p className="site-try-fine">
+                  Entry: where the plan starts. Stop: where the idea is proven wrong. Targets: where to take profit.
+                  R:R to TP1: the potential reward for each unit of risk, up to the first target.
+                </p>
+              ) : null}
 
               {result.reasoning && <p className="site-demo-rationale">{result.reasoning}</p>}
               <div className="site-demo-meta">{result.disclaimer}</div>
@@ -397,7 +406,7 @@ const TryPage = () => {
 
               <SignupCta
                 headline="Want to analyze more charts?"
-                sub="Create your free account and get 3 more analyses, your charts, any market."
+                sub="Create your free account and get 3 free trade plans on your own charts. WAIT reads don't count, and this read stays in your dashboard on this device."
               />
             </div>
           )}
@@ -406,12 +415,12 @@ const TryPage = () => {
             <div className="site-card site-try-locked">
               <h2>You already used your free analysis</h2>
               <p>
-                It does not stop here. Create a free account and get 3 more analyses on your own charts, no
-                credit card needed.
+                It does not stop here. Create a free account and get 3 free trade plans on your own charts (WAIT
+                reads don't count), no credit card needed.
               </p>
               <SignupCta
                 headline="Keep analyzing for free"
-                sub="3 more analyses included with your free account."
+                sub="3 free trade plans included with your free account."
               />
             </div>
           )}
