@@ -12,7 +12,7 @@ vi.mock('@/lib/api', () => ({ buildApiUrl: (p: string) => `https://api.test${p}`
 const relatorio = {
   dias: 30,
   declarada: [
-    { canal: 'chatgpt', cadastros: 10, analisaram: 8, assinaram: 2, ativos: 1 },
+    { canal: 'chatgpt', cadastros: 10, analisaram: 8, assinaram: 3, ativos: 2 },
     { canal: 'google', cadastros: 5, analisaram: 2, assinaram: 0, ativos: 0 },
   ],
   tecnica: [{ canal: 'chatgpt.com', cadastros: 7, analisaram: 6, assinaram: 2, ativos: 1 }],

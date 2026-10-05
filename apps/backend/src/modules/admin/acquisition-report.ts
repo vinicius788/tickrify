@@ -9,7 +9,9 @@
  * - TECNICA: primeiro toque gravado pelo navegador (`firstTouchAttribution`):
  *   `utmSource`, senao o dominio de onde veio.
  *
- * Assinatura sempre SEM o acesso manual do dono (`stripeId NOT LIKE 'manual_%'`)
+ * `assinaram` = criou assinatura na Stripe em qualquer estado (inclui cartao
+ * recusado e cancelada); `ativos` = pagando hoje. A conversao da tela usa
+ * `ativos`. Assinatura sempre SEM o acesso manual do dono (`stripeId NOT LIKE 'manual_%'`)
  * e sem contas admin, regra do CLAUDE.md. SQL cru e parametrizado, como o resto
  * do admin: o Prisma Client so e regenerado no Render.
  */
@@ -70,7 +72,7 @@ const porCanal = (dias: number | null, coluna: 'declarada' | 'tecnica') => Prism
          COUNT(*) FILTER (WHERE ativo)::int AS ativos
   FROM base
   GROUP BY 1
-  ORDER BY assinaram DESC, cadastros DESC
+  ORDER BY ativos DESC, assinaram DESC, cadastros DESC
   LIMIT 30
 `;
 

@@ -46,9 +46,9 @@ function Tabela({ titulo, nota, linhas, nomear }: { titulo: string; nota: string
                 <th className="py-1 pr-3">Canal</th>
                 <th className="py-1 pr-3 text-right">Cadastros</th>
                 <th className="py-1 pr-3 text-right">Analisaram</th>
-                <th className="py-1 pr-3 text-right">Assinaram</th>
-                <th className="py-1 pr-3 text-right">Conversão</th>
-                <th className="py-1 text-right">Ativos hoje</th>
+                <th className="py-1 pr-3 text-right" title="Criou assinatura na Stripe, mesmo recusada ou cancelada depois">Tentaram assinar</th>
+                <th className="py-1 pr-3 text-right">Pagando hoje</th>
+                <th className="py-1 text-right" title="Pagando hoje / cadastros">Conversão</th>
               </tr>
             </thead>
             <tbody>
@@ -57,9 +57,9 @@ function Tabela({ titulo, nota, linhas, nomear }: { titulo: string; nota: string
                   <td className="py-1.5 pr-3">{nomear ? NOME_CANAL[l.canal] ?? l.canal : l.canal}</td>
                   <td className="py-1.5 pr-3 text-right">{l.cadastros}</td>
                   <td className="py-1.5 pr-3 text-right">{l.analisaram}</td>
-                  <td className="py-1.5 pr-3 text-right font-semibold text-emerald-300">{l.assinaram}</td>
-                  <td className="py-1.5 pr-3 text-right">{pct(l.assinaram, l.cadastros)}</td>
-                  <td className="py-1.5 text-right">{l.ativos}</td>
+                  <td className="py-1.5 pr-3 text-right">{l.assinaram}</td>
+                  <td className="py-1.5 pr-3 text-right font-semibold text-emerald-300">{l.ativos}</td>
+                  <td className="py-1.5 text-right">{pct(l.ativos, l.cadastros)}</td>
                 </tr>
               ))}
             </tbody>
