@@ -662,6 +662,32 @@ describe('DashboardPage', () => {
     });
   });
 
+  describe('oferta da ultima gratis no resultado', () => {
+    const lastFreeViewed = () =>
+      mockTrack.mock.calls.some(([event, props]) => event === 'upgrade_cta_viewed' && props?.source === 'last_free_result');
+
+    it('recarregar uma analise com o plano ainda carregando nao conta oferta vista', async () => {
+      // Carregando, o hook devolve remaining 0 para todo mundo (ate assinante).
+      mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 0, used: 0, remaining: 0, isUnlimited: false, isLoading: true });
+      const getAnalysis = vi.fn().mockResolvedValue({ id: 'a-1', status: 'completed', recommendation: 'SELL' });
+      mockUseAPIClient.mockReturnValue(makeApiClient({ getAnalysis }));
+      renderDashboard('/dashboard/analysis/a-1');
+
+      await waitFor(() => expect(getAnalysis).toHaveBeenCalledWith('a-1'));
+      expect(lastFreeViewed()).toBe(false);
+    });
+
+    it('com o plano confirmado e nada sobrando, conta a oferta vista', async () => {
+      mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 3, remaining: 0, isUnlimited: false, isLoading: false });
+      mockUseAPIClient.mockReturnValue(
+        makeApiClient({ getAnalysis: vi.fn().mockResolvedValue({ id: 'a-1', status: 'completed', recommendation: 'SELL' }) }),
+      );
+      renderDashboard('/dashboard/analysis/a-1');
+
+      await waitFor(() => expect(lastFreeViewed()).toBe(true));
+    });
+  });
+
   describe('gratis esgotado', () => {
     const locked = { plan: 'free', total: 3, used: 3, remaining: 0, isUnlimited: false, freeLocked: true, isLoading: false };
     const recent = [

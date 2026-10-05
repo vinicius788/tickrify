@@ -786,16 +786,18 @@ const DashboardPage = () => {
   const handleModalWeekly = useCallback(() => void startCheckout('upgrade_modal', 'weekly'), [startCheckout]);
 
   // A pessoa VIU a oferta depois da ultima gratis? Uma vez por analise. Sem
-  // isto so dava para medir o clique, nunca quem viu e ignorou.
+  // isto so dava para medir o clique, nunca quem viu e ignorou. Enquanto o plano
+  // carrega, `remaining` e 0 para todo mundo (ate assinante): sem esperar, o
+  // recarregar de /dashboard/analysis/:id contava uma oferta que ninguem viu.
   const lastFreeCtaSeenFor = useRef<string | null>(null);
   useEffect(() => {
-    if (activeView !== 'analysis-result' || isDemo || isUnlimited) return;
+    if (activeView !== 'analysis-result' || isDemo || isUnlimited || isPlanLoading) return;
     if (!Number.isFinite(remaining) || remaining > 0) return;
     const key = lastAnalysisId || 'unknown';
     if (lastFreeCtaSeenFor.current === key) return;
     lastFreeCtaSeenFor.current = key;
     track('upgrade_cta_viewed', { source: 'last_free_result' });
-  }, [activeView, isDemo, isUnlimited, remaining, lastAnalysisId]);
+  }, [activeView, isDemo, isUnlimited, isPlanLoading, remaining, lastAnalysisId]);
   // Barra do WAIT (topo do resultado): vista uma vez por analise.
   const isWaitResult = ['WAIT', 'HOLD'].includes(String(analysisData?.recommendation || '').toUpperCase());
   const waitNudgeSeenFor = useRef<string | null>(null);
