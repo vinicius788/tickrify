@@ -30,6 +30,7 @@ import {
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { getScenarioMeta } from '@/lib/trading-ui';
 import { warmupPaymentsApi } from '@/lib/api';
+import { shrinkChartImage } from '@/lib/chart-image';
 import { seoFor, useSeo } from '@/hooks/useSeo';
 import exampleChart from '@/assets/demo-example-chart.png';
 import afterChart from '@/assets/demo-after-chart.png';
@@ -106,8 +107,16 @@ const TryPage = () => {
     void (async () => {
       const fp = await getDeviceFingerprint();
       fingerprintRef.current = fp;
-      const used = await fetchDemoStatus(fp);
-      if (used) {
+      const { used, result: previous } = await fetchDemoStatus(fp);
+      if (previous) {
+        // A leitura que este aparelho ja recebeu (talvez sem ver): mostra de
+        // novo em vez de "voce ja usou".
+        setResult(previous);
+        setAnalyzedExample(false);
+        setState((prev) => (prev === 'ready' ? 'done' : prev));
+        saveDemoResult(previous);
+        track('demo_result_recovered', { source: 'status_check' });
+      } else if (used) {
         setState((prev) => (prev === 'ready' ? 'locked' : prev));
         track('demo_limit_hit', { source: 'status_check' });
       }
@@ -169,7 +178,11 @@ const TryPage = () => {
       // Gráfico do usuário, ou o exemplo pré-carregado (zero decisão).
       let image: Blob;
       if (customImage) {
-        image = customImage.blob;
+        // Reduz como o painel ja faz: a foto do celular ia inteira pela rede
+        // movel e o envio caia no meio (network_error).
+        image = await shrinkChartImage(
+          new File([customImage.blob], 'chart', { type: customImage.blob.type || 'image/png' }),
+        );
       } else {
         const exampleResponse = await fetch(exampleChart);
         image = await exampleResponse.blob();
@@ -186,6 +199,7 @@ const TryPage = () => {
       setResult(analysis);
       setState('done');
       saveDemoResult(analysis);
+      if (analysis.recovered) track('demo_result_recovered', { source: 'analyze' });
       track('demo_analysis_completed', {
         recommendation: analysis.recommendation,
         confidence: analysis.confidence,
@@ -257,6 +271,7 @@ const TryPage = () => {
               {/* Mesma tela de espera do dashboard: o gráfico sendo varrido e as
                   fases embaixo. Quem vê a demo da vitrine reconhece isto aqui. */}
               <AnalysisLoading chart={customImage?.previewUrl ?? exampleChart} />
+              <p className="site-try-fine">Keep this page open. The read takes about 20 seconds.</p>
             </div>
           )}
 

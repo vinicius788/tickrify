@@ -59,12 +59,14 @@ export class DemoController {
 
   /**
    * Estado da cota deste device — permite à UI abrir já no estado "bloqueado"
-   * (CTA de cadastro) sem gastar uma tentativa. Não revela nada além de used.
+   * (CTA de cadastro) sem gastar uma tentativa. Devolve `used` e, por 24h, a
+   * leitura ja sanitizada que este mesmo device recebeu.
    */
   @Get('status')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async status(@Query() query: DemoStatusDto) {
-    const used = await this.demoService.isFingerprintUsed(query.fingerprint);
-    return { used };
+    // `result`: a leitura das ultimas 24h deste device, para a tela mostrar o
+    // que a pessoa ja recebeu em vez de so "voce ja usou".
+    return this.demoService.getFingerprintStatus(query.fingerprint);
   }
 }

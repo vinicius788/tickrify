@@ -78,6 +78,10 @@ export class DemoService implements OnModuleInit {
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."DemoUsage" ENABLE ROW LEVEL SECURITY',
       );
+      // Resultado da demo guardado (05/10/2026): ver `analyze`, passo 2.
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."DemoUsage" ADD COLUMN IF NOT EXISTS "result" JSONB',
+      );
       this.tableReady = true;
       this.logger.log('[demo] Tabela de controle da demo pronta (RLS habilitado).');
     } catch (err) {
@@ -145,14 +149,32 @@ export class DemoService implements OnModuleInit {
     });
   }
 
-  /** true se este fingerprint JÁ consumiu a análise grátis. */
-  async isFingerprintUsed(fingerprint: string): Promise<boolean> {
-    if (!this.tableReady) return false;
-    const fpHash = this.hashIdentifier(fingerprint);
-    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT "id" FROM "tickrify"."DemoUsage" WHERE "fingerprintHash" = ${fpHash} LIMIT 1
+  /**
+   * Este device ja usou a demo? E, se usou nas ultimas 24h, o resultado que ele
+   * recebeu. O resultado volta porque, no celular, a conexao de ~20 s cai quando
+   * a pessoa troca de app: o servidor concluia, gastava a cota e ela via
+   * "network error" e depois "you already used" sem nunca ver a analise
+   * (05/10/2026: 16 network_error em 126 demos em 14 dias).
+   */
+  async getFingerprintStatus(fingerprint: string): Promise<{ used: boolean; result: Record<string, unknown> | null }> {
+    if (!this.tableReady) return { used: false, result: null };
+    const row = await this.findUsage(this.hashIdentifier(fingerprint));
+    return { used: Boolean(row), result: this.recoverable(row) };
+  }
+
+  private async findUsage(fpHash: string) {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string; result: unknown; createdAt: Date }>>`
+      SELECT "id", "result", "createdAt" FROM "tickrify"."DemoUsage" WHERE "fingerprintHash" = ${fpHash} LIMIT 1
     `;
-    return rows.length > 0;
+    return rows[0] ?? null;
+  }
+
+  /** O resultado guardado so volta por 24h. Nunca gera analise nova nem custo. */
+  private recoverable(row: { result: unknown; createdAt: Date } | null): Record<string, unknown> | null {
+    if (!row || !row.result || typeof row.result !== 'object') return null;
+    const age = Date.now() - new Date(row.createdAt).getTime();
+    if (!(age >= 0 && age < 24 * 60 * 60 * 1000)) return null;
+    return { ...(row.result as Record<string, unknown>), recovered: true };
   }
 
   /** Erro público padrão de limite — mensagem orientada à ação, sem detalhes internos. */
@@ -191,10 +213,12 @@ export class DemoService implements OnModuleInit {
     const ipHash = this.hashIdentifier(params.ip);
 
     // 2) Cota por device: 1 análise concluída por fingerprint (persistente, server-side).
-    const usedRows = await this.prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT "id" FROM "tickrify"."DemoUsage" WHERE "fingerprintHash" = ${fpHash} LIMIT 1
-    `;
-    if (usedRows.length > 0) {
+    //    Quem ja analisou nas ultimas 24h recebe a MESMA leitura de volta (a
+    //    conexao pode ter caido antes de ela chegar), sem chamar a IA de novo.
+    const used = await this.findUsage(fpHash);
+    if (used) {
+      const recovered = this.recoverable(used);
+      if (recovered) return recovered;
       throw this.limitError();
     }
 
@@ -236,16 +260,19 @@ export class DemoService implements OnModuleInit {
       );
 
       const aiResponse = await this.aiAdapter.analyzeImage(dataUrl, prompt, 'quick');
+      const safe = this.serializeSafeResult(aiResponse);
 
       // 6) Sucesso → AGORA a cota é gasta (contabilização justa). ON CONFLICT
-      //    cobre corrida entre requisições simultâneas do mesmo device.
+      //    cobre corrida entre requisições simultâneas do mesmo device. O
+      //    resultado (ja sanitizado) fica guardado para o caso de a resposta
+      //    nao chegar ao celular.
       await this.prisma.$executeRaw`
-        INSERT INTO "tickrify"."DemoUsage" ("fingerprintHash", "ipHash")
-        VALUES (${fpHash}, ${ipHash})
+        INSERT INTO "tickrify"."DemoUsage" ("fingerprintHash", "ipHash", "result")
+        VALUES (${fpHash}, ${ipHash}, ${JSON.stringify(safe)}::jsonb)
         ON CONFLICT ("fingerprintHash") DO NOTHING
       `;
 
-      return this.serializeSafeResult(aiResponse);
+      return safe;
     } catch (error) {
       // Imagem que não é gráfico: erro claro pro usuário, cota intacta.
       if (error instanceof AIAnalysisError && error.code === 'non_chart_image') {

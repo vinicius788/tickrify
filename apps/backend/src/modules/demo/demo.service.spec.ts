@@ -103,4 +103,42 @@ describe('Demo security gates', () => {
     expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
     expect(ai.analyzeImage.mock.invocationCallOrder[0]).toBeLessThan(prisma.$executeRaw.mock.invocationCallOrder[0]);
   });
+
+  it('guarda a leitura junto com o uso (ja sanitizada)', async () => {
+    await service.analyze(params);
+    const insert = prisma.$executeRaw.mock.calls[0];
+    expect(insert[0].join('?')).toContain('"result"');
+    expect(JSON.parse(insert[3])).toMatchObject({ status: 'completed', recommendation: 'WAIT' });
+  });
+
+  it('conexao caiu e a pessoa tentou de novo: recebe a MESMA leitura, sem IA nova e sem gastar de novo', async () => {
+    const guardada = { status: 'completed', recommendation: 'BUY', symbol: 'XAUUSD' };
+    prisma.$queryRaw = jest.fn().mockResolvedValueOnce([{ id: 'u1', result: guardada, createdAt: new Date() }]);
+    await expect(service.analyze(params)).resolves.toEqual({ ...guardada, recovered: true });
+    expect(ai.analyzeImage).not.toHaveBeenCalled();
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it('leitura com mais de 24h (ou uso antigo sem leitura) continua sendo limite', async () => {
+    const velha = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    prisma.$queryRaw = jest.fn().mockResolvedValueOnce([{ id: 'u1', result: { status: 'completed' }, createdAt: velha }]);
+    await expect(service.analyze(params)).rejects.toMatchObject({ status: 403 });
+    prisma.$queryRaw = jest.fn().mockResolvedValueOnce([{ id: 'u1', result: null, createdAt: new Date() }]);
+    await expect(service.analyze(params)).rejects.toMatchObject({ status: 403 });
+    expect(ai.analyzeImage).not.toHaveBeenCalled();
+  });
+
+  it('a recuperacao nunca pula a verificacao anti-robo', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ success: false }) } as Response);
+    prisma.$queryRaw = jest.fn().mockResolvedValue([{ id: 'u1', result: { status: 'completed' }, createdAt: new Date() }]);
+    await expect(service.analyze(params)).rejects.toMatchObject({ status: 403 });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('status devolve a leitura das ultimas 24h deste device', async () => {
+    prisma.$queryRaw = jest.fn().mockResolvedValueOnce([{ id: 'u1', result: { recommendation: 'SELL' }, createdAt: new Date() }]);
+    await expect(service.getFingerprintStatus('fp')).resolves.toEqual({ used: true, result: { recommendation: 'SELL', recovered: true } });
+    prisma.$queryRaw = jest.fn().mockResolvedValueOnce([]);
+    await expect(service.getFingerprintStatus('fp')).resolves.toEqual({ used: false, result: null });
+  });
 });

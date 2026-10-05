@@ -18,6 +18,8 @@ export interface DemoAnalysisResult {
   reasoning: string;
   disclaimer: string;
   demoRemaining: number;
+  /** A mesma leitura devolvida de novo (a conexao tinha caido antes de chegar). */
+  recovered?: boolean;
 }
 
 export type DemoErrorCode =
@@ -59,19 +61,24 @@ async function parseErrorCode(response: Response): Promise<DemoErrorCode> {
   return 'analysis_failed';
 }
 
-/** true se este device JÁ usou a análise grátis (decidido pelo servidor). */
-export async function fetchDemoStatus(fingerprint: string): Promise<boolean> {
+/**
+ * Este device JÁ usou a análise grátis (decidido pelo servidor)? E, nas
+ * ultimas 24h, a leitura que ele recebeu (05/10/2026: no celular a resposta
+ * se perdia quando a pessoa trocava de app durante a espera).
+ */
+export async function fetchDemoStatus(fingerprint: string): Promise<{ used: boolean; result: DemoAnalysisResult | null }> {
   try {
     const res = await fetch(
       buildApiUrl(`/api/demo/status?fingerprint=${encodeURIComponent(fingerprint)}`),
       { method: 'GET', cache: 'no-store' },
     );
-    if (!res.ok) return false;
-    const data = (await res.json()) as { used?: boolean };
-    return data?.used === true;
+    if (!res.ok) return { used: false, result: null };
+    const data = (await res.json()) as { used?: boolean; result?: DemoAnalysisResult | null };
+    const result = data?.result && data.result.status === 'completed' ? data.result : null;
+    return { used: data?.used === true, result };
   } catch {
     // Rede/cold start: não bloquear a UI — o servidor ainda barra na hora do analyze.
-    return false;
+    return { used: false, result: null };
   }
 }
 

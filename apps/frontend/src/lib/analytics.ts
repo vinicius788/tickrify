@@ -385,6 +385,8 @@ export type FunnelEvent =
   // ultima gratis, menu). `source` diz qual. O clique no BOTAO DE COMPRA em si
   // continua sendo `upgrade_clicked`.
   | 'upgrade_cta_viewed'
+  // /try: leitura ja feita devolvida de novo (a resposta tinha se perdido).
+  | 'demo_result_recovered'
   // Quadrinho de opiniao do painel (o texto fica so no banco, nunca no PostHog).
   | 'feedback_sent'
   | 'feedback_dismissed'
