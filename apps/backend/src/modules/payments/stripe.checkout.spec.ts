@@ -162,6 +162,41 @@ describe('StripeService.createCheckoutSession', () => {
     expect(params.billing_address_collection).toBe('auto');
   });
 
+  describe('EARLY35 so no mensal (regra do servidor)', () => {
+    const affiliateDiscount = { affiliateId: 'aff_1', discount: { promotion_code: 'promo_1' } };
+    const cases: Array<[cycle: 'monthly' | 'yearly' | 'weekly', expected: unknown]> = [
+      ['monthly', [{ coupon: 'EARLY35' }]],
+      ['yearly', undefined],
+      ['weekly', undefined],
+    ];
+
+    it.each(cases)('%s pedindo EARLY35, sem afiliado', async (cycle, expected) => {
+      await service.createCheckoutSession('clerk_1', 'starter', cycle, 'usd', 'EARLY35');
+      const params = stripe.checkout.sessions.create.mock.calls[0][0];
+      expect(params.discounts).toEqual(expected);
+      expect(params.metadata.coupon).toBe(expected ? 'EARLY35' : '');
+    });
+
+    it('anual pedido pela vitrine antiga (com EARLY35) sai a US$ 290 cheio, com o campo de codigo', async () => {
+      await service.createCheckoutSession('clerk_1', 'starter', 'yearly', 'usd', 'EARLY35');
+      const params = stripe.checkout.sessions.create.mock.calls[0][0];
+      expect(params.discounts).toBeUndefined();
+      expect(params.allow_promotion_codes).toBe(true);
+    });
+
+    // Regra do afiliado NAO mudou: um desconto, o maior. Sem EARLY35 no anual e
+    // no semanal, o 10% do indicado e o que sobra nesses ciclos.
+    it.each([
+      ['monthly', [{ coupon: 'EARLY35' }]],
+      ['yearly', [{ promotion_code: 'promo_1' }]],
+      ['weekly', [{ promotion_code: 'promo_1' }]],
+    ] as const)('%s com indicacao de afiliado', async (cycle, expected) => {
+      affiliates.checkoutDiscountFor.mockResolvedValue(affiliateDiscount);
+      await service.createCheckoutSession('clerk_1', 'starter', cycle, 'usd', 'EARLY35');
+      expect(stripe.checkout.sessions.create.mock.calls[0][0].discounts).toEqual(expected);
+    });
+  });
+
   it('EARLY35 esgotado: a sessao abre sem desconto, com o campo de codigo', async () => {
     stripe.coupons.retrieve.mockResolvedValue({
       id: 'EARLY35', valid: true, percent_off: 35, max_redemptions: 50, times_redeemed: 50, redeem_by: null,
@@ -183,7 +218,7 @@ describe('StripeService.createCheckoutSession', () => {
     expect(params.mode).toBe('subscription');
     expect(params.line_items).toEqual([{ price: PRICE, quantity: 1 }]);
     expect(params.success_url).toBe('https://tickrify.com/dashboard?success=true&session_id={CHECKOUT_SESSION_ID}');
-    expect(params.cancel_url).toBe('https://tickrify.com/pricing?canceled=true');
+    expect(params.cancel_url).toBe('https://tickrify.com/dashboard/plans?canceled=true');
     expect(params.discounts).toEqual([{ coupon: 'EARLY35' }]);
     expect(params.metadata).toMatchObject({ priceId: PRICE, coupon: 'EARLY35', userId: 'usr_1' });
   });

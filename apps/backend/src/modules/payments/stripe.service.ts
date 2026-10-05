@@ -287,9 +287,11 @@ export class StripeService implements OnModuleInit {
       // Cupom esgotado ou expirado nao vai para a sessao: a vitrine ja parou de
       // anuncia-lo, e a sessao sem ele abre de primeira em vez de depender do
       // fallback de erro mais abaixo.
-      // EARLY35 e "35% no primeiro MES": no semanal viraria 35% da primeira
-      // semana, o que nenhuma pagina promete. O semanal sai sem ele.
-      if (billingCycle === 'weekly') couponId = undefined;
+      // EARLY35 e "35% no primeiro MES": vale SO no mensal (decisao de
+      // 05/10/2026). No semanal viraria 35% da primeira semana, e no anual
+      // 35% de US$ 290 (US$ 188,50), o que nenhuma pagina promete. A regra
+      // mora AQUI: a vitrine so mostra o desconto onde o servidor aplica.
+      if (billingCycle !== 'monthly') couponId = undefined;
       if (couponId === FOUNDING_COUPON_ID && !(await this.getFoundingOffer()).active) {
         this.logger.warn(`[stripe] ${FOUNDING_COUPON_ID} sem usos ou expirado; checkout sem desconto.`);
         couponId = undefined;
@@ -392,7 +394,10 @@ export class StripeService implements OnModuleInit {
       // painel confirma no servidor que a sessao foi paga antes de disparar o
       // Purchase do pixel (com o mesmo event_id do servidor, para deduplicar).
       const successUrl = `${appBaseUrl}/dashboard?success=true&session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${appBaseUrl}/pricing?canceled=true`;
+      // So quem esta logado abre checkout, entao cancelar volta para os Planos
+      // DENTRO do painel (antes ia para a /pricing publica e o voltar do
+      // navegador tirava a pessoa do app).
+      const cancelUrl = `${appBaseUrl}/dashboard/plans?canceled=true`;
 
       const baseParams: Stripe.Checkout.SessionCreateParams = {
         customer: customerId,
