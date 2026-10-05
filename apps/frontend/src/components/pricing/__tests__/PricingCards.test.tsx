@@ -14,6 +14,8 @@ vi.mock('../../../lib/api', () => ({ warmupPaymentsApi: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock('@/lib/i18n/LanguageContext', () => ({ useLanguage: () => ({ language: 'en' }) }));
+const offer = { current: null as null | { active: boolean; code: string; percentOff: number | null } };
+vi.mock('@/hooks/useFoundingOffer', () => ({ useFoundingOffer: () => offer.current }));
 
 import { PricingCards } from '@/components/pricing/PricingCards';
 import { clearCheckoutIntent, loadCheckoutIntent } from '@/lib/checkoutIntent';
@@ -133,5 +135,28 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
 
     await waitFor(() => expect(createCheckoutSession).toHaveBeenCalledTimes(1));
     expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', cycle, 'usd', coupon, 'pricing');
+  });
+});
+
+describe('PricingCards: oferta do 1o mes', () => {
+  afterEach(() => {
+    cleanup();
+    offer.current = null;
+  });
+
+  it('com o EARLY35 ativo, so o mensal mostra o preco do 1o mes', async () => {
+    offer.current = { active: true, code: 'EARLY35', percentOff: 35 };
+    render(<PricingCards />);
+    expect(screen.getByText(/First month \$18\.85 with EARLY35 \(35% off\)/)).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: /yearly/i }));
+    expect(screen.queryByText(/First month/)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /^weekly$/i }));
+    expect(screen.queryByText(/First month/)).toBeNull();
+  });
+
+  it('sem cupom ativo, nenhuma promessa de desconto', () => {
+    render(<PricingCards />);
+    expect(screen.queryByText(/First month/)).toBeNull();
   });
 });

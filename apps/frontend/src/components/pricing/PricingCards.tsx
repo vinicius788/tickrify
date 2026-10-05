@@ -5,6 +5,7 @@ import { buildApiUrl, warmupPaymentsApi } from "../../lib/api";
 import { getReferralCoupon, isAffiliateCode, saveReferralCoupon } from "../../lib/attribution";
 import { track } from "../../lib/analytics";
 import { useToast } from "../../hooks/use-toast";
+import { useFoundingOffer } from "@/hooks/useFoundingOffer";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
   authUrlForCheckout,
@@ -174,6 +175,8 @@ const CHROME_COPY = {
     partnerInvalid: "That code is not valid.",
     canceledTitle: "Payment canceled",
     canceledDesc: "No charge was made. You can subscribe whenever you want.",
+    firstMonth: (price: string, code: string, pct: number) =>
+      `First month ${price} with ${code} (${pct}% off), applied automatically. Then $29/month.`,
   },
   pt: {
     weekly: "Semanal",
@@ -197,6 +200,8 @@ const CHROME_COPY = {
     partnerInvalid: "Esse código não é válido.",
     canceledTitle: "Pagamento cancelado",
     canceledDesc: "Nenhuma cobrança foi feita. Você pode assinar quando quiser.",
+    firstMonth: (price: string, code: string, pct: number) =>
+      `Primeiro mês ${price} com ${code} (${pct}% off), aplicado automaticamente. Depois US$ 29/mês.`,
   },
 };
 
@@ -323,6 +328,13 @@ export function PricingCards() {
   const copy = CHROME_COPY[lang];
   const planCopy = PLAN_COPY[lang];
   const weeklyCopy = WEEKLY_COPY[lang];
+  // O checkout do mensal ja leva o EARLY35; sem esta linha o card dizia so
+  // "$29" e o paywall do painel, "$18.85 no 1o mes" (05/10/2026). Some junto
+  // com o cupom e nunca aparece no semanal nem no anual (o servidor descarta).
+  const foundingOffer = useFoundingOffer();
+  const firstMonthPrice = foundingOffer?.percentOff
+    ? `$${(29 * (1 - foundingOffer.percentOff / 100)).toFixed(2)}`
+    : null;
   const [loadingPlan, setLoadingPlan] = useState<PlanType | null>(null);
   const [processingUpgrade, setProcessingUpgrade] = useState(false);
   // `?cycle=weekly` (link do e-mail do plano semanal) abre a pagina ja no
@@ -597,6 +609,11 @@ export function PricingCards() {
               {loadingPlan === plan.id ? copy.processing : cardCopy.cta}
             </button>
             {billingCycle === "weekly" ? <p className="site-price-fine">{weeklyCopy.note}</p> : null}
+            {billingCycle === "monthly" && foundingOffer?.percentOff && firstMonthPrice ? (
+              <p className="site-price-fine">
+                {copy.firstMonth(firstMonthPrice, foundingOffer.code, foundingOffer.percentOff)}
+              </p>
+            ) : null}
           </div>
           );
         })}

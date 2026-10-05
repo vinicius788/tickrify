@@ -78,7 +78,7 @@ const DASH_COPY = {
     analysisFailed: 'The analysis could not be completed.',
     networkError: 'Could not reach Tickrify. Check your internet connection and try again.',
     authTokenFailed: 'We could not confirm your session. Reload the page and try again. If it keeps happening, sign out and sign in again.',
-    upgradeToPro: 'Upgrade to Pro',
+    subscribeCta: 'Subscribe',
     demoMode: 'Demo mode: exploring the interface without login',
     demoLogin: 'Log in for real analyses',
     choosePlan: 'Choose your plan',
@@ -119,7 +119,7 @@ const DASH_COPY = {
     analysisFailed: 'Não foi possível concluir a análise.',
     networkError: 'Não foi possível conectar ao Tickrify. Confira sua internet e tente novamente.',
     authTokenFailed: 'Não conseguimos confirmar sua sessão. Recarregue a página e tente novamente. Se continuar, saia e entre de novo na conta.',
-    upgradeToPro: 'Fazer Upgrade para Pro',
+    subscribeCta: 'Assinar',
     demoMode: 'Modo Demonstração: explorando a interface sem login',
     demoLogin: 'Fazer Login para Análises Reais',
     choosePlan: 'Escolha seu plano',
@@ -1821,7 +1821,7 @@ const DashboardPage = () => {
         <div className="flex flex-col gap-0.5 border-t border-[var(--border-subtle)] px-3 py-2">
           {user && plan === 'free' && (
             <button type="button" onClick={() => openUpgradeModal('sidebar')} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
-              <Crown className="h-4 w-4 text-[var(--accent-green)]" /> {dc.upgradeToPro}
+              <Crown className="h-4 w-4 text-[var(--accent-green)]" /> {dc.subscribeCta}
             </button>
           )}
           <Link
@@ -1950,7 +1950,7 @@ const DashboardPage = () => {
                 onClick={() => openUpgradeModal('cta')}
               >
                 <Crown className="mr-2 h-4 w-4" />
-                {dc.upgradeToPro}
+                {dc.subscribeCta}
               </Button>
             </div>
           )}
