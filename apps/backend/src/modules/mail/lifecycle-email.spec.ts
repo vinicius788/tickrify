@@ -33,7 +33,14 @@ function makeDeps(opts: {
       findFirst: jest.fn(async ({ where }: any) => ((opts.paying ?? []).includes(where.userId) ? { id: 's' } : null)),
     },
     adminAudit: {
-      findMany: jest.fn(async () => opts.checkoutSessions ?? []),
+      // Filtra pela janela como o banco faria (recuperacao 1h-24h, reativacao 3-30 dias).
+      findMany: jest.fn(async ({ where }: any) =>
+        (opts.checkoutSessions ?? []).filter(
+          (row) =>
+            (!where?.createdAt?.gte || row.createdAt >= where.createdAt.gte) &&
+            (!where?.createdAt?.lte || row.createdAt <= where.createdAt.lte),
+        ),
+      ),
       findFirst: jest.fn(async ({ where }: any) => {
         const hit = audits.find(
           (a) =>
@@ -209,6 +216,43 @@ describe('lifecycle emails', () => {
     });
     expect(email.html).not.toContain('one-click example');
     expect(email.html).toContain('three real example analyses');
+  });
+
+  it('winback: checkout aberto ha 3 a 30 dias recebe o segundo toque, uma vez; o de ontem nao', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const { deps, sent, created } = makeDeps({
+      enabled: true,
+      users: [
+        { id: 'old', email: 'old@x.com', name: null },
+        { id: 'fresh', email: 'fresh@x.com', name: null },
+      ],
+      checkoutSessions: [
+        { targetUserId: 'old', createdAt: new Date(NOW.getTime() - 10 * DAY) },
+        { targetUserId: 'fresh', createdAt: new Date(NOW.getTime() - 5 * 60 * 60 * 1000) },
+      ],
+    });
+
+    const counts = await runLifecycleSweep(deps);
+    expect(counts.checkout_winback).toBe(1);
+    const winback = sent.filter((m) => m.kind === 'checkout_winback');
+    expect(winback).toEqual([expect.objectContaining({ to: 'old@x.com', subject: 'Tickrify starts at $7.99 a week' })]);
+    expect(created.some((c) => c.action === lifecycleAuditAction('checkout_winback' as LifecycleKind))).toBe(true);
+
+    // Segunda volta: ja recebeu, nao repete.
+    await runLifecycleSweep(deps);
+    expect(sent.filter((m) => m.kind === 'checkout_winback')).toHaveLength(1);
+  });
+
+  it('winback: texto honesto, sem erro inventado, link do semanal e descadastro', () => {
+    const email = renderLifecycleEmail('checkout_winback', {
+      appUrl: 'https://tickrify.com',
+      unsubscribeUrl: 'https://tickrify.onrender.com/api/email/unsubscribe?u=1&t=x',
+    });
+    expect(email.html).toContain('https://tickrify.com/pricing?cycle=weekly');
+    expect(email.html).toContain('it was not completed');
+    expect(email.html).not.toMatch(/our (side|error)|technical (issue|error)|on our end/i);
+    expect(email.html).not.toContain('—');
+    expect(email.html).toContain('Unsubscribe');
   });
 
   it('tokens: a tampered token or another user id is refused', () => {

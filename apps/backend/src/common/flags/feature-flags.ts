@@ -131,6 +131,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'EMAIL_CHECKOUT_WINBACK',
+    type: 'boolean',
+    label: 'E-mail de reativação de checkout',
+    description:
+      'Segundo e ultimo toque para quem abriu o checkout e nao assinou: uma vez por pessoa, 3 a 30 dias depois, com o plano semanal e a dica do banco. Ao ligar, alcanca quem tentou nos ultimos 30 dias. DESLIGADO: so loga quem receberia ([lifecycle] dry-run).',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
     key: 'EMAIL_CHECKOUT_RECOVERY',
     type: 'boolean',
     label: 'E-mail de checkout abandonado',

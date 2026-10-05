@@ -7,6 +7,8 @@ import { FeatureFlagsService } from './feature-flags.service';
 import { ReportsService, type ReportKind, type ReportStatus } from '../reports/reports.service';
 import { SetFlagDto } from './dto/set-flag.dto';
 import { SetReportStatusDto } from './dto/set-report-status.dto';
+import { PrismaService } from '../database/prisma.service';
+import { buildAcquisitionReport, parseDias } from './acquisition-report';
 
 /**
  * Painel de administração — a "loja de apps" interna.
@@ -22,7 +24,18 @@ export class AdminController {
   constructor(
     private readonly flags: FeatureFlagsService,
     private readonly reports: ReportsService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  /**
+   * Aba "Origem": de onde vem quem cadastra, analisa e assina (declarado pela
+   * pessoa e primeiro toque tecnico). `dias` = 7, 30, 90 ou 0 (desde o inicio).
+   */
+  @Get('acquisition')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async origem(@Query('dias') dias?: string) {
+    return buildAcquisitionReport(this.prisma, parseDias(dias));
+  }
 
   /** Estado de todas as funções: valor, de onde veio e o que cada uma faz. */
   @Get('flags')

@@ -5,6 +5,10 @@
  *   activation_2       20h a 48h depois do cadastro, ainda sem analise
  *   checkout_recovery  1h a 24h depois de abrir o checkout, sem assinatura
  *                      (texto muda se a Stripe registrou recusa do banco)
+ *   checkout_winback   3 a 30 dias depois de abrir o checkout, sem assinatura
+ *                      (05/10/2026): segundo e ultimo toque, com o semanal.
+ *                      Honesto de proposito: nao inventa erro do nosso lado
+ *                      (a Stripe registrou saldo insuficiente e recusa do banco).
  *   second_analysis    24h a 72h depois da UNICA analise concluida, sem
  *                      voltar (05/10/2026; texto muda se ela foi WAIT). Medido
  *                      no PostHog em 14 dias: 38 de 96 que analisaram fizeram
@@ -29,7 +33,7 @@ import type { PrismaClient } from '@prisma/client';
 import { cleanFirstName } from './welcome-email';
 import { FREE_SIGNAL_LIMIT } from '../../common/free-quota';
 
-export type LifecycleKind = 'activation_1' | 'activation_2' | 'checkout_recovery' | 'second_analysis';
+export type LifecycleKind = 'activation_1' | 'activation_2' | 'checkout_recovery' | 'second_analysis' | 'checkout_winback';
 
 export const UNSUBSCRIBE_AUDIT_ACTION = 'email_unsubscribed';
 export const lifecycleAuditAction = (kind: LifecycleKind) => `lifecycle:${kind}`;
@@ -41,6 +45,8 @@ export const WINDOWS: Record<LifecycleKind, { minAgeMs: number; maxAgeMs: number
   checkout_recovery: { minAgeMs: 1 * HOUR, maxAgeMs: 24 * HOUR },
   // Idade da unica analise concluida.
   second_analysis: { minAgeMs: 24 * HOUR, maxAgeMs: 72 * HOUR },
+  // Idade da ultima sessao de checkout aberta.
+  checkout_winback: { minAgeMs: 3 * 24 * HOUR, maxAgeMs: 30 * 24 * HOUR },
 };
 const BATCH = 50;
 
@@ -221,8 +227,25 @@ export function renderLifecycleEmail(
     };
   }
 
-  // checkout_recovery
+  // checkout_recovery e checkout_winback
   const weekly = `${app}/pricing?cycle=weekly`;
+  if (kind === 'checkout_winback') {
+    return {
+      kind,
+      unsubscribeUrl: params.unsubscribeUrl,
+      subject: 'Tickrify starts at $7.99 a week',
+      html: letter({
+        ...base,
+        preview: '25 analyses, renews every 7 days, cancel anytime.',
+        paragraphs: [
+          'You started a Tickrify subscription recently, but it was not completed.',
+          'There is a weekly plan: $7.99 for 25 analyses, renews every 7 days, and you can cancel anytime from your dashboard.',
+          'If your bank blocked the payment, turning on international online purchases in your bank app usually fixes it.',
+        ],
+        cta: { label: 'See the weekly plan', url: weekly },
+      }),
+    };
+  }
   if (params.declined) {
     return {
       kind,
@@ -267,6 +290,7 @@ export const LIFECYCLE_FLAG: Record<LifecycleKind, string> = {
   activation_2: 'EMAIL_ACTIVATION_NUDGE',
   checkout_recovery: 'EMAIL_CHECKOUT_RECOVERY',
   second_analysis: 'EMAIL_SECOND_ANALYSIS_NUDGE',
+  checkout_winback: 'EMAIL_CHECKOUT_WINBACK',
 };
 
 /** Links do e-mail: nunca localhost nem URL sem protocolo. */
@@ -395,16 +419,61 @@ async function checkoutCandidates(deps: LifecycleDeps, now: Date) {
   return out;
 }
 
+/**
+ * Abriu o checkout entre 3 e 30 dias atras e nao assinou. Quem abriu outro
+ * checkout nos ultimos 3 dias fica para a recuperacao normal (1h a 24h).
+ */
+async function winbackCandidates(deps: LifecycleDeps, now: Date) {
+  const w = WINDOWS.checkout_winback;
+  const sessions = await deps.prisma.adminAudit.findMany({
+    where: {
+      action: 'funnel:checkout_session_created',
+      targetUserId: { not: null },
+      createdAt: { gte: new Date(now.getTime() - w.maxAgeMs), lte: new Date(now.getTime() - w.minAgeMs) },
+    },
+    select: { targetUserId: true, createdAt: true },
+    orderBy: { createdAt: 'desc' },
+    take: BATCH * 2,
+  });
+  const out: Candidate[] = [];
+  const seen = new Set<string>();
+  for (const row of sessions) {
+    const userId = row.targetUserId as string;
+    if (seen.has(userId)) continue;
+    seen.add(userId);
+    const recent = await deps.prisma.adminAudit.findFirst({
+      where: {
+        action: 'funnel:checkout_session_created',
+        targetUserId: userId,
+        createdAt: { gt: new Date(now.getTime() - w.minAgeMs) },
+      },
+      select: { id: true },
+    });
+    if (recent) continue;
+    const user = await deps.prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
+    if (!user?.email) continue;
+    out.push({ userId, email: user.email, name: user.name });
+  }
+  return out;
+}
+
 /** Uma volta da varredura. Devolve quantos sairiam/sairam por tipo (para log e teste). */
 export async function runLifecycleSweep(deps: LifecycleDeps): Promise<Record<LifecycleKind, number>> {
   const now = deps.now ? deps.now() : new Date();
-  const counts: Record<LifecycleKind, number> = { activation_1: 0, activation_2: 0, checkout_recovery: 0, second_analysis: 0 };
+  const counts: Record<LifecycleKind, number> = {
+    activation_1: 0,
+    activation_2: 0,
+    checkout_recovery: 0,
+    second_analysis: 0,
+    checkout_winback: 0,
+  };
 
   const jobs: Array<[LifecycleKind, () => Promise<Candidate[]>]> = [
     ['activation_1', () => activationCandidates(deps, 'activation_1', now)],
     ['activation_2', () => activationCandidates(deps, 'activation_2', now)],
     ['checkout_recovery', () => checkoutCandidates(deps, now)],
     ['second_analysis', () => secondAnalysisCandidates(deps, now)],
+    ['checkout_winback', () => winbackCandidates(deps, now)],
   ];
 
   for (const [kind, load] of jobs) {

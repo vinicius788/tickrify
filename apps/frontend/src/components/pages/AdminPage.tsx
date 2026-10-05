@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { useSeo, seoFor } from '@/hooks/useSeo';
 import RelatosPainel from '@/components/admin/RelatosPainel';
+import OrigemPainel from '@/components/admin/OrigemPainel';
 import AfiliadosPainel from '@/components/admin/AfiliadosPainel';
 
 /**
@@ -108,12 +109,14 @@ function LinhaFlag({
               role="switch"
               aria-checked={ligada}
               aria-label={`${ligada ? 'Desligar' : 'Ligar'} ${def.label}`}
-              className={`relative h-7 w-12 rounded-full transition-colors disabled:opacity-40 ${
+              // `left-0` e `shrink-0`: sem eles a bolinha partia do CENTRO do
+              // botao e, ligada, saia para fora do trilho (05/10/2026).
+              className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
                 ligada ? 'bg-emerald-500' : 'bg-zinc-700'
               }`}
             >
               <span
-                className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-transform ${
+                className={`absolute left-0 top-1 h-5 w-5 rounded-full bg-white transition-transform ${
                   ligada ? 'translate-x-6' : 'translate-x-1'
                 }`}
               />
@@ -155,7 +158,7 @@ function LinhaFlag({
   );
 }
 
-type Aba = 'afiliados' | 'relatos' | 'opinioes' | 'config';
+type Aba = 'afiliados' | 'origem' | 'relatos' | 'opinioes' | 'config';
 
 /** Contador do topo. Zero fica apagado; acima de zero chama atencao e leva a aba. */
 function Pendencia({ n, rotulo, onClick }: { n: number | null; rotulo: string; onClick: () => void }) {
@@ -176,6 +179,7 @@ function Pendencia({ n, rotulo, onClick }: { n: number | null; rotulo: string; o
 
 const ABAS: Array<{ chave: Aba; rotulo: string }> = [
   { chave: 'afiliados', rotulo: 'Afiliados' },
+  { chave: 'origem', rotulo: 'Origem' },
   { chave: 'relatos', rotulo: 'Relatos de problema' },
   { chave: 'opinioes', rotulo: 'Opiniões' },
   { chave: 'config', rotulo: 'Configurações avançadas' },
@@ -270,6 +274,8 @@ export default function AdminPage() {
         {aba === 'relatos' && <RelatosPainel />}
 
         {aba === 'opinioes' && <RelatosPainel kind="feedback" />}
+
+        {aba === 'origem' && <OrigemPainel />}
 
         {aba === 'config' && (
           <>
