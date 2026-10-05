@@ -809,7 +809,7 @@ describe('DashboardPage', () => {
       const [url, init] = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/api/reports'))!;
       expect(url).toBe('https://api.test/api/reports');
       expect(JSON.parse(init.body)).toEqual({ message: 'Gostei, mas quero alerta de entrada', route: '/dashboard', kind: 'feedback' });
-      expect(mockTrack).toHaveBeenCalledWith('feedback_sent', { length: 35 });
+      expect(mockTrack).toHaveBeenCalledWith('feedback_sent', { length: 35, surface: 'card' });
     });
 
     it('texto curto nao envia', async () => {
@@ -869,5 +869,25 @@ describe('DashboardPage', () => {
     renderDashboard('/dashboard');
     // Barra lateral (computador) e topo do inicio (celular).
     expect((await screen.findAllByText('Analysis counter')).length).toBe(2);
+  });
+
+  it('pergunta de origem tambem aparece logo abaixo do resultado da analise', async () => {
+    const user = userEvent.setup();
+    const setAcquisitionSource = vi.fn().mockResolvedValue(undefined);
+    mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 0, remaining: 3, isUnlimited: false, freeLocked: false, isLoading: false });
+    mockUseAPIClient.mockReturnValue(
+      makeApiClient({
+        syncUserProfile: vi.fn().mockResolvedValue({ acquisitionSource: null }),
+        setAcquisitionSource,
+        createAnalysis: vi.fn().mockResolvedValue({ id: 'q-1', status: 'pending' }),
+        waitForAnalysisCompletion: vi.fn().mockResolvedValue({ id: 'q-1', status: 'completed', recommendation: 'BUY' }),
+      }),
+    );
+    renderDashboard('/dashboard/new');
+    await user.click(await screen.findByRole('button', { name: 'start-with-image' }));
+    expect(await screen.findByText('Analysis result')).toBeTruthy();
+
+    await user.click(await screen.findByRole('button', { name: 'ChatGPT' }));
+    expect(setAcquisitionSource).toHaveBeenCalledWith({ source: 'chatgpt' });
   });
 });

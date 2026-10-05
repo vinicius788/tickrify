@@ -154,7 +154,9 @@ const CHROME_COPY = {
     weekly: "Weekly",
     monthly: "Monthly",
     yearly: "Yearly",
-    yearlyBadge: "2 months free",
+    // Era "2 months free": lido como teste gratis. E a conta do anual
+    // (US$ 290 contra 12 x 29 = 348), sem nenhum periodo gratis.
+    yearlyBadge: "pay 10 months, get 12",
     perWeek: "/wk",
     perMonth: "/mo",
     perYear: "/yr",
@@ -177,7 +179,7 @@ const CHROME_COPY = {
     weekly: "Semanal",
     monthly: "Mensal",
     yearly: "Anual",
-    yearlyBadge: "2 meses grátis",
+    yearlyBadge: "pague 10 meses, leve 12",
     perWeek: "/sem",
     perMonth: "/mês",
     perYear: "/ano",

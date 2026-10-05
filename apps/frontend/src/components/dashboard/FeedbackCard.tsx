@@ -81,7 +81,7 @@ const FeedbackCard = () => {
         setState('idle');
         return;
       }
-      track('feedback_sent', { length: message.length });
+      track('feedback_sent', { length: message.length, surface: 'card' });
       hideFor(HIDE_AFTER_SEND_MS);
       setState('sent');
     } catch {

@@ -482,13 +482,20 @@ export class StripeService implements OnModuleInit {
        * Com o fallback, o cupom morto apenas deixa de descontar. Vale igual para
        * o desconto de afiliado.
        */
+      // Campo de codigo digitavel SO no mensal (05/10/2026, decisao do dono):
+      // o EARLY35 e "35% no 1o mes para os primeiros 50" e nao pode valer no
+      // anual nem no semanal nem digitado a mao. O codigo promocional EARLY35
+      // da Stripe vale para qualquer produto, entao a trava tem que ser aqui.
+      const campoDeCodigo = billingCycle === 'monthly';
       const abrirCheckout = (comCupom: boolean) =>
         stripe.checkout.sessions.create({
           ...baseParams,
           metadata: { ...baseParams.metadata, coupon: comCupom && discount ? discountLabel : '' },
           ...(comCupom && discount
             ? { discounts: [discount] }
-            : { allow_promotion_codes: true }),
+            : campoDeCodigo
+              ? { allow_promotion_codes: true }
+              : {}),
         });
 
       let session: Stripe.Checkout.Session;

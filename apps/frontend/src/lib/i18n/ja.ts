@@ -532,6 +532,8 @@ export default {
     ja: '日本語',
   },
   report: {
+    bubble: 'ご意見・不具合',
+    tabOpinion: 'ご意見を送る',
     button: '問題を報告',
     title: '何が起きましたか？',
     close: '閉じる',

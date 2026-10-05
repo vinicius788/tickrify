@@ -177,11 +177,19 @@ describe('StripeService.createCheckoutSession', () => {
       expect(params.metadata.coupon).toBe(expected ? 'EARLY35' : '');
     });
 
-    it('anual pedido pela vitrine antiga (com EARLY35) sai a US$ 290 cheio, com o campo de codigo', async () => {
-      await service.createCheckoutSession('clerk_1', 'starter', 'yearly', 'usd', 'EARLY35');
+    it.each(['yearly', 'weekly'] as const)('%s sai cheio e SEM campo de codigo (EARLY35 digitado nao vale)', async (cycle) => {
+      await service.createCheckoutSession('clerk_1', 'starter', cycle, 'usd', 'EARLY35');
       const params = stripe.checkout.sessions.create.mock.calls[0][0];
       expect(params.discounts).toBeUndefined();
-      expect(params.allow_promotion_codes).toBe(true);
+      expect(params.allow_promotion_codes).toBeUndefined();
+    });
+
+    it('mensal sem desconto automatico (EARLY35 esgotado) mantem o campo de codigo', async () => {
+      stripe.coupons.retrieve.mockResolvedValue({
+        id: 'EARLY35', valid: true, percent_off: 35, max_redemptions: 50, times_redeemed: 50, redeem_by: null,
+      });
+      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
+      expect(stripe.checkout.sessions.create.mock.calls[0][0].allow_promotion_codes).toBe(true);
     });
 
     // Regra do afiliado NAO mudou: um desconto, o maior. Sem EARLY35 no anual e

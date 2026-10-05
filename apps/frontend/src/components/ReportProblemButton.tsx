@@ -6,6 +6,7 @@ import { coletarContexto, lerAnaliseAtual } from '@/lib/breadcrumbs';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { track } from '@/lib/analytics';
 
 /**
  * Botão de reportar problema.
@@ -36,6 +37,10 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
   const analysisId = analysisIdProp ?? lerAnaliseAtual();
 
   const [aberto, setAberto] = useState(false);
+  // 05/10/2026: a mesma bolha recebe problema (padrao, igual a antes: contexto
+  // tecnico e e-mail ao suporte) e opiniao (aba Opinioes do /admin, sem e-mail).
+  const [modo, setModo] = useState<'problem' | 'feedback'>('problem');
+  const opiniao = modo === 'feedback';
   const [texto, setTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
 
@@ -56,12 +61,16 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({
-          message: texto.trim(),
-          route: pathname,
-          analysisId,
-          context: coletarContexto(),
-        }),
+        body: JSON.stringify(
+          opiniao
+            ? { message: texto.trim(), route: pathname, kind: 'feedback' }
+            : {
+                message: texto.trim(),
+                route: pathname,
+                analysisId,
+                context: coletarContexto(),
+              },
+        ),
       });
 
       if (res.status === 429) {
@@ -73,8 +82,14 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
       if (!res.ok) throw new Error(`${res.status}`);
 
       const { id } = await res.json();
+      const tamanho = texto.trim().length;
       setTexto('');
       setAberto(false);
+      if (opiniao) {
+        track('feedback_sent', { length: tamanho, surface: 'bubble' });
+        toast({ title: t.feedback.thanks });
+        return;
+      }
       toast({
         title: r.sentTitle,
         description: r.sentDesc.replace('{id}', String(id).slice(0, 8)),
@@ -96,17 +111,33 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
         type="button"
         onClick={() => setAberto(true)}
         className="fixed bottom-4 right-4 z-40 rounded-full border border-white/10 bg-black/70 px-3.5 py-2 text-xs text-zinc-400 backdrop-blur transition-colors hover:border-white/20 hover:text-white"
-        aria-label={r.button}
+        aria-label={r.bubble}
       >
-        {r.button}
+        {r.bubble}
       </button>
     );
   }
 
   return (
     <div className="fixed bottom-4 right-4 z-40 w-[min(360px,calc(100vw-2rem))] rounded-xl border border-white/10 bg-[#0b0b12] p-4 shadow-2xl">
+      <div className="mb-3 flex gap-1 rounded-lg bg-white/5 p-1" role="tablist">
+        {(['problem', 'feedback'] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            role="tab"
+            aria-selected={modo === m}
+            onClick={() => setModo(m)}
+            className={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors ${
+              modo === m ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {m === 'problem' ? r.button : r.tabOpinion}
+          </button>
+        ))}
+      </div>
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-white">{r.title}</h2>
+        <h2 className="text-sm font-semibold text-white">{opiniao ? t.feedback.title : r.title}</h2>
         <button
           type="button"
           onClick={() => setAberto(false)}
@@ -123,12 +154,12 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
         maxLength={2000}
         rows={4}
         autoFocus
-        placeholder={r.placeholder}
+        placeholder={opiniao ? t.feedback.placeholder : r.placeholder}
         className="w-full resize-none rounded-lg border border-white/10 bg-black/40 p-2.5 text-sm text-white placeholder:text-zinc-600 focus:border-white/25 focus:outline-none"
       />
 
       <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
-        {r.context.replace('{analysis}', analysisId ? r.contextAnalysis : '')}
+        {opiniao ? t.feedback.subtitle : r.context.replace('{analysis}', analysisId ? r.contextAnalysis : '')}
       </p>
 
       <div className="mt-3 flex justify-end gap-2">

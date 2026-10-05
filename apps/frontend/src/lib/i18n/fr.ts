@@ -532,6 +532,8 @@ export default {
     ja: '日本語',
   },
   report: {
+    bubble: 'Avis ou problème',
+    tabOpinion: 'Donner votre avis',
     button: 'Signaler un problème',
     title: 'Que s\'est-il passé ?',
     close: 'Fermer',

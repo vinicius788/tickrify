@@ -550,6 +550,8 @@ export default {
   },
   // Botão flutuante de reportar problema (ReportProblemButton).
   report: {
+    bubble: 'Opinião ou problema',
+    tabOpinion: 'Dar sua opinião',
     button: 'Reportar problema',
     title: 'O que aconteceu?',
     close: 'Fechar',

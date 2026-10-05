@@ -1049,6 +1049,23 @@ const DashboardPage = () => {
     </div>
   );
 
+  // A mesma pergunta em dois lugares: inicio do painel e logo abaixo do
+  // resultado de uma analise (05/10/2026: 208 de 226 cadastros nao respondiam,
+  // porque quem cai direto em "nova analise" nunca via o inicio). Respondeu ou
+  // dispensou num lugar, some dos dois.
+  const acquisitionSurvey = (
+    <AcquisitionSurvey
+      onAnswer={async (payload) => {
+        try {
+          await apiClient.setAcquisitionSource(payload);
+        } catch {
+          /* engolido de proposito: medicao nunca quebra o painel */
+        }
+      }}
+      onDismiss={() => setShowAcquisitionSurvey(false)}
+    />
+  );
+
   const renderDashboardHome = () => {
     const titleWords = t.nav.centralTitle.split(' ');
     const titleLast = titleWords.length > 1 ? titleWords.pop() : '';
@@ -1075,18 +1092,7 @@ const DashboardPage = () => {
         {/* De onde a pessoa veio, perguntado a ela. A atribuicao tecnica
             (PostHog + UTM) nao respondeu isso para os tres primeiros
             assinantes; ver o cabecalho do AcquisitionSurvey. */}
-        {!isDemo && showAcquisitionSurvey && (
-          <AcquisitionSurvey
-            onAnswer={async (payload) => {
-              try {
-                await apiClient.setAcquisitionSource(payload);
-              } catch {
-                /* engolido de proposito: medicao nunca quebra o painel */
-              }
-            }}
-            onDismiss={() => setShowAcquisitionSurvey(false)}
-          />
-        )}
+        {!isDemo && showAcquisitionSurvey && acquisitionSurvey}
 
         {/* Onda 2.3 — o motivo de voltar amanhã. Só aparece com trades que o
             próprio usuário marcou como "vou operar" e que já passaram de 12h.
@@ -1582,6 +1588,7 @@ const DashboardPage = () => {
               </div>
             )}
             <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />
+            {!isDemo && showAcquisitionSurvey && acquisitionSurvey}
             {!isDemo && (
               <div className="flex flex-col gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
                 {/* Onda 2.2 — pergunta no único momento em que o usuário ainda
