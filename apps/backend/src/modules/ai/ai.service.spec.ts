@@ -426,6 +426,73 @@ describe('AiService access enforcement', () => {
     });
   });
 
+  // ── Gratis esgotado: 402 nas rotas de operacao ──────────────────────────────
+  // Regra de 05/10/2026: depois das gratis, historico completo, diario, marcar
+  // resultado e favoritar ficam para quem assina; as 3 ultimas analises
+  // continuam abertas para leitura. Antes de esgotar nada trava.
+  describe('gratis esgotado', () => {
+    const expect402 = async (promise: Promise<unknown>) => {
+      await expect(promise).rejects.toMatchObject({
+        status: 402,
+        response: { code: 'free_quota_exhausted' },
+      });
+    };
+    const range = [new Date('2026-09-01T00:00:00Z'), new Date('2026-10-01T00:00:00Z')] as const;
+
+    it('diario, resultado e favorito respondem 402 free_quota_exhausted', async () => {
+      setFreeQuota(prisma, { signals: 3 });
+      await expect402(service.listAnalysesInRange('usr_1', ...range));
+      await expect402(service.setOutcome('usr_1', 'an_1', { outcome: 'tp1' }));
+      await expect402(service.setFavorite('usr_1', 'an_1', true));
+    });
+
+    it('historico: so as 3 ultimas concluidas, sem paginacao', async () => {
+      setFreeQuota(prisma, { signals: 3 });
+      await service.listAnalyses('usr_1', 40);
+      const args = prisma.analysis.findMany.mock.calls[0][0];
+      expect(args.take).toBe(3);
+      expect(args.where).toEqual({ userId: 'usr_1', status: 'completed' });
+
+      prisma.analysis.findMany.mockClear();
+      expect(await service.listAnalyses('usr_1', 40, 'an_123')).toEqual([]);
+      expect(prisma.analysis.findMany).not.toHaveBeenCalled();
+    });
+
+    it('analise mais antiga que as 3 ultimas: 402; em andamento nunca trava o polling', async () => {
+      setFreeQuota(prisma, { signals: 3 });
+      prisma.analysis.findFirst.mockResolvedValue({ id: 'an_old', status: 'completed', createdAt: new Date(), updatedAt: new Date() });
+      prisma.analysis.findMany.mockResolvedValue([{ id: 'an_3' }, { id: 'an_2' }, { id: 'an_1' }]);
+      await expect402(service.getAnalysis('an_old', 'usr_1'));
+
+      prisma.analysis.findFirst.mockResolvedValue({ id: 'an_new', status: 'processing', createdAt: new Date(), updatedAt: new Date() });
+      expect((await service.getAnalysis('an_new', 'usr_1')).status).toBe('processing');
+    });
+
+    it('antes de esgotar nada trava', async () => {
+      setFreeQuota(prisma, { signals: 2 });
+      await expect(service.listAnalysesInRange('usr_1', ...range)).resolves.toMatchObject({ truncated: false });
+      await service.listAnalyses('usr_1', 40);
+      expect(prisma.analysis.findMany.mock.calls.at(-1)[0].take).toBe(40);
+    });
+
+    it('assinante (inclusive acesso manual) e admin nunca travam', async () => {
+      setFreeQuota(prisma, { signals: 3 });
+      prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', stripeId: 'manual_owner_1', priceId: null });
+      await expect(service.isFreeLocked('usr_1')).resolves.toBe(false);
+
+      prisma.subscription.findFirst.mockResolvedValue(null);
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', role: 'admin' });
+      await expect(service.isFreeLocked('usr_1')).resolves.toBe(false);
+    });
+
+    it('/usage avisa a tela com freeLocked', async () => {
+      setFreeQuota(prisma, { signals: 3 });
+      expect((await service.getUsage('usr_1')).freeLocked).toBe(true);
+      setFreeQuota(prisma, { signals: 1 });
+      expect((await service.getUsage('usr_1')).freeLocked).toBe(false);
+    });
+  });
+
   // ── setOutcome ────────────────────────────────────────────────────────────────
   // `Number(null)` e 0: ate 25/09/2026 "sem valor" era gravado como 0, e um trade
   // sem valor aparecia como +0.00 e entrava na soma do Diario.

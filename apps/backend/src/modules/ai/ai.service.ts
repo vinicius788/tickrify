@@ -9,6 +9,7 @@ import {
   BadRequestException,
   ForbiddenException,
   HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   OnModuleInit,
@@ -45,7 +46,7 @@ import {
   prepareIncomingImage,
 } from '../../common/utils/image-storage';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
-import { getFreeQuota } from '../../common/free-quota';
+import { FREE_READABLE_ANALYSES, getFreeQuota } from '../../common/free-quota';
 import { TICK_COSTS, AnalysisType } from '../ticks/tick-packages';
 import { TicksService } from '../ticks/ticks.service';
 import { MailService } from '../mail/mail.service';
@@ -301,7 +302,7 @@ export class AiService implements OnModuleInit {
     // `enforceAccessAndCreate`. Uma vez so, e o valor desce por parametro.
     const paidAccess = await this.hasPaidAccess(userId);
 
-    // Deep é recurso de assinante (gpt-4o, ~15x mais caro). Conta grátis/demo
+    // Deep é recurso de assinante (custa 3 ticks). Conta grátis/demo
     // roda como 'quick' — mesma regra do multi-timeframe. Degradação graciosa:
     // a análise segue normal, só sem o enriquecimento deep.
     const normalizedAnalysisType: AnalysisType =
@@ -511,6 +512,17 @@ export class AiService implements OnModuleInit {
       return this.serializePendingAnalysis(analysis.id, apiStatus, analysis);
     }
 
+    // Gratis esgotado: so as ultimas analises continuam abertas para leitura.
+    if (await this.isFreeLocked(userId)) {
+      const readable = await this.prisma.analysis.findMany({
+        where: { userId, status: 'completed' },
+        select: { id: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: FREE_READABLE_ANALYSES,
+      });
+      if (!readable.some((row) => row.id === analysis.id)) throw this.freeLockedError();
+    }
+
     const serialized = await this.serializeAnalysis(analysis);
     const calibration = await this.getCalibration(
       userId,
@@ -532,8 +544,16 @@ export class AiService implements OnModuleInit {
    * repetir uma linha na fronteira da pagina.
    */
   async listAnalyses(userId: string, limit = 20, cursor?: string | null) {
-    const safeLimit = Math.max(1, Math.min(100, Math.floor(limit || 20)));
+    let safeLimit = Math.max(1, Math.min(100, Math.floor(limit || 20)));
     const safeCursor = typeof cursor === 'string' && cursor.trim() ? cursor.trim() : null;
+
+    // Gratis esgotado: as ultimas analises concluidas, so para leitura; o resto
+    // do historico (e a paginacao) fica para quem assina.
+    const freeLocked = await this.isFreeLocked(userId);
+    if (freeLocked) {
+      if (safeCursor) return [];
+      safeLimit = Math.min(safeLimit, FREE_READABLE_ANALYSES);
+    }
 
     // O cursor vem do CLIENTE, entao precisa ser validado antes de virar ancora
     // de query. Duas coisas quebram sem isto:
@@ -555,7 +575,7 @@ export class AiService implements OnModuleInit {
     }
 
     const analyses = await this.prisma.analysis.findMany({
-      where: { userId },
+      where: freeLocked ? { userId, status: 'completed' } : { userId },
       // So as colunas que o mapeamento abaixo le. Sem isto vinha a linha
       // inteira, incluindo `fullResponse` (texto bruto da IA, varios kB por
       // analise, x40), que neste caminho nunca e usado: getStoredAnalysisPayload
@@ -597,6 +617,7 @@ export class AiService implements OnModuleInit {
     if (to.getTime() <= from.getTime() || to.getTime() - from.getTime() > MAX_SPAN_MS) {
       throw new BadRequestException('Date range must be positive and at most 45 days');
     }
+    if (await this.isFreeLocked(userId)) throw this.freeLockedError();
 
     const analyses = await this.prisma.analysis.findMany({
       where: { userId, status: 'completed', createdAt: { gte: from, lt: to } },
@@ -739,6 +760,7 @@ export class AiService implements OnModuleInit {
    * Mesmo padrão tolerante do setOutcome: SQL isolado, nunca derruba nada.
    */
   async setFavorite(userId: string, id: string, isFavorite: boolean) {
+    if (await this.isFreeLocked(userId)) throw this.freeLockedError();
     const analysis = await this.prisma.analysis.findFirst({
       where: { id, userId },
       select: { id: true },
@@ -772,6 +794,7 @@ export class AiService implements OnModuleInit {
     id: string,
     input: { outcome: string | null; pnlPercent?: number | null; pnlAmount?: number | null },
   ) {
+    if (await this.isFreeLocked(userId)) throw this.freeLockedError();
     // Ownership check usando o modelo Prisma padrão (colunas garantidas).
     const analysis = await this.prisma.analysis.findFirst({
       where: { id, userId },
@@ -944,6 +967,7 @@ export class AiService implements OnModuleInit {
     // SINAIS (BUY/SELL), para o front antigo continuar coerente.
     if (!paidAccess) {
       const quota = await getFreeQuota(this.prisma, userId);
+      const freeLocked = quota.settledExhausted && !(await this.isAdmin(userId));
       return {
         plan: 'free',
         period: 'monthly',
@@ -959,6 +983,9 @@ export class AiService implements OnModuleInit {
         signalsLimit: quota.signalsLimit,
         totalUsed: quota.totalUsed,
         totalLimit: quota.totalLimit,
+        // Gratis esgotado: o painel trava historico, diario e marcacao de
+        // resultado (mesma regra de `isFreeLocked`).
+        freeLocked,
       };
     }
 
@@ -1428,6 +1455,34 @@ export class AiService implements OnModuleInit {
 
       throw error;
     }
+  }
+
+  /**
+   * Gratis esgotado (05/10/2026). Conta sem assinatura que ja usou as gratis
+   * (`settledExhausted`, o mesmo estado que dispara `free_quota_exhausted`):
+   * historico completo, diario, marcar resultado e favoritar ficam para quem
+   * assina, e as ultimas FREE_READABLE_ANALYSES analises continuam abertas para
+   * leitura. Antes de esgotar nada trava. Assinante (inclusive o acesso manual
+   * `manual_owner_1`) e admin nunca travam. A tela traduz o 402 no paywall.
+   */
+  async isFreeLocked(userId: string): Promise<boolean> {
+    // Ordem de custo: a cota e so contagem no banco e resolve quase todo mundo;
+    // `hasPaidAccess` pode consultar a Stripe e so roda para quem esgotou.
+    if (!(await getFreeQuota(this.prisma, userId)).settledExhausted) return false;
+    if (await this.isAdmin(userId)) return false;
+    return !(await this.hasPaidAccess(userId));
+  }
+
+  private async isAdmin(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    return String(user?.role || '').toLowerCase() === 'admin';
+  }
+
+  private freeLockedError() {
+    return new HttpException(
+      { code: 'free_quota_exhausted', message: 'Subscribe to keep access to your analyses and trades.' },
+      HttpStatus.PAYMENT_REQUIRED,
+    );
   }
 
   // Publico: a rota de estrategia (ai.controller) consome para checar acesso pago.

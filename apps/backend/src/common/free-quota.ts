@@ -28,6 +28,12 @@
 
 export const FREE_SIGNAL_LIMIT = 3;
 export const FREE_TOTAL_LIMIT = 10;
+/**
+ * Depois de esgotar (`settledExhausted`), quantas das ultimas analises
+ * concluidas continuam abertas para leitura (05/10/2026). O resto do
+ * historico, o diario e marcar resultado ficam para quem assina.
+ */
+export const FREE_READABLE_ANALYSES = 3;
 
 /** Recomendacoes que consomem um dos sinais gratis. O banco guarda o valor normalizado. */
 const SIGNAL_RECOMMENDATIONS = ['BUY', 'SELL'];
