@@ -6,6 +6,7 @@ import { PrismaService } from '../database/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { fetchClerkEmail } from '../../common/utils/clerk-email';
 import { sendMetaEvent } from '../../common/analytics/meta-capi';
+import { captureServer } from '../../common/analytics/posthog';
 
 /** Sinal de cadastro para o Meta. Todo campo com decorator: o ValidationPipe rejeita o resto. */
 export class AdsSignupDto {
@@ -181,7 +182,7 @@ export class AuthController implements OnModuleInit {
     const where = user.id ? { id: user.id } : { clerkUserId: user.clerkUserId };
     const atual = await this.prisma.user.findUnique({
       where,
-      select: { id: true, acquisitionSource: true },
+      select: { id: true, clerkUserId: true, acquisitionSource: true },
     });
     if (!atual) return { ok: false };
     if (atual.acquisitionSource) return { ok: true, alreadyAnswered: true };
@@ -193,6 +194,14 @@ export class AuthController implements OnModuleInit {
         acquisitionDetail: body.detail?.trim() || null,
         acquisitionAnsweredAt: new Date(),
       },
+    });
+    // Propriedade de pessoa no PostHog (05/10/2026): sem isto a resposta so
+    // existia no banco, e o funil por origem (`acquisition_source`) nao tinha
+    // como ser cortado la. `$set_once` segue a regra "a primeira vale". O
+    // `detail` (texto livre) fica so no banco.
+    captureServer(atual.clerkUserId, 'acquisition_source_answered', {
+      source: body.source,
+      $set_once: { acquisition_source: body.source },
     });
     return { ok: true };
   }
