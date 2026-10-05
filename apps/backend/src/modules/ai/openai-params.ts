@@ -15,9 +15,8 @@
  * gastam tokens internos invisíveis, então "max_tokens" deixou de descrever o
  * que o campo faz) e não aceita mais `seed`.
  *
- * Isto NÃO é só para o backtest: o `gpt-4o` usado no deep tem shutdown marcado
- * pela OpenAI para 23/10/2026. A migração para GPT-5.x é obrigatória, e quando
- * ela acontecer todos os call sites já vão estar prontos.
+ * Produção roda GPT-5.x (`gpt-5.6-luna`) no quick e no deep, então todo call
+ * site do motor passa por aqui.
  *
  * Centralizado de propósito: se aparecer mais um parâmetro incompatível, muda
  * numa função só em vez de caçar por três lugares no adapter.
@@ -102,10 +101,11 @@ export function buildSamplingParams(
  * Ordem de precedência (a primeira que existir vence):
  *   1. AI_MODEL_QUICK / AI_MODEL_DEEP  — controle por tipo (preferido)
  *   2. AI_MODEL                        — override global (usado pelo backtest)
- *   3. padrão histórico                — gpt-4o-mini (quick) / gpt-4o (deep)
+ *   3. padrão                          — gpt-5.6-luna (quick e deep)
  *
- * ATENÇÃO ao padrão do deep: `gpt-4o` tem shutdown marcado pela OpenAI para
- * 23/10/2026. Migrar antes disso não é opcional.
+ * O padrão é o mesmo modelo de produção (05/10/2026): se a env sumir do painel,
+ * o motor continua no modelo medido em vez de cair calado no gpt-4o/4o-mini,
+ * que nunca receberam o prompt v7.5 nem os tetos de caracteres.
  */
 /**
  * Esforço de raciocínio por tipo de análise, via env.
@@ -135,10 +135,12 @@ export function resolveReasoningEffort(
     : undefined;
 }
 
+const DEFAULT_ANALYSIS_MODEL = 'gpt-5.6-luna';
+
 export function resolveModel(analysisType: 'quick' | 'deep' | string): string {
   const isDeep = analysisType === 'deep';
   const perType = isDeep ? process.env.AI_MODEL_DEEP : process.env.AI_MODEL_QUICK;
   const chosen = (perType || process.env.AI_MODEL || '').trim();
   if (chosen) return chosen;
-  return isDeep ? 'gpt-4o' : 'gpt-4o-mini';
+  return DEFAULT_ANALYSIS_MODEL;
 }

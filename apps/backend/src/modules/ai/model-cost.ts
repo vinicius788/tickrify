@@ -33,7 +33,8 @@ interface ModelPricing {
 // https://developers.openai.com/api/docs/models/gpt-4o
 // https://developers.openai.com/api/docs/models/gpt-4o-mini
 // Valores Standard sem desconto de cache; revisar antes de orçar nova rodada.
-// `gpt-4o` está aqui porque o deep ainda roda nele — shutdown em 23/10/2026.
+// `gpt-4o`/`gpt-4o-mini` ficam para análises antigas e o backtest (`AI_MODEL`);
+// o `extractSymbol` do grounding ainda chama o `gpt-4o-mini`.
 const PRICING: Record<string, ModelPricing> = {
   'gpt-4o': { input: 2.5, output: 10 },
   'gpt-4o-mini': { input: 0.15, output: 0.6 },

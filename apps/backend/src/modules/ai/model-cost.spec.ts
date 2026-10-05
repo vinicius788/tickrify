@@ -4,7 +4,7 @@ import {
   formatCostLog,
   REVENUE_PER_TICK_USD,
 } from './model-cost';
-import { resolveReasoningEffort } from './openai-params';
+import { resolveModel, resolveReasoningEffort } from './openai-params';
 
 describe('extractUsage', () => {
   it('lê o formato real da OpenAI, incluindo reasoning_tokens', () => {
@@ -115,5 +115,28 @@ describe('resolveReasoningEffort', () => {
   it('IGNORA valor inválido — typo no Render não pode derrubar 100% das análises', () => {
     process.env.AI_REASONING_EFFORT_DEEP = 'muito_alto';
     expect(resolveReasoningEffort('deep')).toBeUndefined();
+  });
+});
+
+describe('resolveModel', () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it('sem env cai no modelo de produção, nunca no gpt-4o', () => {
+    delete process.env.AI_MODEL;
+    delete process.env.AI_MODEL_QUICK;
+    delete process.env.AI_MODEL_DEEP;
+    expect(resolveModel('quick')).toBe('gpt-5.6-luna');
+    expect(resolveModel('deep')).toBe('gpt-5.6-luna');
+  });
+
+  it('env por tipo vence o AI_MODEL global', () => {
+    process.env.AI_MODEL = 'gpt-5.6-terra';
+    process.env.AI_MODEL_DEEP = 'gpt-5.6-sol';
+    delete process.env.AI_MODEL_QUICK;
+    expect(resolveModel('quick')).toBe('gpt-5.6-terra');
+    expect(resolveModel('deep')).toBe('gpt-5.6-sol');
   });
 });
