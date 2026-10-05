@@ -1334,10 +1334,13 @@ const lifecycleTick = async () => {
     console.log(`[lifecycle] Volta: ${JSON.stringify(counts)}`);
   }
 };
+// `unref()`: o timer nao segura o processo sozinho. Em producao quem mantem o
+// worker vivo e a conexao da fila; sem o unref, todo teste que importa este
+// arquivo deixava o jest preso e o CI rodava ate o limite de 6h (desde 29/09).
 setTimeout(() => {
   void lifecycleTick();
-  setInterval(() => void lifecycleTick(), LIFECYCLE_INTERVAL_MS);
-}, 5 * 60 * 1000);
+  setInterval(() => void lifecycleTick(), LIFECYCLE_INTERVAL_MS).unref();
+}, 5 * 60 * 1000).unref();
 
 async function shutdown() {
   await worker.close();

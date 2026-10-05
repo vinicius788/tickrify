@@ -126,6 +126,15 @@ regexes = [
 ]
 
 [[allowlists]]
+description = "Chave de PROJETO do PostHog (phc_) e PUBLICA: vai no bundle e no static-analytics.js"
+# O PostHog separa a chave de projeto (phc_, so ingere evento, feita para o
+# navegador) da chave pessoal (phx_, essa sim segredo). So a phc_ e liberada,
+# e so o valor, nao a linha. Acusada em 05/10/2026 no commit 177233e.
+regexes = [
+  '''^phc_[A-Za-z0-9]{30,}$''',
+]
+
+[[allowlists]]
 description = "Placeholders de token nos exemplos de curl da documentação"
 regexTarget = "line"
 # Descobertos varrendo os 325 commits do histórico em 12/08/2026: 23 ocorrências,
