@@ -82,9 +82,13 @@ const Header = ({ active = null, minimal = false }: HeaderProps) => {
                     {n.login}
                   </button>
                 </SignInButton>
-                <Link to="/try" className="site-btn site-btn-primary site-btn-sm hidden sm:inline-flex">
-                  {t.landing.hero.startFree}
-                </Link>
+                {/* `hidden` no <span>, nao no link: `.site-btn` vem depois do
+                    Tailwind no CSS e ganharia do `hidden`, espremendo o logo. */}
+                <span className="hidden sm:inline-flex">
+                  <Link to="/try" className="site-btn site-btn-primary site-btn-sm">
+                    {t.landing.hero.startFree}
+                  </Link>
+                </span>
               </SignedOut>
               <SignedIn>
                 <Link to="/dashboard" className="site-btn site-btn-primary site-btn-sm">

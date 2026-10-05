@@ -30,7 +30,11 @@ describe('cabecalho e topo da home no celular', () => {
     renderSite(<Header />);
     const login = screen.getByRole('button', { name: 'Login' });
     expect(login.closest('.hidden')).toBeNull();
-    expect(screen.getByRole('link', { name: 'Analyze my chart free' }).getAttribute('href')).toBe('/try');
+    const cta = screen.getByRole('link', { name: 'Analyze my chart free' });
+    expect(cta.getAttribute('href')).toBe('/try');
+    // No celular o botao some (o menu tem o mesmo link); `hidden` fica no
+    // invólucro porque `.site-btn` ganharia do Tailwind no proprio link.
+    expect(cta.parentElement?.className).toContain('hidden');
   });
 
   it('o menu abre FIXO na tela, com analise gratis, links e login', async () => {
