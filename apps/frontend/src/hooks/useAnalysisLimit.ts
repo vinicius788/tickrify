@@ -22,6 +22,8 @@ interface AnalysisLimitData {
    *  `remaining` falam das analises com SINAL (BUY/SELL). */
   totalUsed: number | null;
   totalLimit: number | null;
+  /** Gratis esgotado: historico, diario e resultado travados ate assinar. */
+  freeLocked: boolean;
   /** true enquanto o backend ainda não confirmou o plano/limite do usuário logado.
    *  Durante esse tempo NÃO se deve tratar o usuário como "free 3 grátis". */
   isLoading: boolean;
@@ -58,6 +60,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
   // null enquanto nao chegou do backend. O painel cai no contador local nesse caso.
   const [analysesAllTime, setAnalysesAllTime] = useState<number | null>(null);
   const [freeTotal, setFreeTotal] = useState<{ used: number; limit: number } | null>(null);
+  const [freeLocked, setFreeLocked] = useState(false);
   // Começa carregando: o backend (Render hiberna) pode levar segundos a confirmar
   // que a conta é paga. Sem isto, a tela mostrava "3 grátis" no meio-tempo e o
   // assinante conseguia gastar análise grátis antes do plano ser reconhecido.
@@ -113,6 +116,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
           ? { used: usage.totalUsed, limit: usage.totalLimit }
           : null,
       );
+      setFreeLocked(usage.freeLocked === true);
       // Só marca resolvido em caso de sucesso — assim canAnalyze fica travado até
       // termos a verdade do backend, evitando gastar grátis por engano.
       setStatusResolved(true);
@@ -121,6 +125,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setAnalysisCount(0);
       setAnalysisLimit(FREE_LIMIT);
       setFreeTotal(null);
+      setFreeLocked(false);
       setBackendUnlimited(false);
       // Falha de rede: libera a UI para não travar pra sempre, mas o backend ainda
       // é a fonte da verdade na hora de criar a análise (bloqueia grátis indevido).
@@ -148,6 +153,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setAnalysisCount(0);
       setAnalysisLimit(FREE_LIMIT);
       setFreeTotal(null);
+      setFreeLocked(false);
       setUserPlan('free');
       setBackendUnlimited(false);
       setStatusResolved(false);
@@ -167,6 +173,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       analysesAllTime: null,
       totalUsed: null,
       totalLimit: null,
+      freeLocked: false,
       isLoading: false,
     };
   }
@@ -185,6 +192,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       analysesAllTime: null,
       totalUsed: null,
       totalLimit: null,
+      freeLocked: false,
       isLoading: true,
     };
   }
@@ -207,6 +215,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
     analysesAllTime,
     totalUsed: isUnlimited ? null : freeTotal?.used ?? null,
     totalLimit: isUnlimited ? null : freeTotal?.limit ?? null,
+    freeLocked: !isUnlimited && freeLocked,
     isLoading: false,
   };
 }

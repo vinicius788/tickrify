@@ -8,6 +8,15 @@ do estado atual. Para o projeto atual, use o `README.md` da raiz, `DEPLOY.md`,
 
 ---
 
+## 05/10/2026: o painel ganhou rotas reais
+
+O painel deixou de ser uma rota so com abas em estado interno. O mapa
+(`/dashboard`, `/new`, `/new/example/:kind`, `/analysis/:id`, `/trades`,
+`/journal`, `/strategy`, `/plans`) e as regras de navegacao, gratis esgotado,
+paywall unico e `translate="no"` estao na secao 3.6 do `CLAUDE.md` da raiz.
+
+---
+
 ## Sprint 31/08/2026 — auditoria de promessas, llms.txt e o rename que NAO foi feito
 
 ### 🔴 Rename BUY/SELL/HOLD → BULLISH/BEARISH/NEUTRAL: ADIADO com motivo

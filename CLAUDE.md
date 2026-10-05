@@ -162,11 +162,16 @@ Vale para TODA mudanca, grande ou pequena:
   cartao, publico quase todo de pais onde US$ 29 de uma vez nao fecha.
 - Checkout com `billing_address_collection: 'auto'` desde 28/09 (era
   `required`: formulario de endereco inteiro no celular).
-- **Cupons:** EARLY35 (35% no 1o mes) pre-aplicado no paywall e na /pricing; o
-  estado e lido da Stripe (`founding-offer.ts`) e a oferta some sozinha quando o
-  cupom acaba (5 de 50 usos em 21/09; tentativa recusada tambem gasta uso). O DTO
-  so aceita EARLY35. Codigo EARLY50 segue ativo por decisao do dono. TICKS (100%
-  vitalicio) arquivado.
+- **Cupons:** EARLY35 (35% no 1o mes) pre-aplicado no paywall e na /pricing,
+  **so no MENSAL** (05/10: regra no servidor, `billingCycle !== 'monthly'`
+  descarta; antes o anual saia a US$ 188,50). O estado e lido da Stripe
+  (`founding-offer.ts`) e a oferta some sozinha quando o cupom acaba (5 de 50
+  usos em 21/09; tentativa recusada tambem gasta uso). Em 05/10 o
+  `/api/stripe/offer` respondia `active: true, percentOff: 35`. O DTO so aceita
+  EARLY35. Codigo EARLY50 segue ativo por decisao do dono. TICKS (100%
+  vitalicio) arquivado. Sem desconto pre-aplicado (anual, semanal sem
+  afiliado), a sessao abre com `allow_promotion_codes`: um codigo DIGITADO
+  ali vale conforme a configuracao dele na Stripe (ver 6.2).
 - **Assinantes:** 3 pagantes (08 a 10/09, todos pelo paywall, a US$ 18,85). A
   conta do dono tem acesso manual (`manual_owner_1` no banco, nao na Stripe):
   **toda contagem de assinantes pelo banco filtra
@@ -232,8 +237,11 @@ Vale para TODA mudanca, grande ou pequena:
 
 - **Modelo:** `gpt-5.6-luna` no quick e no deep (`AI_MODEL_QUICK`,
   `AI_MODEL_DEEP`). `AI_REASONING_EFFORT_QUICK=low` (09/09); `_DEEP` nao setada
-  (padrao da OpenAI). O `gpt-4o` (desligado pela OpenAI em 23/10/2026) nao e mais
-  usado.
+  (padrao da OpenAI). Sem env, o `resolveModel` cai no `gpt-5.6-luna` (05/10;
+  antes caia no `gpt-4o`/`gpt-4o-mini`). A pagina de desativacoes da OpenAI
+  (lida em 05/10) so desliga o snapshot `gpt-4o-2024-05-13` em 23/10/2026; o
+  alias `gpt-4o` e o `gpt-4o-mini` nao estao na lista. O `extractSymbol` do
+  grounding chama `gpt-4o-mini` fixo no codigo.
 - **Prompt:** v7.5 (24/09) em `apps/backend/src/common/prompts/trading-system-prompt.ts`.
   O `PromptSyncService` publica como versao nova no boot, entao `promptVer`
   separa antes e depois. Tetos de caracteres por campo desde 09/09.
@@ -350,10 +358,68 @@ Vale para TODA mudanca, grande ou pequena:
 - Substituiu o "Try it with an example chart" (que rodava a IA via
   `POST /api/demo/example`): rota, DTO, metodo do service, caminho logado do
   `/try` e evento `example_cta_clicked` removidos. O `/try` anonimo nao mudou.
+- Junto dos exemplos (05/10): bloco "How Tickrify works" (envia o print, a IA
+  le, recebe plano ou WAIT; segunda opiniao, nao sinais) e, se a pessoa fez a
+  demo do `/try` neste aparelho, a leitura dela (`saveDemoResult` em
+  `lib/demo-api.ts`, localStorage, 7 dias). Os dois somem depois da 1a analise.
+
+### 3.6 Rotas do painel, gratis esgotado e paywall (05/10)
+
+- **Rotas reais:** `/dashboard` (inicio), `/dashboard/new`,
+  `/dashboard/new/example/:kind`, `/dashboard/analysis/:id`,
+  `/dashboard/trades`, `/dashboard/journal`, `/dashboard/strategy`,
+  `/dashboard/plans`. O mapa mora em `parseDashboardPath` (`DashboardPage.tsx`);
+  `/demo/*` usa o mesmo. Item ativo do menu sai da URL; endereco desconhecido
+  volta para `/dashboard`. So a nova analise tem estado sem URL (carregando,
+  erro, paywall). Rotas do painel nao entram no `seo-routes.json` e levam
+  `noindex` pelo `useSeo`. O `$pageview` por subrota substituiu o
+  `feature_opened` (removido). `/dashboard/plans` conta `pricing_viewed
+  { surface: 'dashboard' }`.
+- **Planos dentro do painel:** os mesmos `PricingCards` da /pricing. A volta do
+  login com intencao de compra (`checkoutReturnPath`) e o `cancel_url` da
+  Stripe vao para `/dashboard/plans`; a /pricing segue aceita na volta do login
+  (links antigos) e os cards tratam `?canceled=true` nos dois lugares.
+- **Gratis esgotado** = `settledExhausted` de `free-quota.ts` (o mesmo estado
+  do `free_quota_exhausted`), sem assinatura e sem `role=admin`
+  (`AiService.isFreeLocked`). O servidor responde 402 `free_quota_exhausted` em
+  diario, `outcome` e `favorite`; o historico devolve so as
+  `FREE_READABLE_ANALYSES` (3) ultimas concluidas, sem cursor, e
+  `analysis/:id` abre so elas (o polling de analise em andamento nunca trava).
+  O `/usage` manda `freeLocked`. Antes de esgotar nada trava. Quem assina volta
+  a ver tudo na hora (o retorno da Stripe invalida todas as queries).
+- **Paywall unico:** `components/dashboard/Paywall.tsx` (era `LockedAnalysis`,
+  so em ingles), 6 idiomas (`t.paywall`), `surface` em `new_analysis | trades
+  | journal | history`. Eventos: `upgrade_cta_viewed { source: 'paywall',
+  surface }`, `upgrade_cta_clicked { destination: 'plans' }`, `upgrade_clicked`
+  e `checkout_started` com `surface` (Stripe recebe `source=locked_value`). O
+  `upgrade_modal_viewed { trigger: 'locked_value' }` saiu: era o paywall.
+- **Traducao automatica:** area logada (tudo sob `ProtectedRoute`, e no boot
+  pelo `isLoggedAreaPath`) marca `<html translate="no" class="notranslate">`;
+  a vitrine segue traduzivel. O `removeChild` do Google Translate derrubava o
+  painel (reproduzido em teste: arrastar o grafico com a pagina traduzida) e
+  era DESCARTADO pelo `beforeSend` do Sentry; agora chega com `page_translated`
+  e `route`. Cada area do painel tem ErrorBoundary proprio (tentar de novo sem
+  recarregar).
 
 ---
 
 ## 4. Regras tecnicas que nasceram de bug real (nao desfazer)
+
+### 4.0 Regras de 05/10/2026
+
+- **Texto que muda no React nunca e no de texto solto ao lado de condicional**
+  (`{cond ? 'a' : <>{x}, <em/></>}`, `{v ? 'x' : ''}` entre irmaos): com a
+  pagina traduzida, o React tenta remover um no que o tradutor trocou e cai em
+  `removeChild`. Cada estado vira um `<span>` com `key`, ou um texto so
+  (template string). Teste: `translate-safety.test.tsx` (simula o tradutor).
+- **EARLY35 so no mensal, decidido no servidor.** A vitrine so mostra o 35%
+  onde o servidor aplica; preco riscado ou "35% off" nunca ao lado do anual.
+- **Navegacao do painel e por URL.** Nada de `useState` para trocar de area;
+  link interno do painel aponta para `/dashboard/*`, nunca para a /pricing ou a
+  landing (exceto logo e sair).
+- **Trava do gratis vale no servidor.** Tela que trava sem 402 no servidor nao
+  e trava. Rota nova de operacao (historico, resultado, diario) passa pelo
+  `isFreeLocked`.
 
 ### 4.1 Motor e OpenAI
 
@@ -510,6 +576,13 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 05/10 | **Aprovar antes de subir:** texto do e-mail de boas-vindas novo (`welcome-email.ts`, HTML em `_local/semana-2026-10-05/`), textos da vitrine e do paywall da semana (lista no relatorio `_local/funil-2026-10-05.md`). | dono |
+| 05/10 | **Ler no painel:** `AI_MODEL_QUICK`/`AI_MODEL_DEEP` no Render (o `/health` exige ops token; o codigo ja nao cai em `gpt-4o` sem env) e o cupom EARLY35 na Stripe (`max_redemptions`, `times_redeemed`, `redeem_by`, `valid`). | dono |
+| 05/10 | **Decidir `allow_promotion_codes` no anual/semanal.** Sem desconto pre-aplicado a Stripe abre o campo de codigo: quem DIGITAR EARLY35 (ou EARLY50) no anual pode receber o desconto, conforme a configuracao do codigo na Stripe. Fechar o campo nesses ciclos tambem fecha o codigo de afiliado digitado. | dono decide, Claude implementa |
+| 05/10 | PostHog: dashboards que usam `feature_opened` passam a usar `$pageview` com `$pathname` (`/dashboard/trades`, `/journal`, `/strategy`); os que usam `upgrade_modal_viewed trigger=locked_value` passam a `upgrade_cta_viewed source=paywall` (por `surface`). Novo: `acquisition_source_answered` e a propriedade de pessoa `acquisition_source`. | dono / Claude |
+| 05/10 | Medir 7 dias depois do deploy: 402 `free_quota_exhausted` por rota, `upgrade_cta_viewed` por `surface`, `checkout_started` com `surface`, erros `removeChild` no Sentry com `page_translated=yes` (devem sumir do painel). | Claude |
+| 05/10 | **`og.png` desatualizado:** o cartao de compartilhamento ainda mostra "Confidence 68% · Read" (fora do produto desde 30/09) e "3 FREE ANALYSES". Arte nova com "3 free trade plans" e sem confianca; ao trocar, subir `?v=2` para `?v=3` nas 54 referencias. | dono (arte) / Claude (referencias) |
+| 05/10 | Limpeza local: 7 conteineres Docker parados `supabase_*_tickrify-staging-20261001` e 2 volumes; branch `welcome-email` sem commit; `stash@{0}` (seguranca, 28/09) e `stash@{1}` (My Trades, 24/09) esperando decisao. | dono |
 | 30/09 | **Decidir o R/R guard pelo TP1.** Trocar "melhor alvo >= 1,2" por "TP1 >= 1,5R" seria a unica faixa com expectancy positiva (ver 3.2), mas viraria WAIT ~87 de 127 BUY/SELL (WAIT% de ~48% para ~80%), o que pesa na ativacao do gratis. Alternativa: so medir mais (n=40 nao fecha). Expectancy na /accuracy so depois dessa decisao (e publico). | dono decide, Claude implementa |
 | 30/09 | Medir a tabela "48 hours later" da home (`/api/ai/public-analyses/scored`): cliques para `/accuracy` e `/try` a partir de `#reads`. Hash diario publico das analises (repo publico ou OpenTimestamps) ainda nao feito. | Claude |
 | 29/09 | Primeiros envios dos e-mails de ciclo de vida: conferir no Render (`[lifecycle] kind=... sent=1`) e na Resend que sairam e se alguem respondeu em `vinicius@tickrify.com`. | Claude |
@@ -584,6 +657,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **29/09 (recuperacao):** texto novo do e-mail "cota gratis esgotada" aprovado pelo dono: assunto "Your free Tickrify analyses are used up", semanal primeiro, mensal com o EARLY35 so se ativo, sem presumir uso.
 - **30/09:** 3 analises de exemplo fixas no painel antes das gratis (otimista, pessimista, neutra, com o depois), sem IA e sem cota (ver 3.5); o exemplo em um clique (`/api/demo/example`) saiu.
 - **30/09 (confianca e recibos):** confianca, Signal/Read e "Probabilities" fora de todas as telas (card mostra a hora da leitura em UTC); R/R principal pelo TP1; rota publica `/api/ai/public-analyses/scored` e tabela "What the market did 48 hours later" na home (WIN, LOSS, NO_FILL, TIMEOUT, ordem do sweeper); semanal na secao de preco da home; textos falsos corrigidos nos 6 idiomas e no corpo pre-renderizado ("one-off Ticks", "See live analysis", "API sleeps", FAQ "professional traders", "3 free analyses" virou "3 free trade plans, WAIT doesn't count"); blog, `llms.txt` e /pricing sem "confidence score/tier". `confidenceToPercent` e `getConvictionTier` removidos.
+- **05/10:** semana de produto: erro `removeChild` do painel (Google Translate) com causa reproduzida e corrigida, `translate="no"` na area logada e Sentry passando a receber o erro; rotas reais do painel e Planos dentro dele; EARLY35 so no mensal no servidor e na vitrine; gratis esgotado trava historico, diario e resultado no servidor (402) com paywall unico em 6 idiomas; numeros de desempenho fora da home e do corpo pre-renderizado (so na /accuracy); "3 free analyses" corrigido para "3 free trade plans" no resto do site (blog, tools, meta description, FAQ, /try); "cheaper than buying Ticks one by one" removido (nao existe avulso); bloco "How Tickrify works" e leitura do /try no painel; e-mail de boas-vindas redesenhado (marca em texto, versao texto puro, regra verdadeira do gratis) aguardando aprovacao; pergunta de origem vira propriedade de pessoa no PostHog; modelo padrao sem env vira `gpt-5.6-luna`. Detalhe em `_local/funil-2026-10-05.md`.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

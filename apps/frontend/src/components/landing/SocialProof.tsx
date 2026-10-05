@@ -1,27 +1,19 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { buildApiUrl } from '@/lib/api';
 
 /** Plataformas de onde o print pode vir. Só o nome, nunca o logo: não existe
  *  integração com nenhuma delas, e exibir a marca sugeriria parceria. */
 const PLATFORMS = ['TradingView', 'MetaTrader 4 / 5', 'Binance', 'Bybit', 'Profit', 'Coinbase'];
 
-/** O que esta faixa le da /api/ai/accuracy (o resto do payload e da /accuracy). */
-interface AccuracySummary {
-  overall?: { n?: number };
-  abstention?: { rate?: number | null; total?: number };
-}
-
 /** Número que sobe ao entrar na tela. Uma vez só, e desliga em reduced-motion. */
-const CountUp = ({ value, suffix = '' }: { value: number | null; suffix?: string }) => {
+const CountUp = ({ value, suffix = '' }: { value: number; suffix?: string }) => {
   const ref = useRef<HTMLDivElement | null>(null);
   const [shown, setShown] = useState(0);
 
   useEffect(() => {
     const el = ref.current;
-    if (!el || value === null) return;
+    if (!el) return;
 
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       setShown(value);
@@ -62,37 +54,22 @@ const CountUp = ({ value, suffix = '' }: { value: number | null; suffix?: string
     };
   }, [value]);
 
-  // Sem dado ainda (ou API fora): travessao, nunca um numero velho ou inventado.
-  return <div ref={ref} className="site-stat-n">{value === null ? '—' : `${shown}${suffix}`}</div>;
+  return <div ref={ref} className="site-stat-n">{`${shown}${suffix}`}</div>;
 };
 
 const SocialProof = () => {
   const { t } = useLanguage();
   const s = t.landing.social;
 
-  // Trades pontuados e abstencao vem AO VIVO da mesma API da /accuracy (mesma
-  // queryKey, entao a pagina de acuracia reaproveita o cache). Eram numeros
-  // fixos no codigo (104 / 39% / 395) e ficaram velhos em um mes.
-  const { data } = useQuery<AccuracySummary>({
-    queryKey: ['accuracy'],
-    queryFn: async () => {
-      const res = await fetch(buildApiUrl('/api/ai/accuracy'));
-      if (!res.ok) throw new Error(`accuracy: ${res.status}`);
-      return res.json();
-    },
-    staleTime: 600_000,
-    refetchOnWindowFocus: false,
-    retry: 1,
-  });
-  const scored = typeof data?.overall?.n === 'number' ? data.overall.n : null;
-  const abstention = typeof data?.abstention?.rate === 'number' ? Math.round(data.abstention.rate) : null;
-  const analysed = typeof data?.abstention?.total === 'number' ? String(data.abstention.total) : '—';
-
+  // So numeros de PRODUTO e de metodo (05/10/2026). A contagem de trades
+  // pontuados e a taxa de abstencao sairam daqui: numero de desempenho fica na
+  // /accuracy, com n, intervalo e metodologia, ate a amostra sustentar. O
+  // primeiro bloco leva para la. "6+ mercados" virou 4: era o que a legenda lista.
   const stats = [
-    { value: scored, suffix: '', label: s.s1label, sub: s.s1sub, href: '/accuracy' },
-    { value: abstention, suffix: '%', label: s.s4label, sub: s.s4sub.replace('{n}', analysed) },
-    { value: 6, suffix: '+', label: s.s2label, sub: s.s2sub },
+    { value: 48, suffix: 'h', label: s.s1label, sub: s.s1sub, href: '/accuracy' },
+    { value: 4, suffix: '', label: s.s2label, sub: s.s2sub },
     { value: 3, suffix: '', label: s.s3label, sub: s.s3sub },
+    { value: 1, suffix: '', label: s.s4label, sub: s.s4sub },
   ];
 
   return (

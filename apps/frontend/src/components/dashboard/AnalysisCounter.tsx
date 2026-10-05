@@ -112,8 +112,8 @@ const AnalysisCounter = () => {
                   {c.exhausted}
                 </p>
                 <Link
-                  to="/pricing"
-                  onClick={() => track('upgrade_cta_clicked', { source: 'counter_exhausted', destination: 'pricing' })}
+                  to="/dashboard/plans"
+                  onClick={() => track('upgrade_cta_clicked', { source: 'counter_exhausted', destination: 'plans' })}
                 >
                   <Button size="sm" className="w-full">
                     <Crown className="mr-2 h-4 w-4" />
@@ -132,9 +132,9 @@ const AnalysisCounter = () => {
                   </p>
                 )}
                 <Link
-                  to="/pricing"
+                  to="/dashboard/plans"
                   onClick={() =>
-                    track('upgrade_cta_clicked', { source: 'counter_view_plans', destination: 'pricing', freeRemaining })
+                    track('upgrade_cta_clicked', { source: 'counter_view_plans', destination: 'plans', freeRemaining })
                   }
                 >
                   <Button size="sm" variant="outline" className="w-full">

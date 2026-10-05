@@ -70,7 +70,8 @@ function AuthScreen({ seoPath, children }: { seoPath: "/sign-in" | "/sign-up"; c
 //
 // O destino e FORCADO (One Tap nao le `redirect_url`), entao na tela de login
 // aberta pelo Upgrade ele segue a intencao de compra em vez do /dashboard.
-// `checkoutTargetFromAuthSearch` so aceita /pricing?checkout=... deste site.
+// `checkoutTargetFromAuthSearch` so aceita os Planos do painel (ou a /pricing
+// antiga) com ?checkout=... deste site.
 function OneTapOutsideTry() {
   const { pathname, search, hash } = useLocation();
   if (pathname.startsWith("/try")) return null;
@@ -136,7 +137,7 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           {/* Demo anônima (Fase 0): análise real sem cadastro — valor antes do signup. */}
           <Route path="/try" element={<TryPage />} />
-          <Route path="/demo" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+          <Route path="/demo/*" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/pricing" element={<PricingPage />} />
           {/* Política de privacidade. A rota canônica é /privacy (site global,
               texto em inglês). /privacidade continua respondendo porque é o
@@ -195,8 +196,10 @@ function App() {
               </AuthScreen>
             }
           />
+          {/* `/*`: cada area do painel tem URL propria (/dashboard/trades,
+              /dashboard/plans...). O mapa fica no DashboardPage. */}
           <Route
-            path="/dashboard"
+            path="/dashboard/*"
             element={
               <ProtectedRoute>
                 <DashboardPage />

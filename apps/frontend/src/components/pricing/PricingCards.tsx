@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
-import { CheckoutError, createCheckoutSession, type BillingCycle, type Currency, type PlanType } from "../../lib/stripe";
+import { CheckoutError, createCheckoutSession, getCheckoutStatus, type BillingCycle, type Currency, type PlanType } from "../../lib/stripe";
 import { buildApiUrl, warmupPaymentsApi } from "../../lib/api";
 import { getReferralCoupon, isAffiliateCode, saveReferralCoupon } from "../../lib/attribution";
 import { track } from "../../lib/analytics";
@@ -44,7 +44,7 @@ const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
         "200 monthly Ticks (~200 quick or 66 deep)",
         "Quick + deep analysis",
         "Live candle grounding + economic calendar",
-        "$0.145 per quick analysis, cheaper than buying Ticks one by one",
+        "$0.145 per quick analysis ($29 / 200 Ticks)",
       ],
       cta: "Get started",
     },
@@ -84,7 +84,7 @@ const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
         "200 Ticks mensais (~200 rápidas ou 66 deep)",
         "Análise rápida + deep",
         "Grounding com candles ao vivo + calendário econômico",
-        "US$ 0,145 por análise rápida, mais barato que Ticks avulsos",
+        "US$ 0,145 por análise rápida (US$ 29 / 200 Ticks)",
       ],
       cta: "Começar",
     },
@@ -119,7 +119,7 @@ const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
 
 // Plano SEMANAL (28/09/2026): o mesmo plano cobrado por semana, com 25 Ticks
 // que voltam a 25 a cada semana. Entrada menor para quem nao paga US$ 29 de uma
-// vez. Sem o EARLY35 (o cupom e do primeiro mes), entao nada aqui fala dele.
+// vez. Sem o EARLY35 (o cupom e do primeiro mes do MENSAL), entao nada aqui fala dele.
 const WEEKLY_COPY: Record<"en" | "pt", PlanCopy & { note: string }> = {
   en: {
     badge: "Start small",
@@ -170,6 +170,8 @@ const CHROME_COPY = {
     partnerApply: "Apply",
     partnerApplied: (code: string) => `Partner code ${code} applied. Checkout uses the best discount available to you.`,
     partnerInvalid: "That code is not valid.",
+    canceledTitle: "Payment canceled",
+    canceledDesc: "No charge was made. You can subscribe whenever you want.",
   },
   pt: {
     weekly: "Semanal",
@@ -191,6 +193,8 @@ const CHROME_COPY = {
     partnerApply: "Aplicar",
     partnerApplied: (code: string) => `Código de parceiro ${code} aplicado. O checkout usa o maior desconto disponível para você.`,
     partnerInvalid: "Esse código não é válido.",
+    canceledTitle: "Pagamento cancelado",
+    canceledDesc: "Nenhuma cobrança foi feita. Você pode assinar quando quiser.",
   },
 };
 
@@ -295,7 +299,7 @@ export const PLANS: Plan[] = [
       "200 monthly Ticks (~200 quick or 66 deep)",
       "Quick + deep analysis",
       "Live candle grounding + economic calendar",
-      "$0.145 per quick analysis, cheaper than buying Ticks one by one",
+      "$0.145 per quick analysis ($29 / 200 Ticks)",
     ],
     cta: "Get started",
   },
@@ -345,6 +349,25 @@ export function PricingCards() {
     return () => window.removeEventListener("pageshow", onPageShow);
   }, []);
 
+  // Volta da Stripe sem pagar (`cancel_url`). Fica nos cards, e nao numa
+  // pagina, porque eles existem em dois lugares: os Planos do painel (destino
+  // do cancel_url desde 05/10/2026) e a /pricing (sessoes abertas antes disso).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("canceled") !== "true") return;
+    // Sem este evento o funil nao separava "abandonou no checkout" de "nunca chegou".
+    track("checkout_canceled", { source: "stripe_cancel_url" });
+    // Registro no servidor (log [funnel] + historico do usuario): sem isto,
+    // "voltou da Stripe sem pagar" so existia para quem aceitou cookies.
+    void getToken().then((token) => (token ? getCheckoutStatus(token, { outcome: "canceled" }) : null));
+    toast({ title: copy.canceledTitle, description: copy.canceledDesc });
+    const url = new URL(window.location.href);
+    url.searchParams.delete("canceled");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    // So na montagem: a volta da Stripe e uma entrada nova na pagina.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Global product: prices always in USD, regardless of site language.
   const currency: Currency = "usd";
 
@@ -367,7 +390,7 @@ export function PricingCards() {
         track('upgrade_clicked', { plan: planType, cycle, source, signedIn: Boolean(isSignedIn) });
       }
       if (!isSignedIn) {
-        // Login/cadastro devolve para /pricing?checkout=... e o efeito abaixo
+        // Login/cadastro devolve para /dashboard/plans?checkout=... e o efeito abaixo
         // retoma a compra. Antes ia para /sign-in sem destino e o Clerk
         // mandava todo mundo para o /dashboard: a intencao morria ali.
         const intent: CheckoutIntent = { plan: planType, cycle, source };
@@ -406,8 +429,12 @@ export function PricingCards() {
          * a propria pagina anuncia. Quem nao digitava pagava 54% a mais.
          *
          * A copy da /pricing foi ajustada junto: ela nao pede mais o codigo,
-         * porque agora nao ha codigo para pedir. */
-        const coupon = cycle === "weekly" ? undefined : "EARLY35";
+         * porque agora nao ha codigo para pedir.
+         *
+         * SO no mensal (05/10/2026): o cupom e "35% no primeiro MES". Ate entao
+         * o anual tambem ia com ele (US$ 290 virava US$ 188,50). O servidor
+         * descarta igual; mandar so aqui evita sessao marcada com cupom. */
+        const coupon = cycle === "monthly" ? "EARLY35" : undefined;
         const { url, sessionId } = await createCheckoutSession(planType, token, cycle, currency, coupon, source);
         // Dispara SO com a URL da Stripe em maos: antes saia antes da chamada a
         // API e contava clique como checkout, inclusive quando a sessao falhava.

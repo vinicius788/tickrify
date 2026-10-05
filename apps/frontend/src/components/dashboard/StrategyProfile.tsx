@@ -198,7 +198,7 @@ const StrategyProfile = () => {
           title={st.emptyTitle}
           description={st.emptyDesc}
           ctaLabel={st.emptyCta}
-          onCta={() => navigate('/pricing')}
+          onCta={() => navigate('/dashboard/plans')}
         />
       </Card>
     );

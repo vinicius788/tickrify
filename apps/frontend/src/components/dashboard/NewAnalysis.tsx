@@ -278,12 +278,16 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
               <UploadCloud className="h-7 w-7" />
             </span>
             <h3 className="tk-display mt-5 text-balance text-2xl text-[var(--text-primary)] md:text-3xl">
+              {/* Cada estado num <span> proprio: com a pagina traduzida pelo
+                  navegador, trocar NOS DE TEXTO soltos derrubava o painel ao
+                  arrastar o grafico (removeChild). Trocar elemento e seguro. */}
               {isDragActive ? (
-                u.dropActive
+                <span key="drop-active">{u.dropActive}</span>
               ) : (
-                <>
-                  {u.dropHere}, <em className="font-serif italic text-[var(--text-secondary)]">{u.orClick}</em>
-                </>
+                <span key="drop-idle">
+                  {`${u.dropHere}, `}
+                  <em className="font-serif italic text-[var(--text-secondary)]">{u.orClick}</em>
+                </span>
               )}
             </h3>
             <p className="mt-2 max-w-[420px] text-pretty text-sm text-[var(--text-secondary)]">{u.dropSources}</p>

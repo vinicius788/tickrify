@@ -39,3 +39,36 @@ export function scrollToTop(): void {
   root.scrollTop = 0;
   root.scrollLeft = 0;
 }
+
+/** Rotas logadas: o painel ja existe nos 6 idiomas, entao nao precisa de tradutor. */
+const LOGGED_AREA = /^\/(dashboard|demo|admin|affiliate)(\/|$)/;
+
+export function isLoggedAreaPath(pathname: string): boolean {
+  return LOGGED_AREA.test(pathname);
+}
+
+/**
+ * Liga ou desliga a traducao automatica do navegador na pagina inteira.
+ *
+ * O Google Translate troca os nos de texto por `<font>` por fora do React; na
+ * proxima troca de tela o React tenta remover um no que nao existe mais e o
+ * painel cai no ErrorBoundary ("removeChild"). Reproduzido em 05/10/2026 ao
+ * arrastar o grafico. Vale no <html> (e nao so num container) porque dialogos
+ * e avisos abrem em portal, fora da arvore do painel. A vitrine publica
+ * continua traduzivel.
+ */
+export function setPageTranslatable(translatable: boolean): void {
+  const html = document.documentElement;
+  if (translatable) {
+    html.removeAttribute('translate');
+    html.classList.remove('notranslate');
+  } else {
+    html.setAttribute('translate', 'no');
+    html.classList.add('notranslate');
+  }
+}
+
+/** A pagina foi traduzida pelo navegador? (Chrome marca o <html> com `translated-ltr`/`translated-rtl`.) */
+export function isPageTranslated(): boolean {
+  return typeof document !== 'undefined' && /\btranslated-/.test(document.documentElement.className);
+}

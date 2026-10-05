@@ -20,8 +20,13 @@ export function RouteAnalytics() {
 
     if (pathname === '/') {
       track('landing_viewed');
-    } else if (pathname === '/pricing') {
-      track('pricing_viewed', { from: previousPath.current ?? 'direct_or_external' });
+    } else if (pathname === '/pricing' || pathname === '/dashboard/plans') {
+      // Os Planos do painel (05/10/2026) sao a mesma vitrine de precos: sem
+      // isto o funil perdia quem antes ia do painel para a /pricing.
+      track('pricing_viewed', {
+        from: previousPath.current ?? 'direct_or_external',
+        surface: pathname === '/pricing' ? 'public' : 'dashboard',
+      });
     } else if (pathname.startsWith('/sign-up')) {
       // /sign-up/verify-email-address e outras sub-rotas do Clerk trocam o
       // pathname: sem o "uma vez", um cadastro contava 2 ou 3 inicios.

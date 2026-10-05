@@ -8,6 +8,7 @@ import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import { initAnalytics, initAnonymousAnalytics, revokeAnalyticsConsent } from './lib/analytics';
 import { CONSENT_EVENT, getConsent } from './lib/consent';
 import { AnalyticsIdentify } from './components/providers/AnalyticsIdentify';
+import { isLoggedAreaPath, isPageTranslated, setPageTranslatable } from './lib/utils';
 import './styles/trading-tokens.css';
 import './index.css';
 
@@ -123,22 +124,25 @@ const SENTRY_ENV = import.meta.env.PROD
  * Ruído conhecido que não é bug do produto. Filtrado no cliente de propósito,
  * e não por regra no painel: evento descartado aqui não gasta cota do plano.
  *
- * 1. Google Translate. Ele reescreve os nós de texto da página por fora do
- *    React, e aí o React tenta remover um nó que não é mais filho do que ele
- *    pensa. Rendeu 58 eventos de `removeChild`. É incompatibilidade conhecida
- *    entre o Translate e qualquer app React, não tem conserto do nosso lado, e
- *    o usuário sequer percebe.
- * 2. WebView do Instagram. O navegador embutido do app quebra APIs que o
- *    Chrome tem, e o tráfego de anúncio do Instagram cai todo lá dentro. Vale
- *    reavaliar se um erro de conversão aparecer só nesse ambiente.
+ * O `removeChild` do Google Translate SAIU desta lista em 05/10/2026. Ele era
+ * descartado como "o usuário sequer percebe", mas derrubava o painel inteiro no
+ * ErrorBoundary (reproduzido ao arrastar o gráfico com a página traduzida).
+ * Agora o painel não é traduzível (`setPageTranslatable`) e o erro chega ao
+ * Sentry com `page_translated` e a rota, para ver se sobrou em algum lugar.
+ *
+ * WebView do Instagram: o navegador embutido do app quebra APIs que o Chrome
+ * tem, e o tráfego de anúncio do Instagram cai todo lá dentro. Vale reavaliar
+ * se um erro de conversão aparecer só nesse ambiente.
  */
 const RUIDO_CONHECIDO = [
-  "Failed to execute 'removeChild' on 'Node'",
-  'The node to be removed is not a child of this node',
-  'NotFoundError: The object can not be found here',
   'ResizeObserver loop completed with undelivered notifications',
   'ResizeObserver loop limit exceeded',
 ];
+
+// Área logada aberta direto (ou recarregada): marca "não traduzir" antes da
+// primeira pintura, antes de o navegador decidir traduzir a página. Navegar
+// dentro do app é coberto pelo ProtectedRoute.
+if (isLoggedAreaPath(window.location.pathname)) setPageTranslatable(false);
 
 function ehWebViewDoInstagram(): boolean {
   if (typeof navigator === 'undefined') return false;
@@ -188,6 +192,11 @@ if (SENTRY_DSN) {
       if (ehWebViewDoInstagram()) {
         event.tags = { ...event.tags, webview: 'instagram' };
       }
+      event.tags = {
+        ...event.tags,
+        page_translated: isPageTranslated() ? 'yes' : 'no',
+        route: window.location.pathname,
+      };
       return event;
     },
   });
@@ -247,7 +256,20 @@ if (missingVars.length > 0) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <Sentry.ErrorBoundary fallback={<div style={{ padding: 24, color: '#E8ECF4', background: '#0A0B0D', minHeight: '100vh' }}>Algo deu errado. Recarregue a página.</div>}>
+    <Sentry.ErrorBoundary
+      fallback={
+        <div style={{ padding: 24, color: '#E8ECF4', background: '#0A0B0D', minHeight: '100vh', fontFamily: 'system-ui, sans-serif' }}>
+          <p style={{ margin: '0 0 12px' }}>Something went wrong. Reload the page to continue.</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #3a3f47', background: '#f7f7f5', color: '#08090a', cursor: 'pointer' }}
+          >
+            Reload
+          </button>
+        </div>
+      }
+    >
       <QueryClientProvider client={queryClient}>
         <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/" appearance={clerkAppearance}>
           <LanguageProvider>

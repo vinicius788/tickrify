@@ -19,7 +19,7 @@ describe('checkoutIntent', () => {
     const intent = { plan: 'starter', cycle: 'yearly', source: 'locked_value' } as const;
     const authUrl = authUrlForCheckout(intent);
 
-    expect(authUrl).toBe('/sign-in?redirect_url=%2Fpricing%3Fcheckout%3Dstarter%26cycle%3Dyearly%26source%3Dlocked_value');
+    expect(authUrl).toBe('/sign-in?redirect_url=%2Fdashboard%2Fplans%3Fcheckout%3Dstarter%26cycle%3Dyearly%26source%3Dlocked_value');
     const redirect = new URLSearchParams(authUrl.split('?')[1]).get('redirect_url')!;
     expect(parseCheckoutIntent(new URL(redirect, ORIGIN).search)).toEqual(intent);
   });
@@ -50,11 +50,15 @@ describe('checkoutIntent', () => {
     });
   });
 
-  it('nao vira open redirect: so aceita /pricing deste mesmo site', () => {
+  it('nao vira open redirect: so aceita os Planos (ou a /pricing antiga) deste mesmo site', () => {
     const q = (target: string) => `?redirect_url=${encodeURIComponent(target)}`;
 
+    expect(checkoutTargetFromAuthSearch(q('/dashboard/plans?checkout=starter&cycle=yearly'), ORIGIN)).toBe(
+      '/dashboard/plans?checkout=starter&cycle=yearly&source=pricing',
+    );
+    // Link de login aberto antes da troca: volta para o painel mesmo assim.
     expect(checkoutTargetFromAuthSearch(q('/pricing?checkout=starter&cycle=yearly'), ORIGIN)).toBe(
-      '/pricing?checkout=starter&cycle=yearly&source=pricing',
+      '/dashboard/plans?checkout=starter&cycle=yearly&source=pricing',
     );
     expect(checkoutTargetFromAuthSearch(q('https://evil.com/pricing?checkout=starter'), ORIGIN)).toBeNull();
     expect(checkoutTargetFromAuthSearch(q('//evil.com/pricing?checkout=starter'), ORIGIN)).toBeNull();
@@ -67,7 +71,7 @@ describe('checkoutIntent', () => {
     // Link real de producao: "Sign up" na tela de login aberta pelo Upgrade.
     const hash = '#/?redirect_url=https%3A%2F%2Ftickrify.com%2Fpricing%3Fcheckout%3Dstarter%26cycle%3Dyearly%26source%3Dpricing';
 
-    expect(checkoutTargetFromAuthSearch('', ORIGIN, hash)).toBe('/pricing?checkout=starter&cycle=yearly&source=pricing');
+    expect(checkoutTargetFromAuthSearch('', ORIGIN, hash)).toBe('/dashboard/plans?checkout=starter&cycle=yearly&source=pricing');
     expect(checkoutTargetFromAuthSearch('', ORIGIN, '#/?redirect_url=https%3A%2F%2Fevil.com%2Fpricing%3Fcheckout%3Dstarter')).toBeNull();
   });
 
@@ -82,7 +86,7 @@ describe('checkoutIntent', () => {
 
   it('o destino montado e sempre o mesmo caminho interno', () => {
     expect(checkoutReturnPath({ plan: 'starter', cycle: 'monthly', source: 'pricing' })).toBe(
-      '/pricing?checkout=starter&cycle=monthly&source=pricing',
+      '/dashboard/plans?checkout=starter&cycle=monthly&source=pricing',
     );
   });
 });

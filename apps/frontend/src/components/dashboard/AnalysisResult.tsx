@@ -904,7 +904,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
       {isDemo && (
         <div className="flex items-center justify-between rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-4 py-2.5 text-xs text-[var(--text-secondary)]">
           <span>{r.demoBanner}</span>
-          <a href="/pricing" className="ml-3 flex-shrink-0 font-semibold text-[var(--signal-buy)] hover:underline">
+          <a href="/dashboard/plans" className="ml-3 flex-shrink-0 font-semibold text-[var(--signal-buy)] hover:underline">
             {r.viewPlans}
           </a>
         </div>
@@ -955,7 +955,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
             // palavra e entende que a ferramenta nao respondeu.
             <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
               {r.waitExplain}
-              {waitFlipItems.length > 0 && <> {r.waitExplainPlan}</>}
+              {waitFlipItems.length > 0 && <span>{` ${r.waitExplainPlan}`}</span>}
             </p>
           )}
           {strategyFit && (
@@ -1071,9 +1071,9 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                 </p>
                 {!invalidTradePlan && tradeTone !== 'hold' && (rrTp1 !== null || rrTp2 !== null) && (
                   <p className="font-terminal text-[10px] text-[var(--text-secondary)]">
-                    {rrTp1 !== null ? `TP1 ${rrTp1.toFixed(1)}` : ''}
-                    {rrTp1 !== null && rrTp2 !== null ? ' · ' : ''}
-                    {rrTp2 !== null ? `TP2 ${rrTp2.toFixed(1)}` : ''}
+                    {[rrTp1 !== null ? `TP1 ${rrTp1.toFixed(1)}` : null, rrTp2 !== null ? `TP2 ${rrTp2.toFixed(1)}` : null]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </p>
                 )}
                 {riskRewardLow && (
@@ -1228,7 +1228,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                           <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-2">
                             <p className="text-[var(--text-secondary)]">{t.analysis.liveMarket.fundingRate}</p>
                             <p className={`font-terminal font-semibold ${liveMarket.fundingRatePercent >= 0 ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'}`}>
-                              {liveMarket.fundingRatePercent >= 0 ? '+' : ''}{liveMarket.fundingRatePercent.toFixed(4)}%
+                              {`${liveMarket.fundingRatePercent >= 0 ? '+' : ''}${liveMarket.fundingRatePercent.toFixed(4)}%`}
                             </p>
                           </div>
                         )}
@@ -1480,8 +1480,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                                 {item.label ? (
                                   <strong className="font-medium text-[var(--text-primary)]">{item.label}</strong>
                                 ) : null}
-                                {item.label && item.detail ? ' ' : ''}
-                                {item.detail}
+                                {item.detail ? <span>{`${item.label ? ' ' : ''}${item.detail}`}</span> : null}
                               </span>
                             </li>
                           ))}

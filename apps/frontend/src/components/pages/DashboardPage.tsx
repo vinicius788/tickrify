@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap, Upload, Sliders, Handshake } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import * as Sentry from "@sentry/react";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import NewAnalysis from "../dashboard/NewAnalysis";
@@ -25,15 +26,16 @@ import MyTrades from "../dashboard/MyTrades";
 import JournalCalendar from "../dashboard/JournalCalendar";
 import StrategyProfile from "../dashboard/StrategyProfile";
 import AnalysisResult from "../dashboard/AnalysisResult";
-import LockedAnalysis from "../dashboard/LockedAnalysis";
+import Paywall, { type PaywallSurface } from "../dashboard/Paywall";
 import AnalysisLoading from "../dashboard/AnalysisLoading";
 import AnalysisCounter from "../dashboard/AnalysisCounter";
 import { TicksBadge } from "@/components/dashboard/TicksBadge";
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
-import { APIError, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
+import { APIError, isFreeQuotaExhausted, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
 import { AnalysisProcessingError, analysisFailureTelemetry } from "@/lib/analysis-failure";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
-import { asRecord, scrollToTop } from "@/lib/utils";
+import { asRecord, isPageTranslated, scrollToTop } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import { getRecommendationMeta, getScenarioMeta, normalizeRecommendationLabel } from "@/lib/trading-ui";
@@ -46,6 +48,9 @@ import { useFoundingOffer } from "@/hooks/useFoundingOffer";
 import UpgradeVideo from "../dashboard/UpgradeVideo";
 import { SampleAnalysisView, SamplePicker } from "../dashboard/SampleAnalyses";
 import { SAMPLE_ANALYSES, type SampleKind } from "@/lib/sample-analyses";
+import { PricingCards } from "@/components/pricing/PricingCards";
+import { useSeo } from "@/hooks/useSeo";
+import { loadSavedDemoResult } from "@/lib/demo-api";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
 // PT quando o idioma for português. Contido neste arquivo (sem mexer nos 6 locales).
@@ -88,6 +93,8 @@ const DASH_COPY = {
     waitNudgeHint: 'Try another pair or a different timeframe.',
     waitNudgeCta: 'Analyze another chart',
     waitNudgeWhy: 'Why WAIT? (22 s video)',
+    plansTitle: 'Plans',
+    plansSub: 'Same engine on every plan. Cancel anytime.',
   },
   pt: {
     planActivatedTitle: 'Plano ativado!',
@@ -127,6 +134,8 @@ const DASH_COPY = {
     waitNudgeHint: 'Tente outro par ou outro tempo gráfico.',
     waitNudgeCta: 'Analisar outro gráfico',
     waitNudgeWhy: 'Por que WAIT? (vídeo de 22 s)',
+    plansTitle: 'Planos',
+    plansSub: 'O mesmo motor em todos os planos. Cancele quando quiser.',
   },
 } as const;
 import officialIcon from "@/assets/tickrify-icon-official.png";
@@ -136,7 +145,51 @@ const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
 };
 
-type View = 'dashboard' | 'new-analysis' | 'sample' | 'my-trades' | 'journal' | 'strategy' | 'analysis-result' | 'loading' | 'error' | 'locked';
+type View = 'dashboard' | 'new-analysis' | 'sample' | 'my-trades' | 'journal' | 'strategy' | 'plans' | 'analysis-result' | 'loading' | 'error' | 'locked';
+
+/**
+ * Rotas do painel (05/10/2026). Antes era UMA rota so e as areas eram estado
+ * interno: o voltar do navegador saia do app e o PostHog via tudo como
+ * /dashboard. Agora cada area tem URL propria, o item ativo do menu sai da URL
+ * e colar o endereco na barra abre a area certa. `/demo` usa o mesmo mapa.
+ *
+ *   /dashboard                    inicio (KPIs, recentes)
+ *   /dashboard/new                nova analise (envio, carregando, erro, paywall)
+ *   /dashboard/new/example/:kind  uma das 3 analises de exemplo
+ *   /dashboard/analysis/:id       resultado de uma analise
+ *   /dashboard/trades             My Trades (o historico)
+ *   /dashboard/journal            diario
+ *   /dashboard/strategy           perfil de estrategia
+ *   /dashboard/plans              planos, sem sair do painel
+ */
+type Section = 'home' | 'new' | 'sample' | 'analysis' | 'trades' | 'journal' | 'strategy' | 'plans';
+type NavSection = 'home' | 'new' | 'trades' | 'journal' | 'strategy' | 'plans';
+const SECTION_PATH: Record<NavSection, string> = {
+  home: '',
+  new: '/new',
+  trades: '/trades',
+  journal: '/journal',
+  strategy: '/strategy',
+  plans: '/plans',
+};
+
+function parseDashboardPath(pathname: string): { base: string; section: Section | null; param: string | null } {
+  const [, root = 'dashboard', ...rest] = pathname.replace(/\/+$/, '').split('/');
+  const base = root === 'demo' ? '/demo' : '/dashboard';
+  const [first, second, third] = rest;
+  if (!first) return { base, section: 'home', param: null };
+  if (first === 'new' && !second) return { base, section: 'new', param: null };
+  if (first === 'new' && second === 'example' && third && rest.length === 3) return { base, section: 'sample', param: third };
+  if (first === 'analysis' && second && rest.length === 2) return { base, section: 'analysis', param: decodeURIComponent(second) };
+  if (rest.length === 1 && ['trades', 'journal', 'strategy', 'plans'].includes(first)) {
+    return { base, section: first as Section, param: null };
+  }
+  return { base, section: null, param: null };
+}
+
+/** Estado da tela de nova analise, que nao tem URL propria (e passageiro). */
+type NewFlow = 'idle' | 'loading' | 'error' | 'locked' | 'result';
+type MyTradesFilter = 'all' | 'pending' | 'favorites' | Verdict;
 type RecentAnalysisItem = {
   symbol: string;
   timeframe: string;
@@ -171,28 +224,34 @@ const DashboardPage = () => {
   // Preço do 1º mês com o EARLY35, só quando a Stripe diz que o cupom está ativo.
   const foundingOffer = useFoundingOffer();
   const modalFirstMonth = foundingOffer?.percentOff ? (29 * (1 - foundingOffer.percentOff / 100)).toFixed(2) : null;
-  const [activeView, setActiveView] = useState<View>('dashboard');
+  const location = useLocation();
+  const route = parseDashboardPath(location.pathname);
+  const { base } = route;
+  const [flow, setFlow] = useState<NewFlow>('idle');
+  const goTo = useCallback(
+    (section: NavSection, options?: { replace?: boolean; state?: unknown }) =>
+      navigate(`${base}${SECTION_PATH[section]}`, options),
+    [navigate, base],
+  );
 
-  // O dashboard troca de tela sem trocar de rota, então o ScrollToTopOnRouteChange
-  // do App não alcança aqui: quem estava rolado no fim do histórico e pedia uma
-  // análise nova via o resultado aparecer fora da tela. Volta ao topo a cada
-  // troca de view.
+  // A tela de nova analise troca de estado (carregando, erro, paywall) sem
+  // trocar de rota, entao o ScrollToTopOnRouteChange do App nao alcanca aqui.
   useEffect(() => {
     scrollToTop();
-  }, [activeView]);
-  // Abas que so existem dentro do painel (a rota continua /dashboard): sem
-  // isto o PostHog nao mostrava o que o assinante usa depois de analisar.
+  }, [flow]);
+  // Erro e paywall sao da tentativa que acabou de falhar: quem sai da tela e
+  // volta pelo voltar do navegador encontra o envio limpo. "Carregando" fica,
+  // porque a analise continua rodando.
   useEffect(() => {
-    if (activeView === 'my-trades' || activeView === 'journal' || activeView === 'strategy') {
-      track('feature_opened', { feature: activeView });
-    }
-  }, [activeView]);
+    if (route.section !== 'new') setFlow((current) => (current === 'error' || current === 'locked' ? 'idle' : current));
+  }, [route.section]);
   const [analysisKey, setAnalysisKey] = useState(0);
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, isLoading: isPlanLoading } = useAnalysisLimit();
+  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, isLoading: isPlanLoading } = useAnalysisLimit();
+  const queryClient = useQueryClient();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
   const { getToken } = useAuth();
@@ -245,14 +304,16 @@ const DashboardPage = () => {
   }, [toast]);
 
   // Intencao de compra que se perdeu no login. O caminho normal volta direto
-  // para /pricing?checkout=... pelo `redirect_url`; alguns nao carregam a URL
+  // para /dashboard/plans?checkout=... pelo `redirect_url`; alguns nao carregam a URL
   // (One Tap, verificacao de e-mail aberta em outra aba no celular) e caem
   // aqui. Com intencao recente (30 min) no storage, segue para o checkout em
   // vez de largar a pessoa no painel.
   useEffect(() => {
-    if (!user) return;
+    if (!user || route.section === 'plans') return;
     const intent = loadCheckoutIntent();
     if (intent) navigate(checkoutReturnPath(intent), { replace: true });
+    // So na entrada no painel; os Planos ja retomam a compra sozinhos.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, navigate]);
 
   // ── Loop do veredito ────────────────────────────────────────────────────
@@ -277,11 +338,16 @@ const DashboardPage = () => {
   // "ver todas" do bloco de cobrança; entrar pelo menu tem que mostrar TUDO.
   // (Antes eu aplicava 'OPEN' sempre que existisse trade em aberto, o que
   // escondia o histórico inteiro de quem clicasse em My Trades no menu.)
-  const [myTradesFilter, setMyTradesFilter] = useState<'all' | 'pending' | 'favorites' | Verdict | undefined>(undefined);
-  const openMyTrades = useCallback((filter?: 'all' | 'pending' | 'favorites' | Verdict) => {
-    setMyTradesFilter(filter);
-    setActiveView('my-trades');
-  }, []);
+  // O filtro viaja no `state` da navegacao: entrar pelo menu (sem state)
+  // mostra tudo, e o voltar do navegador restaura o filtro com que se entrou.
+  const myTradesFilter = (location.state as { filter?: MyTradesFilter } | null)?.filter;
+  const openMyTrades = useCallback((filter?: MyTradesFilter) => {
+    goTo('trades', filter ? { state: { filter } } : undefined);
+  }, [goTo]);
+
+  // O modal de upgrade e declarado mais abaixo; o ref deixa o applyVerdict
+  // abri-lo sem depender da ordem das declaracoes.
+  const openUpgradeModalRef = useRef<(trigger: string) => void>(() => undefined);
 
   // Escrita otimista: a tela muda no clique e o servidor grava em seguida. O
   // servidor e a fonte da verdade (lib/verdict.ts): depois que ele confirma e a
@@ -294,8 +360,14 @@ const DashboardPage = () => {
     void apiClient.setOutcome(id, { outcome: outcomeFromVerdict(v) })
       .then(() => refetchAnalyses())
       .then(() => setVerdicts((prev) => withoutPending(prev, id)))
-      .catch(() => {
+      .catch((error) => {
         setVerdicts((prev) => withoutPending(prev, id));
+        // Gratis esgotado: marcar resultado e da assinatura. Tela velha (antes
+        // do /usage avisar) cai aqui; em vez de "falhou", oferece o plano.
+        if (isFreeQuotaExhausted(error)) {
+          openUpgradeModalRef.current('outcome');
+          return;
+        }
         toast({ title: t.trades.resultSaveFailed, variant: 'destructive' });
       });
   }, [isDemo, apiClient, refetchAnalyses, toast, t]);
@@ -502,12 +574,16 @@ const DashboardPage = () => {
         title: dc.planActivatedTitle,
         description: dc.planActivatedDesc,
       });
-      // Dispara re-fetch do limite para refletir o novo plano
+      // Dispara re-fetch do limite para refletir o novo plano e rele tudo que
+      // estava travado para o gratis (historico, diario): quem assina volta a
+      // ver tudo na hora, sem recarregar.
       window.dispatchEvent(new Event('tickrify:analysis-created'));
-      window.history.replaceState({}, '', '/dashboard');
+      void queryClient.invalidateQueries();
+      navigate(location.pathname, { replace: true });
       return;
     }
-
+    // Roda so na montagem: a volta da Stripe e uma entrada nova no painel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast, dc, getToken]);
 
   // Ativação do funil: usuário entrou no modo demo (sem login).
@@ -522,11 +598,12 @@ const DashboardPage = () => {
   useEffect(() => {
     if (autoRoutedNewUser || isDemo || !user || loadingAnalyses) return;
     const hasAnalysis = rawAnalyses.some((a) => a.status === 'completed');
-    if (!hasAnalysis) {
-      setActiveView('new-analysis');
+    // So quem abriu o inicio: um link direto para outra area e respeitado.
+    if (!hasAnalysis && route.section === 'home') {
+      goTo('new', { replace: true });
     }
     setAutoRoutedNewUser(true);
-  }, [autoRoutedNewUser, isDemo, user, loadingAnalyses, rawAnalyses]);
+  }, [autoRoutedNewUser, isDemo, user, loadingAnalyses, rawAnalyses, route.section, goTo]);
 
   // Tres analises de exemplo fixas antes das gratis, so para quem esta no
   // plano gratis e ainda nao concluiu nenhuma. Sao dados do bundle: abrir nao
@@ -538,15 +615,12 @@ const DashboardPage = () => {
     SAMPLE_ANALYSES.length > 0 &&
     !loadingAnalyses &&
     !rawAnalyses.some((a) => a.status === 'completed');
-  const [openSample, setOpenSample] = useState<SampleKind | null>(null);
   const [viewedSamples, setViewedSamples] = useState<Set<SampleKind>>(loadViewedSamples);
+  // Leitura feita no /try antes do cadastro (fica so neste aparelho).
+  const [savedDemo] = useState(loadSavedDemoResult);
   const openSampleAnalysis = useCallback((kind: SampleKind) => {
     track('sample_analysis_opened', { sample: kind });
-    setOpenSample(kind);
-    setActiveView('sample');
-    // Trocar de um exemplo para outro nao muda a view: sem isto a tela nova
-    // abriria na altura em que a anterior estava.
-    scrollToTop();
+    navigate(`${base}/new/example/${kind}`);
     setViewedSamples((prev) => {
       if (prev.has(kind)) return prev;
       const next = new Set(prev).add(kind);
@@ -557,22 +631,81 @@ const DashboardPage = () => {
       }
       return next;
     });
-  }, []);
+  }, [navigate, base]);
   // Sinais gratis que ainda restam (o /usage ja desconta); 3 enquanto carrega.
   const samplesFreeLeft = Number.isFinite(remaining) ? Math.max(0, remaining) : (total ?? 3);
+
+  // Resultado aberto pela URL (recarregar, voltar do navegador, link colado):
+  // busca a analise no servidor. Logo depois de uma analise nova ela ja esta
+  // em memoria e nada e buscado.
+  const routeAnalysisId = route.section === 'analysis' ? route.param : null;
+  const [resultLoad, setResultLoad] = useState<'idle' | 'loading' | 'failed' | 'locked'>('idle');
+  const analysisInMemory = Boolean(
+    routeAnalysisId && analysisData && (analysisData.id === routeAnalysisId || lastAnalysisId === routeAnalysisId),
+  );
+  useEffect(() => {
+    if (!routeAnalysisId || isDemo || analysisInMemory) return;
+    let cancelled = false;
+    setResultLoad('loading');
+    apiClient
+      .getAnalysis(routeAnalysisId)
+      .then((analysis) => {
+        if (cancelled) return;
+        if (analysis.status !== 'completed') {
+          setResultLoad('failed');
+          return;
+        }
+        setAnalysisData({ ...analysis, id: routeAnalysisId });
+        setUploadedImage(null);
+        setLastAnalysisId(routeAnalysisId);
+        setAskDismissed(false);
+        setResultLoad('idle');
+      })
+      .catch((error) => {
+        if (!cancelled) setResultLoad(isFreeQuotaExhausted(error) ? 'locked' : 'failed');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [routeAnalysisId, isDemo, analysisInMemory, apiClient]);
+
+  // A tela atual sai da URL; so a nova analise tem estados sem endereco.
+  const activeView: View | null = (() => {
+    switch (route.section) {
+      case 'home':
+        return 'dashboard';
+      case 'new':
+        return flow === 'idle' ? 'new-analysis' : flow === 'result' ? 'analysis-result' : flow;
+      case 'sample':
+        return 'sample';
+      case 'analysis':
+        return 'analysis-result';
+      case 'trades':
+        return 'my-trades';
+      case 'journal':
+        return 'journal';
+      case 'strategy':
+        return 'strategy';
+      case 'plans':
+        return 'plans';
+      default:
+        return null;
+    }
+  })();
 
   // Usar dados demo ou reais dependendo do modo
   const displayRecentAnalyses = isDemo ? demoRecentAnalyses : recentAnalyses;
 
-  const goToPricing = useCallback(() => {
+  const goToPlans = useCallback(() => {
     setShowUpgradeModal(false);
-    window.location.href = '/pricing';
-  }, []);
+    goTo('plans');
+  }, [goTo]);
 
   const openUpgradeModal = useCallback((trigger: string) => {
     track('upgrade_modal_viewed', { trigger });
     setShowUpgradeModal(true);
   }, []);
+  openUpgradeModalRef.current = openUpgradeModal;
 
   // Paywall → Stripe em 1 clique, com EARLY35 já aplicado. O momento de maior
   // intenção do funil não pode passar pela página de pricing genérica.
@@ -586,6 +719,7 @@ const DashboardPage = () => {
   const startCheckout = useCallback(async (
     source: 'locked_value' | 'last_free_result' | 'upgrade_modal',
     cycle: 'monthly' | 'weekly' = 'monthly',
+    surface: PaywallSurface | null = null,
   ) => {
     if (unlockPending) return;
     setUnlockPending(true);
@@ -593,7 +727,7 @@ const DashboardPage = () => {
       const token = await getToken();
       if (!token) {
         track('checkout_failed', { source, plan: 'starter', code: 'no_token' });
-        navigate('/pricing');
+        goTo('plans');
         return;
       }
       // `starter` é o plano da vitrine (200 ticks). Este botão vendia `pro`
@@ -601,10 +735,11 @@ const DashboardPage = () => {
       // pagava igual e recebia 50 ticks a menos que quem passou pelo /pricing.
       // A moeda é USD fixo: o `detectCurrency` daqui mandava navegador pt-BR
       // para o price BRL congelado em jun/2026.
-      const coupon = cycle === 'weekly' ? undefined : 'EARLY35';
-      track('upgrade_clicked', { source, cycle, coupon: coupon ?? null });
+      // EARLY35 so no mensal (regra do servidor, 05/10/2026).
+      const coupon = cycle === 'monthly' ? 'EARLY35' : undefined;
+      track('upgrade_clicked', { source, cycle, coupon: coupon ?? null, surface });
       const { url, sessionId } = await createCheckoutSession('starter', token, cycle, 'usd', coupon, source);
-      track('checkout_started', { plan: 'starter', billingCycle: cycle, currency: 'usd', coupon: coupon ?? null, source, sessionId });
+      track('checkout_started', { plan: 'starter', billingCycle: cycle, currency: 'usd', coupon: coupon ?? null, source, surface, sessionId });
       window.location.href = url;
     } catch (error) {
       // Este catch era silencioso: a falha virava um desvio para /pricing sem
@@ -624,15 +759,26 @@ const DashboardPage = () => {
         return;
       }
       toast({ title: dc.checkoutErrorTitle, description: message, variant: 'destructive' });
-      // Cai no caminho antigo, nunca num beco: a /pricing tem o mesmo botao.
-      navigate('/pricing');
+      // Cai nos Planos do painel, nunca num beco: la tem o mesmo botao.
+      goTo('plans');
     } finally {
       setUnlockPending(false);
     }
-  }, [unlockPending, getToken, navigate, toast, dc]);
+  }, [unlockPending, getToken, goTo, toast, dc]);
 
-  const handleUnlockCheckout = useCallback(() => void startCheckout('locked_value'), [startCheckout]);
-  const handleUnlockWeekly = useCallback(() => void startCheckout('locked_value', 'weekly'), [startCheckout]);
+  // Todo paywall fecha no mesmo checkout (`locked_value` na Stripe); a area de
+  // onde veio vai junto para o PostHog.
+  const paywallFor = (surface: PaywallSurface, children?: ReactNode) => (
+    <Paywall
+      surface={surface}
+      onUnlock={() => void startCheckout('locked_value', 'monthly', surface)}
+      onUnlockWeekly={() => void startCheckout('locked_value', 'weekly', surface)}
+      unlockPending={unlockPending}
+      plansHref={`${base}${SECTION_PATH.plans}`}
+    >
+      {children}
+    </Paywall>
+  );
   // Janela de upgrade: checkout direto, como no paywall. Antes o unico botao
   // levava para a /pricing (um passo a mais) e so mostrava o mensal de US$ 29.
   const handleModalMonthly = useCallback(() => void startCheckout('upgrade_modal'), [startCheckout]);
@@ -667,14 +813,17 @@ const DashboardPage = () => {
   }, [startCheckout]);
 
   const resetNewAnalysisView = useCallback(() => {
-    setActiveView('new-analysis');
+    setFlow('idle');
+    // Ja na nova analise: troca a entrada em vez de empilhar outra igual.
+    goTo('new', { replace: route.section === 'new' });
     setAnalysisKey((key) => key + 1);
-    setAnalysisData(null);
+    // `analysisData` fica: e o resultado anterior, que o voltar do navegador
+    // reabre sem buscar de novo. A proxima analise substitui.
     setErrorMessage('');
     setUploadedImage(null);
     setLastAnalysisId(null);
     setAskDismissed(false);
-  }, []);
+  }, [goTo, route.section]);
 
   // Guarda o último envio para o "Try again" refazer a análise sem perder o gráfico.
   const lastAnalysisParamsRef = useRef<{
@@ -693,10 +842,10 @@ const DashboardPage = () => {
     // Modo DEMO: apenas simula, não faz análise real
     if (isDemo) {
       setUploadedImage(imageUrl);
-      setActiveView('loading');
+      setFlow('loading');
       setTimeout(() => {
         setAnalysisData(null);
-        setActiveView('analysis-result');
+        setFlow('result');
       }, 2000); // Simulação mais rápida no demo
       return;
     }
@@ -712,7 +861,7 @@ const DashboardPage = () => {
     // Validar se tem imagem
     if (!imageUrl && !imageFile) {
       setErrorMessage(dc.uploadRequired);
-      setActiveView('error');
+      setFlow('error');
       return;
     }
 
@@ -720,13 +869,13 @@ const DashboardPage = () => {
       const normalizedType = String(imageFile.type || '').toLowerCase();
       if (!ALLOWED_IMAGE_TYPES.has(normalizedType)) {
         setErrorMessage(dc.invalidFormat);
-        setActiveView('error');
+        setFlow('error');
         return;
       }
 
       if (imageFile.size > MAX_IMAGE_FILE_SIZE) {
         setErrorMessage(dc.tooLarge);
-        setActiveView('error');
+        setFlow('error');
         return;
       }
     }
@@ -735,8 +884,7 @@ const DashboardPage = () => {
     if (!isDemo && !isUnlimited && Number.isFinite(remaining) && remaining <= 0) {
       setUploadedImage(imageUrl);
       track('free_limit_reached', { reason: 'no_free_left' });
-      track('upgrade_modal_viewed', { trigger: 'locked_value' });
-      setActiveView('locked');
+      setFlow('locked');
       return;
     }
 
@@ -746,7 +894,7 @@ const DashboardPage = () => {
     const startedAt = performance.now();
     try {
       setUploadedImage(imageUrl);
-      setActiveView('loading');
+      setFlow('loading');
       setErrorMessage('');
 
       track('analysis_started', {
@@ -780,9 +928,16 @@ const DashboardPage = () => {
         );
       }
 
-      // Análise concluída
-      setAnalysisData(analysis);
-      setActiveView('analysis-result');
+      // Análise concluída: o resultado ganha URL propria (recarregar a pagina
+      // ou voltar do navegador reabre a mesma analise).
+      const resultId = analysis.id || response.id;
+      setAnalysisData(resultId ? { ...analysis, id: resultId } : analysis);
+      if (resultId) {
+        setFlow('idle');
+        navigate(`${base}/analysis/${encodeURIComponent(resultId)}`);
+      } else {
+        setFlow('result');
+      }
       // ATIVAÇÃO: resultado renderizado com sucesso (apenas usuário logado).
       track('analysis_completed', {
         analysisType,
@@ -846,8 +1001,7 @@ const DashboardPage = () => {
         if (apiCode === 'SUBSCRIPTION_REQUIRED' || apiCode === 'DEMO_LIMIT_REACHED' || error.status === 403) {
           // Sem análises grátis restantes → mostra o valor trancado (paywall com preview borrado).
           track('free_limit_reached', { reason: apiCode || 'forbidden' });
-          track('upgrade_modal_viewed', { trigger: 'locked_value' });
-          setActiveView('locked');
+          setFlow('locked');
           return;
         }
 
@@ -872,7 +1026,7 @@ const DashboardPage = () => {
       } else {
         setErrorMessage(error instanceof Error ? error.message : dc.analysisUnknownError);
       }
-      setActiveView('error');
+      setFlow('error');
     }
   };
 
@@ -935,7 +1089,7 @@ const DashboardPage = () => {
         {/* Onda 2.3 — o motivo de voltar amanhã. Só aparece com trades que o
             próprio usuário marcou como "vou operar" e que já passaram de 12h.
             Nunca cobra análise WAIT: não houve trade pra fechar. */}
-        {!isDemo && !verdictSnoozed && openVerdictRows.length > 0 && (
+        {!isDemo && !freeLocked && !verdictSnoozed && openVerdictRows.length > 0 && (
           <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -1034,7 +1188,7 @@ const DashboardPage = () => {
             <div className="flex shrink-0 flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={() => setActiveView('journal')}
+                onClick={() => goTo('journal')}
                 className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-default)] px-4 py-2.5 text-sm text-[var(--text-primary)] transition-colors hover:bg-white/[0.04]"
               >
                 <CalendarDays className="h-4 w-4" /> {t.nav.journal}
@@ -1164,6 +1318,65 @@ const DashboardPage = () => {
               {viewEyebrow(t.nav.newAnalysis)}
               <h1 className="tk-display mt-2 text-3xl md:text-4xl">{t.nav.newAnalysis}</h1>
             </div>
+            {/* Primeira experiencia: em poucos segundos, o que a Tickrify faz,
+                o que a pessoa envia e o que recebe. Some depois da 1a analise. */}
+            {showSamples && (
+              <section
+                aria-labelledby="how-it-works-title"
+                className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5"
+              >
+                <h2 id="how-it-works-title" className="text-sm font-semibold text-[var(--text-primary)]">
+                  {t.onboarding.title}
+                </h2>
+                <ol className="mt-3 grid gap-3 md:grid-cols-3">
+                  {[
+                    [t.onboarding.step1Title, t.onboarding.step1Text],
+                    [t.onboarding.step2Title, t.onboarding.step2Text],
+                    [t.onboarding.step3Title, t.onboarding.step3Text],
+                  ].map(([title, text], index) => (
+                    <li key={title} className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[var(--border-default)] font-terminal text-[11px] text-[var(--text-secondary)]">
+                        {index + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-[var(--text-primary)]">{title}</p>
+                        <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-secondary)]">{text}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+                <p className="mt-4 border-t border-[var(--border-subtle)] pt-3 text-xs leading-relaxed text-[var(--text-secondary)]">
+                  {t.onboarding.note}
+                </p>
+              </section>
+            )}
+            {showSamples && savedDemo && (
+              <section className="rounded-2xl border border-[var(--border-accent)] bg-[var(--bg-card)] p-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t.onboarding.demoTitle}</h2>
+                  <span className="font-terminal text-xs text-[var(--text-secondary)]">
+                    {`${savedDemo.symbol} · ${savedDemo.timeframe} · ${
+                      savedDemo.recommendation === 'BUY' ? t.analysis.buy : savedDemo.recommendation === 'SELL' ? t.analysis.sell : t.analysis.hold
+                    }`}
+                  </span>
+                </div>
+                {savedDemo.recommendation !== 'WAIT' && (
+                  <dl className="mt-3 grid grid-cols-3 gap-2 font-terminal text-xs">
+                    {[
+                      [t.onboarding.demoEntry, savedDemo.entry],
+                      [t.onboarding.demoStop, savedDemo.stopLoss],
+                      [t.onboarding.demoTp1, savedDemo.takeProfit1],
+                    ].map(([label, value]) => (
+                      <div key={String(label)} className="rounded-lg border border-[var(--border-subtle)] px-3 py-2">
+                        <dt className="text-[var(--text-secondary)]">{label}</dt>
+                        <dd className="mt-0.5 text-[var(--text-primary)]">{value == null ? 'n/a' : String(value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                <p className="mt-3 text-xs leading-relaxed text-[var(--text-secondary)]">{t.onboarding.demoNote}</p>
+              </section>
+            )}
             {showSamples && (
               <SamplePicker
                 samples={SAMPLE_ANALYSES}
@@ -1176,14 +1389,20 @@ const DashboardPage = () => {
                 }}
               />
             )}
-            <div id="new-analysis-upload" className="scroll-mt-24">
-              <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} allowHigherTimeframes={!isDemo && isUnlimited} />
-            </div>
+            {/* Gratis esgotado: o envio vira o paywall direto, em vez de deixar
+                subir o print e so recusar depois. */}
+            {freeLocked ? (
+              paywallFor('new_analysis')
+            ) : (
+              <div id="new-analysis-upload" className="scroll-mt-24">
+                <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} allowHigherTimeframes={!isDemo && isUnlimited} />
+              </div>
+            )}
           </div>
         );
       case 'sample': {
-        const sample = SAMPLE_ANALYSES.find((s) => s.kind === openSample);
-        if (!sample) return null;
+        const sample = SAMPLE_ANALYSES.find((s) => s.kind === route.param);
+        if (!sample) return <Navigate to={`${base}${SECTION_PATH.new}`} replace />;
         return (
           <SampleAnalysisView
             sample={sample}
@@ -1191,7 +1410,7 @@ const DashboardPage = () => {
             viewed={viewedSamples}
             freeLeft={samplesFreeLeft}
             onOpen={openSampleAnalysis}
-            onBack={() => setActiveView('new-analysis')}
+            onBack={() => goTo('new')}
             onAnalyze={() => {
               track('sample_cta_clicked', { viewed: viewedSamples.size, surface: 'sample' });
               resetNewAnalysisView();
@@ -1200,12 +1419,99 @@ const DashboardPage = () => {
         );
       }
       case 'my-trades':
+        if (freeLocked) {
+          // O servidor ja devolve so as ultimas concluidas; aqui so leitura,
+          // sem marcar resultado nem favoritar.
+          const readable = rawAnalyses.filter((a) => a.status === 'completed').slice(0, 3);
+          return (
+            <div className="flex flex-col gap-4">
+              <div>
+                {viewEyebrow(t.nav.myTrades)}
+                <h1 className="tk-display mt-2 text-3xl md:text-4xl">{t.nav.myTrades}</h1>
+              </div>
+              {paywallFor(
+                'trades',
+                readable.length > 0 ? (
+                  <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
+                    <p className="tk-stat-label mb-2">{t.paywall.recentTitle}</p>
+                    {readable.map((a) => {
+                      const action = getRecommendationMeta(a.recommendation);
+                      const actionLabel = action.tone === 'buy' ? t.analysis.buy : action.tone === 'sell' ? t.analysis.sell : t.analysis.hold;
+                      return (
+                        <Link
+                          key={a.id}
+                          to={`${base}/analysis/${encodeURIComponent(a.id)}`}
+                          className="flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] py-2.5 text-sm first:border-t-0 hover:text-[var(--text-primary)]"
+                        >
+                          <span className="font-terminal text-[var(--text-primary)]">
+                            {`${String(a.symbol || 'N/A')} `}
+                            <span className="text-xs text-[var(--text-secondary)]">{String(a.timeframe || '')}</span>
+                          </span>
+                          <span className="font-terminal text-xs text-[var(--text-secondary)]">
+                            {`${actionLabel} · ${a.createdAt ? new Date(a.createdAt).toLocaleDateString(DATE_LOCALES[language] ?? 'en-US') : ''}`}
+                          </span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : undefined,
+              )}
+            </div>
+          );
+        }
         return <MyTrades onStartAnalysis={resetNewAnalysisView} initialFilter={myTradesFilter} />;
       case 'journal':
+        if (freeLocked) {
+          return (
+            <div className="flex flex-col gap-4">
+              <div>
+                {viewEyebrow(t.nav.journal)}
+                <h1 className="tk-display mt-2 text-3xl md:text-4xl">{t.nav.journal}</h1>
+              </div>
+              {paywallFor('journal')}
+            </div>
+          );
+        }
         return <JournalCalendar onStartAnalysis={resetNewAnalysisView} />;
       case 'strategy':
         return <StrategyProfile />;
+      case 'plans':
+        return (
+          <div className="flex flex-col gap-4">
+            <div>
+              {viewEyebrow(dc.plansTitle)}
+              <h1 className="tk-display mt-2 text-3xl md:text-4xl">{dc.plansTitle}</h1>
+              <p className="mt-2 text-sm text-[var(--text-secondary)]">{dc.plansSub}</p>
+            </div>
+            {/* Os MESMOS cards da /pricing (checkout, ciclos, codigo de
+                parceiro e retomada depois do login), dentro do painel. */}
+            <div className="tk-site overflow-hidden rounded-2xl">
+              <div className="site-light px-4 py-8 md:px-8">
+                <PricingCards />
+              </div>
+            </div>
+          </div>
+        );
       case 'analysis-result': {
+        if (routeAnalysisId && !analysisInMemory) {
+          if (resultLoad === 'locked') return paywallFor('history');
+          return resultLoad === 'failed' ? (
+            <div className="space-y-4">
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>{t.nav.analysisNotFound}</AlertTitle>
+              </Alert>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => openMyTrades()}>{t.nav.myTrades}</Button>
+                <Button variant="outline" onClick={resetNewAnalysisView}>
+                  {t.nav.newAnalysis}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-[var(--text-secondary)]">{t.common.loading}</p>
+          );
+        }
         // Gancho de retorno: depois do resultado, dar um próximo passo claro
         // (analisar outro / quantas grátis restam / assinar) — sem beco sem saída.
         const freeLeftKnown = !isUnlimited && Number.isFinite(remaining);
@@ -1222,6 +1528,7 @@ const DashboardPage = () => {
         const verdictTargetId = lastAnalysisId || analysisData?.id || null;
         const canAskVerdict =
           !isDemo &&
+          !freeLocked &&
           !askDismissed &&
           Boolean(verdictTargetId) &&
           // Aguardar nao e operacao: "vai entrar nesta?" nao faz sentido e
@@ -1329,8 +1636,8 @@ const DashboardPage = () => {
                         {t.counter.subscribe}
                       </Button>
                       <Link
-                        to="/pricing"
-                        onClick={() => track('upgrade_cta_clicked', { source: 'last_free_result', destination: 'pricing' })}
+                        to={`${base}${SECTION_PATH.plans}`}
+                        onClick={() => track('upgrade_cta_clicked', { source: 'last_free_result', destination: 'plans' })}
                         className="text-xs text-[var(--text-secondary)] underline-offset-2 transition-colors hover:text-[var(--text-primary)] hover:underline"
                       >
                         {t.counter.viewPlans}
@@ -1347,8 +1654,8 @@ const DashboardPage = () => {
                       </button>
                       {freeLeftKnown && (
                         <Link
-                          to="/pricing"
-                          onClick={() => track('upgrade_cta_clicked', { source: 'result_free_left', destination: 'pricing', freeRemaining: remaining })}
+                          to={`${base}${SECTION_PATH.plans}`}
+                          onClick={() => track('upgrade_cta_clicked', { source: 'result_free_left', destination: 'plans', freeRemaining: remaining })}
                           className="text-xs text-[var(--text-secondary)] underline-offset-2 transition-colors hover:text-[var(--text-primary)] hover:underline"
                         >
                           {t.counter.viewPlans}
@@ -1364,13 +1671,7 @@ const DashboardPage = () => {
         );
       }
       case 'locked':
-        return (
-          <LockedAnalysis
-            onUnlock={handleUnlockCheckout}
-            onUnlockWeekly={handleUnlockWeekly}
-            unlockPending={unlockPending}
-          />
-        );
+        return paywallFor('new_analysis');
       case 'loading':
         return <AnalysisLoading chart={uploadedImage} />;
       case 'error':
@@ -1390,7 +1691,8 @@ const DashboardPage = () => {
           </div>
         );
       default:
-        return renderDashboardHome();
+        // Endereco desconhecido dentro do painel volta ao inicio do painel.
+        return <Navigate to={base} replace />;
     }
   };
 
@@ -1410,21 +1712,42 @@ const DashboardPage = () => {
   const freeRemainingChip = safeTotal === null ? null : Number.isFinite(remaining) ? Math.max(0, remaining) : Math.max(0, safeTotal - safeUsed);
   const quotaText =
     freeRemainingChip === null ? `${safeUsed}/-` : `${freeRemainingChip} ${t.nav.freeLeft}`;
-  const mobileActiveView =
-    activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error' || activeView === 'sample'
-      ? 'new-analysis'
-      : activeView;
+  // Item ativo do menu: sai da URL. Resultado e exemplos pertencem a "Nova analise".
+  const activeNav: NavSection | null =
+    route.section === 'sample' || route.section === 'analysis' ? 'new' : (route.section as NavSection | null);
   const currentViewLabel =
-    activeView === 'my-trades'
+    activeNav === 'trades'
       ? t.nav.myTrades
-      : activeView === 'journal'
+      : activeNav === 'journal'
         ? t.nav.journal
-        : activeView === 'strategy'
+        : activeNav === 'strategy'
           ? t.nav.strategy
-          : activeView === 'dashboard'
-            ? t.nav.dashboard
-            : t.nav.newAnalysis;
+          : activeNav === 'plans'
+            ? t.nav.plans
+            : activeNav === 'home'
+              ? t.nav.dashboard
+              : t.nav.newAnalysis;
   const sidebarSectionTitleClass = 'text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]';
+
+  // Painel e area logada: titulo por area (aba do navegador e $title do
+  // PostHog) e nunca indexavel. Fora do seo-routes.json de proposito.
+  useSeo({
+    title: `${currentViewLabel} | Tickrify`,
+    description: 'Your Tickrify workspace.',
+    path: location.pathname,
+    noindex: true,
+  });
+
+  const navItemClass = (section: NavSection) =>
+    `flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
+      activeNav === section ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'
+    }`;
+  const navLink = (section: NavSection) => `${base}${SECTION_PATH[section]}`;
+  // "Nova analise" sempre abre o envio limpo, mesmo vindo de um erro ou resultado.
+  const onNewAnalysisLink = (event: ReactMouseEvent) => {
+    event.preventDefault();
+    resetNewAnalysisView();
+  };
 
   if (!bootDone.current) {
     const waiting = Boolean(user) && !bootTimedOut && (isPlanLoading || loadingAnalyses);
@@ -1447,21 +1770,21 @@ const DashboardPage = () => {
         <div className="flex flex-1 flex-col overflow-y-auto px-3">
           <div className={`${sidebarSectionTitleClass} px-2 pb-1 pt-2`}>{t.nav.workArea}</div>
           <nav className="flex flex-col gap-0.5">
-            <button type="button" onClick={() => setActiveView('dashboard')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'dashboard' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+            <Link to={navLink('home')} aria-current={activeNav === 'home' ? 'page' : undefined} className={navItemClass('home')}>
               <LayoutGrid className="h-4 w-4" /> {t.nav.dashboard}
-            </button>
-            <button type="button" onClick={resetNewAnalysisView} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'new-analysis' || activeView === 'sample' || activeView === 'analysis-result' || activeView === 'loading' || activeView === 'error' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+            </Link>
+            <Link to={navLink('new')} onClick={onNewAnalysisLink} aria-current={activeNav === 'new' ? 'page' : undefined} className={navItemClass('new')}>
               <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
-            </button>
-            <button type="button" onClick={() => openMyTrades()} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'my-trades' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+            </Link>
+            <Link to={navLink('trades')} aria-current={activeNav === 'trades' ? 'page' : undefined} className={navItemClass('trades')}>
               <History className="h-4 w-4" /> {t.nav.myTrades}
-            </button>
-            <button type="button" onClick={() => setActiveView('journal')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'journal' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+            </Link>
+            <Link to={navLink('journal')} aria-current={activeNav === 'journal' ? 'page' : undefined} className={navItemClass('journal')}>
               <CalendarDays className="h-4 w-4" /> {t.nav.journal}
-            </button>
-            <button type="button" onClick={() => setActiveView('strategy')} className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${activeView === 'strategy' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'}`}>
+            </Link>
+            <Link to={navLink('strategy')} aria-current={activeNav === 'strategy' ? 'page' : undefined} className={navItemClass('strategy')}>
               <Sliders className="h-4 w-4" /> {t.nav.strategy}
-            </button>
+            </Link>
           </nav>
 
 
@@ -1472,16 +1795,22 @@ const DashboardPage = () => {
           )}
         </div>
 
-        {/* Plano e assinatura ficam no rodape, junto da conta, e nao na lista de
-            abas: "Plans" abre outra pagina (/pricing), nao uma aba do painel, e
-            no meio do menu parecia mais uma. */}
+        {/* Plano e assinatura ficam no rodape, junto da conta. "Plans" abre os
+            planos DENTRO do painel (/dashboard/plans): antes ia para a /pricing
+            publica e o voltar do navegador tirava a pessoa do app. */}
         <div className="flex flex-col gap-0.5 border-t border-[var(--border-subtle)] px-3 py-2">
           {user && plan === 'free' && (
             <button type="button" onClick={() => openUpgradeModal('sidebar')} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
               <Crown className="h-4 w-4 text-[var(--accent-green)]" /> {dc.upgradeToPro}
             </button>
           )}
-          <Link to="/pricing" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+          <Link
+            to={navLink('plans')}
+            aria-current={activeNav === 'plans' ? 'page' : undefined}
+            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${
+              activeNav === 'plans' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'
+            }`}
+          >
             <CreditCard className="h-3.5 w-3.5" /> {t.nav.plans}
           </Link>
           <Link to="/affiliate" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
@@ -1562,33 +1891,28 @@ const DashboardPage = () => {
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border md:hidden">
           <div className="flex">
-            {(['dashboard', 'new-analysis', 'my-trades', 'journal', 'strategy'] as const).map((view) => (
-              <button
-                key={view}
-                type="button"
-                onClick={() => {
-                  if (view === 'new-analysis') {
-                    resetNewAnalysisView();
-                  } else {
-                    setActiveView(view);
-                  }
-                }}
-                className={`min-w-0 flex-1 truncate px-1 py-2 text-[11px] font-medium leading-tight transition-colors ${
-                  mobileActiveView === view
+            {(['home', 'new', 'trades', 'journal', 'strategy'] as const).map((section) => (
+              <Link
+                key={section}
+                to={navLink(section)}
+                onClick={section === 'new' ? onNewAnalysisLink : undefined}
+                aria-current={activeNav === section ? 'page' : undefined}
+                className={`min-w-0 flex-1 truncate px-1 py-2 text-center text-[11px] font-medium leading-tight transition-colors ${
+                  activeNav === section
                     ? 'border-b-2 border-primary text-primary'
                     : 'text-muted-foreground'
                 }`}
               >
-                {view === 'dashboard'
+                {section === 'home'
                   ? t.nav.dashboard
-                  : view === 'new-analysis'
+                  : section === 'new'
                     ? t.nav.newAnalysisShort
-                    : view === 'my-trades'
+                    : section === 'trades'
                       ? t.nav.myTrades
-                      : view === 'journal'
+                      : section === 'journal'
                         ? t.nav.journalShort
                         : t.nav.strategy}
-              </button>
+              </Link>
             ))}
           </div>
           {user && plan === 'free' && (
@@ -1608,7 +1932,33 @@ const DashboardPage = () => {
         <div className="flex flex-1 overflow-hidden">
           <main className="min-w-0 flex-1 overflow-y-auto p-3 md:p-6">
             <div className="flex flex-col gap-6 md:gap-8">
-              {renderContent()}
+              {/* Uma area que quebra nao derruba o painel inteiro: o menu
+                  continua funcionando, trocar de area remonta (key) e o erro
+                  vai para o Sentry com a area e se a pagina estava traduzida. */}
+              <Sentry.ErrorBoundary
+                key={location.pathname}
+                beforeCapture={(scope) => {
+                  scope.setTag('dashboard_area', route.section ?? 'unknown');
+                  scope.setTag('dashboard_view', activeView ?? 'unknown');
+                  scope.setTag('page_translated', isPageTranslated() ? 'yes' : 'no');
+                }}
+                fallback={({ resetError }) => (
+                  <div role="alert" className="space-y-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-6">
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--text-primary)]">{t.nav.viewCrashTitle}</p>
+                      <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">{t.nav.viewCrashDesc}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button onClick={resetError}>{t.nav.viewCrashRetry}</Button>
+                      <Button variant="outline" onClick={() => window.location.reload()}>
+                        {t.nav.viewCrashReload}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              >
+                {renderContent()}
+              </Sentry.ErrorBoundary>
             </div>
           </main>
         </div>
@@ -1657,7 +2007,7 @@ const DashboardPage = () => {
           <UpgradeVideo surface="upgrade_modal" caption={dc.modalVideoCaption} />
 
           <DialogFooter className="sm:flex-col gap-2">
-            <Button variant="outline" className="w-full" onClick={goToPricing}>
+            <Button variant="outline" className="w-full" onClick={goToPlans}>
               {dc.modalCompare}
             </Button>
             <Button variant="ghost" className="w-full" onClick={() => setShowUpgradeModal(false)}>

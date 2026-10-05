@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import DashboardPage from '@/components/pages/DashboardPage';
@@ -36,6 +36,8 @@ vi.mock('@/lib/api', () => ({
     }
   },
   useAPIClient: () => mockUseAPIClient(),
+  isFreeQuotaExhausted: (error: unknown) =>
+    Boolean(error) && (error as { status?: number }).status === 402 && (error as { code?: string }).code === 'free_quota_exhausted',
 }));
 
 vi.mock('@/lib/analytics', async (importOriginal) => ({
@@ -107,6 +109,10 @@ vi.mock('@/components/dashboard/AnalysisCounter', () => ({
   default: () => <div>Analysis counter</div>,
 }));
 
+vi.mock('@/components/pricing/PricingCards', () => ({
+  PricingCards: () => <div>Pricing cards</div>,
+}));
+
 /**
  * Fábrica do apiClient falso.
  *
@@ -128,20 +134,35 @@ function makeApiClient(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function renderDashboard() {
+/** Mostra a URL atual e faz o papel do botao voltar do navegador. */
+function RouterProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output data-testid="pathname">{location.pathname}</output>
+      <button type="button" onClick={() => navigate(-1)}>browser-back</button>
+    </>
+  );
+}
+
+function renderDashboard(path = '/dashboard') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
       <LanguageProvider>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[path]}>
           <DashboardPage />
+          <RouterProbe />
         </MemoryRouter>
       </LanguageProvider>
     </QueryClientProvider>,
   );
 }
+
+const currentPath = () => screen.getByTestId('pathname').textContent;
 
 describe('DashboardPage', () => {
   beforeEach(() => {
@@ -339,7 +360,7 @@ describe('DashboardPage', () => {
       expect(createAnalysis).toHaveBeenCalledTimes(1);
       expect(screen.getByText('Suas análises grátis foram utilizadas.')).toBeTruthy();
       expect(screen.getByRole('button', { name: /Assinar para continuar/ })).toBeTruthy();
-      expect(screen.queryByText(/Your free trade calls are used up/)).toBeNull();
+      expect(screen.queryByText(/Suas análises grátis com plano de trade acabaram/)).toBeNull();
     });
 
     it('com a cota esgotada, a proxima tentativa cai direto no paywall sem chamar a API', async () => {
@@ -352,7 +373,7 @@ describe('DashboardPage', () => {
       await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
       await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
 
-      expect(await screen.findByText(/Your free trade calls are used up/)).toBeTruthy();
+      expect(await screen.findByText(/Suas análises grátis com plano de trade acabaram/)).toBeTruthy();
       expect(createAnalysis).not.toHaveBeenCalled();
     });
 
@@ -405,10 +426,10 @@ describe('DashboardPage', () => {
       await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
       await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
 
-      expect(await screen.findByText(/Your free trade calls are used up/)).toBeTruthy();
+      expect(await screen.findByText(/Suas análises grátis com plano de trade acabaram/)).toBeTruthy();
       expect(screen.queryByText(/is ready/i)).toBeNull();
       expect(screen.queryByText(/calculated for this chart/i)).toBeNull();
-      expect(screen.getByRole('button', { name: /one week: \$7\.99/ })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /uma semana: US\$ 7,99/ })).toBeTruthy();
     });
 
     it('se o contador do navegador estiver defasado, o 403 do backend tambem leva ao paywall', async () => {
@@ -424,7 +445,7 @@ describe('DashboardPage', () => {
       await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
       await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
 
-      expect(await screen.findByText(/Your free trade calls are used up/)).toBeTruthy();
+      expect(await screen.findByText(/Suas análises grátis com plano de trade acabaram/)).toBeTruthy();
     });
   });
   // ── Cobranca de trades em aberto (25/09/2026) ─────────────────────────────
@@ -514,7 +535,7 @@ describe('DashboardPage', () => {
       expect(screen.queryByText('Não entrar também é uma resposta')).toBeNull();
 
       expect(screen.getByText('Agora é sua vez.')).toBeTruthy();
-      expect(screen.getByText('Você tem 3 análises grátis para testar com seus próprios gráficos.')).toBeTruthy();
+      expect(screen.getByText('Você tem 3 planos de trade grátis para testar com seus próprios gráficos. WAIT não conta.')).toBeTruthy();
       expect(api.createAnalysis).not.toHaveBeenCalled();
       expect(api.getAnalysis).not.toHaveBeenCalled();
       expect(api.getAnalysisUsage).not.toHaveBeenCalled();
@@ -564,6 +585,197 @@ describe('DashboardPage', () => {
       await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
       expect(screen.getByRole('button', { name: 'start-with-image' })).toBeTruthy();
       expect(screen.queryByText('Veja antes 3 análises reais de exemplo')).toBeNull();
+    });
+  });
+
+  describe('rotas do painel', () => {
+    const withAnalysis = () =>
+      makeApiClient({
+        listAnalyses: vi.fn().mockResolvedValue([
+          { id: 'old-1', status: 'completed', symbol: 'BTCUSD', timeframe: '1H', recommendation: 'BUY', createdAt: new Date().toISOString() },
+        ]),
+      });
+
+    it('link colado na barra abre a area certa, com o item do menu ativo', async () => {
+      mockUseAPIClient.mockReturnValue(withAnalysis());
+      renderDashboard('/dashboard/journal');
+
+      expect(await screen.findByText('Journal')).toBeTruthy();
+      const active = screen.getAllByRole('link', { current: 'page' });
+      expect(active.length).toBeGreaterThan(0);
+      expect(active.every((link) => link.getAttribute('href') === '/dashboard/journal')).toBe(true);
+    });
+
+    it('Planos abre dentro do painel e o voltar do navegador fica no app', async () => {
+      const user = userEvent.setup();
+      mockUseAPIClient.mockReturnValue(withAnalysis());
+      renderDashboard('/dashboard/trades');
+      expect(await screen.findByText('My trades')).toBeTruthy();
+
+      await user.click(screen.getByRole('link', { name: 'Planos' }));
+      expect(currentPath()).toBe('/dashboard/plans');
+      expect(screen.getByText('Pricing cards')).toBeTruthy();
+
+      await user.click(screen.getByRole('button', { name: 'browser-back' }));
+      expect(currentPath()).toBe('/dashboard/trades');
+      expect(screen.getByText('My trades')).toBeTruthy();
+    });
+
+    it('trocar de area pelo menu muda a URL', async () => {
+      const user = userEvent.setup();
+      mockUseAPIClient.mockReturnValue(withAnalysis());
+      renderDashboard('/dashboard');
+
+      await user.click((await screen.findAllByRole('link', { name: 'Meus Trades' }))[0]);
+      expect(currentPath()).toBe('/dashboard/trades');
+      await user.click(screen.getAllByRole('link', { name: 'Estratégia' })[0]);
+      expect(currentPath()).toBe('/dashboard/strategy');
+    });
+
+    it('endereco desconhecido dentro do painel volta ao inicio do painel, nunca a landing', async () => {
+      mockUseAPIClient.mockReturnValue(withAnalysis());
+      renderDashboard('/dashboard/nao-existe');
+      await waitFor(() => expect(currentPath()).toBe('/dashboard'));
+    });
+
+    it('analise concluida ganha URL propria; recarregar busca a mesma analise no servidor', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockReturnValue({ plan: 'starter', isUnlimited: true, isLoading: false });
+      mockUseAPIClient.mockReturnValue(
+        makeApiClient({
+          createAnalysis: vi.fn().mockResolvedValue({ id: 'a-77', status: 'pending' }),
+          waitForAnalysisCompletion: vi.fn().mockResolvedValue({ id: 'a-77', status: 'completed', recommendation: 'BUY' }),
+        }),
+      );
+      renderDashboard('/dashboard/new');
+      await user.click(await screen.findByRole('button', { name: 'start-with-image' }));
+      expect(await screen.findByText('Analysis result')).toBeTruthy();
+      expect(currentPath()).toBe('/dashboard/analysis/a-77');
+
+      cleanup();
+      const getAnalysis = vi.fn().mockResolvedValue({ id: 'a-77', status: 'completed', recommendation: 'BUY' });
+      mockUseAPIClient.mockReturnValue(makeApiClient({ getAnalysis }));
+      renderDashboard('/dashboard/analysis/a-77');
+      expect(await screen.findByText('Analysis result')).toBeTruthy();
+      expect(getAnalysis).toHaveBeenCalledWith('a-77');
+    });
+  });
+
+  describe('gratis esgotado', () => {
+    const locked = { plan: 'free', total: 3, used: 3, remaining: 0, isUnlimited: false, freeLocked: true, isLoading: false };
+    const recent = [
+      { id: 'r-1', status: 'completed', symbol: 'BTCUSD', timeframe: '1H', recommendation: 'BUY', createdAt: new Date().toISOString() },
+      { id: 'r-2', status: 'completed', symbol: 'XAUUSD', timeframe: '4H', recommendation: 'SELL', createdAt: new Date().toISOString() },
+    ];
+
+    it('My Trades abre com o paywall e as ultimas analises so para leitura', async () => {
+      mockUseAnalysisLimit.mockReturnValue(locked);
+      mockUseAPIClient.mockReturnValue(makeApiClient({ listAnalyses: vi.fn().mockResolvedValue(recent) }));
+      renderDashboard('/dashboard/trades');
+
+      expect(await screen.findByText('Assine para continuar com acesso às suas análises e operações')).toBeTruthy();
+      expect(screen.queryByText('My trades')).toBeNull();
+      const row = await screen.findByRole('link', { name: /BTCUSD/ });
+      expect(row.getAttribute('href')).toBe('/dashboard/analysis/r-1');
+      expect(mockTrack).toHaveBeenCalledWith('upgrade_cta_viewed', { source: 'paywall', surface: 'trades' });
+    });
+
+    it('diario abre com o paywall, sem buscar os dados', async () => {
+      mockUseAnalysisLimit.mockReturnValue(locked);
+      mockUseAPIClient.mockReturnValue(makeApiClient({ listAnalyses: vi.fn().mockResolvedValue(recent) }));
+      renderDashboard('/dashboard/journal');
+
+      expect(await screen.findByText(/O diário organiza cada análise/)).toBeTruthy();
+      expect(screen.queryByText('Journal')).toBeNull();
+    });
+
+    it('nova analise vira o paywall direto, sem area de envio', async () => {
+      mockUseAnalysisLimit.mockReturnValue(locked);
+      mockUseAPIClient.mockReturnValue(makeApiClient({ listAnalyses: vi.fn().mockResolvedValue(recent) }));
+      renderDashboard('/dashboard/new');
+
+      expect(await screen.findByText('Suas análises grátis com plano de trade acabaram')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'start-with-image' })).toBeNull();
+    });
+
+    it('analise antiga aberta pelo link: o 402 do servidor vira o paywall do historico', async () => {
+      mockUseAnalysisLimit.mockReturnValue(locked);
+      const { APIError } = await import('@/lib/api');
+      const getAnalysis = vi
+        .fn()
+        .mockRejectedValue(new (APIError as unknown as new (m: string, s: number, c?: string) => Error)('locked', 402, 'free_quota_exhausted'));
+      mockUseAPIClient.mockReturnValue(makeApiClient({ getAnalysis, listAnalyses: vi.fn().mockResolvedValue(recent) }));
+      renderDashboard('/dashboard/analysis/velha');
+
+      expect(await screen.findByText(/mais antiga que as suas 3 últimas/)).toBeTruthy();
+    });
+
+    it('checkout do paywall leva a area para o PostHog', async () => {
+      const user = userEvent.setup();
+      const { createCheckoutSession } = await import('@/lib/stripe');
+      (createCheckoutSession as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ url: 'https://checkout.stripe.com/x', sessionId: 'cs_1' });
+      mockUseAnalysisLimit.mockReturnValue(locked);
+      mockUseAPIClient.mockReturnValue(makeApiClient({ listAnalyses: vi.fn().mockResolvedValue(recent) }));
+      Object.defineProperty(window, 'location', { value: { ...window.location, href: '' }, writable: true, configurable: true });
+      renderDashboard('/dashboard/journal');
+
+      await user.click(await screen.findByRole('button', { name: /uma semana: US\$ 7,99/ }));
+      await waitFor(() =>
+        expect(mockTrack).toHaveBeenCalledWith('checkout_started', expect.objectContaining({ source: 'locked_value', surface: 'journal', billingCycle: 'weekly', coupon: null })),
+      );
+    });
+
+    it('antes de esgotar, My Trades funciona normal', async () => {
+      mockUseAnalysisLimit.mockReturnValue({ ...locked, used: 1, remaining: 2, freeLocked: false });
+      mockUseAPIClient.mockReturnValue(makeApiClient({ listAnalyses: vi.fn().mockResolvedValue(recent) }));
+      renderDashboard('/dashboard/trades');
+      expect(await screen.findByText('My trades')).toBeTruthy();
+    });
+  });
+
+  it('leitura feita no /try antes do cadastro aparece no painel da conta nova', async () => {
+    mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 0, remaining: 3, isUnlimited: false, freeLocked: false, isLoading: false });
+    window.localStorage.setItem(
+      'tickrify_demo_result',
+      JSON.stringify({ recommendation: 'BUY', symbol: 'XAUUSD', timeframe: 'M30', entry: 4261.4, stopLoss: 4240, takeProfit1: 4300, riskReward: '1.8', savedAt: Date.now() }),
+    );
+    renderDashboard('/dashboard/new');
+
+    expect(await screen.findByText('Sua leitura da demo grátis')).toBeTruthy();
+    expect(screen.getByText('4261.4')).toBeTruthy();
+    window.localStorage.removeItem('tickrify_demo_result');
+  });
+
+  describe('pergunta de origem', () => {
+    const withHistory = (overrides: Record<string, unknown>) =>
+      makeApiClient({
+        syncUserProfile: vi.fn().mockResolvedValue({ acquisitionSource: null }),
+        listAnalyses: vi.fn().mockResolvedValue([
+          { id: 'o-1', status: 'completed', symbol: 'BTCUSD', timeframe: '1H', recommendation: 'BUY', createdAt: new Date().toISOString() },
+        ]),
+        ...overrides,
+      });
+
+    it('responder grava uma vez, com a origem escolhida', async () => {
+      const user = userEvent.setup();
+      const setAcquisitionSource = vi.fn().mockResolvedValue(undefined);
+      mockUseAPIClient.mockReturnValue(withHistory({ setAcquisitionSource }));
+      renderDashboard('/dashboard');
+
+      await user.click(await screen.findByRole('button', { name: 'ChatGPT' }));
+      expect(setAcquisitionSource).toHaveBeenCalledTimes(1);
+      expect(setAcquisitionSource).toHaveBeenCalledWith({ source: 'chatgpt' });
+    });
+
+    it('dispensar nao grava nada', async () => {
+      const user = userEvent.setup();
+      const setAcquisitionSource = vi.fn().mockResolvedValue(undefined);
+      mockUseAPIClient.mockReturnValue(withHistory({ setAcquisitionSource }));
+      renderDashboard('/dashboard');
+
+      await user.click(await screen.findByRole('button', { name: 'Agora não' }));
+      expect(screen.queryByRole('button', { name: 'ChatGPT' })).toBeNull();
+      expect(setAcquisitionSource).not.toHaveBeenCalled();
     });
   });
 });

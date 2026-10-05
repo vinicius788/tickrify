@@ -1,18 +1,12 @@
-import { useEffect, useMemo } from 'react';
-import { useAuth } from '@clerk/clerk-react';
-import { getCheckoutStatus } from '@/lib/stripe';
+import { useMemo } from 'react';
 import SiteLayout from '@/components/layout/SiteLayout';
 import { PricingCards } from '@/components/pricing/PricingCards';
-import { useToast } from '@/hooks/use-toast';
 import { seoFor, useJsonLd, useSeo } from '@/hooks/useSeo';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { track } from '@/lib/analytics';
 import { useFoundingOffer } from '@/hooks/useFoundingOffer';
 
 const PRICING_COPY = {
   en: {
-    canceledTitle: 'Payment canceled',
-    canceledDesc: 'No charge was made. You can subscribe whenever you want.',
     eyebrow: 'Pricing',
     title: 'One plan. 200 analyses a month.',
     subtitle:
@@ -21,7 +15,7 @@ const PRICING_COPY = {
     foundingDesc:
       'You are early, and that counts. While this offer lasts, early subscribers lock the $29/month price for as long as the subscription stays active. Your',
     foundingCode: 'EARLY35',
-    foundingSuffix: 'discount is applied automatically at checkout: 35% off your first month, then $29/month.',
+    foundingSuffix: 'discount is applied automatically at checkout on the monthly plan: 35% off your first month, then $29/month.',
     trust: ['Payments secured by Stripe', 'Cancel in one click', 'No broker connection required'],
     faqTitle: 'Before you pay',
     faqEyebrow: 'Questions',
@@ -48,13 +42,11 @@ const PRICING_COPY = {
       },
       {
         q: 'Is there a refund guarantee?',
-        a: 'You never pay blind: 3 free analyses before any charge, and you can cancel anytime. Per the Terms of Service purchases are final, but if anything goes wrong with an analysis, reply to any email and we’ll make it right. We read every message.',
+        a: 'You never pay blind: 3 free trade plans before any charge (WAIT reads don’t count), and you can cancel anytime. Per the Terms of Service purchases are final, but if anything goes wrong with an analysis, reply to any email and we’ll make it right. We read every message.',
       },
     ],
   },
   pt: {
-    canceledTitle: 'Pagamento cancelado',
-    canceledDesc: 'Nenhuma cobrança foi feita. Você pode assinar quando quiser.',
     eyebrow: 'Preço',
     title: 'Um plano só. 200 análises por mês.',
     subtitle:
@@ -63,7 +55,7 @@ const PRICING_COPY = {
     foundingDesc:
       'Você chegou cedo, e isso conta. Enquanto a oferta durar, os primeiros assinantes travam o preço de US$ 29/mês enquanto a assinatura estiver ativa. O desconto',
     foundingCode: 'EARLY35',
-    foundingSuffix: 'é aplicado automaticamente no checkout: 35% no primeiro mês, depois US$ 29/mês.',
+    foundingSuffix: 'é aplicado automaticamente no checkout do plano mensal: 35% no primeiro mês, depois US$ 29/mês.',
     trust: ['Pagamento protegido pela Stripe', 'Cancela em um clique', 'Não precisa conectar corretora'],
     faqTitle: 'Antes de pagar',
     faqEyebrow: 'Dúvidas',
@@ -90,15 +82,13 @@ const PRICING_COPY = {
       },
       {
         q: 'Há garantia de reembolso?',
-        a: 'Você nunca paga no escuro: são 3 análises grátis antes de qualquer cobrança, e dá para cancelar quando quiser. Pelos Termos de Serviço as compras são finais, mas se algo der errado em uma análise, responda qualquer e-mail que a gente resolve. Lemos cada mensagem.',
+        a: 'Você nunca paga no escuro: são 3 planos de trade grátis antes de qualquer cobrança (WAIT não conta), e dá para cancelar quando quiser. Pelos Termos de Serviço as compras são finais, mas se algo der errado em uma análise, responda qualquer e-mail que a gente resolve. Lemos cada mensagem.',
       },
     ],
   },
 } as const;
 
 export default function PricingPage() {
-  const { toast } = useToast();
-  const { getToken } = useAuth();
   const { language } = useLanguage();
   const copy = language === 'pt' ? PRICING_COPY.pt : PRICING_COPY.en;
   const foundingOffer = useFoundingOffer();
@@ -152,23 +142,6 @@ export default function PricingPage() {
   );
 
   useJsonLd('pricing', jsonLd);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('canceled') === 'true') {
-      // A pessoa chegou na pagina da Stripe e voltou sem pagar. Sem este
-      // evento o funil nao separava "abandonou no checkout" de "nunca chegou".
-      track('checkout_canceled', { source: 'stripe_cancel_url' });
-      // Registro no servidor (log [funnel] + historico do usuario): sem isto,
-      // "voltou da Stripe sem pagar" so existia para quem aceitou cookies.
-      void getToken().then((token) => (token ? getCheckoutStatus(token, { outcome: 'canceled' }) : null));
-      toast({
-        title: copy.canceledTitle,
-        description: copy.canceledDesc,
-      });
-      window.history.replaceState({}, '', '/pricing');
-    }
-  }, [toast, copy, getToken]);
 
   return (
     <SiteLayout active="pricing">

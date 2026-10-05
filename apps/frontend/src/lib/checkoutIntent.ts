@@ -6,7 +6,7 @@
 // nem eram guardados.
 //
 // Agora a intencao viaja de dois jeitos:
-// 1. na URL: /sign-in?redirect_url=/pricing?checkout=starter&cycle=monthly&source=pricing
+// 1. na URL: /sign-in?redirect_url=/dashboard/plans?checkout=starter&cycle=monthly&source=pricing
 //    O Clerk respeita `redirect_url` no login, no cadastro e na troca entre os dois.
 // 2. no localStorage, por 30 min, como rede para os caminhos que nao carregam a
 //    URL (One Tap, verificacao de e-mail aberta em outra aba no celular).
@@ -33,7 +33,12 @@ const SOURCES: readonly CheckoutSource[] = ['pricing', 'locked_value'];
 
 const STORAGE_KEY = 'tickrify_checkout_intent';
 export const CHECKOUT_INTENT_TTL_MS = 30 * 60 * 1000;
-const RETURN_PATH = '/pricing';
+// Logado, a compra continua DENTRO do painel (05/10/2026): os Planos do painel
+// usam os mesmos cards da /pricing e retomam o checkout sozinhos. A /pricing
+// segue aceita na volta do login porque links de login abertos antes da troca
+// ainda a carregam.
+const RETURN_PATH = '/dashboard/plans';
+const LEGACY_RETURN_PATH = '/pricing';
 
 function isOneOf<T extends string>(list: readonly T[], value: unknown): value is T {
   return typeof value === 'string' && (list as readonly string[]).includes(value);
@@ -85,7 +90,7 @@ export function checkoutTargetFromAuthSearch(search: string, origin: string, has
   if (!raw) return null;
   try {
     const url = new URL(raw, origin);
-    if (url.origin !== origin || url.pathname !== RETURN_PATH) return null;
+    if (url.origin !== origin || (url.pathname !== RETURN_PATH && url.pathname !== LEGACY_RETURN_PATH)) return null;
     const intent = parseCheckoutIntent(url.search);
     return intent ? checkoutReturnPath(intent) : null;
   } catch {

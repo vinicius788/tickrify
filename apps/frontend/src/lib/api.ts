@@ -290,6 +290,16 @@ export interface AnalysisUsageResponse {
   signalsLimit?: number;
   totalUsed?: number;
   totalLimit?: number;
+  /**
+   * Gratis esgotado (05/10/2026): historico completo, diario e marcar resultado
+   * ficam para quem assina; o servidor responde 402 `free_quota_exhausted`.
+   */
+  freeLocked?: boolean;
+}
+
+/** O servidor recusou porque as analises gratis acabaram (rotas de operacao). */
+export function isFreeQuotaExhausted(error: unknown): boolean {
+  return error instanceof APIError && error.status === 402 && error.code === 'free_quota_exhausted';
 }
 
 /**

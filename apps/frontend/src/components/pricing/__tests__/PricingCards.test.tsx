@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const auth = { isSignedIn: false, isLoaded: true, getToken: vi.fn() };
@@ -44,6 +44,8 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
   });
 
   afterEach(() => {
+    // Sem config global do Vitest a tela nao desmonta sozinha entre testes.
+    cleanup();
     vi.unstubAllGlobals();
   });
 
@@ -56,7 +58,7 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
     await userEvent.click(screen.getByRole('button', { name: /get started/i }));
 
     expect(location.assigned).toBe(
-      '/sign-in?redirect_url=%2Fpricing%3Fcheckout%3Dstarter%26cycle%3Dyearly%26source%3Dpricing',
+      '/sign-in?redirect_url=%2Fdashboard%2Fplans%3Fcheckout%3Dstarter%26cycle%3Dyearly%26source%3Dpricing',
     );
     expect(loadCheckoutIntent()).toEqual({ plan: 'starter', cycle: 'yearly', source: 'pricing' });
     expect(createCheckoutSession).not.toHaveBeenCalled();
@@ -71,7 +73,8 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
 
     await waitFor(() => expect(location.assigned).toBe('https://checkout.stripe.com/c/pay/cs_1'));
     expect(createCheckoutSession).toHaveBeenCalledTimes(1);
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'yearly', 'usd', 'EARLY35', 'pricing');
+    // EARLY35 e so do mensal: o anual vai sem cupom.
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'yearly', 'usd', undefined, 'pricing');
     expect(loadCheckoutIntent()).toBeNull();
   });
 
@@ -113,5 +116,22 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
 
     expect(createCheckoutSession).not.toHaveBeenCalled();
     expect(loadCheckoutIntent()).not.toBeNull();
+  });
+
+  it.each([
+    ['weekly', undefined],
+    ['monthly', 'EARLY35'],
+    ['yearly', undefined],
+  ] as const)('logado, clique no ciclo %s: cupom %s', async (cycle, coupon) => {
+    auth.isSignedIn = true;
+    createCheckoutSession.mockResolvedValue({ sessionId: 'cs_c', url: 'https://checkout.stripe.com/c/pay/cs_c' });
+    stubLocation('https://tickrify.com/dashboard/plans');
+
+    render(<PricingCards />);
+    await userEvent.click(screen.getByRole('button', { name: new RegExp(`^${cycle}`, 'i') }));
+    await userEvent.click(screen.getByRole('button', { name: /get started|start weekly/i }));
+
+    await waitFor(() => expect(createCheckoutSession).toHaveBeenCalledTimes(1));
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', cycle, 'usd', coupon, 'pricing');
   });
 });
