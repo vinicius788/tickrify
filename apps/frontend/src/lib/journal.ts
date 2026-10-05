@@ -104,3 +104,143 @@ export function summarizeByDay<T extends { createdAt: string }>(
   totals.pnl = round(totals.pnl);
   return { days, totals };
 }
+
+/**
+ * Desempenho do mes (05/10/2026): curva de resultado, R medio, fator de lucro,
+ * maior queda, melhor e pior dia e recortes por ativo, tempo grafico, direcao
+ * e dia da semana. So com o que o Diario ja recebe; nada aqui vai ao servidor.
+ *
+ * Mesmas regras do calendario: trade fechado = TP1, TP2 ou Stop; valor so de
+ * trade fechado; tudo pelo dia em que a analise foi FEITA. R e o PLANEJADO
+ * pela leitura: TP1 vale o R:R do TP1, TP2 o do TP2, Stop vale -1. Trade sem
+ * R:R conhecido fica fora do R medio (o `rTrades` diz quantos entraram).
+ */
+export interface GroupRow {
+  key: string;
+  closed: number;
+  wins: number;
+  /** null quando nenhum trade fechado do grupo tem valor registrado. */
+  pnl: number | null;
+}
+
+export interface MonthStats {
+  closed: number;
+  avgR: number | null;
+  rTrades: number;
+  /** Ganho bruto / perda bruta registrados. null sem perda registrada (nao ha divisor). */
+  profitFactor: number | null;
+  /** Maior queda da curva, do pico ao fundo (<= 0). null sem curva. */
+  maxDrawdown: number | null;
+  /** P&L acumulado no fim de cada dia com valor registrado, em ordem. */
+  equity: Array<{ day: string; value: number }>;
+  bestDay: { day: string; pnl: number } | null;
+  worstDay: { day: string; pnl: number } | null;
+  bySymbol: GroupRow[];
+  byTimeframe: GroupRow[];
+  bySide: GroupRow[];
+  /** Chave = dia da semana local (0 = domingo). */
+  byWeekday: GroupRow[];
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export function computeMonthStats<T extends { createdAt: string; symbol?: string | null; timeframe?: string | null }>(
+  items: T[],
+  verdictOf: (item: T) => Verdict,
+  pnlOf: (item: T) => number | null,
+  sideOf: (item: T) => 'BUY' | 'SELL' | null,
+  rrOf: (item: T, verdict: 'TP1' | 'TP2') => number | null,
+): MonthStats {
+  const groups = {
+    bySymbol: new Map<string, GroupRow>(),
+    byTimeframe: new Map<string, GroupRow>(),
+    bySide: new Map<string, GroupRow>(),
+    byWeekday: new Map<string, GroupRow>(),
+  };
+  const dayPnl = new Map<string, number>();
+  let closed = 0;
+  let rSum = 0;
+  let rTrades = 0;
+  let gross = 0;
+  let loss = 0;
+
+  const add = (map: Map<string, GroupRow>, key: string, win: boolean, amount: number | null) => {
+    const row = map.get(key) ?? { key, closed: 0, wins: 0, pnl: null };
+    row.closed += 1;
+    if (win) row.wins += 1;
+    if (amount !== null) row.pnl = (row.pnl ?? 0) + amount;
+    map.set(key, row);
+  };
+
+  for (const item of items) {
+    const verdict = verdictOf(item);
+    if (verdict !== 'TP1' && verdict !== 'TP2' && verdict !== 'SL') continue;
+    const created = new Date(item.createdAt);
+    if (Number.isNaN(created.getTime())) continue;
+    closed += 1;
+    const win = verdict !== 'SL';
+
+    const r = verdict === 'SL' ? -1 : rrOf(item, verdict);
+    if (r !== null && Number.isFinite(r)) {
+      rSum += r;
+      rTrades += 1;
+    }
+
+    const raw = pnlOf(item);
+    const amount = raw !== null && Number.isFinite(raw) ? raw : null;
+    if (amount !== null) {
+      const key = dayKey(created);
+      dayPnl.set(key, (dayPnl.get(key) ?? 0) + amount);
+      if (amount > 0) gross += amount;
+      if (amount < 0) loss += -amount;
+    }
+
+    const symbol = String(item.symbol || '').trim();
+    const timeframe = String(item.timeframe || '').trim();
+    if (symbol && symbol !== 'N/A') add(groups.bySymbol, symbol, win, amount);
+    if (timeframe && timeframe !== 'N/A') add(groups.byTimeframe, timeframe, win, amount);
+    const side = sideOf(item);
+    if (side) add(groups.bySide, side, win, amount);
+    add(groups.byWeekday, String(created.getDay()), win, amount);
+  }
+
+  const days = [...dayPnl.keys()].sort();
+  const equity: Array<{ day: string; value: number }> = [];
+  let running = 0;
+  let peak = 0;
+  let maxDrawdown = 0;
+  for (const day of days) {
+    running += dayPnl.get(day) ?? 0;
+    equity.push({ day, value: round2(running) });
+    peak = Math.max(peak, running);
+    maxDrawdown = Math.min(maxDrawdown, running - peak);
+  }
+
+  let bestDay: MonthStats['bestDay'] = null;
+  let worstDay: MonthStats['worstDay'] = null;
+  for (const day of days) {
+    const pnl = round2(dayPnl.get(day) ?? 0);
+    if (pnl > 0 && (!bestDay || pnl > bestDay.pnl)) bestDay = { day, pnl };
+    if (pnl < 0 && (!worstDay || pnl < worstDay.pnl)) worstDay = { day, pnl };
+  }
+
+  const finish = (map: Map<string, GroupRow>) =>
+    [...map.values()]
+      .map((row) => ({ ...row, pnl: row.pnl === null ? null : round2(row.pnl) }))
+      .sort((a, b) => b.closed - a.closed || (b.pnl ?? 0) - (a.pnl ?? 0) || a.key.localeCompare(b.key));
+
+  return {
+    closed,
+    avgR: rTrades > 0 ? Math.round((rSum / rTrades) * 100) / 100 : null,
+    rTrades,
+    profitFactor: loss > 0 ? Math.round((gross / loss) * 100) / 100 : null,
+    maxDrawdown: equity.length > 0 ? round2(maxDrawdown) : null,
+    equity,
+    bestDay,
+    worstDay,
+    bySymbol: finish(groups.bySymbol),
+    byTimeframe: finish(groups.byTimeframe),
+    bySide: finish(groups.bySide),
+    byWeekday: finish(groups.byWeekday).sort((a, b) => Number(a.key) - Number(b.key)),
+  };
+}

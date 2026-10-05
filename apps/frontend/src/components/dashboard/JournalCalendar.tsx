@@ -20,7 +20,7 @@ import { useAPIClient, type AIAnalysisResponse } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { getRecommendationMeta } from '@/lib/trading-ui';
 import { VERDICT_CFG, isTradeCall, verdictFromOutcome, type Verdict } from '@/lib/verdict';
-import { buildMonthGrid, dayKey, monthRange, summarizeByDay, weekStartFor } from '@/lib/journal';
+import { buildMonthGrid, computeMonthStats, dayKey, monthRange, summarizeByDay, weekStartFor, type GroupRow, type MonthStats } from '@/lib/journal';
 
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
@@ -42,6 +42,136 @@ const upperFirst = (text: string, locale: string) =>
 
 const pnlColor = (n: number | null) =>
   n === null || n === 0 ? 'var(--text-secondary)' : n > 0 ? 'var(--signal-buy)' : 'var(--signal-sell)';
+
+type JournalCopy = ReturnType<typeof useLanguage>['t']['journal'];
+
+/** R:R planejado do alvo atingido, lido do item da lista (numero ou "1:2.5"). */
+function plannedRr(a: AIAnalysisResponse, verdict: 'TP1' | 'TP2'): number | null {
+  const raw = (a as unknown as Record<string, unknown>)[verdict === 'TP1' ? 'riskRewardTp1' : 'riskRewardTp2'];
+  const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').replace(/^1:/, ''));
+  return raw === null || raw === undefined || raw === '' || !Number.isFinite(n) || n <= 0 ? null : n;
+}
+
+function sideOf(a: AIAnalysisResponse): 'BUY' | 'SELL' | null {
+  const tone = getRecommendationMeta(a.recommendation).tone;
+  return tone === 'buy' ? 'BUY' : tone === 'sell' ? 'SELL' : null;
+}
+
+/** Curva do P&L acumulado: linha simples com o zero tracejado. */
+function EquityCurve({ points }: { points: MonthStats['equity'] }) {
+  const values = [0, ...points.map((p) => p.value)];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const W = 600;
+  const H = 120;
+  const x = (i: number) => (i / (values.length - 1)) * W;
+  const y = (v: number) => 8 + (1 - (v - min) / span) * (H - 16);
+  const last = values[values.length - 1];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-28 w-full" preserveAspectRatio="none" aria-hidden="true">
+      <line x1={0} x2={W} y1={y(0)} y2={y(0)} stroke="var(--border-subtle)" strokeDasharray="4 5" />
+      <polyline
+        fill="none"
+        stroke={last >= 0 ? 'var(--signal-buy)' : 'var(--signal-sell)'}
+        strokeWidth={2.5}
+        vectorEffect="non-scaling-stroke"
+        points={values.map((v, i) => `${x(i)},${y(v)}`).join(' ')}
+      />
+    </svg>
+  );
+}
+
+function GroupCard({ title, rows, label, j }: { title: string; rows: GroupRow[]; label: (key: string) => string; j: JournalCopy }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-[var(--border-subtle)] p-3">
+      <p className="mb-2 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{title}</p>
+      <div className="flex flex-col gap-1.5">
+        {rows.slice(0, 6).map((row) => (
+          <div key={row.key} className="flex items-center justify-between gap-3 text-xs">
+            <span className="truncate font-terminal text-[var(--text-primary)]">{label(row.key)}</span>
+            <span className="flex shrink-0 items-center gap-3 font-terminal">
+              <span className="text-[var(--text-secondary)]">{j.closedTrades.replace('{n}', String(row.closed))}</span>
+              <span className="w-10 text-right text-[var(--text-primary)]">{`${Math.round((row.wins / row.closed) * 100)}%`}</span>
+              <span className="w-20 text-right font-semibold" style={{ color: pnlColor(row.pnl) }}>
+                {row.pnl !== null ? fmtPnl(row.pnl) : '·'}
+              </span>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Desempenho do mes (05/10/2026). A conta mora em `computeMonthStats` (testada). */
+function JournalStats({ stats, j, locale }: { stats: MonthStats; j: JournalCopy; locale: string }) {
+  if (stats.closed === 0) {
+    return <p className="mt-4 rounded-lg border border-[var(--border-subtle)] px-4 py-4 text-center text-xs text-[var(--text-secondary)]">{j.statsEmpty}</p>;
+  }
+  const dayLabel = (key: string) =>
+    upperFirst(new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(new Date(`${key}T12:00:00`)), locale);
+  const weekdayFmt = new Intl.DateTimeFormat(locale, { weekday: 'long' });
+  // 04/01/2026 foi domingo: chave 0 = domingo, como `Date.getDay()`.
+  const weekdayLabel = (key: string) => upperFirst(weekdayFmt.format(new Date(2026, 0, 4 + Number(key))), locale);
+  const sideLabel = (key: string) => getRecommendationMeta(key).label;
+  const tile = 'bg-[var(--bg-surface)] px-3 py-2.5';
+  return (
+    <section className="mt-4" aria-labelledby="journal-stats-title">
+      <h3 id="journal-stats-title" className="mb-2 text-sm font-semibold text-[var(--text-primary)]">{j.statsTitle}</h3>
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-4">
+        <div className={tile}>
+          <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.avgR}</p>
+          <p className="font-terminal text-lg font-semibold" style={{ color: pnlColor(stats.avgR) }}>
+            {stats.avgR !== null ? `${stats.avgR > 0 ? '+' : ''}${stats.avgR.toFixed(2)}R` : '·'}
+          </p>
+          <p className="text-[10px] text-[var(--text-secondary)]">{j.avgRSub.replace('{n}', String(stats.rTrades))}</p>
+        </div>
+        <div className={tile}>
+          <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.profitFactor}</p>
+          <p className="font-terminal text-lg font-semibold text-[var(--text-primary)]">
+            {stats.profitFactor !== null ? stats.profitFactor.toFixed(2) : '·'}
+          </p>
+          <p className="text-[10px] text-[var(--text-secondary)]">{j.profitFactorSub}</p>
+        </div>
+        <div className={tile}>
+          <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.maxDrawdown}</p>
+          <p className="font-terminal text-lg font-semibold" style={{ color: pnlColor(stats.maxDrawdown) }}>
+            {stats.maxDrawdown !== null ? fmtPnl(stats.maxDrawdown) : '·'}
+          </p>
+          <p className="text-[10px] text-[var(--text-secondary)]">{j.maxDrawdownSub}</p>
+        </div>
+        <div className={tile}>
+          <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.bestDay}</p>
+          <p className="font-terminal text-sm font-semibold" style={{ color: pnlColor(stats.bestDay?.pnl ?? null) }}>
+            {stats.bestDay ? `${dayLabel(stats.bestDay.day)} ${fmtPnl(stats.bestDay.pnl)}` : '·'}
+          </p>
+          <p className="mt-1 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.worstDay}</p>
+          <p className="font-terminal text-sm font-semibold" style={{ color: pnlColor(stats.worstDay?.pnl ?? null) }}>
+            {stats.worstDay ? `${dayLabel(stats.worstDay.day)} ${fmtPnl(stats.worstDay.pnl)}` : '·'}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-lg border border-[var(--border-subtle)] p-3">
+        <p className="mb-1 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.equity}</p>
+        {stats.equity.length >= 2 ? (
+          <EquityCurve points={stats.equity} />
+        ) : (
+          <p className="py-4 text-center text-xs text-[var(--text-secondary)]">{j.equityHint}</p>
+        )}
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <GroupCard title={j.byAsset} rows={stats.bySymbol} label={(k) => k} j={j} />
+        <GroupCard title={j.byTimeframe} rows={stats.byTimeframe} label={(k) => k} j={j} />
+        <GroupCard title={j.bySide} rows={stats.bySide} label={sideLabel} j={j} />
+        <GroupCard title={j.byWeekday} rows={stats.byWeekday} label={weekdayLabel} j={j} />
+      </div>
+    </section>
+  );
+}
 
 interface JournalCalendarProps {
   onStartAnalysis?: () => void;
@@ -82,6 +212,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
     return a.pnlAmount === null || a.pnlAmount === undefined || !Number.isFinite(n) ? null : n;
   };
   const { days, totals } = useMemo(() => summarizeByDay(items, verdictOf, pnlOf), [items]);
+  const stats = useMemo(() => computeMonthStats(items, verdictOf, pnlOf, sideOf, plannedRr), [items]);
 
   const weekStart = weekStartFor(language);
   const grid = useMemo(() => buildMonthGrid(cursor.year, cursor.month, weekStart), [cursor, weekStart]);
@@ -400,6 +531,8 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                     </>
                   )}
                 </div>
+
+                <JournalStats stats={stats} j={j} locale={locale} />
               </>
             )}
           </div>

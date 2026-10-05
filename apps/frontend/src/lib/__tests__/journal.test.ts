@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMonthGrid, dayKey, monthRange, summarizeByDay, weekStartFor } from '@/lib/journal';
+import { buildMonthGrid, computeMonthStats, dayKey, monthRange, summarizeByDay, weekStartFor } from '@/lib/journal';
 import { outcomeFromVerdict, verdictFromOutcome, type Verdict } from '@/lib/verdict';
 
 type Row = { id: string; createdAt: string; verdict: Verdict; pnl: number | null };
@@ -94,5 +94,70 @@ describe('verdict: entrada nao atingida', () => {
   it('ida e volta com o valor do backend', () => {
     expect(outcomeFromVerdict('NO_FILL')).toBe('no_fill');
     expect(verdictFromOutcome('no_fill')).toBe('NO_FILL');
+  });
+});
+
+describe('journal: desempenho do mes', () => {
+  type T = { createdAt: string; symbol: string; timeframe: string; side: 'BUY' | 'SELL' | null; v: Verdict; pnl: number | null; rr1: number | null; rr2: number | null };
+  const t = (day: number, hour: number, symbol: string, timeframe: string, side: 'BUY' | 'SELL' | null, v: Verdict, pnl: number | null, rr1: number | null = 1.5, rr2: number | null = 3): T => ({
+    createdAt: new Date(2026, 9, day, hour).toISOString(), symbol, timeframe, side, v, pnl, rr1, rr2,
+  });
+  const stats = (rows: T[]) =>
+    computeMonthStats(rows, (r) => r.v, (r) => r.pnl, (r) => r.side, (r, v) => (v === 'TP1' ? r.rr1 : r.rr2));
+
+  const rows = [
+    t(1, 9, 'XAUUSD', '15M', 'BUY', 'TP1', 300),
+    t(1, 14, 'XAUUSD', '15M', 'BUY', 'TP2', 200),
+    t(2, 10, 'BTCUSD', '1H', 'SELL', 'SL', -150),
+    t(5, 11, 'EURJPY', '5M', 'BUY', 'SL', -100, null),
+    t(6, 9, 'XAUUSD', '5M', 'SELL', 'TP1', 400),
+    t(6, 12, 'BTCUSD', '1H', null, null, 999),
+    t(7, 9, 'BTCUSD', '1H', 'BUY', 'NO_FILL', 50),
+    t(7, 10, 'BTCUSD', '1H', 'BUY', 'OPEN', 70),
+    t(8, 9, 'XAUUSD', '15M', 'BUY', 'TP1', null),
+  ];
+
+  it('so trade fechado conta; R e o planejado (Stop = -1) e trade sem R:R fica fora da media', () => {
+    const s = stats(rows);
+    expect(s.closed).toBe(6);
+    // Stop vale -1 mesmo sem R:R (EURJPY): os 6 fechados entram na media.
+    expect(s.rTrades).toBe(6);
+    expect(s.avgR).toBe(Math.round(((1.5 + 3 - 1 - 1 + 1.5 + 1.5) / 6) * 100) / 100);
+  });
+
+  it('fator de lucro, curva, maior queda, melhor e pior dia saem so dos valores registrados', () => {
+    const s = stats(rows);
+    expect(s.profitFactor).toBe(Math.round((900 / 250) * 100) / 100);
+    expect(s.equity).toEqual([
+      { day: '2026-10-01', value: 500 },
+      { day: '2026-10-02', value: 350 },
+      { day: '2026-10-05', value: 250 },
+      { day: '2026-10-06', value: 650 },
+    ]);
+    expect(s.maxDrawdown).toBe(-250);
+    expect(s.bestDay).toEqual({ day: '2026-10-01', pnl: 500 });
+    expect(s.worstDay).toEqual({ day: '2026-10-02', pnl: -150 });
+  });
+
+  it('recortes por ativo, tempo grafico, direcao e dia da semana', () => {
+    const s = stats(rows);
+    expect(s.bySymbol[0]).toEqual({ key: 'XAUUSD', closed: 4, wins: 4, pnl: 900 });
+    expect(s.bySymbol.find((r) => r.key === 'BTCUSD')).toEqual({ key: 'BTCUSD', closed: 1, wins: 0, pnl: -150 });
+    expect(s.byTimeframe.find((r) => r.key === '5M')).toEqual({ key: '5M', closed: 2, wins: 1, pnl: 300 });
+    expect(s.bySide).toEqual([
+      { key: 'BUY', closed: 4, wins: 3, pnl: 400 },
+      { key: 'SELL', closed: 2, wins: 1, pnl: 250 },
+    ]);
+    // 01/10/2026 e quinta (4); a lista sai em ordem de dia da semana.
+    expect(s.byWeekday.map((r) => r.key)).toEqual(['1', '2', '4', '5']);
+  });
+
+  it('sem trade fechado: nada inventado', () => {
+    const s = stats([t(3, 9, 'XAUUSD', '15M', 'BUY', 'OPEN', 10), t(3, 10, 'XAUUSD', '15M', null, null, null)]);
+    expect(s).toMatchObject({ closed: 0, avgR: null, profitFactor: null, maxDrawdown: null, equity: [], bestDay: null, worstDay: null });
+  });
+
+  it('sem perda registrada o fator de lucro fica vazio (nao e infinito)', () => {
+    expect(stats([t(1, 9, 'XAUUSD', '15M', 'BUY', 'TP1', 100)]).profitFactor).toBeNull();
   });
 });
