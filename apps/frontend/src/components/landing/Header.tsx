@@ -1,10 +1,9 @@
 import { Menu } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { SignInButton, SignUpButton, SignedIn, SignedOut, useUser } from '@clerk/clerk-react';
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { SignInButton, SignedIn, SignedOut, useUser } from '@clerk/clerk-react';
+import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { trackSignupStartedOnce } from '@/lib/analytics';
 import lockup from '@/assets/tickrify-lockup.svg';
 import type { SiteSection } from '@/components/layout/SiteLayout';
 
@@ -22,7 +21,10 @@ interface HeaderProps {
  * também a partir de /pricing ou /accuracy, onde a seção não existe na página.
  */
 const Header = ({ active = null, minimal = false }: HeaderProps) => {
-  const { isLoaded } = useUser();
+  const { isLoaded, user } = useUser();
+  // Menu do celular: sem depender do Clerk carregar. Enquanto nao ha sessao
+  // confirmada, mostra analise gratis e login (antes o menu ficava sem os dois).
+  const signedIn = isLoaded && Boolean(user);
   const { t } = useLanguage();
   const n = t.landing.nav;
   const f = t.landing.footer;
@@ -68,29 +70,21 @@ const Header = ({ active = null, minimal = false }: HeaderProps) => {
             <LanguageSwitcher />
           </div>
 
+          {/* 05/10/2026: "Log in" visivel em TODA largura (no celular ficava
+              escondido e quem ja tinha conta so achava o "Sign in" no rodape do
+              cadastro). O botao principal leva a analise gratis (/try), igual
+              ao da home: antes tinha o MESMO texto e abria o cadastro. */}
           {isLoaded ? (
             <>
               <SignedOut>
-                <span className="hidden sm:inline-flex">
-                  <SignInButton mode="modal">
-                    <button type="button" className="site-btn site-btn-ghost site-btn-sm">
-                      {n.login}
-                    </button>
-                  </SignInButton>
-                </span>
-                <SignUpButton
-                  mode="modal"
-                  forceRedirectUrl="/dashboard"
-                  signInForceRedirectUrl="/dashboard"
-                >
-                  <button
-                    type="button"
-                    onClick={() => trackSignupStartedOnce('header')}
-                    className="site-btn site-btn-primary site-btn-sm"
-                  >
-                    {t.landing.hero.startFree}
+                <SignInButton mode="modal">
+                  <button type="button" className="site-btn site-btn-ghost site-btn-sm">
+                    {n.login}
                   </button>
-                </SignUpButton>
+                </SignInButton>
+                <Link to="/try" className="site-btn site-btn-primary site-btn-sm hidden sm:inline-flex">
+                  {t.landing.hero.startFree}
+                </Link>
               </SignedOut>
               <SignedIn>
                 <Link to="/dashboard" className="site-btn site-btn-primary site-btn-sm">
@@ -107,25 +101,50 @@ const Header = ({ active = null, minimal = false }: HeaderProps) => {
           {minimal ? null : (
           <Sheet>
             <SheetTrigger asChild>
+              {/* Some so a partir de 940px, onde a barra de links aparece
+                  (.site-nav). Com `md:hidden` (768px) sobrava uma faixa sem
+                  nenhum dos dois. */}
               <button
                 type="button"
                 aria-label={n.menu}
-                className="site-btn site-btn-ghost site-btn-icon md:hidden"
+                className="site-btn site-btn-ghost site-btn-icon min-[940px]:hidden"
               >
                 <Menu className="h-5 w-5" />
               </button>
             </SheetTrigger>
-            <SheetContent
-              side="right"
-              className="tk-site border-[var(--s-hair)] bg-[#0e1012] text-[var(--s-fg)]"
-            >
+            {/* `tk-site` fica no miolo, NUNCA no SheetContent: o `.tk-site` tem
+                `position: relative` e ganha do `fixed` do painel, que ia parar
+                no fim da pagina e o menu "nao abria" no celular (05/10/2026). */}
+            <SheetContent side="right" className="border-white/10 bg-[#08090a] text-[#f7f7f5]">
               <SheetTitle className="sr-only">{n.menu}</SheetTitle>
-              <div className="mt-8 flex flex-col gap-3">
+              <div className="tk-site mt-8 flex flex-col gap-3">
+                <SheetClose asChild>
+                  {signedIn ? (
+                    <Link to="/dashboard" className="site-btn site-btn-primary site-btn-block">
+                      {n.dashboard}
+                    </Link>
+                  ) : (
+                    <Link to="/try" className="site-btn site-btn-primary site-btn-block">
+                      {t.landing.hero.startFree}
+                    </Link>
+                  )}
+                </SheetClose>
                 {links.map((link) => (
-                  <a key={link.href} href={link.href} className="site-menu-link">
-                    {link.label}
-                  </a>
+                  <SheetClose asChild key={link.href}>
+                    <a href={link.href} className="site-menu-link">
+                      {link.label}
+                    </a>
+                  </SheetClose>
                 ))}
+                {/* Pagina de login, nao o modal: com o menu aberto o modal do
+                    Clerk ficaria por baixo do bloqueio de clique do painel. */}
+                {signedIn ? null : (
+                  <SheetClose asChild>
+                    <Link to="/sign-in" className="site-menu-link">
+                      {n.login}
+                    </Link>
+                  </SheetClose>
+                )}
                 <div className="mt-2">
                   <LanguageSwitcher />
                 </div>

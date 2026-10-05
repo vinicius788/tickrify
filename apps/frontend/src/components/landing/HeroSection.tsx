@@ -1,17 +1,19 @@
-import { SignedIn, SignedOut } from '@clerk/clerk-react';
+import { useUser } from '@clerk/clerk-react';
 import { ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 /**
- * Hero do site. Uma ideia por tela: título em duas linhas, uma frase, dois
- * botões, e o cartão de leitura à direita mostrando o formato do resultado.
+ * Hero do site. Uma ideia por tela: título em duas linhas, uma frase, UM
+ * botão, e o cartão de leitura à direita mostrando o formato do resultado.
  *
  * O cartão é um exemplo e está rotulado como tal. Nunca rotular como "live":
  * não é dado ao vivo.
  */
 const HeroSection = () => {
   const navigate = useNavigate();
+  const { isLoaded, user } = useUser();
+  const signedIn = isLoaded && Boolean(user);
   const { t } = useLanguage();
   const h = t.landing.hero;
 
@@ -38,25 +40,16 @@ const HeroSection = () => {
           <div className="site-hero-actions">
             {/* Fase 0 (ativação): o CTA primário leva à demo real sem cadastro.
                 O valor vem antes do formulário. */}
-            <SignedOut>
-              <button
-                type="button"
-                onClick={() => navigate('/try')}
-                className="site-btn site-btn-primary"
-              >
-                {h.startFree} <ArrowRight className="h-4 w-4" />
-              </button>
-            </SignedOut>
-            <SignedIn>
-              <button
-                type="button"
-                onClick={() => navigate('/dashboard')}
-                className="site-btn site-btn-primary"
-              >
-                {h.goToPanel} <ArrowRight className="h-4 w-4" />
-              </button>
-            </SignedIn>
-            <a href="#platform" className="site-btn site-btn-ghost">{h.seeExample}</a>
+            {/* Um botao so (05/10/2026). Sem depender do Clerk carregar: antes,
+                com internet lenta, o topo ficava sem botao nenhum ate o login
+                responder. Sem sessao confirmada, vai para a analise gratis. */}
+            <button
+              type="button"
+              onClick={() => navigate(signedIn ? '/dashboard' : '/try')}
+              className="site-btn site-btn-primary"
+            >
+              {signedIn ? h.goToPanel : h.startFree} <ArrowRight className="h-4 w-4" />
+            </button>
           </div>
 
           {/* Diferencial real contra os concorrentes de diário de trading, cuja

@@ -560,7 +560,6 @@ export default {
       subtitle: 'Pega cualquier gráfico, con o sin una sola línea dibujada. La IA lo lee en frío y devuelve entrada, stop, objetivos y riesgo, o te dice que no hay nada que valga la pena. La última palabra es tuya.',
       startFree: 'Empezar gratis',
       goToPanel: 'Ir al panel',
-      seeExample: 'Ver cómo es una lectura',
       valueNow: 'Sin historial de trades que importar. Sin 30 días de diario que rellenar antes. Pega un gráfico y la IA lo lee ahora: estructura, zonas, entrada, stop y objetivos.',
       freeNote: '3 planes de trade gratis • WAIT no cuenta • sin tarjeta',
       terminal: 'terminal de análisis',

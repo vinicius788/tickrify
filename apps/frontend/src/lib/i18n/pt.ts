@@ -578,7 +578,6 @@ export default {
       subtitle: 'Cole qualquer gráfico, com ou sem uma única linha desenhada. A IA lê do zero e devolve entrada, stop, alvos e risco, ou diz que não há nada que valha a pena. A decisão final é sempre sua.',
       startFree: 'Começar grátis',
       goToPanel: 'Ir para o painel',
-      seeExample: 'Ver como é uma leitura',
       valueNow: 'Sem histórico de trades pra importar. Sem 30 dias de diário pra preencher antes. Cole um gráfico e a IA lê agora: estrutura, zonas, entrada, stop e alvos.',
       freeNote: '3 planos de trade grátis • WAIT não conta • sem cartão',
       terminal: 'terminal de análise',

@@ -560,7 +560,6 @@ export default {
       subtitle: 'Paste any chart, with or without a single line drawn on it. The AI reads it cold and returns entry, stop, targets and risk, or tells you there is nothing worth taking. The final call is always yours.',
       startFree: 'Analyze my chart free',
       goToPanel: 'Go to dashboard',
-      seeExample: 'See how a read looks',
       valueNow: 'No trade history to import. No 30-day journal to fill in first. Upload a chart and the AI reads it now: structure, zones, entry, stop and targets.',
       freeNote: '3 free trade plans • WAIT reads don\'t count • no card needed',
       terminal: 'analysis terminal',

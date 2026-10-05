@@ -560,7 +560,6 @@ export default {
       subtitle: 'Fügen Sie einen beliebigen Chart ein, mit oder ohne eine einzige eingezeichnete Linie. Die KI liest ihn nüchtern und liefert Einstieg, Stop, Ziele und Risiko, oder sagt Ihnen, dass es nichts gibt, das sich lohnt. Das letzte Wort haben Sie.',
       startFree: 'Kostenlos starten',
       goToPanel: 'Zum Dashboard',
-      seeExample: 'So sieht eine Analyse aus',
       valueNow: 'Keine Trade-Historie zum Importieren. Kein 30-Tage-Journal, das erst gefüllt werden muss. Chart hochladen und die KI liest ihn sofort, Struktur, Zonen, Entry, Stop und Ziele.',
       freeNote: '3 kostenlose Trade-Pläne • WAIT zählt nicht • keine Kreditkarte',
       terminal: 'Analyse-Terminal',

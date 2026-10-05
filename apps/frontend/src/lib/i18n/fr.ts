@@ -560,7 +560,6 @@ export default {
       subtitle: 'Collez n\'importe quel graphique, avec ou sans une seule ligne tracée. L\'IA le lit à froid et renvoie entrée, stop, objectifs et risque, ou vous dit qu\'il n\'y a rien qui vaille la peine. Le dernier mot vous revient.',
       startFree: 'Commencer gratuitement',
       goToPanel: 'Aller au tableau de bord',
-      seeExample: 'Voir à quoi ressemble une lecture',
       valueNow: 'Aucun historique de trades à importer. Aucun journal de 30 jours à remplir avant. Collez un graphique et l\'IA le lit tout de suite, structure, zones, entrée, stop et objectifs.',
       freeNote: '3 plans de trade gratuits • WAIT ne compte pas • sans carte bancaire',
       terminal: 'terminal d\'analyse',
