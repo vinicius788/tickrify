@@ -12,4 +12,4 @@ jobs:
       - name: Run smoke tests
         env:
           SMOKE_OPS_TOKEN: ${{ secrets.INTERNAL_OPS_TOKEN }}
-        run: bash scripts/smoke.sh https://tickrify.onrender.com https://tickrify.vercel.app
+        run: bash scripts/smoke.sh https://tickrify.onrender.com https://tickrify.com
