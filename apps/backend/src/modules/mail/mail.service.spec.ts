@@ -37,7 +37,7 @@ describe('MailService', () => {
     expect(semOferta).not.toMatch(/% off/);
   });
 
-  it('boas-vindas: assunto, remetente configurado, reply-to do suporte e logo HTTPS absoluta', async () => {
+  it('boas-vindas: assunto, remetente configurado, reply-to do suporte, icone HTTPS absoluto e versao em texto', async () => {
     process.env.RESEND_API_KEY = 're_test';
     const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '' });
     global.fetch = fetchMock as unknown as typeof fetch;
@@ -45,10 +45,12 @@ describe('MailService', () => {
     await new MailService().sendWelcome('ana@example.com', 'Ana');
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.subject).toBe('Your 3 free Tickrify analyses are ready');
+    expect(body.subject).toBe('Welcome to Tickrify: your 3 free trade plans are ready');
     expect(body.reply_to).toBe('support@tickrify.com');
-    expect(body.html).toContain('src="https://tickrify.com/logo.png"');
+    expect(body.html).toContain('src="https://tickrify.com/icon.png"');
     expect(body.html).toContain('Hi Ana,');
+    expect(body.text).toContain('Hi Ana,');
+    expect(body.text).toContain('https://tickrify.com/dashboard');
   });
 
   it('boas-vindas: falha da Resend nao lanca erro', async () => {

@@ -1,14 +1,23 @@
-import { cleanFirstName, renderWelcomeEmail, WELCOME_LOGO_URL } from './welcome-email';
+import { cleanFirstName, renderWelcomeEmail, renderWelcomeText, welcomeSubject, WELCOME_ICON_URL } from './welcome-email';
 
 describe('renderWelcomeEmail', () => {
   const appUrl = 'https://tickrify.com';
 
-  it('logo em URL HTTPS absoluta e botao apontando para o painel', () => {
+  it('icone em URL HTTPS absoluta, marca em texto e botao apontando para o painel', () => {
     const html = renderWelcomeEmail({ appUrl });
-    expect(WELCOME_LOGO_URL).toMatch(/^https:\/\//);
-    expect(html).toContain(`src="${WELCOME_LOGO_URL}"`);
+    expect(WELCOME_ICON_URL).toMatch(/^https:\/\//);
+    expect(html).toContain(`src="${WELCOME_ICON_URL}"`);
+    // A marca aparece mesmo com imagem bloqueada pelo cliente de e-mail.
+    expect(html).toMatch(/>Tickrify<\/td>/);
     expect(html).toContain('href="https://tickrify.com/dashboard"');
-    expect(html).toContain('Analyze a chart');
+    expect(html).toContain('Analyze your first chart');
+    expect(html).not.toMatch(/<svg|data:image/);
+  });
+
+  it('largura de 600px, CSS inline e modo escuro', () => {
+    const html = renderWelcomeEmail({ appUrl });
+    expect(html).toContain('max-width:600px');
+    expect(html).toContain('prefers-color-scheme: dark');
   });
 
   it('nao duplica a barra final da URL da aplicacao', () => {
@@ -28,7 +37,7 @@ describe('renderWelcomeEmail', () => {
       expect(html).not.toMatch(/undefined|null/);
       expect(html).not.toContain('Hi ,');
       expect(html).not.toContain('Hi ');
-      expect(html).toContain('Welcome to Tickrify.');
+      expect(renderWelcomeText({ appUrl, firstName })).not.toContain('Hi ');
     }
   });
 
@@ -39,12 +48,20 @@ describe('renderWelcomeEmail', () => {
     expect(html).toContain('&lt;script&gt;');
   });
 
-  it('textos e preview exatos, sem travessao', () => {
+  it('a regra do gratis e a verdadeira (WAIT nao conta, teto de 10), sem travessao', () => {
     const html = renderWelcomeEmail({ appUrl });
-    expect(html).toContain('Your 3 free analyses are ready');
-    expect(html).toContain('Your Tickrify account is ready. Analyze your first chart.');
-    expect(html).toContain('Tickrify provides analytical information and a second opinion, not financial advice. Trading involves risk. The decision is yours.');
-    expect(html).not.toContain('—');
+    const text = renderWelcomeText({ appUrl });
+    for (const out of [html, text]) {
+      expect(out).toContain('3 free trade plans (BUY or SELL). WAIT reads do not count against them, up to 10 analyses in total.');
+      expect(out).toContain('never places orders');
+      expect(out).not.toContain('—');
+    }
+    expect(welcomeSubject()).toBe('Welcome to Tickrify: your 3 free trade plans are ready');
+    expect(welcomeSubject()).not.toContain('—');
+  });
+
+  it('versao em texto puro leva o link do painel', () => {
+    expect(renderWelcomeText({ appUrl })).toContain('Analyze your first chart: https://tickrify.com/dashboard');
   });
 
   it('cleanFirstName limita o tamanho', () => {

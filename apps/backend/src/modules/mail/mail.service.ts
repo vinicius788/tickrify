@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { renderWelcomeEmail, welcomeSubject } from './welcome-email';
+import { renderWelcomeEmail, renderWelcomeText, welcomeSubject } from './welcome-email';
 
 /**
  * Serviço de e-mail isolado, usando a API HTTP do Resend (sem dependência nova).
@@ -28,7 +28,7 @@ export class MailService {
     to: string,
     subject: string,
     html: string,
-    options: { kind: string; replyTo?: string; from?: string; headers?: Record<string, string> },
+    options: { kind: string; replyTo?: string; from?: string; headers?: Record<string, string>; text?: string },
   ): Promise<boolean> {
     if (!this.apiKey) {
       this.logger.warn('RESEND_API_KEY ausente — pulando envio de e-mail.');
@@ -48,6 +48,7 @@ export class MailService {
           to,
           subject,
           html,
+          ...(options.text ? { text: options.text } : {}),
           reply_to: options.replyTo || this.replyTo,
           ...(options.headers ? { headers: options.headers } : {}),
         }),
@@ -114,7 +115,10 @@ export class MailService {
 
   /** Boas-vindas: disparado uma unica vez, quando a conta nova e criada. `firstName` e opcional. */
   async sendWelcome(to: string, firstName?: string | null): Promise<void> {
-    await this.send(to, welcomeSubject(), renderWelcomeEmail({ appUrl: this.appUrl, firstName }), { kind: 'welcome' });
+    await this.send(to, welcomeSubject(), renderWelcomeEmail({ appUrl: this.appUrl, firstName }), {
+      kind: 'welcome',
+      text: renderWelcomeText({ appUrl: this.appUrl, firstName }),
+    });
   }
 
   /**
