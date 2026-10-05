@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { useAnalysisLimit, type UserPlan } from "@/hooks/useAnalysisLimit";
 import { useTicks } from "@/hooks/useTicks";
-import { Zap, Crown, TriangleAlert, ExternalLink } from "lucide-react";
+import { Coins, Crown, Gift, TriangleAlert, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { buildApiUrl } from "@/lib/api";
@@ -93,7 +93,7 @@ const AnalysisCounter = () => {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Zap className="h-4 w-4 text-[var(--accent-green)]" />
+                <Gift className="h-4 w-4 text-[var(--accent-green)]" />
                 <span className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
                   {c.freeTitle}
                 </span>
@@ -168,7 +168,7 @@ const AnalysisCounter = () => {
               </span>
             </div>
             <div className="flex items-center gap-1 text-sm font-bold text-[var(--text-primary)]">
-              <Zap className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
+              <Coins className="h-3.5 w-3.5 text-[var(--accent-green)]" />
               <span>{balance}</span>
               {planTicks > 0 && (
                 <span className="text-xs font-normal text-[var(--text-secondary)]">/{planTicks}</span>

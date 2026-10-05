@@ -885,16 +885,31 @@ describe('DashboardPage', () => {
     expect(mensal).toBeGreaterThan(semanal);
   });
 
-  it('assinante ve o cartao do plano (onde fica o Manage subscription), nao so o gratis', async () => {
+  it('assinante: o cartao do plano (Manage subscription) abre pelo saldo ou pelo plano no topo, nao fica fixo', async () => {
+    const user = userEvent.setup();
     mockUseAnalysisLimit.mockReturnValue({ plan: 'weekly', isUnlimited: true, isLoading: false, total: Infinity, remaining: Infinity, used: 0 });
+    mockUseTicks.mockReturnValue({ balance: 21, refetch: vi.fn(), history: [], loadingBalance: false });
     mockUseAPIClient.mockReturnValue(makeApiClient({
       listAnalyses: vi.fn().mockResolvedValue([
         { id: 's-1', status: 'completed', symbol: 'BTCUSD', timeframe: '1H', recommendation: 'BUY', createdAt: new Date().toISOString() },
       ]),
     }));
     renderDashboard('/dashboard');
-    // Barra lateral (computador) e topo do inicio (celular).
-    expect((await screen.findAllByText('Analysis counter')).length).toBe(2);
+
+    const plano = await screen.findByRole('button', { name: /WEEKLY/ });
+    expect(screen.queryByText('Analysis counter')).toBeNull();
+    await user.click(plano);
+    expect(screen.getByText('Analysis counter')).toBeTruthy();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByText('Analysis counter')).toBeNull();
+    await user.click(screen.getByRole('button', { name: '21 Ticks' }));
+    expect(screen.getByText('Analysis counter')).toBeTruthy();
+  });
+
+  it('gratis continua vendo o contador na lateral', async () => {
+    mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 1, remaining: 2, isUnlimited: false, isLoading: false });
+    renderDashboard('/dashboard');
+    expect(await screen.findByText('Analysis counter')).toBeTruthy();
   });
 
   it('pergunta de origem tambem aparece logo abaixo do resultado da analise', async () => {

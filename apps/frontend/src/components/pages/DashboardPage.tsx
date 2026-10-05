@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Zap, Upload, Sliders, Handshake } from "lucide-react";
+import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Coins, Upload, Sliders, Handshake } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import * as Sentry from "@sentry/react";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
@@ -1087,7 +1087,7 @@ const DashboardPage = () => {
         accent: true,
       },
       { label: t.nav.activeMarkets, value: String(realActiveMarkets.length), sub: t.nav.kpiSubMarkets, Icon: Activity },
-      { label: 'Ticks', value: String(ticksNum), sub: t.nav.kpiSubTicks, Icon: Zap },
+      { label: 'Ticks', value: String(ticksNum), sub: t.nav.kpiSubTicks, Icon: Coins },
     ];
     return (
       <div className="flex flex-col gap-4">
@@ -1804,11 +1804,11 @@ const DashboardPage = () => {
           </nav>
 
 
-          {/* Gratis: contador das gratis. Assinante: saldo de ticks e
-              "Manage subscription" (portal da Stripe, onde se cancela). Ate
-              05/10/2026 so o gratis via este bloco, e o assinante nao tinha
-              onde cancelar pelo painel, embora a /pricing prometesse. */}
-          {user && (
+          {/* Gratis: contador das gratis na lateral (o empurrao para assinar).
+              Assinante: o cartao do plano (saldo, renovacao e "Manage
+              subscription", onde se cancela) abre ao clicar no saldo ou no
+              plano no topo (TicksBadge); fixo aqui ele poluia a lateral. */}
+          {user && plan === 'free' && !isPlanLoading && (
             <div className="mt-4">
               <AnalysisCounter />
             </div>
@@ -1886,15 +1886,18 @@ const DashboardPage = () => {
             </span>
           </div>
 
-          {user && <TicksBadge />}
-
-          <div className="flex shrink-0 items-center gap-1 rounded-lg border border-[var(--border-subtle)] px-2.5 py-1.5 text-sm font-medium">
-            <Zap className="h-3.5 w-3.5 text-[var(--accent-green)]" />
-            <span className="whitespace-nowrap">{navbarUnlimited ? plan.toUpperCase() : quotaText}</span>
-            <span className="hidden whitespace-nowrap text-[var(--text-secondary)] md:inline">
-              {navbarUnlimited ? `· ${t.nav.statusActive}` : ''}
-            </span>
-          </div>
+          {user ? (
+            <TicksBadge
+              showBalance
+              subscriber={navbarUnlimited}
+              planText={navbarUnlimited ? plan.toUpperCase() : quotaText}
+              planSub={navbarUnlimited ? `· ${t.nav.statusActive}` : ''}
+            />
+          ) : (
+            <div className="flex shrink-0 items-center gap-1 rounded-lg border border-[var(--border-subtle)] px-2.5 py-1.5 text-sm font-medium">
+              <span className="whitespace-nowrap">{navbarUnlimited ? plan.toUpperCase() : quotaText}</span>
+            </div>
+          )}
 
           <LanguageSwitcher />
 
@@ -1935,13 +1938,6 @@ const DashboardPage = () => {
               </Link>
             ))}
           </div>
-          {/* Celular (sem barra lateral): o assinante ve o plano e o "Manage
-              subscription" no inicio e nos Planos. */}
-          {user && plan !== 'free' && !isPlanLoading && (activeNav === 'home' || activeNav === 'plans') && (
-            <div className="p-3">
-              <AnalysisCounter />
-            </div>
-          )}
           {user && plan === 'free' && (
             <div className="p-3">
               <Button
