@@ -17,7 +17,9 @@ export interface ProblemReport {
   resolvedAt: string | null;
 }
 
-export function useProblemReports(filtro: ReportStatus | 'todos') {
+export type ReportKind = 'problem' | 'feedback';
+
+export function useProblemReports(filtro: ReportStatus | 'todos', kind: ReportKind = 'problem') {
   const { getToken, isSignedIn } = useAuth();
   const queryClient = useQueryClient();
 
@@ -27,12 +29,12 @@ export function useProblemReports(filtro: ReportStatus | 'todos') {
   };
 
   const query = useQuery<{ itens: ProblemReport[]; contagem: Record<string, number> }, Error>({
-    queryKey: ['admin-reports', filtro],
+    queryKey: ['admin-reports', kind, filtro],
     enabled: Boolean(isSignedIn),
     staleTime: 0,
     retry: false,
     queryFn: async () => {
-      const res = await fetch(buildApiUrl(`/api/admin/reports?status=${filtro}`), {
+      const res = await fetch(buildApiUrl(`/api/admin/reports?status=${filtro}&kind=${kind}`), {
         headers: await authHeaders(),
       });
       if (res.status === 403) throw new Error('SEM_ACESSO');

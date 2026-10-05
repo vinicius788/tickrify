@@ -385,6 +385,9 @@ export type FunnelEvent =
   // ultima gratis, menu). `source` diz qual. O clique no BOTAO DE COMPRA em si
   // continua sendo `upgrade_clicked`.
   | 'upgrade_cta_viewed'
+  // Quadrinho de opiniao do painel (o texto fica so no banco, nunca no PostHog).
+  | 'feedback_sent'
+  | 'feedback_dismissed'
   | 'upgrade_cta_clicked'
   | 'upgrade_clicked'
   // Disparado quando a Stripe DEVOLVEU a URL do checkout, nao no clique.

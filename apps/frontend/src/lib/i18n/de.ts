@@ -459,6 +459,18 @@ export default {
     step3Text: 'Einstieg, Stop, Ziele und Risiko, wenn es ein sauberes Setup gibt. Ein WAIT mit dem, was sich ändern müsste, wenn nicht.',
     note: 'Eine zweite Meinung vor dem Einstieg, kein Signaldienst. Tickrify platziert nie Orders und verspricht keinen Gewinn: Die Entscheidung liegt immer bei dir.',
   },
+  feedback: {
+    title: 'Wie gefällt dir Tickrify bisher?',
+    subtitle: 'Was funktioniert, was verwirrt, was fehlt. Nur das Tickrify-Team liest das.',
+    placeholder: 'Zum Beispiel: Die WAIT-Erklärung hat geholfen, aber ich hätte gern einen Hinweis, wenn der Einstieg erreicht wird.',
+    send: 'Senden',
+    sending: 'Wird gesendet…',
+    dismiss: 'Nicht jetzt',
+    thanks: 'Danke. Das geht direkt an das Team.',
+    short: 'Schreib etwas mehr (mindestens 5 Zeichen).',
+    failed: 'Das wurde nicht gesendet. Versuch es gleich noch einmal.',
+    limit: 'Wir haben in dieser Stunde schon mehrere Nachrichten von dir. Versuch es später.',
+  },
   paywall: {
     titleNewAnalysis: 'Deine kostenlosen Analysen mit Tradeplan sind aufgebraucht',
     titleArea: 'Abonniere, um weiter Zugriff auf deine Analysen und Trades zu haben',
@@ -541,9 +553,9 @@ export default {
   landing: {
     nav: { features: 'Funktionen', how: 'So funktioniert\'s', panel: 'Panel', plans: 'Pläne', faq: 'FAQ', login: 'Anmelden', dashboard: 'Dashboard', app: 'App', menu: 'Hauptmenü' },
     hero: {
-      badge: 'Trading-Copilot • eine zweite Meinung, keine Signale',
-      title1: 'Handeln Sie nicht mehr',
-      title2: 'im Dunkeln.',
+      badge: 'Eine zweite Meinung, keine Signale • du entscheidest',
+      title1: 'Dein Trading-Copilot',
+      title2: 'mit KI.',
       seoLine: 'KI-Chartanalyse für Forex, Gold, Krypto und Indizes, aus einem Screenshot von TradingView, MetaTrader oder deinem Broker.',
       subtitle: 'Fügen Sie einen beliebigen Chart ein, mit oder ohne eine einzige eingezeichnete Linie. Die KI liest ihn nüchtern und liefert Einstieg, Stop, Ziele und Risiko, oder sagt Ihnen, dass es nichts gibt, das sich lohnt. Das letzte Wort haben Sie.',
       startFree: 'Kostenlos starten',

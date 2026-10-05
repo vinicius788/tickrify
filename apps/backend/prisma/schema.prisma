@@ -263,6 +263,7 @@ model ProblemReport {
   route      String?
   analysisId String?
   context    Json?
+  kind       String    @default("problem") // problem (botao de relato) | feedback (quadrinho de opiniao)
   status     String    @default("aberto")
   resolvedAt DateTime?
   createdAt  DateTime  @default(now())

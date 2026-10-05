@@ -459,6 +459,18 @@ export default {
     step3Text: 'Entrée, stop, objectifs et risque quand il y a un setup propre. Un WAIT, avec ce qui devrait changer, quand il n\'y en a pas.',
     note: 'Un deuxième avis avant d\'entrer, pas un service de signaux. Tickrify ne passe jamais d\'ordres et ne promet aucun gain : la décision vous appartient toujours.',
   },
+  feedback: {
+    title: 'Qu\'est-ce que vous pensez de Tickrify jusqu\'ici ?',
+    subtitle: 'Ce qui marche, ce qui est confus, ce qui manque. Seule l\'équipe Tickrify lit ceci.',
+    placeholder: 'Par exemple : l\'explication du WAIT m\'a aidé, mais je voulais une alerte quand l\'entrée est atteinte.',
+    send: 'Envoyer',
+    sending: 'Envoi…',
+    dismiss: 'Pas maintenant',
+    thanks: 'Merci. Ça part directement à l\'équipe.',
+    short: 'Écrivez un peu plus (5 caractères minimum).',
+    failed: 'L\'envoi a échoué. Réessayez dans un instant.',
+    limit: 'Nous avons déjà plusieurs messages de vous cette heure-ci. Réessayez plus tard.',
+  },
   paywall: {
     titleNewAnalysis: 'Vos analyses gratuites avec plan de trade sont épuisées',
     titleArea: 'Abonnez-vous pour garder l\'accès à vos analyses et à vos trades',
@@ -541,9 +553,9 @@ export default {
   landing: {
     nav: { features: 'Fonctionnalités', how: 'Comment ça marche', panel: 'Panneau', plans: 'Offres', faq: 'FAQ', login: 'Connexion', dashboard: 'Tableau de bord', app: 'App', menu: 'Menu principal' },
     hero: {
-      badge: 'Copilote de trading • un deuxième avis, pas des signaux',
-      title1: 'Arrêtez de trader',
-      title2: 'à l\'aveugle.',
+      badge: 'Un deuxième avis, pas des signaux • vous décidez',
+      title1: 'Votre copilote',
+      title2: 'de trading IA.',
       seoLine: "Analyse de graphiques par IA pour le forex, l'or, les cryptos et les indices, à partir d'une capture de TradingView, MetaTrader ou de votre courtier.",
       subtitle: 'Collez n\'importe quel graphique, avec ou sans une seule ligne tracée. L\'IA le lit à froid et renvoie entrée, stop, objectifs et risque, ou vous dit qu\'il n\'y a rien qui vaille la peine. Le dernier mot vous revient.',
       startFree: 'Commencer gratuitement',

@@ -6,6 +6,14 @@ import { MailService } from '../mail/mail.service';
 
 export type ReportStatus = 'aberto' | 'investigando' | 'resolvido' | 'descartado';
 
+/**
+ * `problem` = botao "Report a problem" (bug, com contexto e aviso por e-mail).
+ * `feedback` = quadrinho "What do you think?" do painel (05/10/2026): opiniao
+ * livre, SEM e-mail (o dono le no /admin, aba Opinioes, quando puder).
+ */
+export type ReportKind = 'problem' | 'feedback';
+export const REPORT_KINDS: readonly ReportKind[] = ['problem', 'feedback'] as const;
+
 export const REPORT_STATUSES: readonly ReportStatus[] = [
   'aberto',
   'investigando',
@@ -20,6 +28,7 @@ export interface ProblemReportRow {
   route: string | null;
   analysisId: string | null;
   context: unknown;
+  kind: string;
   status: string;
   resolvedAt: Date | null;
   createdAt: Date;
@@ -98,6 +107,9 @@ export class ReportsService implements OnModuleInit {
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."ProblemReport" ENABLE ROW LEVEL SECURITY',
       );
+      await this.prisma.$executeRawUnsafe(
+        `ALTER TABLE "tickrify"."ProblemReport" ADD COLUMN IF NOT EXISTS "kind" TEXT NOT NULL DEFAULT 'problem'`,
+      );
     } catch (error) {
       this.logger.warn(
         `[relatos] Não foi possível preparar a tabela: ${
@@ -162,14 +174,16 @@ export class ReportsService implements OnModuleInit {
     route?: string;
     analysisId?: string;
     context?: Record<string, unknown>;
+    kind?: ReportKind;
   }): Promise<{ id: string; status: ReportStatus }> {
     const id = randomUUID();
+    const kind: ReportKind = params.kind === 'feedback' ? 'feedback' : 'problem';
     const contexto = this.sanitizarContexto(params.context);
 
     await this.prisma.$executeRaw(
       Prisma.sql`
         INSERT INTO "tickrify"."ProblemReport"
-          ("id", "userId", "message", "route", "analysisId", "context", "status", "createdAt")
+          ("id", "userId", "message", "route", "analysisId", "context", "kind", "status", "createdAt")
         VALUES (
           ${id},
           ${params.userId},
@@ -177,11 +191,18 @@ export class ReportsService implements OnModuleInit {
           ${params.route ?? null},
           ${params.analysisId ?? null},
           ${contexto === Prisma.DbNull ? null : JSON.stringify(contexto)}::jsonb,
+          ${kind},
           'aberto',
           NOW()
         )
       `,
     );
+
+    if (kind === 'feedback') {
+      // Opiniao nao vira e-mail: o dono le no /admin quando puder.
+      this.logger.log(`[feedback] Nova opiniao ${id}${params.route ? ` em ${params.route}` : ''}`);
+      return { id, status: 'aberto' };
+    }
 
     this.logger.log(
       `[relatos] Novo relato ${id}${params.route ? ` em ${params.route}` : ''}${
@@ -239,32 +260,23 @@ export class ReportsService implements OnModuleInit {
     }
   }
 
-  async listar(status?: ReportStatus, limite = 50): Promise<ProblemReportRow[]> {
+  async listar(status?: ReportStatus, limite = 50, kind: ReportKind = 'problem'): Promise<ProblemReportRow[]> {
     const take = Math.min(Math.max(limite, 1), 200);
 
-    const linhas = status
-      ? await this.prisma.$queryRaw<ProblemReportRow[]>(Prisma.sql`
-          SELECT r.*, u."email" AS "userEmail"
-          FROM "tickrify"."ProblemReport" r
-          LEFT JOIN "tickrify"."User" u ON u."id" = r."userId"
-          WHERE r."status" = ${status}
-          ORDER BY r."createdAt" DESC
-          LIMIT ${take}
-        `)
-      : await this.prisma.$queryRaw<ProblemReportRow[]>(Prisma.sql`
-          SELECT r.*, u."email" AS "userEmail"
-          FROM "tickrify"."ProblemReport" r
-          LEFT JOIN "tickrify"."User" u ON u."id" = r."userId"
-          ORDER BY r."createdAt" DESC
-          LIMIT ${take}
-        `);
-
-    return linhas;
+    return this.prisma.$queryRaw<ProblemReportRow[]>(Prisma.sql`
+      SELECT r.*, u."email" AS "userEmail"
+      FROM "tickrify"."ProblemReport" r
+      LEFT JOIN "tickrify"."User" u ON u."id" = r."userId"
+      WHERE r."kind" = ${kind}
+      ${status ? Prisma.sql`AND r."status" = ${status}` : Prisma.empty}
+      ORDER BY r."createdAt" DESC
+      LIMIT ${take}
+    `);
   }
 
-  async contarPorStatus(): Promise<Record<string, number>> {
+  async contarPorStatus(kind: ReportKind = 'problem'): Promise<Record<string, number>> {
     const linhas = await this.prisma.$queryRaw<Array<{ status: string; total: bigint }>>(
-      Prisma.sql`SELECT "status", COUNT(*)::bigint AS total FROM "tickrify"."ProblemReport" GROUP BY "status"`,
+      Prisma.sql`SELECT "status", COUNT(*)::bigint AS total FROM "tickrify"."ProblemReport" WHERE "kind" = ${kind} GROUP BY "status"`,
     );
     const saida: Record<string, number> = {};
     for (const linha of linhas) saida[linha.status] = Number(linha.total);

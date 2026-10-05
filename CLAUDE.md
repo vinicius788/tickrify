@@ -393,6 +393,13 @@ Vale para TODA mudanca, grande ou pequena:
   surface }`, `upgrade_cta_clicked { destination: 'plans' }`, `upgrade_clicked`
   e `checkout_started` com `surface` (Stripe recebe `source=locked_value`). O
   `upgrade_modal_viewed { trigger: 'locked_value' }` saiu: era o paywall.
+- **Quadrinho de opiniao** (`FeedbackCard.tsx`): "What do you think of
+  Tickrify so far?" na tela inicial do painel, so para quem ja fez 1 analise e
+  nunca junto da pergunta de origem. Grava em `ProblemReport` com
+  `kind='feedback'` (coluna nova: migracao `20261005120000_problem_report_kind`
+  e `ADD COLUMN IF NOT EXISTS` no boot do `ReportsService`), SEM e-mail. Lido
+  na aba "Opinioes" do /admin. Dispensar esconde 30 dias; enviar, 60. Eventos
+  `feedback_sent { length }` e `feedback_dismissed` (o texto nunca vai ao PostHog).
 - **Traducao automatica:** area logada (tudo sob `ProtectedRoute`, e no boot
   pelo `isLoggedAreaPath`) marca `<html translate="no" class="notranslate">`;
   a vitrine segue traduzivel. O `removeChild` do Google Translate derrubava o
@@ -657,6 +664,8 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **30/09:** 3 analises de exemplo fixas no painel antes das gratis (otimista, pessimista, neutra, com o depois), sem IA e sem cota (ver 3.5); o exemplo em um clique (`/api/demo/example`) saiu.
 - **30/09 (confianca e recibos):** confianca, Signal/Read e "Probabilities" fora de todas as telas (card mostra a hora da leitura em UTC); R/R principal pelo TP1; rota publica `/api/ai/public-analyses/scored` e tabela "What the market did 48 hours later" na home (WIN, LOSS, NO_FILL, TIMEOUT, ordem do sweeper); semanal na secao de preco da home; textos falsos corrigidos nos 6 idiomas e no corpo pre-renderizado ("one-off Ticks", "See live analysis", "API sleeps", FAQ "professional traders", "3 free analyses" virou "3 free trade plans, WAIT doesn't count"); blog, `llms.txt` e /pricing sem "confidence score/tier". `confidenceToPercent` e `getConvictionTier` removidos.
 - **05/10 (WAIT% medido, SQL do dono):** luna, por `promptVer` e posicao da analise do usuario. v10 e v11 (antes de 24/09): 76% a 93% de WAIT. v12 (v7.5): 38% na 1a analise gratis (n=82), 35% na 2a (n=52), 33% na 3a (n=33), 33% da 4a em diante no gratis (n=30) e 32% no pago (n=57). Dentro do alvo 35-55% so na 1a e 2a, logo abaixo nas outras, longe do alarme de 25%. Gratis e pago iguais: o motor nao trata o gratis diferente. Prompt nao muda sem medir o acerto.
+- **05/10 (CI):** CI verde pela 1a vez desde 29/09. O jest nao saia (timer do ciclo de vida no `ai.worker.ts` sem `unref`) e cada CI rodava ate o limite de 6h; o gitleaks acusava a chave PUBLICA de projeto do PostHog (`phc_`) no `static-analytics.js`, liberada por formato no `.gitleaks.toml`. Smoke test agendado apontava para `tickrify.vercel.app` (nao existe mais), trocado por `tickrify.com`.
+- **05/10 (opiniao):** quadrinho de opiniao no painel (ver 3.6).
 - **05/10:** semana de produto: erro `removeChild` do painel (Google Translate) com causa reproduzida e corrigida, `translate="no"` na area logada e Sentry passando a receber o erro; rotas reais do painel e Planos dentro dele; EARLY35 so no mensal no servidor e na vitrine; gratis esgotado trava historico, diario e resultado no servidor (402) com paywall unico em 6 idiomas; numeros de desempenho fora da home e do corpo pre-renderizado (so na /accuracy); "3 free analyses" corrigido para "3 free trade plans" no resto do site (blog, tools, meta description, FAQ, /try); "cheaper than buying Ticks one by one" removido (nao existe avulso); bloco "How Tickrify works" e leitura do /try no painel; e-mail de boas-vindas redesenhado (marca em texto, versao texto puro, regra verdadeira do gratis) aguardando aprovacao; pergunta de origem vira propriedade de pessoa no PostHog; modelo padrao sem env vira `gpt-5.6-luna`. Detalhe em `_local/funil-2026-10-05.md`.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 

@@ -36,6 +36,7 @@ vi.mock('@/lib/api', () => ({
     }
   },
   useAPIClient: () => mockUseAPIClient(),
+  buildApiUrl: (path: string) => `https://api.test${path}`,
   isFreeQuotaExhausted: (error: unknown) =>
     Boolean(error) && (error as { status?: number }).status === 402 && (error as { code?: string }).code === 'free_quota_exhausted',
 }));
@@ -776,6 +777,72 @@ describe('DashboardPage', () => {
       await user.click(await screen.findByRole('button', { name: 'Agora não' }));
       expect(screen.queryByRole('button', { name: 'ChatGPT' })).toBeNull();
       expect(setAcquisitionSource).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('quadrinho de opiniao', () => {
+    const comAnalise = () =>
+      makeApiClient({
+        listAnalyses: vi.fn().mockResolvedValue([
+          { id: 'f-1', status: 'completed', symbol: 'BTCUSD', timeframe: '1H', recommendation: 'BUY', createdAt: new Date().toISOString() },
+        ]),
+      });
+    const usage = { plan: 'free', total: 3, used: 1, remaining: 2, isUnlimited: false, freeLocked: false, isLoading: false, analysesAllTime: 1 };
+
+    afterEach(() => {
+      window.localStorage.removeItem('tickrify_feedback_hidden_until');
+      vi.unstubAllGlobals();
+    });
+
+    it('envia a opiniao como kind feedback, com a rota, e agradece', async () => {
+      const user = userEvent.setup();
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 201, json: async () => ({}) });
+      vi.stubGlobal('fetch', fetchMock);
+      mockUseAnalysisLimit.mockReturnValue(usage);
+      mockUseAPIClient.mockReturnValue(comAnalise());
+      renderDashboard('/dashboard');
+
+      await user.type(await screen.findByRole('textbox', { name: 'O que você está achando da Tickrify?' }), 'Gostei, mas quero alerta de entrada');
+      await user.click(screen.getByRole('button', { name: 'Enviar' }));
+
+      expect(await screen.findByText('Obrigado. Vai direto para a equipe.')).toBeTruthy();
+      const [url, init] = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/api/reports'))!;
+      expect(url).toBe('https://api.test/api/reports');
+      expect(JSON.parse(init.body)).toEqual({ message: 'Gostei, mas quero alerta de entrada', route: '/dashboard', kind: 'feedback' });
+      expect(mockTrack).toHaveBeenCalledWith('feedback_sent', { length: 35 });
+    });
+
+    it('texto curto nao envia', async () => {
+      const user = userEvent.setup();
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      mockUseAnalysisLimit.mockReturnValue(usage);
+      mockUseAPIClient.mockReturnValue(comAnalise());
+      renderDashboard('/dashboard');
+
+      await user.type(await screen.findByRole('textbox', { name: 'O que você está achando da Tickrify?' }), 'ok');
+      await user.click(screen.getByRole('button', { name: 'Enviar' }));
+      expect(screen.getByRole('alert').textContent).toContain('mínimo de 5');
+      expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/api/reports'))).toBe(false);
+    });
+
+    it('dispensar esconde e lembra no aparelho', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockReturnValue(usage);
+      mockUseAPIClient.mockReturnValue(comAnalise());
+      renderDashboard('/dashboard');
+
+      await user.click(await screen.findByRole('button', { name: 'Agora não' }));
+      expect(screen.queryByText('O que você está achando da Tickrify?')).toBeNull();
+      expect(Number(window.localStorage.getItem('tickrify_feedback_hidden_until'))).toBeGreaterThan(Date.now());
+    });
+
+    it('quem nunca analisou nao ve o quadrinho', async () => {
+      mockUseAnalysisLimit.mockReturnValue({ ...usage, used: 0, analysesAllTime: 0 });
+      mockUseAPIClient.mockReturnValue(makeApiClient());
+      renderDashboard('/dashboard/trades');
+      await screen.findByText('My trades');
+      expect(screen.queryByText('O que você está achando da Tickrify?')).toBeNull();
     });
   });
 });

@@ -155,7 +155,7 @@ function LinhaFlag({
   );
 }
 
-type Aba = 'afiliados' | 'relatos' | 'config';
+type Aba = 'afiliados' | 'relatos' | 'opinioes' | 'config';
 
 /** Contador do topo. Zero fica apagado; acima de zero chama atencao e leva a aba. */
 function Pendencia({ n, rotulo, onClick }: { n: number | null; rotulo: string; onClick: () => void }) {
@@ -177,6 +177,7 @@ function Pendencia({ n, rotulo, onClick }: { n: number | null; rotulo: string; o
 const ABAS: Array<{ chave: Aba; rotulo: string }> = [
   { chave: 'afiliados', rotulo: 'Afiliados' },
   { chave: 'relatos', rotulo: 'Relatos de problema' },
+  { chave: 'opinioes', rotulo: 'Opiniões' },
   { chave: 'config', rotulo: 'Configurações avançadas' },
 ];
 
@@ -187,13 +188,15 @@ export default function AdminPage() {
   const [aba, setAba] = useState<Aba>('afiliados');
   const { affiliates, payouts } = useAffiliateAdmin();
   const { contagem } = useProblemReports('aberto');
+  const { contagem: contagemOpinioes } = useProblemReports('aberto', 'feedback');
 
   const pedidosAfiliado = affiliates.data ? affiliates.data.filter((a) => a.status === 'PENDING').length : null;
   const saquesAbertos = payouts.data
     ? payouts.data.filter((p) => p.status === 'REQUESTED' || p.status === 'APPROVED').length
     : null;
   const relatosAbertos = contagem.aberto ?? 0;
-  const nadaPendente = pedidosAfiliado === 0 && saquesAbertos === 0 && relatosAbertos === 0;
+  const opinioesNovas = contagemOpinioes.aberto ?? 0;
+  const nadaPendente = pedidosAfiliado === 0 && saquesAbertos === 0 && relatosAbertos === 0 && opinioesNovas === 0;
 
   const salvando = setFlag.isPending || clearFlag.isPending;
 
@@ -241,6 +244,7 @@ export default function AdminPage() {
             <Pendencia n={pedidosAfiliado} rotulo="pedidos de afiliado para aprovar" onClick={() => setAba('afiliados')} />
             <Pendencia n={saquesAbertos} rotulo="saques de afiliado para pagar" onClick={() => setAba('afiliados')} />
             <Pendencia n={relatosAbertos} rotulo="relatos de problema abertos" onClick={() => setAba('relatos')} />
+            <Pendencia n={opinioesNovas} rotulo="opiniões novas" onClick={() => setAba('opinioes')} />
           </div>
         )}
 
@@ -264,6 +268,8 @@ export default function AdminPage() {
         {aba === 'afiliados' && <AfiliadosPainel />}
 
         {aba === 'relatos' && <RelatosPainel />}
+
+        {aba === 'opinioes' && <RelatosPainel kind="feedback" />}
 
         {aba === 'config' && (
           <>

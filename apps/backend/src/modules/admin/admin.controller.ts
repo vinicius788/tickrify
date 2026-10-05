@@ -4,7 +4,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { FeatureFlagsService } from './feature-flags.service';
-import { ReportsService, type ReportStatus } from '../reports/reports.service';
+import { ReportsService, type ReportKind, type ReportStatus } from '../reports/reports.service';
 import { SetFlagDto } from './dto/set-flag.dto';
 import { SetReportStatusDto } from './dto/set-report-status.dto';
 
@@ -65,11 +65,13 @@ export class AdminController {
   /** Caixa de entrada dos relatos, com a contagem por estado. */
   @Get('reports')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  async listarRelatos(@Query('status') status?: string) {
+  async listarRelatos(@Query('status') status?: string, @Query('kind') kindRaw?: string) {
     const filtro = (status && status !== 'todos' ? status : undefined) as ReportStatus | undefined;
+    // Problemas e opinioes (quadrinho do painel) ficam em abas separadas.
+    const kind: ReportKind = kindRaw === 'feedback' ? 'feedback' : 'problem';
     const [itens, contagem] = await Promise.all([
-      this.reports.listar(filtro),
-      this.reports.contarPorStatus(),
+      this.reports.listar(filtro, 50, kind),
+      this.reports.contarPorStatus(kind),
     ]);
     return { itens, contagem };
   }

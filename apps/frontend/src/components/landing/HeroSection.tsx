@@ -27,7 +27,7 @@ const HeroSection = () => {
             {h.title2}
           </h1>
 
-          {/* Linha semantica explicita. O H1 ("Stop trading in the dark.") e de
+          {/* Linha semantica explicita. O H1 ("Your AI trading copilot.", 05/10) e de
               marca e nao contem nenhum termo de busca: sem esta frase, a
               primeira ocorrencia de "AI chart analysis" na home so aparecia
               no <head>. Auditoria de SEO, 02/09/2026. */}

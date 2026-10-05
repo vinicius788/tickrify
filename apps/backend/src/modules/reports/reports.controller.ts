@@ -37,6 +37,7 @@ export class ReportsController {
       route: body.route,
       analysisId: body.analysisId,
       context: body.context,
+      kind: body.kind,
     });
 
     // O protocolo devolvido não é enfeite: é o que o usuário cola numa conversa

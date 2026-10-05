@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MaxLength, MinLength, IsObject } from 'class-validator';
+import { IsIn, IsOptional, IsString, MaxLength, MinLength, IsObject } from 'class-validator';
 
 export class CreateReportDto {
   /**
@@ -30,4 +30,9 @@ export class CreateReportDto {
   @IsOptional()
   @IsObject()
   context?: Record<string, unknown>;
+
+  /** `feedback` = quadrinho de opiniao do painel; ausente = relato de problema. */
+  @IsOptional()
+  @IsIn(['problem', 'feedback'])
+  kind?: 'problem' | 'feedback';
 }

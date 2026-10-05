@@ -1,3 +1,5 @@
+import { ValidationPipe } from '@nestjs/common';
+import { CreateReportDto } from '../dto/create-report.dto';
 import { ReportsService } from '../reports.service';
 
 /**
@@ -156,6 +158,36 @@ describe('ReportsService', () => {
     });
   });
 
+  describe('opiniao do painel (kind=feedback)', () => {
+    const sqlDe = (call: any[]) => (call[0].strings ?? []).join('?') + JSON.stringify(call[0].values ?? []);
+
+    it('grava com kind feedback e NAO manda e-mail', async () => {
+      process.env.BOOTSTRAP_ADMIN_EMAILS = 'dono@tickrify.com';
+      await service.criar({ userId: 'u1', message: 'Gostei, mas falta alerta de preco', kind: 'feedback' });
+      await new Promise((r) => setImmediate(r));
+      expect(sqlDe(prisma.$executeRaw.mock.calls[0])).toContain('"feedback"');
+      expect(mail.sendProblemReport).not.toHaveBeenCalled();
+    });
+
+    it('sem kind continua sendo relato de problema, com e-mail', async () => {
+      await service.criar({ userId: 'u1', message: 'tela travou no envio' });
+      await new Promise((r) => setImmediate(r));
+      expect(sqlDe(prisma.$executeRaw.mock.calls[0])).toContain('"problem"');
+      expect(mail.sendProblemReport).toHaveBeenCalled();
+    });
+
+    it('a lista e a contagem do admin separam problemas de opinioes', async () => {
+      await service.listar(undefined, 50, 'feedback');
+      await service.contarPorStatus('feedback');
+      expect(sqlDe(prisma.$queryRaw.mock.calls[0])).toContain('"feedback"');
+      expect(sqlDe(prisma.$queryRaw.mock.calls[1])).toContain('"feedback"');
+      await service.listar('aberto');
+      const padrao = sqlDe(prisma.$queryRaw.mock.calls[2]);
+      expect(padrao).toContain('"problem"');
+      expect(padrao).toContain('"aberto"');
+    });
+  });
+
   describe('estados', () => {
     it('resolvido e descartado carimbam resolvedAt; investigando não', async () => {
       await service.definirStatus('r1', 'resolvido');
@@ -167,5 +199,19 @@ describe('ReportsService', () => {
       prisma.$executeRawUnsafe.mockRejectedValue(new Error('sem permissão'));
       await expect(service.onModuleInit()).resolves.toBeUndefined();
     });
+  });
+});
+
+describe('CreateReportDto contra o ValidationPipe real', () => {
+  const pipe = new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true });
+  const META = { type: 'body' as const, metatype: CreateReportDto };
+
+  it('aceita a opiniao do quadrinho e o relato sem kind', async () => {
+    await expect(pipe.transform({ message: 'Gostei muito', route: '/dashboard', kind: 'feedback' }, META)).resolves.toMatchObject({ kind: 'feedback' });
+    await expect(pipe.transform({ message: 'tela travou' }, META)).resolves.toBeDefined();
+  });
+
+  it('recusa kind desconhecido', async () => {
+    await expect(pipe.transform({ message: 'Gostei muito', kind: 'elogio' }, META)).rejects.toBeDefined();
   });
 });

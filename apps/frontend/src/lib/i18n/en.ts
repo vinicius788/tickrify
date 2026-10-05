@@ -459,6 +459,18 @@ export default {
     step3Text: 'Entry, stop, targets and risk when there is a clean setup. A WAIT, with what would have to change, when there is not.',
     note: 'A second opinion before you enter, not a signal service. Tickrify never places orders and promises no profit: the decision is always yours.',
   },
+  feedback: {
+    title: 'What do you think of Tickrify so far?',
+    subtitle: 'What works, what is confusing, what is missing. Only the Tickrify team reads this.',
+    placeholder: 'For example: the WAIT explanation helped, but I wanted an alert when the entry is reached.',
+    send: 'Send',
+    sending: 'Sending…',
+    dismiss: 'Not now',
+    thanks: 'Thank you. It goes straight to the team.',
+    short: 'Write a little more (5 characters minimum).',
+    failed: 'That did not send. Try again in a moment.',
+    limit: 'We already have several messages from you this hour. Try again later.',
+  },
   paywall: {
     titleNewAnalysis: 'Your free trade plans are used up',
     titleArea: 'Subscribe to keep access to your analyses and trades',
@@ -541,9 +553,9 @@ export default {
   landing: {
     nav: { features: 'Features', how: 'How It Works', panel: 'Panel', plans: 'Plans', faq: 'FAQ', login: 'Login', dashboard: 'Dashboard', app: 'App', menu: 'Main menu' },
     hero: {
-      badge: 'Trading copilot • second opinion, not signals',
-      title1: 'Stop trading',
-      title2: 'in the dark.',
+      badge: 'Second opinion, not signals • you make the call',
+      title1: 'Your AI trading',
+      title2: 'copilot.',
       seoLine: 'AI chart analysis for forex, gold, crypto and indices, from a TradingView, MetaTrader or broker screenshot.',
       subtitle: 'Paste any chart, with or without a single line drawn on it. The AI reads it cold and returns entry, stop, targets and risk, or tells you there is nothing worth taking. The final call is always yours.',
       startFree: 'Analyze my chart free',

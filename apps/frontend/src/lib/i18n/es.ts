@@ -459,6 +459,18 @@ export default {
     step3Text: 'Entrada, stop, objetivos y riesgo cuando hay un setup limpio. Un WAIT, con lo que tendría que cambiar, cuando no lo hay.',
     note: 'Una segunda opinión antes de entrar, no un servicio de señales. Tickrify nunca envía órdenes ni promete ganancias: la decisión siempre es tuya.',
   },
+  feedback: {
+    title: '¿Qué te está pareciendo Tickrify?',
+    subtitle: 'Qué funciona, qué confunde, qué falta. Solo el equipo de Tickrify lo lee.',
+    placeholder: 'Por ejemplo: la explicación del WAIT ayudó, pero quería un aviso cuando se alcance la entrada.',
+    send: 'Enviar',
+    sending: 'Enviando…',
+    dismiss: 'Ahora no',
+    thanks: 'Gracias. Va directo al equipo.',
+    short: 'Escribe un poco más (mínimo 5 caracteres).',
+    failed: 'No se envió. Inténtalo de nuevo en un momento.',
+    limit: 'Ya recibimos varios mensajes tuyos en esta hora. Inténtalo más tarde.',
+  },
   paywall: {
     titleNewAnalysis: 'Se acabaron tus análisis gratis con plan de trade',
     titleArea: 'Suscríbete para seguir accediendo a tus análisis y operaciones',
@@ -541,9 +553,9 @@ export default {
   landing: {
     nav: { features: 'Funciones', how: 'Cómo Funciona', panel: 'Panel', plans: 'Planes', faq: 'FAQ', login: 'Entrar', dashboard: 'Panel', app: 'App', menu: 'Menú principal' },
     hero: {
-      badge: 'Copiloto de trading • segunda opinión, no señales',
-      title1: 'Deja de operar',
-      title2: 'a ciegas.',
+      badge: 'Segunda opinión, no señales • tú decides',
+      title1: 'Tu copiloto',
+      title2: 'de trading con IA.',
       seoLine: 'Análisis de gráficos con IA para forex, oro, cripto e índices, desde una captura de TradingView, MetaTrader o tu bróker.',
       subtitle: 'Pega cualquier gráfico, con o sin una sola línea dibujada. La IA lo lee en frío y devuelve entrada, stop, objetivos y riesgo, o te dice que no hay nada que valga la pena. La última palabra es tuya.',
       startFree: 'Empezar gratis',

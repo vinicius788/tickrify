@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useProblemReports, type ProblemReport, type ReportStatus } from '@/hooks/useProblemReports';
+import { useProblemReports, type ProblemReport, type ReportKind, type ReportStatus } from '@/hooks/useProblemReports';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -109,14 +109,16 @@ function Relato({
   );
 }
 
-export function RelatosPainel() {
+/** `feedback` = opinioes do quadrinho do painel; mesma caixa, outra aba. */
+export function RelatosPainel({ kind = 'problem' }: { kind?: ReportKind }) {
   const [filtro, setFiltro] = useState<ReportStatus | 'todos'>('aberto');
-  const { relatos, contagem, isLoading, setStatus } = useProblemReports(filtro);
+  const { relatos, contagem, isLoading, setStatus } = useProblemReports(filtro, kind);
+  const opinioes = kind === 'feedback';
 
   return (
     <section className="mt-10">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-white">Relatos de problema</h2>
+        <h2 className="text-lg font-semibold text-white">{opinioes ? 'Opiniões dos usuários' : 'Relatos de problema'}</h2>
         <div className="flex flex-wrap gap-1">
           {FILTROS.map((f) => (
             <button
@@ -139,7 +141,7 @@ export function RelatosPainel() {
       {!isLoading && relatos.length === 0 && (
         <Card className="border-white/10 bg-white/[0.02] p-6 text-center">
           <p className="text-sm text-zinc-400">
-            Nenhum relato {filtro === 'todos' ? '' : filtro}.
+            {opinioes ? 'Nenhuma opinião' : 'Nenhum relato'} {filtro === 'todos' ? '' : filtro}.
           </p>
           <p className="mt-1 text-xs text-zinc-600">
             Silêncio aqui pode ser produto funcionando — ou ninguém usando. Cruze com o funil antes
