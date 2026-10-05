@@ -210,6 +210,15 @@ describe('StripeService.createCheckoutSession', () => {
     expect(params.metadata.coupon).toBe('');
   });
 
+  it('a tela de pagamento diz que cancela quando quiser e que as analises chegam logo', async () => {
+    await service.createCheckoutSession('clerk_1', 'starter', 'weekly', 'usd');
+    const params = stripe.checkout.sessions.create.mock.calls[0][0];
+    expect(params.custom_text.submit.message).toBe(
+      'Cancel anytime from your Tickrify dashboard. Your analyses are available right after payment.',
+    );
+    expect(params.custom_text.submit.message).not.toContain('—');
+  });
+
   it('cria a sessao com o price, as URLs de retorno e o cupom certos', async () => {
     const result = await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
 

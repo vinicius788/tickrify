@@ -1795,7 +1795,11 @@ const DashboardPage = () => {
           </nav>
 
 
-          {user && plan === 'free' && (
+          {/* Gratis: contador das gratis. Assinante: saldo de ticks e
+              "Manage subscription" (portal da Stripe, onde se cancela). Ate
+              05/10/2026 so o gratis via este bloco, e o assinante nao tinha
+              onde cancelar pelo painel, embora a /pricing prometesse. */}
+          {user && (
             <div className="mt-4">
               <AnalysisCounter />
             </div>
@@ -1922,6 +1926,13 @@ const DashboardPage = () => {
               </Link>
             ))}
           </div>
+          {/* Celular (sem barra lateral): o assinante ve o plano e o "Manage
+              subscription" no inicio e nos Planos. */}
+          {user && plan !== 'free' && !isPlanLoading && (activeNav === 'home' || activeNav === 'plans') && (
+            <div className="p-3">
+              <AnalysisCounter />
+            </div>
+          )}
           {user && plan === 'free' && (
             <div className="p-3">
               <Button

@@ -419,6 +419,16 @@ export class StripeService implements OnModuleInit {
         // 'auto': a Stripe pede so o que o cartao exige (pais, as vezes CEP).
         // 'required' abria o formulario de endereco inteiro no celular.
         billing_address_collection: 'auto',
+        // Texto acima do botao de pagar (05/10/2026). Em 14 dias, 10 de 13
+        // pessoas abriram o checkout e sairam sem digitar o cartao: o medo de
+        // assinatura recorrente e a duvida "quando recebo" sao respondidos ali.
+        // As duas frases sao verdadeiras: o portal da Stripe cancela pelo
+        // painel, e os ticks entram pelo webhook logo apos o pagamento.
+        custom_text: {
+          submit: {
+            message: 'Cancel anytime from your Tickrify dashboard. Your analyses are available right after payment.',
+          },
+        },
         // SEM trial: o "grátis" do Tickrify são as 3 análises gratuitas (freemium
         // de uso). Um trial de tempo por cima seria redundante — não dá ticks a
         // mais, só adiaria a receita e abriria churn involuntário. Cobra já; o

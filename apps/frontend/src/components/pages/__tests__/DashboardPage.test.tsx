@@ -858,4 +858,16 @@ describe('DashboardPage', () => {
     expect(semanal).toBeGreaterThanOrEqual(0);
     expect(mensal).toBeGreaterThan(semanal);
   });
+
+  it('assinante ve o cartao do plano (onde fica o Manage subscription), nao so o gratis', async () => {
+    mockUseAnalysisLimit.mockReturnValue({ plan: 'weekly', isUnlimited: true, isLoading: false, total: Infinity, remaining: Infinity, used: 0 });
+    mockUseAPIClient.mockReturnValue(makeApiClient({
+      listAnalyses: vi.fn().mockResolvedValue([
+        { id: 's-1', status: 'completed', symbol: 'BTCUSD', timeframe: '1H', recommendation: 'BUY', createdAt: new Date().toISOString() },
+      ]),
+    }));
+    renderDashboard('/dashboard');
+    // Barra lateral (computador) e topo do inicio (celular).
+    expect((await screen.findAllByText('Analysis counter')).length).toBe(2);
+  });
 });
