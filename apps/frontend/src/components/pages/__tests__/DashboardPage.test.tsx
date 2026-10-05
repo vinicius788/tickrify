@@ -845,4 +845,17 @@ describe('DashboardPage', () => {
       expect(screen.queryByText('O que você está achando da Tickrify?')).toBeNull();
     });
   });
+
+  it('paywall: semanal e o botao principal, o mensal vem em seguida', async () => {
+    mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 3, remaining: 0, isUnlimited: false, freeLocked: true, isLoading: false });
+    mockUseAPIClient.mockReturnValue(makeApiClient());
+    renderDashboard('/dashboard/new');
+
+    await screen.findByRole('button', { name: /Comece com uma semana/ });
+    const botoes = screen.getAllByRole('button').map((b) => b.textContent ?? '');
+    const semanal = botoes.findIndex((b) => b.includes('Comece com uma semana: US$ 7,99 por 25 análises'));
+    const mensal = botoes.findIndex((b) => b.startsWith('Ou mensal:'));
+    expect(semanal).toBeGreaterThanOrEqual(0);
+    expect(mensal).toBeGreaterThan(semanal);
+  });
 });

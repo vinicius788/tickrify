@@ -171,6 +171,46 @@ describe('lifecycle emails', () => {
     expect(sent).toEqual([]);
   });
 
+  it('second analysis: one read and gone, the text follows the first result; two reads get nothing', async () => {
+    const users = [
+      { id: 'w1', email: 'w@x.com', name: 'Ana', analyses: [{ recommendation: 'WAIT' }] },
+      { id: 'b1', email: 'b@x.com', name: null, analyses: [{ recommendation: 'BUY' }] },
+      { id: 'two', email: 't@x.com', name: null, analyses: [{ recommendation: 'SELL' }, { recommendation: 'WAIT' }] },
+    ];
+    const { deps, sent, prisma } = makeDeps({ enabled: true, users: users as any });
+    // So a busca do segunda analise devolve estes usuarios (a de ativacao filtra outra coisa).
+    (prisma.user.findMany as jest.Mock).mockImplementation(async (args: any) => (args?.select?.analyses ? users : []));
+
+    const counts = await runLifecycleSweep(deps);
+    expect(counts.second_analysis).toBe(2);
+    const bySubject = Object.fromEntries(sent.filter((m) => m.kind === 'second_analysis').map((m) => [m.to, m.subject]));
+    expect(bySubject['w@x.com']).toBe('Your first Tickrify read said WAIT');
+    expect(bySubject['b@x.com']).toBe('You still have 2 free trade plans on Tickrify');
+    expect(bySubject['t@x.com']).toBeUndefined();
+  });
+
+  it('second analysis texts: link to a new analysis, no em dash, true free rule', () => {
+    for (const firstWasWait of [true, false]) {
+      const email = renderLifecycleEmail('second_analysis', {
+        appUrl: 'https://tickrify.com',
+        unsubscribeUrl: 'https://tickrify.onrender.com/api/email/unsubscribe?u=1&t=x',
+        firstWasWait,
+      });
+      expect(email.html).toContain('https://tickrify.com/dashboard/new');
+      expect(email.html).not.toContain('—');
+      expect(email.html).toContain('Unsubscribe');
+    }
+  });
+
+  it('activation email no longer promises the removed one-click example', () => {
+    const email = renderLifecycleEmail('activation_1', {
+      appUrl: 'https://tickrify.com',
+      unsubscribeUrl: 'https://tickrify.onrender.com/api/email/unsubscribe?u=1&t=x',
+    });
+    expect(email.html).not.toContain('one-click example');
+    expect(email.html).toContain('three real example analyses');
+  });
+
   it('tokens: a tampered token or another user id is refused', () => {
     const t = unsubscribeToken('u1')!;
     expect(verifyUnsubscribeToken('u1', t)).toBe(true);

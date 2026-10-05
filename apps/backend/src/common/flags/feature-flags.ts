@@ -122,6 +122,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'EMAIL_SECOND_ANALYSIS_NUDGE',
+    type: 'boolean',
+    label: 'E-mail para quem fez 1 analise e sumiu',
+    description:
+      'Um e-mail, uma vez por pessoa, 24h a 72h depois da UNICA analise, se a pessoa nao voltou: se foi WAIT, explica que nao gastou e sugere outro grafico; se foi plano de trade, lembra que restam 2. DESLIGADO: so loga quem receberia ([lifecycle] dry-run). Ligar so com o texto aprovado.',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
     key: 'EMAIL_CHECKOUT_RECOVERY',
     type: 'boolean',
     label: 'E-mail de checkout abandonado',

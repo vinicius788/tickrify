@@ -15,10 +15,14 @@ export type PaywallSurface = 'new_analysis' | 'trades' | 'journal' | 'history';
 
 interface PaywallProps {
   surface: PaywallSurface;
+  /**
+   * Checkout do semanal (US$ 7,99, 25 analises), o botao PRINCIPAL desde
+   * 05/10/2026: em 14 dias, 13 abriram o checkout e 1 pagou, quase todos de
+   * paises onde US$ 29 de uma vez pesa e o cartao recusa.
+   */
+  onWeekly: () => void;
   /** Checkout do mensal (o EARLY35 entra se ainda estiver ativo, e so no mensal). */
-  onUnlock: () => void;
-  /** Checkout do plano semanal (US$ 7,99, 25 analises por semana), sem cupom. */
-  onUnlockWeekly?: () => void;
+  onMonthly: () => void;
   /** True enquanto a sessão de checkout está sendo criada (cold start pode demorar). */
   unlockPending?: boolean;
   /** Planos dentro do painel (o anual mora la). */
@@ -39,7 +43,7 @@ const MONTHLY_PRICE_USD = 29;
  * ate 29/09, e nenhuma analise rodava). O rotulo diz o que e: o formato da
  * leitura que o assinante recebe.
  */
-const Paywall = ({ surface, onUnlock, onUnlockWeekly, unlockPending = false, plansHref, children }: PaywallProps) => {
+const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHref, children }: PaywallProps) => {
   const { t } = useLanguage();
   const p = t.paywall;
   // O desconto so e anunciado com o cupom ativo na Stripe, e so vale no mensal.
@@ -113,7 +117,7 @@ const Paywall = ({ surface, onUnlock, onUnlockWeekly, unlockPending = false, pla
           <p className="max-w-[440px] text-sm text-[var(--text-secondary)]">{description}</p>
           <button
             type="button"
-            onClick={onUnlock}
+            onClick={onWeekly}
             disabled={unlockPending}
             className="mt-1 inline-flex items-center gap-2 rounded-xl bg-[var(--signal-buy)] px-6 py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-60"
           >
@@ -123,23 +127,21 @@ const Paywall = ({ surface, onUnlock, onUnlockWeekly, unlockPending = false, pla
                 <span>{p.opening}</span>
               </>
             ) : (
-              <span>{firstMonth ? p.ctaFirstMonth.replace('{price}', `$${firstMonth}`) : p.ctaMonthly}</span>
+              <span>{p.ctaWeekly}</span>
             )}
+          </button>
+          <button
+            type="button"
+            onClick={onMonthly}
+            disabled={unlockPending}
+            className="inline-flex items-center rounded-xl border border-[var(--border-default)] px-5 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-white/[0.04] disabled:opacity-60"
+          >
+            {firstMonth ? p.orMonthlyFirst.replace('{price}', `$${firstMonth}`) : p.orMonthly}
           </button>
           {offer?.percentOff ? (
             <p className="max-w-[440px] font-terminal text-[11px] text-[var(--text-secondary)]">
               {p.offerNote.replace('{code}', offer.code).replace('{pct}', String(offer.percentOff))}
             </p>
-          ) : null}
-          {onUnlockWeekly ? (
-            <button
-              type="button"
-              onClick={onUnlockWeekly}
-              disabled={unlockPending}
-              className="inline-flex items-center rounded-xl border border-[var(--border-default)] px-5 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-white/[0.04] disabled:opacity-60"
-            >
-              {p.weekly}
-            </button>
           ) : null}
           <Link
             to={plansHref}

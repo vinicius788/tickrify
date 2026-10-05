@@ -772,8 +772,8 @@ const DashboardPage = () => {
   const paywallFor = (surface: PaywallSurface, children?: ReactNode) => (
     <Paywall
       surface={surface}
-      onUnlock={() => void startCheckout('locked_value', 'monthly', surface)}
-      onUnlockWeekly={() => void startCheckout('locked_value', 'weekly', surface)}
+      onWeekly={() => void startCheckout('locked_value', 'weekly', surface)}
+      onMonthly={() => void startCheckout('locked_value', 'monthly', surface)}
       unlockPending={unlockPending}
       plansHref={`${base}${SECTION_PATH.plans}`}
     >
@@ -810,7 +810,8 @@ const DashboardPage = () => {
 
   const handleLastFreeCheckout = useCallback(() => {
     track('upgrade_cta_clicked', { source: 'last_free_result', destination: 'checkout' });
-    void startCheckout('last_free_result');
+    // Semanal primeiro (05/10/2026), como o paywall: a entrada mais barata.
+    void startCheckout('last_free_result', 'weekly');
   }, [startCheckout]);
 
   const resetNewAnalysisView = useCallback(() => {
@@ -1635,8 +1636,8 @@ const DashboardPage = () => {
                 <div className="flex shrink-0 items-center gap-3">
                   {exhausted ? (
                     <>
-                      {/* Mesmo checkout do paywall (EARLY35 aplicado). Antes ia
-                          para /pricing e exigia mais um clique. */}
+                      {/* Mesmo checkout do paywall (semanal, a entrada mais barata).
+                          Antes ia para /pricing e exigia mais um clique. */}
                       <Button size="sm" onClick={handleLastFreeCheckout} disabled={unlockPending}>
                         <Crown className="mr-2 h-4 w-4" />
                         {t.counter.subscribe}
@@ -1985,28 +1986,31 @@ const DashboardPage = () => {
           </DialogHeader>
 
           <div className="space-y-2 py-2">
+            {/* Semanal primeiro e em destaque (05/10/2026): 13 abriram o
+                checkout em 14 dias e 1 pagou, quase todos de paises onde
+                US$ 29 de uma vez pesa. O mensal continua logo abaixo. */}
             <button
               type="button"
-              onClick={handleModalMonthly}
+              onClick={handleModalWeekly}
               disabled={unlockPending}
               className="flex w-full items-center justify-between rounded-lg border border-primary bg-primary/10 px-4 py-3 text-left transition-opacity hover:opacity-90 disabled:opacity-60"
             >
               <span className="flex items-center gap-3">
                 <Crown className="h-4 w-4 flex-shrink-0 text-primary" />
-                <span className="text-sm font-semibold">{dc.modalMonthly}</span>
+                <span className="text-sm font-semibold">{dc.modalWeekly}</span>
               </span>
-              <span className="text-right text-xs font-semibold">
-                {modalFirstMonth ? dc.modalMonthlyOffer.replace('{price}', `$${modalFirstMonth}`) : `$29${dc.perMonth}`}
-              </span>
+              <span className="text-right text-xs font-semibold">$7.99</span>
             </button>
             <button
               type="button"
-              onClick={handleModalWeekly}
+              onClick={handleModalMonthly}
               disabled={unlockPending}
               className="flex w-full items-center justify-between rounded-lg border border-border bg-muted/30 px-4 py-3 text-left transition-colors hover:bg-muted/50 disabled:opacity-60"
             >
-              <span className="text-sm font-semibold">{dc.modalWeekly}</span>
-              <span className="text-right text-xs font-semibold">$7.99</span>
+              <span className="text-sm font-semibold">{dc.modalMonthly}</span>
+              <span className="text-right text-xs font-semibold">
+                {modalFirstMonth ? dc.modalMonthlyOffer.replace('{price}', `$${modalFirstMonth}`) : `$29${dc.perMonth}`}
+              </span>
             </button>
           </div>
 
