@@ -13,7 +13,7 @@ const PRICING_COPY = {
       'No tiers to compare and nothing held back for a higher price. Every subscriber runs the same engine, on the same queue, with the same models.',
     foundingTitle: 'Founding Trader offer',
     foundingDesc:
-      'You are early, and that counts. While this offer lasts, early subscribers lock the $29/month price for as long as the subscription stays active. Your',
+      'You are early, and that counts. While this offer lasts, the',
     foundingCode: 'EARLY35',
     foundingSuffix: 'discount is applied automatically at checkout on the monthly plan: 35% off your first month, then $29/month.',
     trust: ['Payments secured by Stripe', 'Cancel in one click', 'No broker connection required'],
@@ -53,7 +53,7 @@ const PRICING_COPY = {
       'Sem tiers para comparar e sem recurso escondido atrás de um preço maior. Todo assinante roda o mesmo motor, na mesma fila, com os mesmos modelos.',
     foundingTitle: 'Oferta Founding Trader',
     foundingDesc:
-      'Você chegou cedo, e isso conta. Enquanto a oferta durar, os primeiros assinantes travam o preço de US$ 29/mês enquanto a assinatura estiver ativa. O desconto',
+      'Você chegou cedo, e isso conta. Enquanto a oferta durar, o desconto',
     foundingCode: 'EARLY35',
     foundingSuffix: 'é aplicado automaticamente no checkout do plano mensal: 35% no primeiro mês, depois US$ 29/mês.',
     trust: ['Pagamento protegido pela Stripe', 'Cancela em um clique', 'Não precisa conectar corretora'],

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import Header from '@/components/landing/Header';
 import HeroSection from '@/components/landing/HeroSection';
+import FoundingTraderBanner from '@/components/landing/FoundingTraderBanner';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 
 vi.mock('@clerk/clerk-react', () => ({
@@ -13,6 +14,9 @@ vi.mock('@clerk/clerk-react', () => ({
   SignedIn: () => null,
   SignInButton: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
+
+const offer = { current: null as null | { active: boolean; code: string; percentOff: number | null } };
+vi.mock('@/hooks/useFoundingOffer', () => ({ useFoundingOffer: () => offer.current }));
 
 function renderSite(node: ReactNode) {
   window.localStorage.setItem('tickrify-language', 'en');
@@ -56,5 +60,26 @@ describe('cabecalho e topo da home no celular', () => {
     const acoes = document.querySelector('.site-hero-actions');
     expect(acoes?.querySelectorAll('a, button')).toHaveLength(1);
     expect(screen.getByRole('button', { name: /Analyze my chart free/ })).toBeTruthy();
+  });
+});
+
+describe('faixa da oferta de lancamento', () => {
+  afterEach(() => {
+    cleanup();
+    offer.current = null;
+  });
+
+  it('diz a oferta real (desconto no 1o mes do mensal), sem prometer trava de preco', () => {
+    offer.current = { active: true, code: 'EARLY35', percentOff: 35 };
+    renderSite(<FoundingTraderBanner />);
+    expect(
+      screen.getByText(/35% off your first month on the monthly plan with EARLY35, applied at checkout\. Then \$29\/month\./),
+    ).toBeTruthy();
+    expect(screen.queryByText(/lock/i)).toBeNull();
+  });
+
+  it('sem cupom ativo, a faixa nao aparece', () => {
+    const { container } = renderSite(<FoundingTraderBanner />);
+    expect(container.textContent).toBe('');
   });
 });
