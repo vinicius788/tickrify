@@ -97,6 +97,11 @@ export function renderCampaignEmail(
       preview: 'Use it on the next trade you are actually considering.',
       paragraphs: [
         `You still have ${plans} on Tickrify, and WAIT results do not use them.`,
+        // three_left = analisou e so recebeu WAIT. Ate 24/09 o motor dava WAIT
+        // em 76% a 93% das leituras; o prompt v7.5 baixou para ~35% (medido).
+        ...(segment === 'three_left'
+          ? ['If your earlier reads came back as WAIT: we updated the AI in late September, and it now gives a full trade plan more often when the chart has a clean setup.']
+          : []),
         'Since your last visit the dashboard got a trading journal: your stats for the month, notes on each trade, and how your results compare with what the market did in the 48 hours after each read.',
         `The best use of ${left === 1 ? 'it' : 'the next one'}: the chart of the next trade you are actually thinking about taking, before you enter.`,
       ],

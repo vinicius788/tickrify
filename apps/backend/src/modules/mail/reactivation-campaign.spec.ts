@@ -156,6 +156,8 @@ describe('campanha de reativacao', () => {
       expect(render('two_left').subject).toBe('You still have 2 free trade plans on Tickrify');
       expect(render('three_left').subject).toBe('You still have 3 free trade plans on Tickrify');
       expect(render('two_left').html).toContain('https://tickrify.com/dashboard/new');
+      expect(render('three_left').html).toContain('we updated the AI in late September');
+      expect(render('two_left').html).not.toContain('we updated the AI');
     });
 
     it('todo e-mail tem descadastro e nenhum tem travessao ou emoji', () => {
