@@ -327,7 +327,9 @@ Vale para TODA mudanca, grande ou pequena:
   com aceite. Conversoes do Ads (sign_up e purchase) com rotulos no codigo
   (`ADS_CONVERSION_LABELS` em `analytics.ts`), nao em env var.
 - **Sentry:** `environment` decidido por `import.meta.env.PROD`; ruido do Google
-  Translate e do ResizeObserver filtrado no cliente; WebView do Instagram so
+  Translate e do ResizeObserver filtrado no cliente; erro com a pagina traduzida
+  e NENHUMA linha do bundle (`/assets/`) e descartado (`isTranslatorOnlyError`,
+  06/10: RangeError dentro do tradutor do Chrome do iPhone); WebView do Instagram so
   marcado (`tags.webview`), nao descartado.
 - Pergunta de atribuicao no painel (`AcquisitionSurvey`): a primeira resposta
   vale, dispensar nao grava nada.

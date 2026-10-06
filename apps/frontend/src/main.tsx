@@ -8,7 +8,7 @@ import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import { initAnalytics, initAnonymousAnalytics, revokeAnalyticsConsent } from './lib/analytics';
 import { CONSENT_EVENT, getConsent } from './lib/consent';
 import { AnalyticsIdentify } from './components/providers/AnalyticsIdentify';
-import { isLoggedAreaPath, isPageTranslated, setPageTranslatable } from './lib/utils';
+import { isLoggedAreaPath, isPageTranslated, isTranslatorOnlyError, setPageTranslatable } from './lib/utils';
 import './styles/trading-tokens.css';
 import './index.css';
 
@@ -187,6 +187,11 @@ if (SENTRY_DSN) {
       const texto = [event.message, ...valores.map((v) => v.value)].filter(Boolean).join(' | ');
       if (RUIDO_CONHECIDO.some((padrao) => texto.includes(padrao))) return null;
 
+      /* Erro inteiro dentro do tradutor do navegador (nenhuma linha nossa):
+       * nao e bug da Tickrify e so gerava alerta (06/10/2026). */
+      const traduzida = isPageTranslated();
+      if (valores.length > 0 && valores.every((v) => isTranslatorOnlyError(traduzida, v.stacktrace?.frames))) return null;
+
       /* Marcado, não descartado: o volume do WebView some do ruído mas
        * continua auditável pela tag quando alguém for investigar conversão. */
       if (ehWebViewDoInstagram()) {
@@ -194,7 +199,7 @@ if (SENTRY_DSN) {
       }
       event.tags = {
         ...event.tags,
-        page_translated: isPageTranslated() ? 'yes' : 'no',
+        page_translated: traduzida ? 'yes' : 'no',
         route: window.location.pathname,
       };
       return event;

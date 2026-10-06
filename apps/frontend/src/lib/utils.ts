@@ -72,3 +72,20 @@ export function setPageTranslatable(translatable: boolean): void {
 export function isPageTranslated(): boolean {
   return typeof document !== 'undefined' && /\btranslated-/.test(document.documentElement.className);
 }
+
+/**
+ * Erro que aconteceu so dentro do codigo do tradutor do navegador: pagina
+ * traduzida e NENHUMA linha da pilha vem do nosso bundle (`/assets/`).
+ * Visto em 06/10/2026: Chrome do iPhone com traducao, `RangeError: Maximum
+ * call stack size exceeded` em 50 linhas de script injetado pelo tradutor
+ * (linhas 190 a 226 de uma pagina que tem 166) e o painel seguiu funcionando.
+ * Pilha vazia NAO conta: sem pilha nao da para saber de quem e o erro, e erro
+ * nosso de verdade (como o `removeChild` de 05/10) tem linha no bundle.
+ */
+export function isTranslatorOnlyError(
+  translated: boolean,
+  frames: ReadonlyArray<{ filename?: string | null }> | undefined,
+): boolean {
+  if (!translated || !frames || frames.length === 0) return false;
+  return frames.every((frame) => !String(frame.filename || '').includes('/assets/'));
+}
