@@ -159,7 +159,7 @@ export class MailService {
     to: string,
     email: { kind: string; subject: string; html: string; unsubscribeUrl: string },
   ): Promise<boolean> {
-    // Nome do dono: Vinicius, CEO (nunca "Vini", nunca "Founder"). Sem acento no
+    // Nome do dono: Vinicius, nunca "Vini" (Founder e CEO valem). Sem acento no
     // cabecalho From de proposito: nome com acento exige codificacao especial
     // e uma recusa aqui derrubaria todos os e-mails de ciclo de vida.
     const from = process.env.LIFECYCLE_MAIL_FROM || 'Vinicius from Tickrify <vinicius@tickrify.com>';
