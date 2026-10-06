@@ -225,7 +225,7 @@ Vale para TODA mudanca, grande ou pequena:
   (AdminAudit `lifecycle:<tipo>`), nunca para assinante nem para quem saiu
   (`email_unsubscribed`, rota publica `/api/email/unsubscribe` com HMAC do id;
   segredo `EMAIL_UNSUBSCRIBE_SECRET` ou, na falta, `CLERK_SECRET_KEY`). Remetente
-  `LIFECYCLE_MAIL_FROM` (padrao `Vini from Tickrify <vinicius@tickrify.com>`),
+  `LIFECYCLE_MAIL_FROM` (padrao `Vinicius from Tickrify <vinicius@tickrify.com>`; nao existe no Render, lido em 06/10),
   resposta em `LIFECYCLE_MAIL_REPLY_TO`; links de descadastro em `PUBLIC_API_URL`
   ou `RENDER_EXTERNAL_URL`.
 - **GitHub Actions:** CI, `calendar-mirror.yml` (a cada 6h), `backup.yml` (diario,
@@ -527,6 +527,7 @@ Vale para TODA mudanca, grande ou pequena:
   depoimento ou `aggregateRating`. Numero publico so com metodologia e
   disclaimer; de preferencia vindo da API, nunca fixo no codigo.
 - Texto publico em ingles. Sem travessao. Sem emoji na interface.
+- **Nome do dono:** tudo que sai em nome dele (e-mail, assinatura, remetente, rascunho) usa **Vinícius** e o cargo **CEO**. Nunca "Vini" (so para os intimos) e nunca "Founder" (no tradutor virou "fundadora", 06/10/2026). Os 200 e-mails da campanha de 05/10 sairam assinados "Vini, Founder".
 - String com numero ou afirmacao verificavel muda nos 6 idiomas no MESMO commit,
   conferindo um a um. O `tsc` pega chave ausente, nao traducao desatualizada (ja
   divergiu tres vezes).

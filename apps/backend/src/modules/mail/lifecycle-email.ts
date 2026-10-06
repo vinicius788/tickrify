@@ -120,7 +120,7 @@ export function letter(params: {
           </td></tr>
         </table>
         ${(params.afterCta ?? []).map(p).join('\n        ')}
-        ${p('Vini<br>Founder, Tickrify')}
+        ${p('Vinícius<br>CEO, Tickrify')}
         <p style="margin:24px 0 0;font-family:${FONT};font-size:12px;line-height:18px;color:#7a8794;">
           Tickrify gives a second opinion on your chart, not financial advice. Trading involves risk and the decision is yours.<br>
           You get this email because you created a Tickrify account. <a href="${escapeHtml(params.unsubscribeUrl)}" style="color:#7a8794;">Unsubscribe from these emails</a>.

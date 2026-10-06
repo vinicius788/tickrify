@@ -281,6 +281,12 @@ describe('lifecycle emails', () => {
     expect(verifyUnsubscribeToken('u1', '')).toBe(false);
   });
 
+  it('signed by the owner as Vinícius, CEO (never "Vini", never "Founder")', () => {
+    const { html } = renderLifecycleEmail('activation_1', { appUrl: 'https://tickrify.com', unsubscribeUrl: 'https://x/u' });
+    expect(html).toContain('Vinícius<br>CEO, Tickrify');
+    expect(html).not.toMatch(/\bVini\b|Founder/);
+  });
+
   it('links never point to localhost', () => {
     expect(publicUrl('http://localhost:5173', 'https://tickrify.com')).toBe('https://tickrify.com');
     expect(publicUrl('https://tickrify.com/', 'x')).toBe('https://tickrify.com');

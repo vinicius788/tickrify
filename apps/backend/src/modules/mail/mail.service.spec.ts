@@ -74,7 +74,7 @@ describe('MailService', () => {
 
     expect(ok).toBe(true);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.from).toBe('Vini from Tickrify <vinicius@tickrify.com>');
+    expect(body.from).toBe('Vinicius from Tickrify <vinicius@tickrify.com>');
     expect(body.reply_to).toBe('vinicius@tickrify.com');
     expect(body.headers['List-Unsubscribe']).toBe('<https://tickrify.onrender.com/api/email/unsubscribe?u=u1&t=abc>');
     expect(body.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');

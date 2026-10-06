@@ -159,7 +159,10 @@ export class MailService {
     to: string,
     email: { kind: string; subject: string; html: string; unsubscribeUrl: string },
   ): Promise<boolean> {
-    const from = process.env.LIFECYCLE_MAIL_FROM || 'Vini from Tickrify <vinicius@tickrify.com>';
+    // Nome do dono: Vinicius, CEO (nunca "Vini", nunca "Founder"). Sem acento no
+    // cabecalho From de proposito: nome com acento exige codificacao especial
+    // e uma recusa aqui derrubaria todos os e-mails de ciclo de vida.
+    const from = process.env.LIFECYCLE_MAIL_FROM || 'Vinicius from Tickrify <vinicius@tickrify.com>';
     const replyTo = process.env.LIFECYCLE_MAIL_REPLY_TO || 'vinicius@tickrify.com';
     return this.send(to, email.subject, email.html, {
       kind: email.kind,
