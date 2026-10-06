@@ -18,7 +18,7 @@ const NOW = new Date('2026-10-06T12:00:00Z');
 type Q = { remaining: number; settledExhausted: boolean };
 
 function makeDeps(opts: {
-  users: Array<{ id: string; email: string | null; name?: string | null; quota: Q; completed: number }>;
+  users: Array<{ id: string; email: string | null; name?: string | null; quota: Q; completed: number; last?: string }>;
   skipped?: string[];
   recentLifecycle?: string[];
   sendOk?: (to: string) => boolean;
@@ -31,7 +31,13 @@ function makeDeps(opts: {
   const deps: CampaignDeps = {
     prisma: {
       user: { findMany: jest.fn().mockResolvedValue(opts.users.map((u) => ({ id: u.id, email: u.email, name: u.name ?? null }))) },
-      analysis: { count: jest.fn(async ({ where }: { where: { userId: string } }) => byId.get(where.userId)?.completed ?? 0) },
+      analysis: {
+        count: jest.fn(async ({ where }: { where: { userId: string } }) => byId.get(where.userId)?.completed ?? 0),
+        findFirst: jest.fn(async ({ where }: { where: { userId: string } }) => {
+          const last = byId.get(where.userId)?.last;
+          return last ? { createdAt: new Date(last) } : null;
+        }),
+      },
       adminAudit: {
         findMany: jest.fn(async ({ where }: { where: { action: unknown } }) =>
           typeof where.action === 'object' && where.action && 'startsWith' in (where.action as object)
@@ -66,7 +72,8 @@ const users = [
   { id: 'u_ex', email: 'ex@x.com', name: 'Ana Maria', quota: { remaining: 0, settledExhausted: true }, completed: 3 },
   { id: 'u_1', email: 'one@x.com', quota: { remaining: 1, settledExhausted: false }, completed: 2 },
   { id: 'u_2', email: 'two@x.com', quota: { remaining: 2, settledExhausted: false }, completed: 1 },
-  { id: 'u_3', email: 'three@x.com', quota: { remaining: 3, settledExhausted: false }, completed: 2 },
+  { id: 'u_3', email: 'three@x.com', quota: { remaining: 3, settledExhausted: false }, completed: 2, last: '2026-09-10T10:00:00Z' },
+  { id: 'u_3r', email: 'threer@x.com', quota: { remaining: 3, settledExhausted: false }, completed: 1, last: '2026-09-28T10:00:00Z' },
   { id: 'u_0', email: 'never@x.com', quota: { remaining: 3, settledExhausted: false }, completed: 0 },
   { id: 'u_null', email: null, quota: { remaining: 0, settledExhausted: true }, completed: 3 },
 ];
@@ -80,7 +87,7 @@ describe('campanha de reativacao', () => {
     const { deps } = makeDeps({ users });
     const out = await campaignCandidates(deps);
     expect(Object.fromEntries(out.map((c) => [c.userId, c.segment]))).toEqual({
-      u_ex: 'exhausted', u_1: 'one_left', u_2: 'two_left', u_3: 'three_left', u_0: 'never',
+      u_ex: 'exhausted', u_1: 'one_left', u_2: 'two_left', u_3: 'three_left', u_3r: 'three_left_recent', u_0: 'never',
     });
   });
 
@@ -107,7 +114,7 @@ describe('campanha de reativacao', () => {
   it('contagem por grupo nao grava nem envia nada', async () => {
     const { deps, audits, sent } = makeDeps({ users });
     const out = await countCampaign(deps);
-    expect(out.bySegment).toEqual({ exhausted: 1, one_left: 1, two_left: 1, three_left: 1, never: 1 });
+    expect(out.bySegment).toEqual({ exhausted: 1, one_left: 1, two_left: 1, three_left: 1, three_left_recent: 1, never: 1 });
     expect(audits).toHaveLength(0);
     expect(sent).toHaveLength(0);
   });
@@ -154,14 +161,17 @@ describe('campanha de reativacao', () => {
       expect(render('exhausted').html).toContain('https://tickrify.com/dashboard/plans?cycle=weekly');
       expect(render('one_left').subject).toBe('You still have 1 free trade plan on Tickrify');
       expect(render('two_left').subject).toBe('You still have 2 free trade plans on Tickrify');
-      expect(render('three_left').subject).toBe('You still have 3 free trade plans on Tickrify');
+      expect(render('three_left').subject).toBe('Sorry about all those WAITs');
       expect(render('two_left').html).toContain('https://tickrify.com/dashboard/new');
-      expect(render('three_left').html).toContain('we updated the AI in late September');
-      expect(render('two_left').html).not.toContain('we updated the AI');
+      expect(render('three_left').html).toContain('We changed the AI on September 24');
+      expect(render('three_left').html).not.toMatch(/\berror\b|\bbug\b/i);
+      expect(render('two_left').html).not.toContain('Sorry');
+      expect(render('three_left_recent').subject).toBe('You still have 3 free trade plans on Tickrify');
+      expect(render('three_left_recent').html).not.toContain('Sorry');
     });
 
     it('todo e-mail tem descadastro e nenhum tem travessao ou emoji', () => {
-      for (const s of ['exhausted', 'one_left', 'two_left', 'three_left', 'never'] as const) {
+      for (const s of ['exhausted', 'one_left', 'two_left', 'three_left', 'three_left_recent', 'never'] as const) {
         const { html, subject } = render(s);
         expect(html).toContain('https://api.test/u');
         expect(`${subject}${html}`).not.toMatch(/—|–/);

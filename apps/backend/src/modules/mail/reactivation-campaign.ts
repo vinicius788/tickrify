@@ -5,7 +5,9 @@
  *   exhausted   usou os planos gratis (settledExhausted): o semanal de US$ 7,99
  *   one_left    resta 1 plano de trade gratis
  *   two_left    restam 2
- *   three_left  fez analises (so WAIT ou falhas) e ainda tem os 3
+ *   three_left  so recebeu WAIT, e a ultima analise foi ANTES de 24/09:
+ *               pedido de desculpas pelo WAIT demais daquele motor (real)
+ *   three_left_recent  so recebeu WAIT ja com o motor novo: texto normal
  *   never       nunca concluiu analise (fora do envio por padrao)
  *
  * Por que existe: ate 05/10 o pagamento so aparecia ao tentar a 4a analise e o
@@ -30,10 +32,12 @@ import { UNSUBSCRIBE_AUDIT_ACTION, letter, unsubscribeUrl } from './lifecycle-em
 
 export const CAMPAIGN_ID = 'reactivation_2026_10';
 export const CAMPAIGN_AUDIT_ACTION = `campaign:${CAMPAIGN_ID}`;
-export const CAMPAIGN_SEGMENTS = ['exhausted', 'one_left', 'two_left', 'three_left', 'never'] as const;
+export const CAMPAIGN_SEGMENTS = ['exhausted', 'one_left', 'two_left', 'three_left', 'three_left_recent', 'never'] as const;
 export type CampaignSegment = (typeof CAMPAIGN_SEGMENTS)[number];
 /** O que sai quando o disparo nao diz quais grupos. */
-export const DEFAULT_SEND_SEGMENTS: CampaignSegment[] = ['exhausted', 'one_left', 'two_left', 'three_left'];
+export const DEFAULT_SEND_SEGMENTS: CampaignSegment[] = ['exhausted', 'one_left', 'two_left', 'three_left', 'three_left_recent'];
+/** Dia em que o prompt v7.5 entrou (WAIT de 76-93% para ~35%). */
+export const ENGINE_UPDATE_AT = new Date('2026-09-24T00:00:00Z');
 
 const DAY = 24 * 60 * 60 * 1000;
 const MIN_ACCOUNT_AGE_MS = 3 * DAY;
@@ -86,6 +90,29 @@ export function renderCampaignEmail(
     };
   }
 
+  if (segment === 'three_left') {
+    // Analisou e so recebeu WAIT. O pedido de desculpas e por um problema REAL:
+    // ate 24/09 o motor dava WAIT em 76% a 93% das leituras (medido por
+    // promptVer); o prompt v7.5 baixou para ~35%. Nao inventa "erro" nem diz
+    // que as leituras estavam erradas: diz que a IA era cautelosa demais.
+    return {
+      kind,
+      unsubscribeUrl: params.unsubscribeUrl,
+      subject: 'Sorry about all those WAITs',
+      html: letter({
+        ...base,
+        preview: 'We changed the AI. Your 3 free trade plans are still there.',
+        paragraphs: [
+          'When you tried Tickrify, the AI was being too cautious: it answered WAIT on most charts. That is on us, and I am sorry it got in the way of seeing what Tickrify can do.',
+          'We changed the AI on September 24. It still says WAIT when there is no clean entry, but it now gives a full trade plan, with entry, stop and targets, much more often.',
+          `Your ${FREE_SIGNAL_LIMIT} free trade plans are untouched, because WAIT results never used them. Try it again with the chart of a trade you are considering.`,
+        ],
+        cta: { label: 'Analyze a chart', url: `${app}/dashboard/new` },
+        afterCta: ['If the new read still does not make sense, reply and tell me. I read every message.'],
+      }),
+    };
+  }
+
   const left = segment === 'one_left' ? 1 : segment === 'two_left' ? 2 : 3;
   const plans = left === 1 ? '1 free trade plan' : `${left} free trade plans`;
   return {
@@ -97,11 +124,6 @@ export function renderCampaignEmail(
       preview: 'Use it on the next trade you are actually considering.',
       paragraphs: [
         `You still have ${plans} on Tickrify, and WAIT results do not use them.`,
-        // three_left = analisou e so recebeu WAIT. Ate 24/09 o motor dava WAIT
-        // em 76% a 93% das leituras; o prompt v7.5 baixou para ~35% (medido).
-        ...(segment === 'three_left'
-          ? ['If your earlier reads came back as WAIT: we updated the AI in late September, and it now gives a full trade plan more often when the chart has a clean setup.']
-          : []),
         'Since your last visit the dashboard got a trading journal: your stats for the month, notes on each trade, and how your results compare with what the market did in the 48 hours after each read.',
         `The best use of ${left === 1 ? 'it' : 'the next one'}: the chart of the next trade you are actually thinking about taking, before you enter.`,
       ],
@@ -172,7 +194,14 @@ export async function campaignCandidates(deps: CampaignDeps): Promise<Candidate[
     else if (completed === 0) segment = 'never';
     else if (quota.remaining === 1) segment = 'one_left';
     else if (quota.remaining === 2) segment = 'two_left';
-    else if (quota.remaining >= 3) segment = 'three_left';
+    else if (quota.remaining >= 3) {
+      const last = await deps.prisma.analysis.findFirst({
+        where: { userId: user.id, status: 'completed' },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+      segment = last && last.createdAt < ENGINE_UPDATE_AT ? 'three_left' : 'three_left_recent';
+    }
     else continue; // analise em andamento segurando a cota: fica para outra hora
     out.push({ userId: user.id, email: user.email, name: user.name, segment });
   }
