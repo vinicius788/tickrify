@@ -91,7 +91,7 @@ const FONT = `-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif`;
  * Layout de carta pessoal (fundo branco, sem cartao escuro): e um e-mail do
  * fundador, nao um aviso do sistema. Um botao, assinatura e descadastro.
  */
-function letter(params: {
+export function letter(params: {
   preview: string;
   firstName: string | null;
   paragraphs: string[];

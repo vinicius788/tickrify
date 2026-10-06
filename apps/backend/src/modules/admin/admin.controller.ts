@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Delete, Get, Logger, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
@@ -9,6 +9,18 @@ import { SetFlagDto } from './dto/set-flag.dto';
 import { SetReportStatusDto } from './dto/set-report-status.dto';
 import { PrismaService } from '../database/prisma.service';
 import { buildAcquisitionReport, parseDias } from './acquisition-report';
+import { CampaignSendDto } from './dto/campaign-send.dto';
+import { MailService } from '../mail/mail.service';
+import { publicUrl } from '../mail/lifecycle-email';
+import {
+  CAMPAIGN_SEGMENTS,
+  DEFAULT_SEND_SEGMENTS,
+  countCampaign,
+  renderCampaignEmail,
+  sendCampaign,
+  type CampaignDeps,
+  type CampaignSegment,
+} from '../mail/reactivation-campaign';
 
 /**
  * Painel de administração — a "loja de apps" interna.
@@ -25,7 +37,61 @@ export class AdminController {
     private readonly flags: FeatureFlagsService,
     private readonly reports: ReportsService,
     private readonly prisma: PrismaService,
+    private readonly mail: MailService,
   ) {}
+
+  private readonly logger = new Logger(AdminController.name);
+  /** Um disparo por vez neste processo: o segundo POST recebe 409. */
+  private campaignRunning = false;
+
+  private campaignDeps(): CampaignDeps {
+    return {
+      prisma: this.prisma,
+      mail: this.mail,
+      appUrl: publicUrl(process.env.FRONTEND_URL, 'https://tickrify.com'),
+      apiBaseUrl: publicUrl(process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL, 'https://tickrify.onrender.com'),
+      log: (level, message) => this.logger[level](message),
+    };
+  }
+
+  /**
+   * Campanha de reativacao (05/10/2026), ver `reactivation-campaign.ts`.
+   * GET conta quem receberia por grupo (nao grava nada); `preview` devolve o
+   * e-mail de um grupo; POST `send` dispara em segundo plano e responde na hora.
+   */
+  @Get('campaigns/reactivation')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async campanhaContagem() {
+    return { ...(await countCampaign(this.campaignDeps())), running: this.campaignRunning };
+  }
+
+  @Get('campaigns/reactivation/preview')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  campanhaPrevia(@Query('segment') segment?: string) {
+    if (!(CAMPAIGN_SEGMENTS as readonly string[]).includes(String(segment))) {
+      throw new BadRequestException(`segment must be one of: ${CAMPAIGN_SEGMENTS.join(', ')}`);
+    }
+    const deps = this.campaignDeps();
+    return renderCampaignEmail(segment as CampaignSegment, {
+      appUrl: deps.appUrl,
+      firstName: 'Alex',
+      unsubscribeUrl: `${deps.apiBaseUrl}/api/email/unsubscribe?preview=1`,
+    });
+  }
+
+  @Post('campaigns/reactivation/send')
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  campanhaDisparo(@Body() body: CampaignSendDto) {
+    if (this.campaignRunning) throw new ConflictException('Campaign is already running');
+    const segments = (body.segments as CampaignSegment[] | undefined) ?? DEFAULT_SEND_SEGMENTS;
+    this.campaignRunning = true;
+    void sendCampaign(this.campaignDeps(), segments)
+      .catch((err) => this.logger.warn(`[campaign] Falha: ${err instanceof Error ? err.message : err}`))
+      .finally(() => {
+        this.campaignRunning = false;
+      });
+    return { started: true, segments };
+  }
 
   /**
    * Aba "Origem": de onde vem quem cadastra, analisa e assina (declarado pela
