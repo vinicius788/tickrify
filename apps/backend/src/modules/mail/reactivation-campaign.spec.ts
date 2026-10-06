@@ -48,6 +48,12 @@ function makeDeps(opts: {
         create: jest.fn(async ({ data }: { data: { action: string; targetUserId: string } }) => {
           audits.push(data);
           order.push(`audit:${data.targetUserId}`);
+          return { id: `a_${data.targetUserId}` };
+        }),
+        delete: jest.fn(async ({ where }: { where: { id: string } }) => {
+          const i = audits.findIndex((a) => `a_${a.targetUserId}` === where.id);
+          if (i >= 0) audits.splice(i, 1);
+          order.push(`unmark:${where.id}`);
         }),
       },
       subscription: {},
@@ -137,6 +143,13 @@ describe('campanha de reativacao', () => {
     const out = await sendCampaign(deps, ['exhausted']);
     expect(sent).toHaveLength(5);
     expect(out.failed).toBe(5);
+  });
+
+  it('envio recusado tira a marca, para o proximo disparo tentar de novo', async () => {
+    const { deps, audits, order } = makeDeps({ users, sendOk: (to) => to !== 'one@x.com' });
+    await sendCampaign(deps, ['exhausted', 'one_left']);
+    expect(audits.map((a) => a.targetUserId)).toEqual(['u_ex']);
+    expect(order).toContain('unmark:a_u_1');
   });
 
   it('sem segredo de descadastro nada sai', async () => {

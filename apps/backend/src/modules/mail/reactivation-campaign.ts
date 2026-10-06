@@ -23,7 +23,11 @@
  * - uma vez por pessoa: AdminAudit `campaign:reactivation_2026_10` gravado
  *   ANTES de enviar (numa corrida, perder um e-mail e melhor que duplicar);
  * - o disparo e manual (rota do /admin) e para sozinho depois de 5 falhas
- *   seguidas do provedor.
+ *   seguidas do provedor; envio recusado perde a marca (o proximo disparo
+ *   tenta de novo so essas pessoas);
+ * - Resend gratis = 100 e-mails/dia (UTC) para TUDO, inclusive boas-vindas e
+ *   recuperacao: disparo grande gasta a cota do dia do site inteiro (06/10:
+ *   200 enviados, 5 recusados com 429 e o resto do dia sem e-mail).
  */
 import type { PrismaClient } from '@prisma/client';
 import { getFreeQuota, FREE_SIGNAL_LIMIT } from '../../common/free-quota';
@@ -230,8 +234,9 @@ export async function sendCampaign(deps: CampaignDeps, segments: CampaignSegment
       deps.log('warn', '[campaign] Sem segredo de descadastro: nada sai.');
       break;
     }
-    await deps.prisma.adminAudit.create({
+    const audit = await deps.prisma.adminAudit.create({
       data: { action: CAMPAIGN_AUDIT_ACTION, targetUserId: c.userId, targetEmail: c.email, details: { segment: c.segment } },
+      select: { id: true },
     });
     const email = renderCampaignEmail(c.segment, {
       appUrl: deps.appUrl,
@@ -244,6 +249,9 @@ export async function sendCampaign(deps: CampaignDeps, segments: CampaignSegment
       sent[c.segment] += 1;
       consecutiveFailures = 0;
     } else {
+      // Provedor recusou (ex.: cota diaria da Resend, 06/10/2026): tira a
+      // marca para um proximo disparo tentar de novo so esta pessoa.
+      await deps.prisma.adminAudit.delete({ where: { id: audit.id } }).catch(() => undefined);
       failed += 1;
       consecutiveFailures += 1;
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
