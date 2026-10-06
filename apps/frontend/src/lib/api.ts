@@ -3,6 +3,7 @@ import { registrarMigalha } from './breadcrumbs';
 import { useAuth } from '@clerk/clerk-react';
 import { useCallback, useMemo } from 'react';
 import type { TechnicalAttributionPayload } from './attribution';
+import type { TradeNote } from './trade-note';
 
 const DEV_API_FALLBACK = 'http://localhost:3001';
 
@@ -190,6 +191,8 @@ export interface AIAnalysisResponse {
    * UNTRACKABLE, ou null enquanto nao mediu. Nunca e o que o trader marcou.
    */
   marketOutcome?: string | null;
+  /** Anotacao do trader (nota, setup, emocao, erros); null sem anotacao. */
+  tradeNote?: TradeNote | null;
   /** Valor da operacao informado pelo trader no My Trades (moeda da conta dele). */
   pnlAmount?: number | null;
   pnlPercent?: number | null;
@@ -750,6 +753,34 @@ class APIClient {
     return response.json();
   }
 
+  async setTradeNote(
+    analysisId: string,
+    body: TradeNote,
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<{ id: string; tradeNote: TradeNote | null }> {
+    const response = await this.request(
+      `/api/ai/analysis/${analysisId}/note`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...this.getAuthHeader(token),
+        },
+        body: JSON.stringify(body),
+      },
+      'Failed to save note',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
+    );
+
+    if (!response.ok) {
+      throw await this.buildApiError(response, 'Failed to save note');
+    }
+
+    return response.json();
+  }
+
   async setOutcome(
     analysisId: string,
     payload: { outcome: string | null; pnlPercent?: number | null; pnlAmount?: number | null },
@@ -937,6 +968,11 @@ export function useAPIClient() {
     return apiClient.setFavorite(analysisId, isFavorite, token, getFreshToken);
   }, [getFreshToken, getInitialToken]);
 
+  const setTradeNote = useCallback(async (analysisId: string, body: TradeNote) => {
+    const token = await getInitialToken();
+    return apiClient.setTradeNote(analysisId, body, token, getFreshToken);
+  }, [getFreshToken, getInitialToken]);
+
   const getStrategy = useCallback(async () => {
     const token = await getInitialToken();
     return apiClient.getStrategy(token, getFreshToken);
@@ -971,8 +1007,9 @@ export function useAPIClient() {
     setTechnicalAttribution,
     setOutcome,
     setFavorite,
+    setTradeNote,
     getStrategy,
     saveStrategy,
     waitForAnalysisCompletion,
-  }), [createAnalysis, getAnalysis, listAnalyses, getJournal, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setTechnicalAttribution, setOutcome, setFavorite, getStrategy, saveStrategy, waitForAnalysisCompletion]);
+  }), [createAnalysis, getAnalysis, listAnalyses, getJournal, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setTechnicalAttribution, setOutcome, setFavorite, setTradeNote, getStrategy, saveStrategy, waitForAnalysisCompletion]);
 }

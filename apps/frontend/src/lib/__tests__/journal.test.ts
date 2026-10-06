@@ -187,3 +187,24 @@ describe('journal: voce x IA (resultado do mercado 48h)', () => {
     expect(compare([{ side: null, v: null, m: 'ABSTAIN' }]).plans).toBe(0);
   });
 });
+
+describe('journal: recortes pela anotacao', () => {
+  type N = { createdAt: string; v: Verdict; pnl: number | null; note: { setup: string | null; mistakes: string[] } | null };
+  const n = (v: Verdict, pnl: number | null, note: N['note']): N => ({ createdAt: new Date(2026, 9, 2, 9).toISOString(), v, pnl, note });
+  const stats = (rows: N[]) => computeMonthStats(rows, (r) => r.v, (r) => r.pnl, () => 'BUY', () => 2, (r) => r.note);
+
+  it('agrupa por setup e por erro; trade sem anotacao fica fora; erro repetido conta uma vez', () => {
+    const s = stats([
+      n('TP1', 100, { setup: 'pullback', mistakes: [] }),
+      n('SL', -50, { setup: 'pullback', mistakes: ['early_exit', 'early_exit', 'oversized'] }),
+      n('SL', -30, { setup: null, mistakes: ['oversized'] }),
+      n('TP2', 200, null),
+      n('OPEN', null, { setup: 'breakout', mistakes: ['revenge'] }),
+    ]);
+    expect(s.bySetup).toEqual([{ key: 'pullback', closed: 2, wins: 1, pnl: 50 }]);
+    expect(s.byMistake).toEqual([
+      { key: 'oversized', closed: 2, wins: 0, pnl: -80 },
+      { key: 'early_exit', closed: 1, wins: 0, pnl: -50 },
+    ]);
+  });
+});

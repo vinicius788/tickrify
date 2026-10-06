@@ -140,6 +140,10 @@ export interface MonthStats {
   bySide: GroupRow[];
   /** Chave = dia da semana local (0 = domingo). */
   byWeekday: GroupRow[];
+  /** Pela anotacao do trader (so trades anotados). */
+  bySetup: GroupRow[];
+  /** Um trade com dois erros conta nos dois. */
+  byMistake: GroupRow[];
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -150,8 +154,11 @@ export function computeMonthStats<T extends { createdAt: string; symbol?: string
   pnlOf: (item: T) => number | null,
   sideOf: (item: T) => 'BUY' | 'SELL' | null,
   rrOf: (item: T, verdict: 'TP1' | 'TP2') => number | null,
+  noteOf: (item: T) => { setup: string | null; mistakes: string[] } | null | undefined = () => null,
 ): MonthStats {
   const groups = {
+    bySetup: new Map<string, GroupRow>(),
+    byMistake: new Map<string, GroupRow>(),
     bySymbol: new Map<string, GroupRow>(),
     byTimeframe: new Map<string, GroupRow>(),
     bySide: new Map<string, GroupRow>(),
@@ -204,6 +211,9 @@ export function computeMonthStats<T extends { createdAt: string; symbol?: string
     const side = sideOf(item);
     if (side) add(groups.bySide, side, win, amount);
     add(groups.byWeekday, String(created.getDay()), win, amount);
+    const note = noteOf(item);
+    if (note?.setup) add(groups.bySetup, note.setup, win, amount);
+    for (const mistake of new Set(note?.mistakes ?? [])) add(groups.byMistake, mistake, win, amount);
   }
 
   // Trade a trade, nao dia a dia: dois trades no mesmo dia ja formam curva, e
@@ -248,6 +258,8 @@ export function computeMonthStats<T extends { createdAt: string; symbol?: string
     byTimeframe: finish(groups.byTimeframe),
     bySide: finish(groups.bySide),
     byWeekday: finish(groups.byWeekday).sort((a, b) => Number(a.key) - Number(b.key)),
+    bySetup: finish(groups.bySetup),
+    byMistake: finish(groups.byMistake),
   };
 }
 

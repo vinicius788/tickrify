@@ -1,4 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import JournalCalendar from '@/components/dashboard/JournalCalendar';
@@ -6,7 +7,8 @@ import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 
 vi.mock('@clerk/clerk-react', () => ({ useUser: () => ({ user: { id: 'u-1' } }) }));
 const getJournal = vi.fn();
-vi.mock('@/lib/api', () => ({ useAPIClient: () => ({ getJournal }) }));
+const setTradeNote = vi.fn();
+vi.mock('@/lib/api', () => ({ useAPIClient: () => ({ getJournal, setTradeNote }) }));
 
 const now = new Date();
 const at = (day: number, hour: number) => new Date(now.getFullYear(), now.getMonth(), day, hour).toISOString();
@@ -86,5 +88,47 @@ describe('Diario: voce x o plano da IA', () => {
     expect(screen.getByText('You hit the stop where the plan reached TP1: 1')).toBeTruthy();
     expect(screen.getByText('1, of which 0 reached TP1')).toBeTruthy();
     expect(screen.getByText('1 still inside the 48h window')).toBeTruthy();
+  });
+});
+
+describe('Diario: anotacao do trade', () => {
+  afterEach(() => {
+    cleanup();
+    getJournal.mockReset();
+    setTradeNote.mockReset();
+  });
+
+  it('anota setup, emocao, erro e nota; mostra o resumo e o recorte por erro', async () => {
+    const user = userEvent.setup();
+    const today = new Date().getDate();
+    const base = { ...item('a', today, 'XAUUSD', 'BUY', 'stop', -50, 2) };
+    getJournal.mockResolvedValueOnce({ truncated: false, items: [base] });
+    setTradeNote.mockResolvedValue({ id: 'a', tradeNote: { note: 'Moved my stop', setup: 'pullback', emotion: 'fomo', mistakes: ['moved_stop'] } });
+    renderJournal();
+
+    await user.click(await screen.findByRole('button', { name: 'Add note' }));
+    await user.click(screen.getByRole('button', { name: 'Pullback' }));
+    await user.click(screen.getByRole('button', { name: 'FOMO' }));
+    await user.click(screen.getByRole('button', { name: 'Moved the stop' }));
+    await user.type(screen.getByRole('textbox', { name: /Trade notes/ }), '  Moved my stop  ');
+
+    getJournal.mockResolvedValueOnce({
+      truncated: false,
+      items: [{ ...base, tradeNote: { note: 'Moved my stop', setup: 'pullback', emotion: 'fomo', mistakes: ['moved_stop'] } }],
+    });
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(setTradeNote).toHaveBeenCalledWith('a', { note: 'Moved my stop', setup: 'pullback', emotion: 'fomo', mistakes: ['moved_stop'] });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit note' })).toBeTruthy());
+    expect(screen.getByText('Moved my stop')).toBeTruthy();
+    expect(screen.getByText('Mistakes')).toBeTruthy();
+    expect(screen.getAllByText('Moved the stop').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('WAIT nao tem botao de anotar (nao e operacao)', async () => {
+    getJournal.mockResolvedValue({ truncated: false, items: [item('w', new Date().getDate(), 'XAUUSD', 'WAIT', null, null, null)] });
+    renderJournal();
+    await screen.findByText('XAUUSD');
+    expect(screen.queryByRole('button', { name: 'Add note' })).toBeNull();
   });
 });

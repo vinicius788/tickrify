@@ -9,13 +9,15 @@
  * de 40: um mes cheio passaria disso e o total do mes sairia menor que o real.
  */
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useUser } from '@clerk/clerk-react';
-import { CalendarDays, ChevronLeft, ChevronRight, ExternalLink, ImageOff, Maximize2 } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, ExternalLink, ImageOff, Maximize2, NotebookPen } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import EmptyState from '@/components/dashboard/EmptyState';
+import TradeNoteDialog from '@/components/dashboard/TradeNoteDialog';
+import { isEmptyTradeNote, type TradeNote } from '@/lib/trade-note';
 import { useAPIClient, type AIAnalysisResponse } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { getRecommendationMeta } from '@/lib/trading-ui';
@@ -168,6 +170,8 @@ function JournalStats({ stats, j, locale }: { stats: MonthStats; j: JournalCopy;
         <GroupCard title={j.byTimeframe} rows={stats.byTimeframe} label={(k) => k} j={j} />
         <GroupCard title={j.bySide} rows={stats.bySide} label={sideLabel} j={j} />
         <GroupCard title={j.byWeekday} rows={stats.byWeekday} label={weekdayLabel} j={j} />
+        <GroupCard title={j.bySetup} rows={stats.bySetup} label={(k) => (j.setupLabels as Record<string, string>)[k] ?? k} j={j} />
+        <GroupCard title={j.byMistake} rows={stats.byMistake} label={(k) => (j.mistakeLabels as Record<string, string>)[k] ?? k} j={j} />
       </div>
     </section>
   );
@@ -236,6 +240,8 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
   const [selected, setSelected] = useState<string | null>(dayKey(now));
   const [viewer, setViewer] = useState<{ url: string; title: string } | null>(null);
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
+  const [noteFor, setNoteFor] = useState<{ id: string; title: string; note: TradeNote | null } | null>(null);
+  const queryClient = useQueryClient();
 
   const { from, to } = monthRange(cursor.year, cursor.month);
   const isCurrentMonth = cursor.year === now.getFullYear() && cursor.month === now.getMonth();
@@ -258,7 +264,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
     return a.pnlAmount === null || a.pnlAmount === undefined || !Number.isFinite(n) ? null : n;
   };
   const { days, totals } = useMemo(() => summarizeByDay(items, verdictOf, pnlOf), [items]);
-  const stats = useMemo(() => computeMonthStats(items, verdictOf, pnlOf, sideOf, plannedRr), [items]);
+  const stats = useMemo(() => computeMonthStats(items, verdictOf, pnlOf, sideOf, plannedRr, (a) => a.tradeNote), [items]);
   const comparison = useMemo(() => computeAiComparison(items, verdictOf, sideOf, (a) => a.marketOutcome), [items]);
 
   const weekStart = weekStartFor(language);
@@ -554,6 +560,32 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                   <span className="font-terminal text-[10px] text-[var(--text-secondary)]">
                                     {new Date(a.createdAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
                                   </span>
+                                  {!isEmptyTradeNote(a.tradeNote) && (
+                                    <span className="flex flex-wrap gap-1 text-[10px] text-[var(--text-secondary)]">
+                                      {a.tradeNote?.setup && (
+                                        <span className="rounded border border-[var(--border-subtle)] px-1.5 py-0.5">{(j.setupLabels as Record<string, string>)[a.tradeNote.setup] ?? a.tradeNote.setup}</span>
+                                      )}
+                                      {a.tradeNote?.emotion && (
+                                        <span className="rounded border border-[var(--border-subtle)] px-1.5 py-0.5">{(j.emotionLabels as Record<string, string>)[a.tradeNote.emotion] ?? a.tradeNote.emotion}</span>
+                                      )}
+                                      {a.tradeNote?.mistakes.map((m) => (
+                                        <span key={m} className="rounded border border-amber-500/40 px-1.5 py-0.5 text-amber-500">{(j.mistakeLabels as Record<string, string>)[m] ?? m}</span>
+                                      ))}
+                                    </span>
+                                  )}
+                                  {a.tradeNote?.note && (
+                                    <span className="line-clamp-2 text-xs text-[var(--text-secondary)]">{a.tradeNote.note}</span>
+                                  )}
+                                  {isTradeCall(a.recommendation) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setNoteFor({ id: a.id, title, note: a.tradeNote ?? null })}
+                                      className="inline-flex w-fit items-center gap-1 text-[11px] text-[var(--text-secondary)] underline-offset-2 transition-colors hover:text-[var(--text-primary)] hover:underline"
+                                    >
+                                      <NotebookPen className="h-3 w-3" />
+                                      <span>{isEmptyTradeNote(a.tradeNote) ? j.noteAdd : j.noteEdit}</span>
+                                    </button>
+                                  )}
                                 </div>
                                 <div className="flex shrink-0 flex-col items-end gap-1">
                                   <span
@@ -586,6 +618,19 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
           </div>
         )}
       </CardContent>
+
+      {noteFor && (
+        <TradeNoteDialog
+          analysisId={noteFor.id}
+          title={noteFor.title}
+          initial={noteFor.note}
+          onClose={() => setNoteFor(null)}
+          onSaved={() => {
+            setNoteFor(null);
+            void queryClient.invalidateQueries({ queryKey: ['journal'] });
+          }}
+        />
+      )}
 
       <Dialog open={viewer !== null} onOpenChange={(open) => { if (!open) setViewer(null); }}>
         <DialogContent className="max-w-5xl border-[var(--border-subtle)] bg-[var(--bg-card)] p-4">
