@@ -115,6 +115,9 @@ model Analysis {
   // busca por outcome=null) e o sweeper apagava o veredicto do usuário.
   // `outcome` = o que o mercado fez (medido). `userVerdict` = o que o trader diz.
   userVerdict    String?
+  // Anotacao do trader no Diario: { note, setup, emotion, mistakes }. So ele le;
+  // nunca vai para o prompt. Lida e gravada por SQL (AiService.setTradeNote).
+  tradeNote      Json?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
