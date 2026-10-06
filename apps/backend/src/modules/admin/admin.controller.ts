@@ -15,6 +15,7 @@ import { publicUrl } from '../mail/lifecycle-email';
 import {
   CAMPAIGN_SEGMENTS,
   DEFAULT_SEND_SEGMENTS,
+  campaignReport,
   countCampaign,
   renderCampaignEmail,
   sendCampaign,
@@ -63,6 +64,13 @@ export class AdminController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async campanhaContagem() {
     return { ...(await countCampaign(this.campaignDeps())), running: this.campaignRunning };
+  }
+
+  /** Quem recebeu e o que fez depois (analise, checkout, assinatura). */
+  @Get('campaigns/reactivation/report')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async campanhaRelatorio() {
+    return campaignReport(this.prisma);
   }
 
   @Get('campaigns/reactivation/preview')

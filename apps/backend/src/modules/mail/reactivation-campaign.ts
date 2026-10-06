@@ -29,7 +29,7 @@
  *   recuperacao: disparo grande gasta a cota do dia do site inteiro (06/10:
  *   200 enviados, 5 recusados com 429 e o resto do dia sem e-mail).
  */
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { getFreeQuota, FREE_SIGNAL_LIMIT } from '../../common/free-quota';
 import { cleanFirstName } from './welcome-email';
 import { UNSUBSCRIBE_AUDIT_ACTION, letter, unsubscribeUrl } from './lifecycle-email';
@@ -263,4 +263,52 @@ export async function sendCampaign(deps: CampaignDeps, segments: CampaignSegment
   }
   deps.log('log', `[campaign] ${CAMPAIGN_ID} fim sent=${JSON.stringify(sent)} failed=${failed}`);
   return { sent, failed };
+}
+
+export type CampaignReportRow = {
+  userId: string;
+  clerkUserId: string | null;
+  email: string | null;
+  segment: string | null;
+  sentAt: Date;
+  analysesAfter: number;
+  lastAnalysisAt: Date | null;
+  checkoutAfter: boolean;
+  paying: boolean;
+};
+
+/**
+ * Quem recebeu a campanha e o que fez DEPOIS do e-mail (banco): analises
+ * concluidas, checkout aberto e assinatura ativa (sem acesso manual). So o
+ * admin le; o `clerkUserId` serve para cruzar com o PostHog (distinct_id).
+ */
+export async function campaignReport(prisma: { $queryRaw<T = unknown>(query: Prisma.Sql): Promise<T> }) {
+  const rows = await prisma.$queryRaw<CampaignReportRow[]>(Prisma.sql`
+    WITH sent AS (
+      SELECT DISTINCT ON ("targetUserId") "targetUserId" AS uid, "targetEmail" AS email,
+             details->>'segment' AS segment, "createdAt" AS sent_at
+      FROM "tickrify"."AdminAudit"
+      WHERE action = ${CAMPAIGN_AUDIT_ACTION} AND "targetUserId" IS NOT NULL
+      ORDER BY "targetUserId", "createdAt"
+    )
+    SELECT s.uid AS "userId", u."clerkUserId" AS "clerkUserId", s.email, s.segment, s.sent_at AS "sentAt",
+      (SELECT COUNT(*) FROM "tickrify"."Analysis" a
+        WHERE a."userId" = s.uid AND a."status" = 'completed' AND a."createdAt" > s.sent_at)::int AS "analysesAfter",
+      (SELECT MAX(a."createdAt") FROM "tickrify"."Analysis" a
+        WHERE a."userId" = s.uid AND a."createdAt" > s.sent_at) AS "lastAnalysisAt",
+      EXISTS (SELECT 1 FROM "tickrify"."AdminAudit" f
+        WHERE f.action = 'funnel:checkout_session_created' AND f."targetUserId" = s.uid AND f."createdAt" > s.sent_at) AS "checkoutAfter",
+      EXISTS (SELECT 1 FROM "tickrify"."Subscription" x
+        WHERE x."userId" = s.uid AND x."status" IN ('active', 'trialing') AND x."stripeId" NOT LIKE 'manual_%') AS "paying"
+    FROM sent s
+    LEFT JOIN "tickrify"."User" u ON u."id" = s.uid
+    ORDER BY "analysesAfter" DESC, s.sent_at
+  `);
+  const summary = {
+    sent: rows.length,
+    analyzedAfter: rows.filter((r) => r.analysesAfter > 0).length,
+    checkoutAfter: rows.filter((r) => r.checkoutAfter).length,
+    paying: rows.filter((r) => r.paying).length,
+  };
+  return { campaign: CAMPAIGN_ID, summary, rows };
 }

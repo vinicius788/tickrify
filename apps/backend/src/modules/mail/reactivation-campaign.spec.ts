@@ -1,5 +1,6 @@
 import {
   CAMPAIGN_AUDIT_ACTION,
+  campaignReport,
   campaignCandidates,
   countCampaign,
   renderCampaignEmail,
@@ -193,3 +194,20 @@ describe('campanha de reativacao', () => {
     });
   });
 });
+
+describe('relatorio da campanha', () => {
+  it('le so a acao da campanha e resume quem voltou, abriu checkout e assina', async () => {
+    const rows = [
+      { userId: 'u1', clerkUserId: 'c1', email: 'a@x.com', segment: 'three_left', sentAt: new Date(), analysesAfter: 2, lastAnalysisAt: new Date(), checkoutAfter: true, paying: false },
+      { userId: 'u2', clerkUserId: 'c2', email: 'b@x.com', segment: 'exhausted', sentAt: new Date(), analysesAfter: 0, lastAnalysisAt: null, checkoutAfter: false, paying: true },
+      { userId: 'u3', clerkUserId: null, email: 'c@x.com', segment: 'never', sentAt: new Date(), analysesAfter: 0, lastAnalysisAt: null, checkoutAfter: false, paying: false },
+    ];
+    const queryRaw = jest.fn().mockResolvedValue(rows);
+    const out = await campaignReport({ $queryRaw: queryRaw } as any);
+    expect(out.summary).toEqual({ sent: 3, analyzedAfter: 1, checkoutAfter: 1, paying: 1 });
+    const sql = queryRaw.mock.calls[0][0];
+    expect(sql.values).toContain(CAMPAIGN_AUDIT_ACTION);
+    expect(sql.sql).toContain(`"stripeId" NOT LIKE 'manual_%'`);
+  });
+});
+
