@@ -527,7 +527,7 @@ Vale para TODA mudanca, grande ou pequena:
   depoimento ou `aggregateRating`. Numero publico so com metodologia e
   disclaimer; de preferencia vindo da API, nunca fixo no codigo.
 - Texto publico em ingles. Sem travessao. Sem emoji na interface.
-- **Nome do dono:** tudo que sai em nome dele (e-mail, assinatura, remetente, rascunho) usa **Vinícius** e o cargo **CEO**. Nunca "Vini" (so para os intimos) e nunca "Founder" (no tradutor virou "fundadora", 06/10/2026). Os 200 e-mails da campanha de 05/10 sairam assinados "Vini, Founder".
+- **Nome do dono:** tudo que sai em nome dele (e-mail, assinatura, remetente, rascunho) usa **Vinícius**, nunca "Vini" (so para os intimos). Cargo: CEO ou Founder, os dois valem (dono, 06/10/2026). Os 200 e-mails da campanha de 05/10 sairam assinados "Vini, Founder".
 - String com numero ou afirmacao verificavel muda nos 6 idiomas no MESMO commit,
   conferindo um a um. O `tsc` pega chave ausente, nao traducao desatualizada (ja
   divergiu tres vezes).

@@ -31,7 +31,7 @@
  */
 import { createHmac, timingSafeEqual } from 'crypto';
 import type { PrismaClient } from '@prisma/client';
-import { cleanFirstName } from './welcome-email';
+import { WELCOME_ICON_URL, cleanFirstName } from './welcome-email';
 import { FREE_SIGNAL_LIMIT } from '../../common/free-quota';
 
 export type LifecycleKind = 'activation_1' | 'activation_2' | 'checkout_recovery' | 'second_analysis' | 'checkout_winback';
@@ -90,7 +90,9 @@ const FONT = `-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif`;
 
 /**
  * Layout de carta pessoal (fundo branco, sem cartao escuro): e um e-mail do
- * fundador, nao um aviso do sistema. Um botao, assinatura e descadastro.
+ * fundador, nao um aviso do sistema. Marca no topo (icone + "Tickrify" em
+ * texto, porque o Gmail esconde imagem de remetente novo), um botao,
+ * assinatura com o icone ("Vinícius, CEO", nunca "Vini") e descadastro.
  */
 export function letter(params: {
   preview: string;
@@ -112,6 +114,12 @@ export function letter(params: {
   <tr><td align="center" style="padding:32px 16px;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
       <tr><td>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px;">
+          <tr>
+            <td valign="middle" style="padding-right:8px;"><img src="${WELCOME_ICON_URL}" alt="" width="20" height="24" style="display:block;width:20px;height:24px;border:0;"></td>
+            <td valign="middle" style="font-family:${FONT};font-size:18px;line-height:24px;font-weight:700;color:#0b0f14;">Tickrify</td>
+          </tr>
+        </table>
         ${greeting}
         ${params.paragraphs.map(p).join('\n        ')}
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px;">
@@ -120,7 +128,12 @@ export function letter(params: {
           </td></tr>
         </table>
         ${(params.afterCta ?? []).map(p).join('\n        ')}
-        ${p('Vinícius<br>CEO, Tickrify')}
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;">
+          <tr>
+            <td valign="middle" style="padding-right:12px;"><img src="${WELCOME_ICON_URL}" alt="Tickrify" width="30" height="36" style="display:block;width:30px;height:36px;border:0;"></td>
+            <td valign="middle" style="font-family:${FONT};font-size:15px;line-height:21px;color:#1f2a36;"><b>Vinícius</b><br>CEO, Tickrify</td>
+          </tr>
+        </table>
         <p style="margin:24px 0 0;font-family:${FONT};font-size:12px;line-height:18px;color:#7a8794;">
           Tickrify gives a second opinion on your chart, not financial advice. Trading involves risk and the decision is yours.<br>
           You get this email because you created a Tickrify account. <a href="${escapeHtml(params.unsubscribeUrl)}" style="color:#7a8794;">Unsubscribe from these emails</a>.
