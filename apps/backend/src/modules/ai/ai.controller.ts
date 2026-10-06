@@ -25,6 +25,7 @@ import { UploadedFile as UploadedFileType } from '../../common/interfaces/multer
 import { CreateAnalysisDto } from './dto/create-analysis.dto';
 import { ListAnalysesQueryDto } from './dto/list-analyses-query.dto';
 import { JournalQueryDto } from './dto/journal-query.dto';
+import { SetTradeNoteDto } from './dto/set-trade-note.dto';
 import { SetOutcomeDto } from './dto/set-outcome.dto';
 import { SetFavoriteDto } from './dto/set-favorite.dto';
 import { SetStrategyDto } from './dto/set-strategy.dto';
@@ -182,6 +183,20 @@ export class AiController {
     if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
 
     return this.aiService.setFavorite(dbUserId, id, body.isFavorite === true);
+  }
+
+  @Patch('analysis/:id/note')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async setTradeNote(
+    @CurrentUser() user: { id?: string; clerkUserId: string },
+    @Param('id') id: string,
+    @Body() body: SetTradeNoteDto,
+  ) {
+    const dbUserId = await this.resolveDbUserId(user);
+    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
+
+    return this.aiService.setTradeNote(dbUserId, id, body);
   }
 
   @Get('strategy')

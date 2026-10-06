@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { AiService } from './ai.service';
+import { AiService, sanitizeTradeNote } from './ai.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
 import { captureServer as captureServerMock } from '../../common/analytics/posthog';
 
@@ -540,6 +540,81 @@ describe('AiService access enforcement', () => {
     it('entrada nao atingida (no_fill) e gravada como veredito', async () => {
       await service.setOutcome('usr_1', 'an_1', { outcome: 'no_fill' });
       expect(valuesOfUpdate()[0]).toBe('no_fill');
+    });
+  });
+
+  // ── Anotacao do trader (Diario, 05/10/2026) ───────────────────────────────────
+  describe('anotacao do trade', () => {
+    it('sanitize: so valores das listas, nota cortada, tudo vazio vira null', () => {
+      expect(sanitizeTradeNote({ note: '  entrei cedo  ', setup: 'pullback', emotion: 'fomo', mistakes: ['late_entry', 'late_entry', 'hack'] })).toEqual({
+        note: 'entrei cedo', setup: 'pullback', emotion: 'fomo', mistakes: ['late_entry'],
+      });
+      expect(sanitizeTradeNote({ setup: 'DROP TABLE', emotion: 42, note: '   ', mistakes: 'x' })).toBeNull();
+      expect(sanitizeTradeNote(null)).toBeNull();
+      expect(sanitizeTradeNote({ note: 'a'.repeat(1500) })?.note).toHaveLength(1000);
+    });
+
+    describe('setTradeNote', () => {
+      beforeEach(() => {
+        prisma.$executeRaw = jest.fn().mockResolvedValue(1);
+        prisma.analysis.findFirst.mockResolvedValue({ id: 'an_1' });
+        (service as any).tradeNoteReady = true;
+      });
+      const valueOfUpdate = () => (prisma.$executeRaw as jest.Mock).mock.calls.at(-1)[1];
+
+      it('grava o JSON limpo como jsonb, so na analise do proprio usuario', async () => {
+        const out = await service.setTradeNote('usr_1', 'an_1', { note: 'ok', setup: 'breakout', mistakes: ['oversized'] });
+        expect(out.tradeNote).toEqual({ note: 'ok', setup: 'breakout', emotion: null, mistakes: ['oversized'] });
+        expect(valueOfUpdate().values[0]).toBe(JSON.stringify(out.tradeNote));
+        const strings = (prisma.$executeRaw as jest.Mock).mock.calls.at(-1)[0].join('?');
+        expect(strings).toContain('"userId" =');
+        expect(prisma.analysis.findFirst).toHaveBeenCalledWith({ where: { id: 'an_1', userId: 'usr_1' }, select: { id: true } });
+      });
+
+      it('apagar tudo grava NULL', async () => {
+        await service.setTradeNote('usr_1', 'an_1', { note: '', setup: null, mistakes: [] });
+        expect(valueOfUpdate().values).toEqual([]);
+        expect(valueOfUpdate().strings.join('')).toBe('NULL');
+      });
+
+      it('analise de outro usuario: recusa sem gravar', async () => {
+        prisma.analysis.findFirst.mockResolvedValue(null);
+        await expect(service.setTradeNote('usr_1', 'alheia', { note: 'x' })).rejects.toBeInstanceOf(BadRequestException);
+        expect(prisma.$executeRaw).not.toHaveBeenCalled();
+      });
+
+      it('sem a coluna, so as notas ficam indisponiveis (503)', async () => {
+        (service as any).tradeNoteReady = false;
+        await expect(service.setTradeNote('usr_1', 'an_1', { note: 'x' })).rejects.toMatchObject({ status: 503 });
+      });
+
+      it('PostHog recebe o evento sem o texto da nota', async () => {
+        captureServer.mockClear();
+        prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', clerkUserId: 'clerk_1' });
+        await service.setTradeNote('usr_1', 'an_1', { note: 'segredo', emotion: 'calm' });
+        await new Promise((r) => setImmediate(r));
+        const call = captureServer.mock.calls.find((c) => c[1] === 'trade_note_saved');
+        expect(call?.[2]).toMatchObject({ hasNote: true, emotion: 'calm', mistakes: 0 });
+        expect(JSON.stringify(call?.[2])).not.toContain('segredo');
+      });
+    });
+
+    it('a lista le a anotacao so quando a coluna existe, e devolve limpa', async () => {
+      prisma.analysis.findMany.mockResolvedValue([{ id: 'a1', imageUrl: null, status: 'completed', result: {}, createdAt: new Date() }]);
+      (service as any).outcomeColumnsReady = true;
+      (service as any).tradeNoteReady = false;
+      prisma.$queryRaw = jest.fn().mockResolvedValue([{ id: 'a1', outcome: 'tp1', pnlPercent: null, pnlAmount: 10, isFavorite: false }]);
+      const range: [Date, Date] = [new Date('2026-10-01T00:00:00Z'), new Date('2026-10-20T00:00:00Z')];
+      await service.listAnalysesInRange('usr_1', ...range);
+      expect((prisma.$queryRaw as jest.Mock).mock.calls[0][0].sql).not.toContain('tradeNote');
+
+      (service as any).tradeNoteReady = true;
+      prisma.$queryRaw = jest.fn().mockResolvedValue([
+        { id: 'a1', outcome: 'tp1', pnlPercent: null, pnlAmount: 10, isFavorite: false, tradeNote: { note: 'ok', setup: 'bogus', mistakes: ['early_exit'] } },
+      ]);
+      const out = await service.listAnalysesInRange('usr_1', ...range);
+      expect((prisma.$queryRaw as jest.Mock).mock.calls[0][0].sql).toContain('"tradeNote"');
+      expect(out.items[0].tradeNote).toEqual({ note: 'ok', setup: null, emotion: null, mistakes: ['early_exit'] });
     });
   });
 

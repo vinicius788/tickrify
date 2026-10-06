@@ -56,6 +56,7 @@ import {
   type RecoveryEmailDeps,
 } from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
+import { TRADE_EMOTIONS, TRADE_MISTAKES, TRADE_NOTE_MAX, TRADE_SETUPS } from './dto/set-trade-note.dto';
 import { trackFreeAnalysisCompleted, trackFreeAnalysisStarted } from '../../common/analytics/free-funnel';
 import { analysisFailureCodeForResponse, safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../../common/analytics/analysis-failure';
 import {
@@ -107,11 +108,32 @@ export function resolveAbPromptVariant(userId: string): 'A' | 'B' {
   return (Math.abs(h) % 100) < pct ? 'B' : 'A';
 }
 
+export type TradeNote = { note: string | null; setup: string | null; emotion: string | null; mistakes: string[] };
+
+/**
+ * Anotacao limpa, na escrita E na leitura (o que esta no banco tambem passa
+ * por aqui): so valores das listas fechadas, nota cortada no teto. Tudo vazio
+ * = null, para "sem anotacao" nunca virar um objeto vazio gravado.
+ */
+export function sanitizeTradeNote(raw: unknown): TradeNote | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const pick = (v: unknown, list: readonly string[]) => (typeof v === 'string' && list.includes(v) ? v : null);
+  const note = typeof r.note === 'string' ? r.note.trim().slice(0, TRADE_NOTE_MAX) || null : null;
+  const mistakes = Array.isArray(r.mistakes)
+    ? [...new Set(r.mistakes.filter((m): m is string => typeof m === 'string' && (TRADE_MISTAKES as readonly string[]).includes(m)))]
+    : [];
+  const out: TradeNote = { note, setup: pick(r.setup, TRADE_SETUPS), emotion: pick(r.emotion, TRADE_EMOTIONS), mistakes };
+  return out.note || out.setup || out.emotion || out.mistakes.length > 0 ? out : null;
+}
+
 @Injectable()
 export class AiService implements OnModuleInit {
   private readonly logger = new Logger(AiService.name);
   /** true quando as colunas de resultado existem no banco (verificado no boot). */
   private outcomeColumnsReady = false;
+  /** true quando a coluna da anotacao do trader existe (separada: se falhar, so as notas param). */
+  private tradeNoteReady = false;
 
   constructor(
     private prisma: PrismaService,
@@ -222,6 +244,17 @@ export class AiService implements OnModuleInit {
         }`,
       );
     }
+    // Anotacao do trader (05/10/2026). Bloco proprio: se falhar, so as notas
+    // ficam indisponiveis; resultado, valor e favoritos seguem normais.
+    try {
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "tradeNote" JSONB',
+      );
+      this.tradeNoteReady = true;
+    } catch (err) {
+      this.tradeNoteReady = false;
+      this.logger.warn(`[outcome] Coluna de anotacao indisponivel: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   /** Mapa id -> resultado, lido por SQL isolado. Nunca lança (retorna mapa vazio em falha). */
@@ -229,19 +262,21 @@ export class AiService implements OnModuleInit {
     userId: string,
     /** Se vier, le so estas analises (a pagina da lista). Sem ele, todas. */
     ids?: string[],
-  ): Promise<Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean }>> {
-    const map = new Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean }>();
+  ): Promise<Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean; tradeNote: TradeNote | null }>> {
+    const map = new Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean; tradeNote: TradeNote | null }>();
     if (!this.outcomeColumnsReady) {
       return map;
     }
+    // Sem a coluna da anotacao, a consulta segue sem ela (nunca derruba o resultado).
+    const noteColumn = this.tradeNoteReady ? Prisma.sql`, "tradeNote"` : Prisma.empty;
     try {
       const rows = await this.prisma.$queryRaw<
-        Array<{ id: string; outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean | null }>
+        Array<{ id: string; outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean | null; tradeNote?: unknown }>
       >(ids
         ? ids.length === 0
           ? Prisma.sql`SELECT NULL::text AS "id" WHERE false`
-          : Prisma.sql`SELECT "id", "userVerdict" AS "outcome", "pnlPercent", "pnlAmount", "isFavorite" FROM "tickrify"."Analysis" WHERE "userId" = ${userId} AND "id" IN (${Prisma.join(ids)})`
-        : Prisma.sql`SELECT "id", "userVerdict" AS "outcome", "pnlPercent", "pnlAmount", "isFavorite" FROM "tickrify"."Analysis" WHERE "userId" = ${userId}`);
+          : Prisma.sql`SELECT "id", "userVerdict" AS "outcome", "pnlPercent", "pnlAmount", "isFavorite"${noteColumn} FROM "tickrify"."Analysis" WHERE "userId" = ${userId} AND "id" IN (${Prisma.join(ids)})`
+        : Prisma.sql`SELECT "id", "userVerdict" AS "outcome", "pnlPercent", "pnlAmount", "isFavorite"${noteColumn} FROM "tickrify"."Analysis" WHERE "userId" = ${userId}`);
       // O campo `outcome` da API é, e sempre foi, o veredicto do TRADER — agora
       // lido da coluna certa. O outcome automático do sweeper não é exposto aqui
       // (ele aparece agregado e anonimizado em GET /api/ai/accuracy).
@@ -251,6 +286,7 @@ export class AiService implements OnModuleInit {
           pnlPercent: r.pnlPercent ?? null,
           pnlAmount: r.pnlAmount ?? null,
           isFavorite: r.isFavorite === true,
+          tradeNote: sanitizeTradeNote(r.tradeNote),
         });
       }
     } catch (err) {
@@ -759,6 +795,7 @@ export class AiService implements OnModuleInit {
           pnlPercent: outcomeData?.pnlPercent ?? null,
           pnlAmount: outcomeData?.pnlAmount ?? null,
           isFavorite: outcomeData?.isFavorite ?? false,
+          tradeNote: outcomeData?.tradeNote ?? null,
         };
       }),
     );
@@ -792,6 +829,44 @@ export class AiService implements OnModuleInit {
     `;
 
     return { id, isFavorite: value };
+  }
+
+  /**
+   * Anotacao do trader num trade (Diario): nota, setup, emocao e erros.
+   * Rota propria, separada do setOutcome, para nunca arriscar o registro do
+   * resultado. Tudo vazio grava NULL. Owner-checked e atras da trava do gratis.
+   */
+  async setTradeNote(userId: string, id: string, input: unknown) {
+    if (await this.isFreeLocked(userId)) throw this.freeLockedError();
+    const analysis = await this.prisma.analysis.findFirst({
+      where: { id, userId },
+      select: { id: true },
+    });
+    if (!analysis) {
+      throw new BadRequestException('Analysis not found');
+    }
+    if (!this.tradeNoteReady) {
+      throw new ServiceUnavailableException('Notes are temporarily unavailable. Try again in a moment.');
+    }
+
+    const tradeNote = sanitizeTradeNote(input);
+    const value = tradeNote ? Prisma.sql`${JSON.stringify(tradeNote)}::jsonb` : Prisma.sql`NULL`;
+    await this.prisma.$executeRaw`
+      UPDATE "tickrify"."Analysis"
+      SET "tradeNote" = ${value}
+      WHERE "id" = ${id} AND "userId" = ${userId}
+    `;
+
+    // Sem o texto da nota: so o que da para contar.
+    void trackUserActivity(this.prisma, userId, 'trade_note_saved', {
+      analysisId: id,
+      hasNote: Boolean(tradeNote?.note),
+      setup: tradeNote?.setup ?? null,
+      emotion: tradeNote?.emotion ?? null,
+      mistakes: tradeNote?.mistakes.length ?? 0,
+    });
+
+    return { id, tradeNote };
   }
 
   /**

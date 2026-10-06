@@ -21,7 +21,7 @@ type PrismaLike = {
 export async function trackUserActivity(
   prisma: PrismaLike,
   userId: string,
-  event: 'paid_analysis_started' | 'trade_outcome_set' | 'strategy_saved',
+  event: 'paid_analysis_started' | 'trade_outcome_set' | 'trade_note_saved' | 'strategy_saved',
   properties: Record<string, unknown>,
   options: CaptureOptions = {},
 ): Promise<void> {
