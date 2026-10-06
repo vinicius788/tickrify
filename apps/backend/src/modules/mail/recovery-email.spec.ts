@@ -2,7 +2,7 @@ jest.mock('../../common/utils/clerk-email', () => ({
   fetchClerkEmail: jest.fn().mockResolvedValue(null),
 }));
 
-import { notifyIfFreeQuotaExhausted, type RecoveryEmailDeps } from './recovery-email';
+import { notifyIfFreeQuotaExhausted, retryRecoveryEmails, type RecoveryEmailDeps } from './recovery-email';
 
 /**
  * `analysis.count` falso que responde pela clausula, na mesma forma que
@@ -18,15 +18,18 @@ function quotaCount(q: { signals: number; total?: number; inFlight?: number }) {
   });
 }
 
-function makeDeps(opts: { quota: { signals: number; total?: number; inFlight?: number }; alreadySent?: boolean; paid?: boolean; email?: string | null; offerActive?: boolean }) {
-  const sendRecovery = jest.fn().mockResolvedValue(undefined);
-  const auditCreate = jest.fn().mockResolvedValue({});
+function makeDeps(opts: { quota: { signals: number; total?: number; inFlight?: number }; alreadySent?: boolean; paid?: boolean; email?: string | null; offerActive?: boolean; sendOk?: boolean }) {
+  const sendRecovery = jest.fn().mockResolvedValue(opts.sendOk ?? true);
+  const auditCreate = jest.fn().mockResolvedValue({ id: 'audit_1' });
+  const auditDelete = jest.fn().mockResolvedValue({});
   const deps = {
     prisma: {
       analysis: { count: quotaCount(opts.quota) },
       adminAudit: {
         findFirst: jest.fn().mockResolvedValue(opts.alreadySent ? { id: 'a1' } : null),
         create: auditCreate,
+        delete: auditDelete,
+        findMany: jest.fn().mockResolvedValue([]),
       },
       user: {
         findUnique: jest.fn().mockResolvedValue({ email: opts.email === undefined ? 'ana@example.com' : opts.email, clerkUserId: 'clerk_1' }),
@@ -38,7 +41,7 @@ function makeDeps(opts: { quota: { signals: number; total?: number; inFlight?: n
     foundingOffer: jest.fn().mockResolvedValue({ active: opts.offerActive ?? true, code: 'EARLY35', percentOff: 35 }),
     log: jest.fn(),
   } as unknown as RecoveryEmailDeps;
-  return { deps, sendRecovery, auditCreate };
+  return { deps, sendRecovery, auditCreate, auditDelete };
 }
 
 describe('notifyIfFreeQuotaExhausted', () => {
@@ -114,3 +117,41 @@ describe('notifyIfFreeQuotaExhausted', () => {
     await expect(notifyIfFreeQuotaExhausted(deps, 'u1')).resolves.toBeUndefined();
   });
 });
+
+describe('envio recusado pelo provedor (cota da Resend, 06/10/2026)', () => {
+  it('tira a marca e nao diz "enviado" no log', async () => {
+    const { deps, auditDelete } = makeDeps({ quota: { signals: 3 }, sendOk: false });
+    await notifyIfFreeQuotaExhausted(deps, 'u1');
+    expect(auditDelete).toHaveBeenCalledWith({ where: { id: 'audit_1' } });
+    const logs = (deps.log as jest.Mock).mock.calls.map((c) => c[1]).join(' ');
+    expect(logs).not.toContain('enviado (');
+    expect(logs).toContain('Envio recusado');
+  });
+
+  it('envio aceito mantem a marca', async () => {
+    const { deps, auditDelete } = makeDeps({ quota: { signals: 3 } });
+    await notifyIfFreeQuotaExhausted(deps, 'u1');
+    expect(auditDelete).not.toHaveBeenCalled();
+  });
+
+  it('retentativa: so quem esgotou nas ultimas 72h e ainda nao tem a marca', async () => {
+    const { deps, sendRecovery } = makeDeps({ quota: { signals: 3 } });
+    (deps.prisma as any).user.findMany = jest.fn().mockResolvedValue([{ id: 'u1' }, { id: 'u2' }]);
+    (deps.prisma as any).adminAudit.findMany = jest.fn().mockResolvedValue([{ targetUserId: 'u2' }]);
+    const now = new Date('2026-10-06T20:00:00Z');
+    const tried = await retryRecoveryEmails(deps, now);
+    expect(tried).toBe(1);
+    expect(sendRecovery).toHaveBeenCalledTimes(1);
+    const where = ((deps.prisma as any).user.findMany as jest.Mock).mock.calls[0][0].where;
+    expect(where.analyses.some.createdAt.gte.toISOString()).toBe('2026-10-03T20:00:00.000Z');
+    expect(where.NOT).toEqual({ role: 'admin' });
+  });
+
+  it('retentativa ignora quem ainda tem analise gratis', async () => {
+    const { deps, sendRecovery } = makeDeps({ quota: { signals: 1 } });
+    (deps.prisma as any).user.findMany = jest.fn().mockResolvedValue([{ id: 'u1' }]);
+    expect(await retryRecoveryEmails(deps)).toBe(0);
+    expect(sendRecovery).not.toHaveBeenCalled();
+  });
+});
+

@@ -23,7 +23,8 @@
  *   (`[lifecycle] dry-run ...`), sem gravar nada, para o dono ver o volume.
  * - Janelas fechadas: ligar a chave nao dispara para a base antiga inteira.
  * - Cada e-mail uma vez por pessoa (AdminAudit `lifecycle:<tipo>`), gravado
- *   ANTES de enviar: numa corrida, melhor perder um e-mail que duplicar.
+ *   ANTES de enviar: numa corrida, melhor perder um e-mail que duplicar. Envio
+ *   recusado pelo provedor tira a marca (a proxima volta tenta de novo).
  * - Nunca para assinante, nunca para quem se descadastrou
  *   (AdminAudit `email_unsubscribed`), nunca sem link de descadastro.
  * - Best-effort: nenhuma falha aqui derruba o worker.
@@ -497,7 +498,8 @@ export async function runLifecycleSweep(deps: LifecycleDeps): Promise<Record<Lif
           );
           continue;
         }
-        await deps.prisma.adminAudit.create({
+        const audit = await deps.prisma.adminAudit.create({
+          select: { id: true },
           data: {
             action: lifecycleAuditAction(kind),
             targetUserId: c.userId,
@@ -513,6 +515,11 @@ export async function runLifecycleSweep(deps: LifecycleDeps): Promise<Record<Lif
           firstWasWait: c.firstWasWait,
         });
         const ok = await deps.mail.sendLifecycle(c.email, email);
+        // Recusado (ex.: cota diaria da Resend, 06/10/2026): tira a marca e a
+        // proxima volta tenta de novo, enquanto a pessoa estiver na janela.
+        if (!ok && audit?.id) {
+          await deps.prisma.adminAudit.delete({ where: { id: audit.id } }).catch(() => undefined);
+        }
         deps.log('log', `[lifecycle] kind=${kind} user=${c.userId} sent=${ok ? 1 : 0}`);
       }
     } catch (err) {

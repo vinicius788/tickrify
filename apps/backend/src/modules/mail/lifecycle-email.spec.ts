@@ -18,6 +18,7 @@ function makeDeps(opts: {
   audits?: Array<{ action: string; targetUserId: string; createdAt?: Date }>;
   paying?: string[];
   checkoutSessions?: Array<{ targetUserId: string; createdAt: Date }>;
+  sendOk?: boolean;
 }) {
   const audits = [...(opts.audits ?? [])];
   const created: Array<{ action: string; targetUserId: string }> = [];
@@ -55,7 +56,12 @@ function makeDeps(opts: {
         order.push('audit');
         created.push(data);
         audits.push(data);
-        return data;
+        return { id: `audit_${data.targetUserId}_${data.action}` };
+      }),
+      delete: jest.fn(async ({ where }: any) => {
+        order.push(`unmark:${where.id}`);
+        const i = audits.findIndex((a) => `audit_${a.targetUserId}_${a.action}` === where.id);
+        if (i >= 0) audits.splice(i, 1);
       }),
     },
   };
@@ -65,7 +71,7 @@ function makeDeps(opts: {
       sendLifecycle: jest.fn(async (to, email) => {
         order.push('send');
         sent.push({ to, kind: email.kind, subject: email.subject, unsubscribeUrl: email.unsubscribeUrl });
-        return true;
+        return opts.sendOk ?? true;
       }),
     },
     isEnabled: () => opts.enabled ?? false,
@@ -116,6 +122,18 @@ describe('lifecycle emails', () => {
     sent.length = 0;
     await runLifecycleSweep(deps);
     expect(sent.filter((s) => s.kind === 'activation_1')).toHaveLength(0);
+  });
+
+  it('provider refused (Resend daily quota): the mark comes off and the next sweep retries', async () => {
+    const { deps, order, sent } = makeDeps({
+      enabled: true,
+      sendOk: false,
+      users: [{ id: 'u1', email: 'ana@example.com', name: 'Ana' }],
+    });
+    await runLifecycleSweep(deps);
+    expect(order).toContain(`unmark:audit_u1_${lifecycleAuditAction('activation_1')}`);
+    await runLifecycleSweep(deps);
+    expect(sent.filter((s) => s.kind === 'activation_1')).toHaveLength(2);
   });
 
   it('never emails subscribers or people who unsubscribed', async () => {

@@ -132,7 +132,7 @@ export class MailService {
    * so afirma o que e verdade para todos e mostra o semanal primeiro, porque o
    * publico e quase todo de pais onde US$ 29 de uma vez nao fecha.
    */
-  async sendRecovery(to: string, offer?: { code: string; percentOff: number | null } | null): Promise<void> {
+  async sendRecovery(to: string, offer?: { code: string; percentOff: number | null } | null): Promise<boolean> {
     const oferta =
       offer && offer.percentOff
         ? `, or use code <b>${offer.code}</b> for ${offer.percentOff}% off the first month`
@@ -147,7 +147,7 @@ export class MailService {
       'See plans',
       `${this.appUrl}/pricing`,
     );
-    await this.send(to, subject, html, { kind: 'recovery' });
+    return this.send(to, subject, html, { kind: 'recovery' });
   }
 
   /**

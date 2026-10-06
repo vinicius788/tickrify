@@ -28,7 +28,7 @@ import { startOutcomeSweeper } from './outcome.sweeper';
 import { trackFreeAnalysisCompleted } from '../src/common/analytics/free-funnel';
 import { safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../src/common/analytics/analysis-failure';
 import { MailService } from '../src/modules/mail/mail.service';
-import { notifyIfFreeQuotaExhausted, type RecoveryEmailDeps } from '../src/modules/mail/recovery-email';
+import { notifyIfFreeQuotaExhausted, retryRecoveryEmails, type RecoveryEmailDeps } from '../src/modules/mail/recovery-email';
 import { LIFECYCLE_FLAG, publicUrl, runLifecycleSweep } from '../src/modules/mail/lifecycle-email';
 import Stripe from 'stripe';
 import { getFoundingOffer } from '../src/modules/payments/founding-offer';
@@ -1333,6 +1333,9 @@ const lifecycleTick = async () => {
   if (counts && Object.values(counts).some((n) => n > 0)) {
     console.log(`[lifecycle] Volta: ${JSON.stringify(counts)}`);
   }
+  // E-mail de "gratis esgotado" que o provedor recusou (recovery-email.ts).
+  const retried = await retryRecoveryEmails(recoveryDeps);
+  if (retried > 0) console.log(`[recovery] Retentativa: ${retried}`);
 };
 // `unref()`: o timer nao segura o processo sozinho. Em producao quem mantem o
 // worker vivo e a conexao da fila; sem o unref, todo teste que importa este
