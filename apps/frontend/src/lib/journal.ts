@@ -250,3 +250,68 @@ export function computeMonthStats<T extends { createdAt: string; symbol?: string
     byWeekday: finish(groups.byWeekday).sort((a, b) => Number(a.key) - Number(b.key)),
   };
 }
+
+/**
+ * Voce x IA (05/10/2026): o que o trader marcou contra o que o MERCADO fez nas
+ * 48h depois da leitura (sweeper, `marketOutcome`). So planos de trade
+ * (BUY/SELL). WIN/LOSS do mercado e a corrida TP1 x stop depois da entrada;
+ * NO_FILL e TIMEOUT nao decidem; INCOMPLETE/UNTRACKABLE/ABSTAIN nao foram
+ * medidos; null = ainda dentro das 48h.
+ */
+export interface AiComparison {
+  plans: number;
+  measured: number;
+  marketWins: number;
+  pending: number;
+  undecided: number;
+  unmeasured: number;
+  /** Trades com resultado do trader (TP1/TP2/Stop) E do mercado (WIN/LOSS). */
+  both: number;
+  agree: number;
+  /** Trader no lucro onde o plano bateu o stop. */
+  beatPlan: number;
+  /** Trader no stop onde o plano chegou ao TP1. */
+  missedPlan: number;
+  /** Planos medidos que o trader nao marcou. */
+  untaken: number;
+  untakenWins: number;
+}
+
+export function computeAiComparison<T>(
+  items: T[],
+  verdictOf: (item: T) => Verdict,
+  sideOf: (item: T) => 'BUY' | 'SELL' | null,
+  marketOf: (item: T) => string | null | undefined,
+): AiComparison {
+  const c: AiComparison = {
+    plans: 0, measured: 0, marketWins: 0, pending: 0, undecided: 0, unmeasured: 0,
+    both: 0, agree: 0, beatPlan: 0, missedPlan: 0, untaken: 0, untakenWins: 0,
+  };
+  for (const item of items) {
+    if (!sideOf(item)) continue;
+    c.plans += 1;
+    const market = String(marketOf(item) ?? '').toUpperCase();
+    const decided = market === 'WIN' || market === 'LOSS';
+    if (decided) {
+      c.measured += 1;
+      if (market === 'WIN') c.marketWins += 1;
+    } else if (market === 'NO_FILL' || market === 'TIMEOUT') c.undecided += 1;
+    else if (market === '') c.pending += 1;
+    else c.unmeasured += 1;
+    if (!decided) continue;
+
+    const verdict = verdictOf(item);
+    if (verdict === 'TP1' || verdict === 'TP2' || verdict === 'SL') {
+      const youWon = verdict !== 'SL';
+      const planWon = market === 'WIN';
+      c.both += 1;
+      if (youWon === planWon) c.agree += 1;
+      else if (youWon) c.beatPlan += 1;
+      else c.missedPlan += 1;
+    } else if (verdict === null) {
+      c.untaken += 1;
+      if (market === 'WIN') c.untakenWins += 1;
+    }
+  }
+  return c;
+}

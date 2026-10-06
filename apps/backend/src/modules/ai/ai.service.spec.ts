@@ -586,6 +586,17 @@ describe('AiService access enforcement', () => {
       expect(out.truncated).toBe(false);
       expect(out.items[0]).toMatchObject({ id: 'a1', status: 'completed', pnlAmount: null });
     });
+
+    it('manda o resultado do mercado (sweeper) em marketOutcome, sem misturar com o que o trader marcou', async () => {
+      prisma.analysis.findMany.mockResolvedValue([
+        { id: 'a1', imageUrl: null, status: 'completed', result: {}, outcome: 'WIN', createdAt: new Date() },
+        { id: 'a2', imageUrl: null, status: 'completed', result: {}, outcome: null, createdAt: new Date() },
+      ]);
+      const out = await service.listAnalysesInRange('usr_1', from, to);
+      expect(prisma.analysis.findMany.mock.calls[0][0].select.outcome).toBe(true);
+      expect(out.items[0]).toMatchObject({ id: 'a1', marketOutcome: 'WIN', outcome: null });
+      expect(out.items[1]).toMatchObject({ id: 'a2', marketOutcome: null });
+    });
   });
 
   // ── getUsage ────────────────────────────────────────────────────────────────

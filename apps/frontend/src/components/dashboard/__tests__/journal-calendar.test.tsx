@@ -62,3 +62,29 @@ describe('Diario: desempenho do mes', () => {
     expect(screen.queryByText('Performance this month')).toBeNull();
   });
 });
+
+describe('Diario: voce x o plano da IA', () => {
+  afterEach(() => {
+    cleanup();
+    getJournal.mockReset();
+  });
+
+  it('compara o que o trader marcou com o resultado do mercado em 48h', async () => {
+    getJournal.mockResolvedValue({
+      truncated: false,
+      items: [
+        { ...item('a', 1, 'XAUUSD', 'BUY', 'tp1', 300, 2), marketOutcome: 'WIN' },
+        { ...item('b', 1, 'BTCUSD', 'SELL', 'stop', -100, 1.5), marketOutcome: 'WIN' },
+        { ...item('c', 2, 'EURUSD', 'BUY', null, null, 2), marketOutcome: 'LOSS' },
+        { ...item('d', 2, 'EURUSD', 'BUY', null, null, 2), marketOutcome: null },
+      ],
+    });
+    renderJournal();
+    expect(await screen.findByText('You vs the AI plan')).toBeTruthy();
+    expect(screen.getByText('2 of 3 reached TP1 before the stop')).toBeTruthy();
+    expect(screen.getByText('1 of 2 trades you logged')).toBeTruthy();
+    expect(screen.getByText('You hit the stop where the plan reached TP1: 1')).toBeTruthy();
+    expect(screen.getByText('1, of which 0 reached TP1')).toBeTruthy();
+    expect(screen.getByText('1 still inside the 48h window')).toBeTruthy();
+  });
+});

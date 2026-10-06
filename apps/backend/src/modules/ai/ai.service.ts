@@ -588,6 +588,8 @@ export class AiService implements OnModuleInit {
         confidence: true,
         reasoning: true,
         result: true,
+        // Resultado do MERCADO 48h depois (sweeper). Vai como `marketOutcome`.
+        outcome: true,
         createdAt: true,
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -629,6 +631,8 @@ export class AiService implements OnModuleInit {
         confidence: true,
         reasoning: true,
         result: true,
+        // Resultado do MERCADO 48h depois (sweeper). Vai como `marketOutcome`.
+        outcome: true,
         createdAt: true,
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -655,6 +659,7 @@ export class AiService implements OnModuleInit {
       confidence: number | null;
       reasoning: string | null;
       result: Prisma.JsonValue;
+      outcome?: string | null;
       createdAt: Date;
     }>,
   ) {
@@ -746,7 +751,11 @@ export class AiService implements OnModuleInit {
           riskRewardRatio: operationFields.riskReward,
           riskRewardTp1: operationFields.riskRewardTp1,
           riskRewardTp2: operationFields.riskRewardTp2,
+          // `outcome` aqui e o que o TRADER marcou (retrocompat); o que o
+          // mercado fez, medido pelo sweeper, vai separado e nunca se mistura
+          // (05/10/2026, "Voce x IA" no Diario).
           outcome: outcomeData?.outcome ?? null,
+          marketOutcome: analysis.outcome ?? null,
           pnlPercent: outcomeData?.pnlPercent ?? null,
           pnlAmount: outcomeData?.pnlAmount ?? null,
           isFavorite: outcomeData?.isFavorite ?? false,

@@ -184,6 +184,12 @@ export interface AIAnalysisResponse {
   // O backend devolve isto (ai.service.ts) desde a Onda 2.2, mas a interface
   // nunca foi atualizada: o tsc quebrava em DashboardPage.tsx:848 desde 29/07.
   outcome?: string | null;
+  /**
+   * O que o MERCADO fez 48h depois (sweeper): WIN = TP1 antes do stop depois da
+   * entrada, LOSS = stop antes, TIMEOUT, NO_FILL, ABSTAIN, INCOMPLETE,
+   * UNTRACKABLE, ou null enquanto nao mediu. Nunca e o que o trader marcou.
+   */
+  marketOutcome?: string | null;
   /** Valor da operacao informado pelo trader no My Trades (moeda da conta dele). */
   pnlAmount?: number | null;
   pnlPercent?: number | null;

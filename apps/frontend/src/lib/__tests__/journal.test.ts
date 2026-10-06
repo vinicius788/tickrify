@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMonthGrid, computeMonthStats, dayKey, monthRange, summarizeByDay, weekStartFor } from '@/lib/journal';
+import { buildMonthGrid, computeAiComparison, computeMonthStats, dayKey, monthRange, summarizeByDay, weekStartFor } from '@/lib/journal';
 import { outcomeFromVerdict, verdictFromOutcome, type Verdict } from '@/lib/verdict';
 
 type Row = { id: string; createdAt: string; verdict: Verdict; pnl: number | null };
@@ -155,5 +155,35 @@ describe('journal: desempenho do mes', () => {
 
   it('sem perda registrada o fator de lucro fica vazio (nao e infinito)', () => {
     expect(stats([t(1, 9, 'XAUUSD', '15M', 'BUY', 'TP1', 100)]).profitFactor).toBeNull();
+  });
+});
+
+describe('journal: voce x IA (resultado do mercado 48h)', () => {
+  type C = { side: 'BUY' | 'SELL' | null; v: Verdict; m: string | null };
+  const compare = (rows: C[]) => computeAiComparison(rows, (r) => r.v, (r) => r.side, (r) => r.m);
+
+  it('separa medidos, pendentes, sem decisao e sem medicao; WAIT fica de fora', () => {
+    const c = compare([
+      { side: 'BUY', v: 'TP1', m: 'WIN' },
+      { side: 'SELL', v: 'SL', m: 'LOSS' },
+      { side: 'BUY', v: 'TP2', m: 'LOSS' },
+      { side: 'BUY', v: 'SL', m: 'WIN' },
+      { side: 'BUY', v: null, m: 'WIN' },
+      { side: 'SELL', v: null, m: 'LOSS' },
+      { side: 'BUY', v: 'OPEN', m: 'WIN' },
+      { side: 'BUY', v: null, m: 'TIMEOUT' },
+      { side: 'SELL', v: null, m: 'NO_FILL' },
+      { side: 'BUY', v: null, m: null },
+      { side: 'BUY', v: null, m: 'UNTRACKABLE' },
+      { side: null, v: null, m: 'ABSTAIN' },
+    ]);
+    expect(c).toEqual({
+      plans: 11, measured: 7, marketWins: 4, pending: 1, undecided: 2, unmeasured: 1,
+      both: 4, agree: 2, beatPlan: 1, missedPlan: 1, untaken: 2, untakenWins: 1,
+    });
+  });
+
+  it('sem planos, tudo zero', () => {
+    expect(compare([{ side: null, v: null, m: 'ABSTAIN' }]).plans).toBe(0);
   });
 });

@@ -20,7 +20,7 @@ import { useAPIClient, type AIAnalysisResponse } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { getRecommendationMeta } from '@/lib/trading-ui';
 import { VERDICT_CFG, isTradeCall, verdictFromOutcome, type Verdict } from '@/lib/verdict';
-import { buildMonthGrid, computeMonthStats, dayKey, monthRange, summarizeByDay, weekStartFor, type GroupRow, type MonthStats } from '@/lib/journal';
+import { buildMonthGrid, computeAiComparison, computeMonthStats, type AiComparison, dayKey, monthRange, summarizeByDay, weekStartFor, type GroupRow, type MonthStats } from '@/lib/journal';
 
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
@@ -173,6 +173,52 @@ function JournalStats({ stats, j, locale }: { stats: MonthStats; j: JournalCopy;
   );
 }
 
+/**
+ * Voce x o plano da IA (05/10/2026): o que o trader marcou contra o que o
+ * mercado fez nas 48h (sweeper). A conta mora em `computeAiComparison`.
+ */
+function AiComparisonCard({ c, j }: { c: AiComparison; j: JournalCopy }) {
+  if (c.plans === 0) return null;
+  const n = (text: string, values: Record<string, number>) =>
+    Object.entries(values).reduce((acc, [k, v]) => acc.replace(`{${k}}`, String(v)), text);
+  const row = 'flex items-start justify-between gap-3 text-xs';
+  return (
+    <section className="mt-3 rounded-lg border border-[var(--border-subtle)] p-3" aria-labelledby="journal-vs-title">
+      <h3 id="journal-vs-title" className="text-sm font-semibold text-[var(--text-primary)]">{j.vsTitle}</h3>
+      <p className="mt-0.5 text-[11px] text-[var(--text-secondary)]">{j.vsSub}</p>
+      <div className="mt-3 flex flex-col gap-2">
+        <div className={row}>
+          <span className="text-[var(--text-secondary)]">{j.vsPlans}</span>
+          <span className="text-right font-terminal text-[var(--text-primary)]">
+            {c.measured > 0 ? n(j.vsPlansValue, { w: c.marketWins, n: c.measured }) : '·'}
+          </span>
+        </div>
+        {c.both > 0 && (
+          <>
+            <div className={row}>
+              <span className="text-[var(--text-secondary)]">{j.vsSame}</span>
+              <span className="text-right font-terminal text-[var(--text-primary)]">{n(j.vsSameValue, { k: c.agree, n: c.both })}</span>
+            </div>
+            {c.beatPlan > 0 && <p className="text-xs text-[var(--signal-buy)]">{n(j.vsBeatPlan, { n: c.beatPlan })}</p>}
+            {c.missedPlan > 0 && <p className="text-xs text-[var(--signal-sell)]">{n(j.vsMissedPlan, { n: c.missedPlan })}</p>}
+          </>
+        )}
+        {c.untaken > 0 && (
+          <div className={row}>
+            <span className="text-[var(--text-secondary)]">{j.vsUntaken}</span>
+            <span className="text-right font-terminal text-[var(--text-primary)]">{n(j.vsUntakenValue, { n: c.untaken, w: c.untakenWins })}</span>
+          </div>
+        )}
+        <div className="flex flex-col gap-0.5 text-[11px] text-[var(--text-secondary)]">
+          {c.pending > 0 && <span>{n(j.vsPending, { n: c.pending })}</span>}
+          {c.undecided > 0 && <span>{n(j.vsUndecided, { n: c.undecided })}</span>}
+          {c.unmeasured > 0 && <span>{n(j.vsUnmeasured, { n: c.unmeasured })}</span>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 interface JournalCalendarProps {
   onStartAnalysis?: () => void;
 }
@@ -213,6 +259,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
   };
   const { days, totals } = useMemo(() => summarizeByDay(items, verdictOf, pnlOf), [items]);
   const stats = useMemo(() => computeMonthStats(items, verdictOf, pnlOf, sideOf, plannedRr), [items]);
+  const comparison = useMemo(() => computeAiComparison(items, verdictOf, sideOf, (a) => a.marketOutcome), [items]);
 
   const weekStart = weekStartFor(language);
   const grid = useMemo(() => buildMonthGrid(cursor.year, cursor.month, weekStart), [cursor, weekStart]);
@@ -533,6 +580,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                 </div>
 
                 <JournalStats stats={stats} j={j} locale={locale} />
+                <AiComparisonCard c={comparison} j={j} />
               </>
             )}
           </div>
