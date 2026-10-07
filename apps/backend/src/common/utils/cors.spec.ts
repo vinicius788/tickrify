@@ -1,4 +1,4 @@
-import { resolveAllowedOrigins } from './cors';
+import { isOriginAllowed, resolveAllowedOrigins } from './cors';
 
 describe('cors origin resolution', () => {
   const originalEnv = { ...process.env };
@@ -32,5 +32,17 @@ describe('cors origin resolution', () => {
     const origins = resolveAllowedOrigins();
     expect(origins).not.toEqual(expect.arrayContaining(['http://localhost:5173']));
   });
-});
 
+  // Extensao de navegador (06/10/2026): so a origem EXATA da extensao oficial
+  // entra (env CORS_ORIGINS no Render). Outra extensao qualquer continua barrada.
+  it('libera so a extensao listada, pela origem exata', () => {
+    process.env.APP_ENV = 'production';
+    process.env.NODE_ENV = 'production';
+    process.env.CORS_ORIGINS = 'https://tickrify.com,chrome-extension://abcdefghijklmnopabcdefghijklmnop';
+
+    const origins = resolveAllowedOrigins();
+    expect(isOriginAllowed('chrome-extension://abcdefghijklmnopabcdefghijklmnop', origins)).toBe(true);
+    expect(isOriginAllowed('chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba', origins)).toBe(false);
+    expect(isOriginAllowed('moz-extension://abcdefghijklmnopabcdefghijklmnop', origins)).toBe(false);
+  });
+});

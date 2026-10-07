@@ -127,6 +127,34 @@ export function sanitizeTradeNote(raw: unknown): TradeNote | null {
   return out.note || out.setup || out.emotion || out.mistakes.length > 0 ? out : null;
 }
 
+/**
+ * De onde veio a analise (06/10/2026): hoje so a extensao de navegador manda.
+ * Guardado em `Analysis.clientContext` (JSONB, fora do schema.prisma, gravado
+ * por SQL) para medir uso e comparar o simbolo lido da pagina com o que o
+ * motor extrai. O motor NAO le isto. Os valores ja passaram pelo DTO (listas
+ * fechadas e regex estreita).
+ */
+export type AnalysisClientContext = {
+  source: 'web' | 'extension';
+  platform?: string;
+  chartSymbol?: string;
+  chartTimeframe?: string;
+};
+
+export function buildClientContext(body: {
+  source?: string;
+  platform?: string;
+  chartSymbol?: string;
+  chartTimeframe?: string;
+}): AnalysisClientContext | null {
+  if (body.source !== 'extension') return null;
+  const context: AnalysisClientContext = { source: 'extension' };
+  if (body.platform) context.platform = body.platform;
+  if (body.chartSymbol) context.chartSymbol = body.chartSymbol;
+  if (body.chartTimeframe) context.chartTimeframe = body.chartTimeframe;
+  return context;
+}
+
 @Injectable()
 export class AiService implements OnModuleInit {
   private readonly logger = new Logger(AiService.name);
@@ -134,6 +162,8 @@ export class AiService implements OnModuleInit {
   private outcomeColumnsReady = false;
   /** true quando a coluna da anotacao do trader existe (separada: se falhar, so as notas param). */
   private tradeNoteReady = false;
+  /** true quando a coluna da origem da analise existe (se falhar, so a marcacao para). */
+  private clientContextReady = false;
 
   constructor(
     private prisma: PrismaService,
@@ -255,6 +285,80 @@ export class AiService implements OnModuleInit {
       this.tradeNoteReady = false;
       this.logger.warn(`[outcome] Coluna de anotacao indisponivel: ${err instanceof Error ? err.message : err}`);
     }
+    // Origem da analise (extensao, 06/10/2026). Fora do schema.prisma de
+    // proposito: o client nao conhece a coluna, entao create/update do worker
+    // nunca dependem dela. Se falhar, a analise segue sem a marcacao.
+    try {
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "clientContext" JSONB',
+      );
+      this.clientContextReady = true;
+    } catch (err) {
+      this.clientContextReady = false;
+      this.logger.warn(`[outcome] Coluna de origem indisponivel: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  /** Grava a origem da analise. Nunca lanca: sem a marcacao, a analise segue igual. */
+  private async saveClientContext(analysisId: string, context: AnalysisClientContext): Promise<void> {
+    if (!this.clientContextReady) return;
+    try {
+      await this.prisma.$executeRaw`
+        UPDATE "tickrify"."Analysis"
+        SET "clientContext" = ${JSON.stringify(context)}::jsonb
+        WHERE "id" = ${analysisId}
+      `;
+    } catch (err) {
+      this.logger.warn(`[source] Origem da analise nao gravada: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  /**
+   * Escala do eixo de precos para as linhas da extensao (ver price-axis.ts).
+   * So para analise da PROPRIA conta, feita pela extensao, concluida e com
+   * BUY/SELL. Le uma vez e guarda em `clientContext.priceAxis`: chamar de novo
+   * devolve o guardado, sem IA. Nao cobra tick. Com o gratis esgotado vale a
+   * mesma regra do `getAnalysis` (so as ultimas analises abertas).
+   */
+  async getPriceAxis(userId: string, id: string): Promise<{ top: number | null; bottom: number | null }> {
+    const none = { top: null, bottom: null };
+    const rows = await this.prisma.$queryRaw<
+      Array<{ imageUrl: string | null; status: string; recommendation: string | null; clientContext: Record<string, any> | null }>
+    >`
+      SELECT "imageUrl", "status", "recommendation", ${this.clientContextReady ? Prisma.sql`"clientContext"` : Prisma.sql`NULL::jsonb AS "clientContext"`}
+      FROM "tickrify"."Analysis"
+      WHERE "id" = ${id} AND "userId" = ${userId}
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) throw new BadRequestException('Analysis not found');
+    const ctx = row.clientContext;
+    if (ctx?.source !== 'extension' || row.status !== 'completed' || !['BUY', 'SELL'].includes(String(row.recommendation)) || !row.imageUrl) {
+      return none;
+    }
+    if (ctx.priceAxis !== undefined) return ctx.priceAxis ?? none;
+
+    if (await this.isFreeLocked(userId)) {
+      const readable = await this.prisma.analysis.findMany({
+        where: { userId, status: 'completed' },
+        select: { id: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: FREE_READABLE_ANALYSES,
+      });
+      if (!readable.some((r) => r.id === id)) throw this.freeLockedError();
+    }
+
+    const axis = (await this.aiAdapter.readPriceAxis(row.imageUrl)) ?? none;
+    try {
+      await this.prisma.$executeRaw`
+        UPDATE "tickrify"."Analysis"
+        SET "clientContext" = jsonb_set("clientContext", '{priceAxis}', ${JSON.stringify(axis)}::jsonb)
+        WHERE "id" = ${id} AND "userId" = ${userId}
+      `;
+    } catch (err) {
+      this.logger.warn(`[price-axis] Leitura nao guardada: ${err instanceof Error ? err.message : err}`);
+    }
+    return axis;
   }
 
   /** Mapa id -> resultado, lido por SQL isolado. Nunca lança (retorna mapa vazio em falha). */
@@ -323,6 +427,7 @@ export class AiService implements OnModuleInit {
     analysisType: AnalysisType = 'quick',
     userLanguage?: string,
     htfBase64Images?: string[],
+    clientContext?: AnalysisClientContext | null,
   ) {
     const preparedImage = this.prepareImagePayload(imageFile, base64Image);
     // useCache: decidir fila-vs-sincrono aceita um readiness de ate 15s. Sao
@@ -449,15 +554,19 @@ export class AiService implements OnModuleInit {
       paidAccess,
     );
 
+    if (clientContext) await this.saveClientContext(analysis.id, clientContext);
+    const source = clientContext?.source ?? 'web';
+
     // Funil gratis (fonte: banco). Fire-and-forget: nunca segura a analise.
     if (isDemo) {
       void trackFreeAnalysisStarted(this.prisma, {
         userId,
         analysisId: analysis.id,
         createdAt: analysis.createdAt,
+        source,
       });
     } else {
-      void this.trackPaidAnalysisStarted(userId, analysis, normalizedAnalysisType);
+      void this.trackPaidAnalysisStarted(userId, analysis, normalizedAnalysisType, source);
     }
 
     const queue = queueReadiness.connected ? getAiQueue() : null;
@@ -1391,6 +1500,7 @@ export class AiService implements OnModuleInit {
     userId: string,
     analysis: { id: string; createdAt: Date },
     analysisType: AnalysisType,
+    source: AnalysisClientContext['source'] = 'web',
   ): Promise<void> {
     try {
       const [{ plan, billingCycle }, ticksLeft] = await Promise.all([
@@ -1409,6 +1519,7 @@ export class AiService implements OnModuleInit {
           ticksLeft,
           plan,
           billingCycle,
+          source,
           $set: {
             plan,
             billing_cycle: billingCycle,

@@ -11,7 +11,7 @@
  * (worker/ai.worker.ts, caminho de producao) e o AiService (fallback sem fila).
  *
  * Eventos (distinctId = id do Clerk, o mesmo do identify do frontend):
- *   free_analysis_started   { analysisNumber, freeRemaining, signalsUsed }
+ *   free_analysis_started   { analysisNumber, freeRemaining, signalsUsed, source }
  *   free_analysis_completed { analysisNumber, freeRemaining, signalsUsed, isLastFree }
  *   free_quota_exhausted    { analysisNumber, signalsUsed }  (uma vez por usuario)
  *
@@ -35,7 +35,7 @@ async function clerkIdFor(prisma: PrismaLike, userId: string): Promise<string | 
 /** Chamar logo depois de criar a linha de uma analise gratis. */
 export async function trackFreeAnalysisStarted(
   prisma: PrismaLike,
-  params: { userId: string; analysisId: string; createdAt?: Date },
+  params: { userId: string; analysisId: string; createdAt?: Date; source?: 'web' | 'extension' },
 ): Promise<void> {
   try {
     const clerkId = await clerkIdFor(prisma, params.userId);
@@ -49,6 +49,7 @@ export async function trackFreeAnalysisStarted(
         analysisNumber: quota.totalUsed,
         freeRemaining: quota.remaining,
         signalsUsed: quota.signalsUsed,
+        source: params.source ?? 'web',
       },
       { dedupeKey: `free_analysis_started:${params.analysisId}`, timestamp: params.createdAt },
     );

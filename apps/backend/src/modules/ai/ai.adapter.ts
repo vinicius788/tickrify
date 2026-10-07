@@ -17,6 +17,7 @@ import {
 } from '../../common/utils/analysis-normalizer';
 import { decideSignal } from '../../common/utils/signal-decision';
 import { computeCost, extractUsage, formatCostLog } from './model-cost';
+import { PRICE_AXIS_PROMPT, PRICE_AXIS_SCHEMA, sanitizePriceAxis, type PriceAxis } from './price-axis';
 import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
 import { MarketService, normalizeToBinancePerp } from '../market/market.service';
@@ -1044,6 +1045,41 @@ export class AIAdapter {
       if (delta) {
         yield delta;
       }
+    }
+  }
+
+  /**
+   * Le o preco do topo e da base do recorte pelo eixo (linhas da extensao; ver
+   * price-axis.ts). Chamada separada da analise: nao mexe no prompt nem no
+   * schema do motor. Nunca lanca: qualquer falha vira null (sem linhas).
+   */
+  async readPriceAxis(imageUrl: string): Promise<PriceAxis | null> {
+    const model = resolveModel('quick');
+    try {
+      const signed = await this.resolveImageUrlForOpenAi(imageUrl);
+      const response = await withTimeout((signal) => this.openai.chat.completions.create({
+        model,
+        ...buildSamplingParams(model, { maxTokens: 4000, temperature: 0, topP: 1, seed: 42, reasoningEffort: 'low' }),
+        response_format: {
+          type: 'json_schema',
+          json_schema: { name: 'price_axis', strict: true, schema: PRICE_AXIS_SCHEMA },
+        } as any,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: PRICE_AXIS_PROMPT },
+              { type: 'image_url', image_url: { url: signed, detail: 'high' } },
+            ],
+          },
+        ],
+      }, { signal }), 30_000, 'Price axis read timed out after 30s');
+      this.logger.log(formatCostLog(model, 'price-axis', computeCost(model, extractUsage(response.usage), 0)));
+      const content = response.choices?.[0]?.message?.content ?? '';
+      return sanitizePriceAxis(JSON.parse(content));
+    } catch (err) {
+      this.logger.warn(`[price-axis] Leitura do eixo falhou: ${err instanceof Error ? err.message : err}`);
+      return null;
     }
   }
 

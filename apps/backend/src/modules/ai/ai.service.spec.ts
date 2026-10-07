@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { AiService, sanitizeTradeNote } from './ai.service';
+import { AiService, buildClientContext, sanitizeTradeNote } from './ai.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
 import { captureServer as captureServerMock } from '../../common/analytics/posthog';
 
@@ -781,6 +781,121 @@ describe('AiService access enforcement', () => {
     expect(usage.plan).toBe('weekly');
     expect(usage.billingCycle).toBe('weekly');
     expect(usage.period).toBe('weekly');
+  });
+
+  describe('origem da analise (clientContext, 06/10/2026)', () => {
+    const flush = async () => {
+      for (let i = 0; i < 5; i += 1) await new Promise((resolve) => setImmediate(resolve));
+    };
+
+    beforeEach(() => {
+      captureServer.mockClear();
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', email: 'trader@example.com', clerkUserId: 'clerk_1' });
+      prisma.$executeRaw = jest.fn().mockResolvedValue(1);
+      (service as any).clientContextReady = true;
+      setFreeQuota(prisma, { signals: 0 });
+      (getAiQueueReadiness as jest.Mock).mockResolvedValue(QUEUE_ONLINE);
+      (getAiQueue as jest.Mock).mockReturnValue({ add: jest.fn().mockResolvedValue(undefined) });
+    });
+
+    it('extensao: grava o clientContext na analise criada e marca source no evento', async () => {
+      const context = { source: 'extension' as const, platform: 'tradingview', chartSymbol: 'FX:EURJPY', chartTimeframe: '5m' };
+
+      await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, undefined, 'quick', 'en', [], context);
+      await flush();
+
+      expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+      const [sqlParts, ...values] = (prisma.$executeRaw as jest.Mock).mock.calls[0];
+      expect(sqlParts.join('?')).toContain('"clientContext"');
+      expect(values).toContain(JSON.stringify(context));
+      expect(values).toContain('an_1');
+      expect(captureServer).toHaveBeenCalledWith(
+        'clerk_1',
+        'free_analysis_started',
+        expect.objectContaining({ analysisId: 'an_1', source: 'extension' }),
+        expect.anything(),
+      );
+    });
+
+    it('site: nao grava nada e o evento sai com source web', async () => {
+      await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL);
+      await flush();
+
+      expect(prisma.$executeRaw).not.toHaveBeenCalled();
+      expect(captureServer).toHaveBeenCalledWith(
+        'clerk_1',
+        'free_analysis_started',
+        expect.objectContaining({ source: 'web' }),
+        expect.anything(),
+      );
+    });
+
+    it('falha ao gravar o clientContext nao derruba a analise', async () => {
+      prisma.$executeRaw = jest.fn().mockRejectedValue(new Error('column missing'));
+
+      await expect(
+        service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, undefined, 'quick', 'en', [], { source: 'extension' }),
+      ).resolves.toMatchObject({ id: 'an_1' });
+    });
+
+    it('coluna indisponivel no boot: nem tenta gravar', async () => {
+      (service as any).clientContextReady = false;
+
+      await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, undefined, 'quick', 'en', [], { source: 'extension' });
+
+      expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    });
+
+    describe('getPriceAxis (linhas da extensao)', () => {
+      const row = (over: Record<string, unknown> = {}) => ({
+        imageUrl: 'data:image/jpeg;base64,AAAA',
+        status: 'completed',
+        recommendation: 'BUY',
+        clientContext: { source: 'extension', platform: 'tradingview' },
+        ...over,
+      });
+
+      beforeEach(() => {
+        (service as any).aiAdapter.readPriceAxis = jest.fn().mockResolvedValue({ top: 189.37, bottom: 173.85 });
+      });
+
+      it('le o eixo uma vez, guarda e devolve', async () => {
+        prisma.$queryRaw = jest.fn().mockResolvedValue([row()]);
+        await expect(service.getPriceAxis('usr_1', 'an_1')).resolves.toEqual({ top: 189.37, bottom: 173.85 });
+        expect((service as any).aiAdapter.readPriceAxis).toHaveBeenCalledTimes(1);
+        const [sqlParts, ...values] = (prisma.$executeRaw as jest.Mock).mock.calls[0];
+        expect(sqlParts.join('?')).toContain('priceAxis');
+        expect(values).toContain(JSON.stringify({ top: 189.37, bottom: 173.85 }));
+      });
+
+      it('ja guardado: devolve sem chamar a IA', async () => {
+        prisma.$queryRaw = jest.fn().mockResolvedValue([row({ clientContext: { source: 'extension', priceAxis: { top: 2, bottom: 1 } } })]);
+        await expect(service.getPriceAxis('usr_1', 'an_1')).resolves.toEqual({ top: 2, bottom: 1 });
+        expect((service as any).aiAdapter.readPriceAxis).not.toHaveBeenCalled();
+      });
+
+      it('analise do site, WAIT ou em andamento: sem IA e sem linhas', async () => {
+        for (const over of [{ clientContext: null }, { recommendation: 'WAIT' }, { status: 'processing' }]) {
+          prisma.$queryRaw = jest.fn().mockResolvedValue([row(over)]);
+          await expect(service.getPriceAxis('usr_1', 'an_1')).resolves.toEqual({ top: null, bottom: null });
+        }
+        expect((service as any).aiAdapter.readPriceAxis).not.toHaveBeenCalled();
+      });
+
+      it('analise de outra pessoa (ou inexistente) e recusada', async () => {
+        prisma.$queryRaw = jest.fn().mockResolvedValue([]);
+        await expect(service.getPriceAxis('usr_1', 'an_x')).rejects.toBeInstanceOf(BadRequestException);
+      });
+    });
+
+    it('buildClientContext: so a extensao gera contexto, sem campos vazios', () => {
+      expect(buildClientContext({})).toBeNull();
+      expect(buildClientContext({ source: 'web' })).toBeNull();
+      expect(buildClientContext({ source: 'extension', chartSymbol: '', platform: 'other' })).toEqual({
+        source: 'extension',
+        platform: 'other',
+      });
+    });
   });
 
   it('analise paga manda custo, saldo e plano para o PostHog (evento e perfil)', async () => {

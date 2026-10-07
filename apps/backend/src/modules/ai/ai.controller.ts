@@ -19,7 +19,7 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { AiService } from './ai.service';
+import { AiService, buildClientContext } from './ai.service';
 import { PrismaService } from '../database/prisma.service';
 import { UploadedFile as UploadedFileType } from '../../common/interfaces/multer';
 import { CreateAnalysisDto } from './dto/create-analysis.dto';
@@ -97,6 +97,7 @@ export class AiController {
         body.analysisType,
         body.userLanguage,
         htfImages,
+        buildClientContext(body),
       );
 
       this.logger.log(`Analysis created: ${result.id}`);
@@ -197,6 +198,20 @@ export class AiController {
     if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
 
     return this.aiService.setTradeNote(dbUserId, id, body);
+  }
+
+  /** Escala do eixo para as linhas da extensao. Uma leitura de IA por analise, guardada. */
+  @Get('analysis/:id/price-axis')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async getPriceAxis(
+    @CurrentUser() user: { id?: string; clerkUserId: string },
+    @Param('id') id: string,
+  ) {
+    const dbUserId = await this.resolveDbUserId(user);
+    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
+
+    return this.aiService.getPriceAxis(dbUserId, id);
   }
 
   @Get('strategy')

@@ -5,7 +5,7 @@
  * faz dentro do produto precisa aparecer para todo assinante.
  *
  * Eventos (distinctId = id do Clerk):
- *   paid_analysis_started { analysisId, analysisType, ticksCost, ticksLeft, plan, billingCycle }
+ *   paid_analysis_started { analysisId, analysisType, ticksCost, ticksLeft, plan, billingCycle, source }
  *     e no perfil: plan, billing_cycle, ticks_left, last_paid_analysis_at
  *   trade_outcome_set     { analysisId, outcome, hasPnl }
  *   strategy_saved        { hasProfile }
