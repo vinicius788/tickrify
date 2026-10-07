@@ -402,6 +402,12 @@ export type FunnelEvent =
   | 'checkout_failed'
   // Voltou da Stripe pelo cancel_url sem pagar.
   | 'checkout_canceled'
+  // Passe pre-pago em cripto (NOWPayments, 07/10/2026).
+  | 'crypto_cta_clicked'
+  | 'crypto_checkout_started'
+  | 'crypto_checkout_failed'
+  | 'crypto_return_viewed'
+  | 'crypto_pass_seen_active'
   // Voltou da Stripe na success_url. So UX: a confirmacao de pagamento e o
   // `checkout_completed` do backend.
   | 'checkout_success_viewed'

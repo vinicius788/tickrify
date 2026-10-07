@@ -29,7 +29,15 @@ export type FunnelStage =
   | 'payment_succeeded'
   | 'payment_failed'
   | 'subscription_created'
-  | 'subscription_canceled';
+  | 'subscription_canceled'
+  // Passe pre-pago em cripto (NOWPayments, 07/10/2026).
+  | 'crypto_checkout_created'
+  | 'crypto_checkout_failed'
+  | 'crypto_ipn_rejected'
+  | 'crypto_payment_updated'
+  | 'crypto_payment_mismatch'
+  | 'crypto_payment_succeeded'
+  | 'crypto_payment_partial';
 
 const ALLOWED_FIELDS = [
   'user',
@@ -56,6 +64,8 @@ const ALLOWED_FIELDS = [
   'durationMs',
   'cancelAtPeriodEnd',
   'message',
+  'pass',
+  'payment',
 ] as const;
 
 export type FunnelFields = Partial<Record<(typeof ALLOWED_FIELDS)[number], string | number | boolean | null | undefined>>;

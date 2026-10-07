@@ -24,10 +24,21 @@ interface AnalysisLimitData {
   totalLimit: number | null;
   /** Gratis esgotado: historico, diario e resultado travados ate assinar. */
   freeLocked: boolean;
+  /** Passe em cripto (07/10/2026). Ver AnalysisUsageResponse. */
+  crypto: CryptoUsage;
   /** true enquanto o backend ainda não confirmou o plano/limite do usuário logado.
    *  Durante esse tempo NÃO se deve tratar o usuário como "free 3 grátis". */
   isLoading: boolean;
 }
+
+export type CryptoUsage = {
+  enabled: boolean;
+  paymentMethod: 'card' | 'crypto' | 'manual' | null;
+  passEndsAt: string | null;
+  passEndedAt: string | null;
+};
+
+const NO_CRYPTO: CryptoUsage = { enabled: false, paymentMethod: null, passEndsAt: null, passEndedAt: null };
 
 const FREE_LIMIT = 3;
 const ANALYSIS_REFRESH_EVENT = 'tickrify:analysis-created';
@@ -61,6 +72,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
   const [analysesAllTime, setAnalysesAllTime] = useState<number | null>(null);
   const [freeTotal, setFreeTotal] = useState<{ used: number; limit: number } | null>(null);
   const [freeLocked, setFreeLocked] = useState(false);
+  const [crypto, setCrypto] = useState<CryptoUsage>(NO_CRYPTO);
   // Começa carregando: o backend (Render hiberna) pode levar segundos a confirmar
   // que a conta é paga. Sem isto, a tela mostrava "3 grátis" no meio-tempo e o
   // assinante conseguia gastar análise grátis antes do plano ser reconhecido.
@@ -117,6 +129,12 @@ export function useAnalysisLimit(): AnalysisLimitData {
           : null,
       );
       setFreeLocked(usage.freeLocked === true);
+      setCrypto({
+        enabled: usage.cryptoEnabled === true,
+        paymentMethod: usage.paymentMethod ?? null,
+        passEndsAt: usage.passEndsAt ?? null,
+        passEndedAt: usage.cryptoPassEndedAt ?? null,
+      });
       // Só marca resolvido em caso de sucesso — assim canAnalyze fica travado até
       // termos a verdade do backend, evitando gastar grátis por engano.
       setStatusResolved(true);
@@ -126,6 +144,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setAnalysisLimit(FREE_LIMIT);
       setFreeTotal(null);
       setFreeLocked(false);
+      setCrypto(NO_CRYPTO);
       setBackendUnlimited(false);
       // Falha de rede: libera a UI para não travar pra sempre, mas o backend ainda
       // é a fonte da verdade na hora de criar a análise (bloqueia grátis indevido).
@@ -154,6 +173,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setAnalysisLimit(FREE_LIMIT);
       setFreeTotal(null);
       setFreeLocked(false);
+      setCrypto(NO_CRYPTO);
       setUserPlan('free');
       setBackendUnlimited(false);
       setStatusResolved(false);
@@ -174,6 +194,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       totalUsed: null,
       totalLimit: null,
       freeLocked: false,
+      crypto: NO_CRYPTO,
       isLoading: false,
     };
   }
@@ -193,6 +214,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       totalUsed: null,
       totalLimit: null,
       freeLocked: false,
+      crypto: NO_CRYPTO,
       isLoading: true,
     };
   }
@@ -216,6 +238,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
     totalUsed: isUnlimited ? null : freeTotal?.used ?? null,
     totalLimit: isUnlimited ? null : freeTotal?.limit ?? null,
     freeLocked: !isUnlimited && freeLocked,
+    crypto,
     isLoading: false,
   };
 }

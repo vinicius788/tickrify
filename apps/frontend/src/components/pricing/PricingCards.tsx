@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
+import { CryptoPayLink } from "@/components/dashboard/CryptoPass";
 import { CheckoutError, createCheckoutSession, getCheckoutStatus, type BillingCycle, type Currency, type PlanType } from "../../lib/stripe";
 import { buildApiUrl, warmupPaymentsApi } from "../../lib/api";
 import { getReferralCoupon, isAffiliateCode, saveReferralCoupon } from "../../lib/attribution";
@@ -622,6 +623,8 @@ export function PricingCards() {
       <div className="mt-4 text-center">
         <PartnerCode copy={copy} />
       </div>
+      {/* Cartao recusado pelo banco: passe pre-pago em cripto (so logado e com o NOWPayments ligado). */}
+      {isSignedIn ? <CryptoPayLink surface="plans" className="mt-3 text-center" /> : null}
     </div>
   );
 }

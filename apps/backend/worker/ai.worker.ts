@@ -30,6 +30,7 @@ import { safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../src/co
 import { MailService } from '../src/modules/mail/mail.service';
 import { notifyIfFreeQuotaExhausted, retryRecoveryEmails, type RecoveryEmailDeps } from '../src/modules/mail/recovery-email';
 import { LIFECYCLE_FLAG, publicUrl, runLifecycleSweep } from '../src/modules/mail/lifecycle-email';
+import { refreshCryptoPasses } from '../src/modules/crypto/crypto-pass';
 import Stripe from 'stripe';
 import { getFoundingOffer } from '../src/modules/payments/founding-offer';
 
@@ -1336,6 +1337,15 @@ const lifecycleTick = async () => {
   // E-mail de "gratis esgotado" que o provedor recusou (recovery-email.ts).
   const retried = await retryRecoveryEmails(recoveryDeps);
   if (retried > 0) console.log(`[recovery] Retentativa: ${retried}`);
+  // Passe em cripto vencido de quem nao abriu o painel: sai do "ativo" para os
+  // relatorios. Quem abre ja e atualizado na hora (`hasPaidAccess`).
+  const passes = await refreshCryptoPasses(prisma).catch((err) => {
+    console.warn(`[crypto] Varredura de passes falhou: ${(err as Error)?.message ?? err}`);
+    return null;
+  });
+  if (passes && (passes.expired > 0 || passes.promoted > 0)) {
+    console.log(`[crypto] Passes: ${passes.expired} vencido(s), ${passes.promoted} iniciado(s)`);
+  }
 };
 // `unref()`: o timer nao segura o processo sozinho. Em producao quem mantem o
 // worker vivo e a conexao da fila; sem o unref, todo teste que importa este

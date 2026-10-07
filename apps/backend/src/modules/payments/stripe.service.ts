@@ -22,12 +22,14 @@ import {
   resolvePlanForPriceId,
   allowanceForPriceId,
   allowanceCadenceForPriceId,
+  AllowanceCadence,
   allowanceWindowStart,
   PlanType,
   BillingCycle,
   Currency,
   stripeKeyMode,
 } from '../../config/stripe.config';
+import { isCryptoPassId, refreshCryptoPasses } from '../crypto/crypto-pass';
 
 type AttributionRecord = Record<string, unknown>;
 
@@ -262,7 +264,13 @@ export class StripeService implements OnModuleInit {
       }
 
       // Trava 1, banco: barata e cobre tambem o acesso manual do dono
-      // (`manual_owner_1`), que nao existe na Stripe.
+      // (`manual_owner_1`) e o passe em cripto, que nao existem na Stripe.
+      // Passe vencido sai antes, senao travaria quem quer assinar no cartao.
+      await refreshCryptoPasses(this.prisma, user.id).catch((error) =>
+        // Sem atualizar, um passe vencido ainda trava (direcao segura: nunca
+        // abre cobranca em dobro). A varredura do worker corrige em 15 min.
+        this.logger.warn(`[crypto] Nao consegui atualizar os passes de ${user.id}: ${(error as Error)?.message}`),
+      );
       const dbSubscription = await this.prisma.subscription.findFirst({
         where: { userId: user.id, status: { in: BLOCKING_SUBSCRIPTION_STATUSES } },
         select: { status: true },
@@ -1563,7 +1571,7 @@ export class StripeService implements OnModuleInit {
    */
   private async applyMonthlyAllowance(
     userId: string,
-    subscription: { stripeId: string; priceId: string | null; periodStart: Date | null },
+    subscription: { stripeId: string; priceId: string | null; periodStart: Date | null; cadence?: AllowanceCadence },
     source: 'invoice_webhook' | 'lazy_sync' | 'access_check',
     now = new Date(),
   ): Promise<boolean> {
@@ -1576,7 +1584,7 @@ export class StripeService implements OnModuleInit {
     const windowStart = allowanceWindowStart(
       subscription.periodStart,
       now,
-      allowanceCadenceForPriceId(subscription.priceId),
+      subscription.cadence ?? allowanceCadenceForPriceId(subscription.priceId),
     );
     const key = `allowance:${subscription.stripeId}:${windowStart.toISOString().slice(0, 10)}`;
 
@@ -1761,6 +1769,16 @@ export class StripeService implements OnModuleInit {
           periodStart = new Date(live.current_period_start * 1000);
           priceId = live.items.data[0]?.price.id ?? priceId;
         }
+      } else if (isCryptoPassId(subscription.stripeId)) {
+        // Passe em cripto: uma janela so, a partir do inicio do passe. O
+        // vencimento ja foi aplicado por `refreshCryptoPasses` antes daqui.
+        if (!periodStart) return;
+        await this.applyMonthlyAllowance(
+          userId,
+          { stripeId: subscription.stripeId, priceId, periodStart, cadence: 'pass' },
+          'access_check',
+        );
+        return;
       } else {
         periodStart = null;
       }

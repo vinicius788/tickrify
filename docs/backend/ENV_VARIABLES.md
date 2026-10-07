@@ -31,6 +31,7 @@ um exemplo separado em `apps/frontend/.env.example`.
 | Storage | `SUPABASE_*`, `USE_LOCAL_STORAGE`, `MAX_IMAGE_UPLOAD_BYTES` | Producao usa Supabase Storage; armazenamento local e apenas auxiliar de desenvolvimento. |
 | IA | `OPENAI_API_KEY`, `AI_MODEL_*`, `AI_REASONING_EFFORT_*` | Modelos quick e deep podem ser configurados separadamente. |
 | Cobranca | `STRIPE_*` | Necessario quando a integracao Stripe esta ativa. |
+| Cobranca em cripto | `NOWPAYMENTS_API_KEY`, `NOWPAYMENTS_IPN_SECRET`, `NOWPAYMENTS_API_URL` | Passe pre-pago em cripto. Sem as duas chaves o botao some e `/api/crypto/*` responde 503. `NOWPAYMENTS_API_URL` so aceita a producao (padrao) ou `https://api-sandbox.nowpayments.io/v1`. |
 | URLs e CORS | `APP_URL`, `FRONTEND_URL`, `CORS_ORIGINS` | Devem conter apenas origens confiaveis em producao. |
 | Operacoes | `INTERNAL_OPS_TOKEN` | Protege os endpoints internos de health e readiness. |
 | Flags | `ENABLE_*`, `AB_PROMPT_V9_PERCENT`, `PROMPT_AUTO_SYNC` | Overrides salvos no painel admin prevalecem sobre os valores de ambiente. |

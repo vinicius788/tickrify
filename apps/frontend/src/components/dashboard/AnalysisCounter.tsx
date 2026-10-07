@@ -10,6 +10,8 @@ import { Link } from "react-router-dom";
 import { buildApiUrl } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { track } from "@/lib/analytics";
+import { CryptoPassDialog } from "@/components/dashboard/CryptoPass";
+import { formatPassDate } from "@/lib/crypto-checkout";
 
 const PLAN_LABELS: Record<UserPlan, string> = {
   free: 'Free',
@@ -28,9 +30,9 @@ const PLAN_TICKS: Record<UserPlan, number> = {
 };
 
 const AnalysisCounter = () => {
-  const { isUnlimited, plan, total, used, remaining, totalUsed, totalLimit, isLoading } = useAnalysisLimit();
+  const { isUnlimited, plan, total, used, remaining, totalUsed, totalLimit, isLoading, crypto } = useAnalysisLimit();
   const { balance } = useTicks();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { getToken } = useAuth();
   const c = t.counter;
 
@@ -39,6 +41,7 @@ const AnalysisCounter = () => {
   // IMPORTANTE: todos os hooks (incl. este useState) precisam ser chamados ANTES
   // de qualquer return condicional, senão React error #310 (hooks condicionais).
   const [portalLoading, setPortalLoading] = useState(false);
+  const [extendOpen, setExtendOpen] = useState(false);
 
   // Enquanto o backend não confirmou o plano (conta paga demora no cold start),
   // mostrar um estado neutro de carregamento — NUNCA "0/3 grátis", que confundia
@@ -151,7 +154,9 @@ const AnalysisCounter = () => {
   }
 
   // Assinante: mostrar saldo de ticks
-  const planLabel = PLAN_LABELS[plan] ?? 'Pro';
+  // Passe em cripto: pagamento unico, sem portal da Stripe e sem renovacao.
+  const cryptoPass = crypto?.paymentMethod === 'crypto';
+  const planLabel = cryptoPass ? t.crypto.planLabel : PLAN_LABELS[plan] ?? 'Pro';
   const planTicks = PLAN_TICKS[plan] ?? 0;
   const ticksPercent = planTicks > 0 ? Math.max(0, Math.min(100, (balance / planTicks) * 100)) : 0;
   const ticksLow = balance <= Math.ceil(planTicks * 0.1);
@@ -180,31 +185,51 @@ const AnalysisCounter = () => {
             <Progress value={ticksPercent} className="h-1.5 bg-[var(--bg-overlay)]" />
           )}
 
-          {ticksLow && balance === 0 ? (
+          {/* "Renova no proximo ciclo" seria falso no passe em cripto (nao renova). */}
+          {!cryptoPass && ticksLow && balance === 0 ? (
             <p className="text-xs text-amber-500 flex items-center gap-1.5">
               <TriangleAlert className="h-3.5 w-3.5" />
               {c.ticksOut}
             </p>
-          ) : ticksLow ? (
+          ) : !cryptoPass && ticksLow ? (
             <p className="text-xs text-amber-500 flex items-center gap-1.5">
               <TriangleAlert className="h-3.5 w-3.5" />
               {c.ticksLow}
             </p>
-          ) : (
+          ) : cryptoPass ? null : (
             <p className="text-xs text-[var(--text-secondary)]">
               {plan === 'weekly' ? c.renewsWeeklyPrefix : c.renewsPrefix} {Math.floor(balance)} {c.renewsSuffix}
             </p>
           )}
 
-          <button
-            type="button"
-            onClick={() => void openCustomerPortal()}
-            disabled={portalLoading}
-            className="flex items-center gap-1 text-xs text-[var(--text-secondary)] underline-offset-2 transition-colors hover:text-[var(--text-primary)] hover:underline disabled:opacity-60"
-          >
-            <ExternalLink className="h-3 w-3" />
-            {portalLoading ? '…' : c.manageSubscription}
-          </button>
+          {cryptoPass ? (
+            <>
+              <p className="text-xs text-[var(--text-secondary)]">
+                {t.crypto.endsOn.replace('{date}', formatPassDate(crypto.passEndsAt, language))}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  track('crypto_cta_clicked', { surface: 'plan_card' });
+                  setExtendOpen(true);
+                }}
+                className="text-xs text-[var(--text-primary)] underline underline-offset-2 hover:opacity-80"
+              >
+                {t.crypto.extend}
+              </button>
+              <CryptoPassDialog open={extendOpen} onOpenChange={setExtendOpen} surface="plan_card" />
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void openCustomerPortal()}
+              disabled={portalLoading}
+              className="flex items-center gap-1 text-xs text-[var(--text-secondary)] underline-offset-2 transition-colors hover:text-[var(--text-primary)] hover:underline disabled:opacity-60"
+            >
+              <ExternalLink className="h-3 w-3" />
+              {portalLoading ? '…' : c.manageSubscription}
+            </button>
+          )}
         </div>
       </CardContent>
     </Card>
