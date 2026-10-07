@@ -2,6 +2,7 @@ import { createClerkClient } from '@clerk/chrome-extension/client';
 import { ApiError, createApi, type Usage } from '@/lib/api';
 import { API_URL, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST, TEST_TOKEN, userLanguage } from '@/lib/config';
 import { cropRectToPixels, fitWithin, type Rect } from '@/lib/crop';
+import { strings } from '@/lib/i18n';
 import type { CaptureReply, ErrorReason, PanelView, ToBackground, ToContent } from '@/lib/messages';
 import { detectPlatform, type PageMeta, type Platform } from '@/lib/platform';
 
@@ -28,19 +29,36 @@ async function getToken(): Promise<string | null> {
 
 const api = createApi({ baseUrl: API_URL, getToken });
 
-/** Logo apos a injecao o painel pode ainda nao estar ouvindo: tenta por ~2 s. */
+/**
+ * Logo apos a injecao o painel pode ainda nao estar ouvindo. Em pagina pesada
+ * recem-carregada (TradingView, Binance) isso passou de 2 s no teste
+ * automatizado e o clique se perdia calado; tenta por ~10 s.
+ */
 async function sendToTab(tabId: number, message: ToContent): Promise<void> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
     try {
       await browser.tabs.sendMessage(tabId, message);
       return;
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
 }
 
 const showView = (tabId: number, view: PanelView) => sendToTab(tabId, { type: 'tk:view', view });
+
+/** Texto curto do erro para o painel e o console. Erros do Clerk trazem `errors[0].code`. */
+function errorDetail(err: unknown): string {
+  const clerk = (err as { errors?: Array<{ code?: string; longMessage?: string; message?: string }> })?.errors?.[0];
+  const text = clerk ? [clerk.code, clerk.longMessage || clerk.message].filter(Boolean).join(': ') : err instanceof Error ? err.message : String(err);
+  return text.slice(0, 180);
+}
+
+/** Erro mostrado no painel, com o detalhe tecnico (e registrado no console do service worker). */
+function errorView(err: unknown): PanelView {
+  console.error('[Tickrify]', err);
+  return { kind: 'error', reason: reasonFrom(err), detail: errorDetail(err) };
+}
 
 function reasonFrom(err: unknown): ErrorReason {
   if (err instanceof ApiError) {
@@ -86,7 +104,7 @@ async function start(tab: { id?: number; url?: string }, again = false): Promise
     usage = await api.usage();
   } catch (err) {
     if (err instanceof ApiError && err.kind === 'auth') return showView(tabId, { kind: 'signin' });
-    return showView(tabId, { kind: 'error', reason: reasonFrom(err) });
+    return showView(tabId, errorView(err));
   }
   // Mesma trava do servidor: sem analise disponivel, nada e capturado.
   if (!usage.canAnalyze) return showView(tabId, { kind: 'paywall', usage });
@@ -143,7 +161,7 @@ async function analyze(tabId: number, blob: Blob, rect: Rect, platform: Platform
       return showView(tabId, { kind: 'paywall', usage: await api.usage().catch(() => null) });
     }
     if (err instanceof ApiError && err.kind === 'auth') return showView(tabId, { kind: 'signin' });
-    await showView(tabId, { kind: 'error', reason: reasonFrom(err) });
+    await showView(tabId, errorView(err));
   } finally {
     busyTabs.delete(tabId);
   }
@@ -163,8 +181,9 @@ async function showLast(tab: { id?: number }): Promise<void> {
 
 export default defineBackground(() => {
   browser.runtime.onInstalled.addListener(() => {
-    browser.contextMenus.create({ id: MENU_ID, title: 'Analyze this chart with Tickrify', contexts: ['all'] });
-    browser.contextMenus.create({ id: MENU_LAST, title: 'Show my last Tickrify analysis', contexts: ['all'] });
+    const t = strings();
+    browser.contextMenus.create({ id: MENU_ID, title: t.menuAnalyze, contexts: ['all'] });
+    browser.contextMenus.create({ id: MENU_LAST, title: t.menuLast, contexts: ['all'] });
   });
 
   browser.action.onClicked.addListener((tab) => void start(tab));
@@ -195,6 +214,7 @@ export default defineBackground(() => {
         },
         (err) => {
           busyTabs.delete(tabId);
+          console.error('[Tickrify] captura', err);
           sendResponse({ ok: false, reason: reasonFrom(err) });
         },
       );
@@ -216,12 +236,13 @@ export default defineBackground(() => {
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (!alarm.name.startsWith('remind:')) return;
     const stored = await browser.storage.session.get(alarm.name);
-    const label = String(stored[alarm.name] ?? 'your chart');
+    const t = strings();
+    const label = String(stored[alarm.name] ?? t.yourChart);
     await browser.notifications.create(alarm.name, {
       type: 'basic',
       iconUrl: browser.runtime.getURL('/icon/128.png'),
       title: 'Tickrify',
-      message: `Time to check ${label} again.`,
+      message: t.remindNotification(label),
     });
   });
 

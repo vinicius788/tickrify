@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Rect } from '@/lib/crop';
+import { strings } from '@/lib/i18n';
+
+const t = strings();
 
 const MIN_W = 240;
 const MIN_H = 160;
@@ -46,8 +49,8 @@ export function AreaSelect({ onDone, onCancel }: { onDone: (rect: Rect) => void;
         {rect && <div className="tk-select-rect" style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }} />}
       </div>
       <div className="tk-select-help">
-        <b>Drag over the chart.</b> Tickrify only sends this area. We remember it for this site.
-        <div className="tk-small" style={{ margin: '4px 0 0' }}>Press Esc to cancel</div>
+        <b>{t.dragTitle}</b> {t.dragBody}
+        <div className="tk-small" style={{ margin: '4px 0 0' }}>{t.escCancel}</div>
       </div>
       {ready && (
         <div
@@ -55,10 +58,10 @@ export function AreaSelect({ onDone, onCancel }: { onDone: (rect: Rect) => void;
           style={{ left: rect.x, top: Math.min(rect.y + rect.h + 10, window.innerHeight - 52) }}
         >
           <button type="button" className="tk-btn" onClick={() => onDone(rect)}>
-            Use this area
+            {t.useArea}
           </button>
           <button type="button" className="tk-btn sec" onClick={() => setRect(null)}>
-            Redo
+            {t.redo}
           </button>
         </div>
       )}

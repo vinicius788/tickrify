@@ -30,7 +30,8 @@ describe('readResult', () => {
     const r = readResult(BUY, { symbol: 'FX:EURJPY', timeframe: '5m' });
     expect(r.rec).toBe('BUY');
     expect(r.symbol).toBe('EURJPY');
-    expect(r.entryLabel).toBe('Buy limit');
+    expect(r.side).toBe('BUY');
+    expect(r.entryType).toBe('limit');
     expect(r.prices).toEqual({ entry: '179.25', stop: '179.08', tp1: '179.50', tp2: '179.65' });
     // entryY/stopY da IA nao servem para desenhar (medido em 06/10): sem escala do eixo, sem linhas.
     expect(r.fractions).toBeNull();

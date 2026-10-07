@@ -1,9 +1,11 @@
 import type { Rect } from '@/lib/crop';
+import { strings } from '@/lib/i18n';
 import { placeLevels, type LevelFractions, type LevelKey } from '@/lib/levels';
 
 export type LevelPrices = Record<LevelKey, string | null>;
 
-const LABEL: Record<LevelKey, string> = { entry: 'Entry', stop: 'Stop', tp1: 'TP1', tp2: 'TP2' };
+const t = strings();
+const LABEL: Record<Exclude<LevelKey, 'entry'>, string> = { stop: t.stop, tp1: 'TP1', tp2: 'TP2' };
 
 /**
  * Entrada, stop e alvos desenhados por cima do grafico, no retangulo que foi
@@ -44,7 +46,7 @@ export function LevelsOverlay({
               className={`tk-tag ${m.key} edge`}
               style={m.edge === 'above' ? { top: 6 } : { bottom: 44 }}
             >
-              {`${text} ${m.edge === 'above' ? 'above' : 'below'} view`}
+              {`${text} ${m.edge === 'above' ? t.aboveView : t.belowView}`}
             </div>
           );
         }
@@ -58,7 +60,7 @@ export function LevelsOverlay({
         );
       })}
       <div className="tk-credit">
-        <b>Tickrify</b> levels at {takenAt}. Prices are exact; line placement is approximate.
+        <b>Tickrify</b> {t.levelsCredit(takenAt)}
       </div>
     </div>
   );

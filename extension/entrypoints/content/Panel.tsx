@@ -3,7 +3,8 @@ import type { Analysis, AnalysisLevels, Usage } from '@/lib/api';
 import { PLANS_URL, SIGN_IN_URL, analysisUrl } from '@/lib/config';
 import type { Rect } from '@/lib/crop';
 import { fractionsFromAxis, type LevelFractions } from '@/lib/levels';
-import type { ErrorReason, PanelView } from '@/lib/messages';
+import { strings } from '@/lib/i18n';
+import type { PanelView } from '@/lib/messages';
 import type { PageMeta, Platform } from '@/lib/platform';
 import type { LevelPrices } from './LevelsOverlay';
 
@@ -14,7 +15,9 @@ export type ReadResult = {
   rec: 'BUY' | 'SELL' | 'WAIT';
   symbol: string;
   timeframe: string;
-  entryLabel: string;
+  /** Lado da entrada e tipo cru do motor (limit/market); cada idioma monta o rotulo. */
+  side: 'BUY' | 'SELL';
+  entryType: string | null;
   prices: LevelPrices;
   /** null = sem escala confiavel: so os precos no painel, nenhuma linha. */
   fractions: LevelFractions | null;
@@ -43,12 +46,12 @@ export function readResult(analysis: Analysis, meta: PageMeta): ReadResult {
   const a: AnalysisLevels = analysis.fullResponse?.analysis ?? {};
   const raw = String(analysis.recommendation ?? analysis.fullResponse?.recommendation ?? '').toUpperCase();
   const rec = raw === 'BUY' || raw === 'SELL' ? raw : 'WAIT';
-  const side = rec === 'SELL' ? 'Sell' : 'Buy';
   return {
     rec,
     symbol: str(a.symbol) ?? meta.symbol ?? '',
     timeframe: str(a.timeframe) ?? meta.timeframe ?? '',
-    entryLabel: a.entryType ? `${side} ${a.entryType}` : side,
+    side: rec === 'SELL' ? 'SELL' : 'BUY',
+    entryType: str(a.entryType),
     prices: samePrecision({ entry: a.entry, stop: a.stopLoss, tp1: a.takeProfit1, tp2: a.takeProfit2 }),
     fractions: fractionsFromAxis(
       { entry: num(a.entry), stop: num(a.stopLoss), tp1: num(a.takeProfit1), tp2: num(a.takeProfit2) },
@@ -63,24 +66,18 @@ export function readResult(analysis: Analysis, meta: PageMeta): ReadResult {
   };
 }
 
+// Idioma do navegador (o mesmo que vai para a IA): pt para Chrome em portugues, en no resto.
+const t = strings();
+
 function usageLine(usage: Usage | null): string {
   if (!usage) return '';
   if (usage.plan === 'free') {
     return typeof usage.remaining === 'number' && typeof usage.total === 'number'
-      ? `${usage.remaining} of ${usage.total} free plans left`
-      : 'Free plan';
+      ? t.freeLeft(usage.remaining, usage.total)
+      : t.freePlan;
   }
-  return typeof usage.tickBalance === 'number' ? `${usage.tickBalance} analyses left` : '';
+  return typeof usage.tickBalance === 'number' ? t.analysesLeft(usage.tickBalance) : '';
 }
-
-const ERROR_TEXT: Record<ErrorReason, string> = {
-  permission: 'Click the Tickrify icon in your toolbar to analyze this chart again.',
-  auth: 'Your session ended. Sign in to Tickrify and try again.',
-  timeout: 'The analysis took too long. Press ↻ to try again.',
-  network: 'Could not reach Tickrify. Check your connection and press ↻.',
-  server: 'Something went wrong on our side. Press ↻ to try again.',
-  failed: 'This analysis could not be completed. Press ↻ to try again.',
-};
 
 const TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '4h', '1D', '1W'];
 
@@ -148,18 +145,18 @@ export function Panel(props: PanelProps) {
         <span className="tk-ctx">{context}</span>
         <span className="tk-sp" />
         {canRetry(view) && (
-          <button type="button" className="tk-icon-btn" onClick={props.onAgain} aria-label="Analyze again" title="Analyze again">
+          <button type="button" className="tk-icon-btn" onClick={props.onAgain} aria-label={t.analyzeAgain} title={t.analyzeAgain}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8" /><path d="M21 3v5h-5" /></svg>
           </button>
         )}
-        <button type="button" className="tk-icon-btn" onClick={props.onMinimize} aria-label="Minimize" title="Minimize">
+        <button type="button" className="tk-icon-btn" onClick={props.onMinimize} aria-label={t.minimize} title={t.minimize}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14" /></svg>
         </button>
       </div>
       <div className="tk-body">
         <Body {...props} />
       </div>
-      {showFoot && <div className="tk-foot">{[usageLine(usage), 'Second opinion, not a signal'].filter(Boolean).join(' · ')}</div>}
+      {showFoot && <div className="tk-foot">{[usageLine(usage), t.secondOpinion].filter(Boolean).join(' · ')}</div>}
     </div>
   );
 }
@@ -170,19 +167,19 @@ function Body(props: PanelProps) {
     case 'signin':
       return (
         <>
-          <p className="tk-h">Sign in to analyze this chart</p>
-          <p className="tk-p">Use your Tickrify account. Your analyses and free trade plans are the same as on tickrify.com.</p>
+          <p className="tk-h">{t.signInTitle}</p>
+          <p className="tk-p">{t.signInBody}</p>
           <a className="tk-btn" href={SIGN_IN_URL} target="_blank" rel="noopener noreferrer">
-            Sign in to Tickrify
+            {t.signInButton}
           </a>
-          <p className="tk-small">After signing in, come back and press ↻.</p>
+          <p className="tk-small">{t.signInAfter}</p>
         </>
       );
     case 'empty':
       return (
         <>
-          <p className="tk-h">No analysis on this tab yet</p>
-          <p className="tk-p">Click the Tickrify icon in your toolbar to analyze the chart you have open.</p>
+          <p className="tk-h">{t.emptyTitle}</p>
+          <p className="tk-p">{t.emptyBody}</p>
         </>
       );
     case 'paywall':
@@ -194,11 +191,12 @@ function Body(props: PanelProps) {
     case 'error':
       return (
         <>
-          <p className="tk-h">{view.reason === 'permission' ? 'One more click' : 'Analysis not completed'}</p>
-          <p className="tk-p">{ERROR_TEXT[view.reason]}</p>
+          <p className="tk-h">{view.reason === 'permission' ? t.oneMoreClick : t.notCompleted}</p>
+          <p className="tk-p">{t.errors[view.reason]}</p>
+          {view.detail && <p className="tk-small tk-code">{t.technicalDetails(view.detail)}</p>}
           {view.reason === 'auth' && (
             <a className="tk-btn" href={SIGN_IN_URL} target="_blank" rel="noopener noreferrer">
-              Sign in to Tickrify
+              {t.signInButton}
             </a>
           )}
         </>
@@ -212,15 +210,17 @@ function Paywall({ usage }: { usage: Usage | null }) {
   const free = !usage || usage.plan === 'free';
   return (
     <>
-      <p className="tk-h">{free ? 'Your free trade plans are used up' : 'You are out of analyses for now'}</p>
+      <p className="tk-h">{free ? t.paywallFree : t.paywallPaid}</p>
       <div className="tk-price main">
-        <b>$7.99</b> / week<small>25 analyses every 7 days. Cancel anytime.</small>
+        <b>$7.99</b> {t.perWeek}
+        <small>{t.weekNote}</small>
       </div>
       <div className="tk-price">
-        <b>$29</b> / month<small>200 analyses every month.</small>
+        <b>$29</b> {t.perMonth}
+        <small>{t.monthNote}</small>
       </div>
       <a className="tk-btn" href={PLANS_URL} target="_blank" rel="noopener noreferrer">
-        See plans on tickrify.com
+        {t.seePlans}
       </a>
     </>
   );
@@ -233,13 +233,13 @@ function Confirm({ meta, onConfirm, onAdjustArea }: { meta: PageMeta; onConfirm:
     <>
       <div className="tk-field">
         <label>
-          Symbol
+          {t.symbol}
           <input value={symbol} maxLength={32} onChange={(e) => setSymbol(e.target.value.replace(/\s+/g, '').toUpperCase())} />
         </label>
         <label>
-          Timeframe
+          {t.timeframe}
           <select value={timeframe} onChange={(e) => setTimeframe(e.target.value)}>
-            <option value="">Not sure</option>
+            <option value="">{t.notSure}</option>
             {TIMEFRAMES.map((tf) => (
               <option key={tf} value={tf}>
                 {tf}
@@ -253,10 +253,10 @@ function Confirm({ meta, onConfirm, onAdjustArea }: { meta: PageMeta; onConfirm:
         className="tk-btn"
         onClick={() => onConfirm({ symbol: /^[A-Za-z0-9:._/!-]{2,32}$/.test(symbol) ? symbol : undefined, timeframe: timeframe || undefined })}
       >
-        Analyze this chart
+        {t.analyzeThisChart}
       </button>
       <button type="button" className="tk-link" onClick={onAdjustArea}>
-        Adjust area
+        {t.adjustArea}
       </button>
     </>
   );
@@ -273,13 +273,13 @@ function Analyzing() {
     <>
       <div>
         <span className="tk-spin" />
-        <b>Analyzing your chart</b>
+        <b>{t.analyzing}</b>
       </div>
       <div className="tk-bar">
         <i style={{ width: `${Math.min(95, (seconds / 20) * 100)}%` }} />
       </div>
       <div className="tk-small" style={{ display: 'flex', justifyContent: 'space-between', margin: 0 }}>
-        <span>About 20 seconds. You can keep trading.</span>
+        <span>{t.analyzingNote}</span>
         <span>{`${seconds} s`}</span>
       </div>
     </>
@@ -293,17 +293,17 @@ function Result(props: PanelProps & { view: Extract<UiView, { kind: 'result' }> 
   const lastFree = usage?.plan === 'free' && usage.remaining === 0 && r.rec !== 'WAIT';
   const details = (
     <details className="tk-more">
-      <summary>Details</summary>
+      <summary>{t.details}</summary>
       <div className="tk-in">
         {r.summary && (
           <>
-            <h5>Why</h5>
+            <h5>{t.why}</h5>
             <p>{r.summary}</p>
           </>
         )}
         {r.risks.length > 0 && (
           <>
-            <h5>Risks</h5>
+            <h5>{t.risks}</h5>
             <ul>
               {r.risks.map((risk) => (
                 <li key={risk}>{risk}</li>
@@ -313,25 +313,25 @@ function Result(props: PanelProps & { view: Extract<UiView, { kind: 'result' }> 
         )}
         {r.invalidation && (
           <>
-            <h5>Invalidation</h5>
+            <h5>{t.invalidation}</h5>
             <p>{r.invalidation}</p>
           </>
         )}
-        {r.rr2 && <p className="tk-small">{`Risk/reward to TP2: ${r.rr2}`}</p>}
+        {r.rr2 && <p className="tk-small">{t.rrTp2(r.rr2)}</p>}
       </div>
     </details>
   );
   return (
     <>
-      {view.restored && <p className="tk-small" style={{ margin: '0 0 8px' }}>Your last analysis on this tab.</p>}
+      {view.restored && <p className="tk-small" style={{ margin: '0 0 8px' }}>{t.lastOnTab}</p>}
       <div className="tk-top">
         <span className={`tk-verdict ${r.rec.toLowerCase()}`}>{r.rec}</span>
         {r.rec === 'WAIT' ? (
-          <span className="tk-small" style={{ margin: 0 }}>{"Didn't use a free plan"}</span>
+          <span className="tk-small" style={{ margin: 0 }}>{t.waitFree}</span>
         ) : (
           r.rr1 && (
             <span className="tk-rr">
-              R/R <b>{r.rr1}</b> to TP1
+              R/R <b>{r.rr1}</b> {t.rrTp1}
             </span>
           )
         )}
@@ -339,13 +339,13 @@ function Result(props: PanelProps & { view: Extract<UiView, { kind: 'result' }> 
       {r.rec === 'WAIT' ? (
         r.waitFor && (
           <div className="tk-waitfor">
-            <small>Wait for</small>
+            <small>{t.waitFor}</small>
             <p>{r.waitFor}</p>
             {props.reminderAt ? (
-              <div className="tk-okline">{`Reminder set for ${props.reminderAt}. Tickrify will not analyze by itself.`}</div>
+              <div className="tk-okline">{t.reminderSet(props.reminderAt)}</div>
             ) : (
-              <button type="button" className="tk-link" onClick={() => props.onRemind(r.symbol || 'your chart')}>
-                Remind me in 15 min
+              <button type="button" className="tk-link" onClick={() => props.onRemind(r.symbol || t.yourChart)}>
+                {t.remindMe}
               </button>
             )}
           </div>
@@ -353,19 +353,19 @@ function Result(props: PanelProps & { view: Extract<UiView, { kind: 'result' }> 
       ) : (
         <div className="tk-levels">
           <div className="tk-lv">
-            <small>{r.entryLabel.replace(/^(Buy|Sell)\s?/, 'Entry ')}</small>
+            <small>{t.entry(r.entryType ? t.entryType(r.entryType) : null)}</small>
             <b>{r.prices.entry ?? '-'}</b>
           </div>
           <div className="tk-lv stop">
-            <small>Stop</small>
+            <small>{t.stop}</small>
             <b>{r.prices.stop ?? '-'}</b>
           </div>
           <div className="tk-lv tp">
-            <small>Target 1</small>
+            <small>{t.target1}</small>
             <b>{r.prices.tp1 ?? '-'}</b>
           </div>
           <div className="tk-lv tp">
-            <small>Target 2</small>
+            <small>{t.target2}</small>
             <b>{r.prices.tp2 ?? '-'}</b>
           </div>
         </div>
@@ -373,15 +373,16 @@ function Result(props: PanelProps & { view: Extract<UiView, { kind: 'result' }> 
       {details}
       {lastFree && (
         <div className="tk-note">
-          <b>That was your last free trade plan.</b> Your next analysis needs a subscription.
+          <b>{t.lastFreeBold}</b>
+          {t.lastFreeRest}
         </div>
       )}
       <a className="tk-btn" href={analysisUrl(view.analysis.id)} target="_blank" rel="noopener noreferrer">
-        Open in Tickrify
+        {t.openInTickrify}
       </a>
       {props.platform === 'other' && !view.restored && (
         <button type="button" className="tk-link" onClick={props.onAdjustArea}>
-          Adjust area
+          {t.adjustArea}
         </button>
       )}
     </>

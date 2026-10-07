@@ -13,7 +13,8 @@ export type PanelView =
   // o grafico ja pode ter mudado desde o print).
   | { kind: 'result'; analysis: Analysis; usage: Usage | null; rect: Rect; meta: PageMeta; restored?: boolean }
   | { kind: 'empty' }
-  | { kind: 'error'; reason: ErrorReason };
+  // `detail`: mensagem tecnica curta do erro (ex.: codigo do Clerk) para o suporte.
+  | { kind: 'error'; reason: ErrorReason; detail?: string };
 
 /** Service worker -> content script. */
 export type ToContent =

@@ -484,6 +484,20 @@ Vale para TODA mudanca, grande ou pequena:
   ligadas (sem interruptor). Menu do botao direito "Show my last Tickrify
   analysis" reabre o ultimo resultado da aba (storage.session, sobrevive a
   recarregar a pagina) sem analise nova e sem linhas.
+- **Clerk de producao: "Native API" LIGADO e obrigatorio** (Configure > Native
+  applications). Desligado, a extensao funciona sem sessao (pede login) e
+  falha COM sessao (o sync manda o `__client` como requisicao nativa). Ligado
+  pelo dono em 07/10, junto do `allowed_origins` (PATCH na Backend API) e do
+  `CORS_ORIGINS` + `CLERK_AUTHORIZED_PARTIES` no Render com a origem da extensao.
+  1a analise real pela extensao em 07/10 (EURJPY 5m SELL, linhas no lugar, 1 tick).
+- **Painel no idioma do navegador** (`lib/i18n.ts`: pt e en; o resto cai no
+  ingles) e `translate="no"` no painel (o tradutor do Chrome traduzia o painel).
+  **Cores = tokens do painel do site** (`#050508`, cartoes 3% branco, botao
+  principal branco, verde/vermelho/amarelo so para sinal, rotulos em mono).
+  Erro mostra `Detalhe:` com o codigo tecnico (e loga `[Tickrify]` no console do
+  service worker). Mensagem para o painel tenta por ~10 s (pagina pesada
+  recem-carregada perdia o clique). Suite e2e oscila com a maquina carregada
+  (load > 10): rodar de novo antes de concluir que quebrou.
 - **Card de novidade** (`ExtensionAnnouncement.tsx`) na tela inicial do painel:
   so aparece com `EXTENSION_STORE_URL` preenchida (vazia ate a loja aprovar) e
   em Chrome/Edge de computador. Eventos `extension_card_viewed/clicked/dismissed`.

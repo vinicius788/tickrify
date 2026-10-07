@@ -3,6 +3,7 @@ import type { Usage } from '@/lib/api';
 import type { Rect } from '@/lib/crop';
 import type { CaptureReply, PanelMessage, ToBackground } from '@/lib/messages';
 import type { PageMeta, Platform } from '@/lib/platform';
+import { strings } from '@/lib/i18n';
 import { AreaSelect } from './AreaSelect';
 import { LevelsOverlay } from './LevelsOverlay';
 import { Panel, readResult, type Pos, type UiView } from './Panel';
@@ -12,6 +13,7 @@ export type Bus = { subscribe: (fn: (message: PanelMessage) => void) => () => vo
 
 const POS_KEY = 'tk_panel_pos';
 const PANEL_W = 320;
+const t = strings();
 
 const defaultPos = (): Pos => ({ x: Math.max(8, window.innerWidth - PANEL_W - 16), y: 16 });
 const clampPos = (p: Pos): Pos => ({
@@ -43,8 +45,11 @@ export function App({ bus, logo, setHidden }: { bus: Bus; logo: string; setHidde
   const capture = useCallback(
     async (rect: Rect, meta: PageMeta, from: Platform) => {
       setHidden(true);
+      // 2 quadros + folga: com a maquina ocupada, 2 quadros as vezes nao bastavam
+      // e o painel saia no print (A10 da suite, 07/10).
       await nextFrame();
       await nextFrame();
+      await new Promise((resolve) => setTimeout(resolve, 80));
       const reply = await send({ type: 'tk:capture', rect, viewport: { width: window.innerWidth, height: window.innerHeight }, platform: from, meta }).catch(() => undefined);
       setHidden(false);
       if (!reply || !reply.ok) setView({ kind: 'error', reason: reply && !reply.ok ? reply.reason : 'failed' });
@@ -146,7 +151,9 @@ export function App({ bus, logo, setHidden }: { bus: Bus; logo: string; setHidde
   const takenAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div className="tk-root">
+    // translate="no": o tradutor do Chrome traduzia o painel na pagina traduzida
+    // (visto em 06/10) e pode quebrar o React (mesmo bug do removeChild, CLAUDE.md 4.0).
+    <div className="tk-root notranslate" translate="no">
       {selecting && (
         <AreaSelect
           onCancel={close}
@@ -159,23 +166,23 @@ export function App({ bus, logo, setHidden }: { bus: Bus; logo: string; setHidde
       )}
 
       {result && parsed?.fractions && parsed.rec !== 'WAIT' && levelsOn && (
-        <LevelsOverlay rect={result.rect} fractions={parsed.fractions} prices={parsed.prices} side={parsed.entryLabel} takenAt={takenAt} />
+        <LevelsOverlay rect={result.rect} fractions={parsed.fractions} prices={parsed.prices} side={t.side(parsed.side, parsed.entryType ? t.entryType(parsed.entryType) : null)} takenAt={takenAt} />
       )}
 
       {result && moved && parsed?.fractions && parsed.rec !== 'WAIT' && (
         <div className="tk-toast" style={{ left: result.rect.x + 12, top: result.rect.y + result.rect.h - 52 }}>
-          Chart moved, so the levels were hidden. Press ↻ to analyze again.
+          {t.chartMoved}
         </div>
       )}
 
       {view && minimized && (
         <div className="tk-bubble" style={{ left: Math.min(pos.x + PANEL_W - 200, window.innerWidth - 210), top: pos.y }}>
-          <button type="button" className="tk-bubble-open" onClick={() => setMinimized(false)} aria-label="Open Tickrify panel">
+          <button type="button" className="tk-bubble-open" onClick={() => setMinimized(false)} aria-label={t.openPanel}>
             <img className="tk-logo" src={logo} alt="" />
             <span className="tk-dot" style={{ background: !parsed ? '#8a91b4' : parsed.rec === 'BUY' ? '#00ff88' : parsed.rec === 'SELL' ? '#ff4d5e' : '#ffb800' }} />
             {view.kind === 'analyzing' ? 'Analyzing' : parsed ? `${parsed.rec} ${parsed.symbol}`.trim() : 'Tickrify'}
           </button>
-          <button type="button" className="tk-icon-btn tk-x" onClick={close} aria-label="Close" title="Close">
+          <button type="button" className="tk-icon-btn tk-x" onClick={close} aria-label={t.close} title={t.close}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </button>
         </div>
