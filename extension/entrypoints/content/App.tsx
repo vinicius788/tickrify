@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Usage } from '@/lib/api';
 import type { Rect } from '@/lib/crop';
 import type { CaptureReply, PanelMessage, ToBackground } from '@/lib/messages';
 import type { PageMeta, Platform } from '@/lib/platform';
-import { strings } from '@/lib/i18n';
+import { t } from '@/lib/texts';
 import { AreaSelect } from './AreaSelect';
 import { LevelsOverlay } from './LevelsOverlay';
 import { Panel, readResult, type Pos, type UiView } from './Panel';
@@ -13,7 +13,8 @@ export type Bus = { subscribe: (fn: (message: PanelMessage) => void) => () => vo
 
 const POS_KEY = 'tk_panel_pos';
 const PANEL_W = 320;
-const t = strings();
+// Quanto o mouse anda com o botao apertado ate contar como arrastar o grafico.
+const DRAG_PX = 4;
 
 const defaultPos = (): Pos => ({ x: Math.max(8, window.innerWidth - PANEL_W - 16), y: 16 });
 const clampPos = (p: Pos): Pos => ({
@@ -42,8 +43,12 @@ export function App({ bus, logo, setHidden }: { bus: Bus; logo: string; setHidde
   }, []);
 
   /** Esconde tudo o que e da extensao, tira o print e mostra de novo. */
+  const capturing = useRef(false);
   const capture = useCallback(
     async (rect: Rect, meta: PageMeta, from: Platform) => {
+      // Um print por vez: outro "comecar" no meio deste nao tira outro.
+      if (capturing.current) return;
+      capturing.current = true;
       setHidden(true);
       // 2 quadros + folga: com a maquina ocupada, 2 quadros as vezes nao bastavam
       // e o painel saia no print (A10 da suite, 07/10).
@@ -52,6 +57,7 @@ export function App({ bus, logo, setHidden }: { bus: Bus; logo: string; setHidde
       await new Promise((resolve) => setTimeout(resolve, 80));
       const reply = await send({ type: 'tk:capture', rect, viewport: { width: window.innerWidth, height: window.innerHeight }, platform: from, meta }).catch(() => undefined);
       setHidden(false);
+      capturing.current = false;
       if (!reply || !reply.ok) setView({ kind: 'error', reason: reply && !reply.ok ? reply.reason : 'failed' });
     },
     [setHidden],
@@ -59,6 +65,7 @@ export function App({ bus, logo, setHidden }: { bus: Bus; logo: string; setHidde
 
   const begin = useCallback(
     async (from: Platform) => {
+      if (capturing.current) return;
       setMinimized(false);
       setLevelsGone(false);
       setMoved(false);
@@ -116,7 +123,9 @@ export function App({ bus, logo, setHidden }: { bus: Bus; logo: string; setHidde
   );
 
   // Grafico mexeu (rolar, arrastar, zoom, janela): as linhas perdem o
-  // alinhamento e somem. Resultado reaberto pelo menu nunca tem linhas.
+  // alinhamento e somem. Clique parado NAO some: o trader clica no grafico
+  // para pôr a ordem e precisa ver onde. Resultado reaberto pelo menu nunca
+  // tem linhas.
   const result = view?.kind === 'result' ? view : null;
   const levelsOn = Boolean(result && !result.restored && !levelsGone);
   useEffect(() => {
@@ -127,15 +136,32 @@ export function App({ bus, logo, setHidden }: { bus: Bus; logo: string; setHidde
       setLevelsGone(true);
       setMoved(true);
     };
-    const onPointer = (e: MouseEvent) => {
-      if (inside(e) && !(e.target as Element | null)?.closest?.('tickrify-panel')) hide();
+    const onChart = (e: MouseEvent) => inside(e) && !(e.target as Element | null)?.closest?.('tickrify-panel');
+    let pressed: { x: number; y: number } | null = null;
+    const onWheel = (e: WheelEvent) => {
+      if (onChart(e)) hide();
     };
-    window.addEventListener('wheel', onPointer, { capture: true, passive: true });
-    window.addEventListener('pointerdown', onPointer, true);
+    const onDown = (e: PointerEvent) => {
+      pressed = onChart(e) ? { x: e.clientX, y: e.clientY } : null;
+    };
+    const onMove = (e: PointerEvent) => {
+      if (pressed && Math.hypot(e.clientX - pressed.x, e.clientY - pressed.y) > DRAG_PX) hide();
+    };
+    const onUp = () => {
+      pressed = null;
+    };
+    window.addEventListener('wheel', onWheel, { capture: true, passive: true });
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onUp, true);
     window.addEventListener('resize', hide);
     return () => {
-      window.removeEventListener('wheel', onPointer, { capture: true });
-      window.removeEventListener('pointerdown', onPointer, true);
+      window.removeEventListener('wheel', onWheel, { capture: true });
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onUp, true);
       window.removeEventListener('resize', hide);
     };
   }, [levelsOn, result]);
@@ -166,7 +192,7 @@ export function App({ bus, logo, setHidden }: { bus: Bus; logo: string; setHidde
       )}
 
       {result && parsed?.fractions && parsed.rec !== 'WAIT' && levelsOn && (
-        <LevelsOverlay rect={result.rect} fractions={parsed.fractions} prices={parsed.prices} side={t.side(parsed.side, parsed.entryType ? t.entryType(parsed.entryType) : null)} takenAt={takenAt} />
+        <LevelsOverlay rect={result.rect} fractions={parsed.fractions} prices={parsed.prices} side={t.side(parsed.side, parsed.entryType ? parsed.entryType : null)} takenAt={takenAt} />
       )}
 
       {result && moved && parsed?.fractions && parsed.rec !== 'WAIT' && (

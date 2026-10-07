@@ -18,7 +18,6 @@ describe('createApi', () => {
       platform: 'tradingview',
       chartSymbol: 'FX:EURJPY',
       chartTimeframe: '5m',
-      userLanguage: 'en',
     });
 
     expect(created).toEqual({ id: 'an_1', status: 'pending' });
@@ -31,13 +30,14 @@ describe('createApi', () => {
     expect(form.get('platform')).toBe('tradingview');
     expect(form.get('chartSymbol')).toBe('FX:EURJPY');
     expect(form.get('chartTimeframe')).toBe('5m');
+    expect(form.get('userLanguage')).toBe('en');
     expect(form.get('image')).toBeInstanceOf(Blob);
   });
 
   it('nao manda campo vazio (o backend recusaria string vazia no regex)', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(201, { id: 'an_1', status: 'pending' }));
     const api = createApi({ baseUrl: 'https://api.test', getToken: async () => 'tok_1' });
-    await api.analyze(new Blob(['x']), { platform: 'other', userLanguage: 'en' });
+    await api.analyze(new Blob(['x']), { platform: 'other' });
     const form = fetchMock.mock.calls[0]![1]?.body as FormData;
     expect(form.has('chartSymbol')).toBe(false);
     expect(form.has('chartTimeframe')).toBe(false);
@@ -51,7 +51,7 @@ describe('createApi', () => {
       jsonResponse(400, { message: '{"code":"INSUFFICIENT_TICKS","message":"Ticks insuficientes"}' }),
     ]) {
       vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(res);
-      await expect(api.analyze(new Blob(['x']), { platform: 'other', userLanguage: 'en' })).rejects.toMatchObject({ kind: 'quota' });
+      await expect(api.analyze(new Blob(['x']), { platform: 'other' })).rejects.toMatchObject({ kind: 'quota' });
     }
   });
 

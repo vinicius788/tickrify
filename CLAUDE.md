@@ -447,7 +447,10 @@ Vale para TODA mudanca, grande ou pequena:
   nivel. Medido em 4 graficos reais x 2 rodadas: pior erro 7,5 px (30 px sem a
   frase da faixa de datas). Sem escala valida, sem linhas (so os precos).
   Chamada SEPARADA: prompt do motor, schema e `promptVer` intocados. Medicao em
-  `_local/extensao/medicao-eixo/`. Somem quando o grafico mexe.
+  `_local/extensao/medicao-eixo/`. Somem quando o grafico mexe (roda do mouse,
+  ARRASTAR mais de 4 px, mudar a janela); clique parado (esquerdo ou direito)
+  NAO apaga: o trader clica no grafico para pôr a ordem (pedido do dono, 07/10).
+  Cada preco do painel copia com um clique (`PriceCell`, "Copied").
 - **Regras que nasceram do teste automatizado (06/10, nao desfazer):** (1)
   escala do recorte = largura da captura / largura da janela, nunca o
   `devicePixelRatio` (com 1x numa tela "2x" o recorte pegava a barra lateral);
@@ -457,13 +460,20 @@ Vale para TODA mudanca, grande ou pequena:
   `:host { all: initial !important }` do WXT ganha do estilo do host e o
   painel saia no print); (4) dois cliques durante uma analise nao cobram duas
   vezes (`busyTabs`); (5) respostas por `sendResponse` + `return true`.
+  De 07/10: (6) clique no icone em andamento trava a aba (`startingTabs`) e o
+  painel tira um print por vez: cliques repetidos numa pagina recem-carregada
+  entregavam um "comecar" atrasado e cobravam 2 vezes; (7) cada analise solta a
+  trava UMA vez (`release`): o fim atrasado de uma analise velha apagava a
+  trava da nova; (8) mensagem que chega antes do React montar e entregue na
+  inscricao do painel (`bus.subscribe`), nunca num `setTimeout`: o 1o clique
+  na Binance se perdia.
 - **Suite de ponta a ponta (custo zero):** `_local/extensao/e2e/suite.mjs`
   (Puppeteer + Chrome for Testing, `triggerExtensionAction` libera o
   `activeTab` como o clique real) contra a API falsa
   `_local/extensao/fake-api/server.mjs` (porta 8787, salva cada recorte). Build
   de teste: `WXT_API_URL=http://localhost:8787 WXT_TEST_TOKEN=test npm run build`
   copiado para `_local/extensao/teste-chrome`, e depois `npm run build` normal
-  de novo. 30/30 em 06/10 (TradingView real, Binance real, zoom 125%, erros,
+  de novo. 30/30 em 06/10; 33/33 tres vezes seguidas em 07/10 (TradingView real, Binance real, zoom 125%, erros,
   cota, ultima analise). Rodar de novo antes de qualquer subida da extensao.
 - **Camada 3 (06/10, backend real local com banco/Redis descartaveis no Docker,
   worker da fila, IA de verdade, Clerk de TESTE; `_local/extensao/camada3/` e
@@ -473,10 +483,6 @@ Vale para TODA mudanca, grande ou pequena:
   BUY/SELL; proximo clique = planos sem linha nova; chamada direta ao servidor
   = 403 `DEMO_LIMIT_REACHED`. CORS real: so a origem oficial passa. 5 analises,
   ~US$ 0,10.
-- **Linhas no grafico ERRADAS na medicao real (06/10):** EURJPY 1D, stop 182,3
-  desenhado em ~183,7; entrada 181,1 em ~181,8; TP1 177,0 em ~178,2 (erro de
-  0,6 a 1,4 no preco, ate ~80 px). O `entryY/stopY/tp1Y/tp2Y` do motor nao serve
-  para desenhar. Decisao do dono pendente (secao 6).
 - **Painel enxuto (aprovado pelo dono em 06/10, `_local/extensao/demo-painel-enxuto.html`):**
   cabecalho so com ↻ (analisar de novo) e minimizar; fechar fica no x da bolha;
   resultado = veredito, 4 precos, R/R do TP1, um "Details" (por que, riscos,
@@ -490,8 +496,10 @@ Vale para TODA mudanca, grande ou pequena:
   pelo dono em 07/10, junto do `allowed_origins` (PATCH na Backend API) e do
   `CORS_ORIGINS` + `CLERK_AUTHORIZED_PARTIES` no Render com a origem da extensao.
   1a analise real pela extensao em 07/10 (EURJPY 5m SELL, linhas no lugar, 1 tick).
-- **Painel no idioma do navegador** (`lib/i18n.ts`: pt e en; o resto cai no
-  ingles) e `translate="no"` no painel (o tradutor do Chrome traduzia o painel).
+- **Painel SO em ingles** (`lib/texts.ts`; decisao do dono em 07/10: o
+  portugues e so a conversa com ele). A extensao manda `userLanguage=en`, entao
+  o texto da IA tambem sai em ingles e a tela nao mistura idiomas.
+  `translate="no"` no painel (o tradutor do Chrome traduzia o painel).
   **Cores = tokens do painel do site** (`#050508`, cartoes 3% branco, botao
   principal branco, verde/vermelho/amarelo so para sinal, rotulos em mono).
   Erro mostra `Detalhe:` com o codigo tecnico (e loga `[Tickrify]` no console do
@@ -682,9 +690,8 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
-| 06/10 | **Extensao: ligar o teste do dono.** Depois do deploy do backend (os campos novos do DTO precisam estar no ar, senao a extensao toma 400): (1) Render: `CORS_ORIGINS` += `chrome-extension://fjmlahaidjmkfiogbmklmnhcaadkmfck`; ler se `CLERK_AUTHORIZED_PARTIES` existe e, se existir, acrescentar a mesma origem; (2) Clerk: `allowed_origins` da instancia com a mesma origem (PATCH na Backend API, mantendo as que ja existirem); (3) carregar `extension/.output/chrome-mv3` em modo desenvolvedor. Passo a passo em `_local/extensao/como-testar.md`. Conferir no Render que a 1a analise grava `clientContext` e sai `source=extension` no PostHog. | dono / Claude |
 | 06/10 | **Linhas: medir em mais graficos antes de divulgar.** A leitura do eixo foi medida em 4 graficos do TradingView (tema claro, 1D). Falta: tema escuro, intraday, corretoras (area marcada pode nao ter o eixo: a IA tem que devolver null) e o `[Cost] price-axis` real no Render. Se alguma passar de ~15 px, desligar as linhas (a extensao ja fica so com precos quando nao ha escala). | Claude |
-| 06/10 | **Extensao, fase 2:** medir a posicao das linhas (`entryY` etc.) contra o grafico real e o simbolo lido da pagina contra o `extractSymbol`; visual final com o dono; texto da /privacy (envia so o recorte, so no clique); ficha da Chrome Web Store (US$ 5, conta do dono); depois de aprovada, preencher `EXTENSION_STORE_URL` (liga o card) e trocar a chave/id pelos da loja no CORS e no Clerk. Fase 3: Firefox (sync do Clerk so e documentado para Chrome) e Safari (US$ 99/ano + Xcode, decisao do dono). | Claude / dono |
+| 06/10 | **Extensao, fase 2:** conferir o simbolo lido da pagina contra o `extractSymbol`; visual final com o dono; texto da /privacy (envia so o recorte, so no clique); ficha da Chrome Web Store (US$ 5, conta do dono); depois de aprovada, preencher `EXTENSION_STORE_URL` (liga o card) e trocar a chave/id pelos da loja no CORS e no Clerk. Fase 3: Firefox (sync do Clerk so e documentado para Chrome) e Safari (US$ 99/ano + Xcode, decisao do dono). | Claude / dono |
 | 05/10 | **Campanha de reativacao: medir em 13/10** quem voltou a analisar e quem assinou entre os 200 (AdminAudit `campaign:reactivation_2026_10` x analises/assinaturas depois de 06/10 00:42 UTC) e as respostas em `vinicius@tickrify.com`. Reenviar os 5 recusados depois de rodar o SQL que tira a marca deles (entregue no chat em 05/10). Decidir o plano da Resend: gratis = 100/dia; Pro (US$ 20/mes) tira o limite diario. | Claude / dono |
 | 05/10 | **Ligar no /admin** a chave `EMAIL_CHECKOUT_WINBACK` (reativacao de checkout, texto aprovado pelo dono em 05/10; `EMAIL_SECOND_ANALYSIS_NUDGE` ja foi ligada por ele). Depois conferir no Render `[lifecycle] kind=checkout_winback ... sent=1` e `kind=second_analysis ... sent=1`. | dono |
 | 05/10 | **Decidir `allow_promotion_codes` no anual/semanal.** Sem desconto pre-aplicado a Stripe abre o campo de codigo: quem DIGITAR EARLY35 (ou EARLY50) no anual pode receber o desconto, conforme a configuracao do codigo na Stripe. Fechar o campo nesses ciclos tambem fecha o codigo de afiliado digitado. | dono decide, Claude implementa |
@@ -785,6 +792,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **06/10 (extensao, fase 1):** prova da extensao de navegador em `extension/` (fora do workspace: dentro de `apps/` o pnpm mexeria no lockfile do Render/CI). Demos clicaveis aprovadas pelo dono (Chrome e Safari, TradingView e corretora, niveis no grafico, painel em duas camadas, WAIT com "Wait for"). Backend com `source`/`platform`/`chartSymbol`/`chartTimeframe` opcionais e `Analysis.clientContext`; card de novidade pronto e desligado. Testado com o `content.js` construido numa pagina de teste (todos os estados); o fluxo real depende da config do dono (6.2).
 - **06/10 (CI):** alerta CRITICO novo em `proxy-addr` (<2.0.8, via express do backend; GHSA-jqcg-44mw-7w3h) derrubava o `pnpm audit` do CI desde a tarde. Override `"proxy-addr": "2.0.8"` no `package.json` da raiz; teste de Docker ok (imagem sobe, API + worker, so a 2.0.8 dentro). Risco real baixo para nos (`trust proxy 1`, nao por faixa de IP).
 - **07/10 (funil conferido no PostHog e na Stripe):** recarregar `/dashboard/analysis/:id` contava `upgrade_cta_viewed { source: 'last_free_result' }` duas vezes (uma com chave `unknown` enquanto carregava) e ate quando a analise caia no paywall; agora so conta com a analise na tela. Abrir checkout de outro ciclo expira a sessao aberta (trava 3 do `stripe.service.ts`) e, com ela, a assinatura `incomplete` e a fatura: o link de fatura mandado a mao ao cliente do anual morreu assim quando ele abriu o semanal.
+- **07/10 (extensao no ar para o dono):** `CORS_ORIGINS` e `CLERK_AUTHORIZED_PARTIES` no Render, `allowed_origins` e "Native API" no Clerk; 1a analise real (EURJPY 5m SELL, linhas no lugar). Depois, a pedido dele: paleta do site, painel SO em ingles (o portugues era a conversa), precos copiaveis, linhas ficam no clique parado. A suite achou 2 bugs que cobrariam 2 vezes (trava solta pela analise velha; "comecar" atrasado) e o 1o clique perdido na Binance; corrigidos (3.7, regras 6 a 8).
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

@@ -25,14 +25,18 @@ export default defineContentScript({
     window.__tickrifyLoaded = true;
 
     const listeners = new Set<(message: PanelMessage) => void>();
+    // A mensagem do service worker pode chegar antes do React montar: guarda e
+    // entrega quando o painel se inscreve. Entregar num setTimeout depois do
+    // render perdia o 1o clique em pagina pesada (Binance, 07/10): o React 19
+    // ainda nao tinha rodado o efeito que inscreve.
+    const pending: PanelMessage[] = [];
     const bus: Bus = {
       subscribe(fn) {
         listeners.add(fn);
+        pending.splice(0).forEach((m) => fn(m));
         return () => listeners.delete(fn);
       },
     };
-    // A mensagem do service worker pode chegar antes do React montar: guarda.
-    const pending: PanelMessage[] = [];
     browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse: (alive: boolean) => void) => {
       const m = message as ToContent;
       // O service worker pergunta antes de injetar de novo (ver background.ts).
@@ -61,10 +65,6 @@ export default defineContentScript({
         };
         const root = createRoot(container);
         root.render(<App bus={bus} logo={logo} setHidden={setHidden} />);
-        // Entrega o que chegou antes de montar, depois do primeiro render.
-        setTimeout(() => {
-          pending.splice(0).forEach((m) => listeners.forEach((fn) => fn(m)));
-        }, 0);
         return root;
       },
       onRemove(root) {

@@ -3,7 +3,7 @@ import type { Analysis, AnalysisLevels, Usage } from '@/lib/api';
 import { PLANS_URL, SIGN_IN_URL, analysisUrl } from '@/lib/config';
 import type { Rect } from '@/lib/crop';
 import { fractionsFromAxis, type LevelFractions } from '@/lib/levels';
-import { strings } from '@/lib/i18n';
+import { t } from '@/lib/texts';
 import type { PanelView } from '@/lib/messages';
 import type { PageMeta, Platform } from '@/lib/platform';
 import type { LevelPrices } from './LevelsOverlay';
@@ -15,7 +15,7 @@ export type ReadResult = {
   rec: 'BUY' | 'SELL' | 'WAIT';
   symbol: string;
   timeframe: string;
-  /** Lado da entrada e tipo cru do motor (limit/market); cada idioma monta o rotulo. */
+  /** Lado da entrada e tipo cru do motor (limit/market); o rotulo sai do texts.ts. */
   side: 'BUY' | 'SELL';
   entryType: string | null;
   prices: LevelPrices;
@@ -66,8 +66,6 @@ export function readResult(analysis: Analysis, meta: PageMeta): ReadResult {
   };
 }
 
-// Idioma do navegador (o mesmo que vai para a IA): pt para Chrome em portugues, en no resto.
-const t = strings();
 
 function usageLine(usage: Usage | null): string {
   if (!usage) return '';
@@ -286,6 +284,45 @@ function Analyzing() {
   );
 }
 
+/**
+ * Preco do plano. Um clique copia o numero (o trader cola no boleto da
+ * corretora); as linhas no grafico somem quando ele mexe no grafico, o numero
+ * copiado nao.
+ */
+function PriceCell({ label, value, tone }: { label: string; value: string | null; tone?: 'stop' | 'tp' }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+  const className = `tk-lv${tone ? ` ${tone}` : ''}`;
+  if (!value) {
+    return (
+      <div className={className}>
+        <small>{label}</small>
+        <b>-</b>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className={`${className} tk-copy`}
+      title={t.copyPrice}
+      onClick={() => {
+        navigator.clipboard.writeText(value).then(
+          () => setCopied(true),
+          () => undefined,
+        );
+      }}
+    >
+      <small>{copied ? <span key="copied">{t.copied}</span> : <span key="label">{label}</span>}</small>
+      <b>{value}</b>
+    </button>
+  );
+}
+
 function Result(props: PanelProps & { view: Extract<UiView, { kind: 'result' }> }) {
   const { view } = props;
   const r = readResult(view.analysis, view.meta);
@@ -352,22 +389,10 @@ function Result(props: PanelProps & { view: Extract<UiView, { kind: 'result' }> 
         )
       ) : (
         <div className="tk-levels">
-          <div className="tk-lv">
-            <small>{t.entry(r.entryType ? t.entryType(r.entryType) : null)}</small>
-            <b>{r.prices.entry ?? '-'}</b>
-          </div>
-          <div className="tk-lv stop">
-            <small>{t.stop}</small>
-            <b>{r.prices.stop ?? '-'}</b>
-          </div>
-          <div className="tk-lv tp">
-            <small>{t.target1}</small>
-            <b>{r.prices.tp1 ?? '-'}</b>
-          </div>
-          <div className="tk-lv tp">
-            <small>{t.target2}</small>
-            <b>{r.prices.tp2 ?? '-'}</b>
-          </div>
+          <PriceCell label={t.entry(r.entryType ? r.entryType : null)} value={r.prices.entry} />
+          <PriceCell label={t.stop} value={r.prices.stop} tone="stop" />
+          <PriceCell label={t.target1} value={r.prices.tp1} tone="tp" />
+          <PriceCell label={t.target2} value={r.prices.tp2} tone="tp" />
         </div>
       )}
       {details}

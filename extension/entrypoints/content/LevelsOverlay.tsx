@@ -1,10 +1,9 @@
 import type { Rect } from '@/lib/crop';
-import { strings } from '@/lib/i18n';
+import { t } from '@/lib/texts';
 import { placeLevels, type LevelFractions, type LevelKey } from '@/lib/levels';
 
 export type LevelPrices = Record<LevelKey, string | null>;
 
-const t = strings();
 const LABEL: Record<Exclude<LevelKey, 'entry'>, string> = { stop: t.stop, tp1: 'TP1', tp2: 'TP2' };
 
 /**

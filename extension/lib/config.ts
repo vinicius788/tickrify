@@ -11,9 +11,3 @@ export const TEST_TOKEN: string = import.meta.env.WXT_TEST_TOKEN ?? '';
 export const SIGN_IN_URL = `${SITE_URL}/sign-in`;
 export const PLANS_URL = `${SITE_URL}/dashboard/plans`;
 export const analysisUrl = (id: string) => `${SITE_URL}/dashboard/analysis/${encodeURIComponent(id)}`;
-
-/** Idiomas que o motor escreve; o resto cai no ingles. */
-export function userLanguage(): string {
-  const lang = (navigator.language || 'en').slice(0, 2).toLowerCase();
-  return ['en', 'pt', 'es', 'fr', 'de', 'ja'].includes(lang) ? lang : 'en';
-}

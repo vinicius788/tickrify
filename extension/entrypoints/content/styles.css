@@ -48,6 +48,8 @@
 .tk-lv b { font-size: 14px; font-variant-numeric: tabular-nums; }
 .tk-lv.stop b { color: var(--tk-red); }
 .tk-lv.tp b { color: var(--tk-green); }
+.tk-copy { display: block; width: 100%; text-align: left; color: var(--tk-text); font: inherit; cursor: copy; transition: border-color .15s; }
+.tk-copy:hover { border-color: rgba(255,255,255,.24); }
 .tk-rr { font-size: 12px; color: var(--tk-mute); }
 .tk-rr b { color: var(--tk-text); }
 

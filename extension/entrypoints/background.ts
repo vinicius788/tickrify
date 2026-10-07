@@ -1,8 +1,8 @@
 import { createClerkClient } from '@clerk/chrome-extension/client';
 import { ApiError, createApi, type Usage } from '@/lib/api';
-import { API_URL, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST, TEST_TOKEN, userLanguage } from '@/lib/config';
+import { API_URL, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST, TEST_TOKEN } from '@/lib/config';
 import { cropRectToPixels, fitWithin, type Rect } from '@/lib/crop';
-import { strings } from '@/lib/i18n';
+import { t } from '@/lib/texts';
 import type { CaptureReply, ErrorReason, PanelView, ToBackground, ToContent } from '@/lib/messages';
 import { detectPlatform, type PageMeta, type Platform } from '@/lib/platform';
 
@@ -13,6 +13,10 @@ const lastKey = (tabId: number) => `last:${tabId}`;
 // Abas com analise em andamento. Segundo clique (ou atalho) durante a analise
 // nao captura nem cobra de novo: o painel ja mostra "Analyzing".
 const busyTabs = new Set<number>();
+// Clique no icone em andamento (injetar, ler a cota, avisar a pagina). Sem
+// isso, varios cliques numa pagina recem-carregada entregavam um "comecar"
+// atrasado depois que a 1a analise ja tinha terminado: 2a cobranca (A6, 07/10).
+const startingTabs = new Set<number>();
 const MAX_SIDE = 1600;
 
 /**
@@ -92,25 +96,30 @@ async function ensurePanel(tabId: number): Promise<boolean> {
 
 /** Gesto do trader (icone, atalho ou menu): so aqui o Chrome libera a aba. */
 async function start(tab: { id?: number; url?: string }, again = false): Promise<void> {
-  if (!tab.id || busyTabs.has(tab.id)) return;
+  if (!tab.id || busyTabs.has(tab.id) || startingTabs.has(tab.id)) return;
   const tabId = tab.id;
-  if (!(await ensurePanel(tabId))) {
-    if (again) await showView(tabId, { kind: 'error', reason: 'permission' });
-    return;
-  }
-
-  let usage: Usage;
+  startingTabs.add(tabId);
   try {
-    usage = await api.usage();
-  } catch (err) {
-    if (err instanceof ApiError && err.kind === 'auth') return showView(tabId, { kind: 'signin' });
-    return showView(tabId, errorView(err));
-  }
-  // Mesma trava do servidor: sem analise disponivel, nada e capturado.
-  if (!usage.canAnalyze) return showView(tabId, { kind: 'paywall', usage });
+    if (!(await ensurePanel(tabId))) {
+      if (again) await showView(tabId, { kind: 'error', reason: 'permission' });
+      return;
+    }
 
-  const platform: Platform = detectPlatform(tab.url ?? '');
-  await sendToTab(tabId, { type: 'tk:start', platform, usage });
+    let usage: Usage;
+    try {
+      usage = await api.usage();
+    } catch (err) {
+      if (err instanceof ApiError && err.kind === 'auth') return showView(tabId, { kind: 'signin' });
+      return showView(tabId, errorView(err));
+    }
+    // Mesma trava do servidor: sem analise disponivel, nada e capturado.
+    if (!usage.canAnalyze) return showView(tabId, { kind: 'paywall', usage });
+
+    const platform: Platform = detectPlatform(tab.url ?? '');
+    await sendToTab(tabId, { type: 'tk:start', platform, usage });
+  } finally {
+    startingTabs.delete(tabId);
+  }
 }
 
 /** Print da aba visivel, recortado na area do grafico e reduzido. */
@@ -133,19 +142,26 @@ async function captureChart(
 }
 
 async function analyze(tabId: number, blob: Blob, rect: Rect, platform: Platform, meta: PageMeta): Promise<void> {
+  // Solta a trava da aba uma vez so. O fim desta funcao pode chegar ate 10 s
+  // depois (tk:axis esperando a pagina recarregada); soltar de novo ali
+  // apagava a trava de uma analise NOVA e deixava passar a 2a cobranca (A6, 07/10).
+  let held = true;
+  const release = () => {
+    if (held) busyTabs.delete(tabId);
+    held = false;
+  };
   await showView(tabId, { kind: 'analyzing', meta });
   try {
     const created = await api.analyze(blob, {
       platform,
       chartSymbol: meta.symbol,
       chartTimeframe: meta.timeframe,
-      userLanguage: userLanguage(),
     });
     const analysis = await api.waitForAnalysis(created.id);
     if (analysis.status === 'failed') return showView(tabId, { kind: 'error', reason: 'failed' });
     const usage = await api.usage().catch(() => null);
     await showView(tabId, { kind: 'result', analysis, usage, rect, meta });
-    busyTabs.delete(tabId); // a leitura do eixo abaixo nao segura um novo clique
+    release(); // a leitura do eixo abaixo nao segura um novo clique
     await browser.storage.session.set({ [lastKey(tabId)]: { analysis, usage, rect, meta } });
     // Linhas: so com a escala do eixo lida pelo servidor (o entryY/stopY do
     // motor errou ate ~82 px na medicao de 06/10). Sem escala, so os precos.
@@ -163,7 +179,7 @@ async function analyze(tabId: number, blob: Blob, rect: Rect, platform: Platform
     if (err instanceof ApiError && err.kind === 'auth') return showView(tabId, { kind: 'signin' });
     await showView(tabId, errorView(err));
   } finally {
-    busyTabs.delete(tabId);
+    release();
   }
 }
 
@@ -181,7 +197,6 @@ async function showLast(tab: { id?: number }): Promise<void> {
 
 export default defineBackground(() => {
   browser.runtime.onInstalled.addListener(() => {
-    const t = strings();
     browser.contextMenus.create({ id: MENU_ID, title: t.menuAnalyze, contexts: ['all'] });
     browser.contextMenus.create({ id: MENU_LAST, title: t.menuLast, contexts: ['all'] });
   });
@@ -236,7 +251,6 @@ export default defineBackground(() => {
   browser.alarms.onAlarm.addListener(async (alarm) => {
     if (!alarm.name.startsWith('remind:')) return;
     const stored = await browser.storage.session.get(alarm.name);
-    const t = strings();
     const label = String(stored[alarm.name] ?? t.yourChart);
     await browser.notifications.create(alarm.name, {
       type: 'basic',

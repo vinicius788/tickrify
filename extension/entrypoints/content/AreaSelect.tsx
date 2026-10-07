@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Rect } from '@/lib/crop';
-import { strings } from '@/lib/i18n';
+import { t } from '@/lib/texts';
 
-const t = strings();
 
 const MIN_W = 240;
 const MIN_H = 160;

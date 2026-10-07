@@ -59,7 +59,6 @@ export type AnalyzeContext = {
   platform: 'tradingview' | 'other';
   chartSymbol?: string;
   chartTimeframe?: string;
-  userLanguage: string;
 };
 
 const QUOTA_CODES = ['free_quota_exhausted', 'DEMO_LIMIT_REACHED', 'INSUFFICIENT_TICKS'];
@@ -105,7 +104,8 @@ export function createApi(opts: { baseUrl: string; getToken: () => Promise<strin
       const form = new FormData();
       form.append('image', image, 'chart.jpg');
       form.append('analysisType', 'quick');
-      form.append('userLanguage', ctx.userLanguage);
+      // O painel e em ingles, entao o texto da IA tambem (senao a tela mistura idiomas).
+      form.append('userLanguage', 'en');
       form.append('source', 'extension');
       form.append('platform', ctx.platform);
       if (ctx.chartSymbol) form.append('chartSymbol', ctx.chartSymbol);
