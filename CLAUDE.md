@@ -75,6 +75,11 @@ Vale para TODA mudanca, grande ou pequena:
   `tsc --noEmit` em `apps/backend`. **O build do Render NAO e portao de tipo:** em
   14/09 (`a9ab59b`) um backend que nao compilava foi para producao e ficou ~3h no
   ar. Nao existe rede de seguranca depois do commit.
+- **Extensao (`extension/`, fora do workspace do pnpm, npm proprio):** dentro
+  da pasta, `npm run typecheck`, `npm test` e `npm run build` (gera
+  `.output/chrome-mv3`). Nunca `pnpm install` la dentro: o pnpm sobe para o
+  lockfile da raiz, que o Docker do Render e o CI usam. Nao usar `wxt build`
+  direto (termina o build mas o processo nao sai); o `npm run build` chama a API.
 - O dono nao roda build local: o codigo tem que estar certo na primeira. Rodar o
   typecheck do frontend antes de entregar, sempre.
 - **Na VM do Claude (maquina do dono):** funcionam `./node_modules/.bin/tsc`,
@@ -410,6 +415,79 @@ Vale para TODA mudanca, grande ou pequena:
   e `route`. Cada area do painel tem ErrorBoundary proprio (tentar de novo sem
   recarregar).
 
+### 3.7 Extensao de navegador (06/10, fase 1: prova no Chrome, NAO publicada)
+
+- Codigo em `extension/` (WXT 0.21.4, MV3, React no Shadow DOM, Clerk
+  `@clerk/chrome-extension` 3.1.91). Desenho, plano, demos e passo a passo do
+  dono em `_local/extensao/`.
+- **Disparo so por gesto do trader:** icone da barra, Alt+Shift+T ou menu do
+  botao direito (`activeTab`). Clique em botao injetado na pagina NAO libera
+  `captureVisibleTab` (doc do Chrome): a bolha so mostra/reabre. Nenhuma host
+  permission de plataforma; o painel e injetado por `scripting` depois do
+  clique. Funciona em qualquer site: TradingView acha o grafico sozinho
+  (`.layout__area--center`), nos outros o trader marca a area uma vez por site.
+- **Login:** sessao do site via `syncHost = https://clerk.tickrify.com` (em
+  producao o cookie `__client` mora no dominio do Frontend API, nao no
+  tickrify.com). Exige `cookies` + host permission do clerk.tickrify.com.
+- **Id de desenvolvimento fixo:** `fjmlahaidjmkfiogbmklmnhcaadkmfck` (chave
+  publica no `wxt.config.ts`, privada em `_local/extensao/chave/`). A loja da
+  outro id: CORS e Clerk vao precisar dos dois.
+- **Backend (opcional, retrocompativel):** `CreateAnalysisDto` aceita `source`
+  (`web|extension`), `platform` (`tradingview|other`), `chartSymbol`,
+  `chartTimeframe`. Gravados em `Analysis.clientContext` (JSONB, criada no boot
+  com flag propria e migracao `20261006120000`, FORA do `schema.prisma`, gravada
+  por SQL). O motor NAO le. `free_analysis_started` e `paid_analysis_started`
+  levam `source`. CORS: so a origem exata entra (`CORS_ORIGINS`).
+- **Linhas no grafico = conta, nao estimativa.** O `entryY/stopY/tp1Y/tp2Y` do
+  motor errou ate ~82 px num grafico real e NAO e usado. A extensao pede
+  `GET /api/ai/analysis/:id/price-axis` (so analise da propria conta, da
+  extensao, BUY/SELL; 1 leitura de IA por analise, guardada em
+  `clientContext.priceAxis`; sem tick; `price-axis.ts`): a IA le o preco do
+  topo e da base do recorte pelo eixo e a extensao calcula a altura de cada
+  nivel. Medido em 4 graficos reais x 2 rodadas: pior erro 7,5 px (30 px sem a
+  frase da faixa de datas). Sem escala valida, sem linhas (so os precos).
+  Chamada SEPARADA: prompt do motor, schema e `promptVer` intocados. Medicao em
+  `_local/extensao/medicao-eixo/`. Somem quando o grafico mexe.
+- **Regras que nasceram do teste automatizado (06/10, nao desfazer):** (1)
+  escala do recorte = largura da captura / largura da janela, nunca o
+  `devicePixelRatio` (com 1x numa tela "2x" o recorte pegava a barra lateral);
+  (2) o service worker manda `tk:ping` antes de injetar: reinjetar faz o WXT
+  desmontar o painel e o icone parava de funcionar na pagina; (3) esconder o
+  painel antes do print pelo container DENTRO do Shadow DOM (o
+  `:host { all: initial !important }` do WXT ganha do estilo do host e o
+  painel saia no print); (4) dois cliques durante uma analise nao cobram duas
+  vezes (`busyTabs`); (5) respostas por `sendResponse` + `return true`.
+- **Suite de ponta a ponta (custo zero):** `_local/extensao/e2e/suite.mjs`
+  (Puppeteer + Chrome for Testing, `triggerExtensionAction` libera o
+  `activeTab` como o clique real) contra a API falsa
+  `_local/extensao/fake-api/server.mjs` (porta 8787, salva cada recorte). Build
+  de teste: `WXT_API_URL=http://localhost:8787 WXT_TEST_TOKEN=test npm run build`
+  copiado para `_local/extensao/teste-chrome`, e depois `npm run build` normal
+  de novo. 30/30 em 06/10 (TradingView real, Binance real, zoom 125%, erros,
+  cota, ultima analise). Rodar de novo antes de qualquer subida da extensao.
+- **Camada 3 (06/10, backend real local com banco/Redis descartaveis no Docker,
+  worker da fila, IA de verdade, Clerk de TESTE; `_local/extensao/camada3/` e
+  `e2e/suite3.mjs`): 8/8.** Site sem campos novos igual (clientContext NULL);
+  analise pela extensao grava `clientContext`, aparece no historico e o "Open in
+  Tickrify" aponta a analise certa; WAIT nao gasta; cota esgotou no 3o
+  BUY/SELL; proximo clique = planos sem linha nova; chamada direta ao servidor
+  = 403 `DEMO_LIMIT_REACHED`. CORS real: so a origem oficial passa. 5 analises,
+  ~US$ 0,10.
+- **Linhas no grafico ERRADAS na medicao real (06/10):** EURJPY 1D, stop 182,3
+  desenhado em ~183,7; entrada 181,1 em ~181,8; TP1 177,0 em ~178,2 (erro de
+  0,6 a 1,4 no preco, ate ~80 px). O `entryY/stopY/tp1Y/tp2Y` do motor nao serve
+  para desenhar. Decisao do dono pendente (secao 6).
+- **Painel enxuto (aprovado pelo dono em 06/10, `_local/extensao/demo-painel-enxuto.html`):**
+  cabecalho so com ↻ (analisar de novo) e minimizar; fechar fica no x da bolha;
+  resultado = veredito, 4 precos, R/R do TP1, um "Details" (por que, riscos,
+  invalidacao, R/R do TP2) e UM botao, "Open in Tickrify". Linhas sempre
+  ligadas (sem interruptor). Menu do botao direito "Show my last Tickrify
+  analysis" reabre o ultimo resultado da aba (storage.session, sobrevive a
+  recarregar a pagina) sem analise nova e sem linhas.
+- **Card de novidade** (`ExtensionAnnouncement.tsx`) na tela inicial do painel:
+  so aparece com `EXTENSION_STORE_URL` preenchida (vazia ate a loja aprovar) e
+  em Chrome/Edge de computador. Eventos `extension_card_viewed/clicked/dismissed`.
+
 ---
 
 ## 4. Regras tecnicas que nasceram de bug real (nao desfazer)
@@ -590,6 +668,9 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 06/10 | **Extensao: ligar o teste do dono.** Depois do deploy do backend (os campos novos do DTO precisam estar no ar, senao a extensao toma 400): (1) Render: `CORS_ORIGINS` += `chrome-extension://fjmlahaidjmkfiogbmklmnhcaadkmfck`; ler se `CLERK_AUTHORIZED_PARTIES` existe e, se existir, acrescentar a mesma origem; (2) Clerk: `allowed_origins` da instancia com a mesma origem (PATCH na Backend API, mantendo as que ja existirem); (3) carregar `extension/.output/chrome-mv3` em modo desenvolvedor. Passo a passo em `_local/extensao/como-testar.md`. Conferir no Render que a 1a analise grava `clientContext` e sai `source=extension` no PostHog. | dono / Claude |
+| 06/10 | **Linhas: medir em mais graficos antes de divulgar.** A leitura do eixo foi medida em 4 graficos do TradingView (tema claro, 1D). Falta: tema escuro, intraday, corretoras (area marcada pode nao ter o eixo: a IA tem que devolver null) e o `[Cost] price-axis` real no Render. Se alguma passar de ~15 px, desligar as linhas (a extensao ja fica so com precos quando nao ha escala). | Claude |
+| 06/10 | **Extensao, fase 2:** medir a posicao das linhas (`entryY` etc.) contra o grafico real e o simbolo lido da pagina contra o `extractSymbol`; visual final com o dono; texto da /privacy (envia so o recorte, so no clique); ficha da Chrome Web Store (US$ 5, conta do dono); depois de aprovada, preencher `EXTENSION_STORE_URL` (liga o card) e trocar a chave/id pelos da loja no CORS e no Clerk. Fase 3: Firefox (sync do Clerk so e documentado para Chrome) e Safari (US$ 99/ano + Xcode, decisao do dono). | Claude / dono |
 | 05/10 | **Campanha de reativacao: medir em 13/10** quem voltou a analisar e quem assinou entre os 200 (AdminAudit `campaign:reactivation_2026_10` x analises/assinaturas depois de 06/10 00:42 UTC) e as respostas em `vinicius@tickrify.com`. Reenviar os 5 recusados depois de rodar o SQL que tira a marca deles (entregue no chat em 05/10). Decidir o plano da Resend: gratis = 100/dia; Pro (US$ 20/mes) tira o limite diario. | Claude / dono |
 | 05/10 | **Ligar no /admin** a chave `EMAIL_CHECKOUT_WINBACK` (reativacao de checkout, texto aprovado pelo dono em 05/10; `EMAIL_SECOND_ANALYSIS_NUDGE` ja foi ligada por ele). Depois conferir no Render `[lifecycle] kind=checkout_winback ... sent=1` e `kind=second_analysis ... sent=1`. | dono |
 | 05/10 | **Decidir `allow_promotion_codes` no anual/semanal.** Sem desconto pre-aplicado a Stripe abre o campo de codigo: quem DIGITAR EARLY35 (ou EARLY50) no anual pode receber o desconto, conforme a configuracao do codigo na Stripe. Fechar o campo nesses ciclos tambem fecha o codigo de afiliado digitado. | dono decide, Claude implementa |
@@ -687,6 +768,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **05/10 (diario e topo do painel):** Diario ganhou "Performance this month" (`computeMonthStats` em `lib/journal.ts`, so com os dados que o `/journal` ja manda): R medio PLANEJADO (TP1/TP2 pelo R:R da leitura, Stop = -1), fator de lucro e curva/maior queda trade a trade pelos valores registrados, melhor/pior dia e recortes por ativo, tempo grafico, direcao e dia da semana. Depois, no mesmo dia: "You vs the AI plan" (lista e `/journal` mandam `marketOutcome` = `Analysis.outcome` do sweeper, separado do `outcome` da API, que segue sendo o `userVerdict`) e anotacao por trade (`tradeNote` JSONB: nota ate 1000, setup, emocao e erros em listas fechadas copiadas em `lib/trade-note.ts` e `dto/set-trade-note.dto.ts`; `PATCH /api/ai/analysis/:id/note`, rota separada do resultado; coluna no boot com flag propria `tradeNoteReady`; a nota nunca vai ao prompt nem ao PostHog, que recebe so `trade_note_saved` sem texto). Regra que nasceu daqui: campo novo no `schema.prisma` so DEPOIS de a coluna existir em producao, porque `update`/`create` sem `select` no worker devolvem todas as colunas e quebrariam se o worker rodasse antes do ALTER do boot (deploy em dois commits; prova da coluna = salvar nota vazia responde 200, nao 503). Cartao do plano do assinante saiu da lateral e abre pelo saldo/plano no topo (`TicksBadge`); o gratis segue com o contador na lateral. Raio (Zap) trocado por moedas (saldo) e selo (plano).
 - **05/10 (oferta):** faixa do topo e /pricing diziam que os primeiros assinantes "travam US$ 29/mes" (ja e o preco normal; nada no codigo garante trava). Agora dizem a oferta real, lida da Stripe: X% no 1o mes do mensal com EARLY35, depois US$ 29. O card mensal dos Planos mostra o mesmo; menu do gratis diz "Subscribe" (era "Upgrade to Pro"). Descricao do produto na Stripe trocada pelo dono (dizia "Monthly Ticks" ate no semanal).
 - **05/10:** semana de produto: erro `removeChild` do painel (Google Translate) com causa reproduzida e corrigida, `translate="no"` na area logada e Sentry passando a receber o erro; rotas reais do painel e Planos dentro dele; EARLY35 so no mensal no servidor e na vitrine; gratis esgotado trava historico, diario e resultado no servidor (402) com paywall unico em 6 idiomas; numeros de desempenho fora da home e do corpo pre-renderizado (so na /accuracy); "3 free analyses" corrigido para "3 free trade plans" no resto do site (blog, tools, meta description, FAQ, /try); "cheaper than buying Ticks one by one" removido (nao existe avulso); bloco "How Tickrify works" e leitura do /try no painel; e-mail de boas-vindas redesenhado (marca em texto, versao texto puro, regra verdadeira do gratis) aguardando aprovacao; pergunta de origem vira propriedade de pessoa no PostHog; modelo padrao sem env vira `gpt-5.6-luna`. Detalhe em `_local/funil-2026-10-05.md`.
+- **06/10 (extensao, fase 1):** prova da extensao de navegador em `extension/` (fora do workspace: dentro de `apps/` o pnpm mexeria no lockfile do Render/CI). Demos clicaveis aprovadas pelo dono (Chrome e Safari, TradingView e corretora, niveis no grafico, painel em duas camadas, WAIT com "Wait for"). Backend com `source`/`platform`/`chartSymbol`/`chartTimeframe` opcionais e `Analysis.clientContext`; card de novidade pronto e desligado. Testado com o `content.js` construido numa pagina de teste (todos os estados); o fluxo real depende da config do dono (6.2).
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---
