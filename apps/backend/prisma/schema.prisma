@@ -423,36 +423,6 @@ model AffiliatePayout {
   @@schema("tickrify")
 }
 
-/// Pagamento em cripto (NOWPayments) de um passe pre-pago. Sem relacao Prisma
-/// com User de proposito (o model User nao muda; a FK existe no SQL). Em
-/// producao a tabela nasce pelo `CREATE TABLE IF NOT EXISTS` do
-/// CryptoService.onModuleInit (RUN_MIGRATIONS_ON_START=false).
-///
-/// status: `created` (invoice aberta) e depois o `payment_status` do provedor
-/// (waiting, confirming, confirmed, sending, partially_paid, finished, failed,
-/// refunded, expired). Valor em centavos de USD; o que chegou em cripto fica em
-/// texto (`actuallyPaid`), nunca em ponto flutuante.
-model CryptoPayment {
-  id                String    @id @default(cuid())
-  userId            String
-  pass              String
-  priceCents        Int
-  status            String    @default("created")
-  providerInvoiceId String?   @unique
-  providerPaymentId String?   @unique
-  payCurrency       String?
-  actuallyPaid      String?
-  /// `stripeId` da linha em Subscription criada para o passe (`crypto_<id>`).
-  subscriptionId    String?
-  paidAt            DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-
-  @@index([userId, createdAt])
-  @@index([status])
-  @@schema("tickrify")
-}
-
 /// Nota que o assinante da a uma analise (estrelas abaixo do resultado, 07/10/2026)
 /// e, com licenca, o depoimento que vai para o site. Sem relacao Prisma (a FK
 /// existe no SQL). Em producao a tabela nasce pelo `CREATE TABLE IF NOT EXISTS`

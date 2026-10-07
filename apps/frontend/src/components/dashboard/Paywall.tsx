@@ -1,13 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, Loader2, Lock } from 'lucide-react';
 import { useFoundingOffer } from '@/hooks/useFoundingOffer';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import UpgradeVideo from './UpgradeVideo';
-import { useAnalysisLimit } from '@/hooks/useAnalysisLimit';
-import { CryptoPassDialog, CryptoPayLink } from './CryptoPass';
-import { formatPassDate } from '@/lib/crypto-checkout';
 import { useTestimonials } from '@/lib/ratings';
 
 /**
@@ -48,12 +45,8 @@ const MONTHLY_PRICE_USD = 29;
  * leitura que o assinante recebe.
  */
 const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHref, children }: PaywallProps) => {
-  const { t, language } = useLanguage();
+  const { t } = useLanguage();
   const p = t.paywall;
-  // Passe em cripto vencido: a tela diz isso e oferece renovar em cripto primeiro.
-  const { crypto } = useAnalysisLimit();
-  const passEnded = Boolean(crypto?.enabled && crypto.passEndedAt);
-  const [renewOpen, setRenewOpen] = useState(false);
   // Uma frase real de assinante, so com 2+ depoimentos publicados (com licenca).
   const quote = useTestimonials()[0];
   // O desconto so e anunciado com o cupom ativo na Stripe, e so vale no mensal.
@@ -66,14 +59,9 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
     track('upgrade_cta_viewed', { source: 'paywall', surface });
   }, [surface]);
 
-  const title = passEnded
-    ? t.crypto.endedTitle.replace('{date}', formatPassDate(crypto.passEndedAt, language))
-    : surface === 'new_analysis'
-      ? p.titleNewAnalysis
-      : p.titleArea;
-  const description = passEnded
-    ? t.crypto.endedDesc
-    : surface === 'trades'
+  const title = surface === 'new_analysis' ? p.titleNewAnalysis : p.titleArea;
+  const description =
+    surface === 'trades'
       ? p.descTrades
       : surface === 'journal'
         ? p.descJournal
@@ -130,24 +118,11 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
           </span>
           <h2 className="tk-display text-2xl text-[var(--text-primary)] md:text-3xl">{title}</h2>
           <p className="max-w-[440px] text-sm text-[var(--text-secondary)]">{description}</p>
-          {passEnded ? (
-            <button
-              type="button"
-              onClick={() => setRenewOpen(true)}
-              className="mt-1 inline-flex items-center rounded-xl bg-[var(--signal-buy)] px-6 py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90"
-            >
-              {t.crypto.renew}
-            </button>
-          ) : null}
           <button
             type="button"
             onClick={onWeekly}
             disabled={unlockPending}
-            className={
-              passEnded
-                ? 'inline-flex items-center gap-2 rounded-xl border border-[var(--border-default)] px-5 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-white/[0.04] disabled:opacity-60'
-                : 'mt-1 inline-flex items-center gap-2 rounded-xl bg-[var(--signal-buy)] px-6 py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-60'
-            }
+            className="mt-1 inline-flex items-center gap-2 rounded-xl bg-[var(--signal-buy)] px-6 py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {unlockPending ? (
               <>
@@ -178,7 +153,6 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
           >
             {p.allPlans}
           </Link>
-          {passEnded ? null : <CryptoPayLink surface="paywall" />}
           {quote ? (
             <p className="max-w-[440px] text-xs italic text-[var(--text-secondary)]">
               &ldquo;{quote.comment}&rdquo; · {[quote.displayName, quote.country].filter(Boolean).join(', ') || t.rating.subscriber}
@@ -186,7 +160,6 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
           ) : null}
         </div>
       </div>
-      {passEnded ? <CryptoPassDialog open={renewOpen} onOpenChange={setRenewOpen} surface="pass_ended" /> : null}
 
       <ul className="grid gap-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 text-sm text-[var(--text-primary)] sm:grid-cols-2 md:p-5">
         {[p.benefit1, p.benefit2, p.benefit3, p.benefit4].map((benefit) => (

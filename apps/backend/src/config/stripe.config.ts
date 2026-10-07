@@ -141,8 +141,7 @@ export function allowanceForPriceId(priceId: string | null | undefined): number 
   return plan ? PLAN_TICKS_PER_MONTH[plan] : 0;
 }
 
-/** `pass`: passe pre-pago em cripto, UMA janela que comeca na compra (07/10/2026). */
-export type AllowanceCadence = 'month' | 'week' | 'pass';
+export type AllowanceCadence = 'month' | 'week';
 
 export function allowanceCadenceForPriceId(priceId: string | null | undefined): AllowanceCadence {
   return isWeeklyPriceId(priceId) ? 'week' : 'month';
@@ -164,15 +163,13 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
  * Com periodo de cobranca: meses contados a partir do inicio do periodo (no
  * mensal a janela E o periodo; no anual sao 12 janelas). No semanal, blocos de
  * 7 dias a partir do inicio do periodo, igual ao mes contado no anual. Sem
- * periodo (acesso manual): mes-calendario UTC. Passe em cripto: o proprio
- * inicio do passe (uma janela so, o passe acaba antes da proxima).
+ * periodo (acesso manual): mes-calendario UTC.
  */
 export function allowanceWindowStart(
   periodStart: Date | null | undefined,
   now: Date,
   cadence: AllowanceCadence = 'month',
 ): Date {
-  if (cadence === 'pass' && periodStart) return periodStart;
   if (cadence === 'week' && periodStart) {
     const weeks = Math.max(0, Math.floor((now.getTime() - periodStart.getTime()) / WEEK_MS));
     return new Date(periodStart.getTime() + weeks * WEEK_MS);

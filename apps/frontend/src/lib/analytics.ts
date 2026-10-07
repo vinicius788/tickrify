@@ -402,12 +402,6 @@ export type FunnelEvent =
   | 'checkout_failed'
   // Voltou da Stripe pelo cancel_url sem pagar.
   | 'checkout_canceled'
-  // Passe pre-pago em cripto (NOWPayments, 07/10/2026).
-  | 'crypto_cta_clicked'
-  | 'crypto_checkout_started'
-  | 'crypto_checkout_failed'
-  | 'crypto_return_viewed'
-  | 'crypto_pass_seen_active'
   // Estrelas abaixo do resultado da analise paga (07/10/2026). Texto nunca vai ao PostHog.
   | 'rating_card_viewed'
   | 'rating_card_dismissed'

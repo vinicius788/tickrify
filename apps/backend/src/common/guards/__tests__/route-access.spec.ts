@@ -45,8 +45,6 @@ const RATE_LIMIT_EXEMPT = new Set([
   'health.controller.ts::getHealth',
   // Limitar o Stripe causaria reenvio em loop do webhook. A defesa é o HMAC.
   'stripe.controller.ts::handleWebhook',
-  // Mesmo caso do aviso do NOWPayments: HMAC-SHA512 + releitura na API deles.
-  'crypto.controller.ts::webhook',
 ]);
 
 function listControllerFiles(dir: string): string[] {
@@ -261,9 +259,6 @@ describe('controle de acesso das rotas', () => {
         // Recibo da vitrine: planos ja pontuados pelo sweeper, sem usuario nem imagem.
         'ai.controller.ts::getScoredPublicAnalyses',
         'calendar.controller.ts::getEvents',
-        // Aviso de pagamento do NOWPayments (passe em cripto): quem chama e o
-        // provedor. Corpo autenticado por HMAC e relido na API antes de liberar.
-        'crypto.controller.ts::webhook',
         'demo.controller.ts::analyze',
         'demo.controller.ts::status',
         'health.controller.ts::getHealth',

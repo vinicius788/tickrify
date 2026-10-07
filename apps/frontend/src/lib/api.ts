@@ -304,14 +304,6 @@ export interface AnalysisUsageResponse {
    * ficam para quem assina; o servidor responde 402 `free_quota_exhausted`.
    */
   freeLocked?: boolean;
-  /** Pagamento em cripto (NOWPayments) configurado no servidor: so entao o painel oferece. */
-  cryptoEnabled?: boolean;
-  /** Assinante: como paga. O passe em cripto nao tem portal da Stripe. */
-  paymentMethod?: 'card' | 'crypto' | 'manual' | null;
-  /** Fim do ultimo passe em cripto ativo ou agendado (ISO). */
-  passEndsAt?: string | null;
-  /** Gratis: fim do ultimo passe em cripto vencido (ISO), para a tela de renovar. */
-  cryptoPassEndedAt?: string | null;
 }
 
 /** O servidor recusou porque as analises gratis acabaram (rotas de operacao). */

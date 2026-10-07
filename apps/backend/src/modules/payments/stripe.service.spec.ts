@@ -594,21 +594,6 @@ describe('StripeService webhooks', () => {
       expect(stripe.subscriptions.retrieve).not.toHaveBeenCalled();
     });
 
-    it('passe em cripto: uma janela so, a partir do inicio do passe, sem Stripe', async () => {
-      const start = new Date('2026-09-20T15:30:00Z');
-      await service.ensureTicksForActiveSubscriber('usr_1', {
-        stripeId: 'crypto_ord_1',
-        priceId: STARTER_MONTHLY,
-        currentPeriodStart: start,
-        currentPeriodEnd: new Date(start.getTime() + 30 * 86400000),
-      });
-
-      expect(prisma.tickTransaction.create).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ stripePaymentIntentId: 'allowance:crypto_ord_1:2026-09-20' }) }),
-      );
-      expect(stripe.subscriptions.retrieve).not.toHaveBeenCalled();
-    });
-
     it('falha aqui nao derruba a analise', async () => {
       prisma.tickTransaction.findUnique.mockRejectedValue(new Error('db down'));
 

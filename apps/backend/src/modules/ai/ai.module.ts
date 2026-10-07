@@ -5,10 +5,9 @@ import { AIAdapter } from './ai.adapter';
 import { TicksModule } from '../ticks/ticks.module';
 import { PromptModule } from '../prompt/prompt.module';
 import { PaymentsModule } from '../payments/payments.module';
-import { CryptoModule } from '../crypto/crypto.module';
 
 @Module({
-  imports: [TicksModule, PromptModule, PaymentsModule, CryptoModule],
+  imports: [TicksModule, PromptModule, PaymentsModule],
   controllers: [AiController],
   providers: [AiService, AIAdapter],
   exports: [AIAdapter],

@@ -2,7 +2,6 @@ import { flagBool, flagNumber, resolveAllFlags } from '../../common/flags/featur
 import { Controller, Get, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { EconomicCalendarService } from '../calendar/calendar.service';
-import { isNowPaymentsConfigured } from '../crypto/nowpayments';
 import { getAiQueueReadiness } from '../ai/ai.queue';
 import { hasValidOpenAiKey } from '../../common/utils/ai-runtime';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
@@ -195,9 +194,6 @@ export class HealthController {
       // notícia agendada". 'degraded'/'unavailable' aqui = incidente de
       // claim, exatamente como quickGrounding acima — trate igual.
       calendar: this.calendarService.getFeedStatus(),
-      // Passe pre-pago em cripto: 'disabled' = sem NOWPAYMENTS_API_KEY/IPN_SECRET
-      // (o botao some do painel). Nao e incidente, e escolha de config.
-      cryptoPayments: isNowPaymentsConfigured() ? 'enabled' : 'disabled',
       storage: {
         required: runtimeProduction,
         configured: storageConfigured,

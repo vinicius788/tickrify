@@ -32,7 +32,6 @@ import Paywall, { type PaywallSurface } from "../dashboard/Paywall";
 import AnalysisLoading from "../dashboard/AnalysisLoading";
 import AnalysisCounter from "../dashboard/AnalysisCounter";
 import { TicksBadge } from "@/components/dashboard/TicksBadge";
-import { CryptoReturnNotice } from '@/components/dashboard/CryptoPass';
 import RatingCard from '@/components/dashboard/RatingCard';
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
 import { APIError, isFreeQuotaExhausted, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
@@ -254,7 +253,7 @@ const DashboardPage = () => {
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, isLoading: isPlanLoading, crypto } = useAnalysisLimit();
+  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, isLoading: isPlanLoading } = useAnalysisLimit();
   const queryClient = useQueryClient();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
@@ -1600,8 +1599,8 @@ const DashboardPage = () => {
               </div>
             )}
             <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />
-            {/* Estrelas so para quem paga (o acesso manual do dono fica de fora). */}
-            {!isDemo && isUnlimited && crypto?.paymentMethod !== 'manual' && analysisData?.id ? (
+            {/* Estrelas so para quem paga. */}
+            {!isDemo && isUnlimited && analysisData?.id ? (
               <RatingCard key={analysisData.id} analysisId={analysisData.id} />
             ) : null}
             {!isDemo && showAcquisitionSurvey && acquisitionSurvey}
@@ -1904,7 +1903,7 @@ const DashboardPage = () => {
             <TicksBadge
               showBalance
               subscriber={navbarUnlimited}
-              planText={navbarUnlimited ? (crypto?.paymentMethod === 'crypto' ? t.crypto.planLabel : plan.toUpperCase()) : quotaText}
+              planText={navbarUnlimited ? plan.toUpperCase() : quotaText}
               planSub={navbarUnlimited ? `· ${t.nav.statusActive}` : ''}
             />
           ) : (
@@ -1968,8 +1967,6 @@ const DashboardPage = () => {
 
         <div className="flex flex-1 overflow-hidden">
           <main className="min-w-0 flex-1 overflow-y-auto p-3 md:p-6">
-            {/* Volta do pagamento em cripto (?crypto=): confirmando, ativo, cancelado ou parcial. */}
-            {!isDemo && <CryptoReturnNotice />}
             <div className="flex flex-col gap-6 md:gap-8">
               {/* Uma area que quebra nao derruba o painel inteiro: o menu
                   continua funcionando, trocar de area remonta (key) e o erro

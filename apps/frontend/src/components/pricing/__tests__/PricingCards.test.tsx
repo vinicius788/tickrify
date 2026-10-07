@@ -11,8 +11,6 @@ vi.mock('@/lib/stripe', async (importOriginal) => {
   return { ...actual, createCheckoutSession: (...args: unknown[]) => createCheckoutSession(...args) };
 });
 vi.mock('../../../lib/api', () => ({ warmupPaymentsApi: vi.fn() }));
-// O link de cripto tem teste proprio (crypto-pass.test.tsx); aqui so atrapalharia o mock do Clerk.
-vi.mock('@/components/dashboard/CryptoPass', () => ({ CryptoPayLink: () => null }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock('@/lib/i18n/LanguageContext', () => ({ useLanguage: () => ({ language: 'en' }) }));

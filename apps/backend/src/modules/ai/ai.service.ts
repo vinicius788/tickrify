@@ -13,7 +13,6 @@ import {
   Injectable,
   Logger,
   OnModuleInit,
-  Optional,
   ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -57,8 +56,6 @@ import {
   type RecoveryEmailDeps,
 } from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
-import { CryptoService } from '../crypto/crypto.service';
-import { CRYPTO_PASS_PREFIX, isCryptoPassId, refreshCryptoPasses } from '../crypto/crypto-pass';
 import { TRADE_EMOTIONS, TRADE_MISTAKES, TRADE_NOTE_MAX, TRADE_SETUPS } from './dto/set-trade-note.dto';
 import { trackFreeAnalysisCompleted, trackFreeAnalysisStarted } from '../../common/analytics/free-funnel';
 import { analysisFailureCodeForResponse, safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../../common/analytics/analysis-failure';
@@ -175,8 +172,6 @@ export class AiService implements OnModuleInit {
     private promptBuilder: PromptBuilderService,
     private stripeService: StripeService,
     private mailService: MailService,
-    // Opcional so para os testes antigos que montam o servico na mao.
-    @Optional() private cryptoService?: CryptoService,
   ) {}
 
   /**
@@ -1166,7 +1161,6 @@ export class AiService implements OnModuleInit {
     if (!paidAccess) {
       const quota = await getFreeQuota(this.prisma, userId);
       const freeLocked = quota.settledExhausted && !(await this.isAdmin(userId));
-      const crypto = await this.cryptoUsageFree(userId);
       return {
         plan: 'free',
         period: 'monthly',
@@ -1185,14 +1179,10 @@ export class AiService implements OnModuleInit {
         // Gratis esgotado: o painel trava historico, diario e marcacao de
         // resultado (mesma regra de `isFreeLocked`).
         freeLocked,
-        cryptoEnabled: crypto.cryptoEnabled,
-        // Ultimo passe em cripto vencido: o painel mostra "renove" em vez do paywall comum.
-        cryptoPassEndedAt: crypto.cryptoPassEndedAt,
       };
     }
 
     const { plan: planName, billingCycle } = await this.resolvePaidPlan(userId);
-    const crypto = await this.cryptoUsagePaid(userId);
     const weekly = billingCycle === 'weekly';
 
     return {
@@ -1207,10 +1197,6 @@ export class AiService implements OnModuleInit {
       tickBalance,
       canAnalyze: canAnalyzeWithTicks,
       analysesAllTime,
-      cryptoEnabled: crypto.cryptoEnabled,
-      // Passe em cripto nao tem portal da Stripe: o painel mostra a data de fim.
-      paymentMethod: crypto.paymentMethod,
-      passEndsAt: crypto.passEndsAt,
     };
   }
 
@@ -1509,47 +1495,6 @@ export class AiService implements OnModuleInit {
     };
   }
 
-  /**
-   * Passe em cripto no /usage. `cryptoEnabled`: o painel so mostra "Pay with
-   * crypto" com o NOWPayments configurado. Pagante: como paga (o passe nao tem
-   * portal da Stripe) e quando o ultimo passe termina. Gratis: quando o ultimo
-   * passe vencido terminou, para a tela de renovar.
-   */
-  private async cryptoUsagePaid(
-    userId: string,
-  ): Promise<{ cryptoEnabled: boolean; paymentMethod: 'crypto' | 'manual' | 'card' | null; passEndsAt: string | null }> {
-    const cryptoEnabled = this.cryptoService?.isEnabled() ?? false;
-    const active = await this.prisma.subscription.findFirst({
-      where: { userId, status: { in: ACTIVE_SUBSCRIPTION_STATUSES } },
-      orderBy: { updatedAt: 'desc' },
-      select: { stripeId: true },
-    });
-    const paymentMethod = !active
-      ? null
-      : isCryptoPassId(active.stripeId)
-        ? 'crypto'
-        : String(active.stripeId ?? '').startsWith('manual_')
-          ? 'manual'
-          : 'card';
-    if (paymentMethod !== 'crypto') return { cryptoEnabled, paymentMethod, passEndsAt: null };
-    const last = await this.prisma.subscription.findFirst({
-      where: { userId, stripeId: { startsWith: CRYPTO_PASS_PREFIX }, status: { in: ['active', 'scheduled'] } },
-      orderBy: { currentPeriodEnd: 'desc' },
-      select: { currentPeriodEnd: true },
-    });
-    return { cryptoEnabled, paymentMethod, passEndsAt: last?.currentPeriodEnd?.toISOString() ?? null };
-  }
-
-  private async cryptoUsageFree(userId: string): Promise<{ cryptoEnabled: boolean; cryptoPassEndedAt: string | null }> {
-    const cryptoEnabled = this.cryptoService?.isEnabled() ?? false;
-    const ended = await this.prisma.subscription.findFirst({
-      where: { userId, stripeId: { startsWith: CRYPTO_PASS_PREFIX }, status: 'expired' },
-      orderBy: { currentPeriodEnd: 'desc' },
-      select: { currentPeriodEnd: true },
-    });
-    return { cryptoEnabled, cryptoPassEndedAt: ended?.currentPeriodEnd?.toISOString() ?? null };
-  }
-
   /** Analise paga criada: custo, saldo que sobrou e plano, no evento e no perfil. */
   private async trackPaidAnalysisStarted(
     userId: string,
@@ -1737,14 +1682,6 @@ export class AiService implements OnModuleInit {
 
   // Publico: a rota de estrategia (ai.controller) consome para checar acesso pago.
   async hasPaidAccess(userId: string): Promise<boolean> {
-    // Passe em cripto vencido sai antes da consulta: a trava entra no minuto
-    // em que ele vence. Falha aqui nao derruba a analise (a varredura do
-    // worker repete a cada 15 min).
-    try {
-      await refreshCryptoPasses(this.prisma, userId);
-    } catch (error) {
-      this.logger.warn(`[crypto] Nao consegui atualizar os passes de ${userId}: ${(error as Error)?.message}`);
-    }
     const activeSubscription = await this.prisma.subscription.findFirst({
       where: {
         userId,

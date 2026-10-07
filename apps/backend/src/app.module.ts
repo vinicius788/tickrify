@@ -6,7 +6,6 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { DatabaseModule } from './modules/database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { PaymentsModule } from './modules/payments/payments.module';
-import { CryptoModule } from './modules/crypto/crypto.module';
 import { RatingsModule } from './modules/ratings/ratings.module';
 import { AiModule } from './modules/ai/ai.module';
 import { PromptModule } from './modules/prompt/prompt.module';
@@ -43,7 +42,6 @@ import { HttpLoggingInterceptor } from './common/interceptors/http-logging.inter
     MailModule,
     AuthModule,
     PaymentsModule,
-    CryptoModule,
     RatingsModule,
     TicksModule,
     AiModule,
