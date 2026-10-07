@@ -790,15 +790,18 @@ const DashboardPage = () => {
   // isto so dava para medir o clique, nunca quem viu e ignorou. Enquanto o plano
   // carrega, `remaining` e 0 para todo mundo (ate assinante): sem esperar, o
   // recarregar de /dashboard/analysis/:id contava uma oferta que ninguem viu.
+  // Pela URL, so conta com a analise JA na tela: antes contava uma vez com a
+  // chave 'unknown' enquanto carregava e outra quando chegava (07/10/2026), e
+  // contava ate quando a analise caia no paywall.
   const lastFreeCtaSeenFor = useRef<string | null>(null);
   useEffect(() => {
     if (activeView !== 'analysis-result' || isDemo || isUnlimited || isPlanLoading) return;
     if (!Number.isFinite(remaining) || remaining > 0) return;
-    const key = lastAnalysisId || 'unknown';
-    if (lastFreeCtaSeenFor.current === key) return;
+    const key = route.section === 'analysis' ? (analysisInMemory ? routeAnalysisId : null) : lastAnalysisId || 'unknown';
+    if (!key || lastFreeCtaSeenFor.current === key) return;
     lastFreeCtaSeenFor.current = key;
     track('upgrade_cta_viewed', { source: 'last_free_result' });
-  }, [activeView, isDemo, isUnlimited, isPlanLoading, remaining, lastAnalysisId]);
+  }, [activeView, isDemo, isUnlimited, isPlanLoading, remaining, lastAnalysisId, route.section, analysisInMemory, routeAnalysisId]);
   // Barra do WAIT (topo do resultado): vista uma vez por analise.
   const isWaitResult = ['WAIT', 'HOLD'].includes(String(analysisData?.recommendation || '').toUpperCase());
   const waitNudgeSeenFor = useRef<string | null>(null);

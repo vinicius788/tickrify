@@ -686,6 +686,35 @@ describe('DashboardPage', () => {
 
       await waitFor(() => expect(lastFreeViewed()).toBe(true));
     });
+
+    it('recarregar a analise conta a oferta UMA vez, so depois de ela chegar', async () => {
+      mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 3, remaining: 0, isUnlimited: false, isLoading: false });
+      let resolve: (value: unknown) => void = () => {};
+      const getAnalysis = vi.fn().mockReturnValue(new Promise((r) => { resolve = r; }));
+      mockUseAPIClient.mockReturnValue(makeApiClient({ getAnalysis }));
+      renderDashboard('/dashboard/analysis/a-1');
+
+      await waitFor(() => expect(getAnalysis).toHaveBeenCalledWith('a-1'));
+      expect(lastFreeViewed()).toBe(false);
+      resolve({ id: 'a-1', status: 'completed', recommendation: 'SELL' });
+      expect(await screen.findByText('Analysis result')).toBeTruthy();
+      await waitFor(() => expect(lastFreeViewed()).toBe(true));
+      const views = mockTrack.mock.calls.filter(
+        ([event, props]) => event === 'upgrade_cta_viewed' && props?.source === 'last_free_result',
+      );
+      expect(views).toHaveLength(1);
+    });
+
+    it('analise que cai no paywall nao conta a oferta da ultima gratis', async () => {
+      mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 3, remaining: 0, isUnlimited: false, freeLocked: true, isLoading: false });
+      const getAnalysis = vi.fn().mockRejectedValue(Object.assign(new Error('locked'), { status: 402, code: 'free_quota_exhausted' }));
+      mockUseAPIClient.mockReturnValue(makeApiClient({ getAnalysis }));
+      renderDashboard('/dashboard/analysis/a-9');
+
+      await waitFor(() => expect(getAnalysis).toHaveBeenCalledWith('a-9'));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(lastFreeViewed()).toBe(false);
+    });
   });
 
   describe('gratis esgotado', () => {
