@@ -504,7 +504,12 @@ Vale para TODA mudanca, grande ou pequena:
   principal branco, verde/vermelho/amarelo so para sinal, rotulos em mono).
   Erro mostra `Detalhe:` com o codigo tecnico (e loga `[Tickrify]` no console do
   service worker). Mensagem para o painel tenta por ~10 s (pagina pesada
-  recem-carregada perdia o clique). Suite e2e oscila com a maquina carregada
+  recem-carregada perdia o clique). **Clique responde na hora** (07/10): o
+  painel mostra "Checking your account" logo depois de injetar, antes de
+  conferir login e cota; o Clerk carrega UMA vez por gesto (`refreshSession`
+  no clique, `loadClerk` reaproveita nas chamadas seguintes, teto de 20 s) em
+  vez de um `load` na rede por chamada (cota, envio e cada consulta da
+  analise). O dono via o clique no icone "travar" (2 a 3 s de tela parada). Suite e2e oscila com a maquina carregada
   (load > 10): rodar de novo antes de concluir que quebrou.
 - **Card de novidade** (`ExtensionAnnouncement.tsx`) na tela inicial do painel:
   so aparece com `EXTENSION_STORE_URL` preenchida (vazia ate a loja aprovar) e
@@ -690,7 +695,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
-| 06/10 | **Linhas: medir em mais graficos antes de divulgar.** A leitura do eixo foi medida em 4 graficos do TradingView (tema claro, 1D). Falta: tema escuro, intraday, corretoras (area marcada pode nao ter o eixo: a IA tem que devolver null) e o `[Cost] price-axis` real no Render. Se alguma passar de ~15 px, desligar as linhas (a extensao ja fica so com precos quando nao ha escala). | Claude |
+| 06/10 | **Linhas: medir em mais graficos antes de divulgar.** A leitura do eixo foi medida em 4 graficos do TradingView (tema claro, 1D) e, em 07/10, num print real do dono (XAUUSD 5m, tema ESCURO, Pepperstone): as 4 linhas no preco certo pelo eixo, erro de ~1 px. Falta: corretoras (area marcada pode nao ter o eixo: a IA tem que devolver null) e o `[Cost] price-axis` real no Render. Se alguma passar de ~15 px, desligar as linhas (a extensao ja fica so com precos quando nao ha escala). | Claude |
 | 06/10 | **Extensao, fase 2:** conferir o simbolo lido da pagina contra o `extractSymbol`; visual final com o dono; texto da /privacy (envia so o recorte, so no clique); ficha da Chrome Web Store (US$ 5, conta do dono); depois de aprovada, preencher `EXTENSION_STORE_URL` (liga o card) e trocar a chave/id pelos da loja no CORS e no Clerk. Fase 3: Firefox (sync do Clerk so e documentado para Chrome) e Safari (US$ 99/ano + Xcode, decisao do dono). | Claude / dono |
 | 05/10 | **Campanha de reativacao: medir em 13/10** quem voltou a analisar e quem assinou entre os 200 (AdminAudit `campaign:reactivation_2026_10` x analises/assinaturas depois de 06/10 00:42 UTC) e as respostas em `vinicius@tickrify.com`. Reenviar os 5 recusados depois de rodar o SQL que tira a marca deles (entregue no chat em 05/10). Decidir o plano da Resend: gratis = 100/dia; Pro (US$ 20/mes) tira o limite diario. | Claude / dono |
 | 05/10 | **Ligar no /admin** a chave `EMAIL_CHECKOUT_WINBACK` (reativacao de checkout, texto aprovado pelo dono em 05/10; `EMAIL_SECOND_ANALYSIS_NUDGE` ja foi ligada por ele). Depois conferir no Render `[lifecycle] kind=checkout_winback ... sent=1` e `kind=second_analysis ... sent=1`. | dono |

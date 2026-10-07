@@ -35,6 +35,7 @@ export const t = {
   notSure: 'Not sure',
   analyzeThisChart: 'Analyze this chart',
   adjustArea: 'Adjust area',
+  starting: 'Checking your account',
   analyzing: 'Analyzing your chart',
   analyzingNote: 'About 20 seconds. You can keep trading.',
   lastOnTab: 'Your last analysis on this tab.',

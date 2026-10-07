@@ -184,6 +184,13 @@ function Body(props: PanelProps) {
       return <Paywall usage={view.usage ?? props.usage} />;
     case 'confirm':
       return <Confirm meta={view.meta} onConfirm={props.onConfirm} onAdjustArea={props.onAdjustArea} />;
+    case 'starting':
+      return (
+        <div>
+          <span className="tk-spin" />
+          <b>{t.starting}</b>
+        </div>
+      );
     case 'analyzing':
       return <Analyzing />;
     case 'error':

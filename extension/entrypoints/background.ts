@@ -19,15 +19,43 @@ const busyTabs = new Set<number>();
 const startingTabs = new Set<number>();
 const MAX_SIDE = 1600;
 
+const CLERK_LOAD_TIMEOUT_MS = 20_000;
+type ClerkClient = Awaited<ReturnType<typeof createClerkClient>>;
+let clerkClient: Promise<ClerkClient> | null = null;
+
 /**
- * Sessao do Clerk sincronizada com tickrify.com (syncHost). Um cliente novo a
- * cada gesto: o modo background le o cookie de sessao no `load`, entao quem
- * acabou de entrar no site ja aparece logado sem reiniciar a extensao.
+ * Sessao do Clerk sincronizada com tickrify.com (syncHost). O cliente e
+ * carregado de novo a cada GESTO (`refreshSession` no clique): o modo
+ * background le o cookie de sessao no `load`, entao quem acabou de entrar no
+ * site ja aparece logado. Dentro do gesto o mesmo cliente serve todas as
+ * chamadas; antes cada chamada (cota, envio, cada consulta da analise) fazia
+ * um `load` na rede e o clique ficava 2 a 3 s sem nada na tela (07/10).
  */
+function refreshSession(): void {
+  clerkClient = null;
+}
+
+function loadClerk(): Promise<ClerkClient> {
+  if (!clerkClient) {
+    const loading = new Promise<ClerkClient>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new ApiError('timeout', 'Sign-in check timed out')), CLERK_LOAD_TIMEOUT_MS);
+      createClerkClient({ publishableKey: CLERK_PUBLISHABLE_KEY, syncHost: CLERK_SYNC_HOST, background: true })
+        .then(resolve, reject)
+        .finally(() => clearTimeout(timer));
+    });
+    // Falhou: o proximo pedido tenta carregar de novo.
+    loading.catch(() => {
+      if (clerkClient === loading) clerkClient = null;
+    });
+    clerkClient = loading;
+  }
+  return clerkClient;
+}
+
 async function getToken(): Promise<string | null> {
   if (TEST_TOKEN) return TEST_TOKEN;
   if (!CLERK_PUBLISHABLE_KEY) return null;
-  const clerk = await createClerkClient({ publishableKey: CLERK_PUBLISHABLE_KEY, syncHost: CLERK_SYNC_HOST, background: true });
+  const clerk = await loadClerk();
   return clerk.session ? await clerk.session.getToken() : null;
 }
 
@@ -99,11 +127,14 @@ async function start(tab: { id?: number; url?: string }, again = false): Promise
   if (!tab.id || busyTabs.has(tab.id) || startingTabs.has(tab.id)) return;
   const tabId = tab.id;
   startingTabs.add(tabId);
+  refreshSession();
   try {
     if (!(await ensurePanel(tabId))) {
       if (again) await showView(tabId, { kind: 'error', reason: 'permission' });
       return;
     }
+    // Resposta na hora: conferir login e cota leva ate ~2 s na rede.
+    await showView(tabId, { kind: 'starting' });
 
     let usage: Usage;
     try {

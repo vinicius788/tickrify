@@ -7,6 +7,8 @@ export type ErrorReason = 'permission' | 'auth' | 'timeout' | 'network' | 'serve
 /** O que o painel mostra quando quem manda e o service worker. */
 export type PanelView =
   | { kind: 'signin' }
+  // Logo depois do clique, enquanto confere login e cota.
+  | { kind: 'starting' }
   | { kind: 'paywall'; usage: Usage | null }
   | { kind: 'analyzing'; meta: PageMeta }
   // `restored`: reaberto pelo menu "Show my last Tickrify analysis" (sem linhas:
