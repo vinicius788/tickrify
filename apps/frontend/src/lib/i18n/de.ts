@@ -507,6 +507,13 @@ export default {
     step3Text: 'Einstieg, Stop, Ziele und Risiko, wenn es ein sauberes Setup gibt. Ein WAIT mit dem, was sich ändern müsste, wenn nicht.',
     note: 'Eine zweite Meinung vor dem Einstieg, kein Signaldienst. Tickrify platziert nie Orders und verspricht keinen Gewinn: Die Entscheidung liegt immer bei dir.',
   },
+  // Card de novidade da extensao no painel (so aparece com o link da loja).
+  extensionCard: {
+    title: 'Neu: Tickrify für Chrome',
+    body: 'Analysiere den Chart, den du schon offen hast, mit einem Klick. Keine Screenshots mehr.',
+    cta: 'Zu Chrome hinzufügen',
+    dismiss: 'Nicht jetzt',
+  },
   feedback: {
     title: 'Wie gefällt dir Tickrify bisher?',
     subtitle: 'Was funktioniert, was verwirrt, was fehlt. Nur das Tickrify-Team liest das.',

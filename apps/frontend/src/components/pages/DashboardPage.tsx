@@ -10,6 +10,7 @@ import NewAnalysis from "../dashboard/NewAnalysis";
 import EmptyState from '@/components/dashboard/EmptyState';
 import AcquisitionSurvey from '@/components/dashboard/AcquisitionSurvey';
 import FeedbackCard from '@/components/dashboard/FeedbackCard';
+import ExtensionAnnouncement from '@/components/dashboard/ExtensionAnnouncement';
 import {
   VERDICT_MAX_ROWS,
   VERDICT_MIN_AGE_MS,
@@ -1314,6 +1315,10 @@ const DashboardPage = () => {
         {/* Opiniao livre, lida no /admin (aba Opinioes). So para quem ja fez
             ao menos uma analise (antes disso nao ha o que opinar) e nunca junto
             da pergunta de origem: um pedido por vez. */}
+        {/* Novidade: extensao de navegador. So aparece com o link da loja
+            preenchido e em Chrome/Edge de computador. */}
+        {!isDemo && <ExtensionAnnouncement />}
+
         {!isDemo && !showAcquisitionSurvey && dashboardKpis.total > 0 && <FeedbackCard />}
 
         {/* Heatmap de consistência — mecânica de hábito + card "printável" */}

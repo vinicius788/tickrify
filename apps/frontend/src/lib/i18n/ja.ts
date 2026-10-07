@@ -507,6 +507,13 @@ export default {
     step3Text: 'きれいなセットアップがあれば、エントリー、ストップ、ターゲット、リスク。なければ、何が変われば入れるかを添えたWAIT。',
     note: 'エントリー前のセカンドオピニオンであり、シグナル配信ではありません。Tickrifyが注文を出すことはなく、利益も約束しません。判断は常にあなたのものです。',
   },
+  // Card de novidade da extensao no painel (so aparece com o link da loja).
+  extensionCard: {
+    title: '新登場: Chrome 版 Tickrify',
+    body: '開いているチャートをワンクリックで分析。スクリーンショットはもう不要です。',
+    cta: 'Chrome に追加',
+    dismiss: '後で',
+  },
   feedback: {
     title: 'ここまでのTickrifyの感想を教えてください',
     subtitle: '良かった点、わかりにくい点、足りない点。Tickrifyのチームだけが読みます。',

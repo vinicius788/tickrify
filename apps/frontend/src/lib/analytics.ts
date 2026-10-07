@@ -390,6 +390,10 @@ export type FunnelEvent =
   // Quadrinho de opiniao do painel (o texto fica so no banco, nunca no PostHog).
   | 'feedback_sent'
   | 'feedback_dismissed'
+  // Card de novidade da extensao de navegador (so com o link da loja).
+  | 'extension_card_viewed'
+  | 'extension_card_clicked'
+  | 'extension_card_dismissed'
   | 'upgrade_cta_clicked'
   | 'upgrade_clicked'
   // Disparado quando a Stripe DEVOLVEU a URL do checkout, nao no clique.
