@@ -33,6 +33,7 @@ import AnalysisLoading from "../dashboard/AnalysisLoading";
 import AnalysisCounter from "../dashboard/AnalysisCounter";
 import { TicksBadge } from "@/components/dashboard/TicksBadge";
 import { CryptoReturnNotice } from '@/components/dashboard/CryptoPass';
+import RatingCard from '@/components/dashboard/RatingCard';
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
 import { APIError, isFreeQuotaExhausted, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
@@ -1599,6 +1600,10 @@ const DashboardPage = () => {
               </div>
             )}
             <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />
+            {/* Estrelas so para quem paga (o acesso manual do dono fica de fora). */}
+            {!isDemo && isUnlimited && crypto?.paymentMethod !== 'manual' && analysisData?.id ? (
+              <RatingCard key={analysisData.id} analysisId={analysisData.id} />
+            ) : null}
             {!isDemo && showAcquisitionSurvey && acquisitionSurvey}
             {!isDemo && (
               <div className="flex flex-col gap-4 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">

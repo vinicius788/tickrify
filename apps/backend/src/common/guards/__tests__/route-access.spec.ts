@@ -274,6 +274,8 @@ describe('controle de acesso das rotas', () => {
         'mail.controller.ts::unsubscribeOneClick',
         'mail.controller.ts::unsubscribePage',
         'market.controller.ts::getContext',
+        // Depoimentos do site: so com licenca do assinante e aprovacao do admin.
+        'ratings.controller.ts::testimonials',
         'stripe.controller.ts::getOffer',
         'stripe.controller.ts::handleWebhook',
       ].sort(),

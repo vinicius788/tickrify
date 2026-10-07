@@ -408,6 +408,11 @@ export type FunnelEvent =
   | 'crypto_checkout_failed'
   | 'crypto_return_viewed'
   | 'crypto_pass_seen_active'
+  // Estrelas abaixo do resultado da analise paga (07/10/2026). Texto nunca vai ao PostHog.
+  | 'rating_card_viewed'
+  | 'rating_card_dismissed'
+  | 'rating_given'
+  | 'rating_details_sent'
   // Voltou da Stripe na success_url. So UX: a confirmacao de pagamento e o
   // `checkout_completed` do backend.
   | 'checkout_success_viewed'

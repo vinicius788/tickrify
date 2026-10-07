@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { useSeo, seoFor } from '@/hooks/useSeo';
 import RelatosPainel from '@/components/admin/RelatosPainel';
+import NotasPainel from '@/components/admin/NotasPainel';
 import OrigemPainel from '@/components/admin/OrigemPainel';
 import AfiliadosPainel from '@/components/admin/AfiliadosPainel';
 
@@ -273,7 +274,12 @@ export default function AdminPage() {
 
         {aba === 'relatos' && <RelatosPainel />}
 
-        {aba === 'opinioes' && <RelatosPainel kind="feedback" />}
+        {aba === 'opinioes' && (
+          <div className="flex flex-col gap-8">
+            <NotasPainel />
+            <RelatosPainel kind="feedback" />
+          </div>
+        )}
 
         {aba === 'origem' && <OrigemPainel />}
 

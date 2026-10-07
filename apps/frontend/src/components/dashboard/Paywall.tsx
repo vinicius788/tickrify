@@ -8,6 +8,7 @@ import UpgradeVideo from './UpgradeVideo';
 import { useAnalysisLimit } from '@/hooks/useAnalysisLimit';
 import { CryptoPassDialog, CryptoPayLink } from './CryptoPass';
 import { formatPassDate } from '@/lib/crypto-checkout';
+import { useTestimonials } from '@/lib/ratings';
 
 /**
  * Onde o paywall apareceu. Vai em todo evento (`upgrade_cta_viewed`,
@@ -53,6 +54,8 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
   const { crypto } = useAnalysisLimit();
   const passEnded = Boolean(crypto?.enabled && crypto.passEndedAt);
   const [renewOpen, setRenewOpen] = useState(false);
+  // Uma frase real de assinante, so com 2+ depoimentos publicados (com licenca).
+  const quote = useTestimonials()[0];
   // O desconto so e anunciado com o cupom ativo na Stripe, e so vale no mensal.
   const offer = useFoundingOffer();
   const firstMonth = offer?.percentOff
@@ -176,6 +179,11 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
             {p.allPlans}
           </Link>
           {passEnded ? null : <CryptoPayLink surface="paywall" />}
+          {quote ? (
+            <p className="max-w-[440px] text-xs italic text-[var(--text-secondary)]">
+              &ldquo;{quote.comment}&rdquo; · {[quote.displayName, quote.country].filter(Boolean).join(', ') || t.rating.subscriber}
+            </p>
+          ) : null}
         </div>
       </div>
       {passEnded ? <CryptoPassDialog open={renewOpen} onOpenChange={setRenewOpen} surface="pass_ended" /> : null}

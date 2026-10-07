@@ -452,3 +452,32 @@ model CryptoPayment {
   @@index([status])
   @@schema("tickrify")
 }
+
+/// Nota que o assinante da a uma analise (estrelas abaixo do resultado, 07/10/2026)
+/// e, com licenca, o depoimento que vai para o site. Sem relacao Prisma (a FK
+/// existe no SQL). Em producao a tabela nasce pelo `CREATE TABLE IF NOT EXISTS`
+/// do RatingsService.onModuleInit.
+///
+/// `published` so o admin liga, e so com `quoteConsent` e comentario. A rota
+/// publica devolve apenas publicado + licenca + nota >= 4.
+model AnalysisRating {
+  id             String   @id @default(cuid())
+  userId         String
+  analysisId     String
+  rating         Int
+  /// Lista FECHADA (RATING_REASONS); nada livre aqui.
+  reasons        Json?
+  comment        String?
+  quoteConsent   Boolean  @default(false)
+  displayName    String?
+  country        String?
+  /// Veredito da analise no momento da nota (BUY/SELL/WAIT), para a media por tipo.
+  recommendation String?
+  published      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, analysisId])
+  @@index([published, createdAt])
+  @@schema("tickrify")
+}

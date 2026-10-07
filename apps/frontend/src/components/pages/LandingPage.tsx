@@ -7,6 +7,7 @@ import PlatformDemoSection from '@/components/landing/PlatformDemoSection';
 import FeaturesSection from '@/components/landing/FeaturesSection';
 import RecentAnalysesSection from '@/components/landing/RecentAnalysesSection';
 import PricingSection from '@/components/landing/PricingSection';
+import TestimonialsSection from '@/components/landing/TestimonialsSection';
 import FaqSection from '@/components/landing/FaqSection';
 import FinalCtaSection from '@/components/landing/FinalCtaSection';
 import { seoFor, useSeo } from '@/hooks/useSeo';
@@ -32,6 +33,7 @@ const LandingPage = () => {
       <PlatformDemoSection />
       <FeaturesSection />
       <RecentAnalysesSection />
+      <TestimonialsSection />
       <PricingSection />
       <FaqSection />
       <FinalCtaSection />

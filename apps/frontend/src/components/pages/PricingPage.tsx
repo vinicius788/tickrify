@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import SiteLayout from '@/components/layout/SiteLayout';
 import { PricingCards } from '@/components/pricing/PricingCards';
+import TestimonialsSection from '@/components/landing/TestimonialsSection';
 import { seoFor, useJsonLd, useSeo } from '@/hooks/useSeo';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useFoundingOffer } from '@/hooks/useFoundingOffer';
@@ -182,6 +183,8 @@ export default function PricingPage() {
           </div>
         </div>
       </section>
+
+      <TestimonialsSection />
 
       <section className="site-dark">
         <div className="site-wrap site-faq">
