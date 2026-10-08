@@ -279,6 +279,7 @@ function pricingFaqBlock(items) {
 function navBlock(current) {
   const links = [
     ['/', 'AI chart analysis'],
+    ['/about', 'About Tickrify'],
     ['/pricing', 'Pricing'],
     ['/accuracy', 'Accuracy scoreboard'],
     ['/try', 'Try it free, no signup'],
@@ -377,6 +378,18 @@ export function buildBody({ path, meta, copy, accuracy, pricingFaq }) {
       /* As MESMAS perguntas que a tela mostra. Sem isto o crawler que não
        * executa JS via uma pergunta só nesta rota. */
       pricingFaqBlock(pricingFaq)
+    );
+  } else if (path === '/about') {
+    parts.push(
+      '<h1>About Tickrify</h1>',
+      '<p>Tickrify is an independent, bootstrapped SaaS platform for AI-powered technical chart analysis. It is built by founder Vinicius Marques de Oliveira in Belo Horizonte, Brazil.</p>',
+      '<h2>What the product does</h2>',
+      '<p>Tickrify analyzes trading charts, identifies market structures and lays out potential entries, stop-loss levels and targets. When conditions do not support a trade setup, it can describe scenarios to wait for instead.</p>',
+      '<h2>Where we are going</h2>',
+      '<p>Our future goal is to develop specialized agents using Claude to improve analytical precision, technical reasoning and the engineering behind each analysis. These agents are a development objective, not a current product feature.</p>',
+      '<h2>Company status</h2>',
+      '<p>Tickrify is an independent startup and has not been formally incorporated.</p>',
+      '<p>Visit <a href="https://tickrify.com">tickrify.com</a>.</p>'
     );
   } else if (path === '/try' && l) {
     parts.push(
@@ -486,6 +499,24 @@ export function readPricingFaq(root) {
 export function buildJsonLd({ path, copy, accuracy, offer, pricingFaq }) {
   const l = copy?.landing ?? null;
   let data = null;
+
+  if (path === '/about') {
+    data = {
+      '@context': 'https://schema.org',
+      '@type': 'AboutPage',
+      '@id': `${SITE}/about#webpage`,
+      name: 'About Tickrify',
+      url: `${SITE}/about`,
+      about: {
+        '@type': 'Organization',
+        '@id': `${SITE}/#organization`,
+        name: 'Tickrify',
+        founder: { '@type': 'Person', name: 'Vinicius Marques de Oliveira' },
+        address: { '@type': 'PostalAddress', addressLocality: 'Belo Horizonte', addressCountry: 'BR' },
+      },
+    };
+    return { id: 'about', data };
+  }
 
   if (path === '/' && l) {
     data = {

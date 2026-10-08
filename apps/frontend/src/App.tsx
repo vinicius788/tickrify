@@ -38,6 +38,7 @@ const TermsPage = lazy(() => import("@/components/pages/TermsPage"));
 const CookiePolicyPage = lazy(() => import("@/components/pages/CookiePolicyPage"));
 const RiskDisclosurePage = lazy(() => import("@/components/pages/RiskDisclosurePage"));
 const PrivacyPolicyPage = lazy(() => import("@/components/pages/PrivacyPolicyPage"));
+const AboutPage = lazy(() => import("@/components/pages/AboutPage"));
 const NotFoundPage = lazy(() => import("@/components/pages/NotFoundPage"));
 
 /** Enquanto o arquivo da rota chega: so o fundo da pagina, sem texto nem salto de layout. */
@@ -139,6 +140,7 @@ function App() {
           <Route path="/try" element={<TryPage />} />
           <Route path="/demo/*" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
           <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/about" element={<AboutPage />} />
           {/* Política de privacidade. A rota canônica é /privacy (site global,
               texto em inglês). /privacidade continua respondendo porque é o
               endereço que já circula — links antigos e indexação — e quebrá-lo

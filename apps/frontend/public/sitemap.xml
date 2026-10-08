@@ -21,6 +21,7 @@
      que o usuario faz ao modelo, nao termos que ele digita na busca. Todos tem
      Article + FAQPage em JSON-LD, e o /blog/ ganhou ItemList para o crawler
      enxergar a lista inteira sem precisar parsear o HTML. -->
+<!-- Updated 2026-10-08: added /about, the company information page. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://tickrify.com/</loc>
@@ -33,6 +34,10 @@
   <url>
     <loc>https://tickrify.com/pricing</loc>
     <lastmod>2026-08-24</lastmod>
+  </url>
+  <url>
+    <loc>https://tickrify.com/about</loc>
+    <lastmod>2026-10-08</lastmod>
   </url>
   <url>
     <loc>https://tickrify.com/accuracy</loc>

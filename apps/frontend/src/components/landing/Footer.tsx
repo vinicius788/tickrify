@@ -82,6 +82,7 @@ const Footer = () => {
           <div className="site-footer-col">
             <h2>{f.company}</h2>
             <ul>
+              <li><Link to="/about">About</Link></li>
               <li><a href="/blog/">{f.blog}</a></li>
               <li><a href="/#faq">{f.faq}</a></li>
               <li><a href="mailto:support@tickrify.com">{f.support}</a></li>
