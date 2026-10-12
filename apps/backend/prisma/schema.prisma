@@ -118,11 +118,15 @@ model Analysis {
   // Anotacao do trader no Diario: { note, setup, emotion, mistakes }. So ele le;
   // nunca vai para o prompt. Lida e gravada por SQL (AiService.setTradeNote).
   tradeNote      Json?
+  // Versao de um setup acompanhado (TrackedSetup.id). NULL = analise avulsa.
+  // So entrou aqui depois de a coluna existir em producao (boot do SetupsService).
+  setupId        String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+  @@index([setupId])
   @@index([status])
   @@index([outcome, createdAt])
   @@index([promptVer, outcome])
@@ -430,6 +434,27 @@ model AffiliatePayout {
 ///
 /// `published` so o admin liga, e so com `quoteConsent` e comentario. A rota
 /// publica devolve apenas publicado + licenca + nota >= 4.
+/// Setup acompanhado (12/10/2026): o trader segue uma analise e volta para
+/// atualizar com analises novas (Analysis.setupId). Lido e gravado por SQL
+/// (SetupsService); seguir nao e entrar nem favoritar.
+model TrackedSetup {
+  id             String    @id @default(uuid())
+  userId         String
+  /// A analise que comecou o setup. Unico: seguir duas vezes e um setup so.
+  rootAnalysisId String    @unique
+  /// tracking | untracked | archived. Nada e apagado.
+  status         String    @default("tracking")
+  symbol         String?
+  timeframe      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now())
+  lastAnalysisAt DateTime  @default(now())
+  archivedAt     DateTime?
+
+  @@index([userId, status, lastAnalysisAt])
+  @@schema("tickrify")
+}
+
 model AnalysisRating {
   id             String   @id @default(cuid())
   userId         String
