@@ -78,6 +78,10 @@ Vale para TODA mudanca, grande ou pequena:
   `tsc --noEmit` em `apps/backend`. **O build do Render NAO e portao de tipo:** em
   14/09 (`a9ab59b`) um backend que nao compilava foi para producao e ficou ~3h no
   ar. Nao existe rede de seguranca depois do commit.
+- **Gancho `pre-push` (`.githooks/pre-push`, 12/10):** roda `pnpm check`, o
+  `tsc` do backend e o `pnpm test` antes de todo push, porque o Actions do repo
+  privado so tem 2.000 min/mes gratis. Liga com
+  `git config core.hooksPath .githooks`; `git push --no-verify` so com motivo.
 - **Extensao (`extension/`, fora do workspace do pnpm, npm proprio):** dentro
   da pasta, `npm run typecheck`, `npm test` e `npm run build` (gera
   `.output/chrome-mv3`). Nunca `pnpm install` la dentro: o pnpm sobe para o
@@ -768,7 +772,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 | 28/09 | **Afiliados: configuracao manual na Stripe antes de divulgar.** (1) Criar cupom 10%, `duration: once`, e pôr o id em `STRIPE_AFFILIATE_COUPON_ID` no Render (sem ele: sem desconto para indicado e sem promotion code; a comissao funciona igual). (2) Marcar `charge.refunded` e `charge.dispute.created` no endpoint do webhook. (3) Afiliados que entraram ANTES do (1) ficam "sem promotion code" no admin: salvar o perfil deles de novo cria o codigo. Conferir no boot log `[affiliate] Tabelas prontas. Cupom da Stripe: configurado`. | dono |
 | 05/10 | Acompanhar o acerto do `promptVer` 12 (v7.5) contra o 10/11 quando houver amostra: `select "promptVer", count(*) filter (where outcome='WIN') win, count(*) filter (where outcome='LOSS') loss from tickrify."Analysis" where outcome in ('WIN','LOSS') group by 1 order by 1;`. O WAIT% caiu para o limite de baixo do alvo; se o acerto do 12 cair, a alavanca e a decisao do R/R guard (30/09), nao o prompt. | dono roda, Claude le |
 | 24/09 | Comentario do `schema.prisma` diz que a imagem "nao e mais salva": errado, a print e salva no Supabase Storage. Corrigir na proxima mudanca de schema. Evento candidato no funil: `trade_result_logged`. | Claude |
-| 21/09 | **GitHub Actions parado** ("recent account payments have failed or your spending limit needs to be increased"): conferir se CI, `calendar-mirror` e `backup` voltaram a rodar. Ultimo backup valido: 16/09. Apagar os artifacts antigos (703 MB) para liberar a cota. | dono |
+| 21/09 | **GitHub Actions parado** ("recent account payments have failed or your spending limit needs to be increased"). Diagnostico de 12/10: NAO e cartao; e a cota gratis do repo privado (2.000 min/mes) esgotada em outubro pelo CI que rodava ate 6h (29/09 a 05/10, ~1.700 min de relogio x 6 jobs). Volta sozinho na virada do mes; ate la o portao e o `pre-push` (secao 1.3). Desde 12/10 todo job tem `timeout-minutes` e o CI cancela a execucao anterior. Conferir em novembro se CI, `calendar-mirror` e `backup` voltaram. Ultimo backup valido: 16/09. | dono / Claude |
 | 21/09 | **CLS oscilou de 0 a 0,128** no PageSpeed mobile. Suspeito nº1: troca de fonte depois do `media="print"`. Se passar de 0,1 em varios runs: self-host das fontes ou fallback com `size-adjust`, sem desfazer o `media="print"`. | Claude |
 | 21/09 | Performance: 416 KB de JS nao usado na home; i18n dos 6 idiomas no bundle principal; `DashboardPage` (1.200+ linhas) sem memoizacao estudada; contraste; erros de console; 8 de 43 alvos de toque abaixo de 32px; pesos da Geist nunca auditados. | Claude |
 | 21/09 | Reset mensal: a primeira tela do painel mostrou o saldo antigo (corrida entre `/ticks/balance` e `/usage`). Nao corrigido. | Claude |
@@ -858,6 +862,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **07/10 (cripto, desistido):** passe pre-pago em cripto via NOWPayments foi implementado e publicado (commit `6698806`) e REMOVIDO no mesmo dia por decisao do dono: a assinatura continua so pela Stripe. Nunca foi ligado (sem chaves), nenhum pagamento. Motivo da ideia, se voltar: nos paises emergentes 8 de 8 recusas desde set/26 foram do BANCO (Stripe/Radar nao bloqueiam nada; Radar so com regras padrao). Pesquisa: Stripe Crypto nao atende conta BR; Coinbase Commerce fechou fora de US/SG; NOWPayments serve, mas o repasse em USDT TRC20 pode custar varios dolares por pagamento (usar rede barata). Desenho e demo em `_local/cripto/`.
 - **12/10 (setups, Parte A):** seguir um setup a partir de qualquer analise e atualizar com o fluxo normal de nova analise (versoes em `/dashboard/setups/:id`, secao no topo do inicio); tabela `TrackedSetup` + `Analysis.setupId` por SQL, testado num Postgres descartavel (30 casos: dono, idempotencia, teto, clique duplo, cursores, ordem das versoes).
 - **12/10 (chat, Parte B):** chat com o fundador dentro da bolha do painel (aba padrao), aba Chat no /admin com "Start conversation" pelo e-mail, avisos por e-mail com teto (chave `CHAT_EMAIL_NOTIFY` desligada); /privacy cita as mensagens do chat. Testado num Postgres descartavel (37 casos: isolamento, texto puro, limite por hora, nao lidas, tetos de e-mail com relogio falso, descadastro).
+- **12/10 (testes em producao):** setups e chat testados logado no Chrome do dono (seguir, atualizar com print novo cobrando 1 tick, versao 2 no setup, arquivar, chat ida e volta com nao lidas, /admin, 375 px). Achados corrigidos: condicao do WAIT tambem do `alternativeScenario` e "First analysis" com a data da 1a analise (nao a de seguir).
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

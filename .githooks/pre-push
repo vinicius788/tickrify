@@ -1,0 +1,15 @@
+#!/bin/sh
+# Portao local antes de todo `git push` (12/10/2026). O GitHub Actions do
+# repositorio privado tem 2.000 min/mes gratis e ja ficou sem cota; este gancho
+# roda na maquina o mesmo que o CI: tipos, testes e build dos dois lados.
+# Ligar uma vez:   git config core.hooksPath .githooks
+# Emergencia:      git push --no-verify   (pula o portao; usar so com motivo)
+set -e
+cd "$(git rev-parse --show-toplevel)"
+echo "[pre-push] frontend: tipos, testes e build (pnpm check)"
+pnpm check
+echo "[pre-push] backend: tipos"
+(cd apps/backend && ./node_modules/.bin/tsc --noEmit)
+echo "[pre-push] backend: testes"
+pnpm test
+echo "[pre-push] ok"

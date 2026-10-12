@@ -39,6 +39,9 @@ concurrency:
 jobs:
   mirror:
     runs-on: ubuntu-latest
+    # Teto: um job travado nao pode comer a cota de 2.000 min/mes (29/09 a 05/10
+    # cada CI rodava ate 6h e esgotou outubro).
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 

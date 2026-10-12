@@ -3,6 +3,13 @@ name: CI
 on:
   pull_request:
   push:
+    branches: [main]
+
+# Push novo cancela o CI anterior do mesmo ramo: so o ultimo commit interessa,
+# e cada execucao gasta minutos da cota gratis.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   NODE_VERSION: "20"
@@ -14,6 +21,9 @@ jobs:
   install:
     name: Install
     runs-on: ubuntu-latest
+    # Teto: um job travado nao pode comer a cota de 2.000 min/mes (29/09 a 05/10
+    # cada CI rodava ate 6h e esgotou outubro).
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,6 +50,9 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    # Teto: um job travado nao pode comer a cota de 2.000 min/mes (29/09 a 05/10
+    # cada CI rodava ate 6h e esgotou outubro).
+    timeout-minutes: 15
     needs: install
     steps:
       - name: Checkout
@@ -73,6 +86,9 @@ jobs:
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
+    # Teto: um job travado nao pode comer a cota de 2.000 min/mes (29/09 a 05/10
+    # cada CI rodava ate 6h e esgotou outubro).
+    timeout-minutes: 15
     needs: install
     steps:
       - name: Checkout
@@ -113,6 +129,9 @@ jobs:
   auditoria:
     name: Auditoria de segurança
     runs-on: ubuntu-latest
+    # Teto: um job travado nao pode comer a cota de 2.000 min/mes (29/09 a 05/10
+    # cada CI rodava ate 6h e esgotou outubro).
+    timeout-minutes: 15
     needs: install
     steps:
       - name: Checkout
@@ -139,6 +158,9 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    # Teto: um job travado nao pode comer a cota de 2.000 min/mes (29/09 a 05/10
+    # cada CI rodava ate 6h e esgotou outubro).
+    timeout-minutes: 15
     needs: install
     steps:
       - name: Checkout
@@ -175,6 +197,9 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    # Teto: um job travado nao pode comer a cota de 2.000 min/mes (29/09 a 05/10
+    # cada CI rodava ate 6h e esgotou outubro).
+    timeout-minutes: 15
     needs:
       - lint
       - typecheck
