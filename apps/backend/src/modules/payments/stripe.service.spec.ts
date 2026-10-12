@@ -529,6 +529,15 @@ describe('StripeService webhooks', () => {
     const SEPT_10 = new Date(Date.UTC(2026, 8, 10, 18, 27));
     const OCT_10 = new Date(Date.UTC(2026, 9, 10, 18, 27));
 
+    // A janela mensal e calculada a partir de "agora": o relogio fica dentro do periodo 10/09 a 10/10.
+    beforeEach(() => {
+      jest.useFakeTimers({ now: new Date('2026-09-20T12:00:00Z'), doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
     it('assinante atual (periodo 10/09): primeira checagem define o saldo em 200', async () => {
       prisma.userTicks.findUnique.mockResolvedValue({ balance: 358 });
 
