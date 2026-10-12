@@ -139,7 +139,7 @@ const SetupsSection = ({
                       ) : null}
                     </p>
                     <p className="mt-1 font-terminal text-[11px] text-[var(--text-secondary)]">
-                      {`${s.firstAnalysis.replace('{date}', formatSetupDay(setup.createdAt, locale))} · ${s.updated
+                      {`${s.firstAnalysis.replace('{date}', formatSetupDay(setup.firstAnalysisAt, locale))} · ${s.updated
                         .replace('{relative}', formatSetupRelative(setup.lastAnalysisAt, locale))
                         .replace('{date}', formatSetupDay(setup.lastAnalysisAt, locale))}`}
                     </p>

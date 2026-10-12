@@ -136,6 +136,8 @@ describe('Follow setup no resultado', () => {
 describe('Setups no inicio do painel', () => {
   const listed = {
     ...SETUP,
+    // Passou a seguir em 10/10, mas a 1a analise e de 08/10: o cartao mostra 08/10.
+    firstAnalysisAt: '2026-10-08T10:00:00.000Z',
     versions: 2,
     latest: { analysisId: 'analysis00002', createdAt: '2026-10-11T10:00:00.000Z', recommendation: 'WAIT', entryCondition: 'Close above 1.0950' },
   };
@@ -146,7 +148,7 @@ describe('Setups no inicio do painel', () => {
     wrap(<SetupsSection base="/dashboard" onNewAnalysis={vi.fn()} showEmpty />);
 
     expect(await screen.findByText("Setups you're following")).toBeTruthy();
-    expect(screen.getByText(/First analysis Oct 10/)).toBeTruthy();
+    expect(screen.getByText(/First analysis Oct 8 /)).toBeTruthy();
     expect(screen.getByText('Waiting for: Close above 1.0950 (from Oct 11)')).toBeTruthy();
     // Nada de preco atual, "monitoring" ou alerta.
     expect(document.body.textContent).not.toMatch(/monitor|live|alert|current price/i);

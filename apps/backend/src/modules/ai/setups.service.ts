@@ -69,6 +69,7 @@ export type SetupSummary = {
   symbol: string | null;
   timeframe: string | null;
   rootAnalysisId: string;
+  /** Quando a pessoa passou a seguir (nao e a data da 1a analise). */
   createdAt: Date;
   lastAnalysisAt: Date;
 };
@@ -119,7 +120,10 @@ export function readPlan(result: unknown, recommendation: string | null) {
     stopLoss: trade ? price(analysis.stopLoss) : null,
     takeProfit1: trade ? price(analysis.takeProfit1) : null,
     takeProfit2: trade ? price(analysis.takeProfit2) : null,
-    entryCondition: trade ? null : text(analysis.entryCondition, 400),
+    // No WAIT o gatilho as vezes vem so no cenario alternativo ("If price
+    // closes above 82,000, reassess for BUY"), com `entryCondition` vazio. A tela
+    // do resultado ja mostra os dois; aqui vale o primeiro que existir.
+    entryCondition: trade ? null : text(analysis.entryCondition, 400) ?? text(analysis.alternativeScenario, 400),
   };
 }
 
@@ -345,10 +349,20 @@ export class SetupsService implements OnModuleInit {
       after = Prisma.sql`AND (s."lastAnalysisAt", s."id") < (${anchor.lastAnalysisAt}, ${anchor.id})`;
     }
     const rows = await this.prisma.$queryRaw<
-      Array<SetupRow & { versions: number; latestAnalysisId: string | null; latestAt: Date | null; latestRecommendation: string | null; latestResult: unknown }>
+      Array<
+        SetupRow & {
+          versions: number;
+          firstAnalysisAt: Date | null;
+          latestAnalysisId: string | null;
+          latestAt: Date | null;
+          latestRecommendation: string | null;
+          latestResult: unknown;
+        }
+      >
     >`
       SELECT s."id", s."userId", s."status", s."symbol", s."timeframe", s."rootAnalysisId", s."createdAt", s."lastAnalysisAt",
         l."id" AS "latestAnalysisId", l."createdAt" AS "latestAt", l."recommendation" AS "latestRecommendation", l."result" AS "latestResult",
+        (SELECT r."createdAt" FROM "tickrify"."Analysis" r WHERE r."id" = s."rootAnalysisId" AND r."userId" = s."userId") AS "firstAnalysisAt",
         (SELECT COUNT(*)::int FROM "tickrify"."Analysis" v
           WHERE v."setupId" = s."id" AND v."userId" = s."userId" AND v."status" = 'completed') AS "versions"
       FROM "tickrify"."TrackedSetup" s
@@ -369,6 +383,8 @@ export class SetupsService implements OnModuleInit {
         const plan = readPlan(row.latestResult, row.latestRecommendation);
         return {
           ...toSummary(row),
+          // Data da analise que comecou o setup (o cartao diz "First analysis").
+          firstAnalysisAt: row.firstAnalysisAt ?? row.createdAt,
           versions: Number(row.versions) || 0,
           latest: row.latestAnalysisId
             ? {

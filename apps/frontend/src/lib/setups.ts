@@ -21,6 +21,8 @@ export interface SetupSummary {
 }
 
 export interface FollowedSetup extends SetupSummary {
+  /** Data da analise que comecou o setup (`createdAt` e quando passou a seguir). */
+  firstAnalysisAt: string;
   versions: number;
   latest: {
     analysisId: string;

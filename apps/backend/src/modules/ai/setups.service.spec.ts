@@ -231,6 +231,7 @@ describe('SetupsService', () => {
           {
             ...SETUP,
             versions: 2,
+            firstAnalysisAt: new Date('2026-10-08T10:00:00Z'),
             latestAnalysisId: 'analysis00002',
             latestAt: new Date('2026-10-11T09:00:00Z'),
             latestRecommendation: 'WAIT',
@@ -244,6 +245,7 @@ describe('SetupsService', () => {
 
     expect(items[0]).toMatchObject({
       id: SETUP.id,
+      firstAnalysisAt: new Date('2026-10-08T10:00:00Z'),
       versions: 2,
       latest: { analysisId: 'analysis00002', recommendation: 'WAIT', entryCondition: 'Retest of 1.0950 holds' },
     });
@@ -260,6 +262,13 @@ describe('SetupsService', () => {
     await expect(service.follow({ id: 'u1' }, 'analysis00001')).rejects.toMatchObject({ status: 503 });
     await expect(service.assertUpdatable('u1', SETUP.id)).rejects.toMatchObject({ status: 503 });
     expect(calls).toHaveLength(0);
+  });
+
+  it('readPlan: WAIT sem entryCondition usa o cenario alternativo (onde o motor as vezes poe o gatilho)', () => {
+    const result = { analysis: { entryCondition: null, alternativeScenario: 'If price closes above 82,000, reassess for BUY toward 82,400.' } };
+    expect(readPlan(result, 'WAIT').entryCondition).toBe('If price closes above 82,000, reassess for BUY toward 82,400.');
+    expect(readPlan({ analysis: { entryCondition: 'Close above 1.0950', alternativeScenario: 'x' } }, 'WAIT').entryCondition).toBe('Close above 1.0950');
+    expect(readPlan({ analysis: { alternativeScenario: 'x', entry: 1 } }, 'BUY').entryCondition).toBeNull();
   });
 
   it('readPlan: WAIT nunca devolve precos; simbolo vazio vira null', () => {
