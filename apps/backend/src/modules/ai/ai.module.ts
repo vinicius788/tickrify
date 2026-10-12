@@ -12,6 +12,6 @@ import { PaymentsModule } from '../payments/payments.module';
   imports: [TicksModule, PromptModule, PaymentsModule],
   controllers: [AiController, SetupsController],
   providers: [AiService, AIAdapter, SetupsService],
-  exports: [AIAdapter],
+  exports: [AIAdapter, AiService],
 })
 export class AiModule {}

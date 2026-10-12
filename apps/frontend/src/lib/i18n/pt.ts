@@ -680,8 +680,27 @@ export default {
     ja: '日本語',
   },
   // Botão flutuante de reportar problema (ReportProblemButton).
+  // Chat com o fundador (12/10/2026), dentro da bolha "Chat, feedback or problem".
+  chat: {
+    title: 'Fale com o Vinícius, fundador da Tickrify',
+    subtitle: 'Costuma responder em algumas horas',
+    welcome: 'Oi, eu sou o Vinícius, criei a Tickrify. Me conte o que está faltando ou o que não ficou claro, eu mesmo leio.',
+    placeholder: 'Escreva uma mensagem',
+    send: 'Enviar',
+    sending: 'Enviando',
+    hint: 'Enter envia, Shift+Enter pula linha.',
+    you: 'Você',
+    founder: 'Vinícius',
+    loadEarlier: 'Ver mensagens anteriores',
+    failed: 'Não enviou. Tente de novo em instantes.',
+    rateLimited: 'Você mandou muitas mensagens na última hora. Tente de novo daqui a pouco.',
+    unavailable: 'O chat está fora do ar agora. Tente de novo em instantes.',
+    unread: '{n} não lidas',
+    menu: 'Conversar com o Vinícius',
+  },
   report: {
-    bubble: 'Opinião ou problema',
+    bubble: 'Chat, opinião ou problema',
+    tabChat: 'Chat',
     tabOpinion: 'Dar sua opinião',
     button: 'Reportar problema',
     title: 'O que aconteceu?',

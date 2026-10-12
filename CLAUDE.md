@@ -542,6 +542,31 @@ Vale para TODA mudanca, grande ou pequena:
 - `schema.prisma` so ganha `TrackedSetup` e `setupId` DEPOIS do deploy (patch
   em `_local/setups-chat/`, ver secao 6).
 
+### 3.9 Chat com o fundador (12/10, Parte B; aguardando commit/deploy)
+
+- **Feito em casa**, sem widget de terceiro (cookie, /privacy, sumiria para
+  quem recusa). Uma conversa por pessoa (`SupportThread`, unico em `userId`) e
+  `SupportMessage` (texto puro, 1 a 2000 caracteres), por SQL em
+  `modules/support/`. Rotas `/api/support/{thread,messages,read}` so da conversa
+  do token; `/api/admin/support/threads*` com AdminGuard. NAO passa pelo
+  `isFreeLocked`: quem esta no paywall consegue falar. 20 mensagens/hora por
+  pessoa (contado no banco).
+- **Tela:** a bolha virou "Chat, feedback or problem" com o chat como aba
+  padrao ("Talk to Vinícius, founder of Tickrify", "Usually replies within a
+  few hours", sem bolinha verde); numero de nao lidas no botao e no menu do
+  painel; `?chat=open` abre direto. Polling 10 s com o chat aberto e 60 s para
+  o contador, parado com a aba oculta. /admin ganhou a aba Chat (`?aba=chat`).
+- **E-mails** (`chat-email.ts`, chave `CHAT_EMAIL_NOTIFY` DESLIGADA = so
+  `[chat] dry-run`): `chat_founder_notify` para `FOUNDER_CHAT_NOTIFY_TO`
+  (padrao support@), com o texto, 1 por conversa a cada 15 min;
+  `chat_reply` ("Vinícius replied", sem o texto) se a pessoa nao leu em 10 min,
+  1 por conversa a cada 6 h, nunca para descadastrado (varredura no worker a
+  cada 5 min). Reserva por UPDATE condicional (2 instancias no Render).
+- **PostHog sem texto:** `chat_message_sent { threadId, author, length,
+  isSubscriber, freeLocked }`, `chat_thread_started { startedBy }`,
+  `chat_reply_email_sent`, `chat_founder_notify_sent`; navegador
+  `chat_opened { surface, unread }`, `chat_message_submitted { length }`.
+
 ---
 
 ## 4. Regras tecnicas que nasceram de bug real (nao desfazer)
@@ -722,6 +747,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 12/10 | **Chat (Parte B) no ar:** (1) conferir no boot `[chat] Tabelas prontas.`; (2) escolher a frase de boas-vindas do chat (versao 1 no ar); (3) ligar no /admin `CHAT_EMAIL_NOTIFY` quando quiser os avisos por e-mail (conferir depois `[mail] Enviado kind=chat_founder_notify` e `kind=chat_reply`; lembrar que a Resend gratis e 100/dia para tudo); (4) so depois do deploy aplicar `_local/setups-chat/schema-parte-b.patch` e commitar. Medir por semana: conversas iniciadas pelo usuario, tempo ate a 1a resposta, e % de quem conversou que analisou ou assinou em 7 dias contra quem nao conversou (leitura, sem afirmar causa). | dono / Claude |
 | 12/10 | **Setups (Parte A) no ar:** (1) depois do deploy, conferir no boot `[setups] Tabela e coluna prontas.`; (2) rodar no Supabase `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Analysis_setupId_idx" ON "tickrify"."Analysis"("setupId");` (desfazer: `DROP INDEX CONCURRENTLY IF EXISTS "tickrify"."Analysis_setupId_idx";`); (3) so entao aplicar o patch do `schema.prisma` (`_local/setups-chat/schema-parte-a.patch`) e commitar. Medir em 7 dias: % de quem seguiu e fez `setup_update_completed` em OUTRO dia em ate 7 dias; 2a analise de quem tomou WAIT na 1a (hoje ~50%); dias distintos com analise por semana entre assinantes. | dono / Claude |
 | 08/10 | **Proximo experimento: teste mais longo (tese do dono).** O dono acha que 3 analises nao bastam para o trader ver se o produto e bom: "se ele testar 3 dias e no 4o pensar *preciso disso*, assina". Pensar bem antes de fazer. Combinado: NAO trocar o gratis (e o que traz gente; 83% de quem cadastra analisa) nem pedir cartao no cadastro (o cartao e o buraco: 11 de 12 checkouts sem cartao digitado, 40% de recusa por falta de saldo). Desenho candidato: no PAYWALL, opcao "3 days full access" com cartao, virando semanal/mensal no 4o dia; variante "3 days for $1" (a cobranca de US$ 1 ja testa o cartao no dia 1, nao entrega 3 dias de IA a quem nao vai conseguir pagar). Stripe tem trial nativo. Medir checkout iniciado x cartao digitado x pago no dia 5 contra o funil atual (13 abrem, 1 paga). Antes: dono assiste ~10 gravacoes do PostHog (session replay) de quem ficou 10+ min sem assinar (perdido ou interessado?). Mexe em cobranca: demo clicavel e ok do dono antes de codigo. Junto: credibilidade (depoimentos no ar, texto "How I use Tickrify", "Who's behind this" com foto, video de 60 s) e conversa 1 a 1 com os pagantes (SQL de uso por assinante entregue no chat em 08/10; mensagem citando o uso real + 1 mes gratis por call de 15 min). | dono decide / Claude |
 | 07/10 | **Estrelas e depoimentos.** "How useful was this read?" abaixo do resultado de analise PAGA (`RatingCard`, 1x/semana; respondeu, 30 dias). Nota alta pede frase + licenca OPT-IN para citar; nota baixa, motivos de lista fechada. Tabela `AnalysisRating` (migracao `20261007130000` + boot), `modules/ratings/`. /admin aba Opinioes: notas, media por BUY/SELL/WAIT e botao Publicar (so com licenca e comentario, o servidor confere). Site: `TestimonialsSection` na home e na /pricing e uma frase no paywall, SO com 2+ publicados. PostHog: `rating_card_viewed`, `rating_given`, `rating_details_sent`, `analysis_rated` (servidor), sem texto. Falta: commit/deploy; bloco "How I use Tickrify" do dono (precisa do texto dele). | dono / Claude |
@@ -831,6 +857,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **07/10 (extensao no ar para o dono):** `CORS_ORIGINS` e `CLERK_AUTHORIZED_PARTIES` no Render, `allowed_origins` e "Native API" no Clerk; 1a analise real (EURJPY 5m SELL, linhas no lugar). Depois, a pedido dele: paleta do site, painel SO em ingles (o portugues era a conversa), precos copiaveis, linhas ficam no clique parado. A suite achou 2 bugs que cobrariam 2 vezes (trava solta pela analise velha; "comecar" atrasado) e o 1o clique perdido na Binance; corrigidos (3.7, regras 6 a 8).
 - **07/10 (cripto, desistido):** passe pre-pago em cripto via NOWPayments foi implementado e publicado (commit `6698806`) e REMOVIDO no mesmo dia por decisao do dono: a assinatura continua so pela Stripe. Nunca foi ligado (sem chaves), nenhum pagamento. Motivo da ideia, se voltar: nos paises emergentes 8 de 8 recusas desde set/26 foram do BANCO (Stripe/Radar nao bloqueiam nada; Radar so com regras padrao). Pesquisa: Stripe Crypto nao atende conta BR; Coinbase Commerce fechou fora de US/SG; NOWPayments serve, mas o repasse em USDT TRC20 pode custar varios dolares por pagamento (usar rede barata). Desenho e demo em `_local/cripto/`.
 - **12/10 (setups, Parte A):** seguir um setup a partir de qualquer analise e atualizar com o fluxo normal de nova analise (versoes em `/dashboard/setups/:id`, secao no topo do inicio); tabela `TrackedSetup` + `Analysis.setupId` por SQL, testado num Postgres descartavel (30 casos: dono, idempotencia, teto, clique duplo, cursores, ordem das versoes).
+- **12/10 (chat, Parte B):** chat com o fundador dentro da bolha do painel (aba padrao), aba Chat no /admin com "Start conversation" pelo e-mail, avisos por e-mail com teto (chave `CHAT_EMAIL_NOTIFY` desligada); /privacy cita as mensagens do chat. Testado num Postgres descartavel (37 casos: isolamento, texto puro, limite por hora, nao lidas, tetos de e-mail com relogio falso, descadastro).
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

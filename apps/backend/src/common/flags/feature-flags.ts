@@ -149,6 +149,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'CHAT_EMAIL_NOTIFY',
+    type: 'boolean',
+    label: 'E-mails do chat com o fundador',
+    description:
+      'Dois avisos do chat do painel: para o suporte quando chega mensagem (no maximo 1 por conversa a cada 15 min, com o texto) e para a pessoa quando voce responde e ela nao leu em 10 min (no maximo 1 por conversa a cada 6 h, sem o texto, respeitando o descadastro). Usa a mesma cota diaria da Resend. DESLIGADO: so loga quem receberia ([chat] dry-run).',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
     key: 'AB_PROMPT_V9_PERCENT',
     type: 'number',
     label: 'A/B do prompt v9 (% de usuários)',

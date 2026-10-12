@@ -113,6 +113,34 @@ export class MailService {
     );
   }
 
+  /**
+   * Chat do painel (12/10/2026): chegou mensagem de usuario. Operacional, igual
+   * ao relato de problema: vai para o suporte com o texto (escapado, nunca HTML
+   * do usuario) e o link para responder pelo /admin, aba Chat.
+   */
+  async sendChatFounderNotify(
+    to: string,
+    info: { userEmail: string | null; isSubscriber: boolean; freeLocked: boolean; body: string },
+  ): Promise<boolean> {
+    const escape = (value: string) =>
+      value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    const plano = info.isSubscriber ? 'assinante' : info.freeLocked ? 'gratis esgotado' : 'gratis';
+    return this.send(
+      to,
+      '[Tickrify] Nova mensagem no chat',
+      `<!doctype html><html><body style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:15px;line-height:1.6;color:#16202a;">
+  <div style="max-width:560px;margin:0 auto;padding:24px;">
+    <div style="font-size:13px;color:#5b6b7a;margin-bottom:8px;">Tickrify · chat do painel</div>
+    <p style="margin:0 0 4px;"><b>${escape(info.userEmail || 'sem e-mail')}</b> (${plano})</p>
+    <div style="white-space:pre-wrap;border-left:3px solid #d0d7de;padding-left:12px;margin:12px 0;">${escape(info.body)}</div>
+    <p style="font-size:13px;color:#5b6b7a;">Responda pelo painel: o historico fica la e a pessoa le no Tickrify.</p>
+    <a href="${this.appUrl}/admin?aba=chat" style="display:inline-block;margin-top:8px;font-size:14px;">Abrir o chat no /admin</a>
+  </div>
+</body></html>`,
+      { kind: 'chat_founder_notify' },
+    );
+  }
+
   /** Boas-vindas: disparado uma unica vez, quando a conta nova e criada. `firstName` e opcional. */
   async sendWelcome(to: string, firstName?: string | null): Promise<void> {
     await this.send(to, welcomeSubject(), renderWelcomeEmail({ appUrl: this.appUrl, firstName }), {

@@ -17,6 +17,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { DemoModule } from './modules/demo/demo.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { SupportModule } from './modules/support/support.module';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { GlobalAuthGuard } from './common/guards/global-auth.guard';
 import { HttpLoggingInterceptor } from './common/interceptors/http-logging.interceptor';
@@ -51,6 +52,7 @@ import { HttpLoggingInterceptor } from './common/interceptors/http-logging.inter
     PromptModule,
     HealthModule,
     ReportsModule,
+    SupportModule,
     AdminModule,
   ],
   providers: [

@@ -11,6 +11,8 @@ import RelatosPainel from '@/components/admin/RelatosPainel';
 import NotasPainel from '@/components/admin/NotasPainel';
 import OrigemPainel from '@/components/admin/OrigemPainel';
 import AfiliadosPainel from '@/components/admin/AfiliadosPainel';
+import ChatPainel from '@/components/admin/ChatPainel';
+import { useAdminChatThreads } from '@/lib/support-chat';
 
 /**
  * Painel do dono. Em cima, o que pede acao (pedidos de afiliado, saques,
@@ -159,7 +161,7 @@ function LinhaFlag({
   );
 }
 
-type Aba = 'afiliados' | 'origem' | 'relatos' | 'opinioes' | 'config';
+type Aba = 'chat' | 'afiliados' | 'origem' | 'relatos' | 'opinioes' | 'config';
 
 /** Contador do topo. Zero fica apagado; acima de zero chama atencao e leva a aba. */
 function Pendencia({ n, rotulo, onClick }: { n: number | null; rotulo: string; onClick: () => void }) {
@@ -179,6 +181,7 @@ function Pendencia({ n, rotulo, onClick }: { n: number | null; rotulo: string; o
 }
 
 const ABAS: Array<{ chave: Aba; rotulo: string }> = [
+  { chave: 'chat', rotulo: 'Chat' },
   { chave: 'afiliados', rotulo: 'Afiliados' },
   { chave: 'origem', rotulo: 'Origem' },
   { chave: 'relatos', rotulo: 'Relatos de problema' },
@@ -190,7 +193,13 @@ export default function AdminPage() {
   useSeo(seoFor('/admin'));
   const { flags, cache, isLoading, error, semAcesso, setFlag, clearFlag } = useFeatureFlags();
   const { toast } = useToast();
-  const [aba, setAba] = useState<Aba>('afiliados');
+  // `?aba=chat` vem do e-mail de aviso de mensagem nova.
+  const [aba, setAba] = useState<Aba>(() => {
+    const pedida = new URLSearchParams(window.location.search).get('aba');
+    return ABAS.some((a) => a.chave === pedida) ? (pedida as Aba) : 'afiliados';
+  });
+  const conversas = useAdminChatThreads();
+  const conversasNovas = conversas.data ? conversas.data.items.filter((t) => t.unread > 0).length : null;
   const { affiliates, payouts } = useAffiliateAdmin();
   const { contagem } = useProblemReports('aberto');
   const { contagem: contagemOpinioes } = useProblemReports('aberto', 'feedback');
@@ -201,7 +210,8 @@ export default function AdminPage() {
     : null;
   const relatosAbertos = contagem.aberto ?? 0;
   const opinioesNovas = contagemOpinioes.aberto ?? 0;
-  const nadaPendente = pedidosAfiliado === 0 && saquesAbertos === 0 && relatosAbertos === 0 && opinioesNovas === 0;
+  const nadaPendente =
+    pedidosAfiliado === 0 && saquesAbertos === 0 && relatosAbertos === 0 && opinioesNovas === 0 && (conversasNovas ?? 0) === 0;
 
   const salvando = setFlag.isPending || clearFlag.isPending;
 
@@ -246,6 +256,7 @@ export default function AdminPage() {
           </div>
         ) : (
           <div className="mb-8 flex flex-col gap-3 sm:flex-row">
+            <Pendencia n={conversasNovas} rotulo="conversas com mensagem nova" onClick={() => setAba('chat')} />
             <Pendencia n={pedidosAfiliado} rotulo="pedidos de afiliado para aprovar" onClick={() => setAba('afiliados')} />
             <Pendencia n={saquesAbertos} rotulo="saques de afiliado para pagar" onClick={() => setAba('afiliados')} />
             <Pendencia n={relatosAbertos} rotulo="relatos de problema abertos" onClick={() => setAba('relatos')} />
@@ -269,6 +280,8 @@ export default function AdminPage() {
             </button>
           ))}
         </nav>
+
+        {aba === 'chat' && <ChatPainel />}
 
         {aba === 'afiliados' && <AfiliadosPainel />}
 

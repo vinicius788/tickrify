@@ -431,6 +431,10 @@ export type FunnelEvent =
   | 'setup_update_clicked'
   | 'setup_update_submitted'
   | 'setup_update_failed'
+  // Chat com o fundador (12/10/2026). Nunca leva o texto: so superficie,
+  // nao lidas e tamanho. O envio confirmado e `chat_message_sent` (servidor).
+  | 'chat_opened'
+  | 'chat_message_submitted'
   // Funil da demo anônima (/try) — Fase 0 de ativação:
   | 'demo_page_view'
   | 'demo_analysis_started'

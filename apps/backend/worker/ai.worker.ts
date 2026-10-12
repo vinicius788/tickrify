@@ -33,6 +33,7 @@ import { LIFECYCLE_FLAG, publicUrl, runLifecycleSweep } from '../src/modules/mai
 import Stripe from 'stripe';
 import { getFoundingOffer } from '../src/modules/payments/founding-offer';
 import { recordSetupVersion } from '../src/modules/ai/setups.service';
+import { CHAT_EMAIL_FLAG, CHAT_SWEEP_INTERVAL_MS, runChatReplySweep } from '../src/modules/support/chat-email';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -1357,6 +1358,24 @@ setTimeout(() => {
   void lifecycleTick();
   setInterval(() => void lifecycleTick(), LIFECYCLE_INTERVAL_MS).unref();
 }, 5 * 60 * 1000).unref();
+
+// Chat com o fundador: e-mail "Vinicius replied" para quem nao leu a resposta
+// em 10 min (chat-email.ts). Chave CHAT_EMAIL_NOTIFY desligada: so dry-run.
+const chatReplyTick = async () => {
+  const result = await runChatReplySweep({
+    prisma,
+    mail: workerMail,
+    isEnabled: () => flagBool(CHAT_EMAIL_FLAG),
+    appUrl: publicUrl(process.env.FRONTEND_URL, 'https://tickrify.com'),
+    apiBaseUrl: publicUrl(process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL, 'https://tickrify.onrender.com'),
+    log: (level, message) => (level === 'warn' ? console.warn(message) : console.log(message)),
+  }).catch((err) => {
+    console.warn(`[chat] Varredura falhou: ${(err as Error)?.message ?? err}`);
+    return null;
+  });
+  if (result && result.sent > 0) console.log(`[chat] Avisos de resposta: ${result.sent}`);
+};
+setInterval(() => void chatReplyTick(), CHAT_SWEEP_INTERVAL_MS).unref();
 
 async function shutdown() {
   await worker.close();

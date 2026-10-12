@@ -23,7 +23,7 @@ import { seoFor, useSeo } from '@/hooks/useSeo';
  * dizia um endereço, os Termos outro e o rodapé um terceiro. Ao trocar, trocar
  * no rodapé e nas quatro páginas legais.
  */
-const LAST_UPDATED = 'September 21, 2026';
+const LAST_UPDATED = 'October 12, 2026';
 
 const SECTIONS: LegalSection[] = [
   {
@@ -47,6 +47,7 @@ const SECTIONS: LegalSection[] = [
           <li><strong>Payment data:</strong> billing information processed by Stripe. Tickrify never stores card numbers.</li>
           <li><strong>Uploaded images:</strong> the charts you upload for analysis. We store them so your analysis history stays available to you.</li>
           <li><strong>Usage data:</strong> number of analyses run, current plan, Tick balance and transaction history.</li>
+          <li><strong>Chat messages:</strong> the messages you send in the in-app chat. We keep them so we can answer you and see the conversation history.</li>
           <li><strong>Technical data:</strong> IP address, device type and browser, collected automatically for security and diagnostics.</li>
         </ul>
       </>

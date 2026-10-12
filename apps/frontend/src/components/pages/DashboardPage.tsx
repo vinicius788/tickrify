@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Coins, Upload, Sliders, Handshake } from "lucide-react";
+import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Coins, Upload, Sliders, Handshake, MessageCircle } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import * as Sentry from "@sentry/react";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
@@ -58,6 +58,7 @@ import FollowSetupBar from "../dashboard/FollowSetupBar";
 import SetupsSection from "../dashboard/SetupsSection";
 import SetupPage from "../dashboard/SetupPage";
 import { SETUP_ID_PATTERN, formatSetupDay, useSetupVersions } from "@/lib/setups";
+import { openChat, useChatThread } from "@/lib/support-chat";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
 // PT quando o idioma for português. Contido neste arquivo (sem mexer nos 6 locales).
@@ -499,6 +500,8 @@ const DashboardPage = () => {
   }, [rawAnalyses, analysesAllTime]);
 
   const { balance: ticksBalance } = useTicks();
+  // Respostas do fundador ainda nao lidas (o mesmo numero da bolha do chat).
+  const chatUnread = useChatThread(!isDemo, false).data?.thread?.unread ?? 0;
 
   // Insight da semana: cenário de mercado, inclusive WAIT com viés direcional.
   const weeklyInsight = useMemo(() => {
@@ -1940,6 +1943,23 @@ const DashboardPage = () => {
           <Link to="/affiliate" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
             <Handshake className="h-3.5 w-3.5" /> {t.nav.affiliates}
           </Link>
+          {/* Chat com o fundador: abre a bolha ja na conversa. */}
+          {user && (
+            <button
+              type="button"
+              onClick={() => openChat('dashboard_menu')}
+              aria-label={chatUnread > 0 ? `${t.chat.menu} (${t.chat.unread.replace('{n}', String(chatUnread))})` : t.chat.menu}
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]"
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              <span>{t.chat.menu}</span>
+              {chatUnread > 0 ? (
+                <span key="chat-unread" className="ml-auto min-w-[18px] rounded-full bg-white px-1.5 text-center text-[10px] font-semibold leading-[18px] text-[#050508]">
+                  {String(chatUnread)}
+                </span>
+              ) : null}
+            </button>
+          )}
         </div>
 
         {user && (
