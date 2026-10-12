@@ -526,6 +526,35 @@ export default {
     failed: 'That did not send. Try again in a moment.',
     limit: 'We already have several messages from you this hour. Try again later.',
   },
+  // O que o mercado fez 48h depois (12/10/2026): quadro da analise e o
+  // historico do proprio usuario no inicio do painel.
+  marketResult: {
+    title: '48 hours later',
+    pendingTitle: 'Result pending',
+    pending: 'Tickrify checks what price did with this plan 48 hours after the read. The result shows up here around {date}.',
+    win: 'Target 1 reached',
+    winDesc: 'Price touched the entry, then reached Target 1 before the stop.',
+    tp2: 'Target 2 was reached too.',
+    loss: 'Stop hit',
+    lossDesc: 'Price touched the entry, then hit the stop before Target 1.',
+    noFill: 'Entry not reached',
+    noFillDesc: 'Price never came back to the entry within 48 hours, so the plan never started. It counts as no trade.',
+    timeout: 'No target, no stop',
+    timeoutDesc: 'Price touched the entry, but neither Target 1 nor the stop was reached within 48 hours.',
+    untracked: 'Not measured',
+    untrackedDesc: 'There was no market data to measure this plan.',
+    fine: 'Measured on 30-minute candles. A level being touched is not a guaranteed fill, and fees are not included. Same method as the public accuracy page.',
+  },
+  trackRecord: {
+    title: 'Your track record',
+    sub: 'What price did with your trade plans in the last 30 days, measured 48 hours after each read.',
+    plans: 'Trade plans',
+    target: 'Reached Target 1',
+    stop: 'Hit the stop',
+    noFill: 'Entry not reached',
+    timeout: 'Neither in 48 hours',
+    pending: 'Still being measured',
+  },
   // Setups acompanhados (12/10/2026): seguir, atualizar e a pagina do setup.
   setups: {
     follow: 'Follow setup',

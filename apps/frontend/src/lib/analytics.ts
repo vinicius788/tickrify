@@ -427,6 +427,9 @@ export type FunnelEvent =
   // separados; a conclusao (`setup_update_completed`) e o seguir de verdade
   // (`setup_followed`) saem do servidor. So ids e enums, nunca texto ou preco.
   | 'setup_follow_clicked'
+  // "48 hours later" na analise e "Your track record" no inicio (12/10/2026).
+  | 'market_result_viewed'
+  | 'track_record_viewed'
   | 'setup_opened'
   | 'setup_update_clicked'
   | 'setup_update_submitted'

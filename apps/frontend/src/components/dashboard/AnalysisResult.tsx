@@ -21,6 +21,7 @@ import { useEconomicCalendar } from '@/hooks/useEconomicCalendar';
 import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
+import { MarketResultCard } from './MarketResult';
 import { ShareCardButton, type ShareCardData } from './ShareCard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -1197,6 +1198,18 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
         </Card>
         )}
       </div>
+
+      {/* O que o mercado fez com o plano 48h depois (sweeper). So plano real
+          da pessoa: exemplo fixo tem o proprio "depois" e demo nao e medida. */}
+      {!sample && !isDemo && !isWaitVerdict && !invalidTradePlan && analysisData.id && analysisData.createdAt && (
+        <MarketResultCard
+          analysisId={analysisData.id}
+          createdAt={analysisData.createdAt}
+          marketOutcome={analysisData.marketOutcome}
+          marketTp1R={analysisData.marketTp1R}
+          marketTp2Hit={analysisData.marketTp2Hit}
+        />
+      )}
 
       <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '140ms' }}>
         <Accordion type="single" collapsible className="w-full">

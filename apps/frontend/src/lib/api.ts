@@ -191,6 +191,10 @@ export interface AIAnalysisResponse {
    * UNTRACKABLE, ou null enquanto nao mediu. Nunca e o que o trader marcou.
    */
   marketOutcome?: string | null;
+  /** R do Target 1 quando o mercado deu WIN (so na analise aberta, nao na lista). */
+  marketTp1R?: number | null;
+  /** Target 2 tambem foi tocado antes do stop (so com WIN). */
+  marketTp2Hit?: boolean;
   /** Anotacao do trader (nota, setup, emocao, erros); null sem anotacao. */
   tradeNote?: TradeNote | null;
   /** Valor da operacao informado pelo trader no My Trades (moeda da conta dele). */

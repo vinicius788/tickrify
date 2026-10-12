@@ -277,6 +277,48 @@ describe('AiService access enforcement', () => {
     expect((await service.getAnalysis(row.id, 'usr_1')).errorCode).toBeNull();
   });
 
+  // "48 hours later" (12/10/2026): a analise traz o que o MERCADO fez, separado
+  // do que o trader marcou, com o R do Target 1 so quando foi WIN.
+  it('returns the measured market outcome next to the trader verdict', async () => {
+    const base = {
+      id: 'an_done', status: 'completed', recommendation: 'BUY', confidence: 60,
+      reasoning: 'r', errorMessage: null, errorCode: null, result: {}, fullResponse: null, imageUrl: null,
+      createdAt: new Date('2026-10-10T00:00:00Z'), updatedAt: new Date('2026-10-10T00:00:01Z'),
+    };
+    (service as any).getSignedImageUrl = jest.fn().mockResolvedValue(null);
+    (service as any).getOutcomeById = jest.fn().mockResolvedValue({ outcome: 'stop', pnlPercent: null, pnlAmount: null });
+    (service as any).getCalibration = jest.fn().mockResolvedValue({ sampleSize: 0, winRate: null });
+
+    prisma.analysis.findFirst.mockResolvedValue({
+      ...base, outcome: 'WIN', outcomeDetail: { entry: 4150, stopLoss: 4140, takeProfit1: 4170, tp2Hit: true },
+    });
+    expect(await service.getAnalysis('an_done', 'usr_1')).toMatchObject({
+      outcome: 'stop', marketOutcome: 'WIN', marketTp1R: 2, marketTp2Hit: true,
+    });
+
+    prisma.analysis.findFirst.mockResolvedValue({ ...base, outcome: 'LOSS', outcomeDetail: { tp2Hit: true } });
+    expect(await service.getAnalysis('an_done', 'usr_1')).toMatchObject({
+      marketOutcome: 'LOSS', marketTp1R: null, marketTp2Hit: false,
+    });
+
+    prisma.analysis.findFirst.mockResolvedValue({ ...base, outcome: null, outcomeDetail: null });
+    expect(await service.getAnalysis('an_done', 'usr_1')).toMatchObject({ marketOutcome: null, marketTp1R: null });
+  });
+
+  it('track record: counts only the user own BUY/SELL plans of the last 30 days', async () => {
+    prisma.analysis.groupBy = jest.fn().mockResolvedValue([
+      { outcome: 'WIN', _count: { _all: 3 } },
+      { outcome: 'LOSS', _count: { _all: 4 } },
+      { outcome: 'NO_FILL', _count: { _all: 1 } },
+      { outcome: null, _count: { _all: 2 } },
+    ]);
+    const out = await service.getTrackRecord('usr_1');
+    expect(out).toEqual({ days: 30, plans: 10, win: 3, loss: 4, noFill: 1, timeout: 0, pending: 2 });
+    const where = prisma.analysis.groupBy.mock.calls[0][0].where;
+    expect(where).toMatchObject({ userId: 'usr_1', status: 'completed', recommendation: { in: ['BUY', 'SELL'] } });
+    expect(Date.now() - where.createdAt.gte.getTime()).toBeGreaterThanOrEqual(30 * 24 * 3600_000 - 1000);
+  });
+
   it('never leaks a prior error code while polling an analysis in progress', async () => {
     prisma.analysis.findFirst.mockResolvedValue({
       id: 'an_processing', status: 'processing', errorCode: 'openai_rate_limit',

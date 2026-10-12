@@ -526,6 +526,35 @@ export default {
     failed: '送信できませんでした。少し待ってからもう一度お試しください。',
     limit: 'この1時間で既に複数のメッセージを受け取っています。後でもう一度お試しください。',
   },
+  // O que o mercado fez 48h depois (12/10/2026): quadro da analise e o
+  // historico do proprio usuario no inicio do painel.
+  marketResult: {
+    title: '48時間後',
+    pendingTitle: '結果は未確定',
+    pending: 'Tickrifyは分析の48時間後に、このプランに対して価格がどう動いたかを確認します。結果は{date}ごろにここに表示されます。',
+    win: 'ターゲット1に到達',
+    winDesc: '価格はエントリーに触れた後、ストップより先にターゲット1に到達しました。',
+    tp2: 'ターゲット2にも到達しました。',
+    loss: 'ストップに到達',
+    lossDesc: '価格はエントリーに触れた後、ターゲット1より先にストップに到達しました。',
+    noFill: 'エントリー未到達',
+    noFillDesc: '48時間以内に価格がエントリーに戻らなかったため、プランは始まりませんでした。取引なしとして扱います。',
+    timeout: 'ターゲットもストップもなし',
+    timeoutDesc: '価格はエントリーに触れましたが、48時間以内にターゲット1にもストップにも到達しませんでした。',
+    untracked: '未計測',
+    untrackedDesc: 'このプランを計測する市場データがありませんでした。',
+    fine: '30分足で計測。水準に触れても約定は保証されず、手数料は含みません。公開している精度ページと同じ方法です。',
+  },
+  trackRecord: {
+    title: 'あなたの実績',
+    sub: '過去30日間のトレードプランに対して価格がどう動いたか。各分析の48時間後に計測しています。',
+    plans: 'トレードプラン',
+    target: 'ターゲット1に到達',
+    stop: 'ストップに到達',
+    noFill: 'エントリー未到達',
+    timeout: '48時間でどちらもなし',
+    pending: '計測中',
+  },
   // Setups acompanhados (12/10/2026): seguir, atualizar e a pagina do setup.
   setups: {
     follow: 'セットアップをフォロー',

@@ -526,6 +526,35 @@ export default {
     failed: 'L\'envoi a échoué. Réessayez dans un instant.',
     limit: 'Nous avons déjà plusieurs messages de vous cette heure-ci. Réessayez plus tard.',
   },
+  // O que o mercado fez 48h depois (12/10/2026): quadro da analise e o
+  // historico do proprio usuario no inicio do painel.
+  marketResult: {
+    title: '48 heures plus tard',
+    pendingTitle: 'Résultat en attente',
+    pending: 'Tickrify vérifie ce que le prix a fait avec ce plan 48 heures après la lecture. Le résultat apparaît ici vers {date}.',
+    win: 'Objectif 1 atteint',
+    winDesc: "Le prix a touché l'entrée, puis atteint l'objectif 1 avant le stop.",
+    tp2: "L'objectif 2 a aussi été atteint.",
+    loss: 'Stop touché',
+    lossDesc: "Le prix a touché l'entrée, puis le stop avant l'objectif 1.",
+    noFill: 'Entrée non atteinte',
+    noFillDesc: "Le prix n'est pas revenu à l'entrée en 48 heures, donc le plan n'a jamais commencé. Cela compte comme aucune position.",
+    timeout: 'Ni objectif, ni stop',
+    timeoutDesc: "Le prix a touché l'entrée, mais ni l'objectif 1 ni le stop n'ont été atteints en 48 heures.",
+    untracked: 'Non mesuré',
+    untrackedDesc: "Il n'y avait pas de données de marché pour mesurer ce plan.",
+    fine: "Mesuré sur des bougies de 30 minutes. Un niveau touché ne garantit pas l'exécution, et les frais ne sont pas inclus. Même méthode que la page publique de précision.",
+  },
+  trackRecord: {
+    title: 'Votre historique',
+    sub: 'Ce que le prix a fait avec vos plans de trading sur les 30 derniers jours, mesuré 48 heures après chaque lecture.',
+    plans: 'Plans de trading',
+    target: "Ont atteint l'objectif 1",
+    stop: 'Ont touché le stop',
+    noFill: 'Entrée non atteinte',
+    timeout: 'Aucun des deux en 48 heures',
+    pending: 'Encore en mesure',
+  },
   // Setups acompanhados (12/10/2026): seguir, atualizar e a pagina do setup.
   setups: {
     follow: 'Suivre le setup',

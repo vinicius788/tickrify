@@ -58,6 +58,7 @@ import {
 import { StripeService } from '../payments/stripe.service';
 import { SetupsService, recordSetupVersion } from './setups.service';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from './analysis-data-coverage';
+import { tp1RFromDetail } from '../mail/analysis-result-email';
 import { TRADE_EMOTIONS, TRADE_MISTAKES, TRADE_NOTE_MAX, TRADE_SETUPS } from './dto/set-trade-note.dto';
 import { trackFreeAnalysisCompleted, trackFreeAnalysisStarted } from '../../common/analytics/free-funnel';
 import { analysisFailureCodeForResponse, safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../../common/analytics/analysis-failure';
@@ -1442,6 +1443,37 @@ export class AiService implements OnModuleInit {
     return { days: rows.map((r) => ({ day: r.day, count: Number(r.count) })) };
   }
 
+  /**
+   * "Your track record" do inicio do painel (12/10/2026): o que o mercado fez
+   * com os planos BUY/SELL do PROPRIO usuario nos ultimos 30 dias, medido pelo
+   * sweeper (mesma regua da /accuracy). So contagens: nao abre analise nenhuma,
+   * por isso nao passa pelo isFreeLocked. `pending` = ainda sem 48h medidas.
+   */
+  async getTrackRecord(userId: string): Promise<{
+    days: number; plans: number; win: number; loss: number; noFill: number; timeout: number; pending: number;
+  }> {
+    const rows = await this.prisma.analysis.groupBy({
+      by: ['outcome'],
+      where: {
+        userId,
+        status: 'completed',
+        recommendation: { in: ['BUY', 'SELL'] },
+        createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+      },
+      _count: { _all: true },
+    });
+    const count = (outcome: string | null) => rows.find((r) => r.outcome === outcome)?._count._all ?? 0;
+    return {
+      days: 30,
+      plans: rows.reduce((sum, r) => sum + r._count._all, 0),
+      win: count('WIN'),
+      loss: count('LOSS'),
+      noFill: count('NO_FILL'),
+      timeout: count('TIMEOUT'),
+      pending: count(null),
+    };
+  }
+
   private readonly DEMO_LIMIT_ERROR = {
     code: 'DEMO_LIMIT_REACHED',
     message: 'You have used your free analyses. Subscribe to a plan to continue.',
@@ -1811,6 +1843,8 @@ export class AiService implements OnModuleInit {
     fullResponse?: unknown;
     errorMessage?: string | null;
     errorCode?: string | null;
+    outcome?: string | null;
+    outcomeDetail?: unknown;
     createdAt: Date;
     updatedAt: Date;
   }) {
@@ -1851,6 +1885,11 @@ export class AiService implements OnModuleInit {
       outcome: outcomeData?.outcome ?? null,
       pnlPercent: outcomeData?.pnlPercent ?? null,
       pnlAmount: outcomeData?.pnlAmount ?? null,
+      // O que o MERCADO fez 48h depois (sweeper), separado do que o trader
+      // marcou (`outcome`). Quadro "48 hours later" da tela da analise.
+      marketOutcome: analysis.outcome ?? null,
+      marketTp1R: analysis.outcome === 'WIN' ? tp1RFromDetail(analysis.outcomeDetail) : null,
+      marketTp2Hit: analysis.outcome === 'WIN' && Boolean((analysis.outcomeDetail as { tp2Hit?: unknown } | null)?.tp2Hit),
       errorMessage: analysis.errorMessage || null,
       errorCode: analysisFailureCodeForResponse(analysis.status, analysis.errorCode),
       createdAt: analysis.createdAt,

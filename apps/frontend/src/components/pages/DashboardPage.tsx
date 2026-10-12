@@ -23,6 +23,7 @@ import {
   type Verdict,
 } from '@/lib/verdict';
 import ActivityHeatmap from "../dashboard/ActivityHeatmap";
+import { TrackRecordCard } from "../dashboard/MarketResult";
 import LiveTape from "../dashboard/LiveTape";
 import MyTrades from "../dashboard/MyTrades";
 import JournalCalendar from "../dashboard/JournalCalendar";
@@ -1361,6 +1362,9 @@ const DashboardPage = () => {
         {!isDemo && <ExtensionAnnouncement />}
 
         {!isDemo && !showAcquisitionSurvey && dashboardKpis.total > 0 && <FeedbackCard />}
+
+        {/* O que o mercado fez com os planos da pessoa nos ultimos 30 dias */}
+        {!isDemo && <TrackRecordCard />}
 
         {/* Heatmap de consistência — mecânica de hábito + card "printável" */}
         {!isDemo && <ActivityHeatmap />}

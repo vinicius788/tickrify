@@ -455,4 +455,15 @@ export class AiController {
 
     return this.aiService.getActivityHeatmap(dbUserId);
   }
+
+  /** O que o mercado fez com os planos do proprio usuario nos ultimos 30 dias. */
+  @Get('track-record')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async getTrackRecord(@CurrentUser() user: { id?: string; clerkUserId: string }) {
+    const dbUserId = await this.resolveDbUserId(user);
+    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
+
+    return this.aiService.getTrackRecord(dbUserId);
+  }
 }

@@ -77,7 +77,7 @@ export function unsubscribeUrl(apiBaseUrl: string, userId: string): string | nul
 
 // ── Textos (ingles; traducao para o dono no CLAUDE.md/chat) ────────────────
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

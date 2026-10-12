@@ -149,6 +149,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'EMAIL_ANALYSIS_RESULT',
+    type: 'boolean',
+    label: 'E-mail "o que aconteceu com a sua analise"',
+    description:
+      'Depois que o sistema mede o resultado de uma analise BUY/SELL (48h depois), avisa a pessoa por e-mail: alvo, stop, entrada nao atingida ou nada em 48h. Acerto e erro saem igual. No maximo 1 e-mail por pessoa por dia, juntando ate 5 analises, inclusive para assinante, respeitando o descadastro. Usa a mesma cota diaria da Resend. DESLIGADO: so loga quem receberia ([analysis-result] dry-run).',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
     key: 'CHAT_EMAIL_NOTIFY',
     type: 'boolean',
     label: 'E-mails do chat com o fundador',

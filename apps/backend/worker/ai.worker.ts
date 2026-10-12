@@ -30,6 +30,7 @@ import { safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../src/co
 import { MailService } from '../src/modules/mail/mail.service';
 import { notifyIfFreeQuotaExhausted, retryRecoveryEmails, type RecoveryEmailDeps } from '../src/modules/mail/recovery-email';
 import { LIFECYCLE_FLAG, publicUrl, runLifecycleSweep } from '../src/modules/mail/lifecycle-email';
+import { ANALYSIS_RESULT_FLAG, runAnalysisResultSweep } from '../src/modules/mail/analysis-result-email';
 import Stripe from 'stripe';
 import { getFoundingOffer } from '../src/modules/payments/founding-offer';
 import { recordSetupVersion } from '../src/modules/ai/setups.service';
@@ -1350,6 +1351,20 @@ const lifecycleTick = async () => {
   if (counts && Object.values(counts).some((n) => n > 0)) {
     console.log(`[lifecycle] Volta: ${JSON.stringify(counts)}`);
   }
+  // "O que aconteceu com a sua analise" (analysis-result-email.ts), chave
+  // EMAIL_ANALYSIS_RESULT desligada: so dry-run.
+  const results = await runAnalysisResultSweep({
+    prisma,
+    mail: workerMail,
+    isEnabled: () => flagBool(ANALYSIS_RESULT_FLAG),
+    appUrl: publicUrl(process.env.FRONTEND_URL, 'https://tickrify.com'),
+    apiBaseUrl: publicUrl(process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL, 'https://tickrify.onrender.com'),
+    log: (level, message) => (level === 'warn' ? console.warn(message) : console.log(message)),
+  }).catch((err) => {
+    console.warn(`[analysis-result] Varredura falhou: ${(err as Error)?.message ?? err}`);
+    return null;
+  });
+  if (results && results.sent > 0) console.log(`[analysis-result] Volta: ${JSON.stringify(results)}`);
   // E-mail de "gratis esgotado" que o provedor recusou (recovery-email.ts).
   const retried = await retryRecoveryEmails(recoveryDeps);
   if (retried > 0) console.log(`[recovery] Retentativa: ${retried}`);
