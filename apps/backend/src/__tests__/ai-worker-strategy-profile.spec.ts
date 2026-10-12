@@ -372,6 +372,40 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     expect(versionQuery).toBeDefined();
   });
 
+  // Telemetria (12/10/2026): a FILA e o caminho real; o teste confere o que e
+  // GRAVADO, por SQL e fora do `result` que a tela le.
+  it('telemetria: grava o modelo que respondeu e os numeros do grounding depois de concluir', async () => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
+    prismaClient.analysis.update.mockClear();
+    const calls = (globalThis as any).__prismaCalls as Array<{ path: string; args: unknown[] }>;
+    calls.length = 0;
+    const groundingStats = {
+      v: 1, symbol: 'XAUUSD', interval: '15m', coverage: 'injected',
+      numbers: { candles: 120, atr14: 6.5, swingHighs: [], swingLows: [] },
+    };
+    analyzeImageMock.mockResolvedValueOnce({
+      recommendation: 'WAIT', confidence: 40,
+      analysis: { symbol: 'XAUUSD', timeframe: '15m', currentPrice: 4150 },
+      respondedModel: 'gpt-5.6-luna-2026-09-01',
+      groundingStats,
+    });
+
+    await processAnalysis(makeJob({
+      analysisId: 'analysis-telemetry', imageUrl: 'https://example.com/chart.png',
+      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+    }));
+
+    const completed = prismaClient.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed');
+    expect(completed).toBeDefined();
+    expect(completed[0].data.result).not.toHaveProperty('respondedModel');
+    expect(completed[0].data.result).not.toHaveProperty('groundingStats');
+    const write = calls.find((c) => c.path === '$executeRaw' && c.args.includes('analysis-telemetry'));
+    expect(write).toBeDefined();
+    expect(write!.args.slice(1)).toEqual(['gpt-5.6-luna-2026-09-01', JSON.stringify(groundingStats), 'analysis-telemetry']);
+  });
+
   it('sem setup: nenhuma consulta de setup depois de concluir', async () => {
     require('../../worker/ai.worker');
     const processAnalysis = getProcessor();

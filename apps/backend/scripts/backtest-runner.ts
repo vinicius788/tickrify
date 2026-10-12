@@ -118,7 +118,7 @@ function groundingBlock(e: ManifestEntry): string {
   // produção invalida a comparação — por isso agora é uma fonte só.
   // O dataset local traz volume em candles[i][5] (cripto tem; FX/metais vêm 0,
   // e nesse caso o bloco de volume some sozinho, exatamente como em produção).
-  return buildRealDataBlock(e.symbol, e.interval, win) ?? '';
+  return buildRealDataBlock(e.symbol, e.interval, win)?.block ?? '';
 }
 
 function loadDone(): Set<string> {

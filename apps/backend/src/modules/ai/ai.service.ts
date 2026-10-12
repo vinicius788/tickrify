@@ -57,6 +57,7 @@ import {
 } from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
 import { SetupsService, recordSetupVersion } from './setups.service';
+import { saveAnalysisTelemetry, telemetryFromAiSource } from './analysis-data-coverage';
 import { TRADE_EMOTIONS, TRADE_MISTAKES, TRADE_NOTE_MAX, TRADE_SETUPS } from './dto/set-trade-note.dto';
 import { trackFreeAnalysisCompleted, trackFreeAnalysisStarted } from '../../common/analytics/free-funnel';
 import { analysisFailureCodeForResponse, safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../../common/analytics/analysis-failure';
@@ -298,6 +299,20 @@ export class AiService implements OnModuleInit {
     } catch (err) {
       this.clientContextReady = false;
       this.logger.warn(`[outcome] Coluna de origem indisponivel: ${err instanceof Error ? err.message : err}`);
+    }
+    // Telemetria por analise (12/10/2026): snapshot que a OpenAI usou e numeros
+    // do grounding. Fora do schema.prisma ate existir em producao; gravada por
+    // SQL em saveAnalysisTelemetry, que tolera a coluna ausente.
+    try {
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "responseModel" TEXT',
+      );
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "groundingStats" JSONB',
+      );
+      this.logger.log('[telemetry] Colunas responseModel e groundingStats prontas.');
+    } catch (err) {
+      this.logger.warn(`[telemetry] Colunas de telemetria indisponiveis: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -1286,6 +1301,8 @@ export class AiService implements OnModuleInit {
           errorCode: null,
         },
       });
+      // Mesma telemetria do worker (fila).
+      await saveAnalysisTelemetry(this.prisma, analysisId, telemetryFromAiSource(aiResponse), (m) => this.logger.warn(m));
 
       // Última análise grátis concluída → e-mail de recuperação (ver o método).
       void this.notifyIfFreeQuotaExhausted(userId, updated.isDemo, updated.id);

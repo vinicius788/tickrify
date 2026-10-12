@@ -31,6 +31,8 @@ import {
   type CandleCoverage,
   type CoverageAssetClass,
   type CalendarCoverage,
+  type GroundingNumbers,
+  type GroundingStats,
 } from './analysis-data-coverage';
 import {
   buildSamplingParams,
@@ -544,7 +546,11 @@ function buildEventMapLines(candles: number[][], fmt: (n: number) => number): st
  * (sem volume e sem mapa de eventos) e o backtest passou a medir um motor que
  * nao era o de producao. Uma fonte da verdade, sem divergencia possivel.
  */
-export function buildRealDataBlock(symbol: string, timeframe: string, candles: number[][]): string | null {
+export function buildRealDataBlock(
+  symbol: string,
+  timeframe: string,
+  candles: number[][],
+): { block: string; numbers: GroundingNumbers } | null {
   const win = candles.slice(-120);
   if (win.length < 20) return null;
   const highs = win.map((c) => c[2]);
@@ -621,12 +627,14 @@ export function buildRealDataBlock(symbol: string, timeframe: string, candles: n
     .join(' ');
 
   const volumeLines: string[] = [];
+  let volumeProfile: GroundingNumbers['volumeProfile'] = null;
   if (hasVolume) {
     const profile = buildVolumeProfile(win);
     volumeLines.push(
       '- Volume is REAL (exchange feed), expressed as a multiple of the 20-candle average. 1.0x = typical, 2.0x+ = a spike (a decision point price tends to revisit), below 0.6x = no participation.',
     );
     if (profile) {
+      volumeProfile = { poc: profile.poc, val: profile.val, vah: profile.vah };
       const gaps = profile.lowVolumeZones
         .map(([a, b]) => `${fmt(a)}-${fmt(b)}`)
         .join(', ');
@@ -644,7 +652,7 @@ export function buildRealDataBlock(symbol: string, timeframe: string, candles: n
     rsi14 != null
       ? `- Momentum (RSI14): ${Math.round(rsi14)} — ${rsi14 >= 70 ? 'overbought zone (in a strong uptrend it can stay high; not a sell trigger by itself)' : rsi14 <= 30 ? 'oversold zone (in a strong downtrend it can stay low; not a buy trigger by itself)' : 'neutral'}`
       : null;
-  return [
+  const block = [
     '# REAL MARKET DATA (ground truth from the exchange feed — trust these numbers over pixel-reading)',
     `- Symbol: ${symbol} · timeframe: ${timeframe} · current price (last close): ${fmt(last[4])}`,
     `- Visible window high: ${fmt(winHigh)} · low: ${fmt(winLow)} (last ${win.length} candles)`,
@@ -661,6 +669,27 @@ export function buildRealDataBlock(symbol: string, timeframe: string, candles: n
   ]
     .filter(Boolean)
     .join('\n');
+
+  // Os MESMOS numeros do texto acima, para gravar por analise (groundingStats).
+  const finite = (n: number) => (Number.isFinite(n) ? n : null);
+  return {
+    block,
+    numbers: {
+      candles: win.length,
+      lastClose: finite(last[4]),
+      windowHigh: finite(winHigh),
+      windowLow: finite(winLow),
+      atr14: finite(atr),
+      rsi14: rsi14 != null ? finite(rsi14) : null,
+      rangePosPct: finite(rangePos),
+      momentumPct: finite(momPct),
+      momentumLookback: lookback,
+      swingHighs: swingsH.slice(-5),
+      swingLows: swingsL.slice(-5),
+      relVolumeLast: hasVolume ? finite(relVol(last[5])) : null,
+      volumeProfile,
+    },
+  };
 }
 
 /**
@@ -1502,10 +1531,11 @@ export class AIAdapter {
     candles: CandleCoverage;
     marketContext: AnalysisDataCoverage['marketContext'];
     assetClass: CoverageAssetClass;
+    stats: GroundingStats | null;
   }> {
     const extracted = await this.extractSymbol(imageUrl);
     if (!extracted) return {
-      block: null, candles: 'symbol_unreadable', marketContext: 'unavailable', assetClass: 'unknown',
+      block: null, candles: 'symbol_unreadable', marketContext: 'unavailable', assetClass: 'unknown', stats: null,
     };
 
     const sym = extracted.symbol.toUpperCase();
@@ -1516,6 +1546,7 @@ export class AIAdapter {
     // Sem timeframe legível não dá pra calcular ATR/janela honestos — pula os
     // candles (estatística no intervalo errado atrapalha mais do que ajuda).
     let candleBlock: string | null = null;
+    let numbers: GroundingNumbers | null = null;
     let staleReason: string | null = null;
     let candleCoverage: CandleCoverage = 'timeframe_unreadable';
     if (interval) {
@@ -1536,7 +1567,9 @@ export class AIAdapter {
           if (staleReason) {
             candleCoverage = 'stale_withheld';
           } else {
-            candleBlock = buildRealDataBlock(sym, interval, candles);
+            const real = buildRealDataBlock(sym, interval, candles);
+            candleBlock = real?.block ?? null;
+            numbers = real?.numbers ?? null;
             candleCoverage = candleBlock ? 'injected' : 'block_unavailable';
           }
         }
@@ -1566,6 +1599,10 @@ export class AIAdapter {
         ].join('\n')
       : null;
 
+    // Numeros so quando os candles ENTRARAM no prompt; com print velho retido,
+    // eles descrevem o mercado de agora, nao o grafico analisado.
+    const stats: GroundingStats = { v: 1, symbol: sym, interval, coverage: candleCoverage, numbers };
+
     const parts = [candleBlock, staleBlock, contextBlock].filter(Boolean) as string[];
     if (parts.length > 0) {
       // Log de verificação: permite confirmar no Render que o grounding está
@@ -1577,9 +1614,10 @@ export class AIAdapter {
         block: parts.join('\n\n'), candles: candleCoverage,
         marketContext: staleReason ? 'stale_withheld' : contextBlock ? 'injected' : 'unavailable',
         assetClass,
+        stats,
       };
     }
-    return { block: null, candles: candleCoverage, marketContext: 'unavailable', assetClass };
+    return { block: null, candles: candleCoverage, marketContext: 'unavailable', assetClass, stats };
   }
 
   /**
@@ -1652,6 +1690,7 @@ export class AIAdapter {
       // (kill-switch) para desligar na hora, sem redeploy. Qualquer falha/timeout
       // simplesmente segue com o prompt original (degradação graciosa).
       let effectivePrompt = prompt;
+      let groundingStats: GroundingStats | null = null;
       if (analysisType === 'deep' && flagBool('ENABLE_MARKET_ENRICHMENT')) {
         try {
           const enrichment = await withTimeout(
@@ -1687,6 +1726,7 @@ export class AIAdapter {
           coverage.candles = grounding.candles;
           coverage.marketContext = grounding.marketContext;
           coverage.assetClass = grounding.assetClass;
+          groundingStats = grounding.stats;
           if (grounding.block) {
             effectivePrompt = `${prompt}\n\n${grounding.block}`;
           }
@@ -2113,6 +2153,10 @@ export class AIAdapter {
         reasoning: parsed.analysis.reasoning,
         analysis: parsed.analysis,
         evidence: toAnalysisEvidence(coverage),
+        // Telemetria gravada por analise (saveAnalysisTelemetry): o snapshot que
+        // a OpenAI de fato usou e os numeros do grounding que entraram no prompt.
+        respondedModel: typeof response.model === 'string' ? response.model : null,
+        groundingStats,
         drawingPlan: null,
         drawingFailed: true,
         rawResponse: parsed,

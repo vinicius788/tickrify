@@ -1,5 +1,12 @@
 import { AIAdapter } from './ai.adapter';
-import { classifyCoverageAsset, formatAnalysisDataCoverage, toAnalysisEvidence } from './analysis-data-coverage';
+import {
+  classifyCoverageAsset,
+  formatAnalysisDataCoverage,
+  saveAnalysisTelemetry,
+  telemetryFromAiSource,
+  toAnalysisEvidence,
+  type GroundingStats,
+} from './analysis-data-coverage';
 import { EconomicCalendarService } from '../calendar/calendar.service';
 import { buildPersistedAnalysisPayload, normalizeStoredAnalysis } from '../../common/utils/analysis-payload';
 
@@ -139,7 +146,10 @@ describe('analysis data coverage', () => {
     adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(null);
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue(null);
     const unavailable = await adapter.buildQuickGrounding('chart');
-    expect(unavailable).toEqual({ block: null, candles: 'source_unavailable', marketContext: 'unavailable', assetClass: 'crypto' });
+    expect(unavailable).toEqual({
+      block: null, candles: 'source_unavailable', marketContext: 'unavailable', assetClass: 'crypto',
+      stats: { v: 1, symbol: 'BTCUSDT', interval: '30m', coverage: 'source_unavailable', numbers: null },
+    });
 
     adapter.fetchCryptoCandles.mockResolvedValue(Array.from({ length: 30 }, (_, i) => [i, 100, 102, 98, 100, 1]));
     adapter.detectStaleChart = jest.fn().mockReturnValue('chart differs from current feed');
@@ -157,5 +167,49 @@ describe('analysis data coverage', () => {
     expect(injected.marketContext).toBe('injected');
     expect(injected.block).toContain('BTCUSDT');
     expect(injected.block).toContain('LIVE CONTEXT');
+  });
+});
+
+describe('analysis telemetry', () => {
+  const stats: GroundingStats = {
+    v: 1, symbol: 'XAUUSD', interval: '15m', coverage: 'injected',
+    numbers: {
+      candles: 120, lastClose: 4150, windowHigh: 4200, windowLow: 4100, atr14: 6.5, rsi14: 55,
+      rangePosPct: 50, momentumPct: 0.1, momentumLookback: 6, swingHighs: [4190], swingLows: [4110],
+      relVolumeLast: null, volumeProfile: null,
+    },
+  };
+
+  it('reads only well-formed telemetry from the adapter response', () => {
+    expect(telemetryFromAiSource({ respondedModel: ' gpt-5.6-luna-2026-09-01 ', groundingStats: stats }))
+      .toEqual({ respondedModel: 'gpt-5.6-luna-2026-09-01', groundingStats: stats });
+    expect(telemetryFromAiSource({ respondedModel: 42, groundingStats: { v: 2 } }))
+      .toEqual({ respondedModel: null, groundingStats: null });
+    expect(telemetryFromAiSource(null)).toEqual({ respondedModel: null, groundingStats: null });
+    expect(telemetryFromAiSource({ respondedModel: 'x'.repeat(300) }).respondedModel).toHaveLength(100);
+  });
+
+  it('writes both columns by SQL for the analysis id', async () => {
+    const db = { $executeRaw: jest.fn().mockResolvedValue(1) };
+    await saveAnalysisTelemetry(db as any, 'analysis-1', { respondedModel: 'gpt-5.6-luna', groundingStats: stats }, jest.fn());
+    expect(db.$executeRaw).toHaveBeenCalledTimes(1);
+    const [strings, ...values] = db.$executeRaw.mock.calls[0];
+    expect(strings.join('?')).toContain('"responseModel" =');
+    expect(strings.join('?')).toContain('"groundingStats" =');
+    expect(values).toEqual(['gpt-5.6-luna', JSON.stringify(stats), 'analysis-1']);
+  });
+
+  it('skips the write when there is nothing to record', async () => {
+    const db = { $executeRaw: jest.fn() };
+    await saveAnalysisTelemetry(db as any, 'analysis-1', { respondedModel: null, groundingStats: null }, jest.fn());
+    expect(db.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it('never throws when the column is missing and warns only once', async () => {
+    const db = { $executeRaw: jest.fn().mockRejectedValue(new Error('column "responseModel" does not exist')) };
+    const warn = jest.fn();
+    await expect(saveAnalysisTelemetry(db as any, 'a', { respondedModel: 'm', groundingStats: null }, warn)).resolves.toBeUndefined();
+    await expect(saveAnalysisTelemetry(db as any, 'b', { respondedModel: 'm', groundingStats: null }, warn)).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

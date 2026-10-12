@@ -33,6 +33,7 @@ import { LIFECYCLE_FLAG, publicUrl, runLifecycleSweep } from '../src/modules/mai
 import Stripe from 'stripe';
 import { getFoundingOffer } from '../src/modules/payments/founding-offer';
 import { recordSetupVersion } from '../src/modules/ai/setups.service';
+import { saveAnalysisTelemetry, telemetryFromAiSource } from '../src/modules/ai/analysis-data-coverage';
 import { CHAT_EMAIL_FLAG, CHAT_SWEEP_INTERVAL_MS, runChatReplySweep } from '../src/modules/support/chat-email';
 
 const prisma = new PrismaClient({
@@ -1156,6 +1157,8 @@ async function processAnalysis(job: Job<JobData>) {
         errorCode: null,
       },
     });
+    // Modelo que respondeu e numeros do grounding, fora do `result` (que a tela le).
+    await saveAnalysisTelemetry(prisma, analysisId, telemetryFromAiSource(aiSource), (m) => console.warn(m));
     persistMs = Date.now() - tPersist;
 
     logAnalysisMetrics({

@@ -1,5 +1,6 @@
 import { Bias, Recommendation } from '../utils/analysis-normalizer';
 import { DrawingPlan } from '../utils/drawing-plan';
+import type { GroundingStats } from '../../modules/ai/analysis-data-coverage';
 
 export interface AnalysisEvidence {
   version: 1;
@@ -31,4 +32,7 @@ export interface AIAnalysisResponse {
   // `recommendation`. Ver strategy-profile.ts e ai.adapter.ts.
   strategyFit?: string | null;
   strategyFitReason?: string | null;
+  // Telemetria por analise, gravada fora do `result` (saveAnalysisTelemetry).
+  respondedModel?: string | null;
+  groundingStats?: GroundingStats | null;
 }

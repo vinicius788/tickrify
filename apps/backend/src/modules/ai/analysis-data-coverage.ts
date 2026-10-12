@@ -1,3 +1,4 @@
+import type { PrismaClient } from '@prisma/client';
 import type { AnalysisEvidence } from '../../common/interfaces/ai-response.interface';
 
 /** Categorias de cobertura do contexto enviado ao modelo; nunca recebem texto do usuário. */
@@ -84,4 +85,80 @@ export function formatAnalysisDataCoverage(value: AnalysisDataCoverage): string 
     marketContext: CONTEXT_VALUES.has(value.marketContext) ? value.marketContext : 'error',
     calendar: CALENDAR_VALUES.has(value.calendar) ? value.calendar : 'error',
   })}`;
+}
+
+// ─── Telemetria por analise (12/10/2026) ────────────────────────────────────
+// A re-simulacao de 12/10 mostrou que o resultado depende de onde o motor poe
+// entrada e stop, e nada no banco dizia o tamanho do stop frente a volatilidade
+// do grafico, nem qual snapshot do modelo respondeu. Estas duas colunas
+// ("responseModel" TEXT e "groundingStats" JSONB) ficam FORA do schema.prisma
+// ate existirem em producao: criadas no boot (AiService) e gravadas por SQL.
+
+/** Numeros que o grounding do quick calculou e injetou no prompt. */
+export interface GroundingNumbers {
+  candles: number;
+  lastClose: number | null;
+  windowHigh: number | null;
+  windowLow: number | null;
+  atr14: number | null;
+  rsi14: number | null;
+  rangePosPct: number | null;
+  momentumPct: number | null;
+  momentumLookback: number;
+  swingHighs: number[];
+  swingLows: number[];
+  relVolumeLast: number | null;
+  volumeProfile: { poc: number; val: number; vah: number } | null;
+}
+
+/** O que vai para "groundingStats". `numbers` e null quando os candles nao entraram no prompt. */
+export interface GroundingStats {
+  v: 1;
+  symbol: string;
+  interval: string | null;
+  coverage: CandleCoverage;
+  numbers: GroundingNumbers | null;
+}
+
+export interface AnalysisTelemetry {
+  respondedModel: string | null;
+  groundingStats: GroundingStats | null;
+}
+
+/** Le a telemetria da resposta do adapter; qualquer coisa fora do formato vira null. */
+export function telemetryFromAiSource(source: unknown): AnalysisTelemetry {
+  const s = source && typeof source === 'object' ? (source as Record<string, unknown>) : {};
+  const model = typeof s.respondedModel === 'string' ? s.respondedModel.trim().slice(0, 100) : '';
+  const stats = s.groundingStats as GroundingStats | null | undefined;
+  return {
+    respondedModel: model || null,
+    groundingStats: stats && typeof stats === 'object' && stats.v === 1 ? stats : null,
+  };
+}
+
+let telemetryWarned = false;
+
+/**
+ * Grava a telemetria da analise concluida. Nunca lanca: o worker pode rodar
+ * antes de a API criar as colunas no boot, e medir nunca derruba uma analise.
+ */
+export async function saveAnalysisTelemetry(
+  db: Pick<PrismaClient, '$executeRaw'>,
+  analysisId: string,
+  telemetry: AnalysisTelemetry,
+  warn: (message: string) => void,
+): Promise<void> {
+  if (!telemetry.respondedModel && !telemetry.groundingStats) return;
+  try {
+    await db.$executeRaw`
+      UPDATE "tickrify"."Analysis"
+      SET "responseModel" = ${telemetry.respondedModel},
+          "groundingStats" = ${telemetry.groundingStats ? JSON.stringify(telemetry.groundingStats) : null}::jsonb
+      WHERE "id" = ${analysisId}
+    `;
+  } catch (err) {
+    if (telemetryWarned) return;
+    telemetryWarned = true;
+    warn(`[telemetry] Telemetria da analise nao gravada: ${err instanceof Error ? err.message : err}`);
+  }
 }
