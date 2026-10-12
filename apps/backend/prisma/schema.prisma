@@ -455,6 +455,44 @@ model TrackedSetup {
   @@schema("tickrify")
 }
 
+/// Chat com o fundador (12/10/2026): uma conversa por pessoa. Lido e gravado
+/// por SQL (SupportService); as mensagens sao texto puro e nunca vao ao PostHog.
+model SupportThread {
+  id                   String    @id @default(uuid())
+  /// Uma conversa por pessoa.
+  userId               String    @unique
+  /// open | closed
+  status               String    @default("open")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @default(now())
+  lastMessageAt        DateTime?
+  lastUserReadAt       DateTime?
+  lastFounderReadAt    DateTime?
+  lastFounderMessageAt DateTime?
+  /// Teto do aviso ao fundador (1 a cada 15 min por conversa).
+  lastFounderNotifyAt  DateTime?
+  /// Teto do e-mail "Vinicius replied" (1 a cada 6 h por conversa).
+  lastReplyEmailAt     DateTime?
+  messages             SupportMessage[]
+
+  @@index([lastMessageAt])
+  @@schema("tickrify")
+}
+
+model SupportMessage {
+  id        String        @id @default(uuid())
+  threadId  String
+  /// user | founder
+  author    String
+  /// Texto puro, 1 a 2000 caracteres.
+  body      String
+  createdAt DateTime      @default(now())
+  thread    SupportThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@schema("tickrify")
+}
+
 model AnalysisRating {
   id             String   @id @default(cuid())
   userId         String
