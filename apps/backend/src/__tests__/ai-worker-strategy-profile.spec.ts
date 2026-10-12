@@ -342,6 +342,53 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     }));
   });
 
+  // Setup acompanhado (12/10/2026): a FILA e o caminho real. O vinculo foi
+  // gravado na criacao; aqui so pode registrar a versao depois de gravar a
+  // analise concluida, sem reescrever o setupId e sem mandar nada ao motor.
+  it('versao de setup: registra depois de concluir, sem setupId no update nem no motor', async () => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
+    prismaClient.analysis.update.mockClear();
+    const calls = (globalThis as any).__prismaCalls as Array<{ path: string; args: unknown[] }>;
+    calls.length = 0;
+    analyzeImageMock.mockResolvedValueOnce({
+      recommendation: 'WAIT', confidence: 40,
+      analysis: { symbol: 'EURUSD', timeframe: '1H', currentPrice: 1.09, entryCondition: 'Close above 1.0950' },
+    });
+
+    await processAnalysis(makeJob({
+      analysisId: 'analysis-setup-2', imageUrl: 'https://example.com/chart.png',
+      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: true,
+      setupId: 'setup-123456',
+    }));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const completed = prismaClient.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed');
+    expect(completed).toBeDefined();
+    expect(completed[0].data).not.toHaveProperty('setupId');
+    expect(analyzeImageMock.mock.calls[0]).toHaveLength(5);
+    const versionQuery = calls.find((c) => c.path === '$queryRaw' && (c.args[1] === 'setup-123456' || (c.args as unknown[]).includes('setup-123456')));
+    expect(versionQuery).toBeDefined();
+  });
+
+  it('sem setup: nenhuma consulta de setup depois de concluir', async () => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const calls = (globalThis as any).__prismaCalls as Array<{ path: string; args: unknown[] }>;
+    calls.length = 0;
+    analyzeImageMock.mockResolvedValueOnce({
+      recommendation: 'WAIT', confidence: 40,
+      analysis: { symbol: 'EURUSD', timeframe: '1H', currentPrice: 1.09 },
+    });
+    await processAnalysis(makeJob({
+      analysisId: 'analysis-plain', imageUrl: 'https://example.com/chart.png',
+      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+    }));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(calls.some((c) => c.path === '$queryRaw' && (c.args as unknown[]).includes('setup-123456'))).toBe(false);
+  });
+
   // Segundo bug do mesmo recurso (24/09/2026): o perfil chegava a IA, a IA
   // devolvia o selo, e o worker o descartava ao montar o resultado salvo. O
   // teste acima passava; nenhum conferia o que era GRAVADO.

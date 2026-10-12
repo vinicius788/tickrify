@@ -43,4 +43,12 @@ describe('CreateAnalysisDto contra o ValidationPipe real', () => {
     await expect(pipe.transform({ chartTimeframe: '5 m' }, META)).rejects.toBeDefined();
     await expect(pipe.transform({ promptOverride: 'x' }, META)).rejects.toBeDefined();
   });
+
+  it('aceita o setupId de uma atualizacao de setup, so no formato do id', async () => {
+    await expect(
+      pipe.transform({ analysisType: 'quick', setupId: '3f2b8c1e-6a2d-4c55-9a51-0f1b2c3d4e5f' }, META),
+    ).resolves.toMatchObject({ setupId: '3f2b8c1e-6a2d-4c55-9a51-0f1b2c3d4e5f' });
+    await expect(pipe.transform({ setupId: 'abc' }, META)).rejects.toBeDefined();
+    await expect(pipe.transform({ setupId: "x' OR '1'='1" }, META)).rejects.toBeDefined();
+  });
 });

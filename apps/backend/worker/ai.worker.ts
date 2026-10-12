@@ -32,6 +32,7 @@ import { notifyIfFreeQuotaExhausted, retryRecoveryEmails, type RecoveryEmailDeps
 import { LIFECYCLE_FLAG, publicUrl, runLifecycleSweep } from '../src/modules/mail/lifecycle-email';
 import Stripe from 'stripe';
 import { getFoundingOffer } from '../src/modules/payments/founding-offer';
+import { recordSetupVersion } from '../src/modules/ai/setups.service';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -78,6 +79,8 @@ interface JobData {
   isDemo?: boolean;
   userLanguage?: string;
   strategyProfile?: StrategyProfile | null;
+  /** Versao de um setup acompanhado (o vinculo ja foi gravado na criacao). */
+  setupId?: string | null;
 }
 
 interface WorkerAnalysisMarketStructure {
@@ -999,6 +1002,7 @@ async function processAnalysis(job: Job<JobData>) {
     isDemo,
     userLanguage,
     strategyProfile,
+    setupId,
   } = job.data;
   const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
 
@@ -1176,6 +1180,15 @@ async function processAnalysis(job: Job<JobData>) {
     if (isDemo && userId) {
       void trackFreeAnalysisCompleted(prisma, { userId, analysisId, completedAt: new Date() });
       void notifyIfFreeQuotaExhausted(recoveryDeps, userId);
+    }
+    // Setup acompanhado: ultima atualizacao e `setup_update_completed`. O motor
+    // nunca viu o setupId; isto so roda depois de a analise estar gravada.
+    if (setupId && userId) {
+      void recordSetupVersion(
+        prisma,
+        { analysisId, userId, setupId, analysisType: normalizedAnalysisType, isDemo: Boolean(isDemo) },
+        (message) => console.warn(message),
+      );
     }
   } catch (error) {
     console.error(`[Worker] Error processing analysis ${analysisId}:`, error);

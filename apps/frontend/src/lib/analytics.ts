@@ -423,6 +423,14 @@ export type FunnelEvent =
   | 'sample_analysis_opened'
   // "Agora e sua vez" depois dos exemplos (`viewed`: quantos a pessoa abriu).
   | 'sample_cta_clicked'
+  // Setups acompanhados (12/10/2026). Clique, envio e conclusao sao eventos
+  // separados; a conclusao (`setup_update_completed`) e o seguir de verdade
+  // (`setup_followed`) saem do servidor. So ids e enums, nunca texto ou preco.
+  | 'setup_follow_clicked'
+  | 'setup_opened'
+  | 'setup_update_clicked'
+  | 'setup_update_submitted'
+  | 'setup_update_failed'
   // Funil da demo anônima (/try) — Fase 0 de ativação:
   | 'demo_page_view'
   | 'demo_analysis_started'

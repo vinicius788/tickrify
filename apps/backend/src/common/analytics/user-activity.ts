@@ -9,6 +9,8 @@
  *     e no perfil: plan, billing_cycle, ticks_left, last_paid_analysis_at
  *   trade_outcome_set     { analysisId, outcome, hasPnl }
  *   strategy_saved        { hasProfile }
+ *   setup_update_completed { setupId, analysisId, version, daysSinceRoot, daysSinceLast,
+ *                            analysisType, ticksCost, recommendation } (setups.service.ts)
  */
 import { captureServer, type CaptureOptions } from './posthog';
 
@@ -21,7 +23,7 @@ type PrismaLike = {
 export async function trackUserActivity(
   prisma: PrismaLike,
   userId: string,
-  event: 'paid_analysis_started' | 'trade_outcome_set' | 'trade_note_saved' | 'strategy_saved',
+  event: 'paid_analysis_started' | 'trade_outcome_set' | 'trade_note_saved' | 'strategy_saved' | 'setup_update_completed',
   properties: Record<string, unknown>,
   options: CaptureOptions = {},
 ): Promise<void> {

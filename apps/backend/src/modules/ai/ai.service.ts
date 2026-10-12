@@ -56,6 +56,7 @@ import {
   type RecoveryEmailDeps,
 } from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
+import { SetupsService, recordSetupVersion } from './setups.service';
 import { TRADE_EMOTIONS, TRADE_MISTAKES, TRADE_NOTE_MAX, TRADE_SETUPS } from './dto/set-trade-note.dto';
 import { trackFreeAnalysisCompleted, trackFreeAnalysisStarted } from '../../common/analytics/free-funnel';
 import { analysisFailureCodeForResponse, safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../../common/analytics/analysis-failure';
@@ -172,6 +173,7 @@ export class AiService implements OnModuleInit {
     private promptBuilder: PromptBuilderService,
     private stripeService: StripeService,
     private mailService: MailService,
+    private setups: SetupsService,
   ) {}
 
   /**
@@ -338,15 +340,8 @@ export class AiService implements OnModuleInit {
     }
     if (ctx.priceAxis !== undefined) return ctx.priceAxis ?? none;
 
-    if (await this.isFreeLocked(userId)) {
-      const readable = await this.prisma.analysis.findMany({
-        where: { userId, status: 'completed' },
-        select: { id: true },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: FREE_READABLE_ANALYSES,
-      });
-      if (!readable.some((r) => r.id === id)) throw this.freeLockedError();
-    }
+    const readable = await this.readableAnalysisIds(userId);
+    if (readable && !readable.includes(id)) throw this.freeLockedError();
 
     const axis = (await this.aiAdapter.readPriceAxis(row.imageUrl)) ?? none;
     try {
@@ -428,8 +423,12 @@ export class AiService implements OnModuleInit {
     userLanguage?: string,
     htfBase64Images?: string[],
     clientContext?: AnalysisClientContext | null,
+    setupId?: string | null,
   ) {
     const preparedImage = this.prepareImagePayload(imageFile, base64Image);
+    // Atualizacao de setup (12/10/2026): setup alheio = 404, largado = 409,
+    // ANTES de subir imagem ou cobrar. Depois disto o fluxo e o de sempre.
+    if (setupId) await this.setups.assertUpdatable(userId, setupId);
     // useCache: decidir fila-vs-sincrono aceita um readiness de ate 15s. Sao
     // tres round-trips no Redis por analise que deixam de existir. O health
     // check continua perguntando ao vivo.
@@ -555,6 +554,7 @@ export class AiService implements OnModuleInit {
     );
 
     if (clientContext) await this.saveClientContext(analysis.id, clientContext);
+    if (setupId) await this.setups.linkAnalysis(userId, analysis.id, setupId);
     const source = clientContext?.source ?? 'web';
 
     // Funil gratis (fonte: banco). Fire-and-forget: nunca segura a analise.
@@ -584,6 +584,7 @@ export class AiService implements OnModuleInit {
         isDemo,
         userLanguage,
         strategyProfile,
+        setupId: setupId ?? null,
       }, { jobId: analysis.id });
 
       return {
@@ -611,6 +612,7 @@ export class AiService implements OnModuleInit {
       userLanguage,
       isDemo,
       strategyProfile,
+      setupId: setupId ?? null,
     });
   }
 
@@ -658,15 +660,8 @@ export class AiService implements OnModuleInit {
     }
 
     // Gratis esgotado: so as ultimas analises continuam abertas para leitura.
-    if (await this.isFreeLocked(userId)) {
-      const readable = await this.prisma.analysis.findMany({
-        where: { userId, status: 'completed' },
-        select: { id: true },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: FREE_READABLE_ANALYSES,
-      });
-      if (!readable.some((row) => row.id === analysis.id)) throw this.freeLockedError();
-    }
+    const readable = await this.readableAnalysisIds(userId);
+    if (readable && !readable.includes(analysis.id)) throw this.freeLockedError();
 
     const serialized = await this.serializeAnalysis(analysis);
     const calibration = await this.getCalibration(
@@ -1211,6 +1206,7 @@ export class AiService implements OnModuleInit {
     userLanguage?: string;
     isDemo?: boolean;
     strategyProfile?: StrategyProfile | null;
+    setupId?: string | null;
   }) {
     const {
       analysisId,
@@ -1223,6 +1219,7 @@ export class AiService implements OnModuleInit {
       userLanguage,
       isDemo,
       strategyProfile,
+      setupId,
     } = params;
     const startedAt = Date.now();
 
@@ -1292,6 +1289,14 @@ export class AiService implements OnModuleInit {
 
       // Última análise grátis concluída → e-mail de recuperação (ver o método).
       void this.notifyIfFreeQuotaExhausted(userId, updated.isDemo, updated.id);
+      // Versao de um setup acompanhado: mesma chamada do worker (fila).
+      if (setupId) {
+        void recordSetupVersion(
+          this.prisma,
+          { analysisId, userId, setupId, analysisType, isDemo: updated.isDemo },
+          (message) => this.logger.warn(message),
+        );
+      }
 
       const model = resolveModel(analysisType);
       await runPostHooks(pipelineCtx, aiResponse, [
@@ -1668,12 +1673,27 @@ export class AiService implements OnModuleInit {
     return !(await this.hasPaidAccess(userId));
   }
 
+  /**
+   * Gratis esgotado: ids das ultimas FREE_READABLE_ANALYSES analises concluidas,
+   * as unicas que continuam abertas para leitura. null = nada travado.
+   */
+  async readableAnalysisIds(userId: string): Promise<string[] | null> {
+    if (!(await this.isFreeLocked(userId))) return null;
+    const rows = await this.prisma.analysis.findMany({
+      where: { userId, status: 'completed' },
+      select: { id: true },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: FREE_READABLE_ANALYSES,
+    });
+    return rows.map((row) => row.id);
+  }
+
   private async isAdmin(userId: string): Promise<boolean> {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
     return String(user?.role || '').toLowerCase() === 'admin';
   }
 
-  private freeLockedError() {
+  freeLockedError() {
     return new HttpException(
       { code: 'free_quota_exhausted', message: 'Subscribe to keep access to your analyses and trades.' },
       HttpStatus.PAYMENT_REQUIRED,

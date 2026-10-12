@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { AiService, buildClientContext, sanitizeTradeNote } from './ai.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
 import { captureServer as captureServerMock } from '../../common/analytics/posthog';
+import { recordSetupVersion } from './setups.service';
 
 const captureServer = captureServerMock as jest.Mock;
 
@@ -9,6 +10,12 @@ const captureServer = captureServerMock as jest.Mock;
 jest.mock('../../common/analytics/posthog', () => ({
   ...jest.requireActual('../../common/analytics/posthog'),
   captureServer: jest.fn(),
+}));
+
+// Conclusao de versao de setup: o teste confere que o caminho sincrono chama.
+jest.mock('./setups.service', () => ({
+  ...jest.requireActual('./setups.service'),
+  recordSetupVersion: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('./ai.queue', () => ({
@@ -65,6 +72,7 @@ describe('AiService access enforcement', () => {
   let ticksService: any;
   let promptBuilder: any;
   let mailService: any;
+  let setups: any;
 
   beforeEach(() => {
     process.env.NODE_ENV = 'test';
@@ -163,7 +171,93 @@ describe('AiService access enforcement', () => {
       sendWelcome: jest.fn().mockResolvedValue(undefined),
     };
 
-    service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any, mailService as any);
+    setups = {
+      assertUpdatable: jest.fn().mockResolvedValue(undefined),
+      linkAnalysis: jest.fn().mockResolvedValue(undefined),
+    };
+
+    service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any, mailService as any, setups);
+  });
+
+  // ── Atualizar um setup acompanhado (12/10/2026) ─────────────────────────────
+  describe('atualizacao de setup', () => {
+    const flushAll = () => new Promise((resolve) => setImmediate(resolve));
+
+    beforeEach(() => {
+      setFreeQuota(prisma, { signals: 0 });
+    });
+
+    it('confere o setup ANTES de cobrar: alheio ou largado nao cria analise nem vincula', async () => {
+      const { NotFoundException } = jest.requireActual('@nestjs/common');
+      setups.assertUpdatable.mockRejectedValueOnce(new NotFoundException({ code: 'setup_not_found' }));
+
+      await expect(
+        service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, undefined, 'quick', 'en', [], null, 'setup-of-someone-else'),
+      ).rejects.toMatchObject({ status: 404 });
+
+      expect(setups.assertUpdatable).toHaveBeenCalledWith('usr_1', 'setup-of-someone-else');
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.analysis.create).not.toHaveBeenCalled();
+      expect(setups.linkAnalysis).not.toHaveBeenCalled();
+    });
+
+    it('fila: cobra igual a uma analise normal, vincula a analise criada e manda o setupId no job', async () => {
+      (getAiQueueReadiness as jest.Mock).mockResolvedValue(QUEUE_ONLINE);
+      const add = jest.fn().mockResolvedValue(undefined);
+      (getAiQueue as jest.Mock).mockReturnValue({ add });
+
+      await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, undefined, 'quick', 'en', [], null, 'setup-123456');
+
+      // Mesma reserva da cota gratis (transacao serializavel), nada de preco novo.
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.analysis.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ isDemo: true, userId: 'usr_1' }) }),
+      );
+      expect(setups.linkAnalysis).toHaveBeenCalledWith('usr_1', 'an_1', 'setup-123456');
+      expect(add).toHaveBeenCalledWith('process-analysis', expect.objectContaining({ analysisId: 'an_1', setupId: 'setup-123456' }), expect.anything());
+    });
+
+    it('sem setupId: nem confere nem vincula (analise normal intocada)', async () => {
+      (getAiQueueReadiness as jest.Mock).mockResolvedValue(QUEUE_ONLINE);
+      const add = jest.fn().mockResolvedValue(undefined);
+      (getAiQueue as jest.Mock).mockReturnValue({ add });
+
+      await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL);
+
+      expect(setups.assertUpdatable).not.toHaveBeenCalled();
+      expect(setups.linkAnalysis).not.toHaveBeenCalled();
+      expect(add).toHaveBeenCalledWith('process-analysis', expect.objectContaining({ setupId: null }), expect.anything());
+    });
+
+    it('caminho sincrono: grava a analise concluida sem tocar no setupId e registra a versao', async () => {
+      (recordSetupVersion as jest.Mock).mockClear();
+      (service as any).aiAdapter.analyzeImage = jest.fn().mockResolvedValue({
+        recommendation: 'WAIT', bias: 'neutral', confidence: 40, reasoning: 'No trigger yet.',
+        analysis: { symbol: 'EURUSD', timeframe: '1H', entryCondition: 'Close above 1.0950' },
+        rawResponse: {}, rawContent: '{}',
+      });
+      prisma.analysis.update
+        .mockResolvedValueOnce({ id: 'an_9', status: 'processing' })
+        .mockResolvedValueOnce({ id: 'an_9', status: 'completed', isDemo: true, createdAt: new Date(), updatedAt: new Date() });
+      (service as any).serializeAnalysis = jest.fn().mockResolvedValue({ id: 'an_9' });
+
+      await (service as any).processSynchronously({
+        analysisId: 'an_9', imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1',
+        analysisType: 'quick', isDemo: true, setupId: 'setup-123456',
+      });
+      await flushAll();
+
+      const completed = prisma.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed');
+      expect(completed).toBeDefined();
+      expect(completed[0].data).not.toHaveProperty('setupId');
+      // O motor nao recebeu nada do setup: os mesmos 5 argumentos de sempre.
+      expect((service as any).aiAdapter.analyzeImage.mock.calls[0]).toHaveLength(5);
+      expect(recordSetupVersion).toHaveBeenCalledWith(
+        prisma,
+        { analysisId: 'an_9', userId: 'usr_1', setupId: 'setup-123456', analysisType: 'quick', isDemo: true },
+        expect.any(Function),
+      );
+    });
   });
 
   it('returns the persisted safe code on a failed analysis and tolerates old rows', async () => {

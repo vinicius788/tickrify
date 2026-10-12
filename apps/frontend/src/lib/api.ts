@@ -269,6 +269,8 @@ export interface CreateAnalysisPayload {
   userLanguage?: string;
   /** Gráficos de timeframe maior (top-down) — opcionais, base64. */
   htfBase64Images?: string[];
+  /** Atualizacao de um setup acompanhado (o servidor confere dono e status). */
+  setupId?: string;
 }
 
 export interface AnalysisUsageResponse {
@@ -489,6 +491,10 @@ class APIClient {
     if (payload.htfBase64Images && payload.htfBase64Images.length > 0) {
       if (payload.htfBase64Images[0]) formData.append('htfBase64Image1', payload.htfBase64Images[0]);
       if (payload.htfBase64Images[1]) formData.append('htfBase64Image2', payload.htfBase64Images[1]);
+    }
+
+    if (payload.setupId) {
+      formData.append('setupId', payload.setupId);
     }
 
     const response = await this.request(

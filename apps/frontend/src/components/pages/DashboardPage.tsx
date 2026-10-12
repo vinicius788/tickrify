@@ -54,6 +54,10 @@ import { SAMPLE_ANALYSES, type SampleKind } from "@/lib/sample-analyses";
 import { PricingCards } from "@/components/pricing/PricingCards";
 import { useSeo } from "@/hooks/useSeo";
 import { loadSavedDemoResult } from "@/lib/demo-api";
+import FollowSetupBar from "../dashboard/FollowSetupBar";
+import SetupsSection from "../dashboard/SetupsSection";
+import SetupPage from "../dashboard/SetupPage";
+import { SETUP_ID_PATTERN, formatSetupDay, useSetupVersions } from "@/lib/setups";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
 // PT quando o idioma for português. Contido neste arquivo (sem mexer nos 6 locales).
@@ -148,7 +152,7 @@ const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
 };
 
-type View = 'dashboard' | 'new-analysis' | 'sample' | 'my-trades' | 'journal' | 'strategy' | 'plans' | 'analysis-result' | 'loading' | 'error' | 'locked';
+type View = 'dashboard' | 'new-analysis' | 'sample' | 'my-trades' | 'journal' | 'strategy' | 'plans' | 'setup' | 'analysis-result' | 'loading' | 'error' | 'locked';
 
 /**
  * Rotas do painel (05/10/2026). Antes era UMA rota so e as areas eram estado
@@ -164,8 +168,10 @@ type View = 'dashboard' | 'new-analysis' | 'sample' | 'my-trades' | 'journal' | 
  *   /dashboard/journal            diario
  *   /dashboard/strategy           perfil de estrategia
  *   /dashboard/plans              planos, sem sair do painel
+ *   /dashboard/setups/:id         um setup acompanhado e as versoes dele
+ *   /dashboard/new?setup=:id      atualizar esse setup (o envio de sempre)
  */
-type Section = 'home' | 'new' | 'sample' | 'analysis' | 'trades' | 'journal' | 'strategy' | 'plans';
+type Section = 'home' | 'new' | 'sample' | 'analysis' | 'trades' | 'journal' | 'strategy' | 'plans' | 'setups';
 type NavSection = 'home' | 'new' | 'trades' | 'journal' | 'strategy' | 'plans';
 const SECTION_PATH: Record<NavSection, string> = {
   home: '',
@@ -184,6 +190,7 @@ function parseDashboardPath(pathname: string): { base: string; section: Section 
   if (first === 'new' && !second) return { base, section: 'new', param: null };
   if (first === 'new' && second === 'example' && third && rest.length === 3) return { base, section: 'sample', param: third };
   if (first === 'analysis' && second && rest.length === 2) return { base, section: 'analysis', param: decodeURIComponent(second) };
+  if (first === 'setups' && second && rest.length === 2) return { base, section: 'setups', param: decodeURIComponent(second) };
   if (rest.length === 1 && ['trades', 'journal', 'strategy', 'plans'].includes(first)) {
     return { base, section: first as Section, param: null };
   }
@@ -635,6 +642,14 @@ const DashboardPage = () => {
       return next;
     });
   }, [navigate, base]);
+  // Atualizacao de setup: /dashboard/new?setup=<id>. O setup so vai junto se
+  // a pessoa ainda o acompanha; o servidor confere de novo antes de cobrar.
+  const setupParam = route.section === 'new' ? new URLSearchParams(location.search).get('setup') : null;
+  const updatingSetupId = setupParam && SETUP_ID_PATTERN.test(setupParam) && !isDemo ? setupParam : null;
+  const updatingSetupQuery = useSetupVersions(updatingSetupId, 1);
+  const updatingSetupPage = updatingSetupQuery.data?.pages[0];
+  const updatingSetup = updatingSetupPage?.setup.status === 'tracking' ? updatingSetupPage : null;
+
   // Sinais gratis que ainda restam (o /usage ja desconta); 3 enquanto carrega.
   const samplesFreeLeft = Number.isFinite(remaining) ? Math.max(0, remaining) : (total ?? 3);
 
@@ -691,6 +706,8 @@ const DashboardPage = () => {
         return 'strategy';
       case 'plans':
         return 'plans';
+      case 'setups':
+        return 'setup';
       default:
         return null;
     }
@@ -899,6 +916,7 @@ const DashboardPage = () => {
 
     // Memoriza o envio para o retry manter o mesmo gráfico e contexto.
     lastAnalysisParamsRef.current = { imageUrl, imageFile, htfBase64Images, analysisType };
+    const setupId = updatingSetup?.setup.id;
 
     const startedAt = performance.now();
     try {
@@ -906,6 +924,7 @@ const DashboardPage = () => {
       setFlow('loading');
       setErrorMessage('');
 
+      if (setupId) track('setup_update_submitted', { setupId });
       track('analysis_started', {
         analysisType,
         plan,
@@ -922,6 +941,7 @@ const DashboardPage = () => {
         userLanguage: language,
         htfBase64Images: htfBase64Images.length > 0 ? htfBase64Images : undefined,
         analysisType,
+        setupId,
       });
 
       // Incrementar contador (apenas quando logado)
@@ -973,6 +993,8 @@ const DashboardPage = () => {
       if (!isDemo && user) {
         refetchAnalyses();
       }
+      // Nova versao de setup: a lista do inicio e a pagina do setup releem.
+      if (setupId) void queryClient.invalidateQueries({ queryKey: ['setups'] });
     } catch (error) {
       console.error('[Dashboard] Erro ao criar análise:', error);
       track('analysis_failed', {
@@ -984,6 +1006,7 @@ const DashboardPage = () => {
         fileBytes: imageFile?.size ?? null,
         fileType: imageFile?.type || null,
       });
+      if (setupId) track('setup_update_failed', { setupId, code: analysisFailureTelemetry(error).code });
       // Reconcilia o contador com o backend: falhas não consomem análise grátis,
       // então o slot precisa voltar caso a IA tenha falhado.
       incrementAnalysis();
@@ -1032,6 +1055,10 @@ const DashboardPage = () => {
         setErrorMessage(dc.networkError);
       } else if (error instanceof APIError && error.code === 'auth_token_failed') {
         setErrorMessage(dc.authTokenFailed);
+      } else if (error instanceof APIError && error.code === 'setup_not_tracking') {
+        setErrorMessage(t.setups.updateNotFollowed);
+      } else if (error instanceof APIError && error.code === 'setup_not_found') {
+        setErrorMessage(t.setups.updateNotFound);
       } else {
         setErrorMessage(error instanceof Error ? error.message : dc.analysisUnknownError);
       }
@@ -1096,6 +1123,13 @@ const DashboardPage = () => {
     ];
     return (
       <div className="flex flex-col gap-4">
+        {/* Topo: preparacao (perfil salvo + nova analise) e os setups que a
+            pessoa segue. Gratis esgotado: o servidor responde 402 e a secao
+            fica de fora (o setup em si abre o paywall `setups`). */}
+        {!isDemo && !freeLocked && (
+          <SetupsSection base={base} onNewAnalysis={resetNewAnalysisView} showEmpty={dashboardKpis.total > 0} />
+        )}
+
         {/* De onde a pessoa veio, perguntado a ela. A atribuicao tecnica
             (PostHog + UTM) nao respondeu isso para os tres primeiros
             assinantes; ver o cabecalho do AcquisitionSurvey. */}
@@ -1419,7 +1453,36 @@ const DashboardPage = () => {
               paywallFor('new_analysis')
             ) : (
               <div id="new-analysis-upload" className="scroll-mt-24">
-                <NewAnalysis key={analysisKey} onStartAnalysis={handleStartAnalysis} allowHigherTimeframes={!isDemo && isUnlimited} />
+                <NewAnalysis
+                  key={analysisKey}
+                  onStartAnalysis={handleStartAnalysis}
+                  allowHigherTimeframes={!isDemo && isUnlimited}
+                  setupUpdate={
+                    updatingSetup
+                      ? {
+                          title: t.setups.updatingTitle.replace(
+                            '{setup}',
+                            `${updatingSetup.setup.symbol ?? 'N/A'} ${updatingSetup.setup.timeframe ?? ''}`.trim(),
+                          ),
+                          detail:
+                            updatingSetup.versions[0]?.recommendation === 'WAIT' && updatingSetup.versions[0].entryCondition
+                              ? t.setups.waitingFor
+                                  .replace('{condition}', updatingSetup.versions[0].entryCondition)
+                                  .replace('{date}', formatSetupDay(updatingSetup.versions[0].createdAt, DATE_LOCALES[language] ?? 'en-US'))
+                              : null,
+                          hint: t.setups.updatingHint,
+                          costLine: (deep) =>
+                            isUnlimited
+                              ? t.setups.costPaid
+                                  .replace('{cost}', String(deep ? 3 : 1))
+                                  .replace('{balance}', String(Math.floor(Number(ticksBalance) || 0)))
+                              : t.setups.costFree.replace('{left}', String(samplesFreeLeft)),
+                          cancelLabel: t.setups.updatingCancel,
+                          onCancel: resetNewAnalysisView,
+                        }
+                      : null
+                  }
+                />
               </div>
             )}
           </div>
@@ -1499,6 +1562,18 @@ const DashboardPage = () => {
         return <JournalCalendar onStartAnalysis={resetNewAnalysisView} />;
       case 'strategy':
         return <StrategyProfile />;
+      case 'setup':
+        return (
+          <SetupPage
+            setupId={String(route.param)}
+            base={base}
+            onUpdate={(setupId) => {
+              track('setup_update_clicked', { setupId });
+              navigate(`${base}/new?setup=${encodeURIComponent(setupId)}`);
+            }}
+            paywall={() => paywallFor('setups')}
+          />
+        );
       case 'plans':
         return (
           <div className="flex flex-col gap-4">
@@ -1599,6 +1674,18 @@ const DashboardPage = () => {
               </div>
             )}
             <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />
+            {/* Seguir o setup: ao lado das acoes de sempre, nunca no lugar delas. */}
+            {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' ? (
+              <FollowSetupBar
+                key={`follow-${analysisData.id}`}
+                analysisId={analysisData.id}
+                recommendation={(() => {
+                  const tone = getRecommendationMeta(analysisData.recommendation).tone;
+                  return tone === 'buy' ? 'BUY' : tone === 'sell' ? 'SELL' : 'WAIT';
+                })()}
+                base={base}
+              />
+            ) : null}
             {/* Estrelas so para quem paga. */}
             {!isDemo && isUnlimited && analysisData?.id ? (
               <RatingCard key={analysisData.id} analysisId={analysisData.id} />
@@ -1743,7 +1830,11 @@ const DashboardPage = () => {
     freeRemainingChip === null ? `${safeUsed}/-` : `${freeRemainingChip} ${t.nav.freeLeft}`;
   // Item ativo do menu: sai da URL. Resultado e exemplos pertencem a "Nova analise".
   const activeNav: NavSection | null =
-    route.section === 'sample' || route.section === 'analysis' ? 'new' : (route.section as NavSection | null);
+    route.section === 'sample' || route.section === 'analysis'
+      ? 'new'
+      : route.section === 'setups'
+        ? 'home'
+        : (route.section as NavSection | null);
   const currentViewLabel =
     activeNav === 'trades'
       ? t.nav.myTrades

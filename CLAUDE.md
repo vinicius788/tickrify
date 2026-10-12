@@ -32,8 +32,11 @@
 1. Nenhuma sessao cria arquivo novo no repositorio, a nao ser **codigo que roda**
    (`.ts`, `.tsx`, `.sql`, config, migracao). Arquivo que nao e codigo: **nao
    crie, pergunte.**
-2. Documento (plano, relatorio, prompt, thread, roteiro, analise, handoff) vai
+2. Documento (plano, relatorio, thread, roteiro, analise, handoff) vai
    para `_local/` (gitignored) ou e entregue no chat. Nunca no git.
+   **Prompt (para outro Claude/sessao) vai SEMPRE escrito no chat, para o dono
+   copiar e colar. Nunca vira arquivo, nem em `_local/`** (12/10/2026: pasta
+   enche e ninguem limpa).
 3. Nada de `RESUMO.md`, `HANDOFF.md`, `PLANO_X.md`, `NOTES.md`, README novo. O
    contexto do projeto mora AQUI; atualize este arquivo em vez de criar outro.
 4. Arquivo de codigo novo precisa de justificativa dita antes de criar (por que
@@ -515,6 +518,30 @@ Vale para TODA mudanca, grande ou pequena:
   so aparece com `EXTENSION_STORE_URL` preenchida (vazia ate a loja aprovar) e
   em Chrome/Edge de computador. Eventos `extension_card_viewed/clicked/dismissed`.
 
+### 3.8 Setups acompanhados (12/10, Parte A; aguardando commit/deploy)
+
+- **Seguir != favoritar != entrar.** "Follow setup" (abaixo do resultado, em
+  destaque no WAIT) grava `TrackedSetup` e `Analysis.setupId`; nao toca
+  `userVerdict`, resultado, valor, diario, /usage nem consultas publicas.
+  Seguir 2x = 1 setup (unico em `rootAnalysisId`); largar/arquivar so muda o
+  status (`tracking|untracked|archived`). Teto de 20 `tracking` (lock por
+  pessoa no Postgres). Codigo em `modules/ai/setups.*`, tudo por SQL.
+- **Atualizar = analise normal** com `setupId` no `POST ai/analyze`
+  (`/dashboard/new?setup=<id>`, custo real na tela antes de enviar). O
+  servidor confere ANTES de cobrar: alheio 404, largado 409. Vinculo gravado na
+  criacao (vale para fila e sincrono); `recordSetupVersion` roda na conclusao
+  dos dois caminhos. O motor nunca le o `setupId`.
+- **Rotas** `/api/setups` (lista, seguir, `by-analysis/:id`, `:id` com versoes
+  por cursor, `PATCH :id`): nenhuma publica; gratis esgotado = 402 (a pagina do
+  setup mostra so versoes entre as 3 abertas, senao Paywall `setups`). Tela:
+  topo do inicio (linha do perfil de estrategia + setups) e
+  `/dashboard/setups/:id` ("Analysis from <data>", nunca "current/live").
+- **PostHog:** servidor `setup_followed`, `setup_unfollowed`, `setup_archived`,
+  `setup_update_completed`; navegador `setup_follow_clicked`, `setup_opened`,
+  `setup_update_clicked/submitted/failed`. So ids e enums.
+- `schema.prisma` so ganha `TrackedSetup` e `setupId` DEPOIS do deploy (patch
+  em `_local/setups-chat/`, ver secao 6).
+
 ---
 
 ## 4. Regras tecnicas que nasceram de bug real (nao desfazer)
@@ -695,6 +722,8 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 12/10 | **Setups (Parte A) no ar:** (1) depois do deploy, conferir no boot `[setups] Tabela e coluna prontas.`; (2) rodar no Supabase `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Analysis_setupId_idx" ON "tickrify"."Analysis"("setupId");` (desfazer: `DROP INDEX CONCURRENTLY IF EXISTS "tickrify"."Analysis_setupId_idx";`); (3) so entao aplicar o patch do `schema.prisma` (`_local/setups-chat/schema-parte-a.patch`) e commitar. Medir em 7 dias: % de quem seguiu e fez `setup_update_completed` em OUTRO dia em ate 7 dias; 2a analise de quem tomou WAIT na 1a (hoje ~50%); dias distintos com analise por semana entre assinantes. | dono / Claude |
+| 08/10 | **Proximo experimento: teste mais longo (tese do dono).** O dono acha que 3 analises nao bastam para o trader ver se o produto e bom: "se ele testar 3 dias e no 4o pensar *preciso disso*, assina". Pensar bem antes de fazer. Combinado: NAO trocar o gratis (e o que traz gente; 83% de quem cadastra analisa) nem pedir cartao no cadastro (o cartao e o buraco: 11 de 12 checkouts sem cartao digitado, 40% de recusa por falta de saldo). Desenho candidato: no PAYWALL, opcao "3 days full access" com cartao, virando semanal/mensal no 4o dia; variante "3 days for $1" (a cobranca de US$ 1 ja testa o cartao no dia 1, nao entrega 3 dias de IA a quem nao vai conseguir pagar). Stripe tem trial nativo. Medir checkout iniciado x cartao digitado x pago no dia 5 contra o funil atual (13 abrem, 1 paga). Antes: dono assiste ~10 gravacoes do PostHog (session replay) de quem ficou 10+ min sem assinar (perdido ou interessado?). Mexe em cobranca: demo clicavel e ok do dono antes de codigo. Junto: credibilidade (depoimentos no ar, texto "How I use Tickrify", "Who's behind this" com foto, video de 60 s) e conversa 1 a 1 com os pagantes (SQL de uso por assinante entregue no chat em 08/10; mensagem citando o uso real + 1 mes gratis por call de 15 min). | dono decide / Claude |
 | 07/10 | **Estrelas e depoimentos.** "How useful was this read?" abaixo do resultado de analise PAGA (`RatingCard`, 1x/semana; respondeu, 30 dias). Nota alta pede frase + licenca OPT-IN para citar; nota baixa, motivos de lista fechada. Tabela `AnalysisRating` (migracao `20261007130000` + boot), `modules/ratings/`. /admin aba Opinioes: notas, media por BUY/SELL/WAIT e botao Publicar (so com licenca e comentario, o servidor confere). Site: `TestimonialsSection` na home e na /pricing e uma frase no paywall, SO com 2+ publicados. PostHog: `rating_card_viewed`, `rating_given`, `rating_details_sent`, `analysis_rated` (servidor), sem texto. Falta: commit/deploy; bloco "How I use Tickrify" do dono (precisa do texto dele). | dono / Claude |
 | 06/10 | **Linhas: medir em mais graficos antes de divulgar.** A leitura do eixo foi medida em 4 graficos do TradingView (tema claro, 1D) e, em 07/10, num print real do dono (XAUUSD 5m, tema ESCURO, Pepperstone): as 4 linhas no preco certo pelo eixo, erro de ~1 px. Falta: corretoras (area marcada pode nao ter o eixo: a IA tem que devolver null) e o `[Cost] price-axis` real no Render. Se alguma passar de ~15 px, desligar as linhas (a extensao ja fica so com precos quando nao ha escala). | Claude |
 | 07/10 | **Extensao PAUSADA pelo dono para replanejar** (achou o fluxo confuso). Nada publicado: so roda no Chrome dele (pasta da Mesa); o card do site segue desligado. Ficou decidido manter a analise direto no clique no TradingView. Em aberto ao voltar: arrastar a linha da ordem no grafico apaga as linhas da extensao (nao da para distinguir de arrastar o grafico); o painel do TradingView que abre embaixo muda a altura do grafico sem apagar as linhas (falta observar o tamanho do grafico). | dono |
@@ -801,6 +830,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **07/10 (funil conferido no PostHog e na Stripe):** recarregar `/dashboard/analysis/:id` contava `upgrade_cta_viewed { source: 'last_free_result' }` duas vezes (uma com chave `unknown` enquanto carregava) e ate quando a analise caia no paywall; agora so conta com a analise na tela. Abrir checkout de outro ciclo expira a sessao aberta (trava 3 do `stripe.service.ts`) e, com ela, a assinatura `incomplete` e a fatura: o link de fatura mandado a mao ao cliente do anual morreu assim quando ele abriu o semanal.
 - **07/10 (extensao no ar para o dono):** `CORS_ORIGINS` e `CLERK_AUTHORIZED_PARTIES` no Render, `allowed_origins` e "Native API" no Clerk; 1a analise real (EURJPY 5m SELL, linhas no lugar). Depois, a pedido dele: paleta do site, painel SO em ingles (o portugues era a conversa), precos copiaveis, linhas ficam no clique parado. A suite achou 2 bugs que cobrariam 2 vezes (trava solta pela analise velha; "comecar" atrasado) e o 1o clique perdido na Binance; corrigidos (3.7, regras 6 a 8).
 - **07/10 (cripto, desistido):** passe pre-pago em cripto via NOWPayments foi implementado e publicado (commit `6698806`) e REMOVIDO no mesmo dia por decisao do dono: a assinatura continua so pela Stripe. Nunca foi ligado (sem chaves), nenhum pagamento. Motivo da ideia, se voltar: nos paises emergentes 8 de 8 recusas desde set/26 foram do BANCO (Stripe/Radar nao bloqueiam nada; Radar so com regras padrao). Pesquisa: Stripe Crypto nao atende conta BR; Coinbase Commerce fechou fora de US/SG; NOWPayments serve, mas o repasse em USDT TRC20 pode custar varios dolares por pagamento (usar rede barata). Desenho e demo em `_local/cripto/`.
+- **12/10 (setups, Parte A):** seguir um setup a partir de qualquer analise e atualizar com o fluxo normal de nova analise (versoes em `/dashboard/setups/:id`, secao no topo do inicio); tabela `TrackedSetup` + `Analysis.setupId` por SQL, testado num Postgres descartavel (30 casos: dono, idempotencia, teto, clique duplo, cursores, ordem das versoes).
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

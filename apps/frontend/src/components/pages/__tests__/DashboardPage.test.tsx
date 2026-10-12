@@ -130,6 +130,7 @@ function makeApiClient(overrides: Record<string, unknown> = {}) {
     getAnalysisUsage: vi.fn(),
     setOutcome: vi.fn().mockResolvedValue(undefined),
     syncUserProfile: vi.fn().mockResolvedValue(undefined),
+    getStrategy: vi.fn().mockResolvedValue({ profile: null, paid: false }),
     waitForAnalysisCompletion: vi.fn().mockResolvedValue({ status: 'completed' }),
     ...overrides,
   };
@@ -181,9 +182,13 @@ describe('DashboardPage', () => {
     });
     mockUseAuth.mockReturnValue({ getToken: vi.fn().mockResolvedValue('token') });
     mockUseAPIClient.mockReturnValue(makeApiClient());
+    // Setups (12/10/2026) buscam por fetch proprio: fora do ar por padrao,
+    // a secao some e o resto do painel e o de sempre.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) }));
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     // Sem config do Vitest (globals: false) a Testing Library NAO desmonta a
     // tela sozinha entre testes: os paineis se empilhavam e o clique em
     // "Nova Analise"[0] caia no painel do teste ANTERIOR.
@@ -323,6 +328,57 @@ describe('DashboardPage', () => {
     const failed = mockTrack.mock.calls.find(([event]) => event === 'analysis_failed');
     expect(failed?.[1]).toMatchObject({ code: 'auth_token_failed', stage: 'request' });
     expect(failed?.[1].errorMessage).toBeUndefined();
+  });
+
+  it('atualizar setup: o envio de sempre leva o setupId e conta clique e envio separados', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+      String(url).includes('/api/setups/setup-aaaaaaaa')
+        ? {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              setup: {
+                id: 'setup-aaaaaaaa', status: 'tracking', symbol: 'EURUSD', timeframe: '1H', rootAnalysisId: 'analysis00001',
+                createdAt: '2026-10-10T10:00:00.000Z', lastAnalysisAt: '2026-10-10T10:00:00.000Z',
+              },
+              versions: [],
+              nextCursor: null,
+            }),
+          }
+        : { ok: false, status: 503, json: async () => ({}) },
+    ));
+    mockUseUser.mockReturnValue({ user: { id: 'user-1' } });
+    mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 0, remaining: 3, isUnlimited: false, isLoading: false });
+    const createAnalysis = vi.fn().mockResolvedValue({ id: 'analysis00002', status: 'pending' });
+    mockUseAPIClient.mockReturnValue(
+      makeApiClient({ createAnalysis, waitForAnalysisCompletion: vi.fn().mockResolvedValue({ id: 'analysis00002', status: 'completed' }) }),
+    );
+
+    renderDashboard('/dashboard/new?setup=setup-aaaaaaaa');
+    // O envio so leva o setup depois de confirmar que ele ainda e acompanhado.
+    await waitFor(() => expect((fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.some(([u]) => String(u).includes('/api/setups/setup-aaaaaaaa'))).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
+
+    await waitFor(() => expect(createAnalysis).toHaveBeenCalledWith(expect.objectContaining({ setupId: 'setup-aaaaaaaa' })));
+    expect(mockTrack).toHaveBeenCalledWith('setup_update_submitted', { setupId: 'setup-aaaaaaaa' });
+    expect(await screen.findByText('Analysis result')).toBeTruthy();
+  });
+
+  it('nova analise sem setup na URL nao manda setupId', async () => {
+    const user = userEvent.setup();
+    mockUseUser.mockReturnValue({ user: { id: 'user-1' } });
+    mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 0, remaining: 3, isUnlimited: false, isLoading: false });
+    const createAnalysis = vi.fn().mockResolvedValue({ id: 'analysis00002', status: 'pending' });
+    mockUseAPIClient.mockReturnValue(makeApiClient({ createAnalysis }));
+
+    renderDashboard('/dashboard/new');
+    await user.click((await screen.findAllByRole('button', { name: 'start-with-image' }))[0]);
+
+    await waitFor(() => expect(createAnalysis).toHaveBeenCalled());
+    expect(createAnalysis.mock.calls[0][0].setupId).toBeUndefined();
+    expect(mockTrack.mock.calls.some(([event]) => event === 'setup_update_submitted')).toBe(false);
   });
 
   describe('fim das 3 gratis', () => {

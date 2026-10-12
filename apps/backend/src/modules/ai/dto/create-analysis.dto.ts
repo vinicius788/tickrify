@@ -1,5 +1,6 @@
 import { IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { AnalysisType } from '../../ticks/tick-packages';
+import { SETUP_ID_PATTERN } from './setups.dto';
 
 export class CreateAnalysisDto {
   @IsOptional()
@@ -54,4 +55,11 @@ export class CreateAnalysisDto {
   @MaxLength(8)
   @Matches(/^[A-Za-z0-9]+$/)
   chartTimeframe?: string;
+
+  // Atualizacao de um setup acompanhado (12/10/2026). O servidor confere o
+  // dono e o status antes de cobrar; o motor nunca le este campo.
+  @IsOptional()
+  @IsString()
+  @Matches(SETUP_ID_PATTERN)
+  setupId?: string;
 }

@@ -98,6 +98,7 @@ export class AiController {
         body.userLanguage,
         htfImages,
         buildClientContext(body),
+        body.setupId ?? null,
       );
 
       this.logger.log(`Analysis created: ${result.id}`);

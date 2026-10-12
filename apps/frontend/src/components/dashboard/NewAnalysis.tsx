@@ -15,7 +15,41 @@ interface NewAnalysisProps {
   ) => void;
   /** Multi-timeframe (top-down) é recurso de assinante. No grátis/demo fica oculto. */
   allowHigherTimeframes?: boolean;
+  /**
+   * Atualizacao de um setup acompanhado (12/10/2026): o mesmo envio de sempre,
+   * com o setup no topo e o custo real antes de enviar.
+   */
+  setupUpdate?: SetupUpdateContext | null;
 }
+
+export interface SetupUpdateContext {
+  title: string;
+  detail: string | null;
+  hint: string;
+  /** Custo real desta analise (ticks do assinante ou gratis restantes). */
+  costLine: (deep: boolean) => string;
+  cancelLabel: string;
+  onCancel: () => void;
+}
+
+/** `deep` null: o custo vai junto do botao (tela de revisao), nao aqui. */
+const SetupUpdateBanner = ({ context, deep }: { context: SetupUpdateContext; deep: boolean | null }) => (
+  <Card className="flex flex-col gap-2 border border-[var(--border-accent)] bg-[var(--bg-card)] px-4 py-3.5">
+    <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <p className="text-sm font-semibold text-[var(--text-primary)]">{context.title}</p>
+      <button
+        type="button"
+        onClick={context.onCancel}
+        className="text-xs text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text-primary)] hover:underline"
+      >
+        {context.cancelLabel}
+      </button>
+    </div>
+    {context.detail ? <p className="text-xs leading-relaxed text-[var(--text-primary)]/85">{context.detail}</p> : null}
+    <p className="text-xs leading-relaxed text-[var(--text-secondary)]">{context.hint}</p>
+    {deep === null ? null : <p className="font-terminal text-[11px] text-[var(--text-primary)]">{context.costLine(deep)}</p>}
+  </Card>
+);
 
 const MAX_HTF = 2;
 
@@ -28,7 +62,7 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnalysisProps) => {
+const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdate = null }: NewAnalysisProps) => {
   const { t } = useLanguage();
   const u = t.analysis.upload;
   const [mainFile, setMainFile] = useState<File | null>(null);
@@ -166,6 +200,8 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
   if (!mainFile) {
     return (
       <div className="flex flex-col gap-4">
+        {setupUpdate ? <SetupUpdateBanner context={setupUpdate} deep={false} /> : null}
+
         <p className="max-w-[480px] text-[13.5px] leading-relaxed text-[var(--text-secondary)]">{u.subtitle}</p>
 
         <Stepper active={1} />
@@ -266,6 +302,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
   // ── Estado de revisão: gráfico principal + timeframes maiores (opcional) + Analisar ──
   return (
     <div className="flex flex-col gap-4">
+      {setupUpdate ? <SetupUpdateBanner context={setupUpdate} deep={null} /> : null}
       <Stepper active={2} />
       <Card className="border border-[var(--border-subtle)] bg-[var(--bg-card)] flex min-h-[480px] flex-1 flex-col px-4 py-6 md:px-8">
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
@@ -342,6 +379,9 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true }: NewAnaly
                 </span>
               </label>
             )}
+            {setupUpdate ? (
+              <p className="mb-2 text-center font-terminal text-[11px] text-[var(--text-primary)]">{setupUpdate.costLine(deep)}</p>
+            ) : null}
             <button
               type="button"
               onClick={() => void analyze()}
