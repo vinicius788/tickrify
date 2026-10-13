@@ -57,6 +57,8 @@ export interface EngineTimings {
 
 export interface EngineRecord {
   version: string;
+  /** Provedor de IA que respondeu (vision-model.ts). null = caminho sem adapter. */
+  provider: string | null;
   data_mode: 'print';
   validator_action: ValidatorAction;
   validator_reasons: SignalDecisionResult['validatorReasons'];
@@ -82,6 +84,7 @@ const VALIDATOR_REASON_TEXT: Record<SignalDecisionResult['validatorReasons'][num
   implausible_price: 'A price level is outside a plausible range of the chart price.',
   rr_below_min: 'No target pays enough for the risk.',
   direction: 'Stop and targets do not match the trade direction.',
+  incomplete: 'A required price level is missing.',
 };
 
 function clip(text: string, max: number): string {
@@ -180,6 +183,7 @@ function ms(value: number | null | undefined): number | null {
 
 export function buildEngineRecord(params: {
   contract: EngineContractInput;
+  provider?: string | null;
   validatorAction: ValidatorAction;
   validatorFlags: SignalDecisionResult['validatorFlags'];
   timings: Partial<Record<keyof EngineTimings, number | null | undefined>>;
@@ -192,6 +196,7 @@ export function buildEngineRecord(params: {
   const t = params.timings;
   return {
     version: ENGINE_VERSION,
+    provider: params.provider ?? null,
     data_mode: 'print',
     validator_action: params.validatorAction,
     validator_reasons: [...params.contract.validatorReasons],

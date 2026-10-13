@@ -28,7 +28,7 @@ Não é serviço de sinais. A decisão é sempre do trader. Consequência práti
 | Backend | NestJS + Prisma | **Render** (`tickrify`) |
 | Worker | BullMQ + Redis | Embutido no serviço Render `tickrify` |
 | Banco | Postgres (**Supabase**, região `us-west-2`) | — |
-| IA | OpenAI — `gpt-4o-mini` (quick) / `gpt-4o` (deep), configuráveis por tipo | — |
+| IA | Camada única de provedor (`modules/ai/vision-model.ts`): OpenAI ativa, modelo por tipo (`AI_MODEL_QUICK/DEEP`); outro provedor opcional por env | — |
 | Pagamento | Stripe (Checkout + webhooks) | — |
 | Observabilidade | PostHog (funil) + Sentry (frontend) | — |
 | E-mail | Resend | — |

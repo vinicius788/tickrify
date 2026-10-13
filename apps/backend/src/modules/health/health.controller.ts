@@ -3,6 +3,7 @@ import { Controller, Get, ServiceUnavailableException, UseGuards } from '@nestjs
 import { PrismaService } from '../database/prisma.service';
 import { EconomicCalendarService } from '../calendar/calendar.service';
 import { getAiQueueReadiness } from '../ai/ai.queue';
+import { aiProviderStatus } from '../ai/vision-model';
 import { hasValidOpenAiKey } from '../../common/utils/ai-runtime';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { Public } from '../../common/decorators/public.decorator';
@@ -169,6 +170,9 @@ export class HealthController {
         required: runtimeProduction,
         configured: aiConfigured,
         ready: aiReady,
+        // Camada de provedor (vision-model.ts): qual responde, se ha contingencia
+        // e se o modo comparacao esta ligado. Sem ANTHROPIC_API_KEY: openai/none.
+        providers: aiProviderStatus(),
         model: process.env.AI_MODEL ? 'configured' : 'default',
         modelQuick: process.env.AI_MODEL_QUICK?.trim() || 'default',
         modelDeep: process.env.AI_MODEL_DEEP?.trim() || 'default',

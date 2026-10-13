@@ -5,14 +5,18 @@ import { Recommendation, hasInvalidTradePlanLevels } from './analysis-normalizer
 // ----------------------------------------------------------------------------
 // Roda depois da resposta do modelo e antes de qualquer coisa chegar a tela.
 // Cada regra devolve um codigo; quem chama decide o destino:
-//   - `direction`: o adapter e o worker FALHAM a analise (o tick volta). Virar
-//     WAIT cobraria o assinante por um erro do modelo.
+//   - `direction` e `incomplete` (BROKEN_PLAN_RULES): o adapter repete a
+//     chamada UMA vez; se continuar quebrado, FALHA a analise (o tick volta).
+//     Virar WAIT cobraria o assinante por um erro do modelo.
 //   - as outras: o `decideSignal` rebaixa para WAIT, mantendo os niveis,
 //     menos as de MEASURE_ONLY_RULES, que so ficam registradas.
 // O R/R minimo continua sendo o guard do `decideSignal` (decisao de 05/10).
 // ============================================================================
 
-export type TradePlanRule = 'direction' | 'stop_inside_invalidation' | 'implausible_price';
+export type TradePlanRule = 'direction' | 'incomplete' | 'stop_inside_invalidation' | 'implausible_price';
+
+/** Plano quebrado: nao vira WAIT, falha (depois de uma nova tentativa no adapter). */
+export const BROKEN_PLAN_RULES: readonly TradePlanRule[] = ['direction', 'incomplete'];
 
 /**
  * Regras que so MEDEM (vao para `validator_flags`, nao rebaixam). Em 12/10 o
@@ -46,6 +50,12 @@ export function validateTradePlan(input: TradePlanInput): TradePlanRule[] {
   if (input.side === 'WAIT') return [];
   const failures: TradePlanRule[] = [];
   const { side, entry, stopLoss, takeProfit1, takeProfit2, invalidationLevel, currentPrice } = input;
+
+  // BUY/SELL precisa de entrada, stop e ao menos um alvo, todos numeros > 0.
+  const positive = (value: number | null | undefined) => finite(value) && value > 0;
+  if (!positive(entry) || !positive(stopLoss) || !(positive(takeProfit1) || positive(takeProfit2))) {
+    failures.push('incomplete');
+  }
 
   // BUY: stop abaixo da entrada e alvos acima. SELL: o inverso.
   const stopWrongSide = finite(entry) && finite(stopLoss) &&

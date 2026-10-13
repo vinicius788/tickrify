@@ -29,7 +29,7 @@ um exemplo separado em `apps/frontend/.env.example`.
 | Fila | `REDIS_URL`, `REDIS_HOST`, `REDIS_PORT` | Redis e obrigatorio em producao para a fila BullMQ e o worker embutido. |
 | Autenticacao | `CLERK_*`, `BOOTSTRAP_ADMIN_EMAILS` | Chaves secretas ficam somente no ambiente do backend. |
 | Storage | `SUPABASE_*`, `USE_LOCAL_STORAGE`, `MAX_IMAGE_UPLOAD_BYTES` | Producao usa Supabase Storage; armazenamento local e apenas auxiliar de desenvolvimento. |
-| IA | `OPENAI_API_KEY`, `AI_MODEL_*`, `AI_REASONING_EFFORT_*` | Modelos quick e deep podem ser configurados separadamente. |
+| IA | `OPENAI_API_KEY`, `AI_MODEL_*`, `AI_REASONING_EFFORT_*`, `AI_PROVIDER`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL_QUICK/DEEP/LIGHT`, `AI_COMPARE_PROVIDERS` | Modelos quick e deep podem ser configurados separadamente. Toda chamada passa por `modules/ai/vision-model.ts`. `AI_PROVIDER` = `openai` (padrao) ou `anthropic`; sem `ANTHROPIC_API_KEY` a Anthropic nao existe e tudo roda na OpenAI. Com as duas chaves, o outro provedor vira contingencia automatica. `AI_COMPARE_PROVIDERS=true` (desligado por padrao) roda o segundo provedor em paralelo e grava os dois em AdminAudit `ai:provider_compare` + PostHog `ai_provider_compared`, sem mostrar o segundo ao usuario. O `/health` mostra `ai.providers`. |
 | Cobranca | `STRIPE_*` | Necessario quando a integracao Stripe esta ativa. |
 | URLs e CORS | `APP_URL`, `FRONTEND_URL`, `CORS_ORIGINS` | Devem conter apenas origens confiaveis em producao. |
 | Operacoes | `INTERNAL_OPS_TOKEN` | Protege os endpoints internos de health e readiness. |

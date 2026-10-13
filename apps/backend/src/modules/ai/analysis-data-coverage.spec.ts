@@ -78,7 +78,7 @@ describe('analysis data coverage', () => {
 
   it('does not claim multiple timeframes when every extra image fails', async () => {
     const adapter = new AIAdapter() as any;
-    adapter.resolveImageUrlForOpenAi = jest.fn(async (url: string) => {
+    adapter.resolveImageUrlForModel = jest.fn(async (url: string) => {
       if (url === 'broken-htf') throw new Error('unavailable');
       return url;
     });
@@ -89,7 +89,7 @@ describe('analysis data coverage', () => {
 
   it('retains the top-down instruction when an extra image is delivered', async () => {
     const adapter = new AIAdapter() as any;
-    adapter.resolveImageUrlForOpenAi = jest.fn(async (url: string) => url);
+    adapter.resolveImageUrlForModel = jest.fn(async (url: string) => url);
     const content = await adapter.buildUserContent('primary-chart', ['valid-htf']);
     expect(content.filter((part: { type: string }) => part.type === 'image')).toHaveLength(2);
     expect(content[0].text).toContain('MÚLTIPLOS');
@@ -97,7 +97,7 @@ describe('analysis data coverage', () => {
 
   it('numbers only delivered HTF images after an earlier image fails', async () => {
     const adapter = new AIAdapter() as any;
-    adapter.resolveImageUrlForOpenAi = jest.fn(async (url: string) => {
+    adapter.resolveImageUrlForModel = jest.fn(async (url: string) => {
       if (url === 'broken-htf') throw new Error('unavailable');
       return url;
     });

@@ -9,7 +9,7 @@ Backend da plataforma Tickrify para autenticação, análises de IA, billing e o
 - BullMQ + Redis (processamento assíncrono)
 - Clerk (auth JWT)
 - Stripe (checkout, portal, webhooks)
-- OpenAI (análise de imagem)
+- Provedor de IA (análise de imagem; camada única em `src/modules/ai/vision-model.ts`)
 - Supabase Storage (persistência de imagens)
 
 ## Endpoints Canônicos

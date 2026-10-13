@@ -259,8 +259,9 @@ describe('AiService access enforcement', () => {
         contract: { verdict: 'NEUTRAL', asset: 'EURUSD', timeframe: '1H', engine_version: '2.0.0' },
       });
       expect(completed[0].data.result.engine.timings.server_total_ms).toBeGreaterThanOrEqual(500);
-      // O motor nao recebeu nada do setup: os mesmos 5 argumentos de sempre.
-      expect((service as any).aiAdapter.analyzeImage.mock.calls[0]).toHaveLength(5);
+      // O motor nao recebeu nada do setup: os 5 argumentos de sempre + a opcao de comparacao.
+      expect((service as any).aiAdapter.analyzeImage.mock.calls[0]).toHaveLength(6);
+      expect((service as any).aiAdapter.analyzeImage.mock.calls[0][5]).toEqual({ compareProviders: true });
       expect(recordSetupVersion).toHaveBeenCalledWith(
         prisma,
         { analysisId: 'an_9', userId: 'usr_1', setupId: 'setup-123456', analysisType: 'quick', isDemo: true },

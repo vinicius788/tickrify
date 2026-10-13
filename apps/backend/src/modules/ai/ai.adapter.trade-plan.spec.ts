@@ -1,11 +1,14 @@
 import { createHash } from 'crypto';
 import { AIAdapter, buildRealDataBlock } from './ai.adapter';
-import { OpenAiVisionModel } from './vision-model';
+import { FallbackVisionModel, OpenAiVisionModel, type VisionModel } from './vision-model';
 
 // A analise chama o modelo so pela interface do provedor; o fake fica no
 // cliente da OpenAI para exercitar a implementacao real (mensagens, parse).
 function withFakeOpenAi(adapter: AIAdapter, create: jest.Mock): void {
-  (adapter as any).visionModel = new OpenAiVisionModel({ chat: { completions: { create } } } as any);
+  (adapter as any).visionModel = new FallbackVisionModel(
+    new OpenAiVisionModel({ chat: { completions: { create } } } as any),
+    null,
+  );
 }
 
 const responseFor = (takeProfit1: number, extra: Record<string, unknown> = {}) => ({
@@ -42,14 +45,49 @@ describe('AIAdapter trade-plan integrity', () => {
     else process.env.ENABLE_NEWS_GUARD = oldNews;
   });
 
-  it('rejects a BUY whose TP1 is below entry, even when TP2 looks attractive', async () => {
+  it('rejects a BUY whose TP1 is below entry after ONE retry, even when TP2 looks attractive', async () => {
     const adapter = new AIAdapter();
     const create = jest.fn().mockResolvedValue(responseFor(90));
     withFakeOpenAi(adapter, create);
 
     await expect(adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick'))
       .rejects.toMatchObject({ code: 'invalid_trade_plan', retriable: false });
-    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the retry answer when the second plan is coherent', async () => {
+    const adapter = new AIAdapter();
+    const create = jest.fn()
+      .mockResolvedValueOnce(responseFor(90))
+      .mockResolvedValueOnce(responseFor(110));
+    withFakeOpenAi(adapter, create);
+
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(result.recommendation).toBe('BUY');
+    expect(result.analysis?.takeProfit1).toBe(110);
+    expect(result.engineMeta?.provider).toBe('openai');
+  });
+
+  it('treats a BUY without a stop as a broken plan (retry, then fail)', async () => {
+    const adapter = new AIAdapter();
+    const create = jest.fn().mockResolvedValue(responseFor(110, { stopLoss: null }));
+    withFakeOpenAi(adapter, create);
+
+    await expect(adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick'))
+      .rejects.toMatchObject({ code: 'invalid_trade_plan' });
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries once when the answer is not valid JSON', async () => {
+    const adapter = new AIAdapter();
+    const broken = { model: 'gpt-5.6-luna', choices: [{ finish_reason: 'stop', message: { content: 'not json' } }] };
+    const create = jest.fn().mockResolvedValueOnce(broken).mockResolvedValueOnce(responseFor(110));
+    withFakeOpenAi(adapter, create);
+
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(result.recommendation).toBe('BUY');
   });
 
   it('preserves a coherent BUY plan', async () => {
@@ -117,6 +155,66 @@ describe('AIAdapter trade-plan integrity', () => {
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(result.respondedModel).toBe('gpt-5.6-luna');
     expect(result.groundingStats).toBeNull();
+  });
+});
+
+describe('AIAdapter provider comparison (AI_COMPARE_PROVIDERS)', () => {
+  const saved = { ...process.env };
+  beforeEach(() => {
+    process.env.ENABLE_QUICK_GROUNDING = 'false';
+    process.env.ENABLE_NEWS_GUARD = 'false';
+  });
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  function secondaryAnswering(recommendation: string): VisionModel {
+    const body = JSON.parse(responseFor(110).choices[0].message.content);
+    return {
+      provider: 'fake-second',
+      complete: jest.fn().mockResolvedValue({
+        provider: 'fake-second', model: 'fake-model', content: JSON.stringify({ ...body, recommendation }),
+        finishReason: 'stop', refusal: '', respondedModel: 'fake-model', modelMs: 5,
+        usage: { promptTokens: 10, cachedTokens: 0, completionTokens: 20, reasoningTokens: 0, totalTokens: 30 },
+      }),
+    };
+  }
+
+  it('runs the second provider only when the flag is on AND the caller records it', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
+    const second = secondaryAnswering('SELL');
+    (adapter as any).secondaryModel = second;
+
+    process.env.AI_COMPARE_PROVIDERS = 'false';
+    const off = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick', [], null, { compareProviders: true });
+    expect(off.providerComparison).toBeUndefined();
+
+    process.env.AI_COMPARE_PROVIDERS = 'true';
+    const demo = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(demo.providerComparison).toBeUndefined();
+    expect(second.complete).not.toHaveBeenCalled();
+
+    const on = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick', [], null, { compareProviders: true });
+    // O usuario ve so o ativo.
+    expect(on.recommendation).toBe('BUY');
+    const comparison = await on.providerComparison;
+    expect(comparison).toMatchObject({
+      agree: false,
+      primary: { provider: 'openai', recommendation: 'BUY', entry: 100 },
+      secondary: { provider: 'fake-second', recommendation: 'SELL', modelMs: 5, error: null },
+    });
+  });
+
+  it('records a failing second provider without touching the analysis', async () => {
+    process.env.AI_COMPARE_PROVIDERS = 'true';
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
+    (adapter as any).secondaryModel = { provider: 'x', complete: jest.fn().mockRejectedValue(new Error('down')) };
+
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick', [], null, { compareProviders: true });
+    expect(result.recommendation).toBe('BUY');
+    await expect(result.providerComparison).resolves.toMatchObject({ agree: null, secondary: { error: 'down' } });
   });
 });
 

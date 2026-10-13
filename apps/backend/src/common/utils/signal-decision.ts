@@ -6,7 +6,7 @@ import {
   applyRiskRewardGuard,
 } from './analysis-normalizer';
 import { EconomicCalendarService } from '../../modules/calendar/calendar.service';
-import { MEASURE_ONLY_RULES, TradePlanRule } from './trade-plan-validator';
+import { BROKEN_PLAN_RULES, MEASURE_ONLY_RULES, TradePlanRule } from './trade-plan-validator';
 
 // ============================================================================
 // DECISÃO DE SINAL — SEQUÊNCIA DETERMINÍSTICA ÚNICA (paridade adapter/worker)
@@ -97,7 +97,7 @@ export async function decideSignal(
   // print vira WAIT (níveis preservados, confiança <= 45, igual ao guard de R/R).
   const failures = input.recommendation === 'WAIT'
     ? []
-    : (input.planFailures ?? []).filter((rule) => rule !== 'direction');
+    : (input.planFailures ?? []).filter((rule) => !BROKEN_PLAN_RULES.includes(rule));
   const validatorFlags = failures.filter((rule) => MEASURE_ONLY_RULES.includes(rule));
   const planFailures = failures.filter((rule) => !MEASURE_ONLY_RULES.includes(rule));
   const planDowngraded = input.recommendation !== 'WAIT' && planFailures.length > 0;

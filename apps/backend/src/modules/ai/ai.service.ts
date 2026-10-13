@@ -24,6 +24,7 @@ import { billingCycleForPriceId, isWeeklyPriceId, resolvePlanForPriceId } from '
 import { trackUserActivity } from '../../common/analytics/user-activity';
 import { AIAdapter, AIAnalysisError } from './ai.adapter';
 import { resolveModel } from './openai-params';
+import { recordProviderComparison } from './vision-model';
 import { TRADING_SYSTEM_PROMPT_V9 } from '../../common/prompts/trading-system-prompt-v9';
 import { UploadedFile } from '../../common/interfaces/multer';
 import { PromptBuilderService } from '../prompt/prompt-builder.service';
@@ -1275,12 +1276,14 @@ export class AiService implements OnModuleInit {
         analysisType,
         htfImageUrls ?? [],
         strategyProfile,
+        { compareProviders: true },
       );
 
       // Contrato v2 + validador + tempos (mesmo bloco do worker; sem fila aqui).
       const meta = aiResponse.engineMeta;
       const analysisFields = (aiResponse.analysis ?? {}) as Record<string, unknown>;
       const engine = buildEngineRecord({
+        provider: meta?.provider ?? null,
         contract: {
           recommendation: aiResponse.recommendation,
           confidencePct: aiResponse.confidence,
@@ -1349,6 +1352,14 @@ export class AiService implements OnModuleInit {
       });
       // Mesma telemetria do worker (fila).
       await saveAnalysisTelemetry(this.prisma, analysisId, telemetryFromAiSource(aiResponse), (m) => this.logger.warn(m));
+      // Modo comparacao de provedores (desligado por padrao), igual ao worker.
+      if (aiResponse.providerComparison) {
+        void recordProviderComparison(
+          this.prisma,
+          { analysisId, userId, comparison: aiResponse.providerComparison },
+          (m) => this.logger.warn(m),
+        );
+      }
 
       // Última análise grátis concluída → e-mail de recuperação (ver o método).
       void this.notifyIfFreeQuotaExhausted(userId, updated.isDemo, updated.id);

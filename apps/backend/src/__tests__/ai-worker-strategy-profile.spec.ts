@@ -411,7 +411,9 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     const completed = prismaClient.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed');
     expect(completed).toBeDefined();
     expect(completed[0].data).not.toHaveProperty('setupId');
-    expect(analyzeImageMock.mock.calls[0]).toHaveLength(5);
+    // O motor nao recebe nada do setup: os 5 argumentos de sempre + a opcao de comparacao.
+    expect(analyzeImageMock.mock.calls[0]).toHaveLength(6);
+    expect(analyzeImageMock.mock.calls[0][5]).toEqual({ compareProviders: true });
     const versionQuery = calls.find((c) => c.path === '$queryRaw' && (c.args[1] === 'setup-123456' || (c.args as unknown[]).includes('setup-123456')));
     expect(versionQuery).toBeDefined();
   });

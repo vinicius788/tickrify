@@ -312,6 +312,20 @@ Vale para TODA mudanca, grande ou pequena:
   trades (7%) e 0 fora de faixa; rebaixar mudaria o que o motor entrega sem
   saber se esses trades perdem mais. R/R segue o guard de 1,2 no melhor alvo. `[Cost]` agora mostra `cached=` (cache de prompt).
   Streaming adiado (precisa de Redis pub/sub + SSE; a analise roda no worker).
+- **Camada unica de provedor (13/10):** TODA chamada a modelo (analise, eixo de
+  preco, `extractSymbol`) passa por `vision-model.ts`; nada mais fala com a
+  OpenAI. `AI_PROVIDER` = `openai` (padrao) | `anthropic`; a Anthropic (HTTP,
+  sem SDK) so existe com `ANTHROPIC_API_KEY` e hoje esta INATIVA. Com as duas
+  chaves, o outro provedor vira contingencia automatica (`FallbackVisionModel`).
+  `AI_COMPARE_PROVIDERS=true` (desligado) roda o segundo em paralelo e grava em
+  AdminAudit `ai:provider_compare` + PostHog `ai_provider_compared`; o usuario
+  nunca ve o segundo. `/health` mostra `ai.providers`; `result.engine.provider`
+  diz quem respondeu. Checagem por codigo: JSON invalido ou plano quebrado
+  (`direction`, `incomplete` = sem entrada/stop/alvo) repete a chamada UMA vez
+  dentro do mesmo `AI_ANALYZE_TIMEOUT_MS`; falhou de novo, tick volta. Antes de
+  ligar a Anthropic: o schema da analise tem 29 campos anulaveis e a saida
+  estruturada dela aceita 16 (vai como texto no prompt, sem garantia de ordem);
+  medir no backtest (4.1).
 
 ### 3.3 Pagamentos (Stripe)
 
@@ -771,6 +785,8 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 13/10 | **Blog com o visual do site:** demo em `_local/blog-visual/demo.html` (tokens `.tk-site`, cabecalho/rodape do site, filtro por categoria na listagem, post em superficie escura ou papel). Dono escolhe a superficie e aprova; depois: CSS unico `/blog/blog.css` nos 12 HTMLs, sem mexer no texto. URLs do blog auditadas (0 link quebrado, canonical e sitemap ok, slugs limpos): NAO mudar URL nem criar `/blog/categoria` (filtro so na listagem). | dono aprova / Claude |
+| 13/10 | **Quando a Anthropic entrar em uso:** atualizar /privacy (secao 4 ja diz "AI provider"; texto proposto entregue no chat em 13/10) e conferir `[ai-provider]` no Render. Nada publico cita a Anthropic antes disso. | dono / Claude |
 | 12/10 | **Redesenho da tela de resultado nunca juntado:** branch remota `claude/blissful-heisenberg-dwasmg` (01/10, 2 commits): acao em destaque e vies secundario, WAIT explicado uma vez como decisao de risco, preco sem `$`, textos dos exemplos em `t.samples` nos 6 idiomas (~540 linhas no `AnalysisResult.tsx`), e `scripts/e2e-payment.mjs` no lugar do `e2e-staging.mjs`. O `main` mudou muito depois (setups, motor 2.0.0, estrelas): decidir se refaz em cima do `main` (com demo antes) ou se descarta e apaga a branch. | dono decide |
 | 12/10 | **Motor 2.0.0 no ar:** depois do deploy conferir `analysis_completed` com `engine_version=2.0.0` e `[Cost] ... cached=` no Render. Em 7 dias: `validator_action` por valor, mediana de `model_ms`, `queue_ms`, `verdict_visible_ms`. Tempo ate o 1o token so existe com streaming. Em **19/10**, junto do R/R guard: acerto (WIN/LOSS do sweeper) dos trades com stop antes da invalidacao x os outros; so ligar o rebaixamento se perderem claramente mais com n >= 30. | dono / Claude |
 | 12/10 | **Chat (Parte B) no ar:** (1) conferir no boot `[chat] Tabelas prontas.`; (2) escolher a frase de boas-vindas do chat (versao 1 no ar); (3) ligar no /admin `CHAT_EMAIL_NOTIFY` quando quiser os avisos por e-mail (conferir depois `[mail] Enviado kind=chat_founder_notify` e `kind=chat_reply`; lembrar que a Resend gratis e 100/dia para tudo). Medir por semana: conversas iniciadas pelo usuario, tempo ate a 1a resposta, e % de quem conversou que analisou ou assinou em 7 dias contra quem nao conversou (leitura, sem afirmar causa). | dono / Claude |
@@ -886,6 +902,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **12/10 (testes em producao):** setups e chat testados logado no Chrome do dono (seguir, atualizar com print novo cobrando 1 tick, versao 2 no setup, arquivar, chat ida e volta com nao lidas, /admin, 375 px). Achados corrigidos: condicao do WAIT tambem do `alternativeScenario` e "First analysis" com a data da 1a analise (nao a de seguir).
 - **12/10 (motor 2.0.0):** medicao por etapa no `analysis_completed`, contrato v2 em `result.engine`, validador do plano com testes, chamada ao modelo isolada em `VisionModel`, `streamAnalyzeImage` (morto desde 21/09) removido. Linha de base PostHog (30 dias, `symbol` so existe desde 30/09): 347 analises com ativo, ouro 59%, cripto 28%, forex 7%, indices sinteticos 4%, indices 1%, acoes 0.
 - **12/10 (limpeza do git):** 4 worktrees (3 do Codex, 1 do Claude), 7 branches locais ja contidas no `main` e os 2 stashes (seguranca 28/09 e My Trades 24/09, ambos ja no `main`) removidos; backup dos diffs em `_local/limpeza-2026-10-12/`. Do worktree do Codex `analysis-funnel-count` (28/09, nunca commitado) entrou so o `analysisNumber` contando WAIT (3.4); os scripts do piloto de analise (`analysis-pilot-*`, `analysis-checklist-candidate`) ficaram so no backup. Frontend, setups e chat confirmados em producao (bundle e rotas respondendo). Em 13/10: 12 branches remotas ja contidas no `main` apagadas do GitHub; Docker sem o staging de 01/10 (7 conteineres `supabase_*_tickrify-staging-20261001`, 2 volumes, 2 imagens) e sem cache de build (9,2 GB). Restou so a branch `claude/blissful-heisenberg-dwasmg` (6.2).
+- **13/10 (provedor de IA):** camada unica `vision-model.ts` com OpenAI ativa, Anthropic pronta e inativa, contingencia, modo comparacao desligado e nova tentativa unica quando a checagem por codigo falha (ver 3.2). Nao existe chat com IA no produto (o chat e com o fundador), entao nao ha historico de chat a limitar.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

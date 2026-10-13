@@ -16,15 +16,19 @@ import {
   deriveMarketRegime,
 } from '../../common/utils/analysis-normalizer';
 import { decideSignal } from '../../common/utils/signal-decision';
-import { computeCost, extractUsage, formatCostLog } from './model-cost';
+import { computeCost, formatCostLog } from './model-cost';
 import {
-  OpenAiVisionModel,
-  extractMessageContent,
+  compareProvidersEnabled,
+  createVisionModels,
   withTimeout,
+  type ProviderComparison,
+  type ProviderRunSummary,
   type VisionContentPart,
   type VisionModel,
+  type VisionModelRequest,
+  type VisionModelResult,
 } from './vision-model';
-import { validateTradePlan } from '../../common/utils/trade-plan-validator';
+import { BROKEN_PLAN_RULES, validateTradePlan, type TradePlanRule } from '../../common/utils/trade-plan-validator';
 import { PRICE_AXIS_PROMPT, PRICE_AXIS_SCHEMA, sanitizePriceAxis, type PriceAxis } from './price-axis';
 import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
@@ -43,7 +47,6 @@ import {
   type GroundingStats,
 } from './analysis-data-coverage';
 import {
-  buildSamplingParams,
   isNextGenModel,
   resolveModel,
   resolveReasoningEffort,
@@ -690,6 +693,36 @@ const ANALYZE_TIMEOUT_MS = (() => {
   return Number.isFinite(raw) && raw >= 20_000 && raw <= 180_000 ? raw : 55_000;
 })();
 
+/** Nova tentativa so se sobrar ao menos isto do orcamento da analise. */
+const MIN_RETRY_BUDGET_MS = 20_000;
+
+/** Resumo de uma resposta para o modo comparacao (vision-model.ts). */
+function summarizeProviderRun(result: VisionModelResult | null, error: string | null): ProviderRunSummary {
+  let parsed: TradingAnalysisSchemaResult | null = null;
+  let parseError: string | null = null;
+  if (result?.content) {
+    try {
+      parsed = parseSchemaResult(result.content);
+    } catch (err) {
+      parseError = err instanceof Error ? err.message : 'invalid json';
+    }
+  }
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  return {
+    provider: result?.provider ?? 'unknown',
+    model: result?.model ?? 'unknown',
+    respondedModel: result?.respondedModel ?? null,
+    modelMs: result?.modelMs ?? 0,
+    usage: result?.usage ?? { promptTokens: 0, cachedTokens: 0, completionTokens: 0, reasoningTokens: 0, totalTokens: 0 },
+    recommendation: parsed ? mapSchemaRecommendationToInternal(parsed.recommendation) : null,
+    entry: num(parsed?.analysis?.entry),
+    stopLoss: num(parsed?.analysis?.stopLoss),
+    takeProfit1: num(parsed?.analysis?.takeProfit1),
+    result: parsed ?? result?.content ?? null,
+    error: error ?? parseError,
+  };
+}
+
 /**
  * Tenta reparar JSON truncado fechando colchetes/chaves abertas.
  * O OpenAI às vezes atinge o limite de tokens com o JSON quase completo (faltando apenas `}`).
@@ -872,9 +905,10 @@ const calendarService = new EconomicCalendarService();
 
 @Injectable()
 export class AIAdapter {
-  private readonly openai: OpenAI;
-  /** A chamada da analise passa SO por aqui (ver vision-model.ts). */
+  /** Toda chamada a modelo passa SO por aqui (ver vision-model.ts). */
   private readonly visionModel: VisionModel;
+  /** Outro provedor configurado (modo comparacao), ou null. */
+  private readonly secondaryModel: VisionModel | null;
   private readonly logger = new Logger(AIAdapter.name);
   private readonly supabaseClient: SupabaseClient | null;
   private readonly defaultStorageBucket: string;
@@ -893,8 +927,9 @@ export class AIAdapter {
       );
     }
 
-    this.openai = new OpenAI({ apiKey });
-    this.visionModel = new OpenAiVisionModel(this.openai);
+    const models = createVisionModels(new OpenAI({ apiKey }), process.env, (m) => this.logger.warn(m));
+    this.visionModel = models.model;
+    this.secondaryModel = models.secondary;
     this.defaultStorageBucket = process.env.SUPABASE_STORAGE_BUCKET?.trim() || 'analysis-images';
     this.supabaseClient =
       supabaseUrl && supabaseServiceKey
@@ -949,7 +984,7 @@ export class AIAdapter {
     };
   }
 
-  private async resolveImageUrlForOpenAi(imageUrl: string): Promise<string> {
+  private async resolveImageUrlForModel(imageUrl: string): Promise<string> {
     if (!/^https?:\/\//i.test(imageUrl)) {
       return imageUrl;
     }
@@ -988,29 +1023,25 @@ export class AIAdapter {
    * schema do motor. Nunca lanca: qualquer falha vira null (sem linhas).
    */
   async readPriceAxis(imageUrl: string): Promise<PriceAxis | null> {
-    const model = resolveModel('quick');
     try {
-      const signed = await this.resolveImageUrlForOpenAi(imageUrl);
-      const response = await withTimeout((signal) => this.openai.chat.completions.create({
-        model,
-        ...buildSamplingParams(model, { maxTokens: 4000, temperature: 0, topP: 1, seed: 42, reasoningEffort: 'low' }),
-        response_format: {
-          type: 'json_schema',
-          json_schema: { name: 'price_axis', strict: true, schema: PRICE_AXIS_SCHEMA },
-        } as any,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: PRICE_AXIS_PROMPT },
-              { type: 'image_url', image_url: { url: signed, detail: 'high' } },
-            ],
-          },
+      const signed = await this.resolveImageUrlForModel(imageUrl);
+      const result = await this.visionModel.complete({
+        tier: 'quick',
+        instructions: '',
+        context: [],
+        userContent: [
+          { type: 'text', text: PRICE_AXIS_PROMPT },
+          { type: 'image', url: signed },
         ],
-      }, { signal }), 30_000, 'Price axis read timed out after 30s');
-      this.logger.log(formatCostLog(model, 'price-axis', computeCost(model, extractUsage(response.usage), 0)));
-      const content = response.choices?.[0]?.message?.content ?? '';
-      return sanitizePriceAxis(JSON.parse(content));
+        schemaName: 'price_axis',
+        schema: PRICE_AXIS_SCHEMA as unknown as Record<string, unknown>,
+        maxTokens: 4000,
+        sampling: { temperature: 0, topP: 1, seed: 42 },
+        reasoningEffort: 'low',
+        timeoutMs: 30_000,
+      });
+      this.logger.log(formatCostLog(result.model, 'price-axis', computeCost(result.model, result.usage, 0)));
+      return sanitizePriceAxis(JSON.parse(result.content || ''));
     } catch (err) {
       this.logger.warn(`[price-axis] Leitura do eixo falhou: ${err instanceof Error ? err.message : err}`);
       return null;
@@ -1026,7 +1057,7 @@ export class AIAdapter {
     imageUrl: string,
     extraImageUrls: string[],
   ): Promise<VisionContentPart[]> {
-    const signedPrimary = await this.resolveImageUrlForOpenAi(imageUrl);
+    const signedPrimary = await this.resolveImageUrlForModel(imageUrl);
     const content: VisionContentPart[] = [
       {
         type: 'text',
@@ -1040,7 +1071,7 @@ export class AIAdapter {
 
     for (let i = 0; i < extraImageUrls.length; i++) {
       try {
-        const signed = await this.resolveImageUrlForOpenAi(extraImageUrls[i]);
+        const signed = await this.resolveImageUrlForModel(extraImageUrls[i]);
         const deliveredNumber = content.filter((part) => part.type === 'image').length;
         content.push({
           type: 'text',
@@ -1083,29 +1114,23 @@ export class AIAdapter {
     imageUrl: string,
   ): Promise<{ symbol: string; timeframe: string; lastPrice: number | null } | null> {
     try {
-      const resp = await withTimeout(
-        (signal) => this.openai.chat.completions.create({
-          model: 'gpt-4o-mini',
-          max_tokens: 80,
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: 'Read this trading chart screenshot. Return ONLY JSON: {"symbol":"<ticker e.g. BTCUSDT, XAUUSD, EURUSD, or empty>","timeframe":"<e.g. 15m, 1h, 4h, or empty>","lastPrice":<the price of the most recent candle close, as a number read from the Y axis, or null>}. Read every digit of the price. If you cannot read something clearly, use an empty string or null.',
-                },
-                { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } },
-              ] as any,
-            },
-          ],
-        }, { signal }),
-        12_000,
-        'symbol extraction timed out',
-      );
-      const txt = extractMessageContent(resp.choices[0]?.message?.content);
+      const result = await this.visionModel.complete({
+        tier: 'light',
+        instructions: '',
+        context: [],
+        userContent: [
+          {
+            type: 'text',
+            text: 'Read this trading chart screenshot. Return ONLY JSON: {"symbol":"<ticker e.g. BTCUSDT, XAUUSD, EURUSD, or empty>","timeframe":"<e.g. 15m, 1h, 4h, or empty>","lastPrice":<the price of the most recent candle close, as a number read from the Y axis, or null>}. Read every digit of the price. If you cannot read something clearly, use an empty string or null.',
+          },
+          { type: 'image', url: imageUrl },
+        ],
+        maxTokens: 80,
+        sampling: { temperature: 0 },
+        imageDetail: 'low',
+        timeoutMs: 12_000,
+      });
+      const txt = result.content;
       const parsed = JSON.parse(txt || '{}');
       const symbol = String(parsed.symbol || '').trim();
       const timeframe = String(parsed.timeframe || '').trim();
@@ -1578,6 +1603,8 @@ export class AIAdapter {
     analysisType: AnalysisType = 'quick',
     extraImageUrls: string[] = [],
     strategyProfile?: StrategyProfile | null,
+    /** compareProviders: so quem grava a comparacao pede (worker e caminho sincrono; a demo nao). */
+    options: { compareProviders?: boolean } = {},
   ): Promise<AIAnalysisResponse> {
     try {
       const userContent = await this.buildUserContent(imageUrl, extraImageUrls);
@@ -1672,6 +1699,7 @@ export class AIAdapter {
       // assertIsFinancialChart removida: adicionava 5-15s de latência em CADA análise.
       // O prompt principal já rejeita imagens inválidas via campo "non_chart_image" implícito
       // no schema. A validação prévia custava mais em latência do que poupava em tokens.
+      // Teto de saida medido no modelo da OpenAI; vale igual para o outro provedor.
       const model = resolveModel(analysisType);
       // quick: 8000 tokens cobre análise completa v7.0 com novos campos (~5000 tokens reais)
       // deep: 12000 tokens para análise mais detalhada
@@ -1710,8 +1738,8 @@ export class AIAdapter {
 
       // A chamada passa pela interface do provedor (vision-model.ts): instrucoes
       // fixas primeiro, contexto variavel depois, imagens por ultimo.
-      const modelResult = await this.visionModel.complete({
-        model,
+      const request: VisionModelRequest = {
+        tier: analysisType === 'deep' ? 'deep' : 'quick',
         instructions: prompt,
         context,
         userContent,
@@ -1855,136 +1883,196 @@ export class AIAdapter {
         },
         maxTokens,
         reasoningEffort: resolveReasoningEffort(analysisType),
+        sampling: { temperature: 0.1, topP: 0.1, seed: 42 },
         timeoutMs: ANALYZE_TIMEOUT_MS,
-      });
+      };
 
-      const { content, finishReason, refusal, usage } = modelResult;
+      // Modo comparacao (desligado por padrao; vision-model.ts): o outro
+      // provedor roda em paralelo e ninguem espera por ele.
+      const secondaryRun =
+        options.compareProviders && this.secondaryModel && compareProvidersEnabled()
+          ? this.secondaryModel.complete(request).then(
+              (result) => ({ result, error: null as string | null }),
+              (err: unknown) => ({ result: null, error: err instanceof Error ? err.message : 'error' }),
+            )
+          : null;
 
-      // Uso real e custo ESTIMADO desta análise, sempre (não atrás de flag de debug). O `usage`
-      // já vinha na resposta e era descartado fora do modo de debug, então o
-      // gasto de `reasoning_tokens` dos modelos GPT-5 — que é a maior incógnita
-      // da conta de margem — nunca foi observado em produção. Ver model-cost.ts.
-      // Instrumentação nunca pode derrubar a análise: tudo dentro de try/catch.
-      try {
-        const breakdown = computeCost(model, usage, analysisType === 'deep' ? 3 : 1);
-        this.logger.log(formatCostLog(model, analysisType, breakdown));
-      } catch {
-        /* medir nunca quebra o que está sendo medido */
-      }
+      const runOnce = async (timeoutMs: number) => {
+        const modelResult = await this.visionModel.complete({ ...request, timeoutMs });
 
-      // Diagnóstico (AI_DEBUG_DUMP_RAW=/caminho/arquivo.txt): grava a RESPOSTA
-      // crua do modelo e o uso de tokens. Serve para descobrir para onde vão os
-      // tokens quando a resposta volta truncada — sem isso a investigação é chute.
-      // Só a resposta é gravada; o prompt do sistema NUNCA vai para arquivo.
-      if (process.env.AI_DEBUG_DUMP_RAW) {
+        const { content, finishReason, refusal, usage } = modelResult;
+
+        // Uso real e custo ESTIMADO desta análise, sempre (não atrás de flag de debug). O `usage`
+        // já vinha na resposta e era descartado fora do modo de debug, então o
+        // gasto de `reasoning_tokens` dos modelos GPT-5 — que é a maior incógnita
+        // da conta de margem — nunca foi observado em produção. Ver model-cost.ts.
+        // Instrumentação nunca pode derrubar a análise: tudo dentro de try/catch.
         try {
-          require('fs').appendFileSync(
-            process.env.AI_DEBUG_DUMP_RAW,
-            [
-              '===== ' + new Date().toISOString() + ' =====',
-              'model=' + model + ' finish_reason=' + finishReason,
-              'tokens: prompt=' + usage.promptTokens + ' cached=' + usage.cachedTokens +
-                ' completion=' + usage.completionTokens + ' total=' + usage.totalTokens,
-              'reasoning=' + usage.reasoningTokens,
-              'content_length=' + String(content || '').length,
-              '--- RESPOSTA CRUA ---',
-              String(content || ''),
-              '',
-            ].join('\n'),
-          );
+          const breakdown = computeCost(modelResult.model, usage, analysisType === 'deep' ? 3 : 1);
+          this.logger.log(formatCostLog(modelResult.model, analysisType, breakdown));
         } catch {
-          /* diagnóstico é best-effort */
+          /* medir nunca quebra o que está sendo medido */
         }
-      }
 
-      if (refusal) {
-        throw new AIAnalysisError({
-          code: 'openai_refusal',
-          message: `OpenAI recusou a resposta estruturada: ${refusal}`,
-          retriable: false,
-          rawContent: refusal,
-        });
-      }
-
-      if (!content) {
-        throw new AIAnalysisError({
-          code: 'openai_empty_content',
-          message: 'OpenAI retornou conteúdo vazio para análise.',
-          retriable: false,
-        });
-      }
-
-      // Se truncado, tenta reparar o JSON antes de falhar
-      // O modelo às vezes gera todos os dados mas falta apenas o `}` final
-      let contentToParse = content;
-      if (finishReason === 'length') {
-        const repaired = repairTruncatedJson(content);
-        if (repaired) {
-          contentToParse = repaired;
-          this.logger.warn('[AIAdapter] Resposta truncada pelo OpenAI — JSON reparado com sucesso');
+        // Diagnóstico (AI_DEBUG_DUMP_RAW=/caminho/arquivo.txt): grava a RESPOSTA
+        // crua do modelo e o uso de tokens. Serve para descobrir para onde vão os
+        // tokens quando a resposta volta truncada — sem isso a investigação é chute.
+        // Só a resposta é gravada; o prompt do sistema NUNCA vai para arquivo.
+        if (process.env.AI_DEBUG_DUMP_RAW) {
+          try {
+            require('fs').appendFileSync(
+              process.env.AI_DEBUG_DUMP_RAW,
+              [
+                '===== ' + new Date().toISOString() + ' =====',
+                'model=' + modelResult.model + ' finish_reason=' + finishReason,
+                'tokens: prompt=' + usage.promptTokens + ' cached=' + usage.cachedTokens +
+                  ' completion=' + usage.completionTokens + ' total=' + usage.totalTokens,
+                'reasoning=' + usage.reasoningTokens,
+                'content_length=' + String(content || '').length,
+                '--- RESPOSTA CRUA ---',
+                String(content || ''),
+                '',
+              ].join('\n'),
+            );
+          } catch {
+            /* diagnóstico é best-effort */
+          }
         }
-      }
 
-      let parsed: TradingAnalysisSchemaResult;
-      const tParse = Date.now();
-      try {
-        parsed = parseSchemaResult(contentToParse);
-        if (finishReason === 'length') {
-          this.logger.warn('[AIAdapter] Análise salva após reparação de JSON truncado');
-        }
-      } catch (error) {
-        // Se truncado e reparo falhou → erro específico
-        if (finishReason === 'length') {
+        if (refusal) {
           throw new AIAnalysisError({
-            code: 'openai_truncated_response',
-            message: 'OpenAI truncou a resposta antes de concluir o JSON do schema.',
+            code: 'openai_refusal',
+            message: `OpenAI recusou a resposta estruturada: ${refusal}`,
+            retriable: false,
+            rawContent: refusal,
+          });
+        }
+
+        if (!content) {
+          throw new AIAnalysisError({
+            code: 'openai_empty_content',
+            message: 'OpenAI retornou conteúdo vazio para análise.',
+            retriable: false,
+          });
+        }
+
+        // Se truncado, tenta reparar o JSON antes de falhar
+        // O modelo às vezes gera todos os dados mas falta apenas o `}` final
+        let contentToParse = content;
+        if (finishReason === 'length') {
+          const repaired = repairTruncatedJson(content);
+          if (repaired) {
+            contentToParse = repaired;
+            this.logger.warn('[AIAdapter] Resposta truncada pelo OpenAI — JSON reparado com sucesso');
+          }
+        }
+
+        let parsed: TradingAnalysisSchemaResult;
+        const tParse = Date.now();
+        try {
+          parsed = parseSchemaResult(contentToParse);
+          if (finishReason === 'length') {
+            this.logger.warn('[AIAdapter] Análise salva após reparação de JSON truncado');
+          }
+        } catch (error) {
+          // Se truncado e reparo falhou → erro específico
+          if (finishReason === 'length') {
+            throw new AIAnalysisError({
+              code: 'openai_truncated_response',
+              message: 'OpenAI truncou a resposta antes de concluir o JSON do schema.',
+              retriable: false,
+              rawContent: content,
+            });
+          }
+          throw new AIAnalysisError({
+            code: 'openai_invalid_json',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'Resposta da OpenAI não retornou JSON válido.',
             retriable: false,
             rawContent: content,
           });
         }
-        throw new AIAnalysisError({
-          code: 'openai_invalid_json',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Resposta da OpenAI não retornou JSON válido.',
-          retriable: false,
-          rawContent: content,
+
+        // Se a IA sinalizou que a imagem não é um gráfico financeiro → rejeitar imediatamente
+        if (parsed.is_financial_chart === false) {
+          throw new AIAnalysisError({
+            code: 'non_chart_image',
+            message: 'This image does not look like a financial chart. Please upload a screenshot of your trading chart.',
+            retriable: false,
+          });
+        }
+
+        const parseMs = Date.now() - tParse;
+
+        const tValidation = Date.now();
+        const rawRecommendation = mapSchemaRecommendationToInternal(parsed.recommendation);
+        const planFailures = validateTradePlan({
+          side: rawRecommendation,
+          entry: parsed.analysis?.entry,
+          stopLoss: parsed.analysis?.stopLoss,
+          takeProfit1: parsed.analysis?.takeProfit1,
+          takeProfit2: parsed.analysis?.takeProfit2,
+          invalidationLevel: parsed.analysis?.invalidationLevel,
+          currentPrice: parsed.analysis?.currentPrice,
         });
+        return { modelResult, content, parsed, parseMs, tValidation, rawRecommendation, planFailures };
+      };
+
+      // CHECAGEM POR CODIGO + UMA NOVA TENTATIVA (13/10/2026). JSON que nao
+      // abre, ou BUY/SELL com stop/alvo do lado errado ou nivel faltando ->
+      // repete a chamada UMA vez, dentro do MESMO orcamento de tempo (o
+      // frontend desiste depois dele; CLAUDE.md 3.2, timeouts acoplados).
+      // Falhou de novo -> erro claro e o tick volta. Nunca corrigir a direcao
+      // por conta propria: viraria uma operacao que ninguem avaliou.
+      const deadline = Date.now() + ANALYZE_TIMEOUT_MS;
+      const broken = (failures: TradePlanRule[]) => failures.filter((r) => BROKEN_PLAN_RULES.includes(r));
+      let retried = false;
+      let modelMsTotal = 0;
+      const retryOnce = async (reason: string) => {
+        retried = true;
+        this.logger.warn(`[AIAdapter] ${reason}: repetindo a chamada uma vez`);
+        const next = await runOnce(deadline - Date.now());
+        modelMsTotal += next.modelResult.modelMs;
+        return next;
+      };
+      const canRetry = () => !retried && deadline - Date.now() >= MIN_RETRY_BUDGET_MS;
+
+      let run: Awaited<ReturnType<typeof runOnce>>;
+      try {
+        run = await runOnce(ANALYZE_TIMEOUT_MS);
+        modelMsTotal += run.modelResult.modelMs;
+      } catch (error) {
+        if (!(error instanceof AIAnalysisError && error.code === 'openai_invalid_json') || !canRetry()) throw error;
+        run = await retryOnce('Resposta sem JSON valido');
       }
-
-      // Se a IA sinalizou que a imagem não é um gráfico financeiro → rejeitar imediatamente
-      if (parsed.is_financial_chart === false) {
-        throw new AIAnalysisError({
-          code: 'non_chart_image',
-          message: 'This image does not look like a financial chart. Please upload a screenshot of your trading chart.',
-          retriable: false,
-        });
+      if (broken(run.planFailures).length > 0 && canRetry()) {
+        run = await retryOnce(`Plano incoerente (${broken(run.planFailures).join(',')})`);
       }
-
-      const parseMs = Date.now() - tParse;
-
-      const tValidation = Date.now();
-      const rawRecommendation = mapSchemaRecommendationToInternal(parsed.recommendation);
-      const planFailures = validateTradePlan({
-        side: rawRecommendation,
-        entry: parsed.analysis?.entry,
-        stopLoss: parsed.analysis?.stopLoss,
-        takeProfit1: parsed.analysis?.takeProfit1,
-        takeProfit2: parsed.analysis?.takeProfit2,
-        invalidationLevel: parsed.analysis?.invalidationLevel,
-        currentPrice: parsed.analysis?.currentPrice,
-      });
-      // Não entregar BUY/SELL com stop/alvo invertidos. O fluxo de falha
-      // definitiva reembolsa o tick; corrigir a direção por conta própria
-      // transformaria um erro do modelo em uma operação não avaliada.
-      if (planFailures.includes('direction')) {
+      const { modelResult, content, parsed, parseMs, tValidation, rawRecommendation, planFailures } = run;
+      if (broken(planFailures).length > 0) {
         throw new AIAnalysisError({
           code: 'invalid_trade_plan',
-          message: 'A IA retornou níveis incoerentes de entrada, stop ou alvo.',
+          message: `A IA retornou níveis incoerentes de entrada, stop ou alvo (${broken(planFailures).join(',')}).`,
           retriable: false,
         });
       }
+
+      const providerComparison = secondaryRun
+        ? secondaryRun.then((secondary): ProviderComparison => {
+            const primarySummary = summarizeProviderRun(modelResult, null);
+            const secondarySummary = summarizeProviderRun(secondary.result, secondary.error);
+            return {
+              primary: primarySummary,
+              secondary: secondarySummary,
+              agree:
+                primarySummary.recommendation && secondarySummary.recommendation
+                  ? primarySummary.recommendation === secondarySummary.recommendation
+                  : null,
+            };
+          })
+        : undefined;
       // TRAVA 1: le e propaga, nunca decide. Se algum dia alguem escrever aqui
       // algo como `if (strategyFit === 'ideal') recommendation = 'BUY'`, isso
       // transforma preferencia do usuario em sinal, que e exatamente o que este
@@ -2056,6 +2144,7 @@ export class AIAdapter {
         // Telemetria gravada por analise (saveAnalysisTelemetry): o snapshot que
         // a OpenAI de fato usou e os numeros do grounding que entraram no prompt.
         respondedModel: modelResult.respondedModel,
+        providerComparison,
         groundingStats,
         drawingPlan: null,
         drawingFailed: true,
@@ -2068,7 +2157,8 @@ export class AIAdapter {
           validatorReasons: decision.validatorReasons,
           validatorFlags: decision.validatorFlags,
           groundingMs,
-          modelMs: modelResult.modelMs,
+          provider: modelResult.provider,
+          modelMs: modelMsTotal,
           parseMs,
           validationMs,
         },

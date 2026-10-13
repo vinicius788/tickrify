@@ -16,7 +16,7 @@ import {
   reconcileConfluence,
 } from '../src/common/utils/analysis-normalizer';
 import { decideSignal, type SignalDecisionResult, type ValidatorAction } from '../src/common/utils/signal-decision';
-import { validateTradePlan } from '../src/common/utils/trade-plan-validator';
+import { BROKEN_PLAN_RULES, validateTradePlan } from '../src/common/utils/trade-plan-validator';
 import { buildEngineRecord, type AnalysisIntakeTimings } from '../src/modules/ai/engine-contract';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
 import { isProductionRuntime } from '../src/common/utils/runtime-env';
@@ -37,6 +37,7 @@ import { getFoundingOffer } from '../src/modules/payments/founding-offer';
 import { recordSetupVersion } from '../src/modules/ai/setups.service';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from '../src/modules/ai/analysis-data-coverage';
 import { CHAT_EMAIL_FLAG, CHAT_SWEEP_INTERVAL_MS, runChatReplySweep } from '../src/modules/support/chat-email';
+import { recordProviderComparison, type ProviderComparison } from '../src/modules/ai/vision-model';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -342,7 +343,7 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerParseOutcom
     invalidationLevel,
     currentPrice: ensureNumber(analysisSource.currentPrice ?? source.currentPrice, 0),
   });
-  if (planFailures.includes('direction')) {
+  if (planFailures.some((rule) => BROKEN_PLAN_RULES.includes(rule))) {
     throw new AIAnalysisError({
       code: 'invalid_trade_plan',
       message: 'A IA retornou níveis incoerentes de entrada, stop ou alvo.',
@@ -775,7 +776,9 @@ async function resolveAiSource(
     // Esquecer de propagar strategyProfile aqui faz o perfil de estratégia
     // pago virar no-op silencioso: o strategyHash é gravado, mas o bloco
     // nunca entra no prompt e o strategyFit nunca é gerado.
-    return aiAdapter.analyzeImage(imageUrl, prompt, analysisType, htfImageUrls, strategyProfile);
+    return aiAdapter.analyzeImage(imageUrl, prompt, analysisType, htfImageUrls, strategyProfile, {
+      compareProviders: true,
+    });
   }
 
   if (canUseDemoFallback()) {
@@ -1158,9 +1161,10 @@ async function processAnalysis(job: Job<JobData>) {
     // Contrato v2 + validador + tempos de cada etapa (result.engine, vai ao PostHog).
     const adapterMeta =
       aiSource && typeof aiSource === 'object' && 'engineMeta' in aiSource
-        ? (aiSource as { engineMeta?: { groundingMs?: number; modelMs?: number; parseMs?: number } }).engineMeta
+        ? (aiSource as { engineMeta?: { provider?: string; groundingMs?: number; modelMs?: number; parseMs?: number } }).engineMeta
         : undefined;
     const engine = buildEngineRecord({
+      provider: adapterMeta?.provider ?? null,
       contract: {
         recommendation: parsed.recommendation === 'COMPRA' ? 'BUY' : parsed.recommendation === 'VENDA' ? 'SELL' : 'WAIT',
         confidencePct: parsed.confidence * 100,
@@ -1233,6 +1237,14 @@ async function processAnalysis(job: Job<JobData>) {
     });
     // Modelo que respondeu e numeros do grounding, fora do `result` (que a tela le).
     await saveAnalysisTelemetry(prisma, analysisId, telemetryFromAiSource(aiSource), (m) => console.warn(m));
+    // Modo comparacao de provedores (desligado por padrao): grava depois, sem segurar a analise.
+    const providerComparison =
+      aiSource && typeof aiSource === 'object' && 'providerComparison' in aiSource
+        ? (aiSource as { providerComparison?: Promise<ProviderComparison | null> }).providerComparison
+        : undefined;
+    if (providerComparison && userId) {
+      void recordProviderComparison(prisma, { analysisId, userId, comparison: providerComparison }, (m) => console.warn(m));
+    }
     persistMs = Date.now() - tPersist;
 
     logAnalysisMetrics({

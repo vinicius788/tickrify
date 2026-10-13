@@ -30,6 +30,20 @@ describe('validateTradePlan', () => {
     expect(validateTradePlan({ ...buy, side: 'WAIT', stopLoss: 500, currentPrice: 1 })).toEqual([]);
   });
 
+  describe('incomplete', () => {
+    it('flags a BUY/SELL without entry, stop or any target', () => {
+      expect(validateTradePlan({ ...buy, entry: null })).toContain('incomplete');
+      expect(validateTradePlan({ ...sell, stopLoss: undefined })).toContain('incomplete');
+      expect(validateTradePlan({ ...buy, takeProfit1: null, takeProfit2: null })).toContain('incomplete');
+      expect(validateTradePlan({ ...buy, entry: Number.NaN })).toContain('incomplete');
+      expect(validateTradePlan({ ...buy, stopLoss: 0 })).toContain('incomplete');
+    });
+
+    it('accepts a plan with only one of the two targets', () => {
+      expect(validateTradePlan({ ...buy, takeProfit2: null })).toEqual([]);
+    });
+  });
+
   describe('direction', () => {
     it('BUY: stop must be below entry', () => {
       expect(validateTradePlan({ ...buy, stopLoss: 101 })).toContain('direction');

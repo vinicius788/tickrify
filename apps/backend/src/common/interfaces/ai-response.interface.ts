@@ -2,6 +2,7 @@ import { Bias, Recommendation } from '../utils/analysis-normalizer';
 import { DrawingPlan } from '../utils/drawing-plan';
 import type { GroundingStats } from '../../modules/ai/analysis-data-coverage';
 import type { SignalDecisionResult, ValidatorAction } from '../utils/signal-decision';
+import type { ProviderComparison } from '../../modules/ai/vision-model';
 
 export interface AnalysisEvidence {
   version: 1;
@@ -38,7 +39,11 @@ export interface AIAnalysisResponse {
   groundingStats?: GroundingStats | null;
   // O que o validador fez e o tempo de cada etapa dentro do adapter
   // (vai para `result.engine`, ver engine-contract.ts).
+  /** Modo comparacao (vision-model.ts): resolve depois da analise; so quem grava le. */
+  providerComparison?: Promise<ProviderComparison | null>;
   engineMeta?: {
+    /** Provedor de IA que respondeu (openai | anthropic). */
+    provider: string;
     validatorAction: ValidatorAction;
     validatorReasons: SignalDecisionResult['validatorReasons'];
     validatorFlags: SignalDecisionResult['validatorFlags'];
