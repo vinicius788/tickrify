@@ -67,17 +67,31 @@ describe('programa de afiliados na tela', () => {
     expect(document.body.textContent?.match(/\d+%/g)).toEqual(['25%']);
   });
 
-  it('pedido de entrada: so envia com link https e plano, e manda o que foi preenchido', async () => {
+  it('pedido de entrada vazio: envia so com o e-mail da conta (nada obrigatorio)', async () => {
     renderWith(<AffiliateDashboardPage />, { '/api/affiliates/me': { affiliate: null, program: PROGRAM } });
     const send = await screen.findByRole('button', { name: 'Send application' });
-    expect((send as HTMLButtonElement).disabled).toBe(true);
+    expect((send as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(send);
 
-    fireEvent.change(screen.getByLabelText('Where is your audience?'), { target: { value: 'telegram' } });
+    await waitFor(() => {
+      const call = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(([u]) => String(u).includes('/api/affiliates/join'));
+      expect(call).toBeTruthy();
+      expect(JSON.parse(call![1].body)).toEqual({});
+    });
+  });
+
+  it('pedido de entrada: link, se vier, precisa ser https; manda o que foi preenchido', async () => {
+    renderWith(<AffiliateDashboardPage />, { '/api/affiliates/me': { affiliate: null, program: PROGRAM } });
+    const send = await screen.findByRole('button', { name: 'Send application' });
+
+    fireEvent.change(screen.getByLabelText(/Where is your audience/), { target: { value: 'telegram' } });
+    fireEvent.change(screen.getByLabelText(/Link to your profile/), { target: { value: 't.me/tradersgroup' } });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText(/Link to your profile/), {
       target: { value: 'https://t.me/tradersgroup' },
     });
-    fireEvent.change(screen.getByLabelText('How many followers or members?'), { target: { value: '10k_50k' } });
-    fireEvent.change(screen.getByLabelText(/How would you share Tickrify/), {
+    fireEvent.change(screen.getByLabelText(/How many followers or members/), { target: { value: '10k_50k' } });
+    fireEvent.change(screen.getByLabelText(/Anything you want to tell us/), {
       target: { value: 'Grupo de sinais de ouro, mostraria nas analises da semana.' },
     });
     expect((send as HTMLButtonElement).disabled).toBe(false);

@@ -38,25 +38,29 @@ export class ClaimAffiliateDto {
 }
 
 /**
- * Pedido de entrada. Tudo obrigatorio: sem canal e audiencia o admin nao tem
- * como decidir. Link so https (vira link clicavel no /admin). O texto livre
- * so aparece para o admin, nunca perto do prompt do motor.
+ * Pedido de entrada. NADA obrigatorio (dono, 13/10/2026): quem nao tem
+ * comunidade tambem pode pedir; o admin ja ve o e-mail da conta. O que vier
+ * preenchido continua validado: link so https (vira link clicavel no /admin).
+ * O texto livre so aparece para o admin, nunca perto do prompt do motor.
  */
 export class JoinAffiliateDto {
+  @IsOptional()
   @IsIn(['youtube', 'instagram', 'tiktok', 'x', 'telegram', 'discord', 'website', 'other'])
-  platform!: string;
+  platform?: string;
 
+  @IsOptional()
   @IsUrl({ protocols: ['https'], require_protocol: true })
   @MaxLength(300)
-  url!: string;
+  url?: string;
 
+  @IsOptional()
   @IsIn(['under_1k', '1k_10k', '10k_50k', '50k_plus'])
-  audience!: string;
+  audience?: string;
 
+  @IsOptional()
   @IsString()
-  @MinLength(20)
   @MaxLength(500)
-  note!: string;
+  note?: string;
 }
 
 export class RequestPayoutDto {

@@ -131,14 +131,17 @@ function PedidoAfiliado({
           {afiliado.application ? (
             <div className="mt-3 space-y-1.5 text-sm text-zinc-300">
               <p>
-                <span className="text-zinc-500">Canal:</span> {CANAL[afiliado.application.platform] ?? afiliado.application.platform}
+                <span className="text-zinc-500">Canal:</span>{' '}
+                {afiliado.application.platform ? CANAL[afiliado.application.platform] ?? afiliado.application.platform : 'não informado'}
                 {' · '}
                 <span className="text-zinc-500">Audiência:</span>{' '}
-                {AUDIENCIA[afiliado.application.audience] ?? afiliado.application.audience}
+                {afiliado.application.audience ? AUDIENCIA[afiliado.application.audience] ?? afiliado.application.audience : 'não informada'}
               </p>
               <p className="break-all">
                 <span className="text-zinc-500">Link:</span>{' '}
-                {linkSeguro(afiliado.application.url) ? (
+                {!afiliado.application.url ? (
+                  'não informado'
+                ) : linkSeguro(afiliado.application.url) ? (
                   <a
                     href={afiliado.application.url}
                     target="_blank"
@@ -151,13 +154,15 @@ function PedidoAfiliado({
                   afiliado.application.url
                 )}
               </p>
-              <p className="whitespace-pre-wrap">
-                <span className="text-zinc-500">Como vai divulgar:</span> {afiliado.application.note}
-              </p>
-              <p className="text-xs text-zinc-500">Abra o link e confira se a comunidade existe e combina com a Tickrify antes de aprovar.</p>
+              {afiliado.application.note ? (
+                <p className="whitespace-pre-wrap">
+                  <span className="text-zinc-500">Recado:</span> {afiliado.application.note}
+                </p>
+              ) : null}
+              <p className="text-xs text-zinc-500">Se houver link, abra e confira se a comunidade combina com a Tickrify antes de aprovar.</p>
             </div>
           ) : (
-            <p className="mt-2 text-xs text-zinc-500">Pediu antes do formulário existir: sem canal nem link informados.</p>
+            <p className="mt-2 text-xs text-zinc-500">Não preencheu nada além do e-mail da conta.</p>
           )}
         </div>
         <div className="flex gap-2">

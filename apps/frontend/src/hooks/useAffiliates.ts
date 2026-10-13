@@ -22,12 +22,12 @@ export type CommissionStatus = 'PENDING' | 'AVAILABLE' | 'PAID' | 'CANCELLED';
 export type PayoutStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'PAID';
 export type AffiliateStatus = 'PENDING' | 'ACTIVE' | 'REJECTED' | 'SUSPENDED';
 
-/** Pedido de entrada: onde esta a audiencia e como pretende divulgar (mesmas listas do JoinAffiliateDto). */
+/** Pedido de entrada (mesmas listas do JoinAffiliateDto). Tudo opcional: so vai o que foi preenchido. */
 export interface AffiliateApplication {
-  platform: 'youtube' | 'instagram' | 'tiktok' | 'x' | 'telegram' | 'discord' | 'website' | 'other';
-  url: string;
-  audience: 'under_1k' | '1k_10k' | '10k_50k' | '50k_plus';
-  note: string;
+  platform?: 'youtube' | 'instagram' | 'tiktok' | 'x' | 'telegram' | 'discord' | 'website' | 'other';
+  url?: string;
+  audience?: 'under_1k' | '1k_10k' | '10k_50k' | '50k_plus';
+  note?: string;
 }
 
 export interface AffiliateDashboard {

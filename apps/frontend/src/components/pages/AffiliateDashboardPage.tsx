@@ -44,28 +44,37 @@ const inputClass =
   'w-full rounded-lg border border-[var(--s-hair)] bg-transparent px-3 py-2 text-base text-[var(--s-fg)]';
 
 /**
- * Pedido de entrada. Tudo obrigatorio: o admin aprova a mao e precisa ver onde
- * esta a audiencia. As mesmas regras sao conferidas no servidor (JoinAffiliateDto).
+ * Pedido de entrada. Nada obrigatorio (dono, 13/10/2026): o admin ja ve o
+ * e-mail da conta, e quem nao tem comunidade tambem pode pedir. So vai ao
+ * servidor o que foi preenchido; o link, se vier, precisa ser https
+ * (JoinAffiliateDto confere o mesmo).
  */
 function ApplicationForm({ sending, onSubmit }: { sending: boolean; onSubmit: (a: AffiliateApplication) => void }) {
-  const [platform, setPlatform] = useState<AffiliateApplication['platform']>('youtube');
+  const [platform, setPlatform] = useState<AffiliateApplication['platform'] | ''>('');
   const [url, setUrl] = useState('');
-  const [audience, setAudience] = useState<AffiliateApplication['audience']>('under_1k');
+  const [audience, setAudience] = useState<AffiliateApplication['audience'] | ''>('');
   const [note, setNote] = useState('');
-  const urlOk = /^https:\/\/[^\s.]+\.[^\s]{2,}$/.test(url.trim());
-  const noteOk = note.trim().length >= 20;
+  const urlOk = url.trim() === '' || /^https:\/\/[^\s.]+\.[^\s]{2,}$/.test(url.trim());
 
   return (
     <form
       className="mt-4 space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
-        if (urlOk && noteOk) onSubmit({ platform, url: url.trim(), audience, note: note.trim() });
+        if (!urlOk) return;
+        onSubmit({
+          ...(platform ? { platform } : {}),
+          ...(url.trim() ? { url: url.trim() } : {}),
+          ...(audience ? { audience } : {}),
+          ...(note.trim() ? { note: note.trim() } : {}),
+        });
       }}
     >
+      <p className="text-sm text-[var(--s-fg-2)]">Everything below is optional. We already have the email on your account.</p>
       <label className="block text-sm">
-        <span className="mb-1 block text-[var(--s-fg)]">Where is your audience?</span>
-        <select value={platform} onChange={(e) => setPlatform(e.target.value as AffiliateApplication['platform'])} className={inputClass}>
+        <span className="mb-1 block text-[var(--s-fg)]">Where is your audience? (optional)</span>
+        <select value={platform} onChange={(e) => setPlatform(e.target.value as AffiliateApplication['platform'] | '')} className={inputClass}>
+          <option value="">Not specified</option>
           {PLATFORMS.map((p) => (
             <option key={p.value} value={p.value}>
               {p.label}
@@ -74,7 +83,7 @@ function ApplicationForm({ sending, onSubmit }: { sending: boolean; onSubmit: (a
         </select>
       </label>
       <label className="block text-sm">
-        <span className="mb-1 block text-[var(--s-fg)]">Link to your profile, channel or community</span>
+        <span className="mb-1 block text-[var(--s-fg)]">Link to your profile, channel or community (optional)</span>
         <input
           type="url"
           value={url}
@@ -83,11 +92,12 @@ function ApplicationForm({ sending, onSubmit }: { sending: boolean; onSubmit: (a
           maxLength={300}
           className={inputClass}
         />
-        {url && !urlOk ? <span className="mt-1 block text-xs text-[var(--s-fg-3)]">Use the full link, starting with https://</span> : null}
+        {!urlOk ? <span className="mt-1 block text-xs text-[var(--s-fg-3)]">Use the full link, starting with https://, or leave it empty.</span> : null}
       </label>
       <label className="block text-sm">
-        <span className="mb-1 block text-[var(--s-fg)]">How many followers or members?</span>
-        <select value={audience} onChange={(e) => setAudience(e.target.value as AffiliateApplication['audience'])} className={inputClass}>
+        <span className="mb-1 block text-[var(--s-fg)]">How many followers or members? (optional)</span>
+        <select value={audience} onChange={(e) => setAudience(e.target.value as AffiliateApplication['audience'] | '')} className={inputClass}>
+          <option value="">Not specified</option>
           {AUDIENCES.map((a) => (
             <option key={a.value} value={a.value}>
               {a.label}
@@ -96,7 +106,7 @@ function ApplicationForm({ sending, onSubmit }: { sending: boolean; onSubmit: (a
         </select>
       </label>
       <label className="block text-sm">
-        <span className="mb-1 block text-[var(--s-fg)]">How would you share Tickrify with them?</span>
+        <span className="mb-1 block text-[var(--s-fg)]">Anything you want to tell us? (optional)</span>
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
@@ -105,9 +115,8 @@ function ApplicationForm({ sending, onSubmit }: { sending: boolean; onSubmit: (a
           placeholder="For example: I post daily gold analysis and would show Tickrify in my weekly live."
           className={inputClass}
         />
-        <span className="mt-1 block text-xs text-[var(--s-fg-3)]">At least 20 characters.</span>
       </label>
-      <button type="submit" disabled={sending || !urlOk || !noteOk} className="site-btn site-btn-primary">
+      <button type="submit" disabled={sending || !urlOk} className="site-btn site-btn-primary">
         {sending ? 'Sending...' : 'Send application'}
       </button>
     </form>

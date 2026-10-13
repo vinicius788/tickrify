@@ -202,12 +202,12 @@ const BOOT_SQL = [
 
 type ClaimResult = { attributed: boolean; reason?: string };
 
-/** O que a pessoa conta ao pedir para entrar (validado no DTO). */
+/** O que a pessoa conta ao pedir para entrar (validado no DTO). Tudo opcional. */
 export type AffiliateApplication = {
-  platform: string;
-  url: string;
-  audience: string;
-  note: string;
+  platform?: string;
+  url?: string;
+  audience?: string;
+  note?: string;
 };
 
 export type CheckoutDiscount = {
@@ -652,10 +652,10 @@ export class AffiliatesService implements OnModuleInit {
             couponCode: code,
             commissionRateBps: AFFILIATE_RULES.defaultRateBps,
             status: 'PENDING',
-            applicationPlatform: application.platform,
-            applicationUrl: application.url.trim().slice(0, 300),
-            applicationAudience: application.audience,
-            applicationNote: application.note.trim().slice(0, 500),
+            applicationPlatform: application.platform || null,
+            applicationUrl: application.url?.trim().slice(0, 300) || null,
+            applicationAudience: application.audience || null,
+            applicationNote: application.note?.trim().slice(0, 500) || null,
           },
         });
         await this.syncPromotionCode(created);
@@ -820,7 +820,7 @@ export class AffiliatesService implements OnModuleInit {
       commissionRateBps: a.commissionRateBps,
       status: a.status,
       stripePromotionCodeId: a.stripePromotionCodeId,
-      application: a.applicationUrl
+      application: a.applicationPlatform || a.applicationUrl || a.applicationAudience || a.applicationNote
         ? {
             platform: a.applicationPlatform,
             url: a.applicationUrl,

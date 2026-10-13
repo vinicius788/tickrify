@@ -789,7 +789,7 @@ describe('DTOs de afiliado contra o ValidationPipe real', () => {
     await expect(run(ClaimAffiliateDto, { code: 'a b;', kind: 'link' })).rejects.toBeDefined();
   });
 
-  it('pedido de entrada exige canal, link https, audiencia e um plano de verdade', async () => {
+  it('pedido de entrada: nada obrigatorio, mas o que vier preenchido e validado', async () => {
     const ok = {
       platform: 'instagram',
       url: 'https://instagram.com/trader',
@@ -797,10 +797,11 @@ describe('DTOs de afiliado contra o ValidationPipe real', () => {
       note: 'Posto analises diarias de cripto nos stories.',
     };
     await expect(run(JoinAffiliateDto, ok)).resolves.toBeDefined();
-    await expect(run(JoinAffiliateDto, {})).rejects.toBeDefined();
+    await expect(run(JoinAffiliateDto, {})).resolves.toBeDefined();
+    await expect(run(JoinAffiliateDto, { note: 'quero' })).resolves.toBeDefined();
     await expect(run(JoinAffiliateDto, { ...ok, url: 'http://instagram.com/trader' })).rejects.toBeDefined();
     await expect(run(JoinAffiliateDto, { ...ok, url: 'javascript:alert(1)' })).rejects.toBeDefined();
-    await expect(run(JoinAffiliateDto, { ...ok, note: 'quero' })).rejects.toBeDefined();
+    await expect(run(JoinAffiliateDto, { ...ok, note: 'x'.repeat(501) })).rejects.toBeDefined();
     await expect(run(JoinAffiliateDto, { ...ok, platform: 'myspace' })).rejects.toBeDefined();
     await expect(run(JoinAffiliateDto, { ...ok, audience: '1000000' })).rejects.toBeDefined();
   });
