@@ -8,7 +8,7 @@ import { useRecentPublicAnalyses, useScoredPublicAnalyses, type ScoredPublicAnal
 const MIN_ITEMS = 3;
 
 function formatPrice(v: number | null) {
-  if (v === null || v === undefined) return '—';
+  if (v === null || v === undefined) return '·';
   return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 }).format(v);
 }
 
@@ -23,7 +23,7 @@ function timeAgo(dateStr: string, l: { now: string; mAgo: string; hAgo: string; 
 /** Data e hora em UTC, curtas: "Sep 28, 14:05 UTC". É o carimbo da leitura. */
 function formatUtc(dateStr: string) {
   const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return '·';
   const day = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
   return `${day}, ${d.toISOString().slice(11, 16)} UTC`;
 }
@@ -109,15 +109,15 @@ const RecentAnalysesSection = () => {
                     return (
                       <tr key={a.id}>
                         <td className="site-sym-cell">{a.symbol}</td>
-                        <td>{a.timeframe || '—'}</td>
+                        <td>{a.timeframe || '·'}</td>
                         <td>
                           <div className="flex flex-col items-start gap-1">
                             <span className={`site-chip ${chip}`}>{scenario.icon} {scenario.label}</span>
                             <span className="site-hero-note">{t.analysis.action}: {actionLabel}</span>
                           </div>
                         </td>
-                        <td>{isHold ? '—' : formatPrice(a.entry)}</td>
-                        <td className={isHold ? '' : 'site-short'}>{isHold ? '—' : formatPrice(a.stopLoss)}</td>
+                        <td>{isHold ? '·' : formatPrice(a.entry)}</td>
+                        <td className={isHold ? '' : 'site-short'}>{isHold ? '·' : formatPrice(a.stopLoss)}</td>
                         <td>{timeAgo(a.createdAt, r)}</td>
                       </tr>
                     );
@@ -157,7 +157,7 @@ const RecentAnalysesSection = () => {
                     return (
                       <tr key={a.id}>
                         <td className="site-sym-cell">{a.symbol}</td>
-                        <td>{a.timeframe || '—'}</td>
+                        <td>{a.timeframe || '·'}</td>
                         <td className={meta.tone === 'buy' ? 'site-long' : 'site-short'}>{actionLabel}</td>
                         <td>{formatPrice(a.entry)}</td>
                         <td>{formatPrice(a.stopLoss)}</td>

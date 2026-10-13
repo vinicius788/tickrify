@@ -99,7 +99,7 @@ const SECTIONS: LegalSection[] = [
         <ul>
           <li>it can misread the instrument, the timeframe or the scale of a screenshot;</li>
           <li>it can produce a confident, well argued analysis that the market immediately invalidates;</li>
-          <li>it checks the economic calendar for scheduled high/medium-impact events (rate decisions, CPI, payrolls) in the window around the chart, best-effort — but it has no access to breaking news headlines, market sentiment, or order flow, and no knowledge of anything that is not on the chart, in the data it is given, or on that calendar;</li>
+          <li>it checks the economic calendar for scheduled high/medium-impact events (rate decisions, CPI, payrolls) in the window around the chart, best-effort, but it has no access to breaking news headlines, market sentiment, or order flow, and no knowledge of anything that is not on the chart, in the data it is given, or on that calendar;</li>
           <li>the confidence score is a model output, not a probability we can promise you.</li>
         </ul>
         <p>

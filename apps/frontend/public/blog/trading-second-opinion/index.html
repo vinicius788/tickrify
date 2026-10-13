@@ -26,58 +26,34 @@
        o <link> de fonte bloqueante custava 750ms de render no mobile.
        display=swap ja pinta o texto antes; o <noscript> cobre quem nao
        executa JS, que e justamente o crawler de IA. -->
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-  <noscript><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet"></noscript>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet"></noscript>
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"Article","headline":"You Don't Need More Signals. You Need a Second Opinion.","datePublished":"2026-07-20","dateModified":"2026-08-10","image":"https://tickrify.com/og.png?v=4","author":{"@type":"Organization","name":"Tickrify"},"publisher":{"@type":"Organization","name":"Tickrify"},"mainEntityOfPage":"https://tickrify.com/blog/trading-second-opinion/"}
   </script>
   <script type="application/ld+json">
-  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "What's the difference between a trading signal and a second opinion?", "acceptedAnswer": {"@type": "Answer", "text": "A signal originates the idea and tells you to act. A second opinion starts from your idea and either confirms or kills it. The first adds trades; the second removes them."}}, {"@type": "Question", "name": "Are AI trading signals worth paying for?", "acceptedAnswer": {"@type": "Answer", "text": "Anything advertising a high win rate without a published methodology and sample size is selling certainty that doesn't exist. Nobody in this category has demonstrated raw signals that survive spreads, slippage and fees."}}, {"@type": "Question", "name": "Does saying \"no trade\" mean the tool is broken?", "acceptedAnswer": {"@type": "Answer", "text": "No — a high abstention rate is what a tool with no signal quota looks like. Most charts, most of the time, don't contain a setup worth risking money on."}}, {"@type": "Question", "name": "How do I stop overtrading?", "acceptedAnswer": {"@type": "Answer", "text": "Write your read down before entering, refuse any trade without a defined invalidation, impose a delay between decision and click, and log outcomes. Those four cost nothing and address the actual failure point."}}, {"@type": "Question", "name": "Can I do this without buying a tool?", "acceptedAnswer": {"@type": "Answer", "text": "Yes — there's a six-step version above. A paid checkpoint automates it for the day your discipline is weakest, which is the only honest thing it's selling."}}]}
+  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "What's the difference between a trading signal and a second opinion?", "acceptedAnswer": {"@type": "Answer", "text": "A signal originates the idea and tells you to act. A second opinion starts from your idea and either confirms or kills it. The first adds trades; the second removes them."}}, {"@type": "Question", "name": "Are AI trading signals worth paying for?", "acceptedAnswer": {"@type": "Answer", "text": "Anything advertising a high win rate without a published methodology and sample size is selling certainty that doesn't exist. Nobody in this category has demonstrated raw signals that survive spreads, slippage and fees."}}, {"@type": "Question", "name": "Does saying \"no trade\" mean the tool is broken?", "acceptedAnswer": {"@type": "Answer", "text": "No. A high abstention rate is what a tool with no signal quota looks like. Most charts, most of the time, don't contain a setup worth risking money on."}}, {"@type": "Question", "name": "How do I stop overtrading?", "acceptedAnswer": {"@type": "Answer", "text": "Write your read down before entering, refuse any trade without a defined invalidation, impose a delay between decision and click, and log outcomes. Those four cost nothing and address the actual failure point."}}, {"@type": "Question", "name": "Can I do this without buying a tool?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. There's a six-step version above. A paid checkpoint automates it for the day your discipline is weakest, which is the only honest thing it's selling."}}]}
   </script>
-  <style>
-    :root{--bg:#050508;--fg:#f5f6f8;--muted:#9aa3ae;--green:#5eea8a;--line:rgba(154,163,174,.18)}
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--fg);font-family:Geist,system-ui,sans-serif;line-height:1.8}
-    .wrap{max-width:720px;margin:0 auto;padding:32px 20px 80px}
-    header.site{display:flex;justify-content:space-between;align-items:center;margin-bottom:48px}
-    header.site a.logo{color:var(--fg);text-decoration:none;font-weight:700;font-size:18px}
-    header.site a.logo span{color:var(--green)}
-    header.site a.cta{color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
-    .kicker{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--green)}
-    h1{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:clamp(2rem,4.5vw,3rem);line-height:1.1;letter-spacing:-.02em;margin:12px 0 10px}
-    .meta{color:var(--muted);font-size:13px;margin-bottom:36px;font-family:"JetBrains Mono",monospace}
-    h2{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.5rem;margin:44px 0 12px;line-height:1.3}
-    p,li{color:#c9cfd6;font-size:1.02rem}
-    strong{color:var(--fg)}
-    a{color:var(--green)}
-    blockquote{border-left:2px solid var(--green);margin:28px 0;padding:4px 0 4px 20px;color:var(--fg);font-family:Fraunces,Georgia,serif;font-size:1.15rem;font-style:italic}
-    .callout{border:1px solid rgba(94,234,138,.35);border-radius:14px;padding:20px 24px;margin:36px 0;background:rgba(94,234,138,.04)}
-    .callout p{margin:0 0 12px}
-    .callout a.btn{display:inline-block;color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
-    footer{margin-top:64px;border-top:1px solid var(--line);padding-top:24px;color:var(--muted);font-size:13px}
-
-    h3{font-size:1.05rem;margin:28px 0 6px;color:var(--fg);font-weight:650}
-    ul,ol{padding-left:22px}
-    li{margin-bottom:8px;color:#c9cfd6;font-size:1.02rem}
-    blockquote{border-left:2px solid var(--green);margin:28px 0;padding:4px 0 4px 20px;color:#c9cfd6;font-size:1.02rem}
-    .toc{border:1px solid var(--line);border-radius:14px;padding:18px 24px;margin:32px 0}
-    .toc p{margin:0 0 8px;font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-    .toc ol{margin:0;padding-left:20px}
-    .toc li{margin-bottom:4px;font-size:.95rem}
-  </style>
+  <link rel="stylesheet" href="/site.css?v=1" />
 </head>
 <body>
+  <header class="site-header">
+    <div class="site-bar">
+      <a class="site-logo" href="/" aria-label="Tickrify"><img src="/tickrify-lockup.svg" alt="Tickrify" width="116" height="30" /></a>
+      <nav class="site-nav" aria-label="Main"><a href="/#how">How It Works</a><a href="/#platform">Panel</a><a href="/accuracy">Accuracy scoreboard</a><a href="/pricing">Plans</a><a href="/#faq">FAQ</a></nav>
+      <div class="site-actions">
+        <a class="site-btn site-btn-ghost" href="/sign-in">Login</a>
+        <a class="site-btn site-btn-primary" href="/try?utm_source=blog&amp;utm_medium=organic&amp;utm_campaign=second-opinion">Analyze a chart free</a>
+      </div>
+    </div>
+  </header>
   <div class="wrap">
-    <header class="site">
-      <a class="logo" href="/">tickrify<span>.</span></a>
-      <a class="cta" href="/try?utm_source=blog&amp;utm_medium=organic&amp;utm_campaign=second-opinion">Analyze a chart free</a>
-    </header>
 
     <span class="kicker">Philosophy · 10 min read</span>
     <h1>You Don't Need More Signals. You Need a Second Opinion.</h1>
     <p class="meta">Tickrify Team · Updated August 2026</p>
 
-    <p>The trading internet runs on signals. Telegram groups, Discord servers, "AI signal" apps — an endless feed of arrows telling you to buy here and sell there. And the business model behind almost all of them shares one design flaw: <strong>the seller gets paid whether you win or lose, and has zero skin in your outcome.</strong></p>
+    <p>The trading internet runs on signals. Telegram groups, Discord servers, "AI signal" apps: an endless feed of arrows telling you to buy here and sell there. And the business model behind almost all of them shares one design flaw: <strong>the seller gets paid whether you win or lose, and has zero skin in your outcome.</strong></p>
 
     <div class="toc">
       <p>What's in here</p>
@@ -94,29 +70,29 @@
     </div>
 
     <h2 id="broken">Why signal-selling is broken by design</h2>
-    <p>A signal service needs to send signals. Silence doesn't retain subscribers. So the incentive is to produce a steady stream of confident calls — in trending markets, chopping markets, news-bomb markets, every market. But any honest trader knows that most days offer few good setups, and many days offer none. A product that must generate signals is structurally incapable of telling you the most valuable thing a market read can say: <em>"there's nothing here today."</em></p>
+    <p>A signal service needs to send signals. Silence doesn't retain subscribers. So the incentive is to produce a steady stream of confident calls: in trending markets, chopping markets, news-bomb markets, every market. But any honest trader knows that most days offer few good setups, and many days offer none. A product that must generate signals is structurally incapable of telling you the most valuable thing a market read can say: <em>"there's nothing here today."</em></p>
     <p>That's also why "92% win rate" screenshots flood social media and verified, methodology-backed track records are almost impossible to find. The signal economy sells certainty, and certainty doesn't exist in markets.</p>
-    <p>There's a second, quieter distortion. Because subscribers churn when they're bored, the incentive isn't just <em>volume</em> of signals — it's <em>excitement</em>. Volatile instruments, aggressive targets, tight windows. The setups that keep a channel alive are systematically not the setups that keep an account alive, and nothing in the business model corrects for that.</p>
-    <p>Watch what happens after a losing streak, too. A tool that admitted it had no read for a week would look broken to its own customers. So the incentive is to keep calling — precisely when conditions are worst.</p>
+    <p>There's a second, quieter distortion. Because subscribers churn when they're bored, the incentive isn't just <em>volume</em> of signals: it's <em>excitement</em>. Volatile instruments, aggressive targets, tight windows. The setups that keep a channel alive are systematically not the setups that keep an account alive, and nothing in the business model corrects for that.</p>
+    <p>Watch what happens after a losing streak, too. A tool that admitted it had no read for a week would look broken to its own customers. So the incentive is to keep calling, precisely when conditions are worst.</p>
 
     <h2 id="enemy">The real enemy: your own impulse</h2>
-    <p>Study after study on retail trading points at the same culprits — not bad signals, but bad process: overtrading, revenge trading after losses, entering without a defined invalidation, position sizes driven by emotion. The expensive mistakes happen in the ten seconds between "I see a setup" and clicking buy. No signal feed fixes that. It usually makes it worse, because every arrow is a fresh invitation to act.</p>
-    <p>The uncomfortable implication: <strong>most traders don't have an information problem, they have an execution problem.</strong> More input aimed at an execution problem is not neutral — it's fuel. Every additional signal is another opportunity to act impulsively, dressed up as an opportunity to profit.</p>
+    <p>Study after study on retail trading points at the same culprits, not bad signals, but bad process: overtrading, revenge trading after losses, entering without a defined invalidation, position sizes driven by emotion. The expensive mistakes happen in the ten seconds between "I see a setup" and clicking buy. No signal feed fixes that. It usually makes it worse, because every arrow is a fresh invitation to act.</p>
+    <p>The uncomfortable implication: <strong>most traders don't have an information problem, they have an execution problem.</strong> More input aimed at an execution problem is not neutral: it's fuel. Every additional signal is another opportunity to act impulsively, dressed up as an opportunity to profit.</p>
 
     <blockquote>A second opinion isn't someone telling you what to trade. It's a checkpoint that confirms or kills what you already wanted to trade.</blockquote>
 
     <h2 id="arithmetic">The arithmetic of not trading</h2>
-    <p>Skipping trades sounds passive. It isn't — it's the highest-leverage thing in the whole process, and it's arithmetic rather than philosophy.</p>
-    <p>Every trade carries a fixed drag: spread, commission, slippage. That drag applies to your marginal, low-conviction trades exactly as much as to your best ones — but your marginal trades have the worst expectancy to absorb it. So the trades at the bottom of your quality distribution are the ones where costs eat the largest share of whatever edge exists, and they're the ones a checkpoint removes first.</p>
-    <p>Run the thought experiment on your own history: take your last fifty trades, mark the ones you'd describe as "I wasn't sure but it looked okay", and total them up. For most people that subset is negative on its own — and it's usually a sizeable share of the total. You don't need a better signal to fix that. You need something standing between you and those specific entries.</p>
+    <p>Skipping trades sounds passive. It isn't: it's the highest-leverage thing in the whole process, and it's arithmetic rather than philosophy.</p>
+    <p>Every trade carries a fixed drag: spread, commission, slippage. That drag applies to your marginal, low-conviction trades exactly as much as to your best ones, but your marginal trades have the worst expectancy to absorb it. So the trades at the bottom of your quality distribution are the ones where costs eat the largest share of whatever edge exists, and they're the ones a checkpoint removes first.</p>
+    <p>Run the thought experiment on your own history: take your last fifty trades, mark the ones you'd describe as "I wasn't sure but it looked okay", and total them up. For most people that subset is negative on its own, and it's usually a sizeable share of the total. You don't need a better signal to fix that. You need something standing between you and those specific entries.</p>
     <p>This is also why abstention rate is a quality signal in a tool rather than a defect. When our own engine analyzed a year of blind-sampled charts in backtesting, it declined to trade most of them. Users sometimes read that as timidity. It's the entire point.</p>
 
     <h2 id="changes">What a confirm-or-kill checkpoint changes</h2>
-    <p><strong>It inverts the workflow.</strong> You bring your read — your chart, your idea. The checkpoint stress-tests it: does the structure support the direction? Where exactly are you wrong? Is the entry realistic, or already gone? Is the risk-reward worth taking at all?</p>
-    <p><strong>It normalizes "no trade."</strong> A checkpoint with no signal quota is free to reject most setups — as it should. The trades you don't take are the cheapest wins you'll ever get.</p>
-    <p><strong>It removes the tilt variable.</strong> The checkpoint doesn't know you're down two trades today. It reads the same chart the same way at your best and at your worst — which is precisely when you need it.</p>
+    <p><strong>It inverts the workflow.</strong> You bring your read: your chart, your idea. The checkpoint stress-tests it: does the structure support the direction? Where exactly are you wrong? Is the entry realistic, or already gone? Is the risk-reward worth taking at all?</p>
+    <p><strong>It normalizes "no trade."</strong> A checkpoint with no signal quota is free to reject most setups: as it should. The trades you don't take are the cheapest wins you'll ever get.</p>
+    <p><strong>It removes the tilt variable.</strong> The checkpoint doesn't know you're down two trades today. It reads the same chart the same way at your best and at your worst, which is precisely when you need it.</p>
     <p><strong>It forces invalidation before entry.</strong> This is the underrated one. Most blown accounts trace back to positions with no pre-defined "I'm wrong here" level. A checkpoint that always outputs an invalidation makes the undefined-risk trade harder to take by accident.</p>
-    <p><strong>It creates a record.</strong> Because you asked before entering, you now have a written read to compare against what actually happened. That's the raw material for improving, and it's the thing a signal feed never gives you — nobody keeps a log of the arrows they ignored.</p>
+    <p><strong>It creates a record.</strong> Because you asked before entering, you now have a written read to compare against what actually happened. That's the raw material for improving, and it's the thing a signal feed never gives you: nobody keeps a log of the arrows they ignored.</p>
 
     <h2 id="theater">Checkpoint vs. theater</h2>
     <p>A checkpoint that always agrees with you isn't a checkpoint. It's reassurance with extra steps, and it's worse than nothing because it launders a bad decision as a validated one. Four tests to tell them apart:</p>
@@ -127,7 +103,7 @@
       <tr><td>Its track record exists and is visible</td><td>Confidence with no published sample size</td></tr>
       <tr><td>You consult it <em>before</em> deciding</td><td>You consult it after deciding, for permission</td></tr>
     </table>
-    <p>That last row is the one that's on you rather than the tool. A checkpoint used to confirm a decision you've already made is a rubber stamp, no matter how good it is. Write your read down first — even one line — and the checkpoint has something to actually check.</p>
+    <p>That last row is the one that's on you rather than the tool. A checkpoint used to confirm a decision you've already made is a rubber stamp, no matter how good it is. Write your read down first, even one line, and the checkpoint has something to actually check.</p>
 
     <h2 id="build">How to build one without paying anyone</h2>
     <p>The principle matters more than any product, ours included. You can run a decent version for free today:</p>
@@ -137,13 +113,13 @@
       <li><strong>Argue the other side out loud.</strong> Force yourself to state the strongest case against your own trade. If you can't, you don't understand the setup yet.</li>
       <li><strong>Impose a delay.</strong> Even sixty seconds between decision and click kills a meaningful share of impulse entries.</li>
       <li><strong>Log it.</strong> A spreadsheet with your read and the outcome beats any subscription you don't review.</li>
-      <li><strong>Add a second reader.</strong> A trading partner, or a general AI model given your levels and told it may answer "no trade" — <a href="/blog/chatgpt-chart-analysis/">there's a prompt for that here</a>.</li>
+      <li><strong>Add a second reader.</strong> A trading partner, or a general AI model given your levels and told it may answer "no trade": <a href="/blog/chatgpt-chart-analysis/">there's a prompt for that here</a>.</li>
     </ol>
-    <p>If you'll genuinely do all six, every time, including on the day you're down two trades and in a hurry — you don't need to buy anything. The honest case for a paid checkpoint is that it does this automatically at the exact moment your discipline is weakest. That's a real product, but it isn't magic, and it's worth knowing what you're actually buying.</p>
+    <p>If you'll genuinely do all six, every time, including on the day you're down two trades and in a hurry: you don't need to buy anything. The honest case for a paid checkpoint is that it does this automatically at the exact moment your discipline is weakest. That's a real product, but it isn't magic, and it's worth knowing what you're actually buying.</p>
 
     <h2 id="limits">The honest limits</h2>
-    <p>A second opinion — human or AI — won't give you an edge by itself. It won't predict news, see order flow, or turn a bad strategy into a good one. What it does is narrower and more valuable: it makes your process consistent, forces invalidation before entry, and blocks a percentage of your worst impulses. For most retail traders, that filter is worth more than any signal feed they've ever paid for.</p>
-    <p>Two more limits worth stating, since we sell one of these. A checkpoint can be wrong, and being wrong confidently is its own risk — which is why the only defensible version publishes its results instead of asserting them; <a href="/accuracy">ours are here</a>, unflattering parts included. And a checkpoint can be over-trusted: if you stop forming your own read because something else will, you've replaced your judgement rather than tested it, and you'll have nothing to fall back on the day the tool is wrong.</p>
+    <p>A second opinion, human or AI, won't give you an edge by itself. It won't predict news, see order flow, or turn a bad strategy into a good one. What it does is narrower and more valuable: it makes your process consistent, forces invalidation before entry, and blocks a percentage of your worst impulses. For most retail traders, that filter is worth more than any signal feed they've ever paid for.</p>
+    <p>Two more limits worth stating, since we sell one of these. A checkpoint can be wrong, and being wrong confidently is its own risk, which is why the only defensible version publishes its results instead of asserting them; <a href="/accuracy">ours are here</a>, unflattering parts included. And a checkpoint can be over-trusted: if you stop forming your own read because something else will, you've replaced your judgement rather than tested it, and you'll have nothing to fall back on the day the tool is wrong.</p>
 
     <h2 id="faq">FAQ</h2>
     <h3>What's the difference between a trading signal and a second opinion?</h3>
@@ -153,23 +129,41 @@
     <p>Anything advertising a high win rate without a published methodology and sample size is selling certainty that doesn't exist. Nobody in this category has demonstrated raw signals that survive spreads, slippage and fees.</p>
 
     <h3>Does saying "no trade" mean the tool is broken?</h3>
-    <p>No — a high abstention rate is what a tool with no signal quota looks like. Most charts, most of the time, don't contain a setup worth risking money on.</p>
+    <p>No. A high abstention rate is what a tool with no signal quota looks like. Most charts, most of the time, don't contain a setup worth risking money on.</p>
 
     <h3>How do I stop overtrading?</h3>
     <p>Write your read down before entering, refuse any trade without a defined invalidation, impose a delay between decision and click, and log outcomes. Those four cost nothing and address the actual failure point.</p>
 
     <h3>Can I do this without buying a tool?</h3>
-    <p>Yes — there's a six-step version above. A paid checkpoint automates it for the day your discipline is weakest, which is the only honest thing it's selling.</p>
+    <p>Yes. There's a six-step version above. A paid checkpoint automates it for the day your discipline is weakest, which is the only honest thing it's selling.</p>
 
     <div class="callout">
       <p>Tickrify is built as exactly this checkpoint: paste your chart, get a structured read with entry, stop, targets and risk-to-reward, with <a href="/accuracy">results that are public</a>, or an honest WAIT. The final call is always yours.</p>
-      <a class="btn" href="/try?utm_source=blog&amp;utm_medium=organic&amp;utm_campaign=second-opinion">Get a second opinion on your next setup — free</a>
+      <a class="btn" href="/try?utm_source=blog&amp;utm_medium=organic&amp;utm_campaign=second-opinion">Get a second opinion on your next setup: free</a>
     </div>
 
     <p>Related: <a href="/for/">What Tickrify can actually read</a> &middot; <a href="/blog/ai-chart-analysis/">What AI chart analysis actually does</a> · <a href="/blog/chatgpt-chart-analysis/">Can ChatGPT analyze charts?</a> · <a href="/accuracy">Our measured accuracy, published</a> · <a href="/tools/">Free trading calculators</a> &middot; <a href="/for/gold/">A second opinion on XAUUSD</a> &middot; <a href="/blog/">All posts</a></p>
 
-    <footer>Nothing on this page is financial advice. Trading involves substantial risk of loss. Tickrify provides analysis, not signals — the final call is always yours.</footer>
+    <div class="page-note"><p>Nothing on this page is financial advice. Trading involves substantial risk of loss. Tickrify provides analysis, not signals: the final call is always yours.</p></div>
   </div>
+  <footer class="site-footer">
+    <div class="site-footer-inner">
+      <div class="site-footer-grid">
+        <div class="site-footer-brand">
+          <a href="/" aria-label="Tickrify"><img src="/tickrify-lockup.svg" alt="Tickrify" width="116" height="30" /></a>
+          <p>AI chart reading for traders who want a second opinion before they enter, not a signal to follow.</p>
+          <div class="site-social"><a href="https://x.com/tickrify" target="_blank" rel="noreferrer" aria-label="X"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M18.901 1.153h3.68l-8.04 9.19 9.456 12.504h-7.403l-5.793-7.57-6.63 7.57H.49l8.6-9.83L0 1.154h7.595l5.243 6.932 6.063-6.933Zm-1.29 19.512h2.04L6.486 3.258H4.298l13.313 17.407Z"/></svg></a><a href="https://instagram.com/tickrify" target="_blank" rel="noreferrer" aria-label="Instagram"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg></a></div>
+        </div>
+        <div class="site-footer-col"><h2>Product</h2><ul><li><a href="/#how">How it works</a></li><li><a href="/#platform">Panel</a></li><li><a href="/pricing">Pricing</a></li><li><a href="/try">Try without an account</a></li><li><a href="/accuracy">Accuracy scoreboard</a></li></ul></div>
+        <div class="site-footer-col"><h2>Markets</h2><ul><li><a href="/for/forex/">AI Forex chart analysis</a></li><li><a href="/for/gold/">AI Gold chart analysis (XAUUSD)</a></li><li><a href="/for/bitcoin/">AI crypto chart analysis</a></li><li><a href="/for/tradingview/">For TradingView</a></li><li><a href="/for/metatrader/">For MetaTrader</a></li><li><a href="/tools/">Free trading calculators</a></li></ul></div>
+        <div class="site-footer-col"><h2>Company</h2><ul><li><a href="/about">About</a></li><li><a href="/blog/">Blog</a></li><li><a href="/#faq">FAQ</a></li><li><a href="mailto:support@tickrify.com">Contact support</a></li><li><a href="/affiliates">Affiliate program</a></li></ul></div>
+        <div class="site-footer-col"><h2>Legal</h2><ul><li><a href="/terms">Terms of Service</a></li><li><a href="/privacy">Privacy Policy</a></li><li><a href="/cookies">Cookie Policy</a></li><li><a href="/risk">Risk disclosure</a></li><li><a href="/terms#refunds">Refund and cancellation</a></li></ul></div>
+      </div>
+      <div class="site-footer-legal"><p>Tickrify is a technical-analysis tool powered by artificial intelligence. It does not provide investment, financial, legal or tax advice, and nothing produced by the platform should be read as a recommendation to buy or sell any instrument. Trading in forex, crypto, stocks, indices and derivatives carries a high level of risk and can result in the loss of your entire capital. Past performance, including the hit rate published on our accuracy page, does not guarantee future results. You are solely responsible for your trading decisions.</p></div>
+      <div class="site-footer-bottom">&copy; Tickrify. All rights reserved.</div>
+    </div>
+  </footer>
+
 <script src="/static-analytics.js" defer></script>
 </body>
 </html>

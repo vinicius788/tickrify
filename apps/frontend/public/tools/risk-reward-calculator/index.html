@@ -20,67 +20,28 @@
        o <link> de fonte bloqueante custava 750ms de render no mobile.
        display=swap ja pinta o texto antes; o <noscript> cobre quem nao
        executa JS, que e justamente o crawler de IA. -->
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-  <noscript><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet"></noscript>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet"></noscript>
   <script type="application/ld+json">
   {"@context": "https://schema.org", "@type": "WebApplication", "name": "Risk / Reward Ratio Calculator", "url": "https://tickrify.com/tools/risk-reward-calculator/", "applicationCategory": "FinanceApplication", "operatingSystem": "Web", "description": "Calculates risk/reward ratio and the corresponding breakeven win rate from entry, stop-loss and target prices.", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}
   </script>
   <script type="application/ld+json">
   {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "What is a good risk/reward ratio?", "acceptedAnswer": {"@type": "Answer", "text": "There is no universal answer. A 1:1 with a 60% hit rate beats a 3:1 with a 20% hit rate. What matters is whether your actual win rate clears the breakeven rate the ratio demands, after costs."}}, {"@type": "Question", "name": "How do I calculate risk/reward?", "acceptedAnswer": {"@type": "Answer", "text": "Divide the distance from entry to target by the distance from entry to stop. Both distances are absolute, so direction does not change the arithmetic."}}, {"@type": "Question", "name": "Why is my breakeven win rate higher than the formula says?", "acceptedAnswer": {"@type": "Answer", "text": "Because 1 divided by (1 + ratio) assumes zero costs. Spread, fees and slippage raise the real bar, and on short timeframes the gap is not small."}}, {"@type": "Question", "name": "Should I use the first target or the second?", "acceptedAnswer": {"@type": "Answer", "text": "Calculate both. Partial exits change your effective ratio, and a plan that only works at the second target is one you will abandon at the first."}}]}
   </script>
-  <style>
-    :root{--bg:#050508;--fg:#f5f6f8;--muted:#9aa3ae;--green:#5eea8a;--red:#ff6b6b;--line:rgba(154,163,174,.18)}
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--fg);font-family:Geist,system-ui,sans-serif;line-height:1.75}
-    .wrap{max-width:760px;margin:0 auto;padding:32px 20px 80px}
-    header.site{display:flex;justify-content:space-between;align-items:center;margin-bottom:44px}
-    header.site a.logo{color:var(--fg);text-decoration:none;font-weight:700;font-size:18px}
-    header.site a.logo span{color:var(--green)}
-    header.site a.cta{color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
-    .kicker{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--green)}
-    h1{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:clamp(2rem,4.5vw,2.9rem);line-height:1.1;letter-spacing:-.02em;margin:12px 0 12px}
-    h2{font-family:Fraunces,Georgia,serif;font-weight:500;font-size:1.45rem;margin:44px 0 10px;line-height:1.3}
-    h3{font-size:1.02rem;margin:26px 0 6px;font-weight:650}
-    p,li{color:#c9cfd6;font-size:1.02rem}
-    ul,ol{padding-left:22px} li{margin-bottom:8px}
-    strong{color:var(--fg)} a{color:var(--green)}
-    .lede{color:var(--muted);font-size:1.06rem;margin-bottom:8px}
-    /* calculadora */
-    .calc{border:1px solid var(--line);border-radius:16px;padding:24px;margin:28px 0;background:#0b0c11}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;align-items:end}
-    .field label{display:block;font-family:"JetBrains Mono",monospace;font-size:10.5px;letter-spacing:.09em;
-      text-transform:uppercase;color:var(--muted);margin-bottom:6px}
-    .field input,.field select{width:100%;background:#05060a;border:1px solid var(--line);border-radius:10px;
-      padding:11px 13px;color:var(--fg);font-size:1rem;font-family:"JetBrains Mono",monospace}
-    .field input:focus,.field select:focus{outline:none;border-color:rgba(94,234,138,.55)}
-    .out{margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
-    .rowout{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:9px 0}
-    .rowout + .rowout{border-top:1px dashed rgba(154,163,174,.13)}
-    .rowout .k{color:var(--muted);font-size:.9rem}
-    .rowout .v{font-family:"JetBrains Mono",monospace;font-size:1.12rem;font-weight:600;color:var(--fg);text-align:right}
-    .hero-out .v{font-size:1.85rem;color:var(--green)}
-    .err{color:var(--red);font-size:.92rem;margin-top:14px;display:none}
-    .hint{color:var(--muted);font-size:.85rem;margin-top:14px}
-    table{width:100%;border-collapse:collapse;margin:22px 0;font-size:.92rem}
-    th,td{border:1px solid var(--line);padding:9px 12px;text-align:left}
-    th{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-    td.num{font-family:"JetBrains Mono",monospace}
-    .callout{border:1px solid rgba(94,234,138,.32);border-radius:14px;padding:20px 24px;margin:36px 0;background:rgba(94,234,138,.04)}
-    .callout p{margin:0 0 12px}
-    .callout a.btn{display:inline-block;color:var(--bg);background:var(--green);text-decoration:none;font-weight:600;font-size:14px;padding:10px 18px;border-radius:10px}
-    .tools-nav{display:flex;flex-wrap:wrap;gap:10px;margin:28px 0}
-    .tools-nav a{border:1px solid var(--line);border-radius:999px;padding:7px 15px;text-decoration:none;
-      color:var(--muted);font-size:.87rem}
-    .tools-nav a.on{border-color:rgba(94,234,138,.5);color:var(--green)}
-    footer{margin-top:60px;border-top:1px solid var(--line);padding-top:22px;color:var(--muted);font-size:13px}
-  </style>
+  <link rel="stylesheet" href="/site.css?v=1" />
 </head>
 <body>
+  <header class="site-header">
+    <div class="site-bar">
+      <a class="site-logo" href="/" aria-label="Tickrify"><img src="/tickrify-lockup.svg" alt="Tickrify" width="116" height="30" /></a>
+      <nav class="site-nav" aria-label="Main"><a href="/#how">How It Works</a><a href="/#platform">Panel</a><a href="/accuracy">Accuracy scoreboard</a><a href="/pricing">Plans</a><a href="/#faq">FAQ</a></nav>
+      <div class="site-actions">
+        <a class="site-btn site-btn-ghost" href="/sign-in">Login</a>
+        <a class="site-btn site-btn-primary" href="/try?utm_source=tools&amp;utm_medium=organic&amp;utm_campaign=risk-reward">Analyze a chart free</a>
+      </div>
+    </div>
+  </header>
   <div class="wrap">
-    <header class="site">
-      <a class="logo" href="/">tickrify<span>.</span></a>
-      <a class="cta" href="/try?utm_source=tools&amp;utm_medium=organic&amp;utm_campaign=risk-reward">Analyze a chart free</a>
-    </header>
     <div class="tools-nav">
       <a href="/tools/" >All tools</a>
       <a href="/tools/position-size-calculator/" >Position size</a>
@@ -89,7 +50,7 @@
     </div>
     <span class="kicker">Free tool · No signup</span>
     <h1>Risk / Reward Ratio Calculator</h1>
-    <p class="lede">Enter, stop and target — get the ratio, and the win rate you'd need just to break even at it. The second number is the one people skip.</p>
+    <p class="lede">Enter, stop and target: get the ratio, and the win rate you'd need just to break even at it. The second number is the one people skip.</p>
 
     <div class="calc">
       <div class="grid">
@@ -98,11 +59,11 @@
         <div class="field"><label for="target">Target price</label><input id="target" type="number" inputmode="decimal" value="71000" min="0" step="any"></div>
       </div>
       <div class="out" id="out">
-        <div class="rowout hero-out"><span class="k">Risk / reward</span><span class="v" id="rRR">—</span></div>
-        <div class="rowout"><span class="k">Breakeven win rate</span><span class="v" id="rBE">—</span></div>
-        <div class="rowout"><span class="k">Risk per unit</span><span class="v" id="rRisk">—</span></div>
-        <div class="rowout"><span class="k">Reward per unit</span><span class="v" id="rReward">—</span></div>
-        <div class="rowout"><span class="k">Direction</span><span class="v" id="rDir">—</span></div>
+        <div class="rowout hero-out"><span class="k">Risk / reward</span><span class="v" id="rRR">·</span></div>
+        <div class="rowout"><span class="k">Breakeven win rate</span><span class="v" id="rBE">·</span></div>
+        <div class="rowout"><span class="k">Risk per unit</span><span class="v" id="rRisk">·</span></div>
+        <div class="rowout"><span class="k">Reward per unit</span><span class="v" id="rReward">·</span></div>
+        <div class="rowout"><span class="k">Direction</span><span class="v" id="rDir">·</span></div>
       </div>
       <p class="err" id="err"></p>
       <p class="hint">Direction is inferred from your stop: below entry means long, above entry means short. Nothing you type leaves your browser.</p>
@@ -115,7 +76,7 @@
       <li><strong>Ratio</strong> = reward ÷ risk</li>
       <li><strong>Breakeven win rate</strong> = 1 ÷ (1 + ratio)</li>
     </ul>
-    <p>With the defaults: risk is 1,200, reward is 2,600, so the ratio is <strong>2.17</strong>. That means you'd need to win about <strong>31.5%</strong> of the time just to break even before costs — and anything above that is where profit starts.</p>
+    <p>With the defaults: risk is 1,200, reward is 2,600, so the ratio is <strong>2.17</strong>. That means you'd need to win about <strong>31.5%</strong> of the time just to break even before costs, and anything above that is where profit starts.</p>
 
     <h2>Why the breakeven number matters more than the ratio</h2>
     <p>"3:1 minimum" is repeated everywhere as if the ratio alone were the point. It isn't. A ratio is only meaningful next to the win rate it demands, because the two trade off directly:</p>
@@ -128,21 +89,21 @@
       <tr><td class="num">3 : 1</td><td class="num">25.0%</td><td>Right one time in four</td></tr>
       <tr><td class="num">5 : 1</td><td class="num">16.7%</td><td>Rare, and usually means the target is fantasy</td></tr>
     </table>
-    <p>The trap in that table is the bottom row. Ratios improve on paper simply by moving the target further away — and a target far enough to look attractive is often a target price never reaches. <strong>A high ratio you don't actually hit is worse than a modest one you do.</strong> The honest test is whether the target sits at a level the market has respected, not whether the arithmetic looks good.</p>
+    <p>The trap in that table is the bottom row. Ratios improve on paper simply by moving the target further away, and a target far enough to look attractive is often a target price never reaches. <strong>A high ratio you don't actually hit is worse than a modest one you do.</strong> The honest test is whether the target sits at a level the market has respected, not whether the arithmetic looks good.</p>
 
     <h2>Where this calculation quietly lies</h2>
     <ul>
-      <li><strong>It assumes you hold to one of the two levels.</strong> Exiting early — which most people do — means your real ratio is worse than the planned one, every time.</li>
+      <li><strong>It assumes you hold to one of the two levels.</strong> Exiting early, which most people do, means your real ratio is worse than the planned one, every time.</li>
       <li><strong>It ignores costs.</strong> Spread, fees and slippage push the true breakeven win rate above the number shown. Use the <a href="/tools/breakeven-win-rate-calculator/">breakeven calculator</a> to add them.</li>
       <li><strong>It says nothing about probability.</strong> The ratio is arithmetic on three numbers you chose. It has no opinion on whether the market agrees with them.</li>
     </ul>
 
     <h2>FAQ</h2>
     <h3>What is a good risk/reward ratio?</h3>
-    <p>There's no universal answer — a 1:1 with a 60% hit rate beats a 3:1 with a 20% hit rate. What matters is whether your actual win rate clears the breakeven rate the ratio demands, after costs. Judge the pair, never the ratio alone.</p>
+    <p>There's no universal answer: a 1:1 with a 60% hit rate beats a 3:1 with a 20% hit rate. What matters is whether your actual win rate clears the breakeven rate the ratio demands, after costs. Judge the pair, never the ratio alone.</p>
 
     <h3>How do I calculate risk/reward?</h3>
-    <p>Divide the distance from entry to target by the distance from entry to stop. Both distances are absolute — direction doesn't change the arithmetic.</p>
+    <p>Divide the distance from entry to target by the distance from entry to stop. Both distances are absolute: direction doesn't change the arithmetic.</p>
 
     <h3>Why is my breakeven win rate higher than the formula says?</h3>
     <p>Because 1 ÷ (1 + ratio) assumes zero costs. Every trade pays spread, fees and some slippage, which raises the bar. On short-timeframe trading the gap is not small.</p>
@@ -150,14 +111,32 @@
     <h3>Should I use the first target or the second?</h3>
     <p>Calculate both. Partial exits change your effective ratio, and a plan that only pencils out at target 2 is a plan you'll abandon at target 1.</p>
     <div class="callout">
-      <p>These numbers tell you <em>how much</em> to risk. They can't tell you whether the setup is worth risking anything on — that's a different question, and it's the one we built Tickrify for: paste a chart, get entry, stop, targets and risk, or an honest "no trade". 3-day free trial, no card.</p>
+      <p>These numbers tell you <em>how much</em> to risk. They can't tell you whether the setup is worth risking anything on: that's a different question, and it's the one we built Tickrify for: paste a chart, get entry, stop, targets and risk, or an honest "no trade". 3-day free trial, no card.</p>
       <a class="btn" href="/try?utm_source=tools&amp;utm_medium=organic&amp;utm_campaign=risk-reward">Gut-check your next setup free</a>
     </div>
 
     <p>Related: <a href="/tools/position-size-calculator/">Position size calculator</a> · <a href="/tools/breakeven-win-rate-calculator/">Breakeven win rate calculator</a> · <a href="/blog/ai-chart-analysis/">What AI chart analysis actually does</a></p>
 
-    <footer>Nothing on this page is financial advice. Trading involves substantial risk of loss. These calculators do arithmetic on numbers you supply — they don't know your market, your costs, or your strategy.</footer>
+    <div class="page-note"><p>Nothing on this page is financial advice. Trading involves substantial risk of loss. These calculators do arithmetic on numbers you supply: they don't know your market, your costs, or your strategy.</p></div>
   </div>
+  <footer class="site-footer">
+    <div class="site-footer-inner">
+      <div class="site-footer-grid">
+        <div class="site-footer-brand">
+          <a href="/" aria-label="Tickrify"><img src="/tickrify-lockup.svg" alt="Tickrify" width="116" height="30" /></a>
+          <p>AI chart reading for traders who want a second opinion before they enter, not a signal to follow.</p>
+          <div class="site-social"><a href="https://x.com/tickrify" target="_blank" rel="noreferrer" aria-label="X"><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M18.901 1.153h3.68l-8.04 9.19 9.456 12.504h-7.403l-5.793-7.57-6.63 7.57H.49l8.6-9.83L0 1.154h7.595l5.243 6.932 6.063-6.933Zm-1.29 19.512h2.04L6.486 3.258H4.298l13.313 17.407Z"/></svg></a><a href="https://instagram.com/tickrify" target="_blank" rel="noreferrer" aria-label="Instagram"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg></a></div>
+        </div>
+        <div class="site-footer-col"><h2>Product</h2><ul><li><a href="/#how">How it works</a></li><li><a href="/#platform">Panel</a></li><li><a href="/pricing">Pricing</a></li><li><a href="/try">Try without an account</a></li><li><a href="/accuracy">Accuracy scoreboard</a></li></ul></div>
+        <div class="site-footer-col"><h2>Markets</h2><ul><li><a href="/for/forex/">AI Forex chart analysis</a></li><li><a href="/for/gold/">AI Gold chart analysis (XAUUSD)</a></li><li><a href="/for/bitcoin/">AI crypto chart analysis</a></li><li><a href="/for/tradingview/">For TradingView</a></li><li><a href="/for/metatrader/">For MetaTrader</a></li><li><a href="/tools/">Free trading calculators</a></li></ul></div>
+        <div class="site-footer-col"><h2>Company</h2><ul><li><a href="/about">About</a></li><li><a href="/blog/">Blog</a></li><li><a href="/#faq">FAQ</a></li><li><a href="mailto:support@tickrify.com">Contact support</a></li><li><a href="/affiliates">Affiliate program</a></li></ul></div>
+        <div class="site-footer-col"><h2>Legal</h2><ul><li><a href="/terms">Terms of Service</a></li><li><a href="/privacy">Privacy Policy</a></li><li><a href="/cookies">Cookie Policy</a></li><li><a href="/risk">Risk disclosure</a></li><li><a href="/terms#refunds">Refund and cancellation</a></li></ul></div>
+      </div>
+      <div class="site-footer-legal"><p>Tickrify is a technical-analysis tool powered by artificial intelligence. It does not provide investment, financial, legal or tax advice, and nothing produced by the platform should be read as a recommendation to buy or sell any instrument. Trading in forex, crypto, stocks, indices and derivatives carries a high level of risk and can result in the loss of your entire capital. Past performance, including the hit rate published on our accuracy page, does not guarantee future results. You are solely responsible for your trading decisions.</p></div>
+      <div class="site-footer-bottom">&copy; Tickrify. All rights reserved.</div>
+    </div>
+  </footer>
+
   <script>
     function riskReward(i) {
       if (!(i.entry > 0) || !(i.stop > 0) || !(i.target > 0)) return { error: 'Entry, stop and target must all be positive prices.' };

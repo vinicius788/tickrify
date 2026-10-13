@@ -58,7 +58,7 @@ const CASES: Case[] = [
     meta: 'R/R to TP1 1.8:1 · Confluence 5/8',
   },
   {
-    sym: 'BTCUSD · 1H', chart: chartWait, scenario: 'NEUTRAL', action: 'WAIT', arrow: '—', tone: 'wait',
+    sym: 'BTCUSD · 1H', chart: chartWait, scenario: 'NEUTRAL', action: 'WAIT', arrow: '·', tone: 'wait',
     changes: [
       'An hourly close above 64,180 with volume behind it.',
       'A clean rejection wick at 61,900.',
