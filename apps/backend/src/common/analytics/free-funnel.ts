@@ -78,10 +78,13 @@ export async function trackFreeAnalysisCompleted(
         freeRemaining: quota.remaining,
         signalsUsed: quota.signalsUsed,
         isLastFree,
+        trial: Boolean(quota.trial),
+        ...(quota.trial ? { trial_day: quota.trial.dayIndex } : {}),
       },
       { dedupeKey: `free_analysis_completed:${params.analysisId}`, timestamp: params.completedAt },
     );
-    if (isLastFree) {
+    // Trial: o fim tem evento proprio (`trial_ended`, trial-funnel.ts).
+    if (isLastFree && !quota.trial) {
       captureServer(
         clerkId,
         'free_quota_exhausted',

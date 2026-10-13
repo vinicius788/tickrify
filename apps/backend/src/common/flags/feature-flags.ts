@@ -167,6 +167,33 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'TRIAL_MODE',
+    type: 'boolean',
+    label: 'Trial de 3 dias (no lugar das 3 analises gratis)',
+    description:
+      'Conta que ainda nao fez nenhuma analise gratis ganha o trial de 3 dias de uso (3, 2 e 2 analises por dia, ate 7 dias, sem cartao) na primeira visita ao painel. Quem ja usou a regra antiga continua nela. Ao ligar, conferir os textos da vitrine ("3 free trade plans"): passam a ser falsos para conta nova. DESLIGADO: nada muda.',
+    defaultValue: 'false',
+    risk: 'alto',
+  },
+  {
+    key: 'TRIAL_REACTIVATION',
+    type: 'boolean',
+    label: 'Reativacao com trial (quem esgotou as gratis antigas)',
+    description:
+      'Libera, no /admin, conceder o trial de 3 dias a quem esgotou a regra antiga e nunca assinou. Ligar sozinho NAO concede nem envia nada: a concessao exige confirmacao no painel.',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
+    key: 'EMAIL_TRIAL_SEQUENCE',
+    type: 'boolean',
+    label: 'E-mails do trial de 3 dias',
+    description:
+      'Sequencia do trial: convite a 1a analise (~3h), volta no dia 2 e no dia 3 (de manha no fuso da pessoa), fim do trial (na hora e +2 dias) e semanal 5 e 10 dias depois. No maximo 1 e-mail por pessoa por dia, para ao assinar, respeita o descadastro. DESLIGADO: so loga quem receberia ([lifecycle] dry-run).',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
     key: 'AB_PROMPT_V9_PERCENT',
     type: 'number',
     label: 'A/B do prompt v9 (% de usuários)',

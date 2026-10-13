@@ -605,6 +605,41 @@ Vale para TODA mudanca, grande ou pequena:
   `chat_reply_email_sent`, `chat_founder_notify_sent`; navegador
   `chat_opened { surface, unread }`, `chat_message_submitted { length }`.
 
+### 3.10 Trial de 3 dias sem cartao (13/10; pronto, DESLIGADO)
+
+- **Chave `TRIAL_MODE` (/admin, desligada).** Ligada: conta sem nenhuma
+  analise gratis ganha o trial na 1a visita ao painel (`/usage`); quem ja usou
+  a regra antiga (3 planos) continua nela. Sem cartao, sem trial da Stripe,
+  sem cobranca automatica: paga so quem clica para assinar.
+- **Regras num lugar so** (`common/trial.ts`, `TRIAL_RULES`): dia de uso = dia
+  do calendario no fuso do navegador (guardado no trial; sem fuso, UTC) com
+  ao menos 1 analise; cota 3/2/2 (WAIT conta); acaba ao esgotar o dia 3, ao
+  comecar um 4o dia de uso ou 7 dias depois do inicio. Depois: modo leitura
+  (historico inteiro aberto, diario/resultado/favoritos/nova analise travados).
+- **Integracao:** `getFreeQuota` (free-quota.ts) le o trial e devolve o MESMO
+  formato, entao acesso, `/usage`, trava, funil e e-mails mudaram juntos. Sem
+  linha em `UserTrial`, tudo igual a antes. Tabela por SQL (boot do
+  `TrialService` + migracao `20261013120000_user_trial`), fora do schema.prisma;
+  coluna `Analysis.imageSha256` (print repetido em 24h devolve a leitura, sem IA).
+- **Anti-abuso:** e-mail descartavel nega (linha `denied`), e-mail nao
+  verificado no Clerk espera verificar, 3 trials novos por IP em 24h. Teto de
+  gasto US$ 10/dia (UTC, estimado a US$ 0,0195/analise): passou, mensagem de
+  fila (`TRIAL_BUSY`) e alerta 1x/dia (log, AdminAudit `trial:spend_cap:<dia>`,
+  e-mail ao suporte).
+- **PostHog (servidor):** `trial_started`, `trial_day_completed {day_index,
+  analyses_that_day}`, `trial_daily_limit_hit`, `trial_paywall_shown {trigger}`,
+  `trial_ended {reason}`, `subscription_renewed` (fatura `subscription_cycle`).
+  `subscription_created`/`payment_succeeded` levam `trial_day_at_conversion`;
+  o navegador leva `trial_day` em todo evento (super propriedade do /usage).
+  Todos com `utm_source` e `$referring_domain` do primeiro toque.
+- **E-mails:** 7 tipos `trial_*` no lifecycle-email.ts, chave
+  `EMAIL_TRIAL_SEQUENCE` (desligada = dry-run). Regra nova para TODO e-mail de
+  ciclo de vida: no maximo 1 por pessoa em 20h. Trial nao recebe
+  activation_*/second_analysis/recuperacao (falam dos 3 planos). Boas-vindas
+  muda de texto com `TRIAL_MODE` ligado.
+- **Reativacao:** `GET/POST /api/admin/trial/reactivation` (chave
+  `TRIAL_REACTIVATION`, `confirm: 'GRANT'`); concede o trial, nao envia nada.
+
 ---
 
 ## 4. Regras tecnicas que nasceram de bug real (nao desfazer)
@@ -785,6 +820,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 13/10 | **Trial de 3 dias pronto e DESLIGADO (3.10).** Antes de ligar `TRIAL_MODE`: (1) aprovar os textos (e-mails `trial_*`, boas-vindas, telas) entregues no chat em 13/10; (2) trocar na vitrine o "3 free trade plans" (landing, /pricing, FAQ, pre-render, og.png, blog, tools, llms.txt) pelo texto do trial, senao vira claim falso para conta nova; (3) conferir no boot `[trial] Tabela pronta`. Depois de ligar: funil por dia no PostHog (`trial_day_completed` por `day_index`), `trial_paywall_shown` por `trigger`, conversao por `trial_day_at_conversion`. | dono / Claude |
 | 13/10 | **Blog com o visual do site:** demo em `_local/blog-visual/demo.html` (tokens `.tk-site`, cabecalho/rodape do site, filtro por categoria na listagem, post em superficie escura ou papel). Dono escolhe a superficie e aprova; depois: CSS unico `/blog/blog.css` nos 12 HTMLs, sem mexer no texto. URLs do blog auditadas (0 link quebrado, canonical e sitemap ok, slugs limpos): NAO mudar URL nem criar `/blog/categoria` (filtro so na listagem). | dono aprova / Claude |
 | 13/10 | **Quando a Anthropic entrar em uso:** atualizar /privacy (secao 4 ja diz "AI provider"; texto proposto entregue no chat em 13/10) e conferir `[ai-provider]` no Render. Nada publico cita a Anthropic antes disso. | dono / Claude |
 | 12/10 | **Redesenho da tela de resultado nunca juntado:** branch remota `claude/blissful-heisenberg-dwasmg` (01/10, 2 commits): acao em destaque e vies secundario, WAIT explicado uma vez como decisao de risco, preco sem `$`, textos dos exemplos em `t.samples` nos 6 idiomas (~540 linhas no `AnalysisResult.tsx`), e `scripts/e2e-payment.mjs` no lugar do `e2e-staging.mjs`. O `main` mudou muito depois (setups, motor 2.0.0, estrelas): decidir se refaz em cima do `main` (com demo antes) ou se descarta e apaga a branch. | dono decide |
@@ -903,6 +939,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **12/10 (motor 2.0.0):** medicao por etapa no `analysis_completed`, contrato v2 em `result.engine`, validador do plano com testes, chamada ao modelo isolada em `VisionModel`, `streamAnalyzeImage` (morto desde 21/09) removido. Linha de base PostHog (30 dias, `symbol` so existe desde 30/09): 347 analises com ativo, ouro 59%, cripto 28%, forex 7%, indices sinteticos 4%, indices 1%, acoes 0.
 - **12/10 (limpeza do git):** 4 worktrees (3 do Codex, 1 do Claude), 7 branches locais ja contidas no `main` e os 2 stashes (seguranca 28/09 e My Trades 24/09, ambos ja no `main`) removidos; backup dos diffs em `_local/limpeza-2026-10-12/`. Do worktree do Codex `analysis-funnel-count` (28/09, nunca commitado) entrou so o `analysisNumber` contando WAIT (3.4); os scripts do piloto de analise (`analysis-pilot-*`, `analysis-checklist-candidate`) ficaram so no backup. Frontend, setups e chat confirmados em producao (bundle e rotas respondendo). Em 13/10: 12 branches remotas ja contidas no `main` apagadas do GitHub; Docker sem o staging de 01/10 (7 conteineres `supabase_*_tickrify-staging-20261001`, 2 volumes, 2 imagens) e sem cache de build (9,2 GB). Restou so a branch `claude/blissful-heisenberg-dwasmg` (6.2).
 - **13/10 (provedor de IA):** camada unica `vision-model.ts` com OpenAI ativa, Anthropic pronta e inativa, contingencia, modo comparacao desligado e nova tentativa unica quando a checagem por codigo falha (ver 3.2). Nao existe chat com IA no produto (o chat e com o fundador), entao nao ha historico de chat a limitar.
+- **13/10 (trial):** trial de 3 dias sem cartao implementado atras de `TRIAL_MODE` (3.10). Diagnostico de 22/09 a 13/10 (PostHog, 194 cadastros): 0 analises 16%, 1 = 35%, 2 = 20%, 3 = 15%, 4+ = 14%; de quem analisou, 16% voltou em outro dia (UTC) e 2% em 3 dias; mediana de 1 min entre cadastro e 1a analise (157 de 162 na 1a hora); o assinante semanal pagou ~39h depois do cadastro (3o dia do calendario) e renovou em 12/10.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

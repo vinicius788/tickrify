@@ -51,11 +51,16 @@ describe('analytics', () => {
     expect(posthog.register).not.toHaveBeenCalled();
 
     await a.initAnalytics();
-    expect(posthog.register).toHaveBeenCalledWith({ plan: 'weekly', billing_cycle: 'weekly', is_subscriber: true });
+    expect(posthog.register).toHaveBeenCalledWith({ plan: 'weekly', billing_cycle: 'weekly', is_subscriber: true, trial_day: null });
+
+    // Trial de 3 dias: o dia de uso vai em todo evento (inclusive upgrade_clicked).
+    a.setPlanContext({ plan: 'free', billingCycle: null, isSubscriber: false, trialDay: 2 });
+    expect(posthog.register).toHaveBeenLastCalledWith({ plan: 'free', billing_cycle: null, is_subscriber: false, trial_day: 2 });
 
     a.setPlanContext(null);
     expect(posthog.unregister).toHaveBeenCalledWith('plan');
     expect(posthog.unregister).toHaveBeenCalledWith('is_subscriber');
+    expect(posthog.unregister).toHaveBeenCalledWith('trial_day');
   });
 
   it('signup_started sai uma vez por sessao, venha de onde vier', async () => {

@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { TrialService } from './trial.service';
 import { AiService, buildClientContext, sanitizeTradeNote } from './ai.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
 import { captureServer as captureServerMock } from '../../common/analytics/posthog';
@@ -175,7 +176,8 @@ describe('AiService access enforcement', () => {
       linkAnalysis: jest.fn().mockResolvedValue(undefined),
     };
 
-    service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any, mailService as any, setups);
+    // Trial sem onModuleInit = tabela "indisponivel": regra antiga, como antes do trial.
+    service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any, mailService as any, setups, new TrialService(prisma, mailService as any));
   });
 
   // ── Atualizar um setup acompanhado (12/10/2026) ─────────────────────────────

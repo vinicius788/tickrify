@@ -24,7 +24,13 @@
  * codigo escreve nessa coluna.
  *
  * A demo anonima do /try nao passa por aqui.
+ *
+ * TRIAL (13/10/2026): quem tem linha em `UserTrial` (common/trial.ts) segue a
+ * regra do trial de 3 dias, no MESMO formato de resposta, para que acesso,
+ * /usage, trava de leitura, funil e e-mails mudem juntos. Sem linha, tudo
+ * igual a antes.
  */
+import { TRIAL_TOTAL_ANALYSES, computeTrialState, readTrial, type TrialState } from './trial';
 
 export const FREE_SIGNAL_LIMIT = 3;
 export const FREE_TOTAL_LIMIT = 10;
@@ -47,7 +53,13 @@ export type FreeQuotaCounter = {
   };
   analysis: {
     count: (args: { where: Record<string, unknown> }) => Promise<number>;
+    /** Para o trial. Sem ele (fakes antigos de teste) ninguem esta em trial. */
+    findMany?: (args: {
+      where: Record<string, unknown>;
+      select: { createdAt: true; status: true };
+    }) => Promise<Array<{ createdAt: Date; status: string }>>;
   };
+  $queryRawUnsafe?: <T = unknown>(query: string, ...values: unknown[]) => Promise<T>;
 };
 
 export type FreeQuota = {
@@ -67,6 +79,8 @@ export type FreeQuota = {
    * terminar em WAIT e devolver a vaga, e dizer "acabou" antes disso e falso.
    */
   settledExhausted: boolean;
+  /** Estado do trial de 3 dias; null = regra antiga (3 planos). */
+  trial: TrialState | null;
 };
 
 /**
@@ -75,6 +89,9 @@ export type FreeQuota = {
  * que usa uma conexao so.
  */
 export async function getFreeQuota(prisma: FreeQuotaCounter, userId: string): Promise<FreeQuota> {
+  const trial = await getTrialQuota(prisma, userId);
+  if (trial) return trial;
+
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { freeQuotaResetAt: true } });
   const base = {
     userId,
@@ -104,5 +121,29 @@ export async function getFreeQuota(prisma: FreeQuotaCounter, userId: string): Pr
     remaining: exhausted ? 0 : FREE_SIGNAL_LIMIT - signalsUsed,
     exhausted,
     settledExhausted,
+    trial: null,
+  };
+}
+
+/** Cota de quem esta em trial, no formato da cota gratis. null = sem trial. */
+async function getTrialQuota(prisma: FreeQuotaCounter, userId: string): Promise<FreeQuota | null> {
+  if (!prisma.$queryRawUnsafe || !prisma.analysis.findMany) return null;
+  const row = await readTrial({ $queryRawUnsafe: prisma.$queryRawUnsafe.bind(prisma) }, userId);
+  if (!row) return null;
+  const analyses = await prisma.analysis.findMany({
+    where: { userId, isDemo: true, createdAt: { gte: row.startedAt } },
+    select: { createdAt: true, status: true },
+  });
+  const state = computeTrialState(row, analyses);
+  return {
+    // Durante o trial "sinais" = analises do dia (WAIT conta), para o front antigo.
+    signalsUsed: state.usedToday,
+    signalsLimit: state.limitToday,
+    totalUsed: state.totalUsed,
+    totalLimit: TRIAL_TOTAL_ANALYSES,
+    remaining: state.blocked ? 0 : state.remainingToday,
+    exhausted: state.blocked,
+    settledExhausted: state.endedSettled,
+    trial: state,
   };
 }

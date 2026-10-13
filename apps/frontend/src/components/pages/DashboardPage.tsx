@@ -262,7 +262,15 @@ const DashboardPage = () => {
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, isLoading: isPlanLoading } = useAnalysisLimit();
+  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, trial, trialBlocked, isLoading: isPlanLoading } = useAnalysisLimit();
+  // Trial de 3 dias: qual paywall mostrar (volte amanha ou trial encerrado).
+  const trialVariant: 'daily_limit' | 'trial_ended' | undefined = trial
+    ? trial.status === 'ended'
+      ? 'trial_ended'
+      : trial.paywall === 'daily_limit'
+        ? 'daily_limit'
+        : undefined
+    : undefined;
   const queryClient = useQueryClient();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
@@ -799,6 +807,7 @@ const DashboardPage = () => {
       onMonthly={() => void startCheckout('locked_value', 'monthly', surface)}
       unlockPending={unlockPending}
       plansHref={`${base}${SECTION_PATH.plans}`}
+      variant={trialVariant}
     >
       {children}
     </Paywall>
@@ -1063,6 +1072,23 @@ const DashboardPage = () => {
         }
 
         const apiCode = error.code || String(parsedBody?.code || '');
+        // Trial de 3 dias: limite do dia e fim mostram o paywall certo (o /usage
+        // relido decide a variante); fila e anti-abuso mostram a mensagem.
+        if (apiCode === 'TRIAL_DAILY_LIMIT' || apiCode === 'TRIAL_ENDED') {
+          track('free_limit_reached', { reason: apiCode });
+          setFlow('locked');
+          return;
+        }
+        if (apiCode === 'TRIAL_BUSY') {
+          setErrorMessage(t.paywall.trialBusy);
+          setFlow('error');
+          return;
+        }
+        if (apiCode === 'TRIAL_EMAIL_NOT_ALLOWED' || apiCode === 'TRIAL_EMAIL_UNVERIFIED' || apiCode === 'TRIAL_NETWORK_LIMIT') {
+          setErrorMessage(String(parsedBody?.message || error.message || dc.analysisUnknownError));
+          setFlow('error');
+          return;
+        }
         if (apiCode === 'INSUFFICIENT_TICKS') {
           track('free_limit_reached', { reason: 'insufficient_ticks' });
           toast({
@@ -1496,8 +1522,12 @@ const DashboardPage = () => {
             )}
             {/* Gratis esgotado: o envio vira o paywall direto, em vez de deixar
                 subir o print e so recusar depois. */}
-            {freeLocked ? (
+            {freeLocked || trialVariant ? (
               paywallFor('new_analysis')
+            ) : trialBlocked ? (
+              <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4 text-sm text-[var(--text-secondary)]">
+                {trialBlocked.message}
+              </div>
             ) : (
               <div id="new-analysis-upload" className="scroll-mt-24">
                 <NewAnalysis
@@ -1523,7 +1553,11 @@ const DashboardPage = () => {
                               ? t.setups.costPaid
                                   .replace('{cost}', String(deep ? 3 : 1))
                                   .replace('{balance}', String(Math.floor(Number(ticksBalance) || 0)))
-                              : t.setups.costFree.replace('{left}', String(samplesFreeLeft)),
+                              : trial
+                                ? t.counter.trialLeftToday
+                                    .replace('{left}', String(trial.remainingToday))
+                                    .replace('{limit}', String(trial.limitToday))
+                                : t.setups.costFree.replace('{left}', String(samplesFreeLeft)),
                           cancelLabel: t.setups.updatingCancel,
                           onCancel: resetNewAnalysisView,
                         }
@@ -1556,7 +1590,9 @@ const DashboardPage = () => {
         if (freeLocked) {
           // O servidor ja devolve so as ultimas concluidas; aqui so leitura,
           // sem marcar resultado nem favoritar.
-          const readable = rawAnalyses.filter((a) => a.status === 'completed').slice(0, 3);
+          // Trial encerrado: modo leitura com o historico inteiro.
+          const completedRows = rawAnalyses.filter((a) => a.status === 'completed');
+          const readable = trial ? completedRows : completedRows.slice(0, 3);
           return (
             <div className="flex flex-col gap-4">
               <div>
@@ -1567,7 +1603,7 @@ const DashboardPage = () => {
                 'trades',
                 readable.length > 0 ? (
                   <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
-                    <p className="tk-stat-label mb-2">{t.paywall.recentTitle}</p>
+                    <p className="tk-stat-label mb-2">{trial ? t.paywall.recentTitleTrial : t.paywall.recentTitle}</p>
                     {readable.map((a) => {
                       const action = getRecommendationMeta(a.recommendation);
                       const actionLabel = action.tone === 'buy' ? t.analysis.buy : action.tone === 'sell' ? t.analysis.sell : t.analysis.hold;
@@ -1662,7 +1698,8 @@ const DashboardPage = () => {
         // (analisar outro / quantas grátis restam / assinar) — sem beco sem saída.
         const freeLeftKnown = !isUnlimited && Number.isFinite(remaining);
         const exhausted = freeLeftKnown && remaining <= 0;
-        const showWaitNudge = !isDemo && freeLeftKnown && !exhausted && isWaitResult;
+        // No trial o WAIT conta na cota do dia: a barra "nao gastou" seria falsa.
+        const showWaitNudge = !isDemo && freeLeftKnown && !exhausted && isWaitResult && !trial;
 
         // Qual análise a pergunta do veredito vai marcar.
         //
@@ -1774,20 +1811,26 @@ const DashboardPage = () => {
                 <div className="min-w-0">
                   {freeLeftKnown && !exhausted && (
                     <p className="text-sm text-[var(--text-primary)]">
-                      {t.counter.tradeCallsLeft.replace('{left}', String(remaining)).replace('{limit}', String(total))}
+                      {trial
+                        ? t.counter.trialLeftToday.replace('{left}', String(trial.remainingToday)).replace('{limit}', String(trial.limitToday))
+                        : t.counter.tradeCallsLeft.replace('{left}', String(remaining)).replace('{limit}', String(total))}
                     </p>
                   )}
                   {/* WAIT não consome análise com sinal: dizer isso no momento em
                       que a pessoa recebe um, senão ela lê o WAIT como gasto. */}
-                  {freeLeftKnown && !exhausted && ['WAIT', 'HOLD'].includes(String(analysisData?.recommendation || '').toUpperCase()) && (
+                  {freeLeftKnown && !exhausted && !trial && ['WAIT', 'HOLD'].includes(String(analysisData?.recommendation || '').toUpperCase()) && (
                     <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">{t.counter.waitFreeNote}</p>
                   )}
-                  {freeLeftKnown && !exhausted && totalUsed !== null && totalLimit !== null && (
+                  {freeLeftKnown && !exhausted && !trial && totalUsed !== null && totalLimit !== null && (
                     <p className="mt-1 text-xs text-[var(--text-secondary)]">
                       {t.counter.totalCapNote.replace('{limit}', String(totalLimit)).replace('{left}', String(Math.max(0, totalLimit - totalUsed)))}
                     </p>
                   )}
-                  {exhausted && <p className="text-sm text-amber-500">{t.counter.exhausted}</p>}
+                  {exhausted && (
+                    <p className="text-sm text-amber-500">
+                      {trialVariant === 'daily_limit' ? t.counter.trialComeBack : trialVariant === 'trial_ended' ? t.counter.trialEnded : t.counter.exhausted}
+                    </p>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                   {exhausted ? (

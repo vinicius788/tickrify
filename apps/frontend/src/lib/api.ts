@@ -310,6 +310,35 @@ export interface AnalysisUsageResponse {
    * ficam para quem assina; o servidor responde 402 `free_quota_exhausted`.
    */
   freeLocked?: boolean;
+  /** Trial de 3 dias (sem cartao). null/ausente = regra antiga ou assinante. */
+  trial?: TrialUsage | null;
+  /** Trial recusado pelo anti-abuso (e-mail, rede); `message` vem do servidor. */
+  trialBlocked?: { code: string; message: string } | null;
+}
+
+export type TrialPaywall = 'daily_limit' | 'day3_quota' | 'fourth_day' | 'expired';
+
+export interface TrialUsage {
+  dayIndex: number;
+  daysTotal: number;
+  usedToday: number;
+  limitToday: number;
+  remainingToday: number;
+  daysUsed: number;
+  status: 'active' | 'ended';
+  /** O que mostrar agora: null = pode analisar; daily_limit = volte amanha; o resto = acabou. */
+  paywall: TrialPaywall | null;
+  windowEndsAt: string;
+}
+
+/** Fuso IANA do navegador (ex.: America/Sao_Paulo), ou null. */
+export function browserTimezone(): string | null {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof tz === 'string' && /^[A-Za-z0-9_+\-/]{1,64}$/.test(tz) ? tz : null;
+  } catch {
+    return null;
+  }
 }
 
 /** O servidor recusou porque as analises gratis acabaram (rotas de operacao). */
@@ -497,6 +526,9 @@ class APIClient {
       if (payload.htfBase64Images[1]) formData.append('htfBase64Image2', payload.htfBase64Images[1]);
     }
 
+    // Fuso do navegador: no trial de 3 dias, o dia de uso e o dia da pessoa.
+    const timezone = browserTimezone();
+    if (timezone) formData.append('timezone', timezone);
     if (payload.setupId) {
       formData.append('setupId', payload.setupId);
     }
@@ -610,8 +642,9 @@ class APIClient {
     token: string | null,
     getFreshToken?: FreshTokenGetter,
   ): Promise<AnalysisUsageResponse> {
+    const timezone = browserTimezone();
     const response = await this.request(
-      '/api/ai/usage',
+      timezone ? `/api/ai/usage?tz=${encodeURIComponent(timezone)}` : '/api/ai/usage',
       {
         method: 'GET',
         headers: {

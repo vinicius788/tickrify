@@ -609,9 +609,12 @@ export function setAttributionContext(first: AttributionTouch | null, last: Attr
 // Plano de quem esta logado, em TODO evento do navegador (super propriedade):
 // sem isto, pagante e gratis faziam "a mesma coisa" na lista do PostHog e so o
 // `analysis_completed` dizia o plano. Vem do /usage (useAnalysisLimit).
-export type PlanContext = { plan: string; billingCycle: string | null; isSubscriber: boolean };
+// `trial_day` (13/10/2026): dia de uso do trial de 3 dias (null fora dele). Vai
+// em todo evento, inclusive no `upgrade_clicked`, para medir em que dia a
+// pessoa clica para assinar.
+export type PlanContext = { plan: string; billingCycle: string | null; isSubscriber: boolean; trialDay?: number | null };
 let planContext: PlanContext | null = null;
-const PLAN_KEYS = ['plan', 'billing_cycle', 'is_subscriber'] as const;
+const PLAN_KEYS = ['plan', 'billing_cycle', 'is_subscriber', 'trial_day'] as const;
 
 function applyPlanContext(): void {
   if (!ready) return;
@@ -624,6 +627,7 @@ function applyPlanContext(): void {
       plan: planContext.plan,
       billing_cycle: planContext.billingCycle,
       is_subscriber: planContext.isSubscriber,
+      trial_day: planContext.trialDay ?? null,
     });
   } catch {
     /* noop */

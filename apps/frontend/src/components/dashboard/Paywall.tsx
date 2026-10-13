@@ -30,6 +30,11 @@ interface PaywallProps {
   plansHref: string;
   /** O que continua aberto para leitura (ex.: as 3 ultimas analises). */
   children?: ReactNode;
+  /**
+   * Trial de 3 dias: `daily_limit` = acabou a cota de hoje ("volte amanha ou
+   * assine"); `trial_ended` = o trial acabou (modo leitura). Ausente = regra antiga.
+   */
+  variant?: 'daily_limit' | 'trial_ended';
 }
 
 const MONTHLY_PRICE_USD = 29;
@@ -44,7 +49,7 @@ const MONTHLY_PRICE_USD = 29;
  * ate 29/09, e nenhuma analise rodava). O rotulo diz o que e: o formato da
  * leitura que o assinante recebe.
  */
-const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHref, children }: PaywallProps) => {
+const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHref, children, variant }: PaywallProps) => {
   const { t } = useLanguage();
   const p = t.paywall;
   // Uma frase real de assinante, so com 2+ depoimentos publicados (com licenca).
@@ -56,20 +61,32 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
     : null;
 
   useEffect(() => {
-    track('upgrade_cta_viewed', { source: 'paywall', surface });
-  }, [surface]);
+    track('upgrade_cta_viewed', { source: 'paywall', surface, ...(variant ? { trial: variant } : {}) });
+  }, [surface, variant]);
 
-  const title = surface === 'new_analysis' ? p.titleNewAnalysis : p.titleArea;
+  const title =
+    variant === 'daily_limit'
+      ? p.titleDailyLimit
+      : variant === 'trial_ended' && surface === 'new_analysis'
+        ? p.titleTrialEnded
+        : surface === 'new_analysis'
+          ? p.titleNewAnalysis
+          : p.titleArea;
+  const areaDescription: Record<PaywallSurface, string> = {
+    new_analysis: p.descNewAnalysis,
+    trades: p.descTrades,
+    journal: p.descJournal,
+    history: p.descHistory,
+    setups: p.descSetups,
+  };
   const description =
-    surface === 'trades'
-      ? p.descTrades
-      : surface === 'journal'
-        ? p.descJournal
-        : surface === 'history'
-          ? p.descHistory
-          : surface === 'setups'
-            ? p.descSetups
-            : p.descNewAnalysis;
+    variant === 'daily_limit'
+      ? p.descDailyLimit
+      : variant === 'trial_ended' && surface === 'new_analysis'
+        ? p.descTrialEnded
+        : variant === 'trial_ended' && surface === 'trades'
+          ? p.descTradesTrial
+          : areaDescription[surface];
   const preview: Array<{ label: string; value: string }> = [
     { label: p.previewScenario, value: '•••••••' },
     { label: p.previewEntry, value: '$ 4,261.40' },

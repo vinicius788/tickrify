@@ -92,7 +92,8 @@ export async function sendRecoveryEmailOnce(deps: RecoveryEmailDeps, userId: str
 export async function notifyIfFreeQuotaExhausted(deps: RecoveryEmailDeps, userId: string): Promise<void> {
   try {
     const quota = await getFreeQuota(deps.prisma, userId);
-    if (!quota.settledExhausted) return;
+    // Trial de 3 dias tem a propria sequencia (EMAIL_TRIAL_SEQUENCE).
+    if (!quota.settledExhausted || quota.trial) return;
     await sendRecoveryEmailOnce(deps, userId);
   } catch (err) {
     deps.log('warn', `[recovery] Falha ao checar cota grátis esgotada: ${(err as Error)?.message ?? err}`);
@@ -131,7 +132,7 @@ export async function retryRecoveryEmails(deps: RecoveryEmailDeps, now: Date = n
     for (const user of users) {
       if (done.has(user.id)) continue;
       const quota = await getFreeQuota(deps.prisma, user.id);
-      if (!quota.settledExhausted) continue;
+      if (!quota.settledExhausted || quota.trial) continue;
       tried += 1;
       await sendRecoveryEmailOnce(deps, user.id);
     }

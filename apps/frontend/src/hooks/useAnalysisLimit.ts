@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth, useUser } from '@clerk/clerk-react';
-import { apiClient } from '@/lib/api';
+import { apiClient, type TrialUsage } from '@/lib/api';
 import { setPlanContext } from '@/lib/analytics';
 
 export type UserPlan = 'free' | 'starter' | 'pro' | 'elite' | 'weekly';
@@ -24,6 +24,10 @@ interface AnalysisLimitData {
   totalLimit: number | null;
   /** Gratis esgotado: historico, diario e resultado travados ate assinar. */
   freeLocked: boolean;
+  /** Trial de 3 dias (sem cartao). null = regra antiga ou assinante. */
+  trial: TrialUsage | null;
+  /** Trial recusado pelo anti-abuso: mensagem do servidor para mostrar. */
+  trialBlocked: { code: string; message: string } | null;
   /** true enquanto o backend ainda não confirmou o plano/limite do usuário logado.
    *  Durante esse tempo NÃO se deve tratar o usuário como "free 3 grátis". */
   isLoading: boolean;
@@ -61,6 +65,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
   const [analysesAllTime, setAnalysesAllTime] = useState<number | null>(null);
   const [freeTotal, setFreeTotal] = useState<{ used: number; limit: number } | null>(null);
   const [freeLocked, setFreeLocked] = useState(false);
+  const [trial, setTrial] = useState<TrialUsage | null>(null);
+  const [trialBlocked, setTrialBlocked] = useState<{ code: string; message: string } | null>(null);
   // Começa carregando: o backend (Render hiberna) pode levar segundos a confirmar
   // que a conta é paga. Sem isto, a tela mostrava "3 grátis" no meio-tempo e o
   // assinante conseguia gastar análise grátis antes do plano ser reconhecido.
@@ -98,6 +104,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
         plan: usage.plan,
         billingCycle: usage.billingCycle ?? null,
         isSubscriber: usage.plan !== 'free',
+        trialDay: usage.trial ? usage.trial.dayIndex : null,
       });
       setBackendUnlimited(Boolean(usage.isUnlimited));
       setAnalysisCount(usage.used);
@@ -117,6 +124,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
           : null,
       );
       setFreeLocked(usage.freeLocked === true);
+      setTrial(usage.trial ?? null);
+      setTrialBlocked(usage.trialBlocked ?? null);
       // Só marca resolvido em caso de sucesso — assim canAnalyze fica travado até
       // termos a verdade do backend, evitando gastar grátis por engano.
       setStatusResolved(true);
@@ -126,6 +135,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setAnalysisLimit(FREE_LIMIT);
       setFreeTotal(null);
       setFreeLocked(false);
+      setTrial(null);
+      setTrialBlocked(null);
       setBackendUnlimited(false);
       // Falha de rede: libera a UI para não travar pra sempre, mas o backend ainda
       // é a fonte da verdade na hora de criar a análise (bloqueia grátis indevido).
@@ -154,6 +165,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setAnalysisLimit(FREE_LIMIT);
       setFreeTotal(null);
       setFreeLocked(false);
+      setTrial(null);
+      setTrialBlocked(null);
       setUserPlan('free');
       setBackendUnlimited(false);
       setStatusResolved(false);
@@ -174,6 +187,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       totalUsed: null,
       totalLimit: null,
       freeLocked: false,
+      trial: null,
+      trialBlocked: null,
       isLoading: false,
     };
   }
@@ -193,6 +208,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       totalUsed: null,
       totalLimit: null,
       freeLocked: false,
+      trial: null,
+      trialBlocked: null,
       isLoading: true,
     };
   }
@@ -202,7 +219,17 @@ export function useAnalysisLimit(): AnalysisLimitData {
   const used = analysisCount;
   // Bater o teto de 10 no total zera o que resta, mesmo com sinal sobrando.
   const totalCapHit = !isUnlimited && freeTotal !== null && freeTotal.used >= freeTotal.limit;
-  const remaining = isUnlimited ? Infinity : totalCapHit ? 0 : Math.max(0, analysisLimit - used);
+  // Trial: o servidor ja diz quanto resta HOJE (0 com o dia ou o trial esgotado).
+  const activeTrial = isUnlimited ? null : trial;
+  const remaining = isUnlimited
+    ? Infinity
+    : activeTrial
+      ? activeTrial.remainingToday
+      : trialBlocked
+        ? 0
+        : totalCapHit
+          ? 0
+          : Math.max(0, analysisLimit - used);
   const canAnalyze = isUnlimited || remaining > 0;
 
   return {
@@ -216,6 +243,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
     totalUsed: isUnlimited ? null : freeTotal?.used ?? null,
     totalLimit: isUnlimited ? null : freeTotal?.limit ?? null,
     freeLocked: !isUnlimited && freeLocked,
+    trial: activeTrial,
+    trialBlocked: isUnlimited ? null : trialBlocked,
     isLoading: false,
   };
 }

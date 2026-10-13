@@ -48,6 +48,8 @@ import {
 } from '../../common/utils/image-storage';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { FREE_READABLE_ANALYSES, getFreeQuota } from '../../common/free-quota';
+import { TrialService } from './trial.service';
+import { TRIAL_RULES } from '../../common/trial';
 import { TICK_COSTS, AnalysisType } from '../ticks/tick-packages';
 import { TicksService } from '../ticks/ticks.service';
 import { MailService } from '../mail/mail.service';
@@ -178,6 +180,7 @@ export class AiService implements OnModuleInit {
     private stripeService: StripeService,
     private mailService: MailService,
     private setups: SetupsService,
+    private trial: TrialService,
   ) {}
 
   /**
@@ -442,6 +445,8 @@ export class AiService implements OnModuleInit {
     htfBase64Images?: string[],
     clientContext?: AnalysisClientContext | null,
     setupId?: string | null,
+    /** Trial: IP (limite suave por rede) e fuso do navegador. */
+    trialContext: { ip?: string | null; timezone?: string | null } = {},
   ) {
     // Medicao por etapa (result.engine.timings): o upload ja chegou inteiro aqui.
     const receivedAt = Date.now();
@@ -468,6 +473,20 @@ export class AiService implements OnModuleInit {
     // a análise segue normal, só sem o enriquecimento deep.
     const normalizedAnalysisType: AnalysisType =
       analysisType === 'deep' && paidAccess ? 'deep' : 'quick';
+
+    // Trial de 3 dias (sem cartao): concede a quem tem direito e guarda o fuso.
+    // Print identico ao de uma leitura recente devolve a leitura, sem IA e sem
+    // gastar cota; e o teto de gasto diario vale antes de qualquer upload.
+    const trialRow = paidAccess ? null : await this.trial.ensure(userId, trialContext);
+    const trialImageHash = trialRow ? TrialService.imageHash(preparedImage.buffer) : null;
+    if (trialRow && trialImageHash) {
+      const duplicateId = await this.trial.findDuplicate(userId, trialImageHash);
+      if (duplicateId) {
+        this.logger.log(`[trial] Print repetido: devolvendo ${duplicateId} sem nova analise`);
+        return this.getAnalysis(duplicateId, userId);
+      }
+      await this.trial.assertSpendCapacity();
+    }
 
     // Perfil so vale para quem paga. A checagem se repete aqui, e nao so na
     // rota de escrita, para que cancelar a assinatura pare de injetar o bloco
@@ -581,6 +600,7 @@ export class AiService implements OnModuleInit {
 
     if (clientContext) await this.saveClientContext(analysis.id, clientContext);
     if (setupId) await this.setups.linkAnalysis(userId, analysis.id, setupId);
+    if (trialImageHash) await this.trial.saveImageHash(analysis.id, trialImageHash);
     const source = clientContext?.source ?? 'web';
 
     // Funil gratis (fonte: banco). Fire-and-forget: nunca segura a analise.
@@ -713,7 +733,8 @@ export class AiService implements OnModuleInit {
 
     // Gratis esgotado: as ultimas analises concluidas, so para leitura; o resto
     // do historico (e a paginacao) fica para quem assina.
-    const freeLocked = await this.isFreeLocked(userId);
+    // Trial encerrado e modo leitura com o historico inteiro aberto.
+    const freeLocked = (await this.isFreeLocked(userId)) && !(await this.trial.read(userId));
     if (freeLocked) {
       if (safeCursor) return [];
       safeLimit = Math.min(safeLimit, FREE_READABLE_ANALYSES);
@@ -1130,7 +1151,7 @@ export class AiService implements OnModuleInit {
     };
   }
 
-  async getUsage(userId: string) {
+  async getUsage(userId: string, trialContext: { ip?: string | null; timezone?: string | null } = {}) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true },
@@ -1178,8 +1199,18 @@ export class AiService implements OnModuleInit {
     // do `enforceAccessAndCreate`. `total`/`used`/`remaining` seguem falando de
     // SINAIS (BUY/SELL), para o front antigo continuar coerente.
     if (!paidAccess) {
+      // Trial: concede na 1a visita (a recusa de anti-abuso vira `trialBlocked`).
+      let trialBlocked: { code: string; message: string } | null = null;
+      try {
+        await this.trial.ensure(userId, trialContext);
+      } catch (error) {
+        const body = error instanceof HttpException ? (error.getResponse() as { code?: string; message?: string }) : null;
+        trialBlocked = { code: String(body?.code || 'TRIAL_UNAVAILABLE'), message: String(body?.message || '') };
+      }
       const quota = await getFreeQuota(this.prisma, userId);
       const freeLocked = quota.settledExhausted && !(await this.isAdmin(userId));
+      const trialState = quota.trial ? ((await this.trial.sync(userId)) ?? quota.trial) : null;
+      if (trialState?.paywall) this.trial.paywallShown(userId, trialState);
       return {
         plan: 'free',
         period: 'monthly',
@@ -1198,6 +1229,20 @@ export class AiService implements OnModuleInit {
         // Gratis esgotado: o painel trava historico, diario e marcacao de
         // resultado (mesma regra de `isFreeLocked`).
         freeLocked,
+        trial: trialState
+          ? {
+              dayIndex: trialState.dayIndex,
+              daysTotal: TRIAL_RULES.usageDays,
+              usedToday: trialState.usedToday,
+              limitToday: trialState.limitToday,
+              remainingToday: trialState.remainingToday,
+              daysUsed: trialState.daysUsed,
+              status: trialState.status,
+              paywall: trialState.paywall,
+              windowEndsAt: trialState.windowEndsAt.toISOString(),
+            }
+          : null,
+        trialBlocked,
       };
     }
 
@@ -1580,6 +1625,7 @@ export class AiService implements OnModuleInit {
     if (analysisId) {
       void trackFreeAnalysisCompleted(this.prisma, { userId, analysisId, completedAt: new Date() });
     }
+    void this.trial.sync(userId);
     await notifyFreeQuotaExhausted(this.recoveryDeps(), userId);
   }
 
@@ -1721,6 +1767,10 @@ export class AiService implements OnModuleInit {
         async (tx) => {
           const quota = await getFreeQuota(tx, userId);
 
+          if (quota.exhausted && quota.trial) {
+            this.trial.paywallShown(userId, quota.trial);
+            throw this.trial.blockedError(quota.trial);
+          }
           if (quota.exhausted) {
             throw new ForbiddenException(this.DEMO_LIMIT_ERROR);
           }
@@ -1784,6 +1834,8 @@ export class AiService implements OnModuleInit {
    */
   async readableAnalysisIds(userId: string): Promise<string[] | null> {
     if (!(await this.isFreeLocked(userId))) return null;
+    // Trial encerrado: modo leitura com todas as analises abertas.
+    if (await this.trial.read(userId)) return null;
     const rows = await this.prisma.analysis.findMany({
       where: { userId, status: 'completed' },
       select: { id: true },

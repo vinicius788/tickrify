@@ -68,3 +68,14 @@ describe('renderWelcomeEmail', () => {
     expect(cleanFirstName('A'.repeat(100))).toHaveLength(40);
   });
 });
+
+describe('boas-vindas com o trial de 3 dias', () => {
+  it('troca so a linha do gratis e o assunto; sem trial, igual a antes', () => {
+    expect(welcomeSubject()).toContain('free trade plans');
+    expect(welcomeSubject(true)).toBe('Welcome to Tickrify: your 3-day free trial is ready');
+    const html = renderWelcomeEmail({ appUrl: 'https://tickrify.com', trial: true });
+    expect(html).toContain('Your free trial');
+    expect(html).not.toContain('free trade plans');
+    expect(renderWelcomeText({ appUrl: 'https://tickrify.com', trial: true })).toContain('3 days of use');
+  });
+});

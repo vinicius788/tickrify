@@ -192,6 +192,8 @@ export async function campaignCandidates(deps: CampaignDeps): Promise<Candidate[
   for (const user of users) {
     if (!user.email || skip.has(user.id) || recentLifecycle.has(user.id)) continue;
     const quota = await getFreeQuota(deps.prisma, user.id);
+    // Quem esta em trial tem a propria sequencia: fora da campanha.
+    if (quota.trial) continue;
     const completed = await deps.prisma.analysis.count({ where: { userId: user.id, status: 'completed' } });
     let segment: CampaignSegment;
     if (quota.settledExhausted) segment = 'exhausted';

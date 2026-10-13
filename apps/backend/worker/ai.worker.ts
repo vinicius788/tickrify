@@ -38,6 +38,8 @@ import { recordSetupVersion } from '../src/modules/ai/setups.service';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from '../src/modules/ai/analysis-data-coverage';
 import { CHAT_EMAIL_FLAG, CHAT_SWEEP_INTERVAL_MS, runChatReplySweep } from '../src/modules/support/chat-email';
 import { recordProviderComparison, type ProviderComparison } from '../src/modules/ai/vision-model';
+import { loadTrialsForSweep, syncTrial } from '../src/common/analytics/trial-funnel';
+import { readTrial } from '../src/common/trial';
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
@@ -1270,6 +1272,8 @@ async function processAnalysis(job: Job<JobData>) {
     if (isDemo && userId) {
       void trackFreeAnalysisCompleted(prisma, { userId, analysisId, completedAt: new Date() });
       void notifyIfFreeQuotaExhausted(recoveryDeps, userId);
+      // Trial de 3 dias: retrato do dia e eventos (limite do dia, fim).
+      void syncTrial(prisma, userId);
     }
     // Setup acompanhado: ultima atualizacao e `setup_update_completed`. O motor
     // nunca viu o setupId; isto so roda depois de a analise estar gravada.
@@ -1424,6 +1428,14 @@ const LIFECYCLE_INTERVAL_MS = 15 * 60 * 1000;
 const lifecycleTick = async () => {
   const counts = await runLifecycleSweep({
     prisma,
+    // Trial de 3 dias: sincroniza os ativos e entrega o estado aos e-mails.
+    loadTrials: () => loadTrialsForSweep(prisma),
+    // Com TRIAL_MODE ligado, conta sem analise gratis ja e do trial (a linha so
+    // nasce na 1a visita ao painel): nunca recebe o e-mail dos "3 planos".
+    hasTrial: async (userId) =>
+      Boolean(await readTrial(prisma, userId)) ||
+      (flagBool('TRIAL_MODE') &&
+        (await prisma.analysis.count({ where: { userId, isDemo: true, status: { not: 'failed' } } })) === 0),
     mail: workerMail,
     isEnabled: (kind) => flagBool(LIFECYCLE_FLAG[kind]),
     appUrl: publicUrl(process.env.FRONTEND_URL, 'https://tickrify.com'),

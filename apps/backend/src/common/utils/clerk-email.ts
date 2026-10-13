@@ -16,11 +16,15 @@ export async function fetchClerkEmail(clerkUserId: string): Promise<string | nul
   return (await fetchClerkProfile(clerkUserId)).email;
 }
 
-/** Igual a fetchClerkEmail, mas devolve tambem o primeiro nome (para o e-mail de boas-vindas). */
+/**
+ * Igual a fetchClerkEmail, mas devolve tambem o primeiro nome (boas-vindas) e
+ * se o e-mail principal esta verificado no Clerk (trial: null = nao deu para
+ * saber, e quem chama nao pune por isso).
+ */
 export async function fetchClerkProfile(
   clerkUserId: string,
-): Promise<{ email: string | null; firstName: string | null }> {
-  const none = { email: null, firstName: null };
+): Promise<{ email: string | null; firstName: string | null; emailVerified: boolean | null }> {
+  const none = { email: null, firstName: null, emailVerified: null };
   const secretKey = String(process.env.CLERK_SECRET_KEY || '').trim();
   const id = String(clerkUserId || '').trim();
 
@@ -51,7 +55,7 @@ export async function fetchClerkProfile(
 
     const data = (await res.json()) as {
       primary_email_address_id?: string | null;
-      email_addresses?: Array<{ id?: string; email_address?: string }>;
+      email_addresses?: Array<{ id?: string; email_address?: string; verification?: { status?: string } | null }>;
       first_name?: string | null;
     };
 
@@ -63,7 +67,10 @@ export async function fetchClerkProfile(
       return none;
     }
     const firstName = String(data.first_name || '').trim() || null;
-    return { email, firstName };
+    const chosen = primary ?? list[0];
+    const status = chosen?.verification?.status;
+    const emailVerified = typeof status === 'string' ? status === 'verified' : null;
+    return { email, firstName, emailVerified };
   } catch (err) {
     logger.warn(
       `[email] Falha ao consultar o Clerk para ${id}: ${err instanceof Error ? err.message : err}`,

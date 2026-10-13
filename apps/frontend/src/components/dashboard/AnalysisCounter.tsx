@@ -28,7 +28,7 @@ const PLAN_TICKS: Record<UserPlan, number> = {
 };
 
 const AnalysisCounter = () => {
-  const { isUnlimited, plan, total, used, remaining, totalUsed, totalLimit, isLoading } = useAnalysisLimit();
+  const { isUnlimited, plan, total, used, remaining, totalUsed, totalLimit, trial, isLoading } = useAnalysisLimit();
   const { balance } = useTicks();
   const { t } = useLanguage();
   const { getToken } = useAuth();
@@ -76,6 +76,71 @@ const AnalysisCounter = () => {
       setPortalLoading(false);
     }
   };
+
+  // Trial de 3 dias: dia de uso e o que resta HOJE (o servidor decide tudo).
+  if (!isUnlimited && trial) {
+    const ended = trial.status === 'ended';
+    const limit = Math.max(trial.limitToday, 1);
+    const usedToday = Math.min(trial.usedToday, limit);
+    return (
+      <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
+        <CardContent className="p-4">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Gift className="h-4 w-4 text-[var(--accent-green)]" />
+                <span className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                  {c.trialTitle}
+                </span>
+              </div>
+              {ended ? null : (
+                <span className="font-terminal text-sm font-bold text-[var(--text-primary)]">
+                  {c.trialDay.replace('{day}', String(trial.dayIndex)).replace('{days}', String(trial.daysTotal))}
+                </span>
+              )}
+            </div>
+            {ended ? null : <Progress value={(usedToday / limit) * 100} className="h-1.5 bg-[var(--bg-overlay)]" />}
+            {ended || trial.paywall === 'daily_limit' ? (
+              <>
+                <p className="text-xs text-amber-500 flex items-center gap-1.5">
+                  <TriangleAlert className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span>{ended ? c.trialEnded : c.trialComeBack}</span>
+                </p>
+                <Link
+                  to="/dashboard/plans"
+                  onClick={() =>
+                    track('upgrade_cta_clicked', {
+                      source: ended ? 'counter_trial_ended' : 'counter_trial_daily_limit',
+                      destination: 'plans',
+                    })
+                  }
+                >
+                  <Button size="sm" className="w-full">
+                    <Crown className="mr-2 h-4 w-4" />
+                    {c.subscribe}
+                  </Button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-[var(--text-secondary)]">
+                  {c.trialLeftToday.replace('{left}', String(trial.remainingToday)).replace('{limit}', String(trial.limitToday))}
+                </p>
+                <Link
+                  to="/dashboard/plans"
+                  onClick={() => track('upgrade_cta_clicked', { source: 'counter_trial', destination: 'plans' })}
+                >
+                  <Button size="sm" variant="outline" className="w-full">
+                    {c.viewPlans}
+                  </Button>
+                </Link>
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   // Usuário sem assinatura: contador das análises grátis COM SINAL (BUY/SELL).
   // WAIT não consome sinal; só conta no teto de análises no total.

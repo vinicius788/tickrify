@@ -645,6 +645,13 @@ export default {
     benefit4: 'Cancele quando quiser',
     videoCaption: 'O assinante também pode enviar o gráfico de entrada mais até dois tempos maiores e receber uma leitura combinada. 20 segundos.',
     recentTitle: 'Suas 3 últimas análises',
+    titleDailyLimit: 'Você usou as análises de hoje',
+    descDailyLimit: 'Volte amanhã ou assine agora. Seu teste grátis continua amanhã.',
+    titleTrialEnded: 'Seu teste grátis terminou',
+    descTrialEnded: 'Suas análises continuam na sua conta para ler. Assine para continuar analisando: entrada, stop, alvos, risco e o raciocínio em cada leitura.',
+    descTradesTrial: 'Suas análises continuam abertas para leitura abaixo. Marcar resultado e favoritos voltam assim que você assinar.',
+    recentTitleTrial: 'Suas análises',
+    trialBusy: 'As análises do teste grátis estão com muita procura agora. Tente de novo daqui a pouco.',
   },
   rating: {
     question: 'Quão útil foi esta leitura?',
@@ -688,6 +695,11 @@ export default {
     tradeCallsLeft: '{left} de {limit} análises com entrada restantes',
     totalCapNote: 'Resultados WAIT são grátis, até {limit} análises no total (restam {left}).',
     waitFreeNote: 'O mercado não está operável o tempo todo. Quando não há entrada limpa, você recebe um WAIT com os níveis exatos que disparariam um trade, e ele não consome suas análises grátis.',
+    trialTitle: 'Teste grátis',
+    trialDay: 'Dia {day} de {days}',
+    trialLeftToday: '{left} de {limit} análises restantes hoje',
+    trialComeBack: 'As análises de hoje acabaram. Volte amanhã ou assine agora.',
+    trialEnded: 'Seu teste grátis terminou. Suas análises continuam abertas para leitura.',
   },
 
   // ── Errors ────────────────────────────────────────────────────────────────────

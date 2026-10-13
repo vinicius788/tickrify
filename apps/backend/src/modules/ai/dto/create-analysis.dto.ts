@@ -56,6 +56,14 @@ export class CreateAnalysisDto {
   @Matches(/^[A-Za-z0-9]+$/)
   chartTimeframe?: string;
 
+  // Fuso IANA do navegador (trial de 3 dias: o dia de uso e o dia no fuso da
+  // pessoa). O servico confere com Intl e ignora valor invalido.
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^[A-Za-z0-9_+\-/]+$/)
+  timezone?: string;
+
   // Atualizacao de um setup acompanhado (12/10/2026). O servidor confere o
   // dono e o status antes de cobrar; o motor nunca le este campo.
   @IsOptional()

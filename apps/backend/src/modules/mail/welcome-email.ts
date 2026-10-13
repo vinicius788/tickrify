@@ -18,14 +18,31 @@
  * - versao em texto puro junto (clientes sem HTML e filtros de spam).
  */
 import { FREE_SIGNAL_LIMIT, FREE_TOTAL_LIMIT } from '../../common/free-quota';
+import { TRIAL_RULES } from '../../common/trial';
 
 export const WELCOME_ICON_URL = 'https://tickrify.com/icon.png';
 
 export const WELCOME_PREVIEW_TEXT =
   'Send a chart, get entry, stop, targets and risk, or a WAIT. The decision is always yours.';
 
-export function welcomeSubject(): string {
-  return `Welcome to Tickrify: your ${FREE_SIGNAL_LIMIT} free trade plans are ready`;
+/**
+ * `trial`: a conta nova entra no trial de 3 dias (chave TRIAL_MODE ligada).
+ * Sem ele, o texto da regra antiga (3 planos gratis), igual a antes.
+ */
+export function welcomeSubject(trial = false): string {
+  return trial
+    ? 'Welcome to Tickrify: your 3-day free trial is ready'
+    : `Welcome to Tickrify: your ${FREE_SIGNAL_LIMIT} free trade plans are ready`;
+}
+
+function freeLine(trial: boolean): { title: string; text: string } {
+  const [d1, d2] = TRIAL_RULES.dailyQuota;
+  return trial
+    ? {
+        title: 'Your free trial',
+        text: `3 days of use, with up to ${d1} analyses on your first day and ${d2} on each of the next two, within ${TRIAL_RULES.windowDays} days. No card needed.`,
+      }
+    : { title: COPY.freeTitle, text: COPY.free };
 }
 
 function escapeHtml(value: string): string {
@@ -71,8 +88,9 @@ const COPY = {
     'Tickrify is a second opinion, not financial advice and not a signal service. It never places orders. Trading involves risk, and the decision is always yours.',
 } as const;
 
-export function renderWelcomeText(params: { appUrl: string; firstName?: string | null }): string {
+export function renderWelcomeText(params: { appUrl: string; firstName?: string | null; trial?: boolean }): string {
   const firstName = cleanFirstName(params.firstName);
+  const free = freeLine(Boolean(params.trial));
   return [
     COPY.title,
     '',
@@ -82,7 +100,7 @@ export function renderWelcomeText(params: { appUrl: string; firstName?: string |
     `${COPY.getTitle}:`,
     ...COPY.get.map((line) => `- ${line}`),
     '',
-    `${COPY.freeTitle}: ${COPY.free}`,
+    `${free.title}: ${free.text}`,
     '',
     `${COPY.cta}: ${dashboardUrl(params.appUrl)}`,
     '',
@@ -94,8 +112,9 @@ export function renderWelcomeText(params: { appUrl: string; firstName?: string |
   ].join('\n');
 }
 
-export function renderWelcomeEmail(params: { appUrl: string; firstName?: string | null }): string {
+export function renderWelcomeEmail(params: { appUrl: string; firstName?: string | null; trial?: boolean }): string {
   const firstName = cleanFirstName(params.firstName);
+  const free = freeLine(Boolean(params.trial));
   const ctaUrl = dashboardUrl(params.appUrl);
   const font = `-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif`;
   const p = `margin:0 0 16px;font-family:${font};font-size:16px;line-height:26px;color:#33424f;`;
@@ -170,7 +189,7 @@ export function renderWelcomeEmail(params: { appUrl: string; firstName?: string 
                   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="free-box" style="background-color:#f2f7f4;border:1px solid #d5e8dc;border-radius:12px;">
                     <tr>
                       <td style="padding:16px 18px;font-family:${font};font-size:15px;line-height:23px;color:#33424f;">
-                        <span class="strong" style="font-weight:700;color:#0b0f14;">${escapeHtml(COPY.freeTitle)}:</span> ${escapeHtml(COPY.free)}
+                        <span class="strong" style="font-weight:700;color:#0b0f14;">${escapeHtml(free.title)}:</span> ${escapeHtml(free.text)}
                       </td>
                     </tr>
                   </table>

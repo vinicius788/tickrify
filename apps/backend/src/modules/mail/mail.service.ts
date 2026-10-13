@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { flagBool } from '../../common/flags/feature-flags';
 import { renderWelcomeEmail, renderWelcomeText, welcomeSubject } from './welcome-email';
 
 /**
@@ -141,11 +142,33 @@ export class MailService {
     );
   }
 
+  /**
+   * Alerta operacional para o dono (ex.: teto de gasto do trial). Vai para o
+   * suporte (FOUNDER_CHAT_NOTIFY_TO, padrao support@), nunca para usuario.
+   */
+  async sendOwnerAlert(subject: string, corpoHtml: string): Promise<boolean> {
+    const to = process.env.FOUNDER_CHAT_NOTIFY_TO?.trim() || 'support@tickrify.com';
+    return this.send(
+      to,
+      subject,
+      `<!doctype html><html><body style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:15px;line-height:1.6;color:#16202a;">
+  <div style="max-width:560px;margin:0 auto;padding:24px;">
+    <div style="font-size:13px;color:#5b6b7a;margin-bottom:8px;">Tickrify · alerta operacional</div>
+    ${corpoHtml}
+    <a href="${this.appUrl}/admin" style="display:inline-block;margin-top:16px;font-size:14px;">Abrir o painel</a>
+  </div>
+</body></html>`,
+      { kind: 'owner_alert' },
+    );
+  }
+
   /** Boas-vindas: disparado uma unica vez, quando a conta nova e criada. `firstName` e opcional. */
   async sendWelcome(to: string, firstName?: string | null): Promise<void> {
-    await this.send(to, welcomeSubject(), renderWelcomeEmail({ appUrl: this.appUrl, firstName }), {
+    // Conta nova com TRIAL_MODE ligado entra no trial de 3 dias: o texto acompanha.
+    const trial = flagBool('TRIAL_MODE');
+    await this.send(to, welcomeSubject(trial), renderWelcomeEmail({ appUrl: this.appUrl, firstName, trial }), {
       kind: 'welcome',
-      text: renderWelcomeText({ appUrl: this.appUrl, firstName }),
+      text: renderWelcomeText({ appUrl: this.appUrl, firstName, trial }),
     });
   }
 

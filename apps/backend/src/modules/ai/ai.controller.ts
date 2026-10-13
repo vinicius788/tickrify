@@ -3,6 +3,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Ip,
   Logger,
   Param,
   Patch,
@@ -76,6 +77,7 @@ export class AiController {
     @CurrentUser() user: { id?: string; clerkUserId: string; email?: string | null },
     @UploadedFile() file: UploadedFileType,
     @Body() body: CreateAnalysisDto,
+    @Ip() ip: string,
   ) {
     try {
       const dbUserId = await this.resolveDbUserId(user);
@@ -99,6 +101,7 @@ export class AiController {
         htfImages,
         buildClientContext(body),
         body.setupId ?? null,
+        { ip, timezone: body.timezone ?? null },
       );
 
       this.logger.log(`Analysis created: ${result.id}`);
@@ -438,11 +441,16 @@ export class AiController {
   @Get('usage')
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  async getUsage(@CurrentUser() user: { id?: string; clerkUserId: string }) {
+  async getUsage(
+    @CurrentUser() user: { id?: string; clerkUserId: string },
+    @Ip() ip: string,
+    @Query('tz') tz?: string,
+  ) {
     const dbUserId = await this.resolveDbUserId(user);
     if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
 
-    return this.aiService.getUsage(dbUserId);
+    // `tz`: fuso do navegador para o trial (validado no servico).
+    return this.aiService.getUsage(dbUserId, { ip, timezone: typeof tz === 'string' ? tz : null });
   }
 
   /** Heatmap de consistência: análises por dia (últimos ~119 dias) do usuário. */

@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import Stripe from 'stripe';
+import { markTrialConverted } from '../../common/trial';
 import { PrismaService } from '../database/prisma.service';
 import { captureServer, type CaptureOptions } from '../../common/analytics/posthog';
 import { sendMetaEvent, type MetaAdsContext } from '../../common/analytics/meta-capi';
@@ -1245,6 +1246,11 @@ export class StripeService implements OnModuleInit {
     }
 
     if (eventType === 'customer.subscription.created') {
+      // Trial de 3 dias: assinatura que ja nasce paga encerra o trial como
+      // convertido (idempotente; a fatura paga faz o mesmo quando chega depois).
+      const trialDay = ['active', 'trialing'].includes(synced.subscription.status)
+        ? await markTrialConverted(this.prisma, synced.userId, new Date(synced.subscription.created * 1000))
+        : null;
       funnelLog(
         'subscription_created',
         {
@@ -1263,6 +1269,7 @@ export class StripeService implements OnModuleInit {
           status: synced.subscription.status,
           priceId: synced.subscription.items.data[0]?.price.id ?? null,
           checkoutSource: synced.subscription.metadata?.checkoutSource ?? null,
+          ...(trialDay !== null ? { trial_day_at_conversion: trialDay } : {}),
           // Marca a pessoa no PostHog so se a assinatura ja nasceu paga. Com o
           // cartao recusado ela nasce `incomplete` e expira sem evento de fim
           // (29/09: cartao recusado ficou marcado como assinante). Quem paga
@@ -1399,6 +1406,11 @@ export class StripeService implements OnModuleInit {
 
     // Receita confirmada (primeira cobranca e renovacoes). So o backend emite.
     const paidAt = invoice.status_transitions?.paid_at ?? invoice.created;
+    // 1a cobranca de quem estava no trial de 3 dias: encerra como convertido.
+    const trialDay =
+      invoice.billing_reason === 'subscription_create'
+        ? await markTrialConverted(this.prisma, synced.userId, new Date(paidAt * 1000))
+        : null;
     await this.captureForUser(
       synced.userId,
       'payment_succeeded',
@@ -1408,10 +1420,26 @@ export class StripeService implements OnModuleInit {
         billingReason: invoice.billing_reason ?? null,
         value: (invoice.amount_paid ?? 0) / 100,
         currency: String(invoice.currency || 'usd').toUpperCase(),
+        ...(trialDay !== null ? { trial_day_at_conversion: trialDay } : {}),
         $set: { is_subscriber: true },
       },
       { dedupeKey: `payment_succeeded:${invoice.id}`, timestamp: new Date(paidAt * 1000) },
     );
+    // Renovacao (2a cobranca em diante): evento proprio para o funil de retencao.
+    if (invoice.billing_reason === 'subscription_cycle') {
+      await this.captureForUser(
+        synced.userId,
+        'subscription_renewed',
+        {
+          invoiceId: invoice.id,
+          subscriptionId,
+          priceId: synced.subscription.items?.data?.[0]?.price?.id ?? null,
+          value: (invoice.amount_paid ?? 0) / 100,
+          currency: String(invoice.currency || 'usd').toUpperCase(),
+        },
+        { dedupeKey: `subscription_renewed:${invoice.id}`, timestamp: new Date(paidAt * 1000) },
+      );
+    }
 
     // Troca de plano/proration tambem gera fatura paga. So a criacao e a
     // renovacao abrem a janela do mes.

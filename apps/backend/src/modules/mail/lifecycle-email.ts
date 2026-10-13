@@ -14,6 +14,18 @@
  *                      no PostHog em 14 dias: 38 de 96 que analisaram fizeram
  *                      so 1 analise e sumiram, e nenhum e-mail os chamava.
  *
+ * Trial de 3 dias (13/10/2026, chave EMAIL_TRIAL_SEQUENCE, desligada), para
+ * quem tem linha em UserTrial (essas pessoas NAO recebem activation_* nem
+ * second_analysis, que falam dos 3 planos gratis):
+ *   trial_first_analysis   3h a 24h depois do inicio, sem nenhuma analise
+ *   trial_day2             fez so o dia 1, ao menos 20h depois, de manha no fuso
+ *   trial_last_day         fez os dias 1 e 2, ao menos 20h depois, de manha no fuso
+ *   trial_ended            ate 24h depois do fim sem assinar
+ *   trial_ended_followup   2 dias depois do fim, de manha no fuso
+ *   trial_winback_5/_10    5 e 10 dias depois do fim, de manha no fuso; depois para
+ * Regra geral (todos os tipos): no maximo 1 e-mail de ciclo de vida por
+ * pessoa em 20h.
+ *
  * Arquivo proprio pelo mesmo motivo do recovery-email.ts: roda no worker,
  * fora do Nest, e as regras precisam de teste sem subir o app.
  *
@@ -33,8 +45,34 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import type { PrismaClient } from '@prisma/client';
 import { WELCOME_ICON_URL, cleanFirstName } from './welcome-email';
 import { FREE_SIGNAL_LIMIT } from '../../common/free-quota';
+import { TRIAL_RULES, localHour, type TrialRow, type TrialState } from '../../common/trial';
 
-export type LifecycleKind = 'activation_1' | 'activation_2' | 'checkout_recovery' | 'second_analysis' | 'checkout_winback';
+export type TrialEmailKind =
+  | 'trial_first_analysis'
+  | 'trial_day2'
+  | 'trial_last_day'
+  | 'trial_ended'
+  | 'trial_ended_followup'
+  | 'trial_winback_5'
+  | 'trial_winback_10';
+
+export type LifecycleKind =
+  | 'activation_1'
+  | 'activation_2'
+  | 'checkout_recovery'
+  | 'second_analysis'
+  | 'checkout_winback'
+  | TrialEmailKind;
+
+export const TRIAL_EMAIL_KINDS: readonly TrialEmailKind[] = [
+  'trial_first_analysis',
+  'trial_day2',
+  'trial_last_day',
+  'trial_ended',
+  'trial_ended_followup',
+  'trial_winback_5',
+  'trial_winback_10',
+];
 
 export const UNSUBSCRIBE_AUDIT_ACTION = 'email_unsubscribed';
 export const lifecycleAuditAction = (kind: LifecycleKind) => `lifecycle:${kind}`;
@@ -48,7 +86,19 @@ export const WINDOWS: Record<LifecycleKind, { minAgeMs: number; maxAgeMs: number
   second_analysis: { minAgeMs: 24 * HOUR, maxAgeMs: 72 * HOUR },
   // Idade da ultima sessao de checkout aberta.
   checkout_winback: { minAgeMs: 3 * 24 * HOUR, maxAgeMs: 30 * 24 * HOUR },
+  // Trial: idade do inicio (first), da ultima analise (day2, last_day) ou do fim.
+  trial_first_analysis: { minAgeMs: 3 * HOUR, maxAgeMs: 24 * HOUR },
+  trial_day2: { minAgeMs: 20 * HOUR, maxAgeMs: 48 * HOUR },
+  trial_last_day: { minAgeMs: 20 * HOUR, maxAgeMs: 48 * HOUR },
+  trial_ended: { minAgeMs: 0, maxAgeMs: 24 * HOUR },
+  trial_ended_followup: { minAgeMs: 48 * HOUR, maxAgeMs: 72 * HOUR },
+  trial_winback_5: { minAgeMs: 5 * 24 * HOUR, maxAgeMs: 6 * 24 * HOUR },
+  trial_winback_10: { minAgeMs: 10 * 24 * HOUR, maxAgeMs: 11 * 24 * HOUR },
 };
+/** Nunca dois e-mails de ciclo de vida para a mesma pessoa nesta janela. */
+export const ONE_EMAIL_PER_MS = 20 * HOUR;
+/** "De manha" no fuso da pessoa: 8h ate antes do meio-dia. */
+const MORNING = { from: 8, to: 12 };
 const BATCH = 50;
 
 // ── Descadastro ─────────────────────────────────────────────────────────────
@@ -148,6 +198,103 @@ export function letter(params: {
 
 export type RenderedEmail = { kind: LifecycleKind; subject: string; html: string; unsubscribeUrl: string };
 
+const WEEKLY_LINE = 'The weekly plan is $7.99 for 25 analyses, renews every 7 days, and you can cancel anytime from your dashboard.';
+
+/** Textos do trial (ingles, sem emoji, sem travessao; traducao para o dono no chat). */
+export function trialCopy(
+  kind: TrialEmailKind,
+  app: string,
+): { subject: string; body: { preview: string; paragraphs: string[]; cta: { label: string; url: string }; afterCta?: string[] } } {
+  const [d1, d2, d3] = TRIAL_RULES.dailyQuota;
+  const analyze = { label: 'Analyze a chart', url: `${app}/dashboard/new` };
+  const plans = { label: 'See the weekly plan', url: `${app}/dashboard/plans` };
+  switch (kind) {
+    case 'trial_first_analysis':
+      return {
+        subject: 'Your 3-day Tickrify trial is ready',
+        body: {
+          preview: 'No card needed. Your first read takes about 20 seconds.',
+          paragraphs: [
+            `Your free trial is ready: 3 days of use, with up to ${d1} chart analyses on the first day and ${d2} on each of the next two. No card needed.`,
+            'Take a screenshot of the chart you are watching and upload it. In about 20 seconds you get the read: BUY, SELL or WAIT, with entry, stop, targets and the reasoning behind it.',
+          ],
+          cta: analyze,
+          afterCta: [`The trial ends after 3 days of use or ${TRIAL_RULES.windowDays} days after it started, whichever comes first.`],
+        },
+      };
+    case 'trial_day2':
+      return {
+        subject: "Yesterday's chart has moved since",
+        body: {
+          preview: `Day 2 of your trial: ${d2} analyses today.`,
+          paragraphs: [
+            'Yesterday you analyzed a chart on Tickrify. The market has moved since then.',
+            `Upload a fresh screenshot of the same chart to see where it stands now. Today is day 2 of your trial, with ${d2} analyses.`,
+          ],
+          cta: { label: "Analyze today's chart", url: `${app}/dashboard/new` },
+        },
+      };
+    case 'trial_last_day':
+      return {
+        subject: 'Last day of your Tickrify trial',
+        body: {
+          preview: `${d3} analyses left, today only.`,
+          paragraphs: [
+            `Today is the last day of your free trial, with ${d3} analyses.`,
+            'Use them on the trades you are actually considering this week, before you enter.',
+          ],
+          cta: analyze,
+        },
+      };
+    case 'trial_ended':
+      return {
+        subject: 'Your Tickrify trial has ended',
+        body: {
+          preview: 'Your analyses stay in your account.',
+          paragraphs: [
+            'Your free trial is over. Your past analyses stay in your account, and you can read them anytime.',
+            `To keep analyzing: ${WEEKLY_LINE}`,
+          ],
+          cta: plans,
+        },
+      };
+    case 'trial_ended_followup':
+      return {
+        subject: 'Still trading this week?',
+        body: {
+          preview: 'The smallest way to keep using Tickrify.',
+          paragraphs: ['A quick reminder: the weekly plan is the smallest way to keep using Tickrify.', WEEKLY_LINE],
+          cta: plans,
+        },
+      };
+    case 'trial_winback_5':
+      return {
+        subject: 'Your Tickrify analyses are still here',
+        body: {
+          preview: 'A second opinion on your next trade, when you want it.',
+          paragraphs: [
+            'Your trial ended a few days ago. Your analyses are still in your account.',
+            `If you want a second opinion on your next trade: ${WEEKLY_LINE}`,
+          ],
+          cta: plans,
+        },
+      };
+    case 'trial_winback_10':
+      return {
+        subject: 'One last note from Tickrify',
+        body: {
+          preview: 'This is the last email about your trial.',
+          paragraphs: [
+            'This is the last email about your trial. If Tickrify is not for you right now, no problem.',
+            `If you want it back later: ${WEEKLY_LINE}`,
+          ],
+          cta: plans,
+          afterCta: ['If something did not work for you, reply and tell me. I read every message.'],
+        },
+      };
+  }
+}
+
 export function renderLifecycleEmail(
   kind: LifecycleKind,
   params: {
@@ -162,6 +309,11 @@ export function renderLifecycleEmail(
   const app = params.appUrl.replace(/\/+$/, '');
   const firstName = cleanFirstName(params.firstName);
   const base = { firstName, unsubscribeUrl: params.unsubscribeUrl };
+
+  if ((TRIAL_EMAIL_KINDS as readonly string[]).includes(kind)) {
+    const copy = trialCopy(kind as TrialEmailKind, app);
+    return { kind, unsubscribeUrl: params.unsubscribeUrl, subject: copy.subject, html: letter({ ...base, ...copy.body }) };
+  }
 
   if (kind === 'activation_1') {
     return {
@@ -305,6 +457,13 @@ export const LIFECYCLE_FLAG: Record<LifecycleKind, string> = {
   checkout_recovery: 'EMAIL_CHECKOUT_RECOVERY',
   second_analysis: 'EMAIL_SECOND_ANALYSIS_NUDGE',
   checkout_winback: 'EMAIL_CHECKOUT_WINBACK',
+  trial_first_analysis: 'EMAIL_TRIAL_SEQUENCE',
+  trial_day2: 'EMAIL_TRIAL_SEQUENCE',
+  trial_last_day: 'EMAIL_TRIAL_SEQUENCE',
+  trial_ended: 'EMAIL_TRIAL_SEQUENCE',
+  trial_ended_followup: 'EMAIL_TRIAL_SEQUENCE',
+  trial_winback_5: 'EMAIL_TRIAL_SEQUENCE',
+  trial_winback_10: 'EMAIL_TRIAL_SEQUENCE',
 };
 
 /** Links do e-mail: nunca localhost nem URL sem protocolo. */
@@ -315,8 +474,22 @@ export function publicUrl(value: string | undefined, fallback: string): string {
 
 type Candidate = { userId: string; email: string; name: string | null; declined?: boolean; firstWasWait?: boolean };
 
+/** Trial pronto para a varredura de e-mail (estado calculado na hora da volta). */
+export type TrialEmailInput = {
+  row: TrialRow;
+  state: TrialState;
+  email: string;
+  name: string | null;
+  /** Ultima analise nao falhada do trial (null = nenhuma). */
+  lastAnalysisAt: Date | null;
+};
+
 export type LifecycleDeps = {
   prisma: Pick<PrismaClient, 'user' | 'adminAudit' | 'subscription'>;
+  /** Trials ativos e encerrados sem assinar (worker). Ausente = sem e-mails de trial. */
+  loadTrials?: () => Promise<TrialEmailInput[]>;
+  /** Pessoa com trial (fica fora dos e-mails da regra antiga). */
+  hasTrial?: (userId: string) => Promise<boolean>;
   mail: { sendLifecycle(to: string, email: RenderedEmail): Promise<boolean> };
   isEnabled(kind: LifecycleKind): boolean;
   appUrl: string;
@@ -471,16 +644,55 @@ async function winbackCandidates(deps: LifecycleDeps, now: Date) {
   return out;
 }
 
+function trialKindFor(t: TrialEmailInput, now: Date): TrialEmailKind | null {
+  const age = (from: Date | null) => (from ? now.getTime() - from.getTime() : -1);
+  const inWindow = (kind: TrialEmailKind, from: Date | null) => {
+    const a = age(from);
+    return a >= WINDOWS[kind].minAgeMs && a <= WINDOWS[kind].maxAgeMs;
+  };
+  const morning = (() => {
+    const h = localHour(now, t.state.timezone);
+    return h >= MORNING.from && h < MORNING.to;
+  })();
+  if (t.row.status === 'active' && t.state.status === 'active') {
+    if (t.state.totalUsed === 0 && inWindow('trial_first_analysis', t.row.startedAt)) return 'trial_first_analysis';
+    if (t.state.usedToday === 0 && morning) {
+      if (t.state.daysUsed === 1 && inWindow('trial_day2', t.lastAnalysisAt)) return 'trial_day2';
+      if (t.state.daysUsed === 2 && inWindow('trial_last_day', t.lastAnalysisAt)) return 'trial_last_day';
+    }
+    return null;
+  }
+  if (t.row.status === 'ended_unconverted') {
+    if (inWindow('trial_ended', t.row.endedAt)) return 'trial_ended';
+    if (!morning) return null;
+    if (inWindow('trial_ended_followup', t.row.endedAt)) return 'trial_ended_followup';
+    if (inWindow('trial_winback_5', t.row.endedAt)) return 'trial_winback_5';
+    if (inWindow('trial_winback_10', t.row.endedAt)) return 'trial_winback_10';
+  }
+  return null;
+}
+
+async function trialCandidates(deps: LifecycleDeps, kind: TrialEmailKind, now: Date): Promise<Candidate[]> {
+  if (!deps.loadTrials) return [];
+  const trials = await deps.loadTrials();
+  return trials
+    .filter((t) => trialKindFor(t, now) === kind)
+    .map((t) => ({ userId: t.row.userId, email: t.email, name: t.name }));
+}
+
 /** Uma volta da varredura. Devolve quantos sairiam/sairam por tipo (para log e teste). */
 export async function runLifecycleSweep(deps: LifecycleDeps): Promise<Record<LifecycleKind, number>> {
   const now = deps.now ? deps.now() : new Date();
-  const counts: Record<LifecycleKind, number> = {
-    activation_1: 0,
-    activation_2: 0,
-    checkout_recovery: 0,
-    second_analysis: 0,
-    checkout_winback: 0,
+  const counts = Object.fromEntries(Object.keys(WINDOWS).map((kind) => [kind, 0])) as Record<LifecycleKind, number>;
+  // Carrega os trials uma vez por volta (os 7 tipos usam a mesma lista).
+  let trialList: TrialEmailInput[] | null = null;
+  const trialDeps: LifecycleDeps = {
+    ...deps,
+    loadTrials: deps.loadTrials
+      ? async () => (trialList ??= await deps.loadTrials!())
+      : undefined,
   };
+  const LEGACY_FREE_KINDS: LifecycleKind[] = ['activation_1', 'activation_2', 'second_analysis'];
 
   const jobs: Array<[LifecycleKind, () => Promise<Candidate[]>]> = [
     ['activation_1', () => activationCandidates(deps, 'activation_1', now)],
@@ -488,6 +700,9 @@ export async function runLifecycleSweep(deps: LifecycleDeps): Promise<Record<Lif
     ['checkout_recovery', () => checkoutCandidates(deps, now)],
     ['second_analysis', () => secondAnalysisCandidates(deps, now)],
     ['checkout_winback', () => winbackCandidates(deps, now)],
+    ...TRIAL_EMAIL_KINDS.map(
+      (kind): [LifecycleKind, () => Promise<Candidate[]>] => [kind, () => trialCandidates(trialDeps, kind, now)],
+    ),
   ];
 
   for (const [kind, load] of jobs) {
@@ -498,6 +713,18 @@ export async function runLifecycleSweep(deps: LifecycleDeps): Promise<Record<Lif
         if (await hasAudit(deps, c.userId, lifecycleAuditAction(kind))) continue;
         if (await hasAudit(deps, c.userId, UNSUBSCRIBE_AUDIT_ACTION)) continue;
         if (await isPaying(deps, c.userId)) continue;
+        // Quem esta no trial nao recebe os e-mails que falam dos 3 planos gratis.
+        if (LEGACY_FREE_KINDS.includes(kind) && deps.hasTrial && (await deps.hasTrial(c.userId))) continue;
+        // No maximo 1 e-mail de ciclo de vida por pessoa em 20h.
+        const recent = await deps.prisma.adminAudit.findFirst({
+          where: {
+            action: { startsWith: 'lifecycle:' },
+            targetUserId: c.userId,
+            createdAt: { gt: new Date(now.getTime() - ONE_EMAIL_PER_MS) },
+          },
+          select: { id: true },
+        });
+        if (recent) continue;
         const url = unsubscribeUrl(deps.apiBaseUrl, c.userId);
         if (!url) {
           deps.log('warn', '[lifecycle] Sem segredo de descadastro (EMAIL_UNSUBSCRIBE_SECRET/CLERK_SECRET_KEY): nada sai.');
