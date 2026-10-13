@@ -98,7 +98,8 @@ describe('cota gratis com trial', () => {
   const quotaDb = (trial: Record<string, unknown> | null, analyses: Array<{ createdAt: Date; status: string }>) => ({
     user: { findUnique: async () => ({ freeQuotaResetAt: null }) },
     analysis: { count: async () => 99, findMany: async () => analyses },
-    $queryRawUnsafe: async (sql: string) => (sql.includes('to_regclass') ? [{ ok: true }] : trial ? [trial] : []),
+    $queryRawUnsafe: async (sql: string) =>
+      sql.includes('to_regclass') ? [{ ok: true }] : sql.includes('"UserTrial"') && trial ? [trial] : [],
   });
 
   it('sem linha de trial: regra antiga (3 planos), sem mudar nada', async () => {
@@ -168,6 +169,19 @@ describe('e-mails do trial (modo simulado)', () => {
     ]));
     expect(send).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it('dia 2 com operacao aberta: o gancho vira acompanhar o trade', () => {
+    const email = renderLifecycleEmail('trial_day2', {
+      appUrl: 'https://tickrify.com',
+      unsubscribeUrl: 'https://x/u',
+      openTradeSymbol: 'XAUUSD',
+    });
+    expect(email.subject).toBe('Your XAUUSD trade is still open');
+    expect(email.html).toContain('Check how it is doing.');
+    expect(renderLifecycleEmail('trial_day2', { appUrl: 'https://tickrify.com', unsubscribeUrl: 'https://x/u' }).subject).toBe(
+      "Yesterday's chart has moved since",
+    );
   });
 
   it('textos sem emoji e sem travessao, com descadastro', () => {

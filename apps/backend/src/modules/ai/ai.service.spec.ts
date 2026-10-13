@@ -177,7 +177,7 @@ describe('AiService access enforcement', () => {
     };
 
     // Trial sem onModuleInit = tabela "indisponivel": regra antiga, como antes do trial.
-    service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any, mailService as any, setups, new TrialService(prisma, mailService as any));
+    service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any, mailService as any, setups, new TrialService(prisma, mailService as any), { syncFromVerdict: jest.fn().mockResolvedValue(undefined) } as any);
   });
 
   // ── Atualizar um setup acompanhado (12/10/2026) ─────────────────────────────

@@ -36,6 +36,8 @@ vi.mock('@/lib/api', () => ({
     }
   },
   useAPIClient: () => mockUseAPIClient(),
+  displayAsset: (symbol: string | null | undefined) => String(symbol || '').replace(/^[A-Za-z0-9_]+:/, '') || 'N/A',
+  tradeQueryKey: (analysisId: string) => ['trade', analysisId],
   buildApiUrl: (path: string) => `https://api.test${path}`,
   isFreeQuotaExhausted: (error: unknown) =>
     Boolean(error) && (error as { status?: number }).status === 402 && (error as { code?: string }).code === 'free_quota_exhausted',
@@ -132,6 +134,10 @@ function makeApiClient(overrides: Record<string, unknown> = {}) {
     syncUserProfile: vi.fn().mockResolvedValue(undefined),
     getStrategy: vi.fn().mockResolvedValue({ profile: null, paid: false }),
     waitForAnalysisCompletion: vi.fn().mockResolvedValue({ status: 'completed' }),
+    // Estado da operacao: sem operacao aberta, o fluxo de sempre.
+    listOpenTrades: vi.fn().mockResolvedValue({ trades: [] }),
+    matchTrade: vi.fn().mockResolvedValue({ symbol: null, matches: [] }),
+    getTrade: vi.fn().mockRejectedValue(new Error('not tracked in this test')),
     ...overrides,
   };
 }
@@ -379,6 +385,53 @@ describe('DashboardPage', () => {
     await waitFor(() => expect(createAnalysis).toHaveBeenCalled());
     expect(createAnalysis.mock.calls[0][0].setupId).toBeUndefined();
     expect(mockTrack.mock.calls.some(([event]) => event === 'setup_update_submitted')).toBe(false);
+  });
+
+  // Estado da operacao (13/10/2026): operacao aberta do mesmo ativo dispara a pergunta.
+  const openGold = { analysisId: 'analysis-gold', status: 'in_trade', symbol: 'FX:XAUUSD', timeframe: '1H', direction: 'BUY', updatedAt: '2026-10-12T10:00:00.000Z' };
+
+  it('grafico novo do mesmo ativo de uma operacao aberta pergunta antes de analisar', async () => {
+    const user = userEvent.setup();
+    mockUseUser.mockReturnValue({ user: { id: 'user-1' } });
+    mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 0, remaining: 3, isUnlimited: false, isLoading: false });
+    const createAnalysis = vi.fn().mockResolvedValue({ id: 'analysis00003', status: 'pending' });
+    const checkTrade = vi.fn().mockResolvedValue({ result: {}, view: { analysisId: 'analysis-gold' } });
+    mockUseAPIClient.mockReturnValue(makeApiClient({
+      createAnalysis,
+      checkTrade,
+      listOpenTrades: vi.fn().mockResolvedValue({ trades: [openGold] }),
+      matchTrade: vi.fn().mockResolvedValue({ symbol: 'XAUUSD', matches: [openGold] }),
+    }));
+
+    renderDashboard('/dashboard/new');
+    await user.click((await screen.findAllByRole('button', { name: 'start-with-image' }))[0]);
+
+    expect(await screen.findByText('Este gráfico é acompanhamento da sua operação aberta em XAUUSD?')).toBeTruthy();
+    expect(createAnalysis).not.toHaveBeenCalled();
+
+    // Sim: modo gerenciamento na operacao, nunca uma analise nova.
+    await user.click(screen.getByRole('button', { name: 'Sim, conferir minha operação' }));
+    await waitFor(() => expect(checkTrade).toHaveBeenCalledWith('analysis-gold', expect.objectContaining({ userLanguage: 'pt' })));
+    expect(createAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('nao e acompanhamento: pergunta se a anterior segue aberta e faz a analise nova', async () => {
+    const user = userEvent.setup();
+    mockUseUser.mockReturnValue({ user: { id: 'user-1' } });
+    mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 0, remaining: 3, isUnlimited: false, isLoading: false });
+    const createAnalysis = vi.fn().mockResolvedValue({ id: 'analysis00004', status: 'pending' });
+    mockUseAPIClient.mockReturnValue(makeApiClient({
+      createAnalysis,
+      listOpenTrades: vi.fn().mockResolvedValue({ trades: [openGold] }),
+      matchTrade: vi.fn().mockResolvedValue({ symbol: 'XAUUSD', matches: [openGold] }),
+    }));
+
+    renderDashboard('/dashboard/new');
+    await user.click((await screen.findAllByRole('button', { name: 'start-with-image' }))[0]);
+    await user.click(await screen.findByRole('button', { name: 'Não, análise nova' }));
+    expect(await screen.findByText('Sua operação em XAUUSD continua aberta?')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Continua aberta' }));
+    await waitFor(() => expect(createAnalysis).toHaveBeenCalledTimes(1));
   });
 
   it.each([

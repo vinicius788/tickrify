@@ -169,7 +169,9 @@ export async function loadTrialsForSweep(
     };
   },
   now = new Date(),
-): Promise<Array<{ row: TrialRow; state: TrialState; email: string; name: string | null; lastAnalysisAt: Date | null }>> {
+): Promise<
+  Array<{ row: TrialRow; state: TrialState; email: string; name: string | null; lastAnalysisAt: Date | null; openTradeSymbol: string | null }>
+> {
   const active = await readTrialsByStatus(db, ['active'], 500);
   for (const row of active) await syncTrial(db, row.userId, now);
   const rows = await readTrialsByStatus(db, ['active', 'ended_unconverted'], 500);
@@ -188,12 +190,20 @@ export async function loadTrialsForSweep(
       select: { createdAt: true, status: true },
     });
     const live = analyses.filter((a) => a.status !== 'failed').map((a) => a.createdAt.getTime());
+    // Operacao marcada como aberta/pendente (estado da operacao): muda o gancho do dia 2.
+    const openTrade = await db
+      .$queryRawUnsafe<Array<{ symbol: string | null }>>(
+        `SELECT "symbol" FROM "tickrify"."TradeState" WHERE "userId" = $1 AND "status" IN ('pending_order', 'in_trade') ORDER BY "updatedAt" DESC LIMIT 1`,
+        row.userId,
+      )
+      .catch(() => []);
     out.push({
       row,
       state: computeTrialState(row, analyses, now),
       email: user.email,
       name: user.name,
       lastAnalysisAt: live.length ? new Date(Math.max(...live)) : null,
+      openTradeSymbol: openTrade[0]?.symbol ?? null,
     });
   }
   return out;

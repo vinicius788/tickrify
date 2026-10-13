@@ -49,6 +49,7 @@ import {
 import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { FREE_READABLE_ANALYSES, getFreeQuota } from '../../common/free-quota';
 import { TrialService } from './trial.service';
+import { TradesService } from './trades.service';
 import { TRIAL_RULES } from '../../common/trial';
 import { TICK_COSTS, AnalysisType } from '../ticks/tick-packages';
 import { TicksService } from '../ticks/ticks.service';
@@ -181,6 +182,7 @@ export class AiService implements OnModuleInit {
     private mailService: MailService,
     private setups: SetupsService,
     private trial: TrialService,
+    private trades: TradesService,
   ) {}
 
   /**
@@ -1058,6 +1060,9 @@ export class AiService implements OnModuleInit {
       SET "userVerdict" = ${outcome}, "pnlPercent" = ${pnlPercent}, "pnlAmount" = ${pnlAmount}, "closedAt" = ${closedAt}
       WHERE "id" = ${id} AND "userId" = ${userId}
     `;
+
+    // O estado da operacao acompanha o resultado marcado (uma verdade so).
+    await this.trades.syncFromVerdict(userId, id, outcome);
 
     void trackUserActivity(this.prisma, userId, 'trade_outcome_set', {
       analysisId: id,

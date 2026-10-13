@@ -36,7 +36,7 @@ import { TicksBadge } from "@/components/dashboard/TicksBadge";
 import RatingCard from '@/components/dashboard/RatingCard';
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
 import { APIError, isFreeQuotaExhausted, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnalysisProcessingError, analysisFailureTelemetry } from "@/lib/analysis-failure";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { afterNextPaint, asRecord, isPageTranslated, scrollToTop } from "@/lib/utils";
@@ -58,6 +58,8 @@ import { loadSavedDemoResult } from "@/lib/demo-api";
 import FollowSetupBar from "../dashboard/FollowSetupBar";
 import SetupsSection from "../dashboard/SetupsSection";
 import SetupPage from "../dashboard/SetupPage";
+import TradePanel from "../dashboard/TradePanel";
+import { displayAsset, tradeQueryKey, type OpenTrade, type TradeCloseReason } from "@/lib/api";
 import { SETUP_ID_PATTERN, formatSetupDay, useSetupVersions } from "@/lib/setups";
 import { openChat, useChatThread } from "@/lib/support-chat";
 
@@ -229,6 +231,14 @@ function loadViewedSamples(): Set<SampleKind> {
 const MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp']);
 
+/** Mesmo ativo, sem o prefixo da corretora e sem separador (FX:XAUUSD = XAU/USD). */
+function sameAssetName(a: string | null | undefined, b: string | null | undefined): boolean {
+  const norm = (v: string | null | undefined) =>
+    displayAsset(v).toUpperCase().replace(/(\.P|PERP)$/, '').replace(/[^A-Z0-9]/g, '');
+  const x = norm(a);
+  return x !== 'NA' && x !== '' && x === norm(b);
+}
+
 const DashboardPage = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
@@ -278,6 +288,14 @@ const DashboardPage = () => {
   const { toast } = useToast();
   const apiClient = useAPIClient();
   const isDemo = !user;
+  // Operacoes pendentes/abertas: aviso no resultado de outro grafico do mesmo ativo.
+  const openTradesQuery = useQuery({
+    queryKey: ['trades-open'],
+    queryFn: () => apiClient.listOpenTrades(),
+    enabled: !isDemo,
+    staleTime: 60_000,
+    retry: false,
+  });
   const { analyses: rawAnalyses, loading: loadingAnalyses, refetch: refetchAnalyses } = useAnalyses(40);
 
   // Logo de carregamento ate o plano e a lista chegarem, para o painel abrir ja
@@ -348,7 +366,15 @@ const DashboardPage = () => {
   //   3. mesma fonte de verdade do My Trades = os dois nunca divergem.
   const [verdicts, setVerdicts] = useState<Record<string, Verdict>>({});
   const [verdictSnoozed, setVerdictSnoozed] = useState<boolean>(isVerdictPromptSnoozed);
-  const [askDismissed, setAskDismissed] = useState(false);
+  // Grafico novo com operacao aberta do mesmo ativo: perguntar antes de analisar
+  // (estado da operacao, 13/10/2026). `step` = qual pergunta esta na tela.
+  const [followUp, setFollowUp] = useState<{
+    trade: OpenTrade;
+    step: 'is_follow_up' | 'still_open' | 'close_reason';
+    params: { imageUrl: string | null; imageFile: File | null; htfBase64Images: string[]; analysisType: 'quick' | 'deep' };
+  } | null>(null);
+  const [followUpReason, setFollowUpReason] = useState<TradeCloseReason>('manual');
+  const [followUpBusy, setFollowUpBusy] = useState(false);
   // Id da análise que está sendo exibida no resultado. Vem do `createAnalysis`,
   // que é a única fonte exata — não dá pra deduzir "a mais recente da lista",
   // porque o refetch pode trocar quem é a mais recente no meio do caminho e a
@@ -688,7 +714,6 @@ const DashboardPage = () => {
         setAnalysisData({ ...analysis, id: routeAnalysisId });
         setUploadedImage(null);
         setLastAnalysisId(routeAnalysisId);
-        setAskDismissed(false);
         setResultLoad('idle');
       })
       .catch((error) => {
@@ -861,7 +886,6 @@ const DashboardPage = () => {
     setErrorMessage('');
     setUploadedImage(null);
     setLastAnalysisId(null);
-    setAskDismissed(false);
   }, [goTo, route.section]);
 
   // Guarda o último envio para o "Try again" refazer a análise sem perder o gráfico.
@@ -877,6 +901,8 @@ const DashboardPage = () => {
     imageFile: File | null = null,
     htfBase64Images: string[] = [],
     analysisType: 'quick' | 'deep' = 'quick',
+    /** A pessoa ja respondeu que NAO e acompanhamento da operacao aberta. */
+    skipFollowUpCheck = false,
   ) => {
     // Modo DEMO: apenas simula, não faz análise real
     if (isDemo) {
@@ -927,9 +953,25 @@ const DashboardPage = () => {
       return;
     }
 
+    const setupId = updatingSetup?.setup.id;
+
+    // Operacao aberta do MESMO ativo: quem decide se e acompanhamento e o
+    // trader, nunca a imagem sozinha. Sem operacao aberta, nada muda.
+    if (!skipFollowUpCheck && !setupId) {
+      const open = await apiClient.listOpenTrades().catch(() => ({ trades: [] as OpenTrade[] }));
+      if (open.trades.length > 0) {
+        const match = await apiClient
+          .matchTrade({ imageFile: imageFile ?? undefined, base64Image: imageFile ? undefined : imageUrl ?? undefined })
+          .catch(() => null);
+        if (match && match.matches.length > 0) {
+          setFollowUp({ trade: match.matches[0], step: 'is_follow_up', params: { imageUrl, imageFile, htfBase64Images, analysisType } });
+          return;
+        }
+      }
+    }
+
     // Memoriza o envio para o retry manter o mesmo gráfico e contexto.
     lastAnalysisParamsRef.current = { imageUrl, imageFile, htfBase64Images, analysisType };
-    const setupId = updatingSetup?.setup.id;
 
     const startedAt = performance.now();
     // Posicao na cota gratis contando WAIT (`used` conta so BUY/SELL e repetia
@@ -1133,6 +1175,51 @@ const DashboardPage = () => {
         setErrorMessage(error instanceof Error ? error.message : dc.analysisUnknownError);
       }
       setFlow('error');
+    }
+  };
+
+  // Pergunta de acompanhamento (estado da operacao). "Sim": confere a operacao
+  // com o grafico novo e abre a pagina dela. "Nao": pergunta se a anterior
+  // continua aberta e segue com a analise nova, independente.
+  const answerFollowUpYes = async () => {
+    if (!followUp) return;
+    const { trade, params } = followUp;
+    setFollowUpBusy(true);
+    try {
+      const { view } = await apiClient.checkTrade(trade.analysisId, {
+        imageFile: params.imageFile ?? undefined,
+        base64Image: params.imageFile ? undefined : params.imageUrl ?? undefined,
+        userLanguage: language,
+      });
+      queryClient.setQueryData(tradeQueryKey(trade.analysisId), view);
+      void queryClient.invalidateQueries({ queryKey: ['trades-open'] });
+      incrementAnalysis();
+      setFollowUp(null);
+      navigate(`${base}/analysis/${encodeURIComponent(trade.analysisId)}`);
+    } catch (error) {
+      toast({ title: t.trade.error, description: error instanceof APIError ? error.message : undefined, variant: 'destructive' });
+    } finally {
+      setFollowUpBusy(false);
+    }
+  };
+  const continueAsNewAnalysis = () => {
+    if (!followUp) return;
+    const { params } = followUp;
+    setFollowUp(null);
+    void handleStartAnalysis(params.imageUrl, params.imageFile, params.htfBase64Images, params.analysisType, true);
+  };
+  const closePreviousAndContinue = async () => {
+    if (!followUp) return;
+    setFollowUpBusy(true);
+    try {
+      await apiClient.markTrade(followUp.trade.analysisId, { status: 'closed', closeReason: followUpReason });
+      void queryClient.invalidateQueries({ queryKey: ['trades-open'] });
+      void queryClient.invalidateQueries({ queryKey: ['analyses'] });
+      continueAsNewAnalysis();
+    } catch (error) {
+      toast({ title: t.trade.error, description: error instanceof APIError ? error.message : undefined, variant: 'destructive' });
+    } finally {
+      setFollowUpBusy(false);
     }
   };
 
@@ -1701,23 +1788,15 @@ const DashboardPage = () => {
         // No trial o WAIT conta na cota do dia: a barra "nao gastou" seria falsa.
         const showWaitNudge = !isDemo && freeLeftKnown && !exhausted && isWaitResult && !trial;
 
-        // Qual análise a pergunta do veredito vai marcar.
-        //
-        // O id vem do `createAnalysis` (guardado em lastAnalysisId) e só cai
-        // para o `analysisData` se aquele faltar. NUNCA deduzir pela lista:
-        // a primeira versão fazia `rawAnalyses.find(completed)` e, quando o
-        // refetch trocava quem era a mais recente, o clique marcava a análise
-        // ERRADA — bug real, visto em produção em 28/07.
-        const verdictTargetId = lastAnalysisId || analysisData?.id || null;
-        const canAskVerdict =
-          !isDemo &&
-          !freeLocked &&
-          !askDismissed &&
-          Boolean(verdictTargetId) &&
-          // Aguardar nao e operacao: "vai entrar nesta?" nao faz sentido e
-          // marcar "vou entrar" criaria um trade aberto que nunca existiu.
-          isTradeCall(analysisData?.recommendation) &&
-          resolveVerdict({ id: String(verdictTargetId), outcome: analysisData?.outcome }, verdicts) === null;
+        // Estado da operacao (13/10/2026): o painel substitui a antiga pergunta
+        // "Vai operar?". So BUY/SELL; WAIT nao e operacao.
+        const tradeAnalysisId = !isDemo && !freeLocked && analysisData?.status === 'completed' && isTradeCall(analysisData?.recommendation)
+          ? analysisData?.id ?? null
+          : null;
+        const resultAsset = String(analysisData?.symbol || '');
+        const otherOpenTrade = (openTradesQuery.data?.trades ?? []).find(
+          (tr) => tr.analysisId !== analysisData?.id && sameAssetName(tr.symbol, resultAsset),
+        );
         return (
           <div className="flex flex-col gap-4">
             {/* WAIT no plano gratis: o proximo passo vai para o TOPO. A mesma
@@ -1757,7 +1836,15 @@ const DashboardPage = () => {
                 </button>
               </div>
             )}
+            {otherOpenTrade ? (
+              <div role="status" className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+                {t.trade.openTradeNotice
+                  .replace('{asset}', displayAsset(otherOpenTrade.symbol))
+                  .replace('{date}', new Date(otherOpenTrade.updatedAt).toLocaleDateString(DATE_LOCALES[language] ?? 'en-US'))}
+              </div>
+            ) : null}
             <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />
+            {tradeAnalysisId ? <TradePanel key={`trade-${tradeAnalysisId}`} analysisId={tradeAnalysisId} /> : null}
             {/* Seguir o setup: ao lado das acoes de sempre, nunca no lugar delas. */}
             {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' ? (
               <FollowSetupBar
@@ -1782,31 +1869,6 @@ const DashboardPage = () => {
                     trade acabou de nascer, não há resposta possível, e cobrar
                     resultado agora ensina a ignorar o card. Só marcamos como
                     aberto — é isso que cria o pendente que cobramos depois. */}
-                {canAskVerdict && verdictTargetId && (
-                  <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] pb-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-[var(--text-primary)]">{t.verdict.askTitle}</p>
-                      <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">{t.verdict.askHint}</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => applyVerdict(String(verdictTargetId), 'OPEN')}
-                      >
-                        {t.verdict.askYes}
-                      </Button>
-                      <button
-                        type="button"
-                        onClick={() => setAskDismissed(true)}
-                        className="rounded-lg px-3 py-2 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-                      >
-                        {t.verdict.askNo}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   {freeLeftKnown && !exhausted && (
@@ -2193,6 +2255,68 @@ const DashboardPage = () => {
               >
                 {renderContent()}
               </Sentry.ErrorBoundary>
+              {followUp ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" role="dialog" aria-modal="true">
+                  <div className="w-full max-w-md space-y-4 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
+                    {followUp.step === 'is_follow_up' ? (
+                      <div key="is_follow_up" className="space-y-4">
+                        <p className="text-base font-semibold text-[var(--text-primary)]">
+                          {t.trade.followUpTitle.replace('{asset}', displayAsset(followUp.trade.symbol))}
+                        </p>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <Button type="button" disabled={followUpBusy} onClick={() => void answerFollowUpYes()}>
+                            {followUpBusy ? t.trade.checking : t.trade.followUpYes}
+                          </Button>
+                          <Button type="button" variant="outline" disabled={followUpBusy} onClick={() => setFollowUp({ ...followUp, step: 'still_open' })}>
+                            {t.trade.followUpNo}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : followUp.step === 'still_open' ? (
+                      <div key="still_open" className="space-y-4">
+                        <p className="text-base font-semibold text-[var(--text-primary)]">
+                          {t.trade.stillOpenTitle.replace('{asset}', displayAsset(followUp.trade.symbol))}
+                        </p>
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <Button type="button" onClick={continueAsNewAnalysis}>{t.trade.stillOpen}</Button>
+                          <Button type="button" variant="outline" onClick={() => setFollowUp({ ...followUp, step: 'close_reason' })}>
+                            {t.trade.closedIt}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div key="close_reason" className="space-y-4">
+                        <label className="flex flex-col gap-1 text-sm text-[var(--text-secondary)]">
+                          {t.trade.closeReason}
+                          <select
+                            value={followUpReason}
+                            onChange={(e) => setFollowUpReason(e.target.value as TradeCloseReason)}
+                            className="h-10 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 text-base text-[var(--text-primary)]"
+                          >
+                            <option value="target_hit">{t.trade.reasonTarget}</option>
+                            <option value="stop_hit">{t.trade.reasonStop}</option>
+                            <option value="breakeven">{t.trade.reasonBreakeven}</option>
+                            <option value="manual">{t.trade.reasonManual}</option>
+                            <option value="invalidated">{t.trade.reasonInvalidated}</option>
+                          </select>
+                        </label>
+                        <Button type="button" disabled={followUpBusy} onClick={() => void closePreviousAndContinue()}>
+                          {t.trade.save}
+                        </Button>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setFollowUp(null)}
+                      className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    >
+                      {t.trade.cancel}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {/* Aviso fixo do painel (13/10/2026). */}
+              <p className="pb-2 text-center font-terminal text-[11px] text-[var(--text-secondary)]">{t.trade.disclaimer}</p>
             </div>
           </main>
         </div>

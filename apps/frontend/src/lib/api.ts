@@ -331,6 +331,56 @@ export interface TrialUsage {
   windowEndsAt: string;
 }
 
+// ── Estado da operacao (13/10/2026) ─────────────────────────────────────────
+export type TradeStatus = 'suggested' | 'pending_order' | 'in_trade' | 'closed' | 'cancelled' | 'expired';
+export type TradeCloseReason = 'target_hit' | 'stop_hit' | 'breakeven' | 'manual' | 'invalidated' | 'cancelled';
+export type TradeSituation = 'on_track' | 'near_target' | 'near_stop' | 'invalidated' | 'target_hit' | 'stop_hit' | 'unclear';
+export type TradeAction = 'hold' | 'move_stop_to_breakeven' | 'partial_exit' | 'exit' | 'cancel_order' | 'wait';
+
+export interface TradeCheckResult {
+  situation: TradeSituation;
+  action: TradeAction;
+  reason: string;
+  watch: string;
+  priceReadable: boolean;
+  readPrice: number | null;
+  needsCurrentPrice: boolean;
+  decidedByPrice: boolean;
+}
+
+export interface TradeView {
+  analysisId: string;
+  status: TradeStatus;
+  direction: 'BUY' | 'SELL';
+  symbol: string | null;
+  timeframe: string | null;
+  entryPrice: number | null;
+  plannedEntry: number | null;
+  stopLoss: number | null;
+  target: number | null;
+  closeReason: TradeCloseReason | null;
+  timeline: Array<{ status: TradeStatus; at: string; entryPrice?: number | null; closeReason?: TradeCloseReason | null }>;
+  checks: Array<{ id: string; createdAt: string; currentPrice: number | null; result: TradeCheckResult }>;
+  checksLeft: number;
+  analysisCreatedAt: string;
+}
+
+export const tradeQueryKey = (analysisId: string) => ['trade', analysisId] as const;
+
+/** Simbolo para mostrar: sem o prefixo da corretora (FX:XAUUSD -> XAUUSD). */
+export function displayAsset(symbol: string | null | undefined): string {
+  return String(symbol || '').replace(/^[A-Za-z0-9_]+:/, '') || 'N/A';
+}
+
+export interface OpenTrade {
+  analysisId: string;
+  status: TradeStatus;
+  symbol: string | null;
+  timeframe: string | null;
+  direction: 'BUY' | 'SELL';
+  updatedAt: string;
+}
+
 /** Fuso IANA do navegador (ex.: America/Sao_Paulo), ou null. */
 export function browserTimezone(): string | null {
   try {
@@ -852,6 +902,74 @@ class APIClient {
     return response.json();
   }
 
+  /** Estado da operacao: GET (ver), PUT (marcar), POST check (gerenciamento), open e match. */
+  private async tradesCall<T>(
+    path: string,
+    init: RequestInit,
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+    timeoutMs = APIClient.REQUEST_TIMEOUT_MS,
+  ): Promise<T> {
+    const response = await this.request(
+      `/api/trades${path}`,
+      { ...init, headers: { ...(init.headers ?? {}), ...this.getAuthHeader(token) } },
+      'Trade request failed',
+      timeoutMs,
+      getFreshToken,
+    );
+    if (!response.ok) throw await this.buildApiError(response, 'Trade request failed');
+    return response.json() as Promise<T>;
+  }
+
+  getTrade(analysisId: string, token: string | null, getFreshToken?: FreshTokenGetter) {
+    return this.tradesCall<TradeView>(`/${encodeURIComponent(analysisId)}`, { method: 'GET' }, token, getFreshToken);
+  }
+
+  markTrade(
+    analysisId: string,
+    body: { status: 'pending_order' | 'in_trade' | 'closed' | 'cancelled'; entryPrice?: number; closeReason?: TradeCloseReason },
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ) {
+    return this.tradesCall<TradeView>(
+      `/${encodeURIComponent(analysisId)}`,
+      { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+      token,
+      getFreshToken,
+    );
+  }
+
+  checkTrade(
+    analysisId: string,
+    payload: { imageFile?: File; base64Image?: string; currentPrice?: number | null; userLanguage?: string },
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ) {
+    const form = new FormData();
+    if (payload.imageFile) form.append('image', payload.imageFile);
+    if (payload.base64Image) form.append('base64Image', payload.base64Image);
+    if (payload.currentPrice != null && Number.isFinite(payload.currentPrice)) form.append('currentPrice', String(payload.currentPrice));
+    if (payload.userLanguage) form.append('userLanguage', payload.userLanguage);
+    return this.tradesCall<{ result: TradeCheckResult; view: TradeView }>(
+      `/${encodeURIComponent(analysisId)}/check`,
+      { method: 'POST', body: form },
+      token,
+      getFreshToken,
+      APIClient.ANALYZE_TIMEOUT_MS,
+    );
+  }
+
+  listOpenTrades(token: string | null, getFreshToken?: FreshTokenGetter) {
+    return this.tradesCall<{ trades: OpenTrade[] }>('/open', { method: 'GET' }, token, getFreshToken);
+  }
+
+  matchTrade(payload: { imageFile?: File; base64Image?: string }, token: string | null, getFreshToken?: FreshTokenGetter) {
+    const form = new FormData();
+    if (payload.imageFile) form.append('image', payload.imageFile);
+    if (payload.base64Image) form.append('base64Image', payload.base64Image);
+    return this.tradesCall<{ symbol: string | null; matches: OpenTrade[] }>('/match', { method: 'POST', body: form }, token, getFreshToken);
+  }
+
   async getStrategy(
     token: string | null,
     getFreshToken?: FreshTokenGetter,
@@ -1021,6 +1139,31 @@ export function useAPIClient() {
     return apiClient.getStrategy(token, getFreshToken);
   }, [getFreshToken, getInitialToken]);
 
+  const getTrade = useCallback(async (analysisId: string) => {
+    const token = await getInitialToken();
+    return apiClient.getTrade(analysisId, token, getFreshToken);
+  }, [getFreshToken, getInitialToken]);
+
+  const markTrade = useCallback(async (analysisId: string, body: Parameters<APIClient['markTrade']>[1]) => {
+    const token = await getInitialToken();
+    return apiClient.markTrade(analysisId, body, token, getFreshToken);
+  }, [getFreshToken, getInitialToken]);
+
+  const checkTrade = useCallback(async (analysisId: string, payload: Parameters<APIClient['checkTrade']>[1]) => {
+    const token = await getInitialToken();
+    return apiClient.checkTrade(analysisId, payload, token, getFreshToken);
+  }, [getFreshToken, getInitialToken]);
+
+  const listOpenTrades = useCallback(async () => {
+    const token = await getInitialToken();
+    return apiClient.listOpenTrades(token, getFreshToken);
+  }, [getFreshToken, getInitialToken]);
+
+  const matchTrade = useCallback(async (payload: Parameters<APIClient['matchTrade']>[0]) => {
+    const token = await getInitialToken();
+    return apiClient.matchTrade(payload, token, getFreshToken);
+  }, [getFreshToken, getInitialToken]);
+
   const saveStrategy = useCallback(async (profile: StrategyProfileDto) => {
     const token = await getInitialToken();
     return apiClient.saveStrategy(profile, token, getFreshToken);
@@ -1054,5 +1197,10 @@ export function useAPIClient() {
     getStrategy,
     saveStrategy,
     waitForAnalysisCompletion,
-  }), [createAnalysis, getAnalysis, listAnalyses, getJournal, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setTechnicalAttribution, setOutcome, setFavorite, setTradeNote, getStrategy, saveStrategy, waitForAnalysisCompletion]);
+    getTrade,
+    markTrade,
+    checkTrade,
+    listOpenTrades,
+    matchTrade,
+  }), [createAnalysis, getAnalysis, listAnalyses, getJournal, getAnalysisUsage, syncUserProfile, setAcquisitionSource, setTechnicalAttribution, setOutcome, setFavorite, setTradeNote, getStrategy, saveStrategy, waitForAnalysisCompletion, getTrade, markTrade, checkTrade, listOpenTrades, matchTrade]);
 }

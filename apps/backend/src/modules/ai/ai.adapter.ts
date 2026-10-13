@@ -30,6 +30,13 @@ import {
 } from './vision-model';
 import { BROKEN_PLAN_RULES, validateTradePlan, type TradePlanRule } from '../../common/utils/trade-plan-validator';
 import { PRICE_AXIS_PROMPT, PRICE_AXIS_SCHEMA, sanitizePriceAxis, type PriceAxis } from './price-axis';
+import {
+  MANAGEMENT_SCHEMA,
+  buildManagementPrompt,
+  finalizeManagement,
+  type ManagementContext,
+  type ManagementResult,
+} from './trade-management';
 import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
 import { MarketService, normalizeToBinancePerp } from '../market/market.service';
@@ -1046,6 +1053,55 @@ export class AIAdapter {
       this.logger.warn(`[price-axis] Leitura do eixo falhou: ${err instanceof Error ? err.message : err}`);
       return null;
     }
+  }
+
+  /**
+   * Simbolo do grafico, para perguntar "e da sua operacao aberta?" antes de
+   * analisar. Leitura barata (tier light), sem cota. null = nao deu para ler.
+   */
+  async readChartSymbol(imageUrl: string): Promise<string | null> {
+    const read = await this.extractSymbol(imageUrl);
+    return read?.symbol ?? null;
+  }
+
+  /**
+   * Modo gerenciamento (trade-management.ts): o trader ja tem a operacao e
+   * manda um grafico novo. Mesmo provedor e modelo da analise quick; JSON fora
+   * do schema repete a chamada UMA vez, como na analise normal.
+   */
+  async manageTrade(imageUrl: string, ctx: ManagementContext): Promise<ManagementResult> {
+    const signed = await this.resolveImageUrlForModel(imageUrl);
+    const request: VisionModelRequest = {
+      tier: 'quick',
+      instructions: buildManagementPrompt(ctx),
+      context: [],
+      userContent: [
+        { type: 'text', text: 'New chart of the same trade. Judge the trade described above.' },
+        { type: 'image', url: signed },
+      ],
+      schemaName: 'trade_management',
+      schema: MANAGEMENT_SCHEMA as unknown as Record<string, unknown>,
+      maxTokens: 8000,
+      reasoningEffort: resolveReasoningEffort('quick'),
+      sampling: { temperature: 0.1, topP: 0.1, seed: 42 },
+      timeoutMs: ANALYZE_TIMEOUT_MS,
+    };
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await this.visionModel.complete(request);
+      this.logger.log(formatCostLog(result.model, 'trade-management', computeCost(result.model, result.usage, 1)));
+      try {
+        return finalizeManagement(result.content, ctx);
+      } catch (error) {
+        lastError = error;
+        this.logger.warn(`[trade] Resposta de gerenciamento fora do schema (tentativa ${attempt + 1})`);
+      }
+    }
+    throw new AIAnalysisError({
+      code: 'openai_invalid_json',
+      message: lastError instanceof Error ? lastError.message : 'invalid management response',
+      retriable: false,
+    });
   }
 
   /**

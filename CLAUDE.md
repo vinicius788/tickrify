@@ -640,6 +640,38 @@ Vale para TODA mudanca, grande ou pequena:
 - **Reativacao:** `GET/POST /api/admin/trial/reactivation` (chave
   `TRIAL_REACTIVATION`, `confirm: 'GRANT'`); concede o trial, nao envia nada.
 
+### 3.11 Estado da operacao e modo gerenciamento (13/10)
+
+- **Por que:** medido em 13/10 com 2 prints reais de ouro com a posicao
+  desenhada, a analise normal tratou o print como setup novo (compra desenhada
+  -> WAIT bearish usando o stop/alvo desenhados como niveis proprios; venda
+  desenhada -> venda NOVA acima do stop desenhado). Custo do teste: 2 ticks.
+- **Estado** (`common/trade-state.ts`, tabelas `TradeState` e `TradeCheck` por
+  SQL, boot + migracao `20261013130000_trade_state`): suggested (sem linha),
+  pending_order, in_trade, closed, cancelled, expired (pendente > 7 dias);
+  motivo em lista fechada. **Uma verdade so:** marcar grava o `userVerdict`
+  junto (in_trade=open, target_hit=tp1, stop_hit=stop, cancelado/expirado=
+  no_fill) e o `setOutcome` do My Trades/diario atualiza o estado
+  (`syncFromVerdict`). O painel substituiu a pergunta "Vai operar?".
+- **Grafico novo:** com operacao pendente/aberta na janela de 14 dias, o
+  front le o simbolo (`/api/trades/match`, leitura barata sem cota) e PERGUNTA
+  se e acompanhamento. Sim = modo gerenciamento; Nao = pergunta se a anterior
+  segue aberta e faz analise nova (com aviso de operacao aberta no resultado).
+  Nunca decide pela imagem.
+- **Modo gerenciamento** (`trade-management.ts`, chamada separada, mesmo
+  modelo, prompt do motor intocado): schema proprio (situacao + acao, sem
+  campo de entrada nova); codigo corrige acao fora do estado e decide
+  target_hit/stop_hit pelo preco DIGITADO; sem preco e sem leitura segura =
+  unclear e pede o preco. JSON fora do schema repete 1 vez.
+- **Cota:** `TRADE_RULES.managementCheckCost` (1 analise gratis ou 1 tick) e
+  `maxChecksPerTrade` (10). Checagem gratis conta no total da regra antiga e
+  no dia do trial (free-quota.ts).
+- **PostHog:** `trade_marked_pending`, `trade_marked_open`, `trade_closed
+  {close_reason}`, `trade_management_requested {situation, action}`, todos com
+  `analysisId`. E-mail `trial_day2` com operacao aberta vira "Your [ASSET]
+  trade is still open" (mesma chave desligada). Aviso fixo no painel:
+  "Educational tool, not financial advice."
+
 ---
 
 ## 4. Regras tecnicas que nasceram de bug real (nao desfazer)
@@ -940,6 +972,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **12/10 (limpeza do git):** 4 worktrees (3 do Codex, 1 do Claude), 7 branches locais ja contidas no `main` e os 2 stashes (seguranca 28/09 e My Trades 24/09, ambos ja no `main`) removidos; backup dos diffs em `_local/limpeza-2026-10-12/`. Do worktree do Codex `analysis-funnel-count` (28/09, nunca commitado) entrou so o `analysisNumber` contando WAIT (3.4); os scripts do piloto de analise (`analysis-pilot-*`, `analysis-checklist-candidate`) ficaram so no backup. Frontend, setups e chat confirmados em producao (bundle e rotas respondendo). Em 13/10: 12 branches remotas ja contidas no `main` apagadas do GitHub; Docker sem o staging de 01/10 (7 conteineres `supabase_*_tickrify-staging-20261001`, 2 volumes, 2 imagens) e sem cache de build (9,2 GB). Restou so a branch `claude/blissful-heisenberg-dwasmg` (6.2).
 - **13/10 (provedor de IA):** camada unica `vision-model.ts` com OpenAI ativa, Anthropic pronta e inativa, contingencia, modo comparacao desligado e nova tentativa unica quando a checagem por codigo falha (ver 3.2). Nao existe chat com IA no produto (o chat e com o fundador), entao nao ha historico de chat a limitar.
 - **13/10 (trial):** trial de 3 dias sem cartao implementado atras de `TRIAL_MODE` (3.10). Diagnostico de 22/09 a 13/10 (PostHog, 194 cadastros): 0 analises 16%, 1 = 35%, 2 = 20%, 3 = 15%, 4+ = 14%; de quem analisou, 16% voltou em outro dia (UTC) e 2% em 3 dias; mediana de 1 min entre cadastro e 1a analise (157 de 162 na 1a hora); o assinante semanal pagou ~39h depois do cadastro (3o dia do calendario) e renovou em 12/10.
+- **13/10 (operacao):** estado da operacao, pergunta de acompanhamento e modo gerenciamento (3.11).
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

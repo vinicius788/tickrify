@@ -98,9 +98,11 @@ export async function getFreeQuota(prisma: FreeQuotaCounter, userId: string): Pr
     isDemo: true,
     ...(user?.freeQuotaResetAt ? { createdAt: { gt: user.freeQuotaResetAt } } : {}),
   };
-  const totalUsed = await prisma.analysis.count({
-    where: { ...base, status: { not: 'failed' } },
-  });
+  // Checagem de operacao (trade-state.ts) conta como analise no total.
+  const totalUsed =
+    (await prisma.analysis.count({
+      where: { ...base, status: { not: 'failed' } },
+    })) + (await freeTradeChecks(prisma, userId, user?.freeQuotaResetAt ?? null)).length;
   const signalsDone = await prisma.analysis.count({
     where: { ...base, status: 'completed', recommendation: { in: SIGNAL_RECOMMENDATIONS } },
   });
@@ -125,6 +127,34 @@ export async function getFreeQuota(prisma: FreeQuotaCounter, userId: string): Pr
   };
 }
 
+/**
+ * Datas das checagens de operacao gratis desde `since`. Mesma protecao do
+ * trial (to_regclass): roda dentro da transacao serializavel da reserva, e um
+ * SELECT em tabela ausente abortaria a transacao inteira.
+ */
+let tradeCheckTableSeen = false;
+async function freeTradeChecks(prisma: FreeQuotaCounter, userId: string, since: Date | null): Promise<Date[]> {
+  const raw = prisma.$queryRawUnsafe?.bind(prisma);
+  if (!raw) return [];
+  try {
+    if (!tradeCheckTableSeen) {
+      const ok = await raw<Array<{ ok: boolean }>>(`SELECT to_regclass('"tickrify"."TradeCheck"') IS NOT NULL AS ok`);
+      tradeCheckTableSeen = ok?.[0]?.ok === true;
+      if (!tradeCheckTableSeen) return [];
+    }
+    const rows = await raw<Array<{ createdAt: Date }>>(
+      `SELECT "createdAt" FROM "tickrify"."TradeCheck" WHERE "userId" = $1 AND "isFree" = true AND "createdAt" > $2`,
+      userId,
+      since ?? new Date(0),
+    );
+    return Array.isArray(rows)
+      ? rows.map((r) => new Date(r.createdAt)).filter((d) => !Number.isNaN(d.getTime()))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Cota de quem esta em trial, no formato da cota gratis. null = sem trial. */
 async function getTrialQuota(prisma: FreeQuotaCounter, userId: string): Promise<FreeQuota | null> {
   if (!prisma.$queryRawUnsafe || !prisma.analysis.findMany) return null;
@@ -134,7 +164,9 @@ async function getTrialQuota(prisma: FreeQuotaCounter, userId: string): Promise<
     where: { userId, isDemo: true, createdAt: { gte: row.startedAt } },
     select: { createdAt: true, status: true },
   });
-  const state = computeTrialState(row, analyses);
+  // Checagem de operacao conta como analise no dia do trial.
+  const checks = (await freeTradeChecks(prisma, userId, row.startedAt)).map((createdAt) => ({ createdAt, status: 'completed' }));
+  const state = computeTrialState(row, [...analyses, ...checks]);
   return {
     // Durante o trial "sinais" = analises do dia (WAIT conta), para o front antigo.
     signalsUsed: state.usedToday,

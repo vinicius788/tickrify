@@ -204,6 +204,7 @@ const WEEKLY_LINE = 'The weekly plan is $7.99 for 25 analyses, renews every 7 da
 export function trialCopy(
   kind: TrialEmailKind,
   app: string,
+  extra: { openTradeSymbol?: string | null } = {},
 ): { subject: string; body: { preview: string; paragraphs: string[]; cta: { label: string; url: string }; afterCta?: string[] } } {
   const [d1, d2, d3] = TRIAL_RULES.dailyQuota;
   const analyze = { label: 'Analyze a chart', url: `${app}/dashboard/new` };
@@ -223,6 +224,21 @@ export function trialCopy(
         },
       };
     case 'trial_day2':
+      // Operacao marcada como aberta/pendente (estado da operacao, 13/10/2026):
+      // o gancho vira acompanhar o trade, nunca "analise de novo do zero".
+      if (extra.openTradeSymbol) {
+        return {
+          subject: `Your ${extra.openTradeSymbol} trade is still open`,
+          body: {
+            preview: 'Check how it is doing with a fresh screenshot.',
+            paragraphs: [
+              `Your ${extra.openTradeSymbol} trade is still open on Tickrify. Check how it is doing.`,
+              `Open the trade and send a fresh screenshot of the same chart: you get where it stands against your stop and target, and what to watch next. Today is day 2 of your trial, with ${d2} analyses.`,
+            ],
+            cta: { label: 'Check my trade', url: `${app}/dashboard/trades` },
+          },
+        };
+      }
       return {
         subject: "Yesterday's chart has moved since",
         body: {
@@ -304,6 +320,8 @@ export function renderLifecycleEmail(
     declined?: boolean;
     /** second_analysis: a unica analise foi WAIT? */
     firstWasWait?: boolean;
+    /** trial_day2: ativo da operacao marcada como aberta, se houver. */
+    openTradeSymbol?: string | null;
   },
 ): RenderedEmail {
   const app = params.appUrl.replace(/\/+$/, '');
@@ -311,7 +329,7 @@ export function renderLifecycleEmail(
   const base = { firstName, unsubscribeUrl: params.unsubscribeUrl };
 
   if ((TRIAL_EMAIL_KINDS as readonly string[]).includes(kind)) {
-    const copy = trialCopy(kind as TrialEmailKind, app);
+    const copy = trialCopy(kind as TrialEmailKind, app, { openTradeSymbol: params.openTradeSymbol });
     return { kind, unsubscribeUrl: params.unsubscribeUrl, subject: copy.subject, html: letter({ ...base, ...copy.body }) };
   }
 
@@ -472,7 +490,14 @@ export function publicUrl(value: string | undefined, fallback: string): string {
   return /^https:\/\/\S+$/.test(v) ? v.replace(/\/+$/, '') : fallback;
 }
 
-type Candidate = { userId: string; email: string; name: string | null; declined?: boolean; firstWasWait?: boolean };
+type Candidate = {
+  userId: string;
+  email: string;
+  name: string | null;
+  declined?: boolean;
+  firstWasWait?: boolean;
+  openTradeSymbol?: string | null;
+};
 
 /** Trial pronto para a varredura de e-mail (estado calculado na hora da volta). */
 export type TrialEmailInput = {
@@ -482,6 +507,8 @@ export type TrialEmailInput = {
   name: string | null;
   /** Ultima analise nao falhada do trial (null = nenhuma). */
   lastAnalysisAt: Date | null;
+  /** Ativo de uma operacao marcada como aberta/pendente, se houver. */
+  openTradeSymbol?: string | null;
 };
 
 export type LifecycleDeps = {
@@ -677,7 +704,7 @@ async function trialCandidates(deps: LifecycleDeps, kind: TrialEmailKind, now: D
   const trials = await deps.loadTrials();
   return trials
     .filter((t) => trialKindFor(t, now) === kind)
-    .map((t) => ({ userId: t.row.userId, email: t.email, name: t.name }));
+    .map((t) => ({ userId: t.row.userId, email: t.email, name: t.name, openTradeSymbol: t.openTradeSymbol ?? null }));
 }
 
 /** Uma volta da varredura. Devolve quantos sairiam/sairam por tipo (para log e teste). */
@@ -734,7 +761,7 @@ export async function runLifecycleSweep(deps: LifecycleDeps): Promise<Record<Lif
         if (!enabled) {
           deps.log(
             'log',
-            `[lifecycle] dry-run kind=${kind} user=${c.userId}${c.declined ? ' declined=1' : ''}${c.firstWasWait ? ' wait=1' : ''}`,
+            `[lifecycle] dry-run kind=${kind} user=${c.userId}${c.declined ? ' declined=1' : ''}${c.firstWasWait ? ' wait=1' : ''}${c.openTradeSymbol ? ' trade=1' : ''}`,
           );
           continue;
         }
@@ -753,6 +780,7 @@ export async function runLifecycleSweep(deps: LifecycleDeps): Promise<Record<Lif
           unsubscribeUrl: url,
           declined: c.declined,
           firstWasWait: c.firstWasWait,
+          openTradeSymbol: c.openTradeSymbol,
         });
         const ok = await deps.mail.sendLifecycle(c.email, email);
         // Recusado (ex.: cota diaria da Resend, 06/10/2026): tira a marca e a
