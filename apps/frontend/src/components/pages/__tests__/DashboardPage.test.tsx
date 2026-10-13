@@ -381,6 +381,50 @@ describe('DashboardPage', () => {
     expect(mockTrack.mock.calls.some(([event]) => event === 'setup_update_submitted')).toBe(false);
   });
 
+  it.each([
+    { label: 'primeira analise', used: 0, totalUsed: 0, isUnlimited: false, expected: 1 },
+    { label: 'dois WAIT anteriores', used: 0, totalUsed: 2, isUnlimited: false, expected: 3 },
+    { label: 'contador total ainda desconhecido', used: 0, totalUsed: null, isUnlimited: false, expected: null },
+    { label: 'contador total invalido', used: 0, totalUsed: -1, isUnlimited: false, expected: null },
+    { label: 'assinante', used: 2, totalUsed: 2, isUnlimited: true, expected: null },
+  ])('numera o evento pelo total da cota: $label', async ({ used, totalUsed, isUnlimited, expected }) => {
+    const user = userEvent.setup();
+    mockUseUser.mockReturnValue({ user: { id: 'user-1' } });
+    const quota = {
+      plan: isUnlimited ? 'starter' : 'free',
+      total: 3, used, remaining: 3 - used, totalUsed, totalLimit: 10,
+      isUnlimited, isLoading: false,
+    };
+    mockUseAnalysisLimit.mockImplementation(() => quota);
+    // O refresh depois da criacao ja inclui a analise em andamento: a conclusao
+    // tem que manter o numero lido ANTES do envio.
+    mockUseIncrementAnalysis.mockReturnValue(() => {
+      quota.totalUsed = 9;
+    });
+    mockUseAPIClient.mockReturnValue(makeApiClient({
+      createAnalysis: vi.fn().mockResolvedValue({ id: 'analysis-number', status: 'pending' }),
+      waitForAnalysisCompletion: vi.fn().mockResolvedValue({
+        id: 'analysis-number', status: 'completed', recommendation: 'WAIT',
+      }),
+    }));
+
+    renderDashboard('/dashboard/new');
+    await user.click((await screen.findAllByRole('button', { name: 'start-with-image' }))[0]);
+    // O `analysis_completed` de um teste anterior sai depois do proximo quadro
+    // pintado e pode cair no comeco deste: vale so o desta analise (WAIT).
+    const isMine = ([name, props]: unknown[]) =>
+      name === 'analysis_completed' && (props as { recommendation?: string })?.recommendation === 'WAIT';
+    await waitFor(() => expect(mockTrack.mock.calls.some(isMine)).toBe(true));
+
+    const started = mockTrack.mock.calls.filter(([name]) => name === 'analysis_started').at(-1);
+    for (const last of [started, mockTrack.mock.calls.find(isMine)]) {
+      expect(last?.[1]).toEqual(expect.objectContaining({
+        analysisNumber: expected,
+        analysisNumberSource: expected === null ? null : 'free_quota_total',
+      }));
+    }
+  });
+
   describe('fim das 3 gratis', () => {
     const freeLimit = (used: number) => ({
       plan: 'free',

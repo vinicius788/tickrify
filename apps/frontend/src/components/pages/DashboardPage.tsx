@@ -923,6 +923,13 @@ const DashboardPage = () => {
     const setupId = updatingSetup?.setup.id;
 
     const startedAt = performance.now();
+    // Posicao na cota gratis contando WAIT (`used` conta so BUY/SELL e repetia
+    // "1" depois de um WAIT). Lida antes do envio: o refresh depois da criacao
+    // ja inclui a analise em andamento e o inicio e a conclusao saem iguais.
+    const analysisNumber = !isUnlimited && typeof totalUsed === 'number'
+      && Number.isSafeInteger(totalUsed) && totalUsed >= 0
+      ? totalUsed + 1 : null;
+    const analysisNumberSource = analysisNumber === null ? null : 'free_quota_total';
     try {
       setUploadedImage(imageUrl);
       setFlow('loading');
@@ -932,10 +939,10 @@ const DashboardPage = () => {
       track('analysis_started', {
         analysisType,
         plan,
-        // Qual gratis esta comecando (1, 2 ou 3). O backend emite o mesmo fato
-        // como `free_analysis_started`, numerado pelo banco e sem depender de
-        // cookie; este serve para ver o funil no navegador lado a lado.
-        analysisNumber: isUnlimited ? null : used + 1,
+        // O backend emite o mesmo fato como `free_analysis_started`, numerado
+        // pelo banco; a origem separa esta contagem dos eventos antigos (por sinais).
+        analysisNumber,
+        analysisNumberSource,
         freeRemainingBefore: isUnlimited || !Number.isFinite(remaining) ? null : remaining,
       });
 
@@ -1000,9 +1007,9 @@ const DashboardPage = () => {
           };
         })(),
         plan,
-        // Posição da análise na escada grátis (1, 2 ou 3). null para plano pago/ilimitado.
-        // `used` vem do backend (count antes desta análise), então esta é a (used+1)-ésima.
-        analysisNumber: isUnlimited ? null : used + 1,
+        // Mesmo numero do inicio; assinante ou contador desconhecido = null.
+        analysisNumber,
+        analysisNumberSource,
         durationMs: Math.round(performance.now() - startedAt),
         engine_version: typeof engine.version === 'string' ? engine.version : null,
         data_mode: typeof engine.data_mode === 'string' ? engine.data_mode : null,

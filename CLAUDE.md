@@ -296,7 +296,7 @@ Vale para TODA mudanca, grande ou pequena:
   (`ideal|good|poor|conflict`) que nunca muda a recomendacao; analise com
   estrategia fica fora de tudo que e publico (`strategyHash`).
 - **A/B do prompt v9:** `AB_PROMPT_V9_PERCENT` = 0, desligado (ver secao 8).
-- **Motor 2.0.0 (12/10, aguardando commit/deploy):** `ENGINE_VERSION` mora SO em
+- **Motor 2.0.0 (12/10, no ar):** `ENGINE_VERSION` mora SO em
   `modules/ai/engine-contract.ts`. Cada analise nova grava `result.engine`
   (versao, `data_mode: print`, `validator_action` none|fixed|downgraded, tempos
   por etapa e o contrato v2: verdict BULLISH/BEARISH/NEUTRAL, confidence,
@@ -365,6 +365,10 @@ Vale para TODA mudanca, grande ou pequena:
   so existem desde 21/09: contar so eles deu "metade dos cadastros nunca analisa"
   quando o real era 83% (80 de 96, 29/09). Usar `analysis_started` OU
   `free_analysis_started`, ou recortar o periodo a partir de 21/09.
+- **`analysisNumber` do `analysis_started/completed` (12/10):** posicao na cota
+  gratis CONTANDO WAIT (`totalUsed + 1`), com `analysisNumberSource:
+  'free_quota_total'`. Antes contava so BUY/SELL (`used + 1`) e repetia "1"
+  depois de um WAIT: evento sem `analysisNumberSource` e da contagem antiga.
 - **Paginas estaticas (blog/tools/for) medidas desde 29/09** por
   `public/static-analytics.js` (sem biblioteca, cookieless, `$lib=tickrify-static`):
   `$pageview`, `static_cta_clicked { href }`, `static_video_played { video }`.
@@ -538,7 +542,7 @@ Vale para TODA mudanca, grande ou pequena:
   so aparece com `EXTENSION_STORE_URL` preenchida (vazia ate a loja aprovar) e
   em Chrome/Edge de computador. Eventos `extension_card_viewed/clicked/dismissed`.
 
-### 3.8 Setups acompanhados (12/10, Parte A; aguardando commit/deploy)
+### 3.8 Setups acompanhados (12/10, Parte A; no ar)
 
 - **Seguir != favoritar != entrar.** "Follow setup" (abaixo do resultado, em
   destaque no WAIT) grava `TrackedSetup` e `Analysis.setupId`; nao toca
@@ -559,10 +563,10 @@ Vale para TODA mudanca, grande ou pequena:
 - **PostHog:** servidor `setup_followed`, `setup_unfollowed`, `setup_archived`,
   `setup_update_completed`; navegador `setup_follow_clicked`, `setup_opened`,
   `setup_update_clicked/submitted/failed`. So ids e enums.
-- `schema.prisma` so ganha `TrackedSetup` e `setupId` DEPOIS do deploy (patch
-  em `_local/setups-chat/`, ver secao 6).
+- `TrackedSetup` e `Analysis.setupId` ja estao no `schema.prisma` (`0812338`;
+  `SupportThread`/`SupportMessage` em `5a0512d`).
 
-### 3.9 Chat com o fundador (12/10, Parte B; aguardando commit/deploy)
+### 3.9 Chat com o fundador (12/10, Parte B; no ar)
 
 - **Feito em casa**, sem widget de terceiro (cookie, /privacy, sumiria para
   quem recusa). Uma conversa por pessoa (`SupportThread`, unico em `userId`) e
@@ -767,9 +771,10 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 12/10 | **Redesenho da tela de resultado nunca juntado:** branch remota `claude/blissful-heisenberg-dwasmg` (01/10, 2 commits): acao em destaque e vies secundario, WAIT explicado uma vez como decisao de risco, preco sem `$`, textos dos exemplos em `t.samples` nos 6 idiomas (~540 linhas no `AnalysisResult.tsx`), e `scripts/e2e-payment.mjs` no lugar do `e2e-staging.mjs`. O `main` mudou muito depois (setups, motor 2.0.0, estrelas): decidir se refaz em cima do `main` (com demo antes) ou se descarta e apaga a branch. | dono decide |
 | 12/10 | **Motor 2.0.0 no ar:** depois do deploy conferir `analysis_completed` com `engine_version=2.0.0` e `[Cost] ... cached=` no Render. Em 7 dias: `validator_action` por valor, mediana de `model_ms`, `queue_ms`, `verdict_visible_ms`. Tempo ate o 1o token so existe com streaming. Em **19/10**, junto do R/R guard: acerto (WIN/LOSS do sweeper) dos trades com stop antes da invalidacao x os outros; so ligar o rebaixamento se perderem claramente mais com n >= 30. | dono / Claude |
-| 12/10 | **Chat (Parte B) no ar:** (1) conferir no boot `[chat] Tabelas prontas.`; (2) escolher a frase de boas-vindas do chat (versao 1 no ar); (3) ligar no /admin `CHAT_EMAIL_NOTIFY` quando quiser os avisos por e-mail (conferir depois `[mail] Enviado kind=chat_founder_notify` e `kind=chat_reply`; lembrar que a Resend gratis e 100/dia para tudo); (4) so depois do deploy aplicar `_local/setups-chat/schema-parte-b.patch` e commitar. Medir por semana: conversas iniciadas pelo usuario, tempo ate a 1a resposta, e % de quem conversou que analisou ou assinou em 7 dias contra quem nao conversou (leitura, sem afirmar causa). | dono / Claude |
-| 12/10 | **Setups (Parte A) no ar:** (1) depois do deploy, conferir no boot `[setups] Tabela e coluna prontas.`; (2) rodar no Supabase `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Analysis_setupId_idx" ON "tickrify"."Analysis"("setupId");` (desfazer: `DROP INDEX CONCURRENTLY IF EXISTS "tickrify"."Analysis_setupId_idx";`); (3) so entao aplicar o patch do `schema.prisma` (`_local/setups-chat/schema-parte-a.patch`) e commitar. Medir em 7 dias: % de quem seguiu e fez `setup_update_completed` em OUTRO dia em ate 7 dias; 2a analise de quem tomou WAIT na 1a (hoje ~50%); dias distintos com analise por semana entre assinantes. | dono / Claude |
+| 12/10 | **Chat (Parte B) no ar:** (1) conferir no boot `[chat] Tabelas prontas.`; (2) escolher a frase de boas-vindas do chat (versao 1 no ar); (3) ligar no /admin `CHAT_EMAIL_NOTIFY` quando quiser os avisos por e-mail (conferir depois `[mail] Enviado kind=chat_founder_notify` e `kind=chat_reply`; lembrar que a Resend gratis e 100/dia para tudo). Medir por semana: conversas iniciadas pelo usuario, tempo ate a 1a resposta, e % de quem conversou que analisou ou assinou em 7 dias contra quem nao conversou (leitura, sem afirmar causa). | dono / Claude |
+| 12/10 | **Setups (Parte A) no ar:** (1) depois do deploy, conferir no boot `[setups] Tabela e coluna prontas.`; (2) rodar no Supabase `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Analysis_setupId_idx" ON "tickrify"."Analysis"("setupId");` (desfazer: `DROP INDEX CONCURRENTLY IF EXISTS "tickrify"."Analysis_setupId_idx";`). Medir em 7 dias: % de quem seguiu e fez `setup_update_completed` em OUTRO dia em ate 7 dias; 2a analise de quem tomou WAIT na 1a (hoje ~50%); dias distintos com analise por semana entre assinantes. | dono / Claude |
 | 08/10 | **Proximo experimento: teste mais longo (tese do dono).** O dono acha que 3 analises nao bastam para o trader ver se o produto e bom: "se ele testar 3 dias e no 4o pensar *preciso disso*, assina". Pensar bem antes de fazer. Combinado: NAO trocar o gratis (e o que traz gente; 83% de quem cadastra analisa) nem pedir cartao no cadastro (o cartao e o buraco: 11 de 12 checkouts sem cartao digitado, 40% de recusa por falta de saldo). Desenho candidato: no PAYWALL, opcao "3 days full access" com cartao, virando semanal/mensal no 4o dia; variante "3 days for $1" (a cobranca de US$ 1 ja testa o cartao no dia 1, nao entrega 3 dias de IA a quem nao vai conseguir pagar). Stripe tem trial nativo. Medir checkout iniciado x cartao digitado x pago no dia 5 contra o funil atual (13 abrem, 1 paga). Antes: dono assiste ~10 gravacoes do PostHog (session replay) de quem ficou 10+ min sem assinar (perdido ou interessado?). Mexe em cobranca: demo clicavel e ok do dono antes de codigo. Junto: credibilidade (depoimentos no ar, texto "How I use Tickrify", "Who's behind this" com foto, video de 60 s) e conversa 1 a 1 com os pagantes (SQL de uso por assinante entregue no chat em 08/10; mensagem citando o uso real + 1 mes gratis por call de 15 min). | dono decide / Claude |
 | 07/10 | **Estrelas e depoimentos.** "How useful was this read?" abaixo do resultado de analise PAGA (`RatingCard`, 1x/semana; respondeu, 30 dias). Nota alta pede frase + licenca OPT-IN para citar; nota baixa, motivos de lista fechada. Tabela `AnalysisRating` (migracao `20261007130000` + boot), `modules/ratings/`. /admin aba Opinioes: notas, media por BUY/SELL/WAIT e botao Publicar (so com licenca e comentario, o servidor confere). Site: `TestimonialsSection` na home e na /pricing e uma frase no paywall, SO com 2+ publicados. PostHog: `rating_card_viewed`, `rating_given`, `rating_details_sent`, `analysis_rated` (servidor), sem texto. Falta: commit/deploy; bloco "How I use Tickrify" do dono (precisa do texto dele). | dono / Claude |
 | 06/10 | **Linhas: medir em mais graficos antes de divulgar.** A leitura do eixo foi medida em 4 graficos do TradingView (tema claro, 1D) e, em 07/10, num print real do dono (XAUUSD 5m, tema ESCURO, Pepperstone): as 4 linhas no preco certo pelo eixo, erro de ~1 px. Falta: corretoras (area marcada pode nao ter o eixo: a IA tem que devolver null) e o `[Cost] price-axis` real no Render. Se alguma passar de ~15 px, desligar as linhas (a extensao ja fica so com precos quando nao ha escala). | Claude |
@@ -780,7 +785,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 | 05/10 | **Decidir `allow_promotion_codes` no anual/semanal.** Sem desconto pre-aplicado a Stripe abre o campo de codigo: quem DIGITAR EARLY35 (ou EARLY50) no anual pode receber o desconto, conforme a configuracao do codigo na Stripe. Fechar o campo nesses ciclos tambem fecha o codigo de afiliado digitado. | dono decide, Claude implementa |
 | 05/10 | PostHog: dashboards que usam `feature_opened` passam a usar `$pageview` com `$pathname` (`/dashboard/trades`, `/journal`, `/strategy`); os que usam `upgrade_modal_viewed trigger=locked_value` passam a `upgrade_cta_viewed source=paywall` (por `surface`). Novo: `acquisition_source_answered` e a propriedade de pessoa `acquisition_source`. | dono / Claude |
 | 05/10 | Medir 7 dias depois do deploy: 402 `free_quota_exhausted` por rota, `upgrade_cta_viewed` por `surface`, `checkout_started` com `surface`, erros `removeChild` no Sentry com `page_translated=yes` (devem sumir do painel). | Claude |
-| 05/10 | Limpeza local: 7 conteineres Docker parados `supabase_*_tickrify-staging-20261001` e 2 volumes; branch `welcome-email` sem commit; `stash@{0}` (seguranca, 28/09) e `stash@{1}` (My Trades, 24/09) esperando decisao. | dono |
+| 05/10 | Limpeza local: 7 conteineres Docker parados `supabase_*_tickrify-staging-20261001` e 2 volumes (o Docker nao respondeu em 12/10; conferir com `docker ps -a`). Branches, stashes e worktrees ja limpos em 12/10 (secao 7). | dono |
 | 05/10 | **R/R guard: decidido (dono delegou em 05/10).** NAO mudar agora. Motivo: os numeros de 30/09 misturam prompts (v10/v11 davam 80% WAIT; o v7.5, `promptVer` 12, da 35%) e a unica faixa positiva (TP1 >= 1,5R, n=40) tem intervalo de 26% a 55%, que ainda inclui expectancy negativa; travar em 1,2R viraria WAIT ~57% dos planos e voltaria ao WAIT de ~70%, o que derrubou a ativacao em setembro. Regra: em **19/10** (ou quando o `promptVer` 12 tiver 60 trades WIN/LOSS) rodar a expectancy por faixa de R do TP1 so no 12; se abaixo de 1,2R continuar negativa com n >= 30, mudar o guard para "TP1 >= 1,2R" e medir WAIT% e ativacao por 7 dias. SQL: `select case when (result->>'riskRewardTp1')::numeric < 1.2 then '<1.2' when (result->>'riskRewardTp1')::numeric < 1.5 then '1.2-1.5' else '>=1.5' end faixa, count(*) n, round(100.0*avg((outcome='WIN')::int)) win from tickrify."Analysis" where "promptVer"=12 and outcome in ('WIN','LOSS') group by 1;` | Claude (em 19/10) |
 | 30/09 | Medir a tabela "48 hours later" da home (`/api/ai/public-analyses/scored`): cliques para `/accuracy` e `/try` a partir de `#reads`. Hash diario publico das analises (repo publico ou OpenTimestamps) ainda nao feito. | Claude |
 | 29/09 | Primeiros envios dos e-mails de ciclo de vida: conferir no Render (`[lifecycle] kind=... sent=1`) e na Resend que sairam e se alguem respondeu em `vinicius@tickrify.com`. | Claude |
@@ -881,6 +886,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **12/10 (chat, Parte B):** chat com o fundador dentro da bolha do painel (aba padrao), aba Chat no /admin com "Start conversation" pelo e-mail, avisos por e-mail com teto (chave `CHAT_EMAIL_NOTIFY` desligada); /privacy cita as mensagens do chat. Testado num Postgres descartavel (37 casos: isolamento, texto puro, limite por hora, nao lidas, tetos de e-mail com relogio falso, descadastro).
 - **12/10 (testes em producao):** setups e chat testados logado no Chrome do dono (seguir, atualizar com print novo cobrando 1 tick, versao 2 no setup, arquivar, chat ida e volta com nao lidas, /admin, 375 px). Achados corrigidos: condicao do WAIT tambem do `alternativeScenario` e "First analysis" com a data da 1a analise (nao a de seguir).
 - **12/10 (motor 2.0.0):** medicao por etapa no `analysis_completed`, contrato v2 em `result.engine`, validador do plano com testes, chamada ao modelo isolada em `VisionModel`, `streamAnalyzeImage` (morto desde 21/09) removido. Linha de base PostHog (30 dias, `symbol` so existe desde 30/09): 347 analises com ativo, ouro 59%, cripto 28%, forex 7%, indices sinteticos 4%, indices 1%, acoes 0.
+- **12/10 (limpeza do git):** 4 worktrees (3 do Codex, 1 do Claude), 7 branches locais ja contidas no `main` e os 2 stashes (seguranca 28/09 e My Trades 24/09, ambos ja no `main`) removidos; backup dos diffs em `_local/limpeza-2026-10-12/`. Do worktree do Codex `analysis-funnel-count` (28/09, nunca commitado) entrou so o `analysisNumber` contando WAIT (3.4); os scripts do piloto de analise (`analysis-pilot-*`, `analysis-checklist-candidate`) ficaram so no backup. Frontend, setups e chat confirmados em producao (bundle e rotas respondendo).
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---
