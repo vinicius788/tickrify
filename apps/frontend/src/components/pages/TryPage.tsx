@@ -74,7 +74,7 @@ const SignupCta = ({ headline, sub }: { headline: string; sub: string }) => (
       </Link>
     </SignedIn>
     <SignedOut>
-      <p className="site-try-fine">Free account · 3 free trade plans · WAIT reads don't count · no credit card</p>
+      <p className="site-try-fine">Free account · 3-day free trial · no credit card</p>
     </SignedOut>
   </div>
 );
@@ -421,7 +421,7 @@ const TryPage = () => {
 
               <SignupCta
                 headline="Want to analyze more charts?"
-                sub="Create your free account and get 3 free trade plans on your own charts. WAIT reads don't count, and this read stays in your dashboard on this device."
+                sub="Create your free account and start a 3-day free trial on your own charts. This read stays in your dashboard on this device."
               />
             </div>
           )}
@@ -430,12 +430,12 @@ const TryPage = () => {
             <div className="site-card site-try-locked">
               <h2>You already used your free analysis</h2>
               <p>
-                It does not stop here. Create a free account and get 3 free trade plans on your own charts (WAIT
-                reads don't count), no credit card needed.
+                It does not stop here. Create a free account and start a 3-day free trial on your own charts, no
+                credit card needed.
               </p>
               <SignupCta
                 headline="Keep analyzing for free"
-                sub="3 free trade plans included with your free account."
+                sub="A 3-day free trial comes with your free account."
               />
             </div>
           )}

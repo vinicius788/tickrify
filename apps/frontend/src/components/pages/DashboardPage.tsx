@@ -1600,6 +1600,7 @@ const DashboardPage = () => {
                 samples={SAMPLE_ANALYSES}
                 viewed={viewedSamples}
                 freeLeft={samplesFreeLeft}
+                trial={Boolean(trial)}
                 onOpen={openSampleAnalysis}
                 onAnalyze={() => {
                   track('sample_cta_clicked', { viewed: viewedSamples.size, surface: 'picker' });
@@ -1664,6 +1665,7 @@ const DashboardPage = () => {
             samples={SAMPLE_ANALYSES}
             viewed={viewedSamples}
             freeLeft={samplesFreeLeft}
+                trial={Boolean(trial)}
             onOpen={openSampleAnalysis}
             onBack={() => goTo('new')}
             onAnalyze={() => {

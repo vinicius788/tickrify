@@ -43,7 +43,7 @@ const PRICING_COPY = {
       },
       {
         q: 'Is there a refund guarantee?',
-        a: 'You never pay blind: 3 free trade plans before any charge (WAIT reads don’t count), and you can cancel anytime. Per the Terms of Service purchases are final, but if anything goes wrong with an analysis, reply to any email and we’ll make it right. We read every message.',
+        a: 'You never pay blind: a 3-day free trial before any charge, with no card, and you can cancel anytime. Per the Terms of Service purchases are final, but if anything goes wrong with an analysis, reply to any email and we’ll make it right. We read every message.',
       },
     ],
   },
@@ -83,7 +83,7 @@ const PRICING_COPY = {
       },
       {
         q: 'Há garantia de reembolso?',
-        a: 'Você nunca paga no escuro: são 3 planos de trade grátis antes de qualquer cobrança (WAIT não conta), e dá para cancelar quando quiser. Pelos Termos de Serviço as compras são finais, mas se algo der errado em uma análise, responda qualquer e-mail que a gente resolve. Lemos cada mensagem.',
+        a: 'Você nunca paga no escuro: são 3 dias de teste grátis antes de qualquer cobrança, sem cartão, e dá para cancelar quando quiser. Pelos Termos de Serviço as compras são finais, mas se algo der errado em uma análise, responda qualquer e-mail que a gente resolve. Lemos cada mensagem.',
       },
     ],
   },

@@ -29,7 +29,7 @@ const SITE_URL = 'https://tickrify.com';
 // ficaria grudada na próxima rota que não usa este hook.
 const DEFAULT_TITLE = 'Tickrify: AI chart analysis for traders';
 const DEFAULT_DESCRIPTION =
-  'Upload a trading chart and get a structured AI read: entry, stop, targets, risk and an explicit WAIT. 3 free trade plans, no card required.';
+  'Upload a trading chart and get a structured AI read: entry, stop, targets, risk and an explicit WAIT. 3-day free trial, no card required.';
 
 export interface SeoOptions {
   /** Aparece na aba e como link azul na SERP. Mire 50–60 caracteres. */

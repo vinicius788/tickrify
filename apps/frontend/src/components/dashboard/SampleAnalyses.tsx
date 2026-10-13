@@ -21,6 +21,7 @@ const COPY = {
     viewed: 'Viewed',
     turnTitle: "Now it's your turn.",
     turnDesc: 'You have {left} free trade plans to test on your own charts. WAIT reads do not count.',
+    turnDescTrial: 'Your 3-day free trial is ready: {left} analyses today on your own charts.',
     turnCta: 'Analyze my chart',
     eyebrow: 'Example analysis',
     title: { bullish: 'Bullish example', bearish: 'Bearish example', neutral: 'Neutral example' },
@@ -39,6 +40,7 @@ const COPY = {
     viewed: 'Vista',
     turnTitle: 'Agora é sua vez.',
     turnDesc: 'Você tem {left} planos de trade grátis para testar com seus próprios gráficos. WAIT não conta.',
+    turnDescTrial: 'Seu teste grátis de 3 dias está pronto: {left} análises hoje nos seus próprios gráficos.',
     turnCta: 'Analisar meu gráfico',
     eyebrow: 'Análise de exemplo',
     title: { bullish: 'Exemplo otimista', bearish: 'Exemplo pessimista', neutral: 'Exemplo neutro' },
@@ -79,13 +81,14 @@ function actionOf(sample: SampleAnalysis): string {
   return rec === 'HOLD' ? 'WAIT' : rec;
 }
 
-const TurnCta = ({ freeLeft, onAnalyze }: { freeLeft: number; onAnalyze: () => void }) => {
+/** `trial`: conta no trial de 3 dias (a cota e por dia e o WAIT conta). */
+const TurnCta = ({ freeLeft, trial, onAnalyze }: { freeLeft: number; trial?: boolean; onAnalyze: () => void }) => {
   const c = useSampleCopy();
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-[var(--border-accent)] bg-[var(--bg-card)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <p className="text-base font-semibold text-[var(--text-primary)]">{c.turnTitle}</p>
-        <p className="mt-0.5 text-sm text-[var(--text-secondary)]">{c.turnDesc.replace('{left}', String(freeLeft))}</p>
+        <p className="mt-0.5 text-sm text-[var(--text-secondary)]">{(trial ? c.turnDescTrial : c.turnDesc).replace('{left}', String(freeLeft))}</p>
       </div>
       <button
         type="button"
@@ -151,12 +154,14 @@ export const SamplePicker = ({
   samples,
   viewed,
   freeLeft,
+  trial,
   onOpen,
   onAnalyze,
 }: {
   samples: SampleAnalysis[];
   viewed: ReadonlySet<SampleKind>;
   freeLeft: number;
+  trial?: boolean;
   onOpen: (kind: SampleKind) => void;
   onAnalyze: () => void;
 }) => {
@@ -168,7 +173,7 @@ export const SamplePicker = ({
         <p className="mb-3 mt-0.5 text-xs text-[var(--text-secondary)]">{c.pickerDesc}</p>
         <SampleButtons samples={samples} viewed={viewed} onOpen={onOpen} />
       </section>
-      {viewed.size > 0 && <TurnCta freeLeft={freeLeft} onAnalyze={onAnalyze} />}
+      {viewed.size > 0 && <TurnCta freeLeft={freeLeft} trial={trial} onAnalyze={onAnalyze} />}
     </div>
   );
 };
@@ -179,6 +184,7 @@ export const SampleAnalysisView = ({
   samples,
   viewed,
   freeLeft,
+  trial,
   onOpen,
   onBack,
   onAnalyze,
@@ -187,6 +193,7 @@ export const SampleAnalysisView = ({
   samples: SampleAnalysis[];
   viewed: ReadonlySet<SampleKind>;
   freeLeft: number;
+  trial?: boolean;
   onOpen: (kind: SampleKind) => void;
   onBack: () => void;
   onAnalyze: () => void;
@@ -244,7 +251,7 @@ export const SampleAnalysisView = ({
         <p className="mt-3 text-xs text-[var(--text-muted)]">{c.afterFine}</p>
       </section>
 
-      <TurnCta freeLeft={freeLeft} onAnalyze={onAnalyze} />
+      <TurnCta freeLeft={freeLeft} trial={trial} onAnalyze={onAnalyze} />
     </div>
   );
 };
