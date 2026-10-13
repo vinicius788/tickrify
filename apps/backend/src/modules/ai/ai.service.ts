@@ -69,6 +69,7 @@ import {
   runPreHooks,
   runPostHooks,
 } from './analysis-pipeline';
+import { buildEngineRecord, type AnalysisIntakeTimings } from './engine-contract';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
 
@@ -441,7 +442,10 @@ export class AiService implements OnModuleInit {
     clientContext?: AnalysisClientContext | null,
     setupId?: string | null,
   ) {
+    // Medicao por etapa (result.engine.timings): o upload ja chegou inteiro aqui.
+    const receivedAt = Date.now();
     const preparedImage = this.prepareImagePayload(imageFile, base64Image);
+    let imagePrepMs = Date.now() - receivedAt;
     // Atualizacao de setup (12/10/2026): setup alheio = 404, largado = 409,
     // ANTES de subir imagem ou cobrar. Depois disto o fluxo e o de sempre.
     if (setupId) await this.setups.assertUpdatable(userId, setupId);
@@ -491,13 +495,16 @@ export class AiService implements OnModuleInit {
         if (!storage.isConfigured()) {
           return preparedImage.dataUrl;
         }
+        const tUpload = Date.now();
         try {
-          return await storage.uploadBuffer({
+          const url = await storage.uploadBuffer({
             buffer: preparedImage.buffer,
             mimeType: preparedImage.mimeType,
             extension: preparedImage.extension,
             pathPrefix: `analyses/${userId}/original`,
           });
+          imagePrepMs += Date.now() - tUpload;
+          return url;
         } catch (error) {
           if (isProductionRuntime()) throw error;
           this.logger.warn(
@@ -522,6 +529,7 @@ export class AiService implements OnModuleInit {
       })(),
     ]);
 
+    const tHtf = Date.now();
     // Upload das imagens de timeframe maior (top-down), se houver. Máx 2; falhas ignoradas.
     // EM PARALELO: eram dois uploads em serie dentro de um `for`, somando o tempo
     // de rede de ambos no caminho critico de toda analise top-down.
@@ -552,6 +560,7 @@ export class AiService implements OnModuleInit {
         ),
       )
     ).filter((url): url is string => typeof url === 'string' && url.length > 0);
+    imagePrepMs += Date.now() - tHtf;
 
     // Only consume free quota / ticks after infrastructure/storage prerequisites are validated.
     // enforceAccessAndCreate conta a cota grátis e cria a análise na MESMA transação,
@@ -586,6 +595,7 @@ export class AiService implements OnModuleInit {
     }
 
     const queue = queueReadiness.connected ? getAiQueue() : null;
+    const intake: AnalysisIntakeTimings = { receivedAt, imagePrepMs, intakeMs: Date.now() - receivedAt };
 
     // Use queue when workers are available — async, fastest path.
     if (queue && queueReadiness.hasWorkers) {
@@ -601,6 +611,7 @@ export class AiService implements OnModuleInit {
         userLanguage,
         strategyProfile,
         setupId: setupId ?? null,
+        intake,
       }, { jobId: analysis.id });
 
       return {
@@ -629,14 +640,10 @@ export class AiService implements OnModuleInit {
       isDemo,
       strategyProfile,
       setupId: setupId ?? null,
+      intake,
     });
   }
 
-  /**
-   * Streaming analysis via Server-Sent Events.
-   * Emits: progress (phase/pct), chunk (text delta), result (full response), error.
-   * Does not use the queue — runs synchronously for immediate feedback.
-   */
   async getAnalysis(id: string, userId: string) {
     const analysis = await this.prisma.analysis.findFirst({
       where: {
@@ -1223,6 +1230,7 @@ export class AiService implements OnModuleInit {
     isDemo?: boolean;
     strategyProfile?: StrategyProfile | null;
     setupId?: string | null;
+    intake: AnalysisIntakeTimings;
   }) {
     const {
       analysisId,
@@ -1236,6 +1244,7 @@ export class AiService implements OnModuleInit {
       isDemo,
       strategyProfile,
       setupId,
+      intake,
     } = params;
     const startedAt = Date.now();
 
@@ -1252,12 +1261,14 @@ export class AiService implements OnModuleInit {
       // enter the same failure/refund path as model failures.
       await runPreHooks(pipelineCtx, [validateImageHook()]);
 
+      const tPrompt = Date.now();
       const prompt = await this.promptBuilder.buildPromptByVersion(
         analysisType,
         promptVersion,
         promptOverride,
         userLanguage,
       );
+      const promptMs = Date.now() - tPrompt;
       const aiResponse = await this.aiAdapter.analyzeImage(
         imageUrl,
         prompt,
@@ -1266,12 +1277,46 @@ export class AiService implements OnModuleInit {
         strategyProfile,
       );
 
+      // Contrato v2 + validador + tempos (mesmo bloco do worker; sem fila aqui).
+      const meta = aiResponse.engineMeta;
+      const analysisFields = (aiResponse.analysis ?? {}) as Record<string, unknown>;
+      const engine = buildEngineRecord({
+        contract: {
+          recommendation: aiResponse.recommendation,
+          confidencePct: aiResponse.confidence,
+          symbol: analysisFields.symbol,
+          timeframe: analysisFields.timeframe,
+          entry: analysisFields.entry,
+          stopLoss: analysisFields.stopLoss,
+          takeProfit1: analysisFields.takeProfit1,
+          takeProfit2: analysisFields.takeProfit2,
+          invalidationLevel: analysisFields.invalidationLevel,
+          executiveSummary: analysisFields.executiveSummary,
+          validatorReasons: meta?.validatorReasons ?? [],
+        },
+        validatorAction: meta?.validatorAction ?? 'none',
+        validatorFlags: meta?.validatorFlags ?? [],
+        timings: {
+          image_prep_ms: intake.imagePrepMs,
+          intake_ms: intake.intakeMs,
+          queue_ms: null,
+          prompt_ms: promptMs,
+          grounding_ms: meta?.groundingMs,
+          model_ms: meta?.modelMs,
+          parse_ms: meta?.parseMs,
+          validation_ms: meta?.validationMs,
+          server_total_ms: Date.now() - intake.receivedAt,
+        },
+        warn: (m) => this.logger.warn(m),
+      });
+
       let normalizedPayload = buildPersistedAnalysisPayload({
         source: {
           ...((aiResponse.rawResponse as Record<string, any>) || {}),
           ...(aiResponse.evidence ? { evidence: aiResponse.evidence } : {}),
           // Selo de estrategia: o VALIDADO pelo adapter, por cima do cru do modelo.
           ...strategyFitFields(aiResponse),
+          engine,
         },
         recommendation: aiResponse.recommendation,
         bias: aiResponse.bias,

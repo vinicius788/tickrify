@@ -12,11 +12,12 @@ import { AIAdapter, AIAnalysisError } from '../src/modules/ai/ai.adapter';
 import {
   computeRiskReward,
   formatRiskReward,
-  hasInvalidTradePlanLevels,
   normalizeTargetProbabilities,
   reconcileConfluence,
 } from '../src/common/utils/analysis-normalizer';
-import { decideSignal } from '../src/common/utils/signal-decision';
+import { decideSignal, type SignalDecisionResult, type ValidatorAction } from '../src/common/utils/signal-decision';
+import { validateTradePlan } from '../src/common/utils/trade-plan-validator';
+import { buildEngineRecord, type AnalysisIntakeTimings } from '../src/modules/ai/engine-contract';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
 import { isProductionRuntime } from '../src/common/utils/runtime-env';
 import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-runtime';
@@ -84,6 +85,8 @@ interface JobData {
   strategyProfile?: StrategyProfile | null;
   /** Versao de um setup acompanhado (o vinculo ja foi gravado na criacao). */
   setupId?: string | null;
+  /** Tempos da API antes da fila (job antigo nao tem). */
+  intake?: AnalysisIntakeTimings;
 }
 
 interface WorkerAnalysisMarketStructure {
@@ -147,6 +150,15 @@ interface WorkerAnalysisResult {
   recommendation: SchemaRecommendation;
   confidence: number;
   analysis: WorkerAnalysisDetails;
+}
+
+interface WorkerParseOutcome {
+  result: WorkerAnalysisResult;
+  validatorAction: ValidatorAction;
+  validatorReasons: SignalDecisionResult['validatorReasons'];
+  validatorFlags: SignalDecisionResult['validatorFlags'];
+  /** validateTradePlan + decideSignal (inclui o calendario do news guard). */
+  validationMs: number;
 }
 
 function getRedisConnection() {
@@ -296,7 +308,7 @@ function normalizeRiskFactors(value: unknown): string[] {
   return items.length > 0 ? items : fallback;
 }
 
-async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisResult> {
+async function toWorkerAnalysisResult(value: unknown): Promise<WorkerParseOutcome> {
   const source = isRecord(value) ? (value as Record<string, unknown>) : {};
   const analysisSource = isRecord(source.analysis) ? (source.analysis as Record<string, unknown>) : source;
   const marketStructureSource = isRecord(analysisSource.marketStructure)
@@ -315,10 +327,22 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisRes
   const rawConfidence01 = normalizeConfidence(source.confidence);
   const flooredConfidence = rawConfidence01 <= 0 ? 30 : Math.round(rawConfidence01 * 100);
 
+  const tValidation = Date.now();
   const workerRecommendation = normalizeRecommendation(source.recommendation);
   const canonicalRecommendation =
     workerRecommendation === 'COMPRA' ? 'BUY' : workerRecommendation === 'VENDA' ? 'SELL' : 'WAIT';
-  if (hasInvalidTradePlanLevels(canonicalRecommendation, entry, stopLoss, takeProfit1, takeProfit2)) {
+  const invalidationLevel =
+    analysisSource.invalidationLevel != null ? Number(analysisSource.invalidationLevel) : null;
+  const planFailures = validateTradePlan({
+    side: canonicalRecommendation,
+    entry,
+    stopLoss,
+    takeProfit1,
+    takeProfit2,
+    invalidationLevel,
+    currentPrice: ensureNumber(analysisSource.currentPrice ?? source.currentPrice, 0),
+  });
+  if (planFailures.includes('direction')) {
     throw new AIAnalysisError({
       code: 'invalid_trade_plan',
       message: 'A IA retornou níveis incoerentes de entrada, stop ou alvo.',
@@ -329,7 +353,7 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisRes
   const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2, canonicalRecommendation);
 
   // Sequência determinística ÚNICA (mesma usada pelo adapter):
-  // caps de confiança → guard R/R → news guard → teto WAIT.
+  // caps de confiança → validador do plano → guard R/R → news guard → teto WAIT.
   const decision = await decideSignal({
     recommendation: canonicalRecommendation,
     flooredConfidence,
@@ -338,7 +362,10 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisRes
     riskRewardTp1,
     riskRewardTp2,
     symbol: ensureString(analysisSource.symbol ?? source.symbol, ''),
+    planFailures,
+    priceFixed: analysisSource.priceMagnitudeFixed === true,
   });
+  const validationMs = Date.now() - tValidation;
 
   const finalRecommendation: SchemaRecommendation =
     decision.recommendation === 'BUY'
@@ -359,7 +386,7 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisRes
     { hasTradePlan: finalRecommendation !== 'AGUARDAR' && riskRewardTp1 !== null },
   );
 
-  return {
+  const result: WorkerAnalysisResult = {
     recommendation: finalRecommendation,
     confidence: finalConfidencePct / 100,
     analysis: {
@@ -417,7 +444,7 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisRes
         'Resumo executivo indisponível.',
       ),
       reasoning: ensureString(analysisSource.reasoning ?? source.reasoning, 'Sem justificativa gerada.'),
-      invalidationLevel: analysisSource.invalidationLevel != null ? Number(analysisSource.invalidationLevel) : null,
+      invalidationLevel,
       invalidationNote: analysisSource.invalidationNote != null ? String(analysisSource.invalidationNote).trim() || null : null,
       entryType: analysisSource.entryType != null ? String(analysisSource.entryType).trim() || null : null,
       entryCondition: analysisSource.entryCondition != null ? String(analysisSource.entryCondition).trim() || null : null,
@@ -439,6 +466,13 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerAnalysisRes
       tp1Y: ensureNumberOrNull(analysisSource.tp1Y),
       tp2Y: ensureNumberOrNull(analysisSource.tp2Y),
     },
+  };
+  return {
+    result,
+    validatorAction: decision.validatorAction,
+    validatorReasons: decision.validatorReasons,
+    validatorFlags: decision.validatorFlags,
+    validationMs,
   };
 }
 
@@ -1006,6 +1040,7 @@ async function processAnalysis(job: Job<JobData>) {
     userLanguage,
     strategyProfile,
     setupId,
+    intake,
   } = job.data;
   const normalizedAnalysisType: AnalysisType = analysisType === 'deep' ? 'deep' : 'quick';
 
@@ -1062,7 +1097,8 @@ async function processAnalysis(job: Job<JobData>) {
         : aiSource;
 
     const tParse = Date.now();
-    const parsed = await toWorkerAnalysisResult(sourcePayload);
+    const outcome = await toWorkerAnalysisResult(sourcePayload);
+    const parsed = outcome.result;
     rawContent = extractRawContent(aiSource, parsed);
     parseMs = Date.now() - tParse;
 
@@ -1119,6 +1155,42 @@ async function processAnalysis(job: Job<JobData>) {
       return;
     }
 
+    // Contrato v2 + validador + tempos de cada etapa (result.engine, vai ao PostHog).
+    const adapterMeta =
+      aiSource && typeof aiSource === 'object' && 'engineMeta' in aiSource
+        ? (aiSource as { engineMeta?: { groundingMs?: number; modelMs?: number; parseMs?: number } }).engineMeta
+        : undefined;
+    const engine = buildEngineRecord({
+      contract: {
+        recommendation: parsed.recommendation === 'COMPRA' ? 'BUY' : parsed.recommendation === 'VENDA' ? 'SELL' : 'WAIT',
+        confidencePct: parsed.confidence * 100,
+        symbol: parsed.analysis.symbol,
+        timeframe: parsed.analysis.timeframe,
+        entry: parsed.analysis.entry,
+        stopLoss: parsed.analysis.stopLoss,
+        takeProfit1: parsed.analysis.takeProfit1,
+        takeProfit2: parsed.analysis.takeProfit2,
+        invalidationLevel: parsed.analysis.invalidationLevel,
+        executiveSummary: parsed.analysis.executiveSummary,
+        validatorReasons: outcome.validatorReasons,
+      },
+      validatorAction: outcome.validatorAction,
+      validatorFlags: outcome.validatorFlags,
+      timings: {
+        image_prep_ms: intake?.imagePrepMs,
+        intake_ms: intake?.intakeMs,
+        queue_ms: queueWaitMs,
+        prompt_ms: promptMs,
+        grounding_ms: adapterMeta?.groundingMs,
+        model_ms: adapterMeta?.modelMs ?? aiMs,
+        // parse do adapter (JSON do modelo) + normalizacao do worker, sem a validacao.
+        parse_ms: (adapterMeta?.parseMs ?? 0) + Math.max(0, parseMs - outcome.validationMs),
+        validation_ms: outcome.validationMs,
+        server_total_ms: typeof intake?.receivedAt === 'number' ? Date.now() - intake.receivedAt : null,
+      },
+      warn: (m) => console.warn(m),
+    });
+
     let normalized = buildPersistedAnalysisPayload({
       // O selo do perfil de estrategia vem do TOPO da resposta do adapter
       // (aiSource), nao do `parsed`, que so carrega recomendacao, confianca e
@@ -1129,6 +1201,7 @@ async function processAnalysis(job: Job<JobData>) {
           ? { evidence: aiSource.evidence }
           : {}),
         ...strategyFitFields(aiSource),
+        engine,
       },
       recommendation: parsed.recommendation,
       bias: parsed.analysis.marketStructure.bias,

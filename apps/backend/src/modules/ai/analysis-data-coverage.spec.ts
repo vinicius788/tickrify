@@ -83,7 +83,7 @@ describe('analysis data coverage', () => {
       return url;
     });
     const content = await adapter.buildUserContent('primary-chart', ['broken-htf']);
-    expect(content.filter((part: { type: string }) => part.type === 'image_url')).toHaveLength(1);
+    expect(content.filter((part: { type: string }) => part.type === 'image')).toHaveLength(1);
     expect(content[0].text).not.toContain('MÚLTIPLOS');
   });
 
@@ -91,7 +91,7 @@ describe('analysis data coverage', () => {
     const adapter = new AIAdapter() as any;
     adapter.resolveImageUrlForOpenAi = jest.fn(async (url: string) => url);
     const content = await adapter.buildUserContent('primary-chart', ['valid-htf']);
-    expect(content.filter((part: { type: string }) => part.type === 'image_url')).toHaveLength(2);
+    expect(content.filter((part: { type: string }) => part.type === 'image')).toHaveLength(2);
     expect(content[0].text).toContain('MÚLTIPLOS');
   });
 
@@ -102,7 +102,7 @@ describe('analysis data coverage', () => {
       return url;
     });
     const content = await adapter.buildUserContent('primary-chart', ['broken-htf', 'valid-htf']);
-    expect(content.filter((part: { type: string }) => part.type === 'image_url')).toHaveLength(2);
+    expect(content.filter((part: { type: string }) => part.type === 'image')).toHaveLength(2);
     expect(content[0].text).toContain('MÚLTIPLOS');
     expect(content[2].text).toContain('MAIOR 1');
   });

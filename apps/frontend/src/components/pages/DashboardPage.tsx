@@ -39,7 +39,7 @@ import { APIError, isFreeQuotaExhausted, useAPIClient, type AIAnalysisResponse, 
 import { useQueryClient } from "@tanstack/react-query";
 import { AnalysisProcessingError, analysisFailureTelemetry } from "@/lib/analysis-failure";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
-import { asRecord, isPageTranslated, scrollToTop } from "@/lib/utils";
+import { afterNextPaint, asRecord, isPageTranslated, scrollToTop } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import { getRecommendationMeta, getScenarioMeta, normalizeRecommendationLabel } from "@/lib/trading-ui";
@@ -939,6 +939,7 @@ const DashboardPage = () => {
         freeRemainingBefore: isUnlimited || !Number.isFinite(remaining) ? null : remaining,
       });
 
+      const uploadStartedAt = performance.now();
       const response = await apiClient.createAnalysis({
         imageFile: imageFile || undefined,
         base64Image: imageUrl || undefined,
@@ -947,6 +948,8 @@ const DashboardPage = () => {
         analysisType,
         setupId,
       });
+
+      const uploadMs = Math.round(performance.now() - uploadStartedAt);
 
       // Incrementar contador (apenas quando logado)
       incrementAnalysis();
@@ -971,8 +974,16 @@ const DashboardPage = () => {
       } else {
         setFlow('result');
       }
+      // Versao do motor, validador e tempo de cada etapa no servidor
+      // (`result.engine`, engine-contract.ts no backend). Analise de antes do
+      // motor 2.0.0 nao tem o bloco: as propriedades vao null.
+      const engine = asRecord(asRecord(analysis.fullResponse).engine);
+      const timings = asRecord(engine.timings);
+      const msOrNull = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
       // ATIVAÇÃO: resultado renderizado com sucesso (apenas usuário logado).
-      track('analysis_completed', {
+      // Sai depois do proximo quadro pintado: `verdict_visible_ms` e o tempo
+      // do clique em analisar ate o veredito estar na tela (ate 1 s de espera).
+      const completedProps = {
         analysisType,
         recommendation: analysis.recommendation ?? 'unknown',
         confidence: analysis.confidence ?? null,
@@ -993,6 +1004,28 @@ const DashboardPage = () => {
         // `used` vem do backend (count antes desta análise), então esta é a (used+1)-ésima.
         analysisNumber: isUnlimited ? null : used + 1,
         durationMs: Math.round(performance.now() - startedAt),
+        engine_version: typeof engine.version === 'string' ? engine.version : null,
+        data_mode: typeof engine.data_mode === 'string' ? engine.data_mode : null,
+        validator_action: typeof engine.validator_action === 'string' ? engine.validator_action : null,
+        // Regras que so medem (ex.: stop antes da invalidacao), sem mudar o sinal.
+        validator_flags: Array.isArray(engine.validator_flags) ? engine.validator_flags : [],
+        upload_ms: uploadMs,
+        image_prep_ms: msOrNull(timings.image_prep_ms),
+        intake_ms: msOrNull(timings.intake_ms),
+        queue_ms: msOrNull(timings.queue_ms),
+        prompt_ms: msOrNull(timings.prompt_ms),
+        grounding_ms: msOrNull(timings.grounding_ms),
+        model_ms: msOrNull(timings.model_ms),
+        parse_ms: msOrNull(timings.parse_ms),
+        validation_ms: msOrNull(timings.validation_ms),
+        server_total_ms: msOrNull(timings.server_total_ms),
+      };
+      afterNextPaint((painted) => {
+        track('analysis_completed', {
+          ...completedProps,
+          // null = a aba estava em segundo plano (nada foi pintado a tempo).
+          verdict_visible_ms: painted ? Math.round(performance.now() - startedAt) : null,
+        });
       });
       if (!isDemo && user) {
         refetchAnalyses();

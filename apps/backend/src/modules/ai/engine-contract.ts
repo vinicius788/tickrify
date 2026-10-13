@@ -1,0 +1,212 @@
+import type { Recommendation } from '../../common/utils/analysis-normalizer';
+import type { SignalDecisionResult, ValidatorAction } from '../../common/utils/signal-decision';
+
+// ============================================================================
+// CONTRATO DE SAIDA DO MOTOR (v2, 12/10/2026)
+// ----------------------------------------------------------------------------
+// Formato fixo, independente do provedor, gravado em `result.engine` de cada
+// analise nova. NAO e o schema que o modelo gera: aquele continua com o
+// raciocinio antes do veredito e BUY/SELL/HOLD (ordem e vocabulario medidos,
+// ver CLAUDE.md 4.1 e apps/frontend/CLAUDE.md). Este contrato e montado DEPOIS
+// do parse e das travas, a partir do resultado final, e e o que a troca de
+// provedor tem que reproduzir. Analise antiga nao tem `engine`: nada na tela
+// le este bloco, entao o historico nao muda.
+// ============================================================================
+
+/** Versao do motor. Unico lugar; vai para o banco e para o PostHog. */
+export const ENGINE_VERSION = '2.0.0';
+
+export type EngineVerdict = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+
+export interface EngineContract {
+  verdict: EngineVerdict;
+  confidence: number;
+  asset: string;
+  timeframe: string;
+  entry: number | null;
+  stop: number | null;
+  targets: number[];
+  invalidation: number | null;
+  key_reasons: string[];
+  no_trade_reason: string | null;
+  engine_version: string;
+}
+
+/** Tempos medidos na API antes de a analise ir para a fila (viajam no job). */
+export interface AnalysisIntakeTimings {
+  /** Date.now() quando a requisicao chegou ao service (upload ja recebido). */
+  receivedAt: number;
+  /** Preparo da imagem: decodificar e subir ao Storage. */
+  imagePrepMs: number;
+  /** Da chegada ate a analise entrar na fila (inclui cota e cobranca). */
+  intakeMs: number;
+}
+
+/** Tempo de cada etapa no servidor. null = a etapa nao existe neste caminho. */
+export interface EngineTimings {
+  image_prep_ms: number | null;
+  intake_ms: number | null;
+  queue_ms: number | null;
+  prompt_ms: number | null;
+  grounding_ms: number | null;
+  model_ms: number | null;
+  parse_ms: number | null;
+  validation_ms: number | null;
+  server_total_ms: number | null;
+}
+
+export interface EngineRecord {
+  version: string;
+  data_mode: 'print';
+  validator_action: ValidatorAction;
+  validator_reasons: SignalDecisionResult['validatorReasons'];
+  /** Regras quebradas que so medem, sem rebaixar (MEASURE_ONLY_RULES). */
+  validator_flags: SignalDecisionResult['validatorFlags'];
+  timings: EngineTimings;
+  contract: EngineContract | null;
+}
+
+const MAX_KEY_REASONS = 3;
+const MAX_REASON_CHARS = 160;
+const MAX_NO_TRADE_CHARS = 240;
+
+const VERDICTS: Record<Recommendation, EngineVerdict> = {
+  BUY: 'BULLISH',
+  SELL: 'BEARISH',
+  WAIT: 'NEUTRAL',
+};
+
+// Motivo fixo quando o validador rebaixou (o texto da IA defendia o trade).
+const VALIDATOR_REASON_TEXT: Record<SignalDecisionResult['validatorReasons'][number], string> = {
+  stop_inside_invalidation: 'The stop sits before the invalidation level.',
+  implausible_price: 'A price level is outside a plausible range of the chart price.',
+  rr_below_min: 'No target pays enough for the risk.',
+  direction: 'Stop and targets do not match the trade direction.',
+};
+
+function clip(text: string, max: number): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  return clean.length <= max ? clean : `${clean.slice(0, max - 1).trimEnd()}…`;
+}
+
+function sentences(text: unknown): string[] {
+  if (typeof text !== 'string') return [];
+  return text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+function level(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export interface EngineContractInput {
+  /** Recomendação FINAL (depois das travas). */
+  recommendation: Recommendation;
+  /** Confiança final, 0 a 100. */
+  confidencePct: number;
+  symbol: unknown;
+  timeframe: unknown;
+  entry: unknown;
+  stopLoss: unknown;
+  takeProfit1: unknown;
+  takeProfit2: unknown;
+  invalidationLevel: unknown;
+  executiveSummary: unknown;
+  validatorReasons: SignalDecisionResult['validatorReasons'];
+}
+
+export function buildEngineContract(input: EngineContractInput): EngineContract {
+  const verdict = VERDICTS[input.recommendation];
+  const isTrade = verdict !== 'NEUTRAL';
+  const summary = sentences(input.executiveSummary);
+  const validatorReason = input.validatorReasons[0];
+
+  return {
+    verdict,
+    confidence: Math.max(0, Math.min(100, Math.round(Number(input.confidencePct) || 0))),
+    asset: clip(String(input.symbol ?? '') || 'UNKNOWN', 40),
+    timeframe: clip(String(input.timeframe ?? '') || 'UNKNOWN', 20),
+    entry: isTrade ? level(input.entry) : null,
+    stop: isTrade ? level(input.stopLoss) : null,
+    targets: isTrade
+      ? [input.takeProfit1, input.takeProfit2].map(level).filter((n): n is number => n !== null)
+      : [],
+    invalidation: isTrade ? level(input.invalidationLevel) : null,
+    key_reasons: summary.slice(0, MAX_KEY_REASONS).map((s) => clip(s, MAX_REASON_CHARS)),
+    no_trade_reason: isTrade
+      ? null
+      : validatorReason
+        ? VALIDATOR_REASON_TEXT[validatorReason]
+        : clip(summary[0] ?? 'No trade setup on this chart.', MAX_NO_TRADE_CHARS),
+    engine_version: ENGINE_VERSION,
+  };
+}
+
+/** Confere o formato do contrato campo a campo. Fora do formato = null. */
+export function parseEngineContract(value: unknown): EngineContract | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const c = value as Record<string, unknown>;
+  const isLevel = (v: unknown) => v === null || (typeof v === 'number' && Number.isFinite(v) && v > 0);
+  const isText = (v: unknown, max: number) => typeof v === 'string' && v.length > 0 && v.length <= max;
+
+  const ok =
+    (c.verdict === 'BULLISH' || c.verdict === 'BEARISH' || c.verdict === 'NEUTRAL') &&
+    typeof c.confidence === 'number' && Number.isInteger(c.confidence) &&
+    c.confidence >= 0 && c.confidence <= 100 &&
+    isText(c.asset, 40) &&
+    isText(c.timeframe, 20) &&
+    isLevel(c.entry) &&
+    isLevel(c.stop) &&
+    Array.isArray(c.targets) && c.targets.length <= 2 && c.targets.every((t) => isLevel(t) && t !== null) &&
+    isLevel(c.invalidation) &&
+    Array.isArray(c.key_reasons) && c.key_reasons.length <= MAX_KEY_REASONS &&
+    c.key_reasons.every((r) => isText(r, MAX_REASON_CHARS)) &&
+    (c.verdict === 'NEUTRAL'
+      ? isText(c.no_trade_reason, MAX_NO_TRADE_CHARS) &&
+        c.entry === null && c.stop === null && (c.targets as unknown[]).length === 0
+      : c.no_trade_reason === null && c.entry !== null && c.stop !== null &&
+        (c.targets as unknown[]).length > 0) &&
+    typeof c.engine_version === 'string' && c.engine_version.length > 0;
+
+  return ok ? (c as unknown as EngineContract) : null;
+}
+
+/** Arredonda e descarta tempo negativo/ausente (-1 no worker = etapa que nao rodou). */
+function ms(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value) : null;
+}
+
+export function buildEngineRecord(params: {
+  contract: EngineContractInput;
+  validatorAction: ValidatorAction;
+  validatorFlags: SignalDecisionResult['validatorFlags'];
+  timings: Partial<Record<keyof EngineTimings, number | null | undefined>>;
+  warn: (message: string) => void;
+}): EngineRecord {
+  const built = buildEngineContract(params.contract);
+  const contract = parseEngineContract(built);
+  if (!contract) params.warn(`[engine] contrato v${ENGINE_VERSION} fora do formato; gravado sem contrato`);
+
+  const t = params.timings;
+  return {
+    version: ENGINE_VERSION,
+    data_mode: 'print',
+    validator_action: params.validatorAction,
+    validator_reasons: [...params.contract.validatorReasons],
+    validator_flags: [...params.validatorFlags],
+    timings: {
+      image_prep_ms: ms(t.image_prep_ms),
+      intake_ms: ms(t.intake_ms),
+      queue_ms: ms(t.queue_ms),
+      prompt_ms: ms(t.prompt_ms),
+      grounding_ms: ms(t.grounding_ms),
+      model_ms: ms(t.model_ms),
+      parse_ms: ms(t.parse_ms),
+      validation_ms: ms(t.validation_ms),
+      server_total_ms: ms(t.server_total_ms),
+    },
+    contract,
+  };
+}

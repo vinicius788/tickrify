@@ -48,6 +48,8 @@ export const REVENUE_PER_TICK_USD = 29 / 200;
 
 export interface TokenUsage {
   promptTokens: number;
+  /** Parte de `promptTokens` servida pelo cache de prompt do provedor. */
+  cachedTokens: number;
   completionTokens: number;
   reasoningTokens: number;
   totalTokens: number;
@@ -70,12 +72,14 @@ export interface CostBreakdown extends TokenUsage {
 export function extractUsage(usage: unknown): TokenUsage {
   const u = (usage || {}) as Record<string, any>;
   const details = (u.completion_tokens_details || {}) as Record<string, any>;
+  const promptDetails = (u.prompt_tokens_details || {}) as Record<string, any>;
   const num = (v: unknown): number => {
     const n = Number(v);
     return Number.isFinite(n) && n >= 0 ? n : 0;
   };
   return {
     promptTokens: num(u.prompt_tokens),
+    cachedTokens: num(promptDetails.cached_tokens),
     completionTokens: num(u.completion_tokens),
     reasoningTokens: num(details.reasoning_tokens),
     totalTokens: num(u.total_tokens),
@@ -127,7 +131,7 @@ export function formatCostLog(
 
   return (
     `[Cost] ${analysisType} model=${model} ` +
-    `prompt=${breakdown.promptTokens} completion=${breakdown.completionTokens} ` +
+    `prompt=${breakdown.promptTokens} cached=${breakdown.cachedTokens} completion=${breakdown.completionTokens} ` +
     `reasoning=${breakdown.reasoningTokens} ` +
     `cost=${cost} revenue=${usd(breakdown.revenueUsd)} margin=${margin}` +
     (breakdown.overBudget ? ' ⚠️ CUSTO ACIMA DA RECEITA' : '')

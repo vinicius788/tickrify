@@ -17,6 +17,14 @@ import {
 } from '../../common/utils/analysis-normalizer';
 import { decideSignal } from '../../common/utils/signal-decision';
 import { computeCost, extractUsage, formatCostLog } from './model-cost';
+import {
+  OpenAiVisionModel,
+  extractMessageContent,
+  withTimeout,
+  type VisionContentPart,
+  type VisionModel,
+} from './vision-model';
+import { validateTradePlan } from '../../common/utils/trade-plan-validator';
 import { PRICE_AXIS_PROMPT, PRICE_AXIS_SCHEMA, sanitizePriceAxis, type PriceAxis } from './price-axis';
 import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
@@ -93,6 +101,8 @@ interface TradingAnalysisDetails {
   detectedSession: string;
   sessionNote: string;
   currentPrice: number;
+  /** true quando correctPriceMagnitude reescreveu os niveis. */
+  priceMagnitudeFixed: boolean;
   entry: number | null;
   stopLoss: number | null;
   stopLossPercent: number | null;
@@ -285,32 +295,6 @@ function normalizeSchemaBias(value: unknown): SchemaMarketBias {
     return biasRaw;
   }
   return 'neutral';
-}
-
-function extractMessageContent(content: unknown): string {
-  if (typeof content === 'string') {
-    return content.trim();
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((item) => {
-        if (typeof item === 'string') {
-          return item;
-        }
-
-        if (item && typeof item === 'object' && 'text' in item) {
-          const text = (item as { text?: unknown }).text;
-          return typeof text === 'string' ? text : '';
-        }
-
-        return '';
-      })
-      .join('\n')
-      .trim();
-  }
-
-  return String(content || '').trim();
 }
 
 /**
@@ -693,47 +677,6 @@ export function buildRealDataBlock(
 }
 
 /**
- * Garante que uma promise seja resolvida ou rejeitada em no máximo `ms` milissegundos.
- * Mais confiável do que o timeout interno do SDK OpenAI, que pode não funcionar em todos
- * os ambientes (ex.: quando o servidor aceita a conexão mas demora a enviar a resposta).
- */
-/**
- * Timeout com CANCELAMENTO REAL.
- *
- * Ate 08/09/2026 isto era um `Promise.race` puro: no timeout a promise era
- * abandonada, mas a requisicao HTTP para a OpenAI continuava viva ate o fim —
- * segurando socket, gastando CPU no parse e sendo COBRADA em tokens. Como o
- * BullMQ retenta (`attempts: 3`), a segunda tentativa comecava com a primeira
- * ainda em voo. Com `concurrency: 3` num container de 0.1 CPU isso empilhava
- * ate 9 requisicoes orfas e era o mecanismo que fazia "lento" virar
- * "muito mais lento" em cascata sob carga.
- *
- * Passando uma FUNCAO em vez de uma promise, o AbortSignal chega ao SDK da
- * OpenAI e a conexao morre de verdade no timeout. As chamadas que ainda passam
- * uma promise (enriquecimento, calendario) mantem o comportamento antigo: sao
- * composicoes de varios fetches, onde nao existe um unico socket para abortar.
- */
-function withTimeout<T>(
-  input: Promise<T> | ((signal: AbortSignal) => Promise<T>),
-  ms: number,
-  message: string,
-): Promise<T> {
-  const controller = typeof input === 'function' ? new AbortController() : null;
-  const promise = typeof input === 'function' ? input(controller!.signal) : input;
-
-  return new Promise<T>((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      controller?.abort(new Error(message));
-      reject(new Error(message));
-    }, ms);
-    promise.then(
-      (value) => { clearTimeout(timeoutId); resolve(value); },
-      (error) => { clearTimeout(timeoutId); reject(error); },
-    );
-  });
-}
-
-/**
  * Timeout da chamada não-stream à OpenAI (visão).
  * gpt-4o com imagem + tokens altos costuma levar 30-50s; 30s era curto demais e
  * derrubava análises legítimas em produção. 55s casa com o orçamento do frontend
@@ -817,6 +760,8 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
     invalidationLevel: parsedAnalysis.invalidationLevel != null ? Number(parsedAnalysis.invalidationLevel) : null,
   });
   const currentPrice = corrected.currentPrice;
+  // O validador conta como `fixed` quando a ordem de grandeza foi corrigida.
+  const priceMagnitudeFixed = corrected.currentPrice !== ensureNumber(parsedAnalysis.currentPrice, 0);
   const entry = corrected.entry;
   const stopLoss = corrected.stopLoss;
   const takeProfit1 = corrected.takeProfit1;
@@ -857,6 +802,7 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       detectedSession: ensureString(parsedAnalysis.detectedSession, 'unknown'),
       sessionNote: ensureString(parsedAnalysis.sessionNote, 'Contexto de sessão não informado.'),
       currentPrice,
+      priceMagnitudeFixed,
       entry,
       stopLoss,
       stopLossPercent: ensureNumberOrNull(parsedAnalysis.stopLossPercent),
@@ -927,6 +873,8 @@ const calendarService = new EconomicCalendarService();
 @Injectable()
 export class AIAdapter {
   private readonly openai: OpenAI;
+  /** A chamada da analise passa SO por aqui (ver vision-model.ts). */
+  private readonly visionModel: VisionModel;
   private readonly logger = new Logger(AIAdapter.name);
   private readonly supabaseClient: SupabaseClient | null;
   private readonly defaultStorageBucket: string;
@@ -946,6 +894,7 @@ export class AIAdapter {
     }
 
     this.openai = new OpenAI({ apiKey });
+    this.visionModel = new OpenAiVisionModel(this.openai);
     this.defaultStorageBucket = process.env.SUPABASE_STORAGE_BUCKET?.trim() || 'analysis-images';
     this.supabaseClient =
       supabaseUrl && supabaseServiceKey
@@ -1033,50 +982,6 @@ export class AIAdapter {
     return `data:${mimeType};base64,${base64}`;
   }
 
-  async *streamAnalyzeImage(
-    imageUrl: string,
-    prompt: string,
-    analysisType: AnalysisType = 'quick',
-  ): AsyncGenerator<string> {
-    const signedImageUrl = await this.resolveImageUrlForOpenAi(imageUrl);
-    const model = resolveModel(analysisType);
-
-    const streamMaxTokens = 16384; // máximo absoluto do gpt-4o-mini
-    // withTimeout aborta a conexao de verdade no estouro (AbortSignal ao SDK)
-    const stream = await withTimeout((signal) => this.openai.chat.completions.create({
-      model,
-      // GPT-5+ exige max_completion_tokens e rejeita seed — ver openai-params.ts
-      ...buildSamplingParams(model, {
-        maxTokens: streamMaxTokens,
-        temperature: 0.1,
-        topP: 0.1,
-        seed: 42,
-        reasoningEffort: resolveReasoningEffort(analysisType),
-      }),
-      stream: true,
-      messages: [
-        { role: 'system', content: String(prompt || '').trim() },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: 'Analise o gráfico e responda exclusivamente no JSON do schema. Não escreva texto fora do JSON.',
-            },
-            { type: 'image_url', image_url: { url: signedImageUrl, detail: 'high' } },
-          ],
-        },
-      ],
-    }, { signal }), 60_000, 'OpenAI stream timed out after 60s');
-
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content;
-      if (delta) {
-        yield delta;
-      }
-    }
-  }
-
   /**
    * Le o preco do topo e da base do recorte pelo eixo (linhas da extensao; ver
    * price-axis.ts). Chamada separada da analise: nao mexe no prompt nem no
@@ -1120,9 +1025,9 @@ export class AIAdapter {
   private async buildUserContent(
     imageUrl: string,
     extraImageUrls: string[],
-  ): Promise<Array<Record<string, unknown>>> {
+  ): Promise<VisionContentPart[]> {
     const signedPrimary = await this.resolveImageUrlForOpenAi(imageUrl);
-    const content: Array<Record<string, unknown>> = [
+    const content: VisionContentPart[] = [
       {
         type: 'text',
         text:
@@ -1130,13 +1035,13 @@ export class AIAdapter {
             ? 'Análise TOP-DOWN com MÚLTIPLOS gráficos. O 1º gráfico é o timeframe de EXECUÇÃO; os SEGUINTES são timeframes MAIORES (HTF). Para CADA gráfico maior fornecido, descreva explicitamente a estrutura e o viés que VOCÊ REALMENTE VÊ nele (não invente, não infira de cabeça — leia a imagem). Em "multiTimeframeAlignment", conclua se há ALINHAMENTO ou CONFLITO citando o que viu em cada timeframe. É obrigatório comentar o(s) gráfico(s) secundário(s). Responda exclusivamente no JSON do schema.'
             : 'Analise o gráfico e responda exclusivamente no JSON do schema. Não escreva texto fora do JSON.',
       },
-      { type: 'image_url', image_url: { url: signedPrimary, detail: 'high' } },
+      { type: 'image', url: signedPrimary },
     ];
 
     for (let i = 0; i < extraImageUrls.length; i++) {
       try {
         const signed = await this.resolveImageUrlForOpenAi(extraImageUrls[i]);
-        const deliveredNumber = content.filter((part) => part.type === 'image_url').length;
+        const deliveredNumber = content.filter((part) => part.type === 'image').length;
         content.push({
           type: 'text',
           text: `Gráfico de timeframe MAIOR ${deliveredNumber} (contexto top-down / HTF) — leia e comente explicitamente este gráfico:`,
@@ -1144,7 +1049,7 @@ export class AIAdapter {
         // 'high' detail: o usuário subiu este HTF de propósito para um top-down REAL.
         // Em 'low' a IA quase não lê o gráfico e só dá uma frase genérica de MTF.
         // O custo extra (~700 tokens/imagem) só ocorre quando o usuário opta por enviar HTF.
-        content.push({ type: 'image_url', image_url: { url: signed, detail: 'high' } });
+        content.push({ type: 'image', url: signed });
       } catch (err) {
         this.logger.warn(
           `Ignorando imagem HTF ${i + 1} (falha ao assinar): ${err instanceof Error ? err.message : err}`,
@@ -1154,8 +1059,11 @@ export class AIAdapter {
 
     // A instrução inicial deve refletir as imagens que realmente chegaram ao
     // modelo, não as URLs solicitadas: assinatura de HTF pode falhar sem abortar.
-    if (!content.some((part, index) => index > 1 && part.type === 'image_url')) {
-      content[0].text = 'Analise o gráfico e responda exclusivamente no JSON do schema. Não escreva texto fora do JSON.';
+    if (!content.some((part, index) => index > 1 && part.type === 'image')) {
+      content[0] = {
+        type: 'text',
+        text: 'Analise o gráfico e responda exclusivamente no JSON do schema. Não escreva texto fora do JSON.',
+      };
     }
 
     return content;
@@ -1673,7 +1581,7 @@ export class AIAdapter {
   ): Promise<AIAnalysisResponse> {
     try {
       const userContent = await this.buildUserContent(imageUrl, extraImageUrls);
-      const deliveredHtfImages = Math.max(0, userContent.filter((part) => part.type === 'image_url').length - 1);
+      const deliveredHtfImages = Math.max(0, userContent.filter((part) => part.type === 'image').length - 1);
       const coverage: AnalysisDataCoverage = {
         analysisType: analysisType === 'deep' ? 'deep' : 'quick',
         htfImagesRequested: extraImageUrls.length,
@@ -1689,8 +1597,10 @@ export class AIAdapter {
       // A env ENABLE_MARKET_ENRICHMENT='false' funciona como botão de emergência
       // (kill-switch) para desligar na hora, sem redeploy. Qualquer falha/timeout
       // simplesmente segue com o prompt original (degradação graciosa).
-      let effectivePrompt = prompt;
+      // Blocos variaveis (grounding, perfil): entram DEPOIS das instrucoes fixas.
+      const context: string[] = [];
       let groundingStats: GroundingStats | null = null;
+      const tGrounding = Date.now();
       if (analysisType === 'deep' && flagBool('ENABLE_MARKET_ENRICHMENT')) {
         try {
           const enrichment = await withTimeout(
@@ -1700,7 +1610,7 @@ export class AIAdapter {
           );
           coverage.assetClass = enrichment.assetClass;
           if (enrichment.block) {
-            effectivePrompt = `${prompt}\n\n${enrichment.block}`;
+            context.push(enrichment.block);
           }
           coverage.marketContext = enrichment.marketContext;
           coverage.calendar = enrichment.calendar;
@@ -1728,7 +1638,7 @@ export class AIAdapter {
           coverage.assetClass = grounding.assetClass;
           groundingStats = grounding.stats;
           if (grounding.block) {
-            effectivePrompt = `${prompt}\n\n${grounding.block}`;
+            context.push(grounding.block);
           }
         } catch (error) {
           const failure = error instanceof Error && error.message === 'quick grounding timed out'
@@ -1738,6 +1648,8 @@ export class AIAdapter {
           // graceful: mantém o prompt original
         }
       }
+
+      const groundingMs = Date.now() - tGrounding;
 
       // Opt-in e sem conteúdo do usuário. Mede o que foi entregue ao modelo,
       // inclusive quando o enriquecimento falha e a análise segue normalmente.
@@ -1754,7 +1666,7 @@ export class AIAdapter {
       // leitura; a estrategia e preferencia do usuario e so serve para avaliar
       // o que ja foi lido. Ver TRAVA 1.
       if (strategyProfile) {
-        effectivePrompt = `${effectivePrompt}\n\n${buildStrategyBlock(strategyProfile)}`;
+        context.push(buildStrategyBlock(strategyProfile));
       }
 
       // assertIsFinancialChart removida: adicionava 5-15s de latência em CADA análise.
@@ -1796,183 +1708,157 @@ export class AIAdapter {
       // obrigado a inventar um valor para quem nao tem estrategia nenhuma.
       const strategyFitRequired = strategyProfile ? ['strategyFit', 'strategyFitReason'] : [];
 
-      // withTimeout aborta a conexao de verdade no estouro, via AbortSignal
-      // repassado ao SDK. Antes era Promise.race, que abandonava a promise mas
-      // deixava a requisicao viva e cobrada. Ver withTimeout.
-      const response = await withTimeout((signal) => this.openai.chat.completions.create({
+      // A chamada passa pela interface do provedor (vision-model.ts): instrucoes
+      // fixas primeiro, contexto variavel depois, imagens por ultimo.
+      const modelResult = await this.visionModel.complete({
         model,
-        // GPT-5+ exige max_completion_tokens e rejeita seed — ver openai-params.ts
-        ...buildSamplingParams(model, {
-          maxTokens,
-          temperature: 0.1,
-          topP: 0.1,
-          seed: 42,
-          reasoningEffort: resolveReasoningEffort(analysisType),
-        }),
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'trading_analysis',
-            strict: true,
-            schema: {
+        instructions: prompt,
+        context,
+        userContent,
+        schemaName: 'trading_analysis',
+        schema: {
+          type: 'object',
+          properties: {
+            is_financial_chart: { type: 'boolean' },
+            analysis: {
               type: 'object',
               properties: {
-                is_financial_chart: { type: 'boolean' },
-                analysis: {
+                reasoning: { type: 'string' },
+                symbol: { type: 'string' },
+                timeframe: { type: 'string' },
+                detectedSession: {
+                  type: 'string',
+                  enum: ['asian', 'london', 'new_york', 'overlap', 'dead_zone', 'unknown'],
+                },
+                sessionNote: { type: 'string' },
+                currentPrice: { type: 'number' },
+                entry: { type: ['number', 'null'] },
+                stopLoss: { type: ['number', 'null'] },
+                stopLossPercent: { type: ['number', 'null'] },
+                takeProfit1: { type: ['number', 'null'] },
+                takeProfit1Percent: { type: ['number', 'null'] },
+                takeProfit2: { type: ['number', 'null'] },
+                takeProfit2Percent: { type: ['number', 'null'] },
+                entryY: { type: ['number', 'null'] },
+                stopY: { type: ['number', 'null'] },
+                tp1Y: { type: ['number', 'null'] },
+                tp2Y: { type: ['number', 'null'] },
+                riskRewardRatio: { type: ['string', 'null'] },
+                marketStructure: {
                   type: 'object',
                   properties: {
-                    reasoning: { type: 'string' },
-                    symbol: { type: 'string' },
-                    timeframe: { type: 'string' },
-                    detectedSession: {
+                    bias: {
                       type: 'string',
-                      enum: ['asian', 'london', 'new_york', 'overlap', 'dead_zone', 'unknown'],
+                      enum: ['bullish', 'bearish', 'neutral'],
                     },
-                    sessionNote: { type: 'string' },
-                    currentPrice: { type: 'number' },
-                    entry: { type: ['number', 'null'] },
-                    stopLoss: { type: ['number', 'null'] },
-                    stopLossPercent: { type: ['number', 'null'] },
-                    takeProfit1: { type: ['number', 'null'] },
-                    takeProfit1Percent: { type: ['number', 'null'] },
-                    takeProfit2: { type: ['number', 'null'] },
-                    takeProfit2Percent: { type: ['number', 'null'] },
-                    entryY: { type: ['number', 'null'] },
-                    stopY: { type: ['number', 'null'] },
-                    tp1Y: { type: ['number', 'null'] },
-                    tp2Y: { type: ['number', 'null'] },
-                    riskRewardRatio: { type: ['string', 'null'] },
-                    marketStructure: {
-                      type: 'object',
-                      properties: {
-                        bias: {
-                          type: 'string',
-                          enum: ['bullish', 'bearish', 'neutral'],
-                        },
-                        lastStructure: { type: 'string' },
-                        breakOfStructure: { type: 'string' },
-                        priceZone: { type: 'string' },
-                        orderBlock: { type: 'string' },
-                      },
-                      required: [
-                        'bias',
-                        'lastStructure',
-                        'breakOfStructure',
-                        'priceZone',
-                        'orderBlock',
-                      ],
-                      additionalProperties: false,
-                    },
-                    chartType: { type: 'string' },
-                    confluenceScore: { type: 'number' },
-                    factorsPresent: { type: 'number' },
-                    technicalAnalysis: { type: 'string' },
-                    keyIndicators: { type: 'string' },
-                    identifiedPatterns: { type: 'string' },
-                    structureValidation: { type: 'string' },
-                    riskFactors: { type: 'string' },
-                    whyNotOpposite: { type: 'string' },
-                    executiveSummary: { type: 'string' },
-                    invalidationLevel: { type: ['number', 'null'] },
-                    invalidationNote: { type: ['string', 'null'] },
-                    entryType: { type: ['string', 'null'] },
-                    entryCondition: { type: ['string', 'null'] },
-                    partialExitStrategy: { type: ['string', 'null'] },
-                    tp1ClosePercent: { type: ['number', 'null'] },
-                    tp2ClosePercent: { type: ['number', 'null'] },
-                    breakevenTrigger: { type: ['string', 'null'] },
-                    probabilityTp1: { type: ['number', 'null'] },
-                    probabilityTp2: { type: ['number', 'null'] },
-                    probabilityStop: { type: ['number', 'null'] },
-                    alternativeScenario: { type: ['string', 'null'] },
-                    trendStrength: { type: ['string', 'null'] },
-                    trendStrengthNote: { type: ['string', 'null'] },
-                    marketRegime: { type: ['string', 'null'] },
-                    marketRegimeNote: { type: ['string', 'null'] },
-                    multiTimeframeAlignment: { type: ['string', 'null'] },
+                    lastStructure: { type: 'string' },
+                    breakOfStructure: { type: 'string' },
+                    priceZone: { type: 'string' },
+                    orderBlock: { type: 'string' },
                   },
                   required: [
-                    'reasoning',
-                    'symbol',
-                    'timeframe',
-                    'detectedSession',
-                    'sessionNote',
-                    'currentPrice',
-                    'entry',
-                    'stopLoss',
-                    'stopLossPercent',
-                    'takeProfit1',
-                    'takeProfit1Percent',
-                    'takeProfit2',
-                    'takeProfit2Percent',
-                    'entryY',
-                    'stopY',
-                    'tp1Y',
-                    'tp2Y',
-                    'riskRewardRatio',
-                    'marketStructure',
-                    'chartType',
-                    'confluenceScore',
-                    'factorsPresent',
-                    'technicalAnalysis',
-                    'keyIndicators',
-                    'identifiedPatterns',
-                    'structureValidation',
-                    'riskFactors',
-                    'whyNotOpposite',
-                    'executiveSummary',
-                    'invalidationLevel',
-                    'invalidationNote',
-                    'entryType',
-                    'entryCondition',
-                    'partialExitStrategy',
-                    'tp1ClosePercent',
-                    'tp2ClosePercent',
-                    'breakevenTrigger',
-                    'probabilityTp1',
-                    'probabilityTp2',
-                    'probabilityStop',
-                    'alternativeScenario',
-                    'trendStrength',
-                    'trendStrengthNote',
-                    'marketRegime',
-                    'marketRegimeNote',
-                    'multiTimeframeAlignment',
+                    'bias',
+                    'lastStructure',
+                    'breakOfStructure',
+                    'priceZone',
+                    'orderBlock',
                   ],
                   additionalProperties: false,
                 },
-                recommendation: {
-                  type: 'string',
-                  enum: ['BUY', 'SELL', 'HOLD', 'COMPRA', 'VENDA', 'AGUARDAR'],
-                },
-                confidence: { type: 'number' },
-                ...strategyFitProps,
+                chartType: { type: 'string' },
+                confluenceScore: { type: 'number' },
+                factorsPresent: { type: 'number' },
+                technicalAnalysis: { type: 'string' },
+                keyIndicators: { type: 'string' },
+                identifiedPatterns: { type: 'string' },
+                structureValidation: { type: 'string' },
+                riskFactors: { type: 'string' },
+                whyNotOpposite: { type: 'string' },
+                executiveSummary: { type: 'string' },
+                invalidationLevel: { type: ['number', 'null'] },
+                invalidationNote: { type: ['string', 'null'] },
+                entryType: { type: ['string', 'null'] },
+                entryCondition: { type: ['string', 'null'] },
+                partialExitStrategy: { type: ['string', 'null'] },
+                tp1ClosePercent: { type: ['number', 'null'] },
+                tp2ClosePercent: { type: ['number', 'null'] },
+                breakevenTrigger: { type: ['string', 'null'] },
+                probabilityTp1: { type: ['number', 'null'] },
+                probabilityTp2: { type: ['number', 'null'] },
+                probabilityStop: { type: ['number', 'null'] },
+                alternativeScenario: { type: ['string', 'null'] },
+                trendStrength: { type: ['string', 'null'] },
+                trendStrengthNote: { type: ['string', 'null'] },
+                marketRegime: { type: ['string', 'null'] },
+                marketRegimeNote: { type: ['string', 'null'] },
+                multiTimeframeAlignment: { type: ['string', 'null'] },
               },
-              required: ['is_financial_chart', 'analysis', 'recommendation', 'confidence', ...strategyFitRequired],
+              required: [
+                'reasoning',
+                'symbol',
+                'timeframe',
+                'detectedSession',
+                'sessionNote',
+                'currentPrice',
+                'entry',
+                'stopLoss',
+                'stopLossPercent',
+                'takeProfit1',
+                'takeProfit1Percent',
+                'takeProfit2',
+                'takeProfit2Percent',
+                'entryY',
+                'stopY',
+                'tp1Y',
+                'tp2Y',
+                'riskRewardRatio',
+                'marketStructure',
+                'chartType',
+                'confluenceScore',
+                'factorsPresent',
+                'technicalAnalysis',
+                'keyIndicators',
+                'identifiedPatterns',
+                'structureValidation',
+                'riskFactors',
+                'whyNotOpposite',
+                'executiveSummary',
+                'invalidationLevel',
+                'invalidationNote',
+                'entryType',
+                'entryCondition',
+                'partialExitStrategy',
+                'tp1ClosePercent',
+                'tp2ClosePercent',
+                'breakevenTrigger',
+                'probabilityTp1',
+                'probabilityTp2',
+                'probabilityStop',
+                'alternativeScenario',
+                'trendStrength',
+                'trendStrengthNote',
+                'marketRegime',
+                'marketRegimeNote',
+                'multiTimeframeAlignment',
+              ],
               additionalProperties: false,
             },
+            recommendation: {
+              type: 'string',
+              enum: ['BUY', 'SELL', 'HOLD', 'COMPRA', 'VENDA', 'AGUARDAR'],
+            },
+            confidence: { type: 'number' },
+            ...strategyFitProps,
           },
-        } as any,
-        messages: [
-          {
-            role: 'system',
-            content: String(effectivePrompt || '').trim(),
-          },
-          {
-            role: 'user',
-            content: userContent as any,
-          },
-        ],
-      }, { signal }), ANALYZE_TIMEOUT_MS, `OpenAI analysis timed out after ${Math.round(ANALYZE_TIMEOUT_MS / 1000)}s`);
+          required: ['is_financial_chart', 'analysis', 'recommendation', 'confidence', ...strategyFitRequired],
+          additionalProperties: false,
+        },
+        maxTokens,
+        reasoningEffort: resolveReasoningEffort(analysisType),
+        timeoutMs: ANALYZE_TIMEOUT_MS,
+      });
 
-      const choice = response.choices[0];
-      const finishReason = String(choice?.finish_reason || '').trim().toLowerCase();
-      const refusal =
-        choice?.message &&
-        typeof (choice.message as { refusal?: unknown }).refusal === 'string'
-          ? String((choice.message as { refusal?: string }).refusal || '').trim()
-          : '';
-      const content = extractMessageContent(choice?.message?.content);
+      const { content, finishReason, refusal, usage } = modelResult;
 
       // Uso real e custo ESTIMADO desta análise, sempre (não atrás de flag de debug). O `usage`
       // já vinha na resposta e era descartado fora do modo de debug, então o
@@ -1980,7 +1866,6 @@ export class AIAdapter {
       // da conta de margem — nunca foi observado em produção. Ver model-cost.ts.
       // Instrumentação nunca pode derrubar a análise: tudo dentro de try/catch.
       try {
-        const usage = extractUsage((response as any).usage);
         const breakdown = computeCost(model, usage, analysisType === 'deep' ? 3 : 1);
         this.logger.log(formatCostLog(model, analysisType, breakdown));
       } catch {
@@ -1993,14 +1878,14 @@ export class AIAdapter {
       // Só a resposta é gravada; o prompt do sistema NUNCA vai para arquivo.
       if (process.env.AI_DEBUG_DUMP_RAW) {
         try {
-          const u: any = (response as any).usage || {};
           require('fs').appendFileSync(
             process.env.AI_DEBUG_DUMP_RAW,
             [
               '===== ' + new Date().toISOString() + ' =====',
               'model=' + model + ' finish_reason=' + finishReason,
-              'tokens: prompt=' + u.prompt_tokens + ' completion=' + u.completion_tokens + ' total=' + u.total_tokens,
-              'completion_details=' + JSON.stringify(u.completion_tokens_details || null),
+              'tokens: prompt=' + usage.promptTokens + ' cached=' + usage.cachedTokens +
+                ' completion=' + usage.completionTokens + ' total=' + usage.totalTokens,
+              'reasoning=' + usage.reasoningTokens,
               'content_length=' + String(content || '').length,
               '--- RESPOSTA CRUA ---',
               String(content || ''),
@@ -2041,6 +1926,7 @@ export class AIAdapter {
       }
 
       let parsed: TradingAnalysisSchemaResult;
+      const tParse = Date.now();
       try {
         parsed = parseSchemaResult(contentToParse);
         if (finishReason === 'length') {
@@ -2076,17 +1962,23 @@ export class AIAdapter {
         });
       }
 
+      const parseMs = Date.now() - tParse;
+
+      const tValidation = Date.now();
       const rawRecommendation = mapSchemaRecommendationToInternal(parsed.recommendation);
+      const planFailures = validateTradePlan({
+        side: rawRecommendation,
+        entry: parsed.analysis?.entry,
+        stopLoss: parsed.analysis?.stopLoss,
+        takeProfit1: parsed.analysis?.takeProfit1,
+        takeProfit2: parsed.analysis?.takeProfit2,
+        invalidationLevel: parsed.analysis?.invalidationLevel,
+        currentPrice: parsed.analysis?.currentPrice,
+      });
       // Não entregar BUY/SELL com stop/alvo invertidos. O fluxo de falha
       // definitiva reembolsa o tick; corrigir a direção por conta própria
       // transformaria um erro do modelo em uma operação não avaliada.
-      if (hasInvalidTradePlanLevels(
-        rawRecommendation,
-        parsed.analysis?.entry,
-        parsed.analysis?.stopLoss,
-        parsed.analysis?.takeProfit1,
-        parsed.analysis?.takeProfit2,
-      )) {
+      if (planFailures.includes('direction')) {
         throw new AIAnalysisError({
           code: 'invalid_trade_plan',
           message: 'A IA retornou níveis incoerentes de entrada, stop ou alvo.',
@@ -2123,7 +2015,7 @@ export class AIAdapter {
       );
 
       // Sequência determinística ÚNICA (mesma usada pelo worker):
-      // caps de confiança → guard R/R → news guard → teto WAIT.
+      // caps de confiança → validador do plano → guard R/R → news guard → teto WAIT.
       const decision = await decideSignal({
         recommendation: rawRecommendation,
         flooredConfidence,
@@ -2132,7 +2024,15 @@ export class AIAdapter {
         riskRewardTp1: decisionRiskRewardTp1,
         riskRewardTp2: decisionRiskRewardTp2,
         symbol: String(parsed.analysis?.symbol || ''),
+        planFailures,
+        priceFixed: parsed.analysis?.priceMagnitudeFixed === true,
       });
+      const validationMs = Date.now() - tValidation;
+      if (decision.validatorReasons.some((r) => r !== 'rr_below_min')) {
+        this.logger.warn(
+          `Validador: sinal ${rawRecommendation} rebaixado para WAIT (${decision.validatorReasons.join(',')})`,
+        );
+      }
       if (decision.rrDowngraded) {
         this.logger.warn(
           `RR guard: sinal ${rawRecommendation} rebaixado para WAIT (riskRewardTp1=${decisionRiskRewardTp1})`,
@@ -2155,7 +2055,7 @@ export class AIAdapter {
         evidence: toAnalysisEvidence(coverage),
         // Telemetria gravada por analise (saveAnalysisTelemetry): o snapshot que
         // a OpenAI de fato usou e os numeros do grounding que entraram no prompt.
-        respondedModel: typeof response.model === 'string' ? response.model : null,
+        respondedModel: modelResult.respondedModel,
         groundingStats,
         drawingPlan: null,
         drawingFailed: true,
@@ -2163,6 +2063,15 @@ export class AIAdapter {
         rawContent: content,
         strategyFit,
         strategyFitReason,
+        engineMeta: {
+          validatorAction: decision.validatorAction,
+          validatorReasons: decision.validatorReasons,
+          validatorFlags: decision.validatorFlags,
+          groundingMs,
+          modelMs: modelResult.modelMs,
+          parseMs,
+          validationMs,
+        },
       };
     } catch (error) {
       if (error instanceof AIAnalysisError) {

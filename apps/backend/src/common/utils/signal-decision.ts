@@ -6,6 +6,7 @@ import {
   applyRiskRewardGuard,
 } from './analysis-normalizer';
 import { EconomicCalendarService } from '../../modules/calendar/calendar.service';
+import { MEASURE_ONLY_RULES, TradePlanRule } from './trade-plan-validator';
 
 // ============================================================================
 // DECISÃO DE SINAL — SEQUÊNCIA DETERMINÍSTICA ÚNICA (paridade adapter/worker)
@@ -17,7 +18,8 @@ import { EconomicCalendarService } from '../../modules/calendar/calendar.service
 // Esta função concentra TODA a sequência num lugar só, então os dois caminhos
 // passam a decidir de forma idêntica. Conservadora por design: só REDUZ a
 // confiança e só rebaixa para WAIT — nunca inventa um trade.
-// Ordem: cap por tendência → cap por confluência → guard R/R → news guard → teto WAIT.
+// Ordem: cap por tendência → cap por confluência → validador do plano →
+// guard R/R → news guard → teto WAIT.
 // ============================================================================
 
 export interface SignalDecisionInput {
@@ -33,7 +35,17 @@ export interface SignalDecisionInput {
   riskRewardTp2?: number | null | undefined;
   /** Símbolo para consulta do calendário econômico (news guard). */
   symbol: string;
+  /**
+   * Regras do `validateTradePlan` que o plano quebrou. `direction` nunca chega
+   * aqui: quem chama falha a análise antes (o tick volta).
+   */
+  planFailures?: TradePlanRule[];
+  /** true quando `correctPriceMagnitude` reescreveu os níveis (BTC lido 10x menor etc.). */
+  priceFixed?: boolean;
 }
+
+/** O que o validador fez com a resposta do modelo (vai ao PostHog). */
+export type ValidatorAction = 'none' | 'fixed' | 'downgraded';
 
 export interface SignalDecisionResult {
   recommendation: Recommendation;
@@ -42,6 +54,11 @@ export interface SignalDecisionResult {
   newsDowngraded: boolean;
   /** Descrição do evento que rebaixou o sinal (para log), quando houver. */
   newsEvent: string | null;
+  validatorAction: ValidatorAction;
+  /** Regras que rebaixaram o plano; `rr_below_min` é o guard de R/R. */
+  validatorReasons: Array<TradePlanRule | 'rr_below_min'>;
+  /** Regras quebradas que so medem (MEASURE_ONLY_RULES): o sinal nao muda. */
+  validatorFlags: TradePlanRule[];
 }
 
 // Instância única: reaproveita o cache de 1h do calendário entre análises.
@@ -76,7 +93,18 @@ export async function decideSignal(
   const bestRiskReward = [input.riskRewardTp1, input.riskRewardTp2]
     .filter((r): r is number => typeof r === 'number' && Number.isFinite(r))
     .reduce<number | null>((best, r) => (best === null || r > best ? r : best), null);
-  const guarded = applyRiskRewardGuard(input.recommendation, harmonized, bestRiskReward);
+  // Validador do plano: stop antes da invalidação ou preço fora da faixa do
+  // print vira WAIT (níveis preservados, confiança <= 45, igual ao guard de R/R).
+  const failures = input.recommendation === 'WAIT'
+    ? []
+    : (input.planFailures ?? []).filter((rule) => rule !== 'direction');
+  const validatorFlags = failures.filter((rule) => MEASURE_ONLY_RULES.includes(rule));
+  const planFailures = failures.filter((rule) => !MEASURE_ONLY_RULES.includes(rule));
+  const planDowngraded = input.recommendation !== 'WAIT' && planFailures.length > 0;
+  const validated: Recommendation = planDowngraded ? 'WAIT' : input.recommendation;
+  const validatedConfidence = planDowngraded ? Math.min(harmonized, 45) : harmonized;
+
+  const guarded = applyRiskRewardGuard(validated, validatedConfidence, bestRiskReward);
 
   let recommendation = guarded.recommendation;
   let confidence = guarded.confidence;
@@ -119,11 +147,17 @@ export async function decideSignal(
     confidence = Math.min(confidence, 60);
   }
 
+  const validatorReasons: SignalDecisionResult['validatorReasons'] = planDowngraded ? [...planFailures] : [];
+  if (guarded.downgraded) validatorReasons.push('rr_below_min');
+
   return {
     recommendation,
     confidence,
     rrDowngraded: guarded.downgraded,
     newsDowngraded,
     newsEvent,
+    validatorAction: validatorReasons.length > 0 ? 'downgraded' : input.priceFixed ? 'fixed' : 'none',
+    validatorReasons,
+    validatorFlags,
   };
 }

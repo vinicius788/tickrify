@@ -296,6 +296,22 @@ Vale para TODA mudanca, grande ou pequena:
   (`ideal|good|poor|conflict`) que nunca muda a recomendacao; analise com
   estrategia fica fora de tudo que e publico (`strategyHash`).
 - **A/B do prompt v9:** `AB_PROMPT_V9_PERCENT` = 0, desligado (ver secao 8).
+- **Motor 2.0.0 (12/10, aguardando commit/deploy):** `ENGINE_VERSION` mora SO em
+  `modules/ai/engine-contract.ts`. Cada analise nova grava `result.engine`
+  (versao, `data_mode: print`, `validator_action` none|fixed|downgraded, tempos
+  por etapa e o contrato v2: verdict BULLISH/BEARISH/NEUTRAL, confidence,
+  asset, timeframe, entry, stop, targets, invalidation, key_reasons,
+  no_trade_reason). O contrato e montado DEPOIS do parse: o schema do modelo
+  continua igual (raciocinio antes, BUY/SELL/HOLD). Analise antiga nao tem o
+  bloco e nada na tela le. A chamada ao modelo passa so por `VisionModel`
+  (`vision-model.ts`, implementacao `OpenAiVisionModel`): trocar de provedor =
+  outra classe. Validador puro `trade-plan-validator.ts` dentro do
+  `decideSignal`: direcao invertida continua FALHANDO (tick volta); nivel fora
+  de [preco/2, preco*2] vira WAIT; stop antes da invalidacao SO MEDE
+  (`validator_flags`, `MEASURE_ONLY_RULES`): o SQL de 12/10 deu 25 de 349
+  trades (7%) e 0 fora de faixa; rebaixar mudaria o que o motor entrega sem
+  saber se esses trades perdem mais. R/R segue o guard de 1,2 no melhor alvo. `[Cost]` agora mostra `cached=` (cache de prompt).
+  Streaming adiado (precisa de Redis pub/sub + SSE; a analise roda no worker).
 
 ### 3.3 Pagamentos (Stripe)
 
@@ -751,6 +767,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 12/10 | **Motor 2.0.0 no ar:** depois do deploy conferir `analysis_completed` com `engine_version=2.0.0` e `[Cost] ... cached=` no Render. Em 7 dias: `validator_action` por valor, mediana de `model_ms`, `queue_ms`, `verdict_visible_ms`. Tempo ate o 1o token so existe com streaming. Em **19/10**, junto do R/R guard: acerto (WIN/LOSS do sweeper) dos trades com stop antes da invalidacao x os outros; so ligar o rebaixamento se perderem claramente mais com n >= 30. | dono / Claude |
 | 12/10 | **Chat (Parte B) no ar:** (1) conferir no boot `[chat] Tabelas prontas.`; (2) escolher a frase de boas-vindas do chat (versao 1 no ar); (3) ligar no /admin `CHAT_EMAIL_NOTIFY` quando quiser os avisos por e-mail (conferir depois `[mail] Enviado kind=chat_founder_notify` e `kind=chat_reply`; lembrar que a Resend gratis e 100/dia para tudo); (4) so depois do deploy aplicar `_local/setups-chat/schema-parte-b.patch` e commitar. Medir por semana: conversas iniciadas pelo usuario, tempo ate a 1a resposta, e % de quem conversou que analisou ou assinou em 7 dias contra quem nao conversou (leitura, sem afirmar causa). | dono / Claude |
 | 12/10 | **Setups (Parte A) no ar:** (1) depois do deploy, conferir no boot `[setups] Tabela e coluna prontas.`; (2) rodar no Supabase `CREATE INDEX CONCURRENTLY IF NOT EXISTS "Analysis_setupId_idx" ON "tickrify"."Analysis"("setupId");` (desfazer: `DROP INDEX CONCURRENTLY IF EXISTS "tickrify"."Analysis_setupId_idx";`); (3) so entao aplicar o patch do `schema.prisma` (`_local/setups-chat/schema-parte-a.patch`) e commitar. Medir em 7 dias: % de quem seguiu e fez `setup_update_completed` em OUTRO dia em ate 7 dias; 2a analise de quem tomou WAIT na 1a (hoje ~50%); dias distintos com analise por semana entre assinantes. | dono / Claude |
 | 08/10 | **Proximo experimento: teste mais longo (tese do dono).** O dono acha que 3 analises nao bastam para o trader ver se o produto e bom: "se ele testar 3 dias e no 4o pensar *preciso disso*, assina". Pensar bem antes de fazer. Combinado: NAO trocar o gratis (e o que traz gente; 83% de quem cadastra analisa) nem pedir cartao no cadastro (o cartao e o buraco: 11 de 12 checkouts sem cartao digitado, 40% de recusa por falta de saldo). Desenho candidato: no PAYWALL, opcao "3 days full access" com cartao, virando semanal/mensal no 4o dia; variante "3 days for $1" (a cobranca de US$ 1 ja testa o cartao no dia 1, nao entrega 3 dias de IA a quem nao vai conseguir pagar). Stripe tem trial nativo. Medir checkout iniciado x cartao digitado x pago no dia 5 contra o funil atual (13 abrem, 1 paga). Antes: dono assiste ~10 gravacoes do PostHog (session replay) de quem ficou 10+ min sem assinar (perdido ou interessado?). Mexe em cobranca: demo clicavel e ok do dono antes de codigo. Junto: credibilidade (depoimentos no ar, texto "How I use Tickrify", "Who's behind this" com foto, video de 60 s) e conversa 1 a 1 com os pagantes (SQL de uso por assinante entregue no chat em 08/10; mensagem citando o uso real + 1 mes gratis por call de 15 min). | dono decide / Claude |
@@ -863,6 +880,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **12/10 (setups, Parte A):** seguir um setup a partir de qualquer analise e atualizar com o fluxo normal de nova analise (versoes em `/dashboard/setups/:id`, secao no topo do inicio); tabela `TrackedSetup` + `Analysis.setupId` por SQL, testado num Postgres descartavel (30 casos: dono, idempotencia, teto, clique duplo, cursores, ordem das versoes).
 - **12/10 (chat, Parte B):** chat com o fundador dentro da bolha do painel (aba padrao), aba Chat no /admin com "Start conversation" pelo e-mail, avisos por e-mail com teto (chave `CHAT_EMAIL_NOTIFY` desligada); /privacy cita as mensagens do chat. Testado num Postgres descartavel (37 casos: isolamento, texto puro, limite por hora, nao lidas, tetos de e-mail com relogio falso, descadastro).
 - **12/10 (testes em producao):** setups e chat testados logado no Chrome do dono (seguir, atualizar com print novo cobrando 1 tick, versao 2 no setup, arquivar, chat ida e volta com nao lidas, /admin, 375 px). Achados corrigidos: condicao do WAIT tambem do `alternativeScenario` e "First analysis" com a data da 1a analise (nao a de seguir).
+- **12/10 (motor 2.0.0):** medicao por etapa no `analysis_completed`, contrato v2 em `result.engine`, validador do plano com testes, chamada ao modelo isolada em `VisionModel`, `streamAnalyzeImage` (morto desde 21/09) removido. Linha de base PostHog (30 dias, `symbol` so existe desde 30/09): 347 analises com ativo, ouro 59%, cripto 28%, forex 7%, indices sinteticos 4%, indices 1%, acoes 0.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

@@ -342,6 +342,50 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     }));
   });
 
+  it('validador: alvo absurdo vira WAIT, stop antes da invalidacao so marca, e grava o contrato v2 com os tempos', async () => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
+    prismaClient.analysis.update.mockClear();
+    analyzeImageMock.mockResolvedValueOnce({
+      recommendation: 'BUY', confidence: 70,
+      analysis: {
+        symbol: 'TEST', timeframe: '30m', currentPrice: 100,
+        entry: 100, stopLoss: 95, takeProfit1: 110, takeProfit2: 1200,
+        invalidationLevel: 94, executiveSummary: 'Buyers defend 95.',
+        trendStrength: 'strong', factorsPresent: 6,
+      },
+      engineMeta: { validatorAction: 'downgraded', validatorReasons: ['stop_inside_invalidation'], groundingMs: 5, modelMs: 900, parseMs: 2, validationMs: 1 },
+    });
+
+    await processAnalysis(makeJob({
+      analysisId: 'analysis-validator', imageUrl: 'https://example.com/chart.png',
+      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+      intake: { receivedAt: Date.now() - 2_000, imagePrepMs: 150, intakeMs: 400 },
+    }));
+
+    const completed = prismaClient.analysis.update.mock.calls.find(
+      ([args]: any[]) => args.data.status === 'completed',
+    );
+    expect(completed).toBeDefined();
+    expect(completed[0].data.recommendation).toBe('WAIT');
+    const engine = completed[0].data.result.engine;
+    expect(engine).toMatchObject({
+      version: '2.0.0',
+      data_mode: 'print',
+      validator_action: 'downgraded',
+      validator_reasons: ['implausible_price'],
+      validator_flags: ['stop_inside_invalidation'],
+      timings: { image_prep_ms: 150, intake_ms: 400, grounding_ms: 5, model_ms: 900 },
+      contract: {
+        verdict: 'NEUTRAL', asset: 'TEST', timeframe: '30m', entry: null, targets: [],
+        no_trade_reason: 'A price level is outside a plausible range of the chart price.',
+      },
+    });
+    expect(engine.timings.server_total_ms).toBeGreaterThanOrEqual(2_000);
+    expect(engine.timings.validation_ms).toBeGreaterThanOrEqual(0);
+  });
+
   // Setup acompanhado (12/10/2026): a FILA e o caminho real. O vinculo foi
   // gravado na criacao; aqui so pode registrar a versao depois de gravar a
   // analise concluida, sem reescrever o setupId e sem mandar nada ao motor.

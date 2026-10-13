@@ -137,7 +137,6 @@ describe('AiService access enforcement', () => {
 
     const aiAdapter = {
       analyzeImage: jest.fn(),
-      streamAnalyzeImage: jest.fn(),
     };
 
     ticksService = {
@@ -244,12 +243,22 @@ describe('AiService access enforcement', () => {
       await (service as any).processSynchronously({
         analysisId: 'an_9', imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1',
         analysisType: 'quick', isDemo: true, setupId: 'setup-123456',
+        intake: { receivedAt: Date.now() - 500, imagePrepMs: 120, intakeMs: 300 },
       });
       await flushAll();
 
       const completed = prisma.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed');
       expect(completed).toBeDefined();
       expect(completed[0].data).not.toHaveProperty('setupId');
+      // Contrato v2 e tempos gravados junto da analise, igual ao worker.
+      expect(completed[0].data.result.engine).toMatchObject({
+        version: '2.0.0',
+        data_mode: 'print',
+        validator_action: 'none',
+        timings: { image_prep_ms: 120, intake_ms: 300, queue_ms: null },
+        contract: { verdict: 'NEUTRAL', asset: 'EURUSD', timeframe: '1H', engine_version: '2.0.0' },
+      });
+      expect(completed[0].data.result.engine.timings.server_total_ms).toBeGreaterThanOrEqual(500);
       // O motor nao recebeu nada do setup: os mesmos 5 argumentos de sempre.
       expect((service as any).aiAdapter.analyzeImage.mock.calls[0]).toHaveLength(5);
       expect(recordSetupVersion).toHaveBeenCalledWith(

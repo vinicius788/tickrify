@@ -14,6 +14,28 @@ export function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /**
+ * Roda `fn(true)` depois que o navegador pintar o proximo quadro (dois
+ * requestAnimationFrame: o primeiro cai antes da pintura, o segundo depois).
+ * Aba em segundo plano nao pinta: se o quadro nao vier em `maxWaitMs`, roda
+ * `fn(false)` mesmo assim, uma vez so. Quem mede nunca perde o evento.
+ */
+export function afterNextPaint(fn: (painted: boolean) => void, maxWaitMs = 1000): void {
+  let done = false;
+  const run = (painted: boolean) => {
+    if (done) return;
+    done = true;
+    fn(painted);
+  };
+  const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+  if (hidden || typeof requestAnimationFrame !== 'function') {
+    setTimeout(() => run(false), 0);
+    return;
+  }
+  setTimeout(() => run(false), maxWaitMs);
+  requestAnimationFrame(() => requestAnimationFrame(() => run(true)));
+}
+
+/**
  * Leva a janela para o topo, na hora.
  *
  * `behavior: 'instant'` NÃO é enfeite. O `html` deste projeto tem

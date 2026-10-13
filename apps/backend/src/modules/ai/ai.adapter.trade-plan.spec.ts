@@ -1,7 +1,14 @@
 import { createHash } from 'crypto';
 import { AIAdapter, buildRealDataBlock } from './ai.adapter';
+import { OpenAiVisionModel } from './vision-model';
 
-const responseFor = (takeProfit1: number) => ({
+// A analise chama o modelo so pela interface do provedor; o fake fica no
+// cliente da OpenAI para exercitar a implementacao real (mensagens, parse).
+function withFakeOpenAi(adapter: AIAdapter, create: jest.Mock): void {
+  (adapter as any).visionModel = new OpenAiVisionModel({ chat: { completions: { create } } } as any);
+}
+
+const responseFor = (takeProfit1: number, extra: Record<string, unknown> = {}) => ({
   model: 'gpt-5.6-luna',
   choices: [{
     finish_reason: 'stop',
@@ -14,6 +21,7 @@ const responseFor = (takeProfit1: number) => ({
         entry: 100, stopLoss: 95, takeProfit1, takeProfit2: 120,
         marketStructure: { bias: 'bullish' },
         trendStrength: 'moderate', factorsPresent: 6,
+        ...extra,
       },
     }) },
   }],
@@ -37,7 +45,7 @@ describe('AIAdapter trade-plan integrity', () => {
   it('rejects a BUY whose TP1 is below entry, even when TP2 looks attractive', async () => {
     const adapter = new AIAdapter();
     const create = jest.fn().mockResolvedValue(responseFor(90));
-    (adapter as any).openai = { chat: { completions: { create } } };
+    withFakeOpenAi(adapter, create);
 
     await expect(adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick'))
       .rejects.toMatchObject({ code: 'invalid_trade_plan', retriable: false });
@@ -46,17 +54,65 @@ describe('AIAdapter trade-plan integrity', () => {
 
   it('preserves a coherent BUY plan', async () => {
     const adapter = new AIAdapter();
-    (adapter as any).openai = { chat: { completions: { create: jest.fn().mockResolvedValue(responseFor(110)) } } };
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(result.recommendation).toBe('BUY');
     expect(result.analysis?.riskRewardTp1).toBe(2);
     expect(result.analysis?.riskRewardTp2).toBe(4);
+    expect(result.engineMeta?.validatorAction).toBe('none');
+    expect(result.engineMeta?.modelMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('keeps a BUY whose stop sits before the invalidation level and only flags it (measure-only rule)', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { invalidationLevel: 94 })));
+
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result.recommendation).toBe('BUY');
+    expect(result.engineMeta).toMatchObject({
+      validatorAction: 'none',
+      validatorReasons: [],
+      validatorFlags: ['stop_inside_invalidation'],
+    });
+  });
+
+  it('turns a BUY with an absurd target (extra digit) into WAIT, keeping the levels', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { takeProfit2: 1200 })));
+
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result.recommendation).toBe('WAIT');
+    expect(result.confidence).toBeLessThanOrEqual(45);
+    expect(result.analysis?.takeProfit2).toBe(1200);
+    expect(result.engineMeta).toMatchObject({
+      validatorAction: 'downgraded',
+      validatorReasons: ['implausible_price'],
+    });
+  });
+
+  it('sends fixed instructions first, then the variable blocks, then the image (same messages as before)', async () => {
+    const adapter = new AIAdapter();
+    const create = jest.fn().mockResolvedValue(responseFor(110));
+    withFakeOpenAi(adapter, create);
+
+    await adapter.analyzeImage('data:image/png;base64,AA==', 'FIXED PROMPT', 'quick', [], {
+      timeframes: [], sessions: [], instruments: [], setups: [], direction: 'both', minRiskReward: 2,
+    } as any);
+    const body = create.mock.calls[0][0];
+    expect(body.messages[0].role).toBe('system');
+    expect(body.messages[0].content).toMatch(/^FIXED PROMPT\n\n## TRADER STRATEGY PROFILE/);
+    expect(body.messages[1].role).toBe('user');
+    expect(body.messages[1].content[1]).toEqual({
+      type: 'image_url',
+      image_url: { url: 'data:image/png;base64,AA==', detail: 'high' },
+    });
+    expect(body.response_format.json_schema).toMatchObject({ name: 'trading_analysis', strict: true });
   });
 
   it('reports the model that actually answered and no grounding when it is off', async () => {
     const adapter = new AIAdapter();
-    (adapter as any).openai = { chat: { completions: { create: jest.fn().mockResolvedValue(responseFor(110)) } } };
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(result.respondedModel).toBe('gpt-5.6-luna');

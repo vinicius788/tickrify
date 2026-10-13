@@ -7,16 +7,18 @@ import {
 import { resolveModel, resolveReasoningEffort } from './openai-params';
 
 describe('extractUsage', () => {
-  it('lê o formato real da OpenAI, incluindo reasoning_tokens', () => {
+  it('lê o formato real da OpenAI, incluindo reasoning_tokens e cached_tokens', () => {
     expect(
       extractUsage({
         prompt_tokens: 12_000,
         completion_tokens: 8_000,
         total_tokens: 20_000,
+        prompt_tokens_details: { cached_tokens: 9_984 },
         completion_tokens_details: { reasoning_tokens: 5_500 },
       }),
     ).toEqual({
       promptTokens: 12_000,
+      cachedTokens: 9_984,
       completionTokens: 8_000,
       reasoningTokens: 5_500,
       totalTokens: 20_000,
@@ -34,6 +36,7 @@ describe('extractUsage', () => {
 describe('computeCost', () => {
   const usage = {
     promptTokens: 20_000,
+    cachedTokens: 0,
     completionTokens: 10_000,
     reasoningTokens: 7_500,
     totalTokens: 30_000,
@@ -56,6 +59,7 @@ describe('computeCost', () => {
   it('o teto configurado de 32K de saída cabe por pouco na receita de um deep no terra', () => {
     const ceiling = {
       promptTokens: 20_000,
+      cachedTokens: 0,
       completionTokens: 32_000,
       reasoningTokens: 29_500,
       totalTokens: 52_000,
@@ -80,10 +84,15 @@ describe('formatCostLog', () => {
   it('marca quando o custo passa da receita', () => {
     const over = computeCost(
       'gpt-5.6-sol',
-      { promptTokens: 20_000, completionTokens: 32_000, reasoningTokens: 0, totalTokens: 52_000 },
+      { promptTokens: 20_000, cachedTokens: 0, completionTokens: 32_000, reasoningTokens: 0, totalTokens: 52_000 },
       1,
     );
     expect(formatCostLog('gpt-5.6-sol', 'quick', over)).toContain('CUSTO ACIMA DA RECEITA');
+  });
+
+  it('mostra quantos tokens do prompt vieram do cache', () => {
+    const c = computeCost('gpt-5.6-luna', extractUsage({ prompt_tokens: 12_000, prompt_tokens_details: { cached_tokens: 9_984 } }), 1);
+    expect(formatCostLog('gpt-5.6-luna', 'quick', c)).toContain('prompt=12000 cached=9984 ');
   });
 
   it('não quebra com modelo fora da tabela', () => {

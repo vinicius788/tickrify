@@ -1,6 +1,7 @@
 import { Bias, Recommendation } from '../utils/analysis-normalizer';
 import { DrawingPlan } from '../utils/drawing-plan';
 import type { GroundingStats } from '../../modules/ai/analysis-data-coverage';
+import type { SignalDecisionResult, ValidatorAction } from '../utils/signal-decision';
 
 export interface AnalysisEvidence {
   version: 1;
@@ -35,4 +36,15 @@ export interface AIAnalysisResponse {
   // Telemetria por analise, gravada fora do `result` (saveAnalysisTelemetry).
   respondedModel?: string | null;
   groundingStats?: GroundingStats | null;
+  // O que o validador fez e o tempo de cada etapa dentro do adapter
+  // (vai para `result.engine`, ver engine-contract.ts).
+  engineMeta?: {
+    validatorAction: ValidatorAction;
+    validatorReasons: SignalDecisionResult['validatorReasons'];
+    validatorFlags: SignalDecisionResult['validatorFlags'];
+    groundingMs: number;
+    modelMs: number;
+    parseMs: number;
+    validationMs: number;
+  };
 }
