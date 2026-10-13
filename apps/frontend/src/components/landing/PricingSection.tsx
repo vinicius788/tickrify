@@ -117,7 +117,7 @@ const PricingSection = () => {
 
         <div className="site-trust">
           <span><i />Payments secured by Stripe</span>
-          <span><i />Cancel in one click</span>
+          <span><i />Cancel anytime in Settings</span>
           <span><i />No broker connection required</span>
         </div>
       </div>

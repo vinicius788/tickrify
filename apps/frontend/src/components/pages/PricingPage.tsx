@@ -17,13 +17,13 @@ const PRICING_COPY = {
       'You are early, and that counts. While this offer lasts, the',
     foundingCode: 'EARLY35',
     foundingSuffix: 'discount is applied automatically at checkout on the monthly plan: 35% off your first month, then $29/month.',
-    trust: ['Payments secured by Stripe', 'Cancel in one click', 'No broker connection required'],
+    trust: ['Payments secured by Stripe', 'Cancel anytime in Settings', 'No broker connection required'],
     faqTitle: 'Before you pay',
     faqEyebrow: 'Questions',
     faq: [
       {
-        q: 'Can I cancel anytime?',
-        a: 'Yes, cancel in one click from your dashboard, no emails and no questions. You keep your Ticks and full access until the end of the period you already paid for.',
+        q: 'How do I cancel?',
+        a: 'Anytime, from Settings in your dashboard: Settings, then Manage subscription, then Cancel subscription. No email needed. Canceling stops future charges, and you keep your Ticks and full access until the end of the period you already paid for. After that your account stays open in read mode with your history, and you can reactivate before that date in the same place. Questions: support@tickrify.com.',
       },
       {
         q: 'How do Ticks work?',
@@ -31,7 +31,7 @@ const PRICING_COPY = {
       },
       {
         q: 'Can I switch plans later?',
-        a: 'Yes. You can change plans anytime through the Stripe customer portal, accessible from your Tickrify dashboard.',
+        a: 'Yes. Write to support@tickrify.com and we switch you between the weekly, monthly and yearly plans, starting on your next billing date. You can also cancel in Settings and pick the new plan when your current period ends.',
       },
       {
         q: 'Which payment methods are accepted?',
@@ -57,13 +57,13 @@ const PRICING_COPY = {
       'Você chegou cedo, e isso conta. Enquanto a oferta durar, o desconto',
     foundingCode: 'EARLY35',
     foundingSuffix: 'é aplicado automaticamente no checkout do plano mensal: 35% no primeiro mês, depois US$ 29/mês.',
-    trust: ['Pagamento protegido pela Stripe', 'Cancela em um clique', 'Não precisa conectar corretora'],
+    trust: ['Pagamento protegido pela Stripe', 'Cancele quando quiser em Configurações', 'Não precisa conectar corretora'],
     faqTitle: 'Antes de pagar',
     faqEyebrow: 'Dúvidas',
     faq: [
       {
-        q: 'Posso cancelar a qualquer momento?',
-        a: 'Sim, cancele em um clique pelo seu dashboard, sem e-mails e sem perguntas. Você mantém seus Ticks e o acesso completo até o fim do período que já pagou.',
+        q: 'Como eu cancelo?',
+        a: 'Quando quiser, em Configurações no seu painel: Configurações, depois Gerenciar assinatura, depois Cancelar assinatura. Não precisa mandar e-mail. Cancelar interrompe as próximas cobranças, e você mantém seus Ticks e o acesso completo até o fim do período que já pagou. Depois disso a conta continua aberta em modo leitura com o seu histórico, e dá para reativar antes dessa data no mesmo lugar. Dúvidas: support@tickrify.com.',
       },
       {
         q: 'Como funcionam os Ticks?',
@@ -71,7 +71,7 @@ const PRICING_COPY = {
       },
       {
         q: 'Posso trocar de plano depois?',
-        a: 'Sim. Você pode mudar de plano a qualquer momento pelo portal do cliente Stripe, acessível pelo dashboard da Tickrify.',
+        a: 'Sim. Escreva para support@tickrify.com e trocamos você entre os planos semanal, mensal e anual a partir da próxima cobrança. Você também pode cancelar em Configurações e escolher o novo plano quando o período atual terminar.',
       },
       {
         q: 'Quais métodos de pagamento são aceitos?',

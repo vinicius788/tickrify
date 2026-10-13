@@ -939,7 +939,7 @@ export default {
       q5: 'Wie berechnet das System Stop Loss und Take Profit?',
       a5: 'Die Levels kommen aus der Marktstruktur: Hochs und Tiefs, Zonen und das Level, das die Analyse entkräftet. Der Plan wird zu WAIT, wenn nicht einmal das beste Ziel 1,2:1 Chance-Risiko übertrifft.',
       q6: 'Kann ich mein Abo jederzeit kündigen?',
-      a6: 'Ja, kündigen Sie mit einem Klick direkt im Dashboard, ohne E-Mails und ohne Fragen. Ihre Ticks und der volle Zugriff bleiben bis zum Ende des bereits bezahlten Zeitraums erhalten.',
+      a6: 'Ja, jederzeit unter Einstellungen in deinem Dashboard (Abo verwalten), ohne E-Mail. Deine Ticks und der volle Zugriff bleiben bis zum Ende des bereits bezahlten Zeitraums.',
     },
     footer: {
       tagline: 'KI-Chartanalyse für alle, die vor dem Einstieg eine zweite Meinung wollen, kein Signal zum Nachhandeln.',

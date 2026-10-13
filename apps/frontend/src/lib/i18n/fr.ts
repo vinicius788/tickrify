@@ -939,7 +939,7 @@ export default {
       q5: 'Comment le système calcule-t-il le Stop Loss et le Take Profit ?',
       a5: 'Les niveaux viennent de la structure du marché : sommets et creux, zones et le niveau qui invalide la lecture. Le plan passe en WAIT quand même son meilleur objectif ne dépasse pas 1,2:1 de risque/rendement.',
       q6: 'Puis-je annuler mon abonnement à tout moment ?',
-      a6: 'Oui, annulez en un clic depuis votre dashboard, sans e-mails ni questions. Vous conservez vos Ticks et l\'accès complet jusqu\'à la fin de la période déjà payée.',
+      a6: 'Oui, à tout moment, depuis Paramètres dans votre espace (Gérer l’abonnement), sans e-mail à envoyer. Vous conservez vos Ticks et l’accès complet jusqu’à la fin de la période déjà payée.',
     },
     footer: {
       tagline: 'Lecture de graphiques par IA pour ceux qui veulent un second avis avant d\'entrer, pas un signal à suivre.',

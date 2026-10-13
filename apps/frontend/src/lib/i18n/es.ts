@@ -939,7 +939,7 @@ export default {
       q5: '¿Cómo calcula el sistema el Stop Loss y el Take Profit?',
       a5: 'Los niveles salen de la estructura del mercado: máximos y mínimos, zonas y el nivel que invalida la lectura. El plan pasa a WAIT cuando ni su mejor objetivo supera 1,2:1 de riesgo y beneficio.',
       q6: '¿Puedo cancelar mi suscripción en cualquier momento?',
-      a6: 'Sí, cancela con un clic desde tu dashboard, sin correos ni preguntas. Mantienes tus Ticks y el acceso completo hasta el final del período que ya pagaste.',
+      a6: 'Sí, cuando quieras, desde Ajustes en tu panel (Gestionar suscripción), sin necesidad de enviar correos. Mantienes tus Ticks y el acceso completo hasta el final del período que ya pagaste.',
     },
     footer: {
       tagline: 'Lectura de gráficos con IA para quien quiere una segunda opinión antes de entrar, no una señal que seguir.',

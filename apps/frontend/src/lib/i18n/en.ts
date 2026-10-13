@@ -939,7 +939,7 @@ export default {
       q5: 'How does the system calculate Stop Loss and Take Profit?',
       a5: 'Levels come from market structure: swing points, zones and the level that invalidates the read. A plan is downgraded to WAIT when not even its best target clears 1.2:1 risk to reward.',
       q6: 'Can I cancel my subscription anytime?',
-      a6: 'Yes, cancel in one click from your dashboard, no emails and no questions. You keep your Ticks and full access until the end of the period you already paid for.',
+      a6: 'Yes, anytime, from Settings in your dashboard (Manage subscription), with no email needed. You keep your Ticks and full access until the end of the period you already paid for.',
     },
     footer: {
       tagline: 'AI chart reading for traders who want a second opinion before they enter, not a signal to follow.',
