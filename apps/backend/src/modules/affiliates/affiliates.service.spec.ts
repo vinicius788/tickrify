@@ -302,6 +302,26 @@ describe('AffiliatesService', () => {
       await expect(service.checkoutDiscountFor('buyer')).resolves.toBeNull();
     });
 
+    it('afiliado aprovado ANTES do cupom existir ganha o codigo na Stripe no boot, uma vez so', async () => {
+      seedUser('partner');
+      const aff = await service.join('partner', APP);
+      db.affiliate[0].status = 'ACTIVE';
+      // Sem cupom configurado: nada acontece.
+      await expect(service.syncMissingPromotionCodes()).resolves.toBe(0);
+      expect(stripe.promotionCodes.create).not.toHaveBeenCalled();
+
+      process.env.STRIPE_AFFILIATE_COUPON_ID = 'AFF10';
+      await expect(service.syncMissingPromotionCodes()).resolves.toBe(1);
+      expect(stripe.promotionCodes.create).toHaveBeenCalledWith(
+        expect.objectContaining({ coupon: 'AFF10', code: aff.couponCode, active: true }),
+      );
+      expect(db.affiliate[0].stripePromotionCodeId).toBe(`promo_${aff.couponCode}`);
+
+      // Segunda vez: ja tem codigo, nao cria de novo.
+      await expect(service.syncMissingPromotionCodes()).resolves.toBe(0);
+      expect(stripe.promotionCodes.create).toHaveBeenCalledTimes(1);
+    });
+
     it('com cupom configurado, entrar no programa cria o promotion code (1o pagamento, metadata do afiliado)', async () => {
       process.env.STRIPE_AFFILIATE_COUPON_ID = 'AFF10';
       seedUser('partner');

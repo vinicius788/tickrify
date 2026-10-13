@@ -242,8 +242,36 @@ export class AffiliatesService implements OnModuleInit {
       this.logger.log(
         `[affiliate] Tabelas prontas. Cupom da Stripe: ${this.affiliateCouponId() ? 'configurado' : 'AUSENTE (sem desconto para indicados)'}.`,
       );
+      void this.syncMissingPromotionCodes();
     } catch (error) {
       this.logger.error('[affiliate] Nao consegui garantir as tabelas de afiliados.', error);
+    }
+  }
+
+  /**
+   * Afiliado que entrou ou foi aprovado ANTES de existir STRIPE_AFFILIATE_COUPON_ID
+   * ficava sem codigo na Stripe (o cupom dele nao funcionava) e o /admin so
+   * sincroniza quando algo muda. No boot, cria o que falta. Idempotente: quem
+   * ja tem codigo nao e tocado; com 2 instancias, a Stripe recusa o codigo
+   * repetido na segunda e so fica um log.
+   */
+  async syncMissingPromotionCodes(): Promise<number> {
+    if (!this.affiliateCouponId() || !this.stripe) return 0;
+    try {
+      const missing = await this.prisma.affiliate.findMany({
+        where: { stripePromotionCodeId: null, status: { in: ['ACTIVE', 'PENDING'] } },
+      });
+      let created = 0;
+      for (const affiliate of missing) {
+        if ((await this.syncPromotionCode(affiliate)) === 'ok') created++;
+      }
+      if (missing.length > 0) {
+        this.logger.log(`[affiliate] Codigos na Stripe criados no boot: ${created} de ${missing.length}.`);
+      }
+      return created;
+    } catch (error) {
+      this.logger.error(`[affiliate] Sincronizacao de codigos no boot falhou: ${error instanceof Error ? error.message : error}`);
+      return 0;
     }
   }
 
