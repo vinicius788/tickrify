@@ -9,6 +9,9 @@ vi.mock('@clerk/clerk-react', () => ({ useUser: () => ({ user: { id: 'u-1' } }) 
 const getJournal = vi.fn();
 const setTradeNote = vi.fn();
 vi.mock('@/lib/api', () => ({ useAPIClient: () => ({ getJournal, setTradeNote }) }));
+// O pre-push roda tudo de uma vez e a primeira carga da query passa de 1 s
+// (padrao do findBy) com a maquina cheia: o teste quebrava no push da noite.
+const LOAD = { timeout: 5000 };
 
 const now = new Date();
 const at = (day: number, hour: number) => new Date(now.getFullYear(), now.getMonth(), day, hour).toISOString();
@@ -45,7 +48,7 @@ describe('Diario: desempenho do mes', () => {
     });
     renderJournal();
 
-    expect(await screen.findByText('Performance this month')).toBeTruthy();
+    expect(await screen.findByText('Performance this month', {}, LOAD)).toBeTruthy();
     // (2 - 1) / 2 = +0.50R
     expect(screen.getByText('+0.50R')).toBeTruthy();
     expect(screen.getByText('planned R per closed trade (2)')).toBeTruthy();
@@ -60,7 +63,7 @@ describe('Diario: desempenho do mes', () => {
   it('mes sem trade fechado: explica como preencher, sem numero inventado', async () => {
     getJournal.mockResolvedValue({ truncated: false, items: [item('w', 1, 'XAUUSD', 'WAIT', null, null, null)] });
     renderJournal();
-    expect(await screen.findByText('Mark TP or Stop on your trades in My Trades and your stats for the month show up here.')).toBeTruthy();
+    expect(await screen.findByText('Mark TP or Stop on your trades in My Trades and your stats for the month show up here.', {}, LOAD)).toBeTruthy();
     expect(screen.queryByText('Performance this month')).toBeNull();
   });
 });
@@ -82,7 +85,7 @@ describe('Diario: voce x o plano da IA', () => {
       ],
     });
     renderJournal();
-    expect(await screen.findByText('You vs the AI plan')).toBeTruthy();
+    expect(await screen.findByText('You vs the AI plan', {}, LOAD)).toBeTruthy();
     expect(screen.getByText('2 of 3 reached TP1 before the stop')).toBeTruthy();
     expect(screen.getByText('1 of 2 trades you logged')).toBeTruthy();
     expect(screen.getByText('You hit the stop where the plan reached TP1: 1')).toBeTruthy();
@@ -106,7 +109,7 @@ describe('Diario: anotacao do trade', () => {
     setTradeNote.mockResolvedValue({ id: 'a', tradeNote: { note: 'Moved my stop', setup: 'pullback', emotion: 'fomo', mistakes: ['moved_stop'] } });
     renderJournal();
 
-    await user.click(await screen.findByRole('button', { name: 'Add note' }));
+    await user.click(await screen.findByRole('button', { name: 'Add note' }, LOAD));
     await user.click(screen.getByRole('button', { name: 'Pullback' }));
     await user.click(screen.getByRole('button', { name: 'FOMO' }));
     await user.click(screen.getByRole('button', { name: 'Moved the stop' }));
@@ -128,7 +131,7 @@ describe('Diario: anotacao do trade', () => {
   it('WAIT nao tem botao de anotar (nao e operacao)', async () => {
     getJournal.mockResolvedValue({ truncated: false, items: [item('w', new Date().getDate(), 'XAUUSD', 'WAIT', null, null, null)] });
     renderJournal();
-    await screen.findByText('XAUUSD');
+    await screen.findByText('XAUUSD', {}, LOAD);
     expect(screen.queryByRole('button', { name: 'Add note' })).toBeNull();
   });
 });
