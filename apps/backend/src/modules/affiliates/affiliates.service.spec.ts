@@ -7,6 +7,9 @@ import { AdminGuard } from '../auth/admin.guard';
 import { AuthGuard } from '../auth/auth.guard';
 import { AdminUpdateAffiliateDto, ClaimAffiliateDto, JoinAffiliateDto, RequestPayoutDto } from './dto/affiliates.dto';
 import { CreateCheckoutSessionDto } from '../payments/dto/create-checkout-session.dto';
+import { captureServer } from '../../common/analytics/posthog';
+
+jest.mock('../../common/analytics/posthog', () => ({ captureServer: jest.fn() }));
 
 // ── Prisma em memoria: so o que o servico usa, com chave unica de verdade ────
 
@@ -46,16 +49,24 @@ function fakePrisma() {
     const out: Row = { ...row };
     if (include?.user) out.user = db.user.find((u) => u.id === row.userId) ?? null;
     if (include?.affiliate) out.affiliate = db.affiliate.find((a) => a.id === row.affiliateId) ?? null;
+    if (include?._count) {
+      const related: Record<string, string> = { clicks: 'affiliateClick', referrals: 'affiliateReferral' };
+      out._count = Object.fromEntries(
+        Object.keys(include._count.select).map((k) => [k, db[related[k]].filter((r) => r.affiliateId === row.id).length]),
+      );
+    }
     return out;
   };
 
   const model = (name: string) => ({
     findUnique: async ({ where, include }: Row) => withInclude(name, db[name].find((r) => matches(r, where)), include),
     findFirst: async ({ where, include }: Row = {}) => withInclude(name, db[name].find((r) => matches(r, where)), include),
-    findMany: async ({ where, select }: Row = {}) =>
+    findMany: async ({ where, select, include }: Row = {}) =>
       db[name]
         .filter((r) => matches(r, where))
-        .map((r) => (select ? Object.fromEntries(Object.keys(select).map((k) => [k, r[k]])) : { ...r })),
+        .map((r) =>
+          select ? Object.fromEntries(Object.keys(select).map((k) => [k, r[k]])) : include ? withInclude(name, r, include) : { ...r },
+        ),
     count: async ({ where }: Row = {}) => db[name].filter((r) => matches(r, where)).length,
     create: async ({ data }: Row) => {
       const row: Row = { id: id(), createdAt: new Date(), updatedAt: new Date(), ...data };
@@ -205,6 +216,28 @@ describe('AffiliatesService', () => {
       await expect(service.recordClick('partner1', '/pricing')).resolves.toEqual({ valid: true, clickId: expect.any(String) });
       await expect(service.recordClick('NOPE99')).resolves.toEqual({ valid: false });
       expect(db.affiliateClick.filter((c) => c.affiliateId === aff.id)).toHaveLength(1);
+    });
+
+    it('mesmo aparelho no mesmo dia conta UM clique; outro dia ou outro aparelho conta outro', async () => {
+      (captureServer as jest.Mock).mockClear();
+      const aff = await setup();
+      const phone = { ip: '200.1.2.3', userAgent: 'Mobile Safari' };
+      const first = await service.recordClick('PARTNER1', '/', phone, NOW);
+      const again = await service.recordClick('PARTNER1', '/pricing', phone, new Date(NOW.getTime() + 60_000));
+      expect(again.clickId).toBe(first.clickId);
+      await service.recordClick('PARTNER1', '/', { ip: '200.1.2.4', userAgent: 'Mobile Safari' }, NOW);
+      await service.recordClick('PARTNER1', '/', phone, new Date(NOW.getTime() + DAY));
+      expect(db.affiliateClick.filter((c) => c.affiliateId === aff.id)).toHaveLength(3);
+      // O id de clique continua passando no DTO do claim.
+      const dto = await new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }).transform(
+        { code: 'PARTNER1', kind: 'link', clickId: first.clickId },
+        { type: 'body', metatype: ClaimAffiliateDto },
+      );
+      expect(dto.clickId).toBe(first.clickId);
+      // Repeticao nao vira outro affiliate_link_visited.
+      const visits = (captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'affiliate_link_visited');
+      expect(visits).toHaveLength(3);
+      expect(visits[0][2]).toMatchObject({ code: 'PARTNER1', $process_person_profile: false });
     });
 
     it('link dentro de 30 dias vincula o usuario', async () => {
@@ -373,6 +406,18 @@ describe('AffiliatesService', () => {
       await service.claim('buyer', { code: 'SAVE10', kind: 'coupon' }, NOW);
     });
 
+    it('cancelou e assinou de novo: a assinatura nova nao gera comissao', async () => {
+      db.subscription.push({ id: 's_old', userId: 'buyer', stripeId: 'sub_old', status: 'canceled' });
+      await pay({ id: 'in_new', subscription: 'sub_new' });
+      expect(db.affiliateCommission).toHaveLength(0);
+    });
+
+    it('renovacao da MESMA assinatura segue gerando comissao', async () => {
+      db.subscription.push({ id: 's_1', userId: 'buyer', stripeId: 'sub_1', status: 'active' });
+      await pay({ id: 'in_1', subscription: 'sub_1' });
+      expect(db.affiliateCommission).toHaveLength(1);
+    });
+
     it('fatura paga cria comissao PENDING pelo valor REALMENTE pago, relido na Stripe', async () => {
       // O payload do webhook mente 9999: vale o que a API da Stripe devolve.
       stripe.invoices.retrieve.mockResolvedValueOnce(stripeInvoice());
@@ -534,6 +579,27 @@ describe('AffiliatesService', () => {
         await pay({ id: `in_${i}`, amount_paid: 2900, billing_reason: i ? 'subscription_cycle' : 'subscription_create', status_transitions: { paid_at: at(NOW) } });
       }
     };
+
+    it('venda paga emite affiliate_sale_paid com o codigo e a comissao pela taxa do afiliado', async () => {
+      (captureServer as jest.Mock).mockClear();
+      await earn(1);
+      const sale = (captureServer as jest.Mock).mock.calls.find((c) => c[1] === 'affiliate_sale_paid');
+      expect(sale?.[0]).toBe('clerk_buyer');
+      expect(sale?.[2]).toMatchObject({ code: 'PARTNER1', amount_usd: 29, commission_usd: 5.8, rate_percent: 20 });
+      const signup = (captureServer as jest.Mock).mock.calls.find((c) => c[1] === 'affiliate_signup');
+      expect(signup?.[2]).toMatchObject({ code: 'PARTNER1', source: 'coupon' });
+    });
+
+    it('marcar como pago no admin fecha so o disponivel, sem minimo e sem pedido do afiliado', async () => {
+      await earn(2); // 2 x 5,80, abaixo do minimo de saque
+      await expect(service.adminSettle(db.affiliate[0].id, 'admin_1', 'pix', NOW)).rejects.toBeInstanceOf(BadRequestException);
+      const payout = await service.adminSettle(db.affiliate[0].id, 'admin_1', 'pix e2e', LATER);
+      expect(payout).toMatchObject({ amountCents: 1160, status: 'PAID', method: 'manual (pix)' });
+      expect(db.affiliateCommission.every((c) => c.status === 'PAID' && c.payoutId === payout.id)).toBe(true);
+      await expect(service.adminSettle(db.affiliate[0].id, 'admin_1', undefined, LATER)).rejects.toBeInstanceOf(BadRequestException);
+      const list = await service.adminList(LATER);
+      expect(list[0]).toMatchObject({ paidSales: 2, paidCustomers: 1, paidCents: 1160, availableCents: 0 });
+    });
 
     it('PENDING vira AVAILABLE so depois de 30 dias', async () => {
       await earn(1);

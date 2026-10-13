@@ -136,7 +136,7 @@ const FeedbackCard = () => {
           <button
             type="submit"
             disabled={state === 'sending'}
-            className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-[#050508] transition-opacity hover:opacity-90 disabled:opacity-60"
+            className="rounded-lg bg-[var(--inverse-bg)] px-4 py-2 text-sm font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {state === 'sending' ? f.sending : f.send}
           </button>

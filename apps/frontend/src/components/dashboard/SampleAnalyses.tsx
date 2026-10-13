@@ -93,7 +93,7 @@ const TurnCta = ({ freeLeft, trial, onAnalyze }: { freeLeft: number; trial?: boo
       <button
         type="button"
         onClick={onAnalyze}
-        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#050508] transition-opacity hover:opacity-90"
+        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--inverse-bg)] px-4 py-2.5 text-sm font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90"
       >
         <PlusCircle className="h-4 w-4" /> {c.turnCta}
       </button>
@@ -127,8 +127,8 @@ const SampleButtons = ({
             aria-current={active ? 'true' : undefined}
             className={`flex min-w-0 flex-col items-start gap-1.5 rounded-lg border px-3 py-2.5 text-left transition-colors ${
               active
-                ? 'border-[var(--border-accent)] bg-white/[0.06]'
-                : 'border-[var(--border-subtle)] bg-[var(--bg-overlay)] hover:bg-white/[0.04]'
+                ? 'border-[var(--border-accent)] bg-[var(--fill-3)]'
+                : 'border-[var(--border-subtle)] bg-[var(--bg-overlay)] hover:bg-[var(--fill-2)]'
             }`}
           >
             <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-bold tracking-wider ${KIND_TONE[sample.kind]}`}>

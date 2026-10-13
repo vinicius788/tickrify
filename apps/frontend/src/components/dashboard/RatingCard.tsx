@@ -111,9 +111,9 @@ const RatingCard = ({ analysisId }: { analysisId: string }) => {
                 aria-label={r.star.replace('{n}', String(value))}
                 onMouseEnter={() => setHover(value)}
                 onClick={() => void rate(value)}
-                className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border-default)] transition-colors hover:border-amber-400"
+                className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--border-default)] transition-colors hover:border-[var(--tone-warn-2)]"
               >
-                <Star className={`h-5 w-5 ${value <= hover ? 'fill-amber-400 text-amber-400' : 'text-[var(--text-secondary)]'}`} />
+                <Star className={`h-5 w-5 ${value <= hover ? 'fill-[var(--tone-star)] text-[var(--tone-warn-2)]' : 'text-[var(--text-secondary)]'}`} />
               </button>
             ))}
           </div>
@@ -155,7 +155,7 @@ const RatingCard = ({ analysisId }: { analysisId: string }) => {
               type="button"
               disabled={sending}
               onClick={() => void sendDetails(true)}
-              className="rounded-xl bg-[var(--signal-buy)] px-5 py-2 text-sm font-semibold text-black disabled:opacity-60"
+              className="rounded-xl bg-[var(--signal-buy)] px-5 py-2 text-sm font-semibold text-[var(--on-accent)] disabled:opacity-60"
             >
               {r.send}
             </button>
@@ -195,7 +195,7 @@ const RatingCard = ({ analysisId }: { analysisId: string }) => {
               type="button"
               disabled={sending}
               onClick={() => void sendDetails(false)}
-              className="rounded-xl bg-[var(--signal-buy)] px-5 py-2 text-sm font-semibold text-black disabled:opacity-60"
+              className="rounded-xl bg-[var(--signal-buy)] px-5 py-2 text-sm font-semibold text-[var(--on-accent)] disabled:opacity-60"
             >
               {r.send}
             </button>
@@ -211,7 +211,7 @@ const RatingCard = ({ analysisId }: { analysisId: string }) => {
         </div>
       )}
       {error ? (
-        <p key="error" role="alert" className="mt-2 text-xs text-red-400">
+        <p key="error" role="alert" className="mt-2 text-xs text-[var(--tone-down-2)]">
           {error}
         </p>
       ) : null}

@@ -93,6 +93,7 @@
 /* Casca pré-hidratação: só a barra do cabeçalho, sem texto.
          Nas mesmas medidas da barra real. Ver CLAUDE.md, 25/08/2026. */
       html, body { background: #08090a; margin: 0; }
+      html[data-theme=light], html[data-theme=light] body { background: #f6f7f9; }
       .ph-bar {
         height: 68px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.09);
@@ -136,7 +137,7 @@
     </style>
   </head>
   <body>
-    <script>if(/^\/(dashboard|demo|admin)(\/|$)/.test(location.pathname))document.documentElement.classList.add('tk-boot')</script>
+    <script>(function(d,p){if(/^\/(dashboard|demo|admin)(\/|$)/.test(p))d.classList.add('tk-boot');try{if(/^\/(dashboard|demo|admin)(\/|$)/.test(p)&&localStorage.getItem('tickrify_theme')==='light')d.setAttribute('data-theme','light')}catch(e){}})(document.documentElement,location.pathname)</script>
     <div id="root"><div class="ph-load"><img src="/tickrify-mark-loader.svg" alt="" width="64" height="77" loading="lazy" /></div><div class="ph-bar"><span><img src="/tickrify-lockup.svg" alt="Tickrify" width="116" height="30" /></span></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

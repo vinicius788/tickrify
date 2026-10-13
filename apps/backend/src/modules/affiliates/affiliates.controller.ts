@@ -1,4 +1,4 @@
-import { Body, Controller, Get, NotFoundException, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Post, Req, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
@@ -32,9 +32,13 @@ export class AffiliatesController {
   @Public()
   @Post('track')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  async track(@Body() body: TrackAffiliateDto) {
+  async track(@Body() body: TrackAffiliateDto, @Req() req: { ip?: string; headers?: Record<string, string | string[] | undefined> }) {
     if (body.kind === 'coupon') return { valid: await this.affiliates.isCouponValid(body.code) };
-    return this.affiliates.recordClick(body.code, body.landingPath);
+    const ua = req.headers?.['user-agent'];
+    return this.affiliates.recordClick(body.code, body.landingPath, {
+      ip: req.ip ?? null,
+      userAgent: (Array.isArray(ua) ? ua[0] : ua) ?? null,
+    });
   }
 
   /** Vincula a conta logada ao afiliado do link/cupom guardado no navegador. */

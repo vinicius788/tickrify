@@ -202,6 +202,29 @@ export class MailService {
   }
 
   /**
+   * Confirmacao de cancelamento (13/10/2026): quando o acesso termina e como
+   * reativar. Transacional (sem descadastro). Atras da chave
+   * EMAIL_CANCELLATION_CONFIRM, decidida no StripeService.
+   */
+  async sendCancellationConfirm(to: string, name: string | null | undefined, accessEndsAt: Date): Promise<boolean> {
+    const date = accessEndsAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    const first = String(name ?? '').trim().split(/\s+/)[0]?.replace(/[<>&"]/g, '') || '';
+    const subject = 'Your Tickrify subscription is canceled';
+    const html = this.wrap(
+      subject,
+      `${first ? `Hi ${first},<br><br>` : ''}` +
+        `Your subscription will not renew. You keep full access until <b>${date}</b>.<br><br>` +
+        `After that your account stays open in read mode: your analyses and history remain available, ` +
+        `and new analyses need a subscription.<br><br>` +
+        `Changed your mind? You can reactivate before ${date} in Settings with one click, and your plan stays the same.<br><br>` +
+        `Questions? Reply to this email or write to support@tickrify.com.`,
+      'Open Settings',
+      `${this.appUrl}/dashboard/settings`,
+    );
+    return this.send(to, subject, html, { kind: 'cancellation_confirm' });
+  }
+
+  /**
    * E-mails de ciclo de vida (ativacao e checkout abandonado). Saem em nome do
    * fundador (LIFECYCLE_MAIL_FROM; resposta cai na caixa dele) e levam o
    * cabecalho de descadastro de um clique que Gmail e Yahoo exigem.

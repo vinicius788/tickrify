@@ -297,7 +297,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
       : isTradeCall(recommendation) ? j.noResult : tr.noTrade;
 
   const navBtn =
-    'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-30';
+    'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-30';
 
   return (
     <Card className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)]">
@@ -312,7 +312,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
               <button
                 type="button"
                 onClick={goToday}
-                className="rounded-lg border border-[var(--border-subtle)] px-3 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]"
+                className="rounded-lg border border-[var(--border-subtle)] px-3 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]"
               >
                 {j.today}
               </button>
@@ -366,7 +366,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
         </div>
 
         {query.data?.truncated && (
-          <p className="border-b border-[var(--border-subtle)] px-5 py-2 text-xs text-amber-500">{j.truncated}</p>
+          <p className="border-b border-[var(--border-subtle)] px-5 py-2 text-xs text-[var(--tone-warn-3)]">{j.truncated}</p>
         )}
 
         {query.isError ? (
@@ -375,7 +375,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
             <button
               type="button"
               onClick={() => void query.refetch()}
-              className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm text-[var(--text-primary)] transition-colors hover:bg-white/[0.04]"
+              className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)]"
             >
               {j.retry}
             </button>
@@ -421,7 +421,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                   >
                     <span
                       className={`inline-flex h-5 w-5 items-center justify-center self-start rounded-full font-terminal text-[11px] sm:h-6 sm:w-6 sm:text-xs ${
-                        isToday ? 'bg-white font-semibold text-[#050508]' : 'text-[var(--text-secondary)]'
+                        isToday ? 'bg-[var(--inverse-bg)] font-semibold text-[var(--inverse-fg)]' : 'text-[var(--text-secondary)]'
                       }`}
                     >
                       {date.getDate()}
@@ -535,8 +535,8 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                         onError={() => setBrokenImages((prev) => ({ ...prev, [a.id]: true }))}
                                         className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
                                       />
-                                      <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-                                        <Maximize2 className="h-3.5 w-3.5 text-white" />
+                                      <span className="absolute inset-0 flex items-center justify-center bg-[var(--scrim-soft)] opacity-0 transition-opacity group-hover:opacity-100">
+                                        <Maximize2 className="h-3.5 w-3.5 text-[var(--on-scrim)]" />
                                       </span>
                                     </>
                                   ) : (
@@ -569,7 +569,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                         <span className="rounded border border-[var(--border-subtle)] px-1.5 py-0.5">{(j.emotionLabels as Record<string, string>)[a.tradeNote.emotion] ?? a.tradeNote.emotion}</span>
                                       )}
                                       {a.tradeNote?.mistakes.map((m) => (
-                                        <span key={m} className="rounded border border-amber-500/40 px-1.5 py-0.5 text-amber-500">{(j.mistakeLabels as Record<string, string>)[m] ?? m}</span>
+                                        <span key={m} className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[var(--tone-warn-3)]">{(j.mistakeLabels as Record<string, string>)[m] ?? m}</span>
                                       ))}
                                     </span>
                                   )}

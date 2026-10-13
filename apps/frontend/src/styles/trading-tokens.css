@@ -46,6 +46,182 @@
   --data-positive: var(--accent-green);
   --data-negative: var(--accent-red);
   --data-neutral: var(--text-secondary);
+
+  /* Tema (13/10/2026). Tudo que a area logada pintava com cor solta
+     (bg-white/[0.04], text-zinc-500, text-amber-300...) virou token, com o
+     valor ESCURO identico ao de antes. O tema claro so redefine estes valores
+     em :root[data-theme='light'], aplicado apenas na area logada (lib/theme.ts). */
+  --text-soft: #d4d4d8;
+  --text-dim: #a1a1aa;
+  --text-faint: #71717a;
+  --text-ghost: #52525b;
+  --fill-1: rgba(255, 255, 255, 0.02);
+  --fill-2: rgba(255, 255, 255, 0.04);
+  --fill-3: rgba(255, 255, 255, 0.06);
+  --fill-4: rgba(255, 255, 255, 0.08);
+  --fill-5: rgba(255, 255, 255, 0.1);
+  --fill-6: rgba(255, 255, 255, 0.12);
+  --fill-strong: #3f3f46;
+  --border-strong: rgba(255, 255, 255, 0.1);
+  --border-heavy: rgba(255, 255, 255, 0.25);
+  /* Botao principal e item ativo do menu: claro no escuro, escuro no claro. */
+  --inverse-bg: #ffffff;
+  --inverse-fg: #050508;
+  /* Texto sobre o verde/vermelho/amarelo do sinal usado como fundo. */
+  --on-accent: #000000;
+  --bg-inset: rgba(0, 0, 0, 0.4);
+  --bg-floating: rgba(0, 0, 0, 0.7);
+  --bg-solid: #0b0b12;
+  --bg-header: rgba(5, 5, 8, 0.95);
+  --paywall-veil: rgba(5, 5, 8, 0.7);
+  --verdict-tp1: #00ff7f;
+  --verdict-tp1-bg: rgba(0, 255, 127, 0.12);
+  --verdict-tp1-border: rgba(0, 255, 127, 0.4);
+  --verdict-tp2: #00c850;
+  --verdict-tp2-bg: rgba(0, 200, 80, 0.12);
+  --verdict-tp2-border: rgba(0, 200, 80, 0.4);
+  --verdict-sl: #ff4444;
+  --verdict-sl-bg: rgba(255, 68, 68, 0.12);
+  --verdict-sl-border: rgba(255, 68, 68, 0.4);
+  --verdict-open: #9999cc;
+  --verdict-open-bg: rgba(120, 120, 180, 0.1);
+  --verdict-open-border: rgba(120, 120, 180, 0.3);
+  --verdict-nofill: #a0a0a0;
+  --verdict-nofill-bg: rgba(140, 140, 140, 0.1);
+  --verdict-nofill-border: rgba(140, 140, 140, 0.3);
+  --media-bg: #000000;
+  --scrim-soft: rgba(0, 0, 0, 0.5);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --scrim-strong: rgba(0, 0, 0, 0.8);
+  --on-scrim: #ffffff;
+  --tone-up-1: #6ee7b7;
+  --tone-up-2: #34d399;
+  --tone-warn-1: #fcd34d;
+  --tone-warn-2: #fbbf24;
+  --tone-warn-3: #f59e0b;
+  --tone-down-1: #fca5a5;
+  --tone-down-2: #f87171;
+  --tone-down-3: #ef4444;
+  --tone-info-1: #7dd3fc;
+  --tone-violet-1: #d8b4fe;
+  --tone-star: #fbbf24;
+  --tone-down-bg-text: #fef2f2;
+  --heat-0: rgba(154, 163, 174, 0.12);
+  --heat-1: rgba(94, 234, 138, 0.3);
+  --heat-2: rgba(94, 234, 138, 0.6);
+  --heat-3: rgba(94, 234, 138, 1);
+  --scan-box-bg: #0b0c0e;
+  --scan-box-border: rgba(255, 255, 255, 0.09);
+  --scan-sweep: rgba(255, 255, 255, 0.5);
+  --scan-sweep-soft: rgba(255, 255, 255, 0.1);
+  --scan-sweep-faint: rgba(255, 255, 255, 0.04);
+  --scan-meta: rgba(255, 255, 255, 0.34);
+  --scan-line: rgba(255, 255, 255, 0.07);
+  --scan-phase: rgba(255, 255, 255, 0.3);
+  --scan-phase-done: rgba(255, 255, 255, 0.48);
+  --scan-phase-now: #f7f7f5;
+  --page-grid-line: rgba(255, 255, 255, 0.015);
+  --page-glow-1: rgba(0, 200, 100, 0.07);
+  --page-glow-2: rgba(0, 140, 255, 0.04);
+  --page-glow-3: rgba(0, 200, 100, 0.03);
+  color-scheme: dark;
+}
+
+/* Tema claro da area logada. Contraste conferido contra o fundo #f6f7f9:
+   texto principal 17:1, secundario 5,9:1, verde/vermelho/ambar do sinal
+   acima de 4,5:1 (os neon do escuro ficam ilegiveis no branco). */
+:root[data-theme='light'] {
+  --bg: #f6f7f9;
+  --bg-surface: rgba(15, 17, 22, 0.02);
+  --bg-card: #ffffff;
+  --border-hover: rgba(15, 17, 22, 0.2);
+  --text-primary: #0b0d12;
+  --text-secondary: #5b616b;
+  --text-muted: #6f757e;
+  --accent-green: #057a44;
+  --accent-green-dim: rgba(6, 132, 74, 0.1);
+  --accent-red: #c62828;
+  --accent-yellow: #8a5c00;
+  --grid-color: rgba(15, 17, 22, 0.04);
+  --bg-overlay: #eef0f3;
+  --border-subtle: rgba(15, 17, 22, 0.08);
+  --border-default: rgba(15, 17, 22, 0.12);
+  --signal-buy-border: rgba(6, 132, 74, 0.35);
+  --signal-sell-bg: rgba(198, 40, 40, 0.08);
+  --signal-sell-border: rgba(198, 40, 40, 0.3);
+  --signal-hold-bg: rgba(154, 103, 0, 0.1);
+  --signal-hold-border: rgba(154, 103, 0, 0.3);
+
+  --text-soft: #2f333b;
+  --text-dim: #4a4f58;
+  --text-faint: #636973;
+  --text-ghost: #858b94;
+  --fill-1: rgba(15, 17, 22, 0.025);
+  --fill-2: rgba(15, 17, 22, 0.045);
+  --fill-3: rgba(15, 17, 22, 0.06);
+  --fill-4: rgba(15, 17, 22, 0.08);
+  --fill-5: rgba(15, 17, 22, 0.1);
+  --fill-6: rgba(15, 17, 22, 0.12);
+  --fill-strong: #c9ccd2;
+  --border-strong: rgba(15, 17, 22, 0.12);
+  --border-heavy: rgba(15, 17, 22, 0.3);
+  --inverse-bg: #0b0d12;
+  --inverse-fg: #ffffff;
+  --on-accent: #ffffff;
+  --bg-inset: #f1f2f5;
+  --bg-floating: rgba(255, 255, 255, 0.92);
+  --bg-solid: #ffffff;
+  --bg-header: rgba(246, 247, 249, 0.95);
+  --paywall-veil: rgba(246, 247, 249, 0.8);
+  --verdict-tp1: #057a44;
+  --verdict-tp1-bg: rgba(6, 132, 74, 0.1);
+  --verdict-tp1-border: rgba(6, 132, 74, 0.4);
+  --verdict-tp2: #046c3c;
+  --verdict-tp2-bg: rgba(4, 108, 60, 0.1);
+  --verdict-tp2-border: rgba(4, 108, 60, 0.4);
+  --verdict-sl: #c62828;
+  --verdict-sl-bg: rgba(198, 40, 40, 0.08);
+  --verdict-sl-border: rgba(198, 40, 40, 0.35);
+  --verdict-open: #4b4b8f;
+  --verdict-open-bg: rgba(75, 75, 143, 0.08);
+  --verdict-open-border: rgba(75, 75, 143, 0.3);
+  --verdict-nofill: #5b616b;
+  --verdict-nofill-bg: rgba(15, 17, 22, 0.05);
+  --verdict-nofill-border: rgba(15, 17, 22, 0.2);
+  --scrim-soft: rgba(11, 13, 18, 0.45);
+  --scrim: rgba(11, 13, 18, 0.5);
+  --scrim-strong: rgba(11, 13, 18, 0.6);
+  --tone-up-1: #047857;
+  --tone-up-2: #047857;
+  --tone-warn-1: #92400e;
+  --tone-warn-2: #92400e;
+  --tone-warn-3: #8a5c00;
+  --tone-down-1: #b91c1c;
+  --tone-down-2: #b91c1c;
+  --tone-down-3: #c62828;
+  --tone-info-1: #0369a1;
+  --tone-violet-1: #7e22ce;
+  --tone-star: #d97706;
+  --tone-down-bg-text: #7f1d1d;
+  --heat-0: rgba(15, 17, 22, 0.07);
+  --heat-1: rgba(6, 132, 74, 0.25);
+  --heat-2: rgba(6, 132, 74, 0.55);
+  --heat-3: rgba(6, 132, 74, 0.9);
+  --scan-box-bg: #eef0f3;
+  --scan-box-border: rgba(15, 17, 22, 0.1);
+  --scan-sweep: rgba(6, 132, 74, 0.45);
+  --scan-sweep-soft: rgba(6, 132, 74, 0.12);
+  --scan-sweep-faint: rgba(6, 132, 74, 0.04);
+  --scan-meta: rgba(15, 17, 22, 0.5);
+  --scan-line: rgba(15, 17, 22, 0.08);
+  --scan-phase: rgba(15, 17, 22, 0.38);
+  --scan-phase-done: rgba(15, 17, 22, 0.55);
+  --scan-phase-now: #0b0d12;
+  --page-grid-line: rgba(15, 17, 22, 0.03);
+  --page-glow-1: rgba(6, 132, 74, 0.05);
+  --page-glow-2: rgba(0, 110, 220, 0.03);
+  --page-glow-3: rgba(6, 132, 74, 0.02);
+  color-scheme: light;
 }
 
 .font-terminal {

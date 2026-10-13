@@ -116,7 +116,7 @@ const SetupPage = ({
               key="update"
               type="button"
               onClick={() => onUpdate(setup.id)}
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#050508] transition-opacity hover:opacity-90"
+              className="inline-flex items-center gap-2 rounded-xl bg-[var(--inverse-bg)] px-4 py-2.5 text-sm font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90"
             >
               <RefreshCw className="h-4 w-4" /> {s.update}
             </button>
@@ -125,7 +125,7 @@ const SetupPage = ({
               type="button"
               onClick={() => changeStatus('untracked')}
               disabled={busy}
-              className="rounded-xl border border-[var(--border-default)] px-4 py-2.5 text-sm text-[var(--text-primary)] transition-colors hover:bg-white/[0.04] disabled:opacity-50"
+              className="rounded-xl border border-[var(--border-default)] px-4 py-2.5 text-sm text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)] disabled:opacity-50"
             >
               {s.unfollow}
             </button>
@@ -145,7 +145,7 @@ const SetupPage = ({
             type="button"
             onClick={followAgain}
             disabled={busy}
-            className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#050508] transition-opacity hover:opacity-90 disabled:opacity-60"
+            className="rounded-xl bg-[var(--inverse-bg)] px-4 py-2.5 text-sm font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {s.followAgain}
           </button>

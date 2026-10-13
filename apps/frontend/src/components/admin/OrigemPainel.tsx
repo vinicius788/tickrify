@@ -33,15 +33,15 @@ function pct(parte: number, todo: number): string {
 
 function Tabela({ titulo, nota, linhas, nomear }: { titulo: string; nota: string; linhas: Linha[]; nomear?: boolean }) {
   return (
-    <Card className="border-white/10 bg-white/[0.02] p-4">
-      <h3 className="text-sm font-semibold text-white">{titulo}</h3>
-      <p className="mt-1 text-xs text-zinc-500">{nota}</p>
+    <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
+      <h3 className="text-sm font-semibold text-[var(--text-primary)]">{titulo}</h3>
+      <p className="mt-1 text-xs text-[var(--text-faint)]">{nota}</p>
       {linhas.length === 0 ? (
-        <p className="mt-3 text-sm text-zinc-500">Nada no período.</p>
+        <p className="mt-3 text-sm text-[var(--text-faint)]">Nada no período.</p>
       ) : (
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="text-[11px] uppercase tracking-wide text-zinc-500">
+            <thead className="text-[11px] uppercase tracking-wide text-[var(--text-faint)]">
               <tr>
                 <th className="py-1 pr-3">Canal</th>
                 <th className="py-1 pr-3 text-right">Cadastros</th>
@@ -53,12 +53,12 @@ function Tabela({ titulo, nota, linhas, nomear }: { titulo: string; nota: string
             </thead>
             <tbody>
               {linhas.map((l) => (
-                <tr key={l.canal} className="border-t border-white/5 text-zinc-200">
+                <tr key={l.canal} className="border-t border-[var(--border-subtle)] text-[var(--text-soft)]">
                   <td className="py-1.5 pr-3">{nomear ? NOME_CANAL[l.canal] ?? l.canal : l.canal}</td>
                   <td className="py-1.5 pr-3 text-right">{l.cadastros}</td>
                   <td className="py-1.5 pr-3 text-right">{l.analisaram}</td>
                   <td className="py-1.5 pr-3 text-right">{l.assinaram}</td>
-                  <td className="py-1.5 pr-3 text-right font-semibold text-emerald-300">{l.ativos}</td>
+                  <td className="py-1.5 pr-3 text-right font-semibold text-[var(--tone-up-1)]">{l.ativos}</td>
                   <td className="py-1.5 text-right">{pct(l.ativos, l.cadastros)}</td>
                 </tr>
               ))}
@@ -99,7 +99,7 @@ export function OrigemPainel() {
   return (
     <section className="mt-10 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-white">De onde vem quem assina</h2>
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">De onde vem quem assina</h2>
         <div className="flex flex-wrap gap-1">
           {PERIODOS.map((p) => (
             <button
@@ -107,7 +107,7 @@ export function OrigemPainel() {
               type="button"
               onClick={() => setDias(p.dias)}
               className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
-                dias === p.dias ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300'
+                dias === p.dias ? 'bg-[var(--fill-5)] text-[var(--text-primary)]' : 'text-[var(--text-faint)] hover:text-[var(--text-soft)]'
               }`}
             >
               {p.rotulo}
@@ -116,8 +116,8 @@ export function OrigemPainel() {
         </div>
       </div>
 
-      {query.isLoading && <p className="text-sm text-zinc-500">Carregando…</p>}
-      {query.error && <p className="text-sm text-red-400">{query.error.message}</p>}
+      {query.isLoading && <p className="text-sm text-[var(--text-faint)]">Carregando…</p>}
+      {query.error && <p className="text-sm text-[var(--tone-down-2)]">{query.error.message}</p>}
 
       {dados && (
         <>
@@ -132,20 +132,20 @@ export function OrigemPainel() {
             nota="UTM do link ou o site de onde a pessoa veio na primeira visita. Vazio quando ela digitou o endereço ou o navegador não informou."
             linhas={dados.tecnica}
           />
-          <Card className="border-white/10 bg-white/[0.02] p-4">
-            <h3 className="text-sm font-semibold text-white">Últimas respostas</h3>
+          <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Últimas respostas</h3>
             {dados.respostas.length === 0 ? (
-              <p className="mt-3 text-sm text-zinc-500">Nenhuma resposta no período.</p>
+              <p className="mt-3 text-sm text-[var(--text-faint)]">Nenhuma resposta no período.</p>
             ) : (
               <ul className="mt-3 space-y-1.5 text-sm">
                 {dados.respostas.map((r, i) => (
-                  <li key={`${r.email ?? 'sem-email'}-${i}`} className="flex flex-wrap items-baseline gap-x-2 border-t border-white/5 pt-1.5 text-zinc-300">
-                    <span className="font-medium text-white">{NOME_CANAL[r.canal] ?? r.canal}</span>
-                    {r.detalhe ? <span className="text-zinc-400">{`"${r.detalhe}"`}</span> : null}
-                    <span className="text-[11px] text-zinc-500">
+                  <li key={`${r.email ?? 'sem-email'}-${i}`} className="flex flex-wrap items-baseline gap-x-2 border-t border-[var(--border-subtle)] pt-1.5 text-[var(--text-soft)]">
+                    <span className="font-medium text-[var(--text-primary)]">{NOME_CANAL[r.canal] ?? r.canal}</span>
+                    {r.detalhe ? <span className="text-[var(--text-dim)]">{`"${r.detalhe}"`}</span> : null}
+                    <span className="text-[11px] text-[var(--text-faint)]">
                       {`${r.email ?? 'sem e-mail'} · ${r.respondidoEm ? new Date(r.respondidoEm).toLocaleDateString('pt-BR') : ''}`}
                     </span>
-                    {r.assinou ? <span className="text-[11px] font-semibold text-emerald-300">assinou</span> : null}
+                    {r.assinou ? <span className="text-[11px] font-semibold text-[var(--tone-up-1)]">assinou</span> : null}
                   </li>
                 ))}
               </ul>

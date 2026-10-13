@@ -71,30 +71,30 @@ const SupportChat = ({ thread }: { thread: ChatThread | null }) => {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="mb-3">
-        <h2 className="text-sm font-semibold text-white">{c.title}</h2>
-        <p className="mt-0.5 text-[11px] text-zinc-500">{c.subtitle}</p>
+        <h2 className="text-sm font-semibold text-[var(--text-primary)]">{c.title}</h2>
+        <p className="mt-0.5 text-[11px] text-[var(--text-faint)]">{c.subtitle}</p>
       </div>
 
       <div
         ref={listRef}
         data-sentry-mask
         aria-live="polite"
-        className="flex min-h-[120px] flex-1 flex-col gap-2 overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2.5"
+        className="flex min-h-[120px] flex-1 flex-col gap-2 overflow-y-auto rounded-lg border border-[var(--border-strong)] bg-[var(--bg-inset)] p-2.5"
       >
         {messages.hasNextPage ? (
           <button
             type="button"
             onClick={() => void messages.fetchNextPage()}
             disabled={messages.isFetchingNextPage}
-            className="self-center text-[11px] text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+            className="self-center text-[11px] text-[var(--text-faint)] underline-offset-2 hover:text-[var(--text-soft)] hover:underline"
           >
             {c.loadEarlier}
           </button>
         ) : null}
         {items.length === 0 && !messages.isLoading ? (
-          <div key="welcome" className="max-w-[85%] self-start rounded-lg bg-white/[0.06] px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{c.founder}</p>
-            <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-zinc-100">{c.welcome}</p>
+          <div key="welcome" className="max-w-[85%] self-start rounded-lg bg-[var(--fill-3)] px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">{c.founder}</p>
+            <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-primary)]">{c.welcome}</p>
           </div>
         ) : null}
         {items.map((message) => {
@@ -102,19 +102,19 @@ const SupportChat = ({ thread }: { thread: ChatThread | null }) => {
           return (
             <div
               key={message.id}
-              className={`max-w-[85%] rounded-lg px-3 py-2 ${mine ? 'self-end bg-white/[0.12]' : 'self-start bg-white/[0.06]'}`}
+              className={`max-w-[85%] rounded-lg px-3 py-2 ${mine ? 'self-end bg-[var(--fill-6)]' : 'self-start bg-[var(--fill-3)]'}`}
             >
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">
                 {`${mine ? c.you : c.founder} · ${time(message.createdAt)}`}
               </p>
-              <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-zinc-100">{message.body}</p>
+              <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-primary)]">{message.body}</p>
             </div>
           );
         })}
       </div>
 
       {error ? (
-        <p key={error} role="alert" className="mt-2 text-[11px] text-red-300">
+        <p key={error} role="alert" className="mt-2 text-[11px] text-[var(--tone-down-1)]">
           {c[error]}
         </p>
       ) : null}
@@ -129,10 +129,10 @@ const SupportChat = ({ thread }: { thread: ChatThread | null }) => {
         enterKeyHint="send"
         aria-label={c.placeholder}
         placeholder={c.placeholder}
-        className="mt-2 w-full resize-none rounded-lg border border-white/10 bg-black/40 p-2.5 text-base text-white placeholder:text-zinc-600 focus:border-white/25 focus:outline-none"
+        className="mt-2 w-full resize-none rounded-lg border border-[var(--border-strong)] bg-[var(--bg-inset)] p-2.5 text-base text-[var(--text-primary)] placeholder:text-[var(--text-ghost)] focus:border-[var(--border-heavy)] focus:outline-none"
       />
       <div className="mt-2 flex items-center justify-between gap-2">
-        <p className="hidden text-[11px] text-zinc-600 sm:block">{c.hint}</p>
+        <p className="hidden text-[11px] text-[var(--text-ghost)] sm:block">{c.hint}</p>
         <Button size="sm" className="ml-auto" onClick={submit} disabled={sendMessage.isPending || !draft.trim()}>
           {sendMessage.isPending ? c.sending : c.send}
         </Button>

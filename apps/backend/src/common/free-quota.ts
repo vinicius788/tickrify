@@ -81,6 +81,12 @@ export type FreeQuota = {
   settledExhausted: boolean;
   /** Estado do trial de 3 dias; null = regra antiga (3 planos). */
   trial: TrialState | null;
+  /**
+   * Ja foi assinante da Stripe e a assinatura terminou (13/10/2026): modo
+   * leitura, igual ao fim do trial. Historico inteiro aberto; nova analise,
+   * diario e marcar resultado ficam para quem assina de novo.
+   */
+  formerSubscriber: boolean;
 };
 
 /**
@@ -111,9 +117,10 @@ export async function getFreeQuota(prisma: FreeQuotaCounter, userId: string): Pr
   });
 
   const signalsUsed = signalsDone + inFlight;
-  const exhausted = signalsUsed >= FREE_SIGNAL_LIMIT || totalUsed >= FREE_TOTAL_LIMIT;
+  const formerSubscriber = await hadEndedSubscription(prisma, userId);
+  const exhausted = formerSubscriber || signalsUsed >= FREE_SIGNAL_LIMIT || totalUsed >= FREE_TOTAL_LIMIT;
   const settledExhausted =
-    signalsDone >= FREE_SIGNAL_LIMIT || totalUsed - inFlight >= FREE_TOTAL_LIMIT;
+    formerSubscriber || signalsDone >= FREE_SIGNAL_LIMIT || totalUsed - inFlight >= FREE_TOTAL_LIMIT;
 
   return {
     signalsUsed,
@@ -124,7 +131,28 @@ export async function getFreeQuota(prisma: FreeQuotaCounter, userId: string): Pr
     exhausted,
     settledExhausted,
     trial: null,
+    formerSubscriber,
   };
+}
+
+/**
+ * Teve assinatura da Stripe que ja terminou (`canceled`). O acesso manual
+ * (`manual_*`) e checkout nunca pago (`incomplete_expired`) nao contam. Quem
+ * tem assinatura viva nem chega aqui (todo chamador confere o acesso pago
+ * antes). Sem `$queryRawUnsafe` (fakes de teste antigos): false.
+ */
+export async function hadEndedSubscription(prisma: FreeQuotaCounter, userId: string): Promise<boolean> {
+  const raw = prisma.$queryRawUnsafe?.bind(prisma);
+  if (!raw) return false;
+  try {
+    const rows = await raw<Array<{ ok: boolean }>>(
+      `SELECT EXISTS (SELECT 1 FROM "tickrify"."Subscription" WHERE "userId" = $1 AND "stripeId" LIKE 'sub\\_%' AND "status" = 'canceled') AS ok`,
+      userId,
+    );
+    return rows?.[0]?.ok === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -177,5 +205,6 @@ async function getTrialQuota(prisma: FreeQuotaCounter, userId: string): Promise<
     exhausted: state.blocked,
     settledExhausted: state.endedSettled,
     trial: state,
+    formerSubscriber: false,
   };
 }

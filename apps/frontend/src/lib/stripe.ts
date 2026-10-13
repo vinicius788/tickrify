@@ -141,7 +141,9 @@ async function requestStripeApi<T>(
       throw new CheckoutError(message, code, response.status);
     }
 
-    return response.json() as Promise<T>;
+    // Nest responde corpo vazio quando a rota devolve null (ex.: sem assinatura).
+    const text = await response.text();
+    return (text ? JSON.parse(text) : null) as T;
   } catch (error) {
     if (error instanceof TypeError || (error as Error)?.name === 'AbortError') {
       throw new CheckoutError(
@@ -228,4 +230,52 @@ export async function getCheckoutStatus(
   } catch {
     return null;
   }
+}
+
+/** Assinatura da tela de Configuracoes. Datas em segundos (formato da Stripe). */
+export interface SubscriptionSummary {
+  id: string;
+  status: string;
+  plan: string;
+  billingCycle: BillingCycle | null;
+  currentPeriodEnd: number | null;
+  cancelAtPeriodEnd: boolean;
+  /** Fim do acesso, agendado ou ja encerrado. */
+  accessEndsAt: number | null;
+  /** So para assinatura viva e sem cancelamento agendado. */
+  nextChargeAt: number | null;
+  amount: number | null;
+  currency: string | null;
+  /** Ainda da para abrir o portal (cartao, faturas, cancelar). */
+  manageable: boolean;
+  canReactivate: boolean;
+}
+
+/** null = nunca assinou pela Stripe. */
+export async function getSubscription(token: string): Promise<SubscriptionSummary | null> {
+  return requestStripeApi(
+    '/api/stripe/subscription',
+    { method: 'GET', headers: { Authorization: `Bearer ${token}` } },
+    'Could not load your subscription.',
+  );
+}
+
+/** Abre o portal da Stripe (o servidor escolhe o customer pelo token). */
+export async function openBillingPortal(token: string): Promise<void> {
+  const data = await requestStripeApi<{ url?: string }>(
+    '/api/stripe/create-customer-portal',
+    { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+    'Could not open the billing portal.',
+  );
+  if (!data?.url) throw new CheckoutError('Could not open the billing portal.');
+  window.location.href = data.url;
+}
+
+/** Desfaz o cancelamento agendado (antes do fim do periodo pago). */
+export async function reactivateSubscription(token: string): Promise<SubscriptionSummary> {
+  return requestStripeApi(
+    '/api/stripe/subscription/reactivate',
+    { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+    'Could not reactivate your subscription.',
+  );
 }

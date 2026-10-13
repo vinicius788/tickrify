@@ -8,7 +8,7 @@
  */
 export function BrandLoader() {
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-[#08090a]" role="status" aria-live="polite">
+    <div className="fixed inset-0 flex items-center justify-center bg-[var(--bg)]" role="status" aria-live="polite">
       <img src="/tickrify-mark-loader.svg" alt="" width={64} height={77} className="h-[77px] w-16" />
       <span className="sr-only">Loading</span>
     </div>

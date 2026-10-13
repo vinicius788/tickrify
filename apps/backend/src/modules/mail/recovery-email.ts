@@ -40,6 +40,8 @@ export async function sendRecoveryEmailOnce(deps: RecoveryEmailDeps, userId: str
     if (already) return;
 
     if (await deps.hasPaidAccess(userId)) return;
+    // Ex-assinante esta no modo leitura, nao "sem analises gratis".
+    if ((await getFreeQuota(deps.prisma, userId)).formerSubscriber) return;
 
     const user = await deps.prisma.user.findUnique({
       where: { id: userId },

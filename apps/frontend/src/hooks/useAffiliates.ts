@@ -74,6 +74,9 @@ export interface AdminAffiliate {
   createdAt: string;
   clicks: number;
   signups: number;
+  /** Faturas pagas que geraram comissao (refund/disputa fora). */
+  paidSales: number;
+  paidCustomers: number;
   pendingCents: number;
   availableCents: number;
   paidCents: number;
@@ -226,7 +229,18 @@ export function useAffiliateAdmin() {
     onSuccess: refresh,
   });
 
-  return { affiliates, payouts, update, decide };
+  // "Marcar como pago": o dono pagou por fora (Pix) todo o disponivel.
+  const settle = useMutation<{ amountCents: number }, Error, { id: string; note?: string }>({
+    mutationFn: ({ id, note }) =>
+      authed(
+        `/api/admin/affiliates/${encodeURIComponent(id)}/settle`,
+        { method: 'POST', body: JSON.stringify(note ? { note } : {}) },
+        'Não salvou',
+      ),
+    onSuccess: refresh,
+  });
+
+  return { affiliates, payouts, update, decide, settle };
 }
 
 export function useAffiliateAdminDetail(id: string | null) {

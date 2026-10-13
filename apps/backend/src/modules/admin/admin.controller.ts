@@ -9,6 +9,7 @@ import { SetFlagDto } from './dto/set-flag.dto';
 import { SetReportStatusDto } from './dto/set-report-status.dto';
 import { PrismaService } from '../database/prisma.service';
 import { buildAcquisitionReport, parseDias } from './acquisition-report';
+import { billingCycleForPriceId } from '../../config/stripe.config';
 import { CampaignSendDto } from './dto/campaign-send.dto';
 import { MailService } from '../mail/mail.service';
 import { publicUrl } from '../mail/lifecycle-email';
@@ -109,6 +110,52 @@ export class AdminController {
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async origem(@Query('dias') dias?: string) {
     return buildAcquisitionReport(this.prisma, parseDias(dias));
+  }
+
+  /**
+   * Aba "Cancelamentos" (13/10/2026): assinaturas da Stripe com cancelamento
+   * agendado ou ja encerradas, com o motivo da lista fechada do portal, o
+   * plano e o codigo do afiliado que indicou (se houver). Colunas de
+   * cancelamento gravadas por SQL (fora do schema.prisma), por isso SQL aqui.
+   */
+  @Get('cancellations')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async cancelamentos() {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        subscriptionId: string;
+        email: string | null;
+        status: string;
+        priceId: string | null;
+        cancelAtPeriodEnd: boolean;
+        canceledAt: Date | null;
+        cancelAt: Date | null;
+        endedAt: Date | null;
+        currentPeriodEnd: Date | null;
+        cancelReason: string | null;
+        cancelFeedback: string | null;
+        createdAt: Date;
+        affiliateCode: string | null;
+      }>
+    >(
+      `SELECT s."stripeId" AS "subscriptionId", u."email", s."status", s."priceId", s."cancelAtPeriodEnd",
+              s."canceledAt", s."cancelAt", s."endedAt", s."currentPeriodEnd", s."cancelReason", s."cancelFeedback",
+              s."createdAt", a."referralCode" AS "affiliateCode"
+         FROM "tickrify"."Subscription" s
+         JOIN "tickrify"."User" u ON u."id" = s."userId"
+         LEFT JOIN "tickrify"."AffiliateReferral" r ON r."userId" = s."userId"
+         LEFT JOIN "tickrify"."Affiliate" a ON a."id" = r."affiliateId"
+        WHERE s."stripeId" LIKE 'sub\\_%'
+          AND (s."cancelAtPeriodEnd" = true OR s."status" = 'canceled')
+        ORDER BY COALESCE(s."canceledAt", s."endedAt", s."updatedAt") DESC
+        LIMIT 200`,
+    );
+    return rows.map((row) => ({
+      ...row,
+      billingCycle: billingCycleForPriceId(row.priceId),
+      // Fim do acesso: o que ja aconteceu, ou o que esta agendado.
+      accessEndsAt: row.endedAt ?? row.cancelAt ?? row.currentPeriodEnd,
+    }));
   }
 
   /** Estado de todas as funções: valor, de onde veio e o que cada uma faz. */

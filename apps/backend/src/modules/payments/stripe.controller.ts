@@ -115,9 +115,7 @@ export class StripeController {
     );
   }
 
-  /**
-   * Criar portal do cliente
-   */
+  /** Portal da Stripe (cartao, faturas, cancelar). 403 para quem nao tem assinatura. */
   @Post('create-customer-portal')
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 12, ttl: 60_000 } })
@@ -125,14 +123,21 @@ export class StripeController {
     return this.stripeService.createCustomerPortal(user.clerkUserId);
   }
 
-  /**
-   * Obter assinatura do usuário
-   */
+  /** Assinatura para a tela de Configuracoes (status, valor, proxima cobranca, fim do acesso). */
   @Get('subscription')
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async getUserSubscription(@CurrentUser() user: AuthenticatedUser) {
     return this.stripeService.getUserSubscription(user.clerkUserId);
+  }
+
+  /** Desfaz o cancelamento agendado, enquanto o periodo pago nao terminou. */
+  @Post('subscription/reactivate')
+  @UseGuards(AuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  async reactivateSubscription(@CurrentUser() user: AuthenticatedUser) {
+    return this.stripeService.reactivateSubscription(user.clerkUserId);
   }
 
   /**

@@ -20,7 +20,7 @@ interface EmptyStateProps {
 
 const EmptyState = ({ icon: Icon, title, description, ctaLabel, onCta }: EmptyStateProps) => (
   <div className="flex flex-col items-center gap-4 px-6 py-14 text-center">
-    <div className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[rgba(255,255,255,0.03)]">
+    <div className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-card)]">
       <Icon className="h-5 w-5 text-[var(--accent-green)]" />
     </div>
 

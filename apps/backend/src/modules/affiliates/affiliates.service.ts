@@ -8,10 +8,11 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { randomInt } from 'crypto';
+import { createHash, randomInt } from 'crypto';
 import Stripe from 'stripe';
 import { PrismaService } from '../database/prisma.service';
 import { getStripeConfig } from '../../config/stripe.config';
+import { captureServer } from '../../common/analytics/posthog';
 
 /**
  * Programa de afiliados.
@@ -311,18 +312,47 @@ export class AffiliatesService implements OnModuleInit {
     }
   }
 
-  /** Clique num link ?ref=. Afiliado inexistente ou suspenso nao grava nada. */
-  async recordClick(code: string, landingPath?: string): Promise<{ valid: boolean; clickId?: string }> {
+  /**
+   * Clique num link ?ref=. Afiliado inexistente ou suspenso nao grava nada.
+   *
+   * Anti-fraude (13/10/2026): o mesmo aparelho (IP + navegador) no mesmo dia
+   * UTC conta UM clique. O id do clique sai de um hash desses dados, entao a
+   * repeticao cai na chave primaria e devolve o clique que ja existe. Sem IP
+   * (nao deveria acontecer atras do proxy do Render), cada clique conta.
+   */
+  async recordClick(
+    code: string,
+    landingPath?: string,
+    device?: { ip?: string | null; userAgent?: string | null },
+    now = new Date(),
+  ): Promise<{ valid: boolean; clickId?: string }> {
     const affiliate = await this.prisma.affiliate.findUnique({
       where: { referralCode: normalizeCode(code) },
-      select: { id: true, status: true },
+      select: { id: true, status: true, referralCode: true },
     });
     if (!affiliate || affiliate.status !== 'ACTIVE') return { valid: false };
-    const click = await this.prisma.affiliateClick.create({
-      data: { affiliateId: affiliate.id, landingPath: landingPath?.slice(0, 240) || null },
-      select: { id: true },
-    });
-    return { valid: true, clickId: click.id };
+    const day = now.toISOString().slice(0, 10);
+    const id = device?.ip
+      ? `c${createHash('sha256').update(`tickrify-click|${affiliate.id}|${device.ip}|${device.userAgent ?? ''}|${day}`).digest('hex').slice(0, 24)}`
+      : undefined;
+    try {
+      const click = await this.prisma.affiliateClick.create({
+        data: { ...(id ? { id } : {}), affiliateId: affiliate.id, landingPath: landingPath?.slice(0, 240) || null },
+        select: { id: true },
+      });
+      // Visitante anonimo: evento sem perfil de pessoa no PostHog.
+      captureServer(`affiliate_click_${click.id}`, 'affiliate_link_visited', {
+        code: affiliate.referralCode,
+        landingPath: landingPath?.slice(0, 240) || null,
+        $process_person_profile: false,
+      });
+      return { valid: true, clickId: click.id };
+    } catch (error) {
+      if (id && error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        return { valid: true, clickId: id };
+      }
+      throw error;
+    }
   }
 
   /** Cupom digitado no site antes do login: so diz se existe e esta ativo. */
@@ -358,7 +388,7 @@ export class AffiliatesService implements OnModuleInit {
     });
     if (!affiliate || affiliate.status !== 'ACTIVE') return { attributed: false, reason: 'invalid_code' };
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, clerkUserId: true } });
     if (!user) return { attributed: false, reason: 'unknown_user' };
     if (this.isSelfReferral(affiliate, user)) return { attributed: false, reason: 'self_referral' };
 
@@ -409,6 +439,14 @@ export class AffiliatesService implements OnModuleInit {
       throw error;
     }
     this.logger.log(`[affiliate] Usuario ${userId} indicado por ${affiliate.id} (${input.kind}).`);
+    if (user.clerkUserId) {
+      captureServer(
+        user.clerkUserId,
+        'affiliate_signup',
+        { code: affiliate.referralCode, source: input.kind, $set_once: { affiliate_code: affiliate.referralCode } },
+        { dedupeKey: `affiliate_signup:${userId}` },
+      );
+    }
     return { attributed: true };
   }
 
@@ -495,6 +533,22 @@ export class AffiliatesService implements OnModuleInit {
       return;
     }
 
+    // Cancelou e voltou (13/10/2026): o vinculo nao gera comissao sobre a
+    // assinatura NOVA. Comissao so sobre a assinatura que o afiliado trouxe.
+    const invoiceSubscription = stripeId(full.subscription);
+    const endedBefore = await this.prisma.subscription.findFirst({
+      where: {
+        userId,
+        status: 'canceled',
+        stripeId: { startsWith: 'sub_', ...(invoiceSubscription ? { not: invoiceSubscription } : {}) },
+      },
+      select: { id: true },
+    });
+    if (endedBefore) {
+      this.logger.log(`[affiliate] Fatura ${full.id} de quem ja cancelou uma assinatura; sem comissao.`);
+      return;
+    }
+
     const paidAt = new Date((full.status_transitions?.paid_at ?? full.created) * 1000);
     if (referral.commissionEndsAt && paidAt.getTime() >= referral.commissionEndsAt.getTime()) {
       this.logger.log(`[affiliate] Fatura ${full.id} fora dos 12 meses de ${referral.id}; sem comissao.`);
@@ -550,6 +604,21 @@ export class AffiliatesService implements OnModuleInit {
       `[affiliate] Comissao PENDING ${commissionCents}c (${affiliate.commissionRateBps}bps de ${amountPaidCents}c) ` +
         `para ${affiliate.id}, fatura ${full.id}.`,
     );
+    const buyer = await this.prisma.user.findUnique({ where: { id: userId }, select: { clerkUserId: true } });
+    if (buyer?.clerkUserId) {
+      captureServer(
+        buyer.clerkUserId,
+        'affiliate_sale_paid',
+        {
+          code: affiliate.referralCode,
+          billing_reason: full.billing_reason,
+          amount_usd: amountPaidCents / 100,
+          commission_usd: commissionCents / 100,
+          rate_percent: affiliate.commissionRateBps / 100,
+        },
+        { dedupeKey: `affiliate_sale_paid:${full.id}` },
+      );
+    }
   }
 
   /**
@@ -837,6 +906,12 @@ export class AffiliatesService implements OnModuleInit {
       by: ['affiliateId', 'status'],
       _sum: { commissionCents: true, amountPaidCents: true },
     });
+    // Vendas pagas = faturas pagas que geraram comissao (refund/disputa fora).
+    const sales = await this.prisma.affiliateCommission.findMany({
+      where: { status: { in: ['PENDING', 'AVAILABLE', 'PAID'] } },
+      select: { affiliateId: true, referredUserId: true },
+    });
+    const salesFor = (id: string) => sales.filter((c) => c.affiliateId === id);
     const sumFor = (id: string, status: CommissionStatus, field: 'commissionCents' | 'amountPaidCents' = 'commissionCents') =>
       sums.find((s) => s.affiliateId === id && s.status === status)?._sum[field] ?? 0;
 
@@ -859,6 +934,8 @@ export class AffiliatesService implements OnModuleInit {
       createdAt: a.createdAt,
       clicks: a._count.clicks,
       signups: a._count.referrals,
+      paidSales: salesFor(a.id).length,
+      paidCustomers: new Set(salesFor(a.id).map((c) => c.referredUserId)).size,
       pendingCents: sumFor(a.id, 'PENDING'),
       availableCents: sumFor(a.id, 'AVAILABLE'),
       paidCents: sumFor(a.id, 'PAID'),
@@ -1024,6 +1101,56 @@ export class AffiliatesService implements OnModuleInit {
       },
     });
     return result;
+  }
+
+  /**
+   * "Marcar como pago" direto no /admin (13/10/2026): o dono paga por Pix por
+   * fora e so registra aqui. Fecha TODA a comissao disponivel (passados os 30
+   * dias) num saque ja PAGO, sem esperar o afiliado pedir. Mesmas travas do
+   * saque normal: so AVAILABLE sem saque aberto, e refund no meio desfaz tudo.
+   */
+  async adminSettle(affiliateId: string, actorUserId: string, note?: string, now = new Date()) {
+    const affiliate = await this.prisma.affiliate.findUnique({ where: { id: affiliateId } });
+    if (!affiliate) throw new NotFoundException('Affiliate not found');
+    await this.releaseMatured(now, affiliateId);
+
+    const payout = await this.prisma.$transaction(async (tx) => {
+      const available = await tx.affiliateCommission.findMany({
+        where: { affiliateId, status: 'AVAILABLE', payoutId: null },
+        select: { id: true, commissionCents: true },
+      });
+      const amountCents = available.reduce((acc, c) => acc + c.commissionCents, 0);
+      if (amountCents <= 0) throw new BadRequestException('Nada disponivel para pagar.');
+      const created = await tx.affiliatePayout.create({
+        data: {
+          affiliateId,
+          amountCents,
+          method: 'manual (pix)',
+          status: 'PAID',
+          adminNote: note?.slice(0, 500) || null,
+          decidedAt: now,
+          paidAt: now,
+          decidedById: actorUserId,
+        },
+      });
+      const linked = await tx.affiliateCommission.updateMany({
+        where: { id: { in: available.map((c) => c.id) }, status: 'AVAILABLE', payoutId: null },
+        data: { payoutId: created.id, status: 'PAID' },
+      });
+      if (linked.count !== available.length) throw new ConflictException('O saldo mudou. Tente de novo.');
+      return created;
+    });
+
+    await this.prisma.adminAudit.create({
+      data: {
+        action: 'affiliate_payout_settle',
+        actorUserId,
+        targetUserId: affiliate.userId,
+        details: { payoutId: payout.id, affiliateId, amountCents: payout.amountCents, note: note ?? null },
+      },
+    });
+    this.logger.log(`[affiliate] Pago por fora: ${payout.amountCents}c para ${affiliateId} (saque ${payout.id}).`);
+    return payout;
   }
 
   private async refreshPayoutAmount(payoutId: string): Promise<void> {

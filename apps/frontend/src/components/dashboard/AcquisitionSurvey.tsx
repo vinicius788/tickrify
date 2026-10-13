@@ -72,14 +72,14 @@ const AcquisitionSurvey = ({ onAnswer, onDismiss }: AcquisitionSurveyProps) => {
 
   if (respondido) {
     return (
-      <div className="rounded-xl border border-[var(--border-subtle)] bg-[rgba(255,255,255,0.02)] px-4 py-3">
+      <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--fill-1)] px-4 py-3">
         <p className="text-sm text-[var(--text-secondary)]">{u.thanks}</p>
       </div>
     );
   }
 
   return (
-    <div className="relative rounded-xl border border-[var(--border-subtle)] bg-[rgba(255,255,255,0.02)] px-4 py-4">
+    <div className="relative rounded-xl border border-[var(--border-subtle)] bg-[var(--fill-1)] px-4 py-4">
       <button
         type="button"
         onClick={onDismiss}

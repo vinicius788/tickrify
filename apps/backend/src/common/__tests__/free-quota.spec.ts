@@ -116,4 +116,18 @@ describe('getFreeQuota (regra unica da cota gratis)', () => {
       expect(q).toMatchObject({ signalsUsed: 1, totalUsed: 1, remaining: 2 });
     });
   });
+
+  it('ex-assinante (assinatura da Stripe encerrada) fica em modo leitura, mesmo com gratis sobrando', async () => {
+    const fake: any = db([]);
+    fake.$queryRawUnsafe = jest.fn(async (sql: string) =>
+      sql.includes('"Subscription"') ? [{ ok: true }] : sql.includes('to_regclass') ? [{ ok: false }] : [],
+    );
+    const q = await getFreeQuota(fake, 'u1');
+    expect(q).toMatchObject({ formerSubscriber: true, exhausted: true, settledExhausted: true, remaining: 0, trial: null });
+  });
+
+  it('quem nunca assinou nao e ex-assinante', async () => {
+    const q = await getFreeQuota(db([]), 'u1');
+    expect(q).toMatchObject({ formerSubscriber: false, exhausted: false });
+  });
 });

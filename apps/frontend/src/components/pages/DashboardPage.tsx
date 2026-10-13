@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Coins, Upload, Sliders, Handshake, MessageCircle } from "lucide-react";
+import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Coins, Upload, Sliders, Handshake, MessageCircle, Settings } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import * as Sentry from "@sentry/react";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
@@ -46,7 +46,9 @@ import { getRecommendationMeta, getScenarioMeta, normalizeRecommendationLabel } 
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { track, trackAdConversion } from "@/lib/analytics";
-import { CheckoutError, createCheckoutSession, getCheckoutStatus } from "@/lib/stripe";
+import { CheckoutError, createCheckoutSession, getCheckoutStatus, openBillingPortal } from "@/lib/stripe";
+import { clerkLightAppearance, useTheme } from "@/lib/theme";
+import SettingsPage from "../dashboard/SettingsPage";
 import { checkoutReturnPath, loadCheckoutIntent } from "@/lib/checkoutIntent";
 import { useFoundingOffer } from "@/hooks/useFoundingOffer";
 import UpgradeVideo from "../dashboard/UpgradeVideo";
@@ -156,7 +158,7 @@ const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
 };
 
-type View = 'dashboard' | 'new-analysis' | 'sample' | 'my-trades' | 'journal' | 'strategy' | 'plans' | 'setup' | 'analysis-result' | 'loading' | 'error' | 'locked';
+type View = 'dashboard' | 'new-analysis' | 'sample' | 'my-trades' | 'journal' | 'strategy' | 'plans' | 'settings' | 'setup' | 'analysis-result' | 'loading' | 'error' | 'locked';
 
 /**
  * Rotas do painel (05/10/2026). Antes era UMA rota so e as areas eram estado
@@ -172,11 +174,12 @@ type View = 'dashboard' | 'new-analysis' | 'sample' | 'my-trades' | 'journal' | 
  *   /dashboard/journal            diario
  *   /dashboard/strategy           perfil de estrategia
  *   /dashboard/plans              planos, sem sair do painel
+ *   /dashboard/settings           conta, assinatura (portal da Stripe) e tema
  *   /dashboard/setups/:id         um setup acompanhado e as versoes dele
  *   /dashboard/new?setup=:id      atualizar esse setup (o envio de sempre)
  */
-type Section = 'home' | 'new' | 'sample' | 'analysis' | 'trades' | 'journal' | 'strategy' | 'plans' | 'setups';
-type NavSection = 'home' | 'new' | 'trades' | 'journal' | 'strategy' | 'plans';
+type Section = 'home' | 'new' | 'sample' | 'analysis' | 'trades' | 'journal' | 'strategy' | 'plans' | 'settings' | 'setups';
+type NavSection = 'home' | 'new' | 'trades' | 'journal' | 'strategy' | 'plans' | 'settings';
 const SECTION_PATH: Record<NavSection, string> = {
   home: '',
   new: '/new',
@@ -184,6 +187,7 @@ const SECTION_PATH: Record<NavSection, string> = {
   journal: '/journal',
   strategy: '/strategy',
   plans: '/plans',
+  settings: '/settings',
 };
 
 function parseDashboardPath(pathname: string): { base: string; section: Section | null; param: string | null } {
@@ -195,7 +199,7 @@ function parseDashboardPath(pathname: string): { base: string; section: Section 
   if (first === 'new' && second === 'example' && third && rest.length === 3) return { base, section: 'sample', param: third };
   if (first === 'analysis' && second && rest.length === 2) return { base, section: 'analysis', param: decodeURIComponent(second) };
   if (first === 'setups' && second && rest.length === 2) return { base, section: 'setups', param: decodeURIComponent(second) };
-  if (rest.length === 1 && ['trades', 'journal', 'strategy', 'plans'].includes(first)) {
+  if (rest.length === 1 && ['trades', 'journal', 'strategy', 'plans', 'settings'].includes(first)) {
     return { base, section: first as Section, param: null };
   }
   return { base, section: null, param: null };
@@ -272,7 +276,8 @@ const DashboardPage = () => {
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, trial, trialBlocked, isLoading: isPlanLoading } = useAnalysisLimit();
+  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, billingManageable, trial, trialBlocked, isLoading: isPlanLoading } = useAnalysisLimit();
+  const [theme] = useTheme();
   // Trial de 3 dias: qual paywall mostrar (volte amanha ou trial encerrado).
   const trialVariant: 'daily_limit' | 'trial_ended' | undefined = trial
     ? trial.status === 'ended'
@@ -743,6 +748,8 @@ const DashboardPage = () => {
         return 'strategy';
       case 'plans':
         return 'plans';
+      case 'settings':
+        return 'settings';
       case 'setups':
         return 'setup';
       default:
@@ -1395,14 +1402,14 @@ const DashboardPage = () => {
               <button
                 type="button"
                 onClick={() => goTo('journal')}
-                className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-default)] px-4 py-2.5 text-sm text-[var(--text-primary)] transition-colors hover:bg-white/[0.04]"
+                className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-default)] px-4 py-2.5 text-sm text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)]"
               >
                 <CalendarDays className="h-4 w-4" /> {t.nav.journal}
               </button>
               <button
                 type="button"
                 onClick={resetNewAnalysisView}
-                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#050508] transition-opacity hover:opacity-90"
+                className="inline-flex items-center gap-2 rounded-xl bg-[var(--inverse-bg)] px-4 py-2.5 text-sm font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90"
               >
                 <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
               </button>
@@ -1746,6 +1753,8 @@ const DashboardPage = () => {
             paywall={() => paywallFor('setups')}
           />
         );
+      case 'settings':
+        return <SettingsPage eyebrow={viewEyebrow(t.nav.settings)} />;
       case 'plans':
         return (
           <div className="flex flex-col gap-4">
@@ -1832,7 +1841,7 @@ const DashboardPage = () => {
                     track('wait_nudge_clicked', { freeRemaining: remaining });
                     resetNewAnalysisView();
                   }}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#050508] transition-opacity hover:opacity-90"
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--inverse-bg)] px-4 py-2.5 text-sm font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90"
                 >
                   <PlusCircle className="h-4 w-4" /> {dc.waitNudgeCta}
                 </button>
@@ -1891,7 +1900,7 @@ const DashboardPage = () => {
                     </p>
                   )}
                   {exhausted && (
-                    <p className="text-sm text-amber-500">
+                    <p className="text-sm text-[var(--tone-warn-3)]">
                       {trialVariant === 'daily_limit' ? t.counter.trialComeBack : trialVariant === 'trial_ended' ? t.counter.trialEnded : t.counter.exhausted}
                     </p>
                   )}
@@ -1918,7 +1927,7 @@ const DashboardPage = () => {
                       <button
                         type="button"
                         onClick={resetNewAnalysisView}
-                        className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-[#050508] transition-opacity hover:opacity-90"
+                        className="inline-flex items-center gap-2 rounded-xl bg-[var(--inverse-bg)] px-4 py-2.5 text-sm font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90"
                       >
                         <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
                       </button>
@@ -1998,9 +2007,11 @@ const DashboardPage = () => {
           ? t.nav.strategy
           : activeNav === 'plans'
             ? t.nav.plans
-            : activeNav === 'home'
-              ? t.nav.dashboard
-              : t.nav.newAnalysis;
+            : activeNav === 'settings'
+              ? t.nav.settings
+              : activeNav === 'home'
+                ? t.nav.dashboard
+                : t.nav.newAnalysis;
   const sidebarSectionTitleClass = 'text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]';
 
   // Painel e area logada: titulo por area (aba do navegador e $title do
@@ -2014,7 +2025,7 @@ const DashboardPage = () => {
 
   const navItemClass = (section: NavSection) =>
     `flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-      activeNav === section ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'
+      activeNav === section ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]' : 'text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]'
     }`;
   const navLink = (section: NavSection) => `${base}${SECTION_PATH[section]}`;
   // "Nova analise" sempre abre o envio limpo, mesmo vindo de um erro ou resultado.
@@ -2022,6 +2033,27 @@ const DashboardPage = () => {
     event.preventDefault();
     resetNewAnalysisView();
   };
+
+  // Menu da conta (Clerk): Configuracoes sempre; "Manage subscription" so para
+  // quem tem assinatura da Stripe (abre o portal direto, sem tela no meio).
+  const accountMenu = (
+    <UserButton afterSignOutUrl="/" appearance={theme === 'light' ? clerkLightAppearance : undefined}>
+      <UserButton.MenuItems>
+        <UserButton.Link label={t.nav.settings} labelIcon={<Settings className="h-4 w-4" />} href={navLink('settings')} />
+        {billingManageable ? (
+          <UserButton.Action
+            label={t.settings.manage}
+            labelIcon={<CreditCard className="h-4 w-4" />}
+            onClick={() => {
+              void getToken()
+                .then((token) => (token ? openBillingPortal(token) : navigate(navLink('settings'))))
+                .catch(() => navigate(navLink('settings')));
+            }}
+          />
+        ) : null}
+      </UserButton.MenuItems>
+    </UserButton>
+  );
 
   if (!bootDone.current) {
     const waiting = Boolean(user) && !bootTimedOut && (isPlanLoading || loadingAnalyses);
@@ -2078,7 +2110,7 @@ const DashboardPage = () => {
             publica e o voltar do navegador tirava a pessoa do app. */}
         <div className="flex flex-col gap-0.5 border-t border-[var(--border-subtle)] px-3 py-2">
           {user && plan === 'free' && (
-            <button type="button" onClick={() => openUpgradeModal('sidebar')} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+            <button type="button" onClick={() => openUpgradeModal('sidebar')} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]">
               <Crown className="h-4 w-4 text-[var(--accent-green)]" /> {dc.subscribeCta}
             </button>
           )}
@@ -2086,12 +2118,21 @@ const DashboardPage = () => {
             to={navLink('plans')}
             aria-current={activeNav === 'plans' ? 'page' : undefined}
             className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${
-              activeNav === 'plans' ? 'bg-white text-[#050508]' : 'text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'
+              activeNav === 'plans' ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]' : 'text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]'
             }`}
           >
             <CreditCard className="h-3.5 w-3.5" /> {t.nav.plans}
           </Link>
-          <Link to="/affiliate" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]">
+          <Link
+            to={navLink('settings')}
+            aria-current={activeNav === 'settings' ? 'page' : undefined}
+            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${
+              activeNav === 'settings' ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]' : 'text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            <Settings className="h-3.5 w-3.5" /> {t.nav.settings}
+          </Link>
+          <Link to="/affiliate" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]">
             <Handshake className="h-3.5 w-3.5" /> {t.nav.affiliates}
           </Link>
           {/* Chat com o fundador: abre a bolha ja na conversa. */}
@@ -2100,12 +2141,12 @@ const DashboardPage = () => {
               type="button"
               onClick={() => openChat('dashboard_menu')}
               aria-label={chatUnread > 0 ? `${t.chat.menu} (${t.chat.unread.replace('{n}', String(chatUnread))})` : t.chat.menu}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]"
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]"
             >
               <MessageCircle className="h-3.5 w-3.5" />
               <span>{t.chat.menu}</span>
               {chatUnread > 0 ? (
-                <span key="chat-unread" className="ml-auto min-w-[18px] rounded-full bg-white px-1.5 text-center text-[10px] font-semibold leading-[18px] text-[#050508]">
+                <span key="chat-unread" className="ml-auto min-w-[18px] rounded-full bg-[var(--inverse-bg)] px-1.5 text-center text-[10px] font-semibold leading-[18px] text-[var(--inverse-fg)]">
                   {String(chatUnread)}
                 </span>
               ) : null}
@@ -2115,7 +2156,7 @@ const DashboardPage = () => {
 
         {user && (
           <div className="flex items-center gap-2.5 border-t border-[var(--border-subtle)] p-3">
-            <UserButton afterSignOutUrl="/" />
+            {accountMenu}
             <div className="min-w-0 leading-tight">
               <div className="truncate text-xs text-[var(--text-primary)]">{user.firstName || user.fullName || 'Trader'}</div>
               <div className="font-terminal text-[8px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{plan.toUpperCase()}{navbarUnlimited ? ` · ${t.nav.statusActive}` : ''}</div>
@@ -2141,7 +2182,7 @@ const DashboardPage = () => {
         </div>
       )}
       
-      <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[#050508]/95 px-4 backdrop-blur md:px-6">
+      <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-header)] px-4 backdrop-blur md:px-6">
         <div className="flex min-w-0 items-center gap-2">
           <Link to={user ? "/dashboard" : "/"} className="md:hidden">
             <img src={officialIcon} alt="Tickrify" className="h-7 w-auto shrink-0 object-contain" />
@@ -2155,8 +2196,8 @@ const DashboardPage = () => {
 
         <div className="flex min-w-0 items-center gap-1.5 overflow-visible text-sm md:gap-3">
           <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
-            <span className={`inline-block h-1.5 w-1.5 rounded-full ${isOnline ? 'bg-[var(--accent-green)]' : 'bg-red-500'}`} />
-            <span className={`font-terminal text-[11px] ${isOnline ? 'text-[var(--accent-green)]' : 'text-red-500'}`}>
+            <span className={`inline-block h-1.5 w-1.5 rounded-full ${isOnline ? 'bg-[var(--accent-green)]' : 'bg-[var(--accent-red)]'}`} />
+            <span className={`font-terminal text-[11px] ${isOnline ? 'text-[var(--accent-green)]' : 'text-[var(--tone-down-3)]'}`}>
               {isOnline ? t.common.online : t.common.offline}
             </span>
           </div>
@@ -2178,7 +2219,7 @@ const DashboardPage = () => {
 
           {user && (
             <div className="shrink-0 md:hidden">
-              <UserButton afterSignOutUrl="/" />
+              {accountMenu}
             </div>
           )}
         </div>
@@ -2258,7 +2299,7 @@ const DashboardPage = () => {
                 {renderContent()}
               </Sentry.ErrorBoundary>
               {followUp ? (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" role="dialog" aria-modal="true">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--scrim)] px-4" role="dialog" aria-modal="true">
                   <div className="w-full max-w-md space-y-4 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-5">
                     {followUp.step === 'is_follow_up' ? (
                       <div key="is_follow_up" className="space-y-4">

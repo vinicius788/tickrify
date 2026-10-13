@@ -672,6 +672,49 @@ Vale para TODA mudanca, grande ou pequena:
   trade is still open" (mesma chave desligada). Aviso fixo no painel:
   "Educational tool, not financial advice."
 
+### 3.12 Configuracoes, cancelamento e tema (13/10)
+
+- **`/dashboard/settings`** (`SettingsPage.tsx`): status ("Active, renews on",
+  "Canceled, access until", "Ended on"), valor, proxima cobranca, botao
+  "Manage subscription" (portal da Stripe) e "Reactivate subscription" antes do
+  fim do periodo (`POST /api/stripe/subscription/reactivate`). Tambem no menu da
+  conta (Clerk `UserButton.MenuItems`), so com `billingManageable` do `/usage`
+  (assinatura `sub_*` viva; o acesso manual nao tem portal). Portal responde 403
+  `no_subscription` sem assinatura; customer sempre do banco, nunca do navegador.
+- **Portal criado por API** na 1a abertura (`ensurePortalConfiguration`,
+  metadata `tickrify=portal_v1`): cancelar no FIM do periodo, motivo em lista
+  fechada, cartao e faturas, sem troca de plano, sem retencao, retorno em
+  `/dashboard/settings`. A configuracao padrao do painel fica intocada; falhou,
+  usa a padrao (log `[portal]`). Mudar recurso = versao nova da tag.
+- **Webhook:** `updated` com `cancel_at_period_end`/`cancel_at` mudando emite
+  `subscription_cancel_scheduled {reason, subscription_day, billingCycle}` ou
+  `subscription_reactivated` (dedupe pelo id do evento); `deleted` emite
+  `subscription_ended {reason}`. Colunas `cancelAtPeriodEnd`, `cancelAt`,
+  `canceledAt`, `endedAt`, `cancelReason`, `cancelFeedback` no `Subscription`
+  por SQL (boot + migracao `20261013140000`), FORA do schema.prisma. Portal:
+  `billing_portal_opened`. /admin aba Cancelamentos (`GET admin/cancellations`).
+- **Ex-assinante = modo leitura** (`formerSubscriber` em `getFreeQuota`: tem
+  `sub_*` `canceled`): historico inteiro aberto, nova analise/diario/resultado
+  travados, sem trial novo e sem e-mail de "gratis esgotado".
+- **E-mail de cancelamento** (`sendCancellationConfirm`) atras da chave
+  `EMAIL_CANCELLATION_CONFIRM` DESLIGADA (so `[mail] dry-run`).
+- **Afiliado:** quem cancelou e assinou de novo nao gera comissao sobre a
+  assinatura nova. Clique repetido do mesmo aparelho (IP + navegador) no mesmo
+  dia UTC conta 1 (id do clique = hash). Eventos `affiliate_link_visited`
+  (sem perfil de pessoa), `affiliate_signup`, `affiliate_sale_paid`. Vinculo do
+  navegador tambem em cookie de primeira parte `tickrify_ref` (30 dias). /admin
+  mostra vendas pagas e "Marcar como pago" (`POST admin/affiliates/:id/settle`,
+  fecha todo o disponivel num saque PAGO, Pix por fora).
+- **Tema claro** (so `/dashboard`, `/demo`, `/admin`; vitrine, blog e
+  `/affiliate` seguem escuros): `lib/theme.ts`, tokens em
+  `styles/trading-tokens.css` (`:root[data-theme='light']`; valores ESCUROS
+  iguais aos de antes) e no bloco shadcn do `index.css`. Script do `index.html`
+  aplica antes da pintura (localStorage `tickrify_theme`); a conta guarda em
+  `User.themePreference` (SQL, migracao `20261013150000`, `GET/PATCH
+  /api/auth/preferences`) e vence o aparelho no login. `theme_changed` sai do
+  servidor. Cor nova na area logada = token, nunca `bg-white/[..]`,
+  `text-zinc-*` ou hex (o card de compartilhamento em canvas segue escuro).
+
 ---
 
 ## 4. Regras tecnicas que nasceram de bug real (nao desfazer)
@@ -852,6 +895,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 13/10 | **Cancelamento, afiliados e tema (3.12) prontos para deploy.** Dono: (1) aprovar o texto "How to cancel" (vitrine) e o e-mail de cancelamento (entregues no chat); so depois pôr o "How to cancel" no site e ligar `EMAIL_CANCELLATION_CONFIRM`; (2) conferir no endpoint do webhook `customer.subscription.updated` e `.deleted`; (3) Stripe > Settings > Billing > Subscriptions and emails: link de gerenciar assinatura nos e-mails (recibo/renovacao); (4) testar em modo teste (sandbox) o portal: cancelar, voltar vendo "Canceled, access until", reativar; conferir `[portal] Configuracao do portal criada` no Render; (5) decidir a duracao do cupom de afiliado (o codigo trata `once`; nao existe cupom de afiliado na Stripe em 13/10) e se a /cookies deve citar o `tickrify_ref`; (6) aprovar o tema claro pelo preview da Vercel. | dono |
 | 13/10 | **Trial de 3 dias pronto e DESLIGADO (3.10).** Antes de ligar `TRIAL_MODE`: (1) textos APROVADOS pelo dono em 13/10 (e-mails `trial_*`, inclusive a variante do dia 2 com operacao aberta, boas-vindas e telas); (2) vitrine trocada para "3-day free trial, no card" em 13/10 (landing nos 6 idiomas, /try, /pricing, FAQ, meta descriptions, seo-routes, blog, /for, tools, llms.txt, og.png `?v=4`): o push dessa troca e o liga de `TRIAL_MODE` vao JUNTOS, no mesmo momento, senao o site promete trial com conta nova ainda na regra antiga; (3) conferir no boot `[trial] Tabela pronta`. Depois de ligar: funil por dia no PostHog (`trial_day_completed` por `day_index`), `trial_paywall_shown` por `trigger`, conversao por `trial_day_at_conversion`. | dono / Claude |
 | 13/10 | **Blog com o visual do site:** demo em `_local/blog-visual/demo.html` (tokens `.tk-site`, cabecalho/rodape do site, filtro por categoria na listagem, post em superficie escura ou papel). Dono escolhe a superficie e aprova; depois: CSS unico `/blog/blog.css` nos 12 HTMLs, sem mexer no texto. URLs do blog auditadas (0 link quebrado, canonical e sitemap ok, slugs limpos): NAO mudar URL nem criar `/blog/categoria` (filtro so na listagem). | dono aprova / Claude |
 | 13/10 | **Quando a Anthropic entrar em uso:** atualizar /privacy (secao 4 ja diz "AI provider"; texto proposto entregue no chat em 13/10) e conferir `[ai-provider]` no Render. Nada publico cita a Anthropic antes disso. | dono / Claude |
@@ -973,6 +1017,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **13/10 (provedor de IA):** camada unica `vision-model.ts` com OpenAI ativa, Anthropic pronta e inativa, contingencia, modo comparacao desligado e nova tentativa unica quando a checagem por codigo falha (ver 3.2). Nao existe chat com IA no produto (o chat e com o fundador), entao nao ha historico de chat a limitar.
 - **13/10 (trial):** trial de 3 dias sem cartao implementado atras de `TRIAL_MODE` (3.10). Diagnostico de 22/09 a 13/10 (PostHog, 194 cadastros): 0 analises 16%, 1 = 35%, 2 = 20%, 3 = 15%, 4+ = 14%; de quem analisou, 16% voltou em outro dia (UTC) e 2% em 3 dias; mediana de 1 min entre cadastro e 1a analise (157 de 162 na 1a hora); o assinante semanal pagou ~39h depois do cadastro (3o dia do calendario) e renovou em 12/10.
 - **13/10 (operacao):** estado da operacao, pergunta de acompanhamento e modo gerenciamento (3.11).
+- **13/10 (cancelamento, afiliados, tema):** Configuracoes com assinatura e portal da Stripe por API, reativar, eventos de cancelamento, ex-assinante em modo leitura, aba Cancelamentos; afiliados com clique deduplicado, eventos, cookie do vinculo, vendas pagas e "Marcar como pago"; tema claro na area logada com tokens (361 cores soltas trocadas). Ver 3.12.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---

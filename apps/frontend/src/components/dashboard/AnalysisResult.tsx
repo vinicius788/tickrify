@@ -1005,7 +1005,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
         >
           <CardContent className="p-5 md:p-6">
             <p className="tk-display mb-3 flex items-center gap-2 text-[15px]">
-              <Lightbulb className="h-4 w-4 text-amber-400" />
+              <Lightbulb className="h-4 w-4 text-[var(--tone-warn-2)]" />
               {waitHasPlan ? r.planTitle : r.flipTitle}
             </p>
             <div className="space-y-3 text-sm">
@@ -1302,10 +1302,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                 <AccordionItem value="calendar" className="border-[var(--border-subtle)]">
                     <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                       <span className="flex items-center gap-2">
-                        <CalendarClock className="h-4 w-4 text-amber-400" />
+                        <CalendarClock className="h-4 w-4 text-[var(--tone-warn-2)]" />
                         {t.analysis.economicEvents}
                         {calEvents.some((e) => e.impact === 'High' && (e.minutesUntil ?? 999) <= 60) && (
-                          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-terminal text-[10px] font-bold text-amber-400 uppercase">
+                          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-terminal text-[10px] font-bold text-[var(--tone-warn-2)] uppercase">
                             {r.calHighImpactBadge}
                           </span>
                         )}
@@ -1319,7 +1319,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                         // events==[] não significa "sem notícia", significa "não
                         // sabemos". Bug real encontrado em 25/08/2026 — a tela
                         // afirmava tranquilidade que o backend não tinha checado.
-                        <p className="text-xs text-amber-400/80">⚠ {r.calUnavailable}</p>
+                        <p className="text-xs text-[var(--tone-warn-2)]">⚠ {r.calUnavailable}</p>
                       ) : calEvents.length === 0 ? (
                         <p className="text-xs text-[var(--text-secondary)] opacity-60">
                           ✅ {t.analysis.noHighImpactEvents}
@@ -1351,8 +1351,8 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                               >
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="flex items-center gap-1.5">
-                                    {isHigh && isSoon && <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" />}
-                                    <span className={`font-medium ${isHigh ? 'text-amber-300' : 'text-[var(--text-primary)]'}`}>
+                                    {isHigh && isSoon && <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-[var(--tone-warn-2)]" />}
+                                    <span className={`font-medium ${isHigh ? 'text-[var(--tone-warn-1)]' : 'text-[var(--text-primary)]'}`}>
                                       {ev.title}
                                     </span>
                                   </div>
@@ -1360,7 +1360,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                                     isJustHappened
                                       ? 'bg-[var(--bg-overlay)] text-[var(--text-secondary)]'
                                       : isSoon && isHigh
-                                        ? 'bg-amber-500/20 text-amber-400'
+                                        ? 'bg-amber-500/20 text-[var(--tone-warn-2)]'
                                         : 'bg-[var(--bg-overlay)] text-[var(--text-secondary)]'
                                   }`}>
                                     {timeLabel}
@@ -1370,14 +1370,14 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                                   <span className="rounded bg-[var(--bg-overlay)] px-1.5 py-0.5 font-terminal font-semibold">
                                     {ev.country}
                                   </span>
-                                  <span className={`font-medium ${isHigh ? 'text-amber-400' : 'text-[var(--text-secondary)]'}`}>
+                                  <span className={`font-medium ${isHigh ? 'text-[var(--tone-warn-2)]' : 'text-[var(--text-secondary)]'}`}>
                                     {ev.impact === 'High' ? r.highImpact : r.medImpact}
                                   </span>
                                   {ev.time && ev.time !== 'All Day' && (
                                     <span>{ev.time} ET</span>
                                   )}
                                   {isHigh && !isJustHappened && (
-                                    <span className="text-amber-400/70">
+                                    <span className="text-[var(--tone-warn-2)]">
                                       {r.calMayAffect}
                                     </span>
                                   )}
@@ -1628,7 +1628,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                   <AccordionItem value="plan-b" className="border-[var(--border-subtle)]">
                     <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                       <span className="flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4 text-amber-400" />
+                        <AlertTriangle className="h-4 w-4 text-[var(--tone-warn-2)]" />
                         {t.analysis.planB}
                       </span>
                     </AccordionTrigger>

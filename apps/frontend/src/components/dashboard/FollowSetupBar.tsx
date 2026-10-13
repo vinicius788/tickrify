@@ -65,7 +65,7 @@ const FollowSetupBar = ({ analysisId, recommendation, base }: { analysisId: stri
           <Link
             to={`${base}/setups/${encodeURIComponent(setup.id)}`}
             onClick={() => track('setup_opened', { setupId: setup.id, surface: 'result' })}
-            className="rounded-lg border border-[var(--border-default)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-white/[0.04]"
+            className="rounded-lg border border-[var(--border-default)] px-3 py-2 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)]"
           >
             {s.openSetup}
           </Link>
@@ -100,7 +100,7 @@ const FollowSetupBar = ({ analysisId, recommendation, base }: { analysisId: stri
         onClick={onFollow}
         disabled={busy}
         className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-60 ${
-          isWait ? 'bg-white text-[#050508]' : 'border border-[var(--border-default)] text-[var(--text-primary)]'
+          isWait ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]' : 'border border-[var(--border-default)] text-[var(--text-primary)]'
         }`}
       >
         <BookmarkPlus className="h-4 w-4" /> {s.follow}

@@ -24,6 +24,10 @@ interface AnalysisLimitData {
   totalLimit: number | null;
   /** Gratis esgotado: historico, diario e resultado travados ate assinar. */
   freeLocked: boolean;
+  /** Assinatura encerrada: modo leitura (historico aberto, nova analise travada). */
+  formerSubscriber: boolean;
+  /** Tem assinatura da Stripe para gerenciar no portal. */
+  billingManageable: boolean;
   /** Trial de 3 dias (sem cartao). null = regra antiga ou assinante. */
   trial: TrialUsage | null;
   /** Trial recusado pelo anti-abuso: mensagem do servidor para mostrar. */
@@ -65,6 +69,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
   const [analysesAllTime, setAnalysesAllTime] = useState<number | null>(null);
   const [freeTotal, setFreeTotal] = useState<{ used: number; limit: number } | null>(null);
   const [freeLocked, setFreeLocked] = useState(false);
+  const [formerSubscriber, setFormerSubscriber] = useState(false);
+  const [billingManageable, setBillingManageable] = useState(false);
   const [trial, setTrial] = useState<TrialUsage | null>(null);
   const [trialBlocked, setTrialBlocked] = useState<{ code: string; message: string } | null>(null);
   // Começa carregando: o backend (Render hiberna) pode levar segundos a confirmar
@@ -124,6 +130,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
           : null,
       );
       setFreeLocked(usage.freeLocked === true);
+      setFormerSubscriber(usage.formerSubscriber === true);
+      setBillingManageable(usage.billingManageable === true);
       setTrial(usage.trial ?? null);
       setTrialBlocked(usage.trialBlocked ?? null);
       // Só marca resolvido em caso de sucesso — assim canAnalyze fica travado até
@@ -135,6 +143,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setAnalysisLimit(FREE_LIMIT);
       setFreeTotal(null);
       setFreeLocked(false);
+      setFormerSubscriber(false);
+      setBillingManageable(false);
       setTrial(null);
       setTrialBlocked(null);
       setBackendUnlimited(false);
@@ -165,6 +175,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setAnalysisLimit(FREE_LIMIT);
       setFreeTotal(null);
       setFreeLocked(false);
+      setFormerSubscriber(false);
+      setBillingManageable(false);
       setTrial(null);
       setTrialBlocked(null);
       setUserPlan('free');
@@ -187,6 +199,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       totalUsed: null,
       totalLimit: null,
       freeLocked: false,
+      formerSubscriber: false,
+      billingManageable: false,
       trial: null,
       trialBlocked: null,
       isLoading: false,
@@ -208,6 +222,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       totalUsed: null,
       totalLimit: null,
       freeLocked: false,
+      formerSubscriber: false,
+      billingManageable: false,
       trial: null,
       trialBlocked: null,
       isLoading: true,
@@ -225,7 +241,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
     ? Infinity
     : activeTrial
       ? activeTrial.remainingToday
-      : trialBlocked
+      : trialBlocked || formerSubscriber
         ? 0
         : totalCapHit
           ? 0
@@ -243,6 +259,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
     totalUsed: isUnlimited ? null : freeTotal?.used ?? null,
     totalLimit: isUnlimited ? null : freeTotal?.limit ?? null,
     freeLocked: !isUnlimited && freeLocked,
+    formerSubscriber: !isUnlimited && formerSubscriber,
+    billingManageable: isUnlimited && billingManageable,
     trial: activeTrial,
     trialBlocked: isUnlimited ? null : trialBlocked,
     isLoading: false,

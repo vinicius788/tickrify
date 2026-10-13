@@ -271,7 +271,7 @@ const TradePanel = ({ analysisId }: { analysisId: string }) => {
             <span>{`${tr.watch}: ${shown.watch}`}</span>
           </p>
           {shown.decidedByPrice ? <p className="text-xs text-[var(--text-secondary)]">{tr.decidedByPrice}</p> : null}
-          {shown.needsCurrentPrice ? <p className="text-xs text-amber-500">{tr.needsPrice}</p> : null}
+          {shown.needsCurrentPrice ? <p className="text-xs text-[var(--tone-warn-3)]">{tr.needsPrice}</p> : null}
         </div>
       ) : null}
 

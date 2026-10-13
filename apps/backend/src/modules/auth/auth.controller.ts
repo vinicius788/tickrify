@@ -1,4 +1,5 @@
-import { Body, Controller, Get, OnModuleInit, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, OnModuleInit, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { IsBoolean, IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { AuthGuard } from './auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -135,6 +136,12 @@ export class SetTechnicalAttributionDto {
   capturedAt?: string;
 }
 
+/** Tema da area logada (13/10/2026). Lista fechada: o ValidationPipe rejeita o resto. */
+export class SetPreferencesDto {
+  @IsIn(['dark', 'light'])
+  theme!: 'dark' | 'light';
+}
+
 @Controller('auth')
 export class AuthController implements OnModuleInit {
   constructor(
@@ -159,6 +166,9 @@ export class AuthController implements OnModuleInit {
       // Reset unico da cota gratis (common/free-quota.ts). Nao e de origem, mas
       // e coluna do User e precisa existir antes da primeira leitura da cota.
       'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "freeQuotaResetAt" TIMESTAMP(3)',
+      // Tema escolhido em Configuracoes (13/10/2026). NULL = nunca escolheu =
+      // escuro. Fora do schema.prisma de proposito (migracao 20261013150000).
+      'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "themePreference" TEXT',
     ];
     for (const sql of colunas) {
       try {
@@ -284,6 +294,40 @@ export class AuthController implements OnModuleInit {
       },
     });
     return { sent };
+  }
+
+  /**
+   * Preferencias da conta. Hoje so o tema: vale em qualquer aparelho e depois
+   * de sair e entrar. null = nunca escolheu (o painel fica no escuro).
+   */
+  @Get('preferences')
+  @UseGuards(AuthGuard)
+  async getPreferences(@CurrentUser() user: { id?: string; clerkUserId: string }) {
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ themePreference: string | null }>>(
+        'SELECT "themePreference" FROM "tickrify"."User" WHERE "clerkUserId" = $1',
+        user.clerkUserId,
+      );
+      const theme = rows[0]?.themePreference;
+      return { theme: theme === 'light' || theme === 'dark' ? theme : null };
+    } catch {
+      return { theme: null };
+    }
+  }
+
+  @Patch('preferences')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async setPreferences(@CurrentUser() user: { id?: string; clerkUserId: string }, @Body() body: SetPreferencesDto) {
+    const changed = await this.prisma.$executeRawUnsafe(
+      `UPDATE "tickrify"."User" SET "themePreference" = $2
+        WHERE "clerkUserId" = $1 AND "themePreference" IS DISTINCT FROM $2`,
+      user.clerkUserId,
+      body.theme,
+    );
+    // So conta troca de verdade (mesmo valor reenviado nao vira evento).
+    if (changed > 0) captureServer(user.clerkUserId, 'theme_changed', { theme: body.theme, $set: { theme: body.theme } });
+    return { theme: body.theme };
   }
 
   @Get('me')

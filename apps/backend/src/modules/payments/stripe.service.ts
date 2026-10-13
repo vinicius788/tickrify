@@ -1,11 +1,13 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
   OnModuleInit,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -17,10 +19,13 @@ import { sendMetaEvent, type MetaAdsContext } from '../../common/analytics/meta-
 import { funnelLog, safeErrorFields } from '../../common/observability/funnel-log';
 import { FOUNDING_COUPON_ID, getFoundingOffer, type FoundingOffer } from './founding-offer';
 import { AffiliatesService, type ReferralKind } from '../affiliates/affiliates.service';
+import { MailService } from '../mail/mail.service';
+import { flagBool } from '../../common/flags/feature-flags';
 import {
   getStripeConfig,
   getPriceId,
   resolvePlanForPriceId,
+  billingCycleForPriceId,
   allowanceForPriceId,
   allowanceCadenceForPriceId,
   allowanceWindowStart,
@@ -52,6 +57,24 @@ const REUSE_MIN_REMAINING_SECONDS = 10 * 60;
 /** Validacao do price vale por 1h; mudar o price no painel reflete em ate 1h. */
 const PRICE_CHECK_TTL_MS = 60 * 60 * 1000;
 
+/** Status em que a pessoa ainda tem o que gerenciar no portal (cartao, faturas, cancelar). */
+const MANAGEABLE_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due', 'unpaid'];
+
+/**
+ * Portal da Stripe criado por API (13/10/2026), identificado pela metadata.
+ * Cancelamento no FIM do periodo pago, motivo em lista fechada, troca de
+ * cartao e faturas; sem troca de plano e sem tela de retencao. Mudar algo
+ * aqui = subir a versao, para criar uma configuracao nova em vez de editar a
+ * que ja esta em uso.
+ */
+const PORTAL_CONFIG_TAG = 'portal_v1';
+
+/** Cancelamento agendado, nos dois modos de cobranca da Stripe (classico e flexivel). */
+export function cancelScheduled(subscription: Pick<Stripe.Subscription, 'cancel_at_period_end' | 'cancel_at' | 'status'>): boolean {
+  if (subscription.status === 'canceled') return false;
+  return Boolean(subscription.cancel_at_period_end) || typeof subscription.cancel_at === 'number';
+}
+
 @Injectable()
 export class StripeService implements OnModuleInit {
   private readonly logger = new Logger(StripeService.name);
@@ -67,9 +90,12 @@ export class StripeService implements OnModuleInit {
   private readonly checkoutInFlight = new Map<string, Promise<CheckoutResult>>();
   private readonly priceCheckedAt = new Map<string, number>();
 
+  private portalConfigurationId: string | null = null;
+
   constructor(
     private prisma: PrismaService,
     private affiliates: AffiliatesService,
+    @Optional() private readonly mail?: MailService,
   ) {
     const stripeConfig = getStripeConfig();
     if (!stripeConfig.secretKey) {
@@ -115,6 +141,19 @@ export class StripeService implements OnModuleInit {
       await this.prisma.$executeRawUnsafe(
         'ALTER TABLE "tickrify"."Subscription" ADD COLUMN IF NOT EXISTS "currentPeriodEnd" TIMESTAMP(3)',
       );
+      // Cancelamento (13/10/2026). Fora do schema.prisma de proposito, como o
+      // clientContext: o upsert do client nao depende delas. Gravadas por SQL
+      // em `recordCancellationColumns`. Mesmo conteudo da migracao 20261013140000.
+      for (const column of [
+        '"cancelAtPeriodEnd" BOOLEAN NOT NULL DEFAULT false',
+        '"cancelAt" TIMESTAMP(3)',
+        '"canceledAt" TIMESTAMP(3)',
+        '"endedAt" TIMESTAMP(3)',
+        '"cancelReason" TEXT',
+        '"cancelFeedback" TEXT',
+      ]) {
+        await this.prisma.$executeRawUnsafe(`ALTER TABLE "tickrify"."Subscription" ADD COLUMN IF NOT EXISTS ${column}`);
+      }
       this.logger.log('[webhook] Registro de eventos pronto.');
     } catch (error) {
       this.logger.error('[webhook] Nao consegui garantir a tabela StripeWebhookEvent.', error);
@@ -737,34 +776,105 @@ export class StripeService implements OnModuleInit {
   }
 
   /**
-   * Criar portal do cliente
+   * Portal da Stripe (gerenciar cartao, faturas e cancelar). So para quem tem
+   * assinatura da Stripe que ainda se gerencia: o customer vem do banco pelo
+   * usuario do token, nunca do navegador. Quem nunca assinou (ou so abriu um
+   * checkout) recebe 403 e a tela nem mostra o botao.
    */
   async createCustomerPortal(clerkUserId: string) {
     try {
       const stripe = this.getStripeClient();
       const user = await this.prisma.user.findUnique({
         where: { clerkUserId },
+        select: { id: true, stripeCustomerId: true },
       });
-
-      if (!user?.stripeCustomerId) {
-        throw new Error('User does not have a Stripe customer ID');
+      const subscription = user
+        ? await this.prisma.subscription.findFirst({
+            where: { userId: user.id, stripeId: { startsWith: 'sub_' }, status: { in: MANAGEABLE_SUBSCRIPTION_STATUSES } },
+            select: { stripeId: true },
+          })
+        : null;
+      if (!user?.stripeCustomerId || !subscription) {
+        throw new ForbiddenException({ code: 'no_subscription', message: 'There is no subscription to manage.' });
       }
 
+      const configuration = await this.ensurePortalConfiguration();
       const session = await stripe.billingPortal.sessions.create({
         customer: user.stripeCustomerId,
-        return_url: `${this.resolveAppBaseUrl()}/dashboard`,
+        return_url: `${this.resolveAppBaseUrl()}/dashboard/settings`,
+        ...(configuration ? { configuration } : {}),
       });
 
-      return {
-        url: session.url,
-      };
+      captureServer(clerkUserId, 'billing_portal_opened', { subscriptionId: subscription.stripeId });
+      return { url: session.url };
     } catch (error) {
+      if (error instanceof ForbiddenException) throw error;
       this.logger.error('Failed to create customer portal', {
         clerkUserId,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
       });
       this.rethrowStripeError(error, 'Falha ao criar portal do cliente no Stripe.');
+    }
+  }
+
+  /**
+   * Configuracao do portal criada por API, uma vez por modo (live/teste). A
+   * configuracao PADRAO do painel fica intocada. Falhou (permissao da chave,
+   * Stripe fora): o portal abre com a padrao do painel, e o log avisa.
+   */
+  private async ensurePortalConfiguration(): Promise<string | null> {
+    if (this.portalConfigurationId) return this.portalConfigurationId;
+    const stripe = this.getStripeClient();
+    try {
+      const existing = await stripe.billingPortal.configurations.list({ active: true, limit: 100 });
+      const found = existing.data.find((c) => c.metadata?.tickrify === PORTAL_CONFIG_TAG);
+      if (found) {
+        this.portalConfigurationId = found.id;
+        return found.id;
+      }
+      const base = this.resolveAppBaseUrl();
+      const created = await stripe.billingPortal.configurations.create({
+        business_profile: {
+          privacy_policy_url: `${base}/privacy`,
+          terms_of_service_url: `${base}/terms`,
+        },
+        default_return_url: `${base}/dashboard/settings`,
+        features: {
+          subscription_cancel: {
+            enabled: true,
+            mode: 'at_period_end',
+            proration_behavior: 'none',
+            cancellation_reason: {
+              enabled: true,
+              options: [
+                'too_expensive',
+                'missing_features',
+                'switched_service',
+                'unused',
+                'low_quality',
+                'too_complex',
+                'customer_service',
+                'other',
+              ],
+            },
+          },
+          payment_method_update: { enabled: true },
+          invoice_history: { enabled: true },
+          // Sem troca de plano pelo portal (fica desligada por padrao) e sem
+          // edicao de e-mail/endereco: o e-mail da conta vem do Clerk.
+          customer_update: { enabled: false },
+        },
+        metadata: { tickrify: PORTAL_CONFIG_TAG },
+      });
+      this.logger.log(`[portal] Configuracao do portal criada (${created.id}).`);
+      this.portalConfigurationId = created.id;
+      return created.id;
+    } catch (error) {
+      this.logger.error('[portal] Nao consegui garantir a configuracao do portal; usando a padrao do painel.', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
     }
   }
 
@@ -803,7 +913,8 @@ export class StripeService implements OnModuleInit {
   }
 
   /**
-   * Obter assinatura do usuário
+   * Assinatura para a tela de Configuracoes, relida na Stripe (e gravada).
+   * null = nada para mostrar (nunca assinou, ou so o acesso manual `manual_*`).
    */
   async getUserSubscription(clerkUserId: string) {
     let userId: string | null = null;
@@ -821,7 +932,7 @@ export class StripeService implements OnModuleInit {
       userId = user.id;
 
       const subscriptionRecord = await this.prisma.subscription.findFirst({
-        where: { userId: user.id },
+        where: { userId: user.id, stripeId: { startsWith: 'sub_' } },
         orderBy: { updatedAt: 'desc' },
       });
 
@@ -829,21 +940,9 @@ export class StripeService implements OnModuleInit {
         return null;
       }
 
-      let subscription = await stripe.subscriptions.retrieve(subscriptionRecord.stripeId);
+      const subscription = await stripe.subscriptions.retrieve(subscriptionRecord.stripeId);
       await this.upsertSubscriptionForUser(user.id, subscription);
-
-      const activePriceId = subscription.items.data[0]?.price.id ?? '';
-      const resolvedPlan = resolvePlanForPriceId(activePriceId);
-      const isActive = ['active', 'trialing'].includes(String(subscription.status).toLowerCase());
-
-      return {
-        id: subscription.id,
-        status: subscription.status,
-        currentPeriodStart: subscription.current_period_start,
-        currentPeriodEnd: subscription.current_period_end,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end,
-        plan: isActive ? (resolvedPlan ?? 'pro') : 'free',
-      };
+      return this.subscriptionView(subscription);
     } catch (error) {
       this.logger.error('Failed to get user subscription', {
         userId,
@@ -852,6 +951,71 @@ export class StripeService implements OnModuleInit {
         stack: error instanceof Error ? error.stack : undefined,
       });
       this.rethrowStripeError(error, 'Falha ao obter assinatura do usuário.');
+    }
+  }
+
+  private subscriptionView(subscription: Stripe.Subscription) {
+    const price = subscription.items.data[0]?.price;
+    const priceId = price?.id ?? '';
+    const status = String(subscription.status).toLowerCase();
+    const isActive = ['active', 'trialing'].includes(status);
+    const canceling = cancelScheduled(subscription);
+    const accessEndsAt = canceling
+      ? subscription.cancel_at ?? subscription.current_period_end
+      : status === 'canceled'
+        ? subscription.ended_at ?? subscription.canceled_at
+        : null;
+    return {
+      id: subscription.id,
+      status: subscription.status,
+      plan: isActive ? (resolvePlanForPriceId(priceId) ?? 'pro') : 'free',
+      billingCycle: billingCycleForPriceId(priceId),
+      currentPeriodStart: subscription.current_period_start,
+      currentPeriodEnd: subscription.current_period_end,
+      cancelAtPeriodEnd: canceling,
+      /** Fim do acesso (agendado ou ja encerrado), em segundos. */
+      accessEndsAt: accessEndsAt ?? null,
+      /** Proxima cobranca: so existe para assinatura viva e sem cancelamento agendado. */
+      nextChargeAt: isActive && !canceling ? subscription.current_period_end : null,
+      amount: typeof price?.unit_amount === 'number' ? price.unit_amount / 100 : null,
+      currency: price?.currency ?? null,
+      manageable: MANAGEABLE_SUBSCRIPTION_STATUSES.includes(status),
+      canReactivate: canceling && isActive,
+    };
+  }
+
+  /**
+   * Desfaz o cancelamento agendado, antes do fim do periodo pago. O evento
+   * `subscription_reactivated` sai do webhook (fonte unica, com idempotencia).
+   */
+  async reactivateSubscription(clerkUserId: string) {
+    const user = await this.prisma.user.findUnique({ where: { clerkUserId }, select: { id: true } });
+    const record = user
+      ? await this.prisma.subscription.findFirst({
+          where: { userId: user.id, stripeId: { startsWith: 'sub_' }, status: { in: ['active', 'trialing'] } },
+          orderBy: { updatedAt: 'desc' },
+          select: { stripeId: true },
+        })
+      : null;
+    if (!user || !record) {
+      throw new ForbiddenException({ code: 'no_subscription', message: 'There is no subscription to reactivate.' });
+    }
+    try {
+      const stripe = this.getStripeClient();
+      const live = await stripe.subscriptions.retrieve(record.stripeId);
+      if (!cancelScheduled(live) || !['active', 'trialing'].includes(live.status)) {
+        throw new ConflictException({ code: 'not_canceling', message: 'This subscription is not scheduled to cancel.' });
+      }
+      // Agendado por data (cancel_at) se desfaz com valor vazio; pelo fim do periodo, com false.
+      const updated = await stripe.subscriptions.update(
+        live.id,
+        live.cancel_at_period_end ? { cancel_at_period_end: false } : { cancel_at: '' },
+      );
+      await this.upsertSubscriptionForUser(user.id, updated);
+      return this.subscriptionView(updated);
+    } catch (error) {
+      if (error instanceof ConflictException) throw error;
+      this.rethrowStripeError(error, 'Falha ao reativar a assinatura.');
     }
   }
 
@@ -925,6 +1089,7 @@ export class StripeService implements OnModuleInit {
           event.data.object as Stripe.Subscription,
           event.type,
           (event.data as { previous_attributes?: Record<string, unknown> }).previous_attributes,
+          event.id,
         );
         return;
       case 'customer.subscription.deleted':
@@ -1214,6 +1379,7 @@ export class StripeService implements OnModuleInit {
     subscription: Stripe.Subscription,
     eventType?: string,
     previous?: Record<string, unknown>,
+    eventId?: string,
   ) {
     const synced = await this.syncSubscriptionFromStripe(subscription.id, {
       userIdHint: subscription.metadata?.userId ?? null,
@@ -1224,25 +1390,27 @@ export class StripeService implements OnModuleInit {
       );
     }
 
-    // Cancelamento agendado (fica ativa ate o fim do periodo). O cancelamento
-    // de fato chega depois como customer.subscription.deleted.
+    // Cancelamento agendado (fica ativa ate o fim do periodo) ou desfeito. O
+    // fim de fato chega depois como customer.subscription.deleted. Os dois
+    // modos da Stripe: `cancel_at_period_end` (classico) e `cancel_at`.
     if (
       eventType === 'customer.subscription.updated' &&
       previous &&
-      'cancel_at_period_end' in previous &&
-      synced.subscription.cancel_at_period_end !== previous.cancel_at_period_end
+      ('cancel_at_period_end' in previous || 'cancel_at' in previous)
     ) {
-      funnelLog(
-        'subscription_canceled',
-        {
-          user: synced.userId,
-          subscription: synced.subscription.id,
-          status: synced.subscription.status,
-          cancelAtPeriodEnd: synced.subscription.cancel_at_period_end,
-          reason: synced.subscription.cancel_at_period_end ? 'scheduled' : 'reactivated',
-        },
-        { persist: this.prisma },
-      );
+      // `previous_attributes` traz o valor ANTIGO so do que mudou; o resto e o atual.
+      const before = {
+        cancel_at_period_end: Boolean(
+          'cancel_at_period_end' in previous ? previous.cancel_at_period_end : synced.subscription.cancel_at_period_end,
+        ),
+        cancel_at: ('cancel_at' in previous ? previous.cancel_at : synced.subscription.cancel_at) as number | null,
+        status: synced.subscription.status,
+      };
+      const wasScheduled = cancelScheduled(before);
+      const nowScheduled = cancelScheduled(synced.subscription);
+      if (wasScheduled !== nowScheduled) {
+        await this.onCancellationChanged(synced.userId, synced.subscription, nowScheduled, eventId);
+      }
     }
 
     if (eventType === 'customer.subscription.created') {
@@ -1323,6 +1491,86 @@ export class StripeService implements OnModuleInit {
   }
 
   /**
+   * Cancelamento agendado pelo portal (ou desfeito antes do fim do periodo).
+   * Cada evento da Stripe passa aqui UMA vez (`claimWebhookEvent`); o
+   * dedupeKey do PostHog usa o id do evento, entao reenvio nao duplica.
+   */
+  private async onCancellationChanged(
+    userId: string,
+    subscription: Stripe.Subscription,
+    scheduled: boolean,
+    eventId?: string,
+  ): Promise<void> {
+    const priceId = subscription.items.data[0]?.price.id ?? null;
+    const reason = subscription.cancellation_details?.reason ?? null;
+    const feedback = subscription.cancellation_details?.feedback ?? null;
+    const accessEndsAt = subscription.cancel_at ?? subscription.current_period_end;
+    // Dia da assinatura em que cancelou (1 = no dia em que assinou).
+    const subscriptionDay = Math.max(1, Math.floor((Date.now() / 1000 - subscription.created) / 86400) + 1);
+    funnelLog(
+      'subscription_canceled',
+      {
+        user: userId,
+        subscription: subscription.id,
+        status: subscription.status,
+        cancelAtPeriodEnd: scheduled,
+        reason: scheduled ? 'scheduled' : 'reactivated',
+      },
+      { persist: this.prisma },
+    );
+    const dedupe = eventId ? { dedupeKey: `${scheduled ? 'cancel' : 'reactivate'}:${eventId}` } : {};
+    if (scheduled) {
+      await this.captureForUser(
+        userId,
+        'subscription_cancel_scheduled',
+        {
+          subscriptionId: subscription.id,
+          billingCycle: billingCycleForPriceId(priceId),
+          reason: feedback,
+          comment_given: Boolean(subscription.cancellation_details?.comment),
+          subscription_day: subscriptionDay,
+          access_ends_at: new Date(accessEndsAt * 1000).toISOString(),
+          cancellation_source: reason,
+        },
+        dedupe,
+      );
+      await this.sendCancellationEmail(userId, subscription.id, accessEndsAt);
+    } else {
+      await this.captureForUser(
+        userId,
+        'subscription_reactivated',
+        { subscriptionId: subscription.id, billingCycle: billingCycleForPriceId(priceId), subscription_day: subscriptionDay },
+        dedupe,
+      );
+    }
+  }
+
+  /**
+   * Confirmacao de cancelamento (fim do acesso e como reativar). Chave
+   * EMAIL_CANCELLATION_CONFIRM DESLIGADA = so loga. Uma por assinatura e por
+   * fim de acesso (AdminAudit), para reenvio do webhook nao mandar dois.
+   */
+  private async sendCancellationEmail(userId: string, subscriptionId: string, accessEndsAt: number): Promise<void> {
+    try {
+      const marker = `cancellation_email:${subscriptionId}:${accessEndsAt}`;
+      const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
+      if (!user?.email) return;
+      if (!flagBool('EMAIL_CANCELLATION_CONFIRM')) {
+        this.logger.log(`[mail] dry-run kind=cancellation_confirm user=${userId}`);
+        return;
+      }
+      const already = await this.prisma.adminAudit.findFirst({ where: { action: marker, targetUserId: userId }, select: { id: true } });
+      if (already || !this.mail) return;
+      const sent = await this.mail.sendCancellationConfirm(user.email, user.name, new Date(accessEndsAt * 1000));
+      if (sent) {
+        await this.prisma.adminAudit.create({ data: { action: marker, targetUserId: userId, details: { subscriptionId } } });
+      }
+    } catch (error) {
+      this.logger.warn(`[mail] Falha no e-mail de cancelamento: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
    * Cancelamento. Relido na Stripe tambem: o status vem `canceled`. Sem
    * usuario conhecido nao ha o que liberar, entao so marca a linha, se houver.
    */
@@ -1346,10 +1594,17 @@ export class StripeService implements OnModuleInit {
       { persist: this.prisma },
     );
     const endedAt = synced.subscription.ended_at ?? synced.subscription.canceled_at;
+    const endedPriceId = synced.subscription.items.data[0]?.price.id ?? null;
     await this.captureForUser(
       synced.userId,
       'subscription_ended',
-      { subscriptionId: subscription.id, $set: { is_subscriber: false } },
+      {
+        subscriptionId: subscription.id,
+        billingCycle: billingCycleForPriceId(endedPriceId),
+        reason: synced.subscription.cancellation_details?.feedback ?? null,
+        cancellation_source: synced.subscription.cancellation_details?.reason ?? null,
+        $set: { is_subscriber: false },
+      },
       endedAt
         ? { dedupeKey: `subscription_ended:${subscription.id}`, timestamp: new Date(endedAt * 1000) }
         : {},
@@ -1864,6 +2119,33 @@ export class StripeService implements OnModuleInit {
         ...this.periodColumns(subscription),
       },
     });
+    if (typeof this.prisma.$executeRawUnsafe === 'function') await this.recordCancellationColumns(subscription);
+  }
+
+  /**
+   * Colunas do cancelamento (fora do schema.prisma, ver onModuleInit). Sempre o
+   * estado ATUAL relido na Stripe, entao reenvio do webhook grava o mesmo valor.
+   * Coluna ausente (boot ainda nao rodou) nao derruba o webhook.
+   */
+  private async recordCancellationColumns(subscription: Stripe.Subscription): Promise<void> {
+    const toDate = (value: number | null | undefined) => (typeof value === 'number' ? new Date(value * 1000) : null);
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "tickrify"."Subscription"
+            SET "cancelAtPeriodEnd" = $2, "cancelAt" = $3, "canceledAt" = $4, "endedAt" = $5,
+                "cancelReason" = $6, "cancelFeedback" = $7
+          WHERE "stripeId" = $1`,
+        subscription.id,
+        cancelScheduled(subscription),
+        toDate(subscription.cancel_at),
+        toDate(subscription.canceled_at),
+        toDate(subscription.ended_at),
+        subscription.cancellation_details?.reason ?? null,
+        subscription.cancellation_details?.feedback ?? null,
+      );
+    } catch (error) {
+      this.logger.warn(`[webhook] Colunas de cancelamento nao gravadas (${subscription.id}): ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private periodColumns(subscription: Stripe.Subscription) {

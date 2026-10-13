@@ -7,7 +7,7 @@ import { useTicks } from "@/hooks/useTicks";
 import { Coins, Crown, Gift, TriangleAlert, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-import { buildApiUrl } from "@/lib/api";
+import { openBillingPortal } from "@/lib/stripe";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { track } from "@/lib/analytics";
 
@@ -28,14 +28,14 @@ const PLAN_TICKS: Record<UserPlan, number> = {
 };
 
 const AnalysisCounter = () => {
-  const { isUnlimited, plan, total, used, remaining, totalUsed, totalLimit, trial, isLoading } = useAnalysisLimit();
+  const { isUnlimited, plan, total, used, remaining, totalUsed, totalLimit, trial, formerSubscriber, billingManageable, isLoading } = useAnalysisLimit();
   const { balance } = useTicks();
   const { t } = useLanguage();
   const { getToken } = useAuth();
   const c = t.counter;
 
-  // Portal do cliente Stripe (gerenciar/cancelar assinatura) — endpoint já existia
-  // no backend; este é o primeiro ponto da UI que o expõe.
+  // Portal do cliente Stripe (gerenciar/cancelar assinatura). Tambem em
+  // Configuracoes e no menu da conta (13/10/2026).
   // IMPORTANTE: todos os hooks (incl. este useState) precisam ser chamados ANTES
   // de qualquer return condicional, senão React error #310 (hooks condicionais).
   const [portalLoading, setPortalLoading] = useState(false);
@@ -61,17 +61,8 @@ const AnalysisCounter = () => {
     setPortalLoading(true);
     try {
       const token = await getToken({ skipCache: true });
-      const res = await fetch(buildApiUrl('/api/stripe/create-customer-portal'), {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!res.ok) throw new Error('portal unavailable');
-      const data = (await res.json()) as { url?: string };
-      if (data?.url) {
-        window.location.href = data.url;
-        return;
-      }
-      throw new Error('portal url missing');
+      if (!token) throw new Error('no token');
+      await openBillingPortal(token);
     } catch {
       setPortalLoading(false);
     }
@@ -102,7 +93,7 @@ const AnalysisCounter = () => {
             {ended ? null : <Progress value={(usedToday / limit) * 100} className="h-1.5 bg-[var(--bg-overlay)]" />}
             {ended || trial.paywall === 'daily_limit' ? (
               <>
-                <p className="text-xs text-amber-500 flex items-center gap-1.5">
+                <p className="text-xs text-[var(--tone-warn-3)] flex items-center gap-1.5">
                   <TriangleAlert className="h-3.5 w-3.5 flex-shrink-0" />
                   <span>{ended ? c.trialEnded : c.trialComeBack}</span>
                 </p>
@@ -142,6 +133,23 @@ const AnalysisCounter = () => {
     );
   }
 
+  // Assinatura encerrada: modo leitura (historico aberto, nova analise so assinando).
+  if (!isUnlimited && formerSubscriber) {
+    return (
+      <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
+        <CardContent className="space-y-3 p-4">
+          <p className="text-xs leading-relaxed text-[var(--text-secondary)]">{c.subscriptionEnded}</p>
+          <Link to="/dashboard/plans" onClick={() => track('upgrade_cta_clicked', { source: 'counter_former_subscriber', destination: 'plans' })}>
+            <Button size="sm" className="w-full">
+              <Crown className="mr-2 h-4 w-4" />
+              {c.subscribe}
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
+    );
+  }
+
   // Usuário sem assinatura: contador das análises grátis COM SINAL (BUY/SELL).
   // WAIT não consome sinal; só conta no teto de análises no total.
   if (!isUnlimited) {
@@ -172,7 +180,7 @@ const AnalysisCounter = () => {
 
             {exhausted ? (
               <>
-                <p className="text-xs text-amber-500 flex items-center gap-1.5">
+                <p className="text-xs text-[var(--tone-warn-3)] flex items-center gap-1.5">
                   <TriangleAlert className="h-3.5 w-3.5 flex-shrink-0" />
                   {c.exhausted}
                 </p>
@@ -246,12 +254,12 @@ const AnalysisCounter = () => {
           )}
 
           {ticksLow && balance === 0 ? (
-            <p className="text-xs text-amber-500 flex items-center gap-1.5">
+            <p className="text-xs text-[var(--tone-warn-3)] flex items-center gap-1.5">
               <TriangleAlert className="h-3.5 w-3.5" />
               {c.ticksOut}
             </p>
           ) : ticksLow ? (
-            <p className="text-xs text-amber-500 flex items-center gap-1.5">
+            <p className="text-xs text-[var(--tone-warn-3)] flex items-center gap-1.5">
               <TriangleAlert className="h-3.5 w-3.5" />
               {c.ticksLow}
             </p>
@@ -261,6 +269,7 @@ const AnalysisCounter = () => {
             </p>
           )}
 
+          {billingManageable ? (
           <button
             type="button"
             onClick={() => void openCustomerPortal()}
@@ -270,6 +279,7 @@ const AnalysisCounter = () => {
             <ExternalLink className="h-3 w-3" />
             {portalLoading ? '…' : c.manageSubscription}
           </button>
+          ) : null}
         </div>
       </CardContent>
     </Card>

@@ -140,6 +140,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'EMAIL_CANCELLATION_CONFIRM',
+    type: 'boolean',
+    label: 'E-mail de confirmacao de cancelamento',
+    description:
+      'Quando a pessoa agenda o cancelamento no portal da Stripe: um e-mail com a data em que o acesso termina e como reativar em Settings. Uma vez por assinatura e data. DESLIGADO: so loga quem receberia ([mail] dry-run kind=cancellation_confirm). Ligar so com o texto aprovado.',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
     key: 'EMAIL_CHECKOUT_RECOVERY',
     type: 'boolean',
     label: 'E-mail de checkout abandonado',

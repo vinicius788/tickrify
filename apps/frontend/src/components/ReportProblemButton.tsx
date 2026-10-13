@@ -144,12 +144,12 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
       <button
         type="button"
         onClick={() => abrirChat('bubble')}
-        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-white/10 bg-black/70 px-3.5 py-2 text-xs text-zinc-400 backdrop-blur transition-colors hover:border-white/20 hover:text-white"
+        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-[var(--border-strong)] bg-[var(--bg-floating)] px-3.5 py-2 text-xs text-[var(--text-dim)] backdrop-blur transition-colors hover:border-[var(--border-heavy)] hover:text-[var(--text-primary)]"
         aria-label={rotulo}
       >
         <span>{r.bubble}</span>
         {naoLidas > 0 ? (
-          <span key="unread" className="min-w-[18px] rounded-full bg-white px-1.5 text-center text-[11px] font-semibold leading-[18px] text-[#050508]">
+          <span key="unread" className="min-w-[18px] rounded-full bg-[var(--inverse-bg)] px-1.5 text-center text-[11px] font-semibold leading-[18px] text-[var(--inverse-fg)]">
             {String(naoLidas)}
           </span>
         ) : null}
@@ -158,9 +158,9 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex max-h-[min(640px,calc(100dvh-2rem))] w-[min(380px,calc(100vw-2rem))] flex-col rounded-xl border border-white/10 bg-[#0b0b12] p-4 shadow-2xl">
+    <div className="fixed bottom-4 right-4 z-40 flex max-h-[min(640px,calc(100dvh-2rem))] w-[min(380px,calc(100vw-2rem))] flex-col rounded-xl border border-[var(--border-strong)] bg-[var(--bg-solid)] p-4 shadow-2xl">
       <div className="mb-3 flex shrink-0 items-start gap-2">
-        <div className="flex flex-1 gap-1 rounded-lg bg-white/5 p-1" role="tablist">
+        <div className="flex flex-1 gap-1 rounded-lg bg-[var(--fill-2)] p-1" role="tablist">
           {(['chat', 'problem', 'feedback'] as const).map((m) => (
             <button
               key={m}
@@ -169,7 +169,7 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
               aria-selected={modo === m}
               onClick={() => (m === 'chat' ? abrirChat('tab') : setModo(m))}
               className={`flex-1 rounded-md px-2 py-1.5 text-xs transition-colors ${
-                modo === m ? 'bg-white/10 text-white' : 'text-zinc-500 hover:text-zinc-300'
+                modo === m ? 'bg-[var(--fill-5)] text-[var(--text-primary)]' : 'text-[var(--text-faint)] hover:text-[var(--text-soft)]'
               }`}
             >
               {m === 'chat' ? r.tabChat : m === 'problem' ? r.button : r.tabOpinion}
@@ -179,7 +179,7 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
         <button
           type="button"
           onClick={() => setAberto(false)}
-          className="px-1 py-1 text-zinc-500 hover:text-white"
+          className="px-1 py-1 text-[var(--text-faint)] hover:text-[var(--text-primary)]"
           aria-label={r.close}
         >
           ×
@@ -191,7 +191,7 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
       ) : (
       <div key="report">
       <div className="mb-2">
-        <h2 className="text-sm font-semibold text-white">{opiniao ? t.feedback.title : r.title}</h2>
+        <h2 className="text-sm font-semibold text-[var(--text-primary)]">{opiniao ? t.feedback.title : r.title}</h2>
       </div>
 
       <textarea
@@ -201,10 +201,10 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
         rows={4}
         autoFocus
         placeholder={opiniao ? t.feedback.placeholder : r.placeholder}
-        className="w-full resize-none rounded-lg border border-white/10 bg-black/40 p-2.5 text-base text-white placeholder:text-zinc-600 focus:border-white/25 focus:outline-none"
+        className="w-full resize-none rounded-lg border border-[var(--border-strong)] bg-[var(--bg-inset)] p-2.5 text-base text-[var(--text-primary)] placeholder:text-[var(--text-ghost)] focus:border-[var(--border-heavy)] focus:outline-none"
       />
 
-      <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+      <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-faint)]">
         {opiniao ? t.feedback.subtitle : r.context.replace('{analysis}', analysisId ? r.contextAnalysis : '')}
       </p>
 

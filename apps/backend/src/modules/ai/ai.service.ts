@@ -47,7 +47,7 @@ import {
   prepareIncomingImage,
 } from '../../common/utils/image-storage';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
-import { FREE_READABLE_ANALYSES, getFreeQuota } from '../../common/free-quota';
+import { FREE_READABLE_ANALYSES, getFreeQuota, hadEndedSubscription } from '../../common/free-quota';
 import { TrialService } from './trial.service';
 import { TradesService } from './trades.service';
 import { TRIAL_RULES } from '../../common/trial';
@@ -736,7 +736,7 @@ export class AiService implements OnModuleInit {
     // Gratis esgotado: as ultimas analises concluidas, so para leitura; o resto
     // do historico (e a paginacao) fica para quem assina.
     // Trial encerrado e modo leitura com o historico inteiro aberto.
-    const freeLocked = (await this.isFreeLocked(userId)) && !(await this.trial.read(userId));
+    const freeLocked = (await this.isFreeLocked(userId)) && !(await this.readModeWithFullHistory(userId));
     if (freeLocked) {
       if (safeCursor) return [];
       safeLimit = Math.min(safeLimit, FREE_READABLE_ANALYSES);
@@ -1234,6 +1234,7 @@ export class AiService implements OnModuleInit {
         // Gratis esgotado: o painel trava historico, diario e marcacao de
         // resultado (mesma regra de `isFreeLocked`).
         freeLocked,
+        formerSubscriber: quota.formerSubscriber,
         trial: trialState
           ? {
               dayIndex: trialState.dayIndex,
@@ -1253,6 +1254,14 @@ export class AiService implements OnModuleInit {
 
     const { plan: planName, billingCycle } = await this.resolvePaidPlan(userId);
     const weekly = billingCycle === 'weekly';
+    // Botao "Manage subscription" do menu da conta: so com assinatura da
+    // Stripe (o acesso manual `manual_*` nao tem portal).
+    const billingManageable = Boolean(
+      await this.prisma.subscription.findFirst({
+        where: { userId, stripeId: { startsWith: 'sub_' }, status: { in: ['active', 'trialing', 'past_due', 'unpaid'] } },
+        select: { id: true },
+      }),
+    );
 
     return {
       plan: planName,
@@ -1266,6 +1275,7 @@ export class AiService implements OnModuleInit {
       tickBalance,
       canAnalyze: canAnalyzeWithTicks,
       analysesAllTime,
+      billingManageable,
     };
   }
 
@@ -1839,8 +1849,8 @@ export class AiService implements OnModuleInit {
    */
   async readableAnalysisIds(userId: string): Promise<string[] | null> {
     if (!(await this.isFreeLocked(userId))) return null;
-    // Trial encerrado: modo leitura com todas as analises abertas.
-    if (await this.trial.read(userId)) return null;
+    // Trial encerrado ou ex-assinante: modo leitura com todas as analises abertas.
+    if (await this.readModeWithFullHistory(userId)) return null;
     const rows = await this.prisma.analysis.findMany({
       where: { userId, status: 'completed' },
       select: { id: true },
@@ -1848,6 +1858,11 @@ export class AiService implements OnModuleInit {
       take: FREE_READABLE_ANALYSES,
     });
     return rows.map((row) => row.id);
+  }
+
+  /** Trial encerrado ou assinatura encerrada: leitura com o historico inteiro aberto. */
+  private async readModeWithFullHistory(userId: string): Promise<boolean> {
+    return Boolean(await this.trial.read(userId)) || (await hadEndedSubscription(this.prisma, userId));
   }
 
   private async isAdmin(userId: string): Promise<boolean> {

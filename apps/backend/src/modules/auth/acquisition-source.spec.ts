@@ -1,5 +1,5 @@
 import { ValidationPipe } from '@nestjs/common';
-import { AuthController, SetAcquisitionSourceDto } from './auth.controller';
+import { AuthController, SetAcquisitionSourceDto, SetPreferencesDto } from './auth.controller';
 import { captureServer as captureServerMock } from '../../common/analytics/posthog';
 
 jest.mock('../../common/analytics/posthog', () => ({
@@ -69,5 +69,30 @@ describe('POST /auth/acquisition-source', () => {
     ).resolves.toEqual({ ok: true, alreadyAnswered: true });
     expect(prisma.user.update).not.toHaveBeenCalled();
     expect(captureServer).not.toHaveBeenCalled();
+  });
+});
+
+describe('PATCH /auth/preferences (tema)', () => {
+  const pipe = new ValidationPipe(PIPE_CONFIG);
+  const PREFS = { type: 'body' as const, metatype: SetPreferencesDto };
+
+  it('aceita so dark e light', async () => {
+    await expect(pipe.transform({ theme: 'light' }, PREFS)).resolves.toMatchObject({ theme: 'light' });
+    await expect(pipe.transform({ theme: 'dark' }, PREFS)).resolves.toMatchObject({ theme: 'dark' });
+    await expect(pipe.transform({ theme: 'blue' }, PREFS)).rejects.toBeDefined();
+    await expect(pipe.transform({ theme: 'light', userId: 'x' }, PREFS)).rejects.toBeDefined();
+  });
+
+  it('grava pela conta do token e so emite theme_changed quando muda', async () => {
+    captureServer.mockClear();
+    const prisma: any = { $executeRawUnsafe: jest.fn().mockResolvedValueOnce(1).mockResolvedValueOnce(0) };
+    const controller = new AuthController(prisma, {} as any);
+
+    await controller.setPreferences({ clerkUserId: 'clerk_1' }, { theme: 'light' });
+    await controller.setPreferences({ clerkUserId: 'clerk_1' }, { theme: 'light' });
+
+    expect(prisma.$executeRawUnsafe.mock.calls[0].slice(1)).toEqual(['clerk_1', 'light']);
+    expect(captureServer).toHaveBeenCalledTimes(1);
+    expect(captureServer).toHaveBeenCalledWith('clerk_1', 'theme_changed', { theme: 'light', $set: { theme: 'light' } });
   });
 });

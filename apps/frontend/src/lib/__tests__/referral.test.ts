@@ -19,11 +19,26 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 describe('afiliados no navegador', () => {
   beforeEach(() => {
     localStorage.removeItem(KEY);
+    document.cookie = 'tickrify_ref=; Max-Age=0; Path=/';
     window.history.replaceState({}, '', '/');
   });
   afterEach(() => {
     vi.unstubAllGlobals();
     window.history.replaceState({}, '', '/');
+  });
+
+  it('o vinculo sobrevive ao localStorage apagado (cookie de primeira parte)', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ valid: true, clickId: 'ckabcdefghijklmnopqrst' })));
+    window.history.replaceState({}, '', '/try?ref=partner1');
+    captureReferral('/try');
+    await flush();
+
+    localStorage.removeItem(KEY);
+    expect(getReferralPayload()).toEqual({
+      affiliateCode: 'PARTNER1',
+      affiliateKind: 'link',
+      affiliateClickId: 'ckabcdefghijklmnopqrst',
+    });
   });
 
   it('?ref= valido grava o clique devolvido pelo servidor', async () => {

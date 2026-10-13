@@ -40,6 +40,30 @@
 
     --radius: 0.75rem;
   }
+
+  /* Tema claro (so area logada, ver lib/theme.ts): os tokens do shadcn. */
+  :root[data-theme='light'] {
+    --background: 220 20% 97%;
+    --foreground: 222 20% 6%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 20% 6%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 20% 6%;
+    --primary: 152 91% 27%;
+    --primary-foreground: 0 0% 100%;
+    --primary-dark: 152 91% 22%;
+    --secondary: 0 66% 47%;
+    --secondary-dark: 0 66% 40%;
+    --muted: 220 14% 93%;
+    --muted-foreground: 217 7% 39%;
+    --accent: 220 14% 93%;
+    --accent-foreground: 222 20% 6%;
+    --destructive: 0 66% 47%;
+    --border: 220 12% 88%;
+    --input: 220 12% 85%;
+    --ring: 152 91% 27%;
+    --neutral: 40 100% 30%;
+  }
 }
 
 @layer base {
@@ -56,11 +80,11 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     position: relative;
-    background-color: #050508;
+    background-color: var(--bg);
     background-image:
-      radial-gradient(ellipse 900px 600px at 50% -100px, rgba(0, 200, 100, 0.07) 0%, transparent 70%),
-      radial-gradient(ellipse 600px 400px at 90% 20%, rgba(0, 140, 255, 0.04) 0%, transparent 60%),
-      radial-gradient(ellipse 500px 300px at 10% 60%, rgba(0, 200, 100, 0.03) 0%, transparent 60%);
+      radial-gradient(ellipse 900px 600px at 50% -100px, var(--page-glow-1) 0%, transparent 70%),
+      radial-gradient(ellipse 600px 400px at 90% 20%, var(--page-glow-2) 0%, transparent 60%),
+      radial-gradient(ellipse 500px 300px at 10% 60%, var(--page-glow-3) 0%, transparent 60%);
     background-attachment: fixed;
     color: var(--text-primary);
   }
@@ -70,8 +94,8 @@
     position: fixed;
     inset: 0;
     background-image:
-      linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+      linear-gradient(var(--page-grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--page-grid-line) 1px, transparent 1px);
     background-size: 64px 64px;
     pointer-events: none;
     z-index: 0;
@@ -802,7 +826,7 @@ a.site-stat:hover .site-stat-n { color: #fff; }
 .tk-scanwrap { max-width: 720px; margin: 0 auto; width: 100%; }
 .tk-scanbox {
   position: relative; overflow: hidden; border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.09); background: #0b0c0e;
+  border: 1px solid var(--scan-box-border); background: var(--scan-box-bg);
 }
 .tk-scanbox img { display: block; width: 100%; }
 .tk-scan { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
@@ -814,9 +838,9 @@ a.site-stat:hover .site-stat-n { color: #fff; }
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.04) 62%,
-    rgba(255, 255, 255, 0.1) 93%,
-    rgba(255, 255, 255, 0.5) 100%
+    var(--scan-sweep-faint) 62%,
+    var(--scan-sweep-soft) 93%,
+    var(--scan-sweep) 100%
   );
   transform: translateX(-100%);
   animation: tk-scan-sweep 2.8s cubic-bezier(0.45, 0, 0.25, 1) infinite;
@@ -828,18 +852,18 @@ a.site-stat:hover .site-stat-n { color: #fff; }
 .tk-scan-meta {
   display: flex; justify-content: space-between; align-items: center; gap: 16px;
   margin-top: 16px; font-family: var(--font-mono); font-size: 10.5px;
-  letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255, 255, 255, 0.34);
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--scan-meta);
 }
-.tk-phases { margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+.tk-phases { margin-top: 10px; border-top: 1px solid var(--scan-line); }
 .tk-phase {
   display: flex; align-items: center; gap: 10px; padding: 11px 2px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid var(--scan-line);
   font-family: var(--font-mono); font-size: 11.5px; line-height: 1.4;
-  color: rgba(255, 255, 255, 0.3); transition: color 0.3s ease;
+  color: var(--scan-phase); transition: color 0.3s ease;
 }
 .tk-phase i { flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
-.tk-phase.is-done { color: rgba(255, 255, 255, 0.48); }
-.tk-phase.is-now { color: #f7f7f5; }
+.tk-phase.is-done { color: var(--scan-phase-done); }
+.tk-phase.is-now { color: var(--scan-phase-now); }
 .tk-phase.is-now i { animation: tk-phase-pulse 1.5s ease-in-out infinite; }
 @keyframes tk-phase-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 @media (prefers-reduced-motion: reduce) {

@@ -1,10 +1,10 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AffiliatesService } from './affiliates.service';
-import { AdminPayoutActionDto, AdminUpdateAffiliateDto } from './dto/affiliates.dto';
+import { AdminPayoutActionDto, AdminSettleDto, AdminUpdateAffiliateDto } from './dto/affiliates.dto';
 
 /**
  * Admin dos afiliados. Guardas na CLASSE, igual ao AdminController: metodo
@@ -35,6 +35,13 @@ export class AffiliatesAdminController {
     @Body() body: AdminPayoutActionDto,
   ) {
     return this.affiliates.adminDecidePayout(id, body.action, user.id, body.note);
+  }
+
+  /** Registra que o dono pagou por fora (Pix) toda a comissao disponivel. */
+  @Post(':id/settle')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  settle(@CurrentUser() user: { id: string }, @Param('id') id: string, @Body() body: AdminSettleDto) {
+    return this.affiliates.adminSettle(id, user.id, body.note);
   }
 
   @Get(':id')

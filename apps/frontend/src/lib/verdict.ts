@@ -86,12 +86,13 @@ export function withoutPending(pending: Record<string, Verdict>, id: string): Re
   return next;
 }
 
+/** Cores por resultado. Tokens de styles/trading-tokens.css (claro e escuro). */
 export const VERDICT_CFG = {
-  TP1:  { bg: 'rgba(0,255,127,0.12)',   border: 'rgba(0,255,127,0.4)',  text: '#00FF7F' },
-  TP2:  { bg: 'rgba(0,200,80,0.12)',    border: 'rgba(0,200,80,0.4)',   text: '#00C850' },
-  SL:   { bg: 'rgba(255,68,68,0.12)',   border: 'rgba(255,68,68,0.4)',  text: '#FF4444' },
-  OPEN: { bg: 'rgba(120,120,180,0.10)', border: 'rgba(120,120,180,0.3)', text: '#9999CC' },
-  NO_FILL: { bg: 'rgba(140,140,140,0.10)', border: 'rgba(140,140,140,0.3)', text: '#A0A0A0' },
+  TP1:  { bg: 'var(--verdict-tp1-bg)', border: 'var(--verdict-tp1-border)', text: 'var(--verdict-tp1)' },
+  TP2:  { bg: 'var(--verdict-tp2-bg)', border: 'var(--verdict-tp2-border)', text: 'var(--verdict-tp2)' },
+  SL:   { bg: 'var(--verdict-sl-bg)', border: 'var(--verdict-sl-border)', text: 'var(--verdict-sl)' },
+  OPEN: { bg: 'var(--verdict-open-bg)', border: 'var(--verdict-open-border)', text: 'var(--verdict-open)' },
+  NO_FILL: { bg: 'var(--verdict-nofill-bg)', border: 'var(--verdict-nofill-border)', text: 'var(--verdict-nofill)' },
 } as const;
 
 // ── Cobrança do fechamento (bloco do dashboard) ────────────────────────────

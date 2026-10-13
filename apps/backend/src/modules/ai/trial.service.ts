@@ -4,7 +4,7 @@ import { PrismaService } from '../database/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { flagBool } from '../../common/flags/feature-flags';
 import { fetchClerkProfile } from '../../common/utils/clerk-email';
-import { getFreeQuota } from '../../common/free-quota';
+import { getFreeQuota, hadEndedSubscription } from '../../common/free-quota';
 import {
   TRIAL_RULES,
   isDisposableEmail,
@@ -131,6 +131,8 @@ export class TrialService implements OnModuleInit {
     // So quem nunca usou uma analise gratis entra no trial.
     const used = await this.prisma.analysis.count({ where: { userId, isDemo: true, status: { not: 'failed' } } });
     if (used > 0) return null;
+    // Ex-assinante nao ganha trial depois de cancelar: cai no modo leitura.
+    if (await hadEndedSubscription(this.prisma, userId)) return null;
 
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true, clerkUserId: true } });
     if (!user) return null;

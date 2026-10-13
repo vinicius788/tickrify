@@ -110,7 +110,7 @@ const SetupsSection = ({
         <button
           type="button"
           onClick={onNewAnalysis}
-          className="inline-flex shrink-0 items-center gap-2 self-start rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-white/[0.04] sm:self-auto"
+          className="inline-flex shrink-0 items-center gap-2 self-start rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)] sm:self-auto"
         >
           <PlusCircle className="h-3.5 w-3.5" /> {t.nav.newAnalysis}
         </button>
@@ -155,7 +155,7 @@ const SetupsSection = ({
                     <Link
                       to={`${base}/setups/${encodeURIComponent(setup.id)}`}
                       onClick={() => track('setup_opened', { setupId: setup.id, surface: 'home' })}
-                      className="rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-white/[0.04]"
+                      className="rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)]"
                     >
                       {s.open}
                     </Link>
@@ -165,7 +165,7 @@ const SetupsSection = ({
                         track('setup_update_clicked', { setupId: setup.id });
                         navigate(`${base}/new?setup=${encodeURIComponent(setup.id)}`);
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-[#050508] transition-opacity hover:opacity-90"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--inverse-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90"
                     >
                       <RefreshCw className="h-3.5 w-3.5" /> {s.update}
                     </button>

@@ -156,7 +156,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
         <span
           className={`flex h-8 w-8 items-center justify-center rounded-full text-sm ${
             active === 1
-              ? 'bg-white text-[#050508]'
+              ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]'
               : 'border border-[var(--border-default)] text-[var(--text-secondary)]'
           }`}
           style={{ fontFamily: 'var(--font-serif)' }}
@@ -177,7 +177,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
         <span
           className={`flex h-8 w-8 items-center justify-center rounded-full text-sm ${
             active === 2
-              ? 'bg-white text-[#050508]'
+              ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]'
               : 'border border-[var(--border-default)] text-[var(--text-secondary)]'
           }`}
           style={{ fontFamily: 'var(--font-serif)' }}
@@ -386,7 +386,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
               type="button"
               onClick={() => void analyze()}
               disabled={submitting}
-              className="w-full rounded-md bg-[var(--signal-buy)] px-4 py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-60"
+              className="w-full rounded-md bg-[var(--signal-buy)] px-4 py-3 text-sm font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:opacity-60"
             >
               {submitting ? u.analyzing : u.analyze}
             </button>

@@ -134,6 +134,139 @@ describe('StripeService webhooks', () => {
     });
   });
 
+  describe('cancelamento pelo portal', () => {
+    const deliverUpdate = (object: Record<string, unknown>, previous: Record<string, unknown>, id = 'evt_c1') => {
+      stripe.webhooks.constructEvent.mockReturnValue({
+        id,
+        type: 'customer.subscription.updated',
+        data: { object, previous_attributes: previous },
+      });
+      return service.handleWebhookEvent('sig', Buffer.from('{}'));
+    };
+    const events = () => (captureServer as jest.Mock).mock.calls.map((call) => call[1]);
+    const canceling = subscription({
+      cancel_at_period_end: true,
+      cancel_at: null,
+      created: Math.floor(Date.now() / 1000) - 3 * 86400,
+      current_period_end: Math.floor(Date.now() / 1000) + 4 * 86400,
+      cancellation_details: { reason: 'cancellation_requested', feedback: 'too_expensive', comment: null },
+    });
+
+    it('agendar o cancelamento emite subscription_cancel_scheduled com motivo e dia', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(canceling);
+
+      await deliverUpdate(canceling, { cancel_at_period_end: false });
+
+      const call = (captureServer as jest.Mock).mock.calls.find((c) => c[1] === 'subscription_cancel_scheduled');
+      expect(call?.[2]).toEqual(expect.objectContaining({ reason: 'too_expensive', subscription_day: 4 }));
+      expect(call?.[3]).toEqual(expect.objectContaining({ dedupeKey: 'cancel:evt_c1' }));
+      expect(events()).not.toContain('subscription_reactivated');
+    });
+
+    it('grava o cancelamento agendado e o motivo no banco', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(canceling);
+
+      await deliverUpdate(canceling, { cancel_at_period_end: false });
+
+      const update = prisma.$executeRawUnsafe.mock.calls.find((c: any[]) => String(c[0]).includes('"cancelAtPeriodEnd" = $2'));
+      expect(update?.slice(1, 3)).toEqual(['sub_1', true]);
+      expect(update?.[6]).toBe('cancellation_requested');
+      expect(update?.[7]).toBe('too_expensive');
+    });
+
+    it('desfazer antes do fim emite subscription_reactivated', async () => {
+      const active = subscription({ cancel_at_period_end: false, cancel_at: null, created: 1 });
+      stripe.subscriptions.retrieve.mockResolvedValue(active);
+
+      await deliverUpdate(active, { cancel_at_period_end: true });
+
+      expect(events()).toContain('subscription_reactivated');
+      expect(events()).not.toContain('subscription_cancel_scheduled');
+    });
+
+    it('update sem mudanca de cancelamento nao emite nada', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(canceling);
+
+      await deliverUpdate(canceling, { metadata: {} });
+
+      expect(events()).not.toContain('subscription_cancel_scheduled');
+    });
+
+    it('e-mail de confirmacao desligado so loga (nada sai)', async () => {
+      const mail = { sendCancellationConfirm: jest.fn() };
+      (service as any).mail = mail;
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', clerkUserId: 'clerk_1', email: 'a@b.c', name: 'Ana' });
+      stripe.subscriptions.retrieve.mockResolvedValue(canceling);
+
+      await deliverUpdate(canceling, { cancel_at_period_end: false });
+
+      expect(mail.sendCancellationConfirm).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('portal e reativacao', () => {
+    it('sem assinatura gerenciavel o portal responde 403 e nao cria sessao', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', stripeCustomerId: 'cus_1' });
+      prisma.subscription.findFirst = jest.fn().mockResolvedValue(null);
+      stripe.billingPortal = { sessions: { create: jest.fn() }, configurations: { list: jest.fn(), create: jest.fn() } };
+
+      await expect(service.createCustomerPortal('clerk_1')).rejects.toMatchObject({ status: 403 });
+      expect(stripe.billingPortal.sessions.create).not.toHaveBeenCalled();
+    });
+
+    it('com assinatura abre o portal do customer do BANCO com a configuracao propria', async () => {
+      process.env.APP_URL = 'https://tickrify.com';
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', stripeCustomerId: 'cus_1' });
+      prisma.subscription.findFirst = jest.fn().mockResolvedValue({ stripeId: 'sub_1' });
+      stripe.billingPortal = {
+        sessions: { create: jest.fn().mockResolvedValue({ url: 'https://billing.stripe.com/x' }) },
+        configurations: {
+          list: jest.fn().mockResolvedValue({ data: [] }),
+          create: jest.fn().mockResolvedValue({ id: 'bpc_1' }),
+        },
+      };
+
+      await expect(service.createCustomerPortal('clerk_1')).resolves.toEqual({ url: 'https://billing.stripe.com/x' });
+      expect(stripe.billingPortal.configurations.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          features: expect.objectContaining({
+            subscription_cancel: expect.objectContaining({ enabled: true, mode: 'at_period_end' }),
+            payment_method_update: { enabled: true },
+            invoice_history: { enabled: true },
+          }),
+        }),
+      );
+      expect(stripe.billingPortal.sessions.create).toHaveBeenCalledWith({
+        customer: 'cus_1',
+        return_url: 'https://tickrify.com/dashboard/settings',
+        configuration: 'bpc_1',
+      });
+      expect(captureServer).toHaveBeenCalledWith('clerk_1', 'billing_portal_opened', { subscriptionId: 'sub_1' });
+    });
+
+    it('reativar desfaz o cancelamento agendado na Stripe', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1' });
+      prisma.subscription.findFirst = jest.fn().mockResolvedValue({ stripeId: 'sub_1' });
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ cancel_at_period_end: true, cancel_at: null }));
+      stripe.subscriptions.update = jest.fn().mockResolvedValue(subscription({ cancel_at_period_end: false, cancel_at: null }));
+
+      const view = await service.reactivateSubscription('clerk_1');
+
+      expect(stripe.subscriptions.update).toHaveBeenCalledWith('sub_1', { cancel_at_period_end: false });
+      expect(view).toEqual(expect.objectContaining({ cancelAtPeriodEnd: false, canReactivate: false }));
+    });
+
+    it('reativar o que nao esta cancelando responde 409', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1' });
+      prisma.subscription.findFirst = jest.fn().mockResolvedValue({ stripeId: 'sub_1' });
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ cancel_at_period_end: false, cancel_at: null }));
+      stripe.subscriptions.update = jest.fn();
+
+      await expect(service.reactivateSubscription('clerk_1')).rejects.toBeInstanceOf(ConflictException);
+      expect(stripe.subscriptions.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('checkout.session.completed', () => {
     const session = (overrides: Record<string, unknown> = {}) => ({
       id: 'cs_1',

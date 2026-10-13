@@ -310,6 +310,10 @@ export interface AnalysisUsageResponse {
    * ficam para quem assina; o servidor responde 402 `free_quota_exhausted`.
    */
   freeLocked?: boolean;
+  /** Assinatura encerrada: modo leitura com o historico inteiro aberto. */
+  formerSubscriber?: boolean;
+  /** Assinante com assinatura da Stripe (tem portal). O acesso manual nao tem. */
+  billingManageable?: boolean;
   /** Trial de 3 dias (sem cartao). null/ausente = regra antiga ou assinante. */
   trial?: TrialUsage | null;
   /** Trial recusado pelo anti-abuso (e-mail, rede); `message` vem do servidor. */

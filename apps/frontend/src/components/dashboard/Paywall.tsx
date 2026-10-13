@@ -131,7 +131,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
         </div>
 
         {/* Overlay com cadeado + CTA */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[rgba(5,5,8,0.7)] px-6 py-6 text-center backdrop-blur-[2px]">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[var(--paywall-veil)] px-6 py-6 text-center backdrop-blur-[2px]">
           <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[var(--border-default)] bg-[var(--bg-card)] text-[var(--text-primary)]">
             <Lock className="h-5 w-5" />
           </span>
@@ -141,7 +141,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
             type="button"
             onClick={onWeekly}
             disabled={unlockPending}
-            className="mt-1 inline-flex items-center gap-2 rounded-xl bg-[var(--signal-buy)] px-6 py-3 text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-60"
+            className="mt-1 inline-flex items-center gap-2 rounded-xl bg-[var(--signal-buy)] px-6 py-3 text-sm font-semibold text-[var(--on-accent)] transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {unlockPending ? (
               <>
@@ -156,7 +156,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
             type="button"
             onClick={onMonthly}
             disabled={unlockPending}
-            className="inline-flex items-center rounded-xl border border-[var(--border-default)] px-5 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-white/[0.04] disabled:opacity-60"
+            className="inline-flex items-center rounded-xl border border-[var(--border-default)] px-5 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)] disabled:opacity-60"
           >
             {firstMonth ? p.orMonthlyFirst.replace('{price}', `$${firstMonth}`) : p.orMonthly}
           </button>

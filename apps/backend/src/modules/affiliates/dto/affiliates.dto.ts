@@ -102,3 +102,11 @@ export class AdminPayoutActionDto {
   @MaxLength(500)
   note?: string;
 }
+
+/** "Marcar como pago" no /admin: so uma nota opcional (ex.: id do Pix). O valor e do servidor. */
+export class AdminSettleDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+}

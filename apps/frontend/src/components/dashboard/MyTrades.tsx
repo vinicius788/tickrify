@@ -139,7 +139,7 @@ function PnlField({ verdict, saved, labels, onSave }: PnlFieldProps) {
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="rounded-lg border border-[var(--border-subtle)] px-3 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)]"
+          className="rounded-lg border border-[var(--border-subtle)] px-3 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]"
         >
           {labels.edit}
         </button>
@@ -204,7 +204,7 @@ function PnlField({ verdict, saved, labels, onSave }: PnlFieldProps) {
           type="button"
           onClick={() => void submit()}
           disabled={!valid || busy}
-          className="tk-verdict-btn min-w-[88px] shrink-0 rounded-md bg-white px-4 py-1.5 text-xs font-semibold text-[#050508] disabled:opacity-40"
+          className="tk-verdict-btn min-w-[88px] shrink-0 rounded-md bg-[var(--inverse-bg)] px-4 py-1.5 text-xs font-semibold text-[var(--inverse-fg)] disabled:opacity-40"
         >
           {busy ? labels.saving : labels.save}
         </button>
@@ -536,8 +536,8 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                             onError={() => setBrokenImages((prev) => ({ ...prev, [a.id]: true }))}
                             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110"
                           />
-                          <span className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-                            <Maximize2 className="h-4 w-4 text-white" />
+                          <span className="absolute inset-0 flex items-center justify-center bg-[var(--scrim-soft)] opacity-0 transition-opacity group-hover:opacity-100">
+                            <Maximize2 className="h-4 w-4 text-[var(--on-scrim)]" />
                           </span>
                         </>
                       ) : (
@@ -560,7 +560,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                             className="shrink-0 rounded p-0.5 transition-colors hover:bg-[var(--bg-overlay)]"
                           >
                             <Star
-                              className={`h-4 w-4 ${getFavorite(a) ? 'fill-yellow-400 text-yellow-400' : 'text-[var(--text-secondary)]'}`}
+                              className={`h-4 w-4 ${getFavorite(a) ? 'fill-[var(--tone-star)] text-[var(--tone-star)]' : 'text-[var(--text-secondary)]'}`}
                             />
                           </button>
                         )}
@@ -739,7 +739,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
               type="button"
               onClick={loadMore}
               disabled={loadingMore}
-              className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-white/[0.04] hover:text-[var(--text-primary)] disabled:opacity-50"
+              className="rounded-lg border border-[var(--border-subtle)] px-4 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)] disabled:opacity-50"
             >
               {loadingMore ? tr.loadingMore : tr.loadMore}
             </button>

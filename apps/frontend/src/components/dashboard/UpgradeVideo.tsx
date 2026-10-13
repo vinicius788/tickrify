@@ -34,7 +34,7 @@ const UpgradeVideo = ({ surface, caption }: UpgradeVideoProps) => {
         preload="none"
         width={1280}
         height={720}
-        className="block h-auto w-full rounded-lg border border-[var(--border-subtle)] bg-black"
+        className="block h-auto w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--media-bg)]"
         onPlay={() => {
           if (played.current) return;
           played.current = true;

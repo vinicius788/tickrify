@@ -29,12 +29,8 @@ function levelFor(count: number): number {
   return 3;
 }
 
-const LEVEL_BG = [
-  'rgba(154,163,174,0.12)', // 0 — vazio
-  'rgba(94,234,138,0.30)', // 1
-  'rgba(94,234,138,0.60)', // 2–3
-  'rgba(94,234,138,1)', // 4+
-];
+// Tokens (claro e escuro): 0 vazio, 1, 2-3, 4+.
+const LEVEL_BG = ['var(--heat-0)', 'var(--heat-1)', 'var(--heat-2)', 'var(--heat-3)'];
 
 export default function ActivityHeatmap() {
   const { getToken, isSignedIn } = useAuth();

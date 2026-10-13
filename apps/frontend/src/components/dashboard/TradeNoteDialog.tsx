@@ -21,7 +21,7 @@ interface TradeNoteDialogProps {
 const chip = (active: boolean) =>
   `rounded-full border px-3 py-1 text-xs transition-colors ${
     active
-      ? 'border-[var(--text-primary)] bg-white/[0.08] text-[var(--text-primary)]'
+      ? 'border-[var(--text-primary)] bg-[var(--fill-4)] text-[var(--text-primary)]'
       : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
   }`;
 
@@ -113,7 +113,7 @@ const TradeNoteDialog = ({ analysisId, title, initial, onClose, onSaved }: Trade
             type="button"
             onClick={() => void save()}
             disabled={state === 'saving'}
-            className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-[#050508] transition-opacity hover:opacity-90 disabled:opacity-60"
+            className="rounded-lg bg-[var(--inverse-bg)] px-4 py-2 text-sm font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             {state === 'saving' ? j.noteSaving : j.noteSave}
           </button>

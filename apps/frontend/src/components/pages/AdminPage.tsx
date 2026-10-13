@@ -12,6 +12,7 @@ import NotasPainel from '@/components/admin/NotasPainel';
 import OrigemPainel from '@/components/admin/OrigemPainel';
 import AfiliadosPainel from '@/components/admin/AfiliadosPainel';
 import ChatPainel from '@/components/admin/ChatPainel';
+import CancelamentosPainel from '@/components/admin/CancelamentosPainel';
 import { useAdminChatThreads } from '@/lib/support-chat';
 
 /**
@@ -30,25 +31,25 @@ import { useAdminChatThreads } from '@/lib/support-chat';
 const ORIGEM_ROTULO: Record<string, { texto: string; classe: string; ajuda: string }> = {
   banco: {
     texto: 'definido aqui',
-    classe: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+    classe: 'bg-emerald-500/15 text-[var(--tone-up-1)] border-emerald-500/30',
     ajuda: 'Alguém mudou por este painel. Vence a variável de ambiente do Render.',
   },
   ambiente: {
     texto: 'vem do Render',
-    classe: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+    classe: 'bg-sky-500/15 text-[var(--tone-info-1)] border-sky-500/30',
     ajuda: 'Valor herdado da variável de ambiente. Mudar aqui passa a ignorá-la.',
   },
   padrao: {
     texto: 'padrão do código',
-    classe: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+    classe: 'bg-zinc-500/15 text-[var(--text-dim)] border-zinc-500/30',
     ajuda: 'Nada configurado em lugar nenhum — é o comportamento histórico do código.',
   },
 };
 
 const RISCO_ROTULO: Record<string, string> = {
-  alto: 'bg-red-500/15 text-red-300 border-red-500/30',
-  medio: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
-  baixo: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+  alto: 'bg-red-500/15 text-[var(--tone-down-1)] border-red-500/30',
+  medio: 'bg-amber-500/15 text-[var(--tone-warn-1)] border-amber-500/30',
+  baixo: 'bg-zinc-500/15 text-[var(--text-dim)] border-zinc-500/30',
 };
 
 function LinhaFlag({
@@ -80,14 +81,14 @@ function LinhaFlag({
   };
 
   return (
-    <Card className="border-white/10 bg-white/[0.02] p-4">
+    <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-white">{def.label}</h3>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">{def.label}</h3>
             {def.soldOnSite && (
               <Badge
-                className="border-purple-500/30 bg-purple-500/15 text-purple-300"
+                className="border-purple-500/30 bg-purple-500/15 text-[var(--tone-violet-1)]"
                 title="A landing page vende esta função. Desligar torna uma afirmação pública falsa."
               >
                 vendida na vitrine
@@ -99,8 +100,8 @@ function LinhaFlag({
             </Badge>
           </div>
 
-          <p className="mt-1.5 text-xs leading-relaxed text-zinc-400">{def.description}</p>
-          <p className="mt-1.5 font-mono text-[11px] text-zinc-600">{flag.key}</p>
+          <p className="mt-1.5 text-xs leading-relaxed text-[var(--text-dim)]">{def.description}</p>
+          <p className="mt-1.5 font-mono text-[11px] text-[var(--text-ghost)]">{flag.key}</p>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
@@ -115,11 +116,11 @@ function LinhaFlag({
               // `left-0` e `shrink-0`: sem eles a bolinha partia do CENTRO do
               // botao e, ligada, saia para fora do trilho (05/10/2026).
               className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-40 ${
-                ligada ? 'bg-emerald-500' : 'bg-zinc-700'
+                ligada ? 'bg-[var(--signal-buy)]' : 'bg-[var(--fill-strong)]'
               }`}
             >
               <span
-                className={`absolute left-0 top-1 h-5 w-5 rounded-full bg-white transition-transform ${
+                className={`absolute left-0 top-1 h-5 w-5 rounded-full bg-[var(--inverse-bg)] transition-transform ${
                   ligada ? 'translate-x-6' : 'translate-x-1'
                 }`}
               />
@@ -131,7 +132,7 @@ function LinhaFlag({
                 value={rascunho}
                 onChange={(e) => setRascunho(e.target.value)}
                 disabled={salvando}
-                className="w-20 rounded border border-white/10 bg-black/40 px-2 py-1 text-right text-sm text-white"
+                className="w-20 rounded border border-[var(--border-strong)] bg-[var(--bg-inset)] px-2 py-1 text-right text-sm text-[var(--text-primary)]"
               />
               <Button
                 size="sm"
@@ -161,7 +162,7 @@ function LinhaFlag({
   );
 }
 
-type Aba = 'chat' | 'afiliados' | 'origem' | 'relatos' | 'opinioes' | 'config';
+type Aba = 'chat' | 'afiliados' | 'origem' | 'relatos' | 'opinioes' | 'config' | 'cancelamentos';
 
 /** Contador do topo. Zero fica apagado; acima de zero chama atencao e leva a aba. */
 function Pendencia({ n, rotulo, onClick }: { n: number | null; rotulo: string; onClick: () => void }) {
@@ -171,11 +172,11 @@ function Pendencia({ n, rotulo, onClick }: { n: number | null; rotulo: string; o
       type="button"
       onClick={onClick}
       className={`flex-1 rounded-xl border px-4 py-3 text-left transition-colors ${
-        ativo ? 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15' : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.04]'
+        ativo ? 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15' : 'border-[var(--border-strong)] bg-[var(--fill-1)] hover:bg-[var(--fill-2)]'
       }`}
     >
-      <div className={`text-2xl font-semibold ${ativo ? 'text-amber-300' : 'text-zinc-500'}`}>{n ?? '·'}</div>
-      <div className="mt-0.5 text-xs text-zinc-400">{rotulo}</div>
+      <div className={`text-2xl font-semibold ${ativo ? 'text-[var(--tone-warn-1)]' : 'text-[var(--text-faint)]'}`}>{n ?? '·'}</div>
+      <div className="mt-0.5 text-xs text-[var(--text-dim)]">{rotulo}</div>
     </button>
   );
 }
@@ -184,6 +185,7 @@ const ABAS: Array<{ chave: Aba; rotulo: string }> = [
   { chave: 'chat', rotulo: 'Chat' },
   { chave: 'afiliados', rotulo: 'Afiliados' },
   { chave: 'origem', rotulo: 'Origem' },
+  { chave: 'cancelamentos', rotulo: 'Cancelamentos' },
   { chave: 'relatos', rotulo: 'Relatos de problema' },
   { chave: 'opinioes', rotulo: 'Opiniões' },
   { chave: 'config', rotulo: 'Configurações avançadas' },
@@ -233,8 +235,8 @@ export default function AdminPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--bg-base)] px-6">
         <div className="max-w-sm text-center">
-          <h1 className="text-lg font-semibold text-white">Sem acesso</h1>
-          <p className="mt-2 text-sm text-zinc-400">
+          <h1 className="text-lg font-semibold text-[var(--text-primary)]">Sem acesso</h1>
+          <p className="mt-2 text-sm text-[var(--text-dim)]">
             Esta área é restrita a administradores.
           </p>
         </div>
@@ -246,12 +248,12 @@ export default function AdminPage() {
     <div className="min-h-screen bg-[var(--bg-base)] px-6 py-10">
       <div className="mx-auto max-w-3xl">
         <header className="mb-4">
-          <h1 className="text-xl font-semibold text-white">Painel</h1>
-          <p className="mt-1 text-sm text-zinc-400">O que precisa de você:</p>
+          <h1 className="text-xl font-semibold text-[var(--text-primary)]">Painel</h1>
+          <p className="mt-1 text-sm text-[var(--text-dim)]">O que precisa de você:</p>
         </header>
 
         {nadaPendente ? (
-          <div className="mb-8 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          <div className="mb-8 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-[var(--tone-up-1)]">
             Nada pendente. Tudo em dia.
           </div>
         ) : (
@@ -264,7 +266,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-white/10" role="tablist">
+        <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-[var(--border-strong)]" role="tablist">
           {ABAS.map((a) => (
             <button
               key={a.chave}
@@ -273,7 +275,7 @@ export default function AdminPage() {
               aria-selected={aba === a.chave}
               onClick={() => setAba(a.chave)}
               className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors ${
-                aba === a.chave ? 'border-white text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                aba === a.chave ? 'border-[var(--text-primary)] text-[var(--text-primary)]' : 'border-transparent text-[var(--text-faint)] hover:text-[var(--text-soft)]'
               }`}
             >
               {a.rotulo}
@@ -296,23 +298,25 @@ export default function AdminPage() {
 
         {aba === 'origem' && <OrigemPainel />}
 
+        {aba === 'cancelamentos' && <CancelamentosPainel />}
+
         {aba === 'config' && (
           <>
-            <div className="mb-5 rounded-lg border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-zinc-300">
+            <div className="mb-5 rounded-lg border border-[var(--border-strong)] bg-[var(--fill-1)] px-4 py-3 text-sm text-[var(--text-soft)]">
               Você não precisa mexer aqui no dia a dia. Estas chaves ligam e desligam partes do motor de análise, e
               está tudo configurado. Desligar algo marcado como &quot;vendida na vitrine&quot; torna falsa uma promessa
               do site.
               {cache?.ultimoErro && (
-                <span className="mt-2 block text-amber-300">
+                <span className="mt-2 block text-[var(--tone-warn-1)]">
                   O banco destas chaves não respondeu, então vale o que está no Render. Nada quebrou, mas mudanças feitas
                   aqui só valem quando ele voltar.
                 </span>
               )}
             </div>
 
-            {isLoading && <p className="text-sm text-zinc-500">Carregando…</p>}
+            {isLoading && <p className="text-sm text-[var(--text-faint)]">Carregando…</p>}
             {error && !semAcesso && (
-              <p className="text-sm text-red-400">Não deu para carregar: {error.message}</p>
+              <p className="text-sm text-[var(--tone-down-2)]">Não deu para carregar: {error.message}</p>
             )}
 
             <div className="space-y-3">
@@ -327,7 +331,7 @@ export default function AdminPage() {
               ))}
             </div>
 
-            <p className="mt-6 text-xs leading-relaxed text-zinc-600">
+            <p className="mt-6 text-xs leading-relaxed text-[var(--text-ghost)]">
               Mudanças valem na hora para o site e em até 1 minuto para a análise.
             </p>
           </>

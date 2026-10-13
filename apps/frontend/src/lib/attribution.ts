@@ -242,10 +242,15 @@ interface StoredReferral {
   claimedBy?: string[];
 }
 
-function readReferral(): StoredReferral | null {
-  if (typeof window === 'undefined') return null;
+// Copia em cookie de primeira parte (13/10/2026): o localStorage some em aba
+// anonima reaberta, em WebView de app e quando o Safari limpa o armazenamento
+// do site; o cookie cobre o caminho /try -> cadastro na Clerk -> checkout.
+// So o codigo publico, o tipo e o id do clique (nada que identifique a pessoa).
+const REFERRAL_COOKIE = 'tickrify_ref';
+
+function parseReferral(raw: string | null): StoredReferral | null {
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(REFERRAL_KEY) || 'null') as StoredReferral | null;
+    const parsed = JSON.parse(raw || 'null') as StoredReferral | null;
     if (!parsed || !AFFILIATE_CODE_RE.test(parsed.code)) return null;
     if (Date.now() - parsed.at > REFERRAL_MAX_AGE_MS) return null;
     return parsed;
@@ -254,11 +259,39 @@ function readReferral(): StoredReferral | null {
   }
 }
 
+function readReferralCookie(): StoredReferral | null {
+  try {
+    const entry = document.cookie.split('; ').find((c) => c.startsWith(`${REFERRAL_COOKIE}=`));
+    return entry ? parseReferral(decodeURIComponent(entry.slice(REFERRAL_COOKIE.length + 1))) : null;
+  } catch {
+    return null;
+  }
+}
+
+function readReferral(): StoredReferral | null {
+  if (typeof window === 'undefined') return null;
+  let stored: StoredReferral | null = null;
+  try {
+    stored = parseReferral(window.localStorage.getItem(REFERRAL_KEY));
+  } catch {
+    stored = null;
+  }
+  return stored ?? readReferralCookie();
+}
+
 function writeReferral(value: StoredReferral): void {
   try {
     window.localStorage.setItem(REFERRAL_KEY, JSON.stringify(value));
   } catch {
-    /* storage indisponivel: o vinculo fica so para o checkout desta visita */
+    /* storage indisponivel: fica o cookie */
+  }
+  try {
+    const { code, kind, clickId, at } = value;
+    const maxAge = Math.max(0, Math.floor((at + REFERRAL_MAX_AGE_MS - Date.now()) / 1000));
+    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${REFERRAL_COOKIE}=${encodeURIComponent(JSON.stringify({ code, kind, clickId, at }))}; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure}`;
+  } catch {
+    /* sem cookie: o vinculo fica so para o checkout desta visita */
   }
 }
 

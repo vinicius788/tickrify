@@ -86,7 +86,7 @@ const ExtensionAnnouncement = ({ storeUrl = EXTENSION_STORE_URL }: { storeUrl?: 
             hideUntil(HIDE_FOREVER);
             setHidden(true);
           }}
-          className="mt-3 inline-flex items-center rounded-lg bg-[var(--accent-green)] px-3 py-2 text-xs font-semibold text-[#050508] transition-opacity hover:opacity-90"
+          className="mt-3 inline-flex items-center rounded-lg bg-[var(--accent-green)] px-3 py-2 text-xs font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90"
         >
           {c.cta}
         </a>

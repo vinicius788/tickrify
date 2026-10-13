@@ -22,10 +22,10 @@ import {
 type Patch = Partial<Pick<AdminAffiliate, 'status' | 'commissionRateBps' | 'referralCode' | 'couponCode'>>;
 
 const STATUS: Record<AffiliateStatus, { texto: string; classe: string }> = {
-  PENDING: { texto: 'aguardando aprovação', classe: 'bg-amber-500/15 text-amber-300 border-amber-500/30' },
-  ACTIVE: { texto: 'ativo', classe: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' },
-  REJECTED: { texto: 'rejeitado', classe: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30' },
-  SUSPENDED: { texto: 'suspenso', classe: 'bg-red-500/15 text-red-300 border-red-500/30' },
+  PENDING: { texto: 'aguardando aprovação', classe: 'bg-amber-500/15 text-[var(--tone-warn-1)] border-amber-500/30' },
+  ACTIVE: { texto: 'ativo', classe: 'bg-emerald-500/15 text-[var(--tone-up-1)] border-emerald-500/30' },
+  REJECTED: { texto: 'rejeitado', classe: 'bg-zinc-500/15 text-[var(--text-dim)] border-zinc-500/30' },
+  SUSPENDED: { texto: 'suspenso', classe: 'bg-red-500/15 text-[var(--tone-down-1)] border-red-500/30' },
 };
 
 const STATUS_SAQUE: Record<AdminPayout['status'], string> = {
@@ -64,30 +64,30 @@ const AUDIENCIA: Record<string, string> = {
 const linkSeguro = (url: string) => (/^https:\/\//i.test(url) ? url : null);
 
 const dia = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-BR') : '');
-const campo = 'w-full rounded border border-white/10 bg-black/40 px-2 py-1.5 text-base text-white sm:w-32 sm:text-sm';
+const campo = 'w-full rounded border border-[var(--border-strong)] bg-[var(--bg-inset)] px-2 py-1.5 text-base text-[var(--text-primary)] sm:w-32 sm:text-sm';
 
 function Titulo({ children, n }: { children: string; n?: number }) {
   return (
-    <h3 className="mb-3 mt-8 text-sm font-semibold text-zinc-200 first:mt-0">
+    <h3 className="mb-3 mt-8 text-sm font-semibold text-[var(--text-soft)] first:mt-0">
       {children}
-      {n !== undefined && <span className="ml-1.5 text-zinc-500">({n})</span>}
+      {n !== undefined && <span className="ml-1.5 text-[var(--text-faint)]">({n})</span>}
     </h3>
   );
 }
 
 function Vazio({ children }: { children: string }) {
-  return <p className="rounded-lg border border-white/5 px-4 py-3 text-sm text-zinc-500">{children}</p>;
+  return <p className="rounded-lg border border-[var(--border-subtle)] px-4 py-3 text-sm text-[var(--text-faint)]">{children}</p>;
 }
 
 /** Clientes indicados e comissoes de um afiliado. */
 function Detalhe({ id }: { id: string }) {
   const { data, isLoading, error } = useAffiliateAdminDetail(id);
-  if (isLoading) return <p className="mt-3 text-xs text-zinc-500">Carregando…</p>;
-  if (error || !data) return <p className="mt-3 text-xs text-red-400">Não carregou: {error?.message}</p>;
+  if (isLoading) return <p className="mt-3 text-xs text-[var(--text-faint)]">Carregando…</p>;
+  if (error || !data) return <p className="mt-3 text-xs text-[var(--tone-down-2)]">Não carregou: {error?.message}</p>;
   return (
-    <div className="mt-3 space-y-3 rounded-lg border border-white/5 bg-black/40 p-3 text-xs text-zinc-400">
+    <div className="mt-3 space-y-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-inset)] p-3 text-xs text-[var(--text-dim)]">
       <div>
-        <p className="mb-1 font-semibold text-zinc-300">Clientes que ele trouxe ({data.referrals.length})</p>
+        <p className="mb-1 font-semibold text-[var(--text-soft)]">Clientes que ele trouxe ({data.referrals.length})</p>
         {data.referrals.length === 0 && <p>Nenhum ainda.</p>}
         {data.referrals.map((r) => (
           <p key={r.id}>
@@ -97,7 +97,7 @@ function Detalhe({ id }: { id: string }) {
         ))}
       </div>
       <div>
-        <p className="mb-1 font-semibold text-zinc-300">Comissões ({data.commissions.length})</p>
+        <p className="mb-1 font-semibold text-[var(--text-soft)]">Comissões ({data.commissions.length})</p>
         {data.commissions.length === 0 && <p>Nenhuma ainda.</p>}
         {data.commissions.map((c) => (
           <p key={c.id}>
@@ -126,19 +126,19 @@ function PedidoAfiliado({
     <Card className="border-amber-500/30 bg-amber-500/[0.04] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-white">{quem}</p>
-          <p className="mt-0.5 text-xs text-zinc-400">Pediu para ser afiliado em {dia(afiliado.createdAt)}</p>
+          <p className="text-sm font-semibold text-[var(--text-primary)]">{quem}</p>
+          <p className="mt-0.5 text-xs text-[var(--text-dim)]">Pediu para ser afiliado em {dia(afiliado.createdAt)}</p>
           {afiliado.application ? (
-            <div className="mt-3 space-y-1.5 text-sm text-zinc-300">
+            <div className="mt-3 space-y-1.5 text-sm text-[var(--text-soft)]">
               <p>
-                <span className="text-zinc-500">Canal:</span>{' '}
+                <span className="text-[var(--text-faint)]">Canal:</span>{' '}
                 {afiliado.application.platform ? CANAL[afiliado.application.platform] ?? afiliado.application.platform : 'não informado'}
                 {' · '}
-                <span className="text-zinc-500">Audiência:</span>{' '}
+                <span className="text-[var(--text-faint)]">Audiência:</span>{' '}
                 {afiliado.application.audience ? AUDIENCIA[afiliado.application.audience] ?? afiliado.application.audience : 'não informada'}
               </p>
               <p className="break-all">
-                <span className="text-zinc-500">Link:</span>{' '}
+                <span className="text-[var(--text-faint)]">Link:</span>{' '}
                 {!afiliado.application.url ? (
                   'não informado'
                 ) : linkSeguro(afiliado.application.url) ? (
@@ -146,7 +146,7 @@ function PedidoAfiliado({
                     href={afiliado.application.url}
                     target="_blank"
                     rel="noopener noreferrer nofollow"
-                    className="text-sky-300 underline underline-offset-2"
+                    className="text-[var(--tone-info-1)] underline underline-offset-2"
                   >
                     {afiliado.application.url}
                   </a>
@@ -156,13 +156,13 @@ function PedidoAfiliado({
               </p>
               {afiliado.application.note ? (
                 <p className="whitespace-pre-wrap">
-                  <span className="text-zinc-500">Recado:</span> {afiliado.application.note}
+                  <span className="text-[var(--text-faint)]">Recado:</span> {afiliado.application.note}
                 </p>
               ) : null}
-              <p className="text-xs text-zinc-500">Se houver link, abra e confira se a comunidade combina com a Tickrify antes de aprovar.</p>
+              <p className="text-xs text-[var(--text-faint)]">Se houver link, abra e confira se a comunidade combina com a Tickrify antes de aprovar.</p>
             </div>
           ) : (
-            <p className="mt-2 text-xs text-zinc-500">Não preencheu nada além do e-mail da conta.</p>
+            <p className="mt-2 text-xs text-[var(--text-faint)]">Não preencheu nada além do e-mail da conta.</p>
           )}
         </div>
         <div className="flex gap-2">
@@ -187,10 +187,12 @@ function LinhaAfiliado({
   afiliado,
   ocupado,
   onSalvar,
+  onPagar,
 }: {
   afiliado: AdminAffiliate;
   ocupado: boolean;
   onSalvar: (patch: Patch) => void;
+  onPagar: (note?: string) => void;
 }) {
   const [editando, setEditando] = useState(false);
   const [detalhe, setDetalhe] = useState(false);
@@ -221,22 +223,23 @@ function LinhaAfiliado({
   const status = STATUS[afiliado.status];
 
   return (
-    <Card className="border-white/10 bg-white/[0.02] p-4">
+    <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold text-white">{quem}</p>
+            <p className="text-sm font-semibold text-[var(--text-primary)]">{quem}</p>
             <Badge className={status.classe}>{status.texto}</Badge>
           </div>
-          <p className="mt-1 text-xs text-zinc-400">
+          <p className="mt-1 text-xs text-[var(--text-dim)]">
             Comissão {afiliado.commissionRateBps / 100}% · código <span className="font-mono">{afiliado.couponCode}</span>
           </p>
-          <p className="mt-1 text-xs text-zinc-400">
-            {afiliado.clicks} cliques no link · {afiliado.signups} cadastros · trouxe {formatUsd(afiliado.revenueCents)} em
-            vendas
+          <p className="mt-1 text-xs text-[var(--text-dim)]">
+            {`${afiliado.clicks} cliques no link · ${afiliado.signups} cadastros · ${afiliado.paidSales} vendas pagas (${afiliado.paidCustomers} clientes) · receita ${formatUsd(afiliado.revenueCents)}`}
           </p>
-          <p className="mt-1 text-xs text-zinc-400">
-            A receber: {formatUsd(afiliado.pendingCents + afiliado.availableCents)} · já pago: {formatUsd(afiliado.paidCents)}
+          <p className="mt-1 text-xs text-[var(--text-dim)]">
+            Comissão devida: {formatUsd(afiliado.pendingCents + afiliado.availableCents)} (disponível para pagar:{' '}
+            {formatUsd(afiliado.availableCents)}, em carência de 30 dias: {formatUsd(afiliado.pendingCents)}) · já paga:{' '}
+            {formatUsd(afiliado.paidCents)}
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -258,6 +261,22 @@ function LinhaAfiliado({
               {afiliado.status === 'SUSPENDED' ? 'Reativar' : 'Aprovar'}
             </Button>
           )}
+          {afiliado.availableCents > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={ocupado}
+              onClick={() => {
+                const nota = window.prompt(
+                  `Registrar que você pagou ${formatUsd(afiliado.availableCents)} a ${quem} (Pix)? Nota opcional, ex.: id do Pix.`,
+                  '',
+                );
+                if (nota !== null) onPagar(nota.trim() || undefined);
+              }}
+            >
+              Marcar como pago
+            </Button>
+          )}
           <Button size="sm" variant="ghost" onClick={() => setEditando((v) => !v)}>
             {editando ? 'Cancelar' : 'Editar'}
           </Button>
@@ -265,7 +284,7 @@ function LinhaAfiliado({
       </div>
 
       {editando && (
-        <div className="mt-3 flex flex-wrap items-end gap-3 rounded-lg border border-white/5 bg-black/30 p-3 text-xs text-zinc-400">
+        <div className="mt-3 flex flex-wrap items-end gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-inset)] p-3 text-xs text-[var(--text-dim)]">
           <label className="flex w-full flex-col gap-1 sm:w-auto">
             Comissão (%)
             <input className={campo} value={taxa} onChange={(e) => setTaxa(e.target.value)} disabled={ocupado} />
@@ -287,7 +306,7 @@ function LinhaAfiliado({
       <button
         type="button"
         onClick={() => setDetalhe((v) => !v)}
-        className="mt-3 text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+        className="mt-3 text-xs text-[var(--text-faint)] underline-offset-2 hover:text-[var(--text-soft)] hover:underline"
       >
         {detalhe ? 'Esconder' : 'Ver'} clientes e comissões
       </button>
@@ -314,14 +333,14 @@ function LinhaSaque({
   };
   const aberto = saque.status === 'REQUESTED' || saque.status === 'APPROVED';
   return (
-    <Card className={`p-4 ${aberto ? 'border-amber-500/30 bg-amber-500/[0.04]' : 'border-white/10 bg-white/[0.02]'}`}>
+    <Card className={`p-4 ${aberto ? 'border-amber-500/30 bg-amber-500/[0.04]' : 'border-[var(--border-strong)] bg-[var(--fill-1)]'}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-white">
+          <p className="text-sm font-semibold text-[var(--text-primary)]">
             {formatUsd(saque.amountCents)} para {saque.affiliate.user.email ?? saque.affiliate.referralCode}
           </p>
-          <p className="mt-1 break-all text-xs text-zinc-300">Enviar para: {saque.method}</p>
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 break-all text-xs text-[var(--text-soft)]">Enviar para: {saque.method}</p>
+          <p className="mt-1 text-xs text-[var(--text-faint)]">
             Pedido em {dia(saque.requestedAt)} · {STATUS_SAQUE[saque.status]}
             {saque.paidAt ? ` em ${dia(saque.paidAt)}` : ''}
             {saque.adminNote ? ` · nota: ${saque.adminNote}` : ''}
@@ -349,7 +368,7 @@ function LinhaSaque({
 }
 
 export default function AfiliadosPainel() {
-  const { affiliates, payouts, update, decide } = useAffiliateAdmin();
+  const { affiliates, payouts, update, decide, settle } = useAffiliateAdmin();
   const { toast } = useToast();
   const [historico, setHistorico] = useState(false);
 
@@ -374,6 +393,15 @@ export default function AfiliadosPainel() {
       },
     );
 
+  const pagar = (id: string, note?: string) =>
+    settle.mutate(
+      { id, note },
+      {
+        onSuccess: (r) => toast({ title: `Pagamento de ${formatUsd(r.amountCents)} registrado` }),
+        onError: (e) => toast({ title: 'Não salvou', description: e.message, variant: 'destructive' }),
+      },
+    );
+
   const decidir = (id: string, action: 'approve' | 'reject' | 'mark_paid', note?: string) =>
     decide.mutate(
       { id, action, note },
@@ -391,8 +419,8 @@ export default function AfiliadosPainel() {
   const saquesAbertos = saques.filter((s) => s.status === 'REQUESTED' || s.status === 'APPROVED');
   const saquesFechados = saques.filter((s) => s.status === 'PAID' || s.status === 'REJECTED');
 
-  if (affiliates.isLoading) return <p className="text-sm text-zinc-500">Carregando…</p>;
-  if (affiliates.error) return <p className="text-sm text-red-400">Não carregou: {affiliates.error.message}</p>;
+  if (affiliates.isLoading) return <p className="text-sm text-[var(--text-faint)]">Carregando…</p>;
+  if (affiliates.error) return <p className="text-sm text-[var(--tone-down-2)]">Não carregou: {affiliates.error.message}</p>;
 
   return (
     <section>
@@ -408,10 +436,10 @@ export default function AfiliadosPainel() {
       )}
 
       <Titulo n={saquesAbertos.length}>Saques para pagar</Titulo>
-      <p className="-mt-2 mb-3 text-xs text-zinc-500">
+      <p className="-mt-2 mb-3 text-xs text-[var(--text-faint)]">
         O pagamento é feito por você, fora do site (PayPal, Pix, etc.). Aqui você só registra.
       </p>
-      {payouts.error && <p className="text-sm text-red-400">{payouts.error.message}</p>}
+      {payouts.error && <p className="text-sm text-[var(--tone-down-2)]">{payouts.error.message}</p>}
       {saquesAbertos.length === 0 ? (
         <Vazio>Nenhum saque esperando.</Vazio>
       ) : (
@@ -426,7 +454,7 @@ export default function AfiliadosPainel() {
           <button
             type="button"
             onClick={() => setHistorico((v) => !v)}
-            className="mt-3 text-xs text-zinc-500 underline-offset-2 hover:text-zinc-300 hover:underline"
+            className="mt-3 text-xs text-[var(--text-faint)] underline-offset-2 hover:text-[var(--text-soft)] hover:underline"
           >
             {historico ? 'Esconder' : 'Ver'} saques antigos ({saquesFechados.length})
           </button>
@@ -441,7 +469,7 @@ export default function AfiliadosPainel() {
       )}
 
       <Titulo n={demais.length}>Afiliados</Titulo>
-      <p className="-mt-2 mb-3 text-xs text-zinc-500">
+      <p className="-mt-2 mb-3 text-xs text-[var(--text-faint)]">
         Comissão padrão de 20%. Ela não aparece no site: cada afiliado só vê a própria.
       </p>
       {demais.length === 0 ? (
@@ -449,7 +477,13 @@ export default function AfiliadosPainel() {
       ) : (
         <div className="space-y-3">
           {demais.map((a) => (
-            <LinhaAfiliado key={a.id} afiliado={a} ocupado={update.isPending} onSalvar={(p) => salvar(a.id, p)} />
+            <LinhaAfiliado
+              key={a.id}
+              afiliado={a}
+              ocupado={update.isPending || settle.isPending}
+              onSalvar={(p) => salvar(a.id, p)}
+              onPagar={(note) => pagar(a.id, note)}
+            />
           ))}
         </div>
       )}

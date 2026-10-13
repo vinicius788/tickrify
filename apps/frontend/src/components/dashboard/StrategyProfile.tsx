@@ -75,8 +75,8 @@ const ChipGroup = ({ label, values, selected, labelFor, onToggle }: ChipGroupPro
             onClick={() => onToggle(value)}
             className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
               active
-                ? 'border-transparent bg-white text-[#050508]'
-                : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'
+                ? 'border-transparent bg-[var(--inverse-bg)] text-[var(--inverse-fg)]'
+                : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]'
             }`}
           >
             {labelFor(value)}
@@ -213,7 +213,7 @@ const StrategyProfile = () => {
 
       <CardContent className="flex flex-col gap-6 pb-6">
         {loadError && (
-          <p className="text-xs text-amber-500">{st.loadError}</p>
+          <p className="text-xs text-[var(--tone-warn-3)]">{st.loadError}</p>
         )}
 
         <ChipGroup
@@ -261,8 +261,8 @@ const StrategyProfile = () => {
                   onClick={() => setProfile((p) => ({ ...p, direction: value }))}
                   className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
                     active
-                      ? 'border-transparent bg-white text-[#050508]'
-                      : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-white/[0.04] hover:text-[var(--text-primary)]'
+                      ? 'border-transparent bg-[var(--inverse-bg)] text-[var(--inverse-fg)]'
+                      : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]'
                   }`}
                 >
                   {directionLabel(value)}
@@ -298,7 +298,7 @@ const StrategyProfile = () => {
             {saving ? st.saving : st.save}
           </Button>
           {saveMessage && <span className="text-xs text-[var(--accent-green)]">{saveMessage}</span>}
-          {saveErrorMessage && <span className="text-xs text-red-500">{saveErrorMessage}</span>}
+          {saveErrorMessage && <span className="text-xs text-[var(--tone-down-3)]">{saveErrorMessage}</span>}
         </div>
       </CardContent>
     </Card>

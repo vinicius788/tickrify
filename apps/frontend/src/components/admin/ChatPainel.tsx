@@ -37,11 +37,11 @@ function Conversa({ thread }: { thread: AdminChatThread }) {
   const fechada = (data?.thread.status ?? thread.status) === 'closed';
 
   return (
-    <Card className="border-white/10 bg-white/[0.02] p-4">
+    <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold text-white">{thread.email ?? 'sem e-mail'}</h3>
-          <p className="text-xs text-zinc-500">
+          <h3 className="truncate text-sm font-semibold text-[var(--text-primary)]">{thread.email ?? 'sem e-mail'}</h3>
+          <p className="text-xs text-[var(--text-faint)]">
             {`${PLANO[thread.plan] ?? thread.plan} · origem: ${thread.acquisitionSource ?? 'não respondeu'} · última análise: ${quando(thread.lastAnalysisAt)}`}
           </p>
         </div>
@@ -55,14 +55,14 @@ function Conversa({ thread }: { thread: AdminChatThread }) {
         </Button>
       </div>
 
-      <div className="mt-3 flex max-h-[420px] flex-col gap-2 overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2.5">
-        {isLoading ? <p className="text-xs text-zinc-500">Carregando…</p> : null}
+      <div className="mt-3 flex max-h-[420px] flex-col gap-2 overflow-y-auto rounded-lg border border-[var(--border-strong)] bg-[var(--bg-inset)] p-2.5">
+        {isLoading ? <p className="text-xs text-[var(--text-faint)]">Carregando…</p> : null}
         {(data?.items ?? []).map((m) => {
           const doFundador = m.author === 'founder';
           return (
-            <div key={m.id} className={`max-w-[85%] rounded-lg px-3 py-2 ${doFundador ? 'self-end bg-white/[0.12]' : 'self-start bg-white/[0.06]'}`}>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{`${doFundador ? 'Você' : 'Usuário'} · ${quando(m.createdAt)}`}</p>
-              <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-zinc-100">{m.body}</p>
+            <div key={m.id} className={`max-w-[85%] rounded-lg px-3 py-2 ${doFundador ? 'self-end bg-[var(--fill-6)]' : 'self-start bg-[var(--fill-3)]'}`}>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">{`${doFundador ? 'Você' : 'Usuário'} · ${quando(m.createdAt)}`}</p>
+              <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-primary)]">{m.body}</p>
             </div>
           );
         })}
@@ -75,7 +75,7 @@ function Conversa({ thread }: { thread: AdminChatThread }) {
         maxLength={2000}
         rows={3}
         placeholder="Responder (Enter envia, Shift+Enter quebra linha)"
-        className="mt-3 w-full resize-none rounded-lg border border-white/10 bg-black/40 p-2.5 text-base text-white placeholder:text-zinc-600 focus:border-white/25 focus:outline-none"
+        className="mt-3 w-full resize-none rounded-lg border border-[var(--border-strong)] bg-[var(--bg-inset)] p-2.5 text-base text-[var(--text-primary)] placeholder:text-[var(--text-ghost)] focus:border-[var(--border-heavy)] focus:outline-none"
       />
       <div className="mt-2 flex justify-end">
         <Button size="sm" onClick={responder} disabled={reply.isPending || !texto.trim()}>
@@ -125,16 +125,16 @@ export default function ChatPainel() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Card className="border-white/10 bg-white/[0.02] p-4">
-        <h3 className="text-sm font-semibold text-white">Iniciar conversa</h3>
-        <p className="mt-1 text-xs text-zinc-500">Pelo e-mail da conta. Se a pessoa já tem conversa, a mensagem entra nela.</p>
+      <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Iniciar conversa</h3>
+        <p className="mt-1 text-xs text-[var(--text-faint)]">Pelo e-mail da conta. Se a pessoa já tem conversa, a mensagem entra nela.</p>
         <div className="mt-3 flex flex-col gap-2">
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="e-mail da conta"
-            className="rounded-lg border border-white/10 bg-black/40 px-2.5 py-2 text-base text-white placeholder:text-zinc-600 focus:border-white/25 focus:outline-none"
+            className="rounded-lg border border-[var(--border-strong)] bg-[var(--bg-inset)] px-2.5 py-2 text-base text-[var(--text-primary)] placeholder:text-[var(--text-ghost)] focus:border-[var(--border-heavy)] focus:outline-none"
           />
           <textarea
             value={mensagem}
@@ -142,7 +142,7 @@ export default function ChatPainel() {
             maxLength={2000}
             rows={3}
             placeholder="Mensagem (em inglês, assinada como Vinícius)"
-            className="resize-none rounded-lg border border-white/10 bg-black/40 p-2.5 text-base text-white placeholder:text-zinc-600 focus:border-white/25 focus:outline-none"
+            className="resize-none rounded-lg border border-[var(--border-strong)] bg-[var(--bg-inset)] p-2.5 text-base text-[var(--text-primary)] placeholder:text-[var(--text-ghost)] focus:border-[var(--border-heavy)] focus:outline-none"
           />
           <div className="flex justify-end">
             <Button size="sm" onClick={iniciar} disabled={start.isPending || !email.trim() || !mensagem.trim()}>
@@ -153,10 +153,10 @@ export default function ChatPainel() {
       </Card>
 
       <div>
-        <h3 className="mb-2 text-sm font-semibold text-white">Conversas</h3>
-        {isLoading ? <p className="text-sm text-zinc-500">Carregando…</p> : null}
-        {error ? <p className="text-sm text-red-400">{`Não deu para carregar: ${error.message}`}</p> : null}
-        {!isLoading && !error && itens.length === 0 ? <p className="text-sm text-zinc-500">Nenhuma conversa ainda.</p> : null}
+        <h3 className="mb-2 text-sm font-semibold text-[var(--text-primary)]">Conversas</h3>
+        {isLoading ? <p className="text-sm text-[var(--text-faint)]">Carregando…</p> : null}
+        {error ? <p className="text-sm text-[var(--tone-down-2)]">{`Não deu para carregar: ${error.message}`}</p> : null}
+        {!isLoading && !error && itens.length === 0 ? <p className="text-sm text-[var(--text-faint)]">Nenhuma conversa ainda.</p> : null}
         <ul className="flex flex-col gap-2">
           {itens.map((t) => (
             <li key={t.id}>
@@ -164,20 +164,20 @@ export default function ChatPainel() {
                 type="button"
                 onClick={() => setAberta(t.id === aberta ? null : t.id)}
                 className={`w-full rounded-xl border px-4 py-3 text-left transition-colors ${
-                  t.id === aberta ? 'border-white/30 bg-white/[0.06]' : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.04]'
+                  t.id === aberta ? 'border-[var(--border-heavy)] bg-[var(--fill-3)]' : 'border-[var(--border-strong)] bg-[var(--fill-1)] hover:bg-[var(--fill-2)]'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-sm text-white">{t.email ?? 'sem e-mail'}</span>
-                  <span className="flex shrink-0 items-center gap-2 text-[11px] text-zinc-500">
+                  <span className="truncate text-sm text-[var(--text-primary)]">{t.email ?? 'sem e-mail'}</span>
+                  <span className="flex shrink-0 items-center gap-2 text-[11px] text-[var(--text-faint)]">
                     <span>{quando(t.lastMessageAt)}</span>
                     {t.unread > 0 ? (
-                      <span key="nova" className="rounded-full bg-amber-500/20 px-2 text-amber-300">{`${t.unread} nova(s)`}</span>
+                      <span key="nova" className="rounded-full bg-amber-500/20 px-2 text-[var(--tone-warn-1)]">{`${t.unread} nova(s)`}</span>
                     ) : null}
                     {t.status === 'closed' ? <span key="fechada">fechada</span> : null}
                   </span>
                 </div>
-                <p className="mt-1 truncate text-xs text-zinc-400">
+                <p className="mt-1 truncate text-xs text-[var(--text-dim)]">
                   {`${t.isSubscriber ? 'assinante' : 'grátis'} · ${t.lastAuthor === 'founder' ? 'Você: ' : ''}${t.lastMessage ?? ''}`}
                 </p>
               </button>
