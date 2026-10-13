@@ -399,6 +399,8 @@ describe('DashboardPage', () => {
     mockUseAPIClient.mockReturnValue(makeApiClient({
       createAnalysis,
       checkTrade,
+      // Depois do "Sim" a tela abre a analise da operacao: a busca precisa responder.
+      getAnalysis: vi.fn().mockResolvedValue({ id: 'analysis-gold', status: 'completed', recommendation: 'BUY' }),
       listOpenTrades: vi.fn().mockResolvedValue({ trades: [openGold] }),
       matchTrade: vi.fn().mockResolvedValue({ symbol: 'XAUUSD', matches: [openGold] }),
     }));
