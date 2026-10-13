@@ -5,7 +5,7 @@
   },
   "/pricing": {
     "title": "Pricing: $29/mo for 200 AI Chart Analyses | Tickrify",
-    "description": "One plan, $29/month: 200 Ticks, quick and deep analysis, live candle grounding. Start with a 3-day free trial, no card needed. Cancel in one click."
+    "description": "One plan, $29/month: 200 Ticks, quick and deep analysis, live candle grounding. Start with a 3-day free trial, no card needed. Cancel anytime in Settings."
   },
   "/about": {
     "title": "About Tickrify: Company, Founder & Product",
@@ -56,7 +56,7 @@
   },
   "/sign-up": {
     "title": "Create your account | Tickrify",
-    "description": "Create a Tickrify account and get 3 free AI chart analyses.",
+    "description": "Create a Tickrify account and start a 3-day free trial of AI chart analysis, no card required.",
     "noindex": true
   },
   "/affiliate": {

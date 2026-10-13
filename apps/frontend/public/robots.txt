@@ -1,48 +1,16 @@
 User-agent: *
 Allow: /
 
-# Rotas privadas / sem valor de indexacao.
-# A forma sem barra bloqueia a rota exata E tudo abaixo dela; a linha com barra
-# esta explicita para deixar claro que o subdiretorio inteiro cai junto e para
-# nao depender de interpretacao de prefixo por parte de crawler menos comum.
+# Private routes.
 Disallow: /dashboard
 Disallow: /dashboard/
 Disallow: /demo
 Disallow: /demo/
 
-# /sign-in e /sign-up saíram do Disallow DE PROPÓSITO, e isto não é descuido.
-# As duas estavam bloqueadas aqui e mesmo assim /sign-in foi parar no índice do
-# Google (conferido no Search Console em 10/08/2026, último rastreamento 16/06).
-# Disallow impede RASTREAR, não INDEXAR: a URL entra no índice por link, sem
-# conteúdo, e bloqueada o Google nunca chega a LER o noindex. Os dois juntos se
-# anulam. As duas rotas agora servem <meta name="robots" content="noindex,
-# nofollow"> no HTML cru (scripts/prerender.mjs) e depois da hidratação
-# (useSeo), que é o que de fato tira do índice. Recolocar o Disallow aqui
-# desfaz a correção.
+# /sign-in and /sign-up are not disallowed on purpose: they serve a noindex
+# meta tag, which crawlers can only read if they are allowed to fetch the page.
 
-# ---------------------------------------------------------------------------
-# CRAWLERS DE IA , liberados EXPLICITAMENTE (14/09/2026)
-#
-# Por que existir, se o "User-agent: *" acima ja libera tudo: varios desses
-# agentes sao conservadores por padrao e alguns operadores de site os bloqueiam,
-# entao a ausencia de regra propria e ambigua. Regra nomeada e o sinal
-# inequivoco de que o conteudo pode ser lido e citado.
-#
-# CONTEXTO DE NEGOCIO: em 30 dias, 368 de 1017 pageviews chegaram com
-# utm_source=chatgpt.com , o maior canal de aquisicao do produto, e organico.
-# Pelo menos um assinante veio por ai. Bloquear qualquer um destes por descuido
-# custaria o unico canal que funciona hoje.
-#
-# Quem e quem (nao sao intercambiaveis):
-#   OAI-SearchBot  indexa para a busca do ChatGPT      -> citacao
-#   ChatGPT-User   busca ao vivo quando o usuario pede -> citacao na hora
-#   GPTBot         coleta para treino                  -> nao gera citacao
-#   Google-Extended  controla uso no Gemini/AI Overviews (nao afeta a Busca)
-#   PerplexityBot / Perplexity-User  indice e busca ao vivo da Perplexity
-#   ClaudeBot / Claude-SearchBot / Claude-User  Anthropic
-#   Bingbot        o ChatGPT depende MUITO do indice do Bing
-#   Applebot-Extended  Apple Intelligence
-# ---------------------------------------------------------------------------
+# AI and search crawlers, allowed explicitly.
 
 User-agent: OAI-SearchBot
 Allow: /
