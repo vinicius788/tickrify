@@ -14,6 +14,7 @@ import {
   formatRiskReward,
   correctPriceMagnitude,
   deriveMarketRegime,
+  canonicalFxPair,
 } from '../../common/utils/analysis-normalizer';
 import { decideSignal } from '../../common/utils/signal-decision';
 import { computeCost, formatCostLog } from './model-cost';
@@ -1362,8 +1363,10 @@ export class AIAdapter {
     let classBlock: string | null = null;
     if (isCrypto) {
       classBlock = await this.buildCryptoEnrichment(extracted.symbol);
-    } else if (/XAU|XAG|EUR|USD|GBP|JPY|AUD|NZD|CAD|CHF/.test(sym)) {
-      // Fase 2: forex e metais (ouro/prata).
+    } else if (canonicalFxPair(sym)) {
+      // Fase 2: forex e metais (ouro/prata). So par de verdade: o regex solto
+      // de antes dava o bloco de dolar/juros a qualquer nome com "USD" (altcoin
+      // fora da lista de cripto, XTIUSD), rotulado como dado real.
       classBlock = await this.buildFxEnrichment(sym);
     } else if (/NAS100|US100|NDX|US30|DJI|US500|SPX|SPX500|DAX|GER40|UK100|FTSE|JP225|NKY|WIN|IBOV/.test(sym)) {
       // Fase 3: índices de ações (regime de risco via VIX).
@@ -1477,17 +1480,14 @@ export class AIAdapter {
     };
     const itv = tdInterval[interval];
     if (!itv) return null;
-    const m = symbol
-      .toUpperCase()
-      .replace(/[^A-Z]/g, '')
-      .match(/^(XAU|XAG|EUR|GBP|AUD|NZD|USD|CAD|CHF|JPY)(USD|JPY|CHF|CAD|GBP|EUR|AUD|NZD)$/);
-    if (!m) return null;
+    const pair = canonicalFxPair(symbol);
+    if (!pair) return null;
     const td = await this.fetchJson<{
       values?: Array<{
         datetime: string; open: string; high: string; low: string; close: string; volume?: string;
       }>;
     }>(
-      `https://api.twelvedata.com/time_series?symbol=${m[1]}/${m[2]}&interval=${itv}&outputsize=120&apikey=${key}`,
+      `https://api.twelvedata.com/time_series?symbol=${pair.slice(0, 3)}/${pair.slice(3)}&interval=${itv}&outputsize=120&apikey=${key}`,
       6_000,
     );
     const values = td?.values;
@@ -1539,9 +1539,7 @@ export class AIAdapter {
     let staleReason: string | null = null;
     let candleCoverage: CandleCoverage = 'timeframe_unreadable';
     if (interval) {
-      const fxSupported = /^(XAU|XAG|EUR|GBP|AUD|NZD|USD|CAD|CHF|JPY)(USD|JPY|CHF|CAD|GBP|EUR|AUD|NZD)$/.test(
-        sym.replace(/[^A-Z]/g, ''),
-      );
+      const fxSupported = canonicalFxPair(sym) !== null;
       if (!isCrypto && !fxSupported) {
         candleCoverage = 'unsupported_asset';
       } else if (!isCrypto && !process.env.TWELVE_DATA_API_KEY?.trim()) {
@@ -1572,7 +1570,7 @@ export class AIAdapter {
     if (!staleReason) {
       if (isCrypto) {
         contextBlock = await this.buildCryptoEnrichment(extracted.symbol);
-      } else if (/XAU|XAG|EUR|USD|GBP|JPY|AUD|NZD|CAD|CHF/.test(sym)) {
+      } else if (canonicalFxPair(sym)) {
         contextBlock = await this.buildFxEnrichment(sym);
       }
     }

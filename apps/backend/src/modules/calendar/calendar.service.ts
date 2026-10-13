@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { canonicalFxPair } from '../../common/utils/analysis-normalizer';
+import { normalizeToBinancePerp } from '../market/market.service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,6 +88,12 @@ const SYMBOL_CURRENCIES: Record<string, string[]> = {
 function getCurrenciesForSymbol(symbol: string): string[] {
   const upper = symbol.toUpperCase().replace(/[^A-Z]/g, '');
   if (SYMBOL_CURRENCIES[upper]) return SYMBOL_CURRENCIES[upper];
+  // Par com sufixo de corretora (XAUUSDm, EURUSD.pro) -> par limpo.
+  const pair = canonicalFxPair(symbol);
+  if (pair) return SYMBOL_CURRENCIES[pair] ?? [pair.slice(0, 3), pair.slice(3)];
+  // Cripto reage a evento de USD. Sem isto, AVAXUSDT virava "AVA"/"XUS" e o
+  // news guard nunca disparava para a maioria das altcoins (13/10/2026).
+  if (normalizeToBinancePerp(symbol).isCrypto || /(USDT|USDC|PERP)$/.test(upper)) return ['USD'];
   // Fallback: try first 3 and last 3 chars
   if (upper.length >= 6) return [upper.slice(0, 3), upper.slice(3, 6)];
   return ['USD'];

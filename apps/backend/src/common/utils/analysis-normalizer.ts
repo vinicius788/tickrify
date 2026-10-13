@@ -185,9 +185,27 @@ export interface PriceLevels {
   invalidationLevel: number | null;
 }
 
+/**
+ * Par de forex/metal no formato do provedor (EURUSD, XAUUSD), aceitando o
+ * sufixo que a corretora poe no simbolo (XAUUSDm, EURUSD.pro, XAUUSD+).
+ * Antes o regex era ancorado no fim: ouro com sufixo ficava sem candles no
+ * grounding e sem outcome no sweeper (29 de 200 sinais de metais UNTRACKABLE,
+ * medido em 13/10/2026). Sufixo T/C fica de fora: XXXUSDT/USDC e cripto.
+ * null = nao e par de forex/metal.
+ */
+export function canonicalFxPair(symbol: unknown): string | null {
+  const s = String(symbol ?? '').toUpperCase().replace(/[^A-Z]/g, '');
+  const m = s.match(/^(XAU|XAG|EUR|GBP|AUD|NZD|USD|CAD|CHF|JPY)(USD|JPY|CHF|CAD|GBP|EUR|AUD|NZD)([A-Z]{0,5})$/);
+  if (!m || m[1] === m[2] || m[3] === 'T' || m[3] === 'C') return null;
+  return m[1] + m[2];
+}
+
 const FOREX_CODES = new Set(['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CAD', 'CHF']);
-const isForexPair = (s: string): boolean =>
-  s.length === 6 && FOREX_CODES.has(s.slice(0, 3)) && FOREX_CODES.has(s.slice(3, 6));
+/** Par de moedas (sem metal) ja sem o sufixo da corretora, ou null. */
+const forexPairOf = (s: string): string | null => {
+  const pair = canonicalFxPair(s);
+  return pair && FOREX_CODES.has(pair.slice(0, 3)) ? pair : null;
+};
 
 // Faixas plausíveis por ativo. Só corrigimos erros ÓBVIOS de ordem de grandeza.
 const PRICE_RANGES: Array<{ test: (s: string) => boolean; min: number; max: number }> = [
@@ -213,9 +231,9 @@ const PRICE_RANGES: Array<{ test: (s: string) => boolean; min: number; max: numb
   { test: (s) => s.startsWith('WDO') || s.startsWith('DOL'), min: 3_000, max: 9_000 }, // mini dólar
   // ── Forex ──
   // JPY (USDJPY ~150): real 90–160, faixa segura 50–300.
-  { test: (s) => isForexPair(s) && s.endsWith('JPY'), min: 50, max: 300 },
+  { test: (s) => forexPairOf(s)?.endsWith('JPY') === true, min: 50, max: 300 },
   // demais majors (EURUSD ~1.08): real 0.5–2.0, faixa segura 0.3–3.0.
-  { test: (s) => isForexPair(s) && !s.endsWith('JPY'), min: 0.3, max: 3 },
+  { test: (s) => forexPairOf(s)?.endsWith('JPY') === false, min: 0.3, max: 3 },
 ];
 
 /**

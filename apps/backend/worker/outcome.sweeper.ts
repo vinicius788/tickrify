@@ -27,6 +27,7 @@ import { flagBool } from '../src/common/flags/feature-flags';
  */
 import { PrismaClient } from '@prisma/client';
 import { normalizeToBinancePerp } from '../src/modules/market/market.service';
+import { canonicalFxPair } from '../src/common/utils/analysis-normalizer';
 
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000; // 1h
 const FIRST_SWEEP_DELAY_MS = 3 * 60 * 1000; // 3min após o boot (deixa o worker estabilizar)
@@ -93,17 +94,15 @@ async function fetchCryptoWindow(base: string, startMs: number, endMs: number): 
 async function fetchFxWindow(symbol: string, startMs: number, endMs: number): Promise<Candle[] | null> {
   const key = process.env.TWELVE_DATA_API_KEY?.trim();
   if (!key) return null;
-  const m = symbol
-    .toUpperCase()
-    .replace(/[^A-Z]/g, '')
-    .match(/^(XAU|XAG|EUR|GBP|AUD|NZD|USD|CAD|CHF|JPY)(USD|JPY|CHF|CAD|GBP|EUR|AUD|NZD)$/);
-  if (!m) return null;
+  // Aceita o sufixo da corretora (XAUUSDm): antes virava UNTRACKABLE.
+  const pair = canonicalFxPair(symbol);
+  if (!pair) return null;
   const startIso = new Date(startMs).toISOString().slice(0, 19).replace('T', ' ');
   const endIso = new Date(endMs).toISOString().slice(0, 19).replace('T', ' ');
   const td = await fetchJson<{
     values?: Array<{ datetime: string; open: string; high: string; low: string; close: string }>;
   }>(
-    `https://api.twelvedata.com/time_series?symbol=${m[1]}/${m[2]}&interval=30min&timezone=UTC` +
+    `https://api.twelvedata.com/time_series?symbol=${pair.slice(0, 3)}/${pair.slice(3)}&interval=30min&timezone=UTC` +
       `&start_date=${encodeURIComponent(startIso)}&end_date=${encodeURIComponent(endIso)}&outputsize=120&apikey=${key}`,
     8_000,
   );

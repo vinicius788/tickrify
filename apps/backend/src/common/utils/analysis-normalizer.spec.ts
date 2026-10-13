@@ -1,4 +1,5 @@
 import {
+  canonicalFxPair,
   normalizeSymbol,
   computeRiskReward,
   hasInvalidTradePlanLevels,
@@ -213,5 +214,25 @@ describe('normalizeSymbol', () => {
     expect(normalizeSymbol('')).toBe('N/A');
     expect(normalizeSymbol(null)).toBe('N/A');
     expect(normalizeSymbol(undefined)).toBe('N/A');
+  });
+});
+
+describe('canonicalFxPair', () => {
+  it('aceita o sufixo da corretora no ouro e no forex', () => {
+    expect(canonicalFxPair('XAUUSD')).toBe('XAUUSD');
+    expect(canonicalFxPair('XAUUSDm')).toBe('XAUUSD');
+    expect(canonicalFxPair('XAUUSD+')).toBe('XAUUSD');
+    expect(canonicalFxPair('EURUSD.pro')).toBe('EURUSD');
+    expect(canonicalFxPair('usd/jpy')).toBe('USDJPY');
+  });
+
+  it('nao confunde cripto, indice ou petroleo com forex', () => {
+    expect(canonicalFxPair('XAUUSDT')).toBeNull();
+    expect(canonicalFxPair('EURUSDC')).toBeNull();
+    expect(canonicalFxPair('HYPEUSDT')).toBeNull();
+    expect(canonicalFxPair('XTIUSD')).toBeNull();
+    expect(canonicalFxPair('US30')).toBeNull();
+    expect(canonicalFxPair('USDUSD')).toBeNull();
+    expect(canonicalFxPair('')).toBeNull();
   });
 });
