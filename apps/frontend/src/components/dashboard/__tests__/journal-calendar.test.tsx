@@ -126,7 +126,8 @@ describe('Diario: anotacao do trade', () => {
     expect(screen.getByText('Moved my stop')).toBeTruthy();
     expect(screen.getByText('Mistakes')).toBeTruthy();
     expect(screen.getAllByText('Moved the stop').length).toBeGreaterThanOrEqual(2);
-  });
+    // Muitos cliques e digitacao: com a maquina cheia (pre-push) 5 s nao bastam.
+  }, 15000);
 
   it('WAIT nao tem botao de anotar (nao e operacao)', async () => {
     getJournal.mockResolvedValue({ truncated: false, items: [item('w', new Date().getDate(), 'XAUUSD', 'WAIT', null, null, null)] });
