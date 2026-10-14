@@ -5,7 +5,7 @@
  *
  * Por que existe (13/10/2026): o backtest-runner usa graficos desenhados no
  * matplotlib; aqui o teste roda nos prints que os usuarios mandaram, contra o
- * que o mercado fez depois. O candidato atual e o v7.6 (TP1 mais perto):
+ * que o mercado fez depois. Medido em 13/10 com o v7.6 (TP1 mais perto), hoje no prompt:
  * no v12, TP1 >= 2R acertou 20% (n=77, -0,27R) e TP1 < 1,5R acertou 61% (n=46).
  *
  * Uso (em apps/backend, com o .env de producao para ler os prints):
@@ -40,11 +40,9 @@ const COST_PER_CALL_USD = 0.0195; // quick medido em 09/09 (CLAUDE.md 3.2)
 const WINDOW_MS = 48 * 60 * 60 * 1000;
 const OUT = path.resolve(__dirname, '../../../scripts/backtest/results/prompt-replay.jsonl');
 
-const TP1_LINE = 'SL: always beyond structural level or OB/FVG. Min R:R 1:1.5. Target 1:2+.';
-const TP1_PATCH = [
-  'SL: always beyond structural level or OB/FVG.',
-  'TARGET PLACEMENT: takeProfit1 is the FIRST realistic objective, the nearest opposing liquidity or structure level that price can plausibly reach within the next ~20-30 candles of this timeframe, typically 1.0 to 1.5 times the risk. Never push takeProfit1 further away to improve the ratio: measured on real outcomes, a takeProfit1 set at 2R or more was reached only about 20% of the time. Put the extended objective (2R or more) in takeProfit2. The R:R >= 1.5 requirement (checklist item 6) is measured to takeProfit2, never to takeProfit1.',
-].join('\n');
+// v7.6 ja esta no prompt; o controle reconstroi a v7.5 trocando o trecho de volta.
+const V75_TP1_LINE = 'SL: always beyond structural level or OB/FVG. Min R:R 1:1.5. Target 1:2+.';
+const V76_TP1_START = 'SL: always beyond structural level or OB/FVG.\nTARGET PLACEMENT:';
 
 interface InputRow {
   id: string;
@@ -77,10 +75,12 @@ function classOf(symbol: string): Done['cls'] | null {
 }
 
 async function buildPrompt(arm: Arm): Promise<string> {
-  if (!TRADING_SYSTEM_PROMPT.includes(TP1_LINE)) {
-    throw new Error('A linha do TP1 mudou no prompt; revise TP1_LINE antes de medir.');
-  }
-  const source = arm === 'v76' ? TRADING_SYSTEM_PROMPT.replace(TP1_LINE, TP1_PATCH) : TRADING_SYSTEM_PROMPT;
+  const start = TRADING_SYSTEM_PROMPT.indexOf(V76_TP1_START);
+  if (start < 0) throw new Error('O trecho do TP1 da v7.6 mudou no prompt; revise V76_TP1_START antes de medir.');
+  const end = TRADING_SYSTEM_PROMPT.indexOf('\n', start + V76_TP1_START.length);
+  const source = arm === 'v76'
+    ? TRADING_SYSTEM_PROMPT
+    : TRADING_SYSTEM_PROMPT.slice(0, start) + V75_TP1_LINE + TRADING_SYSTEM_PROMPT.slice(end);
   const stubDb: any = { promptConfig: { findFirst: async () => null, findUnique: async () => null } };
   return new PromptBuilderService(stubDb).buildPromptByVersion('quick', undefined, source, 'en');
 }

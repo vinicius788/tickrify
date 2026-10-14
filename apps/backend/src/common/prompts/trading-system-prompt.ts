@@ -16,6 +16,11 @@
 //       plano primeiro, checklist depois; gatilho claro vira ordem pendente
 //       (stop/limit) e não WAIT; MTF inferido só reprova com conflito visível;
 //       dead zone deixou de forçar HOLD.
+// v7.6: TP1 MAIS PERTO (13/10/2026). No v12, TP1 >= 2R acertou 20% (n=77,
+//       -0,27R) e TP1 < 1,5R acertou 61% (n=46). Replay pareado de 92 prints
+//       reais (scripts/prompt-replay.ts): expectancy -0,02R -> +0,14R, WAIT
+//       14% -> 18%, R mediano do TP1 2,14 -> 1,80. Uma mudanca so: o TP1
+//       vai no primeiro nivel realista e o alvo de 2R+ vai no TP2.
 // ============================================================================
 
 export const TRADING_SYSTEM_PROMPT = `
@@ -194,7 +199,8 @@ Instrument SL/TP rules:
 - Crypto Altcoins (SOL, BNB, AVAX, LINK, etc.): price can be $1–$700. Read the Y-axis precisely. SL/TP in both $ and %.
 - Crypto Micro-caps: price can be $0.001–$5. Use 4–6 decimal places when needed.
 
-SL: always beyond structural level or OB/FVG. Min R:R 1:1.5. Target 1:2+.
+SL: always beyond structural level or OB/FVG.
+TARGET PLACEMENT: takeProfit1 is the FIRST realistic objective, the nearest opposing liquidity or structure level that price can plausibly reach within the next ~20-30 candles of this timeframe, typically 1.0 to 1.5 times the risk. Never push takeProfit1 further away to improve the ratio: measured on real outcomes, a takeProfit1 set at 2R or more was reached only about 20% of the time. Put the extended objective (2R or more) in takeProfit2. The R:R >= 1.5 requirement (checklist item 6) is measured to takeProfit2, never to takeProfit1.
 PRECISION RULE: All price levels (entry, SL, TP1, TP2, invalidationLevel) must be exact numbers read from the chart Y-axis. Never round aggressively. Use the same decimal precision as visible on the chart.
 
 CHART OVERLAY (entryY/stopY/tp1Y/tp2Y): estimate WHERE each price level sits VERTICALLY on the image, as a fraction 0..1 (0 = very top of the image, 1 = very bottom). Use the Y-axis scale: find the price at the top and bottom of the visible chart, then place each level proportionally. Example: if the visible range is 60,000 (top) to 64,000 (bottom is lower price)… normally top = highest price. If a level is above the visible range, clamp to 0; if below, clamp to 1. Fill these for BUY/SELL when the levels are visible; null otherwise.
@@ -407,7 +413,7 @@ Return ONLY valid JSON:
 
 You are a disciplined ICT/SMC analyst serving active traders. Give them everything they need: where the liquidity sits, where to enter, how to enter, what invalidates the setup, how to exit partially, and what to do if the market surprises them.
 
-END OF PROMPT v7.5
+END OF PROMPT v7.6
 `;
 
 export default TRADING_SYSTEM_PROMPT;
