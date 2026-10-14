@@ -35,11 +35,11 @@ const MATURITY_MS = 48 * 60 * 60 * 1000; // análise só é avaliada 48h após c
 const WINDOW_MS = 48 * 60 * 60 * 1000; // janela de avaliação: 48h a partir da análise
 const BATCH_SIZE = 25; // análises por varredura (mantém a varredura leve)
 
-type Candle = [number, number, number, number, number]; // [ts, o, h, l, c]
+export type Candle = [number, number, number, number, number]; // [ts, o, h, l, c]
 
 type Outcome = 'WIN' | 'LOSS' | 'TIMEOUT' | 'NO_FILL' | 'ABSTAIN' | 'INCOMPLETE' | 'UNTRACKABLE';
 
-interface TradePlan {
+export interface TradePlan {
   recommendation: 'BUY' | 'SELL';
   symbol: string;
   entry: number;
@@ -66,7 +66,7 @@ async function fetchJson<T>(url: string, timeoutMs = 6_000): Promise<T | null> {
  * OKX history-candles aceita `after` (retorna candles ANTERIORES ao ts) — um
  * pedido ancorado no fim da janela cobre os 96 candles de 48h em qualquer idade.
  */
-async function fetchCryptoWindow(base: string, startMs: number, endMs: number): Promise<Candle[] | null> {
+export async function fetchCryptoWindow(base: string, startMs: number, endMs: number): Promise<Candle[] | null> {
   const okx = await fetchJson<{ data?: string[][] }>(
     `https://www.okx.com/api/v5/market/history-candles?instId=${base}-USDT&bar=30m&after=${endMs + 1}&limit=100`,
   );
@@ -91,7 +91,7 @@ async function fetchCryptoWindow(base: string, startMs: number, endMs: number): 
 }
 
 /** Candles 30m de FOREX/METAIS via Twelve Data (se houver chave). */
-async function fetchFxWindow(symbol: string, startMs: number, endMs: number): Promise<Candle[] | null> {
+export async function fetchFxWindow(symbol: string, startMs: number, endMs: number): Promise<Candle[] | null> {
   const key = process.env.TWELVE_DATA_API_KEY?.trim();
   if (!key) return null;
   // Aceita o sufixo da corretora (XAUUSDm): antes virava UNTRACKABLE.
