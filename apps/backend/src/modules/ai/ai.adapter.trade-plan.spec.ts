@@ -118,6 +118,42 @@ describe('AIAdapter trade-plan integrity', () => {
     }
   });
 
+  it.each(['HOLD', 'BUY', 'BROKEN_BUY'])('rejects a non-chart %s before confidence floors or plan retries', async (kind) => {
+    const response = responseFor(kind === 'BROKEN_BUY' ? 90 : 110);
+    const body = JSON.parse(response.choices[0].message.content);
+    body.is_financial_chart = false;
+    body.confidence = 0;
+    if (kind === 'HOLD') {
+      body.recommendation = 'HOLD';
+      for (const key of ['entry', 'stopLoss', 'takeProfit1', 'takeProfit2']) body.analysis[key] = null;
+    }
+    response.choices[0].message.content = JSON.stringify(body);
+    const adapter = new AIAdapter();
+    const create = jest.fn().mockResolvedValue(response);
+    withFakeOpenAi(adapter, create);
+    await expect(adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick'))
+      .rejects.toMatchObject({ code: 'non_chart_image', retriable: false });
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([true, undefined, null, 'false'])('preserves only a boolean chart classification: %s', async (value) => {
+    const response = responseFor(110);
+    const body = JSON.parse(response.choices[0].message.content);
+    if (value === undefined) delete body.is_financial_chart;
+    else body.is_financial_chart = value;
+    response.choices[0].message.content = JSON.stringify(body);
+    const adapter = new AIAdapter();
+    const create = jest.fn().mockResolvedValue(response);
+    withFakeOpenAi(adapter, create);
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(result.recommendation).toBe('BUY');
+    expect(result.analysis?.entry).toBe(100);
+    expect(result.analysis?.riskRewardTp2).toBe(4);
+    if (value === true) expect(result.rawResponse).toHaveProperty('is_financial_chart', true);
+    else expect(result.rawResponse).not.toHaveProperty('is_financial_chart');
+  });
+
   it('preserves a coherent BUY plan', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
@@ -336,4 +372,59 @@ describe('AIAdapter quick grounding stats', () => {
     const g = await adapter.buildQuickGrounding('data:image/png;base64,AA==');
     expect(g.stats).toBeNull();
   });
+});
+
+
+describe('AIAdapter Deep P1 regressions', () => {
+  const keys = ['ENABLE_RR_GUARD', 'ENABLE_NEWS_GUARD', 'ENABLE_MARKET_ENRICHMENT'] as const;
+  let saved: Array<string | undefined>;
+  beforeEach(() => {
+    saved = keys.map((key) => process.env[key]);
+    process.env.ENABLE_RR_GUARD = 'true';
+    process.env.ENABLE_NEWS_GUARD = 'false';
+  });
+  afterEach(() => keys.forEach((key, i) => {
+    if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i];
+  }));
+
+  it.each(['injected', 'unavailable', 'error', 'disabled'] as const)(
+    'preserves scaled prices and rejects non-charts in Deep with enrichment %s', async (mode) => {
+      process.env.ENABLE_MARKET_ENRICHMENT = String(mode !== 'disabled');
+      for (const isChart of [true, false]) {
+        const adapter = new AIAdapter();
+        const enrichment = jest.fn();
+        if (mode === 'error') enrichment.mockRejectedValue(new Error('synthetic enrichment failure'));
+        else enrichment.mockResolvedValue({
+          block: mode === 'injected' ? 'SYNTHETIC MARKET CONTEXT' : null,
+          assetClass: 'forex', marketContext: mode === 'injected' ? 'injected' : 'unavailable', calendar: 'no_events_returned',
+        });
+        (adapter as any).buildMarketEnrichment = enrichment;
+        const response = responseFor(108.02, {
+          symbol: 'EURUSD', currentPrice: 107.983, entry: 107.855, stopLoss: 107.7,
+          takeProfit2: 108.12, invalidationLevel: 107.72,
+        });
+        const body = JSON.parse(response.choices[0].message.content);
+        body.is_financial_chart = isChart;
+        response.choices[0].message.content = JSON.stringify(body);
+        const create = jest.fn().mockResolvedValue(response);
+        withFakeOpenAi(adapter, create);
+        const pending = adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'deep');
+        if (isChart) {
+          const result = await pending;
+          expect(result.recommendation).toBe('BUY');
+          expect(result.analysis).toMatchObject({
+            currentPrice: 107.983 * 0.01, entry: 107.855 * 0.01, stopLoss: 107.7 * 0.01,
+            takeProfit1: 108.02 * 0.01, takeProfit2: 108.12 * 0.01, invalidationLevel: 107.72 * 0.01,
+            riskRewardTp1: 1.06, riskRewardTp2: 1.71,
+          });
+          expect(result.rawResponse).toHaveProperty('is_financial_chart', true);
+        } else {
+          await expect(pending).rejects.toMatchObject({ code: 'non_chart_image', retriable: false });
+        }
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(enrichment).toHaveBeenCalledTimes(mode === 'disabled' ? 0 : 1);
+        if (mode === 'injected') expect(JSON.stringify(create.mock.calls[0][0].messages)).toContain('SYNTHETIC MARKET CONTEXT');
+      }
+    },
+  );
 });

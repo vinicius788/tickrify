@@ -835,6 +835,9 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
   );
 
   return {
+    ...(typeof parsed.is_financial_chart === 'boolean'
+      ? { is_financial_chart: parsed.is_financial_chart }
+      : {}),
     recommendation: normalizeSchemaRecommendation(parsed.recommendation),
     confidence: ensureNumber(parsed.confidence, 0),
     analysis: {

@@ -511,6 +511,32 @@ describe('AiService access enforcement', () => {
     expect(committed).toBe(false);
   });
 
+  it.each(['quick', 'deep'] as const)('preserves non_chart_image in the %s synchronous failure and serialized result', async (analysisType) => {
+    const { AIAnalysisError } = await import('./ai.adapter');
+    const error = new AIAnalysisError({ code: 'non_chart_image', message: 'Not a financial chart', retriable: false });
+    (service as any).aiAdapter.analyzeImage = jest.fn().mockRejectedValue(error);
+    prisma.analysis.update
+      .mockResolvedValueOnce({ id: 'an_1', status: 'processing' })
+      .mockResolvedValueOnce({ id: 'an_1', status: 'failed', createdAt: new Date() });
+    ticksService.refundTicks = jest.fn().mockResolvedValue(undefined);
+    await expect((service as any).processSynchronously({
+      analysisId: 'an_1', imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType, isDemo: false,
+    })).rejects.toBeInstanceOf(BadRequestException);
+    expect((service as any).aiAdapter.analyzeImage).toHaveBeenCalledTimes(1);
+    expect(prisma.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'failed', errorCode: 'non_chart_image' }),
+    }));
+    expect(prisma.analysis.update.mock.calls.some(([args]: any[]) => args.data.status === 'completed')).toBe(false);
+    expect(ticksService.refundTicks).toHaveBeenCalledWith('usr_1', analysisType === 'deep' ? 3 : 1, 'Refund: analysis failed', 'an_1');
+    const failed = prisma.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'failed')[0].data;
+    (service as any).getSignedImageUrl = jest.fn().mockResolvedValue(null);
+    (service as any).getOutcomeById = jest.fn().mockResolvedValue(null);
+    const delivered = await (service as any).serializeAnalysis({
+      id: 'an_1', ...failed, result: null, createdAt: new Date(), updatedAt: new Date(),
+    });
+    expect(delivered).toMatchObject({ status: 'failed', errorCode: 'non_chart_image', entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null });
+  });
+
   it('falha e reembolsa quando a validação prévia do caminho síncrono bloqueia', async () => {
     prisma.analysis.update
       .mockResolvedValueOnce({ id: 'an_1', status: 'processing' })

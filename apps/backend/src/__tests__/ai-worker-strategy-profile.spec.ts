@@ -247,6 +247,28 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     }));
   });
 
+  it.each(['quick', 'deep'] as const)('preserves non_chart_image from the adapter in the %s worker', async (analysisType) => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const { prismaClient, tx } = mockPaidRefund();
+    analyzeImageMock.mockRejectedValueOnce(new AIAnalysisError({
+      code: 'non_chart_image', message: 'Not a financial chart', retriable: false,
+    }));
+    await expect(processAnalysis(makeJob({
+      analysisId: 'analysis-non-chart', imageUrl: 'https://example.com/chart.png',
+      promptOverride: 'PROMPT DE TESTE', analysisType, userId: 'user-1', isDemo: false,
+    }))).rejects.toThrow('Not a financial chart');
+    expect(analyzeImageMock).toHaveBeenCalledTimes(1);
+    expect(prismaClient.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'failed', errorCode: 'non_chart_image' }),
+    }));
+    expect(prismaClient.analysis.update.mock.calls.some(([args]: any[]) => args.data.status === 'completed')).toBe(false);
+    expect(tx.userTicks.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.tickTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ type: 'REFUND', amount: analysisType === 'deep' ? 3 : 1 }),
+    }));
+  });
+
   it.each([['COMPRA', 155.334, 1.67], ['AGUARDAR', 155.324, 1.11]] as const)(
     'keeps corrected decimal prices through the worker: %s', async (recommendation, takeProfit2, r2) => {
       require('../../worker/ai.worker');
@@ -275,6 +297,60 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       expect(analysis.riskRewardTp2).toBe(recommendation === 'COMPRA' ? r2 : null);
     },
   );
+
+  it.each([true, false])('runs the real Deep adapter into the worker and serializer (financial chart=%s)', async (isChart) => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const { prismaClient } = mockPaidRefund();
+    const { AIAdapter: RealAdapter } = jest.requireActual('../modules/ai/ai.adapter');
+    const { OpenAiVisionModel } = jest.requireActual('../modules/ai/vision-model');
+    const { AiService } = jest.requireActual('../modules/ai/ai.service');
+    const adapter = new RealAdapter();
+    const raw = { is_financial_chart: isChart, recommendation: 'BUY', confidence: 70, analysis: {
+      symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.983, entry: 107.855, stopLoss: 107.7,
+      takeProfit1: 108.02, takeProfit2: 108.12, invalidationLevel: 107.72,
+      factorsPresent: 6, trendStrength: 'strong', marketStructure: { bias: 'bullish' },
+    } };
+    const create = jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(raw) } }] });
+    adapter.visionModel = new OpenAiVisionModel({ chat: { completions: { create } } });
+    adapter.buildMarketEnrichment = jest.fn().mockResolvedValue({ block: 'SYNTHETIC CONTEXT', assetClass: 'forex', marketContext: 'injected', calendar: 'no_events_returned' });
+    analyzeImageMock.mockImplementationOnce(adapter.analyzeImage.bind(adapter));
+    const oldEnrichment = process.env.ENABLE_MARKET_ENRICHMENT;
+    process.env.ENABLE_MARKET_ENRICHMENT = 'true';
+    try {
+      const pending = processAnalysis(makeJob({
+        analysisId: 'analysis-deep-p1', imageUrl: 'data:image/png;base64,AA==',
+        promptOverride: 'PROMPT DE TESTE', analysisType: 'deep', userId: 'user-1', isDemo: false,
+      }));
+      if (isChart) await pending;
+      else await expect(pending).rejects.toThrow('financial chart');
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(adapter.buildMarketEnrichment).toHaveBeenCalledTimes(1);
+      const stored = prismaClient.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === (isChart ? 'completed' : 'failed'))[0].data;
+      // Use the real API serializer on the worker-produced record, with only I/O mocked.
+      const serializer = Object.create(AiService.prototype);
+      serializer.getSignedImageUrl = jest.fn().mockResolvedValue(null);
+      serializer.getOutcomeById = jest.fn().mockResolvedValue(null);
+      const delivered = await serializer.serializeAnalysis({
+        id: 'analysis-deep-p1', ...JSON.parse(JSON.stringify(stored)),
+        ...(isChart ? {} : { result: null }), createdAt: new Date(), updatedAt: new Date(),
+      });
+      if (isChart) {
+        for (const key of ['entry', 'stopLoss', 'takeProfit1', 'takeProfit2'] as const) {
+          expect(stored.result.analysis[key]).toBe(raw.analysis[key] * 0.01);
+          expect(delivered[key]).toBe(raw.analysis[key] * 0.01);
+        }
+        expect(stored.result.analysis.invalidationLevel).toBe(107.72 * 0.01);
+        expect(delivered).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.06, riskRewardTp2: 1.71, errorCode: null });
+      } else {
+        expect(prismaClient.analysis.update.mock.calls.some(([args]: any[]) => args.data.status === 'completed')).toBe(false);
+        expect(delivered).toMatchObject({ status: 'failed', errorCode: 'non_chart_image', entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null });
+      }
+    } finally {
+      if (oldEnrichment === undefined) delete process.env.ENABLE_MARKET_ENRICHMENT;
+      else process.env.ENABLE_MARKET_ENRICHMENT = oldEnrichment;
+    }
+  });
 
   it('reembolsa uma analise paga rejeitada pela validacao final do worker', async () => {
     require('../../worker/ai.worker');
