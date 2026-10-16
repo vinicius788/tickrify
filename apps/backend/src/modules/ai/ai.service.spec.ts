@@ -272,6 +272,52 @@ describe('AiService access enforcement', () => {
     });
   });
 
+  it.each(['quick', 'deep'] as const)('round-trips %s adapter prices through mocked persistence and real serialization', async (analysisType) => {
+    const { AIAdapter } = await import('./ai.adapter');
+    const { OpenAiVisionModel } = await import('./vision-model');
+    const keys = ['ENABLE_RR_GUARD', 'ENABLE_NEWS_GUARD', 'ENABLE_QUICK_GROUNDING', 'ENABLE_MARKET_ENRICHMENT'] as const;
+    const saved = keys.map((key) => process.env[key]);
+    process.env.ENABLE_RR_GUARD = 'true';
+    process.env.ENABLE_NEWS_GUARD = 'false';
+    process.env.ENABLE_QUICK_GROUNDING = 'false';
+    process.env.ENABLE_MARKET_ENRICHMENT = 'true';
+    try {
+      const raw = { is_financial_chart: true, recommendation: 'BUY', confidence: 70, analysis: {
+        symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.983, entry: 107.855,
+        stopLoss: 107.7, takeProfit1: 108.02, takeProfit2: 108.12, invalidationLevel: 107.72,
+        factorsPresent: 6, trendStrength: 'strong', marketStructure: { bias: 'bullish' },
+      } };
+      const content = JSON.stringify(raw);
+      const create = jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content } }] });
+      const adapter = new AIAdapter();
+      (adapter as any).visionModel = new OpenAiVisionModel({ chat: { completions: { create } } } as any);
+      (adapter as any).buildMarketEnrichment = jest.fn().mockResolvedValue({ block: null, assetClass: 'forex', marketContext: 'unavailable', calendar: 'no_events_returned' });
+      (service as any).aiAdapter = adapter;
+      (service as any).getSignedImageUrl = jest.fn().mockResolvedValue(null);
+      (service as any).getOutcomeById = jest.fn().mockResolvedValue(null);
+      const row = { id: 'an_precision', status: 'pending', isDemo: false, createdAt: new Date(), updatedAt: new Date() };
+      prisma.analysis.update.mockImplementation(async ({ data }: any) => ({ ...row, ...data }));
+      const delivered = await (service as any).processSynchronously({
+        analysisId: row.id, imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType, isDemo: false,
+        intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
+      });
+      const completed = prisma.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed')[0].data;
+      expect(completed.fullResponse).toBe(content);
+      const readback = await (service as any).serializeAnalysis({ ...row, ...JSON.parse(JSON.stringify(completed)) });
+      for (const key of ['entry', 'stopLoss', 'takeProfit1', 'takeProfit2'] as const) {
+        const expected = raw.analysis[key] * 0.01;
+        expect(completed.result.analysis[key]).toBe(expected);
+        expect(delivered[key]).toBe(expected);
+        expect(readback[key]).toBe(expected);
+      }
+      expect(readback.fullResponse.analysis.invalidationLevel).toBe(107.72 * 0.01);
+      expect(readback).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.06, riskRewardTp2: 1.71, errorCode: null });
+      expect(create).toHaveBeenCalledTimes(1);
+    } finally {
+      keys.forEach((key, i) => { if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i]; });
+    }
+  });
+
   it('returns the persisted safe code on a failed analysis and tolerates old rows', async () => {
     const row = {
       id: 'an_failed', status: 'failed', recommendation: null, confidence: null,

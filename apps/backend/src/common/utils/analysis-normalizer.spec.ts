@@ -236,3 +236,39 @@ describe('canonicalFxPair', () => {
     expect(canonicalFxPair('')).toBeNull();
   });
 });
+
+
+describe('correctPriceMagnitude precision regression', () => {
+  it.each([
+    ['EURUSD', [107.983, 107.855, 107.7, 108.02, 108.12], 0.01, 'BUY', 1.06, 1.71],
+    ['USDJPY', [15531.8, 15530.4, 15528.6, 15531.6, 15533.4], 0.01, 'BUY', 0.67, 1.67],
+    ['USDJPY', [15531.8, 15530.4, 15529.6, 15531.6, 15532.4], 0.01, 'BUY', 1.5, 2.5],
+    ['USDJPY', [15530.2, 15530.4, 15532.2, 15529.2, 15527.4], 0.01, 'SELL', 0.67, 1.67],
+    ['XAUUSD', [239.5324, 237.8004, 236.3004, 239.8006, 241.0007], 10, 'BUY', 1.33, 2.13],
+    ['BTCUSD', [6300.0123, 6200.0123, 6100.0121, 6400.0126, 6500.0127], 10, 'BUY', 2, 3],
+    ['SPX', [500.012, 500.001, 499.001, 502.001, 503.001], 10, 'BUY', 2, 3],
+  ] as const)('scales %s without rounding away levels (%j)', (symbol, prices, factor, side, r1, r2) => {
+    const [currentPrice, entry, stopLoss, takeProfit1, takeProfit2] = prices;
+    const input = { currentPrice, entry, stopLoss, takeProfit1, takeProfit2, invalidationLevel: stopLoss };
+    const snapshot = { ...input };
+    const output = correctPriceMagnitude(symbol, input);
+    for (const key of Object.keys(input) as Array<keyof typeof input>) {
+      expect(output[key]).toBe(input[key] * factor);
+    }
+    expect(input).toEqual(snapshot);
+    expect(output.entry).not.toBe(output.stopLoss);
+    expect(computeRiskReward(output.entry, output.stopLoss, output.takeProfit1, side)).toBe(r1);
+    expect(computeRiskReward(output.entry, output.stopLoss, output.takeProfit2, side)).toBe(r2);
+  });
+
+  it.each([0, -1, NaN, Infinity, -Infinity, 1e20])('leaves uncorrectable currentPrice %s unchanged', (currentPrice) => {
+    const input = { currentPrice, entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null, invalidationLevel: null };
+    expect(correctPriceMagnitude('EURUSD', input)).toBe(input);
+  });
+
+  it('preserves null and nonfinite levels and skips unknown symbols', () => {
+    const input = { currentPrice: 107.983, entry: null, stopLoss: NaN, takeProfit1: Infinity, takeProfit2: -Infinity, invalidationLevel: null };
+    expect(correctPriceMagnitude('UNKNOWN', input)).toBe(input);
+    expect(correctPriceMagnitude('EURUSD', input)).toEqual({ ...input, currentPrice: input.currentPrice * 0.01 });
+  });
+});

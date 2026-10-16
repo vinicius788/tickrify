@@ -268,7 +268,7 @@ export function correctPriceMagnitude<T extends PriceLevels>(symbol: string, lev
   }
 
   const scale = (v: number | null): number | null =>
-    v == null || !Number.isFinite(v) ? v : Math.round(v * (factor as number) * 100) / 100;
+    v == null || !Number.isFinite(v) ? v : v * (factor as number);
 
   return {
     ...levels,

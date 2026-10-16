@@ -133,6 +133,16 @@ import type { StrategyProfile } from '../common/strategy/strategy-profile';
 
 describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () => {
   const analyzeImageMock = jest.fn().mockRejectedValue(new Error('stop-after-capture'));
+  let savedRrGuard: string | undefined;
+  beforeEach(() => {
+    savedRrGuard = process.env.ENABLE_RR_GUARD;
+    process.env.ENABLE_RR_GUARD = 'true';
+  });
+  afterEach(() => {
+    if (savedRrGuard === undefined) delete process.env.ENABLE_RR_GUARD;
+    else process.env.ENABLE_RR_GUARD = savedRrGuard;
+  });
+
 
   beforeAll(() => {
     (AIAdapter as unknown as jest.Mock).mockImplementation(() => ({
@@ -236,6 +246,35 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       data: expect.objectContaining({ type: 'REFUND', amount: 1, metadata: { analysisId: 'analysis-invalid-plan' } }),
     }));
   });
+
+  it.each([['COMPRA', 155.334, 1.67], ['AGUARDAR', 155.324, 1.11]] as const)(
+    'keeps corrected decimal prices through the worker: %s', async (recommendation, takeProfit2, r2) => {
+      require('../../worker/ai.worker');
+      const processAnalysis = getProcessor();
+      const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
+      prismaClient.analysis.update.mockClear();
+      analyzeImageMock.mockResolvedValueOnce({
+        recommendation: 'BUY', confidence: 70,
+        analysis: {
+          symbol: 'USDJPY', timeframe: '30m', currentPrice: 155.318,
+          entry: 15530.4 * 0.01, stopLoss: 15528.6 * 0.01, takeProfit1: 15531.6 * 0.01, takeProfit2,
+          trendStrength: 'strong', factorsPresent: 6,
+        },
+      });
+      await processAnalysis(makeJob({
+        analysisId: 'analysis-precision', imageUrl: 'https://example.com/chart.png',
+        promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: true,
+      }));
+      const completed = prismaClient.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed');
+      expect(completed).toBeDefined();
+      expect(completed[0].data.recommendation).toBe(recommendation === 'COMPRA' ? 'BUY' : 'WAIT');
+      const analysis = completed[0].data.result.analysis;
+      expect(analysis.entry).toBe(15530.4 * 0.01);
+      expect(analysis.stopLoss).toBe(15528.6 * 0.01);
+      expect(analysis.takeProfit2).toBe(takeProfit2);
+      expect(analysis.riskRewardTp2).toBe(recommendation === 'COMPRA' ? r2 : null);
+    },
+  );
 
   it('reembolsa uma analise paga rejeitada pela validacao final do worker', async () => {
     require('../../worker/ai.worker');

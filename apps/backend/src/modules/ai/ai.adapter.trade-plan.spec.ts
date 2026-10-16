@@ -90,6 +90,34 @@ describe('AIAdapter trade-plan integrity', () => {
     expect(result.recommendation).toBe('BUY');
   });
 
+  it.each([
+    [15533.4, 1.67, 'BUY', true],
+    [15532.4, 1.11, 'WAIT', true],
+    [15532.56, 1.2, 'BUY', true],
+    [15532.4, 1.11, 'BUY', false],
+  ] as const)('keeps scaled R and the existing guard: TP2=%s, R2=%s, decision=%s, guard=%s', async (takeProfit2, r2, decision, enabled) => {
+    const oldRr = process.env.ENABLE_RR_GUARD;
+    process.env.ENABLE_RR_GUARD = String(enabled);
+    try {
+      const adapter = new AIAdapter();
+      const create = jest.fn().mockResolvedValue(responseFor(15531.6, {
+        symbol: 'USDJPY', currentPrice: 15531.8, entry: 15530.4, stopLoss: 15528.6, takeProfit2,
+      }));
+      withFakeOpenAi(adapter, create);
+      const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(result.analysis?.entry).toBe(15530.4 * 0.01);
+      expect(result.analysis?.stopLoss).toBe(15528.6 * 0.01);
+      expect(result.analysis?.riskRewardTp1).toBe(0.67);
+      expect(result.analysis?.riskRewardTp2).toBe(r2);
+      expect(result.recommendation).toBe(decision);
+      if (decision === 'WAIT') expect(result.confidence).toBeLessThanOrEqual(45);
+    } finally {
+      if (oldRr === undefined) delete process.env.ENABLE_RR_GUARD;
+      else process.env.ENABLE_RR_GUARD = oldRr;
+    }
+  });
+
   it('preserves a coherent BUY plan', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
