@@ -33,8 +33,11 @@ describe('StripeService webhooks', () => {
   let stripe: any;
   let affiliates: any;
 
-  const deliver = (type: string, object: Record<string, unknown>, id = 'evt_1') => {
-    stripe.webhooks.constructEvent.mockReturnValue({ id, type, data: { object } });
+  /** Momento em que a Stripe criou o evento (segundos); igual em qualquer reentrega. */
+  const EVENT_CREATED = 1790000000;
+
+  const deliver = (type: string, object: Record<string, unknown>, id = 'evt_1', created = EVENT_CREATED) => {
+    stripe.webhooks.constructEvent.mockReturnValue({ id, type, created, data: { object } });
     return service.handleWebhookEvent('sig', Buffer.from('{}'));
   };
 
@@ -75,7 +78,7 @@ describe('StripeService webhooks', () => {
         findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({}),
       },
-      adminAudit: { create: jest.fn().mockResolvedValue({}) },
+      adminAudit: { create: jest.fn().mockResolvedValue({}), count: jest.fn().mockResolvedValue(0) },
     };
 
     affiliates = {
@@ -494,6 +497,103 @@ describe('StripeService webhooks', () => {
       );
     });
 
+    it('payment_succeeded leva plano e perfil do cartao quando a Stripe devolve', async () => {
+      stripe.invoices = {
+        retrieve: jest.fn().mockResolvedValue({
+          payment_intent: {
+            latest_charge: { created: 1790100000, payment_method_details: { card: { country: 'US', funding: 'debit', brand: 'mastercard', wallet: null } } },
+          },
+        }),
+      };
+
+      await deliver('invoice.payment_succeeded', invoice({ attempt_count: 1 }));
+
+      const call = (captureServer as jest.Mock).mock.calls.find((c) => c[1] === 'payment_succeeded');
+      expect(call[2]).toEqual(
+        expect.objectContaining({ priceId: STARTER_MONTHLY, attemptCount: 1, cardCountry: 'US', cardFunding: 'debit', cardBrand: 'mastercard', cardWallet: null }),
+      );
+      expect((captureServer as jest.Mock).mock.calls.some((c) => c[1] === 'payment_recovered')).toBe(false);
+    });
+
+    it('pagou so na 3a tentativa: emite payment_recovered uma vez por fatura', async () => {
+      await deliver('invoice.payment_succeeded', invoice({ attempt_count: 3, amount_paid: 2900, currency: 'usd' }));
+
+      const recovered = (captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'payment_recovered');
+      expect(recovered).toHaveLength(1);
+      expect(recovered[0][2]).toEqual(expect.objectContaining({ invoiceId: 'in_1', attemptCount: 3, value: 29, currency: 'USD' }));
+      expect(recovered[0][2]).toEqual(expect.objectContaining({ detectedBy: 'attempt_count' }));
+      expect(recovered[0][3]).toEqual(expect.objectContaining({ dedupeKey: 'payment_recovered:in_1' }));
+      // Ja ha prova pela Stripe: nao precisa consultar o historico.
+      expect(prisma.adminAudit.count).not.toHaveBeenCalled();
+    });
+
+    it('cartao atualizado no portal (attempt_count continua 1): recuperacao vem do registro da falha desta fatura', async () => {
+      prisma.adminAudit.count.mockResolvedValue(1);
+
+      await deliver('invoice.payment_succeeded', invoice({ attempt_count: 1, amount_paid: 2900, currency: 'usd' }));
+
+      expect(prisma.adminAudit.count).toHaveBeenCalledWith({
+        where: { action: 'stripe_payment_failed', targetUserId: 'usr_1', details: { path: ['invoiceId'], equals: 'in_1' } },
+      });
+      const recovered = (captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'payment_recovered');
+      expect(recovered).toHaveLength(1);
+      expect(recovered[0][2]).toEqual(expect.objectContaining({ invoiceId: 'in_1', attemptCount: 1, detectedBy: 'failure_record', value: 29 }));
+    });
+
+    it('fatura que nunca falhou (1o pagamento, conversao de trial, renovacao normal) NAO e recuperacao', async () => {
+      prisma.adminAudit.count.mockResolvedValue(0);
+
+      await deliver('invoice.payment_succeeded', invoice({ billing_reason: 'subscription_create', attempt_count: 1, amount_paid: 2900 }));
+      await deliver('invoice.payment_succeeded', invoice({ id: 'in_2', attempt_count: 1, amount_paid: 2900 }), 'evt_2');
+
+      expect((captureServer as jest.Mock).mock.calls.some((c) => c[1] === 'payment_recovered')).toBe(false);
+      expect((captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'payment_succeeded')).toHaveLength(2);
+    });
+
+    it('falha na consulta do historico: nao inventa recuperacao e o pagamento segue normal', async () => {
+      prisma.adminAudit.count.mockRejectedValue(new Error('banco indisponivel'));
+
+      await deliver('invoice.payment_succeeded', invoice({ attempt_count: 1, amount_paid: 2900 }));
+
+      expect((captureServer as jest.Mock).mock.calls.some((c) => c[1] === 'payment_recovered')).toBe(false);
+      expect((captureServer as jest.Mock).mock.calls.some((c) => c[1] === 'payment_succeeded')).toBe(true);
+      expect(prisma.userTicks.upsert).toHaveBeenCalled();
+    });
+
+    it('webhook reentregue: a recuperacao sai com o MESMO uuid e o MESMO timestamp, nunca duas vezes diferentes', async () => {
+      prisma.adminAudit.count.mockResolvedValue(1);
+      const paid = invoice({ attempt_count: 1, amount_paid: 2900, status_transitions: { paid_at: 1790000500 } });
+
+      await deliver('invoice.payment_succeeded', paid);
+      await deliver('invoice.payment_succeeded', paid);
+
+      const recovered = (captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'payment_recovered');
+      expect(recovered).toHaveLength(2); // o PostHog descarta a 2a pelo uuid + timestamp iguais
+      expect(recovered[0][3]).toEqual(recovered[1][3]);
+      expect(recovered[0][3]).toEqual({ dedupeKey: 'payment_recovered:in_1', timestamp: new Date(1790000500 * 1000) });
+    });
+
+    it('reentrega bloqueada pelo registro de eventos nao chega a emitir de novo', async () => {
+      prisma.adminAudit.count.mockResolvedValue(1);
+      await deliver('invoice.payment_succeeded', invoice({ attempt_count: 1, amount_paid: 2900 }), 'evt_dup_paid');
+      const before = (captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'payment_recovered').length;
+
+      prisma.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ status: 'processed' }]);
+      const second = await deliver('invoice.payment_succeeded', invoice({ attempt_count: 1, amount_paid: 2900 }), 'evt_dup_paid');
+
+      expect(second).toEqual({ received: true, duplicate: true });
+      expect((captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'payment_recovered')).toHaveLength(before);
+    });
+
+    it('falha ao ler a cobranca na Stripe nao impede o evento nem os ticks', async () => {
+      stripe.invoices = { retrieve: jest.fn().mockRejectedValue(new Error('timeout')) };
+
+      await deliver('invoice.payment_succeeded', invoice());
+
+      expect((captureServer as jest.Mock).mock.calls.some((c) => c[1] === 'payment_succeeded')).toBe(true);
+      expect(prisma.userTicks.upsert).toHaveBeenCalled();
+    });
+
     it('grava o periodo de cobranca na assinatura', async () => {
       await deliver('invoice.payment_succeeded', invoice());
 
@@ -605,6 +705,32 @@ describe('StripeService webhooks', () => {
       });
     });
 
+    it('checkout.session.expired tambem vai para o PostHog, com plano, origem e cupom', async () => {
+      stripe.webhooks.constructEvent.mockReturnValue({
+        id: 'evt_exp',
+        type: 'checkout.session.expired',
+        created: 1790200000,
+        data: {
+          object: {
+            id: 'cs_exp2',
+            status: 'expired',
+            client_reference_id: 'usr_1',
+            amount_total: 2900,
+            currency: 'usd',
+            metadata: { priceId: STARTER_MONTHLY, coupon: 'EARLY35', checkoutSource: 'paywall' },
+          },
+        },
+      });
+      await service.handleWebhookEvent('sig', Buffer.from('{}'));
+
+      expect(captureServer).toHaveBeenCalledWith(
+        'clerk_1',
+        'checkout_session_expired',
+        expect.objectContaining({ sessionId: 'cs_exp2', priceId: STARTER_MONTHLY, coupon: 'EARLY35', source: 'paywall', value: 29, currency: 'USD' }),
+        { dedupeKey: 'checkout_session_expired:cs_exp2', timestamp: new Date(1790200000 * 1000) },
+      );
+    });
+
     it('checkout.session.completed entregue DUAS vezes: a segunda nao faz nada', async () => {
       prisma.$queryRaw.mockResolvedValueOnce([{ id: 'evt_dup' }]);
       await deliver('checkout.session.completed', {
@@ -653,8 +779,223 @@ describe('StripeService webhooks', () => {
         'clerk_1',
         'payment_failed',
         expect.objectContaining({ invoiceId: 'in_2' }),
-        expect.objectContaining({ dedupeKey: 'payment_failed:in_2:1' }),
+        expect.objectContaining({ dedupeKey: `payment_failed:in_2:1:${EVENT_CREATED}` }),
       );
+    });
+
+    it('o evento do PostHog leva o motivo da recusa (failureCode e declineCode) lido da Stripe', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'past_due' }));
+      stripe.invoices = {
+        retrieve: jest.fn().mockResolvedValue({
+          payment_intent: { last_payment_error: { code: 'card_declined', decline_code: 'insufficient_funds' } },
+        }),
+      };
+
+      await deliver('invoice.payment_failed', {
+        id: 'in_3',
+        customer: 'cus_1',
+        parent: { subscription_details: { subscription: 'sub_1', metadata: {} }, type: 'subscription_details' },
+        amount_due: 2900,
+        currency: 'usd',
+        attempt_count: 2,
+        billing_reason: 'subscription_cycle',
+      });
+
+      expect(captureServer).toHaveBeenCalledWith(
+        'clerk_1',
+        'payment_failed',
+        expect.objectContaining({ invoiceId: 'in_3', failureCode: 'card_declined', declineCode: 'insufficient_funds' }),
+        expect.objectContaining({ dedupeKey: `payment_failed:in_3:2:${EVENT_CREATED}` }),
+      );
+    });
+
+    it('o evento leva plano, perfil do cartao, codigo da rede e a data do EVENTO de falha (nao a da fatura)', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'past_due' }));
+      stripe.invoices = {
+        retrieve: jest.fn().mockResolvedValue({
+          payment_intent: {
+            last_payment_error: {
+              code: 'card_declined',
+              decline_code: 'generic_decline',
+              network_decline_code: '51',
+              advice_code: 'try_again_later',
+            },
+            latest_charge: {
+              created: EVENT_CREATED - 4,
+              payment_method_details: { card: { country: 'BR', funding: 'credit', brand: 'visa', wallet: { type: 'apple_pay' } } },
+            },
+          },
+        }),
+      };
+
+      await deliver('invoice.payment_failed', {
+        id: 'in_4',
+        customer: 'cus_1',
+        created: 1789000000,
+        parent: { subscription_details: { subscription: 'sub_1', metadata: {} }, type: 'subscription_details' },
+        amount_due: 2900,
+        currency: 'usd',
+        attempt_count: 3,
+        billing_reason: 'subscription_cycle',
+      });
+
+      expect(stripe.invoices.retrieve).toHaveBeenCalledWith('in_4', {
+        expand: ['payment_intent', 'payment_intent.latest_charge'],
+      });
+      const call = (captureServer as jest.Mock).mock.calls.find((c) => c[1] === 'payment_failed');
+      expect(call[2]).toEqual(
+        expect.objectContaining({
+          priceId: STARTER_MONTHLY,
+          declineCode: 'generic_decline',
+          networkDeclineCode: '51',
+          adviceCode: 'try_again_later',
+          cardCountry: 'BR',
+          cardFunding: 'credit',
+          cardBrand: 'visa',
+          cardWallet: 'apple_pay',
+        }),
+      );
+      expect(call[3].timestamp).toEqual(new Date(EVENT_CREATED * 1000));
+    });
+
+    it('sem detalhes da Stripe o evento sai mesmo assim, com os campos nulos', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'past_due' }));
+      stripe.invoices = { retrieve: jest.fn().mockRejectedValue(new Error('stripe fora do ar')) };
+
+      await deliver('invoice.payment_failed', {
+        id: 'in_5',
+        customer: 'cus_1',
+        parent: { subscription_details: { subscription: 'sub_1', metadata: {} }, type: 'subscription_details' },
+        amount_due: 2900,
+        currency: 'usd',
+        attempt_count: 1,
+        billing_reason: 'subscription_cycle',
+      });
+
+      const call = (captureServer as jest.Mock).mock.calls.find((c) => c[1] === 'payment_failed');
+      expect(call[2]).toEqual(expect.objectContaining({ declineCode: null, cardCountry: null, cardWallet: null }));
+      expect(call[3].timestamp).toEqual(new Date(EVENT_CREATED * 1000));
+    });
+
+    it('webhook atrasado: cobranca mais nova que o evento e de OUTRA tentativa, entao motivo e cartao ficam nulos', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'past_due' }));
+      stripe.invoices = {
+        retrieve: jest.fn().mockResolvedValue({
+          payment_intent: {
+            last_payment_error: { code: 'card_declined', decline_code: 'do_not_honor' },
+            latest_charge: {
+              created: EVENT_CREATED + 3 * 86400, // retentativa 3 dias depois
+              payment_method_details: { card: { country: 'BR', funding: 'credit', brand: 'visa', wallet: null } },
+            },
+          },
+        }),
+      };
+
+      await deliver('invoice.payment_failed', {
+        id: 'in_6',
+        customer: 'cus_1',
+        parent: { subscription_details: { subscription: 'sub_1', metadata: {} }, type: 'subscription_details' },
+        amount_due: 2900,
+        currency: 'usd',
+        attempt_count: 1,
+        billing_reason: 'subscription_cycle',
+      });
+
+      const call = (captureServer as jest.Mock).mock.calls.find((c) => c[1] === 'payment_failed');
+      expect(call[2]).toEqual(
+        expect.objectContaining({ failureCode: null, declineCode: null, cardCountry: null, cardBrand: null }),
+      );
+      expect(call[3].timestamp).toEqual(new Date(EVENT_CREATED * 1000));
+    });
+
+    it('a data nao depende do relogio: processar de novo depois produz o MESMO uuid e o MESMO timestamp', async () => {
+      jest.useFakeTimers({ now: new Date('2026-10-21T10:00:00Z'), doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+      try {
+        stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'past_due' }));
+        const failed = {
+          id: 'in_7',
+          customer: 'cus_1',
+          parent: { subscription_details: { subscription: 'sub_1', metadata: {} }, type: 'subscription_details' },
+          amount_due: 2900,
+          currency: 'usd',
+          attempt_count: 2,
+          billing_reason: 'subscription_cycle',
+        };
+
+        await deliver('invoice.payment_failed', failed);
+        jest.setSystemTime(new Date('2026-10-23T18:30:00Z'));
+        await deliver('invoice.payment_failed', failed);
+
+        const calls = (captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'payment_failed');
+        expect(calls).toHaveLength(2);
+        expect(calls[0][3]).toEqual(calls[1][3]);
+        expect(calls[0][3]).toEqual({
+          dedupeKey: `payment_failed:in_7:2:${EVENT_CREATED}`,
+          timestamp: new Date(EVENT_CREATED * 1000),
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    describe('chave de deduplicacao do payment_failed', () => {
+      const failedInvoice = (attemptCount: number) => ({
+        id: 'in_8',
+        customer: 'cus_1',
+        parent: { subscription_details: { subscription: 'sub_1', metadata: {} }, type: 'subscription_details' },
+        amount_due: 2900,
+        currency: 'usd',
+        attempt_count: attemptCount,
+        billing_reason: 'subscription_cycle',
+      });
+      const failedKeys = () =>
+        (captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'payment_failed').map((c) => c[3].dedupeKey);
+
+      beforeEach(() => {
+        stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'past_due' }));
+      });
+
+      it('reentrega do MESMO evento gera a mesma chave', async () => {
+        await deliver('invoice.payment_failed', failedInvoice(1), 'evt_f1', 1790000000);
+        await deliver('invoice.payment_failed', failedInvoice(1), 'evt_f1', 1790000000);
+
+        const keys = failedKeys();
+        expect(keys).toHaveLength(2);
+        expect(keys[0]).toBe(keys[1]);
+        expect(keys[0]).toBe('payment_failed:in_8:1:1790000000');
+      });
+
+      it('duas falhas manuais da mesma fatura (mesmo attempt_count, event.created diferente) geram chaves diferentes', async () => {
+        await deliver('invoice.payment_failed', failedInvoice(1), 'evt_f1', 1790000000);
+        await deliver('invoice.payment_failed', failedInvoice(1), 'evt_f2', 1790003600); // 1h depois, mesmo dia
+
+        const [first, second] = failedKeys();
+        expect(first).not.toBe(second);
+        expect(first).toBe('payment_failed:in_8:1:1790000000');
+        expect(second).toBe('payment_failed:in_8:1:1790003600');
+      });
+
+      it('retentativas automaticas seguem distintas: attempt_count 1, 2 e 3 em dias diferentes', async () => {
+        await deliver('invoice.payment_failed', failedInvoice(1), 'evt_a1', 1790000000);
+        await deliver('invoice.payment_failed', failedInvoice(2), 'evt_a2', 1790000000 + 86400);
+        await deliver('invoice.payment_failed', failedInvoice(3), 'evt_a3', 1790000000 + 3 * 86400);
+
+        const keys = failedKeys();
+        expect(new Set(keys).size).toBe(3);
+        expect(keys).toEqual([
+          'payment_failed:in_8:1:1790000000',
+          `payment_failed:in_8:2:${1790000000 + 86400}`,
+          `payment_failed:in_8:3:${1790000000 + 3 * 86400}`,
+        ]);
+      });
+
+      it('o uuid que o PostHog recebe muda quando a chave muda (e e igual na reentrega)', async () => {
+        const { uuidFromKey } = jest.requireActual('../../common/analytics/posthog');
+        const a = uuidFromKey('payment_failed:in_8:1:1790000000');
+        const b = uuidFromKey('payment_failed:in_8:1:1790003600');
+        expect(a).not.toBe(b);
+        expect(uuidFromKey('payment_failed:in_8:1:1790000000')).toBe(a);
+      });
     });
   });
 

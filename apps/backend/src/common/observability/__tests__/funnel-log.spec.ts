@@ -7,6 +7,16 @@ describe('funnel-log', () => {
     );
   });
 
+  it('metodos de pagamento da sessao e a configuracao do painel entram na linha', () => {
+    expect(
+      formatFunnelLine('checkout_session_created', {
+        session: 'cs_1',
+        paymentMethodTypes: 'card,link',
+        paymentMethodConfig: 'pmc_1',
+      }),
+    ).toBe('[funnel] stage=checkout_session_created session=cs_1 paymentMethodTypes=card,link paymentMethodConfig=pmc_1');
+  });
+
   it('nunca deixa passar chave nem e-mail, venha no campo que vier', () => {
     const line = formatFunnelLine('checkout_failed', {
       message: 'Invalid API Key provided: sk_live_51ABCdef for ana@example.com with whsec_abc123',

@@ -39,6 +39,24 @@ type AttributionRecord = Record<string, unknown>;
 
 type CheckoutResult = { sessionId: string; url: string; reused: boolean };
 
+/** Motivo da recusa e perfil do cartao de uma cobranca (so analytics, nunca dado de cartao). */
+type InvoiceAttemptDetails = {
+  declineCode: string | null;
+  failureCode: string | null;
+  networkDeclineCode: string | null;
+  adviceCode: string | null;
+  cardCountry: string | null;
+  cardFunding: string | null;
+  cardBrand: string | null;
+  cardWallet: string | null;
+};
+
+/**
+ * Folga entre o evento de falha e a cobranca que o originou (a cobranca nasce
+ * segundos antes do evento). Uma cobranca mais nova que isso e de outra tentativa.
+ */
+const ATTEMPT_MATCH_TOLERANCE_MS = 60 * 1000;
+
 /** Link/cupom de afiliado guardado no navegador, conferido no servidor antes do checkout. */
 export type CheckoutReferral = { code: string; kind: ReferralKind; clickId?: string | null };
 
@@ -577,6 +595,11 @@ export class StripeService implements OnModuleInit {
           source,
           amount: (session.amount_total ?? 0) / 100,
           currency,
+          // O que a Stripe ofereceu de fato (sem `payment_method_types` na
+          // criacao, quem decide e a configuracao do painel). Carteiras como
+          // Apple Pay e Google Pay aparecem como `card`.
+          paymentMethodTypes: session.payment_method_types?.join(','),
+          paymentMethodConfig: session.payment_method_configuration_details?.id,
           durationMs: Date.now() - startedAt,
         },
         { persist: this.prisma },
@@ -1099,7 +1122,7 @@ export class StripeService implements OnModuleInit {
         await this.handleInvoicePaymentSucceeded(event.data.object as Stripe.Invoice);
         return;
       case 'invoice.payment_failed':
-        await this.handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
+        await this.handleInvoicePaymentFailed(event.data.object as Stripe.Invoice, event.created);
         return;
       // Os dois abaixo so chegam se estiverem marcados no endpoint da Stripe.
       // Recusa DENTRO da pagina de checkout nao gera fatura: sem este evento,
@@ -1135,6 +1158,21 @@ export class StripeService implements OnModuleInit {
           'checkout_returned',
           { user: expiredUser, session: expired.id, outcome: 'expired', status: expired.status },
           { persist: expiredUser ? this.prisma : undefined },
+        );
+        // O abandono do checkout hospedado so existia no log do Render: sem o
+        // evento no PostHog nao da para ver quantos abriram e deixaram expirar.
+        await this.captureForUser(
+          expiredUser,
+          'checkout_session_expired',
+          {
+            sessionId: expired.id,
+            priceId: expired.metadata?.priceId ?? null,
+            coupon: expired.metadata?.coupon || null,
+            source: expired.metadata?.checkoutSource ?? null,
+            value: (expired.amount_total ?? 0) / 100,
+            currency: String(expired.currency || 'usd').toUpperCase(),
+          },
+          { dedupeKey: `checkout_session_expired:${expired.id}`, timestamp: new Date(event.created * 1000) },
         );
         return;
       }
@@ -1661,6 +1699,7 @@ export class StripeService implements OnModuleInit {
 
     // Receita confirmada (primeira cobranca e renovacoes). So o backend emite.
     const paidAt = invoice.status_transitions?.paid_at ?? invoice.created;
+    const attempt = await this.invoiceAttemptDetails(invoice.id);
     // 1a cobranca de quem estava no trial de 3 dias: encerra como convertido.
     const trialDay =
       invoice.billing_reason === 'subscription_create'
@@ -1675,11 +1714,42 @@ export class StripeService implements OnModuleInit {
         billingReason: invoice.billing_reason ?? null,
         value: (invoice.amount_paid ?? 0) / 100,
         currency: String(invoice.currency || 'usd').toUpperCase(),
+        attemptCount: invoice.attempt_count ?? null,
+        priceId: synced.subscription.items?.data?.[0]?.price?.id ?? null,
+        billingInterval: synced.subscription.items?.data?.[0]?.price?.recurring?.interval ?? null,
+        cardCountry: attempt.cardCountry,
+        cardFunding: attempt.cardFunding,
+        cardBrand: attempt.cardBrand,
+        cardWallet: attempt.cardWallet,
         ...(trialDay !== null ? { trial_day_at_conversion: trialDay } : {}),
         $set: { is_subscriber: true },
       },
       { dedupeKey: `payment_succeeded:${invoice.id}`, timestamp: new Date(paidAt * 1000) },
     );
+    // Pagou depois de uma recusa: mede se Smart Retries e troca de cartao salvam
+    // receita. `attempt_count` sozinho nao basta: a Stripe so o incrementa nas
+    // retentativas AUTOMATICAS, e quem atualiza o cartao no portal paga com
+    // tentativa manual (continua em 1). Por isso a falha tambem e conferida no
+    // registro que o webhook de falha grava (AdminAudit), por fatura. Sem uma
+    // das duas provas nao ha recuperacao: o 1o pagamento e a conversao de trial
+    // nunca entram.
+    const recoveredBy = await this.recoveryEvidence(invoice, synced.userId);
+    if (recoveredBy) {
+      await this.captureForUser(
+        synced.userId,
+        'payment_recovered',
+        {
+          invoiceId: invoice.id,
+          subscriptionId,
+          attemptCount: invoice.attempt_count ?? null,
+          detectedBy: recoveredBy,
+          billingReason: invoice.billing_reason ?? null,
+          value: (invoice.amount_paid ?? 0) / 100,
+          currency: String(invoice.currency || 'usd').toUpperCase(),
+        },
+        { dedupeKey: `payment_recovered:${invoice.id}`, timestamp: new Date(paidAt * 1000) },
+      );
+    }
     // Renovacao (2a cobranca em diante): evento proprio para o funil de retencao.
     if (invoice.billing_reason === 'subscription_cycle') {
       await this.captureForUser(
@@ -1723,6 +1793,101 @@ export class StripeService implements OnModuleInit {
     await this.affiliates.recordInvoiceCommission(invoice, synced.userId);
   }
 
+  /**
+   * Prova de que esta fatura paga ja tinha falhado antes, ou null.
+   * - `attempt_count`: > 1 so acontece depois de uma falha (retentativa automatica).
+   * - `failure_record`: o webhook de falha desta MESMA fatura foi gravado no
+   *   AdminAudit (cobre a atualizacao manual do cartao, que nao incrementa
+   *   `attempt_count`).
+   * Se a consulta falhar, so vale a primeira prova: nunca se inventa recuperacao.
+   * Limite conhecido: uma falha anterior ao registro no AdminAudit (ou um
+   * `invoice.payment_succeeded` que chegue ANTES do `payment_failed`) nao e vista.
+   */
+  private async recoveryEvidence(
+    invoice: Stripe.Invoice,
+    userId: string,
+  ): Promise<'attempt_count' | 'failure_record' | null> {
+    if ((invoice.attempt_count ?? 0) > 1) return 'attempt_count';
+    if ((invoice.amount_paid ?? 0) <= 0) return null;
+    try {
+      const failures = await this.prisma.adminAudit.count({
+        where: {
+          action: 'stripe_payment_failed',
+          targetUserId: userId,
+          details: { path: ['invoiceId'], equals: invoice.id },
+        },
+      });
+      return failures > 0 ? 'failure_record' : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Detalhes da cobranca de uma fatura, so para analytics: motivo da recusa e
+   * perfil do cartao (pais, tipo, bandeira, carteira). Nunca numero, validade
+   * nem nome. Uma chamada a Stripe; qualquer falha devolve tudo nulo, porque
+   * isso nunca pode derrubar o webhook.
+   *
+   * `attemptNotAfter` (so no webhook de FALHA): a Stripe devolve a fatura como
+   * ela esta AGORA, entao com o webhook atrasado a ultima cobranca pode ser de
+   * uma retentativa posterior. Se a cobranca e mais nova que o evento, o motivo
+   * e o cartao nao sao desta tentativa e voltam nulos, em vez de atribuidos a
+   * tentativa errada.
+   */
+  private async invoiceAttemptDetails(
+    invoiceId: string,
+    attemptNotAfter?: Date,
+  ): Promise<InvoiceAttemptDetails> {
+    const empty: InvoiceAttemptDetails = {
+      declineCode: null,
+      failureCode: null,
+      networkDeclineCode: null,
+      adviceCode: null,
+      cardCountry: null,
+      cardFunding: null,
+      cardBrand: null,
+      cardWallet: null,
+    };
+    try {
+      const expanded = await this.getStripeClient().invoices.retrieve(invoiceId, {
+        expand: ['payment_intent', 'payment_intent.latest_charge'],
+      });
+      const pi = expanded.payment_intent as Stripe.PaymentIntent | string | null;
+      if (!pi || typeof pi === 'string') return empty;
+
+      // `network_decline_code` e `advice_code` existem na API, mas nao nos
+      // tipos do SDK 14.x.
+      const err = pi.last_payment_error as
+        | (Stripe.PaymentIntent.LastPaymentError & {
+            network_decline_code?: string | null;
+            advice_code?: string | null;
+          })
+        | null;
+      const charge = pi.latest_charge && typeof pi.latest_charge !== 'string' ? pi.latest_charge : null;
+      if (
+        attemptNotAfter &&
+        charge &&
+        charge.created * 1000 > attemptNotAfter.getTime() + ATTEMPT_MATCH_TOLERANCE_MS
+      ) {
+        return empty;
+      }
+      const card = charge?.payment_method_details?.card ?? null;
+      return {
+        declineCode: err?.decline_code ?? null,
+        failureCode: err?.code ?? null,
+        networkDeclineCode: err?.network_decline_code ?? null,
+        adviceCode: err?.advice_code ?? null,
+        cardCountry: card?.country ?? null,
+        cardFunding: card?.funding ?? null,
+        cardBrand: card?.brand ?? null,
+        cardWallet: card?.wallet?.type ?? null,
+      };
+    } catch {
+      return empty;
+    }
+  }
+
   private refId(ref: string | { id: string } | null | undefined): string | null {
     if (!ref) return null;
     return typeof ref === 'string' ? ref : ref.id ?? null;
@@ -1734,7 +1899,7 @@ export class StripeService implements OnModuleInit {
    * AdminAudit, alem do log. Antes marcava todas as assinaturas do usuario
    * como `past_due`, inclusive as canceladas, e nao guardava nada.
    */
-  private async handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
+  private async handleInvoicePaymentFailed(invoice: Stripe.Invoice, eventCreated: number) {
     const { subscriptionId, userIdHint } = this.invoiceSubscriptionRef(invoice);
     const synced = subscriptionId
       ? await this.syncSubscriptionFromStripe(subscriptionId, { userIdHint })
@@ -1755,20 +1920,10 @@ export class StripeService implements OnModuleInit {
       customerId: String(invoice.customer || ''),
     };
 
-    // Motivo da recusa (codigo e decline_code da Stripe, nunca dado de cartao).
-    // Uma chamada a mais, so em falha, e nunca derruba o webhook.
-    let declineCode: string | null = null;
-    let failureCode: string | null = null;
-    try {
-      const expanded = await this.getStripeClient().invoices.retrieve(invoice.id, { expand: ['payment_intent'] });
-      const pi = expanded.payment_intent as Stripe.PaymentIntent | string | null;
-      if (pi && typeof pi !== 'string') {
-        declineCode = pi.last_payment_error?.decline_code ?? null;
-        failureCode = pi.last_payment_error?.code ?? null;
-      }
-    } catch {
-      /* sem motivo detalhado; o resto do registro segue */
-    }
+    // Motivo da recusa e perfil do cartao (so codigos e atributos da Stripe,
+    // nunca dado de cartao). Uma chamada a mais, so em falha, e nunca derruba o webhook.
+    const attempt = await this.invoiceAttemptDetails(invoice.id, new Date(eventCreated * 1000));
+    const { declineCode, failureCode } = attempt;
     funnelLog(
       'payment_failed',
       {
@@ -1797,10 +1952,39 @@ export class StripeService implements OnModuleInit {
 
     // Uma por tentativa de cobranca: a Stripe tenta de novo em outros dias, e
     // cada tentativa falha e um fato proprio. Reenvio do MESMO evento nao duplica.
-    await this.captureForUser(userId, 'payment_failed', details, {
-      dedupeKey: `payment_failed:${invoice.id}:${invoice.attempt_count ?? 0}`,
-      timestamp: new Date(invoice.created * 1000),
-    });
+    // O motivo (`insufficient_funds`, `do_not_honor`...) ia so para o log do
+    // Render: no PostHog a falha vinha sem causa e nao dava para separar saldo
+    // de recusa do banco. So codigos da Stripe, nunca dado de cartao.
+    // A data e a do EVENTO de falha, que a Stripe cria no momento da tentativa
+    // e repete igual em qualquer reentrega ou processamento atrasado. Nao e a
+    // de criacao da fatura (`invoice.created` e a da 1a tentativa e jogava
+    // todas as retentativas no mesmo dia) nem a da ultima cobranca (com o
+    // webhook atrasado ela pode ser de uma tentativa posterior). Sem
+    // `new Date()`: a deduplicacao do PostHog exige timestamp estavel.
+    await this.captureForUser(
+      userId,
+      'payment_failed',
+      {
+        ...details,
+        failureCode,
+        declineCode,
+        networkDeclineCode: attempt.networkDeclineCode,
+        adviceCode: attempt.adviceCode,
+        priceId: synced?.subscription.items?.data?.[0]?.price?.id ?? null,
+        cardCountry: attempt.cardCountry,
+        cardFunding: attempt.cardFunding,
+        cardBrand: attempt.cardBrand,
+        cardWallet: attempt.cardWallet,
+      },
+      {
+        // `attempt_count` sozinho nao separa duas falhas MANUAIS da mesma fatura
+        // (ele so sobe nas retentativas automaticas) e o PostHog junta eventos
+        // de mesmo uuid no mesmo dia. A data do evento distingue as tentativas e
+        // e igual em qualquer reentrega do mesmo evento.
+        dedupeKey: `payment_failed:${invoice.id}:${invoice.attempt_count ?? 0}:${eventCreated}`,
+        timestamp: new Date(eventCreated * 1000),
+      },
+    );
   }
 
   /**
