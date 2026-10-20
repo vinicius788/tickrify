@@ -12,6 +12,9 @@
  *   pnpm exec ts-node scripts/prompt-replay.ts --input ../../_local/replay-input.json
  *   pnpm exec ts-node scripts/prompt-replay.ts --input ../../_local/replay-input.json --execute
  * Sem --execute so conta casos e custo. Retomavel: pula o que ja rodou.
+ * --fill-candle-rule legacy|stop_only (padrao legacy, a regra do replay de
+ * 13/10): regra do candle do fill na medicao (outcome.sweeper.ts). Cada linha
+ * grava a regra; retomar um arquivo com outra regra e recusado.
  * O prompt nunca e gravado; so as respostas resumidas.
  */
 // Mesmas condicoes nos dois bracos: sem grounding ao vivo (o print e antigo e
@@ -27,6 +30,7 @@ import { AIAdapter } from '../src/modules/ai/ai.adapter';
 import { PromptBuilderService } from '../src/modules/prompt/prompt-builder.service';
 import { TRADING_SYSTEM_PROMPT } from '../src/common/prompts/trading-system-prompt';
 import { canonicalFxPair } from '../src/common/utils/analysis-normalizer';
+import { FILL_CANDLE_RULES, type FillCandleRule, fillCandleRuleOf } from '../src/modules/ai/accuracy.util';
 import { normalizeToBinancePerp } from '../src/modules/market/market.service';
 import {
   Candle,
@@ -51,6 +55,14 @@ interface InputRow {
   symbol: string;
 }
 type Arm = 'control' | 'v76';
+const FILL_RULE: FillCandleRule = (() => {
+  const i = process.argv.indexOf('--fill-candle-rule');
+  const value = i >= 0 ? process.argv[i + 1] : 'legacy';
+  if (!(FILL_CANDLE_RULES as readonly string[]).includes(value)) {
+    throw new Error(`--fill-candle-rule invalido: ${value} (use ${FILL_CANDLE_RULES.join(' ou ')})`);
+  }
+  return value as FillCandleRule;
+})();
 interface Done {
   id: string;
   arm: Arm;
@@ -59,6 +71,8 @@ interface Done {
   recommendation: string;
   outcome: string;
   rrTp1: number | null;
+  /** Regra do candle do fill da medicao; linhas sem o campo sao legacy. */
+  fillCandleRule?: FillCandleRule;
   error?: string;
 }
 
@@ -117,7 +131,7 @@ function measure(rec: string, analysis: any, window: Candle[] | null): { outcome
     recommendation: rec, symbol: String(analysis?.symbol || ''), entry, stopLoss, takeProfit1,
     takeProfit2: num(analysis?.takeProfit2),
   };
-  return { outcome: evaluateTrade(plan, window).outcome, rrTp1 };
+  return { outcome: evaluateTrade(plan, window, FILL_RULE).outcome, rrTp1 };
 }
 
 function summarize(rows: Done[]): void {
@@ -151,6 +165,10 @@ async function main() {
   const done: Done[] = fs.existsSync(OUT)
     ? fs.readFileSync(OUT, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
     : [];
+  const otherRule = done.find((d) => fillCandleRuleOf(d) !== FILL_RULE);
+  if (otherRule) {
+    throw new Error(`${OUT} foi medido com fillCandleRule=${fillCandleRuleOf(otherRule)}; rode com --fill-candle-rule ${fillCandleRuleOf(otherRule)} ou use outro arquivo.`);
+  }
   const doneKeys = new Set(done.filter((d) => !d.error).map((d) => `${d.id}:${d.arm}`));
   const todo = cases.flatMap((c) => (['control', 'v76'] as Arm[]).map((arm) => ({ ...c, arm }))).filter((t) => !doneKeys.has(`${t.row.id}:${t.arm}`));
 
@@ -176,11 +194,11 @@ async function main() {
       const res: any = await adapter.analyzeImage(t.row.imageUrl, prompts[t.arm], 'quick');
       const window = await windowFor(t.row, t.cls);
       const m = measure(String(res.recommendation), res.analysis, window);
-      record = { id: t.row.id, arm: t.arm, symbol: t.row.symbol, cls: t.cls, recommendation: String(res.recommendation), ...m };
+      record = { id: t.row.id, arm: t.arm, symbol: t.row.symbol, cls: t.cls, recommendation: String(res.recommendation), ...m, fillCandleRule: FILL_RULE };
     } catch (err) {
       record = {
         id: t.row.id, arm: t.arm, symbol: t.row.symbol, cls: t.cls, recommendation: 'ERROR', outcome: 'ERROR', rrTp1: null,
-        error: err instanceof Error ? err.message.slice(0, 200) : 'erro',
+        error: err instanceof Error ? err.message.slice(0, 200) : 'erro', fillCandleRule: FILL_RULE,
       };
     }
     fs.appendFileSync(OUT, `${JSON.stringify(record)}\n`);

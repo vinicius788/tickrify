@@ -50,6 +50,8 @@ interface AccuracyPayload {
   byGrounding: { before: Interval; after: Interval };
   abstention: { wait: number; total: number; rate: number | null };
   breakdown: Record<string, number>;
+  /** Regra nova do candle do fill (20/10/2026): serie a parte, fora do overall. Ausente em APIs antigas. */
+  stopOnly?: { overall: Interval; breakdown: Record<string, number> };
 }
 
 const BAND_LABEL: Record<string, string> = {
@@ -135,7 +137,7 @@ const AccuracyPage = () => {
 
     items.push({
       q: 'How is that accuracy measured?',
-      a: 'An automated sweeper runs hourly and attempts to evaluate completed analyses after 48 hours. BUY and SELL plans with available candles are scored: the entry must fill first, then the first target races the stop on 30-minute candles. A candle touching both is recorded as a loss. WAIT, incomplete plans and cases without reliable candles are reported separately rather than counted as wins or losses.',
+      a: 'An automated sweeper runs hourly and attempts to evaluate completed analyses after 48 hours. BUY and SELL plans with available candles are scored: the entry must fill first, then the first target races the stop on 30-minute candles. A candle touching both is recorded as a loss. WAIT, incomplete plans and cases without reliable candles are reported separately rather than counted as wins or losses. The headline figures use the original rule, which also counts a target touched in the same candle where the entry fills as a win; analyses scored under a later, stricter rule, where only the stop counts in that candle, are reported as a separate series and never added to the headline figures.',
     });
 
     items.push({
@@ -196,7 +198,7 @@ const AccuracyPage = () => {
         {
           '@type': 'PropertyValue',
           name: 'Hit rate',
-          description: 'Share of resolved analyses that reached target before stop, with a 95% Wilson confidence interval.',
+          description: 'Share of resolved analyses scored under the original rule that reached target before stop, with a 95% Wilson confidence interval.',
           ...(answer ? { value: answer.rate, unitText: 'PERCENT' } : {}),
         },
         {
@@ -331,7 +333,7 @@ const AccuracyPage = () => {
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="site-sym-cell">Hit rate, all resolved analyses</td>
+                      <td className="site-sym-cell">Hit rate, original scoring rule</td>
                       <td>{answer ? `${answer.rate}%` : 'Not published yet'}</td>
                       <td>
                         {answer
@@ -503,6 +505,22 @@ const AccuracyPage = () => {
                 </div>
               )}
 
+              {data.stopOnly ? (
+                <div>
+                  <h2 id="updated-rule">Updated scoring rule, separate series</h2>
+                  <p>
+                    Analyses scored under the updated rule do not count a target touched in the same 30-minute candle
+                    where the entry fills: inside that candle only the stop counts, because the order of the two is not
+                    visible on 30-minute candles. They are kept out of every figure above so the historical series stays
+                    comparable. This is a change in how outcomes are measured, not in the analyses, and it is not evidence
+                    of better or worse performance.
+                  </p>
+                  <div className="site-kpis">
+                    <Kpi interval={data.stopOnly.overall} label="Reached target before stop, updated rule" />
+                  </div>
+                </div>
+              ) : null}
+
               <h2 id="outcomes">How did every outcome resolve?</h2>
               <div className="site-chips">
                 {Object.entries(data.breakdown)
@@ -529,6 +547,12 @@ const AccuracyPage = () => {
                   Resolution rule: the entry must fill first. Then the first target races the stop on 30-minute
                   candles. If a single candle contains both the target and the stop, it is recorded as a{' '}
                   <strong>loss</strong>, the pessimistic reading.
+                </li>
+                <li>
+                  Fill candle: the headline figures use the original rule, which also counts a target touched in the
+                  same candle where the entry fills as a win, although the order inside that candle is unknown. Analyses
+                  scored under the updated rule, where only the stop counts in that candle, are reported in a separate
+                  series and never added to the headline figures.
                 </li>
                 <li>
                   Window: 48 hours. An analysis that has neither hit target nor stop by then is a TIMEOUT and is

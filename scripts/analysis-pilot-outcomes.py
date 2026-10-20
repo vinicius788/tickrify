@@ -3,6 +3,9 @@
 
 The future candles are used only for outcome scoring, never passed to the model.
 This is an offline diagnostic; historical OHLC cannot establish live fill or P&L.
+--fill-candle-rule picks the fill-candle rule of evaluate.py explicitly: "legacy"
+(default, the rule the 28/09 pilots were scored with) or "stop_only" (the
+sweeper rule once this change is deployed). The chosen rule is part of the output.
 """
 import argparse
 import importlib.util
@@ -31,7 +34,7 @@ def rows_from_name(name):
     return {row["id"]: row for row in rows}
 
 
-def score(row, sample, candles, evaluator):
+def score(row, sample, candles, evaluator, fill_candle_rule):
     if row.get("error"):
         return {"outcome": "ERROR", "r": 0}
     action = row.get("recommendation")
@@ -47,7 +50,8 @@ def score(row, sample, candles, evaluator):
     window = candles[sample["cutIndex"]:sample["cutIndex"] + evaluator.HORIZON]
     if len(window) != evaluator.HORIZON:
         raise ValueError(f"Future candle window incomplete: {sample['id']}")
-    outcome, _, _ = evaluator.evaluate_trade(action, window, entry, stop, tp1, tp2)
+    outcome, _, _ = evaluator.evaluate_trade(action, window, entry, stop, tp1, tp2,
+                                             fill_candle_rule=fill_candle_rule)
     reward_r = abs(tp1 - entry) / abs(entry - stop)
     return {"outcome": outcome, "r": reward_r if outcome == "WIN" else -1 if outcome == "LOSS" else 0}
 
@@ -65,7 +69,7 @@ def summarize(scores):
     }
 
 
-def compare(baseline_name, candidate_name):
+def compare(baseline_name, candidate_name, fill_candle_rule):
     baseline = rows_from_name(baseline_name)
     candidate = rows_from_name(candidate_name)
     manifest = {case["id"]: case for case in json.loads((ROOT / "pilot-manifest.json").read_text())["cases"]}
@@ -91,11 +95,12 @@ def compare(baseline_name, candidate_name):
         transitions[(pair[0].get("recommendation") or "ERROR", pair[1].get("recommendation") or "ERROR")] += 1
         candle_window = series[(case["symbol"], case["interval"])]
         for arm, row in zip(("baseline", "candidate"), pair):
-            result = score(row, sample, candle_window, evaluator)
+            result = score(row, sample, candle_window, evaluator, fill_candle_rule)
             for bucket in ("all", case["mode"], case["assetClass"]):
                 scored[arm][bucket].append(result)
     return {
         "scope": "Offline 96-candle historical proxy, conservative same-candle loss; no spread, slippage, or live execution",
+        "fillCandleRule": fill_candle_rule,
         "arms": {arm: {bucket: summarize(items) for bucket, items in groups.items()}
                  for arm, groups in scored.items()},
         "signalTransitions": {f"{a}->{b}": count for (a, b), count in sorted(transitions.items())},
@@ -106,8 +111,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", required=True)
     parser.add_argument("--candidate", required=True)
+    parser.add_argument("--fill-candle-rule", choices=("legacy", "stop_only"), default="legacy")
     args = parser.parse_args()
     try:
-        print(json.dumps(compare(args.baseline, args.candidate), indent=2))
+        print(json.dumps(compare(args.baseline, args.candidate, args.fill_candle_rule), indent=2))
     except (ValueError, KeyError, FileNotFoundError) as error:
         parser.exit(1, f"Pilot outcome audit failed: {error}\n")

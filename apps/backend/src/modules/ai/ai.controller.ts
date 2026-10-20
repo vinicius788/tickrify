@@ -32,9 +32,12 @@ import { SetFavoriteDto } from './dto/set-favorite.dto';
 import { SetStrategyDto } from './dto/set-strategy.dto';
 import {
   AUTOMATIC_OUTCOMES,
+  FILL_CANDLE_RULE,
   GROUNDING_LIVE_SINCE,
   PUBLIC_SCORED_OUTCOMES,
+  breakdownOf,
   confidenceBand,
+  splitByFillCandleRule,
   tally,
   type ConfidenceBand,
   type OutcomeRow,
@@ -370,17 +373,16 @@ export class AiController {
       return this.accuracyCache.payload;
     }
 
-    // O select devolve exatamente o shape de OutcomeRow — sem cast.
-    const rows: OutcomeRow[] = await this.prisma.analysis.findMany({
+    const allRows: OutcomeRow[] = await this.prisma.analysis.findMany({
       where: { outcome: { in: [...AUTOMATIC_OUTCOMES] }, isDemo: false, strategyHash: null },
-      select: { outcome: true, confidence: true, createdAt: true, promptVer: true, model: true },
+      select: { outcome: true, confidence: true, createdAt: true, promptVer: true, model: true, outcomeDetail: true },
     });
+    // Regra do candle do fill (decisao de 20/10/2026): tudo que a resposta ja
+    // tinha (overall e cortes) e calculado so com as linhas `legacy`, o historico
+    // comparavel. As linhas `stop_only` vao so para `stopOnly`, sem se misturar.
+    const { legacy: rows, stop_only: stopOnlyRows } = splitByFillCandleRule(allRows);
 
-    const breakdown: Record<string, number> = {};
-    for (const row of rows) {
-      const key = String(row.outcome);
-      breakdown[key] = (breakdown[key] || 0) + 1;
-    }
+    const breakdown = breakdownOf(rows);
 
     const bands: ConfidenceBand[] = ['below60', 'band60to69', 'band70plus', 'unknown'];
     const byConfidence = bands.map((band) => ({
@@ -432,6 +434,11 @@ export class AiController {
         rate: completedCount > 0 ? Math.round((waitCount / completedCount) * 1000) / 10 : null,
       },
       breakdown,
+      // Campos novos (20/10/2026), aditivos. `stopOnly`: a serie da regra nova do
+      // candle do fill, a parte (nunca somada ao overall). `methodology`: qual regra
+      // cada serie usa e qual o sweeper aplica nas avaliacoes novas.
+      stopOnly: { overall: tally(stopOnlyRows), breakdown: breakdownOf(stopOnlyRows) },
+      methodology: { overall: 'legacy', stopOnly: 'stop_only', newEvaluations: FILL_CANDLE_RULE },
     };
 
     this.accuracyCache = { at: Date.now(), payload };

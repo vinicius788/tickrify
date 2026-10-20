@@ -166,10 +166,12 @@ export function accuracyBlock(data) {
   const asOf = typeof data.updatedAt === 'string' ? data.updatedAt.slice(0, 10) : null;
 
   const rows = [
-    metricRow('Hit rate, all resolved analyses', data.overall),
+    metricRow('Hit rate, original scoring rule', data.overall),
     ...(Array.isArray(data.byConfidence)
       ? data.byConfidence.map((b) => metricRow(BAND_LABEL[b.band] ?? b.band, b))
       : []),
+    // Regra nova do candle do fill (20/10/2026): serie a parte, nunca somada ao overall.
+    metricRow('Hit rate, updated scoring rule (separate series)', data.stopOnly?.overall),
   ]
     .filter(Boolean)
     .join('');
@@ -226,7 +228,7 @@ export function accuracyFaqItems(data) {
     { q: 'How accurate is Tickrify?', a: accuracyAnswer(data) },
     {
       q: 'How is that accuracy measured?',
-      a: 'An automated sweeper runs hourly and scores every analysis that was completed at least 48 hours earlier against real market candles. The proposed entry must fill first, then the first target races the stop on 30-minute candles. If one candle contains both the target and the stop, it is recorded as a loss. There is no human in the loop and no selection of which trades get scored.',
+      a: 'An automated sweeper runs hourly and scores every analysis that was completed at least 48 hours earlier against real market candles. The proposed entry must fill first, then the first target races the stop on 30-minute candles. If one candle contains both the target and the stop, it is recorded as a loss. There is no human in the loop and no selection of which trades get scored. The headline figures use the original rule, which also counts a target touched in the same candle where the entry fills as a win; analyses scored under a later, stricter rule, where only the stop counts in that candle, are reported as a separate series and never added to the headline figures.',
     },
     {
       q: 'Does the AI suggest a trade on every chart?',
@@ -590,7 +592,7 @@ export function buildJsonLd({ path, copy, accuracy, offer, pricingFaq }) {
         {
           '@type': 'PropertyValue',
           name: 'Hit rate',
-          description: 'Share of resolved analyses that reached target before stop, with a 95% Wilson confidence interval.',
+          description: 'Share of resolved analyses scored under the original rule that reached target before stop, with a 95% Wilson confidence interval.',
           ...(pubOverall ? { value: accuracy.overall.rate, unitText: 'PERCENT' } : {}),
         },
         {

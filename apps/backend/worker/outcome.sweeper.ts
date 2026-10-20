@@ -28,6 +28,7 @@ import { flagBool } from '../src/common/flags/feature-flags';
 import { PrismaClient } from '@prisma/client';
 import { normalizeToBinancePerp } from '../src/modules/market/market.service';
 import { canonicalFxPair } from '../src/common/utils/analysis-normalizer';
+import { FILL_CANDLE_RULE, type FillCandleRule } from '../src/modules/ai/accuracy.util';
 
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000; // 1h
 const FIRST_SWEEP_DELAY_MS = 3 * 60 * 1000; // 3min após o boot (deixa o worker estabilizar)
@@ -139,12 +140,14 @@ export interface AfterTp1 {
 }
 
 /**
- * Corrida TP1×SL — espelho fiel do evaluate_trade() do evaluate.py.
- * Retorna o outcome e detalhes para auditoria.
+ * Corrida TP1×SL. Com `rule = 'legacy'` e o evaluate_trade() do
+ * scripts/backtest/evaluate.py com fill_candle_rule="legacy"; com `stop_only`, o
+ * mesmo com fill_candle_rule="stop_only". Retorna o outcome e detalhes para auditoria.
  */
 export function evaluateTrade(
   plan: TradePlan,
   window: Candle[],
+  rule: FillCandleRule = FILL_CANDLE_RULE,
 ): {
   outcome: Outcome;
   fillIndex: number | null;
@@ -171,6 +174,7 @@ export function evaluateTrade(
 
   // Corrida a partir do candle do fill (inclusive). SL primeiro = LOSS,
   // inclusive quando o mesmo candle toca TP e SL (convenção conservadora).
+  // stop_only: no candle do fill so o SL conta.
   let outcome: Outcome = 'TIMEOUT';
   let resolvedIndex: number | null = null;
   for (let i = fillIndex; i < window.length; i++) {
@@ -179,7 +183,7 @@ export function evaluateTrade(
       resolvedIndex = i;
       break;
     }
-    if (tpHit(window[i], plan.takeProfit1)) {
+    if ((rule === 'legacy' || i > fillIndex) && tpHit(window[i], plan.takeProfit1)) {
       outcome = 'WIN';
       resolvedIndex = i;
       break;
@@ -344,11 +348,12 @@ async function sweepWaits(prisma: PrismaClient, cutoff: Date): Promise<void> {
           takeProfit2: plan.takeProfit2,
           evaluatedOn: '30m',
           windowHours: 48,
+          fillCandleRule: FILL_CANDLE_RULE,
         };
         if (!window) {
           detail = { shadow: { ...base, outcome: 'UNTRACKABLE' } };
         } else {
-          const res = evaluateTrade(plan, window);
+          const res = evaluateTrade(plan, window, FILL_CANDLE_RULE);
           detail = {
             shadow: {
               ...base,
@@ -396,7 +401,7 @@ async function sweepTrades(prisma: PrismaClient, cutoff: Date): Promise<void> {
       const endMs = startMs + WINDOW_MS;
 
       let outcome: Outcome;
-      let detail: Record<string, unknown> = { evaluatedOn: '30m', windowHours: 48 };
+      let detail: Record<string, unknown> = { evaluatedOn: '30m', windowHours: 48, fillCandleRule: FILL_CANDLE_RULE };
 
       if (plan === null || plan === 'incoherent') {
         outcome = 'INCOMPLETE';
@@ -408,7 +413,7 @@ async function sweepTrades(prisma: PrismaClient, cutoff: Date): Promise<void> {
           outcome = 'UNTRACKABLE';
           detail.reason = `sem candles disponíveis para ${plan.symbol}`;
         } else {
-          const res = evaluateTrade(plan, window);
+          const res = evaluateTrade(plan, window, FILL_CANDLE_RULE);
           outcome = res.outcome;
           detail = {
             ...detail,

@@ -29,6 +29,15 @@ Win rate primário = WIN / (WIN + LOSS). Também reportamos WIN/(WIN+LOSS+TIMEOU
 Expectancy em R: WIN → +R:R do TP1 (calculado dos níveis), LOSS → −1,
 TIMEOUT → 0 (aprox. conservadora; sem custos de spread/slippage).
 
+Adendo de 20/10/2026 (regras acima intactas): `fill_candle_rule` explicito em
+evaluate_trade(). "legacy" e a regra acima (candle do fill que toca so o TP1 =
+WIN) e continua o padrao, para reproduzir os relatorios ja gerados. "stop_only"
+(a regra do sweeper a partir do deploy desta correcao): no candle do fill so o SL conta; o TP1
+so a partir do candle seguinte. Nenhuma das duas revela a ordem dentro do
+candle; stop_only e a leitura pessimista. Sem fill (require_fill=False) nao ha
+candle do fill e as duas regras dao o mesmo resultado. O CLI le
+BT_FILL_CANDLE_RULE (padrao legacy) e grava a regra no relatorio e no CSV.
+
 Rodar: python3 scripts/backtest/evaluate.py
 Saídas: Tickrify_Backtest_Report.md e Tickrify_Backtest_Results.csv (raiz do repo).
 """
@@ -48,6 +57,10 @@ REPORT = os.path.join(ROOT, f"Tickrify_Backtest_Report{TAG}.md")
 CSV_OUT = os.path.join(ROOT, f"Tickrify_Backtest_Results{TAG}.csv")
 
 HORIZON = 96
+FILL_CANDLE_RULES = ("legacy", "stop_only")
+FILL_CANDLE_RULE = os.environ.get("BT_FILL_CANDLE_RULE", "legacy")
+if FILL_CANDLE_RULE not in FILL_CANDLE_RULES:
+    raise SystemExit(f"BT_FILL_CANDLE_RULE invalido: {FILL_CANDLE_RULE} (use legacy ou stop_only)")
 
 
 def wilson(wins, n, z=1.96):
@@ -74,8 +87,15 @@ def touches(candle, price):
     return candle[3] <= price <= candle[2]  # low <= p <= high
 
 
-def evaluate_trade(rec, window, entry, sl, tp1, tp2, require_fill=True):
-    """Retorna (outcome, fill_idx, tp2_hit). outcome ∈ WIN/LOSS/TIMEOUT/NO_FILL."""
+def evaluate_trade(rec, window, entry, sl, tp1, tp2, require_fill=True, fill_candle_rule="legacy"):
+    """Retorna (outcome, fill_idx, tp2_hit). outcome ∈ WIN/LOSS/TIMEOUT/NO_FILL.
+
+    fill_candle_rule: "legacy" (TP1 vale no candle do fill) ou "stop_only"
+    (no candle do fill so o SL conta). Igual ao evaluateTrade() do
+    apps/backend/worker/outcome.sweeper.ts com a mesma regra.
+    """
+    if fill_candle_rule not in FILL_CANDLE_RULES:
+        raise ValueError(f"fill_candle_rule invalido: {fill_candle_rule}")
     is_buy = rec == "BUY"
 
     def sl_hit(c):
@@ -104,7 +124,7 @@ def evaluate_trade(rec, window, entry, sl, tp1, tp2, require_fill=True):
             outcome = "LOSS"
             resolved_at = idx
             break
-        if t:
+        if t and (fill_candle_rule == "legacy" or not require_fill or idx > start):
             outcome = "WIN"
             resolved_at = idx
             break
@@ -203,8 +223,10 @@ def main():
         candles = series[(r["symbol"], r["interval"])]
         i = r["cutIndex"]
         window = candles[i : i + HORIZON]
-        outcome, fill_idx, tp2_hit = evaluate_trade(rec, window, entry, sl, tp1, tp2)
-        naive_outcome, _, _ = evaluate_trade(rec, window, entry, sl, tp1, tp2, require_fill=False)
+        outcome, fill_idx, tp2_hit = evaluate_trade(rec, window, entry, sl, tp1, tp2,
+                                                    fill_candle_rule=FILL_CANDLE_RULE)
+        naive_outcome, _, _ = evaluate_trade(rec, window, entry, sl, tp1, tp2, require_fill=False,
+                                             fill_candle_rule=FILL_CANDLE_RULE)
         rr = r.get("riskRewardTp1")
         if rr is None:
             risk = abs(entry - sl)
@@ -215,6 +237,7 @@ def main():
             fillIdx=fill_idx,
             tp2Hit=tp2_hit,
             rrTp1=rr,
+            fillCandleRule=FILL_CANDLE_RULE,
         )
         counts[outcome.lower()] += 1
         evaluated.append(r)
@@ -250,6 +273,7 @@ def main():
         "+ metodologia + disclaimer (past performance ≠ future results).\n"
     )
 
+    L.append(f"Regra do candle do fill: `{FILL_CANDLE_RULE}` (ver adendo de 20/10/2026 no evaluate.py).\n")
     L.append("## 1. Win rate geral (TP1 antes do SL, com exigência de fill)\n")
     w, l, t = tally(trades)
     nf = sum(1 for r in trades if r["outcome"] == "NO_FILL")
@@ -356,7 +380,7 @@ def main():
     cols = [
         "id", "symbol", "interval", "cutTimeIso", "recommendation", "confidence",
         "rawRecommendation", "rawConfidence", "entry", "stopLoss", "takeProfit1",
-        "takeProfit2", "rrTp1", "outcome", "naiveOutcome", "fillIdx", "tp2Hit",
+        "takeProfit2", "rrTp1", "outcome", "naiveOutcome", "fillIdx", "tp2Hit", "fillCandleRule",
         "factorsPresent", "trendStrength", "marketRegime", "symbolRead",
         "timeframeRead", "currentPriceRead", "lastClose", "durationMs", "error",
     ]

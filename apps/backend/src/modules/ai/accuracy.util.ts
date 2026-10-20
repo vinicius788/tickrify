@@ -97,10 +97,36 @@ export function confidenceBand(confidence: number | null | undefined): Confidenc
   return 'below60';
 }
 
+/**
+ * Regra do candle do fill (20/10/2026), gravada em `outcomeDetail.fillCandleRule`.
+ * - `legacy`: o TP1 vale ja no candle do fill (regra ate 20/10). Linhas sem o
+ *   campo foram avaliadas assim.
+ * - `stop_only`: no candle do fill so o stop conta; o TP1 vale a partir do
+ *   candle seguinte. Em 30m nao da para saber se o TP1 daquele candle veio antes
+ *   ou depois do fill, e a metodologia publicada diz que a entrada enche
+ *   PRIMEIRO. E uma convencao pessimista, nao a ordem real: em 196 trades de
+ *   24/09 a 10/10, dentro do intervalo dado pelos candles de 1m em 190 (legacy:
+ *   4 WIN falsos, 2 LOSS pessimistas) -> 193 (stop_only: 0 WIN falso, 3 erros
+ *   pessimistas).
+ * TP1 e stop no mesmo candle DEPOIS do fill seguem LOSS nas duas regras.
+ */
+export type FillCandleRule = 'legacy' | 'stop_only';
+export const FILL_CANDLE_RULES: readonly FillCandleRule[] = ['legacy', 'stop_only'];
+/** Regra das avaliacoes novas do sweeper (trades e shadow dos WAIT). */
+export const FILL_CANDLE_RULE: FillCandleRule = 'stop_only';
+
+/** Regra de uma linha ja avaliada: sem o campo (ou com valor desconhecido) = legacy. */
+export function fillCandleRuleOf(detail: unknown): FillCandleRule {
+  const rule = (detail as { fillCandleRule?: unknown } | null | undefined)?.fillCandleRule;
+  return rule === 'stop_only' ? 'stop_only' : 'legacy';
+}
+
 export interface OutcomeRow {
   outcome: string | null;
   confidence: number | null;
   createdAt: Date;
+  /** So o `fillCandleRule` e lido (fillCandleRuleOf). */
+  outcomeDetail?: unknown;
 }
 
 /** Soma WIN/LOSS de um conjunto de linhas. */
@@ -112,4 +138,27 @@ export function tally(rows: OutcomeRow[]): Interval {
     else if (row.outcome === 'LOSS') losses += 1;
   }
   return wilson(wins, losses);
+}
+
+/**
+ * Linhas separadas pela regra do candle do fill (decisao de 20/10/2026, opcao c):
+ * a serie publica principal (`overall` e os cortes) segue so `legacy`, para o
+ * historico continuar comparavel; `stop_only` e uma serie a parte. As duas medem
+ * o mesmo evento com convencoes diferentes no candle do fill: nunca somar.
+ * Sem `fillCandleRule` (ou com valor desconhecido) = legacy.
+ */
+export function splitByFillCandleRule<T extends OutcomeRow>(rows: T[]): Record<FillCandleRule, T[]> {
+  const split: Record<FillCandleRule, T[]> = { legacy: [], stop_only: [] };
+  for (const row of rows) split[fillCandleRuleOf(row.outcomeDetail)].push(row);
+  return split;
+}
+
+/** Quantas linhas por outcome (o `breakdown` da /accuracy). */
+export function breakdownOf(rows: OutcomeRow[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const row of rows) {
+    const key = String(row.outcome);
+    out[key] = (out[key] || 0) + 1;
+  }
+  return out;
 }
