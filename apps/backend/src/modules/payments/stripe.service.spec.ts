@@ -302,10 +302,28 @@ describe('StripeService webhooks', () => {
         'clerk_1',
         'checkout_completed',
         expect.objectContaining({ checkoutSource: 'pricing', sessionId: 'cs_1' }),
-        expect.objectContaining({ dedupeKey: 'checkout_completed:cs_1' }),
+        expect.objectContaining({ dedupeKey: 'checkout_completed:cs_1', timestamp: new Date(EVENT_CREATED * 1000) }),
       );
       // O nome antigo contava a receita em dobro com o do navegador.
       expect(captureServer).not.toHaveBeenCalledWith('clerk_1', 'subscription_activated', expect.anything(), expect.anything());
+    });
+
+    it('checkout_completed usa a hora do evento e guarda a criacao da sessao em sessionCreatedAt', async () => {
+      const sessionCreated = EVENT_CREATED - 120;
+      await deliver('checkout.session.completed', session({ created: sessionCreated }));
+
+      const call = (captureServer as jest.Mock).mock.calls.find((c) => c[1] === 'checkout_completed');
+      expect(call[3].timestamp).toEqual(new Date(EVENT_CREATED * 1000));
+      expect(call[3].dedupeKey).toBe('checkout_completed:cs_1');
+      expect(call[2].sessionCreatedAt).toBe(new Date(sessionCreated * 1000).toISOString());
+    });
+
+    it('sessao sem created: sessionCreatedAt nulo e timestamp valido (nunca Invalid Date)', async () => {
+      await deliver('checkout.session.completed', session());
+
+      const call = (captureServer as jest.Mock).mock.calls.find((c) => c[1] === 'checkout_completed');
+      expect(call[2].sessionCreatedAt).toBeNull();
+      expect(Number.isNaN(call[3].timestamp.getTime())).toBe(false);
     });
 
     it('Purchase no Meta SO com pagamento confirmado, com o event_id do pixel e o contexto da sessao', async () => {

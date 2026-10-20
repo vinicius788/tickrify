@@ -1104,7 +1104,7 @@ export class StripeService implements OnModuleInit {
   private async dispatchWebhookEvent(event: Stripe.Event): Promise<void> {
     switch (event.type) {
       case 'checkout.session.completed':
-        await this.handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session);
+        await this.handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session, event.created);
         return;
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
@@ -1237,7 +1237,7 @@ export class StripeService implements OnModuleInit {
    * Stripe devolve (`active`/`trialing`), nunca por este evento sozinho: com
    * pagamento pendente a sessao completa e a assinatura nasce `incomplete`.
    */
-  private async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session) {
+  private async handleCheckoutSessionCompleted(session: Stripe.Checkout.Session, eventCreated: number) {
     if (session.mode !== 'subscription') {
       this.logger.log(`[webhook] Checkout ${session.id} em modo ${session.mode}; nada a sincronizar.`);
       return;
@@ -1303,9 +1303,15 @@ export class StripeService implements OnModuleInit {
           value: (session.amount_total ?? 0) / 100,
           currency: String(session.currency || 'usd').toUpperCase(),
           coupon: session.metadata?.coupon || null,
+          // Criacao da sessao (o timestamp do evento e a conclusao, abaixo).
+          sessionCreatedAt:
+            typeof session.created === 'number' ? new Date(session.created * 1000).toISOString() : null,
           ...this.posthogAttributionProperties(analyticsUser),
         },
-        { dedupeKey: `checkout_completed:${session.id}`, timestamp: new Date(session.created * 1000) },
+        // Timestamp = hora do evento `checkout.session.completed` (conclusao real),
+        // estavel em reentrega. Antes era `session.created`, que antecedia o
+        // `checkout_started` do navegador e quebrava funil sequencial.
+        { dedupeKey: `checkout_completed:${session.id}`, timestamp: new Date(eventCreated * 1000) },
       );
     } catch {
       /* analytics nunca pode quebrar o webhook */
