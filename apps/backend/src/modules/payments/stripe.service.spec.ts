@@ -78,7 +78,11 @@ describe('StripeService webhooks', () => {
         findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({}),
       },
-      adminAudit: { create: jest.fn().mockResolvedValue({}), count: jest.fn().mockResolvedValue(0) },
+      adminAudit: {
+        create: jest.fn().mockResolvedValue({}),
+        count: jest.fn().mockResolvedValue(0),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
     };
 
     affiliates = {
@@ -936,6 +940,91 @@ describe('StripeService webhooks', () => {
       } finally {
         jest.useRealTimers();
       }
+    });
+
+    describe('e-mail de pagamento recusado (Resend)', () => {
+      const renewalFailed = (overrides: Record<string, unknown> = {}) => ({
+        id: 'in_9',
+        customer: 'cus_1',
+        parent: { subscription_details: { subscription: 'sub_1', metadata: {} }, type: 'subscription_details' },
+        amount_due: 2900,
+        currency: 'usd',
+        attempt_count: 1,
+        billing_reason: 'subscription_cycle',
+        next_payment_attempt: 1790259200,
+        ...overrides,
+      });
+      let mail: { sendPaymentFailed: jest.Mock };
+
+      beforeEach(() => {
+        mail = { sendPaymentFailed: jest.fn().mockResolvedValue(true) };
+        (service as any).mail = mail;
+        stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'past_due' }));
+        prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', clerkUserId: 'clerk_1', email: 'ana@example.com', name: 'Ana Souza' });
+      });
+
+      afterEach(() => {
+        delete process.env.EMAIL_PAYMENT_FAILED;
+      });
+
+      it('chave desligada (padrao): so loga, nada sai', async () => {
+        await deliver('invoice.payment_failed', renewalFailed());
+
+        expect(mail.sendPaymentFailed).not.toHaveBeenCalled();
+        expect(prisma.adminAudit.create).not.toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ action: 'payment_failed_email:in_9' }) }),
+        );
+      });
+
+      it('chave ligada: manda uma vez com valor e proxima tentativa, e grava a marca da fatura', async () => {
+        process.env.EMAIL_PAYMENT_FAILED = 'true';
+
+        await deliver('invoice.payment_failed', renewalFailed());
+
+        expect(mail.sendPaymentFailed).toHaveBeenCalledWith('ana@example.com', 'Ana Souza', {
+          amount: 29,
+          currency: 'usd',
+          nextAttempt: new Date(1790259200 * 1000),
+        });
+        expect(prisma.adminAudit.create).toHaveBeenCalledWith({
+          data: { action: 'payment_failed_email:in_9', targetUserId: 'usr_1', details: { invoiceId: 'in_9' } },
+        });
+      });
+
+      it('retentativa da Stripe ou reenvio do webhook da MESMA fatura nao manda de novo', async () => {
+        process.env.EMAIL_PAYMENT_FAILED = 'true';
+        prisma.adminAudit.findFirst.mockResolvedValue({ id: 'audit_1' });
+
+        await deliver('invoice.payment_failed', renewalFailed({ attempt_count: 2 }), 'evt_retry');
+
+        expect(prisma.adminAudit.findFirst).toHaveBeenCalledWith({
+          where: { action: 'payment_failed_email:in_9', targetUserId: 'usr_1' },
+          select: { id: true },
+        });
+        expect(mail.sendPaymentFailed).not.toHaveBeenCalled();
+      });
+
+      it('fora da renovacao, sem valor ou com a assinatura ja ativa: nao manda', async () => {
+        process.env.EMAIL_PAYMENT_FAILED = 'true';
+
+        await deliver('invoice.payment_failed', renewalFailed({ billing_reason: 'subscription_update' }), 'evt_a');
+        await deliver('invoice.payment_failed', renewalFailed({ amount_due: 0 }), 'evt_b');
+        stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'active' }));
+        await deliver('invoice.payment_failed', renewalFailed(), 'evt_c');
+
+        expect(mail.sendPaymentFailed).not.toHaveBeenCalled();
+      });
+
+      it('Resend recusou: nao grava a marca (o proximo evento tenta de novo) e o webhook segue', async () => {
+        process.env.EMAIL_PAYMENT_FAILED = 'true';
+        mail.sendPaymentFailed.mockResolvedValue(false);
+
+        await expect(deliver('invoice.payment_failed', renewalFailed())).resolves.toEqual({ received: true });
+
+        expect(prisma.adminAudit.create).not.toHaveBeenCalledWith(
+          expect.objectContaining({ data: expect.objectContaining({ action: 'payment_failed_email:in_9' }) }),
+        );
+      });
     });
 
     describe('chave de deduplicacao do payment_failed', () => {

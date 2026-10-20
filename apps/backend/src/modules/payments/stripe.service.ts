@@ -1985,6 +1985,46 @@ export class StripeService implements OnModuleInit {
         timestamp: new Date(eventCreated * 1000),
       },
     );
+
+    await this.sendPaymentFailedEmail(userId, invoice, details.subscriptionStatus);
+  }
+
+  /**
+   * Aviso de renovacao recusada pela Resend. So renovacao (`subscription_cycle`)
+   * com assinatura em `past_due`/`unpaid`: a 1a cobranca nao gera fatura recusada
+   * (o Checkout so cria a assinatura quando o pagamento passa). Uma vez por
+   * fatura (AdminAudit): as retentativas da Stripe e o reenvio do webhook nao
+   * repetem. EMAIL_PAYMENT_FAILED DESLIGADA = so loga. Nunca derruba o webhook.
+   */
+  private async sendPaymentFailedEmail(
+    userId: string | null,
+    invoice: Stripe.Invoice,
+    subscriptionStatus: string | null,
+  ): Promise<void> {
+    try {
+      if (!userId || invoice.billing_reason !== 'subscription_cycle') return;
+      if ((invoice.amount_due ?? 0) <= 0) return;
+      if (subscriptionStatus !== 'past_due' && subscriptionStatus !== 'unpaid') return;
+      if (!flagBool('EMAIL_PAYMENT_FAILED')) {
+        this.logger.log(`[mail] dry-run kind=payment_failed user=${userId}`);
+        return;
+      }
+      const marker = `payment_failed_email:${invoice.id}`;
+      const already = await this.prisma.adminAudit.findFirst({ where: { action: marker, targetUserId: userId }, select: { id: true } });
+      if (already || !this.mail) return;
+      const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
+      if (!user?.email) return;
+      const sent = await this.mail.sendPaymentFailed(user.email, user.name, {
+        amount: (invoice.amount_due ?? 0) / 100,
+        currency: String(invoice.currency || 'usd'),
+        nextAttempt: invoice.next_payment_attempt ? new Date(invoice.next_payment_attempt * 1000) : null,
+      });
+      if (sent) {
+        await this.prisma.adminAudit.create({ data: { action: marker, targetUserId: userId, details: { invoiceId: invoice.id } } });
+      }
+    } catch (error) {
+      this.logger.warn(`[mail] Falha no e-mail de pagamento recusado: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**
