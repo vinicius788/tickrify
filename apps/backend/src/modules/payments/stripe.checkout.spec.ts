@@ -1,4 +1,4 @@
-import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { StripeService } from './stripe.service';
 import { resetFoundingOfferCache } from './founding-offer';
 import {
@@ -238,6 +238,36 @@ describe('StripeService.createCheckoutSession', () => {
     expect(params.cancel_url).toBe('https://tickrify.com/dashboard/plans?canceled=true');
     expect(params.discounts).toEqual([{ coupon: 'EARLY35' }]);
     expect(params.metadata).toMatchObject({ priceId: PRICE, coupon: 'EARLY35', userId: 'usr_1' });
+  });
+
+  it('nao fixa payment_method_types: os metodos vem da configuracao do painel', async () => {
+    await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
+    await service.createCheckoutSession('clerk_1', 'starter', 'weekly', 'usd');
+    expect(stripe.checkout.sessions.create).toHaveBeenCalledTimes(2);
+    for (const [params] of stripe.checkout.sessions.create.mock.calls) {
+      expect(params).not.toHaveProperty('payment_method_types');
+      expect(params).not.toHaveProperty('payment_method_configuration');
+    }
+  });
+
+  it('log do funil registra os metodos que a Stripe ofereceu e a configuracao usada', async () => {
+    stripe.checkout.sessions.create.mockResolvedValue({
+      id: 'cs_pm',
+      url: 'https://checkout.stripe.com/c/pay/cs_pm',
+      payment_method_types: ['card', 'link'],
+      payment_method_configuration_details: { id: 'pmc_1', parent: null },
+    });
+    const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    try {
+      await service.createCheckoutSession('clerk_1', 'starter', 'weekly', 'usd');
+      const line = logSpy.mock.calls
+        .map(([msg]) => String(msg))
+        .find((msg) => msg.includes('stage=checkout_session_created'));
+      expect(line).toContain('paymentMethodTypes=card,link');
+      expect(line).toContain('paymentMethodConfig=pmc_1');
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   it('pedidos simultaneos do mesmo usuario criam UMA sessao e UM customer', async () => {

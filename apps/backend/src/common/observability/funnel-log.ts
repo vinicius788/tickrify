@@ -55,6 +55,11 @@ const ALLOWED_FIELDS = [
   'requestId',
   'durationMs',
   'cancelAtPeriodEnd',
+  // Metodos que a Stripe liberou na sessao (`card,link`) e a configuracao de
+  // metodos do painel que ela usou (`pmc_...`): configuracao da conta, nao do
+  // cliente.
+  'paymentMethodTypes',
+  'paymentMethodConfig',
   'message',
 ] as const;
 

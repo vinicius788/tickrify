@@ -744,6 +744,7 @@ export default {
     cycleMonthly: 'Monthly',
     cycleYearly: 'Yearly',
     manage: 'Manage subscription',
+    updateCard: 'Update card',
     manageHint: 'Change your card, see your invoices or cancel. If you cancel, you keep access until the end of the period you already paid.',
     reactivate: 'Reactivate subscription',
     reactivated: 'Your subscription is active again.',

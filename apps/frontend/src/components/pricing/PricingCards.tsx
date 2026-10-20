@@ -168,7 +168,7 @@ const CHROME_COPY = {
     tokenError: "Could not get authentication token",
     checkoutError: "Failed to create checkout session. Please try again.",
     alreadySubscribedTitle: "You are already subscribed",
-    alreadySubscribedDesc: "Your plan is active. Manage it from your dashboard.",
+    alreadySubscribedDesc: "This account already has a subscription. Check its status or update your card in Settings.",
     partnerAsk: "Have a partner code?",
     partnerApply: "Apply",
     partnerApplied: (code: string) => `Partner code ${code} applied. Checkout uses the best discount available to you.`,
@@ -193,7 +193,7 @@ const CHROME_COPY = {
     tokenError: "Não foi possível obter token de autenticação",
     checkoutError: "Falha ao criar sessão de checkout. Tente novamente.",
     alreadySubscribedTitle: "Você já é assinante",
-    alreadySubscribedDesc: "Seu plano está ativo. Gerencie pelo painel.",
+    alreadySubscribedDesc: "Esta conta já tem uma assinatura. Veja o status ou atualize o cartão em Configurações.",
     partnerAsk: "Tem um código de parceiro?",
     partnerApply: "Aplicar",
     partnerApplied: (code: string) => `Código de parceiro ${code} aplicado. O checkout usa o maior desconto disponível para você.`,
@@ -488,7 +488,7 @@ export function PricingCards() {
             toast({ title: copy.alreadySubscribedTitle, description: copy.alreadySubscribedDesc });
           }
           redirecting = true;
-          window.location.href = "/dashboard";
+          window.location.href = "/dashboard/settings";
           return;
         }
         toast({

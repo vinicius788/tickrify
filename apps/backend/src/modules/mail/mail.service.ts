@@ -225,6 +225,41 @@ export class MailService {
   }
 
   /**
+   * Renovacao recusada (20/10/2026): o cartao nao passou e as funcoes do plano
+   * ficam pausadas ate trocar o cartao em Settings. Transacional (sem
+   * descadastro). Atras da chave EMAIL_PAYMENT_FAILED, decidida no StripeService.
+   */
+  async sendPaymentFailed(
+    to: string,
+    name: string | null | undefined,
+    charge: { amount: number; currency: string; nextAttempt: Date | null },
+  ): Promise<boolean> {
+    const first = String(name ?? '').trim().split(/\s+/)[0]?.replace(/[<>&"]/g, '') || '';
+    let amount = '';
+    try {
+      amount = new Intl.NumberFormat('en-US', { style: 'currency', currency: charge.currency.toUpperCase() }).format(charge.amount);
+    } catch {
+      amount = '';
+    }
+    const retry = charge.nextAttempt
+      ? ` We will try the card again on <b>${charge.nextAttempt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' })}</b>.`
+      : '';
+    const subject = "Your Tickrify payment didn't go through";
+    const html = this.wrap(
+      subject,
+      `${first ? `Hi ${first},<br><br>` : ''}` +
+        `We couldn't charge your card for your Tickrify subscription${amount ? ` (${amount})` : ''}. ` +
+        `This usually happens when a card expires, has insufficient funds, or the bank declines the charge.<br><br>` +
+        `Until your card is updated, your plan features are paused.${retry}<br><br>` +
+        `To get your access back, update your card in Settings. It takes less than a minute, and your plan and history stay the same.<br><br>` +
+        `Questions? Reply to this email or write to support@tickrify.com.`,
+      'Update card',
+      `${this.appUrl}/dashboard/settings`,
+    );
+    return this.send(to, subject, html, { kind: 'payment_failed' });
+  }
+
+  /**
    * E-mails de ciclo de vida (ativacao e checkout abandonado). Saem em nome do
    * fundador (LIFECYCLE_MAIL_FROM; resposta cai na caixa dele) e levam o
    * cabecalho de descadastro de um clique que Gmail e Yahoo exigem.

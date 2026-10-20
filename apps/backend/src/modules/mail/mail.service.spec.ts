@@ -9,6 +9,42 @@ describe('MailService', () => {
     process.env.RESEND_API_KEY = originalKey;
   });
 
+  it('pagamento recusado: valor, proxima tentativa, botao para Settings e sem travessao', async () => {
+    process.env.RESEND_API_KEY = 're_test';
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '{"id":"em_1"}' });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const ok = await new MailService().sendPaymentFailed('ana@example.com', 'Ana <b>Souza</b>', {
+      amount: 29,
+      currency: 'usd',
+      nextAttempt: new Date(Date.UTC(2026, 9, 24)),
+    });
+
+    expect(ok).toBe(true);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.subject).toBe("Your Tickrify payment didn't go through");
+    expect(body.reply_to).toBe('support@tickrify.com');
+    expect(body.html).toContain('Hi Ana,');
+    expect(body.html).toContain('($29.00)');
+    expect(body.html).toContain('October 24');
+    expect(body.html).toContain('/dashboard/settings');
+    expect(body.html).toContain('Update card');
+    expect(body.html).not.toContain('<b>Souza');
+    expect(body.html).not.toContain('\u2014');
+  });
+
+  it('pagamento recusado sem nova tentativa marcada nao inventa data', async () => {
+    process.env.RESEND_API_KEY = 're_test';
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '' });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await new MailService().sendPaymentFailed('ana@example.com', null, { amount: 29, currency: 'usd', nextAttempt: null });
+
+    const html = JSON.parse(fetchMock.mock.calls[0][1].body).html as string;
+    expect(html).not.toContain('try the card again');
+    expect(html).not.toContain('Hi ,');
+  });
+
   it('respostas ao e-mail vao para o suporte, nao para o noreply', async () => {
     process.env.RESEND_API_KEY = 're_test';
     const fetchMock = jest.fn().mockResolvedValue({ ok: true, text: async () => '' });

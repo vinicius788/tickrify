@@ -149,6 +149,24 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'CHAT_FEEDBACK_ASK',
+    type: 'boolean',
+    label: 'Chat: fundador pede feedback ao entrar',
+    description:
+      'Quem ja fez pelo menos 1 analise e ainda nao tem conversa recebe, ao abrir o painel, uma mensagem curta do fundador no chat pedindo opiniao sobre a plataforma (a bolha mostra 1 nova). Uma vez por pessoa, sem e-mail. A resposta chega no /admin > Chat como qualquer mensagem. DESLIGADO: nada muda. Ligar so com o texto aprovado.',
+    defaultValue: 'false',
+    risk: 'baixo',
+  },
+  {
+    key: 'EMAIL_PAYMENT_FAILED',
+    type: 'boolean',
+    label: 'E-mail de pagamento recusado (Resend)',
+    description:
+      'Quando a renovacao da assinatura e recusada (past_due/unpaid): um e-mail pela Resend com o botao que leva a Settings para trocar o cartao. Uma vez por fatura, na primeira recusa; as retentativas da Stripe nao repetem. DESLIGADO: so loga quem receberia ([mail] dry-run kind=payment_failed). Ligar so com o texto aprovado; com ele ligado, desligar o e-mail de falha da propria Stripe para nao mandar dois.',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
     key: 'EMAIL_CANCELLATION_CONFIRM',
     type: 'boolean',
     label: 'E-mail de confirmacao de cancelamento',

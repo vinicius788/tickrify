@@ -61,8 +61,13 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
-vi.mock('@/lib/stripe', () => ({
+const mockGetSubscription = vi.fn();
+const mockOpenBillingPortal = vi.fn();
+vi.mock('@/lib/stripe', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/stripe')>()),
   createCheckoutSession: vi.fn(),
+  getSubscription: (...args: unknown[]) => mockGetSubscription(...args),
+  openBillingPortal: (...args: unknown[]) => mockOpenBillingPortal(...args),
 }));
 
 vi.mock('@/components/dashboard/NewAnalysis', () => ({
@@ -187,6 +192,8 @@ describe('DashboardPage', () => {
       loadingBalance: false,
     });
     mockUseAuth.mockReturnValue({ getToken: vi.fn().mockResolvedValue('token') });
+    mockGetSubscription.mockReset().mockResolvedValue(null);
+    mockOpenBillingPortal.mockReset();
     mockUseAPIClient.mockReturnValue(makeApiClient());
     // Setups (12/10/2026) buscam por fetch proprio: fora do ar por padrao,
     // a secao some e o resto do painel e o de sempre.
@@ -1114,5 +1121,74 @@ describe('DashboardPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'ChatGPT' }));
     expect(setAcquisitionSource).toHaveBeenCalledWith({ source: 'chatgpt' });
+  });
+
+  describe('assinatura com pagamento recusado', () => {
+    const pastDue = {
+      id: 'sub_1',
+      status: 'past_due',
+      plan: 'free',
+      billingCycle: 'monthly',
+      currentPeriodEnd: 1_800_000_000,
+      cancelAtPeriodEnd: false,
+      accessEndsAt: null,
+      nextChargeAt: null,
+      amount: 29,
+      currency: 'usd',
+      manageable: true,
+      canReactivate: false,
+    };
+    const gratis = { plan: 'free', total: 3, used: 1, remaining: 2, isUnlimited: false, isLoading: false };
+
+    it('past_due: o aviso aparece no topo do painel e o botao abre o portal da Stripe', async () => {
+      const user = userEvent.setup();
+      mockGetSubscription.mockResolvedValue(pastDue);
+      mockUseAnalysisLimit.mockReturnValue(gratis);
+      renderDashboard('/dashboard');
+
+      expect(await screen.findByText('O pagamento falhou. Atualize o cartão para manter o acesso.')).toBeTruthy();
+      await user.click(screen.getByRole('button', { name: 'Atualizar cartão' }));
+      expect(mockOpenBillingPortal).toHaveBeenCalledWith('token');
+    });
+
+    it('em Configuracoes o aviso nao se repete: a propria tela ja mostra o status', async () => {
+      mockGetSubscription.mockResolvedValue(pastDue);
+      mockUseAnalysisLimit.mockReturnValue(gratis);
+      renderDashboard('/dashboard/settings');
+
+      expect(await screen.findByText('O pagamento falhou. Atualize o cartão para manter o acesso.')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('assinante com plano ativo e visitante da demo nao consultam a assinatura', async () => {
+      mockUseAnalysisLimit.mockReturnValue({ plan: 'weekly', isUnlimited: true, isLoading: false, total: Infinity, remaining: Infinity, used: 0 });
+      const ativo = renderDashboard('/dashboard');
+      await screen.findByRole('button', { name: /WEEKLY/ });
+      ativo.unmount();
+
+      mockUseUser.mockReturnValue({ user: null });
+      mockUseAnalysisLimit.mockReturnValue(gratis);
+      renderDashboard('/dashboard');
+      await screen.findAllByRole('button', { name: 'Nova Análise' });
+
+      expect(mockGetSubscription).not.toHaveBeenCalled();
+    });
+
+    it('paywall: quem ja tem assinatura recebe o aviso e vai para Configuracoes, nao para um beco', async () => {
+      const user = userEvent.setup();
+      const { createCheckoutSession, CheckoutError } = await import('@/lib/stripe');
+      (createCheckoutSession as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new CheckoutError('already subscribed', 'already_subscribed', 409),
+      );
+      mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 3, remaining: 0, isUnlimited: false, freeLocked: true, isLoading: false });
+      renderDashboard('/dashboard/new');
+
+      await user.click(await screen.findByRole('button', { name: /Comece com uma semana/ }));
+      await waitFor(() => expect(currentPath()).toBe('/dashboard/settings'));
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({ description: 'Esta conta já tem uma assinatura. Veja o status ou atualize o cartão em Configurações.' }),
+      );
+      expect(mockTrack).toHaveBeenCalledWith('checkout_failed', expect.objectContaining({ code: 'already_subscribed' }));
+    });
   });
 });

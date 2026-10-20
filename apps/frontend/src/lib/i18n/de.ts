@@ -744,6 +744,7 @@ export default {
     cycleMonthly: 'Monatlich',
     cycleYearly: 'Jährlich',
     manage: 'Abo verwalten',
+    updateCard: 'Karte aktualisieren',
     manageHint: 'Karte ändern, Rechnungen ansehen oder kündigen. Nach der Kündigung bleibt der Zugang bis zum Ende des bezahlten Zeitraums.',
     reactivate: 'Abo reaktivieren',
     reactivated: 'Dein Abo ist wieder aktiv.',
