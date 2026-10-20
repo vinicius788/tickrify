@@ -268,7 +268,6 @@ export interface AIAnalysisResponse {
 export interface CreateAnalysisPayload {
   imageFile?: File;
   base64Image?: string;
-  promptOverride?: string;
   analysisType?: 'quick' | 'deep';
   userLanguage?: string;
   /** Gráficos de timeframe maior (top-down) — opcionais, base64. */
@@ -561,10 +560,6 @@ class APIClient {
 
     if (payload.base64Image) {
       formData.append('base64Image', payload.base64Image);
-    }
-
-    if (payload.promptOverride) {
-      formData.append('promptOverride', payload.promptOverride);
     }
 
     if (payload.analysisType) {
