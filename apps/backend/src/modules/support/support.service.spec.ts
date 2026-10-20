@@ -2,7 +2,7 @@ import { ForbiddenException, ValidationPipe } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { makeRawSqlPrisma } from '../../__tests__/raw-sql-mock';
-import { SupportService, CHAT_RATE_LIMIT_PER_HOUR } from './support.service';
+import { SupportService, CHAT_RATE_LIMIT_PER_HOUR, feedbackAskText } from './support.service';
 import { SupportAdminController } from './support-admin.controller';
 import { SupportController } from './support.controller';
 import { AdminGuard } from '../auth/admin.guard';
@@ -184,5 +184,100 @@ describe('rotas do chat: acesso', () => {
     await expect(pipe.transform({ email: 'a@b.com', body: 'hi' }, { type: 'body', metatype: AdminStartChatDto })).resolves.toBeDefined();
     await expect(pipe.transform({ email: 'not-an-email', body: 'hi' }, { type: 'body', metatype: AdminStartChatDto })).rejects.toBeDefined();
     await expect(pipe.transform({ cursor: "x' OR 1=1" }, { type: 'query', metatype: ChatMessagesQueryDto })).rejects.toBeDefined();
+  });
+
+  describe('pedido de feedback do fundador (CHAT_FEEDBACK_ASK)', () => {
+    beforeEach(() => {
+      captureServer.mockClear();
+      __resetFlagCacheForTests();
+    });
+
+    const THREAD_B = { id: 'thread-bbbbbbbb', userId: 'uB', status: 'open', lastMessageAt: null, lastUserReadAt: null, lastFounderReadAt: null };
+
+    /** Conversa de B passa a existir quando o INSERT roda; a mensagem so entra uma vez (ON CONFLICT). */
+    function feedbackSetup(user: { name: string | null; eligible: boolean } = { name: 'Ana Souza', eligible: true }) {
+      let threadExists = false;
+      let messageExists = false;
+      return setup([
+        ['FROM "tickrify"."User" u WHERE u."id"', () => [{ ...user, clerkUserId: 'clerk_uB' }]],
+        ['INSERT INTO "tickrify"."SupportThread"', () => {
+          const created = !threadExists;
+          threadExists = true;
+          return created ? [{ id: THREAD_B.id }] : [];
+        }],
+        ['FROM "tickrify"."SupportThread" WHERE "userId"', (_t, values) => (values.includes('uB') && threadExists ? [THREAD_B] : [])],
+        ['ON CONFLICT ("id") DO NOTHING', () => {
+          if (messageExists) return [];
+          messageExists = true;
+          return [{ id: 'feedback_ask:uB', createdAt: new Date('2026-10-20T13:00:00Z') }];
+        }],
+        ['SELECT COUNT(*)::int AS "n" FROM "tickrify"."SupportMessage"', () => [{ n: messageExists ? 1 : 0 }]],
+      ]);
+    }
+
+    it('chave desligada (padrao): nada e criado, nem consulta extra', async () => {
+      const { service, calls } = feedbackSetup();
+      await service.onModuleInit();
+      expect(await service.getThreadForUser('uB')).toEqual({ thread: null });
+      expect(calls.some((c) => c.text.includes('ON CONFLICT ("id") DO NOTHING'))).toBe(false);
+      expect(calls.some((c) => c.text.includes('FROM "tickrify"."User" u'))).toBe(false);
+    });
+
+    it('chave ligada e ja fez analise: cria a conversa com 1 mensagem do fundador, que aparece como nao lida', async () => {
+      applyFlagOverrideLocally('CHAT_FEEDBACK_ASK', 'true');
+      const { service, calls } = feedbackSetup();
+      await service.onModuleInit();
+
+      const { thread } = await service.getThreadForUser('uB');
+
+      expect(thread).toEqual(expect.objectContaining({ id: THREAD_B.id, unread: 1 }));
+      const insert = calls.find((c) => c.text.includes('ON CONFLICT ("id") DO NOTHING'));
+      expect(insert?.text).toContain("'founder'");
+      expect(insert?.values).toEqual(expect.arrayContaining(['feedback_ask:uB', THREAD_B.id, feedbackAskText('Ana Souza')]));
+      expect(captureServer).toHaveBeenCalledWith('clerk_uB', 'chat_feedback_ask_sent', { threadId: THREAD_B.id });
+      expect(captureServer).toHaveBeenCalledWith('clerk_uB', 'chat_thread_started', { threadId: THREAD_B.id, startedBy: 'founder_auto' });
+    });
+
+    it('nao marca lastFounderMessageAt: o e-mail "o fundador respondeu" nunca sai por esta mensagem', async () => {
+      applyFlagOverrideLocally('CHAT_FEEDBACK_ASK', 'true');
+      const { service, calls } = feedbackSetup();
+      await service.onModuleInit();
+      await service.getThreadForUser('uB');
+      expect(calls.some((c) => c.text.includes('"lastFounderMessageAt"'))).toBe(false);
+    });
+
+    it('uma vez por pessoa: abrir o painel de novo (ou a outra instancia) nao repete a mensagem', async () => {
+      applyFlagOverrideLocally('CHAT_FEEDBACK_ASK', 'true');
+      const { service, calls } = feedbackSetup();
+      await service.onModuleInit();
+      await service.getThreadForUser('uB');
+      await service.getThreadForUser('uB');
+
+      expect(calls.filter((c) => c.text.includes('ON CONFLICT ("id") DO NOTHING'))).toHaveLength(1);
+      expect(captureServer.mock.calls.filter((c) => c[1] === 'chat_feedback_ask_sent')).toHaveLength(1);
+    });
+
+    it('quem ainda nao fez nenhuma analise nao recebe', async () => {
+      applyFlagOverrideLocally('CHAT_FEEDBACK_ASK', 'true');
+      const { service, calls } = feedbackSetup({ name: 'Ana', eligible: false });
+      await service.onModuleInit();
+      expect(await service.getThreadForUser('uB')).toEqual({ thread: null });
+      expect(calls.some((c) => c.text.includes('INSERT INTO "tickrify"."SupportThread"'))).toBe(false);
+    });
+
+    it('quem ja tem conversa com o fundador nao recebe o pedido', async () => {
+      applyFlagOverrideLocally('CHAT_FEEDBACK_ASK', 'true');
+      const { service, calls } = setup([['SELECT COUNT(*)::int AS "n" FROM "tickrify"."SupportMessage"', () => [{ n: 0 }]]]);
+      await service.onModuleInit();
+      expect((await service.getThreadForUser('uC')).thread).toEqual(expect.objectContaining({ id: THREAD_C.id, unread: 0 }));
+      expect(calls.some((c) => c.text.includes('ON CONFLICT ("id") DO NOTHING'))).toBe(false);
+    });
+
+    it('texto: primeiro nome sem marcacao, sem travessao, e "there" quando nao ha nome', () => {
+      expect(feedbackAskText('Ana <b>Souza</b>')).toMatch(/^Hi Ana, I'm Vinicius/);
+      expect(feedbackAskText(null)).toMatch(/^Hi there, /);
+      expect(feedbackAskText('Ana')).not.toContain('\u2014');
+      expect(feedbackAskText('Ana').length).toBeLessThan(2000);
+    });
   });
 });

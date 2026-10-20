@@ -67,6 +67,19 @@ const BOOT_SQL = [
   `CREATE INDEX IF NOT EXISTS "SupportMessage_threadId_createdAt_idx" ON "tickrify"."SupportMessage"("threadId", "createdAt")`,
 ];
 
+/** Chave do pedido de feedback automatico do fundador (ver `askForFeedback`). */
+export const CHAT_FEEDBACK_FLAG = 'CHAT_FEEDBACK_ASK';
+
+/** Texto do pedido de feedback. Primeiro nome sem marcacao (o chat e texto puro). */
+export function feedbackAskText(name: string | null | undefined): string {
+  const first = String(name ?? '').trim().split(/\s+/)[0]?.replace(/[<>&"]/g, '') || '';
+  return (
+    `Hi ${first || 'there'}, I'm Vinicius, the founder of Tickrify. I read every message here myself.\n\n` +
+    `How is Tickrify working for you so far? Anything confusing, missing, or that you would change? ` +
+    `Even one line helps me a lot.`
+  );
+}
+
 /** 20 mensagens por hora por pessoa (no banco: vale para as 2 instancias). */
 export const CHAT_RATE_LIMIT_PER_HOUR = 20;
 
@@ -181,7 +194,7 @@ export class SupportService implements OnModuleInit {
   /** A conversa da pessoa e quantas respostas do fundador ela ainda nao leu. */
   async getThreadForUser(userId: string) {
     this.assertReady();
-    const thread = await this.threadOfUser(userId);
+    const thread = (await this.threadOfUser(userId)) ?? (await this.askForFeedback(userId));
     if (!thread) return { thread: null };
     return {
       thread: {
@@ -191,6 +204,52 @@ export class SupportService implements OnModuleInit {
         unread: await this.unreadFor(thread.id, 'founder', thread.lastUserReadAt),
       },
     };
+  }
+
+  /**
+   * Pedido de feedback do fundador (20/10/2026), criado na hora em que a pessoa
+   * abre o painel, e nao em lote: so recebe quem volta (e quem ve o chat), sem
+   * conversa vazia para quem nunca mais entrou. Regras:
+   * - chave CHAT_FEEDBACK_ASK ligada, ja fez 1 analise concluida e nao tem conversa;
+   * - uma vez por pessoa, ate com as 2 instancias: conversa unica por usuario e
+   *   mensagem com id fixo (`feedback_ask:<usuario>`, ON CONFLICT);
+   * - NAO marca `lastFounderMessageAt`: a varredura do e-mail "o fundador
+   *   respondeu" ignora esta mensagem, entao ninguem recebe e-mail por ela.
+   * Nunca lanca: falha aqui so deixa a pessoa sem a mensagem.
+   */
+  private async askForFeedback(userId: string): Promise<ThreadRow | null> {
+    if (!flagBool(CHAT_FEEDBACK_FLAG)) return null;
+    try {
+      const rows = await this.prisma.$queryRaw<Array<{ name: string | null; clerkUserId: string | null; eligible: boolean }>>`
+        SELECT u."name", u."clerkUserId",
+          EXISTS (SELECT 1 FROM "tickrify"."Analysis" a WHERE a."userId" = u."id" AND a."status" = 'completed') AS "eligible"
+        FROM "tickrify"."User" u WHERE u."id" = ${userId} LIMIT 1
+      `;
+      const user = rows[0];
+      if (!user?.eligible) return null;
+
+      const { thread, created } = await this.ensureThread(userId);
+      const inserted = await this.prisma.$queryRaw<Array<{ id: string; createdAt: Date }>>`
+        INSERT INTO "tickrify"."SupportMessage" ("id", "threadId", "author", "body", "createdAt")
+        VALUES (${`feedback_ask:${userId}`}, ${thread.id}, 'founder', ${feedbackAskText(user.name)}, NOW())
+        ON CONFLICT ("id") DO NOTHING
+        RETURNING "id", "createdAt"
+      `;
+      if (inserted.length) {
+        await this.prisma.$executeRaw`
+          UPDATE "tickrify"."SupportThread" SET "lastMessageAt" = ${inserted[0].createdAt}, "updatedAt" = NOW()
+          WHERE "id" = ${thread.id}
+        `;
+        if (user.clerkUserId) {
+          if (created) captureServer(user.clerkUserId, 'chat_thread_started', { threadId: thread.id, startedBy: 'founder_auto' });
+          captureServer(user.clerkUserId, 'chat_feedback_ask_sent', { threadId: thread.id });
+        }
+      }
+      return this.threadOfUser(userId);
+    } catch (error) {
+      this.logger.warn(`[chat] Pedido de feedback nao criado: ${error instanceof Error ? error.message : error}`);
+      return null;
+    }
   }
 
   async listMessagesForUser(userId: string, cursor: string | null, limit = 50) {

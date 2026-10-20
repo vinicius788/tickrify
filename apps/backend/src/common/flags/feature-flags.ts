@@ -149,6 +149,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'CHAT_FEEDBACK_ASK',
+    type: 'boolean',
+    label: 'Chat: fundador pede feedback ao entrar',
+    description:
+      'Quem ja fez pelo menos 1 analise e ainda nao tem conversa recebe, ao abrir o painel, uma mensagem curta do fundador no chat pedindo opiniao sobre a plataforma (a bolha mostra 1 nova). Uma vez por pessoa, sem e-mail. A resposta chega no /admin > Chat como qualquer mensagem. DESLIGADO: nada muda. Ligar so com o texto aprovado.',
+    defaultValue: 'false',
+    risk: 'baixo',
+  },
+  {
     key: 'EMAIL_PAYMENT_FAILED',
     type: 'boolean',
     label: 'E-mail de pagamento recusado (Resend)',
