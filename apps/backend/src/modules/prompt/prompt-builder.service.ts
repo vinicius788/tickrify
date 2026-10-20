@@ -115,8 +115,6 @@ export async function buildAnalysisPrompt(
   return withDeep(withLanguage(basePrompt));
 }
 
-const PARTS_SEPARATOR = '\n\n---\n\n';
-
 // Cache TTL: 60 segundos — evita DB round-trip em cada análise sem sacrificar atualizações
 const PROMPT_CACHE_TTL_MS = 60_000;
 
@@ -131,23 +129,6 @@ export class PromptBuilderService {
   private promptCache: PromptCacheEntry | null = null;
 
   constructor(private readonly prisma: PrismaService) {}
-
-  /**
-   * Resolves the final prompt following the hierarchy:
-   * 1. promptOverride (if provided) → used directly
-   * 2. Active PromptConfig for the analysisType → used as base
-   * 3. TRADING_SYSTEM_PROMPT default → fallback
-   *
-   * DETERMINISTIC_CONSISTENCY_INSTRUCTION is always appended at the end.
-   */
-  async buildPrompt(analysisType: AnalysisType, override?: string): Promise<string> {
-    if (override) {
-      return this.appendDeepEnrichment(this.appendConsistencyInstruction(override), analysisType);
-    }
-
-    const base = await this.resolveActivePrompt();
-    return this.appendDeepEnrichment(this.appendConsistencyInstruction(base), analysisType);
-  }
 
   private async resolveActivePrompt(): Promise<string> {
     const now = Date.now();
@@ -223,16 +204,6 @@ export class PromptBuilderService {
     const langName = (userLanguage && LANGUAGE_NAMES[userLanguage]) ? LANGUAGE_NAMES[userLanguage] : 'English';
     const languageContext = `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, breakevenTrigger, trendStrengthNote, marketRegimeNote, multiTimeframeAlignment, sessionNote, reasoning, marketStructure.lastStructure, marketStructure.breakOfStructure, marketStructure.priceZone, marketStructure.orderBlock) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
     return prompt.replace('{{USER_CONTEXT}}', languageContext);
-  }
-
-  /**
-   * Concatenates prompt parts with a visual separator.
-   */
-  composePromptParts(parts: string[]): string {
-    return parts
-      .map((p) => String(p || '').trim())
-      .filter(Boolean)
-      .join(PARTS_SEPARATOR);
   }
 
   private appendConsistencyInstruction(prompt: string): string {

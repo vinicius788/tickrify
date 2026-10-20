@@ -31,9 +31,6 @@ export const AUTOMATIC_OUTCOMES = [
  */
 export const PUBLIC_SCORED_OUTCOMES = ['WIN', 'LOSS', 'NO_FILL', 'TIMEOUT'] as const;
 
-/** Só WIN e LOSS entram no cálculo de acerto. O resto é contexto. */
-export const CONCLUSIVE_OUTCOMES = ['WIN', 'LOSS'] as const;
-
 /** Data em que o grounding com candles ao vivo entrou em produção. */
 export const GROUNDING_LIVE_SINCE = new Date('2026-07-17T00:00:00.000Z');
 

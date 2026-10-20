@@ -155,9 +155,7 @@ describe('AiService access enforcement', () => {
     };
 
     promptBuilder = {
-      buildPrompt: jest.fn().mockResolvedValue('test prompt'),
       buildPromptByVersion: jest.fn().mockResolvedValue('test prompt'),
-      composePromptParts: jest.fn((parts: string[]) => parts.join('\n\n---\n\n')),
     };
 
     const stripeService = {
@@ -1375,7 +1373,7 @@ describe('PromptBuilderService', () => {
     const prisma = { promptConfig: { findFirst: jest.fn(), findUnique: jest.fn() } };
     const builder = new PromptBuilderService(prisma as any);
 
-    const result = await builder.buildPrompt('quick', 'custom override prompt');
+    const result = await builder.buildPromptByVersion('quick', undefined, 'custom override prompt');
 
     expect(result).toContain('custom override prompt');
     expect(result).toContain('Seja determinístico');
@@ -1391,9 +1389,9 @@ describe('PromptBuilderService', () => {
     };
     const builder = new PromptBuilderService(prisma as any);
 
-    const result = await builder.buildPrompt('quick');
+    const result = await builder.buildPromptByVersion('quick');
 
-    // buildPrompt normaliza (trim) o prompt base, então comparamos sem o espaço inicial.
+    // O padrao (/try e scripts) normaliza (trim) o prompt base, então comparamos sem o espaço inicial.
     expect(result).toContain(TRADING_SYSTEM_PROMPT.trim().slice(0, 40));
     expect(result).toContain('Seja determinístico');
   });
@@ -1406,21 +1404,12 @@ describe('PromptBuilderService', () => {
 
     const alreadyHasInstruction =
       'My prompt\n\nSeja determinístico. Para o mesmo gráfico, sempre gere a mesma análise.';
-    const result = await builder.buildPrompt('quick', alreadyHasInstruction);
+    const result = await builder.buildPromptByVersion('quick', undefined, alreadyHasInstruction);
 
     const occurrences = (result.match(/Seja determinístico/g) || []).length;
     expect(occurrences).toBe(1);
   });
 
-  it('composePromptParts joins parts with separator', async () => {
-    const { PromptBuilderService } = await import('../prompt/prompt-builder.service');
-
-    const prisma = { promptConfig: { findFirst: jest.fn(), findUnique: jest.fn() } };
-    const builder = new PromptBuilderService(prisma as any);
-
-    const result = builder.composePromptParts(['Part A', 'Part B', 'Part C']);
-    expect(result).toBe('Part A\n\n---\n\nPart B\n\n---\n\nPart C');
-  });
 });
 
 describe('AIAnalysisError static helpers', () => {
