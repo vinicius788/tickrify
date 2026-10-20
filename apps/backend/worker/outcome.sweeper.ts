@@ -34,6 +34,8 @@ const FIRST_SWEEP_DELAY_MS = 3 * 60 * 1000; // 3min após o boot (deixa o worker
 const MATURITY_MS = 48 * 60 * 60 * 1000; // análise só é avaliada 48h após criada
 const WINDOW_MS = 48 * 60 * 60 * 1000; // janela de avaliação: 48h a partir da análise
 const BATCH_SIZE = 25; // análises por varredura (mantém a varredura leve)
+// WAIT por varredura. So o WAIT com niveis busca candles (7% deles em 20/10/2026).
+const WAIT_BATCH_SIZE = 50;
 
 export type Candle = [number, number, number, number, number]; // [ts, o, h, l, c]
 
@@ -123,13 +125,33 @@ export async function fetchFxWindow(symbol: string, startMs: number, endMs: numb
 }
 
 /**
+ * O que aconteceu DEPOIS do TP1 (20/10/2026, so medicao: nada aqui muda o
+ * outcome). Permite avaliar TP2 e a hipotese de break-even sem chamar a IA.
+ */
+export interface AfterTp1 {
+  /** TP2 antes do stop original, stop antes, nenhum ate o fim da janela, ou plano sem TP2. */
+  tp2: 'hit' | 'stop' | 'timeout' | 'none';
+  tp2Index: number | null;
+  /** 1o candle DEPOIS do candle do TP1 que toca a entrada (gatilho do break-even). */
+  entryRetouchIndex: number | null;
+  /** O candle do TP1 tambem toca a entrada: em 30m a ordem dos dois e desconhecida. */
+  tp1CandleTouchesEntry: boolean;
+}
+
+/**
  * Corrida TP1×SL — espelho fiel do evaluate_trade() do evaluate.py.
  * Retorna o outcome e detalhes para auditoria.
  */
 export function evaluateTrade(
   plan: TradePlan,
   window: Candle[],
-): { outcome: Outcome; fillIndex: number | null; resolvedIndex: number | null; tp2Hit: boolean } {
+): {
+  outcome: Outcome;
+  fillIndex: number | null;
+  resolvedIndex: number | null;
+  tp2Hit: boolean;
+  afterTp1: AfterTp1 | null;
+} {
   const isBuy = plan.recommendation === 'BUY';
   const slHit = (c: Candle) => (isBuy ? c[3] <= plan.stopLoss : c[2] >= plan.stopLoss);
   const tpHit = (c: Candle, tp: number) => (isBuy ? c[2] >= tp : c[3] <= tp);
@@ -144,7 +166,7 @@ export function evaluateTrade(
     }
   }
   if (fillIndex === null) {
-    return { outcome: 'NO_FILL', fillIndex: null, resolvedIndex: null, tp2Hit: false };
+    return { outcome: 'NO_FILL', fillIndex: null, resolvedIndex: null, tp2Hit: false, afterTp1: null };
   }
 
   // Corrida a partir do candle do fill (inclusive). SL primeiro = LOSS,
@@ -164,18 +186,82 @@ export function evaluateTrade(
     }
   }
 
-  let tp2Hit = false;
-  if (outcome === 'WIN' && plan.takeProfit2 != null && resolvedIndex != null) {
+  if (outcome !== 'WIN' || resolvedIndex === null) {
+    return { outcome, fillIndex, resolvedIndex, tp2Hit: false, afterTp1: null };
+  }
+
+  // Mesmo laco de sempre para o TP2 (stop antes = nao atingiu); agora tambem
+  // diz se parou no stop ou no fim da janela.
+  let tp2: AfterTp1['tp2'] = plan.takeProfit2 == null ? 'none' : 'timeout';
+  let tp2Index: number | null = null;
+  if (plan.takeProfit2 != null) {
     for (let i = resolvedIndex; i < window.length; i++) {
-      if (slHit(window[i])) break;
+      if (slHit(window[i])) {
+        tp2 = 'stop';
+        tp2Index = i;
+        break;
+      }
       if (tpHit(window[i], plan.takeProfit2)) {
-        tp2Hit = true;
+        tp2 = 'hit';
+        tp2Index = i;
         break;
       }
     }
   }
 
-  return { outcome, fillIndex, resolvedIndex, tp2Hit };
+  let entryRetouchIndex: number | null = null;
+  for (let i = resolvedIndex + 1; i < window.length; i++) {
+    if (touches(window[i], plan.entry)) {
+      entryRetouchIndex = i;
+      break;
+    }
+  }
+
+  return {
+    outcome,
+    fillIndex,
+    resolvedIndex,
+    tp2Hit: tp2 === 'hit',
+    afterTp1: {
+      tp2,
+      tp2Index,
+      entryRetouchIndex,
+      tp1CandleTouchesEntry: touches(window[resolvedIndex], plan.entry),
+    },
+  };
+}
+
+/**
+ * Plano de um WAIT que guardou os niveis (rebaixado por codigo: guard de R/R,
+ * validador, news guard, guard de cripto). WAIT do proprio modelo vem sem
+ * niveis e da null: nao ha plano para simular. O lado sai da geometria
+ * (stop < entrada < TP1 = compra); TP2 so conta se estiver alem do TP1.
+ */
+export function extractShadowPlan(result: unknown): TradePlan | null {
+  const root = result && typeof result === 'object' ? (result as Record<string, any>) : {};
+  const a = root.analysis && typeof root.analysis === 'object' ? root.analysis : root;
+  const num = (v: unknown): number | null => {
+    const n = Number(v);
+    return v != null && Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const entry = num(a.entry);
+  const stopLoss = num(a.stopLoss);
+  const takeProfit1 = num(a.takeProfit1);
+  const tp2 = num(a.takeProfit2);
+  const symbol = String(a.symbol || root.symbol || '').trim();
+  if (entry == null || stopLoss == null || takeProfit1 == null || !symbol) return null;
+
+  const recommendation = stopLoss < entry && entry < takeProfit1
+    ? 'BUY'
+    : stopLoss > entry && entry > takeProfit1 ? 'SELL' : null;
+  if (!recommendation) return null;
+  const takeProfit2 = tp2 != null && (recommendation === 'BUY' ? tp2 > takeProfit1 : tp2 < takeProfit1) ? tp2 : null;
+  return { recommendation, symbol, entry, stopLoss, takeProfit1, takeProfit2 };
+}
+
+function fetchWindowFor(symbol: string, startMs: number, endMs: number): Promise<Candle[] | null> {
+  const { isCrypto, base } = normalizeToBinancePerp(symbol);
+  return isCrypto && base ? fetchCryptoWindow(base, startMs, endMs) : fetchFxWindow(symbol, startMs, endMs);
 }
 
 /** Extrai o plano de trade do JSON persistido; null = sem plano avaliável. */
@@ -207,21 +293,87 @@ function extractPlan(recommendation: string | null, result: unknown): TradePlan 
   return { recommendation, symbol, entry, stopLoss, takeProfit1, takeProfit2 };
 }
 
-async function sweepOnce(prisma: PrismaClient): Promise<void> {
+export async function sweepOnce(prisma: PrismaClient): Promise<void> {
   const cutoff = new Date(Date.now() - MATURITY_MS);
 
-  // 1) WAIT → ABSTAIN em lote (sem candles; abstenção fica fora do win rate).
-  await prisma.analysis.updateMany({
+  // 1) BUY/SELL maduras sem outcome (antes do WAIT: a fonte de candles e
+  //    gratis e limitada, e o resultado real vem primeiro).
+  await sweepTrades(prisma, cutoff);
+  // 2) WAIT → ABSTAIN, com o resultado hipotetico ao lado (shadow).
+  await sweepWaits(prisma, cutoff);
+}
+
+/**
+ * WAIT → ABSTAIN (fora do win rate, como sempre). Desde 20/10/2026, o WAIT que
+ * guardou os niveis tambem e simulado nos candles e o resultado vai para
+ * `outcomeDetail.shadow`. A coluna `outcome` continua ABSTAIN: /accuracy,
+ * vitrine, e-mail de resultado e My Trades leem so a coluna e nao mudam. So
+ * passa por aqui WAIT com outcome null: o historico ja marcado nao e tocado.
+ */
+async function sweepWaits(prisma: PrismaClient, cutoff: Date): Promise<void> {
+  const waits = await prisma.analysis.findMany({
     where: {
       status: 'completed',
       outcome: null,
       recommendation: 'WAIT',
       createdAt: { lt: cutoff },
     },
-    data: { outcome: 'ABSTAIN', outcomeAt: new Date() },
+    orderBy: { createdAt: 'asc' },
+    take: WAIT_BATCH_SIZE,
+    select: { id: true, result: true, createdAt: true },
   });
 
-  // 2) BUY/SELL maduras sem outcome.
+  for (const row of waits) {
+    try {
+      const plan = extractShadowPlan(row.result);
+      let detail: Record<string, unknown> | undefined;
+      if (plan) {
+        const startMs = row.createdAt.getTime();
+        const window = await fetchWindowFor(plan.symbol, startMs, startMs + WINDOW_MS);
+        const engine = (row.result as Record<string, any> | null)?.engine;
+        const reasons = Array.isArray(engine?.validator_reasons) ? engine.validator_reasons : null;
+        const base = {
+          version: 1,
+          side: plan.recommendation,
+          sideFrom: 'levels',
+          reasons,
+          symbol: plan.symbol,
+          entry: plan.entry,
+          stopLoss: plan.stopLoss,
+          takeProfit1: plan.takeProfit1,
+          takeProfit2: plan.takeProfit2,
+          evaluatedOn: '30m',
+          windowHours: 48,
+        };
+        if (!window) {
+          detail = { shadow: { ...base, outcome: 'UNTRACKABLE' } };
+        } else {
+          const res = evaluateTrade(plan, window);
+          detail = {
+            shadow: {
+              ...base,
+              candles: window.length,
+              outcome: res.outcome,
+              fillIndex: res.fillIndex,
+              resolvedIndex: res.resolvedIndex,
+              tp2Hit: res.tp2Hit,
+              afterTp1: res.afterTp1,
+            },
+          };
+        }
+      }
+      await prisma.analysis.update({
+        where: { id: row.id },
+        data: { outcome: 'ABSTAIN', outcomeAt: new Date(), ...(detail ? { outcomeDetail: detail as any } : {}) },
+      });
+    } catch (err) {
+      // Fica outcome=null e tenta de novo na proxima varredura.
+      console.warn(`[Outcome] Falha no WAIT ${row.id}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+}
+
+async function sweepTrades(prisma: PrismaClient, cutoff: Date): Promise<void> {
   const pending = await prisma.analysis.findMany({
     where: {
       status: 'completed',
@@ -250,10 +402,7 @@ async function sweepOnce(prisma: PrismaClient): Promise<void> {
         outcome = 'INCOMPLETE';
         detail.reason = plan === null ? 'sem plano de trade' : 'níveis ausentes ou incoerentes';
       } else {
-        const { isCrypto, base } = normalizeToBinancePerp(plan.symbol);
-        const window = isCrypto && base
-          ? await fetchCryptoWindow(base, startMs, endMs)
-          : await fetchFxWindow(plan.symbol, startMs, endMs);
+        const window = await fetchWindowFor(plan.symbol, startMs, endMs);
 
         if (!window) {
           outcome = 'UNTRACKABLE';
@@ -272,6 +421,7 @@ async function sweepOnce(prisma: PrismaClient): Promise<void> {
             fillIndex: res.fillIndex,
             resolvedIndex: res.resolvedIndex,
             tp2Hit: res.tp2Hit,
+            afterTp1: res.afterTp1,
             isDemo: row.isDemo,
           };
         }

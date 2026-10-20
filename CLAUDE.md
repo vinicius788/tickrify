@@ -267,6 +267,7 @@ Vale para TODA mudanca, grande ou pequena:
 - **Outcome sweeper** (worker, 1x por hora): avalia analises 48h depois, corrida
   TP1 x SL em candles de 30m. `outcome` = o que o mercado fez (MAIUSCULO, so o
   sweeper); `userVerdict` = o que o trader marcou (minusculo, so o `setOutcome`).
+  Desde 20/10/2026 (so medicao, nada muda na tela nem na /accuracy): `outcomeDetail.afterTp1` = TP2 `hit|stop|timeout|none` + 1o reteste da entrada depois do TP1 (break-even); WAIT que guardou niveis (so os rebaixados por codigo: 13 de 187 em 20/10; WAIT do modelo vem sem niveis) e simulado e vai para `outcomeDetail.shadow`, com a coluna `outcome` em ABSTAIN. So linhas com outcome null passam: historico intocado.
 - **Latencia e custo medidos (09/09):** o backend gasta ~49 ms; o resto e a
   OpenAI escrevendo (~102 tokens/s). Quick ~18,5 s e ~US$ 0,0195 (margem ~86%).
   Toda analise loga `[Cost]` e `[Metrics]` no Render.
