@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { AIAdapter, buildRealDataBlock } from './ai.adapter';
+import { AIAdapter, buildRealDataBlock, classifyRawCurrentPrice, logNewsGuardStatus } from './ai.adapter';
 import { FallbackVisionModel, OpenAiVisionModel, type VisionModel } from './vision-model';
 
 // A analise chama o modelo so pela interface do provedor; o fake fica no
@@ -179,6 +179,119 @@ describe('AIAdapter trade-plan integrity', () => {
     });
   });
 
+  // Guard de cripto (19/10/2026): mesma resposta, so muda o simbolo e a chave.
+  describe('ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD pelo adapter', () => {
+    const condition = 'Place a buy limit at 100 only after a sweep/reclaim of 99; no reclaim, no trade.';
+    const saved = process.env.ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD;
+    afterEach(() => {
+      if (saved === undefined) delete process.env.ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD;
+      else process.env.ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD = saved;
+    });
+    // Precos realistas por ativo: com 100 a correcao de ordem de grandeza mexeria nos niveis.
+    const base: Record<string, number> = { BTCUSDT: 84600, BTCUSDm: 84600, ETHUSD: 4000, XAUUSD: 4200, XAUUSDm: 4200, EURUSD: 1.16, EURUSDm: 1.16, US500: 6600 };
+    const plan = (symbol: string) => {
+      const p = base[symbol];
+      return { currentPrice: p * 1.002, entry: p, stopLoss: p * 0.99, takeProfit2: p * 1.04, invalidationLevel: p * 0.991, tp1: p * 1.02 };
+    };
+    const run = async (symbol: string, key: string | undefined, entryCondition = condition) => {
+      if (key === undefined) delete process.env.ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD;
+      else process.env.ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD = key;
+      const { tp1, ...levels } = plan(symbol);
+      const adapter = new AIAdapter();
+      withFakeOpenAi(adapter, jest.fn().mockResolvedValue(
+        responseFor(tp1, { symbol, ...levels, entryType: 'limit', entryCondition }),
+      ));
+      return adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    };
+    const shape = (r: any) => ({
+      recommendation: r.recommendation, confidence: r.confidence,
+      levels: [r.analysis?.entry, r.analysis?.stopLoss, r.analysis?.takeProfit1, r.analysis?.takeProfit2],
+      action: r.engineMeta?.validatorAction, reasons: r.engineMeta?.validatorReasons, flags: r.engineMeta?.validatorFlags,
+    });
+
+    it('desligada ou valor invalido: cripto igual a hoje (BUY, so a marca)', async () => {
+      for (const key of [undefined, 'false', 'sim']) {
+        expect(shape(await run('BTCUSDT', key))).toMatchObject({
+          recommendation: 'BUY', action: 'none', reasons: [], flags: ['limit_needs_confirmation'],
+        });
+      }
+    });
+
+    it('BTCUSDm (Exness): desligada igual a hoje, ligada vira WAIT', async () => {
+      expect(shape(await run('BTCUSDm', undefined))).toMatchObject({ recommendation: 'BUY', action: 'none', flags: ['limit_needs_confirmation'] });
+      expect(shape(await run('BTCUSDm', 'true'))).toMatchObject({ recommendation: 'WAIT', action: 'downgraded', reasons: ['limit_needs_confirmation'] });
+    });
+
+    it('ligada: cripto vira WAIT com os niveis mantidos e o motivo gravado', async () => {
+      const r = shape(await run('BTCUSDT', 'true'));
+      expect(r).toMatchObject({
+        recommendation: 'WAIT', action: 'downgraded', reasons: ['limit_needs_confirmation'], flags: [],
+        levels: [84600, 84600 * 0.99, 84600 * 1.02, 84600 * 1.04],
+      });
+      expect(r.confidence).toBeLessThanOrEqual(45);
+    });
+
+    it('ligada: ouro, forex e indice saem identicos a chave desligada', async () => {
+      for (const symbol of ['XAUUSD', 'XAUUSDm', 'EURUSD', 'EURUSDm', 'US500']) {
+        expect(shape(await run(symbol, 'true'))).toEqual(shape(await run(symbol, undefined)));
+        expect(shape(await run(symbol, 'true')).recommendation).toBe('BUY');
+      }
+    });
+
+    it('rollback: ligar e desligar no mesmo processo volta ao resultado de hoje', async () => {
+      const before = shape(await run('ETHUSD', undefined));
+      expect(shape(await run('ETHUSD', 'true')).recommendation).toBe('WAIT');
+      expect(shape(await run('ETHUSD', 'false'))).toEqual(before);
+    });
+
+    it('cripto sem a frase de confirmacao nao muda com a chave ligada', async () => {
+      const plain = 'Place a buy limit at 84600 inside the bullish OB; no fill, no trade.';
+      const r = shape(await run('BTCUSDT', 'true', plain));
+      expect(r).toMatchObject({ recommendation: 'BUY', action: 'none', flags: [] });
+      expect(r).toEqual(shape(await run('BTCUSDT', undefined, plain)));
+    });
+  });
+
+  // Respostas reais do luna (19/10/2026): percentual do stop com sinal trocado,
+  // 6 ✅ listados com "factorsPresent: 5" e limit que espera rejeicao.
+  it('recalcula percentuais e o total do checklist sem mudar o sinal, e so marca o limit com confirmacao', async () => {
+    const adapter = new AIAdapter();
+    const checklist = '✅ HTF bias: bearish. ✅ Zone: premium. ✅ OB: 113800. ✅ Liquidity: swept. ' +
+      '✅ BOS: confirmed. ✅ R:R: 2.3. ❌ MTF: one chart only. → 5/7 → SELL limit.';
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue({
+      model: 'gpt-5.6-luna',
+      choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({
+        is_financial_chart: true,
+        recommendation: 'SELL',
+        confidence: 70,
+        analysis: {
+          symbol: 'TEST', timeframe: '4h', currentPrice: 100,
+          entry: 100, stopLoss: 105, takeProfit1: 90, takeProfit2: 80,
+          stopLossPercent: 5, takeProfit1Percent: 5, takeProfit2Percent: 20,
+          marketStructure: { bias: 'bearish' }, trendStrength: 'moderate',
+          factorsPresent: 5, confluenceScore: 71.43, structureValidation: checklist,
+          entryType: 'limit',
+          entryCondition: 'Place a sell limit at 100 only after a sweep and rejection; no rejection, no trade.',
+        },
+      }) } }],
+    }));
+
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result.recommendation).toBe('SELL');
+    expect(result.analysis).toMatchObject({
+      stopLossPercent: -5,
+      takeProfit1Percent: 10,
+      takeProfit2Percent: 20,
+      factorsPresent: 6,
+      confluenceScore: 85.71,
+    });
+    expect(result.engineMeta).toMatchObject({
+      validatorAction: 'none',
+      validatorReasons: [],
+      validatorFlags: ['limit_needs_confirmation'],
+    });
+  });
+
   it('turns a BUY with an absurd target (extra digit) into WAIT, keeping the levels', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { takeProfit2: 1200 })));
@@ -219,6 +332,112 @@ describe('AIAdapter trade-plan integrity', () => {
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(result.respondedModel).toBe('gpt-5.6-luna');
     expect(result.groundingStats).toBeNull();
+  });
+});
+
+// D3 (19/10/2026): caracterizacao do currentPrice no parser do adapter. Nao muda regra.
+describe('AIAdapter currentPrice no parser (caracterizacao)', () => {
+  const saved = { grounding: process.env.ENABLE_QUICK_GROUNDING, news: process.env.ENABLE_NEWS_GUARD };
+  beforeEach(() => {
+    process.env.ENABLE_QUICK_GROUNDING = 'false';
+    process.env.ENABLE_NEWS_GUARD = 'false';
+  });
+  afterAll(() => {
+    if (saved.grounding === undefined) delete process.env.ENABLE_QUICK_GROUNDING;
+    else process.env.ENABLE_QUICK_GROUNDING = saved.grounding;
+    if (saved.news === undefined) delete process.env.ENABLE_NEWS_GUARD;
+    else process.env.ENABLE_NEWS_GUARD = saved.news;
+  });
+
+  const reply = (recommendation: string, analysis: Record<string, unknown>) => ({
+    model: 'gpt-5.6-luna',
+    choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({
+      is_financial_chart: true, recommendation, confidence: 50,
+      analysis: { symbol: 'TEST', timeframe: '30m', marketStructure: { bias: 'neutral' }, ...analysis },
+    }) } }],
+  });
+
+  it.each([
+    ['0', 0],
+    ['null', null],
+    ['ausente', undefined],
+    ['string vazia', ''],
+    ['texto nao numerico', 'abc'],
+  ] as const)('preco %s: o adapter entrega 0 e a analise WAIT segue sem erro', async (_name, price) => {
+    const adapter = new AIAdapter();
+    const analysis: Record<string, unknown> = {};
+    if (price !== undefined) analysis.currentPrice = price;
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(reply('HOLD', analysis)));
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result.recommendation).toBe('WAIT');
+    expect(result.analysis?.currentPrice).toBe(0);
+    expect((result.rawResponse as any).analysis.currentPrice).toBe(0);
+  });
+
+  it('preco numerico em texto ("123.5") e convertido, sem virar 0', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(reply('HOLD', { currentPrice: '123.5' })));
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result.analysis?.currentPrice).toBe(123.5);
+  });
+
+  // Rastreabilidade (19/10/2026): so um log com a forma do valor bruto; o resultado e o mesmo.
+  it.each([
+    ['0', 0, 'model_zero'],
+    ['negativo', -5, 'model_negative'],
+    ['null', null, 'null'],
+    ['ausente', undefined, 'missing'],
+    ['string vazia', '', 'non_numeric'],
+    ['texto nao numerico', 'abc', 'non_numeric'],
+    ['texto "0"', '0', 'model_zero'],
+  ] as const)('preco %s: registra a origem do 0 no log, sem mudar o resultado', async (_name, price, issue) => {
+    const adapter = new AIAdapter();
+    const warn = jest.spyOn((adapter as any).logger, 'warn').mockImplementation(() => undefined);
+    const analysis: Record<string, unknown> = {};
+    if (price !== undefined) analysis.currentPrice = price;
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(reply('HOLD', analysis)));
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    const priceLogs = warn.mock.calls.map(([m]) => String(m)).filter((m) => m.startsWith('[price]'));
+    expect(priceLogs).toEqual([`[price] currentPrice do modelo sem preco util: ${issue}`]);
+    expect(result.recommendation).toBe('WAIT');
+    expect(result.analysis?.currentPrice).toBe(price === -5 ? -5 : 0);
+  });
+
+  it.each([['positivo', 101.25], ['texto numerico', '123.5']] as const)(
+    'preco %s: nenhum log de preco',
+    async (_name, price) => {
+      const adapter = new AIAdapter();
+      const warn = jest.spyOn((adapter as any).logger, 'warn').mockImplementation(() => undefined);
+      withFakeOpenAi(adapter, jest.fn().mockResolvedValue(reply('HOLD', { currentPrice: price })));
+      await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+      expect(warn.mock.calls.map(([m]) => String(m)).filter((m) => m.startsWith('[price]'))).toEqual([]);
+    },
+  );
+
+  it('classifyRawCurrentPrice so classifica o que o valor bruto sustenta', () => {
+    expect(classifyRawCurrentPrice(0)).toBe('model_zero');
+    expect(classifyRawCurrentPrice(-1)).toBe('model_negative');
+    expect(classifyRawCurrentPrice(undefined)).toBe('missing');
+    expect(classifyRawCurrentPrice(null)).toBe('null');
+    expect(classifyRawCurrentPrice('')).toBe('non_numeric');
+    expect(classifyRawCurrentPrice('  ')).toBe('non_numeric');
+    expect(classifyRawCurrentPrice('abc')).toBe('non_numeric');
+    expect(classifyRawCurrentPrice(true)).toBe('non_numeric');
+    expect(classifyRawCurrentPrice({})).toBe('non_numeric');
+    expect(classifyRawCurrentPrice(Number.NaN)).toBe('non_numeric');
+    expect(classifyRawCurrentPrice(42)).toBeNull();
+    expect(classifyRawCurrentPrice('42')).toBeNull();
+  });
+
+  it('BUY coerente com preco 0 segue BUY no adapter (sem preco, a faixa plausivel nao e checada)', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(reply('BUY', {
+      currentPrice: 0, entry: 100, stopLoss: 95, takeProfit1: 110, takeProfit2: 120,
+      trendStrength: 'strong', factorsPresent: 6,
+    })));
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result.recommendation).toBe('BUY');
+    expect(result.analysis?.currentPrice).toBe(0);
   });
 });
 
@@ -427,4 +646,30 @@ describe('AIAdapter Deep P1 regressions', () => {
       }
     },
   );
+});
+
+describe('logNewsGuardStatus (D4, 19/10/2026)', () => {
+  it.each([
+    ['disabled', null, null],
+    ['skipped', 'info', '[news-guard] status=skipped symbol=EURUSD'],
+    ['no_event', 'info', '[news-guard] status=no_event symbol=EURUSD'],
+    ['event', 'info', '[news-guard] status=event symbol=EURUSD'],
+    ['degraded_no_event', 'warn', '[news-guard] status=degraded_no_event symbol=EURUSD'],
+    ['degraded_event', 'warn', '[news-guard] status=degraded_event symbol=EURUSD'],
+    ['timeout', 'warn', '[news-guard] status=timeout symbol=EURUSD'],
+    ['error', 'warn', '[news-guard] status=error symbol=EURUSD'],
+  ] as const)('%s', (status, level, line) => {
+    const warn = jest.fn();
+    const info = jest.fn();
+    logNewsGuardStatus(status, 'EURUSD', warn, info);
+    expect(warn.mock.calls).toEqual(level === 'warn' ? [[line]] : []);
+    expect(info.mock.calls).toEqual(level === 'info' ? [[line]] : []);
+  });
+
+  it('simbolo vazio vira UNKNOWN e e cortado em 20 caracteres', () => {
+    const info = jest.fn();
+    logNewsGuardStatus('no_event', '', jest.fn(), info);
+    logNewsGuardStatus('no_event', 'X'.repeat(50), jest.fn(), info);
+    expect(info.mock.calls).toEqual([['[news-guard] status=no_event symbol=UNKNOWN'], [`[news-guard] status=no_event symbol=${'X'.repeat(20)}`]]);
+  });
 });

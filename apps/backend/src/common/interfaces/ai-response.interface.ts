@@ -47,6 +47,8 @@ export interface AIAnalysisResponse {
     validatorAction: ValidatorAction;
     validatorReasons: SignalDecisionResult['validatorReasons'];
     validatorFlags: SignalDecisionResult['validatorFlags'];
+    /** Status do news guard da decisao do adapter (so em memoria e log; o worker reusa). */
+    newsGuardStatus: SignalDecisionResult['newsGuardStatus'];
     groundingMs: number;
     modelMs: number;
     parseMs: number;

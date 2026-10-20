@@ -27,6 +27,94 @@ REGRAS: comente APENAS o que está visível; NÃO invente volume, indicadores ou
 RÓTULOS (contrato fixo com a interface): no executiveSummary, use EXATAMENTE estes rótulos em INGLÊS, um por linha, nesta ordem: "READING:", "VOLATILITY:", "SCENARIOS:", "MULTI-TIMEFRAME:", "MARKET PHASE:", "VOLUME:", "REVERSAL RISK:". NUNCA traduza os rótulos — a interface os traduz automaticamente. O CONTEÚDO de cada bloco, porém, deve ser escrito no OUTPUT LANGUAGE definido em USER_CONTEXT, assim como a linha final (que reforça que a direção é uma hipótese e a decisão é do usuário). Se houver DADOS REAIS no contexto, cite ao menos um número real no texto, rotulado como "dado real" (no idioma de saída).
 `.trim();
 
+// ============================================================================
+// MONTADOR DO PROMPT DA ANALISE (VNext, Etapa 1, 19/10/2026)
+// ----------------------------------------------------------------------------
+// Fonte unica do prompt que o WORKER (caminho de producao) entrega ao adapter.
+// Reproduz byte a byte o `getPrompt` que morava em worker/ai.worker.ts; prova
+// em src/__tests__/ai-worker-prompt-equivalence.spec.ts (480 casos + digest).
+// O caminho sincrono (`buildPromptByVersion`, abaixo) ainda monta por conta
+// propria e difere do worker em um ponto: com versao ausente, cai no prompt
+// ativo (o worker cai no do codigo). Alinhar muda comportamento: fica para
+// outra rodada. O trim do sincrono saiu em 19/10/2026 (so com consistency: false).
+// A "CONSISTENCIA OBRIGATORIA" saiu do sincrono em 19/10/2026 (D1); o /try e
+// os scripts de medicao ainda a recebem (padrao de buildPromptByVersion).
+// D2 (19/10/2026): o override (perna B do A/B da v9) tambem recebe o idioma
+// no {{USER_CONTEXT}}, como no sincrono; antes ia ao modelo com o placeholder
+// literal. Override sem placeholder segue sem instrucao de idioma (igual a API).
+// ============================================================================
+
+/** Idiomas de saida aceitos; qualquer outro codigo vira English. */
+export const OUTPUT_LANGUAGE_NAMES: Record<string, string> = {
+  pt: 'Portuguese (Brazil)',
+  en: 'English',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  ja: 'Japanese',
+};
+
+export function outputLanguageInstruction(langName: string): string {
+  return `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, breakevenTrigger, trendStrengthNote, marketRegimeNote, multiTimeframeAlignment, sessionNote, reasoning, marketStructure.lastStructure, marketStructure.breakOfStructure, marketStructure.priceZone, marketStructure.orderBlock) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
+}
+
+/** O pedaco do Prisma que o montador le (o PrismaClient do worker serve). */
+export interface PromptConfigReader {
+  promptConfig: {
+    findUnique(args: { where: { version: number } }): PromiseLike<{ prompt: string } | null>;
+    findFirst(args: {
+      where: { isActive: true };
+      orderBy: { version: 'desc' };
+    }): PromiseLike<{ prompt: string } | null>;
+  };
+}
+
+export interface AnalysisPromptInput {
+  promptOverride?: string;
+  promptVersion?: number;
+  userLanguage?: string;
+  analysisType?: AnalysisType;
+}
+
+export async function buildAnalysisPrompt(
+  db: PromptConfigReader,
+  { promptOverride, promptVersion, userLanguage, analysisType }: AnalysisPromptInput,
+): Promise<string> {
+  const withDeep = (p: string): string =>
+    analysisType === 'deep' && !p.includes('ANÁLISE DEEP — LEITURA EM CAMADAS')
+      ? `${p}\n\n${DEEP_ENRICHMENT_INSTRUCTION}`
+      : p;
+
+  // Inject language into USER_CONTEXT placeholder — English by default (global product)
+  const langName = (userLanguage && OUTPUT_LANGUAGE_NAMES[userLanguage]) ? OUTPUT_LANGUAGE_NAMES[userLanguage] : 'English';
+  const withLanguage = (p: string): string => p.replace('{{USER_CONTEXT}}', outputLanguageInstruction(langName));
+
+  if (promptOverride) {
+    return withDeep(withLanguage(promptOverride));
+  }
+
+  let basePrompt: string;
+
+  if (promptVersion) {
+    const promptConfig = await db.promptConfig.findUnique({
+      where: { version: promptVersion },
+    });
+    if (promptConfig?.prompt) {
+      basePrompt = promptConfig.prompt;
+    } else {
+      basePrompt = TRADING_SYSTEM_PROMPT;
+    }
+  } else {
+    const activePrompt = await db.promptConfig.findFirst({
+      where: { isActive: true },
+      orderBy: { version: 'desc' },
+    });
+    basePrompt = activePrompt?.prompt || TRADING_SYSTEM_PROMPT;
+  }
+
+  return withDeep(withLanguage(basePrompt));
+}
+
 const PARTS_SEPARATOR = '\n\n---\n\n';
 
 // Cache TTL: 60 segundos — evita DB round-trip em cada análise sem sacrificar atualizações
@@ -81,17 +169,33 @@ export class PromptBuilderService {
   }
 
   /**
-   * Resolves the prompt using a specific version number (used by the worker/queue path).
-   * Falls back to buildPrompt if the version isn't found.
+   * Resolves the prompt using a specific version number (synchronous path, /try and scripts).
+   * Falls back to the active prompt if the version isn't found.
+   *
+   * `consistency: false` (caminho sincrono da analise): monta como o worker,
+   * sem a "CONSISTENCIA OBRIGATORIA" (D1) e sem trim, com o bloco deep juntado
+   * como no `buildAnalysisPrompt` (19/10/2026). O padrao (/try e scripts) segue
+   * com o bloco e o trim.
    */
   async buildPromptByVersion(
     analysisType: AnalysisType,
     promptVersion?: number,
     override?: string,
     userLanguage?: string,
+    options: { consistency?: boolean } = {},
   ): Promise<string> {
+    const finish = (prompt: string): string => {
+      if (options.consistency !== false) {
+        return this.appendDeepEnrichment(this.appendConsistencyInstruction(prompt), analysisType);
+      }
+      // Mesma regra do `withDeep` de buildAnalysisPrompt (worker), sem trim.
+      return analysisType === 'deep' && !prompt.includes('ANÁLISE DEEP — LEITURA EM CAMADAS')
+        ? `${prompt}\n\n${DEEP_ENRICHMENT_INSTRUCTION}`
+        : prompt;
+    };
+
     if (override) {
-      return this.appendDeepEnrichment(this.appendConsistencyInstruction(this.injectLanguage(override, userLanguage)), analysisType);
+      return finish(this.injectLanguage(override, userLanguage));
     }
 
     if (promptVersion) {
@@ -99,12 +203,12 @@ export class PromptBuilderService {
         where: { version: promptVersion },
       });
       if (config?.prompt) {
-        return this.appendDeepEnrichment(this.appendConsistencyInstruction(this.injectLanguage(config.prompt, userLanguage)), analysisType);
+        return finish(this.injectLanguage(config.prompt, userLanguage));
       }
     }
 
     const base = await this.resolveActivePrompt();
-    return this.appendDeepEnrichment(this.appendConsistencyInstruction(this.injectLanguage(base, userLanguage)), analysisType);
+    return finish(this.injectLanguage(base, userLanguage));
   }
 
   private injectLanguage(prompt: string, userLanguage?: string): string {

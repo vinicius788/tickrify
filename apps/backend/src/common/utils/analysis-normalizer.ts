@@ -352,17 +352,43 @@ export function applyRiskRewardGuard(
   };
 }
 
+const CHECKLIST_MARKERS = '✅❌✔✖⚠⚪';
+const CHECKLIST_SPLIT = new RegExp(`(?=[${CHECKLIST_MARKERS}])`, 'u');
+
+/**
+ * Itens aprovados do checklist de 7 critérios, contados como a tela conta
+ * (`parseStructureChecklist` do frontend: "| N/A" vira item não avaliável).
+ * null quando o texto não traz exatamente 7 itens marcados.
+ */
+export function countChecklistApproved(structureValidation: unknown): number | null {
+  const text = String(structureValidation ?? '').replace(/\|\s*(N\/A)\b/giu, ' ⚪ $1');
+  const items = text
+    .split(CHECKLIST_SPLIT)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => CHECKLIST_MARKERS.includes(chunk.charAt(0)) &&
+      chunk.slice(1).replace(/^️/, '').trim() !== '');
+  if (items.length !== 7) return null;
+  return items.filter((chunk) => chunk.startsWith('✅') || chunk.startsWith('✔')).length;
+}
+
 /**
  * Reconcilia a confluência numérica com o checklist textual. O modelo às vezes
  * escreve "✅×7 → 7/7" no structureValidation mas zera confluenceScore/factorsPresent
  * (visto em produção: painel "0/100" ao lado de checklist 7/7). Quando os números
  * vêm zerados e o texto tem placar, o texto vence.
+ * 19/10/2026: com os 7 itens marcados e um total declarado diferente (respostas
+ * reais com 6 ✅ e "factorsPresent: 5"), a contagem da lista vence. É a lista
+ * que o usuário lê; o total errado alimentava o teto de confiança.
  */
 export function reconcileConfluence(
   structureValidation: unknown,
   confluenceScore: number,
   factorsPresent: number,
 ): { confluenceScore: number; factorsPresent: number } {
+  const approved = countChecklistApproved(structureValidation);
+  if (approved !== null && factorsPresent > 0 && approved !== factorsPresent) {
+    return { confluenceScore: Math.round((approved / 7) * 10000) / 100, factorsPresent: approved };
+  }
   if (factorsPresent > 0 || confluenceScore > 0) {
     return { confluenceScore, factorsPresent };
   }
@@ -430,6 +456,35 @@ export function formatRiskReward(ratio: number | null | undefined): string | nul
     return null;
   }
   return `1:${ratio.toFixed(1)}`;
+}
+
+export interface LevelPercents {
+  stopLossPercent: number | null;
+  takeProfit1Percent: number | null;
+  takeProfit2Percent: number | null;
+}
+
+/**
+ * Distancia percentual de cada nivel ate a entrada, calculada pelos precos
+ * (19/10/2026). Antes vinha pronta do modelo, que trocava o sinal do stop em
+ * vendas e as vezes errava o valor (8 de 83 planos de teste). Mesma convencao
+ * da tela (trading-ui.ts): stop sempre negativo, alvos positivos, 2 casas.
+ */
+export function computeLevelPercents(
+  entry: number | null | undefined,
+  stopLoss: number | null | undefined,
+  takeProfit1: number | null | undefined,
+  takeProfit2: number | null | undefined,
+): LevelPercents {
+  const valid = (n: number | null | undefined): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0;
+  const distance = (level: number | null | undefined): number | null =>
+    valid(entry) && valid(level) ? Math.round((Math.abs(level - entry) / entry) * 10000) / 100 : null;
+  const stop = distance(stopLoss);
+  return {
+    stopLossPercent: stop === null ? null : stop === 0 ? 0 : -stop,
+    takeProfit1Percent: distance(takeProfit1),
+    takeProfit2Percent: distance(takeProfit2),
+  };
 }
 
 export function parseJsonFromContent(content: string): Record<string, any> | null {

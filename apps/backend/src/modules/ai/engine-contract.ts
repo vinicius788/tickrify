@@ -81,8 +81,10 @@ const VERDICTS: Record<Recommendation, EngineVerdict> = {
 // Motivo fixo quando o validador rebaixou (o texto da IA defendia o trade).
 const VALIDATOR_REASON_TEXT: Record<SignalDecisionResult['validatorReasons'][number], string> = {
   stop_inside_invalidation: 'The stop sits before the invalidation level.',
+  limit_needs_confirmation: 'The limit entry waits for a confirmation a resting order cannot see.',
   implausible_price: 'A price level is outside a plausible range of the chart price.',
   rr_below_min: 'No target pays enough for the risk.',
+  news_event: 'A high-impact economic event is due within 45 minutes or came out in the last 15.',
   direction: 'Stop and targets do not match the trade direction.',
   incomplete: 'A required price level is missing.',
 };

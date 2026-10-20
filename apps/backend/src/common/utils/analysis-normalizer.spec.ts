@@ -8,6 +8,9 @@ import {
   correctPriceMagnitude,
   deriveMarketRegime,
   normalizeTargetProbabilities,
+  computeLevelPercents,
+  countChecklistApproved,
+  reconcileConfluence,
 } from './analysis-normalizer';
 
 describe('normalizeTargetProbabilities', () => {
@@ -270,5 +273,46 @@ describe('correctPriceMagnitude precision regression', () => {
     const input = { currentPrice: 107.983, entry: null, stopLoss: NaN, takeProfit1: Infinity, takeProfit2: -Infinity, invalidationLevel: null };
     expect(correctPriceMagnitude('UNKNOWN', input)).toBe(input);
     expect(correctPriceMagnitude('EURUSD', input)).toEqual({ ...input, currentPrice: input.currentPrice * 0.01 });
+  });
+});
+
+describe('computeLevelPercents', () => {
+  it('stop sempre negativo e alvos positivos, compra ou venda', () => {
+    expect(computeLevelPercents(100, 95, 110, 120)).toEqual({ stopLossPercent: -5, takeProfit1Percent: 10, takeProfit2Percent: 20 });
+    expect(computeLevelPercents(100, 105, 90, 80)).toEqual({ stopLossPercent: -5, takeProfit1Percent: 10, takeProfit2Percent: 20 });
+  });
+
+  it('duas casas, como a tela', () => {
+    expect(computeLevelPercents(1.07855, 1.077, 1.0802, null)).toEqual({ stopLossPercent: -0.14, takeProfit1Percent: 0.15, takeProfit2Percent: null });
+  });
+
+  it('sem entrada ou nivel valido devolve null (nunca 0 inventado)', () => {
+    expect(computeLevelPercents(null, 95, 110, 120)).toEqual({ stopLossPercent: null, takeProfit1Percent: null, takeProfit2Percent: null });
+    expect(computeLevelPercents(100, 0, NaN, undefined)).toEqual({ stopLossPercent: null, takeProfit1Percent: null, takeProfit2Percent: null });
+  });
+});
+
+describe('checklist x total declarado', () => {
+  const seven = (ok: number) =>
+    Array.from({ length: 7 }, (_, i) => `${i < ok ? '✅' : '❌'} Item ${i + 1}: detalhe.`).join(' ') + ` → ${ok}/7 → BUY.`;
+
+  it('conta os aprovados so com os 7 itens marcados', () => {
+    expect(countChecklistApproved(seven(6))).toBe(6);
+    expect(countChecklistApproved('✅ A. ✅ B. → 2/7')).toBeNull();
+    expect(countChecklistApproved('✅ A. ✅ B. ✅ C. ✅ D. ✅ E. ❌ F | N/A sem dado. → 5/7')).toBe(5);
+    expect(countChecklistApproved(null)).toBeNull();
+  });
+
+  it('a lista vence o total declarado quando os dois discordam', () => {
+    expect(reconcileConfluence(seven(6), 71.43, 5)).toEqual({ confluenceScore: 85.71, factorsPresent: 6 });
+  });
+
+  it('nao mexe quando batem, nem sem os 7 itens', () => {
+    expect(reconcileConfluence(seven(4), 57.14, 4)).toEqual({ confluenceScore: 57.14, factorsPresent: 4 });
+    expect(reconcileConfluence('texto livre sem marcadores', 57.14, 4)).toEqual({ confluenceScore: 57.14, factorsPresent: 4 });
+  });
+
+  it('zerado continua lendo o placar, como antes', () => {
+    expect(reconcileConfluence('✅ A ✅ B ✅ C ✅ D ✅ E ✅ F ✅ G → 7/7', 0, 0)).toEqual({ confluenceScore: 100, factorsPresent: 7 });
   });
 });

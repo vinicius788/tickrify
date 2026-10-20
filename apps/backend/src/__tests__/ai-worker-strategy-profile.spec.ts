@@ -639,4 +639,60 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     // TRAVA 1: o selo nunca muda a recomendacao.
     expect(saved![0].data.recommendation).toBe('WAIT');
   });
+
+  // D3 (19/10/2026): caracterizacao do preco atual no worker. Nao muda regra nenhuma.
+  describe('currentPrice no worker (caracterizacao)', () => {
+    function runWith(analysisId: string, recommendation: string, analysis: Record<string, unknown>) {
+      require('../../worker/ai.worker');
+      const processAnalysis = getProcessor();
+      const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
+      prismaClient.analysis.update.mockClear();
+      analyzeImageMock.mockResolvedValueOnce({ recommendation, confidence: 50, analysis });
+      return { prismaClient, run: () => processAnalysis(makeJob({
+        analysisId, imageUrl: 'https://example.com/chart.png',
+        promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: true,
+      })) };
+    }
+    const failedUpdate = (prismaClient: any) =>
+      prismaClient.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'failed');
+
+    it.each([
+      ['0', 0],
+      ['null', null],
+      ['ausente', undefined],
+      ['string vazia', ''],
+      ['texto nao numerico', 'abc'],
+    ] as const)('preco %s chega ao worker, vira 0 e falha a validacao final, mesmo num WAIT', async (_name, price) => {
+      const analysis: Record<string, unknown> = { symbol: 'TEST', timeframe: '30m' };
+      if (price !== undefined) analysis.currentPrice = price;
+      const { prismaClient, run } = runWith('analysis-price', 'WAIT', analysis);
+      await run();
+      const failed = failedUpdate(prismaClient);
+      expect(failed).toBeDefined();
+      expect(failed[0].data).toMatchObject({
+        status: 'failed',
+        errorCode: 'validation_failed',
+        errorMessage: 'Validação falhou: currentPrice inválido: 0',
+      });
+    });
+
+    it('BUY com niveis coerentes e preco 0: falha so pelo preco (o validador do plano nao checa a faixa sem preco)', async () => {
+      const { prismaClient, run } = runWith('analysis-buy-price-zero', 'BUY', {
+        symbol: 'TEST', timeframe: '30m', currentPrice: 0,
+        entry: 100, stopLoss: 95, takeProfit1: 110, takeProfit2: 120,
+      });
+      await run();
+      expect(failedUpdate(prismaClient)[0].data.errorMessage).toBe('Validação falhou: currentPrice inválido: 0');
+    });
+
+    it('WAIT com preco valido conclui normalmente', async () => {
+      const { prismaClient, run } = runWith('analysis-wait-price-ok', 'WAIT', {
+        symbol: 'TEST', timeframe: '30m', currentPrice: 123.45,
+      });
+      await run();
+      expect(failedUpdate(prismaClient)).toBeUndefined();
+      const completed = prismaClient.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed');
+      expect(completed[0].data.result.analysis.currentPrice).toBe(123.45);
+    });
+  });
 });

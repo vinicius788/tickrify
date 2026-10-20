@@ -104,6 +104,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD',
+    type: 'boolean',
+    label: 'Cripto: limit que exige confirmacao vira WAIT',
+    description:
+      'Em cripto, plano com ordem limit cuja condicao exige rejeicao/sweep/fechamento antes de entrar vira WAIT (niveis mantidos). Medido na v12: 2 acertos em 19 (-0,66R). LIGAR aumenta o WAIT em cripto (29 de 71 planos teriam virado WAIT).',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
     key: 'DEMO_MODE',
     type: 'boolean',
     label: 'Modo demo (resposta sintética)',

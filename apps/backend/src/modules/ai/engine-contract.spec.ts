@@ -64,6 +64,15 @@ describe('engine contract v2', () => {
     expect(empty.no_trade_reason).toBe('No trade setup on this chart.');
   });
 
+  it('news guard downgrade explains the event, not the model text that defended the trade', () => {
+    const fromNews = buildEngineContract({ ...trade, recommendation: 'WAIT', validatorReasons: ['news_event'] });
+    expect(fromNews.no_trade_reason).toBe(
+      'A high-impact economic event is due within 45 minutes or came out in the last 15.',
+    );
+    expect(fromNews).toMatchObject({ verdict: 'NEUTRAL', entry: null, stop: null, targets: [] });
+    expect(parseEngineContract(fromNews)).not.toBeNull();
+  });
+
   it('rejects anything outside the format', () => {
     const ok = buildEngineContract(trade);
     expect(parseEngineContract(null)).toBeNull();

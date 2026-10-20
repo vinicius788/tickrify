@@ -578,7 +578,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                         </span>
                         {confluence !== null && (
                           <span className="text-xs text-[var(--text-secondary)]">
-                            {Number(factorsPresent)}/{6} {tr.factors}
+                            {`${Number(factorsPresent)}/7 ${tr.factors}`}
                           </span>
                         )}
                       </div>

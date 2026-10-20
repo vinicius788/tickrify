@@ -6,6 +6,7 @@ import {
   applyRiskRewardGuard,
 } from './analysis-normalizer';
 import { EconomicCalendarService } from '../../modules/calendar/calendar.service';
+import { normalizeToBinancePerp } from '../../modules/market/market.service';
 import { BROKEN_PLAN_RULES, MEASURE_ONLY_RULES, TradePlanRule } from './trade-plan-validator';
 
 // ============================================================================
@@ -55,11 +56,43 @@ export interface SignalDecisionResult {
   /** Descrição do evento que rebaixou o sinal (para log), quando houver. */
   newsEvent: string | null;
   validatorAction: ValidatorAction;
-  /** Regras que rebaixaram o plano; `rr_below_min` é o guard de R/R. */
-  validatorReasons: Array<TradePlanRule | 'rr_below_min'>;
+  /**
+   * Regras que rebaixaram o plano; `rr_below_min` é o guard de R/R e
+   * `news_event` o news guard (evento High na janela).
+   */
+  validatorReasons: Array<TradePlanRule | 'rr_below_min' | 'news_event'>;
   /** Regras quebradas que so medem (MEASURE_ONLY_RULES): o sinal nao muda. */
   validatorFlags: TradePlanRule[];
+  /** O que o news guard conseguiu checar nesta decisao (so em memoria e log, nunca gravado). */
+  newsGuardStatus: NewsGuardStatus;
 }
+
+/**
+ * Resultado do news guard (19/10/2026). Politica ATUAL, sem mudanca: so
+ * `event`/`degraded_event` rebaixam. `timeout`, `error` e `degraded_no_event`
+ * seguem sem rebaixar (falha aberta), mas agora ficam distinguiveis de
+ * `no_event` (checou e nao havia evento). Bloquear nesses casos seria politica
+ * nova e depende do dono.
+ *   disabled          ENABLE_NEWS_GUARD desligado
+ *   skipped           o sinal ja era WAIT antes do guard (nada a checar)
+ *   no_event          calendario respondeu, sem evento High na janela
+ *   event             evento High na janela: rebaixou
+ *   degraded_no_event fonte fora do ar; resposta (cache velho ou vazia) sem evento
+ *   degraded_event    fonte fora do ar; o cache velho tinha o evento: rebaixou
+ *   timeout           o calendario nao respondeu em 6 s
+ *   error             o calendario lancou erro
+ */
+export type NewsGuardStatus =
+  | 'disabled'
+  | 'skipped'
+  | 'no_event'
+  | 'event'
+  | 'degraded_no_event'
+  | 'degraded_event'
+  | 'timeout'
+  | 'error';
+
+class CalendarTimeoutError extends Error {}
 
 // Instância única: reaproveita o cache de 1h do calendário entre análises.
 const calendar = new EconomicCalendarService();
@@ -71,9 +104,24 @@ function raceTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('calendar timed out')), ms);
+      timer = setTimeout(() => reject(new CalendarTimeoutError('calendar timed out')), ms);
     }),
   ]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Cripto para o guard de limit com confirmacao, aceitando sufixo de corretora
+ * (BTCUSDm da Exness, BTCUSD.pro, ETHUSD-P). So o guard usa: grounding,
+ * calendario e sweeper seguem com `normalizeToBinancePerp` como antes. A base
+ * continua tendo de estar na lista de cripto, entao ouro e forex nunca entram.
+ */
+export function isCryptoSymbolForGuard(symbol: unknown): boolean {
+  const raw = String(symbol ?? '').trim();
+  if (normalizeToBinancePerp(raw).isCrypto) return true;
+  const head = raw.split(/[.\-_#]/)[0];
+  if (head !== raw && normalizeToBinancePerp(head).isCrypto) return true;
+  const exness = head.match(/^(.+?(?:USDT|USDC|USD))[mcz]$/i);
+  return exness !== null && normalizeToBinancePerp(exness[1]).isCrypto;
 }
 
 export async function decideSignal(
@@ -98,8 +146,15 @@ export async function decideSignal(
   const failures = input.recommendation === 'WAIT'
     ? []
     : (input.planFailures ?? []).filter((rule) => !BROKEN_PLAN_RULES.includes(rule));
-  const validatorFlags = failures.filter((rule) => MEASURE_ONLY_RULES.includes(rule));
-  const planFailures = failures.filter((rule) => !MEASURE_ONLY_RULES.includes(rule));
+  // Cripto com limit que exige confirmacao (19/10/2026): v12, 2 acertos em 19
+  // planos decididos, -0,66R, contra -0,10R dos outros 35. Atras de chave
+  // DESLIGADA: ligar muda o WAIT% de cripto. Fora de cripto segue so medindo.
+  const measureOnly = (rule: TradePlanRule) =>
+    MEASURE_ONLY_RULES.includes(rule) &&
+    !(rule === 'limit_needs_confirmation' && flagBool('ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD') &&
+      isCryptoSymbolForGuard(input.symbol));
+  const validatorFlags = failures.filter(measureOnly);
+  const planFailures = failures.filter((rule) => !measureOnly(rule));
   const planDowngraded = input.recommendation !== 'WAIT' && planFailures.length > 0;
   const validated: Recommendation = planDowngraded ? 'WAIT' : input.recommendation;
   const validatedConfidence = planDowngraded ? Math.min(harmonized, 45) : harmonized;
@@ -110,13 +165,16 @@ export async function decideSignal(
   let confidence = guarded.confidence;
   let newsDowngraded = false;
   let newsEvent: string | null = null;
+  let newsGuardStatus: NewsGuardStatus = 'disabled';
 
   // 3) News guard — não se opera em cima de notícia. Evento de impacto ALTO para
   //    a(s) moeda(s) do ativo a ≤45min (ou que saiu há ≤15min) → WAIT, confiança ≤45.
   //    Best-effort: falha do calendário nunca bloqueia. Kill-switch: ENABLE_NEWS_GUARD=false.
-  if (flagBool('ENABLE_NEWS_GUARD') && recommendation !== 'WAIT') {
+  if (flagBool('ENABLE_NEWS_GUARD') && recommendation === 'WAIT') {
+    newsGuardStatus = 'skipped';
+  } else if (flagBool('ENABLE_NEWS_GUARD')) {
     try {
-      const { events } = await raceTimeout(
+      const { events, degraded } = await raceTimeout(
         calendar.getEventsForSymbol(String(input.symbol || ''), new Date(), 2),
         6_000,
       );
@@ -136,8 +194,12 @@ export async function decideSignal(
         newsDowngraded = true;
         newsEvent = `${imminent.country} ${imminent.title} (${imminent.minutesUntil}min)`;
       }
-    } catch {
+      newsGuardStatus = imminent
+        ? (degraded ? 'degraded_event' : 'event')
+        : (degraded ? 'degraded_no_event' : 'no_event');
+    } catch (error) {
       // segue normal — guard é proteção extra, nunca bloqueio
+      newsGuardStatus = error instanceof CalendarTimeoutError ? 'timeout' : 'error';
     }
   }
 
@@ -149,6 +211,9 @@ export async function decideSignal(
 
   const validatorReasons: SignalDecisionResult['validatorReasons'] = planDowngraded ? [...planFailures] : [];
   if (guarded.downgraded) validatorReasons.push('rr_below_min');
+  // Antes de 19/10/2026 o news guard rebaixava sem deixar motivo (action 'none').
+  // So registra: a decisao e a confianca ja foram tomadas acima.
+  if (newsDowngraded) validatorReasons.push('news_event');
 
   return {
     recommendation,
@@ -159,5 +224,6 @@ export async function decideSignal(
     validatorAction: validatorReasons.length > 0 ? 'downgraded' : input.priceFixed ? 'fixed' : 'none',
     validatorReasons,
     validatorFlags,
+    newsGuardStatus,
   };
 }

@@ -3,17 +3,17 @@ import 'dotenv/config';
 import { Job, UnrecoverableError, Worker } from 'bullmq';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { TRADING_SYSTEM_PROMPT } from '../src/common/prompts/trading-system-prompt';
 import {
   buildPersistedAnalysisPayload,
   NormalizedPersistedAnalysis,
 } from '../src/common/utils/analysis-payload';
-import { AIAdapter, AIAnalysisError } from '../src/modules/ai/ai.adapter';
+import { AIAdapter, AIAnalysisError, logNewsGuardStatus } from '../src/modules/ai/ai.adapter';
 import {
   computeRiskReward,
   formatRiskReward,
   normalizeTargetProbabilities,
   reconcileConfluence,
+  computeLevelPercents,
 } from '../src/common/utils/analysis-normalizer';
 import { decideSignal, type SignalDecisionResult, type ValidatorAction } from '../src/common/utils/signal-decision';
 import { BROKEN_PLAN_RULES, validateTradePlan } from '../src/common/utils/trade-plan-validator';
@@ -23,7 +23,7 @@ import { isProductionRuntime } from '../src/common/utils/runtime-env';
 import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-runtime';
 import { resolvePrismaDatasourceUrl } from '../src/modules/database/prisma.datasource';
 import { AnalysisType } from '../src/modules/ticks/tick-packages';
-import { DEEP_ENRICHMENT_INSTRUCTION } from '../src/modules/prompt/prompt-builder.service';
+import { buildAnalysisPrompt } from '../src/modules/prompt/prompt-builder.service';
 import { strategyFitFields, type StrategyProfile } from '../src/common/strategy/strategy-profile';
 import { startOutcomeSweeper } from './outcome.sweeper';
 import { trackFreeAnalysisCompleted } from '../src/common/analytics/free-funnel';
@@ -311,7 +311,42 @@ function normalizeRiskFactors(value: unknown): string[] {
   return items.length > 0 ? items : fallback;
 }
 
-async function toWorkerAnalysisResult(value: unknown): Promise<WorkerParseOutcome> {
+/**
+ * Decisao que o adapter ja tomou (D4, 19/10/2026). Quando a fonte e o
+ * AIAdapter, ela e a UNICA decisao: o worker nao roda `decideSignal` de novo
+ * (antes rodava, com uma 2a consulta ao calendario, e descartava a 1a).
+ */
+interface AdapterDecision {
+  recommendation: 'BUY' | 'SELL' | 'WAIT';
+  /** 0-100, como o adapter devolve. */
+  confidence: number;
+  validatorAction: ValidatorAction;
+  validatorReasons: SignalDecisionResult['validatorReasons'];
+  validatorFlags: SignalDecisionResult['validatorFlags'];
+  newsGuardStatus: SignalDecisionResult['newsGuardStatus'];
+}
+
+/** A decisao do adapter, se `aiSource` veio dele; null para outras fontes (demo). */
+function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
+  if (!isRecord(aiSource) || !isRecord(aiSource.engineMeta)) return null;
+  const meta = aiSource.engineMeta as Record<string, unknown>;
+  const rec = aiSource.recommendation;
+  if ((rec !== 'BUY' && rec !== 'SELL' && rec !== 'WAIT') || typeof aiSource.confidence !== 'number') return null;
+  if (!Array.isArray(meta.validatorReasons) || !Array.isArray(meta.validatorFlags)) return null;
+  return {
+    recommendation: rec,
+    confidence: aiSource.confidence,
+    validatorAction: meta.validatorAction as ValidatorAction,
+    validatorReasons: meta.validatorReasons as SignalDecisionResult['validatorReasons'],
+    validatorFlags: meta.validatorFlags as SignalDecisionResult['validatorFlags'],
+    newsGuardStatus: (meta.newsGuardStatus as SignalDecisionResult['newsGuardStatus']) ?? 'disabled',
+  };
+}
+
+async function toWorkerAnalysisResult(
+  value: unknown,
+  adapterDecision: AdapterDecision | null = null,
+): Promise<WorkerParseOutcome> {
   const source = isRecord(value) ? (value as Record<string, unknown>) : {};
   const analysisSource = isRecord(source.analysis) ? (source.analysis as Record<string, unknown>) : source;
   const marketStructureSource = isRecord(analysisSource.marketStructure)
@@ -327,8 +362,6 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerParseOutcom
 
   // Confiança em escala 0-100, com piso de 30 em gráfico válido (paridade com o
   // adapter). normalizeConfidence devolve 0-1 aqui — convertemos para 0-100.
-  const rawConfidence01 = normalizeConfidence(source.confidence);
-  const flooredConfidence = rawConfidence01 <= 0 ? 30 : Math.round(rawConfidence01 * 100);
 
   const tValidation = Date.now();
   const workerRecommendation = normalizeRecommendation(source.recommendation);
@@ -344,6 +377,8 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerParseOutcom
     takeProfit2,
     invalidationLevel,
     currentPrice: ensureNumber(analysisSource.currentPrice ?? source.currentPrice, 0),
+    entryType: analysisSource.entryType,
+    entryCondition: analysisSource.entryCondition,
   });
   if (planFailures.some((rule) => BROKEN_PLAN_RULES.includes(rule))) {
     throw new AIAnalysisError({
@@ -355,19 +390,32 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerParseOutcom
   const riskRewardTp1 = computeRiskReward(entry, stopLoss, takeProfit1, canonicalRecommendation);
   const riskRewardTp2 = computeRiskReward(entry, stopLoss, takeProfit2, canonicalRecommendation);
 
-  // Sequência determinística ÚNICA (mesma usada pelo adapter):
-  // caps de confiança → validador do plano → guard R/R → news guard → teto WAIT.
-  const decision = await decideSignal({
-    recommendation: canonicalRecommendation,
-    flooredConfidence,
-    trendStrength: analysisSource.trendStrength,
-    factorsPresent: analysisSource.factorsPresent,
-    riskRewardTp1,
-    riskRewardTp2,
-    symbol: ensureString(analysisSource.symbol ?? source.symbol, ''),
-    planFailures,
-    priceFixed: analysisSource.priceMagnitudeFixed === true,
-  });
+  // Fonte = adapter: a decisao dele e a unica. A confianca e arredondada como o
+  // worker sempre gravou (inteiro; com tetos inteiros, arredondar antes ou
+  // depois dos tetos da o mesmo numero). Outras fontes (demo, fora de
+  // producao): o worker decide sozinho, na sequencia unica do decideSignal.
+  let decision: Pick<SignalDecisionResult, 'recommendation' | 'confidence' | 'validatorAction' | 'validatorReasons' | 'validatorFlags'>;
+  if (adapterDecision) {
+    decision = { ...adapterDecision, confidence: Math.round(adapterDecision.confidence) };
+  } else {
+    // Confiança em escala 0-100, com piso de 30 em gráfico válido (paridade com o
+    // adapter). normalizeConfidence devolve 0-1 aqui — convertemos para 0-100.
+    const rawConfidence01 = normalizeConfidence(source.confidence);
+    const flooredConfidence = rawConfidence01 <= 0 ? 30 : Math.round(rawConfidence01 * 100);
+    const own = await decideSignal({
+      recommendation: canonicalRecommendation,
+      flooredConfidence,
+      trendStrength: analysisSource.trendStrength,
+      factorsPresent: analysisSource.factorsPresent,
+      riskRewardTp1,
+      riskRewardTp2,
+      symbol: ensureString(analysisSource.symbol ?? source.symbol, ''),
+      planFailures,
+      priceFixed: analysisSource.priceMagnitudeFixed === true,
+    });
+    logNewsGuardStatus(own.newsGuardStatus, analysisSource.symbol ?? source.symbol, console.warn, console.log);
+    decision = own;
+  }
   const validationMs = Date.now() - tValidation;
 
   const finalRecommendation: SchemaRecommendation =
@@ -398,15 +446,9 @@ async function toWorkerAnalysisResult(value: unknown): Promise<WorkerParseOutcom
       currentPrice: ensureNumber(analysisSource.currentPrice ?? source.currentPrice, 0),
       entry,
       stopLoss,
-      stopLossPercent: ensureNumberOrNull(analysisSource.stopLossPercent ?? source.stopLossPercent),
+      ...computeLevelPercents(entry, stopLoss, takeProfit1, takeProfit2),
       takeProfit1,
-      takeProfit1Percent: ensureNumberOrNull(
-        analysisSource.takeProfit1Percent ?? source.takeProfit1Percent,
-      ),
       takeProfit2,
-      takeProfit2Percent: ensureNumberOrNull(
-        analysisSource.takeProfit2Percent ?? source.takeProfit2Percent,
-      ),
       riskRewardRatio: finalRecommendation === 'AGUARDAR'
         ? null : formatRiskReward(riskRewardTp2 ?? riskRewardTp1),
       riskRewardTp1: finalRecommendation === 'AGUARDAR' ? null : riskRewardTp1,
@@ -670,56 +712,6 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
       multiTimeframeAlignment: 'DEMO | DEMO | DEMO → 3/3 alinhados — setup de alta convicção',
     },
   };
-}
-
-const LANGUAGE_NAMES: Record<string, string> = {
-  pt: 'Portuguese (Brazil)',
-  en: 'English',
-  es: 'Spanish',
-  fr: 'French',
-  de: 'German',
-  ja: 'Japanese',
-};
-
-async function getPrompt(
-  promptOverride?: string,
-  promptVersion?: number,
-  userLanguage?: string,
-  analysisType?: AnalysisType,
-): Promise<string> {
-  const withDeep = (p: string): string =>
-    analysisType === 'deep' && !p.includes('ANÁLISE DEEP — LEITURA EM CAMADAS')
-      ? `${p}\n\n${DEEP_ENRICHMENT_INSTRUCTION}`
-      : p;
-
-  if (promptOverride) {
-    return withDeep(promptOverride);
-  }
-
-  let basePrompt: string;
-
-  if (promptVersion) {
-    const promptConfig = await prisma.promptConfig.findUnique({
-      where: { version: promptVersion },
-    });
-    if (promptConfig?.prompt) {
-      basePrompt = promptConfig.prompt;
-    } else {
-      basePrompt = TRADING_SYSTEM_PROMPT;
-    }
-  } else {
-    const activePrompt = await prisma.promptConfig.findFirst({
-      where: { isActive: true },
-      orderBy: { version: 'desc' },
-    });
-    basePrompt = activePrompt?.prompt || TRADING_SYSTEM_PROMPT;
-  }
-
-  // Inject language into USER_CONTEXT placeholder — English by default (global product)
-  const langName = (userLanguage && LANGUAGE_NAMES[userLanguage]) ? LANGUAGE_NAMES[userLanguage] : 'English';
-  const languageContext = `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, breakevenTrigger, trendStrengthNote, marketRegimeNote, multiTimeframeAlignment, sessionNote, reasoning, marketStructure.lastStructure, marketStructure.breakOfStructure, marketStructure.priceZone, marketStructure.orderBlock) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
-
-  return withDeep(basePrompt.replace('{{USER_CONTEXT}}', languageContext));
 }
 
 async function persistAnnotatedImage(
@@ -1080,7 +1072,12 @@ async function processAnalysis(job: Job<JobData>) {
 
     // ── Free analyses (isDemo=true) now run real AI — no tick cost, same pipeline ─
     const tPrompt = Date.now();
-    const prompt = await getPrompt(promptOverride, promptVersion, userLanguage, normalizedAnalysisType);
+    const prompt = await buildAnalysisPrompt(prisma, {
+      promptOverride,
+      promptVersion,
+      userLanguage,
+      analysisType: normalizedAnalysisType,
+    });
     promptMs = Date.now() - tPrompt;
 
     const tAi = Date.now();
@@ -1102,7 +1099,7 @@ async function processAnalysis(job: Job<JobData>) {
         : aiSource;
 
     const tParse = Date.now();
-    const outcome = await toWorkerAnalysisResult(sourcePayload);
+    const outcome = await toWorkerAnalysisResult(sourcePayload, adapterDecisionFrom(aiSource));
     const parsed = outcome.result;
     rawContent = extractRawContent(aiSource, parsed);
     parseMs = Date.now() - tParse;
@@ -1191,7 +1188,9 @@ async function processAnalysis(job: Job<JobData>) {
         model_ms: adapterMeta?.modelMs ?? aiMs,
         // parse do adapter (JSON do modelo) + normalizacao do worker, sem a validacao.
         parse_ms: (adapterMeta?.parseMs ?? 0) + Math.max(0, parseMs - outcome.validationMs),
-        validation_ms: outcome.validationMs,
+        // Decisao do adapter (quando houve) + a validacao local do worker.
+        validation_ms: ((aiSource as { engineMeta?: { validationMs?: number } } | null)?.engineMeta?.validationMs ?? 0) +
+          outcome.validationMs,
         server_total_ms: typeof intake?.receivedAt === 'number' ? Date.now() - intake.receivedAt : null,
       },
       warn: (m) => console.warn(m),

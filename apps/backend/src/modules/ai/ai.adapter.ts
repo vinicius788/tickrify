@@ -8,6 +8,7 @@ import {
   normalizeConfidence,
   normalizeTargetProbabilities,
   reconcileConfluence,
+  computeLevelPercents,
   parseJsonFromContent,
   computeRiskReward,
   hasInvalidTradePlanLevels,
@@ -16,7 +17,7 @@ import {
   deriveMarketRegime,
   canonicalFxPair,
 } from '../../common/utils/analysis-normalizer';
-import { decideSignal } from '../../common/utils/signal-decision';
+import { decideSignal, type NewsGuardStatus } from '../../common/utils/signal-decision';
 import { computeCost, formatCostLog } from './model-cost';
 import {
   compareProvidersEnabled,
@@ -771,7 +772,51 @@ function repairTruncatedJson(content: string): string | null {
   }
 }
 
-function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
+/**
+ * Forma do `currentPrice` que o modelo mandou, quando ela NAO e um preco util
+ * (19/10/2026, so observabilidade). O parser segue igual: ausente, null, texto
+ * vazio ou nao numerico viram 0 (`ensureNumber`) e o negativo fica negativo;
+ * esta classificacao so diz a forma original. Texto numerico ("123.5") e preco
+ * positivo nao entram: viram preco normal.
+ */
+export type RawCurrentPriceIssue = 'model_zero' | 'model_negative' | 'missing' | 'null' | 'non_numeric';
+
+export function classifyRawCurrentPrice(raw: unknown): RawCurrentPriceIssue | null {
+  if (raw === undefined) return 'missing';
+  if (raw === null) return 'null';
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw)) return 'non_numeric';
+    if (raw === 0) return 'model_zero';
+    return raw < 0 ? 'model_negative' : null;
+  }
+  if (typeof raw === 'string' && raw.trim() !== '' && Number.isFinite(Number(raw))) {
+    return classifyRawCurrentPrice(Number(raw));
+  }
+  return 'non_numeric';
+}
+
+/**
+ * Uma linha por decisao usada (19/10/2026): o que o news guard checou. So o
+ * status e o simbolo do grafico; nada de prompt, resposta ou usuario. Falha
+ * (timeout, erro, fonte degradada) sai em warn porque o sinal seguiu SEM a
+ * checagem. `disabled` nao loga.
+ */
+export function logNewsGuardStatus(
+  status: NewsGuardStatus,
+  symbol: unknown,
+  warn: (message: string) => void,
+  info: (message: string) => void,
+): void {
+  if (status === 'disabled') return;
+  const line = `[news-guard] status=${status} symbol=${String(symbol || 'UNKNOWN').slice(0, 20)}`;
+  if (status === 'timeout' || status === 'error' || status.startsWith('degraded')) warn(line);
+  else info(line);
+}
+
+function parseSchemaResult(
+  content: string,
+  onPriceIssue?: (issue: RawCurrentPriceIssue) => void,
+): TradingAnalysisSchemaResult {
   const parsed = parseJsonFromContent(content);
 
   if (!parsed) {
@@ -789,6 +834,9 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
     !Array.isArray(parsedAnalysis.marketStructure)
       ? (parsedAnalysis.marketStructure as Record<string, unknown>)
       : {};
+
+  const priceIssue = classifyRawCurrentPrice(parsedAnalysis.currentPrice);
+  if (priceIssue && onPriceIssue) onPriceIssue(priceIssue);
 
   // ── Níveis de preço — com correção de ordem de grandeza (BTC lido 10x menor, etc.)
   const rawSymbol = ensureString(parsedAnalysis.symbol, 'UNKNOWN');
@@ -823,6 +871,10 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
   const riskRewardRatio = invalidTradePlan || side === 'WAIT'
     ? null : formatRiskReward(riskRewardTp2 ?? riskRewardTp1);
 
+  // Percentuais pelos precos ja corrigidos; os do modelo sao ignorados
+  // (vinham com sinal trocado ou valor errado).
+  const levelPercents = computeLevelPercents(entry, stopLoss, takeProfit1, takeProfit2);
+
   // Probabilidades por alvo: só publica um trio completo; confiança não
   // substitui valores que o modelo não forneceu.
   const targetProbabilities = normalizeTargetProbabilities(
@@ -849,11 +901,11 @@ function parseSchemaResult(content: string): TradingAnalysisSchemaResult {
       priceMagnitudeFixed,
       entry,
       stopLoss,
-      stopLossPercent: ensureNumberOrNull(parsedAnalysis.stopLossPercent),
+      stopLossPercent: levelPercents.stopLossPercent,
       takeProfit1,
-      takeProfit1Percent: ensureNumberOrNull(parsedAnalysis.takeProfit1Percent),
+      takeProfit1Percent: levelPercents.takeProfit1Percent,
       takeProfit2,
-      takeProfit2Percent: ensureNumberOrNull(parsedAnalysis.takeProfit2Percent),
+      takeProfit2Percent: levelPercents.takeProfit2Percent,
       entryY: ensureNumberOrNull(parsedAnalysis.entryY),
       stopY: ensureNumberOrNull(parsedAnalysis.stopY),
       tp1Y: ensureNumberOrNull(parsedAnalysis.tp1Y),
@@ -2027,7 +2079,9 @@ export class AIAdapter {
         let parsed: TradingAnalysisSchemaResult;
         const tParse = Date.now();
         try {
-          parsed = parseSchemaResult(contentToParse);
+          parsed = parseSchemaResult(contentToParse, (issue) =>
+            this.logger.warn(`[price] currentPrice do modelo sem preco util: ${issue}`),
+          );
           if (finishReason === 'length') {
             this.logger.warn('[AIAdapter] Análise salva após reparação de JSON truncado');
           }
@@ -2073,6 +2127,8 @@ export class AIAdapter {
           takeProfit2: parsed.analysis?.takeProfit2,
           invalidationLevel: parsed.analysis?.invalidationLevel,
           currentPrice: parsed.analysis?.currentPrice,
+          entryType: parsed.analysis?.entryType,
+          entryCondition: parsed.analysis?.entryCondition,
         });
         return { modelResult, content, parsed, parseMs, tValidation, rawRecommendation, planFailures };
       };
@@ -2173,7 +2229,8 @@ export class AIAdapter {
         priceFixed: parsed.analysis?.priceMagnitudeFixed === true,
       });
       const validationMs = Date.now() - tValidation;
-      if (decision.validatorReasons.some((r) => r !== 'rr_below_min')) {
+      // R/R e news guard tem linha propria abaixo.
+      if (decision.validatorReasons.some((r) => r !== 'rr_below_min' && r !== 'news_event')) {
         this.logger.warn(
           `Validador: sinal ${rawRecommendation} rebaixado para WAIT (${decision.validatorReasons.join(',')})`,
         );
@@ -2188,6 +2245,7 @@ export class AIAdapter {
           `News guard: sinal ${rawRecommendation} rebaixado para WAIT — evento High iminente: ${decision.newsEvent}`,
         );
       }
+      logNewsGuardStatus(decision.newsGuardStatus, parsed.analysis?.symbol, (m) => this.logger.warn(m), (m) => this.logger.log(m));
       const recommendation = decision.recommendation;
       const confidence = decision.confidence;
 
@@ -2213,6 +2271,7 @@ export class AIAdapter {
           validatorAction: decision.validatorAction,
           validatorReasons: decision.validatorReasons,
           validatorFlags: decision.validatorFlags,
+          newsGuardStatus: decision.newsGuardStatus,
           groundingMs,
           provider: modelResult.provider,
           modelMs: modelMsTotal,

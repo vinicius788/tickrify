@@ -180,6 +180,16 @@ describe('AiService access enforcement', () => {
     service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any, mailService as any, setups, new TrialService(prisma, mailService as any), { syncFromVerdict: jest.fn().mockResolvedValue(undefined) } as any);
   });
 
+  // Analise antiga gravada com o percentual do modelo (stop de venda positivo):
+  // a leitura recalcula pelos precos, como ja fazia com o R/R (19/10/2026).
+  it('le percentuais de analises antigas pelos precos, nao pelo que o modelo gravou', () => {
+    const fields = (service as any).extractOperationFields({
+      recommendation: 'SELL',
+      analysis: { entry: 100, stopLoss: 105, stopLossPercent: 5, takeProfit1: 90, takeProfit1Percent: 5, takeProfit2: null },
+    });
+    expect(fields).toMatchObject({ stopLossPercent: -5, takeProfit1Percent: 10, takeProfit2Percent: null });
+  });
+
   // ── Atualizar um setup acompanhado (12/10/2026) ─────────────────────────────
   describe('atualizacao de setup', () => {
     const flushAll = () => new Promise((resolve) => setImmediate(resolve));
@@ -270,6 +280,56 @@ describe('AiService access enforcement', () => {
         expect.any(Function),
       );
     });
+  });
+
+  // D1 (19/10/2026): o sincrono pede o prompt sem a "CONSISTENCIA OBRIGATORIA", como o worker.
+  it.each(['quick', 'deep'] as const)('caminho sincrono (%s) monta o prompt com consistency: false', async (analysisType) => {
+    (service as any).aiAdapter.analyzeImage = jest.fn().mockResolvedValue({
+      recommendation: 'WAIT', bias: 'neutral', confidence: 40, reasoning: 'No trigger yet.',
+      analysis: { symbol: 'EURUSD', timeframe: '1H' }, rawResponse: {}, rawContent: '{}',
+    });
+    prisma.analysis.update
+      .mockResolvedValueOnce({ id: 'an_d1', status: 'processing' })
+      .mockResolvedValueOnce({ id: 'an_d1', status: 'completed', isDemo: true, createdAt: new Date(), updatedAt: new Date() });
+    (service as any).serializeAnalysis = jest.fn().mockResolvedValue({ id: 'an_d1' });
+    promptBuilder.buildPromptByVersion.mockClear();
+
+    await (service as any).processSynchronously({
+      analysisId: 'an_d1', imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType, isDemo: true,
+      promptVersion: 12, promptOverride: undefined, userLanguage: 'pt',
+      intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
+    });
+
+    expect(promptBuilder.buildPromptByVersion).toHaveBeenCalledTimes(1);
+    expect(promptBuilder.buildPromptByVersion).toHaveBeenCalledWith(analysisType, 12, undefined, 'pt', { consistency: false });
+    expect((service as any).aiAdapter.analyzeImage.mock.calls[0][1]).toBe('test prompt');
+  });
+
+  // D3 (19/10/2026): caracterizacao. O sincrono nao tem a validacao final do worker:
+  // a mesma resposta com preco 0 e gravada como concluida.
+  it.each(['WAIT', 'BUY'] as const)('caminho sincrono grava como concluida uma resposta %s com preco 0', async (recommendation) => {
+    (service as any).aiAdapter.analyzeImage = jest.fn().mockResolvedValue({
+      recommendation, bias: 'neutral', confidence: 50, reasoning: 'x',
+      analysis: {
+        symbol: 'TEST', timeframe: '30m', currentPrice: 0,
+        ...(recommendation === 'BUY' ? { entry: 100, stopLoss: 95, takeProfit1: 110, takeProfit2: 120 } : {}),
+      },
+      rawResponse: {}, rawContent: '{}',
+    });
+    prisma.analysis.update
+      .mockResolvedValueOnce({ id: 'an_p0', status: 'processing' })
+      .mockResolvedValueOnce({ id: 'an_p0', status: 'completed', isDemo: true, createdAt: new Date(), updatedAt: new Date() });
+    (service as any).serializeAnalysis = jest.fn().mockResolvedValue({ id: 'an_p0' });
+    prisma.analysis.update.mockClear();
+
+    await (service as any).processSynchronously({
+      analysisId: 'an_p0', imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType: 'quick', isDemo: true,
+      intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
+    });
+
+    const statuses = prisma.analysis.update.mock.calls.map(([args]: any[]) => args.data.status);
+    expect(statuses).toContain('completed');
+    expect(statuses).not.toContain('failed');
   });
 
   it.each(['quick', 'deep'] as const)('round-trips %s adapter prices through mocked persistence and real serialization', async (analysisType) => {

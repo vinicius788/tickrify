@@ -41,6 +41,7 @@ import {
   computeRiskReward,
   hasInvalidTradePlanLevels,
   formatRiskReward,
+  computeLevelPercents,
 } from '../../common/utils/analysis-normalizer';
 import {
   ImageStorageClient,
@@ -1323,11 +1324,13 @@ export class AiService implements OnModuleInit {
       await runPreHooks(pipelineCtx, [validateImageHook()]);
 
       const tPrompt = Date.now();
+      // Sem a "CONSISTENCIA OBRIGATORIA", igual ao worker (D1, 19/10/2026).
       const prompt = await this.promptBuilder.buildPromptByVersion(
         analysisType,
         promptVersion,
         promptOverride,
         userLanguage,
+        { consistency: false },
       );
       const promptMs = Date.now() - tPrompt;
       const aiResponse = await this.aiAdapter.analyzeImage(
@@ -2299,19 +2302,11 @@ export class AiService implements OnModuleInit {
         fullResponse?.stopLoss ??
         fullResponse?.stop_loss,
     );
-    const stopLossPercent = this.toNullableNumber(
-      analysisMeta?.stopLossPercent ?? analysisMeta?.stop_loss_percent ?? fullResponse?.stopLossPercent,
-    );
     const takeProfit1 = this.toNullableNumber(
       analysisMeta?.takeProfit1 ??
         analysisMeta?.take_profit_1 ??
         fullResponse?.takeProfit1 ??
         fullResponse?.take_profit_1,
-    );
-    const takeProfit1Percent = this.toNullableNumber(
-      analysisMeta?.takeProfit1Percent ??
-        analysisMeta?.take_profit_1_percent ??
-        fullResponse?.takeProfit1Percent,
     );
     const takeProfit2 = this.toNullableNumber(
       analysisMeta?.takeProfit2 ??
@@ -2319,10 +2314,13 @@ export class AiService implements OnModuleInit {
         fullResponse?.takeProfit2 ??
         fullResponse?.take_profit_2,
     );
-    const takeProfit2Percent = this.toNullableNumber(
-      analysisMeta?.takeProfit2Percent ??
-        analysisMeta?.take_profit_2_percent ??
-        fullResponse?.takeProfit2Percent,
+    // Percentuais recalculados pelos precos, como o R/R abaixo: corrige tambem as
+    // analises antigas gravadas com o percentual do modelo (sinal trocado).
+    const { stopLossPercent, takeProfit1Percent, takeProfit2Percent } = computeLevelPercents(
+      entry,
+      stopLoss,
+      takeProfit1,
+      takeProfit2,
     );
     const reasoning =
       this.toNullableString(fallbackReasoning) ??
