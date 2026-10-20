@@ -19,6 +19,7 @@ vi.mock('@/hooks/useFoundingOffer', () => ({ useFoundingOffer: () => offer.curre
 
 import { PricingCards } from '@/components/pricing/PricingCards';
 import { clearCheckoutIntent, loadCheckoutIntent } from '@/lib/checkoutIntent';
+import { CheckoutError } from '@/lib/stripe';
 
 /** Troca `window.location` por um objeto que registra o destino do redirect. */
 function stubLocation(url: string) {
@@ -135,6 +136,21 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
 
     await waitFor(() => expect(createCheckoutSession).toHaveBeenCalledTimes(1));
     expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', cycle, 'usd', coupon, 'pricing');
+  });
+
+  it('conta que ja tem assinatura (past_due incluso): avisa e leva para Configuracoes, onde fica o cartao', async () => {
+    auth.isSignedIn = true;
+    sessionStorage.clear();
+    createCheckoutSession.mockRejectedValue(new CheckoutError('already subscribed', 'already_subscribed', 409));
+    const location = stubLocation('https://tickrify.com/dashboard/plans');
+
+    render(<PricingCards />);
+    await userEvent.click(screen.getByRole('button', { name: /^monthly/i }));
+    await userEvent.click(screen.getByRole('button', { name: /get started/i }));
+
+    await waitFor(() => expect(location.assigned).toBe('/dashboard/settings'));
+    const flash = JSON.parse(sessionStorage.getItem('tickrify_flash') ?? '{}');
+    expect(flash.description).toBe('This account already has a subscription. Check its status or update your card in Settings.');
   });
 });
 

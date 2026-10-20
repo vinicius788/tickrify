@@ -744,6 +744,7 @@ export default {
     cycleMonthly: 'Mensual',
     cycleYearly: 'Anual',
     manage: 'Gestionar suscripción',
+    updateCard: 'Actualizar tarjeta',
     manageHint: 'Cambia tu tarjeta, consulta tus facturas o cancela. Si cancelas, conservas el acceso hasta el final del periodo ya pagado.',
     reactivate: 'Reactivar suscripción',
     reactivated: 'Tu suscripción vuelve a estar activa.',

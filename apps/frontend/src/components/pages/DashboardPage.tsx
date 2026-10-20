@@ -32,6 +32,7 @@ import AnalysisResult from "../dashboard/AnalysisResult";
 import Paywall, { type PaywallSurface } from "../dashboard/Paywall";
 import AnalysisLoading from "../dashboard/AnalysisLoading";
 import AnalysisCounter from "../dashboard/AnalysisCounter";
+import PaymentFailedBanner from "../dashboard/PaymentFailedBanner";
 import { TicksBadge } from "@/components/dashboard/TicksBadge";
 import RatingCard from '@/components/dashboard/RatingCard';
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
@@ -74,6 +75,7 @@ const DASH_COPY = {
     allowanceNoticeTitle: 'Your Ticks now reset every month',
     allowanceNoticeDesc: 'At the start of each billing month your balance goes back to 200 Ticks. Unused Ticks do not carry over.',
     alreadySubscribedTitle: 'You are already subscribed',
+    alreadySubscribedDesc: 'This account already has a subscription. Check its status or update your card in Settings.',
     planActivatedDesc: 'Welcome to Tickrify. Your ticks are now available.',
     uploadRequired: 'Please upload a chart image.',
     invalidFormat: 'Invalid format. Upload a PNG, JPG/JPEG or WEBP image.',
@@ -115,6 +117,7 @@ const DASH_COPY = {
     allowanceNoticeTitle: 'Seus Ticks agora renovam todo mês',
     allowanceNoticeDesc: 'No início de cada mês de cobrança seu saldo volta para 200 Ticks. Ticks não usados não acumulam.',
     alreadySubscribedTitle: 'Você já é assinante',
+    alreadySubscribedDesc: 'Esta conta já tem uma assinatura. Veja o status ou atualize o cartão em Configurações.',
     planActivatedDesc: 'Bem-vindo ao Tickrify. Seus ticks já estão disponíveis.',
     uploadRequired: 'Por favor, faça upload de uma imagem de gráfico.',
     invalidFormat: 'Formato inválido. Envie uma imagem PNG, JPG/JPEG ou WEBP.',
@@ -817,9 +820,13 @@ const DashboardPage = () => {
         message: message.slice(0, 200) || 'unknown',
       });
       if (code === 'already_subscribed') {
-        // Ja paga: mandar para a pagina de precos seria vender de novo. O
-        // painel ja e o lugar certo, entao so avisa.
-        toast({ title: dc.alreadySubscribedTitle, description: message });
+        // Ja tem assinatura: vender de novo nao serve. Em `past_due`/`unpaid`
+        // (renovacao recusada) e quem quer pagar de novo, e o unico caminho e o
+        // cartao novo pelo portal, que mora em Configuracoes (19/10/2026: um
+        // assinante com a renovacao recusada tentou assinar duas vezes pelo
+        // celular e ficou no toast, sem saida).
+        toast({ title: dc.alreadySubscribedTitle, description: dc.alreadySubscribedDesc });
+        goTo('settings');
         return;
       }
       toast({ title: dc.checkoutErrorTitle, description: message, variant: 'destructive' });
@@ -2271,6 +2278,10 @@ const DashboardPage = () => {
         <div className="flex flex-1 overflow-hidden">
           <main className="min-w-0 flex-1 overflow-y-auto p-3 md:p-6">
             <div className="flex flex-col gap-6 md:gap-8">
+              {/* Renovacao recusada (past_due/unpaid): o painel trata a conta como
+                  gratuita, entao o aviso com o botao do portal fica no topo de
+                  toda area. Configuracoes ja mostra o status por conta propria. */}
+              {user && !isDemo && !isPlanLoading && plan === 'free' && route.section !== 'settings' ? <PaymentFailedBanner /> : null}
               {/* Uma area que quebra nao derruba o painel inteiro: o menu
                   continua funcionando, trocar de area remonta (key) e o erro
                   vai para o Sentry com a area e se a pagina estava traduzida. */}

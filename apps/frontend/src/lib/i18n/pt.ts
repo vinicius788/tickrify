@@ -757,6 +757,7 @@ export default {
     cycleMonthly: 'Mensal',
     cycleYearly: 'Anual',
     manage: 'Gerenciar assinatura',
+    updateCard: 'Atualizar cartão',
     manageHint: 'Troque o cartão, veja as faturas ou cancele. Se cancelar, o acesso continua até o fim do período já pago.',
     reactivate: 'Reativar assinatura',
     reactivated: 'Sua assinatura está ativa de novo.',

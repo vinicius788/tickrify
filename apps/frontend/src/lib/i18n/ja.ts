@@ -744,6 +744,7 @@ export default {
     cycleMonthly: '月額',
     cycleYearly: '年額',
     manage: 'サブスクリプションを管理',
+    updateCard: 'カードを更新',
     manageHint: 'カードの変更、請求書の確認、解約ができます。解約しても、支払い済みの期間の終わりまで利用できます。',
     reactivate: 'サブスクリプションを再開',
     reactivated: 'サブスクリプションが再び有効になりました。',

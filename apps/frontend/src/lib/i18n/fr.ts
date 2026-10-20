@@ -744,6 +744,7 @@ export default {
     cycleMonthly: 'Mensuel',
     cycleYearly: 'Annuel',
     manage: 'Gérer l’abonnement',
+    updateCard: 'Mettre à jour la carte',
     manageHint: 'Changez de carte, consultez vos factures ou annulez. Si vous annulez, vous gardez l’accès jusqu’à la fin de la période déjà payée.',
     reactivate: 'Réactiver l’abonnement',
     reactivated: 'Votre abonnement est de nouveau actif.',

@@ -402,6 +402,10 @@ export type FunnelEvent =
   | 'checkout_failed'
   // Voltou da Stripe pelo cancel_url sem pagar.
   | 'checkout_canceled'
+  // Aviso de pagamento recusado (assinatura past_due/unpaid): visto e clique no
+  // botao que abre o portal da Stripe para trocar o cartao.
+  | 'billing_alert_viewed'
+  | 'billing_alert_clicked'
   // Estrelas abaixo do resultado da analise paga (07/10/2026). Texto nunca vai ao PostHog.
   | 'rating_card_viewed'
   | 'rating_card_dismissed'
