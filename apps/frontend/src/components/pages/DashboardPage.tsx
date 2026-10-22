@@ -2278,6 +2278,18 @@ const DashboardPage = () => {
         <div className="flex flex-1 overflow-hidden">
           <main className="min-w-0 flex-1 overflow-y-auto p-3 md:p-6">
             <div className="flex flex-col gap-6 md:gap-8">
+              {/* Aviso temporario de instabilidade (22/10/2026, pedido do dono).
+                  Tirar junto com `serviceNotice` dos 6 idiomas quando normalizar. */}
+              <div
+                role="status"
+                className="flex items-start gap-2.5 rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card)] p-4"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" style={{ color: 'var(--signal-hold)' }} aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-medium text-[var(--text-primary)]">{t.serviceNotice.title}</p>
+                  <p className="mt-1 text-xs text-[var(--text-secondary)]">{t.serviceNotice.body}</p>
+                </div>
+              </div>
               {/* Renovacao recusada (past_due/unpaid): o painel trata a conta como
                   gratuita, entao o aviso com o botao do portal fica no topo de
                   toda area. Configuracoes ja mostra o status por conta propria. */}

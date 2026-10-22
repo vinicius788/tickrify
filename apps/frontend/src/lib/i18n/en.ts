@@ -955,4 +955,8 @@ export default {
       disclaimer: 'Tickrify is a technical-analysis tool powered by artificial intelligence. It does not provide investment, financial, legal or tax advice, and nothing produced by the platform should be read as a recommendation to buy or sell any instrument. Trading in forex, crypto, stocks, indices and derivatives carries a high level of risk and can result in the loss of your entire capital. Past performance, including the hit rate published on our accuracy page, does not guarantee future results. You are solely responsible for your trading decisions.',
     },
   },
+  serviceNotice: {
+    title: 'We\'re experiencing some instability right now',
+    body: 'Some analyses may take longer or fail. We\'re already working on it and appreciate everyone\'s patience and understanding.',
+  },
 } as const;

@@ -955,4 +955,8 @@ export default {
       disclaimer: 'Tickrify ist ein Werkzeug zur technischen Analyse auf Basis künstlicher Intelligenz. Es erbringt keine Anlage-, Finanz-, Rechts- oder Steuerberatung, und nichts, was die Plattform ausgibt, ist als Kauf- oder Verkaufsempfehlung zu verstehen. Der Handel mit Forex, Krypto, Aktien, Indizes und Derivaten ist mit hohem Risiko verbunden und kann zum Totalverlust des Kapitals führen. Vergangene Ergebnisse, einschließlich der auf der Trefferquoten-Seite veröffentlichten Werte, garantieren keine künftigen Ergebnisse. Ihre Handelsentscheidungen treffen Sie allein.',
     },
   },
+  serviceNotice: {
+    title: 'Derzeit kommt es zu Instabilitäten',
+    body: 'Einige Analysen können länger dauern oder fehlschlagen. Wir arbeiten bereits daran und danken allen für ihr Verständnis.',
+  },
 } as const;

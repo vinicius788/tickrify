@@ -973,4 +973,8 @@ export default {
       disclaimer: 'A Tickrify é uma ferramenta de análise técnica com inteligência artificial. Não presta consultoria de investimento, financeira, jurídica ou tributária, e nada produzido pela plataforma deve ser lido como recomendação de compra ou venda de qualquer ativo. Operar em forex, cripto, ações, índices e derivativos envolve risco elevado e pode levar à perda total do capital. Resultados passados, inclusive a taxa de acerto publicada na página de acurácia, não garantem resultados futuros. As decisões de operação são exclusivamente suas.',
     },
   },
+  serviceNotice: {
+    title: 'Estamos enfrentando instabilidade no momento',
+    body: 'Algumas análises podem demorar mais ou falhar. Já estamos trabalhando nisso e pedimos a compreensão de todos.',
+  },
 } as const;
