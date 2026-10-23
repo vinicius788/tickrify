@@ -72,11 +72,16 @@ export const WEEKLY_PRICE_ID = 'price_1UKeWPB1hl0IoocUjsQNv9BG';
 export const WEEKLY_TICKS = 25;
 
 export function isWeeklyPriceId(priceId: string | null | undefined): boolean {
-  return priceId === WEEKLY_PRICE_ID;
+  return priceId === WEEKLY_PRICE_ID || Boolean(process.env.STRIPE_TEST_PRICE_WEEKLY && priceId === process.env.STRIPE_TEST_PRICE_WEEKLY);
 }
 
 /** String vazia = combinacao sem preco (o checkout responde price_not_configured). */
 export function getPriceId(plan: PlanType, interval: BillingCycle, currency: Currency): string {
+  if (stripeKeyMode(getStripeConfig().secretKey) === 'test') {
+    if (plan !== 'starter' || currency !== 'usd') return '';
+    return interval === 'weekly' ? process.env.STRIPE_TEST_PRICE_WEEKLY?.trim() ?? ''
+      : interval === 'monthly' ? process.env.STRIPE_TEST_PRICE_MONTHLY?.trim() ?? '' : process.env.STRIPE_TEST_PRICE_YEARLY?.trim() ?? '';
+  }
   if (interval === 'weekly') return plan === 'starter' && currency === 'usd' ? WEEKLY_PRICE_ID : '';
   return PRICES[plan][interval][currency];
 }
@@ -84,7 +89,7 @@ export function getPriceId(plan: PlanType, interval: BillingCycle, currency: Cur
 // Reverse-lookup: priceId → plan name (or null if not found)
 export function resolvePlanForPriceId(priceId: string): PlanType | null {
   if (!priceId) return null;
-  if (isWeeklyPriceId(priceId)) return 'starter';
+  if (isWeeklyPriceId(priceId) || (process.env.STRIPE_TEST_PRICE_MONTHLY && priceId === process.env.STRIPE_TEST_PRICE_MONTHLY) || (process.env.STRIPE_TEST_PRICE_YEARLY && priceId === process.env.STRIPE_TEST_PRICE_YEARLY)) return 'starter';
 
   for (const [planKey, intervals] of Object.entries(PRICES) as [PlanType, typeof PRICES[PlanType]][]) {
     for (const currencies of Object.values(intervals)) {
@@ -101,6 +106,8 @@ export function resolvePlanForPriceId(priceId: string): PlanType | null {
 export function billingCycleForPriceId(priceId: string | null | undefined): BillingCycle | null {
   if (!priceId) return null;
   if (isWeeklyPriceId(priceId)) return 'weekly';
+  if (process.env.STRIPE_TEST_PRICE_MONTHLY && priceId === process.env.STRIPE_TEST_PRICE_MONTHLY) return 'monthly';
+  if (process.env.STRIPE_TEST_PRICE_YEARLY && priceId === process.env.STRIPE_TEST_PRICE_YEARLY) return 'yearly';
   for (const intervals of Object.values(PRICES)) {
     for (const [cycle, currencies] of Object.entries(intervals) as [PlanCycle, Record<Currency, string>][]) {
       if (Object.values(currencies).includes(priceId)) return cycle;
@@ -182,4 +189,45 @@ export function allowanceWindowStart(
     start = next;
   }
   return start;
+}
+
+/** Prepared only: enabling the portal requires an explicitly provisioned config ID. */
+export const PORTAL_V2_API_VERSION = '2023-10-16';
+
+/** Gate portal entry only. Webhooks and already-paid entitlements never depend on rollout. */
+export function portalUpgradeEnabled(userId: string): boolean {
+  return process.env.STRIPE_UPGRADE_ENABLED === 'true' &&
+    (process.env.STRIPE_UPGRADE_USER_IDS ?? '').split(',').map(id => id.trim()).filter(Boolean).includes(userId);
+}
+
+export function portalCatalog() {
+  if (stripeKeyMode(getStripeConfig().secretKey) === 'test') {
+    const product = process.env.STRIPE_TEST_PRODUCT_ID?.trim();
+    const weekly = process.env.STRIPE_TEST_PRICE_WEEKLY?.trim();
+    const monthly = process.env.STRIPE_TEST_PRICE_MONTHLY?.trim();
+    if (!product || !weekly || !monthly) throw new Error('Test Stripe catalog is not configured; live IDs are never used as fallback.');
+    return { product, weekly, monthly };
+  }
+  if (stripeKeyMode(getStripeConfig().secretKey) !== 'live') throw new Error('Stripe key mode is unknown.');
+  return { product: 'prod_U0Xv91LhQKeP94', weekly: WEEKLY_PRICE_ID, monthly: PRICES.starter.monthly.usd };
+}
+export function portalV2Configuration(base: string) {
+  const catalog = portalCatalog();
+  return {
+    metadata: { tickrify: 'portal_v2' },
+    default_return_url: `${base}/dashboard/settings`,
+    business_profile: { privacy_policy_url: `${base}/privacy`, terms_of_service_url: `${base}/terms` },
+    features: {
+      customer_update: { enabled: false },
+      invoice_history: { enabled: true },
+      payment_method_update: { enabled: true },
+      subscription_cancel: { enabled: true, mode: 'at_period_end' as const, proration_behavior: 'none' as const },
+      subscription_update: {
+        enabled: true,
+        default_allowed_updates: ['price' as const],
+        products: [{ product: catalog.product, prices: [catalog.monthly] }],
+        proration_behavior: 'always_invoice' as const,
+      },
+    },
+  };
 }

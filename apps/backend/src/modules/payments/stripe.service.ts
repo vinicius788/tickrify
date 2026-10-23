@@ -23,6 +23,10 @@ import { MailService } from '../mail/mail.service';
 import { flagBool } from '../../common/flags/feature-flags';
 import {
   getStripeConfig,
+  portalV2Configuration,
+  portalCatalog,
+  portalUpgradeEnabled,
+  PORTAL_V2_API_VERSION,
   getPriceId,
   resolvePlanForPriceId,
   billingCycleForPriceId,
@@ -804,7 +808,7 @@ export class StripeService implements OnModuleInit {
    * usuario do token, nunca do navegador. Quem nunca assinou (ou so abriu um
    * checkout) recebe 403 e a tela nem mostra o botao.
    */
-  async createCustomerPortal(clerkUserId: string) {
+  async createCustomerPortal(clerkUserId: string, upgrade = false) {
     try {
       const stripe = this.getStripeClient();
       const user = await this.prisma.user.findUnique({
@@ -821,17 +825,47 @@ export class StripeService implements OnModuleInit {
         throw new ForbiddenException({ code: 'no_subscription', message: 'There is no subscription to manage.' });
       }
 
-      const configuration = await this.ensurePortalConfiguration();
-      const session = await stripe.billingPortal.sessions.create({
+      // The rollout is checked against the internal user ID resolved from authentication.
+      if (upgrade && !portalUpgradeEnabled(user.id)) throw new ForbiddenException('Plan upgrade is not enabled for this user.');
+      const live = upgrade && portalUpgradeEnabled(user.id) ? await stripe.subscriptions.retrieve(subscription.stripeId) : null;
+      const eligible = live?.status === 'active' && !live.schedule && !live.pending_update && !cancelScheduled(live) &&
+        live.items.data.length === 1 && live.items.data[0].quantity === 1 && live.items.data[0].price.id === portalCatalog().weekly;
+      if (upgrade && !eligible) throw new ConflictException('This subscription cannot be upgraded.');
+      const v2 = eligible ? process.env.STRIPE_PORTAL_V2_CONFIG_ID?.trim() : undefined;
+      if (eligible && !v2) throw new ServiceUnavailableException('Upgrade portal is not configured.');
+      if (v2) {
+        // Provisioning is deliberately external; opening a session never creates v2.
+        const config = await stripe.billingPortal.configurations.retrieve(v2, { expand: ['features.subscription_update.products'] }, { apiVersion: PORTAL_V2_API_VERSION });
+        const expected = portalV2Configuration(this.resolveAppBaseUrl()).features.subscription_update;
+        const update = config.features.subscription_update;
+
+        if (!config.active || config.metadata?.tickrify !== 'portal_v2' || !update.enabled ||
+            JSON.stringify(update.default_allowed_updates) !== JSON.stringify(expected.default_allowed_updates) ||
+            update.proration_behavior !== expected.proration_behavior ||
+            (!update.products || update.products.length !== 1 || update.products[0].product !== expected.products[0].product ||
+              JSON.stringify([...update.products[0].prices].sort()) !== JSON.stringify([...expected.products[0].prices].sort())) ||
+            config.livemode !== (stripeKeyMode(getStripeConfig().secretKey) === 'live')) {
+          throw new ServiceUnavailableException('Billing portal configuration has not been verified.');
+        }
+      }
+      const configuration = v2 || await this.ensurePortalConfiguration();
+      const params: Stripe.BillingPortal.SessionCreateParams = {
         customer: user.stripeCustomerId,
         return_url: `${this.resolveAppBaseUrl()}/dashboard/settings`,
         ...(configuration ? { configuration } : {}),
-      });
+        ...(v2 && live ? { flow_data: {
+          type: 'subscription_update_confirm' as const,
+          subscription_update_confirm: { subscription: live.id, items: [{ id: live.items.data[0].id, price: portalCatalog().monthly, quantity: 1 }] },
+        } } : {}),
+      };
+      const session = v2
+        ? await stripe.billingPortal.sessions.create(params, { apiVersion: PORTAL_V2_API_VERSION })
+        : await stripe.billingPortal.sessions.create(params);
 
       captureServer(clerkUserId, 'billing_portal_opened', { subscriptionId: subscription.stripeId });
       return { url: session.url };
     } catch (error) {
-      if (error instanceof ForbiddenException) throw error;
+      if (error instanceof ForbiddenException || error instanceof ConflictException) throw error;
       this.logger.error('Failed to create customer portal', {
         clerkUserId,
         error: error instanceof Error ? error.message : String(error),
@@ -965,7 +999,7 @@ export class StripeService implements OnModuleInit {
 
       const subscription = await stripe.subscriptions.retrieve(subscriptionRecord.stripeId);
       await this.upsertSubscriptionForUser(user.id, subscription);
-      return this.subscriptionView(subscription);
+      return this.subscriptionViewWithSchedule(subscription, user.id);
     } catch (error) {
       this.logger.error('Failed to get user subscription', {
         userId,
@@ -975,6 +1009,20 @@ export class StripeService implements OnModuleInit {
       });
       this.rethrowStripeError(error, 'Falha ao obter assinatura do usuário.');
     }
+  }
+
+  private async subscriptionViewWithSchedule(subscription: Stripe.Subscription, userId = '') {
+    const scheduleId = this.refId(subscription.schedule);
+    const schedule = scheduleId ? await this.getStripeClient().subscriptionSchedules.retrieve(scheduleId) : null;
+    const next = schedule?.status === 'active'
+      ? schedule.phases.find(phase => phase.start_date >= subscription.current_period_end)
+      : null;
+    const nextPrice = next ? this.refId(next.items[0]?.price) : null;
+    return { ...this.subscriptionView(subscription),
+      canChangePlans: Boolean(process.env.STRIPE_PORTAL_V2_CONFIG_ID) && portalUpgradeEnabled(userId) && subscription.status === 'active' && !subscription.schedule && !subscription.pending_update && !cancelScheduled(subscription) && subscription.items.data.length === 1 && subscription.items.data[0].quantity === 1 && subscription.items.data[0].price.id === portalCatalog().weekly,
+      pendingPayment: Boolean(subscription.pending_update),
+      scheduledChange: next && nextPrice ? { billingCycle: billingCycleForPriceId(nextPrice), effectiveAt: next.start_date } : null,
+    };
   }
 
   private subscriptionView(subscription: Stripe.Subscription) {
@@ -1107,6 +1155,8 @@ export class StripeService implements OnModuleInit {
         await this.handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session, event.created);
         return;
       case 'customer.subscription.created':
+      case 'customer.subscription.pending_update_applied':
+      case 'customer.subscription.pending_update_expired':
       case 'customer.subscription.updated':
         await this.handleSubscriptionChanged(
           event.data.object as Stripe.Subscription,
@@ -1772,13 +1822,15 @@ export class StripeService implements OnModuleInit {
       );
     }
 
-    // Troca de plano/proration tambem gera fatura paga. So a criacao e a
-    // renovacao abrem a janela do mes.
+    // Criacao e renovacao mantem a regra existente. Troca de ciclo exige
+    // uma linha do novo periodo paga; prorrata isolada nao abre franquia.
     const reason = invoice.billing_reason ?? '';
-    if (!['subscription_create', 'subscription_cycle'].includes(reason)) {
+    if (!['subscription_create', 'subscription_cycle', 'subscription_update'].includes(reason)) {
       this.logger.log(`[Ticks] Fatura ${invoice.id} (${reason}) nao abre janela de ticks.`);
       return;
     }
+
+    if (reason === 'subscription_update' && !(await this.confirmedCyclePayment(synced.subscription, invoice))) return;
 
     // Erro aqui SOBE: antes era engolido e o assinante ficava sem os ticks do
     // mes, com o webhook respondendo 200. A chave da janela impede reset duplo
@@ -2074,6 +2126,16 @@ export class StripeService implements OnModuleInit {
    * Regra decidida pelo dono em 21/09/2026. Substitui o "+200 por fatura" e o
    * "+200 sempre que o saldo zerava" (este ultimo era tick sem pagamento).
    */
+  private async confirmedCyclePayment(subscription: Stripe.Subscription, invoice?: Stripe.Invoice): Promise<boolean> {
+    // Read invoice through our pinned 2023 API: webhook lines use the Basil schema.
+    if (invoice && invoice.status !== 'paid') return false;
+    const invoiceId = invoice?.id ?? this.refId(subscription.latest_invoice);
+    const paid = invoiceId ? await this.getStripeClient().invoices.retrieve(invoiceId) : null;
+    if (!paid || paid.status !== 'paid' || subscription.pending_update) return false;
+    return paid.lines.data.some(line => !line.proration && line.price?.id === subscription.items.data[0]?.price.id &&
+      line.period.start === subscription.current_period_start && line.period.end === subscription.current_period_end);
+  }
+
   private async applyMonthlyAllowance(
     userId: string,
     subscription: { stripeId: string; priceId: string | null; periodStart: Date | null },
@@ -2091,7 +2153,28 @@ export class StripeService implements OnModuleInit {
       now,
       allowanceCadenceForPriceId(subscription.priceId),
     );
-    const key = `allowance:${subscription.stripeId}:${windowStart.toISOString().slice(0, 10)}`;
+    const cycleKey = `allowance-cycle:${subscription.stripeId}:${windowStart.toISOString()}`;
+    // Keep paid transitions idempotent even when portal entry is disabled during rollback.
+    if (await this.prisma.tickTransaction.findUnique({ where: { stripePaymentIntentId: cycleKey }, select: { id: true } })) return false;
+    let transition = false;
+    if (subscription.stripeId.startsWith('sub_') && process.env.STRIPE_PORTAL_V2_CONFIG_ID) {
+      const live = await this.getStripeClient().subscriptions.retrieve(subscription.stripeId);
+      if (live.items.data[0]?.price.id !== subscription.priceId ||
+          !subscription.periodStart || live.current_period_start !== subscription.periodStart.getTime() / 1000) return false;
+      const invoiceId = this.refId(live.latest_invoice);
+      if (!invoiceId) return false;
+      if (invoiceId) {
+        const invoice = await this.getStripeClient().invoices.retrieve(invoiceId);
+        if (invoice.status !== 'paid') return false;
+        if (invoice.billing_reason === 'subscription_update') {
+          if (!(await this.confirmedCyclePayment(live, invoice))) return false;
+          transition = true;
+        }
+      }
+    }
+    const key = transition
+      ? cycleKey
+      : `allowance:${subscription.stripeId}:${windowStart.toISOString().slice(0, 10)}`;
 
     // Caminho de toda analise: uma consulta pela chave unica e acabou.
     const applied = await this.prisma.tickTransaction.findUnique({

@@ -121,3 +121,27 @@ describe('Configuracoes: assinatura e tema', () => {
     );
   });
 });
+
+it('shows a pending payment without replacing the paid current plan', async () => {
+  getSubscription.mockResolvedValue(sub({ pendingPayment: true }));
+  renderPage();
+  expect(await screen.findByText(/Plan change awaiting payment confirmation/)).toBeTruthy();
+  expect(screen.getByText('$7.99 / week')).toBeTruthy();
+  cleanup();
+});
+it('shows a future change read-only while downgrades remain disabled', async () => {
+  getSubscription.mockResolvedValue(sub({ billingCycle: 'monthly', scheduledChange: { billingCycle: 'weekly', effectiveAt: PERIOD_END } }));
+  renderPage();
+  expect(await screen.findByText(/Change to Weekly on/)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Undo scheduled change' })).toBeNull();
+  cleanup();
+});
+
+it('shows upgrade entry only for an eligible user, preserving the manage button', async () => {
+  getSubscription.mockResolvedValue(sub({ canChangePlans: true }));
+  renderPage();
+  await userEvent.click(await screen.findByRole('button', { name: 'Upgrade to monthly' }));
+  expect(openBillingPortal).toHaveBeenCalledWith('tok', 'upgrade');
+  expect(screen.getByRole('button', { name: /Manage subscription/ })).toBeTruthy();
+  cleanup();
+});

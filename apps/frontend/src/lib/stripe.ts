@@ -234,6 +234,9 @@ export async function getCheckoutStatus(
 
 /** Assinatura da tela de Configuracoes. Datas em segundos (formato da Stripe). */
 export interface SubscriptionSummary {
+  canChangePlans?: boolean;
+  pendingPayment?: boolean;
+  scheduledChange?: { billingCycle: BillingCycle | null; effectiveAt: number } | null;
   id: string;
   status: string;
   plan: string;
@@ -261,10 +264,10 @@ export async function getSubscription(token: string): Promise<SubscriptionSummar
 }
 
 /** Abre o portal da Stripe (o servidor escolhe o customer pelo token). */
-export async function openBillingPortal(token: string): Promise<void> {
+export async function openBillingPortal(token: string, intent?: 'upgrade'): Promise<void> {
   const data = await requestStripeApi<{ url?: string }>(
     '/api/stripe/create-customer-portal',
-    { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
+    { method: 'POST', headers: { Authorization: `Bearer ${token}`, ...(intent ? { 'Content-Type': 'application/json' } : {}) }, ...(intent ? { body: JSON.stringify({ intent }) } : {}) },
     'Could not open the billing portal.',
   );
   if (!data?.url) throw new CheckoutError('Could not open the billing portal.');

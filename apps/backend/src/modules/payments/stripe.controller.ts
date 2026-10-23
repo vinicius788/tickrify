@@ -119,8 +119,8 @@ export class StripeController {
   @Post('create-customer-portal')
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 12, ttl: 60_000 } })
-  async createCustomerPortal(@CurrentUser() user: AuthenticatedUser) {
-    return this.stripeService.createCustomerPortal(user.clerkUserId);
+  async createCustomerPortal(@CurrentUser() user: AuthenticatedUser, @Body() body?: { intent?: string }) {
+    return this.stripeService.createCustomerPortal(user.clerkUserId, body?.intent === 'upgrade');
   }
 
   /** Assinatura para a tela de Configuracoes (status, valor, proxima cobranca, fim do acesso). */

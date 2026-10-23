@@ -1,3 +1,4 @@
+import { portalV2Configuration, PORTAL_V2_API_VERSION } from '../../config/stripe.config';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { StripeService } from './stripe.service';
@@ -49,6 +50,9 @@ describe('StripeService webhooks', () => {
 
   beforeEach(() => {
     process.env.STRIPE_SECRET_KEY = 'sk_test_x';
+    process.env.STRIPE_TEST_PRODUCT_ID = 'prod_unit';
+    process.env.STRIPE_TEST_PRICE_WEEKLY = 'price_1UKeWPB1hl0IoocUjsQNv9BG';
+    process.env.STRIPE_TEST_PRICE_MONTHLY = STARTER_MONTHLY;
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_x';
     (captureServer as jest.Mock).mockClear();
     (sendMetaEvent as jest.Mock).mockClear();
@@ -1203,5 +1207,110 @@ describe('StripeService webhooks', () => {
         expect.objectContaining({ data: expect.objectContaining({ stripePaymentIntentId: 'allowance:sub_1:2026-09-10' }) }),
       );
     });
+  });
+  describe('portal v2 cycle allowances', () => {
+    const start = Math.floor(Date.now() / 1000) - 3600;
+    const end = start + 30 * 86400;
+    const live = () => subscription({ current_period_start: start, current_period_end: end, latest_invoice: 'in_change' });
+    const paid = () => ({ id: 'in_change', status: 'paid', billing_reason: 'subscription_update', lines: { data: [
+      { proration: false, price: { id: STARTER_MONTHLY }, period: { start, end } },
+    ] } });
+    beforeEach(() => {
+      process.env.STRIPE_PORTAL_V2_CONFIG_ID = 'bpc_v2';
+      process.env.STRIPE_UPGRADE_ENABLED = 'true';
+      process.env.STRIPE_UPGRADE_USER_IDS = 'usr_1';
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1' });
+      prisma.subscription.findFirst = jest.fn().mockResolvedValue({ stripeId: 'sub_1' });
+      stripe.subscriptions.retrieve.mockResolvedValue(live());
+      stripe.invoices = { retrieve: jest.fn().mockResolvedValue(paid()) };
+    });
+    afterEach(() => { delete process.env.STRIPE_PORTAL_V2_CONFIG_ID; delete process.env.STRIPE_UPGRADE_ENABLED; delete process.env.STRIPE_UPGRADE_USER_IDS; });
+    const apply = () => service['applyMonthlyAllowance']('usr_1', {
+      stripeId: 'sub_1', priceId: STARTER_MONTHLY, periodStart: new Date(start * 1000),
+    }, 'access_check');
+    it('paid weekly to monthly resets to 200 with a distinct same-day key', async () => {
+      await apply();
+      expect(prisma.userTicks.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { balance: 200 } }));
+      expect(prisma.tickTransaction.create.mock.calls[0][0].data.stripePaymentIntentId)
+        .toBe(`allowance-cycle:sub_1:${new Date(start * 1000).toISOString()}`);
+    });
+    it.each(['open', 'draft', 'uncollectible'])('does not provision for unpaid invoice %s', async status => {
+      stripe.invoices.retrieve.mockResolvedValue({ ...paid(), status });
+      await apply();
+      expect(prisma.userTicks.upsert).not.toHaveBeenCalled();
+    });
+    it.each(['card_declined', 'requires_action'])('preserves existing access and balance while pending: %s', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue({ ...live(), pending_update: { expires_at: end } });
+      await apply();
+      expect(prisma.userTicks.upsert).not.toHaveBeenCalled();
+      expect(await service.getUserSubscription('clerk_1')).toMatchObject({ plan: 'starter', status: 'active' });
+    });
+    it('does not treat a proration-only invoice as a new paid cycle', async () => {
+      const invoice = paid(); invoice.lines.data[0].proration = true;
+      stripe.invoices.retrieve.mockResolvedValue(invoice);
+      await apply(); expect(prisma.userTicks.upsert).not.toHaveBeenCalled();
+    });
+    it('duplicate paid transition does not replenish spent ticks', async () => {
+      prisma.tickTransaction.findUnique.mockResolvedValue({ id: 'already_applied' });
+      await apply(); expect(prisma.userTicks.upsert).not.toHaveBeenCalled();
+    });
+    it('out-of-order stale snapshot cannot overwrite the current allowance', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ current_period_start: start, items: { data: [{ price: { id: 'price_legacy' } }] } }));
+      await apply(); expect(prisma.userTicks.upsert).not.toHaveBeenCalled();
+    });
+    it('shows future phase without applying its weekly allowance', async () => {
+      stripe.subscriptionSchedules = { retrieve: jest.fn().mockResolvedValue({ status: 'active', phases: [
+        { start_date: end, items: [{ price: 'price_1UKeWPB1hl0IoocUjsQNv9BG' }] },
+      ] }) };
+      stripe.subscriptions.retrieve.mockResolvedValue({ ...live(), schedule: 'sub_sched_1' });
+      const view = await service.getUserSubscription('clerk_1');
+      expect(view).toMatchObject({ billingCycle: 'monthly', scheduledChange: { billingCycle: 'weekly', effectiveAt: end } });
+      expect(prisma.userTicks.upsert).not.toHaveBeenCalled();
+    });
+    it('first weekly renewal after downgrade supplies 25, preserving the existing renewal key', async () => {
+      const weekly = 'price_1UKeWPB1hl0IoocUjsQNv9BG';
+      stripe.subscriptions.retrieve.mockResolvedValue({ ...live(), items: { data: [{ price: { id: weekly } }] } });
+      stripe.invoices.retrieve.mockResolvedValue({ ...paid(), billing_reason: 'subscription_cycle' });
+      await service['applyMonthlyAllowance']('usr_1', { stripeId: 'sub_1', priceId: weekly, periodStart: new Date(start * 1000) }, 'access_check');
+      expect(prisma.userTicks.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: { balance: 25 } }));
+      expect(prisma.tickTransaction.create.mock.calls[0][0].data.stripePaymentIntentId).toBe(`allowance:sub_1:${new Date(start * 1000).toISOString().slice(0, 10)}`);
+    });
+    it('opens only a verified v2 config with the pinned API and never provisions configs', async () => {
+      process.env.APP_URL = 'https://tickrify.com';
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', stripeCustomerId: 'cus_1' });
+      stripe.subscriptions.retrieve.mockResolvedValue({ ...live(), items: { data: [{ id: 'si_1', quantity: 1, price: { id: 'price_1UKeWPB1hl0IoocUjsQNv9BG' } }] } });
+      stripe.billingPortal = { configurations: { retrieve: jest.fn().mockResolvedValue({ ...portalV2Configuration('https://tickrify.com'), active: true, livemode: false }) },
+        sessions: { create: jest.fn().mockResolvedValue({ url: 'https://billing.stripe.com/local' }) } };
+      await service.createCustomerPortal('clerk_1', true);
+      expect(stripe.billingPortal.sessions.create).toHaveBeenCalledWith({ customer: 'cus_1', configuration: 'bpc_v2', return_url: 'https://tickrify.com/dashboard/settings', flow_data: { type: 'subscription_update_confirm', subscription_update_confirm: { subscription: 'sub_1', items: [{ id: 'si_1', price: STARTER_MONTHLY, quantity: 1 }] } } }, { apiVersion: PORTAL_V2_API_VERSION });
+      expect(stripe.billingPortal.configurations.create).toBeUndefined();
+    });
+    it('fails closed for a misconfigured v2 instead of falling back to the default portal', async () => {
+      process.env.APP_URL = 'https://tickrify.com';
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', stripeCustomerId: 'cus_1' });
+      stripe.subscriptions.retrieve.mockResolvedValue({ ...live(), items: { data: [{ id: 'si_1', quantity: 1, price: { id: 'price_1UKeWPB1hl0IoocUjsQNv9BG' } }] } });
+      const config = portalV2Configuration('https://tickrify.com');
+      config.features.subscription_update.products[0].prices.push('price_legacy');
+      stripe.billingPortal = { configurations: { retrieve: jest.fn().mockResolvedValue({ ...config, active: true, livemode: false }) }, sessions: { create: jest.fn() } };
+      await expect(service.createCustomerPortal('clerk_1', true)).rejects.toMatchObject({ status: 503 });
+      expect(stripe.billingPortal.sessions.create).not.toHaveBeenCalled();
+    });
+    it('rejects a direct upgrade request while the global gate is off', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', stripeCustomerId: 'cus_1' });
+      delete process.env.STRIPE_UPGRADE_ENABLED;
+      await expect(service.createCustomerPortal('clerk_1', true)).rejects.toMatchObject({ status: 403 });
+      expect(stripe.subscriptions.retrieve).not.toHaveBeenCalled();
+    });
+    it('rejects a direct downgrade request from an already-monthly subscriber', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', stripeCustomerId: 'cus_1' });
+      await expect(service.createCustomerPortal('clerk_1', true)).rejects.toMatchObject({ status: 409 });
+      expect(stripe.subscriptions.update).toBeUndefined();
+    });
+    it('does not replenish a paid transition again when portal entry is disabled', async () => {
+      delete process.env.STRIPE_PORTAL_V2_CONFIG_ID;
+      prisma.tickTransaction.findUnique.mockResolvedValue({ id: 'existing_paid_transition' });
+      await apply(); expect(prisma.userTicks.upsert).not.toHaveBeenCalled();
+    });
+
   });
 });

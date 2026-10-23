@@ -49,6 +49,7 @@ const SettingsPage = ({ eyebrow }: { eyebrow: ReactNode }) => {
       const token = await getToken();
       if (!token) throw new Error('no token');
       setSubscription(await getSubscription(token));
+      window.dispatchEvent(new Event('tickrify:analysis-created'));
       setLoad('ready');
     } catch {
       setLoad('failed');
@@ -59,14 +60,21 @@ const SettingsPage = ({ eyebrow }: { eyebrow: ReactNode }) => {
     void refresh();
   }, [refresh]);
 
-  const openPortal = async () => {
+  useEffect(() => {
+    const onFocus = () => { void refresh(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refresh]);
+
+  const openPortal = async (intent?: 'upgrade') => {
     if (busy) return;
     setBusy('portal');
     setMessage(null);
     try {
       const token = await getToken();
       if (!token) throw new Error('no token');
-      await openBillingPortal(token);
+      if (intent) await openBillingPortal(token, intent);
+      else await openBillingPortal(token);
     } catch {
       setBusy(null);
       setMessage({ kind: 'error', text: s.actionFailed });
@@ -190,6 +198,10 @@ const SettingsPage = ({ eyebrow }: { eyebrow: ReactNode }) => {
               </div>
             )}
 
+            {subscription.pendingPayment ? <p role="status">{s.pendingPayment}</p> : null}
+            {subscription.scheduledChange ? <div role="status">
+              <p>{s.scheduledChange.replace('{cycle}', subscription.scheduledChange.billingCycle === 'weekly' ? s.cycleWeekly : s.cycleMonthly).replace('{date}', formatDate(subscription.scheduledChange.effectiveAt))}</p>
+            </div> : null}
             {ended ? (
               <div key="ended" className="mt-4 flex flex-col items-start gap-3 border-t border-[var(--border-subtle)] pt-4">
                 <p className="text-sm text-[var(--text-secondary)]">{s.readMode}</p>
@@ -215,6 +227,12 @@ const SettingsPage = ({ eyebrow }: { eyebrow: ReactNode }) => {
                       <span>{s.reactivate}</span>
                     </button>
                   ) : null}
+                  {subscription.canChangePlans ? (
+                    <button type="button" onClick={() => void openPortal('upgrade')} disabled={busy !== null}
+                      className="rounded-lg bg-[var(--inverse-bg)] px-4 py-2 text-sm font-semibold text-[var(--inverse-fg)] disabled:opacity-60">
+                      {s.upgradeMonthly}
+                    </button>
+                  ) : null}
                   {subscription.manageable ? (
                     <button
                       key="portal"
@@ -229,7 +247,7 @@ const SettingsPage = ({ eyebrow }: { eyebrow: ReactNode }) => {
                     </button>
                   ) : null}
                 </div>
-                <p className="text-xs leading-relaxed text-[var(--text-secondary)]">{s.manageHint}</p>
+                <p className="text-xs leading-relaxed text-[var(--text-secondary)]">{subscription.canChangePlans ? s.planChangeHint : s.manageHint}</p>
               </div>
             )}
           </div>

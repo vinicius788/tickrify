@@ -1,3 +1,5 @@
+import Stripe from 'stripe';
+import { portalV2Configuration, PORTAL_V2_API_VERSION, portalUpgradeEnabled } from '../../config/stripe.config';
 import { ConflictException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { StripeService } from './stripe.service';
 import { resetFoundingOfferCache } from './founding-offer';
@@ -10,7 +12,15 @@ import {
   resolvePlanForPriceId,
 } from '../../config/stripe.config';
 
-const PRICE = 'price_1TRvEJB1hl0IoocUvbCyxkt5'; // starter mensal USD
+const PRICE = 'price_1TRvEJB1hl0IoocUvbCyxkt5'; // Unit fixtures only; all API transports are mocked.
+const fileEnv = { ...process.env };
+beforeEach(() => {
+  process.env.STRIPE_TEST_PRODUCT_ID = 'prod_unit';
+  process.env.STRIPE_TEST_PRICE_YEARLY = 'price_1TRvKHB1hl0IoocU3N7MMGcG';
+  process.env.STRIPE_TEST_PRICE_WEEKLY = WEEKLY_PRICE_ID;
+  process.env.STRIPE_TEST_PRICE_MONTHLY = PRICE;
+});
+afterEach(() => { process.env = { ...fileEnv }; });
 
 describe('StripeService.createCheckoutSession', () => {
   let service: StripeService;
@@ -485,5 +495,56 @@ describe('allowanceWindowStart', () => {
     expect(getPriceId('starter', 'weekly', 'brl')).toBe('');
     expect(getPriceId('pro', 'weekly', 'usd')).toBe('');
     expect(resolvePlanForPriceId(WEEKLY_PRICE_ID)).toBe('starter');
+  });
+});
+
+
+describe('upgrade-only portal SDK wire compatibility (no network)', () => {
+  it('SDK 14 serializes the upgrade-only policy with the pinned API version', async () => {
+    let requestBody = '';
+    let requestHeaders = '';
+    const client = new Stripe('sk_test_local_only', {
+      apiVersion: '2023-10-16',
+      httpClient: Stripe.createFetchHttpClient(async (_url: string, init?: RequestInit) => {
+        requestBody = String(init?.body);
+        requestHeaders = JSON.stringify(init?.headers);
+        return new Response(JSON.stringify({ id: 'bpc_local', object: 'billing_portal.configuration' }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        });
+      }),
+    });
+    await client.billingPortal.configurations.create(portalV2Configuration('https://tickrify.com'), { apiVersion: PORTAL_V2_API_VERSION });
+    const body = new URLSearchParams(requestBody);
+    expect(requestHeaders).toContain(PORTAL_V2_API_VERSION);
+    expect(body.get('features[subscription_update][schedule_at_period_end][conditions][0][type]')).toBeNull();
+    expect(body.get('features[subscription_update][proration_behavior]')).toBe('always_invoice');
+    expect(body.get('features[subscription_update][default_allowed_updates][0]')).toBe('price');
+    expect(body.get('features[subscription_update][products][0][prices][0]')).toBe(PRICE);
+    expect(body.get('features[subscription_update][products][0][prices][1]')).toBeNull();
+    expect(body.get('features[subscription_update][products][0][prices][2]')).toBeNull();
+  });
+});
+
+describe('upgrade rollout gate', () => {
+  it('is off by default, even when an allowlist exists', () => {
+    delete process.env.STRIPE_UPGRADE_ENABLED;
+    process.env.STRIPE_UPGRADE_USER_IDS = 'internal_mattia';
+    expect(portalUpgradeEnabled('internal_mattia')).toBe(false);
+  });
+  it('requires both the global switch and an exact internal user ID', () => {
+    process.env.STRIPE_UPGRADE_ENABLED = 'true';
+    process.env.STRIPE_UPGRADE_USER_IDS = '';
+    expect(portalUpgradeEnabled('internal_mattia')).toBe(false);
+    process.env.STRIPE_UPGRADE_USER_IDS = 'internal_mattia';
+    expect(portalUpgradeEnabled('internal_mattia')).toBe(true);
+    expect(portalUpgradeEnabled('internal_mattia_other')).toBe(false);
+    expect(portalUpgradeEnabled('other')).toBe(false);
+  });
+  it('never falls back to live IDs for test checkout when test catalog is missing', () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_unit';
+    delete process.env.STRIPE_TEST_PRICE_WEEKLY;
+    delete process.env.STRIPE_TEST_PRICE_MONTHLY;
+    expect(getPriceId('starter', 'weekly', 'usd')).toBe('');
+    expect(getPriceId('starter', 'monthly', 'usd')).toBe('');
   });
 });
