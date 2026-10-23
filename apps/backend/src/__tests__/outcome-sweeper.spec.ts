@@ -120,7 +120,7 @@ describe('evaluateTrade: candle do fill (FILL_CANDLE_RULE = stop_only, 20/10/202
     expect(evaluateTrade(sell, [c(101, 89), c(99, 88)])).toMatchObject({ outcome: 'WIN', resolvedIndex: 1 });
   });
 
-  it('caso real (XAUUSD 30m, 24/09/2026): o candle abriu acima do TP1 e so depois encheu a entrada', () => {
+  it('caso real (XAUUSD 30m, 25/09/2026): o candle abriu acima do TP1 e so depois encheu a entrada', () => {
     // Analise cmugsp1hr001nr5071vh62jyo: compra limit 4.285,5, stop 4.279,5, TP1 4.298.
     // Em 1m: TP1 nos minutos 0 a 2 do candle, entrada so no minuto 25, stop no candle seguinte.
     // O sweeper gravou WIN; a regra nova da LOSS, como o 1m.

@@ -218,8 +218,8 @@ export class TradesService implements OnModuleInit {
   private async expireIfStale(userId: string, state: StateRow, now = new Date()): Promise<StateRow> {
     if (state.status !== 'pending_order' || !state.pendingAt) return state;
     if (now.getTime() - state.pendingAt.getTime() < TRADE_RULES.pendingOrderExpiryDays * DAY_MS) return state;
-    await this.write(userId, state.analysisId, { status: 'expired', closeReason: 'cancelled' }, state, now);
-    return { ...state, status: 'expired', closeReason: 'cancelled' };
+    const timeline = await this.write(userId, state.analysisId, { status: 'expired', closeReason: 'cancelled' }, state, now);
+    return { ...state, status: 'expired', closeReason: 'cancelled', timeline };
   }
 
   /** Grava estado + linha do tempo e o resultado antigo junto. */
@@ -231,7 +231,7 @@ export class TradesService implements OnModuleInit {
     now: Date,
     plan?: AnalysisPlan,
     options: { syncVerdict?: boolean } = {},
-  ): Promise<void> {
+  ): Promise<TradeTimelineEntry[]> {
     const entry: TradeTimelineEntry = {
       status: next.status,
       at: now.toISOString(),
@@ -271,9 +271,9 @@ export class TradesService implements OnModuleInit {
       next.closeReason ?? null,
       JSON.stringify(timeline),
     );
-    if (options.syncVerdict === false) return;
+    if (options.syncVerdict === false) return timeline;
     const verdict = verdictFor(next.status, next.closeReason ?? null);
-    if (verdict === undefined) return;
+    if (verdict === undefined) return timeline;
     try {
       await this.prisma.$executeRawUnsafe(
         `UPDATE "tickrify"."Analysis" SET "userVerdict" = $3, "closedAt" = $4 WHERE "id" = $1 AND "userId" = $2`,
@@ -285,6 +285,7 @@ export class TradesService implements OnModuleInit {
     } catch (error) {
       this.logger.warn(`[trades] Resultado antigo nao sincronizado: ${error instanceof Error ? error.message : error}`);
     }
+    return timeline;
   }
 
   /** Marca o estado (Order pending / I'm in this trade / Close trade / cancelar ordem). */

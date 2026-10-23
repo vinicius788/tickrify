@@ -134,6 +134,8 @@ type CalendarMode =
 interface Scenario {
   name: string;
   replies: unknown[];
+  analysisType?: 'quick' | 'deep';
+  userLanguage?: string;
   calendar?: CalendarMode;
 }
 
@@ -257,7 +259,7 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     if (mode.kind === 'timeout') jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
     const job = processor()({ id: 'job-1', data: {
       analysisId: 'analysis-d4', imageUrl: 'data:image/png;base64,AA==', promptOverride: 'PROMPT',
-      analysisType: 'quick', userId: 'user-1', isDemo: true,
+      analysisType: scenario.analysisType ?? 'quick', userLanguage: scenario.userLanguage, userId: 'user-1', isDemo: true,
     }, opts: { attempts: 1 }, attemptsMade: 0 }).catch((error: unknown) => {
       thrown = error;
     });
@@ -310,6 +312,97 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
       thrown: thrown ? String((thrown as Error).message) : null,
     };
   }
+
+  it.each(['quick', 'deep'].flatMap(analysisType => ['en', 'pt', 'es', 'fr', 'de', 'ja'].map(userLanguage => ({ analysisType: analysisType as 'quick' | 'deep', userLanguage }))))('incremental coherence persists raw, decision and levels for $analysisType/$userLanguage', async ({ analysisType, userLanguage }) => {
+    const labels: Record<string, [string, string, string]> = {
+      en: ['Current checklist ', 'Previous checklist ', 'If checklist '],
+      pt: ['Placar atual ', 'Placar anterior ', 'Se placar '],
+      es: ['Confluencia actual ', 'Confluencia anterior ', 'Si confluencia '],
+      fr: ['Checklist actuel ', 'Checklist précédent ', 'Si checklist '],
+      de: ['Aktuelle Faktoren ', 'Vorherige Faktoren ', 'Wenn Faktoren '],
+      ja: ['現在のチェックリスト', '過去のチェックリスト', 'もしチェックリスト'],
+    };
+    const [current, historical, hypothetical] = labels[userLanguage];
+    const narrative = `${current}4/7. ${historical}4/7. ${hypothetical}4/7, wait.`;
+    const presented = `${current}5/7. ${historical}4/7. ${hypothetical}4/7, wait.`;
+    const fields = { ...buyPlan, invalidationLevel: 94, entryType: 'stop',
+      entryCondition: 'Enter after a candle close above 100.',
+      structureValidation: '✅ HTF | ❌ Zone | ✅ ICT | ✅ Anti-retail | ✅ Structure | ✅ R:R | ❌ MTF → 4/7',
+      factorsPresent: 4, confluenceScore: 57.14, executiveSummary: narrative,
+      reasoning: narrative, multiTimeframeAlignment: 'H1 bullish | H4 bullish | D1 neutral' };
+    const reply = modelReply('BUY', 60, fields);
+    const raw = reply.choices[0].message.content;
+    await run({ name: 'incremental', replies: [reply], analysisType, userLanguage });
+    const done = (globalThis as any).__prisma.analysis.update.mock.calls.map(([args]: any[]) => args.data).find((d: any) => d.status === 'completed');
+    expect(done).toBeDefined(); expect(done.recommendation).toBe('BUY');
+    expect(done.fullResponse).toBe(raw);
+    expect(done.result.analysis).toMatchObject({ entry: 100, stopLoss: 95, invalidationLevel: 94,
+      takeProfit1: 110, takeProfit2: 120, factorsPresent: 5, confluenceScore: 71.43,
+      executiveSummary: presented, reasoning: presented });
+    expect(done.result.analysis.multiTimeframeAlignment).not.toBe(fields.multiTimeframeAlignment);
+    expect(done.result.engine.validator_flags).toContain('stop_inside_invalidation');
+    expect(done.result.engine.validator_action).toBe('none');
+    expect(done.result).not.toHaveProperty('observation');
+    expect(openaiCreate).toHaveBeenCalledTimes(1);
+    expect(logLines.some(l => l.includes('price_order_requires_close'))).toBe(true);
+    expect(logLines.some(l => l.includes('persistence_candidate'))).toBe(true);
+  });
+
+
+  it.each(['quick', 'deep'].flatMap(analysisType => ['en', 'pt', 'es', 'fr', 'de', 'ja'].flatMap(userLanguage => [false, true].map(optional => ({ analysisType: analysisType as 'quick' | 'deep', userLanguage, optional })))))('B1 keeps LIMIT data and observational optional=$optional for $analysisType/$userLanguage', async ({ analysisType, userLanguage, optional }) => {
+    const conditions: Record<string, [string, string]> = {
+    "en": [
+        "Place limit 100 only after a sweep and rejection.",
+        "Limit 100; preferably enter after a sweep and rejection."
+    ],
+    "pt": [
+        "Coloque limit 100 somente após varredura e rejeição.",
+        "Limit 100; preferencialmente entrar após varredura e rejeição."
+    ],
+    "es": [
+        "Orden limit 100 solo después de barrida y rechazo.",
+        "Limit 100; preferiblemente entrar después de barrida y rechazo."
+    ],
+    "fr": [
+        "Ordre limit 100 uniquement après balayage et rejet.",
+        "Limit 100; de préférence entrer après balayage et rejet."
+    ],
+    "de": [
+        "Limit 100 erst nach Sweep und Ablehnung platzieren.",
+        "Limit 100; vorzugsweise nach Sweep und Ablehnung einsteigen."
+    ],
+    "ja": [
+        "リミット100、スイープと反発の確認後のみ注文。",
+        "リミット100、できればスイープと反発の確認後に注文。"
+    ]
+};
+    const entryCondition = conditions[userLanguage][optional ? 1 : 0];
+    const narrative = 'Checklist 4/7.';
+    const presented = 'Checklist 5/7.';
+    const fields = { ...buyPlan, invalidationLevel: 94, entryType: 'limit',
+      entryCondition,
+      structureValidation: '✅ HTF | ❌ Zone | ✅ ICT | ✅ Anti-retail | ✅ Structure | ✅ R:R | ❌ MTF → 4/7',
+      factorsPresent: 4, confluenceScore: 57.14, executiveSummary: narrative,
+      reasoning: narrative, multiTimeframeAlignment: 'H1 bullish | H4 bullish | D1 neutral' };
+    const reply = modelReply('BUY', 60, fields);
+    const raw = reply.choices[0].message.content;
+    await run({ name: 'incremental', replies: [reply], analysisType, userLanguage });
+    const done = (globalThis as any).__prisma.analysis.update.mock.calls.map(([args]: any[]) => args.data).find((d: any) => d.status === 'completed');
+    expect(done).toBeDefined(); expect(done.recommendation).toBe('BUY');
+    expect(done.fullResponse).toBe(raw);
+    expect(done.result.analysis).toMatchObject({ entry: 100, stopLoss: 95, invalidationLevel: 94,
+      takeProfit1: 110, takeProfit2: 120, factorsPresent: 5, confluenceScore: 71.43,
+      executiveSummary: presented, reasoning: presented });
+    expect(done.result.analysis.multiTimeframeAlignment).not.toBe(fields.multiTimeframeAlignment);
+    expect(done.result.engine.validator_flags).toContain('stop_inside_invalidation');
+    expect(done.result.engine.validator_action).toBe('none');
+    expect(done.result).not.toHaveProperty('observation');
+    expect(openaiCreate).toHaveBeenCalledTimes(1);
+    expect(done.result.analysis).toMatchObject({ entryType: 'limit', entryCondition });
+    expect(logLines.some(l => l.includes('[AnalysisObservation]') && l.includes('touch_requires_confirmation'))).toBe(!optional);
+    expect(done.result).not.toHaveProperty('limitCondition');
+    expect(logLines.some(l => l.includes('persistence_candidate'))).toBe(true);
+  });
 
   // Contagens depois da correcao: 1 modelo, 2 validateTradePlan (adapter + worker,
   // puro), 1 decideSignal (so o adapter) e 1 consulta ao calendario com compra/venda.

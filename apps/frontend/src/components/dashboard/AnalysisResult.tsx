@@ -65,6 +65,7 @@ function getOpenSessions(date: Date): MarketSession[] {
 }
 
 function toNumber(value: unknown): number | null {
+  if (value == null || (typeof value === 'string' && !value.trim())) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -354,6 +355,7 @@ export function normalizeRiskFactorsForView(value: unknown): string[] {
 
 interface ChecklistItem {
   ok: boolean;
+  warning?: boolean;
   notApplicable?: boolean;
   label: string;
   detail: string;
@@ -424,6 +426,7 @@ export function parseStructureChecklist(text: string): StructureChecklist {
     items.push({
       ok: marker === '✅' || marker === '✔',
       notApplicable: marker === '⚪',
+      ...(marker === '⚠' ? { warning: true } : {}),
       label: split ? split[1].trim() : '',
       detail: split ? split[2].trim() : body,
     });
@@ -543,16 +546,16 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   const takeProfit1Percent = entry !== null && takeProfit1 !== null ? calcTPPercent(entry, takeProfit1) : null;
   const takeProfit2Percent = entry !== null && takeProfit2 !== null ? calcTPPercent(entry, takeProfit2) : null;
 
-  // Distância em pips (apenas forex). null em outros mercados.
+  // Distância em pips (apenas forex), preservando décimos nas cotações fracionárias. null em outros mercados.
   const pipSize = forexPipSize(symbol);
   const pipsBetween = (a: number | null, b: number | null): number | null =>
-    pipSize && a !== null && b !== null ? Math.round(Math.abs(a - b) / pipSize) : null;
+    pipSize && a !== null && b !== null ? Math.round((Math.abs(a - b) / pipSize) * 10) / 10 : null;
   const stopPips = pipsBetween(entry, stopLoss);
   const tp1Pips = pipsBetween(entry, takeProfit1);
   const tp2Pips = pipsBetween(entry, takeProfit2);
 
   const confluenceRaw = toNumber(analysis.confluenceScore);
-  const confluence = confluenceRaw !== null ? normalizeConfluenceScore(confluenceRaw, 8) : null;
+  const confluence = confluenceRaw !== null ? normalizeConfluenceScore(confluenceRaw) : null;
 
   // v7.0 new fields
   const invalidationLevel = toNumber(analysis.invalidationLevel);
@@ -590,6 +593,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   // multiplicava as duas coisas e superestimava o resultado.
   const riskReward = invalidTradePlan || tradeTone === 'hold' ? null : rrTp1 ?? rrTp2;
   // R/R baixo (< 1.5) = vermelho + aviso; >= 2 verde; entre = amarelo.
+  const riskRewardLabel = riskReward !== null && rrTp1 === null ? r.rrTp1Label.replace('TP1', 'TP2') : r.rrTp1Label;
   const riskRewardLow = riskReward !== null && riskReward < 1.5;
   const riskRewardTone = riskReward === null
     ? 'text-[var(--text-secondary)]'
@@ -774,8 +778,8 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   // "What would change my mind": vira o WAIT/HOLD (o resultado mais comum do
   // motor) em orientação acionável — composto SÓ de campos que o motor já
   // devolve hoje (nenhuma mudança de prompt; regra: motor só muda com medição).
-  const recUpper = String(analysisData.recommendation || '').toUpperCase();
-  const isWaitVerdict = recUpper === 'WAIT' || recUpper === 'HOLD';
+  // Use the same canonical action as the header, including legacy WAIT aliases.
+  const isWaitVerdict = recommendationMeta.tone === 'hold';
   // Quando o gatilho traz preco, o card vira "No entry yet. Here is the plan:"
   // e o gatilho ganha o lado (ver `classifyWaitTrigger`). Sem preco, fica o
   // card antigo, com o titulo antigo.
@@ -1066,7 +1070,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
           <CardContent className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3">
               <div>
-                <p className="text-xs text-[var(--text-secondary)]">{r.rrTp1Label}</p>
+                <p className="text-xs text-[var(--text-secondary)]">{riskRewardLabel}</p>
                 <p className={`font-terminal text-base font-semibold ${riskRewardTone}`}>
                   {riskReward !== null ? `${riskReward.toFixed(1)} : 1` : 'N/A'}
                 </p>
@@ -1484,10 +1488,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                             >
                               <span
                                 className={`mt-px flex-shrink-0 font-terminal text-xs ${
-                                  item.notApplicable ? 'text-[var(--text-muted)]' : item.ok ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'
+                                  item.notApplicable ? 'text-[var(--text-muted)]' : item.warning ? 'text-[var(--signal-hold)]' : item.ok ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'
                                 }`}
                               >
-                                {item.notApplicable ? '—' : item.ok ? '✓' : '✕'}
+                                {item.notApplicable ? '—' : item.warning ? '⚠' : item.ok ? '✓' : '✕'}
                               </span>
                               <span className="text-[var(--text-secondary)] leading-relaxed">
                                 {item.label ? (

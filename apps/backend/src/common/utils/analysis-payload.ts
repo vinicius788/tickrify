@@ -1,3 +1,4 @@
+import { presentAnalysis } from './analysis-presentation';
 import {
   Bias,
   Recommendation,
@@ -109,12 +110,12 @@ function normalizeAnalysisObject(
   );
   const timeframe = normalizeTimeframeValue(timeframeRaw) || 'N/A';
 
-  return {
+  return presentAnalysis({
     ...base,
     marketStructure,
     symbol,
     timeframe,
-  };
+  }, 'en', 1); // score-only; image provenance requires delivery metadata
 }
 
 export function buildPersistedAnalysisPayload(params: {
@@ -127,6 +128,7 @@ export function buildPersistedAnalysisPayload(params: {
   drawingPlan?: unknown;
   originalImageUrl?: string | null;
   forceDrawingPlanForDemo?: boolean;
+  presentation?: { language: string; additionalCharts: number };
 }): NormalizedPersistedAnalysis {
   const recommendation = normalizeRecommendation(
     params.recommendation ?? params.source.recommendation ?? params.source.recomendacao,
@@ -178,7 +180,12 @@ export function buildPersistedAnalysisPayload(params: {
     drawingFailed = true;
   }
 
-  const analysis = normalizeAnalysisObject(params.analysis ?? params.source.analysis, bias, params.source);
+  const normalizedAnalysis = normalizeAnalysisObject(params.analysis ?? params.source.analysis, bias, params.source);
+  const analysis = params.presentation && normalizedAnalysis
+    ? presentAnalysis(normalizedAnalysis, params.presentation.language, params.presentation.additionalCharts)
+    : normalizedAnalysis;
+
+  if (analysis) reasoning = presentAnalysis({ ...analysis, reasoning }, 'en', 1).reasoning;
 
   const fullResponse: Record<string, any> = {
     ...(isObject(params.source) ? params.source : {}),

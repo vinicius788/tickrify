@@ -489,6 +489,8 @@ export default {
     sitInvalidated: "無効",
     sitTargetHit: "ターゲット到達",
     sitStopHit: "ストップ到達",
+    reportedPriceAtTarget: "入力価格がターゲット水準に到達または通過",
+    reportedPriceAtStop: "入力価格がストップ水準に到達または通過",
     sitUnclear: "不明",
     actHold: "保有継続",
     actBreakeven: "ストップを建値へ",

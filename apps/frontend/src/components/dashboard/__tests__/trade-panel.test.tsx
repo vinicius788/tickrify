@@ -1,9 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import TradePanel from '@/components/dashboard/TradePanel';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import type { TradeView } from '@/lib/api';
+import { getTranslations } from '@/lib/i18n';
 
 const api = {
   getTrade: vi.fn(),
@@ -44,6 +45,7 @@ const renderPanel = () =>
   );
 
 describe('painel da operacao', () => {
+  beforeEach(() => window.localStorage.clear());
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
@@ -103,4 +105,49 @@ describe('painel da operacao', () => {
     await waitFor(() => expect(api.getTrade).toHaveBeenCalled());
     expect(container.textContent).toBe('');
   });
+});
+
+// B2 synthetic price comparisons: a pending order is not a certified fill.
+const temporalLabels = [
+  ['en', 'Reported price at or beyond target', 'Reported price at or beyond stop'],
+  ['pt', 'Preço informado no alvo ou além', 'Preço informado no stop ou além'],
+  ['es', 'Precio indicado en el objetivo o más allá', 'Precio indicado en el stop o más allá'],
+  ['fr', 'Prix indiqué au niveau de l’objectif ou au-delà', 'Prix indiqué au niveau du stop ou au-delà'],
+  ['de', 'Angegebener Preis am Ziel oder darüber hinaus', 'Angegebener Preis am Stop oder darüber hinaus'],
+  ['ja', '入力価格がターゲット水準に到達または通過', '入力価格がストップ水準に到達または通過'],
+] as const;
+
+describe('B2 synthetic pending-order temporal labels', () => {
+  afterEach(() => { cleanup(); vi.clearAllMocks(); window.localStorage.clear(); });
+  for (const [language, target, stop] of temporalLabels) {
+    for (const situation of ['target_hit', 'stop_hit'] as const) {
+      it(`${language}: pending ${situation} reports the typed-price relation, not an executed trade`, async () => {
+        window.localStorage.setItem('tickrify-language', language);
+        const view: TradeView = { ...base, status: 'pending_order', checks: [{ id: 'synthetic-check', createdAt: '2026-10-13T12:00:00Z',
+          currentPrice: situation === 'target_hit' ? 4310 : 4090,
+          result: { situation, action: 'cancel_order', reason: 'Synthetic price comparison only.', watch: 'Await manual review.',
+            priceReadable: false, readPrice: null, needsCurrentPrice: false, decidedByPrice: true } }] };
+        const before = JSON.stringify(view);
+        api.getTrade.mockResolvedValue(view);
+        renderPanel();
+        const tr = getTranslations(language).trade;
+        const label = situation === 'target_hit' ? target : stop;
+        expect(await screen.findByText(`${label} · ${tr.suggested}: ${tr.actCancel}`)).toBeTruthy();
+        expect(screen.getByText(tr.statusPending)).toBeTruthy();
+        expect(api.markTrade).not.toHaveBeenCalled();
+        expect(api.checkTrade).not.toHaveBeenCalled();
+        expect(JSON.stringify(view)).toBe(before);
+      });
+      it(`${language}: preserves the existing ${situation} label for a trader-marked open trade`, async () => {
+        window.localStorage.setItem('tickrify-language', language);
+        api.getTrade.mockResolvedValue({ ...base, status: 'in_trade', checks: [{ id: 'synthetic-check', createdAt: '2026-10-13T12:00:00Z',
+          currentPrice: situation === 'target_hit' ? 4310 : 4090,
+          result: { situation, action: 'exit', reason: 'Synthetic open trade.', watch: 'Review.', priceReadable: true,
+            readPrice: 4200, needsCurrentPrice: false, decidedByPrice: true } }] });
+        renderPanel();
+        const tr = getTranslations(language).trade;
+        expect(await screen.findByText(`${situation === 'target_hit' ? tr.sitTargetHit : tr.sitStopHit} · ${tr.suggested}: ${tr.actExit}`)).toBeTruthy();
+      });
+    }
+  }
 });

@@ -62,23 +62,16 @@ export function calcTPPercent(entry: number, tp: number): number {
   return Math.abs(((tp - entry) / Math.abs(entry)) * 100);
 }
 
-export function normalizeConfluenceScore(score: number, maxFactors = 8): {
+/** The analysis contract supplies confluenceScore in percentage points (0..100).
+ * factorsPresent is a separate field; do not infer factors or probability units
+ * from a small percentage value.
+ */
+export function normalizeConfluenceScore(score: number): {
   percent: number;
   display: string;
 } {
   if (!Number.isFinite(score)) {
     return { percent: 0, display: 'N/A' };
-  }
-
-  if (score >= 0 && score <= 1) {
-    const percent = Math.round(score * 100);
-    return { percent, display: `${percent}/100` };
-  }
-
-  if (score <= 10) {
-    const factors = Math.max(0, Math.round(score));
-    const percent = Math.round((factors / maxFactors) * 100);
-    return { percent, display: `${factors}/${maxFactors} fatores` };
   }
 
   const percent = Math.max(0, Math.min(100, Math.round(score)));

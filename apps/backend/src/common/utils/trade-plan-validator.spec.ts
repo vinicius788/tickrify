@@ -295,3 +295,15 @@ describe('isCryptoSymbolForGuard (sufixo de corretora)', () => {
     }
   });
 });
+
+// B2 synthetic geometry: current-price position is not a chronological fill/miss certificate.
+describe('B2 synthetic LIMIT temporal neutrality', () => {
+  for (const plan of [buy, sell]) {
+    it.each([90, 100, 110])(`${plan.side} LIMIT: currentPrice=%s alone does not mark a setup missed or touched`, currentPrice => {
+      const input = { ...plan, currentPrice, entryType: 'limit', entryCondition: 'Passive order on return to the zone.' };
+      const before = JSON.stringify(input);
+      expect(validateTradePlan(input)).toEqual([]);
+      expect(JSON.stringify(input)).toBe(before);
+    });
+  }
+});

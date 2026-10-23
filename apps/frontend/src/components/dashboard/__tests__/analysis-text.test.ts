@@ -147,6 +147,17 @@ describe('parseStructureChecklist', () => {
     expect(out.verdict).toBe('HOLD-WATCH');
   });
 
+  // C1 synthetic: a warning is neither approval nor a failed criterion.
+  it.each(['⚠', '⚠️'])('preserves caution marker %s without changing the score', marker => {
+    const text = `✅ Bias | ✅ Zone | ✅ ICT | ✅ Anti-retail | ✅ R:R | ❌ MTF | ${marker} Structure: close still pending → 5/7 → BUY`;
+    const out = parseStructureChecklist(text);
+    expect(out.items[6]).toMatchObject({ ok: false, notApplicable: false, warning: true,
+      label: 'Structure', detail: 'close still pending' });
+    expect(out.score).toBe('5/7');
+    expect(out.scoreMismatch).toBe(false);
+    expect(out.items.filter(item => item.ok)).toHaveLength(5);
+  });
+
   it('mantém o placar quando os sete critérios concordam', () => {
     const text = '✅ Bias | ✅ Zone | ✅ ICT | ❌ Anti-retail | ❌ Structure | ❌ R:R | N/A MTF → 3/7 passes → WAIT';
     const out = parseStructureChecklist(text);

@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { AIAdapter, buildRealDataBlock, classifyRawCurrentPrice, logNewsGuardStatus } from './ai.adapter';
+import { AIAdapter, buildRealDataBlock, buildEventMapLines, classifyRawCurrentPrice, logNewsGuardStatus } from './ai.adapter';
 import { FallbackVisionModel, OpenAiVisionModel, type VisionModel } from './vision-model';
 
 // A analise chama o modelo so pela interface do provedor; o fake fica no
@@ -521,12 +521,15 @@ describe('buildRealDataBlock', () => {
   // passar a devolver os numeros (12/10/2026). O backtest-runner usa este mesmo
   // texto: se mudar, o prompt de producao mudou junto. Mudanca de proposito
   // atualiza o hash aqui no mesmo commit.
-  it('keeps the prompt text byte-identical', () => {
+  it('changes only the documented volume labels against the frozen text oracle', () => {
     const sha = (s: string) => createHash('sha256').update(s).digest('hex');
     const vol = buildRealDataBlock('XAUUSD', '1h', fixedCandles(true))!;
     const noVol = buildRealDataBlock('EURUSD', '1h', fixedCandles(false))!;
-    expect(vol.block).toHaveLength(2437);
-    expect(sha(vol.block)).toBe('11911f57b3850ab02308978d3ff1590e5334e44baf5773e9633b02594ccc7b13');
+    const legacyLabels = vol.block
+      .replace('- Volume is supplied by the feed; its unit/venue must be known before interpreting participation. It is expressed as a multiple of the 20-candle average.', '- Volume is REAL (exchange feed), expressed as a multiple of the 20-candle average.')
+      .replace('POC proxy (highest bin under the uniform-range approximation, not measured trades at price)', 'POC (most traded price, a magnet)');
+    expect(legacyLabels).toHaveLength(2437);
+    expect(sha(legacyLabels)).toBe('11911f57b3850ab02308978d3ff1590e5334e44baf5773e9633b02594ccc7b13');
     expect(noVol.block).toHaveLength(2061);
     expect(sha(noVol.block)).toBe('9185ee81d30b5d0973e1fb167e1bb18e8b2184e19af9d165e68f81282568d21c');
   });
@@ -671,5 +674,83 @@ describe('logNewsGuardStatus (D4, 19/10/2026)', () => {
     logNewsGuardStatus('no_event', '', jest.fn(), info);
     logNewsGuardStatus('no_event', 'X'.repeat(50), jest.fn(), info);
     expect(info.mock.calls).toEqual([['[news-guard] status=no_event symbol=UNKNOWN'], [`[news-guard] status=no_event symbol=${'X'.repeat(20)}`]]);
+  });
+});
+
+
+describe('Incremental factual grounding, no strategy changes', () => {
+  const rows = (values: number[]) => values.map((c, i) => [i * 3600000, c, c + 1, c - 1, c, 10]);
+  it('stationary RSI is unavailable, ATR stays SMA true range', () => {
+    const b = buildRealDataBlock('TEST', '1h', rows(Array(30).fill(100)))!;
+    expect(b.numbers.rsi14).toBeNull(); expect(b.numbers.atr14).toBe(2);
+    expect(b.block).not.toContain('Momentum (RSI14): 100');
+  });
+  it.each([[1, 100], [-1, 0]])('preserves the nonflat Wilder RSI, delta=%s', (delta, expected) => {
+    const b = buildRealDataBlock('TEST', '1h', rows(Array.from({ length: 30 }, (_, i) => 100 + i * delta)))!;
+    expect(b.numbers.rsi14).toBe(expected);
+  });
+  it('preserves the mixed Wilder seed and the SMA true-range gap convention', () => {
+    const values = [100, ...Array.from({ length: 13 }, (_, i) => 101 + i), 111, 111, 111, 111, 111, 111];
+    expect(buildRealDataBlock('TEST', '1h', rows(values))!.numbers.rsi14).toBeCloseTo(100 - 100 / 7.5, 10);
+    const gap = rows(Array(30).fill(100)); gap[29] = [29 * 3600000, 110, 111, 109, 110, 10];
+    expect(buildRealDataBlock('TEST', '1h', gap)!.numbers.atr14).toBeCloseTo(37 / 14, 10);
+  });
+  it('a future-confirmed swing cannot hide a break known before that confirmation', () => {
+    const bars = rows(Array(40).fill(100));
+    [101, 101, 101, 101, 101, 101, 101, 101, 101, 101, 101, 101, 105,
+      101, 102, 103, 104, 106, 107, 108, 110, 104, 108, 109].forEach((h, i) => bars[i][2] = h);
+    bars[22][4] = 107; bars[22][1] = 100;
+    const text = buildEventMapLines(bars, n => n).join('\n');
+    expect(text).toContain('bullish at 105 (17 candles ago)');
+    expect(bars[20][2]).toBe(110); // this pivot is confirmed only at candle 23
+  });
+  it.each(['1H', 'H1', '60m'])('normalizes equivalent hourly alias %s', tf => {
+    expect((new AIAdapter() as any).normalizeTimeframe(tf)).toBe('1h');
+  });
+  it.each(['6H', 'H6', '360m'])('recognizes six hours without inventing a provider interval: %s', tf => {
+    expect((new AIAdapter() as any).normalizeTimeframe(tf)).toBe('6h');
+  });
+  it.each(['1M', '60M', '1month', '0h', '1s', '1.5h'])('rejects ambiguous or unsupported unit %s', tf => {
+    expect((new AIAdapter() as any).normalizeTimeframe(tf)).toBeNull();
+  });
+  it('does not send a fabricated interval to any provider', async () => {
+    const a = new AIAdapter() as any; a.fetchJson = jest.fn();
+    expect(await a.fetchCryptoCandles('BTC', '7h')).toBeNull(); expect(a.fetchJson).not.toHaveBeenCalled();
+  });
+  it('does not invent H6 support or aggregate candles for the FX provider', async () => {
+    const old = process.env.TWELVE_DATA_API_KEY; process.env.TWELVE_DATA_API_KEY = 'synthetic-not-a-credential';
+    try { const a = new AIAdapter() as any; a.fetchJson = jest.fn();
+      expect(await a.fetchFxCandles('EURUSD', '6h')).toBeNull(); expect(a.fetchJson).not.toHaveBeenCalled();
+    } finally { if (old === undefined) delete process.env.TWELVE_DATA_API_KEY; else process.env.TWELVE_DATA_API_KEY = old; }
+  });
+  it('H6 skips OKX instead of inventing a 6H map and uses the existing Binance fallback', async () => {
+    const a = new AIAdapter() as any; a.fetchJson = jest.fn().mockResolvedValue(null);
+    expect(await a.fetchCryptoCandles('BTC', '6h')).toBeNull();
+    expect(a.fetchJson).toHaveBeenCalledTimes(1); expect(a.fetchJson.mock.calls[0][0]).toContain('api.binance.com');
+    expect(a.fetchJson.mock.calls[0][0]).toContain('interval=6h');
+  });
+  it('volume profile is expressly a proxy and does not claim trades at price', () => {
+    const b = buildRealDataBlock('TEST', '1h', rows(Array(30).fill(100)))!;
+    expect(b.block).toContain('not measured trades at price'); expect(b.block).not.toContain('most traded price');
+  });
+});
+
+
+// B2 synthetic chronology limitation: no historical market claim or paid inference.
+describe('B2 synthetic chronology: price alignment is not a time certificate', () => {
+  it('cannot distinguish the same prices from a different epoch by the stale-price heuristic', async () => {
+    const adapter = new AIAdapter() as any;
+    const historical = fixedCandles(true);
+    const later = historical.map(c => [c[0] + 365 * 86400000, ...c.slice(1)]);
+    const price = historical[historical.length - 1][4];
+    expect(adapter.detectStaleChart(historical, price)).toBeNull();
+    expect(adapter.detectStaleChart(later, price)).toBeNull();
+    adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '1H', lastPrice: price });
+    adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(later);
+    adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue(null);
+    const g = await adapter.buildQuickGrounding('data:image/png;base64,AA==');
+    // Existing behavior exposed as a gap, NOT certified chronological validity.
+    expect(g.candles).toBe('injected');
+    expect(g.stats.numbers).toEqual(buildRealDataBlock('BTCUSDT', '1h', historical)!.numbers);
   });
 });

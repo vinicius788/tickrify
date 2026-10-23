@@ -1,3 +1,4 @@
+import type { AnalysisObservation } from '../utils/analysis-observation';
 import { Bias, Recommendation } from '../utils/analysis-normalizer';
 import { DrawingPlan } from '../utils/drawing-plan';
 import type { GroundingStats } from '../../modules/ai/analysis-data-coverage';
@@ -13,6 +14,8 @@ export interface AnalysisEvidence {
 }
 
 export interface AIAnalysisResponse {
+  /** In-memory diagnostic only; excluded from persisted/public contracts. */
+  observation?: AnalysisObservation;
   recommendation: Recommendation;
   bias: Bias;
   confidence: number; // 0-100

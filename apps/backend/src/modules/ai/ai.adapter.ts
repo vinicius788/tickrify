@@ -1,3 +1,5 @@
+import { logObservation, rawObservation, safeObserve } from '../../common/utils/analysis-observation';
+import { presentAnalysis } from '../../common/utils/analysis-presentation';
 import { flagBool } from '../../common/flags/feature-flags';
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
@@ -413,7 +415,7 @@ function buildVolumeProfile(
  * (spring/upthrust). Tudo com preço e "há N candles".
  * Nada encontrado → a linha correspondente simplesmente não é emitida.
  */
-function buildEventMapLines(candles: number[][], fmt: (n: number) => number): string[] {
+export function buildEventMapLines(candles: number[][], fmt: (n: number) => number): string[] {
   const win = candles.slice(-120);
   if (win.length < 40) return [];
 
@@ -462,8 +464,8 @@ function buildEventMapLines(candles: number[][], fmt: (n: number) => number): st
   let refLow: number | null = null;
   let lastDir: 'up' | 'down' | null = null;
   for (let i = 4; i < n; i++) {
-    const priorHighs = swings.filter((s) => s.kind === 'high' && s.i < i - 1);
-    const priorLows = swings.filter((s) => s.kind === 'low' && s.i < i - 1);
+    const priorHighs = swings.filter((s) => s.kind === 'high' && s.i + 3 <= i);
+    const priorLows = swings.filter((s) => s.kind === 'low' && s.i + 3 <= i);
     refHigh = priorHighs.length ? priorHighs[priorHighs.length - 1].price : null;
     refLow = priorLows.length ? priorLows[priorLows.length - 1].price : null;
     if (refHigh != null && closes[i] > refHigh && lastDir !== 'up') {
@@ -584,6 +586,7 @@ export function buildRealDataBlock(
       avgG = (avgG * (period - 1) + (d > 0 ? d : 0)) / period;
       avgL = (avgL * (period - 1) + (d < 0 ? -d : 0)) / period;
     }
+    if (avgG === 0 && avgL === 0) return null; // 0/0: stationary series, not overbought
     if (avgL === 0) return 100;
     return 100 - 100 / (1 + avgG / avgL);
   })();
@@ -627,7 +630,7 @@ export function buildRealDataBlock(
   if (hasVolume) {
     const profile = buildVolumeProfile(win);
     volumeLines.push(
-      '- Volume is REAL (exchange feed), expressed as a multiple of the 20-candle average. 1.0x = typical, 2.0x+ = a spike (a decision point price tends to revisit), below 0.6x = no participation.',
+      '- Volume is supplied by the feed; its unit/venue must be known before interpreting participation. It is expressed as a multiple of the 20-candle average. 1.0x = typical, 2.0x+ = a spike (a decision point price tends to revisit), below 0.6x = no participation.',
     );
     if (profile) {
       volumeProfile = { poc: profile.poc, val: profile.val, vah: profile.vah };
@@ -635,7 +638,7 @@ export function buildRealDataBlock(
         .map(([a, b]) => `${fmt(a)}-${fmt(b)}`)
         .join(', ');
       volumeLines.push(
-        `- VOLUME MAP (approximate: each candle's volume spread evenly across its range) — acceptance zone (value area) ${fmt(profile.val)} to ${fmt(profile.vah)} · POC (most traded price, a magnet) ${fmt(profile.poc)}${gaps ? ` · low-volume gaps price crosses fast (bad target locations): ${gaps}` : ''}`,
+        `- VOLUME MAP (approximate: each candle's volume spread evenly across its range) — acceptance zone (value area) ${fmt(profile.val)} to ${fmt(profile.vah)} · POC proxy (highest bin under the uniform-range approximation, not measured trades at price) ${fmt(profile.poc)}${gaps ? ` · low-volume gaps price crosses fast (bad target locations): ${gaps}` : ''}`,
       );
     }
   } else {
@@ -1466,13 +1469,15 @@ export class AIAdapter {
 
   /** Normaliza o timeframe lido do gráfico ("M30", "1H", "4h"…) para o intervalo canônico. */
   private normalizeTimeframe(tf: string): string | null {
-    const t = String(tf || '').trim().toLowerCase().replace(/\s+/g, '');
+    const raw = String(tf || '').trim();
+    if (/^\d+\s*M$/.test(raw)) return null; // calendar month must not become minute
+    const t = raw.toLowerCase().replace(/\s+/g, '');
     const map: Record<string, string> = {
-      '1m': '1m', 'm1': '1m', '3m': '3m', '5m': '5m', 'm5': '5m',
+      '1m': '1m', 'm1': '1m', '3m': '3m', 'm3': '3m', '5m': '5m', 'm5': '5m',
       '15m': '15m', 'm15': '15m', '30m': '30m', 'm30': '30m',
-      '1h': '1h', 'h1': '1h', '60m': '1h', '2h': '2h', 'h2': '2h',
-      '4h': '4h', 'h4': '4h', '1d': '1d', 'd1': '1d', 'd': '1d', 'daily': '1d',
-      '1w': '1w', 'w': '1w', 'weekly': '1w',
+      '1h': '1h', 'h1': '1h', '60m': '1h', '2h': '2h', 'h2': '2h', '120m': '2h',
+      '4h': '4h', 'h4': '4h', '240m': '4h', '6h': '6h', 'h6': '6h', '360m': '6h', '1440m': '1d', '1d': '1d', 'd1': '1d', 'd': '1d', 'daily': '1d',
+      '1w': '1w', 'w1': '1w', '10080m': '1w', 'w': '1w', 'weekly': '1w',
     };
     return map[t] ?? null;
   }
@@ -1487,6 +1492,7 @@ export class AIAdapter {
    * Volume ausente/inválido vira 0 (o bloco de volume some sozinho).
    */
   private async fetchCryptoCandles(base: string, interval: string): Promise<number[][] | null> {
+    if (!['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '1d', '1w'].includes(interval)) return null;
     const okxBar: Record<string, string> = {
       '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m', '30m': '30m',
       '1h': '1H', '2h': '2H', '4h': '4H', '1d': '1D', '1w': '1W',
@@ -2065,6 +2071,9 @@ export class AIAdapter {
           });
         }
 
+        const rawDiagnostic = rawObservation(content);
+        logObservation(rawDiagnostic, m => this.logger.log(m));
+
         // Se truncado, tenta reparar o JSON antes de falhar
         // O modelo às vezes gera todos os dados mas falta apenas o `}` final
         let contentToParse = content;
@@ -2130,7 +2139,7 @@ export class AIAdapter {
           entryType: parsed.analysis?.entryType,
           entryCondition: parsed.analysis?.entryCondition,
         });
-        return { modelResult, content, parsed, parseMs, tValidation, rawRecommendation, planFailures };
+        return { modelResult, content, parsed, parseMs, tValidation, rawRecommendation, planFailures, rawDiagnostic };
       };
 
       // CHECAGEM POR CODIGO + UMA NOVA TENTATIVA (13/10/2026). JSON que nao
@@ -2249,12 +2258,17 @@ export class AIAdapter {
       const recommendation = decision.recommendation;
       const confidence = decision.confidence;
 
+      // Presentation follows the decision; nothing here feeds guards or repairs.
+      const presentedAnalysis = presentAnalysis(parsed.analysis, 'en', 1); // MTF provenance is added at delivery with its output language.
+      const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);
+      logObservation(observation, m => this.logger.log(m));
       return {
+        observation,
         recommendation,
         bias: parsed.analysis.marketStructure.bias,
         confidence,
-        reasoning: parsed.analysis.reasoning,
-        analysis: parsed.analysis,
+        reasoning: presentedAnalysis.reasoning,
+        analysis: presentedAnalysis,
         evidence: toAnalysisEvidence(coverage),
         // Telemetria gravada por analise (saveAnalysisTelemetry): o snapshot que
         // a OpenAI de fato usou e os numeros do grounding que entraram no prompt.
@@ -2263,7 +2277,7 @@ export class AIAdapter {
         groundingStats,
         drawingPlan: null,
         drawingFailed: true,
-        rawResponse: parsed,
+        rawResponse: { ...parsed, analysis: presentedAnalysis },
         rawContent: content,
         strategyFit,
         strategyFitReason,

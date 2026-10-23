@@ -330,7 +330,18 @@ describe('AiService access enforcement', () => {
     expect(statuses).not.toContain('failed');
   });
 
-  it.each(['quick', 'deep'] as const)('round-trips %s adapter prices through mocked persistence and real serialization', async (analysisType) => {
+  it.each(['quick', 'deep'].flatMap(analysisType => ['en', 'pt', 'es', 'fr', 'de', 'ja'].map(userLanguage => ({ analysisType, userLanguage }))))('round-trips $analysisType/$userLanguage prices and presentation through persistence/serialization', async ({ analysisType, userLanguage }) => {
+    const labels: Record<string, [string, string, string]> = {
+      en: ['Current checklist ', 'Previous checklist ', 'If checklist '],
+      pt: ['Placar atual ', 'Placar anterior ', 'Se placar '],
+      es: ['Confluencia actual ', 'Confluencia anterior ', 'Si confluencia '],
+      fr: ['Checklist actuel ', 'Checklist précédent ', 'Si checklist '],
+      de: ['Aktuelle Faktoren ', 'Vorherige Faktoren ', 'Wenn Faktoren '],
+      ja: ['現在のチェックリスト', '過去のチェックリスト', 'もしチェックリスト'],
+    };
+    const [current, historical, hypothetical] = labels[userLanguage];
+    const narrative = `${current}4/7. ${historical}4/7. ${hypothetical}4/7, wait.`;
+    const presented = `${current}5/7. ${historical}4/7. ${hypothetical}4/7, wait.`;
     const { AIAdapter } = await import('./ai.adapter');
     const { OpenAiVisionModel } = await import('./vision-model');
     const keys = ['ENABLE_RR_GUARD', 'ENABLE_NEWS_GUARD', 'ENABLE_QUICK_GROUNDING', 'ENABLE_MARKET_ENRICHMENT'] as const;
@@ -343,7 +354,10 @@ describe('AiService access enforcement', () => {
       const raw = { is_financial_chart: true, recommendation: 'BUY', confidence: 70, analysis: {
         symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.983, entry: 107.855,
         stopLoss: 107.7, takeProfit1: 108.02, takeProfit2: 108.12, invalidationLevel: 107.72,
-        factorsPresent: 6, trendStrength: 'strong', marketStructure: { bias: 'bullish' },
+        factorsPresent: 4, confluenceScore: 57.14, trendStrength: 'strong', marketStructure: { bias: 'bullish' },
+        structureValidation: '✅ HTF | ❌ Zone | ✅ ICT | ✅ Anti-retail | ✅ Structure | ✅ R:R | ❌ MTF → 4/7',
+        executiveSummary: narrative, reasoning: narrative,
+        multiTimeframeAlignment: 'H1 bullish | H4 bullish',
       } };
       const content = JSON.stringify(raw);
       const create = jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content } }] });
@@ -356,11 +370,16 @@ describe('AiService access enforcement', () => {
       const row = { id: 'an_precision', status: 'pending', isDemo: false, createdAt: new Date(), updatedAt: new Date() };
       prisma.analysis.update.mockImplementation(async ({ data }: any) => ({ ...row, ...data }));
       const delivered = await (service as any).processSynchronously({
-        analysisId: row.id, imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType, isDemo: false,
+        analysisId: row.id, imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType, userLanguage, isDemo: false,
         intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
       });
       const completed = prisma.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed')[0].data;
       expect(completed.fullResponse).toBe(content);
+      expect(delivered.fullResponse.analysis.executiveSummary).toBe(presented);
+      expect(delivered.fullResponse.analysis.reasoning).toBe(presented);
+      expect(delivered.fullResponse.analysis.multiTimeframeAlignment).not.toBe('H1 bullish | H4 bullish');
+      expect(delivered.fullResponse.analysis.multiTimeframeAlignment.endsWith('H1 bullish | H4 bullish')).toBe(true);
+      expect(completed.result).not.toHaveProperty('observation');
       const readback = await (service as any).serializeAnalysis({ ...row, ...JSON.parse(JSON.stringify(completed)) });
       for (const key of ['entry', 'stopLoss', 'takeProfit1', 'takeProfit2'] as const) {
         const expected = raw.analysis[key] * 0.01;
@@ -368,8 +387,100 @@ describe('AiService access enforcement', () => {
         expect(delivered[key]).toBe(expected);
         expect(readback[key]).toBe(expected);
       }
+      expect(readback.fullResponse.analysis.executiveSummary).toBe(presented);
+      expect(readback.fullResponse.analysis.reasoning).toBe(presented);
       expect(readback.fullResponse.analysis.invalidationLevel).toBe(107.72 * 0.01);
       expect(readback).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.06, riskRewardTp2: 1.71, errorCode: null });
+      expect(create).toHaveBeenCalledTimes(1);
+    } finally {
+      keys.forEach((key, i) => { if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i]; });
+    }
+  });
+
+
+  it.each(['quick', 'deep'].flatMap(analysisType => ['en', 'pt', 'es', 'fr', 'de', 'ja'].flatMap(userLanguage => [false, true].map(optional => ({ analysisType, userLanguage, optional })))))('B1 persists unchanged LIMIT optional=$optional in $analysisType/$userLanguage', async ({ analysisType, userLanguage, optional }) => {
+    const conditions: Record<string, [string, string]> = {
+    "en": [
+        "Place limit 100 only after a sweep and rejection.",
+        "Limit 100; preferably enter after a sweep and rejection."
+    ],
+    "pt": [
+        "Coloque limit 100 somente após varredura e rejeição.",
+        "Limit 100; preferencialmente entrar após varredura e rejeição."
+    ],
+    "es": [
+        "Orden limit 100 solo después de barrida y rechazo.",
+        "Limit 100; preferiblemente entrar después de barrida y rechazo."
+    ],
+    "fr": [
+        "Ordre limit 100 uniquement après balayage et rejet.",
+        "Limit 100; de préférence entrer après balayage et rejet."
+    ],
+    "de": [
+        "Limit 100 erst nach Sweep und Ablehnung platzieren.",
+        "Limit 100; vorzugsweise nach Sweep und Ablehnung einsteigen."
+    ],
+    "ja": [
+        "リミット100、スイープと反発の確認後のみ注文。",
+        "リミット100、できればスイープと反発の確認後に注文。"
+    ]
+};
+    const entryCondition = conditions[userLanguage][optional ? 1 : 0];
+    const narrative = 'Checklist 4/7.';
+    const presented = 'Checklist 5/7.';
+    const { AIAdapter } = await import('./ai.adapter');
+    const { OpenAiVisionModel } = await import('./vision-model');
+    const keys = ['ENABLE_RR_GUARD', 'ENABLE_NEWS_GUARD', 'ENABLE_QUICK_GROUNDING', 'ENABLE_MARKET_ENRICHMENT'] as const;
+    const saved = keys.map((key) => process.env[key]);
+    process.env.ENABLE_RR_GUARD = 'true';
+    process.env.ENABLE_NEWS_GUARD = 'false';
+    process.env.ENABLE_QUICK_GROUNDING = 'false';
+    process.env.ENABLE_MARKET_ENRICHMENT = 'true';
+    try {
+      const raw = { is_financial_chart: true, recommendation: 'BUY', confidence: 70, analysis: {
+        entryType: 'limit', entryCondition,
+        symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.983, entry: 107.855,
+        stopLoss: 107.7, takeProfit1: 108.02, takeProfit2: 108.12, invalidationLevel: 107.72,
+        factorsPresent: 4, confluenceScore: 57.14, trendStrength: 'strong', marketStructure: { bias: 'bullish' },
+        structureValidation: '✅ HTF | ❌ Zone | ✅ ICT | ✅ Anti-retail | ✅ Structure | ✅ R:R | ❌ MTF → 4/7',
+        executiveSummary: narrative, reasoning: narrative,
+        multiTimeframeAlignment: 'H1 bullish | H4 bullish',
+      } };
+      const content = JSON.stringify(raw);
+      const create = jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content } }] });
+      const adapter = new AIAdapter();
+      (adapter as any).visionModel = new OpenAiVisionModel({ chat: { completions: { create } } } as any);
+      (adapter as any).buildMarketEnrichment = jest.fn().mockResolvedValue({ block: null, assetClass: 'forex', marketContext: 'unavailable', calendar: 'no_events_returned' });
+      (service as any).aiAdapter = adapter;
+      (service as any).getSignedImageUrl = jest.fn().mockResolvedValue(null);
+      (service as any).getOutcomeById = jest.fn().mockResolvedValue(null);
+      const row = { id: 'an_precision', status: 'pending', isDemo: false, createdAt: new Date(), updatedAt: new Date() };
+      prisma.analysis.update.mockImplementation(async ({ data }: any) => ({ ...row, ...data }));
+      const delivered = await (service as any).processSynchronously({
+        analysisId: row.id, imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType, userLanguage, isDemo: false,
+        intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
+      });
+      const completed = prisma.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed')[0].data;
+      expect(completed.fullResponse).toBe(content);
+      expect(delivered.fullResponse.analysis.executiveSummary).toBe(presented);
+      expect(delivered.fullResponse.analysis.reasoning).toBe(presented);
+      expect(delivered.fullResponse.analysis.multiTimeframeAlignment).not.toBe('H1 bullish | H4 bullish');
+      expect(delivered.fullResponse.analysis.multiTimeframeAlignment.endsWith('H1 bullish | H4 bullish')).toBe(true);
+      expect(completed.result).not.toHaveProperty('observation');
+      const readback = await (service as any).serializeAnalysis({ ...row, ...JSON.parse(JSON.stringify(completed)) });
+      for (const key of ['entry', 'stopLoss', 'takeProfit1', 'takeProfit2'] as const) {
+        const expected = raw.analysis[key] * 0.01;
+        expect(completed.result.analysis[key]).toBe(expected);
+        expect(delivered[key]).toBe(expected);
+        expect(readback[key]).toBe(expected);
+      }
+      expect(readback.fullResponse.analysis.executiveSummary).toBe(presented);
+      expect(readback.fullResponse.analysis.reasoning).toBe(presented);
+      expect(readback.fullResponse.analysis.invalidationLevel).toBe(107.72 * 0.01);
+      expect(readback).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.06, riskRewardTp2: 1.71, errorCode: null });
+      expect(delivered.fullResponse.analysis).toMatchObject({ entryType: 'limit', entryCondition });
+      expect(readback.fullResponse.analysis).toMatchObject({ entryType: 'limit', entryCondition });
+      expect(completed.result).not.toHaveProperty('limitCondition');
       expect(create).toHaveBeenCalledTimes(1);
     } finally {
       keys.forEach((key, i) => { if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i]; });

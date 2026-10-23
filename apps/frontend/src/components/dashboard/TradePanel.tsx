@@ -126,6 +126,12 @@ const TradePanel = ({ analysisId }: { analysisId: string }) => {
   const busy = mark.isPending || check.isPending;
   const isOpen = OPEN.includes(view.status);
   const shown = lastCheck ?? view.checks[0]?.result ?? null;
+  // A typed-price comparison proves a threshold relation, not a pending-order fill.
+  let shownSituationLabel = shown ? situationLabel[shown.situation] : '';
+  if (view.status === 'pending_order' && shown?.decidedByPrice) {
+    if (shown.situation === 'target_hit') shownSituationLabel = tr.reportedPriceAtTarget;
+    if (shown.situation === 'stop_hit') shownSituationLabel = tr.reportedPriceAtStop;
+  }
   const inputClass =
     'h-10 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 text-base text-[var(--text-primary)] sm:w-44';
 
@@ -264,7 +270,7 @@ const TradePanel = ({ analysisId }: { analysisId: string }) => {
       {shown ? (
         <div className="flex flex-col gap-1 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-4 py-3 text-sm">
           <p className="font-semibold text-[var(--text-primary)]">
-            <span>{`${situationLabel[shown.situation]} · ${tr.suggested}: ${actionLabel[shown.action]}`}</span>
+            <span>{`${shownSituationLabel} · ${tr.suggested}: ${actionLabel[shown.action]}`}</span>
           </p>
           <p className="text-[var(--text-secondary)]">{shown.reason}</p>
           <p className="text-xs text-[var(--text-secondary)]">

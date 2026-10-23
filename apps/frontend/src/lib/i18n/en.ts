@@ -489,6 +489,8 @@ export default {
     sitInvalidated: "Invalidated",
     sitTargetHit: "Target hit",
     sitStopHit: "Stop hit",
+    reportedPriceAtTarget: "Reported price at or beyond target",
+    reportedPriceAtStop: "Reported price at or beyond stop",
     sitUnclear: "Unclear",
     actHold: "Hold",
     actBreakeven: "Move stop to breakeven",

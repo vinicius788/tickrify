@@ -1,3 +1,4 @@
+import { logObservation, safeObserve } from '../../common/utils/analysis-observation';
 import { flagNumber } from '../../common/flags/feature-flags';
 import {
   sanitizeStrategyProfile,
@@ -1389,6 +1390,7 @@ export class AiService implements OnModuleInit {
         confidence: aiResponse.confidence,
         reasoning: aiResponse.reasoning,
         analysis: aiResponse.analysis,
+        presentation: { language: userLanguage || 'en', additionalCharts: aiResponse.evidence?.additionalChartsDelivered ?? -1 },
         drawingPlan: aiResponse.drawingPlan,
         originalImageUrl: imageUrl,
       });
@@ -1399,6 +1401,8 @@ export class AiService implements OnModuleInit {
           ? aiResponse.rawContent
           : JSON.stringify(aiResponse.rawResponse || {});
 
+      const candidateObservation = safeObserve(normalizedPayload.fullResponse, 'persistence_candidate', aiResponse.observation);
+      logObservation(candidateObservation, m => this.logger.log(m));
       const updated = await this.prisma.analysis.update({
         where: { id: analysisId },
         data: {
@@ -1413,6 +1417,7 @@ export class AiService implements OnModuleInit {
           errorCode: null,
         },
       });
+      if (updated?.result) logObservation(safeObserve(updated, 'persisted', candidateObservation), m => this.logger.log(m));
       // Mesma telemetria do worker (fila).
       await saveAnalysisTelemetry(this.prisma, analysisId, telemetryFromAiSource(aiResponse), (m) => this.logger.warn(m));
       // Modo comparacao de provedores (desligado por padrao), igual ao worker.
@@ -1989,7 +1994,7 @@ export class AiService implements OnModuleInit {
     );
     const outcomeData = await this.getOutcomeById(analysis.id);
 
-    return {
+    const response = {
       id: analysis.id,
       imageUrl: signedOriginalImageUrl,
       status: this.toApiStatus(analysis.status),
@@ -2026,6 +2031,8 @@ export class AiService implements OnModuleInit {
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
     };
+    logObservation(safeObserve(response, 'public', safeObserve(analysis, 'persisted')), m => this.logger.log(m));
+    return response;
   }
 
   /**

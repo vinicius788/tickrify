@@ -1,3 +1,4 @@
+import { logObservation, safeObserve, type AnalysisObservation } from '../src/common/utils/analysis-observation';
 import { flagBool, startFlagRefresh } from '../src/common/flags/feature-flags';
 import 'dotenv/config';
 import { Job, UnrecoverableError, Worker } from 'bullmq';
@@ -1101,6 +1102,9 @@ async function processAnalysis(job: Job<JobData>) {
     const tParse = Date.now();
     const outcome = await toWorkerAnalysisResult(sourcePayload, adapterDecisionFrom(aiSource));
     const parsed = outcome.result;
+    const adapterObservation = (aiSource as { observation?: AnalysisObservation } | null)?.observation;
+    const workerObservation = safeObserve(parsed, 'worker', adapterObservation, 100);
+    logObservation(workerObservation, m => console.log(m));
     rawContent = extractRawContent(aiSource, parsed);
     parseMs = Date.now() - tParse;
 
@@ -1213,6 +1217,7 @@ async function processAnalysis(job: Job<JobData>) {
       confidence: parsed.confidence,
       reasoning: parsed.analysis.reasoning,
       analysis: toPersistedAnalysis(parsed),
+      presentation: { language: userLanguage || 'en', additionalCharts: (aiSource as { evidence?: { additionalChartsDelivered?: number } } | null)?.evidence?.additionalChartsDelivered ?? -1 },
       drawingPlan: null,
       originalImageUrl: imageUrl,
     });
@@ -1221,8 +1226,10 @@ async function processAnalysis(job: Job<JobData>) {
     normalized = await persistAnnotatedImage(normalized, userId);
     annotateMs = Date.now() - tAnnotate;
 
+    const candidateObservation = safeObserve(normalized.fullResponse, 'persistence_candidate', workerObservation);
+    logObservation(candidateObservation, m => console.log(m));
     const tPersist = Date.now();
-    await prisma.analysis.update({
+    const persisted = await prisma.analysis.update({
       where: { id: analysisId },
       data: {
         status: 'completed',
@@ -1236,6 +1243,7 @@ async function processAnalysis(job: Job<JobData>) {
         errorCode: null,
       },
     });
+    if (persisted?.result) logObservation(safeObserve(persisted, 'persisted', candidateObservation), m => console.log(m));
     // Modelo que respondeu e numeros do grounding, fora do `result` (que a tela le).
     await saveAnalysisTelemetry(prisma, analysisId, telemetryFromAiSource(aiSource), (m) => console.warn(m));
     // Modo comparacao de provedores (desligado por padrao): grava depois, sem segurar a analise.
