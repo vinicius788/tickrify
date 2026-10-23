@@ -210,6 +210,8 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation(capture as any);
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(capture as any);
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    // Esta fixture modela a analise principal, sem uma resposta auxiliar de simbolo.
+    jest.spyOn(AIAdapter.prototype as any, 'extractSymbol').mockResolvedValue(null);
     // Guarda o que o adapter devolveu (a decisao autoritativa), chamando o metodo real.
     const original = AIAdapter.prototype.analyzeImage;
     jest.spyOn(AIAdapter.prototype, 'analyzeImage').mockImplementation(async function (this: AIAdapter, ...args: any[]) {
