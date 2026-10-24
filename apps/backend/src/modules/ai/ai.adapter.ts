@@ -506,8 +506,8 @@ export function buildEventMapLines(candles: number[][], fmt: (n: number) => numb
       after.length < 3
         ? 'STILL LIVE (compression not resolved yet — this is a squeeze, not a signal)'
         : after[after.length - 1] > mid
-          ? 'it resolved UP (accumulation — the range top and bottom are now support and liquidity)'
-          : 'it resolved DOWN (distribution)';
+          ? 'last reported close is above the midpoint; this midpoint test does not certify a range breakout'
+          : 'last reported close is at or below the midpoint; this midpoint test does not certify a range breakout';
     lines.push(
       `- Base / trading range: ${fmt(base.bottom)} to ${fmt(base.top)}, ${base.to - base.from + 1} candles, ending ${ago(base.to)} candles ago — ${exit}. Range height ${((base.top - base.bottom) / atr).toFixed(1)} ATR (the "cause" behind the move that follows).`,
     );
