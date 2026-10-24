@@ -155,6 +155,9 @@ jobs:
       - name: Pente fino
         run: pnpm auditoria
 
+      - name: Testar proteção do token operacional
+        run: node --test scripts/supply-chain-guards.test.mjs
+
   test:
     name: Test
     runs-on: ubuntu-latest

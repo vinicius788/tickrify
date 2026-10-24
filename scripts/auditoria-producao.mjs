@@ -21,6 +21,7 @@
  */
 
 import tls from 'tls';
+import { assertTrustedOpsTarget } from './ops-audit-target.mjs';
 
 const API = (process.argv[2] || process.env.BACKEND_URL || '').replace(/\/$/, '');
 const SITE = (process.argv[3] || process.env.FRONTEND_URL || '').replace(/\/$/, '');
@@ -31,15 +32,28 @@ if (!API) {
   process.exit(2);
 }
 
+// Recusa o destino antes de qualquer acesso à rede quando há um token.
+if (OPS_TOKEN) {
+  try {
+    assertTrustedOpsTarget(API);
+  } catch (erro) {
+    console.error(erro.message);
+    process.exit(2);
+  }
+}
+
 const resultados = [];
 const registrar = (nome, severidade, problemas) =>
   resultados.push({ nome, severidade, ok: problemas.length === 0, problemas });
 
 async function buscar(url, opcoes = {}) {
+  if (new Headers(opcoes.headers).has('x-ops-token')) {
+    assertTrustedOpsTarget(url);
+  }
   const controlador = new AbortController();
   const timer = setTimeout(() => controlador.abort(), 20_000);
   try {
-    return await fetch(url, { redirect: 'manual', signal: controlador.signal, ...opcoes });
+    return await fetch(url, { signal: controlador.signal, ...opcoes, redirect: 'manual' });
   } finally {
     clearTimeout(timer);
   }

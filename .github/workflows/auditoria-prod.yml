@@ -42,7 +42,9 @@ jobs:
       - name: Auditar
         env:
           SMOKE_OPS_TOKEN: ${{ secrets.INTERNAL_OPS_TOKEN }}
+          AUDIT_API: ${{ inputs.api || 'https://tickrify.onrender.com' }}
+          AUDIT_SITE: ${{ inputs.site || 'https://tickrify.com' }}
         run: |
           node scripts/auditoria-producao.mjs \
-            "${{ inputs.api || 'https://tickrify.onrender.com' }}" \
-            "${{ inputs.site || 'https://tickrify.com' }}"
+            "$AUDIT_API" \
+            "$AUDIT_SITE"

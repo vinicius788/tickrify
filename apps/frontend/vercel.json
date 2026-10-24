@@ -1,8 +1,8 @@
 {
   "framework": "vite",
-  "buildCommand": "npm run build",
+  "buildCommand": "corepack pnpm run build",
   "outputDirectory": "dist",
-  "installCommand": "npm install --ignore-scripts",
+  "installCommand": "corepack pnpm --filter vite-react-typescript-starter... install --frozen-lockfile --ignore-scripts",
   "rewrites": [
     {
       "source": "/(.*)",
