@@ -766,6 +766,7 @@ export default {
     subscriptionEnded: 'Dein Abo ist beendet. Dein Verlauf bleibt lesbar.',
     manageSubscription: 'Abo verwalten',
     loadingPlan: 'Dein Tarif wird geladen…',
+    planUnavailable: 'Dein Abonnement kann gerade nicht überprüft werden. Bitte versuche es gleich erneut.',
     freeTitle: 'Gratis-Analysen',
     exhausted: 'Ihre Gratis-Analysen wurden verbraucht.',
     subscribe: 'Abonnieren, um fortzufahren',

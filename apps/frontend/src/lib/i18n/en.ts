@@ -766,6 +766,7 @@ export default {
     subscriptionEnded: 'Your subscription ended. Your history stays open to read.',
     manageSubscription: 'Manage subscription',
     loadingPlan: 'Loading your plan…',
+    planUnavailable: 'We cannot verify your subscription right now. Please try again shortly.',
     freeTitle: 'Free Analyses',
     exhausted: 'Your free analyses are used up. No sense going back to trading blind.',
     subscribe: 'Subscribe to continue',

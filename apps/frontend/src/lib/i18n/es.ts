@@ -766,6 +766,7 @@ export default {
     subscriptionEnded: 'Tu suscripción terminó. Tu historial sigue abierto para leer.',
     manageSubscription: 'Gestionar suscripción',
     loadingPlan: 'Cargando tu plan…',
+    planUnavailable: 'No podemos verificar tu suscripción ahora. Inténtalo de nuevo en unos instantes.',
     freeTitle: 'Análisis Gratis',
     exhausted: 'Tus análisis gratis han sido utilizados.',
     subscribe: 'Suscríbete para continuar',

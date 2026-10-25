@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -1096,6 +1096,21 @@ describe('DashboardPage', () => {
     await user.click(screen.getByRole('button', { name: '21 Ticks' }));
     expect(screen.getByText('Analysis counter')).toBeTruthy();
   });
+
+  it.each(['/dashboard', '/dashboard/new', '/dashboard/plans'])(
+    'usage indisponivel em %s nao mostra cotas ou ofertas e permite nova tentativa', async path => {
+      const retry = vi.fn();
+      mockUseAnalysisLimit.mockReturnValue({ plan: null, total: 0, remaining: 0, used: 0, isUnlimited: false, isLoading: true, isUnavailable: true, retry });
+      renderDashboard(path);
+      const message = 'Não foi possível verificar sua assinatura agora. Tente novamente em instantes.';
+      expect(await screen.findByText(message)).toBeTruthy();
+      expect(screen.queryByText('Analysis counter')).toBeNull();
+      expect(screen.queryByText('Pricing cards')).toBeNull();
+      expect(screen.queryByRole('button', { name: /assinar|subscribe|grátis restantes/i })).toBeNull();
+      expect(screen.queryByText(/assinatura encerrada/i)).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+      expect(retry).toHaveBeenCalledTimes(1);
+    });
 
   it('gratis continua vendo o contador na lateral', async () => {
     mockUseAnalysisLimit.mockReturnValue({ plan: 'free', total: 3, used: 1, remaining: 2, isUnlimited: false, isLoading: false });

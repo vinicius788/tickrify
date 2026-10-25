@@ -34,6 +34,7 @@ import AnalysisLoading from "../dashboard/AnalysisLoading";
 import AnalysisCounter from "../dashboard/AnalysisCounter";
 import PaymentFailedBanner from "../dashboard/PaymentFailedBanner";
 import { TicksBadge } from "@/components/dashboard/TicksBadge";
+import { PlanUnavailableNotice } from '@/components/dashboard/PlanUnavailableNotice';
 import RatingCard from '@/components/dashboard/RatingCard';
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
 import { APIError, isFreeQuotaExhausted, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
@@ -279,7 +280,7 @@ const DashboardPage = () => {
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, billingManageable, trial, trialBlocked, isLoading: isPlanLoading } = useAnalysisLimit();
+  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, billingManageable, trial, trialBlocked, isLoading: isPlanLoading, isUnavailable: isUsageUnavailable, retry: retryUsage } = useAnalysisLimit();
   const [theme] = useTheme();
   // Trial de 3 dias: qual paywall mostrar (volte amanha ou trial encerrado).
   const trialVariant: 'daily_limit' | 'trial_ended' | undefined = trial
@@ -666,6 +667,7 @@ const DashboardPage = () => {
   // chama a API e nao mexe na cota (ver SampleAnalyses.tsx).
   const showSamples =
     !isDemo &&
+    !isPlanLoading &&
     Boolean(user) &&
     !isUnlimited &&
     SAMPLE_ANALYSES.length > 0 &&
@@ -1540,6 +1542,9 @@ const DashboardPage = () => {
   };
 
   const renderContent = () => {
+    if (!isDemo && isPlanLoading && ['new-analysis', 'sample', 'plans'].includes(activeView ?? '')) {
+      return isUsageUnavailable ? null : <p className="text-sm text-[var(--text-secondary)]">{t.counter.loadingPlan}</p>;
+    }
     switch (activeView) {
       case 'dashboard':
         return renderDashboardHome();
@@ -1801,7 +1806,7 @@ const DashboardPage = () => {
         }
         // Gancho de retorno: depois do resultado, dar um próximo passo claro
         // (analisar outro / quantas grátis restam / assinar) — sem beco sem saída.
-        const freeLeftKnown = !isUnlimited && Number.isFinite(remaining);
+        const freeLeftKnown = !isPlanLoading && !isUnlimited && Number.isFinite(remaining);
         const exhausted = freeLeftKnown && remaining <= 0;
         // No trial o WAIT conta na cota do dia: a barra "nao gastou" seria falsa.
         const showWaitNudge = !isDemo && freeLeftKnown && !exhausted && isWaitResult && !trial;
@@ -1985,11 +1990,11 @@ const DashboardPage = () => {
   const safeTotal = Number.isFinite(total) ? Math.max(0, Number(total)) : null;
   const safeUsed = Number.isFinite(used) ? Math.max(0, Number(used)) : 0;
   const navbarUnlimited =
-    isUnlimited ||
+    !isPlanLoading && (isUnlimited ||
     total === null ||
     total === undefined ||
     total === -1 ||
-    !Number.isFinite(total);
+    !Number.isFinite(total));
   // Plano gratis: o chip mostra quantas RESTAM ("2 free left"). Antes era
   // "1/3" e, no celular, sem a palavra ao lado: nao dava para saber se era
   // usadas ou restantes. O contador detalhado so existe na barra lateral, que
@@ -2064,7 +2069,7 @@ const DashboardPage = () => {
 
   if (!bootDone.current) {
     const waiting = Boolean(user) && !bootTimedOut && (isPlanLoading || loadingAnalyses);
-    if (waiting) return <BrandLoader />;
+    if (waiting && !isUsageUnavailable) return <BrandLoader />;
     bootDone.current = true;
   }
 
@@ -2166,7 +2171,7 @@ const DashboardPage = () => {
             {accountMenu}
             <div className="min-w-0 leading-tight">
               <div className="truncate text-xs text-[var(--text-primary)]">{user.firstName || user.fullName || 'Trader'}</div>
-              <div className="font-terminal text-[8px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{plan.toUpperCase()}{navbarUnlimited ? ` · ${t.nav.statusActive}` : ''}</div>
+              <div className="font-terminal text-[8px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{isPlanLoading ? t.counter.loadingPlan : plan?.toUpperCase()}{navbarUnlimited ? ` · ${t.nav.statusActive}` : ''}</div>
             </div>
           </div>
         )}
@@ -2211,14 +2216,14 @@ const DashboardPage = () => {
 
           {user ? (
             <TicksBadge
-              showBalance
+              showBalance={!isPlanLoading}
               subscriber={navbarUnlimited}
-              planText={navbarUnlimited ? plan.toUpperCase() : quotaText}
+              planText={isPlanLoading ? t.counter.loadingPlan : navbarUnlimited ? (plan ?? '').toUpperCase() : quotaText}
               planSub={navbarUnlimited ? `· ${t.nav.statusActive}` : ''}
             />
           ) : (
             <div className="flex shrink-0 items-center gap-1 rounded-lg border border-[var(--border-subtle)] px-2.5 py-1.5 text-sm font-medium">
-              <span className="whitespace-nowrap">{navbarUnlimited ? plan.toUpperCase() : quotaText}</span>
+              <span className="whitespace-nowrap">{navbarUnlimited ? (plan ?? '').toUpperCase() : quotaText}</span>
             </div>
           )}
 
@@ -2278,6 +2283,7 @@ const DashboardPage = () => {
         <div className="flex flex-1 overflow-hidden">
           <main className="min-w-0 flex-1 overflow-y-auto p-3 md:p-6">
             <div className="flex flex-col gap-6 md:gap-8">
+              {isUsageUnavailable && <PlanUnavailableNotice onRetry={retryUsage} />}
               {/* Aviso temporario de instabilidade (22/10/2026, pedido do dono).
                   Tirar junto com `serviceNotice` dos 6 idiomas quando normalizar. */}
               <div
@@ -2390,7 +2396,7 @@ const DashboardPage = () => {
       </div>
 
       {/* Modal de Upgrade */}
-      <Dialog open={showUpgradeModal} onOpenChange={setShowUpgradeModal}>
+      <Dialog open={showUpgradeModal && !isPlanLoading} onOpenChange={setShowUpgradeModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">

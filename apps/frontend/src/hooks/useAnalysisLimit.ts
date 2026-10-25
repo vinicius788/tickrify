@@ -11,7 +11,7 @@ interface AnalysisLimitData {
   remaining: number;
   canAnalyze: boolean;
   isUnlimited: boolean;
-  plan: UserPlan;
+  plan: UserPlan | null;
   /** Contagem REAL de análises concluídas, de todos os tempos, vinda de um
    *  count() no banco. `null` enquanto o backend não respondeu, e nesse caso o
    *  painel cai no contador local da lista carregada. NÃO confundir com `used`,
@@ -35,10 +35,14 @@ interface AnalysisLimitData {
   /** true enquanto o backend ainda não confirmou o plano/limite do usuário logado.
    *  Durante esse tempo NÃO se deve tratar o usuário como "free 3 grátis". */
   isLoading: boolean;
+  isUnavailable: boolean;
+  retry: () => void;
 }
 
 const FREE_LIMIT = 3;
 const ANALYSIS_REFRESH_EVENT = 'tickrify:analysis-created';
+const USAGE_REFRESH_EVENT = 'tickrify:usage-refresh';
+const retryUsage = () => window.dispatchEvent(new Event(USAGE_REFRESH_EVENT));
 
 // O painel e o contador da barra lateral usam este hook ao mesmo tempo, e cada
 // um buscava /api/ai/usage: duas requisicoes identicas a cada abertura e a
@@ -46,14 +50,14 @@ const ANALYSIS_REFRESH_EVENT = 'tickrify:analysis-created';
 // agora dividem a MESMA requisicao. Janela curta: nao e cache, e deduplicacao.
 type UsageResponse = Awaited<ReturnType<typeof apiClient.getAnalysisUsage>>;
 const SHARE_WINDOW_MS = 1500;
-let sharedUsage: { promise: Promise<UsageResponse>; startedAt: number } | null = null;
+let sharedUsage: { token: string; promise: Promise<UsageResponse>; startedAt: number } | null = null;
 
 function fetchUsageShared(token: string): Promise<UsageResponse> {
-  if (sharedUsage && Date.now() - sharedUsage.startedAt < SHARE_WINDOW_MS) return sharedUsage.promise;
+  if (sharedUsage?.token === token && Date.now() - sharedUsage.startedAt < SHARE_WINDOW_MS) return sharedUsage.promise;
   const promise = apiClient.getAnalysisUsage(token);
-  sharedUsage = { promise, startedAt: Date.now() };
+  sharedUsage = { token, promise, startedAt: Date.now() };
   promise.catch(() => {
-    sharedUsage = null;
+    if (sharedUsage?.promise === promise) sharedUsage = null;
   });
   return promise;
 }
@@ -77,6 +81,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
   // que a conta é paga. Sem isto, a tela mostrava "3 grátis" no meio-tempo e o
   // assinante conseguia gastar análise grátis antes do plano ser reconhecido.
   const [statusResolved, setStatusResolved] = useState(false);
+  const [isUnavailable, setIsUnavailable] = useState(false);
 
   // Verificar se está no modo demo (rota /demo sem usuário)
   const isDemo = !user;
@@ -89,17 +94,14 @@ export function useAnalysisLimit(): AnalysisLimitData {
       return;
     }
 
+    setIsUnavailable(false);
     try {
       // Token do cache (instantaneo). Se estiver vencido, o 401 e repetido com
       // token novo dentro do apiClient (fetchWithAuthRetry).
       const token = await getToken();
 
       if (!token) {
-        setUserPlan('free');
-        setAnalysisCount(0);
-        setAnalysisLimit(FREE_LIMIT);
-        setBackendUnlimited(false);
-        return;
+        throw new Error('Session token unavailable');
       }
 
       const usage = await fetchUsageShared(token);
@@ -138,19 +140,9 @@ export function useAnalysisLimit(): AnalysisLimitData {
       // termos a verdade do backend, evitando gastar grátis por engano.
       setStatusResolved(true);
     } catch {
-      setUserPlan('free');
-      setAnalysisCount(0);
-      setAnalysisLimit(FREE_LIMIT);
-      setFreeTotal(null);
-      setFreeLocked(false);
-      setFormerSubscriber(false);
-      setBillingManageable(false);
-      setTrial(null);
-      setTrialBlocked(null);
-      setBackendUnlimited(false);
-      // Falha de rede: libera a UI para não travar pra sempre, mas o backend ainda
-      // é a fonte da verdade na hora de criar a análise (bloqueia grátis indevido).
-      setStatusResolved(true);
+      // Sem resposta valida, o plano e desconhecido, nao gratuito ou encerrado.
+      setStatusResolved(false);
+      setIsUnavailable(true);
     }
   }, [getToken, isLoaded, user]);
 
@@ -162,9 +154,11 @@ export function useAnalysisLimit(): AnalysisLimitData {
     };
 
     window.addEventListener(ANALYSIS_REFRESH_EVENT, handleRefresh);
+    window.addEventListener(USAGE_REFRESH_EVENT, handleRefresh);
 
     return () => {
       window.removeEventListener(ANALYSIS_REFRESH_EVENT, handleRefresh);
+      window.removeEventListener(USAGE_REFRESH_EVENT, handleRefresh);
     };
   }, [refreshLimits]);
 
@@ -182,6 +176,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setUserPlan('free');
       setBackendUnlimited(false);
       setStatusResolved(false);
+      setIsUnavailable(false);
     }
   }, [user]);
 
@@ -204,6 +199,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       trial: null,
       trialBlocked: null,
       isLoading: false,
+      isUnavailable: false,
+      retry: retryUsage,
     };
   }
 
@@ -216,7 +213,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       remaining: 0,
       canAnalyze: false,
       isUnlimited: false,
-      plan: userPlan,
+      plan: null,
       // Ainda nao chegou do backend; o painel usa o contador local ate chegar.
       analysesAllTime: null,
       totalUsed: null,
@@ -227,6 +224,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
       trial: null,
       trialBlocked: null,
       isLoading: true,
+      isUnavailable,
+      retry: retryUsage,
     };
   }
 
@@ -264,6 +263,8 @@ export function useAnalysisLimit(): AnalysisLimitData {
     trial: activeTrial,
     trialBlocked: isUnlimited ? null : trialBlocked,
     isLoading: false,
+    isUnavailable: false,
+    retry: retryUsage,
   };
 }
 

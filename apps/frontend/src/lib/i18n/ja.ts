@@ -766,6 +766,7 @@ export default {
     subscriptionEnded: 'サブスクリプションは終了しました。履歴は引き続き閲覧できます。',
     manageSubscription: 'サブスクリプションを管理',
     loadingPlan: 'プランを読み込み中…',
+    planUnavailable: '現在、サブスクリプションを確認できません。しばらくしてから再試行してください。',
     freeTitle: '無料分析',
     exhausted: '無料分析を使い切りました。',
     subscribe: '続けるには登録',

@@ -10,6 +10,7 @@ import { Link } from "react-router-dom";
 import { openBillingPortal } from "@/lib/stripe";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { track } from "@/lib/analytics";
+import { PlanUnavailableNotice } from './PlanUnavailableNotice';
 
 const PLAN_LABELS: Record<UserPlan, string> = {
   free: 'Free',
@@ -28,7 +29,7 @@ const PLAN_TICKS: Record<UserPlan, number> = {
 };
 
 const AnalysisCounter = () => {
-  const { isUnlimited, plan, total, used, remaining, totalUsed, totalLimit, trial, formerSubscriber, billingManageable, isLoading } = useAnalysisLimit();
+  const { isUnlimited, plan, total, used, remaining, totalUsed, totalLimit, trial, formerSubscriber, billingManageable, isLoading, isUnavailable, retry } = useAnalysisLimit();
   const { balance } = useTicks();
   const { t } = useLanguage();
   const { getToken } = useAuth();
@@ -43,7 +44,8 @@ const AnalysisCounter = () => {
   // Enquanto o backend não confirmou o plano (conta paga demora no cold start),
   // mostrar um estado neutro de carregamento — NUNCA "0/3 grátis", que confundia
   // o assinante e o fazia achar que perdeu o plano.
-  if (isLoading) {
+  if (isUnavailable) return <PlanUnavailableNotice onRetry={retry} />;
+  if (isLoading || !plan) {
     return (
       <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
         <CardContent className="p-4">

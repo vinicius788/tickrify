@@ -779,6 +779,7 @@ export default {
     subscriptionEnded: 'Sua assinatura terminou. Seu histórico continua aberto para leitura.',
     manageSubscription: 'Gerenciar assinatura',
     loadingPlan: 'Carregando seu plano…',
+    planUnavailable: 'Não foi possível verificar sua assinatura agora. Tente novamente em instantes.',
     freeTitle: 'Análises Grátis',
     exhausted: 'Suas análises grátis foram utilizadas.',
     subscribe: 'Assinar para continuar',
