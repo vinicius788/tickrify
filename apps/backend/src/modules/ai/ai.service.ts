@@ -1899,8 +1899,7 @@ export class AiService implements OnModuleInit {
 
     if (activeSubscription) {
       // Janela mensal de ticks (saldo = pacote do plano no inicio de cada mes).
-      await this.stripeService.ensureTicksForActiveSubscriber(userId, activeSubscription);
-      return true;
+      if (await this.stripeService.ensureTicksForActiveSubscriber(userId, activeSubscription)) return true;
     }
 
     // Fallback: webhook may have been missed — check Stripe API directly

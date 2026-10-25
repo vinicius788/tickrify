@@ -1193,7 +1193,7 @@ describe('StripeService webhooks', () => {
 
       await expect(
         service.ensureTicksForActiveSubscriber('usr_1', { stripeId: 'manual_owner_1', priceId: STARTER_MONTHLY }),
-      ).resolves.toBeUndefined();
+      ).resolves.toBe(true);
     });
 
     it('lazy sync aplica a mesma janela do webhook', async () => {

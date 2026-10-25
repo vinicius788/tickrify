@@ -159,7 +159,7 @@ describe('AiService access enforcement', () => {
     };
 
     const stripeService = {
-      ensureTicksForActiveSubscriber: jest.fn().mockResolvedValue(undefined),
+      ensureTicksForActiveSubscriber: jest.fn().mockResolvedValue(true),
       syncActiveSubscriptionFromStripe: jest.fn().mockResolvedValue(false),
       getFoundingOffer: jest.fn().mockResolvedValue({ active: true, code: 'EARLY35', percentOff: 35 }),
     };

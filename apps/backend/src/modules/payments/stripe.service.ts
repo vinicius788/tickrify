@@ -82,6 +82,11 @@ const PRICE_CHECK_TTL_MS = 60 * 60 * 1000;
 /** Status em que a pessoa ainda tem o que gerenciar no portal (cartao, faturas, cancelar). */
 const MANAGEABLE_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due', 'unpaid'];
 
+function hasCurrentStripeAccess(subscription: Pick<Stripe.Subscription, 'status' | 'current_period_end'>): boolean {
+  return ['active', 'trialing'].includes(subscription.status) &&
+    Number.isFinite(subscription.current_period_end) && subscription.current_period_end * 1000 > Date.now();
+}
+
 /**
  * Portal da Stripe criado por API (13/10/2026), identificado pela metadata.
  * Cancelamento no FIM do periodo pago, motivo em lista fechada, troca de
@@ -2330,7 +2335,8 @@ export class StripeService implements OnModuleInit {
    *
    * O periodo vem do banco. So consulta a Stripe se ele estiver ausente ou
    * vencido (renovacao cujo webhook ainda nao chegou), e grava o novo.
-   * Acesso manual (`manual_*`) usa o mes-calendario.
+   * Acesso manual (`manual_*`) usa o mes-calendario. O retorno decide o acesso
+   * desta mesma requisicao; falha de reposicao nao revoga um periodo confirmado.
    */
   async ensureTicksForActiveSubscriber(
     userId: string,
@@ -2340,20 +2346,34 @@ export class StripeService implements OnModuleInit {
       currentPeriodStart?: Date | null;
       currentPeriodEnd?: Date | null;
     },
-  ): Promise<void> {
+  ): Promise<boolean> {
+    let accessConfirmed = !subscription.stripeId.startsWith('sub_');
     try {
       let periodStart = subscription.currentPeriodStart ?? null;
       let priceId = subscription.priceId;
 
       if (subscription.stripeId.startsWith('sub_')) {
+        const periodEnd = subscription.currentPeriodEnd?.getTime();
+        accessConfirmed = typeof periodEnd === 'number' && Number.isFinite(periodEnd) && periodEnd > Date.now();
         const stale =
-          !periodStart ||
-          !subscription.currentPeriodEnd ||
-          subscription.currentPeriodEnd.getTime() <= Date.now();
+          !periodStart || !Number.isFinite(periodStart.getTime()) || !accessConfirmed;
         if (stale) {
-          const live = await this.getStripeClient().subscriptions.retrieve(subscription.stripeId);
+          // Falha temporaria so pode preservar um periodo local ainda vigente.
+          let live: Stripe.Subscription;
+          try {
+            live = await this.getStripeClient().subscriptions.retrieve(subscription.stripeId);
+          } catch (error) {
+            if ((error as { code?: string })?.code !== 'resource_missing') throw error;
+            accessConfirmed = false;
+            await this.prisma.subscription.updateMany({
+              where: { stripeId: subscription.stripeId },
+              data: { status: 'canceled' },
+            });
+            return false;
+          }
+          accessConfirmed = hasCurrentStripeAccess(live);
           await this.upsertSubscriptionForUser(userId, live);
-          if (!['active', 'trialing'].includes(live.status)) return;
+          if (!accessConfirmed) return false;
           periodStart = new Date(live.current_period_start * 1000);
           priceId = live.items.data[0]?.price.id ?? priceId;
         }
@@ -2367,10 +2387,16 @@ export class StripeService implements OnModuleInit {
         'access_check',
       );
     } catch (error) {
-      // Chamado dentro do fluxo de analise: nao pode derrubar a analise. O
-      // webhook da fatura segue abrindo a janela de cada renovacao.
       this.logger.error(`[Ticks] Falha ao verificar a janela mensal de ${userId}`, error);
+      if (!accessConfirmed) {
+        throw new ServiceUnavailableException({
+          code: 'subscription_verification_unavailable',
+          message: 'Unable to confirm subscription access. Please try again shortly.',
+        });
+      }
+      // So a reposicao falhou: preserva acesso ja confirmado e saldo existente.
     }
+    return true;
   }
 
   /**
@@ -2386,9 +2412,7 @@ export class StripeService implements OnModuleInit {
         limit: 5,
       });
 
-      const active = subscriptions.data.filter(s =>
-        ['active', 'trialing'].includes(s.status),
-      );
+      const active = subscriptions.data.filter(hasCurrentStripeAccess);
 
       if (active.length === 0) return false;
 
