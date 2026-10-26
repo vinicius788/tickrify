@@ -1696,10 +1696,20 @@ export class AIAdapter {
     if (!Number.isFinite(lastClose) || lastClose <= 0) return null;
 
     // Ordem de grandeza diferente = ou o ticker está errado, ou a leitura do eixo
-    // falhou feio. Nos dois casos não dá pra confiar no cruzamento — melhor reter.
+    // falhou feio. Exceção: em 'low' a leitura às vezes perde a vírgula (401,25
+    // por 4012,5; visto em produção em 26/10/2026 num print ATUAL de ouro). Só
+    // potência de 10 que, corrigida, caia a 10% do preço real; o teste de ATR
+    // abaixo continua decidindo se o print é velho.
+    let price = imagePrice;
     const ratio = imagePrice / lastClose;
     if (ratio < 0.5 || ratio > 2) {
-      return 'the price read from the image is on a different order of magnitude than the live feed (wrong ticker or unreadable axis)';
+      const rescaled = [10, 100, 1000, 0.1, 0.01, 0.001]
+        .map((factor) => imagePrice * factor)
+        .find((p) => p / lastClose >= 0.9 && p / lastClose <= 1.1);
+      if (rescaled == null) {
+        return `the price read from the image (${imagePrice}) is on a different order of magnitude than the live feed (${lastClose}) (wrong ticker or unreadable axis)`;
+      }
+      price = rescaled;
     }
 
     const trs = candles
@@ -1710,7 +1720,7 @@ export class AIAdapter {
     const atr = trs.slice(-14).reduce((a, b) => a + b, 0) / Math.min(14, trs.length);
     if (!Number.isFinite(atr) || atr <= 0) return null;
 
-    const gapInAtr = Math.abs(imagePrice - lastClose) / atr;
+    const gapInAtr = Math.abs(price - lastClose) / atr;
     if (gapInAtr > 3) {
       return `the chart shows a price ${gapInAtr.toFixed(1)} ATR away from the live price (the screenshot is not from the current moment)`;
     }

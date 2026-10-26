@@ -754,3 +754,25 @@ describe('B2 synthetic chronology: price alignment is not a time certificate', (
     expect(g.stats.numbers).toEqual(buildRealDataBlock('BTCUSDT', '1h', historical)!.numbers);
   });
 });
+
+
+describe('detectStaleChart: virgula perdida na leitura em low (26/10/2026)', () => {
+  // 30 candles de ouro em volta de 4012 com ATR ~2.
+  const gold = Array.from({ length: 30 }, (_, i) => [i * 3600000, 4011, 4013, 4010, 4012, 0]);
+  const adapter = new AIAdapter() as any;
+
+  it.each([401.25, 40125, 4.0125])('preco atual com a virgula fora do lugar (%s) nao retem os candles', (read) => {
+    expect(adapter.detectStaleChart(gold, read)).toBeNull();
+  });
+
+  it('print velho continua retido, mesmo com a virgula corrigida', () => {
+    expect(adapter.detectStaleChart(gold, 395.0)).toMatch(/ATR away/);
+  });
+
+  it('ticker errado sem relacao de potencia de 10 continua retido e diz os dois precos', () => {
+    const reason = adapter.detectStaleChart(gold, 27.3);
+    expect(reason).toMatch(/different order of magnitude/);
+    expect(reason).toContain('27.3');
+    expect(reason).toContain('4012');
+  });
+});
