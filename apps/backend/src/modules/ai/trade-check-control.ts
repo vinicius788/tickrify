@@ -49,6 +49,22 @@ export async function finishTradeCheck(prisma: PrismaService, id: string): Promi
     await save(tx, state);
   });
 }
+/** Tira tickets de processos mortos (mesmo teto das reservas presas). */
+export async function dropStaleTradeCheckTickets(prisma: PrismaService, olderThanMinutes: number): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRawUnsafe<Array<{ value: string }>>(
+      'SELECT "value" FROM "tickrify"."FeatureFlag" WHERE "key" = $1 FOR UPDATE', KEY);
+    if (!rows[0]) return 0;
+    const state = parse(rows[0].value);
+    const cutoff = Date.now() - olderThanMinutes * 60_000;
+    const kept = state.active.filter((t) => !(Date.parse(t.startedAt) < cutoff));
+    if (kept.length === state.active.length) return 0;
+    const dropped = state.active.length - kept.length;
+    state.active = kept;
+    await save(tx, state);
+    return dropped;
+  });
+}
 export async function tradeCheckStatus(prisma: PrismaService) {
   const row = await prisma.featureFlag.findUnique({ where: { key: KEY }, select: { value: true } });
   const state = row ? parse(row.value) : closed();

@@ -8,7 +8,8 @@ import { TicksService } from '../ticks/ticks.service';
 import { getFreeQuota } from '../../common/free-quota';
 import { AiService } from './ai.service';
 import { TradesService } from './trades.service';
-import { pauseTradeChecks, openTradeChecks, tradeCheckStatus, recoverTradeCheck } from './trade-check-control';
+import { pauseTradeChecks, openTradeChecks, tradeCheckStatus, recoverTradeCheck, dropStaleTradeCheckTickets } from './trade-check-control';
+import { releaseStaleTradeChecks } from './trade-check-reservation';
 
 // Explicit opt-in. Never consume DATABASE_URL from a developer or deployment.
 const integration = process.env.TICKRIFY_PG_INTEGRATION === '1' ? describe : describe.skip;
@@ -500,5 +501,58 @@ integration('isolated PostgreSQL: real admission, refunds and crash recovery', (
       expect((await balances()).balance).toBe(1);
       expect((await balances()).ledger.filter((tx: any) => tx.type === 'REFUND')).toHaveLength(1);
     } finally { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); }
+  });
+  async function pendingAt(minutesAgo: number, paid = true) {
+    const id = randomUUID();
+    await prisma.$executeRawUnsafe(`INSERT INTO tickrify."TradeCheck" ("id","analysisId","userId","isFree","cost","result","createdAt")
+      VALUES ($1,$2,$3,$4,1,'null'::jsonb,NOW() - make_interval(mins => $5))`, id, analysisId, userId, !paid, minutesAgo);
+    if (paid) {
+      await prisma.userTicks.update({ where: { userId }, data: { balance: { decrement: 1 } } });
+      await prisma.tickTransaction.create({ data: { userId, amount: -1, type: 'USAGE', description: 'synthetic',
+        metadata: { analysisId, kind: 'trade_check', tradeCheckId: id } } });
+    }
+    return id;
+  }
+
+  it('releases only reservations stuck past the ceiling, once, even with concurrent sweeps', async () => {
+    openingBalance = 1;
+    await prisma.userTicks.update({ where: { userId }, data: { balance: 3 } });
+    openingBalance = 3;
+    const stale = await pendingAt(31);
+    const fresh = await pendingAt(5);
+    const done = randomUUID();
+    await prisma.$executeRawUnsafe(`INSERT INTO tickrify."TradeCheck" ("id","analysisId","userId","cost","result","createdAt")
+      VALUES ($1,$2,$3,1,$4::jsonb,NOW() - INTERVAL '2 hours')`, done, analysisId, userId, JSON.stringify(modelResult));
+    const sweeps = await Promise.all(Array.from({ length: 4 }, () => releaseStaleTradeChecks(prisma)));
+    expect(sweeps.reduce((n, r) => n + r.released, 0)).toBe(1);
+    expect(sweeps.every((r) => r.failed === 0)).toBe(true);
+    const ids = (await prisma.$queryRawUnsafe('SELECT "id" FROM tickrify."TradeCheck"')).map((r: { id: string }) => r.id).sort();
+    expect(ids).toEqual([fresh, done].sort());
+    const state = await balances();
+    expect(state.balance).toBe(2); // 3 - 2 debits + 1 refund of the stale one.
+    expect(state.ledger.filter((tx: any) => tx.type === 'REFUND')).toHaveLength(1);
+    expect(stale).toBeTruthy();
+  });
+
+  it('never credits a stuck reservation without its own debit and keeps it as evidence', async () => {
+    const orphan = randomUUID();
+    await prisma.$executeRawUnsafe(`INSERT INTO tickrify."TradeCheck" ("id","analysisId","userId","isFree","cost","result","createdAt")
+      VALUES ($1,$2,$3,false,1,'null'::jsonb,NOW() - INTERVAL '2 hours')`, orphan, analysisId, userId);
+    const freeStale = await pendingAt(45, false);
+    expect(await releaseStaleTradeChecks(prisma)).toEqual({ released: 1, failed: 1 });
+    const ids = (await prisma.$queryRawUnsafe('SELECT "id" FROM tickrify."TradeCheck"')).map((r: { id: string }) => r.id);
+    expect(ids).toEqual([orphan]);
+    expect(freeStale).toBeTruthy();
+    expect((await balances()).ledger).toHaveLength(0);
+  });
+
+  it('drops only admission tickets older than the ceiling', async () => {
+    const old = { id: randomUUID(), userId, instance: 'dead:1', startedAt: new Date(Date.now() - 31 * 60_000).toISOString() };
+    const live = { id: randomUUID(), userId, instance: 'live:1', startedAt: new Date().toISOString() };
+    await prisma.$executeRawUnsafe(`UPDATE tickrify."FeatureFlag" SET "value" = $1 WHERE "key" = 'ops.trade_checks.v1'`,
+      JSON.stringify({ version: 1, paused: false, active: [old, live] }));
+    expect(await dropStaleTradeCheckTickets(prisma, 30)).toBe(1);
+    expect((await tradeCheckStatus(prisma)).active.map((t: any) => t.id)).toEqual([live.id]);
+    expect((await tradeCheckStatus(prisma)).paused).toBe(false);
   });
 });

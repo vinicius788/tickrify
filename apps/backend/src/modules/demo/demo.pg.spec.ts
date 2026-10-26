@@ -401,4 +401,15 @@ integration('demo: disposable PostgreSQL admission, recovery and version coexist
     expect(await count()).toBe(1);
     expect((await cli(['open'])).output).toMatchObject({ paused: false, pending: [] });
   });
+  it('the background sweep frees only reservations stuck past 30 minutes', async () => {
+    const stuck = await seed('stuck-device', '192.0.2.50', null);
+    await prisma.$executeRawUnsafe(`UPDATE tickrify."DemoUsage" SET "createdAt" = NOW() - INTERVAL '31 minutes' WHERE id = $1`, stuck);
+    const fresh = await seed('fresh-device', '192.0.2.50', null);
+    const done = await seed('done-device', '192.0.2.50', { status: 'completed', recommendation: 'WAIT' }, 5);
+    const f = fixture();
+    await Promise.all([(f.service as any).releaseStale(), (f.service as any).releaseStale()]);
+    const ids = (await prisma.$queryRawUnsafe<Array<{ id: string }>>('SELECT id FROM tickrify."DemoUsage"')).map(r => r.id).sort();
+    expect(ids).toEqual([fresh, done].sort());
+    expect(await f.service.getFingerprintStatus('stuck-device')).toEqual({ used: false, result: null });
+  });
 });

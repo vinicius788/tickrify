@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, HttpStatus, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
@@ -22,8 +22,8 @@ import {
   type TradeTimelineEntry,
 } from '../../common/trade-state';
 import type { ManagementResult } from './trade-management';
-import { releasePendingTradeCheck } from './trade-check-reservation';
-import { admitTradeCheck, finishTradeCheck } from './trade-check-control';
+import { STALE_RESERVATION_MINUTES, releasePendingTradeCheck, releaseStaleTradeChecks } from './trade-check-reservation';
+import { admitTradeCheck, dropStaleTradeCheckTickets, finishTradeCheck } from './trade-check-control';
 import type { UploadedFile } from '../../common/interfaces/multer';
 
 /**
@@ -136,9 +136,10 @@ export function tradeError(code: string, message: string, status = HttpStatus.BA
 }
 
 @Injectable()
-export class TradesService implements OnModuleInit {
+export class TradesService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TradesService.name);
   private ready = false;
+  private staleSweep?: NodeJS.Timeout;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -151,22 +152,27 @@ export class TradesService implements OnModuleInit {
       for (const sql of BOOT_SQL) await this.prisma.$executeRawUnsafe(sql);
       this.ready = true;
       this.logger.log('[trades] Tabelas prontas.');
-      await this.warnStalePending();
+      await this.releaseStale();
+      this.staleSweep = setInterval(() => void this.releaseStale(), 10 * 60_000);
+      this.staleSweep.unref();
     } catch (error) {
       this.logger.warn(`[trades] Tabelas indisponiveis (estado da operacao desligado): ${error instanceof Error ? error.message : error}`);
     }
   }
 
-  /** So avisa: idade nao prova que a execucao parou, nada e restituido aqui. */
-  private async warnStalePending(): Promise<void> {
+  onModuleDestroy(): void {
+    if (this.staleSweep) clearInterval(this.staleSweep);
+  }
+
+  /** Reserva de processo morto (deploy no meio da IA) volta sozinha, sem operador. */
+  private async releaseStale(): Promise<void> {
     try {
-      const [row] = await this.prisma.$queryRawUnsafe<Array<{ n: number }>>(
-        `SELECT COUNT(*)::int AS n FROM "tickrify"."TradeCheck"
-          WHERE "result" = 'null'::jsonb AND "createdAt" < NOW() - INTERVAL '10 minutes'`,
-      );
-      if (row?.n) this.logger.warn(`[trades] ${row.n} checagem(ns) pendente(s) ha mais de 10 min: conferir com scripts/reconcile-trade-check.cjs`);
+      const { released, failed } = await releaseStaleTradeChecks(this.prisma);
+      await dropStaleTradeCheckTickets(this.prisma, STALE_RESERVATION_MINUTES);
+      if (released) this.logger.warn(`[trades] ${released} reserva(s) presa(s) liberada(s) automaticamente.`);
+      if (failed) this.logger.error(`[trades] ${failed} reserva(s) presa(s) com ledger inconsistente: revisar com scripts/reconcile-trade-check.cjs`);
     } catch {
-      // Aviso opcional: nunca derruba o boot.
+      // Proxima volta tenta de novo; nunca derruba o boot.
     }
   }
 

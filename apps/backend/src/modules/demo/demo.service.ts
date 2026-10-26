@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  OnModuleDestroy,
   OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -39,9 +40,10 @@ type DemoUsage = { id: string; result: unknown; createdAt: Date; pending: boolea
  * - Nenhuma resposta ou erro público revela modelo, prompt ou detalhes internos.
  */
 @Injectable()
-export class DemoService implements OnModuleInit {
+export class DemoService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DemoService.name);
   private tableReady = false;
+  private staleSweep?: NodeJS.Timeout;
 
   constructor(
     private prisma: PrismaService,
@@ -87,7 +89,9 @@ export class DemoService implements OnModuleInit {
       );
       this.tableReady = true;
       this.logger.log('[demo] Tabela de controle da demo pronta (RLS habilitado).');
-      await this.warnStalePending();
+      await this.releaseStale();
+      this.staleSweep = setInterval(() => void this.releaseStale(), 10 * 60_000);
+      this.staleSweep.unref();
     } catch (err) {
       this.tableReady = false;
       this.logger.warn(
@@ -98,16 +102,23 @@ export class DemoService implements OnModuleInit {
     }
   }
 
-  /** So avisa: idade nao prova que a execucao parou, nada e liberado aqui. */
-  private async warnStalePending(): Promise<void> {
+  onModuleDestroy(): void {
+    if (this.staleSweep) clearInterval(this.staleSweep);
+  }
+
+  /** Vaga presa por processo morto (deploy no meio da IA) volta sozinha. A IA
+   * tem timeout de ~2 min: 30 min e muito acima de qualquer requisicao viva, e
+   * uma gravacao tardia so acha a linha se ela ainda estiver pendente. */
+  private async releaseStale(): Promise<void> {
     try {
-      const [row] = await this.prisma.$queryRaw<Array<{ n: number }>>`
-        SELECT COUNT(*)::int AS n FROM "tickrify"."DemoUsage"
-        WHERE "result" = 'null'::jsonb AND "createdAt" < NOW() - INTERVAL '10 minutes'
+      const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+        DELETE FROM "tickrify"."DemoUsage"
+        WHERE "result" = 'null'::jsonb AND "createdAt" < NOW() - INTERVAL '30 minutes'
+        RETURNING "id"
       `;
-      if (row?.n) this.logger.warn(`[demo] ${row.n} reserva(s) pendente(s) ha mais de 10 min: conferir com scripts/demo-control.cjs status`);
+      if (rows.length) this.logger.warn(`[demo] ${rows.length} reserva(s) presa(s) liberada(s) automaticamente.`);
     } catch {
-      // Aviso opcional: nunca derruba o boot.
+      // Proxima volta tenta de novo; nunca derruba o boot.
     }
   }
 

@@ -796,8 +796,12 @@ Vale para TODA mudanca, grande ou pequena:
   `node apps/backend/scripts/trade-check-control.cjs pause|status|open --confirm-bootstrap-retired`,
   `node apps/backend/scripts/demo-control.cjs pause|status|open|release --id UUID --confirm-execution-stopped`,
   `node apps/backend/scripts/reconcile-trade-check.cjs [--check-id UUID --apply --confirm-execution-stopped]`.
-  Boot avisa `[trades]`/`[demo] ... pendente(s) ha mais de 10 min`: requisicao
-  morta por SIGKILL no deploy (o entrypoint ignora SIGTERM). Rollback = PAUSAR;
+  Reserva presa (requisicao morta por SIGKILL no deploy; o entrypoint ignora
+  SIGTERM) volta SOZINHA: varredura no boot e a cada 10 min libera pendentes
+  com mais de 30 min (IA tem timeout de ~2 min; o DELETE e a unica
+  reivindicacao, nada credita 2x). Log `[trades]`/`[demo] ... liberada(s)
+  automaticamente`; so `[trades] ... ledger inconsistente` pede olho humano.
+  Ninguem precisa rodar comando no dia a dia. Rollback = PAUSAR;
   nunca "Rollback" da Render para antes de `96ebbfc` com os endpoints abertos
   (reabre a corrida: IA sem reserva, quota e limite de 10 furados).
 
