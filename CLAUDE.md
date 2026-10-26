@@ -788,6 +788,18 @@ Vale para TODA mudanca, grande ou pequena:
   `disabled`/`degraded` = incidente de claim, nao config.
 - Antes de suspeitar de ambiente, confirmar que o codigo que usa aquele ambiente
   chega a ser EXECUTADO (o e-mail NULL de julho era uma rota que ninguem chamava).
+- **Checagem de operacao e demo reservam ANTES da IA (26/10, `96ebbfc`).** Reserva
+  = linha com `result = 'null'::jsonb` (`TradeCheck`, `DemoUsage`); falha libera
+  uma vez; nunca por idade. Controle nas linhas `ops.trade_checks.v1` e
+  `ops.demo.v1` da `FeatureFlag` (fora do /admin): linha ausente = endpoint
+  FECHADO (503). Pausar/abrir/conciliar so pelo Shell da Render:
+  `node apps/backend/scripts/trade-check-control.cjs pause|status|open --confirm-bootstrap-retired`,
+  `node apps/backend/scripts/demo-control.cjs pause|status|open|release --id UUID --confirm-execution-stopped`,
+  `node apps/backend/scripts/reconcile-trade-check.cjs [--check-id UUID --apply --confirm-execution-stopped]`.
+  Boot avisa `[trades]`/`[demo] ... pendente(s) ha mais de 10 min`: requisicao
+  morta por SIGKILL no deploy (o entrypoint ignora SIGTERM). Rollback = PAUSAR;
+  nunca "Rollback" da Render para antes de `96ebbfc` com os endpoints abertos
+  (reabre a corrida: IA sem reserva, quota e limite de 10 furados).
 
 ### 4.3 Frontend
 
@@ -1032,6 +1044,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **13/10 (paginas do rodape):** blog, /for e /tools (22 paginas estaticas) com o visual da landing via `public/site.css` (sai o verde neon, o logo em texto e as fontes Fraunces/JetBrains); cabecalho e rodape iguais aos do site; 229 travessoes trocados por virgula, dois pontos ou ponto; tabela "48 hours later" da home e aviso de risco sem travessao. As paginas React do rodape ja usavam o `SiteLayout`.
 - **13/10 (vitrine factual):** "cancel in one click" virou "anytime in Settings" (home, /pricing, meta, 6 idiomas); /pricing ganhou "How do I cancel?"; post how-tickrify-works sem "3 free"; vs-chatgpt e best-tools sem "not aware of another tool"; llms.txt com calendario, print velho, sentimento so em cripto, sem score de confianca, hit rate != lucro; robots.txt so com comentario em ingles. Diagnostico das IAs: o "75% de perda" mais provavel e (LOSS + NO_FILL) / (WIN + LOSS + NO_FILL) da tabela crua da /accuracy (172/233 = 73,8%); nenhuma versao publicou acerto perto de 25%.
 - **13/10 (cancelamento, afiliados, tema):** Configuracoes com assinatura e portal da Stripe por API, reativar, eventos de cancelamento, ex-assinante em modo leitura, aba Cancelamentos; afiliados com clique deduplicado, eventos, cookie do vinculo, vendas pagas e "Marcar como pago"; tema claro na area logada com tokens (361 cores soltas trocadas). Ver 3.12.
+- **26/10 (concorrencia):** checagem de operacao e demo com reserva atomica antes da IA (trabalho do Codex revisado + pausa da demo), `96ebbfc`/`557afbc` Live 01:38 BRT; aberto pelos CLIs as ~09h com `active=[]`/`pending=0`. Conciliacao (deficit liquido por usuario+analise, historico inteiro): 1 par, 2 debitos x 2 resultados pagos, deficit 0, nada a compensar. Antes disso ja estavam no ar `6d1ed51` (body-parser 2.4.0), `26d45be` (Vercel com lockfile congelado) e `d1d10c5`/`92fe994` (assinatura). SQL de deficit e de compensacao (chave unica `compensation:trade_check:<user>:<analysis>:v1`) no historico da sessao, nao executar compensacao sem o dono.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
 
 ---
