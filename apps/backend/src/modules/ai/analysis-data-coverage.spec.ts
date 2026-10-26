@@ -263,6 +263,33 @@ describe('extractSymbol: le o print do Storage privado (26/10/2026)', () => {
     expect(sent.url).toBe('data:image/png;base64,AAAA');
   });
 
+  it('le com o modelo do quick e a imagem em detalhe alto (26/10/2026: o mini low errava 36 de 97)', async () => {
+    const adapter = new AIAdapter() as any;
+    adapter.resolveImageUrlForModel = jest.fn(async () => 'data:image/png;base64,AAAA');
+    const complete = jest.fn(async () => ({ content: '{"symbol":"XAUUSD","timeframe":"5m","lastPrice":4012.05}' }));
+    adapter.visionModel = { complete };
+    await adapter.extractSymbol(storageUrl);
+    const req = (complete.mock.calls[0] as any[])[0];
+    expect(req.tier).toBe('quick');
+    expect(req.imageDetail ?? 'high').toBe('high');
+    expect(req.reasoningEffort).toBeUndefined();
+    expect(req.maxTokens).toBeGreaterThanOrEqual(2000);
+  });
+
+  it.each(['GOLD', 'GOLD#', 'gold', 'GOLDm', 'GOLD.pro', 'GOLD-P'])('nome de corretora do ouro %s vira XAUUSD', async (read) => {
+    const adapter = new AIAdapter() as any;
+    adapter.resolveImageUrlForModel = jest.fn(async () => 'data:image/png;base64,AAAA');
+    adapter.visionModel = { complete: jest.fn(async () => ({ content: JSON.stringify({ symbol: read, timeframe: '1h', lastPrice: 4100 }) })) };
+    await expect(adapter.extractSymbol(storageUrl)).resolves.toEqual({ symbol: 'XAUUSD', timeframe: '1h', lastPrice: 4100 });
+  });
+
+  it.each(['GOLDUSDT', 'GOLDEN', 'XAUUSDm', 'BTCUSDT'])('%s nao passa pelo alias do ouro', async (read) => {
+    const adapter = new AIAdapter() as any;
+    adapter.resolveImageUrlForModel = jest.fn(async () => 'data:image/png;base64,AAAA');
+    adapter.visionModel = { complete: jest.fn(async () => ({ content: JSON.stringify({ symbol: read, timeframe: '1h', lastPrice: 1 }) })) };
+    await expect(adapter.extractSymbol(storageUrl)).resolves.toMatchObject({ symbol: read });
+  });
+
   it('falha ao baixar a imagem vira null (analise segue sem candles), sem lancar', async () => {
     const adapter = new AIAdapter() as any;
     adapter.resolveImageUrlForModel = jest.fn(async () => { throw new Error('Failed to download image from Supabase'); });

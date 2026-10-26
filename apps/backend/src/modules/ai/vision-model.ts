@@ -18,8 +18,8 @@ import { buildSamplingParams, resolveModel, type ReasoningEffort } from './opena
 //     criada, nao loga e nao e chamada: com so a OpenAI, tudo e como antes.
 //   - Havendo os dois, o outro vira contingencia: erro, timeout ou limite no
 //     ativo -> a mesma chamada vai ao outro (FallbackVisionModel).
-//   - Modelo por tarefa: OpenAI pelo `resolveModel` (AI_MODEL_QUICK/DEEP) e
-//     gpt-4o-mini no `light`; Anthropic por ANTHROPIC_MODEL_QUICK/DEEP/LIGHT.
+//   - Modelo por tarefa: OpenAI pelo `resolveModel` (AI_MODEL_QUICK/DEEP);
+//     Anthropic por ANTHROPIC_MODEL_QUICK/DEEP. A leitura do simbolo usa o quick.
 //
 // Ordem fixa para o cache de prompt do provedor: `instructions` (igual em toda
 // analise do mesmo prompt e idioma) vai primeiro, `context` (grounding e
@@ -32,8 +32,8 @@ export type VisionContentPart =
   | { type: 'text'; text: string }
   | { type: 'image'; url: string };
 
-/** quick/deep = analise; light = leitura barata (simbolo do grafico). */
-export type ModelTier = 'quick' | 'deep' | 'light';
+/** quick/deep = analise (o quick tambem le simbolo, eixo e gerenciamento). */
+export type ModelTier = 'quick' | 'deep';
 
 export interface VisionModelRequest {
   tier: ModelTier;
@@ -138,15 +138,13 @@ function extractMessageContent(content: unknown): string {
   return '';
 }
 
-const OPENAI_LIGHT_MODEL = 'gpt-4o-mini';
-
 export class OpenAiVisionModel implements VisionModel {
   readonly provider = 'openai';
 
   constructor(private readonly client: OpenAI) {}
 
   async complete(request: VisionModelRequest): Promise<VisionModelResult> {
-    const model = request.tier === 'light' ? OPENAI_LIGHT_MODEL : resolveModel(request.tier);
+    const model = resolveModel(request.tier);
     // Mesmas mensagens de antes da interface: system = instrucoes + contexto,
     // user = texto + imagens (detalhe alto, salvo pedido contrario).
     const system = [request.instructions, ...request.context]
@@ -225,7 +223,6 @@ const ANTHROPIC_MAX_UNION_FIELDS = 16;
 const ANTHROPIC_DEFAULT_MODELS: Record<ModelTier, string> = {
   quick: 'claude-sonnet-5-5',
   deep: 'claude-sonnet-5-5',
-  light: 'claude-haiku-5-5',
 };
 
 /** Erro de HTTP do provedor com `status`, que o adapter usa para classificar. */
@@ -407,7 +404,6 @@ export function createVisionModels(
         {
           quick: String(env.ANTHROPIC_MODEL_QUICK || '').trim() || ANTHROPIC_DEFAULT_MODELS.quick,
           deep: String(env.ANTHROPIC_MODEL_DEEP || '').trim() || ANTHROPIC_DEFAULT_MODELS.deep,
-          light: String(env.ANTHROPIC_MODEL_LIGHT || '').trim() || ANTHROPIC_DEFAULT_MODELS.light,
         },
         fetchImpl,
       )

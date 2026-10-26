@@ -1216,8 +1216,15 @@ export class AIAdapter {
   }
 
   /**
-   * Passo barato (gpt-4o-mini) que lê o símbolo, o timeframe E o preço do último
-   * candle visível no gráfico. Usado antes de buscar dados reais de mercado.
+   * Leitura do símbolo, do timeframe E do preço do último candle visível no
+   * gráfico. Usada antes de buscar dados reais de mercado.
+   *
+   * Modelo da análise quick com imagem em detalhe alto (26/10/2026). Medido em
+   * 99 prints reais contra a leitura da análise principal: o gpt-4o-mini em
+   * `detail: low` acertava ativo + timeframe em 61 de 97 (XAUUSD 5m lido como
+   * EURUSD 1h) e o luna em 95 de 97, pelo mesmo custo (~US$ 0,0005 por print;
+   * o mini cobra ~2,8 mil tokens por imagem low). Custa ~1 s a mais (p90 3,6 s).
+   * Esforço de raciocínio no padrão do modelo: foi o que se mediu.
    *
    * O `lastPrice` existe para a GUARDA DE PRINT VELHO (ver `buildQuickGrounding`):
    * sem ele, um print de dias atrás faz o backend injetar "preço atual = X" e a
@@ -1235,7 +1242,7 @@ export class AIAdapter {
       // demo, que manda a imagem embutida, funcionava.
       const image = await this.resolveImageUrlForModel(imageUrl);
       const result = await this.visionModel.complete({
-        tier: 'light',
+        tier: 'quick',
         instructions: '',
         context: [],
         userContent: [
@@ -1245,14 +1252,17 @@ export class AIAdapter {
           },
           { type: 'image', url: image },
         ],
-        maxTokens: 80,
+        // Raciocinio conta dentro do teto: 80 tokens nao bastam para o luna.
+        maxTokens: 2000,
         sampling: { temperature: 0 },
-        imageDetail: 'low',
         timeoutMs: 12_000,
       });
       const txt = result.content;
       const parsed = JSON.parse(txt || '{}');
-      const symbol = String(parsed.symbol || '').trim();
+      const read = String(parsed.symbol || '').trim();
+      // Nome de corretora para o ouro ("GOLD", "GOLD#", "GOLDm"): sem isto o
+      // ouro caia em ativo sem candles.
+      const symbol = /^gold(m|[^a-z].*)?$/i.test(read) ? 'XAUUSD' : read;
       const timeframe = String(parsed.timeframe || '').trim();
       const rawPrice = Number(parsed.lastPrice);
       const lastPrice = Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : null;
@@ -1806,7 +1816,7 @@ export class AIAdapter {
         // Grounding do QUICK — DESLIGADO por padrão (só liga com
         // ENABLE_QUICK_GROUNDING='true' no Render). Fica atrás de flag até o
         // backtest isolado (v7.3 + --ground, 75 pareadas) dizer se ajuda.
-        // Custo quando ligado: +1 chamada gpt-4o-mini (extractSymbol, ~US$0,0001)
+        // Custo quando ligado: +1 leitura do simbolo (extractSymbol, ~US$0,0005)
         // e +alguns segundos de latência, com teto de 15s. Falha → segue sem o bloco.
         try {
           const grounding = await withTimeout(
