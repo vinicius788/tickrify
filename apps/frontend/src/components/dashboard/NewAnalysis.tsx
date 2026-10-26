@@ -1,7 +1,7 @@
 import { useDropzone } from 'react-dropzone';
 import { Card } from '@/components/ui/card';
 import { UploadCloud, X, Plus, Layers, Info } from 'lucide-react';
-import { useCallback, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import { shrinkChartImage } from '@/lib/chart-image';
@@ -52,6 +52,9 @@ const SetupUpdateBanner = ({ context, deep }: { context: SetupUpdateContext; dee
 );
 
 const MAX_HTF = 2;
+
+/** A dica de colar diz ⌘V; fora do Mac e Windows/Linux a tecla e Ctrl+V. */
+const IS_APPLE_PLATFORM = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent);
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -110,6 +113,27 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
     multiple: false,
     maxSize: 10 * 1024 * 1024,
   });
+
+  // Colar o print (Ctrl/Cmd+V). A tela promete ("or paste with ⌘V") e so o /try
+  // cumpria: no painel, quem copiava o print do TradingView e colava nao via
+  // nada acontecer. No desktop, 36% dos trials (9 de 25, 14 dias ate 26/10)
+  // nunca fizeram a 1a analise, contra 17% no celular. Campo de texto aberto
+  // (chat do fundador) fica de fora, para nao roubar o colar de la.
+  useEffect(() => {
+    if (mainFile) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith('image/'));
+      const file = item?.getAsFile();
+      if (!file) return;
+      e.preventDefault();
+      track('upload_pasted', { surface: 'dashboard' });
+      void onDrop([file]);
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [mainFile, onDrop]);
 
   const pushHtf = (file: File | undefined | null) => {
     if (file && file.type.startsWith('image/') && htf.length < MAX_HTF) {
@@ -251,7 +275,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
             </div>
 
             <p className="mt-4 font-terminal text-[10px] uppercase tracking-[0.1em] text-[var(--text-secondary)]">
-              {u.pasteHint}
+              {IS_APPLE_PLATFORM ? u.pasteHint : u.pasteHint.replace('⌘V', 'Ctrl+V')}
             </p>
             <p className="mt-3 text-xs text-[var(--text-secondary)]">{u.mobileCamera}</p>
           </div>

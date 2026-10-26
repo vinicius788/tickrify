@@ -371,6 +371,9 @@ export type FunnelEvent =
   // pasta na nuvem). A pessoa ve o aviso na tela; sem este evento, nao vemos.
   // `surface`: dashboard | try.
   | 'upload_read_failed'
+  // Print colado com Ctrl/Cmd+V na tela de envio do painel (26/10/2026). Mede se
+  // o desktop, onde 36% dos trials nunca analisavam, passa a usar o atalho.
+  | 'upload_pasted'
   // Card de compartilhamento: `step` diz onde a pessoa parou
   // (opened | copied | downloaded | x_opened | native_shared). Sem isto não dá
   // para saber se o card é gerado e nunca postado, que é a falha mais provável.
