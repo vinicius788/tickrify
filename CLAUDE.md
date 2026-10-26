@@ -257,6 +257,7 @@ Vale para TODA mudanca, grande ou pequena:
 - **Prompt:** v7.6 (13/10; v7.5 em 24/09) em `apps/backend/src/common/prompts/trading-system-prompt.ts`. v7.6 = so o TP1 no primeiro nivel realista (~1 a 1,5R), alvo de 2R+ no TP2. Teste de prompt novo: `apps/backend/scripts/prompt-replay.ts` (prints reais de producao, dois bracos, mesma regua do sweeper; ~US$ 0,006 por analise).
   O `PromptSyncService` publica como versao nova no boot, entao `promptVer`
   separa antes e depois. Tetos de caracteres por campo desde 09/09.
+- **Deep com os mesmos candles reais (26/10/2026):** `buildMarketEnrichment` usa `buildCandleBlocks` (o calculo do quick) numa leitura de simbolo so, mais contexto do ativo e calendario em paralelo; print velho retem candles e contexto e avisa; teto do enriquecimento 18 s. Log `[DeepGrounding]`; `groundingStats` gravado tambem na deep.
 - **Grounding do quick ligado** (`ENABLE_QUICK_GROUNDING=true`): candles reais
   (OKX, Binance de reserva, Twelve Data para XAU/FX), RSI(14), posicao no range,
   momentum, volume e mapa de volume por preco (SO cripto: forex e metais spot nao

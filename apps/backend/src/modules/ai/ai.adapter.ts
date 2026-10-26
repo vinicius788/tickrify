@@ -1413,18 +1413,28 @@ export class AIAdapter {
     assetClass: CoverageAssetClass;
     marketContext: AnalysisDataCoverage['marketContext'];
     calendar: CalendarCoverage;
+    candles: CandleCoverage;
+    stats: GroundingStats | null;
   }> {
     const extracted = await this.extractSymbol(imageUrl);
     if (!extracted) return {
       block: null, assetClass: 'unknown', marketContext: 'unavailable', calendar: 'symbol_unreadable',
+      candles: 'symbol_unreadable', stats: null,
     };
 
-    const sym = extracted.symbol.toUpperCase();
-    const { isCrypto } = normalizeToBinancePerp(extracted.symbol);
-    const assetClass = classifyCoverageAsset(sym, isCrypto);
+    // Deep com os MESMOS candles reais do quick (26/10/2026); antes so tinha contexto.
+    // Calendário econômico vale para TODAS as classes (cripto reage a CPI/Fed também).
+    const [candles, calendar] = await Promise.all([
+      this.buildCandleBlocks(extracted),
+      this.buildCalendarEnrichment(extracted.symbol.toUpperCase()),
+    ]);
+    const { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats } = candles;
 
+    // Contexto de AGORA nao entra junto de print velho (mesma regra do quick).
     let classBlock: string | null = null;
-    if (isCrypto) {
+    if (staleReason) {
+      // print velho: so os candles retidos e o aviso
+    } else if (isCrypto) {
       classBlock = await this.buildCryptoEnrichment(extracted.symbol);
     } else if (canonicalFxPair(sym)) {
       // Fase 2: forex e metais (ouro/prata). So par de verdade: o regex solto
@@ -1436,15 +1446,17 @@ export class AIAdapter {
       classBlock = await this.buildIndexEnrichment(sym);
     }
 
-    // Calendário econômico vale para TODAS as classes (cripto reage a CPI/Fed também).
-    const calendar = await this.buildCalendarEnrichment(sym);
-
-    const parts = [classBlock, calendar.block].filter(Boolean) as string[];
+    const parts = [candleBlock, staleBlock, classBlock, calendar.block].filter(Boolean) as string[];
+    this.logger.log(
+      `[DeepGrounding] ${sym} ${interval ?? 'tf?'} — candles: ${candleBlock ? 'sim' : 'não'}${staleReason ? ` (retido: ${staleReason})` : ''}, contexto: ${classBlock ? 'sim' : 'não'}`,
+    );
     return {
       block: parts.length > 0 ? parts.join('\n\n') : null,
       assetClass,
-      marketContext: classBlock ? 'injected' : 'unavailable',
+      marketContext: staleReason ? 'stale_withheld' : classBlock ? 'injected' : 'unavailable',
       calendar: calendar.status,
+      candles: candleCoverage,
+      stats,
     };
   }
 
@@ -1581,18 +1593,11 @@ export class AIAdapter {
    * (funding/OI/long-short/F&G pra cripto; dólar/juros pra forex/ouro — os
    * mesmos blocos que o deep já usa). Best-effort; falha → null.
    */
-  private async buildQuickGrounding(imageUrl: string): Promise<{
-    block: string | null;
-    candles: CandleCoverage;
-    marketContext: AnalysisDataCoverage['marketContext'];
-    assetClass: CoverageAssetClass;
-    stats: GroundingStats | null;
-  }> {
-    const extracted = await this.extractSymbol(imageUrl);
-    if (!extracted) return {
-      block: null, candles: 'symbol_unreadable', marketContext: 'unavailable', assetClass: 'unknown', stats: null,
-    };
-
+  /**
+   * Candles reais do grafico (26/10/2026: separado do quick para a deep usar o
+   * mesmo calculo, com uma leitura de simbolo so). Inclui a guarda de print velho.
+   */
+  private async buildCandleBlocks(extracted: { symbol: string; timeframe: string; lastPrice: number | null }) {
     const sym = extracted.symbol.toUpperCase();
     const interval = this.normalizeTimeframe(extracted.timeframe);
     const { isCrypto, base } = normalizeToBinancePerp(extracted.symbol);
@@ -1629,18 +1634,6 @@ export class AIAdapter {
       }
     }
 
-    // O contexto abaixo descreve o mercado de AGORA. Se o preço da imagem
-    // denuncia um print antigo, injetá-lo junto do aviso de print histórico
-    // mistura épocas e pode produzir uma tese aparentemente fundamentada.
-    let contextBlock: string | null = null;
-    if (!staleReason) {
-      if (isCrypto) {
-        contextBlock = await this.buildCryptoEnrichment(extracted.symbol);
-      } else if (canonicalFxPair(sym)) {
-        contextBlock = await this.buildFxEnrichment(sym);
-      }
-    }
-
     // Print antigo/símbolo divergente: em vez de calar, AVISA a IA. Ela precisa
     // saber que os números do gráfico não são os de agora — senão trata a leitura
     // visual como se fosse ao vivo.
@@ -1654,7 +1647,36 @@ export class AIAdapter {
 
     // Numeros so quando os candles ENTRARAM no prompt; com print velho retido,
     // eles descrevem o mercado de agora, nao o grafico analisado.
+
     const stats: GroundingStats = { v: 1, symbol: sym, interval, coverage: candleCoverage, numbers };
+    return { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats };
+  }
+
+  private async buildQuickGrounding(imageUrl: string): Promise<{
+    block: string | null;
+    candles: CandleCoverage;
+    marketContext: AnalysisDataCoverage['marketContext'];
+    assetClass: CoverageAssetClass;
+    stats: GroundingStats | null;
+  }> {
+    const extracted = await this.extractSymbol(imageUrl);
+    if (!extracted) return {
+      block: null, candles: 'symbol_unreadable', marketContext: 'unavailable', assetClass: 'unknown', stats: null,
+    };
+    const { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats } =
+      await this.buildCandleBlocks(extracted);
+
+    // O contexto abaixo descreve o mercado de AGORA. Se o preço da imagem
+    // denuncia um print antigo, injetá-lo junto do aviso de print histórico
+    // mistura épocas e pode produzir uma tese aparentemente fundamentada.
+    let contextBlock: string | null = null;
+    if (!staleReason) {
+      if (isCrypto) {
+        contextBlock = await this.buildCryptoEnrichment(extracted.symbol);
+      } else if (canonicalFxPair(sym)) {
+        contextBlock = await this.buildFxEnrichment(sym);
+      }
+    }
 
     const parts = [candleBlock, staleBlock, contextBlock].filter(Boolean) as string[];
     if (parts.length > 0) {
@@ -1762,10 +1784,12 @@ export class AIAdapter {
         try {
           const enrichment = await withTimeout(
             this.buildMarketEnrichment(imageUrl),
-            14_000,
+            18_000,
             'market enrichment timed out',
           );
           coverage.assetClass = enrichment.assetClass;
+          coverage.candles = enrichment.candles ?? coverage.candles;
+          groundingStats = enrichment.stats ?? null;
           if (enrichment.block) {
             context.push(enrichment.block);
           }
