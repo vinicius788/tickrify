@@ -105,10 +105,11 @@ export async function getFreeQuota(prisma: FreeQuotaCounter, userId: string): Pr
     ...(user?.freeQuotaResetAt ? { createdAt: { gt: user.freeQuotaResetAt } } : {}),
   };
   // Checagem de operacao (trade-state.ts) conta como analise no total.
+  const checks = await freeTradeChecks(prisma, userId, user?.freeQuotaResetAt ?? null);
   const totalUsed =
     (await prisma.analysis.count({
       where: { ...base, status: { not: 'failed' } },
-    })) + (await freeTradeChecks(prisma, userId, user?.freeQuotaResetAt ?? null)).length;
+    })) + checks.length;
   const signalsDone = await prisma.analysis.count({
     where: { ...base, status: 'completed', recommendation: { in: SIGNAL_RECOMMENDATIONS } },
   });
@@ -120,7 +121,8 @@ export async function getFreeQuota(prisma: FreeQuotaCounter, userId: string): Pr
   const formerSubscriber = await hadEndedSubscription(prisma, userId);
   const exhausted = formerSubscriber || signalsUsed >= FREE_SIGNAL_LIMIT || totalUsed >= FREE_TOTAL_LIMIT;
   const settledExhausted =
-    formerSubscriber || signalsDone >= FREE_SIGNAL_LIMIT || totalUsed - inFlight >= FREE_TOTAL_LIMIT;
+    formerSubscriber || signalsDone >= FREE_SIGNAL_LIMIT ||
+    totalUsed - inFlight - checks.filter((c) => c.status === 'pending').length >= FREE_TOTAL_LIMIT;
 
   return {
     signalsUsed,
@@ -161,7 +163,7 @@ export async function hadEndedSubscription(prisma: FreeQuotaCounter, userId: str
  * SELECT em tabela ausente abortaria a transacao inteira.
  */
 let tradeCheckTableSeen = false;
-async function freeTradeChecks(prisma: FreeQuotaCounter, userId: string, since: Date | null): Promise<Date[]> {
+async function freeTradeChecks(prisma: FreeQuotaCounter, userId: string, since: Date | null): Promise<Array<{ createdAt: Date; status: string }>> {
   const raw = prisma.$queryRawUnsafe?.bind(prisma);
   if (!raw) return [];
   try {
@@ -170,13 +172,14 @@ async function freeTradeChecks(prisma: FreeQuotaCounter, userId: string, since: 
       tradeCheckTableSeen = ok?.[0]?.ok === true;
       if (!tradeCheckTableSeen) return [];
     }
-    const rows = await raw<Array<{ createdAt: Date }>>(
-      `SELECT "createdAt" FROM "tickrify"."TradeCheck" WHERE "userId" = $1 AND "isFree" = true AND "createdAt" > $2`,
+    const rows = await raw<Array<{ createdAt: Date; pending?: boolean }>>(
+      `SELECT "createdAt", "result" = 'null'::jsonb AS "pending" FROM "tickrify"."TradeCheck" WHERE "userId" = $1 AND "isFree" = true AND "createdAt" > $2`,
       userId,
       since ?? new Date(0),
     );
     return Array.isArray(rows)
-      ? rows.map((r) => new Date(r.createdAt)).filter((d) => !Number.isNaN(d.getTime()))
+      ? rows.map((r) => ({ createdAt: new Date(r.createdAt), status: r.pending ? 'pending' : 'completed' }))
+          .filter((r) => !Number.isNaN(r.createdAt.getTime()))
       : [];
   } catch {
     return [];
@@ -193,7 +196,7 @@ async function getTrialQuota(prisma: FreeQuotaCounter, userId: string): Promise<
     select: { createdAt: true, status: true },
   });
   // Checagem de operacao conta como analise no dia do trial.
-  const checks = (await freeTradeChecks(prisma, userId, row.startedAt)).map((createdAt) => ({ createdAt, status: 'completed' }));
+  const checks = await freeTradeChecks(prisma, userId, row.startedAt);
   const state = computeTrialState(row, [...analyses, ...checks]);
   return {
     // Durante o trial "sinais" = analises do dia (WAIT conta), para o front antigo.

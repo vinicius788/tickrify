@@ -6,7 +6,7 @@ import {
   OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
 import { AIAdapter, AIAnalysisError, scrubPromptLeak } from '../ai/ai.adapter';
 import { PromptBuilderService } from '../prompt/prompt-builder.service';
@@ -20,6 +20,9 @@ import {
   normalizeConfidence,
   normalizeRecommendation,
 } from '../../common/utils/analysis-normalizer';
+import { assertDemoOpen } from './demo-control';
+
+type DemoUsage = { id: string; result: unknown; createdAt: Date; pending: boolean };
 
 /**
  * Demo anônima (sem cadastro) — o "aha moment" antes do sign-up.
@@ -46,7 +49,7 @@ export class DemoService implements OnModuleInit {
     private promptBuilder: PromptBuilderService,
   ) {}
 
-  /** Teto de análises demo CONCLUÍDAS por IP em 24h (custo máximo por IP). */
+  /** Concluidas em 24h + vagas reservadas; falhas liberadas nao gastam cota. */
   private get ipDailyCap(): number {
     const raw = Number(process.env.DEMO_IP_DAILY_CAP || 3);
     return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 3;
@@ -84,6 +87,7 @@ export class DemoService implements OnModuleInit {
       );
       this.tableReady = true;
       this.logger.log('[demo] Tabela de controle da demo pronta (RLS habilitado).');
+      await this.warnStalePending();
     } catch (err) {
       this.tableReady = false;
       this.logger.warn(
@@ -91,6 +95,19 @@ export class DemoService implements OnModuleInit {
           err instanceof Error ? err.message : err
         }`,
       );
+    }
+  }
+
+  /** So avisa: idade nao prova que a execucao parou, nada e liberado aqui. */
+  private async warnStalePending(): Promise<void> {
+    try {
+      const [row] = await this.prisma.$queryRaw<Array<{ n: number }>>`
+        SELECT COUNT(*)::int AS n FROM "tickrify"."DemoUsage"
+        WHERE "result" = 'null'::jsonb AND "createdAt" < NOW() - INTERVAL '10 minutes'
+      `;
+      if (row?.n) this.logger.warn(`[demo] ${row.n} reserva(s) pendente(s) ha mais de 10 min: conferir com scripts/demo-control.cjs status`);
+    } catch {
+      // Aviso opcional: nunca derruba o boot.
     }
   }
 
@@ -159,18 +176,20 @@ export class DemoService implements OnModuleInit {
   async getFingerprintStatus(fingerprint: string): Promise<{ used: boolean; result: Record<string, unknown> | null }> {
     if (!this.tableReady) return { used: false, result: null };
     const row = await this.findUsage(this.hashIdentifier(fingerprint));
-    return { used: Boolean(row), result: this.recoverable(row) };
+    return { used: Boolean(row && !row.pending), result: this.recoverable(row) };
   }
 
-  private async findUsage(fpHash: string) {
-    const rows = await this.prisma.$queryRaw<Array<{ id: string; result: unknown; createdAt: Date }>>`
-      SELECT "id", "result", "createdAt" FROM "tickrify"."DemoUsage" WHERE "fingerprintHash" = ${fpHash} LIMIT 1
+  private async findUsage(fpHash: string, client: Pick<PrismaService, '$queryRaw'> = this.prisma) {
+    const rows = await client.$queryRaw<DemoUsage[]>`
+      SELECT "id", "result", "createdAt", COALESCE("result" = 'null'::jsonb, FALSE) AS "pending"
+      FROM "tickrify"."DemoUsage" WHERE "fingerprintHash" = ${fpHash} LIMIT 1
     `;
     return rows[0] ?? null;
   }
 
   /** O resultado guardado so volta por 24h. Nunca gera analise nova nem custo. */
-  private recoverable(row: { result: unknown; createdAt: Date } | null): Record<string, unknown> | null {
+  private recoverable(row: { result: unknown; createdAt: Date; pending?: boolean } | null): Record<string, unknown> | null {
+    if (row?.pending) return null;
     if (!row || !row.result || typeof row.result !== 'object') return null;
     const age = Date.now() - new Date(row.createdAt).getTime();
     if (!(age >= 0 && age < 24 * 60 * 60 * 1000)) return null;
@@ -183,6 +202,54 @@ export class DemoService implements OnModuleInit {
       code: 'demo_limit_reached',
       message: 'You already used your free analysis. Create a free account to keep analyzing.',
     });
+  }
+
+  private inProgressError(): ServiceUnavailableException {
+    return new ServiceUnavailableException({
+      code: 'demo_in_progress',
+      message: 'Your free analysis is still being processed. Please try again shortly.',
+    });
+  }
+
+  private async releaseReservation(id: string): Promise<void> {
+    await this.prisma.$executeRaw`
+      DELETE FROM "tickrify"."DemoUsage" WHERE "id" = ${id} AND "result" = 'null'::jsonb
+    `;
+  }
+
+  private async reserveUsage(fpHash: string, ipHash: string): Promise<{ id: string; existing?: DemoUsage }> {
+    const id = randomUUID();
+    try {
+      return await this.prisma.$transaction(async tx => {
+        await assertDemoOpen(tx);
+        // Transaction-scoped, including with transaction pooling. Never held over AI.
+        // ReadCommitted ensures the count sees the previous lock holder's commit.
+        await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtextextended(${`tickrify-demo:${ipHash}`}, 0))`;
+        const existing = await this.findUsage(fpHash, tx);
+        if (existing) return { id: existing.id, existing };
+        const rows = await tx.$queryRaw<Array<{ count: bigint }>>`
+          SELECT COUNT(*)::bigint AS count FROM "tickrify"."DemoUsage"
+          WHERE "ipHash" = ${ipHash}
+            AND ("result" = 'null'::jsonb OR "createdAt" > NOW() - INTERVAL '24 hours')
+        `;
+        if (Number(rows[0]?.count ?? 0) >= this.ipDailyCap) throw this.limitError();
+        // JSON null is pending; legacy SQL NULL remains an already-used demo.
+        const inserted = await tx.$queryRaw<Array<{ id: string }>>`
+          INSERT INTO "tickrify"."DemoUsage" ("id", "fingerprintHash", "ipHash", "result")
+          VALUES (${id}, ${fpHash}, ${ipHash}, 'null'::jsonb)
+          ON CONFLICT ("fingerprintHash") DO NOTHING RETURNING "id"
+        `;
+        if (inserted.length) return { id };
+        // The same fingerprint may compete from different IPs/locks.
+        const winner = await this.findUsage(fpHash, tx);
+        if (!winner) throw this.inProgressError();
+        return { id: winner.id, existing: winner };
+      }, { isolationLevel: 'ReadCommitted' });
+    } catch (error) {
+      if (error instanceof ForbiddenException || error instanceof ServiceUnavailableException) throw error;
+      this.logger.warn(`[demo] Reserva ${id} nao confirmada; nenhuma IA iniciada.`);
+      throw this.inProgressError();
+    }
   }
 
   async analyze(params: {
@@ -212,24 +279,13 @@ export class DemoService implements OnModuleInit {
     const fpHash = this.hashIdentifier(params.fingerprint);
     const ipHash = this.hashIdentifier(params.ip);
 
-    // 2) Cota por device: 1 análise concluída por fingerprint (persistente, server-side).
-    //    Quem ja analisou nas ultimas 24h recebe a MESMA leitura de volta (a
-    //    conexao pode ter caido antes de ela chegar), sem chamar a IA de novo.
+    // Recovery never requires another image. Admission repeats this read under
+    // the IP lock, so this fast path is not the concurrency protection.
     const used = await this.findUsage(fpHash);
     if (used) {
+      if (used.pending) throw this.inProgressError();
       const recovered = this.recoverable(used);
       if (recovered) return recovered;
-      throw this.limitError();
-    }
-
-    // 3) Teto persistente por IP/24h: limita o custo máximo mesmo com rotação
-    //    de fingerprint (sobrevive a restart/hibernação do Render).
-    const ipRows = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
-      SELECT COUNT(*)::bigint AS count FROM "tickrify"."DemoUsage"
-      WHERE "ipHash" = ${ipHash} AND "createdAt" > NOW() - INTERVAL '24 hours'
-    `;
-    const ipCount = Number(ipRows[0]?.count ?? 0);
-    if (ipCount >= this.ipDailyCap) {
       throw this.limitError();
     }
 
@@ -244,8 +300,19 @@ export class DemoService implements OnModuleInit {
       });
     }
 
+    // 2/3) Reserva fingerprint e capacidade por IP ANTES de qualquer IA.
+    const reservation = await this.reserveUsage(fpHash, ipHash);
+    if (reservation.existing) {
+      if (reservation.existing.pending) throw this.inProgressError();
+      const recovered = this.recoverable(reservation.existing);
+      if (recovered) return recovered;
+      throw this.limitError();
+    }
+    this.logger.log(`[demo] Reserva ${reservation.id} admitida.`);
+
     // 5) Análise REAL — mesmo motor 'quick' da plataforma, prompt resolvido
     //    server-side (banco → arquivo). Nada do prompt/modelo sai daqui.
+    let safe: ReturnType<DemoService['serializeSafeResult']>;
     try {
       const latestPrompt = await this.prisma.promptConfig.findFirst({
         where: { isActive: true },
@@ -260,20 +327,15 @@ export class DemoService implements OnModuleInit {
       );
 
       const aiResponse = await this.aiAdapter.analyzeImage(dataUrl, prompt, 'quick');
-      const safe = this.serializeSafeResult(aiResponse);
-
-      // 6) Sucesso → AGORA a cota é gasta (contabilização justa). ON CONFLICT
-      //    cobre corrida entre requisições simultâneas do mesmo device. O
-      //    resultado (ja sanitizado) fica guardado para o caso de a resposta
-      //    nao chegar ao celular.
-      await this.prisma.$executeRaw`
-        INSERT INTO "tickrify"."DemoUsage" ("fingerprintHash", "ipHash", "result")
-        VALUES (${fpHash}, ${ipHash}, ${JSON.stringify(safe)}::jsonb)
-        ON CONFLICT ("fingerprintHash") DO NOTHING
-      `;
-
-      return safe;
+      safe = this.serializeSafeResult(aiResponse);
     } catch (error) {
+      try {
+        // Only the owner can release its still-pending slot. Never delete a result.
+        await this.releaseReservation(reservation.id);
+      } catch {
+        this.logger.warn(`[demo] Reserva ${reservation.id} pendente de reconciliacao.`);
+        throw this.inProgressError();
+      }
       // Imagem que não é gráfico: erro claro pro usuário, cota intacta.
       if (error instanceof AIAnalysisError && error.code === 'non_chart_image') {
         throw new BadRequestException({
@@ -293,6 +355,20 @@ export class DemoService implements OnModuleInit {
         code: 'analysis_failed',
         message: 'Analysis failed. Your free analysis was not used — please try again.',
       });
+    }
+
+    try {
+      const updated = await this.prisma.$executeRaw`
+        UPDATE "tickrify"."DemoUsage" SET "result" = ${JSON.stringify(safe)}::jsonb, "createdAt" = NOW()
+        WHERE "id" = ${reservation.id} AND "result" = 'null'::jsonb
+      `;
+      if (updated !== 1) throw new Error('Pending reservation was not finalized');
+      return safe;
+    } catch {
+      // Unknown write outcome: keep the slot. A committed result is recoverable;
+      // a pending one needs reconciliation after its execution is confirmed stopped.
+      this.logger.warn(`[demo] Resultado da reserva ${reservation.id} nao confirmado; vaga preservada.`);
+      throw this.inProgressError();
     }
   }
 

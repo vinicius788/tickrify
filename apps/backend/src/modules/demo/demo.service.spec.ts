@@ -26,13 +26,21 @@ describe('Demo security gates', () => {
     } as Response);
     prisma = {
       $executeRawUnsafe: jest.fn().mockResolvedValue(0),
-      $queryRaw: jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ count: 0n }]),
+      $queryRaw: jest.fn(async (sql: TemplateStringsArray, ...values: unknown[]) => {
+        const query = sql.join('?');
+        if (query.includes('FeatureFlag')) return [{ value: '{"version":1,"paused":false}' }];
+        if (query.includes('COUNT(*)')) return [{ count: 0n }];
+        if (query.includes('INSERT INTO')) return [{ id: values[0] }];
+        return [];
+      }),
       $executeRaw: jest.fn().mockResolvedValue(1),
       promptConfig: { findFirst: jest.fn().mockResolvedValue(null) },
     };
+    prisma.$transaction = jest.fn(async (run: (tx: any) => Promise<unknown>) => run(prisma));
     ai = { analyzeImage: jest.fn().mockResolvedValue({ recommendation: 'HOLD', confidence: 50, analysis: {} }) };
     service = new DemoService(prisma, ai, { buildPromptByVersion: jest.fn().mockResolvedValue('test prompt') } as any);
     await service.onModuleInit();
+    prisma.$queryRaw.mockClear(); // Boot warning only; requests start from zero.
   });
 
   afterEach(() => {
@@ -97,9 +105,11 @@ describe('Demo security gates', () => {
     await expectBlocked(503);
   });
 
-  it('valid challenge reaches AI and records usage only on completion', async () => {
+  it('valid challenge reserves before AI and confirms usage only on completion', async () => {
     await expect(service.analyze(params)).resolves.toMatchObject({ status: 'completed' });
     expect(ai.analyzeImage).toHaveBeenCalledTimes(1);
+    const admission = prisma.$queryRaw.mock.calls.findIndex((call: any[]) => call[0].join('?').includes('INSERT INTO'));
+    expect(prisma.$queryRaw.mock.invocationCallOrder[admission]).toBeLessThan(ai.analyzeImage.mock.invocationCallOrder[0]);
     expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
     expect(ai.analyzeImage.mock.invocationCallOrder[0]).toBeLessThan(prisma.$executeRaw.mock.invocationCallOrder[0]);
   });
@@ -107,8 +117,9 @@ describe('Demo security gates', () => {
   it('guarda a leitura junto com o uso (ja sanitizada)', async () => {
     await service.analyze(params);
     const insert = prisma.$executeRaw.mock.calls[0];
+    expect(insert[0].join('?')).toContain('UPDATE');
     expect(insert[0].join('?')).toContain('"result"');
-    expect(JSON.parse(insert[3])).toMatchObject({ status: 'completed', recommendation: 'WAIT' });
+    expect(JSON.parse(insert[1])).toMatchObject({ status: 'completed', recommendation: 'WAIT' });
   });
 
   it('conexao caiu e a pessoa tentou de novo: recebe a MESMA leitura, sem IA nova e sem gastar de novo', async () => {

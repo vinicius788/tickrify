@@ -1,5 +1,6 @@
 import { BadRequestException, HttpException, HttpStatus, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { TicksService } from '../ticks/ticks.service';
 import { AIAdapter } from './ai.adapter';
@@ -21,6 +22,8 @@ import {
   type TradeTimelineEntry,
 } from '../../common/trade-state';
 import type { ManagementResult } from './trade-management';
+import { releasePendingTradeCheck } from './trade-check-reservation';
+import { admitTradeCheck, finishTradeCheck } from './trade-check-control';
 import type { UploadedFile } from '../../common/interfaces/multer';
 
 /**
@@ -148,8 +151,22 @@ export class TradesService implements OnModuleInit {
       for (const sql of BOOT_SQL) await this.prisma.$executeRawUnsafe(sql);
       this.ready = true;
       this.logger.log('[trades] Tabelas prontas.');
+      await this.warnStalePending();
     } catch (error) {
       this.logger.warn(`[trades] Tabelas indisponiveis (estado da operacao desligado): ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  /** So avisa: idade nao prova que a execucao parou, nada e restituido aqui. */
+  private async warnStalePending(): Promise<void> {
+    try {
+      const [row] = await this.prisma.$queryRawUnsafe<Array<{ n: number }>>(
+        `SELECT COUNT(*)::int AS n FROM "tickrify"."TradeCheck"
+          WHERE "result" = 'null'::jsonb AND "createdAt" < NOW() - INTERVAL '10 minutes'`,
+      );
+      if (row?.n) this.logger.warn(`[trades] ${row.n} checagem(ns) pendente(s) ha mais de 10 min: conferir com scripts/reconcile-trade-check.cjs`);
+    } catch {
+      // Aviso opcional: nunca derruba o boot.
     }
   }
 
@@ -344,7 +361,7 @@ export class TradesService implements OnModuleInit {
     const plan = await this.plan(userId, analysisId);
     let state = await this.readState(analysisId);
     if (state) state = await this.expireIfStale(userId, state);
-    const checks = await this.prisma.$queryRawUnsafe<Array<{ id: string; createdAt: Date; currentPrice: number | null; result: ManagementResult }>>(
+    const checks = await this.prisma.$queryRawUnsafe<Array<{ id: string; createdAt: Date; currentPrice: number | null; result: ManagementResult | null }>>(
       `SELECT "id", "createdAt", "currentPrice", "result" FROM "tickrify"."TradeCheck"
         WHERE "analysisId" = $1 AND "userId" = $2 ORDER BY "createdAt" DESC LIMIT 20`,
       analysisId,
@@ -362,7 +379,8 @@ export class TradesService implements OnModuleInit {
       target: plan.takeProfit1,
       closeReason: state?.closeReason ?? null,
       timeline: state?.timeline ?? [],
-      checks: checks.map((c) => ({
+      // JSON null reserves a check in flight; never expose it as an AI result.
+      checks: checks.filter((c): c is typeof c & { result: ManagementResult } => c.result !== null).map((c) => ({
         id: c.id,
         createdAt: new Date(c.createdAt).toISOString(),
         currentPrice: num(c.currentPrice),
@@ -446,6 +464,25 @@ export class TradesService implements OnModuleInit {
     blockedError: (quota: Awaited<ReturnType<typeof getFreeQuota>>) => HttpException,
   ): Promise<{ result: ManagementResult; view: TradeView }> {
     this.assertReady();
+    const checkId = randomUUID();
+    await admitTradeCheck(this.prisma, { id: checkId, userId,
+      instance: `${process.env.RENDER_INSTANCE_ID || 'local'}:${process.pid}`, startedAt: new Date().toISOString() });
+    try {
+      return await this.checkAdmitted(userId, analysisId, input, paidAccess, blockedError, checkId);
+    } finally {
+      try { await finishTradeCheck(this.prisma, checkId); }
+      catch { this.logger.error(`[trades] Check ticket ${checkId} could not be cleared; drain/recovery required.`); }
+    }
+  }
+
+  private async checkAdmitted(
+    userId: string,
+    analysisId: string,
+    input: { imageFile?: UploadedFile; base64Image?: string; currentPrice?: number | null; language?: string | null },
+    paidAccess: boolean,
+    blockedError: (quota: Awaited<ReturnType<typeof getFreeQuota>>) => HttpException,
+    checkId: string,
+  ): Promise<{ result: ManagementResult; view: TradeView }> {
     const plan = await this.plan(userId, analysisId);
     const state = await this.readState(analysisId).then((s) => (s ? this.expireIfStale(userId, s) : null));
     if (!state || !isOpenStatus(state.status)) {
@@ -471,39 +508,47 @@ export class TradesService implements OnModuleInit {
     const prepared = this.prepare(input.imageFile, input.base64Image);
     const imageUrl = await this.upload(userId, prepared);
     const currentPrice = num(input.currentPrice ?? null);
-    const result = await this.adapter.manageTrade(imageUrl, {
-      direction: plan.direction,
-      status: state.status as 'pending_order' | 'in_trade',
-      symbol: plan.symbol,
-      timeframe: plan.timeframe,
-      plannedEntry: plan.entry,
-      entryType: plan.entryType,
-      stopLoss: plan.stopLoss,
-      takeProfit1: plan.takeProfit1,
-      takeProfit2: plan.takeProfit2,
-      invalidationLevel: plan.invalidationLevel,
-      thesis: plan.thesis,
-      entryPrice: state.entryPrice,
-      hoursSinceAnalysis: (Date.now() - plan.createdAt.getTime()) / 3_600_000,
-      currentPrice,
-      language: input.language || 'en',
-    });
 
-    if (paidAccess) {
-      await this.ticks.debitTicks(userId, cost, 'Checagem de operacao', { analysisId, kind: 'trade_check' });
+    let result: ManagementResult;
+    try {
+      // Also compensate if the reservation committed but its acknowledgement
+      // was lost: in that case no model request has started yet.
+      await this.reserveCheck(userId, analysisId, checkId, paidAccess, imageUrl, currentPrice, blockedError);
+      result = await this.adapter.manageTrade(imageUrl, {
+        direction: plan.direction,
+        status: state.status as 'pending_order' | 'in_trade',
+        symbol: plan.symbol,
+        timeframe: plan.timeframe,
+        plannedEntry: plan.entry,
+        entryType: plan.entryType,
+        stopLoss: plan.stopLoss,
+        takeProfit1: plan.takeProfit1,
+        takeProfit2: plan.takeProfit2,
+        invalidationLevel: plan.invalidationLevel,
+        thesis: plan.thesis,
+        entryPrice: state.entryPrice,
+        hoursSinceAnalysis: (Date.now() - plan.createdAt.getTime()) / 3_600_000,
+        currentPrice,
+        language: input.language || 'en',
+      });
+      const saved = await this.prisma.$executeRawUnsafe(
+        `UPDATE "tickrify"."TradeCheck" SET "result" = $3::jsonb
+          WHERE "id" = $1 AND "userId" = $2 AND "result" = 'null'::jsonb`,
+        checkId,
+        userId,
+        JSON.stringify(result),
+      );
+      if (saved !== 1) throw tradeError('trade_check_unavailable', 'Trade check could not be saved.', HttpStatus.SERVICE_UNAVAILABLE);
+    } catch (error) {
+      try {
+        await this.releaseCheck(userId, checkId);
+      } catch {
+        // Keep the reservation if compensation cannot commit. Never grant
+        // another AI call or credit based on an unconfirmed refund.
+        this.logger.error(`[trades] Could not release check ${checkId}; reconciliation required.`);
+      }
+      throw error;
     }
-    await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "tickrify"."TradeCheck" ("id", "analysisId", "userId", "isFree", "cost", "imageUrl", "currentPrice", "result")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
-      randomUUID(),
-      analysisId,
-      userId,
-      !paidAccess,
-      cost,
-      imageUrl.startsWith('data:') ? null : imageUrl,
-      currentPrice,
-      JSON.stringify(result),
-    );
     void trackUserActivity(this.prisma, userId, 'trade_management_requested', {
       analysisId,
       situation: result.situation,
@@ -514,6 +559,65 @@ export class TradesService implements OnModuleInit {
       paid: paidAccess,
     });
     return { result, view: await this.view(userId, analysisId) };
+  }
+
+  private async reserveCheck(
+    userId: string,
+    analysisId: string,
+    checkId: string,
+    paidAccess: boolean,
+    imageUrl: string,
+    currentPrice: number | null,
+    blockedError: (quota: Awaited<ReturnType<typeof getFreeQuota>>) => HttpException,
+  ): Promise<void> {
+    // Share Serializable isolation with normal free-analysis reservations:
+    // both endpoints must see the other's in-flight use of the same quota.
+    // No upload or model request runs inside this short transaction.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          const used = await tx.$queryRawUnsafe<Array<{ n: bigint | number }>>(
+            'SELECT COUNT(*) AS n FROM "tickrify"."TradeCheck" WHERE "analysisId" = $1',
+            analysisId,
+          );
+          if (Number(used[0]?.n ?? 0) >= TRADE_RULES.maxChecksPerTrade) {
+            throw tradeError('trade_check_limit', `This trade already has ${TRADE_RULES.maxChecksPerTrade} checks.`, HttpStatus.TOO_MANY_REQUESTS);
+          }
+          const cost = TRADE_RULES.managementCheckCost;
+          if (paidAccess) {
+            const balance = await tx.userTicks.findUnique({ where: { userId }, select: { balance: true } });
+            if ((balance?.balance ?? 0) < cost) {
+              throw tradeError('INSUFFICIENT_TICKS', 'Not enough ticks for a trade check.', HttpStatus.PAYMENT_REQUIRED);
+            }
+            await this.ticks.debitTicks(userId, cost, 'Checagem de operacao', { analysisId, kind: 'trade_check', tradeCheckId: checkId }, tx);
+          } else {
+            const quota = await getFreeQuota(tx, userId);
+            if (quota.exhausted) throw blockedError(quota);
+          }
+          // Reuse the existing JSONB column: JSON null means pending. This
+          // consumes quota before AI without adding a schema or migration.
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "tickrify"."TradeCheck" ("id", "analysisId", "userId", "isFree", "cost", "imageUrl", "currentPrice", "result")
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'null'::jsonb)`,
+            checkId, analysisId, userId, !paidAccess, cost,
+            imageUrl.startsWith('data:') ? null : imageUrl, currentPrice,
+          );
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        return;
+      } catch (error) {
+        // Raw writes expose PostgreSQL serialization failures as P2010/40001;
+        // model writes expose P2034. Both mean the transaction was aborted.
+        const conflict = error instanceof Prisma.PrismaClientKnownRequestError &&
+          (error.code === 'P2034' || (error.code === 'P2010' && error.meta?.code === '40001'));
+        if (!conflict) throw error;
+        // Retry only transactions known to have rolled back, never AI calls.
+        if (attempt >= 4) throw tradeError('trade_check_busy', 'Please try the trade check again.', HttpStatus.SERVICE_UNAVAILABLE);
+      }
+    }
+  }
+
+  private async releaseCheck(userId: string, checkId: string): Promise<void> {
+    await releasePendingTradeCheck(this.prisma, userId, checkId);
   }
 
   private async upload(userId: string, prepared: ReturnType<typeof prepareIncomingImage>): Promise<string> {
