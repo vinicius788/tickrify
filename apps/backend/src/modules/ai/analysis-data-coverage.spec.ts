@@ -213,3 +213,26 @@ describe('analysis telemetry', () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('extractSymbol: le o print do Storage privado (26/10/2026)', () => {
+  const storageUrl = 'https://proj.supabase.co/storage/v1/object/analysis-images/analyses/u1/original/x.png';
+
+  it('manda ao modelo a imagem resolvida, nunca a URL crua do Storage', async () => {
+    const adapter = new AIAdapter() as any;
+    adapter.resolveImageUrlForModel = jest.fn(async () => 'data:image/png;base64,AAAA');
+    const complete = jest.fn(async () => ({ content: '{"symbol":"XAUUSD","timeframe":"15m","lastPrice":2400.5}' }));
+    adapter.visionModel = { complete };
+    await expect(adapter.extractSymbol(storageUrl)).resolves.toEqual({ symbol: 'XAUUSD', timeframe: '15m', lastPrice: 2400.5 });
+    expect(adapter.resolveImageUrlForModel).toHaveBeenCalledWith(storageUrl);
+    const sent = (complete.mock.calls[0] as any[])[0].userContent.find((p: { type: string }) => p.type === 'image');
+    expect(sent.url).toBe('data:image/png;base64,AAAA');
+  });
+
+  it('falha ao baixar a imagem vira null (analise segue sem candles), sem lancar', async () => {
+    const adapter = new AIAdapter() as any;
+    adapter.resolveImageUrlForModel = jest.fn(async () => { throw new Error('Failed to download image from Supabase'); });
+    adapter.visionModel = { complete: jest.fn() };
+    await expect(adapter.extractSymbol(storageUrl)).resolves.toBeNull();
+    expect(adapter.visionModel.complete).not.toHaveBeenCalled();
+  });
+});

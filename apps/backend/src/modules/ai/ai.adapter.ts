@@ -1229,6 +1229,11 @@ export class AIAdapter {
     imageUrl: string,
   ): Promise<{ symbol: string; timeframe: string; lastPrice: number | null } | null> {
     try {
+      // O print do usuario mora no Storage PRIVADO: a OpenAI nao abre a URL crua.
+      // Sem isto a leitura falhava calada e nenhuma analise logada recebia os
+      // candles (groundingStats vazio em 100% de 30 dias, 26/10/2026); so a
+      // demo, que manda a imagem embutida, funcionava.
+      const image = await this.resolveImageUrlForModel(imageUrl);
       const result = await this.visionModel.complete({
         tier: 'light',
         instructions: '',
@@ -1238,7 +1243,7 @@ export class AIAdapter {
             type: 'text',
             text: 'Read this trading chart screenshot. Return ONLY JSON: {"symbol":"<ticker e.g. BTCUSDT, XAUUSD, EURUSD, or empty>","timeframe":"<e.g. 15m, 1h, 4h, or empty>","lastPrice":<the price of the most recent candle close, as a number read from the Y axis, or null>}. Read every digit of the price. If you cannot read something clearly, use an empty string or null.',
           },
-          { type: 'image', url: imageUrl },
+          { type: 'image', url: image },
         ],
         maxTokens: 80,
         sampling: { temperature: 0 },
