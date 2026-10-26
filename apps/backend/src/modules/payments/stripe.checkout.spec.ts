@@ -501,6 +501,7 @@ describe('allowanceWindowStart', () => {
 
 describe('upgrade-only portal SDK wire compatibility (no network)', () => {
   it('SDK 14 serializes the upgrade-only policy with the pinned API version', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_local_only'; // Test catalog, independent of the shell.
     let requestBody = '';
     let requestHeaders = '';
     const client = new Stripe('sk_test_local_only', {
