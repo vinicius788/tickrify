@@ -386,7 +386,9 @@ export function reconcileConfluence(
   factorsPresent: number,
 ): { confluenceScore: number; factorsPresent: number } {
   const approved = countChecklistApproved(structureValidation);
-  if (approved !== null && factorsPresent > 0 && approved !== factorsPresent) {
+  // A complete checklist determines BOTH derived values, including zero passes.
+  // Matching factorsPresent does not make an inflated/model score trustworthy.
+  if (approved !== null) {
     return { confluenceScore: Math.round((approved / 7) * 10000) / 100, factorsPresent: approved };
   }
   if (factorsPresent > 0 || confluenceScore > 0) {

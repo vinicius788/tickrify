@@ -33,6 +33,29 @@ describe('normalizeTargetProbabilities', () => {
   });
 });
 
+describe('complete checklist determines count and score — synthetic regressions', () => {
+  const checklist = (n: number) => Array.from({ length: 7 }, (_, i) => `${i < n ? '✅' : '❌'} criterion ${i + 1}`).join(' | ');
+
+  it.each([0, 1, 2, 3, 4, 5, 6, 7])('%i passes cannot retain an unrelated score', n => {
+    expect(reconcileConfluence(checklist(n), 100, n)).toEqual({
+      factorsPresent: n, confluenceScore: Math.round(n / 7 * 10000) / 100,
+    });
+  });
+
+  it.each([0, -1, 999, NaN, Infinity])('derives a finite score instead of trusting %s', score => {
+    expect(reconcileConfluence(checklist(4), score, 4)).toEqual({ factorsPresent: 4, confluenceScore: 57.14 });
+  });
+
+  it('does not invent certainty for an incomplete checklist', () => {
+    expect(reconcileConfluence('✅ HTF | ❌ Structure', 57.14, 4)).toEqual({ factorsPresent: 4, confluenceScore: 57.14 });
+  });
+
+  it('does not count a historical or hypothetical prose score as an extra criterion', () => {
+    const text = `${checklist(4)} → 4/7; previous 7/7; if 6/7, re-evaluate`;
+    expect(reconcileConfluence(text, 100, 4)).toEqual({ factorsPresent: 4, confluenceScore: 57.14 });
+  });
+});
+
 describe('deriveMarketRegime', () => {
   it('tendência de baixa moderada → "trending" (nunca "lateral")', () => {
     expect(deriveMarketRegime('ranging', 'bearish', 'moderate')).toBe('trending');
