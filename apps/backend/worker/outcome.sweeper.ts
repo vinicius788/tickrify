@@ -18,16 +18,15 @@ import { flagBool } from '../src/common/flags/feature-flags';
  * timeframe do gráfico: granularidade fina decide a corrida TP×SL com mais
  * precisão do que candles do TF original.
  *
- * Fontes de candles: OKX primário (Binance bloqueia IPs dos EUA, onde o Render
- * roda), Binance spot fallback; forex/ouro via Twelve Data se TWELVE_DATA_API_KEY
- * existir. Sem fonte → UNTRACKABLE (marcado, não re-escaneado para sempre).
+ * Fontes de candles: src/modules/market/candles.ts (OKX, Binance de reserva,
+ * Twelve Data para forex/ouro). Sem fonte → UNTRACKABLE (marcado, não
+ * re-escaneado para sempre).
  *
  * Kill-switch: ENABLE_OUTCOME_TRACKING='false' desliga sem redeploy.
  * Best-effort absoluto: nenhuma falha aqui derruba o worker de análises.
  */
 import { PrismaClient } from '@prisma/client';
-import { normalizeToBinancePerp } from '../src/modules/market/market.service';
-import { canonicalFxPair } from '../src/common/utils/analysis-normalizer';
+import { fetchWindowFor, type Candle } from '../src/modules/market/candles';
 import { FILL_CANDLE_RULE, type FillCandleRule } from '../src/modules/ai/accuracy.util';
 
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000; // 1h
@@ -38,8 +37,6 @@ const BATCH_SIZE = 25; // análises por varredura (mantém a varredura leve)
 // WAIT por varredura. So o WAIT com niveis busca candles (7% deles em 20/10/2026).
 const WAIT_BATCH_SIZE = 50;
 
-export type Candle = [number, number, number, number, number]; // [ts, o, h, l, c]
-
 type Outcome = 'WIN' | 'LOSS' | 'TIMEOUT' | 'NO_FILL' | 'ABSTAIN' | 'INCOMPLETE' | 'UNTRACKABLE';
 
 export interface TradePlan {
@@ -49,80 +46,6 @@ export interface TradePlan {
   stopLoss: number;
   takeProfit1: number;
   takeProfit2: number | null;
-}
-
-async function fetchJson<T>(url: string, timeoutMs = 6_000): Promise<T | null> {
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'tickrify/1.0' },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Candles 30m de CRIPTO cobrindo [startMs, endMs].
- * OKX history-candles aceita `after` (retorna candles ANTERIORES ao ts) — um
- * pedido ancorado no fim da janela cobre os 96 candles de 48h em qualquer idade.
- */
-export async function fetchCryptoWindow(base: string, startMs: number, endMs: number): Promise<Candle[] | null> {
-  const okx = await fetchJson<{ data?: string[][] }>(
-    `https://www.okx.com/api/v5/market/history-candles?instId=${base}-USDT&bar=30m&after=${endMs + 1}&limit=100`,
-  );
-  const rows = okx?.data;
-  if (Array.isArray(rows) && rows.length > 0) {
-    const candles = rows
-      .map((r): Candle => [Number(r[0]), Number(r[1]), Number(r[2]), Number(r[3]), Number(r[4])])
-      .filter((c) => c.every((v) => Number.isFinite(v)) && c[0] >= startMs && c[0] <= endMs)
-      .sort((a, b) => a[0] - b[0]);
-    if (candles.length >= 24) return candles; // >=12h de dados já decide a maioria dos casos
-  }
-  const bin = await fetchJson<Array<Array<string | number>>>(
-    `https://api.binance.com/api/v3/klines?symbol=${base}USDT&interval=30m&startTime=${startMs}&limit=100`,
-  );
-  if (Array.isArray(bin) && bin.length > 0) {
-    const candles = bin
-      .map((r): Candle => [Number(r[0]), Number(r[1]), Number(r[2]), Number(r[3]), Number(r[4])])
-      .filter((c) => c.every((v) => Number.isFinite(v)) && c[0] <= endMs);
-    if (candles.length >= 24) return candles;
-  }
-  return null;
-}
-
-/** Candles 30m de FOREX/METAIS via Twelve Data (se houver chave). */
-export async function fetchFxWindow(symbol: string, startMs: number, endMs: number): Promise<Candle[] | null> {
-  const key = process.env.TWELVE_DATA_API_KEY?.trim();
-  if (!key) return null;
-  // Aceita o sufixo da corretora (XAUUSDm): antes virava UNTRACKABLE.
-  const pair = canonicalFxPair(symbol);
-  if (!pair) return null;
-  const startIso = new Date(startMs).toISOString().slice(0, 19).replace('T', ' ');
-  const endIso = new Date(endMs).toISOString().slice(0, 19).replace('T', ' ');
-  const td = await fetchJson<{
-    values?: Array<{ datetime: string; open: string; high: string; low: string; close: string }>;
-  }>(
-    `https://api.twelvedata.com/time_series?symbol=${pair.slice(0, 3)}/${pair.slice(3)}&interval=30min&timezone=UTC` +
-      `&start_date=${encodeURIComponent(startIso)}&end_date=${encodeURIComponent(endIso)}&outputsize=120&apikey=${key}`,
-    8_000,
-  );
-  const values = td?.values;
-  if (!Array.isArray(values) || values.length === 0) return null;
-  const candles = values
-    .map((v): Candle => [
-      Date.parse(`${v.datetime.replace(' ', 'T')}Z`),
-      Number(v.open),
-      Number(v.high),
-      Number(v.low),
-      Number(v.close),
-    ])
-    .filter((c) => c.every((n) => Number.isFinite(n)))
-    .sort((a, b) => a[0] - b[0]);
-  // Forex fecha no fim de semana — 24 candles (12h) bastam pra decidir a maioria.
-  return candles.length >= 24 ? candles : null;
 }
 
 /**
@@ -261,11 +184,6 @@ export function extractShadowPlan(result: unknown): TradePlan | null {
   if (!recommendation) return null;
   const takeProfit2 = tp2 != null && (recommendation === 'BUY' ? tp2 > takeProfit1 : tp2 < takeProfit1) ? tp2 : null;
   return { recommendation, symbol, entry, stopLoss, takeProfit1, takeProfit2 };
-}
-
-function fetchWindowFor(symbol: string, startMs: number, endMs: number): Promise<Candle[] | null> {
-  const { isCrypto, base } = normalizeToBinancePerp(symbol);
-  return isCrypto && base ? fetchCryptoWindow(base, startMs, endMs) : fetchFxWindow(symbol, startMs, endMs);
 }
 
 /** Extrai o plano de trade do JSON persistido; null = sem plano avaliável. */
