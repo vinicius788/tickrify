@@ -36,6 +36,8 @@ import { ANALYSIS_RESULT_FLAG, runAnalysisResultSweep } from '../src/modules/mai
 import Stripe from 'stripe';
 import { getFoundingOffer } from '../src/modules/payments/founding-offer';
 import { recordSetupVersion } from '../src/modules/ai/setups.service';
+import { ALERT_RULES, runAlertMonitor } from '../src/modules/ai/setup-alerts.service';
+import { SETUP_ALERT_EMAIL_FLAG, runSetupAlertEmailSweep } from '../src/modules/mail/setup-alert-email';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from '../src/modules/ai/analysis-data-coverage';
 import { CHAT_EMAIL_FLAG, CHAT_SWEEP_INTERVAL_MS, runChatReplySweep } from '../src/modules/support/chat-email';
 import { recordProviderComparison, type ProviderComparison } from '../src/modules/ai/vision-model';
@@ -1498,6 +1500,38 @@ const chatReplyTick = async () => {
   if (result && result.sent > 0) console.log(`[chat] Avisos de resposta: ${result.sent}`);
 };
 setInterval(() => void chatReplyTick(), CHAT_SWEEP_INTERVAL_MS).unref();
+
+// Alertas de nivel dos setups (setup-alerts.service.ts): a cada 10 min, so com
+// alertas ativos; depois o e-mail dos disparos (chave EMAIL_SETUP_ALERTS
+// desligada = so dry-run). Primeira volta 2 min depois do boot.
+const alertTick = async () => {
+  const counts = await runAlertMonitor({
+    prisma,
+    log: (level, message) => (level === 'warn' ? console.warn(message) : console.log(message)),
+  }).catch((err) => {
+    console.warn(`[alerts] Varredura falhou: ${(err as Error)?.message ?? err}`);
+    return null;
+  });
+  if (counts && (counts.symbols > 0 || counts.triggered > 0)) {
+    console.log(`[alerts] symbols=${counts.symbols} checked=${counts.checked} triggered=${counts.triggered} paused=${counts.paused}`);
+  }
+  const emails = await runSetupAlertEmailSweep({
+    prisma,
+    mail: workerMail,
+    isEnabled: () => flagBool(SETUP_ALERT_EMAIL_FLAG),
+    appUrl: publicUrl(process.env.FRONTEND_URL, 'https://tickrify.com'),
+    apiBaseUrl: publicUrl(process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL, 'https://tickrify.onrender.com'),
+    log: (level, message) => (level === 'warn' ? console.warn(message) : console.log(message)),
+  }).catch((err) => {
+    console.warn(`[setup-alert] Varredura falhou: ${(err as Error)?.message ?? err}`);
+    return null;
+  });
+  if (emails && emails.sent > 0) console.log(`[setup-alert] Volta: ${JSON.stringify(emails)}`);
+};
+setTimeout(() => {
+  void alertTick();
+  setInterval(() => void alertTick(), ALERT_RULES.monitorIntervalMs).unref();
+}, 2 * 60 * 1000).unref();
 
 async function shutdown() {
   await worker.close();

@@ -194,6 +194,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'EMAIL_SETUP_ALERTS',
+    type: 'boolean',
+    label: 'E-mail de alerta de nivel do setup',
+    description:
+      'Quando o preco toca o nivel que a pessoa pediu para vigiar (entrada, stop, alvo, invalidacao ou digitado), avisa por e-mail com o link para atualizar o grafico. No maximo 1 e-mail por setup a cada 12h e 3 por pessoa em 24h, respeitando o descadastro. Usa a mesma cota diaria da Resend. DESLIGADO: o alerta dispara na tela e so loga quem receberia ([setup-alert] dry-run).',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
     key: 'CHAT_EMAIL_NOTIFY',
     type: 'boolean',
     label: 'E-mails do chat com o fundador',
