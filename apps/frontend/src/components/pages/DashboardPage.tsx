@@ -1200,31 +1200,57 @@ const DashboardPage = () => {
     const ticksNum = Math.floor(Number(ticksBalance) || 0);
     return (
       <div className="flex flex-col gap-4">
+        {/* Cockpit hero: o titulo da pagina e o UNICO "New Analysis" do inicio. */}
+        <div
+          className="relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-6 md:p-8"
+          style={{ backgroundImage: 'radial-gradient(ellipse 720px 320px at 100% 0%, rgba(0,232,122,0.06), transparent 60%)' }}
+        >
+          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+            <div className="min-w-0">
+              <div className="tk-eyebrow flex items-center gap-2 text-[11px]">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
+                {t.nav.greeting}, {firstName}
+              </div>
+              <h1 className="tk-display mt-2 text-4xl md:text-5xl">
+                {titleHead}{' '}
+                {titleLast && <em className="font-serif italic text-[var(--text-secondary)]">{titleLast}</em>}
+              </h1>
+              <p className="mt-3 font-terminal text-xs text-[var(--text-secondary)]">
+                {ticksNum} ticks · {analysesTotal} {t.nav.analysesWord}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => goTo('journal')}
+                className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-default)] px-4 py-2.5 text-sm text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)]"
+              >
+                <CalendarDays className="h-4 w-4" /> {t.nav.journal}
+              </button>
+              <button
+                type="button"
+                onClick={resetNewAnalysisView}
+                className="inline-flex items-center gap-2 rounded-xl bg-[var(--inverse-bg)] px-4 py-2.5 text-sm font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90"
+              >
+                <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Today: alertas disparados, niveis vigiados e operacoes abertas. Conta
             travada: os alertas ficam pausados e o paywall cita o ativo real. */}
         {!isDemo && !freeLocked && (
-          <TodaySection
-            base={base}
-            alerts={alertsQuery.data}
-            openTrades={openTradesQuery.data?.trades ?? []}
-            onNewAnalysis={resetNewAnalysisView}
-          />
+          <TodaySection base={base} alerts={alertsQuery.data} openTrades={openTradesQuery.data?.trades ?? []} />
         )}
         {!isDemo && freeLocked && alertsQuery.data?.paused && alertsQuery.data.pausedSymbol
           ? paywallFor('alerts', undefined, alertsQuery.data.pausedSymbol)
           : null}
 
-        {/* Preparacao (perfil salvo + nova analise) e os setups que a pessoa
-            segue sem alerta (os com alerta estao no Today). Gratis esgotado: o
-            servidor responde 402 e a secao fica de fora. */}
-        {!isDemo && !freeLocked && (
-          <SetupsSection
-            base={base}
-            onNewAnalysis={resetNewAnalysisView}
-            showEmpty={analysesTotal > 0}
-            hiddenSetupIds={watchedSetupIds}
-          />
-        )}
+        {/* Perfil de estrategia salvo e os setups que a pessoa segue sem alerta
+            (os com alerta estao no Today). Gratis esgotado: o servidor responde
+            402 e a secao fica de fora. */}
+        {!isDemo && !freeLocked && <SetupsSection base={base} hiddenSetupIds={watchedSetupIds} />}
 
         {/* De onde a pessoa veio, perguntado a ela. A atribuicao tecnica
             (PostHog + UTM) nao respondeu isso para os tres primeiros
@@ -1310,44 +1336,6 @@ const DashboardPage = () => {
             </span>
           </div>
         )}
-
-        {/* Cockpit hero */}
-        <div
-          className="relative overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-6 md:p-8"
-          style={{ backgroundImage: 'radial-gradient(ellipse 720px 320px at 100% 0%, rgba(0,232,122,0.06), transparent 60%)' }}
-        >
-          <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-            <div className="min-w-0">
-              <div className="tk-eyebrow flex items-center gap-2 text-[11px]">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
-                {t.nav.greeting}, {firstName}
-              </div>
-              <h1 className="tk-display mt-2 text-4xl md:text-5xl">
-                {titleHead}{' '}
-                {titleLast && <em className="font-serif italic text-[var(--text-secondary)]">{titleLast}</em>}
-              </h1>
-              <p className="mt-3 font-terminal text-xs text-[var(--text-secondary)]">
-                {ticksNum} ticks · {analysesTotal} {t.nav.analysesWord}
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => goTo('journal')}
-                className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-default)] px-4 py-2.5 text-sm text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)]"
-              >
-                <CalendarDays className="h-4 w-4" /> {t.nav.journal}
-              </button>
-              <button
-                type="button"
-                onClick={resetNewAnalysisView}
-                className="inline-flex items-center gap-2 rounded-xl bg-[var(--inverse-bg)] px-4 py-2.5 text-sm font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90"
-              >
-                <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
-              </button>
-            </div>
-          </div>
-        </div>
 
         {/* Usuário sem nenhuma análise: um estado que explica o que a tela vira
             e oferece UMA ação. Também é aqui que a promessa do "valor no

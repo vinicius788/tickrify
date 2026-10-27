@@ -222,7 +222,7 @@ describe('Today no inicio do painel', () => {
   it('disparado nao visto: hora em UTC, aviso de que nao e sinal; Update chart marca visto e abre a atualizacao', async () => {
     const user = userEvent.setup();
     const fetchMock = serve({ 'POST /api/setups/alerts/alert-aaaaaaaa/seen': () => json(200, { alert: ALERT }) });
-    wrap(<TodaySection base="/dashboard" alerts={list([ALERT])} openTrades={[]} onNewAnalysis={vi.fn()} />);
+    wrap(<TodaySection base="/dashboard" alerts={list([ALERT])} openTrades={[]} />);
     expect(screen.getByText('Price reached your level')).toBeTruthy();
     expect(screen.getByText('Reached 4,180 at 13:42 UTC')).toBeTruthy();
     expect(screen.getByText('This is not a signal to enter.')).toBeTruthy();
@@ -240,7 +240,6 @@ describe('Today no inicio do painel', () => {
         base="/dashboard"
         alerts={list([active])}
         openTrades={[{ analysisId: 'analysis00009', status: 'in_trade', symbol: 'BTCUSD', timeframe: '1H', direction: 'SELL', updatedAt: '2026-10-27T10:00:00Z' }]}
-        onNewAnalysis={vi.fn()}
       />,
     );
     expect(screen.getByText('Entry 4,140 · 0.24% away')).toBeTruthy();
@@ -248,17 +247,15 @@ describe('Today no inicio do painel', () => {
     expect(screen.getByRole('link', { name: 'Mark result' }).getAttribute('href')).toBe('/dashboard/analysis/analysis00009');
   });
 
-  it('vazio: a frase do e-mail so com a chave ligada, e o botao de nova analise', async () => {
-    const user = userEvent.setup();
-    const onNew = vi.fn();
-    const first = wrap(<TodaySection base="/dashboard" alerts={list([])} openTrades={[]} onNewAnalysis={onNew} />);
+  it('vazio: so a frase (o New Analysis e o do topo), e o e-mail so com a chave ligada', () => {
+    const first = wrap(<TodaySection base="/dashboard" alerts={list([])} openTrades={[]} />);
     expect(screen.getByText("Run an analysis and set an alert. We'll email you when price gets there.")).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: /New analysis/i }));
-    expect(onNew).toHaveBeenCalled();
+    expect(screen.queryByRole('button')).toBeNull();
     first.unmount();
-    wrap(<TodaySection base="/dashboard" alerts={list([], false)} openTrades={[]} onNewAnalysis={onNew} />);
+    wrap(<TodaySection base="/dashboard" alerts={list([], false)} openTrades={[]} />);
     expect(screen.getByText('Run an analysis and set an alert. It shows up here when price gets there.')).toBeTruthy();
   });
+
 });
 
 describe('Paywall dos alertas e limite diario do trial', () => {
@@ -307,7 +304,7 @@ describe('Setups no inicio do painel', () => {
   it('cartao: ativo, datas, condicao de espera com a data; Update abre a nova analise com o setup', async () => {
     const user = userEvent.setup();
     serve({ 'GET /api/setups': () => json(200, { items: [listed], nextCursor: null }) });
-    wrap(<SetupsSection base="/dashboard" onNewAnalysis={vi.fn()} showEmpty />);
+    wrap(<SetupsSection base="/dashboard" />);
 
     expect(await screen.findByText("Setups you're following")).toBeTruthy();
     expect(screen.getByText(/First analysis Oct 8 /)).toBeTruthy();
@@ -327,31 +324,38 @@ describe('Setups no inicio do painel', () => {
       'GET /api/setups': () => json(200, { items: [listed], nextCursor: null }),
       'PATCH /api/setups/setup-aaaaaaaa': () => json(200, { setup: { ...SETUP, status: 'archived' } }),
     });
-    wrap(<SetupsSection base="/dashboard" onNewAnalysis={vi.fn()} showEmpty />);
+    wrap(<SetupsSection base="/dashboard" />);
     await user.click(await screen.findByRole('button', { name: /Archive/ }));
     const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
     expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ status: 'archived' });
   });
 
-  it('vazio: uma frase de como seguir; perfil salvo vira uma linha com Edit', async () => {
+  it('sem setup fora do Today: perfil salvo vira uma linha com Edit, sem botao repetido', async () => {
     getStrategy.mockResolvedValue({
       paid: true,
       profile: { instruments: ['forex', 'metals'], timeframes: ['1h', '4h'], setups: ['breakout'], sessions: [], direction: 'both', minRiskReward: 1.5 },
     });
     serve({ 'GET /api/setups': () => json(200, { items: [], nextCursor: null }) });
-    wrap(<SetupsSection base="/dashboard" onNewAnalysis={vi.fn()} showEmpty />);
-    expect(await screen.findByText('Follow a setup from any analysis to come back to it here.')).toBeTruthy();
+    wrap(<SetupsSection base="/dashboard" />);
     expect(await screen.findByText('Forex, Metals · 1h, 4h · Breakout')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Edit' }).getAttribute('href')).toBe('/dashboard/strategy');
+    expect(screen.queryByRole('button', { name: /New analysis/i })).toBeNull();
   });
 
-  it('gratis ou sem perfil: sem resumo de estrategia', async () => {
+  it('sem perfil e sem setup: a secao nao aparece (nada de cartao vazio)', async () => {
     getStrategy.mockResolvedValue({ paid: false, profile: { instruments: ['forex'], timeframes: [], setups: [], sessions: [], direction: 'both', minRiskReward: 1 } });
     serve({ 'GET /api/setups': () => json(200, { items: [], nextCursor: null }) });
-    wrap(<SetupsSection base="/dashboard" onNewAnalysis={vi.fn()} showEmpty={false} />);
+    wrap(<SetupsSection base="/dashboard" />);
     await waitFor(() => expect(getStrategy).toHaveBeenCalled());
+    expect(screen.queryByRole('region', { name: "Setups you're following" })).toBeNull();
     expect(screen.queryByText(/Your strategy/)).toBeNull();
-    expect(screen.queryByText('Follow a setup from any analysis to come back to it here.')).toBeNull();
+  });
+
+  it('setup com alerta ativo sai daqui (esta no Today)', async () => {
+    serve({ 'GET /api/setups': () => json(200, { items: [listed], nextCursor: null }) });
+    wrap(<SetupsSection base="/dashboard" hiddenSetupIds={new Set(['setup-aaaaaaaa'])} />);
+    await waitFor(() => expect(getStrategy).toHaveBeenCalled());
+    expect(screen.queryByText("Setups you're following")).toBeNull();
   });
 });
 

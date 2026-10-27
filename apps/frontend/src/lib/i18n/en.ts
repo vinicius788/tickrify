@@ -614,7 +614,6 @@ export default {
     limitTitle: 'You follow 20 setups',
     limitDesc: 'Archive one on your dashboard to follow this one.',
     sectionTitle: "Setups you're following",
-    empty: 'Follow a setup from any analysis to come back to it here.',
     firstAnalysis: 'First analysis {date}',
     updated: 'Updated {relative} ({date})',
     waitingFor: 'Waiting for: {condition} (from {date})',

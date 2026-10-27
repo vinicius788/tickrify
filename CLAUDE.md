@@ -774,7 +774,10 @@ Vale para TODA mudanca, grande ou pequena:
   botao so); bloco `TodaySection` no topo do inicio (disparados nao vistos com
   "Update chart", niveis vigiados com distancia e "Last checked HH:MM UTC",
   operacoes abertas com "Mark result"); setups com alerta saem do
-  `SetupsSection`. Saiu do inicio: os 4 KPIs, o quadro semanal, os recentes e a
+  `SetupsSection`. Ordem do inicio (27/10, depois de ver em producao): cartao de
+  boas-vindas no topo com o UNICO "New Analysis", depois o Today (vazio = so a
+  frase), depois o `SetupsSection`, que some se nao tiver perfil salvo nem setup
+  sem alerta (antes eram 3 botoes "New Analysis" empilhados e um cartao vazio). Saiu do inicio: os 4 KPIs, o quadro semanal, os recentes e a
   `LiveTape`. Pagina do setup: alertas, cancelar, ultimo preco checado; abrir
   marca os disparados como vistos. Contador no menu e "(1) ..." no titulo da
   aba. Paywall `alerts` ("Your XAUUSD alert is paused") para conta travada;

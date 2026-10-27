@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { BellRing, PlusCircle, RefreshCw } from 'lucide-react';
+import { BellRing, RefreshCw } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import type { OpenTrade } from '@/lib/api';
@@ -28,12 +28,10 @@ const TodaySection = ({
   base,
   alerts,
   openTrades,
-  onNewAnalysis,
 }: {
   base: string;
   alerts: SetupAlertList | undefined;
   openTrades: OpenTrade[];
-  onNewAnalysis: () => void;
 }) => {
   const { t, language } = useLanguage();
   const a = t.alerts;
@@ -69,17 +67,11 @@ const TodaySection = ({
     <section aria-label={d.title} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
       <h2 className="tk-stat-label">{d.title}</h2>
 
+      {/* Vazio: so a frase. O "New Analysis" e o do cartao de boas-vindas, logo acima. */}
       {empty ? (
-        <div key="empty" className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{alerts?.emailEnabled ? d.emptyEmail : d.emptyScreen}</p>
-          <button
-            type="button"
-            onClick={onNewAnalysis}
-            className="inline-flex shrink-0 items-center gap-2 self-start rounded-xl bg-[var(--inverse-bg)] px-4 py-2.5 text-sm font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90"
-          >
-            <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
-          </button>
-        </div>
+        <p key="empty" className="mt-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+          {alerts?.emailEnabled ? d.emptyEmail : d.emptyScreen}
+        </p>
       ) : null}
 
       {reached.length > 0 ? (

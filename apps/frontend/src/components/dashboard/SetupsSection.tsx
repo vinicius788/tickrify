@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Archive, PlusCircle, RefreshCw } from 'lucide-react';
+import { Archive, RefreshCw } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
@@ -29,15 +29,10 @@ const DATE_LOCALES: Record<string, string> = {
  */
 const SetupsSection = ({
   base,
-  onNewAnalysis,
-  showEmpty,
   hiddenSetupIds,
 }: {
   base: string;
-  onNewAnalysis: () => void;
   hiddenSetupIds?: ReadonlySet<string>;
-  /** Frase de "como seguir" so para quem ja tem analise (o painel vazio ja ensina o primeiro passo). */
-  showEmpty: boolean;
 }) => {
   const { t, language } = useLanguage();
   const s = t.setups;
@@ -95,35 +90,24 @@ const SetupsSection = ({
       },
     );
 
+  const showList = !isError && items.length > 0;
+  // Sem perfil salvo e sem setup fora do Today: nada a mostrar (o "New Analysis"
+  // fica no cartao de boas-vindas e a frase de como comecar, no Today).
+  if (!strategySummary && !showList) return null;
+
   return (
     <section aria-label={s.sectionTitle} className="flex flex-col gap-3">
-      {/* Preparacao: uma linha so, nunca uma etapa obrigatoria. */}
-      <div className="flex flex-col gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-        {strategySummary ? (
-          <p key="strategy" className="min-w-0 text-xs leading-relaxed text-[var(--text-secondary)]">
-            <span className="text-[var(--text-primary)]">{`${s.strategyLabel}: `}</span>
-            <span>{strategySummary}</span>{' '}
-            <Link to={`${base}/strategy`} className="underline underline-offset-2 hover:text-[var(--text-primary)]">
-              {s.strategyEdit}
-            </Link>
-          </p>
-        ) : (
-          <span key="no-strategy" />
-        )}
-        <button
-          type="button"
-          onClick={onNewAnalysis}
-          className="inline-flex shrink-0 items-center gap-2 self-start rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)] sm:self-auto"
-        >
-          <PlusCircle className="h-3.5 w-3.5" /> {t.nav.newAnalysis}
-        </button>
-      </div>
+      {strategySummary ? (
+        <p key="strategy" className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3 text-xs leading-relaxed text-[var(--text-secondary)]">
+          <span className="text-[var(--text-primary)]">{`${s.strategyLabel}: `}</span>
+          <span>{strategySummary}</span>{' '}
+          <Link to={`${base}/strategy`} className="underline underline-offset-2 hover:text-[var(--text-primary)]">
+            {s.strategyEdit}
+          </Link>
+        </p>
+      ) : null}
 
-      {isError ? null : items.length === 0 ? (
-        showEmpty && data && !hiddenSetupIds?.size ? (
-          <p key="empty" className="px-1 text-xs text-[var(--text-secondary)]">{s.empty}</p>
-        ) : null
-      ) : (
+      {!showList ? null : (
         <div key="list" className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
           <h2 className="tk-stat-label">{s.sectionTitle}</h2>
           <ul className="mt-3 divide-y divide-[var(--border-subtle)]">

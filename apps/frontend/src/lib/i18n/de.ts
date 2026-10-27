@@ -614,7 +614,6 @@ export default {
     limitTitle: 'Du folgst bereits 20 Setups',
     limitDesc: 'Archiviere eines in deinem Dashboard, um diesem zu folgen.',
     sectionTitle: 'Setups, denen du folgst',
-    empty: 'Folge einem Setup aus einer beliebigen Analyse, um hier darauf zurückzukommen.',
     firstAnalysis: 'Erste Analyse: {date}',
     updated: 'Aktualisiert {relative} ({date})',
     waitingFor: 'Wartet auf: {condition} (vom {date})',
