@@ -37,6 +37,7 @@ import Stripe from 'stripe';
 import { getFoundingOffer } from '../src/modules/payments/founding-offer';
 import { recordSetupVersion } from '../src/modules/ai/setups.service';
 import { ALERT_RULES, runAlertMonitor } from '../src/modules/ai/setup-alerts.service';
+import { startTwelveDataReport } from '../src/modules/market/twelve-data';
 import { SETUP_ALERT_EMAIL_FLAG, runSetupAlertEmailSweep } from '../src/modules/mail/setup-alert-email';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from '../src/modules/ai/analysis-data-coverage';
 import { CHAT_EMAIL_FLAG, CHAT_SWEEP_INTERVAL_MS, runChatReplySweep } from '../src/modules/support/chat-email';
@@ -1429,6 +1430,9 @@ startFlagRefresh(async () =>
 );
 
 startOutcomeSweeper(prisma);
+
+// Consumo do Twelve Data (twelve-data.ts): `[twelvedata] day=N/800 ...` de hora em hora.
+startTwelveDataReport();
 
 // E-mails de ciclo de vida (lifecycle-email.ts): a cada 15 min, primeira volta
 // 5 min depois do boot. Com as chaves do /admin desligadas (padrao), so loga

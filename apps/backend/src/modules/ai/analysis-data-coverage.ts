@@ -9,6 +9,8 @@ export type CandleCoverage =
   | 'timeframe_unreadable'
   | 'unsupported_asset'
   | 'provider_unconfigured'
+  /** Sem candles porque a cota do Twelve Data nao deixou (orcamento, minuto ou dia). */
+  | 'provider_quota'
   | 'source_unavailable'
   | 'stale_withheld'
   | 'block_unavailable'
@@ -32,7 +34,7 @@ export interface AnalysisDataCoverage {
 
 const CANDLE_VALUES = new Set<CandleCoverage>([
   'disabled', 'not_attempted', 'symbol_unreadable', 'timeframe_unreadable',
-  'unsupported_asset', 'provider_unconfigured', 'source_unavailable',
+  'unsupported_asset', 'provider_unconfigured', 'provider_quota', 'source_unavailable',
   'stale_withheld', 'block_unavailable', 'injected', 'timeout', 'error',
 ]);
 const CONTEXT_VALUES = new Set<ContextCoverage>([

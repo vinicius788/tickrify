@@ -155,7 +155,9 @@ function aggregate4h(h1) {
 }
 
 // ── Twelve Data (plano B — chave grátis: https://twelvedata.com, 800 req/dia) ──
-// Usada automaticamente quando TWELVEDATA_API_KEY está no ambiente.
+// Usada automaticamente quando TWELVE_DATA_API_KEY_EXPERIMENTS está no ambiente:
+// conta grátis SEPARADA. A chave de produção (TWELVE_DATA_API_KEY) nunca é usada
+// por script, para não gastar a cota das análises (27/10/2026).
 // Precisamos de só 4 requisições (XAU/USD e EUR/USD, 30min e 4h nativos).
 const TD_SYMBOLS = { XAUUSD: 'XAU/USD', EURUSD: 'EUR/USD' };
 const TD_INTERVALS = { '30m': '30min', '4h': '4h' };
@@ -240,11 +242,11 @@ async function resolveSymbol(asset) {
 async function main() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 
-  const tdKey = process.env.TWELVEDATA_API_KEY?.trim();
+  const tdKey = process.env.TWELVE_DATA_API_KEY_EXPERIMENTS?.trim();
   if (tdKey) {
     return mainTwelveData(tdKey);
   }
-  console.log('(sem TWELVEDATA_API_KEY no ambiente — tentando Yahoo)');
+  console.log('(sem TWELVE_DATA_API_KEY_EXPERIMENTS no ambiente — tentando Yahoo; a chave de produção nunca é usada aqui)');
 
   const resolved = {};
   const failedAssets = [];

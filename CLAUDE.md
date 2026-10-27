@@ -264,6 +264,32 @@ Vale para TODA mudanca, grande ou pequena:
   momentum, volume e mapa de volume por preco (SO cripto: forex e metais spot nao
   tem volume e o motor nao inventa), mapa de eventos e guarda de print velho
   (`detectStaleChart`). Acoes/ETF nao tem grounding.
+- **Twelve Data = cota compartilhada (27/10/2026, `modules/market/twelve-data.ts`,
+  o UNICO caminho para api.twelvedata.com no backend).** Gratis: 800 creditos/dia
+  UTC e 8/minuto; estourou em 27/10 (886 de 800) e ouro/forex ficaram sem
+  candles. Quem consome: `analysis` (grounding do quick e do deep,
+  `ai.adapter.ts` `fetchFxCandles`), `monitor` (monitor de alertas e preco na
+  criacao do alerta, `setup-alerts.service.ts`), `sweeper` (outcome sweeper via
+  `candles.ts`). Scripts de medicao (`prompt-replay.ts`, `backtest-runner.ts`,
+  `analysis-pilot-runner.ts`, `scripts/backtest/fetch-extra.mjs`) entram em modo
+  experimento: so `TWELVE_DATA_API_KEY_EXPERIMENTS` (conta gratis separada), nunca
+  a de producao; sem ela recusam forex/metal com mensagem clara. Medidor unico
+  por dia e por minuto no Redis (2 instancias + worker; sem Redis, memoria e log
+  "degradado"). Orcamento em `TWELVE_DATA_BUDGET`: reserva de 550/dia para a
+  analise e 200 para o monitor, o resto para o sweeper; ninguem gasta a reserva
+  de quem tem mais prioridade; monitor e sweeper deixam 3 vagas do minuto para a
+  analise. Acima de 80%: monitor de forex a cada 30 min, sweeper de forex no dia
+  seguinte; acima de 95%: so analise. Fim de semana (sexta 22h a domingo 22h
+  UTC): monitor e sweeper nao chamam. Provedor disse "acabaram os creditos do
+  dia": ninguem chama ate a virada UTC. Cache das respostas "ultimos 120"
+  compartilhado (grounding reaproveita ate 1 min no 5m e 2 min nos outros, nunca
+  no 1m; o monitor reaproveita o 5m ate 10 min, so com horario em UTC): mesma
+  URL de antes, mesmos candles (teste prova). Analise sem candle por cota grava
+  `provider_quota` na cobertura e loga `[grounding] ... cota do Twelve Data`.
+  Recusa no sweeper ADIA a analise (antes virava UNTRACKABLE para sempre) e nao
+  trava o lote. Linha `[twelvedata] day=N/800 minute=N/8 analysis=N monitor=N
+  sweeper=N` de hora em hora no worker, aviso no log ao passar de 80% e 95%,
+  `/health` (ops token) com `twelveData`.
 - **Guards ligados por padrao:** news guard (evento High entre -15min e +45min
   vira WAIT) e R/R guard (rebaixa so quando nem o MELHOR alvo passa de 1.2:1).
 - **Outcome sweeper** (worker, 1x por hora): avalia analises 48h depois, corrida
@@ -749,16 +775,19 @@ Vale para TODA mudanca, grande ou pequena:
   agora importa de la). Disparo = maxima/minima de um candle que ABRIU em
   `watchFrom` ou depois cruzou o nivel; UPDATE condicional active->triggered.
   Cada ativo e buscado por UMA instancia por vez (claim em `AlertPriceCheck`,
-  TTL cripto 5 min, forex/metal 10 min). Forex no fim de semana nao busca.
+  TTL cripto 5 min; forex/metal 10 min, mais espacado se a reserva do monitor
+  nao der para o dia com N ativos, e 30 min acima de 80% da cota). Forex no fim
+  de semana nao busca. Forex usa os ultimos 120 candles de 5m, o MESMO pedido do
+  grounding (cache compartilhado); cota do Twelve Data = ativo adiado, log
+  `[alerts] symbol=... adiado`.
   Conta travada (mesma regra do `isFreeLocked`, so banco): nao busca, nao
   dispara e empurra o `watchFrom` (assinar nao dispara pelo passado). Log
   `[alerts] symbols=N checked=N triggered=N paused=N`.
-- **Twelve Data (cota):** hoje ~1 pedido por analise de forex/metal no
-  grounding + 1 no sweeper 48h depois (~59% do uso e ouro). Os alertas somam no
-  maximo 1 pedido por ativo de forex/metal com alerta ativo a cada 10 min, so em
-  dia de semana: ate 144/dia por ativo, teto de 5 ativos por volta
-  (`maxFxSymbolsPerRun`, rodizio pelo mais antigo). O plano gratis publico e
-  800/dia e 8/minuto: plano real nao lido no painel (6.2).
+- **Twelve Data (cota):** ~1 pedido por analise de forex/metal no grounding + 1
+  no sweeper 48h depois (~59% do uso e ouro). O monitor tem teto de 200/dia
+  (orcamento da 3.2): 1 ativo cabe a cada 10 min; mais ativos espacam sozinhos.
+  Teto de 5 ativos por volta (`maxFxSymbolsPerRun`, rodizio pelo mais antigo).
+  Gratis = 800/dia e 8/minuto (lido na resposta do provedor em 27/10).
 - **E-mail `setup_alert`** (`modules/mail/setup-alert-email.ts`, chave
   `EMAIL_SETUP_ALERTS`, desligada = `[setup-alert] dry-run`; texto APROVADO pelo
   dono em 27/10): "Your XAUUSD setup
@@ -998,6 +1027,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 27/10 | **Cota do Twelve Data (3.2), branch `claude/twelvedata-budget`, sem deploy.** Dono: (1) criar uma conta GRATIS separada no Twelve Data e por a chave em `TWELVE_DATA_API_KEY_EXPERIMENTS` SO no ambiente local de quem roda script (nunca no Render); sem ela os scripts recusam forex/metal; (2) depois do deploy, conferir no worker a linha `[twelvedata] day=...` de hora em hora e se aparece `store=memory(degradado)` (Redis nao alcancado); (3) ler o `/health` (`twelveData`); (4) analises de ouro/forex de 27/10 viraram UNTRACKABLE porque a cota acabou: SQL de conferir e devolver ao sweeper (com backup e desfazer) entregue no chat em 27/10. Medir 7 dias: consumo por quem gastou e quantas analises gravaram `provider_quota`; ajustar a reserva (550/200) pela medicao. | dono / Claude |
 | 27/10 | **Alertas de nivel (3.13) no ar (`a8e962d`, 27/10 ~11h BRT; bundle da Vercel e rota nova no Render conferidos por fora).** Decisao do dono em 27/10: NADA pago (Resend, Twelve Data e GitHub Actions seguem no gratis). Falta: (1) ligar `EMAIL_SETUP_ALERTS` no /admin (texto aprovado em 27/10), depois conferir `[mail] Enviado kind=setup_alert`; (2) ler no Render o boot `[alerts] Tabelas prontas.` e, com alerta ativo, `[alerts] symbols=... checked=...` (Claude nao tem acesso ao painel); (3) teste de ponta a ponta com alerta de BTC perto do preco; (4) conferir no painel do Twelve Data que o consumo cabe no gratis (800/dia, 8/min; pior caso dos alertas ~720/dia com 5 ativos de forex o dia todo): se encostar, baixar `maxFxSymbolsPerRun`; (5) Resend gratis = 100/dia para TODOS os e-mails: os alertas tem teto de 3 por pessoa em 24h e recusa tenta de novo por 6h; se a cota estourar, o primeiro corte e baixar esse teto, nao pagar. CI do PR #7 nao rodou (Actions sem minutos ate novembro); portao foi o `pre-push` e varredura manual de segredos no diff. | dono / Claude |
 | 27/10 | **Criterio de decisao da fase 2 da sessao diaria.** 3 semanas depois do deploy dos alertas (se subir em 28/10/2026, decidir em 18/11/2026): retorno no dia 2 do trial (`trial_day_completed day_index=2` / `trial_started`) acima de 35% = seguir para a fase 2 (regras pessoais, abrir/fechar o dia, resumo no diario); abaixo = parar e priorizar qualidade da leitura e checkout. Linha de base: ~21% (16 de 76). Ler junto: % de trials que criam alerta no dia 1, retorno no dia 2 de quem criou x quem nao criou, disparados -> e-mail -> clique -> `setup_update_completed`. Consultas HogQL entregues no chat em 27/10. Exige `TRIAL_MODE` ligado (3.10). | dono decide / Claude mede |
 | 20/10 | **Regra do candle do fill, `legacy | stop_only` (commit `bad809625121ac23b27037071f77ddea0dd982d5`, no `main`; deploy confirmado em 20/10/2026 21:44 UTC: Vercel com os textos novos da /accuracy, Render com `stopOnly` e `methodology` na API).** A /accuracy publica que a entrada enche primeiro, mas o sweeper aceitava o TP1 no mesmo candle de 30m do fill. Em 196 trades (24/09 a 10/10) contra a sequencia de 1m: `legacy` 6 fora do intervalo do 1m (4 WIN falsos, 2 LOSS pessimistas), `stop_only` 3 (todos pessimistas). Regra e `fillCandleRuleOf` em `accuracy.util.ts`; sweeper usa `stop_only` e grava `outcomeDetail.fillCandleRule` (sem o campo = legacy); `prompt-replay.ts --fill-candle-rule` (padrao legacy, grava a regra, recusa retomar com outra); `evaluate.py` `fill_candle_rule` (CLI `BT_FILL_CANDLE_RULE`, padrao legacy) e `analysis-pilot-outcomes.py --fill-candle-rule` (padrao legacy). /accuracy (decisao do dono, opcao c): `overall`, `byConfidence`, `byGrounding`, `byPrompt`, `byModel` e `breakdown` so com linhas `legacy` (sem o campo, nulo ou desconhecido); `stop_only` so em `stopOnly { overall, breakdown }`, nunca somado; `methodology` diz qual regra cada serie usa. Nenhuma linha reprocessada. Pagina e `geo-body.mjs`: rotulo 'Hit rate, original scoring rule', secao 'Updated scoring rule, separate series' (so com `stopOnly`), metodologia e FAQ explicam a diferenca. `legacy` = TP1 vale no candle do fill (regra ate o deploy, todas as linhas antigas); `stop_only` = no candle do fill so o stop conta (avaliacoes feitas depois do deploy). Vigencia de `stop_only`: 20/10/2026 21:44 UTC; isso NAO quer dizer que ja existam resultados nela: na verificacao do deploy `overall.n` = 176 (todos legacy) e `stopOnly.n` = 0, porque o sweeper so avalia analises com mais de 48h. **Pendente (~22/10/2026):** SQL somente leitura no Supabase confirmando avaliacoes novas com `outcomeDetail.fillCandleRule = 'stop_only'`; sem registros, conferir o ciclo do worker e a janela de 48h antes de suspeitar de defeito. | Claude (verificar 22/10) |
@@ -1131,6 +1161,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **13/10 (cancelamento, afiliados, tema):** Configuracoes com assinatura e portal da Stripe por API, reativar, eventos de cancelamento, ex-assinante em modo leitura, aba Cancelamentos; afiliados com clique deduplicado, eventos, cookie do vinculo, vendas pagas e "Marcar como pago"; tema claro na area logada com tokens (361 cores soltas trocadas). Ver 3.12.
 - **26/10 (concorrencia):** checagem de operacao e demo com reserva atomica antes da IA (trabalho do Codex revisado + pausa da demo), `96ebbfc`/`557afbc` Live 01:38 BRT; aberto pelos CLIs as ~09h com `active=[]`/`pending=0`. Conciliacao (deficit liquido por usuario+analise, historico inteiro): 1 par, 2 debitos x 2 resultados pagos, deficit 0, nada a compensar. Antes disso ja estavam no ar `6d1ed51` (body-parser 2.4.0), `26d45be` (Vercel com lockfile congelado) e `d1d10c5`/`92fe994` (assinatura). SQL de deficit e de compensacao (chave unica `compensation:trade_check:<user>:<analysis>:v1`) no historico da sessao, nao executar compensacao sem o dono.
 - **26/10 (confluencia, `80910da`, Codex, Live 13:10 BRT):** checklist completo de 7 itens decide `factorsPresent` E `confluenceScore` (inclusive 0 de 7); antes so corrigia quando o total divergia. Roda so em analise nova (adapter); historico intocado. Prompt de producao segue v13 (v7.6): o pacote de prompt do Codex (mexe em `trading-system-prompt.ts`: MTF observado x inferido, ordem stop/limit como colocacao manual, checklist so 7 itens) NAO foi publicado: A/B de 25/10 (10 prints x 2 repeticoes, US$ 0,13) deu INCONCLUSIVO. Candidata zerou 3 CHoCH falsos e 2 erros de R/R do texto, mas virou WAIT em 6 de 20 decisoes (BUY/SELL/WAIT 7/12/1 -> 6/8/6), com 3 regressoes factuais novas e mesma estabilidade (8/10). Diff guardado em `_local/backup-worktrees-20261026/quality-package-20261025.diff`. Nao publicar sem nova medicao com amostra maior.
+- **27/10 (cota do Twelve Data, noite):** medidor unico com orcamento por prioridade (analise, monitor, sweeper), fim de semana, cache compartilhado grounding/monitor, chave separada para scripts, recusa vira adiamento no sweeper, `provider_quota` na cobertura, linha `[twelvedata]` e `/health`. Ver 3.2.
 - **27/10 (alertas de nivel, PR #7, `a8e962d`, no ar):** alerta por setup com monitor de 5m, e-mail `setup_alert` desligado, bloco Today no inicio (sairam KPIs, quadro semanal, recentes e LiveTape), contador no menu e na aba, paywall `alerts`; `fetchCryptoWindow`/`fetchFxWindow` movidos para `modules/market/candles.ts`. Ver 3.13.
 - **26/10 (grounding consertado):** `extractSymbol` mandava a URL crua do Storage PRIVADO para a OpenAI, que nao abria: a leitura do ativo falhava calada e NENHUMA analise logada recebia candles (`groundingStats` vazio em 669 de 669 em 30 dias; so a demo, com imagem embutida, funcionava). Agora resolve a imagem como a analise principal (`resolveImageUrlForModel`); conserta grounding do quick, enriquecimento do deep e `readChartSymbol`. A /accuracy "depois do grounding" mediu, na pratica, analises sem candles. 2o defeito (mesmo dia): a leitura `detail: low` do gpt-4o-mini as vezes perde a virgula do preco (print ATUAL de ouro lido fora de ordem de grandeza) e a trava de print velho retinha os candles; `detectStaleChart` agora aceita potencia de 10 que caia a 10% do preco real (o teste de 3 ATR segue decidindo) e a mensagem de retencao mostra os dois precos. Medir cobertura: `select "groundingStats"->>'coverage', count(*) from tickrify."Analysis" where "createdAt" > <deploy> group by 1`.
 - **26/10 (leitura do simbolo):** medida em 99 prints contra a analise principal: `gpt-4o-mini` `detail: low` acertava ativo + timeframe em 61 de 97 (vazio, "GOLD", ativo trocado, timeframe errado, digito do preco perdido) e o luna `detail: high` em 95 de 97, pelo mesmo custo (~US$ 0,0005 por print) e ~1 s a mais (p90 3,6 s). `extractSymbol` passou ao tier quick em detalhe alto, esforco no padrao do modelo (o que foi medido); "GOLD"/"GOLD#"/"GOLDm" viram XAUUSD; tier `light` e `ANTHROPIC_MODEL_LIGHT` removidos. Resultado em `_local/engine-final-20261026/symbol-read-probe.jsonl`.

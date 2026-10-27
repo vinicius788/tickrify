@@ -5,6 +5,7 @@
  */
 import { evaluateTrade, sweepOnce, type TradePlan } from '../../worker/outcome.sweeper';
 import { fetchCryptoWindow, fetchFxWindow, type Candle } from '../modules/market/candles';
+import { __setTwelveDataForTests } from '../modules/market/twelve-data';
 import { fillCandleRuleOf, splitByFillCandleRule, tally, type FillCandleRule } from '../modules/ai/accuracy.util';
 
 const T = Date.parse('2026-10-01T00:00:00Z');
@@ -73,6 +74,7 @@ describe('B3 synthetic intrabar uncertainty and diagnostic limits', () => {
 });
 
 describe('B3 synthetic source/window counterexamples; existing outcomes intentionally unchanged', () => {
+  beforeEach(() => __setTwelveDataForTests({ now: () => new Date('2026-10-27T12:00:00Z') }));
   const key = process.env.TWELVE_DATA_API_KEY;
   afterEach(() => { jest.restoreAllMocks(); if (key === undefined) delete process.env.TWELVE_DATA_API_KEY; else process.env.TWELVE_DATA_API_KEY = key; });
   const flat = (n: number, from = 0) => Array.from({ length: n }, (_, i) => bar(from + i, 104, 101, 102, 103));

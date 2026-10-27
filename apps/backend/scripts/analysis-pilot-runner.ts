@@ -195,6 +195,10 @@ async function main() {
 
   // Dynamic require após fixar as flags; nenhum Prisma é instanciado.
   const OpenAI = require('openai').default;
+  // Script de medicao: so a chave TWELVE_DATA_API_KEY_EXPERIMENTS, nunca a de producao.
+  const { enterTwelveDataExperimentMode, experimentRefusesFx } = require('../src/modules/market/twelve-data');
+  const { canonicalFxPair } = require('../src/common/utils/analysis-normalizer');
+  enterTwelveDataExperimentMode();
   const { AIAdapter, AIAnalysisError } = require('../src/modules/ai/ai.adapter');
   const { computeCost, extractUsage } = require('../src/modules/ai/model-cost');
   const adapter = new AIAdapter();
@@ -216,6 +220,7 @@ async function main() {
   let estimatedUsd = 0;
   for (const c of selected) {
     if (calls >= opts.maxCalls || estimatedUsd + opts.reservePerCallUsd > opts.maxEstimatedUsd) break;
+    if (canonicalFxPair(c.symbol) && experimentRefusesFx('analysis-pilot-runner')) continue;
     const chart = fs.readFileSync(path.join(BACKTEST, c.chartFile));
     if (sha256(chart) !== c.chartSha256) throw new Error(`Gráfico alterado após preflight: ${c.id}`);
     const before = calls;

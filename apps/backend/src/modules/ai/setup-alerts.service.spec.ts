@@ -5,21 +5,23 @@ import {
   SetupAlertsService,
   alertSuggestions,
   findTrigger,
-  fxMarketClosed,
   priceSymbolOf,
   runAlertMonitor,
   sideFor,
 } from './setup-alerts.service';
 import { CreateSetupAlertDto, ListSetupAlertsQueryDto } from './dto/setups.dto';
 import { SetupsController } from './setups.controller';
-import { fetchWindowFor as fetchWindowForMock, type Candle } from '../market/candles';
+import { TwelveDataUnavailableError, __setTwelveDataForTests, fxMarketClosed } from '../market/twelve-data';
+import { fetchFxLatest5m as fetchFxLatest5mMock, fetchWindowFor as fetchWindowForMock, type Candle } from '../market/candles';
 const fetchWindowFor = fetchWindowForMock as jest.Mock;
+const fetchFxLatest5m = fetchFxLatest5mMock as jest.Mock;
 import { captureServer as captureServerMock } from '../../common/analytics/posthog';
 
 jest.mock('../market/candles', () => ({
   ...jest.requireActual('../market/candles'),
   // Sem preco de mercado por padrao: a criacao cai no preco da analise.
   fetchWindowFor: jest.fn(async () => null),
+  fetchFxLatest5m: jest.fn(async () => null),
 }));
 jest.mock('../../common/analytics/posthog', () => ({
   ...jest.requireActual('../../common/analytics/posthog'),
@@ -54,6 +56,9 @@ beforeEach(() => {
   captureServer.mockClear();
   fetchWindowFor.mockReset();
   fetchWindowFor.mockResolvedValue(null);
+  fetchFxLatest5m.mockReset();
+  fetchFxLatest5m.mockResolvedValue(null);
+  __setTwelveDataForTests({ now: () => new Date('2026-10-27T12:30:00Z') });
 });
 
 describe('regras puras dos alertas', () => {
@@ -108,8 +113,8 @@ describe('regras puras dos alertas', () => {
   it('forex fechado no fim de semana', () => {
     expect(fxMarketClosed(new Date('2026-10-24T12:00:00Z'))).toBe(true); // sabado
     expect(fxMarketClosed(new Date('2026-10-23T22:30:00Z'))).toBe(true); // sexta a noite
-    expect(fxMarketClosed(new Date('2026-10-25T20:00:00Z'))).toBe(true); // domingo antes da abertura
-    expect(fxMarketClosed(new Date('2026-10-25T21:30:00Z'))).toBe(false);
+    expect(fxMarketClosed(new Date('2026-10-25T21:30:00Z'))).toBe(true); // domingo antes da abertura (22h UTC)
+    expect(fxMarketClosed(new Date('2026-10-25T22:30:00Z'))).toBe(false);
     expect(fxMarketClosed(new Date('2026-10-27T12:00:00Z'))).toBe(false);
   });
 });
@@ -196,15 +201,15 @@ describe('SetupAlertsService.create', () => {
     expect(fetchWindowFor).not.toHaveBeenCalled();
   });
 
-  it('cache velho: busca o ultimo candle (forex olha 72h, para cobrir o fim de semana)', async () => {
-    fetchWindowFor.mockResolvedValue([[Date.now() - 300_000, 4290, 4295, 4285, 4290]]);
+  it('cache velho: busca o ultimo candle de 5m de forex pelo cache compartilhado com o grounding', async () => {
+    fetchFxLatest5m.mockResolvedValue([[Date.now() - 300_000, 4290, 4295, 4285, 4290]]);
     const { service, calls } = await ready({ cachedPrice: { lastPrice: 4000, checkedAt: new Date(Date.now() - 60 * 60_000) } });
     await service.create(user, { analysisId: 'analysis00001', label: 'custom', level: 4200 }, free);
-    const [, start, end, interval] = fetchWindowFor.mock.calls[0];
-    expect(end - start).toBe(72 * 3600_000);
-    expect(interval).toBe('5m');
+    expect(fetchFxLatest5m).toHaveBeenCalledWith('XAUUSD', 'monitor', ALERT_RULES.cacheTtlMs.fx);
+    expect(fetchWindowFor).not.toHaveBeenCalled();
     expect(calls.find((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"'))?.values).toEqual(expect.arrayContaining(['below', 4290]));
   });
+
 
   it('sem preco de mercado (fonte fora): usa o preco da analise, e sem nenhum preco recusa', async () => {
     const { service, calls } = await ready();
@@ -357,7 +362,7 @@ describe('runAlertMonitor', () => {
   it('busca o ativo, grava o ultimo preco e dispara por UPDATE condicional', async () => {
     const { run, calls, fetchWindow } = monitor({});
     await expect(run()).resolves.toEqual({ symbols: 1, checked: 1, triggered: 1, paused: 0 });
-    expect(fetchWindow).toHaveBeenCalledWith('BTCUSDT', expect.any(Number), NOW.getTime(), '5m', 1);
+    expect(fetchWindow).toHaveBeenCalledWith('BTCUSDT', expect.any(Number), NOW.getTime(), '5m', 1, 'monitor');
     const trigger = calls.find((c) => c.text.includes('SET "status" = \'triggered\''));
     expect(trigger?.text).toContain('AND "status" = \'active\'');
     expect(trigger?.values).toEqual(expect.arrayContaining([new Date(T + 3 * M5), 111, 'alert-1']));
@@ -404,11 +409,34 @@ describe('runAlertMonitor', () => {
       ['SELECT "symbol", "claimedAt" FROM', () => [{ symbol: 'EURUSD', claimedAt: new Date(T) }]],
       ['INSERT INTO "tickrify"."AlertPriceCheck"', (_t, values) => [{ symbol: values[0] }]],
     ]);
-    const fetchWindow = jest.fn(async () => [bar(0, 1, 1)]);
-    const counts = await runAlertMonitor({ prisma, now: () => NOW, fetchWindow, isPaused: async () => false, log: jest.fn() });
+    const fetchFxLatest = jest.fn(async () => [bar(0, 1, 1)]);
+    const counts = await runAlertMonitor({ prisma, now: () => NOW, fetchWindow: jest.fn(), fetchFxLatest, isPaused: async () => false, log: jest.fn() });
     expect(counts.symbols).toBe(ALERT_RULES.maxFxSymbolsPerRun);
+    expect(fetchFxLatest).toHaveBeenCalledTimes(ALERT_RULES.maxFxSymbolsPerRun);
     // EURUSD foi checado nesta janela: fica para a proxima volta.
-    expect(fetchWindow.mock.calls.map((c: unknown[]) => c[0])).not.toContain('EURUSD');
+    expect(fetchFxLatest.mock.calls.map((c: unknown[]) => c[0])).not.toContain('EURUSD');
+  });
+
+  it('forex/metal: candles do cache compartilhado (so os que abriram depois), e cota do Twelve Data adia sem erro', async () => {
+    const { prisma } = makePrisma([
+      ['WHERE a."status" = \'active\'\n    ORDER BY', () => [alertRow({ priceSymbol: 'XAUUSD', level: 4010 })]],
+      ['INSERT INTO "tickrify"."AlertPriceCheck"', () => [{ symbol: 'XAUUSD' }]],
+      ['SET "status" = \'triggered\'', () => 1],
+    ]);
+    const fetchFxLatest = jest.fn(async () => [[T - M5, 4000, 4020, 3990, 4000], [T + M5, 4000, 4011, 3999, 4005]] as Candle[]);
+    const log = jest.fn();
+    const base = { prisma, now: () => NOW, fetchWindow: jest.fn(), fetchFxLatest, isPaused: async () => false, log };
+    await expect(runAlertMonitor(base)).resolves.toMatchObject({ symbols: 1, triggered: 1 });
+    expect(fetchFxLatest).toHaveBeenCalledWith('XAUUSD', 'monitor', ALERT_RULES.cacheTtlMs.fx);
+    expect(base.fetchWindow).not.toHaveBeenCalled();
+
+    const denied = jest.fn(async () => {
+      throw new TwelveDataUnavailableError('budget');
+    });
+    const quiet = jest.fn();
+    await expect(runAlertMonitor({ ...base, fetchFxLatest: denied, log: quiet })).resolves.toMatchObject({ triggered: 0 });
+    expect(quiet).toHaveBeenCalledWith('log', '[alerts] symbol=XAUUSD adiado: cota do Twelve Data (budget)');
+    expect(quiet).not.toHaveBeenCalledWith('warn', expect.anything());
   });
 
   it('sem alerta ativo nao faz nada', async () => {

@@ -15,7 +15,8 @@ import { captureServer } from '../../common/analytics/posthog';
 import { getFreeQuota, type FreeQuotaCounter } from '../../common/free-quota';
 import { canonicalFxPair } from '../../common/utils/analysis-normalizer';
 import { normalizeToBinancePerp } from '../market/market.service';
-import { INTERVAL_MS, candleSourceFor, fetchWindowFor, type Candle, type CandleSource } from '../market/candles';
+import { INTERVAL_MS, candleSourceFor, fetchFxLatest5m, fetchWindowFor, type Candle, type CandleSource } from '../market/candles';
+import { TwelveDataUnavailableError, fxMarketClosed, monitorFxIntervalMs, twelveDataUsage } from '../market/twelve-data';
 import { extractShadowPlan } from '../../../worker/outcome.sweeper';
 import { SetupsService, readPlan } from './setups.service';
 
@@ -226,13 +227,6 @@ export function findTrigger(
   return null;
 }
 
-/** Forex e metais fecham do fim da sexta (22h UTC) ao fim do domingo (21h UTC): nao gasta a cota do Twelve Data. */
-export function fxMarketClosed(now: Date): boolean {
-  const day = now.getUTCDay();
-  const hour = now.getUTCHours();
-  return day === 6 || (day === 5 && hour >= 22) || (day === 0 && hour < 21);
-}
-
 /** Mesma trava do servidor (gratis esgotado sem assinatura), so com o banco: o worker nao fala com a Stripe. */
 export async function alertsPausedFor(prisma: FreeQuotaCounter & RawPrisma, userId: string): Promise<boolean> {
   if (!(await getFreeQuota(prisma, userId)).settledExhausted) return false;
@@ -439,8 +433,9 @@ export class SetupAlertsService implements OnModuleInit {
 
   /**
    * Ultimo fechamento de 5m conhecido do ativo: o cache do monitor se for
-   * recente, senao uma busca. Forex/metal olha 72h para cobrir o fim de semana
-   * (vale o fechamento de sexta). Falhou = null; nunca se inventa preco.
+   * recente, senao uma busca. Forex/metal pede os ultimos 120 candles de 5m
+   * (o mesmo pedido do grounding, cache compartilhado; no fim de semana vale o
+   * fechamento de sexta). Sem cota ou falhou = null; nunca se inventa preco.
    */
   private async latestPrice(priceSymbol: string, source: CandleSource): Promise<number | null> {
     try {
@@ -452,8 +447,10 @@ export class SetupAlertsService implements OnModuleInit {
         return Number(hit.lastPrice);
       }
       const now = Date.now();
-      const lookback = source === 'fx' ? 72 * HOUR : 2 * HOUR;
-      const candles = await fetchWindowFor(priceSymbol, now - lookback, now, ALERT_RULES.candleInterval, 1);
+      const candles =
+        source === 'fx'
+          ? await fetchFxLatest5m(priceSymbol, 'monitor', ALERT_RULES.cacheTtlMs.fx)
+          : await fetchWindowFor(priceSymbol, now - 2 * HOUR, now, ALERT_RULES.candleInterval, 1, 'monitor');
       return candles?.length ? candles[candles.length - 1][4] : null;
     } catch {
       return null;
@@ -559,6 +556,7 @@ export type AlertMonitorDeps = {
   prisma: RawPrisma & FreeQuotaCounter;
   now?: () => Date;
   fetchWindow?: typeof fetchWindowFor;
+  fetchFxLatest?: typeof fetchFxLatest5m;
   isPaused?: (userId: string) => Promise<boolean>;
   capture?: typeof captureServer;
   log(level: 'log' | 'warn', message: string): void;
@@ -572,6 +570,7 @@ export type AlertMonitorDeps = {
 export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<{ symbols: number; checked: number; triggered: number; paused: number }> {
   const now = deps.now ? deps.now() : new Date();
   const fetchWindow = deps.fetchWindow ?? fetchWindowFor;
+  const fetchFxLatest = deps.fetchFxLatest ?? fetchFxLatest5m;
   const isPaused = deps.isPaused ?? ((userId: string) => alertsPausedFor(deps.prisma, userId));
   const capture = deps.capture ?? captureServer;
   const counts = { symbols: 0, checked: 0, triggered: 0, paused: 0 };
@@ -626,13 +625,17 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<{ symbols
   );
   const ordered = [...bySymbol.entries()].sort(([a], [b]) => (lastClaims.get(a) ?? 0) - (lastClaims.get(b) ?? 0));
   let fxFetches = 0;
+  // Forex/metal: intervalo que cabe na reserva do monitor com N ativos, e 30
+  // min acima de 80% do dia (twelve-data.ts).
+  const fxSymbols = ordered.filter(([symbol]) => candleSourceFor(symbol) === 'fx').length;
+  const fxIntervalMs = fxSymbols > 0 ? monitorFxIntervalMs(fxSymbols, await twelveDataUsage(now)) : ALERT_RULES.cacheTtlMs.fx;
 
   for (const [priceSymbol, alerts] of ordered) {
     try {
       const source = candleSourceFor(priceSymbol);
       if (!source) continue;
       if (source === 'fx' && (fxMarketClosed(now) || fxFetches >= ALERT_RULES.maxFxSymbolsPerRun)) continue;
-      const ttl = ALERT_RULES.cacheTtlMs[source] - CLAIM_SLACK_MS;
+      const ttl = (source === 'fx' ? fxIntervalMs : ALERT_RULES.cacheTtlMs.crypto) - CLAIM_SLACK_MS;
       const claimed = await deps.prisma.$queryRaw<Array<{ symbol: string }>>`
         INSERT INTO "tickrify"."AlertPriceCheck" ("symbol", "claimedAt") VALUES (${priceSymbol}, ${now})
         ON CONFLICT ("symbol") DO UPDATE SET "claimedAt" = EXCLUDED."claimedAt"
@@ -645,7 +648,10 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<{ symbols
 
       const earliest = Math.min(...alerts.map((a) => a.watchFrom.getTime()));
       const startMs = Math.max(earliest - INTERVAL_MS[ALERT_RULES.candleInterval], now.getTime() - ALERT_RULES.lookbackMs);
-      const candles = await fetchWindow(priceSymbol, startMs, now.getTime(), ALERT_RULES.candleInterval, 1);
+      const candles =
+        source === 'fx'
+          ? (await fetchFxLatest(priceSymbol, 'monitor', ALERT_RULES.cacheTtlMs.fx))?.filter((c) => c[0] >= startMs) ?? null
+          : await fetchWindow(priceSymbol, startMs, now.getTime(), ALERT_RULES.candleInterval, 1, 'monitor');
       if (!candles || candles.length === 0) {
         deps.log('warn', `[alerts] Sem candles symbol=${priceSymbol}`);
         continue;
@@ -679,6 +685,10 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<{ symbols
         }
       }
     } catch (err) {
+      if (err instanceof TwelveDataUnavailableError) {
+        deps.log('log', `[alerts] symbol=${priceSymbol} adiado: cota do Twelve Data (${err.reason})`);
+        continue;
+      }
       deps.log('warn', `[alerts] Falha best-effort symbol=${priceSymbol}: ${(err as Error)?.message ?? err}`);
     }
   }

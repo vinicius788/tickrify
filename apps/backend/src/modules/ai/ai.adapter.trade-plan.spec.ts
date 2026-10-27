@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { __setTwelveDataForTests } from '../market/twelve-data';
 import { AIAdapter, buildRealDataBlock, buildEventMapLines, classifyRawCurrentPrice, logNewsGuardStatus } from './ai.adapter';
 import { FallbackVisionModel, OpenAiVisionModel, type VisionModel } from './vision-model';
 
@@ -719,9 +720,10 @@ describe('Incremental factual grounding, no strategy changes', () => {
   });
   it('does not invent H6 support or aggregate candles for the FX provider', async () => {
     const old = process.env.TWELVE_DATA_API_KEY; process.env.TWELVE_DATA_API_KEY = 'synthetic-not-a-credential';
-    try { const a = new AIAdapter() as any; a.fetchJson = jest.fn();
-      expect(await a.fetchFxCandles('EURUSD', '6h')).toBeNull(); expect(a.fetchJson).not.toHaveBeenCalled();
-    } finally { if (old === undefined) delete process.env.TWELVE_DATA_API_KEY; else process.env.TWELVE_DATA_API_KEY = old; }
+    const fetchSpy = jest.spyOn(global, 'fetch');
+    try { const a = new AIAdapter() as any;
+      expect((await a.fetchFxCandles('EURUSD', '6h')).candles).toBeNull(); expect(fetchSpy).not.toHaveBeenCalled();
+    } finally { fetchSpy.mockRestore(); if (old === undefined) delete process.env.TWELVE_DATA_API_KEY; else process.env.TWELVE_DATA_API_KEY = old; }
   });
   it('H6 skips OKX instead of inventing a 6H map and uses the existing Binance fallback', async () => {
     const a = new AIAdapter() as any; a.fetchJson = jest.fn().mockResolvedValue(null);
@@ -774,5 +776,59 @@ describe('detectStaleChart: virgula perdida na leitura em low (26/10/2026)', () 
     expect(reason).toMatch(/different order of magnitude/);
     expect(reason).toContain('27.3');
     expect(reason).toContain('4012');
+  });
+});
+
+describe('grounding de forex/metal pelo medidor do Twelve Data (27/10/2026)', () => {
+  const NOW = new Date('2026-10-27T12:00:00Z');
+  const tdValues = Array.from({ length: 120 }, (_, i) => {
+    const t = new Date(NOW.getTime() - (i + 1) * 5 * 60_000).toISOString().slice(0, 19).replace('T', ' ');
+    const p = 4000 + Math.sin(i / 5) * 10;
+    return { datetime: t, open: String(p), high: String(p + 3), low: String(p - 3), close: String(p + 1), volume: '0' };
+  });
+  const oldKey = process.env.TWELVE_DATA_API_KEY;
+  let fetchSpy: jest.SpyInstance;
+  beforeEach(() => {
+    process.env.TWELVE_DATA_API_KEY = 'synthetic-not-a-credential';
+    __setTwelveDataForTests({ now: () => NOW });
+    fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ values: tdValues, meta: { exchange_timezone: 'UTC' } }) } as any);
+  });
+  afterEach(() => {
+    fetchSpy.mockRestore();
+    if (oldKey === undefined) delete process.env.TWELVE_DATA_API_KEY;
+    else process.env.TWELVE_DATA_API_KEY = oldKey;
+  });
+
+  it('cache nao muda o que o motor recebe: mesma URL de antes, mesmos candles e o mesmo bloco', async () => {
+    const a = new AIAdapter() as any;
+    const first = await a.fetchFxCandles('XAUUSD', '5m');
+    const second = await a.fetchFxCandles('XAUUSD', '5m');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(String(fetchSpy.mock.calls[0][0])).toBe(
+      'https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&outputsize=120&apikey=synthetic-not-a-credential',
+    );
+    expect(second.candles).toEqual(first.candles);
+    expect(first.candles).toHaveLength(120);
+    expect(buildRealDataBlock('XAUUSD', '5m', second.candles)).toEqual(buildRealDataBlock('XAUUSD', '5m', first.candles));
+    // Mesmo mapeamento de antes: o mais antigo primeiro, volume zerado.
+    expect(first.candles[119][4]).toBeCloseTo(Number(tdValues[0].close));
+  });
+
+  it('1m nunca reaproveita (o ultimo candle muda rapido demais)', async () => {
+    const a = new AIAdapter() as any;
+    await a.fetchFxCandles('XAUUSD', '1m');
+    await a.fetchFxCandles('XAUUSD', '1m');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('cota acabou: a analise segue sem candles, com o motivo gravado (provider_quota) e logado', async () => {
+    fetchSpy.mockResolvedValue({ ok: false, status: 429, json: async () => ({ code: 429, status: 'error', message: 'You have run out of API credits for the day.' }) } as any);
+    const a = new AIAdapter() as any;
+    const warn = jest.spyOn(a.logger, 'warn').mockImplementation(() => undefined);
+    const out = await a.buildCandleBlocks({ symbol: 'XAUUSD', timeframe: '5m', lastPrice: 4000 });
+    expect(out.candleCoverage).toBe('provider_quota');
+    expect(out.candleBlock).toBeNull();
+    expect(out.stats.coverage).toBe('provider_quota');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('cota do Twelve Data (quota_exhausted)'));
   });
 });

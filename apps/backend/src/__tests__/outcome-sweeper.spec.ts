@@ -14,6 +14,7 @@ import {
   type TradePlan,
 } from '../../worker/outcome.sweeper';
 import type { Candle } from '../modules/market/candles';
+import { __setTwelveDataForTests } from '../modules/market/twelve-data';
 
 const buy: TradePlan = { recommendation: 'BUY', symbol: 'BTCUSDT', entry: 100, stopLoss: 95, takeProfit1: 110, takeProfit2: 120 };
 const sell: TradePlan = { recommendation: 'SELL', symbol: 'BTCUSDT', entry: 100, stopLoss: 105, takeProfit1: 90, takeProfit2: 80 };
@@ -243,6 +244,8 @@ describe('sweepOnce com WAIT em shadow', () => {
   });
 
   let fetchSpy: jest.SpyInstance;
+  // Medidor do Twelve Data num dia util, com contador zerado a cada teste.
+  beforeEach(() => __setTwelveDataForTests({ now: () => new Date('2026-10-27T12:00:00Z') }));
   afterEach(() => fetchSpy?.mockRestore());
 
   function fakePrisma(rows: { trades?: any[]; waits?: any[] }) {
@@ -358,6 +361,36 @@ describe('sweepOnce com WAIT em shadow', () => {
         afterTp1: { tp2: 'hit', tp2Index: 2 },
       });
     } finally {
+      if (savedKey === undefined) delete process.env.TWELVE_DATA_API_KEY;
+      else process.env.TWELVE_DATA_API_KEY = savedKey;
+    }
+  });
+
+  it('cota/fim de semana do Twelve Data: forex fica para depois (nunca UNTRACKABLE) e nao trava quem vem atras', async () => {
+    const savedKey = process.env.TWELVE_DATA_API_KEY;
+    process.env.TWELVE_DATA_API_KEY = 'test-key';
+    __setTwelveDataForTests({ now: () => new Date('2026-10-31T12:00:00Z') }); // sabado
+    fetchSpy = jest.spyOn(global, 'fetch' as any).mockResolvedValue({ ok: true, json: async () => ({ data: [] }) } as any);
+    const log = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    try {
+      const { prisma, update } = fakePrisma({
+        trades: [
+          { id: 'fx1', createdAt: created, recommendation: 'BUY', isDemo: false, result: { analysis: { symbol: 'XAUUSD', entry: 4200, stopLoss: 4190, takeProfit1: 4220 } } },
+          { id: 'c1', createdAt: created, recommendation: 'BUY', isDemo: false, result: { analysis: { symbol: 'BTCUSDT', entry: 100, stopLoss: 95, takeProfit1: 110 } } },
+        ],
+        waits: [{ id: 'w7', createdAt: created, result: { analysis: { symbol: 'EURUSD', entry: 1.1, stopLoss: 1.11, takeProfit1: 1.09 } } }],
+      });
+      await sweepOnce(prisma);
+      const touched = update.mock.calls.map((c) => c[0].where.id);
+      expect(touched).not.toContain('fx1');
+      expect(touched).not.toContain('w7');
+      // O cripto atras do forex foi avaliado (sem candles no mock = UNTRACKABLE, como sempre).
+      expect(update.mock.calls.find((c) => c[0].where.id === 'c1')?.[0].data.outcome).toBe('UNTRACKABLE');
+      expect(fetchSpy.mock.calls.some(([url]) => String(url).includes('twelvedata'))).toBe(false);
+      expect(log).toHaveBeenCalledWith('[Outcome] Forex/metal adiado pela cota do Twelve Data: market_closed=1');
+      expect(log).toHaveBeenCalledWith('[Outcome] 1 WAIT de forex/metal adiado(s): cota do Twelve Data.');
+    } finally {
+      log.mockRestore();
       if (savedKey === undefined) delete process.env.TWELVE_DATA_API_KEY;
       else process.env.TWELVE_DATA_API_KEY = savedKey;
     }
