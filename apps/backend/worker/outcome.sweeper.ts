@@ -27,6 +27,7 @@ import { flagBool } from '../src/common/flags/feature-flags';
  */
 import { PrismaClient } from '@prisma/client';
 import { fetchWindowFor, type Candle } from '../src/modules/market/candles';
+import { TwelveDataUnavailableError } from '../src/modules/market/twelve-data';
 import { FILL_CANDLE_RULE, type FillCandleRule } from '../src/modules/ai/accuracy.util';
 
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000; // 1h
@@ -34,6 +35,9 @@ const FIRST_SWEEP_DELAY_MS = 3 * 60 * 1000; // 3min após o boot (deixa o worker
 const MATURITY_MS = 48 * 60 * 60 * 1000; // análise só é avaliada 48h após criada
 const WINDOW_MS = 48 * 60 * 60 * 1000; // janela de avaliação: 48h a partir da análise
 const BATCH_SIZE = 25; // análises por varredura (mantém a varredura leve)
+// Candidatas lidas por varredura: forex/metal adiado pela cota do Twelve Data
+// (twelve-data.ts) nao conta no lote, para nao travar o resto atras dele.
+const CANDIDATES = BATCH_SIZE * 4;
 // WAIT por varredura. So o WAIT com niveis busca candles (7% deles em 20/10/2026).
 const WAIT_BATCH_SIZE = 50;
 
@@ -245,6 +249,7 @@ async function sweepWaits(prisma: PrismaClient, cutoff: Date): Promise<void> {
     select: { id: true, result: true, createdAt: true },
   });
 
+  let deferred = 0;
   for (const row of waits) {
     try {
       const plan = extractShadowPlan(row.result);
@@ -291,9 +296,11 @@ async function sweepWaits(prisma: PrismaClient, cutoff: Date): Promise<void> {
       });
     } catch (err) {
       // Fica outcome=null e tenta de novo na proxima varredura.
-      console.warn(`[Outcome] Falha no WAIT ${row.id}: ${err instanceof Error ? err.message : err}`);
+      if (err instanceof TwelveDataUnavailableError) deferred++;
+      else console.warn(`[Outcome] Falha no WAIT ${row.id}: ${err instanceof Error ? err.message : err}`);
     }
   }
+  if (deferred > 0) console.log(`[Outcome] ${deferred} WAIT de forex/metal adiado(s): cota do Twelve Data.`);
 }
 
 async function sweepTrades(prisma: PrismaClient, cutoff: Date): Promise<void> {
@@ -305,14 +312,17 @@ async function sweepTrades(prisma: PrismaClient, cutoff: Date): Promise<void> {
       createdAt: { lt: cutoff },
     },
     orderBy: { createdAt: 'asc' },
-    take: BATCH_SIZE,
+    take: CANDIDATES,
     select: { id: true, recommendation: true, result: true, createdAt: true, isDemo: true },
   });
 
   if (pending.length === 0) return;
-  console.log(`[Outcome] Avaliando ${pending.length} análise(s) madura(s)...`);
+  console.log(`[Outcome] Avaliando ${Math.min(pending.length, BATCH_SIZE)} análise(s) madura(s)...`);
 
+  let evaluated = 0;
+  const deferred = new Map<string, number>();
   for (const row of pending) {
+    if (evaluated >= BATCH_SIZE) break;
     try {
       const plan = extractPlan(row.recommendation, row.result);
       const startMs = row.createdAt.getTime();
@@ -355,13 +365,25 @@ async function sweepTrades(prisma: PrismaClient, cutoff: Date): Promise<void> {
         data: { outcome, outcomeAt: new Date(), outcomeDetail: detail as any },
       });
       console.log(`[Outcome] ${row.id} → ${outcome}`);
+      evaluated++;
     } catch (err) {
       // Nunca derruba a varredura: loga e segue pro próximo. A análise fica
-      // outcome=null e será re-tentada na próxima varredura.
+      // outcome=null e será re-tentada na próxima varredura. Cota do Twelve
+      // Data (orcamento, fim de semana, acabou no dia) e adiamento, nunca
+      // UNTRACKABLE: antes de 27/10 o dia sem cota marcava para sempre.
+      if (err instanceof TwelveDataUnavailableError) {
+        deferred.set(err.reason, (deferred.get(err.reason) ?? 0) + 1);
+        continue;
+      }
+      evaluated++;
       console.warn(
         `[Outcome] Falha ao avaliar ${row.id}: ${err instanceof Error ? err.message : err}`,
       );
     }
+  }
+  if (deferred.size > 0) {
+    const parts = [...deferred.entries()].map(([reason, n]) => `${reason}=${n}`).join(' ');
+    console.log(`[Outcome] Forex/metal adiado pela cota do Twelve Data: ${parts}`);
   }
 }
 

@@ -44,6 +44,7 @@ import {
 import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
 import { MarketService, normalizeToBinancePerp } from '../market/market.service';
+import { twelveDataApiKey, twelveDataTimeSeries, type TwelveDataDenyReason } from '../market/twelve-data';
 import { EconomicCalendarService } from '../calendar/calendar.service';
 import { buildStrategyBlock, STRATEGY_FIT_VALUES, type StrategyProfile } from '../../common/strategy/strategy-profile';
 import {
@@ -969,6 +970,15 @@ function parseSchemaResult(
 // bloqueio/rate-limit (achado em 25/08/2026, junto do bug do cache vazio).
 const calendarService = new EconomicCalendarService();
 
+/**
+ * Idade maxima da resposta do Twelve Data que o grounding reaproveita, por
+ * tempo grafico: 1m nunca (o ultimo candle muda rapido demais), 5m ate 1 min,
+ * o resto ate 2 min. Mesmo pedido (ativo, intervalo, 120 candles).
+ */
+const GROUNDING_CACHE_MAX_AGE_MS: Record<string, number> = {
+  '1m': 0, '5m': 60_000, '15m': 120_000, '30m': 120_000, '1h': 120_000, '2h': 120_000, '4h': 120_000, '1d': 120_000,
+};
+
 @Injectable()
 export class AIAdapter {
   /** Toda chamada a modelo passa SO por aqui (ver vision-model.ts). */
@@ -1556,30 +1566,33 @@ export class AIAdapter {
   }
 
   /**
-   * Candles de FOREX/METAIS via Twelve Data (mesma fonte do backtest).
-   * Só roda se TWELVE_DATA_API_KEY estiver no env; senão, degrada para null.
+   * Candles de FOREX/METAIS via Twelve Data (mesma fonte do backtest), pelo
+   * medidor unico (market/twelve-data.ts): a analise tem a prioridade maior da
+   * cota e reaproveita a mesma resposta se ela tiver ate 1-2 min (mesmo ativo,
+   * intervalo e janela de 120: o motor recebe os mesmos candles). `denied` diz
+   * por que nao veio candle quando foi a cota, para nao falhar calado.
    */
-  private async fetchFxCandles(symbol: string, interval: string): Promise<number[][] | null> {
-    const key = process.env.TWELVE_DATA_API_KEY?.trim();
-    if (!key) return null;
+  private async fetchFxCandles(symbol: string, interval: string): Promise<{ candles: number[][] | null; denied: TwelveDataDenyReason | null }> {
+    const none = { candles: null, denied: null };
     const tdInterval: Record<string, string> = {
       '1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min',
       '1h': '1h', '2h': '2h', '4h': '4h', '1d': '1day',
     };
     const itv = tdInterval[interval];
-    if (!itv) return null;
+    if (!itv) return none;
     const pair = canonicalFxPair(symbol);
-    if (!pair) return null;
-    const td = await this.fetchJson<{
-      values?: Array<{
-        datetime: string; open: string; high: string; low: string; close: string; volume?: string;
-      }>;
-    }>(
-      `https://api.twelvedata.com/time_series?symbol=${pair.slice(0, 3)}/${pair.slice(3)}&interval=${itv}&outputsize=120&apikey=${key}`,
-      6_000,
-    );
-    const values = td?.values;
-    if (!Array.isArray(values) || values.length < 30) return null;
+    if (!pair) return none;
+    const res = await twelveDataTimeSeries({
+      consumer: 'analysis',
+      pair,
+      interval: itv,
+      outputsize: 120,
+      cacheMaxAgeMs: GROUNDING_CACHE_MAX_AGE_MS[interval] ?? 0,
+      timeoutMs: 6_000,
+    });
+    if (!res.ok) return { candles: null, denied: res.reason === 'error' || res.reason === 'no_key' ? null : res.reason };
+    const values = res.series.values;
+    if (!Array.isArray(values) || values.length < 30) return none;
     // Twelve Data devolve o mais recente primeiro. Forex spot NÃO tem volume
     // centralizado — o campo costuma vir ausente ou zerado, e isso é correto:
     // o bloco de volume simplesmente não é emitido (nada de inventar).
@@ -1589,7 +1602,7 @@ export class AIAdapter {
         safeVolume(v.volume),
       ])
       .reverse();
-    return candles.every((c) => c.every((v) => Number.isFinite(v))) ? candles : null;
+    return { candles: candles.every((c) => c.every((v) => Number.isFinite(v))) ? candles : null, denied: null };
   }
 
   /**
@@ -1623,13 +1636,18 @@ export class AIAdapter {
       const fxSupported = canonicalFxPair(sym) !== null;
       if (!isCrypto && !fxSupported) {
         candleCoverage = 'unsupported_asset';
-      } else if (!isCrypto && !process.env.TWELVE_DATA_API_KEY?.trim()) {
+      } else if (!isCrypto && !twelveDataApiKey()) {
         candleCoverage = 'provider_unconfigured';
       } else {
-        const candles = isCrypto && base
-          ? await this.fetchCryptoCandles(base, interval)
-          : await this.fetchFxCandles(sym, interval);
+        const fx = isCrypto && base ? null : await this.fetchFxCandles(sym, interval);
+        const candles = isCrypto && base ? await this.fetchCryptoCandles(base, interval) : fx?.candles ?? null;
         candleCoverage = 'source_unavailable';
+        if (fx?.denied) {
+          // Cota do Twelve Data (orcamento, minuto cheio ou acabou no dia): a
+          // analise segue sem candles, mas isso fica gravado e no log.
+          candleCoverage = 'provider_quota';
+          this.logger.warn(`[grounding] ${sym} ${interval} sem candles reais: cota do Twelve Data (${fx.denied})`);
+        }
         if (candles) {
           staleReason = this.detectStaleChart(candles, extracted.lastPrice);
           if (staleReason) {

@@ -34,6 +34,8 @@ import * as path from 'path';
 import * as readline from 'readline';
 import { AIAdapter, AIAnalysisError, buildRealDataBlock } from '../src/modules/ai/ai.adapter';
 import { PromptBuilderService } from '../src/modules/prompt/prompt-builder.service';
+import { enterTwelveDataExperimentMode, experimentRefusesFx } from '../src/modules/market/twelve-data';
+import { canonicalFxPair } from '../src/common/utils/analysis-normalizer';
 
 const BACKTEST_DIR = path.resolve(__dirname, '../../../scripts/backtest');
 const MANIFEST = path.join(BACKTEST_DIR, 'manifest.json');
@@ -203,8 +205,11 @@ async function main() {
 
   const entries: ManifestEntry[] = JSON.parse(fs.readFileSync(MANIFEST, 'utf8')).entries;
   const done = loadDone();
+  // Script de medicao: so a chave TWELVE_DATA_API_KEY_EXPERIMENTS, nunca a de producao.
+  enterTwelveDataExperimentMode();
   const pending = entries
     .filter((e) => !done.has(e.id))
+    .filter((e) => !canonicalFxPair(e.symbol) || !experimentRefusesFx('backtest-runner'))
     .filter((_, i) => i % every === 0)
     .slice(0, limit);
   if (ground) console.log('Grounding LIGADO: dados reais dos candles serão injetados no prompt.');

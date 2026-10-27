@@ -34,7 +34,8 @@ um exemplo separado em `apps/frontend/.env.example`.
 | URLs e CORS | `APP_URL`, `FRONTEND_URL`, `CORS_ORIGINS` | Devem conter apenas origens confiaveis em producao. |
 | Operacoes | `INTERNAL_OPS_TOKEN` | Protege os endpoints internos de health e readiness. |
 | Flags | `ENABLE_*`, `AB_PROMPT_V9_PERCENT`, `PROMPT_AUTO_SYNC` | Overrides salvos no painel admin prevalecem sobre os valores de ambiente. |
-| Demo e dados | `DEMO_*`, `TURNSTILE_SECRET_KEY`, `TWELVE_DATA_API_KEY`, `FRED_API_KEY` | Demo retorna 503 sem chave Turnstile, sem verificador disponivel ou sem segredo para hash. Dados de mercado opcionais degradam conforme documentado no codigo. |
+| Demo e dados | `DEMO_*`, `TURNSTILE_SECRET_KEY`, `TWELVE_DATA_API_KEY`, `FRED_API_KEY` | Demo retorna 503 sem chave Turnstile, sem verificador disponivel ou sem segredo para hash. Dados de mercado opcionais degradam conforme documentado no codigo. `TWELVE_DATA_API_KEY` e a cota de producao (800/dia, 8/min), dividida por prioridade em `modules/market/twelve-data.ts`. |
+| Scripts de medicao | `TWELVE_DATA_API_KEY_EXPERIMENTS` | Conta gratis SEPARADA do Twelve Data, so no ambiente local de quem roda `prompt-replay`, `backtest-runner`, `analysis-pilot-runner` e `scripts/backtest/fetch-extra.mjs`. Nunca no Render. Sem ela, esses scripts recusam forex/metal; nunca usam a chave de producao. |
 | Email e telemetria | `RESEND_API_KEY`, `MAIL_FROM`, `FOUNDER_CHAT_NOTIFY_TO` (aviso do chat, padrao support@), `POSTHOG_*` | Nao habilite telemetria em testes sem intencao explicita. |
 | Backtest | `BT_DEBUG_FIELDS` | Usado apenas por scripts locais. |
 

@@ -34,6 +34,7 @@ import { FILL_CANDLE_RULES, type FillCandleRule, fillCandleRuleOf } from '../src
 import { normalizeToBinancePerp } from '../src/modules/market/market.service';
 import { TradePlan, evaluateTrade } from '../worker/outcome.sweeper';
 import { Candle, fetchCryptoWindow, fetchFxWindow } from '../src/modules/market/candles';
+import { enterTwelveDataExperimentMode, experimentRefusesFx } from '../src/modules/market/twelve-data';
 
 const COST_PER_CALL_USD = 0.0195; // quick medido em 09/09 (CLAUDE.md 3.2)
 const WINDOW_MS = 48 * 60 * 60 * 1000;
@@ -152,10 +153,13 @@ function summarize(rows: Done[]): void {
 }
 
 async function main() {
+  // Script de medicao: so a chave TWELVE_DATA_API_KEY_EXPERIMENTS, nunca a de producao.
+  enterTwelveDataExperimentMode();
   const input = arg('--input');
   if (!input) throw new Error('Passe --input <arquivo JSON exportado do Supabase>');
   const rows = (JSON.parse(fs.readFileSync(input, 'utf8')) as InputRow[]).filter((r) => r.id && r.imageUrl && r.createdAt);
-  const cases = rows.map((r) => ({ row: r, cls: classOf(r.symbol) })).filter((c): c is { row: InputRow; cls: Done['cls'] } => c.cls !== null);
+  const cases = rows.map((r) => ({ row: r, cls: classOf(r.symbol) })).filter((c): c is { row: InputRow; cls: Done['cls'] } => c.cls !== null)
+    .filter((c) => c.cls === 'crypto' || !experimentRefusesFx('prompt-replay'));
 
   const done: Done[] = fs.existsSync(OUT)
     ? fs.readFileSync(OUT, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))

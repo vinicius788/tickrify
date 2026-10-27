@@ -8,6 +8,7 @@ import { hasValidOpenAiKey } from '../../common/utils/ai-runtime';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { Public } from '../../common/decorators/public.decorator';
 import { OpsTokenGuard } from './ops-token.guard';
+import { TWELVE_DATA_BUDGET, twelveDataApiKey, twelveDataUsage } from '../market/twelve-data';
 
 type ReadinessItem = {
   required: boolean;
@@ -131,6 +132,8 @@ export class HealthController {
     const aiReady = !runtimeProduction || aiConfigured;
     const status = ready && queue.ready && authReady && storageReady && aiReady ? 'ok' : 'degraded';
 
+    const twelveData = await twelveDataUsage().catch(() => null);
+
     return {
       status,
       service: 'tickrify-backend',
@@ -138,6 +141,13 @@ export class HealthController {
       environment: process.env.NODE_ENV || 'development',
       appEnv: process.env.APP_ENV || '',
       database: ready ? 'ok' : 'error',
+      // Cota do Twelve Data no dia UTC (grounding de ouro/forex, alertas, sweeper).
+      twelveData: twelveData && {
+        ...twelveData,
+        dailyLimit: TWELVE_DATA_BUDGET.dailyLimit,
+        perMinute: TWELVE_DATA_BUDGET.perMinute,
+        keyConfigured: Boolean(twelveDataApiKey()),
+      },
       queue: {
         required: queue.required,
         configured: queue.configured,
