@@ -1000,8 +1000,4 @@ export default {
       disclaimer: 'Tickrify est un outil d\'analyse technique reposant sur l\'intelligence artificielle. Il ne fournit aucun conseil en investissement, financier, juridique ou fiscal, et rien de ce que produit la plateforme ne doit être lu comme une recommandation d\'achat ou de vente. Le trading sur le forex, les cryptos, les actions, les indices et les dérivés comporte un risque élevé et peut entraîner la perte totale du capital. Les performances passées, y compris le taux de réussite publié sur la page de précision, ne garantissent pas les performances futures. Vos décisions de trading n\'engagent que vous.',
     },
   },
-  serviceNotice: {
-    title: 'Nous rencontrons actuellement une instabilité',
-    body: 'Certaines analyses peuvent prendre plus de temps ou échouer. Nous y travaillons déjà et remercions chacun de sa compréhension.',
-  },
 } as const;
