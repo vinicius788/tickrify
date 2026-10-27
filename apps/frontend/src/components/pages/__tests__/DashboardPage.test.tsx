@@ -223,7 +223,7 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Analysis loading')).toBeTruthy();
   });
 
-  it('exibe análises recentes quando listAnalyses retorna dados', async () => {
+  it('inicio: bloco Today no topo, sem KPIs, quadro semanal nem lista de recentes (27/10/2026)', async () => {
     mockUseUser.mockReturnValue({
       user: { id: 'user-1' },
     });
@@ -244,10 +244,12 @@ describe('DashboardPage', () => {
 
     renderDashboard();
 
-    await waitFor(() => {
-      expect(screen.getAllByText('BTCUSD').length).toBeGreaterThan(0);
-    });
-
+    // Este arquivo roda em portugues (idioma do navegador do teste).
+    expect(await screen.findByRole('region', { name: 'Hoje' }, { timeout: 3000 })).toBeTruthy();
+    expect(screen.queryByText('Últimas Análises')).toBeNull();
+    expect(screen.queryByText('Planos de trade')).toBeNull();
+    expect(screen.queryByText('Insight da semana')).toBeNull();
+    expect(screen.queryByText('Ao vivo')).toBeNull();
     expect(listAnalyses).toHaveBeenCalledWith(40, null);
   });
 

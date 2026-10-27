@@ -32,13 +32,8 @@ import { TRADING_SYSTEM_PROMPT } from '../src/common/prompts/trading-system-prom
 import { canonicalFxPair } from '../src/common/utils/analysis-normalizer';
 import { FILL_CANDLE_RULES, type FillCandleRule, fillCandleRuleOf } from '../src/modules/ai/accuracy.util';
 import { normalizeToBinancePerp } from '../src/modules/market/market.service';
-import {
-  Candle,
-  TradePlan,
-  evaluateTrade,
-  fetchCryptoWindow,
-  fetchFxWindow,
-} from '../worker/outcome.sweeper';
+import { TradePlan, evaluateTrade } from '../worker/outcome.sweeper';
+import { Candle, fetchCryptoWindow, fetchFxWindow } from '../src/modules/market/candles';
 
 const COST_PER_CALL_USD = 0.0195; // quick medido em 09/09 (CLAUDE.md 3.2)
 const WINDOW_MS = 48 * 60 * 60 * 1000;

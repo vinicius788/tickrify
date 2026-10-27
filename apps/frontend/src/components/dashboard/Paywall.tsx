@@ -12,7 +12,7 @@ import { useTestimonials } from '@/lib/ratings';
  * `upgrade_cta_clicked`, `upgrade_clicked`, `checkout_started`) para o funil
  * separar "acabou a analise gratis" de "quis abrir o diario".
  */
-export type PaywallSurface = 'new_analysis' | 'trades' | 'journal' | 'history' | 'setups';
+export type PaywallSurface = 'new_analysis' | 'trades' | 'journal' | 'history' | 'setups' | 'alerts';
 
 interface PaywallProps {
   surface: PaywallSurface;
@@ -35,6 +35,13 @@ interface PaywallProps {
    * assine"); `trial_ended` = o trial acabou (modo leitura). Ausente = regra antiga.
    */
   variant?: 'daily_limit' | 'trial_ended';
+  /** Surface `alerts`: o ativo real do alerta pausado ("Your XAUUSD alert is paused"). */
+  symbol?: string | null;
+  /**
+   * Limite diario do trial com alertas ativos: diz que eles continuam ligados,
+   * e so fala do e-mail com a chave EMAIL_SETUP_ALERTS ligada.
+   */
+  alertsOn?: 'email' | 'screen' | null;
 }
 
 const MONTHLY_PRICE_USD = 29;
@@ -49,7 +56,7 @@ const MONTHLY_PRICE_USD = 29;
  * ate 29/09, e nenhuma analise rodava). O rotulo diz o que e: o formato da
  * leitura que o assinante recebe.
  */
-const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHref, children, variant }: PaywallProps) => {
+const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHref, children, variant, symbol, alertsOn }: PaywallProps) => {
   const { t } = useLanguage();
   const p = t.paywall;
   // Uma frase real de assinante, so com 2+ depoimentos publicados (com licenca).
@@ -65,28 +72,35 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
   }, [surface, variant]);
 
   const title =
-    variant === 'daily_limit'
-      ? p.titleDailyLimit
-      : variant === 'trial_ended' && surface === 'new_analysis'
-        ? p.titleTrialEnded
-        : surface === 'new_analysis'
-          ? p.titleNewAnalysis
-          : p.titleArea;
+    surface === 'alerts'
+      ? p.titleAlerts.replace('{symbol}', symbol || 'Tickrify')
+      : variant === 'daily_limit'
+        ? p.titleDailyLimit
+        : variant === 'trial_ended' && surface === 'new_analysis'
+          ? p.titleTrialEnded
+          : surface === 'new_analysis'
+            ? p.titleNewAnalysis
+            : p.titleArea;
   const areaDescription: Record<PaywallSurface, string> = {
     new_analysis: p.descNewAnalysis,
     trades: p.descTrades,
     journal: p.descJournal,
     history: p.descHistory,
     setups: p.descSetups,
+    alerts: p.descAlerts,
   };
+  const dailyLimitDescription =
+    alertsOn === 'email' ? p.descDailyLimitAlertsEmail : alertsOn === 'screen' ? p.descDailyLimitAlerts : p.descDailyLimit;
   const description =
-    variant === 'daily_limit'
-      ? p.descDailyLimit
-      : variant === 'trial_ended' && surface === 'new_analysis'
-        ? p.descTrialEnded
-        : variant === 'trial_ended' && surface === 'trades'
-          ? p.descTradesTrial
-          : areaDescription[surface];
+    surface === 'alerts'
+      ? p.descAlerts
+      : variant === 'daily_limit'
+        ? dailyLimitDescription
+        : variant === 'trial_ended' && surface === 'new_analysis'
+          ? p.descTrialEnded
+          : variant === 'trial_ended' && surface === 'trades'
+            ? p.descTradesTrial
+            : areaDescription[surface];
   const preview: Array<{ label: string; value: string }> = [
     { label: p.previewScenario, value: '•••••••' },
     { label: p.previewEntry, value: '$ 4,261.40' },

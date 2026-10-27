@@ -11,9 +11,9 @@ import {
   evaluateTrade,
   extractShadowPlan,
   sweepOnce,
-  type Candle,
   type TradePlan,
 } from '../../worker/outcome.sweeper';
+import type { Candle } from '../modules/market/candles';
 
 const buy: TradePlan = { recommendation: 'BUY', symbol: 'BTCUSDT', entry: 100, stopLoss: 95, takeProfit1: 110, takeProfit2: 120 };
 const sell: TradePlan = { recommendation: 'SELL', symbol: 'BTCUSDT', entry: 100, stopLoss: 105, takeProfit1: 90, takeProfit2: 80 };

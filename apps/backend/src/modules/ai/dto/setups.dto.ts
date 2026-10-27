@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsPositive, IsString, Matches, Max, Min } from 'class-validator';
+import { ALERT_LABELS, type AlertLabel } from '../setup-alerts.service';
 
 /**
  * Setups acompanhados (12/10/2026). Decorator em TODO campo: o ValidationPipe
@@ -49,4 +50,26 @@ export class SetupVersionsQueryDto {
   @IsString()
   @Matches(ANALYSIS_ID_PATTERN)
   cursor?: string;
+}
+
+/** Alerta de nivel (27/10/2026). Nivel editado pela pessoa chega como `custom`. */
+export class CreateSetupAlertDto {
+  @IsString()
+  @Matches(ANALYSIS_ID_PATTERN)
+  analysisId!: string;
+
+  @IsIn(ALERT_LABELS)
+  label!: AlertLabel;
+
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @IsPositive()
+  @Max(1e9)
+  level!: number;
+}
+
+export class ListSetupAlertsQueryDto {
+  @IsOptional()
+  @IsString()
+  @Matches(SETUP_ID_PATTERN)
+  setupId?: string;
 }

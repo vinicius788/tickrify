@@ -24,15 +24,18 @@ const DATE_LOCALES: Record<string, string> = {
  * setups aparece uma frase dizendo como seguir um.
  *
  * Honesto sobre o tempo: cada cartao mostra a data da ultima LEITURA, nunca
- * preco atual, "monitoring" ou alerta. Nada e acompanhado ao vivo.
+ * preco atual. Setup com alerta de nivel ativo sai daqui (`hiddenSetupIds`):
+ * aparece no bloco Today, com o nivel e o ultimo preco checado.
  */
 const SetupsSection = ({
   base,
   onNewAnalysis,
   showEmpty,
+  hiddenSetupIds,
 }: {
   base: string;
   onNewAnalysis: () => void;
+  hiddenSetupIds?: ReadonlySet<string>;
   /** Frase de "como seguir" so para quem ja tem analise (o painel vazio ja ensina o primeiro passo). */
   showEmpty: boolean;
 }) => {
@@ -78,7 +81,7 @@ const SetupsSection = ({
         .join(' · ')
     : '';
 
-  const items = data?.items ?? [];
+  const items = (data?.items ?? []).filter((setup) => !hiddenSetupIds?.has(setup.id));
   const verdictLabel = (rec: string) => (rec === 'BUY' ? t.analysis.buy : rec === 'SELL' ? t.analysis.sell : t.analysis.hold);
   const verdictTone = (rec: string) =>
     rec === 'BUY' ? 'text-[var(--signal-buy)]' : rec === 'SELL' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]';
@@ -117,7 +120,7 @@ const SetupsSection = ({
       </div>
 
       {isError ? null : items.length === 0 ? (
-        showEmpty && data ? (
+        showEmpty && data && !hiddenSetupIds?.size ? (
           <p key="empty" className="px-1 text-xs text-[var(--text-secondary)]">{s.empty}</p>
         ) : null
       ) : (

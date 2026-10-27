@@ -3,7 +3,8 @@
  * Counterexamples deliberately assert existing behavior and identify its limits.
  * All feeds/database writes below are mocks; no historical record is reprocessed.
  */
-import { evaluateTrade, fetchCryptoWindow, fetchFxWindow, sweepOnce, type Candle, type TradePlan } from '../../worker/outcome.sweeper';
+import { evaluateTrade, sweepOnce, type TradePlan } from '../../worker/outcome.sweeper';
+import { fetchCryptoWindow, fetchFxWindow, type Candle } from '../modules/market/candles';
 import { fillCandleRuleOf, splitByFillCandleRule, tally, type FillCandleRule } from '../modules/ai/accuracy.util';
 
 const T = Date.parse('2026-10-01T00:00:00Z');

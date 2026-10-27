@@ -580,6 +580,7 @@ Vale para TODA mudanca, grande ou pequena:
 - **PostHog:** servidor `setup_followed`, `setup_unfollowed`, `setup_archived`,
   `setup_update_completed`; navegador `setup_follow_clicked`, `setup_opened`,
   `setup_update_clicked/submitted/failed`. So ids e enums.
+- Alertas de nivel por setup desde 27/10 (3.13): seguir continua valendo sem alerta.
 - `TrackedSetup` e `Analysis.setupId` ja estao no `schema.prisma` (`0812338`;
   `SupportThread`/`SupportMessage` em `5a0512d`).
 
@@ -719,6 +720,75 @@ Vale para TODA mudanca, grande ou pequena:
   `text-zinc-*` ou hex (o card de compartilhamento em canvas segue escuro).
 
 ---
+
+### 3.13 Alertas de nivel dos setups (27/10/2026; branch `claude/setup-alerts`, NAO publicado)
+
+- **Por que:** de quem analisa, so 16% volta em outro dia; no trial, 76 usaram
+  no dia 1, 16 no dia 2 e 6 no dia 3. Fase 1 da sessao diaria: o Tickrify vigia
+  o nivel do setup e chama o trader de volta quando o preco chega la. Regras
+  pessoais e fechamento do dia so se esta fase provar retorno (criterio na 6.2).
+  Terminal ao vivo da operacao esta FORA.
+- **Dados:** tabelas `SetupAlert` (um alerta = um nivel de um `TrackedSetup`;
+  `label` entry|stop|tp1|invalidation|custom, `side` above|below pelo preco da
+  analise, `status` active|triggered|cancelled, `watchFrom`, `emailedAt`,
+  `seenAt`) e `AlertPriceCheck` (cache por ativo e "Last checked"), por SQL no
+  boot do `SetupAlertsService` + migracao `20261027120000_setup_alert`, fora do
+  schema.prisma. Codigo em `modules/ai/setup-alerts.service.ts`.
+- **Regras (`ALERT_RULES`, conferidas no servidor):** 3 ativos por setup;
+  setups com alerta: gratis/trial 2, assinante 10 (lock por pessoa). Criar
+  segue o setup no mesmo clique. Rotulo diferente de `custom` tem de bater com o
+  nivel preenchido; nivel fora de [preco/2, preco*2] ou no proprio preco e
+  recusado. Niveis: BUY/SELL = entrada, stop, TP1 e invalidacao; WAIT =
+  invalidacao ou shadow (`extractShadowPlan`); sem nenhum, a pessoa digita.
+  Ativo sem fonte (sinteticos, acoes, ETF, forex sem chave): sem alerta, a tela
+  diz "Price alerts aren't available for this asset yet." e oferece so seguir.
+- **Monitor** (worker embutido, a cada 10 min, `unref`, so com alerta ativo):
+  candles de 5m de `modules/market/candles.ts` (mesmas fontes do sweeper, que
+  agora importa de la). Disparo = maxima/minima de um candle que ABRIU em
+  `watchFrom` ou depois cruzou o nivel; UPDATE condicional active->triggered.
+  Cada ativo e buscado por UMA instancia por vez (claim em `AlertPriceCheck`,
+  TTL cripto 5 min, forex/metal 10 min). Forex no fim de semana nao busca.
+  Conta travada (mesma regra do `isFreeLocked`, so banco): nao busca, nao
+  dispara e empurra o `watchFrom` (assinar nao dispara pelo passado). Log
+  `[alerts] symbols=N checked=N triggered=N paused=N`.
+- **Twelve Data (cota):** hoje ~1 pedido por analise de forex/metal no
+  grounding + 1 no sweeper 48h depois (~59% do uso e ouro). Os alertas somam no
+  maximo 1 pedido por ativo de forex/metal com alerta ativo a cada 10 min, so em
+  dia de semana: ate 144/dia por ativo, teto de 5 ativos por volta
+  (`maxFxSymbolsPerRun`, rodizio pelo mais antigo). O plano gratis publico e
+  800/dia e 8/minuto: plano real nao lido no painel (6.2).
+- **E-mail `setup_alert`** (`modules/mail/setup-alert-email.ts`, chave
+  `EMAIL_SETUP_ALERTS` DESLIGADA = `[setup-alert] dry-run`): "Your XAUUSD setup
+  reached 4,180", nivel, rotulo, hora UTC, "Update the chart to review it. This
+  is not a signal to enter.", botao para `/dashboard/new?setup=<id>&alert=<id>`
+  com `utm_source=email&utm_campaign=setup_alert`. 1 por setup a cada 12h, 3
+  por pessoa em 24h, so disparos das ultimas 6h, nunca para descadastrado nem
+  alerta ja visto. Marca `emailedAt` antes de enviar; recusa da Resend tira a
+  marca (tenta de novo).
+- **Rotas** `/api/setups/alerts` (lista; conta travada recebe `paused` e o
+  ativo, sem alertas), `alerts/options/:analysisId`, `POST alerts`,
+  `alerts/:id/cancel`, `alerts/:id/seen`; criar/opcoes/cancelar/visto = 402 com
+  gratis esgotado. Largar ou arquivar o setup cancela os alertas.
+- **Telas:** `SetupAlertBar` no resultado (substituiu o `FollowSetupBar`, um
+  botao so); bloco `TodaySection` no topo do inicio (disparados nao vistos com
+  "Update chart", niveis vigiados com distancia e "Last checked HH:MM UTC",
+  operacoes abertas com "Mark result"); setups com alerta saem do
+  `SetupsSection`. Saiu do inicio: os 4 KPIs, o quadro semanal, os recentes e a
+  `LiveTape`. Pagina do setup: alertas, cancelar, ultimo preco checado; abrir
+  marca os disparados como vistos. Contador no menu e "(1) ..." no titulo da
+  aba. Paywall `alerts` ("Your XAUUSD alert is paused") para conta travada;
+  limite diario do trial diz que os alertas seguem ligados (e-mail so com a
+  chave ligada).
+- **PostHog:** servidor `setup_alert_created {label, prefilled, symbol_class,
+  is_subscriber, trial_day}`, `setup_alert_triggered {label, symbol_class,
+  minutes_to_trigger}`, `setup_alert_email_sent`; navegador `setup_alert_opened
+  {source: email|dashboard}`, `setup_alert_update_clicked`, paywall com
+  `surface=alerts`. So ids e enums. Abertura de e-mail nao chega ao PostHog: o
+  "aberto" mensuravel e o clique (`setup_alert_opened source=email`).
+- **Testes:** `setup-alerts.service.spec.ts` (regras, tetos, 402, DTO contra o
+  ValidationPipe, monitor), `setup-alert-email.spec.ts` (limites, recusa) e
+  `setup-alerts.pg.spec.ts` (Postgres descartavel, opt-in como o trades.pg: 10
+  casos, corrida de tetos, 2 instancias, pausa, relogio falso).
 
 ## 4. Regras tecnicas que nasceram de bug real (nao desfazer)
 
@@ -922,6 +992,8 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 27/10 | **Alertas de nivel (3.13), branch `claude/setup-alerts`, sem commit/deploy.** Depois do deploy: (1) conferir no boot `[alerts] Tabelas prontas.` e, com alerta ativo, `[alerts] symbols=... checked=...` no Render; (2) ler no painel do Twelve Data o plano e o consumo diario (o gratis e 800/dia e 8/min; estimativa na 3.13) e baixar `maxFxSymbolsPerRun` se encostar; (3) ligar `EMAIL_SETUP_ALERTS` no /admin so com o texto aprovado (ate la, alerta so na tela e `[setup-alert] dry-run`), depois conferir `[mail] Enviado kind=setup_alert`; (4) Resend gratis = 100/dia para TODOS os e-mails: com alertas ligados, decidir o Pro (US$ 20/mes). | dono / Claude |
+| 27/10 | **Criterio de decisao da fase 2 da sessao diaria.** 3 semanas depois do deploy dos alertas (se subir em 28/10/2026, decidir em 18/11/2026): retorno no dia 2 do trial (`trial_day_completed day_index=2` / `trial_started`) acima de 35% = seguir para a fase 2 (regras pessoais, abrir/fechar o dia, resumo no diario); abaixo = parar e priorizar qualidade da leitura e checkout. Linha de base: ~21% (16 de 76). Ler junto: % de trials que criam alerta no dia 1, retorno no dia 2 de quem criou x quem nao criou, disparados -> e-mail -> clique -> `setup_update_completed`. Consultas HogQL entregues no chat em 27/10. Exige `TRIAL_MODE` ligado (3.10). | dono decide / Claude mede |
 | 20/10 | **Regra do candle do fill, `legacy | stop_only` (commit `bad809625121ac23b27037071f77ddea0dd982d5`, no `main`; deploy confirmado em 20/10/2026 21:44 UTC: Vercel com os textos novos da /accuracy, Render com `stopOnly` e `methodology` na API).** A /accuracy publica que a entrada enche primeiro, mas o sweeper aceitava o TP1 no mesmo candle de 30m do fill. Em 196 trades (24/09 a 10/10) contra a sequencia de 1m: `legacy` 6 fora do intervalo do 1m (4 WIN falsos, 2 LOSS pessimistas), `stop_only` 3 (todos pessimistas). Regra e `fillCandleRuleOf` em `accuracy.util.ts`; sweeper usa `stop_only` e grava `outcomeDetail.fillCandleRule` (sem o campo = legacy); `prompt-replay.ts --fill-candle-rule` (padrao legacy, grava a regra, recusa retomar com outra); `evaluate.py` `fill_candle_rule` (CLI `BT_FILL_CANDLE_RULE`, padrao legacy) e `analysis-pilot-outcomes.py --fill-candle-rule` (padrao legacy). /accuracy (decisao do dono, opcao c): `overall`, `byConfidence`, `byGrounding`, `byPrompt`, `byModel` e `breakdown` so com linhas `legacy` (sem o campo, nulo ou desconhecido); `stop_only` so em `stopOnly { overall, breakdown }`, nunca somado; `methodology` diz qual regra cada serie usa. Nenhuma linha reprocessada. Pagina e `geo-body.mjs`: rotulo 'Hit rate, original scoring rule', secao 'Updated scoring rule, separate series' (so com `stopOnly`), metodologia e FAQ explicam a diferenca. `legacy` = TP1 vale no candle do fill (regra ate o deploy, todas as linhas antigas); `stop_only` = no candle do fill so o stop conta (avaliacoes feitas depois do deploy). Vigencia de `stop_only`: 20/10/2026 21:44 UTC; isso NAO quer dizer que ja existam resultados nela: na verificacao do deploy `overall.n` = 176 (todos legacy) e `stopOnly.n` = 0, porque o sweeper so avalia analises com mais de 48h. **Pendente (~22/10/2026):** SQL somente leitura no Supabase confirmando avaliacoes novas com `outcomeDetail.fillCandleRule = 'stop_only'`; sem registros, conferir o ciclo do worker e a janela de 48h antes de suspeitar de defeito. | Claude (verificar 22/10) |
 | 19/10 | **VNext (branch `claude/vnext-engine`, base `2ea57bd`): divergencia residual do prompt, adiada de proposito.** Feito: o worker monta o prompt por `buildAnalysisPrompt` (`prompt-builder.service.ts`; prova byte a byte em `src/__tests__/ai-worker-prompt-equivalence.spec.ts`, 480 casos + digest); `news_event` em `validatorReasons`; D1 = o caminho sincrono (`ai.service.processSynchronously`) chama `buildPromptByVersion(..., { consistency: false })` e fica sem a "CONSISTENCIA OBRIGATORIA", como o worker. D2 = o worker passou a trocar o `{{USER_CONTEXT}}` do override (perna B do A/B da v9, unico override de producao, padrao 0%) pela instrucao de idioma, como o sincrono ja fazia; override sem placeholder segue sem idioma nos dois (o teste do worker guarda o digest de `2ea57bd` e o de D2). Trim: com `consistency: false` o sincrono nao faz mais trim e junta o bloco deep como o worker; os dois ficam byte a byte iguais (montador e mensagem system da OpenAI) para prompt do banco, do codigo e override v9. **Ainda recebem o bloco (padrao de `buildPromptByVersion`), por decisao do dono em 19/10:** o `/try` (`demo.service.ts`, publico) e os scripts de medicao `prompt-replay.ts`, `backtest-runner.ts` e `analysis-pilot-runner.ts`. Consequencia: medicao feita por esses scripts NAO reproduz o prompt do worker (bloco e trim); os comentarios do `backtest-runner` ("exatamente o caminho de producao") e do `analysis-pilot-runner` ("mesmo caminho do worker") estao errados nisso. D3 (so caracterizacao e log, regra nenhuma mudou): testes fixam que `currentPrice` 0, null, ausente, "" ou texto vira 0 no parser (negativo fica negativo), que o worker falha com `validation_failed` / `currentPrice invalido: 0` ate num WAIT e que o sincrono grava a mesma resposta como concluida. Log novo do adapter, so na analise principal e ANTES do `ensureNumber` (no `parseSchemaResult`): `[price] currentPrice do modelo sem preco util: <categoria>`, com `model_zero`, `model_negative`, `missing`, `null` ou `non_numeric`; preco positivo e texto numerico nao logam. `missing` = campo ausente no JSON que o parser recebeu: NAO prova se foi o modelo ou resposta truncada e reparada (o truncamento tem log proprio). As 4 falhas de 20/09 sem `errorCode` sao anteriores a coluna (`a171226`, 23/09). Validado na worktree em 19/10: 65 suites, 1017/1017, tsc e eslint limpos; ainda NAO esta em producao (sem commit). D4: com resultado do AIAdapter o worker NAO roda mais `decideSignal` (antes rodava de novo, com 2a consulta ao calendario, e descartava a 1a); grava a decisao do adapter com a confianca inteira (como sempre gravou) e so revalida o plano (`validateTradePlan`, puro). A fonte de demonstracao (fora de producao) decide sozinha. `decideSignal` devolve `newsGuardStatus` (so memoria): disabled, skipped, no_event, event, degraded_no_event, degraded_event, timeout, error; log `[news-guard] status=<s> symbol=<ativo>` uma vez pela decisao usada (warn em timeout/error/degraded). Politica do guard NAO mudou: timeout, erro e fonte degradada sem evento seguem sem rebaixar (falha aberta), agora visivel; bloquear e decisao do dono. `result.engine.timings.validation_ms` passou a somar o tempo de decisao do adapter. Problema separado, nao corrigido: WAIT com confianca 55 grava 55.00000000000001 (0..1 no worker e x100 ao gravar). Ainda abertos: versao ausente (sincrono cai no ativo, worker no codigo), regras do worker (preco <= 0 ate em WAIT, TP1/TP2 obrigatorios, ordem dos alvos; decisoes do dono, auditoria D3-A), politica do news guard sem calendario. **Qualidade por codigo (19/10, noite):** 92 respostas completas do luna guardadas no Mac (Experimentos A e B, checklist de 29/09; os 92 prints do replay de 13/10 so tem resumo) passadas pelo adapter real com cliente falso: percentual de stop/alvo errado em 7 de 83 planos e total do checklist diferente da lista em 16 de 32 respostas no formato de producao. Agora percentuais saem dos precos (`computeLevelPercents`, adapter, worker e leitura do historico) e, com os 7 itens marcados, a lista vence o total declarado (`reconcileConfluence`); depois: 0 e 0, nenhuma recomendacao nem confianca mudou nas 92. Regra so de medicao `limit_needs_confirmation` em `validator_flags` (limit cujo texto espera rejeicao/sweep/fechamento: 32 de 83). My Trades mostrava fatores sobre 6 (checklist tem 7). Validado: 66 suites 1092/1092, tsc, eslint, frontend tsc + 265/265 + vite build. Fica com o prompt (precisa de chamada paga para medir): limit que espera confirmacao, instabilidade entre repeticoes (2 a 3 de 10 iguais no B), entrada a mais de 3 ATR do preco (26 de 83). **Experimento D (19/10, pago, US$ 0,16 de teto 0,20, fora do repo em `tickrify-experimento-d-limit/`):** prompt de producao x candidata que separa limit (toque) de stop (confirmacao), 10 graficos x 2 repeticoes, caminho do worker: problema 4/15 x 2/15 (leitura manual), 0 erros novos, mesmo HOLD (5 x 5), formato igual; a candidata nunca usou stop. Amostra pequena e efeito pequeno: NAO mudar o prompt; medir pela `limit_needs_confirmation` em producao primeiro. A regra ignora a clausula de cancelamento ("cancel after a close above X" era falso positivo). Varredura final por codigo (19/10) nos 113 planos guardados (92 + Experimento D): zero invalidacao do lado errado, limit ja executavel, stop ja atingido, TP2 antes do TP1 ou preco do texto diferente do campo `entry`; o que sobra e julgamento do modelo (prompt) ou regra que depende do resultado do sweeper (R/R guard e stop antes da invalidacao, SQL do dono). | dono decide / Claude |
 | 13/10 | **Auditoria do motor por classe (relatorio em `_local/auditoria-motor-classes-2026-10-13.md`).** Prompt unico para todas as classes. v12, WIN/LOSS do sweeper, antes de custos: metais n=97, 41% (Wilson 32 a 51), +0,14R; cripto n=50, 30%, -0,24R; forex n=17, 12%, -0,71R; sinteticos 19 analises, nada medivel; indices/acoes ~8 cada. `isDemo=true` = analise GRATIS (nao filtrar ao medir o motor). Feito: `canonicalFxPair` (4.1); v7.6 no ar (replay de 92 prints: -0,02R -> +0,14R; ganho veio de cripto/forex com n pequeno, ouro igual). Medir o `promptVer` novo x 12 por classe quando tiver n >= 30 WIN/LOSS; se metais cair abaixo de 0R, voltar a v7.5. Falta: (1) dono aprova o texto do aviso "experimental" no forex e da recusa de sinteticos (sem cobrar) antes do codigo; (2) depois do deploy, SQL que devolve ao sweeper os UNTRACKABLE de forex/metal com sufixo (entregue no chat); (3) playbook por classe so depois de medir a v7.6. | dono / Claude |
@@ -1052,6 +1124,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **13/10 (cancelamento, afiliados, tema):** Configuracoes com assinatura e portal da Stripe por API, reativar, eventos de cancelamento, ex-assinante em modo leitura, aba Cancelamentos; afiliados com clique deduplicado, eventos, cookie do vinculo, vendas pagas e "Marcar como pago"; tema claro na area logada com tokens (361 cores soltas trocadas). Ver 3.12.
 - **26/10 (concorrencia):** checagem de operacao e demo com reserva atomica antes da IA (trabalho do Codex revisado + pausa da demo), `96ebbfc`/`557afbc` Live 01:38 BRT; aberto pelos CLIs as ~09h com `active=[]`/`pending=0`. Conciliacao (deficit liquido por usuario+analise, historico inteiro): 1 par, 2 debitos x 2 resultados pagos, deficit 0, nada a compensar. Antes disso ja estavam no ar `6d1ed51` (body-parser 2.4.0), `26d45be` (Vercel com lockfile congelado) e `d1d10c5`/`92fe994` (assinatura). SQL de deficit e de compensacao (chave unica `compensation:trade_check:<user>:<analysis>:v1`) no historico da sessao, nao executar compensacao sem o dono.
 - **26/10 (confluencia, `80910da`, Codex, Live 13:10 BRT):** checklist completo de 7 itens decide `factorsPresent` E `confluenceScore` (inclusive 0 de 7); antes so corrigia quando o total divergia. Roda so em analise nova (adapter); historico intocado. Prompt de producao segue v13 (v7.6): o pacote de prompt do Codex (mexe em `trading-system-prompt.ts`: MTF observado x inferido, ordem stop/limit como colocacao manual, checklist so 7 itens) NAO foi publicado: A/B de 25/10 (10 prints x 2 repeticoes, US$ 0,13) deu INCONCLUSIVO. Candidata zerou 3 CHoCH falsos e 2 erros de R/R do texto, mas virou WAIT em 6 de 20 decisoes (BUY/SELL/WAIT 7/12/1 -> 6/8/6), com 3 regressoes factuais novas e mesma estabilidade (8/10). Diff guardado em `_local/backup-worktrees-20261026/quality-package-20261025.diff`. Nao publicar sem nova medicao com amostra maior.
+- **27/10 (alertas de nivel, branch `claude/setup-alerts`):** alerta por setup com monitor de 5m, e-mail `setup_alert` desligado, bloco Today no inicio (sairam KPIs, quadro semanal, recentes e LiveTape), contador no menu e na aba, paywall `alerts`; `fetchCryptoWindow`/`fetchFxWindow` movidos para `modules/market/candles.ts`. Ver 3.13.
 - **26/10 (grounding consertado):** `extractSymbol` mandava a URL crua do Storage PRIVADO para a OpenAI, que nao abria: a leitura do ativo falhava calada e NENHUMA analise logada recebia candles (`groundingStats` vazio em 669 de 669 em 30 dias; so a demo, com imagem embutida, funcionava). Agora resolve a imagem como a analise principal (`resolveImageUrlForModel`); conserta grounding do quick, enriquecimento do deep e `readChartSymbol`. A /accuracy "depois do grounding" mediu, na pratica, analises sem candles. 2o defeito (mesmo dia): a leitura `detail: low` do gpt-4o-mini as vezes perde a virgula do preco (print ATUAL de ouro lido fora de ordem de grandeza) e a trava de print velho retinha os candles; `detectStaleChart` agora aceita potencia de 10 que caia a 10% do preco real (o teste de 3 ATR segue decidindo) e a mensagem de retencao mostra os dois precos. Medir cobertura: `select "groundingStats"->>'coverage', count(*) from tickrify."Analysis" where "createdAt" > <deploy> group by 1`.
 - **26/10 (leitura do simbolo):** medida em 99 prints contra a analise principal: `gpt-4o-mini` `detail: low` acertava ativo + timeframe em 61 de 97 (vazio, "GOLD", ativo trocado, timeframe errado, digito do preco perdido) e o luna `detail: high` em 95 de 97, pelo mesmo custo (~US$ 0,0005 por print) e ~1 s a mais (p90 3,6 s). `extractSymbol` passou ao tier quick em detalhe alto, esforco no padrao do modelo (o que foi medido); "GOLD"/"GOLD#"/"GOLDm" viram XAUUSD; tier `light` e `ANTHROPIC_MODEL_LIGHT` removidos. Resultado em `_local/engine-final-20261026/symbol-read-probe.jsonl`.
 - **25/09:** este arquivo reorganizado; aviso de "trade aberto" que nunca sumia corrigido (servidor vira a fonte da verdade do resultado; valor vazio nao vira mais 0).
