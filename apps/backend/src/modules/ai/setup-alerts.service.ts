@@ -371,8 +371,11 @@ export class SetupAlertsService implements OnModuleInit {
     if (input.label !== 'custom' && (!suggestion || Math.abs(suggestion.level - level) > Math.abs(level) * 1e-9)) {
       throw new BadRequestException({ code: 'alert_level_mismatch', message: 'This level does not match the analysis.' });
     }
+    // O lado (acima/abaixo) sai do preco de AGORA: um alerta criado a partir de
+    // uma analise antiga, com o preco ja longe, dispararia na primeira volta sem
+    // o preco ter ido ate o nivel. O preco da analise so vale sem preco real.
     const referencePrice =
-      positive(record(record(analysis.result).analysis).currentPrice) ?? (await this.latestPrice(price.priceSymbol));
+      (await this.latestPrice(price.priceSymbol, price.source)) ?? positive(record(record(analysis.result).analysis).currentPrice);
     if (referencePrice == null) {
       throw new UnprocessableEntityException({ code: 'alert_price_unavailable', message: 'We could not read the current price. Try again later.' });
     }
@@ -434,16 +437,27 @@ export class SetupAlertsService implements OnModuleInit {
     return { alert: toView({ ...row, timeframe: setup.timeframe }), setupId: setup.id };
   }
 
-  /** Ultimo fechamento de 5m conhecido do ativo (cache do monitor primeiro). */
-  private async latestPrice(priceSymbol: string): Promise<number | null> {
-    const cached = await this.prisma.$queryRaw<Array<{ lastPrice: number | null; checkedAt: Date | null }>>`
-      SELECT "lastPrice", "checkedAt" FROM "tickrify"."AlertPriceCheck" WHERE "symbol" = ${priceSymbol} LIMIT 1
-    `;
-    const hit = cached[0];
-    if (hit?.lastPrice && hit.checkedAt && Date.now() - hit.checkedAt.getTime() < ALERT_RULES.cacheTtlMs.fx) return Number(hit.lastPrice);
-    const now = Date.now();
-    const candles = await fetchWindowFor(priceSymbol, now - 2 * HOUR, now, ALERT_RULES.candleInterval, 1);
-    return candles?.length ? candles[candles.length - 1][4] : null;
+  /**
+   * Ultimo fechamento de 5m conhecido do ativo: o cache do monitor se for
+   * recente, senao uma busca. Forex/metal olha 72h para cobrir o fim de semana
+   * (vale o fechamento de sexta). Falhou = null; nunca se inventa preco.
+   */
+  private async latestPrice(priceSymbol: string, source: CandleSource): Promise<number | null> {
+    try {
+      const cached = await this.prisma.$queryRaw<Array<{ lastPrice: number | null; checkedAt: Date | null }>>`
+        SELECT "lastPrice", "checkedAt" FROM "tickrify"."AlertPriceCheck" WHERE "symbol" = ${priceSymbol} LIMIT 1
+      `;
+      const hit = cached[0];
+      if (hit?.lastPrice && hit.checkedAt && Date.now() - hit.checkedAt.getTime() < ALERT_RULES.cacheTtlMs[source]) {
+        return Number(hit.lastPrice);
+      }
+      const now = Date.now();
+      const lookback = source === 'fx' ? 72 * HOUR : 2 * HOUR;
+      const candles = await fetchWindowFor(priceSymbol, now - lookback, now, ALERT_RULES.candleInterval, 1);
+      return candles?.length ? candles[candles.length - 1][4] : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
