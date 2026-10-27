@@ -20,11 +20,6 @@ export const RECOMMENDATION_LABELS: Record<
   WAIT: { label: 'HOLD', tone: 'hold', icon: '⏸' },
 };
 
-export function normalizeRecommendationLabel(value: unknown): RecommendationCanonical {
-  const key = String(value || '').trim().toUpperCase();
-  return RECOMMENDATION_LABELS[key]?.label || 'HOLD';
-}
-
 export function getRecommendationMeta(value: unknown) {
   const key = String(value || '').trim().toUpperCase();
   return RECOMMENDATION_LABELS[key] || RECOMMENDATION_LABELS.AGUARDAR;

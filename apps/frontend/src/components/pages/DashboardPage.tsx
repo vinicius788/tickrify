@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, BarChart3, Target, Activity, Coins, Upload, Sliders, Handshake, MessageCircle, Settings } from "lucide-react";
+import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, Upload, Sliders, Handshake, MessageCircle, Settings } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import * as Sentry from "@sentry/react";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
@@ -24,7 +24,6 @@ import {
 } from '@/lib/verdict';
 import ActivityHeatmap from "../dashboard/ActivityHeatmap";
 import { TrackRecordCard } from "../dashboard/MarketResult";
-import LiveTape from "../dashboard/LiveTape";
 import MyTrades from "../dashboard/MyTrades";
 import JournalCalendar from "../dashboard/JournalCalendar";
 import StrategyProfile from "../dashboard/StrategyProfile";
@@ -37,14 +36,14 @@ import { TicksBadge } from "@/components/dashboard/TicksBadge";
 import { PlanUnavailableNotice } from '@/components/dashboard/PlanUnavailableNotice';
 import RatingCard from '@/components/dashboard/RatingCard';
 import { useAnalysisLimit, useIncrementAnalysis } from "@/hooks/useAnalysisLimit";
-import { APIError, isFreeQuotaExhausted, useAPIClient, type AIAnalysisResponse, type Bias, type Recommendation } from "@/lib/api";
+import { APIError, isFreeQuotaExhausted, useAPIClient, type AIAnalysisResponse } from "@/lib/api";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnalysisProcessingError, analysisFailureTelemetry } from "@/lib/analysis-failure";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { afterNextPaint, asRecord, isPageTranslated, scrollToTop } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
-import { getRecommendationMeta, getScenarioMeta, normalizeRecommendationLabel } from "@/lib/trading-ui";
+import { getRecommendationMeta } from "@/lib/trading-ui";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { track, trackAdConversion } from "@/lib/analytics";
@@ -59,12 +58,13 @@ import { SAMPLE_ANALYSES, type SampleKind } from "@/lib/sample-analyses";
 import { PricingCards } from "@/components/pricing/PricingCards";
 import { useSeo } from "@/hooks/useSeo";
 import { loadSavedDemoResult } from "@/lib/demo-api";
-import FollowSetupBar from "../dashboard/FollowSetupBar";
+import SetupAlertBar from "../dashboard/SetupAlertBar";
+import TodaySection from "../dashboard/TodaySection";
 import SetupsSection from "../dashboard/SetupsSection";
 import SetupPage from "../dashboard/SetupPage";
 import TradePanel from "../dashboard/TradePanel";
 import { displayAsset, tradeQueryKey, type OpenTrade, type TradeCloseReason } from "@/lib/api";
-import { SETUP_ID_PATTERN, formatSetupDay, useSetupVersions } from "@/lib/setups";
+import { SETUP_ID_PATTERN, formatSetupDay, useAlertActions, useSetupAlerts, useSetupVersions } from "@/lib/setups";
 import { openChat, useChatThread } from "@/lib/support-chat";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
@@ -83,7 +83,6 @@ const DASH_COPY = {
     tooLarge: 'File too large. The limit is 10MB.',
     ticksOutTitle: 'Ticks used up',
     ticksOutDesc: 'Your plan ticks are used up. They renew automatically next cycle.',
-    weeklyInsight: 'This week',
     analysisError: 'Analysis error',
     tryAgain: 'Try again',
     loadingPlanTitle: 'Loading your plan…',
@@ -125,7 +124,6 @@ const DASH_COPY = {
     tooLarge: 'Arquivo muito grande. O limite é de 10MB.',
     ticksOutTitle: 'Ticks esgotados',
     ticksOutDesc: 'Seus ticks do plano se esgotaram. Eles renovam automaticamente no próximo ciclo.',
-    weeklyInsight: 'Insight da semana',
     analysisError: 'Erro na Análise',
     tryAgain: 'Tentar Novamente',
     loadingPlanTitle: 'Carregando seu plano…',
@@ -212,17 +210,6 @@ function parseDashboardPath(pathname: string): { base: string; section: Section 
 /** Estado da tela de nova analise, que nao tem URL propria (e passageiro). */
 type NewFlow = 'idle' | 'loading' | 'error' | 'locked' | 'result';
 type MyTradesFilter = 'all' | 'pending' | 'favorites' | Verdict;
-type RecentAnalysisItem = {
-  symbol: string;
-  timeframe: string;
-  recommendation: Recommendation;
-  bias?: Bias;
-  createdAt: string;
-};
-type ActiveMarketItem = {
-  name: string;
-  lastSeen: string;
-};
 
 /** Exemplos que a pessoa ja abriu, para o "Vista" sobreviver a recarga. */
 const SAMPLES_VIEWED_KEY = 'tickrify_samples_viewed';
@@ -466,103 +453,24 @@ const DashboardPage = () => {
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
 
-  // Dados de exemplo APENAS para modo DEMO
-  // (o array `demoActiveMarkets` foi removido em 19/08/2026: ficou órfão quando
-  //  o KPI passou a ler `realActiveMarkets` direto. Era dado inventado sem uso —
-  //  exatamente o tipo de coisa que já apareceu como número falso na vitrine.)
-
-  const demoRecentAnalyses = [
-    { symbol: "ETH/USD", timeframe: "4H", recommendation: "COMPRA", bias: "bullish", createdAt: new Date().toISOString() },
-    { symbol: "TSLA", timeframe: "1D", recommendation: "AGUARDAR", bias: "neutral", createdAt: new Date().toISOString() },
-    { symbol: "XAU/USD", timeframe: "1H", recommendation: "VENDA", bias: "bearish", createdAt: new Date().toISOString() },
-  ];
-
-  // Derivar análises recentes e mercados ativos via useMemo (sem estado manual)
-  const recentAnalyses = useMemo<RecentAnalysisItem[]>(() => {
-    if (isDemo || rawAnalyses.length === 0) return [];
-    const completed = rawAnalyses
-      .filter((a) => a.status === 'completed')
-      .map((a) => ({
-        symbol: String(a.symbol || '').trim() || 'N/A',
-        timeframe: String(a.timeframe || '').trim() || 'N/A',
-        recommendation: normalizeRecommendationLabel(a.recommendation) as Recommendation,
-        bias: a.bias,
-        createdAt: a.createdAt,
-      }));
-    const withIdentity = completed.filter((item) => item.symbol !== 'N/A' && item.timeframe !== 'N/A');
-    return (withIdentity.length > 0 ? withIdentity : completed).slice(0, 3);
-  }, [rawAnalyses, isDemo]);
-
-  const realActiveMarkets = useMemo<ActiveMarketItem[]>(() => {
-    if (isDemo || rawAnalyses.length === 0) return [];
-    const now = Date.now();
-    const activeWindowMs = 8 * 60 * 60 * 1000;
-    const formatLastSeen = (dateIso: string) => {
-      const diffMs = Math.max(0, now - new Date(dateIso).getTime());
-      const minutes = Math.max(1, Math.floor(diffMs / (60 * 1000)));
-      if (minutes < 60) return `${minutes} min ${t.nav.ago}`;
-      return `${Math.floor(minutes / 60)}h ${t.nav.ago}`;
-    };
-    const recent = rawAnalyses
-      .filter((a) => a.createdAt && now - new Date(a.createdAt).getTime() <= activeWindowMs)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    const marketMap = new Map<string, ActiveMarketItem>();
-    for (const analysis of recent) {
-      const symbol = String(analysis.symbol || '').trim();
-      if (!symbol || symbol === 'N/A') continue;
-      if (!marketMap.has(symbol)) {
-        const timeframe = analysis.timeframe ? ` • ${analysis.timeframe}` : '';
-        marketMap.set(symbol, { name: `${symbol}${timeframe}`, lastSeen: formatLastSeen(analysis.createdAt) });
-      }
-    }
-    return Array.from(marketMap.values()).slice(0, 6);
-  }, [rawAnalyses, isDemo, t.nav.ago]);
-
-  // KPIs do cockpit — derivados das análises já carregadas (sem fetch novo).
-  const dashboardKpis = useMemo(() => {
-    const completed = rawAnalyses.filter((a) => a.status === 'completed');
-    // Era a "confiança média". Saiu em 30/09/2026 junto com o score: a
-    // confiança era pedida ao modelo como chance de bater o TP1 e, medida em
-    // produção, não separou acerto de erro. No lugar, quantas das leituras
-    // recentes viraram plano de trade (BUY/SELL) e quantas foram WAIT.
-    const tradePlans = completed.filter((a) => {
-      const tone = getRecommendationMeta(a.recommendation).tone;
-      return tone === 'buy' || tone === 'sell';
-    }).length;
-    // `total` do KPI: contagem REAL do banco quando ela chega, senao o que der
-    // para contar da lista carregada.
-    //
-    // O contador local sozinho era um numero FALSO: `rawAnalyses` vem de
-    // useAnalyses(40), entao uma conta com 403 analises exibia 38 para sempre,
-    // sob um rotulo que diz "all time". Analise nova entrava no topo e uma
-    // antiga saia embaixo, e o numero nunca se mexia.
-    //
-    // O fallback local continua existindo de proposito: o Render hiberna, e a
-    // tela precisa mostrar algo enquanto o /usage nao responde. Ele so nao pode
-    // ser a fonte final.
-    return { total: analysesAllTime ?? completed.length, tradePlans, recentCount: completed.length };
-  }, [rawAnalyses, analysesAllTime]);
+  // Contagem REAL do banco quando chega (o /usage); antes disso, o que der para
+  // contar da lista carregada (useAnalyses(40) nunca passaria de 40).
+  const analysesTotal = analysesAllTime ?? rawAnalyses.filter((a) => a.status === 'completed').length;
 
   const { balance: ticksBalance } = useTicks();
   // Respostas do fundador ainda nao lidas (o mesmo numero da bolha do chat).
   const chatUnread = useChatThread(!isDemo, false).data?.thread?.unread ?? 0;
 
-  // Insight da semana: cenário de mercado, inclusive WAIT com viés direcional.
-  const weeklyInsight = useMemo(() => {
-    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    let bull = 0;
-    let bear = 0;
-    let neutral = 0;
-    for (const a of rawAnalyses) {
-      if (a.status !== 'completed' || !a.createdAt) continue;
-      if (new Date(a.createdAt).getTime() < weekAgo) continue;
-      const scenario = getScenarioMeta(a.bias, a.recommendation).label;
-      if (scenario === 'BULLISH') bull += 1;
-      else if (scenario === 'BEARISH') bear += 1;
-      else neutral += 1;
-    }
-    return { bull, bear, neutral, total: bull + bear + neutral };
-  }, [rawAnalyses]);
+  // Alertas de nivel (27/10/2026): o bloco Today, o contador no menu e no
+  // titulo da aba, e o paywall `alerts` da conta travada.
+  const alertsQuery = useSetupAlerts(!isDemo);
+  const alertsUnseen = alertsQuery.data?.unseen ?? 0;
+  const { seen: markAlertSeen } = useAlertActions();
+  const watchedSetupIds = useMemo(
+    () => new Set((alertsQuery.data?.items ?? []).filter((a) => a.status === 'active').map((a) => a.setupId)),
+    [alertsQuery.data],
+  );
+  const alertsOn: 'email' | 'screen' | null = watchedSetupIds.size > 0 ? (alertsQuery.data?.emailEnabled ? 'email' : 'screen') : null;
 
   // Dispara o backfill de e-mail + boas-vindas no backend (GET /api/auth/me).
   //
@@ -693,6 +601,16 @@ const DashboardPage = () => {
   // Atualizacao de setup: /dashboard/new?setup=<id>. O setup so vai junto se
   // a pessoa ainda o acompanha; o servidor confere de novo antes de cobrar.
   const setupParam = route.section === 'new' ? new URLSearchParams(location.search).get('setup') : null;
+  // Link do e-mail do alerta: /dashboard/new?setup=<id>&alert=<id>&utm_source=email.
+  const alertParam = route.section === 'new' ? new URLSearchParams(location.search).get('alert') : null;
+  const openedAlertRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (isDemo || !alertParam || !SETUP_ID_PATTERN.test(alertParam) || openedAlertRef.current === alertParam) return;
+    openedAlertRef.current = alertParam;
+    const source = new URLSearchParams(location.search).get('utm_source') === 'email' ? 'email' : 'dashboard';
+    track('setup_alert_opened', { source, alertId: alertParam, setupId: setupParam });
+    markAlertSeen.mutate(alertParam);
+  }, [alertParam, isDemo, location.search, markAlertSeen, setupParam]);
   const updatingSetupId = setupParam && SETUP_ID_PATTERN.test(setupParam) && !isDemo ? setupParam : null;
   const updatingSetupQuery = useSetupVersions(updatingSetupId, 1);
   const updatingSetupPage = updatingSetupQuery.data?.pages[0];
@@ -763,7 +681,6 @@ const DashboardPage = () => {
   })();
 
   // Usar dados demo ou reais dependendo do modo
-  const displayRecentAnalyses = isDemo ? demoRecentAnalyses : recentAnalyses;
 
   const goToPlans = useCallback(() => {
     setShowUpgradeModal(false);
@@ -841,9 +758,11 @@ const DashboardPage = () => {
 
   // Todo paywall fecha no mesmo checkout (`locked_value` na Stripe); a area de
   // onde veio vai junto para o PostHog.
-  const paywallFor = (surface: PaywallSurface, children?: ReactNode) => (
+  const paywallFor = (surface: PaywallSurface, children?: ReactNode, symbol?: string) => (
     <Paywall
       surface={surface}
+      symbol={symbol}
+      alertsOn={alertsOn}
       onWeekly={() => void startCheckout('locked_value', 'weekly', surface)}
       onMonthly={() => void startCheckout('locked_value', 'monthly', surface)}
       unlockPending={unlockPending}
@@ -1277,30 +1196,34 @@ const DashboardPage = () => {
     const titleWords = t.nav.centralTitle.split(' ');
     const titleLast = titleWords.length > 1 ? titleWords.pop() : '';
     const titleHead = titleWords.join(' ');
-    const bullPct = weeklyInsight.total > 0 ? (weeklyInsight.bull / weeklyInsight.total) * 100 : 0;
-    const bearPct = weeklyInsight.total > 0 ? (weeklyInsight.bear / weeklyInsight.total) * 100 : 0;
-    const neutralPct = weeklyInsight.total > 0 ? (weeklyInsight.neutral / weeklyInsight.total) * 100 : 0;
     const firstName = user?.firstName || 'Trader';
     const ticksNum = Math.floor(Number(ticksBalance) || 0);
-    const kpis: Array<{ label: string; value: string; sub: string; Icon: typeof BarChart3; accent?: boolean }> = [
-      { label: t.nav.analysesWord, value: String(dashboardKpis.total), sub: t.nav.kpiSubTotal, Icon: BarChart3 },
-      {
-        label: t.nav.kpiTradePlans,
-        value: String(dashboardKpis.tradePlans),
-        sub: t.nav.kpiSubTradePlans.replace('{n}', String(dashboardKpis.recentCount)),
-        Icon: Target,
-        accent: true,
-      },
-      { label: t.nav.activeMarkets, value: String(realActiveMarkets.length), sub: t.nav.kpiSubMarkets, Icon: Activity },
-      { label: 'Ticks', value: String(ticksNum), sub: t.nav.kpiSubTicks, Icon: Coins },
-    ];
     return (
       <div className="flex flex-col gap-4">
-        {/* Topo: preparacao (perfil salvo + nova analise) e os setups que a
-            pessoa segue. Gratis esgotado: o servidor responde 402 e a secao
-            fica de fora (o setup em si abre o paywall `setups`). */}
+        {/* Today: alertas disparados, niveis vigiados e operacoes abertas. Conta
+            travada: os alertas ficam pausados e o paywall cita o ativo real. */}
         {!isDemo && !freeLocked && (
-          <SetupsSection base={base} onNewAnalysis={resetNewAnalysisView} showEmpty={dashboardKpis.total > 0} />
+          <TodaySection
+            base={base}
+            alerts={alertsQuery.data}
+            openTrades={openTradesQuery.data?.trades ?? []}
+            onNewAnalysis={resetNewAnalysisView}
+          />
+        )}
+        {!isDemo && freeLocked && alertsQuery.data?.paused && alertsQuery.data.pausedSymbol
+          ? paywallFor('alerts', undefined, alertsQuery.data.pausedSymbol)
+          : null}
+
+        {/* Preparacao (perfil salvo + nova analise) e os setups que a pessoa
+            segue sem alerta (os com alerta estao no Today). Gratis esgotado: o
+            servidor responde 402 e a secao fica de fora. */}
+        {!isDemo && !freeLocked && (
+          <SetupsSection
+            base={base}
+            onNewAnalysis={resetNewAnalysisView}
+            showEmpty={analysesTotal > 0}
+            hiddenSetupIds={watchedSetupIds}
+          />
         )}
 
         {/* De onde a pessoa veio, perguntado a ela. A atribuicao tecnica
@@ -1404,7 +1327,7 @@ const DashboardPage = () => {
                 {titleLast && <em className="font-serif italic text-[var(--text-secondary)]">{titleLast}</em>}
               </h1>
               <p className="mt-3 font-terminal text-xs text-[var(--text-secondary)]">
-                {ticksNum} ticks · {dashboardKpis.total} {t.nav.analysesWord}
+                {ticksNum} ticks · {analysesTotal} {t.nav.analysesWord}
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-3">
@@ -1426,11 +1349,10 @@ const DashboardPage = () => {
           </div>
         </div>
 
-        {/* Usuário sem nenhuma análise: KPI zerado não ensina nada e ainda passa
-            a impressão de produto vazio. Troca por um estado que explica o que
-            a tela vira e oferece UMA ação. Também é aqui que a promessa do
-            "valor no minuto 1" se repete dentro do painel (Onda 1.2). */}
-        {!isDemo && dashboardKpis.total === 0 && !loadingAnalyses ? (
+        {/* Usuário sem nenhuma análise: um estado que explica o que a tela vira
+            e oferece UMA ação. Também é aqui que a promessa do "valor no
+            minuto 1" se repete dentro do painel (Onda 1.2). */}
+        {!isDemo && analysesTotal === 0 && !loadingAnalyses ? (
           <div className="overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)]">
             <EmptyState
               icon={Upload}
@@ -1440,88 +1362,7 @@ const DashboardPage = () => {
               onCta={resetNewAnalysisView}
             />
           </div>
-        ) : (
-        <div className="grid grid-cols-2 divide-x divide-y divide-[var(--border-subtle)] overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] md:grid-cols-4 md:divide-y-0">
-          {kpis.map((k) => (
-            <div key={k.label} className="p-5">
-              <div className="flex items-start justify-between">
-                <div className="tk-stat-label">{k.label}</div>
-                <span className="flex h-6 w-6 items-center justify-center rounded-md border border-[var(--border-subtle)]">
-                  <k.Icon className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
-                </span>
-              </div>
-              <div className={`tk-stat mt-3 text-3xl ${k.accent ? 'text-[var(--accent-green)]' : ''}`}>{k.value}</div>
-              <div className="tk-stat-label mt-1 opacity-60">{k.sub}</div>
-            </div>
-          ))}
-        </div>
-        )}
-
-        {/* Recent + Insight */}
-        <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr]">
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div className="tk-stat-label">{t.nav.recentAnalyses}</div>
-              <button
-                type="button"
-                onClick={() => openMyTrades()}
-                className="font-terminal text-[12px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
-                aria-label={t.nav.recentAnalyses}
-              >
-                →
-              </button>
-            </div>
-            {displayRecentAnalyses.length > 0 ? (
-              displayRecentAnalyses.map((item, idx) => {
-                const scenario = getScenarioMeta(item.bias, item.recommendation);
-                const action = getRecommendationMeta(item.recommendation);
-                const actionLabel = action.tone === 'buy'
-                  ? t.analysis.buy
-                  : action.tone === 'sell'
-                    ? t.analysis.sell
-                    : t.analysis.hold;
-                return (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between gap-2 border-t border-[var(--border-subtle)] py-2 first:border-t-0"
-                  >
-                    <span className="font-terminal text-xs text-[var(--text-primary)]">
-                      {item.symbol} <span className="text-[var(--text-secondary)]">{item.timeframe}</span>
-                    </span>
-                    <span className="text-right font-terminal text-[11px] text-[var(--text-secondary)]">
-                      <span className={`font-semibold ${scenario.tone === 'buy' ? 'text-[var(--signal-buy)]' : scenario.tone === 'sell' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}`}>{scenario.label}</span>
-                      {' · '}{t.analysis.action}: {actionLabel}
-                    </span>
-                  </div>
-                );
-              })
-            ) : (
-              <p className="py-3 text-xs text-[var(--text-secondary)]">{loadingAnalyses ? t.common.loading : '—'}</p>
-            )}
-          </div>
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
-            <div className="tk-stat-label">{dc.weeklyInsight}</div>
-            <div className="mt-4 flex gap-6">
-              <div>
-                <div className="tk-stat text-2xl text-[var(--accent-green)]">{weeklyInsight.bull}</div>
-                <div className="tk-stat-label mt-1">Bullish</div>
-              </div>
-              <div>
-                <div className="tk-stat text-2xl text-[var(--signal-sell)]">{weeklyInsight.bear}</div>
-                <div className="tk-stat-label mt-1">Bearish</div>
-              </div>
-              <div>
-                <div className="tk-stat text-2xl text-[var(--text-secondary)]">{weeklyInsight.neutral}</div>
-                <div className="tk-stat-label mt-1">Neutral</div>
-              </div>
-            </div>
-            <div className="mt-4 flex h-1.5 overflow-hidden rounded-full bg-[var(--bg-overlay)]">
-              <div className="h-full" style={{ width: `${bullPct}%`, background: 'var(--accent-green)' }} />
-              <div className="h-full" style={{ width: `${bearPct}%`, background: 'var(--signal-sell)' }} />
-              <div className="h-full" style={{ width: `${neutralPct}%`, background: 'var(--text-secondary)' }} />
-            </div>
-          </div>
-        </div>
+        ) : null}
 
         {/* Opiniao livre, lida no /admin (aba Opinioes). So para quem ja fez
             ao menos uma analise (antes disso nao ha o que opinar) e nunca junto
@@ -1530,7 +1371,7 @@ const DashboardPage = () => {
             preenchido e em Chrome/Edge de computador. */}
         {!isDemo && <ExtensionAnnouncement />}
 
-        {!isDemo && !showAcquisitionSurvey && dashboardKpis.total > 0 && <FeedbackCard />}
+        {!isDemo && !showAcquisitionSurvey && analysesTotal > 0 && <FeedbackCard />}
 
         {/* O que o mercado fez com os planos da pessoa nos ultimos 30 dias */}
         {!isDemo && <TrackRecordCard />}
@@ -1870,8 +1711,8 @@ const DashboardPage = () => {
             {tradeAnalysisId ? <TradePanel key={`trade-${tradeAnalysisId}`} analysisId={tradeAnalysisId} /> : null}
             {/* Seguir o setup: ao lado das acoes de sempre, nunca no lugar delas. */}
             {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' ? (
-              <FollowSetupBar
-                key={`follow-${analysisData.id}`}
+              <SetupAlertBar
+                key={`alerts-${analysisData.id}`}
                 analysisId={analysisData.id}
                 recommendation={(() => {
                   const tone = getRecommendationMeta(analysisData.recommendation).tone;
@@ -2034,6 +1875,14 @@ const DashboardPage = () => {
     path: location.pathname,
     noindex: true,
   });
+  // "(1) Dashboard | Tickrify": alerta disparado e ainda nao aberto, na aba do navegador.
+  useEffect(() => {
+    if (alertsUnseen <= 0) return;
+    document.title = `(${alertsUnseen}) ${document.title.replace(/^\(\d+\) /, '')}`;
+    return () => {
+      document.title = document.title.replace(/^\(\d+\) /, '');
+    };
+  }, [alertsUnseen, currentViewLabel]);
 
   const navItemClass = (section: NavSection) =>
     `flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
@@ -2089,7 +1938,13 @@ const DashboardPage = () => {
           <div className={`${sidebarSectionTitleClass} px-2 pb-1 pt-2`}>{t.nav.workArea}</div>
           <nav className="flex flex-col gap-0.5">
             <Link to={navLink('home')} aria-current={activeNav === 'home' ? 'page' : undefined} className={navItemClass('home')}>
-              <LayoutGrid className="h-4 w-4" /> {t.nav.dashboard}
+              <LayoutGrid className="h-4 w-4" />
+              <span>{t.nav.dashboard}</span>
+              {alertsUnseen > 0 ? (
+                <span key="alerts-unseen" aria-label={t.alerts.menuBadge.replace('{n}', String(alertsUnseen))} className="ml-auto min-w-[18px] rounded-full bg-[var(--accent-green)] px-1.5 text-center text-[10px] font-semibold leading-[18px] text-[var(--on-accent)]">
+                  {String(alertsUnseen)}
+                </span>
+              ) : null}
             </Link>
             <Link to={navLink('new')} onClick={onNewAnalysisLink} aria-current={activeNav === 'new' ? 'page' : undefined} className={navItemClass('new')}>
               <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
@@ -2237,8 +2092,6 @@ const DashboardPage = () => {
         </div>
       </header>
 
-      <LiveTape />
-
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border md:hidden">
           <div className="flex">
@@ -2254,15 +2107,22 @@ const DashboardPage = () => {
                     : 'text-muted-foreground'
                 }`}
               >
-                {section === 'home'
-                  ? t.nav.dashboard
-                  : section === 'new'
-                    ? t.nav.newAnalysisShort
-                    : section === 'trades'
-                      ? t.nav.myTrades
-                      : section === 'journal'
-                        ? t.nav.journalShort
-                        : t.nav.strategy}
+                <span key="label">
+                  {section === 'home'
+                    ? t.nav.dashboard
+                    : section === 'new'
+                      ? t.nav.newAnalysisShort
+                      : section === 'trades'
+                        ? t.nav.myTrades
+                        : section === 'journal'
+                          ? t.nav.journalShort
+                          : t.nav.strategy}
+                </span>
+                {section === 'home' && alertsUnseen > 0 ? (
+                  <span key="alerts" aria-label={t.alerts.menuBadge.replace('{n}', String(alertsUnseen))} className="ml-1 rounded-full bg-[var(--inverse-bg)] px-1.5 text-[10px] font-semibold text-[var(--inverse-fg)]">
+                    {String(alertsUnseen)}
+                  </span>
+                ) : null}
               </Link>
             ))}
           </div>

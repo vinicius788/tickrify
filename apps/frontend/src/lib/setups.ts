@@ -44,6 +44,52 @@ export interface SetupVersion {
   entryCondition: string | null;
 }
 
+/**
+ * Alertas de nivel (27/10/2026): o servidor vigia o nivel em candles reais de
+ * 5m e marca o alerta quando o preco chega la (e-mail atras da chave
+ * EMAIL_SETUP_ALERTS). Criar um alerta segue o setup no mesmo clique.
+ */
+export type AlertLabel = 'entry' | 'stop' | 'tp1' | 'invalidation' | 'custom';
+
+export interface SetupAlert {
+  id: string;
+  setupId: string;
+  analysisId: string;
+  symbol: string;
+  timeframe: string | null;
+  level: number;
+  label: AlertLabel;
+  side: 'above' | 'below';
+  status: 'active' | 'triggered' | 'cancelled';
+  createdAt: string;
+  triggeredAt: string | null;
+  triggerPrice: number | null;
+  seenAt: string | null;
+  lastPrice: number | null;
+  checkedAt: string | null;
+}
+
+export interface SetupAlertList {
+  /** Conta travada (gratis esgotado): alertas pausados, nenhum devolvido. */
+  paused: boolean;
+  pausedSymbol: string | null;
+  items: SetupAlert[];
+  unseen: number;
+  emailEnabled: boolean;
+}
+
+export interface SetupAlertOptions {
+  available: boolean;
+  symbol: string | null;
+  symbolClass: 'crypto' | 'forex' | 'metal' | null;
+  referencePrice: number | null;
+  suggestions: Array<{ label: Exclude<AlertLabel, 'custom'>; level: number }>;
+  setupId: string | null;
+  alerts: SetupAlert[];
+  limits: { perSetup: number; maxSetups: number; setupsUsed: number };
+  emailEnabled: boolean;
+}
+
 /** Mesmo formato que o backend aceita (uuid do setup). */
 export const SETUP_ID_PATTERN = /^[a-z0-9-]{10,40}$/i;
 
@@ -140,6 +186,77 @@ export function useSetupActions() {
   return { follow, setStatus };
 }
 
+export function useSetupAlerts(enabled: boolean, setupId: string | null = null) {
+  const token = useToken();
+  return useQuery({
+    queryKey: ['setups', 'alerts', setupId],
+    queryFn: async () =>
+      send<SetupAlertList>(
+        `/api/setups/alerts${setupId ? `?setupId=${encodeURIComponent(setupId)}` : ''}`,
+        { method: 'GET' },
+        await token(),
+      ),
+    enabled,
+    staleTime: 60_000,
+    // O monitor roda a cada 10 min: 5 min com a aba aberta basta.
+    refetchInterval: 5 * 60_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+}
+
+export function useAlertOptions(analysisId: string | null) {
+  const token = useToken();
+  return useQuery({
+    queryKey: ['setups', 'alert-options', analysisId],
+    queryFn: async () =>
+      send<SetupAlertOptions>(`/api/setups/alerts/options/${encodeURIComponent(String(analysisId))}`, { method: 'GET' }, await token()),
+    enabled: Boolean(analysisId),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+}
+
+export function useAlertActions() {
+  const token = useToken();
+  const queryClient = useQueryClient();
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['setups'] });
+  const create = useMutation({
+    mutationFn: async (input: { analysisId: string; label: AlertLabel; level: number }) =>
+      send<{ alert: SetupAlert; setupId: string }>('/api/setups/alerts', { method: 'POST', body: JSON.stringify(input) }, await token()),
+    onSuccess: refresh,
+  });
+  const cancel = useMutation({
+    mutationFn: async (alertId: string) =>
+      send<{ alert: SetupAlert }>(`/api/setups/alerts/${encodeURIComponent(alertId)}/cancel`, { method: 'POST' }, await token()),
+    onSuccess: refresh,
+  });
+  const seen = useMutation({
+    mutationFn: async (alertId: string) =>
+      send<{ alert: SetupAlert }>(`/api/setups/alerts/${encodeURIComponent(alertId)}/seen`, { method: 'POST' }, await token()),
+    onSuccess: refresh,
+  });
+  return { create, cancel, seen };
+}
+
+/** Nivel no formato da tela (sem perder as casas do forex). */
+export function formatAlertLevel(level: number, locale: string): string {
+  return level.toLocaleString(locale, { maximumFractionDigits: level >= 1000 ? 2 : level >= 1 ? 5 : 8 });
+}
+
+/** "13:42 UTC": a hora do monitor e do e-mail e sempre em UTC. */
+export function formatUtcTime(iso: string): string {
+  return `${new Date(iso).toISOString().slice(11, 16)} UTC`;
+}
+
+/** Distancia do ultimo preco checado ate o nivel, em %, com sinal. null sem preco. */
+export function alertDistancePct(alert: Pick<SetupAlert, 'level' | 'lastPrice'>): number | null {
+  if (!alert.lastPrice || alert.lastPrice <= 0) return null;
+  return ((alert.level - alert.lastPrice) / alert.lastPrice) * 100;
+}
+
 /** "Oct 10" no idioma da tela (com o ano quando nao e o ano corrente). */
 export function formatSetupDay(iso: string, locale: string): string {
   const date = new Date(iso);
@@ -159,4 +276,24 @@ export function formatSetupRelative(iso: string, locale: string, now = Date.now(
   if (Math.abs(days) >= 1) return rtf.format(days, 'day');
   const hours = Math.round((new Date(iso).getTime() - now) / (60 * 60 * 1000));
   return Math.abs(hours) >= 1 ? rtf.format(hours, 'hour') : rtf.format(0, 'day');
+}
+
+/**
+ * Le o preco que a pessoa digitou: "4180.5", "4,180.5", "4.180,5", "1,0952".
+ * Com os dois separadores, o ultimo e o decimal; so virgula, ela e decimal se
+ * nao separar milhar (3 digitos depois). null = nao e um preco.
+ */
+export function parseAlertLevel(raw: string): number | null {
+  let text = raw.replace(/[\s'_]/g, '');
+  if (!text) return null;
+  const comma = text.lastIndexOf(',');
+  const dot = text.lastIndexOf('.');
+  if (comma >= 0 && dot >= 0) {
+    text = comma > dot ? text.replace(/\./g, '').replace(',', '.') : text.replace(/,/g, '');
+  } else if (comma >= 0) {
+    text = /^\d{1,3}(,\d{3})+$/.test(text) ? text.replace(/,/g, '') : text.replace(',', '.');
+  }
+  if (!/^\d+(\.\d+)?$/.test(text)) return null;
+  const value = Number(text);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }
