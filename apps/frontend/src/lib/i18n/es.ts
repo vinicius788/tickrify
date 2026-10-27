@@ -614,7 +614,6 @@ export default {
     limitTitle: 'Ya sigues 20 setups',
     limitDesc: 'Archiva uno en tu panel para seguir este.',
     sectionTitle: 'Setups que sigues',
-    empty: 'Sigue un setup desde cualquier análisis para volver a él aquí.',
     firstAnalysis: 'Primer análisis: {date}',
     updated: 'Actualizado {relative} ({date})',
     waitingFor: 'Esperando: {condition} (del {date})',

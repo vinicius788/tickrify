@@ -614,7 +614,6 @@ export default {
     limitTitle: 'すでに20件のセットアップをフォローしています',
     limitDesc: 'ダッシュボードで1件アーカイブすると、これをフォローできます。',
     sectionTitle: 'フォロー中のセットアップ',
-    empty: 'どの分析からでもセットアップをフォローすると、ここから戻れます。',
     firstAnalysis: '最初の分析: {date}',
     updated: '更新: {relative}（{date}）',
     waitingFor: '待機条件: {condition}（{date}時点）',
