@@ -729,8 +729,10 @@ Vale para TODA mudanca, grande ou pequena:
   pessoais e fechamento do dia so se esta fase provar retorno (criterio na 6.2).
   Terminal ao vivo da operacao esta FORA.
 - **Dados:** tabelas `SetupAlert` (um alerta = um nivel de um `TrackedSetup`;
-  `label` entry|stop|tp1|invalidation|custom, `side` above|below pelo preco da
-  analise, `status` active|triggered|cancelled, `watchFrom`, `emailedAt`,
+  `label` entry|stop|tp1|invalidation|custom, `side` above|below pelo ultimo
+  preco REAL do ativo na criacao (cache do monitor ou candle de 5m; forex olha
+  72h por causa do fim de semana) e so sem ele pelo preco da analise (27/10:
+  analise antiga com o preco ja longe disparava na primeira volta), `status` active|triggered|cancelled, `watchFrom`, `emailedAt`,
   `seenAt`) e `AlertPriceCheck` (cache por ativo e "Last checked"), por SQL no
   boot do `SetupAlertsService` + migracao `20261027120000_setup_alert`, fora do
   schema.prisma. Codigo em `modules/ai/setup-alerts.service.ts`.

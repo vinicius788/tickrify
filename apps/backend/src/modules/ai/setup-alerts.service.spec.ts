@@ -12,9 +12,15 @@ import {
 } from './setup-alerts.service';
 import { CreateSetupAlertDto, ListSetupAlertsQueryDto } from './dto/setups.dto';
 import { SetupsController } from './setups.controller';
-import type { Candle } from '../market/candles';
+import { fetchWindowFor as fetchWindowForMock, type Candle } from '../market/candles';
+const fetchWindowFor = fetchWindowForMock as jest.Mock;
 import { captureServer as captureServerMock } from '../../common/analytics/posthog';
 
+jest.mock('../market/candles', () => ({
+  ...jest.requireActual('../market/candles'),
+  // Sem preco de mercado por padrao: a criacao cai no preco da analise.
+  fetchWindowFor: jest.fn(async () => null),
+}));
 jest.mock('../../common/analytics/posthog', () => ({
   ...jest.requireActual('../../common/analytics/posthog'),
   captureServer: jest.fn(),
@@ -44,7 +50,11 @@ afterAll(() => {
   if (oldKey === undefined) delete process.env.TWELVE_DATA_API_KEY;
   else process.env.TWELVE_DATA_API_KEY = oldKey;
 });
-beforeEach(() => captureServer.mockClear());
+beforeEach(() => {
+  captureServer.mockClear();
+  fetchWindowFor.mockReset();
+  fetchWindowFor.mockResolvedValue(null);
+});
 
 describe('regras puras dos alertas', () => {
   it('disparo acima: maxima de um candle depois da criacao toca o nivel', () => {
@@ -104,8 +114,9 @@ describe('regras puras dos alertas', () => {
   });
 });
 
-function makeService(opts: { activeOnSetup?: number; setupsWithAlerts?: number; sameLevel?: boolean; analysis?: unknown } = {}) {
+function makeService(opts: { activeOnSetup?: number; setupsWithAlerts?: number; sameLevel?: boolean; analysis?: unknown; cachedPrice?: { lastPrice: number; checkedAt: Date } } = {}) {
   const { prisma, calls } = makePrisma([
+    ['SELECT "lastPrice", "checkedAt" FROM', () => (opts.cachedPrice ? [opts.cachedPrice] : [])],
     ['FROM "tickrify"."Analysis"\n      WHERE "id"', () => [opts.analysis ?? BUY_GOLD]],
     ['a."level" =', () => (opts.sameLevel ? [{ id: 'alert-existing0', status: 'active', level: 4140 }] : [])],
     ['COUNT(DISTINCT "setupId")', () => [{ n: opts.setupsWithAlerts ?? 0 }]],
@@ -173,6 +184,36 @@ describe('SetupAlertsService.create', () => {
     const { service } = await ready({ analysis: synthetic });
     await expect(service.create(user, { analysisId: 'analysis00001', label: 'entry', level: 4140 }, free)).rejects.toMatchObject({
       response: { code: 'alert_unavailable' },
+    });
+  });
+
+  it('lado pelo preco de AGORA (cache do monitor): analise antiga com o preco ja longe nao dispara na hora', async () => {
+    // Analise a 4150; o ouro agora esta a 4300. Nivel 4200 fica ABAIXO do preco atual.
+    const { service, calls } = await ready({ cachedPrice: { lastPrice: 4300, checkedAt: new Date() } });
+    await service.create(user, { analysisId: 'analysis00001', label: 'custom', level: 4200 }, free);
+    const insert = calls.find((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"'));
+    expect(insert?.values).toEqual(expect.arrayContaining(['below', 4300]));
+    expect(fetchWindowFor).not.toHaveBeenCalled();
+  });
+
+  it('cache velho: busca o ultimo candle (forex olha 72h, para cobrir o fim de semana)', async () => {
+    fetchWindowFor.mockResolvedValue([[Date.now() - 300_000, 4290, 4295, 4285, 4290]]);
+    const { service, calls } = await ready({ cachedPrice: { lastPrice: 4000, checkedAt: new Date(Date.now() - 60 * 60_000) } });
+    await service.create(user, { analysisId: 'analysis00001', label: 'custom', level: 4200 }, free);
+    const [, start, end, interval] = fetchWindowFor.mock.calls[0];
+    expect(end - start).toBe(72 * 3600_000);
+    expect(interval).toBe('5m');
+    expect(calls.find((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"'))?.values).toEqual(expect.arrayContaining(['below', 4290]));
+  });
+
+  it('sem preco de mercado (fonte fora): usa o preco da analise, e sem nenhum preco recusa', async () => {
+    const { service, calls } = await ready();
+    await service.create(user, { analysisId: 'analysis00001', label: 'custom', level: 4200 }, free);
+    expect(calls.find((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"'))?.values).toEqual(expect.arrayContaining(['above', 4150]));
+    const noPrice = { ...BUY_GOLD, result: { analysis: { ...BUY_GOLD.result.analysis, currentPrice: 0 } } };
+    const bare = await ready({ analysis: noPrice });
+    await expect(bare.service.create(user, { analysisId: 'analysis00001', label: 'custom', level: 4200 }, free)).rejects.toMatchObject({
+      response: { code: 'alert_price_unavailable' },
     });
   });
 

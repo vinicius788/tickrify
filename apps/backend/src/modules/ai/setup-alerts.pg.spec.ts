@@ -6,6 +6,11 @@ import { ALERT_RULES, SetupAlertsService, runAlertMonitor } from './setup-alerts
 import { runSetupAlertEmailSweep } from '../mail/setup-alert-email';
 import type { Candle } from '../market/candles';
 
+jest.mock('../market/candles', () => ({
+  ...jest.requireActual('../market/candles'),
+  // Sem preco de mercado por padrao: a criacao cai no preco da analise.
+  fetchWindowFor: jest.fn(async () => null),
+}));
 jest.mock('../../common/analytics/posthog', () => ({
   ...jest.requireActual('../../common/analytics/posthog'),
   captureServer: jest.fn(),
