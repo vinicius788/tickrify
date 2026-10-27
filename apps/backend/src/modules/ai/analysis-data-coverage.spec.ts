@@ -110,21 +110,56 @@ describe('analysis data coverage', () => {
   it('preserves the deep enrichment block while reporting its asset class', async () => {
     const adapter = new AIAdapter() as any;
     adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
+    adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(null);
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue('MARKET BLOCK');
     adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: null, status: 'no_events_returned' });
     expect(await adapter.buildMarketEnrichment('chart')).toEqual({
       block: 'MARKET BLOCK', assetClass: 'crypto', marketContext: 'injected', calendar: 'no_events_returned',
+      candles: 'source_unavailable',
+      stats: { v: 1, symbol: 'BTCUSDT', interval: '30m', coverage: 'source_unavailable', numbers: null },
     });
   });
 
   it('does not count a calendar-only block as market context', async () => {
     const adapter = new AIAdapter() as any;
     adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
+    adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(null);
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue(null);
     adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: 'CALENDAR BLOCK', status: 'events_injected' });
-    expect(await adapter.buildMarketEnrichment('chart')).toEqual({
+    expect(await adapter.buildMarketEnrichment('chart')).toMatchObject({
       block: 'CALENDAR BLOCK', assetClass: 'crypto', marketContext: 'unavailable', calendar: 'events_injected',
     });
+  });
+
+  // 26/10/2026: a deep passou a receber os mesmos candles reais do quick.
+  const candles = (last: number) => Array.from({ length: 40 }, (_, i) => [i * 1800000, last - 1, last + 1, last - 2, last, 10]);
+
+  it('deep com print atual recebe os candles reais, o contexto e o calendario numa leitura so', async () => {
+    const adapter = new AIAdapter() as any;
+    adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
+    adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(candles(100));
+    adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue('MARKET BLOCK');
+    adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: 'CALENDAR BLOCK', status: 'events_injected' });
+    const deep = await adapter.buildMarketEnrichment('chart');
+    expect(deep.block).toContain('# REAL MARKET DATA');
+    expect(deep.block).toContain('MARKET BLOCK');
+    expect(deep.block).toContain('CALENDAR BLOCK');
+    expect(deep).toMatchObject({ candles: 'injected', marketContext: 'injected', stats: { coverage: 'injected', numbers: { candles: 40, lastClose: 100 } } });
+    expect(adapter.extractSymbol).toHaveBeenCalledTimes(1);
+  });
+
+  it('deep com print velho retem candles e contexto de agora, e avisa', async () => {
+    const adapter = new AIAdapter() as any;
+    adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 150 });
+    adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(candles(100));
+    adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue('MARKET BLOCK');
+    adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: null, status: 'no_events_returned' });
+    const deep = await adapter.buildMarketEnrichment('chart');
+    expect(deep.block).toContain('# LIVE DATA WITHHELD');
+    expect(deep.block).not.toContain('# REAL MARKET DATA');
+    expect(deep.block).not.toContain('MARKET BLOCK');
+    expect(adapter.buildCryptoEnrichment).not.toHaveBeenCalled();
+    expect(deep).toMatchObject({ candles: 'stale_withheld', marketContext: 'stale_withheld', stats: { numbers: null } });
   });
 
   it('distinguishes calendar events, no returned events and degraded source', async () => {
@@ -211,5 +246,55 @@ describe('analysis telemetry', () => {
     await expect(saveAnalysisTelemetry(db as any, 'a', { respondedModel: 'm', groundingStats: null }, warn)).resolves.toBeUndefined();
     await expect(saveAnalysisTelemetry(db as any, 'b', { respondedModel: 'm', groundingStats: null }, warn)).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('extractSymbol: le o print do Storage privado (26/10/2026)', () => {
+  const storageUrl = 'https://proj.supabase.co/storage/v1/object/analysis-images/analyses/u1/original/x.png';
+
+  it('manda ao modelo a imagem resolvida, nunca a URL crua do Storage', async () => {
+    const adapter = new AIAdapter() as any;
+    adapter.resolveImageUrlForModel = jest.fn(async () => 'data:image/png;base64,AAAA');
+    const complete = jest.fn(async () => ({ content: '{"symbol":"XAUUSD","timeframe":"15m","lastPrice":2400.5}' }));
+    adapter.visionModel = { complete };
+    await expect(adapter.extractSymbol(storageUrl)).resolves.toEqual({ symbol: 'XAUUSD', timeframe: '15m', lastPrice: 2400.5 });
+    expect(adapter.resolveImageUrlForModel).toHaveBeenCalledWith(storageUrl);
+    const sent = (complete.mock.calls[0] as any[])[0].userContent.find((p: { type: string }) => p.type === 'image');
+    expect(sent.url).toBe('data:image/png;base64,AAAA');
+  });
+
+  it('le com o modelo do quick e a imagem em detalhe alto (26/10/2026: o mini low errava 36 de 97)', async () => {
+    const adapter = new AIAdapter() as any;
+    adapter.resolveImageUrlForModel = jest.fn(async () => 'data:image/png;base64,AAAA');
+    const complete = jest.fn(async () => ({ content: '{"symbol":"XAUUSD","timeframe":"5m","lastPrice":4012.05}' }));
+    adapter.visionModel = { complete };
+    await adapter.extractSymbol(storageUrl);
+    const req = (complete.mock.calls[0] as any[])[0];
+    expect(req.tier).toBe('quick');
+    expect(req.imageDetail ?? 'high').toBe('high');
+    expect(req.reasoningEffort).toBeUndefined();
+    expect(req.maxTokens).toBeGreaterThanOrEqual(2000);
+  });
+
+  it.each(['GOLD', 'GOLD#', 'gold', 'GOLDm', 'GOLD.pro', 'GOLD-P'])('nome de corretora do ouro %s vira XAUUSD', async (read) => {
+    const adapter = new AIAdapter() as any;
+    adapter.resolveImageUrlForModel = jest.fn(async () => 'data:image/png;base64,AAAA');
+    adapter.visionModel = { complete: jest.fn(async () => ({ content: JSON.stringify({ symbol: read, timeframe: '1h', lastPrice: 4100 }) })) };
+    await expect(adapter.extractSymbol(storageUrl)).resolves.toEqual({ symbol: 'XAUUSD', timeframe: '1h', lastPrice: 4100 });
+  });
+
+  it.each(['GOLDUSDT', 'GOLDEN', 'XAUUSDm', 'BTCUSDT'])('%s nao passa pelo alias do ouro', async (read) => {
+    const adapter = new AIAdapter() as any;
+    adapter.resolveImageUrlForModel = jest.fn(async () => 'data:image/png;base64,AAAA');
+    adapter.visionModel = { complete: jest.fn(async () => ({ content: JSON.stringify({ symbol: read, timeframe: '1h', lastPrice: 1 }) })) };
+    await expect(adapter.extractSymbol(storageUrl)).resolves.toMatchObject({ symbol: read });
+  });
+
+  it('falha ao baixar a imagem vira null (analise segue sem candles), sem lancar', async () => {
+    const adapter = new AIAdapter() as any;
+    adapter.resolveImageUrlForModel = jest.fn(async () => { throw new Error('Failed to download image from Supabase'); });
+    adapter.visionModel = { complete: jest.fn() };
+    await expect(adapter.extractSymbol(storageUrl)).resolves.toBeNull();
+    expect(adapter.visionModel.complete).not.toHaveBeenCalled();
   });
 });

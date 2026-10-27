@@ -101,7 +101,7 @@ describe('createVisionModels', () => {
 });
 
 describe('AnthropicVisionModel request', () => {
-  const models = { quick: 'claude-q', deep: 'claude-d', light: 'claude-l' };
+  const models = { quick: 'claude-q', deep: 'claude-d' };
 
   it('sends base64 images, cached fixed instructions and structured output', async () => {
     const fetchImpl = anthropicReply({ stop_reason: 'end_turn', content: [{ type: 'text', text: '{}' }], usage: {} });
@@ -182,12 +182,19 @@ describe('FallbackVisionModel', () => {
 
 describe('OpenAiVisionModel', () => {
   it('without instructions and schema: no system message and a free JSON object', async () => {
-    const create = jest.fn().mockResolvedValue({ model: 'gpt-4o-mini', choices: [{ finish_reason: 'stop', message: { content: '{}' } }] });
-    await new OpenAiVisionModel(fakeOpenAiClient(create)).complete(
-      request({ tier: 'light', instructions: '', context: [], schema: undefined, imageDetail: 'low', sampling: { temperature: 0 }, maxTokens: 80 }),
-    );
+    const create = jest.fn().mockResolvedValue({ model: 'gpt-4o', choices: [{ finish_reason: 'stop', message: { content: '{}' } }] });
+    const previous = process.env.AI_MODEL_QUICK;
+    process.env.AI_MODEL_QUICK = 'gpt-4o';
+    try {
+      await new OpenAiVisionModel(fakeOpenAiClient(create)).complete(
+        request({ tier: 'quick', instructions: '', context: [], schema: undefined, imageDetail: 'low', sampling: { temperature: 0 }, maxTokens: 80 }),
+      );
+    } finally {
+      if (previous === undefined) delete process.env.AI_MODEL_QUICK;
+      else process.env.AI_MODEL_QUICK = previous;
+    }
     const body = create.mock.calls[0][0];
-    expect(body.model).toBe('gpt-4o-mini');
+    expect(body.model).toBe('gpt-4o');
     expect(body.messages).toHaveLength(1);
     expect(body.messages[0].role).toBe('user');
     expect(body.messages[0].content[1].image_url.detail).toBe('low');

@@ -1216,8 +1216,15 @@ export class AIAdapter {
   }
 
   /**
-   * Passo barato (gpt-4o-mini) que lê o símbolo, o timeframe E o preço do último
-   * candle visível no gráfico. Usado antes de buscar dados reais de mercado.
+   * Leitura do símbolo, do timeframe E do preço do último candle visível no
+   * gráfico. Usada antes de buscar dados reais de mercado.
+   *
+   * Modelo da análise quick com imagem em detalhe alto (26/10/2026). Medido em
+   * 99 prints reais contra a leitura da análise principal: o gpt-4o-mini em
+   * `detail: low` acertava ativo + timeframe em 61 de 97 (XAUUSD 5m lido como
+   * EURUSD 1h) e o luna em 95 de 97, pelo mesmo custo (~US$ 0,0005 por print;
+   * o mini cobra ~2,8 mil tokens por imagem low). Custa ~1 s a mais (p90 3,6 s).
+   * Esforço de raciocínio no padrão do modelo: foi o que se mediu.
    *
    * O `lastPrice` existe para a GUARDA DE PRINT VELHO (ver `buildQuickGrounding`):
    * sem ele, um print de dias atrás faz o backend injetar "preço atual = X" e a
@@ -1229,8 +1236,13 @@ export class AIAdapter {
     imageUrl: string,
   ): Promise<{ symbol: string; timeframe: string; lastPrice: number | null } | null> {
     try {
+      // O print do usuario mora no Storage PRIVADO: a OpenAI nao abre a URL crua.
+      // Sem isto a leitura falhava calada e nenhuma analise logada recebia os
+      // candles (groundingStats vazio em 100% de 30 dias, 26/10/2026); so a
+      // demo, que manda a imagem embutida, funcionava.
+      const image = await this.resolveImageUrlForModel(imageUrl);
       const result = await this.visionModel.complete({
-        tier: 'light',
+        tier: 'quick',
         instructions: '',
         context: [],
         userContent: [
@@ -1238,16 +1250,19 @@ export class AIAdapter {
             type: 'text',
             text: 'Read this trading chart screenshot. Return ONLY JSON: {"symbol":"<ticker e.g. BTCUSDT, XAUUSD, EURUSD, or empty>","timeframe":"<e.g. 15m, 1h, 4h, or empty>","lastPrice":<the price of the most recent candle close, as a number read from the Y axis, or null>}. Read every digit of the price. If you cannot read something clearly, use an empty string or null.',
           },
-          { type: 'image', url: imageUrl },
+          { type: 'image', url: image },
         ],
-        maxTokens: 80,
+        // Raciocinio conta dentro do teto: 80 tokens nao bastam para o luna.
+        maxTokens: 2000,
         sampling: { temperature: 0 },
-        imageDetail: 'low',
         timeoutMs: 12_000,
       });
       const txt = result.content;
       const parsed = JSON.parse(txt || '{}');
-      const symbol = String(parsed.symbol || '').trim();
+      const read = String(parsed.symbol || '').trim();
+      // Nome de corretora para o ouro ("GOLD", "GOLD#", "GOLDm"): sem isto o
+      // ouro caia em ativo sem candles.
+      const symbol = /^gold(m|[^a-z].*)?$/i.test(read) ? 'XAUUSD' : read;
       const timeframe = String(parsed.timeframe || '').trim();
       const rawPrice = Number(parsed.lastPrice);
       const lastPrice = Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : null;
@@ -1408,18 +1423,28 @@ export class AIAdapter {
     assetClass: CoverageAssetClass;
     marketContext: AnalysisDataCoverage['marketContext'];
     calendar: CalendarCoverage;
+    candles: CandleCoverage;
+    stats: GroundingStats | null;
   }> {
     const extracted = await this.extractSymbol(imageUrl);
     if (!extracted) return {
       block: null, assetClass: 'unknown', marketContext: 'unavailable', calendar: 'symbol_unreadable',
+      candles: 'symbol_unreadable', stats: null,
     };
 
-    const sym = extracted.symbol.toUpperCase();
-    const { isCrypto } = normalizeToBinancePerp(extracted.symbol);
-    const assetClass = classifyCoverageAsset(sym, isCrypto);
+    // Deep com os MESMOS candles reais do quick (26/10/2026); antes so tinha contexto.
+    // Calendário econômico vale para TODAS as classes (cripto reage a CPI/Fed também).
+    const [candles, calendar] = await Promise.all([
+      this.buildCandleBlocks(extracted),
+      this.buildCalendarEnrichment(extracted.symbol.toUpperCase()),
+    ]);
+    const { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats } = candles;
 
+    // Contexto de AGORA nao entra junto de print velho (mesma regra do quick).
     let classBlock: string | null = null;
-    if (isCrypto) {
+    if (staleReason) {
+      // print velho: so os candles retidos e o aviso
+    } else if (isCrypto) {
       classBlock = await this.buildCryptoEnrichment(extracted.symbol);
     } else if (canonicalFxPair(sym)) {
       // Fase 2: forex e metais (ouro/prata). So par de verdade: o regex solto
@@ -1431,15 +1456,17 @@ export class AIAdapter {
       classBlock = await this.buildIndexEnrichment(sym);
     }
 
-    // Calendário econômico vale para TODAS as classes (cripto reage a CPI/Fed também).
-    const calendar = await this.buildCalendarEnrichment(sym);
-
-    const parts = [classBlock, calendar.block].filter(Boolean) as string[];
+    const parts = [candleBlock, staleBlock, classBlock, calendar.block].filter(Boolean) as string[];
+    this.logger.log(
+      `[DeepGrounding] ${sym} ${interval ?? 'tf?'} — candles: ${candleBlock ? 'sim' : 'não'}${staleReason ? ` (retido: ${staleReason})` : ''}, contexto: ${classBlock ? 'sim' : 'não'}`,
+    );
     return {
       block: parts.length > 0 ? parts.join('\n\n') : null,
       assetClass,
-      marketContext: classBlock ? 'injected' : 'unavailable',
+      marketContext: staleReason ? 'stale_withheld' : classBlock ? 'injected' : 'unavailable',
       calendar: calendar.status,
+      candles: candleCoverage,
+      stats,
     };
   }
 
@@ -1576,18 +1603,11 @@ export class AIAdapter {
    * (funding/OI/long-short/F&G pra cripto; dólar/juros pra forex/ouro — os
    * mesmos blocos que o deep já usa). Best-effort; falha → null.
    */
-  private async buildQuickGrounding(imageUrl: string): Promise<{
-    block: string | null;
-    candles: CandleCoverage;
-    marketContext: AnalysisDataCoverage['marketContext'];
-    assetClass: CoverageAssetClass;
-    stats: GroundingStats | null;
-  }> {
-    const extracted = await this.extractSymbol(imageUrl);
-    if (!extracted) return {
-      block: null, candles: 'symbol_unreadable', marketContext: 'unavailable', assetClass: 'unknown', stats: null,
-    };
-
+  /**
+   * Candles reais do grafico (26/10/2026: separado do quick para a deep usar o
+   * mesmo calculo, com uma leitura de simbolo so). Inclui a guarda de print velho.
+   */
+  private async buildCandleBlocks(extracted: { symbol: string; timeframe: string; lastPrice: number | null }) {
     const sym = extracted.symbol.toUpperCase();
     const interval = this.normalizeTimeframe(extracted.timeframe);
     const { isCrypto, base } = normalizeToBinancePerp(extracted.symbol);
@@ -1624,18 +1644,6 @@ export class AIAdapter {
       }
     }
 
-    // O contexto abaixo descreve o mercado de AGORA. Se o preço da imagem
-    // denuncia um print antigo, injetá-lo junto do aviso de print histórico
-    // mistura épocas e pode produzir uma tese aparentemente fundamentada.
-    let contextBlock: string | null = null;
-    if (!staleReason) {
-      if (isCrypto) {
-        contextBlock = await this.buildCryptoEnrichment(extracted.symbol);
-      } else if (canonicalFxPair(sym)) {
-        contextBlock = await this.buildFxEnrichment(sym);
-      }
-    }
-
     // Print antigo/símbolo divergente: em vez de calar, AVISA a IA. Ela precisa
     // saber que os números do gráfico não são os de agora — senão trata a leitura
     // visual como se fosse ao vivo.
@@ -1649,7 +1657,36 @@ export class AIAdapter {
 
     // Numeros so quando os candles ENTRARAM no prompt; com print velho retido,
     // eles descrevem o mercado de agora, nao o grafico analisado.
+
     const stats: GroundingStats = { v: 1, symbol: sym, interval, coverage: candleCoverage, numbers };
+    return { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats };
+  }
+
+  private async buildQuickGrounding(imageUrl: string): Promise<{
+    block: string | null;
+    candles: CandleCoverage;
+    marketContext: AnalysisDataCoverage['marketContext'];
+    assetClass: CoverageAssetClass;
+    stats: GroundingStats | null;
+  }> {
+    const extracted = await this.extractSymbol(imageUrl);
+    if (!extracted) return {
+      block: null, candles: 'symbol_unreadable', marketContext: 'unavailable', assetClass: 'unknown', stats: null,
+    };
+    const { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats } =
+      await this.buildCandleBlocks(extracted);
+
+    // O contexto abaixo descreve o mercado de AGORA. Se o preço da imagem
+    // denuncia um print antigo, injetá-lo junto do aviso de print histórico
+    // mistura épocas e pode produzir uma tese aparentemente fundamentada.
+    let contextBlock: string | null = null;
+    if (!staleReason) {
+      if (isCrypto) {
+        contextBlock = await this.buildCryptoEnrichment(extracted.symbol);
+      } else if (canonicalFxPair(sym)) {
+        contextBlock = await this.buildFxEnrichment(sym);
+      }
+    }
 
     const parts = [candleBlock, staleBlock, contextBlock].filter(Boolean) as string[];
     if (parts.length > 0) {
@@ -1691,10 +1728,20 @@ export class AIAdapter {
     if (!Number.isFinite(lastClose) || lastClose <= 0) return null;
 
     // Ordem de grandeza diferente = ou o ticker está errado, ou a leitura do eixo
-    // falhou feio. Nos dois casos não dá pra confiar no cruzamento — melhor reter.
+    // falhou feio. Exceção: em 'low' a leitura às vezes perde a vírgula (401,25
+    // por 4012,5; visto em produção em 26/10/2026 num print ATUAL de ouro). Só
+    // potência de 10 que, corrigida, caia a 10% do preço real; o teste de ATR
+    // abaixo continua decidindo se o print é velho.
+    let price = imagePrice;
     const ratio = imagePrice / lastClose;
     if (ratio < 0.5 || ratio > 2) {
-      return 'the price read from the image is on a different order of magnitude than the live feed (wrong ticker or unreadable axis)';
+      const rescaled = [10, 100, 1000, 0.1, 0.01, 0.001]
+        .map((factor) => imagePrice * factor)
+        .find((p) => p / lastClose >= 0.9 && p / lastClose <= 1.1);
+      if (rescaled == null) {
+        return `the price read from the image (${imagePrice}) is on a different order of magnitude than the live feed (${lastClose}) (wrong ticker or unreadable axis)`;
+      }
+      price = rescaled;
     }
 
     const trs = candles
@@ -1705,7 +1752,7 @@ export class AIAdapter {
     const atr = trs.slice(-14).reduce((a, b) => a + b, 0) / Math.min(14, trs.length);
     if (!Number.isFinite(atr) || atr <= 0) return null;
 
-    const gapInAtr = Math.abs(imagePrice - lastClose) / atr;
+    const gapInAtr = Math.abs(price - lastClose) / atr;
     if (gapInAtr > 3) {
       return `the chart shows a price ${gapInAtr.toFixed(1)} ATR away from the live price (the screenshot is not from the current moment)`;
     }
@@ -1747,10 +1794,12 @@ export class AIAdapter {
         try {
           const enrichment = await withTimeout(
             this.buildMarketEnrichment(imageUrl),
-            14_000,
+            18_000,
             'market enrichment timed out',
           );
           coverage.assetClass = enrichment.assetClass;
+          coverage.candles = enrichment.candles ?? coverage.candles;
+          groundingStats = enrichment.stats ?? null;
           if (enrichment.block) {
             context.push(enrichment.block);
           }
@@ -1767,7 +1816,7 @@ export class AIAdapter {
         // Grounding do QUICK — DESLIGADO por padrão (só liga com
         // ENABLE_QUICK_GROUNDING='true' no Render). Fica atrás de flag até o
         // backtest isolado (v7.3 + --ground, 75 pareadas) dizer se ajuda.
-        // Custo quando ligado: +1 chamada gpt-4o-mini (extractSymbol, ~US$0,0001)
+        // Custo quando ligado: +1 leitura do simbolo (extractSymbol, ~US$0,0005)
         // e +alguns segundos de latência, com teto de 15s. Falha → segue sem o bloco.
         try {
           const grounding = await withTimeout(
