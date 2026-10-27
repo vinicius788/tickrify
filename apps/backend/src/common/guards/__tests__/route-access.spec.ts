@@ -271,6 +271,9 @@ describe('controle de acesso das rotas', () => {
         'market.controller.ts::getContext',
         // Depoimentos do site: so com licenca do assinante e aprovacao do admin.
         'ratings.controller.ts::testimonials',
+        // Oferta Founding Member: confere um link pessoal (FND-XXXXXXXX) e so devolve
+        // se o codigo existe e esta valido na Stripe; nao expoe lista nem enumera.
+        'stripe.controller.ts::getFounderOffer',
         'stripe.controller.ts::getOffer',
         'stripe.controller.ts::handleWebhook',
       ].sort(),

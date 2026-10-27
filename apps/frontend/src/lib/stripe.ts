@@ -166,6 +166,7 @@ export async function createCheckoutSession(
   currency: Currency = 'usd',
   coupon?: 'EARLY35',
   source?: 'pricing' | 'locked_value' | 'last_free_result' | 'upgrade_modal',
+  offerCode?: string,
 ) {
   const session = await requestStripeApi<{ sessionId: string; url: string }>(
     '/api/stripe/create-checkout-session',
@@ -181,6 +182,8 @@ export async function createCheckoutSession(
         currency,
         ...(coupon ? { coupon } : {}),
         ...(source ? { source } : {}),
+        // Link pessoal Founding Member: o servidor confere o codigo na Stripe.
+        ...(offerCode ? { offerCode } : {}),
         // Contexto do Meta (so com aceite de cookies). O servidor usa no
         // InitiateCheckout e guarda na sessao para o Purchase do webhook.
         ...getAdsPayload(),

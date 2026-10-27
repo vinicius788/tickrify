@@ -415,6 +415,9 @@ export type FunnelEvent =
   // `checkout_completed` do backend.
   | 'checkout_success_viewed'
   | 'founding_banner_clicked'
+  // Oferta Founding Member (link pessoal por e-mail, 27/10/2026): so aparece
+  // para quem tem um codigo valido. A compra e o `checkout_*` com `offer: true`.
+  | 'founder_offer_viewed'
   // Filme 04 no paywall/janela de upgrade (`surface`: locked | upgrade_modal).
   | 'upgrade_video_played'
   | 'upgrade_video_completed'

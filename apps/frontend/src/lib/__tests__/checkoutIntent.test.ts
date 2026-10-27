@@ -89,4 +89,31 @@ describe('checkoutIntent', () => {
       '/dashboard/plans?checkout=starter&cycle=monthly&source=pricing',
     );
   });
+  describe('oferta Founding Member', () => {
+    const CODE = 'FND-ABCD2345';
+
+    it('o codigo viaja na URL de volta do login e na intencao guardada, sempre no mensal', () => {
+      expect(parseCheckoutIntent(`?checkout=starter&cycle=yearly&source=pricing&offer=${CODE}`)).toEqual({
+        plan: 'starter', cycle: 'monthly', source: 'pricing', offer: CODE,
+      });
+      const intent = { plan: 'starter', cycle: 'monthly', source: 'pricing', offer: CODE } as const;
+      expect(checkoutReturnPath(intent)).toBe(`/dashboard/plans?checkout=starter&cycle=monthly&source=pricing&offer=${CODE}`);
+      saveCheckoutIntent(intent, 1_000);
+      expect(loadCheckoutIntent(1_001)).toEqual(intent);
+    });
+
+    it('codigo fora do formato some, e o resto da intencao continua igual', () => {
+      for (const bad of ['EARLY35', 'fnd-abcd2345', 'FND-ABCD234', 'FND-ABCD23456', 'FND-ABCD234!', '']) {
+        expect(parseCheckoutIntent(`?checkout=starter&cycle=yearly&source=pricing&offer=${bad}`)).toEqual({
+          plan: 'starter', cycle: 'yearly', source: 'pricing',
+        });
+      }
+    });
+
+    it('o redirect do login preserva o codigo e continua recusando destino de fora', () => {
+      const target = `/dashboard/plans?checkout=starter&cycle=monthly&source=pricing&offer=${CODE}`;
+      expect(checkoutTargetFromAuthSearch(`?redirect_url=${encodeURIComponent(target)}`, ORIGIN)).toBe(target);
+      expect(checkoutTargetFromAuthSearch(`?redirect_url=${encodeURIComponent(`https://evil.com${target}`)}`, ORIGIN)).toBeNull();
+    });
+  });
 });

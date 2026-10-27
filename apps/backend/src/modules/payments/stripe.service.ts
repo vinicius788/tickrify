@@ -17,7 +17,18 @@ import { PrismaService } from '../database/prisma.service';
 import { captureServer, type CaptureOptions } from '../../common/analytics/posthog';
 import { sendMetaEvent, type MetaAdsContext } from '../../common/analytics/meta-capi';
 import { funnelLog, safeErrorFields } from '../../common/observability/funnel-log';
-import { FOUNDING_COUPON_ID, getFoundingOffer, type FoundingOffer } from './founding-offer';
+import {
+  FOUNDER_CLOSED,
+  FOUNDER_COUPON_ID,
+  FOUNDING_COUPON_ID,
+  createFounderPromotionCode,
+  ensureFounderCoupon,
+  findFounderPromotion,
+  founderOfferFromPromotion,
+  getFoundingOffer,
+  type FounderOffer,
+  type FoundingOffer,
+} from './founding-offer';
 import { AffiliatesService, type ReferralKind } from '../affiliates/affiliates.service';
 import { MailService } from '../mail/mail.service';
 import { flagBool } from '../../common/flags/feature-flags';
@@ -192,6 +203,43 @@ export class StripeService implements OnModuleInit {
     return getFoundingOffer(this.stripe);
   }
 
+  /**
+   * Oferta Founding Member de UM codigo (link pessoal). Nunca lanca: erro da
+   * Stripe = oferta fechada, e a vitrine so mostra o que o servidor confirma.
+   */
+  async getFounderOffer(code: string): Promise<FounderOffer> {
+    if (!this.stripe) return FOUNDER_CLOSED;
+    try {
+      return founderOfferFromPromotion(await findFounderPromotion(this.stripe, code));
+    } catch (error) {
+      this.logger.warn(`[founder] Consulta do codigo falhou: ${error instanceof Error ? error.message : String(error)}`);
+      return FOUNDER_CLOSED;
+    }
+  }
+
+  /** Cria (se preciso) o cupom das vagas e um codigo pessoal para `userId`. Uso: campanha do /admin. */
+  async issueFounderCode(userId: string, expiresAt: number): Promise<{ id: string; code: string }> {
+    const stripe = this.getStripeClient();
+    await ensureFounderCoupon(stripe);
+    return createFounderPromotionCode(stripe, { userId, expiresAt });
+  }
+
+  /** Desativa um codigo que nao chegou a sair (e-mail recusado pelo provedor). */
+  async revokeFounderCode(promotionCodeId: string): Promise<void> {
+    await this.getStripeClient().promotionCodes.update(promotionCodeId, { active: false });
+  }
+
+  /** Vagas usadas, para a conferencia do /admin. null = cupom ainda nao criado. */
+  async founderSeats(): Promise<{ used: number; total: number | null; valid: boolean } | null> {
+    try {
+      const coupon = await this.getStripeClient().coupons.retrieve(FOUNDER_COUPON_ID);
+      return { used: coupon.times_redeemed, total: coupon.max_redemptions, valid: coupon.valid };
+    } catch (error) {
+      if ((error as { statusCode?: number })?.statusCode === 404) return null;
+      throw error;
+    }
+  }
+
   private getStripeClient(): Stripe {
     if (!this.stripe) {
       throw new ServiceUnavailableException('Stripe is not configured');
@@ -258,6 +306,14 @@ export class StripeService implements OnModuleInit {
     this.priceCheckedAt.set(priceId, Date.now());
   }
 
+  private founderUnavailable(userId: string): ConflictException {
+    this.logger.warn(`[founder] Codigo recusado para o usuario ${userId}.`);
+    return new ConflictException({
+      code: 'founder_offer_unavailable',
+      message: 'This offer is no longer available. The regular plans are still open.',
+    });
+  }
+
   private alreadySubscribed(userId: string, status: string, source: 'db' | 'stripe'): ConflictException {
     this.logger.warn(`[stripe] Checkout recusado: usuario ${userId} ja tem assinatura ${status} (${source}).`);
     return new ConflictException({
@@ -282,6 +338,7 @@ export class StripeService implements OnModuleInit {
     source?: 'pricing' | 'locked_value' | 'last_free_result' | 'upgrade_modal',
     ads: MetaAdsContext = { consent: false },
     referral?: CheckoutReferral,
+    founderCode?: string,
   ): Promise<CheckoutResult> {
     const inFlight = this.checkoutInFlight.get(clerkUserId);
     if (inFlight) {
@@ -289,7 +346,7 @@ export class StripeService implements OnModuleInit {
       return inFlight;
     }
 
-    const run = this.createCheckoutSessionUnlocked(clerkUserId, planType, billingCycle, currency, couponId, source, ads, referral)
+    const run = this.createCheckoutSessionUnlocked(clerkUserId, planType, billingCycle, currency, couponId, source, ads, referral, founderCode)
       .finally(() => this.checkoutInFlight.delete(clerkUserId));
     this.checkoutInFlight.set(clerkUserId, run);
     return run;
@@ -304,6 +361,7 @@ export class StripeService implements OnModuleInit {
     source?: 'pricing' | 'locked_value' | 'last_free_result' | 'upgrade_modal',
     ads: MetaAdsContext = { consent: false },
     referral?: CheckoutReferral,
+    founderCode?: string,
   ): Promise<CheckoutResult> {
     const startedAt = Date.now();
     // Resolvido logo que o usuario e lido; os logs de erro usam o que houver.
@@ -359,6 +417,18 @@ export class StripeService implements OnModuleInit {
       // 35% de US$ 290 (US$ 188,50), o que nenhuma pagina promete. A regra
       // mora AQUI: a vitrine so mostra o desconto onde o servidor aplica.
       if (billingCycle !== 'monthly') couponId = undefined;
+
+      // Founding Member (link pessoal): valida o codigo na Stripe ANTES de abrir
+      // a sessao. Codigo recusado NUNCA cai no preco cheio em silencio: quem
+      // clicou esperando US$ 15 e chegasse num checkout de US$ 29 sentiria que
+      // foi enganado. Falha explicita e a tela explica.
+      let founderPromotionId: string | undefined;
+      if (founderCode) {
+        const promo = billingCycle === 'monthly' ? await findFounderPromotion(stripe, founderCode) : null;
+        if (!founderOfferFromPromotion(promo).active) throw this.founderUnavailable(user.id);
+        founderPromotionId = promo?.id;
+        couponId = undefined;
+      }
       if (couponId === FOUNDING_COUPON_ID && !(await this.getFoundingOffer()).active) {
         this.logger.warn(`[stripe] ${FOUNDING_COUPON_ID} sem usos ou expirado; checkout sem desconto.`);
         couponId = undefined;
@@ -380,9 +450,12 @@ export class StripeService implements OnModuleInit {
       // 35% "aplicados automaticamente" e a promessa tem que valer para todos.
       // A comissao sai sobre o valor pago de fato, entao o afiliado segue
       // recebendo pela indicacao (vinculo no banco, nao no cupom).
-      let discount: Stripe.Checkout.SessionCreateParams.Discount | undefined =
-        couponId ? { coupon: couponId } : undefined;
-      let discountLabel = couponId ?? '';
+      let discount: Stripe.Checkout.SessionCreateParams.Discount | undefined = founderPromotionId
+        ? { promotion_code: founderPromotionId }
+        : couponId
+          ? { coupon: couponId }
+          : undefined;
+      let discountLabel = founderPromotionId ? `founder:${founderCode}` : couponId ?? '';
       let affiliateId: string | null = null;
       if (!discount) {
         const affiliateDiscount = await this.affiliates.checkoutDiscountFor(user.id).catch(() => null);
@@ -464,7 +537,7 @@ export class StripeService implements OnModuleInit {
       // So quem esta logado abre checkout, entao cancelar volta para os Planos
       // DENTRO do painel (antes ia para a /pricing publica e o voltar do
       // navegador tirava a pessoa do app).
-      const cancelUrl = `${appBaseUrl}/dashboard/plans?canceled=true`;
+      const cancelUrl = `${appBaseUrl}/dashboard/plans?canceled=true${founderCode ? `&offer=${founderCode}` : ''}`;
 
       const baseParams: Stripe.Checkout.SessionCreateParams = {
         customer: customerId,
@@ -575,6 +648,8 @@ export class StripeService implements OnModuleInit {
           /coupon|promotion|discount/i.test(erroCupom.message);
 
         if (!recusouOCupom) throw erroCupom;
+        // Founding Member: sem desconto nao ha oferta (ver acima).
+        if (founderPromotionId) throw this.founderUnavailable(user.id);
 
         this.logger.warn(
           `[stripe] Desconto ${discountLabel} recusado pela Stripe (${erroCupom.message}). ` +

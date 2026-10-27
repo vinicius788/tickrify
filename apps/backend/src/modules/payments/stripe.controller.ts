@@ -90,6 +90,7 @@ export class StripeController {
       body.affiliateCode && body.affiliateKind
         ? { code: body.affiliateCode, kind: body.affiliateKind, clickId: body.affiliateClickId ?? null }
         : undefined,
+      body.offerCode,
     );
   }
 
@@ -160,6 +161,18 @@ export class StripeController {
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   getOffer() {
     return this.stripeService.getFoundingOffer();
+  }
+
+  /**
+   * Oferta Founding Member de UM link pessoal. Publica porque quem abre o link
+   * pode estar sem login. O codigo tem 8 caracteres sorteados (~1 trilhao de
+   * combinacoes) e a rota so devolve "ativa, preco, vagas, validade".
+   */
+  @Public()
+  @Get('founder-offer')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  getFounderOffer(@Query('code') code?: string) {
+    return this.stripeService.getFounderOffer(typeof code === 'string' ? code.trim().toUpperCase() : '');
   }
 
   @Public()

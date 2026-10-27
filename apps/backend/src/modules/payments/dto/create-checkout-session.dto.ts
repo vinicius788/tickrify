@@ -74,6 +74,14 @@ export class CreateCheckoutSessionDto {
   @Matches(/^[A-Za-z0-9]{4,20}$/)
   affiliateCode?: string;
 
+  /**
+   * Link pessoal da oferta Founding Member (FND-XXXXXXXX). So identifica o
+   * codigo: o servidor confere na Stripe se esta ativo, e so vale no mensal.
+   */
+  @IsOptional()
+  @Matches(/^FND-[A-Z0-9]{8}$/)
+  offerCode?: string;
+
   @IsOptional()
   @IsIn(['link', 'coupon'])
   affiliateKind?: 'link' | 'coupon';

@@ -5,9 +5,10 @@ import { buildApiUrl, warmupPaymentsApi } from "../../lib/api";
 import { getReferralCoupon, isAffiliateCode, saveReferralCoupon } from "../../lib/attribution";
 import { track } from "../../lib/analytics";
 import { useToast } from "../../hooks/use-toast";
-import { useFoundingOffer } from "@/hooks/useFoundingOffer";
+import { useFounderOffer, useFoundingOffer } from "@/hooks/useFoundingOffer";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
+  FOUNDER_CODE_PATTERN,
   authUrlForCheckout,
   clearCheckoutIntent,
   loadCheckoutIntent,
@@ -177,6 +178,19 @@ const CHROME_COPY = {
     canceledDesc: "No charge was made. You can subscribe whenever you want.",
     firstMonth: (price: string, code: string, pct: number) =>
       `First month ${price} with ${code} (${pct}% off), applied automatically. Then $29/month.`,
+    founderEyebrow: "Founding member",
+    founderSub: "Locked for as long as your subscription stays active",
+    founderFeatures: [
+      "200 Ticks every month (~200 quick or 66 deep)",
+      "Quick + deep analysis",
+      "Live candle grounding + economic calendar",
+      "Your price never goes up while you stay subscribed",
+    ],
+    founderCta: "Claim my founding price",
+    founderSeats: (left: number) => (left === 1 ? "1 founding spot left" : `${left} founding spots left`),
+    founderUntil: (date: string) => `Your personal link expires on ${date}`,
+    founderNote:
+      "One-time offer, not listed anywhere else. Billed every month, cancel anytime from your dashboard. If you cancel, you come back at the regular price.",
   },
   pt: {
     weekly: "Semanal",
@@ -202,6 +216,19 @@ const CHROME_COPY = {
     canceledDesc: "Nenhuma cobrança foi feita. Você pode assinar quando quiser.",
     firstMonth: (price: string, code: string, pct: number) =>
       `Primeiro mês ${price} com ${code} (${pct}% off), aplicado automaticamente. Depois US$ 29/mês.`,
+    founderEyebrow: "Membro fundador",
+    founderSub: "Travado enquanto sua assinatura continuar ativa",
+    founderFeatures: [
+      "200 Ticks por mês (~200 rápidas ou 66 deep)",
+      "Análise rápida + deep",
+      "Grounding com candles ao vivo + calendário econômico",
+      "Seu preço não sobe enquanto você continuar assinando",
+    ],
+    founderCta: "Garantir meu preço fundador",
+    founderSeats: (left: number) => (left === 1 ? "Resta 1 vaga de fundador" : `Restam ${left} vagas de fundador`),
+    founderUntil: (date: string) => `Seu link pessoal vence em ${date}`,
+    founderNote:
+      "Oferta única, não listada em nenhum outro lugar. Cobrança mensal, cancele quando quiser pelo painel. Se cancelar, volta ao preço normal.",
   },
 };
 
@@ -320,6 +347,17 @@ function cycleFromUrl(): BillingCycle | null {
   return (CYCLES_FROM_URL as readonly string[]).includes(value ?? "") ? (value as BillingCycle) : null;
 }
 
+/** Link pessoal da oferta Founding Member (`?offer=FND-XXXXXXXX`). */
+function offerFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const value = (new URLSearchParams(window.location.search).get("offer") ?? "").trim().toUpperCase();
+  return FOUNDER_CODE_PATTERN.test(value) ? value : null;
+}
+
+function formatOfferDate(seconds: number, lang: "en" | "pt"): string {
+  return new Date(seconds * 1000).toLocaleDateString(lang === "pt" ? "pt-BR" : "en-US", { month: "long", day: "numeric" });
+}
+
 export function PricingCards() {
   const { getToken, isSignedIn, isLoaded } = useAuth();
   const { toast } = useToast();
@@ -335,6 +373,14 @@ export function PricingCards() {
   const firstMonthPrice = foundingOffer?.percentOff
     ? `$${(29 * (1 - foundingOffer.percentOff / 100)).toFixed(2)}`
     : null;
+  // Oferta Founding Member: so existe com um link pessoal valido. Sem codigo, ou
+  // com codigo usado ou vencido, a pagina fica exatamente como sempre foi.
+  const [offerCode] = useState<string | null>(() => offerFromUrl());
+  const founder = useFounderOffer(offerCode);
+  const founderActive = Boolean(founder);
+  useEffect(() => {
+    if (founderActive) track("founder_offer_viewed");
+  }, [founderActive]);
   const [loadingPlan, setLoadingPlan] = useState<PlanType | null>(null);
   const [processingUpgrade, setProcessingUpgrade] = useState(false);
   // `?cycle=weekly` (link do e-mail do plano semanal) abre a pagina ja no
@@ -394,20 +440,22 @@ export function PricingCards() {
   const handleUpgrade = useCallback(
     async (
       planType: PlanType,
-      options: { cycle?: BillingCycle; source?: CheckoutSource; resumed?: boolean } = {},
+      options: { cycle?: BillingCycle; source?: CheckoutSource; resumed?: boolean; offer?: string } = {},
     ) => {
-      const cycle = options.cycle ?? billingCycle;
+      const offer = options.offer;
+      // A oferta fundador e so do mensal.
+      const cycle = offer ? "monthly" : options.cycle ?? billingCycle;
       const source = options.source ?? "pricing";
       // INTENÇÃO de compra. `resumed` = voltou do login e seguiu sozinho; nao e
       // um segundo clique, entao nao conta outro upgrade_clicked.
       if (!options.resumed) {
-        track('upgrade_clicked', { plan: planType, cycle, source, signedIn: Boolean(isSignedIn) });
+        track('upgrade_clicked', { plan: planType, cycle, source, signedIn: Boolean(isSignedIn), ...(offer ? { offer: true } : {}) });
       }
       if (!isSignedIn) {
         // Login/cadastro devolve para /dashboard/plans?checkout=... e o efeito abaixo
         // retoma a compra. Antes ia para /sign-in sem destino e o Clerk
         // mandava todo mundo para o /dashboard: a intencao morria ali.
-        const intent: CheckoutIntent = { plan: planType, cycle, source };
+        const intent: CheckoutIntent = { plan: planType, cycle, source, ...(offer ? { offer } : {}) };
         saveCheckoutIntent(intent);
         window.location.href = authUrlForCheckout(intent);
         return;
@@ -448,8 +496,8 @@ export function PricingCards() {
          * SO no mensal (05/10/2026): o cupom e "35% no primeiro MES". Ate entao
          * o anual tambem ia com ele (US$ 290 virava US$ 188,50). O servidor
          * descarta igual; mandar so aqui evita sessao marcada com cupom. */
-        const coupon = cycle === "monthly" ? "EARLY35" : undefined;
-        const { url, sessionId } = await createCheckoutSession(planType, token, cycle, currency, coupon, source);
+        const coupon = cycle === "monthly" && !offer ? "EARLY35" : undefined;
+        const { url, sessionId } = await createCheckoutSession(planType, token, cycle, currency, coupon, source, offer);
         // Dispara SO com a URL da Stripe em maos: antes saia antes da chamada a
         // API e contava clique como checkout, inclusive quando a sessao falhava.
         track('checkout_started', {
@@ -457,6 +505,7 @@ export function PricingCards() {
           billingCycle: cycle,
           currency,
           coupon: coupon ?? null,
+          ...(offer ? { offer: true } : {}),
           source,
           sessionId,
           resumedAfterAuth: Boolean(options.resumed),
@@ -526,7 +575,7 @@ export function PricingCards() {
 
     setBillingCycle(intent.cycle);
     setProcessingUpgrade(true);
-    void handleUpgrade(intent.plan, { cycle: intent.cycle, source: intent.source, resumed: true });
+    void handleUpgrade(intent.plan, { cycle: intent.cycle, source: intent.source, resumed: true, offer: intent.offer });
   }, [handleUpgrade, isLoaded, isSignedIn]);
 
   if (processingUpgrade) {
@@ -543,6 +592,40 @@ export function PricingCards() {
     <div>
       {/* Ciclo de cobrança. Dois botões com aria-pressed em vez de um switch:
           o estado fica legível para leitor de tela e para quem só olha. */}
+      {founder ? (
+        <div className="mb-6">
+          <div className="site-price">
+            <span className="site-eyebrow">{copy.founderEyebrow}</span>
+            <div className="site-price-amt">
+              <b>{`$${founder.priceUsd}`}</b>
+              <span>{copy.perMonth}</span>
+            </div>
+            <p className="site-price-sub">{copy.founderSub}</p>
+            <ul>
+              {copy.founderFeatures.map((feature) => (
+                <li key={feature}>
+                  <Check />
+                  {feature}
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => handleUpgrade(PLANS[0].id, { offer: offerCode ?? undefined })}
+              disabled={loadingPlan !== null}
+              className="site-btn site-btn-primary site-btn-block"
+            >
+              {loadingPlan === PLANS[0].id ? copy.processing : copy.founderCta}
+            </button>
+            {founder.seatsLeft !== null ? <p className="site-price-fine">{copy.founderSeats(founder.seatsLeft)}</p> : null}
+            {founder.expiresAt ? (
+              <p className="site-price-fine">{copy.founderUntil(formatOfferDate(founder.expiresAt, lang))}</p>
+            ) : null}
+            <p className="site-price-fine">{copy.founderNote}</p>
+          </div>
+        </div>
+      ) : null}
+
       <div ref={cycleRef} className="site-cycle" role="group" aria-label="Billing cycle">
         <button
           type="button"

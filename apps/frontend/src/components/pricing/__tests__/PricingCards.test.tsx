@@ -15,7 +15,14 @@ vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock('@/lib/i18n/LanguageContext', () => ({ useLanguage: () => ({ language: 'en' }) }));
 const offer = { current: null as null | { active: boolean; code: string; percentOff: number | null } };
-vi.mock('@/hooks/useFoundingOffer', () => ({ useFoundingOffer: () => offer.current }));
+const founder = { current: null as null | { active: boolean; priceUsd: number; seatsLeft: number | null; expiresAt: number | null }, lastCode: undefined as string | null | undefined };
+vi.mock('@/hooks/useFoundingOffer', () => ({
+  useFoundingOffer: () => offer.current,
+  useFounderOffer: (code: string | null) => {
+    founder.lastCode = code;
+    return code ? founder.current : null;
+  },
+}));
 
 import { PricingCards } from '@/components/pricing/PricingCards';
 import { clearCheckoutIntent, loadCheckoutIntent } from '@/lib/checkoutIntent';
@@ -77,7 +84,7 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
     await waitFor(() => expect(location.assigned).toBe('https://checkout.stripe.com/c/pay/cs_1'));
     expect(createCheckoutSession).toHaveBeenCalledTimes(1);
     // EARLY35 e so do mensal: o anual vai sem cupom.
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'yearly', 'usd', undefined, 'pricing');
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'yearly', 'usd', undefined, 'pricing', undefined);
     expect(loadCheckoutIntent()).toBeNull();
   });
 
@@ -93,7 +100,7 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
     render(<PricingCards />);
 
     await waitFor(() => expect(location.assigned).toBe('https://checkout.stripe.com/c/pay/cs_2'));
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', 'EARLY35', 'locked_value');
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', 'EARLY35', 'locked_value', undefined);
   });
 
   it('logado sem intencao: nao abre checkout sozinho', async () => {
@@ -135,7 +142,7 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
     await userEvent.click(screen.getByRole('button', { name: /get started|start weekly/i }));
 
     await waitFor(() => expect(createCheckoutSession).toHaveBeenCalledTimes(1));
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', cycle, 'usd', coupon, 'pricing');
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', cycle, 'usd', coupon, 'pricing', undefined);
   });
 
   it('conta que ja tem assinatura (past_due incluso): avisa e leva para Configuracoes, onde fica o cartao', async () => {
@@ -174,5 +181,114 @@ describe('PricingCards: oferta do 1o mes', () => {
   it('sem cupom ativo, nenhuma promessa de desconto', () => {
     render(<PricingCards />);
     expect(screen.queryByText(/First month/)).toBeNull();
+  });
+});
+
+describe('PricingCards: oferta Founding Member (link pessoal)', () => {
+  const CODE = 'FND-ABCD2345';
+  const active = { active: true, priceUsd: 15, seatsLeft: 27, expiresAt: Math.floor(Date.UTC(2026, 10, 4, 12) / 1000) };
+
+  beforeEach(() => {
+    clearCheckoutIntent();
+    createCheckoutSession.mockReset();
+    auth.getToken.mockReset().mockResolvedValue('tok');
+    founder.current = null;
+    founder.lastCode = undefined;
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('sem codigo na URL a oferta nao existe e o servidor nem e consultado', () => {
+    founder.current = active;
+    stubLocation('https://tickrify.com/pricing');
+    render(<PricingCards />);
+    expect(founder.lastCode).toBeNull();
+    expect(screen.queryByText(/founding/i)).toBeNull();
+  });
+
+  it('codigo fora do formato e ignorado (EARLY35 digitado na URL nao abre nada)', () => {
+    founder.current = active;
+    stubLocation('https://tickrify.com/pricing?offer=EARLY35');
+    render(<PricingCards />);
+    expect(founder.lastCode).toBeNull();
+    expect(screen.queryByText(/founding/i)).toBeNull();
+  });
+
+  it('codigo recusado pelo servidor (usado, vencido): pagina normal, sem cartao', () => {
+    founder.current = null;
+    stubLocation(`https://tickrify.com/pricing?offer=${CODE}`);
+    render(<PricingCards />);
+    expect(founder.lastCode).toBe(CODE);
+    expect(screen.queryByText(/founding/i)).toBeNull();
+  });
+
+  it('codigo valido: mostra US$ 15, vagas reais e validade, e o plano normal segue abaixo', () => {
+    founder.current = active;
+    stubLocation(`https://tickrify.com/pricing?offer=${CODE.toLowerCase()}`);
+    render(<PricingCards />);
+    expect(founder.lastCode).toBe(CODE);
+    expect(screen.getByText('$15')).toBeTruthy();
+    expect(screen.getByText('27 founding spots left')).toBeTruthy();
+    expect(screen.getByText(/Your personal link expires on November 4/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /claim my founding price/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /get started/i })).toBeTruthy();
+  });
+
+  it('logado: o clique abre o checkout mensal com o codigo e SEM EARLY35', async () => {
+    auth.isSignedIn = true;
+    founder.current = active;
+    createCheckoutSession.mockResolvedValue({ sessionId: 'cs_f', url: 'https://checkout.stripe.com/c/pay/cs_f' });
+    const location = stubLocation(`https://tickrify.com/dashboard/plans?offer=${CODE}`);
+
+    render(<PricingCards />);
+    await userEvent.click(screen.getByRole('button', { name: /claim my founding price/i }));
+
+    await waitFor(() => expect(location.assigned).toBe('https://checkout.stripe.com/c/pay/cs_f'));
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', undefined, 'pricing', CODE);
+  });
+
+  it('deslogado: guarda o codigo na intencao e o login devolve para o checkout com ele', async () => {
+    auth.isSignedIn = false;
+    founder.current = active;
+    const location = stubLocation(`https://tickrify.com/pricing?offer=${CODE}`);
+
+    render(<PricingCards />);
+    await userEvent.click(screen.getByRole('button', { name: /claim my founding price/i }));
+
+    expect(location.assigned).toBe(
+      `/sign-in?redirect_url=${encodeURIComponent(`/dashboard/plans?checkout=starter&cycle=monthly&source=pricing&offer=${CODE}`)}`,
+    );
+    expect(loadCheckoutIntent()).toEqual({ plan: 'starter', cycle: 'monthly', source: 'pricing', offer: CODE });
+    expect(createCheckoutSession).not.toHaveBeenCalled();
+  });
+
+  it('volta do login com o codigo: abre o checkout sozinho, uma vez, com o codigo', async () => {
+    auth.isSignedIn = true;
+    founder.current = active;
+    createCheckoutSession.mockResolvedValue({ sessionId: 'cs_r', url: 'https://checkout.stripe.com/c/pay/cs_r' });
+    const location = stubLocation(
+      `https://tickrify.com/dashboard/plans?checkout=starter&cycle=monthly&source=pricing&offer=${CODE}`,
+    );
+
+    render(<PricingCards />);
+
+    await waitFor(() => expect(location.assigned).toBe('https://checkout.stripe.com/c/pay/cs_r'));
+    expect(createCheckoutSession).toHaveBeenCalledTimes(1);
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', undefined, 'pricing', CODE);
+  });
+
+  it('servidor recusa o codigo no checkout: erro na tela e nenhum redirect para o preco cheio', async () => {
+    auth.isSignedIn = true;
+    founder.current = active;
+    createCheckoutSession.mockRejectedValue(new CheckoutError('This offer is no longer available.', 'founder_offer_unavailable', 409));
+    const location = stubLocation(`https://tickrify.com/dashboard/plans?offer=${CODE}`);
+
+    render(<PricingCards />);
+    await userEvent.click(screen.getByRole('button', { name: /claim my founding price/i }));
+
+    await waitFor(() => expect(createCheckoutSession).toHaveBeenCalledTimes(1));
+    expect(location.assigned).toBe('');
   });
 });

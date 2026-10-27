@@ -86,6 +86,67 @@ describe('StripeService.createCheckoutSession', () => {
     process.env = { ...originalEnv };
   });
 
+  describe('founding member (link pessoal)', () => {
+    const promo = (over: Record<string, unknown> = {}, coupon: Record<string, unknown> = {}) => ({
+      id: 'promo_f1',
+      code: 'FND-ABCD2345',
+      active: true,
+      max_redemptions: 1,
+      times_redeemed: 0,
+      expires_at: Math.floor(Date.now() / 1000) + 86_400,
+      coupon: { id: 'FOUNDER15', valid: true, max_redemptions: 30, times_redeemed: 3, ...coupon },
+      ...over,
+    });
+    const found = (p: unknown) => {
+      stripe.promotionCodes = { list: jest.fn().mockResolvedValue({ data: p ? [p] : [] }) };
+    };
+    const open = (cycle: 'monthly' | 'yearly' = 'monthly') =>
+      service.createCheckoutSession('clerk_1', 'starter', cycle, 'usd', 'EARLY35', 'pricing', { consent: false }, undefined, 'FND-ABCD2345');
+
+    it('aplica o codigo pessoal no lugar do EARLY35 e do afiliado, e carimba a sessao', async () => {
+      found(promo());
+      affiliates.checkoutDiscountFor.mockResolvedValue({ affiliateId: 'aff_1', discount: { promotion_code: 'promo_1' } });
+      await open();
+
+      const params = stripe.checkout.sessions.create.mock.calls[0][0];
+      expect(params.discounts).toEqual([{ promotion_code: 'promo_f1' }]);
+      expect(params.allow_promotion_codes).toBeUndefined();
+      expect(params.metadata.coupon).toBe('founder:FND-ABCD2345');
+      expect(params.cancel_url).toContain('/dashboard/plans?canceled=true&offer=FND-ABCD2345');
+      expect(stripe.coupons.retrieve).not.toHaveBeenCalled();
+      expect(affiliates.checkoutDiscountFor).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['inexistente', null],
+      ['ja usado', promo({ times_redeemed: 1 })],
+      ['expirado', promo({ expires_at: Math.floor(Date.now() / 1000) - 5 })],
+      ['30 vagas gastas', promo({}, { times_redeemed: 30 })],
+    ])('codigo %s: recusa com founder_offer_unavailable e NAO abre checkout', async (_nome, p) => {
+      found(p);
+      await expect(open()).rejects.toMatchObject({ response: { code: 'founder_offer_unavailable' } });
+      expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+    });
+
+    it('so vale no mensal: no anual recusa sem abrir checkout', async () => {
+      found(promo());
+      await expect(open('yearly')).rejects.toMatchObject({ response: { code: 'founder_offer_unavailable' } });
+      expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+    });
+
+    it('Stripe recusa o desconto ao criar a sessao: erro explicito, nunca reabre a US$ 29', async () => {
+      found(promo());
+      stripe.checkout.sessions.create.mockRejectedValue(new Error('No such promotion code: promo_f1'));
+      await expect(open()).rejects.toMatchObject({ response: { code: 'founder_offer_unavailable' } });
+      expect(stripe.checkout.sessions.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('sem codigo o comportamento e o de sempre (EARLY35 pre-aplicado)', async () => {
+      await service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35');
+      expect(stripe.checkout.sessions.create.mock.calls[0][0].discounts).toEqual([{ coupon: 'EARLY35' }]);
+    });
+  });
+
   describe('afiliados', () => {
     const affiliateDiscount = { affiliateId: 'aff_1', discount: { promotion_code: 'promo_1' } };
 

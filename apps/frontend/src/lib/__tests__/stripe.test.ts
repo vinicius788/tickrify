@@ -48,6 +48,20 @@ describe('createCheckoutSession', () => {
     document.cookie = '_fbc=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
   });
 
+  it('manda o codigo da oferta Founding Member so quando existe', async () => {
+    // Uma Response nova por chamada: o corpo so pode ser lido uma vez.
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      jsonResponse({ sessionId: 'cs_1', url: 'https://checkout.stripe.com/c/pay/cs_1' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await createCheckoutSession('starter', 'tok', 'monthly', 'usd', undefined, 'pricing', 'FND-ABCD2345');
+    await createCheckoutSession('starter', 'tok', 'monthly', 'usd', undefined, 'pricing');
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).offerCode).toBe('FND-ABCD2345');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty('offerCode');
+  });
+
   it('rejeita resposta sem URL em vez de redirecionar para "undefined"', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ sessionId: 'cs_1', url: null })));
 

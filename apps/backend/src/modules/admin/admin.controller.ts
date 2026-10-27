@@ -11,6 +11,8 @@ import { PrismaService } from '../database/prisma.service';
 import { buildAcquisitionReport, parseDias } from './acquisition-report';
 import { billingCycleForPriceId } from '../../config/stripe.config';
 import { CampaignSendDto } from './dto/campaign-send.dto';
+import { FounderSendDto } from './dto/founder-send.dto';
+import { StripeService } from '../payments/stripe.service';
 import { MailService } from '../mail/mail.service';
 import { publicUrl } from '../mail/lifecycle-email';
 import {
@@ -23,6 +25,7 @@ import {
   type CampaignDeps,
   type CampaignSegment,
 } from '../mail/reactivation-campaign';
+import { FOUNDER_AUDIT_ACTION, renderFounderEmail, sendFounderCampaign, type FounderDeps } from '../mail/founder-campaign';
 
 /**
  * Painel de administração — a "loja de apps" interna.
@@ -40,6 +43,7 @@ export class AdminController {
     private readonly reports: ReportsService,
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
+    private readonly stripe: StripeService,
   ) {}
 
   private readonly logger = new Logger(AdminController.name);
@@ -100,6 +104,56 @@ export class AdminController {
         this.campaignRunning = false;
       });
     return { started: true, segments };
+  }
+
+  private founderDeps(): FounderDeps {
+    return {
+      ...this.campaignDeps(),
+      stripe: {
+        issue: (userId, expiresAt) => this.stripe.issueFounderCode(userId, expiresAt),
+        revoke: (promotionCodeId) => this.stripe.revokeFounderCode(promotionCodeId),
+      },
+    };
+  }
+
+  /**
+   * Campanha Founding Member (27/10/2026), ver `founder-campaign.ts`. GET conta
+   * quantos convites sairam e quantas vagas a Stripe ja gastou; `preview`
+   * mostra o e-mail; POST `send` SIMULA sem `confirm: "SEND"`.
+   */
+  @Get('campaigns/founder')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async fundadorStatus() {
+    return {
+      invitesSent: await this.prisma.adminAudit.count({ where: { action: FOUNDER_AUDIT_ACTION } }),
+      seats: await this.stripe.founderSeats(),
+      running: this.campaignRunning,
+    };
+  }
+
+  @Get('campaigns/founder/preview')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  fundadorPrevia() {
+    const deps = this.founderDeps();
+    return renderFounderEmail({
+      appUrl: deps.appUrl,
+      firstName: 'Alex',
+      unsubscribeUrl: `${deps.apiBaseUrl}/api/email/unsubscribe?preview=1`,
+      code: 'FND-AB12CD34',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+  }
+
+  @Post('campaigns/founder/send')
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  async fundadorDisparo(@Body() body: FounderSendDto) {
+    if (this.campaignRunning) throw new ConflictException('Campaign is already running');
+    this.campaignRunning = true;
+    try {
+      return await sendFounderCampaign(this.founderDeps(), body.emails, body.confirm !== 'SEND');
+    } finally {
+      this.campaignRunning = false;
+    }
   }
 
   /**

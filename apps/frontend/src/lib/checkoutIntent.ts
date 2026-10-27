@@ -23,7 +23,11 @@ export type CheckoutIntent = {
   plan: PlanType;
   cycle: BillingCycle;
   source: CheckoutSource;
+  /** Link pessoal Founding Member (FND-XXXXXXXX). So vale no mensal. */
+  offer?: string;
 };
+
+export const FOUNDER_CODE_PATTERN = /^FND-[A-Z0-9]{8}$/;
 
 // So o plano vendido na vitrine. `pro`/`elite` sao legado: aceitar aqui
 // deixaria uma URL montada a mao vender o plano de 150 ticks.
@@ -44,19 +48,22 @@ function isOneOf<T extends string>(list: readonly T[], value: unknown): value is
   return typeof value === 'string' && (list as readonly string[]).includes(value);
 }
 
-function validate(plan: unknown, cycle: unknown, source: unknown): CheckoutIntent | null {
+function validate(plan: unknown, cycle: unknown, source: unknown, offer?: unknown): CheckoutIntent | null {
   if (!isOneOf(PLANS, plan)) return null;
+  const founder = typeof offer === 'string' && FOUNDER_CODE_PATTERN.test(offer) ? offer : null;
   return {
     plan,
-    cycle: isOneOf(CYCLES, cycle) ? cycle : 'monthly',
+    // A oferta fundador e do mensal: um codigo nunca puxa o ciclo para outro.
+    cycle: founder ? 'monthly' : isOneOf(CYCLES, cycle) ? cycle : 'monthly',
     source: isOneOf(SOURCES, source) ? source : 'pricing',
+    ...(founder ? { offer: founder } : {}),
   };
 }
 
-/** Le a intencao dos parametros `checkout`, `cycle` e `source` da URL. */
+/** Le a intencao dos parametros `checkout`, `cycle`, `source` e `offer` da URL. */
 export function parseCheckoutIntent(search: string): CheckoutIntent | null {
   const params = new URLSearchParams(search);
-  return validate(params.get('checkout'), params.get('cycle'), params.get('source'));
+  return validate(params.get('checkout'), params.get('cycle'), params.get('source'), params.get('offer'));
 }
 
 /** Caminho interno para onde o login devolve a pessoa. */
@@ -65,6 +72,7 @@ export function checkoutReturnPath(intent: CheckoutIntent): string {
     checkout: intent.plan,
     cycle: intent.cycle,
     source: intent.source,
+    ...(intent.offer ? { offer: intent.offer } : {}),
   });
   return `${RETURN_PATH}?${params.toString()}`;
 }
@@ -115,7 +123,7 @@ export function loadCheckoutIntent(now = Date.now()): CheckoutIntent | null {
       localStorage.removeItem(STORAGE_KEY);
       return null;
     }
-    return validate(parsed.plan, parsed.cycle, parsed.source);
+    return validate(parsed.plan, parsed.cycle, parsed.source, parsed.offer);
   } catch {
     return null;
   }
