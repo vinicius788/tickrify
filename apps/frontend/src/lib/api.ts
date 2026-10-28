@@ -353,6 +353,9 @@ export interface TrialUsage {
   /** O que mostrar agora: null = pode analisar; daily_limit = volte amanha; o resto = acabou. */
   paywall: TrialPaywall | null;
   windowEndsAt: string;
+  timezone?: string;
+  /** Next local day only when it precedes the window end; null means no next quota. */
+  nextAvailableAt?: string | null;
 }
 
 // ── Estado da operacao (13/10/2026) ─────────────────────────────────────────

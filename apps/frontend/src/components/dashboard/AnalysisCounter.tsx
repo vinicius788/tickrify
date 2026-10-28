@@ -11,6 +11,7 @@ import { openBillingPortal } from "@/lib/stripe";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { track } from "@/lib/analytics";
 import { PlanUnavailableNotice } from './PlanUnavailableNotice';
+import TrialDetails from './TrialDetails';
 
 const PLAN_LABELS: Record<UserPlan, string> = {
   free: 'Free',
@@ -29,7 +30,7 @@ const PLAN_TICKS: Record<UserPlan, number> = {
 };
 
 const AnalysisCounter = () => {
-  const { isUnlimited, plan, total, used, remaining, totalUsed, totalLimit, trial, formerSubscriber, billingManageable, isLoading, isUnavailable, retry } = useAnalysisLimit();
+  const { isUnlimited, plan, total, used, remaining, totalUsed, totalLimit, trial, trialBlocked, formerSubscriber, billingManageable, isLoading, isUnavailable, retry } = useAnalysisLimit();
   const { balance } = useTicks();
   const { t } = useLanguage();
   const { getToken } = useAuth();
@@ -71,6 +72,9 @@ const AnalysisCounter = () => {
   };
 
   // Trial de 3 dias: dia de uso e o que resta HOJE (o servidor decide tudo).
+  if (!isUnlimited && trialBlocked) {
+    return <Card className="surface-terminal-elevated border border-[var(--border-subtle)]"><CardContent className="p-4 text-xs text-[var(--text-secondary)]">{trialBlocked.message}</CardContent></Card>;
+  }
   if (!isUnlimited && trial) {
     const ended = trial.status === 'ended';
     const limit = Math.max(trial.limitToday, 1);
@@ -79,7 +83,7 @@ const AnalysisCounter = () => {
       <Card className="surface-terminal-elevated border border-[var(--border-subtle)]">
         <CardContent className="p-4">
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Gift className="h-4 w-4 text-[var(--accent-green)]" />
                 <span className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
@@ -93,6 +97,8 @@ const AnalysisCounter = () => {
               )}
             </div>
             {ended ? null : <Progress value={(usedToday / limit) * 100} className="h-1.5 bg-[var(--bg-overlay)]" />}
+            {!ended && <p className="text-xs text-[var(--text-secondary)]">{c.trialLeftToday.replace('{left}', String(trial.remainingToday)).replace('{limit}', String(trial.limitToday))}</p>}
+            <TrialDetails trial={trial} />
             {ended || trial.paywall === 'daily_limit' ? (
               <>
                 <p className="text-xs text-[var(--tone-warn-3)] flex items-center gap-1.5">
@@ -116,9 +122,6 @@ const AnalysisCounter = () => {
               </>
             ) : (
               <>
-                <p className="text-xs text-[var(--text-secondary)]">
-                  {c.trialLeftToday.replace('{left}', String(trial.remainingToday)).replace('{limit}', String(trial.limitToday))}
-                </p>
                 <Link
                   to="/dashboard/plans"
                   onClick={() => track('upgrade_cta_clicked', { source: 'counter_trial', destination: 'plans' })}

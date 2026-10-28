@@ -37,7 +37,48 @@ describe('usage verification failures', () => {
     mocks.getToken.mockResolvedValue('token_test');
     window.localStorage.setItem('tickrify-language', 'pt');
   });
-  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  it.each([100, 10_000])('rechecks the trial boundary in %i ms without reusing the pre-boundary quota or granting local credits', async boundaryDelay => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const trial = {
+      dayIndex: 1, daysTotal: 3, usedToday: 3, limitToday: 3, remainingToday: 0,
+      daysUsed: 1, status: 'active', paywall: 'daily_limit',
+      nextAvailableAt: new Date(now + boundaryDelay).toISOString(), windowEndsAt: new Date(now + 100_000).toISOString(),
+    };
+    let resolve!: (value: ReturnType<typeof usage>) => void;
+    mocks.getUsage.mockResolvedValueOnce(usage({ plan: 'free', isUnlimited: false, trial }))
+      .mockReturnValueOnce(new Promise(r => { resolve = r; }));
+    const { result } = renderHook(useAnalysisLimit);
+    await act(async () => {});
+    expect(result.current.canAnalyze).toBe(false);
+    const delay = Math.max(boundaryDelay + 1000, 1600);
+    now += delay;
+    await act(() => vi.advanceTimersByTimeAsync(delay));
+    expect(mocks.getUsage).toHaveBeenCalledTimes(2);
+    expect(result.current.remaining).toBe(0);
+    await act(async () => resolve(usage({ plan: 'free', isUnlimited: false, trial: { ...trial, dayIndex: 2, usedToday: 0, limitToday: 2, remainingToday: 2, paywall: null, nextAvailableAt: null } })));
+    expect(result.current.remaining).toBe(2);
+    expect(result.current.canAnalyze).toBe(true);
+  });
+
+  it('does not loop if the refreshed server response still contains the expired trial boundary', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const trial = {
+      dayIndex: 1, daysTotal: 3, usedToday: 3, limitToday: 3, remainingToday: 0,
+      daysUsed: 1, status: 'active', paywall: 'daily_limit',
+      nextAvailableAt: new Date(now + 100).toISOString(), windowEndsAt: new Date(now + 100_000).toISOString(),
+    };
+    mocks.getUsage.mockImplementation(async () => usage({ plan: 'free', isUnlimited: false, trial: { ...trial } }));
+    const { result } = renderHook(useAnalysisLimit);
+    await act(async () => {});
+    now += 1600;
+    await act(() => vi.advanceTimersByTimeAsync(1600));
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(mocks.getUsage).toHaveBeenCalledTimes(2);
+    expect(result.current.canAnalyze).toBe(false);
+    expect(result.current.remaining).toBe(0);
+  });
 
   it('keeps the plan unknown until the first successful response', async () => {
     let resolve!: (value: ReturnType<typeof usage>) => void;

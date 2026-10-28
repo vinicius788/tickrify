@@ -167,20 +167,29 @@ describe('PricingCards: oferta do 1o mes', () => {
     offer.current = null;
   });
 
+  it('anual informa cobranca anual e franquia mensal sem custo unitario do mensal', async () => {
+    render(<PricingCards />);
+    await userEvent.click(screen.getByRole('button', { name: /yearly/i }));
+    expect(screen.getByText(/\$290 billed now and every year until canceled/)).toBeTruthy();
+    expect(screen.getByText(/200 ticks\/mo/i)).toBeTruthy();
+    expect(screen.queryByText(/0\.145/)).toBeNull();
+    expect(screen.getByRole('button', { name: /get started.*\$290\/yr/i })).toBeTruthy();
+  });
+
   it('com o EARLY35 ativo, so o mensal mostra o preco do 1o mes', async () => {
     offer.current = { active: true, code: 'EARLY35', percentOff: 35 };
     render(<PricingCards />);
-    expect(screen.getByText(/First month \$18\.85 with EARLY35 \(35% off\)/)).toBeTruthy();
+    expect(screen.getByText(/Billed \$18\.85 now for the first month with EARLY35 \(35% off\)/)).toBeTruthy();
 
     await userEvent.click(screen.getByRole('button', { name: /yearly/i }));
-    expect(screen.queryByText(/First month/)).toBeNull();
+    expect(screen.queryByText(/Billed .*now for the first month/)).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: /^weekly$/i }));
-    expect(screen.queryByText(/First month/)).toBeNull();
+    expect(screen.queryByText(/Billed .*now for the first month/)).toBeNull();
   });
 
   it('sem cupom ativo, nenhuma promessa de desconto', () => {
     render(<PricingCards />);
-    expect(screen.queryByText(/First month/)).toBeNull();
+    expect(screen.queryByText(/Billed .*now for the first month/)).toBeNull();
   });
 });
 

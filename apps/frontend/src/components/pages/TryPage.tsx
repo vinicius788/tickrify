@@ -32,6 +32,7 @@ import en from '@/lib/i18n/en';
 import { getScenarioMeta, resolveSignalState, signalStateTone } from '@/lib/trading-ui';
 import { warmupPaymentsApi } from '@/lib/api';
 import { shrinkChartImage } from '@/lib/chart-image';
+import { chartFileError } from '@/lib/chart-upload';
 import { seoFor, useSeo } from '@/hooks/useSeo';
 import exampleChart from '@/assets/demo-example-chart.png';
 import afterChart from '@/assets/demo-after-chart.png';
@@ -75,7 +76,7 @@ const SignupCta = ({ headline, sub }: { headline: string; sub: string }) => (
       </Link>
     </SignedIn>
     <SignedOut>
-      <p className="site-try-fine">Free account · 3-day free trial · no credit card</p>
+      <p className="site-try-fine">Eligible accounts: up to 7 analyses · 3 usage days within 7 days · no card</p>
     </SignedOut>
   </div>
 );
@@ -86,7 +87,7 @@ const TryPage = () => {
   // sitemap e servindo o title do home.
   useSeo(seoFor('/try'));
 
-  const { language } = useLanguage();
+  const { language, t } = useLanguage();
   const [state, setState] = useState<PageState>('ready');
   const [result, setResult] = useState<DemoAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -128,7 +129,12 @@ const TryPage = () => {
   // no Android, arquivo do Google Fotos ou de pasta na nuvem pode ficar
   // ilegivel ate o envio, e o erro saia como falha de rede.
   const handleFile = useCallback(async (file: File | undefined | null) => {
-    if (!file || !file.type.startsWith('image/')) return;
+    if (!file) return;
+    const validationError = chartFileError(file);
+    if (validationError) {
+      setError(t.commercial[validationError]);
+      return;
+    }
     let copy: Blob;
     try {
       copy = new Blob([await file.arrayBuffer()], { type: file.type });
@@ -149,7 +155,7 @@ const TryPage = () => {
       if (prev) URL.revokeObjectURL(prev.previewUrl);
       return { blob: copy, previewUrl: URL.createObjectURL(copy) };
     });
-  }, []);
+  }, [t]);
 
   // Colar print direto (Ctrl/Cmd+V), atrito mínimo pra quem veio do TradingView.
   useEffect(() => {
@@ -296,7 +302,7 @@ const TryPage = () => {
                   : 'Example loaded: XAUUSD (Gold) · M30, a real trader chart. Or use your own below.'}
               </p>
 
-              {error && <p className="site-try-error">{error}</p>}
+              {error && <p role="alert" className="site-try-error">{error}</p>}
 
               <div className="site-try-actions">
                 <button
@@ -317,13 +323,13 @@ const TryPage = () => {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/png,image/jpeg,image/webp"
                   className="hidden"
-                  onChange={(e) => void handleFile(e.target.files?.[0])}
+                  onChange={(e) => { void handleFile(e.target.files?.[0]); e.target.value = ''; }}
                 />
 
                 <p className="site-try-fine">1 free analysis per device · no account · no card</p>
-                <p className="site-try-fine">After that, a free account adds 3 trade plans on your own charts.</p>
+                <p className="site-try-fine">{t.commercial.freeEligibility}</p>
               </div>
             </div>
           )}
@@ -413,7 +419,7 @@ const TryPage = () => {
 
               <SignupCta
                 headline="Want to analyze more charts?"
-                sub="Create your free account and start a 3-day free trial on your own charts. This read stays in your dashboard on this device."
+                sub={t.commercial.freeEligibility}
               />
             </div>
           )}
@@ -422,12 +428,11 @@ const TryPage = () => {
             <div className="site-card site-try-locked">
               <h2>You already used your free analysis</h2>
               <p>
-                It does not stop here. Create a free account and start a 3-day free trial on your own charts, no
-                credit card needed.
+                {t.commercial.freeEligibility}
               </p>
               <SignupCta
                 headline="Keep analyzing for free"
-                sub="A 3-day free trial comes with your free account."
+                sub="Your dashboard shows the allowance available to your account."
               />
             </div>
           )}

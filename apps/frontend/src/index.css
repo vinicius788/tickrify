@@ -775,7 +775,8 @@ a.site-stat:hover .site-stat-n { color: #fff; }
   font-family: var(--font-mono); font-weight: 400; color: var(--s-wait);
   border: 1px solid rgba(217, 162, 27, 0.34); border-radius: 6px; padding: 2px 7px;
 }
-.site-cycle { display: flex; justify-content: center; gap: 8px; margin-bottom: 34px; }
+.site-cycle { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 34px; scroll-margin-top: 84px; }
+.site-cycle .site-btn { max-width: 100%; white-space: normal; text-align: center; }
 .site-plans { display: grid; gap: 20px; }
 @media (min-width: 900px) { .site-plans { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); max-width: none; } }
 .site-price-sub { font-family: var(--font-mono); font-size: 11.5px; color: var(--s-on-light-2); }

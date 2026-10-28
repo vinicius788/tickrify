@@ -129,6 +129,21 @@ export function localHour(date: Date, timezone: string): number {
   return Number.isFinite(hour) ? hour % 24 : 0;
 }
 
+/** Presentation only: next local calendar day, if it falls inside the trial window. */
+export function nextTrialAvailability(state: TrialState, now = new Date()): Date | null {
+  if (state.status !== 'active' || state.paywall !== 'daily_limit') return null;
+  const today = localDate(now, state.timezone);
+  let low = now.getTime();
+  let high = low + 36 * 60 * 60 * 1000;
+  // Search the calendar boundary rather than adding 24h (DST and half-hour zones).
+  while (high - low > 1) {
+    const mid = Math.floor((low + high) / 2);
+    if (localDate(new Date(mid), state.timezone) === today) low = mid;
+    else high = mid;
+  }
+  return high < state.windowEndsAt.getTime() ? new Date(high) : null;
+}
+
 type Core = {
   ended: boolean;
   endReason: TrialEndReason | null;

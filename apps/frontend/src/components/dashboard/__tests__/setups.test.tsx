@@ -267,13 +267,13 @@ describe('Paywall dos alertas e limite diario do trial', () => {
 
   it('limite diario: fala do e-mail so com ele ligado; sem alerta, o texto de sempre', () => {
     const view = wrap(<Paywall surface="new_analysis" variant="daily_limit" alertsOn="email" onWeekly={vi.fn()} onMonthly={vi.fn()} plansHref="/p" />);
-    expect(screen.getByText("Your alerts stay on. We'll email you when price reaches your levels. Your next analyses unlock tomorrow.")).toBeTruthy();
+    expect(screen.getByText("Your alerts stay on. We'll email you when price reaches your levels. See your trial allowance for your next analyses.")).toBeTruthy();
     view.unmount();
     const screenOnly = wrap(<Paywall surface="new_analysis" variant="daily_limit" alertsOn="screen" onWeekly={vi.fn()} onMonthly={vi.fn()} plansHref="/p" />);
-    expect(screen.getByText('Your alerts stay on. Your next analyses unlock tomorrow.')).toBeTruthy();
+    expect(screen.getByText('Your alerts stay on. See your trial allowance for your next analyses.')).toBeTruthy();
     screenOnly.unmount();
     wrap(<Paywall surface="new_analysis" variant="daily_limit" onWeekly={vi.fn()} onMonthly={vi.fn()} plansHref="/p" />);
-    expect(screen.getByText('Come back tomorrow or subscribe now. Your free trial continues tomorrow.')).toBeTruthy();
+    expect(screen.getByText('Today’s analyses are used up. See your trial allowance for availability.')).toBeTruthy();
   });
 });
 

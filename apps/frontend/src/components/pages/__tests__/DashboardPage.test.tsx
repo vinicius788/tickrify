@@ -524,7 +524,7 @@ describe('DashboardPage', () => {
       expect(await screen.findByText('Analysis result')).toBeTruthy();
       expect(createAnalysis).toHaveBeenCalledTimes(1);
       expect(screen.getByText('Suas análises grátis foram utilizadas.')).toBeTruthy();
-      expect(screen.getByRole('button', { name: /Assinar para continuar/ })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Comece com uma semana/ })).toBeTruthy();
       expect(screen.queryByText(/Suas análises grátis com plano de trade acabaram/)).toBeNull();
     });
 
@@ -1072,7 +1072,7 @@ describe('DashboardPage', () => {
 
     await screen.findByRole('button', { name: /Comece com uma semana/ });
     const botoes = screen.getAllByRole('button').map((b) => b.textContent ?? '');
-    const semanal = botoes.findIndex((b) => b.includes('Comece com uma semana: US$ 7,99 por 25 análises'));
+    const semanal = botoes.findIndex((b) => b.includes('Comece com uma semana: US$ 7,99 por 25 Ticks'));
     const mensal = botoes.findIndex((b) => b.startsWith('Ou mensal:'));
     expect(semanal).toBeGreaterThanOrEqual(0);
     expect(mensal).toBeGreaterThan(semanal);

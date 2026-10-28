@@ -51,7 +51,7 @@ import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { FREE_READABLE_ANALYSES, getFreeQuota, hadEndedSubscription } from '../../common/free-quota';
 import { TrialService } from './trial.service';
 import { TradesService } from './trades.service';
-import { TRIAL_RULES } from '../../common/trial';
+import { TRIAL_RULES, nextTrialAvailability } from '../../common/trial';
 import { TICK_COSTS, AnalysisType } from '../ticks/tick-packages';
 import { TicksService } from '../ticks/ticks.service';
 import { MailService } from '../mail/mail.service';
@@ -1137,6 +1137,8 @@ export class AiService implements OnModuleInit {
               status: trialState.status,
               paywall: trialState.paywall,
               windowEndsAt: trialState.windowEndsAt.toISOString(),
+              timezone: trialState.timezone,
+              nextAvailableAt: nextTrialAvailability(trialState)?.toISOString() ?? null,
             }
           : null,
         trialBlocked,

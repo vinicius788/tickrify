@@ -17,7 +17,7 @@ export type PaywallSurface = 'new_analysis' | 'trades' | 'journal' | 'history' |
 interface PaywallProps {
   surface: PaywallSurface;
   /**
-   * Checkout do semanal (US$ 7,99, 25 analises), o botao PRINCIPAL desde
+   * Checkout do semanal (US$ 7,99, 25 Ticks), o botao PRINCIPAL desde
    * 05/10/2026: em 14 dias, 13 abriram o checkout e 1 pagou, quase todos de
    * paises onde US$ 29 de uma vez pesa e o cartao recusa.
    */
@@ -179,6 +179,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
               {p.offerNote.replace('{code}', offer.code).replace('{pct}', String(offer.percentOff))}
             </p>
           ) : null}
+          <p className="max-w-[440px] text-xs text-[var(--text-secondary)]">{t.commercial.weeklyRenewal}</p>
           <Link
             to={plansHref}
             onClick={() => track('upgrade_cta_clicked', { source: 'paywall', surface, destination: 'plans' })}
@@ -195,7 +196,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
       </div>
 
       <ul className="grid gap-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 text-sm text-[var(--text-primary)] sm:grid-cols-2 md:p-5">
-        {[p.benefit1, p.benefit2, p.benefit3, p.benefit4].map((benefit) => (
+        {[p.benefit1, t.commercial.tickCosts, p.benefit2, p.benefit3, p.benefit4].map((benefit) => (
           <li key={benefit} className="flex items-start gap-2">
             <Check className="mt-0.5 h-4 w-4 shrink-0 text-[var(--signal-buy)]" />
             <span>{benefit}</span>

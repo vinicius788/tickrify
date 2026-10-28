@@ -68,13 +68,28 @@ describe('trial de 3 dias no painel', () => {
   it('cota do dia esgotada: volte amanha ou assine', () => {
     trial = day({ usedToday: 3, remainingToday: 0, paywall: 'daily_limit' });
     renderCounter();
-    expect(screen.getByText("Today's analyses are used up. Come back tomorrow or subscribe now.")).toBeTruthy();
+    expect(screen.getByText("Today’s analyses are used up. See your trial allowance for availability.")).toBeTruthy();
   });
 
   it('trial encerrado: modo leitura', () => {
     trial = day({ status: 'ended', dayIndex: 3, limitToday: 0, remainingToday: 0, paywall: 'day3_quota', daysUsed: 3 });
     renderCounter();
     expect(screen.getByText('Your free trial has ended. Your analyses stay open to read.')).toBeTruthy();
+  });
+
+  it('mostra janela e a proxima cota no fuso da conta', () => {
+    trial = day({ usedToday: 3, remainingToday: 0, paywall: 'daily_limit', timezone: 'America/Sao_Paulo', nextAvailableAt: '2026-10-21T03:00:00Z' });
+    renderCounter();
+    expect(screen.getByText(/Next analyses:.*Oct 21, 2026.*12:00 AM.*America\/Sao_Paulo/)).toBeTruthy();
+    expect(screen.getByText(/Trial window ends:.*America\/Sao_Paulo/)).toBeTruthy();
+    expect(screen.getByText(/WAIT counts/)).toBeTruthy();
+  });
+
+  it('nao promete voltar amanha se nao ha proxima cota dentro da janela', () => {
+    trial = day({ usedToday: 3, remainingToday: 0, paywall: 'daily_limit', nextAvailableAt: null });
+    renderCounter();
+    expect(screen.getByText('The trial window ends before another daily allowance becomes available.')).toBeTruthy();
+    expect(screen.queryByText(/Come back tomorrow/)).toBeNull();
   });
 
   it('paywall: botao principal e o semanal, com o mensal ao lado', () => {
@@ -87,9 +102,9 @@ describe('trial de 3 dias no painel', () => {
       </MemoryRouter>,
     );
     expect(screen.getByText("You have used today's analyses")).toBeTruthy();
-    expect(screen.getByText('Come back tomorrow or subscribe now. Your free trial continues tomorrow.')).toBeTruthy();
-    screen.getByRole('button', { name: 'Start with one week: $7.99 for 25 analyses' }).click();
+    expect(screen.getByText('Today’s analyses are used up. See your trial allowance for availability.')).toBeTruthy();
+    screen.getByRole('button', { name: 'Start with one week: $7.99 for 25 Ticks' }).click();
     expect(onWeekly).toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Or monthly: $29/month for 200 analyses' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Or monthly: $29/month for 200 Ticks' })).toBeTruthy();
   });
 });

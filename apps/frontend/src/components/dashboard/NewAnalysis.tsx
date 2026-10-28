@@ -5,6 +5,7 @@ import { useCallback, useState, type ChangeEvent } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import { shrinkChartImage } from '@/lib/chart-image';
+import { CHART_ACCEPT, MAX_CHART_BYTES, chartFileError } from '@/lib/chart-upload';
 
 interface NewAnalysisProps {
   onStartAnalysis: (
@@ -72,6 +73,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
   const [deep, setDeep] = useState(false);
 
   const [readError, setReadError] = useState(false);
+  const [fileError, setFileError] = useState<'uploadFormat' | 'uploadSize' | 'uploadMultiple' | null>(null);
 
   // Copia a imagem para a memoria no momento da escolha. No Android, o arquivo
   // escolhido do Google Fotos ou de pasta na nuvem pode deixar de ser legivel
@@ -82,6 +84,9 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (!file) return;
+    const error = chartFileError(file);
+    setFileError(error);
+    if (error) return;
     let copy: File;
     try {
       const bytes = await file.arrayBuffer();
@@ -106,13 +111,21 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { 'image/*': ['.jpeg', '.png', '.jpg', '.webp'] },
+    onDropRejected: (rejections) => {
+      setReadError(false);
+      const codes = rejections.flatMap((r) => r.errors.map((e) => e.code));
+      setFileError(codes.includes('file-too-large') ? 'uploadSize' : codes.includes('too-many-files') ? 'uploadMultiple' : 'uploadFormat');
+    },
+    accept: CHART_ACCEPT,
     multiple: false,
-    maxSize: 10 * 1024 * 1024,
+    maxSize: MAX_CHART_BYTES,
   });
 
   const pushHtf = (file: File | undefined | null) => {
-    if (file && file.type.startsWith('image/') && htf.length < MAX_HTF) {
+    if (!file) return;
+    const error = chartFileError(file);
+    setFileError(error);
+    if (!error && htf.length < MAX_HTF) {
       setHtf((prev) => [...prev, { file, url: URL.createObjectURL(file) }]);
     }
   };
@@ -128,6 +141,8 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
     setMainFile(null);
     setMainPreview(null);
     setHtf([]);
+    setFileError(null);
+    setReadError(false);
   };
 
   const analyze = async () => {
@@ -212,7 +227,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
             isDragActive ? 'border-[var(--signal-buy)] bg-[var(--signal-buy-bg)]' : ''
           }`}
         >
-          <input {...getInputProps({ accept: 'image/*,image/png,image/jpeg,image/webp' })} />
+          <input {...getInputProps()} />
           <div
             className={`flex min-h-[320px] flex-col items-center justify-center rounded-[14px] border-[1.5px] border-dashed px-6 py-12 text-center transition-all duration-300 md:min-h-[360px] ${
               isDragActive ? 'border-[var(--signal-buy-border)]' : 'border-[var(--border-default)]'
@@ -262,6 +277,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
             {u.readError}
           </p>
         )}
+        {fileError && <p role="alert" className="text-sm leading-relaxed text-[var(--signal-sell)]">{t.commercial[fileError]}</p>}
 
         {/* O WAIT e o resultado mais comum. Quem nao sabe disso antes le o
             primeiro WAIT como "nao funcionou" e vai embora (medido 21 a 27/09:
@@ -304,6 +320,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
     <div className="flex flex-col gap-4">
       {setupUpdate ? <SetupUpdateBanner context={setupUpdate} deep={null} /> : null}
       <Stepper active={2} />
+      {fileError && <p role="alert" className="text-sm leading-relaxed text-[var(--signal-sell)]">{t.commercial[fileError]}</p>}
       <Card className="border border-[var(--border-subtle)] bg-[var(--bg-card)] flex min-h-[480px] flex-1 flex-col px-4 py-6 md:px-8">
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col">
           {/* Gráfico principal */}

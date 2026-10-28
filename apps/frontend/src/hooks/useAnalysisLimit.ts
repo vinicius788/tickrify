@@ -162,6 +162,17 @@ export function useAnalysisLimit(): AnalysisLimitData {
     };
   }, [refreshLimits]);
 
+  // Refresh the server's decision at the boundary shown to the user. No local
+  // credit grant: remaining/canAnalyze still come from the usage response.
+  useEffect(() => {
+    if (!trial || trial.status !== 'active') return;
+    const boundary = trial.nextAvailableAt ?? trial.windowEndsAt;
+    const delay = new Date(boundary).getTime() - Date.now();
+    if (!Number.isFinite(delay) || delay <= 0) return;
+    const timer = window.setTimeout(() => void refreshLimits(), Math.min(Math.max(delay + 1000, SHARE_WINDOW_MS + 100), 2_147_483_647));
+    return () => window.clearTimeout(timer);
+  }, [trial, refreshLimits]);
+
   useEffect(() => {
     if (!user) {
       setPlanContext(null);

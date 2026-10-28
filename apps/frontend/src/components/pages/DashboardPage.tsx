@@ -31,6 +31,7 @@ import AnalysisResult from "../dashboard/AnalysisResult";
 import Paywall, { type PaywallSurface } from "../dashboard/Paywall";
 import AnalysisLoading from "../dashboard/AnalysisLoading";
 import AnalysisCounter from "../dashboard/AnalysisCounter";
+import CheckoutConfirmation from "../dashboard/CheckoutConfirmation";
 import PaymentFailedBanner from "../dashboard/PaymentFailedBanner";
 import { TicksBadge } from "@/components/dashboard/TicksBadge";
 import { PlanUnavailableNotice } from '@/components/dashboard/PlanUnavailableNotice';
@@ -46,8 +47,8 @@ import { useToast } from "@/hooks/use-toast";
 import { getRecommendationMeta, resolveSignalState } from "@/lib/trading-ui";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
-import { track, trackAdConversion } from "@/lib/analytics";
-import { CheckoutError, createCheckoutSession, getCheckoutStatus, openBillingPortal } from "@/lib/stripe";
+import { track } from "@/lib/analytics";
+import { CheckoutError, createCheckoutSession, openBillingPortal } from "@/lib/stripe";
 import { clerkLightAppearance, useTheme } from "@/lib/theme";
 import SettingsPage from "../dashboard/SettingsPage";
 import { checkoutReturnPath, loadCheckoutIntent } from "@/lib/checkoutIntent";
@@ -71,13 +72,11 @@ import { openChat, useChatThread } from "@/lib/support-chat";
 // PT quando o idioma for português. Contido neste arquivo (sem mexer nos 6 locales).
 const DASH_COPY = {
   en: {
-    planActivatedTitle: 'Plan activated!',
     checkoutErrorTitle: 'Could not open checkout',
     allowanceNoticeTitle: 'Your Ticks now reset every month',
     allowanceNoticeDesc: 'At the start of each billing month your balance goes back to 200 Ticks. Unused Ticks do not carry over.',
     alreadySubscribedTitle: 'You are already subscribed',
     alreadySubscribedDesc: 'This account already has a subscription. Check its status or update your card in Settings.',
-    planActivatedDesc: 'Welcome to Tickrify. Your ticks are now available.',
     uploadRequired: 'Please upload a chart image.',
     invalidFormat: 'Invalid format. Upload a PNG, JPG/JPEG or WEBP image.',
     tooLarge: 'File too large. The limit is 10MB.',
@@ -99,9 +98,9 @@ const DASH_COPY = {
     planSub: 'Start with one week or go monthly. Cancel anytime.',
     later: 'Maybe later',
     perMonth: '/mo',
-    modalMonthly: 'Monthly, 200 analyses',
+    modalMonthly: 'Monthly, 200 Ticks',
     modalMonthlyOffer: '{price} first month, then $29/month',
-    modalWeekly: 'One week, 25 analyses',
+    modalWeekly: 'Weekly, 25 Ticks',
     modalCompare: 'Compare all plans',
     modalVideoCaption: 'What subscribers get: the entry chart plus up to two higher timeframes, read as one market. 20 seconds.',
     waitNudge: 'This WAIT did not use a trade call. You still have {left} of {limit}.',
@@ -112,13 +111,11 @@ const DASH_COPY = {
     plansSub: 'Same engine on every plan. Cancel anytime.',
   },
   pt: {
-    planActivatedTitle: 'Plano ativado!',
     checkoutErrorTitle: 'Não foi possível abrir o checkout',
     allowanceNoticeTitle: 'Seus Ticks agora renovam todo mês',
     allowanceNoticeDesc: 'No início de cada mês de cobrança seu saldo volta para 200 Ticks. Ticks não usados não acumulam.',
     alreadySubscribedTitle: 'Você já é assinante',
     alreadySubscribedDesc: 'Esta conta já tem uma assinatura. Veja o status ou atualize o cartão em Configurações.',
-    planActivatedDesc: 'Bem-vindo ao Tickrify. Seus ticks já estão disponíveis.',
     uploadRequired: 'Por favor, faça upload de uma imagem de gráfico.',
     invalidFormat: 'Formato inválido. Envie uma imagem PNG, JPG/JPEG ou WEBP.',
     tooLarge: 'Arquivo muito grande. O limite é de 10MB.',
@@ -140,9 +137,9 @@ const DASH_COPY = {
     planSub: 'Comece com uma semana ou vá de mensal. Cancele quando quiser.',
     later: 'Continuar depois',
     perMonth: '/mês',
-    modalMonthly: 'Mensal, 200 análises',
+    modalMonthly: 'Mensal, 200 Ticks',
     modalMonthlyOffer: '{price} no primeiro mês, depois US$ 29/mês',
-    modalWeekly: 'Uma semana, 25 análises',
+    modalWeekly: 'Semanal, 25 Ticks',
     modalCompare: 'Comparar todos os planos',
     modalVideoCaption: 'O que o assinante recebe: o gráfico de entrada mais até dois tempos maiores, lidos como um mercado só. 20 segundos.',
     waitNudge: 'Este WAIT não gastou uma análise com entrada. Você ainda tem {left} de {limit}.',
@@ -507,49 +504,6 @@ const DashboardPage = () => {
       window.removeEventListener('offline', goOffline);
     };
   }, []);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const successState = params.get('success');
-
-    if (successState === 'true') {
-      // Volta da Stripe. No PostHog e so UX (`checkout_success_viewed`): a receita
-      // confirmada e o `checkout_completed` do backend. Antes este evento se
-      // chamava `subscription_activated`, o mesmo nome do backend, e a receita
-      // contava em dobro. Os pixels de anuncio so existem no navegador, entao
-      // a conversao de compra deles continua saindo daqui.
-      const sessionId = params.get('session_id');
-      track('checkout_success_viewed', { sessionId });
-      // Purchase do pixel SO depois que o servidor confirma a sessao paga (e
-      // desta pessoa), com o valor real e o mesmo event_id do servidor. Voltar
-      // para esta URL sem ter pago nao conta compra.
-      void getToken().then(async (token) => {
-        if (!token) return;
-        const status = await getCheckoutStatus(token, { sessionId, outcome: 'success' });
-        if (status?.paid && status.sessionId) {
-          trackAdConversion('purchase', {
-            eventId: `purchase_${status.sessionId}`,
-            transactionId: status.sessionId,
-            value: status.value ?? 0,
-            currency: status.currency ?? 'USD',
-          });
-        }
-      });
-      toast({
-        title: dc.planActivatedTitle,
-        description: dc.planActivatedDesc,
-      });
-      // Dispara re-fetch do limite para refletir o novo plano e rele tudo que
-      // estava travado para o gratis (historico, diario): quem assina volta a
-      // ver tudo na hora, sem recarregar.
-      window.dispatchEvent(new Event('tickrify:analysis-created'));
-      void queryClient.invalidateQueries();
-      navigate(location.pathname, { replace: true });
-      return;
-    }
-    // Roda so na montagem: a volta da Stripe e uma entrada nova no painel.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast, dc, getToken]);
 
   // Ativação do funil: usuário entrou no modo demo (sem login).
   useEffect(() => {
@@ -1748,14 +1702,14 @@ const DashboardPage = () => {
                     </p>
                   )}
                 </div>
-                <div className="flex shrink-0 items-center gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-3 sm:shrink-0">
                   {exhausted ? (
                     <>
                       {/* Mesmo checkout do paywall (semanal, a entrada mais barata).
                           Antes ia para /pricing e exigia mais um clique. */}
-                      <Button size="sm" onClick={handleLastFreeCheckout} disabled={unlockPending}>
+                      <Button size="sm" className="h-auto max-w-full whitespace-normal py-2" onClick={handleLastFreeCheckout} disabled={unlockPending}>
                         <Crown className="mr-2 h-4 w-4" />
-                        {t.counter.subscribe}
+                        {t.paywall.ctaWeekly}
                       </Button>
                       <Link
                         to={`${base}${SECTION_PATH.plans}`}
@@ -2133,6 +2087,10 @@ const DashboardPage = () => {
         <div className="flex flex-1 overflow-hidden">
           <main className="min-w-0 flex-1 overflow-y-auto p-3 md:p-6">
             <div className="flex flex-col gap-6 md:gap-8">
+              {!isDemo && <CheckoutConfirmation hasPaidAccess={!isPlanLoading && isUnlimited} />}
+              {user && !isDemo && !isPlanLoading && !isUsageUnavailable && plan === 'free' && (trial || trialBlocked) && (
+                <div className="md:hidden"><AnalysisCounter /></div>
+              )}
               {isUsageUnavailable && <PlanUnavailableNotice onRetry={retryUsage} />}
               {/* Renovacao recusada (past_due/unpaid): o painel trata a conta como
                   gratuita, entao o aviso com o botao do portal fica no topo de
@@ -2247,6 +2205,7 @@ const DashboardPage = () => {
           </DialogHeader>
 
           <div className="space-y-2 py-2">
+            <p className="text-xs text-[var(--text-secondary)]">{t.commercial.tickCosts}</p>
             {/* Semanal primeiro e em destaque (05/10/2026): 13 abriram o
                 checkout em 14 dias e 1 pagou, quase todos de paises onde
                 US$ 29 de uma vez pesa. O mensal continua logo abaixo. */}
@@ -2260,7 +2219,7 @@ const DashboardPage = () => {
                 <Crown className="h-4 w-4 flex-shrink-0 text-primary" />
                 <span className="text-sm font-semibold">{dc.modalWeekly}</span>
               </span>
-              <span className="text-right text-xs font-semibold">$7.99</span>
+              <span className="text-right text-xs font-semibold">$7.99 / 7d</span>
             </button>
             <button
               type="button"
@@ -2275,6 +2234,7 @@ const DashboardPage = () => {
             </button>
           </div>
 
+          <p className="text-xs text-[var(--text-secondary)]">{t.commercial.weeklyRenewal}</p>
           <UpgradeVideo surface="upgrade_modal" caption={dc.modalVideoCaption} />
 
           <DialogFooter className="sm:flex-col gap-2">

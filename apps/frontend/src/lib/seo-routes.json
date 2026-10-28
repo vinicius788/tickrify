@@ -1,11 +1,11 @@
 {
   "/": {
     "title": "AI Chart Analysis for Forex, Gold & Crypto | Tickrify",
-    "description": "Upload a trading chart and get a structured AI read: entry, stop, targets, risk and an explicit WAIT. 3-day free trial, no card required."
+    "description": "AI chart analysis with entry, stop, targets, risk or WAIT. One demo per device; eligible accounts get up to 7 free analyses. No card required."
   },
   "/pricing": {
     "title": "Pricing: $29/mo for 200 AI Chart Analyses | Tickrify",
-    "description": "One plan, $29/month: 200 Ticks, quick and deep analysis, live candle grounding. Start with a 3-day free trial, no card needed. Cancel anytime in Settings."
+    "description": "Weekly $7.99/25 Ticks, monthly $29/200 Ticks, yearly $290 with 200 Ticks per month. Quick uses 1 Tick; Deep uses 3. Renews until canceled."
   },
   "/about": {
     "title": "About Tickrify: Company, Founder & Product",
@@ -56,7 +56,7 @@
   },
   "/sign-up": {
     "title": "Create your account | Tickrify",
-    "description": "Create a Tickrify account and start a 3-day free trial of AI chart analysis, no card required.",
+    "description": "Create a Tickrify account. Eligible accounts get up to 7 analyses across 3 usage days within 7 days, no card required.",
     "noindex": true
   },
   "/affiliate": {

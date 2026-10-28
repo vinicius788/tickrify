@@ -63,7 +63,7 @@ const AffiliatesPage = () => {
                 <p>
                   {program.customerDiscountPercent
                     ? `Your link and your code give them at least ${program.customerDiscountPercent}% off their first payment. If a bigger launch offer is running, they get that one instead: they always pay the lower price.`
-                    : 'They get the same product and the same price as everyone else, plus the free trial every account starts with.'}{' '}
+                    : 'They get the same product and the same price as everyone else, with free access subject to account eligibility.'}{' '}
                   Tickrify reads their chart cold and returns a structured analysis, or tells them to wait. It is a
                   second opinion, not a signal service, and it never promises profits.
                 </p>

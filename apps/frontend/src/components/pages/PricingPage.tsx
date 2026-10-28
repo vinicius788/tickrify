@@ -9,7 +9,7 @@ import { useFoundingOffer } from '@/hooks/useFoundingOffer';
 const PRICING_COPY = {
   en: {
     eyebrow: 'Pricing',
-    title: 'One plan. 200 analyses a month.',
+    title: 'One plan. Choose your billing cycle.',
     subtitle:
       'No tiers to compare and nothing held back for a higher price. Every subscriber runs the same engine, on the same queue, with the same models.',
     foundingTitle: 'Founding Trader offer',
@@ -27,7 +27,7 @@ const PRICING_COPY = {
       },
       {
         q: 'How do Ticks work?',
-        a: 'Ticks are Tickrify’s analysis credits. The monthly plan resets your balance to 200 Ticks every billing month, and the weekly plan ($7.99) resets it to 25 Ticks every week. A quick analysis uses 1 Tick; a deep analysis uses 3 Ticks.',
+        a: 'Ticks are Tickrify’s analysis credits. The monthly plan resets your balance to 200 Ticks every billing month, and the weekly plan ($7.99) resets it to 25 Ticks every week. The yearly plan costs $290 upfront and renews annually, with a balance reset to 200 Ticks each month. Unused Ticks do not carry over. A quick analysis uses 1 Tick; a deep analysis uses 3 Ticks.',
       },
       {
         q: 'Can I switch plans later?',
@@ -43,13 +43,13 @@ const PRICING_COPY = {
       },
       {
         q: 'Is there a refund guarantee?',
-        a: 'You never pay blind: a 3-day free trial before any charge, with no card, and you can cancel anytime. Per the Terms of Service purchases are final, but if anything goes wrong with an analysis, reply to any email and we’ll make it right. We read every message.',
+        a: 'You can try one anonymous demo per device. Eligible accounts receive up to 7 analyses across 3 usage days (3/2/2), within 7 days, with no card or automatic charge. Existing accounts keep their applicable free allowance. Subscriptions renew until canceled. Per the Terms of Service purchases are final, but if anything goes wrong with an analysis, reply to any email and we’ll make it right. We read every message.',
       },
     ],
   },
   pt: {
     eyebrow: 'Preço',
-    title: 'Um plano só. 200 análises por mês.',
+    title: 'Um plano só. Escolha seu ciclo de cobrança.',
     subtitle:
       'Sem tiers para comparar e sem recurso escondido atrás de um preço maior. Todo assinante roda o mesmo motor, na mesma fila, com os mesmos modelos.',
     foundingTitle: 'Oferta Founding Trader',
@@ -67,7 +67,7 @@ const PRICING_COPY = {
       },
       {
         q: 'Como funcionam os Ticks?',
-        a: 'Ticks são os créditos de análise da Tickrify. O plano mensal volta seu saldo para 200 Ticks a cada mês de cobrança, e o plano semanal (US$ 7,99) volta para 25 Ticks toda semana. Uma análise rápida consome 1 Tick; uma análise deep consome 3 Ticks.',
+        a: 'Ticks são os créditos de análise da Tickrify. O plano mensal volta seu saldo para 200 Ticks a cada mês de cobrança, e o plano semanal (US$ 7,99) volta para 25 Ticks toda semana. O anual custa US$ 290 antecipados e renova anualmente, com saldo renovado para 200 Ticks por mês. Ticks não utilizados não acumulam. Uma análise rápida consome 1 Tick; uma análise deep consome 3 Ticks.',
       },
       {
         q: 'Posso trocar de plano depois?',
@@ -83,7 +83,7 @@ const PRICING_COPY = {
       },
       {
         q: 'Há garantia de reembolso?',
-        a: 'Você nunca paga no escuro: são 3 dias de teste grátis antes de qualquer cobrança, sem cartão, e dá para cancelar quando quiser. Pelos Termos de Serviço as compras são finais, mas se algo der errado em uma análise, responda qualquer e-mail que a gente resolve. Lemos cada mensagem.',
+        a: 'Você pode testar uma demo anônima por dispositivo. Contas elegíveis recebem até 7 análises em 3 dias de uso (3/2/2), dentro de 7 dias, sem cartão nem cobrança automática. Contas existentes mantêm sua cota gratuita aplicável. Assinaturas renovam até cancelar. Pelos Termos de Serviço as compras são finais, mas se algo der errado em uma análise, responda qualquer e-mail que a gente resolve. Lemos cada mensagem.',
       },
     ],
   },

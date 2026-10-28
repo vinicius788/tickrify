@@ -1,4 +1,4 @@
-import { TRIAL_RULES, computeTrialState, isDisposableEmail, localDate, validTimezone, type TrialRow } from './trial';
+import { TRIAL_RULES, computeTrialState, nextTrialAvailability, isDisposableEmail, localDate, validTimezone, type TrialRow } from './trial';
 import { getFreeQuota } from './free-quota';
 import { runLifecycleSweep, renderLifecycleEmail, type TrialEmailInput } from '../modules/mail/lifecycle-email';
 
@@ -24,6 +24,24 @@ const row = (over: Partial<TrialRow> = {}): TrialRow => ({
 const done = (iso: string) => ({ createdAt: new Date(iso), status: 'completed' });
 
 describe('regras do trial de 3 dias', () => {
+  it.each([
+    ['America/Sao_Paulo', '2026-10-20T23:00:00Z', '2026-10-21T03:00:00Z'],
+    ['Asia/Kolkata', '2026-10-20T15:00:00Z', '2026-10-20T18:30:00Z'],
+    ['America/New_York', '2026-11-01T05:30:00Z', '2026-11-02T05:00:00Z'],
+  ])('disponibilidade informativa respeita a virada local em %s, inclusive horario de verao', (timezone, instant, expected) => {
+    const now = new Date(instant);
+    const state = computeTrialState(row({ timezone, startedAt: now }), Array.from({ length: 3 }, () => done(instant)), now);
+    expect(nextTrialAvailability(state, now)?.toISOString()).toBe(new Date(expected).toISOString());
+  });
+
+  it('nao promete cota amanha quando a janela vence antes, nem apos encerramento', () => {
+    const now = new Date('2026-10-27T11:00:00Z');
+    const state = computeTrialState(row(), Array.from({ length: 3 }, () => done(now.toISOString())), now);
+    expect(state.paywall).toBe('daily_limit');
+    expect(nextTrialAvailability(state, now)).toBeNull();
+    expect(nextTrialAvailability({ ...state, status: 'ended' }, now)).toBeNull();
+    expect(nextTrialAvailability({ ...state, paywall: null }, now)).toBeNull();
+  });
   it('dia 1 tem 3 analises; a 3a esgota o dia e pede para voltar amanha', () => {
     const now = new Date('2026-10-20T20:00:00Z');
     expect(computeTrialState(row(), [], now)).toMatchObject({ dayIndex: 1, limitToday: 3, remainingToday: 3, blocked: false, paywall: null });

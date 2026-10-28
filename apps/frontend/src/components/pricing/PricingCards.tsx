@@ -134,7 +134,7 @@ const WEEKLY_COPY: Record<"en" | "pt", PlanCopy & { note: string }> = {
       "Renews weekly, cancel anytime",
     ],
     cta: "Start weekly",
-    note: "Billed $7.99 every 7 days. Your balance resets to 25 Ticks each week.",
+    note: "Billed $7.99 now and every 7 days until canceled. Your balance resets to 25 Ticks each week.",
   },
   pt: {
     badge: "Comece pequeno",
@@ -147,7 +147,7 @@ const WEEKLY_COPY: Record<"en" | "pt", PlanCopy & { note: string }> = {
       "Renova toda semana, cancele quando quiser",
     ],
     cta: "Assinar semanal",
-    note: "Cobrado US$ 7,99 a cada 7 dias. O saldo volta para 25 Ticks toda semana.",
+    note: "Cobrado US$ 7,99 agora e a cada 7 dias até cancelar. O saldo volta para 25 Ticks toda semana.",
   },
 };
 
@@ -177,7 +177,7 @@ const CHROME_COPY = {
     canceledTitle: "Payment canceled",
     canceledDesc: "No charge was made. You can subscribe whenever you want.",
     firstMonth: (price: string, code: string, pct: number) =>
-      `First month ${price} with ${code} (${pct}% off), applied automatically. Then $29/month.`,
+      `Billed ${price} now for the first month with ${code} (${pct}% off), applied automatically. Then $29/month until canceled.`,
     founderEyebrow: "Founding member",
     founderSub: "Locked for as long as your subscription stays active",
     founderFeatures: [
@@ -190,7 +190,7 @@ const CHROME_COPY = {
     founderSeats: (left: number) => (left === 1 ? "1 founding spot left" : `${left} founding spots left`),
     founderUntil: (date: string) => `Your personal link expires on ${date}`,
     founderNote:
-      "One-time offer, not listed anywhere else. Billed every month, cancel anytime from your dashboard. If you cancel, you come back at the regular price.",
+      "One-time offer, not listed anywhere else. Billed now and every month, cancel anytime from your dashboard. If you cancel, you come back at the regular price.",
   },
   pt: {
     weekly: "Semanal",
@@ -215,7 +215,7 @@ const CHROME_COPY = {
     canceledTitle: "Pagamento cancelado",
     canceledDesc: "Nenhuma cobrança foi feita. Você pode assinar quando quiser.",
     firstMonth: (price: string, code: string, pct: number) =>
-      `Primeiro mês ${price} com ${code} (${pct}% off), aplicado automaticamente. Depois US$ 29/mês.`,
+      `Cobrado ${price} agora pelo primeiro mês com ${code} (${pct}% off), aplicado automaticamente. Depois US$ 29/mês até cancelar.`,
     founderEyebrow: "Membro fundador",
     founderSub: "Travado enquanto sua assinatura continuar ativa",
     founderFeatures: [
@@ -228,7 +228,7 @@ const CHROME_COPY = {
     founderSeats: (left: number) => (left === 1 ? "Resta 1 vaga de fundador" : `Restam ${left} vagas de fundador`),
     founderUntil: (date: string) => `Seu link pessoal vence em ${date}`,
     founderNote:
-      "Oferta única, não listada em nenhum outro lugar. Cobrança mensal, cancele quando quiser pelo painel. Se cancelar, volta ao preço normal.",
+      "Oferta única, não listada em nenhum outro lugar. Cobrança agora e mensalmente, cancele quando quiser pelo painel. Se cancelar, volta ao preço normal.",
   },
 };
 
@@ -660,9 +660,22 @@ export function PricingCards() {
           para não quebrar de novo se um segundo plano voltar. */}
       <div className={PLANS.length > 1 ? "site-plans" : undefined}>
         {PLANS.map((plan) => {
-          const cardCopy = billingCycle === "weekly" ? weeklyCopy : planCopy[plan.id];
+          const baseCopy = planCopy[plan.id];
+          const cardCopy = billingCycle === "weekly" ? weeklyCopy : billingCycle === "yearly"
+            ? { ...baseCopy, features: baseCopy.features.slice(0, 3) }
+            : baseCopy;
+          const renewalNote = billingCycle === "yearly"
+            ? lang === "pt"
+              ? "US$ 290 cobrados agora e a cada ano até cancelar. O saldo volta a 200 Ticks a cada mês; Ticks não utilizados não acumulam."
+              : "$290 billed now and every year until canceled. Your balance resets to 200 Ticks each month; unused Ticks do not carry over."
+            : billingCycle === "monthly"
+              ? lang === "pt"
+                ? "US$ 29 cobrados agora e mensalmente até cancelar. O saldo volta a 200 Ticks por mês; Ticks não utilizados não acumulam."
+                : "$29 billed now and monthly until canceled. Your balance resets to 200 Ticks per month; unused Ticks do not carry over."
+              : weeklyCopy.note;
           const perCycle =
             billingCycle === "weekly" ? copy.perWeek : billingCycle === "monthly" ? copy.perMonth : copy.perYear;
+          const ctaPrice = billingCycle === "monthly" && firstMonthPrice ? firstMonthPrice : plan.prices[billingCycle][currency];
           return (
           <div key={plan.id} className="site-price">
             <span className="site-eyebrow">{cardCopy.badge}</span>
@@ -689,9 +702,9 @@ export function PricingCards() {
               disabled={loadingPlan !== null}
               className="site-btn site-btn-primary site-btn-block"
             >
-              {loadingPlan === plan.id ? copy.processing : cardCopy.cta}
+              {loadingPlan === plan.id ? copy.processing : `${cardCopy.cta} · ${ctaPrice}${perCycle}`}
             </button>
-            {billingCycle === "weekly" ? <p className="site-price-fine">{weeklyCopy.note}</p> : null}
+            {billingCycle !== "monthly" || !firstMonthPrice ? <p className="site-price-fine">{renewalNote}</p> : null}
             {billingCycle === "monthly" && foundingOffer?.percentOff && firstMonthPrice ? (
               <p className="site-price-fine">
                 {copy.firstMonth(firstMonthPrice, foundingOffer.code, foundingOffer.percentOff)}
