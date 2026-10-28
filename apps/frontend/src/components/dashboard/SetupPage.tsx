@@ -5,7 +5,8 @@ import { Alert, AlertTitle } from '@/components/ui/alert';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
-import { APIError, isFreeQuotaExhausted } from '@/lib/api';
+import { APIError, isFreeQuotaExhausted, type SignalState } from '@/lib/api';
+import { resolveSignalState, signalStateTone } from '@/lib/trading-ui';
 import {
   formatAlertLevel,
   formatSetupDay,
@@ -16,7 +17,6 @@ import {
   useSetupAlerts,
   useSetupVersions,
   type AlertLabel,
-  type SetupVersion,
 } from '@/lib/setups';
 
 const DATE_LOCALES: Record<string, string> = {
@@ -87,10 +87,13 @@ const SetupPage = ({
   const tracking = setup.status === 'tracking';
   const busy = follow.isPending || setStatus.isPending;
   const price = (value: number | null) => (value === null ? 'n/a' : value.toLocaleString(locale, { maximumFractionDigits: 6 }));
-  const verdictLabel = (rec: SetupVersion['recommendation']) =>
-    rec === 'BUY' ? t.analysis.buy : rec === 'SELL' ? t.analysis.sell : t.analysis.hold;
-  const verdictTone = (rec: SetupVersion['recommendation']) =>
-    rec === 'BUY' ? 'text-[var(--signal-buy)]' : rec === 'SELL' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]';
+  // Estado do copiloto (v10.3) pelo servidor; cor de direcao so em ordem/entrada.
+  const verdictLabel = (v: { recommendation: string; signalState?: SignalState }) =>
+    t.analysis.states[resolveSignalState(v.signalState, v.recommendation)];
+  const verdictTone = (v: { recommendation: string; signalState?: SignalState }) => {
+    const tone = signalStateTone(resolveSignalState(v.signalState, v.recommendation), v.recommendation);
+    return tone === 'buy' ? 'text-[var(--signal-buy)]' : tone === 'sell' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]';
+  };
 
   const alertLabel: Record<AlertLabel, string> = {
     entry: t.alerts.labelEntry,
@@ -235,7 +238,7 @@ const SetupPage = ({
                   </p>
                   <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
                     {`${s.version.replace('{n}', String(v.version))} · `}
-                    <span className={`font-semibold ${verdictTone(v.recommendation)}`}>{verdictLabel(v.recommendation)}</span>
+                    <span className={`font-semibold ${verdictTone(v)}`}>{verdictLabel(v)}</span>
                   </p>
                 </div>
                 {v.recommendation === 'WAIT' ? (

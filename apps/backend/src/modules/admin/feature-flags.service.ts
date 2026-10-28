@@ -181,11 +181,6 @@ export class FeatureFlagsService implements OnModuleInit, OnModuleDestroy {
       if (!Number.isFinite(parsed)) {
         throw new BadRequestException(`${key} aceita apenas número (recebido: "${raw}")`);
       }
-      // AB_PROMPT_V9_PERCENT é porcentagem. Aceitar 150 aqui significaria
-      // "150% dos usuários", que o hash nunca satisfaz — silenciosamente errado.
-      if (key.endsWith('_PERCENT') && (parsed < 0 || parsed > 100)) {
-        throw new BadRequestException(`${key} precisa estar entre 0 e 100 (recebido: ${parsed})`);
-      }
       return String(parsed);
     }
 

@@ -124,10 +124,10 @@ export function buildStrategyBlock(p: StrategyProfile): string {
     '2. Only AFTER the recommendation and confidence are written, judge how',
     '   well the setup you found matches the profile, and report it in',
     '   strategyFit.',
-    '3. You must never upgrade a WAIT into a BUY or a SELL because the profile',
-    '   would prefer a trade. A profile can only tell the user that a valid',
-    '   setup is not their kind of setup. It can never create one.',
-    '4. If the chart offers nothing, the answer stays WAIT and strategyFit',
+    '3. You must never move NO_TRADE or WATCH to ARMED or ENTER_NOW because',
+    '   the profile would prefer a trade. A profile can only tell the user that',
+    '   a valid setup is not their kind of setup. It can never create one.',
+    '4. If the chart offers nothing, the state stays NO_TRADE and strategyFit',
     '   describes the absent setup, not a hypothetical one.',
   ].join('\n');
 }

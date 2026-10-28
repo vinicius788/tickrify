@@ -65,7 +65,7 @@ describe('paid access after subscription reconciliation', () => {
     const billing = new StripeService(prisma, {} as any);
     (billing as any).stripe = stripe;
     // Real authorization and reconciliation; no lifecycle hooks, network or AI calls.
-    ai = new AiService(prisma, {} as any, {} as any, {} as any, billing, {} as any, {} as any, {} as any, {} as any);
+    ai = new AiService(prisma, {} as any, {} as any, billing, {} as any, {} as any, {} as any, {} as any);
   });
 
   afterEach(() => {

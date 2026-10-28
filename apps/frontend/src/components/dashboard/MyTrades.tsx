@@ -3,7 +3,7 @@ import { useUser } from '@clerk/clerk-react';
 import { Calculator, Check, ExternalLink, Filter, ImageOff, Maximize2, Star, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { getRecommendationMeta, getScenarioMeta } from '@/lib/trading-ui';
+import { getScenarioMeta, resolveSignalState, signalStateTone, type SignalStateCanonical } from '@/lib/trading-ui';
 import { useAnalyses } from '@/hooks/useAnalyses';
 import { asRecord } from '@/lib/utils';
 import { useAPIClient } from '@/lib/api';
@@ -224,8 +224,15 @@ const DEMO: AIAnalysisResponse[] = [
 // ── Component ────────────────────────────────────────────────────────────────
 // onStartAnalysis: o DashboardPage passa o resetNewAnalysisView (mesma navegação
 // por `activeView` usada no resto do painel — sem rota nova).
-/** 'favorites' mostra so as analises com estrela (antes era a aba Watchlist). */
-type TradesFilter = 'all' | 'pending' | 'favorites' | Verdict;
+/** 'favorites' mostra so as analises com estrela (antes era a aba Watchlist); `state:` filtra pelo estado do copiloto. */
+type TradesFilter = 'all' | 'pending' | 'favorites' | `state:${SignalStateCanonical}` | Verdict;
+const STATE_FILTERS: readonly SignalStateCanonical[] = ['ENTER_NOW', 'ARMED', 'WATCH', 'NO_TRADE'];
+
+const stateOf = (a: AIAnalysisResponse): SignalStateCanonical => {
+  const full = asRecord(a.fullResponse);
+  const analysis = asRecord(full.analysis);
+  return resolveSignalState(a.signalState ?? full.signalState, a.recommendation, analysis.entryType, analysis.alternativeScenario);
+};
 
 interface MyTradesProps {
   onStartAnalysis?: () => void;
@@ -291,6 +298,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
       const { symbol } = extractLevels(a);
       if (filterSymbol && symbol !== filterSymbol) return false;
       if (filterVerdict === 'favorites') return getFavorite(a);
+      if (typeof filterVerdict === 'string' && filterVerdict.startsWith('state:')) return `state:${stateOf(a)}` === filterVerdict;
       const v = getVerdict(a);
       if (filterVerdict === 'pending' && (v !== null || !isTradeCall(a.recommendation))) return false;
       if (filterVerdict !== 'all' && filterVerdict !== 'pending' && v !== filterVerdict) return false;
@@ -419,6 +427,9 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
               <option value="SL">{tr.slHit}</option>
               <option value="OPEN">{tr.open}</option>
               <option value="NO_FILL">{tr.noFill}</option>
+              {STATE_FILTERS.map((st) => (
+                <option key={st} value={`state:${st}`}>{t.analysis.states[st]}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -486,13 +497,9 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
           <div className="divide-y divide-[var(--border-subtle)]">
             {filtered.map((a) => {
               const { symbol, timeframe, entry, stopLoss, takeProfit1, takeProfit2, confluence, factorsPresent } = extractLevels(a);
-              const meta = getRecommendationMeta(a.recommendation);
               const scenario = getScenarioMeta(a.bias ?? asRecord(a.fullResponse).bias, a.recommendation);
-              const actionLabel = meta.tone === 'buy'
-                ? t.analysis.buy
-                : meta.tone === 'sell'
-                  ? t.analysis.sell
-                  : t.analysis.hold;
+              const state = stateOf(a);
+              const stateTone = signalStateTone(state, a.recommendation);
               const verdict = getVerdict(a);
               const closed = isClosed(verdict);
               // Aguardar sem resultado marcado: nada a marcar. Se um WAIT ja tiver
@@ -506,9 +513,9 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
               const chartTitle = `${symbol}${timeframe && timeframe !== '—' ? ` · ${timeframe}` : ''}`;
               const toggleCalc = () => setCalcOpen((prev) => ({ ...prev, [a.id]: !prev[a.id] }));
 
-              const signalBg = scenario.tone === 'buy'
+              const signalBg = stateTone === 'buy'
                 ? 'bg-[var(--signal-buy-bg)] border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
-                : scenario.tone === 'sell'
+                : stateTone === 'sell'
                   ? 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
                   : 'bg-[var(--signal-hold-bg)] border-[var(--signal-hold-border)] text-[var(--signal-hold)]';
 
@@ -570,11 +577,11 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                             {timeframe}
                           </span>
                         )}
-                        <Badge variant="outline" className={`border text-xs font-bold tracking-widest ${signalBg}`}>
-                          {scenario.label}
+                        <Badge variant="outline" className={`border text-xs font-bold uppercase tracking-widest ${signalBg}`}>
+                          {t.analysis.states[state]}
                         </Badge>
                         <span className="text-xs text-[var(--text-secondary)]">
-                          {t.analysis.action}: <span className="font-semibold text-[var(--text-primary)]">{actionLabel}</span>
+                          {t.analysis.bias}: <span className="font-semibold text-[var(--text-primary)]">{scenario.label}</span>
                         </span>
                         {confluence !== null && (
                           <span className="text-xs text-[var(--text-secondary)]">

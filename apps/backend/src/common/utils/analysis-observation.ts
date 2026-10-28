@@ -35,61 +35,6 @@ function closeEnough(actual: number, expected: number): boolean {
   return Math.abs(actual - expected) <= tolerance + Number.EPSILON * Math.max(1, Math.abs(expected)) * 8;
 }
 
-/** Text interpretation for diagnostics only. Never a broker/execution status. */
-export interface LimitConditionTextObservation {
-  kind: 'not_applicable' | 'insufficient' | 'not_stated' | 'required' | 'optional' | 'reported_satisfied' | 'cancellation_only';
-  requiresClose: boolean;
-}
-const CONFIRMATION_EVENT = /sweep|reclaim|reject|confirm|reaction|close[sd]?\s+(?:back\s+)?(?:above|below)|varred|rejei|retom|confirma|fechamento|barrida|rechazo|cierre|balayage|rejet|clôture|bestätig|ablehnung|schlusskurs|スイープ|リクレイム|反発|確認|終値/iu;
-const REQUIRED_CONFIRMATION = /\bonly (?:after|if)|\bafter\b|\bwait(?:ing)? for\b|\bmust\b|\brequires?\b|\bneeds?\b|somente|apenas após|após|aguardar|obrigatóri|después de|solo después|requiere|uniquement après|seulement après|après|attendre|obligatoire|erst nach|nur nach|warten auf|muss|erforderlich|後のみ|後にのみ|必須|まで待/iu;
-const STRONG_REQUIREMENT = /\bonly\b|\bmust\b|\brequires?\b|somente|apenas|obrigatóri|solo después|requiere|uniquement|seulement|obligatoire|erst nach|nur nach|muss|erforderlich|後のみ|後にのみ|必須/iu;
-const OPTIONAL_CONFIRMATION_TEXT = /prefer|préfér|préférence|optional|opcional|ideal|de preferência|se possível|si es posible|facultatif|si possible|vorzugsweise|wenn möglich|not required|not necessary|no (?:sweep|rejection|confirmation) required|não (?:é )?(?:necessári|obrigatóri)|no (?:es )?(?:necesari|obligatori)|pas (?:nécessaire|obligatoire)|nicht erforderlich|任意|できれば|望ましい|必須ではない/iu;
-const REPORTED_CONFIRMATION = /already (?:confirmed|completed|occurred)|has (?:already )?(?:been confirmed|completed|occurred)|já (?:confirmad|realizad|concluíd)|ya (?:confirmad|realizad)|déjà (?:confirm|effectu|termin)|bereits bestätig|schon bestätigt|確認済み|完了済み|(?:すでに|既に).{0,16}(?:確認|完了)/iu;
-const NEGATED_CONFIRMATION = /not (?:yet |already )?(?:confirmed|completed)|ainda não|todavía no|pas encore|noch nicht|未確認|未完了/iu;
-const CLOSE_EVENT = /close[sd]?\s+(?:back\s+)?(?:above|below)|fechamento|cierre|clôture|schlusskurs|終値/iu;
-const CANCEL_CONDITION = /\b(?:cancel\p{L}*|invalidat\p{L}*|invalida\p{L}*|annul\p{L}*|stornier\p{L}*)|キャンセル|無効/iu;
-const ENTRY_ACTION = /\b(?:enter|entry|place|buy|sell|limit|entrar|entrada|compr\p{L}*|vend\p{L}*|orden|ordre|einstieg)\b|注文|リミット/iu;
-
-/** No statement here certifies that an event happened or that an order is active. */
-export function observeLimitConditionText(entryType: unknown, entryCondition: unknown): LimitConditionTextObservation {
-  const result = (kind: LimitConditionTextObservation['kind'], requiresClose = false): LimitConditionTextObservation => ({ kind, requiresClose });
-  if (String(entryType ?? '').trim().toLowerCase() !== 'limit') return result('not_applicable');
-  if (typeof entryCondition !== 'string' || !entryCondition.trim()) return result('insufficient');
-  let required = false, optional = false, reported = false, uncertain = false, cancelled = false, requiresClose = false;
-  // Decimal points and thousand separators remain inside their clauses.
-  const clauses = entryCondition.normalize('NFKC').split(/[;\n。！？]|[.!?](?=\s|$)|\b(?:but|however|pero|mais|aber|porém)\b/iu);
-  for (let clause of clauses) {
-    const cancellation = clause.match(CANCEL_CONDITION);
-    if (cancellation && cancellation.index !== undefined) {
-      cancelled = true;
-      const before = clause.slice(0, cancellation.index);
-      clause = ENTRY_ACTION.test(before) ? before : '';
-    }
-    if (!CONFIRMATION_EVENT.test(clause)) continue;
-    const isOptional = OPTIONAL_CONFIRMATION_TEXT.test(clause);
-    // Mixed obligations in one clause are not safe to resolve by keyword priority.
-    if (isOptional && STRONG_REQUIREMENT.test(clause) && !/not required|não .*obrigatóri|no .*obligatori|pas obligatoire|nicht erforderlich|必須ではない/iu.test(clause)) {
-      uncertain = true;
-    } else if (isOptional) {
-      optional = true;
-    } else if (REPORTED_CONFIRMATION.test(clause) && !NEGATED_CONFIRMATION.test(clause)) {
-      // A simultaneous obligation and past claim is not certified execution metadata.
-      if (STRONG_REQUIREMENT.test(clause)) uncertain = true;
-      else reported = true; // A textual claim, never verified market confirmation.
-    } else if (REQUIRED_CONFIRMATION.test(clause)) {
-      required = true;
-      requiresClose ||= CLOSE_EVENT.test(clause);
-    } else {
-      uncertain = true; // Mentioning a sweep/rejection alone is not an obligation.
-    }
-  }
-  if (required) return result('required', requiresClose);
-  if (uncertain) return result('insufficient');
-  if (reported) return result('reported_satisfied');
-  if (optional) return result('optional');
-  return result(cancelled ? 'cancellation_only' : 'not_stated');
-}
-
 export function observeAnalysis(value: unknown, stage: ObservationStage, previous?: AnalysisObservation,
   confidenceScale = 1): AnalysisObservation {
   const v = obj(value), nested = obj(v.result ?? v.fullResponse), a = { ...obj(v.analysis ?? nested.analysis) };
@@ -143,13 +88,6 @@ export function observeAnalysis(value: unknown, stage: ObservationStage, previou
     if (hasInvalidTradePlanLevels(side, a.entry, a.stopLoss, a.takeProfit1, a.takeProfit2)) add('direction', 'levels');
     if (finite(a.stopLoss) && positive(a.invalidationLevel) && (side === 'BUY' ? a.stopLoss > a.invalidationLevel : a.stopLoss < a.invalidationLevel)) add('stop_inside_invalidation', 'levels');
   }
-  const type = a.entryType;
-  const condition = typeof a.entryCondition === 'string' ? a.entryCondition : '';
-  const limitCondition = observeLimitConditionText(type, condition);
-  if (limitCondition.kind === 'required') add('touch_requires_confirmation', 'entryCondition', 'medium', 'text_pattern');
-  // Unlike the existing limit-only rule this also observes price-stop orders.
-  const clauses = condition.split(/[;]|\.(?=\s|$)/u).map(c => c.split(/\b(?:cancel\w*|invalid\w*|annul\w*|stornier\w*)|キャンセル|無効/iu)[0]);
-  if (limitCondition.requiresClose || (type === 'stop' && clauses.some(c => !/prefer|optional|opcional|ideal|optionnel|任意/iu.test(c) && /\b(close[sd]?\s+(?:back\s+)?(?:above|below)|fech(?:amento|ar|e)\b|cierre\b|clôture\b|schlusskurs\b)|終値/u.test(c.toLowerCase())))) add('price_order_requires_close', 'entryCondition', 'medium', 'text_pattern');
   const count = a.factorsPresent;
   if (count != null && (!Number.isInteger(count) || count < 0 || count > 7)) add('factor_count_bounds', 'factorsPresent');
   const approved = countChecklistApproved(a.structureValidation);

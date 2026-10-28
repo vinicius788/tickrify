@@ -57,16 +57,6 @@ export interface FlagDefinition {
  */
 export const FLAG_REGISTRY: readonly FlagDefinition[] = [
   {
-    key: 'ENABLE_QUICK_GROUNDING',
-    type: 'boolean',
-    label: 'Grounding com candles reais',
-    description:
-      'Injeta OHLCV real, RSI, perfil de volume e mapa de eventos no prompt. DESLIGAR faz a IA voltar a "olhar o print e chutar o preço".',
-    defaultValue: 'false',
-    risk: 'alto',
-    soldOnSite: true,
-  },
-  {
     key: 'ENABLE_OUTCOME_TRACKING',
     type: 'boolean',
     label: 'Medição de acerto (sweeper 48h)',
@@ -99,17 +89,8 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     type: 'boolean',
     label: 'Guarda de risco/retorno',
     description:
-      'Rebaixa o sinal quando o alvo não compensa o risco (R:R abaixo de 1.2). DESLIGAR deixa passar setup com retorno pior que o risco.',
+      'Rebaixa para No trade quando o alvo final (TP2, ou o TP1 sem TP2) não paga 1.5 vezes o risco. DESLIGAR deixa passar setup com retorno pior que o risco.',
     defaultValue: 'true',
-    risk: 'medio',
-  },
-  {
-    key: 'ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD',
-    type: 'boolean',
-    label: 'Cripto: limit que exige confirmacao vira WAIT',
-    description:
-      'Em cripto, plano com ordem limit cuja condicao exige rejeicao/sweep/fechamento antes de entrar vira WAIT (niveis mantidos). Medido na v12: 2 acertos em 19 (-0,66R). LIGAR aumenta o WAIT em cripto (29 de 71 planos teriam virado WAIT).',
-    defaultValue: 'false',
     risk: 'medio',
   },
   {
@@ -238,15 +219,6 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     defaultValue: 'false',
     risk: 'medio',
   },
-  {
-    key: 'AB_PROMPT_V9_PERCENT',
-    type: 'number',
-    label: 'A/B do prompt v9 (% de usuários)',
-    description:
-      'Fatia de usuários que recebe o prompt v9. O sorteio é estável POR USUÁRIO, nunca por análise. 0 = desligado. Não subir junto com troca de modelo: os dois ao mesmo tempo invalidam o teste.',
-    defaultValue: '0',
-    risk: 'alto',
-  },
 ] as const;
 
 const REGISTRY_BY_KEY: ReadonlyMap<string, FlagDefinition> = new Map(
@@ -322,12 +294,6 @@ export function flagBool(key: string): boolean {
   return definition.defaultValue.trim().toLowerCase() === 'true';
 }
 
-export function flagNumber(key: string): number {
-  const { value, definition } = resolveFlag(key);
-  const parsed = Number(value);
-  if (Number.isFinite(parsed)) return parsed;
-  return Number(definition.defaultValue) || 0;
-}
 
 /** Estado de todas as flags — é o que o painel /admin renderiza. */
 export function resolveAllFlags(): ResolvedFlag[] {

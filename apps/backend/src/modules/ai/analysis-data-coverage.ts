@@ -111,7 +111,12 @@ export interface GroundingNumbers {
   swingLows: number[];
   relVolumeLast: number | null;
   volumeProfile: { poc: number; val: number; vah: number } | null;
+  /** Resumo do 4h (v10.1): estrutura e fechamento contra a EMA50; null sem velas de 4h. */
+  htfTrend?: HtfTrend | null;
+  htfVsEma50?: 'above' | 'below' | null;
 }
+
+export type HtfTrend = 'uptrend' | 'downtrend' | 'range';
 
 /** O que vai para "groundingStats". `numbers` e null quando os candles nao entraram no prompt. */
 export interface GroundingStats {

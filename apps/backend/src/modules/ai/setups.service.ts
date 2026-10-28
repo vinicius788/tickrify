@@ -12,6 +12,7 @@ import { PrismaService } from '../database/prisma.service';
 import { captureServer } from '../../common/analytics/posthog';
 import { trackUserActivity } from '../../common/analytics/user-activity';
 import { normalizeRecommendation, normalizeSymbol } from '../../common/utils/analysis-normalizer';
+import { storedSignalState, type SignalState } from '../../common/utils/signal-decision';
 import { TICK_COSTS, type AnalysisType } from '../ticks/tick-packages';
 
 /**
@@ -80,6 +81,7 @@ export type SetupVersion = {
   version: number;
   createdAt: Date;
   recommendation: 'BUY' | 'SELL' | 'WAIT';
+  signalState: SignalState;
   entry: number | null;
   stopLoss: number | null;
   takeProfit1: number | null;
@@ -112,6 +114,7 @@ export function readPlan(result: unknown, recommendation: string | null) {
   const symbol = normalizeSymbol(analysis.symbol ?? analysis.ticker ?? root.symbol);
   return {
     recommendation: rec,
+    signalState: storedSignalState(root, rec),
     symbol: symbol === 'N/A' ? null : symbol.slice(0, 32),
     timeframe: text(analysis.timeframe ?? analysis.period ?? root.timeframe, 16),
     // Card de niveis so em BUY/SELL (mesma regra da tela do resultado): no WAIT
@@ -391,6 +394,7 @@ export class SetupsService implements OnModuleInit {
                 analysisId: row.latestAnalysisId,
                 createdAt: row.latestAt,
                 recommendation: plan.recommendation,
+                signalState: plan.signalState,
                 entryCondition: plan.entryCondition,
               }
             : null,
@@ -453,6 +457,7 @@ export class SetupsService implements OnModuleInit {
           version: Number(row.version),
           createdAt: row.createdAt,
           recommendation: plan.recommendation,
+          signalState: plan.signalState,
           entry: plan.entry,
           stopLoss: plan.stopLoss,
           takeProfit1: plan.takeProfit1,

@@ -43,7 +43,7 @@ import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { afterNextPaint, asRecord, isPageTranslated, scrollToTop } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
-import { getRecommendationMeta } from "@/lib/trading-ui";
+import { getRecommendationMeta, resolveSignalState } from "@/lib/trading-ui";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { track, trackAdConversion } from "@/lib/analytics";
@@ -1000,6 +1000,9 @@ const DashboardPage = () => {
         engine_version: typeof engine.version === 'string' ? engine.version : null,
         data_mode: typeof engine.data_mode === 'string' ? engine.data_mode : null,
         validator_action: typeof engine.validator_action === 'string' ? engine.validator_action : null,
+        // Estado do v10 e motivos de cada rebaixamento (signal-decision.ts no backend).
+        signal_state: typeof engine.signal_state === 'string' ? engine.signal_state : null,
+        validator_reasons: Array.isArray(engine.validator_reasons) ? engine.validator_reasons : [],
         // Regras que so medem (ex.: stop antes da invalidacao), sem mudar o sinal.
         validator_flags: Array.isArray(engine.validator_flags) ? engine.validator_flags : [],
         upload_ms: uploadMs,
@@ -1422,7 +1425,7 @@ const DashboardPage = () => {
                   <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t.onboarding.demoTitle}</h2>
                   <span className="font-terminal text-xs text-[var(--text-secondary)]">
                     {`${savedDemo.symbol} · ${savedDemo.timeframe} · ${
-                      savedDemo.recommendation === 'BUY' ? t.analysis.buy : savedDemo.recommendation === 'SELL' ? t.analysis.sell : t.analysis.hold
+                      t.analysis.states[resolveSignalState(savedDemo.signalState, savedDemo.recommendation)]
                     }`}
                   </span>
                 </div>
@@ -1542,8 +1545,7 @@ const DashboardPage = () => {
                   <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
                     <p className="tk-stat-label mb-2">{trial ? t.paywall.recentTitleTrial : t.paywall.recentTitle}</p>
                     {readable.map((a) => {
-                      const action = getRecommendationMeta(a.recommendation);
-                      const actionLabel = action.tone === 'buy' ? t.analysis.buy : action.tone === 'sell' ? t.analysis.sell : t.analysis.hold;
+                      const actionLabel = t.analysis.states[resolveSignalState(a.signalState ?? a.fullResponse?.signalState, a.recommendation)];
                       return (
                         <Link
                           key={a.id}

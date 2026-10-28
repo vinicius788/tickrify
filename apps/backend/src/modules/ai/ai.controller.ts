@@ -42,7 +42,6 @@ import {
   type ConfidenceBand,
   type OutcomeRow,
 } from './accuracy.util';
-import { AB_V9_PROMPT_VER } from './ai.service';
 import { normalizeSymbol } from '../../common/utils/analysis-normalizer';
 
 @Controller('ai')
@@ -94,11 +93,6 @@ export class AiController {
         dbUserId,
         file,
         body.base64Image,
-        // SEGURANÇA: promptOverride NUNCA vem do cliente. Aceitá-lo permitiria
-        // trocar o system prompt da plataforma e usar a OpenAI como ChatGPT
-        // grátis (abuso de custo). O prompt é sempre resolvido server-side
-        // (banco → arquivo). Forçamos undefined aqui, ignorando o campo do body.
-        undefined,
         body.analysisType,
         body.userLanguage,
         htfImages,
@@ -375,7 +369,7 @@ export class AiController {
 
     const allRows: OutcomeRow[] = await this.prisma.analysis.findMany({
       where: { outcome: { in: [...AUTOMATIC_OUTCOMES] }, isDemo: false, strategyHash: null },
-      select: { outcome: true, confidence: true, createdAt: true, promptVer: true, model: true, outcomeDetail: true },
+      select: { outcome: true, confidence: true, createdAt: true, model: true, outcomeDetail: true },
     });
     // Regra do candle do fill (decisao de 20/10/2026): tudo que a resposta ja
     // tinha (overall e cortes) e calculado so com as linhas `legacy`, o historico
@@ -397,14 +391,7 @@ export class AiController {
       after: tally(rows.filter((r) => r.createdAt >= GROUNDING_LIVE_SINCE)),
     };
 
-    // A/B de prompt medido em PRODUÇÃO, com print real de usuário — o backtest
-    // roda em gráfico renderizado, que é a limitação nº 1 do relatório interno.
-    // promptVer -9 = perna v9 (ver AB_V9_PROMPT_VER em ai.service.ts).
-    const withVer = rows as Array<(typeof rows)[number] & { promptVer: number | null; model: string | null }>;
-    const byPrompt = {
-      v9: tally(withVer.filter((r) => r.promptVer === AB_V9_PROMPT_VER)),
-      current: tally(withVer.filter((r) => r.promptVer !== AB_V9_PROMPT_VER)),
-    };
+    const withVer = rows as Array<(typeof rows)[number] & { model: string | null }>;
 
     // Corte por modelo: a migração gpt-4o-mini → gpt-5.6 é obrigatória até
     // 23/10/2026, e sem este corte não há como saber se a troca ajudou.
@@ -426,7 +413,6 @@ export class AiController {
       overall: tally(rows),
       byConfidence,
       byGrounding,
-      byPrompt,
       byModel,
       abstention: {
         wait: waitCount,

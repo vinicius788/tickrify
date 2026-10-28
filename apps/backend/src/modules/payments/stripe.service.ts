@@ -182,16 +182,15 @@ export class StripeService implements OnModuleInit {
       // Cancelamento (13/10/2026). Fora do schema.prisma de proposito, como o
       // clientContext: o upsert do client nao depende delas. Gravadas por SQL
       // em `recordCancellationColumns`. Mesmo conteudo da migracao 20261013140000.
-      for (const column of [
-        '"cancelAtPeriodEnd" BOOLEAN NOT NULL DEFAULT false',
-        '"cancelAt" TIMESTAMP(3)',
-        '"canceledAt" TIMESTAMP(3)',
-        '"endedAt" TIMESTAMP(3)',
-        '"cancelReason" TEXT',
-        '"cancelFeedback" TEXT',
-      ]) {
-        await this.prisma.$executeRawUnsafe(`ALTER TABLE "tickrify"."Subscription" ADD COLUMN IF NOT EXISTS ${column}`);
-      }
+      await this.prisma.$executeRawUnsafe(`
+        ALTER TABLE "tickrify"."Subscription"
+          ADD COLUMN IF NOT EXISTS "cancelAtPeriodEnd" BOOLEAN NOT NULL DEFAULT false,
+          ADD COLUMN IF NOT EXISTS "cancelAt" TIMESTAMP(3),
+          ADD COLUMN IF NOT EXISTS "canceledAt" TIMESTAMP(3),
+          ADD COLUMN IF NOT EXISTS "endedAt" TIMESTAMP(3),
+          ADD COLUMN IF NOT EXISTS "cancelReason" TEXT,
+          ADD COLUMN IF NOT EXISTS "cancelFeedback" TEXT
+      `);
       this.logger.log('[webhook] Registro de eventos pronto.');
     } catch (error) {
       this.logger.error('[webhook] Nao consegui garantir a tabela StripeWebhookEvent.', error);

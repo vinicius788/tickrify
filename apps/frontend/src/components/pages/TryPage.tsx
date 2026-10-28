@@ -28,7 +28,8 @@ import {
   saveDemoResult,
 } from '@/lib/demo-api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { getScenarioMeta } from '@/lib/trading-ui';
+import en from '@/lib/i18n/en';
+import { getScenarioMeta, resolveSignalState, signalStateTone } from '@/lib/trading-ui';
 import { warmupPaymentsApi } from '@/lib/api';
 import { shrinkChartImage } from '@/lib/chart-image';
 import { seoFor, useSeo } from '@/hooks/useSeo';
@@ -237,19 +238,11 @@ const TryPage = () => {
     }
   };
 
-  // A cor principal acompanha o cenário; a ação continua explícita e separada.
+  // Rotulo principal = estado do copiloto (pagina so em ingles); o cenario fica ao lado, neutro.
   const scenario = result ? getScenarioMeta(result.bias, result.recommendation) : null;
-  const callClass =
-    scenario?.tone === 'buy'
-      ? 'site-chip-long'
-      : scenario?.tone === 'sell'
-        ? 'site-chip-short'
-        : 'site-chip-wait';
-  const actionClass = result?.recommendation === 'BUY'
-    ? 'site-chip-long'
-    : result?.recommendation === 'SELL'
-      ? 'site-chip-short'
-      : 'site-chip-wait';
+  const signalState = result ? resolveSignalState(result.signalState, result.recommendation) : 'NO_TRADE';
+  const stateTone = result ? signalStateTone(signalState, result.recommendation) : 'hold';
+  const callClass = stateTone === 'buy' ? 'site-chip-long' : stateTone === 'sell' ? 'site-chip-short' : 'site-chip-wait';
 
   return (
     <SiteLayout minimal>
@@ -346,8 +339,8 @@ const TryPage = () => {
 
               <div className="site-verdict flex-wrap">
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className={`site-call ${callClass}`}>{scenario?.icon} {scenario?.label}</span>
-                  <span className={`site-chip ${actionClass}`}>Action: {result.recommendation}</span>
+                  <span className={`site-call ${callClass}`}>{en.analysis.states[signalState]}</span>
+                  <span className="site-chip">{`${en.analysis.bias}: ${scenario?.label ?? 'NEUTRAL'}`}</span>
                 </div>
                 {result.riskReward && result.recommendation !== 'WAIT' ? (
                   <span className="site-conf">
@@ -360,8 +353,7 @@ const TryPage = () => {
                   manda nao fazer contradizem a resposta (mesma regra do painel). */}
               {result.recommendation === 'WAIT' ? (
                 <p className="site-demo-rationale">
-                  WAIT means the AI found no clean entry on this chart right now. Staying out of a bad trade is part of
-                  the job.
+                  {signalState === 'WATCH' ? en.analysis.result.watchExplain : en.analysis.result.noTradeExplain}
                 </p>
               ) : (
               <div className="site-levels">

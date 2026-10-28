@@ -16,7 +16,17 @@ import {
   reconcileConfluence,
   computeLevelPercents,
 } from '../src/common/utils/analysis-normalizer';
-import { decideSignal, type SignalDecisionResult, type ValidatorAction } from '../src/common/utils/signal-decision';
+import {
+  applyDecisionToAnalysis,
+  decideSignal,
+  deriveSignalState,
+  parseSignalState,
+  type SignalDecisionResult,
+  type SignalState,
+  type ValidatorAction,
+  type ValidatorNote,
+} from '../src/common/utils/signal-decision';
+import type { WatchPlan } from '../src/common/utils/plan-engine';
 import { BROKEN_PLAN_RULES, validateTradePlan } from '../src/common/utils/trade-plan-validator';
 import { buildEngineRecord, type AnalysisIntakeTimings } from '../src/modules/ai/engine-contract';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
@@ -27,6 +37,7 @@ import { AnalysisType } from '../src/modules/ticks/tick-packages';
 import { buildAnalysisPrompt } from '../src/modules/prompt/prompt-builder.service';
 import { strategyFitFields, type StrategyProfile } from '../src/common/strategy/strategy-profile';
 import { startOutcomeSweeper } from './outcome.sweeper';
+import { startAnalysisTracker } from './analysis-tracker';
 import { trackFreeAnalysisCompleted } from '../src/common/analytics/free-funnel';
 import { safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../src/common/analytics/analysis-failure';
 import { MailService } from '../src/modules/mail/mail.service';
@@ -38,6 +49,7 @@ import { getFoundingOffer } from '../src/modules/payments/founding-offer';
 import { recordSetupVersion } from '../src/modules/ai/setups.service';
 import { ALERT_RULES, runAlertMonitor } from '../src/modules/ai/setup-alerts.service';
 import { startTwelveDataReport } from '../src/modules/market/twelve-data';
+import { registerCandleStore } from '../src/modules/market/candle-store';
 import { SETUP_ALERT_EMAIL_FLAG, runSetupAlertEmailSweep } from '../src/modules/mail/setup-alert-email';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from '../src/modules/ai/analysis-data-coverage';
 import { CHAT_EMAIL_FLAG, CHAT_SWEEP_INTERVAL_MS, runChatReplySweep } from '../src/modules/support/chat-email';
@@ -83,8 +95,6 @@ interface JobData {
   analysisId: string;
   imageUrl: string;
   htfImageUrls?: string[];
-  promptOverride?: string;
-  promptVersion?: number;
   userId?: string;
   analysisType?: AnalysisType;
   isDemo?: boolean;
@@ -156,13 +166,18 @@ interface WorkerAnalysisDetails {
 interface WorkerAnalysisResult {
   recommendation: SchemaRecommendation;
   confidence: number;
+  signalState: SignalState;
+  watchPlan: WatchPlan | null;
+  /** real_data = niveis pelos candles reais; print = estimados do print. */
+  dataMode: 'real_data' | 'print';
+  validatorNotes: ValidatorNote[];
   analysis: WorkerAnalysisDetails;
 }
 
 interface WorkerParseOutcome {
   result: WorkerAnalysisResult;
   validatorAction: ValidatorAction;
-  validatorReasons: SignalDecisionResult['validatorReasons'];
+  validatorReasons: ValidatorNote[];
   validatorFlags: SignalDecisionResult['validatorFlags'];
   /** validateTradePlan + decideSignal (inclui o calendario do news guard). */
   validationMs: number;
@@ -324,8 +339,11 @@ interface AdapterDecision {
   recommendation: 'BUY' | 'SELL' | 'WAIT';
   /** 0-100, como o adapter devolve. */
   confidence: number;
+  signalState: SignalState;
+  watchPlan: WatchPlan | null;
+  dataMode: 'real_data' | 'print';
   validatorAction: ValidatorAction;
-  validatorReasons: SignalDecisionResult['validatorReasons'];
+  validatorReasons: ValidatorNote[];
   validatorFlags: SignalDecisionResult['validatorFlags'];
   newsGuardStatus: SignalDecisionResult['newsGuardStatus'];
 }
@@ -337,11 +355,16 @@ function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
   const rec = aiSource.recommendation;
   if ((rec !== 'BUY' && rec !== 'SELL' && rec !== 'WAIT') || typeof aiSource.confidence !== 'number') return null;
   if (!Array.isArray(meta.validatorReasons) || !Array.isArray(meta.validatorFlags)) return null;
+  const signalState = parseSignalState(aiSource.signalState);
+  if (!signalState) return null;
   return {
     recommendation: rec,
     confidence: aiSource.confidence,
+    signalState,
+    watchPlan: (aiSource.watchPlan as WatchPlan | null) ?? null,
+    dataMode: aiSource.dataMode === 'real_data' ? 'real_data' : 'print',
     validatorAction: meta.validatorAction as ValidatorAction,
-    validatorReasons: meta.validatorReasons as SignalDecisionResult['validatorReasons'],
+    validatorReasons: meta.validatorReasons as ValidatorNote[],
     validatorFlags: meta.validatorFlags as SignalDecisionResult['validatorFlags'],
     newsGuardStatus: (meta.newsGuardStatus as SignalDecisionResult['newsGuardStatus']) ?? 'disabled',
   };
@@ -381,8 +404,6 @@ async function toWorkerAnalysisResult(
     takeProfit2,
     invalidationLevel,
     currentPrice: ensureNumber(analysisSource.currentPrice ?? source.currentPrice, 0),
-    entryType: analysisSource.entryType,
-    entryCondition: analysisSource.entryCondition,
   });
   if (planFailures.some((rule) => BROKEN_PLAN_RULES.includes(rule))) {
     throw new AIAnalysisError({
@@ -398,27 +419,53 @@ async function toWorkerAnalysisResult(
   // worker sempre gravou (inteiro; com tetos inteiros, arredondar antes ou
   // depois dos tetos da o mesmo numero). Outras fontes (demo, fora de
   // producao): o worker decide sozinho, na sequencia unica do decideSignal.
-  let decision: Pick<SignalDecisionResult, 'recommendation' | 'confidence' | 'validatorAction' | 'validatorReasons' | 'validatorFlags'>;
+  let decision: AdapterDecision;
   if (adapterDecision) {
     decision = { ...adapterDecision, confidence: Math.round(adapterDecision.confidence) };
   } else {
-    // Confiança em escala 0-100, com piso de 30 em gráfico válido (paridade com o
-    // adapter). normalizeConfidence devolve 0-1 aqui — convertemos para 0-100.
-    const rawConfidence01 = normalizeConfidence(source.confidence);
-    const flooredConfidence = rawConfidence01 <= 0 ? 30 : Math.round(rawConfidence01 * 100);
+    // Outras fontes (demo, fora de producao): o worker decide sozinho, pelo
+    // mesmo validador, e remonta a partir da analise ja decidida.
+    const symbol = ensureString(analysisSource.symbol ?? source.symbol, '');
     const own = await decideSignal({
+      state: parseSignalState(source.signalState) ??
+        deriveSignalState(canonicalRecommendation, analysisSource.entryType, analysisSource.alternativeScenario),
       recommendation: canonicalRecommendation,
-      flooredConfidence,
+      confidence: Math.round(normalizeConfidence(source.confidence) * 100),
       trendStrength: analysisSource.trendStrength,
-      factorsPresent: analysisSource.factorsPresent,
-      riskRewardTp1,
-      riskRewardTp2,
-      symbol: ensureString(analysisSource.symbol ?? source.symbol, ''),
+      structureValidation: analysisSource.structureValidation,
+      symbol,
+      currentPrice: ensureNumberOrNull(analysisSource.currentPrice),
+      watchPlan: (source.watchPlan as WatchPlan | null) ?? null,
+      estimatedLevels: { entry, stopLoss, takeProfit1, takeProfit2 },
+      probabilities: {
+        probabilityTp1: ensureNumberOrNull(analysisSource.probabilityTp1),
+        probabilityTp2: ensureNumberOrNull(analysisSource.probabilityTp2),
+        probabilityStop: ensureNumberOrNull(analysisSource.probabilityStop),
+      },
+      realData: null,
       planFailures,
       priceFixed: analysisSource.priceMagnitudeFixed === true,
     });
-    logNewsGuardStatus(own.newsGuardStatus, analysisSource.symbol ?? source.symbol, console.warn, console.log);
-    decision = own;
+    logNewsGuardStatus(own.newsGuardStatus, symbol, console.warn, console.log);
+    const decided = await toWorkerAnalysisResult(
+      {
+        ...source,
+        recommendation: own.recommendation === 'WAIT' ? 'HOLD' : own.recommendation,
+        analysis: applyDecisionToAnalysis(analysisSource, own),
+      },
+      {
+        recommendation: own.recommendation,
+        confidence: own.confidence,
+        signalState: own.state,
+        watchPlan: own.watchPlan,
+        dataMode: own.dataMode,
+        validatorAction: own.validatorAction,
+        validatorReasons: own.validatorNotes,
+        validatorFlags: own.validatorFlags,
+        newsGuardStatus: own.newsGuardStatus,
+      },
+    );
+    return { ...decided, validationMs: Date.now() - tValidation };
   }
   const validationMs = Date.now() - tValidation;
 
@@ -444,6 +491,10 @@ async function toWorkerAnalysisResult(
   const result: WorkerAnalysisResult = {
     recommendation: finalRecommendation,
     confidence: finalConfidencePct / 100,
+    signalState: decision.signalState,
+    watchPlan: decision.watchPlan,
+    dataMode: decision.dataMode,
+    validatorNotes: decision.validatorReasons,
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),
       timeframe: ensureString(analysisSource.timeframe ?? source.timeframe, 'UNKNOWN'),
@@ -575,6 +626,10 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
     return {
       recommendation,
       confidence,
+      signalState: 'NO_TRADE',
+      watchPlan: null,
+      dataMode: 'print',
+      validatorNotes: [],
       analysis: {
         symbol: 'DEMOUSDT',
         timeframe: 'H1',
@@ -626,6 +681,10 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
     return {
       recommendation,
       confidence,
+      signalState: 'ARMED',
+      watchPlan: null,
+      dataMode: 'print',
+      validatorNotes: [],
       analysis: {
         symbol: 'DEMOUSDT',
         timeframe: 'H1',
@@ -676,6 +735,10 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
   return {
     recommendation,
     confidence,
+    signalState: 'ARMED',
+    watchPlan: null,
+    dataMode: 'print',
+    validatorNotes: [],
     analysis: {
       symbol: 'DEMOUSDT',
       timeframe: 'H1',
@@ -1033,8 +1096,6 @@ async function processAnalysis(job: Job<JobData>) {
     analysisId,
     imageUrl,
     htfImageUrls,
-    promptOverride,
-    promptVersion,
     userId,
     analysisType,
     isDemo,
@@ -1076,12 +1137,7 @@ async function processAnalysis(job: Job<JobData>) {
 
     // ── Free analyses (isDemo=true) now run real AI — no tick cost, same pipeline ─
     const tPrompt = Date.now();
-    const prompt = await buildAnalysisPrompt(prisma, {
-      promptOverride,
-      promptVersion,
-      userLanguage,
-      analysisType: normalizedAnalysisType,
-    });
+    const prompt = buildAnalysisPrompt({ userLanguage, analysisType: normalizedAnalysisType });
     promptMs = Date.now() - tPrompt;
 
     const tAi = Date.now();
@@ -1171,6 +1227,8 @@ async function processAnalysis(job: Job<JobData>) {
         : undefined;
     const engine = buildEngineRecord({
       provider: adapterMeta?.provider ?? null,
+      signalState: parsed.signalState,
+      dataMode: parsed.dataMode,
       contract: {
         recommendation: parsed.recommendation === 'COMPRA' ? 'BUY' : parsed.recommendation === 'VENDA' ? 'SELL' : 'WAIT',
         confidencePct: parsed.confidence * 100,
@@ -1430,6 +1488,10 @@ startFlagRefresh(async () =>
 );
 
 startOutcomeSweeper(prisma);
+
+// Armazem de velas (REAL DATA de toda analise) e rastreador de resultado do v10.3.
+void registerCandleStore(prisma, (m) => console.log(m));
+startAnalysisTracker(prisma);
 
 // Consumo do Twelve Data (twelve-data.ts): `[twelvedata] day=N/800 ...` de hora em hora.
 startTwelveDataReport();

@@ -28,7 +28,7 @@ const client = new Proxy(prisma, {
   },
 });
 const ai = { analyzeImage: async () => { process.send({ event: 'model-started' }); return new Promise(() => {}); } };
-const service = new DemoService(client, ai, { buildPromptByVersion: async () => 'synthetic prompt' });
+const service = new DemoService(client, ai);
 service.tableReady = true; // No boot hooks or project migrations.
 service.analyze({ fingerprint: 'synthetic-device', ip: '192.0.2.10', base64Image: process.argv[3], turnstileToken: 'synthetic-proof' })
   .catch(() => { process.send({ event: 'error' }); process.exitCode = 1; });

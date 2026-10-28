@@ -175,6 +175,8 @@ export function extractShadowPlan(result: unknown): TradePlan | null {
     const n = Number(v);
     return v != null && Number.isFinite(n) && n > 0 ? n : null;
   };
+  // WATCH do v10.1 nao tem entrada nem stop (saem da vela de gatilho que
+  // ainda nao existe): fica fora da sombra, que so simula niveis guardados.
   const entry = num(a.entry);
   const stopLoss = num(a.stopLoss);
   const takeProfit1 = num(a.takeProfit1);

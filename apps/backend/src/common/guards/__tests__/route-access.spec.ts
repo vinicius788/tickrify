@@ -229,7 +229,7 @@ describe('controle de acesso das rotas', () => {
     const source = readFileSync(promptController as string, 'utf8');
     const promptRoutes = parseController(promptController as string);
 
-    expect(promptRoutes.length).toBeGreaterThanOrEqual(5);
+    expect(promptRoutes.length).toBeGreaterThanOrEqual(3);
     expect(source).not.toContain('@Public()');
 
     for (const route of promptRoutes) {

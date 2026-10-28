@@ -1,10 +1,12 @@
 // Cliente da demo anônima (/api/demo/*) — endpoints públicos, sem auth.
 // Mantido fora do api.ts para não misturar com o cliente autenticado.
-import { buildApiUrl } from './api';
+import { buildApiUrl, type SignalState } from './api';
 
 export interface DemoAnalysisResult {
   status: 'completed';
   recommendation: 'BUY' | 'SELL' | 'WAIT';
+  /** Estado do copiloto; leitura guardada antes do v10.3 nao tem. */
+  signalState?: SignalState;
   bias: 'bullish' | 'bearish' | 'neutral';
   confidence: number;
   symbol: string;
@@ -123,12 +125,13 @@ const DEMO_RESULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type SavedDemoResult = Pick<
   DemoAnalysisResult,
-  'recommendation' | 'symbol' | 'timeframe' | 'entry' | 'stopLoss' | 'takeProfit1' | 'riskReward'
+  'recommendation' | 'signalState' | 'symbol' | 'timeframe' | 'entry' | 'stopLoss' | 'takeProfit1' | 'riskReward'
 > & { savedAt: number };
 
 export function saveDemoResult(result: DemoAnalysisResult, now = Date.now()): void {
   const saved: SavedDemoResult = {
     recommendation: result.recommendation,
+    signalState: result.signalState,
     symbol: result.symbol,
     timeframe: result.timeframe,
     entry: result.entry,

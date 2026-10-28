@@ -3,7 +3,6 @@ import {
   __resetFlagCacheForTests,
   applyFlagOverrideLocally,
   flagBool,
-  flagNumber,
   getFlagCacheStatus,
   loadFlagsFromDb,
   resolveAllFlags,
@@ -27,31 +26,31 @@ describe('loja de apps — resolução de flags', () => {
 
   describe('ordem banco → ambiente → padrão', () => {
     it('sem nada configurado, usa o padrão do código', () => {
-      const r = resolveFlag('ENABLE_QUICK_GROUNDING');
+      const r = resolveFlag('TRIAL_MODE');
       expect(r.value).toBe('false');
       expect(r.source).toBe('padrao');
     });
 
     it('a variável de ambiente vence o padrão', () => {
-      process.env.ENABLE_QUICK_GROUNDING = 'true';
-      const r = resolveFlag('ENABLE_QUICK_GROUNDING');
+      process.env.TRIAL_MODE = 'true';
+      const r = resolveFlag('TRIAL_MODE');
       expect(r.value).toBe('true');
       expect(r.source).toBe('ambiente');
     });
 
     it('o banco vence a variável de ambiente', () => {
-      process.env.ENABLE_QUICK_GROUNDING = 'true';
-      applyFlagOverrideLocally('ENABLE_QUICK_GROUNDING', 'false');
-      const r = resolveFlag('ENABLE_QUICK_GROUNDING');
+      process.env.TRIAL_MODE = 'true';
+      applyFlagOverrideLocally('TRIAL_MODE', 'false');
+      const r = resolveFlag('TRIAL_MODE');
       expect(r.value).toBe('false');
       expect(r.source).toBe('banco');
     });
 
     it('limpar o override devolve o controle para o ambiente', () => {
-      process.env.ENABLE_QUICK_GROUNDING = 'true';
-      applyFlagOverrideLocally('ENABLE_QUICK_GROUNDING', 'false');
-      applyFlagOverrideLocally('ENABLE_QUICK_GROUNDING', null);
-      const r = resolveFlag('ENABLE_QUICK_GROUNDING');
+      process.env.TRIAL_MODE = 'true';
+      applyFlagOverrideLocally('TRIAL_MODE', 'false');
+      applyFlagOverrideLocally('TRIAL_MODE', null);
+      const r = resolveFlag('TRIAL_MODE');
       expect(r.value).toBe('true');
       expect(r.source).toBe('ambiente');
     });
@@ -65,10 +64,10 @@ describe('loja de apps — resolução de flags', () => {
     // A troca só é segura se cada flag continuar decidindo EXATAMENTE como
     // decidia com `process.env` direto. Estes casos são o contrato.
 
-    it('ENABLE_QUICK_GROUNDING continua DESLIGADO por padrão (era === "true")', () => {
-      expect(flagBool('ENABLE_QUICK_GROUNDING')).toBe(false);
-      process.env.ENABLE_QUICK_GROUNDING = 'true';
-      expect(flagBool('ENABLE_QUICK_GROUNDING')).toBe(true);
+    it('TRIAL_MODE continua DESLIGADO por padrão', () => {
+      expect(flagBool('TRIAL_MODE')).toBe(false);
+      process.env.TRIAL_MODE = 'true';
+      expect(flagBool('TRIAL_MODE')).toBe(true);
     });
 
     it.each(['ENABLE_RR_GUARD', 'ENABLE_NEWS_GUARD', 'ENABLE_MARKET_ENRICHMENT', 'ENABLE_OUTCOME_TRACKING'])(
@@ -99,37 +98,27 @@ describe('loja de apps — resolução de flags', () => {
     it.each(['sim', 'ON', 'talvez'])(
       'valor lixo (%p) NÃO liga uma função que é desligada por padrão',
       (lixo) => {
-        applyFlagOverrideLocally('ENABLE_QUICK_GROUNDING', lixo);
-        expect(flagBool('ENABLE_QUICK_GROUNDING')).toBe(false);
+        applyFlagOverrideLocally('TRIAL_MODE', lixo);
+        expect(flagBool('TRIAL_MODE')).toBe(false);
       },
     );
 
     it('aceita 1/0 além de true/false', () => {
-      applyFlagOverrideLocally('ENABLE_QUICK_GROUNDING', '1');
-      expect(flagBool('ENABLE_QUICK_GROUNDING')).toBe(true);
+      applyFlagOverrideLocally('TRIAL_MODE', '1');
+      expect(flagBool('TRIAL_MODE')).toBe(true);
       applyFlagOverrideLocally('ENABLE_RR_GUARD', '0');
       expect(flagBool('ENABLE_RR_GUARD')).toBe(false);
     });
 
-    it('AB_PROMPT_V9_PERCENT continua 0 por padrão e lê número do banco', () => {
-      expect(flagNumber('AB_PROMPT_V9_PERCENT')).toBe(0);
-      applyFlagOverrideLocally('AB_PROMPT_V9_PERCENT', '20');
-      expect(flagNumber('AB_PROMPT_V9_PERCENT')).toBe(20);
-    });
-
-    it('número inválido cai no padrão em vez de virar NaN', () => {
-      applyFlagOverrideLocally('AB_PROMPT_V9_PERCENT', 'vinte');
-      expect(flagNumber('AB_PROMPT_V9_PERCENT')).toBe(0);
-    });
   });
 
   describe('carga a partir do banco', () => {
     it('popula o cache e marca a origem', async () => {
       const ok = await loadFlagsFromDb(async () => [
-        { key: 'ENABLE_QUICK_GROUNDING', value: 'true' },
+        { key: 'TRIAL_MODE', value: 'true' },
       ]);
       expect(ok).toBe(true);
-      expect(resolveFlag('ENABLE_QUICK_GROUNDING').source).toBe('banco');
+      expect(resolveFlag('TRIAL_MODE').source).toBe('banco');
       expect(getFlagCacheStatus().overridesNoBanco).toBe(1);
     });
 
@@ -144,15 +133,15 @@ describe('loja de apps — resolução de flags', () => {
 
     // ⭐ A propriedade que torna esta feature segura de existir.
     it('banco fora do ar NÃO derruba nada: tudo volta a resolver por env', async () => {
-      process.env.ENABLE_QUICK_GROUNDING = 'true';
+      process.env.TRIAL_MODE = 'true';
 
       const ok = await loadFlagsFromDb(async () => {
         throw new Error('relation "tickrify.FeatureFlag" does not exist');
       });
 
       expect(ok).toBe(false);
-      expect(() => flagBool('ENABLE_QUICK_GROUNDING')).not.toThrow();
-      expect(flagBool('ENABLE_QUICK_GROUNDING')).toBe(true);
+      expect(() => flagBool('TRIAL_MODE')).not.toThrow();
+      expect(flagBool('TRIAL_MODE')).toBe(true);
       expect(getFlagCacheStatus().ultimoErro).toMatch(/does not exist/);
     });
 

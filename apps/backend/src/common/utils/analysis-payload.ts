@@ -1,4 +1,6 @@
 import { presentAnalysis } from './analysis-presentation';
+import { storedSignalState } from './signal-decision';
+import { isValidWatchPlan } from './plan-engine';
 import {
   Bias,
   Recommendation,
@@ -187,8 +189,22 @@ export function buildPersistedAnalysisPayload(params: {
 
   if (analysis) reasoning = presentAnalysis({ ...analysis, reasoning }, 'en', 1).reasoning;
 
+  // Estado do v10. Analise anterior a ele nao tem o campo: o estado sai da
+  // recomendacao e do tipo de entrada, na leitura, sem migrar o banco.
+  const signalState = storedSignalState({ signalState: params.source.signalState, analysis }, recommendation);
+  const watchPlan = signalState !== 'NO_TRADE' && isValidWatchPlan(params.source.watchPlan) ? params.source.watchPlan : null;
+  // De onde sairam os niveis (v10.3): candles reais ou estimados do print. Analise antiga: null.
+  const dataMode = params.source.dataMode === 'real_data' || params.source.dataMode === 'print' ? params.source.dataMode : null;
+  const validatorNotes = Array.isArray(params.source.validatorNotes)
+    ? params.source.validatorNotes.filter((n: unknown) => typeof n === 'string')
+    : [];
+
   const fullResponse: Record<string, any> = {
     ...(isObject(params.source) ? params.source : {}),
+    signalState,
+    watchPlan,
+    dataMode,
+    validatorNotes,
     recommendation,
     bias,
     confidence,

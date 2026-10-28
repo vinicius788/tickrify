@@ -37,7 +37,7 @@ integration('demo: disposable PostgreSQL admission, recovery and version coexist
     published = require(resolve(process.env.TICKRIFY_DEMO_PUBLISHED_DIST!, 'modules/demo/demo.service.js')).DemoService;
     await prisma.$executeRawUnsafe('DROP SCHEMA IF EXISTS tickrify CASCADE');
     await prisma.$executeRawUnsafe('CREATE SCHEMA tickrify');
-    const boot = new DemoService(prisma, {} as any, {} as any);
+    const boot = new DemoService(prisma, {} as any);
     await boot.onModuleInit(); // Existing demo DDL only, in this disposable DB.
     expect((boot as any).tableReady).toBe(true);
     await prisma.$executeRawUnsafe(`CREATE TABLE tickrify."FeatureFlag" (
@@ -69,9 +69,10 @@ integration('demo: disposable PostgreSQL admission, recovery and version coexist
   afterAll(async () => { await prisma?.$disconnect(); process.env = originalEnv; });
 
   function fixture(options: { old?: boolean; execute?: (...args: any[]) => Promise<any>; transaction?: (...args: any[]) => Promise<any> } = {}) {
+    const promptConfig = { findFirst: jest.fn().mockResolvedValue(null), findUnique: jest.fn().mockResolvedValue(null) };
     const client = new Proxy(prisma, {
       get(target, key) {
-        if (key === 'promptConfig') return { findFirst: jest.fn().mockResolvedValue(null) };
+        if (key === 'promptConfig') return promptConfig;
         if (key === '$executeRaw' && options.execute) return options.execute;
         if (key === '$transaction' && options.transaction) return options.transaction;
         const value = Reflect.get(target, key);
@@ -81,11 +82,12 @@ integration('demo: disposable PostgreSQL admission, recovery and version coexist
     let release!: () => void;
     const barrier = new Promise<void>(r => { release = r; });
     const ai = { analyzeImage: jest.fn(async () => { await barrier; return modelResult; }) };
-    const prompt = { buildPromptByVersion: jest.fn().mockResolvedValue('synthetic prompt') };
-    const Service = options.old ? published : DemoService;
-    const service = new Service(client, ai as any, prompt as any);
+    // A versao publicada antiga ainda recebia o montador de prompt pelo construtor.
+    const service = options.old
+      ? new (published as any)(client, ai as any, { buildPromptByVersion: jest.fn().mockResolvedValue('synthetic prompt') })
+      : new DemoService(client, ai as any);
     (service as any).tableReady = true;
-    return { service, ai, prompt, release };
+    return { service, ai, promptConfig, release };
   }
 
   async function count() {
@@ -173,14 +175,21 @@ integration('demo: disposable PostgreSQL admission, recovery and version coexist
     expect(await count()).toBe(1);
   });
 
-  it('invalid images and prompt failures do not consume capacity or call AI', async () => {
+  it('invalid images do not consume capacity or call AI', async () => {
     const f = fixture();
     await expect(f.service.analyze({ ...params(), base64Image: 'invalid' })).rejects.toMatchObject({ status: 400 });
-    expect(await count()).toBe(0);
-    f.prompt.buildPromptByVersion.mockRejectedValue(new Error('synthetic prompt unavailable'));
-    await expect(f.service.analyze(params())).rejects.toMatchObject({ status: 503 });
     expect(f.ai.analyzeImage).not.toHaveBeenCalled();
     expect(await count()).toBe(0);
+  });
+
+  it('uses the code prompt even when the legacy prompt table is unavailable', async () => {
+    const f = fixture();
+    f.promptConfig.findFirst.mockRejectedValue(new Error('synthetic prompt unavailable'));
+    f.release();
+    await expect(f.service.analyze(params())).resolves.toMatchObject({ status: 'completed' });
+    expect(f.promptConfig.findFirst).not.toHaveBeenCalled();
+    expect(f.ai.analyzeImage).toHaveBeenCalledTimes(1);
+    expect(await count()).toBe(1);
   });
 
   it('failed cleanup retains capacity instead of admitting a duplicate analysis', async () => {

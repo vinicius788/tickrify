@@ -1,5 +1,5 @@
 import type { Recommendation } from '../../common/utils/analysis-normalizer';
-import type { SignalDecisionResult, ValidatorAction } from '../../common/utils/signal-decision';
+import type { SignalDecisionResult, SignalState, ValidatorAction, ValidatorNote } from '../../common/utils/signal-decision';
 
 // ============================================================================
 // CONTRATO DE SAIDA DO MOTOR (v2, 12/10/2026)
@@ -14,7 +14,7 @@ import type { SignalDecisionResult, ValidatorAction } from '../../common/utils/s
 // ============================================================================
 
 /** Versao do motor. Unico lugar; vai para o banco e para o PostHog. */
-export const ENGINE_VERSION = '2.0.0';
+export const ENGINE_VERSION = '3.2.0';
 
 export type EngineVerdict = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 
@@ -59,9 +59,12 @@ export interface EngineRecord {
   version: string;
   /** Provedor de IA que respondeu (vision-model.ts). null = caminho sem adapter. */
   provider: string | null;
-  data_mode: 'print';
+  /** real_data = niveis e distancia pelos candles reais; print = estimados do print. */
+  data_mode: 'real_data' | 'print';
+  /** Estado final do v10 (signal-decision.ts). */
+  signal_state: SignalState;
   validator_action: ValidatorAction;
-  validator_reasons: SignalDecisionResult['validatorReasons'];
+  validator_reasons: ValidatorNote[];
   /** Regras quebradas que so medem, sem rebaixar (MEASURE_ONLY_RULES). */
   validator_flags: SignalDecisionResult['validatorFlags'];
   timings: EngineTimings;
@@ -79,14 +82,24 @@ const VERDICTS: Record<Recommendation, EngineVerdict> = {
 };
 
 // Motivo fixo quando o validador rebaixou (o texto da IA defendia o trade).
-const VALIDATOR_REASON_TEXT: Record<SignalDecisionResult['validatorReasons'][number], string> = {
-  stop_inside_invalidation: 'The stop sits before the invalidation level.',
-  limit_needs_confirmation: 'The limit entry waits for a confirmation a resting order cannot see.',
+const VALIDATOR_REASON_TEXT: Record<ValidatorNote, string> = {
+  state_mismatch: 'The state and the recommendation did not agree.',
   implausible_price: 'A price level is outside a plausible range of the chart price.',
-  rr_below_min: 'No target pays enough for the risk.',
+  levels_unverified: 'No real candles, and the plan levels or the chart price could not be read.',
+  plan_invalidated: 'Price is already beyond the invalidation.',
+  zone_overrun: 'Price has already passed through the zone.',
+  stop_atr_out_of_range: 'The stop from the invalidation is more than 2.0 ATR from the entry.',
+  tp1_no_room: 'The first target is less than 1R from the entry.',
+  rr_tp2_below_min: 'The final target does not pay at least 1.5 times the risk.',
+  required_check_failed: 'Location, setup, geometry and room must all pass for a plan.',
+  checks_below_min: 'Too few checklist items passed for a plan.',
+  forex_checks_below_min: 'Forex needs six checklist items for a plan.',
+  countertrend_checks_below_min: 'A plan against the 4h trend needs six checklist items.',
+  not_at_price: 'Price is not inside the zone, so the plan is a pending limit order.',
+  entry_far_from_price: 'The entry is too far from the current price.',
   news_event: 'A high-impact economic event is due within 45 minutes or came out in the last 15.',
-  direction: 'Stop and targets do not match the trade direction.',
-  incomplete: 'A required price level is missing.',
+  watch_plan_invalid: 'The conditional plan has its levels out of order.',
+  stale_print: 'The screenshot is older than the market.',
 };
 
 function clip(text: string, max: number): string {
@@ -119,14 +132,14 @@ export interface EngineContractInput {
   takeProfit2: unknown;
   invalidationLevel: unknown;
   executiveSummary: unknown;
-  validatorReasons: SignalDecisionResult['validatorReasons'];
+  validatorReasons: ValidatorNote[];
 }
 
 export function buildEngineContract(input: EngineContractInput): EngineContract {
   const verdict = VERDICTS[input.recommendation];
   const isTrade = verdict !== 'NEUTRAL';
   const summary = sentences(input.executiveSummary);
-  const validatorReason = input.validatorReasons[0];
+  const validatorReason = input.validatorReasons.find((n) => n !== 'stale_print');
 
   return {
     verdict,
@@ -185,6 +198,8 @@ function ms(value: number | null | undefined): number | null {
 
 export function buildEngineRecord(params: {
   contract: EngineContractInput;
+  signalState: SignalState;
+  dataMode: 'real_data' | 'print';
   provider?: string | null;
   validatorAction: ValidatorAction;
   validatorFlags: SignalDecisionResult['validatorFlags'];
@@ -199,7 +214,8 @@ export function buildEngineRecord(params: {
   return {
     version: ENGINE_VERSION,
     provider: params.provider ?? null,
-    data_mode: 'print',
+    data_mode: params.dataMode,
+    signal_state: params.signalState,
     validator_action: params.validatorAction,
     validator_reasons: [...params.contract.validatorReasons],
     validator_flags: [...params.validatorFlags],

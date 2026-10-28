@@ -3,7 +3,7 @@
  * BACKTEST — Etapa C (parte 2): chama o MOTOR REAL de análise para cada
  * gráfico renderizado em scripts/backtest/charts/.
  *
- * Usa exatamente o caminho de produção: PromptBuilderService (prompt oficial,
+ * Usa exatamente o caminho de produção: buildAnalysisPrompt (prompt oficial,
  * idioma EN) + AIAdapter.analyzeImage(dataUrl, prompt, 'quick') — incluindo os
  * guards determinísticos (caps de confiança, guard de R/R, teto de WAIT).
  * ÚNICA diferença deliberada: ENABLE_NEWS_GUARD=false, porque o news guard
@@ -33,7 +33,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { AIAdapter, AIAnalysisError, buildRealDataBlock } from '../src/modules/ai/ai.adapter';
-import { PromptBuilderService } from '../src/modules/prompt/prompt-builder.service';
+import { assembleAnalysisPrompt, buildAnalysisPrompt } from '../src/modules/prompt/prompt-builder.service';
 import { enterTwelveDataExperimentMode, experimentRefusesFx } from '../src/modules/market/twelve-data';
 import { canonicalFxPair } from '../src/common/utils/analysis-normalizer';
 
@@ -73,9 +73,8 @@ function parseArgs() {
     // espelha a melhoria proposta pro backend (ler número, não pixel)
     ground: args.includes('--ground'),
     // --prompt-file <caminho>: testa um prompt CANDIDATO sem tocar no oficial.
-    // Entra como `override` no PromptBuilderService — o mesmo caminho que o
-    // painel admin usa —, então o {{USER_CONTEXT}} e as instruções de
-    // consistência/deep continuam sendo aplicados igual a produção.
+    // Passa pelo montador de produção (assembleAnalysisPrompt), então o
+    // {{USER_CONTEXT}} e o modo deep sao aplicados igual a producao.
     // Sem esta flag não dá pra rodar A/B: o runner só sabia resolver o prompt
     // ativo, e trocar o ativo para testar coloca o candidato em produção.
     promptFile: promptFileIdx >= 0 ? String(args[promptFileIdx + 1] || '') : null,
@@ -85,8 +84,8 @@ function parseArgs() {
 
 /**
  * Lê um prompt candidato de arquivo. Aceita .md/.txt (conteúdo cru) e .ts
- * (extrai o conteúdo do template literal, para apontar direto pro
- * trading-system-prompt-v9.ts sem precisar copiar e colar).
+ * (extrai o conteúdo do template literal, para apontar direto para um
+ * arquivo de prompt sem precisar copiar e colar).
  */
 function readPromptFile(file: string): string {
   const raw = fs.readFileSync(path.resolve(file), 'utf8');
@@ -153,42 +152,14 @@ function confirm(question: string): Promise<boolean> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function buildOfficialPrompt(promptFile?: string | null): Promise<{ prompt: string; source: string }> {
-  // Prompt CANDIDATO (--prompt-file): não toca no banco nem no prompt ativo.
-  // Passa como override pelo mesmo builder de produção, então idioma,
-  // consistência determinística e enriquecimento continuam idênticos.
+function buildOfficialPrompt(promptFile?: string | null): { prompt: string; source: string } {
+  // Prompt CANDIDATO (--prompt-file): mesmo montador de producao, outro texto-base.
   if (promptFile) {
-    const stubDb: any = { promptConfig: { findFirst: async () => null, findUnique: async () => null } };
-    const builder = new PromptBuilderService(stubDb);
-    const prompt = await builder.buildPromptByVersion(
-      'quick',
-      undefined,
-      readPromptFile(promptFile),
-      'en',
-    );
+    const prompt = assembleAnalysisPrompt(readPromptFile(promptFile), { userLanguage: 'en', analysisType: 'quick' });
     return { prompt, source: `arquivo candidato (${path.basename(promptFile)}) — prompt oficial NÃO foi tocado` };
   }
-
-  // Fidelidade máxima: se houver DATABASE_URL válido (env ou .env), resolve o
-  // prompt ativo do banco (como produção). QUALQUER falha (credencial velha,
-  // sem rede, etc.) cai no arquivo TRADING_SYSTEM_PROMPT — exatamente o
-  // fallback que produção usa. Mesmo caminho do worker: injeta
-  // OUTPUT LANGUAGE = English no {{USER_CONTEXT}}.
-  try {
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
-    const builder = new PromptBuilderService(prisma as any);
-    const prompt = await builder.buildPromptByVersion('quick', undefined, undefined, 'en');
-    await prisma.$disconnect().catch(() => {});
-    return { prompt, source: 'database (PromptConfig ativo)' };
-  } catch (err) {
-    const msg = String((err as Error)?.message || err).split('\n').filter(Boolean)[0] || 'erro';
-    console.warn(`Banco indisponível (${msg}) — usando o prompt do arquivo (mesmo fallback de produção).`);
-  }
-  const stub: any = { promptConfig: { findFirst: async () => null, findUnique: async () => null } };
-  const builder = new PromptBuilderService(stub);
-  const prompt = await builder.buildPromptByVersion('quick', undefined, undefined, 'en');
-  return { prompt, source: 'file (TRADING_SYSTEM_PROMPT fallback)' };
+  // Mesmo caminho do worker: o prompt do codigo, com OUTPUT LANGUAGE = English.
+  return { prompt: buildAnalysisPrompt({ userLanguage: 'en', analysisType: 'quick' }), source: 'codigo (TRADING_SYSTEM_PROMPT)' };
 }
 
 async function main() {
@@ -229,7 +200,7 @@ async function main() {
     }
   }
 
-  const { prompt, source } = await buildOfficialPrompt(promptFile);
+  const { prompt, source } = buildOfficialPrompt(promptFile);
   console.log(`Prompt oficial resolvido via: ${source} (${prompt.length} chars — não será gravado em nenhum arquivo)`);
 
   fs.mkdirSync(RESULTS_DIR, { recursive: true });

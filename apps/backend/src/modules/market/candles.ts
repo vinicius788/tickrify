@@ -23,7 +23,8 @@ export type CandleSource = 'crypto' | 'fx';
 const TWELVE_INTERVAL: Record<CandleInterval, string> = { '5m': '5min', '30m': '30min' };
 export const INTERVAL_MS: Record<CandleInterval, number> = { '5m': 5 * 60 * 1000, '30m': 30 * 60 * 1000 };
 
-async function fetchJson<T>(url: string, timeoutMs = 6_000): Promise<T | null> {
+/** GET de JSON publico com teto de tempo; qualquer falha vira null. Tambem usado pelo armazem de velas. */
+export async function fetchJson<T>(url: string, timeoutMs = 6_000): Promise<T | null> {
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'tickrify/1.0' },

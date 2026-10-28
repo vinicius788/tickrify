@@ -1,5 +1,5 @@
 #!/usr/bin/env ts-node
-/** Piloto isolado de análise. Dry-run por padrão; nunca consulta PromptConfig. */
+/** Piloto isolado de análise. Dry-run por padrão; nunca consulta o banco. */
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -113,7 +113,7 @@ async function main() {
   const promptQuick = fs.readFileSync(opts.promptFile, 'utf8').trim();
   const promptDeep = opts.promptFileDeep ? fs.readFileSync(opts.promptFileDeep, 'utf8').trim() : promptQuick;
   if (promptQuick.length < 1000 || promptDeep.length < 1000) throw new Error('Prompt local vazio ou incompleto');
-  const deepMarker = '# ANÁLISE DEEP — LEITURA EM CAMADAS';
+  const deepMarker = 'ANALYSIS MODE: DEEP';
   if (opts.promptFileDeep && !promptDeep.includes(deepMarker)) {
     throw new Error('--prompt-file-deep deve conter a instrução DEEP completa');
   }
@@ -127,17 +127,13 @@ async function main() {
     throw new Error('Faixa de casos excede o manifesto');
   }
   const selected = manifest.cases.slice(opts.caseOffset, opts.caseOffset + opts.maxCalls);
-  // Override local: prepara os prompts finais também no dry-run, sem banco/API.
-  const { PromptBuilderService } = require('../src/modules/prompt/prompt-builder.service');
-  const builder = new PromptBuilderService({ promptConfig: {
-    findFirst: async () => { throw new Error('Acesso ao banco proibido neste piloto'); },
-    findUnique: async () => { throw new Error('Acesso ao banco proibido neste piloto'); },
-  } });
+  // Prepara os prompts finais também no dry-run, sem banco/API.
+  const { assembleAnalysisPrompt } = require('../src/modules/prompt/prompt-builder.service');
   const prompts: Record<Mode, string> = {
-    quick: await builder.buildPromptByVersion('quick', undefined, promptQuick, 'en'),
+    quick: assembleAnalysisPrompt(promptQuick, { userLanguage: 'en', analysisType: 'quick' }),
     // O arquivo DEEP separado já inclui sua instrução completa. Usar o modo
-    // quick aqui só para idioma/consistência evita anexar a instrução antiga.
-    deep: await builder.buildPromptByVersion(opts.promptFileDeep ? 'quick' : 'deep', undefined, promptDeep, 'en'),
+    // quick aqui só para o idioma evita anexar a instrução de novo.
+    deep: assembleAnalysisPrompt(promptDeep, { userLanguage: 'en', analysisType: opts.promptFileDeep ? 'quick' : 'deep' }),
   };
   const deepEnrichmentInstructionCount = prompts.deep.split(deepMarker).length - 1;
   if (deepEnrichmentInstructionCount !== 1) {
@@ -178,8 +174,6 @@ async function main() {
   if (opts.reservePerCallUsd > opts.maxEstimatedUsd) throw new Error('Reserva por chamada excede teto estimado');
   // Os gráficos são históricos. Impede vazamento de calendário/dados de hoje,
   // chamadas auxiliares e dumps de resposta definidos no ambiente do operador.
-  process.env.ENABLE_QUICK_GROUNDING = 'false';
-  process.env.ENABLE_MARKET_ENRICHMENT = 'false';
   process.env.ENABLE_NEWS_GUARD = 'false';
   process.env.ENABLE_RR_GUARD = 'true';
   process.env.AI_MODEL_QUICK = opts.modelQuick;
@@ -202,6 +196,7 @@ async function main() {
   const { AIAdapter, AIAnalysisError } = require('../src/modules/ai/ai.adapter');
   const { computeCost, extractUsage } = require('../src/modules/ai/model-cost');
   const adapter = new AIAdapter();
+  adapter.groundingEnabled = false;
   const sdk = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 0 });
   const originalCreate = sdk.chat.completions.create.bind(sdk.chat.completions);
   let calls = 0;

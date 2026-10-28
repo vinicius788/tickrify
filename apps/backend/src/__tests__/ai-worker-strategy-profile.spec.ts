@@ -189,7 +189,6 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     const job = makeJob({
       analysisId: 'analysis-1',
       imageUrl: 'https://example.com/chart.png',
-      promptOverride: 'PROMPT DE TESTE', // evita bater no prisma.promptConfig
       analysisType: 'quick',
       userId: 'user-1',
       isDemo: true, // evita o caminho de refund de ticks no catch
@@ -201,7 +200,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     expect(analyzeImageMock).toHaveBeenCalledTimes(1);
     const call = analyzeImageMock.mock.calls[0];
     expect(call[0]).toBe('https://example.com/chart.png');
-    expect(call[1]).toBe('PROMPT DE TESTE');
+    expect(call[1]).toContain('TICKRIFY ANALYSIS ENGINE v10.3');
     expect(call[2]).toBe('quick');
     expect(call[4]).toEqual(strategyProfile);
 
@@ -235,7 +234,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
 
     await expect(processAnalysis(makeJob({
       analysisId: 'analysis-invalid-plan', imageUrl: 'https://example.com/chart.png',
-      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+      analysisType: 'quick', userId: 'user-1', isDemo: false,
     }))).rejects.toThrow('Inconsistent levels');
 
     expect(prismaClient.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
@@ -256,7 +255,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     }));
     await expect(processAnalysis(makeJob({
       analysisId: 'analysis-non-chart', imageUrl: 'https://example.com/chart.png',
-      promptOverride: 'PROMPT DE TESTE', analysisType, userId: 'user-1', isDemo: false,
+      analysisType, userId: 'user-1', isDemo: false,
     }))).rejects.toThrow('Not a financial chart');
     expect(analyzeImageMock).toHaveBeenCalledTimes(1);
     expect(prismaClient.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
@@ -269,34 +268,29 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     }));
   });
 
-  it.each([['COMPRA', 155.334, 1.67], ['AGUARDAR', 155.324, 1.11]] as const)(
-    'keeps corrected decimal prices through the worker: %s', async (recommendation, takeProfit2, r2) => {
-      require('../../worker/ai.worker');
-      const processAnalysis = getProcessor();
-      const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
-      prismaClient.analysis.update.mockClear();
-      analyzeImageMock.mockResolvedValueOnce({
-        recommendation: 'BUY', confidence: 70,
-        analysis: {
-          symbol: 'USDJPY', timeframe: '30m', currentPrice: 155.318,
-          entry: 15530.4 * 0.01, stopLoss: 15528.6 * 0.01, takeProfit1: 15531.6 * 0.01, takeProfit2,
-          trendStrength: 'strong', factorsPresent: 6,
-        },
-      });
-      await processAnalysis(makeJob({
-        analysisId: 'analysis-precision', imageUrl: 'https://example.com/chart.png',
-        promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: true,
-      }));
-      const completed = prismaClient.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed');
-      expect(completed).toBeDefined();
-      expect(completed[0].data.recommendation).toBe(recommendation === 'COMPRA' ? 'BUY' : 'WAIT');
-      const analysis = completed[0].data.result.analysis;
-      expect(analysis.entry).toBe(15530.4 * 0.01);
-      expect(analysis.stopLoss).toBe(15528.6 * 0.01);
-      expect(analysis.takeProfit2).toBe(takeProfit2);
-      expect(analysis.riskRewardTp2).toBe(recommendation === 'COMPRA' ? r2 : null);
-    },
-  );
+  it('fonte que contorna o adapter: BUY sem watchPlan vira NO_TRADE', async () => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
+    prismaClient.analysis.update.mockClear();
+    analyzeImageMock.mockResolvedValueOnce({
+      recommendation: 'BUY', confidence: 70,
+      analysis: {
+        symbol: 'USDJPY', timeframe: '30m', currentPrice: 155.306,
+        entry: 155.304, stopLoss: 155.286, takeProfit1: 155.316, takeProfit2: 155.334,
+        trendStrength: 'strong', factorsPresent: 6,
+      },
+    });
+    await processAnalysis(makeJob({
+      analysisId: 'analysis-precision', imageUrl: 'https://example.com/chart.png',
+      analysisType: 'quick', userId: 'user-1', isDemo: true,
+    }));
+    const completed = prismaClient.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed');
+    expect(completed).toBeDefined();
+    expect(completed[0].data.recommendation).toBe('WAIT');
+    expect(completed[0].data.result.signalState).toBe('NO_TRADE');
+    expect(completed[0].data.result.analysis.entry).toBeNull();
+  });
 
   it.each([true, false])('runs the real Deep adapter into the worker and serializer (financial chart=%s)', async (isChart) => {
     require('../../worker/ai.worker');
@@ -306,21 +300,30 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     const { OpenAiVisionModel } = jest.requireActual('../modules/ai/vision-model');
     const { AiService } = jest.requireActual('../modules/ai/ai.service');
     const adapter = new RealAdapter();
-    const raw = { is_financial_chart: isChart, recommendation: 'BUY', confidence: 70, analysis: {
-      symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.983, entry: 107.855, stopLoss: 107.7,
+    // v10.3: plano na escala lida (100x); preco real 1,0792 a 0,6 ATR da borda
+    // (ATR 0,002): limit em 1,078, stop 1,076 (invalidacao 1,0765 - 0,25 ATR),
+    // TP1 1,081 (1,5R), TP2 1,0895. Forex: 6 PASS no checklist.
+    const watchPlan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 107.7, zoneHigh: 107.8, invalidation: 107.65,
+      target1: 108.3, target2: 108.95, validForCandles: 16, trigger: 'Bullish close at 1.0770-1.0780' };
+    const raw = { is_financial_chart: isChart, watchPlan, recommendation: 'BUY', confidence: 70, analysis: {
+      symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.88, entry: 107.855, stopLoss: 107.7,
       takeProfit1: 108.02, takeProfit2: 108.12, invalidationLevel: 107.72,
       factorsPresent: 6, trendStrength: 'strong', marketStructure: { bias: 'bullish' },
+      structureValidation: 'C1 PASS: 4h; C2 PASS: discount; C3 PASS: pullback; C4 PASS: buyers; C5 FAIL: retested; C6 PASS: 1 ATR; C7 PASS: room',
     } };
     const create = jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(raw) } }] });
     adapter.visionModel = new OpenAiVisionModel({ chat: { completions: { create } } });
-    adapter.buildMarketEnrichment = jest.fn().mockResolvedValue({ block: 'SYNTHETIC CONTEXT', assetClass: 'forex', marketContext: 'injected', calendar: 'no_events_returned' });
+    adapter.buildMarketEnrichment = jest.fn().mockResolvedValue({
+      block: 'SYNTHETIC CONTEXT', assetClass: 'forex', marketContext: 'injected', calendar: 'no_events_returned', candles: 'injected',
+      stats: { v: 1, symbol: 'EURUSD', interval: '1h', coverage: 'injected', numbers: { lastClose: 1.0792, atr14: 0.002 } },
+    });
     analyzeImageMock.mockImplementationOnce(adapter.analyzeImage.bind(adapter));
     const oldEnrichment = process.env.ENABLE_MARKET_ENRICHMENT;
     process.env.ENABLE_MARKET_ENRICHMENT = 'true';
     try {
       const pending = processAnalysis(makeJob({
         analysisId: 'analysis-deep-p1', imageUrl: 'data:image/png;base64,AA==',
-        promptOverride: 'PROMPT DE TESTE', analysisType: 'deep', userId: 'user-1', isDemo: false,
+        analysisType: 'deep', userId: 'user-1', isDemo: false,
       }));
       if (isChart) await pending;
       else await expect(pending).rejects.toThrow('financial chart');
@@ -336,12 +339,13 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
         ...(isChart ? {} : { result: null }), createdAt: new Date(), updatedAt: new Date(),
       });
       if (isChart) {
+        const engine = { entry: 1.078, stopLoss: 1.076, takeProfit1: 1.081, takeProfit2: 1.0895 };
         for (const key of ['entry', 'stopLoss', 'takeProfit1', 'takeProfit2'] as const) {
-          expect(stored.result.analysis[key]).toBe(raw.analysis[key] * 0.01);
-          expect(delivered[key]).toBe(raw.analysis[key] * 0.01);
+          expect(stored.result.analysis[key]).toBeCloseTo(engine[key], 8);
+          expect(delivered[key]).toBe(stored.result.analysis[key]);
         }
         expect(stored.result.analysis.invalidationLevel).toBe(107.72 * 0.01);
-        expect(delivered).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.06, riskRewardTp2: 1.71, errorCode: null });
+        expect(delivered).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.5, riskRewardTp2: 5.75, errorCode: null });
       } else {
         expect(prismaClient.analysis.update.mock.calls.some(([args]: any[]) => args.data.status === 'completed')).toBe(false);
         expect(delivered).toMatchObject({ status: 'failed', errorCode: 'non_chart_image', entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null });
@@ -363,7 +367,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
 
     await processAnalysis(makeJob({
       analysisId: 'analysis-validation-failed', imageUrl: 'https://example.com/chart.png',
-      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+      analysisType: 'quick', userId: 'user-1', isDemo: false,
     }));
 
     expect(prismaClient.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
@@ -389,7 +393,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
 
     await expect(processAnalysis(makeJob({
       analysisId: 'analysis-worker-invalid-plan', imageUrl: 'https://example.com/chart.png',
-      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+      analysisType: 'quick', userId: 'user-1', isDemo: false,
     }))).rejects.toThrow('níveis incoerentes');
 
     expect(prismaClient.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
@@ -410,7 +414,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
 
     await expect(processAnalysis(makeJob({
       analysisId: 'analysis-deep-invalid', imageUrl: 'https://example.com/chart.png',
-      promptOverride: 'PROMPT DE TESTE', analysisType: 'deep', userId: 'user-1', isDemo: false,
+      analysisType: 'deep', userId: 'user-1', isDemo: false,
     }))).rejects.toThrow('Inconsistent levels');
     expect(tx.tickTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ type: 'REFUND', amount: 3, metadata: { analysisId: 'analysis-deep-invalid' } }),
@@ -422,7 +426,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     }));
     await expect(processAnalysis(makeJob({
       analysisId: 'analysis-deep-invalid', imageUrl: 'https://example.com/chart.png',
-      promptOverride: 'PROMPT DE TESTE', analysisType: 'deep', userId: 'user-1', isDemo: false,
+      analysisType: 'deep', userId: 'user-1', isDemo: false,
     }))).rejects.toThrow('Inconsistent levels');
     expect(tx.userTicks.upsert).toHaveBeenCalledTimes(1);
     expect(tx.tickTransaction.create).toHaveBeenCalledTimes(1);
@@ -444,7 +448,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
 
     await processAnalysis(makeJob({
       analysisId: 'analysis-wait-rr', imageUrl: 'https://example.com/chart.png',
-      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+      analysisType: 'quick', userId: 'user-1', isDemo: false,
     }));
 
     const completed = prismaClient.analysis.update.mock.calls.find(
@@ -457,7 +461,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     }));
   });
 
-  it('validador: alvo absurdo vira WAIT, stop antes da invalidacao so marca, e grava o contrato v2 com os tempos', async () => {
+  it('validador: alvo absurdo vira NO_TRADE, stop antes da invalidacao so marca, e grava o contrato v3 com os tempos', async () => {
     require('../../worker/ai.worker');
     const processAnalysis = getProcessor();
     const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
@@ -475,7 +479,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
 
     await processAnalysis(makeJob({
       analysisId: 'analysis-validator', imageUrl: 'https://example.com/chart.png',
-      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+      analysisType: 'quick', userId: 'user-1', isDemo: false,
       intake: { receivedAt: Date.now() - 2_000, imagePrepMs: 150, intakeMs: 400 },
     }));
 
@@ -486,7 +490,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     expect(completed[0].data.recommendation).toBe('WAIT');
     const engine = completed[0].data.result.engine;
     expect(engine).toMatchObject({
-      version: '2.0.0',
+      version: '3.2.0',
       data_mode: 'print',
       validator_action: 'downgraded',
       validator_reasons: ['implausible_price'],
@@ -518,7 +522,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
 
     await processAnalysis(makeJob({
       analysisId: 'analysis-setup-2', imageUrl: 'https://example.com/chart.png',
-      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: true,
+      analysisType: 'quick', userId: 'user-1', isDemo: true,
       setupId: 'setup-123456',
     }));
     await new Promise((resolve) => setImmediate(resolve));
@@ -555,7 +559,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
 
     await processAnalysis(makeJob({
       analysisId: 'analysis-telemetry', imageUrl: 'https://example.com/chart.png',
-      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+      analysisType: 'quick', userId: 'user-1', isDemo: false,
     }));
 
     const completed = prismaClient.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed');
@@ -578,7 +582,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     });
     await processAnalysis(makeJob({
       analysisId: 'analysis-plain', imageUrl: 'https://example.com/chart.png',
-      promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: false,
+      analysisType: 'quick', userId: 'user-1', isDemo: false,
     }));
     await new Promise((resolve) => setImmediate(resolve));
     expect(calls.some((c) => c.path === '$queryRaw' && (c.args as unknown[]).includes('setup-123456'))).toBe(false);
@@ -619,7 +623,6 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       makeJob({
         analysisId: 'analysis-2',
         imageUrl: 'https://example.com/chart.png',
-        promptOverride: 'PROMPT DE TESTE',
         analysisType: 'quick',
         userId: 'user-1',
         isDemo: false,
@@ -650,7 +653,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       analyzeImageMock.mockResolvedValueOnce({ recommendation, confidence: 50, analysis });
       return { prismaClient, run: () => processAnalysis(makeJob({
         analysisId, imageUrl: 'https://example.com/chart.png',
-        promptOverride: 'PROMPT DE TESTE', analysisType: 'quick', userId: 'user-1', isDemo: true,
+        analysisType: 'quick', userId: 'user-1', isDemo: true,
       })) };
     }
     const failedUpdate = (prismaClient: any) =>
