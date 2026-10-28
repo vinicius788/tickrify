@@ -175,14 +175,21 @@ integration('demo: disposable PostgreSQL admission, recovery and version coexist
     expect(await count()).toBe(1);
   });
 
-  it('invalid images and prompt failures do not consume capacity or call AI', async () => {
+  it('invalid images do not consume capacity or call AI', async () => {
     const f = fixture();
     await expect(f.service.analyze({ ...params(), base64Image: 'invalid' })).rejects.toMatchObject({ status: 400 });
-    expect(await count()).toBe(0);
-    f.promptConfig.findFirst.mockRejectedValue(new Error('synthetic prompt unavailable'));
-    await expect(f.service.analyze(params())).rejects.toMatchObject({ status: 503 });
     expect(f.ai.analyzeImage).not.toHaveBeenCalled();
     expect(await count()).toBe(0);
+  });
+
+  it('uses the code prompt even when the legacy prompt table is unavailable', async () => {
+    const f = fixture();
+    f.promptConfig.findFirst.mockRejectedValue(new Error('synthetic prompt unavailable'));
+    f.release();
+    await expect(f.service.analyze(params())).resolves.toMatchObject({ status: 'completed' });
+    expect(f.promptConfig.findFirst).not.toHaveBeenCalled();
+    expect(f.ai.analyzeImage).toHaveBeenCalledTimes(1);
+    expect(await count()).toBe(1);
   });
 
   it('failed cleanup retains capacity instead of admitting a duplicate analysis', async () => {
