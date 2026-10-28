@@ -1,3 +1,4 @@
+import OpenAI from 'openai';
 import {
   AnthropicVisionModel,
   FallbackVisionModel,
@@ -181,6 +182,35 @@ describe('FallbackVisionModel', () => {
 });
 
 describe('OpenAiVisionModel', () => {
+  it('preserves the analysis wire contract through the real SDK without a network call', async () => {
+    const transport = jest.fn(async (_url: unknown, _init?: RequestInit) => new Response(JSON.stringify({
+      id: 'synthetic-completion', object: 'chat.completion', created: 0, model: 'gpt-5.6-luna',
+      choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: '{"a":1}' } }],
+      usage: { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105 },
+    }), { headers: { 'content-type': 'application/json' } }));
+    const client = new OpenAI({ apiKey: 'synthetic-test-only', fetch: transport as typeof fetch, maxRetries: 0 });
+    const previous = process.env.AI_MODEL_QUICK;
+    process.env.AI_MODEL_QUICK = 'gpt-5.6-luna';
+    try {
+      const result = await new OpenAiVisionModel(client).complete(request({ reasoningEffort: 'low' }));
+      const [url, init] = transport.mock.calls[0];
+      expect(String(url)).toBe('https://api.openai.com/v1/chat/completions');
+      const body = JSON.parse(String(init?.body));
+      expect(body).toMatchObject({ model: 'gpt-5.6-luna', max_completion_tokens: 1000, reasoning_effort: 'low' });
+      expect(body.messages[0]).toEqual({ role: 'system', content: 'FIXED\n\nVARIABLE' });
+      expect(body.messages[1].content[1]).toEqual({ type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA', detail: 'high' } });
+      expect(body.response_format).toMatchObject({ type: 'json_schema', json_schema: { name: 'test', strict: true } });
+      expect(body).not.toHaveProperty('max_tokens');
+      expect(body).not.toHaveProperty('temperature');
+      expect(body).not.toHaveProperty('seed');
+      expect(result).toMatchObject({ content: '{"a":1}', finishReason: 'stop', usage: { promptTokens: 100, completionTokens: 5 } });
+      expect(transport).toHaveBeenCalledTimes(1);
+    } finally {
+      if (previous === undefined) delete process.env.AI_MODEL_QUICK;
+      else process.env.AI_MODEL_QUICK = previous;
+    }
+  });
+
   it('without instructions and schema: no system message and a free JSON object', async () => {
     const create = jest.fn().mockResolvedValue({ model: 'gpt-4o', choices: [{ finish_reason: 'stop', message: { content: '{}' } }] });
     const previous = process.env.AI_MODEL_QUICK;

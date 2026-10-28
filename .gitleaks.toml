@@ -157,6 +157,7 @@ regexes = [
   '^sk_live_51ABCdef$',
   '^postgresql://audit:test-only@$',
   "^DEMO_HASH_SALT: 'test-only-salt'$",
+  "^DEMO_HASH_SALT = 'synthetic-demo-salt'$",
   # Token deliberadamente forjado do smoke antigo: sub=forged, iat=1700.
   '\QeyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmb3JnZWQiLCJpYXQiOjE3MDB9.invalidsig\E',
 ]

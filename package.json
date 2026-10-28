@@ -37,7 +37,7 @@
   },
   "pnpm": {
     "overrides": {
-      "@nestjs/platform-express>multer": "2.4.0",
+      "@nestjs/platform-express>multer": "2.5.0",
       "@angular-devkit/core>picomatch": "4.0.4",
       "@angular-devkit/core>ajv": "8.18.0",
       "@babel/core": "7.29.6",
@@ -62,7 +62,9 @@
       "shell-quote": "1.11.0",
       "undici": "7.29.0",
       "uuid": "11.1.1",
-      "ws": "8.21.0"
+      "ws": "8.21.0",
+      "handlebars": "4.7.10",
+      "dompurify": "3.4.17"
     }
   }
 }
