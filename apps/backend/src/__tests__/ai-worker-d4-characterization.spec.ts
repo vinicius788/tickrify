@@ -96,20 +96,46 @@ const calendar = jest.fn();
 (globalThis as any).__openaiCreate = openaiCreate;
 (globalThis as any).__calendar = calendar;
 
-function modelReply(recommendation: string, confidence: unknown, analysis: Record<string, unknown>) {
+// v10.3: o plano do modelo (zona, alvos) e o preco real que o grounding
+// entrega, ATR 2. Compra: limit em 100 (borda da zona), stop 98 (invalidacao
+// 98,5 - 0,25 ATR), TP1 103 (target1 105 limitado a 1,5R), TP2 111,5 (5,75R).
+// Preco real 101,2: D = 0,6 ATR, ARMED. Venda: o espelho.
+const LONG_PLAN = {
+  direction: 'long', triggerType: 'zone_reaction', zoneLow: 99, zoneHigh: 100, invalidation: 98.5,
+  target1: 105, target2: 111.5, validForCandles: 16, trigger: 'Bullish close in the top third at 99-100',
+};
+const SHORT_PLAN = {
+  direction: 'short', triggerType: 'zone_reaction', zoneLow: 100, zoneHigh: 101, invalidation: 101.5,
+  target1: 95, target2: 88.5, validForCandles: 16, trigger: 'Bearish close in the bottom third at 100-101',
+};
+type Market = 'long' | 'short' | 'btc';
+function marketFor(market: Market) {
+  const price = market === 'short' ? 98.8 : 101.2;
+  const k = market === 'btc' ? 100 : 1;
+  return {
+    block: 'REAL DATA', candles: 'injected', marketContext: 'unavailable', assetClass: 'crypto',
+    stats: { v: 1, symbol: 'TEST', interval: '30m', coverage: 'injected', numbers: { lastClose: price * k, atr14: 2 * k } },
+  };
+}
+const CHECKLIST = 'C1 PASS: 4h; C2 PASS: discount; C3 PASS: pullback; C4 PASS: control; C5 FAIL: retested; C6 PASS: 1 ATR; C7 PASS: room. 6/7';
+
+function modelReply(recommendation: string, confidence: unknown, analysis: Record<string, unknown>, top: Record<string, unknown> = {}) {
+  const watchPlan = recommendation === 'BUY' ? LONG_PLAN : recommendation === 'SELL' ? SHORT_PLAN : null;
   return {
     model: 'gpt-5.6-luna',
     choices: [{
       finish_reason: 'stop',
       message: { content: JSON.stringify({
         is_financial_chart: true,
+        watchPlan,
         recommendation,
         confidence,
         analysis: {
           symbol: 'TEST', timeframe: '30m', marketStructure: { bias: 'bullish' },
-          trendStrength: 'strong', factorsPresent: 6,
+          trendStrength: 'strong', factorsPresent: 6, structureValidation: CHECKLIST,
           ...analysis,
         },
+        ...top,
       }) },
     }],
   };
@@ -137,15 +163,21 @@ interface Scenario {
   analysisType?: 'quick' | 'deep';
   userLanguage?: string;
   calendar?: CalendarMode;
+  market?: Market;
 }
 
 const scenarios: Scenario[] = [
   { name: 'compra valida', replies: [modelReply('BUY', 70, buyPlan)] },
-  { name: 'venda valida', replies: [modelReply('SELL', 70, { ...sellPlan, marketStructure: { bias: 'bearish' } })] },
+  { name: 'venda valida', market: 'short', replies: [modelReply('SELL', 70, { ...sellPlan, marketStructure: { bias: 'bearish' } })] },
   { name: 'WAIT original', replies: [modelReply('HOLD', 55, { currentPrice: 101 })] },
   {
-    name: 'rebaixamento por R (melhor alvo abaixo de 1.2R)',
-    replies: [modelReply('BUY', 70, { ...buyPlan, takeProfit1: 101, takeProfit2: 102 })],
+    name: 'rebaixamento por R (alvo final abaixo de 1,5R)',
+    replies: [modelReply('BUY', 70, buyPlan, { watchPlan: { ...LONG_PLAN, target1: 102.6, target2: null } })],
+  },
+  {
+    name: 'preco real ja atravessou a zona (WATCH)',
+    market: 'short',
+    replies: [modelReply('BUY', 70, { ...buyPlan, currentPrice: 98.9 })],
   },
   {
     name: 'noticia: evento encontrado (rebaixa)',
@@ -181,9 +213,10 @@ const scenarios: Scenario[] = [
   { name: 'confianca em texto ("70%")', replies: [modelReply('BUY', '70%', buyPlan)] },
   {
     name: 'preco corrigido por escala (BTC lido 100x menor)',
+    market: 'btc',
     replies: [modelReply('BUY', 70, {
-      symbol: 'BTCUSDT', currentPrice: 1065, entry: 1064, stopLoss: 1058, takeProfit1: 1076, takeProfit2: 1088,
-    })],
+      symbol: 'BTCUSDT', currentPrice: 1012, entry: 1011, stopLoss: 985, takeProfit1: 1050, takeProfit2: 1115,
+    }, { watchPlan: Object.fromEntries(Object.entries(LONG_PLAN).map(([k, v]) => [k, typeof v === 'number' && k !== 'validForCandles' ? v * 10 : v])) })],
   },
 ];
 
@@ -191,7 +224,6 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
   const saved = {
     news: process.env.ENABLE_NEWS_GUARD,
     rr: process.env.ENABLE_RR_GUARD,
-    grounding: process.env.ENABLE_QUICK_GROUNDING,
   };
   let adapterResults: any[] = [];
   let logLines: string[] = [];
@@ -199,7 +231,6 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
   beforeAll(() => {
     process.env.ENABLE_NEWS_GUARD = 'true';
     process.env.ENABLE_RR_GUARD = 'true';
-    process.env.ENABLE_QUICK_GROUNDING = 'false';
     const capture = (...args: unknown[]) => {
       logLines.push(args.map(String).join(' '));
     };
@@ -210,8 +241,12 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     jest.spyOn(Logger.prototype, 'log').mockImplementation(capture as any);
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(capture as any);
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-    // Esta fixture modela a analise principal, sem uma resposta auxiliar de simbolo.
+    // Esta fixture modela a analise principal, sem uma resposta auxiliar de simbolo:
+    // o grounding entrega direto as velas reais do cenario.
     jest.spyOn(AIAdapter.prototype as any, 'extractSymbol').mockResolvedValue(null);
+    const market = () => marketFor((globalThis as any).__market ?? 'long');
+    jest.spyOn(AIAdapter.prototype as any, 'buildQuickGrounding').mockImplementation(async () => market());
+    jest.spyOn(AIAdapter.prototype as any, 'buildMarketEnrichment').mockImplementation(async () => ({ ...market(), calendar: 'not_attempted' }));
     // Guarda o que o adapter devolveu (a decisao autoritativa), chamando o metodo real.
     const original = AIAdapter.prototype.analyzeImage;
     jest.spyOn(AIAdapter.prototype, 'analyzeImage').mockImplementation(async function (this: AIAdapter, ...args: any[]) {
@@ -230,7 +265,7 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
   afterAll(() => {
     jest.restoreAllMocks();
     for (const [key, value] of [
-      ['ENABLE_NEWS_GUARD', saved.news], ['ENABLE_RR_GUARD', saved.rr], ['ENABLE_QUICK_GROUNDING', saved.grounding],
+      ['ENABLE_NEWS_GUARD', saved.news], ['ENABLE_RR_GUARD', saved.rr],
     ] as const) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -245,6 +280,7 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
   async function run(scenario: Scenario) {
     adapterResults = [];
     logLines = [];
+    (globalThis as any).__market = scenario.market ?? 'long';
     openaiCreate.mockReset();
     for (const reply of scenario.replies) openaiCreate.mockResolvedValueOnce(reply);
     const mode = scenario.calendar ?? { kind: 'events', events: [] };
@@ -260,7 +296,7 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     let thrown: unknown = null;
     if (mode.kind === 'timeout') jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
     const job = processor()({ id: 'job-1', data: {
-      analysisId: 'analysis-d4', imageUrl: 'data:image/png;base64,AA==', promptOverride: 'PROMPT',
+      analysisId: 'analysis-d4', imageUrl: 'data:image/png;base64,AA==',
       analysisType: scenario.analysisType ?? 'quick', userLanguage: scenario.userLanguage, userId: 'user-1', isDemo: true,
     }, opts: { attempts: 1 }, attemptsMade: 0 }).catch((error: unknown) => {
       thrown = error;
@@ -327,63 +363,9 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     const [current, historical, hypothetical] = labels[userLanguage];
     const narrative = `${current}4/7. ${historical}4/7. ${hypothetical}4/7, wait.`;
     const presented = `${current}5/7. ${historical}4/7. ${hypothetical}4/7, wait.`;
-    const fields = { ...buyPlan, invalidationLevel: 94, entryType: 'stop',
-      entryCondition: 'Enter after a candle close above 100.',
-      structureValidation: '✅ HTF | ❌ Zone | ✅ ICT | ✅ Anti-retail | ✅ Structure | ✅ R:R | ❌ MTF → 4/7',
-      factorsPresent: 4, confluenceScore: 57.14, executiveSummary: narrative,
-      reasoning: narrative, multiTimeframeAlignment: 'H1 bullish | H4 bullish | D1 neutral' };
-    const reply = modelReply('BUY', 60, fields);
-    const raw = reply.choices[0].message.content;
-    await run({ name: 'incremental', replies: [reply], analysisType, userLanguage });
-    const done = (globalThis as any).__prisma.analysis.update.mock.calls.map(([args]: any[]) => args.data).find((d: any) => d.status === 'completed');
-    expect(done).toBeDefined(); expect(done.recommendation).toBe('BUY');
-    expect(done.fullResponse).toBe(raw);
-    expect(done.result.analysis).toMatchObject({ entry: 100, stopLoss: 95, invalidationLevel: 94,
-      takeProfit1: 110, takeProfit2: 120, factorsPresent: 5, confluenceScore: 71.43,
-      executiveSummary: presented, reasoning: presented });
-    expect(done.result.analysis.multiTimeframeAlignment).not.toBe(fields.multiTimeframeAlignment);
-    expect(done.result.engine.validator_flags).toContain('stop_inside_invalidation');
-    expect(done.result.engine.validator_action).toBe('none');
-    expect(done.result).not.toHaveProperty('observation');
-    expect(openaiCreate).toHaveBeenCalledTimes(1);
-    expect(logLines.some(l => l.includes('price_order_requires_close'))).toBe(true);
-    expect(logLines.some(l => l.includes('persistence_candidate'))).toBe(true);
-  });
-
-
-  it.each(['quick', 'deep'].flatMap(analysisType => ['en', 'pt', 'es', 'fr', 'de', 'ja'].flatMap(userLanguage => [false, true].map(optional => ({ analysisType: analysisType as 'quick' | 'deep', userLanguage, optional })))))('B1 keeps LIMIT data and observational optional=$optional for $analysisType/$userLanguage', async ({ analysisType, userLanguage, optional }) => {
-    const conditions: Record<string, [string, string]> = {
-    "en": [
-        "Place limit 100 only after a sweep and rejection.",
-        "Limit 100; preferably enter after a sweep and rejection."
-    ],
-    "pt": [
-        "Coloque limit 100 somente após varredura e rejeição.",
-        "Limit 100; preferencialmente entrar após varredura e rejeição."
-    ],
-    "es": [
-        "Orden limit 100 solo después de barrida y rechazo.",
-        "Limit 100; preferiblemente entrar después de barrida y rechazo."
-    ],
-    "fr": [
-        "Ordre limit 100 uniquement après balayage et rejet.",
-        "Limit 100; de préférence entrer après balayage et rejet."
-    ],
-    "de": [
-        "Limit 100 erst nach Sweep und Ablehnung platzieren.",
-        "Limit 100; vorzugsweise nach Sweep und Ablehnung einsteigen."
-    ],
-    "ja": [
-        "リミット100、スイープと反発の確認後のみ注文。",
-        "リミット100、できればスイープと反発の確認後に注文。"
-    ]
-};
-    const entryCondition = conditions[userLanguage][optional ? 1 : 0];
-    const narrative = 'Checklist 4/7.';
-    const presented = 'Checklist 5/7.';
     const fields = { ...buyPlan, invalidationLevel: 94, entryType: 'limit',
-      entryCondition,
-      structureValidation: '✅ HTF | ❌ Zone | ✅ ICT | ✅ Anti-retail | ✅ Structure | ✅ R:R | ❌ MTF → 4/7',
+      entryCondition: 'Pending order: buy limit 100.',
+      structureValidation: 'C1 PASS: 4h; C2 PASS: zone; C3 PASS: setup; C4 FAIL: mixed; C5 FAIL: retested; C6 PASS: 1 ATR; C7 PASS: room → 4/7',
       factorsPresent: 4, confluenceScore: 57.14, executiveSummary: narrative,
       reasoning: narrative, multiTimeframeAlignment: 'H1 bullish | H4 bullish | D1 neutral' };
     const reply = modelReply('BUY', 60, fields);
@@ -392,26 +374,26 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     const done = (globalThis as any).__prisma.analysis.update.mock.calls.map(([args]: any[]) => args.data).find((d: any) => d.status === 'completed');
     expect(done).toBeDefined(); expect(done.recommendation).toBe('BUY');
     expect(done.fullResponse).toBe(raw);
-    expect(done.result.analysis).toMatchObject({ entry: 100, stopLoss: 95, invalidationLevel: 94,
-      takeProfit1: 110, takeProfit2: 120, factorsPresent: 5, confluenceScore: 71.43,
-      executiveSummary: presented, reasoning: presented });
+    expect(done.result.analysis).toMatchObject({ invalidationLevel: 94, entryType: 'limit', takeProfit1: 103, takeProfit2: 111.5,
+      factorsPresent: 5, confluenceScore: 71.43, executiveSummary: presented, reasoning: presented });
+    expect(done.result.analysis.entry).toBeCloseTo(100);
+    expect(done.result.analysis.stopLoss).toBeCloseTo(98);
     expect(done.result.analysis.multiTimeframeAlignment).not.toBe(fields.multiTimeframeAlignment);
     expect(done.result.engine.validator_flags).toContain('stop_inside_invalidation');
     expect(done.result.engine.validator_action).toBe('none');
     expect(done.result).not.toHaveProperty('observation');
     expect(openaiCreate).toHaveBeenCalledTimes(1);
-    expect(done.result.analysis).toMatchObject({ entryType: 'limit', entryCondition });
-    expect(logLines.some(l => l.includes('[AnalysisObservation]') && l.includes('touch_requires_confirmation'))).toBe(!optional);
-    expect(done.result).not.toHaveProperty('limitCondition');
     expect(logLines.some(l => l.includes('persistence_candidate'))).toBe(true);
   });
+
 
   // Contagens depois da correcao: 1 modelo, 2 validateTradePlan (adapter + worker,
   // puro), 1 decideSignal (so o adapter) e 1 consulta ao calendario com compra/venda.
   const calls = (validateTradePlan: number, decideSignal: number, newsCalendar: number, model = 1) => ({
     model, validateTradePlan, decideSignal, newsCalendar, otherCalendar: 0,
   });
-  const tradeSaved = (recommendation: string, confidence: number, action: string, rr: [number, number], probabilities: unknown[] = [55, 30, 45]) => ({
+  // v10: probabilityTp1 fica a 3 pontos da confianca (55 -> 67 com confianca 70) e o stop em no maximo 100 - TP1.
+  const tradeSaved = (recommendation: string, confidence: number, action: string, rr: [number, number], probabilities: unknown[] = [67, 30, 33]) => ({
     recommendation, confidence, action, reasons: [], flags: [],
     rrTp1: rr[0], rrTp2: rr[1], rrRatio: `1:${rr[1].toFixed(1)}`, probabilities,
   });
@@ -433,38 +415,43 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
   });
 
   const expected: Record<string, unknown> = {
-    'compra valida': ok(calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'no_event'), tradeSaved('BUY', 70, 'none', [2, 4]), 'no_event'),
-    'venda valida': ok(calls(2, 1, 1), adapterSaid('SELL', 70, 'none', [], 'no_event'), tradeSaved('SELL', 70, 'none', [2, 4]), 'no_event'),
-    // 55.00000000000001: a confianca vai 0..1 no worker e volta x100 ao gravar (problema separado, ja existia).
-    'WAIT original': ok(calls(2, 1, 0), adapterSaid('WAIT', 55, 'none', [], 'skipped'), waitSaved(55.00000000000001, 'none', []), 'skipped'),
-    'rebaixamento por R (melhor alvo abaixo de 1.2R)': ok(
-      calls(2, 1, 0), adapterSaid('WAIT', 45, 'downgraded', ['rr_below_min'], 'skipped'),
-      waitSaved(45, 'downgraded', ['rr_below_min']), 'skipped',
+    'compra valida': ok(calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'no_event'), tradeSaved('BUY', 70, 'none', [1.5, 5.75]), 'no_event'),
+    'venda valida': ok(calls(2, 1, 1), adapterSaid('SELL', 70, 'none', [], 'no_event'), tradeSaved('SELL', 70, 'none', [1.5, 5.75]), 'no_event'),
+    // HOLD sem cenario alternativo e NO_TRADE: confianca no maximo 49.
+    'WAIT original': ok(calls(2, 1, 0), adapterSaid('WAIT', 49, 'none', [], 'skipped'), waitSaved(49, 'none', []), 'skipped'),
+    'rebaixamento por R (alvo final abaixo de 1,5R)': ok(
+      calls(2, 1, 0), adapterSaid('WAIT', 49, 'downgraded', ['rr_tp2_below_min'], 'skipped'),
+      waitSaved(49, 'downgraded', ['rr_tp2_below_min']), 'skipped',
+    ),
+    // O plano de compra com o preco de venda (98,8, abaixo da zona e acima da invalidacao): WATCH.
+    'preco real ja atravessou a zona (WATCH)': ok(
+      calls(2, 1, 0), adapterSaid('WAIT', 49, 'downgraded', ['zone_overrun'], 'skipped'),
+      waitSaved(49, 'downgraded', ['zone_overrun']), 'skipped',
     ),
     'noticia: evento encontrado (rebaixa)': ok(
-      calls(2, 1, 1), adapterSaid('WAIT', 45, 'downgraded', ['news_event'], 'event'),
-      waitSaved(45, 'downgraded', ['news_event']), 'event',
+      calls(2, 1, 1), adapterSaid('WAIT', 49, 'downgraded', ['news_event'], 'event'),
+      waitSaved(49, 'downgraded', ['news_event']), 'event',
     ),
-    'noticia: nenhum evento': ok(calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'no_event'), tradeSaved('BUY', 70, 'none', [2, 4]), 'no_event'),
+    'noticia: nenhum evento': ok(calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'no_event'), tradeSaved('BUY', 70, 'none', [1.5, 5.75]), 'no_event'),
     'noticia: timeout de 6 s (segue sem rebaixar, status timeout)': ok(
-      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'timeout'), tradeSaved('BUY', 70, 'none', [2, 4]), 'timeout',
+      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'timeout'), tradeSaved('BUY', 70, 'none', [1.5, 5.75]), 'timeout',
     ),
     'noticia: erro do calendario (segue sem rebaixar, status error)': ok(
-      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'error'), tradeSaved('BUY', 70, 'none', [2, 4]), 'error',
+      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'error'), tradeSaved('BUY', 70, 'none', [1.5, 5.75]), 'error',
     ),
     'noticia: fonte degradada sem evento': ok(
-      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'degraded_no_event'), tradeSaved('BUY', 70, 'none', [2, 4]), 'degraded_no_event',
+      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'degraded_no_event'), tradeSaved('BUY', 70, 'none', [1.5, 5.75]), 'degraded_no_event',
     ),
     'noticia: fonte degradada com o evento no cache velho (rebaixa)': ok(
-      calls(2, 1, 1), adapterSaid('WAIT', 45, 'downgraded', ['news_event'], 'degraded_event'),
-      waitSaved(45, 'downgraded', ['news_event']), 'degraded_event',
+      calls(2, 1, 1), adapterSaid('WAIT', 49, 'downgraded', ['news_event'], 'degraded_event'),
+      waitSaved(49, 'downgraded', ['news_event']), 'degraded_event',
     ),
-    // O adapter decide 72.4; o worker grava inteiro (72), como sempre gravou.
-    'confianca decimal (72.4)': ok(calls(2, 1, 1), adapterSaid('BUY', 72.4, 'none', [], 'no_event'), tradeSaved('BUY', 72, 'none', [2, 4]), 'no_event'),
-    // O parser zera o texto antes de decidir: piso de 30.
-    'confianca em texto ("70%")': ok(calls(2, 1, 1), adapterSaid('BUY', 30, 'none', [], 'no_event'), tradeSaved('BUY', 30, 'none', [2, 4]), 'no_event'),
+    // Tendencia forte: teto 72.
+    'confianca decimal (72.4)': ok(calls(2, 1, 1), adapterSaid('BUY', 72, 'none', [], 'no_event'), tradeSaved('BUY', 72, 'none', [1.5, 5.75], [69, 30, 31]), 'no_event'),
+    // O parser zera o texto; sem o piso antigo de 30, o sinal fica com confianca 0.
+    'confianca em texto ("70%")': ok(calls(2, 1, 1), adapterSaid('BUY', 0, 'none', [], 'no_event'), tradeSaved('BUY', 0, 'none', [1.5, 5.75], [3, 3, 45]), 'no_event'),
     'preco corrigido por escala (BTC lido 100x menor)': ok(
-      calls(2, 1, 1), adapterSaid('BUY', 70, 'fixed', [], 'no_event'), tradeSaved('BUY', 70, 'fixed', [2, 4], [null, null, null]),
+      calls(2, 1, 1), adapterSaid('BUY', 70, 'fixed', [], 'no_event'), tradeSaved('BUY', 70, 'fixed', [1.5, 5.75], [null, null, null]),
       'no_event', 'BTCUSDT',
     ),
   };
@@ -499,25 +486,22 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     });
   });
 
-  // 19/10/2026: o que o worker GRAVA quando o modelo erra a aritmetica (resposta
-  // real do luna: stop de venda com percentual positivo, 6 ✅ com total 5).
-  it('grava percentuais pelos precos, o total do checklist pela lista e a marca do limit com confirmacao', async () => {
-    const checklist = '✅ HTF: bearish. ✅ Zone: premium. ✅ OB: 101. ✅ Liquidity: swept. ' +
-      '✅ BOS: confirmed. ✅ R:R: 2. ❌ MTF: one chart. → 5/7 → SELL.';
+  // 19/10/2026: o que o worker GRAVA quando o modelo erra a soma (resposta real
+  // do luna: 6 ✅ com total 5).
+  it('grava o total do checklist pela lista', async () => {
+    const checklist = 'C1 PASS: bearish. C2 PASS: premium. C3 PASS: OB 101. C4 PASS: sellers. ' +
+      'C5 FAIL: retested. C6 PASS: 1 ATR. C7 PASS: room to 97. → 5/7 → SELL.';
     const result = await run({
       name: 'aritmetica',
+      market: 'short',
       replies: [modelReply('SELL', 70, {
-        ...sellPlan, stopLossPercent: 5, takeProfit1Percent: 5, takeProfit2Percent: 20,
-        factorsPresent: 5, confluenceScore: 71.43, structureValidation: checklist,
-        entryType: 'limit', entryCondition: 'Sell limit at 100 only after a sweep and rejection; no rejection, no trade.',
+        ...sellPlan, factorsPresent: 5, confluenceScore: 71.43, structureValidation: checklist, entryType: 'limit',
       })],
     });
-    expect(result.persisted).toMatchObject({ recommendation: 'SELL', action: 'none', reasons: [], flags: ['limit_needs_confirmation'] });
+    expect(result.persisted).toMatchObject({ recommendation: 'SELL', action: 'none', reasons: [], flags: [] });
     const done = (globalThis as any).__prisma.analysis.update.mock.calls
       .map(([args]: any[]) => args.data).find((d: any) => d.status === 'completed');
-    expect(done.result.analysis).toMatchObject({
-      stopLossPercent: -5, takeProfit1Percent: 10, takeProfit2Percent: 20, factorsPresent: 6, confluenceScore: 85.71,
-    });
+    expect(done.result.analysis).toMatchObject({ factorsPresent: 6, confluenceScore: 85.71 });
   });
 
   it('fonte de demonstracao (nao passa pelo adapter): o worker valida e decide sozinho, uma vez', async () => {
@@ -525,7 +509,9 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     const random = jest.spyOn(Math, 'random').mockReturnValue(0); // COMPRA, confianca 0.7, preco 42000
     try {
       const result = await run({ name: 'demo', replies: [] });
-      expect(result.calls).toEqual({ model: 0, validateTradePlan: 1, decideSignal: 1, newsCalendar: 1, otherCalendar: 0 });
+      // validateTradePlan (puro) roda na resposta e de novo na analise ja decidida.
+      // Sem velas reais nem plano, a compra da demo nao vira sinal: o news guard nem consulta.
+      expect(result.calls).toEqual({ model: 0, validateTradePlan: 2, decideSignal: 1, newsCalendar: 0, otherCalendar: 0 });
       expect(result.adapter).toBeNull();
       expect(result.decisions).toHaveLength(1);
       expect(result.persisted).toMatchObject({
@@ -533,7 +519,7 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
         confidence: result.decisions[0].confidence,
       });
       expect(result.newsGuardLogs).toHaveLength(1);
-      expect(result.newsGuardLogs[0]).toMatch(/^\[news-guard\] status=no_event symbol=/);
+      expect(result.newsGuardLogs[0]).toMatch(/^\[news-guard\] status=skipped symbol=/);
     } finally {
       random.mockRestore();
     }

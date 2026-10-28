@@ -84,7 +84,7 @@ describe('buildStrategyBlock', () => {
   it('escreve a TRAVA 1 em texto explicito dentro do bloco', () => {
     expect(block).toContain('AFTER');
     expect(block).toContain('never');
-    expect(block.toLowerCase()).toContain('wait');
+    expect(block).toContain('NO_TRADE');
   });
 
   it('nao usa travessao', () => {

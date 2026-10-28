@@ -5,74 +5,62 @@ promessas de qualidade, tempo de resposta ou uma arquitetura de agentes.
 
 ## Fontes de verdade
 
-- Prompt canonico no codigo: `apps/backend/src/common/prompts/trading-system-prompt.ts`
-- Variante de experimento: `apps/backend/src/common/prompts/trading-system-prompt-v9.ts`
+- Prompt unico, no codigo: `apps/backend/src/common/prompts/trading-system-prompt.ts` (v10.3)
 - Composicao final: `apps/backend/src/modules/prompt/prompt-builder.service.ts`
-- Sincronizacao no boot: `apps/backend/src/modules/prompt/prompt-sync.service.ts`
-- Administracao de versoes: `apps/backend/src/modules/prompt/prompt.controller.ts`
+- Registro de versoes no boot: `apps/backend/src/modules/prompt/prompt-sync.service.ts`
+- Leitura das versoes (admin): `apps/backend/src/modules/prompt/prompt.controller.ts`
 - Caminho assincrono: `apps/backend/worker/ai.worker.ts`
 
 Nao trate textos antigos em handoffs, sprints ou relatorios como prompts ativos.
+Nao existe mais prompt alternativo, A/B, override nem versao escolhida pelo
+banco (removidos em 28/10/2026).
 
-## Como o prompt e resolvido
+## Como o prompt e montado
 
-O prompt final segue esta ordem, conforme o caminho de execucao:
+`buildAnalysisPrompt({ userLanguage, analysisType })` parte SEMPRE do
+`TRADING_SYSTEM_PROMPT` do codigo, troca `{{USER_CONTEXT}}` pela instrucao de
+idioma e, em analises `deep`, acrescenta a leitura em camadas
+(`DEEP_ANALYSIS_INSTRUCTION`, com os estados do v10.3). O worker, o caminho
+sincrono, a demo do `/try` e os scripts de medicao usam a mesma funcao.
 
-1. Override interno, quando fornecido pelo proprio backend.
-2. Versao persistida especifica, quando um job da fila carrega `promptVersion`.
-3. `PromptConfig` ativo mais recente no banco.
-4. `TRADING_SYSTEM_PROMPT` do codigo como fallback.
+Os niveis de entrada, stop e alvo nao saem do texto do modelo: o codigo os
+calcula (`common/utils/plan-engine.ts`) a partir das velas reais do armazem
+(`modules/market/candle-store.ts`) ou, sem velas, dos niveis estimados do
+print (`dataMode: 'print'`, a tela avisa).
 
-O backend acrescenta a instrucao de consistencia deterministica. Analises
-`deep` tambem recebem a instrucao de leitura em camadas. Nos caminhos que
-carregam o idioma do usuario, o contexto de idioma e injetado antes dessas
-instrucoes. O prompt ativo possui cache de 60 segundos no processo da API.
+## Versoes
 
-`promptOverride` nao faz parte do contrato publico de `/api/ai/analyze`. Essa
-restricao e intencional para impedir que clientes substituam as regras do
-sistema. O backend pode usa-lo internamente em testes e no experimento
-controlado por `AB_PROMPT_V9_PERCENT`, cuja distribuicao e estavel por usuario.
-
-## Sincronizacao e versoes
-
-No boot, `PromptSyncService` compara o prompt canonico do codigo com a versao
-ativa no banco:
+No boot, `PromptSyncService` compara o prompt do codigo com a versao ativa em
+`PromptConfig`:
 
 - se forem iguais, nao grava nada;
-- se forem diferentes, desativa a versao ativa, cria uma nova versao e a ativa;
-- se a sincronizacao falhar, registra o erro e permite que a aplicacao suba;
-- `PROMPT_AUTO_SYNC=false` desliga esse comportamento.
+- se forem diferentes, desativa a versao ativa, cria uma nova e a ativa;
+- se falhar, registra o erro e a aplicacao sobe normalmente.
 
-O historico nao e apagado. Uma versao ativada manualmente no banco pode ser
-substituida no proximo boot se diferir do prompt do codigo e o auto-sync estiver
-ligado.
+O banco so numera as versoes: cada analise grava a ativa em `promptVer`, o
+corte de medicao antes/depois de uma troca de prompt. O historico nao e apagado.
 
 ## Administracao
 
-Todas as rotas abaixo exigem `AuthGuard` e `AdminGuard`:
+Rotas so de leitura, todas com `AuthGuard` e `AdminGuard`:
 
 | Metodo | Rota | Funcao |
 | --- | --- | --- |
-| `POST` | `/api/prompts/config` | Cria uma versao e, por padrao, a ativa. |
 | `GET` | `/api/prompts/latest` | Retorna a versao ativa mais recente. |
 | `GET` | `/api/prompts/list` | Lista o historico de versoes. |
 | `GET` | `/api/prompts/:version` | Busca uma versao numerica. |
-| `POST` | `/api/prompts/:version/activate` | Ativa uma versao existente. |
 
-As rotas possuem rate limit. O teste de acesso em
+O teste de acesso em
 `apps/backend/src/common/guards/__tests__/route-access.spec.ts` protege esse
 contrato contra exposicao acidental.
 
 ## Alteracao segura
 
-Para uma mudanca que deve acompanhar o codigo:
-
 1. Edite somente a fonte canonica e os testes relacionados.
 2. Preserve o contrato JSON consumido pelo normalizador e pela interface.
-3. Verifique os caminhos quick, deep, API direta e worker.
+3. Meca antes com `apps/backend/scripts/prompt-replay.ts` (prints reais, mesma regua do rastreador).
 4. Execute os testes e o build antes do deploy.
-5. Depois do deploy, confirme nos logs se a versao foi sincronizada ou ja estava em dia.
-6. Valide uma amostra controlada antes de ampliar qualquer experimento.
+5. Depois do deploy, confirme nos logs se a versao foi registrada ou ja estava em dia.
 
 Comandos minimos:
 
@@ -83,14 +71,10 @@ pnpm --dir apps/backend build
 pnpm auditoria
 ```
 
-Para uma alteracao operacional pelo painel/admin, crie uma nova versao em vez
-de editar registros existentes. Lembre que o auto-sync pode reativar a versao
-do codigo em um reinicio.
-
 ## Cuidados
 
 - Nao registre prompt completo, imagens ou resposta crua da IA em producao.
 - `AI_DEBUG_DUMP_RAW` deve permanecer desligado em producao.
-- Nao altere ao mesmo tempo prompt, modelo e percentual de experimento; isso impede atribuir o efeito observado.
+- Nao altere ao mesmo tempo prompt e modelo; isso impede atribuir o efeito observado.
 - Nao use numeros de versao fixos em runbooks: as versoes crescem a cada mudanca real.
 - Nao presuma tempos de resposta fixos; eles dependem do modelo, da carga e dos provedores.

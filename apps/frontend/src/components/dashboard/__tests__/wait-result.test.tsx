@@ -62,7 +62,7 @@ describe('resultado WAIT', () => {
   it('WAIT mostra a explicacao, o plano e a leitura logo abaixo do veredito', () => {
     renderResult('WAIT');
     const text = document.body.textContent ?? '';
-    expect(text).toContain('WAIT means the AI found no clean entry on this chart right now.');
+    expect(text).toContain('No trade means the AI found no clean setup on this chart right now.');
     expect(text).toContain('A close above 2365 would set up a long.');
     expect(text).toContain('Price is stuck mid range with no confirmation.');
     // Ordem: explicacao, depois plano, depois leitura, tudo antes do grafico.

@@ -2,7 +2,8 @@ import type { AnalysisObservation } from '../utils/analysis-observation';
 import { Bias, Recommendation } from '../utils/analysis-normalizer';
 import { DrawingPlan } from '../utils/drawing-plan';
 import type { GroundingStats } from '../../modules/ai/analysis-data-coverage';
-import type { SignalDecisionResult, ValidatorAction } from '../utils/signal-decision';
+import type { SignalDecisionResult, SignalState, ValidatorAction, ValidatorNote } from '../utils/signal-decision';
+import type { WatchPlan } from '../utils/plan-engine';
 import type { ProviderComparison } from '../../modules/ai/vision-model';
 
 export interface AnalysisEvidence {
@@ -17,6 +18,14 @@ export interface AIAnalysisResponse {
   /** In-memory diagnostic only; excluded from persisted/public contracts. */
   observation?: AnalysisObservation;
   recommendation: Recommendation;
+  /** Estado do v10 depois do validador (signal-decision.ts). */
+  signalState: SignalState;
+  /** Plano do modelo em WATCH, ARMED e ENTER_NOW; null no NO_TRADE. */
+  watchPlan: WatchPlan | null;
+  /** real_data = niveis e distancia pelos candles reais; print = estimados do print. */
+  dataMode: 'real_data' | 'print';
+  /** Motivos dos rebaixamentos, escritos pelo codigo (nunca pelo modelo). */
+  validatorNotes: ValidatorNote[];
   bias: Bias;
   confidence: number; // 0-100
   reasoning: string;
@@ -48,7 +57,7 @@ export interface AIAnalysisResponse {
     /** Provedor de IA que respondeu (openai | anthropic). */
     provider: string;
     validatorAction: ValidatorAction;
-    validatorReasons: SignalDecisionResult['validatorReasons'];
+    validatorReasons: ValidatorNote[];
     validatorFlags: SignalDecisionResult['validatorFlags'];
     /** Status do news guard da decisao do adapter (so em memoria e log; o worker reusa). */
     newsGuardStatus: SignalDecisionResult['newsGuardStatus'];

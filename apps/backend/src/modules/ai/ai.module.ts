@@ -9,11 +9,10 @@ import { TradesService } from './trades.service';
 import { TradesController } from './trades.controller';
 import { AIAdapter } from './ai.adapter';
 import { TicksModule } from '../ticks/ticks.module';
-import { PromptModule } from '../prompt/prompt.module';
 import { PaymentsModule } from '../payments/payments.module';
 
 @Module({
-  imports: [TicksModule, PromptModule, PaymentsModule],
+  imports: [TicksModule, PaymentsModule],
   controllers: [AiController, SetupsController, TradesController],
   providers: [AiService, AIAdapter, SetupsService, SetupAlertsService, TrialService, TradesService],
   exports: [AIAdapter, AiService, TrialService],

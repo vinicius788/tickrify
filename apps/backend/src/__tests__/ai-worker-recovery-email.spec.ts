@@ -96,7 +96,6 @@ describe('worker/ai.worker.ts: e-mail de recuperacao ao concluir analise gratis'
       data: {
         analysisId: 'analysis-1',
         imageUrl: 'https://example.com/chart.png',
-        promptOverride: 'PROMPT DE TESTE',
         analysisType: 'quick',
         userId: 'user-1',
         isDemo,

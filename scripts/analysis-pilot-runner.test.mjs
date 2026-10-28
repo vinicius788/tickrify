@@ -6,8 +6,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { buildMtfCandidate, buildMtfDeepInstructionCandidate, extractDeepInstruction } from './analysis-mtf-candidate.mjs';
-import { extractPrompt } from './analysis-wait-candidate.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const backend = path.join(root, 'apps/backend');
@@ -21,9 +19,10 @@ test('dry-run pins different quick/deep prompts without creating results or usin
   const deepFile = path.join(temp, 'deep.txt');
   const promptSource = path.join(root, 'apps/backend/src/common/prompts/trading-system-prompt.ts');
   const deepSource = path.join(root, 'apps/backend/src/modules/prompt/prompt-builder.service.ts');
-  const base = extractPrompt(readFileSync(promptSource, 'utf8'), promptSource);
-  const quick = buildMtfCandidate(base);
-  const deep = `${quick}\n\n${buildMtfDeepInstructionCandidate(extractDeepInstruction(readFileSync(deepSource, 'utf8')))}`;
+  // Candidatos sinteticos: o prompt do codigo com uma marca, e o deep com a instrucao do montador.
+  const base = readFileSync(promptSource, 'utf8').match(/TRADING_SYSTEM_PROMPT = `([\s\S]*?)`;/)[1].trim();
+  const quick = `${base}\nPILOT CANDIDATE`;
+  const deep = `${quick}\n\n${readFileSync(deepSource, 'utf8').match(/DEEP_ANALYSIS_INSTRUCTION = `([\s\S]*?)`\.trim\(\)/)[1].trim()}`;
   writeFileSync(quickFile, quick);
   writeFileSync(deepFile, deep);
   const args = [

@@ -10,7 +10,7 @@ import {
 import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
 import { AIAdapter, AIAnalysisError, scrubPromptLeak } from '../ai/ai.adapter';
-import { PromptBuilderService } from '../prompt/prompt-builder.service';
+import { buildAnalysisPrompt } from '../prompt/prompt-builder.service';
 import { UploadedFile } from '../../common/interfaces/multer';
 import { prepareIncomingImage } from '../../common/utils/image-storage';
 import {
@@ -22,6 +22,7 @@ import {
   normalizeRecommendation,
 } from '../../common/utils/analysis-normalizer';
 import { assertDemoOpen } from './demo-control';
+import { storedSignalState } from '../../common/utils/signal-decision';
 
 type DemoUsage = { id: string; result: unknown; createdAt: Date; pending: boolean };
 
@@ -48,7 +49,6 @@ export class DemoService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private prisma: PrismaService,
     private aiAdapter: AIAdapter,
-    private promptBuilder: PromptBuilderService,
   ) {}
 
   /** Concluidas em 24h + vagas reservadas; falhas liberadas nao gastam cota. */
@@ -321,21 +321,11 @@ export class DemoService implements OnModuleInit, OnModuleDestroy {
     }
     this.logger.log(`[demo] Reserva ${reservation.id} admitida.`);
 
-    // 5) Análise REAL — mesmo motor 'quick' da plataforma, prompt resolvido
-    //    server-side (banco → arquivo). Nada do prompt/modelo sai daqui.
+    // 5) Análise REAL — mesmo motor 'quick' da plataforma, prompt do código.
+    //    Nada do prompt/modelo sai daqui.
     let safe: ReturnType<DemoService['serializeSafeResult']>;
     try {
-      const latestPrompt = await this.prisma.promptConfig.findFirst({
-        where: { isActive: true },
-        orderBy: { version: 'desc' },
-        select: { version: true },
-      });
-      const prompt = await this.promptBuilder.buildPromptByVersion(
-        'quick',
-        latestPrompt?.version,
-        undefined,
-        params.userLanguage,
-      );
+      const prompt = buildAnalysisPrompt({ userLanguage: params.userLanguage, analysisType: 'quick' });
 
       const aiResponse = await this.aiAdapter.analyzeImage(dataUrl, prompt, 'quick');
       safe = this.serializeSafeResult(aiResponse);
@@ -390,6 +380,7 @@ export class DemoService implements OnModuleInit, OnModuleDestroy {
    */
   private serializeSafeResult(aiResponse: {
     recommendation: unknown;
+    signalState?: unknown;
     bias?: unknown;
     confidence?: unknown;
     reasoning?: unknown;
@@ -429,6 +420,7 @@ export class DemoService implements OnModuleInit, OnModuleDestroy {
     return {
       status: 'completed' as const,
       recommendation,
+      signalState: storedSignalState({ signalState: aiResponse.signalState, analysis }, recommendation),
       bias,
       confidence,
       symbol: str(analysis.symbol) ?? 'N/A',

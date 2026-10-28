@@ -19,7 +19,23 @@ import {
   deriveMarketRegime,
   canonicalFxPair,
 } from '../../common/utils/analysis-normalizer';
-import { decideSignal, type NewsGuardStatus } from '../../common/utils/signal-decision';
+import {
+  applyDecisionToAnalysis,
+  decideSignal,
+  deriveSignalState,
+  parseSignalState,
+  type NewsGuardStatus,
+  type SignalState,
+} from '../../common/utils/signal-decision';
+import {
+  TRIGGER_TYPES,
+  clampValidity,
+  closedBars,
+  type Bar,
+  type TriggerType,
+  type WatchPlan,
+} from '../../common/utils/plan-engine';
+import { OUTPUT_LANGUAGE_NAMES, splitUserContextClose } from '../prompt/prompt-builder.service';
 import { computeCost, formatCostLog } from './model-cost';
 import {
   compareProvidersEnabled,
@@ -44,7 +60,8 @@ import {
 import { AnalysisType } from '../ticks/tick-packages';
 import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
 import { MarketService, normalizeToBinancePerp } from '../market/market.service';
-import { twelveDataApiKey, twelveDataTimeSeries, type TwelveDataDenyReason } from '../market/twelve-data';
+import { twelveDataApiKey } from '../market/twelve-data';
+import { TIMEFRAME_MS, candleMarketOf, normalizeTimeframe, recentCandles, type CandleFetch } from '../market/candle-store';
 import { EconomicCalendarService } from '../calendar/calendar.service';
 import { buildStrategyBlock, STRATEGY_FIT_VALUES, type StrategyProfile } from '../../common/strategy/strategy-profile';
 import {
@@ -57,6 +74,7 @@ import {
   type CalendarCoverage,
   type GroundingNumbers,
   type GroundingStats,
+  type HtfTrend,
 } from './analysis-data-coverage';
 import {
   isNextGenModel,
@@ -165,6 +183,10 @@ interface TradingAnalysisDetails {
 
 interface TradingAnalysisSchemaResult {
   is_financial_chart?: boolean;
+  /** Estado que o modelo escolheu; null quando faltou ou veio fora do enum. */
+  signalState: SignalState | null;
+  /** Plano do modelo (zona, gatilho, invalidacao, alvos), com a ordem de grandeza corrigida. */
+  watchPlan: WatchPlan | null;
   recommendation: SchemaRecommendation;
   confidence: number;
   analysis: TradingAnalysisDetails;
@@ -310,15 +332,6 @@ function normalizeSchemaBias(value: unknown): SchemaMarketBias {
     return biasRaw;
   }
   return 'neutral';
-}
-
-/**
- * Volume vindo de API externa (string ou número) → número finito e não-negativo.
- * Ausente/inválido vira 0, e 0 faz o bloco de volume ser omitido — nunca inventado.
- */
-function safeVolume(raw: unknown): number {
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 /**
@@ -653,7 +666,7 @@ export function buildRealDataBlock(
       ? `- Momentum (RSI14): ${Math.round(rsi14)} — ${rsi14 >= 70 ? 'overbought zone (in a strong uptrend it can stay high; not a sell trigger by itself)' : rsi14 <= 30 ? 'oversold zone (in a strong downtrend it can stay low; not a buy trigger by itself)' : 'neutral'}`
       : null;
   const block = [
-    '# REAL MARKET DATA (ground truth from the exchange feed — trust these numbers over pixel-reading)',
+    '# REAL DATA (ground truth from the exchange feed; trust these numbers over pixel-reading)',
     `- Symbol: ${symbol} · timeframe: ${timeframe} · current price (last close): ${fmt(last[4])}`,
     `- Visible window high: ${fmt(winHigh)} · low: ${fmt(winLow)} (last ${win.length} candles)`,
     `- Price sits at ${Math.round(rangePos)}% of the visible range (0%=low, 100%=high) — buying near 100% or selling near 0% is chasing.`,
@@ -691,6 +704,178 @@ export function buildRealDataBlock(
     },
   };
 }
+
+/** Swings por fractal de 2 velas (o extremo das 2 de cada lado), em ordem cronologica. */
+export function fractalSwings(bars: readonly Bar[]): { i: number; kind: 'high' | 'low'; price: number }[] {
+  const out: { i: number; kind: 'high' | 'low'; price: number }[] = [];
+  for (let i = 2; i < bars.length - 2; i++) {
+    const near = bars.slice(i - 2, i + 3);
+    if (bars[i][2] === Math.max(...near.map((b) => b[2]))) out.push({ i, kind: 'high', price: bars[i][2] });
+    if (bars[i][3] === Math.min(...near.map((b) => b[3]))) out.push({ i, kind: 'low', price: bars[i][3] });
+  }
+  return out;
+}
+
+function ema(values: number[], period: number): number | null {
+  if (values.length < period) return null;
+  let e = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  const k = 2 / (period + 1);
+  for (const v of values.slice(period)) e = v * k + e * (1 - k);
+  return e;
+}
+
+/** Estrutura do 4h pelos dois ultimos topos e fundos e o fechamento contra a EMA50. */
+export function summarizeHigherTimeframe(bars: readonly Bar[]): { trend: HtfTrend; vsEma50: 'above' | 'below' | null; ema50: number | null; highs: number[]; lows: number[] } | null {
+  const swings = fractalSwings(bars);
+  const highs = swings.filter((s) => s.kind === 'high').slice(-2).map((s) => s.price);
+  const lows = swings.filter((s) => s.kind === 'low').slice(-2).map((s) => s.price);
+  if (highs.length < 2 || lows.length < 2) return null;
+  const trend: HtfTrend = highs[1] > highs[0] && lows[1] > lows[0]
+    ? 'uptrend'
+    : highs[1] < highs[0] && lows[1] < lows[0] ? 'downtrend' : 'range';
+  const ema50 = ema(bars.map((b) => b[4]), 50);
+  const close = bars[bars.length - 1][4];
+  return { trend, vsEma50: ema50 === null ? null : close > ema50 ? 'above' : 'below', ema50, highs, lows };
+}
+
+/**
+ * Resumo compacto do REAL DATA (v10.1), so com velas FECHADAS: ATR(14), as 5
+ * ultimas swings, pools de topos e fundos iguais nao varridos, as 3 ultimas
+ * velas e o resumo do 4h. Existe para o C1 sempre ter uma fonte de HTF.
+ */
+export function buildCompactSummary(
+  closed: readonly Bar[],
+  atr: number,
+  htf: readonly Bar[] | null,
+  fmt: (n: number) => number,
+): { block: string; htf: ReturnType<typeof summarizeHigherTimeframe> } | null {
+  if (closed.length < 10 || !(atr > 0)) return null;
+  const n = closed.length;
+  const swings = fractalSwings(closed);
+  const pools = (kind: 'high' | 'low') => {
+    const pts = swings.filter((s) => s.kind === kind);
+    const found: string[] = [];
+    const used = new Set<number>();
+    for (let a = pts.length - 1; a >= 0; a--) {
+      if (used.has(a)) continue;
+      const group = pts.filter((p, b) => !used.has(b) && Math.abs(p.price - pts[a].price) <= 0.1 * atr);
+      if (group.length < 2) continue;
+      pts.forEach((p, b) => { if (group.includes(p)) used.add(b); });
+      const level = kind === 'high' ? Math.max(...group.map((p) => p.price)) : Math.min(...group.map((p) => p.price));
+      const lastTouch = Math.max(...group.map((p) => p.i));
+      const swept = closed.slice(lastTouch + 1).some((b) => (kind === 'high' ? b[2] > level : b[3] < level));
+      if (!swept) found.push(`${fmt(level)} (${group.length} touches)`);
+    }
+    return found.length ? found.join(', ') : 'none';
+  };
+  const summary = htf && htf.length >= 10 ? summarizeHigherTimeframe(htf) : null;
+  const htfLine = summary
+    ? `- Higher timeframe summary (4h, ${htf!.length} candles): ${summary.trend} (last highs ${summary.highs.map(fmt).join(' then ')}, last lows ${summary.lows.map(fmt).join(' then ')}); ${
+        summary.ema50 === null ? 'EMA50 unavailable (under 50 candles)' : `last 4h close ${summary.vsEma50} EMA50 ${fmt(summary.ema50)}`
+      }.`
+    : null;
+  const lines = [
+    '# REAL DATA: COMPACT SUMMARY (computed by code from closed candles)',
+    `- ATR(14) of the execution timeframe: ${fmt(atr)}`,
+    `- Last 5 swings (2-candle fractal), oldest first: ${swings.slice(-5).map((s) => `${s.kind === 'high' ? 'H' : 'L'} ${fmt(s.price)} (${n - 1 - s.i} candles ago)`).join(', ') || 'none'}`,
+    `- Unswept equal highs (0.1 ATR tolerance): ${pools('high')}`,
+    `- Unswept equal lows (0.1 ATR tolerance): ${pools('low')}`,
+    `- Last 3 closed candles, oldest first: ${closed.slice(-3).map((b) => `[o${fmt(b[1])} h${fmt(b[2])} l${fmt(b[3])} c${fmt(b[4])}]`).join(' ')}`,
+    htfLine,
+  ].filter(Boolean);
+  return { block: lines.join('\n'), htf: summary };
+}
+
+// Campos de `analysis` na ORDEM do contrato do v10: em structured outputs a
+// ordem das chaves e a ordem de geracao (CLAUDE.md 4.1). O raciocinio vem
+// primeiro; signalState, watchPlan, recommendation e confidence vem depois
+// de `analysis` inteira. Nao reordenar sem medir.
+const nullable = (type: string) => ({ type: [type, 'null'] });
+/** Entrada do v10.3: a mercado (ENTER_NOW) ou limit na borda da zona (ARMED). */
+const ENTRY_TYPES = ['market', 'limit'] as const;
+
+const ANALYSIS_SCHEMA_PROPERTIES: Record<string, unknown> = {
+  reasoning: { type: 'string' },
+  symbol: { type: 'string' },
+  timeframe: { type: 'string' },
+  detectedSession: { type: 'string', enum: ['asian', 'london', 'new_york', 'overlap', 'dead_zone', 'unknown'] },
+  sessionNote: { type: 'string' },
+  currentPrice: { type: 'number' },
+  entry: nullable('number'),
+  stopLoss: nullable('number'),
+  stopLossPercent: nullable('number'),
+  takeProfit1: nullable('number'),
+  takeProfit1Percent: nullable('number'),
+  takeProfit2: nullable('number'),
+  takeProfit2Percent: nullable('number'),
+  entryY: nullable('number'),
+  stopY: nullable('number'),
+  tp1Y: nullable('number'),
+  tp2Y: nullable('number'),
+  riskRewardRatio: nullable('string'),
+  invalidationLevel: nullable('number'),
+  invalidationNote: nullable('string'),
+  entryType: { type: ['string', 'null'], enum: [...ENTRY_TYPES, null] },
+  entryCondition: nullable('string'),
+  partialExitStrategy: nullable('string'),
+  tp1ClosePercent: nullable('number'),
+  tp2ClosePercent: nullable('number'),
+  breakevenTrigger: nullable('string'),
+  probabilityTp1: nullable('number'),
+  probabilityTp2: nullable('number'),
+  probabilityStop: nullable('number'),
+  alternativeScenario: nullable('string'),
+  trendStrength: { type: 'string', enum: ['strong', 'moderate', 'weak'] },
+  trendStrengthNote: { type: 'string' },
+  marketRegime: { type: 'string', enum: ['trending', 'ranging', 'volatile'] },
+  marketRegimeNote: { type: 'string' },
+  multiTimeframeAlignment: { type: 'string' },
+  marketStructure: {
+    type: 'object',
+    properties: {
+      bias: { type: 'string', enum: ['bullish', 'bearish', 'neutral'] },
+      lastStructure: { type: 'string' },
+      breakOfStructure: { type: 'string' },
+      priceZone: { type: 'string' },
+      orderBlock: { type: 'string' },
+    },
+    required: ['bias', 'lastStructure', 'breakOfStructure', 'priceZone', 'orderBlock'],
+    additionalProperties: false,
+  },
+  chartType: { type: 'string' },
+  confluenceScore: { type: 'number' },
+  factorsPresent: { type: 'number' },
+  technicalAnalysis: { type: 'string' },
+  keyIndicators: { type: 'string' },
+  identifiedPatterns: { type: 'string' },
+  structureValidation: { type: 'string' },
+  riskFactors: { type: 'string' },
+  whyNotOpposite: { type: 'string' },
+  executiveSummary: { type: 'string' },
+};
+
+// Aviso do validador quando o preco real andou mais de 1 ATR desde o print,
+// no idioma da analise (o mesmo OUTPUT LANGUAGE que o montador pos no prompt).
+const STALE_PRINT_NOTE: Record<string, string> = {
+  en: 'The screenshot is outdated: the real price has moved more than 1 ATR since it was taken.',
+  pt: 'O print está desatualizado: o preço real andou mais de 1 ATR desde que foi tirado.',
+  es: 'La captura está desactualizada: el precio real se movió más de 1 ATR desde que se tomó.',
+  fr: "La capture est dépassée : le prix réel a bougé de plus de 1 ATR depuis qu'elle a été prise.",
+  de: 'Der Screenshot ist veraltet: Der reale Kurs hat sich seitdem um mehr als 1 ATR bewegt.',
+  ja: 'このスクリーンショットは古くなっています。撮影後、実際の価格が1 ATR以上動いています。',
+};
+
+function stalePrintNote(prompt: string): string {
+  const name = prompt.match(/OUTPUT LANGUAGE: ([^\n]+)/)?.[1]?.trim();
+  const code = Object.keys(OUTPUT_LANGUAGE_NAMES).find((k) => OUTPUT_LANGUAGE_NAMES[k] === name) ?? 'en';
+  return STALE_PRINT_NOTE[code] ?? STALE_PRINT_NOTE.en;
+}
+
+// Texto que acompanha as imagens (mensagem do usuario). Com mais de um
+// grafico, o 1o e o de execucao e os seguintes sao timeframes maiores.
+const SINGLE_CHART_INSTRUCTION = 'Analyze this chart and answer only with the JSON of the schema.';
+const MULTI_CHART_INSTRUCTION =
+  'Top-down analysis with several charts. The first chart is the execution timeframe; the following ones are higher timeframes. For each higher timeframe chart, describe the structure and bias you actually see in it, and state alignment or conflict in multiTimeframeAlignment. Answer only with the JSON of the schema.';
 
 /**
  * Timeout da chamada não-stream à OpenAI (visão).
@@ -817,6 +1002,35 @@ export function logNewsGuardStatus(
   else info(line);
 }
 
+/** watchPlan do modelo, com a mesma correcao de ordem de grandeza dos niveis principais. */
+function parseWatchPlan(value: unknown, symbol: string, currentPrice: number): WatchPlan | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const w = value as Record<string, unknown>;
+  const direction = w.direction === 'long' || w.direction === 'short' ? w.direction : null;
+  const triggerType = TRIGGER_TYPES.find((t) => t === w.triggerType) ?? null;
+  const fixed = correctPriceMagnitude(symbol, {
+    currentPrice,
+    entry: ensureNumberOrNull(w.zoneLow),
+    stopLoss: ensureNumberOrNull(w.zoneHigh),
+    takeProfit1: ensureNumberOrNull(w.target1),
+    takeProfit2: ensureNumberOrNull(w.target2),
+    invalidationLevel: ensureNumberOrNull(w.invalidation),
+  });
+  if (!direction || !triggerType || fixed.entry == null || fixed.stopLoss == null ||
+      fixed.takeProfit1 == null || fixed.invalidationLevel == null) return null;
+  return {
+    direction,
+    triggerType: triggerType as TriggerType,
+    zoneLow: Math.min(fixed.entry, fixed.stopLoss),
+    zoneHigh: Math.max(fixed.entry, fixed.stopLoss),
+    invalidation: fixed.invalidationLevel,
+    target1: fixed.takeProfit1,
+    target2: fixed.takeProfit2 ?? null,
+    validForCandles: clampValidity(w.validForCandles),
+    trigger: scrubPromptLeak(ensureString(w.trigger, '')),
+  };
+}
+
 function parseSchemaResult(
   content: string,
   onPriceIssue?: (issue: RawCurrentPriceIssue) => void,
@@ -894,6 +1108,8 @@ function parseSchemaResult(
     ...(typeof parsed.is_financial_chart === 'boolean'
       ? { is_financial_chart: parsed.is_financial_chart }
       : {}),
+    signalState: parseSignalState(parsed.signalState),
+    watchPlan: parseWatchPlan(parsed.watchPlan, rawSymbol, ensureNumber(parsedAnalysis.currentPrice, 0)),
     recommendation: normalizeSchemaRecommendation(parsed.recommendation),
     confidence: ensureNumber(parsed.confidence, 0),
     analysis: {
@@ -940,7 +1156,7 @@ function parseSchemaResult(
       reasoning: scrubPromptLeak(ensureString(parsedAnalysis.reasoning, 'Sem justificativa gerada.'), 'Sem justificativa gerada.'),
       invalidationLevel,
       invalidationNote: parsedAnalysis.invalidationNote != null ? ensureString(parsedAnalysis.invalidationNote, '') || null : null,
-      entryType: parsedAnalysis.entryType != null ? ensureString(parsedAnalysis.entryType, '') || null : null,
+      entryType: ENTRY_TYPES.find((t) => t === ensureString(parsedAnalysis.entryType, '').trim().toLowerCase()) ?? null,
       entryCondition: parsedAnalysis.entryCondition != null ? ensureString(parsedAnalysis.entryCondition, '') || null : null,
       partialExitStrategy: parsedAnalysis.partialExitStrategy != null ? ensureString(parsedAnalysis.partialExitStrategy, '') || null : null,
       tp1ClosePercent: closePercentOrDefault(parsedAnalysis.tp1ClosePercent, entry !== null, 50),
@@ -970,14 +1186,6 @@ function parseSchemaResult(
 // bloqueio/rate-limit (achado em 25/08/2026, junto do bug do cache vazio).
 const calendarService = new EconomicCalendarService();
 
-/**
- * Idade maxima da resposta do Twelve Data que o grounding reaproveita, por
- * tempo grafico: 1m nunca (o ultimo candle muda rapido demais), 5m ate 1 min,
- * o resto ate 2 min. Mesmo pedido (ativo, intervalo, 120 candles).
- */
-const GROUNDING_CACHE_MAX_AGE_MS: Record<string, number> = {
-  '1m': 0, '5m': 60_000, '15m': 120_000, '30m': 120_000, '1h': 120_000, '2h': 120_000, '4h': 120_000, '1d': 120_000,
-};
 
 @Injectable()
 export class AIAdapter {
@@ -988,6 +1196,11 @@ export class AIAdapter {
   private readonly logger = new Logger(AIAdapter.name);
   private readonly supabaseClient: SupabaseClient | null;
   private readonly defaultStorageBucket: string;
+  /**
+   * REAL DATA na analise. Sempre ligado em producao; so os scripts de medicao
+   * desligam (replay sem velas da epoca, piloto sem rede).
+   */
+  groundingEnabled = true;
 
   constructor() {
     const apiKey = process.env.OPENAI_API_KEY || 'OPENAI_API_KEY_PLACEHOLDER';
@@ -1188,8 +1401,8 @@ export class AIAdapter {
         type: 'text',
         text:
           extraImageUrls.length > 0
-            ? 'Análise TOP-DOWN com MÚLTIPLOS gráficos. O 1º gráfico é o timeframe de EXECUÇÃO; os SEGUINTES são timeframes MAIORES (HTF). Para CADA gráfico maior fornecido, descreva explicitamente a estrutura e o viés que VOCÊ REALMENTE VÊ nele (não invente, não infira de cabeça — leia a imagem). Em "multiTimeframeAlignment", conclua se há ALINHAMENTO ou CONFLITO citando o que viu em cada timeframe. É obrigatório comentar o(s) gráfico(s) secundário(s). Responda exclusivamente no JSON do schema.'
-            : 'Analise o gráfico e responda exclusivamente no JSON do schema. Não escreva texto fora do JSON.',
+            ? MULTI_CHART_INSTRUCTION
+            : SINGLE_CHART_INSTRUCTION,
       },
       { type: 'image', url: signedPrimary },
     ];
@@ -1200,7 +1413,7 @@ export class AIAdapter {
         const deliveredNumber = content.filter((part) => part.type === 'image').length;
         content.push({
           type: 'text',
-          text: `Gráfico de timeframe MAIOR ${deliveredNumber} (contexto top-down / HTF) — leia e comente explicitamente este gráfico:`,
+          text: `Higher timeframe chart ${deliveredNumber} (top-down context). Read it and describe what you see in it:`,
         });
         // 'high' detail: o usuário subiu este HTF de propósito para um top-down REAL.
         // Em 'low' a IA quase não lê o gráfico e só dá uma frase genérica de MTF.
@@ -1216,10 +1429,7 @@ export class AIAdapter {
     // A instrução inicial deve refletir as imagens que realmente chegaram ao
     // modelo, não as URLs solicitadas: assinatura de HTF pode falhar sem abortar.
     if (!content.some((part, index) => index > 1 && part.type === 'image')) {
-      content[0] = {
-        type: 'text',
-        text: 'Analise o gráfico e responda exclusivamente no JSON do schema. Não escreva texto fora do JSON.',
-      };
+      content[0] = { type: 'text', text: SINGLE_CHART_INSTRUCTION };
     }
 
     return content;
@@ -1332,8 +1542,8 @@ export class AIAdapter {
     if (ctx.fearGreedValue != null) lines.push(`Fear & Greed: ${ctx.fearGreedValue} (${ctx.fearGreedClassification ?? ''})`);
     if (lines.length === 0) return null;
     return [
-      `# DADOS REAIS DE MERCADO (${symbol})`,
-      'Os números abaixo são DADOS REAIS de mercado (não estimados do gráfico). Use-os no seu raciocínio e, ao citá-los, rotule explicitamente como "dado real". NÃO invente outros números além destes.',
+      `# REAL DATA (${symbol})`,
+      'The numbers below are real market data, not estimated from the chart. Use them and call them real data. Do not invent other numbers.',
       ...lines.map((l) => `- ${l}`),
     ].join('\n');
   }
@@ -1358,8 +1568,8 @@ export class AIAdapter {
     }
     if (lines.length === 0) return null;
     return [
-      `# DADOS REAIS DE MERCADO — INTERMARKET (${symbol})`,
-      'Os números abaixo são DADOS REAIS de mercado (não estimados do gráfico). Use-os no raciocínio e rotule como "dado real". NÃO invente outros números.',
+      `# REAL DATA: INTERMARKET (${symbol})`,
+      'The numbers below are real market data, not estimated from the chart. Use them and call them real data. Do not invent other numbers.',
       ...lines.map((l) => `- ${l}`),
       '- Correlação a considerar: ouro (XAU) costuma se mover inverso ao dólar e aos juros; em pares com USD, o lado do dólar pesa na direção.',
     ].join('\n');
@@ -1372,8 +1582,8 @@ export class AIAdapter {
     const mood =
       vix >= 25 ? 'medo/estresse elevado (risk-off)' : vix <= 15 ? 'ambiente calmo (risk-on)' : 'neutro';
     return [
-      `# DADOS REAIS DE MERCADO — INTERMARKET (${symbol})`,
-      'O número abaixo é DADO REAL de mercado (não estimado do gráfico). Use-o no raciocínio e rotule como "dado real". NÃO invente outros números.',
+      `# REAL DATA: INTERMARKET (${symbol})`,
+      'The number below is real market data, not estimated from the chart. Use it and call it real data. Do not invent other numbers.',
       `- VIX (volatilidade implícita / "índice do medo"): ${vix} → ${mood}`,
       '- Correlação a considerar: VIX alto costuma coincidir com pressão de baixa em índices de ações; VIX baixo, ambiente de alta.',
     ].join('\n');
@@ -1419,8 +1629,8 @@ export class AIAdapter {
         return `- [${e.impact}] ${e.country} ${e.title} — ${when}${extra ? ` (${extra})` : ''}`;
       });
       return { block: [
-        `# CALENDÁRIO ECONÔMICO (DADO REAL — eventos agendados p/ ${symbol}, próximas 24h)`,
-        'Considere estes eventos na leitura: evento de impacto High iminente = risco de movimento brusco que atropela a análise técnica — reduza convicção e diga isso explicitamente. Cite como "dado real".',
+        `# REAL DATA: ECONOMIC CALENDAR (scheduled events for ${symbol}, next 24h)`,
+        'A high-impact event close in time can move price sharply past the technical read: say so in riskFactors. Call these real data.',
         ...lines,
       ].join('\n'), status: 'events_injected' };
     } catch {
@@ -1444,16 +1654,21 @@ export class AIAdapter {
 
     // Deep com os MESMOS candles reais do quick (26/10/2026); antes so tinha contexto.
     // Calendário econômico vale para TODAS as classes (cripto reage a CPI/Fed também).
+    // ENABLE_MARKET_ENRICHMENT (botao de emergencia) desliga contexto e calendario;
+    // as velas entram sempre.
+    const withContext = flagBool('ENABLE_MARKET_ENRICHMENT');
     const [candles, calendar] = await Promise.all([
       this.buildCandleBlocks(extracted),
-      this.buildCalendarEnrichment(extracted.symbol.toUpperCase()),
+      withContext
+        ? this.buildCalendarEnrichment(extracted.symbol.toUpperCase())
+        : Promise.resolve({ block: null, status: 'disabled' as CalendarCoverage }),
     ]);
     const { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats } = candles;
 
     // Contexto de AGORA nao entra junto de print velho (mesma regra do quick).
     let classBlock: string | null = null;
-    if (staleReason) {
-      // print velho: so os candles retidos e o aviso
+    if (staleReason || !withContext) {
+      // print velho (so os candles retidos e o aviso) ou contexto desligado
     } else if (isCrypto) {
       classBlock = await this.buildCryptoEnrichment(extracted.symbol);
     } else if (canonicalFxPair(sym)) {
@@ -1486,123 +1701,16 @@ export class AIAdapter {
   // IA ler NÚMEROS em vez de pixels. A matemática é IDÊNTICA à do runner
   // (apps/backend/scripts/backtest-runner.ts → groundingBlock) de propósito:
   // o que foi medido no backtest é o que roda em produção.
-  // Fontes: OKX primário (Binance bloqueia IPs dos EUA, onde o Render roda),
-  // Binance spot como fallback; XAU/EUR via Twelve Data se houver chave.
-  // Best-effort: qualquer falha → null e a análise segue sem o bloco.
-
-  /** GET JSON com timeout curto; nunca lança — null em qualquer falha. */
-  private async fetchJson<T>(url: string, timeoutMs = 4_000): Promise<T | null> {
-    try {
-      const res = await fetch(url, {
-        headers: { 'User-Agent': 'tickrify/1.0' },
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if (!res.ok) return null;
-      return (await res.json()) as T;
-    } catch {
-      return null;
-    }
-  }
-
-  /** Normaliza o timeframe lido do gráfico ("M30", "1H", "4h"…) para o intervalo canônico. */
-  private normalizeTimeframe(tf: string): string | null {
-    const raw = String(tf || '').trim();
-    if (/^\d+\s*M$/.test(raw)) return null; // calendar month must not become minute
-    const t = raw.toLowerCase().replace(/\s+/g, '');
-    const map: Record<string, string> = {
-      '1m': '1m', 'm1': '1m', '3m': '3m', 'm3': '3m', '5m': '5m', 'm5': '5m',
-      '15m': '15m', 'm15': '15m', '30m': '30m', 'm30': '30m',
-      '1h': '1h', 'h1': '1h', '60m': '1h', '2h': '2h', 'h2': '2h', '120m': '2h',
-      '4h': '4h', 'h4': '4h', '240m': '4h', '6h': '6h', 'h6': '6h', '360m': '6h', '1440m': '1d', '1d': '1d', 'd1': '1d', 'd': '1d', 'daily': '1d',
-      '1w': '1w', 'w1': '1w', '10080m': '1w', 'w': '1w', 'weekly': '1w',
-    };
-    return map[t] ?? null;
-  }
+  // Velas pelo armazem (market/candle-store.ts). Best-effort: qualquer falha →
+  // null e a análise segue sem o bloco.
 
   /**
-   * Candles de CRIPTO no formato [ts, o, h, l, c, v] em ordem cronológica.
-   * OKX primário (acessível dos EUA); Binance spot como fallback.
-   *
-   * O volume (índice 5) já vinha nas duas APIs e era descartado. Ele alimenta o
-   * teste de esforço × resultado e o mapa de volume por preço — ler barra de
-   * volume em pixel é justamente o que o modelo de visão faz pior.
-   * Volume ausente/inválido vira 0 (o bloco de volume some sozinho).
+   * Velas do grafico pelo armazem (market/candle-store.ts): a porta unica para
+   * as fontes (Binance, Twelve Data pelo medidor, brapi) e o cache entre
+   * usuarios. O replay troca este metodo pelas velas da epoca do print.
    */
-  private async fetchCryptoCandles(base: string, interval: string): Promise<number[][] | null> {
-    if (!['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '1d', '1w'].includes(interval)) return null;
-    const okxBar: Record<string, string> = {
-      '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m', '30m': '30m',
-      '1h': '1H', '2h': '2H', '4h': '4H', '1d': '1D', '1w': '1W',
-    };
-    const bar = okxBar[interval];
-    if (bar) {
-      const okx = await this.fetchJson<{ data?: string[][] }>(
-        `https://www.okx.com/api/v5/market/candles?instId=${base}-USDT&bar=${bar}&limit=120`,
-      );
-      const rows = okx?.data;
-      if (Array.isArray(rows) && rows.length >= 30) {
-        // OKX devolve o mais recente primeiro; colunas [ts, o, h, l, c, vol, ...]
-        const candles = rows
-          .map((r) => [
-            Number(r[0]), Number(r[1]), Number(r[2]), Number(r[3]), Number(r[4]),
-            safeVolume(r[5]),
-          ])
-          .reverse();
-        if (candles.every((c) => c.every((v) => Number.isFinite(v)))) return candles;
-      }
-    }
-    const bin = await this.fetchJson<Array<Array<string | number>>>(
-      `https://api.binance.com/api/v3/klines?symbol=${base}USDT&interval=${interval}&limit=120`,
-    );
-    if (Array.isArray(bin) && bin.length >= 30) {
-      // Binance klines: [openTime, o, h, l, c, volume, ...]
-      const candles = bin.map((r) => [
-        Number(r[0]), Number(r[1]), Number(r[2]), Number(r[3]), Number(r[4]),
-        safeVolume(r[5]),
-      ]);
-      if (candles.every((c) => c.every((v) => Number.isFinite(v)))) return candles;
-    }
-    return null;
-  }
-
-  /**
-   * Candles de FOREX/METAIS via Twelve Data (mesma fonte do backtest), pelo
-   * medidor unico (market/twelve-data.ts): a analise tem a prioridade maior da
-   * cota e reaproveita a mesma resposta se ela tiver ate 1-2 min (mesmo ativo,
-   * intervalo e janela de 120: o motor recebe os mesmos candles). `denied` diz
-   * por que nao veio candle quando foi a cota, para nao falhar calado.
-   */
-  private async fetchFxCandles(symbol: string, interval: string): Promise<{ candles: number[][] | null; denied: TwelveDataDenyReason | null }> {
-    const none = { candles: null, denied: null };
-    const tdInterval: Record<string, string> = {
-      '1m': '1min', '5m': '5min', '15m': '15min', '30m': '30min',
-      '1h': '1h', '2h': '2h', '4h': '4h', '1d': '1day',
-    };
-    const itv = tdInterval[interval];
-    if (!itv) return none;
-    const pair = canonicalFxPair(symbol);
-    if (!pair) return none;
-    const res = await twelveDataTimeSeries({
-      consumer: 'analysis',
-      pair,
-      interval: itv,
-      outputsize: 120,
-      cacheMaxAgeMs: GROUNDING_CACHE_MAX_AGE_MS[interval] ?? 0,
-      timeoutMs: 6_000,
-    });
-    if (!res.ok) return { candles: null, denied: res.reason === 'error' || res.reason === 'no_key' ? null : res.reason };
-    const values = res.series.values;
-    if (!Array.isArray(values) || values.length < 30) return none;
-    // Twelve Data devolve o mais recente primeiro. Forex spot NÃO tem volume
-    // centralizado — o campo costuma vir ausente ou zerado, e isso é correto:
-    // o bloco de volume simplesmente não é emitido (nada de inventar).
-    const candles = values
-      .map((v) => [
-        Date.parse(v.datetime), Number(v.open), Number(v.high), Number(v.low), Number(v.close),
-        safeVolume(v.volume),
-      ])
-      .reverse();
-    return { candles: candles.every((c) => c.every((v) => Number.isFinite(v))) ? candles : null, denied: null };
+  private fetchCandles(symbol: string, interval: string): Promise<CandleFetch> {
+    return recentCandles(symbol, interval, 'analysis');
   }
 
   /**
@@ -1622,8 +1730,8 @@ export class AIAdapter {
    */
   private async buildCandleBlocks(extracted: { symbol: string; timeframe: string; lastPrice: number | null }) {
     const sym = extracted.symbol.toUpperCase();
-    const interval = this.normalizeTimeframe(extracted.timeframe);
-    const { isCrypto, base } = normalizeToBinancePerp(extracted.symbol);
+    const interval = normalizeTimeframe(extracted.timeframe);
+    const { isCrypto } = normalizeToBinancePerp(extracted.symbol);
     const assetClass = classifyCoverageAsset(sym, isCrypto);
 
     // Sem timeframe legível não dá pra calcular ATR/janela honestos — pula os
@@ -1633,16 +1741,19 @@ export class AIAdapter {
     let staleReason: string | null = null;
     let candleCoverage: CandleCoverage = 'timeframe_unreadable';
     if (interval) {
-      const fxSupported = canonicalFxPair(sym) !== null;
-      if (!isCrypto && !fxSupported) {
+      const market = candleMarketOf(sym)?.market ?? null;
+      if (!market) {
         candleCoverage = 'unsupported_asset';
-      } else if (!isCrypto && !twelveDataApiKey()) {
+      } else if (market === 'fx' && !twelveDataApiKey()) {
         candleCoverage = 'provider_unconfigured';
       } else {
-        const fx = isCrypto && base ? null : await this.fetchFxCandles(sym, interval);
-        const candles = isCrypto && base ? await this.fetchCryptoCandles(base, interval) : fx?.candles ?? null;
+        // Resumo do 4h (v10.1): so para tempo grafico abaixo de 4h.
+        const wantsHtf = (TIMEFRAME_MS[interval] ?? Infinity) < TIMEFRAME_MS['4h'];
+        const [fx, htf4] = await Promise.all([this.fetchCandles(sym, interval), wantsHtf ? this.fetchCandles(sym, '4h') : Promise.resolve(null)]);
+        const candles = fx.candles;
+        const htfCandles = htf4?.candles ?? null;
         candleCoverage = 'source_unavailable';
-        if (fx?.denied) {
+        if (fx.denied) {
           // Cota do Twelve Data (orcamento, minuto cheio ou acabou no dia): a
           // analise segue sem candles, mas isso fica gravado e no log.
           candleCoverage = 'provider_quota';
@@ -1654,8 +1765,17 @@ export class AIAdapter {
             candleCoverage = 'stale_withheld';
           } else {
             const real = buildRealDataBlock(sym, interval, candles);
-            candleBlock = real?.block ?? null;
             numbers = real?.numbers ?? null;
+            const now = this.nowMs();
+            const step = TIMEFRAME_MS[interval];
+            const bars = step ? closedBars(candles, step, now) : [];
+            const htf = htfCandles ? closedBars(htfCandles, TIMEFRAME_MS['4h'], now) : null;
+            const compact = numbers?.atr14 ? buildCompactSummary(bars, numbers.atr14, htf, (n) => Number(n.toPrecision(6))) : null;
+            if (numbers) {
+              numbers.htfTrend = compact?.htf?.trend ?? null;
+              numbers.htfVsEma50 = compact?.htf?.vsEma50 ?? null;
+            }
+            candleBlock = real ? [real.block, compact?.block].filter(Boolean).join('\n\n') : null;
             candleCoverage = candleBlock ? 'injected' : 'block_unavailable';
           }
         }
@@ -1680,6 +1800,11 @@ export class AIAdapter {
     return { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats };
   }
 
+  /** Relogio das velas fechadas (o replay aponta para a hora do print). */
+  private nowMs(): number {
+    return Date.now();
+  }
+
   private async buildQuickGrounding(imageUrl: string): Promise<{
     block: string | null;
     candles: CandleCoverage;
@@ -1698,7 +1823,7 @@ export class AIAdapter {
     // denuncia um print antigo, injetá-lo junto do aviso de print histórico
     // mistura épocas e pode produzir uma tese aparentemente fundamentada.
     let contextBlock: string | null = null;
-    if (!staleReason) {
+    if (!staleReason && flagBool('ENABLE_MARKET_ENRICHMENT')) {
       if (isCrypto) {
         contextBlock = await this.buildCryptoEnrichment(extracted.symbol);
       } else if (canonicalFxPair(sym)) {
@@ -1799,16 +1924,14 @@ export class AIAdapter {
         calendar: analysisType === 'deep' ? 'disabled' : 'not_attempted',
       };
 
-      // Enriquecimento com dados reais de mercado — só DEEP, best-effort.
-      // LIGADO POR PADRÃO: roda sozinho quando a IA identifica o mercado.
-      // A env ENABLE_MARKET_ENRICHMENT='false' funciona como botão de emergência
-      // (kill-switch) para desligar na hora, sem redeploy. Qualquer falha/timeout
-      // simplesmente segue com o prompt original (degradação graciosa).
+      // REAL DATA em toda analise (28/10/2026): velas reais quando o ativo tem
+      // fonte, no quick e no deep. Sem fonte, cota do dia acabou, falha ou
+      // timeout: a analise segue so com a imagem (dataMode=print) e a tela avisa.
       // Blocos variaveis (grounding, perfil): entram DEPOIS das instrucoes fixas.
       const context: string[] = [];
       let groundingStats: GroundingStats | null = null;
       const tGrounding = Date.now();
-      if (analysisType === 'deep' && flagBool('ENABLE_MARKET_ENRICHMENT')) {
+      if (this.groundingEnabled && analysisType === 'deep') {
         try {
           const enrichment = await withTimeout(
             this.buildMarketEnrichment(imageUrl),
@@ -1830,12 +1953,9 @@ export class AIAdapter {
           coverage.calendar = failure;
           // graceful: mantém o prompt original
         }
-      } else if (analysisType === 'quick' && flagBool('ENABLE_QUICK_GROUNDING')) {
-        // Grounding do QUICK — DESLIGADO por padrão (só liga com
-        // ENABLE_QUICK_GROUNDING='true' no Render). Fica atrás de flag até o
-        // backtest isolado (v7.3 + --ground, 75 pareadas) dizer se ajuda.
-        // Custo quando ligado: +1 leitura do simbolo (extractSymbol, ~US$0,0005)
-        // e +alguns segundos de latência, com teto de 15s. Falha → segue sem o bloco.
+      } else if (this.groundingEnabled) {
+        // Grounding do QUICK: +1 leitura do simbolo (extractSymbol, ~US$0,0005)
+        // e alguns segundos, com teto de 15s. Falha → segue sem o bloco.
         try {
           const grounding = await withTimeout(
             this.buildQuickGrounding(imageUrl),
@@ -1877,6 +1997,10 @@ export class AIAdapter {
       if (strategyProfile) {
         context.push(buildStrategyBlock(strategyProfile));
       }
+      // REAL DATA e perfil entram DENTRO do <user_context> do v10, depois da
+      // parte fixa (o cache de prompt do provedor pega o prefixo inteiro).
+      const { instructions, close: userContextClose } = splitUserContextClose(prompt);
+      if (userContextClose) context.push(userContextClose);
 
       // assertIsFinancialChart removida: adicionava 5-15s de latência em CADA análise.
       // O prompt principal já rejeita imagens inválidas via campo "non_chart_image" implícito
@@ -1922,7 +2046,7 @@ export class AIAdapter {
       // fixas primeiro, contexto variavel depois, imagens por ultimo.
       const request: VisionModelRequest = {
         tier: analysisType === 'deep' ? 'deep' : 'quick',
-        instructions: prompt,
+        instructions,
         context,
         userContent,
         schemaName: 'trading_analysis',
@@ -1932,135 +2056,43 @@ export class AIAdapter {
             is_financial_chart: { type: 'boolean' },
             analysis: {
               type: 'object',
-              properties: {
-                reasoning: { type: 'string' },
-                symbol: { type: 'string' },
-                timeframe: { type: 'string' },
-                detectedSession: {
-                  type: 'string',
-                  enum: ['asian', 'london', 'new_york', 'overlap', 'dead_zone', 'unknown'],
-                },
-                sessionNote: { type: 'string' },
-                currentPrice: { type: 'number' },
-                entry: { type: ['number', 'null'] },
-                stopLoss: { type: ['number', 'null'] },
-                stopLossPercent: { type: ['number', 'null'] },
-                takeProfit1: { type: ['number', 'null'] },
-                takeProfit1Percent: { type: ['number', 'null'] },
-                takeProfit2: { type: ['number', 'null'] },
-                takeProfit2Percent: { type: ['number', 'null'] },
-                entryY: { type: ['number', 'null'] },
-                stopY: { type: ['number', 'null'] },
-                tp1Y: { type: ['number', 'null'] },
-                tp2Y: { type: ['number', 'null'] },
-                riskRewardRatio: { type: ['string', 'null'] },
-                marketStructure: {
+              properties: ANALYSIS_SCHEMA_PROPERTIES,
+              required: Object.keys(ANALYSIS_SCHEMA_PROPERTIES),
+              additionalProperties: false,
+            },
+            signalState: { type: 'string', enum: ['NO_TRADE', 'WATCH', 'ARMED', 'ENTER_NOW'] },
+            watchPlan: {
+              anyOf: [
+                {
                   type: 'object',
                   properties: {
-                    bias: {
-                      type: 'string',
-                      enum: ['bullish', 'bearish', 'neutral'],
-                    },
-                    lastStructure: { type: 'string' },
-                    breakOfStructure: { type: 'string' },
-                    priceZone: { type: 'string' },
-                    orderBlock: { type: 'string' },
+                    direction: { type: 'string', enum: ['long', 'short'] },
+                    triggerType: { type: 'string', enum: [...TRIGGER_TYPES] },
+                    zoneLow: { type: 'number' },
+                    zoneHigh: { type: 'number' },
+                    invalidation: { type: 'number' },
+                    target1: { type: 'number' },
+                    target2: nullable('number'),
+                    validForCandles: { type: 'integer' },
+                    trigger: { type: 'string' },
                   },
                   required: [
-                    'bias',
-                    'lastStructure',
-                    'breakOfStructure',
-                    'priceZone',
-                    'orderBlock',
+                    'direction', 'triggerType', 'zoneLow', 'zoneHigh', 'invalidation', 'target1', 'target2',
+                    'validForCandles', 'trigger',
                   ],
                   additionalProperties: false,
                 },
-                chartType: { type: 'string' },
-                confluenceScore: { type: 'number' },
-                factorsPresent: { type: 'number' },
-                technicalAnalysis: { type: 'string' },
-                keyIndicators: { type: 'string' },
-                identifiedPatterns: { type: 'string' },
-                structureValidation: { type: 'string' },
-                riskFactors: { type: 'string' },
-                whyNotOpposite: { type: 'string' },
-                executiveSummary: { type: 'string' },
-                invalidationLevel: { type: ['number', 'null'] },
-                invalidationNote: { type: ['string', 'null'] },
-                entryType: { type: ['string', 'null'] },
-                entryCondition: { type: ['string', 'null'] },
-                partialExitStrategy: { type: ['string', 'null'] },
-                tp1ClosePercent: { type: ['number', 'null'] },
-                tp2ClosePercent: { type: ['number', 'null'] },
-                breakevenTrigger: { type: ['string', 'null'] },
-                probabilityTp1: { type: ['number', 'null'] },
-                probabilityTp2: { type: ['number', 'null'] },
-                probabilityStop: { type: ['number', 'null'] },
-                alternativeScenario: { type: ['string', 'null'] },
-                trendStrength: { type: ['string', 'null'] },
-                trendStrengthNote: { type: ['string', 'null'] },
-                marketRegime: { type: ['string', 'null'] },
-                marketRegimeNote: { type: ['string', 'null'] },
-                multiTimeframeAlignment: { type: ['string', 'null'] },
-              },
-              required: [
-                'reasoning',
-                'symbol',
-                'timeframe',
-                'detectedSession',
-                'sessionNote',
-                'currentPrice',
-                'entry',
-                'stopLoss',
-                'stopLossPercent',
-                'takeProfit1',
-                'takeProfit1Percent',
-                'takeProfit2',
-                'takeProfit2Percent',
-                'entryY',
-                'stopY',
-                'tp1Y',
-                'tp2Y',
-                'riskRewardRatio',
-                'marketStructure',
-                'chartType',
-                'confluenceScore',
-                'factorsPresent',
-                'technicalAnalysis',
-                'keyIndicators',
-                'identifiedPatterns',
-                'structureValidation',
-                'riskFactors',
-                'whyNotOpposite',
-                'executiveSummary',
-                'invalidationLevel',
-                'invalidationNote',
-                'entryType',
-                'entryCondition',
-                'partialExitStrategy',
-                'tp1ClosePercent',
-                'tp2ClosePercent',
-                'breakevenTrigger',
-                'probabilityTp1',
-                'probabilityTp2',
-                'probabilityStop',
-                'alternativeScenario',
-                'trendStrength',
-                'trendStrengthNote',
-                'marketRegime',
-                'marketRegimeNote',
-                'multiTimeframeAlignment',
+                { type: 'null' },
               ],
-              additionalProperties: false,
             },
-            recommendation: {
-              type: 'string',
-              enum: ['BUY', 'SELL', 'HOLD', 'COMPRA', 'VENDA', 'AGUARDAR'],
-            },
+            recommendation: { type: 'string', enum: ['BUY', 'SELL', 'HOLD'] },
             confidence: { type: 'number' },
             ...strategyFitProps,
           },
-          required: ['is_financial_chart', 'analysis', 'recommendation', 'confidence', ...strategyFitRequired],
+          required: [
+            'is_financial_chart', 'analysis', 'signalState', 'watchPlan', 'recommendation', 'confidence',
+            ...strategyFitRequired,
+          ],
           additionalProperties: false,
         },
         maxTokens,
@@ -2203,8 +2235,6 @@ export class AIAdapter {
           takeProfit2: parsed.analysis?.takeProfit2,
           invalidationLevel: parsed.analysis?.invalidationLevel,
           currentPrice: parsed.analysis?.currentPrice,
-          entryType: parsed.analysis?.entryType,
-          entryCondition: parsed.analysis?.entryCondition,
         });
         return { modelResult, content, parsed, parseMs, tValidation, rawRecommendation, planFailures, rawDiagnostic };
       };
@@ -2269,69 +2299,69 @@ export class AIAdapter {
       const strategyFit = STRATEGY_FIT_VALUES.find((v) => v === parsed.strategyFit) ?? null;
       const strategyFitReason =
         typeof parsed.strategyFitReason === 'string' ? parsed.strategyFitReason.slice(0, 400) : null;
-      // Piso de confiança: 0 é reservado para imagem inválida (STEP -1). Em gráfico
-      // válido, o modelo às vezes devolve 0 num HOLD — vira 30 (baixa, mas plausível).
-      // (imagem inválida já foi rejeitada acima — aqui o gráfico é sempre válido)
-      const flooredConfidence =
-        normalizeConfidence(parsed.confidence, 50) <= 0 ? 30 : normalizeConfidence(parsed.confidence, 50);
-
-      // R/R calculado a partir dos NÍVEIS (entry/SL/TP1), não de um campo de texto
-      // da IA. Antes o guard lia parsed.analysis?.riskRewardTp1 — campo inexistente
-      // no schema — e por isso nunca disparava neste caminho. Agora dispara.
-      const decisionRiskRewardTp1 = computeRiskReward(
-        parsed.analysis?.entry,
-        parsed.analysis?.stopLoss,
-        parsed.analysis?.takeProfit1,
-        rawRecommendation,
-      );
-      const decisionRiskRewardTp2 = computeRiskReward(
-        parsed.analysis?.entry,
-        parsed.analysis?.stopLoss,
-        parsed.analysis?.takeProfit2,
-        rawRecommendation,
-      );
-
-      // Sequência determinística ÚNICA (mesma usada pelo worker):
-      // caps de confiança → validador do plano → guard R/R → news guard → teto WAIT.
+      // Validador do v10 (signal-decision.ts): so rebaixa. Preco e ATR reais
+      // valem quando os candles entraram no prompt.
+      const numbers = groundingStats?.coverage === 'injected' ? groundingStats.numbers : null;
+      const realData = numbers && numbers.lastClose !== null && numbers.lastClose > 0
+        ? { price: numbers.lastClose, atr: numbers.atr14, htfTrend: numbers.htfTrend ?? null }
+        : null;
+      const modelState =
+        parsed.signalState ??
+        deriveSignalState(rawRecommendation, parsed.analysis?.entryType, parsed.analysis?.alternativeScenario);
       const decision = await decideSignal({
+        state: modelState,
         recommendation: rawRecommendation,
-        flooredConfidence,
+        confidence: normalizeConfidence(parsed.confidence, 0),
         trendStrength: parsed.analysis?.trendStrength,
-        factorsPresent: parsed.analysis?.factorsPresent,
-        riskRewardTp1: decisionRiskRewardTp1,
-        riskRewardTp2: decisionRiskRewardTp2,
+        structureValidation: parsed.analysis?.structureValidation,
         symbol: String(parsed.analysis?.symbol || ''),
+        currentPrice: parsed.analysis?.currentPrice ?? null,
+        watchPlan: parsed.watchPlan,
+        estimatedLevels: {
+          entry: parsed.analysis?.entry ?? null,
+          stopLoss: parsed.analysis?.stopLoss ?? null,
+          takeProfit1: parsed.analysis?.takeProfit1 ?? null,
+          takeProfit2: parsed.analysis?.takeProfit2 ?? null,
+        },
+        probabilities: {
+          probabilityTp1: parsed.analysis?.probabilityTp1 ?? null,
+          probabilityTp2: parsed.analysis?.probabilityTp2 ?? null,
+          probabilityStop: parsed.analysis?.probabilityStop ?? null,
+        },
+        realData,
         planFailures,
         priceFixed: parsed.analysis?.priceMagnitudeFixed === true,
       });
       const validationMs = Date.now() - tValidation;
-      // R/R e news guard tem linha propria abaixo.
-      if (decision.validatorReasons.some((r) => r !== 'rr_below_min' && r !== 'news_event')) {
+      if (decision.validatorAction === 'downgraded') {
         this.logger.warn(
-          `Validador: sinal ${rawRecommendation} rebaixado para WAIT (${decision.validatorReasons.join(',')})`,
-        );
-      }
-      if (decision.rrDowngraded) {
-        this.logger.warn(
-          `RR guard: sinal ${rawRecommendation} rebaixado para WAIT (riskRewardTp1=${decisionRiskRewardTp1})`,
-        );
-      }
-      if (decision.newsDowngraded) {
-        this.logger.warn(
-          `News guard: sinal ${rawRecommendation} rebaixado para WAIT — evento High iminente: ${decision.newsEvent}`,
+          `[validator] ${JSON.stringify({ from: modelState, to: decision.state, notes: decision.validatorNotes, symbol: parsed.analysis?.symbol, news: decision.newsEvent })}`,
         );
       }
       logNewsGuardStatus(decision.newsGuardStatus, parsed.analysis?.symbol, (m) => this.logger.warn(m), (m) => this.logger.log(m));
       const recommendation = decision.recommendation;
       const confidence = decision.confidence;
+      const wireRecommendation: SchemaRecommendation = recommendation === 'WAIT' ? 'HOLD' : recommendation;
+      const decidedAnalysis = applyDecisionToAnalysis(
+        parsed.analysis,
+        decision,
+        decision.stalePrint ? stalePrintNote(prompt) : null,
+      );
 
       // Presentation follows the decision; nothing here feeds guards or repairs.
-      const presentedAnalysis = presentAnalysis(parsed.analysis, 'en', 1); // MTF provenance is added at delivery with its output language.
+      const presentedAnalysis = presentAnalysis(decidedAnalysis, 'en', 1); // MTF provenance is added at delivery with its output language.
+      const signal = {
+        signalState: decision.state,
+        watchPlan: decision.watchPlan,
+        dataMode: decision.dataMode,
+        validatorNotes: decision.validatorNotes,
+      };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);
       logObservation(observation, m => this.logger.log(m));
       return {
         observation,
         recommendation,
+        ...signal,
         bias: parsed.analysis.marketStructure.bias,
         confidence,
         reasoning: presentedAnalysis.reasoning,
@@ -2344,13 +2374,20 @@ export class AIAdapter {
         groundingStats,
         drawingPlan: null,
         drawingFailed: true,
-        rawResponse: { ...parsed, analysis: presentedAnalysis },
+        // O worker grava a partir daqui: recomendacao e confianca ja decididas.
+        rawResponse: {
+          ...parsed,
+          recommendation: wireRecommendation,
+          confidence,
+          ...signal,
+          analysis: presentedAnalysis,
+        },
         rawContent: content,
         strategyFit,
         strategyFitReason,
         engineMeta: {
           validatorAction: decision.validatorAction,
-          validatorReasons: decision.validatorReasons,
+          validatorReasons: decision.validatorNotes,
           validatorFlags: decision.validatorFlags,
           newsGuardStatus: decision.newsGuardStatus,
           groundingMs,

@@ -184,6 +184,35 @@ const PADROES_REAIS =
   '🕯️ Upper-wick rejection and tight consolidation near 4281.70-4286.85 — hesitation, but no confirmed bearish CHoCH. ' +
   '🔁 Bullish re-accumulation/continuation structure remains more likely than a reversal.';
 
+describe('parseStructureChecklist: formato do motor v10 (PASS/FAIL)', () => {
+  const v10 = 'C1 FAIL: higher timeframe unavailable. C2 PASS: near 85,400 support. C3 PASS: sweep and reclaim. '
+    + 'C4 PASS: buyers absorb. C5 PASS: trigger 85,600. C6 PASS: 1.8R to TP2. C7 FAIL: equal highs above. 5/7 ARMED';
+
+  it('le os 7 itens, o placar e o estado do fim', () => {
+    const c = parseStructureChecklist(v10);
+    expect(c.items).toHaveLength(7);
+    expect(c.items.filter((i) => i.ok)).toHaveLength(5);
+    expect(c.items[0]).toEqual({ ok: false, notApplicable: false, label: 'C1', detail: 'higher timeframe unavailable' });
+    expect(c.items[6].detail).toBe('equal highs above');
+    expect(c).toMatchObject({ score: '5/7', verdict: 'ARMED', scoreMismatch: false });
+  });
+
+  it('aceita rotulo entre o codigo e o veredito', () => {
+    const c = parseStructureChecklist('C1 Context: PASS HTF up; C2 Location: FAIL mid-range; C3 PASS; C4 PASS; C5 FAIL; C6 PASS; C7 PASS. 5/7, WATCH.');
+    expect(c.items[0]).toMatchObject({ ok: true, label: 'C1 Context', detail: 'HTF up' });
+    expect(c.items[1]).toMatchObject({ ok: false, label: 'C2 Location', detail: 'mid-range' });
+    expect(c).toMatchObject({ score: '5/7', verdict: 'WATCH' });
+  });
+
+  it('placar que nao bate com a lista nao aparece', () => {
+    expect(parseStructureChecklist(v10.replace('5/7', '6/7'))).toMatchObject({ score: null, scoreMismatch: true });
+  });
+
+  it('sem os 7 itens cai na leitura antiga', () => {
+    expect(parseStructureChecklist('C1 PASS a. C2 FAIL b.').items).toHaveLength(0);
+  });
+});
+
 describe('splitItems', () => {
   it('usa o emoji como fronteira do item, não a vírgula', () => {
     const itens = splitItems(PADROES_REAIS);

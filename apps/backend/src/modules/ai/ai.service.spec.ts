@@ -4,6 +4,7 @@ import { AiService, buildClientContext, sanitizeTradeNote } from './ai.service';
 import { getAiQueue, getAiQueueReadiness } from './ai.queue';
 import { captureServer as captureServerMock } from '../../common/analytics/posthog';
 import { recordSetupVersion } from './setups.service';
+import { buildAnalysisPrompt } from '../prompt/prompt-builder.service';
 
 const captureServer = captureServerMock as jest.Mock;
 
@@ -71,7 +72,6 @@ describe('AiService access enforcement', () => {
   let service: AiService;
   let prisma: any;
   let ticksService: any;
-  let promptBuilder: any;
   let mailService: any;
   let setups: any;
 
@@ -154,10 +154,6 @@ describe('AiService access enforcement', () => {
         ),
     };
 
-    promptBuilder = {
-      buildPromptByVersion: jest.fn().mockResolvedValue('test prompt'),
-    };
-
     const stripeService = {
       ensureTicksForActiveSubscriber: jest.fn().mockResolvedValue(true),
       syncActiveSubscriptionFromStripe: jest.fn().mockResolvedValue(false),
@@ -175,7 +171,7 @@ describe('AiService access enforcement', () => {
     };
 
     // Trial sem onModuleInit = tabela "indisponivel": regra antiga, como antes do trial.
-    service = new AiService(prisma, aiAdapter as any, ticksService as any, promptBuilder as any, stripeService as any, mailService as any, setups, new TrialService(prisma, mailService as any), { syncFromVerdict: jest.fn().mockResolvedValue(undefined) } as any);
+    service = new AiService(prisma, aiAdapter as any, ticksService as any, stripeService as any, mailService as any, setups, new TrialService(prisma, mailService as any), { syncFromVerdict: jest.fn().mockResolvedValue(undefined) } as any);
   });
 
   // Analise antiga gravada com o percentual do modelo (stop de venda positivo):
@@ -201,7 +197,7 @@ describe('AiService access enforcement', () => {
       setups.assertUpdatable.mockRejectedValueOnce(new NotFoundException({ code: 'setup_not_found' }));
 
       await expect(
-        service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, undefined, 'quick', 'en', [], null, 'setup-of-someone-else'),
+        service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, 'quick', 'en', [], null, 'setup-of-someone-else'),
       ).rejects.toMatchObject({ status: 404 });
 
       expect(setups.assertUpdatable).toHaveBeenCalledWith('usr_1', 'setup-of-someone-else');
@@ -215,7 +211,7 @@ describe('AiService access enforcement', () => {
       const add = jest.fn().mockResolvedValue(undefined);
       (getAiQueue as jest.Mock).mockReturnValue({ add });
 
-      await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, undefined, 'quick', 'en', [], null, 'setup-123456');
+      await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, 'quick', 'en', [], null, 'setup-123456');
 
       // Mesma reserva da cota gratis (transacao serializavel), nada de preco novo.
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
@@ -260,13 +256,13 @@ describe('AiService access enforcement', () => {
       const completed = prisma.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed');
       expect(completed).toBeDefined();
       expect(completed[0].data).not.toHaveProperty('setupId');
-      // Contrato v2 e tempos gravados junto da analise, igual ao worker.
+      // Contrato e tempos gravados junto da analise, igual ao worker.
       expect(completed[0].data.result.engine).toMatchObject({
-        version: '2.0.0',
+        version: '3.2.0',
         data_mode: 'print',
         validator_action: 'none',
         timings: { image_prep_ms: 120, intake_ms: 300, queue_ms: null },
-        contract: { verdict: 'NEUTRAL', asset: 'EURUSD', timeframe: '1H', engine_version: '2.0.0' },
+        contract: { verdict: 'NEUTRAL', asset: 'EURUSD', timeframe: '1H', engine_version: '3.2.0' },
       });
       expect(completed[0].data.result.engine.timings.server_total_ms).toBeGreaterThanOrEqual(500);
       // O motor nao recebeu nada do setup: os 5 argumentos de sempre + a opcao de comparacao.
@@ -280,8 +276,8 @@ describe('AiService access enforcement', () => {
     });
   });
 
-  // D1 (19/10/2026): o sincrono pede o prompt sem a "CONSISTENCIA OBRIGATORIA", como o worker.
-  it.each(['quick', 'deep'] as const)('caminho sincrono (%s) monta o prompt com consistency: false', async (analysisType) => {
+  // 26/10/2026: o sincrono monta pelo mesmo montador do worker (buildAnalysisPrompt).
+  it.each(['quick', 'deep'] as const)('caminho sincrono (%s) usa o montador unico do prompt', async (analysisType) => {
     (service as any).aiAdapter.analyzeImage = jest.fn().mockResolvedValue({
       recommendation: 'WAIT', bias: 'neutral', confidence: 40, reasoning: 'No trigger yet.',
       analysis: { symbol: 'EURUSD', timeframe: '1H' }, rawResponse: {}, rawContent: '{}',
@@ -290,17 +286,15 @@ describe('AiService access enforcement', () => {
       .mockResolvedValueOnce({ id: 'an_d1', status: 'processing' })
       .mockResolvedValueOnce({ id: 'an_d1', status: 'completed', isDemo: true, createdAt: new Date(), updatedAt: new Date() });
     (service as any).serializeAnalysis = jest.fn().mockResolvedValue({ id: 'an_d1' });
-    promptBuilder.buildPromptByVersion.mockClear();
-
     await (service as any).processSynchronously({
       analysisId: 'an_d1', imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType, isDemo: true,
-      promptVersion: 12, promptOverride: undefined, userLanguage: 'pt',
-      intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
+      userLanguage: 'pt', intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
     });
 
-    expect(promptBuilder.buildPromptByVersion).toHaveBeenCalledTimes(1);
-    expect(promptBuilder.buildPromptByVersion).toHaveBeenCalledWith(analysisType, 12, undefined, 'pt', { consistency: false });
-    expect((service as any).aiAdapter.analyzeImage.mock.calls[0][1]).toBe('test prompt');
+    const prompt = (service as any).aiAdapter.analyzeImage.mock.calls[0][1] as string;
+    expect(prompt).toBe(buildAnalysisPrompt({ userLanguage: 'pt', analysisType }));
+    expect(prompt).toContain('OUTPUT LANGUAGE: Portuguese (Brazil)');
+    expect(prompt.includes('ANALYSIS MODE: DEEP')).toBe(analysisType === 'deep');
   });
 
   // D3 (19/10/2026): caracterizacao. O sincrono nao tem a validacao final do worker:
@@ -341,21 +335,28 @@ describe('AiService access enforcement', () => {
     };
     const [current, historical, hypothetical] = labels[userLanguage];
     const narrative = `${current}4/7. ${historical}4/7. ${hypothetical}4/7, wait.`;
-    const presented = `${current}5/7. ${historical}4/7. ${hypothetical}4/7, wait.`;
+    const presented = `${current}6/7. ${historical}4/7. ${hypothetical}4/7, wait.`;
     const { AIAdapter } = await import('./ai.adapter');
     const { OpenAiVisionModel } = await import('./vision-model');
-    const keys = ['ENABLE_RR_GUARD', 'ENABLE_NEWS_GUARD', 'ENABLE_QUICK_GROUNDING', 'ENABLE_MARKET_ENRICHMENT'] as const;
+    const keys = ['ENABLE_RR_GUARD', 'ENABLE_NEWS_GUARD', 'ENABLE_MARKET_ENRICHMENT'] as const;
     const saved = keys.map((key) => process.env[key]);
     process.env.ENABLE_RR_GUARD = 'true';
     process.env.ENABLE_NEWS_GUARD = 'false';
-    process.env.ENABLE_QUICK_GROUNDING = 'false';
     process.env.ENABLE_MARKET_ENRICHMENT = 'true';
     try {
-      const raw = { is_financial_chart: true, recommendation: 'BUY', confidence: 70, analysis: {
-        symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.983, entry: 107.855,
+      // v10.3: plano na escala lida (100x); preco real 1,0792 a 0,6 ATR da borda
+      // (ATR 0,002): limit em 1,078, stop 1,076, TP1 1,081 (1,5R), TP2 1,0895.
+      const watchPlan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 107.7, zoneHigh: 107.8, invalidation: 107.65,
+        target1: 108.3, target2: 108.95, validForCandles: 16, trigger: 'Bullish close at 1.0770-1.0780' };
+      const grounding = {
+        block: null, candles: 'injected', marketContext: 'unavailable', assetClass: 'forex', calendar: 'no_events_returned',
+        stats: { v: 1, symbol: 'EURUSD', interval: '1h', coverage: 'injected', numbers: { lastClose: 1.0792, atr14: 0.002 } },
+      };
+      const raw = { is_financial_chart: true, watchPlan, recommendation: 'BUY', confidence: 70, analysis: {
+        symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.88, entry: 107.855,
         stopLoss: 107.7, takeProfit1: 108.02, takeProfit2: 108.12, invalidationLevel: 107.72,
         factorsPresent: 4, confluenceScore: 57.14, trendStrength: 'strong', marketStructure: { bias: 'bullish' },
-        structureValidation: '✅ HTF | ❌ Zone | ✅ ICT | ✅ Anti-retail | ✅ Structure | ✅ R:R | ❌ MTF → 4/7',
+        structureValidation: 'C1 PASS: H4; C2 PASS: discount; C3 PASS: pullback; C4 PASS: buyers; C5 FAIL: retested; C6 PASS: 1 ATR; C7 PASS: room → 4/7',
         executiveSummary: narrative, reasoning: narrative,
         multiTimeframeAlignment: 'H1 bullish | H4 bullish',
       } };
@@ -363,7 +364,8 @@ describe('AiService access enforcement', () => {
       const create = jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content } }] });
       const adapter = new AIAdapter();
       (adapter as any).visionModel = new OpenAiVisionModel({ chat: { completions: { create } } } as any);
-      (adapter as any).buildMarketEnrichment = jest.fn().mockResolvedValue({ block: null, assetClass: 'forex', marketContext: 'unavailable', calendar: 'no_events_returned' });
+      (adapter as any).buildMarketEnrichment = jest.fn().mockResolvedValue(grounding);
+      (adapter as any).buildQuickGrounding = jest.fn().mockResolvedValue(grounding);
       (service as any).aiAdapter = adapter;
       (service as any).getSignedImageUrl = jest.fn().mockResolvedValue(null);
       (service as any).getOutcomeById = jest.fn().mockResolvedValue(null);
@@ -381,111 +383,22 @@ describe('AiService access enforcement', () => {
       expect(delivered.fullResponse.analysis.multiTimeframeAlignment.endsWith('H1 bullish | H4 bullish')).toBe(true);
       expect(completed.result).not.toHaveProperty('observation');
       const readback = await (service as any).serializeAnalysis({ ...row, ...JSON.parse(JSON.stringify(completed)) });
+      const engine = { entry: 1.078, stopLoss: 1.076, takeProfit1: 1.081, takeProfit2: 1.0895 };
       for (const key of ['entry', 'stopLoss', 'takeProfit1', 'takeProfit2'] as const) {
-        const expected = raw.analysis[key] * 0.01;
-        expect(completed.result.analysis[key]).toBe(expected);
-        expect(delivered[key]).toBe(expected);
-        expect(readback[key]).toBe(expected);
+        expect(completed.result.analysis[key]).toBeCloseTo(engine[key], 8);
+        expect(delivered[key]).toBe(completed.result.analysis[key]);
+        expect(readback[key]).toBe(completed.result.analysis[key]);
       }
       expect(readback.fullResponse.analysis.executiveSummary).toBe(presented);
       expect(readback.fullResponse.analysis.reasoning).toBe(presented);
       expect(readback.fullResponse.analysis.invalidationLevel).toBe(107.72 * 0.01);
-      expect(readback).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.06, riskRewardTp2: 1.71, errorCode: null });
+      expect(readback).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.5, riskRewardTp2: 5.75, errorCode: null });
       expect(create).toHaveBeenCalledTimes(1);
     } finally {
       keys.forEach((key, i) => { if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i]; });
     }
   });
 
-
-  it.each(['quick', 'deep'].flatMap(analysisType => ['en', 'pt', 'es', 'fr', 'de', 'ja'].flatMap(userLanguage => [false, true].map(optional => ({ analysisType, userLanguage, optional })))))('B1 persists unchanged LIMIT optional=$optional in $analysisType/$userLanguage', async ({ analysisType, userLanguage, optional }) => {
-    const conditions: Record<string, [string, string]> = {
-    "en": [
-        "Place limit 100 only after a sweep and rejection.",
-        "Limit 100; preferably enter after a sweep and rejection."
-    ],
-    "pt": [
-        "Coloque limit 100 somente após varredura e rejeição.",
-        "Limit 100; preferencialmente entrar após varredura e rejeição."
-    ],
-    "es": [
-        "Orden limit 100 solo después de barrida y rechazo.",
-        "Limit 100; preferiblemente entrar después de barrida y rechazo."
-    ],
-    "fr": [
-        "Ordre limit 100 uniquement après balayage et rejet.",
-        "Limit 100; de préférence entrer après balayage et rejet."
-    ],
-    "de": [
-        "Limit 100 erst nach Sweep und Ablehnung platzieren.",
-        "Limit 100; vorzugsweise nach Sweep und Ablehnung einsteigen."
-    ],
-    "ja": [
-        "リミット100、スイープと反発の確認後のみ注文。",
-        "リミット100、できればスイープと反発の確認後に注文。"
-    ]
-};
-    const entryCondition = conditions[userLanguage][optional ? 1 : 0];
-    const narrative = 'Checklist 4/7.';
-    const presented = 'Checklist 5/7.';
-    const { AIAdapter } = await import('./ai.adapter');
-    const { OpenAiVisionModel } = await import('./vision-model');
-    const keys = ['ENABLE_RR_GUARD', 'ENABLE_NEWS_GUARD', 'ENABLE_QUICK_GROUNDING', 'ENABLE_MARKET_ENRICHMENT'] as const;
-    const saved = keys.map((key) => process.env[key]);
-    process.env.ENABLE_RR_GUARD = 'true';
-    process.env.ENABLE_NEWS_GUARD = 'false';
-    process.env.ENABLE_QUICK_GROUNDING = 'false';
-    process.env.ENABLE_MARKET_ENRICHMENT = 'true';
-    try {
-      const raw = { is_financial_chart: true, recommendation: 'BUY', confidence: 70, analysis: {
-        entryType: 'limit', entryCondition,
-        symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.983, entry: 107.855,
-        stopLoss: 107.7, takeProfit1: 108.02, takeProfit2: 108.12, invalidationLevel: 107.72,
-        factorsPresent: 4, confluenceScore: 57.14, trendStrength: 'strong', marketStructure: { bias: 'bullish' },
-        structureValidation: '✅ HTF | ❌ Zone | ✅ ICT | ✅ Anti-retail | ✅ Structure | ✅ R:R | ❌ MTF → 4/7',
-        executiveSummary: narrative, reasoning: narrative,
-        multiTimeframeAlignment: 'H1 bullish | H4 bullish',
-      } };
-      const content = JSON.stringify(raw);
-      const create = jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content } }] });
-      const adapter = new AIAdapter();
-      (adapter as any).visionModel = new OpenAiVisionModel({ chat: { completions: { create } } } as any);
-      (adapter as any).buildMarketEnrichment = jest.fn().mockResolvedValue({ block: null, assetClass: 'forex', marketContext: 'unavailable', calendar: 'no_events_returned' });
-      (service as any).aiAdapter = adapter;
-      (service as any).getSignedImageUrl = jest.fn().mockResolvedValue(null);
-      (service as any).getOutcomeById = jest.fn().mockResolvedValue(null);
-      const row = { id: 'an_precision', status: 'pending', isDemo: false, createdAt: new Date(), updatedAt: new Date() };
-      prisma.analysis.update.mockImplementation(async ({ data }: any) => ({ ...row, ...data }));
-      const delivered = await (service as any).processSynchronously({
-        analysisId: row.id, imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType, userLanguage, isDemo: false,
-        intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
-      });
-      const completed = prisma.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed')[0].data;
-      expect(completed.fullResponse).toBe(content);
-      expect(delivered.fullResponse.analysis.executiveSummary).toBe(presented);
-      expect(delivered.fullResponse.analysis.reasoning).toBe(presented);
-      expect(delivered.fullResponse.analysis.multiTimeframeAlignment).not.toBe('H1 bullish | H4 bullish');
-      expect(delivered.fullResponse.analysis.multiTimeframeAlignment.endsWith('H1 bullish | H4 bullish')).toBe(true);
-      expect(completed.result).not.toHaveProperty('observation');
-      const readback = await (service as any).serializeAnalysis({ ...row, ...JSON.parse(JSON.stringify(completed)) });
-      for (const key of ['entry', 'stopLoss', 'takeProfit1', 'takeProfit2'] as const) {
-        const expected = raw.analysis[key] * 0.01;
-        expect(completed.result.analysis[key]).toBe(expected);
-        expect(delivered[key]).toBe(expected);
-        expect(readback[key]).toBe(expected);
-      }
-      expect(readback.fullResponse.analysis.executiveSummary).toBe(presented);
-      expect(readback.fullResponse.analysis.reasoning).toBe(presented);
-      expect(readback.fullResponse.analysis.invalidationLevel).toBe(107.72 * 0.01);
-      expect(readback).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.06, riskRewardTp2: 1.71, errorCode: null });
-      expect(delivered.fullResponse.analysis).toMatchObject({ entryType: 'limit', entryCondition });
-      expect(readback.fullResponse.analysis).toMatchObject({ entryType: 'limit', entryCondition });
-      expect(completed.result).not.toHaveProperty('limitCondition');
-      expect(create).toHaveBeenCalledTimes(1);
-    } finally {
-      keys.forEach((key, i) => { if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i]; });
-    }
-  });
 
   it('returns the persisted safe code on a failed analysis and tolerates old rows', async () => {
     const row = {
@@ -497,7 +410,6 @@ describe('AiService access enforcement', () => {
     prisma.analysis.findFirst.mockResolvedValue(row);
     (service as any).getSignedImageUrl = jest.fn().mockResolvedValue(null);
     (service as any).getOutcomeById = jest.fn().mockResolvedValue(null);
-    (service as any).getCalibration = jest.fn().mockResolvedValue({ sampleSize: 0, winRate: null });
 
     expect((await service.getAnalysis(row.id, 'usr_1')).errorCode).toBe('openai_rate_limit');
     prisma.analysis.findFirst.mockResolvedValue({ ...row, errorCode: null });
@@ -514,7 +426,6 @@ describe('AiService access enforcement', () => {
     };
     (service as any).getSignedImageUrl = jest.fn().mockResolvedValue(null);
     (service as any).getOutcomeById = jest.fn().mockResolvedValue({ outcome: 'stop', pnlPercent: null, pnlAmount: null });
-    (service as any).getCalibration = jest.fn().mockResolvedValue({ sampleSize: 0, winRate: null });
 
     prisma.analysis.findFirst.mockResolvedValue({
       ...base, outcome: 'WIN', outcomeDetail: { entry: 4150, stopLoss: 4140, takeProfit1: 4170, tp2Hit: true },
@@ -723,7 +634,7 @@ describe('AiService access enforcement', () => {
     expect(ticksService.refundTicks).toHaveBeenCalledWith(
       'usr_1', 1, 'Refund: analysis failed', 'an_1',
     );
-    expect(promptBuilder.buildPromptByVersion).not.toHaveBeenCalled();
+    expect((service as any).aiAdapter.analyzeImage).not.toHaveBeenCalled();
   });
 
   // ── listAnalyses: paginacao ──────────────────────────────────────────────────
@@ -1190,7 +1101,7 @@ describe('AiService access enforcement', () => {
     it('extensao: grava o clientContext na analise criada e marca source no evento', async () => {
       const context = { source: 'extension' as const, platform: 'tradingview', chartSymbol: 'FX:EURJPY', chartTimeframe: '5m' };
 
-      await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, undefined, 'quick', 'en', [], context);
+      await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, 'quick', 'en', [], context);
       await flush();
 
       expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
@@ -1223,14 +1134,14 @@ describe('AiService access enforcement', () => {
       prisma.$executeRaw = jest.fn().mockRejectedValue(new Error('column missing'));
 
       await expect(
-        service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, undefined, 'quick', 'en', [], { source: 'extension' }),
+        service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, 'quick', 'en', [], { source: 'extension' }),
       ).resolves.toMatchObject({ id: 'an_1' });
     });
 
     it('coluna indisponivel no boot: nem tenta gravar', async () => {
       (service as any).clientContextReady = false;
 
-      await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, undefined, 'quick', 'en', [], { source: 'extension' });
+      await service.createAnalysis('usr_1', undefined, VALID_PNG_DATA_URL, 'quick', 'en', [], { source: 'extension' });
 
       expect(prisma.$executeRaw).not.toHaveBeenCalled();
     });
@@ -1475,52 +1386,6 @@ describe('AiService pipeline hooks', () => {
     expect(blockingHook).toHaveBeenCalledTimes(1);
     expect(neverHook).not.toHaveBeenCalled();
   });
-});
-
-describe('PromptBuilderService', () => {
-  it('uses override directly without DB lookup', async () => {
-    const { PromptBuilderService } = await import('../prompt/prompt-builder.service');
-
-    const prisma = { promptConfig: { findFirst: jest.fn(), findUnique: jest.fn() } };
-    const builder = new PromptBuilderService(prisma as any);
-
-    const result = await builder.buildPromptByVersion('quick', undefined, 'custom override prompt');
-
-    expect(result).toContain('custom override prompt');
-    expect(result).toContain('Seja determinístico');
-    expect(prisma.promptConfig.findFirst).not.toHaveBeenCalled();
-  });
-
-  it('falls back to TRADING_SYSTEM_PROMPT when no active config', async () => {
-    const { PromptBuilderService } = await import('../prompt/prompt-builder.service');
-    const { TRADING_SYSTEM_PROMPT } = await import('../../common/prompts/trading-system-prompt');
-
-    const prisma = {
-      promptConfig: { findFirst: jest.fn().mockResolvedValue(null), findUnique: jest.fn() },
-    };
-    const builder = new PromptBuilderService(prisma as any);
-
-    const result = await builder.buildPromptByVersion('quick');
-
-    // O padrao (/try e scripts) normaliza (trim) o prompt base, então comparamos sem o espaço inicial.
-    expect(result).toContain(TRADING_SYSTEM_PROMPT.trim().slice(0, 40));
-    expect(result).toContain('Seja determinístico');
-  });
-
-  it('does not double-append consistency instruction', async () => {
-    const { PromptBuilderService } = await import('../prompt/prompt-builder.service');
-
-    const prisma = { promptConfig: { findFirst: jest.fn(), findUnique: jest.fn() } };
-    const builder = new PromptBuilderService(prisma as any);
-
-    const alreadyHasInstruction =
-      'My prompt\n\nSeja determinístico. Para o mesmo gráfico, sempre gere a mesma análise.';
-    const result = await builder.buildPromptByVersion('quick', undefined, alreadyHasInstruction);
-
-    const occurrences = (result.match(/Seja determinístico/g) || []).length;
-    expect(occurrences).toBe(1);
-  });
-
 });
 
 describe('AIAnalysisError static helpers', () => {

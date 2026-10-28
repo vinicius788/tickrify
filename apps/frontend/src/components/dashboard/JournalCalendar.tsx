@@ -20,7 +20,7 @@ import TradeNoteDialog from '@/components/dashboard/TradeNoteDialog';
 import { isEmptyTradeNote, type TradeNote } from '@/lib/trade-note';
 import { useAPIClient, type AIAnalysisResponse } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { getRecommendationMeta } from '@/lib/trading-ui';
+import { getRecommendationMeta, resolveSignalState, signalStateTone } from '@/lib/trading-ui';
 import { VERDICT_CFG, isTradeCall, verdictFromOutcome, type Verdict } from '@/lib/verdict';
 import { buildMonthGrid, computeAiComparison, computeMonthStats, type AiComparison, dayKey, monthRange, summarizeByDay, weekStartFor, type GroupRow, type MonthStats } from '@/lib/journal';
 
@@ -501,7 +501,8 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                       ) : (
                         <div className="divide-y divide-[var(--border-subtle)]">
                           {selectedDay.items.map((a) => {
-                            const meta = getRecommendationMeta(a.recommendation);
+                            const state = resolveSignalState(a.signalState, a.recommendation);
+                            const stateTone = signalStateTone(state, a.recommendation);
                             const verdict = verdictOf(a);
                             const vcfg = verdict ? VERDICT_CFG[verdict] : null;
                             const pnl = verdict === 'TP1' || verdict === 'TP2' || verdict === 'SL' ? pnlOf(a) : null;
@@ -510,9 +511,9 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                             const title = `${symbol}${timeframe ? ` · ${timeframe}` : ''}`;
                             const imageUrl = typeof a.imageUrl === 'string' && a.imageUrl.trim() ? a.imageUrl : null;
                             const broken = brokenImages[a.id] === true;
-                            const signalClass = meta.tone === 'buy'
+                            const signalClass = stateTone === 'buy'
                               ? 'bg-[var(--signal-buy-bg)] border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
-                              : meta.tone === 'sell'
+                              : stateTone === 'sell'
                                 ? 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
                                 : 'bg-[var(--signal-hold-bg)] border-[var(--signal-hold-border)] text-[var(--signal-hold)]';
                             return (
@@ -553,8 +554,8 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                         {timeframe}
                                       </span>
                                     )}
-                                    <Badge variant="outline" className={`border text-[10px] font-bold tracking-widest ${signalClass}`}>
-                                      {meta.label}
+                                    <Badge variant="outline" className={`border text-[10px] font-bold uppercase tracking-widest ${signalClass}`}>
+                                      {t.analysis.states[state]}
                                     </Badge>
                                   </div>
                                   <span className="font-terminal text-[10px] text-[var(--text-secondary)]">

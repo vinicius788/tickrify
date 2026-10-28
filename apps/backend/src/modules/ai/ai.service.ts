@@ -1,5 +1,4 @@
 import { logObservation, safeObserve } from '../../common/utils/analysis-observation';
-import { flagNumber } from '../../common/flags/feature-flags';
 import {
   sanitizeStrategyProfile,
   strategyFitFields,
@@ -26,14 +25,14 @@ import { trackUserActivity } from '../../common/analytics/user-activity';
 import { AIAdapter, AIAnalysisError } from './ai.adapter';
 import { resolveModel } from './openai-params';
 import { recordProviderComparison } from './vision-model';
-import { TRADING_SYSTEM_PROMPT_V9 } from '../../common/prompts/trading-system-prompt-v9';
 import { UploadedFile } from '../../common/interfaces/multer';
-import { PromptBuilderService } from '../prompt/prompt-builder.service';
+import { buildAnalysisPrompt } from '../prompt/prompt-builder.service';
 import {
   buildPersistedAnalysisPayload,
   normalizeStoredAnalysis,
   NormalizedPersistedAnalysis,
 } from '../../common/utils/analysis-payload';
+import { storedSignalState } from '../../common/utils/signal-decision';
 import {
   normalizeBias,
   normalizeConfidence,
@@ -76,47 +75,12 @@ import {
   runPostHooks,
 } from './analysis-pipeline';
 import { buildEngineRecord, type AnalysisIntakeTimings } from './engine-contract';
+import { registerCandleStore } from '../market/candle-store';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
 
 type ApiAnalysisStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
-
-/**
- * A/B DE PROMPT EM PRODUÇÃO — a medição que não custa API.
- *
- * Por que existe: o backtest usa gráficos renderizados (matplotlib, sem
- * indicador, sem desenho, resolução uniforme). O usuário manda print do
- * TradingView. A limitação nº 1 do próprio relatório de backtest é justamente
- * essa: "gráfico renderizado ≠ print real de usuário". Já existe em produção o
- * sweeper que 48h depois mede TP1-antes-do-SL nos candles reais — então basta
- * marcar QUAL prompt gerou cada análise para a produção medir o A/B sozinha,
- * com print de verdade e sem gastar um centavo em teste.
- *
- * Como ligar: AB_PROMPT_V9_PERCENT=20 no env → ~20% dos usuários recebem o v9.
- * Default 0 (desligado). Qualquer valor fora de 0-100 é tratado como 0.
- *
- * Determinístico POR USUÁRIO, não por análise: o mesmo usuário fica sempre no
- * mesmo lado. Se sorteássemos por análise, o mesmo print poderia dar leituras
- * diferentes em dois cliques — e nos modelos GPT-5 não existe mais controle de
- * temperatura para atenuar isso (temperature é forçada em 1).
- *
- * promptVer = -9 marca a perna B. Negativo de propósito: nunca colide com uma
- * versão real de PromptConfig, e o /accuracy corta por esse valor.
- */
-export const AB_V9_PROMPT_VER = -9;
-
-export function resolveAbPromptVariant(userId: string): 'A' | 'B' {
-  const pct = flagNumber('AB_PROMPT_V9_PERCENT');
-  if (!Number.isFinite(pct) || pct <= 0 || pct > 100) return 'A';
-  // Hash estável (FNV-1a): mesmo userId → sempre o mesmo bucket, sem estado.
-  let h = 2166136261;
-  for (let i = 0; i < userId.length; i++) {
-    h ^= userId.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (Math.abs(h) % 100) < pct ? 'B' : 'A';
-}
 
 export type TradeNote = { note: string | null; setup: string | null; emotion: string | null; mistakes: string[] };
 
@@ -179,7 +143,6 @@ export class AiService implements OnModuleInit {
     private prisma: PrismaService,
     private aiAdapter: AIAdapter,
     private ticksService: TicksService,
-    private promptBuilder: PromptBuilderService,
     private stripeService: StripeService,
     private mailService: MailService,
     private setups: SetupsService,
@@ -324,6 +287,8 @@ export class AiService implements OnModuleInit {
     } catch (err) {
       this.logger.warn(`[telemetry] Colunas de telemetria indisponiveis: ${err instanceof Error ? err.message : err}`);
     }
+    // Armazem de velas (REAL DATA): o caminho sincrono e o /try tambem usam.
+    await registerCandleStore(this.prisma, (m) => this.logger.log(m));
   }
 
   /** Grava a origem da analise. Nunca lanca: sem a marcacao, a analise segue igual. */
@@ -443,7 +408,6 @@ export class AiService implements OnModuleInit {
     userId: string,
     imageFile?: UploadedFile,
     base64Image?: string,
-    promptOverride?: string,
     analysisType: AnalysisType = 'quick',
     userLanguage?: string,
     htfBase64Images?: string[],
@@ -507,12 +471,6 @@ export class AiService implements OnModuleInit {
       });
     }
 
-    // A/B de prompt em produção: fração determinística dos usuários recebe o v9.
-    // Desligado por default (AB_PROMPT_V9_PERCENT ausente ou 0).
-    const abVariant = promptOverride ? 'A' : resolveAbPromptVariant(userId);
-    const effectivePromptOverride =
-      promptOverride ?? (abVariant === 'B' ? TRADING_SYSTEM_PROMPT_V9 : undefined);
-
     // Paraleliza: upload da imagem + busca da versão do prompt ao mesmo tempo
     const [imageUrl, promptVersion] = await Promise.all([
       (async (): Promise<string> => {
@@ -540,10 +498,7 @@ export class AiService implements OnModuleInit {
         }
       })(),
       (async (): Promise<number | undefined> => {
-        if (promptOverride) return undefined;
-        // Perna B marcada com o sentinela negativo — é assim que o /accuracy
-        // separa v9 de v7.3 sem precisar de tabela nova.
-        if (abVariant === 'B') return AB_V9_PROMPT_VER;
+        // Numero da versao do prompt do codigo (PromptSyncService registra no boot).
         const latestPrompt = await this.prisma.promptConfig.findFirst({
           where: { isActive: true },
           orderBy: { version: 'desc' },
@@ -628,8 +583,6 @@ export class AiService implements OnModuleInit {
         analysisId: analysis.id,
         imageUrl,
         htfImageUrls,
-        promptOverride: effectivePromptOverride,
-        promptVersion,
         userId,
         analysisType: normalizedAnalysisType,
         isDemo,
@@ -657,8 +610,6 @@ export class AiService implements OnModuleInit {
       analysisId: analysis.id,
       imageUrl,
       htfImageUrls,
-      promptOverride: effectivePromptOverride,
-      promptVersion,
       userId,
       analysisType: normalizedAnalysisType,
       userLanguage,
@@ -698,10 +649,6 @@ export class AiService implements OnModuleInit {
     // container de 0.1 CPU. O polling competia por CPU com a analise que ele
     // estava esperando terminar. Quanto mais o usuario esperava, mais poll, e
     // mais lento o worker ficava.
-    //
-    // O `getCalibration` ja tinha short-circuit por acidente
-    // (`normalizeRecommendation(null)` devolve 'WAIT'), entao ele nunca foi o
-    // problema. As duas chamadas acima eram.
     const apiStatus = this.toApiStatus(analysis.status);
     if (apiStatus === 'pending' || apiStatus === 'processing') {
       return this.serializePendingAnalysis(analysis.id, apiStatus, analysis);
@@ -711,13 +658,7 @@ export class AiService implements OnModuleInit {
     const readable = await this.readableAnalysisIds(userId);
     if (readable && !readable.includes(analysis.id)) throw this.freeLockedError();
 
-    const serialized = await this.serializeAnalysis(analysis);
-    const calibration = await this.getCalibration(
-      userId,
-      serialized.recommendation,
-      serialized.confidence,
-    );
-    return { ...serialized, calibration };
+    return this.serializeAnalysis(analysis);
   }
 
   /**
@@ -923,6 +864,7 @@ export class AiService implements OnModuleInit {
           imageUrl: signedImageUrl,
           status: this.toApiStatus(analysis.status),
           recommendation,
+          signalState: storedSignalState(fullResponse, recommendation),
           bias,
           confidence,
           symbol,
@@ -1105,59 +1047,6 @@ export class AiService implements OnModuleInit {
     return { profile };
   }
 
-  /** Estatísticas de performance do usuário (win rate, R:R médio, contagens). */
-  /**
-   * #2 — Calibração: taxa de acerto histórica de setups SEMELHANTES (mesma direção +
-   * faixa de confiança parecida), a partir dos resultados registrados pelo usuário.
-   * Transforma a confiança da IA em prova com dados. Nunca lança.
-   */
-  async getCalibration(
-    userId: string,
-    recommendation: string | null | undefined,
-    confidence: number | null | undefined,
-  ): Promise<{ sampleSize: number; winRate: number | null }> {
-    const rec = normalizeRecommendation(recommendation);
-    if (rec === 'WAIT') {
-      return { sampleSize: 0, winRate: null };
-    }
-
-    const outcomesMap = await this.getOutcomesMap(userId);
-    if (outcomesMap.size === 0) {
-      return { sampleSize: 0, winRate: null };
-    }
-
-    const analyses = await this.prisma.analysis.findMany({
-      where: { userId, status: 'completed' },
-      orderBy: { createdAt: 'desc' },
-      take: 1000,
-      select: { id: true, confidence: true, recommendation: true },
-    });
-
-    let wins = 0;
-    let losses = 0;
-    for (const a of analyses) {
-      if (normalizeRecommendation(a.recommendation) !== rec) continue;
-      const outcome = outcomesMap.get(a.id)?.outcome;
-      if (outcome !== 'tp1' && outcome !== 'tp2' && outcome !== 'stop') continue;
-      // Faixa de confiança parecida (±12 pontos), quando ambos disponíveis.
-      if (
-        confidence != null &&
-        a.confidence != null &&
-        Math.abs(a.confidence - confidence) > 12
-      ) {
-        continue;
-      }
-      if (outcome === 'stop') losses += 1;
-      else wins += 1;
-    }
-
-    const decided = wins + losses;
-    return {
-      sampleSize: decided,
-      winRate: decided > 0 ? Math.round((wins / decided) * 100) : null,
-    };
-  }
-
   async getUsage(userId: string, trialContext: { ip?: string | null; timezone?: string | null } = {}) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -1285,8 +1174,6 @@ export class AiService implements OnModuleInit {
     analysisId: string;
     imageUrl: string;
     htfImageUrls?: string[];
-    promptOverride?: string;
-    promptVersion?: number;
     userId: string;
     analysisType: AnalysisType;
     userLanguage?: string;
@@ -1299,8 +1186,6 @@ export class AiService implements OnModuleInit {
       analysisId,
       imageUrl,
       htfImageUrls,
-      promptOverride,
-      promptVersion,
       userId,
       analysisType,
       userLanguage,
@@ -1325,14 +1210,8 @@ export class AiService implements OnModuleInit {
       await runPreHooks(pipelineCtx, [validateImageHook()]);
 
       const tPrompt = Date.now();
-      // Sem a "CONSISTENCIA OBRIGATORIA", igual ao worker (D1, 19/10/2026).
-      const prompt = await this.promptBuilder.buildPromptByVersion(
-        analysisType,
-        promptVersion,
-        promptOverride,
-        userLanguage,
-        { consistency: false },
-      );
+      // Mesmo montador do worker (prompt-builder.service.ts).
+      const prompt = buildAnalysisPrompt({ userLanguage, analysisType });
       const promptMs = Date.now() - tPrompt;
       const aiResponse = await this.aiAdapter.analyzeImage(
         imageUrl,
@@ -1348,6 +1227,8 @@ export class AiService implements OnModuleInit {
       const analysisFields = (aiResponse.analysis ?? {}) as Record<string, unknown>;
       const engine = buildEngineRecord({
         provider: meta?.provider ?? null,
+        signalState: aiResponse.signalState,
+        dataMode: aiResponse.dataMode === 'real_data' ? 'real_data' : 'print',
         contract: {
           recommendation: aiResponse.recommendation,
           confidencePct: aiResponse.confidence,
@@ -1963,7 +1844,6 @@ export class AiService implements OnModuleInit {
       errorCode: null,
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
-      calibration: { sampleSize: 0, winRate: null as number | null },
     };
   }
 

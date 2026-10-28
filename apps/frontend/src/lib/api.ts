@@ -172,6 +172,8 @@ export interface AIAnalysisResponse {
   id: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   recommendation?: Recommendation;
+  /** Estado do copiloto (v10.3); nas listas vem no topo, na analise aberta em `fullResponse`. */
+  signalState?: SignalState;
   bias?: Bias;
   confidence?: number;
   symbol?: string | null;
@@ -208,6 +210,10 @@ export interface AIAnalysisResponse {
   drawing_failed?: boolean;
   fullResponse?: {
     recommendation: Recommendation;
+    signalState?: SignalState;
+    watchPlan?: WatchPlan | null;
+    /** De onde sairam os niveis: velas reais ou estimados do print. Analise antiga: null. */
+    dataMode?: 'real_data' | 'print' | null;
     bias: Bias;
     confidence: number;
     reasoning: string;
@@ -263,6 +269,21 @@ export interface AIAnalysisResponse {
   isDemo?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export type SignalState = 'NO_TRADE' | 'WATCH' | 'ARMED' | 'ENTER_NOW';
+
+/** Plano do WATCH (v10.1): o codigo calcula entrada e stop quando a vela de gatilho fechar. */
+export interface WatchPlan {
+  direction: 'long' | 'short';
+  triggerType: 'zone_reaction' | 'sweep_reclaim' | 'breakout_close';
+  zoneLow: number;
+  zoneHigh: number;
+  invalidation: number;
+  target1: number;
+  target2: number | null;
+  validForCandles: number;
+  trigger: string;
 }
 
 export interface CreateAnalysisPayload {

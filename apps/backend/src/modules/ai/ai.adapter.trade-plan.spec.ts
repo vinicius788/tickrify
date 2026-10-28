@@ -1,5 +1,6 @@
 import { createHash } from 'crypto';
 import { __setTwelveDataForTests } from '../market/twelve-data';
+import { normalizeTimeframe } from '../market/candle-store';
 import { AIAdapter, buildRealDataBlock, buildEventMapLines, classifyRawCurrentPrice, logNewsGuardStatus } from './ai.adapter';
 import { FallbackVisionModel, OpenAiVisionModel, type VisionModel } from './vision-model';
 
@@ -12,12 +13,36 @@ function withFakeOpenAi(adapter: AIAdapter, create: jest.Mock): void {
   );
 }
 
-const responseFor = (takeProfit1: number, extra: Record<string, unknown> = {}) => ({
+// v10.3: o plano do modelo e uma compra na zona 99-99,5. Com `withRealCandles`
+// o preco real fica a menos de 0,75 ATR da borda e o BUY fica (limit na borda,
+// stop pela invalidacao); sem velas reais o BUY vira WATCH (niveis sem conferencia).
+const PLAN = {
+  direction: 'long', triggerType: 'zone_reaction', zoneLow: 99, zoneHigh: 99.5, invalidation: 98.8,
+  target1: 101.5, target2: 103, validForCandles: 16, trigger: 'Bullish close in the top third at 99-99.5',
+};
+const STEP = 1_800_000;
+const CHECKLIST = 'C1 PASS: 4h up; C2 PASS: discount; C3 PASS: pullback; C4 PASS: buyers; C5 FAIL: retested; C6 PASS: 0.5 ATR; C7 PASS: room. 6/7';
+
+function withRealCandles(adapter: AIAdapter): void {
+  const a = adapter as any;
+  // 30 velas de range 1 perto da zona e a vela que ainda se forma (ATR ~1).
+  const bars = Array.from({ length: 30 }, (_, i) => [i * STEP, 100.4, 100.9, 99.9, 100.4, 0]);
+  bars.push([30 * STEP, 99.6, 100, 99.2, 99.95, 0], [31 * STEP, 99.95, 100, 99.9, 99.95, 0]);
+  a.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
+  a.fetchCandles = jest.fn(async (_symbol: string, interval: string) => ({ candles: interval === '4h' ? null : bars, source: 'binance', denied: null }));
+  a.buildCryptoEnrichment = jest.fn().mockResolvedValue(null);
+  a.detectStaleChart = jest.fn().mockReturnValue(null);
+  a.nowMs = () => 31 * STEP + 60_000;
+}
+
+const responseFor = (takeProfit1: number, extra: Record<string, unknown> = {}, top: Record<string, unknown> = {}) => ({
   model: 'gpt-5.6-luna',
   choices: [{
     finish_reason: 'stop',
     message: { content: JSON.stringify({
       is_financial_chart: true,
+      signalState: 'ARMED',
+      watchPlan: PLAN,
       recommendation: 'BUY',
       confidence: 70,
       analysis: {
@@ -25,23 +50,24 @@ const responseFor = (takeProfit1: number, extra: Record<string, unknown> = {}) =
         entry: 100, stopLoss: 95, takeProfit1, takeProfit2: 120,
         marketStructure: { bias: 'bullish' },
         trendStrength: 'moderate', factorsPresent: 6,
+        structureValidation: CHECKLIST,
         ...extra,
       },
+      ...top,
     }) },
   }],
 });
 
 describe('AIAdapter trade-plan integrity', () => {
-  const oldGrounding = process.env.ENABLE_QUICK_GROUNDING;
   const oldNews = process.env.ENABLE_NEWS_GUARD;
 
   beforeEach(() => {
-    process.env.ENABLE_QUICK_GROUNDING = 'false';
+    // Sem simbolo lido: sem REAL DATA e sem a chamada extra de leitura do simbolo.
+    jest.spyOn(AIAdapter.prototype as any, 'extractSymbol').mockResolvedValue(null);
     process.env.ENABLE_NEWS_GUARD = 'false';
   });
+  afterEach(() => jest.restoreAllMocks());
   afterAll(() => {
-    if (oldGrounding === undefined) delete process.env.ENABLE_QUICK_GROUNDING;
-    else process.env.ENABLE_QUICK_GROUNDING = oldGrounding;
     if (oldNews === undefined) delete process.env.ENABLE_NEWS_GUARD;
     else process.env.ENABLE_NEWS_GUARD = oldNews;
   });
@@ -62,11 +88,11 @@ describe('AIAdapter trade-plan integrity', () => {
       .mockResolvedValueOnce(responseFor(90))
       .mockResolvedValueOnce(responseFor(110));
     withFakeOpenAi(adapter, create);
+    withRealCandles(adapter);
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(create).toHaveBeenCalledTimes(2);
     expect(result.recommendation).toBe('BUY');
-    expect(result.analysis?.takeProfit1).toBe(110);
     expect(result.engineMeta?.provider).toBe('openai');
   });
 
@@ -85,38 +111,80 @@ describe('AIAdapter trade-plan integrity', () => {
     const broken = { model: 'gpt-5.6-luna', choices: [{ finish_reason: 'stop', message: { content: 'not json' } }] };
     const create = jest.fn().mockResolvedValueOnce(broken).mockResolvedValueOnce(responseFor(110));
     withFakeOpenAi(adapter, create);
+    withRealCandles(adapter);
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(create).toHaveBeenCalledTimes(2);
     expect(result.recommendation).toBe('BUY');
   });
 
+  it('v10.3: limit na borda da zona e stop pela invalidacao, nao os niveis do modelo', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
+    withRealCandles(adapter);
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ARMED', watchPlan: PLAN, dataMode: 'real_data' });
+    expect(result.analysis?.entryType).toBe('limit');
+    expect(result.analysis?.entry).toBe(99.5);
+    expect(result.analysis?.stopLoss).toBeCloseTo(98.55, 1);
+    expect(result.analysis?.takeProfit1).toBeCloseTo(100.93, 1);
+    expect(result.analysis?.takeProfit2).toBe(103);
+  });
+
+  it('v10.3: C3 em FAIL no checklist: NO_TRADE', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { structureValidation: CHECKLIST.replace('C3 PASS', 'C3 FAIL') })));
+    withRealCandles(adapter);
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'NO_TRADE' });
+    expect(result.engineMeta?.validatorReasons).toEqual(['required_check_failed']);
+  });
+
+  it('v10.3: sem velas reais o BUY fica com os niveis do modelo, medido em R, e dataMode print', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ARMED', watchPlan: PLAN, dataMode: 'print' });
+    expect(result.engineMeta?.validatorReasons).toEqual([]);
+    expect(result.analysis?.entry).toBe(100);
+    expect(result.analysis?.stopLoss).toBe(95);
+  });
+
   it.each([
-    [15533.4, 1.67, 'BUY', true],
-    [15532.4, 1.11, 'WAIT', true],
-    [15532.56, 1.2, 'BUY', true],
-    [15532.4, 1.11, 'BUY', false],
-  ] as const)('keeps scaled R and the existing guard: TP2=%s, R2=%s, decision=%s, guard=%s', async (takeProfit2, r2, decision, enabled) => {
+    [101.5, 103, 'BUY', true],
+    [100.7, null, 'WAIT', true],
+    [100.7, null, 'BUY', false],
+  ] as const)('R:R ate o alvo final: target1=%s, target2=%s, decisao=%s, guard=%s', async (target1, target2, decision, enabled) => {
     const oldRr = process.env.ENABLE_RR_GUARD;
     process.env.ENABLE_RR_GUARD = String(enabled);
     try {
       const adapter = new AIAdapter();
-      const create = jest.fn().mockResolvedValue(responseFor(15531.6, {
-        symbol: 'USDJPY', currentPrice: 15531.8, entry: 15530.4, stopLoss: 15528.6, takeProfit2,
-      }));
-      withFakeOpenAi(adapter, create);
+      withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, {}, { watchPlan: { ...PLAN, target1, target2 } })));
+      withRealCandles(adapter);
       const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-      expect(create).toHaveBeenCalledTimes(1);
-      expect(result.analysis?.entry).toBe(15530.4 * 0.01);
-      expect(result.analysis?.stopLoss).toBe(15528.6 * 0.01);
-      expect(result.analysis?.riskRewardTp1).toBe(0.67);
-      expect(result.analysis?.riskRewardTp2).toBe(r2);
       expect(result.recommendation).toBe(decision);
-      if (decision === 'WAIT') expect(result.confidence).toBeLessThanOrEqual(45);
+      if (decision === 'WAIT') {
+        expect(result.signalState).toBe('NO_TRADE');
+        expect(result.engineMeta?.validatorReasons).toEqual(['rr_tp2_below_min']);
+        expect(result.confidence).toBeLessThanOrEqual(49);
+      }
     } finally {
       if (oldRr === undefined) delete process.env.ENABLE_RR_GUARD;
       else process.env.ENABLE_RR_GUARD = oldRr;
     }
+  });
+
+  it('watchPlan do modelo: ordem de grandeza corrigida e validade dentro de 6 a 24 velas', async () => {
+    const adapter = new AIAdapter();
+    const scaled = { ...PLAN, zoneLow: 9900, zoneHigh: 9950, invalidation: 9880, target1: 10150, target2: 10300, validForCandles: 40 };
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { symbol: 'USDJPY', currentPrice: 15530.6, entry: 15530.4, stopLoss: 15528.6, takeProfit1: 15531.6, takeProfit2: 15533.4 }, {
+      signalState: 'WATCH', recommendation: 'HOLD', watchPlan: { ...scaled, zoneLow: 15529, zoneHigh: 15529.5, invalidation: 15528.8, target1: 15531.5, target2: 15533 },
+    })));
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result.signalState).toBe('WATCH');
+    expect(result.watchPlan?.zoneLow).toBeCloseTo(155.29);
+    expect(result.watchPlan?.target2).toBeCloseTo(155.33);
+    expect(result.watchPlan?.validForCandles).toBe(24);
   });
 
   it.each(['HOLD', 'BUY', 'BROKEN_BUY'])('rejects a non-chart %s before confidence floors or plan retries', async (kind) => {
@@ -146,11 +214,10 @@ describe('AIAdapter trade-plan integrity', () => {
     const adapter = new AIAdapter();
     const create = jest.fn().mockResolvedValue(response);
     withFakeOpenAi(adapter, create);
+    withRealCandles(adapter);
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(create).toHaveBeenCalledTimes(1);
     expect(result.recommendation).toBe('BUY');
-    expect(result.analysis?.entry).toBe(100);
-    expect(result.analysis?.riskRewardTp2).toBe(4);
     if (value === true) expect(result.rawResponse).toHaveProperty('is_financial_chart', true);
     else expect(result.rawResponse).not.toHaveProperty('is_financial_chart');
   });
@@ -158,11 +225,12 @@ describe('AIAdapter trade-plan integrity', () => {
   it('preserves a coherent BUY plan', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
+    withRealCandles(adapter);
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(result.recommendation).toBe('BUY');
-    expect(result.analysis?.riskRewardTp1).toBe(2);
-    expect(result.analysis?.riskRewardTp2).toBe(4);
+    expect(result.analysis?.riskRewardTp1).toBeCloseTo(1.5, 1);
+    expect(result.analysis?.riskRewardTp2).toBeCloseTo(3.7, 1);
     expect(result.engineMeta?.validatorAction).toBe('none');
     expect(result.engineMeta?.modelMs).toBeGreaterThanOrEqual(0);
   });
@@ -170,6 +238,7 @@ describe('AIAdapter trade-plan integrity', () => {
   it('keeps a BUY whose stop sits before the invalidation level and only flags it (measure-only rule)', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { invalidationLevel: 94 })));
+    withRealCandles(adapter);
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(result.recommendation).toBe('BUY');
@@ -180,82 +249,8 @@ describe('AIAdapter trade-plan integrity', () => {
     });
   });
 
-  // Guard de cripto (19/10/2026): mesma resposta, so muda o simbolo e a chave.
-  describe('ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD pelo adapter', () => {
-    const condition = 'Place a buy limit at 100 only after a sweep/reclaim of 99; no reclaim, no trade.';
-    const saved = process.env.ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD;
-    afterEach(() => {
-      if (saved === undefined) delete process.env.ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD;
-      else process.env.ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD = saved;
-    });
-    // Precos realistas por ativo: com 100 a correcao de ordem de grandeza mexeria nos niveis.
-    const base: Record<string, number> = { BTCUSDT: 84600, BTCUSDm: 84600, ETHUSD: 4000, XAUUSD: 4200, XAUUSDm: 4200, EURUSD: 1.16, EURUSDm: 1.16, US500: 6600 };
-    const plan = (symbol: string) => {
-      const p = base[symbol];
-      return { currentPrice: p * 1.002, entry: p, stopLoss: p * 0.99, takeProfit2: p * 1.04, invalidationLevel: p * 0.991, tp1: p * 1.02 };
-    };
-    const run = async (symbol: string, key: string | undefined, entryCondition = condition) => {
-      if (key === undefined) delete process.env.ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD;
-      else process.env.ENABLE_CRYPTO_CONFIRMATION_LIMIT_GUARD = key;
-      const { tp1, ...levels } = plan(symbol);
-      const adapter = new AIAdapter();
-      withFakeOpenAi(adapter, jest.fn().mockResolvedValue(
-        responseFor(tp1, { symbol, ...levels, entryType: 'limit', entryCondition }),
-      ));
-      return adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-    };
-    const shape = (r: any) => ({
-      recommendation: r.recommendation, confidence: r.confidence,
-      levels: [r.analysis?.entry, r.analysis?.stopLoss, r.analysis?.takeProfit1, r.analysis?.takeProfit2],
-      action: r.engineMeta?.validatorAction, reasons: r.engineMeta?.validatorReasons, flags: r.engineMeta?.validatorFlags,
-    });
-
-    it('desligada ou valor invalido: cripto igual a hoje (BUY, so a marca)', async () => {
-      for (const key of [undefined, 'false', 'sim']) {
-        expect(shape(await run('BTCUSDT', key))).toMatchObject({
-          recommendation: 'BUY', action: 'none', reasons: [], flags: ['limit_needs_confirmation'],
-        });
-      }
-    });
-
-    it('BTCUSDm (Exness): desligada igual a hoje, ligada vira WAIT', async () => {
-      expect(shape(await run('BTCUSDm', undefined))).toMatchObject({ recommendation: 'BUY', action: 'none', flags: ['limit_needs_confirmation'] });
-      expect(shape(await run('BTCUSDm', 'true'))).toMatchObject({ recommendation: 'WAIT', action: 'downgraded', reasons: ['limit_needs_confirmation'] });
-    });
-
-    it('ligada: cripto vira WAIT com os niveis mantidos e o motivo gravado', async () => {
-      const r = shape(await run('BTCUSDT', 'true'));
-      expect(r).toMatchObject({
-        recommendation: 'WAIT', action: 'downgraded', reasons: ['limit_needs_confirmation'], flags: [],
-        levels: [84600, 84600 * 0.99, 84600 * 1.02, 84600 * 1.04],
-      });
-      expect(r.confidence).toBeLessThanOrEqual(45);
-    });
-
-    it('ligada: ouro, forex e indice saem identicos a chave desligada', async () => {
-      for (const symbol of ['XAUUSD', 'XAUUSDm', 'EURUSD', 'EURUSDm', 'US500']) {
-        expect(shape(await run(symbol, 'true'))).toEqual(shape(await run(symbol, undefined)));
-        expect(shape(await run(symbol, 'true')).recommendation).toBe('BUY');
-      }
-    });
-
-    it('rollback: ligar e desligar no mesmo processo volta ao resultado de hoje', async () => {
-      const before = shape(await run('ETHUSD', undefined));
-      expect(shape(await run('ETHUSD', 'true')).recommendation).toBe('WAIT');
-      expect(shape(await run('ETHUSD', 'false'))).toEqual(before);
-    });
-
-    it('cripto sem a frase de confirmacao nao muda com a chave ligada', async () => {
-      const plain = 'Place a buy limit at 84600 inside the bullish OB; no fill, no trade.';
-      const r = shape(await run('BTCUSDT', 'true', plain));
-      expect(r).toMatchObject({ recommendation: 'BUY', action: 'none', flags: [] });
-      expect(r).toEqual(shape(await run('BTCUSDT', undefined, plain)));
-    });
-  });
-
-  // Respostas reais do luna (19/10/2026): percentual do stop com sinal trocado,
-  // 6 ✅ listados com "factorsPresent: 5" e limit que espera rejeicao.
-  it('recalcula percentuais e o total do checklist sem mudar o sinal, e so marca o limit com confirmacao', async () => {
+  // Resposta real do luna (19/10/2026): 6 ✅ listados com "factorsPresent: 5".
+  it('recalcula o total do checklist pela lista', async () => {
     const adapter = new AIAdapter();
     const checklist = '✅ HTF bias: bearish. ✅ Zone: premium. ✅ OB: 113800. ✅ Liquidity: swept. ' +
       '✅ BOS: confirmed. ✅ R:R: 2.3. ❌ MTF: one chart only. → 5/7 → SELL limit.';
@@ -271,36 +266,25 @@ describe('AIAdapter trade-plan integrity', () => {
           stopLossPercent: 5, takeProfit1Percent: 5, takeProfit2Percent: 20,
           marketStructure: { bias: 'bearish' }, trendStrength: 'moderate',
           factorsPresent: 5, confluenceScore: 71.43, structureValidation: checklist,
-          entryType: 'limit',
-          entryCondition: 'Place a sell limit at 100 only after a sweep and rejection; no rejection, no trade.',
+          entryType: 'stop',
         },
       }) } }],
     }));
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-    expect(result.recommendation).toBe('SELL');
-    expect(result.analysis).toMatchObject({
-      stopLossPercent: -5,
-      takeProfit1Percent: 10,
-      takeProfit2Percent: 20,
-      factorsPresent: 6,
-      confluenceScore: 85.71,
-    });
-    expect(result.engineMeta).toMatchObject({
-      validatorAction: 'none',
-      validatorReasons: [],
-      validatorFlags: ['limit_needs_confirmation'],
-    });
+    expect(result.analysis).toMatchObject({ factorsPresent: 6, confluenceScore: 85.71 });
   });
 
-  it('turns a BUY with an absurd target (extra digit) into WAIT, keeping the levels', async () => {
+  it('turns a BUY with an absurd target (extra digit) into NO_TRADE, without levels', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { takeProfit2: 1200 })));
+    withRealCandles(adapter);
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(result.recommendation).toBe('WAIT');
-    expect(result.confidence).toBeLessThanOrEqual(45);
-    expect(result.analysis?.takeProfit2).toBe(1200);
+    expect(result.signalState).toBe('NO_TRADE');
+    expect(result.confidence).toBeLessThanOrEqual(49);
+    expect(result.analysis?.takeProfit2).toBeNull();
     expect(result.engineMeta).toMatchObject({
       validatorAction: 'downgraded',
       validatorReasons: ['implausible_price'],
@@ -338,14 +322,14 @@ describe('AIAdapter trade-plan integrity', () => {
 
 // D3 (19/10/2026): caracterizacao do currentPrice no parser do adapter. Nao muda regra.
 describe('AIAdapter currentPrice no parser (caracterizacao)', () => {
-  const saved = { grounding: process.env.ENABLE_QUICK_GROUNDING, news: process.env.ENABLE_NEWS_GUARD };
+  const saved = { news: process.env.ENABLE_NEWS_GUARD };
   beforeEach(() => {
-    process.env.ENABLE_QUICK_GROUNDING = 'false';
+    // Sem simbolo lido: sem REAL DATA e sem a chamada extra de leitura do simbolo.
+    jest.spyOn(AIAdapter.prototype as any, 'extractSymbol').mockResolvedValue(null);
     process.env.ENABLE_NEWS_GUARD = 'false';
   });
+  afterEach(() => jest.restoreAllMocks());
   afterAll(() => {
-    if (saved.grounding === undefined) delete process.env.ENABLE_QUICK_GROUNDING;
-    else process.env.ENABLE_QUICK_GROUNDING = saved.grounding;
     if (saved.news === undefined) delete process.env.ENABLE_NEWS_GUARD;
     else process.env.ENABLE_NEWS_GUARD = saved.news;
   });
@@ -430,14 +414,14 @@ describe('AIAdapter currentPrice no parser (caracterizacao)', () => {
     expect(classifyRawCurrentPrice('42')).toBeNull();
   });
 
-  it('BUY coerente com preco 0 segue BUY no adapter (sem preco, a faixa plausivel nao e checada)', async () => {
+  it('BUY coerente com preco 0 nao falha no adapter (sem preco, a faixa plausivel nao e checada)', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(reply('BUY', {
       currentPrice: 0, entry: 100, stopLoss: 95, takeProfit1: 110, takeProfit2: 120,
       trendStrength: 'strong', factorsPresent: 6,
     })));
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-    expect(result.recommendation).toBe('BUY');
+    expect(result.engineMeta?.validatorReasons).not.toContain('implausible_price');
     expect(result.analysis?.currentPrice).toBe(0);
   });
 });
@@ -445,10 +429,12 @@ describe('AIAdapter currentPrice no parser (caracterizacao)', () => {
 describe('AIAdapter provider comparison (AI_COMPARE_PROVIDERS)', () => {
   const saved = { ...process.env };
   beforeEach(() => {
-    process.env.ENABLE_QUICK_GROUNDING = 'false';
+    // Sem simbolo lido: sem REAL DATA e sem a chamada extra de leitura do simbolo.
+    jest.spyOn(AIAdapter.prototype as any, 'extractSymbol').mockResolvedValue(null);
     process.env.ENABLE_NEWS_GUARD = 'false';
   });
   afterEach(() => {
+    jest.restoreAllMocks();
     process.env = { ...saved };
   });
 
@@ -467,6 +453,7 @@ describe('AIAdapter provider comparison (AI_COMPARE_PROVIDERS)', () => {
   it('runs the second provider only when the flag is on AND the caller records it', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
+    withRealCandles(adapter);
     const second = secondaryAnswering('SELL');
     (adapter as any).secondaryModel = second;
 
@@ -494,6 +481,7 @@ describe('AIAdapter provider comparison (AI_COMPARE_PROVIDERS)', () => {
     process.env.AI_COMPARE_PROVIDERS = 'true';
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
+    withRealCandles(adapter);
     (adapter as any).secondaryModel = { provider: 'x', complete: jest.fn().mockRejectedValue(new Error('down')) };
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick', [], null, { compareProviders: true });
@@ -526,13 +514,18 @@ describe('buildRealDataBlock', () => {
     const sha = (s: string) => createHash('sha256').update(s).digest('hex');
     const vol = buildRealDataBlock('XAUUSD', '1h', fixedCandles(true))!;
     const noVol = buildRealDataBlock('EURUSD', '1h', fixedCandles(false))!;
-    const legacyLabels = vol.block
+    // Rotulos documentados: volume (19/10) e o cabecalho REAL DATA do v10 (26/10).
+    const legacyHeader = (b: string) => b.replace(
+      '# REAL DATA (ground truth from the exchange feed; trust these numbers over pixel-reading)',
+      '# REAL MARKET DATA (ground truth from the exchange feed — trust these numbers over pixel-reading)',
+    );
+    const legacyLabels = legacyHeader(vol.block)
       .replace('- Volume is supplied by the feed; its unit/venue must be known before interpreting participation. It is expressed as a multiple of the 20-candle average.', '- Volume is REAL (exchange feed), expressed as a multiple of the 20-candle average.')
       .replace('POC proxy (highest bin under the uniform-range approximation, not measured trades at price)', 'POC (most traded price, a magnet)');
     expect(legacyLabels).toHaveLength(2437);
     expect(sha(legacyLabels)).toBe('11911f57b3850ab02308978d3ff1590e5334e44baf5773e9633b02594ccc7b13');
-    expect(noVol.block).toHaveLength(2061);
-    expect(sha(noVol.block)).toBe('9185ee81d30b5d0973e1fb167e1bb18e8b2184e19af9d165e68f81282568d21c');
+    expect(legacyHeader(noVol.block)).toHaveLength(2061);
+    expect(sha(legacyHeader(noVol.block))).toBe('9185ee81d30b5d0973e1fb167e1bb18e8b2184e19af9d165e68f81282568d21c');
   });
 
   it('returns the same numbers the text shows', () => {
@@ -568,7 +561,7 @@ describe('AIAdapter quick grounding stats', () => {
   function adapterWith(candles: number[][] | null, lastPrice: number | null) {
     const adapter = new AIAdapter() as any;
     adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '1H', lastPrice });
-    adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(candles);
+    adapter.fetchCandles = jest.fn().mockResolvedValue({ candles: candles, source: 'binance', denied: null });
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue(null);
     return adapter;
   }
@@ -579,7 +572,7 @@ describe('AIAdapter quick grounding stats', () => {
     const g = await adapter.buildQuickGrounding('data:image/png;base64,AA==');
     expect(g.candles).toBe('injected');
     expect(g.stats).toMatchObject({ v: 1, symbol: 'BTCUSDT', interval: '1h', coverage: 'injected' });
-    expect(g.stats.numbers).toEqual(buildRealDataBlock('BTCUSDT', '1h', candles)!.numbers);
+    expect(g.stats.numbers).toMatchObject(buildRealDataBlock('BTCUSDT', '1h', candles)!.numbers);
   });
 
   it('keeps no numbers when a stale screenshot withholds the candles', async () => {
@@ -623,7 +616,7 @@ describe('AIAdapter Deep P1 regressions', () => {
         });
         (adapter as any).buildMarketEnrichment = enrichment;
         const response = responseFor(108.02, {
-          symbol: 'EURUSD', currentPrice: 107.983, entry: 107.855, stopLoss: 107.7,
+          symbol: 'EURUSD', currentPrice: 107.88, entry: 107.855, stopLoss: 107.7,
           takeProfit2: 108.12, invalidationLevel: 107.72,
         });
         const body = JSON.parse(response.choices[0].message.content);
@@ -634,18 +627,18 @@ describe('AIAdapter Deep P1 regressions', () => {
         const pending = adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'deep');
         if (isChart) {
           const result = await pending;
-          expect(result.recommendation).toBe('BUY');
-          expect(result.analysis).toMatchObject({
-            currentPrice: 107.983 * 0.01, entry: 107.855 * 0.01, stopLoss: 107.7 * 0.01,
-            takeProfit1: 108.02 * 0.01, takeProfit2: 108.12 * 0.01, invalidationLevel: 107.72 * 0.01,
-            riskRewardTp1: 1.06, riskRewardTp2: 1.71,
-          });
+          // Sem velas reais o gatilho nao e conferido: WATCH com o plano na escala certa.
+          expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'WATCH' });
+          expect(result.analysis?.currentPrice).toBeCloseTo(1.0788);
+          expect(result.watchPlan?.zoneLow).toBeCloseTo(0.99);
+          expect(result.watchPlan?.target2).toBeCloseTo(1.03);
           expect(result.rawResponse).toHaveProperty('is_financial_chart', true);
         } else {
           await expect(pending).rejects.toMatchObject({ code: 'non_chart_image', retriable: false });
         }
         expect(create).toHaveBeenCalledTimes(1);
-        expect(enrichment).toHaveBeenCalledTimes(mode === 'disabled' ? 0 : 1);
+        // As velas entram sempre; a chave so desliga contexto e calendario dentro do enriquecimento.
+        expect(enrichment).toHaveBeenCalledTimes(1);
         if (mode === 'injected') expect(JSON.stringify(create.mock.calls[0][0].messages)).toContain('SYNTHETIC MARKET CONTEXT');
       }
     },
@@ -706,30 +699,13 @@ describe('Incremental factual grounding, no strategy changes', () => {
     expect(bars[20][2]).toBe(110); // this pivot is confirmed only at candle 23
   });
   it.each(['1H', 'H1', '60m'])('normalizes equivalent hourly alias %s', tf => {
-    expect((new AIAdapter() as any).normalizeTimeframe(tf)).toBe('1h');
+    expect(normalizeTimeframe(tf)).toBe('1h');
   });
   it.each(['6H', 'H6', '360m'])('recognizes six hours without inventing a provider interval: %s', tf => {
-    expect((new AIAdapter() as any).normalizeTimeframe(tf)).toBe('6h');
+    expect(normalizeTimeframe(tf)).toBe('6h');
   });
   it.each(['1M', '60M', '1month', '0h', '1s', '1.5h'])('rejects ambiguous or unsupported unit %s', tf => {
-    expect((new AIAdapter() as any).normalizeTimeframe(tf)).toBeNull();
-  });
-  it('does not send a fabricated interval to any provider', async () => {
-    const a = new AIAdapter() as any; a.fetchJson = jest.fn();
-    expect(await a.fetchCryptoCandles('BTC', '7h')).toBeNull(); expect(a.fetchJson).not.toHaveBeenCalled();
-  });
-  it('does not invent H6 support or aggregate candles for the FX provider', async () => {
-    const old = process.env.TWELVE_DATA_API_KEY; process.env.TWELVE_DATA_API_KEY = 'synthetic-not-a-credential';
-    const fetchSpy = jest.spyOn(global, 'fetch');
-    try { const a = new AIAdapter() as any;
-      expect((await a.fetchFxCandles('EURUSD', '6h')).candles).toBeNull(); expect(fetchSpy).not.toHaveBeenCalled();
-    } finally { fetchSpy.mockRestore(); if (old === undefined) delete process.env.TWELVE_DATA_API_KEY; else process.env.TWELVE_DATA_API_KEY = old; }
-  });
-  it('H6 skips OKX instead of inventing a 6H map and uses the existing Binance fallback', async () => {
-    const a = new AIAdapter() as any; a.fetchJson = jest.fn().mockResolvedValue(null);
-    expect(await a.fetchCryptoCandles('BTC', '6h')).toBeNull();
-    expect(a.fetchJson).toHaveBeenCalledTimes(1); expect(a.fetchJson.mock.calls[0][0]).toContain('api.binance.com');
-    expect(a.fetchJson.mock.calls[0][0]).toContain('interval=6h');
+    expect(normalizeTimeframe(tf)).toBeNull();
   });
   it('volume profile is expressly a proxy and does not claim trades at price', () => {
     const b = buildRealDataBlock('TEST', '1h', rows(Array(30).fill(100)))!;
@@ -748,12 +724,12 @@ describe('B2 synthetic chronology: price alignment is not a time certificate', (
     expect(adapter.detectStaleChart(historical, price)).toBeNull();
     expect(adapter.detectStaleChart(later, price)).toBeNull();
     adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '1H', lastPrice: price });
-    adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(later);
+    adapter.fetchCandles = jest.fn().mockResolvedValue({ candles: later, source: 'binance', denied: null });
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue(null);
     const g = await adapter.buildQuickGrounding('data:image/png;base64,AA==');
     // Existing behavior exposed as a gap, NOT certified chronological validity.
     expect(g.candles).toBe('injected');
-    expect(g.stats.numbers).toEqual(buildRealDataBlock('BTCUSDT', '1h', historical)!.numbers);
+    expect(g.stats.numbers).toMatchObject(buildRealDataBlock('BTCUSDT', '1h', historical)!.numbers);
   });
 });
 
@@ -779,7 +755,7 @@ describe('detectStaleChart: virgula perdida na leitura em low (26/10/2026)', () 
   });
 });
 
-describe('grounding de forex/metal pelo medidor do Twelve Data (27/10/2026)', () => {
+describe('grounding de forex/metal sem cota do Twelve Data (27/10/2026)', () => {
   const NOW = new Date('2026-10-27T12:00:00Z');
   const tdValues = Array.from({ length: 120 }, (_, i) => {
     const t = new Date(NOW.getTime() - (i + 1) * 5 * 60_000).toISOString().slice(0, 19).replace('T', ' ');
@@ -797,28 +773,6 @@ describe('grounding de forex/metal pelo medidor do Twelve Data (27/10/2026)', ()
     fetchSpy.mockRestore();
     if (oldKey === undefined) delete process.env.TWELVE_DATA_API_KEY;
     else process.env.TWELVE_DATA_API_KEY = oldKey;
-  });
-
-  it('cache nao muda o que o motor recebe: mesma URL de antes, mesmos candles e o mesmo bloco', async () => {
-    const a = new AIAdapter() as any;
-    const first = await a.fetchFxCandles('XAUUSD', '5m');
-    const second = await a.fetchFxCandles('XAUUSD', '5m');
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(String(fetchSpy.mock.calls[0][0])).toBe(
-      'https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&outputsize=120&apikey=synthetic-not-a-credential',
-    );
-    expect(second.candles).toEqual(first.candles);
-    expect(first.candles).toHaveLength(120);
-    expect(buildRealDataBlock('XAUUSD', '5m', second.candles)).toEqual(buildRealDataBlock('XAUUSD', '5m', first.candles));
-    // Mesmo mapeamento de antes: o mais antigo primeiro, volume zerado.
-    expect(first.candles[119][4]).toBeCloseTo(Number(tdValues[0].close));
-  });
-
-  it('1m nunca reaproveita (o ultimo candle muda rapido demais)', async () => {
-    const a = new AIAdapter() as any;
-    await a.fetchFxCandles('XAUUSD', '1m');
-    await a.fetchFxCandles('XAUUSD', '1m');
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it('cota acabou: a analise segue sem candles, com o motivo gravado (provider_quota) e logado', async () => {

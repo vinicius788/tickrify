@@ -8,7 +8,7 @@
  * UNTRACKABLE para sempre. Decisao do dono: nada pago.
  *
  * Quem consome (cada um com o seu rotulo no medidor):
- *   analysis  grounding do quick e do deep (ai.adapter.ts, fetchFxCandles)
+ *   analysis  grounding do quick e do deep (market/candle-store.ts, pelo ai.adapter.ts)
  *   monitor   monitor de alertas e preco na criacao do alerta (setup-alerts.service.ts)
  *   sweeper   outcome sweeper 48h depois (worker/outcome.sweeper.ts via candles.ts)
  * Scripts de medicao (prompt-replay, backtest-runner, analysis-pilot-runner,

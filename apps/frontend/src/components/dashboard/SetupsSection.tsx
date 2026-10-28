@@ -4,7 +4,8 @@ import { Archive, RefreshCw } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
-import { useAPIClient, type StrategyProfileDto } from '@/lib/api';
+import { useAPIClient, type SignalState, type StrategyProfileDto } from '@/lib/api';
+import { resolveSignalState, signalStateTone } from '@/lib/trading-ui';
 import {
   formatSetupDay,
   formatSetupRelative,
@@ -77,9 +78,13 @@ const SetupsSection = ({
     : '';
 
   const items = (data?.items ?? []).filter((setup) => !hiddenSetupIds?.has(setup.id));
-  const verdictLabel = (rec: string) => (rec === 'BUY' ? t.analysis.buy : rec === 'SELL' ? t.analysis.sell : t.analysis.hold);
-  const verdictTone = (rec: string) =>
-    rec === 'BUY' ? 'text-[var(--signal-buy)]' : rec === 'SELL' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]';
+  // Estado do copiloto (v10.3) pelo servidor; cor de direcao so em ordem/entrada.
+  const verdictLabel = (v: { recommendation: string; signalState?: SignalState }) =>
+    t.analysis.states[resolveSignalState(v.signalState, v.recommendation)];
+  const verdictTone = (v: { recommendation: string; signalState?: SignalState }) => {
+    const tone = signalStateTone(resolveSignalState(v.signalState, v.recommendation), v.recommendation);
+    return tone === 'buy' ? 'text-[var(--signal-buy)]' : tone === 'sell' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]';
+  };
 
   const archive = (setup: FollowedSetup) =>
     setStatus.mutate(
@@ -120,8 +125,8 @@ const SetupsSection = ({
                       {`${setup.symbol ?? 'N/A'} `}
                       <span className="text-xs text-[var(--text-secondary)]">{setup.timeframe ?? ''}</span>
                       {latest ? (
-                        <span className={`ml-2 text-xs font-semibold ${verdictTone(latest.recommendation)}`}>
-                          {verdictLabel(latest.recommendation)}
+                        <span className={`ml-2 text-xs font-semibold ${verdictTone(latest)}`}>
+                          {verdictLabel(latest)}
                         </span>
                       ) : null}
                     </p>

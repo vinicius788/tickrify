@@ -38,7 +38,7 @@ describe('Demo security gates', () => {
     };
     prisma.$transaction = jest.fn(async (run: (tx: any) => Promise<unknown>) => run(prisma));
     ai = { analyzeImage: jest.fn().mockResolvedValue({ recommendation: 'HOLD', confidence: 50, analysis: {} }) };
-    service = new DemoService(prisma, ai, { buildPromptByVersion: jest.fn().mockResolvedValue('test prompt') } as any);
+    service = new DemoService(prisma, ai);
     await service.onModuleInit();
     prisma.$queryRaw.mockClear(); // Boot warning only; requests start from zero.
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildShareText, drawShareCard, publicAction, publicScenario, wrapText, type ShareCardData } from '@/components/dashboard/ShareCard';
+import { buildShareText, drawShareCard, publicAction, publicScenario, publicState, wrapText, type ShareCardData } from '@/components/dashboard/ShareCard';
 
 /**
  * O card de compartilhamento é a única superfície do produto que sai da tela e
@@ -23,6 +23,7 @@ const baseData: ShareCardData = {
   timeframe: '4H',
   scenario: 'BULLISH',
   action: 'BUY',
+  state: 'ARMED',
   tone: 'buy',
   read: 'Reclaim of the 4H order block with volume.',
   date: new Date('2026-09-01T12:00:00Z'),
@@ -81,21 +82,29 @@ describe('rótulos públicos de cenário e ação', () => {
   });
 
   it('preserva o cenário bullish mesmo quando a ação é aguardar', () => {
-    const text = buildShareText({ ...baseData, action: 'HOLD', tone: 'buy' });
+    const text = buildShareText({ ...baseData, action: 'HOLD', state: 'WATCH', tone: 'hold' });
     expect(text).not.toContain('HOLD');
-    expect(text).toContain('read BULLISH and advised waiting');
+    expect(text).toContain('read BULLISH and marked an area to watch');
+  });
+
+  it('rótulo público do estado em inglês, igual no card e no post', () => {
+    expect(publicState('ENTER_NOW')).toBe('ENTER NOW');
+    expect(publicState('ARMED')).toBe('PENDING ORDER');
+    expect(publicState('WATCH')).toBe('WATCH');
+    expect(publicState('NO_TRADE')).toBe('NO TRADE');
   });
 });
 
 describe('buildShareText', () => {
   it('distingue cenário neutro de ação de aguardar', () => {
-    expect(buildShareText({ ...baseData, scenario: 'NEUTRAL', action: 'HOLD', tone: 'hold' })).toContain(
-      'read NEUTRAL and advised waiting',
+    expect(buildShareText({ ...baseData, scenario: 'NEUTRAL', action: 'HOLD', state: 'NO_TRADE', tone: 'hold' })).toContain(
+      'read NEUTRAL and saw no trade',
     );
   });
 
   it('nomeia a direção quando existe', () => {
-    expect(buildShareText(baseData)).toContain('read BULLISH and outlined a buy setup');
+    expect(buildShareText(baseData)).toContain('read BULLISH and outlined a pending buy order');
+    expect(buildShareText({ ...baseData, state: 'ENTER_NOW' })).toContain('read BULLISH and outlined a buy at market');
   });
 
   it('leva o link da /accuracy com UTM, que é o motivo de o card existir', () => {
@@ -150,13 +159,13 @@ describe('drawShareCard', () => {
     const toBlob = vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => {
       callback(new Blob(['image'], { type: 'image/png' }));
     });
-    const data = { ...baseData, action: 'WAIT' } as ShareCardData;
+    const data: ShareCardData = { ...baseData, action: 'WAIT', state: 'WATCH', tone: 'hold' };
 
     try {
       await drawShareCard(data);
       expect(written.join('')).toContain('BULLISH');
-      expect(written).toContain('ACTION: WAIT');
-      expect(buildShareText(data)).toContain('read BULLISH and advised waiting');
+      expect(written).toContain('WATCH');
+      expect(buildShareText(data)).toContain('read BULLISH and marked an area to watch');
     } finally {
       getContext.mockRestore();
       toBlob.mockRestore();

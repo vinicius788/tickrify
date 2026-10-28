@@ -1,4 +1,4 @@
-import { flagBool, flagNumber, resolveAllFlags } from '../../common/flags/feature-flags';
+import { resolveAllFlags } from '../../common/flags/feature-flags';
 import { Controller, Get, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { EconomicCalendarService } from '../calendar/calendar.service';
@@ -8,6 +8,7 @@ import { hasValidOpenAiKey } from '../../common/utils/ai-runtime';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { Public } from '../../common/decorators/public.decorator';
 import { OpsTokenGuard } from './ops-token.guard';
+import { candleStoreStatus } from '../market/candle-store';
 import { TWELVE_DATA_BUDGET, twelveDataApiKey, twelveDataUsage } from '../market/twelve-data';
 
 type ReadinessItem = {
@@ -191,15 +192,10 @@ export class HealthController {
         // OpenAI. Ver openai-params.ts e model-cost.ts.
         reasoningEffortQuick: process.env.AI_REASONING_EFFORT_QUICK?.trim() || 'default',
         reasoningEffortDeep: process.env.AI_REASONING_EFFORT_DEEP?.trim() || 'default',
-        // `quickGrounding` é a única flag aqui que a VITRINE VENDE: o card de
-        // preço lista "Live candle grounding" como feature paga. Se vier
-        // 'disabled', o site está afirmando algo que a produção não faz —
-        // trate como incidente de claim, não como config.
-        // Lidos pela loja de apps (banco → env → padrão): o /health precisa dizer
-        // o que a produção REALMENTE faz. Agora que existe painel, o valor
-        // efetivo pode divergir da variável de ambiente do Render.
-        quickGrounding: flagBool('ENABLE_QUICK_GROUNDING') ? 'enabled' : 'disabled',
-        abPromptV9Percent: flagNumber('AB_PROMPT_V9_PERCENT'),
+        // REAL DATA entra em toda analise com fonte (28/10/2026). `store` = o
+        // armazem de velas guarda e compartilha; `direct` = busca sem guardar
+        // (tabela indisponivel). A vitrine vende "Live candle grounding".
+        realData: candleStoreStatus(),
       },
       // Feed de calendário econômico (ForexFactory) — vendido na vitrine como
       // "Economic calendar guard" / "Live candle grounding + economic

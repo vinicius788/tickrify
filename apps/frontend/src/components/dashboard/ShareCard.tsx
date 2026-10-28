@@ -11,6 +11,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
+import type { SignalStateCanonical } from '@/lib/trading-ui';
 
 /**
  * Card de compartilhamento da análise.
@@ -86,6 +87,9 @@ export interface ShareCardData {
   scenario: string;
   /** Ação operacional separada: BUY | SELL | HOLD/WAIT. */
   action: string;
+  /** Estado do copiloto (v10.3): o rótulo da linha abaixo do cenário. */
+  state: SignalStateCanonical;
+  /** Cor do cenário: direção só em ENTER_NOW/ARMED, neutra em WATCH/NO_TRADE. */
   tone: 'buy' | 'sell' | 'hold';
   /** A leitura em prosa — o "porquê". É o que o card existe para mostrar. */
   read: string;
@@ -106,6 +110,18 @@ export function publicScenario(scenario: string): string {
 export function publicAction(action: string): string {
   const value = String(action || '').trim().toUpperCase();
   return value === 'BUY' || value === 'SELL' ? value : 'WAIT';
+}
+
+const PUBLIC_STATE: Record<SignalStateCanonical, string> = {
+  ENTER_NOW: 'ENTER NOW',
+  ARMED: 'PENDING ORDER',
+  WATCH: 'WATCH',
+  NO_TRADE: 'NO TRADE',
+};
+
+/** Rótulo público do estado, sempre em inglês (a imagem e o post são públicos). */
+export function publicState(state: SignalStateCanonical): string {
+  return PUBLIC_STATE[state] ?? PUBLIC_STATE.NO_TRADE;
 }
 
 /**
@@ -307,10 +323,9 @@ export async function drawShareCard(data: ShareCardData): Promise<Blob> {
   ctx.fillStyle = tone.fg;
   drawTracked(ctx, verdictLabel, PAD + 26, pillY + 39, 3);
 
-  const action = publicAction(data.action);
   ctx.font = `600 16px ${MONO}`;
-  ctx.fillStyle = action === 'BUY' ? TONE.buy.fg : action === 'SELL' ? TONE.sell.fg : TONE.hold.fg;
-  ctx.fillText(`ACTION: ${action}`, PAD, pillY + pillH + 25);
+  ctx.fillStyle = tone.fg;
+  ctx.fillText(publicState(data.state), PAD, pillY + pillH + 25);
 
   // ── Hora da leitura ──────────────────────────────────────────────────────
   // Era a "confiança" em %, que saiu do produto em 30/09/2026: ela era pedida
@@ -444,8 +459,15 @@ export async function drawShareCard(data: ShareCardData): Promise<Blob> {
  */
 export function buildShareText(data: ShareCardData): string {
   const scenario = publicScenario(data.scenario);
-  const action = publicAction(data.action);
-  const plan = action === 'WAIT' ? 'advised waiting' : `outlined a ${action.toLowerCase()} setup`;
+  const side = publicAction(data.action).toLowerCase();
+  const plan =
+    data.state === 'ENTER_NOW' && side !== 'wait'
+      ? `outlined a ${side} at market`
+      : data.state === 'ARMED' && side !== 'wait'
+        ? `outlined a pending ${side} order`
+        : data.state === 'WATCH'
+          ? 'marked an area to watch'
+          : 'saw no trade';
   return [
     `${data.symbol} ${data.timeframe}: the AI read ${scenario} and ${plan}.`,
     '',

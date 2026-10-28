@@ -1,4 +1,3 @@
-import { flagBool } from '../flags/feature-flags';
 export type Recommendation = 'BUY' | 'SELL' | 'WAIT';
 export type Bias = 'bullish' | 'bearish' | 'neutral';
 
@@ -148,34 +147,6 @@ export function hasInvalidTradePlanLevels(
   );
 }
 
-/**
- * Harmoniza a confiança com a força da tendência para evitar contradições visíveis
- * ao usuário (ex.: "75% Alta" ao lado de "Força: Moderada").
- * Tendência fraca/moderada limita o teto da confiança; tendência forte não altera.
- * Conservador por design: só REDUZ a confiança, nunca aumenta.
- *   weak     → teto 60
- *   moderate → teto 74  (abaixo do limite de "Alta", que é 75)
- *   strong   → sem teto
- */
-export function harmonizeConfidenceWithTrend(
-  confidence: number,
-  trendStrength: unknown,
-): number {
-  if (!Number.isFinite(confidence)) {
-    return confidence;
-  }
-
-  const strength = String(trendStrength || '').trim().toLowerCase();
-  let cap = 100;
-  if (strength === 'weak' || strength.includes('frac')) {
-    cap = 60;
-  } else if (strength === 'moderate' || strength.includes('moder')) {
-    cap = 74;
-  }
-
-  return Math.min(confidence, cap);
-}
-
 export interface PriceLevels {
   currentPrice: number;
   entry: number | null;
@@ -301,55 +272,24 @@ export function deriveMarketRegime(aiRegime: unknown, bias: unknown, trendStreng
   return 'ranging';
 }
 
-/**
- * Cap determinístico de confiança pela confluência (checklist 0-7 do prompt).
- * Evita contradições visíveis tipo "85% de confiança" com 4/7 fatores.
- * Regra: ≤3 fatores → máx 50 | 4-5 → máx 74 | 6-7 → sem cap extra.
- * Sem dado de confluência (0/ausente/inválido), não mexe — degradação graciosa.
- */
-export function capConfidenceByConfluence(confidence: number, factorsPresent: unknown): number {
-  const f = Number(factorsPresent);
-  if (!Number.isFinite(f) || f <= 0 || f > 7) {
-    return confidence;
+// v10 (26/10/2026): "C1 PASS ...; C2 Location: FAIL ..." sem emoji. Um rotulo
+// curto pode vir entre o codigo do item e o veredito.
+const PASS_FAIL_ITEM = /\bC([1-7])\b[^;|\n]{0,30}?\b(PASS|FAIL)\b/giu;
+
+/** Itens do checklist C1..C7 do v10 (numero do item -> PASS); null sem os 7 itens. */
+export function parsePassFailChecklist(structureValidation: unknown): ReadonlyMap<number, boolean> | null {
+  const items = new Map<number, boolean>();
+  for (const m of String(structureValidation ?? '').matchAll(PASS_FAIL_ITEM)) {
+    const n = Number(m[1]);
+    if (!items.has(n)) items.set(n, m[2].toUpperCase() === 'PASS');
   }
-  if (f <= 3) {
-    return Math.min(confidence, 50);
-  }
-  if (f <= 5) {
-    return Math.min(confidence, 74);
-  }
-  return confidence;
+  return items.size === 7 ? items : null;
 }
 
-/**
- * Guard determinístico de R/R: um BUY/SELL cujo R/R calculado no TP1 fica abaixo
- * do mínimo objetivamente não compensa o risco — rebaixa para WAIT e limita a
- * confiança a 45. Os níveis de preço NÃO são apagados (o usuário continua vendo
- * a estrutura completa); muda apenas o sinal.
- * Kill-switch: ENABLE_RR_GUARD=false desliga (default: ligado).
- * Conservador: usa 1.2 como piso (o prompt pede ≥1.5) — só derruba o que é
- * indefensável, sem virar censor de sinais razoáveis.
- */
-export function applyRiskRewardGuard(
-  recommendation: Recommendation,
-  confidence: number,
-  riskRewardTp1: number | null | undefined,
-  minRatio = 1.2,
-): { recommendation: Recommendation; confidence: number; downgraded: boolean } {
-  if (!flagBool('ENABLE_RR_GUARD')) {
-    return { recommendation, confidence, downgraded: false };
-  }
-  if (recommendation === 'WAIT' || riskRewardTp1 == null || !Number.isFinite(riskRewardTp1)) {
-    return { recommendation, confidence, downgraded: false };
-  }
-  if (riskRewardTp1 >= minRatio) {
-    return { recommendation, confidence, downgraded: false };
-  }
-  return {
-    recommendation: 'WAIT',
-    confidence: Math.min(confidence, 45),
-    downgraded: true,
-  };
+/** PASS do checklist C1..C7 do v10; null sem os 7 itens. */
+export function countPassFailChecklist(structureValidation: unknown): number | null {
+  const items = parsePassFailChecklist(structureValidation);
+  return items ? [...items.values()].filter(Boolean).length : null;
 }
 
 const CHECKLIST_MARKERS = '✅❌✔✖⚠⚪';
@@ -361,6 +301,8 @@ const CHECKLIST_SPLIT = new RegExp(`(?=[${CHECKLIST_MARKERS}])`, 'u');
  * null quando o texto não traz exatamente 7 itens marcados.
  */
 export function countChecklistApproved(structureValidation: unknown): number | null {
+  const v10 = countPassFailChecklist(structureValidation);
+  if (v10 !== null) return v10;
   const text = String(structureValidation ?? '').replace(/\|\s*(N\/A)\b/giu, ' ⚪ $1');
   const items = text
     .split(CHECKLIST_SPLIT)

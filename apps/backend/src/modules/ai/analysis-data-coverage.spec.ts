@@ -84,7 +84,7 @@ describe('analysis data coverage', () => {
     });
     const content = await adapter.buildUserContent('primary-chart', ['broken-htf']);
     expect(content.filter((part: { type: string }) => part.type === 'image')).toHaveLength(1);
-    expect(content[0].text).not.toContain('MÚLTIPLOS');
+    expect(content[0].text).not.toContain('several charts');
   });
 
   it('retains the top-down instruction when an extra image is delivered', async () => {
@@ -92,7 +92,7 @@ describe('analysis data coverage', () => {
     adapter.resolveImageUrlForModel = jest.fn(async (url: string) => url);
     const content = await adapter.buildUserContent('primary-chart', ['valid-htf']);
     expect(content.filter((part: { type: string }) => part.type === 'image')).toHaveLength(2);
-    expect(content[0].text).toContain('MÚLTIPLOS');
+    expect(content[0].text).toContain('several charts');
   });
 
   it('numbers only delivered HTF images after an earlier image fails', async () => {
@@ -103,14 +103,14 @@ describe('analysis data coverage', () => {
     });
     const content = await adapter.buildUserContent('primary-chart', ['broken-htf', 'valid-htf']);
     expect(content.filter((part: { type: string }) => part.type === 'image')).toHaveLength(2);
-    expect(content[0].text).toContain('MÚLTIPLOS');
-    expect(content[2].text).toContain('MAIOR 1');
+    expect(content[0].text).toContain('several charts');
+    expect(content[2].text).toContain('Higher timeframe chart 1');
   });
 
   it('preserves the deep enrichment block while reporting its asset class', async () => {
     const adapter = new AIAdapter() as any;
     adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
-    adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(null);
+    adapter.fetchCandles = jest.fn().mockResolvedValue({ candles: null, source: 'binance', denied: null });
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue('MARKET BLOCK');
     adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: null, status: 'no_events_returned' });
     expect(await adapter.buildMarketEnrichment('chart')).toEqual({
@@ -123,7 +123,7 @@ describe('analysis data coverage', () => {
   it('does not count a calendar-only block as market context', async () => {
     const adapter = new AIAdapter() as any;
     adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
-    adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(null);
+    adapter.fetchCandles = jest.fn().mockResolvedValue({ candles: null, source: 'binance', denied: null });
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue(null);
     adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: 'CALENDAR BLOCK', status: 'events_injected' });
     expect(await adapter.buildMarketEnrichment('chart')).toMatchObject({
@@ -137,11 +137,11 @@ describe('analysis data coverage', () => {
   it('deep com print atual recebe os candles reais, o contexto e o calendario numa leitura so', async () => {
     const adapter = new AIAdapter() as any;
     adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
-    adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(candles(100));
+    adapter.fetchCandles = jest.fn().mockResolvedValue({ candles: candles(100), source: 'binance', denied: null });
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue('MARKET BLOCK');
     adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: 'CALENDAR BLOCK', status: 'events_injected' });
     const deep = await adapter.buildMarketEnrichment('chart');
-    expect(deep.block).toContain('# REAL MARKET DATA');
+    expect(deep.block).toContain('# REAL DATA (');
     expect(deep.block).toContain('MARKET BLOCK');
     expect(deep.block).toContain('CALENDAR BLOCK');
     expect(deep).toMatchObject({ candles: 'injected', marketContext: 'injected', stats: { coverage: 'injected', numbers: { candles: 40, lastClose: 100 } } });
@@ -151,12 +151,12 @@ describe('analysis data coverage', () => {
   it('deep com print velho retem candles e contexto de agora, e avisa', async () => {
     const adapter = new AIAdapter() as any;
     adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 150 });
-    adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(candles(100));
+    adapter.fetchCandles = jest.fn().mockResolvedValue({ candles: candles(100), source: 'binance', denied: null });
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue('MARKET BLOCK');
     adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: null, status: 'no_events_returned' });
     const deep = await adapter.buildMarketEnrichment('chart');
     expect(deep.block).toContain('# LIVE DATA WITHHELD');
-    expect(deep.block).not.toContain('# REAL MARKET DATA');
+    expect(deep.block).not.toContain('# REAL DATA (');
     expect(deep.block).not.toContain('MARKET BLOCK');
     expect(adapter.buildCryptoEnrichment).not.toHaveBeenCalled();
     expect(deep).toMatchObject({ candles: 'stale_withheld', marketContext: 'stale_withheld', stats: { numbers: null } });
@@ -178,7 +178,7 @@ describe('analysis data coverage', () => {
   it('distinguishes missing candles from a stale chart without network calls', async () => {
     const adapter = new AIAdapter() as any;
     adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
-    adapter.fetchCryptoCandles = jest.fn().mockResolvedValue(null);
+    adapter.fetchCandles = jest.fn().mockResolvedValue({ candles: null, source: 'binance', denied: null });
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue(null);
     const unavailable = await adapter.buildQuickGrounding('chart');
     expect(unavailable).toEqual({
@@ -186,7 +186,7 @@ describe('analysis data coverage', () => {
       stats: { v: 1, symbol: 'BTCUSDT', interval: '30m', coverage: 'source_unavailable', numbers: null },
     });
 
-    adapter.fetchCryptoCandles.mockResolvedValue(Array.from({ length: 30 }, (_, i) => [i, 100, 102, 98, 100, 1]));
+    adapter.fetchCandles.mockResolvedValue({ candles: Array.from({ length: 30 }, (_, i) => [i, 100, 102, 98, 100, 1]), source: 'binance', denied: null });
     adapter.detectStaleChart = jest.fn().mockReturnValue('chart differs from current feed');
     adapter.buildCryptoEnrichment.mockClear().mockResolvedValue('LIVE CONTEXT');
     const stale = await adapter.buildQuickGrounding('chart');

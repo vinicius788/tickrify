@@ -27,7 +27,7 @@ describe('engine contract v2', () => {
       'verdict', 'confidence', 'asset', 'timeframe', 'entry', 'stop', 'targets',
       'invalidation', 'key_reasons', 'no_trade_reason', 'engine_version',
     ]);
-    expect(ENGINE_VERSION).toBe('2.0.0');
+    expect(ENGINE_VERSION).toBe('3.2.0');
     expect(c.engine_version).toBe(ENGINE_VERSION);
   });
 
@@ -57,8 +57,12 @@ describe('engine contract v2', () => {
     expect(fromModel.no_trade_reason).toBe('Higher lows hold above the 61.3k demand.');
     expect(parseEngineContract(fromModel)).not.toBeNull();
 
-    const fromValidator = buildEngineContract({ ...trade, recommendation: 'WAIT', validatorReasons: ['rr_below_min'] });
-    expect(fromValidator.no_trade_reason).toBe('No target pays enough for the risk.');
+    const fromValidator = buildEngineContract({ ...trade, recommendation: 'WAIT', validatorReasons: ['rr_tp2_below_min'] });
+    expect(fromValidator.no_trade_reason).toBe('The final target does not pay at least 1.5 times the risk.');
+
+    // O aviso de print velho nao e motivo de rebaixamento: o motivo vem do texto.
+    const stale = buildEngineContract({ ...trade, recommendation: 'WAIT', validatorReasons: ['stale_print'] });
+    expect(stale.no_trade_reason).toBe('Higher lows hold above the 61.3k demand.');
 
     const empty = buildEngineContract({ ...trade, recommendation: 'WAIT', executiveSummary: '' });
     expect(empty.no_trade_reason).toBe('No trade setup on this chart.');
@@ -87,6 +91,8 @@ describe('engine contract v2', () => {
     const warn = jest.fn();
     const record = buildEngineRecord({
       contract: { ...trade, takeProfit1: null, takeProfit2: null },
+      signalState: 'ARMED',
+      dataMode: 'print',
       validatorAction: 'none',
       validatorFlags: [],
       timings: {},
@@ -99,14 +105,17 @@ describe('engine contract v2', () => {
   it('the record keeps version, data mode, validator and per-stage timings', () => {
     const record = buildEngineRecord({
       contract: trade,
+      signalState: 'ENTER_NOW',
+      dataMode: 'print',
       validatorAction: 'fixed',
       validatorFlags: ['stop_inside_invalidation'],
       timings: { image_prep_ms: 120.4, queue_ms: -1, model_ms: 18_500, server_total_ms: 19_900 },
       warn: jest.fn(),
     });
     expect(record).toMatchObject({
-      version: '2.0.0',
+      version: '3.2.0',
       data_mode: 'print',
+      signal_state: 'ENTER_NOW',
       validator_action: 'fixed',
       validator_reasons: [],
       validator_flags: ['stop_inside_invalidation'],

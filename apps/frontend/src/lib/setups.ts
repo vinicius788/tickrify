@@ -1,6 +1,6 @@
 import { useAuth } from '@clerk/clerk-react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { APIError, buildApiUrl } from './api';
+import { APIError, buildApiUrl, type SignalState } from './api';
 
 /**
  * Setups acompanhados (12/10/2026). Seguir e diferente de favoritar (estrela da
@@ -28,6 +28,7 @@ export interface FollowedSetup extends SetupSummary {
     analysisId: string;
     createdAt: string;
     recommendation: SetupVerdict;
+    signalState?: SignalState;
     entryCondition: string | null;
   } | null;
 }
@@ -37,6 +38,7 @@ export interface SetupVersion {
   version: number;
   createdAt: string;
   recommendation: SetupVerdict;
+  signalState?: SignalState;
   entry: number | null;
   stopLoss: number | null;
   takeProfit1: number | null;

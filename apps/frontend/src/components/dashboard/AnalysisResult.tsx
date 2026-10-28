@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleHelp,
+  Eye,
   Lightbulb,
   Minus,
   ShieldAlert,
@@ -22,6 +23,7 @@ import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
+import { WatchPlanChart, isWatchPlan } from './WatchPlanChart';
 import { ShareCardButton, type ShareCardData } from './ShareCard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -35,6 +37,8 @@ import {
   getRecommendationMeta,
   getScenarioMeta,
   normalizeConfluenceScore,
+  resolveSignalState,
+  signalStateTone,
 } from '@/lib/trading-ui';
 import { asRecord } from '@/lib/utils';
 import { computeDirectionalRiskReward } from '@/lib/trade-plan';
@@ -385,10 +389,47 @@ interface StructureChecklist {
  * Se o formato do modelo mudar e a leitura render menos de dois critérios, o
  * chamador volta a mostrar o parágrafo cru. Parser nunca some com texto.
  */
+// Checklist do motor v10 (26/10/2026): "C1 PASS ...; C2 Location: FAIL ...;
+// ... 5/7 ARMED", sem emoji. Um rotulo curto pode vir entre o codigo e o veredito.
+const PASS_FAIL_ITEM = /\bC([1-7])\b([^;|\n]{0,30}?)\b(PASS|FAIL)\b\s*[:,-]?\s*/giu;
+const PASS_FAIL_TAIL = /[\s.;,]*\b([0-7])\s*\/\s*7\b\s*[:,-]?\s*([^\n]*?)\.?\s*$/u;
+
+function parsePassFailChecklist(text: string): StructureChecklist | null {
+  const matches = [...text.matchAll(PASS_FAIL_ITEM)];
+  if (new Set(matches.map((m) => m[1])).size !== 7) return null;
+  let score: string | null = null;
+  let verdict: string | null = null;
+  const items: ChecklistItem[] = matches.map((m, i) => {
+    const start = (m.index ?? 0) + m[0].length;
+    const end = i + 1 < matches.length ? matches[i + 1].index ?? text.length : text.length;
+    let detail = text.slice(start, end);
+    if (i === matches.length - 1) {
+      const tail = detail.match(PASS_FAIL_TAIL);
+      if (tail && typeof tail.index === 'number') {
+        score = `${tail[1]}/7`;
+        verdict = tail[2].trim() || null;
+        detail = detail.slice(0, tail.index);
+      }
+    }
+    const label = m[2].replace(/[:\s-]+$/u, '').trim();
+    return {
+      ok: m[3].toUpperCase() === 'PASS',
+      notApplicable: false,
+      label: label ? `C${m[1]} ${label}` : `C${m[1]}`,
+      detail: detail.replace(/[\s;,|]+$/u, '').replace(/\.$/, '').trim(),
+    };
+  });
+  const reported = (score as string | null)?.match(/^([0-7])\/7$/);
+  const scoreMismatch = reported != null && Number(reported[1]) !== items.filter((item) => item.ok).length;
+  return { items, score: scoreMismatch ? null : score, verdict, scoreMismatch };
+}
+
 export function parseStructureChecklist(text: string): StructureChecklist {
   if (!text) {
     return { items: [], score: null, verdict: null, scoreMismatch: false };
   }
+  const v10 = parsePassFailChecklist(text);
+  if (v10) return v10;
 
   let rest = text;
   let score: string | null = null;
@@ -514,15 +555,17 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
 
   const recommendationMeta = getRecommendationMeta(analysisData.recommendation);
   const scenarioMeta = getScenarioMeta(analysisData.bias || marketStructure.bias, analysisData.recommendation);
-  const actionLabel = recommendationMeta.tone === 'buy'
-    ? t.analysis.buy
-    : recommendationMeta.tone === 'sell'
-      ? t.analysis.sell
-      : t.analysis.hold;
-  // #2 — calibração: taxa de acerto histórica de setups semelhantes.
-  const calibration = asRecord((analysisData as unknown as Record<string, unknown>).calibration);
-  const calSample = toNumber(calibration.sampleSize) ?? 0;
-  const calWinRate = toNumber(calibration.winRate);
+  // Rotulo principal = estado do copiloto (v10.3). A direcao fica como cenario.
+  const signalState = resolveSignalState(
+    fullResponse.signalState,
+    analysisData.recommendation,
+    analysis.entryType,
+    analysis.alternativeScenario,
+  );
+  const stateTone = signalStateTone(signalState, analysisData.recommendation);
+  const stateActive = signalState === 'ENTER_NOW' || signalState === 'ARMED';
+  const watchPlan = isWatchPlan(fullResponse.watchPlan) ? fullResponse.watchPlan : null;
+  const levelsEstimated = fullResponse.dataMode === 'print';
 
   const symbol = String(
     analysis.symbol || analysis.ticker || analysis.asset || fullResponse.symbol || fullResponse.ticker || 'UNKNOWN',
@@ -841,27 +884,32 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
     timeframe,
     scenario: scenarioMeta.label,
     action: recommendationMeta.label,
-    tone: scenarioMeta.tone,
+    state: signalState,
+    tone: stateTone,
     read: shareRead,
     flip: waitFlipItems[0]?.text ?? null,
     date: timestamp,
   };
 
-  const headerIcon = scenarioMeta.tone === 'buy' ? ArrowUp : scenarioMeta.tone === 'sell' ? ArrowDown : Minus;
-  const HeaderIcon = headerIcon;
+  const HeaderIcon = stateTone === 'buy' ? ArrowUp : stateTone === 'sell' ? ArrowDown : signalState === 'WATCH' ? Eye : Minus;
 
   const signalToneClasses =
-    scenarioMeta.tone === 'buy'
+    stateTone === 'buy'
       ? 'bg-[var(--signal-buy-bg)] border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
-      : scenarioMeta.tone === 'sell'
+      : stateTone === 'sell'
         ? 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
         : 'bg-[var(--signal-hold-bg)] border-[var(--signal-hold-border)] text-[var(--signal-hold)]';
-  const actionToneClasses =
-    recommendationMeta.tone === 'buy'
+  // Cenario em cor so junto de ordem/entrada; no WATCH e no NO_TRADE fica neutro.
+  const scenarioToneClasses = !stateActive
+    ? 'border-[var(--border-subtle)] text-[var(--text-secondary)]'
+    : scenarioMeta.tone === 'buy'
       ? 'border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
-      : recommendationMeta.tone === 'sell'
+      : scenarioMeta.tone === 'sell'
         ? 'border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
-        : 'border-[var(--signal-hold-border)] text-[var(--signal-hold)]';
+        : 'border-[var(--border-subtle)] text-[var(--text-secondary)]';
+  // Ordem pendente: o preco da limit e o que a cancela (mesma regra do runLimitOrder).
+  const pendingInvalidation = watchPlan?.invalidation ?? (invalidationLevel !== null && invalidationLevel > 0 ? invalidationLevel : null);
+  const pendingTarget = watchPlan?.target1 ?? takeProfit1;
 
   const isDemo = Boolean(analysisData.isDemo);
 
@@ -920,9 +968,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
           <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)] md:gap-4">
             <span className="whitespace-nowrap font-terminal font-semibold text-[var(--text-primary)]">{symbol}</span>
             <span className="whitespace-nowrap font-terminal">{timeframe}</span>
-            <div className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold tracking-widest ${signalToneClasses}`}>
+            <div
+              data-testid="signal-state"
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold uppercase tracking-widest ${signalToneClasses}`}
+            >
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{scenarioMeta.label}</span>
+              <span>{t.analysis.states[signalState]}</span>
             </div>
             {strategyFit && (
               <span
@@ -932,17 +983,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                 {r.strategyFitTitle}: {STRATEGY_FIT_LABEL[strategyFit]}
               </span>
             )}
-            <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border px-2 py-1 ${actionToneClasses}`}>
-              {t.analysis.action.toUpperCase()}:{' '}
-              <strong className="font-semibold">{actionLabel}</strong>
+            <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border px-2 py-1 ${scenarioToneClasses}`}>
+              {t.analysis.bias}:{' '}
+              <strong className="font-semibold">{scenarioMeta.label}</strong>
             </span>
-            {calWinRate !== null && calSample >= 3 && (
-              <span className="whitespace-nowrap" title="Your historical hit rate on similar setups">
-                <span className="text-[var(--text-secondary)]">{r.history}</span>{' '}
-                <strong className={`font-terminal font-semibold ${calWinRate >= 50 ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'}`}>{calWinRate}%</strong>{' '}
-                <span className="text-[var(--text-secondary)]">{r.hitRate} ({calSample})</span>
-              </span>
-            )}
             <span className="whitespace-nowrap font-terminal md:ml-auto">{formattedTimestamp}</span>
             {/* Demo anônima não compartilha: o card leva a marca e o link da
                 /accuracy, e um print gerado a partir de dado de demonstração
@@ -959,7 +1003,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
             // Explica o WAIT onde ele aparece: sem isto a pessoa le so a
             // palavra e entende que a ferramenta nao respondeu.
             <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
-              {r.waitExplain}
+              {signalState === 'WATCH' ? r.watchExplain : r.noTradeExplain}
               {waitFlipItems.length > 0 && <span>{` ${r.waitExplainPlan}`}</span>}
             </p>
           )}
@@ -1026,6 +1070,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
         </Card>
       )}
 
+      {signalState === 'WATCH' && watchPlan && (
+        <WatchPlanChart plan={watchPlan} currentPrice={currentPrice} formatPrice={formatPrice} estimated={levelsEstimated} />
+      )}
+
       {isWaitVerdict && (
         <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '60ms' }}>
           <CardContent className="p-5 md:p-6">{summaryBlock}</CardContent>
@@ -1066,8 +1114,27 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
         >
           <CardHeader className="pb-2">
             <CardTitle className="tk-display text-lg tracking-wide">{t.analysis.levels.toUpperCase()}</CardTitle>
+            {levelsEstimated && (
+              <p data-testid="levels-estimated" className="text-xs text-[var(--text-secondary)]">{r.levelsEstimated}</p>
+            )}
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
+            {signalState === 'ARMED' && entry !== null && !invalidTradePlan && (
+              <div data-testid="pending-order" className="rounded-md border border-[var(--border-accent)] bg-[var(--bg-overlay)] p-3 text-xs">
+                <p className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                  {r.pending.title}
+                </p>
+                <p className="mt-1 font-terminal text-sm font-semibold text-[var(--text-primary)]">
+                  {r.pending.limitAt.replace('{price}', formatPrice(entry))}
+                </p>
+                <p className="mt-2 text-[var(--text-secondary)]">{r.pending.cancelIf}</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[var(--text-primary)]/85">
+                  {pendingInvalidation !== null && <li>{r.pending.cancelClose.replace('{price}', formatPrice(pendingInvalidation))}</li>}
+                  {pendingTarget !== null && <li>{r.pending.cancelTarget.replace('{price}', formatPrice(pendingTarget))}</li>}
+                  {watchPlan && <li>{r.pending.cancelExpiry.replace('{n}', String(watchPlan.validForCandles))}</li>}
+                </ul>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3">
               <div>
                 <p className="text-xs text-[var(--text-secondary)]">{riskRewardLabel}</p>

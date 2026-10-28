@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getScenarioMeta, normalizeConfluenceScore } from '@/lib/trading-ui';
+import { getScenarioMeta, normalizeConfluenceScore, resolveSignalState, signalStateTone } from '@/lib/trading-ui';
 
 // Estes casos impedem que uma mudança visual converta WAIT em NEUTRAL ou em um sinal de compra/venda.
 describe('cenário separado da ação', () => {
@@ -30,5 +30,22 @@ describe('v7.7 Lote A — percentage presentation', () => {
   );
   it.each([NaN, Infinity, -Infinity])('keeps non-finite scores unavailable: %s', score => {
     expect(normalizeConfluenceScore(score)).toEqual({ percent: 0, display: 'N/A' });
+  });
+});
+
+describe('estado do copiloto (v10.3)', () => {
+  it('usa o estado gravado; sem ele, a regra do historico do servidor', () => {
+    expect(resolveSignalState('WATCH', 'BUY', 'market')).toBe('WATCH');
+    expect(resolveSignalState(undefined, 'BUY', 'market')).toBe('ENTER_NOW');
+    expect(resolveSignalState(undefined, 'SELL', 'limit')).toBe('ARMED');
+    expect(resolveSignalState(undefined, 'WAIT', null, 'If price closes above 101')).toBe('WATCH');
+    expect(resolveSignalState('LIVE', 'HOLD', null, '')).toBe('NO_TRADE');
+  });
+
+  it('WATCH e NO_TRADE nunca levam a cor de compra ou venda', () => {
+    expect(signalStateTone('ARMED', 'BUY')).toBe('buy');
+    expect(signalStateTone('ENTER_NOW', 'SELL')).toBe('sell');
+    expect(signalStateTone('WATCH', 'BUY')).toBe('hold');
+    expect(signalStateTone('NO_TRADE', 'SELL')).toBe('hold');
   });
 });

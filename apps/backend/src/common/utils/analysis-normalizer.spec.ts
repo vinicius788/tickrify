@@ -4,7 +4,6 @@ import {
   computeRiskReward,
   hasInvalidTradePlanLevels,
   formatRiskReward,
-  harmonizeConfidenceWithTrend,
   correctPriceMagnitude,
   deriveMarketRegime,
   normalizeTargetProbabilities,
@@ -177,33 +176,6 @@ describe('computeRiskReward', () => {
   });
 });
 
-describe('harmonizeConfidenceWithTrend', () => {
-  it('caps confidence at 74 when trend is moderate (resolve "75% Alta" vs "Moderada")', () => {
-    expect(harmonizeConfidenceWithTrend(75, 'moderate')).toBe(74);
-    expect(harmonizeConfidenceWithTrend(90, 'moderate')).toBe(74);
-  });
-
-  it('caps confidence at 60 when trend is weak', () => {
-    expect(harmonizeConfidenceWithTrend(85, 'weak')).toBe(60);
-  });
-
-  it('does not change confidence when trend is strong', () => {
-    expect(harmonizeConfidenceWithTrend(88, 'strong')).toBe(88);
-  });
-
-  it('does not raise confidence already below the cap', () => {
-    expect(harmonizeConfidenceWithTrend(40, 'moderate')).toBe(40);
-    expect(harmonizeConfidenceWithTrend(55, 'weak')).toBe(55);
-  });
-
-  it('handles Portuguese / partial strings and unknown values', () => {
-    expect(harmonizeConfidenceWithTrend(80, 'Moderada')).toBe(74);
-    expect(harmonizeConfidenceWithTrend(80, 'fraca')).toBe(60);
-    expect(harmonizeConfidenceWithTrend(80, null)).toBe(80);
-    expect(harmonizeConfidenceWithTrend(80, undefined)).toBe(80);
-  });
-});
-
 describe('formatRiskReward', () => {
   it('formats a numeric ratio as 1:X.X', () => {
     expect(formatRiskReward(2.5)).toBe('1:2.5');
@@ -337,5 +309,24 @@ describe('checklist x total declarado', () => {
 
   it('zerado continua lendo o placar, como antes', () => {
     expect(reconcileConfluence('✅ A ✅ B ✅ C ✅ D ✅ E ✅ F ✅ G → 7/7', 0, 0)).toEqual({ confluenceScore: 100, factorsPresent: 7 });
+  });
+});
+
+describe('checklist do v10 (PASS/FAIL, sem emoji)', () => {
+  const v10 = 'C1 FAIL: higher timeframe unavailable. C2 PASS: near 85,400 support. C3 PASS: sweep and reclaim. '
+    + 'C4 PASS: buyers absorb. C5 PASS: trigger 85,600. C6 PASS: 1.8R to TP2. C7 FAIL: equal highs above. 5/7 ARMED';
+
+  it('conta os PASS com os 7 itens, aceitando rotulo entre o codigo e o veredito', () => {
+    expect(countChecklistApproved(v10)).toBe(5);
+    expect(countChecklistApproved('C1 Context: PASS x; C2 Location: FAIL y; C3 PASS; C4 PASS; C5 FAIL; C6 PASS; C7 PASS')).toBe(5);
+  });
+
+  it('sem os 7 itens nao conta (e nao confunde com o checklist antigo)', () => {
+    expect(countChecklistApproved('C1 PASS a. C2 FAIL b. 1/7')).toBeNull();
+    expect(countChecklistApproved('C1 PASS C1 FAIL C2 PASS C3 PASS C4 PASS C5 PASS C6 PASS')).toBeNull();
+  });
+
+  it('a lista do v10 decide o total e a nota de confluencia', () => {
+    expect(reconcileConfluence(v10, 71.43, 6)).toEqual({ confluenceScore: 71.43, factorsPresent: 5 });
   });
 });

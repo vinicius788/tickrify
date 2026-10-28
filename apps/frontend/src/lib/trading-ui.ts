@@ -25,6 +25,33 @@ export function getRecommendationMeta(value: unknown) {
   return RECOMMENDATION_LABELS[key] || RECOMMENDATION_LABELS.AGUARDAR;
 }
 
+export type SignalStateCanonical = 'NO_TRADE' | 'WATCH' | 'ARMED' | 'ENTER_NOW';
+const SIGNAL_STATES: readonly SignalStateCanonical[] = ['NO_TRADE', 'WATCH', 'ARMED', 'ENTER_NOW'];
+
+/**
+ * Estado do copiloto (v10.3): o rotulo principal de todo resultado. O servidor
+ * manda o campo em toda resposta (analise, lista, setup); sem ele, a mesma
+ * regra de leitura do historico do backend (`deriveSignalState`).
+ */
+export function resolveSignalState(
+  signalState: unknown,
+  recommendation: unknown,
+  entryType?: unknown,
+  alternativeScenario?: unknown,
+): SignalStateCanonical {
+  const stored = SIGNAL_STATES.find((s) => s === signalState);
+  if (stored) return stored;
+  if (getRecommendationMeta(recommendation).tone !== 'hold') {
+    return String(entryType ?? '').trim().toLowerCase() === 'market' ? 'ENTER_NOW' : 'ARMED';
+  }
+  return String(alternativeScenario ?? '').trim() ? 'WATCH' : 'NO_TRADE';
+}
+
+/** So ENTER_NOW e ARMED levam a cor da direcao: WATCH e NO_TRADE nunca parecem sinal ativo. */
+export function signalStateTone(state: SignalStateCanonical, recommendation: unknown): 'buy' | 'sell' | 'hold' {
+  return state === 'ENTER_NOW' || state === 'ARMED' ? getRecommendationMeta(recommendation).tone : 'hold';
+}
+
 /** Cenário de mercado. A ação WAIT pode coexistir com viés bullish ou bearish. */
 export function getScenarioMeta(bias: unknown, recommendation?: unknown) {
   const key = String(bias || '').trim().toUpperCase();
