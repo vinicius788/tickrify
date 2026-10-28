@@ -912,6 +912,14 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   const pendingTarget = watchPlan?.target1 ?? takeProfit1;
 
   const isDemo = Boolean(analysisData.isDemo);
+  const clarity = t.productClarity;
+  // Presentation only: reuse stored evidence, never infer a new signal or level.
+  // Preview the first stored paragraph; the complete reading stays in the technical panel.
+  const readingReason = shareRead.split(/\n+/).find((line) => line.trim()) || '';
+  const readingInvalidation = positivePriceOrNull(invalidationLevel) ?? watchPlan?.invalidation ?? null;
+  const readingRisk = readingInvalidation !== null
+    ? `${formatPrice(readingInvalidation)}${invalidationNote ? `: ${cleanModelText(invalidationNote)}` : ''}`
+    : cleanModelText(invalidationNote) || riskItems[0];
 
   /** A leitura (executiveSummary). No WAIT sobe para logo abaixo do plano. */
   const summaryBlock = (
@@ -1006,6 +1014,27 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
               {signalState === 'WATCH' ? r.watchExplain : r.noTradeExplain}
               {waitFlipItems.length > 0 && <span>{` ${r.waitExplainPlan}`}</span>}
             </p>
+          )}
+          {stateActive && !invalidTradePlan && (
+            <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
+              {signalState === 'ARMED' ? clarity.pendingEntry : clarity.entryNow}
+            </p>
+          )}
+          {!invalidTradePlan && (
+            <dl aria-label={clarity.readingGuide} className="mt-4 space-y-3 border-t border-[var(--border-subtle)] pt-4 text-sm">
+              <div>
+                <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.why}</dt>
+                <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{readingReason || clarity.reasonMissing}</dd>
+              </div>
+              <div>
+                <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.risk}</dt>
+                <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{readingRisk || clarity.riskMissing}</dd>
+              </div>
+              <div>
+                <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.next}</dt>
+                <dd className="mt-1 leading-relaxed text-[var(--text-secondary)]">{clarity.reviewConditions}</dd>
+              </div>
+            </dl>
           )}
           {strategyFit && (
             // Bloco visível (não só tooltip): a nota anti-claim precisa ser

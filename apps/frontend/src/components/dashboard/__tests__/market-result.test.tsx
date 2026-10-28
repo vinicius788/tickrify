@@ -101,7 +101,8 @@ describe('Your track record', () => {
 
   it('mostra as contagens dos ultimos 30 dias do proprio usuario', async () => {
     const { fetchMock } = renderRecord({ days: 30, plans: 10, win: 3, loss: 4, noFill: 1, timeout: 0, pending: 2 });
-    await waitFor(() => expect(screen.getByText('Your track record')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Automatic market review')).toBeTruthy());
+    expect(screen.getByText(/not your executed trades or recorded P&L/)).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith(
       'https://api.test/api/ai/track-record',
       expect.objectContaining({ headers: { Authorization: 'Bearer tok' } }),

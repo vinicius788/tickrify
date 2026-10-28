@@ -1,4 +1,16 @@
 export default {
+  productClarity: {
+    readingGuide: "Leitura em resumo",
+    why: "Por que esta leitura",
+    risk: "Risco ou invalidação",
+    next: "O que revisar depois",
+    reviewConditions: "Esta leitura e seus níveis se referem ao momento registrado da análise e não confirmam uma oportunidade atual. Revise as condições abaixo e reavalie com um gráfico atual antes de decidir.",
+    entryNow: "No momento da análise, esta leitura identificou uma entrada. Confira condições, stop e alvos antes de decidir. A Tickrify não envia ordens.",
+    pendingEntry: "Esta leitura descreve uma entrada condicional, não uma operação executada. Revise as condições de entrada e cancelamento abaixo. A Tickrify não envia ordens.",
+    reasonMissing: "Não foi registrada uma justificativa detalhada para esta leitura.",
+    riskMissing: "Não foi registrada uma invalidação específica. Revise os fatores de risco disponíveis antes de decidir.",
+    personalMetrics: "A taxa de acerto e o P&L usam os resultados de operações que você registra. São separados da avaliação automática de mercado e não validam o desempenho da IA."
+  },
   commercial: {
     trialRules: "Até 7 análises em 3 dias de uso (3/2/2), dentro de 7 dias do início. WAIT conta. Sem cartão nem cobrança automática.",
     trialEndRule: "Termina ao esgotar o dia 3, iniciar um quarto dia de uso ou vencer a janela de 7 dias, o que ocorrer primeiro.",
@@ -354,9 +366,9 @@ export default {
     tp2Hit: 'TP2 atingido',
     slHit: 'Stop atingido',
     open: 'Em aberto',
-    winRate: 'Win rate',
-    avgRr: 'R:R médio',
-    pendingCount: 'Pendentes',
+    winRate: "Acerto das operações registradas",
+    avgRr: "R:R médio planejado",
+    pendingCount: "Resultados não registrados",
     loadingAnalyses: 'Carregando análises…',
     emptyNew: 'Nenhuma análise ainda. Comece pela Nova Análise!',
     emptyFilter: 'Nenhuma análise com esses filtros.',
@@ -393,14 +405,14 @@ export default {
   // ── Diario (calendario do mes) ──────────────────────────────────────────────────────────────────
   journal: {
     title: 'Diário de trades',
-    subtitle: 'Cada análise e cada resultado que você registra, dia a dia.',
+    subtitle: "Histórico de análises e os resultados de operações que você registra, dia a dia.",
     prev: 'Mês anterior',
     next: 'Próximo mês',
     today: 'Hoje',
     analyses: 'Análises',
     pnl: 'P&L registrado',
     activeDays: 'Dias ativos',
-    winRate: 'Taxa de acerto',
+    winRate: "Acerto das operações registradas",
     dayAnalyses: '{n} análises',
     dayAnalysis: '1 análise',
     emptyMonth: 'Nenhuma análise neste mês ainda.',
@@ -416,7 +428,7 @@ export default {
     openFull: 'Abrir em tamanho real',
     cta: 'Analisar um gráfico',
     byDateNote: 'Cada análise conta no dia em que foi feita.',
-    statsTitle: 'Desempenho do mês',
+    statsTitle: "Seus resultados registrados",
     equity: 'Curva de resultado (P&L registrado)',
     equityHint: 'Registre o valor dos seus trades fechados no My Trades para ver a curva.',
     avgR: 'R médio',
@@ -574,14 +586,14 @@ export default {
   },
   verdict: {
     chaseOpen: 'trades ainda em aberto',
-    chaseDesc: 'Feche esses trades e a taxa de acerto aqui embaixo vira dado real em vez de chute.',
+    chaseDesc: "Registre como suas operações terminaram para formar suas estatísticas pessoais, separadas da avaliação automática de mercado.",
     notTaken: 'Não operei',
     seeAll: 'Ver todas',
     notNow: 'Agora não',
-    statsLabel: 'Sua taxa de acerto',
+    statsLabel: "Acerto das operações registradas",
     statsRr: 'R:R médio proposto',
     statsBasedOn: 'com base em',
-    statsSample: 'trades fechados',
+    statsSample: "operações encerradas registradas",
   },
   empty: {
     tradesTitle: 'Seu histórico começa com um gráfico',
@@ -644,7 +656,7 @@ export default {
   // O que o mercado fez 48h depois (12/10/2026): quadro da analise e o
   // historico do proprio usuario no inicio do painel.
   marketResult: {
-    title: '48 horas depois',
+    title: "Avaliação automática de mercado · 48h",
     pendingTitle: 'Resultado pendente',
     pending: 'A Tickrify confere o que o preço fez com este plano 48 horas depois da leitura. O resultado aparece aqui por volta de {date}.',
     win: 'Alvo 1 atingido',
@@ -661,14 +673,14 @@ export default {
     fine: 'Medido em candles de 30 minutos. Nível tocado não garante execução, e taxas não estão incluídas. Mesmo método da página pública de acurácia.',
   },
   trackRecord: {
-    title: 'Seu histórico',
-    sub: 'O que o preço fez com seus planos de trade nos últimos 30 dias, medido 48 horas depois de cada leitura.',
-    plans: 'Planos de trade',
+    title: "Avaliação automática de mercado",
+    sub: "Movimento do preço frente aos planos das suas análises nos últimos 30 dias, avaliado após 48 horas. Não são operações executadas nem seu P&L registrado.",
+    plans: "Planos de análise",
     target: 'Chegaram ao alvo 1',
     stop: 'Bateram no stop',
     noFill: 'Entrada não atingida',
     timeout: 'Nenhum dos dois em 48 horas',
-    pending: 'Ainda em medição',
+    pending: "Aguardando avaliação",
   },
   // Setups acompanhados (12/10/2026): seguir, atualizar e a pagina do setup.
   setups: {
@@ -957,11 +969,11 @@ export default {
       badge: 'Segunda opinião, não sinais • a decisão é sua',
       title1: 'Seu copiloto',
       title2: 'de trade com IA.',
-      seoLine: 'Análise de gráficos com IA para forex, ouro, cripto e índices, a partir de um print do TradingView, MetaTrader ou da sua corretora.',
-      subtitle: 'Cole qualquer gráfico, com ou sem uma única linha desenhada. A IA lê do zero e devolve entrada, stop, alvos e risco, ou diz que não há nada que valha a pena. A decisão final é sempre sua.',
+      seoLine: "Análise de gráficos com IA para traders de forex, ouro, cripto e índices. Revise setups, entenda o risco e decida com mais informação.",
+      subtitle: "Envie um print do gráfico. Receba o cenário, a justificativa e, quando houver um setup, condições de entrada, stop e alvos. Caso contrário, veja por que não há operação. A decisão é sua.",
       startFree: 'Começar grátis',
       goToPanel: 'Ir para o painel',
-      valueNow: 'Sem histórico de trades pra importar. Sem 30 dias de diário pra preencher antes. Cole um gráfico e a IA lê agora: estrutura, zonas, entrada, stop e alvos.',
+      valueNow: "Volte quando as condições mudarem: compare um novo gráfico com as leituras anteriores e revise se o setup ainda se encaixa no seu plano.",
       freeNote: "Contas elegíveis: até 7 análises grátis · sem cartão",
       terminal: 'terminal de análise',
       mockLabel: 'Exemplo',
@@ -970,9 +982,9 @@ export default {
     },
     preview: {
       label: 'Dentro da plataforma',
-      title: 'Painel de execução',
-      highlight: 'operacional.',
-      subtitle: 'Ambiente focado em decisão: estrutura, níveis de operação, risco e justificativa técnica em um layout denso e objetivo.',
+      title: "Painel de",
+      highlight: "análise.",
+      subtitle: "Revise cenário, condições da operação, risco e justificativa técnica juntos. A leitura do gráfico apoia sua decisão; não executa uma operação.",
     },
     features: {
       label: 'Recursos',
@@ -992,7 +1004,7 @@ export default {
       subtitle: 'Processo objetivo em três etapas que funciona igual, você chegando com uma tese ou sem nada.',
       s1t: 'Capture o gráfico', s1d: 'Print de qualquer gráfico. Desenhado ou completamente limpo. Qualquer ativo, qualquer timeframe.',
       s2t: 'A IA lê no frio', s2d: 'Estrutura, zonas e confluência. No modo rápido, candles verificados complementam o print quando estão disponíveis; confira a cobertura de dados no resultado.',
-      s3t: 'A IA se compromete com uma leitura', s3d: 'Entrada, stop e alvos quando há setup. Um WAIT explícito, e o que mudaria isso, quando não há. A decisão é sua. Chegue com uma tese e é uma segunda opinião. Chegue sem nada e é a primeira.',
+      s3t: "Revise o setup", s3d: "Confira as condições de entrada, risco e alvos, ou o motivo do WAIT. Acompanhe um setup elegível para revisitá-lo com um novo gráfico; alertas de preço são opcionais quando disponíveis.",
     },
     cta: {
       badge: 'Aberto agora',

@@ -79,6 +79,7 @@ export function MarketResultCard(props: {
             <p className="mt-1 text-sm text-[var(--text-secondary)]">{m.pending.replace('{date}', date)}</p>
           </div>
         </div>
+        <p className="mt-3 text-xs text-[var(--text-muted)]">{m.fine}</p>
       </section>
     );
   }

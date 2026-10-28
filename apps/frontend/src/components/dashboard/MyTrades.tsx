@@ -401,6 +401,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
             <CardDescription className="mt-0.5 text-xs">
               {isDemo ? tr.demoData : `${filtered.length} ${tr.found}`}
             </CardDescription>
+            <p className="mt-2 max-w-2xl text-xs leading-relaxed text-[var(--text-secondary)]">{t.productClarity.personalMetrics}</p>
           </div>
 
           {/* Filters */}

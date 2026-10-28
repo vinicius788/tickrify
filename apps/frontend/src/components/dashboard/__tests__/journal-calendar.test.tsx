@@ -48,7 +48,7 @@ describe('Diario: desempenho do mes', () => {
     });
     renderJournal();
 
-    expect(await screen.findByText('Performance this month', {}, LOAD)).toBeTruthy();
+    expect(await screen.findByText('Your logged trading results', {}, LOAD)).toBeTruthy();
     // (2 - 1) / 2 = +0.50R
     expect(screen.getByText('+0.50R')).toBeTruthy();
     expect(screen.getByText('planned R per closed trade (2)')).toBeTruthy();
@@ -64,7 +64,7 @@ describe('Diario: desempenho do mes', () => {
     getJournal.mockResolvedValue({ truncated: false, items: [item('w', 1, 'XAUUSD', 'WAIT', null, null, null)] });
     renderJournal();
     expect(await screen.findByText('Mark TP or Stop on your trades in My Trades and your stats for the month show up here.', {}, LOAD)).toBeTruthy();
-    expect(screen.queryByText('Performance this month')).toBeNull();
+    expect(screen.queryByText('Your logged trading results')).toBeNull();
   });
 });
 

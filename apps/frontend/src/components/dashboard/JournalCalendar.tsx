@@ -87,7 +87,7 @@ function EquityCurve({ points }: { points: MonthStats['equity'] }) {
 function GroupCard({ title, rows, label, j }: { title: string; rows: GroupRow[]; label: (key: string) => string; j: JournalCopy }) {
   if (rows.length === 0) return null;
   return (
-    <div className="rounded-lg border border-[var(--border-subtle)] p-3">
+    <div className="min-w-0 rounded-lg border border-[var(--border-subtle)] p-3">
       <p className="mb-2 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{title}</p>
       <div className="flex flex-col gap-1.5">
         {rows.slice(0, 6).map((row) => (
@@ -306,6 +306,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
           <div>
             <CardTitle className="tk-display text-lg">{j.title}</CardTitle>
             <CardDescription className="mt-0.5 text-xs">{j.subtitle}</CardDescription>
+            <p className="mt-2 max-w-2xl text-xs leading-relaxed text-[var(--text-secondary)]">{t.productClarity.personalMetrics}</p>
           </div>
           <div className="flex items-center gap-2">
             {!isCurrentMonth && (
