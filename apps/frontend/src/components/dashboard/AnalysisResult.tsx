@@ -921,6 +921,25 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
     ? `${formatPrice(readingInvalidation)}${invalidationNote ? `: ${cleanModelText(invalidationNote)}` : ''}`
     : cleanModelText(invalidationNote) || riskItems[0];
 
+  // WAIT keeps the original explanation → plan → technical reading order.
+  // Its clarity guide follows the full reading; active entries retain the header guide.
+  const readingGuide = !invalidTradePlan ? (
+    <dl aria-label={clarity.readingGuide} className="mt-4 space-y-3 border-t border-[var(--border-subtle)] pt-4 text-sm">
+      <div>
+        <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.why}</dt>
+        <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{readingReason || clarity.reasonMissing}</dd>
+      </div>
+      <div>
+        <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.risk}</dt>
+        <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{readingRisk || clarity.riskMissing}</dd>
+      </div>
+      <div>
+        <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.next}</dt>
+        <dd className="mt-1 leading-relaxed text-[var(--text-secondary)]">{clarity.reviewConditions}</dd>
+      </div>
+    </dl>
+  ) : null;
+
   /** A leitura (executiveSummary). No WAIT sobe para logo abaixo do plano. */
   const summaryBlock = (
     <div className="rounded-md border border-[var(--border-emphasis)] bg-[var(--bg-overlay)] p-3">
@@ -1020,22 +1039,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
               {signalState === 'ARMED' ? clarity.pendingEntry : clarity.entryNow}
             </p>
           )}
-          {!invalidTradePlan && (
-            <dl aria-label={clarity.readingGuide} className="mt-4 space-y-3 border-t border-[var(--border-subtle)] pt-4 text-sm">
-              <div>
-                <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.why}</dt>
-                <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{readingReason || clarity.reasonMissing}</dd>
-              </div>
-              <div>
-                <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.risk}</dt>
-                <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{readingRisk || clarity.riskMissing}</dd>
-              </div>
-              <div>
-                <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.next}</dt>
-                <dd className="mt-1 leading-relaxed text-[var(--text-secondary)]">{clarity.reviewConditions}</dd>
-              </div>
-            </dl>
-          )}
+          {!isWaitVerdict && readingGuide}
           {strategyFit && (
             // Bloco visível (não só tooltip): a nota anti-claim precisa ser
             // lida, não descoberta em hover. Nunca reescreve nem substitui o
@@ -1105,7 +1109,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
 
       {isWaitVerdict && (
         <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '60ms' }}>
-          <CardContent className="p-5 md:p-6">{summaryBlock}</CardContent>
+          <CardContent className="p-5 md:p-6">
+            {summaryBlock}
+            {readingGuide}
+          </CardContent>
         </Card>
       )}
 

@@ -106,6 +106,27 @@ describe('product clarity without changing the stored decision', () => {
     expect(screen.queryByText(c.pendingEntry)).toBeNull();
   });
 
+  it.each(['WATCH', 'NO_TRADE'] as const)('keeps explanation, plan and technical reading before the clarity guide for %s', state => {
+    const data = fixture(state, 'WAIT');
+    const a = data.fullResponse!.analysis!;
+    a.executiveSummary = 'Stored complete technical reading.';
+    a.invalidationNote = 'Stored invalidation note.';
+    const before = JSON.stringify(data);
+    const guide = show(data);
+    const t = getTranslations('en');
+    const explanation = screen.getByText(state === 'WATCH' ? t.analysis.result.watchExplain : t.analysis.result.noTradeExplain, { exact: false });
+    const plan = screen.getByText('Only after the stored chart condition.');
+    const reading = screen.getAllByText('Stored complete technical reading.').find(el => !guide.contains(el))!;
+    const follows = (first: Element, second: Element) =>
+      expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    follows(explanation, plan);
+    follows(plan, reading);
+    follows(reading, guide);
+    expect(within(guide).getByText('Stored invalidation note.')).toBeTruthy();
+    expect(screen.queryByTestId('levels-card')).toBeNull();
+    expect(JSON.stringify(data)).toBe(before);
+  });
+
   it('uses only a validated stored watch-plan invalidation for WATCH', () => {
     const data = fixture('WATCH', 'WAIT');
     data.fullResponse!.watchPlan = {
