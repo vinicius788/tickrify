@@ -12,6 +12,9 @@ export default {
     personalMetrics: "Trefferquote und P&L basieren auf den von dir erfassten Trade-Ergebnissen. Sie sind von der automatischen Marktauswertung getrennt und bestätigen nicht die Leistung der KI."
   },
   commercial: {
+    exampleDemo: "Die anonyme Demo erlaubt bis zu eine kostenlose Analyse pro Gerät, einschließlich WAIT. Gespeicherte Beispiele verbrauchen dieses Kontingent nicht.",
+    examplePaid: "Analysen verbrauchen die Ticks deines Tarifs, einschließlich WAIT.",
+    exampleLegacy: "Bisheriges Gratiskontingent: noch {left} BUY/SELL-Signale. WAIT verbraucht keines dieser Signale, zählt aber zum Gesamtlimit der Analysen.",
     trialRules: "Bis zu 7 Analysen an 3 Nutzungstagen (3/2/2), innerhalb von 7 Tagen ab Beginn. WAIT zählt mit. Ohne Karte oder automatische Abbuchung.",
     trialEndRule: "Endet nach Verbrauch von Tag 3, zu Beginn eines vierten Nutzungstags oder nach Ablauf der 7 Tage, je nachdem, was zuerst eintritt.",
     trialWindow: "Testzeitraum endet: {date}.",

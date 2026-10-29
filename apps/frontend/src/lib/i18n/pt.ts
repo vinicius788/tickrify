@@ -12,6 +12,9 @@ export default {
     personalMetrics: "A taxa de acerto e o P&L usam os resultados de operações que você registra. São separados da avaliação automática de mercado e não validam o desempenho da IA."
   },
   commercial: {
+    exampleDemo: "A demo anônima permite até uma análise grátis por dispositivo, incluindo WAIT. Os exemplos fixos não consomem essa cota.",
+    examplePaid: "As análises usam os Ticks do seu plano, incluindo WAIT.",
+    exampleLegacy: "Gratuidade legada: restam {left} sinais BUY/SELL. WAIT não consome um desses sinais, mas conta no limite total de análises.",
     trialRules: "Até 7 análises em 3 dias de uso (3/2/2), dentro de 7 dias do início. WAIT conta. Sem cartão nem cobrança automática.",
     trialEndRule: "Termina ao esgotar o dia 3, iniciar um quarto dia de uso ou vencer a janela de 7 dias, o que ocorrer primeiro.",
     trialWindow: "Fim da janela do teste: {date}.",

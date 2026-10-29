@@ -54,7 +54,7 @@ import SettingsPage from "../dashboard/SettingsPage";
 import { checkoutReturnPath, loadCheckoutIntent } from "@/lib/checkoutIntent";
 import { useFoundingOffer } from "@/hooks/useFoundingOffer";
 import UpgradeVideo from "../dashboard/UpgradeVideo";
-import { SampleAnalysisView, SamplePicker } from "../dashboard/SampleAnalyses";
+import { SampleAnalysisView, SamplePicker, type SampleAllowance } from "../dashboard/SampleAnalyses";
 import { SAMPLE_ANALYSES, type SampleKind } from "@/lib/sample-analyses";
 import { PricingCards } from "@/components/pricing/PricingCards";
 import { useSeo } from "@/hooks/useSeo";
@@ -264,7 +264,7 @@ const DashboardPage = () => {
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, billingManageable, trial, trialBlocked, isLoading: isPlanLoading, isUnavailable: isUsageUnavailable, retry: retryUsage } = useAnalysisLimit();
+  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, formerSubscriber, billingManageable, trial, trialBlocked, isLoading: isPlanLoading, isUnavailable: isUsageUnavailable, retry: retryUsage } = useAnalysisLimit();
   const [theme] = useTheme();
   // Trial de 3 dias: qual paywall mostrar (volte amanha ou trial encerrado).
   const trialVariant: 'daily_limit' | 'trial_ended' | undefined = trial
@@ -572,6 +572,19 @@ const DashboardPage = () => {
 
   // Sinais gratis que ainda restam (o /usage ja desconta); 3 enquanto carrega.
   const samplesFreeLeft = Number.isFinite(remaining) ? Math.max(0, remaining) : (total ?? 3);
+  const sampleAllowance: SampleAllowance = isDemo
+    ? { kind: 'demo' }
+    : isPlanLoading
+      ? { kind: 'loading' }
+      : isUsageUnavailable || trialBlocked
+        ? { kind: 'unavailable' }
+        : isUnlimited
+          ? { kind: 'paid' }
+          : trial
+            ? { kind: 'trial', trial }
+            : formerSubscriber
+              ? { kind: 'former' }
+              : { kind: 'legacy', remaining: samplesFreeLeft };
 
   // Resultado aberto pela URL (recarregar, voltar do navegador, link colado):
   // busca a analise no servidor. Logo depois de uma analise nova ela ja esta
@@ -1404,8 +1417,7 @@ const DashboardPage = () => {
               <SamplePicker
                 samples={SAMPLE_ANALYSES}
                 viewed={viewedSamples}
-                freeLeft={samplesFreeLeft}
-                trial={Boolean(trial)}
+                allowance={sampleAllowance}
                 onOpen={openSampleAnalysis}
                 onAnalyze={() => {
                   track('sample_cta_clicked', { viewed: viewedSamples.size, surface: 'picker' });
@@ -1469,8 +1481,7 @@ const DashboardPage = () => {
             sample={sample}
             samples={SAMPLE_ANALYSES}
             viewed={viewedSamples}
-            freeLeft={samplesFreeLeft}
-                trial={Boolean(trial)}
+            allowance={sampleAllowance}
             onOpen={openSampleAnalysis}
             onBack={() => goTo('new')}
             onAnalyze={() => {

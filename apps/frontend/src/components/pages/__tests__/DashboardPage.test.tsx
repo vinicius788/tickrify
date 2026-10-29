@@ -1,10 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import DashboardPage from '@/components/pages/DashboardPage';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
+import { getTranslations, LANGUAGES } from '@/lib/i18n';
 
 const mockUseUser = vi.fn();
 const mockUseAuth = vi.fn();
@@ -700,7 +701,7 @@ describe('DashboardPage', () => {
       expect(screen.queryByText('Não entrar também é uma resposta')).toBeNull();
 
       expect(screen.getByText('Agora é sua vez.')).toBeTruthy();
-      expect(screen.getByText('Você tem 3 planos de trade grátis para testar com seus próprios gráficos. WAIT não conta.')).toBeTruthy();
+      expect(screen.getByText(getTranslations('pt').commercial.exampleLegacy.replace('{left}', '3'))).toBeTruthy();
       expect(api.createAnalysis).not.toHaveBeenCalled();
       expect(api.getAnalysis).not.toHaveBeenCalled();
       expect(api.getAnalysisUsage).not.toHaveBeenCalled();
@@ -712,6 +713,48 @@ describe('DashboardPage', () => {
       expect(screen.getByRole('button', { name: 'start-with-image' })).toBeTruthy();
       expect(screen.getAllByText('Vista')).toHaveLength(3);
       expect(mockTrack).toHaveBeenCalledWith('sample_cta_clicked', { viewed: 3, surface: 'sample' });
+    });
+
+    const trialState = {
+      dayIndex: 1, daysTotal: 3, usedToday: 1, limitToday: 3, remainingToday: 2,
+      daysUsed: 1, status: 'active', paywall: null,
+      windowEndsAt: '2026-11-03T12:00:00Z', timezone: 'UTC', nextAvailableAt: null,
+    };
+    const pt = getTranslations('pt');
+    it.each([
+      { name: 'anonymous demo', usage: { ...newFreeUser, isUnlimited: true, remaining: Infinity, total: Infinity }, expected: pt.commercial.exampleDemo, anonymous: true },
+      { name: 'paid subscriber', usage: { ...newFreeUser, plan: 'starter', isUnlimited: true, remaining: Infinity, total: Infinity }, expected: `${pt.commercial.examplePaid} ${pt.commercial.tickCosts}` },
+      { name: 'current trial', usage: { ...newFreeUser, trial: trialState, remaining: 2 }, expected: `${pt.counter.trialLeftToday.replace('{left}', '2').replace('{limit}', '3')} ${pt.commercial.trialRules}` },
+      { name: 'ended trial', usage: { ...newFreeUser, trial: { ...trialState, status: 'ended', remainingToday: 0 } }, expected: pt.counter.trialEnded },
+      { name: 'legacy allowance', usage: { ...newFreeUser, remaining: 1 }, expected: pt.commercial.exampleLegacy.replace('{left}', '1') },
+      { name: 'former subscriber', usage: { ...newFreeUser, formerSubscriber: true, remaining: 0 }, expected: pt.counter.subscriptionEnded },
+      { name: 'blocked trial', usage: { ...newFreeUser, trialBlocked: { code: 'TRIAL_UNAVAILABLE', message: 'blocked' } }, expected: pt.counter.planUnavailable },
+      { name: 'unavailable usage', usage: { ...newFreeUser, isUnavailable: true }, expected: pt.counter.planUnavailable },
+      { name: 'non-finite legacy quota', usage: { ...newFreeUser, remaining: Infinity, total: Infinity }, expected: pt.counter.planUnavailable },
+    ])('sample footer reflects $name without granting or spending analyses', async ({ usage, expected, anonymous }) => {
+      if (anonymous) mockUseUser.mockReturnValue({ user: null });
+      mockUseAnalysisLimit.mockReturnValue(usage);
+      const increment = vi.fn();
+      mockUseIncrementAnalysis.mockReturnValue(increment);
+      const api = makeApiClient();
+      mockUseAPIClient.mockReturnValue(api);
+      renderDashboard(`${anonymous ? '/demo' : '/dashboard'}/new/example/neutral`);
+      const footer = (await screen.findByText('Agora é sua vez.')).parentElement!;
+      expect(within(footer).getByText(expected)).toBeTruthy();
+      expect(document.body.textContent).not.toContain('Infinity');
+      expect(document.body.textContent).not.toContain('WAIT não conta.');
+      expect(api.createAnalysis).not.toHaveBeenCalled();
+      expect(api.getAnalysis).not.toHaveBeenCalled();
+      expect(api.getAnalysisUsage).not.toHaveBeenCalled();
+      expect(increment).not.toHaveBeenCalled();
+    });
+
+    it.each(LANGUAGES.map(l => l.code))('uses the existing locale for subscriber sample messaging in %s', async language => {
+      window.localStorage.setItem('tickrify-language', language);
+      mockUseAnalysisLimit.mockReturnValue({ ...newFreeUser, plan: 'starter', isUnlimited: true, remaining: Infinity });
+      renderDashboard('/dashboard/new/example/bullish');
+      const t = getTranslations(language);
+      expect(await screen.findByText(`${t.commercial.examplePaid} ${t.commercial.tickCosts}`)).toBeTruthy();
     });
 
     it('voltar aos exemplos mantem a pessoa na tela de nova analise', async () => {

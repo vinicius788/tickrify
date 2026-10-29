@@ -12,6 +12,9 @@ export default {
     personalMetrics: "勝率とP&Lは、あなたが記録した取引結果に基づきます。市場の自動評価とは別の指標であり、AIの性能を検証するものではありません。"
   },
   commercial: {
+    exampleDemo: "匿名デモは端末ごとに最大1回（WAITを含む）の無料分析です。固定サンプルの閲覧ではこの枠を消費しません。",
+    examplePaid: "分析はプランのTicksを消費します。WAITも含まれます。",
+    exampleLegacy: "従来の無料枠：BUY/SELLシグナルは残り{left}件です。WAITはこのシグナル枠を消費しませんが、分析総数の上限には含まれます。",
     trialRules: "開始から7日以内の3利用日で最大7回の分析（3/2/2）。WAITも回数に含まれます。カード不要・自動課金なし。",
     trialEndRule: "3日目の上限到達、4利用日目の開始、または7日間の期限のうち、最も早い時点で終了します。",
     trialWindow: "トライアル期限：{date}。",

@@ -12,6 +12,9 @@ export default {
     personalMetrics: "Win rate and P&L use the trade results you record. They are separate from the automatic market review and do not validate AI performance."
   },
   commercial: {
+    exampleDemo: "The anonymous demo allows up to one free analysis per device, including WAIT. Fixed examples do not use this allowance.",
+    examplePaid: "Analyses use your plan’s Ticks, including WAIT.",
+    exampleLegacy: "Legacy free allowance: {left} BUY/SELL signals left. WAIT does not use one of these signals, but counts toward the total analysis limit.",
     trialRules: "Up to 7 analyses across 3 usage days (3/2/2), within 7 days of starting. WAIT counts. No card or automatic charge.",
     trialEndRule: "Ends when day 3 is used up, a fourth usage day begins, or the 7-day window expires, whichever comes first.",
     trialWindow: "Trial window ends: {date}.",

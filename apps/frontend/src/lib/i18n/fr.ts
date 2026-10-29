@@ -12,6 +12,9 @@ export default {
     personalMetrics: "Le taux de réussite et le P&L utilisent les résultats de trades que vous enregistrez. Ils sont distincts de l’évaluation automatique du marché et ne valident pas la performance de l’IA."
   },
   commercial: {
+    exampleDemo: "La démo anonyme permet au maximum une analyse gratuite par appareil, WAIT compris. Les exemples fixes ne consomment pas ce quota.",
+    examplePaid: "Les analyses utilisent les Ticks de votre forfait, WAIT compris.",
+    exampleLegacy: "Ancien quota gratuit : il reste {left} signaux BUY/SELL. WAIT ne consomme pas un de ces signaux, mais compte dans la limite totale des analyses.",
     trialRules: "Jusqu’à 7 analyses sur 3 jours d’utilisation (3/2/2), dans les 7 jours suivant le début. WAIT compte. Sans carte ni prélèvement automatique.",
     trialEndRule: "Se termine à épuisement du jour 3, au début d’un quatrième jour d’utilisation ou à expiration des 7 jours, selon la première éventualité.",
     trialWindow: "Fin de la période d’essai : {date}.",

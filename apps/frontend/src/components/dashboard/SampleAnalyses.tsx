@@ -12,6 +12,7 @@ import { ArrowDown, ArrowLeft, ArrowUp, Check, Minus, PlusCircle } from 'lucide-
 import AnalysisResult from './AnalysisResult';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import type { SampleAnalysis, SampleKind } from '@/lib/sample-analyses';
+import type { TrialUsage } from '@/lib/api';
 
 const COPY = {
   en: {
@@ -20,8 +21,6 @@ const COPY = {
     kind: { bullish: 'Bullish', bearish: 'Bearish', neutral: 'Neutral' },
     viewed: 'Viewed',
     turnTitle: "Now it's your turn.",
-    turnDesc: 'You have {left} free trade plans to test on your own charts. WAIT reads do not count.',
-    turnDescTrial: 'Your trial is ready: {left} analyses today on your own charts. Up to 3 usage days within 7 days.',
     turnCta: 'Analyze my chart',
     eyebrow: 'Example analysis',
     title: { bullish: 'Bullish example', bearish: 'Bearish example', neutral: 'Neutral example' },
@@ -39,8 +38,6 @@ const COPY = {
     kind: { bullish: 'Otimista', bearish: 'Pessimista', neutral: 'Neutro' },
     viewed: 'Vista',
     turnTitle: 'Agora é sua vez.',
-    turnDesc: 'Você tem {left} planos de trade grátis para testar com seus próprios gráficos. WAIT não conta.',
-    turnDescTrial: 'Seu teste está pronto: {left} análises hoje nos seus próprios gráficos. Até 3 dias de uso dentro de 7 dias.',
     turnCta: 'Analisar meu gráfico',
     eyebrow: 'Análise de exemplo',
     title: { bullish: 'Exemplo otimista', bearish: 'Exemplo pessimista', neutral: 'Exemplo neutro' },
@@ -81,14 +78,39 @@ function actionOf(sample: SampleAnalysis): string {
   return rec === 'HOLD' ? 'WAIT' : rec;
 }
 
-/** `trial`: conta no trial de 3 dias (a cota e por dia e o WAIT conta). */
-const TurnCta = ({ freeLeft, trial, onAnalyze }: { freeLeft: number; trial?: boolean; onAnalyze: () => void }) => {
+/** Presentation only: the dashboard supplies the already-resolved access state. */
+export type SampleAllowance =
+  | { kind: 'demo' | 'paid' | 'loading' | 'unavailable' | 'former' }
+  | { kind: 'trial'; trial: TrialUsage }
+  | { kind: 'legacy'; remaining: number };
+
+const TurnCta = ({ allowance, onAnalyze }: { allowance: SampleAllowance; onAnalyze: () => void }) => {
   const c = useSampleCopy();
+  const { t } = useLanguage();
+  const description = (() => {
+    switch (allowance.kind) {
+      case 'demo': return t.commercial.exampleDemo;
+      case 'paid': return `${t.commercial.examplePaid} ${t.commercial.tickCosts}`;
+      case 'trial':
+        return allowance.trial.status === 'ended'
+          ? t.counter.trialEnded
+          : `${t.counter.trialLeftToday
+              .replace('{left}', String(allowance.trial.remainingToday))
+              .replace('{limit}', String(allowance.trial.limitToday))} ${t.commercial.trialRules}`;
+      case 'legacy':
+        return Number.isFinite(allowance.remaining) && allowance.remaining >= 0
+          ? t.commercial.exampleLegacy.replace('{left}', String(Math.floor(allowance.remaining)))
+          : t.counter.planUnavailable;
+      case 'loading': return t.counter.loadingPlan;
+      case 'former': return t.counter.subscriptionEnded;
+      case 'unavailable': return t.counter.planUnavailable;
+    }
+  })();
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-[var(--border-accent)] bg-[var(--bg-card)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <p className="text-base font-semibold text-[var(--text-primary)]">{c.turnTitle}</p>
-        <p className="mt-0.5 text-sm text-[var(--text-secondary)]">{(trial ? c.turnDescTrial : c.turnDesc).replace('{left}', String(freeLeft))}</p>
+        <p className="mt-0.5 text-sm text-[var(--text-secondary)]">{description}</p>
       </div>
       <button
         type="button"
@@ -153,15 +175,13 @@ const SampleButtons = ({
 export const SamplePicker = ({
   samples,
   viewed,
-  freeLeft,
-  trial,
+  allowance,
   onOpen,
   onAnalyze,
 }: {
   samples: SampleAnalysis[];
   viewed: ReadonlySet<SampleKind>;
-  freeLeft: number;
-  trial?: boolean;
+  allowance: SampleAllowance;
   onOpen: (kind: SampleKind) => void;
   onAnalyze: () => void;
 }) => {
@@ -173,7 +193,7 @@ export const SamplePicker = ({
         <p className="mb-3 mt-0.5 text-xs text-[var(--text-secondary)]">{c.pickerDesc}</p>
         <SampleButtons samples={samples} viewed={viewed} onOpen={onOpen} />
       </section>
-      {viewed.size > 0 && <TurnCta freeLeft={freeLeft} trial={trial} onAnalyze={onAnalyze} />}
+      {viewed.size > 0 && <TurnCta allowance={allowance} onAnalyze={onAnalyze} />}
     </div>
   );
 };
@@ -183,8 +203,7 @@ export const SampleAnalysisView = ({
   sample,
   samples,
   viewed,
-  freeLeft,
-  trial,
+  allowance,
   onOpen,
   onBack,
   onAnalyze,
@@ -192,8 +211,7 @@ export const SampleAnalysisView = ({
   sample: SampleAnalysis;
   samples: SampleAnalysis[];
   viewed: ReadonlySet<SampleKind>;
-  freeLeft: number;
-  trial?: boolean;
+  allowance: SampleAllowance;
   onOpen: (kind: SampleKind) => void;
   onBack: () => void;
   onAnalyze: () => void;
@@ -251,7 +269,7 @@ export const SampleAnalysisView = ({
         <p className="mt-3 text-xs text-[var(--text-muted)]">{c.afterFine}</p>
       </section>
 
-      <TurnCta freeLeft={freeLeft} trial={trial} onAnalyze={onAnalyze} />
+      <TurnCta allowance={allowance} onAnalyze={onAnalyze} />
     </div>
   );
 };
