@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '../auth/auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
@@ -13,8 +13,8 @@ export class RatingsAdminController {
 
   @Get()
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
-  list() {
-    return this.ratings.adminList();
+  list(@Query('includeUsefulness') includeUsefulness?: string) {
+    return this.ratings.adminList(includeUsefulness === 'true');
   }
 
   @Patch(':id')

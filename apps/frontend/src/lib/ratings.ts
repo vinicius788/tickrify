@@ -48,6 +48,7 @@ export type AdminRating = {
   id: string;
   rating: number;
   reasons: string[] | null;
+  feedback?: { kind: 'usefulness'; useful: boolean; modality: string; verdict: string; reasons: string[] } | null;
   comment: string | null;
   quoteConsent: boolean;
   displayName: string | null;
@@ -58,12 +59,20 @@ export type AdminRating = {
   userEmail: string | null;
 };
 
-export function adminListRatings(token: string) {
-  return send<{ items: AdminRating[]; averages: Array<{ recommendation: string | null; average: number | null; count: number }> }>(
-    '/api/admin/ratings',
-    { method: 'GET' },
-    token,
+export async function adminListRatings(token: string) {
+  const data = await send<{ items: AdminRating[]; supportsUsefulness?: boolean; averages: Array<{ recommendation: string | null; average: number | null; count: number }> }>(
+    '/api/admin/ratings?includeUsefulness=true', { method: 'GET' }, token,
   );
+  const items = data.items.map(item => {
+    const raw = item.reasons as unknown;
+    const legacyEnvelope = raw && typeof raw === 'object' && !Array.isArray(raw)
+      && (raw as { kind?: string }).kind === 'usefulness' ? raw as NonNullable<AdminRating['feedback']> : null;
+    const feedback = item.feedback ?? legacyEnvelope;
+    return { ...item, feedback, reasons: feedback?.reasons ?? (Array.isArray(raw) ? raw as string[] : null) };
+  });
+  // A rolled-back backend may aggregate binary 5/1 with stars. Never display that average.
+  const averagesUnavailable = data.supportsUsefulness !== true;
+  return { items, averages: averagesUnavailable ? [] : data.averages, averagesUnavailable };
 }
 
 export function adminPublishRating(id: string, input: { published: boolean; displayName?: string; country?: string }, token: string) {
@@ -118,4 +127,42 @@ export function useTestimonials(): Testimonial[] {
     };
   }, []);
   return items.length >= MIN_TESTIMONIALS ? items : [];
+}
+
+export const USEFULNESS_REASONS = ['hard_to_understand', 'next_step_unclear', 'levels_or_asset', 'not_trusted', 'too_slow', 'other'] as const;
+export type UsefulnessReason = (typeof USEFULNESS_REASONS)[number];
+export type UsefulnessEligibility = { eligible: boolean; answered?: boolean; recentAnswered?: boolean; modality: 'free' | 'trial' | 'legacy' | 'paid'; verdict: string };
+
+export function getUsefulnessEligibility(analysisId: string, token: string) {
+  return send<UsefulnessEligibility>(`/api/ratings/analysis/${analysisId}`, { method: 'GET' }, token);
+}
+export function rateUsefulness(analysisId: string, useful: boolean, token: string) {
+  return send<{ id: string; duplicate: boolean }>('/api/ratings/usefulness', { method: 'POST', keepalive: true, body: JSON.stringify({ analysisId, useful }) }, token);
+}
+export function addUsefulnessReasons(ratingId: string, reasons: UsefulnessReason[], token: string) {
+  return send<{ id: string }>(`/api/ratings/${ratingId}`, { method: 'PATCH', body: JSON.stringify({ reasons, kind: 'usefulness' }) }, token);
+}
+
+// Same weekly/monthly cadence, scoped to the authenticated account. No token or chart in storage.
+const usefulnessMemory = new Map<string, number>();
+function usefulnessTime(key: string) {
+  return Math.max(readTime(key), usefulnessMemory.get(key) ?? 0);
+}
+function usefulnessWrite(key: string) {
+  usefulnessMemory.set(key, Date.now());
+  writeNow(key);
+}
+const usefulnessKey = (userId: string, suffix: string) => `tickrify-usefulness:${userId}:${suffix}`;
+export function shouldAskUsefulness(userId: string, analysisId: string, now = Date.now()) {
+  return !usefulnessTime(usefulnessKey(userId, `analysis:${analysisId}`))
+    && now - usefulnessTime(usefulnessKey(userId, 'asked')) > WEEK_MS
+    && now - usefulnessTime(usefulnessKey(userId, 'answered')) > MONTH_MS;
+}
+export function markUsefulnessAsked(userId: string, analysisId: string) {
+  usefulnessWrite(usefulnessKey(userId, 'asked'));
+  usefulnessWrite(usefulnessKey(userId, `analysis:${analysisId}`));
+}
+export function markUsefulnessAnswered(userId: string, analysisId: string) {
+  usefulnessWrite(usefulnessKey(userId, 'answered'));
+  usefulnessWrite(usefulnessKey(userId, `analysis:${analysisId}`));
 }

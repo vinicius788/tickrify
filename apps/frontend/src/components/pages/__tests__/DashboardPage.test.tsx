@@ -869,6 +869,28 @@ describe('DashboardPage', () => {
     });
   });
 
+  describe('feedback de utilidade no resultado autenticado', () => {
+    it.each(['free', 'trial', 'legacy'])('mostra Yes/No para %s concluído, sem tocar em créditos ou criar análise', async (modality) => {
+      mockUseUser.mockReturnValue({ user: { id: `feedback-${modality}` } });
+      mockUseAnalysisLimit.mockReturnValue({ plan: 'free', remaining: 2, isUnlimited: false, isLoading: false, trial: modality === 'trial' ? { status: 'active' } : null });
+      const client = makeApiClient({ getAnalysis: vi.fn().mockResolvedValue({ id: 'cmanalysisfeedback', status: 'completed', recommendation: 'WAIT' }) });
+      mockUseAPIClient.mockReturnValue(client);
+      vi.stubGlobal('fetch', vi.fn(async input => ({ ok: String(input).includes('/api/ratings/analysis/'), status: 200, json: async () => ({ eligible: true, modality, verdict: 'WATCH' }) })));
+      renderDashboard('/dashboard/analysis/cmanalysisfeedback');
+      expect(await screen.findByRole('region', { name: 'Esta análise foi útil?' })).toBeTruthy();
+      expect(client.createAnalysis).not.toHaveBeenCalled();
+      expect(mockUseIncrementAnalysis.mock.results.at(-1)?.value).not.toHaveBeenCalled();
+      expect(screen.queryByRole('button', { name: /stars/ })).toBeNull();
+    });
+
+    it('não coloca feedback autenticado nos exemplos fixos da demo', async () => {
+      renderDashboard('/demo/new/example/neutral');
+      await screen.findByText(/Neutral example|Exemplo neutro/i);
+      expect(screen.queryByRole('region', { name: 'Esta análise foi útil?' })).toBeNull();
+      expect((fetch as ReturnType<typeof vi.fn>).mock.calls.filter(([url]) => String(url).includes('/api/ratings/analysis/'))).toHaveLength(0);
+    });
+  });
+
   describe('oferta da ultima gratis no resultado', () => {
     const lastFreeViewed = () =>
       mockTrack.mock.calls.some(([event, props]) => event === 'upgrade_cta_viewed' && props?.source === 'last_free_result');

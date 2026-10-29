@@ -804,6 +804,12 @@ export default {
     descDailyLimitAlerts: 'Your alerts stay on. See your trial allowance for your next analyses.',
   },
   rating: {
+    usefulnessQuestion: "Was this analysis useful?",
+    reasonNextStep: "The next step was unclear",
+    reasonLevelsAsset: "Incorrect levels or asset",
+    reasonTrust: "I don’t trust the analysis",
+    optionalReasons: "Optional: choose any reasons, or skip.",
+
     question: 'How useful was this read?',
     hint: 'One tap. It helps us make the next one better.',
     notNow: 'Not now',

@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { Star } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import {
   addRatingDetails,
+  addUsefulnessReasons, getUsefulnessEligibility, rateUsefulness,
+  shouldAskUsefulness, markUsefulnessAsked, markUsefulnessAnswered,
+  type UsefulnessEligibility, type UsefulnessReason,
   markRatingAnswered,
   markRatingAsked,
   rateAnalysis,
@@ -21,7 +24,7 @@ type Step = 'stars' | 'good' | 'bad' | 'thanks';
  * o que faltou (lista fechada). Nunca trava nada: no maximo 1 vez por semana,
  * e quem respondeu fica 30 dias sem ver.
  */
-const RatingCard = ({ analysisId }: { analysisId: string }) => {
+const StarRatingCard = ({ analysisId }: { analysisId: string }) => {
   const { t } = useLanguage();
   const r = t.rating;
   const { getToken } = useAuth();
@@ -219,4 +222,127 @@ const RatingCard = ({ analysisId }: { analysisId: string }) => {
   );
 };
 
-export default RatingCard;
+/** Free/trial variant reuses the rating card, endpoints, spacing and optional reason chips. */
+function UsefulnessRatingCard({ analysisId, userId }: { analysisId: string; userId: string }) {
+  const { t } = useLanguage();
+  const { getToken } = useAuth();
+  const [context, setContext] = useState<UsefulnessEligibility | null>(null);
+  const [step, setStep] = useState<'question' | 'reasons' | 'thanks' | 'hidden'>('question');
+  const [ratingId, setRatingId] = useState<string | null>(null);
+  const [reasons, setReasons] = useState<UsefulnessReason[]>([]);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState(false);
+  const card = useRef<HTMLElement>(null);
+  const viewed = useRef(false);
+  const busy = useRef(false);
+  const tokenGetter = useRef(getToken);
+  tokenGetter.current = getToken;
+
+  useEffect(() => {
+    let alive = true;
+    if (!shouldAskUsefulness(userId, analysisId)) return;
+    void (async () => {
+      try {
+        const token = await tokenGetter.current();
+        if (!token) return;
+        const result = await getUsefulnessEligibility(analysisId, token);
+        if (alive && result.eligible) setContext(result);
+      } catch { /* No backend support/network: hide feedback, never block the analysis. */ }
+    })();
+    return () => { alive = false; };
+  }, [analysisId, userId]);
+
+  useEffect(() => {
+    if (!context || !card.current || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(entries => {
+      if (viewed.current || document.visibilityState !== 'visible' || !entries.some(e => e.isIntersecting && e.intersectionRatio >= 0.5)) return;
+      viewed.current = true;
+      markUsefulnessAsked(userId, analysisId);
+      track('analysis_usefulness_viewed', { analysisId, modality: context.modality, verdict: context.verdict });
+      observer.disconnect();
+    }, { threshold: 0.5 });
+    observer.observe(card.current);
+    return () => observer.disconnect();
+  }, [context, analysisId, userId]);
+
+  if (!context || step === 'hidden') return null;
+  const answer = async (useful: boolean) => {
+    if (busy.current) return;
+    busy.current = true;
+    setSending(true); setError(false);
+    try {
+      const token = await tokenGetter.current();
+      if (!token) throw new Error('no_token');
+      const saved = await rateUsefulness(analysisId, useful, token);
+      markUsefulnessAnswered(userId, analysisId);
+      setRatingId(saved.id);
+      setStep(saved.duplicate || useful ? 'thanks' : 'reasons');
+    } catch { setError(true); }
+    finally { busy.current = false; setSending(false); }
+  };
+  const sendReasons = async () => {
+    if (busy.current || !ratingId) return;
+    if (!reasons.length) { setStep('thanks'); return; }
+    busy.current = true; setSending(true); setError(false);
+    try {
+      const token = await tokenGetter.current();
+      if (!token) throw new Error('no_token');
+      await addUsefulnessReasons(ratingId, reasons, token);
+      setStep('thanks');
+    } catch { setError(true); }
+    finally { busy.current = false; setSending(false); }
+  };
+  const labels: Array<[UsefulnessReason, string]> = [
+    ['hard_to_understand', t.rating.reasonHard], ['next_step_unclear', t.rating.reasonNextStep],
+    ['levels_or_asset', t.rating.reasonLevelsAsset], ['not_trusted', t.rating.reasonTrust],
+    ['too_slow', t.rating.reasonSlow], ['other', t.rating.reasonOther],
+  ];
+  return <section ref={card} aria-label={t.rating.usefulnessQuestion} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
+    {step === 'question' ? <div>
+      <p className="text-sm font-semibold text-[var(--text-primary)]">{t.rating.usefulnessQuestion}</p>
+      <p className="text-xs text-[var(--text-secondary)]">{t.rating.hint}</p>
+      <div className="mt-3 flex gap-2">
+        {[true, false].map(useful => <button key={String(useful)} type="button" disabled={sending} onClick={() => void answer(useful)}
+          className="rounded-lg border border-[var(--border-default)] px-4 py-2 text-sm text-[var(--text-primary)] transition-colors hover:border-[var(--accent-green)] disabled:opacity-60">{useful ? t.common.yes : t.common.no}</button>)}
+      </div>
+      <button type="button" disabled={sending} onClick={() => setStep('hidden')} className="mt-2 text-xs text-[var(--text-secondary)] underline underline-offset-2 hover:text-[var(--text-primary)]">{t.rating.notNow}</button>
+    </div> : step === 'reasons' ? <div className="flex flex-col gap-3">
+      <p className="text-sm font-semibold text-[var(--text-primary)]">{t.rating.badTitle}</p>
+      <p className="text-xs text-[var(--text-secondary)]">{t.rating.optionalReasons}</p>
+      <div className="flex flex-wrap gap-2">{labels.map(([reason, label]) => <button key={reason} type="button" aria-pressed={reasons.includes(reason)} disabled={sending}
+        onClick={() => setReasons(list => list.includes(reason) ? list.filter(r => r !== reason) : [...list, reason])}
+        className={`rounded-full border px-3 py-1.5 text-xs ${reasons.includes(reason) ? 'border-[var(--accent-green)] text-[var(--text-primary)]' : 'border-[var(--border-default)] text-[var(--text-secondary)]'}`}>{label}</button>)}</div>
+      <div className="flex items-center gap-3">
+        <button type="button" disabled={sending} onClick={() => void sendReasons()} className="rounded-lg bg-[var(--inverse-bg)] px-4 py-2 text-sm font-semibold text-[var(--inverse-fg)] disabled:opacity-60">{t.rating.send}</button>
+        <button type="button" disabled={sending} onClick={() => setStep('thanks')} className="text-xs text-[var(--text-secondary)] underline">{t.rating.skip}</button>
+      </div>
+    </div> : <div role="status"><p className="text-sm font-semibold text-[var(--text-primary)]">{t.rating.thanksTitle}</p><p className="text-xs text-[var(--text-secondary)]">{t.rating.thanksDesc}</p></div>}
+    {error ? <p role="alert" className="mt-2 text-xs text-[var(--tone-down-2)]">{t.rating.error}</p> : null}
+  </section>;
+}
+
+// Existing paid stars remain intact. Only suppress a persisted answer/cooldown, including after upgrade.
+function PaidRatingGate({ analysisId }: { analysisId: string }) {
+  const { getToken } = useAuth();
+  const tokenGetter = useRef(getToken);
+  tokenGetter.current = getToken;
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const token = await tokenGetter.current();
+        if (!token) { if (alive) setAllowed(false); return; }
+        const status = await getUsefulnessEligibility(analysisId, token);
+        if (alive) setAllowed(status.modality === 'paid' && !status.answered && !status.recentAnswered);
+      } catch { if (alive) setAllowed(true); /* Older backend keeps the functional paid flow. */ }
+    })();
+    return () => { alive = false; };
+  }, [analysisId]);
+  return allowed ? <StarRatingCard analysisId={analysisId} /> : null;
+}
+
+export default function RatingCard({ analysisId, usefulnessUserId, userId }: { analysisId: string; usefulnessUserId?: string; userId?: string }) {
+  return usefulnessUserId ? <UsefulnessRatingCard analysisId={analysisId} userId={usefulnessUserId} />
+    : userId ? <PaidRatingGate analysisId={analysisId} /> : <StarRatingCard analysisId={analysisId} />;
+}

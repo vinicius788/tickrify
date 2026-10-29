@@ -804,6 +804,12 @@ export default {
     descDailyLimitAlerts: 'アラートは有効なままです。次の分析枠はトライアルの利用可能日時をご確認ください。',
   },
   rating: {
+    usefulnessQuestion: "この分析は役に立ちましたか？",
+    reasonNextStep: "次のステップが不明確だった",
+    reasonLevelsAsset: "価格水準または銘柄が間違っていた",
+    reasonTrust: "この分析を信頼できない",
+    optionalReasons: "任意：理由を選択するか、スキップしてください。",
+
     question: 'この分析はどのくらい役に立ちましたか？',
     hint: 'ワンタップで。次の分析の改善に役立ちます。',
     notNow: '今はしない',

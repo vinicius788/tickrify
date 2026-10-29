@@ -407,6 +407,7 @@ export type FunnelEvent =
   | 'billing_alert_viewed'
   | 'billing_alert_clicked'
   // Estrelas abaixo do resultado da analise paga (07/10/2026). Texto nunca vai ao PostHog.
+  | 'analysis_usefulness_viewed'
   | 'rating_card_viewed'
   | 'rating_card_dismissed'
   | 'rating_given'

@@ -804,6 +804,12 @@ export default {
     descDailyLimitAlerts: 'Deine Alarme bleiben aktiv. Die nächsten Analysen findest du im Testkontingent.',
   },
   rating: {
+    usefulnessQuestion: "War diese Analyse hilfreich?",
+    reasonNextStep: "Der nächste Schritt war unklar",
+    reasonLevelsAsset: "Falsche Kursniveaus oder falscher Markt",
+    reasonTrust: "Ich vertraue der Analyse nicht",
+    optionalReasons: "Optional: Gründe auswählen oder überspringen.",
+
     question: 'Wie hilfreich war diese Analyse?',
     hint: 'Ein Tipp. Das hilft uns, die nächste zu verbessern.',
     notNow: 'Nicht jetzt',

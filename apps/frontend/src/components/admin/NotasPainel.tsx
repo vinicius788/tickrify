@@ -10,6 +10,9 @@ const MOTIVO: Record<string, string> = {
   too_slow: 'Lento',
   wrong_symbol: 'Ativo/tempo errado',
   other: 'Outra coisa',
+  next_step_unclear: 'Próximo passo pouco claro',
+  levels_or_asset: 'Níveis ou ativo incorretos',
+  not_trusted: 'Não confia na análise',
 };
 
 function estrelas(n: number) {
@@ -49,10 +52,12 @@ const NotasPainel = () => {
       <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
         <h3 className="text-sm font-semibold text-[var(--text-primary)]">Notas das análises</h3>
         <p className="mt-1 text-xs text-[var(--text-faint)]">
-          Estrelas que os assinantes dão abaixo do resultado. No site só entra o que a pessoa autorizou e você publicou.
+          Estrelas dos assinantes e respostas de utilidade dos gratuitos/trial, separadas. Utilidade não mede precisão nem lucro. No site só entra o que a pessoa autorizou e você publicou.
         </p>
         <div className="mt-3 flex flex-wrap gap-4 text-sm text-[var(--text-soft)]">
-          {data.averages.length === 0 ? (
+          {data.averagesUnavailable ? (
+            <span className="text-[var(--text-faint)]">Médias indisponíveis nesta versão da API; avaliações individuais preservadas.</span>
+          ) : data.averages.length === 0 ? (
             <span className="text-[var(--text-faint)]">Nenhuma nota ainda.</span>
           ) : (
             data.averages.map((linha) => (
@@ -69,9 +74,9 @@ const NotasPainel = () => {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <p className="text-sm text-[var(--tone-warn-2)]">
-                {estrelas(nota.rating)}{' '}
+                {nota.feedback ? (nota.feedback.useful ? 'Útil: Sim' : 'Útil: Não') : estrelas(nota.rating)}{' '}
                 <span className="text-xs text-[var(--text-faint)]">
-                  · {nota.userEmail ?? 'sem e-mail'} · {nota.recommendation ?? '·'} · {new Date(nota.createdAt).toLocaleDateString('pt-BR')}
+                  · {nota.userEmail ?? 'sem e-mail'} · {nota.feedback?.verdict ?? nota.recommendation ?? '·'}{nota.feedback ? ` · ${nota.feedback.modality}` : ''} · {new Date(nota.createdAt).toLocaleDateString('pt-BR')}
                 </span>
               </p>
               {nota.comment ? <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--text-primary)]">&ldquo;{nota.comment}&rdquo;</p> : null}

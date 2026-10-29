@@ -804,6 +804,12 @@ export default {
     descDailyLimitAlerts: 'Tus alertas siguen activas. Consulta la cuota de prueba para tus próximos análisis.',
   },
   rating: {
+    usefulnessQuestion: "¿Fue útil este análisis?",
+    reasonNextStep: "El siguiente paso no estaba claro",
+    reasonLevelsAsset: "Niveles o activo incorrectos",
+    reasonTrust: "No confío en el análisis",
+    optionalReasons: "Opcional: elige los motivos o salta este paso.",
+
     question: '¿Qué tan útil fue esta lectura?',
     hint: 'Un toque. Nos ayuda a mejorar la próxima.',
     notNow: 'Ahora no',

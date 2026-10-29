@@ -817,6 +817,12 @@ export default {
     descDailyLimitAlerts: 'Seus alertas continuam ligados. Consulte a cota do teste para as próximas análises.',
   },
   rating: {
+    usefulnessQuestion: "Esta análise foi útil?",
+    reasonNextStep: "O próximo passo não ficou claro",
+    reasonLevelsAsset: "Níveis ou ativo incorretos",
+    reasonTrust: "Não confio na análise",
+    optionalReasons: "Opcional: escolha os motivos ou pule.",
+
     question: 'Quão útil foi esta leitura?',
     hint: 'Um toque. Ajuda a gente a melhorar a próxima.',
     notNow: 'Agora não',

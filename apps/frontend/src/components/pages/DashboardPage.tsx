@@ -1676,9 +1676,9 @@ const DashboardPage = () => {
                 base={base}
               />
             ) : null}
-            {/* Estrelas so para quem paga. */}
-            {!isDemo && isUnlimited && analysisData?.id ? (
-              <RatingCard key={analysisData.id} analysisId={analysisData.id} />
+            {/* Pagantes mantêm as estrelas; gratuitos autenticados avaliam utilidade. */}
+            {!isDemo && !isPlanLoading && !isUsageUnavailable && user?.id && analysisData?.id && analysisData.status === 'completed' ? (
+              <RatingCard key={`${user.id}:${analysisData.id}:${isUnlimited}`} analysisId={analysisData.id} userId={user.id} usefulnessUserId={isUnlimited ? undefined : user.id} />
             ) : null}
             {!isDemo && showAcquisitionSurvey && acquisitionSurvey}
             {!isDemo && (
