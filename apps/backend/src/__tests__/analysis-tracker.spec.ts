@@ -45,6 +45,14 @@ describe('trackAnalysis', () => {
       status: 'tracked', outcome: 'WIN', touched: true, filled: true, fillPrice: 99.5, entry: 99.5, missed: false, candleInterval: '1m',
     });
     expect(row?.touchedAt?.getTime()).toBe(t0 + M);
+    // Revisao mensal: lado, ATR e a referencia de direcao (a mercado, 1 ATR).
+    expect(row).toMatchObject({ direction: 'long', atr: 1, refOutcome: 'WIN', refFillPrice: 100 });
+  });
+
+  it('NO_TRADE tambem ganha linha (skipped) com o estado e a versao do motor', async () => {
+    const row = await trackAnalysis(candidate({ signalState: 'NO_TRADE', watchPlan: null }), after, fetchOk);
+    expect(row).toMatchObject({ status: 'skipped', reason: 'no_plan', signalState: 'NO_TRADE', engineVersion: '4.0.0', direction: null });
+    expect(fetchOk).not.toHaveBeenCalled();
   });
 
   it('janela ainda aberta: fica para a volta seguinte, sem buscar velas', async () => {
