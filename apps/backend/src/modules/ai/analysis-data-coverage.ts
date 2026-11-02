@@ -118,6 +118,8 @@ export interface GroundingNumbers {
   swings?: { kind: 'high' | 'low'; price: number }[];
   /** Movimento atrasado por direcao (v11, moveIsLate); null sem ATR. */
   late?: { long: boolean; short: boolean } | null;
+  /** Regime de volatilidade (v11, volatilityRegime): chave da calibracao. */
+  volRegime?: 'low' | 'normal' | 'high' | null;
 }
 
 export type HtfTrend = 'uptrend' | 'downtrend' | 'range';

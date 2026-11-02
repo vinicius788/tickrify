@@ -6,9 +6,12 @@
 // validador (signal-decision.ts): encaixe da invalidacao na swing real, stop
 // operacional, as duas entradas (a mercado e no nivel do plano) e se o movimento esta
 // atrasado. Tambem e a regua do replay e do rastreador de producao (trackPlan).
-// TODAS as constantes do motor e do validador moram em ENGINE_RULES.
+// TODAS as constantes do motor e do validador moram em ENGINE_RULES; os dados
+// calibrados (margem do stop e alcance), em engine-calibration.ts.
 // Velas no formato [ts, o, h, l, c, ...] em ordem cronologica, todas fechadas.
 // ============================================================================
+
+import { REACH_TABLE, STOP_MARGIN_P80 } from './engine-calibration';
 
 /** Limites do motor e do validador. Recalibrar AQUI, e so aqui. */
 export const ENGINE_RULES = {
@@ -18,7 +21,7 @@ export const ENGINE_RULES = {
    * intervalo, NO_TRADE.
    */
   invalidationSnapAtr: 0.5,
-  /** Margem do stop alem da invalidacao quando o par e o regime nao tem calibracao (STOP_MARGIN_P80). */
+  /** Margem do stop alem da invalidacao quando o par e o regime nao tem calibracao (STOP_MARGIN_P80, engine-calibration.ts). */
   stopMarginAtr: 0.25,
   /** Risco da entrada: abaixo do minimo o stop e alargado ate ele; acima do maximo, entrada invalida. */
   riskMinAtr: 0.5,
@@ -42,6 +45,14 @@ export const ENGINE_RULES = {
   validDefaultCandles: 16,
   validMinCandles: 6,
   validMaxCandles: 24,
+  /** Regime de volatilidade: ATR(14) atual / mediana do ATR(14) das ultimas 100 velas. */
+  volRegimeLowBelow: 0.8,
+  volRegimeHighAbove: 1.25,
+  volRegimeLookback: 100,
+  /** Grade da tabela de alcance: distancia ao nivel (ATR), velas, movimento contrario (ATR). */
+  reachGrid: { d: [0.25, 0.5, 0.75, 1, 1.5, 2, 3], n: [6, 12, 16, 24], k: [1, 2, 3] },
+  /** Celula da tabela de alcance com menos amostras que isto fica sem probabilidade. */
+  reachMinSamples: 200,
   /** Preco real a mais que isto (ATR) do preco lido no print = print desatualizado. */
   stalePrintAtr: 1,
   confidenceCap: 72,
@@ -51,14 +62,6 @@ export const ENGINE_RULES = {
   /** probabilityTp1 fica a no maximo isto da confianca. */
   probabilityTp1Band: 3,
 } as const;
-
-/**
- * Margem do stop alem da invalidacao, em ATR: o P80 de quanto o preco passou
- * da swing antes de respeita-la, por par e regime (`<par>:<tendencia do 4h>`,
- * ex. `XAUUSD:uptrend`). Par ou regime sem medicao usa ENGINE_RULES.stopMarginAtr.
- * Vazio ate existir a calibracao medida.
- */
-export const STOP_MARGIN_P80: Readonly<Record<string, number>> = {};
 
 export type TriggerType = 'zone_reaction' | 'sweep_reclaim' | 'breakout_close';
 export const TRIGGER_TYPES: readonly TriggerType[] = ['zone_reaction', 'sweep_reclaim', 'breakout_close'];
@@ -177,9 +180,55 @@ export function snapInvalidation(
   return { ...plan, invalidation: best, zoneLow, zoneHigh };
 }
 
+export type VolRegime = 'low' | 'normal' | 'high';
+
+/** ATR(14) em cada vela (media simples do true range, como o REAL DATA); NaN antes de 14 velas. */
+export function atr14Series(bars: readonly Bar[]): number[] {
+  const tr = bars.map((b, i) => (i === 0 ? b[2] - b[3] : Math.max(b[2] - b[3], Math.abs(b[2] - bars[i - 1][4]), Math.abs(b[3] - bars[i - 1][4]))));
+  let sum = 0;
+  return tr.map((x, i) => {
+    sum += x - (i >= 14 ? tr[i - 14] : 0);
+    return i >= 13 ? sum / 14 : NaN;
+  });
+}
+
+/** Regime de volatilidade da ultima vela; null com menos de 30 ATRs na janela. */
+export function volatilityRegime(bars: readonly Bar[], atr: readonly number[] = atr14Series(bars), at = bars.length - 1): VolRegime | null {
+  const R = ENGINE_RULES;
+  const window = atr.slice(Math.max(0, at - R.volRegimeLookback + 1), at + 1).filter((x) => Number.isFinite(x) && x > 0);
+  if (window.length < 30 || !(atr[at] > 0)) return null;
+  const sorted = [...window].sort((a, b) => a - b);
+  const ratio = atr[at] / sorted[Math.floor(sorted.length / 2)];
+  return ratio < R.volRegimeLowBelow ? 'low' : ratio > R.volRegimeHighAbove ? 'high' : 'normal';
+}
+
 /** Margem do stop em ATR: o P80 calibrado do par e do regime, ou o padrao. */
-export function stopMarginAtr(pair: string | null, regime: string | null): number {
+export function stopMarginAtr(pair: string | null, regime: VolRegime | null): number {
   return (pair && regime ? STOP_MARGIN_P80[`${pair}:${regime}`] : undefined) ?? ENGINE_RULES.stopMarginAtr;
+}
+
+/** Indice da celula de uma grade: o valor mais proximo; acima do ultimo, `clampHigh` decide. */
+function gridIndex(grid: readonly number[], value: number, clampHigh: boolean): number | null {
+  if (value > grid[grid.length - 1] * 1.25 && !clampHigh) return null;
+  let best = 0;
+  for (let i = 1; i < grid.length; i++) if (Math.abs(grid[i] - value) < Math.abs(grid[best] - value)) best = i;
+  return best;
+}
+
+/**
+ * Chance calibrada de o preco tocar um nivel a `dAtr` dentro de `candles`
+ * velas antes de andar `kAtr` no sentido oposto; null sem calibracao do par e
+ * do regime, celula com amostra pequena ou nivel longe demais da grade.
+ */
+export function reachProbability(pair: string | null, regime: VolRegime | null, dAtr: number, candles: number, kAtr: number): number | null {
+  const table = pair && regime ? REACH_TABLE[`${pair}:${regime}`] : undefined;
+  if (!table) return null;
+  const g = ENGINE_RULES.reachGrid;
+  const d = gridIndex(g.d, dAtr, false);
+  const n = gridIndex(g.n, candles, true);
+  const k = gridIndex(g.k, kAtr, true);
+  if (d === null || n === null || k === null) return null;
+  return table[(d * g.n.length + n) * g.k.length + k] ?? null;
 }
 
 /**

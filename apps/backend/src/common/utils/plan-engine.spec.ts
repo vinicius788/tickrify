@@ -1,6 +1,5 @@
 import {
   ENGINE_RULES,
-  STOP_MARGIN_P80,
   clampValidity,
   closedBars,
   entryLevels,
@@ -9,6 +8,9 @@ import {
   limitEntryLevels,
   moveIsLate,
   nearEdge,
+  atr14Series,
+  reachProbability,
+  volatilityRegime,
   pricePosition,
   resolveTp1,
   snapInvalidation,
@@ -17,6 +19,7 @@ import {
   runLimitOrder,
   type WatchPlan,
 } from './plan-engine';
+import { STOP_MARGIN_P80 } from './engine-calibration';
 
 // Compra na zona 99-99,5, ATR 1: limit em 99,5, stop 98,55. Venda e o espelho em torno de 100.
 const long: WatchPlan = {
@@ -107,8 +110,8 @@ describe('entryLevels e limitEntryLevels', () => {
   });
 
   it('sem calibracao do par e do regime, a margem padrao', () => {
-    expect(STOP_MARGIN_P80).toEqual({});
-    expect(stopMarginAtr('XAUUSD', 'uptrend')).toBe(ENGINE_RULES.stopMarginAtr);
+    expect(STOP_MARGIN_P80['XAUUSDX:normal']).toBeUndefined();
+    expect(stopMarginAtr('XAUUSDX', 'normal')).toBe(ENGINE_RULES.stopMarginAtr);
     expect(stopMarginAtr(null, null)).toBe(ENGINE_RULES.stopMarginAtr);
   });
 });
@@ -281,3 +284,26 @@ describe('trackPlan: a regua compartilhada do replay e do rastreador', () => {
     expect(trackPlan({ ...base, atr: 0.3, fine: [quiet(0)] })).toMatchObject({ outcome: 'NO_LEVELS', rejection: 'stop_out_of_range' });
   });
 });
+
+describe('regime de volatilidade e tabela de alcance', () => {
+  const flat = (n: number, range: number) => Array.from({ length: n }, (_, i) => [i, 100, 100 + range / 2, 100 - range / 2, 100]);
+
+  it('ATR(14) e a media simples do true range; antes de 14 velas, NaN', () => {
+    const atr = atr14Series(flat(20, 2));
+    expect(Number.isNaN(atr[12])).toBe(true);
+    expect(atr[13]).toBeCloseTo(2);
+  });
+
+  it('ATR atual contra a mediana das ultimas 100 velas: low, normal, high', () => {
+    expect(volatilityRegime(flat(60, 1))).toBe('normal');
+    expect(volatilityRegime([...flat(60, 1), ...flat(14, 3)])).toBe('high');
+    expect(volatilityRegime([...flat(60, 2), ...flat(14, 1)])).toBe('low');
+    expect(volatilityRegime(flat(20, 1))).toBeNull();
+  });
+
+  it('sem calibracao do par e do regime: sem probabilidade', () => {
+    expect(reachProbability('NAOEXISTE', 'normal', 0.5, 16, 2)).toBeNull();
+    expect(reachProbability(null, null, 0.5, 16, 2)).toBeNull();
+  });
+});
+

@@ -71,6 +71,7 @@ export function fxMarketClosed(now: Date): boolean {
 // ── Modo experimento (scripts de medicao) ───────────────────────────────────
 
 let experimentMode = false;
+let calibrationMode = false;
 const refusedLogged = new Set<string>();
 
 /**
@@ -83,8 +84,20 @@ export function enterTwelveDataExperimentMode(): void {
   store = null;
 }
 
+/**
+ * Calibracao do motor (replay-variants.ts --calibrate, decisao do dono em
+ * 02/11/2026): usa a chave de PRODUCAO, com o medidor em memoria (fora dos
+ * contadores de producao). O teto diario da calibracao (250 creditos, para
+ * sobrar 550 para as analises) e o ritmo ficam com o script.
+ */
+export function enterTwelveDataCalibrationMode(): void {
+  experimentMode = true;
+  calibrationMode = true;
+  store = null;
+}
+
 export function twelveDataApiKey(): string | null {
-  const key = experimentMode ? process.env.TWELVE_DATA_API_KEY_EXPERIMENTS : process.env.TWELVE_DATA_API_KEY;
+  const key = experimentMode && !calibrationMode ? process.env.TWELVE_DATA_API_KEY_EXPERIMENTS : process.env.TWELVE_DATA_API_KEY;
   return key?.trim() || null;
 }
 
@@ -270,6 +283,7 @@ export function __setTwelveDataForTests(options: { store?: TwelveDataStore | nul
   storePromise = null;
   clock = options.now ?? (() => new Date());
   experimentMode = false;
+  calibrationMode = false;
   refusedLogged.clear();
 }
 

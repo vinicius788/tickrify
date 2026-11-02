@@ -19,9 +19,12 @@ import {
   entryLevels,
   isValidWatchPlan,
   limitEntryLevels,
+  nearEdge,
   pricePosition,
+  reachProbability,
   snapInvalidation,
   stopMarginAtr,
+  type VolRegime,
 } from './plan-engine';
 import type { HtfTrend } from '../../modules/ai/analysis-data-coverage';
 
@@ -97,6 +100,15 @@ export interface RealDataInput {
   swings: readonly Pick<Swing, 'kind' | 'price'>[] | null;
   /** Movimento atrasado por direcao (moveIsLate); null sem o calculo. */
   late: { long: boolean; short: boolean } | null;
+  /** Regime de volatilidade do tempo grafico (volatilityRegime); null sem o calculo. */
+  volRegime: VolRegime | null;
+}
+
+/** Chance calibrada de o preco chegar ao nivel do WATCH dentro da validade. */
+export interface WatchReach {
+  /** 0 a 1. */
+  probability: number;
+  candles: number;
 }
 
 export interface SignalDecisionInput {
@@ -147,6 +159,8 @@ export interface SignalDecisionResult {
   newsGuardStatus: NewsGuardStatus;
   /** Preco real longe do print: o adapter acrescenta o aviso em riskFactors. */
   stalePrint: boolean;
+  /** WATCH com o nivel entre o preco e a invalidacao e calibracao do par e regime; senao null. */
+  watchReach: WatchReach | null;
 }
 
 /**
@@ -237,7 +251,7 @@ function hasUpwardDrift(symbol: string): boolean {
 }
 
 /** Chave do par na calibracao da margem do stop. */
-function calibrationPair(symbol: string): string | null {
+export function calibrationPair(symbol: string): string | null {
   return canonicalFxPair(symbol) ?? normalizeToBinancePerp(symbol).binanceSymbol ?? (String(symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || null);
 }
 
@@ -282,13 +296,14 @@ export function evaluatePlan(input: {
   price: number;
   atr: number;
   htfTrend: HtfTrend | null;
+  volRegime: VolRegime | null;
   swings: readonly Pick<Swing, 'kind' | 'price'>[];
   late: boolean;
 }): PlanEvaluation | ValidatorReason {
   if (pricePosition(input.plan, input.price) === 'invalidated') return 'plan_invalidated';
   const plan = snapInvalidation(input.plan, input.swings, input.atr, input.price);
   if (!plan) return 'invalidation_unsnapped';
-  const margin = stopMarginAtr(calibrationPair(input.symbol), input.htfTrend);
+  const margin = stopMarginAtr(calibrationPair(input.symbol), input.volRegime);
   const checks = parsePassFailChecklist(input.structureValidation);
   return {
     plan,
@@ -431,7 +446,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
   else if (real) {
     const ev = evaluatePlan({
       plan: modelPlan, symbol: input.symbol, structureValidation: input.structureValidation,
-      price: real.price, atr: real.atr as number, htfTrend: real.htfTrend, swings: real.swings ?? [],
+      price: real.price, atr: real.atr as number, htfTrend: real.htfTrend, volRegime: real.volRegime, swings: real.swings ?? [],
       late: real.late ? real.late[modelPlan.direction] : false,
     });
     if (typeof ev === 'string') chosen = { state: 'NO_TRADE', notes: [...mismatch, { from: start, to: 'NO_TRADE', reason: ev }], levels: NULL_LEVELS };
@@ -514,7 +529,21 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     newsEvent,
     newsGuardStatus,
     stalePrint,
+    watchReach: state === 'WATCH' && real && plan ? watchReachOf(plan, input.symbol, real) : null,
   };
+}
+
+/** Chance de chegar ao nivel do plano (borda proxima) antes de o preco andar ate o alvo. */
+function watchReachOf(plan: WatchPlan, symbol: string, real: RealDataInput): WatchReach | null {
+  const atr = real.atr as number;
+  const edge = nearEdge(plan);
+  const pullback = plan.direction === 'long' ? edge < real.price && edge > plan.invalidation : edge > real.price && edge < plan.invalidation;
+  if (!pullback) return null;
+  const probability = reachProbability(
+    calibrationPair(symbol), real.volRegime,
+    Math.abs(real.price - edge) / atr, plan.validForCandles, Math.abs(plan.target1 - real.price) / atr,
+  );
+  return probability === null ? null : { probability, candles: plan.validForCandles };
 }
 
 /**

@@ -34,6 +34,7 @@ import {
   closedBars,
   fractalSwings,
   moveIsLate,
+  volatilityRegime,
   type Bar,
   type TriggerType,
   type WatchPlan,
@@ -1775,6 +1776,7 @@ export class AIAdapter {
               numbers.swings = fractalSwings(bars).map(({ kind, price }) => ({ kind, price }));
               const atr = numbers.atr14;
               numbers.late = atr ? { long: moveIsLate(bars, atr, 'long'), short: moveIsLate(bars, atr, 'short') } : null;
+              numbers.volRegime = volatilityRegime(bars);
             }
             candleBlock = real ? [real.block, compact?.block].filter(Boolean).join('\n\n') : null;
             candleCoverage = candleBlock ? 'injected' : 'block_unavailable';
@@ -2304,7 +2306,10 @@ export class AIAdapter {
       // swings e maturidade reais valem quando os candles entraram no prompt.
       const numbers = groundingStats?.coverage === 'injected' ? groundingStats.numbers : null;
       const realData = numbers && numbers.lastClose !== null && numbers.lastClose > 0
-        ? { price: numbers.lastClose, atr: numbers.atr14, htfTrend: numbers.htfTrend ?? null, swings: numbers.swings ?? null, late: numbers.late ?? null }
+        ? {
+            price: numbers.lastClose, atr: numbers.atr14, htfTrend: numbers.htfTrend ?? null,
+            swings: numbers.swings ?? null, late: numbers.late ?? null, volRegime: numbers.volRegime ?? null,
+          }
         : null;
       const modelState =
         parsed.signalState ??
@@ -2355,6 +2360,7 @@ export class AIAdapter {
         signalState: decision.state,
         watchPlan: decision.watchPlan,
         dataMode: decision.dataMode,
+        watchReach: decision.watchReach,
         validatorNotes: decision.validatorNotes,
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);

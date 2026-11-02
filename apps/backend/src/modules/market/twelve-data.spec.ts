@@ -5,6 +5,7 @@ import {
   TWELVE_DATA_BUDGET,
   __setTwelveDataForTests,
   enterTwelveDataExperimentMode,
+  enterTwelveDataCalibrationMode,
   experimentRefusesFx,
   fxMarketClosed,
   monitorFxIntervalMs,
@@ -222,6 +223,20 @@ describe('scripts: chave de experimento', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toContain('TWELVE_DATA_API_KEY_EXPERIMENTS');
     warn.mockRestore();
+  });
+
+  it('calibracao (decisao do dono): usa a chave de producao, com o medidor em memoria', async () => {
+    const saved = process.env.TWELVE_DATA_API_KEY;
+    process.env.TWELVE_DATA_API_KEY = 'prod-key';
+    try {
+      enterTwelveDataCalibrationMode();
+      expect(twelveDataApiKey()).toBe('prod-key');
+      expect(experimentRefusesFx('replay-variants')).toBe(false);
+      await twelveDataTimeSeries({ consumer: 'sweeper', pair: 'XAUUSD', interval: '1h', outputsize: 5000 });
+      expect(String(fetchSpy.mock.calls[0][0])).toContain('apikey=prod-key');
+    } finally {
+      if (saved === undefined) delete process.env.TWELVE_DATA_API_KEY; else process.env.TWELVE_DATA_API_KEY = saved;
+    }
   });
 
   it('com a chave de experimento: usa so ela, com o medidor separado do de producao', async () => {

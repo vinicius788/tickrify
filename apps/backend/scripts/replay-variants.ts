@@ -18,6 +18,14 @@
  * que faltarem vao para o ULTIMO --after (cripto gratis; forex/metal so com a
  * chave TWELVE_DATA_API_KEY_EXPERIMENTS).
  *
+ * --calibrate --cache <velas.json> --out src/common/utils/engine-calibration.ts
+ * (02/11/2026, so dados, sem IA): gera a tabela de alcance e a margem P80 do
+ * stop por par e regime de volatilidade, calibradas nos 70% mais antigos de
+ * cada serie e validadas nos 30% mais recentes. Cripto pela Binance; ouro e
+ * forex pelo Twelve Data com a chave de PRODUCAO (decisao do dono), no maximo
+ * --td-budget creditos por dia UTC (padrao 250) e 1 pedido a cada 15 s. O
+ * cache guarda cada serie e os creditos do dia: retomar nao repete pedido.
+ *
  * Uso (em apps/backend):
  *   pnpm exec ts-node scripts/replay-variants.ts --runs <A.jsonl>,<B.jsonl> --gabarito <A.txt>,<B.txt> --after <velas.json> --history <historico.json>
  */
@@ -25,11 +33,17 @@ import 'dotenv/config';
 import * as fs from 'fs';
 import { canonicalFxPair } from '../src/common/utils/analysis-normalizer';
 import { normalizeToBinancePerp } from '../src/modules/market/market.service';
-import { enterTwelveDataExperimentMode, experimentRefusesFx } from '../src/modules/market/twelve-data';
+import {
+  enterTwelveDataCalibrationMode,
+  enterTwelveDataExperimentMode,
+  experimentRefusesFx,
+  twelveDataTimeSeries,
+} from '../src/modules/market/twelve-data';
 import { TIMEFRAME_MS, fetchWindow } from '../src/modules/market/candle-store';
-import { decideSignal, type SignalDecisionResult, type SignalState } from '../src/common/utils/signal-decision';
+import { calibrationPair, decideSignal, type SignalDecisionResult, type SignalState } from '../src/common/utils/signal-decision';
 import {
   ENGINE_RULES,
+  atr14Series,
   clampValidity,
   closedBars,
   fractalSwings,
@@ -37,7 +51,9 @@ import {
   moveIsLate,
   resolveTp1,
   trackPlan,
+  volatilityRegime,
   type Bar,
+  type VolRegime,
   type WatchPlan,
 } from '../src/common/utils/plan-engine';
 
@@ -189,6 +205,7 @@ async function decide(c: Ctx): Promise<SignalDecisionResult> {
     realData: {
       price: c.price, atr: c.atr, htfTrend: c.row.htfTrend ?? null, swings,
       late: { long: moveIsLate(c.history, c.atr, 'long'), short: moveIsLate(c.history, c.atr, 'short') },
+      volRegime: volatilityRegime(c.history),
     },
   });
 }
@@ -324,7 +341,177 @@ async function measure(label: string, ctxs: Ctx[], analyses: number): Promise<vo
   console.log(`Veredito pelo criterio: ${checks.every(([, ok]) => ok) ? 'APROVADO' : 'REPROVADO'}.`);
 }
 
+// ── Calibracao (--calibrate) ────────────────────────────────────────────────
+/** Pares na ordem de uso em producao (ouro primeiro); cripto pela Binance, gratis. */
+const CALIBRATION_PAIRS = [
+  'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT',
+  'XAUUSD', 'EURUSD', 'USDJPY', 'GBPUSD', 'EURJPY', 'AUDJPY', 'GBPJPY', 'AUDUSD', 'USDCAD', 'XAGUSD',
+];
+const CALIBRATION_TFS = ['5m', '15m', '1h', '4h'];
+const CALIBRATION_BARS = 5000;
+const TD_INTERVAL: Record<string, string> = { '5m': '5min', '15m': '15min', '1h': '1h', '4h': '4h' };
+const TRAIN_SHARE = 0.7;
+const MARGIN_MIN_EVENTS = 30;
+const SWING_LOOKAHEAD = 50;
+
+interface CalibrationCache { series: Record<string, Bar[] | null>; tdCalls: Record<string, number> }
+
+async function fetchCalibrationSeries(pair: string, tf: string, cache: CalibrationCache, file: string, budget: number): Promise<Bar[] | null | 'budget'> {
+  const key = `${pair}:${tf}`;
+  if (key in cache.series) return cache.series[key];
+  let bars: Bar[] | null;
+  if (normalizeToBinancePerp(pair).isCrypto) {
+    const now = Date.now();
+    bars = (await fetchWindow(pair, tf, now - CALIBRATION_BARS * TIMEFRAME_MS[tf], now, 'sweeper')).candles;
+  } else {
+    const day = new Date().toISOString().slice(0, 10);
+    if ((cache.tdCalls[day] ?? 0) >= budget) return 'budget';
+    await new Promise((r) => setTimeout(r, 15_000));
+    cache.tdCalls[day] = (cache.tdCalls[day] ?? 0) + 1;
+    const res = await twelveDataTimeSeries({ consumer: 'sweeper', pair, interval: TD_INTERVAL[tf], outputsize: CALIBRATION_BARS, timeoutMs: 30_000, timezoneUtc: true });
+    if (!res.ok && res.reason !== 'error') {
+      fs.writeFileSync(file, JSON.stringify(cache));
+      return 'budget';
+    }
+    bars = res.ok
+      ? res.series.values
+        .map((v) => [Date.parse(`${v.datetime.replace(' ', 'T')}Z`), Number(v.open), Number(v.high), Number(v.low), Number(v.close), 0])
+        .filter((b) => b.every((x) => Number.isFinite(x)))
+        .sort((a, b) => a[0] - b[0])
+      : null;
+  }
+  cache.series[key] = bars && bars.length > 200 ? bars : null;
+  fs.writeFileSync(file, JSON.stringify(cache));
+  return cache.series[key];
+}
+
+interface ReachCounts { hits: number[]; totals: number[] }
+const reachCells = () => ENGINE_RULES.reachGrid.d.length * ENGINE_RULES.reachGrid.n.length * ENGINE_RULES.reachGrid.k.length;
+
+/**
+ * Para cada vela t (o "agora"): um nivel a d ATR abaixo (e, no espelho, acima)
+ * e tocado em ate N velas antes de o preco andar k ATR para o outro lado? Vela
+ * que toca os dois conta como nao tocado (o pior caso).
+ */
+function countReach(bars: Bar[], atr: number[], regimes: (VolRegime | null)[], from: number, to: number, into: (regime: VolRegime) => ReachCounts) {
+  const g = ENGINE_RULES.reachGrid;
+  const maxN = Math.max(...g.n);
+  for (let t = from; t < Math.min(to, bars.length - maxN - 1); t++) {
+    const regime = regimes[t];
+    const a = atr[t];
+    if (!regime || !(a > 0)) continue;
+    const c = bars[t][4];
+    const counts = into(regime);
+    for (const below of [true, false]) {
+      // Primeira vela que toca cada nivel e a primeira que anda k ATR contra.
+      const touch = g.d.map((d) => { for (let j = 1; j <= maxN; j++) if (below ? bars[t + j][3] <= c - d * a : bars[t + j][2] >= c + d * a) return j; return Infinity; });
+      const away = g.k.map((k) => { for (let j = 1; j <= maxN; j++) if (below ? bars[t + j][2] >= c + k * a : bars[t + j][3] <= c - k * a) return j; return Infinity; });
+      g.d.forEach((_, di) => g.n.forEach((n, ni) => g.k.forEach((_, ki) => {
+        const cell = (di * g.n.length + ni) * g.k.length + ki;
+        counts.totals[cell]++;
+        if (touch[di] <= n && touch[di] < away[ki]) counts.hits[cell]++;
+      })));
+    }
+  }
+}
+
+/** Quanto o preco fura uma swing fractal e fecha de volta (em ATR), no regime da vela que fura. */
+function swingPenetrations(bars: Bar[], atr: number[], regimes: (VolRegime | null)[], from: number, to: number): { regime: VolRegime; atr: number }[] {
+  const out: { regime: VolRegime; atr: number }[] = [];
+  for (const s of fractalSwings(bars)) {
+    if (s.i < from || s.i >= to) continue;
+    for (let j = s.i + 3; j < Math.min(bars.length, s.i + SWING_LOOKAHEAD); j++) {
+      const [, , h, l, close] = bars[j];
+      const pierced = s.kind === 'low' ? l < s.price : h > s.price;
+      if (!pierced) continue;
+      const back = s.kind === 'low' ? close > s.price : close < s.price;
+      const regime = regimes[j];
+      if (back && regime && atr[j] > 0) out.push({ regime, atr: (s.kind === 'low' ? s.price - l : h - s.price) / atr[j] });
+      break;
+    }
+  }
+  return out;
+}
+
+const percentile = (xs: number[], q: number) => [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(q * xs.length))];
+
+async function calibrate(): Promise<void> {
+  // Decisao do dono (02/11/2026): chave de producao, no maximo --td-budget creditos por dia.
+  enterTwelveDataCalibrationMode();
+  const cacheFile = arg('--cache');
+  const outFile = arg('--out');
+  const budget = Number(arg('--td-budget') ?? 250);
+  if (!cacheFile || !outFile) throw new Error('--calibrate exige --cache e --out');
+  const cache: CalibrationCache = fs.existsSync(cacheFile) ? JSON.parse(fs.readFileSync(cacheFile, 'utf8')) : { series: {}, tdCalls: {} };
+  const train = new Map<string, ReachCounts>();
+  const valid = new Map<string, ReachCounts>();
+  const marginsTrain = new Map<string, number[]>();
+  const marginsValid = new Map<string, number[]>();
+  const missing: string[] = [];
+  const fresh = (): ReachCounts => ({ hits: Array(reachCells()).fill(0), totals: Array(reachCells()).fill(0) });
+  const bucket = (map: Map<string, ReachCounts>, key: string) => { if (!map.has(key)) map.set(key, fresh()); return map.get(key)!; };
+  let stopped = false;
+  for (const symbol of CALIBRATION_PAIRS) {
+    const pair = calibrationPair(symbol) as string;
+    for (const tf of CALIBRATION_TFS) {
+      const bars = stopped ? (cache.series[`${pair}:${tf}`] ?? null) : await fetchCalibrationSeries(pair, tf, cache, cacheFile, budget);
+      if (bars === 'budget') { stopped = true; missing.push(`${pair}:${tf}`); continue; }
+      if (!bars) { missing.push(`${pair}:${tf}`); continue; }
+      process.stdout.write('.');
+      const atr = atr14Series(bars);
+      const regimes = bars.map((_, i) => volatilityRegime(bars, atr, i));
+      const cut = Math.floor(bars.length * TRAIN_SHARE);
+      countReach(bars, atr, regimes, 0, cut, (r) => bucket(train, `${pair}:${r}`));
+      countReach(bars, atr, regimes, cut, bars.length, (r) => bucket(valid, `${pair}:${r}`));
+      for (const [from, to, map] of [[0, cut, marginsTrain], [cut, bars.length, marginsValid]] as const) {
+        for (const p of swingPenetrations(bars, atr, regimes, from, to)) {
+          const key = `${pair}:${p.regime}`;
+          map.set(key, [...(map.get(key) ?? []), p.atr]);
+        }
+      }
+    }
+  }
+  console.log('\n');
+  const reach: Record<string, (number | null)[]> = {};
+  const margin: Record<string, number> = {};
+  const lines: string[][] = [];
+  for (const key of [...new Set([...train.keys(), ...marginsTrain.keys()])].sort()) {
+    const tr = train.get(key);
+    const va = valid.get(key);
+    let errSum = 0;
+    let errN = 0;
+    if (tr) {
+      reach[key] = tr.totals.map((t, i) => (t >= ENGINE_RULES.reachMinSamples ? Number((tr.hits[i] / t).toFixed(3)) : null));
+      reach[key].forEach((p, i) => {
+        if (p !== null && va && va.totals[i] >= ENGINE_RULES.reachMinSamples / 2) { errSum += Math.abs(p - va.hits[i] / va.totals[i]); errN++; }
+      });
+    }
+    const mt = marginsTrain.get(key) ?? [];
+    const mv = marginsValid.get(key) ?? [];
+    const p80 = mt.length >= MARGIN_MIN_EVENTS ? Number(percentile(mt, 0.8).toFixed(3)) : null;
+    if (p80 !== null) margin[key] = p80;
+    const covered = p80 !== null && mv.length ? mv.filter((x) => x <= p80).length / mv.length : NaN;
+    lines.push([key, String(tr ? reach[key].filter((x) => x !== null).length : 0), errN ? `${(100 * errSum / errN).toFixed(1)} pp (${errN} celulas)` : '-',
+      String(mt.length), p80 === null ? '-' : p80.toFixed(3), Number.isFinite(covered) ? `${pct(covered)} (n=${mv.length})` : '-']);
+  }
+  console.log('| par:regime | celulas com amostra | erro medio na validacao (30% recentes) | furos de swing (treino) | margem P80 (ATR) | furos da validacao dentro da P80 |');
+  console.log('|---|---|---|---|---|---|');
+  for (const l of lines) console.log(`| ${l.join(' | ')} |`);
+  console.log(`\nCreditos do Twelve Data usados por dia: ${JSON.stringify(cache.tdCalls)}. Faltando: ${missing.join(', ') || 'nada'}.`);
+  const header = fs.readFileSync(outFile, 'utf8').split('export const CALIBRATED_AT')[0];
+  const json = (o: unknown) => JSON.stringify(o, null, 2).replace(/"([A-Z0-9]+:[a-z]+)":/g, "'$1':");
+  fs.writeFileSync(outFile, `${header}export const CALIBRATED_AT: string | null = '${new Date().toISOString().slice(0, 10)}';\n\n` +
+    `export const STOP_MARGIN_P80: Readonly<Record<string, number>> = ${json(margin)};\n\n` +
+    `export const REACH_TABLE: Readonly<Record<string, readonly (number | null)[]>> = {\n${
+      Object.entries(reach).map(([k, v]) => `  '${k}': [${v.map((x) => (x === null ? 'null' : String(x))).join(', ')}],`).join('\n')}\n};\n`);
+  console.log(`Gravado em ${outFile}.`);
+}
+
 async function main() {
+  if (process.argv.includes('--calibrate')) {
+    await calibrate();
+    return;
+  }
   // Script de medicao: so a chave TWELVE_DATA_API_KEY_EXPERIMENTS, nunca a de producao.
   enterTwelveDataExperimentMode();
   process.env.ENABLE_NEWS_GUARD = 'false';

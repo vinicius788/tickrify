@@ -34,7 +34,7 @@ const plan: WatchPlan = {
 };
 const swings = [{ kind: 'high' as const, price: 101.5 }, { kind: 'low' as const, price: 98.8 }];
 const real = (price: number, patch: Partial<RealDataInput> = {}): RealDataInput =>
-  ({ price, atr: 1, htfTrend: null, swings, late: { long: false, short: false }, ...patch });
+  ({ price, atr: 1, htfTrend: null, swings, late: { long: false, short: false }, volRegime: null, ...patch });
 /** Checklist C1..C7 com os itens de `fails` em FAIL. */
 const checks = (...fails: number[]) =>
   [1, 2, 3, 4, 5, 6, 7].map((n) => `C${n} ${fails.includes(n) ? 'FAIL' : 'PASS'}: 99.5`).join('; ');
