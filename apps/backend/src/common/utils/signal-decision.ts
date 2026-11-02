@@ -269,9 +269,10 @@ export interface PlanEvaluation {
 }
 
 /**
- * Mede o plano contra as velas reais: encaixa a invalidacao (sem swing a 0,1
- * ATR: `invalidation_unsnapped`), confere que o preco nao passou dela
- * (`plan_invalidated`) e calcula as duas entradas.
+ * Mede o plano contra as velas reais: confere que o preco nao passou da
+ * invalidacao do modelo (`plan_invalidated`), encaixa a invalidacao
+ * estrutural (sem swing entre o preco e ela, a ate 0,5 ATR:
+ * `invalidation_unsnapped`) e calcula as duas entradas.
  */
 export function evaluatePlan(input: {
   plan: WatchPlan;
@@ -283,9 +284,9 @@ export function evaluatePlan(input: {
   swings: readonly Pick<Swing, 'kind' | 'price'>[];
   late: boolean;
 }): PlanEvaluation | ValidatorReason {
-  const plan = snapInvalidation(input.plan, input.swings, input.atr);
+  if (pricePosition(input.plan, input.price) === 'invalidated') return 'plan_invalidated';
+  const plan = snapInvalidation(input.plan, input.swings, input.atr, input.price);
   if (!plan) return 'invalidation_unsnapped';
-  if (pricePosition(plan, input.price) === 'invalidated') return 'plan_invalidated';
   const margin = stopMarginAtr(calibrationPair(input.symbol), input.htfTrend);
   const checks = parsePassFailChecklist(input.structureValidation);
   return {

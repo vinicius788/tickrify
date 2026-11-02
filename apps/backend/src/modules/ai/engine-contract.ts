@@ -86,7 +86,7 @@ const VALIDATOR_REASON_TEXT: Record<ValidatorReason, string> = {
   state_mismatch: 'The state and the recommendation did not agree.',
   watch_plan_invalid: 'The plan has its levels out of order.',
   implausible_price: 'A price level is outside a plausible range of the chart price.',
-  invalidation_unsnapped: 'The invalidation is not at a real swing within 0.1 ATR.',
+  invalidation_unsnapped: 'There is no real swing between price and the invalidation, within 0.5 ATR of it.',
   plan_invalidated: 'Price is already beyond the invalidation.',
   market_entry_invalid: 'An entry at the current price needs a risk of at most 2.0 ATR and a first target at least 1R away.',
   market_entry_valid: 'The entry at the current price meets every condition to enter now.',

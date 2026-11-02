@@ -114,21 +114,30 @@ describe('entryLevels e limitEntryLevels', () => {
 });
 
 describe('snapInvalidation', () => {
-  const swings = [{ kind: 'low' as const, price: 98.85 }, { kind: 'high' as const, price: 98.8 }, { kind: 'low' as const, price: 98.3 }];
+  // Compra com invalidacao do modelo em 98,8 e preco em 100.
+  const swings = [{ kind: 'low' as const, price: 99.1 }, { kind: 'low' as const, price: 98.9 }, { kind: 'high' as const, price: 98.85 }, { kind: 'low' as const, price: 98.5 }];
 
-  it('encaixa no fundo real mais proximo a ate 0,1 ATR (topo na venda)', () => {
-    expect(snapInvalidation(long, swings, 1)).toMatchObject({ invalidation: 98.85, zoneLow: 99 });
-    expect(snapInvalidation(short, [{ kind: 'high', price: 101.25 }], 1)).toMatchObject({ invalidation: 101.25 });
+  it('a swing do mesmo lado entre o preco e a invalidacao, a ate 0,5 ATR: a mais proxima da invalidacao', () => {
+    expect(snapInvalidation(long, swings, 1, 100)).toMatchObject({ invalidation: 98.9, zoneLow: 99 });
+    expect(snapInvalidation(short, [{ kind: 'high', price: 101.1 }, { kind: 'high', price: 101.3 }], 1, 100)).toMatchObject({ invalidation: 101.1, zoneHigh: 101 });
   });
 
-  it('sem swing do lado certo a 0,1 ATR: null', () => {
-    expect(snapInvalidation(long, [{ kind: 'high', price: 98.8 }, { kind: 'low', price: 98.6 }], 1)).toBeNull();
-    expect(snapInvalidation(long, swings, 0.4)).toBeNull();
+  it('swing alem da invalidacao, do lado errado ou a mais de 0,5 ATR nao serve: null', () => {
+    expect(snapInvalidation(long, [{ kind: 'low', price: 98.5 }, { kind: 'high', price: 99 }], 1, 100)).toBeNull();
+    expect(snapInvalidation(long, [{ kind: 'low', price: 99.4 }], 1, 100)).toBeNull();
+    expect(snapInvalidation(long, [{ kind: 'low', price: 98.9 }], 0.1, 100)).toBeNull();
   });
 
-  it('a zona e recortada para nao atravessar a invalidacao encaixada', () => {
+  it('a swing nao pode passar do preco atual', () => {
+    expect(snapInvalidation(long, [{ kind: 'low', price: 99.2 }], 1, 99.1)).toBeNull();
+  });
+
+  it('a zona e recortada; com a swing acima da zona ela encolhe ate a swing (a limit deixa de valer)', () => {
     const tight = { ...long, zoneLow: 98.82, invalidation: 98.8 };
-    expect(snapInvalidation(tight, [{ kind: 'low', price: 98.85 }], 1)).toMatchObject({ invalidation: 98.85, zoneLow: 98.85 });
+    expect(snapInvalidation(tight, [{ kind: 'low', price: 98.85 }], 1, 100)).toMatchObject({ invalidation: 98.85, zoneLow: 98.85, zoneHigh: 99.5 });
+    const above = snapInvalidation({ ...long, zoneLow: 98.8, zoneHigh: 98.9 }, [{ kind: 'low', price: 99.2 }], 1, 100);
+    expect(above).toMatchObject({ invalidation: 99.2, zoneLow: 99.2, zoneHigh: 99.2 });
+    expect(limitEntryLevels(above as WatchPlan, 1, 100)).toBe('wrong_side');
   });
 });
 

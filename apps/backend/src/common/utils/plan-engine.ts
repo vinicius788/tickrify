@@ -12,8 +12,12 @@
 
 /** Limites do motor e do validador. Recalibrar AQUI, e so aqui. */
 export const ENGINE_RULES = {
-  /** Invalidacao encaixa na swing fractal real mais proxima ate esta distancia (ATR); sem swing, NO_TRADE. */
-  invalidationSnapAtr: 0.1,
+  /**
+   * Invalidacao estrutural: a swing fractal real entre o preco atual e a
+   * invalidacao do modelo, a ate esta distancia (ATR) dela; sem swing nesse
+   * intervalo, NO_TRADE.
+   */
+  invalidationSnapAtr: 0.5,
   /** Margem do stop alem da invalidacao quando o par e o regime nao tem calibracao (STOP_MARGIN_P80). */
   stopMarginAtr: 0.25,
   /** Risco da entrada: abaixo do minimo o stop e alargado ate ele; acima do maximo, entrada invalida. */
@@ -150,21 +154,32 @@ export function fractalSwings(bars: readonly Bar[]): Swing[] {
 }
 
 /**
- * Invalidacao encaixada na swing real mais proxima do mesmo lado (fundo na
- * compra, topo na venda) a ate 0,1 ATR; null sem swing perto. A zona e
- * recortada para nao atravessar a invalidacao nova; null se nao sobrar zona.
+ * Invalidacao estrutural: a swing real do mesmo lado (fundo na compra, topo
+ * na venda) ENTRE o preco atual e a invalidacao do modelo, a ate 0,5 ATR dela;
+ * havendo mais de uma, a mais proxima da invalidacao do modelo. null sem swing
+ * nesse intervalo. A zona e recortada para nao atravessar a invalidacao nova
+ * (com a swing acima da zona, numa compra, a zona encolhe ate ela e a limit
+ * deixa de valer; a entrada a mercado continua avaliada).
  */
-export function snapInvalidation(plan: WatchPlan, swings: readonly Pick<Swing, 'kind' | 'price'>[], atr: number): WatchPlan | null {
-  const kind = plan.direction === 'long' ? 'low' : 'high';
+export function snapInvalidation(
+  plan: WatchPlan,
+  swings: readonly Pick<Swing, 'kind' | 'price'>[],
+  atr: number,
+  price: number,
+): WatchPlan | null {
+  const long = plan.direction === 'long';
+  const kind = long ? 'low' : 'high';
+  const reach = ENGINE_RULES.invalidationSnapAtr * atr;
   let best: number | null = null;
   for (const s of swings) {
+    const between = long ? s.price >= plan.invalidation && s.price <= price : s.price <= plan.invalidation && s.price >= price;
     const d = Math.abs(s.price - plan.invalidation);
-    if (s.kind === kind && d <= ENGINE_RULES.invalidationSnapAtr * atr && (best === null || d < Math.abs(best - plan.invalidation))) best = s.price;
+    if (s.kind === kind && between && d <= reach && (best === null || d < Math.abs(best - plan.invalidation))) best = s.price;
   }
   if (best === null) return null;
-  const zoneLow = plan.direction === 'long' ? Math.max(plan.zoneLow, best) : plan.zoneLow;
-  const zoneHigh = plan.direction === 'short' ? Math.min(plan.zoneHigh, best) : plan.zoneHigh;
-  return zoneLow <= zoneHigh ? { ...plan, invalidation: best, zoneLow, zoneHigh } : null;
+  const zoneLow = long ? Math.max(plan.zoneLow, best) : Math.min(plan.zoneLow, Math.min(plan.zoneHigh, best));
+  const zoneHigh = long ? Math.max(plan.zoneHigh, zoneLow) : Math.min(plan.zoneHigh, best);
+  return { ...plan, invalidation: best, zoneLow, zoneHigh };
 }
 
 /** Margem do stop em ATR: o P80 calibrado do par e do regime, ou o padrao. */

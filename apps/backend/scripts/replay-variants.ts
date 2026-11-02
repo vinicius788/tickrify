@@ -45,6 +45,8 @@ import {
 
 const H = 3_600_000;
 const RESOLVE_MS = 48 * H;
+/** Criterio de aprovacao do v11 (fixado pelo dono em 02/11, antes de ver o resultado). */
+const CRITERION = { minTrades: 15, minMeanR: -0.05, maxBelowReference: 0.1, minActionable: 0.15, maxActionable: 0.45 } as const;
 const FINE_MAX_MINUTES = 5000;
 
 interface Row {
@@ -336,11 +338,12 @@ async function measure(label: string, ctxs: Ctx[], analyses: number): Promise<vo
   const r = mean(both.map((t) => t.r));
   const ref = mean(refAll.map((t) => t.r));
   const share = actionable / analyses;
+  const C = CRITERION;
   const checks: [string, boolean][] = [
-    [`n executados ${n} >= 30`, n >= 30],
-    [`R liquido medio ${signed(r)} >= -0,05R`, Number.isFinite(r) && r >= -0.05],
-    [`${signed(r)} no maximo 0,1R abaixo da referencia ${signed(ref)}`, Number.isFinite(r) && r >= ref - 0.1],
-    [`acionaveis ${pct(share)} entre 20% e 45%`, share >= 0.2 && share <= 0.45],
+    [`n executados ${n} >= ${C.minTrades}`, n >= C.minTrades],
+    [`R liquido medio ${signed(r)} >= ${signed(C.minMeanR)}`, Number.isFinite(r) && r >= C.minMeanR],
+    [`${signed(r)} no maximo ${C.maxBelowReference}R abaixo da referencia ${signed(ref)}`, Number.isFinite(r) && r >= ref - C.maxBelowReference],
+    [`acionaveis ${pct(share)} entre ${pct(C.minActionable)} e ${pct(C.maxActionable)}`, share >= C.minActionable && share <= C.maxActionable],
   ];
   for (const [text, ok] of checks) console.log(`- ${ok ? 'OK ' : 'NAO'} ${text}`);
   console.log(`Veredito pelo criterio: ${checks.every(([, ok]) => ok) ? 'APROVADO' : 'REPROVADO'}.`);

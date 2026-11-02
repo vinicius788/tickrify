@@ -98,10 +98,10 @@ describe('decideSignal: estados que passam', () => {
     expect(d.levels.stopLoss).toBeCloseTo(101.45);
   });
 
-  it('a invalidacao encaixa na swing real a ate 0,1 ATR e o stop sai dela', async () => {
-    const d = await decide({ state: 'ENTER_NOW', realData: real(99.9, { swings: [{ kind: 'low', price: 98.72 }] }) });
-    expect(d.watchPlan?.invalidation).toBe(98.72);
-    expect(d.levels.stopLoss).toBeCloseTo(98.47);
+  it('a invalidacao vira a swing real entre o preco e a do modelo (ate 0,5 ATR) e o stop sai dela', async () => {
+    const d = await decide({ state: 'ENTER_NOW', realData: real(99.9, { swings: [{ kind: 'low', price: 98.72 }, { kind: 'low', price: 99.05 }] }) });
+    expect(d.watchPlan?.invalidation).toBe(99.05);
+    expect(d.levels.stopLoss).toBeCloseTo(98.8);
   });
 
   it('NO_TRADE do modelo fica NO_TRADE, sem niveis', async () => {
@@ -162,7 +162,7 @@ describe('decideSignal: a escada de estados', () => {
     expect(d.validatorNotes.at(-1)?.reason).toBe('no_valid_geometry');
   });
 
-  it('sem swing real a 0,1 ATR da invalidacao: NO_TRADE', async () => {
+  it('sem swing real entre o preco e a invalidacao, a ate 0,5 ATR: NO_TRADE', async () => {
     const d = await decide({ realData: real(99.9, { swings: [{ kind: 'low', price: 98.5 }] }) });
     expect(d).toMatchObject({ state: 'NO_TRADE', validatorNotes: [{ from: 'ARMED', to: 'NO_TRADE', reason: 'invalidation_unsnapped' }] });
   });
