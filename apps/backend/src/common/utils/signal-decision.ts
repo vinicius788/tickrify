@@ -241,16 +241,17 @@ function calibrationPair(symbol: string): string | null {
 }
 
 /**
- * PASS exigidos para ENTER_NOW e ARMED: o minimo, +1 em forex, +1 contra a
- * tendencia do 4h calculada pelo codigo e +1 na venda de ativo com deriva de
- * alta (indice, large cap, ouro, BTC) com o 4h em alta.
+ * PASS exigidos para ENTER_NOW e ARMED: o minimo, e 1 a mais se houver
+ * qualquer agravante (forex, contra a tendencia do 4h calculada pelo codigo,
+ * venda de ativo com deriva de alta com o 4h em alta). Os agravantes nao se
+ * somam: no maximo 1 a mais, qualquer que seja a combinacao.
  */
 export function requiredPasses(symbol: string, direction: WatchPlan['direction'], htfTrend: HtfTrend | null): number {
-  let n = ENGINE_RULES.minPass;
-  if (isForexPair(symbol)) n++;
-  if (htfTrend === (direction === 'long' ? 'downtrend' : 'uptrend')) n++;
-  if (direction === 'short' && htfTrend === 'uptrend' && hasUpwardDrift(symbol)) n++;
-  return n;
+  const aggravated =
+    isForexPair(symbol) ||
+    htfTrend === (direction === 'long' ? 'downtrend' : 'uptrend') ||
+    (direction === 'short' && htfTrend === 'uptrend' && hasUpwardDrift(symbol));
+  return ENGINE_RULES.minPass + (aggravated ? ENGINE_RULES.aggravatedExtraPass : 0);
 }
 
 /** Tudo o que o codigo mediu do plano com as velas reais. */

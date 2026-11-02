@@ -144,6 +144,9 @@ async function windowFor(row: InputRow, cls: Cls, cache: Record<string, Candle[]
   let candles: Candle[] | null;
   if (cls === 'crypto' && base) {
     candles = await fetchCryptoWindow(base, start, start + WINDOW_MS);
+  } else if (experimentRefusesFx('prompt-replay')) {
+    // Sem a chave de experimento nao ha busca: fica sem medicao do sweeper.
+    return null;
   } else {
     // Twelve Data gratis: 8 creditos por minuto.
     await new Promise((r) => setTimeout(r, 8_000));
@@ -238,6 +241,9 @@ function wireHistoricalGrounding(adapter: any, gabarito: Map<string, Gab>, cache
   };
   adapter.buildCryptoEnrichment = async () => null;
   adapter.buildFxEnrichment = async () => null;
+  // Forex/metal com as velas da epoca no cache nao precisa de chave; cache vazio
+  // busca pelo medidor em modo experimento (sem a chave de experimento, nada sai).
+  adapter.fxSourceConfigured = () => true;
   // Velas fechadas e gatilho contados na hora do print, nao agora.
   adapter.nowMs = () => current!.endMs;
   return (row: InputRow) => {
@@ -343,7 +349,9 @@ async function main() {
   const candlesFile = arg('--candles');
   const rows = (JSON.parse(fs.readFileSync(input, 'utf8')) as InputRow[]).filter((r) => r.id && r.imageUrl && r.createdAt);
   const cases = rows.map((r) => ({ row: r, cls: classOf(r.symbol) })).filter((c): c is { row: InputRow; cls: Cls } => c.cls !== null)
-    .filter((c) => c.cls === 'crypto' || !experimentRefusesFx('prompt-replay'));
+    // Forex/metal sem a chave de experimento so com --history: as velas da epoca
+    // vem do cache e nenhuma busca usa a chave de producao (o medidor so le a de experimento).
+    .filter((c) => c.cls === 'crypto' || !!arg('--history') || !experimentRefusesFx('prompt-replay'));
   const done: Done[] = fs.existsSync(out) ? fs.readFileSync(out, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
   const doneIds = new Set(done.filter((d) => !d.error).map((d) => d.id));
   const todo = cases.filter((c) => !doneIds.has(c.row.id));

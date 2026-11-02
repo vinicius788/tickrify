@@ -28,8 +28,10 @@ export const ENGINE_RULES = {
   enterNowChecks: [2, 3, 6, 7],
   armedChecks: [2, 3, 7],
   watchChecks: [3],
-  /** PASS minimos de ENTER_NOW e ARMED; +1 por agravante (forex, contra o 4h, venda com deriva de alta). */
+  /** PASS minimos de ENTER_NOW e ARMED. */
   minPass: 5,
+  /** PASS a mais com qualquer agravante (forex, contra o 4h, venda com deriva de alta); nunca se somam. */
+  aggravatedExtraPass: 1,
   /** Abaixo disto nem o WATCH fica (o "fewer than 4 PASS" do prompt). */
   minPassWatch: 4,
   /** Movimento atrasado: pernas completas na direcao, ou uma vela fechada com range acima disto (ATR). */

@@ -208,16 +208,18 @@ describe('decideSignal: so rebaixa, com uma excecao', () => {
   });
 });
 
-describe('requiredPasses: um PASS a mais por agravante', () => {
+describe('requiredPasses: agravantes nao se somam (no maximo 1 PASS a mais)', () => {
   it.each([
     ['XAUUSD', 'long', null, 5],
     ['EURUSD', 'long', null, 6],
     ['BTCUSDT', 'long', 'downtrend', 6],
-    ['XAUUSD', 'short', 'uptrend', 7],
-    ['NAS100', 'short', 'uptrend', 7],
-    ['EURUSD', 'short', 'uptrend', 7],
+    ['XAUUSD', 'short', 'uptrend', 6],
+    ['NAS100', 'short', 'uptrend', 6],
+    ['EURUSD', 'short', 'uptrend', 6],
+    ['EURUSD', 'long', 'downtrend', 6],
     ['ETHUSDT', 'short', 'uptrend', 6],
     ['XAUUSD', 'short', 'downtrend', 5],
+    ['XAUUSD', 'short', 'range', 5],
   ] as const)('%s %s com o 4h %s: %i', (symbol, dir, htf, n) => {
     expect(requiredPasses(symbol, dir, htf)).toBe(n);
   });

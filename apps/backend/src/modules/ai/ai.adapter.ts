@@ -1705,6 +1705,11 @@ export class AIAdapter {
     return recentCandles(symbol, interval, 'analysis');
   }
 
+  /** Forex/metal tem fonte (chave do Twelve Data). O replay troca isto quando as velas da epoca vem do cache. */
+  private fxSourceConfigured(): boolean {
+    return twelveDataApiKey() !== null;
+  }
+
   /**
    * Bloco de dados reais dos candles — mesma matemática do groundingBlock do
    * backtest-runner (ATR14 por true range, swings fractais de 3, últimos 12 OHLC).
@@ -1736,7 +1741,7 @@ export class AIAdapter {
       const market = candleMarketOf(sym)?.market ?? null;
       if (!market) {
         candleCoverage = 'unsupported_asset';
-      } else if (market === 'fx' && !twelveDataApiKey()) {
+      } else if (market === 'fx' && !this.fxSourceConfigured()) {
         candleCoverage = 'provider_unconfigured';
       } else {
         // Resumo do 4h (v10.1): so para tempo grafico abaixo de 4h.

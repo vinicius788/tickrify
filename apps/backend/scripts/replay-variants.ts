@@ -106,8 +106,30 @@ async function bars(row: Row, gab: Gab, interval: string, fromMs: number, toMs: 
   return (await fetchWindow(gab.s, interval, fromMs, toMs, 'sweeper', row.cls === 'crypto' ? 0 : 8_000)).candles;
 }
 
-/** Velas do tempo grafico depois do print e velas finas ate 48h depois da ultima execucao possivel. */
+/** Velas do tempo grafico agregadas das velas de 1m (alinhadas ao passo, como as da corretora em UTC). */
+function aggregate(fine: Bar[], step: number): Bar[] {
+  const out: number[][] = [];
+  for (const b of fine) {
+    const t = Math.floor(b[0] / step) * step;
+    const last = out[out.length - 1];
+    if (last && last[0] === t) {
+      last[2] = Math.max(last[2], b[2]);
+      last[3] = Math.min(last[3], b[3]);
+      last[4] = b[4];
+    } else out.push([t, b[1], b[2], b[3], b[4]]);
+  }
+  return out;
+}
+
+/**
+ * Velas do tempo grafico depois do print e velas finas ate 48h depois da
+ * ultima execucao possivel. Sem a janela do plano em cache, serve a de 1m de
+ * 96h da medicao anterior (`<id>:m1`), com o tempo grafico agregado dela.
+ */
 async function windowFor(row: Row, gab: Gab, interval: string, store: CandleStore): Promise<Window> {
+  if (store.all[row.id]) return store.all[row.id];
+  const m1 = store.all[`${row.id}:m1`];
+  if (m1 && m1.fine.length) return { tf: aggregate(m1.fine, TIMEFRAME_MS[interval]), fine: m1.fine, fineStep: TIMEFRAME_MS['1m'] };
   if (row.id in store.all) return store.all[row.id];
   const step = TIMEFRAME_MS[interval];
   const print = createdAtMs(row.createdAt!);
@@ -264,6 +286,13 @@ async function withRules<T>(patch: Rules, fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/** Distancia do preco real a invalidacao do modelo, em ATR (positiva = do lado certo). */
+function distanceToInvalidation(ctxs: Ctx[]): string {
+  const d = ctxs.map((c) => (c.plan.direction === 'long' ? c.price - c.plan.invalidation : c.plan.invalidation - c.price) / c.atr).sort((a, b) => a - b);
+  const q = (p: number) => (d.length ? d[Math.min(d.length - 1, Math.floor(p * d.length))].toFixed(2) : '-');
+  return `preco real -> invalidacao do modelo (ATR, ${d.length} planos): p25 ${q(0.25)}, mediana ${q(0.5)}, p75 ${q(0.75)}, p90 ${q(0.9)}`;
+}
+
 async function measure(label: string, ctxs: Ctx[], analyses: number): Promise<void> {
   const decisions = await Promise.all(ctxs.map(async (c) => ({ c, d: await decide(c) })));
   const states = decisions.map((x) => x.d.state);
@@ -276,7 +305,10 @@ async function measure(label: string, ctxs: Ctx[], analyses: number): Promise<vo
     `Acionaveis: ${actionable} (${pct(actionable / analyses)}).`);
   console.log(`Estado do modelo -> v11: ${count(decisions.map((x) => `${x.c.row.modelState}->${x.d.state}`))}.`);
   console.log(`Motivos do ultimo degrau: ${count(decisions.flatMap((x) => (x.d.validatorNotes.length ? [x.d.validatorNotes[x.d.validatorNotes.length - 1].reason] : [])))}.`);
-  console.log(`Motivos em qualquer degrau: ${count(decisions.flatMap((x) => [...new Set(x.d.validatorNotes.map((n) => n.reason))]))}.`);
+  const barred = new Map<string, number>();
+  for (const x of decisions) for (const reason of new Set(x.d.validatorNotes.filter((n) => n.reason !== 'market_entry_valid').map((n) => n.reason))) barred.set(reason, (barred.get(reason) ?? 0) + 1);
+  console.log(`Planos barrados por regra (em qualquer degrau, % dos ${ctxs.length} planos): ${
+    [...barred].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v} (${pct(v / (ctxs.length || 1))})`).join(', ') || '-'}.`);
 
   const sims = decisions.map((x) => ({ ...x, t: simulate(x.c, x.d) }));
   const executed = (pick: (s: SignalState, long: boolean) => boolean) => {
@@ -362,6 +394,7 @@ async function main() {
   console.log(`Respostas: ${rows.length}; com REAL DATA: ${withReal.length}; com plano do modelo medidas: ${ctxs.length}. ` +
     `Fora: ${count(skipped)}. Velas finas: 1m ${ctxs.filter((c) => c.w.fineStep === 60_000).length}, 5m ${ctxs.filter((c) => c.w.fineStep !== 60_000).length}.`);
 
+  console.log(`Distancia ${distanceToInvalidation(ctxs)}.`);
   await measure('v11, constantes do ENGINE_RULES', ctxs, withReal.length);
   for (const alt of args('--alt').slice(0, 3)) {
     const patch = Object.fromEntries(alt.split(',').map((kv) => { const [k, v] = kv.split('='); return [k.trim(), Number(v)]; }));
