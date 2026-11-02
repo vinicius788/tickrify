@@ -292,13 +292,12 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     const { AiService } = jest.requireActual('../modules/ai/ai.service');
     const adapter = new RealAdapter();
     // v11: plano na escala lida (100x); fundo real em 1,0765 (a invalidacao
-    // encaixa); preco real 1,0792 a 0,6 ATR da borda (ATR 0,002): o ARMED fica,
-    // limit em 1,078, stop 1,076 (1,0765 - 0,25 ATR), TP1 1,081 (1,5R), TP2
-    // 1,0895. Forex: 6 PASS no checklist.
+    // encaixa); preco real 1,0792 (ATR 0,002): ENTER_NOW a mercado, stop 1,076
+    // (1,0765 - 0,25 ATR), TP1 1,083 (1,19R), TP2 1,0895. Forex: 6 PASS.
     const watchPlan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 107.7, zoneHigh: 107.8, invalidation: 107.65,
       target1: 108.3, target2: 108.95, validForCandles: 16, trigger: 'Bullish close at 1.0770-1.0780' };
     const raw = { is_financial_chart: isChart, watchPlan, recommendation: 'BUY', confidence: 70, analysis: {
-      symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.88, entry: 107.855, stopLoss: 107.7,
+      symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.88, entry: 107.855, entryType: 'market', stopLoss: 107.7,
       takeProfit1: 108.02, takeProfit2: 108.12, invalidationLevel: 107.72,
       factorsPresent: 6, trendStrength: 'strong', marketStructure: { bias: 'bullish' },
       structureValidation: 'C1 PASS: 4h; C2 PASS: discount; C3 PASS: pullback; C4 PASS: buyers; C5 FAIL: retested; C6 PASS: 1 ATR; C7 PASS: room',
@@ -333,13 +332,13 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
         ...(isChart ? {} : { result: null }), createdAt: new Date(), updatedAt: new Date(),
       });
       if (isChart) {
-        const engine = { entry: 1.078, stopLoss: 1.076, takeProfit1: 1.081, takeProfit2: 1.0895 };
+        const engine = { entry: 1.0792, stopLoss: 1.076, takeProfit1: 1.083, takeProfit2: 1.0895 };
         for (const key of ['entry', 'stopLoss', 'takeProfit1', 'takeProfit2'] as const) {
           expect(stored.result.analysis[key]).toBeCloseTo(engine[key], 8);
           expect(delivered[key]).toBe(stored.result.analysis[key]);
         }
         expect(stored.result.analysis.invalidationLevel).toBe(107.72 * 0.01);
-        expect(delivered).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.5, riskRewardTp2: 5.75, errorCode: null });
+        expect(delivered).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.19, riskRewardTp2: 3.22, errorCode: null });
       } else {
         expect(prismaClient.analysis.update.mock.calls.some(([args]: any[]) => args.data.status === 'completed')).toBe(false);
         expect(delivered).toMatchObject({ status: 'failed', errorCode: 'non_chart_image', entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null });

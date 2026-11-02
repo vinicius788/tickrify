@@ -14,9 +14,9 @@ function withFakeOpenAi(adapter: AIAdapter, create: jest.Mock): void {
 }
 
 // v11: o plano do modelo e uma compra na zona 99-99,5 com invalidacao 98,8. Com
-// `withRealCandles` ha um fundo real em 98,8 (a invalidacao encaixa), o preco
-// real fica a menos de 0,75 ATR da borda e o ARMED fica (limit na borda, stop
-// pela invalidacao); sem velas reais valem os niveis do modelo (dataMode print).
+// `withRealCandles` ha um fundo real em 98,8 (a invalidacao encaixa) e o preco
+// real 99,95 deixa a entrada a mercado valida (stop 98,55, alvo 101,5): o
+// ENTER_NOW fica; sem velas reais valem os niveis do modelo (dataMode print).
 const PLAN = {
   direction: 'long', triggerType: 'zone_reaction', zoneLow: 99, zoneHigh: 99.5, invalidation: 98.8,
   target1: 101.5, target2: 103, validForCandles: 16, trigger: 'Bullish close in the top third at 99-99.5',
@@ -42,13 +42,13 @@ const responseFor = (takeProfit1: number, extra: Record<string, unknown> = {}, t
     finish_reason: 'stop',
     message: { content: JSON.stringify({
       is_financial_chart: true,
-      signalState: 'ARMED',
+      signalState: 'ENTER_NOW',
       watchPlan: PLAN,
       recommendation: 'BUY',
       confidence: 70,
       analysis: {
         symbol: 'TEST', timeframe: '30m', currentPrice: 100,
-        entry: 100, stopLoss: 95, takeProfit1, takeProfit2: 120,
+        entry: 100, stopLoss: 95, takeProfit1, takeProfit2: 120, entryType: 'market',
         marketStructure: { bias: 'bullish' },
         trendStrength: 'moderate', factorsPresent: 6,
         structureValidation: CHECKLIST,
@@ -119,17 +119,27 @@ describe('AIAdapter trade-plan integrity', () => {
     expect(result.recommendation).toBe('BUY');
   });
 
-  it('v11: limit na borda da zona e stop pela invalidacao, nao os niveis do modelo', async () => {
+  it('v11: entrada a mercado no preco real e stop pela invalidacao, nao os niveis do modelo', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
     withRealCandles(adapter);
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ARMED', watchPlan: PLAN, dataMode: 'real_data' });
-    expect(result.analysis?.entryType).toBe('limit');
-    expect(result.analysis?.entry).toBe(99.5);
+    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ENTER_NOW', watchPlan: PLAN, dataMode: 'real_data' });
+    expect(result.analysis?.entryType).toBe('market');
+    expect(result.analysis?.entry).toBeCloseTo(99.95, 1);
     expect(result.analysis?.stopLoss).toBeCloseTo(98.55, 1);
-    expect(result.analysis?.takeProfit1).toBeCloseTo(100.93, 1);
+    expect(result.analysis?.takeProfit1).toBe(101.5);
     expect(result.analysis?.takeProfit2).toBe(103);
+  });
+
+  it('v11: ARMED do modelo vira WATCH com o plano (a ordem limit nao e mais emitida)', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { entryType: 'limit' }, { signalState: 'ARMED' })));
+    withRealCandles(adapter);
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'WATCH', watchPlan: PLAN });
+    expect(result.validatorNotes).toEqual([{ from: 'ARMED', to: 'WATCH', reason: 'limit_order_retired' }]);
+    expect(result.analysis?.entry).toBeNull();
   });
 
   it('v11: C3 em FAIL no checklist: NO_TRADE, cada degrau com o motivo', async () => {
@@ -139,7 +149,7 @@ describe('AIAdapter trade-plan integrity', () => {
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'NO_TRADE' });
     expect(result.validatorNotes).toEqual([
-      { from: 'ARMED', to: 'WATCH', reason: 'required_check_failed' },
+      { from: 'ENTER_NOW', to: 'WATCH', reason: 'required_check_failed' },
       { from: 'WATCH', to: 'NO_TRADE', reason: 'setup_failed' },
     ]);
     expect(result.engineMeta?.validatorReasons).toEqual(['required_check_failed', 'setup_failed']);
@@ -154,13 +164,13 @@ describe('AIAdapter trade-plan integrity', () => {
     expect(result.groundingStats?.numbers?.late).toEqual({ long: false, short: false });
   });
 
-  it('v11: sem velas reais o BUY fica com os niveis do modelo, medido em R, e dataMode print', async () => {
+  it('v11: sem velas reais o ENTER_NOW dentro da zona fica com os niveis do modelo, dataMode print', async () => {
     const adapter = new AIAdapter();
-    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { currentPrice: 99.3, entry: 99.3 })));
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ARMED', watchPlan: PLAN, dataMode: 'print' });
+    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ENTER_NOW', watchPlan: PLAN, dataMode: 'print' });
     expect(result.engineMeta?.validatorReasons).toEqual([]);
-    expect(result.analysis?.entry).toBe(100);
+    expect(result.analysis?.entry).toBe(99.3);
     expect(result.analysis?.stopLoss).toBe(95);
   });
 
@@ -181,7 +191,7 @@ describe('AIAdapter trade-plan integrity', () => {
     withRealCandles(adapter);
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'NO_TRADE' });
-    expect(result.engineMeta?.validatorReasons).toEqual(['limit_entry_invalid', 'no_valid_geometry']);
+    expect(result.engineMeta?.validatorReasons).toEqual(['market_entry_invalid', 'no_valid_geometry']);
     expect(result.confidence).toBeLessThanOrEqual(49);
   });
 
@@ -240,8 +250,8 @@ describe('AIAdapter trade-plan integrity', () => {
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(result.recommendation).toBe('BUY');
-    expect(result.analysis?.riskRewardTp1).toBeCloseTo(1.5, 1);
-    expect(result.analysis?.riskRewardTp2).toBeCloseTo(3.7, 1);
+    expect(result.analysis?.riskRewardTp1).toBeCloseTo(1.1, 1);
+    expect(result.analysis?.riskRewardTp2).toBeCloseTo(2.2, 1);
     expect(result.engineMeta?.validatorAction).toBe('none');
     expect(result.engineMeta?.modelMs).toBeGreaterThanOrEqual(0);
   });

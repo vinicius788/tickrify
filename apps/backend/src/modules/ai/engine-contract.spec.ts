@@ -58,8 +58,8 @@ describe('engine contract v2', () => {
     expect(parseEngineContract(fromModel)).not.toBeNull();
 
     // Varios degraus: vale o motivo do ultimo (o que levou ao estado final).
-    const fromValidator = buildEngineContract({ ...trade, recommendation: 'WAIT', validatorReasons: ['market_entry_invalid', 'entry_far_from_price'] });
-    expect(fromValidator.no_trade_reason).toBe('The limit entry is more than 0.75 ATR from the current price.');
+    const fromValidator = buildEngineContract({ ...trade, recommendation: 'WAIT', validatorReasons: ['limit_order_retired', 'no_valid_geometry'] });
+    expect(fromValidator.no_trade_reason).toBe('Neither an entry at the current price nor one at the plan level is valid.');
 
     const empty = buildEngineContract({ ...trade, recommendation: 'WAIT', executiveSummary: '' });
     expect(empty.no_trade_reason).toBe('No trade setup on this chart.');

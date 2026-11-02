@@ -5,16 +5,13 @@
  * modelo; ATR, preco e 4h do REAL DATA), refaz as velas fechadas antes do print
  * (--history: swings fractais e maturidade) e decide o estado pelo MESMO
  * decideSignal da producao. Depois mede com a regua do rastreador (trackPlan):
- * ENTER_NOW a mercado na primeira vela fina depois do print, ARMED como ordem
- * limit na validade do plano, TP1 x stop em 48h depois da execucao
+ * ENTER_NOW a mercado na primeira vela fina depois do print (a configuracao de
+ * producao; o ARMED nao e mais emitido)
+ * TP1 x stop em 48h depois da execucao
  * (stop_only), spread tipico do ativo descontado em R.
  *
  * Referencia: a direcao do plano a mercado no print, stop e alvo de 1 ATR,
  * com o mesmo spread.
- *
- * --alt "riskMaxAtr=3; enterNowChecks=[2,3,7]; tp1FloorWithRoom=true" (ate 3
- * vezes) repete a medicao com constantes do ENGINE_RULES trocadas, so neste
- * processo. Pares separados por ponto e virgula; cada valor e JSON.
  *
  * --runs, --gabarito, --after e --history aceitam varios arquivos separados
  * por virgula; a mesma analise num arquivo seguinte substitui a anterior. Velas
@@ -89,10 +86,6 @@ function remember(store: CandleStore, key: string, w: Window): Window {
 function arg(name: string): string | null {
   const i = process.argv.indexOf(name);
   return i >= 0 ? process.argv[i + 1] ?? null : null;
-}
-
-function args(name: string): string[] {
-  return process.argv.flatMap((a, i) => (a === name && process.argv[i + 1] ? [process.argv[i + 1]] : []));
 }
 
 const createdAtMs = (raw: string) => {
@@ -200,9 +193,9 @@ async function decide(c: Ctx): Promise<SignalDecisionResult> {
   });
 }
 
-/** ENTER_NOW a mercado e ARMED como limit, pela regua do rastreador; null = nao executou. */
+/** ENTER_NOW a mercado, pela regua do rastreador; null = nao executou. */
 function simulate(c: Ctx, d: SignalDecisionResult): Trade | null {
-  if (d.state !== 'ENTER_NOW' && d.state !== 'ARMED') return null;
+  if (d.state !== 'ENTER_NOW') return null;
   const plan = d.watchPlan as WatchPlan;
   const t = trackPlan({
     plan, enterNow: d.state === 'ENTER_NOW', atr: c.atr,
@@ -272,23 +265,6 @@ function line(name: string, plans: number, trades: Trade[]): string {
   } | ${trades.length - decided.length} |`;
 }
 
-type Rules = Record<string, unknown>;
-
-/** Troca constantes do ENGINE_RULES so durante `fn` (o objeto e literal em tempo de execucao). */
-async function withRules<T>(patch: Rules, fn: () => Promise<T>): Promise<T> {
-  const target = ENGINE_RULES as unknown as Rules;
-  const saved = Object.fromEntries(Object.keys(patch).map((k) => [k, target[k]]));
-  for (const k of Object.keys(patch)) {
-    if (!(k in target)) throw new Error(`ENGINE_RULES nao tem ${k}`);
-    target[k] = patch[k];
-  }
-  try {
-    return await fn();
-  } finally {
-    Object.assign(target, saved);
-  }
-}
-
 /** Distancia do preco real a invalidacao do modelo, em ATR (positiva = do lado certo). */
 function distanceToInvalidation(ctxs: Ctx[]): string {
   const d = ctxs.map((c) => (c.plan.direction === 'long' ? c.price - c.plan.invalidation : c.plan.invalidation - c.price) / c.atr).sort((a, b) => a - b);
@@ -300,10 +276,10 @@ async function measure(label: string, ctxs: Ctx[], analyses: number): Promise<vo
   const decisions = await Promise.all(ctxs.map(async (c) => ({ c, d: await decide(c) })));
   const states = decisions.map((x) => x.d.state);
   const nonPlan = analyses - ctxs.length;
-  const actionable = states.filter((s) => s === 'ENTER_NOW' || s === 'ARMED').length;
+  const actionable = states.filter((s) => s === 'ENTER_NOW').length;
   console.log(`\n### ${label}`);
   console.log(`Estados (${analyses} analises com REAL DATA; ${nonPlan} sem plano do modelo ficam NO_TRADE): ` +
-    `ENTER_NOW ${states.filter((s) => s === 'ENTER_NOW').length}, ARMED ${states.filter((s) => s === 'ARMED').length}, ` +
+    `ENTER_NOW ${states.filter((s) => s === 'ENTER_NOW').length}, ` +
     `WATCH ${states.filter((s) => s === 'WATCH').length}, NO_TRADE ${states.filter((s) => s === 'NO_TRADE').length + nonPlan}. ` +
     `Acionaveis: ${actionable} (${pct(actionable / analyses)}).`);
   console.log(`Estado do modelo -> v11: ${count(decisions.map((x) => `${x.c.row.modelState}->${x.d.state}`))}.`);
@@ -318,11 +294,9 @@ async function measure(label: string, ctxs: Ctx[], analyses: number): Promise<vo
     const of = sims.filter((x) => pick(x.d.state, x.c.plan.direction === 'long'));
     return { plans: of.length, trades: of.flatMap((x) => (x.t ? [x.t] : [])) };
   };
-  const signal = (s: SignalState) => s === 'ENTER_NOW' || s === 'ARMED';
+  const signal = (s: SignalState) => s === 'ENTER_NOW';
   const groups: [string, { plans: number; trades: Trade[] }][] = [
     ['ENTER_NOW', executed((s) => s === 'ENTER_NOW')],
-    ['ARMED', executed((s) => s === 'ARMED')],
-    ['ENTER_NOW + ARMED', executed(signal)],
     ['compras', executed((s, long) => signal(s) && long)],
     ['vendas', executed((s, long) => signal(s) && !long)],
   ];
@@ -334,7 +308,7 @@ async function measure(label: string, ctxs: Ctx[], analyses: number): Promise<vo
   console.log(line('referencia: direcao do plano a mercado, 1 ATR (todos os planos)', ctxs.length, refAll));
   console.log(line('referencia: a mesma, so nas acionaveis', actionable, refActionable));
 
-  const both = groups[2][1].trades;
+  const both = groups[0][1].trades;
   const n = both.length;
   const r = mean(both.map((t) => t.r));
   const ref = mean(refAll.map((t) => t.r));
@@ -399,14 +373,8 @@ async function main() {
     `Fora: ${count(skipped)}. Velas finas: 1m ${ctxs.filter((c) => c.w.fineStep === 60_000).length}, 5m ${ctxs.filter((c) => c.w.fineStep !== 60_000).length}.`);
 
   console.log(`Distancia ${distanceToInvalidation(ctxs)}.`);
-  await measure('v11, constantes do ENGINE_RULES', ctxs, withReal.length);
-  for (const alt of args('--alt').slice(0, 3)) {
-    const patch = Object.fromEntries(alt.split(';').filter((kv) => kv.trim()).map((kv) => {
-      const i = kv.indexOf('=');
-      return [kv.slice(0, i).trim(), JSON.parse(kv.slice(i + 1).trim())];
-    }));
-    await withRules(patch, () => measure(`alternativa ${alt}`, ctxs, withReal.length));
-  }
+  await measure('v11, configuracao de producao (ENGINE_RULES)', ctxs, withReal.length);
+
 }
 
 main().catch((err) => {
