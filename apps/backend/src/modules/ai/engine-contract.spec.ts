@@ -27,7 +27,7 @@ describe('engine contract v2', () => {
       'verdict', 'confidence', 'asset', 'timeframe', 'entry', 'stop', 'targets',
       'invalidation', 'key_reasons', 'no_trade_reason', 'engine_version',
     ]);
-    expect(ENGINE_VERSION).toBe('3.2.0');
+    expect(ENGINE_VERSION).toBe('4.0.0');
     expect(c.engine_version).toBe(ENGINE_VERSION);
   });
 
@@ -57,12 +57,9 @@ describe('engine contract v2', () => {
     expect(fromModel.no_trade_reason).toBe('Higher lows hold above the 61.3k demand.');
     expect(parseEngineContract(fromModel)).not.toBeNull();
 
-    const fromValidator = buildEngineContract({ ...trade, recommendation: 'WAIT', validatorReasons: ['rr_tp2_below_min'] });
-    expect(fromValidator.no_trade_reason).toBe('The final target does not pay at least 1.5 times the risk.');
-
-    // O aviso de print velho nao e motivo de rebaixamento: o motivo vem do texto.
-    const stale = buildEngineContract({ ...trade, recommendation: 'WAIT', validatorReasons: ['stale_print'] });
-    expect(stale.no_trade_reason).toBe('Higher lows hold above the 61.3k demand.');
+    // Varios degraus: vale o motivo do ultimo (o que levou ao estado final).
+    const fromValidator = buildEngineContract({ ...trade, recommendation: 'WAIT', validatorReasons: ['market_entry_invalid', 'entry_far_from_price'] });
+    expect(fromValidator.no_trade_reason).toBe('The limit entry is more than 0.75 ATR from the current price.');
 
     const empty = buildEngineContract({ ...trade, recommendation: 'WAIT', executiveSummary: '' });
     expect(empty.no_trade_reason).toBe('No trade setup on this chart.');
@@ -113,7 +110,7 @@ describe('engine contract v2', () => {
       warn: jest.fn(),
     });
     expect(record).toMatchObject({
-      version: '3.2.0',
+      version: '4.0.0',
       data_mode: 'print',
       signal_state: 'ENTER_NOW',
       validator_action: 'fixed',

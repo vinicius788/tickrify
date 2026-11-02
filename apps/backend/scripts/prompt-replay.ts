@@ -402,7 +402,7 @@ async function main() {
       const state = stateOf(res);
       const plan = planOf(res, state);
       const window = plan ? await windowFor(t.row, t.cls, candles, candlesFile) : null;
-      const notes: unknown[] = Array.isArray(res.validatorNotes) ? res.validatorNotes : (res.engineMeta?.validatorReasons ?? []);
+      const notes: unknown[] = res.engineMeta?.validatorReasons ?? [];
       const raw = (() => { try { return JSON.parse(String(res.rawContent ?? '')); } catch { return {}; } })();
       const numbers = res.groundingStats?.coverage === 'injected' ? res.groundingStats.numbers : null;
       record = {

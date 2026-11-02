@@ -5,7 +5,7 @@ promessas de qualidade, tempo de resposta ou uma arquitetura de agentes.
 
 ## Fontes de verdade
 
-- Prompt unico, no codigo: `apps/backend/src/common/prompts/trading-system-prompt.ts` (v10.3)
+- Prompt unico, no codigo: `apps/backend/src/common/prompts/trading-system-prompt.ts` (v11)
 - Composicao final: `apps/backend/src/modules/prompt/prompt-builder.service.ts`
 - Registro de versoes no boot: `apps/backend/src/modules/prompt/prompt-sync.service.ts`
 - Leitura das versoes (admin): `apps/backend/src/modules/prompt/prompt.controller.ts`
@@ -20,13 +20,16 @@ banco (removidos em 28/10/2026).
 `buildAnalysisPrompt({ userLanguage, analysisType })` parte SEMPRE do
 `TRADING_SYSTEM_PROMPT` do codigo, troca `{{USER_CONTEXT}}` pela instrucao de
 idioma e, em analises `deep`, acrescenta a leitura em camadas
-(`DEEP_ANALYSIS_INSTRUCTION`, com os estados do v10.3). O worker, o caminho
+(`DEEP_ANALYSIS_INSTRUCTION`, com os mesmos estados). O worker, o caminho
 sincrono, a demo do `/try` e os scripts de medicao usam a mesma funcao.
 
-Os niveis de entrada, stop e alvo nao saem do texto do modelo: o codigo os
-calcula (`common/utils/plan-engine.ts`) a partir das velas reais do armazem
-(`modules/market/candle-store.ts`) ou, sem velas, dos niveis estimados do
-print (`dataMode: 'print'`, a tela avisa).
+Os niveis de entrada, stop e alvo nao saem do texto do modelo, e o estado
+final tambem nao: o validador (`common/utils/signal-decision.ts`) decide com as
+constantes de `ENGINE_RULES` (`common/utils/plan-engine.ts`), a partir das
+velas reais do armazem (`modules/market/candle-store.ts`) ou, sem velas, dos
+niveis estimados do print (`dataMode: 'print'`, a tela avisa). O prompt v11 e
+definitivo: o equilibrio entre entrar e aguardar se ajusta nessas constantes,
+medido antes, nunca no texto.
 
 ## Versoes
 

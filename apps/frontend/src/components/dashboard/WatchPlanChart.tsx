@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import type { WatchPlan } from '@/lib/api';
 
-// Plano do WATCH (v10.3) desenhado numa escala de preco: a area de interesse,
+// Plano do WATCH desenhado numa escala de preco: a area de interesse,
 // a linha de invalidacao e os alvos, com a reacao esperada. Nunca usa as cores
 // de compra/venda nem linhas cheias: nao e um sinal ativo.
 

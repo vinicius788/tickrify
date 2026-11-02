@@ -555,7 +555,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
 
   const recommendationMeta = getRecommendationMeta(analysisData.recommendation);
   const scenarioMeta = getScenarioMeta(analysisData.bias || marketStructure.bias, analysisData.recommendation);
-  // Rotulo principal = estado do copiloto (v10.3). A direcao fica como cenario.
+  // Rotulo principal = estado do copiloto. A direcao fica como cenario.
   const signalState = resolveSignalState(
     fullResponse.signalState,
     analysisData.recommendation,

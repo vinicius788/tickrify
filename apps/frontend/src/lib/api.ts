@@ -172,7 +172,7 @@ export interface AIAnalysisResponse {
   id: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   recommendation?: Recommendation;
-  /** Estado do copiloto (v10.3); nas listas vem no topo, na analise aberta em `fullResponse`. */
+  /** Estado do copiloto; nas listas vem no topo, na analise aberta em `fullResponse`. */
   signalState?: SignalState;
   bias?: Bias;
   confidence?: number;

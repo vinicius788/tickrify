@@ -5,7 +5,7 @@ import { buildApiUrl, type SignalState } from './api';
 export interface DemoAnalysisResult {
   status: 'completed';
   recommendation: 'BUY' | 'SELL' | 'WAIT';
-  /** Estado do copiloto; leitura guardada antes do v10.3 nao tem. */
+  /** Estado do copiloto; leitura guardada antes dele nao tem. */
   signalState?: SignalState;
   bias: 'bullish' | 'bearish' | 'neutral';
   confidence: number;

@@ -1,5 +1,5 @@
 /**
- * Rastreador de resultado do v10.3 (28/10/2026): o que o mercado fez com cada
+ * Rastreador de resultado (28/10/2026): o que o mercado fez com cada
  * plano, pela MESMA regua do replay (trackPlan em plan-engine.ts).
  *
  * Para cada analise nova com plano (WATCH, ARMED, ENTER_NOW), depois que a

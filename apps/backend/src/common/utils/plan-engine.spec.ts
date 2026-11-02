@@ -1,12 +1,18 @@
 import {
-  PLAN_RULES,
+  ENGINE_RULES,
+  STOP_MARGIN_P80,
   clampValidity,
   closedBars,
+  entryLevels,
+  fractalSwings,
   isValidWatchPlan,
-  levelsFromPlan,
+  limitEntryLevels,
+  moveIsLate,
   nearEdge,
   pricePosition,
   resolveTp1,
+  snapInvalidation,
+  stopMarginAtr,
   trackPlan,
   runLimitOrder,
   type WatchPlan,
@@ -48,49 +54,114 @@ describe('clampValidity', () => {
     expect(clampValidity(3)).toBe(6);
     expect(clampValidity(40)).toBe(24);
     expect(clampValidity(12)).toBe(12);
-    expect(clampValidity(null)).toBe(PLAN_RULES.validDefaultCandles);
+    expect(clampValidity(null)).toBe(ENGINE_RULES.validDefaultCandles);
   });
 });
 
-describe('levelsFromPlan', () => {
+describe('entryLevels e limitEntryLevels', () => {
   it('limit na borda proxima, stop na invalidacao alem de 0,25 ATR, TP1 limitado a 1,5R', () => {
     expect(nearEdge(long)).toBe(99.5);
     expect(nearEdge(short)).toBe(100.5);
-    const l = levelsFromPlan(long, 1);
+    const l = limitEntryLevels(long, 1, 100);
     expect(l).toMatchObject({ entry: 99.5, stopLoss: 98.55, takeProfit2: 103, stopWidened: false });
     if (typeof l === 'string') throw new Error(l);
     expect(l.takeProfit1).toBeCloseTo(100.925);
     expect(l.riskAtr).toBeCloseTo(0.95);
-    expect(l.tp1R).toBe(PLAN_RULES.tp1CapR);
+    expect(l.tp1R).toBe(ENGINE_RULES.tp1CapR);
+  });
+
+  it('limit so como recuo: preco dentro ou alem da zona nao tem limit', () => {
+    expect(limitEntryLevels(long, 1, 99.4)).toBe('not_pullback');
+    expect(limitEntryLevels(short, 1, 100.6)).toBe('not_pullback');
   });
 
   it('target1 dentro do teto fica exato; TP2 antes do TP1 limitado cai', () => {
-    expect(levelsFromPlan({ ...long, target1: 100.7, target2: null }, 1)).toMatchObject({ takeProfit1: 100.7, takeProfit2: null });
-    expect(levelsFromPlan({ ...long, target2: 100.9 }, 1)).toMatchObject({ takeProfit2: null });
+    expect(entryLevels({ ...long, target1: 100.7, target2: null }, 1, 99.5)).toMatchObject({ takeProfit1: 100.7, takeProfit2: null });
+    expect(entryLevels({ ...long, target2: 100.9 }, 1, 99.5)).toMatchObject({ takeProfit2: null });
   });
 
-  it('stop a menos de 0,5 ATR e alargado ate 0,5 ATR, nunca descartado', () => {
+  it('risco abaixo de 0,5 ATR e alargado ate 0,5 ATR, nunca descartado', () => {
     const narrow = { ...long, zoneLow: 99.3, invalidation: 99.3 };
-    expect(levelsFromPlan(narrow, 1)).toMatchObject({ entry: 99.5, stopLoss: 99, stopWidened: true, riskAtr: 0.5 });
+    expect(entryLevels(narrow, 1, 99.5)).toMatchObject({ entry: 99.5, stopLoss: 99, stopWidened: true, riskAtr: 0.5 });
   });
 
-  it('stop a mais de 2,0 ATR ou TP1 abaixo de 1,0R: sem trade', () => {
-    expect(levelsFromPlan(long, 0.3)).toBe('stop_out_of_range');
-    expect(levelsFromPlan({ ...long, target1: 100.4 }, 1)).toBe('no_room');
+  it('risco acima de 2,0 ATR, TP1 abaixo de 1,0R ou entrada alem da invalidacao: invalida', () => {
+    expect(entryLevels(long, 0.3, 99.5)).toBe('stop_out_of_range');
+    expect(entryLevels({ ...long, target1: 100.4 }, 1, 99.5)).toBe('no_room');
+    expect(entryLevels(long, 1, 98.7)).toBe('wrong_side');
   });
 
-  it('a mercado (ENTER_NOW): entrada no preco, stop e TP1 pelas mesmas regras', () => {
-    const l = levelsFromPlan(long, 1, 99.3);
+  it('a mercado: entrada no preco, stop e TP1 pelas mesmas regras; margem calibrada muda o stop', () => {
+    const l = entryLevels(long, 1, 99.3);
     expect(l).toMatchObject({ entry: 99.3, stopLoss: 98.55 });
     if (typeof l === 'string') throw new Error(l);
     expect(l.takeProfit1).toBeCloseTo(100.425);
+    expect(entryLevels(long, 1, 99.6, 0.4)).toMatchObject({ stopLoss: 98.4 });
   });
 
   it('venda e o espelho', () => {
-    const l = levelsFromPlan(short, 1);
+    const l = limitEntryLevels(short, 1, 100);
     expect(l).toMatchObject({ entry: 100.5, stopLoss: 101.45 });
     if (typeof l === 'string') throw new Error(l);
     expect(l.takeProfit1).toBeCloseTo(99.075);
+  });
+
+  it('sem calibracao do par e do regime, a margem padrao', () => {
+    expect(STOP_MARGIN_P80).toEqual({});
+    expect(stopMarginAtr('XAUUSD', 'uptrend')).toBe(ENGINE_RULES.stopMarginAtr);
+    expect(stopMarginAtr(null, null)).toBe(ENGINE_RULES.stopMarginAtr);
+  });
+});
+
+describe('snapInvalidation', () => {
+  const swings = [{ kind: 'low' as const, price: 98.85 }, { kind: 'high' as const, price: 98.8 }, { kind: 'low' as const, price: 98.3 }];
+
+  it('encaixa no fundo real mais proximo a ate 0,1 ATR (topo na venda)', () => {
+    expect(snapInvalidation(long, swings, 1)).toMatchObject({ invalidation: 98.85, zoneLow: 99 });
+    expect(snapInvalidation(short, [{ kind: 'high', price: 101.25 }], 1)).toMatchObject({ invalidation: 101.25 });
+  });
+
+  it('sem swing do lado certo a 0,1 ATR: null', () => {
+    expect(snapInvalidation(long, [{ kind: 'high', price: 98.8 }, { kind: 'low', price: 98.6 }], 1)).toBeNull();
+    expect(snapInvalidation(long, swings, 0.4)).toBeNull();
+  });
+
+  it('a zona e recortada para nao atravessar a invalidacao encaixada', () => {
+    const tight = { ...long, zoneLow: 98.82, invalidation: 98.8 };
+    expect(snapInvalidation(tight, [{ kind: 'low', price: 98.85 }], 1)).toMatchObject({ invalidation: 98.85, zoneLow: 98.85 });
+  });
+});
+
+describe('fractalSwings e moveIsLate', () => {
+  // Escada de alta: fundos e topos subindo, pernas de 2.
+  const stairs = (legs: number) => {
+    const out: number[][] = [];
+    let p = 100;
+    for (let k = 0; k < legs; k++) {
+      for (const d of [1, 1, 1, -0.5, -0.5, -0.5]) {
+        p += d;
+        out.push([out.length, p - d, Math.max(p, p - d) + 0.05, Math.min(p, p - d) - 0.05, p]);
+      }
+    }
+    return out;
+  };
+
+  it('fractal de 2 velas acha topos e fundos', () => {
+    const sw = fractalSwings(stairs(3));
+    expect(sw.some((s) => s.kind === 'high')).toBe(true);
+    expect(sw.some((s) => s.kind === 'low')).toBe(true);
+  });
+
+  it('tres pernas de alta seguidas: atrasado na compra, nao na venda', () => {
+    const bars = stairs(4);
+    expect(moveIsLate(bars, 1, 'long')).toBe(true);
+    expect(moveIsLate(bars, 1, 'short')).toBe(false);
+  });
+
+  it('vela de mais de 2 ATR fechando a favor: atrasado (parabolica)', () => {
+    const flat = Array.from({ length: 10 }, (_, i) => [i, 100, 100.3, 99.7, 100 + (i % 2 ? 0.1 : -0.1)]);
+    expect(moveIsLate([...flat, [10, 100, 102.6, 99.9, 102.5]], 1, 'long')).toBe(true);
+    expect(moveIsLate(flat, 1, 'long')).toBe(false);
   });
 });
 

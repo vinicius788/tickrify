@@ -19,7 +19,7 @@ describe('buildAnalysisPrompt', () => {
   it('sempre o prompt do codigo, com o idioma no lugar do placeholder', () => {
     const prompt = buildAnalysisPrompt({ userLanguage: 'es', analysisType: 'quick' });
     expect(prompt).toBe(TRADING_SYSTEM_PROMPT.replace('{{USER_CONTEXT}}', outputLanguageInstruction('Spanish')));
-    expect(prompt).toContain('TICKRIFY ANALYSIS ENGINE v10.3');
+    expect(prompt).toContain('TICKRIFY ANALYSIS ENGINE v11');
     expect(prompt).not.toContain('{{USER_CONTEXT}}');
     expect(prompt).not.toContain(DEEP_ANALYSIS_INSTRUCTION);
   });

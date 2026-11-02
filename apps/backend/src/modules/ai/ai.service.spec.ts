@@ -258,11 +258,11 @@ describe('AiService access enforcement', () => {
       expect(completed[0].data).not.toHaveProperty('setupId');
       // Contrato e tempos gravados junto da analise, igual ao worker.
       expect(completed[0].data.result.engine).toMatchObject({
-        version: '3.2.0',
+        version: '4.0.0',
         data_mode: 'print',
         validator_action: 'none',
         timings: { image_prep_ms: 120, intake_ms: 300, queue_ms: null },
-        contract: { verdict: 'NEUTRAL', asset: 'EURUSD', timeframe: '1H', engine_version: '3.2.0' },
+        contract: { verdict: 'NEUTRAL', asset: 'EURUSD', timeframe: '1H', engine_version: '4.0.0' },
       });
       expect(completed[0].data.result.engine.timings.server_total_ms).toBeGreaterThanOrEqual(500);
       // O motor nao recebeu nada do setup: os 5 argumentos de sempre + a opcao de comparacao.
@@ -338,19 +338,21 @@ describe('AiService access enforcement', () => {
     const presented = `${current}6/7. ${historical}4/7. ${hypothetical}4/7, wait.`;
     const { AIAdapter } = await import('./ai.adapter');
     const { OpenAiVisionModel } = await import('./vision-model');
-    const keys = ['ENABLE_RR_GUARD', 'ENABLE_NEWS_GUARD', 'ENABLE_MARKET_ENRICHMENT'] as const;
+    const keys = ['ENABLE_NEWS_GUARD', 'ENABLE_MARKET_ENRICHMENT'] as const;
     const saved = keys.map((key) => process.env[key]);
-    process.env.ENABLE_RR_GUARD = 'true';
     process.env.ENABLE_NEWS_GUARD = 'false';
     process.env.ENABLE_MARKET_ENRICHMENT = 'true';
     try {
-      // v10.3: plano na escala lida (100x); preco real 1,0792 a 0,6 ATR da borda
-      // (ATR 0,002): limit em 1,078, stop 1,076, TP1 1,081 (1,5R), TP2 1,0895.
+      // v11: plano na escala lida (100x); fundo real em 1,0765 (a invalidacao
+      // encaixa), preco real 1,0792 a 0,6 ATR da borda (ATR 0,002): o ARMED fica,
+      // limit em 1,078, stop 1,076, TP1 1,081 (1,5R), TP2 1,0895.
       const watchPlan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 107.7, zoneHigh: 107.8, invalidation: 107.65,
         target1: 108.3, target2: 108.95, validForCandles: 16, trigger: 'Bullish close at 1.0770-1.0780' };
       const grounding = {
         block: null, candles: 'injected', marketContext: 'unavailable', assetClass: 'forex', calendar: 'no_events_returned',
-        stats: { v: 1, symbol: 'EURUSD', interval: '1h', coverage: 'injected', numbers: { lastClose: 1.0792, atr14: 0.002 } },
+        stats: { v: 1, symbol: 'EURUSD', interval: '1h', coverage: 'injected', numbers: {
+          lastClose: 1.0792, atr14: 0.002, swings: [{ kind: 'low', price: 1.0765 }], late: { long: false, short: false },
+        } },
       };
       const raw = { is_financial_chart: true, watchPlan, recommendation: 'BUY', confidence: 70, analysis: {
         symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.88, entry: 107.855,

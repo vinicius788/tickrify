@@ -24,6 +24,7 @@ import {
   decideSignal,
   deriveSignalState,
   parseSignalState,
+  validatorReasons,
   type NewsGuardStatus,
   type SignalState,
 } from '../../common/utils/signal-decision';
@@ -31,6 +32,8 @@ import {
   TRIGGER_TYPES,
   clampValidity,
   closedBars,
+  fractalSwings,
+  moveIsLate,
   type Bar,
   type TriggerType,
   type WatchPlan,
@@ -705,17 +708,6 @@ export function buildRealDataBlock(
   };
 }
 
-/** Swings por fractal de 2 velas (o extremo das 2 de cada lado), em ordem cronologica. */
-export function fractalSwings(bars: readonly Bar[]): { i: number; kind: 'high' | 'low'; price: number }[] {
-  const out: { i: number; kind: 'high' | 'low'; price: number }[] = [];
-  for (let i = 2; i < bars.length - 2; i++) {
-    const near = bars.slice(i - 2, i + 3);
-    if (bars[i][2] === Math.max(...near.map((b) => b[2]))) out.push({ i, kind: 'high', price: bars[i][2] });
-    if (bars[i][3] === Math.min(...near.map((b) => b[3]))) out.push({ i, kind: 'low', price: bars[i][3] });
-  }
-  return out;
-}
-
 function ema(values: number[], period: number): number | null {
   if (values.length < period) return null;
   let e = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
@@ -791,7 +783,7 @@ export function buildCompactSummary(
 // primeiro; signalState, watchPlan, recommendation e confidence vem depois
 // de `analysis` inteira. Nao reordenar sem medir.
 const nullable = (type: string) => ({ type: [type, 'null'] });
-/** Entrada do v10.3: a mercado (ENTER_NOW) ou limit na borda da zona (ARMED). */
+/** Entrada: a mercado (ENTER_NOW) ou limit na borda da zona (ARMED). */
 const ENTRY_TYPES = ['market', 'limit'] as const;
 
 const ANALYSIS_SCHEMA_PROPERTIES: Record<string, unknown> = {
@@ -1774,6 +1766,10 @@ export class AIAdapter {
             if (numbers) {
               numbers.htfTrend = compact?.htf?.trend ?? null;
               numbers.htfVsEma50 = compact?.htf?.vsEma50 ?? null;
+              // O validador do v11 encaixa a invalidacao nestas swings e le a maturidade daqui.
+              numbers.swings = fractalSwings(bars).map(({ kind, price }) => ({ kind, price }));
+              const atr = numbers.atr14;
+              numbers.late = atr ? { long: moveIsLate(bars, atr, 'long'), short: moveIsLate(bars, atr, 'short') } : null;
             }
             candleBlock = real ? [real.block, compact?.block].filter(Boolean).join('\n\n') : null;
             candleCoverage = candleBlock ? 'injected' : 'block_unavailable';
@@ -2299,11 +2295,11 @@ export class AIAdapter {
       const strategyFit = STRATEGY_FIT_VALUES.find((v) => v === parsed.strategyFit) ?? null;
       const strategyFitReason =
         typeof parsed.strategyFitReason === 'string' ? parsed.strategyFitReason.slice(0, 400) : null;
-      // Validador do v10 (signal-decision.ts): so rebaixa. Preco e ATR reais
-      // valem quando os candles entraram no prompt.
+      // Validador do v11 (signal-decision.ts): decide o estado. Preco, ATR,
+      // swings e maturidade reais valem quando os candles entraram no prompt.
       const numbers = groundingStats?.coverage === 'injected' ? groundingStats.numbers : null;
       const realData = numbers && numbers.lastClose !== null && numbers.lastClose > 0
-        ? { price: numbers.lastClose, atr: numbers.atr14, htfTrend: numbers.htfTrend ?? null }
+        ? { price: numbers.lastClose, atr: numbers.atr14, htfTrend: numbers.htfTrend ?? null, swings: numbers.swings ?? null, late: numbers.late ?? null }
         : null;
       const modelState =
         parsed.signalState ??
@@ -2333,7 +2329,7 @@ export class AIAdapter {
         priceFixed: parsed.analysis?.priceMagnitudeFixed === true,
       });
       const validationMs = Date.now() - tValidation;
-      if (decision.validatorAction === 'downgraded') {
+      if (decision.validatorAction === 'downgraded' || decision.validatorAction === 'promoted') {
         this.logger.warn(
           `[validator] ${JSON.stringify({ from: modelState, to: decision.state, notes: decision.validatorNotes, symbol: parsed.analysis?.symbol, news: decision.newsEvent })}`,
         );
@@ -2387,7 +2383,7 @@ export class AIAdapter {
         strategyFitReason,
         engineMeta: {
           validatorAction: decision.validatorAction,
-          validatorReasons: decision.validatorNotes,
+          validatorReasons: validatorReasons(decision.validatorNotes),
           validatorFlags: decision.validatorFlags,
           newsGuardStatus: decision.newsGuardStatus,
           groundingMs,

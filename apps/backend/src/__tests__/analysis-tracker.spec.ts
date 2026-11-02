@@ -1,5 +1,5 @@
 /**
- * Rastreador de resultado do v10.3 (28/10/2026): janela, regua do replay
+ * Rastreador de resultado (28/10/2026): janela, regua do replay
  * (trackPlan) e o que fica para a volta seguinte.
  */
 import { TRACKER_RULES, trackAnalysis } from '../../worker/analysis-tracker';
@@ -16,7 +16,7 @@ function candidate(result: Record<string, unknown>, extra: Record<string, unknow
   return {
     id: 'an_1', createdAt: created, promptVer: 14,
     result: {
-      signalState: 'WATCH', dataMode: 'real_data', watchPlan: plan, engine: { version: '3.2.0' },
+      signalState: 'WATCH', dataMode: 'real_data', watchPlan: plan, engine: { version: '4.0.0' },
       analysis: { symbol: 'BTCUSDT', timeframe: '15m' },
       ...result,
     },
@@ -41,7 +41,7 @@ describe('trackAnalysis', () => {
   it('WATCH com ATR real: niveis do plano, toque, fill e TP1, ligado a versao do prompt', async () => {
     const row = await trackAnalysis(candidate({}), after, fetchOk);
     expect(row).toMatchObject({
-      analysisId: 'an_1', promptVer: 14, engineVersion: '3.2.0', signalState: 'WATCH', dataMode: 'real_data',
+      analysisId: 'an_1', promptVer: 14, engineVersion: '4.0.0', signalState: 'WATCH', dataMode: 'real_data',
       status: 'tracked', outcome: 'WIN', touched: true, filled: true, fillPrice: 99.5, entry: 99.5, missed: false, candleInterval: '1m',
     });
     expect(row?.touchedAt?.getTime()).toBe(t0 + M);

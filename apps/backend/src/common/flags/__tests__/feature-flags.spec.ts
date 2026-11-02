@@ -70,7 +70,7 @@ describe('loja de apps — resolução de flags', () => {
       expect(flagBool('TRIAL_MODE')).toBe(true);
     });
 
-    it.each(['ENABLE_RR_GUARD', 'ENABLE_NEWS_GUARD', 'ENABLE_MARKET_ENRICHMENT', 'ENABLE_OUTCOME_TRACKING'])(
+    it.each(['ENABLE_NEWS_GUARD', 'ENABLE_MARKET_ENRICHMENT', 'ENABLE_OUTCOME_TRACKING'])(
       '%s continua LIGADO por padrão (era !== "false")',
       (chave) => {
         expect(flagBool(chave)).toBe(true);
@@ -81,17 +81,16 @@ describe('loja de apps — resolução de flags', () => {
 
     // ⭐ O caso que motivou o parser tolerante.
     //
-    // A semântica antiga NÃO era uniforme: `ENABLE_RR_GUARD !== 'false'` mantinha
+    // A semântica antiga NÃO era uniforme: `ENABLE_NEWS_GUARD !== 'false'` mantinha
     // a guarda LIGADA para qualquer valor estranho, enquanto
     // `ENABLE_QUICK_GROUNDING === 'true'` mantinha DESLIGADO. Um parser ingênuo
-    // ("é 'true'? então ligado") desligaria a guarda de risco por causa de um
-    // typo — calada, e a guarda de risco é o que impede o motor de sugerir
-    // entrada com retorno pior que o risco.
+    // ("é 'true'? então ligado") desligaria a guarda por causa de um typo,
+    // calada, e o motor voltaria a sugerir entrada na hora de um payroll.
     it.each(['sim', 'yes', 'ON', '', '  ', 'talvez', 'TRUE '])(
       'valor lixo (%p) NÃO desliga uma guarda que é ligada por padrão',
       (lixo) => {
-        applyFlagOverrideLocally('ENABLE_RR_GUARD', lixo);
-        expect(flagBool('ENABLE_RR_GUARD')).toBe(true);
+        applyFlagOverrideLocally('ENABLE_NEWS_GUARD', lixo);
+        expect(flagBool('ENABLE_NEWS_GUARD')).toBe(true);
       },
     );
 
@@ -106,8 +105,8 @@ describe('loja de apps — resolução de flags', () => {
     it('aceita 1/0 além de true/false', () => {
       applyFlagOverrideLocally('TRIAL_MODE', '1');
       expect(flagBool('TRIAL_MODE')).toBe(true);
-      applyFlagOverrideLocally('ENABLE_RR_GUARD', '0');
-      expect(flagBool('ENABLE_RR_GUARD')).toBe(false);
+      applyFlagOverrideLocally('ENABLE_NEWS_GUARD', '0');
+      expect(flagBool('ENABLE_NEWS_GUARD')).toBe(false);
     });
 
   });
@@ -125,10 +124,10 @@ describe('loja de apps — resolução de flags', () => {
     it('ignora chave que não está no registro (sobra de flag removida do código)', async () => {
       await loadFlagsFromDb(async () => [
         { key: 'FLAG_QUE_NAO_EXISTE_MAIS', value: 'true' },
-        { key: 'ENABLE_RR_GUARD', value: 'false' },
+        { key: 'ENABLE_NEWS_GUARD', value: 'false' },
       ]);
       expect(getFlagCacheStatus().overridesNoBanco).toBe(1);
-      expect(flagBool('ENABLE_RR_GUARD')).toBe(false);
+      expect(flagBool('ENABLE_NEWS_GUARD')).toBe(false);
     });
 
     // ⭐ A propriedade que torna esta feature segura de existir.
@@ -146,8 +145,8 @@ describe('loja de apps — resolução de flags', () => {
     });
 
     it('falha na recarga preserva o cache anterior em vez de zerar as flags', async () => {
-      await loadFlagsFromDb(async () => [{ key: 'ENABLE_RR_GUARD', value: 'false' }]);
-      expect(flagBool('ENABLE_RR_GUARD')).toBe(false);
+      await loadFlagsFromDb(async () => [{ key: 'ENABLE_NEWS_GUARD', value: 'false' }]);
+      expect(flagBool('ENABLE_NEWS_GUARD')).toBe(false);
 
       await loadFlagsFromDb(async () => {
         throw new Error('conexão caiu');
@@ -155,13 +154,13 @@ describe('loja de apps — resolução de flags', () => {
 
       // Continua desligada: uma queda de rede não pode religar sozinha uma
       // guarda que alguém desligou de propósito.
-      expect(flagBool('ENABLE_RR_GUARD')).toBe(false);
+      expect(flagBool('ENABLE_NEWS_GUARD')).toBe(false);
     });
   });
 
   describe('refresher', () => {
     it('carrega na hora e para quando mandado', async () => {
-      const load = jest.fn(async () => [{ key: 'ENABLE_RR_GUARD', value: 'false' }]);
+      const load = jest.fn(async () => [{ key: 'ENABLE_NEWS_GUARD', value: 'false' }]);
       const stop = startFlagRefresh(load, 10_000);
       await Promise.resolve();
       await Promise.resolve();

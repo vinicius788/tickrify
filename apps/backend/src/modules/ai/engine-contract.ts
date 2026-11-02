@@ -1,5 +1,5 @@
 import type { Recommendation } from '../../common/utils/analysis-normalizer';
-import type { SignalDecisionResult, SignalState, ValidatorAction, ValidatorNote } from '../../common/utils/signal-decision';
+import type { SignalDecisionResult, SignalState, ValidatorAction, ValidatorReason } from '../../common/utils/signal-decision';
 
 // ============================================================================
 // CONTRATO DE SAIDA DO MOTOR (v2, 12/10/2026)
@@ -14,7 +14,7 @@ import type { SignalDecisionResult, SignalState, ValidatorAction, ValidatorNote 
 // ============================================================================
 
 /** Versao do motor. Unico lugar; vai para o banco e para o PostHog. */
-export const ENGINE_VERSION = '3.2.0';
+export const ENGINE_VERSION = '4.0.0';
 
 export type EngineVerdict = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 
@@ -64,7 +64,7 @@ export interface EngineRecord {
   /** Estado final do v10 (signal-decision.ts). */
   signal_state: SignalState;
   validator_action: ValidatorAction;
-  validator_reasons: ValidatorNote[];
+  validator_reasons: ValidatorReason[];
   /** Regras quebradas que so medem, sem rebaixar (MEASURE_ONLY_RULES). */
   validator_flags: SignalDecisionResult['validatorFlags'];
   timings: EngineTimings;
@@ -81,25 +81,26 @@ const VERDICTS: Record<Recommendation, EngineVerdict> = {
   WAIT: 'NEUTRAL',
 };
 
-// Motivo fixo quando o validador rebaixou (o texto da IA defendia o trade).
-const VALIDATOR_REASON_TEXT: Record<ValidatorNote, string> = {
+// Motivo fixo de cada mudanca de estado (o texto da IA defendia o estado dela).
+const VALIDATOR_REASON_TEXT: Record<ValidatorReason, string> = {
   state_mismatch: 'The state and the recommendation did not agree.',
+  watch_plan_invalid: 'The plan has its levels out of order.',
   implausible_price: 'A price level is outside a plausible range of the chart price.',
-  levels_unverified: 'No real candles, and the plan levels or the chart price could not be read.',
+  invalidation_unsnapped: 'The invalidation is not at a real swing within 0.1 ATR.',
   plan_invalidated: 'Price is already beyond the invalidation.',
-  zone_overrun: 'Price has already passed through the zone.',
-  stop_atr_out_of_range: 'The stop from the invalidation is more than 2.0 ATR from the entry.',
-  tp1_no_room: 'The first target is less than 1R from the entry.',
-  rr_tp2_below_min: 'The final target does not pay at least 1.5 times the risk.',
-  required_check_failed: 'Location, setup, geometry and room must all pass for a plan.',
-  checks_below_min: 'Too few checklist items passed for a plan.',
-  forex_checks_below_min: 'Forex needs six checklist items for a plan.',
-  countertrend_checks_below_min: 'A plan against the 4h trend needs six checklist items.',
-  not_at_price: 'Price is not inside the zone, so the plan is a pending limit order.',
-  entry_far_from_price: 'The entry is too far from the current price.',
+  market_entry_invalid: 'An entry at the current price needs a risk of at most 2.0 ATR and a first target at least 1R away.',
+  market_entry_valid: 'The entry at the current price meets every condition to enter now.',
+  limit_entry_invalid: 'There is no valid pullback limit between price and the invalidation.',
+  entry_far_from_price: 'The limit entry is more than 0.75 ATR from the current price.',
+  required_check_failed: 'A required checklist item failed for this state.',
+  checks_below_min: 'Too few checklist items passed for this state.',
+  late_move: 'The move is late, so it is not a market entry.',
+  setup_failed: 'There is no complete setup.',
+  no_valid_geometry: 'Neither the market entry nor a pullback limit is valid.',
+  levels_unverified: 'No real candles, and the plan levels or the chart price could not be read.',
+  not_at_price: 'Price is not inside the area, so the plan is a pending limit order.',
+  zone_overrun: 'Price has already passed through the area.',
   news_event: 'A high-impact economic event is due within 45 minutes or came out in the last 15.',
-  watch_plan_invalid: 'The conditional plan has its levels out of order.',
-  stale_print: 'The screenshot is older than the market.',
 };
 
 function clip(text: string, max: number): string {
@@ -132,14 +133,15 @@ export interface EngineContractInput {
   takeProfit2: unknown;
   invalidationLevel: unknown;
   executiveSummary: unknown;
-  validatorReasons: ValidatorNote[];
+  validatorReasons: ValidatorReason[];
 }
 
 export function buildEngineContract(input: EngineContractInput): EngineContract {
   const verdict = VERDICTS[input.recommendation];
   const isTrade = verdict !== 'NEUTRAL';
   const summary = sentences(input.executiveSummary);
-  const validatorReason = input.validatorReasons.find((n) => n !== 'stale_print');
+  // O ultimo motivo e o da mudanca que levou ao estado final.
+  const validatorReason = input.validatorReasons[input.validatorReasons.length - 1];
 
   return {
     verdict,
