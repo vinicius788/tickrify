@@ -113,6 +113,33 @@ describe('entryLevels e limitEntryLevels', () => {
   });
 });
 
+describe('stop no teto a partir da entrada e TP1 em 1,0R (regras da variante C, desligadas por padrao)', () => {
+  const rules = ENGINE_RULES as unknown as Record<string, unknown>;
+  const saved = { stopCapAtr: rules.stopCapAtr };
+  afterEach(() => Object.assign(rules, saved));
+
+  it('padrao: so o stop estrutural e alvo curto invalida', () => {
+    expect(ENGINE_RULES.stopCapAtr).toBe(Infinity);
+    expect(ENGINE_RULES.tp1FloorWithRoom).toBe(false);
+    expect(entryLevels(long, 1, 99.6)).toMatchObject({ stopLoss: 98.55 });
+    expect(entryLevels(long, 1, 100.5)).toBe('no_room');
+  });
+
+  it('com teto de 1,0 ATR vale o stop mais perto da entrada; nunca a menos de 0,5 ATR', () => {
+    rules.stopCapAtr = 1;
+    expect(entryLevels(long, 1, 100.5)).toMatchObject({ stopLoss: 99.5, riskAtr: 1 });
+    expect(entryLevels(long, 1, 99.3)).toMatchObject({ stopLoss: 98.55 });
+    expect(entryLevels({ ...long, invalidation: 99.3, zoneLow: 99.3 }, 1, 99.5)).toMatchObject({ stopLoss: 99, stopWidened: true });
+  });
+
+  it('com floorTp1, alvo abaixo de 1,0R vira TP1 em 1,0R; sem ele, a entrada nao vale', () => {
+    rules.stopCapAtr = 1;
+    const near = { ...long, target1: 101, target2: 102 };
+    expect(entryLevels(near, 1, 100.5)).toBe('no_room');
+    expect(entryLevels(near, 1, 100.5, undefined, true)).toMatchObject({ stopLoss: 99.5, takeProfit1: 101.5, tp1R: 1, takeProfit2: 102 });
+  });
+});
+
 describe('snapInvalidation', () => {
   // Compra com invalidacao do modelo em 98,8 e preco em 100.
   const swings = [{ kind: 'low' as const, price: 99.1 }, { kind: 'low' as const, price: 98.9 }, { kind: 'high' as const, price: 98.85 }, { kind: 'low' as const, price: 98.5 }];

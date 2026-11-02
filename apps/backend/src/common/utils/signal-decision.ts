@@ -289,10 +289,12 @@ export function evaluatePlan(input: {
   if (!plan) return 'invalidation_unsnapped';
   const margin = stopMarginAtr(calibrationPair(input.symbol), input.htfTrend);
   const checks = parsePassFailChecklist(input.structureValidation);
+  // TP1 em 1,0R no lugar de um alvo curto so com o caminho livre (C7 em PASS).
+  const floorTp1 = ENGINE_RULES.tp1FloorWithRoom && checks?.get(7) === true;
   return {
     plan,
-    market: entryLevels(plan, input.atr, input.price, margin),
-    limit: limitEntryLevels(plan, input.atr, input.price, margin),
+    market: entryLevels(plan, input.atr, input.price, margin, floorTp1),
+    limit: limitEntryLevels(plan, input.atr, input.price, margin, floorTp1),
     limitDistanceAtr: Math.abs(nearEdge(plan) - input.price) / input.atr,
     late: input.late,
     checks,
@@ -311,7 +313,7 @@ function whyNot(state: SignalState, ev: PlanEvaluation, fromTop: boolean): Valid
   if (state === 'ENTER_NOW') {
     if (!marketValid) return 'market_entry_invalid';
     if (!allPass(ev.checks, R.enterNowChecks)) return 'required_check_failed';
-    if (ev.passes < ev.requiredPasses) return 'checks_below_min';
+    if (R.enterNowMinPass && ev.passes < ev.requiredPasses) return 'checks_below_min';
     return ev.late ? 'late_move' : null;
   }
   if (state === 'ARMED') {

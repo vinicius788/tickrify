@@ -208,6 +208,31 @@ describe('decideSignal: so rebaixa, com uma excecao', () => {
   });
 });
 
+describe('regras da variante C ligadas (stop no teto, TP1 em 1,0R, ENTER_NOW com C2, C3 e C7)', () => {
+  const rules = ENGINE_RULES as unknown as Record<string, unknown>;
+  const saved = { stopCapAtr: rules.stopCapAtr, tp1FloorWithRoom: rules.tp1FloorWithRoom, enterNowChecks: rules.enterNowChecks, enterNowMinPass: rules.enterNowMinPass };
+  beforeEach(() => Object.assign(rules, { stopCapAtr: 1, tp1FloorWithRoom: true, enterNowChecks: [2, 3, 7], enterNowMinPass: false }));
+  afterEach(() => Object.assign(rules, saved));
+
+  it('ENTER_NOW com C6 em FAIL e poucos PASS, se C2, C3 e C7 passam e o movimento nao esta atrasado', async () => {
+    const d = await decide({ state: 'ENTER_NOW', structureValidation: checks(1, 4, 5, 6) });
+    expect(d).toMatchObject({ state: 'ENTER_NOW', entryType: 'market' });
+    expect(d.levels.stopLoss).toBeCloseTo(98.9);
+    expect(d.watchPlan?.invalidation).toBe(98.8);
+  });
+
+  it('alvo curto vira TP1 em 1,0R so com C7 em PASS', async () => {
+    const d = await decide({ state: 'ENTER_NOW', watchPlan: { ...plan, target1: 100.6, target2: null } });
+    expect(d.state).toBe('ENTER_NOW');
+    expect(d.levels.takeProfit1).toBeCloseTo(100.9);
+    expect((await decide({ state: 'ENTER_NOW', watchPlan: { ...plan, target1: 100.6, target2: null }, structureValidation: checks(7) })).state).not.toBe('ENTER_NOW');
+  });
+
+  it('movimento atrasado continua sem ENTER_NOW', async () => {
+    expect((await decide({ state: 'ENTER_NOW', realData: real(99.9, { late: { long: true, short: false } }) })).state).toBe('WATCH');
+  });
+});
+
 describe('requiredPasses: agravantes nao se somam (no maximo 1 PASS a mais)', () => {
   it.each([
     ['XAUUSD', 'long', null, 5],

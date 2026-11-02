@@ -23,13 +23,26 @@ export const ENGINE_RULES = {
   /** Risco da entrada: abaixo do minimo o stop e alargado ate ele; acima do maximo, entrada invalida. */
   riskMinAtr: 0.5,
   riskMaxAtr: 2.0,
+  /**
+   * Stop operacional no maximo isto (ATR) da entrada: vale o mais perto da
+   * entrada entre ele e o estrutural (invalidacao +- margem). Infinity = so o
+   * estrutural. A invalidacao estrutural continua gravada no plano.
+   */
+  stopCapAtr: Infinity as number,
   /** target1 a pelo menos isto do risco para a entrada valer; TP1 limitado ao teto. */
   tp1MinR: 1.0,
   tp1CapR: 1.5,
+  /**
+   * Com C7 em PASS (nada que ja virou o preco 2 vezes antes do alvo), target1
+   * a menos de tp1MinR vira TP1 em tp1MinR em vez de invalidar a entrada.
+   */
+  tp1FloorWithRoom: false as boolean,
   /** ARMED: borda da limit ate isto do preco real (ATR); mais longe, WATCH. */
   armedMaxAtr: 0.75,
   /** Itens do checklist exigidos em PASS por estado. */
-  enterNowChecks: [2, 3, 6, 7],
+  enterNowChecks: [2, 3, 6, 7] as readonly number[],
+  /** ENTER_NOW tambem exige o minimo de PASS (com o agravante). */
+  enterNowMinPass: true as boolean,
   armedChecks: [2, 3, 7],
   watchChecks: [3],
   /** PASS minimos de ENTER_NOW e ARMED. */
@@ -188,24 +201,34 @@ export function stopMarginAtr(pair: string | null, regime: string | null): numbe
 }
 
 /**
- * Niveis de uma entrada: stop = invalidacao alem da margem, alargado ate 0,5
- * ATR da entrada; risco acima de 2,0 ATR ou target1 abaixo de 1,0R invalidam.
- * TP1 = target1 limitado a 1,5R a partir da entrada.
+ * Niveis de uma entrada: stop = o mais perto da entrada entre o estrutural
+ * (invalidacao alem da margem) e o teto stopCapAtr, alargado ate 0,5 ATR da
+ * entrada; risco acima de 2,0 ATR invalida. TP1 = target1 limitado a 1,5R;
+ * target1 abaixo de 1,0R invalida, ou vira TP1 em 1,0R com `floorTp1`
+ * (tp1FloorWithRoom ligado e C7 em PASS).
  */
-export function entryLevels(plan: WatchPlan, atr: number, entry: number, marginAtr: number = ENGINE_RULES.stopMarginAtr): EntryLevels | EntryRejection {
+export function entryLevels(
+  plan: WatchPlan,
+  atr: number,
+  entry: number,
+  marginAtr: number = ENGINE_RULES.stopMarginAtr,
+  floorTp1 = false,
+): EntryLevels | EntryRejection {
   const R = ENGINE_RULES;
   const long = plan.direction === 'long';
   if (long ? entry <= plan.invalidation : entry >= plan.invalidation) return 'wrong_side';
-  const fromInvalidation = long ? plan.invalidation - marginAtr * atr : plan.invalidation + marginAtr * atr;
+  const structural = long ? plan.invalidation - marginAtr * atr : plan.invalidation + marginAtr * atr;
+  const capped = long ? entry - R.stopCapAtr * atr : entry + R.stopCapAtr * atr;
+  const fromInvalidation = long ? Math.max(structural, capped) : Math.min(structural, capped);
   const stopWidened = Math.abs(entry - fromInvalidation) < R.riskMinAtr * atr;
   const stopLoss = stopWidened ? (long ? entry - R.riskMinAtr * atr : entry + R.riskMinAtr * atr) : fromInvalidation;
   const risk = Math.abs(entry - stopLoss);
   const riskAtr = risk / atr;
   if (riskAtr > R.riskMaxAtr) return 'stop_out_of_range';
   const room = (long ? plan.target1 - entry : entry - plan.target1) / risk;
-  if (room < R.tp1MinR) return 'no_room';
-  const tp1R = Math.min(room, R.tp1CapR);
-  const takeProfit1 = room <= R.tp1CapR ? plan.target1 : precise(long ? entry + tp1R * risk : entry - tp1R * risk);
+  if (room < R.tp1MinR && !floorTp1) return 'no_room';
+  const tp1R = Math.min(Math.max(room, R.tp1MinR), R.tp1CapR);
+  const takeProfit1 = room >= R.tp1MinR && room <= R.tp1CapR ? plan.target1 : precise(long ? entry + tp1R * risk : entry - tp1R * risk);
   const t2 = plan.target2;
   const takeProfit2 = t2 !== null && (long ? t2 > takeProfit1 : t2 < takeProfit1) ? t2 : null;
   return { entry: precise(entry), stopLoss: precise(stopLoss), takeProfit1, takeProfit2, riskAtr, tp1R, stopWidened };
@@ -215,10 +238,10 @@ export function entryLevels(plan: WatchPlan, atr: number, entry: number, marginA
  * Limit na borda proxima da zona, so quando ela fica entre o preco e a
  * invalidacao (recuo): preco dentro ou alem da zona nao tem limit.
  */
-export function limitEntryLevels(plan: WatchPlan, atr: number, price: number, marginAtr?: number): EntryLevels | EntryRejection {
+export function limitEntryLevels(plan: WatchPlan, atr: number, price: number, marginAtr?: number, floorTp1 = false): EntryLevels | EntryRejection {
   const edge = nearEdge(plan);
   if (plan.direction === 'long' ? edge >= price : edge <= price) return 'not_pullback';
-  return entryLevels(plan, atr, edge, marginAtr);
+  return entryLevels(plan, atr, edge, marginAtr, floorTp1);
 }
 
 /**

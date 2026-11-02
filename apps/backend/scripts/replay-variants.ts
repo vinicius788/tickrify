@@ -12,8 +12,9 @@
  * Referencia: a direcao do plano a mercado no print, stop e alvo de 1 ATR,
  * com o mesmo spread.
  *
- * --alt "armedMaxAtr=1,minPass=4,tp1MinR=0.8" (ate 3 vezes) repete a medicao
- * com constantes do ENGINE_RULES trocadas, so neste processo.
+ * --alt "riskMaxAtr=3; enterNowChecks=[2,3,7]; tp1FloorWithRoom=true" (ate 3
+ * vezes) repete a medicao com constantes do ENGINE_RULES trocadas, so neste
+ * processo. Pares separados por ponto e virgula; cada valor e JSON.
  *
  * --runs, --gabarito, --after e --history aceitam varios arquivos separados
  * por virgula; a mesma analise num arquivo seguinte substitui a anterior. Velas
@@ -271,7 +272,7 @@ function line(name: string, plans: number, trades: Trade[]): string {
   } | ${trades.length - decided.length} |`;
 }
 
-type Rules = Record<string, number>;
+type Rules = Record<string, unknown>;
 
 /** Troca constantes do ENGINE_RULES so durante `fn` (o objeto e literal em tempo de execucao). */
 async function withRules<T>(patch: Rules, fn: () => Promise<T>): Promise<T> {
@@ -400,7 +401,10 @@ async function main() {
   console.log(`Distancia ${distanceToInvalidation(ctxs)}.`);
   await measure('v11, constantes do ENGINE_RULES', ctxs, withReal.length);
   for (const alt of args('--alt').slice(0, 3)) {
-    const patch = Object.fromEntries(alt.split(',').map((kv) => { const [k, v] = kv.split('='); return [k.trim(), Number(v)]; }));
+    const patch = Object.fromEntries(alt.split(';').filter((kv) => kv.trim()).map((kv) => {
+      const i = kv.indexOf('=');
+      return [kv.slice(0, i).trim(), JSON.parse(kv.slice(i + 1).trim())];
+    }));
     await withRules(patch, () => measure(`alternativa ${alt}`, ctxs, withReal.length));
   }
 }
