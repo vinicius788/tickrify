@@ -26,6 +26,13 @@
  * --td-budget creditos por dia UTC (padrao 250) e 1 pedido a cada 15 s. O
  * cache guarda cada serie e os creditos do dia: retomar nao repete pedido.
  *
+ * --review [--since AAAA-MM-DD] (02/11/2026): a revisao mensal do motor. Le o
+ * rastreador de producao ("AnalysisTrack", SO LEITURA, pelo DATABASE_URL) e
+ * reporta, por estado, classe de ativo, compra/venda e versao do motor: n,
+ * acerto do TP1 (Wilson), R liquido (bootstrap, spread descontado) e a
+ * referencia de direcao; depois aplica as REVIEW_RULES ao ENTER_NOW da versao
+ * atual. So reporta: nunca muda nada sozinho.
+ *
  * Uso (em apps/backend):
  *   pnpm exec ts-node scripts/replay-variants.ts --runs <A.jsonl>,<B.jsonl> --gabarito <A.txt>,<B.txt> --after <velas.json> --history <historico.json>
  */
@@ -40,7 +47,9 @@ import {
   twelveDataTimeSeries,
 } from '../src/modules/market/twelve-data';
 import { TIMEFRAME_MS, fetchWindow } from '../src/modules/market/candle-store';
+import { PrismaClient } from '@prisma/client';
 import { calibrationPair, decideSignal, type SignalDecisionResult, type SignalState } from '../src/common/utils/signal-decision';
+import { ENGINE_VERSION } from '../src/modules/ai/engine-contract';
 import {
   ENGINE_RULES,
   atr14Series,
@@ -508,9 +517,106 @@ async function calibrate(): Promise<void> {
   console.log(`Gravado em ${outFile}.`);
 }
 
+// ── Revisao mensal (--review) ───────────────────────────────────────────────
+/**
+ * Regras da revisao mensal, fixadas pelo dono em 02/11/2026, so para o
+ * ENTER_NOW da versao atual do motor:
+ *   n >= 30 e R liquido >= -0,05R: mantem.
+ *   n >= 30 e R liquido <= -0,15R: desligar o ENTER_NOW (o produto fica so no
+ *     modo leitura). E decisao do dono; o script so aponta.
+ *   resto: mantem e espera mais dados.
+ */
+const REVIEW_RULES = { minTrades: 30, keepAtOrAbove: -0.05, disableAtOrBelow: -0.15 } as const;
+
+interface TrackRecord {
+  signalState: string;
+  engineVersion: string | null;
+  symbol: string | null;
+  direction: string | null;
+  outcome: string | null;
+  fillPrice: number | null;
+  stopLoss: number | null;
+  takeProfit1: number | null;
+  atr: number | null;
+  refOutcome: string | null;
+  refFillPrice: number | null;
+}
+
+function classOfSymbol(symbol: string): string {
+  if (normalizeToBinancePerp(symbol).isCrypto) return 'cripto';
+  const fx = canonicalFxPair(symbol);
+  if (!fx) return 'outros';
+  return fx.startsWith('XAU') || fx.startsWith('XAG') ? 'metal' : 'forex';
+}
+
+/** Trade executado do rastreador, com o spread descontado em R; null sem fill decidido. */
+function reviewTrade(r: TrackRecord): Trade | null {
+  if (!r.symbol || !['WIN', 'LOSS', 'TIMEOUT'].includes(String(r.outcome)) || !r.fillPrice || !r.stopLoss || !r.takeProfit1) return null;
+  const risk = Math.abs(r.fillPrice - r.stopLoss);
+  if (!(risk > 0)) return null;
+  const outcome = r.outcome as Trade['outcome'];
+  const gross = outcome === 'WIN' ? Math.abs(r.takeProfit1 - r.fillPrice) / risk : outcome === 'LOSS' ? -1 : 0;
+  return { long: r.direction === 'long', outcome, r: gross - spreadOf(r.symbol, r.fillPrice) / risk };
+}
+
+/** Referencia de direcao (a mercado na analise, 1 ATR): +1, -1 ou 0, menos o spread em R. */
+function reviewReference(r: TrackRecord): Trade | null {
+  if (!r.symbol || !r.refOutcome || !r.refFillPrice || !r.atr) return null;
+  const outcome = r.refOutcome as Trade['outcome'];
+  const gross = outcome === 'WIN' ? 1 : outcome === 'LOSS' ? -1 : 0;
+  return { long: r.direction === 'long', outcome, r: gross - spreadOf(r.symbol, r.refFillPrice) / r.atr };
+}
+
+async function review(): Promise<void> {
+  const since = arg('--since');
+  const prisma = new PrismaClient();
+  try {
+    const rows = await prisma.$queryRawUnsafe<TrackRecord[]>(
+      `SELECT "signalState", "engineVersion", "symbol", "direction", "outcome", "fillPrice", "stopLoss", "takeProfit1",
+              "atr", "refOutcome", "refFillPrice"
+       FROM "tickrify"."AnalysisTrack"
+       WHERE "status" = 'tracked' AND ($1::text IS NULL OR "evaluatedAt" >= $1::date)`,
+      since,
+    );
+    console.log(`Revisao mensal do motor: ${rows.length} planos medidos pelo rastreador${since ? ` desde ${since}` : ''}. Versao atual: ${ENGINE_VERSION}.`);
+    const dims: [string, (r: TrackRecord) => string][] = [
+      ['estado', (r) => r.signalState],
+      ['classe de ativo', (r) => classOfSymbol(r.symbol ?? '')],
+      ['compra/venda', (r) => (r.direction === 'long' ? 'compra' : r.direction === 'short' ? 'venda' : '-')],
+      ['versao do motor', (r) => r.engineVersion ?? '-'],
+    ];
+    for (const [title, key] of dims) {
+      console.log(`\n| ${title} | planos | executados | acerto TP1 (Wilson 95%) | R liquido medio (bootstrap 95%) | TIMEOUT |`);
+      console.log('|---|---|---|---|---|---|');
+      for (const value of [...new Set(rows.map(key))].sort()) {
+        const of = rows.filter((r) => key(r) === value);
+        console.log(line(value, of.length, of.flatMap((r) => { const t = reviewTrade(r); return t ? [t] : []; })));
+        console.log(line(`${value}: referencia de direcao (1 ATR)`, of.length, of.flatMap((r) => { const t = reviewReference(r); return t ? [t] : []; })));
+      }
+    }
+    const enter = rows.filter((r) => r.signalState === 'ENTER_NOW' && r.engineVersion === ENGINE_VERSION)
+      .flatMap((r) => { const t = reviewTrade(r); return t ? [t] : []; });
+    const n = enter.length;
+    const meanR = mean(enter.map((t) => t.r));
+    const R = REVIEW_RULES;
+    const verdict = n >= R.minTrades && meanR >= R.keepAtOrAbove
+      ? 'MANTEM o ENTER_NOW'
+      : n >= R.minTrades && meanR <= R.disableAtOrBelow
+        ? 'DESLIGAR o ENTER_NOW (o produto fica so no modo leitura): decisao do dono'
+        : 'MANTEM e espera mais dados';
+    console.log(`\nRegra da revisao (ENTER_NOW do motor ${ENGINE_VERSION}): n ${n}, R liquido ${signed(meanR)}. ${verdict}. O script so reporta; nada foi mudado.`);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
 async function main() {
   if (process.argv.includes('--calibrate')) {
     await calibrate();
+    return;
+  }
+  if (process.argv.includes('--review')) {
+    await review();
     return;
   }
   // Script de medicao: so a chave TWELVE_DATA_API_KEY_EXPERIMENTS, nunca a de producao.
