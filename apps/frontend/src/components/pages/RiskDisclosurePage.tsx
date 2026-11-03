@@ -14,7 +14,7 @@ import { seoFor, useSeo } from '@/hooks/useSeo';
  * bonito do que a realidade medida. É por isso que ela manda o leitor para o
  * placar de acurácia em vez de prometer resultado.
  */
-const LAST_UPDATED = 'September 21, 2026';
+const LAST_UPDATED = 'November 3, 2026';
 
 const SECTIONS: LegalSection[] = [
   {
@@ -93,14 +93,15 @@ const SECTIONS: LegalSection[] = [
       <>
         <p>
           The analysis is produced by an artificial intelligence model reading an image of a chart, alongside
-          live candle data for the instrument. It is wrong regularly, and it can be wrong in ways that look
-          convincing:
+          live candle data where it is available (crypto, major forex pairs and metals; not stocks or indices).
+          It is wrong regularly, and it can be wrong in ways that look convincing:
         </p>
         <ul>
           <li>it can misread the instrument, the timeframe or the scale of a screenshot;</li>
           <li>it can produce a confident, well argued analysis that the market immediately invalidates;</li>
-          <li>it checks the economic calendar for scheduled high/medium-impact events (rate decisions, CPI, payrolls) in the window around the chart, best-effort, but it has no access to breaking news headlines, market sentiment, or order flow, and no knowledge of anything that is not on the chart, in the data it is given, or on that calendar;</li>
-          <li>the confidence score is a model output, not a probability we can promise you.</li>
+          <li>it checks the economic calendar for scheduled high/medium-impact events (rate decisions, CPI, payrolls) in the window around the chart, best-effort, but it has no access to breaking news headlines or order flow, and no knowledge of anything that is not on the chart, in the data it is given, or on that calendar;</li>
+          <li>sentiment data is used only for crypto (the Fear &amp; Greed index, funding rate, open interest and long/short ratio), and it describes the crowd, not where price will go;</li>
+          <li>no part of the analysis is a probability we can promise you: a confidence score was measured, did not separate winning reads from losing ones, and is no longer shown.</li>
         </ul>
         <p>
           We publish the measured hit rate, the sample size and the confidence intervals, including the results

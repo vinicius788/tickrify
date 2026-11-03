@@ -14,7 +14,7 @@ import { seoFor, useSeo } from '@/hooks/useSeo';
  * a cláusula. Nada foi acrescentado nem retirado: mudar o que os Termos dizem é
  * decisão do dono do produto, não de quem redesenha o site.
  */
-const LAST_UPDATED = 'September 21, 2026';
+const LAST_UPDATED = 'November 3, 2026';
 
 const SECTIONS: LegalSection[] = [
   {
@@ -193,7 +193,7 @@ const SECTIONS: LegalSection[] = [
     body: (
       <>
         <p>
-          <strong>Subscriptions can be cancelled at any time</strong>, in one click from your dashboard. You keep
+          <strong>Subscriptions can be cancelled at any time</strong>, from Settings in your dashboard. You keep
           your Ticks and full access until the end of the period you have already paid for, and you are not
           charged again after that.
         </p>
