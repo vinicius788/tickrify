@@ -24,6 +24,7 @@ import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
 import { WatchPlanChart, isWatchPlan } from './WatchPlanChart';
+import { ReadModePanel, type ReadModeData } from './ReadModePanel';
 import { ShareCardButton, type ShareCardData } from './ShareCard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -879,6 +880,27 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
     );
   })();
 
+  // Modo leitura: a leitura, onde o preco esta e a acao, em toda analise.
+  const biasKey = String(analysisData.bias || marketStructure.bias || '').trim().toLowerCase();
+  const readReason = (() => {
+    const first = (executiveSummary || cleanModelText(analysis.technicalAnalysis)).split(/(?<=[.!?])\s/)[0] ?? '';
+    return first.length > 220 ? `${first.slice(0, 219).trimEnd()}…` : first;
+  })();
+  const engineContract = asRecord(asRecord(fullResponse.engine).contract);
+  const readMode: ReadModeData = {
+    state: signalState,
+    bias: biasKey === 'bullish' || biasKey === 'bearish' ? biasKey : 'neutral',
+    strength: trendStrength === 'strong' || trendStrength === 'moderate' || trendStrength === 'weak' ? trendStrength : null,
+    reason: readReason,
+    location: analysisData.fullResponse?.location ?? null,
+    currentPrice,
+    dataMode: analysisData.fullResponse?.dataMode ?? null,
+    levels: { entry, stopLoss, takeProfit1, takeProfit2 },
+    watchPlan,
+    watchReach: analysisData.fullResponse?.watchReach ?? null,
+    noTradeReason: typeof engineContract.no_trade_reason === 'string' ? engineContract.no_trade_reason : readReason || null,
+  };
+
   const shareData: ShareCardData = {
     symbol,
     timeframe,
@@ -1056,6 +1078,8 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
           )}
         </CardContent>
       </Card>
+
+      <ReadModePanel data={readMode} formatPrice={formatPrice} />
 
       {invalidTradePlan && (
         <Alert className="border-[var(--signal-sell)] bg-[var(--signal-sell-bg)]" role="alert">

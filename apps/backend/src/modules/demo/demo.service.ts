@@ -22,7 +22,8 @@ import {
   normalizeRecommendation,
 } from '../../common/utils/analysis-normalizer';
 import { assertDemoOpen } from './demo-control';
-import { storedSignalState } from '../../common/utils/signal-decision';
+import { storedSignalState, type PriceLocation, type WatchReach } from '../../common/utils/signal-decision';
+import type { WatchPlan } from '../../common/utils/plan-engine';
 
 type DemoUsage = { id: string; result: unknown; createdAt: Date; pending: boolean };
 
@@ -385,6 +386,9 @@ export class DemoService implements OnModuleInit, OnModuleDestroy {
     confidence?: unknown;
     reasoning?: unknown;
     analysis?: unknown;
+    watchPlan?: WatchPlan | null;
+    watchReach?: WatchReach | null;
+    location?: PriceLocation | null;
   }) {
     const analysis =
       aiResponse.analysis && typeof aiResponse.analysis === 'object'
@@ -433,6 +437,15 @@ export class DemoService implements OnModuleInit, OnModuleDestroy {
       // TP1 primeiro (30/09/2026): é o alvo que a /accuracy mede, e a tela do
       // /try rotula o número como "R:R to TP1".
       riskReward: invalidTradePlan || recommendation === 'WAIT' ? null : formatRiskReward(rrTp1 ?? rrTp2),
+      // Modo leitura (02/11/2026): os mesmos tres blocos do painel. Textos do
+      // modelo passam pelo scrub; numeros sao do codigo (REAL DATA).
+      trendStrength: ['strong', 'moderate', 'weak'].includes(String(analysis.trendStrength)) ? String(analysis.trendStrength) : null,
+      readLine: scrubPromptLeak((str(analysis.executiveSummary) ?? '').split(/(?<=[.!?])\s/)[0].slice(0, 220), ''),
+      watchPlan: aiResponse.watchPlan
+        ? { ...aiResponse.watchPlan, trigger: scrubPromptLeak(String(aiResponse.watchPlan.trigger ?? '').slice(0, 160), '') }
+        : null,
+      watchReach: aiResponse.watchReach ?? null,
+      location: aiResponse.location ?? null,
       reasoning,
       // Aviso legal: a demo é pública — reforçar caráter educacional na própria resposta.
       disclaimer:

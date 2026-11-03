@@ -116,7 +116,9 @@ describe('product clarity without changing the stored decision', () => {
     const t = getTranslations('en');
     const explanation = screen.getByText(state === 'WATCH' ? t.analysis.result.watchExplain : t.analysis.result.noTradeExplain, { exact: false });
     const plan = screen.getByText('Only after the stored chart condition.');
-    const reading = screen.getAllByText('Stored complete technical reading.').find(el => !guide.contains(el))!;
+    // A leitura tambem abre o painel do modo leitura (topo); aqui vale o bloco da leitura completa.
+    const readMode = screen.getByTestId('read-mode');
+    const reading = screen.getAllByText('Stored complete technical reading.').find(el => !guide.contains(el) && !readMode.contains(el))!;
     const follows = (first: Element, second: Element) =>
       expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     follows(explanation, plan);

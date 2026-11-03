@@ -29,6 +29,8 @@ import {
 } from '@/lib/demo-api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import en from '@/lib/i18n/en';
+import { ReadModePanel } from '@/components/dashboard/ReadModePanel';
+import { getTranslations } from '@/lib/i18n';
 import { getScenarioMeta, resolveSignalState, signalStateTone } from '@/lib/trading-ui';
 import { warmupPaymentsApi } from '@/lib/api';
 import { shrinkChartImage } from '@/lib/chart-image';
@@ -382,6 +384,26 @@ const TryPage = () => {
                   R:R to TP1: the potential reward for each unit of risk, up to the first target.
                 </p>
               ) : null}
+
+              <div className="my-4">
+                <ReadModePanel
+                  texts={getTranslations('en')}
+                  formatPrice={formatPrice}
+                  data={{
+                    state: signalState,
+                    bias: result.bias,
+                    strength: result.trendStrength ?? null,
+                    reason: result.readLine ?? '',
+                    location: result.location ?? null,
+                    currentPrice: result.currentPrice,
+                    dataMode: result.location ? 'real_data' : 'print',
+                    levels: { entry: result.entry, stopLoss: result.stopLoss, takeProfit1: result.takeProfit1, takeProfit2: result.takeProfit2 },
+                    watchPlan: result.watchPlan ?? null,
+                    watchReach: result.watchReach ?? null,
+                    noTradeReason: result.readLine || null,
+                  }}
+                />
+              </div>
 
               {result.reasoning && <p className="site-demo-rationale">{result.reasoning}</p>}
               <div className="site-demo-meta">{result.disclaimer}</div>

@@ -102,6 +102,29 @@ export interface RealDataInput {
   late: { long: boolean; short: boolean } | null;
   /** Regime de volatilidade do tempo grafico (volatilityRegime); null sem o calculo. */
   volRegime: VolRegime | null;
+  /** Posicao do preco no range visivel (0 = minima, 100 = maxima); null sem o calculo. */
+  rangePosPct: number | null;
+}
+
+/** Um nivel e a distancia dele ao preco real, em ATR. */
+export interface LevelDistance {
+  price: number;
+  atr: number;
+}
+
+/** Onde o preco esta (modo leitura), calculado pelo codigo a partir do REAL DATA. */
+export interface PriceLocation {
+  price: number;
+  atr: number;
+  rangePosPct: number | null;
+  htfTrend: HtfTrend | null;
+  /** Invalidacao estrutural do plano. */
+  invalidation: LevelDistance | null;
+  /** Swing real mais proxima abaixo e acima do preco. */
+  support: LevelDistance | null;
+  resistance: LevelDistance | null;
+  /** Nivel do plano (borda proxima da area). */
+  planLevel: LevelDistance | null;
 }
 
 /** Chance calibrada de o preco chegar ao nivel do WATCH dentro da validade. */
@@ -161,6 +184,8 @@ export interface SignalDecisionResult {
   stalePrint: boolean;
   /** WATCH com o nivel entre o preco e a invalidacao e calibracao do par e regime; senao null. */
   watchReach: WatchReach | null;
+  /** Onde o preco esta; null sem REAL DATA (a tela avisa que os niveis sao estimados). */
+  location: PriceLocation | null;
 }
 
 /**
@@ -530,6 +555,26 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     newsGuardStatus,
     stalePrint,
     watchReach: state === 'WATCH' && real && plan ? watchReachOf(plan, input.symbol, real) : null,
+    location: real ? locationOf(real, state === 'NO_TRADE' ? null : plan) : null,
+  };
+}
+
+/** Preco, posicao no range, tendencia do 4h e a distancia em ATR ate os niveis que importam. */
+export function locationOf(real: RealDataInput, plan: WatchPlan | null): PriceLocation {
+  const atr = real.atr as number;
+  const at = (price: number): LevelDistance => ({ price, atr: Math.abs(real.price - price) / atr });
+  const swings = real.swings ?? [];
+  const below = swings.filter((s) => s.kind === 'low' && s.price < real.price).map((s) => s.price);
+  const above = swings.filter((s) => s.kind === 'high' && s.price > real.price).map((s) => s.price);
+  return {
+    price: real.price,
+    atr,
+    rangePosPct: real.rangePosPct,
+    htfTrend: real.htfTrend,
+    invalidation: plan ? at(plan.invalidation) : null,
+    support: below.length ? at(Math.max(...below)) : null,
+    resistance: above.length ? at(Math.min(...above)) : null,
+    planLevel: plan ? at(nearEdge(plan)) : null,
   };
 }
 

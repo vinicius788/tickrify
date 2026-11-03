@@ -2309,6 +2309,7 @@ export class AIAdapter {
         ? {
             price: numbers.lastClose, atr: numbers.atr14, htfTrend: numbers.htfTrend ?? null,
             swings: numbers.swings ?? null, late: numbers.late ?? null, volRegime: numbers.volRegime ?? null,
+            rangePosPct: numbers.rangePosPct,
           }
         : null;
       const modelState =
@@ -2361,6 +2362,7 @@ export class AIAdapter {
         watchPlan: decision.watchPlan,
         dataMode: decision.dataMode,
         watchReach: decision.watchReach,
+        location: decision.location,
         validatorNotes: decision.validatorNotes,
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);

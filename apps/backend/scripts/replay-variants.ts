@@ -206,6 +206,7 @@ async function decide(c: Ctx): Promise<SignalDecisionResult> {
       price: c.price, atr: c.atr, htfTrend: c.row.htfTrend ?? null, swings,
       late: { long: moveIsLate(c.history, c.atr, 'long'), short: moveIsLate(c.history, c.atr, 'short') },
       volRegime: volatilityRegime(c.history),
+      rangePosPct: null,
     },
   });
 }

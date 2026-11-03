@@ -48,7 +48,8 @@ describe('/try devolve a leitura que se perdeu', () => {
     );
 
     expect(await screen.findByText('Real analysis')).toBeTruthy();
-    expect(screen.getByText('4,261.40')).toBeTruthy();
+    // A entrada aparece nos niveis e no bloco Action do modo leitura.
+    expect(screen.getAllByText('4,261.40').length).toBeGreaterThan(0);
     expect(screen.queryByText('You already used your free analysis')).toBeNull();
     expect(track).toHaveBeenCalledWith('demo_result_recovered', { source: 'status_check' });
     expect(window.localStorage.getItem('tickrify_demo_result')).toContain('XAUUSD');

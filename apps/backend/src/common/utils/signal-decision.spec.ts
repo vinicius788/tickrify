@@ -34,7 +34,7 @@ const plan: WatchPlan = {
 };
 const swings = [{ kind: 'high' as const, price: 101.5 }, { kind: 'low' as const, price: 98.8 }];
 const real = (price: number, patch: Partial<RealDataInput> = {}): RealDataInput =>
-  ({ price, atr: 1, htfTrend: null, swings, late: { long: false, short: false }, volRegime: null, ...patch });
+  ({ price, atr: 1, htfTrend: null, swings, late: { long: false, short: false }, volRegime: null, rangePosPct: 60, ...patch });
 /** Checklist C1..C7 com os itens de `fails` em FAIL. */
 const checks = (...fails: number[]) =>
   [1, 2, 3, 4, 5, 6, 7].map((n) => `C${n} ${fails.includes(n) ? 'FAIL' : 'PASS'}: 99.5`).join('; ');
@@ -201,6 +201,25 @@ describe('decideSignal: so rebaixa, com uma excecao', () => {
 
   it('print desatualizado: marca stalePrint sem mudar o estado', async () => {
     expect(await decide({ currentPrice: 98 })).toMatchObject({ state: 'ENTER_NOW', stalePrint: true, validatorNotes: [] });
+  });
+});
+
+describe('modo leitura: onde o preco esta', () => {
+  it('preco, posicao no range, tendencia do 4h e a distancia em ATR ate invalidacao, suporte, resistencia e nivel do plano', async () => {
+    const d = await decide({ realData: real(99.9, { htfTrend: 'uptrend' }) });
+    expect(d.location).toEqual({
+      price: 99.9, atr: 1, rangePosPct: 60, htfTrend: 'uptrend',
+      invalidation: { price: 98.8, atr: expect.closeTo(1.1, 5) },
+      support: { price: 98.8, atr: expect.closeTo(1.1, 5) },
+      resistance: { price: 101.5, atr: expect.closeTo(1.6, 5) },
+      planLevel: { price: 99.5, atr: expect.closeTo(0.4, 5) },
+    });
+  });
+
+  it('NO_TRADE: sem plano, so preco, range e swings; sem REAL DATA: null', async () => {
+    const d = await decide({ state: 'NO_TRADE', recommendation: 'WAIT' });
+    expect(d.location).toMatchObject({ invalidation: null, planLevel: null, support: { price: 98.8 } });
+    expect((await decide({ realData: null })).location).toBeNull();
   });
 });
 

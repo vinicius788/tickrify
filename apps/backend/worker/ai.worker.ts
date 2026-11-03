@@ -26,6 +26,7 @@ import {
   type ValidatorAction,
   type ValidatorNote,
   type ValidatorReason,
+  type PriceLocation,
   type WatchReach,
   validatorReasons,
 } from '../src/common/utils/signal-decision';
@@ -174,6 +175,7 @@ interface WorkerAnalysisResult {
   /** real_data = niveis pelos candles reais; print = estimados do print. */
   dataMode: 'real_data' | 'print';
   watchReach: WatchReach | null;
+  location: PriceLocation | null;
   validatorNotes: ValidatorNote[];
   analysis: WorkerAnalysisDetails;
 }
@@ -347,6 +349,7 @@ interface AdapterDecision {
   watchPlan: WatchPlan | null;
   dataMode: 'real_data' | 'print';
   watchReach: WatchReach | null;
+  location: PriceLocation | null;
   validatorAction: ValidatorAction;
   /** Cada mudanca de estado do validador do adapter. */
   validatorNotes: ValidatorNote[];
@@ -371,6 +374,7 @@ function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
     watchPlan: (aiSource.watchPlan as WatchPlan | null) ?? null,
     dataMode: aiSource.dataMode === 'real_data' ? 'real_data' : 'print',
     watchReach: (aiSource.watchReach as WatchReach | null) ?? null,
+    location: (aiSource.location as PriceLocation | null) ?? null,
     validatorAction: meta.validatorAction as ValidatorAction,
     validatorNotes: Array.isArray(aiSource.validatorNotes) ? (aiSource.validatorNotes as ValidatorNote[]) : [],
     validatorReasons: meta.validatorReasons as ValidatorReason[],
@@ -469,6 +473,7 @@ async function toWorkerAnalysisResult(
         watchPlan: own.watchPlan,
         dataMode: own.dataMode,
         watchReach: own.watchReach,
+        location: own.location,
         validatorAction: own.validatorAction,
         validatorNotes: own.validatorNotes,
         validatorReasons: validatorReasons(own.validatorNotes),
@@ -506,6 +511,7 @@ async function toWorkerAnalysisResult(
     watchPlan: decision.watchPlan,
     dataMode: decision.dataMode,
     watchReach: decision.watchReach,
+    location: decision.location,
     validatorNotes: decision.validatorNotes,
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),
@@ -642,6 +648,7 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
       watchPlan: null,
       dataMode: 'print',
       watchReach: null,
+      location: null,
       validatorNotes: [],
       analysis: {
         symbol: 'DEMOUSDT',
@@ -698,6 +705,7 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
       watchPlan: null,
       dataMode: 'print',
       watchReach: null,
+      location: null,
       validatorNotes: [],
       analysis: {
         symbol: 'DEMOUSDT',
@@ -753,6 +761,7 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
     watchPlan: null,
     dataMode: 'print',
     watchReach: null,
+    location: null,
     validatorNotes: [],
     analysis: {
       symbol: 'DEMOUSDT',

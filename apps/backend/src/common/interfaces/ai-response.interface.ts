@@ -2,7 +2,7 @@ import type { AnalysisObservation } from '../utils/analysis-observation';
 import { Bias, Recommendation } from '../utils/analysis-normalizer';
 import { DrawingPlan } from '../utils/drawing-plan';
 import type { GroundingStats } from '../../modules/ai/analysis-data-coverage';
-import type { SignalDecisionResult, SignalState, ValidatorAction, ValidatorNote, ValidatorReason, WatchReach } from '../utils/signal-decision';
+import type { PriceLocation, SignalDecisionResult, SignalState, ValidatorAction, ValidatorNote, ValidatorReason, WatchReach } from '../utils/signal-decision';
 import type { WatchPlan } from '../utils/plan-engine';
 import type { ProviderComparison } from '../../modules/ai/vision-model';
 
@@ -26,6 +26,8 @@ export interface AIAnalysisResponse {
   dataMode: 'real_data' | 'print';
   /** Chance calibrada de o preco chegar ao nivel do WATCH na validade; null sem calibracao. */
   watchReach: WatchReach | null;
+  /** Onde o preco esta (modo leitura); null sem REAL DATA. */
+  location: PriceLocation | null;
   /** Cada mudanca de estado com o motivo, escrita pelo codigo (nunca pelo modelo). */
   validatorNotes: ValidatorNote[];
   bias: Bias;
