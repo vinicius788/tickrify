@@ -1,3 +1,4 @@
+import { LOCALES } from '@/lib/i18n';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { Link } from "react-router-dom";
@@ -114,7 +115,7 @@ const SettingsPage = ({ eyebrow }: { eyebrow: ReactNode }) => {
     subscription?.billingCycle === 'weekly' ? s.perWeek : subscription?.billingCycle === 'yearly' ? s.perYear : s.perMonth;
   const price =
     subscription?.amount != null
-      ? `${subscription.amount.toLocaleString('en-US', {
+      ? `${subscription.amount.toLocaleString(LOCALES[language], {
           style: 'currency',
           currency: (subscription.currency ?? 'usd').toUpperCase(),
         })} / ${per}`

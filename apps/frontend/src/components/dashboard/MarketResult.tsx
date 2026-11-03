@@ -1,3 +1,4 @@
+import { formatNumber } from '@/lib/i18n';
 // O que o mercado fez com o plano, 48h depois (12/10/2026, ideia A da retencao).
 //
 // O trader recebia o plano e nunca sabia o desfecho. O sweeper ja media tudo
@@ -86,7 +87,7 @@ export function MarketResultCard(props: {
 
   const tone = TONE[result];
   const head = {
-    WIN: props.marketTp1R != null ? `${m.win}, +${props.marketTp1R.toFixed(1)}R` : m.win,
+    WIN: props.marketTp1R != null ? `${m.win}, +${formatNumber(props.marketTp1R, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}R` : m.win,
     LOSS: `${m.loss}, -1R`,
     NO_FILL: m.noFill,
     TIMEOUT: m.timeout,

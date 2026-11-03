@@ -1,3 +1,4 @@
+import { formatNumber } from '@/lib/i18n';
 import { useEffect, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, Loader2, Lock } from 'lucide-react';
@@ -57,14 +58,14 @@ const MONTHLY_PRICE_USD = 29;
  * leitura que o assinante recebe.
  */
 const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHref, children, variant, symbol, alertsOn }: PaywallProps) => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const p = t.paywall;
   // Uma frase real de assinante, so com 2+ depoimentos publicados (com licenca).
   const quote = useTestimonials()[0];
   // O desconto so e anunciado com o cupom ativo na Stripe, e so vale no mensal.
   const offer = useFoundingOffer();
   const firstMonth = offer?.percentOff
-    ? (MONTHLY_PRICE_USD * (1 - offer.percentOff / 100)).toFixed(2)
+    ? formatNumber((MONTHLY_PRICE_USD * (1 - offer.percentOff / 100)), language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })
     : null;
 
   useEffect(() => {

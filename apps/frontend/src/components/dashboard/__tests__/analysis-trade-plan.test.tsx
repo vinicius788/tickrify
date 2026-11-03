@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import AnalysisResult from '../AnalysisResult';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
-import { getTranslations } from '@/lib/i18n';
+import { getTranslations, getStoredLanguage, LOCALES } from '@/lib/i18n';
 import type { AIAnalysisResponse } from '@/lib/api';
 
 vi.mock('@/hooks/useEconomicCalendar', () => ({
@@ -40,7 +40,7 @@ describe('stored trade-plan integrity', () => {
     expect(screen.getByRole('alert').textContent).toContain(t.result.invalidTradePlan);
     expect(screen.queryByText(t.positionSizing.title)).toBeNull();
     expect(screen.queryByText('Buy now')).toBeNull();
-    expect(screen.queryByText('99.0 : 1')).toBeNull();
+    expect(screen.queryByText(`${new Intl.NumberFormat(LOCALES[getStoredLanguage()], { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(99)} : 1`)).toBeNull();
   });
 
   it('keeps the position calculator for a coherent BUY', () => {
@@ -52,8 +52,8 @@ describe('stored trade-plan integrity', () => {
     // O R/R principal é o do TP1 (alvo que a /accuracy mede): 10 / 5 = 2.0,
     // não o do TP2 (20 / 5 = 4.0), que fica só na linha de baixo.
     expect(screen.getByText(t.result.rrTp1Label)).toBeTruthy();
-    expect(screen.getByText('2.0 : 1')).toBeTruthy();
-    expect(screen.queryByText('4.0 : 1')).toBeNull();
+    expect(screen.getByText(`${new Intl.NumberFormat(LOCALES[getStoredLanguage()], { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(2)} : 1`)).toBeTruthy();
+    expect(screen.queryByText(`${new Intl.NumberFormat(LOCALES[getStoredLanguage()], { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(4)} : 1`)).toBeNull();
   });
 
   // Synthetic values exercise the known numeric field contract; they do not
@@ -260,7 +260,7 @@ describe('C3 target labels and WAIT alias consistency', () => {
       const t = getTranslations(language).analysis;
       expect(screen.getByText(t.result.rrTp1Label.replace('TP1', 'TP2'))).toBeTruthy();
       expect(screen.queryByText(t.result.rrTp1Label)).toBeNull();
-      expect(screen.getByText('4.0 : 1')).toBeTruthy();
+      expect(screen.getByText(`${new Intl.NumberFormat(LOCALES[getStoredLanguage()], { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(4)} : 1`)).toBeTruthy();
       expect(JSON.stringify(data)).toBe(before);
     },
   );
@@ -269,7 +269,7 @@ describe('C3 target labels and WAIT alias consistency', () => {
     const data = analysis(110), before = JSON.stringify(data);
     render(<LanguageProvider><AnalysisResult analysisData={data} uploadedImage={null} /></LanguageProvider>);
     expect(screen.getByText(getTranslations(language).analysis.result.rrTp1Label)).toBeTruthy();
-    expect(screen.getByText('2.0 : 1')).toBeTruthy();
+    expect(screen.getByText(`${new Intl.NumberFormat(LOCALES[getStoredLanguage()], { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(2)} : 1`)).toBeTruthy();
     expect(JSON.stringify(data)).toBe(before);
   });
   it.each(languages.flatMap(language => ['AGUARDAR', ' wait ', 'WAIT', 'HOLD'].map(side => [language, side] as const)))(

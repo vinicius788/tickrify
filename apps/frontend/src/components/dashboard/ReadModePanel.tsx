@@ -1,5 +1,5 @@
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import type { Translations } from '@/lib/i18n';
+import { formatNumber } from '@/lib/i18n';
 import type { PriceLocation, WatchPlan, WatchReach } from '@/lib/api';
 import { entrySide, signalStateLabel, type SignalStateCanonical } from '@/lib/trading-ui';
 
@@ -28,15 +28,12 @@ export interface ReadModeData {
 interface ReadModePanelProps {
   data: ReadModeData;
   formatPrice: (value: number | null) => string;
-  /** Textos fixos (o /try e so em ingles); sem isto, o idioma da pessoa. */
-  texts?: Translations;
 }
 
-const atrText = (n: number) => (Math.round(n * 10) / 10).toFixed(1);
 
-export function ReadModePanel({ data, formatPrice, texts }: ReadModePanelProps) {
-  const language = useLanguage();
-  const t = texts ?? language.t;
+export function ReadModePanel({ data, formatPrice }: ReadModePanelProps) {
+  const { t, language } = useLanguage();
+  const atrText = (n: number) => formatNumber(Math.round(n * 10) / 10, language, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const m = t.analysis.result.readMode;
   const a = t.analysis;
   const loc = data.location;

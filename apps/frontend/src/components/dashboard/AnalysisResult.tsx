@@ -1,3 +1,5 @@
+import { messageText, translatedAnnotation } from '@/lib/i18n/messages';
+import { LOCALES, formatNumber, type Language } from '@/lib/i18n';
 import { definirAnaliseAtual } from '@/lib/breadcrumbs';
 import { useState, useEffect } from 'react';
 import {
@@ -219,7 +221,7 @@ function parseSummaryBlocks(summary: string): { blocks: SummaryBlock[]; footer: 
   return { blocks, footer };
 }
 
-function formatPrice(value: number | null): string {
+function formatPriceInLanguage(value: number | null, language: Language): string {
   if (value === null || !Number.isFinite(value)) {
     return 'N/A';
   }
@@ -236,25 +238,25 @@ function formatPrice(value: number | null): string {
     const decPart = str.includes('.') ? str.split('.')[1] : '';
     decimals = Math.min(Math.max(decPart.length, 4), 5);
   }
-  return `$ ${new Intl.NumberFormat('en-US', {
+  return `$ ${new Intl.NumberFormat(LOCALES[language], {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(value)}`;
 }
 
-function formatSignedPercent(value: number | null): string {
+function formatSignedPercentInLanguage(value: number | null, language: Language): string {
   if (value === null || !Number.isFinite(value)) {
     return 'N/A';
   }
   const signal = value >= 0 ? '+' : '';
-  return `${signal}${value.toFixed(2)}%`;
+  return `${signal}${formatNumber(value, language, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 }
 
-function formatPositivePercent(value: number | null): string {
+function formatPositivePercentInLanguage(value: number | null, language: Language): string {
   if (value === null || !Number.isFinite(value)) {
     return 'N/A';
   }
-  return `+${Math.abs(value).toFixed(2)}%`;
+  return `+${formatNumber(Math.abs(value), language, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 }
 
 /**
@@ -510,6 +512,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
 
   const { toast } = useToast();
   const { t, language } = useLanguage();
+  const formatPrice = (value: number | null) => formatPriceInLanguage(value, language);
+  const formatSignedPercent = (value: number | null) => formatSignedPercentInLanguage(value, language);
+  const formatPositivePercent = (value: number | null) => formatPositivePercentInLanguage(value, language);
+
   const r = t.analysis.result;
   const sessionLabels: Record<string, string> = {
     SYD: t.analysis.sessions.sydney,
@@ -561,7 +567,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             </AlertDescription>
           </Alert>
           <div className="text-sm text-[var(--text-secondary)]">
-            Nenhum resultado carregado no momento.
+            {t.interfaceExtras.emptyResult}
           </div>
         </CardContent>
       </Card>
@@ -569,7 +575,15 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   }
 
   const fullResponse = asRecord(analysisData.fullResponse);
-  const analysis = asRecord(fullResponse.analysis);
+  const analysis = { ...asRecord(fullResponse.analysis) };
+  const messages = asRecord(fullResponse.displayMessages);
+  const analysisMessages = asRecord(analysis.displayMessages);
+  const displayReasoning = translatedAnnotation(t, language, translatedAnnotation(t, language, analysisData.reasoning ?? '', messages.stalePrint), messages.drawingReferences);
+  for (const field of ['reasoning', 'executiveSummary', 'technicalAnalysis']) {
+    analysis[field] = translatedAnnotation(t, language, String(analysis[field] ?? ''), messages.stalePrint);
+  }
+  analysis.reasoning = translatedAnnotation(t, language, String(analysis.reasoning ?? ''), messages.drawingReferences);
+  analysis.multiTimeframeAlignment = translatedAnnotation(t, language, String(analysis.multiTimeframeAlignment ?? ''), analysisMessages.multiTimeframePrefix);
   const marketStructure = asRecord(analysis.marketStructure);
 
   const recommendationMeta = getRecommendationMeta(analysisData.recommendation);
@@ -699,7 +713,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
       else if (fg >= 75) liveReadings.push(r.live.greedExtreme);
     }
   }
-  const formattedTimestamp = timestamp.toLocaleString('pt-BR', {
+  const formattedTimestamp = timestamp.toLocaleString(LOCALES[language], {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -768,7 +782,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   const technicalAnalysis =
     cleanModelText(analysis.technicalAnalysis) ||
     cleanModelText(analysis.reasoning) ||
-    cleanModelText(analysisData.reasoning) ||
+    cleanModelText(displayReasoning) ||
     r.noAnalysis;
   const executiveSummary =
     cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary);
@@ -795,7 +809,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
         .replace('{entry}', formatPrice(geometryLevels.entry))
         .replace('{stop}', formatPrice(geometryLevels.stopLoss))
         .replace('{tp1}', formatPrice(geometryLevels.takeProfit1))
-        .replace('{r}', geometryLevels.tp1R.toFixed(1))
+        .replace('{r}', formatNumber(geometryLevels.tp1R, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }))
     : watchLevels === null ? r.watch.targetsRejected : null;
   const checklist = geometryDetail
     ? {
@@ -808,7 +822,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   // a coluna de rótulos alinha igual à dos Operation Levels, e um campo vazio
   // some da grade em vez de imprimir "Not informed" no meio da leitura.
   const structureRows: Array<{ key: string; label: string; value: string; tone?: string }> = [
-    { key: 'bias', label: t.analysis.bias, value: scenarioMeta.label },
+    { key: 'bias', label: t.analysis.bias, value: t.scenarioLabels[scenarioMeta.label] },
     { key: 'structure', label: t.analysis.structure, value: cleanModelText(marketStructure.lastStructure) },
     { key: 'bos', label: 'BOS / CHoCH', value: cleanModelText(marketStructure.breakOfStructure) },
     { key: 'zone', label: t.analysis.priceZone, value: cleanModelText(marketStructure.priceZone) },
@@ -854,7 +868,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     },
   ].filter((row) => row.value.length > 0);
 
-  const patternItems = splitItems(analysis.identifiedPatterns).map((item) => cleanModelText(item)).filter(Boolean);
+  const patternItems = splitItems(analysis.identifiedPatterns).map((item) => cleanModelText(translatedAnnotation(t, language, item, messages.stalePrint))).filter(Boolean);
   // Indicadores são PROSA, não lista: o prompt pede "no máximo 2 frases". A
   // versão anterior picava no ponto-e-vírgula e na vírgula, e o painel exibia
   // "supporting bullish momentum. Pure price action analysis is primary" como
@@ -863,7 +877,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   // Valor CRU de propósito: `cleanModelText` devolve string e achatava o
   // array de riscos numa linha só. A limpeza é aplicada item a item depois.
   const riskItems = normalizeRiskFactorsForView(analysis.riskFactors)
-    .map((item) => cleanModelText(item))
+    .map((item) => cleanModelText(translatedAnnotation(t, language, item, messages.stalePrint)))
     .filter((item) => item.length > 0);
 
   // "What would change my mind": vira o WAIT/HOLD (o resultado mais comum do
@@ -923,7 +937,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     return (
       cleanModelText(analysis.technicalAnalysis) ||
       cleanModelText(analysis.reasoning) ||
-      cleanModelText(analysisData.reasoning)
+      cleanModelText(displayReasoning)
     );
   })();
 
@@ -945,7 +959,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     levels: { entry, stopLoss, takeProfit1, takeProfit2 },
     watchPlan,
     watchReach: analysisData.fullResponse?.watchReach ?? null,
-    noTradeReason: typeof engineContract.no_trade_reason === 'string' ? engineContract.no_trade_reason : readReason || null,
+    noTradeReason: typeof engineContract.no_trade_reason === 'string' ? messageText(t, language, engineContract.no_trade_reason_code, engineContract.no_trade_reason_params, engineContract.no_trade_reason) : readReason || null,
   };
 
   const shareData: ReadShareData = {
@@ -1082,7 +1096,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             )}
             <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border px-2 py-1 ${scenarioToneClasses}`}>
               {t.analysis.bias}:{' '}
-              <strong className="font-semibold">{scenarioMeta.label}</strong>
+              <strong className="font-semibold">{t.scenarioLabels[scenarioMeta.label]}</strong>
             </span>
             <span className="whitespace-nowrap font-terminal md:ml-auto">{formattedTimestamp}</span>
             {/* Demo anônima não compartilha: o card leva a marca e o link da
@@ -1257,11 +1271,11 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
               <div>
                 <p className="text-xs text-[var(--text-secondary)]">{riskRewardLabel}</p>
                 <p className={`font-terminal text-base font-semibold ${riskRewardTone}`}>
-                  {riskReward !== null ? `${riskReward.toFixed(1)} : 1` : 'N/A'}
+                  {riskReward !== null ? `${formatNumber(riskReward, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })} : 1` : 'N/A'}
                 </p>
                 {!invalidTradePlan && tradeTone !== 'hold' && (rrTp1 !== null || rrTp2 !== null) && (
                   <p className="font-terminal text-[10px] text-[var(--text-secondary)]">
-                    {[rrTp1 !== null ? `TP1 ${rrTp1.toFixed(1)}` : null, rrTp2 !== null ? `TP2 ${rrTp2.toFixed(1)}` : null]
+                    {[rrTp1 !== null ? `TP1 ${formatNumber(rrTp1, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}` : null, rrTp2 !== null ? `TP2 ${formatNumber(rrTp2, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}` : null]
                       .filter(Boolean)
                       .join(' · ')}
                   </p>
@@ -1430,7 +1444,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                           <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-2">
                             <p className="text-[var(--text-secondary)]">{t.analysis.liveMarket.fundingRate}</p>
                             <p className={`font-terminal font-semibold ${liveMarket.fundingRatePercent >= 0 ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'}`}>
-                              {`${liveMarket.fundingRatePercent >= 0 ? '+' : ''}${liveMarket.fundingRatePercent.toFixed(4)}%`}
+                              {`${liveMarket.fundingRatePercent >= 0 ? '+' : ''}${formatNumber(liveMarket.fundingRatePercent, language, { minimumFractionDigits: 4, maximumFractionDigits: 4, useGrouping: false })}%`}
                             </p>
                           </div>
                         )}
@@ -1438,7 +1452,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                           <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-2">
                             <p className="text-[var(--text-secondary)]">{t.analysis.liveMarket.longShort}</p>
                             <p className="font-terminal font-semibold text-[var(--text-primary)]">
-                              {liveMarket.longShortRatio.toFixed(2)}
+                              {formatNumber(liveMarket.longShortRatio, language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })}
                               {liveMarket.longAccountPercent !== null && liveMarket.shortAccountPercent !== null && (
                                 <span className="ml-1 text-[10px] text-[var(--text-secondary)]">
                                   ({liveMarket.longAccountPercent}% / {liveMarket.shortAccountPercent}%)
@@ -1451,7 +1465,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                           <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-2">
                             <p className="text-[var(--text-secondary)]">{t.analysis.liveMarket.openInterest}</p>
                             <p className="font-terminal font-semibold text-[var(--text-primary)]">
-                              {liveMarket.openInterest.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                              {liveMarket.openInterest.toLocaleString(LOCALES[language], { maximumFractionDigits: 0 })}
                             </p>
                           </div>
                         )}

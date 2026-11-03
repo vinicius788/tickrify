@@ -1,3 +1,4 @@
+import { LOCALES } from '@/lib/i18n';
 import { useMemo, useState } from 'react';
 import { Calculator, ChevronDown } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
@@ -15,7 +16,7 @@ interface PositionSizingCalculatorProps {
  * da posição usando a distância até o stop (|entry - stopLoss|).
  */
 export function PositionSizingCalculator({ entry, stopLoss, defaultOpen = false }: PositionSizingCalculatorProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const labels = t.analysis.positionSizing;
 
   const [open, setOpen] = useState<boolean>(defaultOpen);
@@ -40,7 +41,7 @@ export function PositionSizingCalculator({ entry, stopLoss, defaultOpen = false 
   }, [accountSize, riskPercent, hasLevels, entry, stopLoss]);
 
   const fmt = (n: number, max = 4) =>
-    n.toLocaleString(undefined, { maximumFractionDigits: max });
+    n.toLocaleString(LOCALES[language], { maximumFractionDigits: max });
 
   // text-base (16px): abaixo disso o iPhone da zoom no campo ao focar e a
   // pagina balanca enquanto a pessoa digita.

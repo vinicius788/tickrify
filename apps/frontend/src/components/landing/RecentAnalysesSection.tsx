@@ -1,3 +1,4 @@
+import { LOCALES, type Language } from '@/lib/i18n';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { getRecommendationMeta, getScenarioMeta } from '@/lib/trading-ui';
@@ -7,9 +8,9 @@ import { useRecentPublicAnalyses, useScoredPublicAnalyses, type ScoredPublicAnal
  *  Sem dado real não existe seção: nunca inventar análise para preencher. */
 const MIN_ITEMS = 3;
 
-function formatPrice(v: number | null) {
+function formatPriceInLanguage(v: number | null, language: Language) {
   if (v === null || v === undefined) return '·';
-  return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 }).format(v);
+  return new Intl.NumberFormat(LOCALES[language], { minimumFractionDigits: 2, maximumFractionDigits: 5 }).format(v);
 }
 
 function timeAgo(dateStr: string, l: { now: string; mAgo: string; hAgo: string; dAgo: string }) {
@@ -21,10 +22,10 @@ function timeAgo(dateStr: string, l: { now: string; mAgo: string; hAgo: string; 
 }
 
 /** Data e hora em UTC, curtas: "Sep 28, 14:05 UTC". É o carimbo da leitura. */
-function formatUtc(dateStr: string) {
+function formatUtcInLanguage(dateStr: string, language: Language) {
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return '·';
-  const day = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const day = d.toLocaleDateString(LOCALES[language], { month: 'short', day: 'numeric', timeZone: 'UTC' });
   return `${day}, ${d.toISOString().slice(11, 16)} UTC`;
 }
 
@@ -43,7 +44,9 @@ const OUTCOME_CLASS: Record<ScoredPublicAnalysis['outcome'], string> = {
  * como um trader lê uma lista de calls, e as que disseram WAIT aparecem junto.
  */
 const RecentAnalysesSection = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const formatPrice = (value: number | null) => formatPriceInLanguage(value, language);
+  const formatUtc = (value: string) => formatUtcInLanguage(value, language);
   const r = t.landing.recent;
   const f = t.landing.footer;
   const { analyses, loading, failed } = useRecentPublicAnalyses();
@@ -78,7 +81,7 @@ const RecentAnalysesSection = () => {
           <table className="site-table">
             <thead>
               <tr>
-                <th>Asset</th>
+                <th>{t.interfaceExtras.asset}</th>
                 <th>TF</th>
                 <th>{t.analysis.bias} / {t.analysis.action}</th>
                 <th>{r.entry}</th>
@@ -112,7 +115,7 @@ const RecentAnalysesSection = () => {
                         <td>{a.timeframe || '·'}</td>
                         <td>
                           <div className="flex flex-col items-start gap-1">
-                            <span className={`site-chip ${chip}`}>{scenario.icon} {scenario.label}</span>
+                            <span className={`site-chip ${chip}`}>{scenario.icon} {t.scenarioLabels[scenario.label]}</span>
                             <span className="site-hero-note">{t.analysis.action}: {actionLabel}</span>
                           </div>
                         </td>
@@ -140,7 +143,7 @@ const RecentAnalysesSection = () => {
               <table className="site-table">
                 <thead>
                   <tr>
-                    <th>Asset</th>
+                    <th>{t.interfaceExtras.asset}</th>
                     <th>TF</th>
                     <th>{t.analysis.action}</th>
                     <th>{r.entry}</th>

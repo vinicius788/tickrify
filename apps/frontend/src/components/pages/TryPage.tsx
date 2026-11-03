@@ -1,3 +1,4 @@
+import { messageText } from '@/lib/i18n/messages';
 // /try, demo anônima de 1 tela (Fase 0 de ativação).
 //
 // Princípio: valor primeiro, cadastro depois. O visitante chega, já existe um
@@ -6,8 +7,6 @@
 //
 // Todo o enforcement (cota 1/device, rate limit, anti-bot) é do SERVIDOR.
 // Esta página apenas coleta fingerprint + token e mostra o resultado.
-//
-// Copy em inglês de propósito: mercado-alvo é EUA/UK/EU (decisão jun/2026).
 //
 // 24/08/2026: passou a usar a casca do site em modo `minimal` — logo, idioma e
 // entrar, sem menu. Ganha rodapé (legal, que faltava numa página que pede
@@ -28,9 +27,8 @@ import {
   saveDemoResult,
 } from '@/lib/demo-api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import en from '@/lib/i18n/en';
 import { ReadModePanel } from '@/components/dashboard/ReadModePanel';
-import { getTranslations } from '@/lib/i18n';
+import { LOCALES, type Language } from '@/lib/i18n';
 import { entrySide, getScenarioMeta, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import { warmupPaymentsApi } from '@/lib/api';
 import { shrinkChartImage } from '@/lib/chart-image';
@@ -53,35 +51,34 @@ function markDemoSource() {
   }
 }
 
-function formatPrice(value: number | null): string {
+function formatDemoPrice(value: number | null, language: Language): string {
   if (value == null || !Number.isFinite(value)) return 'n/a';
-  return value.toLocaleString('en-US', {
+  return value.toLocaleString(LOCALES[language], {
     minimumFractionDigits: value < 10 ? 4 : 2,
     maximumFractionDigits: value < 10 ? 4 : 2,
   });
 }
 
-const SignupCta = ({ headline, sub }: { headline: string; sub: string }) => (
+const SignupCta = ({ headline, sub }: { headline: string; sub: string }) => {
+  const { t } = useLanguage();
+  return (
   <div className="site-try-cta">
     <h3>{headline}</h3>
     <p>{sub}</p>
     <SignedOut>
       <SignUpButton mode="modal" forceRedirectUrl="/dashboard" signInForceRedirectUrl="/dashboard">
-        <button type="button" onClick={markDemoSource} className="site-btn site-btn-primary">
-          Create free account
-        </button>
+        <button type="button" onClick={markDemoSource} className="site-btn site-btn-primary">{t.demoUi.createAccount}</button>
       </SignUpButton>
     </SignedOut>
     <SignedIn>
-      <Link to="/dashboard" className="site-btn site-btn-primary">
-        Go to your dashboard
-      </Link>
+      <Link to="/dashboard" className="site-btn site-btn-primary">{t.demoUi.dashboard}</Link>
     </SignedIn>
     <SignedOut>
-      <p className="site-try-fine">Eligible accounts: up to 7 analyses · 3 usage days within 7 days · no card</p>
+      <p className="site-try-fine">{t.demoUi.eligibility}</p>
     </SignedOut>
   </div>
-);
+  );
+};
 
 const TryPage = () => {
   // Página de maior conversão do funil (análise real sem cadastro) e a que
@@ -90,6 +87,7 @@ const TryPage = () => {
   useSeo(seoFor('/try'));
 
   const { language, t } = useLanguage();
+  const formatPrice = (value: number | null) => formatDemoPrice(value, language);
   const [state, setState] = useState<PageState>('ready');
   const [result, setResult] = useState<DemoAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +146,7 @@ const TryPage = () => {
         errorName: err instanceof Error ? err.name : null,
       });
       setError(
-        "We couldn't open this image. If it came from Google Photos or a cloud folder, save it to your device or take a new screenshot, then try again.",
+        t.demoUi.openImage,
       );
       return;
     }
@@ -227,22 +225,22 @@ const TryPage = () => {
         }
         if (err.code === 'rate_limited') {
           setState('ready');
-          setError('Too many attempts from your network. Please try again in about an hour.');
+          setError(t.demoUi.rateLimited);
           return;
         }
         if (err.code === 'non_chart_image' || err.code === 'invalid_image') {
           setState('ready');
-          setError('That image does not look like a trading chart. Upload a chart screenshot and try again.');
+          setError(t.demoUi.nonChart);
           return;
         }
         if (err.code === 'bot_check_failed') {
           setState('ready');
-          setError('Human verification failed. Refresh the page and try again.');
+          setError(t.demoUi.botCheck);
           return;
         }
       }
       setState('ready');
-      setError('The analysis failed. Your free analysis was NOT used. Please try again.');
+      setError(t.demoUi.failed);
     }
   };
 
@@ -256,12 +254,9 @@ const TryPage = () => {
     <SiteLayout minimal>
       <section className="site-dark site-phead">
         <div className="site-wrap site-try-head">
-          <span className="site-eyebrow">Free demo</span>
-          <h1>See a real AI chart analysis. No signup.</h1>
-          <p>
-            One click, and the same engine our subscribers use returns entry, stop, targets and risk on a
-            real chart, or a WAIT with what would have to change.
-          </p>
+          <span className="site-eyebrow">{t.demoUi.eyebrow}</span>
+          <h1>{t.demoUi.title}</h1>
+          <p>{t.demoUi.subtitle}</p>
         </div>
       </section>
 
@@ -272,7 +267,7 @@ const TryPage = () => {
               {/* Mesma tela de espera do dashboard: o gráfico sendo varrido e as
                   fases embaixo. Quem vê a demo da vitrine reconhece isto aqui. */}
               <AnalysisLoading chart={customImage?.previewUrl ?? exampleChart} />
-              <p className="site-try-fine">Keep this page open. The read takes about 20 seconds.</p>
+              <p className="site-try-fine">{t.demoUi.keepOpen}</p>
             </div>
           )}
 
@@ -281,7 +276,7 @@ const TryPage = () => {
               <div className="site-try-shot">
                 <img
                   src={customImage?.previewUrl ?? exampleChart}
-                  alt={customImage ? 'Your chart' : 'Example chart: XAUUSD (Gold) M30'}
+                  alt={customImage ? t.demoUi.yourChart : t.demoUi.exampleChart}
                 />
                 {customImage && (
                   <button
@@ -291,17 +286,15 @@ const TryPage = () => {
                       setCustomImage(null);
                     }}
                     className="site-try-remove"
-                    aria-label="Remove uploaded chart"
-                  >
-                    Remove
-                  </button>
+                    aria-label={t.demoUi.removeChart}
+                  >{t.demoUi.remove}</button>
                 )}
               </div>
 
               <p className="site-try-caption">
                 {customImage
-                  ? 'Your chart, ready to analyze.'
-                  : 'Example loaded: XAUUSD (Gold) · M30, a real trader chart. Or use your own below.'}
+                  ? t.demoUi.ready
+                  : t.demoUi.exampleReady}
               </p>
 
               {error && <p role="alert" className="site-try-error">{error}</p>}
@@ -311,16 +304,14 @@ const TryPage = () => {
                   type="button"
                   onClick={runAnalysis}
                   className="site-btn site-btn-primary site-btn-block"
-                >
-                  Analyze this chart now
-                </button>
+                >{t.demoUi.analyze}</button>
 
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   className="site-try-upload"
                 >
-                  {customImage ? 'Choose a different chart' : 'Or upload / paste your own chart screenshot'}
+                  {customImage ? t.demoUi.chooseDifferent : t.demoUi.upload}
                 </button>
                 <input
                   ref={fileInputRef}
@@ -330,7 +321,7 @@ const TryPage = () => {
                   onChange={(e) => { void handleFile(e.target.files?.[0]); e.target.value = ''; }}
                 />
 
-                <p className="site-try-fine">1 free analysis per device · no account · no card</p>
+                <p className="site-try-fine">{t.demoUi.freeAllowance}</p>
                 <p className="site-try-fine">{t.commercial.freeEligibility}</p>
               </div>
             </div>
@@ -342,17 +333,16 @@ const TryPage = () => {
                 <span className="site-sym">
                   {result.symbol} · {result.timeframe}
                 </span>
-                <span className="site-chip">Real analysis</span>
+                <span className="site-chip">{t.demoUi.realAnalysis}</span>
               </div>
 
               <div className="site-verdict flex-wrap">
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className={`site-call ${callClass}`}>{signalStateLabel(en.analysis, signalState, entrySide(result.watchPlan, result.recommendation))}</span>
-                  <span className="site-chip">{`${en.analysis.bias}: ${scenario?.label ?? 'NEUTRAL'}`}</span>
+                  <span className={`site-call ${callClass}`}>{signalStateLabel(t.analysis, signalState, entrySide(result.watchPlan, result.recommendation))}</span>
+                  <span className="site-chip">{`${t.analysis.bias}: ${t.scenarioLabels[scenario?.label ?? 'NEUTRAL']}`}</span>
                 </div>
                 {result.riskReward && result.recommendation !== 'WAIT' ? (
-                  <span className="site-conf">
-                    R:R to TP1 <b>{result.riskReward}</b>
+                  <span className="site-conf"><span>{t.demoUi.rr}</span>{' '}<b>{result.riskReward}</b>
                   </span>
                 ) : null}
               </div>
@@ -361,15 +351,15 @@ const TryPage = () => {
                   manda nao fazer contradizem a resposta (mesma regra do painel). */}
               {result.recommendation === 'WAIT' ? (
                 <p className="site-demo-rationale">
-                  {signalState === 'WATCH' ? en.analysis.result.watchExplain : en.analysis.result.noTradeExplain}
+                  {signalState === 'WATCH' ? t.analysis.result.watchExplain : t.analysis.result.noTradeExplain}
                 </p>
               ) : (
               <div className="site-levels">
                 {[
-                  { label: 'Entry', value: result.entry },
-                  { label: 'Stop', value: result.stopLoss },
-                  { label: 'Target 1', value: result.takeProfit1 },
-                  { label: 'Target 2', value: result.takeProfit2 },
+                  { label: t.demoUi.entry, value: result.entry },
+                  { label: t.demoUi.stop, value: result.stopLoss },
+                  { label: t.demoUi.target1, value: result.takeProfit1 },
+                  { label: t.demoUi.target2, value: result.takeProfit2 },
                 ].map((item) => (
                   <div key={item.label}>
                     <span>{item.label}</span>
@@ -379,15 +369,11 @@ const TryPage = () => {
               </div>
               )}
               {result.recommendation !== 'WAIT' ? (
-                <p className="site-try-fine">
-                  Entry: where the plan starts. Stop: where the idea is proven wrong. Targets: where to take profit.
-                  R:R to TP1: the potential reward for each unit of risk, up to the first target.
-                </p>
+                <p className="site-try-fine">{t.demoUi.levelGuide}</p>
               ) : null}
 
               <div className="my-4">
                 <ReadModePanel
-                  texts={getTranslations('en')}
                   formatPrice={formatPrice}
                   data={{
                     state: signalState,
@@ -405,8 +391,8 @@ const TryPage = () => {
                 />
               </div>
 
-              {result.reasoning && <p className="site-demo-rationale">{result.reasoning}</p>}
-              <div className="site-demo-meta">{result.disclaimer}</div>
+              {result.reasoning && <p className="site-demo-rationale">{messageText(t, language, result.reasoningCode, {}, result.reasoning)}</p>}
+              <div className="site-demo-meta">{messageText(t, language, result.disclaimerCode, {}, result.disclaimer)}</div>
 
               {/* Reveal "what happened next", só pro gráfico de exemplo, que é um caso
                   histórico real (XAUUSD 12/12/2025). Prova sem promessa: mostramos o que
@@ -419,28 +405,22 @@ const TryPage = () => {
                     track('demo_after_viewed');
                   }}
                   className="site-btn site-btn-ghost site-btn-block site-try-reveal"
-                >
-                  This chart is from Dec 12, 2025. See what the market did next.
-                </button>
+                >{t.demoUi.reveal}</button>
               )}
               {analyzedExample && showAfter && (
                 <div className="site-try-after">
                   <div className="site-try-shot">
-                    <img src={afterChart} alt="The same XAUUSD chart hours later" loading="lazy" decoding="async" width={1400} height={812} />
+                    <img src={afterChart} alt={t.demoUi.afterAlt} loading="lazy" decoding="async" width={1400} height={812} />
                   </div>
-                  <p className="site-try-caption">
-                    The same chart, hours later that day: gold ran from the 4,260s into the 4,340s.{' '}
-                    <strong>You decide what the read was worth.</strong>
+                  <p className="site-try-caption">{t.demoUi.after}{' '}
+                    <strong>{t.demoUi.youDecide}</strong>
                   </p>
-                  <p className="site-try-fine">
-                    One hand-picked historical example, shown for illustration. Every market and moment is
-                    different, never a promise of results.
-                  </p>
+                  <p className="site-try-fine">{t.demoUi.historical}</p>
                 </div>
               )}
 
               <SignupCta
-                headline="Want to analyze more charts?"
+                headline={t.demoUi.wantMore}
                 sub={t.commercial.freeEligibility}
               />
             </div>
@@ -448,21 +428,20 @@ const TryPage = () => {
 
           {state === 'locked' && (
             <div className="site-card site-try-locked">
-              <h2>You already used your free analysis</h2>
+              <h2>{t.demoUi.used}</h2>
               <p>
                 {t.commercial.freeEligibility}
               </p>
               <SignupCta
-                headline="Keep analyzing for free"
-                sub="Your dashboard shows the allowance available to your account."
+                headline={t.demoUi.keepAnalyzing}
+                sub={t.demoUi.allowance}
               />
             </div>
           )}
 
           <p className="site-try-legal">
-            Tickrify provides educational analysis only, not financial advice. Trading involves risk and you
-            can lose your capital. The decision is always yours. Read the{' '}
-            <Link to="/risk">risk disclosure</Link>.
+            <span>{t.interfaceExtras.tryLegal}</span>{' '}
+            <Link to="/risk">{t.interfaceExtras.riskDisclosure}</Link>.
           </p>
         </div>
       </section>

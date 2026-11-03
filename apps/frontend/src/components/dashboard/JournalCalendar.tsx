@@ -19,6 +19,7 @@ import EmptyState from '@/components/dashboard/EmptyState';
 import TradeNoteDialog from '@/components/dashboard/TradeNoteDialog';
 import { isEmptyTradeNote, type TradeNote } from '@/lib/trade-note';
 import { useAPIClient, type AIAnalysisResponse } from '@/lib/api';
+import { LOCALES } from '@/lib/i18n';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { entrySide, getRecommendationMeta, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import { VERDICT_CFG, isTradeCall, verdictFromOutcome, type Verdict } from '@/lib/verdict';
@@ -29,8 +30,8 @@ const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
 };
 
-function fmtPnl(n: number, compact = false): string {
-  const abs = new Intl.NumberFormat('en-US', compact
+function fmtPnl(n: number, locale: string, compact = false): string {
+  const abs = new Intl.NumberFormat(locale, compact
     ? { notation: 'compact', maximumFractionDigits: 1 }
     : { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(n));
   return `${n > 0 ? '+' : n < 0 ? '−' : ''}${abs}`;
@@ -87,6 +88,8 @@ function EquityCurve({ points }: { points: MonthStats['equity'] }) {
 }
 
 function GroupCard({ title, rows, label, j }: { title: string; rows: GroupRow[]; label: (key: string) => string; j: JournalCopy }) {
+  const { language } = useLanguage();
+  const locale = LOCALES[language];
   if (rows.length === 0) return null;
   return (
     <div className="min-w-0 rounded-lg border border-[var(--border-subtle)] p-3">
@@ -99,7 +102,7 @@ function GroupCard({ title, rows, label, j }: { title: string; rows: GroupRow[];
               <span className="text-[var(--text-secondary)]">{j.closedTrades.replace('{n}', String(row.closed))}</span>
               <span className="w-10 text-right text-[var(--text-primary)]">{`${Math.round((row.wins / row.closed) * 100)}%`}</span>
               <span className="w-20 text-right font-semibold" style={{ color: pnlColor(row.pnl) }}>
-                {row.pnl !== null ? fmtPnl(row.pnl) : '·'}
+                {row.pnl !== null ? fmtPnl(row.pnl, locale) : '·'}
               </span>
             </span>
           </div>
@@ -128,32 +131,32 @@ function JournalStats({ stats, j, locale }: { stats: MonthStats; j: JournalCopy;
         <div className={tile}>
           <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.avgR}</p>
           <p className="font-terminal text-lg font-semibold" style={{ color: pnlColor(stats.avgR) }}>
-            {stats.avgR !== null ? `${stats.avgR > 0 ? '+' : ''}${stats.avgR.toFixed(2)}R` : '·'}
+            {stats.avgR !== null ? `${stats.avgR > 0 ? '+' : ''}${stats.avgR.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}R` : '·'}
           </p>
           <p className="text-[10px] text-[var(--text-secondary)]">{j.avgRSub.replace('{n}', String(stats.rTrades))}</p>
         </div>
         <div className={tile}>
           <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.profitFactor}</p>
           <p className="font-terminal text-lg font-semibold text-[var(--text-primary)]">
-            {stats.profitFactor !== null ? stats.profitFactor.toFixed(2) : '·'}
+            {stats.profitFactor !== null ? stats.profitFactor.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '·'}
           </p>
           <p className="text-[10px] text-[var(--text-secondary)]">{j.profitFactorSub}</p>
         </div>
         <div className={tile}>
           <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.maxDrawdown}</p>
           <p className="font-terminal text-lg font-semibold" style={{ color: pnlColor(stats.maxDrawdown) }}>
-            {stats.maxDrawdown !== null ? fmtPnl(stats.maxDrawdown) : '·'}
+            {stats.maxDrawdown !== null ? fmtPnl(stats.maxDrawdown, locale) : '·'}
           </p>
           <p className="text-[10px] text-[var(--text-secondary)]">{j.maxDrawdownSub}</p>
         </div>
         <div className={tile}>
           <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.bestDay}</p>
           <p className="font-terminal text-sm font-semibold" style={{ color: pnlColor(stats.bestDay?.pnl ?? null) }}>
-            {stats.bestDay ? `${dayLabel(stats.bestDay.day)} ${fmtPnl(stats.bestDay.pnl)}` : '·'}
+            {stats.bestDay ? `${dayLabel(stats.bestDay.day)} ${fmtPnl(stats.bestDay.pnl, locale)}` : '·'}
           </p>
           <p className="mt-1 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.worstDay}</p>
           <p className="font-terminal text-sm font-semibold" style={{ color: pnlColor(stats.worstDay?.pnl ?? null) }}>
-            {stats.worstDay ? `${dayLabel(stats.worstDay.day)} ${fmtPnl(stats.worstDay.pnl)}` : '·'}
+            {stats.worstDay ? `${dayLabel(stats.worstDay.day)} ${fmtPnl(stats.worstDay.pnl, locale)}` : '·'}
           </p>
         </div>
       </div>
@@ -359,7 +362,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
           <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
             <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.pnl}</p>
             <p className="font-terminal text-lg font-semibold" style={{ color: pnlColor(totals.pnl) }}>
-              {totals.pnl !== null ? fmtPnl(totals.pnl) : '-'}
+              {totals.pnl !== null ? fmtPnl(totals.pnl, locale) : '-'}
             </p>
           </div>
           <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
@@ -436,8 +439,8 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                             className="truncate font-terminal text-[10px] font-semibold sm:text-sm"
                             style={{ color: pnlColor(day.pnl) }}
                           >
-                            <span className="sm:hidden">{fmtPnl(day.pnl, true)}</span>
-                            <span className="hidden sm:inline">{fmtPnl(day.pnl)}</span>
+                            <span className="sm:hidden">{fmtPnl(day.pnl, locale, true)}</span>
+                            <span className="hidden sm:inline">{fmtPnl(day.pnl, locale)}</span>
                           </span>
                         )}
                         <span className="hidden truncate font-terminal text-[10px] text-[var(--text-secondary)] sm:block">
@@ -493,7 +496,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                         </span>
                         {selectedDay?.pnl != null && (
                           <span className="font-terminal text-sm font-semibold" style={{ color: pnlColor(selectedDay.pnl) }}>
-                            {fmtPnl(selectedDay.pnl)}
+                            {fmtPnl(selectedDay.pnl, locale)}
                           </span>
                         )}
                       </div>
@@ -603,7 +606,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                   </span>}
                                   {pnl !== null && (
                                     <span className="font-terminal text-xs font-semibold" style={{ color: pnlColor(pnl) }}>
-                                      {fmtPnl(pnl)}
+                                      {fmtPnl(pnl, locale)}
                                     </span>
                                   )}
                                 </div>
