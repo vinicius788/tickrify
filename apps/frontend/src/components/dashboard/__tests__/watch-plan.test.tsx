@@ -1,6 +1,7 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AnalysisResult from '@/components/dashboard/AnalysisResult';
+import { spreadLabels } from '@/components/dashboard/WatchPlanChart';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import type { AIAnalysisResponse, WatchPlan } from '@/lib/api';
 
@@ -44,7 +45,8 @@ describe('plano do WATCH (v10.1)', () => {
     renderResult('WATCH', plan);
     const card = screen.getByTestId('watch-plan');
     const text = card.textContent ?? '';
-    expect(text).toContain('Not an active signal');
+    expect(text).toContain('This is a level to watch, not a signal. The entry only counts if price gets there.');
+    expect(text).not.toMatch(/limit/i);
     expect(text).toContain('Sweep and reclaim');
     expect(text).toContain('A sweep of 2340 that closes back above it.');
     expect(text).toContain('Valid for 12 candles');
@@ -179,5 +181,54 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
     expect(text).toContain('There is no complete setup.');
     expect(text).not.toMatch(/hit rate|win rate|high probability/i);
   });
-});
 
+  it('com watchLevels: alvos do motor (TP1 com teto e o R) no grafico e no C6, sem o calculo do modelo', () => {
+    const watchLevels = { entry: 2345, stopLoss: 2334.5, takeProfit1: 2360.75, takeProfit2: 2380, tp1R: 1.5, riskAtr: 1.05 };
+    renderResult('WATCH', plan, {
+      watchLevels,
+      analysis: {
+        symbol: 'XAUUSD', timeframe: '15m', currentPrice: 2351, executiveSummary: 'Watch 2340-2345.',
+        structureValidation: 'C1 PASS: H1. C2 PASS: discount. C3 PASS: sweep. C4 PASS: control. C5 PASS: fresh. C6 PASS: limit 2345, Rk48, TP1 2362 gives 3.4R. C7 FAIL: support. 6/7, WATCH.',
+      },
+    });
+    const card = screen.getByTestId('watch-plan').textContent ?? '';
+    expect(card).toContain('Target 1 (1.5R) $ 2,360.75');
+    expect(card).not.toContain('$ 2,362.00');
+    fireEvent.click(screen.getByRole('button', { name: 'Technical Panel' }));
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('If price reaches $ 2,345.00: stop $ 2,334.50, TP1 $ 2,360.75 (1.5R).');
+    expect(body).not.toContain('Rk48');
+    expect(body).not.toContain('3.4R');
+  });
+
+  it('analise antiga sem watchLevels: alvos e C6 como o modelo escreveu', () => {
+    renderResult('WATCH', plan, {
+      analysis: {
+        symbol: 'XAUUSD', timeframe: '15m', currentPrice: 2351, executiveSummary: 'Watch 2340-2345.',
+        structureValidation: 'C1 PASS: a. C2 PASS: b. C3 PASS: c. C4 PASS: d. C5 PASS: e. C6 PASS: limit 2345, Rk48, TP1 2362 gives 3.4R. C7 FAIL: f. 6/7, WATCH.',
+      },
+    });
+    expect(screen.getByTestId('watch-plan').textContent).toContain('Target 1 $ 2,362.00');
+    fireEvent.click(screen.getByRole('button', { name: 'Technical Panel' }));
+    expect(document.body.textContent).toContain('Rk48');
+  });
+
+  it('rotulos de niveis a menos de 1 ATR se afastam; linhas ficam onde estao', () => {
+    const ys = spreadLabels([60, 62, 140]);
+    expect(ys[1] - ys[0]).toBeGreaterThanOrEqual(13);
+    expect(ys[2]).toBe(140);
+    const low = spreadLabels([160, 162, 165]);
+    expect(Math.max(...low)).toBeLessThanOrEqual(166);
+    expect(low[1] - low[0]).toBeGreaterThanOrEqual(13);
+    expect(low[2] - low[1]).toBeGreaterThanOrEqual(13);
+    // No grafico: invalidacao 2336 colada na area (2340-2345) com o alvo longe.
+    renderResult('WATCH', { ...plan, invalidation: 2339.9, target1: 2420, target2: null });
+    const texts = [...screen.getByTestId('watch-plan').querySelectorAll('svg text')];
+    const zone = texts.find((n) => n.textContent?.startsWith('Area of interest'))!;
+    const inv = texts.find((n) => n.textContent?.startsWith('Invalidation'))!;
+    expect(Math.abs(Number(zone.getAttribute('y')) - Number(inv.getAttribute('y')))).toBeGreaterThanOrEqual(13);
+    // A linha da invalidacao fica no preco (o fundo do desenho); so o rotulo sai do lugar.
+    const invLine = [...screen.getByTestId('watch-plan').querySelectorAll('svg line')][0];
+    expect(Number(invLine.getAttribute('y1'))).toBeCloseTo(168 - 14, 6);
+  });
+});

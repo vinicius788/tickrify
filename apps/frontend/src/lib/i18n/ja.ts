@@ -260,7 +260,9 @@ export default {
       planTitle: 'まだエントリーはありません。プランはこちら:',
       watch: {
         title: '監視プラン',
-        notSignal: 'アクティブなシグナルではありません。ゾーンでの指値注文は、価格が近づいてから意味を持ちます。',
+        notSignal: 'これは注目する水準で、シグナルではありません。価格がそこに届いた場合のみエントリーが有効です。',
+        geometryWatch: '価格が{entry}に届いた場合: ストップ {stop}、TP1 {tp1}（{r}R）。',
+        geometryEnter: 'エントリー {entry}: ストップ {stop}、TP1 {tp1}（{r}R）。',
         zone: '注目エリア',
         invalidation: '無効化',
         target1: 'ターゲット1',

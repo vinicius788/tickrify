@@ -260,7 +260,9 @@ export default {
       planTitle: 'Noch kein Einstieg. Das ist der Plan:',
       watch: {
         title: 'Beobachtungsplan',
-        notSignal: 'Kein aktives Signal. Die Limit-Order in der Zone ergibt erst Sinn, wenn sich der Kurs ihr nähert.',
+        notSignal: 'Das ist ein Niveau zum Beobachten, kein Signal. Der Einstieg gilt nur, wenn der Kurs es erreicht.',
+        geometryWatch: 'Wenn der Kurs {entry} erreicht: Stop {stop}, TP1 {tp1} ({r}R).',
+        geometryEnter: 'Einstieg {entry}: Stop {stop}, TP1 {tp1} ({r}R).',
         zone: 'Interessenbereich',
         invalidation: 'Invalidierung',
         target1: 'Ziel 1',

@@ -30,7 +30,7 @@ import {
   type WatchReach,
   validatorReasons,
 } from '../src/common/utils/signal-decision';
-import type { WatchPlan } from '../src/common/utils/plan-engine';
+import type { EntryLevels, WatchPlan } from '../src/common/utils/plan-engine';
 import { BROKEN_PLAN_RULES, validateTradePlan } from '../src/common/utils/trade-plan-validator';
 import { buildEngineRecord, type AnalysisIntakeTimings } from '../src/modules/ai/engine-contract';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
@@ -176,6 +176,7 @@ interface WorkerAnalysisResult {
   dataMode: 'real_data' | 'print';
   watchReach: WatchReach | null;
   location: PriceLocation | null;
+  watchLevels: EntryLevels | null;
   validatorNotes: ValidatorNote[];
   analysis: WorkerAnalysisDetails;
 }
@@ -350,6 +351,7 @@ interface AdapterDecision {
   dataMode: 'real_data' | 'print';
   watchReach: WatchReach | null;
   location: PriceLocation | null;
+  watchLevels: EntryLevels | null;
   validatorAction: ValidatorAction;
   /** Cada mudanca de estado do validador do adapter. */
   validatorNotes: ValidatorNote[];
@@ -375,6 +377,7 @@ function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
     dataMode: aiSource.dataMode === 'real_data' ? 'real_data' : 'print',
     watchReach: (aiSource.watchReach as WatchReach | null) ?? null,
     location: (aiSource.location as PriceLocation | null) ?? null,
+    watchLevels: (aiSource.watchLevels as EntryLevels | null) ?? null,
     validatorAction: meta.validatorAction as ValidatorAction,
     validatorNotes: Array.isArray(aiSource.validatorNotes) ? (aiSource.validatorNotes as ValidatorNote[]) : [],
     validatorReasons: meta.validatorReasons as ValidatorReason[],
@@ -474,6 +477,7 @@ async function toWorkerAnalysisResult(
         dataMode: own.dataMode,
         watchReach: own.watchReach,
         location: own.location,
+        watchLevels: own.watchLevels,
         validatorAction: own.validatorAction,
         validatorNotes: own.validatorNotes,
         validatorReasons: validatorReasons(own.validatorNotes),
@@ -512,6 +516,7 @@ async function toWorkerAnalysisResult(
     dataMode: decision.dataMode,
     watchReach: decision.watchReach,
     location: decision.location,
+    watchLevels: decision.watchLevels,
     validatorNotes: decision.validatorNotes,
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),
@@ -649,6 +654,7 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
       dataMode: 'print',
       watchReach: null,
       location: null,
+      watchLevels: null,
       validatorNotes: [],
       analysis: {
         symbol: 'DEMOUSDT',
@@ -706,6 +712,7 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
       dataMode: 'print',
       watchReach: null,
       location: null,
+      watchLevels: null,
       validatorNotes: [],
       analysis: {
         symbol: 'DEMOUSDT',
@@ -762,6 +769,7 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
     dataMode: 'print',
     watchReach: null,
     location: null,
+    watchLevels: null,
     validatorNotes: [],
     analysis: {
       symbol: 'DEMOUSDT',

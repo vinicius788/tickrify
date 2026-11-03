@@ -23,7 +23,7 @@ import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
-import { WatchPlanChart, isWatchPlan } from './WatchPlanChart';
+import { WatchPlanChart, isWatchLevels, isWatchPlan } from './WatchPlanChart';
 import { ReadModePanel, type ReadModeData } from './ReadModePanel';
 import { ShareCardButton, type ShareCardData } from './ShareCard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -566,6 +566,8 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   const stateTone = signalStateTone(signalState, analysisData.recommendation);
   const stateActive = signalState === 'ENTER_NOW' || signalState === 'ARMED';
   const watchPlan = isWatchPlan(fullResponse.watchPlan) ? fullResponse.watchPlan : null;
+  // Niveis do WATCH calculados pelo motor (desde 03/11/2026); analise antiga nao tem o campo.
+  const watchLevels = isWatchLevels(fullResponse.watchLevels) ? fullResponse.watchLevels : null;
   const levelsEstimated = fullResponse.dataMode === 'print';
 
   const symbol = String(
@@ -753,9 +755,32 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   // A ORDEM importa: o checklist precisa dos marcadores ✅/❌ para saber o que
   // passou, e o cleanModelText remove emoji. Então ele lê a versão que ainda
   // tem os marcadores, e o parágrafo de reserva usa a versão já limpa.
-  const checklist = parseStructureChecklist(
+  const parsedChecklist = parseStructureChecklist(
     structureValidation ? softenDashes(String(analysis.structureValidation).trim()) : '',
   );
+  // C6 (geometria) com os niveis do motor, nunca o calculo do modelo: no WATCH,
+  // os que valeriam ao destravar no nivel; no ENTER_NOW de analise com o campo
+  // novo, os do sinal. Analise antiga segue com o texto do modelo.
+  const geometryLevels = signalState === 'WATCH' && watchLevels
+    ? { ...watchLevels, text: r.watch.geometryWatch }
+    : signalState === 'ENTER_NOW' && 'watchLevels' in fullResponse && entry !== null && stopLoss !== null && takeProfit1 !== null && entry !== stopLoss
+      ? { entry, stopLoss, takeProfit1, tp1R: Math.abs(takeProfit1 - entry) / Math.abs(entry - stopLoss), text: r.watch.geometryEnter }
+      : null;
+  const checklist = geometryLevels
+    ? {
+        ...parsedChecklist,
+        items: parsedChecklist.items.map((item) => (/^C6\b/.test(item.label)
+          ? {
+              ...item,
+              detail: geometryLevels.text
+                .replace('{entry}', formatPrice(geometryLevels.entry))
+                .replace('{stop}', formatPrice(geometryLevels.stopLoss))
+                .replace('{tp1}', formatPrice(geometryLevels.takeProfit1))
+                .replace('{r}', geometryLevels.tp1R.toFixed(1)),
+            }
+          : item)),
+      }
+    : parsedChecklist;
 
   // Linhas da estrutura de mercado. Montadas em dado, não em <p> soltos: assim
   // a coluna de rótulos alinha igual à dos Operation Levels, e um campo vazio
@@ -1128,7 +1153,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
       )}
 
       {signalState === 'WATCH' && watchPlan && (
-        <WatchPlanChart plan={watchPlan} currentPrice={currentPrice} formatPrice={formatPrice} estimated={levelsEstimated} />
+        <WatchPlanChart plan={watchPlan} currentPrice={currentPrice} formatPrice={formatPrice} estimated={levelsEstimated} levels={watchLevels} />
       )}
 
       {isWaitVerdict && (

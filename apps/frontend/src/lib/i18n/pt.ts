@@ -269,7 +269,9 @@ export default {
       planTitle: 'Ainda sem entrada. Este é o plano:',
       watch: {
         title: 'Plano em observação',
-        notSignal: 'Não é um sinal ativo. A ordem limit na zona só faz sentido quando o preço chegar perto dela.',
+        notSignal: 'Isto é um nível a observar, não um sinal. A entrada só vale se o preço chegar lá.',
+        geometryWatch: 'Se o preço chegar a {entry}: stop {stop}, TP1 {tp1} ({r}R).',
+        geometryEnter: 'Entrada {entry}: stop {stop}, TP1 {tp1} ({r}R).',
         zone: 'Área de interesse',
         invalidation: 'Invalidação',
         target1: 'Alvo 1',

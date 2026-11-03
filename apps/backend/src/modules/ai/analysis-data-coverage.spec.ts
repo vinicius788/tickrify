@@ -62,6 +62,19 @@ describe('analysis data coverage', () => {
     });
   });
 
+  it('calendar never fetched (quick, context off) is not_attached, not "not confirmed"', () => {
+    const quick = {
+      analysisType: 'quick' as const, htfImagesRequested: 0, htfImagesDelivered: 0,
+      assetClass: 'crypto' as const, candles: 'injected' as const, marketContext: 'injected' as const,
+    };
+    expect(toAnalysisEvidence({ ...quick, calendar: 'not_attempted' }).calendar).toBe('not_attached');
+    expect(toAnalysisEvidence({ ...quick, analysisType: 'deep', calendar: 'disabled' }).calendar).toBe('not_attached');
+    for (const failed of ['source_degraded', 'timeout', 'error', 'symbol_unreadable'] as const) {
+      expect(toAnalysisEvidence({ ...quick, analysisType: 'deep', calendar: failed }).calendar).toBe('not_confirmed');
+    }
+    expect(toAnalysisEvidence({ ...quick, analysisType: 'deep', calendar: 'events_injected' }).calendar).toBe('events_attached');
+  });
+
   it('keeps the evidence summary through persisted analysis normalization', () => {
     const evidence = toAnalysisEvidence({
       analysisType: 'quick', htfImagesRequested: 1, htfImagesDelivered: 0,

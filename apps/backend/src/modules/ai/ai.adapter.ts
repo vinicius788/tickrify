@@ -2363,6 +2363,7 @@ export class AIAdapter {
         dataMode: decision.dataMode,
         watchReach: decision.watchReach,
         location: decision.location,
+        watchLevels: decision.watchLevels,
         validatorNotes: decision.validatorNotes,
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);

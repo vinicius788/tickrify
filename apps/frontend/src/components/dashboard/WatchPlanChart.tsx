@@ -1,7 +1,7 @@
 import { Eye } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import type { WatchPlan } from '@/lib/api';
+import type { WatchLevels, WatchPlan } from '@/lib/api';
 
 // Plano do WATCH desenhado numa escala de preco: a area de interesse,
 // a linha de invalidacao e os alvos, com a reacao esperada. Nunca usa as cores
@@ -13,12 +13,16 @@ interface WatchPlanChartProps {
   formatPrice: (value: number | null) => string;
   /** Niveis lidos do print, sem velas reais (dataMode print). */
   estimated?: boolean;
+  /** Niveis do motor ao destravar no nivel: os alvos vem daqui (TP1 com teto). */
+  levels?: WatchLevels | null;
 }
 
 const WIDTH = 320;
 const HEIGHT = 168;
 const PAD = 14;
 const LABEL_X = 196;
+/** Distancia minima entre rotulos (fonte de 11 px). */
+const LABEL_GAP = 13;
 
 export function isWatchPlan(value: unknown): value is WatchPlan {
   if (!value || typeof value !== 'object') return false;
@@ -30,23 +34,55 @@ export function isWatchPlan(value: unknown): value is WatchPlan {
     (p.target2 === null || n(p.target2)) && typeof p.validForCandles === 'number';
 }
 
-export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = false }: WatchPlanChartProps) {
+export function isWatchLevels(value: unknown): value is WatchLevels {
+  if (!value || typeof value !== 'object') return false;
+  const l = value as Record<string, unknown>;
+  const n = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+  return n(l.entry) && n(l.stopLoss) && n(l.takeProfit1) && (l.takeProfit2 === null || n(l.takeProfit2)) && n(l.tp1R) && n(l.riskAtr);
+}
+
+/**
+ * Afasta rotulos de niveis proximos sem mexer nas linhas: na ordem vertical,
+ * cada rotulo fica a pelo menos LABEL_GAP do anterior, dentro do desenho.
+ */
+export function spreadLabels(ys: readonly number[], min = PAD, max = HEIGHT - 2): number[] {
+  const order = ys.map((y, i) => ({ y, i })).sort((a, b) => a.y - b.y);
+  const out = new Array<number>(ys.length);
+  let last = -Infinity;
+  for (const { y, i } of order) {
+    out[i] = Math.max(y, last + LABEL_GAP, min);
+    last = out[i];
+  }
+  // Passou do fundo: empurra de baixo para cima.
+  let next = Infinity;
+  for (const { i } of [...order].reverse()) {
+    out[i] = Math.min(out[i], next - LABEL_GAP, max);
+    next = out[i];
+  }
+  return out;
+}
+
+export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = false, levels = null }: WatchPlanChartProps) {
   const { t } = useLanguage();
   const w = t.analysis.result.watch;
-  const levels = [plan.zoneLow, plan.zoneHigh, plan.invalidation, plan.target1, plan.target2, currentPrice]
+  const target1 = levels ? levels.takeProfit1 : plan.target1;
+  const target2 = levels ? levels.takeProfit2 : plan.target2;
+  const prices = [plan.zoneLow, plan.zoneHigh, plan.invalidation, target1, target2, currentPrice]
     .filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0);
-  const top = Math.max(...levels);
-  const bottom = Math.min(...levels);
+  const top = Math.max(...prices);
+  const bottom = Math.min(...prices);
   const span = top - bottom || top * 0.001;
   const y = (price: number) => PAD + ((top - price) / span) * (HEIGHT - 2 * PAD);
 
   const lines = [
     { key: 'inv', price: plan.invalidation, label: w.invalidation, color: 'var(--tone-warn-2)' },
-    { key: 't1', price: plan.target1, label: w.target1, color: 'var(--text-secondary)' },
-    ...(plan.target2 !== null ? [{ key: 't2', price: plan.target2, label: w.target2, color: 'var(--text-muted)' }] : []),
+    { key: 't1', price: target1, label: levels ? `${w.target1} (${levels.tp1R.toFixed(1)}R)` : w.target1, color: 'var(--text-secondary)' },
+    ...(target2 !== null ? [{ key: 't2', price: target2, label: w.target2, color: 'var(--text-muted)' }] : []),
   ];
   const zoneTop = y(plan.zoneHigh);
   const zoneHeight = Math.max(2, y(plan.zoneLow) - zoneTop);
+  // Rotulo da area no meio dela; os dos niveis na linha. So os rotulos se afastam.
+  const [zoneLabelY, ...lineLabelY] = spreadLabels([zoneTop + zoneHeight / 2 + 4, ...lines.map((l) => y(l.price) + 4)]);
 
   return (
     <Card className="surface-terminal rounded-xl fade-in-stagger" data-testid="watch-plan" style={{ animationDelay: '50ms' }}>
@@ -76,13 +112,13 @@ export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = fa
             stroke="var(--signal-hold-border)"
             strokeDasharray="4 3"
           />
-          <text x={LABEL_X} y={zoneTop + zoneHeight / 2 + 4} fontSize="11" fill="var(--signal-hold)">
+          <text x={LABEL_X} y={zoneLabelY} fontSize="11" fill="var(--signal-hold)">
             {`${w.zone} ${formatPrice(plan.zoneLow)} - ${formatPrice(plan.zoneHigh)}`}
           </text>
-          {lines.map((line) => (
+          {lines.map((line, i) => (
             <g key={line.key}>
               <line x1={PAD} x2={LABEL_X - 8} y1={y(line.price)} y2={y(line.price)} stroke={line.color} strokeDasharray="5 4" strokeWidth="1" />
-              <text x={LABEL_X} y={y(line.price) + 4} fontSize="11" fill={line.color}>
+              <text x={LABEL_X} y={lineLabelY[i]} fontSize="11" fill={line.color}>
                 {`${line.label} ${formatPrice(line.price)}`}
               </text>
             </g>

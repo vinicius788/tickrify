@@ -186,6 +186,12 @@ export interface SignalDecisionResult {
   watchReach: WatchReach | null;
   /** Onde o preco esta; null sem REAL DATA (a tela avisa que os niveis sao estimados). */
   location: PriceLocation | null;
+  /**
+   * WATCH com REAL DATA: os niveis que o motor usaria se destravasse no nivel do
+   * plano (entryLevels com a margem calibrada, TP1 com o teto de 1,5R), os
+   * mesmos do rastreador. null sem REAL DATA ou sem geometria valida no nivel.
+   */
+  watchLevels: EntryLevels | null;
 }
 
 /**
@@ -556,7 +562,14 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     stalePrint,
     watchReach: state === 'WATCH' && real && plan ? watchReachOf(plan, input.symbol, real) : null,
     location: real ? locationOf(real, state === 'NO_TRADE' ? null : plan) : null,
+    watchLevels: state === 'WATCH' && real && plan ? watchLevelsOf(plan, input.symbol, real) : null,
   };
+}
+
+/** Niveis do WATCH se destravar no nivel do plano (borda proxima), como o rastreador mede. */
+export function watchLevelsOf(plan: WatchPlan, symbol: string, real: RealDataInput): EntryLevels | null {
+  const levels = entryLevels(plan, real.atr as number, nearEdge(plan), stopMarginAtr(calibrationPair(symbol), real.volRegime));
+  return typeof levels === 'string' ? null : levels;
 }
 
 /** Preco, posicao no range, tendencia do 4h e a distancia em ATR ate os niveis que importam. */
