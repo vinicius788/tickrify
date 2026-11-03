@@ -372,8 +372,10 @@ export type FunnelEvent =
   // `surface`: dashboard | try.
   | 'upload_read_failed'
   // Card de compartilhamento: `step` diz onde a pessoa parou
-  // (opened | copied | downloaded | x_opened | native_shared). Sem isto não dá
-  // para saber se o card é gerado e nunca postado, que é a falha mais provável.
+  // (opened | copied | downloaded | x_opened | native_shared | video_downloaded),
+  // `card` = read | trade, `format` = post | feed | story. O card de trade leva
+  // `result` (profit | loss | breakeven), nunca o valor. Sem isto não dá para
+  // saber se o card é gerado e nunca postado, que é a falha mais provável.
   | 'analysis_shared'
   | 'free_limit_reached'
   | 'upgrade_modal_viewed'

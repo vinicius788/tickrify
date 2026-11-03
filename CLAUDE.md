@@ -984,10 +984,16 @@ Vale para TODA mudanca, grande ou pequena:
 - "Second opinion" continua de proposito (keyword e verdade). O que saiu foi o
   pre-requisito "your setup/your read". Auditoria que marcar isso e falso
   positivo.
-- **Card de compartilhamento:** sem entry/stop/alvo na estrutura; WAIT ganha card
-  igual; texto do post sempre em ingles e sem performance; `publicVerdict()` e a
-  unica fonte para imagem e texto. A prosa da IA pode conter precos: decisao
-  consciente do dono (02/09).
+- **Cards de compartilhamento (03/11/2026):** um renderer so (`lib/share-card.ts`)
+  para a leitura da analise e o resultado do trade no My Trades; preview, PNG
+  (2x: 2400x1350, 2160x2700, 2160x3840), clipboard e video saem dele. Arte em
+  `public/share/` (nunca otimizar nem redimensionar). Leitura: sem entry/stop/alvo,
+  e frase com preco ou nivel sai da prosa (`hasPriceLevel`; substitui a decisao
+  de 02/09); prosa fora do ingles vira a frase fixa do estado; WAIT ganha card.
+  Trade: so o que o trader registrou (valor, resultado, entrada digitada, data do
+  fechamento); sem moeda (o My Trades nao guarda); o valor nunca vai ao PostHog
+  nem ao texto do post. Texto do post em ingles e sem performance. Sem `ctx.filter`
+  (Safari) e `shadowBlur` sempre vezes a escala.
 - Datas "last updated" sao constantes (`LAST_UPDATED`) e mudam a mao quando o
   texto muda. `dateModified` so com mudanca real de conteudo.
 - **Falsos positivos conhecidos:** `&amp;` nas UTMs dentro do HTML e o correto;
@@ -1182,6 +1188,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **27/10 (cota do Twelve Data, noite):** medidor unico com orcamento por prioridade (analise, monitor, sweeper), fim de semana, cache compartilhado grounding/monitor, chave separada para scripts, recusa vira adiamento no sweeper, `provider_quota` na cobertura, linha `[twelvedata]` e `/health`. Ver 3.2.
 - **02/11 (motor v11, `31f3e7a`, no ar 22:24 BRT):** variante A como producao, sem ARMED, calibracao de alcance e margem, modo leitura, rastreador completo e revisao mensal. Medicoes do dia (offline, rodada paga de US$ 0,371, variantes A, B e C) no historico do chat e no diario. Revisao do Codex: 6 itens corrigidos (calibracao no medidor Redis de producao, DDL do rastreador com lock_timeout e retentativa, margem P80 no rastreador, `dataMode` no /try, prompt sem ARMED, interface sem travessao e emoji) e aprovados antes do merge.
 - **03/11 (PR #12, `f5424a0`, no ar 14:28:26 BRT / 17:28:26 UTC):** WATCH com os niveis do motor (`watchLevels`, TP1 ate 1,5R; nulo = alvos rejeitados), C6 escrito pelo codigo, texto do WATCH sem ordem limit, calendario "Not attached" no quick, estado final do codigo no checklist (`stripModelState`), barra lateral retratil, "Buy now"/"Sell now" (card: "BUY NOW"/"SELL NOW"), alt traduzido e o bloco EUR/USD corrigido (dado do motor, `9fb655b`). Revisado pelo Codex duas vezes.
+- **03/11 (cards de compartilhar):** card da leitura redesenhado (fundo 3D por estado, Post/Feed/Story, animacao, video MP4/WebM) e card novo de resultado no My Trades, com "Hide amount" (so funciona com retorno em % registrado, que hoje nenhuma tela grava). Ver 4.4.
 - **03/11 (infra):** cartao do workspace do Render atualizado pelo dono; o aviso "Payment failed" sumiu do painel. Aviso "EXCEEDING USAGE LIMITS" do Supabase: a causa era o Storage (1,03 GB de 1 GB no gratis; bucket `analysis-images`, ~270 MB/mes de prints novos). 564 prints com mais de 90 dias recomprimidos em WebP no mesmo caminho (534 MB -> 104 MB, 0 erros; prints de julho conferidos no painel) por `_local/storage-recompress/recompress.mjs`; backup dos originais em `_local/storage-recompress/backup`. Pendencias na linha de 02/11 da 6.2.
 - **28/10 (copiloto v10.3, branch `claude/copilot-v10`, PR #11):** armazem de velas `MarketCandle`, rastreador `AnalysisTrack`, REAL DATA em toda analise com reserva pela distancia em R, prompt v10.3 unico (v9, A/B, override, `PROMPT_AUTO_SYNC`, `ENABLE_QUICK_GROUNDING` e rotas de escrita de prompt removidos), tela por estado nos 6 idiomas e hit rate fora do resultado. Ver 3.2.
 - **27/10 (alertas de nivel, PR #7, `a8e962d`, no ar):** alerta por setup com monitor de 5m, e-mail `setup_alert` desligado, bloco Today no inicio (sairam KPIs, quadro semanal, recentes e LiveTape), contador no menu e na aba, paywall `alerts`; `fetchCryptoWindow`/`fetchFxWindow` movidos para `modules/market/candles.ts`. Ver 3.13.

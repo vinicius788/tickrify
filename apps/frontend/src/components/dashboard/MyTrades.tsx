@@ -13,6 +13,7 @@ import EmptyState from '@/components/dashboard/EmptyState';
 import { PositionSizingCalculator } from '@/components/dashboard/PositionSizingCalculator';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { TradeShareButton } from '@/components/dashboard/ShareCard';
 import {
   VERDICT_CFG,
   outcomeFromVerdict,
@@ -724,6 +725,20 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                               <Calculator className="mt-0.5 h-3 w-3 shrink-0" />
                               <span className="underline decoration-dotted underline-offset-2">{tr.calcNudge}</span>
                             </button>
+                          )}
+                          {!isDemo && (
+                            <div>
+                              <TradeShareButton
+                                analysisId={a.id}
+                                trade={{
+                                  symbol,
+                                  side: entrySide(asRecord(a.fullResponse).watchPlan, a.recommendation),
+                                  verdict,
+                                  pnlAmount: getPnl(a),
+                                  pnlPercent: typeof a.pnlPercent === 'number' && Number.isFinite(a.pnlPercent) ? a.pnlPercent : null,
+                                }}
+                              />
+                            </div>
                           )}
                         </div>
                       )}

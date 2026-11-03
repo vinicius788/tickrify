@@ -25,7 +25,8 @@ import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
 import { WatchPlanChart, isWatchLevels, isWatchPlan } from './WatchPlanChart';
 import { ReadModePanel, type ReadModeData } from './ReadModePanel';
-import { ShareCardButton, type ShareCardData } from './ShareCard';
+import { AnalysisShareButton } from './ShareCard';
+import type { ReadShareData } from '@/lib/share-card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -505,7 +506,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   }, [analysisData?.id, sample]);
 
   const { toast } = useToast();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const r = t.analysis.result;
   const sessionLabels: Record<string, string> = {
     SYD: t.analysis.sessions.sydney,
@@ -902,10 +903,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
    *
    * NÃO reaproveita a variável `technicalAnalysis`: ela já embute o fallback
    * traduzido (`r.noAnalysis`), e o card não deve exibir texto de interface.
-   * Vazio é tratado dentro do `drawShareCard`.
+   * O card escolhe uma frase inteira sem preço; vazio ou fora do inglês, usa a
+   * frase fixa do estado (`buildReadCard` em lib/share-card.ts).
    *
-   * O card existe para TODO veredito, WAIT incluído — ver a justificativa no
-   * cabeçalho do ShareCard.tsx antes de restringir isto.
+   * O card existe para TODO veredito, WAIT incluído.
    */
   const shareRead = (() => {
     if (executiveSummary) {
@@ -944,15 +945,15 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
     noTradeReason: typeof engineContract.no_trade_reason === 'string' ? engineContract.no_trade_reason : readReason || null,
   };
 
-  const shareData: ShareCardData = {
+  const shareData: ReadShareData = {
     symbol,
     timeframe,
     scenario: scenarioMeta.label,
     action: recommendationMeta.label,
     state: signalState,
-    tone: stateTone,
     read: shareRead,
-    flip: waitFlipItems[0]?.text ?? null,
+    // A prosa sai no idioma pedido na analise (o da interface); o card e so em ingles.
+    readIsEnglish: language === 'en',
     date: timestamp,
   };
 
@@ -1084,7 +1085,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                 /accuracy, e um print gerado a partir de dado de demonstração
                 circulando como leitura real é a mesma classe de problema que a
                 auditoria de 27/07 removeu da vitrine. */}
-            {!isDemo && !sample && !invalidTradePlan && <ShareCardButton data={shareData} />}
+            {!isDemo && !sample && !invalidTradePlan && <AnalysisShareButton data={shareData} />}
             {detectedSession && (
               <span className="whitespace-nowrap rounded-sm border border-[var(--border-subtle)] px-2 py-0.5 font-terminal text-xs text-[var(--text-secondary)] uppercase">
                 {detectedSession.replace('_', ' ')}
