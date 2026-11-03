@@ -301,6 +301,15 @@ describe('regime de volatilidade e tabela de alcance', () => {
     expect(volatilityRegime(flat(20, 1))).toBeNull();
   });
 
+  it('com a calibracao gerada: margem P80 e chance de alcance do par e do regime', () => {
+    expect(stopMarginAtr('XAUUSD', 'normal')).toBe(STOP_MARGIN_P80['XAUUSD:normal']);
+    const near = reachProbability('BTCUSDT', 'normal', 0.25, 24, 3);
+    const far = reachProbability('BTCUSDT', 'normal', 3, 6, 1);
+    expect(near).toBeGreaterThan(0.5);
+    expect(far).toBeLessThan(near as number);
+    expect(reachProbability('BTCUSDT', 'normal', 10, 16, 2)).toBeNull();
+  });
+
   it('sem calibracao do par e do regime: sem probabilidade', () => {
     expect(reachProbability('NAOEXISTE', 'normal', 0.5, 16, 2)).toBeNull();
     expect(reachProbability(null, null, 0.5, 16, 2)).toBeNull();
