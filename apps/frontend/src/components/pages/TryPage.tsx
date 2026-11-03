@@ -396,7 +396,7 @@ const TryPage = () => {
                     reason: result.readLine ?? '',
                     location: result.location ?? null,
                     currentPrice: result.currentPrice,
-                    dataMode: result.location ? 'real_data' : 'print',
+                    dataMode: result.dataMode ?? null,
                     levels: { entry: result.entry, stopLoss: result.stopLoss, takeProfit1: result.takeProfit1, takeProfit2: result.takeProfit2 },
                     watchPlan: result.watchPlan ?? null,
                     watchReach: result.watchReach ?? null,

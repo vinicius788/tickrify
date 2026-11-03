@@ -389,6 +389,7 @@ export class DemoService implements OnModuleInit, OnModuleDestroy {
     watchPlan?: WatchPlan | null;
     watchReach?: WatchReach | null;
     location?: PriceLocation | null;
+    dataMode?: unknown;
   }) {
     const analysis =
       aiResponse.analysis && typeof aiResponse.analysis === 'object'
@@ -446,10 +447,12 @@ export class DemoService implements OnModuleInit, OnModuleDestroy {
         : null,
       watchReach: aiResponse.watchReach ?? null,
       location: aiResponse.location ?? null,
+      // Origem dos niveis, a mesma regra do painel: so 'print' mostra "estimated".
+      dataMode: aiResponse.dataMode === 'real_data' || aiResponse.dataMode === 'print' ? aiResponse.dataMode : null,
       reasoning,
       // Aviso legal: a demo é pública — reforçar caráter educacional na própria resposta.
       disclaimer:
-        'Educational analysis only — not financial advice. Trading involves risk; the decision is always yours.',
+        'Educational analysis only, not financial advice. Trading involves risk; the decision is always yours.',
       demoRemaining: 0,
     };
   }

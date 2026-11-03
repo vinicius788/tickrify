@@ -23,6 +23,8 @@ export interface DemoAnalysisResult {
   watchPlan?: WatchPlan | null;
   watchReach?: WatchReach | null;
   location?: PriceLocation | null;
+  /** Origem dos niveis; leitura de antes do v11 nao tem. */
+  dataMode?: 'real_data' | 'print' | null;
   reasoning: string;
   disclaimer: string;
   demoRemaining: number;
