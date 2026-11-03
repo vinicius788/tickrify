@@ -130,6 +130,11 @@ export function WatchPending({
           : watch.outcome === 'unavailable' ? p.unavailable
             : p.statusPending;
   const closedNote = watch.outcome === 'pending' && !open && watch.expiresAt !== null ? p.windowClosed : null;
+  // Janela fechada: so o nivel e a direcao, sem mandar esperar algo que ja passou.
+  const closed = watch.outcome !== 'pending' || closedNote !== null;
+  const levelLine = closed
+    ? (watch.direction === 'long' ? p.buyLevel : p.sellLevel)
+    : (watch.direction === 'long' ? p.possibleBuy : p.possibleSell);
 
   return (
     <div data-testid="watch-pending" data-outcome={watch.outcome} className={`flex flex-col gap-1.5 ${alignEnd ? 'sm:items-end sm:text-right' : ''}`}>
@@ -137,7 +142,7 @@ export function WatchPending({
         {status}
       </span>
       <p className="font-terminal text-xs text-[var(--text-primary)]">
-        {(watch.direction === 'long' ? p.possibleBuy : p.possibleSell).replace('{price}', price(watch.level))}
+        {levelLine.replace('{price}', price(watch.level))}
       </p>
       <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
         {[p.invalidation.replace('{price}', price(watch.invalidation)), validity, closedNote].filter(Boolean).join(' · ')}

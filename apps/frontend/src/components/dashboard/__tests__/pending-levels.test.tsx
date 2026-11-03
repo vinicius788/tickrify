@@ -68,20 +68,32 @@ describe('WATCH pendente', () => {
     ['expired', 'Expired without reaching it'],
     ['invalidated', 'Invalidated before reaching it'],
     ['unavailable', 'Outcome not tracked for this asset'],
-  ] as const)('desfecho %s: so o texto, sem botao, sem acerto', (outcome, text) => {
+  ] as const)('desfecho %s: so o nivel e a direcao, sem instrucao, sem botao, sem acerto', (outcome, text) => {
     wrap(<WatchPending analysisId="w1" watch={watch({ outcome, expiresAt: '2026-11-01T00:00:00.000Z' })} surface="trades" now={NOW} />);
     const card = screen.getByTestId('watch-pending');
     expect(card.dataset.outcome).toBe(outcome);
     expect(card.textContent).toContain(text);
+    expect(card.textContent).toContain('Sell level 77,800');
+    expect(card.textContent).not.toContain('Possible');
+    expect(card.textContent).not.toContain('Re-check the chart');
     expect(card.textContent).not.toMatch(/\bwin\b|P&L/i);
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('janela fechada sem linha no rastreador: continua Pending, sem botao', () => {
+  it('desfecho de compra: "Buy level"', () => {
+    wrap(<WatchPending analysisId="w1" watch={watch({ direction: 'long', level: 3982.5, outcome: 'reached', expiresAt: '2026-11-01T00:00:00.000Z' })} surface="trades" now={NOW} />);
+    const text = screen.getByTestId('watch-pending').textContent ?? '';
+    expect(text).toContain('Buy level 3,982.5');
+    expect(text).not.toContain('Re-check the chart');
+  });
+
+  it('janela fechada sem linha no rastreador: continua Pending, so o nivel, sem botao', () => {
     wrap(<WatchPending analysisId="w1" watch={watch({ expiresAt: '2026-11-03T11:00:00.000Z' })} surface="trades" now={NOW} />);
     const text = screen.getByTestId('watch-pending').textContent ?? '';
     expect(text).toContain('Pending');
     expect(text).toContain('Window closed. Outcome pending.');
+    expect(text).toContain('Sell level 77,800');
+    expect(text).not.toContain('Re-check the chart');
     expect(screen.queryByRole('button')).toBeNull();
   });
 

@@ -808,6 +808,8 @@ export default {
   pending: {
     possibleBuy: 'Posible compra en {price}. Vuelve a revisar el gráfico cuando el precio llegue ahí.',
     possibleSell: 'Posible venta en {price}. Vuelve a revisar el gráfico cuando el precio llegue ahí.',
+    buyLevel: 'Nivel de compra {price}',
+    sellLevel: 'Nivel de venta {price}',
     invalidation: 'Invalidación {price}',
     validLeft: 'Válido por {n} velas, quedan {time}',
     validFor: 'Válido por {n} velas',

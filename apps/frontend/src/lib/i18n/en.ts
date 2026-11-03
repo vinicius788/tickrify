@@ -808,6 +808,8 @@ export default {
   pending: {
     possibleBuy: 'Possible buy at {price}. Re-check the chart when price gets there.',
     possibleSell: 'Possible sell at {price}. Re-check the chart when price gets there.',
+    buyLevel: 'Buy level {price}',
+    sellLevel: 'Sell level {price}',
     invalidation: 'Invalidation {price}',
     validLeft: 'Valid for {n} candles, {time} left',
     validFor: 'Valid for {n} candles',

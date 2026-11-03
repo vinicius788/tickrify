@@ -36,7 +36,7 @@ describe('My Trades: WATCH pendente', () => {
     window.localStorage.setItem('tickrify-language', 'en');
     render(<QueryClientProvider client={new QueryClient()}><LanguageProvider><MyTrades /></LanguageProvider></QueryClientProvider>);
     const card = screen.getByTestId('watch-pending');
-    expect(card.textContent).toContain('Possible sell at 77,800. Re-check the chart when price gets there.');
+    expect(card.textContent).toContain('Sell level 77,800');
     expect(card.textContent).toContain('Expired without reaching it');
     expect(screen.queryByText('A wait call is not a trade. Nothing to mark.')).toBeNull();
     // So o BUY conta: 1 vitoria em 1 decidido = 100%; o WATCH nao vira derrota nem pendente de resultado.

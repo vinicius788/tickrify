@@ -808,6 +808,8 @@ export default {
   pending: {
     possibleBuy: '{price}で買いの可能性。価格が到達したらチャートを再確認してください。',
     possibleSell: '{price}で売りの可能性。価格が到達したらチャートを再確認してください。',
+    buyLevel: '買いレベル {price}',
+    sellLevel: '売りレベル {price}',
     invalidation: '無効化 {price}',
     validLeft: '有効期間 {n}本、残り{time}',
     validFor: '有効期間 {n}本',

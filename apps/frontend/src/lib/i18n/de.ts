@@ -808,6 +808,8 @@ export default {
   pending: {
     possibleBuy: 'Möglicher Kauf bei {price}. Prüfe den Chart erneut, wenn der Kurs dort ankommt.',
     possibleSell: 'Möglicher Verkauf bei {price}. Prüfe den Chart erneut, wenn der Kurs dort ankommt.',
+    buyLevel: 'Kaufniveau {price}',
+    sellLevel: 'Verkaufsniveau {price}',
     invalidation: 'Invalidierung {price}',
     validLeft: 'Gültig für {n} Kerzen, noch {time}',
     validFor: 'Gültig für {n} Kerzen',

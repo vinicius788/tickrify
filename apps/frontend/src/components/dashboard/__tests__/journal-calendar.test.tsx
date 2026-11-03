@@ -83,7 +83,7 @@ describe('Diario: WATCH pendente', () => {
     };
     getJournal.mockResolvedValue({ truncated: false, items: [watch] });
     renderJournal();
-    expect(await screen.findByText('Possible sell at 77,800. Re-check the chart when price gets there.', {}, LOAD)).toBeTruthy();
+    expect(await screen.findByText('Sell level 77,800', {}, LOAD)).toBeTruthy();
     expect(screen.getByTestId('watch-pending').textContent).toContain('Price reached the level');
     expect(screen.queryByText('No trade (wait)')).toBeNull();
     // Nao e operacao: o mes segue sem trade fechado, sem numero.

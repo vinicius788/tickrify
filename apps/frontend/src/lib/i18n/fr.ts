@@ -808,6 +808,8 @@ export default {
   pending: {
     possibleBuy: 'Achat possible à {price}. Revérifiez le graphique quand le prix y arrive.',
     possibleSell: 'Vente possible à {price}. Revérifiez le graphique quand le prix y arrive.',
+    buyLevel: 'Niveau d\'achat {price}',
+    sellLevel: 'Niveau de vente {price}',
     invalidation: 'Invalidation {price}',
     validLeft: 'Valable {n} bougies, encore {time}',
     validFor: 'Valable {n} bougies',
