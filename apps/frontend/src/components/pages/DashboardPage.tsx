@@ -75,7 +75,7 @@ function SideTooltip({ label }: { label: string }) {
   return (
     <span
       aria-hidden="true"
-      className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-1 text-xs font-normal text-[var(--text-primary)] opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+      className="tk-side-tip pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-1 text-xs font-normal text-[var(--text-primary)] opacity-0 shadow-md transition-opacity"
     >
       {label}
     </span>
@@ -1904,9 +1904,9 @@ const DashboardPage = () => {
   const sideState = (active: boolean) =>
     active ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]' : 'text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]';
   const navItemClass = (section: NavSection) =>
-    `group relative flex w-full items-center gap-2.5 rounded-lg py-2 text-sm transition-colors ${sidebarCollapsed ? 'justify-center px-0' : 'px-2.5'} ${sideState(activeNav === section)}`;
+    `tk-side-item relative flex w-full items-center gap-2.5 rounded-lg py-2 text-sm transition-colors ${sidebarCollapsed ? 'justify-center px-0' : 'px-2.5'} ${sideState(activeNav === section)}`;
   const footerItemClass = (active: boolean, size: 'xs' | 'sm' = 'xs') =>
-    `group relative flex w-full items-center gap-2.5 rounded-lg transition-colors ${size === 'sm' ? 'py-2 text-sm' : 'py-1.5 text-xs'} ${sidebarCollapsed ? 'justify-center px-0' : 'px-2.5'} ${sideState(active)}`;
+    `tk-side-item relative flex w-full items-center gap-2.5 rounded-lg transition-colors ${size === 'sm' ? 'py-2 text-sm' : 'py-1.5 text-xs'} ${sidebarCollapsed ? 'justify-center px-0' : 'px-2.5'} ${sideState(active)}`;
   const navLink = (section: NavSection) => `${base}${SECTION_PATH[section]}`;
   // "Nova analise" sempre abre o envio limpo, mesmo vindo de um erro ou resultado.
   const onNewAnalysisLink = (event: ReactMouseEvent) => {
@@ -1946,7 +1946,7 @@ const DashboardPage = () => {
       {/* SIDEBAR (desktop): recolhe para so os icones, com o nome em tooltip e os contadores como badge. */}
       <aside
         id="dashboard-sidebar"
-        className={`hidden shrink-0 flex-col border-r border-[var(--border-subtle)] transition-[width] duration-200 motion-reduce:transition-none md:flex ${sidebarCollapsed ? 'w-[64px]' : 'w-[248px]'}`}
+        className={`relative z-[45] hidden shrink-0 flex-col border-r border-[var(--border-subtle)] transition-[width] duration-200 motion-reduce:transition-none md:flex ${sidebarCollapsed ? 'w-[64px]' : 'w-[248px]'}`}
       >
         <div className={`flex items-center gap-2.5 pb-4 pt-4 ${sidebarCollapsed ? 'flex-col px-2' : 'px-4'}`}>
           <img src={officialIcon} alt="Tickrify" className="h-8 w-auto shrink-0 object-contain" />
@@ -1962,7 +1962,7 @@ const DashboardPage = () => {
             aria-label={sidebarCollapsed ? t.nav.expandSidebar : t.nav.collapseSidebar}
             aria-expanded={!sidebarCollapsed}
             aria-controls="dashboard-sidebar"
-            className="group relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--border-accent)]"
+            className="tk-side-item relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--border-accent)]"
           >
             {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
             {sidebarCollapsed && <SideTooltip label={t.nav.expandSidebar} />}
