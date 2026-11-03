@@ -82,6 +82,8 @@ export default {
     affiliates: 'Programme d\'affiliation',
     workspace: 'Workspace',
     workArea: 'Espace de travail',
+    collapseSidebar: 'Réduire la barre latérale',
+    expandSidebar: 'Développer la barre latérale',
     centralTitle: "Centre d'analyse",
     greeting: 'Bon retour',
     heatTitle: 'Régularité',
@@ -328,6 +330,8 @@ export default {
     bullish: 'HAUSSIER',
     bearish: 'BAISSIER',
     neutral: 'NEUTRE',
+    buyNow: 'Acheter maintenant',
+    sellNow: 'Vendre maintenant',
     states: {
       ENTER_NOW: 'Entrer maintenant',
       ARMED: 'Ordre en attente',

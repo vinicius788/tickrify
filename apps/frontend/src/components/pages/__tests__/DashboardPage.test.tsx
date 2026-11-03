@@ -796,6 +796,53 @@ describe('DashboardPage', () => {
     });
   });
 
+  describe('barra lateral retratil', () => {
+    afterEach(() => {
+      window.localStorage.removeItem('tickrify_sidebar_collapsed');
+      vi.restoreAllMocks();
+    });
+
+    it('recolhe para so os icones, guarda a escolha e mantem nomes e contador', async () => {
+      const user = userEvent.setup();
+      mockUseAnalysisLimit.mockReturnValue({ plan: 'free', remaining: 2, isUnlimited: false });
+      renderDashboard('/dashboard/trades');
+      const collapse = await screen.findByRole('button', { name: 'Recolher barra lateral' });
+      expect(collapse.getAttribute('aria-expanded')).toBe('true');
+      expect(collapse.getAttribute('aria-controls')).toBe('dashboard-sidebar');
+      expect(screen.queryByLabelText('2 grátis restantes')).toBeNull();
+
+      await user.click(collapse);
+      const expand = screen.getByRole('button', { name: 'Expandir barra lateral' });
+      expect(expand.getAttribute('aria-expanded')).toBe('false');
+      expect(window.localStorage.getItem('tickrify_sidebar_collapsed')).toBe('1');
+      expect(document.getElementById('dashboard-sidebar')!.className).toContain('w-[64px]');
+      // Nome so uma vez (o tooltip nao entra no nome) e o item ativo segue marcado.
+      const trades = screen.getAllByRole('link', { name: 'Meus Trades' });
+      expect(trades.some((link) => link.getAttribute('aria-current') === 'page')).toBe(true);
+      // O cartao das gratis some e vira badge no icone de nova analise.
+      expect(screen.getByLabelText('2 grátis restantes')).toBeTruthy();
+
+      await user.click(expand);
+      expect(window.localStorage.getItem('tickrify_sidebar_collapsed')).toBe('0');
+      expect(document.getElementById('dashboard-sidebar')!.className).toContain('w-[248px]');
+    });
+
+    it('abre recolhida quando o aparelho guardou; sem storage, abre expandida', async () => {
+      window.localStorage.setItem('tickrify_sidebar_collapsed', '1');
+      renderDashboard('/dashboard/trades');
+      expect(await screen.findByRole('button', { name: 'Expandir barra lateral' })).toBeTruthy();
+      cleanup();
+
+      const realGetItem = Storage.prototype.getItem;
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key: string) {
+        if (key === 'tickrify_sidebar_collapsed') throw new Error('blocked');
+        return realGetItem.call(this, key);
+      });
+      renderDashboard('/dashboard/trades');
+      expect(await screen.findByRole('button', { name: 'Recolher barra lateral' })).toBeTruthy();
+    });
+  });
+
   describe('rotas do painel', () => {
     const withAnalysis = () =>
       makeApiClient({

@@ -3,7 +3,7 @@ import { useUser } from '@clerk/clerk-react';
 import { Calculator, Check, ExternalLink, Filter, ImageOff, Maximize2, Star, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { getScenarioMeta, resolveSignalState, signalStateTone, type SignalStateCanonical } from '@/lib/trading-ui';
+import { entrySide, getScenarioMeta, resolveSignalState, signalStateLabel, signalStateTone, type SignalStateCanonical } from '@/lib/trading-ui';
 import { useAnalyses } from '@/hooks/useAnalyses';
 import { asRecord } from '@/lib/utils';
 import { useAPIClient } from '@/lib/api';
@@ -579,7 +579,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                           </span>
                         )}
                         <Badge variant="outline" className={`border text-xs font-bold uppercase tracking-widest ${signalBg}`}>
-                          {t.analysis.states[state]}
+                          {signalStateLabel(t.analysis, state, entrySide(asRecord(a.fullResponse).watchPlan, a.recommendation))}
                         </Badge>
                         <span className="text-xs text-[var(--text-secondary)]">
                           {t.analysis.bias}: <span className="font-semibold text-[var(--text-primary)]">{scenario.label}</span>

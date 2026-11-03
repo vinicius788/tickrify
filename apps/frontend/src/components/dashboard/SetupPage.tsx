@@ -6,7 +6,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
 import { APIError, isFreeQuotaExhausted, type SignalState } from '@/lib/api';
-import { resolveSignalState, signalStateTone } from '@/lib/trading-ui';
+import { entrySide, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import {
   formatAlertLevel,
   formatSetupDay,
@@ -89,7 +89,7 @@ const SetupPage = ({
   const price = (value: number | null) => (value === null ? 'n/a' : value.toLocaleString(locale, { maximumFractionDigits: 6 }));
   // Estado do copiloto pelo servidor; cor de direcao so em ordem/entrada.
   const verdictLabel = (v: { recommendation: string; signalState?: SignalState }) =>
-    t.analysis.states[resolveSignalState(v.signalState, v.recommendation)];
+    signalStateLabel(t.analysis, resolveSignalState(v.signalState, v.recommendation), entrySide(null, v.recommendation));
   const verdictTone = (v: { recommendation: string; signalState?: SignalState }) => {
     const tone = signalStateTone(resolveSignalState(v.signalState, v.recommendation), v.recommendation);
     return tone === 'buy' ? 'text-[var(--signal-buy)]' : tone === 'sell' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]';

@@ -82,6 +82,8 @@ export default {
     affiliates: 'Affiliate program',
     workspace: 'Workspace',
     workArea: 'Workspace',
+    collapseSidebar: 'Collapse sidebar',
+    expandSidebar: 'Expand sidebar',
     centralTitle: 'Analysis hub',
     greeting: 'Welcome back',
     heatTitle: 'Consistency',
@@ -328,6 +330,8 @@ export default {
     bullish: 'BULLISH',
     bearish: 'BEARISH',
     neutral: 'NEUTRAL',
+    buyNow: 'Buy now',
+    sellNow: 'Sell now',
     states: {
       ENTER_NOW: 'Enter now',
       ARMED: 'Pending order',

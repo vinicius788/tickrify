@@ -87,11 +87,13 @@ describe('rótulos públicos de cenário e ação', () => {
     expect(text).toContain('read BULLISH and marked an area to watch');
   });
 
-  it('rótulo público do estado em inglês, igual no card e no post', () => {
-    expect(publicState('ENTER_NOW')).toBe('ENTER NOW');
-    expect(publicState('ARMED')).toBe('PENDING ORDER');
-    expect(publicState('WATCH')).toBe('WATCH');
-    expect(publicState('NO_TRADE')).toBe('NO TRADE');
+  it('rótulo público do estado em inglês; ENTER_NOW com a direção (BUY NOW / SELL NOW)', () => {
+    expect(publicState('ENTER_NOW', 'BUY')).toBe('BUY NOW');
+    expect(publicState('ENTER_NOW', 'SELL')).toBe('SELL NOW');
+    expect(publicState('ENTER_NOW', 'HOLD')).toBe('ENTER NOW');
+    expect(publicState('ARMED', 'BUY')).toBe('PENDING ORDER');
+    expect(publicState('WATCH', 'SELL')).toBe('WATCH');
+    expect(publicState('NO_TRADE', 'HOLD')).toBe('NO TRADE');
   });
 });
 

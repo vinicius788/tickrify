@@ -85,6 +85,8 @@ export default {
     affiliates: 'Programa de afiliados',
     workspace: 'Workspace',
     workArea: 'Área de trabalho',
+    collapseSidebar: 'Recolher barra lateral',
+    expandSidebar: 'Expandir barra lateral',
     centralTitle: 'Central de análise',
     greeting: 'Bem-vindo de volta',
     heatTitle: 'Consistência',
@@ -337,6 +339,8 @@ export default {
     bullish: 'BULLISH',
     bearish: 'BEARISH',
     neutral: 'NEUTRO',
+    buyNow: 'Comprar agora',
+    sellNow: 'Vender agora',
     states: {
       ENTER_NOW: 'Entrar agora',
       ARMED: 'Ordem pendente',

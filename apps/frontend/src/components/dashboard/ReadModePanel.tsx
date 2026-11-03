@@ -1,7 +1,7 @@
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import type { Translations } from '@/lib/i18n';
 import type { PriceLocation, WatchPlan, WatchReach } from '@/lib/api';
-import type { SignalStateCanonical } from '@/lib/trading-ui';
+import { entrySide, signalStateLabel, type SignalStateCanonical } from '@/lib/trading-ui';
 
 // Modo leitura (02/11/2026): toda analise mostra a leitura, onde o preco esta
 // e a acao, nunca um "aguardar" vazio. Arquivo proprio porque a tela da
@@ -44,6 +44,9 @@ export function ReadModePanel({ data, formatPrice, texts }: ReadModePanelProps) 
   const long = plan ? plan.direction === 'long' : data.bias !== 'bearish';
   const invalidation = plan?.invalidation ?? loc?.invalidation?.price ?? null;
   const level = plan ? (plan.direction === 'long' ? plan.zoneHigh : plan.zoneLow) : null;
+  // Direcao do plano; sem plano, a dos niveis (entrada acima do stop = compra).
+  const { entry, stopLoss } = data.levels;
+  const actionSide = entrySide(plan, null) ?? (entry !== null && stopLoss !== null && entry !== stopLoss ? (entry > stopLoss ? 'buy' : 'sell') : null);
 
   const distanceRows = loc
     ? ([
@@ -101,7 +104,7 @@ export function ReadModePanel({ data, formatPrice, texts }: ReadModePanelProps) 
 
       <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-4">
         <h4 className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{m.actionTitle}</h4>
-        <p className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{a.states[data.state]}</p>
+        <p data-testid="read-mode-action" className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{signalStateLabel(a, data.state, actionSide)}</p>
         {(data.state === 'ENTER_NOW' || data.state === 'ARMED') && (
           <dl className="mt-2 space-y-1 text-sm">
             {([

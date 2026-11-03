@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, Upload, Sliders, Handshake, MessageCircle, Settings } from "lucide-react";
+import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, Upload, Sliders, Handshake, MessageCircle, Settings, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import * as Sentry from "@sentry/react";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
@@ -44,7 +44,7 @@ import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { afterNextPaint, asRecord, isPageTranslated, scrollToTop } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
-import { getRecommendationMeta, resolveSignalState } from "@/lib/trading-ui";
+import { entrySide, getRecommendationMeta, resolveSignalState, signalStateLabel } from "@/lib/trading-ui";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { track } from "@/lib/analytics";
@@ -70,6 +70,47 @@ import { openChat, useChatThread } from "@/lib/support-chat";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
 // PT quando o idioma for português. Contido neste arquivo (sem mexer nos 6 locales).
+/** Nome do item ao passar o mouse ou focar pelo teclado, com a barra recolhida (o leitor de tela le o rotulo sr-only). */
+function SideTooltip({ label }: { label: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-1 text-xs font-normal text-[var(--text-primary)] opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+    >
+      {label}
+    </span>
+  );
+}
+
+type SideBadge = { key: string; value: string; label: string; tone: 'accent' | 'inverse' };
+
+/**
+ * Icone, nome e contador de um item da barra lateral. Recolhida: o nome fica
+ * so para leitor de tela e no tooltip, e o contador vira badge no icone.
+ */
+function SideItemBody({ collapsed, icon, label, badge = null }: { collapsed: boolean; icon: ReactNode; label: string; badge?: SideBadge | null }) {
+  const tone = badge?.tone === 'accent' ? 'bg-[var(--accent-green)] text-[var(--on-accent)]' : 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]';
+  return (
+    <>
+      <span className="relative flex shrink-0 items-center">
+        {icon}
+        {collapsed && badge ? (
+          <span key={badge.key} aria-label={badge.label} className={`absolute -right-2.5 -top-2 min-w-[16px] rounded-full px-1 text-center text-[9px] font-semibold leading-[16px] ring-2 ring-[var(--bg-base)] ${tone}`}>
+            {badge.value}
+          </span>
+        ) : null}
+      </span>
+      <span className={collapsed ? 'sr-only' : 'truncate'}>{label}</span>
+      {!collapsed && badge ? (
+        <span key={badge.key} aria-label={badge.label} className={`ml-auto min-w-[18px] rounded-full px-1.5 text-center text-[10px] font-semibold leading-[18px] ${tone}`}>
+          {badge.value}
+        </span>
+      ) : null}
+      {collapsed && <SideTooltip label={label} />}
+    </>
+  );
+}
+
 const DASH_COPY = {
   en: {
     checkoutErrorTitle: 'Could not open checkout',
@@ -210,6 +251,15 @@ type MyTradesFilter = 'all' | 'pending' | 'favorites' | Verdict;
 
 /** Exemplos que a pessoa ja abriu, para o "Vista" sobreviver a recarga. */
 const SAMPLES_VIEWED_KEY = 'tickrify_samples_viewed';
+// Barra lateral recolhida (so icones): escolha do aparelho. Sem storage, abre expandida.
+const SIDEBAR_COLLAPSED_KEY = 'tickrify_sidebar_collapsed';
+function readSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function loadViewedSamples(): Set<SampleKind> {
   try {
@@ -263,6 +313,18 @@ const DashboardPage = () => {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [analysisData, setAnalysisData] = useState<AIAnalysisResponse | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
+  const toggleSidebar = () => {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? '1' : '0');
+      } catch {
+        /* sem storage: vale so nesta visita */
+      }
+      return next;
+    });
+  };
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, formerSubscriber, billingManageable, trial, trialBlocked, isLoading: isPlanLoading, isUnavailable: isUsageUnavailable, retry: retryUsage } = useAnalysisLimit();
   const [theme] = useTheme();
@@ -1392,7 +1454,7 @@ const DashboardPage = () => {
                   <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t.onboarding.demoTitle}</h2>
                   <span className="font-terminal text-xs text-[var(--text-secondary)]">
                     {`${savedDemo.symbol} · ${savedDemo.timeframe} · ${
-                      t.analysis.states[resolveSignalState(savedDemo.signalState, savedDemo.recommendation)]
+                      signalStateLabel(t.analysis, resolveSignalState(savedDemo.signalState, savedDemo.recommendation), entrySide(null, savedDemo.recommendation))
                     }`}
                   </span>
                 </div>
@@ -1510,7 +1572,7 @@ const DashboardPage = () => {
                   <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
                     <p className="tk-stat-label mb-2">{trial ? t.paywall.recentTitleTrial : t.paywall.recentTitle}</p>
                     {readable.map((a) => {
-                      const actionLabel = t.analysis.states[resolveSignalState(a.signalState ?? a.fullResponse?.signalState, a.recommendation)];
+                      const actionLabel = signalStateLabel(t.analysis, resolveSignalState(a.signalState ?? a.fullResponse?.signalState, a.recommendation), entrySide(a.fullResponse?.watchPlan, a.recommendation));
                       return (
                         <Link
                           key={a.id}
@@ -1839,10 +1901,12 @@ const DashboardPage = () => {
     };
   }, [alertsUnseen, currentViewLabel]);
 
+  const sideState = (active: boolean) =>
+    active ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]' : 'text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]';
   const navItemClass = (section: NavSection) =>
-    `flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-      activeNav === section ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]' : 'text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]'
-    }`;
+    `group relative flex w-full items-center gap-2.5 rounded-lg py-2 text-sm transition-colors ${sidebarCollapsed ? 'justify-center px-0' : 'px-2.5'} ${sideState(activeNav === section)}`;
+  const footerItemClass = (active: boolean, size: 'xs' | 'sm' = 'xs') =>
+    `group relative flex w-full items-center gap-2.5 rounded-lg transition-colors ${size === 'sm' ? 'py-2 text-sm' : 'py-1.5 text-xs'} ${sidebarCollapsed ? 'justify-center px-0' : 'px-2.5'} ${sideState(active)}`;
   const navLink = (section: NavSection) => `${base}${SECTION_PATH[section]}`;
   // "Nova analise" sempre abre o envio limpo, mesmo vindo de um erro ou resultado.
   const onNewAnalysisLink = (event: ReactMouseEvent) => {
@@ -1879,39 +1943,62 @@ const DashboardPage = () => {
 
   return (
     <div className="relative z-10 flex min-h-screen w-full overflow-x-hidden bg-[var(--bg-base)]">
-      {/* SIDEBAR (desktop) */}
-      <aside className="hidden w-[248px] shrink-0 flex-col border-r border-[var(--border-subtle)] md:flex">
-        <div className="flex items-center gap-2.5 px-4 pb-4 pt-4">
+      {/* SIDEBAR (desktop): recolhe para so os icones, com o nome em tooltip e os contadores como badge. */}
+      <aside
+        id="dashboard-sidebar"
+        className={`hidden shrink-0 flex-col border-r border-[var(--border-subtle)] transition-[width] duration-200 motion-reduce:transition-none md:flex ${sidebarCollapsed ? 'w-[64px]' : 'w-[248px]'}`}
+      >
+        <div className={`flex items-center gap-2.5 pb-4 pt-4 ${sidebarCollapsed ? 'flex-col px-2' : 'px-4'}`}>
           <img src={officialIcon} alt="Tickrify" className="h-8 w-auto shrink-0 object-contain" />
-          <div className="leading-none">
-            <div className="text-sm font-bold tracking-wide text-[var(--text-primary)]">TICKRIFY</div>
-            <div className="mt-1 font-terminal text-[8px] uppercase tracking-[0.14em] text-[var(--text-secondary)]">{t.landing.hero.terminal}</div>
-          </div>
+          {!sidebarCollapsed && (
+            <div className="min-w-0 flex-1 leading-none">
+              <div className="text-sm font-bold tracking-wide text-[var(--text-primary)]">TICKRIFY</div>
+              <div className="mt-1 font-terminal text-[8px] uppercase tracking-[0.14em] text-[var(--text-secondary)]">{t.landing.hero.terminal}</div>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={sidebarCollapsed ? t.nav.expandSidebar : t.nav.collapseSidebar}
+            aria-expanded={!sidebarCollapsed}
+            aria-controls="dashboard-sidebar"
+            className="group relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--border-accent)]"
+          >
+            {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            {sidebarCollapsed && <SideTooltip label={t.nav.expandSidebar} />}
+          </button>
         </div>
 
-        <div className="flex flex-1 flex-col overflow-y-auto px-3">
-          <div className={`${sidebarSectionTitleClass} px-2 pb-1 pt-2`}>{t.nav.workArea}</div>
+        <div className={`flex flex-1 flex-col px-3 ${sidebarCollapsed ? 'overflow-visible px-2' : 'overflow-y-auto'}`}>
+          {!sidebarCollapsed && <div className={`${sidebarSectionTitleClass} px-2 pb-1 pt-2`}>{t.nav.workArea}</div>}
           <nav className="flex flex-col gap-0.5">
             <Link to={navLink('home')} aria-current={activeNav === 'home' ? 'page' : undefined} className={navItemClass('home')}>
-              <LayoutGrid className="h-4 w-4" />
-              <span>{t.nav.dashboard}</span>
-              {alertsUnseen > 0 ? (
-                <span key="alerts-unseen" aria-label={t.alerts.menuBadge.replace('{n}', String(alertsUnseen))} className="ml-auto min-w-[18px] rounded-full bg-[var(--accent-green)] px-1.5 text-center text-[10px] font-semibold leading-[18px] text-[var(--on-accent)]">
-                  {String(alertsUnseen)}
-                </span>
-              ) : null}
+              <SideItemBody
+                collapsed={sidebarCollapsed}
+                icon={<LayoutGrid className="h-4 w-4" />}
+                label={t.nav.dashboard}
+                badge={alertsUnseen > 0 ? { key: 'alerts-unseen', value: String(alertsUnseen), label: t.alerts.menuBadge.replace('{n}', String(alertsUnseen)), tone: 'accent' } : null}
+              />
             </Link>
             <Link to={navLink('new')} onClick={onNewAnalysisLink} aria-current={activeNav === 'new' ? 'page' : undefined} className={navItemClass('new')}>
-              <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
+              <SideItemBody
+                collapsed={sidebarCollapsed}
+                icon={<PlusCircle className="h-4 w-4" />}
+                label={t.nav.newAnalysis}
+                // Recolhida, o contador das gratis (cartao abaixo) vira badge aqui.
+                badge={sidebarCollapsed && user && plan === 'free' && !isPlanLoading && Number.isFinite(remaining)
+                  ? { key: 'free-left', value: String(Math.max(0, remaining)), label: `${Math.max(0, remaining)} ${t.nav.freeLeft}`, tone: 'inverse' }
+                  : null}
+              />
             </Link>
             <Link to={navLink('trades')} aria-current={activeNav === 'trades' ? 'page' : undefined} className={navItemClass('trades')}>
-              <History className="h-4 w-4" /> {t.nav.myTrades}
+              <SideItemBody collapsed={sidebarCollapsed} icon={<History className="h-4 w-4" />} label={t.nav.myTrades} />
             </Link>
             <Link to={navLink('journal')} aria-current={activeNav === 'journal' ? 'page' : undefined} className={navItemClass('journal')}>
-              <CalendarDays className="h-4 w-4" /> {t.nav.journal}
+              <SideItemBody collapsed={sidebarCollapsed} icon={<CalendarDays className="h-4 w-4" />} label={t.nav.journal} />
             </Link>
             <Link to={navLink('strategy')} aria-current={activeNav === 'strategy' ? 'page' : undefined} className={navItemClass('strategy')}>
-              <Sliders className="h-4 w-4" /> {t.nav.strategy}
+              <SideItemBody collapsed={sidebarCollapsed} icon={<Sliders className="h-4 w-4" />} label={t.nav.strategy} />
             </Link>
           </nav>
 
@@ -1920,7 +2007,7 @@ const DashboardPage = () => {
               Assinante: o cartao do plano (saldo, renovacao e "Manage
               subscription", onde se cancela) abre ao clicar no saldo ou no
               plano no topo (TicksBadge); fixo aqui ele poluia a lateral. */}
-          {user && plan === 'free' && !isPlanLoading && (
+          {user && plan === 'free' && !isPlanLoading && !sidebarCollapsed && (
             <div className="mt-4">
               <AnalysisCounter />
             </div>
@@ -1930,32 +2017,20 @@ const DashboardPage = () => {
         {/* Plano e assinatura ficam no rodape, junto da conta. "Plans" abre os
             planos DENTRO do painel (/dashboard/plans): antes ia para a /pricing
             publica e o voltar do navegador tirava a pessoa do app. */}
-        <div className="flex flex-col gap-0.5 border-t border-[var(--border-subtle)] px-3 py-2">
+        <div className={`flex flex-col gap-0.5 border-t border-[var(--border-subtle)] py-2 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
           {user && plan === 'free' && (
-            <button type="button" onClick={() => openUpgradeModal('sidebar')} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]">
-              <Crown className="h-4 w-4 text-[var(--accent-green)]" /> {dc.subscribeCta}
+            <button type="button" onClick={() => openUpgradeModal('sidebar')} className={footerItemClass(false, 'sm')}>
+              <SideItemBody collapsed={sidebarCollapsed} icon={<Crown className="h-4 w-4 text-[var(--accent-green)]" />} label={dc.subscribeCta} />
             </button>
           )}
-          <Link
-            to={navLink('plans')}
-            aria-current={activeNav === 'plans' ? 'page' : undefined}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${
-              activeNav === 'plans' ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]' : 'text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            <CreditCard className="h-3.5 w-3.5" /> {t.nav.plans}
+          <Link to={navLink('plans')} aria-current={activeNav === 'plans' ? 'page' : undefined} className={footerItemClass(activeNav === 'plans')}>
+            <SideItemBody collapsed={sidebarCollapsed} icon={<CreditCard className="h-3.5 w-3.5" />} label={t.nav.plans} />
           </Link>
-          <Link
-            to={navLink('settings')}
-            aria-current={activeNav === 'settings' ? 'page' : undefined}
-            className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors ${
-              activeNav === 'settings' ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]' : 'text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            <Settings className="h-3.5 w-3.5" /> {t.nav.settings}
+          <Link to={navLink('settings')} aria-current={activeNav === 'settings' ? 'page' : undefined} className={footerItemClass(activeNav === 'settings')}>
+            <SideItemBody collapsed={sidebarCollapsed} icon={<Settings className="h-3.5 w-3.5" />} label={t.nav.settings} />
           </Link>
-          <Link to="/affiliate" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]">
-            <Handshake className="h-3.5 w-3.5" /> {t.nav.affiliates}
+          <Link to="/affiliate" className={footerItemClass(false)}>
+            <SideItemBody collapsed={sidebarCollapsed} icon={<Handshake className="h-3.5 w-3.5" />} label={t.nav.affiliates} />
           </Link>
           {/* Chat com o fundador: abre a bolha ja na conversa. */}
           {user && (
@@ -1963,26 +2038,27 @@ const DashboardPage = () => {
               type="button"
               onClick={() => openChat('dashboard_menu')}
               aria-label={chatUnread > 0 ? `${t.chat.menu} (${t.chat.unread.replace('{n}', String(chatUnread))})` : t.chat.menu}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]"
+              className={footerItemClass(false)}
             >
-              <MessageCircle className="h-3.5 w-3.5" />
-              <span>{t.chat.menu}</span>
-              {chatUnread > 0 ? (
-                <span key="chat-unread" className="ml-auto min-w-[18px] rounded-full bg-[var(--inverse-bg)] px-1.5 text-center text-[10px] font-semibold leading-[18px] text-[var(--inverse-fg)]">
-                  {String(chatUnread)}
-                </span>
-              ) : null}
+              <SideItemBody
+                collapsed={sidebarCollapsed}
+                icon={<MessageCircle className="h-3.5 w-3.5" />}
+                label={t.chat.menu}
+                badge={chatUnread > 0 ? { key: 'chat-unread', value: String(chatUnread), label: t.chat.unread.replace('{n}', String(chatUnread)), tone: 'inverse' } : null}
+              />
             </button>
           )}
         </div>
 
         {user && (
-          <div className="flex items-center gap-2.5 border-t border-[var(--border-subtle)] p-3">
+          <div className={`flex items-center gap-2.5 border-t border-[var(--border-subtle)] p-3 ${sidebarCollapsed ? 'justify-center' : ''}`}>
             {accountMenu}
-            <div className="min-w-0 leading-tight">
-              <div className="truncate text-xs text-[var(--text-primary)]">{user.firstName || user.fullName || 'Trader'}</div>
-              <div className="font-terminal text-[8px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{isPlanLoading ? t.counter.loadingPlan : plan?.toUpperCase()}{navbarUnlimited ? ` · ${t.nav.statusActive}` : ''}</div>
-            </div>
+            {!sidebarCollapsed && (
+              <div className="min-w-0 leading-tight">
+                <div className="truncate text-xs text-[var(--text-primary)]">{user.firstName || user.fullName || 'Trader'}</div>
+                <div className="font-terminal text-[8px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{isPlanLoading ? t.counter.loadingPlan : plan?.toUpperCase()}{navbarUnlimited ? ` · ${t.nav.statusActive}` : ''}</div>
+              </div>
+            )}
           </div>
         )}
       </aside>

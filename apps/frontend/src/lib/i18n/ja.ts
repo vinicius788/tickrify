@@ -82,6 +82,8 @@ export default {
     affiliates: 'アフィリエイト',
     workspace: 'ワークスペース',
     workArea: '作業エリア',
+    collapseSidebar: 'サイドバーを折りたたむ',
+    expandSidebar: 'サイドバーを展開',
     centralTitle: '分析センター',
     greeting: 'おかえりなさい',
     heatTitle: '継続記録',
@@ -328,6 +330,8 @@ export default {
     bullish: '強気',
     bearish: '弱気',
     neutral: 'ニュートラル',
+    buyNow: '今すぐ買い',
+    sellNow: '今すぐ売り',
     states: {
       ENTER_NOW: '今すぐエントリー',
       ARMED: '予約注文',

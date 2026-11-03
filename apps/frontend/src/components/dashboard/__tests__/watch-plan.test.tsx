@@ -88,9 +88,9 @@ describe('plano do WATCH (v10.1)', () => {
     expect(screen.queryByTestId('watch-plan')).toBeNull();
   });
 
-  it('ENTER_NOW: entrar agora, sem bloco de ordem pendente', () => {
+  it('ENTER_NOW: entrar agora com a direcao, sem bloco de ordem pendente', () => {
     renderResult('ENTER_NOW', null);
-    expect(screen.getByTestId('signal-state').textContent).toBe('Enter now');
+    expect(screen.getByTestId('signal-state').textContent).toBe('Buy now');
     expect(screen.queryByTestId('pending-order')).toBeNull();
   });
 
@@ -230,5 +230,45 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
     // A linha da invalidacao fica no preco (o fundo do desenho); so o rotulo sai do lugar.
     const invLine = [...screen.getByTestId('watch-plan').querySelectorAll('svg line')][0];
     expect(Number(invLine.getAttribute('y1'))).toBeCloseTo(168 - 14, 6);
+  });
+
+  it('modelo diz WATCH e o codigo decidiu NO_TRADE: so o estado do codigo aparece, o checklist fica sem rotulo de estado', () => {
+    renderResult('NO_TRADE', null, {
+      validatorNotes: [{ from: 'WATCH', to: 'NO_TRADE', reason: 'invalidation_unsnapped' }],
+      analysis: {
+        symbol: 'XAUUSD', timeframe: '5M', currentPrice: 3934, executiveSummary: 'No trade.',
+        structureValidation: 'C1 PASS: a. C2 PASS: b. C3 PASS: c. C4 PASS: d. C5 PASS: e. C6 PASS: f. C7 FAIL: g. 6/7 WATCH',
+      },
+    });
+    expect(screen.getByTestId('signal-state').textContent).toBe('No trade');
+    fireEvent.click(screen.getByRole('button', { name: 'Technical Panel' }));
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('6/7');
+    expect(body).not.toMatch(/6\/7\s*·?\s*WATCH/);
+    expect(body).not.toContain('WATCH');
+  });
+
+  it('imagem do grafico com o texto alternativo no idioma da tela', () => {
+    render(
+      <LanguageProvider>
+        <AnalysisResult analysisData={{ ...analysis('WATCH', plan), imageUrl: 'https://example.com/chart.png' } as AIAnalysisResponse} uploadedImage={null} />
+      </LanguageProvider>,
+    );
+    expect(screen.getByAltText('Analyzed chart')).toBeTruthy();
+    expect(screen.queryByAltText('Gráfico analisado')).toBeNull();
+  });
+
+  it.each([
+    ['long', 'BUY', 'Buy now', { entry: 2345, stopLoss: 2335, takeProfit1: 2360 }],
+    ['short', 'SELL', 'Sell now', { entry: 2345, stopLoss: 2355, takeProfit1: 2330 }],
+  ] as const)('ENTER_NOW %s: "%s" vira "%s" no titulo e no bloco Action', (direction, recommendation, label, levels) => {
+    const sellPlan: WatchPlan = { ...plan, direction, invalidation: direction === 'long' ? 2336 : 2354, target1: direction === 'long' ? 2362 : 2328, target2: null };
+    const data = analysis('ENTER_NOW', sellPlan);
+    Object.assign(data, { recommendation });
+    Object.assign(data.fullResponse!, { recommendation, analysis: { ...data.fullResponse!.analysis, ...levels, entryType: 'market' } });
+    render(<LanguageProvider><AnalysisResult analysisData={data} uploadedImage={null} /></LanguageProvider>);
+    expect(screen.getByTestId('signal-state').textContent).toBe(label);
+    expect(screen.getByTestId('read-mode-action').textContent).toBe(label);
+    expect(document.body.textContent).not.toContain('Enter now');
   });
 });

@@ -40,6 +40,8 @@ import {
   normalizeConfluenceScore,
   resolveSignalState,
   signalStateTone,
+  entrySide,
+  signalStateLabel,
 } from '@/lib/trading-ui';
 import { asRecord } from '@/lib/utils';
 import { computeDirectionalRiskReward } from '@/lib/trade-plan';
@@ -369,7 +371,6 @@ interface ChecklistItem {
 interface StructureChecklist {
   items: ChecklistItem[];
   score: string | null;
-  verdict: string | null;
   scoreMismatch: boolean;
 }
 
@@ -399,7 +400,6 @@ function parsePassFailChecklist(text: string): StructureChecklist | null {
   const matches = [...text.matchAll(PASS_FAIL_ITEM)];
   if (new Set(matches.map((m) => m[1])).size !== 7) return null;
   let score: string | null = null;
-  let verdict: string | null = null;
   const items: ChecklistItem[] = matches.map((m, i) => {
     const start = (m.index ?? 0) + m[0].length;
     const end = i + 1 < matches.length ? matches[i + 1].index ?? text.length : text.length;
@@ -407,8 +407,8 @@ function parsePassFailChecklist(text: string): StructureChecklist | null {
     if (i === matches.length - 1) {
       const tail = detail.match(PASS_FAIL_TAIL);
       if (tail && typeof tail.index === 'number') {
+        // O estado escrito pelo modelo ("6/7 WATCH") fica de fora: a tela so mostra o do codigo.
         score = `${tail[1]}/7`;
-        verdict = tail[2].trim() || null;
         detail = detail.slice(0, tail.index);
       }
     }
@@ -422,25 +422,23 @@ function parsePassFailChecklist(text: string): StructureChecklist | null {
   });
   const reported = (score as string | null)?.match(/^([0-7])\/7$/);
   const scoreMismatch = reported != null && Number(reported[1]) !== items.filter((item) => item.ok).length;
-  return { items, score: scoreMismatch ? null : score, verdict, scoreMismatch };
+  return { items, score: scoreMismatch ? null : score, scoreMismatch };
 }
 
 export function parseStructureChecklist(text: string): StructureChecklist {
   if (!text) {
-    return { items: [], score: null, verdict: null, scoreMismatch: false };
+    return { items: [], score: null, scoreMismatch: false };
   }
   const v10 = parsePassFailChecklist(text);
   if (v10) return v10;
 
   let rest = text;
   let score: string | null = null;
-  let verdict: string | null = null;
 
   // Cauda "→ 6/7 → BUY limit setup."
   const tail = rest.match(/→\s*(\d+\s*\/\s*\d+)\s*(?:passes)?\s*(?:→\s*(.+?))?\s*$/i);
   if (tail && typeof tail.index === 'number') {
     score = tail[1].replace(/\s+/g, '');
-    verdict = (tail[2] || '').replace(/\.$/, '').trim() || null;
     rest = rest.slice(0, tail.index).trim();
   }
 
@@ -479,7 +477,7 @@ export function parseStructureChecklist(text: string): StructureChecklist {
   const reported = score?.match(/^([0-7])\/7$/);
   const scoreMismatch = items.length === 7 && reported != null &&
     Number(reported[1]) !== items.filter((item) => item.ok).length;
-  return { items, score: scoreMismatch ? null : score, verdict, scoreMismatch };
+  return { items, score: scoreMismatch ? null : score, scoreMismatch };
 }
 
 const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: AnalysisResultProps) => {
@@ -751,7 +749,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   const executiveSummary =
     cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary);
   const whyNotOpposite = cleanModelText(analysis.whyNotOpposite);
-  const structureValidation = cleanModelText(analysis.structureValidation);
+  // Paragrafo de reserva (checklist que nao virou lista): sem o estado que o
+  // modelo escreveu no fim ("6/7 WATCH", "-> BUY limit"); a tela so mostra o do codigo.
+  const structureValidation = cleanModelText(analysis.structureValidation)
+    .replace(/[\s.;,]*(?:→\s*)?\b[0-7]\s*\/\s*7\b(?:\s*passes)?\s*(?:→\s*)?[,:-]?\s*(?:NO[_ ]TRADE|WATCH|ARMED|ENTER[_ ]NOW|WAIT|HOLD|BUY|SELL)\b[^\n]*$/iu, '');
   // A ORDEM importa: o checklist precisa dos marcadores ✅/❌ para saber o que
   // passou, e o cleanModelText remove emoji. Então ele lê a versão que ainda
   // tem os marcadores, e o parágrafo de reserva usa a versão já limpa.
@@ -1047,7 +1048,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
               className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold uppercase tracking-widest ${signalToneClasses}`}
             >
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{t.analysis.states[signalState]}</span>
+              <span>{signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
             </div>
             {strategyFit && (
               <span
@@ -1175,7 +1176,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
               {imageUrl ? (
                 <img
                   src={String(imageUrl)}
-                  alt="Gráfico analisado"
+                  alt={t.analysis.chartAnalyzed}
                   className="block h-auto max-h-[70vh] w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] object-contain"
                 />
               ) : (
@@ -1626,9 +1627,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                           ) : checklist.score ? (
                             <span className="font-terminal text-xs text-[var(--text-primary)]">
                               {checklist.score}
-                              {checklist.verdict ? (
-                                <span className="text-[var(--text-secondary)]"> · {checklist.verdict}</span>
-                              ) : null}
                             </span>
                           ) : null}
                         </div>

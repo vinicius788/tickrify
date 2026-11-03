@@ -20,7 +20,7 @@ import TradeNoteDialog from '@/components/dashboard/TradeNoteDialog';
 import { isEmptyTradeNote, type TradeNote } from '@/lib/trade-note';
 import { useAPIClient, type AIAnalysisResponse } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { getRecommendationMeta, resolveSignalState, signalStateTone } from '@/lib/trading-ui';
+import { entrySide, getRecommendationMeta, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import { VERDICT_CFG, isTradeCall, verdictFromOutcome, type Verdict } from '@/lib/verdict';
 import { buildMonthGrid, computeAiComparison, computeMonthStats, type AiComparison, dayKey, monthRange, summarizeByDay, weekStartFor, type GroupRow, type MonthStats } from '@/lib/journal';
 
@@ -556,7 +556,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                       </span>
                                     )}
                                     <Badge variant="outline" className={`border text-[10px] font-bold uppercase tracking-widest ${signalClass}`}>
-                                      {t.analysis.states[state]}
+                                      {signalStateLabel(t.analysis, state, entrySide(a.fullResponse?.watchPlan, a.recommendation))}
                                     </Badge>
                                   </div>
                                   <span className="font-terminal text-[10px] text-[var(--text-secondary)]">

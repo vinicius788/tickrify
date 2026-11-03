@@ -52,6 +52,25 @@ export function signalStateTone(state: SignalStateCanonical, recommendation: unk
   return state === 'ENTER_NOW' || state === 'ARMED' ? getRecommendationMeta(recommendation).tone : 'hold';
 }
 
+/** Lado de uma entrada: a direcao do plano; sem plano, a da recomendacao (nunca o cenario solto). */
+export function entrySide(watchPlan: unknown, recommendation: unknown): 'buy' | 'sell' | null {
+  const direction = (watchPlan as { direction?: unknown } | null | undefined)?.direction;
+  if (direction === 'long') return 'buy';
+  if (direction === 'short') return 'sell';
+  const tone = getRecommendationMeta(recommendation).tone;
+  return tone === 'hold' ? null : tone;
+}
+
+/** Rotulo do estado; no ENTER_NOW, com a direcao ("Buy now" / "Sell now"). */
+export function signalStateLabel(
+  labels: { states: Record<SignalStateCanonical, string>; buyNow: string; sellNow: string },
+  state: SignalStateCanonical,
+  side: 'buy' | 'sell' | null,
+): string {
+  if (state === 'ENTER_NOW' && side) return side === 'buy' ? labels.buyNow : labels.sellNow;
+  return labels.states[state];
+}
+
 /** Cenário de mercado. A ação WAIT pode coexistir com viés bullish ou bearish. */
 export function getScenarioMeta(bias: unknown, recommendation?: unknown) {
   const key = String(bias || '').trim().toUpperCase();
