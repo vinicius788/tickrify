@@ -5,6 +5,7 @@ import {
   normalizeRiskFactorsForView,
   parseStructureChecklist,
   softenDashes,
+  stripModelState,
   splitItems,
 } from '@/components/dashboard/AnalysisResult';
 import { computeDirectionalRiskReward } from '@/lib/trade-plan';
@@ -107,12 +108,12 @@ describe('parseStructureChecklist', () => {
     '❌ MTF evidence is inferred from one chart rather than displayed charts. ' +
     '→ 6/7 → BUY limit setup.';
 
-  it('lê os critérios, o placar e o veredito', () => {
+  it('lê os critérios e o placar; o estado escrito pelo modelo fica de fora', () => {
     const out = parseStructureChecklist(TEXTO);
 
     expect(out.items).toHaveLength(4);
     expect(out.score).toBe('6/7');
-    expect(out.verdict).toBe('BUY limit setup');
+    expect(JSON.stringify(out)).not.toContain('BUY limit setup');
   });
 
   it('marca aprovado e reprovado pelo símbolo', () => {
@@ -149,7 +150,7 @@ describe('parseStructureChecklist', () => {
     expect(out.items[6]).toMatchObject({ ok: false, notApplicable: true, detail: 'N/A verified MTF' });
     expect(out.score).toBeNull();
     expect(out.scoreMismatch).toBe(true);
-    expect(out.verdict).toBe('HOLD-WATCH');
+    expect(JSON.stringify(out)).not.toContain('HOLD-WATCH');
   });
 
   // C1 synthetic: a warning is neither approval nor a failed criterion.
@@ -193,20 +194,22 @@ describe('parseStructureChecklist: formato do motor v10 (PASS/FAIL)', () => {
   const v10 = 'C1 FAIL: higher timeframe unavailable. C2 PASS: near 85,400 support. C3 PASS: sweep and reclaim. '
     + 'C4 PASS: buyers absorb. C5 PASS: trigger 85,600. C6 PASS: 1.8R to TP2. C7 FAIL: equal highs above. 5/7 ARMED';
 
-  it('le os 7 itens, o placar e o estado do fim', () => {
+  it('le os 7 itens e o placar; o estado do fim fica de fora', () => {
     const c = parseStructureChecklist(v10);
     expect(c.items).toHaveLength(7);
     expect(c.items.filter((i) => i.ok)).toHaveLength(5);
     expect(c.items[0]).toEqual({ ok: false, notApplicable: false, label: 'C1', detail: 'higher timeframe unavailable' });
     expect(c.items[6].detail).toBe('equal highs above');
-    expect(c).toMatchObject({ score: '5/7', verdict: 'ARMED', scoreMismatch: false });
+    expect(c).toMatchObject({ score: '5/7', scoreMismatch: false });
+    expect(JSON.stringify(c)).not.toContain('ARMED');
   });
 
-  it('aceita rotulo entre o codigo e o veredito', () => {
+  it('aceita rotulo entre o codigo e o PASS/FAIL', () => {
     const c = parseStructureChecklist('C1 Context: PASS HTF up; C2 Location: FAIL mid-range; C3 PASS; C4 PASS; C5 FAIL; C6 PASS; C7 PASS. 5/7, WATCH.');
     expect(c.items[0]).toMatchObject({ ok: true, label: 'C1 Context', detail: 'HTF up' });
     expect(c.items[1]).toMatchObject({ ok: false, label: 'C2 Location', detail: 'mid-range' });
-    expect(c).toMatchObject({ score: '5/7', verdict: 'WATCH' });
+    expect(c).toMatchObject({ score: '5/7' });
+    expect(c.items[6].detail).toBe('');
   });
 
   it('placar que nao bate com a lista nao aparece', () => {
@@ -289,3 +292,27 @@ describe('classifyWaitTrigger', () => {
     expect(classifyWaitTrigger('BUY above 4,360 or SELL below 4,330.')).toBe('neutral');
   });
 });
+
+describe('stripModelState: o estado ou a direcao do modelo nunca chega a tela', () => {
+  it.each(['BUY', 'SELL', 'HOLD', 'WATCH', 'WAIT', 'NO TRADE', 'ENTER_NOW', 'ARMED', 'HOLD-WATCH'])('tira "%s" com seta, com placar ou solto no fim', (state) => {
+    expect(stripModelState(`✅ HTF | ✅ MTF 2/3 → ${state}`)).toBe('✅ HTF | ✅ MTF 2/3');
+    expect(stripModelState(`C6 PASS: geometry. C7 FAIL: room. 6/7 ${state}`)).toBe('C6 PASS: geometry. C7 FAIL: room. 6/7');
+    expect(stripModelState(`C6 PASS: geometry. C7 FAIL: room. 6/7, ${state}.`)).toBe('C6 PASS: geometry. C7 FAIL: room. 6/7');
+    expect(stripModelState(`❌ MTF H1 neutral → 5/7 → ${state} limit`)).toBe('❌ MTF H1 neutral → 5/7');
+  });
+
+  it('palavra de estado solta no fim so conta em maiusculas; texto comum fica', () => {
+    expect(stripModelState('C7 FAIL: support below. WATCH')).toBe('C7 FAIL: support below.');
+    expect(stripModelState('C4 PASS: rejection favors sellers')).toBe('C4 PASS: rejection favors sellers');
+    expect(stripModelState('C3 PASS: sweep → sell-side taken')).toBe('C3 PASS: sweep → sell-side taken');
+    expect(stripModelState('C2 PASS: buyers defended. Wait for confirmation')).toBe('C2 PASS: buyers defended. Wait for confirmation');
+  });
+
+  it('o checklist lido do texto limpo nao carrega estado em criterio nenhum', () => {
+    const c = parseStructureChecklist(stripModelState('✅ HTF 1H LH/LL | ✅ Premium | ✅ OB | ✅ No trap | ✅ BOS | ✅ R:R 1:2.3 | ✅ MTF 2/3 → SELL'));
+    expect(c.items).toHaveLength(7);
+    expect(JSON.stringify(c)).not.toContain('SELL');
+    expect(c.items[6].detail).toContain('MTF 2/3');
+  });
+});
+

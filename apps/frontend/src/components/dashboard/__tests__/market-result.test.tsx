@@ -109,7 +109,8 @@ describe('Your track record', () => {
     );
     expect(screen.getByText('Reached Target 1').previousSibling?.textContent).toBe('3');
     expect(screen.getByText('Hit the stop').previousSibling?.textContent).toBe('4');
-    expect(track).toHaveBeenCalledWith('track_record_viewed', { plans: 10 });
+    // O evento sai num useEffect depois da pintura: com a maquina carregada (CI) ele chega depois do texto.
+    await waitFor(() => expect(track).toHaveBeenCalledWith('track_record_viewed', { plans: 10 }));
   });
 
   it('sem plano nenhum, ou com erro, o card nao aparece', async () => {

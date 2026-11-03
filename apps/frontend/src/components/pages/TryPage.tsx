@@ -31,7 +31,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import en from '@/lib/i18n/en';
 import { ReadModePanel } from '@/components/dashboard/ReadModePanel';
 import { getTranslations } from '@/lib/i18n';
-import { getScenarioMeta, resolveSignalState, signalStateTone } from '@/lib/trading-ui';
+import { entrySide, getScenarioMeta, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import { warmupPaymentsApi } from '@/lib/api';
 import { shrinkChartImage } from '@/lib/chart-image';
 import { chartFileError } from '@/lib/chart-upload';
@@ -347,7 +347,7 @@ const TryPage = () => {
 
               <div className="site-verdict flex-wrap">
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className={`site-call ${callClass}`}>{en.analysis.states[signalState]}</span>
+                  <span className={`site-call ${callClass}`}>{signalStateLabel(en.analysis, signalState, entrySide(result.watchPlan, result.recommendation))}</span>
                   <span className="site-chip">{`${en.analysis.bias}: ${scenario?.label ?? 'NEUTRAL'}`}</span>
                 </div>
                 {result.riskReward && result.recommendation !== 'WAIT' ? (

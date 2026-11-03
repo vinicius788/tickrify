@@ -21,8 +21,11 @@ import {
   validatorReasons,
   type RealDataInput,
   type SignalDecisionInput,
+  watchLevelsOf,
 } from './signal-decision';
-import { ENGINE_RULES, type WatchPlan } from './plan-engine';
+import { ENGINE_RULES, type WatchPlan, entryLevels, nearEdge, trackPlan } from './plan-engine';
+import { STOP_MARGIN_P80 } from './engine-calibration';
+import { buildPersistedAnalysisPayload } from './analysis-payload';
 
 const saved = process.env.ENABLE_NEWS_GUARD;
 
@@ -121,6 +124,71 @@ describe('decideSignal: a ordem limit (ARMED) nao e mais emitida', () => {
       { from: 'ARMED', to: 'WATCH', reason: 'limit_order_retired' },
       { from: 'WATCH', to: 'NO_TRADE', reason: 'no_valid_geometry' },
     ]);
+  });
+});
+
+describe('WATCH: os niveis que o motor usaria ao destravar no nivel (watchLevels)', () => {
+  it('TP1 com o teto de 1,5R a partir do nivel, nao o alvo cru do modelo', async () => {
+    const d = await decide({ state: 'ARMED' });
+    expect(d.state).toBe('WATCH');
+    // Nivel 99,5, stop 98,8 - 0,25 = 98,55 (sem calibracao), risco 0,95; alvo 101,5 daria 2,1R.
+    expect(d.watchLevels).toMatchObject({ entry: 99.5, stopLoss: 98.55, takeProfit2: 103, tp1R: ENGINE_RULES.tp1CapR });
+    expect(d.watchLevels!.takeProfit1).toBeCloseTo(99.5 + 1.5 * 0.95, 6);
+    expect(d.watchLevels!.takeProfit1).toBeLessThan(plan.target1);
+    expect(d.levels.entry).toBeNull();
+  });
+
+  it('com a margem calibrada do par e do regime (a mesma do validador e do rastreador)', async () => {
+    const d = await decide({ state: 'ARMED', symbol: 'BTCUSDT', realData: real(99.9, { volRegime: 'normal' }) });
+    expect(d.watchLevels!.stopLoss).toBeCloseTo(98.8 - STOP_MARGIN_P80['BTCUSDT:normal'], 6);
+    const tracked = trackPlan({
+      plan: d.watchPlan!, enterNow: false, atr: 1, marginAtr: STOP_MARGIN_P80['BTCUSDT:normal'],
+      tf: [], tfStepMs: 60_000, fine: [[0, 100, 100.1, 99.9, 100, 0]], startMs: 0, resolveMs: 1,
+    });
+    expect(tracked.levels).toMatchObject({ entry: d.watchLevels!.entry, stopLoss: d.watchLevels!.stopLoss, takeProfit1: d.watchLevels!.takeProfit1 });
+  });
+
+  it('caso de producao (BTCUSD 5m, venda na zona 77480): TP1 vai de 3,4R para o teto', () => {
+    const btc: WatchPlan = {
+      direction: 'short', triggerType: 'zone_reaction', zoneLow: 77480, zoneHigh: 77502.8, invalidation: 77502.82,
+      target1: 77316.2, target2: 77159.5, validForCandles: 16, trigger: '',
+    };
+    const levels = watchLevelsOf(btc, 'BTCUSD', { ...real(77417.34, { atr: 101.0614 }), volRegime: 'normal' })!;
+    const margin = STOP_MARGIN_P80['BTCUSDT:normal'];
+    expect(levels).toEqual(entryLevels(btc, 101.0614, nearEdge(btc), margin));
+    expect(levels.entry).toBe(77480);
+    expect(levels.tp1R).toBe(ENGINE_RULES.tp1CapR);
+    expect(levels.takeProfit1).toBeGreaterThan(btc.target1);
+  });
+
+  it('entrada no nivel igual a invalidacao: o motor rejeita (wrong_side) e grava null', () => {
+    const flat: WatchPlan = { ...plan, zoneLow: 98.8, zoneHigh: 98.8, invalidation: 98.8 };
+    expect(entryLevels(flat, 1, nearEdge(flat), ENGINE_RULES.stopMarginAtr)).toBe('wrong_side');
+    expect(watchLevelsOf(flat, 'XAUUSD', real(99.9))).toBeNull();
+  });
+
+  it('o validador mantem WATCH com a geometria do nivel rejeitada (preco dentro da zona, entrada a mercado valida)', async () => {
+    // Mercado 99,3: risco 0,75, alvo 100,2 a 1,2R (vale). Nivel 99,5: risco 0,95, alvo a 0,74R (no_room).
+    const inside = { ...plan, target1: 100.2, target2: null };
+    expect(entryLevels(inside, 1, nearEdge(inside), ENGINE_RULES.stopMarginAtr)).toBe('no_room');
+    const d = await decide({ ...watch, watchPlan: inside, currentPrice: 99.3, realData: real(99.3, { late: { long: true, short: false } }) });
+    expect(d.state).toBe('WATCH');
+    expect(d.watchLevels).toBeNull();
+  });
+
+  it('ENTER_NOW, NO_TRADE e sem REAL DATA: sem watchLevels', async () => {
+    expect((await decide()).watchLevels).toBeNull();
+    expect((await decide({ state: 'NO_TRADE', recommendation: 'WAIT' })).watchLevels).toBeNull();
+    expect((await decide({ state: 'ARMED', realData: null })).watchLevels).toBeNull();
+  });
+
+  it('o campo vai gravado no resultado da analise', async () => {
+    const d = await decide({ state: 'ARMED' });
+    const persisted = buildPersistedAnalysisPayload({
+      source: { signalState: d.state, watchPlan: d.watchPlan, watchLevels: d.watchLevels }, recommendation: 'WAIT', bias: 'bullish',
+      confidence: 40, reasoning: 'WATCH',
+    });
+    expect(persisted.fullResponse.watchLevels).toEqual(d.watchLevels);
   });
 });
 

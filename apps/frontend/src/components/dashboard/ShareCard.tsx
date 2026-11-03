@@ -119,8 +119,10 @@ const PUBLIC_STATE: Record<SignalStateCanonical, string> = {
   NO_TRADE: 'NO TRADE',
 };
 
-/** Rótulo público do estado, sempre em inglês (a imagem e o post são públicos). */
-export function publicState(state: SignalStateCanonical): string {
+/** Rótulo público do estado, sempre em inglês (a imagem e o post são públicos); ENTER_NOW com a direção. */
+export function publicState(state: SignalStateCanonical, action: string): string {
+  const side = publicAction(action);
+  if (state === 'ENTER_NOW' && side !== 'WAIT') return `${side} NOW`;
   return PUBLIC_STATE[state] ?? PUBLIC_STATE.NO_TRADE;
 }
 
@@ -325,7 +327,7 @@ export async function drawShareCard(data: ShareCardData): Promise<Blob> {
 
   ctx.font = `600 16px ${MONO}`;
   ctx.fillStyle = tone.fg;
-  ctx.fillText(publicState(data.state), PAD, pillY + pillH + 25);
+  ctx.fillText(publicState(data.state, data.action), PAD, pillY + pillH + 25);
 
   // ── Hora da leitura ──────────────────────────────────────────────────────
   // Era a "confiança" em %, que saiu do produto em 30/09/2026: ela era pedida

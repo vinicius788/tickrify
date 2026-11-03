@@ -12,7 +12,9 @@ export function AnalysisEvidencePanel({ evidence: value }: { evidence: unknown }
     ? t.analysis.evidenceEventsAttached
     : evidence?.calendar === 'no_events_returned'
       ? t.analysis.evidenceNoEventsReturned
-      : t.analysis.evidenceNotConfirmed;
+      : evidence?.calendar === 'not_attached'
+        ? t.analysis.evidenceNotAttached
+        : t.analysis.evidenceNotConfirmed;
 
   return (
     <div className="mt-3 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">

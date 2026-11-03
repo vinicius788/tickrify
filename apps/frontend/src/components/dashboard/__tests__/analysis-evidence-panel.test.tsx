@@ -26,6 +26,15 @@ describe('AnalysisEvidencePanel', () => {
     expect(screen.getByText('Current data does not establish when the screenshot was captured.')).toBeTruthy();
   });
 
+  it('calendar not fetched for the analysis reads "Not attached"; fetched without confirmation reads "Not confirmed"', () => {
+    const base = { version: 1, additionalChartsDelivered: 0, candleFeedAttached: true, marketContextAttached: true };
+    show({ ...base, calendar: 'not_attached' });
+    expect(within(screen.getByText('Economic calendar:').parentElement!).getByText('Not attached')).toBeTruthy();
+    cleanup();
+    show({ ...base, calendar: 'not_confirmed' });
+    expect(within(screen.getByText('Economic calendar:').parentElement!).getByText('Not confirmed')).toBeTruthy();
+  });
+
   it('does not invent source coverage for responses without a record', () => {
     show(undefined);
     expect(screen.getByText('Input coverage was not recorded for this analysis.')).toBeTruthy();

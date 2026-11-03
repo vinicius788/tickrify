@@ -62,7 +62,7 @@ describe('product clarity without changing the stored decision', () => {
     expect(within(guide).getByText('Stored technical reason.')).toBeTruthy();
     expect(within(guide).getByText('Stored risk, without an invented price.')).toBeTruthy();
     expect(screen.getByText(getTranslations('en').productClarity.entryNow)).toBeTruthy();
-    expect(screen.getByTestId('signal-state').textContent).toContain('Enter now');
+    expect(screen.getByTestId('signal-state').textContent).toContain(recommendation === 'BUY' ? 'Buy now' : 'Sell now');
     expect(JSON.stringify(data)).toBe(before);
   });
 

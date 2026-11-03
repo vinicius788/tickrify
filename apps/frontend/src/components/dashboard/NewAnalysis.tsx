@@ -335,7 +335,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
             </button>
           </div>
           <div className="overflow-hidden rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)]">
-            {mainPreview && <img src={mainPreview} alt="Gráfico principal" className="max-h-[300px] w-full object-contain" />}
+            {mainPreview && <img src={mainPreview} alt={u.mainChart} className="max-h-[300px] w-full object-contain" />}
           </div>
 
           {/* Timeframes maiores (top-down) — somente assinante */}

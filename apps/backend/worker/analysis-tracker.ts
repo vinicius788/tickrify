@@ -37,8 +37,6 @@ export const TRACKER_RULES = {
   fxWeekendMs: 72 * HOUR,
   batch: 20,
   lookbackDays: 21,
-  /** DDL do boot: cada comando desiste depois disto esperando trava. */
-  ddlLockTimeout: '5s',
   /** DDL falhou: nova tentativa a cada 10 min, ate conseguir. */
   ddlRetryMs: 10 * MINUTE,
 } as const;
@@ -252,11 +250,11 @@ export async function runAnalysisTracker(prisma: PrismaClient, nowMs: number = D
   return counts;
 }
 
-/** Cada DDL na propria transacao, com lock_timeout: nunca fica preso atras de outra trava. */
+/** Cada DDL na propria transacao, com lock_timeout de 5 s: nunca fica preso atras de outra trava. */
 async function ensureTrackerTables(prisma: PrismaClient): Promise<void> {
   for (const sql of TRACKER_SQL) {
     await prisma.$transaction([
-      prisma.$executeRawUnsafe(`SET LOCAL lock_timeout = '${TRACKER_RULES.ddlLockTimeout}'`),
+      prisma.$executeRawUnsafe(`SET LOCAL lock_timeout = '5s'`),
       prisma.$executeRawUnsafe(sql),
     ]);
   }

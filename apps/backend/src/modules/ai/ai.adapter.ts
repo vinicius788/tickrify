@@ -1179,6 +1179,16 @@ function parseSchemaResult(
 // bloqueio/rate-limit (achado em 25/08/2026, junto do bug do cache vazio).
 const calendarService = new EconomicCalendarService();
 
+/**
+ * Linha do EUR/USD no bloco de forex/metais. EUR/USD subindo = dolar
+ * ENFRAQUECENDO (de 09/06 a 03/11/2026 o bloco dizia o contrario e chamava a
+ * cotacao de "Dolar"). Abaixo de 0,2% em 7 dias, dolar estavel.
+ */
+export function eurUsdContextLine(usd: { eurusd: number; changePct: number }): string {
+  const move = usd.changePct >= 0 ? 'up' : 'down';
+  const dollar = usd.changePct >= 0.2 ? 'dollar weakening' : usd.changePct <= -0.2 ? 'dollar strengthening' : 'dollar roughly flat';
+  return `EUR/USD ${usd.eurusd.toFixed(4)}, ${move} ${Math.abs(usd.changePct).toFixed(2)}% in 7 days: ${dollar}`;
+}
 
 @Injectable()
 export class AIAdapter {
@@ -1543,19 +1553,14 @@ export class AIAdapter {
 
   /** Bloco de dados reais para FOREX/OURO (driver do dólar + juros 10 anos). */
   private async buildFxEnrichment(symbol: string): Promise<string | null> {
-    const [usd, dgs10] = await Promise.all([this.fetchUsdContext(), this.fetchFredLatest('DGS10')]);
+    // O proprio EURUSD nao recebe o EUR/USD como contexto (seria o ativo explicando ele mesmo).
+    const selfQuote = canonicalFxPair(symbol) === 'EURUSD';
+    const [usd, dgs10] = await Promise.all([
+      selfQuote ? Promise.resolve(null) : this.fetchUsdContext(),
+      this.fetchFredLatest('DGS10'),
+    ]);
     const lines: string[] = [];
-    if (usd) {
-      const trend =
-        usd.changePct <= -0.2
-          ? 'enfraquecendo (tende a favorecer ouro e moedas não-USD)'
-          : usd.changePct >= 0.2
-            ? 'fortalecendo (tende a pressionar ouro e moedas não-USD)'
-            : 'estável';
-      lines.push(
-        `Dólar (proxy EUR/USD): ${usd.eurusd.toFixed(4)} · variação ~7d: ${usd.changePct >= 0 ? '+' : ''}${usd.changePct.toFixed(2)}% → dólar ${trend}`,
-      );
-    }
+    if (usd) lines.push(eurUsdContextLine(usd));
     if (dgs10 != null) {
       lines.push(`Treasury 10 anos (yield): ${dgs10}% — yields em alta tendem a pressionar ouro; em queda, a favorecer.`);
     }
@@ -2363,6 +2368,7 @@ export class AIAdapter {
         dataMode: decision.dataMode,
         watchReach: decision.watchReach,
         location: decision.location,
+        watchLevels: decision.watchLevels,
         validatorNotes: decision.validatorNotes,
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);

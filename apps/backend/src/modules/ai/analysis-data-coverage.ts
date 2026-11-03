@@ -69,9 +69,13 @@ export function toAnalysisEvidence(value: AnalysisDataCoverage): AnalysisEvidenc
     additionalChartsDelivered: boundedImageCount(value.htfImagesDelivered),
     candleFeedAttached: value.candles === 'injected',
     marketContextAttached: value.marketContext === 'injected',
+    // Nao buscado (quick, contexto desligado) e diferente de buscado sem confirmar
+    // (fonte fora do ar, timeout, erro, simbolo ilegivel).
     calendar: value.calendar === 'events_injected'
       ? 'events_attached'
-      : value.calendar === 'no_events_returned' ? 'no_events_returned' : 'not_confirmed',
+      : value.calendar === 'no_events_returned'
+        ? 'no_events_returned'
+        : value.calendar === 'not_attempted' || value.calendar === 'disabled' ? 'not_attached' : 'not_confirmed',
   };
 }
 

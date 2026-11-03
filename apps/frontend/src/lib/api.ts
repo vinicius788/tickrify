@@ -118,7 +118,7 @@ export interface AnalysisEvidence {
   additionalChartsDelivered: number;
   candleFeedAttached: boolean;
   marketContextAttached: boolean;
-  calendar: 'events_attached' | 'no_events_returned' | 'not_confirmed';
+  calendar: 'events_attached' | 'no_events_returned' | 'not_attached' | 'not_confirmed';
 }
 
 export class APIError extends Error {
@@ -218,6 +218,8 @@ export interface AIAnalysisResponse {
     location?: PriceLocation | null;
     /** Chance calibrada de o preco chegar ao nivel do WATCH; null sem calibracao. */
     watchReach?: WatchReach | null;
+    /** Niveis do WATCH calculados pelo motor; ausente em analise antiga, null sem REAL DATA. */
+    watchLevels?: WatchLevels | null;
     /** Contrato do motor; `no_trade_reason` e o motivo em uma linha do NO_TRADE. */
     engine?: { contract?: { no_trade_reason?: string | null } | null } | null;
     bias: Bias;
@@ -301,6 +303,16 @@ export interface PriceLocation {
 export interface WatchReach {
   probability: number;
   candles: number;
+}
+
+/** WATCH: os niveis que o motor usaria se destravasse no nivel (TP1 com teto de 1,5R). */
+export interface WatchLevels {
+  entry: number;
+  stopLoss: number;
+  takeProfit1: number;
+  takeProfit2: number | null;
+  tp1R: number;
+  riskAtr: number;
 }
 
 /** Plano do WATCH (v10.1): o codigo calcula entrada e stop quando a vela de gatilho fechar. */

@@ -23,14 +23,14 @@ import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
-import { WatchPlanChart, isWatchPlan } from './WatchPlanChart';
+import { WatchPlanChart, isWatchLevels, isWatchPlan } from './WatchPlanChart';
 import { ReadModePanel, type ReadModeData } from './ReadModePanel';
 import { ShareCardButton, type ShareCardData } from './ShareCard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import type { AIAnalysisResponse } from '@/lib/api';
+import type { AIAnalysisResponse, WatchLevels } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import {
   calcStopPercent,
@@ -40,6 +40,8 @@ import {
   normalizeConfluenceScore,
   resolveSignalState,
   signalStateTone,
+  entrySide,
+  signalStateLabel,
 } from '@/lib/trading-ui';
 import { asRecord } from '@/lib/utils';
 import { computeDirectionalRiskReward } from '@/lib/trade-plan';
@@ -369,7 +371,6 @@ interface ChecklistItem {
 interface StructureChecklist {
   items: ChecklistItem[];
   score: string | null;
-  verdict: string | null;
   scoreMismatch: boolean;
 }
 
@@ -392,6 +393,22 @@ interface StructureChecklist {
  */
 // Checklist do motor v10 (26/10/2026): "C1 PASS ...; C2 Location: FAIL ...;
 // ... 5/7 ARMED", sem emoji. Um rotulo curto pode vir entre o codigo e o veredito.
+/**
+ * Tira o estado ou a direcao que o modelo escreveu no checklist, em qualquer
+ * criterio, com ou sem placar: "→ SELL", "→ 5/7 → BUY limit setup",
+ * "6/7 WATCH", "4/7 passes → HOLD-WATCH" e uma palavra de estado solta no fim
+ * (". WATCH"). O placar n/7 fica. A palavra solta so conta em maiusculas,
+ * para nao cortar texto comum ("buyers", "sell-side").
+ */
+const MODEL_STATE = '(?:NO[_ ]TRADE|WATCH|ARMED|ENTER[_ ]NOW|WAIT|HOLD(?:-WATCH)?|BUY|SELL)';
+const ARROW_STATE = new RegExp(`\\s*(?:→|->)\\s*${MODEL_STATE}(?![\\w-])[^|;\\n]*`, 'giu');
+const SCORE_STATE = new RegExp(`(\\b[0-7]\\s*/\\s*7\\b(?:\\s*passes)?)\\s*[,:-]?\\s*${MODEL_STATE}(?![\\w-])[^|;\\n]*`, 'giu');
+const BARE_STATE = new RegExp(`([.,;])\\s*${MODEL_STATE}(?![\\w-])\\.?\\s*$`, 'u');
+
+export function stripModelState(text: string): string {
+  return text.replace(ARROW_STATE, '').replace(SCORE_STATE, '$1').replace(BARE_STATE, '$1').trim();
+}
+
 const PASS_FAIL_ITEM = /\bC([1-7])\b([^;|\n]{0,30}?)\b(PASS|FAIL)\b\s*[:,-]?\s*/giu;
 const PASS_FAIL_TAIL = /[\s.;,]*\b([0-7])\s*\/\s*7\b\s*[:,-]?\s*([^\n]*?)\.?\s*$/u;
 
@@ -399,7 +416,6 @@ function parsePassFailChecklist(text: string): StructureChecklist | null {
   const matches = [...text.matchAll(PASS_FAIL_ITEM)];
   if (new Set(matches.map((m) => m[1])).size !== 7) return null;
   let score: string | null = null;
-  let verdict: string | null = null;
   const items: ChecklistItem[] = matches.map((m, i) => {
     const start = (m.index ?? 0) + m[0].length;
     const end = i + 1 < matches.length ? matches[i + 1].index ?? text.length : text.length;
@@ -407,8 +423,8 @@ function parsePassFailChecklist(text: string): StructureChecklist | null {
     if (i === matches.length - 1) {
       const tail = detail.match(PASS_FAIL_TAIL);
       if (tail && typeof tail.index === 'number') {
+        // O estado escrito pelo modelo ("6/7 WATCH") fica de fora: a tela so mostra o do codigo.
         score = `${tail[1]}/7`;
-        verdict = tail[2].trim() || null;
         detail = detail.slice(0, tail.index);
       }
     }
@@ -422,25 +438,23 @@ function parsePassFailChecklist(text: string): StructureChecklist | null {
   });
   const reported = (score as string | null)?.match(/^([0-7])\/7$/);
   const scoreMismatch = reported != null && Number(reported[1]) !== items.filter((item) => item.ok).length;
-  return { items, score: scoreMismatch ? null : score, verdict, scoreMismatch };
+  return { items, score: scoreMismatch ? null : score, scoreMismatch };
 }
 
 export function parseStructureChecklist(text: string): StructureChecklist {
   if (!text) {
-    return { items: [], score: null, verdict: null, scoreMismatch: false };
+    return { items: [], score: null, scoreMismatch: false };
   }
   const v10 = parsePassFailChecklist(text);
   if (v10) return v10;
 
   let rest = text;
   let score: string | null = null;
-  let verdict: string | null = null;
 
   // Cauda "→ 6/7 → BUY limit setup."
   const tail = rest.match(/→\s*(\d+\s*\/\s*\d+)\s*(?:passes)?\s*(?:→\s*(.+?))?\s*$/i);
   if (tail && typeof tail.index === 'number') {
     score = tail[1].replace(/\s+/g, '');
-    verdict = (tail[2] || '').replace(/\.$/, '').trim() || null;
     rest = rest.slice(0, tail.index).trim();
   }
 
@@ -479,7 +493,7 @@ export function parseStructureChecklist(text: string): StructureChecklist {
   const reported = score?.match(/^([0-7])\/7$/);
   const scoreMismatch = items.length === 7 && reported != null &&
     Number(reported[1]) !== items.filter((item) => item.ok).length;
-  return { items, score: scoreMismatch ? null : score, verdict, scoreMismatch };
+  return { items, score: scoreMismatch ? null : score, scoreMismatch };
 }
 
 const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: AnalysisResultProps) => {
@@ -566,6 +580,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   const stateTone = signalStateTone(signalState, analysisData.recommendation);
   const stateActive = signalState === 'ENTER_NOW' || signalState === 'ARMED';
   const watchPlan = isWatchPlan(fullResponse.watchPlan) ? fullResponse.watchPlan : null;
+  // Niveis do WATCH calculados pelo motor (desde 03/11/2026). undefined: analise
+  // antiga ou sem velas reais (alvos do modelo, como antes); null: o motor
+  // rejeitou a geometria no nivel do WATCH (sem alvos nem R na tela).
+  const watchLevels: WatchLevels | null | undefined = isWatchLevels(fullResponse.watchLevels)
+    ? fullResponse.watchLevels
+    : signalState === 'WATCH' && fullResponse.dataMode === 'real_data' && 'watchLevels' in fullResponse ? null : undefined;
   const levelsEstimated = fullResponse.dataMode === 'print';
 
   const symbol = String(
@@ -749,13 +769,36 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   const executiveSummary =
     cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary);
   const whyNotOpposite = cleanModelText(analysis.whyNotOpposite);
-  const structureValidation = cleanModelText(analysis.structureValidation);
+  // Checklist e paragrafo de reserva sem o estado ou a direcao que o modelo
+  // escreveu ("6/7 WATCH", "MTF 2/3 → SELL"): a tela so mostra a decisao do codigo.
+  const structureValidation = stripModelState(cleanModelText(analysis.structureValidation));
   // A ORDEM importa: o checklist precisa dos marcadores ✅/❌ para saber o que
   // passou, e o cleanModelText remove emoji. Então ele lê a versão que ainda
-  // tem os marcadores, e o parágrafo de reserva usa a versão já limpa.
-  const checklist = parseStructureChecklist(
-    structureValidation ? softenDashes(String(analysis.structureValidation).trim()) : '',
+  // tem os marcadores (ja sem o estado do modelo), e o parágrafo de reserva usa a versão limpa.
+  const parsedChecklist = parseStructureChecklist(
+    structureValidation ? stripModelState(softenDashes(String(analysis.structureValidation).trim())) : '',
   );
+  // C6 (geometria) com os niveis do motor, nunca o calculo do modelo: no WATCH,
+  // os que valeriam ao destravar no nivel; no ENTER_NOW de analise com o campo
+  // novo, os do sinal. Analise antiga segue com o texto do modelo.
+  const geometryLevels = signalState === 'WATCH' && watchLevels
+    ? { ...watchLevels, text: r.watch.geometryWatch }
+    : signalState === 'ENTER_NOW' && 'watchLevels' in fullResponse && entry !== null && stopLoss !== null && takeProfit1 !== null && entry !== stopLoss
+      ? { entry, stopLoss, takeProfit1, tp1R: Math.abs(takeProfit1 - entry) / Math.abs(entry - stopLoss), text: r.watch.geometryEnter }
+      : null;
+  const geometryDetail = geometryLevels
+    ? geometryLevels.text
+        .replace('{entry}', formatPrice(geometryLevels.entry))
+        .replace('{stop}', formatPrice(geometryLevels.stopLoss))
+        .replace('{tp1}', formatPrice(geometryLevels.takeProfit1))
+        .replace('{r}', geometryLevels.tp1R.toFixed(1))
+    : watchLevels === null ? r.watch.targetsRejected : null;
+  const checklist = geometryDetail
+    ? {
+        ...parsedChecklist,
+        items: parsedChecklist.items.map((item) => (/^C6\b/.test(item.label) ? { ...item, detail: geometryDetail } : item)),
+      }
+    : parsedChecklist;
 
   // Linhas da estrutura de mercado. Montadas em dado, não em <p> soltos: assim
   // a coluna de rótulos alinha igual à dos Operation Levels, e um campo vazio
@@ -1022,7 +1065,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
               className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold uppercase tracking-widest ${signalToneClasses}`}
             >
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{t.analysis.states[signalState]}</span>
+              <span>{signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
             </div>
             {strategyFit && (
               <span
@@ -1128,7 +1171,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
       )}
 
       {signalState === 'WATCH' && watchPlan && (
-        <WatchPlanChart plan={watchPlan} currentPrice={currentPrice} formatPrice={formatPrice} estimated={levelsEstimated} />
+        <WatchPlanChart plan={watchPlan} currentPrice={currentPrice} formatPrice={formatPrice} estimated={levelsEstimated} levels={watchLevels} />
       )}
 
       {isWaitVerdict && (
@@ -1150,7 +1193,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
               {imageUrl ? (
                 <img
                   src={String(imageUrl)}
-                  alt="Gráfico analisado"
+                  alt={t.analysis.chartAnalyzed}
                   className="block h-auto max-h-[70vh] w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] object-contain"
                 />
               ) : (
@@ -1601,9 +1644,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                           ) : checklist.score ? (
                             <span className="font-terminal text-xs text-[var(--text-primary)]">
                               {checklist.score}
-                              {checklist.verdict ? (
-                                <span className="text-[var(--text-secondary)]"> · {checklist.verdict}</span>
-                              ) : null}
                             </span>
                           ) : null}
                         </div>
