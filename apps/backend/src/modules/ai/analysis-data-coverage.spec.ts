@@ -1,4 +1,4 @@
-import { AIAdapter } from './ai.adapter';
+import { AIAdapter, eurUsdContextLine } from './ai.adapter';
 import {
   classifyCoverageAsset,
   formatAnalysisDataCoverage,
@@ -311,3 +311,46 @@ describe('extractSymbol: le o print do Storage privado (26/10/2026)', () => {
     expect(adapter.visionModel.complete).not.toHaveBeenCalled();
   });
 });
+
+describe('bloco de forex/metais: EUR/USD com a direcao certa do dolar', () => {
+  it('EUR/USD subindo = dolar enfraquecendo; caindo = fortalecendo; perto de zero = estavel', () => {
+    expect(eurUsdContextLine({ eurusd: 1.1216, changePct: 0.5919 })).toBe('EUR/USD 1.1216, up 0.59% in 7 days: dollar weakening');
+    expect(eurUsdContextLine({ eurusd: 1.115, changePct: -0.5884 })).toBe('EUR/USD 1.1150, down 0.59% in 7 days: dollar strengthening');
+    expect(eurUsdContextLine({ eurusd: 1.12, changePct: 0.1 })).toBe('EUR/USD 1.1200, up 0.10% in 7 days: dollar roughly flat');
+  });
+
+  const adapterWith = (usd: { eurusd: number; changePct: number } | null, dgs10: number | null) => {
+    const adapter = new AIAdapter() as any;
+    adapter.fetchUsdContext = jest.fn(async () => usd);
+    adapter.fetchFredLatest = jest.fn(async () => dgs10);
+    return adapter;
+  };
+
+  it('ouro recebe a linha do EUR/USD pelo nome, nunca "dollar" sozinho nem a direcao antiga', async () => {
+    const adapter = adapterWith({ eurusd: 1.1216, changePct: 0.5919 }, 4.94);
+    const block: string = await adapter.buildFxEnrichment('XAUUSD');
+    expect(block).toContain('- EUR/USD 1.1216, up 0.59% in 7 days: dollar weakening');
+    expect(block).not.toContain('proxy EUR/USD');
+    expect(block).not.toContain('fortalecendo');
+    expect(block).toContain('4.94%');
+  });
+
+  it('o proprio EURUSD (com ou sem sufixo de corretora) nao recebe o EUR/USD como contexto', async () => {
+    for (const symbol of ['EURUSD', 'EURUSDm', 'EURUSD.pro']) {
+      const adapter = adapterWith({ eurusd: 1.1216, changePct: 0.5919 }, 4.94);
+      const block: string = await adapter.buildFxEnrichment(symbol);
+      expect(adapter.fetchUsdContext).not.toHaveBeenCalled();
+      expect(block).not.toContain('EUR/USD 1.1216');
+      expect(block).toContain('4.94%');
+    }
+    expect(await adapterWith(null, null).buildFxEnrichment('EURUSD')).toBeNull();
+  });
+
+  it('outros pares seguem recebendo o EUR/USD (nao sao o proprio ativo)', async () => {
+    for (const symbol of ['GBPUSD', 'EURJPY', 'USDJPY']) {
+      const block: string = await adapterWith({ eurusd: 1.115, changePct: -0.5884 }, null).buildFxEnrichment(symbol);
+      expect(block).toContain('EUR/USD 1.1150, down 0.59% in 7 days: dollar strengthening');
+    }
+  });
+});
+
