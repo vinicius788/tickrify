@@ -383,13 +383,15 @@ export interface PlanTrack {
  * dentro da validade, a ordem (a mercado no ENTER_NOW, limit na borda nos
  * outros), o fill, TP1 x stop em `resolveMs` depois do fill (stop_only), MFE
  * e MAE em R, e o "missed" (o alvo veio antes do fill). `levels` = niveis ja
- * decididos (o sinal gravado); sem eles, saem do plano com o ATR (o WATCH,
- * que nao tem niveis): a mercado no ENTER_NOW, limit na borda no resto.
+ * decididos (o sinal gravado); sem eles, saem do plano com o ATR e a margem
+ * do stop do validador (`marginAtr` = stopMarginAtr do par e do regime; o
+ * WATCH, que nao tem niveis): a mercado no ENTER_NOW, limit na borda no resto.
  */
 export function trackPlan(input: {
   plan: WatchPlan;
   enterNow: boolean;
   atr: number | null;
+  marginAtr: number;
   levels?: { entry: number; stopLoss: number; takeProfit1: number } | null;
   tf: readonly Bar[];
   tfStepMs: number;
@@ -408,7 +410,7 @@ export function trackPlan(input: {
   let levels: PlanTrack['levels'] = input.levels ? { ...input.levels, stopWidened: false } : null;
   let rejection: EntryRejection | null = null;
   if (!levels && input.atr && input.atr > 0) {
-    const computed = input.enterNow ? entryLevels(plan, input.atr, open) : entryLevels(plan, input.atr, nearEdge(plan));
+    const computed = entryLevels(plan, input.atr, input.enterNow ? open : nearEdge(plan), input.marginAtr);
     if (typeof computed === 'string') rejection = computed;
     else levels = computed;
   }

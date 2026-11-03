@@ -2,8 +2,11 @@
  * Rastreador de resultado (28/10/2026): janela, regua do replay
  * (trackPlan) e o que fica para a volta seguinte.
  */
-import { TRACKER_RULES, trackAnalysis } from '../../worker/analysis-tracker';
+import { TRACKER_RULES, TRACKER_SQL, startAnalysisTracker, trackAnalysis } from '../../worker/analysis-tracker';
 import type { CandleFetch, StoredCandle, fetchWindow } from '../modules/market/candle-store';
+import { ENGINE_RULES, stopMarginAtr } from '../common/utils/plan-engine';
+import { STOP_MARGIN_P80 } from '../common/utils/engine-calibration';
+import { calibrationPair } from '../common/utils/signal-decision';
 
 const M = 60_000;
 const created = new Date('2026-10-20T10:00:00Z');
@@ -81,5 +84,76 @@ describe('trackAnalysis', () => {
     expect(await trackAnalysis(candidate({ analysis: { symbol: 'BTCUSDT', timeframe: '?' } }, { groundingStats: null }), after, fetchOk))
       .toMatchObject({ reason: 'no_timeframe' });
     expect(await trackAnalysis(candidate({ analysis: { symbol: 'NAS100', timeframe: '15m' } }), after, fetchOk)).toMatchObject({ reason: 'no_source' });
+  });
+});
+
+describe('margem do stop do WATCH = a do validador', () => {
+  it('BTCUSDT no regime normal: stop na P80 calibrada (98,483), nao no padrao de 0,25 ATR (98,75)', async () => {
+    const watch = { ...plan, zoneLow: 99.2, zoneHigh: 99.5, invalidation: 99 };
+    const row = await trackAnalysis(
+      candidate({ watchPlan: watch }, { groundingStats: { interval: '15m', coverage: 'injected', numbers: { atr14: 1, volRegime: 'normal' } } }),
+      after,
+      fetchOk,
+    );
+    expect(stopMarginAtr(calibrationPair('BTCUSDT'), 'normal')).toBe(STOP_MARGIN_P80['BTCUSDT:normal']);
+    expect(row).toMatchObject({ status: 'tracked', entry: 99.5 });
+    expect(row?.stopLoss).toBeCloseTo(98.483, 6);
+  });
+
+  it('sem regime gravado (analise antiga): o mesmo padrao do validador', async () => {
+    const watch = { ...plan, zoneLow: 99.2, zoneHigh: 99.5, invalidation: 99 };
+    const row = await trackAnalysis(candidate({ watchPlan: watch }), after, fetchOk);
+    expect(row?.stopLoss).toBeCloseTo(99 - ENGINE_RULES.stopMarginAtr, 6);
+  });
+});
+
+describe('startAnalysisTracker (DDL do boot)', () => {
+  afterEach(() => jest.useRealTimers());
+
+  it('DDL com lock_timeout de 5 s; falhou, tenta de novo a cada 10 min e so entao agenda a varredura', async () => {
+    jest.useFakeTimers();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const log = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const executed: string[] = [];
+    let failures = 2;
+    const prisma = {
+      $executeRawUnsafe: jest.fn((sql: string) => sql),
+      $transaction: jest.fn(async (ops: string[]) => {
+        if (failures > 0) { failures--; throw new Error('canceling statement due to lock timeout'); }
+        executed.push(...ops);
+      }),
+      $queryRawUnsafe: jest.fn(async () => []),
+    };
+    try {
+      startAnalysisTracker(prisma as never);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).toContain('tentativa 1');
+      expect(String(warn.mock.calls[0][0])).toContain('lock timeout');
+
+      // Sem colunas, nada de varredura.
+      await jest.advanceTimersByTimeAsync(TRACKER_RULES.ddlRetryMs - 1);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(1);
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(String(warn.mock.calls[1][0])).toContain('tentativa 2');
+
+      await jest.advanceTimersByTimeAsync(TRACKER_RULES.ddlRetryMs);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('Tabela pronta na tentativa 3'));
+      expect(executed).toHaveLength(TRACKER_SQL.length * 2);
+      TRACKER_SQL.forEach((sql, i) => {
+        expect(executed[2 * i]).toBe("SET LOCAL lock_timeout = '5s'");
+        expect(executed[2 * i + 1]).toBe(sql);
+      });
+      expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(TRACKER_RULES.firstDelayMs);
+      expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+      log.mockRestore();
+    }
   });
 });

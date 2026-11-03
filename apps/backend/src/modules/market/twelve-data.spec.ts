@@ -80,6 +80,14 @@ describe('orcamento por prioridade (puro)', () => {
     expect(twelveDataDecision('analysis', usage({ minute: 8 }), TUESDAY)).toBe('rate_limited');
   });
 
+  it('calibracao: so com o dia abaixo de 550 (sobram 250) e deixando 3 vagas do minuto', () => {
+    const base = { minute: 0, analysis: 0, monitor: 0, exhausted: false };
+    expect(twelveDataDecision('calibration', { ...base, total: 549 }, TUESDAY)).toBeNull();
+    expect(twelveDataDecision('calibration', { ...base, total: 550 }, TUESDAY)).toBe('budget');
+    expect(twelveDataDecision('calibration', { ...base, total: 100, minute: 5 }, TUESDAY)).toBe('rate_limited');
+    expect(twelveDataDecision('calibration', { ...base, total: 100, exhausted: true }, TUESDAY)).toBe('quota_exhausted');
+  });
+
   it('fim de semana: monitor e sweeper nao chamam; a analise segue', () => {
     expect(fxMarketClosed(new Date('2026-10-30T21:59:00Z'))).toBe(false);
     expect(fxMarketClosed(new Date('2026-10-30T22:00:00Z'))).toBe(true);
@@ -225,18 +233,12 @@ describe('scripts: chave de experimento', () => {
     warn.mockRestore();
   });
 
-  it('calibracao (decisao do dono): usa a chave de producao, com o medidor em memoria', async () => {
-    const saved = process.env.TWELVE_DATA_API_KEY;
-    process.env.TWELVE_DATA_API_KEY = 'prod-key';
-    try {
-      enterTwelveDataCalibrationMode();
-      expect(twelveDataApiKey()).toBe('prod-key');
-      expect(experimentRefusesFx('replay-variants')).toBe(false);
-      await twelveDataTimeSeries({ consumer: 'sweeper', pair: 'XAUUSD', interval: '1h', outputsize: 5000 });
-      expect(String(fetchSpy.mock.calls[0][0])).toContain('apikey=prod-key');
-    } finally {
-      if (saved === undefined) delete process.env.TWELVE_DATA_API_KEY; else process.env.TWELVE_DATA_API_KEY = saved;
-    }
+  it('calibracao sem o medidor de producao (Redis): nao chama', async () => {
+    enterTwelveDataCalibrationMode();
+    expect(twelveDataApiKey()).toBe('prod-key');
+    expect(experimentRefusesFx('replay-variants')).toBe(false);
+    await expect(twelveDataTimeSeries({ consumer: 'calibration', pair: 'XAUUSD', interval: '1h', outputsize: 5000 })).rejects.toThrow('Redis');
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('com a chave de experimento: usa so ela, com o medidor separado do de producao', async () => {
@@ -291,6 +293,38 @@ describe('store do Redis (cliente falso com os comandos do ioredis)', () => {
     await expect(s.once('warn', 60)).resolves.toBe(false);
     await s.set('cache', '{}', 900);
     expect(data.get('cache')).toBe('{}');
+  });
+
+  it('calibracao: com o medidor de producao em 780, nao faz nenhum pedido', async () => {
+    const { redis, data } = fakeRedis();
+    __setTwelveDataForTests({ store: new RedisTwelveDataStore(redis), now: () => now });
+    data.set('td:day:20261027', '780');
+    enterTwelveDataCalibrationMode();
+    const res = await twelveDataTimeSeries({ consumer: 'calibration', pair: 'XAUUSD', interval: '1h', outputsize: 5000 });
+    expect(res).toEqual({ ok: false, reason: 'budget' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect((await twelveDataUsage()).total).toBe(780);
+  });
+
+  it('calibracao conta no medidor de producao e para no 550', async () => {
+    const { redis, data } = fakeRedis();
+    __setTwelveDataForTests({ store: new RedisTwelveDataStore(redis), now: () => now });
+    data.set('td:day:20261027', '549');
+    enterTwelveDataCalibrationMode();
+    const req = { consumer: 'calibration' as const, pair: 'XAUUSD', interval: '1h', outputsize: 5000 };
+    await expect(twelveDataTimeSeries(req)).resolves.toMatchObject({ ok: true });
+    await expect(twelveDataTimeSeries(req)).resolves.toEqual({ ok: false, reason: 'budget' });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(String(fetchSpy.mock.calls[0][0])).toContain('apikey=prod-key');
+    expect(await twelveDataUsage()).toMatchObject({ total: 550, calibration: 1, store: 'redis' });
+  });
+
+  it('calibracao recusa outro consumidor (nunca gasta como sweeper)', async () => {
+    const { redis } = fakeRedis();
+    __setTwelveDataForTests({ store: new RedisTwelveDataStore(redis), now: () => now });
+    enterTwelveDataCalibrationMode();
+    await expect(twelveDataTimeSeries({ consumer: 'sweeper', pair: 'XAUUSD', interval: '1h', outputsize: 5000 })).rejects.toThrow('consumer calibration');
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('duas instancias no mesmo Redis: o teto do minuto vale para as duas juntas', async () => {

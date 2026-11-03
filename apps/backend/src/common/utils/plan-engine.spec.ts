@@ -257,7 +257,7 @@ describe('trackPlan: a regua compartilhada do replay e do rastreador', () => {
   const tfStep = 15 * M;
   const plan = { ...long, validForCandles: 4 };
   const quiet = (t: number) => bar(100, 100.2, 99.8, 100, t);
-  const base = { plan, enterNow: false, atr: 1, tf: [] as number[][], tfStepMs: tfStep, startMs: 0, resolveMs: 48 * 60 * M };
+  const base = { plan, enterNow: false, atr: 1, marginAtr: ENGINE_RULES.stopMarginAtr, tf: [] as number[][], tfStepMs: tfStep, startMs: 0, resolveMs: 48 * 60 * M };
 
   it('toque, fill na borda, WIN no TP1 com MFE e MAE em R', () => {
     const fine = [quiet(0), bar(99.8, 99.9, 99.4, 99.6, M), bar(99.6, 101, 99.5, 100.9, 2 * M)];

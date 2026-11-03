@@ -19,7 +19,8 @@
  * Best-effort absoluto: nenhuma falha aqui derruba o worker de analises.
  */
 import { PrismaClient } from '@prisma/client';
-import { clampValidity, isValidWatchPlan, resolveTp1, trackPlan, type WatchPlan } from '../src/common/utils/plan-engine';
+import { clampValidity, isValidWatchPlan, resolveTp1, stopMarginAtr, trackPlan, type WatchPlan } from '../src/common/utils/plan-engine';
+import { calibrationPair } from '../src/common/utils/signal-decision';
 import { TIMEFRAME_MS, candleMarketOf, fetchWindow, normalizeTimeframe } from '../src/modules/market/candle-store';
 
 const MINUTE = 60_000;
@@ -36,6 +37,10 @@ export const TRACKER_RULES = {
   fxWeekendMs: 72 * HOUR,
   batch: 20,
   lookbackDays: 21,
+  /** DDL do boot: cada comando desiste depois disto esperando trava. */
+  ddlLockTimeout: '5s',
+  /** DDL falhou: nova tentativa a cada 10 min, ate conseguir. */
+  ddlRetryMs: 10 * MINUTE,
 } as const;
 
 export const TRACKER_SQL: readonly string[] = [
@@ -80,7 +85,11 @@ type Candidate = {
   createdAt: Date;
   promptVer: number | null;
   result: Record<string, any> | null;
-  groundingStats: { interval?: string | null; coverage?: string; numbers?: { atr14?: number | null } | null } | null;
+  groundingStats: {
+    interval?: string | null;
+    coverage?: string;
+    numbers?: { atr14?: number | null; volRegime?: 'low' | 'normal' | 'high' | null } | null;
+  } | null;
 };
 
 export type TrackRow = {
@@ -167,10 +176,13 @@ export async function trackAnalysis(
   const levels = signal && positive(analysis.entry) && positive(analysis.stopLoss) && positive(analysis.takeProfit1)
     ? { entry: analysis.entry, stopLoss: analysis.stopLoss, takeProfit1: analysis.takeProfit1 }
     : null;
-  const atr = c.groundingStats?.coverage === 'injected' ? c.groundingStats.numbers?.atr14 ?? null : null;
+  const injected = c.groundingStats?.coverage === 'injected' ? c.groundingStats.numbers ?? null : null;
+  const atr = injected?.atr14 ?? null;
   base.atr = atr;
+  // A margem do validador (P80 do par e do regime gravado na analise), nunca o padrao solto.
+  const marginAtr = stopMarginAtr(calibrationPair(symbol), injected?.volRegime ?? null);
   const t = trackPlan({
-    plan, enterNow: state === 'ENTER_NOW', atr, levels,
+    plan, enterNow: state === 'ENTER_NOW', atr, marginAtr, levels,
     tf: tf.candles, tfStepMs: step, fine: fine.candles, startMs: start, resolveMs: TRACKER_RULES.resolveMs,
   });
   const at = (i: number | null) => (i === null ? null : new Date(fine.candles![i][0]));
@@ -240,6 +252,16 @@ export async function runAnalysisTracker(prisma: PrismaClient, nowMs: number = D
   return counts;
 }
 
+/** Cada DDL na propria transacao, com lock_timeout: nunca fica preso atras de outra trava. */
+async function ensureTrackerTables(prisma: PrismaClient): Promise<void> {
+  for (const sql of TRACKER_SQL) {
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe(`SET LOCAL lock_timeout = '${TRACKER_RULES.ddlLockTimeout}'`),
+      prisma.$executeRawUnsafe(sql),
+    ]);
+  }
+}
+
 export function startAnalysisTracker(prisma: PrismaClient): void {
   const run = async () => {
     try {
@@ -249,16 +271,23 @@ export function startAnalysisTracker(prisma: PrismaClient): void {
       console.warn(`[tracker] Varredura falhou: ${err instanceof Error ? err.message : err}`);
     }
   };
-  void (async () => {
+  // A varredura so e agendada depois que as colunas existem.
+  const boot = async (attempt: number) => {
     try {
-      for (const sql of TRACKER_SQL) await prisma.$executeRawUnsafe(sql);
-      console.log('[tracker] Tabela pronta (varredura a cada 30 min).');
-      setTimeout(() => {
-        void run();
-        setInterval(() => void run(), TRACKER_RULES.intervalMs).unref();
-      }, TRACKER_RULES.firstDelayMs).unref();
+      await ensureTrackerTables(prisma);
     } catch (err) {
-      console.warn(`[tracker] Indisponivel: ${err instanceof Error ? err.message : err}`);
+      console.warn(
+        `[tracker] Tabela indisponivel (tentativa ${attempt}), nova tentativa em ${TRACKER_RULES.ddlRetryMs / MINUTE} min: ` +
+          `${err instanceof Error ? err.message : err}`,
+      );
+      setTimeout(() => void boot(attempt + 1), TRACKER_RULES.ddlRetryMs).unref();
+      return;
     }
-  })();
+    console.log(`[tracker] Tabela pronta${attempt > 1 ? ` na tentativa ${attempt}` : ''} (varredura a cada 30 min).`);
+    setTimeout(() => {
+      void run();
+      setInterval(() => void run(), TRACKER_RULES.intervalMs).unref();
+    }, TRACKER_RULES.firstDelayMs).unref();
+  };
+  void boot(1);
 }
