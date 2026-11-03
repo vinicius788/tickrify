@@ -30,7 +30,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import type { AIAnalysisResponse } from '@/lib/api';
+import type { AIAnalysisResponse, WatchLevels } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import {
   calcStopPercent,
@@ -393,6 +393,22 @@ interface StructureChecklist {
  */
 // Checklist do motor v10 (26/10/2026): "C1 PASS ...; C2 Location: FAIL ...;
 // ... 5/7 ARMED", sem emoji. Um rotulo curto pode vir entre o codigo e o veredito.
+/**
+ * Tira o estado ou a direcao que o modelo escreveu no checklist, em qualquer
+ * criterio, com ou sem placar: "→ SELL", "→ 5/7 → BUY limit setup",
+ * "6/7 WATCH", "4/7 passes → HOLD-WATCH" e uma palavra de estado solta no fim
+ * (". WATCH"). O placar n/7 fica. A palavra solta so conta em maiusculas,
+ * para nao cortar texto comum ("buyers", "sell-side").
+ */
+const MODEL_STATE = '(?:NO[_ ]TRADE|WATCH|ARMED|ENTER[_ ]NOW|WAIT|HOLD(?:-WATCH)?|BUY|SELL)';
+const ARROW_STATE = new RegExp(`\\s*(?:→|->)\\s*${MODEL_STATE}(?![\\w-])[^|;\\n]*`, 'giu');
+const SCORE_STATE = new RegExp(`(\\b[0-7]\\s*/\\s*7\\b(?:\\s*passes)?)\\s*[,:-]?\\s*${MODEL_STATE}(?![\\w-])[^|;\\n]*`, 'giu');
+const BARE_STATE = new RegExp(`([.,;])\\s*${MODEL_STATE}(?![\\w-])\\.?\\s*$`, 'u');
+
+export function stripModelState(text: string): string {
+  return text.replace(ARROW_STATE, '').replace(SCORE_STATE, '$1').replace(BARE_STATE, '$1').trim();
+}
+
 const PASS_FAIL_ITEM = /\bC([1-7])\b([^;|\n]{0,30}?)\b(PASS|FAIL)\b\s*[:,-]?\s*/giu;
 const PASS_FAIL_TAIL = /[\s.;,]*\b([0-7])\s*\/\s*7\b\s*[:,-]?\s*([^\n]*?)\.?\s*$/u;
 
@@ -564,8 +580,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   const stateTone = signalStateTone(signalState, analysisData.recommendation);
   const stateActive = signalState === 'ENTER_NOW' || signalState === 'ARMED';
   const watchPlan = isWatchPlan(fullResponse.watchPlan) ? fullResponse.watchPlan : null;
-  // Niveis do WATCH calculados pelo motor (desde 03/11/2026); analise antiga nao tem o campo.
-  const watchLevels = isWatchLevels(fullResponse.watchLevels) ? fullResponse.watchLevels : null;
+  // Niveis do WATCH calculados pelo motor (desde 03/11/2026). undefined: analise
+  // antiga ou sem velas reais (alvos do modelo, como antes); null: o motor
+  // rejeitou a geometria no nivel do WATCH (sem alvos nem R na tela).
+  const watchLevels: WatchLevels | null | undefined = isWatchLevels(fullResponse.watchLevels)
+    ? fullResponse.watchLevels
+    : signalState === 'WATCH' && fullResponse.dataMode === 'real_data' && 'watchLevels' in fullResponse ? null : undefined;
   const levelsEstimated = fullResponse.dataMode === 'print';
 
   const symbol = String(
@@ -749,15 +769,14 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
   const executiveSummary =
     cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary);
   const whyNotOpposite = cleanModelText(analysis.whyNotOpposite);
-  // Paragrafo de reserva (checklist que nao virou lista): sem o estado que o
-  // modelo escreveu no fim ("6/7 WATCH", "-> BUY limit"); a tela so mostra o do codigo.
-  const structureValidation = cleanModelText(analysis.structureValidation)
-    .replace(/[\s.;,]*(?:→\s*)?\b[0-7]\s*\/\s*7\b(?:\s*passes)?\s*(?:→\s*)?[,:-]?\s*(?:NO[_ ]TRADE|WATCH|ARMED|ENTER[_ ]NOW|WAIT|HOLD|BUY|SELL)\b[^\n]*$/iu, '');
+  // Checklist e paragrafo de reserva sem o estado ou a direcao que o modelo
+  // escreveu ("6/7 WATCH", "MTF 2/3 → SELL"): a tela so mostra a decisao do codigo.
+  const structureValidation = stripModelState(cleanModelText(analysis.structureValidation));
   // A ORDEM importa: o checklist precisa dos marcadores ✅/❌ para saber o que
   // passou, e o cleanModelText remove emoji. Então ele lê a versão que ainda
-  // tem os marcadores, e o parágrafo de reserva usa a versão já limpa.
+  // tem os marcadores (ja sem o estado do modelo), e o parágrafo de reserva usa a versão limpa.
   const parsedChecklist = parseStructureChecklist(
-    structureValidation ? softenDashes(String(analysis.structureValidation).trim()) : '',
+    structureValidation ? stripModelState(softenDashes(String(analysis.structureValidation).trim())) : '',
   );
   // C6 (geometria) com os niveis do motor, nunca o calculo do modelo: no WATCH,
   // os que valeriam ao destravar no nivel; no ENTER_NOW de analise com o campo
@@ -767,19 +786,17 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
     : signalState === 'ENTER_NOW' && 'watchLevels' in fullResponse && entry !== null && stopLoss !== null && takeProfit1 !== null && entry !== stopLoss
       ? { entry, stopLoss, takeProfit1, tp1R: Math.abs(takeProfit1 - entry) / Math.abs(entry - stopLoss), text: r.watch.geometryEnter }
       : null;
-  const checklist = geometryLevels
+  const geometryDetail = geometryLevels
+    ? geometryLevels.text
+        .replace('{entry}', formatPrice(geometryLevels.entry))
+        .replace('{stop}', formatPrice(geometryLevels.stopLoss))
+        .replace('{tp1}', formatPrice(geometryLevels.takeProfit1))
+        .replace('{r}', geometryLevels.tp1R.toFixed(1))
+    : watchLevels === null ? r.watch.targetsRejected : null;
+  const checklist = geometryDetail
     ? {
         ...parsedChecklist,
-        items: parsedChecklist.items.map((item) => (/^C6\b/.test(item.label)
-          ? {
-              ...item,
-              detail: geometryLevels.text
-                .replace('{entry}', formatPrice(geometryLevels.entry))
-                .replace('{stop}', formatPrice(geometryLevels.stopLoss))
-                .replace('{tp1}', formatPrice(geometryLevels.takeProfit1))
-                .replace('{r}', geometryLevels.tp1R.toFixed(1)),
-            }
-          : item)),
+        items: parsedChecklist.items.map((item) => (/^C6\b/.test(item.label) ? { ...item, detail: geometryDetail } : item)),
       }
     : parsedChecklist;
 

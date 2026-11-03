@@ -161,6 +161,21 @@ describe('WATCH: os niveis que o motor usaria ao destravar no nivel (watchLevels
     expect(levels.takeProfit1).toBeGreaterThan(btc.target1);
   });
 
+  it('entrada no nivel igual a invalidacao: o motor rejeita (wrong_side) e grava null', () => {
+    const flat: WatchPlan = { ...plan, zoneLow: 98.8, zoneHigh: 98.8, invalidation: 98.8 };
+    expect(entryLevels(flat, 1, nearEdge(flat), ENGINE_RULES.stopMarginAtr)).toBe('wrong_side');
+    expect(watchLevelsOf(flat, 'XAUUSD', real(99.9))).toBeNull();
+  });
+
+  it('o validador mantem WATCH com a geometria do nivel rejeitada (preco dentro da zona, entrada a mercado valida)', async () => {
+    // Mercado 99,3: risco 0,75, alvo 100,2 a 1,2R (vale). Nivel 99,5: risco 0,95, alvo a 0,74R (no_room).
+    const inside = { ...plan, target1: 100.2, target2: null };
+    expect(entryLevels(inside, 1, nearEdge(inside), ENGINE_RULES.stopMarginAtr)).toBe('no_room');
+    const d = await decide({ ...watch, watchPlan: inside, currentPrice: 99.3, realData: real(99.3, { late: { long: true, short: false } }) });
+    expect(d.state).toBe('WATCH');
+    expect(d.watchLevels).toBeNull();
+  });
+
   it('ENTER_NOW, NO_TRADE e sem REAL DATA: sem watchLevels', async () => {
     expect((await decide()).watchLevels).toBeNull();
     expect((await decide({ state: 'NO_TRADE', recommendation: 'WAIT' })).watchLevels).toBeNull();

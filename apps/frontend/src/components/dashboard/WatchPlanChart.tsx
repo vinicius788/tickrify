@@ -13,7 +13,11 @@ interface WatchPlanChartProps {
   formatPrice: (value: number | null) => string;
   /** Niveis lidos do print, sem velas reais (dataMode print). */
   estimated?: boolean;
-  /** Niveis do motor ao destravar no nivel: os alvos vem daqui (TP1 com teto). */
+  /**
+   * Niveis do motor ao destravar no nivel: os alvos vem daqui (TP1 com teto).
+   * null = o motor rejeitou a geometria no nivel (sem alvos nem R);
+   * ausente = analise antiga ou sem velas reais (alvos do modelo, como antes).
+   */
   levels?: WatchLevels | null;
 }
 
@@ -62,11 +66,12 @@ export function spreadLabels(ys: readonly number[], min = PAD, max = HEIGHT - 2)
   return out;
 }
 
-export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = false, levels = null }: WatchPlanChartProps) {
+export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = false, levels }: WatchPlanChartProps) {
   const { t } = useLanguage();
   const w = t.analysis.result.watch;
-  const target1 = levels ? levels.takeProfit1 : plan.target1;
-  const target2 = levels ? levels.takeProfit2 : plan.target2;
+  const rejected = levels === null;
+  const target1 = rejected ? null : levels ? levels.takeProfit1 : plan.target1;
+  const target2 = rejected ? null : levels ? levels.takeProfit2 : plan.target2;
   const prices = [plan.zoneLow, plan.zoneHigh, plan.invalidation, target1, target2, currentPrice]
     .filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0);
   const top = Math.max(...prices);
@@ -76,7 +81,7 @@ export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = fa
 
   const lines = [
     { key: 'inv', price: plan.invalidation, label: w.invalidation, color: 'var(--tone-warn-2)' },
-    { key: 't1', price: target1, label: levels ? `${w.target1} (${levels.tp1R.toFixed(1)}R)` : w.target1, color: 'var(--text-secondary)' },
+    ...(target1 !== null ? [{ key: 't1', price: target1, label: levels ? `${w.target1} (${levels.tp1R.toFixed(1)}R)` : w.target1, color: 'var(--text-secondary)' }] : []),
     ...(target2 !== null ? [{ key: 't2', price: target2, label: w.target2, color: 'var(--text-muted)' }] : []),
   ];
   const zoneTop = y(plan.zoneHigh);
@@ -92,6 +97,11 @@ export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = fa
           <span>{w.title}</span>
         </p>
         <p className="mb-3 text-xs text-[var(--text-secondary)]">{w.notSignal}</p>
+        {rejected && (
+          <p data-testid="targets-rejected" className="-mt-2 mb-3 text-xs text-[var(--text-secondary)]">
+            {w.targetsRejected}
+          </p>
+        )}
         {estimated && (
           <p data-testid="levels-estimated" className="-mt-2 mb-3 text-xs text-[var(--text-secondary)]">
             {t.analysis.result.levelsEstimated}

@@ -5,6 +5,7 @@ import {
   normalizeRiskFactorsForView,
   parseStructureChecklist,
   softenDashes,
+  stripModelState,
   splitItems,
 } from '@/components/dashboard/AnalysisResult';
 import { computeDirectionalRiskReward } from '@/lib/trade-plan';
@@ -291,3 +292,27 @@ describe('classifyWaitTrigger', () => {
     expect(classifyWaitTrigger('BUY above 4,360 or SELL below 4,330.')).toBe('neutral');
   });
 });
+
+describe('stripModelState: o estado ou a direcao do modelo nunca chega a tela', () => {
+  it.each(['BUY', 'SELL', 'HOLD', 'WATCH', 'WAIT', 'NO TRADE', 'ENTER_NOW', 'ARMED', 'HOLD-WATCH'])('tira "%s" com seta, com placar ou solto no fim', (state) => {
+    expect(stripModelState(`✅ HTF | ✅ MTF 2/3 → ${state}`)).toBe('✅ HTF | ✅ MTF 2/3');
+    expect(stripModelState(`C6 PASS: geometry. C7 FAIL: room. 6/7 ${state}`)).toBe('C6 PASS: geometry. C7 FAIL: room. 6/7');
+    expect(stripModelState(`C6 PASS: geometry. C7 FAIL: room. 6/7, ${state}.`)).toBe('C6 PASS: geometry. C7 FAIL: room. 6/7');
+    expect(stripModelState(`❌ MTF H1 neutral → 5/7 → ${state} limit`)).toBe('❌ MTF H1 neutral → 5/7');
+  });
+
+  it('palavra de estado solta no fim so conta em maiusculas; texto comum fica', () => {
+    expect(stripModelState('C7 FAIL: support below. WATCH')).toBe('C7 FAIL: support below.');
+    expect(stripModelState('C4 PASS: rejection favors sellers')).toBe('C4 PASS: rejection favors sellers');
+    expect(stripModelState('C3 PASS: sweep → sell-side taken')).toBe('C3 PASS: sweep → sell-side taken');
+    expect(stripModelState('C2 PASS: buyers defended. Wait for confirmation')).toBe('C2 PASS: buyers defended. Wait for confirmation');
+  });
+
+  it('o checklist lido do texto limpo nao carrega estado em criterio nenhum', () => {
+    const c = parseStructureChecklist(stripModelState('✅ HTF 1H LH/LL | ✅ Premium | ✅ OB | ✅ No trap | ✅ BOS | ✅ R:R 1:2.3 | ✅ MTF 2/3 → SELL'));
+    expect(c.items).toHaveLength(7);
+    expect(JSON.stringify(c)).not.toContain('SELL');
+    expect(c.items[6].detail).toContain('MTF 2/3');
+  });
+});
+

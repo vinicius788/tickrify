@@ -271,4 +271,52 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
     expect(screen.getByTestId('read-mode-action').textContent).toBe(label);
     expect(document.body.textContent).not.toContain('Enter now');
   });
+
+  it('motor rejeitou a geometria do WATCH (watchLevels null com velas reais): sem alvos nem R, so nivel e invalidacao', () => {
+    // Entrada no nivel igual a invalidacao: entryLevels devolve wrong_side e o motor grava null.
+    renderResult('WATCH', { ...plan, zoneLow: 2336, zoneHigh: 2336, invalidation: 2336 }, {
+      dataMode: 'real_data',
+      watchLevels: null,
+      analysis: {
+        symbol: 'XAUUSD', timeframe: '15m', currentPrice: 2351, executiveSummary: 'Watch.',
+        structureValidation: 'C1 PASS: a. C2 PASS: b. C3 PASS: c. C4 PASS: d. C5 PASS: e. C6 PASS: limit 2336, Rk48, TP1 2362 gives 3.4R. C7 FAIL: g. 6/7 WATCH',
+      },
+    });
+    const card = screen.getByTestId('watch-plan').textContent ?? '';
+    expect(screen.getByTestId('targets-rejected').textContent).toBe('The targets did not pass the risk check, so none are shown.');
+    expect(card).not.toContain('Target 1');
+    expect(card).not.toContain('Target 2');
+    expect(card).not.toMatch(/\dR\)/);
+    expect(card).toContain('Invalidation');
+    expect(card).toContain('Area of interest');
+    fireEvent.click(screen.getByRole('button', { name: 'Technical Panel' }));
+    const body = document.body.textContent ?? '';
+    expect(body).not.toContain('Rk48');
+    expect(body).not.toContain('3.4R');
+  });
+
+  it('campo ausente (analise antiga) e WATCH sem velas reais seguem com os alvos do modelo', () => {
+    renderResult('WATCH', plan, { dataMode: 'real_data' });
+    expect(screen.getByTestId('watch-plan').textContent).toContain('Target 1 $ 2,362.00');
+    expect(screen.queryByTestId('targets-rejected')).toBeNull();
+    cleanup();
+    renderResult('WATCH', plan, { dataMode: 'print', watchLevels: null });
+    expect(screen.getByTestId('watch-plan').textContent).toContain('Target 1 $ 2,362.00');
+    expect(screen.queryByTestId('targets-rejected')).toBeNull();
+  });
+
+  it('cauda de direcao do modelo sem placar ("MTF 2/3 → SELL") some do checklist quando o codigo decidiu WATCH', () => {
+    renderResult('WATCH', plan, {
+      analysis: {
+        symbol: 'XAUUSD', timeframe: '15m', currentPrice: 2351, executiveSummary: 'Watch.',
+        structureValidation: '✅ HTF 1H LH/LL | ✅ Premium $4308 | ✅ OB $4305-15 | ✅ No bullish confirmation | ✅ Bearish BOS | ✅ R:R 1:2.3 | ✅ MTF 2/3 → SELL',
+      },
+    });
+    expect(screen.getByTestId('signal-state').textContent).toBe('Watch');
+    fireEvent.click(screen.getByRole('button', { name: 'Technical Panel' }));
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('MTF 2/3');
+    expect(body).not.toContain('SELL');
+  });
 });
+
