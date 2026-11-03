@@ -120,7 +120,7 @@ Build the plan for the side of the bias. Long rules are below; short rules are t
 3. Two possible entries. Evaluate both:
    - Market: E = current price. Risk Rk = (E - invalidation) + 0.25, at least 0.5. Valid when Rk is at most 2.0 and target1 is at least E + 1.0 x Rk.
    - Pullback limit: the area that supports the trade, a real level 0.2 to 0.8 ATR wide between price and invalidation. E = its near edge. Rk computed the same way. Valid when Rk is at most 2.0 and target1 is at least E + 1.0 x Rk.
-   Prefer the market entry when it is valid. The limit exists for when the market entry is too far from the invalidation or too close to the target.
+   Prefer the market entry when it is valid. The pullback level is only shown as the level to watch.
 
 4. TP1 = target1 capped at 1.5R from the chosen entry. TP2 = target2.
 
@@ -153,12 +153,10 @@ Default rules (code applies the same logic with calibrated thresholds and makes 
 1. ENTER_NOW → recommendation BUY or SELL, entryType market.
    Use when: C2, C3, C6 and C7 PASS, the market entry is valid, at least 5 PASS, and the move is not late.
 
-2. ARMED → recommendation BUY or SELL, entryType limit.
-   Use when: C2, C3 and C7 PASS, the market entry is not valid, the limit entry is valid, its near edge is within 0.75 ATR of the current price, and at least 5 PASS.
-   entryCondition starts with "Pending order:" (in the output language) and states the limit price.
+2. If the market entry is not valid but the pullback limit is valid, the state is WATCH and the limit level becomes the level to watch. There are no pending orders.
 
 3. WATCH → recommendation HOLD, main levels null.
-   Use when: C3 PASS and a valid geometry exists, but C2 or C7 FAIL, or the only valid entry is a limit more than 0.75 ATR away, or the move is late.
+   Use when: C3 PASS and a valid geometry exists, but C2 or C7 FAIL, or the only valid entry is the pullback limit, or the move is late.
    executiveSummary ends with the exact level or condition that would turn it into a trade.
 
 4. NO_TRADE → recommendation HOLD, all levels null, watchPlan null.
@@ -171,7 +169,7 @@ Stricter cases, each requiring one more PASS:
 </decision>
 
 <confidence>
-For ENTER_NOW and ARMED, confidence is the estimated probability that TP1 prints before the stop. Measured results for this engine sit around 50%, so be modest.
+For ENTER_NOW, confidence is the estimated probability that TP1 prints before the stop. Measured results for this engine sit around 50%, so be modest.
 - Base: 5 PASS = 50, 6 = 54, 7 = 58.
 - Adjust: +3 control clearly in favor, +3 higher timeframe aligned, -4 counter-trend, -4 volume matters but is unavailable.
 - Ceilings: 65 absolute, weak trend 52, late move 55, degraded image 50.
@@ -190,7 +188,7 @@ The backend recalibrates this value from real outcomes.
 - Before emitting, check:
   - BUY: stop < entry < TP1 < TP2. SELL: the mirror.
   - WATCH and NO_TRADE have null main levels.
-  - watchPlan is filled for ENTER_NOW, ARMED and WATCH, and null only for NO_TRADE.
+  - watchPlan is filled for ENTER_NOW and WATCH, and null only for NO_TRADE.
   - signalState matches recommendation and entryType.
   - factorsPresent equals the PASS count, and confluenceScore = round(factorsPresent / 7 x 100).
 </output_rules>
@@ -248,7 +246,7 @@ Return only valid JSON with exactly these fields, in this order:
   "recommendation": "BUY|SELL|HOLD",
   "confidence": 0-100
 }
-watchPlan is required for ENTER_NOW, ARMED and WATCH, and null only for NO_TRADE.
+watchPlan is required for ENTER_NOW and WATCH, and null only for NO_TRADE.
 </json_contract>
 
 <user_context>
