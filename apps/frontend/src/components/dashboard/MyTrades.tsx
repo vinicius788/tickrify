@@ -3,6 +3,7 @@ import { useUser } from '@clerk/clerk-react';
 import { Calculator, Check, ExternalLink, Filter, ImageOff, Maximize2, Star, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { WatchPending } from './PendingLevels';
 import { entrySide, getScenarioMeta, resolveSignalState, signalStateLabel, signalStateTone, type SignalStateCanonical } from '@/lib/trading-ui';
 import { useAnalyses } from '@/hooks/useAnalyses';
 import { asRecord } from '@/lib/utils';
@@ -635,7 +636,11 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                     </div>
 
                     {/* DIREITA — resultado: TP1 / TP2 / Stop */}
-                    {noTrade ? (
+                    {noTrade && a.watch && !isDemo ? (
+                      <div className="flex-shrink-0 sm:max-w-[260px]">
+                        <WatchPending analysisId={a.id} watch={a.watch} surface="trades" alignEnd />
+                      </div>
+                    ) : noTrade ? (
                       <div className="flex flex-shrink-0 flex-col gap-1 sm:items-end">
                         <span className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-3 py-1.5 font-terminal text-xs text-[var(--text-secondary)]">
                           {tr.noTrade}

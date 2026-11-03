@@ -5,6 +5,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
 import { useAPIClient, type SignalState, type StrategyProfileDto } from '@/lib/api';
+import { WatchPending } from './PendingLevels';
 import { entrySide, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import {
   formatSetupDay,
@@ -141,6 +142,11 @@ const SetupsSection = ({
                           .replace('{condition}', latest.entryCondition)
                           .replace('{date}', formatSetupDay(latest.createdAt, locale))}
                       </p>
+                    ) : null}
+                    {latest?.watch ? (
+                      <div className="mt-2">
+                        <WatchPending analysisId={latest.analysisId} watch={latest.watch} surface="setups" />
+                      </div>
                     ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">

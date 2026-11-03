@@ -836,6 +836,12 @@ Vale para TODA mudanca, grande ou pequena:
   `setup-alerts.pg.spec.ts` (Postgres descartavel, opt-in como o trades.pg: 10
   casos, corrida de tetos, 2 instancias, pausa, relogio falso).
 
+### 3.14 WATCH pendente e mapa de niveis do NO_TRADE (03/11/2026, branch `claude/watch-pending-level-map`)
+
+- **WATCH = item pendente, nunca operacao.** Listas (historico, Diario, setups) levam `watch` (`modules/ai/watch-pending.ts`): nivel (borda proxima), direcao, invalidacao, `expiresAt` (validade x tempo grafico) e o desfecho LIDO do `AnalysisTrack` (`reached` = tocou na validade, `invalidated`, `expired`, `unavailable`; sem linha = `pending`). Fora de acerto, P&L e estatisticas. Texto "Possible buy/sell at X. Re-check the chart when price gets there." (decisao do dono: entrar na zona do WATCH perdeu na medicao; nao pode soar como ordem pendente).
+- **Alerta no nivel:** o mesmo SetupAlert (regras, tetos, 402). WATCH = rotulo `entry` no nivel do plano (sugestao do servidor); mapa do NO_TRADE = `custom`. Sem fonte de preco (`priceSymbolOf`, agora em `market/candles.ts`), sem botao. Today mostra o WATCH valendo mesmo sem alerta.
+- **`result.levelMap`** (`common/utils/level-map.ts`): so NO_TRADE com `dataMode: real_data`, calculado pelo codigo (suporte/resistencia do `location` + proxima swing fractal, swings do resumo ou max/min da janela; niveis a menos de 0,25 ATR viram um so), gravado pelo adapter nos dois caminhos. Print: null. Analise antiga: sem campo, tela igual.
+
 ## 4. Regras tecnicas que nasceram de bug real (nao desfazer)
 
 ### 4.0 Regras de 05/10/2026

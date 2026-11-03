@@ -14,6 +14,7 @@ import { trackUserActivity } from '../../common/analytics/user-activity';
 import { normalizeRecommendation, normalizeSymbol } from '../../common/utils/analysis-normalizer';
 import { storedSignalState, type SignalState } from '../../common/utils/signal-decision';
 import { TICK_COSTS, type AnalysisType } from '../ticks/tick-packages';
+import { loadWatchTracks, watchSummaryOf, type WatchSummary } from './watch-pending';
 
 /**
  * Setups acompanhados (12/10/2026).
@@ -87,6 +88,8 @@ export type SetupVersion = {
   takeProfit1: number | null;
   takeProfit2: number | null;
   entryCondition: string | null;
+  /** WATCH: nivel, validade e o desfecho do rastreador (watch-pending.ts); null fora dele. */
+  watch: WatchSummary | null;
 };
 
 type SetupRow = SetupSummary & { userId: string };
@@ -128,6 +131,14 @@ export function readPlan(result: unknown, recommendation: string | null) {
     // do resultado ja mostra os dois; aqui vale o primeiro que existir.
     entryCondition: trade ? null : text(analysis.entryCondition, 400) ?? text(analysis.alternativeScenario, 400),
   };
+}
+
+/** Ids das analises em WATCH (so essas leem o rastreador). */
+function watchIdsOf(rows: Array<{ id: string | null; result: unknown; recommendation: string | null }>): string[] {
+  return rows
+    .filter((row): row is { id: string; result: unknown; recommendation: string | null } => Boolean(row.id))
+    .filter((row) => storedSignalState(row.result, row.recommendation) === 'WATCH')
+    .map((row) => row.id);
 }
 
 function toSummary(row: SetupRow): SetupSummary {
@@ -381,6 +392,7 @@ export class SetupsService implements OnModuleInit {
       LIMIT ${take + 1}
     `;
     const page = rows.slice(0, take);
+    const tracks = await loadWatchTracks(this.prisma, watchIdsOf(page.map((row) => ({ id: row.latestAnalysisId, result: row.latestResult, recommendation: row.latestRecommendation }))));
     return {
       items: page.map((row) => {
         const plan = readPlan(row.latestResult, row.latestRecommendation);
@@ -396,6 +408,7 @@ export class SetupsService implements OnModuleInit {
                 recommendation: plan.recommendation,
                 signalState: plan.signalState,
                 entryCondition: plan.entryCondition,
+                watch: row.latestAt ? watchSummaryOf(row.latestResult, plan.recommendation, row.latestAt, tracks.get(row.latestAnalysisId)) : null,
               }
             : null,
         };
@@ -448,6 +461,7 @@ export class SetupsService implements OnModuleInit {
       LIMIT ${take + 1}
     `;
     const page = rows.slice(0, take);
+    const tracks = await loadWatchTracks(this.prisma, watchIdsOf(page));
     return {
       setup: toSummary(setup),
       versions: page.map((row) => {
@@ -463,6 +477,7 @@ export class SetupsService implements OnModuleInit {
           takeProfit1: plan.takeProfit1,
           takeProfit2: plan.takeProfit2,
           entryCondition: plan.entryCondition,
+          watch: watchSummaryOf(row.result, plan.recommendation, row.createdAt, tracks.get(row.id)),
         };
       }),
       nextCursor: rows.length > take ? page[page.length - 1].id : null,

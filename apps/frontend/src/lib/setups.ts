@@ -1,6 +1,6 @@
 import { useAuth } from '@clerk/clerk-react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { APIError, buildApiUrl, type SignalState } from './api';
+import { APIError, buildApiUrl, type SignalState, type WatchSummary } from './api';
 
 /**
  * Setups acompanhados (12/10/2026). Seguir e diferente de favoritar (estrela da
@@ -30,6 +30,7 @@ export interface FollowedSetup extends SetupSummary {
     recommendation: SetupVerdict;
     signalState?: SignalState;
     entryCondition: string | null;
+    watch?: WatchSummary | null;
   } | null;
 }
 
@@ -44,6 +45,7 @@ export interface SetupVersion {
   takeProfit1: number | null;
   takeProfit2: number | null;
   entryCondition: string | null;
+  watch?: WatchSummary | null;
 }
 
 /**
@@ -298,4 +300,24 @@ export function parseAlertLevel(raw: string): number | null {
   if (!/^\d+(\.\d+)?$/.test(text)) return null;
   const value = Number(text);
   return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+const MINUTE = 60_000;
+
+/** "2 d 4 h", "3 h 20 min", "12 min" no idioma da tela. */
+export function formatTimeLeft(ms: number, locale: string): string {
+  const unit = (value: number, u: 'day' | 'hour' | 'minute') =>
+    new Intl.NumberFormat(locale, { style: 'unit', unit: u, unitDisplay: 'narrow' }).format(value);
+  const minutes = Math.max(1, Math.round(ms / MINUTE));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const mins = minutes % 60;
+  if (days > 0) return hours > 0 ? `${unit(days, 'day')} ${unit(hours, 'hour')}` : unit(days, 'day');
+  if (hours > 0) return mins > 0 ? `${unit(hours, 'hour')} ${unit(mins, 'minute')}` : unit(hours, 'hour');
+  return unit(mins, 'minute');
+}
+
+/** WATCH ainda valendo: sem desfecho e antes do fim da validade. */
+export function isWatchOpen(watch: WatchSummary | null | undefined, now = Date.now()): boolean {
+  return Boolean(watch && watch.outcome === 'pending' && watch.expiresAt && Date.parse(watch.expiresAt) > now);
 }

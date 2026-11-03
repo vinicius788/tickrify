@@ -349,6 +349,57 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     }
   });
 
+  it('NO_TRADE com velas reais: o worker grava result.levelMap e a API entrega (caminho da fila)', async () => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const { prismaClient } = mockPaidRefund();
+    const { AIAdapter: RealAdapter } = jest.requireActual('../modules/ai/ai.adapter');
+    const { OpenAiVisionModel } = jest.requireActual('../modules/ai/vision-model');
+    const { AiService } = jest.requireActual('../modules/ai/ai.service');
+    const adapter = new RealAdapter();
+    const raw = { is_financial_chart: true, signalState: 'NO_TRADE', watchPlan: null, recommendation: 'HOLD', confidence: 40, analysis: {
+      symbol: 'BTCUSDT', timeframe: '1h', currentPrice: 100, entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null,
+      factorsPresent: 2, trendStrength: 'weak', marketStructure: { bias: 'neutral' },
+    } };
+    const create = jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(raw) } }] });
+    adapter.visionModel = new OpenAiVisionModel({ chat: { completions: { create } } });
+    adapter.buildMarketEnrichment = jest.fn().mockResolvedValue({
+      block: 'SYNTHETIC CONTEXT', assetClass: 'crypto', marketContext: 'injected', calendar: 'no_events_returned', candles: 'injected',
+      stats: { v: 1, symbol: 'BTCUSDT', interval: '1h', coverage: 'injected', numbers: {
+        lastClose: 100, atr14: 2, windowHigh: 112, windowLow: 90, swingHighs: [], swingLows: [],
+        swings: [{ kind: 'high', price: 104 }, { kind: 'high', price: 108 }, { kind: 'low', price: 97 }, { kind: 'low', price: 94 }],
+        late: { long: false, short: false },
+      } },
+    });
+    analyzeImageMock.mockImplementationOnce(adapter.analyzeImage.bind(adapter));
+    const oldEnrichment = process.env.ENABLE_MARKET_ENRICHMENT;
+    process.env.ENABLE_MARKET_ENRICHMENT = 'true';
+    try {
+      await processAnalysis(makeJob({
+        analysisId: 'analysis-level-map', imageUrl: 'data:image/png;base64,AA==',
+        analysisType: 'deep', userId: 'user-1', isDemo: false,
+      }));
+      const stored = prismaClient.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed')[0].data;
+      expect(stored.result.signalState).toBe('NO_TRADE');
+      expect(stored.result.dataMode).toBe('real_data');
+      expect(stored.result.levelMap).toEqual({
+        price: 100, atr: 2,
+        above: { level: 104, atr: 2, next: 108, nextAtr: 4 },
+        below: { level: 97, atr: 1.5, next: 94, nextAtr: 3 },
+      });
+      const serializer = Object.create(AiService.prototype);
+      serializer.getSignedImageUrl = jest.fn().mockResolvedValue(null);
+      serializer.getOutcomeById = jest.fn().mockResolvedValue(null);
+      const delivered = await serializer.serializeAnalysis({
+        id: 'analysis-level-map', ...JSON.parse(JSON.stringify(stored)), createdAt: new Date(), updatedAt: new Date(),
+      });
+      expect(delivered.fullResponse.levelMap).toEqual(stored.result.levelMap);
+    } finally {
+      if (oldEnrichment === undefined) delete process.env.ENABLE_MARKET_ENRICHMENT;
+      else process.env.ENABLE_MARKET_ENRICHMENT = oldEnrichment;
+    }
+  });
+
   it('reembolsa uma analise paga rejeitada pela validacao final do worker', async () => {
     require('../../worker/ai.worker');
     const processAnalysis = getProcessor();

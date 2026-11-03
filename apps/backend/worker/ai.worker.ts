@@ -31,6 +31,7 @@ import {
   validatorReasons,
 } from '../src/common/utils/signal-decision';
 import type { EntryLevels, WatchPlan } from '../src/common/utils/plan-engine';
+import type { LevelMap } from '../src/common/utils/level-map';
 import { BROKEN_PLAN_RULES, validateTradePlan } from '../src/common/utils/trade-plan-validator';
 import { buildEngineRecord, type AnalysisIntakeTimings } from '../src/modules/ai/engine-contract';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
@@ -177,6 +178,7 @@ interface WorkerAnalysisResult {
   watchReach: WatchReach | null;
   location: PriceLocation | null;
   watchLevels: EntryLevels | null;
+  levelMap: LevelMap | null;
   validatorNotes: ValidatorNote[];
   analysis: WorkerAnalysisDetails;
 }
@@ -352,6 +354,7 @@ interface AdapterDecision {
   watchReach: WatchReach | null;
   location: PriceLocation | null;
   watchLevels: EntryLevels | null;
+  levelMap: LevelMap | null;
   validatorAction: ValidatorAction;
   /** Cada mudanca de estado do validador do adapter. */
   validatorNotes: ValidatorNote[];
@@ -378,6 +381,7 @@ function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
     watchReach: (aiSource.watchReach as WatchReach | null) ?? null,
     location: (aiSource.location as PriceLocation | null) ?? null,
     watchLevels: (aiSource.watchLevels as EntryLevels | null) ?? null,
+    levelMap: (aiSource.levelMap as LevelMap | null) ?? null,
     validatorAction: meta.validatorAction as ValidatorAction,
     validatorNotes: Array.isArray(aiSource.validatorNotes) ? (aiSource.validatorNotes as ValidatorNote[]) : [],
     validatorReasons: meta.validatorReasons as ValidatorReason[],
@@ -478,6 +482,7 @@ async function toWorkerAnalysisResult(
         watchReach: own.watchReach,
         location: own.location,
         watchLevels: own.watchLevels,
+        levelMap: null,
         validatorAction: own.validatorAction,
         validatorNotes: own.validatorNotes,
         validatorReasons: validatorReasons(own.validatorNotes),
@@ -517,6 +522,7 @@ async function toWorkerAnalysisResult(
     watchReach: decision.watchReach,
     location: decision.location,
     watchLevels: decision.watchLevels,
+    levelMap: decision.levelMap,
     validatorNotes: decision.validatorNotes,
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),
@@ -655,6 +661,7 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
       watchReach: null,
       location: null,
       watchLevels: null,
+      levelMap: null,
       validatorNotes: [],
       analysis: {
         symbol: 'DEMOUSDT',
@@ -713,6 +720,7 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
       watchReach: null,
       location: null,
       watchLevels: null,
+      levelMap: null,
       validatorNotes: [],
       analysis: {
         symbol: 'DEMOUSDT',
@@ -770,6 +778,7 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
     watchReach: null,
     location: null,
     watchLevels: null,
+    levelMap: null,
     validatorNotes: [],
     analysis: {
       symbol: 'DEMOUSDT',

@@ -402,6 +402,61 @@ describe('AiService access enforcement', () => {
   });
 
 
+  it('NO_TRADE com velas reais: o caminho sincrono grava result.levelMap; modo print grava null', async () => {
+    const { AIAdapter } = await import('./ai.adapter');
+    const { OpenAiVisionModel } = await import('./vision-model');
+    const keys = ['ENABLE_NEWS_GUARD', 'ENABLE_MARKET_ENRICHMENT'] as const;
+    const saved = keys.map((key) => process.env[key]);
+    process.env.ENABLE_NEWS_GUARD = 'false';
+    process.env.ENABLE_MARKET_ENRICHMENT = 'true';
+    try {
+      const raw = { is_financial_chart: true, signalState: 'NO_TRADE', watchPlan: null, recommendation: 'HOLD', confidence: 40, analysis: {
+        symbol: 'BTCUSDT', timeframe: '1h', currentPrice: 100, entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null,
+        factorsPresent: 2, trendStrength: 'weak', marketStructure: { bias: 'neutral' },
+      } };
+      const injected = {
+        block: null, candles: 'injected', marketContext: 'unavailable', assetClass: 'crypto', calendar: 'no_events_returned',
+        stats: { v: 1, symbol: 'BTCUSDT', interval: '1h', coverage: 'injected', numbers: {
+          lastClose: 100, atr14: 2, windowHigh: 112, windowLow: 90, swingHighs: [], swingLows: [],
+          swings: [{ kind: 'high', price: 104 }, { kind: 'high', price: 108 }, { kind: 'low', price: 97 }],
+          late: { long: false, short: false },
+        } },
+      };
+      const printOnly = { ...injected, candles: 'unavailable', stats: { ...injected.stats, coverage: 'unavailable', numbers: null } };
+      const run = async (grounding: unknown, id: string) => {
+        const create = jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(raw) } }] });
+        const adapter = new AIAdapter();
+        (adapter as any).visionModel = new OpenAiVisionModel({ chat: { completions: { create } } } as any);
+        (adapter as any).buildMarketEnrichment = jest.fn().mockResolvedValue(grounding);
+        (adapter as any).buildQuickGrounding = jest.fn().mockResolvedValue(grounding);
+        (service as any).aiAdapter = adapter;
+        (service as any).getSignedImageUrl = jest.fn().mockResolvedValue(null);
+        (service as any).getOutcomeById = jest.fn().mockResolvedValue(null);
+        const row = { id, status: 'pending', isDemo: false, createdAt: new Date(), updatedAt: new Date() };
+        prisma.analysis.update.mockClear();
+        prisma.analysis.update.mockImplementation(async ({ data }: any) => ({ ...row, ...data }));
+        const delivered = await (service as any).processSynchronously({
+          analysisId: id, imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType: 'quick', userLanguage: 'en', isDemo: false,
+          intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
+        });
+        const completed = prisma.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed')[0].data;
+        return { completed, delivered };
+      };
+      const real = await run(injected, 'an_level_map');
+      expect(real.completed.result).toMatchObject({ signalState: 'NO_TRADE', dataMode: 'real_data' });
+      expect(real.completed.result.levelMap).toEqual({
+        price: 100, atr: 2,
+        above: { level: 104, atr: 2, next: 108, nextAtr: 4 },
+        below: { level: 97, atr: 1.5, next: 90, nextAtr: 5 },
+      });
+      expect(real.delivered.fullResponse.levelMap).toEqual(real.completed.result.levelMap);
+      const print = await run(printOnly, 'an_level_map_print');
+      expect(print.completed.result).toMatchObject({ signalState: 'NO_TRADE', dataMode: 'print', levelMap: null });
+    } finally {
+      keys.forEach((key, i) => { if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i]; });
+    }
+  });
+
   it('returns the persisted safe code on a failed analysis and tolerates old rows', async () => {
     const row = {
       id: 'an_failed', status: 'failed', recommendation: null, confidence: null,
@@ -927,6 +982,44 @@ describe('AiService access enforcement', () => {
   describe('listAnalysesInRange: Diario', () => {
     const from = new Date('2026-09-01T03:00:00.000Z');
     const to = new Date('2026-10-01T03:00:00.000Z');
+
+    it('WATCH vira item pendente: nivel, validade e o desfecho lido do rastreador (so leitura)', async () => {
+      const watchPlan = { direction: 'short', triggerType: 'zone_reaction', zoneLow: 77800, zoneHigh: 78000, invalidation: 78400,
+        target1: 76900, target2: null, validForCandles: 12, trigger: 'Bearish close below 77,800' };
+      const watchRow = (id: string) => ({
+        id, imageUrl: null, status: 'completed', recommendation: 'WAIT', confidence: 40, reasoning: '', outcome: null,
+        result: { signalState: 'WATCH', watchPlan, analysis: { symbol: 'BTCUSDT', timeframe: '15m' } },
+        createdAt: new Date('2026-09-10T12:00:00Z'),
+      });
+      prisma.analysis.findMany.mockResolvedValue([
+        watchRow('w_reached'), watchRow('w_expired'), watchRow('w_invalid'), watchRow('w_pending'),
+        { id: 'n1', imageUrl: null, status: 'completed', recommendation: 'WAIT', result: { signalState: 'NO_TRADE' }, createdAt: new Date('2026-09-10T12:00:00Z') },
+      ]);
+      prisma.$queryRaw = jest.fn(async (query: { sql: string }) =>
+        query.sql.includes('"AnalysisTrack"')
+          ? [
+              { analysisId: 'w_reached', status: 'tracked', outcome: 'LOSS', touched: true },
+              { analysisId: 'w_expired', status: 'tracked', outcome: 'EXPIRED', touched: false },
+              { analysisId: 'w_invalid', status: 'tracked', outcome: 'INVALIDATED', touched: false },
+            ]
+          : [],
+      ) as any;
+      const { items } = await service.listAnalysesInRange('usr_1', from, to);
+      const byId = Object.fromEntries(items.map((item: any) => [item.id, item]));
+      expect(byId.w_reached.watch).toEqual({
+        direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12,
+        expiresAt: '2026-09-10T15:00:00.000Z', outcome: 'reached', alertAvailable: true,
+      });
+      expect(byId.w_expired.watch.outcome).toBe('expired');
+      expect(byId.w_invalid.watch.outcome).toBe('invalidated');
+      expect(byId.w_pending.watch.outcome).toBe('pending');
+      expect(byId.n1.watch).toBeNull();
+      // Nunca vira operacao: sem resultado, sem P&L.
+      expect(byId.w_reached).toMatchObject({ outcome: null, pnlAmount: null, pnlPercent: null, signalState: 'WATCH' });
+      // So os WATCH leem o rastreador.
+      const trackCall = (prisma.$queryRaw as jest.Mock).mock.calls.find(([q]: any[]) => q.sql.includes('"AnalysisTrack"'));
+      expect(trackCall[0].values).toEqual(['w_reached', 'w_expired', 'w_invalid', 'w_pending']);
+    });
 
     it('filtra por usuario, so concluidas, no intervalo [from, to)', async () => {
       await service.listAnalysesInRange('usr_1', from, to);

@@ -1273,7 +1273,7 @@ const DashboardPage = () => {
         {/* Today: alertas disparados, niveis vigiados e operacoes abertas. Conta
             travada: os alertas ficam pausados e o paywall cita o ativo real. */}
         {!isDemo && !freeLocked && (
-          <TodaySection base={base} alerts={alertsQuery.data} openTrades={openTradesQuery.data?.trades ?? []} />
+          <TodaySection base={base} alerts={alertsQuery.data} openTrades={openTradesQuery.data?.trades ?? []} analyses={rawAnalyses} />
         )}
         {!isDemo && freeLocked && alertsQuery.data?.paused && alertsQuery.data.pausedSymbol
           ? paywallFor('alerts', undefined, alertsQuery.data.pausedSymbol)
@@ -1724,7 +1724,7 @@ const DashboardPage = () => {
                   .replace('{date}', new Date(otherOpenTrade.updatedAt).toLocaleDateString(DATE_LOCALES[language] ?? 'en-US'))}
               </div>
             ) : null}
-            <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />
+            <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} alertsEnabled={!isDemo && !freeLocked} />
             {tradeAnalysisId ? <TradePanel key={`trade-${tradeAnalysisId}`} analysisId={tradeAnalysisId} /> : null}
             {/* Seguir o setup: ao lado das acoes de sempre, nunca no lugar delas. */}
             {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' ? (

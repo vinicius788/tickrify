@@ -199,6 +199,8 @@ export interface AIAnalysisResponse {
   marketTp2Hit?: boolean;
   /** Anotacao do trader (nota, setup, emocao, erros); null sem anotacao. */
   tradeNote?: TradeNote | null;
+  /** WATCH nas listas: nivel, validade e o desfecho do rastreador; null fora do WATCH. */
+  watch?: WatchSummary | null;
   /** Valor da operacao informado pelo trader no My Trades (moeda da conta dele). */
   pnlAmount?: number | null;
   pnlPercent?: number | null;
@@ -220,6 +222,8 @@ export interface AIAnalysisResponse {
     watchReach?: WatchReach | null;
     /** Niveis do WATCH calculados pelo motor; ausente em analise antiga, null sem REAL DATA. */
     watchLevels?: WatchLevels | null;
+    /** NO_TRADE com REAL DATA: os dois lados do preco, pelo codigo; ausente em analise antiga. */
+    levelMap?: LevelMap | null;
     /** Contrato do motor; `no_trade_reason` e o motivo em uma linha do NO_TRADE. */
     engine?: { contract?: { no_trade_reason?: string | null } | null } | null;
     bias: Bias;
@@ -313,6 +317,40 @@ export interface WatchLevels {
   takeProfit2: number | null;
   tp1R: number;
   riskAtr: number;
+}
+
+/**
+ * WATCH como pendente (03/11/2026). pending = sem linha no rastreador ainda;
+ * reached/expired/invalidated = o que o preco fez com o nivel dentro da
+ * validade; unavailable = o rastreador nao teve velas do ativo.
+ */
+export type WatchOutcome = 'pending' | 'reached' | 'expired' | 'invalidated' | 'unavailable';
+
+export interface WatchSummary {
+  direction: 'long' | 'short';
+  level: number;
+  invalidation: number;
+  validForCandles: number;
+  /** Hora da analise + validade x tempo grafico; null sem tempo grafico conhecido. */
+  expiresAt: string | null;
+  outcome: WatchOutcome;
+  /** O ativo tem fonte de preco (alerta de nivel). */
+  alertAvailable: boolean;
+}
+
+/** Um lado do mapa de niveis do NO_TRADE: o nivel mais proximo e o seguinte. */
+export interface LevelMapSide {
+  level: number;
+  atr: number;
+  next: number | null;
+  nextAtr: number | null;
+}
+
+export interface LevelMap {
+  price: number;
+  atr: number;
+  above: LevelMapSide | null;
+  below: LevelMapSide | null;
 }
 
 /** Plano do WATCH (v10.1): o codigo calcula entrada e stop quando a vela de gatilho fechar. */

@@ -62,6 +62,7 @@ import {
 } from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
 import { SetupsService, recordSetupVersion } from './setups.service';
+import { loadWatchTracks, watchSummaryOf } from './watch-pending';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from './analysis-data-coverage';
 import { tp1RFromDetail } from '../mail/analysis-result-email';
 import { TRADE_EMOTIONS, TRADE_MISTAKES, TRADE_NOTE_MAX, TRADE_SETUPS } from './dto/set-trade-note.dto';
@@ -795,7 +796,11 @@ export class AiService implements OnModuleInit {
   ) {
     // Veredito so das analises desta pagina (antes: TODAS as do usuario) e as
     // imagens assinadas em UMA chamada ao Supabase (antes: uma por analise).
-    const [outcomesMap, signedUrls] = await Promise.all([
+    // WATCH: o que o rastreador ja gravou (so leitura), para o desfecho do nivel.
+    const watchIds = analyses
+      .filter((a) => storedSignalState(this.getStoredAnalysisPayload(a), a.recommendation) === 'WATCH')
+      .map((a) => a.id);
+    const [outcomesMap, signedUrls, watchTracks] = await Promise.all([
       this.getOutcomesMap(userId, analyses.map((a) => a.id)),
       this.signImagesBatch(
         analyses.map((analysis) => {
@@ -810,6 +815,7 @@ export class AiService implements OnModuleInit {
           );
         }),
       ),
+      loadWatchTracks(this.prisma, watchIds),
     ]);
 
     return Promise.all(
@@ -891,6 +897,8 @@ export class AiService implements OnModuleInit {
           pnlAmount: outcomeData?.pnlAmount ?? null,
           isFavorite: outcomeData?.isFavorite ?? false,
           tradeNote: outcomeData?.tradeNote ?? null,
+          // WATCH pendente: nivel, validade e o desfecho do rastreador. Nunca entra em acerto nem P&L.
+          watch: watchSummaryOf(fullResponse, recommendation, analysis.createdAt, watchTracks.get(analysis.id)),
         };
       }),
     );

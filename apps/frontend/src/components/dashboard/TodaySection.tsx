@@ -2,11 +2,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { BellRing, RefreshCw } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
-import type { OpenTrade } from '@/lib/api';
+import { displayAsset, type AIAnalysisResponse, type OpenTrade } from '@/lib/api';
+import { WatchPending } from './PendingLevels';
 import {
   alertDistancePct,
   formatAlertLevel,
   formatUtcTime,
+  isWatchOpen,
   useAlertActions,
   type AlertLabel,
   type SetupAlert,
@@ -28,10 +30,13 @@ const TodaySection = ({
   base,
   alerts,
   openTrades,
+  analyses = [],
 }: {
   base: string;
   alerts: SetupAlertList | undefined;
   openTrades: OpenTrade[];
+  /** Historico ja carregado no painel: os WATCH ainda valendo aparecem aqui, com ou sem alerta. */
+  analyses?: AIAnalysisResponse[];
 }) => {
   const { t, language } = useLanguage();
   const a = t.alerts;
@@ -61,7 +66,13 @@ const TodaySection = ({
     navigate(`${base}/new?setup=${encodeURIComponent(alert.setupId)}`);
   };
 
-  const empty = reached.length === 0 && watching.size === 0 && openTrades.length === 0;
+  // WATCH ainda valendo e sem alerta ativo (os com alerta ja estao em "Watching").
+  const now = Date.now();
+  const pendingWatches = analyses.filter(
+    (row) => isWatchOpen(row.watch, now) && !items.some((alert) => alert.status === 'active' && alert.analysisId === row.id),
+  );
+
+  const empty = reached.length === 0 && watching.size === 0 && openTrades.length === 0 && pendingWatches.length === 0;
 
   return (
     <section aria-label={d.title} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
@@ -131,6 +142,30 @@ const TodaySection = ({
                 <Link
                   to={`${base}/setups/${encodeURIComponent(setupId)}`}
                   onClick={() => track('setup_opened', { setupId, surface: 'today' })}
+                  className="self-start rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)]"
+                >
+                  {t.setups.open}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {pendingWatches.length > 0 ? (
+        <div key="pending" className="mt-4">
+          <p className="tk-stat-label">{t.pending.todayTitle}</p>
+          <ul className="mt-2 divide-y divide-[var(--border-subtle)]">
+            {pendingWatches.map((row) => (
+              <li key={row.id} className="flex flex-col gap-2 py-3 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0">
+                  <p className="font-terminal text-sm text-[var(--text-primary)]">{`${displayAsset(row.symbol)}${row.timeframe ? ` ${row.timeframe}` : ''}`}</p>
+                  <div className="mt-1">
+                    <WatchPending analysisId={row.id} watch={row.watch!} surface="today" now={now} />
+                  </div>
+                </div>
+                <Link
+                  to={`${base}/analysis/${encodeURIComponent(row.id)}`}
                   className="self-start rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)]"
                 >
                   {t.setups.open}

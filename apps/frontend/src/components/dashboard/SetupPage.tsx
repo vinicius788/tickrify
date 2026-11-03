@@ -6,6 +6,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
 import { APIError, isFreeQuotaExhausted, type SignalState } from '@/lib/api';
+import { WatchPending } from './PendingLevels';
 import { entrySide, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import {
   formatAlertLevel,
@@ -263,6 +264,11 @@ const SetupPage = ({
                   </dl>
                 )}
               </Link>
+              {v.watch ? (
+                <div className="mt-2">
+                  <WatchPending analysisId={v.analysisId} watch={v.watch} surface="setup_page" />
+                </div>
+              ) : null}
             </li>
           ))}
         </ol>
