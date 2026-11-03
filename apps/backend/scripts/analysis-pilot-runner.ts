@@ -175,7 +175,6 @@ async function main() {
   // Os gráficos são históricos. Impede vazamento de calendário/dados de hoje,
   // chamadas auxiliares e dumps de resposta definidos no ambiente do operador.
   process.env.ENABLE_NEWS_GUARD = 'false';
-  process.env.ENABLE_RR_GUARD = 'true';
   process.env.AI_MODEL_QUICK = opts.modelQuick;
   process.env.AI_MODEL_DEEP = opts.modelDeep;
   if (opts.effortQuick === 'default') delete process.env.AI_REASONING_EFFORT_QUICK;

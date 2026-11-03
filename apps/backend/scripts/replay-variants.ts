@@ -1,66 +1,79 @@
 #!/usr/bin/env ts-node
 /**
- * Motor do plano do v10.3 SEM chamar a IA (27/10/2026). Le as respostas
- * gravadas pelo prompt-replay.ts (estado, checklist e watchPlan do modelo,
- * ATR e 4h do REAL DATA) e simula, com o MESMO plan-engine.ts da producao:
- *   O1  ordem limit na borda proxima da zona a partir do print (ENTER_NOW: a
- *       mercado no print, stop e TP1 refeitos do preco), stop pela invalidacao,
- *       TP1 x stop em ate 48h depois da execucao (1m, ou 5m quando a janela
- *       passa de 5000 min); tambem com o gate do checklist do validador
- *   O2  O1 so com C2 e C7 em PASS
- *   O3  referencias a mercado no print, stop e alvo de 1 ATR: direcao do plano
- *       e direcao do 4h calculada pelo codigo (alta = swings em alta e fechamento
- *       acima da EMA50; baixa = o espelho; o resto fica de fora)
- * Mais: pre-condicoes da rodada, metrica principal com o criterio fixado,
- * diagnosticos R1, R5, R6 e acerto por lado.
+ * Medicao offline do validador do v11 SEM chamar a IA (02/11/2026). Le as
+ * respostas gravadas pelo prompt-replay.ts (estado, checklist e watchPlan do
+ * modelo; ATR, preco e 4h do REAL DATA), refaz as velas fechadas antes do print
+ * (--history: swings fractais e maturidade) e decide o estado pelo MESMO
+ * decideSignal da producao. Depois mede com a regua do rastreador (trackPlan):
+ * ENTER_NOW a mercado na primeira vela fina depois do print (a configuracao de
+ * producao; o ARMED nao e mais emitido)
+ * TP1 x stop em 48h depois da execucao
+ * (stop_only), spread tipico do ativo descontado em R.
  *
- * --measure (28/10/2026): no lugar do relatorio acima, as medicoes offline do
- * que o produto ja entrega, sem chamar a IA:
- *   M1  sinais do v7.6 (--v76: export de producao .txt e/ou prompt-replay .jsonl)
- *       por distancia entrada-preco em ATR (ate 0,75 e acima): fill em 48h,
- *       TP1 x stop em 48h depois do fill (1m, stop_only)
- *   M2  zona do modelo x 20 zonas sorteadas (mesma largura e direcao, deslocadas
- *       0,5 a 1,5 ATR, metade para cada lado): toque na validade e reacao de
- *       1 ATR antes de fechar alem da invalidacao; diferenca pareada e p-valor
- *       por permutacao
- *   M3  leitura: preco lido x preco real e precos citados no checklist x swing
- *       real mais proxima (--history), em ATR
- *   M4  trades executados do motor limit: MFE em R e TP1 fixo em 0,75R/1R/1,5R
- * --gabarito, --after e --history aceitam varios arquivos separados por
- * virgula; velas novas vao para o ULTIMO --after.
+ * Referencia: a direcao do plano a mercado no print, stop e alvo de 1 ATR,
+ * com o mesmo spread.
  *
- * --runs aceita varios arquivos separados por virgula; a mesma analise num
- * arquivo seguinte substitui a anterior.
+ * --runs, --gabarito, --after e --history aceitam varios arquivos separados
+ * por virgula; a mesma analise num arquivo seguinte substitui a anterior. Velas
+ * que faltarem vao para o ULTIMO --after (cripto gratis; forex/metal so com a
+ * chave TWELVE_DATA_API_KEY_EXPERIMENTS).
+ *
+ * --calibrate --cache <velas.json> --out src/common/utils/engine-calibration.ts
+ * (02/11/2026, so dados, sem IA): gera a tabela de alcance e a margem P80 do
+ * stop por par e regime de volatilidade, calibradas nos 70% mais antigos de
+ * cada serie e validadas nos 30% mais recentes. Cripto pela Binance; ouro e
+ * forex pelo Twelve Data com a chave de PRODUCAO (decisao do dono) e o MESMO
+ * medidor de producao (Redis, pelo REDIS_URL): so pede com o total do dia
+ * abaixo de 550 (sobram 250 para os usuarios), 1 pedido a cada 15 s. O cache
+ * guarda cada serie: retomar nao repete pedido.
+ *
+ * --review [--since AAAA-MM-DD] (02/11/2026): a revisao mensal do motor. Le o
+ * rastreador de producao ("AnalysisTrack", SO LEITURA, pelo DATABASE_URL) e
+ * reporta, por estado, classe de ativo, compra/venda e versao do motor: n,
+ * acerto do TP1 (Wilson), R liquido (bootstrap, spread descontado) e a
+ * referencia de direcao; depois aplica as REVIEW_RULES ao ENTER_NOW da versao
+ * atual. So reporta: nunca muda nada sozinho.
  *
  * Uso (em apps/backend):
- *   pnpm exec ts-node scripts/replay-variants.ts --runs ../../_local/engine-v10/replay-v10.3-real.jsonl --gabarito <gabarito> --after ../../_local/engine-v10/after-candles.json
- * Busca as velas depois do print (gratis, retomavel no --after) e imprime o relatorio.
+ *   pnpm exec ts-node scripts/replay-variants.ts --runs <A.jsonl>,<B.jsonl> --gabarito <A.txt>,<B.txt> --after <velas.json> --history <historico.json>
  */
 import 'dotenv/config';
 import * as fs from 'fs';
-import { parsePassFailChecklist } from '../src/common/utils/analysis-normalizer';
-import { fractalSwings } from '../src/modules/ai/ai.adapter';
-import { enterTwelveDataExperimentMode, experimentRefusesFx } from '../src/modules/market/twelve-data';
-import { TIMEFRAME_MS, fetchWindow } from '../src/modules/market/candle-store';
-import { checklistGate } from '../src/common/utils/signal-decision';
+import { canonicalFxPair } from '../src/common/utils/analysis-normalizer';
+import { normalizeToBinancePerp } from '../src/modules/market/market.service';
 import {
-  PLAN_RULES,
+  enterTwelveDataCalibrationMode,
+  enterTwelveDataExperimentMode,
+  experimentRefusesFx,
+  TWELVE_DATA_BUDGET,
+  twelveDataTimeSeries,
+  twelveDataUsage,
+} from '../src/modules/market/twelve-data';
+import { TIMEFRAME_MS, fetchWindow } from '../src/modules/market/candle-store';
+import { PrismaClient } from '@prisma/client';
+import { calibrationPair, decideSignal, type SignalDecisionResult, type SignalState } from '../src/common/utils/signal-decision';
+import { ENGINE_VERSION } from '../src/modules/ai/engine-contract';
+import {
+  ENGINE_RULES,
+  atr14Series,
   clampValidity,
   closedBars,
-  closesBeyondInvalidation,
-  nearEdge,
+  fractalSwings,
   isValidWatchPlan,
-  firstTouch,
+  moveIsLate,
   resolveTp1,
+  stopMarginAtr,
   trackPlan,
+  volatilityRegime,
   type Bar,
-  type Fill,
-  type Resolution,
+  type VolRegime,
   type WatchPlan,
 } from '../src/common/utils/plan-engine';
 
 const H = 3_600_000;
 const RESOLVE_MS = 48 * H;
+/** Criterio de aprovacao do v11 (fixado pelo dono em 02/11, antes de ver o resultado). */
+const CRITERION = { minTrades: 15, minMeanR: -0.05, maxBelowReference: 0.1, minActionable: 0.15, maxActionable: 0.45 } as const;
 const FINE_MAX_MINUTES = 5000;
 
 interface Row {
@@ -68,11 +81,8 @@ interface Row {
   symbol: string;
   cls: 'crypto' | 'metal' | 'forex';
   state: string;
-  recommendation?: string;
-  currentPrice?: number | null;
-  notes?: string[];
-  plan?: { side: 'BUY' | 'SELL'; entry: number; stopLoss: number; takeProfit1: number } | null;
   modelState?: string | null;
+  currentPrice?: number | null;
   watchPlan?: any;
   checklist?: string;
   createdAt?: string;
@@ -80,7 +90,6 @@ interface Row {
   atr?: number | null;
   realPrice?: number | null;
   htfTrend?: 'uptrend' | 'downtrend' | 'range' | null;
-  htfVsEma50?: 'above' | 'below' | null;
   error?: string;
 }
 type Gab = { s: string; tf: string; p: number };
@@ -122,12 +131,34 @@ async function bars(row: Row, gab: Gab, interval: string, fromMs: number, toMs: 
   return (await fetchWindow(gab.s, interval, fromMs, toMs, 'sweeper', row.cls === 'crypto' ? 0 : 8_000)).candles;
 }
 
-/** Velas do tempo grafico depois do print e velas finas ate 48h depois da ultima execucao possivel. */
+/** Velas do tempo grafico agregadas das velas de 1m (alinhadas ao passo, como as da corretora em UTC). */
+function aggregate(fine: Bar[], step: number): Bar[] {
+  const out: number[][] = [];
+  for (const b of fine) {
+    const t = Math.floor(b[0] / step) * step;
+    const last = out[out.length - 1];
+    if (last && last[0] === t) {
+      last[2] = Math.max(last[2], b[2]);
+      last[3] = Math.min(last[3], b[3]);
+      last[4] = b[4];
+    } else out.push([t, b[1], b[2], b[3], b[4]]);
+  }
+  return out;
+}
+
+/**
+ * Velas do tempo grafico depois do print e velas finas ate 48h depois da
+ * ultima execucao possivel. Sem a janela do plano em cache, serve a de 1m de
+ * 96h da medicao anterior (`<id>:m1`), com o tempo grafico agregado dela.
+ */
 async function windowFor(row: Row, gab: Gab, interval: string, store: CandleStore): Promise<Window> {
+  if (store.all[row.id]) return store.all[row.id];
+  const m1 = store.all[`${row.id}:m1`];
+  if (m1 && m1.fine.length) return { tf: aggregate(m1.fine, TIMEFRAME_MS[interval]), fine: m1.fine, fineStep: TIMEFRAME_MS['1m'] };
   if (row.id in store.all) return store.all[row.id];
   const step = TIMEFRAME_MS[interval];
   const print = createdAtMs(row.createdAt!);
-  const span = (PLAN_RULES.validMaxCandles + 2) * step + RESOLVE_MS;
+  const span = (ENGINE_RULES.validMaxCandles + 2) * step + RESOLVE_MS;
   // Fim de semana do forex: folga de 3 dias nas velas do tempo grafico.
   const tfEnd = print + span + (row.cls === 'crypto' ? 0 : 72 * H);
   const fineInterval = span / 60_000 <= FINE_MAX_MINUTES || row.cls === 'crypto' ? '1m' : '5m';
@@ -136,83 +167,85 @@ async function windowFor(row: Row, gab: Gab, interval: string, store: CandleStor
   return remember(store, row.id, tf && fine ? { tf, fine, fineStep: TIMEFRAME_MS[fineInterval] } : null);
 }
 
-/** M1: velas de 1m do print ate 96h depois (48h para o fill + 48h de resolucao). */
-async function signalWindow(row: Row, gab: Gab, store: CandleStore): Promise<Window> {
-  const key = `${row.id}:m1`;
-  if (key in store.all) return store.all[key];
-  const print = createdAtMs(row.createdAt!);
-  const end = print + 2 * RESOLVE_MS + (row.cls === 'crypto' ? 0 : 72 * H);
-  const fine = await bars(row, gab, '1m', print - 60_000, end);
-  return remember(store, key, fine ? { tf: [], fine, fineStep: TIMEFRAME_MS['1m'] } : null);
+/**
+ * Spread tipico de conta de varejo, em preco: ouro 0,30; prata 0,03; forex
+ * 1,2 pip nos majors e 2 pips nos cruzados; BTC e ETH 0,02% do preco; outras
+ * cripto 0,05%.
+ */
+function spreadOf(symbol: string, price: number): number {
+  const fx = canonicalFxPair(symbol);
+  if (fx === 'XAUUSD') return 0.3;
+  if (fx === 'XAGUSD') return 0.03;
+  if (fx) {
+    const major = ['EURUSD', 'GBPUSD', 'AUDUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY'].includes(fx);
+    return (fx.endsWith('JPY') ? 0.01 : 0.0001) * (major ? 1.2 : 2);
+  }
+  const base = normalizeToBinancePerp(symbol).base;
+  return price * (base === 'BTC' || base === 'ETH' ? 0.0002 : 0.0005);
 }
 
 // ── Simulacao ───────────────────────────────────────────────────────────────
 interface Trade {
-  id: string;
   long: boolean;
-  fill: number;
-  stop: number;
-  tp1: number;
   outcome: 'WIN' | 'LOSS' | 'TIMEOUT';
-  /** WIN = R do TP1 a partir do preco executado, LOSS = -1, TIMEOUT = 0. */
+  /** R liquido: WIN = R do TP1 a partir do preco executado, LOSS = -1, TIMEOUT = 0; menos o spread em R. */
   r: number;
-  fillIndex: number;
-  sameCandle: boolean;
-  mfeR: number;
-  checklist: string;
 }
-type Status = 'stop_out_of_range' | 'no_room' | 'invalidated' | 'target_before_fill' | 'expired' | 'no_candles' | 'traded';
-interface Sim { status: Status; trade?: Trade; stopWidened?: boolean }
+interface Ctx { row: Row; plan: WatchPlan; atr: number; price: number; step: number; print: number; w: NonNullable<Window>; history: Bar[] }
 
-const fineIndexAt = (fine: Bar[], ms: number) => {
-  const i = fine.findIndex((b) => b[0] >= ms);
-  return i < 0 ? fine.length : i;
-};
-
-function resolveTrade(c: Ctx, long: boolean, fill: Fill, stop: number, tp1: number): Trade {
-  return tradeOf(c, long, fill, stop, tp1, resolveTp1(c.w.fine, long, fill, stop, tp1, c.w.fine[fill.index][0] + RESOLVE_MS));
-}
-
-function tradeOf(c: Ctx, long: boolean, fill: Fill, stop: number, tp1: number, res: Resolution): Trade {
+function netTrade(c: Ctx, long: boolean, fill: { price: number }, stop: number, tp1: number, outcome: Trade['outcome']): Trade {
   const risk = Math.abs(fill.price - stop);
-  return {
-    id: c.row.id, long, fill: fill.price, stop, tp1, outcome: res.outcome, fillIndex: fill.index,
-    r: res.outcome === 'WIN' ? Math.abs(tp1 - fill.price) / risk : res.outcome === 'LOSS' ? -1 : 0,
-    sameCandle: res.sameCandle, mfeR: res.mfeR, checklist: c.row.checklist ?? '',
-  };
+  const gross = outcome === 'WIN' ? Math.abs(tp1 - fill.price) / risk : outcome === 'LOSS' ? -1 : 0;
+  return { long, outcome, r: gross - spreadOf(c.row.symbol, fill.price) / risk };
 }
 
-interface Ctx { row: Row; plan: WatchPlan; atr: number; step: number; print: number; w: NonNullable<Window> }
+/** O estado do v11 pelo decideSignal da producao, com o REAL DATA refeito das velas antes do print. */
+async function decide(c: Ctx): Promise<SignalDecisionResult> {
+  const model = (c.row.modelState ?? 'NO_TRADE') as SignalState;
+  const signal = model === 'ARMED' || model === 'ENTER_NOW';
+  const swings = fractalSwings(c.history).map(({ kind, price }) => ({ kind, price }));
+  return decideSignal({
+    state: model,
+    recommendation: signal ? (c.plan.direction === 'long' ? 'BUY' : 'SELL') : 'WAIT',
+    confidence: 50,
+    trendStrength: null,
+    structureValidation: c.row.checklist ?? '',
+    symbol: c.row.symbol,
+    currentPrice: c.row.currentPrice ?? null,
+    watchPlan: c.plan,
+    estimatedLevels: null,
+    probabilities: { probabilityTp1: null, probabilityTp2: null, probabilityStop: null },
+    realData: {
+      price: c.price, atr: c.atr, htfTrend: c.row.htfTrend ?? null, swings,
+      late: { long: moveIsLate(c.history, c.atr, 'long'), short: moveIsLate(c.history, c.atr, 'short') },
+      volRegime: volatilityRegime(c.history),
+      rangePosPct: null,
+    },
+  });
+}
 
-/** O1: o motor do plano pela regua compartilhada com o rastreador (trackPlan). */
-function simulatePlan(c: Ctx): Sim {
+/** ENTER_NOW a mercado, pela regua do rastreador; null = nao executou. */
+function simulate(c: Ctx, d: SignalDecisionResult): Trade | null {
+  if (d.state !== 'ENTER_NOW') return null;
+  const plan = d.watchPlan as WatchPlan;
   const t = trackPlan({
-    plan: c.plan, enterNow: c.row.state === 'ENTER_NOW', atr: c.atr,
+    plan, enterNow: d.state === 'ENTER_NOW', atr: c.atr, marginAtr: stopMarginAtr(calibrationPair(c.row.symbol), volatilityRegime(c.history)),
+    levels: { entry: d.levels.entry as number, stopLoss: d.levels.stopLoss as number, takeProfit1: d.levels.takeProfit1 as number },
     tf: c.w.tf, tfStepMs: c.step, fine: c.w.fine, startMs: c.print, resolveMs: RESOLVE_MS,
   });
-  const stopWidened = t.levels?.stopWidened;
-  if (t.outcome === 'NO_CANDLES') return { status: 'no_candles' };
-  if (t.outcome === 'NO_LEVELS') return { status: t.rejection ?? 'no_room' };
-  if (!t.fill || !t.levels || !t.resolution) return { status: t.order as Status, stopWidened };
-  return {
-    status: 'traded', stopWidened,
-    trade: tradeOf(c, c.plan.direction === 'long', t.fill, t.levels.stopLoss, t.levels.takeProfit1, t.resolution),
-  };
+  if (!t.fill || !t.levels || !t.resolution) return null;
+  return netTrade(c, plan.direction === 'long', t.fill, t.levels.stopLoss, t.levels.takeProfit1, t.resolution.outcome);
 }
 
-/** O3: mercado no print, stop e alvo de 1 ATR. */
-function simulateDirection(c: Ctx, long: boolean): Trade | null {
-  const i = fineIndexAt(c.w.fine, c.print);
-  if (i >= c.w.fine.length) return null;
-  const price = c.w.fine[i][1];
-  return resolveTrade(c, long, { index: i, price }, long ? price - c.atr : price + c.atr, long ? price + c.atr : price - c.atr);
-}
-
-/** Direcao do 4h pelo codigo: swings e EMA50 concordando; senao, nenhuma. */
-function htfDirection(row: Row): boolean | null {
-  if (row.htfTrend === 'uptrend' && row.htfVsEma50 === 'above') return true;
-  if (row.htfTrend === 'downtrend' && row.htfVsEma50 === 'below') return false;
-  return null;
+/** Referencia: a direcao do plano a mercado no print, stop e alvo de 1 ATR. */
+function reference(c: Ctx): Trade | null {
+  const i = c.w.fine.findIndex((b) => b[0] >= c.print);
+  if (i < 0) return null;
+  const long = c.plan.direction === 'long';
+  const fill = { index: i, price: c.w.fine[i][1] };
+  const stop = long ? fill.price - c.atr : fill.price + c.atr;
+  const tp1 = long ? fill.price + c.atr : fill.price - c.atr;
+  return netTrade(c, long, fill, stop, tp1, resolveTp1(c.w.fine, long, fill, stop, tp1, c.w.fine[i][0] + RESOLVE_MS).outcome);
 }
 
 // ── Estatistica ─────────────────────────────────────────────────────────────
@@ -243,17 +276,16 @@ function bootstrapMean(xs: number[], times = 2000): [number, number] {
 
 const pct = (x: number) => `${(100 * x).toFixed(0)}%`;
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
-const median = (xs: number[]) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] : NaN);
-const signed = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(2)}R`;
+const signed = (x: number) => (Number.isFinite(x) ? `${x >= 0 ? '+' : ''}${x.toFixed(2)}R` : '-');
 
 function count(xs: string[]): string {
   const m = new Map<string, number>();
   for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1);
-  return [...m].map(([k, v]) => `${k} ${v}`).join(', ') || '-';
+  return [...m].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ') || '-';
 }
 
-/** Linha da tabela: planos, executados, acerto do TP1, R medio (TIMEOUT = 0R), mortos e TIMEOUT. */
-function line(name: string, plans: number, trades: Trade[], dead?: string): string {
+/** Linha da tabela: planos, executados, acerto do TP1 (decididos), R liquido medio (TIMEOUT = 0R menos spread), TIMEOUT. */
+function line(name: string, plans: number, trades: Trade[]): string {
   const decided = trades.filter((t) => t.outcome !== 'TIMEOUT');
   const wins = decided.filter((t) => t.outcome === 'WIN').length;
   const [lo, hi] = wilson(wins, decided.length);
@@ -261,226 +293,351 @@ function line(name: string, plans: number, trades: Trade[], dead?: string): stri
   const [blo, bhi] = bootstrapMean(rs);
   return `| ${name} | ${plans} | ${trades.length} | ${decided.length ? `${pct(wins / decided.length)} (${pct(lo)} a ${pct(hi)}), n=${decided.length}` : '-'} | ${
     rs.length ? `${signed(mean(rs))} (${blo.toFixed(2)} a ${bhi.toFixed(2)})` : '-'
-  } | ${dead ?? '-'} | ${trades.length - decided.length} |`;
+  } | ${trades.length - decided.length} |`;
 }
 
-const passes = (checklist: string | undefined, ...items: number[]) => {
-  const parsed = parsePassFailChecklist(checklist);
-  return !!parsed && items.every((n) => parsed.get(n) === true);
-};
+/** Distancia do preco real a invalidacao do modelo, em ATR (positiva = do lado certo). */
+function distanceToInvalidation(ctxs: Ctx[]): string {
+  const d = ctxs.map((c) => (c.plan.direction === 'long' ? c.price - c.plan.invalidation : c.plan.invalidation - c.price) / c.atr).sort((a, b) => a - b);
+  const q = (p: number) => (d.length ? d[Math.min(d.length - 1, Math.floor(p * d.length))].toFixed(2) : '-');
+  return `preco real -> invalidacao do modelo (ATR, ${d.length} planos): p25 ${q(0.25)}, mediana ${q(0.5)}, p75 ${q(0.75)}, p90 ${q(0.9)}`;
+}
 
-// ── Medicoes offline (--measure) ────────────────────────────────────────────
-interface Signal { id: string; source: string; long: boolean; entry: number; stop: number; tp1: number; market: boolean }
+async function measure(label: string, ctxs: Ctx[], analyses: number): Promise<void> {
+  const decisions = await Promise.all(ctxs.map(async (c) => ({ c, d: await decide(c) })));
+  const states = decisions.map((x) => x.d.state);
+  const nonPlan = analyses - ctxs.length;
+  const actionable = states.filter((s) => s === 'ENTER_NOW').length;
+  console.log(`\n### ${label}`);
+  console.log(`Estados (${analyses} analises com REAL DATA; ${nonPlan} sem plano do modelo ficam NO_TRADE): ` +
+    `ENTER_NOW ${states.filter((s) => s === 'ENTER_NOW').length}, ` +
+    `WATCH ${states.filter((s) => s === 'WATCH').length}, NO_TRADE ${states.filter((s) => s === 'NO_TRADE').length + nonPlan}. ` +
+    `Acionaveis: ${actionable} (${pct(actionable / analyses)}).`);
+  console.log(`Estado do modelo -> v11: ${count(decisions.map((x) => `${x.c.row.modelState}->${x.d.state}`))}.`);
+  console.log(`Motivos do ultimo degrau: ${count(decisions.flatMap((x) => (x.d.validatorNotes.length ? [x.d.validatorNotes[x.d.validatorNotes.length - 1].reason] : [])))}.`);
+  const barred = new Map<string, number>();
+  for (const x of decisions) for (const reason of new Set(x.d.validatorNotes.filter((n) => n.reason !== 'market_entry_valid').map((n) => n.reason))) barred.set(reason, (barred.get(reason) ?? 0) + 1);
+  console.log(`Planos barrados por regra (em qualquer degrau, % dos ${ctxs.length} planos): ${
+    [...barred].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v} (${pct(v / (ctxs.length || 1))})`).join(', ') || '-'}.`);
 
-/** Sinais do v7.6: export de producao (.txt, promptVer 13) ou prompt-replay (.jsonl). */
-function loadSignals(files: string): Signal[] {
-  const out: Signal[] = [];
-  for (const file of files.split(',')) {
-    const text = fs.readFileSync(file, 'utf8');
-    if (file.endsWith('.txt')) {
-      for (const l of text.split('\n').filter(Boolean)) {
-        const [id, ver, rec, type, entry, stop, tp1] = l.split('|');
-        if (ver !== '13' || (rec !== 'BUY' && rec !== 'SELL')) continue;
-        out.push({ id, source: 'producao', long: rec === 'BUY', entry: Number(entry), stop: Number(stop), tp1: Number(tp1), market: type === 'market' });
-      }
-    } else {
-      for (const l of text.split('\n').filter(Boolean)) {
-        const r = JSON.parse(l);
-        if (!r.plan) continue;
-        out.push({ id: r.id, source: 'replay', long: r.plan.side === 'BUY', entry: r.plan.entry, stop: r.plan.stopLoss, tp1: r.plan.takeProfit1, market: false });
+  const sims = decisions.map((x) => ({ ...x, t: simulate(x.c, x.d) }));
+  const executed = (pick: (s: SignalState, long: boolean) => boolean) => {
+    const of = sims.filter((x) => pick(x.d.state, x.c.plan.direction === 'long'));
+    return { plans: of.length, trades: of.flatMap((x) => (x.t ? [x.t] : [])) };
+  };
+  const signal = (s: SignalState) => s === 'ENTER_NOW';
+  const groups: [string, { plans: number; trades: Trade[] }][] = [
+    ['ENTER_NOW', executed((s) => s === 'ENTER_NOW')],
+    ['compras', executed((s, long) => signal(s) && long)],
+    ['vendas', executed((s, long) => signal(s) && !long)],
+  ];
+  const refAll = ctxs.flatMap((c) => { const t = reference(c); return t ? [t] : []; });
+  const refActionable = sims.filter((x) => signal(x.d.state)).flatMap((x) => { const t = reference(x.c); return t ? [t] : []; });
+  console.log('\n| grupo | planos | executados | acerto TP1 (Wilson 95%) | R liquido medio (bootstrap 95%) | TIMEOUT |');
+  console.log('|---|---|---|---|---|---|');
+  for (const [name, g] of groups) console.log(line(name, g.plans, g.trades));
+  console.log(line('referencia: direcao do plano a mercado, 1 ATR (todos os planos)', ctxs.length, refAll));
+  console.log(line('referencia: a mesma, so nas acionaveis', actionable, refActionable));
+
+  const both = groups[0][1].trades;
+  const n = both.length;
+  const r = mean(both.map((t) => t.r));
+  const ref = mean(refAll.map((t) => t.r));
+  const share = actionable / analyses;
+  const C = CRITERION;
+  const checks: [string, boolean][] = [
+    [`n executados ${n} >= ${C.minTrades}`, n >= C.minTrades],
+    [`R liquido medio ${signed(r)} >= ${signed(C.minMeanR)}`, Number.isFinite(r) && r >= C.minMeanR],
+    [`${signed(r)} no maximo ${C.maxBelowReference}R abaixo da referencia ${signed(ref)}`, Number.isFinite(r) && r >= ref - C.maxBelowReference],
+    [`acionaveis ${pct(share)} entre ${pct(C.minActionable)} e ${pct(C.maxActionable)}`, share >= C.minActionable && share <= C.maxActionable],
+  ];
+  for (const [text, ok] of checks) console.log(`- ${ok ? 'OK ' : 'NAO'} ${text}`);
+  console.log(`Veredito pelo criterio: ${checks.every(([, ok]) => ok) ? 'APROVADO' : 'REPROVADO'}.`);
+}
+
+// ── Calibracao (--calibrate) ────────────────────────────────────────────────
+/** Pares na ordem de uso em producao (ouro primeiro); cripto pela Binance, gratis. */
+const CALIBRATION_PAIRS = [
+  'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT',
+  'XAUUSD', 'EURUSD', 'USDJPY', 'GBPUSD', 'EURJPY', 'AUDJPY', 'GBPJPY', 'AUDUSD', 'USDCAD', 'XAGUSD',
+];
+const CALIBRATION_TFS = ['5m', '15m', '1h', '4h'];
+const CALIBRATION_BARS = 5000;
+const TD_INTERVAL: Record<string, string> = { '5m': '5min', '15m': '15min', '1h': '1h', '4h': '4h' };
+const TRAIN_SHARE = 0.7;
+const MARGIN_MIN_EVENTS = 30;
+const SWING_LOOKAHEAD = 50;
+
+interface CalibrationCache { series: Record<string, Bar[] | null> }
+
+async function fetchCalibrationSeries(pair: string, tf: string, cache: CalibrationCache, file: string): Promise<Bar[] | null | 'budget'> {
+  const key = `${pair}:${tf}`;
+  if (key in cache.series) return cache.series[key];
+  let bars: Bar[] | null;
+  if (normalizeToBinancePerp(pair).isCrypto) {
+    const now = Date.now();
+    bars = (await fetchWindow(pair, tf, now - CALIBRATION_BARS * TIMEFRAME_MS[tf], now, 'sweeper')).candles;
+  } else {
+    const request = { consumer: 'calibration' as const, pair, interval: TD_INTERVAL[tf], outputsize: CALIBRATION_BARS, timeoutMs: 30_000, timezoneUtc: true };
+    await new Promise((r) => setTimeout(r, 15_000));
+    let res = await twelveDataTimeSeries(request);
+    if (!res.ok && res.reason === 'rate_limited') {
+      await new Promise((r) => setTimeout(r, 60_000));
+      res = await twelveDataTimeSeries(request);
+    }
+    if (!res.ok && res.reason !== 'error') {
+      console.log(`\nTwelve Data recusou (${res.reason}): parando; o cache retoma daqui.`);
+      return 'budget';
+    }
+    bars = res.ok
+      ? res.series.values
+        .map((v) => [Date.parse(`${v.datetime.replace(' ', 'T')}Z`), Number(v.open), Number(v.high), Number(v.low), Number(v.close), 0])
+        .filter((b) => b.every((x) => Number.isFinite(x)))
+        .sort((a, b) => a[0] - b[0])
+      : null;
+  }
+  cache.series[key] = bars && bars.length > 200 ? bars : null;
+  fs.writeFileSync(file, JSON.stringify(cache));
+  return cache.series[key];
+}
+
+interface ReachCounts { hits: number[]; totals: number[] }
+const reachCells = () => ENGINE_RULES.reachGrid.d.length * ENGINE_RULES.reachGrid.n.length * ENGINE_RULES.reachGrid.k.length;
+
+/**
+ * Para cada vela t (o "agora"): um nivel a d ATR abaixo (e, no espelho, acima)
+ * e tocado em ate N velas antes de o preco andar k ATR para o outro lado? Vela
+ * que toca os dois conta como nao tocado (o pior caso).
+ */
+function countReach(bars: Bar[], atr: number[], regimes: (VolRegime | null)[], from: number, to: number, into: (regime: VolRegime) => ReachCounts) {
+  const g = ENGINE_RULES.reachGrid;
+  const maxN = Math.max(...g.n);
+  for (let t = from; t < Math.min(to, bars.length - maxN - 1); t++) {
+    const regime = regimes[t];
+    const a = atr[t];
+    if (!regime || !(a > 0)) continue;
+    const c = bars[t][4];
+    const counts = into(regime);
+    for (const below of [true, false]) {
+      // Primeira vela que toca cada nivel e a primeira que anda k ATR contra.
+      const touch = g.d.map((d) => { for (let j = 1; j <= maxN; j++) if (below ? bars[t + j][3] <= c - d * a : bars[t + j][2] >= c + d * a) return j; return Infinity; });
+      const away = g.k.map((k) => { for (let j = 1; j <= maxN; j++) if (below ? bars[t + j][2] >= c + k * a : bars[t + j][3] <= c - k * a) return j; return Infinity; });
+      g.d.forEach((_, di) => g.n.forEach((n, ni) => g.k.forEach((_, ki) => {
+        const cell = (di * g.n.length + ni) * g.k.length + ki;
+        counts.totals[cell]++;
+        if (touch[di] <= n && touch[di] < away[ki]) counts.hits[cell]++;
+      })));
+    }
+  }
+}
+
+/** Quanto o preco fura uma swing fractal e fecha de volta (em ATR), no regime da vela que fura. */
+function swingPenetrations(bars: Bar[], atr: number[], regimes: (VolRegime | null)[], from: number, to: number): { regime: VolRegime; atr: number }[] {
+  const out: { regime: VolRegime; atr: number }[] = [];
+  for (const s of fractalSwings(bars)) {
+    if (s.i < from || s.i >= to) continue;
+    for (let j = s.i + 3; j < Math.min(bars.length, s.i + SWING_LOOKAHEAD); j++) {
+      const [, , h, l, close] = bars[j];
+      const pierced = s.kind === 'low' ? l < s.price : h > s.price;
+      if (!pierced) continue;
+      const back = s.kind === 'low' ? close > s.price : close < s.price;
+      const regime = regimes[j];
+      if (back && regime && atr[j] > 0) out.push({ regime, atr: (s.kind === 'low' ? s.price - l : h - s.price) / atr[j] });
+      break;
+    }
+  }
+  return out;
+}
+
+const percentile = (xs: number[], q: number) => [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(q * xs.length))];
+
+async function calibrate(): Promise<void> {
+  // Decisao do dono (02/11/2026): chave e medidor de producao, so com o dia abaixo de 550.
+  enterTwelveDataCalibrationMode();
+  const cacheFile = arg('--cache');
+  const outFile = arg('--out');
+  if (!cacheFile || !outFile) throw new Error('--calibrate exige --cache e --out');
+  const cache: CalibrationCache = fs.existsSync(cacheFile) ? { series: JSON.parse(fs.readFileSync(cacheFile, 'utf8')).series } : { series: {} };
+  const train = new Map<string, ReachCounts>();
+  const valid = new Map<string, ReachCounts>();
+  const marginsTrain = new Map<string, number[]>();
+  const marginsValid = new Map<string, number[]>();
+  const missing: string[] = [];
+  const fresh = (): ReachCounts => ({ hits: Array(reachCells()).fill(0), totals: Array(reachCells()).fill(0) });
+  const bucket = (map: Map<string, ReachCounts>, key: string) => { if (!map.has(key)) map.set(key, fresh()); return map.get(key)!; };
+  let stopped = false;
+  for (const symbol of CALIBRATION_PAIRS) {
+    const pair = calibrationPair(symbol) as string;
+    for (const tf of CALIBRATION_TFS) {
+      const bars = stopped ? (cache.series[`${pair}:${tf}`] ?? null) : await fetchCalibrationSeries(pair, tf, cache, cacheFile);
+      if (bars === 'budget') { stopped = true; missing.push(`${pair}:${tf}`); continue; }
+      if (!bars) { missing.push(`${pair}:${tf}`); continue; }
+      process.stdout.write('.');
+      const atr = atr14Series(bars);
+      const regimes = bars.map((_, i) => volatilityRegime(bars, atr, i));
+      const cut = Math.floor(bars.length * TRAIN_SHARE);
+      countReach(bars, atr, regimes, 0, cut, (r) => bucket(train, `${pair}:${r}`));
+      countReach(bars, atr, regimes, cut, bars.length, (r) => bucket(valid, `${pair}:${r}`));
+      for (const [from, to, map] of [[0, cut, marginsTrain], [cut, bars.length, marginsValid]] as const) {
+        for (const p of swingPenetrations(bars, atr, regimes, from, to)) {
+          const key = `${pair}:${p.regime}`;
+          map.set(key, [...(map.get(key) ?? []), p.atr]);
+        }
       }
     }
   }
-  return out.filter((x) => (x.long ? x.stop < x.entry && x.entry < x.tp1 : x.stop > x.entry && x.entry > x.tp1));
-}
-
-/** Ordem pelo toque: limit do lado a favor do preco, stop do outro; gap executa na abertura. */
-function touchFill(fine: Bar[], long: boolean, entry: number, price0: number, from: number, untilMs: number): Fill | null {
-  const limit = long ? entry <= price0 : entry >= price0;
-  for (let i = from; i < fine.length && fine[i][0] < untilMs; i++) {
-    const [, o, h, l] = fine[i];
-    const hit = limit ? (long ? l <= entry : h >= entry) : (long ? h >= entry : l <= entry);
-    if (!hit) continue;
-    const gap = limit ? (long ? o < entry : o > entry) : (long ? o > entry : o < entry);
-    return { index: i, price: gap ? o : entry };
-  }
-  return null;
-}
-
-function table(title: string, head: string[], lines: string[][]) {
-  console.log(`\n${title}\n| ${head.join(' | ')} |\n|${head.map(() => '---').join('|')}|`);
-  for (const l of lines) console.log(`| ${l.join(' | ')} |`);
-}
-
-const ci = (xs: number[]) => { const [lo, hi] = bootstrapMean(xs); return `${signed(mean(xs))} (${lo.toFixed(2)} a ${hi.toFixed(2)})`; };
-const rate = (k: number, n: number) => { const [lo, hi] = wilson(k, n); return n ? `${pct(k / n)} (${pct(lo)} a ${pct(hi)}), n=${n}` : '-'; };
-const quantile = (xs: number[], q: number) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(q * xs.length))] : NaN);
-
-async function measureSignals(signals: Signal[], byId: Map<string, Row>, gab: Map<string, Gab>, store: CandleStore) {
-  type Out = { s: Signal; d: number; filled: boolean; outcome?: Trade['outcome']; r?: number };
-  const done: Out[] = [];
-  const skipped: string[] = [];
-  for (const s of signals) {
-    const row = byId.get(s.id);
-    const g = gab.get(s.id.slice(-8));
-    if (!row?.atr || !row.createdAt || !g) { skipped.push('sem_atr_real'); continue; }
-    const w = await signalWindow(row, g, store);
-    process.stdout.write('.');
-    if (!w || !w.fine.length) { skipped.push('sem_velas'); continue; }
-    const print = createdAtMs(row.createdAt);
-    const i = fineIndexAt(w.fine, print);
-    if (i >= w.fine.length) { skipped.push('sem_velas'); continue; }
-    const price0 = row.realPrice ?? w.fine[i][1];
-    const d = Math.abs(s.entry - price0) / row.atr;
-    const fill = s.market ? { index: i, price: w.fine[i][1] } : touchFill(w.fine, s.long, s.entry, price0, i, print + RESOLVE_MS);
-    if (!fill) { done.push({ s, d, filled: false }); continue; }
-    const res = resolveTp1(w.fine, s.long, fill, s.stop, s.tp1, w.fine[fill.index][0] + RESOLVE_MS);
-    const risk = Math.abs(fill.price - s.stop);
-    const r = res.outcome === 'WIN' ? Math.abs(s.tp1 - fill.price) / risk : res.outcome === 'LOSS' ? -1 : 0;
-    done.push({ s, d, filled: true, outcome: res.outcome, r });
-  }
-  console.log('');
+  console.log('\n');
+  const reach: Record<string, (number | null)[]> = {};
+  const margin: Record<string, number> = {};
   const lines: string[][] = [];
-  for (const source of ['producao', 'replay', 'todos']) {
-    const of = done.filter((x) => source === 'todos' || x.s.source === source);
-    for (const [label, group] of [['ate 0,75 ATR', of.filter((x) => x.d <= 0.75)], ['acima de 0,75 ATR', of.filter((x) => x.d > 0.75)]] as const) {
-      const filled = group.filter((x) => x.filled);
-      const decided = filled.filter((x) => x.outcome !== 'TIMEOUT');
-      lines.push([source, label, `${group.length} (${pct(group.length / (of.length || 1))})`, rate(filled.length, group.length),
-        rate(decided.filter((x) => x.outcome === 'WIN').length, decided.length), filled.length ? ci(filled.map((x) => x.r as number)) : '-',
-        String(filled.length - decided.length)]);
+  for (const key of [...new Set([...train.keys(), ...marginsTrain.keys()])].sort()) {
+    const tr = train.get(key);
+    const va = valid.get(key);
+    let errSum = 0;
+    let errN = 0;
+    if (tr) {
+      reach[key] = tr.totals.map((t, i) => (t >= ENGINE_RULES.reachMinSamples ? Number((tr.hits[i] / t).toFixed(3)) : null));
+      reach[key].forEach((p, i) => {
+        if (p !== null && va && va.totals[i] >= ENGINE_RULES.reachMinSamples / 2) { errSum += Math.abs(p - va.hits[i] / va.totals[i]); errN++; }
+      });
     }
+    const mt = marginsTrain.get(key) ?? [];
+    const mv = marginsValid.get(key) ?? [];
+    const p80 = mt.length >= MARGIN_MIN_EVENTS ? Number(percentile(mt, 0.8).toFixed(3)) : null;
+    if (p80 !== null) margin[key] = p80;
+    const covered = p80 !== null && mv.length ? mv.filter((x) => x <= p80).length / mv.length : NaN;
+    lines.push([key, String(tr ? reach[key].filter((x) => x !== null).length : 0), errN ? `${(100 * errSum / errN).toFixed(1)} pp (${errN} celulas)` : '-',
+      String(mt.length), p80 === null ? '-' : p80.toFixed(3), Number.isFinite(covered) ? `${pct(covered)} (n=${mv.length})` : '-']);
   }
-  table('M1. v7.6: distancia entrada-preco no momento da analise (1m, fill em 48h, TP1 x stop em 48h, stop_only; R por executado, TIMEOUT = 0R)',
-    ['fonte', 'distancia', 'sinais (% da fonte)', 'taxa de fill (Wilson)', 'acerto TP1 (Wilson)', 'R medio (bootstrap)', 'TIMEOUT'], lines);
-  const far = done.filter((x) => x.d > 0.75);
-  console.log(`Portao de 0,75 ATR: rebaixaria ${far.length} de ${done.length} sinais medidos (producao ${far.filter((x) => x.s.source === 'producao').length}, replay ${far.filter((x) => x.s.source === 'replay').length}). Fora da medicao: ${count(skipped)}. Distancia mediana ${quantile(done.map((x) => x.d), 0.5).toFixed(2)} ATR, p90 ${quantile(done.map((x) => x.d), 0.9).toFixed(2)}.`);
+  console.log('| par:regime | celulas com amostra | erro medio na validacao (30% recentes) | furos de swing (treino) | margem P80 (ATR) | furos da validacao dentro da P80 |');
+  console.log('|---|---|---|---|---|---|');
+  for (const l of lines) console.log(`| ${l.join(' | ')} |`);
+  const usage = await twelveDataUsage();
+  console.log(`\nTwelve Data hoje (medidor de producao): ${usage.total}/${TWELVE_DATA_BUDGET.dailyLimit}, calibracao ${usage.calibration}. Faltando: ${missing.join(', ') || 'nada'}.`);
+  const header = fs.readFileSync(outFile, 'utf8').split('export const CALIBRATED_AT')[0];
+  const json = (o: unknown) => JSON.stringify(o, null, 2).replace(/"([A-Z0-9]+:[a-z]+)":/g, "'$1':");
+  fs.writeFileSync(outFile, `${header}export const CALIBRATED_AT: string | null = '${new Date().toISOString().slice(0, 10)}';\n\n` +
+    `export const STOP_MARGIN_P80: Readonly<Record<string, number>> = ${json(margin)};\n\n` +
+    `export const REACH_TABLE: Readonly<Record<string, readonly (number | null)[]>> = {\n${
+      Object.entries(reach).map(([k, v]) => `  '${k}': [${v.map((x) => (x === null ? 'null' : String(x))).join(', ')}],`).join('\n')}\n};\n`);
+  console.log(`Gravado em ${outFile}.`);
 }
 
-interface ZoneResult { touched: boolean; reacted: boolean }
+// ── Revisao mensal (--review) ───────────────────────────────────────────────
+/**
+ * Regras da revisao mensal, fixadas pelo dono em 02/11/2026, so para o
+ * ENTER_NOW da versao atual do motor:
+ *   n >= 30 e R liquido >= -0,05R: mantem.
+ *   n >= 30 e R liquido <= -0,15R: desligar o ENTER_NOW (o produto fica so no
+ *     modo leitura). E decisao do dono; o script so aponta.
+ *   resto: mantem e espera mais dados.
+ */
+const REVIEW_RULES = { minTrades: 30, keepAtOrAbove: -0.05, disableAtOrBelow: -0.15 } as const;
 
-/** M2: toque na validade (velas finas) e reacao de 1 ATR a partir da borda antes de fechar alem da invalidacao (48h). */
-function zoneOutcome(c: Ctx, plan: WatchPlan): ZoneResult {
-  const { w, step, print, atr } = c;
-  const long = plan.direction === 'long';
-  const t = firstTouch(plan, w.fine, print, print + plan.validForCandles * step);
-  if (t === null) return { touched: false, reacted: false };
-  const touchMs = w.fine[t][0];
-  const dead = w.tf.find((b) => b[0] + step > touchMs && closesBeyondInvalidation(plan, b));
-  const endMs = Math.min(touchMs + RESOLVE_MS, dead ? dead[0] + step : Infinity);
-  const goal = long ? nearEdge(plan) + atr : nearEdge(plan) - atr;
-  for (let i = t; i < w.fine.length && w.fine[i][0] < endMs; i++) {
-    if (long ? w.fine[i][2] >= goal : w.fine[i][3] <= goal) return { touched: true, reacted: true };
-  }
-  return { touched: true, reacted: false };
+interface TrackRecord {
+  signalState: string;
+  engineVersion: string | null;
+  symbol: string | null;
+  direction: string | null;
+  outcome: string | null;
+  fillPrice: number | null;
+  stopLoss: number | null;
+  takeProfit1: number | null;
+  atr: number | null;
+  refOutcome: string | null;
+  refFillPrice: number | null;
 }
 
-/** Diferenca pareada (modelo - media das sorteadas) e p-valor bilateral por permutacao do rotulo "modelo". */
-function pairedTest(groups: number[][], perms = 10000): { diff: number; ci: [number, number]; p: number } {
-  const stat = (pick: (g: number[]) => number) => mean(groups.map((g) => {
-    const k = pick(g);
-    const others = g.filter((_, j) => j !== k);
-    return g[k] - mean(others);
-  }));
-  const diff = stat(() => 0);
-  let extreme = 0;
-  for (let t = 0; t < perms; t++) if (Math.abs(stat((g) => Math.floor(rand() * g.length))) >= Math.abs(diff) - 1e-12) extreme++;
-  return { diff, ci: bootstrapMean(groups.map((g) => g[0] - mean(g.slice(1)))), p: (extreme + 1) / (perms + 1) };
+function classOfSymbol(symbol: string): string {
+  if (normalizeToBinancePerp(symbol).isCrypto) return 'cripto';
+  const fx = canonicalFxPair(symbol);
+  if (!fx) return 'outros';
+  return fx.startsWith('XAU') || fx.startsWith('XAG') ? 'metal' : 'forex';
 }
 
-function measureZones(ctxs: Ctx[]) {
-  const touch: number[][] = [];
-  const react: number[][] = [];
-  let modelTouched = 0;
-  let modelReacted = 0;
-  const randTouch: number[] = [];
-  const randReact: number[] = [];
-  for (const c of ctxs) {
-    const width = c.plan.zoneHigh - c.plan.zoneLow;
-    const zones = [c.plan];
-    for (let k = 0; k < 20; k++) {
-      const shift = (k < 10 ? 1 : -1) * (0.5 + rand()) * c.atr;
-      zones.push({ ...c.plan, zoneLow: c.plan.zoneLow + shift, zoneHigh: c.plan.zoneLow + shift + width, invalidation: c.plan.invalidation + shift });
+/** Trade executado do rastreador, com o spread descontado em R; null sem fill decidido. */
+function reviewTrade(r: TrackRecord): Trade | null {
+  if (!r.symbol || !['WIN', 'LOSS', 'TIMEOUT'].includes(String(r.outcome)) || !r.fillPrice || !r.stopLoss || !r.takeProfit1) return null;
+  const risk = Math.abs(r.fillPrice - r.stopLoss);
+  if (!(risk > 0)) return null;
+  const outcome = r.outcome as Trade['outcome'];
+  const gross = outcome === 'WIN' ? Math.abs(r.takeProfit1 - r.fillPrice) / risk : outcome === 'LOSS' ? -1 : 0;
+  return { long: r.direction === 'long', outcome, r: gross - spreadOf(r.symbol, r.fillPrice) / risk };
+}
+
+/** Referencia de direcao (a mercado na analise, 1 ATR): +1, -1 ou 0, menos o spread em R. */
+function reviewReference(r: TrackRecord): Trade | null {
+  if (!r.symbol || !r.refOutcome || !r.refFillPrice || !r.atr) return null;
+  const outcome = r.refOutcome as Trade['outcome'];
+  const gross = outcome === 'WIN' ? 1 : outcome === 'LOSS' ? -1 : 0;
+  return { long: r.direction === 'long', outcome, r: gross - spreadOf(r.symbol, r.refFillPrice) / r.atr };
+}
+
+async function review(): Promise<void> {
+  const since = arg('--since');
+  const prisma = new PrismaClient();
+  try {
+    const rows = await prisma.$queryRawUnsafe<TrackRecord[]>(
+      `SELECT "signalState", "engineVersion", "symbol", "direction", "outcome", "fillPrice", "stopLoss", "takeProfit1",
+              "atr", "refOutcome", "refFillPrice"
+       FROM "tickrify"."AnalysisTrack"
+       WHERE "status" = 'tracked' AND ($1::text IS NULL OR "evaluatedAt" >= $1::date)`,
+      since,
+    );
+    console.log(`Revisao mensal do motor: ${rows.length} planos medidos pelo rastreador${since ? ` desde ${since}` : ''}. Versao atual: ${ENGINE_VERSION}.`);
+    const dims: [string, (r: TrackRecord) => string][] = [
+      ['estado', (r) => r.signalState],
+      ['classe de ativo', (r) => classOfSymbol(r.symbol ?? '')],
+      ['compra/venda', (r) => (r.direction === 'long' ? 'compra' : r.direction === 'short' ? 'venda' : '-')],
+      ['versao do motor', (r) => r.engineVersion ?? '-'],
+    ];
+    for (const [title, key] of dims) {
+      console.log(`\n| ${title} | planos | executados | acerto TP1 (Wilson 95%) | R liquido medio (bootstrap 95%) | TIMEOUT |`);
+      console.log('|---|---|---|---|---|---|');
+      for (const value of [...new Set(rows.map(key))].sort()) {
+        const of = rows.filter((r) => key(r) === value);
+        console.log(line(value, of.length, of.flatMap((r) => { const t = reviewTrade(r); return t ? [t] : []; })));
+        console.log(line(`${value}: referencia de direcao (1 ATR)`, of.length, of.flatMap((r) => { const t = reviewReference(r); return t ? [t] : []; })));
+      }
     }
-    const res = zones.map((z) => zoneOutcome(c, z));
-    touch.push(res.map((x) => (x.touched ? 1 : 0)));
-    if (res[0].touched) modelTouched++;
-    if (res[0].reacted) modelReacted++;
-    res.slice(1).forEach((x) => { randTouch.push(x.touched ? 1 : 0); if (x.touched) randReact.push(x.reacted ? 1 : 0); });
-    // Reacao so entre as zonas tocadas; o plano entra se o modelo e ao menos uma sorteada tocaram.
-    if (res[0].touched && res.slice(1).some((x) => x.touched)) react.push([res[0], ...res.slice(1).filter((x) => x.touched)].map((x) => (x.reacted ? 1 : 0)));
+    const enter = rows.filter((r) => r.signalState === 'ENTER_NOW' && r.engineVersion === ENGINE_VERSION)
+      .flatMap((r) => { const t = reviewTrade(r); return t ? [t] : []; });
+    const n = enter.length;
+    const meanR = mean(enter.map((t) => t.r));
+    const R = REVIEW_RULES;
+    const verdict = n >= R.minTrades && meanR >= R.keepAtOrAbove
+      ? 'MANTEM o ENTER_NOW'
+      : n >= R.minTrades && meanR <= R.disableAtOrBelow
+        ? 'DESLIGAR o ENTER_NOW (o produto fica so no modo leitura): decisao do dono'
+        : 'MANTEM e espera mais dados';
+    console.log(`\nRegra da revisao (ENTER_NOW do motor ${ENGINE_VERSION}): n ${n}, R liquido ${signed(meanR)}. ${verdict}. O script so reporta; nada foi mudado.`);
+  } finally {
+    await prisma.$disconnect();
   }
-  const t = pairedTest(touch);
-  const r = pairedTest(react);
-  table(`M2. Zona do modelo x 20 zonas sorteadas por plano (${ctxs.length} planos das rodadas A e B)`,
-    ['medida', 'zona do modelo', 'zonas sorteadas', 'diferenca pareada (bootstrap)', 'p (permutacao, bilateral)', 'planos no teste'], [
-      ['toque na validade', rate(modelTouched, ctxs.length), `${pct(mean(randTouch))} (n=${randTouch.length})`, `${(100 * t.diff).toFixed(1)} pp (${(100 * t.ci[0]).toFixed(1)} a ${(100 * t.ci[1]).toFixed(1)})`, t.p.toFixed(3), String(touch.length)],
-      ['reacao de 1 ATR (das tocadas)', rate(modelReacted, modelTouched), `${pct(mean(randReact))} (n=${randReact.length})`, `${(100 * r.diff).toFixed(1)} pp (${(100 * r.ci[0]).toFixed(1)} a ${(100 * r.ci[1]).toFixed(1)})`, r.p.toFixed(3), String(react.length)],
-    ]);
-}
-
-function measureReading(rows: Row[], history: Record<string, number[][] | null>, gab: Map<string, Gab>) {
-  const priceErr = rows.filter((r) => r.currentPrice && r.realPrice && r.atr).map((r) => Math.abs((r.currentPrice as number) - (r.realPrice as number)) / (r.atr as number));
-  // Preco que a producao leu do print na epoca (gabarito), quando o grounding nao chegava ao modelo.
-  const imageErr = rows.filter((r) => gab.get(r.id.slice(-8))?.p && r.realPrice && r.atr)
-    .map((r) => Math.abs((gab.get(r.id.slice(-8)) as Gab).p - (r.realPrice as number)) / (r.atr as number));
-  const swingErr: number[] = [];
-  let analyses = 0;
-  for (const r of rows) {
-    if (!r.realPrice || !r.atr || !r.interval || !r.createdAt || !TIMEFRAME_MS[r.interval]) continue;
-    const key = Object.keys(history).find((k) => k.startsWith(`${r.id}:`) && k.endsWith(`:${r.interval}`));
-    const bars = key ? closedBars(history[key] ?? [], TIMEFRAME_MS[r.interval], createdAtMs(r.createdAt)) : [];
-    const swings = fractalSwings(bars).map((x) => x.price);
-    if (!swings.length) continue;
-    const cited = (String(r.checklist ?? '').match(/\d[\d,]*\.?\d*/g) ?? [])
-      .map((x) => Number(x.replace(/,/g, '')))
-      .filter((x) => x > 0.9 * (r.realPrice as number) && x < 1.1 * (r.realPrice as number));
-    if (!cited.length) continue;
-    analyses++;
-    for (const x of cited) swingErr.push(Math.min(...swings.map((y) => Math.abs(x - y))) / (r.atr as number));
-  }
-  table('M3. Leitura (rodadas A e B, prints com REAL DATA)', ['medida', 'n', 'mediana (ATR)', 'p90 (ATR)'], [
-    ['|preco lido (v10.3, com REAL DATA no prompt) - preco real|', String(priceErr.length), quantile(priceErr, 0.5).toFixed(2), quantile(priceErr, 0.9).toFixed(2)],
-    [`|preco lido do print pela producao (sem REAL DATA) - preco real| (acima de 0,5 ATR: ${imageErr.filter((x) => x > 0.5).length})`, String(imageErr.length), quantile(imageErr, 0.5).toFixed(2), quantile(imageErr, 0.9).toFixed(2)],
-    [`preco citado no checklist x swing real mais proxima (${analyses} analises)`, String(swingErr.length), quantile(swingErr, 0.5).toFixed(2), quantile(swingErr, 0.9).toFixed(2)],
-  ]);
-  console.log('O reasoning nao foi gravado pelo prompt-replay: os precos citados vem do structureValidation (C1..C7), a +-10% do preco real. Swings reais = fractal de 2 velas nas 120 velas fechadas do tempo grafico antes do print.');
-}
-
-function measureExits(ctxs: Ctx[]) {
-  const trades = ctxs.filter((c) => ['WATCH', 'ARMED', 'ENTER_NOW'].includes(c.row.state))
-    .flatMap((c) => { const s = simulatePlan(c); return s.trade ? [{ c, t: s.trade }] : []; });
-  const mfe = trades.map(({ c, t }) => resolveTp1(c.w.fine, t.long, { index: t.fillIndex, price: t.fill }, t.stop, t.long ? Infinity : -Infinity, c.w.fine[t.fillIndex][0] + RESOLVE_MS).mfeR);
-  const bucket = (lo: number, hi: number) => String(mfe.filter((x) => x >= lo && x < hi).length);
-  table(`M4. Saida (exploratorio): ${trades.length} trades executados do motor limit nas rodadas A e B`,
-    ['MFE ate o stop ou 48h', 'p25', 'mediana', 'p75', 'p90', '<0,5R', '0,5-1R', '1-1,5R', '>=1,5R'],
-    [['R', quantile(mfe, 0.25).toFixed(2), quantile(mfe, 0.5).toFixed(2), quantile(mfe, 0.75).toFixed(2), quantile(mfe, 0.9).toFixed(2), bucket(-Infinity, 0.5), bucket(0.5, 1), bucket(1, 1.5), bucket(1.5, Infinity)]]);
-  const lines = [0.75, 1, 1.5].map((x) => {
-    const res = trades.map(({ c, t }) => {
-      const risk = Math.abs(t.fill - t.stop);
-      return resolveTp1(c.w.fine, t.long, { index: t.fillIndex, price: t.fill }, t.stop, t.long ? t.fill + x * risk : t.fill - x * risk, c.w.fine[t.fillIndex][0] + RESOLVE_MS).outcome;
-    });
-    const wins = res.filter((o) => o === 'WIN').length;
-    const decided = res.filter((o) => o !== 'TIMEOUT').length;
-    return [`TP1 fixo em ${String(x).replace('.', ',')}R`, String(wins), rate(wins, decided), signed((wins * x - res.filter((o) => o === 'LOSS').length) / (res.length || 1)), String(res.length - decided)];
-  });
-  table('', ['alvo', 'bateram', 'acerto (Wilson)', 'R medio (TIMEOUT = 0R)', 'TIMEOUT'], lines);
 }
 
 async function main() {
+  if (process.argv.includes('--calibrate')) {
+    await calibrate();
+    // A conexao do medidor (Redis) seguraria o processo aberto.
+    process.exit(0);
+  }
+  if (process.argv.includes('--review')) {
+    await review();
+    return;
+  }
   // Script de medicao: so a chave TWELVE_DATA_API_KEY_EXPERIMENTS, nunca a de producao.
   enterTwelveDataExperimentMode();
+  process.env.ENABLE_NEWS_GUARD = 'false';
   const runs = arg('--runs');
   const gabFile = arg('--gabarito');
   const afterFile = arg('--after');
-  if (!runs || !gabFile || !afterFile) throw new Error('Passe --runs, --gabarito e --after');
-  const measure = process.argv.includes('--measure');
-  const all: Row[] = [];
+  const historyFiles = arg('--history');
+  if (!runs || !gabFile || !afterFile || !historyFiles) throw new Error('Passe --runs, --gabarito, --after e --history');
   const byId = new Map<string, Row>();
   for (const file of runs.split(',')) {
     for (const l of fs.readFileSync(file, 'utf8').split('\n').filter(Boolean)) {
       const r: Row = JSON.parse(l);
-      all.push(r);
       if (!r.error) byId.set(r.id, r);
     }
   }
@@ -489,108 +646,36 @@ async function main() {
     const [k, s, tf, p] = r.split(',');
     return [k, { s, tf: tf.toLowerCase(), p: Number(p) }] as const;
   }));
+  const history: Record<string, number[][] | null> = Object.assign({}, ...historyFiles.split(',').map((f) => JSON.parse(fs.readFileSync(f, 'utf8'))));
   const store = loadStore(afterFile);
 
+  const withReal = rows.filter((r) => r.atr && r.realPrice && r.createdAt);
   const ctxs: Ctx[] = [];
   const skipped: string[] = [];
-  for (const row of rows) {
-    // Com --measure entram todos os planos com watchPlan (M2), qualquer que seja o estado final.
-    if (measure ? !row.watchPlan : !['WATCH', 'ARMED', 'ENTER_NOW'].includes(row.state)) continue;
+  for (const row of withReal) {
+    if (!row.watchPlan) continue;
     const g = gab.get(row.id.slice(-8));
     const interval = row.interval ?? g?.tf ?? null;
     const raw = row.watchPlan;
-    const plan = raw && typeof raw === 'object'
-      ? { ...raw, target2: raw.target2 ?? null, validForCandles: clampValidity(raw.validForCandles), trigger: String(raw.trigger ?? '') }
-      : null;
-    if (!plan || !isValidWatchPlan(plan)) { skipped.push('plano_invalido'); continue; }
-    if (!g || !interval || !TIMEFRAME_MS[interval] || !row.atr || !row.createdAt) { skipped.push('sem_real_data'); continue; }
+    const plan = { ...raw, target2: raw.target2 ?? null, validForCandles: clampValidity(raw.validForCandles), trigger: String(raw.trigger ?? '') };
+    if (!isValidWatchPlan(plan)) { skipped.push('plano_invalido'); continue; }
+    if (!g || !interval || !TIMEFRAME_MS[interval]) { skipped.push('sem_tempo_grafico'); continue; }
+    const key = Object.keys(history).find((k) => k.startsWith(`${row.id}:`) && k.endsWith(`:${interval}`));
+    const print = createdAtMs(row.createdAt!);
+    const before = key ? closedBars(history[key] ?? [], TIMEFRAME_MS[interval], print) : [];
+    if (before.length < 10) { skipped.push('sem_velas_antes'); continue; }
     const w = await windowFor(row, g, interval, store);
     process.stdout.write('.');
     if (!w) { skipped.push('sem_velas_depois'); continue; }
-    ctxs.push({ row, plan, atr: row.atr, step: TIMEFRAME_MS[interval], print: createdAtMs(row.createdAt), w });
+    ctxs.push({ row, plan, atr: row.atr as number, price: row.realPrice as number, step: TIMEFRAME_MS[interval], print, w, history: before });
   }
   console.log('\n');
+  console.log(`Respostas: ${rows.length}; com REAL DATA: ${withReal.length}; com plano do modelo medidas: ${ctxs.length}. ` +
+    `Fora: ${count(skipped)}. Velas finas: 1m ${ctxs.filter((c) => c.w.fineStep === 60_000).length}, 5m ${ctxs.filter((c) => c.w.fineStep !== 60_000).length}.`);
 
-  if (measure) {
-    const v76 = arg('--v76');
-    const historyFiles = arg('--history');
-    if (!v76 || !historyFiles) throw new Error('--measure exige --v76 e --history');
-    const history: Record<string, number[][] | null> = Object.assign({}, ...historyFiles.split(',').map((f) => JSON.parse(fs.readFileSync(f, 'utf8'))));
-    await measureSignals(loadSignals(v76), byId, gab, store);
-    measureZones(ctxs);
-    measureReading(rows, history, gab);
-    measureExits(ctxs);
-    return;
-  }
+  console.log(`Distancia ${distanceToInvalidation(ctxs)}.`);
+  await measure('v11, configuracao de producao (ENGINE_RULES)', ctxs, withReal.length);
 
-  // ── Pre-condicoes ──
-  const errors = all.filter((r) => r.error && !byId.has(r.id)).length;
-  const planStates = rows.filter((r) => ['WATCH', 'ARMED', 'ENTER_NOW'].includes(r.modelState ?? ''));
-  const withoutPlan = planStates.filter((r) => !r.watchPlan).length;
-  const signals = rows.filter((r) => (r.state === 'ARMED' || r.state === 'ENTER_NOW') && r.plan && r.watchPlan && r.atr);
-  const stopFromInvalidation = signals.filter((r) => {
-    const p = r.watchPlan;
-    const atr = r.atr as number;
-    const fromInvalidation = p.direction === 'long' ? p.invalidation - PLAN_RULES.stopBufferAtr * atr : p.invalidation + PLAN_RULES.stopBufferAtr * atr;
-    const widened = p.direction === 'long' ? r.plan!.entry - PLAN_RULES.stopMinAtr * atr : r.plan!.entry + PLAN_RULES.stopMinAtr * atr;
-    const near = (a: number, b: number) => Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(b));
-    return near(r.plan!.stopLoss, fromInvalidation) || near(r.plan!.stopLoss, widened);
-  }).length;
-  const sims = ctxs.map((c) => ({ c, s: simulatePlan(c) }));
-  console.log(`Respostas: ${rows.length} (erros de schema ou de chamada sem resposta valida: ${errors}).`);
-  console.log(`Estado final: ${count(rows.map((r) => r.state))}. Estado do modelo: ${count(rows.map((r) => r.modelState ?? '-'))}.`);
-  console.log(`Motivos do validador: ${count(rows.flatMap((r) => r.notes ?? []))}.`);
-  console.log(`Pre-condicoes: estados do modelo com plano ${planStates.length - withoutPlan} de ${planStates.length}; ` +
-    `sinais com stop derivado da invalidation ${stopFromInvalidation} de ${signals.length}; ` +
-    `planos mortos por stop menor que 0,5 ATR 0 (o motor alarga; alargados: ${sims.filter((x) => x.s.stopWidened).length}).`);
-  for (const n of [1, 2, 3, 4, 5, 6, 7]) {
-    const legible = rows.map((r) => parsePassFailChecklist(r.checklist)).filter((m): m is ReadonlyMap<number, boolean> => !!m);
-    process.stdout.write(`${n === 1 ? 'PASS por item: ' : ', '}C${n} ${pct(legible.filter((m) => m.get(n)).length / (legible.length || 1))}`);
-  }
-  console.log(`. Planos simulados: ${ctxs.length}. Fora: ${count(skipped)}.\n`);
-
-  // ── O1, O2, O3 ──
-  const tradesOf = (xs: { s: Sim }[]) => xs.flatMap((x) => (x.s.trade ? [x.s.trade] : []));
-  const deadOf = (xs: { s: Sim }[]) => count(xs.filter((x) => x.s.status !== 'traded').map((x) => x.s.status));
-  const gated = sims.filter(({ c }) => !checklistGate(c.row.checklist, c.row.symbol, c.plan.direction, c.row.htfTrend ?? null));
-  const o2 = sims.filter(({ c }) => passes(c.row.checklist, 2, 7));
-  const dirPlan = ctxs.flatMap((c) => { const t = simulateDirection(c, c.plan.direction === 'long'); return t ? [t] : []; });
-  const htf = ctxs.flatMap((c) => { const long = htfDirection(c.row); const t = long === null ? null : simulateDirection(c, long); return t ? [t] : []; });
-  console.log('| teste | planos | executados | acerto TP1 (Wilson 95%) | R medio por executado (bootstrap 95%) | mortos e motivo | TIMEOUT |');
-  console.log('|---|---|---|---|---|---|---|');
-  console.log(line('O1 motor limit', sims.length, tradesOf(sims), deadOf(sims)));
-  console.log(line('O1 com o gate do checklist', gated.length, tradesOf(gated), deadOf(gated)));
-  console.log(line('O2 C2 e C7 em PASS', o2.length, tradesOf(o2), deadOf(o2)));
-  console.log(line('O3 direcao do plano (1 ATR)', ctxs.length, dirPlan));
-  console.log(line('O3 direcao do 4h (1 ATR)', htf.length, htf, `sem direcao no 4h ${ctxs.length - htf.length}`));
-  for (const state of ['WATCH', 'ARMED', 'ENTER_NOW']) {
-    const by = sims.filter(({ c }) => c.row.state === state);
-    if (by.length) console.log(line(`O1 so ${state}`, by.length, tradesOf(by), deadOf(by)));
-  }
-
-  // ── Metrica principal (criterio fixado antes da rodada) ──
-  const executed = tradesOf(sims);
-  const n = executed.length;
-  const r = mean(executed.map((t) => t.r));
-  const ref = mean(dirPlan.map((t) => t.r));
-  const verdict = n >= 15 && (r <= -0.2 || r < ref - 0.25)
-    ? 'REPROVA'
-    : n >= 15 && r >= 0 && r >= ref ? 'SEGUE PARA A RODADA B' : 'INCONCLUSIVO';
-  const decided = executed.filter((t) => t.outcome !== 'TIMEOUT');
-  console.log(`\nMetrica principal: n executados ${n}, R medio ${signed(r)} (so decididos: ${signed(mean(decided.map((t) => t.r)))}, n=${decided.length}); ` +
-    `referencia direcao do plano ${signed(ref)} (n=${dirPlan.length}). Veredito pelo criterio: ${verdict}.`);
-
-  // ── Diagnosticos ──
-  console.log(`\nR1: TP1 e stop na mesma vela (contados como stop): ${decided.filter((t) => t.sameCandle).length} de ${decided.length} decididos.`);
-  const stops = decided.filter((t) => t.outcome === 'LOSS');
-  console.log(`R5: ${stops.length} stops; MFE mediana ${median(stops.map((t) => t.mfeR)).toFixed(2)}R (${stops.filter((t) => t.mfeR >= 0.5).length} passaram de +0,5R, ${stops.filter((t) => t.mfeR >= 1).length} de +1R).`);
-  const fmt = (xs: Trade[]) => (xs.length ? `${pct(xs.filter((t) => t.outcome === 'WIN').length / xs.length)} (n=${xs.length})` : '- (n=0)');
-  console.log('R6 (O1): acerto por item do checklist');
-  for (const code of [1, 2, 3, 4, 5, 6, 7]) {
-    const by = (v: boolean) => decided.filter((t) => parsePassFailChecklist(t.checklist)?.get(code) === v);
-    console.log(`  C${code}: PASS ${fmt(by(true))} | FAIL ${fmt(by(false))}`);
-  }
-  console.log(`Lado (O1): compra ${fmt(decided.filter((t) => t.long))} | venda ${fmt(decided.filter((t) => !t.long))}`);
 }
 
 main().catch((err) => {

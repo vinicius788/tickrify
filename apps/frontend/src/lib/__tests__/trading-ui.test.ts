@@ -33,7 +33,7 @@ describe('v7.7 Lote A — percentage presentation', () => {
   });
 });
 
-describe('estado do copiloto (v10.3)', () => {
+describe('estado do copiloto', () => {
   it('usa o estado gravado; sem ele, a regra do historico do servidor', () => {
     expect(resolveSignalState('WATCH', 'BUY', 'market')).toBe('WATCH');
     expect(resolveSignalState(undefined, 'BUY', 'market')).toBe('ENTER_NOW');

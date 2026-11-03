@@ -87,6 +87,11 @@ describe('softenDashes', () => {
     );
   });
 
+  it('travessão colado na palavra tambem vira vírgula; en dash de intervalo fica', () => {
+    expect(softenDashes('Liquidity filter: IN FAVOR—sell-side at 4260')).toBe('Liquidity filter: IN FAVOR, sell-side at 4260');
+    expect(softenDashes('zone 4230–4240')).toBe('zone 4230–4240');
+  });
+
   it('NÃO toca em intervalo de preço nem em palavra composta', () => {
     expect(softenDashes('bullish OB at 4230.20-4240.50')).toBe('bullish OB at 4230.20-4240.50');
     expect(softenDashes('cannot be volume-confirmed')).toBe('cannot be volume-confirmed');

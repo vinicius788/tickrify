@@ -1,11 +1,11 @@
 // Cliente da demo anônima (/api/demo/*) — endpoints públicos, sem auth.
 // Mantido fora do api.ts para não misturar com o cliente autenticado.
-import { buildApiUrl, type SignalState } from './api';
+import { buildApiUrl, type PriceLocation, type SignalState, type WatchPlan, type WatchReach } from './api';
 
 export interface DemoAnalysisResult {
   status: 'completed';
   recommendation: 'BUY' | 'SELL' | 'WAIT';
-  /** Estado do copiloto; leitura guardada antes do v10.3 nao tem. */
+  /** Estado do copiloto; leitura guardada antes dele nao tem. */
   signalState?: SignalState;
   bias: 'bullish' | 'bearish' | 'neutral';
   confidence: number;
@@ -17,6 +17,14 @@ export interface DemoAnalysisResult {
   takeProfit1: number | null;
   takeProfit2: number | null;
   riskReward: string | null;
+  /** Modo leitura: forca da tendencia, linha da leitura, plano, alcance e onde o preco esta. */
+  trendStrength?: 'strong' | 'moderate' | 'weak' | null;
+  readLine?: string;
+  watchPlan?: WatchPlan | null;
+  watchReach?: WatchReach | null;
+  location?: PriceLocation | null;
+  /** Origem dos niveis; leitura de antes do v11 nao tem. */
+  dataMode?: 'real_data' | 'print' | null;
   reasoning: string;
   disclaimer: string;
   demoRemaining: number;

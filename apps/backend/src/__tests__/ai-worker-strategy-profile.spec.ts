@@ -133,15 +133,6 @@ import type { StrategyProfile } from '../common/strategy/strategy-profile';
 
 describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () => {
   const analyzeImageMock = jest.fn().mockRejectedValue(new Error('stop-after-capture'));
-  let savedRrGuard: string | undefined;
-  beforeEach(() => {
-    savedRrGuard = process.env.ENABLE_RR_GUARD;
-    process.env.ENABLE_RR_GUARD = 'true';
-  });
-  afterEach(() => {
-    if (savedRrGuard === undefined) delete process.env.ENABLE_RR_GUARD;
-    else process.env.ENABLE_RR_GUARD = savedRrGuard;
-  });
 
 
   beforeAll(() => {
@@ -200,7 +191,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     expect(analyzeImageMock).toHaveBeenCalledTimes(1);
     const call = analyzeImageMock.mock.calls[0];
     expect(call[0]).toBe('https://example.com/chart.png');
-    expect(call[1]).toContain('TICKRIFY ANALYSIS ENGINE v10.3');
+    expect(call[1]).toContain('TICKRIFY ANALYSIS ENGINE v11');
     expect(call[2]).toBe('quick');
     expect(call[4]).toEqual(strategyProfile);
 
@@ -300,13 +291,13 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     const { OpenAiVisionModel } = jest.requireActual('../modules/ai/vision-model');
     const { AiService } = jest.requireActual('../modules/ai/ai.service');
     const adapter = new RealAdapter();
-    // v10.3: plano na escala lida (100x); preco real 1,0792 a 0,6 ATR da borda
-    // (ATR 0,002): limit em 1,078, stop 1,076 (invalidacao 1,0765 - 0,25 ATR),
-    // TP1 1,081 (1,5R), TP2 1,0895. Forex: 6 PASS no checklist.
+    // v11: plano na escala lida (100x); fundo real em 1,0765 (a invalidacao
+    // encaixa); preco real 1,0792 (ATR 0,002): ENTER_NOW a mercado, stop 1,076
+    // (1,0765 - 0,25 ATR), TP1 1,083 (1,19R), TP2 1,0895. Forex: 6 PASS.
     const watchPlan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 107.7, zoneHigh: 107.8, invalidation: 107.65,
       target1: 108.3, target2: 108.95, validForCandles: 16, trigger: 'Bullish close at 1.0770-1.0780' };
     const raw = { is_financial_chart: isChart, watchPlan, recommendation: 'BUY', confidence: 70, analysis: {
-      symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.88, entry: 107.855, stopLoss: 107.7,
+      symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.88, entry: 107.855, entryType: 'market', stopLoss: 107.7,
       takeProfit1: 108.02, takeProfit2: 108.12, invalidationLevel: 107.72,
       factorsPresent: 6, trendStrength: 'strong', marketStructure: { bias: 'bullish' },
       structureValidation: 'C1 PASS: 4h; C2 PASS: discount; C3 PASS: pullback; C4 PASS: buyers; C5 FAIL: retested; C6 PASS: 1 ATR; C7 PASS: room',
@@ -315,7 +306,9 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     adapter.visionModel = new OpenAiVisionModel({ chat: { completions: { create } } });
     adapter.buildMarketEnrichment = jest.fn().mockResolvedValue({
       block: 'SYNTHETIC CONTEXT', assetClass: 'forex', marketContext: 'injected', calendar: 'no_events_returned', candles: 'injected',
-      stats: { v: 1, symbol: 'EURUSD', interval: '1h', coverage: 'injected', numbers: { lastClose: 1.0792, atr14: 0.002 } },
+      stats: { v: 1, symbol: 'EURUSD', interval: '1h', coverage: 'injected', numbers: {
+        lastClose: 1.0792, atr14: 0.002, swings: [{ kind: 'low', price: 1.0765 }], late: { long: false, short: false },
+      } },
     });
     analyzeImageMock.mockImplementationOnce(adapter.analyzeImage.bind(adapter));
     const oldEnrichment = process.env.ENABLE_MARKET_ENRICHMENT;
@@ -339,13 +332,13 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
         ...(isChart ? {} : { result: null }), createdAt: new Date(), updatedAt: new Date(),
       });
       if (isChart) {
-        const engine = { entry: 1.078, stopLoss: 1.076, takeProfit1: 1.081, takeProfit2: 1.0895 };
+        const engine = { entry: 1.0792, stopLoss: 1.076, takeProfit1: 1.083, takeProfit2: 1.0895 };
         for (const key of ['entry', 'stopLoss', 'takeProfit1', 'takeProfit2'] as const) {
           expect(stored.result.analysis[key]).toBeCloseTo(engine[key], 8);
           expect(delivered[key]).toBe(stored.result.analysis[key]);
         }
         expect(stored.result.analysis.invalidationLevel).toBe(107.72 * 0.01);
-        expect(delivered).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.5, riskRewardTp2: 5.75, errorCode: null });
+        expect(delivered).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.19, riskRewardTp2: 3.22, errorCode: null });
       } else {
         expect(prismaClient.analysis.update.mock.calls.some(([args]: any[]) => args.data.status === 'completed')).toBe(false);
         expect(delivered).toMatchObject({ status: 'failed', errorCode: 'non_chart_image', entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null });
@@ -490,7 +483,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     expect(completed[0].data.recommendation).toBe('WAIT');
     const engine = completed[0].data.result.engine;
     expect(engine).toMatchObject({
-      version: '3.2.0',
+      version: '4.0.0',
       data_mode: 'print',
       validator_action: 'downgraded',
       validator_reasons: ['implausible_price'],

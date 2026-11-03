@@ -122,6 +122,12 @@ describe('Demo security gates', () => {
     expect(JSON.parse(insert[1])).toMatchObject({ status: 'completed', recommendation: 'WAIT' });
   });
 
+  it('devolve a origem dos niveis (dataMode) do motor; sem ela, null', async () => {
+    ai.analyzeImage.mockResolvedValueOnce({ recommendation: 'HOLD', confidence: 50, analysis: {}, dataMode: 'real_data' });
+    await expect(service.analyze(params)).resolves.toMatchObject({ dataMode: 'real_data' });
+    await expect(service.analyze({ ...params, fingerprint: 'other-device' })).resolves.toMatchObject({ dataMode: null });
+  });
+
   it('conexao caiu e a pessoa tentou de novo: recebe a MESMA leitura, sem IA nova e sem gastar de novo', async () => {
     const guardada = { status: 'completed', recommendation: 'BUY', symbol: 'XAUUSD' };
     prisma.$queryRaw = jest.fn().mockResolvedValueOnce([{ id: 'u1', result: guardada, createdAt: new Date() }]);

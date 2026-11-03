@@ -172,7 +172,7 @@ export interface AIAnalysisResponse {
   id: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   recommendation?: Recommendation;
-  /** Estado do copiloto (v10.3); nas listas vem no topo, na analise aberta em `fullResponse`. */
+  /** Estado do copiloto; nas listas vem no topo, na analise aberta em `fullResponse`. */
   signalState?: SignalState;
   bias?: Bias;
   confidence?: number;
@@ -214,6 +214,12 @@ export interface AIAnalysisResponse {
     watchPlan?: WatchPlan | null;
     /** De onde sairam os niveis: velas reais ou estimados do print. Analise antiga: null. */
     dataMode?: 'real_data' | 'print' | null;
+    /** Onde o preco esta, calculado pelo codigo do REAL DATA (modo leitura); null sem ele. */
+    location?: PriceLocation | null;
+    /** Chance calibrada de o preco chegar ao nivel do WATCH; null sem calibracao. */
+    watchReach?: WatchReach | null;
+    /** Contrato do motor; `no_trade_reason` e o motivo em uma linha do NO_TRADE. */
+    engine?: { contract?: { no_trade_reason?: string | null } | null } | null;
     bias: Bias;
     confidence: number;
     reasoning: string;
@@ -272,6 +278,30 @@ export interface AIAnalysisResponse {
 }
 
 export type SignalState = 'NO_TRADE' | 'WATCH' | 'ARMED' | 'ENTER_NOW';
+
+/** Um nivel e a distancia dele ao preco, em ATR. */
+export interface LevelDistance {
+  price: number;
+  atr: number;
+}
+
+/** Onde o preco esta (modo leitura), calculado pelo codigo a partir do REAL DATA. */
+export interface PriceLocation {
+  price: number;
+  atr: number;
+  rangePosPct: number | null;
+  htfTrend: 'uptrend' | 'downtrend' | 'range' | null;
+  invalidation: LevelDistance | null;
+  support: LevelDistance | null;
+  resistance: LevelDistance | null;
+  planLevel: LevelDistance | null;
+}
+
+/** Chance calibrada de o preco chegar ao nivel do WATCH dentro da validade. */
+export interface WatchReach {
+  probability: number;
+  candles: number;
+}
 
 /** Plano do WATCH (v10.1): o codigo calcula entrada e stop quando a vela de gatilho fechar. */
 export interface WatchPlan {

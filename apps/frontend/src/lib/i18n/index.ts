@@ -7,13 +7,13 @@ import ja from './ja';
 
 export type Language = 'pt' | 'en' | 'es' | 'fr' | 'de' | 'ja';
 
-export const LANGUAGES: { code: Language; label: string; flag: string }[] = [
-  { code: 'pt', label: 'Português', flag: '🇧🇷' },
-  { code: 'en', label: 'English', flag: '🇺🇸' },
-  { code: 'es', label: 'Español', flag: '🇪🇸' },
-  { code: 'fr', label: 'Français', flag: '🇫🇷' },
-  { code: 'de', label: 'Deutsch', flag: '🇩🇪' },
-  { code: 'ja', label: '日本語', flag: '🇯🇵' },
+export const LANGUAGES: { code: Language; label: string }[] = [
+  { code: 'pt', label: 'Português' },
+  { code: 'en', label: 'English' },
+  { code: 'es', label: 'Español' },
+  { code: 'fr', label: 'Français' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'ja', label: '日本語' },
 ];
 
 const translations = { pt, en, es, fr, de, ja };

@@ -87,7 +87,7 @@ export interface ShareCardData {
   scenario: string;
   /** Ação operacional separada: BUY | SELL | HOLD/WAIT. */
   action: string;
-  /** Estado do copiloto (v10.3): o rótulo da linha abaixo do cenário. */
+  /** Estado do copiloto: o rótulo da linha abaixo do cenário. */
   state: SignalStateCanonical;
   /** Cor do cenário: direção só em ENTER_NOW/ARMED, neutra em WATCH/NO_TRADE. */
   tone: 'buy' | 'sell' | 'hold';

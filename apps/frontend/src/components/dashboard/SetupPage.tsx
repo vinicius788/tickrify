@@ -87,7 +87,7 @@ const SetupPage = ({
   const tracking = setup.status === 'tracking';
   const busy = follow.isPending || setStatus.isPending;
   const price = (value: number | null) => (value === null ? 'n/a' : value.toLocaleString(locale, { maximumFractionDigits: 6 }));
-  // Estado do copiloto (v10.3) pelo servidor; cor de direcao so em ordem/entrada.
+  // Estado do copiloto pelo servidor; cor de direcao so em ordem/entrada.
   const verdictLabel = (v: { recommendation: string; signalState?: SignalState }) =>
     t.analysis.states[resolveSignalState(v.signalState, v.recommendation)];
   const verdictTone = (v: { recommendation: string; signalState?: SignalState }) => {

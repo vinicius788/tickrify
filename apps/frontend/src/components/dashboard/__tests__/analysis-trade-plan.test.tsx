@@ -235,7 +235,7 @@ describe('C1 technical evidence caution presentation', () => {
     expect(screen.getByRole('button', { name: t.marketStructure }).getAttribute('aria-expanded')).toBe('true');
     const item = screen.getByText(text.split(': ')[1]).closest('li')!;
     const marker = item.querySelector('span')!;
-    expect(marker.textContent).toBe('⚠');
+    expect(marker.textContent).toBe('!');
     expect(marker.className).toContain('text-[var(--signal-hold)]');
     expect(marker.className).not.toContain('text-[var(--signal-sell)]');
     expect(screen.getByText('5/7')).toBeTruthy();

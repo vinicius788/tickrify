@@ -11,13 +11,16 @@
  *   analysis  grounding do quick e do deep (market/candle-store.ts, pelo ai.adapter.ts)
  *   monitor   monitor de alertas e preco na criacao do alerta (setup-alerts.service.ts)
  *   sweeper   outcome sweeper 48h depois (worker/outcome.sweeper.ts via candles.ts)
+ *   calibration  calibracao do motor (replay-variants.ts --calibrate), so com
+ *             o dia abaixo de calibrationMaxDayTotal no MESMO medidor
  * Scripts de medicao (prompt-replay, backtest-runner, analysis-pilot-runner,
  * scripts/backtest/fetch-extra.mjs) NUNCA usam a chave de producao: entram em
  * modo experimento e leem TWELVE_DATA_API_KEY_EXPERIMENTS.
  *
  * Regras:
  * - Medidor unico por dia UTC e por minuto, compartilhado entre as 2 instancias
- *   do Render e o worker (Redis). Sem Redis, conta em memoria e loga degradado.
+ *   do Render e o worker (Redis). Sem Redis, conta em memoria e loga degradado
+ *   (a calibracao nao roda sem Redis).
  * - Prioridade: analise primeiro, depois monitor, depois sweeper. Quem tem menos
  *   prioridade nunca gasta a reserva de quem tem mais; analise nunca fica sem
  *   candle por causa do monitor ou do sweeper.
@@ -32,7 +35,7 @@
  */
 import { RedisConnection } from 'bullmq';
 
-export type TwelveDataConsumer = 'analysis' | 'monitor' | 'sweeper';
+export type TwelveDataConsumer = 'analysis' | 'monitor' | 'sweeper' | 'calibration';
 export type TwelveDataDenyReason = 'no_key' | 'market_closed' | 'budget' | 'rate_limited' | 'quota_exhausted';
 
 const MINUTE = 60 * 1000;
@@ -44,6 +47,8 @@ export const TWELVE_DATA_BUDGET = {
   perMinute: 8,
   /** Reserva do dia por prioridade. O sweeper fica com o resto. */
   reserve: { analysis: 550, monitor: 200 },
+  /** A calibracao so pede com o total do dia abaixo disto (sobram 250 para os usuarios). */
+  calibrationMaxDayTotal: 550,
   /** Monitor e sweeper deixam sempre 3 vagas do minuto para a analise. */
   lowPriorityPerMinute: 5,
   slowAbove: 0.8,
@@ -71,6 +76,7 @@ export function fxMarketClosed(now: Date): boolean {
 // ── Modo experimento (scripts de medicao) ───────────────────────────────────
 
 let experimentMode = false;
+let calibrationMode = false;
 const refusedLogged = new Set<string>();
 
 /**
@@ -81,6 +87,15 @@ const refusedLogged = new Set<string>();
 export function enterTwelveDataExperimentMode(): void {
   experimentMode = true;
   store = null;
+}
+
+/**
+ * Calibracao do motor (replay-variants.ts --calibrate, decisao do dono em
+ * 02/11/2026): chave de PRODUCAO e o MESMO medidor de producao (Redis), que ja
+ * conta analises, monitor e sweeper. Sem Redis, nao chama.
+ */
+export function enterTwelveDataCalibrationMode(): void {
+  calibrationMode = true;
 }
 
 export function twelveDataApiKey(): string | null {
@@ -113,6 +128,7 @@ export type TwelveDataUsage = {
   analysis: number;
   monitor: number;
   sweeper: number;
+  calibration: number;
   exhausted: boolean;
   store: 'redis' | 'memory';
 };
@@ -270,6 +286,7 @@ export function __setTwelveDataForTests(options: { store?: TwelveDataStore | nul
   storePromise = null;
   clock = options.now ?? (() => new Date());
   experimentMode = false;
+  calibrationMode = false;
   refusedLogged.clear();
 }
 
@@ -282,6 +299,7 @@ const KEYS = (now: Date) => {
     analysis: `td:day:${day}:analysis`,
     monitor: `td:day:${day}:monitor`,
     sweeper: `td:day:${day}:sweeper`,
+    calibration: `td:day:${day}:calibration`,
     minute: `td:min:${minuteOf(now)}`,
     exhausted: `td:exhausted:${day}`,
     day,
@@ -291,13 +309,16 @@ const KEYS = (now: Date) => {
 export async function twelveDataUsage(now: Date = clock()): Promise<TwelveDataUsage> {
   const k = KEYS(now);
   const s = await getStore();
-  const [total, analysis, monitor, sweeper, minute, exhausted] = await s.get([k.total, k.analysis, k.monitor, k.sweeper, k.minute, k.exhausted]);
+  const [total, analysis, monitor, sweeper, calibration, minute, exhausted] = await s.get([
+    k.total, k.analysis, k.monitor, k.sweeper, k.calibration, k.minute, k.exhausted,
+  ]);
   return {
     day: k.day,
     total: Number(total ?? 0),
     analysis: Number(analysis ?? 0),
     monitor: Number(monitor ?? 0),
     sweeper: Number(sweeper ?? 0),
+    calibration: Number(calibration ?? 0),
     minute: Number(minute ?? 0),
     exhausted: exhausted !== null,
     store: s.kind,
@@ -317,6 +338,10 @@ export function twelveDataDecision(
 ): TwelveDataDenyReason | null {
   if (usage.exhausted || usage.total >= budget.dailyLimit) return 'quota_exhausted';
   if (experiment || consumer === 'analysis') return usage.minute >= budget.perMinute ? 'rate_limited' : null;
+  if (consumer === 'calibration') {
+    if (usage.total >= budget.calibrationMaxDayTotal) return 'budget';
+    return usage.minute >= budget.lowPriorityPerMinute ? 'rate_limited' : null;
+  }
   if (fxMarketClosed(now)) return 'market_closed';
   const used = usage.total / budget.dailyLimit;
   if (used >= budget.analysisOnlyAbove) return 'budget';
@@ -423,6 +448,9 @@ export async function twelveDataTimeSeries(req: TwelveDataRequest): Promise<Twel
   const key = twelveDataApiKey();
   if (!key) return { ok: false, reason: 'no_key' };
   const s = await getStore();
+  if (calibrationMode && (req.consumer !== 'calibration' || s.kind !== 'redis')) {
+    throw new Error('[twelvedata] Calibracao so roda com consumer calibration e o medidor de producao (Redis).');
+  }
   const cacheKey = cacheKeyOf(req);
   if (cacheKey && req.cacheMaxAgeMs) {
     const [raw] = await s.get([cacheKey]);
@@ -484,7 +512,7 @@ export function startTwelveDataReport(log: (message: string) => void = console.l
       const u = await twelveDataUsage();
       log(
         `[twelvedata] day=${u.total}/${TWELVE_DATA_BUDGET.dailyLimit} minute=${u.minute}/${TWELVE_DATA_BUDGET.perMinute} ` +
-          `analysis=${u.analysis} monitor=${u.monitor} sweeper=${u.sweeper}${u.exhausted ? ' exhausted=1' : ''}${u.store === 'memory' ? ' store=memory(degradado)' : ''}`,
+          `analysis=${u.analysis} monitor=${u.monitor} sweeper=${u.sweeper} calibration=${u.calibration}${u.exhausted ? ' exhausted=1' : ''}${u.store === 'memory' ? ' store=memory(degradado)' : ''}`,
       );
     } catch (error) {
       log(`[twelvedata] Relatorio falhou: ${(error as Error)?.message ?? error}`);

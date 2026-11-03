@@ -42,7 +42,7 @@ const ORIGEM_ROTULO: Record<string, { texto: string; classe: string; ajuda: stri
   padrao: {
     texto: 'padrão do código',
     classe: 'bg-zinc-500/15 text-[var(--text-dim)] border-zinc-500/30',
-    ajuda: 'Nada configurado em lugar nenhum — é o comportamento histórico do código.',
+    ajuda: 'Nada configurado em lugar nenhum: é o comportamento histórico do código.',
   },
 };
 

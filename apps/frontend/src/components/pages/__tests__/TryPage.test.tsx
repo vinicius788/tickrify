@@ -48,10 +48,34 @@ describe('/try devolve a leitura que se perdeu', () => {
     );
 
     expect(await screen.findByText('Real analysis')).toBeTruthy();
-    expect(screen.getByText('4,261.40')).toBeTruthy();
+    // A entrada aparece nos niveis e no bloco Action do modo leitura.
+    expect(screen.getAllByText('4,261.40').length).toBeGreaterThan(0);
     expect(screen.queryByText('You already used your free analysis')).toBeNull();
     expect(track).toHaveBeenCalledWith('demo_result_recovered', { source: 'status_check' });
     expect(window.localStorage.getItem('tickrify_demo_result')).toContain('XAUUSD');
+  });
+
+  it('aviso "estimated" so com dataMode print; formato da API antiga (sem dataMode nem location) nao avisa', async () => {
+    window.localStorage.setItem('tickrify-language', 'en');
+    const renderWith = async (result: Record<string, unknown>) => {
+      fetchDemoStatus.mockResolvedValue({ used: true, result: { ...leitura, signalState: 'ENTER_NOW', ...result } });
+      render(
+        <LanguageProvider>
+          <MemoryRouter>
+            <TryPage />
+          </MemoryRouter>
+        </LanguageProvider>,
+      );
+      await screen.findByText('Real analysis');
+    };
+    await renderWith({});
+    expect(screen.queryByTestId('read-mode-estimated')).toBeNull();
+    cleanup();
+    await renderWith({ dataMode: 'real_data' });
+    expect(screen.queryByTestId('read-mode-estimated')).toBeNull();
+    cleanup();
+    await renderWith({ dataMode: 'print' });
+    expect(screen.getByTestId('read-mode-estimated')).toBeTruthy();
   });
 
   it('sem leitura guardada, continua o aviso de limite', async () => {

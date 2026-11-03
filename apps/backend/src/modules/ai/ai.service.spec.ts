@@ -258,11 +258,11 @@ describe('AiService access enforcement', () => {
       expect(completed[0].data).not.toHaveProperty('setupId');
       // Contrato e tempos gravados junto da analise, igual ao worker.
       expect(completed[0].data.result.engine).toMatchObject({
-        version: '3.2.0',
+        version: '4.0.0',
         data_mode: 'print',
         validator_action: 'none',
         timings: { image_prep_ms: 120, intake_ms: 300, queue_ms: null },
-        contract: { verdict: 'NEUTRAL', asset: 'EURUSD', timeframe: '1H', engine_version: '3.2.0' },
+        contract: { verdict: 'NEUTRAL', asset: 'EURUSD', timeframe: '1H', engine_version: '4.0.0' },
       });
       expect(completed[0].data.result.engine.timings.server_total_ms).toBeGreaterThanOrEqual(500);
       // O motor nao recebeu nada do setup: os 5 argumentos de sempre + a opcao de comparacao.
@@ -338,22 +338,24 @@ describe('AiService access enforcement', () => {
     const presented = `${current}6/7. ${historical}4/7. ${hypothetical}4/7, wait.`;
     const { AIAdapter } = await import('./ai.adapter');
     const { OpenAiVisionModel } = await import('./vision-model');
-    const keys = ['ENABLE_RR_GUARD', 'ENABLE_NEWS_GUARD', 'ENABLE_MARKET_ENRICHMENT'] as const;
+    const keys = ['ENABLE_NEWS_GUARD', 'ENABLE_MARKET_ENRICHMENT'] as const;
     const saved = keys.map((key) => process.env[key]);
-    process.env.ENABLE_RR_GUARD = 'true';
     process.env.ENABLE_NEWS_GUARD = 'false';
     process.env.ENABLE_MARKET_ENRICHMENT = 'true';
     try {
-      // v10.3: plano na escala lida (100x); preco real 1,0792 a 0,6 ATR da borda
-      // (ATR 0,002): limit em 1,078, stop 1,076, TP1 1,081 (1,5R), TP2 1,0895.
+      // v11: plano na escala lida (100x); fundo real em 1,0765 (a invalidacao
+      // encaixa), preco real 1,0792 (ATR 0,002): o ENTER_NOW fica, a mercado em
+      // 1,0792, stop 1,076, TP1 1,083 (1,19R), TP2 1,0895 (3,22R).
       const watchPlan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 107.7, zoneHigh: 107.8, invalidation: 107.65,
         target1: 108.3, target2: 108.95, validForCandles: 16, trigger: 'Bullish close at 1.0770-1.0780' };
       const grounding = {
         block: null, candles: 'injected', marketContext: 'unavailable', assetClass: 'forex', calendar: 'no_events_returned',
-        stats: { v: 1, symbol: 'EURUSD', interval: '1h', coverage: 'injected', numbers: { lastClose: 1.0792, atr14: 0.002 } },
+        stats: { v: 1, symbol: 'EURUSD', interval: '1h', coverage: 'injected', numbers: {
+          lastClose: 1.0792, atr14: 0.002, swings: [{ kind: 'low', price: 1.0765 }], late: { long: false, short: false },
+        } },
       };
       const raw = { is_financial_chart: true, watchPlan, recommendation: 'BUY', confidence: 70, analysis: {
-        symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.88, entry: 107.855,
+        symbol: 'EURUSD', timeframe: 'H1', currentPrice: 107.88, entry: 107.855, entryType: 'market',
         stopLoss: 107.7, takeProfit1: 108.02, takeProfit2: 108.12, invalidationLevel: 107.72,
         factorsPresent: 4, confluenceScore: 57.14, trendStrength: 'strong', marketStructure: { bias: 'bullish' },
         structureValidation: 'C1 PASS: H4; C2 PASS: discount; C3 PASS: pullback; C4 PASS: buyers; C5 FAIL: retested; C6 PASS: 1 ATR; C7 PASS: room → 4/7',
@@ -383,7 +385,7 @@ describe('AiService access enforcement', () => {
       expect(delivered.fullResponse.analysis.multiTimeframeAlignment.endsWith('H1 bullish | H4 bullish')).toBe(true);
       expect(completed.result).not.toHaveProperty('observation');
       const readback = await (service as any).serializeAnalysis({ ...row, ...JSON.parse(JSON.stringify(completed)) });
-      const engine = { entry: 1.078, stopLoss: 1.076, takeProfit1: 1.081, takeProfit2: 1.0895 };
+      const engine = { entry: 1.0792, stopLoss: 1.076, takeProfit1: 1.083, takeProfit2: 1.0895 };
       for (const key of ['entry', 'stopLoss', 'takeProfit1', 'takeProfit2'] as const) {
         expect(completed.result.analysis[key]).toBeCloseTo(engine[key], 8);
         expect(delivered[key]).toBe(completed.result.analysis[key]);
@@ -392,7 +394,7 @@ describe('AiService access enforcement', () => {
       expect(readback.fullResponse.analysis.executiveSummary).toBe(presented);
       expect(readback.fullResponse.analysis.reasoning).toBe(presented);
       expect(readback.fullResponse.analysis.invalidationLevel).toBe(107.72 * 0.01);
-      expect(readback).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.5, riskRewardTp2: 5.75, errorCode: null });
+      expect(readback).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.19, riskRewardTp2: 3.22, errorCode: null });
       expect(create).toHaveBeenCalledTimes(1);
     } finally {
       keys.forEach((key, i) => { if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i]; });

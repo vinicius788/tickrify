@@ -13,9 +13,10 @@ function withFakeOpenAi(adapter: AIAdapter, create: jest.Mock): void {
   );
 }
 
-// v10.3: o plano do modelo e uma compra na zona 99-99,5. Com `withRealCandles`
-// o preco real fica a menos de 0,75 ATR da borda e o BUY fica (limit na borda,
-// stop pela invalidacao); sem velas reais o BUY vira WATCH (niveis sem conferencia).
+// v11: o plano do modelo e uma compra na zona 99-99,5 com invalidacao 98,8. Com
+// `withRealCandles` ha um fundo real em 98,8 (a invalidacao encaixa) e o preco
+// real 99,95 deixa a entrada a mercado valida (stop 98,55, alvo 101,5): o
+// ENTER_NOW fica; sem velas reais valem os niveis do modelo (dataMode print).
 const PLAN = {
   direction: 'long', triggerType: 'zone_reaction', zoneLow: 99, zoneHigh: 99.5, invalidation: 98.8,
   target1: 101.5, target2: 103, validForCandles: 16, trigger: 'Bullish close in the top third at 99-99.5',
@@ -25,8 +26,8 @@ const CHECKLIST = 'C1 PASS: 4h up; C2 PASS: discount; C3 PASS: pullback; C4 PASS
 
 function withRealCandles(adapter: AIAdapter): void {
   const a = adapter as any;
-  // 30 velas de range 1 perto da zona e a vela que ainda se forma (ATR ~1).
-  const bars = Array.from({ length: 30 }, (_, i) => [i * STEP, 100.4, 100.9, 99.9, 100.4, 0]);
+  // 30 velas de range 1 perto da zona, um fundo real em 98,8 e a vela que ainda se forma (ATR ~1).
+  const bars = Array.from({ length: 30 }, (_, i) => [i * STEP, 100.4, 100.9, i === 10 ? 98.8 : 99.9, 100.4, 0]);
   bars.push([30 * STEP, 99.6, 100, 99.2, 99.95, 0], [31 * STEP, 99.95, 100, 99.9, 99.95, 0]);
   a.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
   a.fetchCandles = jest.fn(async (_symbol: string, interval: string) => ({ candles: interval === '4h' ? null : bars, source: 'binance', denied: null }));
@@ -41,13 +42,13 @@ const responseFor = (takeProfit1: number, extra: Record<string, unknown> = {}, t
     finish_reason: 'stop',
     message: { content: JSON.stringify({
       is_financial_chart: true,
-      signalState: 'ARMED',
+      signalState: 'ENTER_NOW',
       watchPlan: PLAN,
       recommendation: 'BUY',
       confidence: 70,
       analysis: {
         symbol: 'TEST', timeframe: '30m', currentPrice: 100,
-        entry: 100, stopLoss: 95, takeProfit1, takeProfit2: 120,
+        entry: 100, stopLoss: 95, takeProfit1, takeProfit2: 120, entryType: 'market',
         marketStructure: { bias: 'bullish' },
         trendStrength: 'moderate', factorsPresent: 6,
         structureValidation: CHECKLIST,
@@ -118,60 +119,80 @@ describe('AIAdapter trade-plan integrity', () => {
     expect(result.recommendation).toBe('BUY');
   });
 
-  it('v10.3: limit na borda da zona e stop pela invalidacao, nao os niveis do modelo', async () => {
+  it('v11: entrada a mercado no preco real e stop pela invalidacao, nao os niveis do modelo', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
     withRealCandles(adapter);
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ARMED', watchPlan: PLAN, dataMode: 'real_data' });
-    expect(result.analysis?.entryType).toBe('limit');
-    expect(result.analysis?.entry).toBe(99.5);
+    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ENTER_NOW', watchPlan: PLAN, dataMode: 'real_data' });
+    expect(result.analysis?.entryType).toBe('market');
+    expect(result.analysis?.entry).toBeCloseTo(99.95, 1);
     expect(result.analysis?.stopLoss).toBeCloseTo(98.55, 1);
-    expect(result.analysis?.takeProfit1).toBeCloseTo(100.93, 1);
+    expect(result.analysis?.takeProfit1).toBe(101.5);
     expect(result.analysis?.takeProfit2).toBe(103);
   });
 
-  it('v10.3: C3 em FAIL no checklist: NO_TRADE', async () => {
+  it('v11: ARMED do modelo vira WATCH com o plano (a ordem limit nao e mais emitida)', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { entryType: 'limit' }, { signalState: 'ARMED' })));
+    withRealCandles(adapter);
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'WATCH', watchPlan: PLAN });
+    expect(result.validatorNotes).toEqual([{ from: 'ARMED', to: 'WATCH', reason: 'limit_order_retired' }]);
+    expect(result.analysis?.entry).toBeNull();
+  });
+
+  it('v11: C3 em FAIL no checklist: NO_TRADE, cada degrau com o motivo', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { structureValidation: CHECKLIST.replace('C3 PASS', 'C3 FAIL') })));
     withRealCandles(adapter);
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'NO_TRADE' });
-    expect(result.engineMeta?.validatorReasons).toEqual(['required_check_failed']);
+    expect(result.validatorNotes).toEqual([
+      { from: 'ENTER_NOW', to: 'WATCH', reason: 'required_check_failed' },
+      { from: 'WATCH', to: 'NO_TRADE', reason: 'setup_failed' },
+    ]);
+    expect(result.engineMeta?.validatorReasons).toEqual(['required_check_failed', 'setup_failed']);
   });
 
-  it('v10.3: sem velas reais o BUY fica com os niveis do modelo, medido em R, e dataMode print', async () => {
+  it('v11: o REAL DATA grava as swings e a maturidade que o validador usou', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
+    withRealCandles(adapter);
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ARMED', watchPlan: PLAN, dataMode: 'print' });
+    expect(result.groundingStats?.numbers?.swings).toContainEqual({ kind: 'low', price: 98.8 });
+    expect(result.groundingStats?.numbers?.late).toEqual({ long: false, short: false });
+  });
+
+  it('v11: sem velas reais o ENTER_NOW dentro da zona fica com os niveis do modelo, dataMode print', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { currentPrice: 99.3, entry: 99.3 })));
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ENTER_NOW', watchPlan: PLAN, dataMode: 'print' });
     expect(result.engineMeta?.validatorReasons).toEqual([]);
-    expect(result.analysis?.entry).toBe(100);
+    expect(result.analysis?.entry).toBe(99.3);
     expect(result.analysis?.stopLoss).toBe(95);
   });
 
-  it.each([
-    [101.5, 103, 'BUY', true],
-    [100.7, null, 'WAIT', true],
-    [100.7, null, 'BUY', false],
-  ] as const)('R:R ate o alvo final: target1=%s, target2=%s, decisao=%s, guard=%s', async (target1, target2, decision, enabled) => {
-    const oldRr = process.env.ENABLE_RR_GUARD;
-    process.env.ENABLE_RR_GUARD = String(enabled);
-    try {
-      const adapter = new AIAdapter();
-      withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, {}, { watchPlan: { ...PLAN, target1, target2 } })));
-      withRealCandles(adapter);
-      const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-      expect(result.recommendation).toBe(decision);
-      if (decision === 'WAIT') {
-        expect(result.signalState).toBe('NO_TRADE');
-        expect(result.engineMeta?.validatorReasons).toEqual(['rr_tp2_below_min']);
-        expect(result.confidence).toBeLessThanOrEqual(49);
-      }
-    } finally {
-      if (oldRr === undefined) delete process.env.ENABLE_RR_GUARD;
-      else process.env.ENABLE_RR_GUARD = oldRr;
-    }
+  it('v11: WATCH do modelo com a entrada a mercado valida e todas as condicoes vira ENTER_NOW', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, {}, { signalState: 'WATCH', recommendation: 'HOLD' })));
+    withRealCandles(adapter);
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ENTER_NOW' });
+    expect(result.analysis?.entryType).toBe('market');
+    expect(result.validatorNotes).toEqual([{ from: 'WATCH', to: 'ENTER_NOW', reason: 'market_entry_valid' }]);
+    expect(result.engineMeta?.validatorAction).toBe('promoted');
+  });
+
+  it('v11: alvo a menos de 1R das duas entradas: NO_TRADE', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, {}, { watchPlan: { ...PLAN, target1: 100.3, target2: null } })));
+    withRealCandles(adapter);
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'NO_TRADE' });
+    expect(result.engineMeta?.validatorReasons).toEqual(['market_entry_invalid', 'no_valid_geometry']);
+    expect(result.confidence).toBeLessThanOrEqual(49);
   });
 
   it('watchPlan do modelo: ordem de grandeza corrigida e validade dentro de 6 a 24 velas', async () => {
@@ -229,8 +250,8 @@ describe('AIAdapter trade-plan integrity', () => {
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(result.recommendation).toBe('BUY');
-    expect(result.analysis?.riskRewardTp1).toBeCloseTo(1.5, 1);
-    expect(result.analysis?.riskRewardTp2).toBeCloseTo(3.7, 1);
+    expect(result.analysis?.riskRewardTp1).toBeCloseTo(1.1, 1);
+    expect(result.analysis?.riskRewardTp2).toBeCloseTo(2.2, 1);
     expect(result.engineMeta?.validatorAction).toBe('none');
     expect(result.engineMeta?.modelMs).toBeGreaterThanOrEqual(0);
   });

@@ -66,8 +66,9 @@ describe('resultado WAIT', () => {
     expect(text).toContain('A close above 2365 would set up a long.');
     expect(text).toContain('Price is stuck mid range with no confirmation.');
     // Ordem: explicacao, depois plano, depois leitura, tudo antes do grafico.
-    const at = (s: string) => text.indexOf(s);
-    expect(at('WAIT means')).toBeLessThan(at('A close above 2365'));
+    // (a leitura tambem abre o painel do modo leitura, no topo: vale a ultima ocorrencia).
+    const at = (s: string) => text.lastIndexOf(s);
+    expect(at('No trade means')).toBeLessThan(at('A close above 2365'));
     expect(at('A close above 2365')).toBeLessThan(at('Price is stuck mid range'));
   });
 

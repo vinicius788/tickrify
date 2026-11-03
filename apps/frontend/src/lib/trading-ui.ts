@@ -4,20 +4,20 @@ export type ScenarioCanonical = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 const SCENARIO_META: Record<ScenarioCanonical, { label: ScenarioCanonical; tone: 'buy' | 'sell' | 'hold'; icon: string }> = {
   BULLISH: { label: 'BULLISH', tone: 'buy', icon: '↑' },
   BEARISH: { label: 'BEARISH', tone: 'sell', icon: '↓' },
-  NEUTRAL: { label: 'NEUTRAL', tone: 'hold', icon: '—' },
+  NEUTRAL: { label: 'NEUTRAL', tone: 'hold', icon: '→' },
 };
 
 export const RECOMMENDATION_LABELS: Record<
   string,
-  { label: RecommendationCanonical; tone: 'buy' | 'sell' | 'hold'; icon: string }
+  { label: RecommendationCanonical; tone: 'buy' | 'sell' | 'hold' }
 > = {
-  COMPRA: { label: 'BUY', tone: 'buy', icon: '↑' },
-  VENDA: { label: 'SELL', tone: 'sell', icon: '↓' },
-  AGUARDAR: { label: 'HOLD', tone: 'hold', icon: '⏸' },
-  BUY: { label: 'BUY', tone: 'buy', icon: '↑' },
-  SELL: { label: 'SELL', tone: 'sell', icon: '↓' },
-  HOLD: { label: 'HOLD', tone: 'hold', icon: '⏸' },
-  WAIT: { label: 'HOLD', tone: 'hold', icon: '⏸' },
+  COMPRA: { label: 'BUY', tone: 'buy' },
+  VENDA: { label: 'SELL', tone: 'sell' },
+  AGUARDAR: { label: 'HOLD', tone: 'hold' },
+  BUY: { label: 'BUY', tone: 'buy' },
+  SELL: { label: 'SELL', tone: 'sell' },
+  HOLD: { label: 'HOLD', tone: 'hold' },
+  WAIT: { label: 'HOLD', tone: 'hold' },
 };
 
 export function getRecommendationMeta(value: unknown) {
@@ -29,7 +29,7 @@ export type SignalStateCanonical = 'NO_TRADE' | 'WATCH' | 'ARMED' | 'ENTER_NOW';
 const SIGNAL_STATES: readonly SignalStateCanonical[] = ['NO_TRADE', 'WATCH', 'ARMED', 'ENTER_NOW'];
 
 /**
- * Estado do copiloto (v10.3): o rotulo principal de todo resultado. O servidor
+ * Estado do copiloto: o rotulo principal de todo resultado. O servidor
  * manda o campo em toda resposta (analise, lista, setup); sem ele, a mesma
  * regra de leitura do historico do backend (`deriveSignalState`).
  */

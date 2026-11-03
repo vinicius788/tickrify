@@ -1,12 +1,15 @@
 /**
- * Rastreador de resultado do v10.3 (28/10/2026): o que o mercado fez com cada
+ * Rastreador de resultado (28/10/2026): o que o mercado fez com cada
  * plano, pela MESMA regua do replay (trackPlan em plan-engine.ts).
  *
- * Para cada analise nova com plano (WATCH, ARMED, ENTER_NOW), depois que a
- * janela fecha (validade do plano + 48h), busca as velas do periodo (1m quando
- * a janela cabe em 5000 min, senao 5m) e grava em "AnalysisTrack": toque na
- * zona, fill, TP1/stop/TIMEOUT (stop_only), MFE e MAE em R, e o "missed" (o
- * alvo veio antes do fill). Ligado a analise e a versao do prompt.
+ * Toda analise com estado (v10 em diante) ganha uma linha em "AnalysisTrack",
+ * com o estado, a versao do motor e a do prompt; NO_TRADE e analise sem plano
+ * ficam como `skipped`. Com plano, depois que a janela fecha (validade + 48h),
+ * busca as velas do periodo (1m quando a janela cabe em 5000 min, senao 5m) e
+ * grava: toque no nivel, fill (a mercado no ENTER_NOW, no nivel do plano no
+ * WATCH), TP1/stop/TIMEOUT (stop_only), MFE e MAE em R, o "missed" (o alvo
+ * veio antes do fill) e a referencia de direcao (a mercado na analise, stop e
+ * alvo de 1 ATR), que a revisao mensal compara (scripts/replay-variants.ts).
  *
  * Isto ainda nao aparece para o usuario: e medicao. O outcome sweeper
  * (outcome.sweeper.ts) segue sendo a fonte da /accuracy.
@@ -16,7 +19,8 @@
  * Best-effort absoluto: nenhuma falha aqui derruba o worker de analises.
  */
 import { PrismaClient } from '@prisma/client';
-import { clampValidity, isValidWatchPlan, trackPlan, type WatchPlan } from '../src/common/utils/plan-engine';
+import { clampValidity, isValidWatchPlan, resolveTp1, stopMarginAtr, trackPlan, type WatchPlan } from '../src/common/utils/plan-engine';
+import { calibrationPair } from '../src/common/utils/signal-decision';
 import { TIMEFRAME_MS, candleMarketOf, fetchWindow, normalizeTimeframe } from '../src/modules/market/candle-store';
 
 const MINUTE = 60_000;
@@ -33,6 +37,10 @@ export const TRACKER_RULES = {
   fxWeekendMs: 72 * HOUR,
   batch: 20,
   lookbackDays: 21,
+  /** DDL do boot: cada comando desiste depois disto esperando trava. */
+  ddlLockTimeout: '5s',
+  /** DDL falhou: nova tentativa a cada 10 min, ate conseguir. */
+  ddlRetryMs: 10 * MINUTE,
 } as const;
 
 export const TRACKER_SQL: readonly string[] = [
@@ -65,6 +73,11 @@ export const TRACKER_SQL: readonly string[] = [
     CONSTRAINT "AnalysisTrack_analysisId_fkey" FOREIGN KEY ("analysisId") REFERENCES "tickrify"."Analysis"("id") ON DELETE CASCADE ON UPDATE CASCADE
   )`,
   `CREATE INDEX IF NOT EXISTS "AnalysisTrack_promptVer_idx" ON "tickrify"."AnalysisTrack"("promptVer")`,
+  // Revisao mensal (02/11/2026): lado, ATR e a referencia de direcao.
+  `ALTER TABLE "tickrify"."AnalysisTrack" ADD COLUMN IF NOT EXISTS "direction" TEXT`,
+  `ALTER TABLE "tickrify"."AnalysisTrack" ADD COLUMN IF NOT EXISTS "atr" DOUBLE PRECISION`,
+  `ALTER TABLE "tickrify"."AnalysisTrack" ADD COLUMN IF NOT EXISTS "refOutcome" TEXT`,
+  `ALTER TABLE "tickrify"."AnalysisTrack" ADD COLUMN IF NOT EXISTS "refFillPrice" DOUBLE PRECISION`,
 ];
 
 type Candidate = {
@@ -72,7 +85,11 @@ type Candidate = {
   createdAt: Date;
   promptVer: number | null;
   result: Record<string, any> | null;
-  groundingStats: { interval?: string | null; coverage?: string; numbers?: { atr14?: number | null } | null } | null;
+  groundingStats: {
+    interval?: string | null;
+    coverage?: string;
+    numbers?: { atr14?: number | null; volRegime?: 'low' | 'normal' | 'high' | null } | null;
+  } | null;
 };
 
 export type TrackRow = {
@@ -98,6 +115,11 @@ export type TrackRow = {
   maeR: number | null;
   missed: boolean;
   candleInterval: string | null;
+  direction: 'long' | 'short' | null;
+  atr: number | null;
+  /** Referencia: a direcao do plano a mercado na analise, stop e alvo de 1 ATR (WIN, LOSS ou TIMEOUT). */
+  refOutcome: string | null;
+  refFillPrice: number | null;
 };
 
 const positive = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
@@ -129,9 +151,11 @@ export async function trackAnalysis(
     symbol, timeframe: interval, signalState: state, dataMode: typeof result.dataMode === 'string' ? result.dataMode : null,
     status: 'skipped', reason: null, outcome: null, touched: false, touchedAt: null, filled: false, fillAt: null, fillPrice: null,
     entry: null, stopLoss: null, takeProfit1: null, mfeR: null, maeR: null, missed: false, candleInterval: null,
+    direction: null, atr: null, refOutcome: null, refFillPrice: null,
   };
   const plan = planOf(result.watchPlan);
   if (!plan) return { ...base, reason: 'no_plan' };
+  base.direction = plan.direction;
   const step = interval ? TIMEFRAME_MS[interval] : undefined;
   if (!symbol || !interval || !step) return { ...base, reason: 'no_timeframe' };
   const market = candleMarketOf(symbol);
@@ -152,12 +176,25 @@ export async function trackAnalysis(
   const levels = signal && positive(analysis.entry) && positive(analysis.stopLoss) && positive(analysis.takeProfit1)
     ? { entry: analysis.entry, stopLoss: analysis.stopLoss, takeProfit1: analysis.takeProfit1 }
     : null;
-  const atr = c.groundingStats?.coverage === 'injected' ? c.groundingStats.numbers?.atr14 ?? null : null;
+  const injected = c.groundingStats?.coverage === 'injected' ? c.groundingStats.numbers ?? null : null;
+  const atr = injected?.atr14 ?? null;
+  base.atr = atr;
+  // A margem do validador (P80 do par e do regime gravado na analise), nunca o padrao solto.
+  const marginAtr = stopMarginAtr(calibrationPair(symbol), injected?.volRegime ?? null);
   const t = trackPlan({
-    plan, enterNow: state === 'ENTER_NOW', atr, levels,
+    plan, enterNow: state === 'ENTER_NOW', atr, marginAtr, levels,
     tf: tf.candles, tfStepMs: step, fine: fine.candles, startMs: start, resolveMs: TRACKER_RULES.resolveMs,
   });
   const at = (i: number | null) => (i === null ? null : new Date(fine.candles![i][0]));
+  // Referencia de direcao, pela mesma regua: a mercado na 1a vela fina, 1 ATR.
+  const i0 = fine.candles.findIndex((b) => b[0] >= start);
+  let ref: { outcome: string; price: number } | null = null;
+  if (atr && atr > 0 && i0 >= 0) {
+    const long = plan.direction === 'long';
+    const fill = { index: i0, price: fine.candles[i0][1] };
+    const r = resolveTp1(fine.candles, long, fill, long ? fill.price - atr : fill.price + atr, long ? fill.price + atr : fill.price - atr, fine.candles[i0][0] + TRACKER_RULES.resolveMs);
+    ref = { outcome: r.outcome, price: fill.price };
+  }
   return {
     ...base,
     status: 'tracked',
@@ -175,6 +212,8 @@ export async function trackAnalysis(
     maeR: t.resolution?.maeR ?? null,
     missed: t.outcome === 'MISSED',
     candleInterval: fineInterval,
+    refOutcome: ref?.outcome ?? null,
+    refFillPrice: ref?.price ?? null,
   };
 }
 
@@ -182,11 +221,12 @@ async function insert(prisma: PrismaClient, r: TrackRow): Promise<void> {
   await prisma.$executeRawUnsafe(
     `INSERT INTO "tickrify"."AnalysisTrack" ("analysisId", "promptVer", "engineVersion", "symbol", "timeframe", "signalState",
        "dataMode", "status", "reason", "outcome", "touched", "touchedAt", "filled", "fillAt", "fillPrice", "entry", "stopLoss",
-       "takeProfit1", "mfeR", "maeR", "missed", "candleInterval")
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+       "takeProfit1", "mfeR", "maeR", "missed", "candleInterval", "direction", "atr", "refOutcome", "refFillPrice")
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
      ON CONFLICT ("analysisId") DO NOTHING`,
     r.analysisId, r.promptVer, r.engineVersion, r.symbol, r.timeframe, r.signalState, r.dataMode, r.status, r.reason, r.outcome,
     r.touched, r.touchedAt, r.filled, r.fillAt, r.fillPrice, r.entry, r.stopLoss, r.takeProfit1, r.mfeR, r.maeR, r.missed, r.candleInterval,
+    r.direction, r.atr, r.refOutcome, r.refFillPrice,
   );
 }
 
@@ -196,7 +236,7 @@ export async function runAnalysisTracker(prisma: PrismaClient, nowMs: number = D
      FROM "tickrify"."Analysis" a
      WHERE a."status" = 'completed'
        AND a."createdAt" > NOW() - ($1 || ' days')::interval
-       AND a."result"->>'signalState' IN ('WATCH', 'ARMED', 'ENTER_NOW')
+       AND a."result"->>'signalState' IS NOT NULL
        AND NOT EXISTS (SELECT 1 FROM "tickrify"."AnalysisTrack" t WHERE t."analysisId" = a."id")
      ORDER BY a."createdAt" ASC
      LIMIT $2`,
@@ -212,6 +252,16 @@ export async function runAnalysisTracker(prisma: PrismaClient, nowMs: number = D
   return counts;
 }
 
+/** Cada DDL na propria transacao, com lock_timeout: nunca fica preso atras de outra trava. */
+async function ensureTrackerTables(prisma: PrismaClient): Promise<void> {
+  for (const sql of TRACKER_SQL) {
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe(`SET LOCAL lock_timeout = '${TRACKER_RULES.ddlLockTimeout}'`),
+      prisma.$executeRawUnsafe(sql),
+    ]);
+  }
+}
+
 export function startAnalysisTracker(prisma: PrismaClient): void {
   const run = async () => {
     try {
@@ -221,16 +271,23 @@ export function startAnalysisTracker(prisma: PrismaClient): void {
       console.warn(`[tracker] Varredura falhou: ${err instanceof Error ? err.message : err}`);
     }
   };
-  void (async () => {
+  // A varredura so e agendada depois que as colunas existem.
+  const boot = async (attempt: number) => {
     try {
-      for (const sql of TRACKER_SQL) await prisma.$executeRawUnsafe(sql);
-      console.log('[tracker] Tabela pronta (varredura a cada 30 min).');
-      setTimeout(() => {
-        void run();
-        setInterval(() => void run(), TRACKER_RULES.intervalMs).unref();
-      }, TRACKER_RULES.firstDelayMs).unref();
+      await ensureTrackerTables(prisma);
     } catch (err) {
-      console.warn(`[tracker] Indisponivel: ${err instanceof Error ? err.message : err}`);
+      console.warn(
+        `[tracker] Tabela indisponivel (tentativa ${attempt}), nova tentativa em ${TRACKER_RULES.ddlRetryMs / MINUTE} min: ` +
+          `${err instanceof Error ? err.message : err}`,
+      );
+      setTimeout(() => void boot(attempt + 1), TRACKER_RULES.ddlRetryMs).unref();
+      return;
     }
-  })();
+    console.log(`[tracker] Tabela pronta${attempt > 1 ? ` na tentativa ${attempt}` : ''} (varredura a cada 30 min).`);
+    setTimeout(() => {
+      void run();
+      setInterval(() => void run(), TRACKER_RULES.intervalMs).unref();
+    }, TRACKER_RULES.firstDelayMs).unref();
+  };
+  void boot(1);
 }

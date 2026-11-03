@@ -85,15 +85,6 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
-    key: 'ENABLE_RR_GUARD',
-    type: 'boolean',
-    label: 'Guarda de risco/retorno',
-    description:
-      'Rebaixa para No trade quando o alvo final (TP2, ou o TP1 sem TP2) não paga 1.5 vezes o risco. DESLIGAR deixa passar setup com retorno pior que o risco.',
-    defaultValue: 'true',
-    risk: 'medio',
-  },
-  {
     key: 'DEMO_MODE',
     type: 'boolean',
     label: 'Modo demo (resposta sintética)',
@@ -278,7 +269,7 @@ export function resolveFlag(key: string): ResolvedFlag {
  * Só 'true'/'1' e 'false'/'0' são aceitos; qualquer outra coisa cai no padrão da
  * definição. Isto preserva exatamente a semântica que já existia no código, onde
  * cada flag tinha a sua própria: `ENABLE_QUICK_GROUNDING === 'true'` (padrão
- * DESLIGADO) convivia com `ENABLE_RR_GUARD !== 'false'` (padrão LIGADO).
+ * DESLIGADO) convivia com `ENABLE_NEWS_GUARD !== 'false'` (padrão LIGADO).
  *
  * O ponto sutil: com a segunda semântica, um valor lixo como "sim" mantinha a
  * guarda LIGADA. Um parser ingênuo ("é 'true'? então ligado") desligaria a

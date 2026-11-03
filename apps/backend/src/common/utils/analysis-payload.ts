@@ -189,14 +189,15 @@ export function buildPersistedAnalysisPayload(params: {
 
   if (analysis) reasoning = presentAnalysis({ ...analysis, reasoning }, 'en', 1).reasoning;
 
-  // Estado do v10. Analise anterior a ele nao tem o campo: o estado sai da
+  // Estado do copiloto. Analise anterior a ele nao tem o campo: o estado sai da
   // recomendacao e do tipo de entrada, na leitura, sem migrar o banco.
   const signalState = storedSignalState({ signalState: params.source.signalState, analysis }, recommendation);
   const watchPlan = signalState !== 'NO_TRADE' && isValidWatchPlan(params.source.watchPlan) ? params.source.watchPlan : null;
-  // De onde sairam os niveis (v10.3): candles reais ou estimados do print. Analise antiga: null.
+  // De onde sairam os niveis: candles reais ou estimados do print. Analise antiga: null.
   const dataMode = params.source.dataMode === 'real_data' || params.source.dataMode === 'print' ? params.source.dataMode : null;
+  // v11: cada mudanca de estado ({ from, to, reason }); antes, so o motivo (texto).
   const validatorNotes = Array.isArray(params.source.validatorNotes)
-    ? params.source.validatorNotes.filter((n: unknown) => typeof n === 'string')
+    ? params.source.validatorNotes.filter((n: unknown) => typeof n === 'string' || (isObject(n) && typeof n.reason === 'string'))
     : [];
 
   const fullResponse: Record<string, any> = {

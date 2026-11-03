@@ -114,6 +114,12 @@ export interface GroundingNumbers {
   /** Resumo do 4h (v10.1): estrutura e fechamento contra a EMA50; null sem velas de 4h. */
   htfTrend?: HtfTrend | null;
   htfVsEma50?: 'above' | 'below' | null;
+  /** Swings fractais das velas fechadas (v11): onde a invalidacao encaixa. */
+  swings?: { kind: 'high' | 'low'; price: number }[];
+  /** Movimento atrasado por direcao (v11, moveIsLate); null sem ATR. */
+  late?: { long: boolean; short: boolean } | null;
+  /** Regime de volatilidade (v11, volatilityRegime): chave da calibracao. */
+  volRegime?: 'low' | 'normal' | 'high' | null;
 }
 
 export type HtfTrend = 'uptrend' | 'downtrend' | 'range';

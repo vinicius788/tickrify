@@ -16,7 +16,7 @@ import { AnalysisType } from '../ticks/tick-packages';
 const USER_CONTEXT_PLACEHOLDER = '{{USER_CONTEXT}}';
 const USER_CONTEXT_CLOSE = '</user_context>';
 
-// So na analise DEEP. Mesmo contrato e mesmos estados do v10: a profundidade
+// So na analise DEEP. Mesmo contrato e mesmos estados: a profundidade
 // muda a leitura, nunca o veredito. Os rotulos em ingles sao contrato com a
 // interface, que os traduz.
 export const DEEP_ANALYSIS_INSTRUCTION = `

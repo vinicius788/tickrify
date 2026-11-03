@@ -96,10 +96,11 @@ const calendar = jest.fn();
 (globalThis as any).__openaiCreate = openaiCreate;
 (globalThis as any).__calendar = calendar;
 
-// v10.3: o plano do modelo (zona, alvos) e o preco real que o grounding
-// entrega, ATR 2. Compra: limit em 100 (borda da zona), stop 98 (invalidacao
-// 98,5 - 0,25 ATR), TP1 103 (target1 105 limitado a 1,5R), TP2 111,5 (5,75R).
-// Preco real 101,2: D = 0,6 ATR, ARMED. Venda: o espelho.
+// v11: o plano do modelo (zona, alvos) e o preco real que o grounding entrega,
+// ATR 2, com fundo real em 98,5 e topo em 101,5 (a invalidacao encaixa).
+// Compra a mercado no preco real 101,2: stop 98 (invalidacao 98,5 - 0,25 ATR),
+// TP1 105 (1,19R), TP2 111,5 (3,22R): o ENTER_NOW do modelo fica. Venda: o
+// espelho a 98,8.
 const LONG_PLAN = {
   direction: 'long', triggerType: 'zone_reaction', zoneLow: 99, zoneHigh: 100, invalidation: 98.5,
   target1: 105, target2: 111.5, validForCandles: 16, trigger: 'Bullish close in the top third at 99-100',
@@ -114,7 +115,10 @@ function marketFor(market: Market) {
   const k = market === 'btc' ? 100 : 1;
   return {
     block: 'REAL DATA', candles: 'injected', marketContext: 'unavailable', assetClass: 'crypto',
-    stats: { v: 1, symbol: 'TEST', interval: '30m', coverage: 'injected', numbers: { lastClose: price * k, atr14: 2 * k } },
+    stats: { v: 1, symbol: 'TEST', interval: '30m', coverage: 'injected', numbers: {
+      lastClose: price * k, atr14: 2 * k, late: { long: false, short: false },
+      swings: [{ kind: 'low', price: 98.5 * k }, { kind: 'high', price: 101.5 * k }],
+    } },
   };
 }
 const CHECKLIST = 'C1 PASS: 4h; C2 PASS: discount; C3 PASS: pullback; C4 PASS: control; C5 FAIL: retested; C6 PASS: 1 ATR; C7 PASS: room. 6/7';
@@ -142,11 +146,11 @@ function modelReply(recommendation: string, confidence: unknown, analysis: Recor
 }
 
 const buyPlan = {
-  currentPrice: 101, entry: 100, stopLoss: 95, takeProfit1: 110, takeProfit2: 120,
+  currentPrice: 101, entry: 100, stopLoss: 95, takeProfit1: 110, takeProfit2: 120, entryType: 'market',
   probabilityTp1: 55, probabilityTp2: 30, probabilityStop: 45,
 };
 const sellPlan = {
-  currentPrice: 99, entry: 100, stopLoss: 105, takeProfit1: 90, takeProfit2: 80,
+  currentPrice: 99, entry: 100, stopLoss: 105, takeProfit1: 90, takeProfit2: 80, entryType: 'market',
   probabilityTp1: 55, probabilityTp2: 30, probabilityStop: 45,
 };
 const high: Event = { impact: 'High', minutesUntil: 10, country: 'USD', title: 'CPI m/m' };
@@ -171,13 +175,12 @@ const scenarios: Scenario[] = [
   { name: 'venda valida', market: 'short', replies: [modelReply('SELL', 70, { ...sellPlan, marketStructure: { bias: 'bearish' } })] },
   { name: 'WAIT original', replies: [modelReply('HOLD', 55, { currentPrice: 101 })] },
   {
-    name: 'rebaixamento por R (alvo final abaixo de 1,5R)',
-    replies: [modelReply('BUY', 70, buyPlan, { watchPlan: { ...LONG_PLAN, target1: 102.6, target2: null } })],
+    name: 'sem geometria (alvo a menos de 1R das duas entradas)',
+    replies: [modelReply('BUY', 70, buyPlan, { watchPlan: { ...LONG_PLAN, target1: 101.9, target2: null } })],
   },
   {
-    name: 'preco real ja atravessou a zona (WATCH)',
-    market: 'short',
-    replies: [modelReply('BUY', 70, { ...buyPlan, currentPrice: 98.9 })],
+    name: 'ARMED do modelo vira WATCH (a ordem limit nao e mais emitida)',
+    replies: [modelReply('BUY', 70, { ...buyPlan, entryType: 'limit' })],
   },
   {
     name: 'noticia: evento encontrado (rebaixa)',
@@ -215,7 +218,7 @@ const scenarios: Scenario[] = [
     name: 'preco corrigido por escala (BTC lido 100x menor)',
     market: 'btc',
     replies: [modelReply('BUY', 70, {
-      symbol: 'BTCUSDT', currentPrice: 1012, entry: 1011, stopLoss: 985, takeProfit1: 1050, takeProfit2: 1115,
+      symbol: 'BTCUSDT', currentPrice: 1012, entry: 1011, stopLoss: 985, takeProfit1: 1050, takeProfit2: 1115, entryType: 'market',
     }, { watchPlan: Object.fromEntries(Object.entries(LONG_PLAN).map(([k, v]) => [k, typeof v === 'number' && k !== 'validForCandles' ? v * 10 : v])) })],
   },
 ];
@@ -223,14 +226,12 @@ const scenarios: Scenario[] = [
 describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
   const saved = {
     news: process.env.ENABLE_NEWS_GUARD,
-    rr: process.env.ENABLE_RR_GUARD,
   };
   let adapterResults: any[] = [];
   let logLines: string[] = [];
 
   beforeAll(() => {
     process.env.ENABLE_NEWS_GUARD = 'true';
-    process.env.ENABLE_RR_GUARD = 'true';
     const capture = (...args: unknown[]) => {
       logLines.push(args.map(String).join(' '));
     };
@@ -265,7 +266,7 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
   afterAll(() => {
     jest.restoreAllMocks();
     for (const [key, value] of [
-      ['ENABLE_NEWS_GUARD', saved.news], ['ENABLE_RR_GUARD', saved.rr],
+      ['ENABLE_NEWS_GUARD', saved.news],
     ] as const) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -363,8 +364,8 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     const [current, historical, hypothetical] = labels[userLanguage];
     const narrative = `${current}4/7. ${historical}4/7. ${hypothetical}4/7, wait.`;
     const presented = `${current}5/7. ${historical}4/7. ${hypothetical}4/7, wait.`;
-    const fields = { ...buyPlan, invalidationLevel: 94, entryType: 'limit',
-      entryCondition: 'Pending order: buy limit 100.',
+    const fields = { ...buyPlan, invalidationLevel: 94,
+      entryCondition: 'Buy at market while 101 holds.',
       structureValidation: 'C1 PASS: 4h; C2 PASS: zone; C3 PASS: setup; C4 FAIL: mixed; C5 FAIL: retested; C6 PASS: 1 ATR; C7 PASS: room → 4/7',
       factorsPresent: 4, confluenceScore: 57.14, executiveSummary: narrative,
       reasoning: narrative, multiTimeframeAlignment: 'H1 bullish | H4 bullish | D1 neutral' };
@@ -374,9 +375,9 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     const done = (globalThis as any).__prisma.analysis.update.mock.calls.map(([args]: any[]) => args.data).find((d: any) => d.status === 'completed');
     expect(done).toBeDefined(); expect(done.recommendation).toBe('BUY');
     expect(done.fullResponse).toBe(raw);
-    expect(done.result.analysis).toMatchObject({ invalidationLevel: 94, entryType: 'limit', takeProfit1: 103, takeProfit2: 111.5,
+    expect(done.result.analysis).toMatchObject({ invalidationLevel: 94, entryType: 'market', takeProfit1: 105, takeProfit2: 111.5,
       factorsPresent: 5, confluenceScore: 71.43, executiveSummary: presented, reasoning: presented });
-    expect(done.result.analysis.entry).toBeCloseTo(100);
+    expect(done.result.analysis.entry).toBeCloseTo(101.2);
     expect(done.result.analysis.stopLoss).toBeCloseTo(98);
     expect(done.result.analysis.multiTimeframeAlignment).not.toBe(fields.multiTimeframeAlignment);
     expect(done.result.engine.validator_flags).toContain('stop_inside_invalidation');
@@ -392,7 +393,7 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
   const calls = (validateTradePlan: number, decideSignal: number, newsCalendar: number, model = 1) => ({
     model, validateTradePlan, decideSignal, newsCalendar, otherCalendar: 0,
   });
-  // v10: probabilityTp1 fica a 3 pontos da confianca (55 -> 67 com confianca 70) e o stop em no maximo 100 - TP1.
+  // probabilityTp1 fica a 3 pontos da confianca (55 -> 67 com confianca 70) e o stop em no maximo 100 - TP1.
   const tradeSaved = (recommendation: string, confidence: number, action: string, rr: [number, number], probabilities: unknown[] = [67, 30, 33]) => ({
     recommendation, confidence, action, reasons: [], flags: [],
     rrTp1: rr[0], rrTp2: rr[1], rrRatio: `1:${rr[1].toFixed(1)}`, probabilities,
@@ -415,43 +416,43 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
   });
 
   const expected: Record<string, unknown> = {
-    'compra valida': ok(calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'no_event'), tradeSaved('BUY', 70, 'none', [1.5, 5.75]), 'no_event'),
-    'venda valida': ok(calls(2, 1, 1), adapterSaid('SELL', 70, 'none', [], 'no_event'), tradeSaved('SELL', 70, 'none', [1.5, 5.75]), 'no_event'),
+    'compra valida': ok(calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'no_event'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'no_event'),
+    'venda valida': ok(calls(2, 1, 1), adapterSaid('SELL', 70, 'none', [], 'no_event'), tradeSaved('SELL', 70, 'none', [1.19, 3.22]), 'no_event'),
     // HOLD sem cenario alternativo e NO_TRADE: confianca no maximo 49.
     'WAIT original': ok(calls(2, 1, 0), adapterSaid('WAIT', 49, 'none', [], 'skipped'), waitSaved(49, 'none', []), 'skipped'),
-    'rebaixamento por R (alvo final abaixo de 1,5R)': ok(
-      calls(2, 1, 0), adapterSaid('WAIT', 49, 'downgraded', ['rr_tp2_below_min'], 'skipped'),
-      waitSaved(49, 'downgraded', ['rr_tp2_below_min']), 'skipped',
+    'sem geometria (alvo a menos de 1R das duas entradas)': ok(
+      calls(2, 1, 0), adapterSaid('WAIT', 49, 'downgraded', ['market_entry_invalid', 'no_valid_geometry'], 'skipped'),
+      waitSaved(49, 'downgraded', ['market_entry_invalid', 'no_valid_geometry']), 'skipped',
     ),
-    // O plano de compra com o preco de venda (98,8, abaixo da zona e acima da invalidacao): WATCH.
-    'preco real ja atravessou a zona (WATCH)': ok(
-      calls(2, 1, 0), adapterSaid('WAIT', 49, 'downgraded', ['zone_overrun'], 'skipped'),
-      waitSaved(49, 'downgraded', ['zone_overrun']), 'skipped',
+    // ARMED do modelo (ordem limit) vira WATCH com o plano, sem niveis.
+    'ARMED do modelo vira WATCH (a ordem limit nao e mais emitida)': ok(
+      calls(2, 1, 0), adapterSaid('WAIT', 49, 'downgraded', ['limit_order_retired'], 'skipped'),
+      waitSaved(49, 'downgraded', ['limit_order_retired']), 'skipped',
     ),
     'noticia: evento encontrado (rebaixa)': ok(
       calls(2, 1, 1), adapterSaid('WAIT', 49, 'downgraded', ['news_event'], 'event'),
       waitSaved(49, 'downgraded', ['news_event']), 'event',
     ),
-    'noticia: nenhum evento': ok(calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'no_event'), tradeSaved('BUY', 70, 'none', [1.5, 5.75]), 'no_event'),
+    'noticia: nenhum evento': ok(calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'no_event'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'no_event'),
     'noticia: timeout de 6 s (segue sem rebaixar, status timeout)': ok(
-      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'timeout'), tradeSaved('BUY', 70, 'none', [1.5, 5.75]), 'timeout',
+      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'timeout'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'timeout',
     ),
     'noticia: erro do calendario (segue sem rebaixar, status error)': ok(
-      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'error'), tradeSaved('BUY', 70, 'none', [1.5, 5.75]), 'error',
+      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'error'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'error',
     ),
     'noticia: fonte degradada sem evento': ok(
-      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'degraded_no_event'), tradeSaved('BUY', 70, 'none', [1.5, 5.75]), 'degraded_no_event',
+      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'degraded_no_event'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'degraded_no_event',
     ),
     'noticia: fonte degradada com o evento no cache velho (rebaixa)': ok(
       calls(2, 1, 1), adapterSaid('WAIT', 49, 'downgraded', ['news_event'], 'degraded_event'),
       waitSaved(49, 'downgraded', ['news_event']), 'degraded_event',
     ),
     // Tendencia forte: teto 72.
-    'confianca decimal (72.4)': ok(calls(2, 1, 1), adapterSaid('BUY', 72, 'none', [], 'no_event'), tradeSaved('BUY', 72, 'none', [1.5, 5.75], [69, 30, 31]), 'no_event'),
+    'confianca decimal (72.4)': ok(calls(2, 1, 1), adapterSaid('BUY', 72, 'none', [], 'no_event'), tradeSaved('BUY', 72, 'none', [1.19, 3.22], [69, 30, 31]), 'no_event'),
     // O parser zera o texto; sem o piso antigo de 30, o sinal fica com confianca 0.
-    'confianca em texto ("70%")': ok(calls(2, 1, 1), adapterSaid('BUY', 0, 'none', [], 'no_event'), tradeSaved('BUY', 0, 'none', [1.5, 5.75], [3, 3, 45]), 'no_event'),
+    'confianca em texto ("70%")': ok(calls(2, 1, 1), adapterSaid('BUY', 0, 'none', [], 'no_event'), tradeSaved('BUY', 0, 'none', [1.19, 3.22], [3, 3, 45]), 'no_event'),
     'preco corrigido por escala (BTC lido 100x menor)': ok(
-      calls(2, 1, 1), adapterSaid('BUY', 70, 'fixed', [], 'no_event'), tradeSaved('BUY', 70, 'fixed', [1.5, 5.75], [null, null, null]),
+      calls(2, 1, 1), adapterSaid('BUY', 70, 'fixed', [], 'no_event'), tradeSaved('BUY', 70, 'fixed', [1.19, 3.22], [null, null, null]),
       'no_event', 'BTCUSDT',
     ),
   };
@@ -495,7 +496,7 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
       name: 'aritmetica',
       market: 'short',
       replies: [modelReply('SELL', 70, {
-        ...sellPlan, factorsPresent: 5, confluenceScore: 71.43, structureValidation: checklist, entryType: 'limit',
+        ...sellPlan, factorsPresent: 5, confluenceScore: 71.43, structureValidation: checklist,
       })],
     });
     expect(result.persisted).toMatchObject({ recommendation: 'SELL', action: 'none', reasons: [], flags: [] });

@@ -231,7 +231,7 @@ if (!PUBLISHABLE_KEY || PUBLISHABLE_KEY.includes('YOUR_CLERK')) {
   document.body.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0A0B0D;color:#E8ECF4;font-family:sans-serif;flex-direction:column;gap:12px;">
       <p style="color:#FF3B5C;font-size:14px;">
-        ⚠️ VITE_CLERK_PUBLISHABLE_KEY não configurada.
+        VITE_CLERK_PUBLISHABLE_KEY não configurada.
       </p>
       <p style="color:#8892A4;font-size:12px;">
         Configure a variável de ambiente no Vercel e faça redeploy.

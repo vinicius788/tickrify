@@ -25,6 +25,10 @@ import {
   type SignalState,
   type ValidatorAction,
   type ValidatorNote,
+  type ValidatorReason,
+  type PriceLocation,
+  type WatchReach,
+  validatorReasons,
 } from '../src/common/utils/signal-decision';
 import type { WatchPlan } from '../src/common/utils/plan-engine';
 import { BROKEN_PLAN_RULES, validateTradePlan } from '../src/common/utils/trade-plan-validator';
@@ -170,6 +174,8 @@ interface WorkerAnalysisResult {
   watchPlan: WatchPlan | null;
   /** real_data = niveis pelos candles reais; print = estimados do print. */
   dataMode: 'real_data' | 'print';
+  watchReach: WatchReach | null;
+  location: PriceLocation | null;
   validatorNotes: ValidatorNote[];
   analysis: WorkerAnalysisDetails;
 }
@@ -177,7 +183,7 @@ interface WorkerAnalysisResult {
 interface WorkerParseOutcome {
   result: WorkerAnalysisResult;
   validatorAction: ValidatorAction;
-  validatorReasons: ValidatorNote[];
+  validatorReasons: ValidatorReason[];
   validatorFlags: SignalDecisionResult['validatorFlags'];
   /** validateTradePlan + decideSignal (inclui o calendario do news guard). */
   validationMs: number;
@@ -342,8 +348,12 @@ interface AdapterDecision {
   signalState: SignalState;
   watchPlan: WatchPlan | null;
   dataMode: 'real_data' | 'print';
+  watchReach: WatchReach | null;
+  location: PriceLocation | null;
   validatorAction: ValidatorAction;
-  validatorReasons: ValidatorNote[];
+  /** Cada mudanca de estado do validador do adapter. */
+  validatorNotes: ValidatorNote[];
+  validatorReasons: ValidatorReason[];
   validatorFlags: SignalDecisionResult['validatorFlags'];
   newsGuardStatus: SignalDecisionResult['newsGuardStatus'];
 }
@@ -363,8 +373,11 @@ function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
     signalState,
     watchPlan: (aiSource.watchPlan as WatchPlan | null) ?? null,
     dataMode: aiSource.dataMode === 'real_data' ? 'real_data' : 'print',
+    watchReach: (aiSource.watchReach as WatchReach | null) ?? null,
+    location: (aiSource.location as PriceLocation | null) ?? null,
     validatorAction: meta.validatorAction as ValidatorAction,
-    validatorReasons: meta.validatorReasons as ValidatorNote[],
+    validatorNotes: Array.isArray(aiSource.validatorNotes) ? (aiSource.validatorNotes as ValidatorNote[]) : [],
+    validatorReasons: meta.validatorReasons as ValidatorReason[],
     validatorFlags: meta.validatorFlags as SignalDecisionResult['validatorFlags'],
     newsGuardStatus: (meta.newsGuardStatus as SignalDecisionResult['newsGuardStatus']) ?? 'disabled',
   };
@@ -459,8 +472,11 @@ async function toWorkerAnalysisResult(
         signalState: own.state,
         watchPlan: own.watchPlan,
         dataMode: own.dataMode,
+        watchReach: own.watchReach,
+        location: own.location,
         validatorAction: own.validatorAction,
-        validatorReasons: own.validatorNotes,
+        validatorNotes: own.validatorNotes,
+        validatorReasons: validatorReasons(own.validatorNotes),
         validatorFlags: own.validatorFlags,
         newsGuardStatus: own.newsGuardStatus,
       },
@@ -494,7 +510,9 @@ async function toWorkerAnalysisResult(
     signalState: decision.signalState,
     watchPlan: decision.watchPlan,
     dataMode: decision.dataMode,
-    validatorNotes: decision.validatorReasons,
+    watchReach: decision.watchReach,
+    location: decision.location,
+    validatorNotes: decision.validatorNotes,
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),
       timeframe: ensureString(analysisSource.timeframe ?? source.timeframe, 'UNKNOWN'),
@@ -629,6 +647,8 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
       signalState: 'NO_TRADE',
       watchPlan: null,
       dataMode: 'print',
+      watchReach: null,
+      location: null,
       validatorNotes: [],
       analysis: {
         symbol: 'DEMOUSDT',
@@ -684,6 +704,8 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
       signalState: 'ARMED',
       watchPlan: null,
       dataMode: 'print',
+      watchReach: null,
+      location: null,
       validatorNotes: [],
       analysis: {
         symbol: 'DEMOUSDT',
@@ -738,6 +760,8 @@ function generateDemoAnalysis(): WorkerAnalysisResult {
     signalState: 'ARMED',
     watchPlan: null,
     dataMode: 'print',
+    watchReach: null,
+    location: null,
     validatorNotes: [],
     analysis: {
       symbol: 'DEMOUSDT',
@@ -1489,7 +1513,7 @@ startFlagRefresh(async () =>
 
 startOutcomeSweeper(prisma);
 
-// Armazem de velas (REAL DATA de toda analise) e rastreador de resultado do v10.3.
+// Armazem de velas (REAL DATA de toda analise) e rastreador de resultado dos planos.
 void registerCandleStore(prisma, (m) => console.log(m));
 startAnalysisTracker(prisma);
 

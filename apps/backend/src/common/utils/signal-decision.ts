@@ -8,76 +8,75 @@ import {
   parsePassFailChecklist,
 } from './analysis-normalizer';
 import { EconomicCalendarService } from '../../modules/calendar/calendar.service';
+import { normalizeToBinancePerp } from '../../modules/market/market.service';
 import { BROKEN_PLAN_RULES, MEASURE_ONLY_RULES, TradePlanRule } from './trade-plan-validator';
-import { WatchPlan, isValidWatchPlan, levelsFromPlan, nearEdge, pricePosition } from './plan-engine';
+import {
+  ENGINE_RULES,
+  type EntryLevels,
+  type EntryRejection,
+  type Swing,
+  type WatchPlan,
+  entryLevels,
+  isValidWatchPlan,
+  limitEntryLevels,
+  nearEdge,
+  pricePosition,
+  reachProbability,
+  snapInvalidation,
+  stopMarginAtr,
+  type VolRegime,
+} from './plan-engine';
 import type { HtfTrend } from '../../modules/ai/analysis-data-coverage';
 
 // ============================================================================
-// VALIDADOR DE ESTADO DO v10 (26/10/2026): A DECISAO UNICA DEPOIS DO MODELO
+// VALIDADOR DE ESTADO DO v11 (02/11/2026): O CODIGO DECIDE O ESTADO
 // ----------------------------------------------------------------------------
-// O modelo escolhe um de quatro estados (NO_TRADE, WATCH, ARMED, ENTER_NOW).
-// Este codigo so REBAIXA, na ordem ENTER_NOW -> ARMED -> WATCH -> NO_TRADE,
-// nunca promove. Adapter e worker decidem por aqui (paridade).
-// Mapeamento fixo: ENTER_NOW = BUY/SELL a mercado; ARMED = BUY/SELL com
-// ordem limit na borda da zona; WATCH e NO_TRADE = WAIT sem niveis principais
-// (o WATCH leva o plano condicional em `watchPlan`).
-// v10.3 (27/10/2026): entrada, stop e TP1 saem do plan-engine.ts, nunca do
-// modelo; o estado sai da distancia D da borda proxima ao preco real; C2, C3,
-// C6 e C7 do checklist sao obrigatorios para qualquer plano.
-// Todo rebaixamento grava o motivo em `validatorNotes` e no log.
+// O modelo le o mercado e entrega o plano; este codigo decide entre NO_TRADE,
+// WATCH e ENTER_NOW com as constantes de ENGINE_RULES (plan-engine.ts). O
+// equilibrio entre entrar e aguardar mora aqui e na interface (modo leitura),
+// nunca no prompt.
+// So rebaixa em relacao ao estado do modelo, com uma excecao: WATCH do modelo
+// com entrada a mercado valida e todas as condicoes do ENTER_NOW vira
+// ENTER_NOW. Cada mudanca de estado vai para `validatorNotes` com o motivo.
+// A ordem limit (ARMED) saiu em 02/11/2026: perdeu em todas as rodadas
+// medidas. O que seria ARMED vira WATCH com o plano e o nivel que destrava a
+// entrada; o ARMED segue no tipo so para exibir analises antigas.
+// Mapeamento fixo: ENTER_NOW = BUY/SELL a mercado; WATCH e NO_TRADE = WAIT sem
+// niveis principais (o WATCH leva o plano em `watchPlan`). Adapter e worker
+// decidem por aqui (paridade).
 // ============================================================================
 
 export type SignalState = 'NO_TRADE' | 'WATCH' | 'ARMED' | 'ENTER_NOW';
 export const SIGNAL_STATES: readonly SignalState[] = ['NO_TRADE', 'WATCH', 'ARMED', 'ENTER_NOW'];
 
-/** Limites do validador. Recalibrar AQUI, e so aqui. */
-export const STATE_RULES = {
-  /** R:R minimo da entrada ate o alvo final (TP2, ou TP1 sem TP2; chave ENABLE_RR_GUARD desliga). */
-  minRiskRewardTp2: 1.5,
-  /** D = |borda proxima - preco real| / ATR: ARMED ate isto, WATCH acima. */
-  armedMaxAtr: 0.75,
-  /**
-   * Sem REAL DATA (ativo sem fonte ou cota do dia acabou): D_R = |borda - preco
-   * lido no print| / risco do plano do modelo. Mesmo limite do v10 (f3dea7b).
-   */
-  armedMaxStopR: 0.5,
-  /** Itens do checklist que tem de vir PASS em qualquer plano. */
-  requiredChecks: [2, 3, 6, 7],
-  /** PASS minimos no total; forex e contra a tendencia do 4h pedem mais. */
-  minPass: 5,
-  minPassStrict: 6,
-  /** Preco real a mais que isto (em ATR) do preco lido no print = print desatualizado. */
-  stalePrintAtr: 1,
-  confidenceCap: 72,
-  confidenceCapWeakTrend: 58,
-  confidenceCapModerateTrend: 68,
-  confidenceCapNoSignal: 49,
-  /** probabilityTp1 fica a no maximo isto da confianca. */
-  probabilityTp1Band: 3,
-} as const;
-
-/** Motivo de cada rebaixamento (e da nota de print velho). */
-export type ValidatorNote =
+/** Motivo de cada mudanca de estado. */
+export type ValidatorReason =
   | 'state_mismatch'
+  | 'watch_plan_invalid'
   | 'implausible_price'
-  | 'levels_unverified'
+  | 'invalidation_unsnapped'
   | 'plan_invalidated'
-  | 'zone_overrun'
-  | 'stop_atr_out_of_range'
-  | 'tp1_no_room'
-  | 'rr_tp2_below_min'
+  | 'market_entry_invalid'
+  | 'market_entry_valid'
+  | 'limit_order_retired'
   | 'required_check_failed'
   | 'checks_below_min'
-  | 'forex_checks_below_min'
-  | 'countertrend_checks_below_min'
+  | 'late_move'
+  | 'setup_failed'
+  | 'no_valid_geometry'
+  | 'levels_unverified'
   | 'not_at_price'
-  | 'entry_far_from_price'
-  | 'news_event'
-  | 'watch_plan_invalid'
-  | 'stale_print';
+  | 'news_event';
+
+/** Uma mudanca de estado feita pelo codigo, gravada em `validatorNotes`. */
+export interface ValidatorNote {
+  from: SignalState;
+  to: SignalState;
+  reason: ValidatorReason;
+}
 
 /** O que o validador fez com a resposta do modelo (vai ao PostHog). */
-export type ValidatorAction = 'none' | 'fixed' | 'downgraded';
+export type ValidatorAction = 'none' | 'fixed' | 'downgraded' | 'promoted';
 
 export interface PlanLevels {
   entry: number | null;
@@ -90,6 +89,49 @@ export interface TargetProbabilitiesInput {
   probabilityTp1: number | null;
   probabilityTp2: number | null;
   probabilityStop: number | null;
+}
+
+/** REAL DATA que entrou no prompt, com o que o codigo calculou das velas fechadas. */
+export interface RealDataInput {
+  price: number;
+  atr: number | null;
+  htfTrend: HtfTrend | null;
+  /** Swings fractais do tempo grafico; null em analise sem o calculo. */
+  swings: readonly Pick<Swing, 'kind' | 'price'>[] | null;
+  /** Movimento atrasado por direcao (moveIsLate); null sem o calculo. */
+  late: { long: boolean; short: boolean } | null;
+  /** Regime de volatilidade do tempo grafico (volatilityRegime); null sem o calculo. */
+  volRegime: VolRegime | null;
+  /** Posicao do preco no range visivel (0 = minima, 100 = maxima); null sem o calculo. */
+  rangePosPct: number | null;
+}
+
+/** Um nivel e a distancia dele ao preco real, em ATR. */
+export interface LevelDistance {
+  price: number;
+  atr: number;
+}
+
+/** Onde o preco esta (modo leitura), calculado pelo codigo a partir do REAL DATA. */
+export interface PriceLocation {
+  price: number;
+  atr: number;
+  rangePosPct: number | null;
+  htfTrend: HtfTrend | null;
+  /** Invalidacao estrutural do plano. */
+  invalidation: LevelDistance | null;
+  /** Swing real mais proxima abaixo e acima do preco. */
+  support: LevelDistance | null;
+  resistance: LevelDistance | null;
+  /** Nivel do plano (borda proxima da area). */
+  planLevel: LevelDistance | null;
+}
+
+/** Chance calibrada de o preco chegar ao nivel do WATCH dentro da validade. */
+export interface WatchReach {
+  /** 0 a 1. */
+  probability: number;
+  candles: number;
 }
 
 export interface SignalDecisionInput {
@@ -109,11 +151,8 @@ export interface SignalDecisionInput {
   /** Niveis principais que o modelo escreveu: so valem sem REAL DATA (fallback em R). */
   estimatedLevels: PlanLevels | null;
   probabilities: TargetProbabilitiesInput;
-  /**
-   * Preco, ATR e tendencia do 4h reais (REAL DATA que entrou no prompt). null
-   * sem candles: os niveis do modelo valem, com a distancia medida em R.
-   */
-  realData: { price: number; atr: number | null; htfTrend: HtfTrend | null } | null;
+  /** null sem candles: os niveis do modelo valem, com a distancia medida em R. */
+  realData: RealDataInput | null;
   /** Regras do `validateTradePlan`; as quebradas nunca chegam aqui. */
   planFailures?: TradePlanRule[];
   /** true quando `correctPriceMagnitude` reescreveu os niveis. */
@@ -125,13 +164,14 @@ export interface SignalDecisionResult {
   recommendation: Recommendation;
   confidence: number;
   entryType: string | null;
-  /** Niveis principais (do motor do plano): so ARMED e ENTER_NOW os tem. */
+  /** Niveis principais (do motor do plano): so o ENTER_NOW os tem. */
   levels: PlanLevels;
-  /** O plano do modelo em todo estado com plano (WATCH, ARMED, ENTER_NOW). */
+  /** O plano (com a invalidacao encaixada) em todo estado com plano. */
   watchPlan: WatchPlan | null;
   /** real_data = niveis e distancia pelos candles reais; print = estimados do print. */
   dataMode: 'real_data' | 'print';
   probabilities: TargetProbabilitiesInput;
+  /** Cada mudanca de estado, na ordem, com o motivo. */
   validatorNotes: ValidatorNote[];
   /** Regras que so medem (MEASURE_ONLY_RULES): o estado nao muda. */
   validatorFlags: TradePlanRule[];
@@ -142,6 +182,10 @@ export interface SignalDecisionResult {
   newsGuardStatus: NewsGuardStatus;
   /** Preco real longe do print: o adapter acrescenta o aviso em riskFactors. */
   stalePrint: boolean;
+  /** WATCH com o nivel entre o preco e a invalidacao e calibracao do par e regime; senao null. */
+  watchReach: WatchReach | null;
+  /** Onde o preco esta; null sem REAL DATA (a tela avisa que os niveis sao estimados). */
+  location: PriceLocation | null;
 }
 
 /**
@@ -166,14 +210,6 @@ export type NewsGuardStatus =
   | 'timeout'
   | 'error';
 
-/** Motivos que mudam o estado; `stale_print` so avisa. */
-const DOWNGRADE_NOTES: readonly ValidatorNote[] = [
-  'state_mismatch', 'implausible_price', 'levels_unverified', 'plan_invalidated', 'zone_overrun',
-  'stop_atr_out_of_range', 'tp1_no_room', 'rr_tp2_below_min', 'required_check_failed', 'checks_below_min',
-  'forex_checks_below_min', 'countertrend_checks_below_min', 'not_at_price', 'entry_far_from_price',
-  'news_event', 'watch_plan_invalid',
-];
-
 class CalendarTimeoutError extends Error {}
 
 // Instância única: reaproveita o cache de 1h do calendário entre análises.
@@ -191,12 +227,6 @@ function raceTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]).finally(() => clearTimeout(timer));
 }
 
-/** Par de moedas (sem metal): exige mais itens do checklist. */
-function isForexPair(symbol: string): boolean {
-  const pair = canonicalFxPair(symbol);
-  return pair !== null && !pair.startsWith('XAU') && !pair.startsWith('XAG');
-}
-
 /** Estado lido da resposta; sem `signalState` (prompt antigo), a regra de leitura do historico. */
 export function deriveSignalState(
   recommendation: unknown,
@@ -210,51 +240,207 @@ export function deriveSignalState(
   return String(alternativeScenario ?? '').trim() ? 'WATCH' : 'NO_TRADE';
 }
 
-export type ChecklistGateFailure =
-  | 'required_check_failed'
-  | 'checks_below_min'
-  | 'forex_checks_below_min'
-  | 'countertrend_checks_below_min';
-
-/**
- * Gate do checklist (v10.3), igual para WATCH, ARMED e ENTER_NOW: C2, C3, C6
- * e C7 em PASS e pelo menos 5 PASS (6 em forex e contra a tendencia do 4h
- * calculada pelo codigo). Checklist ilegivel nao passa.
- */
-export function checklistGate(
-  structureValidation: unknown,
-  symbol: string,
-  direction: WatchPlan['direction'],
-  htfTrend: HtfTrend | null,
-): ChecklistGateFailure | null {
-  const items = parsePassFailChecklist(structureValidation);
-  if (!items || STATE_RULES.requiredChecks.some((n) => items.get(n) !== true)) return 'required_check_failed';
-  const passes = [...items.values()].filter(Boolean).length;
-  if (passes < STATE_RULES.minPass) return 'checks_below_min';
-  if (passes < STATE_RULES.minPassStrict && isForexPair(symbol)) return 'forex_checks_below_min';
-  const counterTrend = htfTrend === (direction === 'long' ? 'downtrend' : 'uptrend');
-  if (passes < STATE_RULES.minPassStrict && counterTrend) return 'countertrend_checks_below_min';
-  return null;
-}
-
 export function parseSignalState(value: unknown): SignalState | null {
   return SIGNAL_STATES.find((s) => s === value) ?? null;
 }
 
-/** Estado de um resultado salvo: o gravado (v10) ou, sem ele, a regra de leitura do historico. */
+/** Estado de um resultado salvo: o gravado (v10 em diante) ou, sem ele, a regra de leitura do historico. */
 export function storedSignalState(result: unknown, recommendation: unknown): SignalState {
   const root = result && typeof result === 'object' ? (result as Record<string, any>) : {};
   const analysis = root.analysis && typeof root.analysis === 'object' ? root.analysis : {};
   return parseSignalState(root.signalState) ?? deriveSignalState(recommendation, analysis.entryType, analysis.alternativeScenario);
 }
 
+/** Motivos das mudancas, sem repetir (o `validator_reasons` do contrato e o log). */
+export function validatorReasons(notes: readonly ValidatorNote[]): ValidatorReason[] {
+  return [...new Set(notes.map((n) => n.reason))];
+}
+
+const rank = (s: SignalState) => SIGNAL_STATES.indexOf(s);
+/** Degrau de baixo: ENTER_NOW -> WATCH -> NO_TRADE (o ARMED nao e mais emitido). */
+const lower = (s: SignalState): SignalState => (s === 'ENTER_NOW' || s === 'ARMED' ? 'WATCH' : 'NO_TRADE');
+
+/** Par de moedas (sem metal). */
+function isForexPair(symbol: string): boolean {
+  const pair = canonicalFxPair(symbol);
+  return pair !== null && !pair.startsWith('XAU') && !pair.startsWith('XAG');
+}
+
+/** Indice de acoes, large cap, ouro ou BTC: deriva estrutural de alta. */
+const DRIFT_SYMBOL = /^(NAS100|NDX|US100|USTEC|US30|DJ30|DJI|WS30|US500|SPX500|SPX|SP500|GER40|DE40|DAX|UK100|JP225|IBOV|WIN|IND|AAPL|MSFT|NVDA|AMZN|GOOGL|GOOG|META|TSLA|BRKB)/;
+function hasUpwardDrift(symbol: string): boolean {
+  const clean = String(symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (canonicalFxPair(symbol)?.startsWith('XAU')) return true;
+  if (normalizeToBinancePerp(symbol).base === 'BTC') return true;
+  return DRIFT_SYMBOL.test(clean);
+}
+
+/** Chave do par na calibracao da margem do stop. */
+export function calibrationPair(symbol: string): string | null {
+  return canonicalFxPair(symbol) ?? normalizeToBinancePerp(symbol).binanceSymbol ?? (String(symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || null);
+}
+
+/**
+ * PASS exigidos para o ENTER_NOW: o minimo, e 1 a mais se houver
+ * qualquer agravante (forex, contra a tendencia do 4h calculada pelo codigo,
+ * venda de ativo com deriva de alta com o 4h em alta). Os agravantes nao se
+ * somam: no maximo 1 a mais, qualquer que seja a combinacao.
+ */
+export function requiredPasses(symbol: string, direction: WatchPlan['direction'], htfTrend: HtfTrend | null): number {
+  const aggravated =
+    isForexPair(symbol) ||
+    htfTrend === (direction === 'long' ? 'downtrend' : 'uptrend') ||
+    (direction === 'short' && htfTrend === 'uptrend' && hasUpwardDrift(symbol));
+  return ENGINE_RULES.minPass + (aggravated ? ENGINE_RULES.aggravatedExtraPass : 0);
+}
+
+/** Tudo o que o codigo mediu do plano com as velas reais. */
+export interface PlanEvaluation {
+  /** O plano com a invalidacao encaixada na swing real. */
+  plan: WatchPlan;
+  market: EntryLevels | EntryRejection;
+  /** Entrada no nivel do plano (o recuo que destrava o WATCH). */
+  limit: EntryLevels | EntryRejection;
+  late: boolean;
+  checks: ReadonlyMap<number, boolean> | null;
+  passes: number;
+  requiredPasses: number;
+}
+
+/**
+ * Mede o plano contra as velas reais: confere que o preco nao passou da
+ * invalidacao do modelo (`plan_invalidated`), encaixa a invalidacao
+ * estrutural (sem swing entre o preco e ela, a ate 0,5 ATR:
+ * `invalidation_unsnapped`) e calcula as duas entradas (a mercado e no nivel
+ * do plano).
+ */
+export function evaluatePlan(input: {
+  plan: WatchPlan;
+  symbol: string;
+  structureValidation: unknown;
+  price: number;
+  atr: number;
+  htfTrend: HtfTrend | null;
+  volRegime: VolRegime | null;
+  swings: readonly Pick<Swing, 'kind' | 'price'>[];
+  late: boolean;
+}): PlanEvaluation | ValidatorReason {
+  if (pricePosition(input.plan, input.price) === 'invalidated') return 'plan_invalidated';
+  const plan = snapInvalidation(input.plan, input.swings, input.atr, input.price);
+  if (!plan) return 'invalidation_unsnapped';
+  const margin = stopMarginAtr(calibrationPair(input.symbol), input.volRegime);
+  const checks = parsePassFailChecklist(input.structureValidation);
+  return {
+    plan,
+    market: entryLevels(plan, input.atr, input.price, margin),
+    limit: limitEntryLevels(plan, input.atr, input.price, margin),
+    late: input.late,
+    checks,
+    passes: checks ? [...checks.values()].filter(Boolean).length : 0,
+    requiredPasses: requiredPasses(input.symbol, plan.direction, input.htfTrend),
+  };
+}
+
+const allPass = (checks: ReadonlyMap<number, boolean> | null, items: readonly number[]) =>
+  !!checks && items.every((n) => checks.get(n) === true);
+
+/** Por que o estado nao vale (null = vale). */
+function whyNot(state: SignalState, ev: PlanEvaluation): ValidatorReason | null {
+  const R = ENGINE_RULES;
+  const marketValid = typeof ev.market !== 'string';
+  if (state === 'ENTER_NOW') {
+    if (!marketValid) return 'market_entry_invalid';
+    if (!allPass(ev.checks, R.enterNowChecks)) return 'required_check_failed';
+    if (ev.passes < ev.requiredPasses) return 'checks_below_min';
+    return ev.late ? 'late_move' : null;
+  }
+  if (state === 'WATCH') {
+    if (!allPass(ev.checks, R.watchChecks)) return 'setup_failed';
+    if (!marketValid && typeof ev.limit === 'string') return 'no_valid_geometry';
+    return ev.passes < R.minPassWatch ? 'checks_below_min' : null;
+  }
+  return null;
+}
+
+/** ARMED do modelo (ordem limit) vira WATCH com o mesmo plano, anotado. */
+function retireArmed(model: SignalState): { start: SignalState; notes: ValidatorNote[] } {
+  return model === 'ARMED'
+    ? { start: 'WATCH', notes: [{ from: 'ARMED', to: 'WATCH', reason: 'limit_order_retired' }] }
+    : { start: model, notes: [] };
+}
+
+/**
+ * Estado final a partir do estado do modelo: desce ENTER_NOW -> WATCH ->
+ * NO_TRADE ate a primeira condicao que vale, anotando cada degrau. WATCH do
+ * modelo sobe para ENTER_NOW quando todas as condicoes dele valem; o ARMED do
+ * modelo vira WATCH e nao sobe.
+ */
+export function chooseState(model: SignalState, ev: PlanEvaluation, allowPromotion = true): { state: SignalState; notes: ValidatorNote[]; levels: PlanLevels } {
+  const { start, notes } = retireArmed(model);
+  let state = start;
+  if (allowPromotion && model === 'WATCH' && whyNot('ENTER_NOW', ev) === null) {
+    notes.push({ from: 'WATCH', to: 'ENTER_NOW', reason: 'market_entry_valid' });
+    state = 'ENTER_NOW';
+  }
+  for (let reason = whyNot(state, ev); state !== 'NO_TRADE' && reason; reason = whyNot(state, ev)) {
+    notes.push({ from: state, to: lower(state), reason });
+    state = lower(state);
+  }
+  const levels = state === 'ENTER_NOW' && typeof ev.market !== 'string'
+    ? { entry: ev.market.entry, stopLoss: ev.market.stopLoss, takeProfit1: ev.market.takeProfit1, takeProfit2: ev.market.takeProfit2 }
+    : NULL_LEVELS;
+  return { state, notes, levels };
+}
+
+/**
+ * Sem REAL DATA (ativo sem fonte ou cota do dia acabou): os niveis do modelo e
+ * a posicao pelo preco lido no print; ENTER_NOW so com o preco dentro da
+ * zona. Nao promove. A tela avisa que os niveis sao estimados.
+ */
+function choosePrintState(input: SignalDecisionInput, plan: WatchPlan): { state: SignalState; notes: ValidatorNote[]; levels: PlanLevels } {
+  const R = ENGINE_RULES;
+  const checks = parsePassFailChecklist(input.structureValidation);
+  const passes = checks ? [...checks.values()].filter(Boolean).length : 0;
+  const required = requiredPasses(input.symbol, plan.direction, null);
+  const est = input.estimatedLevels;
+  const price = input.currentPrice;
+  const levelsOk = !!est && positive(est.entry) && positive(est.stopLoss) && positive(est.takeProfit1) && positive(price);
+  const position = positive(price) ? pricePosition(plan, price) : null;
+  if (position === 'invalidated' && input.state !== 'NO_TRADE') {
+    return { state: 'NO_TRADE', notes: [{ from: input.state, to: 'NO_TRADE', reason: 'plan_invalidated' }], levels: NULL_LEVELS };
+  }
+  const why = (state: SignalState): ValidatorReason | null => {
+    if (state === 'ENTER_NOW') {
+      if (!levelsOk) return 'levels_unverified';
+      if (position !== 'inside_zone') return 'not_at_price';
+      if (!allPass(checks, R.enterNowChecks)) return 'required_check_failed';
+      return passes < required ? 'checks_below_min' : null;
+    }
+    if (state === 'WATCH') {
+      if (!allPass(checks, R.watchChecks)) return 'setup_failed';
+      return passes < R.minPassWatch ? 'checks_below_min' : null;
+    }
+    return null;
+  };
+  const { start, notes } = retireArmed(input.state);
+  let state = start;
+  for (let reason = why(state); state !== 'NO_TRADE' && reason; reason = why(state)) {
+    notes.push({ from: state, to: lower(state), reason });
+    state = lower(state);
+  }
+  const levels = state === 'ENTER_NOW'
+    ? { entry: est!.entry, stopLoss: est!.stopLoss, takeProfit1: est!.takeProfit1, takeProfit2: positive(est!.takeProfit2) ? est!.takeProfit2 : null }
+    : NULL_LEVELS;
+  return { state, notes, levels };
+}
+
 const positive = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
 
 function confidenceCap(trendStrength: unknown): number {
   const strength = String(trendStrength || '').trim().toLowerCase();
-  if (strength === 'weak') return STATE_RULES.confidenceCapWeakTrend;
-  if (strength === 'moderate') return STATE_RULES.confidenceCapModerateTrend;
-  return STATE_RULES.confidenceCap;
+  if (strength === 'weak') return ENGINE_RULES.confidenceCapWeakTrend;
+  if (strength === 'moderate') return ENGINE_RULES.confidenceCapModerateTrend;
+  return ENGINE_RULES.confidenceCap;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -262,100 +448,52 @@ const NULL_LEVELS: PlanLevels = { entry: null, stopLoss: null, takeProfit1: null
 const NULL_PROBABILITIES: TargetProbabilitiesInput = { probabilityTp1: null, probabilityTp2: null, probabilityStop: null };
 
 export async function decideSignal(input: SignalDecisionInput): Promise<SignalDecisionResult> {
-  const notes: ValidatorNote[] = [];
   const side = input.recommendation === 'BUY' || input.recommendation === 'SELL' ? input.recommendation : null;
-  let state = input.state;
-  let levels: PlanLevels = NULL_LEVELS;
-  let stalePrint = false;
   const failures = (input.planFailures ?? []).filter((rule) => !BROKEN_PLAN_RULES.includes(rule));
   const validatorFlags = side ? failures.filter((rule) => MEASURE_ONLY_RULES.includes(rule)) : [];
-  const plan = isValidWatchPlan(input.watchPlan) ? input.watchPlan : null;
+  const modelPlan = isValidWatchPlan(input.watchPlan) ? input.watchPlan : null;
+  const real = input.realData && positive(input.realData.atr) && positive(input.realData.price) && input.realData.swings
+    ? input.realData
+    : null;
+  const model = input.state;
+  const stop = (reason: ValidatorReason) => ({ state: 'NO_TRADE' as SignalState, notes: [{ from: model, to: 'NO_TRADE' as SignalState, reason }], levels: NULL_LEVELS });
 
-  const downgrade = (to: SignalState, note: ValidatorNote) => {
-    if (SIGNAL_STATES.indexOf(to) < SIGNAL_STATES.indexOf(state)) state = to;
-    if (!notes.includes(note)) notes.push(note);
-  };
-  // Leitura do estado depois de cada rebaixamento (o TS nao ve a mudanca feita no closure).
-  const now = (): SignalState => state;
-
-  // Estado de sinal sem direcao (ou o contrario) e resposta incoerente.
-  if ((state === 'ARMED' || state === 'ENTER_NOW') && !side) downgrade('WATCH', 'state_mismatch');
-
-  // Gate do checklist: vale para qualquer plano (o WATCH tambem).
-  if (state !== 'NO_TRADE' && plan) {
-    const gate = checklistGate(input.structureValidation, input.symbol, plan.direction, input.realData?.htfTrend ?? null);
-    if (gate) downgrade('NO_TRADE', gate);
-  }
-
-  const real = input.realData && positive(input.realData.atr) ? { price: input.realData.price, atr: input.realData.atr } : null;
-  // R:R ate o alvo final (TP2, ou TP1 sem TP2), nos niveis decididos.
-  const guardRiskReward = () => {
-    const risk = Math.abs((levels.entry as number) - (levels.stopLoss as number));
-    const rrFinal = Math.abs(((levels.takeProfit2 ?? levels.takeProfit1) as number) - (levels.entry as number)) / risk;
-    if (flagBool('ENABLE_RR_GUARD') && rrFinal < STATE_RULES.minRiskRewardTp2) downgrade('NO_TRADE', 'rr_tp2_below_min');
-  };
-
-  if ((now() === 'ARMED' || now() === 'ENTER_NOW') && side) {
-    if (failures.includes('implausible_price')) downgrade('NO_TRADE', 'implausible_price');
-    // v10.2: o sinal vem com o plano; sem ele, nao ha o que conferir.
-    if (now() !== 'NO_TRADE' && (!plan || (plan.direction === 'long') !== (side === 'BUY'))) downgrade('NO_TRADE', 'watch_plan_invalid');
-    if ((now() === 'ARMED' || now() === 'ENTER_NOW') && real) {
-      const p = plan as WatchPlan;
-      const { price, atr: a } = real;
-      const limit = levelsFromPlan(p, a);
-      const position = pricePosition(p, price);
-      if (typeof limit === 'string') {
-        downgrade('NO_TRADE', limit === 'no_room' ? 'tp1_no_room' : 'stop_atr_out_of_range');
-      } else if (position === 'invalidated') {
-        downgrade('NO_TRADE', 'plan_invalidated');
-      } else {
-        levels = { entry: limit.entry, stopLoss: limit.stopLoss, takeProfit1: limit.takeProfit1, takeProfit2: limit.takeProfit2 };
-        if (positive(input.currentPrice) && Math.abs(price - input.currentPrice) > STATE_RULES.stalePrintAtr * a) {
-          stalePrint = true;
-          notes.push('stale_print');
-        }
-        // D: distancia da borda proxima ao preco real, em ATR.
-        const d = Math.abs(nearEdge(p) - price) / a;
-        if (position === 'beyond_zone') downgrade('WATCH', 'zone_overrun');
-        else if (position === 'before_zone' && d > STATE_RULES.armedMaxAtr) downgrade('WATCH', 'entry_far_from_price');
-        if (now() === 'ENTER_NOW') {
-          // Dentro da zona: entra a mercado, com stop e TP1 refeitos a partir do preco.
-          const market = position === 'inside_zone' ? levelsFromPlan(p, a, price) : null;
-          if (market && typeof market !== 'string') {
-            levels = { entry: market.entry, stopLoss: market.stopLoss, takeProfit1: market.takeProfit1, takeProfit2: market.takeProfit2 };
-          } else downgrade('ARMED', market === 'no_room' ? 'tp1_no_room' : 'not_at_price');
-        }
-        guardRiskReward();
-      }
-    } else if (now() === 'ARMED' || now() === 'ENTER_NOW') {
-      // Sem REAL DATA: os niveis do modelo, a posicao pelo preco lido no print e
-      // a distancia em R do proprio plano (D_R). A tela avisa que sao estimados.
-      const p = plan as WatchPlan;
-      const est = input.estimatedLevels;
-      const price = input.currentPrice;
-      if (!est || !positive(est.entry) || !positive(est.stopLoss) || !positive(est.takeProfit1) || !positive(price)) {
-        downgrade('WATCH', 'levels_unverified');
-      } else {
-        const position = pricePosition(p, price);
-        if (position === 'invalidated') {
-          downgrade('NO_TRADE', 'plan_invalidated');
-        } else {
-          levels = { entry: est.entry, stopLoss: est.stopLoss, takeProfit1: est.takeProfit1, takeProfit2: positive(est.takeProfit2) ? est.takeProfit2 : null };
-          const dR = Math.abs(nearEdge(p) - price) / Math.abs(est.entry - est.stopLoss);
-          if (position === 'beyond_zone') downgrade('WATCH', 'zone_overrun');
-          else if (position === 'before_zone' && dR > STATE_RULES.armedMaxStopR) downgrade('WATCH', 'entry_far_from_price');
-          if (now() === 'ENTER_NOW' && position !== 'inside_zone') downgrade('ARMED', 'not_at_price');
-          guardRiskReward();
-        }
-      }
+  let plan = modelPlan;
+  // Estado de sinal com HOLD e incoerente: segue como WATCH com o plano do modelo.
+  const signalWithoutSide = (model === 'ARMED' || model === 'ENTER_NOW') && !side;
+  const start: SignalState = signalWithoutSide ? 'WATCH' : model;
+  const mismatch: ValidatorNote[] = signalWithoutSide ? [{ from: model, to: 'WATCH', reason: 'state_mismatch' }] : [];
+  let chosen: { state: SignalState; notes: ValidatorNote[]; levels: PlanLevels };
+  if (model === 'NO_TRADE') chosen = { state: 'NO_TRADE', notes: [], levels: NULL_LEVELS };
+  else if (side && failures.includes('implausible_price')) chosen = stop('implausible_price');
+  else if (!modelPlan) chosen = stop('watch_plan_invalid');
+  else if (side && (modelPlan.direction === 'long') !== (side === 'BUY')) chosen = stop('state_mismatch');
+  else if (real) {
+    const ev = evaluatePlan({
+      plan: modelPlan, symbol: input.symbol, structureValidation: input.structureValidation,
+      price: real.price, atr: real.atr as number, htfTrend: real.htfTrend, volRegime: real.volRegime, swings: real.swings ?? [],
+      late: real.late ? real.late[modelPlan.direction] : false,
+    });
+    if (typeof ev === 'string') chosen = { state: 'NO_TRADE', notes: [...mismatch, { from: start, to: 'NO_TRADE', reason: ev }], levels: NULL_LEVELS };
+    else {
+      plan = ev.plan;
+      const picked = chooseState(start, ev, !signalWithoutSide);
+      chosen = { ...picked, notes: [...mismatch, ...picked.notes] };
     }
+  } else {
+    const picked = choosePrintState({ ...input, state: start }, modelPlan);
+    chosen = { ...picked, notes: [...mismatch, ...picked.notes] };
   }
+
+  let { state, levels } = chosen;
+  const notes = [...chosen.notes];
+  const stalePrint = !!real && positive(input.currentPrice) && Math.abs(real.price - input.currentPrice) > ENGINE_RULES.stalePrintAtr * (real.atr as number);
 
   // News guard: com evento High na janela, o plano vira condicional (WATCH).
   let newsEvent: string | null = null;
   let newsGuardStatus: NewsGuardStatus = 'disabled';
   if (flagBool('ENABLE_NEWS_GUARD')) {
-    if (now() !== 'ARMED' && now() !== 'ENTER_NOW') {
+    if (state !== 'ENTER_NOW') {
       newsGuardStatus = 'skipped';
     } else {
       try {
@@ -367,7 +505,9 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
           (e) => e.impact === 'High' && typeof e.minutesUntil === 'number' && e.minutesUntil >= -15 && e.minutesUntil <= 45,
         );
         if (imminent) {
-          downgrade('WATCH', 'news_event');
+          notes.push({ from: state, to: 'WATCH', reason: 'news_event' });
+          state = 'WATCH';
+          levels = NULL_LEVELS;
           newsEvent = `${imminent.country} ${imminent.title} (${imminent.minutesUntil}min)`;
         }
         newsGuardStatus = imminent ? (degraded ? 'degraded_event' : 'event') : (degraded ? 'degraded_no_event' : 'no_event');
@@ -377,46 +517,78 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     }
   }
 
-  // WATCH: o plano do modelo (num rebaixamento, o mesmo plano do sinal).
-  if (now() === 'WATCH' && !plan) downgrade('NO_TRADE', 'watch_plan_invalid');
-
-  const final = now();
-  const isSignal = final === 'ARMED' || final === 'ENTER_NOW';
+  const isSignal = state === 'ENTER_NOW';
   let confidence = Number.isFinite(input.confidence) ? input.confidence : 0;
   let probabilities = NULL_PROBABILITIES;
   if (isSignal) {
     confidence = Math.min(confidence, confidenceCap(input.trendStrength));
     const p = input.probabilities;
     if (p.probabilityTp1 !== null) {
-      const tp1 = clamp(p.probabilityTp1, confidence - STATE_RULES.probabilityTp1Band, confidence + STATE_RULES.probabilityTp1Band);
+      const tp1 = clamp(p.probabilityTp1, confidence - ENGINE_RULES.probabilityTp1Band, confidence + ENGINE_RULES.probabilityTp1Band);
       probabilities = {
         probabilityTp1: tp1,
         probabilityTp2: p.probabilityTp2 === null ? null : Math.min(p.probabilityTp2, tp1),
-        // v10: o stop fica perto de 100 - TP1 (e a soma nunca passa de 100).
+        // O stop fica perto de 100 - TP1 (e a soma nunca passa de 100).
         probabilityStop: p.probabilityStop === null ? null : Math.min(p.probabilityStop, 100 - tp1),
       };
     }
   } else {
-    confidence = Math.min(confidence, STATE_RULES.confidenceCapNoSignal);
+    confidence = Math.min(confidence, ENGINE_RULES.confidenceCapNoSignal);
   }
 
-  const downgraded = notes.some((n) => DOWNGRADE_NOTES.includes(n));
+  const action: ValidatorAction = rank(state) < rank(model)
+    ? 'downgraded'
+    : rank(state) > rank(model) ? 'promoted' : input.priceFixed ? 'fixed' : 'none';
   return {
-    state: final,
-    recommendation: isSignal && side ? side : 'WAIT',
+    state,
+    recommendation: isSignal && side ? side : isSignal && plan ? (plan.direction === 'long' ? 'BUY' : 'SELL') : 'WAIT',
     confidence,
-    entryType: isSignal ? (final === 'ENTER_NOW' ? 'market' : 'limit') : null,
+    entryType: isSignal ? 'market' : null,
     levels: isSignal ? levels : NULL_LEVELS,
-    watchPlan: final === 'NO_TRADE' ? null : plan,
+    watchPlan: state === 'NO_TRADE' ? null : plan,
     dataMode: real ? 'real_data' : 'print',
     probabilities,
     validatorNotes: notes,
     validatorFlags,
-    validatorAction: downgraded ? 'downgraded' : input.priceFixed ? 'fixed' : 'none',
+    validatorAction: action,
     newsEvent,
     newsGuardStatus,
     stalePrint,
+    watchReach: state === 'WATCH' && real && plan ? watchReachOf(plan, input.symbol, real) : null,
+    location: real ? locationOf(real, state === 'NO_TRADE' ? null : plan) : null,
   };
+}
+
+/** Preco, posicao no range, tendencia do 4h e a distancia em ATR ate os niveis que importam. */
+export function locationOf(real: RealDataInput, plan: WatchPlan | null): PriceLocation {
+  const atr = real.atr as number;
+  const at = (price: number): LevelDistance => ({ price, atr: Math.abs(real.price - price) / atr });
+  const swings = real.swings ?? [];
+  const below = swings.filter((s) => s.kind === 'low' && s.price < real.price).map((s) => s.price);
+  const above = swings.filter((s) => s.kind === 'high' && s.price > real.price).map((s) => s.price);
+  return {
+    price: real.price,
+    atr,
+    rangePosPct: real.rangePosPct,
+    htfTrend: real.htfTrend,
+    invalidation: plan ? at(plan.invalidation) : null,
+    support: below.length ? at(Math.max(...below)) : null,
+    resistance: above.length ? at(Math.min(...above)) : null,
+    planLevel: plan ? at(nearEdge(plan)) : null,
+  };
+}
+
+/** Chance de chegar ao nivel do plano (borda proxima) antes de o preco andar ate o alvo. */
+function watchReachOf(plan: WatchPlan, symbol: string, real: RealDataInput): WatchReach | null {
+  const atr = real.atr as number;
+  const edge = nearEdge(plan);
+  const pullback = plan.direction === 'long' ? edge < real.price && edge > plan.invalidation : edge > real.price && edge < plan.invalidation;
+  if (!pullback) return null;
+  const probability = reachProbability(
+    calibrationPair(symbol), real.volRegime,
+    Math.abs(real.price - edge) / atr, plan.validForCandles, Math.abs(plan.target1 - real.price) / atr,
+  );
+  return probability === null ? null : { probability, candles: plan.validForCandles };
 }
 
 /**
@@ -430,7 +602,7 @@ export function applyDecisionToAnalysis<T extends Record<string, any>>(
   decision: SignalDecisionResult,
   staleNote: string | null = null,
 ): T {
-  const isSignal = decision.state === 'ARMED' || decision.state === 'ENTER_NOW';
+  const isSignal = decision.state === 'ENTER_NOW';
   const { entry, stopLoss, takeProfit1, takeProfit2 } = decision.levels;
   const rrTp1 = computeRiskReward(entry, stopLoss, takeProfit1, decision.recommendation);
   const rrTp2 = computeRiskReward(entry, stopLoss, takeProfit2, decision.recommendation);

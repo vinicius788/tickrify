@@ -78,7 +78,7 @@ const SetupsSection = ({
     : '';
 
   const items = (data?.items ?? []).filter((setup) => !hiddenSetupIds?.has(setup.id));
-  // Estado do copiloto (v10.3) pelo servidor; cor de direcao so em ordem/entrada.
+  // Estado do copiloto pelo servidor; cor de direcao so em ordem/entrada.
   const verdictLabel = (v: { recommendation: string; signalState?: SignalState }) =>
     t.analysis.states[resolveSignalState(v.signalState, v.recommendation)];
   const verdictTone = (v: { recommendation: string; signalState?: SignalState }) => {

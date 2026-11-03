@@ -26,7 +26,7 @@ export function LanguageSwitcher() {
         title={t.language.select}
       >
         <Globe size={14} />
-        <span>{current?.flag}</span>
+        <span className="sm:hidden">{current?.code.toUpperCase()}</span>
         <span className="hidden sm:inline">{current?.label}</span>
       </button>
 
@@ -42,7 +42,6 @@ export function LanguageSwitcher() {
                   : 'text-[var(--text-secondary)]'
               }`}
             >
-              <span>{lang.flag}</span>
               <span>{lang.label}</span>
               {language === lang.code && (
                 <span className="ml-auto text-[var(--signal-buy)] text-xs">✓</span>

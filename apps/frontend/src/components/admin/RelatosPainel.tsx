@@ -144,7 +144,7 @@ export function RelatosPainel({ kind = 'problem' }: { kind?: ReportKind }) {
             {opinioes ? 'Nenhuma opinião' : 'Nenhum relato'} {filtro === 'todos' ? '' : filtro}.
           </p>
           <p className="mt-1 text-xs text-[var(--text-ghost)]">
-            Silêncio aqui pode ser produto funcionando — ou ninguém usando. Cruze com o funil antes
+            Silêncio aqui pode ser produto funcionando, ou ninguém usando. Cruze com o funil antes
             de comemorar.
           </p>
         </Card>

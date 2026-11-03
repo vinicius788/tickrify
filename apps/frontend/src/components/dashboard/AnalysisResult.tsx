@@ -24,6 +24,7 @@ import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
 import { WatchPlanChart, isWatchPlan } from './WatchPlanChart';
+import { ReadModePanel, type ReadModeData } from './ReadModePanel';
 import { ShareCardButton, type ShareCardData } from './ShareCard';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -120,7 +121,7 @@ const BACKEND_PT_FALLBACKS = new Set([
  * confundir os dois foi exatamente o que quebrou a lista de riscos.
  */
 export function softenDashes(text: string): string {
-  return text.replace(/\s+[—–]\s+/g, ', ');
+  return text.replace(/\s+[—–]\s+/g, ', ').replace(/\s*—\s*/g, ', ');
 }
 
 /**
@@ -555,7 +556,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
 
   const recommendationMeta = getRecommendationMeta(analysisData.recommendation);
   const scenarioMeta = getScenarioMeta(analysisData.bias || marketStructure.bias, analysisData.recommendation);
-  // Rotulo principal = estado do copiloto (v10.3). A direcao fica como cenario.
+  // Rotulo principal = estado do copiloto. A direcao fica como cenario.
   const signalState = resolveSignalState(
     fullResponse.signalState,
     analysisData.recommendation,
@@ -879,6 +880,27 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
     );
   })();
 
+  // Modo leitura: a leitura, onde o preco esta e a acao, em toda analise.
+  const biasKey = String(analysisData.bias || marketStructure.bias || '').trim().toLowerCase();
+  const readReason = (() => {
+    const first = (executiveSummary || cleanModelText(analysis.technicalAnalysis)).split(/(?<=[.!?])\s/)[0] ?? '';
+    return first.length > 220 ? `${first.slice(0, 219).trimEnd()}…` : first;
+  })();
+  const engineContract = asRecord(asRecord(fullResponse.engine).contract);
+  const readMode: ReadModeData = {
+    state: signalState,
+    bias: biasKey === 'bullish' || biasKey === 'bearish' ? biasKey : 'neutral',
+    strength: trendStrength === 'strong' || trendStrength === 'moderate' || trendStrength === 'weak' ? trendStrength : null,
+    reason: readReason,
+    location: analysisData.fullResponse?.location ?? null,
+    currentPrice,
+    dataMode: analysisData.fullResponse?.dataMode ?? null,
+    levels: { entry, stopLoss, takeProfit1, takeProfit2 },
+    watchPlan,
+    watchReach: analysisData.fullResponse?.watchReach ?? null,
+    noTradeReason: typeof engineContract.no_trade_reason === 'string' ? engineContract.no_trade_reason : readReason || null,
+  };
+
   const shareData: ShareCardData = {
     symbol,
     timeframe,
@@ -1056,6 +1078,8 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
           )}
         </CardContent>
       </Card>
+
+      <ReadModePanel data={readMode} formatPrice={formatPrice} />
 
       {invalidTradePlan && (
         <Alert className="border-[var(--signal-sell)] bg-[var(--signal-sell-bg)]" role="alert">
@@ -1264,7 +1288,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                   {/* Trava de coerência: com R/R abaixo do ideal, não exibir "entrar a
                       mercado agora" (contradiz o aviso). Mostra orientação de aguardar recuo. */}
                   {invalidTradePlan ? null : riskRewardLow && entryType.toLowerCase() === 'market' ? (
-                    <p className="mt-0.5 text-[var(--signal-hold)]">⚠ {r.entryCautionRRLow}</p>
+                    <p className="mt-0.5 text-[var(--signal-hold)]">{r.entryCautionRRLow}</p>
                   ) : (
                     entryCondition && <p className="mt-0.5 text-[var(--text-secondary)]">{entryCondition}</p>
                   )}
@@ -1280,7 +1304,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                     aria-expanded={showInvalidation}
                   >
                     <span>
-                      <span className="text-[var(--signal-sell)]">⚠ {t.analysis.invalidation.toUpperCase()}: </span>
+                      <span className="text-[var(--signal-sell)]">{t.analysis.invalidation.toUpperCase()}: </span>
                       <span className="font-terminal font-semibold text-[var(--signal-sell)]">{formatPrice(invalidationLevel)}</span>
                     </span>
                     {invalidationNote && (
@@ -1426,10 +1450,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                         // events==[] não significa "sem notícia", significa "não
                         // sabemos". Bug real encontrado em 25/08/2026 — a tela
                         // afirmava tranquilidade que o backend não tinha checado.
-                        <p className="text-xs text-[var(--tone-warn-2)]">⚠ {r.calUnavailable}</p>
+                        <p className="text-xs text-[var(--tone-warn-2)]">{r.calUnavailable}</p>
                       ) : calEvents.length === 0 ? (
                         <p className="text-xs text-[var(--text-secondary)] opacity-60">
-                          ✅ {t.analysis.noHighImpactEvents}
+                          {t.analysis.noHighImpactEvents}
                         </p>
                       ) : (
                         <div className="space-y-2">
@@ -1594,7 +1618,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                                   item.notApplicable ? 'text-[var(--text-muted)]' : item.warning ? 'text-[var(--signal-hold)]' : item.ok ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'
                                 }`}
                               >
-                                {item.notApplicable ? '—' : item.warning ? '⚠' : item.ok ? '✓' : '✕'}
+                                {item.notApplicable ? '-' : item.warning ? '!' : item.ok ? '✓' : '✕'}
                               </span>
                               <span className="text-[var(--text-secondary)] leading-relaxed">
                                 {item.label ? (

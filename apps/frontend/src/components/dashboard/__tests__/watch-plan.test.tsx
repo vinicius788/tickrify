@@ -108,3 +108,76 @@ describe('plano do WATCH (v10.1)', () => {
     expect(screen.getByTestId('signal-state').textContent).toBe('Pending order');
   });
 });
+
+describe('modo leitura: Read, Where price is e Action em toda analise', () => {
+  afterEach(cleanup);
+  const location = {
+    price: 2351, atr: 4, rangePosPct: 72, htfTrend: 'uptrend',
+    invalidation: { price: 2336, atr: 3.75 }, support: { price: 2345, atr: 1.5 }, resistance: { price: 2362, atr: 2.75 }, planLevel: { price: 2345, atr: 1.5 },
+  };
+
+  it('ENTER_NOW: leitura, distancias em ATR, niveis e a invalidacao estrutural em linha propria', () => {
+    renderResult('ENTER_NOW', plan, { location, dataMode: 'real_data', analysis: {
+      symbol: 'XAUUSD', timeframe: '15m', currentPrice: 2351, trendStrength: 'strong',
+      executiveSummary: 'Bullish and strong: buyers defend 2345. Enter now.', entry: 2351, stopLoss: 2335, takeProfit1: 2362, entryType: 'market',
+    } });
+    const text = screen.getByTestId('read-mode').textContent ?? '';
+    expect(text).toContain('Bullish, strong');
+    expect(text).toContain('Bullish and strong: buyers defend 2345.');
+    expect(text).toContain('72% of the recent range');
+    expect(text).toContain('3.8 ATR away');
+    expect(text).toContain('4h trend');
+    expect(text).toContain('Idea invalid if a candle closes below $ 2,336.00');
+    expect(screen.queryByTestId('read-mode-estimated')).toBeNull();
+  });
+
+  it('WATCH: o nivel e a condicao que destravam, e a chance calibrada quando existe', () => {
+    renderResult('WATCH', plan, { location, dataMode: 'real_data', watchReach: { probability: 0.42, candles: 12 } });
+    const text = screen.getByTestId('read-mode').textContent ?? '';
+    expect(text).toContain('Unlocks if price reaches $ 2,345.00: A sweep of 2340 that closes back above it.');
+    expect(screen.getByTestId('read-mode-reach').textContent).toBe('About 42% chance price reaches this level within 12 candles');
+    cleanup();
+    renderResult('WATCH', plan, { location, dataMode: 'real_data' });
+    expect(screen.queryByTestId('read-mode-reach')).toBeNull();
+  });
+
+  it('sem REAL DATA: o aviso de niveis estimados no lugar das distancias', () => {
+    renderResult('WATCH', plan, { dataMode: 'print' });
+    expect(screen.getByTestId('read-mode-estimated').textContent).toBe('Levels estimated from the screenshot');
+  });
+
+  it('API antiga (v10.3) e historico: sem location, watchReach, trendStrength nem contrato, a tela abre sem inventar', () => {
+    // Velas reais sem location: nada de "estimated from the screenshot".
+    renderResult('WATCH', plan, { dataMode: 'real_data' });
+    let text = screen.getByTestId('read-mode').textContent ?? '';
+    expect(text).toContain('Bullish');
+    expect(text).toContain('Unlocks if price reaches $ 2,345.00');
+    expect(text).not.toContain('ATR away');
+    expect(screen.queryByTestId('read-mode-estimated')).toBeNull();
+    expect(screen.queryByTestId('read-mode-reach')).toBeNull();
+    cleanup();
+    // ARMED do v10.3 continua mostrando os niveis gravados.
+    renderResult('ARMED', plan, { dataMode: 'real_data' });
+    text = screen.getByTestId('read-mode').textContent ?? '';
+    expect(text).toContain('Pending order');
+    expect(text).toContain('$ 2,345.00');
+    cleanup();
+    // NO_TRADE sem contrato do motor: a primeira frase da leitura.
+    renderResult('NO_TRADE', null, { dataMode: 'real_data' });
+    expect(screen.getByTestId('read-mode').textContent).toContain('Watch 2340-2345.');
+    cleanup();
+    // Historico de antes do estado e do dataMode.
+    renderResult('ENTER_NOW', null, { signalState: undefined, dataMode: undefined });
+    expect(screen.getByTestId('read-mode')).toBeTruthy();
+    expect(screen.queryByTestId('read-mode-estimated')).toBeNull();
+  });
+
+  it('NO_TRADE: o motivo em uma linha, do contrato do motor', () => {
+    renderResult('NO_TRADE', null, { engine: { contract: { no_trade_reason: 'There is no complete setup.' } } });
+    const text = screen.getByTestId('read-mode').textContent ?? '';
+    expect(text).toContain('No trade');
+    expect(text).toContain('There is no complete setup.');
+    expect(text).not.toMatch(/hit rate|win rate|high probability/i);
+  });
+});
+
