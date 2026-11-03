@@ -954,6 +954,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
     read: shareRead,
     // A prosa sai no idioma pedido na analise (o da interface); o card e so em ingles.
     readIsEnglish: language === 'en',
+    trendStrength: trendStrength === 'strong' || trendStrength === 'moderate' || trendStrength === 'weak' ? trendStrength : null,
     date: timestamp,
   };
 

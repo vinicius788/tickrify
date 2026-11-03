@@ -13,6 +13,7 @@ import {
   cardText,
   formatCardDate,
   hasPriceLevel,
+  heroText,
   hideAmountState,
   pickRead,
   readSentences,
@@ -55,6 +56,7 @@ const read: ReadShareData = {
   state: 'ENTER_NOW',
   read: 'Buyers reclaimed the 4H order block with volume. Entry at 67,250 with stop at 66,800. Momentum favors continuation.',
   readIsEnglish: true,
+  trendStrength: 'moderate',
   date: new Date('2026-11-03T14:28:00Z'),
 };
 
@@ -146,9 +148,18 @@ describe('card de leitura', () => {
     for (const level of ['67,250', '66,800', '67250', '66800']) expect(text).not.toContain(level);
   });
 
-  it('leitura fora do ingles usa so a frase fixa do estado', () => {
+  it('leitura fora do ingles usa so a frase montada com a forca da tendencia e o estado', () => {
     const model = buildReadCard({ ...read, read: 'Compradores retomaram o order block.', readIsEnglish: false });
-    expect(model.read).toEqual(['The structure lines up and the plan passed the risk checks.']);
+    expect(model.read).toEqual(['Moderate trend. The plan passed the risk checks.']);
+  });
+
+  it('toda frase da IA com preco: cai na frase montada, sem repetir a direcao', () => {
+    const model = buildReadCard({ ...read, action: 'HOLD', state: 'WATCH', read: 'Watch 77800-77820 for rejection. Close below 77820 turns it into a trade.' });
+    expect(model.read).toEqual(['Moderate trend. Price is not at the level yet.']);
+    expect(buildReadCard({ ...read, scenario: 'NEUTRAL', action: 'WAIT', state: 'NO_TRADE', read: '' }).read).toEqual([
+      'No clear direction. No setup worth the risk on this chart.',
+    ]);
+    expect(buildReadCard({ ...read, trendStrength: null, read: '' }).read).toEqual(['The plan passed the risk checks.']);
   });
 
   it('texto do post sem numero de performance', () => {
@@ -198,6 +209,17 @@ describe('card de trade', () => {
     expect(hidden.hero).toBe('+2.40%');
     expect(modelText(hidden)).not.toContain('1,292');
     expect(hideAmountState({ ...trade, pnlAmount: null })).toBe('no_amount');
+  });
+
+  it('o valor sobe de 0 ate o final na animacao, com o sinal do valor final; o quadro final e exato', () => {
+    const model = buildTradeCard({ ...trade, pnlAmount: -471 }, false);
+    expect(heroText(model, 0)).toBe('\u22120.00');
+    const mid = Number(heroText(model, 1100).replace(/[^\d.]/g, ''));
+    expect(mid).toBeGreaterThan(0);
+    expect(mid).toBeLessThan(471);
+    expect(heroText(model, ANIMATION_MS)).toBe('\u2212471.00');
+    expect(heroText(buildReadCard(read), 0)).toBe('BULLISH');
+    expect(heroText(buildTradeCard({ ...trade, pnlAmount: 0 }, false), 0)).toBe('0.00');
   });
 
   it('sem valor registrado: mostra o resultado marcado', () => {

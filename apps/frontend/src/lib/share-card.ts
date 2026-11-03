@@ -59,6 +59,8 @@ export interface ShareCardModel {
   /** Ao lado do ativo: timeframe (leitura) ou LONG/SHORT (trade). */
   tag: string | null;
   hero: string;
+  /** Valor que a animacao conta de 0 ate o final (card de trade); null = palavra fixa. */
+  heroCount: { value: number; percent: boolean } | null;
   status: string | null;
   secondary: string | null;
   /** Leituras candidatas em ordem; desenha a primeira que cabe inteira em 2 linhas. */
@@ -167,15 +169,13 @@ function formatPrice(value: number): string {
   return new Intl.NumberFormat('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value);
 }
 
-/** Valor com sinal, na moeda da conta do trader (sem simbolo: o My Trades nao guarda moeda). */
-export function formatSignedAmount(value: number): string {
+/**
+ * Valor com sinal, na moeda da conta do trader (sem simbolo: o My Trades nao
+ * guarda moeda). `sign` fixa o sinal do valor final durante a contagem.
+ */
+function formatSigned(value: number, percent: boolean, sign = Math.sign(value)): string {
   const abs = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(value));
-  return `${value > 0 ? '+' : value < 0 ? '−' : ''}${abs}`;
-}
-
-function formatSignedPercent(value: number): string {
-  const abs = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(value));
-  return `${value > 0 ? '+' : value < 0 ? '−' : ''}${abs}%`;
+  return `${sign > 0 ? '+' : sign < 0 ? '−' : ''}${abs}${percent ? '%' : ''}`;
 }
 
 // ── Card 1: leitura da analise ──────────────────────────────────────────────
@@ -190,8 +190,10 @@ export interface ReadShareData {
   state: SignalStateCanonical;
   /** A leitura em prosa (resumo da analise). */
   read: string;
-  /** A leitura foi escrita em ingles? Senao o card usa a frase fixa do estado. */
+  /** A leitura foi escrita em ingles? Senao o card usa a frase montada pelos dados. */
   readIsEnglish: boolean;
+  /** Forca da tendencia lida pela IA; null sem o campo. */
+  trendStrength: 'strong' | 'moderate' | 'weak' | null;
   date: Date;
 }
 
@@ -219,12 +221,27 @@ const READ_STATUS: Record<SignalStateCanonical, string> = {
   NO_TRADE: 'No trade right now',
 };
 
-const READ_FALLBACK: Record<SignalStateCanonical, string> = {
-  ENTER_NOW: 'The structure lines up and the plan passed the risk checks.',
-  ARMED: 'The structure lines up and the plan passed the risk checks.',
-  WATCH: 'Price is not at the level yet, so the AI is waiting for it.',
-  NO_TRADE: 'The AI found no setup worth the risk on this chart.',
+const STATE_LINE: Record<SignalStateCanonical, string> = {
+  ENTER_NOW: 'The plan passed the risk checks.',
+  ARMED: 'The plan passed the risk checks.',
+  WATCH: 'Price is not at the level yet.',
+  NO_TRADE: 'No setup worth the risk on this chart.',
 };
+
+/**
+ * Frase da leitura montada so com dados da analise, para quando toda frase da
+ * IA cita preco (comum no v11). A direcao ja esta na palavra grande ou no
+ * "Scenario", entao aqui vai so a forca.
+ */
+export function readDataLine(data: ReadShareData): string {
+  const trend =
+    publicScenario(data.scenario) === 'NEUTRAL'
+      ? 'No clear direction.'
+      : data.trendStrength
+        ? `${data.trendStrength[0].toUpperCase()}${data.trendStrength.slice(1)} trend.`
+        : '';
+  return [trend, STATE_LINE[data.state] ?? STATE_LINE.NO_TRADE].filter(Boolean).join(' ');
+}
 
 export function buildReadCard(data: ReadShareData): ShareCardModel {
   const theme = readTheme(data.state, data.action);
@@ -240,9 +257,10 @@ export function buildReadCard(data: ReadShareData): ShareCardModel {
     symbol: cardText(data.symbol).toUpperCase() || 'CHART',
     tag: cardText(data.timeframe) && data.timeframe !== 'UNKNOWN' ? cardText(data.timeframe) : null,
     hero,
+    heroCount: null,
     status: READ_STATUS[data.state] ?? READ_STATUS.NO_TRADE,
     secondary,
-    read: [...sentences.slice(0, 6), READ_FALLBACK[data.state] ?? READ_FALLBACK.NO_TRADE],
+    read: [...sentences.slice(0, 6), readDataLine(data)],
     stats: [],
     footerUrl: 'tickrify.com/accuracy',
     footerLines: ['Not a signal. The final call is yours.', 'Illustrative candles'],
@@ -321,11 +339,12 @@ export function buildTradeCard(data: TradeShareData, hideAmount: boolean): Share
   const result = tradeResult(data);
   const theme: ShareTheme = result === 'profit' ? 'bull' : result === 'loss' ? 'bear' : 'watch';
   const hide = hideAmount && hideAmountState(data) === 'available';
-  const hero = finite(data.pnlAmount) && !hide
-    ? formatSignedAmount(data.pnlAmount)
+  const heroCount = finite(data.pnlAmount) && !hide
+    ? { value: data.pnlAmount, percent: false }
     : finite(data.pnlPercent)
-      ? formatSignedPercent(data.pnlPercent)
-      : VERDICT_HERO[data.verdict];
+      ? { value: data.pnlPercent, percent: true }
+      : null;
+  const hero = heroCount ? formatSigned(heroCount.value, heroCount.percent) : VERDICT_HERO[data.verdict];
   const stats: ShareCardModel['stats'] = [];
   if (finite(data.entryPrice) && data.entryPrice > 0) stats.push({ label: 'Entry', value: formatPrice(data.entryPrice) });
   return {
@@ -334,6 +353,7 @@ export function buildTradeCard(data: TradeShareData, hideAmount: boolean): Share
     symbol: cardText(data.symbol).toUpperCase() || 'TRADE',
     tag: data.side === 'buy' ? 'LONG' : data.side === 'sell' ? 'SHORT' : null,
     hero,
+    heroCount,
     status: VERDICT_STATUS[data.verdict],
     secondary: null,
     read: [],
@@ -487,6 +507,16 @@ const LAYOUTS: Record<ShareFormat, Layout> = {
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const easeOut = (v: number) => 1 - Math.pow(1 - clamp01(v), 3);
 const phase = (t: number, start: number, end: number) => easeOut((t - start) / (end - start));
+
+const COUNT_START = 800;
+const COUNT_END = 1500;
+
+/** Texto da palavra/valor grande em `t`: o valor do trade sobe de 0 ate o final; o resto e fixo. */
+export function heroText(model: ShareCardModel, t: number): string {
+  const count = model.heroCount;
+  if (!count || count.value === 0 || t >= COUNT_END) return model.hero;
+  return formatSigned(count.value * phase(t, COUNT_START, COUNT_END), count.percent, Math.sign(count.value));
+}
 
 function drawTracked(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, spacing: number): void {
   let cursor = x;
@@ -643,7 +673,8 @@ export function renderShareFrame(
   ctx.fillStyle = theme.color;
   ctx.shadowColor = `rgba(${theme.rgb}, 0.55)`;
   ctx.shadowBlur = heroSize * 0.32 * scale;
-  ctx.fillText(model.hero, x, heroY + (1 - heroP) * 28);
+  // Tamanho medido no valor FINAL: a contagem nunca muda a fonte no meio.
+  ctx.fillText(heroText(model, t), x, heroY + (1 - heroP) * 28);
   ctx.shadowBlur = 0;
   ctx.shadowColor = 'transparent';
 

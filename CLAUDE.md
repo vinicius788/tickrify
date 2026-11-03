@@ -989,7 +989,9 @@ Vale para TODA mudanca, grande ou pequena:
   (2x: 2400x1350, 2160x2700, 2160x3840), clipboard e video saem dele. Arte em
   `public/share/` (nunca otimizar nem redimensionar). Leitura: sem entry/stop/alvo,
   e frase com preco ou nivel sai da prosa (`hasPriceLevel`; substitui a decisao
-  de 02/09); prosa fora do ingles vira a frase fixa do estado; WAIT ganha card.
+  de 02/09); sem frase sem preco (comum no v11) ou fora do ingles, vale a frase
+  montada so com dados (`readDataLine`: forca da tendencia + estado); WAIT ganha card.
+  O valor do trade conta de 0 ate o final na animacao (`heroText`); PNG = valor exato.
   Trade: so o que o trader registrou (valor, resultado, entrada digitada, data do
   fechamento); sem moeda (o My Trades nao guarda); o valor nunca vai ao PostHog
   nem ao texto do post. Texto do post em ingles e sem performance. Sem `ctx.filter`
