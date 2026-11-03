@@ -37,7 +37,9 @@ export function presentAnalysis<T extends Record<string, any>>(analysis: T, lang
   }
   const mtf = analysis.multiTimeframeAlignment;
   if (additionalCharts === 0 && typeof mtf === 'string' && mtf.trim() && !Object.values(mtfLabels).some(label => mtf.startsWith(label))) {
-    out.multiTimeframeAlignment = (mtfLabels[language] ?? mtfLabels.en) + mtf;
+    const prefix = mtfLabels[language] ?? mtfLabels.en;
+    out.multiTimeframeAlignment = prefix + mtf;
+    out.displayMessages = { ...analysis.displayMessages, multiTimeframePrefix: { code: 'single_image_inference', params: {}, text: prefix } };
   }
   return out as T;
 }

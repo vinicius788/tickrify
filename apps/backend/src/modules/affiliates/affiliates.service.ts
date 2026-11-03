@@ -767,7 +767,7 @@ export class AffiliatesService implements OnModuleInit {
         throw error;
       }
     }
-    throw new ConflictException('Could not generate an affiliate code. Please try again.');
+    throw new ConflictException({ code: 'affiliate_code_failed', message: 'Could not generate an affiliate code. Please try again.' });
   }
 
   async getDashboard(userId: string, now = new Date()) {
@@ -856,8 +856,8 @@ export class AffiliatesService implements OnModuleInit {
   /** Pede saque de TODO o saldo disponivel. Um pedido aberto por vez. */
   async requestPayout(userId: string, method: string, now = new Date()) {
     const affiliate = await this.prisma.affiliate.findUnique({ where: { userId } });
-    if (!affiliate) throw new NotFoundException('You are not in the affiliate program.');
-    if (affiliate.status !== 'ACTIVE') throw new ForbiddenException('Your affiliate account is not active.');
+    if (!affiliate) throw new NotFoundException({ code: 'affiliate_missing', message: 'You are not in the affiliate program.' });
+    if (affiliate.status !== 'ACTIVE') throw new ForbiddenException({ code: 'affiliate_inactive', message: 'Your affiliate account is not active.' });
 
     await this.releaseMatured(now, affiliate.id);
 
@@ -866,7 +866,7 @@ export class AffiliatesService implements OnModuleInit {
         where: { affiliateId: affiliate.id, status: { in: ['REQUESTED', 'APPROVED'] } },
         select: { id: true },
       });
-      if (open) throw new ConflictException('You already have a payout in progress.');
+      if (open) throw new ConflictException({ code: 'affiliate_payout_pending', message: 'You already have a payout in progress.' });
 
       const available = await tx.affiliateCommission.findMany({
         where: { affiliateId: affiliate.id, status: 'AVAILABLE', payoutId: null },
@@ -874,7 +874,7 @@ export class AffiliatesService implements OnModuleInit {
       });
       const amountCents = available.reduce((acc, c) => acc + c.commissionCents, 0);
       if (amountCents < AFFILIATE_RULES.minPayoutCents) {
-        throw new BadRequestException(`The minimum payout is $${AFFILIATE_RULES.minPayoutCents / 100}.`);
+        throw new BadRequestException({ code: 'affiliate_min_payout', params: { amount: AFFILIATE_RULES.minPayoutCents / 100 }, message: `The minimum payout is $${AFFILIATE_RULES.minPayoutCents / 100}.` });
       }
 
       const payout = await tx.affiliatePayout.create({
@@ -885,7 +885,7 @@ export class AffiliatesService implements OnModuleInit {
         data: { payoutId: payout.id },
       });
       // Um refund no meio do caminho mudou o saldo: desfaz tudo e a pessoa tenta de novo.
-      if (linked.count !== available.length) throw new ConflictException('Your balance changed. Please try again.');
+      if (linked.count !== available.length) throw new ConflictException({ code: 'affiliate_balance_changed', message: 'Your balance changed. Please try again.' });
       this.logger.log(`[affiliate] Saque ${payout.id} pedido: ${amountCents}c por ${affiliate.id}.`);
       return payout;
     });

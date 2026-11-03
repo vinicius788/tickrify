@@ -25,7 +25,7 @@ describe('engine contract v2', () => {
     const c = buildEngineContract(trade);
     expect(Object.keys(c)).toEqual([
       'verdict', 'confidence', 'asset', 'timeframe', 'entry', 'stop', 'targets',
-      'invalidation', 'key_reasons', 'no_trade_reason', 'engine_version',
+      'invalidation', 'key_reasons', 'no_trade_reason', 'no_trade_reason_code', 'no_trade_reason_params', 'engine_version',
     ]);
     expect(ENGINE_VERSION).toBe('4.0.0');
     expect(c.engine_version).toBe(ENGINE_VERSION);
@@ -59,9 +59,13 @@ describe('engine contract v2', () => {
 
     // Varios degraus: vale o motivo do ultimo (o que levou ao estado final).
     const fromValidator = buildEngineContract({ ...trade, recommendation: 'WAIT', validatorReasons: ['limit_order_retired', 'no_valid_geometry'] });
+    expect(fromValidator.no_trade_reason_code).toBe('engine_no_valid_geometry');
+    expect(fromValidator.no_trade_reason_params).toEqual({});
+    expect(fromModel.no_trade_reason_code).toBeNull();
     expect(fromValidator.no_trade_reason).toBe('Neither an entry at the current price nor one at the plan level is valid.');
 
     const empty = buildEngineContract({ ...trade, recommendation: 'WAIT', executiveSummary: '' });
+    expect(empty.no_trade_reason_code).toBe('engine_no_setup');
     expect(empty.no_trade_reason).toBe('No trade setup on this chart.');
   });
 

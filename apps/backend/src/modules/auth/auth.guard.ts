@@ -32,7 +32,7 @@ export class AuthGuard implements CanActivate {
     const token = this.extractToken(request);
 
     if (!token) {
-      throw new UnauthorizedException('No authentication token provided');
+      throw new UnauthorizedException({ code: 'auth_token_missing', message: 'No authentication token provided' });
     }
 
     try {
@@ -40,7 +40,7 @@ export class AuthGuard implements CanActivate {
       const clerkUserId = String(claims?.sub || '').trim();
 
       if (!clerkUserId) {
-        throw new UnauthorizedException('Invalid authentication token');
+        throw new UnauthorizedException({ code: 'auth_token_invalid', message: 'Invalid authentication token' });
       }
 
       const email = this.extractEmailFromClaims(claims);
@@ -97,7 +97,7 @@ export class AuthGuard implements CanActivate {
       }
 
       if (!user) {
-        throw new UnauthorizedException('User not found');
+        throw new UnauthorizedException({ code: 'auth_user_missing', message: 'User not found' });
       }
 
       if (isNewUser) {
@@ -141,7 +141,7 @@ export class AuthGuard implements CanActivate {
       return true;
     } catch {
       // Provider/driver messages may contain tokens, database details or paths.
-      throw new UnauthorizedException('Invalid authentication token');
+      throw new UnauthorizedException({ code: 'auth_token_invalid', message: 'Invalid authentication token' });
     }
   }
 
@@ -210,7 +210,7 @@ export class AuthGuard implements CanActivate {
     if (process.env.CLERK_ISSUER) {
       const issuer = String(claims?.iss || '');
       if (issuer !== process.env.CLERK_ISSUER) {
-        throw new UnauthorizedException('Invalid token issuer');
+        throw new UnauthorizedException({ code: 'auth_issuer_invalid', message: 'Invalid token issuer' });
       }
     }
 

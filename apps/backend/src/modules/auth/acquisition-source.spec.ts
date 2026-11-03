@@ -96,3 +96,41 @@ describe('PATCH /auth/preferences (tema)', () => {
     expect(captureServer).toHaveBeenCalledWith('clerk_1', 'theme_changed', { theme: 'light', $set: { theme: 'light' } });
   });
 });
+
+describe('account language preferences', () => {
+  const pipe = new ValidationPipe(PIPE_CONFIG);
+  const meta = { type: 'body' as const, metatype: SetPreferencesDto };
+
+  it('validates the real PATCH body, independently of theme', async () => {
+    for (const language of ['en', 'pt', 'es', 'fr', 'de', 'ja']) {
+      await expect(pipe.transform({ language }, meta)).resolves.toMatchObject({ language });
+      await expect(pipe.transform({ theme: 'light', language }, meta)).resolves.toMatchObject({ theme: 'light', language });
+    }
+    for (const language of ['EN', 'xx', '', null, 1, {}, ['es']]) {
+      await expect(pipe.transform({ language }, meta)).rejects.toBeDefined();
+    }
+    await expect(pipe.transform({ language: 'es', userId: 'other' }, meta)).rejects.toBeDefined();
+    await expect(pipe.transform({ theme: null }, meta)).rejects.toBeDefined();
+  });
+
+  it('updates only the authenticated account and preserves an omitted theme', async () => {
+    const prisma: any = { $executeRawUnsafe: jest.fn().mockResolvedValue(1) };
+    const controller = new AuthController(prisma, {} as any);
+    await expect(controller.setPreferences({ clerkUserId: 'owner' }, { language: 'ja' })).resolves.toEqual({ language: 'ja' });
+    expect(prisma.$executeRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(prisma.$executeRawUnsafe.mock.calls[0]).toEqual([expect.stringContaining('"languagePreference"'), 'owner', 'ja']);
+    expect(prisma.$executeRawUnsafe.mock.calls[0][0]).not.toContain('themePreference');
+  });
+
+  it('reads saved language, nullable defaults and invalid old data', async () => {
+    const prisma: any = { $queryRawUnsafe: jest.fn() };
+    const controller = new AuthController(prisma, {} as any);
+    prisma.$queryRawUnsafe.mockResolvedValue([{ languagePreference: 'es', themePreference: 'light' }]);
+    await expect(controller.getPreferences({ clerkUserId: 'owner' })).resolves.toEqual({ language: 'es', theme: 'light' });
+    expect(prisma.$queryRawUnsafe.mock.calls[0].slice(1)).toEqual(['owner']);
+    prisma.$queryRawUnsafe.mockResolvedValue([{ languagePreference: null, themePreference: null }]);
+    await expect(controller.getPreferences({ clerkUserId: 'new' })).resolves.toEqual({ language: null, theme: null });
+    prisma.$queryRawUnsafe.mockResolvedValue([{ languagePreference: 'xx', themePreference: 'dark' }]);
+    await expect(controller.getPreferences({ clerkUserId: 'legacy' })).resolves.toEqual({ language: null, theme: 'dark' });
+  });
+});

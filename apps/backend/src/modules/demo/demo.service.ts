@@ -450,6 +450,8 @@ export class DemoService implements OnModuleInit, OnModuleDestroy {
       // Origem dos niveis, a mesma regra do painel: so 'print' mostra "estimated".
       dataMode: aiResponse.dataMode === 'real_data' || aiResponse.dataMode === 'print' ? aiResponse.dataMode : null,
       reasoning,
+      reasoningCode: reasoning === 'Analysis details unavailable.' ? 'analysis_details_unavailable' : null,
+      disclaimerCode: 'demo_disclaimer',
       // Aviso legal: a demo é pública — reforçar caráter educacional na própria resposta.
       disclaimer:
         'Educational analysis only, not financial advice. Trading involves risk; the decision is always yours.',
