@@ -30,7 +30,7 @@ const DATE_LOCALES: Record<string, string> = {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function fmt(v: unknown): string {
   const n = Number(v);
-  if (!Number.isFinite(n)) return '—';
+  if (!Number.isFinite(n)) return '-';
   return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 }).format(n);
 }
 
@@ -49,7 +49,7 @@ function extractLevels(a: AIAnalysisResponse) {
   const flat = a as unknown as Record<string, unknown>;
   return {
     symbol:      String(analysis.symbol || full.symbol || a.symbol || 'N/A').trim(),
-    timeframe:   String(analysis.timeframe || full.timeframe || a.timeframe || '—').trim(),
+    timeframe:   String(analysis.timeframe || full.timeframe || a.timeframe || '-').trim(),
     entry:       toLevel(analysis.entry ?? flat.entry),
     stopLoss:    toLevel(analysis.stopLoss ?? flat.stopLoss),
     takeProfit1: toLevel(analysis.takeProfit1 ?? flat.takeProfit1),
@@ -443,14 +443,14 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
             <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
               <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.winRate}</p>
               <p className="font-terminal text-lg font-semibold text-[var(--signal-buy)]">
-                {perf.winRate !== null ? `${perf.winRate}%` : '—'}
+                {perf.winRate !== null ? `${perf.winRate}%` : '-'}
               </p>
               <p className="font-terminal text-[10px] text-[var(--text-secondary)]">{perf.wins}{tr.winShort} / {perf.losses}{tr.lossShort}</p>
             </div>
             <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
               <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.avgRr}</p>
               <p className="font-terminal text-lg font-semibold text-[var(--text-primary)]">
-                {perf.avgRr !== null ? `${perf.avgRr.toFixed(1)}:1` : '—'}
+                {perf.avgRr !== null ? `${perf.avgRr.toFixed(1)}:1` : '-'}
               </p>
             </div>
             <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
@@ -471,7 +471,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                     : perf.pnlTotal < 0 ? 'var(--signal-sell)' : 'var(--signal-buy)',
                 }}
               >
-                {perf.pnlTotal !== null ? fmtPnl(perf.pnlTotal) : '—'}
+                {perf.pnlTotal !== null ? fmtPnl(perf.pnlTotal) : '-'}
               </p>
               <p className="font-terminal text-[10px] text-[var(--text-secondary)]">
                 {perf.pnlTotal !== null ? tr.loggedPnlSub.replace('{n}', String(perf.pnlCount)) : tr.noPnlSub}
@@ -511,7 +511,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
               const showCalc = hasLevels && calcOpen[a.id] === true;
               const imageUrl = typeof a.imageUrl === 'string' && a.imageUrl.trim() ? a.imageUrl : null;
               const imageBroken = brokenImages[a.id] === true;
-              const chartTitle = `${symbol}${timeframe && timeframe !== '—' ? ` · ${timeframe}` : ''}`;
+              const chartTitle = `${symbol}${timeframe && timeframe !== '-' ? ` · ${timeframe}` : ''}`;
               const toggleCalc = () => setCalcOpen((prev) => ({ ...prev, [a.id]: !prev[a.id] }));
 
               const signalBg = stateTone === 'buy'
@@ -573,7 +573,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                           </button>
                         )}
                         <span className="font-terminal font-bold text-[var(--text-primary)]">{symbol}</span>
-                        {timeframe && timeframe !== '—' && (
+                        {timeframe && timeframe !== '-' && (
                           <span className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-1.5 py-0.5 font-terminal text-xs text-[var(--text-secondary)]">
                             {timeframe}
                           </span>

@@ -121,7 +121,7 @@ const BACKEND_PT_FALLBACKS = new Set([
  * confundir os dois foi exatamente o que quebrou a lista de riscos.
  */
 export function softenDashes(text: string): string {
-  return text.replace(/\s+[—–]\s+/g, ', ');
+  return text.replace(/\s+[—–]\s+/g, ', ').replace(/\s*—\s*/g, ', ');
 }
 
 /**
@@ -1288,7 +1288,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                   {/* Trava de coerência: com R/R abaixo do ideal, não exibir "entrar a
                       mercado agora" (contradiz o aviso). Mostra orientação de aguardar recuo. */}
                   {invalidTradePlan ? null : riskRewardLow && entryType.toLowerCase() === 'market' ? (
-                    <p className="mt-0.5 text-[var(--signal-hold)]">⚠ {r.entryCautionRRLow}</p>
+                    <p className="mt-0.5 text-[var(--signal-hold)]">{r.entryCautionRRLow}</p>
                   ) : (
                     entryCondition && <p className="mt-0.5 text-[var(--text-secondary)]">{entryCondition}</p>
                   )}
@@ -1304,7 +1304,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                     aria-expanded={showInvalidation}
                   >
                     <span>
-                      <span className="text-[var(--signal-sell)]">⚠ {t.analysis.invalidation.toUpperCase()}: </span>
+                      <span className="text-[var(--signal-sell)]">{t.analysis.invalidation.toUpperCase()}: </span>
                       <span className="font-terminal font-semibold text-[var(--signal-sell)]">{formatPrice(invalidationLevel)}</span>
                     </span>
                     {invalidationNote && (
@@ -1450,10 +1450,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                         // events==[] não significa "sem notícia", significa "não
                         // sabemos". Bug real encontrado em 25/08/2026 — a tela
                         // afirmava tranquilidade que o backend não tinha checado.
-                        <p className="text-xs text-[var(--tone-warn-2)]">⚠ {r.calUnavailable}</p>
+                        <p className="text-xs text-[var(--tone-warn-2)]">{r.calUnavailable}</p>
                       ) : calEvents.length === 0 ? (
                         <p className="text-xs text-[var(--text-secondary)] opacity-60">
-                          ✅ {t.analysis.noHighImpactEvents}
+                          {t.analysis.noHighImpactEvents}
                         </p>
                       ) : (
                         <div className="space-y-2">
@@ -1618,7 +1618,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
                                   item.notApplicable ? 'text-[var(--text-muted)]' : item.warning ? 'text-[var(--signal-hold)]' : item.ok ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'
                                 }`}
                               >
-                                {item.notApplicable ? '—' : item.warning ? '⚠' : item.ok ? '✓' : '✕'}
+                                {item.notApplicable ? '-' : item.warning ? '!' : item.ok ? '✓' : '✕'}
                               </span>
                               <span className="text-[var(--text-secondary)] leading-relaxed">
                                 {item.label ? (

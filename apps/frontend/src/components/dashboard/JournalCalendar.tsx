@@ -348,7 +348,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
           <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
             <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.winRate}</p>
             <p className="font-terminal text-lg font-semibold text-[var(--signal-buy)]">
-              {decided > 0 ? `${Math.round((totals.wins / decided) * 1000) / 10}%` : '—'}
+              {decided > 0 ? `${Math.round((totals.wins / decided) * 1000) / 10}%` : '-'}
             </p>
             <p className="font-terminal text-[10px] text-[var(--text-secondary)]">
               {totals.wins}{tr.winShort} / {totals.losses}{tr.lossShort}
@@ -357,7 +357,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
           <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
             <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.pnl}</p>
             <p className="font-terminal text-lg font-semibold" style={{ color: pnlColor(totals.pnl) }}>
-              {totals.pnl !== null ? fmtPnl(totals.pnl) : '—'}
+              {totals.pnl !== null ? fmtPnl(totals.pnl) : '-'}
             </p>
           </div>
           <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
