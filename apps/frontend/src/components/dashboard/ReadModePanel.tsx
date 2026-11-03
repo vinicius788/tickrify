@@ -96,7 +96,7 @@ export function ReadModePanel({ data, formatPrice, texts }: ReadModePanelProps) 
             </div>
           )}
         </dl>
-        {!loc && <p data-testid="read-mode-estimated" className="mt-2 text-xs text-[var(--text-secondary)]">{t.analysis.result.levelsEstimated}</p>}
+        {!loc && data.dataMode === 'print' && <p data-testid="read-mode-estimated" className="mt-2 text-xs text-[var(--text-secondary)]">{t.analysis.result.levelsEstimated}</p>}
       </section>
 
       <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-4">

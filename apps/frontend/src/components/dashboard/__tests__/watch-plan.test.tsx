@@ -146,6 +146,32 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
     expect(screen.getByTestId('read-mode-estimated').textContent).toBe('Levels estimated from the screenshot');
   });
 
+  it('API antiga (v10.3) e historico: sem location, watchReach, trendStrength nem contrato, a tela abre sem inventar', () => {
+    // Velas reais sem location: nada de "estimated from the screenshot".
+    renderResult('WATCH', plan, { dataMode: 'real_data' });
+    let text = screen.getByTestId('read-mode').textContent ?? '';
+    expect(text).toContain('Bullish');
+    expect(text).toContain('Unlocks if price reaches $ 2,345.00');
+    expect(text).not.toContain('ATR away');
+    expect(screen.queryByTestId('read-mode-estimated')).toBeNull();
+    expect(screen.queryByTestId('read-mode-reach')).toBeNull();
+    cleanup();
+    // ARMED do v10.3 continua mostrando os niveis gravados.
+    renderResult('ARMED', plan, { dataMode: 'real_data' });
+    text = screen.getByTestId('read-mode').textContent ?? '';
+    expect(text).toContain('Pending order');
+    expect(text).toContain('$ 2,345.00');
+    cleanup();
+    // NO_TRADE sem contrato do motor: a primeira frase da leitura.
+    renderResult('NO_TRADE', null, { dataMode: 'real_data' });
+    expect(screen.getByTestId('read-mode').textContent).toContain('Watch 2340-2345.');
+    cleanup();
+    // Historico de antes do estado e do dataMode.
+    renderResult('ENTER_NOW', null, { signalState: undefined, dataMode: undefined });
+    expect(screen.getByTestId('read-mode')).toBeTruthy();
+    expect(screen.queryByTestId('read-mode-estimated')).toBeNull();
+  });
+
   it('NO_TRADE: o motivo em uma linha, do contrato do motor', () => {
     renderResult('NO_TRADE', null, { engine: { contract: { no_trade_reason: 'There is no complete setup.' } } });
     const text = screen.getByTestId('read-mode').textContent ?? '';
