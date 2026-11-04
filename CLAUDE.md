@@ -306,8 +306,27 @@ Vale para TODA mudanca, grande ou pequena:
   (`lib/api.ts`) `ANALYZE_TIMEOUT_MS` 150 s e `POLL_TIMEOUT_MS` 300 s. Nunca
   mexer em um sem o outro: o worker conclui, a tela ja desistiu, o tick foi
   cobrado.
-- **`/accuracy`** publica o acerto com n e intervalo de Wilson; a home le os
-  numeros ao vivo da mesma API (sem resposta mostra um traco, nunca numero velho). O
+- **`/accuracy` com dois registros (04/11/2026, branch `claude/accuracy-v11`, PR
+  draft):** `GET /api/ai/accuracy` devolve `previous` (motor anterior = sem
+  `result.engine.version` ou major < 4: tudo o que a pagina tinha, mesmas regras,
+  mais `avgRewardTp1`, `breakEvenRate` = 1/(1+R) e `edge` below|above|inconclusive
+  pelo Wilson) e `current` (motor atual = major >= 4, lido do `AnalysisTrack` com os
+  filtros publicos: estados emitidos, cobertura `dataMode`, WATCH fechado por
+  `watchOutcomeOf`, taxa de chegada ao nivel, calibracao da `watchReach` por faixa,
+  ENTER_NOW TP1/stop/TIMEOUT com Wilson e R liquido pela regra do `--review`, que
+  agora mora em `accuracy.util.ts` (`spreadOf`, `trackedTradeR`), e `eurUsdBlock`).
+  Recorte do motor atual com n < 20 sai SO com o n ("Collecting data: n of 20").
+  Rastreador fora = `current: null`. As series nunca se somam. Filtros (decisao do
+  dono, 04/11): motor ANTERIOR intacto (`isDemo = false` = so acesso pago, inclui a
+  conta do dono; sem perfil de estrategia); motor ATUAL conta gratis, trial e pago
+  (o motor e o mesmo para todos) e tira a conta do dono (`role = 'admin'` ou
+  `Subscription.stripeId LIKE 'manual_%'`) e perfil de estrategia. A demo anonima do
+  /try nunca grava em "Analysis". Texto publico usa os rotulos da tela (Enter now,
+  Watch, No trade); enum em maiuscula so em codigo. A abertura e um texto fixo do
+  dono (sem numero); os numeros vem depois, no resumo "As of" (motor atual primeiro).
+  So a AccuracyPage e o prerender leem esta rota. Pagina, `geo-body.mjs` e JSON-LD
+  usam os mesmos textos (o teste da pagina compara). A home nao le
+  esta API (numero de desempenho so na /accuracy desde 05/10). O
   score de confianca NAO mostrou poder preditivo em producao (27/07; 30/09: 39,6% na
   faixa 60-69 x 39,7% na 70+, n=116, confianca media 69,6 contra 40% de acerto).
 - **Confianca fora da tela desde 30/09.** O prompt pede `confidence` como chance de
@@ -330,7 +349,8 @@ Vale para TODA mudanca, grande ou pequena:
 - **Rastreador do v10.3 (28/10, so medicao):** `worker/analysis-tracker.ts`, a cada 30 min, tabela
   `AnalysisTrack` (SQL no boot + migracao `20261028130000`): toque, fill, TP1/stop/TIMEOUT
   (stop_only), MFE/MAE em R e missed de cada WATCH/ARMED/ENTER_NOW, pela regua do replay
-  (`trackPlan`), ligado a `promptVer`. Nao aparece na tela; a /accuracy segue no sweeper.
+  (`trackPlan`), ligado a `promptVer`. Desde 04/11/2026 e a fonte do motor atual na /accuracy
+  (`current`); o sweeper segue alimentando so o motor anterior (`previous`).
 - **Tela copiloto (28/10):** rotulo principal = estado (Enter now, Pending order, Watch, No
   trade), direcao como "Scenario: BULLISH/BEARISH/NEUTRAL"; ARMED mostra a limit e o que a
   cancela; WATCH mostra "Area of interest", invalidacao e gatilho, nunca na cor de compra/venda.
@@ -900,8 +920,9 @@ Vale para TODA mudanca, grande ou pequena:
   do perfil de estrategia quebrou 100% em producao com tsc e jest verdes).
 - **Query publica:** `isDemo: false` E `strategyHash: null`. O
   `strategy-accuracy-guard` so varre o `ai.controller.ts` pelo marcador
-  `isDemo: false`; rota publica nova em outro arquivo e responsabilidade de quem
-  escreve.
+  `isDemo: false` (Prisma) e, desde 04/11/2026, `a."isDemo" = false` (SQL da
+  /accuracy, que exige `a."strategyHash" IS NULL` junto); rota publica nova em
+  outro arquivo e responsabilidade de quem escreve.
 - Perfil de estrategia so com campos fechados (whitelist). Texto livre do usuario
   no prompt = injecao contra a abstencao que sustenta a `/accuracy`.
 - Paginacao por cursor validado contra o usuario (`findFirst({ id, userId })`),
@@ -1053,6 +1074,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 | Desde | Item | Quem |
 |---|---|---|
 | 27/10 | **Cota do Twelve Data (3.2), branch `claude/twelvedata-budget`, sem deploy.** Dono: (1) criar uma conta GRATIS separada no Twelve Data e por a chave em `TWELVE_DATA_API_KEY_EXPERIMENTS` SO no ambiente local de quem roda script (nunca no Render); sem ela os scripts recusam forex/metal; (2) depois do deploy, conferir no worker a linha `[twelvedata] day=...` de hora em hora e se aparece `store=memory(degradado)` (Redis nao alcancado); (3) ler o `/health` (`twelveData`); (4) analises de ouro/forex de 27/10 viraram UNTRACKABLE porque a cota acabou: SQL de conferir e devolver ao sweeper (com backup e desfazer) entregue no chat em 27/10. Medir 7 dias: consumo por quem gastou e quantas analises gravaram `provider_quota`; ajustar a reserva (550/200) pela medicao. | dono / Claude |
+| 04/11 | **/accuracy com motor atual x anterior (branch `claude/accuracy-v11`, PR draft para o Codex).** Deploy: Render ANTES da Vercel (o prerender le a API no build; com a API antiga a pagina sai so com o texto sem numero, sem quebrar). Depois do deploy: (1) conferir `/api/ai/accuracy` com `previous` e `current` e o HTML cru da /accuracy; (2) SQL so leitura de divergencia entre versao gravada e data do deploy (motor 4 antes de 03/11 01:24 UTC ou motor < 4 depois): `select coalesce(substring(result->'engine'->>'version' from '^\s*([0-9]+)')::int,0) >= 4 as atual, "createdAt" >= '2026-11-03 01:24+00' as depois, count(*) from tickrify."Analysis" where status='completed' and "createdAt" between '2026-11-02' and '2026-11-05' group by 1,2;`; (3) medir em 4 semanas o efeito no trafego vindo do ChatGPT (PostHog `$pageview` com `$referring_domain` chatgpt.com/openai, /accuracy e total, 28 dias antes x depois) e se as IAs citam o motor certo; (4) PR separado: blog, /for, /tools e o rodape das paginas estaticas ("hit rate published", BUY/SELL/WAIT; lista entregue no chat em 04/11), e ainda o `og:image:alt` do `index.html` ("or an honest WAIT") e a description do /try no `seo-routes.json` ("entry, stop, targets and risk"); a f3d/f6d da landing e a meta da home ja foram corrigidas neste PR; (6) a tabela "48 hours later" da home le o sweeper: so ENTER_NOW do v11 entra (BUY/SELL), avaliado pela regra do sweeper (velas de 30m, entrada tem de encher), que pode divergir do rastreador; WATCH/NO_TRADE gravam WAIT, viram ABSTAIN e ficam fora. Decidir se a tabela separa ou rotula o motor; (5) o prerender acumula 2 espacos de recuo antes do JSON-LD a cada execucao (ja no `main`, so espaco, conteudo nao duplica). | dono / Claude |
 | 03/11 | **Bloco EUR/USD corrigido no ar: 03/11/2026 14:28:26 BRT (17:28:26 UTC), merge `f5424a0` (PR #12, commit `9fb655b`).** E o corte para a revisao: o bloco `REAL DATA: INTERMARKET` (forex e metais) chamava o EUR/USD de "Dolar" e invertia a direcao (EUR/USD subindo era "dolar fortalecendo"). Invertido no codigo desde `1dbe42d` (09/06/2026); nas analises do painel so chegou ao modelo a partir de `7d6c19f` (26/10/2026); no /try, antes. **Todas as analises de ouro e forex de 26/10 ate 03/11 17:28:26 UTC (inclusive as do v11) receberam o bloco invertido**: na revisao de 03/12, separar metais e forex antes e depois desse corte (`"createdAt" >= '2026-11-03 17:28:26+00'`). Agora: "EUR/USD 1.1216, up 0.59% in 7 days: dollar weakening"; o proprio EURUSD nao recebe a linha. | Claude (revisao 03/12) |
 | 03/11 | **WATCH com geometria rejeitada no nivel (regra NAO mudou).** Hoje um WATCH com entrada a mercado valida continua WATCH mesmo quando a geometria no nivel e rejeitada (`watchLevels: null`; a tela nao mostra alvos e diz que nao passaram na checagem de risco). Ate 03/11: 4 WATCH do v11, 2 com velas reais, 0 rejeitados. **Criterio fixado pelo dono em 03/11:** na revisao de 03/12, se a consulta abaixo der 3 ou mais rejeitados entre os WATCH com velas reais, testar offline a regra "WATCH sem geometria valida no nivel vira NO_TRADE" e decidir na revisao; com menos de 3, fica como esta. `select count(*) filter (where a."result"->'watchLevels' = 'null'::jsonb) as rejeitados, count(*) as watch_com_velas from tickrify."Analysis" a where a."result"->>'signalState' = 'WATCH' and a."result"->>'dataMode' = 'real_data' and a."result" ? 'watchLevels';` | dono decide / Claude mede |
 | 03/11 | **A analise quick nao recebe o calendario economico.** So o deep monta o bloco de calendario (`buildCalendarEnrichment`); o quick nem busca, e o prompt v11 tem a tag [EVENTS] (que hoje o modelo preenche com o mapa de eventos das velas). Desde o PR #12 o quadro "Inputs delivered" mostra "Not attached" no quick (antes dizia "Not confirmed", o mesmo de fonte com falha). O "Live context" da tela busca o calendario ao abrir e nao entra na analise. Mandar o calendario ao quick muda a entrada do modelo: decisao do dono, medir antes. | dono decide |
@@ -1196,6 +1218,7 @@ Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 - **27/10 (cota do Twelve Data, noite):** medidor unico com orcamento por prioridade (analise, monitor, sweeper), fim de semana, cache compartilhado grounding/monitor, chave separada para scripts, recusa vira adiamento no sweeper, `provider_quota` na cobertura, linha `[twelvedata]` e `/health`. Ver 3.2.
 - **02/11 (motor v11, `31f3e7a`, no ar 22:24 BRT):** variante A como producao, sem ARMED, calibracao de alcance e margem, modo leitura, rastreador completo e revisao mensal. Medicoes do dia (offline, rodada paga de US$ 0,371, variantes A, B e C) no historico do chat e no diario. Revisao do Codex: 6 itens corrigidos (calibracao no medidor Redis de producao, DDL do rastreador com lock_timeout e retentativa, margem P80 no rastreador, `dataMode` no /try, prompt sem ARMED, interface sem travessao e emoji) e aprovados antes do merge.
 - **03/11 (PR #12, `f5424a0`, no ar 14:28:26 BRT / 17:28:26 UTC):** WATCH com os niveis do motor (`watchLevels`, TP1 ate 1,5R; nulo = alvos rejeitados), C6 escrito pelo codigo, texto do WATCH sem ordem limit, calendario "Not attached" no quick, estado final do codigo no checklist (`stripModelState`), barra lateral retratil, "Buy now"/"Sell now" (card: "BUY NOW"/"SELL NOW"), alt traduzido e o bloco EUR/USD corrigido (dado do motor, `9fb655b`). Revisado pelo Codex duas vezes.
+- **04/11 (/accuracy v11, branch `claude/accuracy-v11`):** API e pagina separam o motor atual (rastreador, desde 03/11 01:24 UTC) do anterior (sweeper, arquivado com os numeros intactos), com break-even e frase escolhida pelo dado, nota do EUR/USD pela contagem, FAQ/disclaimer nos 6 idiomas, llms.txt e prerender juntos; SQL validado em Postgres descartavel.
 - **03/11 (cards de compartilhar):** card da leitura redesenhado (fundo 3D por estado, Post/Feed/Story, animacao, video MP4/WebM) e card novo de resultado no My Trades, com "Hide amount" (so funciona com retorno em % registrado, que hoje nenhuma tela grava). Ver 4.4.
 - **03/11 (infra):** cartao do workspace do Render atualizado pelo dono; o aviso "Payment failed" sumiu do painel. Aviso "EXCEEDING USAGE LIMITS" do Supabase: a causa era o Storage (1,03 GB de 1 GB no gratis; bucket `analysis-images`, ~270 MB/mes de prints novos). 564 prints com mais de 90 dias recomprimidos em WebP no mesmo caminho (534 MB -> 104 MB, 0 erros; prints de julho conferidos no painel) por `_local/storage-recompress/recompress.mjs`; backup dos originais em `_local/storage-recompress/backup`. Pendencias na linha de 02/11 da 6.2.
 - **28/10 (copiloto v10.3, branch `claude/copilot-v10`, PR #11):** armazem de velas `MarketCandle`, rastreador `AnalysisTrack`, REAL DATA em toda analise com reserva pela distancia em R, prompt v10.3 unico (v9, A/B, override, `PROMPT_AUTO_SYNC`, `ENABLE_QUICK_GROUNDING` e rotas de escrita de prompt removidos), tela por estado nos 6 idiomas e hit rate fora do resultado. Ver 3.2.

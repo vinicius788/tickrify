@@ -1,7 +1,7 @@
 {
   "/": {
     "title": "AI Chart Analysis for Forex, Gold & Crypto | Tickrify",
-    "description": "AI chart analysis with entry, stop, targets, risk or WAIT. One demo per device; eligible accounts get up to 7 free analyses. No card required."
+    "description": "AI chart analysis that says Enter now, Watch or No trade, with the levels. One demo per device; eligible accounts get up to 7 free analyses. No card required."
   },
   "/pricing": {
     "title": "Pricing: $29/mo for 200 AI Chart Analyses | Tickrify",
@@ -12,8 +12,8 @@
     "description": "Meet Tickrify, an independent bootstrapped AI chart analysis startup founded by Vinicius Marques de Oliveira in Belo Horizonte, Brazil."
   },
   "/accuracy": {
-    "title": "How Accurate Is Tickrify's AI Chart Analysis? | Tickrify",
-    "description": "Our measured hit rate, updated hourly from live data, with sample size and 95% confidence intervals, including the numbers that look bad."
+    "title": "How Accurate Is Tickrify? How We Measure It | Tickrify",
+    "description": "Results of Tickrify's current AI engine since Nov 3, 2026 and the archived previous one, with sample sizes, 95% intervals and a break-even check."
   },
   "/affiliates": {
     "title": "Affiliate Program: Recurring Commissions | Tickrify",

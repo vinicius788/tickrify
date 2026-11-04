@@ -1,10 +1,12 @@
 /**
  * Matemática do relatório público de acurácia (`GET /api/ai/accuracy`).
  *
- * Funções puras, sem dependência de Prisma nem de Nest — o controller só
- * busca as linhas e chama daqui. Mesma matemática do `scripts/backtest/evaluate.py`
+ * Funções puras, sem Prisma — o controller só busca as linhas e chama daqui. Mesma matemática do `scripts/backtest/evaluate.py`
  * (intervalo de Wilson), para o número da página bater com o do relatório interno.
  */
+import { canonicalFxPair } from '../../common/utils/analysis-normalizer';
+import { normalizeToBinancePerp } from '../market/market.service';
+import { watchOutcomeOf, type WatchTrack } from './watch-pending';
 
 /**
  * Outcomes gravados pelo SWEEPER AUTOMÁTICO (`worker/outcome.sweeper.ts`).
@@ -161,4 +163,209 @@ export function breakdownOf(rows: OutcomeRow[]): Record<string, number> {
     out[key] = (out[key] || 0) + 1;
   }
   return out;
+}
+
+// ── Motor atual x anterior (04/11/2026) ─────────────────────────────────────
+
+/**
+ * Motor atual = `result.engine.version` com major >= 4 (ENGINE_VERSION '4.0.0',
+ * v11). O deploy ficou live em 03/11/2026 01:24 UTC; a versao gravada decide,
+ * a data so aparece no texto. Sem versao (analise antiga) = motor anterior.
+ */
+export const CURRENT_ENGINE_MAJOR = 4;
+export const CURRENT_ENGINE_SINCE = new Date('2026-11-03T01:24:00.000Z');
+
+/** Major da versao gravada; null sem versao legivel. */
+export function engineMajor(version: unknown): number | null {
+  const m = typeof version === 'string' ? /^(\d+)/.exec(version.trim()) : null;
+  return m ? Number(m[1]) : null;
+}
+
+export const isCurrentEngine = (version: unknown) => (engineMajor(version) ?? 0) >= CURRENT_ENGINE_MAJOR;
+
+/** Predicado SQL equivalente ao isCurrentEngine, sobre o `result` de "Analysis" com alias `a`. */
+export const CURRENT_ENGINE_SQL =
+  `COALESCE(substring(a."result"->'engine'->>'version' from '^\\s*([0-9]+)')::int, 0) >= ${CURRENT_ENGINE_MAJOR}`;
+
+/**
+ * Bloco REAL DATA: INTERMARKET com o EUR/USD invertido (6.2 do CLAUDE.md): ouro
+ * e forex do motor atual criados ate o deploy da correcao (03/11/2026 17:28:26
+ * UTC). Ficam na conta e ganham contagem propria para a nota de rodape.
+ */
+export const EURUSD_BLOCK_FIXED_AT = new Date('2026-11-03T17:28:26.000Z');
+
+/** Taxa de acerto que empata com o R medio do TP1: 1 / (1 + R). null sem R. */
+export function breakEvenRate(avgReward: number | null): number | null {
+  if (avgReward === null || !Number.isFinite(avgReward) || avgReward <= 0) return null;
+  return round1(1 / (1 + avgReward));
+}
+
+/**
+ * Acerto contra o empate, pelo intervalo de Wilson: 'below' (o intervalo
+ * inteiro abaixo), 'above' (inteiro acima) ou 'inconclusive' (o empate esta
+ * dentro). null quando o recorte nao publica taxa. A frase publica sai daqui.
+ */
+export type EdgeVerdict = 'below' | 'above' | 'inconclusive';
+export function edgeVerdict(interval: Pick<Interval, 'publishable' | 'low' | 'high'>, breakEven: number | null): EdgeVerdict | null {
+  if (!interval.publishable || interval.low === null || interval.high === null || breakEven === null) return null;
+  if (interval.high < breakEven) return 'below';
+  if (interval.low > breakEven) return 'above';
+  return 'inconclusive';
+}
+
+const round2 = (v: number) => Math.round(v * 100) / 100;
+const meanOf = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+
+/** R medio do TP1 (riskRewardTp1 gravado) dos WIN/LOSS; null sem nenhum valor. */
+export function avgRewardOf(values: Array<number | null | undefined>): number | null {
+  const xs = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0);
+  const m = meanOf(xs);
+  return m === null ? null : round2(m);
+}
+
+/** Recorte publico do motor atual: com menos de MIN_N_TO_PUBLISH sai so o n. */
+export type Gated = Interval | { n: number; publishable: false };
+export function gated(interval: Interval): Gated {
+  return interval.publishable ? interval : { n: interval.n, publishable: false };
+}
+
+/**
+ * Spread tipico de conta de varejo, em preco: ouro 0,30; prata 0,03; forex
+ * 1,2 pip nos majors e 2 pips nos cruzados; BTC e ETH 0,02% do preco; outras
+ * cripto 0,05%. A revisao mensal (scripts/replay-variants.ts) usa este mesmo.
+ */
+export function spreadOf(symbol: string, price: number): number {
+  const fx = canonicalFxPair(symbol);
+  if (fx === 'XAUUSD') return 0.3;
+  if (fx === 'XAGUSD') return 0.03;
+  if (fx) {
+    const major = ['EURUSD', 'GBPUSD', 'AUDUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY'].includes(fx);
+    return (fx.endsWith('JPY') ? 0.01 : 0.0001) * (major ? 1.2 : 2);
+  }
+  const base = normalizeToBinancePerp(symbol).base;
+  return price * (base === 'BTC' || base === 'ETH' ? 0.0002 : 0.0005);
+}
+
+export type TrackedOutcome = 'WIN' | 'LOSS' | 'TIMEOUT';
+export interface TrackedTrade {
+  symbol: string | null;
+  outcome: string | null;
+  fillPrice: number | null;
+  stopLoss: number | null;
+  takeProfit1: number | null;
+}
+
+/**
+ * Trade executado do rastreador (regra da revisao mensal): R bruto do TP1 a
+ * partir do preco executado, LOSS = -1, TIMEOUT = 0, menos o spread em R.
+ * null sem desfecho decidido ou sem niveis.
+ */
+export function trackedTradeR(t: TrackedTrade): { outcome: TrackedOutcome; r: number; reward: number } | null {
+  if (!t.symbol || !['WIN', 'LOSS', 'TIMEOUT'].includes(String(t.outcome)) || !t.fillPrice || !t.stopLoss || !t.takeProfit1) return null;
+  const risk = Math.abs(t.fillPrice - t.stopLoss);
+  if (!(risk > 0)) return null;
+  const outcome = t.outcome as TrackedOutcome;
+  const reward = Math.abs(t.takeProfit1 - t.fillPrice) / risk;
+  const gross = outcome === 'WIN' ? reward : outcome === 'LOSS' ? -1 : 0;
+  return { outcome, r: gross - spreadOf(t.symbol, t.fillPrice) / risk, reward };
+}
+
+/** Uma analise do motor atual, com a linha do rastreador quando a janela ja fechou. */
+export interface CurrentEngineRow {
+  createdAt: Date;
+  signalState: string | null;
+  dataMode: string | null;
+  symbol: string | null;
+  /** result.watchReach.probability (0 a 1), so no WATCH com calibracao. */
+  reachProbability: number | null;
+  track: (WatchTrack & TrackedTrade) | null;
+}
+
+const REACH_BANDS = [
+  { band: '0-25', lo: 0, hi: 0.25 },
+  { band: '25-50', lo: 0.25, hi: 0.5 },
+  { band: '50-75', lo: 0.5, hi: 0.75 },
+  { band: '75-100', lo: 0.75, hi: 1.000001 },
+] as const;
+
+const countBy = (keys: string[]) => keys.reduce<Record<string, number>>((acc, k) => ({ ...acc, [k]: (acc[k] ?? 0) + 1 }), {});
+
+/**
+ * O que o motor atual entregou, lido do rastreador (AnalysisTrack):
+ * - estados emitidos e cobertura de dados (velas reais x so o print);
+ * - WATCH com janela fechada por desfecho (watchOutcomeOf, a mesma regra das
+ *   listas), a taxa de chegada ao nivel e a calibracao da chance mostrada;
+ * - ENTER_NOW resolvido (TP1, stop, TIMEOUT), acerto (Wilson), R liquido medio
+ *   e o empate pelo R medio do TP1.
+ * Todo recorte com menos de 20 resolvidos sai so com o n.
+ */
+export function currentEngineReport(rows: CurrentEngineRow[]) {
+  const watchClosed = rows.filter((r) => r.signalState === 'WATCH' && r.track);
+  const watchOutcomes = watchClosed.map((r) => watchOutcomeOf(r.track));
+  const reached = watchOutcomes.filter((o) => o === 'reached').length;
+  const missedLevel = watchOutcomes.filter((o) => o === 'expired' || o === 'invalidated').length;
+
+  const calibration = REACH_BANDS.map(({ band, lo, hi }) => {
+    const inBand = watchClosed.filter((r) => {
+      const p = r.reachProbability;
+      return typeof p === 'number' && p >= lo && p < hi && watchOutcomeOf(r.track) !== 'unavailable';
+    });
+    const hits = inBand.filter((r) => watchOutcomeOf(r.track) === 'reached').length;
+    const observed = wilson(hits, inBand.length - hits);
+    const predicted = meanOf(inBand.map((r) => r.reachProbability as number));
+    return observed.publishable
+      ? { band, n: inBand.length, publishable: true as const, predicted: predicted === null ? null : round1(predicted), observed }
+      : { band, n: inBand.length, publishable: false as const };
+  });
+
+  const enter = rows.filter((r) => r.signalState === 'ENTER_NOW');
+  const trades = enter.flatMap((r) => {
+    const t = r.track && r.track.status === 'tracked' ? trackedTradeR(r.track) : null;
+    return t ? [t] : [];
+  });
+  const wins = trades.filter((t) => t.outcome === 'WIN').length;
+  const losses = trades.filter((t) => t.outcome === 'LOSS').length;
+  const hitRate = wilson(wins, losses);
+  const decidedRewards = trades.filter((t) => t.outcome !== 'TIMEOUT').map((t) => t.reward);
+  const avgReward = trades.length >= MIN_N_TO_PUBLISH ? avgRewardOf(decidedRewards) : null;
+  const breakEven = breakEvenRate(avgReward);
+  const avgR = trades.length >= MIN_N_TO_PUBLISH ? meanOf(trades.map((t) => t.r)) : null;
+
+  const flagged = rows.filter((r) => r.createdAt < EURUSD_BLOCK_FIXED_AT && canonicalFxPair(r.symbol ?? '') !== null);
+
+  return {
+    since: CURRENT_ENGINE_SINCE.toISOString(),
+    analyses: rows.length,
+    byState: countBy(rows.map((r) => r.signalState ?? 'unknown')),
+    dataMode: countBy(rows.map((r) => (r.dataMode === 'real_data' || r.dataMode === 'print' ? r.dataMode : 'unknown'))),
+    watch: {
+      emitted: rows.filter((r) => r.signalState === 'WATCH').length,
+      open: rows.filter((r) => r.signalState === 'WATCH' && !r.track).length,
+      closed: watchClosed.length,
+      outcomes: { reached: 0, invalidated: 0, expired: 0, unavailable: 0, ...countBy(watchOutcomes) },
+      reachRate: gated(wilson(reached, missedLevel)),
+      calibrationAvailable: watchClosed.some((r) => typeof r.reachProbability === 'number'),
+      calibration,
+    },
+    enterNow: {
+      emitted: enter.length,
+      /** Janela ainda aberta (sem linha no rastreador). */
+      open: enter.filter((r) => !r.track).length,
+      /** Janela fechada sem trade pontuavel (sem velas, sem fonte ou sem niveis). */
+      notScored: enter.filter((r) => r.track).length - trades.length,
+      resolved: trades.length,
+      outcomes: { tp1: wins, stop: losses, timeout: trades.length - wins - losses },
+      hitRate: gated(hitRate),
+      avgNetR: avgR === null ? null : round2(avgR),
+      avgRewardTp1: avgReward,
+      breakEvenRate: breakEven,
+      edge: edgeVerdict(hitRate, breakEven),
+    },
+    eurUsdBlock: {
+      until: EURUSD_BLOCK_FIXED_AT.toISOString(),
+      analyses: flagged.length,
+      closedWatch: flagged.filter((r) => r.signalState === 'WATCH' && r.track).length,
+      enterNow: flagged.filter((r) => r.signalState === 'ENTER_NOW').length,
+    },
+  };
 }

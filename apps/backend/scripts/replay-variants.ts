@@ -40,6 +40,7 @@
 import 'dotenv/config';
 import * as fs from 'fs';
 import { canonicalFxPair } from '../src/common/utils/analysis-normalizer';
+import { spreadOf, trackedTradeR } from '../src/modules/ai/accuracy.util';
 import { normalizeToBinancePerp } from '../src/modules/market/market.service';
 import {
   enterTwelveDataCalibrationMode,
@@ -165,23 +166,6 @@ async function windowFor(row: Row, gab: Gab, interval: string, store: CandleStor
   const tf = await bars(row, gab, interval, print - step, tfEnd);
   const fine = tf ? await bars(row, gab, fineInterval, print - step, tfEnd) : null;
   return remember(store, row.id, tf && fine ? { tf, fine, fineStep: TIMEFRAME_MS[fineInterval] } : null);
-}
-
-/**
- * Spread tipico de conta de varejo, em preco: ouro 0,30; prata 0,03; forex
- * 1,2 pip nos majors e 2 pips nos cruzados; BTC e ETH 0,02% do preco; outras
- * cripto 0,05%.
- */
-function spreadOf(symbol: string, price: number): number {
-  const fx = canonicalFxPair(symbol);
-  if (fx === 'XAUUSD') return 0.3;
-  if (fx === 'XAGUSD') return 0.03;
-  if (fx) {
-    const major = ['EURUSD', 'GBPUSD', 'AUDUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY'].includes(fx);
-    return (fx.endsWith('JPY') ? 0.01 : 0.0001) * (major ? 1.2 : 2);
-  }
-  const base = normalizeToBinancePerp(symbol).base;
-  return price * (base === 'BTC' || base === 'ETH' ? 0.0002 : 0.0005);
 }
 
 // ── Simulacao ───────────────────────────────────────────────────────────────
@@ -555,14 +539,10 @@ function classOfSymbol(symbol: string): string {
   return fx.startsWith('XAU') || fx.startsWith('XAG') ? 'metal' : 'forex';
 }
 
-/** Trade executado do rastreador, com o spread descontado em R; null sem fill decidido. */
+/** Trade executado do rastreador, com o spread descontado em R (a mesma regra da /accuracy); null sem fill decidido. */
 function reviewTrade(r: TrackRecord): Trade | null {
-  if (!r.symbol || !['WIN', 'LOSS', 'TIMEOUT'].includes(String(r.outcome)) || !r.fillPrice || !r.stopLoss || !r.takeProfit1) return null;
-  const risk = Math.abs(r.fillPrice - r.stopLoss);
-  if (!(risk > 0)) return null;
-  const outcome = r.outcome as Trade['outcome'];
-  const gross = outcome === 'WIN' ? Math.abs(r.takeProfit1 - r.fillPrice) / risk : outcome === 'LOSS' ? -1 : 0;
-  return { long: r.direction === 'long', outcome, r: gross - spreadOf(r.symbol, r.fillPrice) / risk };
+  const t = trackedTradeR(r);
+  return t ? { long: r.direction === 'long', outcome: t.outcome, r: t.r } : null;
 }
 
 /** Referencia de direcao (a mercado na analise, 1 ATR): +1, -1 ou 0, menos o spread em R. */
