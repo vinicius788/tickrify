@@ -73,7 +73,7 @@ export class AffiliatesController {
   }
 
   private requireId(user: AuthenticatedUser): string {
-    if (!user?.id) throw new NotFoundException('Account not found. Please sign in again.');
+    if (!user?.id) throw new NotFoundException({ code: 'auth_account_missing', message: 'Account not found. Please sign in again.' });
     return user.id;
   }
 }

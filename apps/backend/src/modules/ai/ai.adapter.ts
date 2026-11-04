@@ -2364,6 +2364,9 @@ export class AIAdapter {
       // Presentation follows the decision; nothing here feeds guards or repairs.
       const presentedAnalysis = presentAnalysis(decidedAnalysis, 'en', 1); // MTF provenance is added at delivery with its output language.
       const signal = {
+        displayMessages: decision.stalePrint
+          ? { stalePrint: { code: 'stale_print', params: {}, text: stalePrintNote(prompt) } }
+          : {},
         signalState: decision.state,
         watchPlan: decision.watchPlan,
         dataMode: decision.dataMode,

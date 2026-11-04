@@ -1,3 +1,5 @@
+import { formatNumber } from '@/lib/i18n';
+import { LOCALES, type Language } from '@/lib/i18n';
 import { useMemo, useState } from 'react';
 import { useUser } from '@clerk/clerk-react';
 import { Calculator, Check, ExternalLink, Filter, ImageOff, Maximize2, Star, TrendingUp } from 'lucide-react';
@@ -30,10 +32,10 @@ const DATE_LOCALES: Record<string, string> = {
 
 // ── Verdict (sincronizado com o backend; localStorage = fallback offline) ────
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function fmt(v: unknown): string {
+function fmt(v: unknown, language: Language): string {
   const n = Number(v);
   if (!Number.isFinite(n)) return '-';
-  return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 5 }).format(n);
+  return new Intl.NumberFormat(LOCALES[language], { minimumFractionDigits: 2, maximumFractionDigits: 5 }).format(n);
 }
 
 function toLevel(v: unknown): number | null {
@@ -71,8 +73,8 @@ function omitKey<T>(map: Record<string, T>, key: string): Record<string, T> {
   return next;
 }
 
-function fmtPnl(n: number): string {
-  const abs = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(n));
+function fmtPnl(n: number, language: Language): string {
+  const abs = new Intl.NumberFormat(LOCALES[language], { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(n));
   return `${n > 0 ? '+' : n < 0 ? '−' : ''}${abs}`;
 }
 
@@ -92,6 +94,7 @@ interface PnlFieldProps {
 }
 
 function PnlField({ verdict, saved, labels, onSave }: PnlFieldProps) {
+  const { language } = useLanguage();
   const [editing, setEditing] = useState(saved === null);
   const [side, setSide] = useState<'gain' | 'loss'>(
     saved !== null ? (saved < 0 ? 'loss' : 'gain') : verdict === 'SL' ? 'loss' : 'gain',
@@ -135,7 +138,7 @@ function PnlField({ verdict, saved, labels, onSave }: PnlFieldProps) {
             className="font-terminal text-xl font-semibold"
             style={{ color: saved < 0 ? 'var(--signal-sell)' : 'var(--signal-buy)' }}
           >
-            {fmtPnl(saved)}
+            {fmtPnl(saved, language)}
           </p>
         </div>
         <button
@@ -453,7 +456,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
             <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
               <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.avgRr}</p>
               <p className="font-terminal text-lg font-semibold text-[var(--text-primary)]">
-                {perf.avgRr !== null ? `${perf.avgRr.toFixed(1)}:1` : '-'}
+                {perf.avgRr !== null ? `${formatNumber(perf.avgRr, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}:1` : '-'}
               </p>
             </div>
             <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
@@ -474,7 +477,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                     : perf.pnlTotal < 0 ? 'var(--signal-sell)' : 'var(--signal-buy)',
                 }}
               >
-                {perf.pnlTotal !== null ? fmtPnl(perf.pnlTotal) : '-'}
+                {perf.pnlTotal !== null ? fmtPnl(perf.pnlTotal, language) : '-'}
               </p>
               <p className="font-terminal text-[10px] text-[var(--text-secondary)]">
                 {perf.pnlTotal !== null ? tr.loggedPnlSub.replace('{n}', String(perf.pnlCount)) : tr.noPnlSub}
@@ -585,7 +588,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                           {signalStateLabel(t.analysis, state, entrySide(asRecord(a.fullResponse).watchPlan, a.recommendation))}
                         </Badge>
                         <span className="text-xs text-[var(--text-secondary)]">
-                          {t.analysis.bias}: <span className="font-semibold text-[var(--text-primary)]">{scenario.label}</span>
+                          {t.analysis.bias}: <span className="font-semibold text-[var(--text-primary)]">{t.scenarioLabels[scenario.label]}</span>
                         </span>
                         {confluence !== null && (
                           <span className="text-xs text-[var(--text-secondary)]">
@@ -598,22 +601,22 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                       <div className="flex flex-wrap gap-x-4 gap-y-0.5 font-terminal text-xs">
                         {entry !== null && (
                           <span className="text-[var(--text-secondary)]">
-                            {t.analysis.entry} <span className="text-[var(--text-primary)]">{fmt(entry)}</span>
+                            {t.analysis.entry} <span className="text-[var(--text-primary)]">{fmt(entry, language)}</span>
                           </span>
                         )}
                         {stopLoss !== null && (
                           <span className="text-[var(--text-secondary)]">
-                            SL <span className="text-[var(--signal-sell)]">{fmt(stopLoss)}</span>
+                            SL <span className="text-[var(--signal-sell)]">{fmt(stopLoss, language)}</span>
                           </span>
                         )}
                         {takeProfit1 !== null && (
                           <span className="text-[var(--text-secondary)]">
-                            TP1 <span className="text-[var(--signal-buy)]">{fmt(takeProfit1)}</span>
+                            TP1 <span className="text-[var(--signal-buy)]">{fmt(takeProfit1, language)}</span>
                           </span>
                         )}
                         {takeProfit2 !== null && (
                           <span className="text-[var(--text-secondary)]">
-                            TP2 <span className="text-[var(--signal-buy)]">{fmt(takeProfit2)}</span>
+                            TP2 <span className="text-[var(--signal-buy)]">{fmt(takeProfit2, language)}</span>
                           </span>
                         )}
                       </div>

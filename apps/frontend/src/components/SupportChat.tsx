@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Button } from '@/components/ui/button';
+import { LOCALES } from '@/lib/i18n';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import { APIError } from '@/lib/api';
@@ -66,7 +67,7 @@ const SupportChat = ({ thread }: { thread: ChatThread | null }) => {
   };
 
   const time = (iso: string) =>
-    new Date(iso).toLocaleString(language === 'pt' ? 'pt-BR' : language, { dateStyle: 'short', timeStyle: 'short' });
+    new Date(iso).toLocaleString(LOCALES[language], { dateStyle: 'short', timeStyle: 'short' });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

@@ -1,3 +1,5 @@
+import { errorText } from '@/lib/i18n/messages';
+import { LOCALES } from '@/lib/i18n';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
@@ -6,7 +8,6 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { useIncrementAnalysis } from '@/hooks/useAnalysisLimit';
 import {
-  APIError,
   displayAsset,
   tradeQueryKey,
   useAPIClient,
@@ -53,7 +54,7 @@ const TradePanel = ({ analysisId }: { analysisId: string }) => {
   const query = useQuery({ queryKey: tradeQueryKey(analysisId), queryFn: () => api.getTrade(analysisId), retry: false });
 
   const onError = (error: unknown) => {
-    const message = error instanceof APIError ? error.message : '';
+    const message = errorText(t, language, error, tr.error);
     toast({ title: tr.error, description: message || undefined, variant: 'destructive' });
   };
   const applyView = (view: TradeView) => {
@@ -287,7 +288,7 @@ const TradePanel = ({ analysisId }: { analysisId: string }) => {
           <ol className="flex flex-col gap-1">
             {view.timeline.map((step, index) => (
               <li key={`${step.at}-${index}`} className="font-terminal text-xs text-[var(--text-secondary)]">
-                {`${new Date(step.at).toLocaleString()} · ${statusLabel[step.status]}${
+                {`${new Date(step.at).toLocaleString(LOCALES[language])} · ${statusLabel[step.status]}${
                   step.entryPrice ? ` · ${tr.entryPrice} ${step.entryPrice}` : ''
                 }${step.closeReason && step.status === 'closed' ? ` · ${reasonLabel[step.closeReason]}` : ''}`}
               </li>

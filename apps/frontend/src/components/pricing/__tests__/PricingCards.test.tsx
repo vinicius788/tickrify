@@ -13,7 +13,10 @@ vi.mock('@/lib/stripe', async (importOriginal) => {
 vi.mock('../../../lib/api', () => ({ warmupPaymentsApi: vi.fn() }));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
-vi.mock('@/lib/i18n/LanguageContext', () => ({ useLanguage: () => ({ language: 'en' }) }));
+vi.mock('@/lib/i18n/LanguageContext', async () => {
+  const { getTranslations } = await import('@/lib/i18n');
+  return { useLanguage: () => ({ language: 'en', t: getTranslations('en') }) };
+});
 const offer = { current: null as null | { active: boolean; code: string; percentOff: number | null } };
 const founder = { current: null as null | { active: boolean; priceUsd: number; seatsLeft: number | null; expiresAt: number | null }, lastCode: undefined as string | null | undefined };
 vi.mock('@/hooks/useFoundingOffer', () => ({

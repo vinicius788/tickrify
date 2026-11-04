@@ -350,12 +350,12 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
               <div className="mt-3 flex flex-wrap gap-3">
                 {htf.map((h, i) => (
                   <div key={i} className="relative h-20 w-28 overflow-hidden rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)]">
-                    <img src={h.url} alt={`Timeframe maior ${i + 1}`} className="h-full w-full object-contain" />
+                    <img src={h.url} alt={t.interfaceExtras.higherTimeframe.replace('{number}', String(i + 1))} className="h-full w-full object-contain" />
                     <button
                       type="button"
                       onClick={() => removeHtf(i)}
                       className="absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-[var(--bg-overlay)] text-[var(--signal-sell)]"
-                      aria-label="Remover"
+                      aria-label={t.demoUi.remove}
                     >
                       <X className="h-3 w-3" />
                     </button>

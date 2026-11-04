@@ -29,6 +29,9 @@ export interface EngineContract {
   invalidation: number | null;
   key_reasons: string[];
   no_trade_reason: string | null;
+  /** Presentation metadata; absent on legacy records. */
+  no_trade_reason_code?: string | null;
+  no_trade_reason_params?: Record<string, string | number>;
   engine_version: string;
 }
 
@@ -158,6 +161,8 @@ export function buildEngineContract(input: EngineContractInput): EngineContract 
       : validatorReason
         ? VALIDATOR_REASON_TEXT[validatorReason]
         : clip(summary[0] ?? 'No trade setup on this chart.', MAX_NO_TRADE_CHARS),
+    no_trade_reason_code: isTrade ? null : validatorReason ? `engine_${validatorReason}` : summary[0] ? null : 'engine_no_setup',
+    no_trade_reason_params: {},
     engine_version: ENGINE_VERSION,
   };
 }

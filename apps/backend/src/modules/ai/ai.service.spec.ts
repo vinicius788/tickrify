@@ -174,6 +174,42 @@ describe('AiService access enforcement', () => {
     service = new AiService(prisma, aiAdapter as any, ticksService as any, stripeService as any, mailService as any, setups, new TrialService(prisma, mailService as any), { syncFromVerdict: jest.fn().mockResolvedValue(undefined) } as any);
   });
 
+  it.each(['quick', 'deep'])('persists the reason code beside unchanged English in the %s synchronous JSON', async (analysisType) => {
+    const text = 'A price level is outside a plausible range of the chart price.';
+    (service as any).aiAdapter.analyzeImage.mockResolvedValueOnce({
+      recommendation: 'WAIT', confidence: 50, reasoning: 'Original model prose.',
+      analysis: { symbol: 'TEST', timeframe: '30m', currentPrice: 100 },
+      engineMeta: { validatorAction: 'downgraded', validatorReasons: ['implausible_price'] },
+      rawResponse: {}, rawContent: '{}',
+    });
+    prisma.analysis.update.mockImplementation(async ({ data }: any) => ({ id: 'coded-wait', createdAt: new Date(), ...data }));
+    (service as any).serializeAnalysis = jest.fn().mockResolvedValue({ id: 'coded-wait' });
+    await (service as any).processSynchronously({
+      analysisId: 'coded-wait', imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType, userLanguage: 'ja', isDemo: true,
+      intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
+    });
+    const saved = prisma.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed')[0].data;
+    expect(JSON.parse(JSON.stringify(saved.result)).engine.contract).toMatchObject({
+      verdict: 'NEUTRAL', entry: null, targets: [], no_trade_reason: text,
+      no_trade_reason_code: 'engine_implausible_price', no_trade_reason_params: {},
+    });
+    expect(saved.reasoning).toBe('Original model prose.');
+  });
+
+  it('persists the same safe fallback as the worker and returns its code over HTTP', async () => {
+    (service as any).aiAdapter.analyzeImage.mockRejectedValueOnce(new Error('private diagnostic'));
+    prisma.analysis.update.mockImplementation(async ({ data }: any) => ({ id: 'safe-failure', createdAt: new Date(), ...data }));
+    await expect((service as any).processSynchronously({
+      analysisId: 'safe-failure', imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType: 'quick', isDemo: true,
+      intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
+    })).rejects.toMatchObject({ response: { code: 'processing_unclassified', message: 'Analysis failed. Please try again.' } });
+    const saved = prisma.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'failed')[0].data;
+    expect(JSON.parse(JSON.stringify(saved))).toMatchObject({
+      errorCode: 'processing_unclassified', errorMessage: 'Analysis failed. Please try again.', reasoning: 'Analysis failed. Please try again.',
+    });
+    expect(JSON.stringify(saved)).not.toContain('private diagnostic');
+  });
+
   // Analise antiga gravada com o percentual do modelo (stop de venda positivo):
   // a leitura recalcula pelos precos, como ja fazia com o R/R (19/10/2026).
   it('le percentuais de analises antigas pelos precos, nao pelo que o modelo gravou', () => {
@@ -384,6 +420,8 @@ describe('AiService access enforcement', () => {
       expect(delivered.fullResponse.analysis.multiTimeframeAlignment).not.toBe('H1 bullish | H4 bullish');
       expect(delivered.fullResponse.analysis.multiTimeframeAlignment.endsWith('H1 bullish | H4 bullish')).toBe(true);
       expect(completed.result).not.toHaveProperty('observation');
+      expect(JSON.parse(JSON.stringify(completed.result)).analysis.displayMessages.multiTimeframePrefix).toMatchObject({ code: 'single_image_inference', params: {} });
+      expect(completed.result.analysis.multiTimeframeAlignment).toBe(completed.result.analysis.displayMessages.multiTimeframePrefix.text + 'H1 bullish | H4 bullish');
       const readback = await (service as any).serializeAnalysis({ ...row, ...JSON.parse(JSON.stringify(completed)) });
       const engine = { entry: 1.0792, stopLoss: 1.076, takeProfit1: 1.083, takeProfit2: 1.0895 };
       for (const key of ['entry', 'stopLoss', 'takeProfit1', 'takeProfit2'] as const) {
@@ -683,7 +721,7 @@ describe('AiService access enforcement', () => {
     await expect((service as any).processSynchronously({
       analysisId: 'an_1', imageUrl: 'invalid-image-url', userId: 'usr_1',
       analysisType: 'quick', isDemo: false,
-    })).rejects.toBeInstanceOf(BadRequestException);
+    })).rejects.toMatchObject({ status: 400, response: { code: 'processing_unclassified', message: 'Analysis failed. Please try again.' } });
 
     expect(prisma.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: 'failed', errorCode: 'processing_unclassified' }),

@@ -1,3 +1,4 @@
+import { DisplayError } from './display-message';
 import { randomUUID } from 'crypto';
 import { UploadedFile } from '../interfaces/multer';
 import { isProductionRuntime } from './runtime-env';
@@ -40,7 +41,7 @@ function parseDataUrl(value: string): { mimeType?: string; base64Payload: string
     .match(/^data:([^;,]+)(?:;[^,]*)?;base64,([a-z0-9+/=\s]+)$/i);
 
   if (!match) {
-    throw new Error('Invalid base64 image payload');
+    throw new DisplayError('image_invalid', 'Invalid base64 image payload');
   }
 
   return {
@@ -52,16 +53,16 @@ function parseDataUrl(value: string): { mimeType?: string; base64Payload: string
 function decodeBase64Payload(payload: string): Buffer {
   const normalized = String(payload || '').replace(/\s+/g, '');
   if (!normalized) {
-    throw new Error('Empty base64 image payload');
+    throw new DisplayError('image_empty', 'Empty base64 image payload');
   }
 
   if (!/^[a-z0-9+/]+={0,2}$/i.test(normalized) || normalized.length % 4 !== 0) {
-    throw new Error('Invalid base64 image payload');
+    throw new DisplayError('image_invalid', 'Invalid base64 image payload');
   }
 
   const buffer = Buffer.from(normalized, 'base64');
   if (!buffer.length) {
-    throw new Error('Empty base64 image payload');
+    throw new DisplayError('image_empty', 'Empty base64 image payload');
   }
 
   return buffer;
@@ -93,26 +94,26 @@ function formatAllowedImageTypes(): string {
 
 function validateImagePayload(buffer: Buffer, declaredMimeType?: string): { mimeType: string; extension: string } {
   if (!buffer?.length) {
-    throw new Error('Empty image payload');
+    throw new DisplayError('image_empty', 'Empty image payload');
   }
 
   if (buffer.length > MAX_IMAGE_BYTES) {
     const maxMb = Math.floor(MAX_IMAGE_BYTES / (1024 * 1024));
-    throw new Error(`Image exceeds maximum size of ${maxMb}MB`);
+    throw new DisplayError('image_too_large', `Image exceeds maximum size of ${maxMb}MB`, { maxMb });
   }
 
   const detectedMimeType = detectMimeTypeFromBuffer(buffer);
   if (!detectedMimeType) {
-    throw new Error(`Unsupported image format. Allowed: ${formatAllowedImageTypes()}`);
+    throw new DisplayError('image_format', `Unsupported image format. Allowed: ${formatAllowedImageTypes()}`, { formats: formatAllowedImageTypes() });
   }
 
   const normalizedDeclared = normalizeMimeType(declaredMimeType);
   if (normalizedDeclared && !ALLOWED_IMAGE_MIME_TYPES.has(normalizedDeclared)) {
-    throw new Error(`Unsupported image format. Allowed: ${formatAllowedImageTypes()}`);
+    throw new DisplayError('image_format', `Unsupported image format. Allowed: ${formatAllowedImageTypes()}`, { formats: formatAllowedImageTypes() });
   }
 
   if (normalizedDeclared && normalizedDeclared !== detectedMimeType) {
-    throw new Error('Image MIME type does not match file signature');
+    throw new DisplayError('image_mime_mismatch', 'Image MIME type does not match file signature');
   }
 
   const finalMimeType = normalizedDeclared || detectedMimeType;
@@ -188,7 +189,7 @@ export function prepareIncomingImage(
     };
   }
 
-  throw new Error('No image provided');
+  throw new DisplayError('image_missing', 'No image provided');
 }
 
 export class ImageStorageClient {
@@ -224,7 +225,7 @@ export class ImageStorageClient {
     extension?: string;
   }): Promise<string> {
     if (!this.isConfigured()) {
-      throw new Error('Supabase Storage is not configured');
+      throw new DisplayError('image_storage_unavailable', 'Supabase Storage is not configured');
     }
 
     const validated = validateImagePayload(params.buffer, params.mimeType);
@@ -251,7 +252,8 @@ export class ImageStorageClient {
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => '');
-      throw new Error(
+      throw new DisplayError(
+        'image_upload_failed',
         `Failed to upload image to storage (${response.status}): ${errorBody || response.statusText}`,
       );
     }

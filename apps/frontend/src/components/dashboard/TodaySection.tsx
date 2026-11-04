@@ -1,3 +1,4 @@
+import { formatNumber } from '@/lib/i18n';
 import { Link, useNavigate } from 'react-router-dom';
 import { BellRing, RefreshCw } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
@@ -132,7 +133,7 @@ const TodaySection = ({
                   <ul className="mt-1 flex flex-col gap-0.5">
                     {list.map((alert) => {
                       const pct = alertDistancePct(alert);
-                      const distance = pct === null ? '' : ` · ${a.away.replace('{pct}', `${Math.abs(pct).toFixed(2)}%`)}`;
+                      const distance = pct === null ? '' : ` · ${a.away.replace('{pct}', `${formatNumber(Math.abs(pct), language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })}%`)}`;
                       return (
                         <li key={alert.id} className="font-terminal text-xs text-[var(--text-secondary)]">
                           {`${labelText[alert.label]} ${formatAlertLevel(alert.level, locale)}${distance}`}

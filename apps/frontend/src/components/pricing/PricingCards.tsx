@@ -1,3 +1,4 @@
+import { errorText } from '@/lib/i18n/messages';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { CheckoutError, createCheckoutSession, getCheckoutStatus, type BillingCycle, type Currency, type PlanType } from "../../lib/stripe";
@@ -6,6 +7,7 @@ import { getReferralCoupon, isAffiliateCode, saveReferralCoupon } from "../../li
 import { track } from "../../lib/analytics";
 import { useToast } from "../../hooks/use-toast";
 import { useFounderOffer, useFoundingOffer } from "@/hooks/useFoundingOffer";
+import { interpolate, LOCALES, formatNumber, type Language, type Translations } from "@/lib/i18n";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
   FOUNDER_CODE_PATTERN,
@@ -25,213 +27,6 @@ const Check = () => (
   </svg>
 );
 
-// Conteúdo visível dos cards — em inglês por padrão (público global), PT quando o
-// idioma for português. O array PLANS abaixo também usa inglês como default
-// (auditoria 24/07/2026: produto global; qualquer consumidor novo do PLANS,
-// como o modal do dashboard, herda inglês em vez de português).
-//
-// REGRA: nenhum bullet aqui pode descrever recurso que não existe no código.
-// Removidos em 24/07: "Priority responses", "Priority execution", "Priority
-// support" (a fila BullMQ é única, sem campo priority) e "Institutional-grade
-// AI" (o modelo é escolhido por tipo de análise, nunca por plano — todos os
-// planos rodam o mesmo motor).
-type PlanCopy = { badge: string; ticks: string; analyses: string; features: string[]; cta: string };
-const PLAN_COPY: Record<"en" | "pt", Record<PlanType, PlanCopy>> = {
-  en: {
-    starter: {
-      badge: "Everything included",
-      ticks: "200 ticks/mo",
-      analyses: "quick 1 tick · deep 3 ticks",
-      features: [
-        "200 monthly Ticks (~200 quick or 66 deep)",
-        "Quick + deep analysis",
-        "Live candle grounding + economic calendar",
-        "$0.145 per quick analysis ($29 / 200 Ticks)",
-      ],
-      cta: "Get started",
-    },
-    pro: {
-      badge: "Most popular",
-      ticks: "150 ticks/mo",
-      analyses: "quick 1 tick · deep 3 ticks",
-      features: [
-        "150 monthly Ticks (~150 quick or 50 deep)",
-        "Quick + deep analysis",
-        "Full history",
-        "$0.19 per quick analysis",
-        "Everything in Starter, 3.3x the volume",
-      ],
-      cta: "Get Pro",
-    },
-    elite: {
-      badge: "High volume",
-      ticks: "400 ticks/mo",
-      analyses: "quick 1 tick · deep 3 ticks",
-      features: [
-        "400 monthly Ticks (~400 quick or 133 deep)",
-        "Quick + deep analysis",
-        "Full history",
-        "$0.15 per quick analysis, the lowest",
-        "Everything in Pro, 2.7x the volume",
-      ],
-      cta: "Get Elite",
-    },
-  },
-  pt: {
-    starter: {
-      badge: "Tudo incluído",
-      ticks: "200 ticks/mês",
-      analyses: "rápida 1 tick · deep 3 ticks",
-      features: [
-        "200 Ticks mensais (~200 rápidas ou 66 deep)",
-        "Análise rápida + deep",
-        "Grounding com candles ao vivo + calendário econômico",
-        "US$ 0,145 por análise rápida (US$ 29 / 200 Ticks)",
-      ],
-      cta: "Começar",
-    },
-    pro: {
-      badge: "Mais escolhido",
-      ticks: "150 ticks/mês",
-      analyses: "rápida 1 tick · deep 3 ticks",
-      features: [
-        "150 Ticks mensais (~150 rápidas ou 50 deep)",
-        "Análise rápida + deep",
-        "Histórico completo",
-        "US$ 0,19 por análise rápida",
-        "Tudo do Starter, 3,3x o volume",
-      ],
-      cta: "Assinar Pro",
-    },
-    elite: {
-      badge: "Alto volume",
-      ticks: "400 ticks/mês",
-      analyses: "rápida 1 tick · deep 3 ticks",
-      features: [
-        "400 Ticks mensais (~400 rápidas ou 133 deep)",
-        "Análise rápida + deep",
-        "Histórico completo",
-        "US$ 0,15 por análise rápida, o menor",
-        "Tudo do Pro, 2,7x o volume",
-      ],
-      cta: "Assinar Elite",
-    },
-  },
-};
-
-// Plano SEMANAL (28/09/2026): o mesmo plano cobrado por semana, com 25 Ticks
-// que voltam a 25 a cada semana. Entrada menor para quem nao paga US$ 29 de uma
-// vez. Sem o EARLY35 (o cupom e do primeiro mes do MENSAL), entao nada aqui fala dele.
-const WEEKLY_COPY: Record<"en" | "pt", PlanCopy & { note: string }> = {
-  en: {
-    badge: "Start small",
-    ticks: "25 ticks/wk",
-    analyses: "quick 1 tick · deep 3 ticks",
-    features: [
-      "25 Ticks every week (~25 quick or 8 deep)",
-      "Quick + deep analysis",
-      "Live candle grounding + economic calendar",
-      "Renews weekly, cancel anytime",
-    ],
-    cta: "Start weekly",
-    note: "Billed $7.99 now and every 7 days until canceled. Your balance resets to 25 Ticks each week.",
-  },
-  pt: {
-    badge: "Comece pequeno",
-    ticks: "25 ticks/sem",
-    analyses: "rápida 1 tick · deep 3 ticks",
-    features: [
-      "25 Ticks por semana (~25 rápidas ou 8 deep)",
-      "Análise rápida + deep",
-      "Grounding com candles ao vivo + calendário econômico",
-      "Renova toda semana, cancele quando quiser",
-    ],
-    cta: "Assinar semanal",
-    note: "Cobrado US$ 7,99 agora e a cada 7 dias até cancelar. O saldo volta para 25 Ticks toda semana.",
-  },
-};
-
-const CHROME_COPY = {
-  en: {
-    weekly: "Weekly",
-    monthly: "Monthly",
-    yearly: "Yearly",
-    // Era "2 months free": lido como teste gratis. E a conta do anual
-    // (US$ 290 contra 12 x 29 = 348), sem nenhum periodo gratis.
-    yearlyBadge: "pay 10 months, get 12",
-    perWeek: "/wk",
-    perMonth: "/mo",
-    perYear: "/yr",
-    processing: "Processing...",
-    processingTitle: "Processing your subscription...",
-    processingSub: "Redirecting to payment",
-    errorTitle: "Error",
-    tokenError: "Could not get authentication token",
-    checkoutError: "Failed to create checkout session. Please try again.",
-    alreadySubscribedTitle: "You are already subscribed",
-    alreadySubscribedDesc: "This account already has a subscription. Check its status or update your card in Settings.",
-    partnerAsk: "Have a partner code?",
-    partnerApply: "Apply",
-    partnerApplied: (code: string) => `Partner code ${code} applied. Checkout uses the best discount available to you.`,
-    partnerInvalid: "That code is not valid.",
-    canceledTitle: "Payment canceled",
-    canceledDesc: "No charge was made. You can subscribe whenever you want.",
-    firstMonth: (price: string, code: string, pct: number) =>
-      `Billed ${price} now for the first month with ${code} (${pct}% off), applied automatically. Then $29/month until canceled.`,
-    founderEyebrow: "Founding member",
-    founderSub: "Locked for as long as your subscription stays active",
-    founderFeatures: [
-      "200 Ticks every month (~200 quick or 66 deep)",
-      "Quick + deep analysis",
-      "Live candle grounding + economic calendar",
-      "Your price never goes up while you stay subscribed",
-    ],
-    founderCta: "Claim my founding price",
-    founderSeats: (left: number) => (left === 1 ? "1 founding spot left" : `${left} founding spots left`),
-    founderUntil: (date: string) => `Your personal link expires on ${date}`,
-    founderNote:
-      "One-time offer, not listed anywhere else. Billed now and every month, cancel anytime from your dashboard. If you cancel, you come back at the regular price.",
-  },
-  pt: {
-    weekly: "Semanal",
-    monthly: "Mensal",
-    yearly: "Anual",
-    yearlyBadge: "pague 10 meses, leve 12",
-    perWeek: "/sem",
-    perMonth: "/mês",
-    perYear: "/ano",
-    processing: "Processando...",
-    processingTitle: "Processando sua assinatura...",
-    processingSub: "Redirecionando para pagamento",
-    errorTitle: "Erro",
-    tokenError: "Não foi possível obter token de autenticação",
-    checkoutError: "Falha ao criar sessão de checkout. Tente novamente.",
-    alreadySubscribedTitle: "Você já é assinante",
-    alreadySubscribedDesc: "Esta conta já tem uma assinatura. Veja o status ou atualize o cartão em Configurações.",
-    partnerAsk: "Tem um código de parceiro?",
-    partnerApply: "Aplicar",
-    partnerApplied: (code: string) => `Código de parceiro ${code} aplicado. O checkout usa o maior desconto disponível para você.`,
-    partnerInvalid: "Esse código não é válido.",
-    canceledTitle: "Pagamento cancelado",
-    canceledDesc: "Nenhuma cobrança foi feita. Você pode assinar quando quiser.",
-    firstMonth: (price: string, code: string, pct: number) =>
-      `Cobrado ${price} agora pelo primeiro mês com ${code} (${pct}% off), aplicado automaticamente. Depois US$ 29/mês até cancelar.`,
-    founderEyebrow: "Membro fundador",
-    founderSub: "Travado enquanto sua assinatura continuar ativa",
-    founderFeatures: [
-      "200 Ticks por mês (~200 rápidas ou 66 deep)",
-      "Análise rápida + deep",
-      "Grounding com candles ao vivo + calendário econômico",
-      "Seu preço não sobe enquanto você continuar assinando",
-    ],
-    founderCta: "Garantir meu preço fundador",
-    founderSeats: (left: number) => (left === 1 ? "Resta 1 vaga de fundador" : `Restam ${left} vagas de fundador`),
-    founderUntil: (date: string) => `Seu link pessoal vence em ${date}`,
-    founderNote:
-      "Oferta única, não listada em nenhum outro lugar. Cobrança agora e mensalmente, cancele quando quiser pelo painel. Se cancelar, volta ao preço normal.",
-  },
-};
-
 type PriceMap = Record<BillingCycle, Record<Currency, string>>;
 
 /**
@@ -240,7 +35,7 @@ type PriceMap = Record<BillingCycle, Record<Currency, string>>;
  * EARLY35 ganha enquanto existir, porque e maior). Fica guardado e vai junto
  * no pedido de checkout, inclusive depois do login.
  */
-function PartnerCode({ copy }: { copy: (typeof CHROME_COPY)["en"] }) {
+function PartnerCode({ copy }: { copy: Translations["pricingChrome"] }) {
   const [applied, setApplied] = useState<string | null>(() => getReferralCoupon());
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
@@ -272,7 +67,7 @@ function PartnerCode({ copy }: { copy: (typeof CHROME_COPY)["en"] }) {
     }
   };
 
-  if (applied) return <p className="site-price-fine">{copy.partnerApplied(applied)}</p>;
+  if (applied) return <p className="site-price-fine">{interpolate(copy.partnerApplied, { code: applied })}</p>;
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)} className="site-price-fine underline underline-offset-2">
@@ -302,14 +97,8 @@ function PartnerCode({ copy }: { copy: (typeof CHROME_COPY)["en"] }) {
 }
 
 type Plan = {
-  id: PlanType;
-  name: string;
-  badge: string;
+  id: "starter";
   prices: PriceMap;
-  ticks: string;
-  featured: boolean;
-  features: string[];
-  cta: string;
 };
 
 // PLANO ÚNICO. Os tiers Pro e Elite saíram da vitrine em 27/07/2026 — eles
@@ -317,25 +106,15 @@ type Plan = {
 // avulso. Os price IDs antigos continuam no backend para assinaturas legadas.
 // Checkout sempre em USD (ver `currency` abaixo), então os campos brl/eur são
 // só rótulo e repetem o valor em dólar de propósito.
-export const PLANS: Plan[] = [
+const PLANS: Plan[] = [
   {
     id: "starter",
-    name: "Tickrify",
-    badge: "Everything included",
     prices: {
       weekly:  { brl: "$7.99", usd: "$7.99", eur: "$7.99" },
       monthly: { brl: "$29", usd: "$29", eur: "$29" },
       yearly:  { brl: "$290", usd: "$290", eur: "$290" },
     },
-    ticks: "200 ticks/mo",
-    featured: true,
-    features: [
-      "200 monthly Ticks (~200 quick or 66 deep)",
-      "Quick + deep analysis",
-      "Live candle grounding + economic calendar",
-      "$0.145 per quick analysis ($29 / 200 Ticks)",
-    ],
-    cta: "Get started",
+
   },
 ];
 
@@ -354,24 +133,23 @@ function offerFromUrl(): string | null {
   return FOUNDER_CODE_PATTERN.test(value) ? value : null;
 }
 
-function formatOfferDate(seconds: number, lang: "en" | "pt"): string {
-  return new Date(seconds * 1000).toLocaleDateString(lang === "pt" ? "pt-BR" : "en-US", { month: "long", day: "numeric" });
+function formatOfferDate(seconds: number, lang: Language): string {
+  return new Date(seconds * 1000).toLocaleDateString(LOCALES[lang], { month: "long", day: "numeric" });
 }
 
 export function PricingCards() {
   const { getToken, isSignedIn, isLoaded } = useAuth();
   const { toast } = useToast();
-  const { language } = useLanguage();
-  const lang = language === "pt" ? "pt" : "en";
-  const copy = CHROME_COPY[lang];
-  const planCopy = PLAN_COPY[lang];
-  const weeklyCopy = WEEKLY_COPY[lang];
+  const { language, t } = useLanguage();
+  const copy = t.pricingChrome;
+  const planCopy = t.pricingPlan;
+  const weeklyCopy = t.pricingWeekly;
   // O checkout do mensal ja leva o EARLY35; sem esta linha o card dizia so
   // "$29" e o paywall do painel, "$18.85 no 1o mes" (05/10/2026). Some junto
   // com o cupom e nunca aparece no semanal nem no anual (o servidor descarta).
   const foundingOffer = useFoundingOffer();
   const firstMonthPrice = foundingOffer?.percentOff
-    ? `$${(29 * (1 - foundingOffer.percentOff / 100)).toFixed(2)}`
+    ? `$${formatNumber((29 * (1 - foundingOffer.percentOff / 100)), language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })}`
     : null;
   // Oferta Founding Member: so existe com um link pessoal valido. Sem codigo, ou
   // com codigo usado ou vencido, a pagina fica exatamente como sempre foi.
@@ -543,7 +321,7 @@ export function PricingCards() {
         toast({
           title: copy.errorTitle,
           description:
-            error instanceof Error ? error.message : copy.checkoutError,
+            errorText(t, language, error, copy.checkoutError),
           variant: "destructive",
         });
       } finally {
@@ -554,7 +332,7 @@ export function PricingCards() {
         }
       }
     },
-    [getToken, isSignedIn, toast, billingCycle, currency, copy],
+    [getToken, isSignedIn, toast, billingCycle, currency, copy, t, language],
   );
 
   // Retomada depois do login/cadastro: a URL traz a intencao (caminho normal) e
@@ -617,16 +395,16 @@ export function PricingCards() {
             >
               {loadingPlan === PLANS[0].id ? copy.processing : copy.founderCta}
             </button>
-            {founder.seatsLeft !== null ? <p className="site-price-fine">{copy.founderSeats(founder.seatsLeft)}</p> : null}
+            {founder.seatsLeft !== null ? <p className="site-price-fine">{interpolate(founder.seatsLeft === 1 ? copy.founderSeat : copy.founderSeats, { left: formatNumber(founder.seatsLeft, language) })}</p> : null}
             {founder.expiresAt ? (
-              <p className="site-price-fine">{copy.founderUntil(formatOfferDate(founder.expiresAt, lang))}</p>
+              <p className="site-price-fine">{interpolate(copy.founderUntil, { date: formatOfferDate(founder.expiresAt, language) })}</p>
             ) : null}
             <p className="site-price-fine">{copy.founderNote}</p>
           </div>
         </div>
       ) : null}
 
-      <div ref={cycleRef} className="site-cycle" role="group" aria-label="Billing cycle">
+      <div ref={cycleRef} className="site-cycle" role="group" aria-label={copy.billingCycle}>
         <button
           type="button"
           aria-pressed={billingCycle === "weekly"}
@@ -660,27 +438,21 @@ export function PricingCards() {
           para não quebrar de novo se um segundo plano voltar. */}
       <div className={PLANS.length > 1 ? "site-plans" : undefined}>
         {PLANS.map((plan) => {
-          const baseCopy = planCopy[plan.id];
+          const baseCopy = planCopy;
           const cardCopy = billingCycle === "weekly" ? weeklyCopy : billingCycle === "yearly"
             ? { ...baseCopy, features: baseCopy.features.slice(0, 3) }
             : baseCopy;
-          const renewalNote = billingCycle === "yearly"
-            ? lang === "pt"
-              ? "US$ 290 cobrados agora e a cada ano até cancelar. O saldo volta a 200 Ticks a cada mês; Ticks não utilizados não acumulam."
-              : "$290 billed now and every year until canceled. Your balance resets to 200 Ticks each month; unused Ticks do not carry over."
-            : billingCycle === "monthly"
-              ? lang === "pt"
-                ? "US$ 29 cobrados agora e mensalmente até cancelar. O saldo volta a 200 Ticks por mês; Ticks não utilizados não acumulam."
-                : "$29 billed now and monthly until canceled. Your balance resets to 200 Ticks per month; unused Ticks do not carry over."
-              : weeklyCopy.note;
+          const renewalNote = billingCycle === "yearly" ? copy.yearlyRenewal
+            : billingCycle === "monthly" ? copy.monthlyRenewal : weeklyCopy.note;
           const perCycle =
             billingCycle === "weekly" ? copy.perWeek : billingCycle === "monthly" ? copy.perMonth : copy.perYear;
-          const ctaPrice = billingCycle === "monthly" && firstMonthPrice ? firstMonthPrice : plan.prices[billingCycle][currency];
+          const price = `$${formatNumber(Number(plan.prices[billingCycle][currency].slice(1)), language, { maximumFractionDigits: 2 })}`;
+          const ctaPrice = billingCycle === "monthly" && firstMonthPrice ? firstMonthPrice : price;
           return (
           <div key={plan.id} className="site-price">
             <span className="site-eyebrow">{cardCopy.badge}</span>
             <div className="site-price-amt">
-              <b>{plan.prices[billingCycle][currency]}</b>
+              <b>{price}</b>
               <span>{perCycle}</span>
             </div>
             <p className="site-price-sub">
@@ -707,7 +479,7 @@ export function PricingCards() {
             {billingCycle !== "monthly" || !firstMonthPrice ? <p className="site-price-fine">{renewalNote}</p> : null}
             {billingCycle === "monthly" && foundingOffer?.percentOff && firstMonthPrice ? (
               <p className="site-price-fine">
-                {copy.firstMonth(firstMonthPrice, foundingOffer.code, foundingOffer.percentOff)}
+                {interpolate(copy.firstMonth, { price: firstMonthPrice, code: foundingOffer.code, pct: foundingOffer.percentOff })}
               </p>
             ) : null}
           </div>

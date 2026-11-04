@@ -1,3 +1,4 @@
+import { imageErrorResponse } from '../../common/utils/display-message';
 import { BadRequestException, HttpException, HttpStatus, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
@@ -131,8 +132,8 @@ type StateRow = {
 
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
 
-export function tradeError(code: string, message: string, status = HttpStatus.BAD_REQUEST): HttpException {
-  return new HttpException({ code, message }, status);
+export function tradeError(code: string, message: string, status = HttpStatus.BAD_REQUEST, params: Record<string, string | number> = {}): HttpException {
+  return new HttpException({ code, message, params }, status);
 }
 
 @Injectable()
@@ -321,10 +322,10 @@ export class TradesService implements OnModuleInit, OnModuleDestroy {
     const plan = await this.plan(userId, analysisId);
     const previous = await this.readState(analysisId);
     if (input.status === 'closed' && !input.closeReason) {
-      throw new BadRequestException('closeReason is required to close a trade');
+      throw tradeError('trade_close_reason_required', 'closeReason is required to close a trade');
     }
     if (input.status === 'cancelled' && previous?.status === 'in_trade') {
-      throw new BadRequestException('An open trade is closed, not cancelled');
+      throw tradeError('trade_cancel_open', 'An open trade is closed, not cancelled');
     }
     const now = new Date();
     const closeReason = input.status === 'closed' ? input.closeReason ?? null : input.status === 'cancelled' ? 'cancelled' : null;
@@ -454,7 +455,7 @@ export class TradesService implements OnModuleInit, OnModuleDestroy {
     try {
       return prepareIncomingImage(imageFile, base64Image);
     } catch (error) {
-      throw new BadRequestException(error instanceof Error ? error.message : 'Invalid image payload');
+      throw new BadRequestException(imageErrorResponse(error));
     }
   }
 
@@ -499,7 +500,7 @@ export class TradesService implements OnModuleInit, OnModuleDestroy {
       analysisId,
     );
     if (Number(used[0]?.n ?? 0) >= TRADE_RULES.maxChecksPerTrade) {
-      throw tradeError('trade_check_limit', `This trade already has ${TRADE_RULES.maxChecksPerTrade} checks.`, HttpStatus.TOO_MANY_REQUESTS);
+      throw tradeError('trade_check_limit', `This trade already has ${TRADE_RULES.maxChecksPerTrade} checks.`, HttpStatus.TOO_MANY_REQUESTS, { count: TRADE_RULES.maxChecksPerTrade });
     }
     const cost = TRADE_RULES.managementCheckCost;
     if (paidAccess) {
@@ -587,7 +588,7 @@ export class TradesService implements OnModuleInit, OnModuleDestroy {
             analysisId,
           );
           if (Number(used[0]?.n ?? 0) >= TRADE_RULES.maxChecksPerTrade) {
-            throw tradeError('trade_check_limit', `This trade already has ${TRADE_RULES.maxChecksPerTrade} checks.`, HttpStatus.TOO_MANY_REQUESTS);
+            throw tradeError('trade_check_limit', `This trade already has ${TRADE_RULES.maxChecksPerTrade} checks.`, HttpStatus.TOO_MANY_REQUESTS, { count: TRADE_RULES.maxChecksPerTrade });
           }
           const cost = TRADE_RULES.managementCheckCost;
           if (paidAccess) {

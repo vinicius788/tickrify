@@ -1,3 +1,4 @@
+import { imageErrorResponse, validationMessages } from '../../common/utils/display-message';
 import { logObservation, safeObserve } from '../../common/utils/analysis-observation';
 import {
   sanitizeStrategyProfile,
@@ -1343,7 +1344,7 @@ export class AiService implements OnModuleInit {
 
       return this.serializeAnalysis(updated);
     } catch (error) {
-      const safeMessage = this.safeErrorMessage(error);
+      const safeMessage = AIAnalysisError.toUserMessage(error);
       const failedAnalysis = await this.prisma.analysis.update({
         where: { id: analysisId },
         data: {
@@ -1388,7 +1389,10 @@ export class AiService implements OnModuleInit {
       if (error instanceof AIAnalysisError && error.code === 'non_chart_image') {
         throw new BadRequestException({ code: 'non_chart_image', message: error.message });
       }
-      throw error;
+      throw new HttpException(
+        { code: safeAnalysisFailureCode(error instanceof AIAnalysisError ? error.code : null), message: safeMessage },
+        error instanceof HttpException ? error.getStatus() : 500,
+      );
     }
   }
 
@@ -1396,7 +1400,7 @@ export class AiService implements OnModuleInit {
     try {
       return prepareIncomingImage(imageFile, base64Image);
     } catch (error) {
-      throw new BadRequestException(error instanceof Error ? error.message : 'Invalid image payload');
+      throw new BadRequestException(imageErrorResponse(error));
     }
   }
 
@@ -1856,6 +1860,7 @@ export class AiService implements OnModuleInit {
       pnlPercent: null,
       pnlAmount: null,
       errorMessage: analysis.errorMessage || null,
+      errorDetails: null,
       errorCode: null,
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
@@ -1921,6 +1926,7 @@ export class AiService implements OnModuleInit {
       marketTp1R: analysis.outcome === 'WIN' ? tp1RFromDetail(analysis.outcomeDetail) : null,
       marketTp2Hit: analysis.outcome === 'WIN' && Boolean((analysis.outcomeDetail as { tp2Hit?: unknown } | null)?.tp2Hit),
       errorMessage: analysis.errorMessage || null,
+      errorDetails: validationMessages(storedPayload?.displayMessages),
       errorCode: analysisFailureCodeForResponse(analysis.status, analysis.errorCode),
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
@@ -2268,24 +2274,4 @@ export class AiService implements OnModuleInit {
     return 'pending';
   }
 
-  private safeErrorMessage(error: unknown): string {
-    if (error instanceof HttpException) {
-      const response = error.getResponse() as { message?: string | string[] } | string;
-      if (typeof response === 'string') {
-        return response;
-      }
-      if (Array.isArray(response?.message)) {
-        return response.message.join(', ');
-      }
-      if (typeof response?.message === 'string') {
-        return response.message;
-      }
-    }
-
-    if (error instanceof Error) {
-      return error.message;
-    }
-
-    return 'Failed to process analysis';
-  }
 }

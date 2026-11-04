@@ -450,8 +450,7 @@ export function readOffer(root) {
  * As perguntas frequentes da /pricing, lidas do MESMO lugar que a tela usa.
  *
  * Mesma técnica do `readOffer` logo acima, e pelo mesmo motivo: a copy mora
- * em `PRICING_COPY` dentro do `PricingPage.tsx`, e um script de build em Node
- * não importa componente React. Copiar as perguntas para cá criaria duas
+ * em `pricingPage` no dicionario `en.ts`, compartilhado com a tela. Copiar as perguntas para cá criaria duas
  * versões que divergem na primeira vez que ele editar uma resposta, e o
  * schema passaria a declarar texto que a página não mostra.
  *
@@ -465,19 +464,16 @@ export function readOffer(root) {
  */
 export function readPricingFaq(root) {
   try {
-    const src = readFileSync(join(root, 'src/components/pages/PricingPage.tsx'), 'utf8');
-    const enStart = src.indexOf('en: {');
-    const ptStart = src.indexOf('pt: {', enStart);
-    if (enStart < 0 || ptStart < 0) return null;
-
-    const bloco = src.slice(enStart, ptStart);
-    const faqStart = bloco.indexOf('faq: [');
-    if (faqStart < 0) return null;
-
-    const lista = bloco.slice(faqStart);
-    const pares = [...lista.matchAll(/\{\s*q:\s*'((?:[^'\\]|\\.)*)',\s*a:\s*'((?:[^'\\]|\\.)*)',?\s*\}/g)].map((m) => ({
-      q: m[1].replace(/\\'/g, "'"),
-      a: m[2].replace(/\\'/g, "'"),
+    const src = readFileSync(join(root, 'src/lib/i18n/en.ts'), 'utf8');
+    const pricingStart = src.indexOf('pricingPage: {');
+    const faqStart = src.indexOf('faq: [', pricingStart);
+    if (pricingStart < 0 || faqStart < 0) return null;
+    const faqEnd = src.indexOf(']', faqStart);
+    if (faqEnd < 0) return null;
+    const lista = src.slice(faqStart, faqEnd);
+    const pares = [...lista.matchAll(/\{\s*q:\s*("(?:[^"\\]|\\.)*"),\s*a:\s*("(?:[^"\\]|\\.)*"),?\s*\}/g)].map((m) => ({
+      q: JSON.parse(m[1]),
+      a: JSON.parse(m[2]),
     }));
 
     return pares.length ? pares : null;

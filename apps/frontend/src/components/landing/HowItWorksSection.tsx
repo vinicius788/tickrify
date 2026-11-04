@@ -26,7 +26,7 @@ const HowItWorksSection = () => {
 
         {steps.map((step) => (
           <div key={step.n} className="site-step">
-            <div className="site-step-n">STEP {step.n}</div>
+            <div className="site-step-n">{t.interfaceExtras.step.replace('{number}', step.n)}</div>
             <h3>{step.title}</h3>
             <p>{step.desc}</p>
           </div>

@@ -102,7 +102,7 @@ const SocialProof = () => {
             {PLATFORMS.map((name) => <span key={name}>{name}</span>)}
           </div>
           <p className="site-compat-foot">
-            All trademarks belong to their owners. Tickrify is not affiliated with, or endorsed by, any of them.
+            {t.interfaceExtras.trademarks}
           </p>
         </div>
       </section>

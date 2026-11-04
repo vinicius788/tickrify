@@ -27,6 +27,8 @@ export interface DemoAnalysisResult {
   dataMode?: 'real_data' | 'print' | null;
   reasoning: string;
   disclaimer: string;
+  disclaimerCode?: string;
+  reasoningCode?: string | null;
   demoRemaining: number;
   /** A mesma leitura devolvida de novo (a conexao tinha caido antes de chegar). */
   recovered?: boolean;

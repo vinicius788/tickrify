@@ -337,6 +337,8 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
           expect(stored.result.analysis[key]).toBeCloseTo(engine[key], 8);
           expect(delivered[key]).toBe(stored.result.analysis[key]);
         }
+        expect(stored.result.engine.contract).toMatchObject({ no_trade_reason: null, no_trade_reason_code: null, no_trade_reason_params: {} });
+        expect(JSON.parse(JSON.stringify(stored.result)).displayMessages).toEqual({});
         expect(stored.result.analysis.invalidationLevel).toBe(107.72 * 0.01);
         expect(delivered).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.19, riskRewardTp2: 3.22, errorCode: null });
       } else {
@@ -400,6 +402,22 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     }
   });
 
+  it('persists the same safe fallback as synchronous processing after the final retry', async () => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const { prismaClient } = mockPaidRefund();
+    analyzeImageMock.mockRejectedValueOnce(new Error('private diagnostic'));
+    const job = makeJob({ analysisId: 'safe-failure', imageUrl: 'https://example.com/chart.png', analysisType: 'quick', userId: 'user-1', isDemo: true });
+    job.opts = { attempts: 1 };
+    job.attemptsMade = 0;
+    await expect(processAnalysis(job)).rejects.toThrow('private diagnostic');
+    const saved = prismaClient.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'failed')[0].data;
+    expect(JSON.parse(JSON.stringify(saved))).toMatchObject({
+      errorCode: 'processing_unclassified', errorMessage: 'Analysis failed. Please try again.', reasoning: 'Analysis failed. Please try again.',
+    });
+    expect(JSON.stringify(saved)).not.toContain('private diagnostic');
+  });
+
   it('reembolsa uma analise paga rejeitada pela validacao final do worker', async () => {
     require('../../worker/ai.worker');
     const processAnalysis = getProcessor();
@@ -415,7 +433,9 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     }));
 
     expect(prismaClient.analysis.update).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ status: 'failed', errorCode: 'validation_failed' }),
+      data: expect.objectContaining({ status: 'failed', errorCode: 'validation_failed',
+        result: { displayMessages: { validationErrors: [{ code: 'validation_invalid_value', params: { field: 'currentPrice', value: '0' }, text: 'currentPrice inválido: 0' }] } },
+      }),
     }));
     expect(tx.userTicks.upsert).toHaveBeenCalledTimes(1);
     expect(tx.tickTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -532,7 +552,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     );
     expect(completed).toBeDefined();
     expect(completed[0].data.recommendation).toBe('WAIT');
-    const engine = completed[0].data.result.engine;
+    const engine = JSON.parse(JSON.stringify(completed[0].data.result)).engine;
     expect(engine).toMatchObject({
       version: '4.0.0',
       data_mode: 'print',
@@ -543,6 +563,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       contract: {
         verdict: 'NEUTRAL', asset: 'TEST', timeframe: '30m', entry: null, targets: [],
         no_trade_reason: 'A price level is outside a plausible range of the chart price.',
+        no_trade_reason_code: 'engine_implausible_price', no_trade_reason_params: {},
       },
     });
     expect(engine.timings.server_total_ms).toBeGreaterThanOrEqual(2_000);

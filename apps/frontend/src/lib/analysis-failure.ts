@@ -1,11 +1,13 @@
 /** Categorias estáveis para analytics; nunca envia mensagem ou conteúdo do gráfico. */
 export class AnalysisProcessingError extends Error {
   readonly code: string;
+  readonly details?: import('./i18n/messages').DisplayMessage[] | null;
 
-  constructor(message: string, code?: string | null) {
+  constructor(message: string, code?: string | null, details?: import('./i18n/messages').DisplayMessage[] | null) {
     super(message);
     this.name = 'AnalysisProcessingError';
     this.code = safeCode(code) ?? 'processing_failed_unclassified';
+    this.details = details;
   }
 }
 

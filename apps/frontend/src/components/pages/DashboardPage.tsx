@@ -1,3 +1,5 @@
+import { formatNumber } from '@/lib/i18n';
+import { errorText } from '@/lib/i18n/messages';
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -111,86 +113,7 @@ function SideItemBody({ collapsed, icon, label, badge = null }: { collapsed: boo
   );
 }
 
-const DASH_COPY = {
-  en: {
-    checkoutErrorTitle: 'Could not open checkout',
-    allowanceNoticeTitle: 'Your Ticks now reset every month',
-    allowanceNoticeDesc: 'At the start of each billing month your balance goes back to 200 Ticks. Unused Ticks do not carry over.',
-    alreadySubscribedTitle: 'You are already subscribed',
-    alreadySubscribedDesc: 'This account already has a subscription. Check its status or update your card in Settings.',
-    uploadRequired: 'Please upload a chart image.',
-    invalidFormat: 'Invalid format. Upload a PNG, JPG/JPEG or WEBP image.',
-    tooLarge: 'File too large. The limit is 10MB.',
-    ticksOutTitle: 'Ticks used up',
-    ticksOutDesc: 'Your plan ticks are used up. They renew automatically next cycle.',
-    analysisError: 'Analysis error',
-    tryAgain: 'Try again',
-    loadingPlanTitle: 'Loading your plan…',
-    loadingPlanDesc: 'Confirming your subscription. This takes a couple of seconds, try again in a moment.',
-    analysisTimeout: 'The analysis took longer than expected. Please try again.',
-    analysisUnknownError: 'Unexpected error while processing the analysis.',
-    analysisFailed: 'The analysis could not be completed.',
-    networkError: 'Could not reach Tickrify. Check your internet connection and try again.',
-    authTokenFailed: 'We could not confirm your session. Reload the page and try again. If it keeps happening, sign out and sign in again.',
-    subscribeCta: 'Subscribe',
-    demoMode: 'Demo mode: exploring the interface without login',
-    demoLogin: 'Log in for real analyses',
-    choosePlan: 'Choose your plan',
-    planSub: 'Start with one week or go monthly. Cancel anytime.',
-    later: 'Maybe later',
-    perMonth: '/mo',
-    modalMonthly: 'Monthly, 200 Ticks',
-    modalMonthlyOffer: '{price} first month, then $29/month',
-    modalWeekly: 'Weekly, 25 Ticks',
-    modalCompare: 'Compare all plans',
-    modalVideoCaption: 'What subscribers get: the entry chart plus up to two higher timeframes, read as one market. 20 seconds.',
-    waitNudge: 'This WAIT did not use a trade call. You still have {left} of {limit}.',
-    waitNudgeHint: 'Try another pair or a different timeframe.',
-    waitNudgeCta: 'Analyze another chart',
-    waitNudgeWhy: 'Why WAIT? (22 s video)',
-    plansTitle: 'Plans',
-    plansSub: 'Same engine on every plan. Cancel anytime.',
-  },
-  pt: {
-    checkoutErrorTitle: 'Não foi possível abrir o checkout',
-    allowanceNoticeTitle: 'Seus Ticks agora renovam todo mês',
-    allowanceNoticeDesc: 'No início de cada mês de cobrança seu saldo volta para 200 Ticks. Ticks não usados não acumulam.',
-    alreadySubscribedTitle: 'Você já é assinante',
-    alreadySubscribedDesc: 'Esta conta já tem uma assinatura. Veja o status ou atualize o cartão em Configurações.',
-    uploadRequired: 'Por favor, faça upload de uma imagem de gráfico.',
-    invalidFormat: 'Formato inválido. Envie uma imagem PNG, JPG/JPEG ou WEBP.',
-    tooLarge: 'Arquivo muito grande. O limite é de 10MB.',
-    ticksOutTitle: 'Ticks esgotados',
-    ticksOutDesc: 'Seus ticks do plano se esgotaram. Eles renovam automaticamente no próximo ciclo.',
-    analysisError: 'Erro na Análise',
-    tryAgain: 'Tentar Novamente',
-    loadingPlanTitle: 'Carregando seu plano…',
-    loadingPlanDesc: 'Confirmando sua assinatura. Leva alguns segundos, tente de novo em instantes.',
-    analysisTimeout: 'A análise demorou mais que o esperado, tente novamente.',
-    analysisUnknownError: 'Erro desconhecido ao processar análise.',
-    analysisFailed: 'Não foi possível concluir a análise.',
-    networkError: 'Não foi possível conectar ao Tickrify. Confira sua internet e tente novamente.',
-    authTokenFailed: 'Não conseguimos confirmar sua sessão. Recarregue a página e tente novamente. Se continuar, saia e entre de novo na conta.',
-    subscribeCta: 'Assinar',
-    demoMode: 'Modo Demonstração: explorando a interface sem login',
-    demoLogin: 'Fazer Login para Análises Reais',
-    choosePlan: 'Escolha seu plano',
-    planSub: 'Comece com uma semana ou vá de mensal. Cancele quando quiser.',
-    later: 'Continuar depois',
-    perMonth: '/mês',
-    modalMonthly: 'Mensal, 200 Ticks',
-    modalMonthlyOffer: '{price} no primeiro mês, depois US$ 29/mês',
-    modalWeekly: 'Semanal, 25 Ticks',
-    modalCompare: 'Comparar todos os planos',
-    modalVideoCaption: 'O que o assinante recebe: o gráfico de entrada mais até dois tempos maiores, lidos como um mercado só. 20 segundos.',
-    waitNudge: 'Este WAIT não gastou uma análise com entrada. Você ainda tem {left} de {limit}.',
-    waitNudgeHint: 'Tente outro par ou outro tempo gráfico.',
-    waitNudgeCta: 'Analisar outro gráfico',
-    waitNudgeWhy: 'Por que WAIT? (vídeo de 22 s)',
-    plansTitle: 'Planos',
-    plansSub: 'O mesmo motor em todos os planos. Cancele quando quiser.',
-  },
-} as const;
+
 import officialIcon from "@/assets/tickrify-icon-official.png";
 import BrandLoader from "../ui/BrandLoader";
 
@@ -284,10 +207,10 @@ function sameAssetName(a: string | null | undefined, b: string | null | undefine
 const DashboardPage = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
-  const dc = language === 'pt' ? DASH_COPY.pt : DASH_COPY.en;
+  const dc = t.dashboardCopy;
   // Preço do 1º mês com o EARLY35, só quando a Stripe diz que o cupom está ativo.
   const foundingOffer = useFoundingOffer();
-  const modalFirstMonth = foundingOffer?.percentOff ? (29 * (1 - foundingOffer.percentOff / 100)).toFixed(2) : null;
+  const modalFirstMonth = foundingOffer?.percentOff ? formatNumber((29 * (1 - foundingOffer.percentOff / 100)), language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false }) : null;
   const location = useLocation();
   const route = parseDashboardPath(location.pathname);
   const { base } = route;
@@ -779,13 +702,13 @@ const DashboardPage = () => {
         goTo('settings');
         return;
       }
-      toast({ title: dc.checkoutErrorTitle, description: message, variant: 'destructive' });
+      toast({ title: dc.checkoutErrorTitle, description: errorText(t, language, error, dc.checkoutErrorTitle), variant: 'destructive' });
       // Cai nos Planos do painel, nunca num beco: la tem o mesmo botao.
       goTo('plans');
     } finally {
       setUnlockPending(false);
     }
-  }, [unlockPending, getToken, goTo, toast, dc]);
+  }, [unlockPending, getToken, goTo, toast, dc, t, language]);
 
   // Todo paywall fecha no mesmo checkout (`locked_value` na Stripe); a area de
   // onde veio vai junto para o PostHog.
@@ -985,6 +908,7 @@ const DashboardPage = () => {
         throw new AnalysisProcessingError(
           analysis.errorMessage || analysis.reasoning || dc.analysisFailed,
           analysis.errorCode,
+          analysis.errorDetails,
         );
       }
 
@@ -1141,7 +1065,7 @@ const DashboardPage = () => {
       } else if (error instanceof APIError && error.code === 'setup_not_found') {
         setErrorMessage(t.setups.updateNotFound);
       } else {
-        setErrorMessage(error instanceof Error ? error.message : dc.analysisUnknownError);
+        setErrorMessage(errorText(t, language, error, dc.analysisUnknownError));
       }
       setFlow('error');
     }
@@ -1166,7 +1090,7 @@ const DashboardPage = () => {
       setFollowUp(null);
       navigate(`${base}/analysis/${encodeURIComponent(trade.analysisId)}`);
     } catch (error) {
-      toast({ title: t.trade.error, description: error instanceof APIError ? error.message : undefined, variant: 'destructive' });
+      toast({ title: t.trade.error, description: errorText(t, language, error, t.trade.error), variant: 'destructive' });
     } finally {
       setFollowUpBusy(false);
     }
@@ -1186,7 +1110,7 @@ const DashboardPage = () => {
       void queryClient.invalidateQueries({ queryKey: ['analyses'] });
       continueAsNewAnalysis();
     } catch (error) {
-      toast({ title: t.trade.error, description: error instanceof APIError ? error.message : undefined, variant: 'destructive' });
+      toast({ title: t.trade.error, description: errorText(t, language, error, t.trade.error), variant: 'destructive' });
     } finally {
       setFollowUpBusy(false);
     }
@@ -1362,7 +1286,7 @@ const DashboardPage = () => {
             <span className="font-terminal text-xl font-semibold text-[var(--text-primary)]">{verdictStats.winRate}%</span>
             {verdictStats.avgRr !== null && (
               <span className="font-terminal text-xs text-[var(--text-secondary)]">
-                {t.verdict.statsRr} {verdictStats.avgRr.toFixed(1)}:1
+                {t.verdict.statsRr} {formatNumber(verdictStats.avgRr, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}:1
               </span>
             )}
             <span className="font-terminal text-xs text-[var(--text-muted)]">
@@ -2308,7 +2232,7 @@ const DashboardPage = () => {
                 <Crown className="h-4 w-4 flex-shrink-0 text-primary" />
                 <span className="text-sm font-semibold">{dc.modalWeekly}</span>
               </span>
-              <span className="text-right text-xs font-semibold">$7.99 / 7d</span>
+              <span className="text-right text-xs font-semibold">{dc.weeklyPrice.replace('{price}', formatNumber(7.99, language, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}</span>
             </button>
             <button
               type="button"

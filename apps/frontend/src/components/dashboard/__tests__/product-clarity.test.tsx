@@ -35,7 +35,7 @@ function show(data: AIAnalysisResponse) {
   render(<LanguageProvider><AnalysisResult analysisData={data} uploadedImage={null} sample /></LanguageProvider>);
   const guide = screen.getByLabelText(getTranslations('en').productClarity.readingGuide);
   expect(within(guide).getByText(getTranslations('en').productClarity.reviewConditions)).toBeTruthy();
-  const timestamp = new Date(data.createdAt).toLocaleString('pt-BR', {
+  const timestamp = new Date(data.createdAt).toLocaleString('en-US', {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
   expect(screen.getByText(timestamp)).toBeTruthy();

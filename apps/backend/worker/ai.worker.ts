@@ -1,3 +1,4 @@
+import type { DisplayMessage } from '../src/common/utils/display-message';
 import { logObservation, safeObserve, type AnalysisObservation } from '../src/common/utils/analysis-observation';
 import { flagBool, startFlagRefresh } from '../src/common/flags/feature-flags';
 import 'dotenv/config';
@@ -35,7 +36,6 @@ import type { LevelMap } from '../src/common/utils/level-map';
 import { BROKEN_PLAN_RULES, validateTradePlan } from '../src/common/utils/trade-plan-validator';
 import { buildEngineRecord, type AnalysisIntakeTimings } from '../src/modules/ai/engine-contract';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
-import { isProductionRuntime } from '../src/common/utils/runtime-env';
 import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-runtime';
 import { resolvePrismaDatasourceUrl } from '../src/modules/database/prisma.datasource';
 import { AnalysisType } from '../src/modules/ticks/tick-packages';
@@ -893,17 +893,6 @@ async function resolveAiSource(
   throw new Error('OpenAI key is missing or invalid in production mode.');
 }
 
-function safeWorkerErrorMessage(error: unknown): string {
-  if (error instanceof AIAnalysisError) {
-    return AIAnalysisError.toUserMessage(error);
-  }
-
-  if (!isProductionRuntime() && error instanceof Error) {
-    return error.message;
-  }
-
-  return 'Analysis failed. Please try again.';
-}
 
 const WORKER_TICK_COSTS: Record<AnalysisType, number> = {
   quick: 1,
@@ -968,90 +957,90 @@ async function refundTicksForFailedAnalysis(
   }
 }
 
-function validateTradingLogic(result: WorkerAnalysisResult): string[] {
-  const errors: string[] = [];
+function validateTradingLogic(result: WorkerAnalysisResult): DisplayMessage[] {
+  const errors: DisplayMessage[] = [];
   const rec = result.recommendation;
   const a = result.analysis;
   const normalizedConfidence = normalizeConfidence(result.confidence);
 
   if (!['COMPRA', 'VENDA', 'AGUARDAR'].includes(rec)) {
-    errors.push(`recommendation inválido: ${rec}`);
+    errors.push({ code: 'validation_invalid_value', params: { field: "recommendation", value: String(rec) }, text: `recommendation inválido: ${rec}` });
   }
 
   if (typeof normalizedConfidence !== 'number' || normalizedConfidence < 0 || normalizedConfidence > 1) {
-    errors.push(`confidence inválido: ${result.confidence}`);
+    errors.push({ code: 'validation_invalid_value', params: { field: "confidence", value: String(result.confidence) }, text: `confidence inválido: ${result.confidence}` });
   }
 
   if (!a.symbol || a.symbol.trim() === '') {
-    errors.push('symbol vazio');
+    errors.push({ code: 'validation_empty_field', params: { field: "symbol" }, text: 'symbol vazio' });
   }
 
   if (!a.timeframe || a.timeframe.trim() === '') {
-    errors.push('timeframe vazio');
+    errors.push({ code: 'validation_empty_field', params: { field: "timeframe" }, text: 'timeframe vazio' });
   }
 
   if (typeof a.currentPrice !== 'number' || a.currentPrice <= 0) {
-    errors.push(`currentPrice inválido: ${a.currentPrice}`);
+    errors.push({ code: 'validation_invalid_value', params: { field: "currentPrice", value: String(a.currentPrice) }, text: `currentPrice inválido: ${a.currentPrice}` });
   }
 
   if (rec === 'COMPRA') {
     if (typeof a.entry !== 'number' || typeof a.stopLoss !== 'number' || typeof a.takeProfit1 !== 'number') {
-      errors.push('COMPRA: entry, stopLoss e takeProfit1 devem ser numéricos');
+      errors.push({ code: 'validation_numeric_levels', params: { side: "BUY" }, text: 'COMPRA: entry, stopLoss e takeProfit1 devem ser numéricos' });
     } else {
       if (a.entry <= a.stopLoss) {
-        errors.push(`COMPRA: entry (${a.entry}) deve ser > stopLoss (${a.stopLoss})`);
+        errors.push({ code: 'validation_greater', params: { side: "BUY", first: "entry", firstValue: a.entry, second: "stopLoss", secondValue: a.stopLoss }, text: `COMPRA: entry (${a.entry}) deve ser > stopLoss (${a.stopLoss})` });
       }
       if (a.takeProfit1 <= a.entry) {
-        errors.push(`COMPRA: takeProfit1 (${a.takeProfit1}) deve ser > entry (${a.entry})`);
+        errors.push({ code: 'validation_greater', params: { side: "BUY", first: "takeProfit1", firstValue: a.takeProfit1, second: "entry", secondValue: a.entry }, text: `COMPRA: takeProfit1 (${a.takeProfit1}) deve ser > entry (${a.entry})` });
       }
 
       const denominator = a.entry - a.stopLoss;
       if (denominator <= 0) {
-        errors.push('COMPRA: denominador inválido para cálculo de R:R');
+        errors.push({ code: 'validation_rr_denominator', params: { side: "BUY" }, text: 'COMPRA: denominador inválido para cálculo de R:R' });
       } else {
         const rr = (a.takeProfit1 - a.entry) / denominator;
         if (!Number.isFinite(rr) || rr <= 0) {
-          errors.push(`COMPRA: R:R inválido (${rr})`);
+          errors.push({ code: 'validation_rr', params: { side: "BUY", value: String(rr) }, text: `COMPRA: R:R inválido (${rr})` });
         }
       }
     }
 
     if (typeof a.takeProfit2 !== 'number') {
-      errors.push('COMPRA: takeProfit2 deve ser numérico');
+      errors.push({ code: 'validation_numeric_target2', params: { side: "BUY" }, text: 'COMPRA: takeProfit2 deve ser numérico' });
     } else if (typeof a.takeProfit1 === 'number' && a.takeProfit2 <= a.takeProfit1) {
       errors.push(
-        `COMPRA: takeProfit2 (${a.takeProfit2}) deve ser > takeProfit1 (${a.takeProfit1})`,
+        { code: 'validation_greater', params: { side: "BUY", first: "takeProfit2", firstValue: a.takeProfit2, second: "takeProfit1", secondValue: a.takeProfit1 }, text: `COMPRA: takeProfit2 (${a.takeProfit2}) deve ser > takeProfit1 (${a.takeProfit1})` },
       );
     }
   }
 
   if (rec === 'VENDA') {
     if (typeof a.entry !== 'number' || typeof a.stopLoss !== 'number' || typeof a.takeProfit1 !== 'number') {
-      errors.push('VENDA: entry, stopLoss e takeProfit1 devem ser numéricos');
+      errors.push({ code: 'validation_numeric_levels', params: { side: "SELL" }, text: 'VENDA: entry, stopLoss e takeProfit1 devem ser numéricos' });
     } else {
       if (a.entry >= a.stopLoss) {
-        errors.push(`VENDA: entry (${a.entry}) deve ser < stopLoss (${a.stopLoss})`);
+        errors.push({ code: 'validation_less', params: { side: "SELL", first: "entry", firstValue: a.entry, second: "stopLoss", secondValue: a.stopLoss }, text: `VENDA: entry (${a.entry}) deve ser < stopLoss (${a.stopLoss})` });
       }
       if (a.takeProfit1 >= a.entry) {
-        errors.push(`VENDA: takeProfit1 (${a.takeProfit1}) deve ser < entry (${a.entry})`);
+        errors.push({ code: 'validation_less', params: { side: "SELL", first: "takeProfit1", firstValue: a.takeProfit1, second: "entry", secondValue: a.entry }, text: `VENDA: takeProfit1 (${a.takeProfit1}) deve ser < entry (${a.entry})` });
       }
 
       const denominator = a.stopLoss - a.entry;
       if (denominator <= 0) {
-        errors.push('VENDA: denominador inválido para cálculo de R:R');
+        errors.push({ code: 'validation_rr_denominator', params: { side: "SELL" }, text: 'VENDA: denominador inválido para cálculo de R:R' });
       } else {
         const rr = (a.entry - a.takeProfit1) / denominator;
         if (!Number.isFinite(rr) || rr <= 0) {
-          errors.push(`VENDA: R:R inválido (${rr})`);
+          errors.push({ code: 'validation_rr', params: { side: "SELL", value: String(rr) }, text: `VENDA: R:R inválido (${rr})` });
         }
       }
     }
 
     if (typeof a.takeProfit2 !== 'number') {
-      errors.push('VENDA: takeProfit2 deve ser numérico');
+      errors.push({ code: 'validation_numeric_target2', params: { side: "SELL" }, text: 'VENDA: takeProfit2 deve ser numérico' });
     } else if (typeof a.takeProfit1 === 'number' && a.takeProfit2 >= a.takeProfit1) {
       errors.push(
-        `VENDA: takeProfit2 (${a.takeProfit2}) deve ser < takeProfit1 (${a.takeProfit1})`,
+        { code: 'validation_less', params: { side: "SELL", first: "takeProfit2", firstValue: a.takeProfit2, second: "takeProfit1", secondValue: a.takeProfit1 }, text: `VENDA: takeProfit2 (${a.takeProfit2}) deve ser < takeProfit1 (${a.takeProfit1})` },
       );
     }
   }
@@ -1211,7 +1200,7 @@ async function processAnalysis(job: Job<JobData>) {
     const validationErrors = validateTradingLogic(parsed);
 
     if (validationErrors.length > 0) {
-      const validationMessage = `Validação falhou: ${validationErrors.join('; ')}`;
+      const validationMessage = `Validação falhou: ${validationErrors.map(error => error.text).join('; ')}`;
 
       console.error('[Worker] Análise com dados inválidos', {
         analysisId,
@@ -1228,7 +1217,7 @@ async function processAnalysis(job: Job<JobData>) {
           reasoning: validationMessage,
           errorMessage: validationMessage,
           errorCode: 'validation_failed',
-          result: Prisma.DbNull,
+          result: { displayMessages: { validationErrors } },
           fullResponse: rawContent,
         },
       });
@@ -1312,6 +1301,8 @@ async function processAnalysis(job: Job<JobData>) {
           ? { evidence: aiSource.evidence }
           : {}),
         ...strategyFitFields(aiSource),
+        displayMessages: sourcePayload && typeof sourcePayload === 'object' && 'displayMessages' in sourcePayload
+          ? sourcePayload.displayMessages : {},
         engine,
       },
       recommendation: parsed.recommendation,
@@ -1419,7 +1410,7 @@ async function processAnalysis(job: Job<JobData>) {
       errorCode: safeAnalysisFailureCode(error instanceof AIAnalysisError ? error.code : null),
     });
 
-    const safeMessage = safeWorkerErrorMessage(error);
+    const safeMessage = AIAnalysisError.toUserMessage(error);
     const failureRawContent =
       rawContent ||
       (error instanceof AIAnalysisError && error.rawContent ? error.rawContent : null);

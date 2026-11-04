@@ -1,3 +1,4 @@
+import { LOCALES } from '@/lib/i18n';
 // Tres analises de exemplo antes das gratis: otimista, pessimista e neutra.
 //
 // Por que existe: 53 de 80 pessoas tomaram WAIT na primeira analise em set/26
@@ -16,46 +17,30 @@ import type { TrialUsage } from '@/lib/api';
 
 const COPY = {
   en: {
-    pickerTitle: 'See 3 real example analyses first',
     pickerDesc: 'Real reads from the Tickrify engine, saved with what the market did next. Open as many as you like: they do not use your free analyses.',
-    kind: { bullish: 'Bullish', bearish: 'Bearish', neutral: 'Neutral' },
-    viewed: 'Viewed',
-    turnTitle: "Now it's your turn.",
-    turnCta: 'Analyze my chart',
-    eyebrow: 'Example analysis',
-    title: { bullish: 'Bullish example', bearish: 'Bearish example', neutral: 'Neutral example' },
     banner: 'A real analysis from the Tickrify engine, saved on {date}. It is a fixed example: nothing is sent to the AI and it does not use your free analyses.',
-    back: 'Back to examples',
     neutralTitle: 'No trade is also an answer',
     neutralDesc: 'Tickrify does not force a buy or a sell. When the chart has no clean setup, it tells you to stay out and shows what would have to change first. Every result depends on the real conditions of the chart.',
     afterTitle: 'What happened next',
     afterFine: 'One historical example, picked to show the format, not a typical result. Every market and moment is different. Never a promise of results.',
-    otherExamples: 'Other examples',
   },
   pt: {
-    pickerTitle: 'Veja antes 3 análises reais de exemplo',
     pickerDesc: 'Leituras reais do motor da Tickrify, guardadas com o que o mercado fez depois. Abra quantas quiser: elas não gastam suas análises grátis.',
-    kind: { bullish: 'Otimista', bearish: 'Pessimista', neutral: 'Neutro' },
-    viewed: 'Vista',
-    turnTitle: 'Agora é sua vez.',
-    turnCta: 'Analisar meu gráfico',
-    eyebrow: 'Análise de exemplo',
-    title: { bullish: 'Exemplo otimista', bearish: 'Exemplo pessimista', neutral: 'Exemplo neutro' },
     banner: 'Uma análise real do motor da Tickrify, feita em {date}. É um exemplo fixo: nada é enviado para a IA e não gasta suas análises grátis.',
-    back: 'Voltar aos exemplos',
     neutralTitle: 'Não entrar também é uma resposta',
     neutralDesc: 'A Tickrify não força compra nem venda. Quando o gráfico não tem um setup limpo, ela diz para ficar de fora e mostra o que precisaria mudar antes. Todo resultado depende das condições reais do gráfico.',
     afterTitle: 'O que aconteceu depois',
     afterFine: 'Um exemplo histórico, escolhido para mostrar o formato, não um resultado típico. Cada mercado e momento é diferente. Nunca uma promessa de resultado.',
-    otherExamples: 'Outros exemplos',
   },
 } as const;
 
-type Copy = (typeof COPY)[keyof typeof COPY];
-
-function useSampleCopy(): Copy {
-  const { language } = useLanguage();
-  return language === 'pt' ? COPY.pt : COPY.en;
+function useSampleCopy() {
+  const { language, t } = useLanguage();
+  const content = language === 'pt' ? COPY.pt : COPY.en;
+  return { ...content, ...t.sampleUi,
+    kind: { bullish: t.sampleUi.bullish, bearish: t.sampleUi.bearish, neutral: t.sampleUi.neutral },
+    title: { bullish: t.sampleUi.bullishTitle, bearish: t.sampleUi.bearishTitle, neutral: t.sampleUi.exampleNeutralTitle },
+  };
 }
 
 const KIND_ICON = { bullish: ArrowUp, bearish: ArrowDown, neutral: Minus } as const;
@@ -218,7 +203,7 @@ export const SampleAnalysisView = ({
 }) => {
   const c = useSampleCopy();
   const { language } = useLanguage();
-  const date = new Date(sample.analysis.createdAt).toLocaleDateString(language === 'pt' ? 'pt-BR' : 'en-US', {
+  const date = new Date(sample.analysis.createdAt).toLocaleDateString(LOCALES[language], {
     day: 'numeric',
     month: 'short',
     year: 'numeric',

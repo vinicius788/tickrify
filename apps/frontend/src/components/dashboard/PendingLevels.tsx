@@ -1,4 +1,5 @@
 import { BellPlus, BellRing } from 'lucide-react';
+import { formatNumber } from '@/lib/i18n';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
@@ -156,8 +157,6 @@ export function WatchPending({
   );
 }
 
-const atrText = (n: number) => (Math.round(n * 10) / 10).toFixed(1);
-
 function MapAlertButton({ analysisId, level, format }: { analysisId: string; level: number; format: (value: number) => string }) {
   const options = useAlertOptions(analysisId);
   if (!options.data?.available || options.isError) return null;
@@ -176,7 +175,7 @@ export function LevelMapCard({
   alerts: boolean;
   formatPrice: (value: number | null) => string;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const p = t.pending;
   // "$ 78,310.00" nunca quebra entre o simbolo e o numero.
   const price = (v: number) => formatPrice(v).replace(/ /g, '\u00a0');
@@ -185,7 +184,7 @@ export function LevelMapCard({
       ? (up ? p.above : p.below)
           .replace('{level}', price(side.level))
           .replace('{next}', price(side.next))
-          .replace('{n}', atrText(side.nextAtr))
+          .replace('{n}', formatNumber(Math.round(side.nextAtr * 10) / 10, language, { minimumFractionDigits: 1, maximumFractionDigits: 1 }))
       : (up ? p.aboveEdge : p.belowEdge).replace('{level}', price(side.level));
   const sides: Array<{ key: 'above' | 'below'; side: LevelMapSide; up: boolean }> = [];
   if (levelMap.above) sides.push({ key: 'above', side: levelMap.above, up: true });

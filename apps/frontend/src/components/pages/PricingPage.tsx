@@ -6,92 +6,11 @@ import { seoFor, useJsonLd, useSeo } from '@/hooks/useSeo';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useFoundingOffer } from '@/hooks/useFoundingOffer';
 
-const PRICING_COPY = {
-  en: {
-    eyebrow: 'Pricing',
-    title: 'One plan. Choose your billing cycle.',
-    subtitle:
-      'No tiers to compare and nothing held back for a higher price. Every subscriber runs the same engine, on the same queue, with the same models.',
-    foundingTitle: 'Founding Trader offer',
-    foundingDesc:
-      'You are early, and that counts. While this offer lasts, the',
-    foundingCode: 'EARLY35',
-    foundingSuffix: 'discount is applied automatically at checkout on the monthly plan: 35% off your first month, then $29/month.',
-    trust: ['Payments secured by Stripe', 'Cancel anytime in Settings', 'No broker connection required'],
-    faqTitle: 'Before you pay',
-    faqEyebrow: 'Questions',
-    faq: [
-      {
-        q: 'How do I cancel?',
-        a: 'Anytime, from Settings in your dashboard: Settings, then Manage subscription, then Cancel subscription. No email needed. Canceling stops future charges, and you keep your Ticks and full access until the end of the period you already paid for. After that your account stays open in read mode with your history, and you can reactivate before that date in the same place. Questions: support@tickrify.com.',
-      },
-      {
-        q: 'How do Ticks work?',
-        a: 'Ticks are Tickrify’s analysis credits. The monthly plan resets your balance to 200 Ticks every billing month, and the weekly plan ($7.99) resets it to 25 Ticks every week. The yearly plan costs $290 upfront and renews annually, with a balance reset to 200 Ticks each month. Unused Ticks do not carry over. A quick analysis uses 1 Tick; a deep analysis uses 3 Ticks.',
-      },
-      {
-        q: 'Can I switch plans later?',
-        a: 'Yes. Write to support@tickrify.com and we switch you between the weekly, monthly and yearly plans, starting on your next billing date. You can also cancel in Settings and pick the new plan when your current period ends.',
-      },
-      {
-        q: 'Which payment methods are accepted?',
-        a: 'We accept all major credit cards (Visa, Mastercard, Amex) through our secure payment processor, Stripe.',
-      },
-      {
-        q: 'Is my card data safe?',
-        a: 'Yes. We use Stripe, one of the most secure payment processors in the world. We never store your card data on our servers.',
-      },
-      {
-        q: 'Is there a refund guarantee?',
-        a: 'You can try one anonymous demo per device. Eligible accounts receive up to 7 analyses across 3 usage days (3/2/2), within 7 days, with no card or automatic charge. Existing accounts keep their applicable free allowance. Subscriptions renew until canceled. Per the Terms of Service purchases are final, but if anything goes wrong with an analysis, reply to any email and we’ll make it right. We read every message.',
-      },
-    ],
-  },
-  pt: {
-    eyebrow: 'Preço',
-    title: 'Um plano só. Escolha seu ciclo de cobrança.',
-    subtitle:
-      'Sem tiers para comparar e sem recurso escondido atrás de um preço maior. Todo assinante roda o mesmo motor, na mesma fila, com os mesmos modelos.',
-    foundingTitle: 'Oferta Founding Trader',
-    foundingDesc:
-      'Você chegou cedo, e isso conta. Enquanto a oferta durar, o desconto',
-    foundingCode: 'EARLY35',
-    foundingSuffix: 'é aplicado automaticamente no checkout do plano mensal: 35% no primeiro mês, depois US$ 29/mês.',
-    trust: ['Pagamento protegido pela Stripe', 'Cancele quando quiser em Configurações', 'Não precisa conectar corretora'],
-    faqTitle: 'Antes de pagar',
-    faqEyebrow: 'Dúvidas',
-    faq: [
-      {
-        q: 'Como eu cancelo?',
-        a: 'Quando quiser, em Configurações no seu painel: Configurações, depois Gerenciar assinatura, depois Cancelar assinatura. Não precisa mandar e-mail. Cancelar interrompe as próximas cobranças, e você mantém seus Ticks e o acesso completo até o fim do período que já pagou. Depois disso a conta continua aberta em modo leitura com o seu histórico, e dá para reativar antes dessa data no mesmo lugar. Dúvidas: support@tickrify.com.',
-      },
-      {
-        q: 'Como funcionam os Ticks?',
-        a: 'Ticks são os créditos de análise da Tickrify. O plano mensal volta seu saldo para 200 Ticks a cada mês de cobrança, e o plano semanal (US$ 7,99) volta para 25 Ticks toda semana. O anual custa US$ 290 antecipados e renova anualmente, com saldo renovado para 200 Ticks por mês. Ticks não utilizados não acumulam. Uma análise rápida consome 1 Tick; uma análise deep consome 3 Ticks.',
-      },
-      {
-        q: 'Posso trocar de plano depois?',
-        a: 'Sim. Escreva para support@tickrify.com e trocamos você entre os planos semanal, mensal e anual a partir da próxima cobrança. Você também pode cancelar em Configurações e escolher o novo plano quando o período atual terminar.',
-      },
-      {
-        q: 'Quais métodos de pagamento são aceitos?',
-        a: 'Aceitamos todos os principais cartões de crédito (Visa, Mastercard, Amex) através do nosso processador de pagamentos seguro Stripe.',
-      },
-      {
-        q: 'Os dados do meu cartão estão seguros?',
-        a: 'Sim! Utilizamos o Stripe, um dos processadores de pagamento mais seguros do mundo. Não armazenamos dados do seu cartão em nossos servidores.',
-      },
-      {
-        q: 'Há garantia de reembolso?',
-        a: 'Você pode testar uma demo anônima por dispositivo. Contas elegíveis recebem até 7 análises em 3 dias de uso (3/2/2), dentro de 7 dias, sem cartão nem cobrança automática. Contas existentes mantêm sua cota gratuita aplicável. Assinaturas renovam até cancelar. Pelos Termos de Serviço as compras são finais, mas se algo der errado em uma análise, responda qualquer e-mail que a gente resolve. Lemos cada mensagem.',
-      },
-    ],
-  },
-} as const;
+
 
 export default function PricingPage() {
-  const { language } = useLanguage();
-  const copy = language === 'pt' ? PRICING_COPY.pt : PRICING_COPY.en;
+  const { t } = useLanguage();
+  const copy = t.pricingPage;
   const foundingOffer = useFoundingOffer();
 
   // Intenção transacional pura, e até 10/08/2026 esta página servia o title e

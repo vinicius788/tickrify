@@ -60,34 +60,28 @@ const Footer = () => {
               linkava NENHUMA delas: os unicos referenciadores internos eram os
               posts do blog. Aqui elas ganham link em toda pagina publica.
 
-              Rotulos em ingles de proposito, mesmo com o resto do rodape
-              traduzido: as paginas de destino sao escritas so em ingles, e um
-              rotulo em japones abrindo pagina em ingles engana mais do que
-              ajuda. O titulo da coluna, esse sim, e traduzido.
-
               <a> e nao <Link>: sao arquivos estaticos de public/, servidos fora
               do router (mesma razao do /blog/ logo abaixo). */}
           <div className="site-footer-col">
             <h2>{f.markets}</h2>
             <ul>
-              <li><a href="/for/forex/">AI Forex chart analysis</a></li>
-              <li><a href="/for/gold/">AI Gold chart analysis (XAUUSD)</a></li>
-              <li><a href="/for/bitcoin/">AI crypto chart analysis</a></li>
-              <li><a href="/for/tradingview/">For TradingView</a></li>
-              <li><a href="/for/metatrader/">For MetaTrader</a></li>
-              <li><a href="/tools/">Free trading calculators</a></li>
+              <li><a href="/for/forex/">{t.interfaceExtras.forex}</a></li>
+              <li><a href="/for/gold/">{t.interfaceExtras.gold}</a></li>
+              <li><a href="/for/bitcoin/">{t.interfaceExtras.crypto}</a></li>
+              <li><a href="/for/tradingview/">{t.interfaceExtras.tradingview}</a></li>
+              <li><a href="/for/metatrader/">{t.interfaceExtras.metatrader}</a></li>
+              <li><a href="/tools/">{t.interfaceExtras.calculators}</a></li>
             </ul>
           </div>
 
           <div className="site-footer-col">
             <h2>{f.company}</h2>
             <ul>
-              <li><Link to="/about">About</Link></li>
+              <li><Link to="/about">{t.interfaceExtras.about}</Link></li>
               <li><a href="/blog/">{f.blog}</a></li>
               <li><a href="/#faq">{f.faq}</a></li>
               <li><a href="mailto:support@tickrify.com">{f.support}</a></li>
-              {/* Rotulo em ingles, como a coluna Markets: a pagina e so em ingles. */}
-              <li><Link to="/affiliates">Affiliate program</Link></li>
+              <li><Link to="/affiliates">{t.interfaceExtras.affiliates}</Link></li>
             </ul>
           </div>
 

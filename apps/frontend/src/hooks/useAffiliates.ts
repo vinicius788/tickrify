@@ -1,5 +1,8 @@
 import { useAuth } from '@clerk/clerk-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { errorText } from '@/lib/i18n/messages';
+import type { Language, Translations } from '@/lib/i18n';
 import { buildApiUrl, fetchWithAuthRetry } from '@/lib/api';
 
 /**
@@ -121,13 +124,14 @@ export function formatUsd(cents: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
 }
 
-async function errorMessage(res: Response, fallback: string): Promise<string> {
-  const body = (await res.json().catch(() => null)) as { message?: string | string[] } | null;
+async function errorMessage(res: Response, fallback: string, t: Translations, language: Language): Promise<string> {
+  const body = (await res.json().catch(() => null)) as { message?: string | string[]; code?: string; params?: Record<string, string | number> } | null;
   const message = Array.isArray(body?.message) ? body?.message.join(', ') : body?.message;
-  return message || `${fallback} (${res.status})`;
+  return errorText(t, language, { ...body, message }, `${fallback} (${res.status})`);
 }
 
 function useAuthedFetch() {
+  const { t, language } = useLanguage();
   const { getToken } = useAuth();
   return async (path: string, init: RequestInit = {}, fallback = 'Request failed') => {
     const token = await getToken();
@@ -142,8 +146,11 @@ function useAuthedFetch() {
       },
       () => getToken({ skipCache: true }),
     );
-    if (res.status === 403) throw new Error('SEM_ACESSO');
-    if (!res.ok) throw new Error(await errorMessage(res, fallback));
+    if (res.status === 403) {
+      const body = await res.clone().json().catch(() => null);
+      if (!body?.code) throw new Error('SEM_ACESSO');
+    }
+    if (!res.ok) throw new Error(await errorMessage(res, fallback, t, language));
     return res.json();
   };
 }

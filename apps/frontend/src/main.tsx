@@ -4,7 +4,9 @@ import * as Sentry from '@sentry/react';
 import { ClerkProvider } from '@clerk/clerk-react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App.tsx';
-import { LanguageProvider } from '@/lib/i18n/LanguageContext';
+import { getTranslations, getStoredLanguage } from '@/lib/i18n';
+import { enUS, ptBR, esES, frFR, deDE, jaJP } from '@clerk/localizations';
+import { LanguageProvider, AccountLanguageSync, useLanguage } from '@/lib/i18n/LanguageContext';
 import { initAnalytics, initAnonymousAnalytics, revokeAnalyticsConsent } from './lib/analytics';
 import { CONSENT_EVENT, getConsent } from './lib/consent';
 import { AnalyticsIdentify } from './components/providers/AnalyticsIdentify';
@@ -225,16 +227,17 @@ const PUBLISHABLE_KEY = String(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || '')
 const API_URL = String(import.meta.env.VITE_API_URL || '').trim();
 const rootElement = document.getElementById('root')!;
 const missingVars: string[] = [];
+const bootstrapCopy = getTranslations(getStoredLanguage()).interfaceExtras;
 const queryClient = new QueryClient();
 
 if (!PUBLISHABLE_KEY || PUBLISHABLE_KEY.includes('YOUR_CLERK')) {
   document.body.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0A0B0D;color:#E8ECF4;font-family:sans-serif;flex-direction:column;gap:12px;">
       <p style="color:#FF3B5C;font-size:14px;">
-        VITE_CLERK_PUBLISHABLE_KEY não configurada.
+        ${bootstrapCopy.missingClerk}
       </p>
       <p style="color:#8892A4;font-size:12px;">
-        Configure a variável de ambiente no Vercel e faça redeploy.
+        ${bootstrapCopy.configureEnvironment}
       </p>
     </div>
   `;
@@ -249,9 +252,9 @@ if (missingVars.length > 0) {
   document.body.innerHTML = `
     <div style="font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f8fafc; color: #0f172a; padding: 24px;">
       <div style="max-width: 680px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; padding: 20px;">
-        <h1 style="margin-top: 0; margin-bottom: 8px; font-size: 20px;">Erro de configuração</h1>
-        <p style="margin: 0 0 8px 0;">Variáveis obrigatórias ausentes: <strong>${missingVars.join(', ')}</strong>.</p>
-        <p style="margin: 0;">Contate o suporte da plataforma.</p>
+        <h1 style="margin-top: 0; margin-bottom: 8px; font-size: 20px;">${bootstrapCopy.configurationError}</h1>
+        <p style="margin: 0 0 8px 0;">${bootstrapCopy.missingVariables} <strong>${missingVars.join(', ')}</strong>.</p>
+        <p style="margin: 0;">${bootstrapCopy.contactSupport}</p>
       </div>
     </div>
   `;
@@ -259,30 +262,41 @@ if (missingVars.length > 0) {
   throw new Error(`${missingVars.join(', ')} is not defined`);
 }
 
+const clerkLocales = { en: enUS, pt: ptBR, es: esES, fr: frFR, de: deDE, ja: jaJP };
+
+function GlobalFailure() {
+  const { t } = useLanguage();
+  return (
+    <div style={{ padding: 24, color: '#E8ECF4', background: '#0A0B0D', minHeight: '100vh', fontFamily: 'system-ui, sans-serif' }}>
+      <p style={{ margin: '0 0 12px' }}>{t.common.globalFailure}</p>
+      <button type="button" onClick={() => window.location.reload()}
+        style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #3a3f47', background: '#f7f7f5', color: '#08090a', cursor: 'pointer' }}>
+        {t.common.reload}
+      </button>
+    </div>
+  );
+}
+
+function LocalizedClerk() {
+  const { language } = useLanguage();
+  return (
+    <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/" appearance={clerkAppearance} localization={clerkLocales[language]}>
+      <AccountLanguageSync>
+        <AnalyticsIdentify />
+        <App />
+      </AccountLanguageSync>
+    </ClerkProvider>
+  );
+}
+
 createRoot(rootElement).render(
   <StrictMode>
-    <Sentry.ErrorBoundary
-      fallback={
-        <div style={{ padding: 24, color: '#E8ECF4', background: '#0A0B0D', minHeight: '100vh', fontFamily: 'system-ui, sans-serif' }}>
-          <p style={{ margin: '0 0 12px' }}>Something went wrong. Reload the page to continue.</p>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #3a3f47', background: '#f7f7f5', color: '#08090a', cursor: 'pointer' }}
-          >
-            Reload
-          </button>
-        </div>
-      }
-    >
-      <QueryClientProvider client={queryClient}>
-        <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/" appearance={clerkAppearance}>
-          <LanguageProvider>
-            <AnalyticsIdentify />
-            <App />
-          </LanguageProvider>
-        </ClerkProvider>
-      </QueryClientProvider>
-    </Sentry.ErrorBoundary>
+    <LanguageProvider>
+      <Sentry.ErrorBoundary fallback={<GlobalFailure />}>
+        <QueryClientProvider client={queryClient}>
+          <LocalizedClerk />
+        </QueryClientProvider>
+      </Sentry.ErrorBoundary>
+    </LanguageProvider>
   </StrictMode>,
 );

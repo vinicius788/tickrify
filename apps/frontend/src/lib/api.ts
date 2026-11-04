@@ -124,6 +124,7 @@ export interface AnalysisEvidence {
 export class APIError extends Error {
   status: number;
   code?: string;
+  params?: Record<string, string | number>;
   /**
    * Erro original, quando este APIError so classifica uma falha que nasceu
    * fora da API (rede, abort, token do Clerk). A telemetria le daqui o nome e
@@ -132,12 +133,13 @@ export class APIError extends Error {
    */
   cause?: unknown;
 
-  constructor(message: string, status: number, code?: string, cause?: unknown) {
+  constructor(message: string, status: number, code?: string, cause?: unknown, params?: Record<string, string | number>) {
     super(message);
     this.name = 'APIError';
     this.status = status;
     this.code = code;
     this.cause = cause;
+    this.params = params;
   }
 }
 
@@ -182,6 +184,7 @@ export interface AIAnalysisResponse {
   timeframe?: string | null;
   period?: string | null;
   reasoning?: string;
+  errorDetails?: import('./i18n/messages').DisplayMessage[] | null;
   errorMessage?: string | null;
   errorCode?: string | null;
   // O backend devolve isto (ai.service.ts) desde a Onda 2.2, mas a interface
@@ -225,7 +228,7 @@ export interface AIAnalysisResponse {
     /** NO_TRADE com REAL DATA: os dois lados do preco, pelo codigo; ausente em analise antiga. */
     levelMap?: LevelMap | null;
     /** Contrato do motor; `no_trade_reason` e o motivo em uma linha do NO_TRADE. */
-    engine?: { contract?: { no_trade_reason?: string | null } | null } | null;
+    engine?: { contract?: { no_trade_reason?: string | null; no_trade_reason_code?: string | null; no_trade_reason_params?: Record<string, string | number> } | null } | null;
     bias: Bias;
     confidence: number;
     reasoning: string;
@@ -645,11 +648,18 @@ class APIClient {
 
   private async buildApiError(response: Response, fallbackMessage: string): Promise<APIError> {
     const error = await response.json().catch(() => ({}));
-    const rawMessage = error.message || fallbackMessage;
-    const message =
-      typeof rawMessage === 'string' ? rawMessage : JSON.stringify(rawMessage);
-    const code = error.code || error.error || undefined;
-    return new APIError(message, response.status, code);
+    // Older endpoints put their structured error inside message as JSON.
+    let details = error;
+    if (typeof error.message === 'string') {
+      try {
+        const nested = JSON.parse(error.message);
+        if (nested && typeof nested === 'object' && typeof nested.code === 'string') details = nested;
+      } catch { /* ordinary legacy message */ }
+    }
+    const rawMessage = details.message || fallbackMessage;
+    const message = typeof rawMessage === 'string' ? rawMessage : JSON.stringify(rawMessage);
+    const code = details.code || error.error || undefined;
+    return new APIError(message, response.status, code, undefined, details.params);
   }
 
   async createAnalysis(

@@ -1,3 +1,4 @@
+import type { DisplayMessage } from './display-message';
 import { presentAnalysis } from './analysis-presentation';
 import { storedSignalState } from './signal-decision';
 import { isValidWatchPlan } from './plan-engine';
@@ -163,12 +164,18 @@ export function buildPersistedAnalysisPayload(params: {
     drawingPlan = buildDemoDrawingPlan(recommendation, bias);
   }
 
+  const displayMessages: Record<string, DisplayMessage> = { ...(params.source.displayMessages ?? {}) };
   let annotatedImageUrl: string | null = null;
   let drawingFailed = false;
   const originalImageUrl = params.originalImageUrl || null;
 
   if (drawingPlan && originalImageUrl) {
+    const beforeReferences = reasoning;
     reasoning = ensureReasoningReferencesDrawing(reasoning, drawingPlan);
+    if (reasoning !== beforeReferences) {
+      const [firstId, secondId] = drawingPlan.elements.map(element => element.id).filter(Boolean);
+      displayMessages.drawingReferences = { code: 'drawing_references', params: { firstId, secondId }, text: reasoning.slice(beforeReferences.trim().length).trim() };
+    }
 
     try {
       annotatedImageUrl = renderAnnotatedImage(originalImageUrl, drawingPlan);
@@ -206,6 +213,7 @@ export function buildPersistedAnalysisPayload(params: {
     watchPlan,
     dataMode,
     validatorNotes,
+    displayMessages,
     recommendation,
     bias,
     confidence,

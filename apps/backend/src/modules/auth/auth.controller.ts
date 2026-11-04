@@ -1,6 +1,6 @@
 import { Body, Controller, Get, OnModuleInit, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { IsBoolean, IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString, Matches, MaxLength, ValidateIf } from 'class-validator';
 import { AuthGuard } from './auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PrismaService } from '../database/prisma.service';
@@ -138,8 +138,13 @@ export class SetTechnicalAttributionDto {
 
 /** Tema da area logada (13/10/2026). Lista fechada: o ValidationPipe rejeita o resto. */
 export class SetPreferencesDto {
+  @ValidateIf((_object, value) => value !== undefined)
   @IsIn(['dark', 'light'])
-  theme!: 'dark' | 'light';
+  theme?: 'dark' | 'light';
+
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsIn(['en', 'pt', 'es', 'fr', 'de', 'ja'])
+  language?: 'en' | 'pt' | 'es' | 'fr' | 'de' | 'ja';
 }
 
 @Controller('auth')
@@ -169,6 +174,7 @@ export class AuthController implements OnModuleInit {
       // Tema escolhido em Configuracoes (13/10/2026). NULL = nunca escolheu =
       // escuro. Fora do schema.prisma de proposito (migracao 20261013150000).
       'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "themePreference" TEXT',
+      'ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "languagePreference" TEXT',
     ];
     for (const sql of colunas) {
       try {
@@ -297,21 +303,25 @@ export class AuthController implements OnModuleInit {
   }
 
   /**
-   * Preferencias da conta. Hoje so o tema: vale em qualquer aparelho e depois
+   * Preferencias da conta (tema e idioma): vale em qualquer aparelho e depois
    * de sair e entrar. null = nunca escolheu (o painel fica no escuro).
    */
   @Get('preferences')
   @UseGuards(AuthGuard)
   async getPreferences(@CurrentUser() user: { id?: string; clerkUserId: string }) {
     try {
-      const rows = await this.prisma.$queryRawUnsafe<Array<{ themePreference: string | null }>>(
-        'SELECT "themePreference" FROM "tickrify"."User" WHERE "clerkUserId" = $1',
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ themePreference: string | null; languagePreference: string | null }>>(
+        'SELECT "themePreference", "languagePreference" FROM "tickrify"."User" WHERE "clerkUserId" = $1',
         user.clerkUserId,
       );
       const theme = rows[0]?.themePreference;
-      return { theme: theme === 'light' || theme === 'dark' ? theme : null };
+      const language = rows[0]?.languagePreference;
+      return {
+        theme: theme === 'light' || theme === 'dark' ? theme : null,
+        language: language && ['en', 'pt', 'es', 'fr', 'de', 'ja'].includes(language) ? language : null,
+      };
     } catch {
-      return { theme: null };
+      return { theme: null, language: null };
     }
   }
 
@@ -319,15 +329,24 @@ export class AuthController implements OnModuleInit {
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   async setPreferences(@CurrentUser() user: { id?: string; clerkUserId: string }, @Body() body: SetPreferencesDto) {
-    const changed = await this.prisma.$executeRawUnsafe(
-      `UPDATE "tickrify"."User" SET "themePreference" = $2
-        WHERE "clerkUserId" = $1 AND "themePreference" IS DISTINCT FROM $2`,
-      user.clerkUserId,
-      body.theme,
-    );
-    // So conta troca de verdade (mesmo valor reenviado nao vira evento).
-    if (changed > 0) captureServer(user.clerkUserId, 'theme_changed', { theme: body.theme, $set: { theme: body.theme } });
-    return { theme: body.theme };
+    if (body.theme !== undefined) {
+      const changed = await this.prisma.$executeRawUnsafe(
+        `UPDATE "tickrify"."User" SET "themePreference" = $2
+          WHERE "clerkUserId" = $1 AND "themePreference" IS DISTINCT FROM $2`,
+        user.clerkUserId,
+        body.theme,
+      );
+      if (changed > 0) captureServer(user.clerkUserId, 'theme_changed', { theme: body.theme, $set: { theme: body.theme } });
+    }
+    if (body.language !== undefined) {
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "tickrify"."User" SET "languagePreference" = $2
+          WHERE "clerkUserId" = $1 AND "languagePreference" IS DISTINCT FROM $2`,
+        user.clerkUserId,
+        body.language,
+      );
+    }
+    return { ...(body.theme !== undefined ? { theme: body.theme } : {}), ...(body.language !== undefined ? { language: body.language } : {}) };
   }
 
   @Get('me')
