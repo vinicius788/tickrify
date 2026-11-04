@@ -26,12 +26,13 @@ export interface ReadModeData {
 }
 
 interface ReadModePanelProps {
+  actionLabel?: string;
   data: ReadModeData;
   formatPrice: (value: number | null) => string;
 }
 
 
-export function ReadModePanel({ data, formatPrice }: ReadModePanelProps) {
+export function ReadModePanel({ data, formatPrice, actionLabel }: ReadModePanelProps) {
   const { t, language } = useLanguage();
   const atrText = (n: number) => formatNumber(Math.round(n * 10) / 10, language, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const m = t.analysis.result.readMode;
@@ -101,7 +102,7 @@ export function ReadModePanel({ data, formatPrice }: ReadModePanelProps) {
 
       <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-4">
         <h4 className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{m.actionTitle}</h4>
-        <p data-testid="read-mode-action" className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{signalStateLabel(a, data.state, actionSide)}</p>
+        <p data-testid="read-mode-action" className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{actionLabel ?? signalStateLabel(a, data.state, actionSide)}</p>
         {(data.state === 'ENTER_NOW' || data.state === 'ARMED') && (
           <dl className="mt-2 space-y-1 text-sm">
             {([

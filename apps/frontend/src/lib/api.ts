@@ -171,6 +171,8 @@ function classifyTransportError(error: unknown, path: string): unknown {
 }
 
 export interface AIAnalysisResponse {
+  setupId?: string | null;
+  previousWatchPlan?: WatchPlan | null;
   id: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   recommendation?: Recommendation;

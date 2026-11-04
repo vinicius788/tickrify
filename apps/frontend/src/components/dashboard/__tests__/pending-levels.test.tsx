@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AnalysisResult from '@/components/dashboard/AnalysisResult';
 import TodaySection from '@/components/dashboard/TodaySection';
-import { LevelMapCard, WatchPending } from '@/components/dashboard/PendingLevels';
+import { LevelMapCard, WatchNextSteps, WatchPending } from '@/components/dashboard/PendingLevels';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import { APIError, type AIAnalysisResponse, type LevelMap, type WatchSummary } from '@/lib/api';
 import { formatTimeLeft, type SetupAlert } from '@/lib/setups';
@@ -19,10 +19,12 @@ vi.mock('@/lib/analytics', async (importOriginal) => ({
 }));
 const mutate = vi.fn();
 let priceAvailable = true;
+let optionsError: APIError | null = null;
 let alertItems: SetupAlert[] = [];
 vi.mock('@/lib/setups', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/setups')>()),
-  useAlertOptions: () => ({ data: { available: priceAvailable, setupId: 's1' } }),
+  useSetupActions: () => ({ follow: { mutate: vi.fn(), isPending: false } }),
+  useAlertOptions: () => ({ error: optionsError, data: { available: priceAvailable, setupId: 's1' } }),
   useSetupAlerts: () => ({ data: { paused: false, pausedSymbol: null, items: alertItems, unseen: 0, emailEnabled: false } }),
   useAlertActions: () => ({ create: { mutate, isPending: false }, cancel: { mutate: vi.fn() }, seen: { mutate: vi.fn() } }),
 }));
@@ -132,6 +134,33 @@ describe('WATCH pendente', () => {
     expect(toast).toHaveBeenCalledWith({ title: 'Subscribe to set price alerts.' });
   });
 
+  it('creates a prefilled alert in the numbered result steps and reports a 402', () => {
+    mutate.mockImplementationOnce((_input, opts) => opts.onError(new APIError('locked', 402)));
+    wrap(<WatchNextSteps analysisId="w1" watch={watch({ expiresAt: '2099-11-03T12:00:00Z' })} />);
+    expect(screen.getAllByRole('listitem')).toHaveLength(3);
+    expect(screen.getByText(/5-minute candles/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Alert me at 77,800' }));
+    expect(mutate).toHaveBeenCalledWith({ analysisId: 'w1', level: 77800, label: 'entry' }, expect.anything());
+    expect(track).toHaveBeenCalledWith('next_step_clicked', { step: 'alert' });
+    expect(toast).toHaveBeenCalledWith({ title: 'Subscribe to set price alerts.' });
+  });
+
+  it('omits the alert step for an unsupported asset and honors locked alert options', () => {
+    const w = watch({ expiresAt: '2099-11-03T12:00:00Z' });
+    priceAvailable = false;
+    try {
+      wrap(<WatchNextSteps analysisId="w1" watch={w} />);
+      expect(screen.getByText(/available for this asset/)).toBeTruthy();
+      expect(screen.queryByText(/When the alert fires/)).toBeNull();
+      expect(screen.getAllByRole('listitem')).toHaveLength(2);
+      cleanup();
+      optionsError = new APIError('locked', 402);
+      wrap(<WatchNextSteps analysisId="w1" watch={w} />);
+      expect(screen.getByText('Subscribe to set price alerts.')).toBeTruthy();
+      expect(screen.queryByRole('button')).toBeNull();
+    } finally { priceAvailable = true; optionsError = null; }
+  });
+
   it('formata o tempo que falta', () => {
     expect(formatTimeLeft(90 * 60_000, 'en-US')).toBe('1h 30m');
     expect(formatTimeLeft(26 * 3_600_000, 'en-US')).toBe('1d 2h');
@@ -147,6 +176,16 @@ describe('Today: WATCH pendente mesmo sem alerta', () => {
     id, status: 'completed', recommendation: 'WAIT', signalState: 'WATCH', symbol: 'BTCUSDT', timeframe: '15m',
     createdAt: '2026-11-03T11:00:00Z', updatedAt: '2026-11-03T11:00:00Z', watch: w,
   } as AIAnalysisResponse);
+
+  it('keeps the touched alert separate from the personal result of its own analysis', () => {
+    const reached = alert({ status: 'triggered', triggeredAt: '2026-11-03T12:00:00Z' });
+    const personal = { ...row('w1', null), outcome: 'stop', marketOutcome: 'WIN' };
+    wrap(<TodaySection base="/dashboard" openTrades={[]} alerts={{ paused: false, pausedSymbol: null, items: [reached], unseen: 1, emailEnabled: false }} analyses={[personal]} />);
+    expect(screen.getByText('Saved plan · Watch')).toBeTruthy();
+    expect(screen.getByText('Price reached the level · 77,800')).toBeTruthy();
+    expect(screen.getByText('Personal result · Stop hit')).toBeTruthy();
+    expect(screen.queryByText('Entry recorded')).toBeNull();
+  });
 
   it('aparece com o botao; some quando ja tem alerta ativo ou a janela fechou', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -224,6 +263,7 @@ describe('NO_TRADE: mapa dos dois lados', () => {
   it('modo print ou analise antiga sem o campo: sem bloco', () => {
     wrap(<AnalysisResult analysisData={noTrade({ dataMode: 'print', levelMap: null })} uploadedImage={null} alertsEnabled />);
     expect(screen.queryByTestId('level-map')).toBeNull();
+    expect(screen.getByText('Try another chart or timeframe')).toBeTruthy();
     cleanup();
     wrap(<AnalysisResult analysisData={noTrade({ dataMode: 'real_data' })} uploadedImage={null} alertsEnabled />);
     expect(screen.queryByTestId('level-map')).toBeNull();

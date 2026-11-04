@@ -62,8 +62,8 @@ import {
   type RecoveryEmailDeps,
 } from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
-import { SetupsService, recordSetupVersion } from './setups.service';
-import { loadWatchContexts, watchSummaryOf } from './watch-pending';
+import { SetupsService, readPlan, recordSetupVersion } from './setups.service';
+import { loadWatchContexts, storedWatchPlan, watchSummaryOf } from './watch-pending';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from './analysis-data-coverage';
 import { tp1RFromDetail } from '../mail/analysis-result-email';
 import { TRADE_EMOTIONS, TRADE_MISTAKES, TRADE_NOTE_MAX, TRADE_SETUPS } from './dto/set-trade-note.dto';
@@ -660,7 +660,7 @@ export class AiService implements OnModuleInit {
     const readable = await this.readableAnalysisIds(userId);
     if (readable && !readable.includes(analysis.id)) throw this.freeLockedError();
 
-    return this.serializeAnalysis(analysis);
+    return this.serializeAnalysis(analysis, readable);
   }
 
   /**
@@ -1869,6 +1869,8 @@ export class AiService implements OnModuleInit {
 
   private async serializeAnalysis(analysis: {
     id: string;
+    setupId?: string | null;
+    userId?: string;
     imageUrl?: string | null;
     status: string;
     recommendation?: string | null;
@@ -1882,7 +1884,7 @@ export class AiService implements OnModuleInit {
     outcomeDetail?: unknown;
     createdAt: Date;
     updatedAt: Date;
-  }) {
+  }, readable: string[] | null = null) {
     const normalized = normalizeStoredAnalysis(analysis);
     const signedOriginalImageUrl = await this.getSignedImageUrl(normalized.originalImageUrl);
     const signedAnnotatedImageUrl = await this.getSignedImageUrl(normalized.annotatedImageUrl);
@@ -1893,7 +1895,28 @@ export class AiService implements OnModuleInit {
     );
     const outcomeData = await this.getOutcomeById(analysis.id);
 
+    const watchContext = storedSignalState(storedPayload, normalized.recommendation) === 'WATCH'
+      ? (await loadWatchContexts(this.prisma, [analysis.id])).get(analysis.id)
+      : null;
+    // Read adjacent saved versions. Never attach subsequent market events to the AI payload.
+    const previous = analysis.setupId && analysis.userId && storedPayload?.signalState === 'ENTER_NOW'
+      ? await this.prisma.analysis.findFirst({
+          where: {
+            userId: analysis.userId, setupId: analysis.setupId, status: 'completed',
+            OR: [{ createdAt: { lt: analysis.createdAt } }, { createdAt: analysis.createdAt, id: { lt: analysis.id } }],
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          select: { id: true, result: true },
+        }).catch(() => null)
+      : null;
+    const previousRead = previous && (!readable || readable.includes(previous.id)) ? readPlan(previous.result, null) : null;
+    const currentRead = previousRead ? readPlan(storedPayload, normalized.recommendation) : null;
+    const previousWatchPlan = previous && previousRead?.symbol && previousRead.symbol === currentRead?.symbol
+      && previousRead.timeframe === currentRead.timeframe ? storedWatchPlan(previous.result, null) : null;
     const response = {
+      previousWatchPlan,
+      setupId: analysis.setupId ?? null,
+      watch: watchSummaryOf(storedPayload, normalized.recommendation, analysis.createdAt, watchContext),
       id: analysis.id,
       imageUrl: signedOriginalImageUrl,
       status: this.toApiStatus(analysis.status),
