@@ -32,8 +32,8 @@ const watch = (over: Partial<WatchSummary> = {}): WatchSummary => ({
   direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12,
   expiresAt: '2026-11-03T14:00:00.000Z', outcome: 'pending', alertAvailable: true, ...over,
 });
-const wrap = (node: React.ReactNode) => {
-  window.localStorage.setItem('tickrify-language', 'en');
+const wrap = (node: React.ReactNode, language = 'en') => {
+  window.localStorage.setItem('tickrify-language', language);
   return render(<MemoryRouter><LanguageProvider>{node}</LanguageProvider></MemoryRouter>);
 };
 const alert = (over: Partial<SetupAlert> = {}): SetupAlert => ({
@@ -185,6 +185,12 @@ describe('NO_TRADE: mapa dos dois lados', () => {
       analysis: { symbol: 'BTCUSDT', timeframe: '1h', currentPrice: 100, executiveSummary: 'No clean setup.' },
       ...extra,
     } as unknown as AIAnalysisResponse['fullResponse'],
+  });
+
+  it.each(['pt', 'de', 'fr', 'es'])('formats the ATR distance using the %s decimal separator', (language) => {
+    const map = { ...levelMap, above: { level: 101, atr: 0.5, next: 103, nextAtr: 1.5 } };
+    wrap(<LevelMapCard levelMap={map} analysisId={null} alerts={false} formatPrice={String} />, language);
+    expect(screen.getByTestId('level-map').textContent).toContain('1,5 ATR');
   });
 
   it('com velas reais: os dois lados, a frase fixa e o alerta nos dois niveis', () => {
