@@ -92,6 +92,44 @@ describe('trackAnalysis', () => {
   });
 });
 
+describe('medicao prospectiva A e B', () => {
+  const bar = (minute: number, open: number, high: number, low: number, close: number): StoredCandle =>
+    [t0 + minute * M, open, high, low, close, 0];
+  const touch = bar(14, 99.4, 99.6, 98, 99.3);
+  const next = bar(15, 99.3, 102, 99.2, 101);
+  const later = bar(16, 101, 102, 100, 101);
+  async function measure(tf: StoredCandle[], candles = [touch, next, later]) {
+    const fetch: typeof fetchWindow = async (_symbol, interval) =>
+      ({ candles: interval === '15m' ? tf : candles, source: 'binance', denied: null });
+    const row = await trackAnalysis(candidate({ signalState: 'NO_TRADE' }), after, fetch);
+    return row?.confirmation;
+  }
+
+  it('entra no fechamento mesmo fora do WATCH; ignora o stop antes dele e aplica stop_only na vela seguinte', async () => {
+    const tf = [bar(0, 100, 101, 98, 99.3)];
+    const b = await measure(tf, [touch, next]);
+    expect(b).toMatchObject({ confirmed: true, entryAt: new Date(t0 + 15*M), entryPrice: 99.3, outcome: 'TIMEOUT',
+      firstTouch: { entryPrice: 99.4, outcome: 'LOSS' } });
+    expect(b?.rNet).toBeCloseTo(-99.3 * 0.0002 / (99.3 - 98.55));
+    expect(await measure(tf)).toMatchObject({ outcome: 'WIN' });
+  });
+
+  it('fechamento alem da invalidacao cancela B antes de uma recuperacao', async () => {
+    expect(await measure([bar(0, 100, 100, 98, 98.7), bar(15, 98.7, 100, 98.5, 99.4)]))
+      .toMatchObject({ confirmed: false, entryAt: null, firstTouch: { outcome: 'LOSS' } });
+  });
+
+  it('nao confirma depois da validade, mesmo com toque dentro dela', async () => {
+    expect(await measure([bar(0, 100, 100, 98.9, 99), bar(90, 99, 100, 99, 99.4)]))
+      .toMatchObject({ confirmed: false, entryAt: null, firstTouch: { outcome: 'LOSS' } });
+  });
+
+  it('primeira confirmacao sem geometria fica sem entrada, mesmo com outra vela favoravel', async () => {
+    expect(await measure([bar(0, 100, 102, 98, 101), bar(15, 101, 101, 99, 99.3)]))
+      .toMatchObject({ confirmed: true, entryAt: null, rNet: null });
+  });
+});
+
 describe('margem do stop do WATCH = a do validador', () => {
   it('BTCUSDT no regime normal: stop na P80 calibrada (98,483), nao no padrao de 0,25 ATR (98,75)', async () => {
     const watch = { ...plan, zoneLow: 99.2, zoneHigh: 99.5, invalidation: 99 };

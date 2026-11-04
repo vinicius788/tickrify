@@ -38,6 +38,7 @@
  *   pnpm exec ts-node scripts/replay-variants.ts --runs <A.jsonl>,<B.jsonl> --gabarito <A.txt>,<B.txt> --after <velas.json> --history <historico.json>
  */
 import 'dotenv/config';
+import { netReturn, spreadOf } from '../worker/measurement-return';
 import * as fs from 'fs';
 import { canonicalFxPair } from '../src/common/utils/analysis-normalizer';
 import { normalizeToBinancePerp } from '../src/modules/market/market.service';
@@ -167,23 +168,6 @@ async function windowFor(row: Row, gab: Gab, interval: string, store: CandleStor
   return remember(store, row.id, tf && fine ? { tf, fine, fineStep: TIMEFRAME_MS[fineInterval] } : null);
 }
 
-/**
- * Spread tipico de conta de varejo, em preco: ouro 0,30; prata 0,03; forex
- * 1,2 pip nos majors e 2 pips nos cruzados; BTC e ETH 0,02% do preco; outras
- * cripto 0,05%.
- */
-function spreadOf(symbol: string, price: number): number {
-  const fx = canonicalFxPair(symbol);
-  if (fx === 'XAUUSD') return 0.3;
-  if (fx === 'XAGUSD') return 0.03;
-  if (fx) {
-    const major = ['EURUSD', 'GBPUSD', 'AUDUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY'].includes(fx);
-    return (fx.endsWith('JPY') ? 0.01 : 0.0001) * (major ? 1.2 : 2);
-  }
-  const base = normalizeToBinancePerp(symbol).base;
-  return price * (base === 'BTC' || base === 'ETH' ? 0.0002 : 0.0005);
-}
-
 // ── Simulacao ───────────────────────────────────────────────────────────────
 interface Trade {
   long: boolean;
@@ -194,9 +178,7 @@ interface Trade {
 interface Ctx { row: Row; plan: WatchPlan; atr: number; price: number; step: number; print: number; w: NonNullable<Window>; history: Bar[] }
 
 function netTrade(c: Ctx, long: boolean, fill: { price: number }, stop: number, tp1: number, outcome: Trade['outcome']): Trade {
-  const risk = Math.abs(fill.price - stop);
-  const gross = outcome === 'WIN' ? Math.abs(tp1 - fill.price) / risk : outcome === 'LOSS' ? -1 : 0;
-  return { long, outcome, r: gross - spreadOf(c.row.symbol, fill.price) / risk };
+  return { long, outcome, r: netReturn(c.row.symbol, fill.price, stop, tp1, outcome) };
 }
 
 /** O estado do v11 pelo decideSignal da producao, com o REAL DATA refeito das velas antes do print. */
@@ -561,8 +543,7 @@ function reviewTrade(r: TrackRecord): Trade | null {
   const risk = Math.abs(r.fillPrice - r.stopLoss);
   if (!(risk > 0)) return null;
   const outcome = r.outcome as Trade['outcome'];
-  const gross = outcome === 'WIN' ? Math.abs(r.takeProfit1 - r.fillPrice) / risk : outcome === 'LOSS' ? -1 : 0;
-  return { long: r.direction === 'long', outcome, r: gross - spreadOf(r.symbol, r.fillPrice) / risk };
+  return { long: r.direction === 'long', outcome, r: netReturn(r.symbol, r.fillPrice, r.stopLoss, r.takeProfit1, outcome) };
 }
 
 /** Referencia de direcao (a mercado na analise, 1 ATR): +1, -1 ou 0, menos o spread em R. */
