@@ -19,7 +19,8 @@
  * Best-effort absoluto: nenhuma falha aqui derruba o worker de analises.
  */
 import { PrismaClient } from '@prisma/client';
-import { clampValidity, isValidWatchPlan, resolveTp1, stopMarginAtr, trackPlan, type WatchPlan } from '../src/common/utils/plan-engine';
+import { clampValidity, closesBeyondInvalidation, entryLevels, isValidWatchPlan, resolveTp1, stopMarginAtr, trackPlan, type Bar, type WatchPlan } from '../src/common/utils/plan-engine';
+import { netReturn } from './measurement-return';
 import { calibrationPair } from '../src/common/utils/signal-decision';
 import { TIMEFRAME_MS, candleMarketOf, fetchWindow, analysisInterval } from '../src/modules/market/candle-store';
 
@@ -76,6 +77,7 @@ export const TRACKER_SQL: readonly string[] = [
   `ALTER TABLE "tickrify"."AnalysisTrack" ADD COLUMN IF NOT EXISTS "atr" DOUBLE PRECISION`,
   `ALTER TABLE "tickrify"."AnalysisTrack" ADD COLUMN IF NOT EXISTS "refOutcome" TEXT`,
   `ALTER TABLE "tickrify"."AnalysisTrack" ADD COLUMN IF NOT EXISTS "refFillPrice" DOUBLE PRECISION`,
+  `ALTER TABLE "tickrify"."AnalysisTrack" ADD COLUMN IF NOT EXISTS "confirmation" JSONB`,
 ];
 
 type Candidate = {
@@ -118,6 +120,7 @@ export type TrackRow = {
   /** Referencia: a direcao do plano a mercado na analise, stop e alvo de 1 ATR (WIN, LOSS ou TIMEOUT). */
   refOutcome: string | null;
   refFillPrice: number | null;
+  confirmation: ReturnType<typeof measureConfirmation> | null;
 };
 
 const positive = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
@@ -128,6 +131,37 @@ function planOf(raw: unknown): WatchPlan | null {
   const r = raw as Record<string, unknown>;
   const plan = { ...r, target2: r.target2 ?? null, validForCandles: clampValidity(r.validForCandles), trigger: String(r.trigger ?? '') } as WatchPlan;
   return isValidWatchPlan(plan) ? plan : null;
+}
+
+// A e B usam o mesmo primeiro toque e a mesma geometria no preco executado.
+// O fill historico do rastreador pode ser a mercado ou uma limit cancelada no alvo.
+function measureConfirmation(
+  plan: WatchPlan, symbol: string, atr: number, marginAtr: number, start: number,
+  tf: readonly Bar[], step: number, fine: readonly Bar[], fineStep: number, touchIndex: number | null,
+) {
+  const long = plan.direction === 'long';
+  function trade(price: number, time: number, index: number) {
+    const levels = entryLevels(plan, atr, price, marginAtr);
+    if (typeof levels === 'string' || index < 0) return null;
+    const { stopLoss, takeProfit1 } = levels;
+    const { outcome } = resolveTp1(fine, long, { index, price }, stopLoss, takeProfit1, time + TRACKER_RULES.resolveMs);
+    return { entryAt: new Date(time), entryPrice: price, outcome, rNet: netReturn(symbol, price, stopLoss, takeProfit1, outcome) };
+  }
+  const expires = start + plan.validForCandles * step;
+  const empty = { confirmed: false, entryAt: null, entryPrice: null, outcome: null, rNet: null };
+  if (touchIndex === null) return { ...empty, firstTouch: null };
+  const [touchAt, open] = fine[touchIndex];
+  const closes = tf.filter(b => b[0] + step > start && b[0] + step <= expires);
+  const dead = closes.find(b => closesBeyondInvalidation(plan, b));
+  const deadAt = dead ? dead[0] + step : Infinity;
+  if (touchAt >= deadAt) return { ...empty, firstTouch: null };
+  const firstTouch = trade(Math.max(plan.zoneLow, Math.min(plan.zoneHigh, open)), touchAt, touchIndex);
+  const bar = closes.find(b => b[0] + step >= touchAt + fineStep && b[0] + step < deadAt &&
+    (long ? b[4] > plan.zoneLow : b[4] < plan.zoneHigh));
+  if (!bar) return { ...empty, firstTouch };
+  const time = bar[0] + step;
+  const index = fine.findIndex(b => b[0] >= time);
+  return { ...empty, confirmed: true, ...trade(bar[4], time, index), firstTouch };
 }
 
 /**
@@ -149,7 +183,7 @@ export async function trackAnalysis(
     symbol, timeframe: interval, signalState: state, dataMode: typeof result.dataMode === 'string' ? result.dataMode : null,
     status: 'skipped', reason: null, outcome: null, touched: false, touchedAt: null, filled: false, fillAt: null, fillPrice: null,
     entry: null, stopLoss: null, takeProfit1: null, mfeR: null, maeR: null, missed: false, candleInterval: null,
-    direction: null, atr: null, refOutcome: null, refFillPrice: null,
+    direction: null, atr: null, refOutcome: null, refFillPrice: null, confirmation: null,
   };
   const plan = planOf(result.watchPlan);
   if (!plan) return { ...base, reason: 'no_plan' };
@@ -195,6 +229,8 @@ export async function trackAnalysis(
   }
   return {
     ...base,
+    confirmation: positive(atr) && i0 >= 0 ? measureConfirmation(plan, symbol, atr, marginAtr, start,
+      tf.candles, step, fine.candles, TIMEFRAME_MS[fineInterval], t.touchIndex) : null,
     status: 'tracked',
     reason: t.rejection,
     outcome: t.outcome,
@@ -219,12 +255,12 @@ async function insert(prisma: PrismaClient, r: TrackRow): Promise<void> {
   await prisma.$executeRawUnsafe(
     `INSERT INTO "tickrify"."AnalysisTrack" ("analysisId", "promptVer", "engineVersion", "symbol", "timeframe", "signalState",
        "dataMode", "status", "reason", "outcome", "touched", "touchedAt", "filled", "fillAt", "fillPrice", "entry", "stopLoss",
-       "takeProfit1", "mfeR", "maeR", "missed", "candleInterval", "direction", "atr", "refOutcome", "refFillPrice")
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+       "takeProfit1", "mfeR", "maeR", "missed", "candleInterval", "direction", "atr", "refOutcome", "refFillPrice", "confirmation")
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27::jsonb)
      ON CONFLICT ("analysisId") DO NOTHING`,
     r.analysisId, r.promptVer, r.engineVersion, r.symbol, r.timeframe, r.signalState, r.dataMode, r.status, r.reason, r.outcome,
     r.touched, r.touchedAt, r.filled, r.fillAt, r.fillPrice, r.entry, r.stopLoss, r.takeProfit1, r.mfeR, r.maeR, r.missed, r.candleInterval,
-    r.direction, r.atr, r.refOutcome, r.refFillPrice,
+    r.direction, r.atr, r.refOutcome, r.refFillPrice, r.confirmation === null ? null : JSON.stringify(r.confirmation),
   );
 }
 
