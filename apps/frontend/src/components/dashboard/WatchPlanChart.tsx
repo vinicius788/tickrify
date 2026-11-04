@@ -1,5 +1,6 @@
 import { Eye } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { formatNumber } from '@/lib/i18n';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import type { WatchLevels, WatchPlan } from '@/lib/api';
 
@@ -67,7 +68,7 @@ export function spreadLabels(ys: readonly number[], min = PAD, max = HEIGHT - 2)
 }
 
 export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = false, levels }: WatchPlanChartProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const w = t.analysis.result.watch;
   const rejected = levels === null;
   const target1 = rejected ? null : levels ? levels.takeProfit1 : plan.target1;
@@ -81,7 +82,7 @@ export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = fa
 
   const lines = [
     { key: 'inv', price: plan.invalidation, label: w.invalidation, color: 'var(--tone-warn-2)' },
-    ...(target1 !== null ? [{ key: 't1', price: target1, label: levels ? `${w.target1} (${levels.tp1R.toFixed(1)}R)` : w.target1, color: 'var(--text-secondary)' }] : []),
+    ...(target1 !== null ? [{ key: 't1', price: target1, label: levels ? `${w.target1} (${formatNumber(levels.tp1R, language, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}R)` : w.target1, color: 'var(--text-secondary)' }] : []),
     ...(target2 !== null ? [{ key: 't2', price: target2, label: w.target2, color: 'var(--text-muted)' }] : []),
   ];
   const zoneTop = y(plan.zoneHigh);
