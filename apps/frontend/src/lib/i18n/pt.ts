@@ -256,7 +256,7 @@ export default {
     partnerInvalid: "Esse código não é válido.",
     canceledTitle: "Pagamento cancelado",
     canceledDesc: "Nenhuma cobrança foi feita. Você pode assinar quando quiser.",
-    firstMonth: "Cobrado {price} agora pelo primeiro mês com {code} ({pct}% off), aplicado automaticamente. Depois US$ 29/mês até cancelar.",
+    firstMonth: "Cobrado {price} agora pelo primeiro mês com {code} ({pct}% off), aplicado automaticamente. O saldo volta a 200 Ticks por mês; Ticks não utilizados não acumulam.",
     founderEyebrow: "Membro fundador",
     founderSub: "Travado enquanto sua assinatura continuar ativa",
     founderFeatures: [
@@ -354,6 +354,10 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "Cobrança de US$ 7,99 agora e a cada 7 dias até cancelar.",
     monthlyRenewal: "Cobrança de US$ 29 agora e mensalmente até cancelar.",
+    offerRegular: "Preço normal",
+    offerFirstMonth: "no primeiro mês",
+    offerThen: "Depois US$ 29/mês. Cancele quando quiser em Configurações.",
+    offerCta: "Começar por {price} no primeiro mês",
     freeEligibility: "Uma demo anônima por dispositivo. Contas elegíveis: até 7 análises em 3 dias de uso (3/2/2), dentro de 7 dias. Contas existentes mantêm sua cota aplicável. Sem cartão."
   },
 
@@ -1168,7 +1172,6 @@ export default {
   },
   paywall: {
     ctaWeekly: 'Comece com uma semana: US$ 7,99 por 25 Ticks',
-    orMonthlyFirst: 'Ou mensal: {price} no primeiro mês, depois US$ 29/mês',
     orMonthly: 'Ou mensal: US$ 29/mês por 200 Ticks',
     titleNewAnalysis: 'Suas análises grátis com plano de trade acabaram',
     titleArea: 'Assine para continuar com acesso às suas análises e operações',
@@ -1177,7 +1180,6 @@ export default {
     descJournal: 'O diário organiza cada análise e resultado por dia. Ele volta a abrir assim que você assinar.',
     descHistory: 'Esta análise é mais antiga que as suas 3 últimas. Assine para abrir o histórico completo de novo.',
     descSetups: 'Nenhuma análise deste setup está entre as suas 3 últimas. Assine para abrir todas as versões de novo.',
-    offerNote: '{code} dá {pct}% de desconto no primeiro mês do plano mensal, aplicado automaticamente. Depois US$ 29/mês, cancele quando quiser.',
     allPlans: 'Todos os planos, incluindo o anual de US$ 290/ano',
     opening: 'Abrindo o checkout seguro…',
     yourChart: 'Seu gráfico',

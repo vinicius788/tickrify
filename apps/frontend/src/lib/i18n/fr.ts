@@ -256,7 +256,7 @@ export default {
     partnerInvalid: "Ce code n’est pas valide.",
     canceledTitle: "Paiement annulé",
     canceledDesc: "Aucun prélèvement n’a été effectué. Vous pouvez vous abonner quand vous le souhaitez.",
-    firstMonth: "{price} facturés maintenant pour le premier mois avec {code} ({pct}% de réduction), appliqué automatiquement. Puis $29/mois jusqu’à annulation.",
+    firstMonth: "{price} facturés maintenant pour le premier mois avec {code} ({pct}% de réduction), appliqué automatiquement. Votre solde revient à 200 Ticks par mois ; les Ticks inutilisés ne sont pas reportés.",
     founderEyebrow: "Membre fondateur",
     founderSub: "Prix garanti tant que votre abonnement reste actif",
     founderFeatures: [
@@ -354,6 +354,10 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "7,99 $ US facturés maintenant puis tous les 7 jours jusqu’à résiliation.",
     monthlyRenewal: "29 $ US facturés maintenant puis chaque mois jusqu’à résiliation.",
+    offerRegular: "Prix normal",
+    offerFirstMonth: "le premier mois",
+    offerThen: "Puis $29/mois. Annulez à tout moment dans les Paramètres.",
+    offerCta: "Commencer à {price} le premier mois",
     freeEligibility: "Une démo anonyme par appareil. Comptes éligibles : jusqu’à 7 analyses sur 3 jours d’utilisation (3/2/2), dans les 7 jours. Les comptes existants conservent leur quota applicable. Sans carte."
   },
 
@@ -1155,7 +1159,6 @@ export default {
   },
   paywall: {
     ctaWeekly: 'Commencez par une semaine : 7,99 $ pour 25 Ticks',
-    orMonthlyFirst: 'Ou mensuel : {price} le premier mois, puis 29 $/mois',
     orMonthly: 'Ou mensuel : 29 $/mois pour 200 Ticks',
     titleNewAnalysis: 'Vos analyses gratuites avec plan de trade sont épuisées',
     titleArea: 'Abonnez-vous pour garder l\'accès à vos analyses et à vos trades',
@@ -1164,7 +1167,6 @@ export default {
     descJournal: 'Le journal classe chaque analyse et chaque résultat par jour. Il se rouvre dès que vous vous abonnez.',
     descHistory: 'Cette analyse est plus ancienne que vos 3 dernières. Abonnez-vous pour rouvrir tout votre historique.',
     descSetups: 'Aucune analyse de ce setup ne fait partie de vos 3 dernières. Abonnez-vous pour rouvrir toutes les versions.',
-    offerNote: '{code} retire {pct} % sur votre premier mois du plan mensuel, appliqué automatiquement. Ensuite 29 $/mois, résiliable à tout moment.',
     allPlans: 'Toutes les formules, y compris l\'annuelle à 290 $/an',
     opening: 'Ouverture du paiement sécurisé…',
     yourChart: 'Votre graphique',

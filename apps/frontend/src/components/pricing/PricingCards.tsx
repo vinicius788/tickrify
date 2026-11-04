@@ -6,7 +6,7 @@ import { buildApiUrl, warmupPaymentsApi } from "../../lib/api";
 import { getReferralCoupon, isAffiliateCode, saveReferralCoupon } from "../../lib/attribution";
 import { track } from "../../lib/analytics";
 import { useToast } from "../../hooks/use-toast";
-import { useFounderOffer, useFoundingOffer } from "@/hooks/useFoundingOffer";
+import { firstMonthPrice, useFounderOffer, useFoundingOffer } from "@/hooks/useFoundingOffer";
 import { interpolate, LOCALES, formatNumber, type Language, type Translations } from "@/lib/i18n";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
@@ -148,9 +148,7 @@ export function PricingCards() {
   // "$29" e o paywall do painel, "$18.85 no 1o mes" (05/10/2026). Some junto
   // com o cupom e nunca aparece no semanal nem no anual (o servidor descarta).
   const foundingOffer = useFoundingOffer();
-  const firstMonthPrice = foundingOffer?.percentOff
-    ? `$${formatNumber((29 * (1 - foundingOffer.percentOff / 100)), language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })}`
-    : null;
+  const offerPrice = firstMonthPrice(foundingOffer, language);
   // Oferta Founding Member: so existe com um link pessoal valido. Sem codigo, ou
   // com codigo usado ou vencido, a pagina fica exatamente como sempre foi.
   const [offerCode] = useState<string | null>(() => offerFromUrl());
@@ -447,14 +445,29 @@ export function PricingCards() {
           const perCycle =
             billingCycle === "weekly" ? copy.perWeek : billingCycle === "monthly" ? copy.perMonth : copy.perYear;
           const price = `$${formatNumber(Number(plan.prices[billingCycle][currency].slice(1)), language, { maximumFractionDigits: 2 })}`;
-          const ctaPrice = billingCycle === "monthly" && firstMonthPrice ? firstMonthPrice : price;
+          // EARLY35 so no mensal (regra 4.0): semanal e anual nunca riscam o preco.
+          const monthlyOffer = billingCycle === "monthly" ? offerPrice : null;
           return (
           <div key={plan.id} className="site-price">
             <span className="site-eyebrow">{cardCopy.badge}</span>
-            <div className="site-price-amt">
-              <b>{price}</b>
-              <span>{perCycle}</span>
-            </div>
+            {monthlyOffer ? (
+              <>
+                <div className="site-price-amt">
+                  <s>
+                    <span className="sr-only">{t.commercial.offerRegular} </span>
+                    {price}
+                  </s>
+                  <b>{monthlyOffer}</b>
+                  <span>{t.commercial.offerFirstMonth}</span>
+                </div>
+                <p className="site-price-then">{t.commercial.offerThen}</p>
+              </>
+            ) : (
+              <div className="site-price-amt">
+                <b>{price}</b>
+                <span>{perCycle}</span>
+              </div>
+            )}
             <p className="site-price-sub">
               {cardCopy.ticks} · {cardCopy.analyses}
             </p>
@@ -474,14 +487,19 @@ export function PricingCards() {
               disabled={loadingPlan !== null}
               className="site-btn site-btn-primary site-btn-block"
             >
-              {loadingPlan === plan.id ? copy.processing : `${cardCopy.cta} · ${ctaPrice}${perCycle}`}
+              {loadingPlan === plan.id
+                ? copy.processing
+                : monthlyOffer
+                  ? interpolate(t.commercial.offerCta, { price: monthlyOffer })
+                  : `${cardCopy.cta} · ${price}${perCycle}`}
             </button>
-            {billingCycle !== "monthly" || !firstMonthPrice ? <p className="site-price-fine">{renewalNote}</p> : null}
-            {billingCycle === "monthly" && foundingOffer?.percentOff && firstMonthPrice ? (
+            {monthlyOffer && foundingOffer ? (
               <p className="site-price-fine">
-                {interpolate(copy.firstMonth, { price: firstMonthPrice, code: foundingOffer.code, pct: foundingOffer.percentOff })}
+                {interpolate(copy.firstMonth, { price: monthlyOffer, code: foundingOffer.code, pct: foundingOffer.percentOff ?? 0 })}
               </p>
-            ) : null}
+            ) : (
+              <p className="site-price-fine">{renewalNote}</p>
+            )}
           </div>
           );
         })}

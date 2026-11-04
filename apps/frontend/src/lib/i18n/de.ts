@@ -256,7 +256,7 @@ export default {
     partnerInvalid: "Dieser Code ist ungültig.",
     canceledTitle: "Zahlung abgebrochen",
     canceledDesc: "Es wurde nichts abgebucht. Du kannst jederzeit ein Abonnement abschließen.",
-    firstMonth: "Jetzt werden {price} für den ersten Monat mit {code} ({pct}% Rabatt) berechnet, automatisch angewendet. Danach $29/Monat bis zur Kündigung.",
+    firstMonth: "Jetzt werden {price} für den ersten Monat mit {code} ({pct}% Rabatt) berechnet, automatisch angewendet. Dein Guthaben wird pro Monat auf 200 Ticks zurückgesetzt; ungenutzte Ticks werden nicht übertragen.",
     founderEyebrow: "Gründungsmitglied",
     founderSub: "Festpreis, solange dein Abonnement aktiv bleibt",
     founderFeatures: [
@@ -354,6 +354,10 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "7,99 US$ jetzt und alle 7 Tage bis zur Kündigung.",
     monthlyRenewal: "29 US$ jetzt und monatlich bis zur Kündigung.",
+    offerRegular: "Regulärer Preis",
+    offerFirstMonth: "im ersten Monat",
+    offerThen: "Danach $29/Monat. Jederzeit in den Einstellungen kündigen.",
+    offerCta: "Für {price} im ersten Monat starten",
     freeEligibility: "Eine anonyme Demo pro Gerät. Berechtigte Konten: bis zu 7 Analysen an 3 Nutzungstagen (3/2/2), innerhalb von 7 Tagen. Bestehende Konten behalten ihr geltendes Kontingent. Ohne Karte."
   },
 
@@ -1155,7 +1159,6 @@ export default {
   },
   paywall: {
     ctaWeekly: 'Starte mit einer Woche: 7,99 $ für 25 Ticks',
-    orMonthlyFirst: 'Oder monatlich: {price} im ersten Monat, danach 29 $/Monat',
     orMonthly: 'Oder monatlich: 29 $/Monat für 200 Ticks',
     titleNewAnalysis: 'Deine kostenlosen Analysen mit Tradeplan sind aufgebraucht',
     titleArea: 'Abonniere, um weiter Zugriff auf deine Analysen und Trades zu haben',
@@ -1164,7 +1167,6 @@ export default {
     descJournal: 'Das Journal ordnet jede Analyse und jedes Ergebnis nach Tag. Es öffnet sich wieder, sobald du abonnierst.',
     descHistory: 'Diese Analyse ist älter als deine letzten 3. Abonniere, um deinen kompletten Verlauf wieder zu öffnen.',
     descSetups: 'Keine Analyse dieses Setups gehört zu deinen letzten 3. Abonniere, um alle Versionen wieder zu öffnen.',
-    offerNote: '{code} gibt {pct} % Rabatt auf deinen ersten Monat im Monatsplan, automatisch angewendet. Danach 29 $/Monat, jederzeit kündbar.',
     allPlans: 'Alle Pläne, auch jährlich für 290 $/Jahr',
     opening: 'Sicherer Checkout wird geöffnet…',
     yourChart: 'Dein Chart',
