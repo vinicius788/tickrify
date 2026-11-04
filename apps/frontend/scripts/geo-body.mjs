@@ -140,14 +140,17 @@ export async function fetchAccuracy() {
 }
 
 /** Uma linha de métrica que obedece as regras da AccuracyPage: sem n suficiente, mostra o n. */
-function metricRow(label, interval) {
+function metricRow(label, interval, collectingMin) {
   if (!interval || typeof interval.n !== 'number') return '';
-  const value =
-    interval.publishable && interval.rate !== null && interval.rate !== undefined
-      ? `${interval.rate}% (95% CI ${interval.low}% to ${interval.high}%)`
+  const value = isRate(interval)
+    ? `${interval.rate}% (95% CI ${interval.low}% to ${interval.high}%)`
+    : collectingMin
+      ? `Collecting data: ${interval.n} of ${collectingMin}`
       : 'Not published yet, too few resolved trades';
   return `<tr><td>${esc(label)}</td><td>${esc(value)}</td><td>n = ${esc(interval.n)}</td></tr>`;
 }
+
+const countRow = (label, value) => `<tr><td>${esc(label)}</td><td>${esc(value)}</td></tr>`;
 
 const BAND_LABEL = {
   below60: 'Confidence below 60',
@@ -156,104 +159,328 @@ const BAND_LABEL = {
   unknown: 'Confidence not recorded',
 };
 
+/*
+ * 04/11/2026: a /accuracy separa o motor atual (v11, medido pelo rastreador) do
+ * motor anterior (arquivado, todos os numeros de antes). Os textos ate
+ * `trackingRows` sao gerados da MESMA fonte que a AccuracyPage.tsx usa (o teste
+ * da pagina compara os dois lados); data, minimo e toda frase que depende do dado
+ * vem da API.
+ */
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** "November 3, 2026" em UTC; null sem data valida. */
+const fmtDate = (iso) => {
+  const d = iso ? new Date(iso) : null;
+  return d && !Number.isNaN(d.getTime()) ? `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}` : null;
+};
+/** "01:24" em UTC; null sem data valida. */
+const fmtTime = (iso) => {
+  const d = iso ? new Date(iso) : null;
+  return d && !Number.isNaN(d.getTime()) ? d.toISOString().slice(11, 16) : null;
+};
+const isRate = (g) =>
+  Boolean(g && g.publishable && 'rate' in g && g.rate !== null && g.rate !== undefined && g.low !== null && g.low !== undefined && g.high !== null && g.high !== undefined);
+const minOf = (data) => data?.filters?.minResolvedToPublish;
+const signedR = (x) => `${x >= 0 ? '+' : ''}${x.toFixed(2)}R`;
+const countOf = (rec, key) => rec?.[key] ?? 0;
+
+const PREVIOUS_METHOD =
+  'An automated sweeper runs hourly and attempts to evaluate completed analyses after 48 hours. BUY and SELL plans with available candles are scored: the entry must fill first, then the first target races the stop on 30-minute candles. A candle touching both is recorded as a loss. WAIT, incomplete plans and cases without reliable candles are reported separately rather than counted as wins or losses. The headline figures use the original rule, which also counts a target touched in the same candle where the entry fills as a win; analyses scored under a later, stricter rule, where only the stop counts in that candle, are reported as a separate series and never added to the headline figures.';
+
+const CURRENT_METHOD =
+  'Trade plans and Watch levels are checked against real candles once their window closes (the validity of the plan plus 48 hours, longer for markets that close at weekends), when a price source is available; reads that cannot be checked are counted separately, by reason. A closed window waits for the next tracker run, every 30 minutes. Prices come from 1-minute candles when the window is short enough, otherwise 5-minute candles. An Enter now fills at the market price right after the analysis; then the first target races the stop for 48 hours, and inside the fill candle only the stop counts. A trade that reaches neither is a timeout: it is left out of the hit rate and counts as zero, minus spread, in the average result. A Watch is not a trade and has no win or loss: it is checked for one thing, whether price reached its level before the window closed or before price went beyond its invalidation.';
+
+const ENGINE_STATES =
+  "Enter now is a complete plan to act on at market. With live candles, code checks the plan: the stop sits beyond a real swing near the invalidation plus a margin measured per market, risk stays between 0.5 and 2 ATR, and the first target is 1R to 1.5R away. Without live candles, the entry, stop and targets are the AI's own estimates read from the screenshot; Enter now then still needs the screenshot price inside the plan's zone and the required checks, and the screen says the levels are estimated. Watch is a level worth waiting for, not an order: the price where the setup would become valid, how long it stays valid and what would cancel it. No trade means there is nothing to do on that chart.";
+
+const WHAT_CHANGED_OUTRO =
+  "These states do different jobs, so they are measured differently, and none of their results are mixed with the previous engine's.";
+
+const EDGE_INTRO =
+  'A hit rate only means something next to the size of the wins: if the average win is R times the risk, a plan breaks even at a hit rate of 1 / (1 + R), before costs. That is why the verdict here uses the average result per trade in R, not the hit rate.';
+
+const WHO_CURRENT =
+  "Who is counted, current engine: analyses from free, trial and paid accounts all count, because the engine is the same for everyone. The founder's own account and analyses run with a personal strategy profile are left out.";
+
+const WHO_PREVIOUS =
+  "Who is counted, previous engine: only analyses made with paid access, as before, which includes the founder's own account. Analyses from the free allowance and the free trial, and analyses run with a personal strategy profile, are left out.";
+
+const WHO_DEMO = 'The anonymous demo at /try is never stored as an analysis, so it is in neither record.';
+
+const TRACK_REASON = {
+  no_plan: 'no plan to track',
+  no_timeframe: 'timeframe not readable',
+  no_source: 'no price source for this instrument',
+  no_candles: 'no candles for the period',
+  unknown: 'other reason',
+};
+
+export function whatChangedTitle(data) {
+  const since = fmtDate(data?.currentEngine?.since);
+  return since ? `What changed on ${since}` : 'What changed with the current engine';
+}
+
+export function previousTitle(data) {
+  const since = fmtDate(data?.currentEngine?.since);
+  return since ? `Previous engine (archived, until ${since})` : 'Previous engine (archived)';
+}
+
+export function whatChangedIntro(data) {
+  const since = fmtDate(data?.currentEngine?.since);
+  const time = fmtTime(data?.currentEngine?.since);
+  const when = since && time ? `On ${since}, at ${time} UTC, Tickrify` : 'Tickrify';
+  return `${when} switched to a new analysis engine. The previous engine returned BUY, SELL or WAIT, and it was scored by one rule: did the first target print before the stop within 48 hours.`;
+}
+
+/** A resposta de abertura (pagina, geo-body e FAQPage). Data e minimo vem da API. */
+export function accuracyAnswer(data) {
+  const since = fmtDate(data?.currentEngine?.since);
+  const min = minOf(data);
+  const opening = since ? `Since ${since}, a new engine` : 'A new engine';
+  const publish = min
+    ? `A result is published once a cut has at least ${min} resolved cases.`
+    : 'A result is published only once a cut has enough resolved cases.';
+  return `Tickrify does not claim an edge. ${opening} decides between three states: Enter now, Watch and No trade. It gives an Enter now plan only when fixed checks pass, so it is measured on what it actually outputs: how its Watch levels resolved, how its Enter now plans resolved in R, and how much of each read used live candle data. ${publish} The previous engine's record stays public in full, archived, with its own rules.`;
+}
+
 /**
- * A tabela de acurácia. Formato de tabela é deliberado: é a forma que um
- * modelo de linguagem extrai e cita com menos deformação, e é o único ativo
- * do site que nenhum concorrente do nicho publica.
+ * O resumo com numeros, depois da abertura: motor atual primeiro (estados com
+ * o n mesmo abaixo do minimo, porque contagem nao e taxa), motor anterior no fim.
+ */
+export function accuracySummary(data) {
+  if (!data?.previous) return null;
+  const asOf = data.updatedAt.slice(0, 10);
+  const min = minOf(data);
+  const c = data.current;
+  const parts = [];
+  if (c) {
+    parts.push(
+      `As of ${asOf}, the current engine has made ${c.analyses} analyses: ${countOf(c.byState, 'ENTER_NOW')} Enter now, ${countOf(c.byState, 'WATCH')} Watch and ${countOf(c.byState, 'NO_TRADE')} No trade, ${countOf(c.dataMode, 'real_data')} of them read with live candle data.`,
+    );
+    const hit = c.enterNow.hitRate;
+    parts.push(
+      isRate(hit)
+        ? `${hit.n} Enter now plans resolved at target or stop: ${hit.rate}% reached the first target before the stop (95% CI ${hit.low}% to ${hit.high}%).`
+        : `Enter now results: collecting data, ${hit.n} of ${min} resolved at target or stop.`,
+    );
+    const reach = c.watch.reachRate;
+    parts.push(
+      isRate(reach)
+        ? `${reach.n} Watch levels resolved: ${reach.rate}% were reached in time (95% CI ${reach.low}% to ${reach.high}%).`
+        : `Watch results: collecting data, ${reach.n} of ${min} resolved.`,
+    );
+  } else {
+    parts.push(`As of ${asOf}, the current engine's results are not loading.`);
+  }
+  const o = data.previous.overall;
+  parts.push(
+    isRate(o)
+      ? `The previous engine, archived, recorded ${o.rate}% across ${o.n} resolved trades (${o.wins} wins, ${o.losses} losses, 95% CI ${o.low}% to ${o.high}%). The two records are never added together.`
+      : `The previous engine, archived, has ${data.previous.overall.n} resolved trades, below the minimum to publish a rate. The two records are never added together.`,
+  );
+  return parts.join(' ');
+}
+
+/** A frase do resultado medio, escolhida pelo veredito da API (below, above, inconclusive). */
+export function edgeSentence(name, ar, costs, min) {
+  if (!ar) return `${name}: results are not loading right now.`;
+  if (!ar.publishable) {
+    return `${name}: still collecting data, ${ar.decided} of ${min} trades resolved at target or stop, so no average result is published yet.`;
+  }
+  const ci = `95% CI ${signedR(ar.low)} to ${signedR(ar.high)}`;
+  const left = ar.excluded > 0 ? ` ${ar.excluded} more trades had no valid R and are left out.` : '';
+  if (ar.verdict === 'above') {
+    return `${name}: the average result per trade was above zero ${costs}, over ${ar.n} trades: ${signedR(ar.mean)} (${ci}).${left}`;
+  }
+  const head = `${name}: the average result was ${signedR(ar.mean)} per trade (${ci}), ${costs}, over ${ar.n} trades.`;
+  if (ar.verdict === 'below') return `${head} The whole interval is below zero.${left}`;
+  return `${head} Zero sits inside that interval, so the data cannot tell a positive average from a negative one.${left}`;
+}
+
+/** As duas frases do resultado medio, motor atual primeiro. */
+export function edgeAnswer(data) {
+  if (!data?.previous) {
+    return "Tickrify does not claim an edge. On the live page, each engine's average result per trade in R is published with a 95% interval, and only once enough trades have resolved.";
+  }
+  const min = minOf(data);
+  const cur = data.current
+    ? edgeSentence('Current engine', data.current.enterNow.averageResult, 'after an estimated spread, before other costs', min)
+    : 'Current engine: results are not loading right now.';
+  const prev = edgeSentence('Previous engine', data.previous.averageResult, 'before costs', min);
+  return `${cur} ${prev} Tickrify does not claim an edge; this comparison is published so you can check.`;
+}
+
+export function averageMethod(data) {
+  const min = minOf(data);
+  return `Average result per trade: a trade that reaches the first target is worth its own reward in R, a stop is -1R and a timeout 0R. For the previous engine the reward is the plan's recorded first-target ratio, before costs; for the current engine it is the distance from the fill to the target divided by the risk, minus a typical retail spread for the instrument. Trades without a valid R are left out and counted. The 95% interval of the mean uses Student's t, and the verdict compares that interval with zero. It is published only once ${min ? `at least ${min}` : 'enough'} of its trades reached target or stop.`;
+}
+
+export function intervalsMethod(data) {
+  const min = minOf(data);
+  return `Confidence intervals for rates are Wilson score intervals at 95%, the same function our internal backtest uses. ${min ? `Any cut with fewer than ${min} resolved cases` : 'A cut without enough resolved cases'} shows its sample size instead of a figure.`;
+}
+
+export function measurementTechnique(data) {
+  const min = minOf(data);
+  return `Current engine: trade plans and Watch levels are tracked against real candles after the validity window plus 48 hours, when a price source is available; reads that cannot be checked are counted separately. Previous engine: eligible trade plans scored automatically against real candles after 48 hours. No human in the loop.${min ? ` Cuts below n = ${min} are shown as sample size only.` : ''}`;
+}
+
+export function datasetDescription(data) {
+  const since = fmtDate(data?.currentEngine?.since);
+  return `Measured results of Tickrify's AI chart analysis in two separate records: the current engine${since ? ` since ${since}` : ''}, tracked by what it delivers (Enter now trades and Watch levels), and the archived previous engine. Published with sample sizes, 95% confidence intervals and the average result per trade in R.`;
+}
+
+/** Comparacao das faixas de confianca do motor anterior: so com as duas faixas publicaveis, frase pelo dado. */
+export function confidenceSentence(data) {
+  const bands = data?.previous?.byConfidence ?? [];
+  const a = bands.find((b) => b.band === 'band60to69');
+  const b = bands.find((x) => x.band === 'band70plus');
+  if (!isRate(a) || !isRate(b)) return null;
+  const overlap = !(Number(a.high) < Number(b.low) || Number(b.high) < Number(a.low));
+  return overlap
+    ? `In production, the 95% intervals of the 60 to 69 band (${a.low}% to ${a.high}%) and the 70 and above band (${b.low}% to ${b.high}%) overlap, so the score has not shown that it separates outcomes.`
+    : `In production, the 95% intervals of the 60 to 69 band (${a.low}% to ${a.high}%) and the 70 and above band (${b.low}% to ${b.high}%) do not overlap.`;
+}
+
+/** As MESMAS perguntas e respostas da pagina, do HTML pre-renderizado e do FAQPage. */
+export function accuracyFaqItems(data) {
+  const c = data?.current;
+  const p = data?.previous;
+  const since = fmtDate(data?.currentEngine?.since);
+  const asOf = data?.updatedAt ? data.updatedAt.slice(0, 10) : null;
+  return [
+    { q: 'How accurate is Tickrify?', a: [accuracyAnswer(data), accuracySummary(data)].filter(Boolean).join(' ') },
+    {
+      q: 'Why are there two sets of results?',
+      a: `Tickrify changed its analysis engine${since ? ` on ${since}` : ''}. The previous engine returned BUY, SELL or WAIT; the current one returns Enter now, Watch or No trade. The two are measured with different rules, so their results are published separately and never added together. The previous engine's record stays public, archived, with its own methodology.`,
+    },
+    { q: 'How is the current engine measured?', a: CURRENT_METHOD },
+    { q: 'How was the previous engine measured?', a: PREVIOUS_METHOD },
+    { q: 'Does Tickrify have an edge?', a: edgeAnswer(data) },
+    {
+      q: 'Does the AI suggest a trade on every chart?',
+      a: c
+        ? `No. Of ${c.analyses} current-engine analyses, ${countOf(c.byState, 'ENTER_NOW')} were Enter now, ${countOf(c.byState, 'WATCH')} were Watch and ${countOf(c.byState, 'NO_TRADE')} were No trade. Watch and No trade are designed outcomes, not failures to answer, and neither counts as a win or a loss.`
+        : 'No. Many analyses return Watch, a level worth waiting for, or No trade. Those are designed outcomes, not failures to answer, and neither counts as a win or a loss.',
+    },
+    {
+      q: 'Are losing trades included?',
+      a:
+        c && p
+          ? `Yes. Every stop is counted: ${c.enterNow.outcomes.stop} so far for the current engine and ${p.overall.losses} in the previous engine's headline figures. Unfilled entries, timeouts and cases without reliable candles are reported separately rather than quietly dropped.`
+          : 'Yes. Every stop is counted. Unfilled entries, timeouts and cases without reliable candles are reported separately rather than quietly dropped.',
+    },
+    {
+      q: 'How often is this page updated?',
+      a: asOf
+        ? `The figures are recalculated hourly and were last updated on ${asOf}. They move on their own, including when they move against us.`
+        : 'The figures are recalculated hourly. They move on their own, including when they move against us.',
+    },
+  ];
+}
+
+/** Nota do bloco EUR/USD invertido: horarios e data vem da API. */
+export function eurUsdNote(data) {
+  const c = data?.current;
+  const b = c?.eurUsdBlock;
+  if (!c || !b) return null;
+  const head = `Note on gold and forex: from ${fmtTime(c.since)} to ${fmtTime(b.until)} UTC on ${fmtDate(b.until)}, the market context sent to the current engine for gold and forex described EUR/USD rising as the dollar strengthening, the opposite of what it means. It was corrected at ${fmtTime(b.until)} UTC.`;
+  return b.analyses > 0
+    ? `${head} ${b.analyses} gold and forex analyses in the published sample were made in that window (${b.enterNow} Enter now, ${b.closedWatch} Watch with a closed window). They are included in the figures above and flagged for the monthly review.`
+    : `${head} No gold or forex analysis in the published sample was made in that window.`;
+}
+
+/** Linhas da tabela do rastreador: [rotulo, Enter now, Watch]. */
+export function trackingRows(c) {
+  const e = c.tracking.ENTER_NOW;
+  const w = c.tracking.WATCH;
+  const reasons = [...new Set([...Object.keys(e.skippedReasons), ...Object.keys(w.skippedReasons)])].sort();
+  return [
+    ['Given', countOf(c.byState, 'ENTER_NOW'), countOf(c.byState, 'WATCH')],
+    ['Window still open', e.open, w.open],
+    ['Window closed, waiting for the next tracker run', e.awaiting, w.awaiting],
+    ...reasons.map((r) => [`Not checked: ${TRACK_REASON[r] ?? TRACK_REASON.unknown}`, e.skippedReasons[r] ?? 0, w.skippedReasons[r] ?? 0]),
+    ['Checked against real candles', e.tracked, w.tracked],
+  ];
+}
+
+/**
+ * A tabela de acurácia: motor atual primeiro, motor anterior arquivado depois.
+ * Formato de tabela é deliberado: é a forma que um modelo de linguagem extrai
+ * e cita com menos deformação.
  */
 export function accuracyBlock(data) {
-  if (!data || !data.overall) return '';
+  if (!data || !data.previous) return '';
   const asOf = typeof data.updatedAt === 'string' ? data.updatedAt.slice(0, 10) : null;
+  const min = minOf(data);
+  const c = data.current;
+  const p = data.previous;
+  const avgCell = (ar) =>
+    ar.publishable
+      ? `${signedR(ar.mean)} (95% CI ${signedR(ar.low)} to ${signedR(ar.high)}), n = ${ar.n}`
+      : `Collecting data: ${ar.decided} of ${min} resolved at target or stop`;
+
+  const current = c
+    ? [
+        `<h2>Current engine: results so far${asOf ? `, as of ${esc(asOf)}` : ''}</h2>`,
+        `<table><thead><tr><th>Metric</th><th>Value</th><th>Sample</th></tr></thead><tbody>${[
+          metricRow('Enter now reached target before stop', c.enterNow.hitRate, min),
+          metricRow('Watch levels reached in time', c.watch.reachRate, min),
+        ].join('')}</tbody></table>`,
+        `<table><thead><tr><th>Current engine</th><th>Count</th></tr></thead><tbody>${[
+          countRow('Analyses by the current engine', c.analyses),
+          countRow('Enter now given', countOf(c.byState, 'ENTER_NOW')),
+          countRow('Watch given', countOf(c.byState, 'WATCH')),
+          countRow('No trade given', countOf(c.byState, 'NO_TRADE')),
+          countRow('Read with live candles', countOf(c.dataMode, 'real_data')),
+          countRow('Read from the screenshot alone', countOf(c.dataMode, 'print')),
+        ].join('')}</tbody></table>`,
+        `<table><thead><tr><th>Tracker</th><th>Enter now</th><th>Watch</th></tr></thead><tbody>${trackingRows(c)
+          .map(([label, e, w]) => `<tr><td>${esc(label)}</td><td>${esc(e)}</td><td>${esc(w)}</td></tr>`)
+          .join('')}</tbody></table>`,
+        `<table><thead><tr><th>Checked Enter now and Watch</th><th>Count</th></tr></thead><tbody>${[
+          countRow('Enter now reached the first target', c.enterNow.outcomes.tp1),
+          countRow('Enter now hit the stop', c.enterNow.outcomes.stop),
+          countRow('Enter now timeout, neither in 48 hours', c.enterNow.outcomes.timeout),
+          countRow('Enter now average result per trade, estimated spread deducted', avgCell(c.enterNow.averageResult)),
+          countRow('Watch reached the level in time', c.watch.outcomes.reached),
+          countRow('Watch went beyond the invalidation first', c.watch.outcomes.invalidated),
+          countRow('Watch window closed without reaching the level', c.watch.outcomes.expired),
+          countRow('Watch could not be checked', c.watch.outcomes.unavailable),
+        ].join('')}</tbody></table>`,
+      ].join('\n')
+    : '<h2>Current engine: results so far</h2>\n<p>The current engine’s results were not available when this page was built. The live page loads them from the same API.</p>';
 
   const rows = [
-    metricRow('Hit rate, original scoring rule', data.overall),
-    ...(Array.isArray(data.byConfidence)
-      ? data.byConfidence.map((b) => metricRow(BAND_LABEL[b.band] ?? b.band, b))
-      : []),
+    metricRow('Hit rate, original scoring rule', p.overall),
+    ...(Array.isArray(p.byConfidence) ? p.byConfidence.map((b) => metricRow(BAND_LABEL[b.band] ?? b.band, b)) : []),
     // Regra nova do candle do fill (20/10/2026): serie a parte, nunca somada ao overall.
-    metricRow('Hit rate, updated scoring rule (separate series)', data.stopOnly?.overall),
+    metricRow('Hit rate, updated scoring rule (separate series)', p.stopOnly?.overall),
   ]
     .filter(Boolean)
     .join('');
 
   const abst =
-    data.abstention && data.abstention.rate !== null && data.abstention.rate !== undefined
-      ? `<p>Abstention rate: ${esc(data.abstention.rate)}% of analyses return a WAIT action rather than BUY or SELL (${esc(data.abstention.wait)} of ${esc(data.abstention.total)} analyses). A WAIT can still describe a bullish or bearish market scenario. Waiting is a designed outcome, not a failure to answer.</p>`
+    p.abstention && p.abstention.rate !== null && p.abstention.rate !== undefined
+      ? `<p>Abstention rate: ${esc(p.abstention.rate)}% of the previous engine’s analyses returned a WAIT action rather than BUY or SELL (${esc(p.abstention.wait)} of ${esc(p.abstention.total)} analyses). A WAIT can still describe a bullish or bearish market scenario. Waiting is a designed outcome, not a failure to answer.</p>`
       : '';
+  const conf = confidenceSentence(data);
 
   return [
-    `<h2>Measured accuracy${asOf ? `, as of ${esc(asOf)}` : ''}</h2>`,
-    '<p>Every completed analysis that carries a trade plan is scored automatically 48 hours later against real market candles: did the first target print before the stop? No human in the loop, no cherry-picking, losses included. Rates with fewer than 20 resolved trades are withheld and only the sample size is shown.</p>',
+    current,
+    '<h2>Does Tickrify have an edge?</h2>',
+    `<p>${esc(EDGE_INTRO)}</p>`,
+    `<p>${esc(edgeAnswer(data))}</p>`,
+    `<h2>${esc(previousTitle(data))}</h2>`,
+    '<p>The record of the previous engine, kept as it was and scored by its own rules. No current-engine analysis is counted here.</p>',
     rows ? `<table><thead><tr><th>Metric</th><th>Value</th><th>Sample</th></tr></thead><tbody>${rows}</tbody></table>` : '',
+    `<p>Average result per trade, before costs: ${esc(avgCell(p.averageResult))}.</p>`,
+    conf ? `<p>${esc(conf)}</p>` : '',
     abst,
     '<p>A hit rate is not profitability. These figures exclude spread, commission, slippage and funding, and past results do not guarantee future results. The full methodology and the numbers that look bad are published at <a href="https://tickrify.com/accuracy">tickrify.com/accuracy</a>.</p>',
   ]
     .filter(Boolean)
     .join('\n');
-}
-
-/**
- * A resposta direta, em uma frase, a partir do recorte geral.
- *
- * Passo 4 do GEO: a pergunta no H1 e a resposta no primeiro parágrafo. Um
- * modelo que lê HTML cru não rola a página até a tabela, ele extrai o começo.
- * Sem número publicável, devolve a frase de método, nunca um número guardado
- * aqui como reserva, que é como se publica um número velho sem perceber.
- */
-export function accuracyAnswer(data) {
-  const o = data?.overall;
-  const asOf = typeof data?.updatedAt === 'string' ? data.updatedAt.slice(0, 10) : null;
-  if (!o || !o.publishable || o.rate === null || o.rate === undefined || !asOf) {
-    return 'Tickrify publishes its measured hit rate on tickrify.com/accuracy, recalculated hourly from live production data, always with the sample size and a 95% confidence interval. No rate is published for any cut with fewer than 20 resolved trades.';
-  }
-  return `As of ${asOf}, ${o.rate}% of resolved Tickrify analyses reached their first target before their stop: ${o.wins} wins against ${o.losses} losses across ${o.n} resolved trades, with a 95% confidence interval of ${o.low}% to ${o.high}%. The figure is recalculated hourly from live production data.`;
-}
-
-/**
- * As mesmas perguntas e respostas que a AccuracyPage mostra na tela.
- *
- * Estão escritas duas vezes, aqui e no .tsx, porque um script de build em
- * Node não importa componente React. A regra que mantém as duas honestas é a
- * mesma dos dois lados: nenhuma resposta traz número que a API não devolveu
- * neste build. Se divergirem em redação, o schema continua verdadeiro; o que
- * nunca pode divergir é o número.
- */
-export function accuracyFaqItems(data) {
-  const asOf = typeof data?.updatedAt === 'string' ? data.updatedAt.slice(0, 10) : null;
-  const o = data?.overall;
-  const pub = o && o.publishable && o.rate !== null && o.rate !== undefined;
-  const abst = data?.abstention;
-
-  return [
-    { q: 'How accurate is Tickrify?', a: accuracyAnswer(data) },
-    {
-      q: 'How is that accuracy measured?',
-      a: 'An automated sweeper runs hourly and scores every analysis that was completed at least 48 hours earlier against real market candles. The proposed entry must fill first, then the first target races the stop on 30-minute candles. If one candle contains both the target and the stop, it is recorded as a loss. There is no human in the loop and no selection of which trades get scored. The headline figures use the original rule, which also counts a target touched in the same candle where the entry fills as a win; analyses scored under a later, stricter rule, where only the stop counts in that candle, are reported as a separate series and never added to the headline figures.',
-    },
-    {
-      q: 'Does the AI suggest a trade on every chart?',
-      a:
-        abst && abst.rate !== null && abst.rate !== undefined
-          ? `No. ${abst.rate}% of analyses (${abst.wait} of ${abst.total}) return a WAIT action rather than BUY or SELL. A WAIT can still describe a bullish or bearish market scenario. Waiting is a designed outcome, not a failure to answer, and those analyses count as neither a win nor a loss.`
-          : 'No. A share of analyses return a WAIT action rather than BUY or SELL. A WAIT can still describe a bullish or bearish market scenario. Waiting is a designed outcome, not a failure to answer, and those analyses count as neither a win nor a loss.',
-    },
-    {
-      q: 'Is that hit rate good or bad?',
-      a: 'On its own it is neither, and Tickrify does not claim it is good. A hit rate says nothing about profitability without reward-to-risk, and these figures exclude spread, slippage, commission and funding, so a real account would do worse. The reason the number is published with its confidence interval is so you can judge it instead of taking a marketing figure on trust.',
-    },
-    {
-      q: 'Are losing trades included?',
-      a: pub
-        ? `Yes. ${o.losses} losses are counted in the published rate, alongside ${o.wins} wins. Unfilled entries, abstentions and untrackable symbols are reported separately and excluded from the rate rather than quietly dropped.`
-        : 'Yes. Every loss the sweeper records is counted in the published rate. Unfilled entries, abstentions and untrackable symbols are reported separately and excluded from the rate rather than quietly dropped.',
-    },
-    {
-      q: 'How often is this page updated?',
-      a: asOf
-        ? `The scoreboard is recalculated hourly and was last updated on ${asOf}. It moves on its own, including when it moves against us.`
-        : 'The scoreboard is recalculated hourly. It moves on its own, including when it moves against us.',
-    },
-  ];
 }
 
 /** O bloco de perguntas em HTML cru, das mesmas strings que viram FAQPage. */
@@ -349,7 +576,7 @@ function headingFromTitle(title) {
  * e metodologia, ate a amostra sustentar. Mesma regra da faixa da home.
  */
 const ACCURACY_POINTER =
-  '<p>Every eligible trade plan is checked against real market candles 48 hours later, automatically. The full scoreboard, with sample size, 95% confidence intervals and the results that look bad, is published at <a href="https://tickrify.com/accuracy">tickrify.com/accuracy</a>.</p>';
+  '<p>Trade plans and Watch levels are checked against real market candles once their window closes, when a price source is available; reads that cannot be checked are counted separately. Results are published in two separate records, the current engine and the archived previous engine, with sample sizes, 95% confidence intervals, the average result per trade and the results that look bad, at <a href="https://tickrify.com/accuracy">tickrify.com/accuracy</a>.</p>';
 
 export function buildBody({ path, meta, copy, accuracy, pricingFaq }) {
   if (meta.noindex) return '';
@@ -402,17 +629,34 @@ export function buildBody({ path, meta, copy, accuracy, pricingFaq }) {
       `<h2>${esc(l.faq.q4)}</h2><p>${esc(l.faq.a4)}</p>`
     );
   } else if (path === '/accuracy') {
-    /* Pergunta no H1, resposta no primeiro parágrafo, tabela em seguida,
-     * perguntas frequentes no fim. É a ordem que um assistente de IA
-     * consegue citar sem ler a página inteira. */
+    /* Pergunta no H1, resposta no primeiro parágrafo, tabelas em seguida,
+     * perguntas frequentes no fim. Mesmos textos da AccuracyPage.tsx. */
+    const note = eurUsdNote(accuracy);
+    const summary = accuracySummary(accuracy);
     parts.push(
-      `<h1>How accurate is Tickrify’s AI chart analysis?</h1>`,
+      '<h1>How accurate is Tickrify? Here is how we measure it</h1>',
       `<p>${esc(accuracyAnswer(accuracy))}</p>`,
-      '<p>That number is measured, not claimed. Every analysis Tickrify produces is re-checked against real market candles 48 hours later, automatically, with no human in the loop. This page is that raw scoreboard. It moves on its own and it includes the results that look bad.</p>',
+      summary ? `<p>${esc(summary)}</p>` : '',
+      '<p>Every number on this page comes from live production data and is recalculated hourly. Results that look bad stay on the page.</p>',
+      `<h2>${esc(whatChangedTitle(accuracy))}</h2>`,
+      `<p>${esc(whatChangedIntro(accuracy))}</p>`,
+      `<p>${esc(ENGINE_STATES)}</p>`,
+      `<p>${esc(WHAT_CHANGED_OUTRO)}</p>`,
       accuracyBlock(accuracy),
-      `<h2>Why this page exists</h2>`,
-      '<p>Tools in this category advertise accuracy figures without a sample size, a confidence interval or a method. Tickrify publishes the raw scoreboard instead, and keeps publishing it when it looks bad. The measurement runs automatically against real candles, so it cannot be curated after the fact.</p>',
-      accuracyFaqBlock(accuracy)
+      '<h2>Why a hit rate is not profit</h2>',
+      '<p>A hit rate ignores how far the target was: a low rate can pay and a high one can lose. Spread, slippage, commission and funding are not in the hit rates; the current engine’s average result deducts an estimated spread only. Timeouts are left out of the hit rate. Tickrify does not know whether you took the trade, at what size, or when you exited.</p>',
+      '<h2>Method</h2>',
+      `<p>${esc(WHO_CURRENT)}</p>`,
+      `<p>${esc(WHO_PREVIOUS)}</p>`,
+      `<p>${esc(WHO_DEMO)}</p>`,
+      `<p>Current engine. ${esc(CURRENT_METHOD)}</p>`,
+      `<p>Previous engine. ${esc(PREVIOUS_METHOD)}</p>`,
+      `<p>${esc(averageMethod(accuracy))}</p>`,
+      `<p>${esc(intervalsMethod(accuracy))}</p>`,
+      '<h2>Exclusions</h2>',
+      '<p>Who is counted differs by engine; both rules are stated under Method above. Verdicts users tag by hand are excluded. Reads without a price source or without candles are counted separately, never as a win or a loss.</p>',
+      accuracyFaqBlock(accuracy),
+      note ? `<p>${esc(note)}</p>` : ''
     );
   } else {
     parts.push(`<h1>${esc(headingFromTitle(meta.title))}</h1>`, `<p>${esc(meta.description)}</p>`);
@@ -537,7 +781,7 @@ export function buildJsonLd({ path, copy, accuracy, offer, pricingFaq }) {
       operatingSystem: 'Web',
       url: `${SITE}`,
       description:
-        'AI chart analysis for traders: upload a chart screenshot and get entry, stop, targets and risk, or a WAIT, as a second opinion before you enter.',
+        'AI chart analysis for traders: upload a chart screenshot and get Enter now with entry, stop and target, Watch with the level to wait for, or No trade, as a second opinion before you enter.',
       offers: {
         '@type': 'Offer',
         price: offer.price,
@@ -568,49 +812,44 @@ export function buildJsonLd({ path, copy, accuracy, offer, pricingFaq }) {
   }
 
   if (path === '/accuracy') {
-    const o = accuracy?.overall;
-    const pubOverall = Boolean(o && o.publishable && o.rate !== null && o.rate !== undefined);
+    const o = accuracy?.previous?.overall;
+    const pubOverall = isRate(o);
+    const hit = accuracy?.current?.enterNow?.hitRate;
     const dataset = {
       '@type': 'Dataset',
-      name: 'Tickrify AI accuracy: measured hit rate',
-      description:
-        'The measured hit rate of Tickrify AI chart analysis, published with sample size and 95% Wilson confidence intervals, including the results that look bad. Every analysis is re-checked against real market candles 48 hours after it was produced.',
+      name: 'Tickrify AI accuracy: current engine and archived previous engine',
+      description: datasetDescription(accuracy),
       url: `${SITE}/accuracy`,
       isAccessibleForFree: true,
       creator: { '@type': 'Organization', name: 'Tickrify', url: SITE },
-      measurementTechnique:
-        'Each published analysis is scored automatically against real candles 48 hours later, with no human in the loop. Rates below n = 20 are shown as sample size only.',
-      /* Os mesmos valores que o .tsx declara. Sem eles o Dataset descreve as
-       * variáveis mas não publica nenhuma medida, e é justamente a medida que
-       * um assistente de IA cita. Entram só quando a API respondeu e o recorte
-       * passou da regra de n mínimo: mesma regra da página. */
+      measurementTechnique: measurementTechnique(accuracy),
+      /* Os mesmos valores que o .tsx declara, só quando a API respondeu e o
+       * recorte passou da regra de n mínimo. */
       variableMeasured: [
         {
           '@type': 'PropertyValue',
-          name: 'Hit rate',
-          description: 'Share of resolved analyses scored under the original rule that reached target before stop, with a 95% Wilson confidence interval.',
-          ...(pubOverall ? { value: accuracy.overall.rate, unitText: 'PERCENT' } : {}),
+          name: 'Current engine Enter now hit rate',
+          description: 'Share of current-engine Enter now trades resolved at target or stop that reached the first target first, with a 95% Wilson confidence interval.',
+          ...(isRate(hit) ? { value: hit.rate, unitText: 'PERCENT' } : {}),
         },
         {
           '@type': 'PropertyValue',
-          name: 'Abstention rate',
-          description: 'Share of analyses with a WAIT action rather than BUY or SELL; the market scenario may still be directional.',
-          ...(accuracy?.abstention && accuracy.abstention.rate !== null && accuracy.abstention.rate !== undefined
-            ? { value: accuracy.abstention.rate, unitText: 'PERCENT' }
-            : {}),
+          name: 'Previous engine hit rate',
+          description: 'Share of the previous engine’s resolved analyses, scored under the original rule, that reached target before stop, with a 95% Wilson confidence interval.',
+          ...(pubOverall ? { value: o.rate, unitText: 'PERCENT' } : {}),
         },
         {
           '@type': 'PropertyValue',
-          name: 'Sample size (n)',
-          description: 'Number of resolved analyses behind each published rate.',
-          ...(pubOverall ? { value: accuracy.overall.n } : {}),
+          name: 'Previous engine sample size (n)',
+          description: 'Number of resolved analyses behind the previous engine’s hit rate.',
+          ...(pubOverall ? { value: o.n } : {}),
         },
       ],
     };
     /* dateModified só entra quando a API respondeu. A página nunca declara o
      * que não pôde verificar, e o markup segue a mesma regra. */
     if (accuracy?.updatedAt) dataset.dateModified = accuracy.updatedAt;
-    if (accuracy?.groundingLiveSince) dataset.temporalCoverage = `${accuracy.groundingLiveSince.slice(0, 10)}/..`;
+    if (accuracy?.previous?.firstRecordAt) dataset.temporalCoverage = `${accuracy.previous.firstRecordAt.slice(0, 10)}/..`;
 
     /* Dataset e FAQPage no mesmo @graph, um id só. O `useJsonLd` do React
      * substitui o elemento por id ao montar; dois elementos aqui virariam um

@@ -13,18 +13,27 @@ const SRC = readFileSync(join(__dirname, 'ai.controller.ts'), 'utf8');
 
 /** Toda query que alimenta numero ou vitrine publica. */
 const PUBLIC_QUERY_MARKERS = [
-  "recommendation: { not: null }, isDemo: false",
-  "outcome: { in: [...AUTOMATIC_OUTCOMES] }, isDemo: false",
-  "recommendation: { in: ['WAIT', 'HOLD', 'AGUARDAR'] }",
+  "outcome: { in: [...PUBLIC_SCORED_OUTCOMES] }, isDemo: false",
+  'a."outcome" IN (${Prisma.join([...AUTOMATIC_OUTCOMES])})',
+  "FILTER (WHERE a.\"recommendation\" IN ('WAIT', 'HOLD', 'AGUARDAR'))",
+  'LEFT JOIN "tickrify"."AnalysisTrack" t',
 ];
 
 describe('TRAVA 2 — estrategia fora da amostra publica', () => {
   it('toda ocorrencia de isDemo: false numa query publica vem com strategyHash: null', () => {
     const wheres = SRC.split('where:').slice(1);
     const publicWheres = wheres.filter((w) => w.slice(0, 200).includes('isDemo: false'));
-    expect(publicWheres.length).toBeGreaterThanOrEqual(4);
+    expect(publicWheres.length).toBeGreaterThanOrEqual(1);
     for (const w of publicWheres) {
       expect(w.slice(0, 200)).toContain('strategyHash: null');
+    }
+  });
+
+  it('toda consulta em SQL sobre "Analysis" (a /accuracy, 04/11/2026) exige strategyHash IS NULL', () => {
+    const sqlFroms = SRC.split('FROM "tickrify"."Analysis" a').slice(1);
+    expect(sqlFroms.length).toBeGreaterThanOrEqual(3);
+    for (const w of sqlFroms) {
+      expect(w.slice(0, 700)).toContain('a."strategyHash" IS NULL');
     }
   });
 

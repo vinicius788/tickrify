@@ -30,19 +30,29 @@ import { SetTradeNoteDto } from './dto/set-trade-note.dto';
 import { SetOutcomeDto } from './dto/set-outcome.dto';
 import { SetFavoriteDto } from './dto/set-favorite.dto';
 import { SetStrategyDto } from './dto/set-strategy.dto';
+import { Prisma } from '@prisma/client';
 import {
   AUTOMATIC_OUTCOMES,
+  CURRENT_ENGINE_MAJOR,
+  CURRENT_ENGINE_SINCE,
+  CURRENT_ENGINE_SQL,
   FILL_CANDLE_RULE,
   GROUNDING_LIVE_SINCE,
+  MIN_N_TO_PUBLISH,
   PUBLIC_SCORED_OUTCOMES,
+  averageResult,
   breakdownOf,
   confidenceBand,
+  currentEngineReport,
+  previousTradeR,
   splitByFillCandleRule,
   tally,
   type ConfidenceBand,
   type OutcomeRow,
 } from './accuracy.util';
 import { normalizeSymbol } from '../../common/utils/analysis-normalizer';
+import { analysisInterval } from '../market/candle-store';
+import { trackingWindowEnd } from '../../../worker/analysis-tracker';
 
 @Controller('ai')
 export class AiController {
@@ -346,7 +356,9 @@ export class AiController {
    *  - so outcomes do sweeper automatico (ver AUTOMATIC_OUTCOMES; o veredicto
    *    manual do My Trades mora no mesmo campo em minusculas e e autorrelato);
    *  - todo recorte sai com n e intervalo de Wilson, nunca so a taxa;
-   *  - recorte com n < 20 sai com publishable=false e o front mostra so o n.
+   *  - recorte com n < 20 sai com publishable=false e o front mostra so o n;
+   *  - motor anterior (`previous`, sweeper) e motor atual (`current`,
+   *    rastreador, major >= 4) nunca se somam (04/11/2026).
    *
    * Cache em memoria de 1h: o Render roda no plano free, isto nao pode
    * recalcular a cada request. Sem dependencia nova.
@@ -367,16 +379,25 @@ export class AiController {
       return this.accuracyCache.payload;
     }
 
-    const allRows: OutcomeRow[] = await this.prisma.analysis.findMany({
-      where: { outcome: { in: [...AUTOMATIC_OUTCOMES] }, isDemo: false, strategyHash: null },
-      select: { outcome: true, confidence: true, createdAt: true, model: true, outcomeDetail: true },
-    });
+    const current = Prisma.raw(CURRENT_ENGINE_SQL);
+    const rewardTp1 = Prisma.sql`CASE
+      WHEN jsonb_typeof(a."result"->'analysis'->'riskRewardTp1') = 'number' THEN (a."result"->'analysis'->>'riskRewardTp1')::float8
+      WHEN jsonb_typeof(a."result"->'riskRewardTp1') = 'number' THEN (a."result"->>'riskRewardTp1')::float8
+    END`;
+
+    // Motor anterior (sem versao ou major < 4): tudo o que a pagina publicava,
+    // com as mesmas regras, so que sem as analises do motor atual.
+    const allRows = await this.prisma.$queryRaw<Array<OutcomeRow & { model: string | null; rewardTp1: number | null }>>(Prisma.sql`
+      SELECT a."outcome", a."confidence", a."createdAt", a."model", a."outcomeDetail", ${rewardTp1} AS "rewardTp1"
+      FROM "tickrify"."Analysis" a
+      WHERE a."outcome" IN (${Prisma.join([...AUTOMATIC_OUTCOMES])})
+        AND a."isDemo" = false AND a."strategyHash" IS NULL
+        AND NOT (${current})
+    `);
     // Regra do candle do fill (decisao de 20/10/2026): tudo que a resposta ja
     // tinha (overall e cortes) e calculado so com as linhas `legacy`, o historico
     // comparavel. As linhas `stop_only` vao so para `stopOnly`, sem se misturar.
     const { legacy: rows, stop_only: stopOnlyRows } = splitByFillCandleRule(allRows);
-
-    const breakdown = breakdownOf(rows);
 
     const bands: ConfidenceBand[] = ['below60', 'band60to69', 'band70plus', 'unknown'];
     const byConfidence = bands.map((band) => ({
@@ -384,47 +405,112 @@ export class AiController {
       ...tally(rows.filter((r) => confidenceBand(r.confidence) === band)),
     }));
 
-    // Split pela data do deploy do grounding: mostra que a Tickrify mede as
-    // proprias mudancas em vez de so anuncia-las.
-    const byGrounding = {
-      before: tally(rows.filter((r) => r.createdAt < GROUNDING_LIVE_SINCE)),
-      after: tally(rows.filter((r) => r.createdAt >= GROUNDING_LIVE_SINCE)),
-    };
-
-    const withVer = rows as Array<(typeof rows)[number] & { model: string | null }>;
-
     // Corte por modelo: a migração gpt-4o-mini → gpt-5.6 é obrigatória até
     // 23/10/2026, e sem este corte não há como saber se a troca ajudou.
-    const models = [...new Set(withVer.map((r) => r.model).filter(Boolean))] as string[];
-    const byModel = models.map((m) => ({ model: m, ...tally(withVer.filter((r) => r.model === m)) }));
+    const models = [...new Set(rows.map((r) => r.model).filter(Boolean))] as string[];
+    const byModel = models.map((m) => ({ model: m, ...tally(rows.filter((r) => r.model === m)) }));
 
-    const [waitCount, completedCount] = await Promise.all([
-      this.prisma.analysis.count({
-        where: { status: 'completed', isDemo: false, strategyHash: null, recommendation: { in: ['WAIT', 'HOLD', 'AGUARDAR'] } },
-      }),
-      this.prisma.analysis.count({
-        where: { status: 'completed', isDemo: false, strategyHash: null, recommendation: { not: null } },
-      }),
-    ]);
+    const [abst] = await this.prisma.$queryRaw<Array<{ wait: number; total: number }>>(Prisma.sql`
+      SELECT count(*) FILTER (WHERE a."recommendation" IN ('WAIT', 'HOLD', 'AGUARDAR'))::int AS "wait", count(*)::int AS "total"
+      FROM "tickrify"."Analysis" a
+      WHERE a."status" = 'completed' AND a."isDemo" = false AND a."strategyHash" IS NULL
+        AND a."recommendation" IS NOT NULL AND NOT (${current})
+    `);
+    const waitCount = Number(abst?.wait ?? 0);
+    const completedCount = Number(abst?.total ?? 0);
 
-    const payload = {
-      updatedAt: new Date().toISOString(),
+    const overall = tally(rows);
+    const previousTrades = rows.filter((r) => ['WIN', 'LOSS', 'TIMEOUT'].includes(String(r.outcome)));
+    const previousR = previousTrades.flatMap((r) => {
+      const t = previousTradeR(r);
+      return t ? [t] : [];
+    });
+    const firstRecord = allRows.reduce<Date | null>((min, r) => (!min || r.createdAt < min ? r.createdAt : min), null);
+
+    const previous = {
+      firstRecordAt: firstRecord ? firstRecord.toISOString() : null,
       groundingLiveSince: GROUNDING_LIVE_SINCE.toISOString(),
-      overall: tally(rows),
+      overall,
       byConfidence,
-      byGrounding,
+      // Split pela data do deploy do grounding: mostra que a Tickrify mede as
+      // proprias mudancas em vez de so anuncia-las.
+      byGrounding: {
+        before: tally(rows.filter((r) => r.createdAt < GROUNDING_LIVE_SINCE)),
+        after: tally(rows.filter((r) => r.createdAt >= GROUNDING_LIVE_SINCE)),
+      },
       byModel,
       abstention: {
         wait: waitCount,
         total: completedCount,
         rate: completedCount > 0 ? Math.round((waitCount / completedCount) * 1000) / 10 : null,
       },
-      breakdown,
-      // Campos novos (20/10/2026), aditivos. `stopOnly`: a serie da regra nova do
-      // candle do fill, a parte (nunca somada ao overall). `methodology`: qual regra
-      // cada serie usa e qual o sweeper aplica nas avaliacoes novas.
+      breakdown: breakdownOf(rows),
+      // `stopOnly`: a serie da regra nova do candle do fill, a parte (nunca somada
+      // ao overall). `methodology`: qual regra cada serie usa.
       stopOnly: { overall: tally(stopOnlyRows), breakdown: breakdownOf(stopOnlyRows) },
       methodology: { overall: 'legacy', stopOnly: 'stop_only', newEvaluations: FILL_CANDLE_RULE },
+      // Resultado medio por trade em R (WIN = riskRewardTp1, LOSS = -1, TIMEOUT = 0),
+      // so linhas legacy, antes de custos; sem R valido fica fora e conta em `excluded`.
+      averageResult: averageResult(previousR, previousTrades.length - previousR.length),
+    };
+
+    // Motor atual: o rastreador (AnalysisTrack), nunca o sweeper. Tabela
+    // indisponivel = `current: null` e a pagina diz que nao carregou.
+    // Filtro proprio (04/11/2026, decisao do dono): gratis, trial e pago contam
+    // (o motor e o mesmo para todos); fora a conta do dono (role admin ou
+    // acesso manual `manual_%`) e analise com perfil de estrategia. A demo
+    // anonima do /try nunca grava em "Analysis" (so em "DemoUsage").
+    let currentReport: ReturnType<typeof currentEngineReport> | null = null;
+    try {
+      const raw = await this.prisma.$queryRaw<Array<{
+        createdAt: Date; signalState: string | null; dataMode: string | null; symbol: string | null; reachProbability: number | null;
+        watchPlan: unknown; groundingInterval: string | null; timeframe: string | null;
+        trackStatus: string | null; trackOutcome: string | null; trackReason: string | null; touched: boolean | null;
+        fillPrice: number | null; stopLoss: number | null; takeProfit1: number | null; trackSymbol: string | null;
+      }>>(Prisma.sql`
+        SELECT a."createdAt", a."result"->>'signalState' AS "signalState", a."result"->>'dataMode' AS "dataMode",
+          COALESCE(a."result"->'analysis'->>'symbol', a."result"->>'symbol') AS "symbol",
+          CASE WHEN jsonb_typeof(a."result"->'watchReach'->'probability') = 'number'
+            THEN (a."result"->'watchReach'->>'probability')::float8 END AS "reachProbability",
+          a."result"->'watchPlan' AS "watchPlan", a."groundingStats"->>'interval' AS "groundingInterval",
+          a."result"->'analysis'->>'timeframe' AS "timeframe",
+          t."status" AS "trackStatus", t."outcome" AS "trackOutcome", t."reason" AS "trackReason", t."touched", t."fillPrice", t."stopLoss", t."takeProfit1",
+          t."symbol" AS "trackSymbol"
+        FROM "tickrify"."Analysis" a
+        LEFT JOIN "tickrify"."AnalysisTrack" t ON t."analysisId" = a."id"
+        WHERE a."status" = 'completed' AND a."strategyHash" IS NULL AND (${current})
+          AND NOT EXISTS (SELECT 1 FROM "tickrify"."User" u WHERE u."id" = a."userId" AND u."role" = 'admin')
+          AND NOT EXISTS (SELECT 1 FROM "tickrify"."Subscription" s WHERE s."userId" = a."userId" AND s."stripeId" LIKE 'manual_%')
+      `);
+      currentReport = currentEngineReport(raw.map((r) => ({
+        createdAt: r.createdAt,
+        signalState: r.signalState,
+        dataMode: r.dataMode,
+        symbol: r.symbol,
+        reachProbability: r.reachProbability,
+        windowEndMs: trackingWindowEnd(r.createdAt, r.watchPlan, r.symbol, analysisInterval(r.groundingInterval, r.timeframe)),
+        track: r.trackStatus
+          ? {
+            status: r.trackStatus, outcome: r.trackOutcome, reason: r.trackReason, touched: Boolean(r.touched),
+            symbol: r.trackSymbol ?? r.symbol, fillPrice: r.fillPrice, stopLoss: r.stopLoss, takeProfit1: r.takeProfit1,
+          }
+          : null,
+      })));
+    } catch (err) {
+      this.logger.warn(`[accuracy] Motor atual indisponivel: ${err instanceof Error ? err.message : err}`);
+    }
+
+    const payload = {
+      updatedAt: new Date().toISOString(),
+      // Filtros publicos de cada serie (a pagina os descreve na metodologia).
+      filters: {
+        previous: { isDemo: false, strategyHash: null },
+        current: { freeTrialAndPaid: true, strategyHash: null, excludesOwnerAccount: true },
+        minResolvedToPublish: MIN_N_TO_PUBLISH,
+      },
+      currentEngine: { major: CURRENT_ENGINE_MAJOR, since: CURRENT_ENGINE_SINCE.toISOString() },
+      previous,
+      current: currentReport,
     };
 
     this.accuracyCache = { at: Date.now(), payload };
