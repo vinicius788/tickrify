@@ -61,6 +61,10 @@ export function normalizeTimeframe(tf: string): string | null {
   return map[t] ?? null;
 }
 
+export function analysisInterval(groundingInterval: string | null | undefined, chartTimeframe: unknown): string | null {
+  return groundingInterval ?? normalizeTimeframe(String(chartTimeframe ?? ''));
+}
+
 /** O pedaco do Prisma que o armazem usa (PrismaClient do worker ou PrismaService). */
 export interface CandleDb {
   $executeRawUnsafe(query: string, ...values: unknown[]): PromiseLike<number>;

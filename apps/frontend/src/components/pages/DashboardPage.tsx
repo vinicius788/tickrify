@@ -65,7 +65,7 @@ import SetupsSection from "../dashboard/SetupsSection";
 import SetupPage from "../dashboard/SetupPage";
 import TradePanel from "../dashboard/TradePanel";
 import { displayAsset, tradeQueryKey, type OpenTrade, type TradeCloseReason } from "@/lib/api";
-import { SETUP_ID_PATTERN, formatSetupDay, useAlertActions, useSetupAlerts, useSetupVersions } from "@/lib/setups";
+import { SETUP_ID_PATTERN, formatSetupDay, useExpiryClock, isWatchOpen, useAlertActions, useSetupAlerts, useSetupVersions } from "@/lib/setups";
 import { openChat, useChatThread } from "@/lib/support-chat";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
@@ -630,6 +630,8 @@ const DashboardPage = () => {
   const updatingSetupId = setupParam && SETUP_ID_PATTERN.test(setupParam) && !isDemo ? setupParam : null;
   const updatingSetupQuery = useSetupVersions(updatingSetupId, 1);
   const updatingSetupPage = updatingSetupQuery.data?.pages[0];
+  const updatingWatch = updatingSetupPage?.versions[0]?.watch;
+  const setupNow = useExpiryClock(Date.parse(updatingWatch?.expiresAt ?? ''));
   const updatingSetup = updatingSetupPage?.setup.status === 'tracking' ? updatingSetupPage : null;
 
   // Sinais gratis que ainda restam (o /usage ja desconta); 3 enquanto carrega.
@@ -1273,7 +1275,7 @@ const DashboardPage = () => {
         {/* Today: alertas disparados, niveis vigiados e operacoes abertas. Conta
             travada: os alertas ficam pausados e o paywall cita o ativo real. */}
         {!isDemo && !freeLocked && (
-          <TodaySection base={base} alerts={alertsQuery.data} openTrades={openTradesQuery.data?.trades ?? []} />
+          <TodaySection base={base} alerts={alertsQuery.data} openTrades={openTradesQuery.data?.trades ?? []} analyses={rawAnalyses} />
         )}
         {!isDemo && freeLocked && alertsQuery.data?.paused && alertsQuery.data.pausedSymbol
           ? paywallFor('alerts', undefined, alertsQuery.data.pausedSymbol)
@@ -1509,7 +1511,7 @@ const DashboardPage = () => {
                             `${updatingSetup.setup.symbol ?? 'N/A'} ${updatingSetup.setup.timeframe ?? ''}`.trim(),
                           ),
                           detail:
-                            updatingSetup.versions[0]?.recommendation === 'WAIT' && updatingSetup.versions[0].entryCondition
+                            updatingSetup.versions[0]?.recommendation === 'WAIT' && updatingSetup.versions[0].entryCondition && (!updatingWatch || isWatchOpen(updatingWatch, setupNow))
                               ? t.setups.waitingFor
                                   .replace('{condition}', updatingSetup.versions[0].entryCondition)
                                   .replace('{date}', formatSetupDay(updatingSetup.versions[0].createdAt, DATE_LOCALES[language] ?? 'en-US'))
@@ -1724,7 +1726,7 @@ const DashboardPage = () => {
                   .replace('{date}', new Date(otherOpenTrade.updatedAt).toLocaleDateString(DATE_LOCALES[language] ?? 'en-US'))}
               </div>
             ) : null}
-            <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} />
+            <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} alertsEnabled={!isDemo && !freeLocked} />
             {tradeAnalysisId ? <TradePanel key={`trade-${tradeAnalysisId}`} analysisId={tradeAnalysisId} /> : null}
             {/* Seguir o setup: ao lado das acoes de sempre, nunca no lugar delas. */}
             {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' ? (

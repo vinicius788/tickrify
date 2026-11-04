@@ -25,6 +25,7 @@ import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
 import { WatchPlanChart, isWatchLevels, isWatchPlan } from './WatchPlanChart';
 import { ReadModePanel, type ReadModeData } from './ReadModePanel';
+import { LevelMapCard } from './PendingLevels';
 import { AnalysisShareButton } from './ShareCard';
 import type { ReadShareData } from '@/lib/share-card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -56,6 +57,8 @@ interface AnalysisResultProps {
    * card de compartilhar e o relato de problema sao de analise da pessoa.
    */
   sample?: boolean;
+  /** Conta pode criar alerta de nivel (painel real, conta nao travada). */
+  alertsEnabled?: boolean;
 }
 
 type MarketSession = { name: string; abbr: string; open: boolean };
@@ -497,7 +500,7 @@ export function parseStructureChecklist(text: string): StructureChecklist {
   return { items, score: scoreMismatch ? null : score, scoreMismatch };
 }
 
-const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: AnalysisResultProps) => {
+const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEnabled = false }: AnalysisResultProps) => {
   // Diz ao botão de reportar problema qual análise está na tela. Sem isto o
   // relato chega sem o id e vira caça ao tesouro no histórico do usuário.
   useEffect(() => {
@@ -1125,6 +1128,16 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false }: Analysi
       </Card>
 
       <ReadModePanel data={readMode} formatPrice={formatPrice} />
+
+      {/* NO_TRADE com velas reais: os dois lados do preco, calculados pelo codigo. Analise antiga ou print: nada. */}
+      {signalState === 'NO_TRADE' && analysisData.fullResponse?.dataMode === 'real_data' && analysisData.fullResponse.levelMap ? (
+        <LevelMapCard
+          levelMap={analysisData.fullResponse.levelMap}
+          analysisId={analysisData.id ?? null}
+          alerts={alertsEnabled && !sample}
+          formatPrice={formatPrice}
+        />
+      ) : null}
 
       {invalidTradePlan && (
         <Alert className="border-[var(--signal-sell)] bg-[var(--signal-sell-bg)]" role="alert">

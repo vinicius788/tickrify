@@ -5,14 +5,13 @@ import {
   SetupAlertsService,
   alertSuggestions,
   findTrigger,
-  priceSymbolOf,
   runAlertMonitor,
   sideFor,
 } from './setup-alerts.service';
 import { CreateSetupAlertDto, ListSetupAlertsQueryDto } from './dto/setups.dto';
 import { SetupsController } from './setups.controller';
 import { TwelveDataUnavailableError, __setTwelveDataForTests, fxMarketClosed } from '../market/twelve-data';
-import { fetchFxLatest5m as fetchFxLatest5mMock, fetchWindowFor as fetchWindowForMock, type Candle } from '../market/candles';
+import { fetchFxLatest5m as fetchFxLatest5mMock, fetchWindowFor as fetchWindowForMock, priceSymbolOf, type Candle } from '../market/candles';
 const fetchWindowFor = fetchWindowForMock as jest.Mock;
 const fetchFxLatest5m = fetchFxLatest5mMock as jest.Mock;
 import { captureServer as captureServerMock } from '../../common/analytics/posthog';
@@ -110,6 +109,21 @@ describe('regras puras dos alertas', () => {
     expect(alertSuggestions({ analysis: { symbol: 'BTCUSD', entryCondition: 'Wait for a close above 100' } }, 'WAIT')).toEqual([]);
   });
 
+  it('WATCH: o nivel do plano (borda proxima, rotulo entry) e a invalidacao vem preenchidos', () => {
+    expect(alertSuggestions(WATCH_BTC.result, 'WAIT', WATCH_BTC)).toEqual([
+      { label: 'entry', level: 77800 },
+      { label: 'invalidation', level: 78400 },
+    ]);
+  });
+
+  it('a validade das sugestoes segue o intervalo do grounding, inclusive no POST', async () => {
+    const analysis = { ...WATCH_BTC, createdAt: new Date(Date.now() - 2 * 3600_000), groundingInterval: '5m' };
+    const { service } = await ready({ analysis });
+    expect((await service.options('u', analysis.id, true)).suggestions).toEqual([]);
+    await expect(service.create({ id: 'u' }, { analysisId: analysis.id, level: 77800, label: 'entry' },
+      { isSubscriber: true, trialDay: null })).rejects.toMatchObject({ response: { code: 'alert_level_mismatch' } });
+  });
+
   it('forex fechado no fim de semana', () => {
     expect(fxMarketClosed(new Date('2026-10-24T12:00:00Z'))).toBe(true); // sabado
     expect(fxMarketClosed(new Date('2026-10-23T22:30:00Z'))).toBe(true); // sexta a noite
@@ -118,6 +132,16 @@ describe('regras puras dos alertas', () => {
     expect(fxMarketClosed(new Date('2026-10-27T12:00:00Z'))).toBe(false);
   });
 });
+
+const WATCH_BTC = {
+  createdAt: new Date(), groundingInterval: null, id: 'analysis00002', status: 'completed', recommendation: 'WAIT', setupId: null,
+  result: {
+    signalState: 'WATCH',
+    watchPlan: { direction: 'short', triggerType: 'zone_reaction', zoneLow: 77800, zoneHigh: 78000, invalidation: 78400,
+      target1: 76900, target2: null, validForCandles: 12, trigger: 'Bearish close below 77,800' },
+    analysis: { symbol: 'BTCUSDT', timeframe: '15m', currentPrice: 77200 },
+  },
+};
 
 function makeService(opts: { activeOnSetup?: number; setupsWithAlerts?: number; sameLevel?: boolean; analysis?: unknown; cachedPrice?: { lastPrice: number; checkedAt: Date } } = {}) {
   const { prisma, calls } = makePrisma([
@@ -161,6 +185,17 @@ describe('SetupAlertsService.create', () => {
     expect(captureServer).toHaveBeenCalledWith('clerk_1', 'setup_alert_created', expect.objectContaining({
       label: 'entry', prefilled: true, symbol_class: 'metal', is_subscriber: false, trial_day: 1,
     }));
+  });
+
+  it('WATCH: "Alert me at <nivel>" cria o alerta preenchido no nivel do plano, com as mesmas regras', async () => {
+    const { service, calls } = await ready({ analysis: WATCH_BTC });
+    const { alert } = await service.create(user, { analysisId: 'analysis00002', label: 'entry', level: 77800 }, free);
+    expect(alert.status).toBe('active');
+    const insert = calls.find((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"'));
+    expect(insert?.values).toEqual(expect.arrayContaining(['BTCUSDT', 77800, 'entry', 'above', 77200, true]));
+    await expect(service.create(user, { analysisId: 'analysis00002', label: 'entry', level: 77900 }, free)).rejects.toMatchObject({
+      response: { code: 'alert_level_mismatch' },
+    });
   });
 
   it('nivel digitado vai como custom (prefilled=false); rotulo que nao bate com o plano e recusado', async () => {
@@ -298,6 +333,9 @@ describe('SetupsController (alertas): conta travada', () => {
   it('criar, opcoes, cancelar e marcar visto respondem 402 sem tocar no servico', async () => {
     const { controller, alerts } = locked();
     await expect(controller.createAlert(me, { analysisId: 'analysis00001', label: 'entry', level: 1 })).rejects.toMatchObject({ status: 402 });
+    // O "Alert me at <nivel>" do WATCH pendente e do mapa de niveis passa pela mesma rota.
+    await expect(controller.createAlert(me, { analysisId: 'analysis00002', label: 'entry', level: 77800 })).rejects.toMatchObject({ status: 402 });
+    await expect(controller.createAlert(me, { analysisId: 'analysis00002', label: 'custom', level: 79000 })).rejects.toMatchObject({ status: 402 });
     await expect(controller.alertOptions(me, 'analysis00001')).rejects.toMatchObject({ status: 402 });
     await expect(controller.cancelAlert(me, 'alert-aaaaaaaa')).rejects.toMatchObject({ status: 402 });
     await expect(controller.seenAlert(me, 'alert-aaaaaaaa')).rejects.toMatchObject({ status: 402 });

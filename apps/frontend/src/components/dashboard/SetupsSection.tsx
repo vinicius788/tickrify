@@ -5,6 +5,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
 import { useAPIClient, type SignalState, type StrategyProfileDto } from '@/lib/api';
+import { WatchPending } from './PendingLevels';
 import { entrySide, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import {
   formatSetupDay,
@@ -135,12 +136,18 @@ const SetupsSection = ({
                         .replace('{relative}', formatSetupRelative(setup.lastAnalysisAt, locale))
                         .replace('{date}', formatSetupDay(setup.lastAnalysisAt, locale))}`}
                     </p>
-                    {latest && latest.recommendation === 'WAIT' && latest.entryCondition ? (
+                    {latest && !latest.watch && latest.recommendation === 'WAIT' && latest.entryCondition ? (
                       <p className="mt-1.5 text-xs leading-relaxed text-[var(--text-primary)]/85">
                         {s.waitingFor
                           .replace('{condition}', latest.entryCondition)
                           .replace('{date}', formatSetupDay(latest.createdAt, locale))}
                       </p>
+                    ) : null}
+                    {latest?.watch ? (
+                      <div className="mt-2">
+                        <WatchPending analysisId={latest.analysisId} watch={latest.watch} surface="setups"
+                        waitingFor={latest.entryCondition && s.waitingFor.replace('{condition}', latest.entryCondition).replace('{date}', formatSetupDay(latest.createdAt, locale))} />
+                      </div>
                     ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-2">

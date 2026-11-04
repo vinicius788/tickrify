@@ -23,6 +23,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { entrySide, getRecommendationMeta, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import { VERDICT_CFG, isTradeCall, verdictFromOutcome, type Verdict } from '@/lib/verdict';
 import { buildMonthGrid, computeAiComparison, computeMonthStats, type AiComparison, dayKey, monthRange, summarizeByDay, weekStartFor, type GroupRow, type MonthStats } from '@/lib/journal';
+import { WatchPending } from './PendingLevels';
 
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
@@ -55,6 +56,7 @@ function plannedRr(a: AIAnalysisResponse, verdict: 'TP1' | 'TP2'): number | null
 }
 
 function sideOf(a: AIAnalysisResponse): 'BUY' | 'SELL' | null {
+  if (!isTradeCall(a.recommendation, a.signalState)) return null;
   const tone = getRecommendationMeta(a.recommendation).tone;
   return tone === 'buy' ? 'BUY' : tone === 'sell' ? 'SELL' : null;
 }
@@ -258,7 +260,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
 
   const items = useMemo(() => query.data?.items ?? [], [query.data]);
   // O Diario so le: o resultado e o do servidor (lib/verdict.ts).
-  const verdictOf = (a: AIAnalysisResponse): Verdict => verdictFromOutcome(a.outcome);
+  const verdictOf = (a: AIAnalysisResponse): Verdict => sideOf(a) ? verdictFromOutcome(a.outcome) : null;
   const pnlOf = (a: AIAnalysisResponse): number | null => {
     const n = Number(a.pnlAmount);
     return a.pnlAmount === null || a.pnlAmount === undefined || !Number.isFinite(n) ? null : n;
@@ -578,7 +580,8 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                   {a.tradeNote?.note && (
                                     <span className="line-clamp-2 text-xs text-[var(--text-secondary)]">{a.tradeNote.note}</span>
                                   )}
-                                  {isTradeCall(a.recommendation) && (
+                                  {a.watch && verdict === null && <WatchPending analysisId={a.id} watch={a.watch} surface="journal" />}
+                                  {sideOf(a) && (
                                     <button
                                       type="button"
                                       onClick={() => setNoteFor({ id: a.id, title, note: a.tradeNote ?? null })}
@@ -590,14 +593,14 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                   )}
                                 </div>
                                 <div className="flex shrink-0 flex-col items-end gap-1">
-                                  <span
+                                  {a.watch && verdict === null ? null : <span
                                     className="rounded px-2 py-0.5 font-terminal text-[10px] font-semibold"
                                     style={vcfg
                                       ? { background: vcfg.bg, border: `1px solid ${vcfg.border}`, color: vcfg.text }
                                       : { border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}
                                   >
                                     {verdictLabel(verdict, a.recommendation)}
-                                  </span>
+                                  </span>}
                                   {pnl !== null && (
                                     <span className="font-terminal text-xs font-semibold" style={{ color: pnlColor(pnl) }}>
                                       {fmtPnl(pnl)}

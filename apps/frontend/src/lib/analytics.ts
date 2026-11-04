@@ -447,6 +447,7 @@ export type FunnelEvent =
   // Alertas de nivel (27/10/2026): aberto pelo e-mail ou pelo Today, e o "Update chart".
   | 'setup_alert_opened'
   | 'setup_alert_update_clicked'
+  | 'pending_alert_clicked'
   // Chat com o fundador (12/10/2026). Nunca leva o texto: so superficie,
   // nao lidas e tamanho. O envio confirmado e `chat_message_sent` (servidor).
   | 'chat_opened'

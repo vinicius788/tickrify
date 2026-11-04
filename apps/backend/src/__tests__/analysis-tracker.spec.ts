@@ -58,6 +58,11 @@ describe('trackAnalysis', () => {
     expect(fetchOk).not.toHaveBeenCalled();
   });
 
+  it('usa o intervalo do grounding mesmo com outro timeframe no resultado', async () => {
+    const row = await trackAnalysis(candidate({ analysis: { symbol: 'BTCUSDT', timeframe: '1h' } }), after, fetchOk);
+    expect(row?.timeframe).toBe('15m');
+  });
+
   it('janela ainda aberta: fica para a volta seguinte, sem buscar velas', async () => {
     expect(await trackAnalysis(candidate({}), t0 + 60 * M, fetchOk)).toBeNull();
     expect(fetchOk).not.toHaveBeenCalled();

@@ -5,6 +5,7 @@ import type { GroundingStats } from '../../modules/ai/analysis-data-coverage';
 import type { EntryLevels } from '../utils/plan-engine';
 import type { PriceLocation, SignalDecisionResult, SignalState, ValidatorAction, ValidatorNote, ValidatorReason, WatchReach } from '../utils/signal-decision';
 import type { WatchPlan } from '../utils/plan-engine';
+import type { LevelMap } from '../utils/level-map';
 import type { ProviderComparison } from '../../modules/ai/vision-model';
 
 export interface AnalysisEvidence {
@@ -32,6 +33,8 @@ export interface AIAnalysisResponse {
   location: PriceLocation | null;
   /** WATCH: niveis que o motor usaria ao destravar no nivel (TP1 com teto); null sem REAL DATA. */
   watchLevels: EntryLevels | null;
+  /** NO_TRADE com REAL DATA: niveis dos dois lados do preco (level-map.ts); null fora disso. */
+  levelMap: LevelMap | null;
   /** Cada mudanca de estado com o motivo, escrita pelo codigo (nunca pelo modelo). */
   validatorNotes: ValidatorNote[];
   bias: Bias;

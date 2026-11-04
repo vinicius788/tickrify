@@ -148,6 +148,24 @@ export function candleSourceFor(symbol: string): CandleSource | null {
   return canonicalFxPair(symbol) && twelveDataApiKey() ? 'fx' : null;
 }
 
+export type SymbolClass = 'crypto' | 'forex' | 'metal';
+
+/** Chave do ativo para preco e cache: BTCUSDT, XAUUSD. null = sem fonte (sem alerta de nivel). */
+export function priceSymbolOf(symbol: string | null | undefined): { priceSymbol: string; source: CandleSource; symbolClass: SymbolClass } | null {
+  if (!symbol) return null;
+  const source = candleSourceFor(symbol);
+  if (source === 'crypto') {
+    const { binanceSymbol } = normalizeToBinancePerp(symbol);
+    return binanceSymbol ? { priceSymbol: binanceSymbol, source, symbolClass: 'crypto' } : null;
+  }
+  if (source === 'fx') {
+    const pair = canonicalFxPair(symbol);
+    if (!pair) return null;
+    return { priceSymbol: pair, source, symbolClass: /^X(AU|AG|PT|PD)/.test(pair) ? 'metal' : 'forex' };
+  }
+  return null;
+}
+
 export function fetchWindowFor(
   symbol: string,
   startMs: number,

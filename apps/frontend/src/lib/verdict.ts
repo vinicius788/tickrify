@@ -27,7 +27,8 @@ export type Verdict = 'TP1' | 'TP2' | 'SL' | 'OPEN' | 'NO_FILL' | null;
  * Stop nem valor a marcar, e nao pode aparecer como "pendente" esperando um
  * resultado que nunca vai existir. Continua contando como ANALISE feita.
  */
-export function isTradeCall(recommendation: unknown): boolean {
+export function isTradeCall(recommendation: unknown, signalState?: unknown): boolean {
+  if (signalState === 'WATCH' || signalState === 'NO_TRADE') return false;
   return getRecommendationMeta(recommendation).tone !== 'hold';
 }
 

@@ -21,7 +21,7 @@
 import { PrismaClient } from '@prisma/client';
 import { clampValidity, isValidWatchPlan, resolveTp1, stopMarginAtr, trackPlan, type WatchPlan } from '../src/common/utils/plan-engine';
 import { calibrationPair } from '../src/common/utils/signal-decision';
-import { TIMEFRAME_MS, candleMarketOf, fetchWindow, normalizeTimeframe } from '../src/modules/market/candle-store';
+import { TIMEFRAME_MS, candleMarketOf, fetchWindow, analysisInterval } from '../src/modules/market/candle-store';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -143,7 +143,7 @@ export async function trackAnalysis(
   const analysis = (result.analysis ?? {}) as Record<string, unknown>;
   const state = String(result.signalState ?? '');
   const symbol = typeof analysis.symbol === 'string' ? analysis.symbol : null;
-  const interval = c.groundingStats?.interval ?? normalizeTimeframe(String(analysis.timeframe ?? ''));
+  const interval = analysisInterval(c.groundingStats?.interval, analysis.timeframe);
   const base: TrackRow = {
     analysisId: c.id, promptVer: c.promptVer, engineVersion: typeof result.engine?.version === 'string' ? result.engine.version : null,
     symbol, timeframe: interval, signalState: state, dataMode: typeof result.dataMode === 'string' ? result.dataMode : null,

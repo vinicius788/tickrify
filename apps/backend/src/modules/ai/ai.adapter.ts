@@ -39,6 +39,7 @@ import {
   type TriggerType,
   type WatchPlan,
 } from '../../common/utils/plan-engine';
+import { buildLevelMap } from '../../common/utils/level-map';
 import { OUTPUT_LANGUAGE_NAMES, splitUserContextClose } from '../prompt/prompt-builder.service';
 import { computeCost, formatCostLog } from './model-cost';
 import {
@@ -2369,6 +2370,8 @@ export class AIAdapter {
         watchReach: decision.watchReach,
         location: decision.location,
         watchLevels: decision.watchLevels,
+        // NO_TRADE com velas reais: os dois lados do preco, pelo codigo (level-map.ts).
+        levelMap: decision.state === 'NO_TRADE' && decision.dataMode === 'real_data' ? buildLevelMap(decision.location, numbers) : null,
         validatorNotes: decision.validatorNotes,
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);

@@ -6,6 +6,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
 import { APIError, isFreeQuotaExhausted, type SignalState } from '@/lib/api';
+import { WatchPending } from './PendingLevels';
 import { entrySide, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import {
   formatAlertLevel,
@@ -242,7 +243,7 @@ const SetupPage = ({
                   </p>
                 </div>
                 {v.recommendation === 'WAIT' ? (
-                  v.entryCondition ? (
+                  !v.watch && v.entryCondition ? (
                     <p className="text-xs leading-relaxed text-[var(--text-primary)]/85">
                       {s.waitingFor.replace('{condition}', v.entryCondition).replace('{date}', formatSetupDay(v.createdAt, locale))}
                     </p>
@@ -263,6 +264,12 @@ const SetupPage = ({
                   </dl>
                 )}
               </Link>
+              {v.watch ? (
+                <div className="mt-2">
+                  <WatchPending analysisId={v.analysisId} watch={v.watch} surface="setup_page"
+                        waitingFor={v.entryCondition && s.waitingFor.replace('{condition}', v.entryCondition).replace('{date}', formatSetupDay(v.createdAt, locale))} />
+                </div>
+              ) : null}
             </li>
           ))}
         </ol>

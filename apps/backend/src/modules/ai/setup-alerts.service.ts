@@ -13,12 +13,11 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { captureServer } from '../../common/analytics/posthog';
 import { getFreeQuota, type FreeQuotaCounter } from '../../common/free-quota';
-import { canonicalFxPair } from '../../common/utils/analysis-normalizer';
-import { normalizeToBinancePerp } from '../market/market.service';
-import { INTERVAL_MS, candleSourceFor, fetchFxLatest5m, fetchWindowFor, type Candle, type CandleSource } from '../market/candles';
+import { INTERVAL_MS, candleSourceFor, fetchFxLatest5m, fetchWindowFor, priceSymbolOf, type Candle, type CandleSource } from '../market/candles';
 import { TwelveDataUnavailableError, fxMarketClosed, monitorFxIntervalMs, twelveDataUsage } from '../market/twelve-data';
 import { extractShadowPlan } from '../../../worker/outcome.sweeper';
 import { SetupsService, readPlan } from './setups.service';
+import { watchSummaryOf } from './watch-pending';
 
 /**
  * Alertas de nivel dos setups acompanhados (27/10/2026, fase 1 da sessao diaria).
@@ -47,7 +46,6 @@ export const ALERT_LABELS = ['entry', 'stop', 'tp1', 'invalidation', 'custom'] a
 export type AlertLabel = (typeof ALERT_LABELS)[number];
 export type AlertSide = 'above' | 'below';
 export type AlertStatus = 'active' | 'triggered' | 'cancelled';
-export type SymbolClass = 'crypto' | 'forex' | 'metal';
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -160,29 +158,14 @@ const positive = (value: unknown): number | null => {
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 
-/** Chave do ativo para preco e cache: BTCUSDT, XAUUSD. null = sem fonte. */
-export function priceSymbolOf(symbol: string | null | undefined): { priceSymbol: string; source: CandleSource; symbolClass: SymbolClass } | null {
-  if (!symbol) return null;
-  const source = candleSourceFor(symbol);
-  if (source === 'crypto') {
-    const { binanceSymbol } = normalizeToBinancePerp(symbol);
-    return binanceSymbol ? { priceSymbol: binanceSymbol, source, symbolClass: 'crypto' } : null;
-  }
-  if (source === 'fx') {
-    const pair = canonicalFxPair(symbol);
-    if (!pair) return null;
-    return { priceSymbol: pair, source, symbolClass: /^X(AU|AG|PT|PD)/.test(pair) ? 'metal' : 'forex' };
-  }
-  return null;
-}
-
 /**
  * Niveis que a tela oferece ja preenchidos. BUY/SELL: entrada, stop e TP1 do
- * plano. WAIT: o modelo quase nunca manda nivel (em 20/10, 13 de 187), entao
- * vale a invalidacao ou os niveis que o codigo guardou ao rebaixar (shadow).
+ * plano. WATCH: o nivel do plano (rotulo entry) e a invalidacao dele. WAIT: o
+ * modelo quase nunca manda nivel (em 20/10, 13 de 187), entao vale a
+ * invalidacao ou os niveis que o codigo guardou ao rebaixar (shadow).
  * Sem nenhum, a pessoa digita.
  */
-export function alertSuggestions(result: unknown, recommendation: string | null): AlertSuggestion[] {
+export function alertSuggestions(result: unknown, recommendation: string | null, timing?: Pick<AnalysisRow, 'createdAt' | 'groundingInterval'>): AlertSuggestion[] {
   const plan = readPlan(result, recommendation);
   const analysis = record(record(result).analysis);
   const out: AlertSuggestion[] = [];
@@ -195,6 +178,15 @@ export function alertSuggestions(result: unknown, recommendation: string | null)
     push('tp1', plan.takeProfit1);
     push('invalidation', positive(analysis.invalidationLevel));
   } else {
+    // WATCH (03/11/2026): o nivel que destrava a entrada e a invalidacao do plano.
+    if (plan.signalState === 'WATCH' && record(result).watchPlan) {
+      const watch = timing && watchSummaryOf(result, recommendation, timing.createdAt, {
+        groundingInterval: timing.groundingInterval, setupId: null, track: null,
+      });
+      if (!watch?.expiresAt || Date.parse(watch.expiresAt) <= Date.now()) return [];
+      push('entry', watch.level);
+      push('invalidation', watch.invalidation);
+    }
     const shadow = extractShadowPlan(result);
     push('invalidation', positive(analysis.invalidationLevel));
     push('entry', shadow?.entry ?? null);
@@ -262,7 +254,7 @@ function toView(row: AlertRow): AlertView {
   };
 }
 
-type AnalysisRow = { id: string; status: string; recommendation: string | null; result: unknown; setupId: string | null };
+type AnalysisRow = { createdAt: Date; groundingInterval: string | null; id: string; status: string; recommendation: string | null; result: unknown; setupId: string | null };
 
 @Injectable()
 export class SetupAlertsService implements OnModuleInit {
@@ -293,7 +285,7 @@ export class SetupAlertsService implements OnModuleInit {
 
   private async loadAnalysis(userId: string, analysisId: string): Promise<AnalysisRow> {
     const rows = await this.prisma.$queryRaw<AnalysisRow[]>`
-      SELECT "id", "status", "recommendation", "result", "setupId"
+      SELECT "id", "status", "recommendation", "result", "setupId", "createdAt", "groundingStats"->>'interval' AS "groundingInterval"
       FROM "tickrify"."Analysis"
       WHERE "id" = ${analysisId} AND "userId" = ${userId}
       LIMIT 1
@@ -331,7 +323,7 @@ export class SetupAlertsService implements OnModuleInit {
       symbol: plan.symbol,
       symbolClass: price?.symbolClass ?? null,
       referencePrice,
-      suggestions: price ? alertSuggestions(analysis.result, analysis.recommendation) : [],
+      suggestions: price ? alertSuggestions(analysis.result, analysis.recommendation, analysis) : [],
       setupId: following?.id ?? null,
       alerts,
       limits: {
@@ -361,7 +353,7 @@ export class SetupAlertsService implements OnModuleInit {
       throw new UnprocessableEntityException({ code: 'alert_unavailable', message: "Price alerts aren't available for this asset yet." });
     }
     const level = input.level;
-    const suggestion = alertSuggestions(analysis.result, analysis.recommendation).find((s) => s.label === input.label);
+    const suggestion = alertSuggestions(analysis.result, analysis.recommendation, analysis).find((s) => s.label === input.label);
     if (input.label !== 'custom' && (!suggestion || Math.abs(suggestion.level - level) > Math.abs(level) * 1e-9)) {
       throw new BadRequestException({ code: 'alert_level_mismatch', message: 'This level does not match the analysis.' });
     }
