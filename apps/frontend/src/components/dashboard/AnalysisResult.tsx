@@ -27,7 +27,7 @@ import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
 import { WatchPlanChart, isWatchLevels, isWatchPlan } from './WatchPlanChart';
 import { ReadModePanel, type ReadModeData } from './ReadModePanel';
-import { LevelMapCard } from './PendingLevels';
+import { LevelMapCard, WatchNextSteps } from './PendingLevels';
 import { AnalysisShareButton } from './ShareCard';
 import type { ReadShareData } from '@/lib/share-card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -45,7 +45,6 @@ import {
   resolveSignalState,
   signalStateTone,
   entrySide,
-  signalStateLabel,
 } from '@/lib/trading-ui';
 import { asRecord } from '@/lib/utils';
 import { computeDirectionalRiskReward } from '@/lib/trade-plan';
@@ -603,7 +602,11 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   // rejeitou a geometria no nivel do WATCH (sem alvos nem R na tela).
   const watchLevels: WatchLevels | null | undefined = isWatchLevels(fullResponse.watchLevels)
     ? fullResponse.watchLevels
-    : signalState === 'WATCH' && fullResponse.dataMode === 'real_data' && 'watchLevels' in fullResponse ? null : undefined;
+    : signalState === 'WATCH' && 'watchLevels' in fullResponse ? null : undefined;
+  const side = entrySide(watchPlan, analysisData.recommendation);
+  const decisionLabel = signalState === 'ENTER_NOW' && side
+    ? t.analysis.states.ENTER_NOW + ' · ' + t.analysis[side]
+    : t.analysis.states[signalState];
   const levelsEstimated = fullResponse.dataMode === 'print';
 
   const symbol = String(
@@ -810,7 +813,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
         .replace('{stop}', formatPrice(geometryLevels.stopLoss))
         .replace('{tp1}', formatPrice(geometryLevels.takeProfit1))
         .replace('{r}', formatNumber(geometryLevels.tp1R, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }))
-    : watchLevels === null ? r.watch.targetsRejected : null;
+    : watchLevels === null ? (levelsEstimated ? r.levelsEstimated : r.watch.targetsRejected) : null;
   const checklist = geometryDetail
     ? {
         ...parsedChecklist,
@@ -1084,7 +1087,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
               className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold uppercase tracking-widest ${signalToneClasses}`}
             >
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
+              <span>{decisionLabel}</span>
             </div>
             {strategyFit && (
               <span
@@ -1114,9 +1117,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             // Explica o WAIT onde ele aparece: sem isto a pessoa le so a
             // palavra e entende que a ferramenta nao respondeu.
             <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
-              {signalState === 'WATCH' ? r.watchExplain : r.noTradeExplain}
-              {waitFlipItems.length > 0 && <span>{` ${r.waitExplainPlan}`}</span>}
+              {signalState === 'WATCH' ? r.watchExplain : [r.noTradeExplain, readMode.noTradeReason].filter(Boolean).join(' ')}
+              {signalState === 'WATCH' && waitFlipItems.length > 0 && <span>{` ${r.waitExplainPlan}`}</span>}
             </p>
+          )}
+          {signalState === 'NO_TRADE' && !analysisData.fullResponse?.levelMap && !sample && !isDemo && (
+            <a className="text-sm underline" href="/dashboard/new">{t.pending.retry}</a>
           )}
           {stateActive && !invalidTradePlan && (
             <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
@@ -1141,7 +1147,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
         </CardContent>
       </Card>
 
-      <ReadModePanel data={readMode} formatPrice={formatPrice} />
+      {signalState === 'WATCH' && watchPlan && (
+        <WatchPlanChart analysisId={!sample && !isDemo ? analysisData.id : undefined} plan={watchPlan} currentPrice={currentPrice} formatPrice={formatPrice} estimated={levelsEstimated} levels={watchLevels} expiresAt={analysisData.watch?.expiresAt} />
+      )}
+      {signalState === 'WATCH' && analysisData.watch && alertsEnabled && !sample && (
+        <WatchNextSteps analysisId={analysisData.id} watch={analysisData.watch} />
+      )}
 
       {/* NO_TRADE com velas reais: os dois lados do preco, calculados pelo codigo. Analise antiga ou print: nada. */}
       {signalState === 'NO_TRADE' && analysisData.fullResponse?.dataMode === 'real_data' && analysisData.fullResponse.levelMap ? (
@@ -1152,6 +1163,13 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
           formatPrice={formatPrice}
         />
       ) : null}
+
+      {signalState === 'ENTER_NOW' && analysisData.setupId && analysisData.previousWatchPlan && entry !== null
+        && entry >= analysisData.previousWatchPlan.zoneLow && entry <= analysisData.previousWatchPlan.zoneHigh
+        && (analysisData.previousWatchPlan.direction === 'long' ? stateTone === 'buy' : stateTone === 'sell') && (
+          <aside className="rounded-xl border p-4 text-sm">{t.pending.confirmed}</aside>
+      )}
+      <ReadModePanel actionLabel={decisionLabel} data={readMode} formatPrice={formatPrice} />
 
       {invalidTradePlan && (
         <Alert className="border-[var(--signal-sell)] bg-[var(--signal-sell-bg)]" role="alert">
@@ -1171,7 +1189,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
         </Alert>
       )}
 
-      {isWaitVerdict && waitFlipItems.length > 0 && (
+      {(signalState === 'WATCH' || !fullResponse.signalState) && isWaitVerdict && waitFlipItems.length > 0 && (
         // O bloco usava borda + fundo ambar. Problema: o badge HOLD ja e ambar
         // (--signal-hold), entao a tela tinha duas coisas ambar significando
         // coisas diferentes, e em UI de trading ambar le como ALERTA. Isto aqui
@@ -1199,9 +1217,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
         </Card>
       )}
 
-      {signalState === 'WATCH' && watchPlan && (
-        <WatchPlanChart plan={watchPlan} currentPrice={currentPrice} formatPrice={formatPrice} estimated={levelsEstimated} levels={watchLevels} />
-      )}
+
 
       {isWaitVerdict && (
         <Card className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '60ms' }}>

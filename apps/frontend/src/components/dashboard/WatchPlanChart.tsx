@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react';
+import { track } from '@/lib/analytics';
 import { Eye } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { formatNumber } from '@/lib/i18n';
@@ -10,6 +12,8 @@ import type { WatchLevels, WatchPlan } from '@/lib/api';
 
 interface WatchPlanChartProps {
   plan: WatchPlan;
+  analysisId?: string;
+  expiresAt?: string | null;
   currentPrice: number | null;
   formatPrice: (value: number | null) => string;
   /** Niveis lidos do print, sem velas reais (dataMode print). */
@@ -67,8 +71,14 @@ export function spreadLabels(ys: readonly number[], min = PAD, max = HEIGHT - 2)
   return out;
 }
 
-export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = false, levels }: WatchPlanChartProps) {
+export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = false, levels, expiresAt, analysisId }: WatchPlanChartProps) {
   const { t, language } = useLanguage();
+  const viewed = useRef<string | null>(null);
+  useEffect(() => {
+    if (!analysisId || viewed.current === analysisId) return;
+    viewed.current = analysisId;
+    track('watch_plan_viewed', { analysisId });
+  }, [analysisId]);
   const w = t.analysis.result.watch;
   const rejected = levels === null;
   const target1 = rejected ? null : levels ? levels.takeProfit1 : plan.target1;
@@ -95,10 +105,15 @@ export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = fa
       <CardContent className="p-5 md:p-6">
         <p className="tk-display mb-1 flex items-center gap-2 text-[15px]">
           <Eye className="h-4 w-4 text-[var(--signal-hold)]" />
-          <span>{w.title}</span>
+          <span>{levels ? t.pending.confirmedPlan.replace('{price}', formatPrice(levels.entry)) : w.title}</span>
         </p>
-        <p className="mb-3 text-xs text-[var(--text-secondary)]">{w.notSignal}</p>
-        {rejected && (
+        <p className="mb-3 text-xs text-[var(--text-secondary)]">{levels ? [
+          plan.direction === 'long' ? t.analysis.buy : t.analysis.sell,
+          t.analysis.entry + ' ' + formatPrice(levels.entry),
+          t.analysis.stopLoss + ' ' + formatPrice(levels.stopLoss),
+          'TP1 ' + formatPrice(levels.takeProfit1) + ' (' + formatNumber(levels.tp1R, language, { maximumFractionDigits: 2 }) + 'R)',
+        ].join(' · ') : w.notSignal}</p>
+        {rejected && !estimated && (
           <p data-testid="targets-rejected" className="-mt-2 mb-3 text-xs text-[var(--text-secondary)]">
             {w.targetsRejected}
           </p>
@@ -108,6 +123,13 @@ export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = fa
             {t.analysis.result.levelsEstimated}
           </p>
         )}
+        <div className="mb-3 space-y-1 text-sm">
+          <p>{w.trigger + ': ' + w.types[plan.triggerType]}</p>
+          {plan.trigger && <p>{plan.trigger}</p>}
+          <p>{(plan.direction === 'long' ? t.analysis.result.readMode.invalidBelow : t.analysis.result.readMode.invalidAbove).replace('{price}', formatPrice(plan.invalidation))}</p>
+          <p>{w.valid.replace('{n}', String(plan.validForCandles))}</p>
+          {expiresAt && <p>{t.pending.expiry.replace('{time}', new Date(expiresAt).toLocaleString(language, { timeZone: 'UTC' }) + ' UTC')}</p>}
+        </div>
         <svg
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           className="w-full max-w-[420px]"
@@ -143,13 +165,6 @@ export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = fa
             </g>
           )}
         </svg>
-        <div className="mt-3 space-y-1 text-sm">
-          <p className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
-            <span>{`${w.trigger}: ${w.types[plan.triggerType]}`}</span>
-          </p>
-          {plan.trigger && <p className="leading-relaxed text-[var(--text-primary)]/85">{plan.trigger}</p>}
-          <p className="text-xs text-[var(--text-secondary)]">{w.valid.replace('{n}', String(plan.validForCandles))}</p>
-        </div>
       </CardContent>
     </Card>
   );

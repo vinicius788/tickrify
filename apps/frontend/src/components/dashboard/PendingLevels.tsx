@@ -1,10 +1,11 @@
+import { useNavigate } from 'react-router-dom';
 import { BellPlus, BellRing } from 'lucide-react';
 import { formatNumber } from '@/lib/i18n';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
 import { APIError, type LevelMap, type LevelMapSide, type WatchSummary } from '@/lib/api';
-import { formatAlertLevel, formatTimeLeft, hasActiveLevel, useExpiryClock, useAlertOptions, isWatchOpen, useAlertActions, useSetupAlerts, type AlertLabel } from '@/lib/setups';
+import { formatAlertLevel, formatTimeLeft, hasActiveLevel, useExpiryClock, useAlertOptions, useSetupActions, isWatchOpen, useAlertActions, useSetupAlerts, type AlertLabel } from '@/lib/setups';
 
 // WATCH pendente e mapa de niveis do NO_TRADE (03/11/2026). Arquivo proprio
 // porque My Trades, Diario, Today, setups e o resultado mostram o mesmo bloco.
@@ -59,6 +60,7 @@ function AlertLevelButton({
 
   const onClick = () => {
     track('pending_alert_clicked', { surface, kind });
+    if (surface === 'result') track('next_step_clicked', { step: 'alert' });
     create.mutate(
       { analysisId, label, level },
       {
@@ -157,10 +159,44 @@ export function WatchPending({
   );
 }
 
-function MapAlertButton({ analysisId, level, format }: { analysisId: string; level: number; format: (value: number) => string }) {
+export function WatchNextSteps({ analysisId, watch }: { analysisId: string; watch: WatchSummary }) {
+  const { t } = useLanguage();
   const options = useAlertOptions(analysisId);
+  const { follow } = useSetupActions();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const now = useExpiryClock(Date.parse(watch.expiresAt ?? ''));
+  if (!isWatchOpen(watch, now)) return null;
+  if (options.error instanceof APIError && options.error.status === 402) return <p>{t.pending.alertPaused}</p>;
+  if (!options.data) return null;
+  const { available, setupId } = options.data;
+  const update = () => {
+    track('next_step_clicked', { step: 'update_chart' });
+    const open = (id: string) => navigate('/dashboard/new?setup=' + encodeURIComponent(id));
+    if (setupId) open(setupId);
+    else follow.mutate(analysisId, {
+      onSuccess: ({ setup }) => open(setup.id),
+      onError: (error) => toast({ title: error instanceof APIError && error.status === 402 ? t.pending.alertPaused : t.setups.followFailed }),
+    });
+  };
+  return <section className="space-y-2 rounded-xl border p-4">
+    <h3 className="font-semibold">{t.pending.nextSteps}</h3>
+    {!available && <p>{t.alerts.unavailable}</p>}
+    <ol className="list-decimal space-y-2 pl-5 text-sm">
+      {available && <li><AlertLevelButton analysisId={analysisId} setupId={setupId} level={watch.level} label="entry" surface="result" kind="watch" /><p>{t.pending.cadence}</p></li>}
+      <li>{available && <p>{t.pending.fresh}</p>}<button className="underline" onClick={update} disabled={follow.isPending}>{t.alerts.updateChart}</button></li>
+      <li>{t.pending.review}</li>
+    </ol>
+  </section>;
+}
+
+function MapAlertButton({ analysisId, level, format, first }: { first: boolean; analysisId: string; level: number; format: (value: number) => string }) {
+  const { t } = useLanguage();
+  const options = useAlertOptions(analysisId);
+  if (options.error instanceof APIError && options.error.status === 402) return first ? <span>{t.pending.alertPaused}</span> : null;
+  if (options.data && !options.data.available) return first ? <span>{t.alerts.unavailable}</span> : null;
   if (!options.data?.available || options.isError) return null;
-  return <AlertLevelButton analysisId={analysisId} setupId={options.data.setupId} level={level} label="custom" surface="result" kind="level_map" format={format} />;
+  return <div><AlertLevelButton analysisId={analysisId} setupId={options.data.setupId} level={level} label="custom" surface="result" kind="level_map" format={format} />{first && <p className="text-xs">{t.pending.cadence}</p>}</div>;
 }
 
 /** NO_TRADE com velas reais: os dois lados do preco, montados pelo codigo. Nao e sinal. */
@@ -194,11 +230,11 @@ export function LevelMapCard({
     <section data-testid="level-map" className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-4">
       <h4 className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{p.levelMapTitle}</h4>
       <ul className="mt-2 flex flex-col gap-3">
-        {sides.map(({ key, side, up }) => (
+        {sides.map(({ key, side, up }, index) => (
           <li key={key} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <p className="font-terminal text-sm text-[var(--text-primary)]">{line(side, up)}</p>
             {alerts && analysisId ? (
-              <MapAlertButton analysisId={analysisId} level={side.level} format={price} />
+              <MapAlertButton first={index === 0} analysisId={analysisId} level={side.level} format={price} />
             ) : null}
           </li>
         ))}

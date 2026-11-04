@@ -62,7 +62,7 @@ describe('product clarity without changing the stored decision', () => {
     expect(within(guide).getByText('Stored technical reason.')).toBeTruthy();
     expect(within(guide).getByText('Stored risk, without an invented price.')).toBeTruthy();
     expect(screen.getByText(getTranslations('en').productClarity.entryNow)).toBeTruthy();
-    expect(screen.getByTestId('signal-state').textContent).toContain(recommendation === 'BUY' ? 'Buy now' : 'Sell now');
+    expect(screen.getByTestId('signal-state').textContent).toContain(recommendation === 'BUY' ? 'Enter now · BUY' : 'Enter now · SELL');
     expect(JSON.stringify(data)).toBe(before);
   });
 
@@ -115,14 +115,20 @@ describe('product clarity without changing the stored decision', () => {
     const guide = show(data);
     const t = getTranslations('en');
     const explanation = screen.getByText(state === 'WATCH' ? t.analysis.result.watchExplain : t.analysis.result.noTradeExplain, { exact: false });
-    const plan = screen.getByText('Only after the stored chart condition.');
+    const plan = screen.queryByText('Only after the stored chart condition.');
     // A leitura tambem abre o painel do modo leitura (topo); aqui vale o bloco da leitura completa.
     const readMode = screen.getByTestId('read-mode');
     const reading = screen.getAllByText('Stored complete technical reading.').find(el => !guide.contains(el) && !readMode.contains(el))!;
     const follows = (first: Element, second: Element) =>
       expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    follows(explanation, plan);
-    follows(plan, reading);
+    if (state === 'WATCH') {
+      expect(plan).toBeTruthy();
+      follows(explanation, plan!);
+      follows(plan!, reading);
+    } else {
+      expect(plan).toBeNull();
+      follows(explanation, reading);
+    }
     follows(reading, guide);
     expect(within(guide).getByText('Stored invalidation note.')).toBeTruthy();
     expect(screen.queryByTestId('levels-card')).toBeNull();

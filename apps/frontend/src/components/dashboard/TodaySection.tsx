@@ -78,6 +78,22 @@ const TodaySection = ({
     (row) => isWatchOpen(row.watch, now) && !hasActiveLevel(items, row.watch!.setupId, row.id, row.watch!.level),
   );
 
+  const facts = (analysisId: string, followed: boolean) => {
+    const row = analyses.find((item) => item.id === analysisId);
+    const trade = openTrades.find((item) => item.analysisId === analysisId);
+    const touched = items.filter((item) => item.analysisId === analysisId && item.status === 'triggered');
+    const personal: Record<string, string> = { tp1: 'TP1', tp2: 'TP2', stop: t.trade.reasonStop, breakeven: t.analysis.breakeven, no_fill: t.trades.noFill };
+    const result = row?.outcome ? personal[row.outcome] : null;
+    const saved = [t.pending.saved, row?.signalState && t.analysis.states[row.signalState],
+      row?.watch && formatAlertLevel(row.watch.level, locale)].filter(Boolean).join(' · ');
+    return <ul className="space-y-1 text-xs text-[var(--text-secondary)]">
+      {(followed || row?.watch?.setupId) && <li>{saved}</li>}
+      {touched.map((item) => <li key={item.id}>{t.pending.reached + ' · ' + formatAlertLevel(item.level, locale)}</li>)}
+      {(trade?.status === 'in_trade' || row?.outcome === 'open') && <li>{t.pending.recorded}</li>}
+      {result && <li>{t.pending.personal + ' · ' + result}</li>}
+    </ul>;
+  };
+
   const empty = reached.length === 0 && watching.size === 0 && openTrades.length === 0 && pendingWatches.length === 0;
 
   return (
@@ -108,6 +124,7 @@ const TodaySection = ({
                       : formatAlertLevel(alert.level, locale)}
                   </p>
                   <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">{a.notSignal}</p>
+                  {facts(alert.analysisId, true)}
                 </div>
                 <button
                   type="button"
@@ -130,6 +147,7 @@ const TodaySection = ({
               <li key={setupId} className="flex flex-col gap-2 py-3 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0">
                   <p className="font-terminal text-sm text-[var(--text-primary)]">{asset(list[0])}</p>
+                  {[...new Set(list.map((item) => item.analysisId))].map((id) => <div key={id}>{facts(id, true)}</div>)}
                   <ul className="mt-1 flex flex-col gap-0.5">
                     {list.map((alert) => {
                       const pct = alertDistancePct(alert);
@@ -167,6 +185,7 @@ const TodaySection = ({
                 <div className="min-w-0">
                   <p className="font-terminal text-sm text-[var(--text-primary)]">{`${displayAsset(row.symbol)}${row.timeframe ? ` ${row.timeframe}` : ''}`}</p>
                   <div className="mt-1">
+                    {facts(row.id, false)}
                     <WatchPending analysisId={row.id} watch={row.watch!} surface="today" now={now} />
                   </div>
                 </div>
@@ -188,7 +207,7 @@ const TodaySection = ({
           <ul className="mt-2 divide-y divide-[var(--border-subtle)]">
             {openTrades.map((trade) => (
               <li key={trade.analysisId} className="flex items-center justify-between gap-2 py-3">
-                <p className="min-w-0 font-terminal text-sm text-[var(--text-primary)]">
+                <div><p className="min-w-0 font-terminal text-sm text-[var(--text-primary)]">
                   {`${trade.symbol ?? 'N/A'}${trade.timeframe ? ` ${trade.timeframe}` : ''} · `}
                   <span className={trade.direction === 'BUY' ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'}>
                     {trade.direction === 'BUY' ? t.analysis.buy : t.analysis.sell}
@@ -196,7 +215,7 @@ const TodaySection = ({
                   <span className="text-xs text-[var(--text-secondary)]">
                     {` · ${trade.status === 'pending_order' ? d.pending : d.inTrade}`}
                   </span>
-                </p>
+                </p>{facts(trade.analysisId, false)}</div>
                 <Link
                   to={`${base}/analysis/${encodeURIComponent(trade.analysisId)}`}
                   className="shrink-0 rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)]"

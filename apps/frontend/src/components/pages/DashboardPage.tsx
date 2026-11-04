@@ -1653,7 +1653,8 @@ const DashboardPage = () => {
             <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} alertsEnabled={!isDemo && !freeLocked} />
             {tradeAnalysisId ? <TradePanel key={`trade-${tradeAnalysisId}`} analysisId={tradeAnalysisId} /> : null}
             {/* Seguir o setup: ao lado das acoes de sempre, nunca no lugar delas. */}
-            {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' ? (
+            {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' &&
+            (analysisData.fullResponse?.signalState !== 'NO_TRADE' || analysisData.fullResponse.levelMap) ? (
               <SetupAlertBar
                 key={`alerts-${analysisData.id}`}
                 analysisId={analysisData.id}
