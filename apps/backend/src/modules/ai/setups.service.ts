@@ -14,7 +14,7 @@ import { trackUserActivity } from '../../common/analytics/user-activity';
 import { normalizeRecommendation, normalizeSymbol } from '../../common/utils/analysis-normalizer';
 import { storedSignalState, type SignalState } from '../../common/utils/signal-decision';
 import { TICK_COSTS, type AnalysisType } from '../ticks/tick-packages';
-import { loadWatchTracks, watchSummaryOf, type WatchSummary } from './watch-pending';
+import { loadWatchContexts, watchSummaryOf, type WatchSummary } from './watch-pending';
 
 /**
  * Setups acompanhados (12/10/2026).
@@ -392,7 +392,7 @@ export class SetupsService implements OnModuleInit {
       LIMIT ${take + 1}
     `;
     const page = rows.slice(0, take);
-    const tracks = await loadWatchTracks(this.prisma, watchIdsOf(page.map((row) => ({ id: row.latestAnalysisId, result: row.latestResult, recommendation: row.latestRecommendation }))));
+    const contexts = await loadWatchContexts(this.prisma, watchIdsOf(page.map((row) => ({ id: row.latestAnalysisId, result: row.latestResult, recommendation: row.latestRecommendation }))));
     return {
       items: page.map((row) => {
         const plan = readPlan(row.latestResult, row.latestRecommendation);
@@ -408,7 +408,7 @@ export class SetupsService implements OnModuleInit {
                 recommendation: plan.recommendation,
                 signalState: plan.signalState,
                 entryCondition: plan.entryCondition,
-                watch: row.latestAt ? watchSummaryOf(row.latestResult, plan.recommendation, row.latestAt, tracks.get(row.latestAnalysisId)) : null,
+                watch: row.latestAt ? watchSummaryOf(row.latestResult, plan.recommendation, row.latestAt, contexts.get(row.latestAnalysisId)) : null,
               }
             : null,
         };
@@ -461,7 +461,7 @@ export class SetupsService implements OnModuleInit {
       LIMIT ${take + 1}
     `;
     const page = rows.slice(0, take);
-    const tracks = await loadWatchTracks(this.prisma, watchIdsOf(page));
+    const contexts = await loadWatchContexts(this.prisma, watchIdsOf(page));
     return {
       setup: toSummary(setup),
       versions: page.map((row) => {
@@ -477,7 +477,7 @@ export class SetupsService implements OnModuleInit {
           takeProfit1: plan.takeProfit1,
           takeProfit2: plan.takeProfit2,
           entryCondition: plan.entryCondition,
-          watch: watchSummaryOf(row.result, plan.recommendation, row.createdAt, tracks.get(row.id)),
+          watch: watchSummaryOf(row.result, plan.recommendation, row.createdAt, contexts.get(row.id)),
         };
       }),
       nextCursor: rows.length > take ? page[page.length - 1].id : null,

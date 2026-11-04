@@ -136,7 +136,7 @@ const SetupsSection = ({
                         .replace('{relative}', formatSetupRelative(setup.lastAnalysisAt, locale))
                         .replace('{date}', formatSetupDay(setup.lastAnalysisAt, locale))}`}
                     </p>
-                    {latest && latest.recommendation === 'WAIT' && latest.entryCondition ? (
+                    {latest && !latest.watch && latest.recommendation === 'WAIT' && latest.entryCondition ? (
                       <p className="mt-1.5 text-xs leading-relaxed text-[var(--text-primary)]/85">
                         {s.waitingFor
                           .replace('{condition}', latest.entryCondition)
@@ -145,7 +145,8 @@ const SetupsSection = ({
                     ) : null}
                     {latest?.watch ? (
                       <div className="mt-2">
-                        <WatchPending analysisId={latest.analysisId} watch={latest.watch} surface="setups" />
+                        <WatchPending analysisId={latest.analysisId} watch={latest.watch} surface="setups"
+                        waitingFor={latest.entryCondition && s.waitingFor.replace('{condition}', latest.entryCondition).replace('{date}', formatSetupDay(latest.createdAt, locale))} />
                       </div>
                     ) : null}
                   </div>

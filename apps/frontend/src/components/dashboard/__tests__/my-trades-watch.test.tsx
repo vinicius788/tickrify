@@ -17,8 +17,12 @@ vi.mock('@/lib/setups', async (importOriginal) => ({
 const rows = [
   {
     id: 'w1', status: 'completed', recommendation: 'WAIT', signalState: 'WATCH', symbol: 'BTCUSDT', timeframe: '15m',
-    outcome: null, createdAt: '2026-11-03T11:00:00Z', updatedAt: '2026-11-03T11:00:00Z',
+    outcome: 'stop', pnlAmount: -42, createdAt: '2026-11-03T11:00:00Z', updatedAt: '2026-11-03T11:00:00Z',
     watch: { direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12, expiresAt: '2026-11-03T14:00:00.000Z', outcome: 'expired', alertAvailable: true },
+  },
+  {
+    id: 'n1', status: 'completed', recommendation: 'WAIT', signalState: 'NO_TRADE', symbol: 'EURUSD', timeframe: '1h',
+    outcome: 'stop', pnlAmount: -75, createdAt: '2026-11-02T11:00:00Z', updatedAt: '2026-11-02T11:00:00Z',
   },
   {
     id: 'b1', status: 'completed', recommendation: 'BUY', signalState: 'ENTER_NOW', symbol: 'XAUUSD', timeframe: '1h',
@@ -38,7 +42,7 @@ describe('My Trades: WATCH pendente', () => {
     const card = screen.getByTestId('watch-pending');
     expect(card.textContent).toContain('Sell level 77,800');
     expect(card.textContent).toContain('Expired without reaching it');
-    expect(screen.queryByText('A wait call is not a trade. Nothing to mark.')).toBeNull();
+    expect(card.textContent).not.toContain('Nothing to mark');
     // So o BUY conta: 1 vitoria em 1 decidido = 100%; o WATCH nao vira derrota nem pendente de resultado.
     expect(screen.getByText('100%')).toBeTruthy();
     expect(screen.getByText('1W / 0L')).toBeTruthy();

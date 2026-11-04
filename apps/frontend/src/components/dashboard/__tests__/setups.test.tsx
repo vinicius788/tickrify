@@ -371,6 +371,23 @@ describe('Pagina do setup', () => {
     },
   ];
 
+  it('WATCH encerrado nao repete a condicao antiga nem a invalidacao', async () => {
+    const watch = { direction: 'long', level: 100, invalidation: 90, validForCandles: 12,
+      expiresAt: '2026-01-01T00:00:00Z', outcome: 'invalidated', alertAvailable: true };
+    const latest = { ...versions[1], watch };
+    serve({
+      'GET /api/setups': () => json(200, { items: [{ ...SETUP, latest, versions: 1 }], nextCursor: null }),
+      'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: SETUP, versions: [latest], nextCursor: null }),
+    });
+    const list = wrap(<SetupsSection base="/dashboard" />);
+    expect(await screen.findByText('Buy level 100')).toBeTruthy();
+    expect(screen.queryByText(/Close above 1.0950/)).toBeNull();
+    list.unmount();
+    wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);
+    expect(await screen.findByText('Buy level 100')).toBeTruthy();
+    expect(screen.queryByText(/Close above 1.0950|Invalidation 90/)).toBeNull();
+  });
+
   it('versoes da mais nova para a mais antiga, rotulo "Analysis from", precos so no BUY/SELL', async () => {
     serve({ 'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: SETUP, versions, nextCursor: null }) });
     wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);

@@ -44,11 +44,13 @@ export interface LevelMapCandles {
 const finitePositive = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
 
 function side(location: PriceLocation, candles: LevelMapCandles, up: boolean): LevelMapSide | null {
-  const first = up ? location.resistance : location.support;
-  if (!first) return null;
   const { price, atr } = location;
+  const swing = up ? location.resistance : location.support;
+  const edge = up ? candles.windowHigh : candles.windowLow;
+  const level = swing?.price ?? edge;
+  if (!finitePositive(level) || (up ? level <= price : level >= price)) return null;
   const gap = LEVEL_MAP_RULES.mergeAtr * atr;
-  const beyond = (v: unknown): v is number => finitePositive(v) && (up ? v - first.price > gap : first.price - v > gap);
+  const beyond = (v: unknown): v is number => finitePositive(v) && (up ? v - level > gap : level - v > gap);
   const closest = (values: readonly unknown[]): number | null => {
     const list = values.filter(beyond);
     if (!list.length) return null;
@@ -60,8 +62,8 @@ function side(location: PriceLocation, candles: LevelMapCandles, up: boolean): L
     closest((up ? candles.swingHighs : candles.swingLows) ?? []) ??
     closest([up ? candles.windowHigh : candles.windowLow]);
   return {
-    level: first.price,
-    atr: first.atr,
+    level,
+    atr: Math.abs(level - price) / atr,
     next,
     nextAtr: next === null ? null : Math.abs(next - price) / atr,
   };

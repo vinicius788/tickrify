@@ -110,10 +110,18 @@ describe('regras puras dos alertas', () => {
   });
 
   it('WATCH: o nivel do plano (borda proxima, rotulo entry) e a invalidacao vem preenchidos', () => {
-    expect(alertSuggestions(WATCH_BTC.result, 'WAIT')).toEqual([
+    expect(alertSuggestions(WATCH_BTC.result, 'WAIT', WATCH_BTC)).toEqual([
       { label: 'entry', level: 77800 },
       { label: 'invalidation', level: 78400 },
     ]);
+  });
+
+  it('a validade das sugestoes segue o intervalo do grounding, inclusive no POST', async () => {
+    const analysis = { ...WATCH_BTC, createdAt: new Date(Date.now() - 2 * 3600_000), groundingInterval: '5m' };
+    const { service } = await ready({ analysis });
+    expect((await service.options('u', analysis.id, true)).suggestions).toEqual([]);
+    await expect(service.create({ id: 'u' }, { analysisId: analysis.id, level: 77800, label: 'entry' },
+      { isSubscriber: true, trialDay: null })).rejects.toMatchObject({ response: { code: 'alert_level_mismatch' } });
   });
 
   it('forex fechado no fim de semana', () => {
@@ -126,7 +134,7 @@ describe('regras puras dos alertas', () => {
 });
 
 const WATCH_BTC = {
-  id: 'analysis00002', status: 'completed', recommendation: 'WAIT', setupId: null,
+  createdAt: new Date(), groundingInterval: null, id: 'analysis00002', status: 'completed', recommendation: 'WAIT', setupId: null,
   result: {
     signalState: 'WATCH',
     watchPlan: { direction: 'short', triggerType: 'zone_reaction', zoneLow: 77800, zoneHigh: 78000, invalidation: 78400,

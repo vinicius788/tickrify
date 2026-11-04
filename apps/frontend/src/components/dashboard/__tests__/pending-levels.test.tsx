@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AnalysisResult from '@/components/dashboard/AnalysisResult';
@@ -18,9 +18,11 @@ vi.mock('@/lib/analytics', async (importOriginal) => ({
   track: (...a: unknown[]) => track(...a),
 }));
 const mutate = vi.fn();
+let priceAvailable = true;
 let alertItems: SetupAlert[] = [];
 vi.mock('@/lib/setups', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/setups')>()),
+  useAlertOptions: () => ({ data: { available: priceAvailable, setupId: 's1' } }),
   useSetupAlerts: () => ({ data: { paused: false, pausedSymbol: null, items: alertItems, unseen: 0, emailEnabled: false } }),
   useAlertActions: () => ({ create: { mutate, isPending: false }, cancel: { mutate: vi.fn() }, seen: { mutate: vi.fn() } }),
 }));
@@ -56,6 +58,19 @@ describe('WATCH pendente', () => {
     expect(track).toHaveBeenCalledWith('pending_alert_clicked', { surface: 'trades', kind: 'watch' });
   });
 
+  it('fecha no instante da validade sem nova resposta do servidor', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(NOW);
+      wrap(<WatchPending analysisId="w1" watch={watch({ expiresAt: new Date(NOW + 5000).toISOString() })} surface="journal" />);
+      expect(screen.getByRole('button')).toBeTruthy();
+      act(() => vi.advanceTimersByTime(5000));
+      expect(screen.queryByRole('button')).toBeNull();
+      expect(screen.getByText('Window closed. Outcome pending.')).toBeTruthy();
+      expect(screen.queryByText(/Re-check the chart/)).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+
   it('compra usa "Buy if"; tempo grafico desconhecido mostra so as velas', () => {
     wrap(<WatchPending analysisId="w1" watch={watch({ direction: 'long', level: 2345, expiresAt: null })} surface="journal" now={NOW} />);
     expect(screen.getByTestId('watch-pending').textContent).toContain('Possible buy at 2,345. Re-check the chart when price gets there.');
@@ -74,6 +89,7 @@ describe('WATCH pendente', () => {
     expect(card.dataset.outcome).toBe(outcome);
     expect(card.textContent).toContain(text);
     expect(card.textContent).toContain('Sell level 77,800');
+    expect(card.textContent).not.toContain('Invalidation');
     expect(card.textContent).not.toContain('Possible');
     expect(card.textContent).not.toContain('Re-check the chart');
     expect(card.textContent).not.toMatch(/\bwin\b|P&L/i);
@@ -90,7 +106,7 @@ describe('WATCH pendente', () => {
   it('janela fechada sem linha no rastreador: continua Pending, so o nivel, sem botao', () => {
     wrap(<WatchPending analysisId="w1" watch={watch({ expiresAt: '2026-11-03T11:00:00.000Z' })} surface="trades" now={NOW} />);
     const text = screen.getByTestId('watch-pending').textContent ?? '';
-    expect(text).toContain('Pending');
+    expect(text).not.toContain('Invalidation');
     expect(text).toContain('Window closed. Outcome pending.');
     expect(text).toContain('Sell level 77,800');
     expect(text).not.toContain('Re-check the chart');
@@ -103,8 +119,8 @@ describe('WATCH pendente', () => {
   });
 
   it('alerta ja ativo no nivel: mostra o estado em vez do botao', () => {
-    alertItems = [alert()];
-    wrap(<WatchPending analysisId="w1" watch={watch()} surface="trades" now={NOW} />);
+    alertItems = [alert({ analysisId: 'outra-versao' })];
+    wrap(<WatchPending analysisId="w1" watch={watch({ setupId: 's1' })} surface="trades" now={NOW} />);
     expect(screen.getByText('Alert active at 77,800')).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
   });
@@ -142,6 +158,10 @@ describe('Today: WATCH pendente mesmo sem alerta', () => {
     expect(screen.getByRole('button', { name: 'Alert me at 77,800' })).toBeTruthy();
     expect(screen.queryByText(/Run an analysis and set an alert/)).toBeNull();
     unmount();
+    const sameAnalysisOtherLevel = [alert({ level: 78400, label: 'invalidation' })];
+    const other = wrap(<TodaySection base="/dashboard" alerts={{ paused: false, pausedSymbol: null, items: sameAnalysisOtherLevel, unseen: 0, emailEnabled: false }} openTrades={[]} analyses={analyses} />);
+    expect(screen.getByText('Pending levels')).toBeTruthy();
+    other.unmount();
 
     alertItems = [alert()];
     wrap(<TodaySection base="/dashboard" alerts={{ paused: false, pausedSymbol: null, items: alertItems, unseen: 0, emailEnabled: false }} openTrades={[]} analyses={analyses} />);
@@ -178,6 +198,15 @@ describe('NO_TRADE: mapa dos dois lados', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Alert me at \$\s97\.0+$/ }));
     expect(mutate).toHaveBeenCalledWith({ analysisId: 'n1', label: 'custom', level: 97 }, expect.anything());
     expect(screen.getByRole('button', { name: /^Alert me at \$\s104\.0+$/ })).toBeTruthy();
+  });
+
+  it('PETR4 com mapa real mas sem fonte no SetupAlert mostra os dois niveis sem botoes', () => {
+    priceAvailable = false;
+    try {
+      wrap(<AnalysisResult analysisData={noTrade({ dataMode: 'real_data', levelMap, analysis: { symbol: 'PETR4', currentPrice: 100 } })} uploadedImage={null} alertsEnabled />);
+      expect(screen.getByTestId('level-map')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /Alert me at/ })).toBeNull();
+    } finally { priceAvailable = true; }
   });
 
   it('sem conta que possa criar alerta (demo, travada): so o mapa', () => {

@@ -38,6 +38,14 @@ describe('buildLevelMap (NO_TRADE, os dois lados do preco)', () => {
     expect(map?.above).toEqual({ level: 104, atr: 2, next: null, nextAtr: null });
   });
 
+  it('sem swings usa os extremos reais da janela como primeiros niveis', () => {
+    const loc = location({ resistance: null, support: null });
+    expect(buildLevelMap(loc, { windowHigh: 104, windowLow: 97 })).toMatchObject({
+      above: { level: 104, atr: 2, next: null }, below: { level: 97, atr: 1.5, next: null },
+    });
+    expect(buildLevelMap(loc, { windowHigh: 100, windowLow: 101 })).toBeNull();
+  });
+
   it('lado sem nivel fica null; sem preco/ATR ou sem nenhum lado, null', () => {
     expect(buildLevelMap(location({ resistance: null }), {})?.above).toBeNull();
     expect(buildLevelMap(location({ resistance: null, support: null }), {})).toBeNull();

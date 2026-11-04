@@ -1,3 +1,4 @@
+import { useEffect, useReducer } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { APIError, buildApiUrl, type SignalState, type WatchSummary } from './api';
@@ -320,4 +321,24 @@ export function formatTimeLeft(ms: number, locale: string): string {
 /** WATCH ainda valendo: sem desfecho e antes do fim da validade. */
 export function isWatchOpen(watch: WatchSummary | null | undefined, now = Date.now()): boolean {
   return Boolean(watch && watch.outcome === 'pending' && watch.expiresAt && Date.parse(watch.expiresAt) > now);
+}
+
+/** Acorda na proxima validade. Janelas semanais podem exceder o limite de setTimeout. */
+export function useExpiryClock(expires: number, fixedNow?: number): number {
+  const now = fixedNow ?? Date.now();
+  const future = expires > now;
+  const [tick, wake] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (fixedNow !== undefined || !future || !Number.isFinite(expires)) return;
+    const delay = expires - Date.now();
+    const timer = setTimeout(wake, Math.min(delay, 2_147_483_647));
+    return () => clearTimeout(timer);
+  }, [expires, fixedNow, future, tick]);
+  return now;
+}
+
+export function hasActiveLevel(items: SetupAlert[], setupId: string | null | undefined, analysisId: string, level: number): boolean {
+  // A lista pode anteceder o primeiro clique, que acabou de vincular a analise ao setup.
+  const id = setupId ?? items.find((item) => item.analysisId === analysisId)?.setupId;
+  return Boolean(id && items.some((item) => item.setupId === id && item.status === 'active' && item.level === level));
 }

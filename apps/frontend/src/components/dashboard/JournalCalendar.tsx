@@ -56,6 +56,7 @@ function plannedRr(a: AIAnalysisResponse, verdict: 'TP1' | 'TP2'): number | null
 }
 
 function sideOf(a: AIAnalysisResponse): 'BUY' | 'SELL' | null {
+  if (!isTradeCall(a.recommendation, a.signalState)) return null;
   const tone = getRecommendationMeta(a.recommendation).tone;
   return tone === 'buy' ? 'BUY' : tone === 'sell' ? 'SELL' : null;
 }
@@ -259,7 +260,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
 
   const items = useMemo(() => query.data?.items ?? [], [query.data]);
   // O Diario so le: o resultado e o do servidor (lib/verdict.ts).
-  const verdictOf = (a: AIAnalysisResponse): Verdict => verdictFromOutcome(a.outcome);
+  const verdictOf = (a: AIAnalysisResponse): Verdict => sideOf(a) ? verdictFromOutcome(a.outcome) : null;
   const pnlOf = (a: AIAnalysisResponse): number | null => {
     const n = Number(a.pnlAmount);
     return a.pnlAmount === null || a.pnlAmount === undefined || !Number.isFinite(n) ? null : n;
@@ -580,7 +581,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                     <span className="line-clamp-2 text-xs text-[var(--text-secondary)]">{a.tradeNote.note}</span>
                                   )}
                                   {a.watch && verdict === null && <WatchPending analysisId={a.id} watch={a.watch} surface="journal" />}
-                                  {isTradeCall(a.recommendation) && (
+                                  {sideOf(a) && (
                                     <button
                                       type="button"
                                       onClick={() => setNoteFor({ id: a.id, title, note: a.tradeNote ?? null })}

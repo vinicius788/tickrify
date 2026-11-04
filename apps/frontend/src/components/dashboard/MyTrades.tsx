@@ -279,7 +279,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
   const rows = isDemo ? DEMO : analyses.filter((a) => a.status === 'completed');
 
   // Verdict efetivo — mesma função usada pelo Dashboard (lib/verdict.ts).
-  const getVerdict = (a: AIAnalysisResponse): Verdict => resolveVerdict(a, verdicts);
+  const getVerdict = (a: AIAnalysisResponse): Verdict => isTradeCall(a.recommendation, stateOf(a)) ? resolveVerdict(a, verdicts) : null;
 
   // Estrela alterada nesta tela vale ate o refetch confirmar; depois, a do banco.
   const getFavorite = (a: AIAnalysisResponse): boolean => {
@@ -302,7 +302,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
       if (filterVerdict === 'favorites') return getFavorite(a);
       if (typeof filterVerdict === 'string' && filterVerdict.startsWith('state:')) return `state:${stateOf(a)}` === filterVerdict;
       const v = getVerdict(a);
-      if (filterVerdict === 'pending' && (v !== null || !isTradeCall(a.recommendation))) return false;
+      if (filterVerdict === 'pending' && (v !== null || !isTradeCall(a.recommendation, stateOf(a)))) return false;
       if (filterVerdict !== 'all' && filterVerdict !== 'pending' && v !== filterVerdict) return false;
       return true;
     });
@@ -313,6 +313,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
   const perf = useMemo(() => {
     let wins = 0, losses = 0, open = 0, pending = 0, rrSum = 0, rrCount = 0, pnlSum = 0, pnlCount = 0;
     for (const a of rows) {
+      if (!isTradeCall(a.recommendation, stateOf(a))) continue;
       const v = getVerdict(a);
       const pnl = isClosed(v) ? getPnl(a) : null;
       if (pnl !== null) { pnlSum += pnl; pnlCount += 1; }
@@ -321,7 +322,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
       else if (v === 'OPEN') open += 1;
       // Aguardar (WAIT/HOLD) nao e operacao: nunca fica "pendente" de resultado.
       // Entrada nao atingida tambem nao: nao houve trade, nao entra em nada.
-      else if (v === null && isTradeCall(a.recommendation)) pending += 1;
+      else if (v === null) pending += 1;
       const rr = Number((a as unknown as Record<string, unknown>).riskRewardTp2 ?? (a as unknown as Record<string, unknown>).riskRewardTp1);
       if (Number.isFinite(rr) && rr > 0) { rrSum += rr; rrCount += 1; }
     }
@@ -508,7 +509,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
               // Aguardar sem resultado marcado: nada a marcar. Se um WAIT ja tiver
               // resultado (marcado antes desta regra), os botoes seguem visiveis
               // para a pessoa poder limpar.
-              const noTrade = !isTradeCall(a.recommendation) && verdict === null;
+              const noTrade = !isTradeCall(a.recommendation, stateOf(a)) && verdict === null;
               const hasLevels = entry !== null && stopLoss !== null && entry !== stopLoss;
               const showCalc = hasLevels && calcOpen[a.id] === true;
               const imageUrl = typeof a.imageUrl === 'string' && a.imageUrl.trim() ? a.imageUrl : null;

@@ -77,15 +77,15 @@ describe('Diario: WATCH pendente', () => {
   it('aparece com o nivel e o desfecho, fora das estatisticas de trade', async () => {
     const today = new Date().getDate();
     const watch = {
-      ...item('w', today, 'BTCUSDT', 'WAIT', null, null, null),
+      ...item('w', today, 'BTCUSDT', 'WAIT', 'stop', -42, null),
       signalState: 'WATCH',
       watch: { direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12, expiresAt: '2026-01-01T00:00:00.000Z', outcome: 'reached', alertAvailable: true },
     };
-    getJournal.mockResolvedValue({ truncated: false, items: [watch] });
+    getJournal.mockResolvedValue({ truncated: false, items: [watch, { ...item('nt', today, 'EURUSD', 'WAIT', 'tp1', 70, null), signalState: 'NO_TRADE' }] });
     renderJournal();
     expect(await screen.findByText('Sell level 77,800', {}, LOAD)).toBeTruthy();
     expect(screen.getByTestId('watch-pending').textContent).toContain('Price reached the level');
-    expect(screen.queryByText('No trade (wait)')).toBeNull();
+    expect(screen.getByTestId('watch-pending').textContent).not.toContain('No trade (wait)');
     // Nao e operacao: o mes segue sem trade fechado, sem numero.
     expect(screen.getByText('Mark TP or Stop on your trades in My Trades and your stats for the month show up here.')).toBeTruthy();
     expect(screen.queryByText('Your logged trading results')).toBeNull();

@@ -60,6 +60,8 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
       });
       await prisma.$executeRawUnsafe(`CREATE TABLE tickrify."${model.dbName || model.name}" (${columns.join(',')})`);
     }
+    // In production AiService adds this telemetry column at boot (outside Prisma).
+    await prisma.$executeRawUnsafe('ALTER TABLE tickrify."Analysis" ADD COLUMN "groundingStats" JSONB');
     await prisma.$executeRawUnsafe(`CREATE TABLE tickrify."UserTrial" (
       "userId" TEXT PRIMARY KEY, "startedAt" TIMESTAMP(3), "timezone" TEXT, "status" TEXT DEFAULT 'active',
       "endedAt" TIMESTAMP(3), "endReason" TEXT, "convertedAt" TIMESTAMP(3), "dayAtConversion" INTEGER,

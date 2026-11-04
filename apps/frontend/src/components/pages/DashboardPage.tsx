@@ -65,7 +65,7 @@ import SetupsSection from "../dashboard/SetupsSection";
 import SetupPage from "../dashboard/SetupPage";
 import TradePanel from "../dashboard/TradePanel";
 import { displayAsset, tradeQueryKey, type OpenTrade, type TradeCloseReason } from "@/lib/api";
-import { SETUP_ID_PATTERN, formatSetupDay, useAlertActions, useSetupAlerts, useSetupVersions } from "@/lib/setups";
+import { SETUP_ID_PATTERN, formatSetupDay, useExpiryClock, isWatchOpen, useAlertActions, useSetupAlerts, useSetupVersions } from "@/lib/setups";
 import { openChat, useChatThread } from "@/lib/support-chat";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
@@ -630,6 +630,8 @@ const DashboardPage = () => {
   const updatingSetupId = setupParam && SETUP_ID_PATTERN.test(setupParam) && !isDemo ? setupParam : null;
   const updatingSetupQuery = useSetupVersions(updatingSetupId, 1);
   const updatingSetupPage = updatingSetupQuery.data?.pages[0];
+  const updatingWatch = updatingSetupPage?.versions[0]?.watch;
+  const setupNow = useExpiryClock(Date.parse(updatingWatch?.expiresAt ?? ''));
   const updatingSetup = updatingSetupPage?.setup.status === 'tracking' ? updatingSetupPage : null;
 
   // Sinais gratis que ainda restam (o /usage ja desconta); 3 enquanto carrega.
@@ -1509,7 +1511,7 @@ const DashboardPage = () => {
                             `${updatingSetup.setup.symbol ?? 'N/A'} ${updatingSetup.setup.timeframe ?? ''}`.trim(),
                           ),
                           detail:
-                            updatingSetup.versions[0]?.recommendation === 'WAIT' && updatingSetup.versions[0].entryCondition
+                            updatingSetup.versions[0]?.recommendation === 'WAIT' && updatingSetup.versions[0].entryCondition && (!updatingWatch || isWatchOpen(updatingWatch, setupNow))
                               ? t.setups.waitingFor
                                   .replace('{condition}', updatingSetup.versions[0].entryCondition)
                                   .replace('{date}', formatSetupDay(updatingSetup.versions[0].createdAt, DATE_LOCALES[language] ?? 'en-US'))

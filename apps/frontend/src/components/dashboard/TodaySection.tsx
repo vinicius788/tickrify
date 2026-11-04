@@ -9,6 +9,8 @@ import {
   formatAlertLevel,
   formatUtcTime,
   isWatchOpen,
+  hasActiveLevel,
+  useExpiryClock,
   useAlertActions,
   type AlertLabel,
   type SetupAlert,
@@ -67,9 +69,12 @@ const TodaySection = ({
   };
 
   // WATCH ainda valendo e sem alerta ativo (os com alerta ja estao em "Watching").
-  const now = Date.now();
+  const current = Date.now();
+  const nextExpiry = analyses.reduce((next, row) => isWatchOpen(row.watch, current)
+    ? Math.min(next, Date.parse(row.watch!.expiresAt!)) : next, Infinity);
+  const now = useExpiryClock(nextExpiry);
   const pendingWatches = analyses.filter(
-    (row) => isWatchOpen(row.watch, now) && !items.some((alert) => alert.status === 'active' && alert.analysisId === row.id),
+    (row) => isWatchOpen(row.watch, now) && !hasActiveLevel(items, row.watch!.setupId, row.id, row.watch!.level),
   );
 
   const empty = reached.length === 0 && watching.size === 0 && openTrades.length === 0 && pendingWatches.length === 0;

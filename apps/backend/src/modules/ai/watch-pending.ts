@@ -10,7 +10,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { clampValidity, isValidWatchPlan, nearEdge, type WatchPlan } from '../../common/utils/plan-engine';
 import { storedSignalState } from '../../common/utils/signal-decision';
-import { TIMEFRAME_MS, normalizeTimeframe } from '../market/candle-store';
+import { TIMEFRAME_MS, analysisInterval } from '../market/candle-store';
 import { priceSymbolOf } from '../market/candles';
 
 /**
@@ -33,6 +33,7 @@ export interface WatchSummary {
   outcome: WatchOutcome;
   /** O ativo tem fonte de preco: a tela oferece o alerta no nivel. */
   alertAvailable: boolean;
+  setupId: string | null;
 }
 
 export interface WatchTrack {
@@ -44,8 +45,9 @@ export interface WatchTrack {
 export function watchOutcomeOf(track: WatchTrack | null | undefined): WatchOutcome {
   if (!track) return 'pending';
   if (track.status !== 'tracked' || track.outcome === 'NO_CANDLES') return 'unavailable';
-  if (track.touched) return 'reached';
-  return track.outcome === 'INVALIDATED' ? 'invalidated' : 'expired';
+  // A ordem encerrou antes do fill. 'touched' tambem inclui retornos posteriores a zona.
+  if (track.outcome === 'INVALIDATED') return 'invalidated';
+  return track.touched ? 'reached' : 'expired';
 }
 
 const record = (v: unknown): Record<string, any> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, any>) : {});
@@ -64,13 +66,13 @@ export function watchSummaryOf(
   result: unknown,
   recommendation: unknown,
   createdAt: Date,
-  track: WatchTrack | null | undefined,
+  context: WatchContext | null | undefined,
 ): WatchSummary | null {
   const plan = storedWatchPlan(result, recommendation);
   if (!plan) return null;
   const root = record(result);
   const analysis = record(root.analysis);
-  const interval = normalizeTimeframe(String(analysis.timeframe ?? root.timeframe ?? ''));
+  const interval = analysisInterval(context?.groundingInterval, analysis.timeframe);
   const step = interval ? TIMEFRAME_MS[interval] : undefined;
   const symbol = typeof analysis.symbol === 'string' ? analysis.symbol : typeof root.symbol === 'string' ? root.symbol : null;
   return {
@@ -79,23 +81,38 @@ export function watchSummaryOf(
     invalidation: plan.invalidation,
     validForCandles: plan.validForCandles,
     expiresAt: step ? new Date(createdAt.getTime() + plan.validForCandles * step).toISOString() : null,
-    outcome: watchOutcomeOf(track),
+    outcome: watchOutcomeOf(context?.track),
+    setupId: context?.setupId ?? null,
     alertAvailable: priceSymbolOf(symbol) !== null,
   };
 }
 
-/** O que o rastreador gravou para estas analises. Tabela ainda ausente ou falha: vazio (tudo segue pendente). */
-export async function loadWatchTracks(db: Pick<PrismaClient, '$queryRaw'>, ids: readonly string[]): Promise<Map<string, WatchTrack>> {
-  const out = new Map<string, WatchTrack>();
+export interface WatchContext {
+  groundingInterval: string | null;
+  setupId: string | null;
+  track: WatchTrack | null;
+}
+
+/** A analise fornece intervalo e setup mesmo antes de existir uma medicao. */
+export async function loadWatchContexts(db: Pick<PrismaClient, '$queryRaw'>, ids: readonly string[]): Promise<Map<string, WatchContext>> {
+  const out = new Map<string, WatchContext>();
   if (!ids.length) return out;
   try {
-    const rows = await db.$queryRaw<Array<WatchTrack & { analysisId: string }>>(Prisma.sql`
-      SELECT "analysisId", "status", "outcome", "touched" FROM "tickrify"."AnalysisTrack"
-      WHERE "analysisId" IN (${Prisma.join([...ids])})
+    const rows = await db.$queryRaw<Array<WatchTrack & { analysisId: string; groundingInterval: string | null; setupId: string | null }>>(Prisma.sql`
+      SELECT a."id" AS "analysisId", a."groundingStats"->>'interval' AS "groundingInterval", a."setupId",
+        t."status", t."outcome", t."touched" FROM "tickrify"."Analysis" a
+      LEFT JOIN "tickrify"."AnalysisTrack" t ON t."analysisId" = a."id"
+      WHERE a."id" IN (${Prisma.join([...ids])})
     `);
-    for (const row of rows ?? []) out.set(row.analysisId, { status: row.status, outcome: row.outcome, touched: row.touched === true });
+    for (const row of rows) {
+      out.set(row.analysisId, {
+        groundingInterval: row.groundingInterval,
+        setupId: row.setupId,
+        track: row.status ? { status: row.status, outcome: row.outcome, touched: row.touched } : null,
+      });
+    }
   } catch {
-    // Leitura de medicao: nunca derruba a lista.
+    // Medicao indisponivel: a lista continua legivel.
   }
   return out;
 }

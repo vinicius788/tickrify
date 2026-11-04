@@ -861,8 +861,18 @@ describe('AiService access enforcement', () => {
 
     beforeEach(() => {
       prisma.$executeRaw = jest.fn().mockResolvedValue(1);
-      prisma.analysis.findFirst.mockResolvedValue({ id: 'an_1' });
+      prisma.analysis.findFirst.mockResolvedValue({ id: 'an_1', recommendation: 'BUY' });
       (service as any).outcomeColumnsReady = true;
+    });
+
+    it.each(['WATCH', 'NO_TRADE'])('recusa resultados de operacao em %s antes de escrever', async (signalState) => {
+      prisma.analysis.findFirst.mockResolvedValue({ id: 'an_1', recommendation: 'WAIT', result: { signalState } });
+      for (const outcome of ['tp1', 'tp2', 'stop', 'open']) {
+        await expect(service.setOutcome('usr_1', 'an_1', { outcome, pnlAmount: 99 })).rejects.toMatchObject({
+          status: 400, response: { code: 'not_a_trade' },
+        });
+      }
+      expect(prisma.$executeRaw).not.toHaveBeenCalled();
     });
 
     it('sem valor grava NULL, nunca 0', async () => {
@@ -998,7 +1008,7 @@ describe('AiService access enforcement', () => {
       prisma.$queryRaw = jest.fn(async (query: { sql: string }) =>
         query.sql.includes('"AnalysisTrack"')
           ? [
-              { analysisId: 'w_reached', status: 'tracked', outcome: 'LOSS', touched: true },
+              { analysisId: 'w_reached', groundingInterval: '5m', setupId: 'setup1', status: 'tracked', outcome: 'LOSS', touched: true },
               { analysisId: 'w_expired', status: 'tracked', outcome: 'EXPIRED', touched: false },
               { analysisId: 'w_invalid', status: 'tracked', outcome: 'INVALIDATED', touched: false },
             ]
@@ -1008,7 +1018,7 @@ describe('AiService access enforcement', () => {
       const byId = Object.fromEntries(items.map((item: any) => [item.id, item]));
       expect(byId.w_reached.watch).toEqual({
         direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12,
-        expiresAt: '2026-09-10T15:00:00.000Z', outcome: 'reached', alertAvailable: true,
+        setupId: 'setup1', expiresAt: '2026-09-10T13:00:00.000Z', outcome: 'reached', alertAvailable: true,
       });
       expect(byId.w_expired.watch.outcome).toBe('expired');
       expect(byId.w_invalid.watch.outcome).toBe('invalidated');

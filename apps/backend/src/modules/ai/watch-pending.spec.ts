@@ -1,4 +1,4 @@
-import { loadWatchTracks, storedWatchPlan, watchOutcomeOf, watchSummaryOf } from './watch-pending';
+import { loadWatchContexts, storedWatchPlan, watchOutcomeOf, watchSummaryOf } from './watch-pending';
 
 const plan = { direction: 'short', triggerType: 'zone_reaction', zoneLow: 77800, zoneHigh: 78000, invalidation: 78400,
   target1: 76900, target2: null, validForCandles: 12, trigger: 'Bearish close below 77,800' };
@@ -16,6 +16,9 @@ describe('watchOutcomeOf (so leitura do AnalysisTrack)', () => {
     expect(watchOutcomeOf({ status: 'tracked', outcome: 'LOSS', touched: true })).toBe('reached');
     expect(watchOutcomeOf({ status: 'tracked', outcome: 'WIN', touched: true })).toBe('reached');
   });
+  it('toque posterior a invalidacao nao reabre a janela', () => {
+    expect(watchOutcomeOf({ status: 'tracked', outcome: 'INVALIDATED', touched: true })).toBe('invalidated');
+  });
   it('nao tocou: invalidated ou expired', () => {
     expect(watchOutcomeOf({ status: 'tracked', outcome: 'INVALIDATED', touched: false })).toBe('invalidated');
     expect(watchOutcomeOf({ status: 'tracked', outcome: 'EXPIRED', touched: false })).toBe('expired');
@@ -31,13 +34,13 @@ describe('watchSummaryOf', () => {
   it('WATCH: nivel = borda proxima, validade x tempo grafico a partir da analise, alerta pela fonte de preco', () => {
     expect(watchSummaryOf(watchResult(), 'WAIT', created, null)).toEqual({
       direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12,
-      expiresAt: '2026-11-03T15:00:00.000Z', outcome: 'pending', alertAvailable: true,
+      expiresAt: '2026-11-03T15:00:00.000Z', outcome: 'pending', alertAvailable: true, setupId: null,
     });
     const long = watchSummaryOf(watchResult({ watchPlan: { ...plan, direction: 'long', invalidation: 77500, target1: 79000 } }), 'WAIT', created, null);
     expect(long?.level).toBe(78000);
   });
   it('desfecho do rastreador e tempo grafico desconhecido', () => {
-    const s = watchSummaryOf(watchResult({ analysis: { symbol: 'BTCUSDT', timeframe: '?' } }), 'WAIT', created, { status: 'tracked', outcome: 'EXPIRED', touched: true });
+    const s = watchSummaryOf(watchResult({ analysis: { symbol: 'BTCUSDT', timeframe: '?' } }), 'WAIT', created, { track: { status: 'tracked', outcome: 'EXPIRED', touched: true }, groundingInterval: null, setupId: null });
     expect(s).toMatchObject({ expiresAt: null, outcome: 'reached' });
   });
   it('ativo sem fonte de preco: sem alerta', () => {
@@ -51,14 +54,14 @@ describe('watchSummaryOf', () => {
   });
 });
 
-describe('loadWatchTracks', () => {
+describe('loadWatchContexts', () => {
   it('le as linhas e nunca derruba a lista se a tabela faltar', async () => {
     const ok = { $queryRaw: jest.fn().mockResolvedValue([{ analysisId: 'a1', status: 'tracked', outcome: 'EXPIRED', touched: false }]) };
-    expect((await loadWatchTracks(ok as any, ['a1'])).get('a1')).toEqual({ status: 'tracked', outcome: 'EXPIRED', touched: false });
+    expect((await loadWatchContexts(ok as any, ['a1'])).get('a1')?.track).toEqual({ status: 'tracked', outcome: 'EXPIRED', touched: false });
     const broken = { $queryRaw: jest.fn().mockRejectedValue(new Error('relation does not exist')) };
-    expect((await loadWatchTracks(broken as any, ['a1'])).size).toBe(0);
+    expect((await loadWatchContexts(broken as any, ['a1'])).size).toBe(0);
     const none = { $queryRaw: jest.fn() };
-    expect((await loadWatchTracks(none as any, [])).size).toBe(0);
+    expect((await loadWatchContexts(none as any, [])).size).toBe(0);
     expect(none.$queryRaw).not.toHaveBeenCalled();
   });
 });

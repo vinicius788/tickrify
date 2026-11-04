@@ -336,6 +336,7 @@ export interface WatchSummary {
   outcome: WatchOutcome;
   /** O ativo tem fonte de preco (alerta de nivel). */
   alertAvailable: boolean;
+  setupId?: string | null;
 }
 
 /** Um lado do mapa de niveis do NO_TRADE: o nivel mais proximo e o seguinte. */

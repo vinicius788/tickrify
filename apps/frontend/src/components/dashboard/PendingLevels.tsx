@@ -3,7 +3,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
 import { APIError, type LevelMap, type LevelMapSide, type WatchSummary } from '@/lib/api';
-import { formatAlertLevel, formatTimeLeft, isWatchOpen, useAlertActions, useSetupAlerts, type AlertLabel } from '@/lib/setups';
+import { formatAlertLevel, formatTimeLeft, hasActiveLevel, useExpiryClock, useAlertOptions, isWatchOpen, useAlertActions, useSetupAlerts, type AlertLabel } from '@/lib/setups';
 
 // WATCH pendente e mapa de niveis do NO_TRADE (03/11/2026). Arquivo proprio
 // porque My Trades, Diario, Today, setups e o resultado mostram o mesmo bloco.
@@ -15,14 +15,13 @@ const DATE_LOCALES: Record<string, string> = {
 
 type Surface = 'trades' | 'journal' | 'today' | 'setups' | 'setup_page' | 'result';
 
-const sameLevel = (a: number, b: number) => Math.abs(a - b) <= Math.abs(b) * 1e-9;
-
 /**
  * "Alert me at <nivel>": cria o SetupAlert de sempre (mesmas regras, tetos e
  * 402 de conta travada, conferidos no servidor) e segue o setup no mesmo clique.
  */
-export function AlertLevelButton({
+function AlertLevelButton({
   analysisId,
+  setupId,
   level,
   label,
   surface,
@@ -30,6 +29,7 @@ export function AlertLevelButton({
   format,
 }: {
   analysisId: string;
+  setupId?: string | null;
   level: number;
   label: AlertLabel;
   surface: Surface;
@@ -45,9 +45,7 @@ export function AlertLevelButton({
   const alerts = useSetupAlerts(true);
   const { create } = useAlertActions();
   const price = format ? format(level) : formatAlertLevel(level, locale);
-  const active = (alerts.data?.items ?? []).some(
-    (alert) => alert.status === 'active' && alert.analysisId === analysisId && sameLevel(alert.level, level),
-  );
+  const active = hasActiveLevel(alerts.data?.items ?? [], setupId, analysisId, level);
 
   if (active) {
     return (
@@ -100,7 +98,8 @@ export function WatchPending({
   watch,
   surface,
   alerts = true,
-  now = Date.now(),
+  now: fixedNow,
+  waitingFor,
   alignEnd = false,
 }: {
   analysisId: string;
@@ -109,6 +108,7 @@ export function WatchPending({
   /** false: so a leitura, sem o botao (demo, exemplo). */
   alerts?: boolean;
   now?: number;
+  waitingFor?: string | null;
   /** Coluna da direita (My Trades): alinha a direita a partir do sm. */
   alignEnd?: boolean;
 }) {
@@ -116,6 +116,7 @@ export function WatchPending({
   const p = t.pending;
   const locale = DATE_LOCALES[language] ?? 'en-US';
   const price = (v: number) => formatAlertLevel(v, locale);
+  const now = useExpiryClock(Date.parse(watch.expiresAt ?? ''), fixedNow);
   const open = isWatchOpen(watch, now);
   const left = watch.expiresAt ? Date.parse(watch.expiresAt) - now : null;
   const validity = open && left !== null
@@ -139,22 +140,29 @@ export function WatchPending({
   return (
     <div data-testid="watch-pending" data-outcome={watch.outcome} className={`flex flex-col gap-1.5 ${alignEnd ? 'sm:items-end sm:text-right' : ''}`}>
       <span className="w-fit rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2.5 py-1 font-terminal text-[11px] text-[var(--text-secondary)]">
-        {status}
+        {closedNote ?? status}
       </span>
       <p className="font-terminal text-xs text-[var(--text-primary)]">
         {levelLine.replace('{price}', price(watch.level))}
       </p>
-      <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
-        {[p.invalidation.replace('{price}', price(watch.invalidation)), validity, closedNote].filter(Boolean).join(' · ')}
-      </p>
+      {!closed && waitingFor && <p className="text-xs text-[var(--text-secondary)]">{waitingFor}</p>}
+      {!closed && <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
+        {[p.invalidation.replace('{price}', price(watch.invalidation)), validity].filter(Boolean).join(' · ')}
+      </p>}
       {alerts && open && watch.alertAvailable ? (
-        <AlertLevelButton analysisId={analysisId} level={watch.level} label="entry" surface={surface} kind="watch" />
+        <AlertLevelButton analysisId={analysisId} setupId={watch.setupId} level={watch.level} label="entry" surface={surface} kind="watch" />
       ) : null}
     </div>
   );
 }
 
 const atrText = (n: number) => (Math.round(n * 10) / 10).toFixed(1);
+
+function MapAlertButton({ analysisId, level, format }: { analysisId: string; level: number; format: (value: number) => string }) {
+  const options = useAlertOptions(analysisId);
+  if (!options.data?.available || options.isError) return null;
+  return <AlertLevelButton analysisId={analysisId} setupId={options.data.setupId} level={level} label="custom" surface="result" kind="level_map" format={format} />;
+}
 
 /** NO_TRADE com velas reais: os dois lados do preco, montados pelo codigo. Nao e sinal. */
 export function LevelMapCard({
@@ -191,7 +199,7 @@ export function LevelMapCard({
           <li key={key} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <p className="font-terminal text-sm text-[var(--text-primary)]">{line(side, up)}</p>
             {alerts && analysisId ? (
-              <AlertLevelButton analysisId={analysisId} level={side.level} label="custom" surface="result" kind="level_map" format={price} />
+              <MapAlertButton analysisId={analysisId} level={side.level} format={price} />
             ) : null}
           </li>
         ))}
