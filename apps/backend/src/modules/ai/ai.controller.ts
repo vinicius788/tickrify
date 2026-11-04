@@ -40,18 +40,19 @@ import {
   GROUNDING_LIVE_SINCE,
   MIN_N_TO_PUBLISH,
   PUBLIC_SCORED_OUTCOMES,
-  avgRewardOf,
-  breakEvenRate,
+  averageResult,
   breakdownOf,
   confidenceBand,
   currentEngineReport,
-  edgeVerdict,
+  previousTradeR,
   splitByFillCandleRule,
   tally,
   type ConfidenceBand,
   type OutcomeRow,
 } from './accuracy.util';
 import { normalizeSymbol } from '../../common/utils/analysis-normalizer';
+import { analysisInterval } from '../market/candle-store';
+import { trackingWindowEnd } from '../../../worker/analysis-tracker';
 
 @Controller('ai')
 export class AiController {
@@ -419,10 +420,15 @@ export class AiController {
     const completedCount = Number(abst?.total ?? 0);
 
     const overall = tally(rows);
-    const avgRewardTp1 = avgRewardOf(rows.filter((r) => r.outcome === 'WIN' || r.outcome === 'LOSS').map((r) => r.rewardTp1));
-    const breakEven = breakEvenRate(avgRewardTp1);
+    const previousTrades = rows.filter((r) => ['WIN', 'LOSS', 'TIMEOUT'].includes(String(r.outcome)));
+    const previousR = previousTrades.flatMap((r) => {
+      const t = previousTradeR(r);
+      return t ? [t] : [];
+    });
+    const firstRecord = allRows.reduce<Date | null>((min, r) => (!min || r.createdAt < min ? r.createdAt : min), null);
 
     const previous = {
+      firstRecordAt: firstRecord ? firstRecord.toISOString() : null,
       groundingLiveSince: GROUNDING_LIVE_SINCE.toISOString(),
       overall,
       byConfidence,
@@ -443,10 +449,9 @@ export class AiController {
       // ao overall). `methodology`: qual regra cada serie usa.
       stopOnly: { overall: tally(stopOnlyRows), breakdown: breakdownOf(stopOnlyRows) },
       methodology: { overall: 'legacy', stopOnly: 'stop_only', newEvaluations: FILL_CANDLE_RULE },
-      // R medio do TP1 dos WIN/LOSS do overall e o acerto que empata com ele.
-      avgRewardTp1,
-      breakEvenRate: breakEven,
-      edge: edgeVerdict(overall, breakEven),
+      // Resultado medio por trade em R (WIN = riskRewardTp1, LOSS = -1, TIMEOUT = 0),
+      // so linhas legacy, antes de custos; sem R valido fica fora e conta em `excluded`.
+      averageResult: averageResult(previousR, previousTrades.length - previousR.length),
     };
 
     // Motor atual: o rastreador (AnalysisTrack), nunca o sweeper. Tabela
@@ -459,14 +464,17 @@ export class AiController {
     try {
       const raw = await this.prisma.$queryRaw<Array<{
         createdAt: Date; signalState: string | null; dataMode: string | null; symbol: string | null; reachProbability: number | null;
-        trackStatus: string | null; trackOutcome: string | null; touched: boolean | null;
+        watchPlan: unknown; groundingInterval: string | null; timeframe: string | null;
+        trackStatus: string | null; trackOutcome: string | null; trackReason: string | null; touched: boolean | null;
         fillPrice: number | null; stopLoss: number | null; takeProfit1: number | null; trackSymbol: string | null;
       }>>(Prisma.sql`
         SELECT a."createdAt", a."result"->>'signalState' AS "signalState", a."result"->>'dataMode' AS "dataMode",
           COALESCE(a."result"->'analysis'->>'symbol', a."result"->>'symbol') AS "symbol",
           CASE WHEN jsonb_typeof(a."result"->'watchReach'->'probability') = 'number'
             THEN (a."result"->'watchReach'->>'probability')::float8 END AS "reachProbability",
-          t."status" AS "trackStatus", t."outcome" AS "trackOutcome", t."touched", t."fillPrice", t."stopLoss", t."takeProfit1",
+          a."result"->'watchPlan' AS "watchPlan", a."groundingStats"->>'interval' AS "groundingInterval",
+          a."result"->'analysis'->>'timeframe' AS "timeframe",
+          t."status" AS "trackStatus", t."outcome" AS "trackOutcome", t."reason" AS "trackReason", t."touched", t."fillPrice", t."stopLoss", t."takeProfit1",
           t."symbol" AS "trackSymbol"
         FROM "tickrify"."Analysis" a
         LEFT JOIN "tickrify"."AnalysisTrack" t ON t."analysisId" = a."id"
@@ -480,9 +488,10 @@ export class AiController {
         dataMode: r.dataMode,
         symbol: r.symbol,
         reachProbability: r.reachProbability,
+        windowEndMs: trackingWindowEnd(r.createdAt, r.watchPlan, r.symbol, analysisInterval(r.groundingInterval, r.timeframe)),
         track: r.trackStatus
           ? {
-            status: r.trackStatus, outcome: r.trackOutcome, touched: Boolean(r.touched),
+            status: r.trackStatus, outcome: r.trackOutcome, reason: r.trackReason, touched: Boolean(r.touched),
             symbol: r.trackSymbol ?? r.symbol, fillPrice: r.fillPrice, stopLoss: r.stopLoss, takeProfit1: r.takeProfit1,
           }
           : null,

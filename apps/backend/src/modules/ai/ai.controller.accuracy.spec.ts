@@ -4,15 +4,15 @@ import type { PrismaService } from '../database/prisma.service';
 import {
   AUTOMATIC_OUTCOMES,
   CURRENT_ENGINE_SQL,
-  breakEvenRate,
+  averageResult,
   breakdownOf,
   confidenceBand,
   currentEngineReport,
-  edgeVerdict,
   engineMajor,
   fillCandleRuleOf,
   isCurrentEngine,
   splitByFillCandleRule,
+  tQuantile975,
   tally,
   trackedTradeR,
   wilson,
@@ -163,82 +163,115 @@ describe('GET /api/ai/accuracy: previous (motor anterior, regra do fill)', () =>
     expect(previous.overall.n).toBe(2);
   });
 
-  it('avgRewardTp1 so com WIN/LOSS legacy e breakEvenRate = 1/(1+R)', async () => {
+  it('resultado medio do anterior: WIN = riskRewardTp1, LOSS = -1, TIMEOUT = 0, sem R valido fora (e contado)', async () => {
     const rows = [
-      row('WIN', null, 60, 2), row('LOSS', null, 60, 1), row('LOSS', null, 60, null),
-      row('NO_FILL', null, 60, 9), row('WIN', { fillCandleRule: 'stop_only' }, 60, 9),
+      ...Array(12).fill(row('WIN', null, 60, 2)),
+      ...Array(10).fill(row('LOSS', null, 60, 1.5)),
+      row('TIMEOUT', null, 60, 1.5),
+      row('LOSS', null, 60, null), // sem R valido: fora, contado em excluded
+      row('NO_FILL', null, 60, 9), // nao e trade
+      row('WIN', { fillCandleRule: 'stop_only' }, 60, 9), // serie a parte
     ];
     const { previous }: any = await controllerWith(rows).controller.getAccuracy();
-    expect(previous.avgRewardTp1).toBe(1.5);
-    expect(previous.breakEvenRate).toBe(40);
-    expect(previous.edge).toBeNull(); // n = 3: sem taxa publicada, sem veredito
+    expect(previous.averageResult).toMatchObject({ n: 23, decided: 22, excluded: 1, publishable: true });
+    expect(previous.averageResult.mean).toBe(Math.round(((12 * 2 - 10) / 23) * 100) / 100);
+    expect(previous.firstRecordAt).toBe(at.toISOString());
+    expect(previous).not.toHaveProperty('breakEvenRate');
+    expect(previous).not.toHaveProperty('edge');
   });
 });
 
-describe('break-even e a frase escolhida pelo dado', () => {
-  it('breakEvenRate: 1/(1+R) em %, null sem R positivo', () => {
-    expect(breakEvenRate(1)).toBe(50);
-    expect(breakEvenRate(1.5)).toBe(40);
-    expect(breakEvenRate(0.5)).toBe(66.7);
-    expect(breakEvenRate(null)).toBeNull();
-    expect(breakEvenRate(0)).toBeNull();
+describe('resultado medio por trade (t de Student) e o veredito pelo dado', () => {
+  it('quantil 0,975 da t bate com a tabela', () => {
+    expect(tQuantile975(19)).toBeCloseTo(2.093, 3);
+    expect(tQuantile975(29)).toBeCloseTo(2.045, 3);
+    expect(tQuantile975(99)).toBeCloseTo(1.984, 3);
   });
 
-  it('abaixo, acima ou dentro do intervalo de Wilson', () => {
-    const iv = (low: number, high: number) => ({ publishable: true, low, high });
-    expect(edgeVerdict(iv(20, 35), 40)).toBe('below');
-    expect(edgeVerdict(iv(45, 60), 40)).toBe('above');
-    expect(edgeVerdict(iv(30, 50), 40)).toBe('inconclusive');
-    expect(edgeVerdict({ publishable: false, low: 10, high: 20 }, 40)).toBeNull();
-    expect(edgeVerdict(iv(20, 35), null)).toBeNull();
+  it('exemplo do Codex: 48% ganham 1R e 52% perdem 1R (alvo de 1,5R) nunca da above', () => {
+    const trades = [...Array(48).fill({ outcome: 'WIN', r: 1 }), ...Array(52).fill({ outcome: 'LOSS', r: -1 })];
+    const res = averageResult(trades, 0);
+    expect(res.publishable).toBe(true);
+    expect(res).toMatchObject({ mean: -0.04 });
+    expect(res.publishable && res.verdict).not.toBe('above');
+    expect(['below', 'inconclusive']).toContain(res.publishable && res.verdict);
   });
 
-  it('o veredito do previous segue o dado: 10 WIN x 30 LOSS com R 1 fica abaixo de 50%', async () => {
-    const rows = [...Array(10).fill(row('WIN', null, 60, 1)), ...Array(30).fill(row('LOSS', null, 60, 1))];
+  it('abaixo, acima ou inconclusivo pelo intervalo da media contra zero', () => {
+    const below = averageResult([...Array(5).fill({ outcome: 'WIN', r: 1 }), ...Array(25).fill({ outcome: 'LOSS', r: -1 })], 0);
+    const above = averageResult([...Array(25).fill({ outcome: 'WIN', r: 1.5 }), ...Array(5).fill({ outcome: 'LOSS', r: -1 })], 0);
+    const mid = averageResult([...Array(15).fill({ outcome: 'WIN', r: 1 }), ...Array(15).fill({ outcome: 'LOSS', r: -1 })], 0);
+    expect(below.publishable && below.verdict).toBe('below');
+    expect(above.publishable && above.verdict).toBe('above');
+    expect(mid.publishable && mid.verdict).toBe('inconclusive');
+  });
+
+  it('19 timeouts + 1 WIN: nada derivado, so o n', async () => {
+    const trades = [...Array(19).fill({ outcome: 'TIMEOUT', r: 0 }), { outcome: 'WIN', r: 1.5 }];
+    expect(averageResult(trades, 0)).toEqual({ n: 20, decided: 1, excluded: 0, publishable: false });
+    const rows = [...Array(19).fill(row('TIMEOUT', null, 60, 1.5)), row('WIN', null, 60, 1.5)];
     const { previous }: any = await controllerWith(rows).controller.getAccuracy();
-    expect(previous.breakEvenRate).toBe(50);
-    expect(previous.overall.high).toBeLessThan(50);
-    expect(previous.edge).toBe('below');
+    expect(previous.averageResult).toEqual({ n: 20, decided: 1, excluded: 0, publishable: false });
+    expect(previous.overall).toMatchObject({ n: 1, publishable: false });
+    const cur20 = currentEngineReport([...Array(19).fill(cur('ENTER_NOW', track('TIMEOUT'))), cur('ENTER_NOW', track('WIN'))]);
+    expect(cur20.enterNow.hitRate).toEqual({ n: 1, publishable: false });
+    expect(cur20.enterNow.averageResult).toEqual({ n: 20, decided: 1, excluded: 0, publishable: false });
   });
 });
 
 const track = (outcome: string, extra: Partial<NonNullable<CurrentEngineRow['track']>> = {}) => ({
   status: 'tracked', outcome, touched: false, symbol: 'BTCUSDT', fillPrice: 100, stopLoss: 99, takeProfit1: 101.5, ...extra,
 });
-const cur = (signalState: string, t: CurrentEngineRow['track'], extra: Partial<CurrentEngineRow> = {}): CurrentEngineRow => ({
-  createdAt: new Date('2026-11-04T10:00:00Z'), signalState, dataMode: 'real_data', symbol: 'BTCUSDT', reachProbability: null, track: t, ...extra,
-});
+function cur(signalState: string, t: CurrentEngineRow['track'], extra: Partial<CurrentEngineRow> = {}): CurrentEngineRow {
+  return {
+    createdAt: new Date('2026-11-04T10:00:00Z'), signalState, dataMode: 'real_data', symbol: 'BTCUSDT', reachProbability: null,
+    windowEndMs: Date.parse('2026-11-06T10:00:00Z'), track: t, ...extra,
+  };
+}
+const NOW = Date.parse('2026-11-05T10:00:00Z');
 
 describe('current (motor atual, rastreador)', () => {
-  it('menos de 20 resolvidos: so o n, sem taxa, sem R e sem veredito', () => {
+  it('menos de 20 resolvidos: so o n, sem taxa, sem resultado medio', () => {
     const rows = [...Array(12).fill(cur('ENTER_NOW', track('WIN'))), ...Array(7).fill(cur('ENTER_NOW', track('LOSS')))];
-    const r = currentEngineReport(rows);
+    const r = currentEngineReport(rows, NOW);
     expect(r.enterNow.resolved).toBe(19);
     expect(r.enterNow.hitRate).toEqual({ n: 19, publishable: false });
-    expect(r.enterNow.avgNetR).toBeNull();
-    expect(r.enterNow.breakEvenRate).toBeNull();
-    expect(r.enterNow.edge).toBeNull();
+    expect(r.enterNow.averageResult).toEqual({ n: 19, decided: 19, excluded: 0, publishable: false });
   });
 
-  it('20 ou mais: Wilson, R liquido pela regra da revisao mensal e break-even', () => {
+  it('20 ou mais: Wilson e resultado medio pela regra da revisao mensal (spread estimado)', () => {
     const rows = [
       ...Array(8).fill(cur('ENTER_NOW', track('WIN'))),
       ...Array(12).fill(cur('ENTER_NOW', track('LOSS'))),
       cur('ENTER_NOW', track('TIMEOUT')),
       cur('ENTER_NOW', null),
-      cur('ENTER_NOW', track('NO_CANDLES', { fillPrice: null })),
+      cur('ENTER_NOW', track('WIN', { fillPrice: null })),
     ];
-    const r = currentEngineReport(rows);
-    expect(r.enterNow).toMatchObject({ emitted: 23, open: 1, notScored: 1, resolved: 21, outcomes: { tp1: 8, stop: 12, timeout: 1 } });
+    const r = currentEngineReport(rows, NOW);
+    expect(r.enterNow).toMatchObject({ emitted: 23, resolved: 21, outcomes: { tp1: 8, stop: 12, timeout: 1 } });
     expect(r.enterNow.hitRate).toEqual(wilson(8, 12));
-    const expected = rows.flatMap((x) => (x.track ? [trackedTradeR(x.track)] : [])).filter(Boolean) as Array<{ r: number }>;
-    expect(r.enterNow.avgNetR).toBe(Math.round((expected.reduce((a, t) => a + t.r, 0) / 21) * 100) / 100);
-    expect(r.enterNow.avgRewardTp1).toBe(1.5);
-    expect(r.enterNow.breakEvenRate).toBe(40);
-    expect(r.enterNow.edge).toBe(edgeVerdict(wilson(8, 12), 40));
+    const expected = rows.flatMap((x) => (x.track ? [trackedTradeR(x.track)] : [])).filter(Boolean) as Array<{ outcome: string; r: number }>;
+    expect(r.enterNow.averageResult).toEqual(averageResult(expected, 1));
+    expect(r.enterNow.averageResult).toMatchObject({ n: 21, decided: 20, excluded: 1, publishable: true });
   });
 
-  it('WATCH fechado por desfecho (watchOutcomeOf), aberto a parte, taxa de chegada so com n >= 20', () => {
+  it('rastreador: janela aberta, fechada aguardando, pulada com motivo e rastreada', () => {
+    const rows = [
+      cur('WATCH', null), // janela abre ate 06/11
+      cur('WATCH', null, { windowEndMs: Date.parse('2026-11-05T09:00:00Z') }), // fechou, aguardando a volta
+      cur('WATCH', null, { windowEndMs: null }), // sem plano/fonte: o rastreador pula na proxima volta
+      cur('WATCH', { ...track('NO_FILL'), status: 'skipped', reason: 'no_source' }),
+      cur('WATCH', { ...track('NO_FILL'), status: 'skipped', reason: 'no_source' }),
+      cur('WATCH', { ...track('NO_FILL'), status: 'skipped', reason: 'no_candles' }),
+      cur('WATCH', track('NO_FILL', { touched: true })),
+      cur('NO_TRADE', { ...track(''), status: 'skipped', reason: 'no_plan' }),
+    ];
+    const r = currentEngineReport(rows, NOW);
+    expect(r.tracking.WATCH).toEqual({ open: 1, awaiting: 2, skipped: 3, skippedReasons: { no_source: 2, no_candles: 1 }, tracked: 1 });
+    expect(r.tracking.ENTER_NOW).toEqual({ open: 0, awaiting: 0, skipped: 0, skippedReasons: {}, tracked: 0 });
+  });
+
+  it('WATCH por desfecho (watchOutcomeOf), taxa de chegada so com n >= 20', () => {
     const rows = [
       cur('WATCH', track('TIMEOUT', { touched: true })),
       cur('WATCH', track('NO_FILL')),
@@ -247,9 +280,9 @@ describe('current (motor atual, rastreador)', () => {
       cur('WATCH', null),
       cur('NO_TRADE', { ...track(''), status: 'skipped' }),
     ];
-    const r = currentEngineReport(rows);
+    const r = currentEngineReport(rows, NOW);
     expect(r.byState).toEqual({ WATCH: 5, NO_TRADE: 1 });
-    expect(r.watch).toMatchObject({ emitted: 5, open: 1, closed: 4, outcomes: { reached: 1, expired: 1, invalidated: 1, unavailable: 1 } });
+    expect(r.watch).toMatchObject({ emitted: 5, outcomes: { reached: 1, expired: 1, invalidated: 1, unavailable: 1 } });
     expect(r.watch.reachRate).toEqual({ n: 3, publishable: false });
     expect(r.watch.calibrationAvailable).toBe(false);
   });

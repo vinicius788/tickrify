@@ -131,6 +131,21 @@ function planOf(raw: unknown): WatchPlan | null {
 }
 
 /**
+ * Fim da janela do rastreador: validade + 2 velas + 48h (mais 72h fora de
+ * cripto, pelo fim de semana). null = sem plano, tempo grafico ou fonte de
+ * preco: o rastreador pula a analise na volta seguinte. A /accuracy usa a
+ * mesma conta para separar janela aberta de janela fechada aguardando registro.
+ */
+export function trackingWindowEnd(createdAt: Date, watchPlan: unknown, symbol: string | null, interval: string | null): number | null {
+  const plan = planOf(watchPlan);
+  const step = interval ? TIMEFRAME_MS[interval] : undefined;
+  const market = symbol ? candleMarketOf(symbol) : null;
+  if (!plan || !step || !market) return null;
+  const span = (plan.validForCandles + 2) * step + TRACKER_RULES.resolveMs;
+  return createdAt.getTime() + span + (market.market === 'crypto' ? 0 : TRACKER_RULES.fxWeekendMs);
+}
+
+/**
  * Avalia uma analise. `null` = ainda nao da (janela aberta ou cota recusada):
  * fica para a volta seguinte. `now` e `fetch` injetaveis para o teste.
  */
@@ -161,7 +176,7 @@ export async function trackAnalysis(
 
   const start = c.createdAt.getTime();
   const span = (plan.validForCandles + 2) * step + TRACKER_RULES.resolveMs;
-  const end = start + span + (market.market === 'crypto' ? 0 : TRACKER_RULES.fxWeekendMs);
+  const end = trackingWindowEnd(c.createdAt, result.watchPlan, symbol, interval) as number;
   if (nowMs < end) return null;
   const fineInterval = span / MINUTE <= TRACKER_RULES.fineMaxMinutes ? '1m' : '5m';
   const tf = await fetch(symbol, interval, start - step, end, 'sweeper');

@@ -194,33 +194,58 @@ export const CURRENT_ENGINE_SQL =
  */
 export const EURUSD_BLOCK_FIXED_AT = new Date('2026-11-03T17:28:26.000Z');
 
-/** Taxa de acerto que empata com o R medio do TP1: 1 / (1 + R). null sem R. */
-export function breakEvenRate(avgReward: number | null): number | null {
-  if (avgReward === null || !Number.isFinite(avgReward) || avgReward <= 0) return null;
-  return round1(1 / (1 + avgReward));
-}
-
-/**
- * Acerto contra o empate, pelo intervalo de Wilson: 'below' (o intervalo
- * inteiro abaixo), 'above' (inteiro acima) ou 'inconclusive' (o empate esta
- * dentro). null quando o recorte nao publica taxa. A frase publica sai daqui.
- */
-export type EdgeVerdict = 'below' | 'above' | 'inconclusive';
-export function edgeVerdict(interval: Pick<Interval, 'publishable' | 'low' | 'high'>, breakEven: number | null): EdgeVerdict | null {
-  if (!interval.publishable || interval.low === null || interval.high === null || breakEven === null) return null;
-  if (interval.high < breakEven) return 'below';
-  if (interval.low > breakEven) return 'above';
-  return 'inconclusive';
-}
-
 const round2 = (v: number) => Math.round(v * 100) / 100;
 const meanOf = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
-/** R medio do TP1 (riskRewardTp1 gravado) dos WIN/LOSS; null sem nenhum valor. */
-export function avgRewardOf(values: Array<number | null | undefined>): number | null {
-  const xs = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0);
-  const m = meanOf(xs);
-  return m === null ? null : round2(m);
+/**
+ * Quantil 0,975 da t de Student (Cornish-Fisher, 4 termos). Com df >= 19 (o
+ * minimo de publicacao e 20) o erro fica abaixo de 1e-4.
+ */
+export function tQuantile975(df: number): number {
+  const z = 1.959963984540054;
+  const z3 = z ** 3, z5 = z ** 5, z7 = z ** 7, z9 = z ** 9;
+  return z
+    + (z3 + z) / (4 * df)
+    + (5 * z5 + 16 * z3 + 3 * z) / (96 * df ** 2)
+    + (3 * z7 + 19 * z5 + 17 * z3 - 15 * z) / (384 * df ** 3)
+    + (79 * z9 + 776 * z7 + 1482 * z5 - 1920 * z3 - 945 * z) / (92160 * df ** 4);
+}
+
+/**
+ * Resultado medio por trade em R, com o intervalo de 95% da media (t de
+ * Student). Veredito pelo intervalo contra zero: 'below' (inteiro abaixo),
+ * 'above' (inteiro acima, antes de custos; nunca chamado de edge ou lucro) ou
+ * 'inconclusive'. So publica com pelo menos MIN_N_TO_PUBLISH trades que
+ * bateram alvo ou stop entre os que entram na conta (timeouts nao contam para
+ * o minimo: media feita de zeros nao diz nada). `excluded` = trades sem R
+ * valido, que ficam fora da conta.
+ */
+export type ResultVerdict = 'below' | 'above' | 'inconclusive';
+export type AverageResult =
+  | { n: number; decided: number; excluded: number; publishable: false }
+  | { n: number; decided: number; excluded: number; publishable: true; mean: number; low: number; high: number; verdict: ResultVerdict };
+
+export function averageResult(trades: Array<{ outcome: string; r: number }>, excluded: number): AverageResult {
+  const n = trades.length;
+  const decided = trades.filter((t) => t.outcome === 'WIN' || t.outcome === 'LOSS').length;
+  if (decided < MIN_N_TO_PUBLISH || n < 2) return { n, decided, excluded, publishable: false };
+  const xs = trades.map((t) => t.r);
+  const mean = meanOf(xs) as number;
+  const sd = Math.sqrt(xs.reduce((a, x) => a + (x - mean) ** 2, 0) / (n - 1));
+  const half = tQuantile975(n - 1) * (sd / Math.sqrt(n));
+  const low = mean - half;
+  const high = mean + half;
+  const verdict: ResultVerdict = high < 0 ? 'below' : low > 0 ? 'above' : 'inconclusive';
+  return { n, decided, excluded, publishable: true, mean: round2(mean), low: round2(low), high: round2(high), verdict };
+}
+
+/** Motor anterior: WIN = riskRewardTp1 gravado, LOSS = -1, TIMEOUT = 0, antes de custos; sem R valido fica fora. */
+export function previousTradeR(row: { outcome: string | null; rewardTp1: number | null }): { outcome: string; r: number } | null {
+  const reward = row.rewardTp1;
+  if (!['WIN', 'LOSS', 'TIMEOUT'].includes(String(row.outcome))) return null;
+  if (typeof reward !== 'number' || !Number.isFinite(reward) || reward <= 0) return null;
+  const outcome = String(row.outcome);
+  return { outcome, r: outcome === 'WIN' ? reward : outcome === 'LOSS' ? -1 : 0 };
 }
 
 /** Recorte publico do motor atual: com menos de MIN_N_TO_PUBLISH sai so o n. */
@@ -260,17 +285,16 @@ export interface TrackedTrade {
  * partir do preco executado, LOSS = -1, TIMEOUT = 0, menos o spread em R.
  * null sem desfecho decidido ou sem niveis.
  */
-export function trackedTradeR(t: TrackedTrade): { outcome: TrackedOutcome; r: number; reward: number } | null {
+export function trackedTradeR(t: TrackedTrade): { outcome: TrackedOutcome; r: number } | null {
   if (!t.symbol || !['WIN', 'LOSS', 'TIMEOUT'].includes(String(t.outcome)) || !t.fillPrice || !t.stopLoss || !t.takeProfit1) return null;
   const risk = Math.abs(t.fillPrice - t.stopLoss);
   if (!(risk > 0)) return null;
   const outcome = t.outcome as TrackedOutcome;
-  const reward = Math.abs(t.takeProfit1 - t.fillPrice) / risk;
-  const gross = outcome === 'WIN' ? reward : outcome === 'LOSS' ? -1 : 0;
-  return { outcome, r: gross - spreadOf(t.symbol, t.fillPrice) / risk, reward };
+  const gross = outcome === 'WIN' ? Math.abs(t.takeProfit1 - t.fillPrice) / risk : outcome === 'LOSS' ? -1 : 0;
+  return { outcome, r: gross - spreadOf(t.symbol, t.fillPrice) / risk };
 }
 
-/** Uma analise do motor atual, com a linha do rastreador quando a janela ja fechou. */
+/** Uma analise do motor atual, com a linha do rastreador quando ela ja existe. */
 export interface CurrentEngineRow {
   createdAt: Date;
   signalState: string | null;
@@ -278,7 +302,9 @@ export interface CurrentEngineRow {
   symbol: string | null;
   /** result.watchReach.probability (0 a 1), so no WATCH com calibracao. */
   reachProbability: number | null;
-  track: (WatchTrack & TrackedTrade) | null;
+  /** Fim da janela do rastreador (trackingWindowEnd); null = o rastreador pula na proxima volta. */
+  windowEndMs: number | null;
+  track: (WatchTrack & TrackedTrade & { reason?: string | null }) | null;
 }
 
 const REACH_BANDS = [
@@ -291,16 +317,34 @@ const REACH_BANDS = [
 const countBy = (keys: string[]) => keys.reduce<Record<string, number>>((acc, k) => ({ ...acc, [k]: (acc[k] ?? 0) + 1 }), {});
 
 /**
+ * Onde cada analise esta no rastreador: janela aberta, janela fechada
+ * aguardando a volta do rastreador (a cada 30 min), pulada (sem plano, tempo
+ * grafico, fonte de preco ou velas; motivo agregado) ou rastreada.
+ */
+export function trackingStatus(rows: CurrentEngineRow[], nowMs: number) {
+  const skipped = rows.filter((r) => r.track && r.track.status !== 'tracked');
+  return {
+    open: rows.filter((r) => !r.track && r.windowEndMs !== null && nowMs < r.windowEndMs).length,
+    awaiting: rows.filter((r) => !r.track && (r.windowEndMs === null || nowMs >= r.windowEndMs)).length,
+    skipped: skipped.length,
+    skippedReasons: countBy(skipped.map((r) => r.track?.reason || 'unknown')),
+    tracked: rows.filter((r) => r.track?.status === 'tracked').length,
+  };
+}
+
+/**
  * O que o motor atual entregou, lido do rastreador (AnalysisTrack):
  * - estados emitidos e cobertura de dados (velas reais x so o print);
- * - WATCH com janela fechada por desfecho (watchOutcomeOf, a mesma regra das
- *   listas), a taxa de chegada ao nivel e a calibracao da chance mostrada;
- * - ENTER_NOW resolvido (TP1, stop, TIMEOUT), acerto (Wilson), R liquido medio
- *   e o empate pelo R medio do TP1.
- * Todo recorte com menos de 20 resolvidos sai so com o n.
+ * - situacao no rastreador de cada ENTER_NOW e WATCH;
+ * - WATCH por desfecho (watchOutcomeOf, a mesma regra das listas), a taxa de
+ *   chegada ao nivel e a calibracao da chance mostrada;
+ * - ENTER_NOW rastreado (TP1, stop, TIMEOUT), acerto (Wilson) e resultado
+ *   medio em R (regra do --review, spread estimado).
+ * Todo derivado com menos de 20 casos na propria conta sai so com o n.
  */
-export function currentEngineReport(rows: CurrentEngineRow[]) {
-  const watchClosed = rows.filter((r) => r.signalState === 'WATCH' && r.track);
+export function currentEngineReport(rows: CurrentEngineRow[], nowMs: number = Date.now()) {
+  const watchRows = rows.filter((r) => r.signalState === 'WATCH');
+  const watchClosed = watchRows.filter((r) => r.track);
   const watchOutcomes = watchClosed.map((r) => watchOutcomeOf(r.track));
   const reached = watchOutcomes.filter((o) => o === 'reached').length;
   const missedLevel = watchOutcomes.filter((o) => o === 'expired' || o === 'invalidated').length;
@@ -319,17 +363,13 @@ export function currentEngineReport(rows: CurrentEngineRow[]) {
   });
 
   const enter = rows.filter((r) => r.signalState === 'ENTER_NOW');
-  const trades = enter.flatMap((r) => {
-    const t = r.track && r.track.status === 'tracked' ? trackedTradeR(r.track) : null;
+  const trackedEnter = enter.filter((r) => r.track?.status === 'tracked');
+  const trades = trackedEnter.flatMap((r) => {
+    const t = trackedTradeR(r.track as TrackedTrade);
     return t ? [t] : [];
   });
   const wins = trades.filter((t) => t.outcome === 'WIN').length;
   const losses = trades.filter((t) => t.outcome === 'LOSS').length;
-  const hitRate = wilson(wins, losses);
-  const decidedRewards = trades.filter((t) => t.outcome !== 'TIMEOUT').map((t) => t.reward);
-  const avgReward = trades.length >= MIN_N_TO_PUBLISH ? avgRewardOf(decidedRewards) : null;
-  const breakEven = breakEvenRate(avgReward);
-  const avgR = trades.length >= MIN_N_TO_PUBLISH ? meanOf(trades.map((t) => t.r)) : null;
 
   const flagged = rows.filter((r) => r.createdAt < EURUSD_BLOCK_FIXED_AT && canonicalFxPair(r.symbol ?? '') !== null);
 
@@ -338,10 +378,9 @@ export function currentEngineReport(rows: CurrentEngineRow[]) {
     analyses: rows.length,
     byState: countBy(rows.map((r) => r.signalState ?? 'unknown')),
     dataMode: countBy(rows.map((r) => (r.dataMode === 'real_data' || r.dataMode === 'print' ? r.dataMode : 'unknown'))),
+    tracking: { ENTER_NOW: trackingStatus(enter, nowMs), WATCH: trackingStatus(watchRows, nowMs) },
     watch: {
-      emitted: rows.filter((r) => r.signalState === 'WATCH').length,
-      open: rows.filter((r) => r.signalState === 'WATCH' && !r.track).length,
-      closed: watchClosed.length,
+      emitted: watchRows.length,
       outcomes: { reached: 0, invalidated: 0, expired: 0, unavailable: 0, ...countBy(watchOutcomes) },
       reachRate: gated(wilson(reached, missedLevel)),
       calibrationAvailable: watchClosed.some((r) => typeof r.reachProbability === 'number'),
@@ -349,17 +388,10 @@ export function currentEngineReport(rows: CurrentEngineRow[]) {
     },
     enterNow: {
       emitted: enter.length,
-      /** Janela ainda aberta (sem linha no rastreador). */
-      open: enter.filter((r) => !r.track).length,
-      /** Janela fechada sem trade pontuavel (sem velas, sem fonte ou sem niveis). */
-      notScored: enter.filter((r) => r.track).length - trades.length,
       resolved: trades.length,
       outcomes: { tp1: wins, stop: losses, timeout: trades.length - wins - losses },
-      hitRate: gated(hitRate),
-      avgNetR: avgR === null ? null : round2(avgR),
-      avgRewardTp1: avgReward,
-      breakEvenRate: breakEven,
-      edge: edgeVerdict(hitRate, breakEven),
+      hitRate: gated(wilson(wins, losses)),
+      averageResult: averageResult(trades, trackedEnter.length - trades.length),
     },
     eurUsdBlock: {
       until: EURUSD_BLOCK_FIXED_AT.toISOString(),
