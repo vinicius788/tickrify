@@ -643,7 +643,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                     {/* DIREITA — resultado: TP1 / TP2 / Stop */}
                     {noTrade && a.watch && !isDemo ? (
                       <div className="flex-shrink-0 sm:max-w-[260px]">
-                        <WatchPending analysisId={a.id} watch={a.watch} surface="trades" alignEnd />
+                        <WatchPending analysisId={a.id} watch={a.watch} surface="trades" alignEnd symbol={a.symbol} />
                       </div>
                     ) : noTrade ? (
                       <div className="flex flex-shrink-0 flex-col gap-1 sm:items-end">

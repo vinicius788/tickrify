@@ -83,7 +83,7 @@ describe('Diario: WATCH pendente', () => {
     };
     getJournal.mockResolvedValue({ truncated: false, items: [watch, { ...item('nt', today, 'EURUSD', 'WAIT', 'tp1', 70, null), signalState: 'NO_TRADE' }] });
     renderJournal();
-    expect(await screen.findByText('Sell level 77,800', {}, LOAD)).toBeTruthy();
+    expect(await screen.findByText('Sell level $ 77,800.00', {}, LOAD)).toBeTruthy();
     expect(screen.getByTestId('watch-pending').textContent).toContain('Price reached the level');
     expect(screen.getByTestId('watch-pending').textContent).not.toContain('No trade (wait)');
     // Nao e operacao: o mes segue sem trade fechado, sem numero.

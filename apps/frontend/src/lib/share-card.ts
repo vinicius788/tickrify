@@ -195,6 +195,8 @@ export interface ReadShareData {
   /** Forca da tendencia lida pela IA; null sem o campo. */
   trendStrength: 'strong' | 'moderate' | 'weak' | null;
   date: Date;
+  /** WATCH com plano: o lado do chip. Nunca preco (regra 1). */
+  watchSide?: 'buy' | 'sell' | null;
 }
 
 export function publicScenario(scenario: string): 'BULLISH' | 'BEARISH' | 'NEUTRAL' {
@@ -258,7 +260,7 @@ export function buildReadCard(data: ReadShareData): ShareCardModel {
     tag: cardText(data.timeframe) && data.timeframe !== 'UNKNOWN' ? cardText(data.timeframe) : null,
     hero,
     heroCount: null,
-    status: READ_STATUS[data.state] ?? READ_STATUS.NO_TRADE,
+    status: data.watchSide ? `Watch for a ${data.watchSide}` : READ_STATUS[data.state] ?? READ_STATUS.NO_TRADE,
     secondary,
     read: [...sentences.slice(0, 6), readDataLine(data)],
     stats: [],

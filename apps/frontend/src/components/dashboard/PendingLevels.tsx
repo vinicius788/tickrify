@@ -4,6 +4,7 @@ import { formatNumber } from '@/lib/i18n';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
+import { formatAssetDistance, formatAssetPrice } from '@/lib/trading-ui';
 import { APIError, displayAsset, type AiLevel, type LevelMap, type LevelMapSide, type WatchSummary } from '@/lib/api';
 import {
   alertDistancePct,
@@ -36,7 +37,7 @@ type Surface = 'trades' | 'journal' | 'today' | 'setups' | 'setup_page' | 'resul
  * "Alert me at <nivel>": cria o SetupAlert de sempre (mesmas regras, tetos e
  * 402 de conta travada, conferidos no servidor) e segue o setup no mesmo clique.
  */
-function AlertLevelButton({
+export function AlertLevelButton({
   analysisId,
   setupId,
   level,
@@ -133,6 +134,7 @@ export function WatchPending({
   now: fixedNow,
   waitingFor,
   alignEnd = false,
+  symbol,
 }: {
   analysisId: string;
   watch: WatchSummary;
@@ -143,11 +145,13 @@ export function WatchPending({
   waitingFor?: string | null;
   /** Coluna da direita (My Trades): alinha a direita a partir do sm. */
   alignEnd?: boolean;
+  /** Ativo, para a unidade do preco (indice sem "$"). */
+  symbol?: string | null;
 }) {
   const { t, language } = useLanguage();
   const p = t.pending;
   const locale = DATE_LOCALES[language] ?? 'en-US';
-  const price = (v: number) => formatAlertLevel(v, locale);
+  const price = (v: number) => (symbol ? formatAssetPrice(v, symbol, locale) : formatAlertLevel(v, locale));
   const conditionalPlan = useConditionalPlan()(watch.direction, watch.plan, price);
   const now = useExpiryClock(Date.parse(watch.expiresAt ?? ''), fixedNow);
   const open = isWatchOpen(watch, now);
@@ -168,7 +172,7 @@ export function WatchPending({
   const closed = watch.outcome !== 'pending' || closedNote !== null;
   const levelLine = closed
     ? (watch.direction === 'long' ? p.buyLevel : p.sellLevel)
-    : (watch.direction === 'long' ? p.possibleBuy : p.possibleSell);
+    : (watch.direction === 'long' ? p.watchBuy : p.watchSell);
 
   return (
     <div data-testid="watch-pending" data-outcome={watch.outcome} className={`flex flex-col gap-1.5 ${alignEnd ? 'sm:items-end sm:text-right' : ''}`}>
@@ -199,7 +203,7 @@ function WatchingRow({ item, now, surface }: { item: WatchingItem; now: number; 
   const navigate = useNavigate();
   const { seen } = useAlertActions();
   const { watch, alert } = item;
-  const price = (v: number) => formatAlertLevel(v, locale);
+  const price = (v: number) => formatAssetPrice(v, item.symbol, locale);
   const conditionalPlan = useConditionalPlan()(watch.direction, watch.plan, price);
   const open = isWatchOpen(watch, now);
   const closed = watch.outcome !== 'pending' || (watch.expiresAt !== null && !open);
@@ -227,10 +231,10 @@ function WatchingRow({ item, now, surface }: { item: WatchingItem; now: number; 
     ? null
     : w.distance
         .replace('{pct}', `${formatNumber(Math.abs(pct), language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })}%`)
-        .replace('{price}', price(Math.abs(watch.level - (item.lastPrice as number))));
+        .replace('{price}', formatAssetDistance(Math.abs(watch.level - (item.lastPrice as number)), item.symbol, locale, t.analysis.result.watch));
   const levelText = (closed
     ? (watch.direction === 'long' ? p.buyLevel : p.sellLevel)
-    : (watch.direction === 'long' ? w.possibleBuy : w.possibleSell)
+    : (watch.direction === 'long' ? p.watchBuy : p.watchSell)
   ).replace('{price}', price(watch.level));
   const checked = closed
     ? null

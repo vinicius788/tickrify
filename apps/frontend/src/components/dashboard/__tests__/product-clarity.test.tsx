@@ -135,8 +135,8 @@ describe('product clarity without changing the stored decision', () => {
       direction: 'long', triggerType: 'zone_reaction', trigger: 'Stored reaction',
       zoneLow: 98, zoneHigh: 99, invalidation: 94, target1: 110, target2: null, validForCandles: 8,
     };
-    const guide = show(data);
-    expect(guide.textContent).toContain('94.0000');
+    show(data);
+    expect(screen.getByTestId('watch-changes').textContent).toContain('94.0000');
     expect(screen.getByTestId('signal-state').textContent).toContain('Watch');
   });
 

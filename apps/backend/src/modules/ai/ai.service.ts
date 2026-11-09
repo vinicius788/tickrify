@@ -65,7 +65,7 @@ import { StripeService } from '../payments/stripe.service';
 import { SetupsService, recordSetupVersion } from './setups.service';
 import { createWatchAlert } from './setup-alerts.service';
 import { loadPriorPlan } from './setup-continuation';
-import { loadWatchContexts, watchSummaryOf } from './watch-pending';
+import { loadWatchContexts, storedWatchPlan, watchSummaryOf } from './watch-pending';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from './analysis-data-coverage';
 import { tp1RFromDetail } from '../mail/analysis-result-email';
 import { TRADE_EMOTIONS, TRADE_MISTAKES, TRADE_NOTE_MAX, TRADE_SETUPS } from './dto/set-trade-note.dto';
@@ -1904,6 +1904,10 @@ export class AiService implements OnModuleInit {
       analysis.errorMessage || normalized.reasoning,
     );
     const outcomeData = await this.getOutcomeById(analysis.id);
+    // Consulta extra so no WATCH com plano: a tela mostra ate quando ele vale.
+    const watchContexts = storedWatchPlan(normalized.fullResponse, normalized.recommendation)
+      ? await loadWatchContexts(this.prisma, [analysis.id])
+      : null;
 
     const response = {
       id: analysis.id,
@@ -1940,6 +1944,7 @@ export class AiService implements OnModuleInit {
       errorMessage: analysis.errorMessage || null,
       errorDetails: validationMessages(storedPayload?.displayMessages),
       errorCode: analysisFailureCodeForResponse(analysis.status, analysis.errorCode),
+      watch: watchContexts ? watchSummaryOf(normalized.fullResponse, normalized.recommendation, analysis.createdAt, watchContexts.get(analysis.id)) : null,
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
     };
