@@ -397,6 +397,28 @@ describe('AiService access enforcement', () => {
   });
 
   // 26/10/2026: o sincrono monta pelo mesmo montador do worker (buildAnalysisPrompt).
+  it('caminho sincrono com 100% na B usa o prompt B e grava a variante', async () => {
+    process.env.PROMPT_VARIANT_B_PERCENT = '100';
+    try {
+      (service as any).aiAdapter.analyzeImage = jest.fn().mockResolvedValue({
+        recommendation: 'WAIT', bias: 'neutral', confidence: 40, reasoning: 'No trigger yet.',
+        analysis: { symbol: 'EURUSD', timeframe: '1H' }, rawResponse: {}, rawContent: '{}',
+      });
+      prisma.analysis.update
+        .mockResolvedValueOnce({ id: 'an_b', status: 'processing' })
+        .mockResolvedValueOnce({ id: 'an_b', status: 'completed', isDemo: true, createdAt: new Date(), updatedAt: new Date() });
+      (service as any).serializeAnalysis = jest.fn().mockResolvedValue({ id: 'an_b' });
+      await (service as any).processSynchronously({
+        analysisId: 'an_b', imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType: 'quick', isDemo: true,
+        userLanguage: 'pt', intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
+      });
+      expect((service as any).aiAdapter.analyzeImage.mock.calls[0][1]).toBe(buildAnalysisPrompt({ userLanguage: 'pt', analysisType: 'quick' }, 'B'));
+      expect(prisma.analysis.update.mock.calls.at(-1)[0].data.result.engine.prompt_variant).toBe('B');
+    } finally {
+      delete process.env.PROMPT_VARIANT_B_PERCENT;
+    }
+  });
+
   it.each(['quick', 'deep'] as const)('caminho sincrono (%s) usa o montador unico do prompt', async (analysisType) => {
     (service as any).aiAdapter.analyzeImage = jest.fn().mockResolvedValue({
       recommendation: 'WAIT', bias: 'neutral', confidence: 40, reasoning: 'No trigger yet.',
@@ -413,6 +435,7 @@ describe('AiService access enforcement', () => {
 
     const prompt = (service as any).aiAdapter.analyzeImage.mock.calls[0][1] as string;
     expect(prompt).toBe(buildAnalysisPrompt({ userLanguage: 'pt', analysisType }));
+    expect(prisma.analysis.update.mock.calls.at(-1)[0].data.result.engine.prompt_variant).toBe('A');
     expect(prompt).toContain('OUTPUT LANGUAGE: Portuguese (Brazil)');
     expect(prompt.includes('ANALYSIS MODE: DEEP')).toBe(analysisType === 'deep');
   });

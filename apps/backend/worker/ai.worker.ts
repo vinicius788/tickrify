@@ -39,7 +39,7 @@ import { ImageStorageClient } from '../src/common/utils/image-storage';
 import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-runtime';
 import { resolvePrismaDatasourceUrl } from '../src/modules/database/prisma.datasource';
 import { AnalysisType } from '../src/modules/ticks/tick-packages';
-import { buildAnalysisPrompt } from '../src/modules/prompt/prompt-builder.service';
+import { buildAnalysisPrompt, promptVariantForUser } from '../src/modules/prompt/prompt-builder.service';
 import { strategyFitFields, type StrategyProfile } from '../src/common/strategy/strategy-profile';
 import { startOutcomeSweeper } from './outcome.sweeper';
 import { startAnalysisTracker } from './analysis-tracker';
@@ -1174,7 +1174,8 @@ async function processAnalysis(job: Job<JobData>) {
 
     // ── Free analyses (isDemo=true) now run real AI — no tick cost, same pipeline ─
     const tPrompt = Date.now();
-    const prompt = buildAnalysisPrompt({ userLanguage, analysisType: normalizedAnalysisType });
+    const promptVariant = promptVariantForUser(userId);
+    const prompt = buildAnalysisPrompt({ userLanguage, analysisType: normalizedAnalysisType }, promptVariant);
     promptMs = Date.now() - tPrompt;
 
     const priorPlan = userId ? await loadPriorPlan(prisma, { analysisId, userId, setupId }, (m) => console.warn(m)) : null;
@@ -1266,6 +1267,7 @@ async function processAnalysis(job: Job<JobData>) {
         : undefined;
     const continuation = isRecord(aiSource) && isRecord(aiSource.continuation) ? aiSource.continuation : null;
     const engine = buildEngineRecord({
+      promptVariant,
       provider: adapterMeta?.provider ?? null,
       signalState: parsed.signalState,
       dataMode: parsed.dataMode,

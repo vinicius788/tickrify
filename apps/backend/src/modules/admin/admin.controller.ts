@@ -9,6 +9,7 @@ import { SetFlagDto } from './dto/set-flag.dto';
 import { SetReportStatusDto } from './dto/set-report-status.dto';
 import { PrismaService } from '../database/prisma.service';
 import { buildAcquisitionReport, parseDias } from './acquisition-report';
+import { loadEngineReport } from './engine-report';
 import { billingCycleForPriceId } from '../../config/stripe.config';
 import { CampaignSendDto } from './dto/campaign-send.dto';
 import { FounderSendDto } from './dto/founder-send.dto';
@@ -164,6 +165,13 @@ export class AdminController {
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   async origem(@Query('dias') dias?: string) {
     return buildAcquisitionReport(this.prisma, parseDias(dias));
+  }
+
+  /** Aba "Motor": desempenho desde a correcao do fuso, por variante e classe, com a decisao ja aplicada. */
+  @Get('engine')
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async motor() {
+    return loadEngineReport(this.prisma);
   }
 
   /**

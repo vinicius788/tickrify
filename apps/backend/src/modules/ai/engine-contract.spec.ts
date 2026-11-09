@@ -115,6 +115,7 @@ describe('engine contract v2', () => {
     });
     expect(record).toMatchObject({
       version: '4.0.0',
+      prompt_variant: 'A',
       data_mode: 'print',
       signal_state: 'ENTER_NOW',
       validator_action: 'fixed',

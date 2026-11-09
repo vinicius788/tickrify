@@ -27,7 +27,7 @@ import { AIAdapter, AIAnalysisError } from './ai.adapter';
 import { resolveModel } from './openai-params';
 import { recordProviderComparison } from './vision-model';
 import { UploadedFile } from '../../common/interfaces/multer';
-import { buildAnalysisPrompt } from '../prompt/prompt-builder.service';
+import { buildAnalysisPrompt, promptVariantForUser } from '../prompt/prompt-builder.service';
 import {
   buildPersistedAnalysisPayload,
   normalizeStoredAnalysis,
@@ -1229,7 +1229,8 @@ export class AiService implements OnModuleInit {
 
       const tPrompt = Date.now();
       // Mesmo montador do worker (prompt-builder.service.ts).
-      const prompt = buildAnalysisPrompt({ userLanguage, analysisType });
+      const promptVariant = promptVariantForUser(userId);
+      const prompt = buildAnalysisPrompt({ userLanguage, analysisType }, promptVariant);
       const promptMs = Date.now() - tPrompt;
       const priorPlan = await loadPriorPlan(this.prisma, { analysisId, userId, setupId }, (m) => this.logger.warn(m));
       const aiResponse = await this.aiAdapter.analyzeImage(
@@ -1245,6 +1246,7 @@ export class AiService implements OnModuleInit {
       const meta = aiResponse.engineMeta;
       const analysisFields = (aiResponse.analysis ?? {}) as Record<string, unknown>;
       const engine = buildEngineRecord({
+        promptVariant,
         provider: meta?.provider ?? null,
         signalState: aiResponse.signalState,
         dataMode: aiResponse.dataMode === 'real_data' ? 'real_data' : 'print',
