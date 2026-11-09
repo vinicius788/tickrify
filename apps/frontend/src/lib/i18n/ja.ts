@@ -609,6 +609,7 @@ export default {
         waitRally: '{zone} への戻りを待ちます。',
         zoneRange: '{low} から {high}',
         planTitle: '価格が {zone} に届いた場合の計画',
+        notSignal: 'シグナルではありません。価格がそこに届いた場合にのみ計画が有効になります。',
         buyAt: '買い',
         sellAt: '売り',
         buyZone: '買いゾーン',

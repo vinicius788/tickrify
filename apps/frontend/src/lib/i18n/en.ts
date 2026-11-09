@@ -609,6 +609,7 @@ export default {
         waitRally: 'Wait for a rally to {zone}.',
         zoneRange: '{low} to {high}',
         planTitle: 'Plan if price reaches {zone}',
+        notSignal: 'Not a signal. The plan only counts if price gets there.',
         buyAt: 'Buy at',
         sellAt: 'Sell at',
         buyZone: 'Buy zone',

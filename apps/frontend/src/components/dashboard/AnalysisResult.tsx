@@ -995,11 +995,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     readIsEnglish: language === 'en',
     trendStrength: trendStrength === 'strong' || trendStrength === 'moderate' || trendStrength === 'weak' ? trendStrength : null,
     date: timestamp,
-    watch: watchLayout && watchPlan ? {
-      direction: watchPlan.direction,
-      level: watchPlan.direction === 'long' ? watchPlan.zoneHigh : watchPlan.zoneLow,
-      plan: watchLevels ? { entry: watchLevels.entry, stopLoss: watchLevels.stopLoss, takeProfit1: watchLevels.takeProfit1, tp1R: watchLevels.tp1R } : null,
-    } : null,
+    watchSide: watchLayout && watchPlan ? (watchPlan.direction === 'long' ? 'buy' : 'sell') : null,
   };
 
   // Tudo o que o WATCH escreve sai daqui: numeros do servidor, frases do codigo.

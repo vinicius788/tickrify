@@ -609,6 +609,7 @@ export default {
         waitRally: 'Warte auf einen Anstieg bis {zone}.',
         zoneRange: '{low} bis {high}',
         planTitle: 'Plan, wenn der Kurs {zone} erreicht',
+        notSignal: 'Kein Signal. Der Plan gilt nur, wenn der Kurs dort ankommt.',
         buyAt: 'Kauf bei',
         sellAt: 'Verkauf bei',
         buyZone: 'Kaufzone',

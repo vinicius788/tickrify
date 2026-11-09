@@ -71,6 +71,7 @@ describe('resultado do WATCH', () => {
     expect(text('watch-headline')).toBe('No entry at 27,832. Wait for a pullback to 27,710 to 27,730.');
     const card = text('watch-plan');
     expect(card).toContain('Plan if price reaches 27,710 to 27,730');
+    expect(text('watch-not-signal')).toBe('Not a signal. The plan only counts if price gets there.');
     expect(text('watch-numbers')).toBe('Buy at27,720Stop27,644Target 127,880(2.1R)Target 227,910');
     expect(text('watch-condition')).toBe('Enter only if no candle closes below 27650.');
     expect(text('watch-timing')).toBe('Price is 102 points above the zone · Valid until 19:23 UTC (1h 20m)');
@@ -201,15 +202,11 @@ describe('unidade do ativo', () => {
 describe('card de compartilhar do WATCH', () => {
   const base = { symbol: 'NAS100', timeframe: 'M5', scenario: 'BULLISH', action: 'WAIT', state: 'WATCH' as const, read: '', readIsEnglish: true, trendStrength: 'moderate' as const, date: new Date(created) };
 
-  it('leva o nivel e a linha do plano', () => {
-    const model = buildReadCard({ ...base, watch: { direction: 'long', level: 27730, plan: { entry: 27720, stopLoss: 27644, takeProfit1: 27880, tp1R: 2.1 } } });
-    expect(model.status).toBe('Watch for a buy at 27,730');
-    expect(model.read[0]).toBe('Plan if price reaches 27,720: buy at 27,720, stop 27,644, target 27,880 (2.1R).');
-  });
-
-  it('sem geometria valida: so o nivel', () => {
-    const model = buildReadCard({ ...base, watch: { direction: 'short', level: 27930, plan: null } });
-    expect(model.status).toBe('Watch for a sell at 27,930');
-    expect(model.read.join(' ')).not.toContain('Plan if');
+  it.each([['buy', 'Watch for a buy'], ['sell', 'Watch for a sell']] as const)('%s: rotulo e leitura, sem nenhum preco', (watchSide, status) => {
+    const read = 'Buyers keep control of the session. Entry near 27,720 with a stop at 27,644.';
+    const model = buildReadCard({ ...base, read, watchSide });
+    expect(model.status).toBe(status);
+    expect(model.read[0]).toBe('Buyers keep control of the session.');
+    expect(JSON.stringify(model)).not.toMatch(/27,?\d{3}|\bstop\b|\btarget\b/i);
   });
 });

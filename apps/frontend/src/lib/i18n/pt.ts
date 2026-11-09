@@ -618,6 +618,7 @@ export default {
         waitRally: 'Espere uma alta até {zone}.',
         zoneRange: '{low} a {high}',
         planTitle: 'Plano se o preço chegar a {zone}',
+        notSignal: 'Não é um sinal. O plano só vale se o preço chegar lá.',
         buyAt: 'Comprar em',
         sellAt: 'Vender em',
         buyZone: 'Zona de compra',
