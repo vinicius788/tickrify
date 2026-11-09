@@ -13,7 +13,6 @@ import {
   formatUtcTime,
   useAlertActions,
   useAlertOptions,
-  useExpiryClock,
   useSetupActions,
   useSetupForAnalysis,
 } from '@/lib/setups';
@@ -131,7 +130,7 @@ function WatchPlanActions({
 
   return (
     <div data-testid="watch-actions" className="mt-5 flex flex-col gap-3 border-t border-[var(--border-subtle)] pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-      {!data.available ? (
+      {!open ? <span key="closed" /> : !data.available ? (
         <p key="broker" data-testid="watch-broker" className="min-w-0 text-sm leading-relaxed text-[var(--text-secondary)]">{w.brokerAlert.replace('{price}', price)}</p>
       ) : alertOn ? (
         <p key="alert-on" data-testid="watch-alert-on" className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
@@ -150,7 +149,7 @@ function WatchPlanActions({
             <X className="h-3.5 w-3.5" />
           </button>
         </p>
-      ) : open ? (
+      ) : (
         <AlertLevelButton
           key="alert"
           analysisId={analysisId}
@@ -161,7 +160,7 @@ function WatchPlanActions({
           kind="watch"
           format={() => price}
         />
-      ) : <span key="closed" />}
+      )}
       {following && setup ? (
         <Link
           key="open"
@@ -188,6 +187,36 @@ function WatchPlanActions({
   );
 }
 
+/** O que o preco fez na janela. Sem linha no rastreador ainda, vale o alerta que disparou dentro dela. */
+function ClosedOutcome({ watch, hitInWindow }: { watch: WatchSummary | null | undefined; hitInWindow: boolean }) {
+  const { t } = useLanguage();
+  const p = t.pending;
+  const outcome = watch?.outcome ?? 'pending';
+  const label =
+    outcome === 'reached' || (outcome === 'pending' && hitInWindow) ? p.reached
+      : outcome === 'invalidated' ? p.invalidated
+        : outcome === 'expired' ? p.expired
+          : outcome === 'unavailable' ? p.unavailable
+            : t.analysis.result.watch.priceCheckPending;
+  const after =
+    watch?.afterReach === 'target' ? t.watching.afterTarget
+      : watch?.afterReach === 'invalidation' ? t.watching.afterInvalidation
+        : watch?.afterReach === 'neither' ? t.watching.afterNeither : null;
+  return (
+    <div data-testid="watch-outcome" data-outcome={outcome} className="mt-3">
+      <p className="text-sm font-semibold text-[var(--text-primary)]">{label}</p>
+      {after ? <p key="after" className="mt-0.5 text-sm text-[var(--text-secondary)]">{after}</p> : null}
+    </div>
+  );
+}
+
+function ClosedOutcomeLive({ analysisId, watch }: { analysisId: string; watch: WatchSummary | null | undefined }) {
+  const alerts = useAlertOptions(analysisId).data?.alerts ?? [];
+  const end = Date.parse(watch?.expiresAt ?? '');
+  const hitInWindow = alerts.some((alert) => alert.status === 'triggered' && alert.triggeredAt !== null && (!Number.isFinite(end) || Date.parse(alert.triggeredAt) <= end));
+  return <ClosedOutcome watch={watch} hitInWindow={hitInWindow} />;
+}
+
 interface WatchPlanCardProps {
   plan: WatchPlan;
   /**
@@ -206,7 +235,9 @@ interface WatchPlanCardProps {
   /** null: sem botoes (conta travada, exemplo). */
   actionsFor: string | null;
   base: string;
-  now?: number;
+  /** Janela encerrada: so o nivel e o desfecho, nunca o plano nem o alerta. */
+  closed: boolean;
+  now: number;
 }
 
 export function WatchPlanCard({
@@ -221,16 +252,14 @@ export function WatchPlanCard({
   condition,
   actionsFor,
   base,
-  now: fixedNow,
+  closed,
+  now,
 }: WatchPlanCardProps) {
   const { t, language } = useLanguage();
   const w = t.analysis.result.watch;
   const locale = LOCALES[language];
   const long = plan.direction === 'long';
   const expires = Date.parse(watch?.expiresAt ?? '');
-  const now = useExpiryClock(expires, fixedNow);
-  const expired = Number.isFinite(expires) && expires <= now;
-  const open = !expired && (watch?.outcome ?? 'pending') === 'pending';
   const rText = (r: number) => `${formatNumber(r, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}R`;
   const money = (value: number) => formatPrice(value).replace(/ /g, '\u00a0');
   const zone = plan.zoneLow === plan.zoneHigh
@@ -264,7 +293,7 @@ export function WatchPlanCard({
   ladder.sort((a, b) => b.at - a.at);
   const ladderY = ladderPositions(ladder.map((row) => row.at));
 
-  const distance = currentPrice === null || !open
+  const distance = currentPrice === null
     ? null
     : currentPrice >= plan.zoneLow && currentPrice <= plan.zoneHigh
       ? w.inZone
@@ -272,12 +301,27 @@ export function WatchPlanCard({
           '{distance}',
           formatAssetDistance(currentPrice > plan.zoneHigh ? currentPrice - plan.zoneHigh : plan.zoneLow - currentPrice, symbol, locale, w),
         );
-  const validity = !watch?.expiresAt
-    ? null
-    : expired
-      ? w.windowClosed.replace('{time}', formatUtcTime(watch.expiresAt))
-      : w.validUntil.replace('{time}', formatUtcTime(watch.expiresAt)).replace('{left}', formatTimeLeft(expires - now, locale));
+  const validity = watch?.expiresAt
+    ? w.validUntil.replace('{time}', formatUtcTime(watch.expiresAt)).replace('{left}', formatTimeLeft(expires - now, locale))
+    : null;
   const alertLevel = watchPlanLevel(plan);
+
+  if (closed) {
+    return (
+      <Card className="surface-terminal rounded-xl fade-in-stagger" data-testid="watch-plan" data-state="closed" style={{ animationDelay: '40ms' }}>
+        <CardContent className="p-5 md:p-6">
+          <h3 className="tk-display text-base text-[var(--text-primary)]">
+            {watch?.expiresAt ? w.windowClosed.replace('{time}', formatUtcTime(watch.expiresAt)) : t.watching.windowClosed}
+          </h3>
+          <p className="mt-1 font-terminal text-xs text-[var(--text-secondary)]">
+            {(long ? t.pending.buyLevel : t.pending.sellLevel).replace('{price}', money(alertLevel))}
+          </p>
+          {actionsFor ? <ClosedOutcomeLive analysisId={actionsFor} watch={watch} /> : <ClosedOutcome watch={watch} hitInWindow={false} />}
+          {actionsFor ? <WatchPlanActions analysisId={actionsFor} level={alertLevel} open={false} price={money(alertLevel)} base={base} /> : null}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="surface-terminal-elevated rounded-xl border border-[var(--border-accent)] fade-in-stagger" data-testid="watch-plan" style={{ animationDelay: '40ms' }}>
@@ -305,7 +349,7 @@ export function WatchPlanCard({
                 {[distance, validity].filter(Boolean).join(' · ')}
               </p>
             ) : null}
-            {reach && open ? (
+            {reach ? (
               <p key="reach" data-testid="watch-reach" className="mt-1 text-xs text-[var(--text-secondary)]">
                 {t.analysis.result.readMode.reach.replace('{pct}', String(Math.round(reach.probability * 100))).replace('{n}', String(reach.candles))}
               </p>
@@ -328,7 +372,7 @@ export function WatchPlanCard({
         </div>
 
         {actionsFor ? (
-          <WatchPlanActions analysisId={actionsFor} level={alertLevel} open={open} price={money(alertLevel)} base={base} />
+          <WatchPlanActions analysisId={actionsFor} level={alertLevel} open price={money(alertLevel)} base={base} />
         ) : null}
       </CardContent>
     </Card>

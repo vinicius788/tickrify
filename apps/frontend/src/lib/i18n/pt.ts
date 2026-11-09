@@ -631,6 +631,7 @@ export default {
         pips: '{n} pips',
         validUntil: 'Vale até {time} ({left})',
         windowClosed: 'Janela encerrada às {time}',
+        priceCheckPending: 'Conferência do preço pendente',
         alertOnEmail: 'Alerta ligado em {price} · avisamos por e-mail',
         alertOnScreen: 'Alerta ligado em {price} · aparece no seu painel',
         brokerAlert: 'Crie um alerta em {price} na sua corretora e depois reavalie aqui.',

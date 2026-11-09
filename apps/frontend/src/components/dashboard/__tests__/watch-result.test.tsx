@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AnalysisResult from '@/components/dashboard/AnalysisResult';
@@ -135,11 +135,79 @@ describe('resultado do WATCH', () => {
     expect(screen.queryByRole('button', { name: /Alert me/ })).toBeNull();
   });
 
-  it('janela fechada: sem botao de alerta nem distancia', () => {
-    vi.setSystemTime(Date.parse('2026-11-09T20:00:00Z'));
-    show(result(long));
-    expect(text('watch-timing')).toBe('Window closed at 19:23 UTC');
-    expect(screen.queryByRole('button', { name: /Alert me/ })).toBeNull();
+  describe('janela encerrada', () => {
+    const closedAt = () => vi.setSystemTime(Date.parse('2026-11-09T20:00:00Z'));
+    const plan = { watchLevels: levels, dataMode: 'real_data' };
+
+    it('relogio passou da validade: titulo, nivel e sem plano, alerta nem espera', () => {
+      closedAt();
+      show(result(long, plan));
+      const card = text('watch-plan');
+      expect(card).toContain('Window closed at 19:23 UTC');
+      expect(card).toContain('Buy level 27,730');
+      expect(card).toContain('Price check pending');
+      expect(card).not.toContain('Plan if price reaches');
+      expect(card).not.toContain('Not a signal');
+      expect(screen.queryByTestId('watch-numbers')).toBeNull();
+      expect(screen.queryByTestId('watch-ladder')).toBeNull();
+      expect(screen.queryByRole('button', { name: /Alert me/ })).toBeNull();
+      expect(screen.queryByTestId('watch-headline')).toBeNull();
+      expect(screen.queryByTestId('watch-why-changes')).toBeNull();
+      expect(text('signal-state')).toBe('Watch');
+    });
+
+    it.each([
+      ['reached', 'target', 'Price reached the level', 'Afterwards price reached the plan target.'],
+      ['reached', 'neither', 'Price reached the level', 'Afterwards price reached neither within 48 hours.'],
+      ['invalidated', null, 'Invalidated before reaching it', null],
+      ['expired', null, 'Expired without reaching it', null],
+      ['unavailable', null, 'Outcome not tracked for this asset', null],
+    ] as const)('desfecho %s/%s', (outcome, afterReach, label, after) => {
+      closedAt();
+      show(result(long, plan, { ...summary, outcome, afterReach }));
+      expect(text('watch-outcome')).toBe(`${label}${after ?? ''}`);
+    });
+
+    it('rastreador ja fechou antes do relogio: tambem encerra', () => {
+      show(result(long, plan, { ...summary, outcome: 'invalidated' }));
+      expect(text('watch-plan')).toContain('Window closed at 19:23 UTC');
+    });
+
+    it('sem linha no rastreador, alerta disparado dentro da janela conta como chegou', () => {
+      closedAt();
+      options = { ...options, alerts: [{ id: 'a', status: 'triggered', level: 27730, triggeredAt: '2026-11-09T18:40:00Z' }] };
+      show(result(long, plan));
+      expect(text('watch-outcome')).toBe('Price reached the level');
+    });
+
+    it('ativo sem fonte de preco e alerta ligado: nenhum convite de alerta; venda usa o nivel de venda', () => {
+      closedAt();
+      options = { ...options, available: false };
+      show(result(short, plan, { ...summary, direction: 'short', level: 27930, outcome: 'expired' }));
+      expect(screen.queryByTestId('watch-broker')).toBeNull();
+      expect(text('watch-plan')).toContain('Sell level 27,930');
+      expect(screen.getByRole('button', { name: 'Follow setup' })).toBeTruthy();
+      cleanup();
+      options = { ...options, available: true, watchAlert: { id: 'al', level: 27730, status: 'active' } };
+      show(result(long, plan));
+      expect(screen.queryByTestId('watch-alert-on')).toBeNull();
+    });
+
+    it('sem conta com alertas o desfecho aparece igual', () => {
+      closedAt();
+      show(result(long, plan, { ...summary, outcome: 'expired' }), false);
+      expect(text('watch-outcome')).toBe('Expired without reaching it');
+      expect(screen.queryByTestId('watch-actions')).toBeNull();
+    });
+
+    it('expira com a tela aberta: troca sozinha', () => {
+      vi.useRealTimers();
+      vi.useFakeTimers({ now: Date.parse('2026-11-09T19:23:33Z'), toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+      show(result(long, plan));
+      expect(text('watch-plan')).toContain('Plan if price reaches');
+      act(() => { vi.advanceTimersByTime(2_000); });
+      expect(text('watch-plan')).toContain('Window closed at 19:23 UTC');
+    });
   });
 
   it('why wait em 3 bullets, o que muda o plano uma vez e o resumo sem repetir', () => {

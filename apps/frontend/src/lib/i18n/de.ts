@@ -622,6 +622,7 @@ export default {
         pips: '{n} Pips',
         validUntil: 'Gültig bis {time} ({left})',
         windowClosed: 'Fenster geschlossen um {time}',
+        priceCheckPending: 'Kursprüfung ausstehend',
         alertOnEmail: 'Alarm aktiv bei {price} · wir schicken dir eine E-Mail',
         alertOnScreen: 'Alarm aktiv bei {price} · erscheint in deinem Dashboard',
         brokerAlert: 'Stelle bei deinem Broker einen Alarm bei {price} und prüfe dann hier erneut.',

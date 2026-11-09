@@ -622,6 +622,7 @@ export default {
         pips: '{n} pips',
         validUntil: 'Valid until {time} ({left})',
         windowClosed: 'Window closed at {time}',
+        priceCheckPending: 'Price check pending',
         alertOnEmail: "Alert on at {price} · we'll email you",
         alertOnScreen: "Alert on at {price} · we'll show it on your dashboard",
         brokerAlert: 'Set an alert at {price} on your broker, then re-check here.',

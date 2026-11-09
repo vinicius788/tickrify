@@ -622,6 +622,7 @@ export default {
         pips: '{n} pips',
         validUntil: 'Válido hasta las {time} ({left})',
         windowClosed: 'Ventana cerrada a las {time}',
+        priceCheckPending: 'Comprobación del precio pendiente',
         alertOnEmail: 'Alerta activa en {price} · te avisamos por correo',
         alertOnScreen: 'Alerta activa en {price} · aparece en tu panel',
         brokerAlert: 'Crea una alerta en {price} en tu bróker y vuelve a revisar aquí.',

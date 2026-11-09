@@ -622,6 +622,7 @@ export default {
         pips: '{n} pips',
         validUntil: '{time} まで有効（{left}）',
         windowClosed: '{time} に期間終了',
+        priceCheckPending: '価格の確認待ち',
         alertOnEmail: '{price} のアラートは有効 · メールでお知らせします',
         alertOnScreen: '{price} のアラートは有効 · ダッシュボードに表示します',
         brokerAlert: 'ブローカーで {price} のアラートを設定し、ここで再確認してください。',
