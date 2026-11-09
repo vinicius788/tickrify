@@ -4,7 +4,7 @@ import { formatNumber } from '@/lib/i18n';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
-import { APIError, displayAsset, type LevelMap, type LevelMapSide, type WatchSummary } from '@/lib/api';
+import { APIError, displayAsset, type AiLevel, type LevelMap, type LevelMapSide, type WatchSummary } from '@/lib/api';
 import {
   alertDistancePct,
   checkFrequencyText,
@@ -320,6 +320,15 @@ function MapAlertButton({ analysisId, level, format }: { analysisId: string; lev
   return <AlertLevelButton analysisId={analysisId} setupId={options.data.setupId} level={level} label="custom" surface="result" kind="level_map" format={format} />;
 }
 
+/** So promete o aviso quando o alerta existe de verdade. */
+function AiLevelAlertNote({ analysisId, level }: { analysisId: string; level: number }) {
+  const { t } = useLanguage();
+  const options = useAlertOptions(analysisId);
+  const alerts = useSetupAlerts(true);
+  if (!hasActiveLevel(alerts.data?.items ?? [], options.data?.setupId, analysisId, level)) return null;
+  return <span data-testid="ai-level-alert">{` ${t.pending.aiLevelAlert}`}</span>;
+}
+
 /** NO_TRADE com velas reais: os dois lados do preco, montados pelo codigo. Nao e sinal. */
 export function LevelMapCard({
   levelMap,
@@ -329,7 +338,7 @@ export function LevelMapCard({
   formatPrice,
 }: {
   levelMap: LevelMap | null;
-  aiLevel?: { price: number } | null;
+  aiLevel?: AiLevel | null;
   analysisId: string | null;
   alerts: boolean;
   formatPrice: (value: number | null) => string;
@@ -356,8 +365,20 @@ export function LevelMapCard({
         {aiLevel ? (
           <li key="ai" data-testid="ai-level" className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <div className="min-w-0">
-              <p className="font-terminal text-sm text-[var(--text-primary)]">{p.aiLevel.replace('{price}', price(aiLevel.price))}</p>
-              <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-secondary)]">{p.aiLevelNote}</p>
+              {aiLevel.direction ? (
+                <>
+                  <p className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{p.aiLevelLabel}</p>
+                  <p className="mt-0.5 text-sm leading-relaxed text-[var(--text-primary)]">
+                    <span>{(aiLevel.direction === 'long' ? p.aiLevelBuy : p.aiLevelSell).replace('{price}', price(aiLevel.price))}</span>
+                    {alerts && analysisId ? <AiLevelAlertNote analysisId={analysisId} level={aiLevel.price} /> : null}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-terminal text-sm text-[var(--text-primary)]">{p.aiLevel.replace('{price}', price(aiLevel.price))}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-secondary)]">{p.aiLevelNote}</p>
+                </>
+              )}
             </div>
             {alerts && analysisId ? (
               <MapAlertButton analysisId={analysisId} level={aiLevel.price} format={price} />

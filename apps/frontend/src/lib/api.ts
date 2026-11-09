@@ -228,7 +228,7 @@ export interface AIAnalysisResponse {
     /** NO_TRADE com REAL DATA: os dois lados do preco, pelo codigo; ausente em analise antiga. */
     levelMap?: LevelMap | null;
     /** NO_TRADE em que o validador recusou o plano do modelo: o preco que a IA marcou. */
-    aiLevel?: { price: number } | null;
+    aiLevel?: AiLevel | null;
     /** Mudancas de estado escritas pelo codigo; analises muito antigas guardam so o texto. */
     validatorNotes?: Array<string | { from?: string; to?: string; reason: string }>;
     /** Contrato do motor; `no_trade_reason` e o motivo em uma linha do NO_TRADE. */
@@ -348,6 +348,15 @@ export interface WatchSummary {
   setupId?: string | null;
   /** Geometria valida no nivel; null ou ausente = so nivel e invalidacao. */
   plan?: { entry: number; stopLoss: number; takeProfit1: number; tp1R: number } | null;
+}
+
+/** Preco do plano recusado por risco. Analise antiga traz so `price`. */
+export interface AiLevel {
+  price: number;
+  direction?: 'long' | 'short';
+  invalidation?: number;
+  validForCandles?: number;
+  reason?: string;
 }
 
 /** Um lado do mapa de niveis do NO_TRADE: o nivel mais proximo e o seguinte. */

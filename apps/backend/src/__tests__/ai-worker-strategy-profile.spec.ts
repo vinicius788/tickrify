@@ -399,8 +399,8 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
         id: 'analysis-level-map', ...JSON.parse(JSON.stringify(stored)), createdAt: new Date(), updatedAt: new Date(),
       });
       expect(delivered.fullResponse.levelMap).toEqual(stored.result.levelMap);
-      expect(stored.result.aiLevel).toEqual({ price: 99 });
-      expect(delivered.fullResponse.aiLevel).toEqual({ price: 99 });
+      expect(stored.result.aiLevel).toMatchObject({ price: 99 });
+      expect(delivered.fullResponse.aiLevel).toEqual(stored.result.aiLevel);
     } finally {
       if (oldEnrichment === undefined) delete process.env.ENABLE_MARKET_ENRICHMENT;
       else process.env.ENABLE_MARKET_ENRICHMENT = oldEnrichment;

@@ -59,12 +59,13 @@ describe('aiLevelOf (o preco que a IA marcou quando o validador recusou o plano)
   const rejected = (reason: string, from = 'WATCH') => ({ state: 'NO_TRADE' as const, validatorNotes: [{ from, to: 'NO_TRADE', reason }] as any });
 
   it('recusado pela geometria: a borda proxima da zona, long e short', () => {
-    expect(aiLevelOf(plan, rejected('invalidation_unsnapped'))).toEqual({ price: 99 });
-    expect(aiLevelOf({ ...plan, direction: 'short' }, rejected('no_valid_geometry'))).toEqual({ price: 98 });
+    expect(aiLevelOf(plan, rejected('invalidation_unsnapped'))).toEqual({ price: 99, direction: 'long', invalidation: 90, validForCandles: 12, reason: 'invalidation_unsnapped' });
+    expect(aiLevelOf({ ...plan, direction: 'short' }, rejected('no_valid_geometry'))).toMatchObject({ price: 98, direction: 'short', reason: 'no_valid_geometry' });
+    expect(aiLevelOf(plan, rejected('market_entry_invalid', 'ENTER_NOW'))).toMatchObject({ price: 99, reason: 'market_entry_invalid' });
   });
 
-  it('plano sem uso como referencia: nada', () => {
-    for (const reason of ['implausible_price', 'state_mismatch', 'watch_plan_invalid', 'plan_invalidated', 'levels_unverified']) {
+  it('motivo que nao e de risco: nada', () => {
+    for (const reason of ['implausible_price', 'state_mismatch', 'watch_plan_invalid', 'plan_invalidated', 'levels_unverified', 'late_move', 'news_event']) {
       expect(aiLevelOf(plan, rejected(reason))).toBeNull();
     }
   });

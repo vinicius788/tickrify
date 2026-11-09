@@ -125,6 +125,11 @@ describe('setup-alert email', () => {
     expect(alertPlanOf({ analysis: { entry: 100, stopLoss: 95, takeProfit1: 110, invalidationLevel: 94 } }, 'SELL')).toEqual({ direction: 'short', invalidation: 94, target: 110, conditional: null });
   });
 
+  it('alertPlanOf: nivel da IA de um NO_TRADE rebaixado', () => {
+    const aiLevel = { price: 99, direction: 'short', invalidation: 104, validForCandles: 6, reason: 'no_valid_geometry' };
+    expect(alertPlanOf({ signalState: 'NO_TRADE', aiLevel }, 'HOLD')).toEqual({ direction: 'short', invalidation: 104, target: null, conditional: null });
+  });
+
   it('niveis formatados sem perder casas de forex', () => {
     expect(formatLevel(4180)).toBe('4,180');
     expect(formatLevel(1.0952)).toBe('1.0952');

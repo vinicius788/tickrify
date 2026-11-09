@@ -10,6 +10,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { clampValidity, isValidWatchPlan, nearEdge, type WatchPlan } from '../../common/utils/plan-engine';
 import { storedSignalState } from '../../common/utils/signal-decision';
+import type { AiLevel } from '../../common/utils/level-map';
 import { TIMEFRAME_MS, analysisInterval } from '../market/candle-store';
 import { priceSymbolOf } from '../market/candles';
 
@@ -81,6 +82,22 @@ export function storedWatchPlan(result: unknown, recommendation: unknown): Watch
   const raw = record(root.watchPlan);
   const plan = { ...raw, target2: raw.target2 ?? null, validForCandles: clampValidity(raw.validForCandles), trigger: String(raw.trigger ?? '') } as WatchPlan;
   return isValidWatchPlan(plan) ? plan : null;
+}
+
+/** O nivel da IA de um NO_TRADE rebaixado por risco; null fora disso ou em analise anterior ao campo completo. */
+export function storedAiLevel(result: unknown, recommendation: unknown): AiLevel | null {
+  const root = record(result);
+  if (storedSignalState(root, recommendation) !== 'NO_TRADE') return null;
+  const ai = record(root.aiLevel);
+  const positive = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+  if (![ai.price, ai.invalidation, ai.validForCandles].every(positive) || (ai.direction !== 'long' && ai.direction !== 'short')) return null;
+  return ai as AiLevel;
+}
+
+/** Ate quando o alerta do nivel da IA vale: a mesma conta do WATCH. */
+export function aiLevelExpiresAt(ai: AiLevel, result: unknown, createdAt: Date, groundingInterval: string | null): string | null {
+  const step = TIMEFRAME_MS[analysisInterval(groundingInterval, record(record(result).analysis).timeframe) ?? ''];
+  return step ? new Date(createdAt.getTime() + ai.validForCandles * step).toISOString() : null;
 }
 
 /** Os niveis que o motor gravou para o WATCH; null = sem geometria valida no nivel. */

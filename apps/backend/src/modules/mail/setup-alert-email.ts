@@ -21,7 +21,7 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import { captureServer } from '../../common/analytics/posthog';
 import { candleSourceFor } from '../market/candles';
 import { readPlan } from '../ai/setups.service';
-import { conditionalPlanOf, storedWatchPlan, type ConditionalPlan } from '../ai/watch-pending';
+import { conditionalPlanOf, storedAiLevel, storedWatchPlan, type ConditionalPlan } from '../ai/watch-pending';
 import { UNSUBSCRIBE_AUDIT_ACTION, escapeHtml, letter, unsubscribeUrl } from './lifecycle-email';
 
 export const SETUP_ALERT_EMAIL_FLAG = 'EMAIL_SETUP_ALERTS';
@@ -86,6 +86,8 @@ const positive = (v: unknown): number | null => (typeof v === 'number' && Number
 export function alertPlanOf(result: unknown, recommendation: string | null): AlertPlan {
   const watch = storedWatchPlan(result, recommendation);
   if (watch) return { direction: watch.direction, invalidation: watch.invalidation, target: null, conditional: conditionalPlanOf(result) };
+  const ai = storedAiLevel(result, recommendation);
+  if (ai) return { direction: ai.direction, invalidation: ai.invalidation, target: null, conditional: null };
   const plan = readPlan(result, recommendation);
   return {
     direction: plan.recommendation === 'BUY' ? 'long' : plan.recommendation === 'SELL' ? 'short' : null,

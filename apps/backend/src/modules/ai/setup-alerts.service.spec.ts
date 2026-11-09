@@ -836,11 +836,23 @@ describe('createWatchAlert: todo WATCH vira alerta', () => {
     expect(f.alertInsert()?.values).not.toContain(70000);
   });
 
-  it('NO_TRADE com o nivel da IA ou o mapa de niveis: nenhum alerta automatico', async () => {
+  const MAP = { price: 77200, atr: 100, above: { level: 78100, atr: 9, next: null, nextAtr: null }, below: null };
+
+  it('NO_TRADE recusado por risco: o nivel da IA recebe o alerta automatico, nunca os extremos do mapa', async () => {
     const f = fake();
-    const result = { ...WATCH, signalState: 'NO_TRADE', watchPlan: null, aiLevel: { price: 77800 }, levelMap: { price: 77200, atr: 100, above: { level: 77800, atr: 6, next: null, nextAtr: null }, below: null } };
-    await expect(createWatchAlert(f.prisma, { ...INPUT, result })).resolves.toBe('not_watch');
-    expect(f.calls).toHaveLength(0);
+    const aiLevel = { price: 77800, direction: 'short', invalidation: 78400, validForCandles: 12, reason: 'no_valid_geometry' };
+    const result = { ...WATCH, signalState: 'NO_TRADE', watchPlan: null, aiLevel, levelMap: MAP };
+    await expect(createWatchAlert(f.prisma, { ...INPUT, result })).resolves.toBe('created');
+    expect(f.alertInsert()?.values).toEqual(expect.arrayContaining([77800, 'entry']));
+    expect(f.alertInsert()?.values).not.toContain(78100);
+  });
+
+  it('NO_TRADE so com o mapa de niveis, ou nivel da IA de analise antiga: nenhum alerta automatico', async () => {
+    for (const extra of [{}, { aiLevel: { price: 77800 } }]) {
+      const f = fake();
+      await expect(createWatchAlert(f.prisma, { ...INPUT, result: { ...WATCH, signalState: 'NO_TRADE', watchPlan: null, levelMap: MAP, ...extra } })).resolves.toBe('not_watch');
+      expect(f.calls).toHaveLength(0);
+    }
   });
 
   it('janela do WATCH ja fechada: nao ha nivel para vigiar', async () => {

@@ -18,7 +18,7 @@ import { TwelveDataUnavailableError, fxMarketClosed, monitorFxIntervals, twelveD
 import { extractShadowPlan } from '../../../worker/outcome.sweeper';
 import { UNSUBSCRIBE_AUDIT_ACTION } from '../mail/lifecycle-email';
 import { SetupsService, findSetupOfAnalysis, followInTransaction, lockSetups, readPlan } from './setups.service';
-import { loadWatchContexts, storedWatchPlan, watchSummaryOf, type WatchSummary } from './watch-pending';
+import { aiLevelExpiresAt, storedAiLevel, loadWatchContexts, storedWatchPlan, watchSummaryOf, type WatchSummary } from './watch-pending';
 
 /**
  * Alertas de nivel dos setups acompanhados (27/10/2026, fase 1 da sessao diaria).
@@ -440,7 +440,8 @@ export async function createWatchAlert(
   log: (message: string) => void = () => undefined,
 ): Promise<WatchAlertOutcome> {
   const { analysisId, userId, result, recommendation } = input;
-  if (!storedWatchPlan(result, recommendation)) return 'not_watch';
+  const aiLevel = storedAiLevel(result, recommendation);
+  if (!storedWatchPlan(result, recommendation) && !aiLevel) return 'not_watch';
   const outcome = await (async (): Promise<WatchAlertOutcome> => {
     if (record(result).dataMode !== 'real_data') return 'print_mode';
     const plan = readPlan(result, recommendation);
@@ -465,12 +466,12 @@ export async function createWatchAlert(
     if (unsubscribed) return 'unsubscribed';
     if (await alertsPausedFor(prisma, userId)) return 'free_locked';
 
-    // So o nivel do plano do modelo: nunca niveis guardados pelo codigo nem o mapa do NO_TRADE.
+    // So o nivel do plano do modelo (WATCH, ou NO_TRADE recusado por risco): nunca os extremos do mapa.
     const watch = watchSummaryOf(result, recommendation, analysis.createdAt, {
       groundingInterval: analysis.groundingInterval, setupId: null, track: null,
     });
-    const level = watch?.level;
-    const expiresAt = watch?.expiresAt;
+    const level = watch?.level ?? aiLevel?.price;
+    const expiresAt = watch?.expiresAt ?? (aiLevel ? aiLevelExpiresAt(aiLevel, result, analysis.createdAt, analysis.groundingInterval) : null);
     if (level == null || !expiresAt || Date.parse(expiresAt) <= Date.now()) return 'no_level';
     const referencePrice = (await latestAlertPrice(prisma, price.priceSymbol, price.source)) ?? positive(record(record(result).analysis).currentPrice);
     if (referencePrice == null) return 'no_price';

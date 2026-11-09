@@ -284,6 +284,20 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
     expect(body).not.toContain('Watch 2340-2345.');
   });
 
+  it('rebaixado por risco: linha da decisao final acima do resumo e frase de acao do modelo fora da tela', () => {
+    renderResult('NO_TRADE', null, {
+      dataMode: 'real_data',
+      aiLevel: { price: 4100, direction: 'long', invalidation: 4080, validForCandles: 12, reason: 'no_valid_geometry' },
+      validatorNotes: [{ from: 'WATCH', to: 'NO_TRADE', reason: 'no_valid_geometry' }],
+      analysis: { symbol: 'XAUUSD', timeframe: '5M', currentPrice: 4120, executiveSummary: 'Price is holding above support. Buy at 4,100 with a stop below 4,080.' },
+    });
+    expect(screen.getByTestId('final-decision').textContent).toBe('Final decision: No trade. Reason: the distance to the stop or to the target does not fit our risk rules.');
+    expect(screen.getByTestId('ai-level').textContent).toContain('The AI saw a possible buy at');
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('Price is holding above support.');
+    expect(body).not.toContain('Buy at 4,100');
+  });
+
   it('o proprio modelo disse NO_TRADE: resumo do modelo e nenhum "AI level"', () => {
     renderResult('NO_TRADE', null, { validatorNotes: [] });
     expect(screen.queryByTestId('ai-level')).toBeNull();

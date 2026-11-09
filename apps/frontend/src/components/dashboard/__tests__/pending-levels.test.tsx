@@ -66,6 +66,17 @@ describe('WATCH pendente', () => {
     expect(screen.queryByTestId('conditional-plan')).toBeNull();
   });
 
+  it('nivel da IA: so promete o aviso quando o alerta existe', () => {
+    const aiLevel = { price: 77800, direction: 'long' as const, invalidation: 77000, validForCandles: 12, reason: 'no_valid_geometry' };
+    wrap(<LevelMapCard levelMap={null} aiLevel={aiLevel} analysisId="w1" alerts formatPrice={(v) => String(v)} />);
+    expect(screen.getByTestId('ai-level').textContent).toContain('The AI saw a possible buy at 77800, but the stop does not fit our risk rules.');
+    expect(screen.queryByTestId('ai-level-alert')).toBeNull();
+    cleanup();
+    alertItems = [alert({ level: 77800 })];
+    wrap(<LevelMapCard levelMap={null} aiLevel={aiLevel} analysisId="w1" alerts formatPrice={(v) => String(v)} />);
+    expect(screen.getByTestId('ai-level-alert').textContent).toContain("We'll alert you if price gets there.");
+  });
+
   it('pendente: direcao e nivel, invalidacao, validade com o tempo que falta e o botao de alerta', () => {
     wrap(<WatchPending analysisId="w1" watch={watch()} surface="trades" now={NOW} />);
     const card = screen.getByTestId('watch-pending');
