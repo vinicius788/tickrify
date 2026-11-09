@@ -109,6 +109,7 @@ const BOOT_SQL = [
     CONSTRAINT "SetupAlert_userId_fkey" FOREIGN KEY ("userId") REFERENCES "tickrify"."User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "SetupAlert_setupId_fkey" FOREIGN KEY ("setupId") REFERENCES "tickrify"."TrackedSetup"("id") ON DELETE CASCADE ON UPDATE CASCADE
   )`,
+  `ALTER TABLE "tickrify"."SetupAlert" ADD COLUMN IF NOT EXISTS "expiresAt" TIMESTAMP(3)`,
   `CREATE INDEX IF NOT EXISTS "SetupAlert_status_priceSymbol_idx" ON "tickrify"."SetupAlert"("status", "priceSymbol")`,
   `CREATE INDEX IF NOT EXISTS "SetupAlert_userId_status_idx" ON "tickrify"."SetupAlert"("userId", "status")`,
   `CREATE INDEX IF NOT EXISTS "SetupAlert_setupId_idx" ON "tickrify"."SetupAlert"("setupId")`,
@@ -315,6 +316,8 @@ async function insertAlertLocked(
     side: AlertSide;
     referencePrice: number;
     cap: number;
+    /** So o alerta automatico do WATCH tem validade; o feito a mao nao expira. */
+    expiresAt: Date | null;
   },
 ): Promise<{ row: AlertRow; created: boolean }> {
   const { userId, setupId, level, cap } = input;
@@ -341,9 +344,9 @@ async function insertAlertLocked(
   await tx.$executeRaw`
     INSERT INTO "tickrify"."SetupAlert"
       ("id", "userId", "setupId", "analysisId", "symbol", "priceSymbol", "level", "label", "side", "referencePrice",
-       "prefilled", "status", "createdAt", "updatedAt", "watchFrom")
+       "prefilled", "status", "createdAt", "updatedAt", "watchFrom", "expiresAt")
     VALUES (${id}, ${userId}, ${setupId}, ${input.analysisId}, ${input.symbol}, ${input.priceSymbol}, ${level}, ${input.label},
-      ${input.side}, ${input.referencePrice}, ${input.label !== 'custom'}, 'active', NOW(), NOW(), NOW())
+      ${input.side}, ${input.referencePrice}, ${input.label !== 'custom'}, 'active', NOW(), NOW(), NOW(), ${input.expiresAt})
   `;
   const inserted = await tx.$queryRaw<AlertRow[]>`
     SELECT ${alertColumns()} FROM "tickrify"."SetupAlert" a WHERE a."id" = ${id} LIMIT 1
@@ -408,7 +411,10 @@ export async function createWatchAlert(
     if (await alertsPausedFor(prisma, userId)) return 'free_locked';
 
     const level = alertSuggestions(result, recommendation, analysis).find((s) => s.label === 'entry')?.level;
-    if (level == null) return 'no_level';
+    const expiresAt = watchSummaryOf(result, recommendation, analysis.createdAt, {
+      groundingInterval: analysis.groundingInterval, setupId: null, track: null,
+    })?.expiresAt;
+    if (level == null || !expiresAt) return 'no_level';
     const referencePrice = (await latestAlertPrice(prisma, price.priceSymbol, price.source)) ?? positive(record(record(result).analysis).currentPrice);
     if (referencePrice == null) return 'no_price';
     const side = levelInBand(level, referencePrice) ? sideFor(level, referencePrice) : null;
@@ -431,7 +437,7 @@ export async function createWatchAlert(
       const { setup } = await followInTransaction(tx, userId, analysis, plan);
       const { row, created } = await insertAlertLocked(tx, {
         userId, setupId: setup.id, analysisId, symbol, priceSymbol: price.priceSymbol,
-        level, label: 'entry', side, referencePrice, cap,
+        level, label: 'entry', side, referencePrice, cap, expiresAt: new Date(expiresAt),
       });
       return created ? { alertId: row.id, setupId: setup.id } : null;
     });
@@ -587,7 +593,7 @@ export class SetupAlertsService implements OnModuleInit {
       await lockAlerts(tx, user.id);
       return insertAlertLocked(tx, {
         userId: user.id, setupId: setup.id, analysisId: input.analysisId, symbol, priceSymbol: price.priceSymbol,
-        level, label: input.label, side, referencePrice, cap,
+        level, label: input.label, side, referencePrice, cap, expiresAt: null,
       });
     });
 
@@ -722,6 +728,13 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<{ symbols
   const isPaused = deps.isPaused ?? ((userId: string) => alertsPausedFor(deps.prisma, userId));
   const capture = deps.capture ?? captureServer;
   const counts = { symbols: 0, checked: 0, triggered: 0, paused: 0 };
+
+  // Alerta automatico cuja janela do WATCH fechou: cancela e libera o teto.
+  const expired = await deps.prisma.$executeRaw`
+    UPDATE "tickrify"."SetupAlert" SET "status" = 'cancelled', "cancelledAt" = ${now}, "updatedAt" = NOW()
+    WHERE "status" = 'active' AND "expiresAt" IS NOT NULL AND "expiresAt" <= ${now}
+  `;
+  if (Number(expired) > 0) deps.log('log', `[alerts] expirados=${Number(expired)}`);
 
   const rows = await deps.prisma.$queryRaw<MonitorRow[]>`
     SELECT a."id", a."userId", a."setupId", a."priceSymbol", a."level", a."label", a."side", a."createdAt", a."watchFrom",

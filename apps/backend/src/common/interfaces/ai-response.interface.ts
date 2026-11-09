@@ -1,3 +1,4 @@
+import type { SetupContinuation } from '../../modules/ai/setup-continuation';
 import type { AnalysisObservation } from '../utils/analysis-observation';
 import { Bias, Recommendation } from '../utils/analysis-normalizer';
 import { DrawingPlan } from '../utils/drawing-plan';
@@ -37,6 +38,8 @@ export interface AIAnalysisResponse {
   levelMap: LevelMap | null;
   /** Cada mudanca de estado com o motivo, escrita pelo codigo (nunca pelo modelo). */
   validatorNotes: ValidatorNote[];
+  /** So quando o plano anterior do setup entrou no prompt (setup-continuation.ts). */
+  continuation?: SetupContinuation;
   bias: Bias;
   confidence: number; // 0-100
   reasoning: string;

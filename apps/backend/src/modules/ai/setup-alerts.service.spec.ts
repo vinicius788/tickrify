@@ -178,6 +178,8 @@ describe('SetupAlertsService.create', () => {
     expect(setups.follow).toHaveBeenCalledWith(user, 'analysis00001');
     expect(alert).toMatchObject({ label: 'entry', level: 4140, status: 'active' });
     const insert = calls.find((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"'));
+    // Alerta feito a mao nao expira.
+    expect(insert?.values[insert.values.length - 1]).toBeNull();
     // Entrada abaixo do preco da analise (4150): dispara quando a minima toca.
     expect(insert?.values).toEqual(expect.arrayContaining(['u1', SETUP.id, 'XAUUSD', 4140, 'entry', 'below', 4150, true]));
     expect(calls.findIndex((c) => c.text.includes('pg_advisory_xact_lock'))).toBeLessThan(
@@ -373,6 +375,18 @@ describe('DTOs de alerta contra o ValidationPipe real', () => {
 });
 
 describe('runAlertMonitor', () => {
+  it('cancela os automaticos vencidos pelo relogio, mesmo sem alerta ativo depois', async () => {
+    const now = new Date('2026-11-09T15:00:00Z');
+    const { prisma, calls } = makePrisma([]);
+    const log = jest.fn();
+    await runAlertMonitor({ prisma, now: () => now, isPaused: async () => false, log });
+    const update = calls.find((c) => c.kind === 'execute' && c.text.includes('"expiresAt" <='));
+    expect(update?.text).toContain('"expiresAt" IS NOT NULL');
+    expect(update?.text).toContain(`"status" = 'cancelled'`);
+    expect(update?.values).toEqual([now, now]);
+    expect(log).toHaveBeenCalledWith('log', '[alerts] expirados=1');
+  });
+
   const NOW = new Date(T + 30 * 60 * 1000);
   const alertRow = (extra: Record<string, unknown> = {}) => ({
     id: 'alert-1', userId: 'u1', setupId: SETUP.id, priceSymbol: 'BTCUSDT', level: 110, label: 'tp1', side: 'above',
@@ -482,7 +496,7 @@ describe('runAlertMonitor', () => {
     const { run, fetchWindow, calls } = monitor({ rows: [] });
     await expect(run()).resolves.toEqual({ symbols: 0, checked: 0, triggered: 0, paused: 0 });
     expect(fetchWindow).not.toHaveBeenCalled();
-    expect(calls).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'query')).toHaveLength(1);
   });
 });
 
@@ -546,6 +560,10 @@ describe('createWatchAlert: todo WATCH vira alerta', () => {
     await expect(createWatchAlert(f.prisma, INPUT)).resolves.toBe('created');
     expect(f.setupInsert()).toBeDefined();
     expect(f.alertInsert()?.values).toEqual(expect.arrayContaining(['u1', SETUP_ROW.id, 'analysis00002', 'BTCUSDT', 'BTCUSDT', 77800, 'entry', 'above', 77200, true]));
+    // Validade = hora da analise + 12 velas de 15m.
+    const expiresAt = f.alertInsert()?.values.find((v) => v instanceof Date) as Date;
+    expect(expiresAt.getTime()).toBeGreaterThan(Date.now() + 2.9 * 3600_000);
+    expect(expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 3 * 3600_000);
     const locks = f.calls.filter((c) => c.text.includes('pg_advisory_xact_lock'));
     expect(locks.map((c) => c.values[0])).toEqual(['alerts:u1', 'setups:u1']);
     expect(captureServer).toHaveBeenCalledWith('clerk_1', 'setup_alert_created', expect.objectContaining({

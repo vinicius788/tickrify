@@ -582,6 +582,9 @@ export default {
       strategyFitPoor: 'Poor fit',
       strategyFitConflict: 'Conflicts with your rules',
       strategyFitNote: 'This does not change the read. It only says whether this setup is the kind you trade.',
+      continuationBuy: 'Earlier plan: Buy at {level}. Now: {status}',
+      continuationSell: 'Earlier plan: Sell at {level}. Now: {status}',
+      continuationStatus: { CONFIRMED: 'Confirmed', STILL_WAITING: 'Still waiting', CHANGED: 'Changed', INVALIDATED: 'Invalidated' },
       planTitle: 'No entry yet. Here is the plan:',
       watch: {
         title: 'Watch plan',

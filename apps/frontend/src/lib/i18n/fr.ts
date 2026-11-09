@@ -582,6 +582,9 @@ export default {
       strategyFitPoor: 'Faible correspondance',
       strategyFitConflict: 'Contredit vos règles',
       strategyFitNote: 'Cela ne change pas la lecture. Cela indique seulement si ce setup correspond à ce que vous tradez.',
+      continuationBuy: 'Plan précédent : acheter à {level}. Maintenant : {status}',
+      continuationSell: 'Plan précédent : vendre à {level}. Maintenant : {status}',
+      continuationStatus: { CONFIRMED: 'Confirmé', STILL_WAITING: 'Toujours en attente', CHANGED: 'Modifié', INVALIDATED: 'Invalidé' },
       planTitle: 'Pas encore d\'entrée. Voici le plan :',
       watch: {
         title: 'Plan en observation',

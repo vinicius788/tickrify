@@ -582,6 +582,9 @@ export default {
       strategyFitPoor: 'Schwach passend',
       strategyFitConflict: 'Widerspricht Ihren Regeln',
       strategyFitNote: 'Das ändert nichts an der Einschätzung. Es sagt nur, ob dieses Setup zu Ihrem Handelsstil passt.',
+      continuationBuy: 'Früherer Plan: Kauf bei {level}. Jetzt: {status}',
+      continuationSell: 'Früherer Plan: Verkauf bei {level}. Jetzt: {status}',
+      continuationStatus: { CONFIRMED: 'Bestätigt', STILL_WAITING: 'Wartet weiter', CHANGED: 'Geändert', INVALIDATED: 'Ungültig' },
       planTitle: 'Noch kein Einstieg. Das ist der Plan:',
       watch: {
         title: 'Beobachtungsplan',

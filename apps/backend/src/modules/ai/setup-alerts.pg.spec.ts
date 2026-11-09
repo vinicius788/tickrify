@@ -243,6 +243,42 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
       expect(await alertsOf(u)).toHaveLength(ALERT_RULES.maxSetupsWithAlerts.free);
     });
 
+    describe('expiracao com relogio falso', () => {
+      const monitor = (now: Date) => runAlertMonitor({ prisma, now: () => now, fetchWindow: jest.fn(async () => []), isPaused: async () => false, log: () => undefined });
+      const expiry = async (userId: string) => (await prisma.$queryRawUnsafe(`SELECT "expiresAt" FROM tickrify."SetupAlert" WHERE "userId" = $1`, userId))[0].expiresAt as Date;
+
+      it('automatico cancela quando a janela fecha e libera o teto; o feito a mao continua', async () => {
+        const u = await newUser();
+        await run(u, await watch(u));
+        await run(u, await watch(u));
+        await expect(run(u, await watch(u))).resolves.toBe('limit');
+        const when = await expiry(u);
+        await monitor(new Date(when.getTime() - 60_000));
+        expect((await alertsOf(u)).map((a: any) => a.status)).toEqual(['active', 'active']);
+        await monitor(new Date(when.getTime() + 60_000));
+        expect((await alertsOf(u)).map((a: any) => a.status)).toEqual(['cancelled', 'cancelled']);
+        await expect(run(u, await watch(u))).resolves.toBe('created');
+
+        const v = await newUser({ subscriber: true });
+        await create(v, await analysis(v), 110, true);
+        await monitor(new Date(Date.now() + 365 * 24 * H));
+        expect((await alertsOf(v)).map((a: any) => a.status)).toEqual(['active']);
+      });
+
+      it('e-mail nunca sai para alerta automatico cujo WATCH venceu', async () => {
+        const u = await newUser({ subscriber: true });
+        await run(u, await watch(u));
+        const when = await expiry(u);
+        await prisma.$executeRawUnsafe(`UPDATE tickrify."SetupAlert" SET "status" = 'triggered', "triggeredAt" = $2 WHERE "userId" = $1`, u, new Date(when.getTime() - 60_000));
+        const send = (now: Date) => {
+          const mail = { sendLifecycle: jest.fn(async () => true) };
+          return runSetupAlertEmailSweep({ prisma, mail, isEnabled: () => true, appUrl: 'https://tickrify.com', apiBaseUrl: 'https://api.test', now: () => now, capture: jest.fn(), log: () => undefined });
+        };
+        await expect(send(new Date(when.getTime() + 60_000))).resolves.toEqual({ due: 0, sent: 0 });
+        await expect(send(new Date(when.getTime() - 30_000))).resolves.toEqual({ due: 1, sent: 1 });
+      });
+    });
+
     it('corrida: dois WATCH ao mesmo tempo nao passam do teto', async () => {
       const u = await newUser();
       await expect(run(u, await watch(u))).resolves.toBe('created');

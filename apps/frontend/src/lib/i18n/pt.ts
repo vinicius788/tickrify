@@ -591,6 +591,9 @@ export default {
       strategyFitPoor: 'Encaixe fraco',
       strategyFitConflict: 'Conflita com suas regras',
       strategyFitNote: 'Isto não muda a leitura. Só diz se este setup é do tipo que você opera.',
+      continuationBuy: 'Plano anterior: comprar em {level}. Agora: {status}',
+      continuationSell: 'Plano anterior: vender em {level}. Agora: {status}',
+      continuationStatus: { CONFIRMED: 'Confirmado', STILL_WAITING: 'Ainda aguardando', CHANGED: 'Mudou', INVALIDATED: 'Invalidado' },
       planTitle: 'Ainda sem entrada. Este é o plano:',
       watch: {
         title: 'Plano em observação',

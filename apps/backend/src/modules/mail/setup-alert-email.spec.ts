@@ -142,9 +142,11 @@ describe('setup-alert email', () => {
   it('janela: ligada olha 6h de disparos; dry-run so os ultimos 20 min', async () => {
     const on = makeDeps({});
     await runSetupAlertEmailSweep(on.deps);
-    expect(on.calls[0].values).toEqual([new Date(NOW.getTime() - 6 * 3600_000)]);
+    expect(on.calls[0].values).toEqual([new Date(NOW.getTime() - 6 * 3600_000), NOW]);
     const off = makeDeps({ enabled: false });
     await runSetupAlertEmailSweep(off.deps);
-    expect(off.calls[0].values).toEqual([new Date(NOW.getTime() - 20 * 60_000)]);
+    expect(off.calls[0].values).toEqual([new Date(NOW.getTime() - 20 * 60_000), NOW]);
+    // Alerta automatico cujo WATCH venceu nunca vira e-mail.
+    expect(on.calls[0].text).toContain('a."expiresAt" IS NULL OR a."expiresAt" >');
   });
 });
