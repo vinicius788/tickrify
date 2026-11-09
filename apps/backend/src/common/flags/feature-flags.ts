@@ -175,6 +175,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'ENABLE_SETUP_CONTINUATION',
+    type: 'boolean',
+    label: 'Continuacao do setup na analise',
+    description:
+      'Quando o trader atualiza um setup cujo WATCH ainda vale, no mesmo ativo, a IA recebe o plano anterior, le o grafico de novo e diz se ele foi confirmado, segue esperando, mudou ou foi invalidado. Os checks e o estado seguem as mesmas regras. Muda a entrada do modelo (uma medicao separa essas analises por result.engine.continuation). DESLIGADO: o prompt fica igual ao de sempre.',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
     key: 'CHAT_EMAIL_NOTIFY',
     type: 'boolean',
     label: 'E-mails do chat com o fundador',

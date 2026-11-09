@@ -5,6 +5,8 @@ import { getAiQueue, getAiQueueReadiness } from './ai.queue';
 import { captureServer as captureServerMock } from '../../common/analytics/posthog';
 import { recordSetupVersion } from './setups.service';
 import { buildAnalysisPrompt } from '../prompt/prompt-builder.service';
+import { makeRawSqlPrisma } from '../../__tests__/raw-sql-mock';
+import { __resetFlagCacheForTests, applyFlagOverrideLocally } from '../../common/flags/feature-flags';
 
 const captureServer = captureServerMock as jest.Mock;
 
@@ -309,6 +311,88 @@ describe('AiService access enforcement', () => {
         { analysisId: 'an_9', userId: 'usr_1', setupId: 'setup-123456', analysisType: 'quick', isDemo: true },
         expect.any(Function),
       );
+    });
+  });
+
+  it('caminho sincrono: WATCH com velas reais grava o setup e o alerta entry no nivel do plano', async () => {
+    const row = { id: 'setup-sync00001', userId: 'usr_1', status: 'tracking', symbol: 'BTCUSDT', timeframe: '15m', rootAnalysisId: 'an_w', createdAt: new Date(), lastAnalysisAt: new Date() };
+    let setupCreated = false;
+    const fake = makeRawSqlPrisma([
+      ['SELECT "lastPrice", "checkedAt" FROM', () => [{ lastPrice: 77200, checkedAt: new Date() }]],
+      ['a."groundingStats"', () => [{ id: 'an_w', setupId: null, createdAt: new Date(), groundingInterval: '15m', clerkUserId: 'clerk_1' }]],
+      ['COUNT(DISTINCT "setupId")', () => [{ n: 0 }]],
+      ['COUNT(*)::int AS "n"', () => [{ n: 0 }]],
+      ['AS "ok"', () => [{ ok: false }]],
+      ['INSERT INTO "tickrify"."TrackedSetup"', () => { setupCreated = true; return 1; }],
+      ['FROM "tickrify"."TrackedSetup"', () => (setupCreated ? [row] : [])],
+      ['WHERE a."id" =', () => [{ id: 'alert-sync00001', setupId: row.id, analysisId: 'an_w', symbol: 'BTCUSDT', level: 77800, label: 'entry', side: 'above', status: 'active', createdAt: new Date() }]],
+    ]);
+    Object.assign(prisma, { $queryRaw: fake.prisma.$queryRaw, $executeRaw: fake.prisma.$executeRaw, $transaction: fake.prisma.$transaction });
+    (service as any).aiAdapter.analyzeImage = jest.fn().mockResolvedValue({
+      recommendation: 'WAIT', bias: 'neutral', confidence: 40, reasoning: 'Waiting for the level.',
+      analysis: { symbol: 'BTCUSDT', timeframe: '15m', currentPrice: 77200 },
+      rawResponse: {
+        signalState: 'WATCH', dataMode: 'real_data',
+        watchPlan: { direction: 'short', triggerType: 'zone_reaction', zoneLow: 77800, zoneHigh: 78000, invalidation: 78400, target1: 76900, target2: null, validForCandles: 12, trigger: 'Bearish close below 77,800' },
+      },
+      rawContent: '{}',
+    });
+    prisma.analysis.update
+      .mockResolvedValueOnce({ id: 'an_w', status: 'processing' })
+      .mockResolvedValueOnce({ id: 'an_w', status: 'completed', isDemo: true, createdAt: new Date(), updatedAt: new Date() });
+    (service as any).serializeAnalysis = jest.fn().mockResolvedValue({ id: 'an_w' });
+
+    await (service as any).processSynchronously({
+      analysisId: 'an_w', imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType: 'quick', isDemo: true,
+      intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
+    });
+
+    const completed = prisma.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed');
+    expect(completed[0].data.result).toMatchObject({ signalState: 'WATCH', dataMode: 'real_data' });
+    expect(fake.calls.some((c) => c.text.includes('INSERT INTO "tickrify"."TrackedSetup"'))).toBe(true);
+    const insert = fake.calls.find((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"'));
+    expect(insert?.values).toEqual(expect.arrayContaining(['usr_1', row.id, 'an_w', 'BTCUSDT', 77800, 'entry', 'above', 77200, true]));
+  });
+
+  describe('continuacao do setup no caminho sincrono', () => {
+    const plan = { direction: 'short', triggerType: 'zone_reaction', zoneLow: 77800, zoneHigh: 78000, invalidation: 78400, target1: 76900, target2: null, validForCandles: 12, trigger: 'Bearish close' };
+    const analyze = async (continuation?: unknown) => {
+      const fake = makeRawSqlPrisma([['"id" <>', () => [{
+        id: 'prior-s', createdAt: new Date(), recommendation: 'WAIT', groundingInterval: '15m',
+        result: { signalState: 'WATCH', watchPlan: plan, analysis: { symbol: 'BTCUSDT', timeframe: '15m' } },
+      }]]]);
+      Object.assign(prisma, { $queryRaw: fake.prisma.$queryRaw, $executeRaw: fake.prisma.$executeRaw });
+      (service as any).aiAdapter.analyzeImage = jest.fn().mockResolvedValue({
+        recommendation: 'WAIT', bias: 'neutral', confidence: 40, reasoning: 'x', continuation,
+        analysis: { symbol: 'BTCUSDT', timeframe: '15m', currentPrice: 77200 },
+        rawResponse: continuation ? { continuation } : {}, rawContent: '{}',
+      });
+      prisma.analysis.update
+        .mockResolvedValueOnce({ id: 'an_c', status: 'processing' })
+        .mockResolvedValueOnce({ id: 'an_c', status: 'completed', isDemo: true, createdAt: new Date(), updatedAt: new Date() });
+      (service as any).serializeAnalysis = jest.fn().mockResolvedValue({ id: 'an_c' });
+      await (service as any).processSynchronously({
+        analysisId: 'an_c', imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType: 'quick', isDemo: true, setupId: 'setup-123456',
+        intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
+      });
+      return prisma.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === 'completed')[0].data.result;
+    };
+    afterEach(() => __resetFlagCacheForTests());
+
+    it('chave desligada: o adapter recebe os mesmos argumentos e nada e gravado', async () => {
+      const result = await analyze();
+      expect((service as any).aiAdapter.analyzeImage.mock.calls[0][5]).toEqual({ compareProviders: true });
+      expect(result).not.toHaveProperty('continuation');
+      expect(result.engine).not.toHaveProperty('continuation');
+    });
+
+    it('chave ligada: passa o plano anterior ao adapter e grava o status', async () => {
+      applyFlagOverrideLocally('ENABLE_SETUP_CONTINUATION', 'true');
+      const continuation = { setupId: 'setup-123456', priorAnalysisId: 'prior-s', status: 'STILL_WAITING', direction: 'short', level: 77800 };
+      const result = await analyze(continuation);
+      expect((service as any).aiAdapter.analyzeImage.mock.calls[0][5].priorPlan).toMatchObject({ setupId: 'setup-123456', priorAnalysisId: 'prior-s', symbol: 'BTCUSDT' });
+      expect(result.continuation).toEqual(continuation);
+      expect(result.engine.continuation).toBe(true);
     });
   });
 

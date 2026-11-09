@@ -52,7 +52,8 @@ import { ANALYSIS_RESULT_FLAG, runAnalysisResultSweep } from '../src/modules/mai
 import Stripe from 'stripe';
 import { getFoundingOffer } from '../src/modules/payments/founding-offer';
 import { recordSetupVersion } from '../src/modules/ai/setups.service';
-import { ALERT_RULES, runAlertMonitor } from '../src/modules/ai/setup-alerts.service';
+import { ALERT_RULES, createWatchAlert, runAlertMonitor } from '../src/modules/ai/setup-alerts.service';
+import { loadPriorPlan, type PriorPlan } from '../src/modules/ai/setup-continuation';
 import { startTwelveDataReport } from '../src/modules/market/twelve-data';
 import { registerCandleStore } from '../src/modules/market/candle-store';
 import { SETUP_ALERT_EMAIL_FLAG, runSetupAlertEmailSweep } from '../src/modules/mail/setup-alert-email';
@@ -871,6 +872,7 @@ async function resolveAiSource(
   analysisType: AnalysisType,
   htfImageUrls: string[] = [],
   strategyProfile?: StrategyProfile | null,
+  priorPlan?: PriorPlan | null,
 ): Promise<unknown> {
   if (hasValidOpenAiKey()) {
     // Caminho VIVO em produção (RUN_EMBEDDED_WORKER=true por padrão, então
@@ -880,6 +882,7 @@ async function resolveAiSource(
     // nunca entra no prompt e o strategyFit nunca é gerado.
     return aiAdapter.analyzeImage(imageUrl, prompt, analysisType, htfImageUrls, strategyProfile, {
       compareProviders: true,
+      ...(priorPlan ? { priorPlan } : {}),
     });
   }
 
@@ -1170,6 +1173,7 @@ async function processAnalysis(job: Job<JobData>) {
     const prompt = buildAnalysisPrompt({ userLanguage, analysisType: normalizedAnalysisType });
     promptMs = Date.now() - tPrompt;
 
+    const priorPlan = userId ? await loadPriorPlan(prisma, { analysisId, userId, setupId }, (m) => console.warn(m)) : null;
     const tAi = Date.now();
     const aiSource = await resolveAiSource(
       imageUrl,
@@ -1177,6 +1181,7 @@ async function processAnalysis(job: Job<JobData>) {
       normalizedAnalysisType,
       htfImageUrls ?? [],
       strategyProfile,
+      priorPlan,
     );
     aiMs = Date.now() - tAi;
 
@@ -1255,10 +1260,12 @@ async function processAnalysis(job: Job<JobData>) {
       aiSource && typeof aiSource === 'object' && 'engineMeta' in aiSource
         ? (aiSource as { engineMeta?: { provider?: string; groundingMs?: number; modelMs?: number; parseMs?: number } }).engineMeta
         : undefined;
+    const continuation = isRecord(aiSource) && isRecord(aiSource.continuation) ? aiSource.continuation : null;
     const engine = buildEngineRecord({
       provider: adapterMeta?.provider ?? null,
       signalState: parsed.signalState,
       dataMode: parsed.dataMode,
+      continuation: Boolean(continuation),
       contract: {
         recommendation: parsed.recommendation === 'COMPRA' ? 'BUY' : parsed.recommendation === 'VENDA' ? 'SELL' : 'WAIT',
         confidencePct: parsed.confidence * 100,
@@ -1303,6 +1310,7 @@ async function processAnalysis(job: Job<JobData>) {
         ...strategyFitFields(aiSource),
         displayMessages: sourcePayload && typeof sourcePayload === 'object' && 'displayMessages' in sourcePayload
           ? sourcePayload.displayMessages : {},
+        ...(continuation ? { continuation } : {}),
         engine,
       },
       recommendation: parsed.recommendation,
@@ -1382,6 +1390,14 @@ async function processAnalysis(job: Job<JobData>) {
         prisma,
         { analysisId, userId, setupId, analysisType: normalizedAnalysisType, isDemo: Boolean(isDemo) },
         (message) => console.warn(message),
+      );
+    }
+    // WATCH vira alerta no nivel do plano (mesma chamada do caminho sincrono). Nunca lanca.
+    if (userId) {
+      await createWatchAlert(
+        prisma,
+        { analysisId, userId, result: normalized.fullResponse, recommendation: normalized.recommendation },
+        (message) => console.log(message),
       );
     }
   } catch (error) {

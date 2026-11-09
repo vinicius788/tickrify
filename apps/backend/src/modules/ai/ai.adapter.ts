@@ -1,6 +1,7 @@
 import { logObservation, rawObservation, safeObserve } from '../../common/utils/analysis-observation';
 import { presentAnalysis } from '../../common/utils/analysis-presentation';
 import { flagBool } from '../../common/flags/feature-flags';
+import { buildPriorPlanBlock, continuationOf, readContinuationStatus, sameAsset, type PriorPlan, type SetupContinuation } from './setup-continuation';
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -1917,8 +1918,11 @@ export class AIAdapter {
     analysisType: AnalysisType = 'quick',
     extraImageUrls: string[] = [],
     strategyProfile?: StrategyProfile | null,
-    /** compareProviders: so quem grava a comparacao pede (worker e caminho sincrono; a demo nao). */
-    options: { compareProviders?: boolean } = {},
+    /**
+     * compareProviders: so quem grava a comparacao pede (worker e caminho sincrono; a demo nao).
+     * priorPlan: plano anterior do setup (setup-continuation.ts); so entra se o ativo lido for o mesmo.
+     */
+    options: { compareProviders?: boolean; priorPlan?: PriorPlan | null } = {},
   ): Promise<AIAnalysisResponse> {
     try {
       const userContent = await this.buildUserContent(imageUrl, extraImageUrls);
@@ -2006,6 +2010,8 @@ export class AIAdapter {
       if (strategyProfile) {
         context.push(buildStrategyBlock(strategyProfile));
       }
+      const priorPlan = options.priorPlan && sameAsset(options.priorPlan.symbol, groundingStats?.symbol) ? options.priorPlan : null;
+      if (priorPlan) context.push(buildPriorPlanBlock(priorPlan));
       // REAL DATA e perfil entram DENTRO do <user_context> do v10, depois da
       // parte fixa (o cache de prompt do provedor pega o prefixo inteiro).
       const { instructions, close: userContextClose } = splitUserContextClose(prompt);
@@ -2318,6 +2324,13 @@ export class AIAdapter {
             rangePosPct: numbers.rangePosPct,
           }
         : null;
+      // A linha do status sai do texto antes de qualquer decisao ou exibicao.
+      let continuation: SetupContinuation | null = null;
+      if (priorPlan) {
+        const read = readContinuationStatus(parsed.analysis?.executiveSummary);
+        if (parsed.analysis && typeof read.text === 'string') parsed.analysis.executiveSummary = read.text;
+        continuation = continuationOf(priorPlan, read.status);
+      }
       const modelState =
         parsed.signalState ??
         deriveSignalState(rawRecommendation, parsed.analysis?.entryType, parsed.analysis?.alternativeScenario);
@@ -2376,6 +2389,7 @@ export class AIAdapter {
         // NO_TRADE com velas reais: os dois lados do preco, pelo codigo (level-map.ts).
         levelMap: decision.state === 'NO_TRADE' && decision.dataMode === 'real_data' ? buildLevelMap(decision.location, numbers) : null,
         validatorNotes: decision.validatorNotes,
+        ...(continuation ? { continuation } : {}),
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);
       logObservation(observation, m => this.logger.log(m));

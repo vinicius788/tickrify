@@ -582,6 +582,9 @@ export default {
       strategyFitPoor: 'Faible correspondance',
       strategyFitConflict: 'Contredit vos règles',
       strategyFitNote: 'Cela ne change pas la lecture. Cela indique seulement si ce setup correspond à ce que vous tradez.',
+      continuationBuy: 'Plan précédent : acheter à {level}. Maintenant : {status}',
+      continuationSell: 'Plan précédent : vendre à {level}. Maintenant : {status}',
+      continuationStatus: { CONFIRMED: 'Confirmé', STILL_WAITING: 'Toujours en attente', CHANGED: 'Modifié', INVALIDATED: 'Invalidé' },
       planTitle: 'Pas encore d\'entrée. Voici le plan :',
       watch: {
         title: 'Plan en observation',
@@ -1087,6 +1090,8 @@ export default {
     title: 'Prévenez-moi quand le prix atteint',
     hintEmail: 'Nous vérifions le prix toutes les 10 minutes et vous envoyons un e-mail quand il y arrive.',
     hintScreen: 'Nous vérifions le prix toutes les 10 minutes et l\'affichons dans votre tableau de bord quand il y arrive.',
+    watchingEmail: 'Nous vous enverrons un e-mail quand le prix atteindra {level}',
+    watchingScreen: 'Nous l\'afficherons sur votre tableau de bord quand le prix atteindra {level}',
     followsToo: 'Créer une alerte suit aussi ce setup.',
     labelEntry: 'Entrée',
     labelStop: 'Stop',

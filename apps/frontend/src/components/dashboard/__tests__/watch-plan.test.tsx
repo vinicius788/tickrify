@@ -111,6 +111,29 @@ describe('plano do WATCH (v10.1)', () => {
   });
 });
 
+describe('continuacao do setup', () => {
+  afterEach(cleanup);
+  const line = () => screen.queryByTestId('setup-continuation')?.textContent ?? null;
+
+  it.each([
+    ['long', 'CONFIRMED', 'Buy', 'Confirmed'],
+    ['long', 'STILL_WAITING', 'Buy', 'Still waiting'],
+    ['short', 'CHANGED', 'Sell', 'Changed'],
+    ['short', 'INVALIDATED', 'Sell', 'Invalidated'],
+  ])('%s %s', (direction, status, side, label) => {
+    renderResult('WATCH', plan, { continuation: { setupId: 's', priorAnalysisId: 'p', status, direction, level: 2345 } });
+    expect(line()).toBe(`Earlier plan: ${side} at $ 2,345.00. Now: ${label}`);
+  });
+
+  it('sem status ou sem continuacao, a linha nao aparece', () => {
+    renderResult('WATCH', plan, { continuation: { setupId: 's', priorAnalysisId: 'p', status: null, direction: 'long', level: 2345 } });
+    expect(line()).toBeNull();
+    cleanup();
+    renderResult('WATCH', plan);
+    expect(line()).toBeNull();
+  });
+});
+
 describe('modo leitura: Read, Where price is e Action em toda analise', () => {
   afterEach(cleanup);
   const location = {

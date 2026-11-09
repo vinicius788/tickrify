@@ -63,6 +63,8 @@ import {
 } from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
 import { SetupsService, recordSetupVersion } from './setups.service';
+import { createWatchAlert } from './setup-alerts.service';
+import { loadPriorPlan } from './setup-continuation';
 import { loadWatchContexts, watchSummaryOf } from './watch-pending';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from './analysis-data-coverage';
 import { tp1RFromDetail } from '../mail/analysis-result-email';
@@ -1229,13 +1231,14 @@ export class AiService implements OnModuleInit {
       // Mesmo montador do worker (prompt-builder.service.ts).
       const prompt = buildAnalysisPrompt({ userLanguage, analysisType });
       const promptMs = Date.now() - tPrompt;
+      const priorPlan = await loadPriorPlan(this.prisma, { analysisId, userId, setupId }, (m) => this.logger.warn(m));
       const aiResponse = await this.aiAdapter.analyzeImage(
         imageUrl,
         prompt,
         analysisType,
         htfImageUrls ?? [],
         strategyProfile,
-        { compareProviders: true },
+        { compareProviders: true, ...(priorPlan ? { priorPlan } : {}) },
       );
 
       // Contrato v2 + validador + tempos (mesmo bloco do worker; sem fila aqui).
@@ -1245,6 +1248,7 @@ export class AiService implements OnModuleInit {
         provider: meta?.provider ?? null,
         signalState: aiResponse.signalState,
         dataMode: aiResponse.dataMode === 'real_data' ? 'real_data' : 'print',
+        continuation: Boolean(aiResponse.continuation),
         contract: {
           recommendation: aiResponse.recommendation,
           confidencePct: aiResponse.confidence,
@@ -1336,6 +1340,12 @@ export class AiService implements OnModuleInit {
           (message) => this.logger.warn(message),
         );
       }
+      // WATCH vira alerta no nivel do plano (mesma chamada do worker). Nunca lanca.
+      await createWatchAlert(
+        this.prisma,
+        { analysisId, userId, result: normalizedPayload.fullResponse, recommendation: normalizedPayload.recommendation },
+        (message) => this.logger.log(message),
+      );
 
       const model = resolveModel(analysisType);
       await runPostHooks(pipelineCtx, aiResponse, [

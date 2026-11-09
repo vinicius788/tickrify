@@ -582,6 +582,9 @@ export default {
       strategyFitPoor: 'Poor fit',
       strategyFitConflict: 'Conflicts with your rules',
       strategyFitNote: 'This does not change the read. It only says whether this setup is the kind you trade.',
+      continuationBuy: 'Earlier plan: Buy at {level}. Now: {status}',
+      continuationSell: 'Earlier plan: Sell at {level}. Now: {status}',
+      continuationStatus: { CONFIRMED: 'Confirmed', STILL_WAITING: 'Still waiting', CHANGED: 'Changed', INVALIDATED: 'Invalidated' },
       planTitle: 'No entry yet. Here is the plan:',
       watch: {
         title: 'Watch plan',
@@ -1087,6 +1090,8 @@ export default {
     title: 'Alert me when price reaches',
     hintEmail: 'We check the price every 10 minutes and email you when it gets there.',
     hintScreen: 'We check the price every 10 minutes and show it on your dashboard when it gets there.',
+    watchingEmail: 'We\'ll email you when price reaches {level}',
+    watchingScreen: 'We\'ll show it on your dashboard when price reaches {level}',
     followsToo: 'Setting an alert also follows this setup.',
     labelEntry: 'Entry',
     labelStop: 'Stop',

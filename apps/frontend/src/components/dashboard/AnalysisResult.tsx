@@ -598,6 +598,14 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   const stateTone = signalStateTone(signalState, analysisData.recommendation);
   const stateActive = signalState === 'ENTER_NOW' || signalState === 'ARMED';
   const watchPlan = isWatchPlan(fullResponse.watchPlan) ? fullResponse.watchPlan : null;
+  const continuation = fullResponse.continuation as { status?: unknown; direction?: unknown; level?: unknown } | null | undefined;
+  const continuationStatus = typeof continuation?.status === 'string' ? r.continuationStatus[continuation.status as keyof typeof r.continuationStatus] : undefined;
+  const continuationLine =
+    continuationStatus && typeof continuation?.level === 'number' && (continuation.direction === 'long' || continuation.direction === 'short')
+      ? (continuation.direction === 'long' ? r.continuationBuy : r.continuationSell)
+          .replace('{level}', formatPrice(continuation.level))
+          .replace('{status}', continuationStatus)
+      : null;
   // Niveis do WATCH calculados pelo motor (desde 03/11/2026). undefined: analise
   // antiga ou sem velas reais (alvos do modelo, como antes); null: o motor
   // rejeitou a geometria no nivel do WATCH (sem alvos nem R na tela).
@@ -1110,6 +1118,9 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
               </span>
             )}
           </div>
+          {continuationLine && (
+            <p data-testid="setup-continuation" className="mt-3 text-sm leading-relaxed text-[var(--text-primary)]">{continuationLine}</p>
+          )}
           {isWaitVerdict && (
             // Explica o WAIT onde ele aparece: sem isto a pessoa le so a
             // palavra e entende que a ferramenta nao respondeu.

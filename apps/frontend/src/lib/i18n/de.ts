@@ -582,6 +582,9 @@ export default {
       strategyFitPoor: 'Schwach passend',
       strategyFitConflict: 'Widerspricht Ihren Regeln',
       strategyFitNote: 'Das ändert nichts an der Einschätzung. Es sagt nur, ob dieses Setup zu Ihrem Handelsstil passt.',
+      continuationBuy: 'Früherer Plan: Kauf bei {level}. Jetzt: {status}',
+      continuationSell: 'Früherer Plan: Verkauf bei {level}. Jetzt: {status}',
+      continuationStatus: { CONFIRMED: 'Bestätigt', STILL_WAITING: 'Wartet weiter', CHANGED: 'Geändert', INVALIDATED: 'Ungültig' },
       planTitle: 'Noch kein Einstieg. Das ist der Plan:',
       watch: {
         title: 'Beobachtungsplan',
@@ -1087,6 +1090,8 @@ export default {
     title: 'Benachrichtige mich, wenn der Kurs erreicht',
     hintEmail: 'Wir prüfen den Kurs alle 10 Minuten und schicken dir eine E-Mail, wenn er dort ankommt.',
     hintScreen: 'Wir prüfen den Kurs alle 10 Minuten und zeigen es in deinem Dashboard, wenn er dort ankommt.',
+    watchingEmail: 'Wir schicken dir eine E-Mail, sobald der Kurs {level} erreicht',
+    watchingScreen: 'Wir zeigen es in deinem Dashboard an, sobald der Kurs {level} erreicht',
     followsToo: 'Ein Alarm folgt diesem Setup automatisch.',
     labelEntry: 'Einstieg',
     labelStop: 'Stop',

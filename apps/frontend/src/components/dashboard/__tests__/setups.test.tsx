@@ -140,6 +140,59 @@ describe('Alerta de nivel no resultado', () => {
     expect(screen.getAllByRole('button', { name: /Set alert/ })).toHaveLength(1);
   });
 
+  describe('WATCH com alerta automatico', () => {
+    const WATCH_ALERT = { ...ALERT, status: 'active', label: 'entry', level: 4140, triggeredAt: null, triggerPrice: null };
+
+    it('troca o formulario pela frase e cancela; cancelado, o formulario volta', async () => {
+      const user = userEvent.setup();
+      let cancelled = false;
+      const fetchMock = serve({
+        'GET /api/setups/alerts/options/analysis00001': () => json(200, { ...OPTIONS, alerts: cancelled ? [] : [WATCH_ALERT], watchAlert: cancelled ? null : WATCH_ALERT }),
+        'GET /api/setups/by-analysis/analysis00001': () => json(200, { setup: null }),
+        'POST /api/setups/alerts/alert-aaaaaaaa/cancel': () => {
+          cancelled = true;
+          return json(200, { alert: { ...WATCH_ALERT, status: 'cancelled' } });
+        },
+      });
+      wrap(<SetupAlertBar analysisId="analysis00001" recommendation="WAIT" base="/dashboard" />);
+
+      expect(await screen.findByText("We'll email you when price reaches 4,140")).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /Set alert/ })).toBeNull();
+      expect(screen.queryByRole('textbox', { name: 'Price level' })).toBeNull();
+
+      await user.click(screen.getByRole('button', { name: 'Cancel alert' }));
+      expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/alert-aaaaaaaa/cancel') && init?.method === 'POST')).toBe(true);
+      await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: 'Alert cancelled.' }));
+      expect(await screen.findByRole('button', { name: /Set alert/ })).toBeTruthy();
+      expect(screen.queryByText(/We'll email you/)).toBeNull();
+    });
+
+    it('com a chave de e-mail desligada nao promete e-mail', async () => {
+      serve({
+        'GET /api/setups/alerts/options/analysis00001': () => json(200, { ...OPTIONS, emailEnabled: false, alerts: [WATCH_ALERT], watchAlert: WATCH_ALERT }),
+        'GET /api/setups/by-analysis/analysis00001': () => json(200, { setup: null }),
+      });
+      wrap(<SetupAlertBar analysisId="analysis00001" recommendation="WAIT" base="/dashboard" />);
+      expect(await screen.findByText("We'll show it on your dashboard when price reaches 4,140")).toBeTruthy();
+      expect(screen.queryByText(/email/)).toBeNull();
+    });
+
+    it('enquanto o servidor grava o alerta, espera em vez de oferecer criar', async () => {
+      let pending = true;
+      serve({
+        'GET /api/setups/alerts/options/analysis00001': () => {
+          const body = pending ? { ...OPTIONS, autoAlertPending: true } : { ...OPTIONS, alerts: [WATCH_ALERT], watchAlert: WATCH_ALERT, autoAlertPending: false };
+          pending = false;
+          return json(200, body);
+        },
+        'GET /api/setups/by-analysis/analysis00001': () => json(200, { setup: null }),
+      });
+      wrap(<SetupAlertBar analysisId="analysis00001" recommendation="WAIT" base="/dashboard" />);
+      await waitFor(() => expect(screen.queryByRole('button', { name: /Set alert/ })).toBeNull());
+      expect(await screen.findByText("We'll email you when price reaches 4,140", {}, { timeout: 4000 })).toBeTruthy();
+    });
+  });
+
   it('nivel digitado vai como custom; com a chave de e-mail desligada o texto nao promete e-mail', async () => {
     const user = userEvent.setup();
     const fetchMock = serve({

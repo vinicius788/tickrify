@@ -92,7 +92,7 @@ export type SetupVersion = {
   watch: WatchSummary | null;
 };
 
-type SetupRow = SetupSummary & { userId: string };
+export type SetupRow = SetupSummary & { userId: string };
 
 type RawPrisma = Pick<PrismaClient, '$queryRaw' | '$executeRaw' | 'user'>;
 
@@ -203,6 +203,92 @@ export async function recordSetupVersion(
   }
 }
 
+async function findOwnedSetup(db: RawPrisma, userId: string, setupId: string): Promise<SetupRow | null> {
+  const rows = await db.$queryRaw<SetupRow[]>`
+    SELECT ${setupColumns()} FROM "tickrify"."TrackedSetup"
+    WHERE "id" = ${setupId} AND "userId" = ${userId}
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+/** Um setup por vez por pessoa entra na contagem do teto (dois cliques paralelos nao passam de 20). */
+export async function lockSetups(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`setups:${userId}`}))`;
+}
+
+async function assertUnderLimit(tx: Prisma.TransactionClient, userId: string) {
+  const [{ n }] = await tx.$queryRaw<Array<{ n: number }>>`
+    SELECT COUNT(*)::int AS "n" FROM "tickrify"."TrackedSetup"
+    WHERE "userId" = ${userId} AND "status" = 'tracking'
+  `;
+  if (Number(n) >= MAX_TRACKING_SETUPS) {
+    throw new ConflictException({
+      code: 'setup_limit',
+      message: `You follow ${MAX_TRACKING_SETUPS} setups. Archive one to follow this.`,
+    });
+  }
+}
+
+/** O setup em que a analise ja esta: pelo vinculo ou como raiz. */
+export async function findSetupOfAnalysis(
+  db: RawPrisma,
+  userId: string,
+  analysis: { id: string; setupId: string | null },
+): Promise<SetupRow | null> {
+  return (
+    (analysis.setupId ? await findOwnedSetup(db, userId, analysis.setupId) : null) ??
+    (
+      await db.$queryRaw<SetupRow[]>`
+        SELECT ${setupColumns()} FROM "tickrify"."TrackedSetup"
+        WHERE "rootAnalysisId" = ${analysis.id} AND "userId" = ${userId}
+        LIMIT 1
+      `
+    )[0] ??
+    null
+  );
+}
+
+/**
+ * Segue dentro de uma transacao com `lockSetups` ja tomado. Idempotente: a
+ * analise que ja e de um setup devolve esse setup (e o volta a acompanhar se
+ * tinha sido largado).
+ */
+export async function followInTransaction(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  analysis: { id: string; createdAt: Date; setupId: string | null },
+  plan: { symbol: string | null; timeframe: string | null },
+): Promise<{ setup: SetupRow; changed: boolean }> {
+  const existing = await findSetupOfAnalysis(tx, userId, analysis);
+  if (existing) {
+    if (existing.status === 'tracking') return { setup: existing, changed: false };
+    await assertUnderLimit(tx, userId);
+    await tx.$executeRaw`
+      UPDATE "tickrify"."TrackedSetup"
+      SET "status" = 'tracking', "archivedAt" = NULL, "updatedAt" = NOW()
+      WHERE "id" = ${existing.id} AND "userId" = ${userId}
+    `;
+    return { setup: { ...existing, status: 'tracking' as const }, changed: true };
+  }
+
+  await assertUnderLimit(tx, userId);
+  const id = randomUUID();
+  await tx.$executeRaw`
+    INSERT INTO "tickrify"."TrackedSetup"
+      ("id", "userId", "rootAnalysisId", "status", "symbol", "timeframe", "createdAt", "updatedAt", "lastAnalysisAt")
+    VALUES (${id}, ${userId}, ${analysis.id}, 'tracking', ${plan.symbol}, ${plan.timeframe}, NOW(), NOW(), ${analysis.createdAt})
+    ON CONFLICT ("rootAnalysisId") DO NOTHING
+  `;
+  await tx.$executeRaw`
+    UPDATE "tickrify"."Analysis" SET "setupId" = ${id}
+    WHERE "id" = ${analysis.id} AND "userId" = ${userId} AND "setupId" IS NULL
+  `;
+  const created = await findOwnedSetup(tx, userId, id);
+  if (!created) throw new ConflictException({ code: 'setup_conflict' });
+  return { setup: created, changed: true };
+}
+
 @Injectable()
 export class SetupsService implements OnModuleInit {
   private readonly logger = new Logger(SetupsService.name);
@@ -227,36 +313,6 @@ export class SetupsService implements OnModuleInit {
     }
   }
 
-  private async findOwned(userId: string, setupId: string, db: RawPrisma = this.prisma): Promise<SetupRow | null> {
-    const rows = await db.$queryRaw<SetupRow[]>`
-      SELECT ${setupColumns()} FROM "tickrify"."TrackedSetup"
-      WHERE "id" = ${setupId} AND "userId" = ${userId}
-      LIMIT 1
-    `;
-    return rows[0] ?? null;
-  }
-
-  /** Um setup por vez por pessoa entra na contagem do teto (dois cliques paralelos nao passam de 20). */
-  private async withUserLock<T>(userId: string, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
-    return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`setups:${userId}`}))`;
-      return fn(tx);
-    });
-  }
-
-  private async assertUnderLimit(tx: Prisma.TransactionClient, userId: string) {
-    const [{ n }] = await tx.$queryRaw<Array<{ n: number }>>`
-      SELECT COUNT(*)::int AS "n" FROM "tickrify"."TrackedSetup"
-      WHERE "userId" = ${userId} AND "status" = 'tracking'
-    `;
-    if (Number(n) >= MAX_TRACKING_SETUPS) {
-      throw new ConflictException({
-        code: 'setup_limit',
-        message: `You follow ${MAX_TRACKING_SETUPS} setups. Archive one to follow this.`,
-      });
-    }
-  }
-
   /**
    * Seguir a partir de uma analise concluida da propria conta (BUY, SELL ou
    * WAIT). Idempotente: a analise que ja e de um setup devolve esse setup (e o
@@ -276,43 +332,9 @@ export class SetupsService implements OnModuleInit {
     if (!analysis || analysis.status !== 'completed') throw new NotFoundException({ code: 'analysis_not_found' });
     const plan = readPlan(analysis.result, analysis.recommendation);
 
-    const { setup, changed } = await this.withUserLock(user.id, async (tx) => {
-      const existing =
-        (analysis.setupId ? await this.findOwned(user.id, analysis.setupId, tx) : null) ??
-        (
-          await tx.$queryRaw<SetupRow[]>`
-            SELECT ${setupColumns()} FROM "tickrify"."TrackedSetup"
-            WHERE "rootAnalysisId" = ${analysisId} AND "userId" = ${user.id}
-            LIMIT 1
-          `
-        )[0] ??
-        null;
-      if (existing) {
-        if (existing.status === 'tracking') return { setup: existing, changed: false };
-        await this.assertUnderLimit(tx, user.id);
-        await tx.$executeRaw`
-          UPDATE "tickrify"."TrackedSetup"
-          SET "status" = 'tracking', "archivedAt" = NULL, "updatedAt" = NOW()
-          WHERE "id" = ${existing.id} AND "userId" = ${user.id}
-        `;
-        return { setup: { ...existing, status: 'tracking' as const }, changed: true };
-      }
-
-      await this.assertUnderLimit(tx, user.id);
-      const id = randomUUID();
-      await tx.$executeRaw`
-        INSERT INTO "tickrify"."TrackedSetup"
-          ("id", "userId", "rootAnalysisId", "status", "symbol", "timeframe", "createdAt", "updatedAt", "lastAnalysisAt")
-        VALUES (${id}, ${user.id}, ${analysisId}, 'tracking', ${plan.symbol}, ${plan.timeframe}, NOW(), NOW(), ${analysis.createdAt})
-        ON CONFLICT ("rootAnalysisId") DO NOTHING
-      `;
-      await tx.$executeRaw`
-        UPDATE "tickrify"."Analysis" SET "setupId" = ${id}
-        WHERE "id" = ${analysisId} AND "userId" = ${user.id} AND "setupId" IS NULL
-      `;
-      const created = await this.findOwned(user.id, id, tx);
-      if (!created) throw new ConflictException({ code: 'setup_conflict' });
-      return { setup: created, changed: true };
+    const { setup, changed } = await this.prisma.$transaction(async (tx) => {
+      await lockSetups(tx, user.id);
+      return followInTransaction(tx, user.id, analysis, plan);
     });
 
     if (changed && user.clerkUserId) {
@@ -334,7 +356,7 @@ export class SetupsService implements OnModuleInit {
     status: 'untracked' | 'archived',
   ): Promise<{ setup: SetupSummary }> {
     this.assertReady();
-    const existing = await this.findOwned(user.id, setupId);
+    const existing = await findOwnedSetup(this.prisma, user.id, setupId);
     if (!existing) throw new NotFoundException({ code: 'setup_not_found' });
     if (existing.status === status) return { setup: toSummary(existing) };
     await this.prisma.$executeRaw`
@@ -358,7 +380,7 @@ export class SetupsService implements OnModuleInit {
     const take = Math.max(1, Math.min(50, Math.floor(limit) || 20));
     let after = Prisma.empty;
     if (cursor) {
-      const anchor = await this.findOwned(userId, cursor);
+      const anchor = await findOwnedSetup(this.prisma, userId, cursor);
       if (!anchor || anchor.status !== 'tracking') return { items: [], nextCursor: null };
       after = Prisma.sql`AND (s."lastAnalysisAt", s."id") < (${anchor.lastAnalysisAt}, ${anchor.id})`;
     }
@@ -428,7 +450,7 @@ export class SetupsService implements OnModuleInit {
     options: { cursor?: string | null; limit?: number; readableIds?: string[] | null } = {},
   ): Promise<{ setup: SetupSummary; versions: SetupVersion[]; nextCursor: string | null }> {
     this.assertReady();
-    const setup = await this.findOwned(userId, setupId);
+    const setup = await findOwnedSetup(this.prisma, userId, setupId);
     if (!setup) throw new NotFoundException({ code: 'setup_not_found' });
     const take = Math.max(1, Math.min(50, Math.floor(options.limit ?? 20) || 20));
     const readable = options.readableIds;
@@ -504,7 +526,7 @@ export class SetupsService implements OnModuleInit {
    */
   async assertUpdatable(userId: string, setupId: string): Promise<void> {
     this.assertReady();
-    const setup = await this.findOwned(userId, setupId);
+    const setup = await findOwnedSetup(this.prisma, userId, setupId);
     if (!setup) throw new NotFoundException({ code: 'setup_not_found', message: 'Setup not found.' });
     if (setup.status !== 'tracking') {
       throw new ConflictException({ code: 'setup_not_tracking', message: 'This setup is no longer followed.' });

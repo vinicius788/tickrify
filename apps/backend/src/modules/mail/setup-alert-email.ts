@@ -14,6 +14,7 @@
  *   nunca mandam dois); envio recusado pela Resend tira a marca e a proxima
  *   volta tenta de novo, dentro das 6h.
  * - Nunca para quem se descadastrou. O texto diz que nao e sinal de entrada.
+ * - Alerta automatico cujo WATCH ja venceu nunca vira e-mail.
  * - A Resend gratis e 100/dia para TODOS os e-mails do produto.
  */
 import type { PrismaClient } from '@prisma/client';
@@ -123,6 +124,7 @@ export async function runSetupAlertEmailSweep(deps: SetupAlertEmailDeps): Promis
     JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
     JOIN "tickrify"."User" u ON u."id" = a."userId"
     WHERE a."status" = 'triggered' AND a."emailedAt" IS NULL AND a."seenAt" IS NULL AND a."triggeredAt" > ${since}
+      AND (a."expiresAt" IS NULL OR a."expiresAt" > ${now})
       AND u."email" IS NOT NULL
     ORDER BY a."triggeredAt" ASC, a."id" ASC
     LIMIT 200

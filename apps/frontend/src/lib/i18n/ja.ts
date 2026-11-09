@@ -582,6 +582,9 @@ export default {
       strategyFitPoor: '弱い適合',
       strategyFitConflict: 'あなたのルールと矛盾',
       strategyFitNote: 'これは判定を変えません。このセットアップがあなたの取引スタイルに合うかどうかを示すだけです。',
+      continuationBuy: '前回のプラン: {level}で買い。現在: {status}',
+      continuationSell: '前回のプラン: {level}で売り。現在: {status}',
+      continuationStatus: { CONFIRMED: '確定', STILL_WAITING: '引き続き待機', CHANGED: '変更あり', INVALIDATED: '無効' },
       planTitle: 'まだエントリーはありません。プランはこちら:',
       watch: {
         title: '監視プラン',
@@ -1087,6 +1090,8 @@ export default {
     title: '価格が次に達したら通知',
     hintEmail: '10分ごとに価格を確認し、到達したらメールでお知らせします。',
     hintScreen: '10分ごとに価格を確認し、到達したらダッシュボードに表示します。',
+    watchingEmail: '価格が{level}に達したらメールでお知らせします',
+    watchingScreen: '価格が{level}に達したらダッシュボードに表示します',
     followsToo: 'アラートを作成すると、このセットアップもフォローされます。',
     labelEntry: 'エントリー',
     labelStop: 'ストップ',
