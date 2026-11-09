@@ -20,6 +20,8 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { captureServer } from '../../common/analytics/posthog';
 import { candleSourceFor } from '../market/candles';
+import { readPlan } from '../ai/setups.service';
+import { storedWatchPlan } from '../ai/watch-pending';
 import { UNSUBSCRIBE_AUDIT_ACTION, escapeHtml, letter, unsubscribeUrl } from './lifecycle-email';
 
 export const SETUP_ALERT_EMAIL_FLAG = 'EMAIL_SETUP_ALERTS';
@@ -33,13 +35,24 @@ export const SETUP_ALERT_EMAIL_RULES = {
   dryRunRecentMs: 5 * 60 * 1000,
 } as const;
 
-const LABEL_TEXT: Record<string, string> = {
-  entry: 'entry',
-  stop: 'stop',
-  tp1: 'Target 1',
-  invalidation: 'invalidation level',
-  custom: 'your level',
-};
+/** Remetente da marca: alerta automatico nunca sai com o nome do dono. */
+export const SETUP_ALERT_FROM = 'Tickrify <alerts@tickrify.com>';
+export const SETUP_ALERT_REPLY_TO = 'support@tickrify.com';
+
+export type AlertDirection = 'long' | 'short' | null;
+
+/** O que o nivel e, em palavras: nunca soa como ordem executada. */
+export function levelDescription(label: string, direction: AlertDirection): string {
+  if (label === 'entry') {
+    if (direction === 'long') return 'possible buy level from your analysis';
+    if (direction === 'short') return 'possible sell level from your analysis';
+    return 'entry level from your analysis';
+  }
+  if (label === 'stop') return 'stop from your analysis';
+  if (label === 'tp1') return 'target 1 from your analysis';
+  if (label === 'invalidation') return 'invalidation level from your analysis';
+  return 'the level you chose';
+}
 
 export function formatLevel(level: number): string {
   return level.toLocaleString('en-US', { maximumFractionDigits: level >= 1000 ? 2 : level >= 1 ? 5 : 8 });
@@ -55,7 +68,29 @@ export type SetupAlertEmailItem = {
   triggeredAt: Date;
   /** BTCUSDT, XAUUSD: decide o tamanho da vela citado no rodape. */
   priceSymbol: string;
+  plan: AlertPlan;
 };
+
+/** O plano da analise do alerta, como foi gravado. Campo ausente some do e-mail. */
+export type AlertPlan = {
+  direction: AlertDirection;
+  invalidation: number | null;
+  target: number | null;
+};
+
+const record = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+const positive = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+
+export function alertPlanOf(result: unknown, recommendation: string | null): AlertPlan {
+  const watch = storedWatchPlan(result, recommendation);
+  if (watch) return { direction: watch.direction, invalidation: watch.invalidation, target: null };
+  const plan = readPlan(result, recommendation);
+  return {
+    direction: plan.recommendation === 'BUY' ? 'long' : plan.recommendation === 'SELL' ? 'short' : null,
+    invalidation: positive(record(record(result).analysis).invalidationLevel),
+    target: plan.takeProfit1,
+  };
+}
 
 /** Link do botao: o fluxo de atualizar o setup (custo na tela antes de enviar). */
 export function setupAlertLink(appUrl: string, item: Pick<SetupAlertEmailItem, 'setupId' | 'alertId'>): string {
@@ -73,39 +108,55 @@ export function renderSetupAlertEmail(params: {
   firstName: string | null;
   item: SetupAlertEmailItem;
   unsubscribeUrl: string;
-}): { kind: string; subject: string; html: string; unsubscribeUrl: string } {
+}): { kind: string; subject: string; html: string; unsubscribeUrl: string; from: string; replyTo: string } {
   const { item } = params;
   const level = formatLevel(item.level);
-  const label = LABEL_TEXT[item.label] ?? LABEL_TEXT.custom;
+  const label = levelDescription(item.label, item.plan.direction);
   const time = `${item.triggeredAt.toISOString().slice(11, 16)} UTC on ${item.triggeredAt.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     timeZone: 'UTC',
   })}`;
+  const side = item.plan.direction === 'long' ? 'Buy' : item.plan.direction === 'short' ? 'Sell' : null;
+  const rows = [
+    side ? `<b>Direction:</b> ${side}` : null,
+    `<b>Level:</b> ${escapeHtml(level)} (${escapeHtml(label)})`,
+    item.plan.invalidation !== null ? `<b>Invalidation:</b> ${escapeHtml(formatLevel(item.plan.invalidation))}` : null,
+    item.plan.target !== null ? `<b>Target:</b> ${escapeHtml(formatLevel(item.plan.target))}` : null,
+    `<b>Reached:</b> ${escapeHtml(time)}`,
+  ];
   const asset = `${item.symbol}${item.timeframe ? ` ${item.timeframe}` : ''}`;
   const subject = `Your ${item.symbol} setup reached ${level}`;
   const html = letter({
     preview: `${item.symbol} touched ${level} (${label}) at ${time}.`,
     firstName: params.firstName,
     paragraphs: [
-      `Price reached the level you asked Tickrify to watch on your <b>${escapeHtml(asset)}</b> setup.`,
-      `<b>Level:</b> ${escapeHtml(level)} (${escapeHtml(label)})<br><b>Reached:</b> ${escapeHtml(time)}`,
+      `Price reached a level from your <b>${escapeHtml(asset)}</b> analysis.`,
+      rows.filter(Boolean).join('<br>'),
       'Update the chart to review it. This is not a signal to enter.',
     ],
-    cta: { label: 'Update the chart', url: setupAlertLink(params.appUrl, item) },
+    cta: { label: 'Update chart', url: setupAlertLink(params.appUrl, item) },
     afterCta: [
       `<span style="font-size:13px;color:#5b6773;">Checked on ${candleSourceFor(item.priceSymbol) === 'crypto' ? 1 : 5}-minute candles from public price feeds. Your broker's price can differ by the spread.</span>`,
     ],
     unsubscribeUrl: params.unsubscribeUrl,
+    signed: false,
   });
-  return { kind: 'setup_alert', subject, html, unsubscribeUrl: params.unsubscribeUrl };
+  return { kind: 'setup_alert', subject, html, unsubscribeUrl: params.unsubscribeUrl, from: SETUP_ALERT_FROM, replyTo: SETUP_ALERT_REPLY_TO };
 }
 
-type PendingRow = SetupAlertEmailItem & { userId: string; email: string | null; name: string | null; clerkUserId: string | null };
+type PendingRow = Omit<SetupAlertEmailItem, 'plan'> & {
+  userId: string;
+  email: string | null;
+  name: string | null;
+  clerkUserId: string | null;
+  analysisResult: unknown;
+  analysisRecommendation: string | null;
+};
 
 export type SetupAlertEmailDeps = {
   prisma: Pick<PrismaClient, '$queryRaw' | '$executeRaw' | 'adminAudit'>;
-  mail: { sendLifecycle(to: string, email: { kind: string; subject: string; html: string; unsubscribeUrl: string }): Promise<boolean> };
+  mail: { sendLifecycle(to: string, email: { kind: string; subject: string; html: string; unsubscribeUrl: string; from: string; replyTo: string }): Promise<boolean> };
   isEnabled(): boolean;
   appUrl: string;
   apiBaseUrl: string;
@@ -126,10 +177,11 @@ export async function runSetupAlertEmailSweep(deps: SetupAlertEmailDeps): Promis
     : Prisma.sql`a."updatedAt" > ${new Date(now.getTime() - SETUP_ALERT_EMAIL_RULES.dryRunRecentMs)}`;
   const rows = await deps.prisma.$queryRaw<PendingRow[]>`
     SELECT a."id" AS "alertId", a."setupId", a."userId", a."symbol", a."priceSymbol", s."timeframe", a."level", a."label", a."triggeredAt",
-      u."email", u."name", u."clerkUserId"
+      u."email", u."name", u."clerkUserId", an."result" AS "analysisResult", an."recommendation" AS "analysisRecommendation"
     FROM "tickrify"."SetupAlert" a
     JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
     JOIN "tickrify"."User" u ON u."id" = a."userId"
+    LEFT JOIN "tickrify"."Analysis" an ON an."id" = a."analysisId"
     WHERE a."status" = 'triggered' AND a."emailedAt" IS NULL AND a."seenAt" IS NULL AND ${recent}
       AND (a."expiresAt" IS NULL OR a."expiresAt" > ${now})
       AND u."email" IS NOT NULL
@@ -183,7 +235,7 @@ export async function runSetupAlertEmailSweep(deps: SetupAlertEmailDeps): Promis
       const rendered = renderSetupAlertEmail({
         appUrl: deps.appUrl,
         firstName: row.name ? row.name.trim().split(/\s+/)[0] : null,
-        item: { ...row, level: Number(row.level) },
+        item: { ...row, level: Number(row.level), plan: alertPlanOf(row.analysisResult, row.analysisRecommendation) },
         unsubscribeUrl: url,
       });
       const ok = await deps.mail.sendLifecycle(row.email, rendered);

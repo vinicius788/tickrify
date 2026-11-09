@@ -151,6 +151,8 @@ export function letter(params: {
   cta: { label: string; url: string };
   afterCta?: string[];
   unsubscribeUrl: string;
+  /** false: sai sem a assinatura pessoal (e-mail automatico da marca). */
+  signed?: boolean;
 }): string {
   const p = (html: string) =>
     `<p style="margin:0 0 16px;font-family:${FONT};font-size:16px;line-height:26px;color:#1f2a36;">${html}</p>`;
@@ -178,12 +180,12 @@ export function letter(params: {
           </td></tr>
         </table>
         ${(params.afterCta ?? []).map(p).join('\n        ')}
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;">
+        ${params.signed === false ? '' : `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;">
           <tr>
             <td valign="middle" style="padding-right:12px;"><img src="${WELCOME_ICON_URL}" alt="Tickrify" width="30" height="36" style="display:block;width:30px;height:36px;border:0;"></td>
             <td valign="middle" style="font-family:${FONT};font-size:15px;line-height:21px;color:#1f2a36;"><b>Vinícius</b><br>CEO, Tickrify</td>
           </tr>
-        </table>
+        </table>`}
         <p style="margin:24px 0 0;font-family:${FONT};font-size:12px;line-height:18px;color:#7a8794;">
           Tickrify gives a second opinion on your chart, not financial advice. Trading involves risk and the decision is yours.<br>
           You get this email because you created a Tickrify account. <a href="${escapeHtml(params.unsubscribeUrl)}" style="color:#7a8794;">Unsubscribe from these emails</a>.

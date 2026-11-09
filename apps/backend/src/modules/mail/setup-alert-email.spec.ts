@@ -1,5 +1,5 @@
 import { makeRawSqlPrisma as makePrisma } from '../../__tests__/raw-sql-mock';
-import { formatLevel, renderSetupAlertEmail, runSetupAlertEmailSweep, setupAlertLink } from './setup-alert-email';
+import { alertPlanOf, formatLevel, renderSetupAlertEmail, runSetupAlertEmailSweep, setupAlertLink } from './setup-alert-email';
 import { UNSUBSCRIBE_AUDIT_ACTION } from './lifecycle-email';
 
 const NOW = new Date('2026-10-27T13:50:00Z');
@@ -16,6 +16,9 @@ const pending = (extra: Record<string, unknown> = {}) => ({
   email: 'u1@x.com',
   name: 'Joao Silva',
   clerkUserId: 'clerk_1',
+  analysisResult: { analysis: { symbol: 'XAUUSD', takeProfit1: 4180, stopLoss: 4100, entry: 4140, invalidationLevel: 4095 } },
+  analysisRecommendation: 'BUY',
+  plan: { direction: 'long', invalidation: 4095, target: 4180 },
   ...extra,
 });
 
@@ -68,7 +71,7 @@ describe('setup-alert email', () => {
     else process.env.EMAIL_UNSUBSCRIBE_SECRET = oldSecret;
   });
 
-  it('texto: assunto com ativo e nivel, rotulo, hora UTC, aviso de que nao e sinal, link de atualizar com utm e assinatura', () => {
+  it('texto: assunto, plano, hora UTC, aviso de que nao e sinal, link com utm e remetente da marca, sem o nome do dono', () => {
     const email = renderSetupAlertEmail({
       appUrl: 'https://tickrify.com',
       firstName: 'Joao',
@@ -77,16 +80,39 @@ describe('setup-alert email', () => {
     });
     expect(email.subject).toBe('Your XAUUSD setup reached 4,180');
     expect(email.kind).toBe('setup_alert');
-    expect(email.html).toContain('Target 1');
+    expect(email.html).toContain('target 1 from your analysis');
+    expect(email.html).toContain('<b>Direction:</b> Buy');
+    expect(email.html).toContain('<b>Invalidation:</b> 4,095');
+    expect(email.html).toContain('<b>Target:</b> 4,180');
+    expect(email.html).toContain('>Update chart</a>');
+    expect(email.from).toBe('Tickrify <alerts@tickrify.com>');
+    expect(email.replyTo).toBe('support@tickrify.com');
     expect(email.html).toContain('13:42 UTC on Oct 27');
     expect(email.html).toContain('Update the chart to review it. This is not a signal to enter.');
     expect(email.html).toContain(
       'https://tickrify.com/dashboard/new?setup=setup-aaaaaaaa&amp;alert=alert-1&amp;utm_source=email&amp;utm_campaign=setup_alert',
     );
-    expect(email.html).toContain('Vinícius');
-    expect(email.html).not.toMatch(/\bVini\b/);
+    expect(email.html).not.toMatch(/Vin[ií]/);
     expect(email.html).not.toContain('—');
     expect(email.html).toContain('Unsubscribe');
+  });
+
+  it('alerta do WATCH diz o que o nivel e, sem alvo; custom diz que foi escolhido', () => {
+    const render = (label: string, plan: object) => renderSetupAlertEmail({ appUrl: 'https://tickrify.com', firstName: null, item: pending({ label, plan }) as any, unsubscribeUrl: 'https://x/u' }).html;
+    const watch = render('entry', { direction: 'short', invalidation: 4200, target: null });
+    expect(watch).toContain('possible sell level from your analysis');
+    expect(watch).toContain('<b>Direction:</b> Sell');
+    expect(watch).not.toContain('<b>Target:</b>');
+    const custom = render('custom', { direction: null, invalidation: null, target: null });
+    expect(custom).toContain('the level you chose');
+    expect(custom).not.toContain('<b>Direction:</b>');
+    expect(custom).not.toContain('<b>Invalidation:</b>');
+  });
+
+  it('alertPlanOf: WATCH usa o plano; BUY usa alvo e invalidacao gravados', () => {
+    const watchResult = { signalState: 'WATCH', watchPlan: { direction: 'long', zoneLow: 99, zoneHigh: 100, invalidation: 95, target1: 110, target2: null, validForCandles: 6, trigger: 'x', triggerType: 'zone_reaction' } };
+    expect(alertPlanOf(watchResult, 'HOLD')).toEqual({ direction: 'long', invalidation: 95, target: null });
+    expect(alertPlanOf({ analysis: { entry: 100, stopLoss: 95, takeProfit1: 110, invalidationLevel: 94 } }, 'SELL')).toEqual({ direction: 'short', invalidation: 94, target: 110 });
   });
 
   it('niveis formatados sem perder casas de forex', () => {
