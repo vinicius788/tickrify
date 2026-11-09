@@ -67,7 +67,7 @@ import SetupsSection from "../dashboard/SetupsSection";
 import SetupPage from "../dashboard/SetupPage";
 import TradePanel from "../dashboard/TradePanel";
 import { displayAsset, tradeQueryKey, type OpenTrade, type TradeCloseReason } from "@/lib/api";
-import { SETUP_ID_PATTERN, formatSetupDay, useExpiryClock, isWatchOpen, useAlertActions, useSetupAlerts, useSetupVersions } from "@/lib/setups";
+import { SETUP_ID_PATTERN, formatSetupDay, useExpiryClock, isWatchOpen, useAlertActions, useAlertTabTitle, useSetupAlerts, useSetupVersions } from "@/lib/setups";
 import { openChat, useChatThread } from "@/lib/support-chat";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
@@ -445,7 +445,7 @@ const DashboardPage = () => {
 
   // Alertas de nivel (27/10/2026): o bloco Today, o contador no menu e no
   // titulo da aba, e o paywall `alerts` da conta travada.
-  const alertsQuery = useSetupAlerts(!isDemo);
+  const alertsQuery = useSetupAlerts(!isDemo, null, { background: true });
   const alertsUnseen = alertsQuery.data?.unseen ?? 0;
   const { seen: markAlertSeen } = useAlertActions();
   const watchedSetupIds = useMemo(
@@ -1819,14 +1819,7 @@ const DashboardPage = () => {
     path: location.pathname,
     noindex: true,
   });
-  // "(1) Dashboard | Tickrify": alerta disparado e ainda nao aberto, na aba do navegador.
-  useEffect(() => {
-    if (alertsUnseen <= 0) return;
-    document.title = `(${alertsUnseen}) ${document.title.replace(/^\(\d+\) /, '')}`;
-    return () => {
-      document.title = document.title.replace(/^\(\d+\) /, '');
-    };
-  }, [alertsUnseen, currentViewLabel]);
+  useAlertTabTitle(alertsUnseen, `${currentViewLabel}|${location.pathname}`);
 
   const sideState = (active: boolean) =>
     active ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]' : 'text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]';
