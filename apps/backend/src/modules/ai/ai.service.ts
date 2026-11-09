@@ -63,6 +63,7 @@ import {
 } from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
 import { SetupsService, recordSetupVersion } from './setups.service';
+import { createWatchAlert } from './setup-alerts.service';
 import { loadWatchContexts, watchSummaryOf } from './watch-pending';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from './analysis-data-coverage';
 import { tp1RFromDetail } from '../mail/analysis-result-email';
@@ -1336,6 +1337,12 @@ export class AiService implements OnModuleInit {
           (message) => this.logger.warn(message),
         );
       }
+      // WATCH vira alerta no nivel do plano (mesma chamada do worker). Nunca lanca.
+      await createWatchAlert(
+        this.prisma,
+        { analysisId, userId, result: normalizedPayload.fullResponse, recommendation: normalizedPayload.recommendation },
+        (message) => this.logger.log(message),
+      );
 
       const model = resolveModel(analysisType);
       await runPostHooks(pipelineCtx, aiResponse, [

@@ -1087,6 +1087,8 @@ export default {
     title: '価格が次に達したら通知',
     hintEmail: '10分ごとに価格を確認し、到達したらメールでお知らせします。',
     hintScreen: '10分ごとに価格を確認し、到達したらダッシュボードに表示します。',
+    watchingEmail: '価格が{level}に達したらメールでお知らせします',
+    watchingScreen: '価格が{level}に達したらダッシュボードに表示します',
     followsToo: 'アラートを作成すると、このセットアップもフォローされます。',
     labelEntry: 'エントリー',
     labelStop: 'ストップ',

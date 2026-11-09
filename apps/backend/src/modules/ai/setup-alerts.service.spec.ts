@@ -4,6 +4,7 @@ import {
   ALERT_RULES,
   SetupAlertsService,
   alertSuggestions,
+  createWatchAlert,
   findTrigger,
   runAlertMonitor,
   sideFor,
@@ -482,5 +483,176 @@ describe('runAlertMonitor', () => {
     await expect(run()).resolves.toEqual({ symbols: 0, checked: 0, triggered: 0, paused: 0 });
     expect(fetchWindow).not.toHaveBeenCalled();
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('createWatchAlert: todo WATCH vira alerta', () => {
+  const NOW = new Date('2026-10-27T12:30:00Z');
+  const WATCH = {
+    signalState: 'WATCH',
+    dataMode: 'real_data',
+    watchPlan: WATCH_BTC.result.watchPlan,
+    analysis: { symbol: 'BTCUSDT', timeframe: '15m', currentPrice: 77200 },
+  };
+  const INPUT = { analysisId: 'analysis00002', userId: 'u1', result: WATCH, recommendation: 'WAIT' };
+  const SETUP_ROW = { id: 'setup-auto00001', userId: 'u1', status: 'tracking', symbol: 'BTCUSDT', timeframe: '15m', rootAnalysisId: 'analysis00002', createdAt: NOW, lastAnalysisAt: NOW };
+
+  type Options = {
+    analysis?: Record<string, unknown> | null;
+    unsubscribed?: boolean;
+    used?: number;
+    subscriber?: boolean;
+    setupsWithAlerts?: number;
+    activeOnSetup?: number;
+    handled?: boolean;
+    existingSetup?: Record<string, unknown>;
+    trackedTotal?: number;
+  };
+
+  function fake(opts: Options = {}) {
+    let inserted = false;
+    const { prisma, calls } = makePrisma(
+      [
+        ['SELECT "lastPrice", "checkedAt" FROM', () => []],
+        ['a."groundingStats"', () => (opts.analysis === null ? [] : [{ id: INPUT.analysisId, setupId: null, createdAt: new Date(), groundingInterval: '15m', clerkUserId: 'clerk_1', ...opts.analysis }])],
+        ['COUNT(DISTINCT "setupId")', () => [{ n: opts.setupsWithAlerts ?? 0 }]],
+        ['COUNT(*)::int AS "n" FROM "tickrify"."SetupAlert"', () => [{ n: opts.activeOnSetup ?? 0 }]],
+        ['COUNT(*)::int AS "n" FROM "tickrify"."TrackedSetup"', () => [{ n: opts.trackedTotal ?? 0 }]],
+        ['SELECT EXISTS (SELECT 1 FROM "tickrify"."Subscription"', () => [{ ok: Boolean(opts.subscriber) }]],
+        ['AS "ok"', () => [{ ok: false }]],
+        ['SELECT "id" FROM "tickrify"."SetupAlert" WHERE "analysisId"', () => (opts.handled ? [{ id: 'alert-old000001' }] : [])],
+        ['INSERT INTO "tickrify"."TrackedSetup"', () => { inserted = true; return 1; }],
+        ['"rootAnalysisId" =', () => (opts.existingSetup ? [opts.existingSetup] : [])],
+        ['FROM "tickrify"."TrackedSetup"', () => (inserted ? [SETUP_ROW] : opts.existingSetup ? [opts.existingSetup] : [])],
+        ['WHERE a."id" =', (_text, values) => [{ id: values[0], setupId: SETUP_ROW.id, analysisId: INPUT.analysisId, symbol: 'BTCUSDT', level: 77800, label: 'entry', side: 'above', status: 'active', createdAt: NOW }]],
+      ],
+      {
+        adminAudit: { findFirst: jest.fn(async () => (opts.unsubscribed ? { id: 'audit' } : null)) },
+        analysis: { count: jest.fn(async () => opts.used ?? 0) },
+        subscription: { findFirst: jest.fn(async () => null) },
+      },
+    );
+    const texts = () => calls.map((c) => c.text);
+    return {
+      prisma,
+      calls,
+      alertInsert: () => calls.find((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"')),
+      setupInsert: () => texts().find((t) => t.includes('INSERT INTO "tickrify"."TrackedSetup"')),
+    };
+  }
+
+  it('WATCH com velas reais grava o setup seguido e o alerta entry no nivel do plano, e avisa o PostHog com auto', async () => {
+    const f = fake();
+    await expect(createWatchAlert(f.prisma, INPUT)).resolves.toBe('created');
+    expect(f.setupInsert()).toBeDefined();
+    expect(f.alertInsert()?.values).toEqual(expect.arrayContaining(['u1', SETUP_ROW.id, 'analysis00002', 'BTCUSDT', 'BTCUSDT', 77800, 'entry', 'above', 77200, true]));
+    const locks = f.calls.filter((c) => c.text.includes('pg_advisory_xact_lock'));
+    expect(locks.map((c) => c.values[0])).toEqual(['alerts:u1', 'setups:u1']);
+    expect(captureServer).toHaveBeenCalledWith('clerk_1', 'setup_alert_created', expect.objectContaining({
+      label: 'entry', prefilled: true, auto: true, symbol_class: 'crypto', is_subscriber: false,
+    }));
+    expect(f.prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('o lado sai do preco de agora, como no alerta manual', async () => {
+    fetchWindowFor.mockResolvedValue([[T, 77900, 78000, 77850, 77900]]);
+    const f = fake();
+    await createWatchAlert(f.prisma, INPUT);
+    expect(f.alertInsert()?.values).toEqual(expect.arrayContaining([77800, 'entry', 'below', 77900]));
+  });
+
+  it('analise que ja e versao de um setup seguido entra no mesmo setup, sem criar outro', async () => {
+    const f = fake({ analysis: { setupId: SETUP_ROW.id }, existingSetup: SETUP_ROW });
+    await expect(createWatchAlert(f.prisma, INPUT)).resolves.toBe('created');
+    expect(f.setupInsert()).toBeUndefined();
+    expect(f.alertInsert()?.values).toEqual(expect.arrayContaining([SETUP_ROW.id, 77800]));
+  });
+
+  it('assinante usa o teto de assinante', async () => {
+    const f = fake({ subscriber: true, setupsWithAlerts: 2 });
+    await expect(createWatchAlert(f.prisma, INPUT)).resolves.toBe('created');
+    expect(captureServer.mock.calls[0][2]).toMatchObject({ is_subscriber: true, trial_day: null });
+  });
+
+  it.each([
+    ['teto de setups com alerta', { setupsWithAlerts: ALERT_RULES.maxSetupsWithAlerts.free }, 'limit'],
+    ['teto de alertas no setup', { analysis: { setupId: SETUP_ROW.id }, existingSetup: SETUP_ROW, activeOnSetup: ALERT_RULES.maxActivePerSetup }, 'limit'],
+    ['teto de setups seguidos', { trackedTotal: 20 }, 'limit'],
+    ['descadastrado', { unsubscribed: true }, 'unsubscribed'],
+    ['gratis esgotado', { used: 50 }, 'free_locked'],
+    ['ja tratado (alerta desta analise cancelado pela pessoa)', { handled: true }, 'already_handled'],
+    ['setup largado pela pessoa', { analysis: { setupId: SETUP_ROW.id }, existingSetup: { ...SETUP_ROW, status: 'untracked' } }, 'already_handled'],
+    ['analise nao concluida', { analysis: null }, 'analysis_missing'],
+  ] as Array<[string, Options, string]>)('%s: nao cria e nao lanca', async (_name, opts, outcome) => {
+    const f = fake(opts);
+    await expect(createWatchAlert(f.prisma, INPUT)).resolves.toBe(outcome);
+    expect(f.alertInsert()).toBeUndefined();
+    expect(captureServer).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['fora do WATCH', { ...INPUT, result: BUY_GOLD.result, recommendation: 'BUY' }, 'not_watch'],
+    ['WATCH sem plano (analise antiga)', { ...INPUT, result: { ...WATCH, watchPlan: undefined } }, 'not_watch'],
+    ['niveis estimados do print', { ...INPUT, result: { ...WATCH, dataMode: 'print' } }, 'print_mode'],
+    ['ativo sem fonte de preco', { ...INPUT, result: { ...WATCH, analysis: { ...WATCH.analysis, symbol: 'Volatility 75 Index' } } }, 'no_price_source'],
+  ])('%s: nem consulta o banco', async (_name, input, outcome) => {
+    const f = fake();
+    await expect(createWatchAlert(f.prisma, input)).resolves.toBe(outcome);
+    expect(f.calls).toHaveLength(0);
+  });
+
+  it('janela do WATCH ja fechada: nao ha nivel para vigiar', async () => {
+    const f = fake({ analysis: { createdAt: new Date(Date.now() - 24 * 3600_000) } });
+    await expect(createWatchAlert(f.prisma, INPUT)).resolves.toBe('no_level');
+    expect(f.alertInsert()).toBeUndefined();
+  });
+
+  it.each([
+    ['preco no proprio nivel', 77800],
+    ['nivel longe demais do preco', 30000],
+  ])('%s: nao cria', async (_name, currentPrice) => {
+    const f = fake();
+    await expect(createWatchAlert(f.prisma, { ...INPUT, result: { ...WATCH, analysis: { ...WATCH.analysis, currentPrice } } })).resolves.toBe('level_rejected');
+    expect(f.alertInsert()).toBeUndefined();
+  });
+
+  it('banco fora do ar: a analise segue, so fica no log', async () => {
+    const f = fake();
+    f.prisma.$queryRaw = jest.fn(async () => {
+      throw new Error('db down');
+    });
+    const log = jest.fn();
+    await expect(createWatchAlert(f.prisma, INPUT, log)).resolves.toBe('error');
+    expect(log.mock.calls.flat().join(' ')).toContain('db down');
+  });
+});
+
+describe('options: alerta automatico na tela do WATCH', () => {
+  const active = { id: 'alert-auto00001', userId: 'u', setupId: SETUP.id, analysisId: WATCH_BTC.id, symbol: 'BTCUSDT', level: 77800, label: 'entry', side: 'above', status: 'active', createdAt: new Date(), triggeredAt: null, triggerPrice: null, seenAt: null };
+  const WATCH_REAL = { ...WATCH_BTC, result: { ...WATCH_BTC.result, dataMode: 'real_data' } };
+
+  async function options(analysis: unknown, alerts: unknown[], following = true) {
+    const made = await ready({ analysis });
+    (made.service as any).list = jest.fn(async () => ({ items: alerts, unseen: 0 }));
+    made.setups.findForAnalysis.mockResolvedValue({ setup: following ? SETUP : null } as any);
+    return made.service.options('u', WATCH_BTC.id, false);
+  }
+
+  it('WATCH com alerta entry ativo desta analise devolve watchAlert', async () => {
+    const out = await options(WATCH_REAL, [active]);
+    expect(out.watchAlert).toMatchObject({ id: 'alert-auto00001', level: 77800 });
+    expect(out.autoAlertPending).toBe(false);
+  });
+
+  it('alerta cancelado, de outra analise ou fora do WATCH nao vira watchAlert', async () => {
+    expect((await options(WATCH_REAL, [{ ...active, status: 'triggered' }])).watchAlert).toBeNull();
+    expect((await options(WATCH_REAL, [{ ...active, analysisId: 'analysis00009' }])).watchAlert).toBeNull();
+    expect((await options({ ...BUY_GOLD, createdAt: new Date() }, [{ ...active, analysisId: BUY_GOLD.id }])).watchAlert).toBeNull();
+  });
+
+  it('WATCH recem-concluido sem alerta gravado: a tela espera; passou a janela, nao espera mais', async () => {
+    expect((await options({ ...WATCH_REAL, updatedAt: new Date() }, [], false)).autoAlertPending).toBe(true);
+    expect((await options({ ...WATCH_REAL, updatedAt: new Date(Date.now() - ALERT_RULES.watchAutoPendingMs - 1000) }, [], false)).autoAlertPending).toBe(false);
+    expect((await options({ ...WATCH_BTC, updatedAt: new Date() }, [], false)).autoAlertPending).toBe(false);
   });
 });

@@ -52,7 +52,7 @@ import { ANALYSIS_RESULT_FLAG, runAnalysisResultSweep } from '../src/modules/mai
 import Stripe from 'stripe';
 import { getFoundingOffer } from '../src/modules/payments/founding-offer';
 import { recordSetupVersion } from '../src/modules/ai/setups.service';
-import { ALERT_RULES, runAlertMonitor } from '../src/modules/ai/setup-alerts.service';
+import { ALERT_RULES, createWatchAlert, runAlertMonitor } from '../src/modules/ai/setup-alerts.service';
 import { startTwelveDataReport } from '../src/modules/market/twelve-data';
 import { registerCandleStore } from '../src/modules/market/candle-store';
 import { SETUP_ALERT_EMAIL_FLAG, runSetupAlertEmailSweep } from '../src/modules/mail/setup-alert-email';
@@ -1382,6 +1382,14 @@ async function processAnalysis(job: Job<JobData>) {
         prisma,
         { analysisId, userId, setupId, analysisType: normalizedAnalysisType, isDemo: Boolean(isDemo) },
         (message) => console.warn(message),
+      );
+    }
+    // WATCH vira alerta no nivel do plano (mesma chamada do caminho sincrono). Nunca lanca.
+    if (userId) {
+      await createWatchAlert(
+        prisma,
+        { analysisId, userId, result: normalized.fullResponse, recommendation: normalized.recommendation },
+        (message) => console.log(message),
       );
     }
   } catch (error) {

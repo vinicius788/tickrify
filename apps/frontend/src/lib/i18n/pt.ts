@@ -1100,6 +1100,8 @@ export default {
     title: 'Me avise quando o preço chegar em',
     hintEmail: 'Checamos o preço a cada 10 minutos e mandamos um e-mail quando ele chegar lá.',
     hintScreen: 'Checamos o preço a cada 10 minutos e mostramos no seu painel quando ele chegar lá.',
+    watchingEmail: 'Vamos te avisar por e-mail quando o preço chegar a {level}',
+    watchingScreen: 'Vamos mostrar no seu painel quando o preço chegar a {level}',
     followsToo: 'Criar um alerta também segue este setup.',
     labelEntry: 'Entrada',
     labelStop: 'Stop',

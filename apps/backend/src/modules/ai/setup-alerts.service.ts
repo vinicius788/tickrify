@@ -16,8 +16,9 @@ import { getFreeQuota, type FreeQuotaCounter } from '../../common/free-quota';
 import { INTERVAL_MS, candleSourceFor, fetchFxLatest5m, fetchWindowFor, priceSymbolOf, type Candle, type CandleSource } from '../market/candles';
 import { TwelveDataUnavailableError, fxMarketClosed, monitorFxIntervalMs, twelveDataUsage } from '../market/twelve-data';
 import { extractShadowPlan } from '../../../worker/outcome.sweeper';
-import { SetupsService, readPlan } from './setups.service';
-import { watchSummaryOf } from './watch-pending';
+import { UNSUBSCRIBE_AUDIT_ACTION } from '../mail/lifecycle-email';
+import { SetupsService, findSetupOfAnalysis, followInTransaction, lockSetups, readPlan } from './setups.service';
+import { storedWatchPlan, watchSummaryOf } from './watch-pending';
 
 /**
  * Alertas de nivel dos setups acompanhados (27/10/2026, fase 1 da sessao diaria).
@@ -70,6 +71,8 @@ export const ALERT_RULES = {
   /** Disparados que a lista ainda mostra. */
   triggeredVisibleMs: 7 * 24 * HOUR,
   triggeredVisibleOnSetupMs: 30 * 24 * HOUR,
+  /** Depois de concluir um WATCH, quanto a tela espera o alerta automatico aparecer. */
+  watchAutoPendingMs: 15 * 1000,
 } as const;
 
 /** Nivel fora desta faixa do preco da analise e erro de digitacao (mesma regua do validador). */
@@ -254,7 +257,207 @@ function toView(row: AlertRow): AlertView {
   };
 }
 
-type AnalysisRow = { createdAt: Date; groundingInterval: string | null; id: string; status: string; recommendation: string | null; result: unknown; setupId: string | null };
+type AnalysisRow = { createdAt: Date; groundingInterval: string | null; id: string; status: string; recommendation: string | null; result: unknown; setupId: string | null; updatedAt?: Date | null };
+
+const levelInBand = (level: number, referencePrice: number) => level >= referencePrice * LEVEL_BAND.min && level <= referencePrice * LEVEL_BAND.max;
+
+const lockAlerts = (tx: RawPrisma, userId: string) => tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`alerts:${userId}`}))`;
+
+async function countSetupsWithAlerts(db: RawPrisma, userId: string, exceptSetupId: string | null = null): Promise<number> {
+  const except = exceptSetupId ? Prisma.sql`AND "setupId" <> ${exceptSetupId}` : Prisma.empty;
+  const [{ n }] = await db.$queryRaw<Array<{ n: number }>>`
+    SELECT COUNT(DISTINCT "setupId")::int AS "n" FROM "tickrify"."SetupAlert"
+    WHERE "userId" = ${userId} AND "status" = 'active' ${except}
+  `;
+  return Number(n) || 0;
+}
+
+/**
+ * Ultimo fechamento de 5m conhecido do ativo: o cache do monitor se for
+ * recente, senao uma busca. Forex/metal pede os ultimos 120 candles de 5m
+ * (o mesmo pedido do grounding, cache compartilhado; no fim de semana vale o
+ * fechamento de sexta). Sem cota ou falhou = null; nunca se inventa preco.
+ */
+async function latestAlertPrice(db: RawPrisma, priceSymbol: string, source: CandleSource): Promise<number | null> {
+  try {
+    const cached = await db.$queryRaw<Array<{ lastPrice: number | null; checkedAt: Date | null }>>`
+      SELECT "lastPrice", "checkedAt" FROM "tickrify"."AlertPriceCheck" WHERE "symbol" = ${priceSymbol} LIMIT 1
+    `;
+    const hit = cached[0];
+    if (hit?.lastPrice && hit.checkedAt && Date.now() - hit.checkedAt.getTime() < ALERT_RULES.cacheTtlMs[source]) {
+      return Number(hit.lastPrice);
+    }
+    const now = Date.now();
+    const candles =
+      source === 'fx'
+        ? await fetchFxLatest5m(priceSymbol, 'monitor', ALERT_RULES.cacheTtlMs.fx)
+        : await fetchWindowFor(priceSymbol, now - 2 * HOUR, now, ALERT_RULES.candleInterval, 1, 'monitor');
+    return candles?.length ? candles[candles.length - 1][4] : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Grava o alerta com o lock de alertas da pessoa ja tomado. Mesmo nivel ativo
+ * no setup devolve o alerta que existe; teto estourado lanca Conflict.
+ */
+async function insertAlertLocked(
+  tx: RawPrisma,
+  input: {
+    userId: string;
+    setupId: string;
+    analysisId: string;
+    symbol: string;
+    priceSymbol: string;
+    level: number;
+    label: AlertLabel;
+    side: AlertSide;
+    referencePrice: number;
+    cap: number;
+  },
+): Promise<{ row: AlertRow; created: boolean }> {
+  const { userId, setupId, level, cap } = input;
+  const same = await tx.$queryRaw<AlertRow[]>`
+    SELECT ${alertColumns()} FROM "tickrify"."SetupAlert" a
+    WHERE a."setupId" = ${setupId} AND a."userId" = ${userId} AND a."status" = 'active' AND a."level" = ${level}
+    LIMIT 1
+  `;
+  if (same[0]) return { row: same[0], created: false };
+  const [{ n }] = await tx.$queryRaw<Array<{ n: number }>>`
+    SELECT COUNT(*)::int AS "n" FROM "tickrify"."SetupAlert"
+    WHERE "setupId" = ${setupId} AND "userId" = ${userId} AND "status" = 'active'
+  `;
+  if (Number(n) >= ALERT_RULES.maxActivePerSetup) {
+    throw new ConflictException({
+      code: 'alert_setup_limit',
+      message: `A setup can have ${ALERT_RULES.maxActivePerSetup} active alerts. Cancel one to add another.`,
+    });
+  }
+  if (Number(n) === 0 && (await countSetupsWithAlerts(tx, userId, setupId)) >= cap) {
+    throw new ConflictException({ code: 'alert_limit', limit: cap, message: `You have alerts on ${cap} setups. Cancel one to add another.` });
+  }
+  const id = randomUUID();
+  await tx.$executeRaw`
+    INSERT INTO "tickrify"."SetupAlert"
+      ("id", "userId", "setupId", "analysisId", "symbol", "priceSymbol", "level", "label", "side", "referencePrice",
+       "prefilled", "status", "createdAt", "updatedAt", "watchFrom")
+    VALUES (${id}, ${userId}, ${setupId}, ${input.analysisId}, ${input.symbol}, ${input.priceSymbol}, ${level}, ${input.label},
+      ${input.side}, ${input.referencePrice}, ${input.label !== 'custom'}, 'active', NOW(), NOW(), NOW())
+  `;
+  const inserted = await tx.$queryRaw<AlertRow[]>`
+    SELECT ${alertColumns()} FROM "tickrify"."SetupAlert" a WHERE a."id" = ${id} LIMIT 1
+  `;
+  return { row: inserted[0], created: true };
+}
+
+export type WatchAlertOutcome =
+  | 'created'
+  | 'not_watch'
+  | 'print_mode'
+  | 'no_price_source'
+  | 'analysis_missing'
+  | 'unsubscribed'
+  | 'free_locked'
+  | 'no_level'
+  | 'no_price'
+  | 'level_rejected'
+  | 'already_handled'
+  | 'limit'
+  | 'error';
+
+/**
+ * Todo WATCH vira alerta sozinho (09/11/2026): quando o preco chega no nivel, o
+ * trader e chamado de volta. Fila e caminho sincrono chamam isto depois de
+ * gravar `completed`. Mesmas regras do alerta manual; o que nao cabe nelas nao
+ * cria nada e nao da erro: a analise nunca depende disto.
+ *
+ * Seguir e gravar o alerta acontecem na MESMA transacao: bater no teto nao
+ * deixa setup seguido sem alerta. Uma vez por analise: alerta cancelado pela
+ * pessoa nao volta, e setup largado continua largado.
+ */
+export async function createWatchAlert(
+  prisma: PrismaClient,
+  input: { analysisId: string; userId: string; result: unknown; recommendation: string | null },
+  log: (message: string) => void = () => undefined,
+): Promise<WatchAlertOutcome> {
+  const { analysisId, userId, result, recommendation } = input;
+  if (!storedWatchPlan(result, recommendation)) return 'not_watch';
+  const outcome = await (async (): Promise<WatchAlertOutcome> => {
+    if (record(result).dataMode !== 'real_data') return 'print_mode';
+    const plan = readPlan(result, recommendation);
+    const price = priceSymbolOf(plan.symbol);
+    if (!price || !plan.symbol) return 'no_price_source';
+    const symbol = plan.symbol;
+
+    const [analysis] = await prisma.$queryRaw<
+      Array<{ id: string; setupId: string | null; createdAt: Date; groundingInterval: string | null; clerkUserId: string | null }>
+    >`
+      SELECT a."id", a."setupId", a."createdAt", a."groundingStats"->>'interval' AS "groundingInterval", u."clerkUserId"
+      FROM "tickrify"."Analysis" a
+      JOIN "tickrify"."User" u ON u."id" = a."userId"
+      WHERE a."id" = ${analysisId} AND a."userId" = ${userId} AND a."status" = 'completed'
+      LIMIT 1
+    `;
+    if (!analysis) return 'analysis_missing';
+    const unsubscribed = await prisma.adminAudit.findFirst({
+      where: { action: UNSUBSCRIBE_AUDIT_ACTION, targetUserId: userId },
+      select: { id: true },
+    });
+    if (unsubscribed) return 'unsubscribed';
+    if (await alertsPausedFor(prisma, userId)) return 'free_locked';
+
+    const level = alertSuggestions(result, recommendation, analysis).find((s) => s.label === 'entry')?.level;
+    if (level == null) return 'no_level';
+    const referencePrice = (await latestAlertPrice(prisma, price.priceSymbol, price.source)) ?? positive(record(record(result).analysis).currentPrice);
+    if (referencePrice == null) return 'no_price';
+    const side = levelInBand(level, referencePrice) ? sideFor(level, referencePrice) : null;
+    if (!side) return 'level_rejected';
+
+    const [{ ok: isSubscriber }] = await prisma.$queryRaw<Array<{ ok: boolean }>>`
+      SELECT EXISTS (SELECT 1 FROM "tickrify"."Subscription" WHERE "userId" = ${userId} AND "status" IN ('active', 'trialing')) AS "ok"
+    `;
+    const cap = isSubscriber ? ALERT_RULES.maxSetupsWithAlerts.subscriber : ALERT_RULES.maxSetupsWithAlerts.free;
+
+    const saved = await prisma.$transaction(async (tx) => {
+      await lockAlerts(tx, userId);
+      const handled = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "tickrify"."SetupAlert" WHERE "analysisId" = ${analysisId} AND "userId" = ${userId} LIMIT 1
+      `;
+      if (handled[0]) return null;
+      await lockSetups(tx, userId);
+      const existing = await findSetupOfAnalysis(tx, userId, analysis);
+      if (existing && existing.status !== 'tracking') return null;
+      const { setup } = await followInTransaction(tx, userId, analysis, plan);
+      const { row, created } = await insertAlertLocked(tx, {
+        userId, setupId: setup.id, analysisId, symbol, priceSymbol: price.priceSymbol,
+        level, label: 'entry', side, referencePrice, cap,
+      });
+      return created ? { alertId: row.id, setupId: setup.id } : null;
+    });
+    if (!saved) return 'already_handled';
+
+    if (analysis.clerkUserId) {
+      captureServer(analysis.clerkUserId, 'setup_alert_created', {
+        alertId: saved.alertId,
+        setupId: saved.setupId,
+        label: 'entry',
+        prefilled: true,
+        auto: true,
+        symbol_class: price.symbolClass,
+        is_subscriber: isSubscriber,
+        trial_day: isSubscriber ? null : (await getFreeQuota(prisma, userId)).trial?.dayIndex ?? null,
+      });
+    }
+    return 'created';
+  })().catch((error: unknown): WatchAlertOutcome => {
+    if (error instanceof ConflictException) return 'limit';
+    log(`[alerts] Alerta automatico falhou analysis=${analysisId}: ${error instanceof Error ? error.message : error}`);
+    return 'error';
+  });
+  log(`[alerts] watch-auto analysis=${analysisId} outcome=${outcome}`);
+  return outcome;
+}
 
 @Injectable()
 export class SetupAlertsService implements OnModuleInit {
@@ -285,7 +488,7 @@ export class SetupAlertsService implements OnModuleInit {
 
   private async loadAnalysis(userId: string, analysisId: string): Promise<AnalysisRow> {
     const rows = await this.prisma.$queryRaw<AnalysisRow[]>`
-      SELECT "id", "status", "recommendation", "result", "setupId", "createdAt", "groundingStats"->>'interval' AS "groundingInterval"
+      SELECT "id", "status", "recommendation", "result", "setupId", "createdAt", "updatedAt", "groundingStats"->>'interval' AS "groundingInterval"
       FROM "tickrify"."Analysis"
       WHERE "id" = ${analysisId} AND "userId" = ${userId}
       LIMIT 1
@@ -295,13 +498,15 @@ export class SetupAlertsService implements OnModuleInit {
     return analysis;
   }
 
-  private async countSetupsWithAlerts(db: RawPrisma, userId: string, exceptSetupId: string | null = null): Promise<number> {
-    const except = exceptSetupId ? Prisma.sql`AND "setupId" <> ${exceptSetupId}` : Prisma.empty;
-    const [{ n }] = await db.$queryRaw<Array<{ n: number }>>`
-      SELECT COUNT(DISTINCT "setupId")::int AS "n" FROM "tickrify"."SetupAlert"
-      WHERE "userId" = ${userId} AND "status" = 'active' ${except}
+  /** WATCH recem-concluido cujo alerta automatico ainda nao foi gravado (a tela espera em vez de oferecer criar). */
+  private async watchAlertPending(userId: string, analysis: AnalysisRow, hasPriceSource: boolean): Promise<boolean> {
+    const age = analysis.updatedAt ? Date.now() - analysis.updatedAt.getTime() : Infinity;
+    if (age > ALERT_RULES.watchAutoPendingMs || !hasPriceSource) return false;
+    if (record(analysis.result).dataMode !== 'real_data' || !storedWatchPlan(analysis.result, analysis.recommendation)) return false;
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "tickrify"."SetupAlert" WHERE "analysisId" = ${analysis.id} AND "userId" = ${userId} LIMIT 1
     `;
-    return Number(n) || 0;
+    return rows.length === 0;
   }
 
   /**
@@ -326,10 +531,13 @@ export class SetupAlertsService implements OnModuleInit {
       suggestions: price ? alertSuggestions(analysis.result, analysis.recommendation, analysis) : [],
       setupId: following?.id ?? null,
       alerts,
+      // WATCH com alerta valendo no nivel do plano: a tela troca o formulario por "We'll email you".
+      watchAlert: plan.signalState === 'WATCH' ? alerts.find((a) => a.status === 'active' && a.label === 'entry' && a.analysisId === analysisId) ?? null : null,
+      autoAlertPending: await this.watchAlertPending(userId, analysis, Boolean(price)),
       limits: {
         perSetup: ALERT_RULES.maxActivePerSetup,
         maxSetups: isSubscriber ? ALERT_RULES.maxSetupsWithAlerts.subscriber : ALERT_RULES.maxSetupsWithAlerts.free,
-        setupsUsed: await this.countSetupsWithAlerts(this.prisma, userId),
+        setupsUsed: await countSetupsWithAlerts(this.prisma, userId),
       },
     };
   }
@@ -352,6 +560,7 @@ export class SetupAlertsService implements OnModuleInit {
     if (!price || !plan.symbol) {
       throw new UnprocessableEntityException({ code: 'alert_unavailable', message: "Price alerts aren't available for this asset yet." });
     }
+    const symbol = plan.symbol;
     const level = input.level;
     const suggestion = alertSuggestions(analysis.result, analysis.recommendation, analysis).find((s) => s.label === input.label);
     if (input.label !== 'custom' && (!suggestion || Math.abs(suggestion.level - level) > Math.abs(level) * 1e-9)) {
@@ -361,11 +570,11 @@ export class SetupAlertsService implements OnModuleInit {
     // uma analise antiga, com o preco ja longe, dispararia na primeira volta sem
     // o preco ter ido ate o nivel. O preco da analise so vale sem preco real.
     const referencePrice =
-      (await this.latestPrice(price.priceSymbol, price.source)) ?? positive(record(record(analysis.result).analysis).currentPrice);
+      (await latestAlertPrice(this.prisma, price.priceSymbol, price.source)) ?? positive(record(record(analysis.result).analysis).currentPrice);
     if (referencePrice == null) {
       throw new UnprocessableEntityException({ code: 'alert_price_unavailable', message: 'We could not read the current price. Try again later.' });
     }
-    if (level < referencePrice * LEVEL_BAND.min || level > referencePrice * LEVEL_BAND.max) {
+    if (!levelInBand(level, referencePrice)) {
       throw new BadRequestException({ code: 'alert_level_out_of_range', message: 'This level is too far from the current price.' });
     }
     const side = sideFor(level, referencePrice);
@@ -375,38 +584,11 @@ export class SetupAlertsService implements OnModuleInit {
     const cap = context.isSubscriber ? ALERT_RULES.maxSetupsWithAlerts.subscriber : ALERT_RULES.maxSetupsWithAlerts.free;
 
     const { row, created } = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`alerts:${user.id}`}))`;
-      const same = await tx.$queryRaw<AlertRow[]>`
-        SELECT ${alertColumns()} FROM "tickrify"."SetupAlert" a
-        WHERE a."setupId" = ${setup.id} AND a."userId" = ${user.id} AND a."status" = 'active' AND a."level" = ${level}
-        LIMIT 1
-      `;
-      if (same[0]) return { row: same[0], created: false };
-      const [{ n }] = await tx.$queryRaw<Array<{ n: number }>>`
-        SELECT COUNT(*)::int AS "n" FROM "tickrify"."SetupAlert"
-        WHERE "setupId" = ${setup.id} AND "userId" = ${user.id} AND "status" = 'active'
-      `;
-      if (Number(n) >= ALERT_RULES.maxActivePerSetup) {
-        throw new ConflictException({
-          code: 'alert_setup_limit',
-          message: `A setup can have ${ALERT_RULES.maxActivePerSetup} active alerts. Cancel one to add another.`,
-        });
-      }
-      if (Number(n) === 0 && (await this.countSetupsWithAlerts(tx, user.id, setup.id)) >= cap) {
-        throw new ConflictException({ code: 'alert_limit', limit: cap, message: `You have alerts on ${cap} setups. Cancel one to add another.` });
-      }
-      const id = randomUUID();
-      await tx.$executeRaw`
-        INSERT INTO "tickrify"."SetupAlert"
-          ("id", "userId", "setupId", "analysisId", "symbol", "priceSymbol", "level", "label", "side", "referencePrice",
-           "prefilled", "status", "createdAt", "updatedAt", "watchFrom")
-        VALUES (${id}, ${user.id}, ${setup.id}, ${input.analysisId}, ${plan.symbol}, ${price.priceSymbol}, ${level}, ${input.label},
-          ${side}, ${referencePrice}, ${input.label !== 'custom'}, 'active', NOW(), NOW(), NOW())
-      `;
-      const inserted = await tx.$queryRaw<AlertRow[]>`
-        SELECT ${alertColumns()} FROM "tickrify"."SetupAlert" a WHERE a."id" = ${id} LIMIT 1
-      `;
-      return { row: inserted[0], created: true };
+      await lockAlerts(tx, user.id);
+      return insertAlertLocked(tx, {
+        userId: user.id, setupId: setup.id, analysisId: input.analysisId, symbol, priceSymbol: price.priceSymbol,
+        level, label: input.label, side, referencePrice, cap,
+      });
     });
 
     if (created && user.clerkUserId) {
@@ -421,32 +603,6 @@ export class SetupAlertsService implements OnModuleInit {
       });
     }
     return { alert: toView({ ...row, timeframe: setup.timeframe }), setupId: setup.id };
-  }
-
-  /**
-   * Ultimo fechamento de 5m conhecido do ativo: o cache do monitor se for
-   * recente, senao uma busca. Forex/metal pede os ultimos 120 candles de 5m
-   * (o mesmo pedido do grounding, cache compartilhado; no fim de semana vale o
-   * fechamento de sexta). Sem cota ou falhou = null; nunca se inventa preco.
-   */
-  private async latestPrice(priceSymbol: string, source: CandleSource): Promise<number | null> {
-    try {
-      const cached = await this.prisma.$queryRaw<Array<{ lastPrice: number | null; checkedAt: Date | null }>>`
-        SELECT "lastPrice", "checkedAt" FROM "tickrify"."AlertPriceCheck" WHERE "symbol" = ${priceSymbol} LIMIT 1
-      `;
-      const hit = cached[0];
-      if (hit?.lastPrice && hit.checkedAt && Date.now() - hit.checkedAt.getTime() < ALERT_RULES.cacheTtlMs[source]) {
-        return Number(hit.lastPrice);
-      }
-      const now = Date.now();
-      const candles =
-        source === 'fx'
-          ? await fetchFxLatest5m(priceSymbol, 'monitor', ALERT_RULES.cacheTtlMs.fx)
-          : await fetchWindowFor(priceSymbol, now - 2 * HOUR, now, ALERT_RULES.candleInterval, 1, 'monitor');
-      return candles?.length ? candles[candles.length - 1][4] : null;
-    } catch {
-      return null;
-    }
   }
 
   /**

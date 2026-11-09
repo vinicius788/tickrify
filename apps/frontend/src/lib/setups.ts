@@ -91,6 +91,10 @@ export interface SetupAlertOptions {
   suggestions: Array<{ label: Exclude<AlertLabel, 'custom'>; level: number }>;
   setupId: string | null;
   alerts: SetupAlert[];
+  /** WATCH com alerta valendo no nivel do plano. */
+  watchAlert?: SetupAlert | null;
+  /** WATCH recem-concluido: o servidor ainda vai gravar o alerta automatico. */
+  autoAlertPending?: boolean;
   limits: { perSetup: number; maxSetups: number; setupsUsed: number };
   emailEnabled: boolean;
 }
@@ -221,6 +225,7 @@ export function useAlertOptions(analysisId: string | null) {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     retry: false,
+    refetchInterval: (query) => (query.state.data?.autoAlertPending ? 2_000 : false),
   });
 }
 
