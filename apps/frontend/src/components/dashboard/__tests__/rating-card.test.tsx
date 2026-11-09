@@ -77,17 +77,19 @@ describe('estrelas abaixo do resultado', () => {
 
 describe('authenticated free/trial usefulness', () => {
   let observer: IntersectionObserverCallback;
+  let observersCreated = 0;
   let account = 0;
   let userId: string;
   let fetchMock: ReturnType<typeof vi.fn>;
   beforeEach(() => {
     window.localStorage.clear();
+    observersCreated = 0;
     userId = `usefulness-test-${++account}`;
     window.localStorage.setItem('tickrify-language', 'en');
     fetchMock = vi.fn(async (_url, init) => ({ ok: true, json: async () => init?.method === 'GET' ? { eligible: true, modality: 'trial', verdict: 'WATCH' } : { id: 'cmrating12345', duplicate: false } }));
     vi.stubGlobal('fetch', fetchMock);
     vi.stubGlobal('IntersectionObserver', class {
-      constructor(callback: IntersectionObserverCallback) { observer = callback; }
+      constructor(callback: IntersectionObserverCallback) { observer = callback; observersCreated += 1; }
       observe() {} disconnect() {} unobserve() {}
     });
   });
@@ -98,6 +100,7 @@ describe('authenticated free/trial usefulness', () => {
   async function show() {
     card();
     await screen.findByRole('region', { name: 'Was this analysis useful?' });
+    await waitFor(() => expect(observersCreated).toBeGreaterThan(0));
   }
   function enterView() {
     act(() => observer([{ isIntersecting: true, intersectionRatio: 0.75 } as IntersectionObserverEntry], {} as IntersectionObserver));
