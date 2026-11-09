@@ -1662,6 +1662,7 @@ const DashboardPage = () => {
                   return tone === 'buy' ? 'BUY' : tone === 'sell' ? 'SELL' : 'WAIT';
                 })()}
                 base={base}
+                readHasLevels={Boolean(analysisData.fullResponse?.aiLevel || analysisData.fullResponse?.levelMap?.above || analysisData.fullResponse?.levelMap?.below)}
               />
             ) : null}
             {/* Pagantes mantêm as estrelas; gratuitos autenticados avaliam utilidade. */}

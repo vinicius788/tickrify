@@ -98,6 +98,16 @@ export function WatchPlanChart({ plan, currentPrice, formatPrice, estimated = fa
           <span>{w.title}</span>
         </p>
         <p className="mb-3 text-xs text-[var(--text-secondary)]">{w.notSignal}</p>
+        {levels ? (
+          <p data-testid="conditional-plan" className="mb-3 font-terminal text-xs text-[var(--text-primary)]">
+            {t.pending.planIf
+              .replace(/\{level\}/g, formatPrice(levels.entry))
+              .replace('{side}', plan.direction === 'long' ? t.pending.sideBuy : t.pending.sideSell)
+              .replace('{stop}', formatPrice(levels.stopLoss))
+              .replace('{target}', formatPrice(levels.takeProfit1))
+              .replace('{r}', formatNumber(levels.tp1R, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }))}
+          </p>
+        ) : null}
         {rejected && (
           <p data-testid="targets-rejected" className="-mt-2 mb-3 text-xs text-[var(--text-secondary)]">
             {w.targetsRejected}

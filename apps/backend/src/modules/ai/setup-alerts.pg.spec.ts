@@ -5,11 +5,13 @@ import { SetupsService } from './setups.service';
 import { ALERT_RULES, SetupAlertsService, createWatchAlert, runAlertMonitor } from './setup-alerts.service';
 import { runSetupAlertEmailSweep } from '../mail/setup-alert-email';
 import type { Candle } from '../market/candles';
+import { __setTwelveDataForTests } from '../market/twelve-data';
+import { recentCandles, registerCandleStore } from '../market/candle-store';
 
 jest.mock('../market/candles', () => ({
   ...jest.requireActual('../market/candles'),
   // Sem preco de mercado por padrao: a criacao cai no preco da analise.
-  fetchWindowFor: jest.fn(async () => null),
+  fetchCrypto1m: jest.fn(async () => null),
 }));
 jest.mock('../../common/analytics/posthog', () => ({
   ...jest.requireActual('../../common/analytics/posthog'),
@@ -164,18 +166,18 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
     const now = new Date(created + 30 * 60 * 1000);
     const firstCandle = Math.ceil(created / M5) * M5;
     const candles: Candle[] = [[firstCandle - M5, 100, 120, 99, 101], [firstCandle + M5, 101, 111, 100, 109]];
-    const fetchWindow = jest.fn(async () => candles);
-    const run = () => runAlertMonitor({ prisma, now: () => now, fetchWindow, log: () => undefined });
+    const fetchCrypto = jest.fn(async () => candles);
+    const run = () => runAlertMonitor({ prisma, now: () => now, fetchCrypto, log: () => undefined });
     const [a, b] = await Promise.all([run(), run()]);
-    expect(fetchWindow).toHaveBeenCalledTimes(1);
+    expect(fetchCrypto).toHaveBeenCalledTimes(1);
     expect(a.triggered + b.triggered).toBe(1);
     const [row] = await prisma.$queryRawUnsafe('SELECT "status", "triggerPrice", "triggeredAt" FROM tickrify."SetupAlert" WHERE "id" = $1', alert.id);
     // O candle anterior a criacao foi a 120 e nao conta: o disparo e o seguinte.
     expect(row).toMatchObject({ status: 'triggered', triggerPrice: 111 });
     expect(new Date(row.triggeredAt).getTime()).toBe(firstCandle + M5);
     // Dentro do TTL o ativo nao e buscado de novo.
-    await runAlertMonitor({ prisma, now: () => new Date(now.getTime() + 60_000), fetchWindow, log: () => undefined });
-    expect(fetchWindow).toHaveBeenCalledTimes(1);
+    await runAlertMonitor({ prisma, now: () => new Date(now.getTime() + 30_000), fetchCrypto, log: () => undefined });
+    expect(fetchCrypto).toHaveBeenCalledTimes(1);
     const [check] = await prisma.$queryRawUnsafe('SELECT "lastPrice" FROM tickrify."AlertPriceCheck" WHERE "symbol" = $1', 'BTCUSDT');
     expect(check.lastPrice).toBe(109);
   });
@@ -188,9 +190,9 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
     });
     const t0 = new Date(alert.createdAt).getTime();
     const pausedAt = new Date(t0 + 2 * H);
-    const fetchWindow = jest.fn(async (): Promise<Candle[]> => [[Math.ceil(t0 / M5) * M5 + M5, 100, 115, 99, 112]]);
-    await expect(runAlertMonitor({ prisma, now: () => pausedAt, fetchWindow, log: () => undefined })).resolves.toMatchObject({ paused: 1, triggered: 0 });
-    expect(fetchWindow).not.toHaveBeenCalled();
+    const fetchCrypto = jest.fn(async (): Promise<Candle[]> => [[Math.ceil(t0 / M5) * M5 + M5, 100, 115, 99, 112]]);
+    await expect(runAlertMonitor({ prisma, now: () => pausedAt, fetchCrypto, log: () => undefined })).resolves.toMatchObject({ paused: 1, triggered: 0 });
+    expect(fetchCrypto).not.toHaveBeenCalled();
     let [row] = await prisma.$queryRawUnsafe('SELECT "status", "watchFrom" FROM tickrify."SetupAlert" WHERE "id" = $1', alert.id);
     expect(row.status).toBe('active');
     expect(new Date(row.watchFrom).getTime()).toBe(pausedAt.getTime());
@@ -198,9 +200,34 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
     await prisma.$executeRawUnsafe(`INSERT INTO tickrify."Subscription" ("id","userId","stripeId","status","updatedAt") VALUES ($1,$2,$3,'active',NOW())`, randomUUID(), u, `sub_${u}`);
     const later = new Date(pausedAt.getTime() + 20 * 60 * 1000);
     // O candle de 115 e de ANTES da pausa: nao dispara na volta.
-    await expect(runAlertMonitor({ prisma, now: () => later, fetchWindow, log: () => undefined })).resolves.toMatchObject({ triggered: 0 });
+    await expect(runAlertMonitor({ prisma, now: () => later, fetchCrypto, log: () => undefined })).resolves.toMatchObject({ triggered: 0 });
     [row] = await prisma.$queryRawUnsafe('SELECT "status" FROM tickrify."SetupAlert" WHERE "id" = $1', alert.id);
     expect(row.status).toBe('active');
+  });
+
+  it('armazem de velas: a busca do Twelve Data apaga o que foi gravado no fuso errado', async () => {
+    const NOW = new Date('2026-11-09T11:46:00Z');
+    const LAST = Date.parse('2026-11-09T11:45:00Z');
+    __setTwelveDataForTests({ now: () => NOW });
+    await registerCandleStore(prisma, () => undefined);
+    // Linhas antigas: 11h a frente, e uma no meio do fim de semana.
+    const stale = [LAST + 11 * H, LAST + 2 * M5 + 7 * H, Date.parse('2026-11-07T09:00:00Z')];
+    for (const t of stale) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO tickrify."MarketCandle" ("symbol","timeframe","openTime","open","high","low","close","source") VALUES ('XAUUSD','5m',$1::timestamp(3),1,2,0,1,'twelvedata')`,
+        new Date(t).toISOString(),
+      );
+    }
+    const stamp = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({ values: Array.from({ length: 40 }, (_, i) => ({ datetime: stamp(LAST - i * M5), open: '4105', high: '4110', low: '4100', close: '4108' })) }),
+    } as any);
+    const got = await recentCandles('XAUUSD', '5m', 'analysis', NOW.getTime());
+    fetchSpy.mockRestore();
+    expect(got.candles).toHaveLength(40);
+    const rows = await prisma.$queryRawUnsafe(`SELECT MIN("openTime") AS "min", MAX("openTime") AS "max", COUNT(*)::int AS "n" FROM tickrify."MarketCandle" WHERE "symbol" = 'XAUUSD'`);
+    expect(rows[0]).toEqual({ min: new Date(LAST - 39 * M5), max: new Date(LAST), n: 40 });
   });
 
   it('largar o setup cancela os alertas e o monitor nao olha mais', async () => {
@@ -244,7 +271,7 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
     });
 
     describe('expiracao com relogio falso', () => {
-      const monitor = (now: Date) => runAlertMonitor({ prisma, now: () => now, fetchWindow: jest.fn(async () => []), isPaused: async () => false, log: () => undefined });
+      const monitor = (now: Date) => runAlertMonitor({ prisma, now: () => now, fetchCrypto: jest.fn(async () => []), isPaused: async () => false, log: () => undefined });
       const expiry = async (userId: string) => (await prisma.$queryRawUnsafe(`SELECT "expiresAt" FROM tickrify."SetupAlert" WHERE "userId" = $1`, userId))[0].expiresAt as Date;
 
       it('automatico cancela quando a janela fecha e libera o teto; o feito a mao continua', async () => {

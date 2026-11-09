@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import JournalCalendar from '@/components/dashboard/JournalCalendar';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 
-vi.mock('@clerk/clerk-react', () => ({ useUser: () => ({ user: { id: 'u-1' } }) }));
+vi.mock('@clerk/clerk-react', () => ({ useUser: () => ({ user: { id: 'u-1' } }), useAuth: () => ({ getToken: vi.fn() }) }));
 const getJournal = vi.fn();
 const setTradeNote = vi.fn();
 vi.mock('@/lib/api', () => ({ useAPIClient: () => ({ getJournal, setTradeNote }) }));

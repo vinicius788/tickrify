@@ -110,7 +110,7 @@ describe('recentCandles sem banco (testes, scripts): busca direto', () => {
     });
     beforeEach(() => {
       process.env.TWELVE_DATA_API_KEY = 'synthetic-not-a-credential';
-      fetchSpy.mockResolvedValue(json({ values: tdValues, meta: { exchange_timezone: 'UTC' } }));
+      fetchSpy.mockResolvedValue(json({ values: tdValues }));
     });
 
     it('a mesma requisicao de sempre e o cache do medidor: uma chamada para dois pedidos', async () => {
@@ -118,7 +118,7 @@ describe('recentCandles sem banco (testes, scripts): busca direto', () => {
       const second = await recentCandles('XAUUSD', '5m');
       expect(fetchSpy).toHaveBeenCalledTimes(1);
       expect(String(fetchSpy.mock.calls[0][0])).toBe(
-        'https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&outputsize=120&apikey=synthetic-not-a-credential',
+        'https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&timezone=UTC&outputsize=120&apikey=synthetic-not-a-credential',
       );
       expect(second.candles).toEqual(first.candles);
       // Mais antiga primeiro, volume zerado.

@@ -6,7 +6,7 @@ import type { GroundingStats } from '../../modules/ai/analysis-data-coverage';
 import type { EntryLevels } from '../utils/plan-engine';
 import type { PriceLocation, SignalDecisionResult, SignalState, ValidatorAction, ValidatorNote, ValidatorReason, WatchReach } from '../utils/signal-decision';
 import type { WatchPlan } from '../utils/plan-engine';
-import type { LevelMap } from '../utils/level-map';
+import type { AiLevel, LevelMap } from '../utils/level-map';
 import type { ProviderComparison } from '../../modules/ai/vision-model';
 
 export interface AnalysisEvidence {
@@ -36,6 +36,8 @@ export interface AIAnalysisResponse {
   watchLevels: EntryLevels | null;
   /** NO_TRADE com REAL DATA: niveis dos dois lados do preco (level-map.ts); null fora disso. */
   levelMap: LevelMap | null;
+  /** NO_TRADE em que o validador recusou o plano do modelo: o preco que a IA marcou, so para a tela. */
+  aiLevel?: AiLevel | null;
   /** Cada mudanca de estado com o motivo, escrita pelo codigo (nunca pelo modelo). */
   validatorNotes: ValidatorNote[];
   /** So quando o plano anterior do setup entrou no prompt (setup-continuation.ts). */

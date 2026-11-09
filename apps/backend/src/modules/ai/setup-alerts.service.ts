@@ -13,12 +13,12 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { captureServer } from '../../common/analytics/posthog';
 import { getFreeQuota, type FreeQuotaCounter } from '../../common/free-quota';
-import { INTERVAL_MS, candleSourceFor, fetchFxLatest5m, fetchWindowFor, priceSymbolOf, type Candle, type CandleSource } from '../market/candles';
-import { TwelveDataUnavailableError, fxMarketClosed, monitorFxIntervalMs, twelveDataUsage } from '../market/twelve-data';
+import { INTERVAL_MS, candleSourceFor, fetchCrypto1m, fetchFxLatest5m, priceSymbolOf, type Candle, type CandleInterval, type CandleSource } from '../market/candles';
+import { TwelveDataUnavailableError, fxMarketClosed, monitorFxIntervals, twelveDataUsage } from '../market/twelve-data';
 import { extractShadowPlan } from '../../../worker/outcome.sweeper';
 import { UNSUBSCRIBE_AUDIT_ACTION } from '../mail/lifecycle-email';
 import { SetupsService, findSetupOfAnalysis, followInTransaction, lockSetups, readPlan } from './setups.service';
-import { storedWatchPlan, watchSummaryOf } from './watch-pending';
+import { aiLevelExpiresAt, storedAiLevel, loadWatchContexts, storedWatchPlan, watchSummaryOf, type WatchSummary } from './watch-pending';
 
 /**
  * Alertas de nivel dos setups acompanhados (27/10/2026, fase 1 da sessao diaria).
@@ -26,8 +26,9 @@ import { storedWatchPlan, watchSummaryOf } from './watch-pending';
  * Por que existe: de quem analisa, so 16% volta em outro dia; no trial, 76
  * usaram no dia 1 e 16 no dia 2. O setup acompanhado ja guardava o caminho de
  * volta, mas nada chamava o trader quando o preco chegava no nivel. Aqui o
- * Tickrify vigia o nivel em candles reais de 5m e, quando ele e tocado, marca o
- * alerta como disparado (o e-mail sai por setup-alert-email.ts).
+ * Tickrify vigia o nivel em candles reais (1m em cripto, 5m em forex e ouro) e,
+ * quando ele e tocado, marca o alerta como disparado (o e-mail sai por
+ * setup-alert-email.ts, na mesma volta).
  *
  * Regras que nao se dobram:
  * - Alerta e de um setup (TrackedSetup): criar segue o setup se preciso.
@@ -56,17 +57,22 @@ export const ALERT_RULES = {
   maxActivePerSetup: 3,
   /** Setups com ao menos 1 alerta ativo, por pessoa. */
   maxSetupsWithAlerts: { free: 2, subscriber: 10 },
-  monitorIntervalMs: 10 * MINUTE,
-  candleInterval: '5m' as const,
+  /** A volta e de 1 min; forex/metal so buscam quando o intervalo do orcamento vence. */
+  monitorIntervalMs: MINUTE,
+  candleInterval: { crypto: '1m', fx: '5m' } as Record<CandleSource, CandleInterval>,
   /** Cache por ativo para todas as contas (Twelve Data tem cota diaria). */
-  cacheTtlMs: { crypto: 5 * MINUTE, fx: 10 * MINUTE } as Record<CandleSource, number>,
+  cacheTtlMs: { crypto: MINUTE, fx: 10 * MINUTE } as Record<CandleSource, number>,
+  /** Sem disparo novo, de quanto em quanto o e-mail tenta de novo o que a Resend recusou. */
+  emailRetryMs: 10 * MINUTE,
+  /** A trava da conta sao varias consultas: nao refazer a cada minuto, por pessoa. */
+  pauseCheckTtlMs: 5 * MINUTE,
   /**
    * Forex/metais buscados por volta. O Twelve Data gratis aceita 8 pedidos por
    * minuto (o grounding da analise usa a mesma chave): o que passar fica para a
    * proxima volta, na ordem de quem foi checado ha mais tempo.
    */
   maxFxSymbolsPerRun: 5,
-  /** Janela maxima de candles por busca (100 candles de 5m). */
+  /** Janela maxima de candles por busca (worker parado por algumas horas). */
   lookbackMs: 8 * HOUR,
   /** Disparados que a lista ainda mostra. */
   triggeredVisibleMs: 7 * 24 * HOUR,
@@ -75,10 +81,20 @@ export const ALERT_RULES = {
   watchAutoPendingMs: 15 * 1000,
 } as const;
 
+/** Secao "Watching" do My Trades e do Diario. */
+export const WATCHING_RULES = {
+  lookbackMs: 21 * 24 * HOUR,
+  /** WATCH encerrado continua na secao por este tempo. */
+  closedVisibleMs: 7 * 24 * HOUR,
+  /** Preco mais velho que isto nao vira "distancia atual" (fora do fim de semana do forex). */
+  priceFreshMs: 2 * HOUR,
+  maxItems: 20,
+} as const;
+
 /** Nivel fora desta faixa do preco da analise e erro de digitacao (mesma regua do validador). */
 const LEVEL_BAND = { min: 0.5, max: 2 };
-// Um pouco antes do TTL: as varreduras de 10 min caem sempre do lado de fora.
-const CLAIM_SLACK_MS = MINUTE;
+// Um pouco antes do TTL: as voltas de 1 min caem sempre do lado de fora.
+const CLAIM_SLACK_MS = 10 * 1000;
 
 const BOOT_SQL = [
   `CREATE TABLE IF NOT EXISTS "tickrify"."SetupAlert" (
@@ -121,6 +137,7 @@ const BOOT_SQL = [
     "lastCandleAt" TIMESTAMP(3),
     CONSTRAINT "AlertPriceCheck_pkey" PRIMARY KEY ("symbol")
   )`,
+  `ALTER TABLE "tickrify"."AlertPriceCheck" ADD COLUMN IF NOT EXISTS "intervalMs" INTEGER`,
 ];
 
 export type AlertSuggestion = { label: Exclude<AlertLabel, 'custom'>; level: number };
@@ -142,14 +159,27 @@ export type AlertView = {
   /** Ultimo preco checado do ativo (o mesmo para todas as contas) e quando. */
   lastPrice: number | null;
   checkedAt: Date | null;
+  /** De quanto em quanto o ativo e checado agora; null = ainda nao se sabe ou mercado fechado. */
+  checkIntervalMs: number | null;
+  marketClosed: boolean;
 };
 
-type AlertRow = Omit<AlertView, 'timeframe' | 'lastPrice' | 'checkedAt'> & {
+type AlertRow = Omit<AlertView, 'timeframe' | 'lastPrice' | 'checkedAt' | 'checkIntervalMs' | 'marketClosed'> & {
   userId: string;
+  priceSymbol: string;
   timeframe?: string | null;
   lastPrice?: number | null;
   checkedAt?: Date | null;
+  intervalMs?: number | null;
 };
+
+/** O que a tela alega sobre a checagem: o intervalo em vigor, nunca um numero fixo. */
+function checkCadence(priceSymbol: string, storedMs: number | null | undefined, now = new Date()): { checkIntervalMs: number | null; marketClosed: boolean } {
+  const source = candleSourceFor(priceSymbol);
+  if (source === 'crypto') return { checkIntervalMs: ALERT_RULES.monitorIntervalMs, marketClosed: false };
+  if (source === 'fx' && fxMarketClosed(now)) return { checkIntervalMs: null, marketClosed: true };
+  return { checkIntervalMs: storedMs == null ? null : Number(storedMs), marketClosed: false };
+}
 
 type RawPrisma = Pick<PrismaClient, '$queryRaw' | '$executeRaw'>;
 
@@ -209,16 +239,24 @@ export function sideFor(level: number, referencePrice: number): AlertSide | null
 /**
  * O primeiro candle que abriu em `watchFrom` ou depois e cruzou o nivel.
  * Acima: maxima >= nivel. Abaixo: minima <= nivel. Candles em ordem de tempo.
+ * Vela que cruzaria mas abriu antes do `watchFrom` ou depois de agora + 1 vela
+ * nunca dispara: `onDiscard` registra (horario errado na fonte, 09/11/2026).
  */
 export function findTrigger(
   alert: { level: number; side: AlertSide; watchFrom: Date },
   candles: Candle[],
+  clock: { nowMs: number; stepMs: number; onDiscard?: (reason: 'before_watch_from' | 'in_future', candleMs: number) => void },
 ): { at: Date; price: number } | null {
   const from = alert.watchFrom.getTime();
+  const latest = clock.nowMs + clock.stepMs;
   for (const c of candles) {
-    if (c[0] < from) continue;
-    if (alert.side === 'above' && c[2] >= alert.level) return { at: new Date(c[0]), price: c[2] };
-    if (alert.side === 'below' && c[3] <= alert.level) return { at: new Date(c[0]), price: c[3] };
+    const crossed = alert.side === 'above' ? c[2] >= alert.level : c[3] <= alert.level;
+    if (!crossed) continue;
+    if (c[0] < from || c[0] > latest) {
+      clock.onDiscard?.(c[0] < from ? 'before_watch_from' : 'in_future', c[0]);
+      continue;
+    }
+    return { at: new Date(c[0]), price: alert.side === 'above' ? c[2] : c[3] };
   }
   return null;
 }
@@ -235,7 +273,7 @@ export async function alertsPausedFor(prisma: FreeQuotaCounter & RawPrisma, user
   return rows[0]?.ok !== true;
 }
 
-const alertColumns = () => Prisma.sql`a."id", a."userId", a."setupId", a."analysisId", a."symbol", a."level", a."label", a."side",
+const alertColumns = () => Prisma.sql`a."id", a."userId", a."setupId", a."analysisId", a."symbol", a."priceSymbol", a."level", a."label", a."side",
   a."status", a."createdAt", a."triggeredAt", a."triggerPrice", a."seenAt"`;
 
 function toView(row: AlertRow): AlertView {
@@ -255,6 +293,7 @@ function toView(row: AlertRow): AlertView {
     seenAt: row.seenAt,
     lastPrice: row.lastPrice == null ? null : Number(row.lastPrice),
     checkedAt: row.checkedAt ?? null,
+    ...checkCadence(row.priceSymbol, row.intervalMs),
   };
 }
 
@@ -274,8 +313,8 @@ async function countSetupsWithAlerts(db: RawPrisma, userId: string, exceptSetupI
 }
 
 /**
- * Ultimo fechamento de 5m conhecido do ativo: o cache do monitor se for
- * recente, senao uma busca. Forex/metal pede os ultimos 120 candles de 5m
+ * Ultimo fechamento conhecido do ativo: o cache do monitor se for recente,
+ * senao uma busca. Forex/metal pede os ultimos 120 candles de 5m
  * (o mesmo pedido do grounding, cache compartilhado; no fim de semana vale o
  * fechamento de sexta). Sem cota ou falhou = null; nunca se inventa preco.
  */
@@ -292,7 +331,7 @@ async function latestAlertPrice(db: RawPrisma, priceSymbol: string, source: Cand
     const candles =
       source === 'fx'
         ? await fetchFxLatest5m(priceSymbol, 'monitor', ALERT_RULES.cacheTtlMs.fx)
-        : await fetchWindowFor(priceSymbol, now - 2 * HOUR, now, ALERT_RULES.candleInterval, 1, 'monitor');
+        : await fetchCrypto1m(priceSymbol, now - 10 * MINUTE, now);
     return candles?.length ? candles[candles.length - 1][4] : null;
   } catch {
     return null;
@@ -354,6 +393,22 @@ async function insertAlertLocked(
   return { row: inserted[0], created: true };
 }
 
+type WatchingAlertRow = { id: string; setupId: string; analysisId: string; level: number; status: AlertStatus; triggeredAt: Date | null; seenAt: Date | null };
+
+export type WatchingItem = {
+  analysisId: string;
+  symbol: string | null;
+  timeframe: string | null;
+  createdAt: Date;
+  watch: WatchSummary;
+  /** Ultimo preco checado do ativo; null sem checagem recente (nunca busca preco para a tela). */
+  lastPrice: number | null;
+  checkedAt: Date | null;
+  checkIntervalMs: number | null;
+  marketClosed: boolean;
+  alert: { id: string; setupId: string; status: AlertStatus; triggeredAt: Date | null; seenAt: Date | null } | null;
+};
+
 export type WatchAlertOutcome =
   | 'created'
   | 'not_watch'
@@ -385,7 +440,8 @@ export async function createWatchAlert(
   log: (message: string) => void = () => undefined,
 ): Promise<WatchAlertOutcome> {
   const { analysisId, userId, result, recommendation } = input;
-  if (!storedWatchPlan(result, recommendation)) return 'not_watch';
+  const aiLevel = storedAiLevel(result, recommendation);
+  if (!storedWatchPlan(result, recommendation) && !aiLevel) return 'not_watch';
   const outcome = await (async (): Promise<WatchAlertOutcome> => {
     if (record(result).dataMode !== 'real_data') return 'print_mode';
     const plan = readPlan(result, recommendation);
@@ -410,11 +466,13 @@ export async function createWatchAlert(
     if (unsubscribed) return 'unsubscribed';
     if (await alertsPausedFor(prisma, userId)) return 'free_locked';
 
-    const level = alertSuggestions(result, recommendation, analysis).find((s) => s.label === 'entry')?.level;
-    const expiresAt = watchSummaryOf(result, recommendation, analysis.createdAt, {
+    // So o nivel do plano do modelo (WATCH, ou NO_TRADE recusado por risco): nunca os extremos do mapa.
+    const watch = watchSummaryOf(result, recommendation, analysis.createdAt, {
       groundingInterval: analysis.groundingInterval, setupId: null, track: null,
-    })?.expiresAt;
-    if (level == null || !expiresAt) return 'no_level';
+    });
+    const level = watch?.level ?? aiLevel?.price;
+    const expiresAt = watch?.expiresAt ?? (aiLevel ? aiLevelExpiresAt(aiLevel, result, analysis.createdAt, analysis.groundingInterval) : null);
+    if (level == null || !expiresAt || Date.parse(expiresAt) <= Date.now()) return 'no_level';
     const referencePrice = (await latestAlertPrice(prisma, price.priceSymbol, price.source)) ?? positive(record(record(result).analysis).currentPrice);
     if (referencePrice == null) return 'no_price';
     const side = levelInBand(level, referencePrice) ? sideFor(level, referencePrice) : null;
@@ -622,7 +680,7 @@ export class SetupAlertsService implements OnModuleInit {
     const since = new Date(Date.now() - (setupId ? ALERT_RULES.triggeredVisibleOnSetupMs : ALERT_RULES.triggeredVisibleMs));
     const onlySetup = setupId ? Prisma.sql`AND a."setupId" = ${setupId}` : Prisma.empty;
     const rows = await this.prisma.$queryRaw<AlertRow[]>`
-      SELECT ${alertColumns()}, s."timeframe", p."lastPrice", p."checkedAt"
+      SELECT ${alertColumns()}, s."timeframe", p."lastPrice", p."checkedAt", p."intervalMs"
       FROM "tickrify"."SetupAlert" a
       JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
       LEFT JOIN "tickrify"."AlertPriceCheck" p ON p."symbol" = a."priceSymbol"
@@ -633,6 +691,78 @@ export class SetupAlertsService implements OnModuleInit {
     `;
     const items = rows.map(toView);
     return { items, unseen: items.filter((a) => a.status === 'triggered' && !a.seenAt).length };
+  }
+
+  /**
+   * Secao "Watching" do My Trades e do Diario: os WATCH valendo e os encerrados
+   * ha ate 7 dias, com o alerta do nivel e o ultimo preco checado. O que o preco
+   * fez vem so do rastreador (ou do proprio alerta, antes da linha existir).
+   * Informacao de mercado: nada aqui entra em acerto, P&L ou estatistica.
+   */
+  async watching(userId: string): Promise<{ items: WatchingItem[] }> {
+    this.assertReady();
+    const now = new Date();
+    const rows = await this.prisma.$queryRaw<Array<{ id: string; recommendation: string | null; result: unknown; createdAt: Date }>>`
+      SELECT "id", "recommendation", "result", "createdAt"
+      FROM "tickrify"."Analysis"
+      WHERE "userId" = ${userId} AND "status" = 'completed' AND "createdAt" > ${new Date(now.getTime() - WATCHING_RULES.lookbackMs)}
+        AND "result"->>'signalState' = 'WATCH'
+      ORDER BY "createdAt" DESC
+      LIMIT 100
+    `;
+    if (rows.length === 0) return { items: [] };
+    const contexts = await loadWatchContexts(this.prisma, rows.map((r) => r.id));
+    const entries = rows.flatMap((row) => {
+      const context = contexts.get(row.id);
+      const watch = watchSummaryOf(row.result, row.recommendation, row.createdAt, context);
+      if (!watch) return [];
+      const closedAt = watch.expiresAt ? Date.parse(watch.expiresAt) : row.createdAt.getTime();
+      if (closedAt <= now.getTime() - WATCHING_RULES.closedVisibleMs) return [];
+      const plan = readPlan(row.result, row.recommendation);
+      return [{ row, watch, symbol: plan.symbol, timeframe: plan.timeframe, priceSymbol: priceSymbolOf(plan.symbol)?.priceSymbol ?? null }];
+    });
+    if (entries.length === 0) return { items: [] };
+
+    const symbols = [...new Set(entries.flatMap((e) => (e.priceSymbol ? [e.priceSymbol] : [])))];
+    const checks = new Map(
+      symbols.length
+        ? (
+            await this.prisma.$queryRaw<Array<{ symbol: string; lastPrice: number | null; checkedAt: Date | null; intervalMs: number | null }>>`
+              SELECT "symbol", "lastPrice", "checkedAt", "intervalMs" FROM "tickrify"."AlertPriceCheck" WHERE "symbol" IN (${Prisma.join(symbols)})
+            `
+          ).map((c) => [c.symbol, c])
+        : [],
+    );
+    const alerts = await this.prisma.$queryRaw<WatchingAlertRow[]>`
+      SELECT "id", "setupId", "analysisId", "level", "status", "triggeredAt", "seenAt" FROM "tickrify"."SetupAlert"
+      WHERE "userId" = ${userId} AND "analysisId" IN (${Prisma.join(entries.map((e) => e.row.id))})
+      ORDER BY "createdAt" DESC
+    `;
+
+    const items = entries.map(({ row, watch, symbol, timeframe, priceSymbol }): WatchingItem => {
+      const check = priceSymbol ? checks.get(priceSymbol) : undefined;
+      const cadence = priceSymbol ? checkCadence(priceSymbol, check?.intervalMs, now) : { checkIntervalMs: null, marketClosed: false };
+      const age = check?.checkedAt ? now.getTime() - check.checkedAt.getTime() : Infinity;
+      const fresh = age < WATCHING_RULES.priceFreshMs || (cadence.marketClosed && age < 3 * 24 * HOUR);
+      const onLevel = alerts.filter((a) => a.analysisId === row.id && Math.abs(Number(a.level) - watch.level) <= Math.abs(watch.level) * 1e-9);
+      const alert = onLevel.find((a) => a.status === 'triggered') ?? onLevel.find((a) => a.status === 'active') ?? onLevel[0] ?? null;
+      return {
+        analysisId: row.id,
+        symbol,
+        timeframe,
+        createdAt: row.createdAt,
+        watch,
+        lastPrice: fresh && check?.lastPrice != null ? Number(check.lastPrice) : null,
+        checkedAt: fresh ? check?.checkedAt ?? null : null,
+        ...cadence,
+        alert: alert ? { id: alert.id, setupId: alert.setupId, status: alert.status, triggeredAt: alert.triggeredAt, seenAt: alert.seenAt } : null,
+      };
+    });
+    const open = (item: WatchingItem) => item.watch.outcome === 'pending' && item.watch.expiresAt !== null && Date.parse(item.watch.expiresAt) > now.getTime();
+    const rank = (item: WatchingItem) => (item.alert?.status === 'triggered' && !item.alert.seenAt ? 0 : open(item) ? 1 : 2);
+    const expiry = (item: WatchingItem) => (item.watch.expiresAt ? Date.parse(item.watch.expiresAt) : item.createdAt.getTime());
+    items.sort((a, b) => rank(a) - rank(b) || (rank(a) === 1 ? expiry(a) - expiry(b) : expiry(b) - expiry(a)));
+    return { items: items.slice(0, WATCHING_RULES.maxItems) };
   }
 
   /** Para o paywall `alerts`: o ativo de um alerta pausado da conta travada. */
@@ -691,7 +821,7 @@ export class SetupAlertsService implements OnModuleInit {
   }
 }
 
-// ── Monitor (worker embutido, a cada 10 min) ────────────────────────────────
+// ── Monitor (worker embutido, a cada 1 min) ─────────────────────────────────
 
 type MonitorRow = {
   id: string;
@@ -709,23 +839,35 @@ type MonitorRow = {
 export type AlertMonitorDeps = {
   prisma: RawPrisma & FreeQuotaCounter;
   now?: () => Date;
-  fetchWindow?: typeof fetchWindowFor;
+  fetchCrypto?: typeof fetchCrypto1m;
   fetchFxLatest?: typeof fetchFxLatest5m;
   isPaused?: (userId: string) => Promise<boolean>;
+  /** Guardado entre as voltas: a trava da conta nao precisa ser refeita a cada minuto. */
+  pauseCache?: Map<string, { paused: boolean; at: number }>;
   capture?: typeof captureServer;
   log(level: 'log' | 'warn', message: string): void;
 };
 
 /**
  * Uma volta do monitor. Agrupa os alertas ativos por ativo, pega o direito de
- * buscar cada ativo (uma instancia por vez, no maximo 1x por TTL), busca os
- * candles de 5m e dispara o que cruzou. Devolve os numeros do log.
+ * buscar cada ativo (uma instancia por vez, no maximo 1x por intervalo), busca
+ * uma vez as velas (1m cripto, 5m forex/metal) e dispara o que cruzou. Devolve
+ * os numeros do log.
  */
-export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<{ symbols: number; checked: number; triggered: number; paused: number }> {
+export type AlertMonitorCounts = { symbols: number; checked: number; triggered: number; paused: number };
+
+export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<AlertMonitorCounts> {
   const now = deps.now ? deps.now() : new Date();
-  const fetchWindow = deps.fetchWindow ?? fetchWindowFor;
+  const fetchCrypto = deps.fetchCrypto ?? fetchCrypto1m;
   const fetchFxLatest = deps.fetchFxLatest ?? fetchFxLatest5m;
-  const isPaused = deps.isPaused ?? ((userId: string) => alertsPausedFor(deps.prisma, userId));
+  const checkPaused = deps.isPaused ?? ((userId: string) => alertsPausedFor(deps.prisma, userId));
+  const isPaused = async (userId: string) => {
+    const hit = deps.pauseCache?.get(userId);
+    if (hit && now.getTime() - hit.at < ALERT_RULES.pauseCheckTtlMs) return hit.paused;
+    const paused = await checkPaused(userId);
+    deps.pauseCache?.set(userId, { paused, at: now.getTime() });
+    return paused;
+  };
   const capture = deps.capture ?? captureServer;
   const counts = { symbols: 0, checked: 0, triggered: 0, paused: 0 };
 
@@ -774,33 +916,35 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<{ symbols
   }
 
   if (bySymbol.size === 0) return counts;
-  // Quem foi checado ha mais tempo primeiro: o teto de forex por volta nunca
-  // deixa o mesmo ativo sempre de fora.
-  const lastClaims = new Map(
+  // Quem foi checado ha mais tempo primeiro, e o ouro sempre antes dos outros
+  // forex: o teto por volta nunca deixa o mesmo ativo de fora.
+  const lastChecks = new Map(
     (
-      await deps.prisma.$queryRaw<Array<{ symbol: string; claimedAt: Date | null }>>`
-        SELECT "symbol", "claimedAt" FROM "tickrify"."AlertPriceCheck"
+      await deps.prisma.$queryRaw<Array<{ symbol: string; claimedAt: Date | null; lastCandleAt: Date | null }>>`
+        SELECT "symbol", "claimedAt", "lastCandleAt" FROM "tickrify"."AlertPriceCheck"
         WHERE "symbol" IN (${Prisma.join([...bySymbol.keys()])})
       `
-    ).map((r) => [r.symbol, r.claimedAt?.getTime() ?? 0]),
+    ).map((r) => [r.symbol, r]),
   );
-  const ordered = [...bySymbol.entries()].sort(([a], [b]) => (lastClaims.get(a) ?? 0) - (lastClaims.get(b) ?? 0));
+  const gold = (symbol: string) => (symbol === 'XAUUSD' ? 0 : 1);
+  const ordered = [...bySymbol.entries()].sort(
+    ([a], [b]) => gold(a) - gold(b) || (lastChecks.get(a)?.claimedAt?.getTime() ?? 0) - (lastChecks.get(b)?.claimedAt?.getTime() ?? 0),
+  );
   let fxFetches = 0;
-  // Forex/metal: intervalo que cabe na reserva do monitor com N ativos, e 30
-  // min acima de 80% do dia (twelve-data.ts).
-  const fxSymbols = ordered.filter(([symbol]) => candleSourceFor(symbol) === 'fx').length;
-  const fxIntervalMs = fxSymbols > 0 ? monitorFxIntervalMs(fxSymbols, await twelveDataUsage(now)) : ALERT_RULES.cacheTtlMs.fx;
+  // Forex/metal: o menor intervalo que a reserva do monitor ainda paga hoje.
+  const fxSymbols = ordered.map(([symbol]) => symbol).filter((symbol) => candleSourceFor(symbol) === 'fx');
+  const fxIntervals = fxSymbols.length > 0 ? monitorFxIntervals(fxSymbols, await twelveDataUsage(now), now) : new Map<string, number>();
 
   for (const [priceSymbol, alerts] of ordered) {
     try {
       const source = candleSourceFor(priceSymbol);
       if (!source) continue;
       if (source === 'fx' && (fxMarketClosed(now) || fxFetches >= ALERT_RULES.maxFxSymbolsPerRun)) continue;
-      const ttl = (source === 'fx' ? fxIntervalMs : ALERT_RULES.cacheTtlMs.crypto) - CLAIM_SLACK_MS;
+      const interval = source === 'fx' ? fxIntervals.get(priceSymbol) ?? ALERT_RULES.cacheTtlMs.fx : ALERT_RULES.cacheTtlMs.crypto;
       const claimed = await deps.prisma.$queryRaw<Array<{ symbol: string }>>`
         INSERT INTO "tickrify"."AlertPriceCheck" ("symbol", "claimedAt") VALUES (${priceSymbol}, ${now})
         ON CONFLICT ("symbol") DO UPDATE SET "claimedAt" = EXCLUDED."claimedAt"
-        WHERE "AlertPriceCheck"."claimedAt" IS NULL OR "AlertPriceCheck"."claimedAt" < ${new Date(now.getTime() - ttl)}
+        WHERE "AlertPriceCheck"."claimedAt" IS NULL OR "AlertPriceCheck"."claimedAt" < ${new Date(now.getTime() - (interval - CLAIM_SLACK_MS))}
         RETURNING "symbol"
       `;
       if (claimed.length === 0) continue;
@@ -808,11 +952,16 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<{ symbols
       if (source === 'fx') fxFetches++;
 
       const earliest = Math.min(...alerts.map((a) => a.watchFrom.getTime()));
-      const startMs = Math.max(earliest - INTERVAL_MS[ALERT_RULES.candleInterval], now.getTime() - ALERT_RULES.lookbackMs);
+      const step = INTERVAL_MS[ALERT_RULES.candleInterval[source]];
+      // So o que falta: normalmente 2 ou 3 velas desde a ultima volta.
+      // Ignora o gravado no futuro (fuso errado ate 09/11/2026): senao filtraria todas as velas.
+      const stored = lastChecks.get(priceSymbol)?.lastCandleAt?.getTime() ?? 0;
+      const seen = stored > now.getTime() + step ? 0 : stored;
+      const startMs = Math.max(earliest - step, seen - step, now.getTime() - ALERT_RULES.lookbackMs);
       const candles =
         source === 'fx'
-          ? (await fetchFxLatest(priceSymbol, 'monitor', ALERT_RULES.cacheTtlMs.fx))?.filter((c) => c[0] >= startMs) ?? null
-          : await fetchWindow(priceSymbol, startMs, now.getTime(), ALERT_RULES.candleInterval, 1, 'monitor');
+          ? (await fetchFxLatest(priceSymbol, 'monitor', interval / 2))?.filter((c) => c[0] >= startMs) ?? null
+          : await fetchCrypto(priceSymbol, startMs, now.getTime());
       if (!candles || candles.length === 0) {
         deps.log('warn', `[alerts] Sem candles symbol=${priceSymbol}`);
         continue;
@@ -820,13 +969,18 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<{ symbols
       const last = candles[candles.length - 1];
       await deps.prisma.$executeRaw`
         UPDATE "tickrify"."AlertPriceCheck"
-        SET "checkedAt" = ${now}, "lastPrice" = ${last[4]}, "lastCandleAt" = ${new Date(last[0])}
+        SET "checkedAt" = ${now}, "lastPrice" = ${last[4]}, "lastCandleAt" = ${new Date(last[0])}, "intervalMs" = ${interval}
         WHERE "symbol" = ${priceSymbol}
       `;
 
       for (const alert of alerts) {
         counts.checked++;
-        const hit = findTrigger({ level: Number(alert.level), side: alert.side, watchFrom: alert.watchFrom }, candles);
+        const hit = findTrigger({ level: Number(alert.level), side: alert.side, watchFrom: alert.watchFrom }, candles, {
+          nowMs: now.getTime(),
+          stepMs: step,
+          onDiscard: (reason, candleMs) =>
+            deps.log('warn', `[alerts] Vela descartada alert=${alert.id} symbol=${priceSymbol} reason=${reason} candle=${new Date(candleMs).toISOString()} watchFrom=${alert.watchFrom.toISOString()}`),
+        });
         if (!hit) continue;
         const won = await deps.prisma.$executeRaw`
           UPDATE "tickrify"."SetupAlert"
@@ -848,10 +1002,55 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<{ symbols
     } catch (err) {
       if (err instanceof TwelveDataUnavailableError) {
         deps.log('log', `[alerts] symbol=${priceSymbol} adiado: cota do Twelve Data (${err.reason})`);
+        // Minuto cheio nao e falta de cota: tenta na proxima volta, sem esperar o intervalo inteiro.
+        if (err.reason === 'rate_limited') {
+          await deps.prisma.$executeRaw`UPDATE "tickrify"."AlertPriceCheck" SET "claimedAt" = NULL WHERE "symbol" = ${priceSymbol}`.catch(() => undefined);
+        }
         continue;
       }
       deps.log('warn', `[alerts] Falha best-effort symbol=${priceSymbol}: ${(err as Error)?.message ?? err}`);
     }
   }
   return counts;
+}
+
+/**
+ * A volta do worker: monitor e, se algo disparou, e-mail na mesma volta. Sem
+ * disparo, o e-mail so roda de vez em quando (o que a Resend recusou). Volta
+ * lenta (fonte fora do ar) nunca se sobrepoe a seguinte.
+ */
+export function createAlertTick(options: {
+  monitor: () => Promise<AlertMonitorCounts>;
+  emails: () => Promise<{ due: number; sent: number }>;
+  log: (level: 'log' | 'warn', message: string) => void;
+  now?: () => number;
+}): () => Promise<void> {
+  const clock = options.now ?? Date.now;
+  let running = false;
+  let lastEmails = 0;
+  let lastLog = 0;
+  return async () => {
+    if (running) return;
+    running = true;
+    try {
+      const counts = await options.monitor().catch((err) => {
+        options.log('warn', `[alerts] Varredura falhou: ${(err as Error)?.message ?? err}`);
+        return null;
+      });
+      const triggered = (counts?.triggered ?? 0) > 0;
+      if (counts && (triggered || (counts.symbols > 0 && clock() - lastLog >= ALERT_RULES.emailRetryMs))) {
+        lastLog = clock();
+        options.log('log', `[alerts] symbols=${counts.symbols} checked=${counts.checked} triggered=${counts.triggered} paused=${counts.paused}`);
+      }
+      if (!triggered && clock() - lastEmails < ALERT_RULES.emailRetryMs) return;
+      lastEmails = clock();
+      const emails = await options.emails().catch((err) => {
+        options.log('warn', `[setup-alert] Varredura falhou: ${(err as Error)?.message ?? err}`);
+        return null;
+      });
+      if (emails && emails.sent > 0) options.log('log', `[setup-alert] Volta: ${JSON.stringify(emails)}`);
+    } finally {
+      running = false;
+    }
+  };
 }

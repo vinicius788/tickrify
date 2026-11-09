@@ -8,7 +8,8 @@ import {
   enterTwelveDataCalibrationMode,
   experimentRefusesFx,
   fxMarketClosed,
-  monitorFxIntervalMs,
+  fxOpenMinutesLeftToday,
+  monitorFxIntervals,
   twelveDataApiKey,
   twelveDataDecision,
   twelveDataTimeSeries,
@@ -17,6 +18,8 @@ import {
 } from './twelve-data';
 import { fetchFxLatest5m, fetchFxWindow } from './candles';
 import { TwelveDataUnavailableError } from './twelve-data';
+import { findTrigger } from '../ai/setup-alerts.service';
+import { closedBars } from '../../common/utils/plan-engine';
 
 const TUESDAY = new Date('2026-10-27T12:00:10Z');
 const SATURDAY = new Date('2026-10-31T12:00:00Z');
@@ -41,7 +44,7 @@ beforeEach(() => {
   __setTwelveDataForTests({ store: new MemoryTwelveDataStore(() => now.getTime()), now: () => now });
   process.env.TWELVE_DATA_API_KEY = 'prod-key';
   delete process.env.TWELVE_DATA_API_KEY_EXPERIMENTS;
-  fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(ok({ values: values(120), meta: { exchange_timezone: 'UTC' } }) as any);
+  fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(ok({ values: values(120), meta: { symbol: 'XAU/USD', interval: '5min', type: 'Physical Currency' } }) as any);
 });
 afterEach(() => {
   fetchSpy.mockRestore();
@@ -99,11 +102,41 @@ describe('orcamento por prioridade (puro)', () => {
     expect(twelveDataDecision('analysis', usage({}), SATURDAY)).toBeNull();
   });
 
-  it('intervalo do monitor de forex cabe na reserva e vai a 30 min acima de 80%', () => {
-    expect(monitorFxIntervalMs(1, { total: 0 })).toBe(10 * 60_000);
-    expect(monitorFxIntervalMs(2, { total: 0 })).toBe(15 * 60_000);
-    expect(monitorFxIntervalMs(5, { total: 0 })).toBe(36 * 60_000);
-    expect(monitorFxIntervalMs(1, { total: 640 })).toBe(30 * 60_000);
+  describe('intervalo do monitor', () => {
+    const MIN = 60_000;
+    const MONDAY = new Date('2026-11-09T00:00:00Z');
+    const idle = { total: 0, analysis: 0, monitor: 0 };
+
+    it('ouro sozinho usa a reserva inteira do dia', () => {
+      expect(monitorFxIntervals(['XAUUSD'], idle, MONDAY).get('XAUUSD')).toBe(8 * MIN);
+    });
+
+    it('com outros ativos, o ouro pesa 3 vezes', () => {
+      const intervals = monitorFxIntervals(['XAUUSD', 'EURUSD'], idle, MONDAY);
+      expect(intervals.get('XAUUSD')).toBe(10 * MIN);
+      expect(intervals.get('EURUSD')).toBe(29 * MIN);
+    });
+
+    it('dia com folga fica mais rapido, com piso de 2 min', () => {
+      const evening = new Date('2026-11-09T20:00:00Z');
+      expect(monitorFxIntervals(['XAUUSD'], idle, evening).get('XAUUSD')).toBe(2 * MIN);
+    });
+
+    it('nunca conta com a reserva de quem tem prioridade', () => {
+      // Sobram 100 do monitor, mas so 50 cabem sem tocar a reserva da analise.
+      const usage = { total: 350, analysis: 150, monitor: 100 };
+      expect(monitorFxIntervals(['EURUSD'], usage, MONDAY).get('EURUSD')).toBe(29 * MIN);
+    });
+
+    it('acima de 80% do dia ou sem reserva: 30 min', () => {
+      expect(monitorFxIntervals(['XAUUSD'], { total: 640, analysis: 550, monitor: 0 }, MONDAY).get('XAUUSD')).toBe(30 * MIN);
+      expect(monitorFxIntervals(['XAUUSD'], { total: 200, analysis: 0, monitor: 200 }, MONDAY).get('XAUUSD')).toBe(30 * MIN);
+    });
+
+    it('sexta conta so ate o mercado fechar, as 22h UTC', () => {
+      expect(fxOpenMinutesLeftToday(new Date('2026-11-13T21:00:00Z'))).toBe(60);
+      expect(fxOpenMinutesLeftToday(new Date('2026-11-09T21:00:00Z'))).toBe(180);
+    });
   });
 });
 
@@ -153,9 +186,9 @@ describe('medidor com relogio falso', () => {
 });
 
 describe('cache compartilhado: mesma requisicao, mesma resposta', () => {
-  it('a URL do grounding e a de sempre (sem fuso, ultimos 120)', () => {
+  it('a URL do grounding: ultimos 120, sempre em UTC', () => {
     expect(twelveDataUrl({ consumer: 'analysis', pair: 'XAUUSD', interval: '5min', outputsize: 120 }, 'k')).toBe(
-      'https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&outputsize=120&apikey=k',
+      'https://api.twelvedata.com/time_series?symbol=XAU/USD&interval=5min&timezone=UTC&outputsize=120&apikey=k',
     );
     const start = Date.parse('2026-10-25T00:00:00Z');
     expect(twelveDataUrl({ consumer: 'sweeper', pair: 'EURUSD', interval: '30min', outputsize: 120, window: { startMs: start, endMs: start + 3600_000 } }, 'k')).toBe(
@@ -190,11 +223,11 @@ describe('cache compartilhado: mesma requisicao, mesma resposta', () => {
     expect((await twelveDataUsage()).monitor).toBe(0);
   });
 
-  it('horario fora de UTC: o monitor nao reaproveita e pede de novo em UTC', async () => {
-    fetchSpy.mockResolvedValueOnce(ok({ values: values(120), meta: { exchange_timezone: 'America/New_York' } }) as any);
+  it('sem pedir fuso, forex e ouro vem 11h a frente: toda chamada pede UTC', async () => {
     await fetchFxLatest5m('XAUUSD', 'monitor', 10 * 60_000);
+    await twelveDataTimeSeries({ consumer: 'analysis', pair: 'EURUSD', interval: '1h', outputsize: 120, cacheMaxAgeMs: 60_000 });
     expect(fetchSpy).toHaveBeenCalledTimes(2);
-    expect(String(fetchSpy.mock.calls[1][0])).toContain('&timezone=UTC&');
+    for (const [url] of fetchSpy.mock.calls) expect(String(url)).toContain('&timezone=UTC');
   });
 
   it('janela fixa (sweeper) nunca usa cache', async () => {
@@ -336,5 +369,62 @@ describe('store do Redis (cliente falso com os comandos do ioredis)', () => {
     expect(results.filter((r) => r.ok)).toHaveLength(TWELVE_DATA_BUDGET.lowPriorityPerMinute);
     expect(results.filter((r) => !r.ok).every((r) => !r.ok && r.reason === 'rate_limited')).toBe(true);
     expect((await twelveDataUsage()).minute).toBe(TWELVE_DATA_BUDGET.lowPriorityPerMinute);
+  });
+});
+
+describe('alerta falso de 09/11/2026 (XAUUSD 5m, nivel 4133.7, e-mail dizia 13:05 UTC as 11:46 UTC)', () => {
+  const H = 3600_000;
+  const NOW = new Date('2026-11-09T11:46:00Z');
+  const WATCH_FROM = new Date('2026-11-09T11:38:00Z');
+  const LAST = Date.parse('2026-11-09T11:45:00Z');
+  const PEAK = Date.parse('2026-11-09T02:05:00Z');
+  const stamp = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+  // Formato real da resposta para forex e metal: o meta NAO traz exchange_timezone.
+  // Sem timezone=UTC o horario vem 11h a frente (EUR/USD lido em 09/11: 00:35 do dia 10 com 13:35 UTC).
+  const response = (url: string, shiftMs?: number) => {
+    const shift = shiftMs ?? (url.includes('timezone=UTC') ? 0 : 11 * H);
+    return ok({
+      meta: { symbol: 'XAU/USD', interval: '5min', currency_base: 'Gold Spot', currency_quote: 'US Dollar', type: 'Physical Currency' },
+      values: Array.from({ length: 120 }, (_, i) => {
+        const t = LAST - i * 5 * 60_000;
+        return { datetime: stamp(t + shift), open: '4105', high: t === PEAK ? '4133.9' : '4113.7', low: '4100', close: '4110' };
+      }),
+      status: 'ok',
+    });
+  };
+
+  beforeEach(() => {
+    now = NOW;
+    fetchSpy.mockImplementation(async (url: unknown) => response(String(url)) as any);
+  });
+
+  it('a vela das 02:05 UTC (a maxima de antes da analise) nao dispara o alerta criado as 11:38', async () => {
+    const candles = await fetchFxLatest5m('XAUUSD', 'monitor', 5 * 60_000);
+    expect(candles![candles!.length - 1][0]).toBe(LAST);
+    expect(candles!.find((c) => c[2] === 4133.9)![0]).toBe(PEAK);
+    expect(findTrigger({ level: 4133.7, side: 'above', watchFrom: WATCH_FROM }, candles!, { nowMs: NOW.getTime(), stepMs: 5 * 60_000 })).toBeNull();
+  });
+
+  it('as velas fechadas chegam ao motor: com o horario errado nenhuma de 5m passava', async () => {
+    const candles = await fetchFxLatest5m('XAUUSD', 'analysis', 5 * 60_000);
+    expect(closedBars(candles!.map((c) => [...c, 0]) as any, 5 * 60_000, NOW.getTime())).toHaveLength(119);
+  });
+
+  it('provedor ignorando o fuso: resposta inteira descartada, sem cache e com log', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    fetchSpy.mockImplementation(async (url: unknown) => response(String(url), 11 * H) as any);
+    await expect(fetchFxLatest5m('XAUUSD', 'monitor', 5 * 60_000)).resolves.toBeNull();
+    expect(warn.mock.calls.flat().join(' ')).toContain('vela no futuro pair=XAUUSD');
+    warn.mockRestore();
+  });
+
+  it('defesa do monitor: vela alem de agora + 1 vela ou antes do watchFrom nunca dispara', () => {
+    const c = (ms: number): [number, number, number, number, number] => [ms, 4105, 4134, 4100, 4110];
+    const discards: string[] = [];
+    const clock = { nowMs: NOW.getTime(), stepMs: 5 * 60_000, onDiscard: (reason: string) => discards.push(reason) };
+    const alert = { level: 4133.7, side: 'above' as const, watchFrom: WATCH_FROM };
+    expect(findTrigger(alert, [c(PEAK), c(NOW.getTime() + 6 * 60_000)], clock)).toBeNull();
+    expect(discards).toEqual(['before_watch_from', 'in_future']);
+    expect(findTrigger(alert, [c(NOW.getTime() + 4 * 60_000)], clock)?.price).toBe(4134);
   });
 });

@@ -43,7 +43,7 @@ import { FILL_CANDLE_RULE } from '../src/modules/ai/accuracy.util';
 import { normalizeToBinancePerp } from '../src/modules/market/market.service';
 import { evaluateTrade } from '../worker/outcome.sweeper';
 import { Candle, fetchCryptoWindow, fetchFxWindow } from '../src/modules/market/candles';
-import { enterTwelveDataExperimentMode, experimentRefusesFx, twelveDataTimeSeries } from '../src/modules/market/twelve-data';
+import { enterTwelveDataExperimentMode, experimentRefusesFx, twelveDataOpenMs, twelveDataTimeSeries } from '../src/modules/market/twelve-data';
 
 const WINDOW_MS = 48 * 60 * 60 * 1000;
 const STATES = ['NO_TRADE', 'WATCH', 'ARMED', 'ENTER_NOW'] as const;
@@ -210,7 +210,7 @@ async function historicalFx(symbol: string, interval: string, endMs: number): Pr
   });
   if (!res.ok || res.series.values.length < 30) return null;
   return res.series.values
-    .map((v) => [Date.parse(`${v.datetime.replace(' ', 'T')}Z`), Number(v.open), Number(v.high), Number(v.low), Number(v.close), 0])
+    .map((v) => [twelveDataOpenMs(v.datetime), Number(v.open), Number(v.high), Number(v.low), Number(v.close), 0])
     .reverse();
 }
 

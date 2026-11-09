@@ -34,7 +34,13 @@ const DATE_LOCALES: Record<string, string> = {
  * alerta e oferece so seguir. Gratis esgotado: o servidor responde 402 e o
  * cartao nao aparece.
  */
-const SetupAlertBar = ({ analysisId, recommendation, base }: { analysisId: string; recommendation: SetupVerdict; base: string }) => {
+const SetupAlertBar = ({ analysisId, recommendation, base, readHasLevels = false }: {
+  analysisId: string;
+  recommendation: SetupVerdict;
+  base: string;
+  /** A leitura mostra niveis fora das sugestoes (mapa do NO_TRADE, nivel da IA). */
+  readHasLevels?: boolean;
+}) => {
   const { t, language } = useLanguage();
   const a = t.alerts;
   const s = t.setups;
@@ -224,7 +230,7 @@ const SetupAlertBar = ({ analysisId, recommendation, base }: { analysisId: strin
           <span>{a.title}</span>
         </p>
         <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">
-          {`${data.emailEnabled ? a.hintEmail : a.hintScreen}${following ? '' : ` ${a.followsToo}`}`}
+          {`${data.symbolClass === 'crypto' ? (data.emailEnabled ? a.hintEmail : a.hintScreen) : (data.emailEnabled ? a.hintEmailFx : a.hintScreenFx)}${following ? '' : ` ${a.followsToo}`}`}
         </p>
       </div>
 
@@ -250,7 +256,7 @@ const SetupAlertBar = ({ analysisId, recommendation, base }: { analysisId: strin
           );
         })}
       </div>
-      {suggestions.length === 0 ? <p className="text-xs text-[var(--text-secondary)]">{a.typeLevel}</p> : null}
+      {suggestions.length === 0 && !readHasLevels ? <p className="text-xs text-[var(--text-secondary)]">{a.typeLevel}</p> : null}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <input

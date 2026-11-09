@@ -10,6 +10,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { clampValidity, isValidWatchPlan, nearEdge, type WatchPlan } from '../../common/utils/plan-engine';
 import { storedSignalState } from '../../common/utils/signal-decision';
+import type { AiLevel } from '../../common/utils/level-map';
 import { TIMEFRAME_MS, analysisInterval } from '../market/candle-store';
 import { priceSymbolOf } from '../market/candles';
 
@@ -22,6 +23,17 @@ import { priceSymbolOf } from '../market/candles';
  */
 export type WatchOutcome = 'pending' | 'reached' | 'expired' | 'invalidated' | 'unavailable';
 
+/** O preco tocou o nivel e depois: alvo do plano, invalidacao ou nenhum dos dois. So o rastreador diz. */
+export type WatchAfterReach = 'target' | 'invalidation' | 'neither' | null;
+
+/** Geometria valida no nivel: o plano condicional que a tela e o e-mail mostram. */
+export interface ConditionalPlan {
+  entry: number;
+  stopLoss: number;
+  takeProfit1: number;
+  tp1R: number;
+}
+
 export interface WatchSummary {
   direction: WatchPlan['direction'];
   /** Borda da area que o preco alcanca primeiro (o nivel que destrava a entrada). */
@@ -31,9 +43,12 @@ export interface WatchSummary {
   /** Hora da analise + validade x tempo grafico; null sem tempo grafico conhecido. */
   expiresAt: string | null;
   outcome: WatchOutcome;
+  afterReach: WatchAfterReach;
   /** O ativo tem fonte de preco: a tela oferece o alerta no nivel. */
   alertAvailable: boolean;
   setupId: string | null;
+  /** null: geometria rejeitada no nivel ou analise sem o campo; so nivel e invalidacao. */
+  plan: ConditionalPlan | null;
 }
 
 export interface WatchTrack {
@@ -50,6 +65,14 @@ export function watchOutcomeOf(track: WatchTrack | null | undefined): WatchOutco
   return track.touched ? 'reached' : 'expired';
 }
 
+/** Nomes do mercado, nunca de operacao: WIN e LOSS do rastreador aqui so dizem aonde o preco foi. */
+export function watchAfterReachOf(track: WatchTrack | null | undefined): WatchAfterReach {
+  if (!track || track.status !== 'tracked' || !track.touched) return null;
+  if (track.outcome === 'WIN') return 'target';
+  if (track.outcome === 'LOSS') return 'invalidation';
+  return track.outcome === 'TIMEOUT' ? 'neither' : null;
+}
+
 const record = (v: unknown): Record<string, any> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, any>) : {});
 
 /** O plano de um WATCH salvo, com a validade no intervalo do motor; null fora do WATCH ou sem plano coerente. */
@@ -59,6 +82,30 @@ export function storedWatchPlan(result: unknown, recommendation: unknown): Watch
   const raw = record(root.watchPlan);
   const plan = { ...raw, target2: raw.target2 ?? null, validForCandles: clampValidity(raw.validForCandles), trigger: String(raw.trigger ?? '') } as WatchPlan;
   return isValidWatchPlan(plan) ? plan : null;
+}
+
+/** O nivel da IA de um NO_TRADE rebaixado por risco; null fora disso ou em analise anterior ao campo completo. */
+export function storedAiLevel(result: unknown, recommendation: unknown): AiLevel | null {
+  const root = record(result);
+  if (storedSignalState(root, recommendation) !== 'NO_TRADE') return null;
+  const ai = record(root.aiLevel);
+  const positive = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+  if (![ai.price, ai.invalidation, ai.validForCandles].every(positive) || (ai.direction !== 'long' && ai.direction !== 'short')) return null;
+  return ai as AiLevel;
+}
+
+/** Ate quando o alerta do nivel da IA vale: a mesma conta do WATCH. */
+export function aiLevelExpiresAt(ai: AiLevel, result: unknown, createdAt: Date, groundingInterval: string | null): string | null {
+  const step = TIMEFRAME_MS[analysisInterval(groundingInterval, record(record(result).analysis).timeframe) ?? ''];
+  return step ? new Date(createdAt.getTime() + ai.validForCandles * step).toISOString() : null;
+}
+
+/** Os niveis que o motor gravou para o WATCH; null = sem geometria valida no nivel. */
+export function conditionalPlanOf(result: unknown): ConditionalPlan | null {
+  const raw = record(record(result).watchLevels);
+  const positive = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
+  if (![raw.entry, raw.stopLoss, raw.takeProfit1, raw.tp1R].every(positive)) return null;
+  return { entry: raw.entry, stopLoss: raw.stopLoss, takeProfit1: raw.takeProfit1, tp1R: raw.tp1R };
 }
 
 /** Resumo do WATCH de um resultado salvo; null fora do WATCH ou sem plano coerente (analise antiga). */
@@ -82,8 +129,10 @@ export function watchSummaryOf(
     validForCandles: plan.validForCandles,
     expiresAt: step ? new Date(createdAt.getTime() + plan.validForCandles * step).toISOString() : null,
     outcome: watchOutcomeOf(context?.track),
+    afterReach: watchAfterReachOf(context?.track),
     setupId: context?.setupId ?? null,
     alertAvailable: priceSymbolOf(symbol) !== null,
+    plan: conditionalPlanOf(root),
   };
 }
 

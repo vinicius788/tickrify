@@ -9,7 +9,8 @@
  * minima da janela. Niveis a menos de `mergeAtr` um do outro contam como um so.
  * Arquivo proprio: o motor (signal-decision, plan-engine) nao muda por isto.
  */
-import type { PriceLocation } from './signal-decision';
+import { clampValidity, nearEdge, type WatchPlan } from './plan-engine';
+import type { PriceLocation, SignalState, ValidatorNote, ValidatorReason } from './signal-decision';
 
 export const LEVEL_MAP_RULES = {
   /** Dois niveis mais perto que isto (em ATR) sao o mesmo nivel. */
@@ -77,4 +78,28 @@ export function buildLevelMap(location: PriceLocation | null, candles: LevelMapC
   const below = side(location, c, false);
   if (!above && !below) return null;
   return { price: location.price, atr: location.atr, above, below };
+}
+
+/** So recusas de risco: o preco do modelo continua fazendo sentido, o stop e que nao cabe. */
+const AI_LEVEL_REASONS: readonly ValidatorReason[] = ['invalidation_unsnapped', 'no_valid_geometry', 'market_entry_invalid'];
+
+export interface AiLevel {
+  price: number;
+  direction: WatchPlan['direction'];
+  invalidation: number;
+  validForCandles: number;
+  reason: ValidatorReason;
+}
+
+/**
+ * O validador recusou por risco um plano coerente do modelo (09/11/2026): o
+ * estado segue NO_TRADE, o preco que a IA marcou entra primeiro no mapa de
+ * niveis e recebe o alerta automatico. Nunca entra em decisao, acerto ou
+ * estatistica.
+ */
+export function aiLevelOf(plan: WatchPlan | null, decision: { state: SignalState; validatorNotes: ValidatorNote[] }): AiLevel | null {
+  if (decision.state !== 'NO_TRADE' || !plan) return null;
+  const note = decision.validatorNotes.find((n) => n.to === 'NO_TRADE');
+  if (!note || note.from === 'NO_TRADE' || !AI_LEVEL_REASONS.includes(note.reason)) return null;
+  return { price: nearEdge(plan), direction: plan.direction, invalidation: plan.invalidation, validForCandles: clampValidity(plan.validForCandles), reason: note.reason };
 }

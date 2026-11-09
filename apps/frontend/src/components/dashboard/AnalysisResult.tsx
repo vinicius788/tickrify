@@ -411,6 +411,37 @@ const ARROW_STATE = new RegExp(`\\s*(?:→|->)\\s*${MODEL_STATE}(?![\\w-])[^|;\\
 const SCORE_STATE = new RegExp(`(\\b[0-7]\\s*/\\s*7\\b(?:\\s*passes)?)\\s*[,:-]?\\s*${MODEL_STATE}(?![\\w-])[^|;\\n]*`, 'giu');
 const BARE_STATE = new RegExp(`([.,;])\\s*${MODEL_STATE}(?![\\w-])\\.?\\s*$`, 'u');
 
+/** Frases em que o modelo manda operar (6 idiomas). So para a tela, quando o codigo decidiu NO_TRADE. */
+const MODEL_ACTION = new RegExp(
+  [
+    String.raw`\b(?:buy|sell)(?:ing)?\s+(?:at|on|from|near|limit|stop|if|when|after|above|below|the)\b`,
+    String.raw`\b(?:enter|entering|entry)\s+(?:a\s+)?(?:long|short|at|on|near|from|if|when|after|above|below|only|the\s+trade)\b`,
+    String.raw`\bgo(?:ing)?\s+(?:long|short)\b`,
+    String.raw`\b(?:long|short)\s+(?:entry|setup|position|trade|from|at|near|if)\b`,
+    String.raw`\b(?:place|set)\s+(?:a|an|the)?\s*(?:limit|stop|buy|sell|order)\b`,
+    String.raw`\blimit\s+(?:buy|sell|order)\b`,
+    String.raw`\bwatch\s+(?:for\s+)?(?:a\s+|the\s+)?(?:long|short|buy|sell|entry|\d)`,
+    String.raw`\b(?:compra|comprar|venda|vender)\s+(?:em|no|na|a|perto|se|quando|acima|abaixo|ap[oó]s|limit)\b`,
+    String.raw`\bentrada\s+(?:em|no|na|de\s+compra|de\s+venda|long|short)\b`,
+    String.raw`\bentrar\s+(?:em|no|na|comprado|vendido|long|short)\b`,
+    String.raw`\b(?:compra|comprar|venta|vender)\s+(?:en|cerca|si|cuando|por)\b`,
+    String.raw`\b(?:acheter|achat|vendre|vente)\s+(?:à|a|au|près|si|quand|sur)\b`,
+    String.raw`\b(?:kaufen|kauf|verkaufen|verkauf)\s+(?:bei|über|unter|wenn|ab)\b`,
+    String.raw`\beinstieg\s+(?:bei|über|unter|ab)\b`,
+    String.raw`\d\s*(?:付近)?で?の?(?:買い|売り|エントリー)`,
+    String.raw`(?:買い|売り)(?:エントリー|注文|を検討|を狙)`,
+  ].join('|'),
+  'iu',
+);
+
+export function stripContradictingActions(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.split(/(?<=[.!?])\s+|(?<=[。！？])/u).filter((sentence) => !MODEL_ACTION.test(sentence)).join(' ').trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
 export function stripModelState(text: string): string {
   return text.replace(ARROW_STATE, '').replace(SCORE_STATE, '$1').replace(BARE_STATE, '$1').trim();
 }
@@ -787,13 +818,22 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     }
   };
 
+  // O validador rebaixou para NO_TRADE: a prosa do modelo ainda fala do plano recusado.
+  const downgradeNote = signalState === 'NO_TRADE'
+    ? (analysisData.fullResponse?.validatorNotes ?? []).find((note): note is { from?: string; to?: string; reason: string } => typeof note === 'object' && note.to === 'NO_TRADE' && note.from !== 'NO_TRADE')
+    : undefined;
+  const downgradedToNoTrade = downgradeNote !== undefined;
+  const finalDecisionReasons = r.finalDecisionReasons as Record<string, string>;
+  const finalDecision = downgradeNote
+    ? r.finalDecision.replace('{reason}', finalDecisionReasons[downgradeNote.reason] ?? r.finalDecisionReasons.other)
+    : null;
+  /** So na tela: tira da prosa do modelo o que contradiz a decisao final. */
+  const modelProse = (text: string) => (downgradedToNoTrade ? stripContradictingActions(text) : text);
   const technicalAnalysis =
-    cleanModelText(analysis.technicalAnalysis) ||
-    cleanModelText(analysis.reasoning) ||
-    cleanModelText(displayReasoning) ||
+    modelProse(cleanModelText(analysis.technicalAnalysis) || cleanModelText(analysis.reasoning) || cleanModelText(displayReasoning)) ||
     r.noAnalysis;
-  const executiveSummary =
-    cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary);
+  const modelSummary = modelProse(cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary));
+  const executiveSummary = downgradedToNoTrade ? modelSummary || r.downgradedSummary : modelSummary;
   const whyNotOpposite = cleanModelText(analysis.whyNotOpposite);
   // Checklist e paragrafo de reserva sem o estado ou a direcao que o modelo
   // escreveu ("6/7 WATCH", "MTF 2/3 → SELL"): a tela so mostra a decisao do codigo.
@@ -903,10 +943,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   };
   const waitFlipItems: Array<{ label: string; text: string }> = [];
   const waitHasPlan =
-    isWaitVerdict && (classifyWaitTrigger(entryCondition) !== null || classifyWaitTrigger(alternativeScenario) !== null);
+    isWaitVerdict && !downgradedToNoTrade && (classifyWaitTrigger(entryCondition) !== null || classifyWaitTrigger(alternativeScenario) !== null);
   if (isWaitVerdict) {
-    if (entryCondition) waitFlipItems.push({ label: triggerLabel(entryCondition, r.flipEntry), text: entryCondition });
-    if (alternativeScenario) waitFlipItems.push({ label: triggerLabel(alternativeScenario, r.flipAlt), text: alternativeScenario });
+    const entryShown = entryCondition ? modelProse(entryCondition) : null;
+    const alternativeShown = alternativeScenario ? modelProse(alternativeScenario) : null;
+    if (entryShown) waitFlipItems.push({ label: triggerLabel(entryShown, r.flipEntry), text: entryShown });
+    if (alternativeShown) waitFlipItems.push({ label: triggerLabel(alternativeShown, r.flipAlt), text: alternativeShown });
     if (invalidationLevel !== null && invalidationLevel > 0) {
       waitFlipItems.push({
         label: r.flipInvalidation,
@@ -1035,6 +1077,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   /** A leitura (executiveSummary). No WAIT sobe para logo abaixo do plano. */
   const summaryBlock = (
     <div className="rounded-md border border-[var(--border-emphasis)] bg-[var(--bg-overlay)] p-3">
+      {finalDecision && <p data-testid="final-decision" className="mb-2 text-sm font-semibold leading-relaxed text-[var(--text-primary)]">{finalDecision}</p>}
       <h4 className="tk-display mb-2 text-base text-[var(--text-primary)]">{t.analysis.executiveSummary}</h4>
       {(() => {
         const { blocks, footer } = parseSummaryBlocks(executiveSummary);
@@ -1155,9 +1198,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
       <ReadModePanel data={readMode} formatPrice={formatPrice} />
 
       {/* NO_TRADE com velas reais: os dois lados do preco, calculados pelo codigo. Analise antiga ou print: nada. */}
-      {signalState === 'NO_TRADE' && analysisData.fullResponse?.dataMode === 'real_data' && analysisData.fullResponse.levelMap ? (
+      {signalState === 'NO_TRADE' && (analysisData.fullResponse?.aiLevel || (analysisData.fullResponse?.dataMode === 'real_data' && analysisData.fullResponse.levelMap)) ? (
         <LevelMapCard
-          levelMap={analysisData.fullResponse.levelMap}
+          levelMap={analysisData.fullResponse?.dataMode === 'real_data' ? analysisData.fullResponse.levelMap ?? null : null}
+          aiLevel={analysisData.fullResponse?.aiLevel ?? null}
           analysisId={analysisData.id ?? null}
           alerts={alertsEnabled && !sample}
           formatPrice={formatPrice}

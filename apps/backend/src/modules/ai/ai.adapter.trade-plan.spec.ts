@@ -788,7 +788,7 @@ describe('grounding de forex/metal sem cota do Twelve Data (27/10/2026)', () => 
   beforeEach(() => {
     process.env.TWELVE_DATA_API_KEY = 'synthetic-not-a-credential';
     __setTwelveDataForTests({ now: () => NOW });
-    fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ values: tdValues, meta: { exchange_timezone: 'UTC' } }) } as any);
+    fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ values: tdValues }) } as any);
   });
   afterEach(() => {
     fetchSpy.mockRestore();

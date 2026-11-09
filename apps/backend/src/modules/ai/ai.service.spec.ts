@@ -545,8 +545,8 @@ describe('AiService access enforcement', () => {
         } },
       };
       const printOnly = { ...injected, candles: 'unavailable', stats: { ...injected.stats, coverage: 'unavailable', numbers: null } };
-      const run = async (grounding: unknown, id: string) => {
-        const create = jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(raw) } }] });
+      const run = async (grounding: unknown, id: string, body: unknown = raw) => {
+        const create = jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(body) } }] });
         const adapter = new AIAdapter();
         (adapter as any).visionModel = new OpenAiVisionModel({ chat: { completions: { create } } } as any);
         (adapter as any).buildMarketEnrichment = jest.fn().mockResolvedValue(grounding);
@@ -573,7 +573,12 @@ describe('AiService access enforcement', () => {
       });
       expect(real.delivered.fullResponse.levelMap).toEqual(real.completed.result.levelMap);
       const print = await run(printOnly, 'an_level_map_print');
-      expect(print.completed.result).toMatchObject({ signalState: 'NO_TRADE', dataMode: 'print', levelMap: null });
+      expect(print.completed.result).toMatchObject({ signalState: 'NO_TRADE', dataMode: 'print', levelMap: null, aiLevel: null });
+      // WATCH recusado pelo validador: o nivel do modelo fica guardado, o estado segue NO_TRADE.
+      const watchPlan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 98, zoneHigh: 99, invalidation: 80, target1: 110, target2: null, validForCandles: 12, trigger: 'Reaction at 98.' };
+      const rejected = await run(injected, 'an_ai_level', { ...raw, signalState: 'WATCH', watchPlan, analysis: { ...raw.analysis, symbol: 'ABCUSDT' } });
+      expect(rejected.completed.result).toMatchObject({ signalState: 'NO_TRADE', watchPlan: null, aiLevel: { price: 99 } });
+      expect(rejected.delivered.fullResponse.aiLevel).toEqual(rejected.completed.result.aiLevel);
     } finally {
       keys.forEach((key, i) => { if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i]; });
     }
@@ -1140,7 +1145,7 @@ describe('AiService access enforcement', () => {
       const byId = Object.fromEntries(items.map((item: any) => [item.id, item]));
       expect(byId.w_reached.watch).toEqual({
         direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12,
-        setupId: 'setup1', expiresAt: '2026-09-10T13:00:00.000Z', outcome: 'reached', alertAvailable: true,
+        setupId: 'setup1', expiresAt: '2026-09-10T13:00:00.000Z', outcome: 'reached', afterReach: 'invalidation', alertAvailable: true, plan: null,
       });
       expect(byId.w_expired.watch.outcome).toBe('expired');
       expect(byId.w_invalid.watch.outcome).toBe('invalidated');

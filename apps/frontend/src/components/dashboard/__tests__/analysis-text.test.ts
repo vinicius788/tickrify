@@ -5,6 +5,7 @@ import {
   normalizeRiskFactorsForView,
   parseStructureChecklist,
   softenDashes,
+  stripContradictingActions,
   stripModelState,
   splitItems,
 } from '@/components/dashboard/AnalysisResult';
@@ -316,3 +317,19 @@ describe('stripModelState: o estado ou a direcao do modelo nunca chega a tela', 
   });
 });
 
+
+describe('stripContradictingActions: so na tela, quando o codigo decidiu NO_TRADE', () => {
+  it.each([
+    ['Trend is up. Buy at 4,100.50 with a stop below.', 'Trend is up.'],
+    ['Sellers defended 2340. Go long if price reclaims it.', 'Sellers defended 2340.'],
+    ['Tendência de alta. Compra em 4.100 com stop abaixo.', 'Tendência de alta.'],
+    ['上昇トレンドです。4100で買いを検討します。', '上昇トレンドです。'],
+  ])('%s', (input, expected) => {
+    expect(stripContradictingActions(input)).toBe(expected);
+  });
+
+  it('nao corta texto de mercado nem quebra preco com ponto', () => {
+    const text = 'Sell-side liquidity sits at 4,133.70. The long-term trend is up.';
+    expect(stripContradictingActions(text)).toBe(text);
+  });
+});

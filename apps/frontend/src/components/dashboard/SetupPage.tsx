@@ -9,6 +9,7 @@ import { APIError, isFreeQuotaExhausted, type SignalState } from '@/lib/api';
 import { WatchPending } from './PendingLevels';
 import { entrySide, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import {
+  checkFrequencyText,
   formatAlertLevel,
   formatSetupDay,
   formatSetupMoment,
@@ -191,7 +192,7 @@ const SetupPage = ({
             <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
               {`${alerts[0].checkedAt ? t.alerts.lastChecked.replace('{time}', formatUtcTime(alerts[0].checkedAt)) : t.alerts.notChecked}${
                 alerts[0].lastPrice ? ` · ${formatAlertLevel(alerts[0].lastPrice, locale)}` : ''
-              }`}
+              }${checkFrequencyText(t.alerts, alerts[0]) ? ` · ${checkFrequencyText(t.alerts, alerts[0])}` : ''}`}
             </p>
           </div>
           <ul className="mt-3 divide-y divide-[var(--border-subtle)]">
