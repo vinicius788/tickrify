@@ -32,7 +32,7 @@ import {
   validatorReasons,
 } from '../src/common/utils/signal-decision';
 import type { EntryLevels, WatchPlan } from '../src/common/utils/plan-engine';
-import type { LevelMap } from '../src/common/utils/level-map';
+import type { AiLevel, LevelMap } from '../src/common/utils/level-map';
 import { BROKEN_PLAN_RULES, validateTradePlan } from '../src/common/utils/trade-plan-validator';
 import { buildEngineRecord, type AnalysisIntakeTimings } from '../src/modules/ai/engine-contract';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
@@ -180,6 +180,7 @@ interface WorkerAnalysisResult {
   location: PriceLocation | null;
   watchLevels: EntryLevels | null;
   levelMap: LevelMap | null;
+  aiLevel?: AiLevel | null;
   validatorNotes: ValidatorNote[];
   analysis: WorkerAnalysisDetails;
 }
@@ -356,6 +357,7 @@ interface AdapterDecision {
   location: PriceLocation | null;
   watchLevels: EntryLevels | null;
   levelMap: LevelMap | null;
+  aiLevel?: AiLevel | null;
   validatorAction: ValidatorAction;
   /** Cada mudanca de estado do validador do adapter. */
   validatorNotes: ValidatorNote[];
@@ -383,6 +385,7 @@ function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
     location: (aiSource.location as PriceLocation | null) ?? null,
     watchLevels: (aiSource.watchLevels as EntryLevels | null) ?? null,
     levelMap: (aiSource.levelMap as LevelMap | null) ?? null,
+    aiLevel: (aiSource.aiLevel as AiLevel | null) ?? null,
     validatorAction: meta.validatorAction as ValidatorAction,
     validatorNotes: Array.isArray(aiSource.validatorNotes) ? (aiSource.validatorNotes as ValidatorNote[]) : [],
     validatorReasons: meta.validatorReasons as ValidatorReason[],
@@ -524,6 +527,7 @@ async function toWorkerAnalysisResult(
     location: decision.location,
     watchLevels: decision.watchLevels,
     levelMap: decision.levelMap,
+    aiLevel: decision.aiLevel ?? null,
     validatorNotes: decision.validatorNotes,
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),

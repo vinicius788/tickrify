@@ -572,6 +572,7 @@ export default {
       noAnalysis: 'Analysis not available.',
       noWhyNot: 'No justification provided by the model.',
       noSummary: 'Executive summary not provided.',
+      downgradedSummary: "The AI saw a possible setup, but it did not pass the risk check. There is no trade on this chart right now.",
       demoTitle: 'Demo',
       demoDesc: 'Log in to see the real result of an analysis processed by the AI.',
       demoBanner: 'Demo analysis, fixed example, not a real AI analysis.',
@@ -1181,6 +1182,8 @@ export default {
     below: 'Below {level}: next level {next} ({n} ATR away)',
     belowEdge: 'Below {level}: no lower level in the recent candles',
     levelMapNote: 'These are levels to watch, not signals. Run a new analysis if price gets there.',
+    aiLevel: "AI level {price}",
+    aiLevelNote: "The AI marked this price, but its plan did not pass the risk check. It is a price to look at, not a trade.",
   },
   paywall: {
     ctaWeekly: 'Start with one week: $7.99 for 25 Ticks',

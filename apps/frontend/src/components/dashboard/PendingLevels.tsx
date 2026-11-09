@@ -304,11 +304,13 @@ function MapAlertButton({ analysisId, level, format }: { analysisId: string; lev
 /** NO_TRADE com velas reais: os dois lados do preco, montados pelo codigo. Nao e sinal. */
 export function LevelMapCard({
   levelMap,
+  aiLevel = null,
   analysisId,
   alerts,
   formatPrice,
 }: {
-  levelMap: LevelMap;
+  levelMap: LevelMap | null;
+  aiLevel?: { price: number } | null;
   analysisId: string | null;
   alerts: boolean;
   formatPrice: (value: number | null) => string;
@@ -325,13 +327,24 @@ export function LevelMapCard({
           .replace('{n}', formatNumber(Math.round(side.nextAtr * 10) / 10, language, { minimumFractionDigits: 1, maximumFractionDigits: 1 }))
       : (up ? p.aboveEdge : p.belowEdge).replace('{level}', price(side.level));
   const sides: Array<{ key: 'above' | 'below'; side: LevelMapSide; up: boolean }> = [];
-  if (levelMap.above) sides.push({ key: 'above', side: levelMap.above, up: true });
-  if (levelMap.below) sides.push({ key: 'below', side: levelMap.below, up: false });
+  if (levelMap?.above) sides.push({ key: 'above', side: levelMap.above, up: true });
+  if (levelMap?.below) sides.push({ key: 'below', side: levelMap.below, up: false });
 
   return (
     <section data-testid="level-map" className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-4">
       <h4 className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{p.levelMapTitle}</h4>
       <ul className="mt-2 flex flex-col gap-3">
+        {aiLevel ? (
+          <li key="ai" data-testid="ai-level" className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+            <div className="min-w-0">
+              <p className="font-terminal text-sm text-[var(--text-primary)]">{p.aiLevel.replace('{price}', price(aiLevel.price))}</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-secondary)]">{p.aiLevelNote}</p>
+            </div>
+            {alerts && analysisId ? (
+              <MapAlertButton analysisId={analysisId} level={aiLevel.price} format={price} />
+            ) : null}
+          </li>
+        ) : null}
         {sides.map(({ key, side, up }) => (
           <li key={key} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <p className="font-terminal text-sm text-[var(--text-primary)]">{line(side, up)}</p>

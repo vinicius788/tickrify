@@ -572,6 +572,7 @@ export default {
       noAnalysis: '分析は利用できません。',
       noWhyNot: 'モデルからの根拠はありません。',
       noSummary: 'エグゼクティブサマリーはありません。',
+      downgradedSummary: "AIは候補となるセットアップを見つけましたが、リスクチェックを通過しませんでした。現在、このチャートにトレードはありません。",
       demoTitle: 'デモ',
       demoDesc: 'ログインすると、AIが処理した実際の分析結果を表示できます。',
       demoBanner: 'デモ分析、固定の例で、実際のAI分析ではありません。',
@@ -1181,6 +1182,8 @@ export default {
     below: '{level}より下：次のレベル {next}（{n} ATR先）',
     belowEdge: '{level}より下：直近のローソク足にこれより低いレベルはありません',
     levelMapNote: 'これはシグナルではなく注目レベルです。価格が到達したら新しい分析を実行してください。',
+    aiLevel: "AIの価格水準 {price}",
+    aiLevelNote: "AIはこの価格を示しましたが、そのプランはリスクチェックを通過しませんでした。確認するための価格であり、トレードではありません。",
   },
   paywall: {
     ctaWeekly: 'まずは1週間から：25 Ticksで $7.99',

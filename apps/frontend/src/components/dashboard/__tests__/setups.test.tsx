@@ -211,6 +211,16 @@ describe('Alerta de nivel no resultado', () => {
     expect(JSON.parse(String(post?.[1]?.body))).toEqual({ analysisId: 'analysis00001', label: 'custom', level: 4200.5 });
   });
 
+  it('a leitura mostra niveis fora das sugestoes: nao diz que nao ha nivel', async () => {
+    serve({
+      'GET /api/setups/alerts/options/analysis00001': () => json(200, { ...OPTIONS, suggestions: [] }),
+      'GET /api/setups/by-analysis/analysis00001': () => json(200, { setup: null }),
+    });
+    wrap(<SetupAlertBar analysisId="analysis00001" recommendation="WAIT" base="/dashboard" readHasLevels />);
+    expect(await screen.findByLabelText('Price level')).toBeTruthy();
+    expect(screen.queryByText('This read has no price level. Type the price you want to watch.')).toBeNull();
+  });
+
   it('WAIT sem nivel: pede para digitar', async () => {
     serve({
       'GET /api/setups/alerts/options/analysis00001': () => json(200, { ...OPTIONS, suggestions: [] }),

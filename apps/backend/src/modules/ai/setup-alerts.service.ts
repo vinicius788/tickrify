@@ -457,11 +457,13 @@ export async function createWatchAlert(
     if (unsubscribed) return 'unsubscribed';
     if (await alertsPausedFor(prisma, userId)) return 'free_locked';
 
-    const level = alertSuggestions(result, recommendation, analysis).find((s) => s.label === 'entry')?.level;
-    const expiresAt = watchSummaryOf(result, recommendation, analysis.createdAt, {
+    // So o nivel do plano do modelo: nunca niveis guardados pelo codigo nem o mapa do NO_TRADE.
+    const watch = watchSummaryOf(result, recommendation, analysis.createdAt, {
       groundingInterval: analysis.groundingInterval, setupId: null, track: null,
-    })?.expiresAt;
-    if (level == null || !expiresAt) return 'no_level';
+    });
+    const level = watch?.level;
+    const expiresAt = watch?.expiresAt;
+    if (level == null || !expiresAt || Date.parse(expiresAt) <= Date.now()) return 'no_level';
     const referencePrice = (await latestAlertPrice(prisma, price.priceSymbol, price.source)) ?? positive(record(record(result).analysis).currentPrice);
     if (referencePrice == null) return 'no_price';
     const side = levelInBand(level, referencePrice) ? sideFor(level, referencePrice) : null;

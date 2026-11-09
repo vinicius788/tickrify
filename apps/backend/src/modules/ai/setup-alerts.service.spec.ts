@@ -826,6 +826,21 @@ describe('createWatchAlert: todo WATCH vira alerta', () => {
     expect(f.calls).toHaveLength(0);
   });
 
+  it('so o nivel do plano do modelo: niveis guardados pelo codigo nao mudam o alerta', async () => {
+    const f = fake();
+    const result = { ...WATCH, analysis: { ...WATCH.analysis, entry: 70000, stopLoss: 69000, takeProfit1: 72000 } };
+    await expect(createWatchAlert(f.prisma, { ...INPUT, result })).resolves.toBe('created');
+    expect(f.alertInsert()?.values).toEqual(expect.arrayContaining([77800, 'entry']));
+    expect(f.alertInsert()?.values).not.toContain(70000);
+  });
+
+  it('NO_TRADE com o nivel da IA ou o mapa de niveis: nenhum alerta automatico', async () => {
+    const f = fake();
+    const result = { ...WATCH, signalState: 'NO_TRADE', watchPlan: null, aiLevel: { price: 77800 }, levelMap: { price: 77200, atr: 100, above: { level: 77800, atr: 6, next: null, nextAtr: null }, below: null } };
+    await expect(createWatchAlert(f.prisma, { ...INPUT, result })).resolves.toBe('not_watch');
+    expect(f.calls).toHaveLength(0);
+  });
+
   it('janela do WATCH ja fechada: nao ha nivel para vigiar', async () => {
     const f = fake({ analysis: { createdAt: new Date(Date.now() - 24 * 3600_000) } });
     await expect(createWatchAlert(f.prisma, INPUT)).resolves.toBe('no_level');

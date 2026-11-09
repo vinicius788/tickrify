@@ -581,6 +581,7 @@ export default {
       noAnalysis: 'Análise não disponível.',
       noWhyNot: 'Justificativa não informada pelo modelo.',
       noSummary: 'Resumo executivo não informado.',
+      downgradedSummary: "A IA viu um possível setup, mas ele não passou na checagem de risco. Não há operação neste gráfico agora.",
       demoTitle: 'Demonstração',
       demoDesc: 'Faça login para visualizar o resultado real de uma análise processada pela IA.',
       demoBanner: 'Análise demonstrativa, exemplo fixo, não análise real de IA.',
@@ -1194,6 +1195,8 @@ export default {
     below: 'Abaixo de {level}: próximo nível {next} (a {n} ATR)',
     belowEdge: 'Abaixo de {level}: nenhum nível mais baixo nas velas recentes',
     levelMapNote: 'São níveis para observar, não sinais. Faça uma nova análise se o preço chegar lá.',
+    aiLevel: "Nível da IA {price}",
+    aiLevelNote: "A IA marcou este preço, mas o plano dela não passou na checagem de risco. É um preço para observar, não uma operação.",
   },
   paywall: {
     ctaWeekly: 'Comece com uma semana: US$ 7,99 por 25 Ticks',

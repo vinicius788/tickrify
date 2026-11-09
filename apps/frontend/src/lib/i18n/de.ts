@@ -572,6 +572,7 @@ export default {
       noAnalysis: 'Analyse nicht verfügbar.',
       noWhyNot: 'Keine Begründung vom Modell.',
       noSummary: 'Keine Zusammenfassung vorhanden.',
+      downgradedSummary: "Die KI hat ein mögliches Setup gesehen, aber es hat die Risikoprüfung nicht bestanden. Auf diesem Chart gibt es gerade keinen Trade.",
       demoTitle: 'Demo',
       demoDesc: 'Melden Sie sich an, um das echte Ergebnis einer KI-Analyse zu sehen.',
       demoBanner: 'Demo-Analyse, festes Beispiel, keine echte KI-Analyse.',
@@ -1181,6 +1182,8 @@ export default {
     below: 'Unter {level}: nächstes Niveau {next} ({n} ATR entfernt)',
     belowEdge: 'Unter {level}: kein tieferes Niveau in den letzten Kerzen',
     levelMapNote: 'Das sind Niveaus zum Beobachten, keine Signale. Starte eine neue Analyse, wenn der Kurs dort ankommt.',
+    aiLevel: "KI-Level {price}",
+    aiLevelNote: "Die KI hat diesen Preis markiert, aber ihr Plan hat die Risikoprüfung nicht bestanden. Es ist ein Preis zum Beobachten, kein Trade.",
   },
   paywall: {
     ctaWeekly: 'Starte mit einer Woche: 7,99 $ für 25 Ticks',

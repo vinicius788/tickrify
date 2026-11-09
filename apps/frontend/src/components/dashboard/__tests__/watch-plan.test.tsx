@@ -271,6 +271,25 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
     expect(body).not.toContain('WATCH');
   });
 
+  it('validador recusou o plano: "AI level" com o preco e resumo sem falar do plano recusado', () => {
+    renderResult('NO_TRADE', null, {
+      dataMode: 'print',
+      aiLevel: { price: 4100 },
+      validatorNotes: [{ from: 'WATCH', to: 'NO_TRADE', reason: 'no_valid_geometry' }],
+    });
+    expect(screen.getByTestId('ai-level').textContent).toContain('AI level');
+    expect(screen.getByTestId('ai-level').textContent).toContain('4,100.00');
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('The AI saw a possible setup, but it did not pass the risk check.');
+    expect(body).not.toContain('Watch 2340-2345.');
+  });
+
+  it('o proprio modelo disse NO_TRADE: resumo do modelo e nenhum "AI level"', () => {
+    renderResult('NO_TRADE', null, { validatorNotes: [] });
+    expect(screen.queryByTestId('ai-level')).toBeNull();
+    expect(document.body.textContent).toContain('Watch 2340-2345.');
+  });
+
   it('imagem do grafico com o texto alternativo no idioma da tela', () => {
     render(
       <LanguageProvider>

@@ -9,7 +9,8 @@
  * minima da janela. Niveis a menos de `mergeAtr` um do outro contam como um so.
  * Arquivo proprio: o motor (signal-decision, plan-engine) nao muda por isto.
  */
-import type { PriceLocation } from './signal-decision';
+import { nearEdge, type WatchPlan } from './plan-engine';
+import type { PriceLocation, SignalState, ValidatorNote, ValidatorReason } from './signal-decision';
 
 export const LEVEL_MAP_RULES = {
   /** Dois niveis mais perto que isto (em ATR) sao o mesmo nivel. */
@@ -77,4 +78,25 @@ export function buildLevelMap(location: PriceLocation | null, candles: LevelMapC
   const below = side(location, c, false);
   if (!above && !below) return null;
   return { price: location.price, atr: location.atr, above, below };
+}
+
+/** Motivos em que o plano do modelo nao serve nem como preco de referencia. */
+const AI_LEVEL_UNUSABLE: readonly ValidatorReason[] = [
+  'implausible_price', 'state_mismatch', 'watch_plan_invalid', 'plan_invalidated', 'levels_unverified',
+];
+
+export interface AiLevel {
+  price: number;
+}
+
+/**
+ * O validador recusou um plano coerente do modelo (09/11/2026): o estado segue
+ * NO_TRADE e o preco que a IA marcou fica guardado so para a tela. Nunca vira
+ * alerta automatico nem entra em decisao, acerto ou estatistica.
+ */
+export function aiLevelOf(plan: WatchPlan | null, decision: { state: SignalState; validatorNotes: ValidatorNote[] }): AiLevel | null {
+  if (decision.state !== 'NO_TRADE' || !plan) return null;
+  const note = decision.validatorNotes.find((n) => n.to === 'NO_TRADE');
+  if (!note || note.from === 'NO_TRADE' || AI_LEVEL_UNUSABLE.includes(note.reason)) return null;
+  return { price: nearEdge(plan) };
 }

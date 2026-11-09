@@ -227,6 +227,10 @@ export interface AIAnalysisResponse {
     watchLevels?: WatchLevels | null;
     /** NO_TRADE com REAL DATA: os dois lados do preco, pelo codigo; ausente em analise antiga. */
     levelMap?: LevelMap | null;
+    /** NO_TRADE em que o validador recusou o plano do modelo: o preco que a IA marcou. */
+    aiLevel?: { price: number } | null;
+    /** Mudancas de estado escritas pelo codigo; analises muito antigas guardam so o texto. */
+    validatorNotes?: Array<string | { from?: string; to?: string; reason: string }>;
     /** Contrato do motor; `no_trade_reason` e o motivo em uma linha do NO_TRADE. */
     engine?: { contract?: { no_trade_reason?: string | null; no_trade_reason_code?: string | null; no_trade_reason_params?: Record<string, string | number> } | null } | null;
     bias: Bias;

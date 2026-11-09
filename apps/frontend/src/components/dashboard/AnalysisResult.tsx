@@ -792,8 +792,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     cleanModelText(analysis.reasoning) ||
     cleanModelText(displayReasoning) ||
     r.noAnalysis;
-  const executiveSummary =
-    cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary);
+  // O validador rebaixou para NO_TRADE: a prosa do modelo ainda fala do plano recusado.
+  const downgradedToNoTrade = signalState === 'NO_TRADE' && (analysisData.fullResponse?.validatorNotes ?? [])
+    .some((note) => typeof note === 'object' && note.to === 'NO_TRADE' && note.from !== 'NO_TRADE');
+  const executiveSummary = downgradedToNoTrade
+    ? r.downgradedSummary
+    : cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary);
   const whyNotOpposite = cleanModelText(analysis.whyNotOpposite);
   // Checklist e paragrafo de reserva sem o estado ou a direcao que o modelo
   // escreveu ("6/7 WATCH", "MTF 2/3 → SELL"): a tela so mostra a decisao do codigo.
@@ -1155,9 +1159,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
       <ReadModePanel data={readMode} formatPrice={formatPrice} />
 
       {/* NO_TRADE com velas reais: os dois lados do preco, calculados pelo codigo. Analise antiga ou print: nada. */}
-      {signalState === 'NO_TRADE' && analysisData.fullResponse?.dataMode === 'real_data' && analysisData.fullResponse.levelMap ? (
+      {signalState === 'NO_TRADE' && (analysisData.fullResponse?.aiLevel || (analysisData.fullResponse?.dataMode === 'real_data' && analysisData.fullResponse.levelMap)) ? (
         <LevelMapCard
-          levelMap={analysisData.fullResponse.levelMap}
+          levelMap={analysisData.fullResponse?.dataMode === 'real_data' ? analysisData.fullResponse.levelMap ?? null : null}
+          aiLevel={analysisData.fullResponse?.aiLevel ?? null}
           analysisId={analysisData.id ?? null}
           alerts={alertsEnabled && !sample}
           formatPrice={formatPrice}
