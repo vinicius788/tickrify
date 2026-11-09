@@ -4,6 +4,7 @@ import { BellRing, RefreshCw } from 'lucide-react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import { displayAsset, type AIAnalysisResponse, type OpenTrade } from '@/lib/api';
+import { formatAssetPrice } from '@/lib/trading-ui';
 import { WatchPending } from './PendingLevels';
 import {
   alertDistancePct,
@@ -135,6 +136,26 @@ const TodaySection = ({
                     {list.map((alert) => {
                       const pct = alertDistancePct(alert);
                       const distance = pct === null ? '' : ` · ${a.away.replace('{pct}', `${formatNumber(Math.abs(pct), language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })}%`)}`;
+                      const row = analyses.find((item) => item.id === alert.analysisId && item.watch && item.watch.level === alert.level && isWatchOpen(item.watch, now));
+                      if (row?.watch) {
+                        const price = (v: number) => formatAssetPrice(v, alert.symbol, locale);
+                        const plan = row.watch.plan;
+                        return (
+                          <li key={alert.id} data-testid="today-watch" className="font-terminal text-xs text-[var(--text-primary)]">
+                            <span className="block">{`${(row.watch.direction === 'long' ? t.pending.watchBuy : t.pending.watchSell).replace('{price}', price(alert.level))}${distance}`}</span>
+                            {plan ? (
+                              <span key="plan" className="block text-[11px] text-[var(--text-secondary)]">
+                                {t.pending.planIf
+                                  .replace(/\{level\}/g, price(plan.entry))
+                                  .replace('{side}', row.watch.direction === 'long' ? t.pending.sideBuy : t.pending.sideSell)
+                                  .replace('{stop}', price(plan.stopLoss))
+                                  .replace('{target}', price(plan.takeProfit1))
+                                  .replace('{r}', formatNumber(plan.tp1R, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }))}
+                              </span>
+                            ) : null}
+                          </li>
+                        );
+                      }
                       return (
                         <li key={alert.id} className="font-terminal text-xs text-[var(--text-secondary)]">
                           {`${labelText[alert.label]} ${formatAlertLevel(alert.level, locale)}${distance}`}
@@ -168,7 +189,7 @@ const TodaySection = ({
                 <div className="min-w-0">
                   <p className="font-terminal text-sm text-[var(--text-primary)]">{`${displayAsset(row.symbol)}${row.timeframe ? ` ${row.timeframe}` : ''}`}</p>
                   <div className="mt-1">
-                    <WatchPending analysisId={row.id} watch={row.watch!} surface="today" now={now} />
+                    <WatchPending analysisId={row.id} watch={row.watch!} surface="today" now={now} symbol={row.symbol} />
                   </div>
                 </div>
                 <Link

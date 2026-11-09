@@ -1,4 +1,4 @@
-import type { SignalStateCanonical } from '@/lib/trading-ui';
+import { formatAssetPrice, type SignalStateCanonical } from '@/lib/trading-ui';
 
 /**
  * Renderer unico dos cards de compartilhar: a leitura da analise e o resultado
@@ -7,8 +7,9 @@ import type { SignalStateCanonical } from '@/lib/trading-ui';
  * Canvas 2D) e e usado pelos dois botoes.
  *
  * Regras que nao se desfazem sem pensar:
- * 1. Card de leitura NUNCA mostra entrada, stop ou alvo: frase com preco ou
- *    nivel sai antes de desenhar (`hasPriceLevel`). Post com nivel le como sinal.
+ * 1. Frase da IA com preco ou nivel sai antes de desenhar (`hasPriceLevel`). A
+ *    unica excecao e o WATCH (decisao do dono, 09/11/2026): nivel e plano
+ *    condicional montados pelo codigo, com os numeros do servidor.
  * 2. Todo texto do card e em ingles, sem travessao e sem emoji (`cardText`).
  * 3. Card de trade so mostra o que o trader registrou. Nada estimado.
  * 4. Sem `ctx.filter` (o Safari nao tem). O brilho e `shadowBlur`, que NAO
@@ -195,6 +196,12 @@ export interface ReadShareData {
   /** Forca da tendencia lida pela IA; null sem o campo. */
   trendStrength: 'strong' | 'moderate' | 'weak' | null;
   date: Date;
+  /** WATCH com plano: o nivel e, com geometria valida, o plano condicional. */
+  watch?: {
+    direction: 'long' | 'short';
+    level: number;
+    plan: { entry: number; stopLoss: number; takeProfit1: number; tp1R: number } | null;
+  } | null;
 }
 
 export function publicScenario(scenario: string): 'BULLISH' | 'BEARISH' | 'NEUTRAL' {
@@ -251,6 +258,12 @@ export function buildReadCard(data: ReadShareData): ShareCardModel {
   const secondary =
     theme === 'watch' && scenario !== 'NEUTRAL' ? `Scenario: ${scenario === 'BULLISH' ? 'Bullish' : 'Bearish'}` : null;
   const sentences = data.readIsEnglish ? readSentences(data.read) : [];
+  const price = (value: number) => cardText(formatAssetPrice(value, data.symbol, 'en-US'));
+  const side = data.watch?.direction === 'short' ? 'sell' : 'buy';
+  const watchStatus = data.watch ? `Watch for a ${side} at ${price(data.watch.level)}` : null;
+  const watchPlan = data.watch?.plan
+    ? `Plan if price reaches ${price(data.watch.plan.entry)}: ${side} at ${price(data.watch.plan.entry)}, stop ${price(data.watch.plan.stopLoss)}, target ${price(data.watch.plan.takeProfit1)} (${data.watch.plan.tp1R.toFixed(1)}R).`
+    : null;
   return {
     theme,
     date: formatCardDate(data.date),
@@ -258,9 +271,9 @@ export function buildReadCard(data: ReadShareData): ShareCardModel {
     tag: cardText(data.timeframe) && data.timeframe !== 'UNKNOWN' ? cardText(data.timeframe) : null,
     hero,
     heroCount: null,
-    status: READ_STATUS[data.state] ?? READ_STATUS.NO_TRADE,
+    status: watchStatus ?? READ_STATUS[data.state] ?? READ_STATUS.NO_TRADE,
     secondary,
-    read: [...sentences.slice(0, 6), readDataLine(data)],
+    read: [...(watchPlan ? [watchPlan] : []), ...sentences.slice(0, watchPlan ? 5 : 6), readDataLine(data)],
     stats: [],
     footerUrl: 'tickrify.com/accuracy',
     footerLines: ['Not a signal. The final call is yours.', 'Illustrative candles'],

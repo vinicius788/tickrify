@@ -81,7 +81,7 @@ describe('WATCH pendente', () => {
     wrap(<WatchPending analysisId="w1" watch={watch()} surface="trades" now={NOW} />);
     const card = screen.getByTestId('watch-pending');
     expect(card.textContent).toContain('Pending');
-    expect(card.textContent).toContain('Possible sell at 77,800. Re-check the chart when price gets there.');
+    expect(card.textContent).toContain('Watch for a sell at 77,800');
     expect(card.textContent).toContain('Invalidation 78,400 · Valid for 12 candles, 2h left');
     expect(card.textContent).not.toMatch(/win|P&L|%/i);
     fireEvent.click(screen.getByRole('button', { name: 'Alert me at 77,800' }));
@@ -104,7 +104,7 @@ describe('WATCH pendente', () => {
 
   it('compra usa "Buy if"; tempo grafico desconhecido mostra so as velas', () => {
     wrap(<WatchPending analysisId="w1" watch={watch({ direction: 'long', level: 2345, expiresAt: null })} surface="journal" now={NOW} />);
-    expect(screen.getByTestId('watch-pending').textContent).toContain('Possible buy at 2,345. Re-check the chart when price gets there.');
+    expect(screen.getByTestId('watch-pending').textContent).toContain('Watch for a buy at 2,345');
     expect(screen.getByTestId('watch-pending').textContent).toContain('Valid for 12 candles');
     expect(screen.queryByRole('button')).toBeNull();
   });
@@ -121,7 +121,7 @@ describe('WATCH pendente', () => {
     expect(card.textContent).toContain(text);
     expect(card.textContent).toContain('Sell level 77,800');
     expect(card.textContent).not.toContain('Invalidation');
-    expect(card.textContent).not.toContain('Possible');
+    expect(card.textContent).not.toContain('Watch for a');
     expect(card.textContent).not.toContain('Re-check the chart');
     expect(card.textContent).not.toMatch(/\bwin\b|P&L/i);
     expect(screen.queryByRole('button')).toBeNull();
@@ -292,9 +292,9 @@ describe('WatchingSection', () => {
     section();
     const row = screen.getByTestId('watching-item');
     expect(row.textContent).toContain('XAUUSD 15m');
-    expect(row.textContent).toContain('Possible buy at 4,180');
-    expect(row.textContent).toContain('0.48% away (20)');
-    expect(row.textContent).toContain('Invalidation 4,150');
+    expect(row.textContent).toContain('Watch for a buy at $ 4,180.00');
+    expect(row.textContent).toContain('0.48% away ($ 20.00)');
+    expect(row.textContent).toContain('Invalidation $ 4,150.00');
     expect(row.textContent).toMatch(/\d.* left/);
     expect(row.textContent).toContain('Last checked 13:50 UTC · Checked every 5 minutes');
     expect(row.textContent).toContain('Alert: watching');
@@ -336,7 +336,7 @@ describe('WatchingSection', () => {
     const row = screen.getByTestId('watching-item');
     expect(row.getAttribute('data-state')).toBe('closed');
     expect(row.textContent).toContain(label);
-    expect(row.textContent).toContain('Buy level 4,180');
+    expect(row.textContent).toContain('Buy level $ 4,180.00');
     if (after) expect(row.textContent).toContain(after);
     expect(row.textContent).not.toMatch(/\b(win|loss|profit|filled|hit rate|P&L)\b/i);
     expect(row.textContent).not.toContain('away');

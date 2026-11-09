@@ -584,7 +584,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                   {a.tradeNote?.note && (
                                     <span className="line-clamp-2 text-xs text-[var(--text-secondary)]">{a.tradeNote.note}</span>
                                   )}
-                                  {a.watch && verdict === null && <WatchPending analysisId={a.id} watch={a.watch} surface="journal" />}
+                                  {a.watch && verdict === null && <WatchPending analysisId={a.id} watch={a.watch} surface="journal" symbol={a.symbol} />}
                                   {sideOf(a) && (
                                     <button
                                       type="button"

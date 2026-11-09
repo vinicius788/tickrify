@@ -176,6 +176,22 @@ describe('AiService access enforcement', () => {
     service = new AiService(prisma, aiAdapter as any, ticksService as any, stripeService as any, mailService as any, setups, new TrialService(prisma, mailService as any), { syncFromVerdict: jest.fn().mockResolvedValue(undefined) } as any);
   });
 
+
+  it('detalhe do WATCH com plano traz a validade; fora dele nao consulta o rastreador', async () => {
+    (service as any).getSignedImageUrl = jest.fn().mockResolvedValue(null);
+    (service as any).getOutcomeById = jest.fn().mockResolvedValue(null);
+    const createdAt = new Date('2026-11-09T18:03:34Z');
+    const plan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 100, zoneHigh: 101, invalidation: 98, target1: 105, target2: null, validForCandles: 16, trigger: 'x' };
+    const row = (result: unknown) => ({ id: 'an_w', status: 'completed', recommendation: 'WAIT', result, createdAt, updatedAt: createdAt });
+    prisma.$queryRaw = jest.fn().mockResolvedValue([{ analysisId: 'an_w', groundingInterval: '5m', setupId: null, status: null }]);
+    const out = await (service as any).serializeAnalysis(row({ recommendation: 'WAIT', signalState: 'WATCH', watchPlan: plan, analysis: { symbol: 'NAS100', timeframe: 'M5' } }));
+    expect(out.watch).toMatchObject({ level: 101, expiresAt: '2026-11-09T19:23:34.000Z', outcome: 'pending' });
+    prisma.$queryRaw.mockClear();
+    const noTrade = await (service as any).serializeAnalysis(row({ recommendation: 'WAIT', signalState: 'NO_TRADE', analysis: { symbol: 'NAS100', timeframe: 'M5' } }));
+    expect(noTrade.watch).toBeNull();
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+
   it.each(['quick', 'deep'])('persists the reason code beside unchanged English in the %s synchronous JSON', async (analysisType) => {
     const text = 'A price level is outside a plausible range of the chart price.';
     (service as any).aiAdapter.analyzeImage.mockResolvedValueOnce({

@@ -62,6 +62,7 @@ import { PricingCards } from "@/components/pricing/PricingCards";
 import { useSeo } from "@/hooks/useSeo";
 import { loadSavedDemoResult } from "@/lib/demo-api";
 import SetupAlertBar from "../dashboard/SetupAlertBar";
+import { isWatchPlan } from "../dashboard/WatchPlanCard";
 import TodaySection from "../dashboard/TodaySection";
 import SetupsSection from "../dashboard/SetupsSection";
 import SetupPage from "../dashboard/SetupPage";
@@ -1650,10 +1651,10 @@ const DashboardPage = () => {
                   .replace('{date}', new Date(otherOpenTrade.updatedAt).toLocaleDateString(DATE_LOCALES[language] ?? 'en-US'))}
               </div>
             ) : null}
-            <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} alertsEnabled={!isDemo && !freeLocked} />
+            <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} alertsEnabled={!isDemo && !freeLocked} base={base} />
             {tradeAnalysisId ? <TradePanel key={`trade-${tradeAnalysisId}`} analysisId={tradeAnalysisId} /> : null}
             {/* Seguir o setup: ao lado das acoes de sempre, nunca no lugar delas. */}
-            {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' ? (
+            {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' && !(analysisData.fullResponse?.signalState === 'WATCH' && isWatchPlan(analysisData.fullResponse.watchPlan)) ? (
               <SetupAlertBar
                 key={`alerts-${analysisData.id}`}
                 analysisId={analysisData.id}
