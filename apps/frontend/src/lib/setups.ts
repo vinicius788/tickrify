@@ -211,7 +211,7 @@ export function useSetupActions() {
   return { follow, setStatus };
 }
 
-export function useSetupAlerts(enabled: boolean, setupId: string | null = null) {
+export function useSetupAlerts(enabled: boolean, setupId: string | null = null, options: { background?: boolean } = {}) {
   const token = useToken();
   return useQuery({
     queryKey: ['setups', 'alerts', setupId],
@@ -225,10 +225,26 @@ export function useSetupAlerts(enabled: boolean, setupId: string | null = null) 
     staleTime: 60_000,
     // O monitor roda a cada minuto: so vale reler rapido com nivel sendo vigiado.
     refetchInterval: (query) => (query.state.data?.items?.some((a) => a.status === 'active') ? 60_000 : 5 * 60_000),
-    refetchIntervalInBackground: false,
+    // So o painel pede: o "(N)" do titulo existe para chamar quem esta em outra aba.
+    refetchIntervalInBackground: options.background ?? false,
     refetchOnWindowFocus: true,
     retry: false,
   });
+}
+
+/**
+ * "(1) Dashboard | Tickrify": alerta disparado e ainda nao aberto. `routeKey`
+ * muda sempre que o `useSeo` regrava o titulo (area ou endereco), senao o
+ * numero some ao passar de uma analise para outra.
+ */
+export function useAlertTabTitle(unseen: number, routeKey: string) {
+  useEffect(() => {
+    if (unseen <= 0) return;
+    document.title = `(${unseen}) ${document.title.replace(/^\(\d+\) /, '')}`;
+    return () => {
+      document.title = document.title.replace(/^\(\d+\) /, '');
+    };
+  }, [unseen, routeKey]);
 }
 
 /** WATCH valendo e encerrados ha ate 7 dias: secao "Watching" do My Trades e do Diario. */
