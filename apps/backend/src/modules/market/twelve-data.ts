@@ -425,7 +425,7 @@ async function take(consumer: TwelveDataConsumer, now: Date): Promise<TwelveData
 // ── Chamada e cache ─────────────────────────────────────────────────────────
 
 export type TwelveDataValue = { datetime: string; open: string; high: string; low: string; close: string; volume?: string };
-export type TwelveDataSeries = { values: TwelveDataValue[]; exchangeTimezone: string | null; fetchedAt: number };
+export type TwelveDataSeries = { values: TwelveDataValue[]; fetchedAt: number };
 export type TwelveDataResult =
   | { ok: true; series: TwelveDataSeries; cached: boolean }
   | { ok: false; reason: TwelveDataDenyReason | 'error' };
@@ -439,7 +439,6 @@ export type TwelveDataRequest = {
   outputsize: number;
   /** Janela fixa (sweeper). Com janela, nada de cache. */
   window?: { startMs: number; endMs: number };
-  timezoneUtc?: boolean;
   /** Aceita resposta "ultimos N" guardada ha ate isto. */
   cacheMaxAgeMs?: number;
   timeoutMs?: number;
@@ -449,8 +448,23 @@ const CACHE_TTL_SEC = 15 * 60;
 const iso = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
 
 /**
- * A URL de sempre de cada consumidor (o grounding continua pedindo exatamente o
- * que pedia: sem fuso, ultimos 120). Exportada para o teste provar isso.
+ * Abertura da vela em ms. Toda URL pede `timezone=UTC`, entao o texto
+ * ("2026-11-09 13:05:00", ou so a data no 1d) e sempre lido como UTC. Unico
+ * parser do horario do Twelve Data.
+ */
+export const twelveDataOpenMs = (datetime: string): number =>
+  Date.parse(/\d:\d/.test(datetime) ? `${datetime.replace(' ', 'T')}Z` : `${datetime}T00:00:00Z`);
+
+const INTERVAL_MS_OF: Record<string, number> = { min: MINUTE, h: HOUR, day: 24 * HOUR, week: 7 * 24 * HOUR };
+const intervalMs = (interval: string): number => {
+  const m = /^(\d+)(min|h|day|week)$/.exec(interval);
+  return m ? Number(m[1]) * INTERVAL_MS_OF[m[2]] : 0;
+};
+
+/**
+ * Sempre em UTC (09/11/2026): sem `timezone=UTC` o forex e o ouro vem no fuso do
+ * provedor (11h a frente em novembro) e o `meta` nem traz `exchange_timezone`
+ * para perceber. Exportada para o teste provar a URL.
  */
 export function twelveDataUrl(req: TwelveDataRequest, key: string): string {
   const symbol = `${req.pair.slice(0, 3)}/${req.pair.slice(3)}`;
@@ -462,13 +476,13 @@ export function twelveDataUrl(req: TwelveDataRequest, key: string): string {
     );
   }
   return (
-    `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${req.interval}` +
-    `${req.timezoneUtc ? '&timezone=UTC' : ''}&outputsize=${req.outputsize}&apikey=${key}`
+    `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${req.interval}&timezone=UTC` +
+    `&outputsize=${req.outputsize}&apikey=${key}`
   );
 }
 
 const cacheKeyOf = (req: TwelveDataRequest) =>
-  req.window ? null : `td:cache:${req.pair}:${req.interval}:${req.outputsize}:${req.timezoneUtc ? 'utc' : 'exchange'}`;
+  req.window ? null : `td:cache:${req.pair}:${req.interval}:${req.outputsize}:utc`;
 
 export async function twelveDataTimeSeries(req: TwelveDataRequest): Promise<TwelveDataResult> {
   const key = twelveDataApiKey();
@@ -501,7 +515,7 @@ export async function twelveDataTimeSeries(req: TwelveDataRequest): Promise<Twel
   }
   if (denied) return { ok: false, reason: denied };
 
-  type Body = { status?: string; code?: number; message?: string; values?: TwelveDataValue[]; meta?: { exchange_timezone?: string } };
+  type Body = { status?: string; code?: number; message?: string; values?: TwelveDataValue[] };
   let series: TwelveDataSeries;
   try {
     const res = await fetch(twelveDataUrl(req, key), {
@@ -522,7 +536,13 @@ export async function twelveDataTimeSeries(req: TwelveDataRequest): Promise<Twel
       return { ok: false, reason: 'quota_exhausted' };
     }
     if (!res.ok || !body || !Array.isArray(body.values)) return { ok: false, reason: 'error' };
-    series = { values: body.values, exchangeTimezone: body.meta?.exchange_timezone ?? null, fetchedAt: clock().getTime() };
+    // Vela no futuro = horario errado: descarta a resposta inteira, nunca grava nem usa.
+    const newest = body.values.reduce((max, v) => Math.max(max, twelveDataOpenMs(v.datetime) || 0), 0);
+    if (newest > clock().getTime() + intervalMs(req.interval)) {
+      console.warn(`[twelvedata] Resposta descartada: vela no futuro pair=${req.pair} interval=${req.interval} newest=${new Date(newest).toISOString()}`);
+      return { ok: false, reason: 'error' };
+    }
+    series = { values: body.values, fetchedAt: clock().getTime() };
   } catch {
     return { ok: false, reason: 'error' };
   }

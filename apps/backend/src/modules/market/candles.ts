@@ -12,6 +12,7 @@ import { canonicalFxPair } from '../../common/utils/analysis-normalizer';
 import {
   TwelveDataUnavailableError,
   twelveDataApiKey,
+  twelveDataOpenMs,
   twelveDataTimeSeries,
   type TwelveDataConsumer,
   type TwelveDataValue,
@@ -122,7 +123,7 @@ export async function fetchCrypto1m(symbol: string, startMs: number, endMs: numb
 const toCandles = (values: TwelveDataValue[]): Candle[] =>
   values
     .map((v): Candle => [
-      Date.parse(`${v.datetime.replace(' ', 'T')}Z`),
+      twelveDataOpenMs(v.datetime),
       Number(v.open),
       Number(v.high),
       Number(v.low),
@@ -168,17 +169,12 @@ export async function fetchFxWindow(
 
 /**
  * Ultimos 120 candles de 5m de forex/metal: a MESMA requisicao do grounding de
- * um grafico de 5m, entao monitor e analise dividem o cache. So reaproveita se
- * o Twelve Data disser que o horario vem em UTC; senao pede com fuso UTC.
+ * um grafico de 5m, entao monitor e analise dividem o cache.
  */
 export async function fetchFxLatest5m(symbol: string, consumer: TwelveDataConsumer, maxAgeMs: number): Promise<Candle[] | null> {
   const pair = canonicalFxPair(symbol);
   if (!pair) return null;
-  const base = { consumer, pair, interval: TWELVE_INTERVAL['5m'], outputsize: 120, cacheMaxAgeMs: maxAgeMs };
-  let res = await twelveDataTimeSeries(base);
-  if (res.ok && res.series.exchangeTimezone && res.series.exchangeTimezone !== 'UTC') {
-    res = await twelveDataTimeSeries({ ...base, timezoneUtc: true });
-  }
+  const res = await twelveDataTimeSeries({ consumer, pair, interval: TWELVE_INTERVAL['5m'], outputsize: 120, cacheMaxAgeMs: maxAgeMs });
   if (!res.ok) {
     if (res.reason === 'no_key' || res.reason === 'error') return null;
     throw new TwelveDataUnavailableError(res.reason);

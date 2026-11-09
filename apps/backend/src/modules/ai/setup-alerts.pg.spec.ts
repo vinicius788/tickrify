@@ -5,6 +5,8 @@ import { SetupsService } from './setups.service';
 import { ALERT_RULES, SetupAlertsService, createWatchAlert, runAlertMonitor } from './setup-alerts.service';
 import { runSetupAlertEmailSweep } from '../mail/setup-alert-email';
 import type { Candle } from '../market/candles';
+import { __setTwelveDataForTests } from '../market/twelve-data';
+import { recentCandles, registerCandleStore } from '../market/candle-store';
 
 jest.mock('../market/candles', () => ({
   ...jest.requireActual('../market/candles'),
@@ -201,6 +203,31 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
     await expect(runAlertMonitor({ prisma, now: () => later, fetchCrypto, log: () => undefined })).resolves.toMatchObject({ triggered: 0 });
     [row] = await prisma.$queryRawUnsafe('SELECT "status" FROM tickrify."SetupAlert" WHERE "id" = $1', alert.id);
     expect(row.status).toBe('active');
+  });
+
+  it('armazem de velas: a busca do Twelve Data apaga o que foi gravado no fuso errado', async () => {
+    const NOW = new Date('2026-11-09T11:46:00Z');
+    const LAST = Date.parse('2026-11-09T11:45:00Z');
+    __setTwelveDataForTests({ now: () => NOW });
+    await registerCandleStore(prisma, () => undefined);
+    // Linhas antigas: 11h a frente, e uma no meio do fim de semana.
+    const stale = [LAST + 11 * H, LAST + 2 * M5 + 7 * H, Date.parse('2026-11-07T09:00:00Z')];
+    for (const t of stale) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO tickrify."MarketCandle" ("symbol","timeframe","openTime","open","high","low","close","source") VALUES ('XAUUSD','5m',$1::timestamp(3),1,2,0,1,'twelvedata')`,
+        new Date(t).toISOString(),
+      );
+    }
+    const stamp = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({ values: Array.from({ length: 40 }, (_, i) => ({ datetime: stamp(LAST - i * M5), open: '4105', high: '4110', low: '4100', close: '4108' })) }),
+    } as any);
+    const got = await recentCandles('XAUUSD', '5m', 'analysis', NOW.getTime());
+    fetchSpy.mockRestore();
+    expect(got.candles).toHaveLength(40);
+    const rows = await prisma.$queryRawUnsafe(`SELECT MIN("openTime") AS "min", MAX("openTime") AS "max", COUNT(*)::int AS "n" FROM tickrify."MarketCandle" WHERE "symbol" = 'XAUUSD'`);
+    expect(rows[0]).toEqual({ min: new Date(LAST - 39 * M5), max: new Date(LAST), n: 40 });
   });
 
   it('largar o setup cancela os alertas e o monitor nao olha mais', async () => {

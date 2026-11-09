@@ -239,16 +239,24 @@ export function sideFor(level: number, referencePrice: number): AlertSide | null
 /**
  * O primeiro candle que abriu em `watchFrom` ou depois e cruzou o nivel.
  * Acima: maxima >= nivel. Abaixo: minima <= nivel. Candles em ordem de tempo.
+ * Vela que cruzaria mas abriu antes do `watchFrom` ou depois de agora + 1 vela
+ * nunca dispara: `onDiscard` registra (horario errado na fonte, 09/11/2026).
  */
 export function findTrigger(
   alert: { level: number; side: AlertSide; watchFrom: Date },
   candles: Candle[],
+  clock: { nowMs: number; stepMs: number; onDiscard?: (reason: 'before_watch_from' | 'in_future', candleMs: number) => void },
 ): { at: Date; price: number } | null {
   const from = alert.watchFrom.getTime();
+  const latest = clock.nowMs + clock.stepMs;
   for (const c of candles) {
-    if (c[0] < from) continue;
-    if (alert.side === 'above' && c[2] >= alert.level) return { at: new Date(c[0]), price: c[2] };
-    if (alert.side === 'below' && c[3] <= alert.level) return { at: new Date(c[0]), price: c[3] };
+    const crossed = alert.side === 'above' ? c[2] >= alert.level : c[3] <= alert.level;
+    if (!crossed) continue;
+    if (c[0] < from || c[0] > latest) {
+      clock.onDiscard?.(c[0] < from ? 'before_watch_from' : 'in_future', c[0]);
+      continue;
+    }
+    return { at: new Date(c[0]), price: alert.side === 'above' ? c[2] : c[3] };
   }
   return null;
 }
@@ -945,7 +953,9 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<AlertMoni
       const earliest = Math.min(...alerts.map((a) => a.watchFrom.getTime()));
       const step = INTERVAL_MS[ALERT_RULES.candleInterval[source]];
       // So o que falta: normalmente 2 ou 3 velas desde a ultima volta.
-      const seen = lastChecks.get(priceSymbol)?.lastCandleAt?.getTime() ?? 0;
+      // Ignora o gravado no futuro (fuso errado ate 09/11/2026): senao filtraria todas as velas.
+      const stored = lastChecks.get(priceSymbol)?.lastCandleAt?.getTime() ?? 0;
+      const seen = stored > now.getTime() + step ? 0 : stored;
       const startMs = Math.max(earliest - step, seen - step, now.getTime() - ALERT_RULES.lookbackMs);
       const candles =
         source === 'fx'
@@ -964,7 +974,12 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<AlertMoni
 
       for (const alert of alerts) {
         counts.checked++;
-        const hit = findTrigger({ level: Number(alert.level), side: alert.side, watchFrom: alert.watchFrom }, candles);
+        const hit = findTrigger({ level: Number(alert.level), side: alert.side, watchFrom: alert.watchFrom }, candles, {
+          nowMs: now.getTime(),
+          stepMs: step,
+          onDiscard: (reason, candleMs) =>
+            deps.log('warn', `[alerts] Vela descartada alert=${alert.id} symbol=${priceSymbol} reason=${reason} candle=${new Date(candleMs).toISOString()} watchFrom=${alert.watchFrom.toISOString()}`),
+        });
         if (!hit) continue;
         const won = await deps.prisma.$executeRaw`
           UPDATE "tickrify"."SetupAlert"

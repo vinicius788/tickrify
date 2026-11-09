@@ -47,6 +47,7 @@ import {
   enterTwelveDataExperimentMode,
   experimentRefusesFx,
   TWELVE_DATA_BUDGET,
+  twelveDataOpenMs,
   twelveDataTimeSeries,
   twelveDataUsage,
 } from '../src/modules/market/twelve-data';
@@ -362,7 +363,7 @@ async function fetchCalibrationSeries(pair: string, tf: string, cache: Calibrati
     const now = Date.now();
     bars = (await fetchWindow(pair, tf, now - CALIBRATION_BARS * TIMEFRAME_MS[tf], now, 'sweeper')).candles;
   } else {
-    const request = { consumer: 'calibration' as const, pair, interval: TD_INTERVAL[tf], outputsize: CALIBRATION_BARS, timeoutMs: 30_000, timezoneUtc: true };
+    const request = { consumer: 'calibration' as const, pair, interval: TD_INTERVAL[tf], outputsize: CALIBRATION_BARS, timeoutMs: 30_000 };
     await new Promise((r) => setTimeout(r, 15_000));
     let res = await twelveDataTimeSeries(request);
     if (!res.ok && res.reason === 'rate_limited') {
@@ -375,7 +376,7 @@ async function fetchCalibrationSeries(pair: string, tf: string, cache: Calibrati
     }
     bars = res.ok
       ? res.series.values
-        .map((v) => [Date.parse(`${v.datetime.replace(' ', 'T')}Z`), Number(v.open), Number(v.high), Number(v.low), Number(v.close), 0])
+        .map((v) => [twelveDataOpenMs(v.datetime), Number(v.open), Number(v.high), Number(v.low), Number(v.close), 0])
         .filter((b) => b.every((x) => Number.isFinite(x)))
         .sort((a, b) => a[0] - b[0])
       : null;

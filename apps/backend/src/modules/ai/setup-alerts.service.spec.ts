@@ -62,22 +62,24 @@ beforeEach(() => {
   __setTwelveDataForTests({ now: () => new Date('2026-10-27T12:30:00Z') });
 });
 
+const CLOCK = { nowMs: T + 60 * M5, stepMs: M5 };
+
 describe('regras puras dos alertas', () => {
   it('disparo acima: maxima de um candle depois da criacao toca o nivel', () => {
     const alert = { level: 110, side: 'above' as const, watchFrom: new Date(T + M5) };
-    expect(findTrigger(alert, [bar(0, 109, 100), bar(1, 109.9, 101), bar(2, 110, 102)])).toEqual({ at: new Date(T + 2 * M5), price: 110 });
-    expect(findTrigger(alert, [bar(1, 109.9, 101)])).toBeNull();
+    expect(findTrigger(alert, [bar(0, 109, 100), bar(1, 109.9, 101), bar(2, 110, 102)], CLOCK)).toEqual({ at: new Date(T + 2 * M5), price: 110 });
+    expect(findTrigger(alert, [bar(1, 109.9, 101)], CLOCK)).toBeNull();
   });
 
   it('disparo abaixo: minima toca o nivel', () => {
     const alert = { level: 95, side: 'below' as const, watchFrom: new Date(T) };
-    expect(findTrigger(alert, [bar(0, 101, 96), bar(1, 100, 94.5)])).toEqual({ at: new Date(T + M5), price: 94.5 });
+    expect(findTrigger(alert, [bar(0, 101, 96), bar(1, 100, 94.5)], CLOCK)).toEqual({ at: new Date(T + M5), price: 94.5 });
   });
 
   it('candle que abriu ANTES do alerta nunca conta, mesmo cruzando o nivel', () => {
     const alert = { level: 110, side: 'above' as const, watchFrom: new Date(T + M5 / 2) };
-    expect(findTrigger(alert, [bar(0, 120, 100)])).toBeNull();
-    expect(findTrigger(alert, [bar(0, 120, 100), bar(1, 111, 100)])?.at).toEqual(new Date(T + M5));
+    expect(findTrigger(alert, [bar(0, 120, 100)], CLOCK)).toBeNull();
+    expect(findTrigger(alert, [bar(0, 120, 100), bar(1, 111, 100)], CLOCK)?.at).toEqual(new Date(T + M5));
   });
 
   it('lado sai do preco da analise; nivel no preco nao tem lado', () => {
