@@ -6,6 +6,7 @@ import { Calculator, Check, ExternalLink, Filter, ImageOff, Maximize2, Star, Tre
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { WatchPending, WatchingSection } from './PendingLevels';
+import { watchTone, WATCH_TONE_CLASSES } from '@/lib/setups';
 import { entrySide, getScenarioMeta, resolveSignalState, signalStateLabel, signalStateTone, type SignalStateCanonical } from '@/lib/trading-ui';
 import { useAnalyses } from '@/hooks/useAnalyses';
 import { asRecord } from '@/lib/utils';
@@ -521,7 +522,9 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
               const chartTitle = `${symbol}${timeframe && timeframe !== '-' ? ` · ${timeframe}` : ''}`;
               const toggleCalc = () => setCalcOpen((prev) => ({ ...prev, [a.id]: !prev[a.id] }));
 
-              const signalBg = stateTone === 'buy'
+              const signalBg = state === 'WATCH' && a.watch
+                ? WATCH_TONE_CLASSES[watchTone(a.watch)]
+                : stateTone === 'buy'
                 ? 'bg-[var(--signal-buy-bg)] border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
                 : stateTone === 'sell'
                   ? 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]'

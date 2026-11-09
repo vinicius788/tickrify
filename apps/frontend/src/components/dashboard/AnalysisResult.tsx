@@ -51,7 +51,7 @@ import {
 } from '@/lib/trading-ui';
 import { asRecord } from '@/lib/utils';
 import { computeDirectionalRiskReward } from '@/lib/trade-plan';
-import { useExpiryClock } from '@/lib/setups';
+import { useExpiryClock, watchTone, WATCH_TONE_CLASSES } from '@/lib/setups';
 
 interface AnalysisResultProps {
   analysisData: AIAnalysisResponse | null;
@@ -1179,7 +1179,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             <span className="whitespace-nowrap font-terminal">{timeframe}</span>
             <div
               data-testid="signal-state"
-              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold uppercase tracking-widest ${signalToneClasses}`}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold uppercase tracking-widest ${watchClosed && analysisData.watch ? WATCH_TONE_CLASSES[watchTone(analysisData.watch, now)] : signalToneClasses}`}
             >
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
               <span>{watchLayout && !watchClosed ? (watchPlan?.direction === 'long' ? r.watch.chipBuy : r.watch.chipSell) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>

@@ -15,12 +15,13 @@ import {
   useAlertOptions,
   useSetupActions,
   useSetupForAnalysis,
+  watchTone,
 } from '@/lib/setups';
-import { AlertLevelButton } from './PendingLevels';
+import { AlertLevelButton, WatchVerdict } from './PendingLevels';
 
 // Cartao do plano do WATCH: o que a pessoa faz se o preco chegar la, com os
-// numeros do servidor num lugar so. Nunca usa as cores de compra/venda: nao e
-// um sinal ativo.
+// numeros do servidor num lugar so. Aberto, nunca usa as cores de compra/venda:
+// nao e um sinal ativo. Verde e vermelho so no desfecho, com a janela encerrada.
 
 const LADDER_HEIGHT = 196;
 const LADDER_PAD = 10;
@@ -187,36 +188,6 @@ function WatchPlanActions({
   );
 }
 
-/** O que o preco fez na janela. Sem linha no rastreador ainda, vale o alerta que disparou dentro dela. */
-function ClosedOutcome({ watch, hitInWindow }: { watch: WatchSummary | null | undefined; hitInWindow: boolean }) {
-  const { t } = useLanguage();
-  const p = t.pending;
-  const outcome = watch?.outcome ?? 'pending';
-  const label =
-    outcome === 'reached' || (outcome === 'pending' && hitInWindow) ? p.reached
-      : outcome === 'invalidated' ? p.invalidated
-        : outcome === 'expired' ? p.expired
-          : outcome === 'unavailable' ? p.unavailable
-            : t.analysis.result.watch.priceCheckPending;
-  const after =
-    watch?.afterReach === 'target' ? t.watching.afterTarget
-      : watch?.afterReach === 'invalidation' ? t.watching.afterInvalidation
-        : watch?.afterReach === 'neither' ? t.watching.afterNeither : null;
-  return (
-    <div data-testid="watch-outcome" data-outcome={outcome} className="mt-3">
-      <p className="text-sm font-semibold text-[var(--text-primary)]">{label}</p>
-      {after ? <p key="after" className="mt-0.5 text-sm text-[var(--text-secondary)]">{after}</p> : null}
-    </div>
-  );
-}
-
-function ClosedOutcomeLive({ analysisId, watch }: { analysisId: string; watch: WatchSummary | null | undefined }) {
-  const alerts = useAlertOptions(analysisId).data?.alerts ?? [];
-  const end = Date.parse(watch?.expiresAt ?? '');
-  const hitInWindow = alerts.some((alert) => alert.status === 'triggered' && alert.triggeredAt !== null && (!Number.isFinite(end) || Date.parse(alert.triggeredAt) <= end));
-  return <ClosedOutcome watch={watch} hitInWindow={hitInWindow} />;
-}
-
 interface WatchPlanCardProps {
   plan: WatchPlan;
   /**
@@ -316,7 +287,7 @@ export function WatchPlanCard({
           <p className="mt-1 font-terminal text-xs text-[var(--text-secondary)]">
             {(long ? t.pending.buyLevel : t.pending.sellLevel).replace('{price}', money(alertLevel))}
           </p>
-          {actionsFor ? <ClosedOutcomeLive analysisId={actionsFor} watch={watch} /> : <ClosedOutcome watch={watch} hitInWindow={false} />}
+          {watch ? <div key="verdict" className="mt-3"><WatchVerdict watch={watch} tone={watchTone(watch, now)} /></div> : null}
           {actionsFor ? <WatchPlanActions analysisId={actionsFor} level={alertLevel} open={false} price={money(alertLevel)} base={base} /> : null}
         </CardContent>
       </Card>
