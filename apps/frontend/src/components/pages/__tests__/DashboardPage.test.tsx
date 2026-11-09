@@ -558,7 +558,7 @@ describe('DashboardPage', () => {
       await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
 
       expect(await screen.findByText('Este WAIT não gastou uma análise com entrada. Você ainda tem 2 de 3.')).toBeTruthy();
-      expect(mockTrack).toHaveBeenCalledWith('wait_nudge_viewed', { freeRemaining: 2 });
+      await waitFor(() => expect(mockTrack).toHaveBeenCalledWith('wait_nudge_viewed', { freeRemaining: 2 }));
 
       await user.click(screen.getByRole('button', { name: /Analisar outro gráfico/ }));
       expect(mockTrack).toHaveBeenCalledWith('wait_nudge_clicked', { freeRemaining: 2 });
