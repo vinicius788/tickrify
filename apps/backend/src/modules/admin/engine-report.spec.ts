@@ -61,3 +61,19 @@ describe('engine-report', () => {
     expect(buildEngineReport(many(30, () => enter('LOSS'))).enterNow.verdict).toContain('Desligar o ENTER_NOW');
   });
 });
+
+describe('analises sem velas, por motivo', () => {
+  const row = (coverage: string | null | undefined): EngineReportRow => ({
+    symbol: 'XAUUSD', variant: 'A', signalState: 'NO_TRADE', trackStatus: null, touched: null, outcome: null,
+    fillPrice: null, stopLoss: null, takeProfit1: null, coverage,
+  });
+
+  it('conta so quem veio sem velas, do mais comum para o menos comum', () => {
+    const report = buildEngineReport([row('injected'), row('symbol_timeout'), row('symbol_timeout'), row('provider_quota'), row(null)]);
+    expect(report.noCandles).toEqual([
+      { reason: 'symbol_timeout', count: 2 },
+      { reason: 'not_recorded', count: 1 },
+      { reason: 'provider_quota', count: 1 },
+    ]);
+  });
+});

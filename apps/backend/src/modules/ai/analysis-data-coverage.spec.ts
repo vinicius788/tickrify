@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { AIAdapter, eurUsdContextLine } from './ai.adapter';
 import {
   classifyCoverageAsset,
@@ -259,6 +260,55 @@ describe('analysis telemetry', () => {
     await expect(saveAnalysisTelemetry(db as any, 'a', { respondedModel: 'm', groundingStats: null }, warn)).resolves.toBeUndefined();
     await expect(saveAnalysisTelemetry(db as any, 'b', { respondedModel: 'm', groundingStats: null }, warn)).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('leitura do ativo que estoura o tempo (09/11/2026)', () => {
+  const build = (complete: jest.Mock) => {
+    const adapter = new AIAdapter() as any;
+    adapter.resolveImageUrlForModel = jest.fn(async () => 'data:image/png;base64,AAAA');
+    adapter.visionModel = { complete };
+    return adapter;
+  };
+  const timedOut = () => jest.fn(async () => { throw new Error('AI request timed out after 20s'); });
+
+  it('pede a leitura com teto de 20 s', async () => {
+    const complete = jest.fn(async () => ({ content: '{"symbol":"XAUUSD","timeframe":"5m"}' }));
+    await build(complete).extractSymbol('chart');
+    expect((complete.mock.calls[0] as any[])[0].timeoutMs).toBe(20_000);
+  });
+
+  it('loga o estouro e grava o motivo no groundingStats, no quick', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const result = await build(timedOut()).buildQuickGrounding('chart');
+    expect(result.candles).toBe('symbol_timeout');
+    expect(result.stats).toEqual({ v: 1, symbol: '', interval: null, coverage: 'symbol_timeout', numbers: null });
+    expect((warn.mock.calls as unknown[][]).some(([m]) => /^\[grounding\] extractSymbol timeout ms=\d+$/.test(String(m)))).toBe(true);
+    warn.mockRestore();
+  });
+
+  it('grava o mesmo motivo no deep', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const result = await build(timedOut()).buildMarketEnrichment('chart');
+    expect(result.candles).toBe('symbol_timeout');
+    expect(result.stats?.coverage).toBe('symbol_timeout');
+    warn.mockRestore();
+  });
+
+  it('erro que nao e tempo continua como ilegivel e sem log de timeout', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const result = await build(jest.fn(async () => { throw new Error('bad json'); })).buildQuickGrounding('chart');
+    expect(result.candles).toBe('symbol_unreadable');
+    expect(result.stats?.coverage).toBe('symbol_unreadable');
+    expect((warn.mock.calls as unknown[][]).some(([m]) => String(m).includes('[grounding]'))).toBe(false);
+    warn.mockRestore();
+  });
+
+  it('a tela sabe que foi o tempo; os outros motivos seguem como antes', () => {
+    const base = { analysisType: 'quick', htfImagesRequested: 0, htfImagesDelivered: 0, assetClass: 'unknown', marketContext: 'unavailable', calendar: 'not_attempted' } as const;
+    expect(toAnalysisEvidence({ ...base, candles: 'symbol_timeout' }).candleFailure).toBe('read_timeout');
+    expect(toAnalysisEvidence({ ...base, candles: 'timeout' }).candleFailure).toBe('read_timeout');
+    expect(toAnalysisEvidence({ ...base, candles: 'provider_quota' })).not.toHaveProperty('candleFailure');
   });
 });
 

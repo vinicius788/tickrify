@@ -451,6 +451,7 @@ export default {
     evidenceCalendar: 'Calendario económico',
     evidenceAttached: 'Adjunto',
     evidenceNotAttached: 'No adjunto',
+    evidenceCandleReadTimeout: "La lectura del gráfico agotó el tiempo",
     evidenceEventsAttached: 'Eventos programados adjuntos',
     evidenceNoEventsReturned: 'La fuente no devolvió eventos',
     evidenceNotConfirmed: 'No confirmado',

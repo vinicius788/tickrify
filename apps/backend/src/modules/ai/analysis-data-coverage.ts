@@ -6,6 +6,8 @@ export type CandleCoverage =
   | 'disabled'
   | 'not_attempted'
   | 'symbol_unreadable'
+  /** A leitura do ativo no print passou do teto (09/11/2026). */
+  | 'symbol_timeout'
   | 'timeframe_unreadable'
   | 'unsupported_asset'
   | 'provider_unconfigured'
@@ -33,7 +35,7 @@ export interface AnalysisDataCoverage {
 }
 
 const CANDLE_VALUES = new Set<CandleCoverage>([
-  'disabled', 'not_attempted', 'symbol_unreadable', 'timeframe_unreadable',
+  'disabled', 'not_attempted', 'symbol_unreadable', 'symbol_timeout', 'timeframe_unreadable',
   'unsupported_asset', 'provider_unconfigured', 'provider_quota', 'source_unavailable',
   'stale_withheld', 'block_unavailable', 'injected', 'timeout', 'error',
 ]);
@@ -68,6 +70,7 @@ export function toAnalysisEvidence(value: AnalysisDataCoverage): AnalysisEvidenc
     version: 1,
     additionalChartsDelivered: boundedImageCount(value.htfImagesDelivered),
     candleFeedAttached: value.candles === 'injected',
+    ...(value.candles === 'symbol_timeout' || value.candles === 'timeout' ? { candleFailure: 'read_timeout' as const } : {}),
     marketContextAttached: value.marketContext === 'injected',
     // Nao buscado (quick, contexto desligado) e diferente de buscado sem confirmar
     // (fonte fora do ar, timeout, erro, simbolo ilegivel).

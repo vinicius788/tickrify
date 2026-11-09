@@ -451,6 +451,7 @@ export default {
     evidenceCalendar: '経済指標カレンダー',
     evidenceAttached: '添付あり',
     evidenceNotAttached: '添付なし',
+    evidenceCandleReadTimeout: "チャートの読み取りがタイムアウトしました",
     evidenceEventsAttached: '予定イベントを添付',
     evidenceNoEventsReturned: '情報源からイベントの返答なし',
     evidenceNotConfirmed: '確認できず',
