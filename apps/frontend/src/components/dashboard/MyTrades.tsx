@@ -5,7 +5,7 @@ import { useUser } from '@clerk/clerk-react';
 import { Calculator, Check, ExternalLink, Filter, ImageOff, Maximize2, Star, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { WatchPending } from './PendingLevels';
+import { WatchPending, WatchingSection } from './PendingLevels';
 import { entrySide, getScenarioMeta, resolveSignalState, signalStateLabel, signalStateTone, type SignalStateCanonical } from '@/lib/trading-ui';
 import { useAnalyses } from '@/hooks/useAnalyses';
 import { asRecord } from '@/lib/utils';
@@ -443,6 +443,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
       </CardHeader>
 
       <CardContent className="p-0">
+        <WatchingSection surface="trades" enabled={!isDemo} />
         {/* ── Resumo de performance ─────────────────────────────── */}
         {rows.length > 0 && (
           <div className="grid grid-cols-2 gap-px border-y border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-5">

@@ -8,6 +8,7 @@ const pending = (extra: Record<string, unknown> = {}) => ({
   setupId: 'setup-aaaaaaaa',
   userId: 'u1',
   symbol: 'XAUUSD',
+  priceSymbol: 'XAUUSD',
   timeframe: '15m',
   level: 4180,
   label: 'tp1',
@@ -139,13 +140,30 @@ describe('setup-alert email', () => {
     await expect(runSetupAlertEmailSweep(deps)).resolves.toEqual({ due: 1, sent: 1 });
   });
 
-  it('janela: ligada olha 6h de disparos; dry-run so os ultimos 20 min', async () => {
+  it('rodape diz o tamanho real da vela: 1m em cripto, 5m em ouro e forex', () => {
+    const render = (priceSymbol: string) =>
+      renderSetupAlertEmail({ appUrl: 'https://tickrify.com', firstName: null, unsubscribeUrl: 'https://x', item: pending({ priceSymbol }) as any }).html;
+    expect(render('BTCUSDT')).toContain('Checked on 1-minute candles');
+    expect(render('XAUUSD')).toContain('Checked on 5-minute candles');
+  });
+
+  it('loga o atraso do cruzamento ao envio, tambem no dry-run', async () => {
+    const on = makeDeps({});
+    await runSetupAlertEmailSweep(on.deps);
+    expect(on.log).toHaveBeenCalledWith('log', '[alerts] latency_ms=480000 alert=alert-1 symbol=XAUUSD sent=1');
+    const off = makeDeps({ enabled: false });
+    await runSetupAlertEmailSweep(off.deps);
+    expect(off.log).toHaveBeenCalledWith('log', '[alerts] latency_ms=480000 alert=alert-1 symbol=XAUUSD dry_run=1');
+  });
+
+  it('janela: ligada olha 6h de disparos; dry-run so o gravado nos ultimos 5 min', async () => {
     const on = makeDeps({});
     await runSetupAlertEmailSweep(on.deps);
     expect(on.calls[0].values).toEqual([new Date(NOW.getTime() - 6 * 3600_000), NOW]);
     const off = makeDeps({ enabled: false });
     await runSetupAlertEmailSweep(off.deps);
-    expect(off.calls[0].values).toEqual([new Date(NOW.getTime() - 20 * 60_000), NOW]);
+    expect(off.calls[0].text).toContain('a."updatedAt" >');
+    expect(off.calls[0].values).toEqual([new Date(NOW.getTime() - 5 * 60_000), NOW]);
     // Alerta automatico cujo WATCH venceu nunca vira e-mail.
     expect(on.calls[0].text).toContain('a."expiresAt" IS NULL OR a."expiresAt" >');
   });

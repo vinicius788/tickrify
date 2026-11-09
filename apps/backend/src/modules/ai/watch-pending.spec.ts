@@ -1,4 +1,4 @@
-import { loadWatchContexts, storedWatchPlan, watchOutcomeOf, watchSummaryOf } from './watch-pending';
+import { loadWatchContexts, storedWatchPlan, watchAfterReachOf, watchOutcomeOf, watchSummaryOf } from './watch-pending';
 
 const plan = { direction: 'short', triggerType: 'zone_reaction', zoneLow: 77800, zoneHigh: 78000, invalidation: 78400,
   target1: 76900, target2: null, validForCandles: 12, trigger: 'Bearish close below 77,800' };
@@ -6,6 +6,22 @@ const watchResult = (over: Record<string, unknown> = {}) => ({
   signalState: 'WATCH', watchPlan: plan, analysis: { symbol: 'BTCUSDT', timeframe: '15m' }, ...over,
 });
 const created = new Date('2026-11-03T12:00:00Z');
+
+describe('watchAfterReachOf: aonde o preco foi depois de tocar o nivel', () => {
+  const track = (outcome: string, touched = true) => ({ status: 'tracked', outcome, touched });
+  it('alvo, invalidacao ou nenhum dos dois', () => {
+    expect(watchAfterReachOf(track('WIN'))).toBe('target');
+    expect(watchAfterReachOf(track('LOSS'))).toBe('invalidation');
+    expect(watchAfterReachOf(track('TIMEOUT'))).toBe('neither');
+  });
+  it('sem toque, sem medicao ou encerrado antes do nivel: nada a dizer', () => {
+    expect(watchAfterReachOf(null)).toBeNull();
+    expect(watchAfterReachOf(track('WIN', false))).toBeNull();
+    expect(watchAfterReachOf(track('INVALIDATED'))).toBeNull();
+    expect(watchAfterReachOf(track('MISSED'))).toBeNull();
+    expect(watchAfterReachOf({ status: 'skipped', outcome: null, touched: false })).toBeNull();
+  });
+});
 
 describe('watchOutcomeOf (so leitura do AnalysisTrack)', () => {
   it('sem linha no rastreador: pending', () => {
@@ -34,7 +50,7 @@ describe('watchSummaryOf', () => {
   it('WATCH: nivel = borda proxima, validade x tempo grafico a partir da analise, alerta pela fonte de preco', () => {
     expect(watchSummaryOf(watchResult(), 'WAIT', created, null)).toEqual({
       direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12,
-      expiresAt: '2026-11-03T15:00:00.000Z', outcome: 'pending', alertAvailable: true, setupId: null,
+      expiresAt: '2026-11-03T15:00:00.000Z', outcome: 'pending', afterReach: null, alertAvailable: true, setupId: null,
     });
     const long = watchSummaryOf(watchResult({ watchPlan: { ...plan, direction: 'long', invalidation: 77500, target1: 79000 } }), 'WAIT', created, null);
     expect(long?.level).toBe(78000);

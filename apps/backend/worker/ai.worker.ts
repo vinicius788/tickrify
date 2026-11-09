@@ -52,7 +52,7 @@ import { ANALYSIS_RESULT_FLAG, runAnalysisResultSweep } from '../src/modules/mai
 import Stripe from 'stripe';
 import { getFoundingOffer } from '../src/modules/payments/founding-offer';
 import { recordSetupVersion } from '../src/modules/ai/setups.service';
-import { ALERT_RULES, createWatchAlert, runAlertMonitor } from '../src/modules/ai/setup-alerts.service';
+import { ALERT_RULES, createAlertTick, createWatchAlert, runAlertMonitor } from '../src/modules/ai/setup-alerts.service';
 import { loadPriorPlan, type PriorPlan } from '../src/modules/ai/setup-continuation';
 import { startTwelveDataReport } from '../src/modules/market/twelve-data';
 import { registerCandleStore } from '../src/modules/market/candle-store';
@@ -1615,33 +1615,24 @@ const chatReplyTick = async () => {
 };
 setInterval(() => void chatReplyTick(), CHAT_SWEEP_INTERVAL_MS).unref();
 
-// Alertas de nivel dos setups (setup-alerts.service.ts): a cada 10 min, so com
-// alertas ativos; depois o e-mail dos disparos (chave EMAIL_SETUP_ALERTS
-// desligada = so dry-run). Primeira volta 2 min depois do boot.
-const alertTick = async () => {
-  const counts = await runAlertMonitor({
-    prisma,
-    log: (level, message) => (level === 'warn' ? console.warn(message) : console.log(message)),
-  }).catch((err) => {
-    console.warn(`[alerts] Varredura falhou: ${(err as Error)?.message ?? err}`);
-    return null;
-  });
-  if (counts && (counts.symbols > 0 || counts.triggered > 0)) {
-    console.log(`[alerts] symbols=${counts.symbols} checked=${counts.checked} triggered=${counts.triggered} paused=${counts.paused}`);
-  }
-  const emails = await runSetupAlertEmailSweep({
-    prisma,
-    mail: workerMail,
-    isEnabled: () => flagBool(SETUP_ALERT_EMAIL_FLAG),
-    appUrl: publicUrl(process.env.FRONTEND_URL, 'https://tickrify.com'),
-    apiBaseUrl: publicUrl(process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL, 'https://tickrify.onrender.com'),
-    log: (level, message) => (level === 'warn' ? console.warn(message) : console.log(message)),
-  }).catch((err) => {
-    console.warn(`[setup-alert] Varredura falhou: ${(err as Error)?.message ?? err}`);
-    return null;
-  });
-  if (emails && emails.sent > 0) console.log(`[setup-alert] Volta: ${JSON.stringify(emails)}`);
-};
+// Alertas de nivel dos setups (setup-alerts.service.ts): uma volta por minuto,
+// so com alertas ativos; o e-mail dos disparos sai na mesma volta (chave
+// EMAIL_SETUP_ALERTS desligada = so dry-run). Primeira volta 2 min depois do boot.
+const alertLog = (level: 'log' | 'warn', message: string) => (level === 'warn' ? console.warn(message) : console.log(message));
+const alertPauseCache = new Map<string, { paused: boolean; at: number }>();
+const alertTick = createAlertTick({
+  log: alertLog,
+  monitor: () => runAlertMonitor({ prisma, pauseCache: alertPauseCache, log: alertLog }),
+  emails: () =>
+    runSetupAlertEmailSweep({
+      prisma,
+      mail: workerMail,
+      isEnabled: () => flagBool(SETUP_ALERT_EMAIL_FLAG),
+      appUrl: publicUrl(process.env.FRONTEND_URL, 'https://tickrify.com'),
+      apiBaseUrl: publicUrl(process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL, 'https://tickrify.onrender.com'),
+      log: alertLog,
+    }),
+});
 setTimeout(() => {
   void alertTick();
   setInterval(() => void alertTick(), ALERT_RULES.monitorIntervalMs).unref();

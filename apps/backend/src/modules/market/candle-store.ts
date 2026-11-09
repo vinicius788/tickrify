@@ -21,7 +21,7 @@
 import { canonicalFxPair } from '../../common/utils/analysis-normalizer';
 import { normalizeToBinancePerp } from './market.service';
 import { twelveDataTimeSeries, type TwelveDataConsumer, type TwelveDataDenyReason } from './twelve-data';
-import { fetchJson } from './candles';
+import { BINANCE_HOSTS, fetchJson } from './candles';
 
 /** [openTime ms, open, high, low, close, volume]; mais antiga primeiro. */
 export type StoredCandle = [number, number, number, number, number, number];
@@ -132,7 +132,6 @@ const volumeOf = (raw: unknown) => {
 };
 const finite = (c: StoredCandle) => c.every((v) => Number.isFinite(v));
 
-const BINANCE_HOSTS = ['https://api.binance.com', 'https://data-api.binance.vision'] as const;
 const OKX_BAR: Record<string, string> = {
   '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '2h': '2H', '4h': '4H', '1d': '1D',
 };

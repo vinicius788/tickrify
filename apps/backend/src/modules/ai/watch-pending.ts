@@ -22,6 +22,9 @@ import { priceSymbolOf } from '../market/candles';
  */
 export type WatchOutcome = 'pending' | 'reached' | 'expired' | 'invalidated' | 'unavailable';
 
+/** O preco tocou o nivel e depois: alvo do plano, invalidacao ou nenhum dos dois. So o rastreador diz. */
+export type WatchAfterReach = 'target' | 'invalidation' | 'neither' | null;
+
 export interface WatchSummary {
   direction: WatchPlan['direction'];
   /** Borda da area que o preco alcanca primeiro (o nivel que destrava a entrada). */
@@ -31,6 +34,7 @@ export interface WatchSummary {
   /** Hora da analise + validade x tempo grafico; null sem tempo grafico conhecido. */
   expiresAt: string | null;
   outcome: WatchOutcome;
+  afterReach: WatchAfterReach;
   /** O ativo tem fonte de preco: a tela oferece o alerta no nivel. */
   alertAvailable: boolean;
   setupId: string | null;
@@ -48,6 +52,14 @@ export function watchOutcomeOf(track: WatchTrack | null | undefined): WatchOutco
   // A ordem encerrou antes do fill. 'touched' tambem inclui retornos posteriores a zona.
   if (track.outcome === 'INVALIDATED') return 'invalidated';
   return track.touched ? 'reached' : 'expired';
+}
+
+/** Nomes do mercado, nunca de operacao: WIN e LOSS do rastreador aqui so dizem aonde o preco foi. */
+export function watchAfterReachOf(track: WatchTrack | null | undefined): WatchAfterReach {
+  if (!track || track.status !== 'tracked' || !track.touched) return null;
+  if (track.outcome === 'WIN') return 'target';
+  if (track.outcome === 'LOSS') return 'invalidation';
+  return track.outcome === 'TIMEOUT' ? 'neither' : null;
 }
 
 const record = (v: unknown): Record<string, any> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, any>) : {});
@@ -82,6 +94,7 @@ export function watchSummaryOf(
     validForCandles: plan.validForCandles,
     expiresAt: step ? new Date(createdAt.getTime() + plan.validForCandles * step).toISOString() : null,
     outcome: watchOutcomeOf(context?.track),
+    afterReach: watchAfterReachOf(context?.track),
     setupId: context?.setupId ?? null,
     alertAvailable: priceSymbolOf(symbol) !== null,
   };

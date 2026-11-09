@@ -8,7 +8,8 @@ import {
   enterTwelveDataCalibrationMode,
   experimentRefusesFx,
   fxMarketClosed,
-  monitorFxIntervalMs,
+  fxOpenMinutesLeftToday,
+  monitorFxIntervals,
   twelveDataApiKey,
   twelveDataDecision,
   twelveDataTimeSeries,
@@ -99,11 +100,41 @@ describe('orcamento por prioridade (puro)', () => {
     expect(twelveDataDecision('analysis', usage({}), SATURDAY)).toBeNull();
   });
 
-  it('intervalo do monitor de forex cabe na reserva e vai a 30 min acima de 80%', () => {
-    expect(monitorFxIntervalMs(1, { total: 0 })).toBe(10 * 60_000);
-    expect(monitorFxIntervalMs(2, { total: 0 })).toBe(15 * 60_000);
-    expect(monitorFxIntervalMs(5, { total: 0 })).toBe(36 * 60_000);
-    expect(monitorFxIntervalMs(1, { total: 640 })).toBe(30 * 60_000);
+  describe('intervalo do monitor', () => {
+    const MIN = 60_000;
+    const MONDAY = new Date('2026-11-09T00:00:00Z');
+    const idle = { total: 0, analysis: 0, monitor: 0 };
+
+    it('ouro sozinho usa a reserva inteira do dia', () => {
+      expect(monitorFxIntervals(['XAUUSD'], idle, MONDAY).get('XAUUSD')).toBe(8 * MIN);
+    });
+
+    it('com outros ativos, o ouro pesa 3 vezes', () => {
+      const intervals = monitorFxIntervals(['XAUUSD', 'EURUSD'], idle, MONDAY);
+      expect(intervals.get('XAUUSD')).toBe(10 * MIN);
+      expect(intervals.get('EURUSD')).toBe(29 * MIN);
+    });
+
+    it('dia com folga fica mais rapido, com piso de 2 min', () => {
+      const evening = new Date('2026-11-09T20:00:00Z');
+      expect(monitorFxIntervals(['XAUUSD'], idle, evening).get('XAUUSD')).toBe(2 * MIN);
+    });
+
+    it('nunca conta com a reserva de quem tem prioridade', () => {
+      // Sobram 100 do monitor, mas so 50 cabem sem tocar a reserva da analise.
+      const usage = { total: 350, analysis: 150, monitor: 100 };
+      expect(monitorFxIntervals(['EURUSD'], usage, MONDAY).get('EURUSD')).toBe(29 * MIN);
+    });
+
+    it('acima de 80% do dia ou sem reserva: 30 min', () => {
+      expect(monitorFxIntervals(['XAUUSD'], { total: 640, analysis: 550, monitor: 0 }, MONDAY).get('XAUUSD')).toBe(30 * MIN);
+      expect(monitorFxIntervals(['XAUUSD'], { total: 200, analysis: 0, monitor: 200 }, MONDAY).get('XAUUSD')).toBe(30 * MIN);
+    });
+
+    it('sexta conta so ate o mercado fechar, as 22h UTC', () => {
+      expect(fxOpenMinutesLeftToday(new Date('2026-11-13T21:00:00Z'))).toBe(60);
+      expect(fxOpenMinutesLeftToday(new Date('2026-11-09T21:00:00Z'))).toBe(180);
+    });
   });
 });
 

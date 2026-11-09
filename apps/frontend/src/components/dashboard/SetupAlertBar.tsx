@@ -224,7 +224,7 @@ const SetupAlertBar = ({ analysisId, recommendation, base }: { analysisId: strin
           <span>{a.title}</span>
         </p>
         <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">
-          {`${data.emailEnabled ? a.hintEmail : a.hintScreen}${following ? '' : ` ${a.followsToo}`}`}
+          {`${data.symbolClass === 'crypto' ? (data.emailEnabled ? a.hintEmail : a.hintScreen) : (data.emailEnabled ? a.hintEmailFx : a.hintScreenFx)}${following ? '' : ` ${a.followsToo}`}`}
         </p>
       </div>
 

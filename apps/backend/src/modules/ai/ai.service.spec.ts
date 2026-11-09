@@ -1140,7 +1140,7 @@ describe('AiService access enforcement', () => {
       const byId = Object.fromEntries(items.map((item: any) => [item.id, item]));
       expect(byId.w_reached.watch).toEqual({
         direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12,
-        setupId: 'setup1', expiresAt: '2026-09-10T13:00:00.000Z', outcome: 'reached', alertAvailable: true,
+        setupId: 'setup1', expiresAt: '2026-09-10T13:00:00.000Z', outcome: 'reached', afterReach: 'invalidation', alertAvailable: true,
       });
       expect(byId.w_expired.watch.outcome).toBe('expired');
       expect(byId.w_invalid.watch.outcome).toBe('invalidated');

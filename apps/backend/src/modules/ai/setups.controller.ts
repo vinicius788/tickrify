@@ -81,6 +81,13 @@ export class SetupsController {
     return { paused: false, pausedSymbol: null, ...(await this.alerts.list(userId, { setupId: query.setupId ?? null })), emailEnabled };
   }
 
+  @Get('watching')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async watching(@CurrentUser() user: AuthenticatedUser) {
+    return this.alerts.watching(await this.unlocked(user));
+  }
+
   @Get('alerts/options/:analysisId')
   @UseGuards(AuthGuard)
   @Throttle({ default: { limit: 60, ttl: 60_000 } })

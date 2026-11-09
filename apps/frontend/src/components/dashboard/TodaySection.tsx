@@ -7,6 +7,7 @@ import { displayAsset, type AIAnalysisResponse, type OpenTrade } from '@/lib/api
 import { WatchPending } from './PendingLevels';
 import {
   alertDistancePct,
+  checkFrequencyText,
   formatAlertLevel,
   formatUtcTime,
   isWatchOpen,
@@ -142,7 +143,7 @@ const TodaySection = ({
                     })}
                   </ul>
                   <p className="mt-1 font-terminal text-[11px] text-[var(--text-muted)]">
-                    {list[0].checkedAt ? a.lastChecked.replace('{time}', formatUtcTime(list[0].checkedAt)) : a.notChecked}
+                    {[list[0].checkedAt ? a.lastChecked.replace('{time}', formatUtcTime(list[0].checkedAt)) : a.notChecked, checkFrequencyText(a, list[0])].filter(Boolean).join(' · ')}
                   </p>
                 </div>
                 <Link

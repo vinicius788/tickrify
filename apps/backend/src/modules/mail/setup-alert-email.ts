@@ -17,8 +17,9 @@
  * - Alerta automatico cujo WATCH ja venceu nunca vira e-mail.
  * - A Resend gratis e 100/dia para TODOS os e-mails do produto.
  */
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { captureServer } from '../../common/analytics/posthog';
+import { candleSourceFor } from '../market/candles';
 import { UNSUBSCRIBE_AUDIT_ACTION, escapeHtml, letter, unsubscribeUrl } from './lifecycle-email';
 
 export const SETUP_ALERT_EMAIL_FLAG = 'EMAIL_SETUP_ALERTS';
@@ -28,8 +29,8 @@ export const SETUP_ALERT_EMAIL_RULES = {
   triggeredWithinMs: 6 * HOUR,
   perSetupGapMs: 12 * HOUR,
   perPersonPer24h: 3,
-  /** Dry-run so loga disparos novos (a volta e de 10 min), nao o mesmo alerta 36 vezes. */
-  dryRunRecentMs: 20 * 60 * 1000,
+  /** Dry-run so loga disparos novos, nao o mesmo alerta a cada varredura. */
+  dryRunRecentMs: 5 * 60 * 1000,
 } as const;
 
 const LABEL_TEXT: Record<string, string> = {
@@ -52,6 +53,8 @@ export type SetupAlertEmailItem = {
   level: number;
   label: string;
   triggeredAt: Date;
+  /** BTCUSDT, XAUUSD: decide o tamanho da vela citado no rodape. */
+  priceSymbol: string;
 };
 
 /** Link do botao: o fluxo de atualizar o setup (custo na tela antes de enviar). */
@@ -91,7 +94,7 @@ export function renderSetupAlertEmail(params: {
     ],
     cta: { label: 'Update the chart', url: setupAlertLink(params.appUrl, item) },
     afterCta: [
-      '<span style="font-size:13px;color:#5b6773;">Checked on 5-minute candles from public price feeds. Your broker\'s price can differ by the spread.</span>',
+      `<span style="font-size:13px;color:#5b6773;">Checked on ${candleSourceFor(item.priceSymbol) === 'crypto' ? 1 : 5}-minute candles from public price feeds. Your broker's price can differ by the spread.</span>`,
     ],
     unsubscribeUrl: params.unsubscribeUrl,
   });
@@ -116,14 +119,18 @@ export async function runSetupAlertEmailSweep(deps: SetupAlertEmailDeps): Promis
   const now = deps.now ? deps.now() : new Date();
   const enabled = deps.isEnabled();
   const capture = deps.capture ?? captureServer;
-  const since = new Date(now.getTime() - (enabled ? SETUP_ALERT_EMAIL_RULES.triggeredWithinMs : SETUP_ALERT_EMAIL_RULES.dryRunRecentMs));
+  // Ligado: disparos das ultimas 6h. Dry-run: so os recem-gravados, pela hora da
+  // gravacao (a vela do forex pode ter aberto bem antes).
+  const recent = enabled
+    ? Prisma.sql`a."triggeredAt" > ${new Date(now.getTime() - SETUP_ALERT_EMAIL_RULES.triggeredWithinMs)}`
+    : Prisma.sql`a."updatedAt" > ${new Date(now.getTime() - SETUP_ALERT_EMAIL_RULES.dryRunRecentMs)}`;
   const rows = await deps.prisma.$queryRaw<PendingRow[]>`
-    SELECT a."id" AS "alertId", a."setupId", a."userId", a."symbol", s."timeframe", a."level", a."label", a."triggeredAt",
+    SELECT a."id" AS "alertId", a."setupId", a."userId", a."symbol", a."priceSymbol", s."timeframe", a."level", a."label", a."triggeredAt",
       u."email", u."name", u."clerkUserId"
     FROM "tickrify"."SetupAlert" a
     JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
     JOIN "tickrify"."User" u ON u."id" = a."userId"
-    WHERE a."status" = 'triggered' AND a."emailedAt" IS NULL AND a."seenAt" IS NULL AND a."triggeredAt" > ${since}
+    WHERE a."status" = 'triggered' AND a."emailedAt" IS NULL AND a."seenAt" IS NULL AND ${recent}
       AND (a."expiresAt" IS NULL OR a."expiresAt" > ${now})
       AND u."email" IS NOT NULL
     ORDER BY a."triggeredAt" ASC, a."id" ASC
@@ -132,6 +139,11 @@ export async function runSetupAlertEmailSweep(deps: SetupAlertEmailDeps): Promis
   let due = 0;
   let sent = 0;
   const unsubscribed = new Map<string, boolean>();
+  // Do cruzamento ao envio; o cruzamento e a abertura da vela que tocou o nivel.
+  const logLatency = (row: PendingRow, result: string) => {
+    const at = (deps.now ? deps.now() : new Date()).getTime();
+    deps.log('log', `[alerts] latency_ms=${Math.max(0, at - row.triggeredAt.getTime())} alert=${row.alertId} symbol=${row.priceSymbol} ${result}`);
+  };
   for (const row of rows) {
     try {
       if (!row.email) continue;
@@ -160,6 +172,7 @@ export async function runSetupAlertEmailSweep(deps: SetupAlertEmailDeps): Promis
       due++;
       if (!enabled) {
         deps.log('log', `[setup-alert] dry-run user=${row.userId} alert=${row.alertId}`);
+        logLatency(row, 'dry_run=1');
         continue;
       }
       const claimed = await deps.prisma.$executeRaw`
@@ -187,6 +200,7 @@ export async function runSetupAlertEmailSweep(deps: SetupAlertEmailDeps): Promis
         }
       }
       deps.log('log', `[setup-alert] user=${row.userId} alert=${row.alertId} sent=${ok ? 1 : 0}`);
+      logLatency(row, `sent=${ok ? 1 : 0}`);
     } catch (err) {
       deps.log('warn', `[setup-alert] Falha best-effort alert=${row.alertId}: ${(err as Error)?.message ?? err}`);
     }

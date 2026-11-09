@@ -3,10 +3,10 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AnalysisResult from '@/components/dashboard/AnalysisResult';
 import TodaySection from '@/components/dashboard/TodaySection';
-import { LevelMapCard, WatchPending } from '@/components/dashboard/PendingLevels';
+import { LevelMapCard, WatchPending, WatchingSection } from '@/components/dashboard/PendingLevels';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import { APIError, type AIAnalysisResponse, type LevelMap, type WatchSummary } from '@/lib/api';
-import { formatTimeLeft, type SetupAlert } from '@/lib/setups';
+import { checkFrequencyText, formatTimeLeft, type SetupAlert, type WatchingItem } from '@/lib/setups';
 
 vi.mock('@/hooks/useEconomicCalendar', () => ({ useEconomicCalendar: () => ({ events: [], loading: false, unreliable: false }) }));
 vi.mock('@/hooks/useMarketContext', () => ({ useMarketContext: () => ({ data: undefined, isLoading: false }) }));
@@ -20,11 +20,19 @@ vi.mock('@/lib/analytics', async (importOriginal) => ({
 const mutate = vi.fn();
 let priceAvailable = true;
 let alertItems: SetupAlert[] = [];
+let watchingItems: WatchingItem[] = [];
+const seenMutate = vi.fn();
+const navigate = vi.fn();
+vi.mock('react-router-dom', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-router-dom')>()),
+  useNavigate: () => navigate,
+}));
 vi.mock('@/lib/setups', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/setups')>()),
   useAlertOptions: () => ({ data: { available: priceAvailable, setupId: 's1' } }),
   useSetupAlerts: () => ({ data: { paused: false, pausedSymbol: null, items: alertItems, unseen: 0, emailEnabled: false } }),
-  useAlertActions: () => ({ create: { mutate, isPending: false }, cancel: { mutate: vi.fn() }, seen: { mutate: vi.fn() } }),
+  useAlertActions: () => ({ create: { mutate, isPending: false }, cancel: { mutate: vi.fn() }, seen: { mutate: seenMutate } }),
+  useWatching: () => ({ data: { items: watchingItems } }),
 }));
 
 const NOW = Date.parse('2026-11-03T12:00:00Z');
@@ -232,5 +240,105 @@ describe('NO_TRADE: mapa dos dois lados', () => {
   it('LevelMapCard sem nenhum lado acima: so o de baixo', () => {
     wrap(<LevelMapCard levelMap={{ ...levelMap, above: null }} analysisId={null} alerts={false} formatPrice={(v) => String(v)} />);
     expect(screen.getByTestId('level-map').textContent).not.toContain('Above');
+  });
+});
+
+describe('WatchingSection', () => {
+  const FUTURE = '2099-01-01T00:00:00.000Z';
+  const item = (over: Partial<WatchingItem> = {}, w: Partial<WatchSummary> = {}): WatchingItem => ({
+    analysisId: 'w1', symbol: 'XAUUSD', timeframe: '15m', createdAt: '2026-11-09T10:00:00Z',
+    watch: { direction: 'long', level: 4180, invalidation: 4150, validForCandles: 12, expiresAt: FUTURE, outcome: 'pending', alertAvailable: true, ...w },
+    lastPrice: 4200, checkedAt: '2026-11-09T13:50:00.000Z', checkIntervalMs: 300_000, marketClosed: false,
+    alert: { id: 'al1', setupId: 's1', status: 'active', triggeredAt: null, seenAt: null }, ...over,
+  });
+  const section = (language = 'en') => wrap(<WatchingSection surface="trades" enabled />, language);
+  afterEach(() => {
+    cleanup();
+    watchingItems = [];
+    navigate.mockClear();
+    seenMutate.mockClear();
+  });
+
+  it('sem WATCH, nao aparece', () => {
+    section();
+    expect(screen.queryByTestId('watching-section')).toBeNull();
+  });
+
+  it('valendo: ativo, direcao, nivel, distancia em % e no preco, invalidacao, tempo, frequencia e alerta', () => {
+    watchingItems = [item()];
+    section();
+    const row = screen.getByTestId('watching-item');
+    expect(row.textContent).toContain('XAUUSD 15m');
+    expect(row.textContent).toContain('Possible buy at 4,180');
+    expect(row.textContent).toContain('0.48% away (20)');
+    expect(row.textContent).toContain('Invalidation 4,150');
+    expect(row.textContent).toMatch(/\d.* left/);
+    expect(row.textContent).toContain('Last checked 13:50 UTC · Checked every 5 minutes');
+    expect(row.textContent).toContain('Alert: watching');
+    expect(screen.queryByText('Update chart')).toBeNull();
+  });
+
+  it('cripto diz a cada minuto; forex no fim de semana nao promete checagem', () => {
+    const a = { everyMinute: 'Checked every minute', everyMinutes: 'Checked every {n} minutes', marketClosed: 'Market closed.' };
+    expect(checkFrequencyText(a, { checkIntervalMs: 60_000 })).toBe('Checked every minute');
+    expect(checkFrequencyText(a, { checkIntervalMs: 8 * 60_000 })).toBe('Checked every 8 minutes');
+    expect(checkFrequencyText(a, { checkIntervalMs: null, marketClosed: true })).toBe('Market closed.');
+    expect(checkFrequencyText(a, { checkIntervalMs: null })).toBeNull();
+  });
+
+  it('disparou: estado e botao que marca visto e abre a atualizacao do setup', () => {
+    watchingItems = [item({ alert: { id: 'al1', setupId: 's1', status: 'triggered', triggeredAt: '2026-11-09T13:00:00.000Z', seenAt: null } })];
+    section();
+    expect(screen.getByTestId('watching-item').textContent).toContain('Alert: triggered');
+    fireEvent.click(screen.getByText('Update chart'));
+    expect(seenMutate).toHaveBeenCalledWith('al1');
+    expect(navigate).toHaveBeenCalledWith('/dashboard/new?setup=s1&alert=al1');
+  });
+
+  it('cancelado aparece como cancelado enquanto a janela vale', () => {
+    watchingItems = [item({ alert: { id: 'al1', setupId: 's1', status: 'cancelled', triggeredAt: null, seenAt: null } })];
+    section();
+    expect(screen.getByTestId('watching-item').textContent).toContain('Alert: cancelled');
+  });
+
+  it.each([
+    ['reached', 'target', 'Level reached', 'Afterwards price reached the plan target.'],
+    ['reached', 'invalidation', 'Level reached', 'Afterwards price reached the invalidation.'],
+    ['reached', 'neither', 'Level reached', 'Afterwards price reached neither within 48 hours.'],
+    ['invalidated', null, 'Invalidated before the level', null],
+    ['expired', null, 'Window closed', null],
+  ] as const)('encerrado %s/%s mostra o que o preco fez, sem cara de operacao', (outcome, afterReach, label, after) => {
+    watchingItems = [item({ alert: null }, { outcome, afterReach, expiresAt: '2026-11-01T00:00:00.000Z' })];
+    section();
+    const row = screen.getByTestId('watching-item');
+    expect(row.getAttribute('data-state')).toBe('closed');
+    expect(row.textContent).toContain(label);
+    expect(row.textContent).toContain('Buy level 4,180');
+    if (after) expect(row.textContent).toContain(after);
+    expect(row.textContent).not.toMatch(/\b(win|loss|profit|filled|hit rate|P&L)\b/i);
+    expect(row.textContent).not.toContain('away');
+  });
+
+  it('janela fechada sem linha no rastreador: diz que falta conferir, ou o nivel se o alerta disparou dentro dela', () => {
+    const expiresAt = '2026-11-01T00:00:00.000Z';
+    watchingItems = [item({ alert: null }, { expiresAt })];
+    section();
+    expect(screen.getByTestId('watching-item').textContent).toContain('Window closed. Price check pending.');
+    cleanup();
+    watchingItems = [item({ alert: { id: 'al1', setupId: 's1', status: 'triggered', triggeredAt: '2026-10-31T00:00:00.000Z', seenAt: '2026-10-31T01:00:00.000Z' } }, { expiresAt })];
+    section();
+    expect(screen.getByTestId('watching-item').textContent).toContain('Level reached');
+    expect(screen.queryByText('Update chart')).toBeNull();
+  });
+
+  it('nos 6 idiomas o titulo e o texto vem traduzidos, sem travessao', () => {
+    for (const [language, title] of [['pt', 'Vigiando'], ['en', 'Watching'], ['es', 'Vigilando'], ['fr', 'Sous surveillance'], ['de', 'Beobachtet'], ['ja', '監視中']]) {
+      watchingItems = [item()];
+      section(language);
+      const node = screen.getByTestId('watching-section');
+      expect(node.textContent).toContain(title);
+      expect(node.textContent).not.toMatch(/[\u2014\u2013]/);
+      cleanup();
+    }
   });
 });

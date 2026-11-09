@@ -337,6 +337,8 @@ export interface WatchSummary {
   /** Hora da analise + validade x tempo grafico; null sem tempo grafico conhecido. */
   expiresAt: string | null;
   outcome: WatchOutcome;
+  /** Aonde o preco foi depois de tocar o nivel (rastreador). Mercado, nunca resultado de operacao. */
+  afterReach?: 'target' | 'invalidation' | 'neither' | null;
   /** O ativo tem fonte de preco (alerta de nivel). */
   alertAvailable: boolean;
   setupId?: string | null;
