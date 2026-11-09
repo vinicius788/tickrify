@@ -6,12 +6,13 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
+import { TRADING_SYSTEM_PROMPT, TRADING_SYSTEM_PROMPT_B } from '../../common/prompts/trading-system-prompt';
 import {
   assembleAnalysisPrompt,
   buildAnalysisPrompt,
   DEEP_ANALYSIS_INSTRUCTION,
   outputLanguageInstruction,
+  promptVariantForUser,
   splitUserContextClose,
 } from './prompt-builder.service';
 
@@ -82,5 +83,39 @@ describe('montador unico: ninguem mais monta o prompt da analise', () => {
       .filter((f) => !f.endsWith(path.join('prompt', 'prompt-builder.service.ts')))
       .filter((f) => /replace\(\s*['"`]\{\{USER_CONTEXT\}\}/.test(fs.readFileSync(f, 'utf8')));
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('teste A/B do prompt', () => {
+  afterEach(() => { delete process.env.PROMPT_VARIANT_B_PERCENT; });
+
+  it('a B difere do prompt atual so na frase do nivel do pullback', () => {
+    const sentence = ' Use the first pullback or retest closest to current price that has real structure (a reclaim, a swing, a zone edge), not the deepest one.';
+    expect(TRADING_SYSTEM_PROMPT_B).not.toBe(TRADING_SYSTEM_PROMPT);
+    expect(TRADING_SYSTEM_PROMPT_B.replace(sentence, () => '')).toBe(TRADING_SYSTEM_PROMPT);
+  });
+
+  it('sem variante, o montador usa o prompt atual; com B, o B', () => {
+    const input = { userLanguage: 'en', analysisType: 'quick' } as const;
+    expect(buildAnalysisPrompt(input)).toBe(buildAnalysisPrompt(input, 'A'));
+    expect(buildAnalysisPrompt(input, 'B')).toContain('not the deepest one');
+    expect(buildAnalysisPrompt(input)).not.toContain('not the deepest one');
+  });
+
+  const users = Array.from({ length: 2000 }, (_, i) => `user_${i}`);
+
+  it('0 = todos na A, 100 = todos na B, sem usuario sempre A', () => {
+    process.env.PROMPT_VARIANT_B_PERCENT = '0';
+    expect(users.every((u) => promptVariantForUser(u) === 'A')).toBe(true);
+    process.env.PROMPT_VARIANT_B_PERCENT = '100';
+    expect(users.every((u) => promptVariantForUser(u) === 'B')).toBe(true);
+    expect(promptVariantForUser(null)).toBe('A');
+  });
+
+  it('o padrao divide perto de 50% e a mesma pessoa fica na mesma variante', () => {
+    const inB = users.filter((u) => promptVariantForUser(u) === 'B').length;
+    expect(inB).toBeGreaterThan(900);
+    expect(inB).toBeLessThan(1100);
+    expect(users.map(promptVariantForUser)).toEqual(users.map(promptVariantForUser));
   });
 });

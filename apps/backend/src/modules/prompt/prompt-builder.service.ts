@@ -1,4 +1,6 @@
-import { TRADING_SYSTEM_PROMPT } from '../../common/prompts/trading-system-prompt';
+import { createHash } from 'crypto';
+import { flagNumber } from '../../common/flags/feature-flags';
+import { TRADING_SYSTEM_PROMPT, TRADING_SYSTEM_PROMPT_B } from '../../common/prompts/trading-system-prompt';
 import { AnalysisType } from '../ticks/tick-packages';
 
 // ============================================================================
@@ -48,9 +50,18 @@ export function outputLanguageInstruction(langName: string): string {
   return `OUTPUT LANGUAGE: ${langName}\nWrite ALL analysis fields (technicalAnalysis, executiveSummary, identifiedPatterns, riskFactors, whyNotOpposite, structureValidation, keyIndicators, invalidationNote, entryCondition, partialExitStrategy, alternativeScenario, breakevenTrigger, trendStrengthNote, marketRegimeNote, multiTimeframeAlignment, sessionNote, reasoning, marketStructure.lastStructure, marketStructure.breakOfStructure, marketStructure.priceZone, marketStructure.orderBlock, watchPlan.trigger) in ${langName}. Do NOT translate symbol names, timeframes, or technical terms (BOS, CHoCH, OB, FVG). Keep numbers and prices in their original format.`;
 }
 
+export type PromptVariant = 'A' | 'B';
+
 export interface AnalysisPromptInput {
   userLanguage?: string;
   analysisType?: AnalysisType;
+}
+
+/** Sorteio estavel do teste A/B: a mesma pessoa fica sempre na mesma variante. Sem usuario, A. */
+export function promptVariantForUser(userId: string | null | undefined): PromptVariant {
+  if (!userId) return 'A';
+  const bucket = createHash('sha256').update(`prompt_variant_b:${userId}`).digest().readUInt32BE(0) % 100;
+  return bucket < flagNumber('PROMPT_VARIANT_B_PERCENT') ? 'B' : 'A';
 }
 
 /**
@@ -74,8 +85,8 @@ export function assembleAnalysisPrompt(base: string, { userLanguage, analysisTyp
  * ativo no banco, versao escolhida por job nem override: a tabela PromptConfig
  * so numera a versao (PromptSyncService) para o promptVer de cada analise.
  */
-export function buildAnalysisPrompt(input: AnalysisPromptInput): string {
-  return assembleAnalysisPrompt(TRADING_SYSTEM_PROMPT, input);
+export function buildAnalysisPrompt(input: AnalysisPromptInput, variant: PromptVariant = 'A'): string {
+  return assembleAnalysisPrompt(variant === 'B' ? TRADING_SYSTEM_PROMPT_B : TRADING_SYSTEM_PROMPT, input);
 }
 
 /**

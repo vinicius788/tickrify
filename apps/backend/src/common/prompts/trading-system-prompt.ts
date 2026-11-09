@@ -253,4 +253,15 @@ watchPlan is required for ENTER_NOW and WATCH, and null only for NO_TRADE.
 {{USER_CONTEXT}}
 </user_context>`;
 
+const PULLBACK_LEVEL_CURRENT = 'between price and invalidation. E = its near edge.';
+const PULLBACK_LEVEL_NEAREST =
+  'between price and invalidation. Use the first pullback or retest closest to current price that has real structure (a reclaim, a swing, a zone edge), not the deepest one. E = its near edge.';
+
+/**
+ * Variante B do teste A/B (09/11/2026): muda SO onde vai o nivel do pullback.
+ * A numeracao do PromptSync segue so o prompt A; a B e identificada por
+ * `result.engine.prompt_variant`.
+ */
+export const TRADING_SYSTEM_PROMPT_B = TRADING_SYSTEM_PROMPT.replace(PULLBACK_LEVEL_CURRENT, () => PULLBACK_LEVEL_NEAREST);
+
 export default TRADING_SYSTEM_PROMPT;

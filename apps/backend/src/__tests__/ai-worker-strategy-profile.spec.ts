@@ -546,6 +546,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       engineMeta: { validatorAction: 'downgraded', validatorReasons: ['stop_inside_invalidation'], groundingMs: 5, modelMs: 900, parseMs: 2, validationMs: 1 },
     });
 
+    process.env.PROMPT_VARIANT_B_PERCENT = '100';
     await processAnalysis(makeJob({
       analysisId: 'analysis-validator', imageUrl: 'https://example.com/chart.png',
       analysisType: 'quick', userId: 'user-1', isDemo: false,
@@ -557,7 +558,9 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     );
     expect(completed).toBeDefined();
     expect(completed[0].data.recommendation).toBe('WAIT');
+    delete process.env.PROMPT_VARIANT_B_PERCENT;
     const engine = JSON.parse(JSON.stringify(completed[0].data.result)).engine;
+    expect(engine.prompt_variant).toBe('B');
     expect(engine).toMatchObject({
       version: '4.0.0',
       data_mode: 'print',

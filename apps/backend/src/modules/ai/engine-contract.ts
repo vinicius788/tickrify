@@ -74,6 +74,8 @@ export interface EngineRecord {
   contract: EngineContract | null;
   /** So existe (true) quando o plano anterior do setup entrou no prompt. */
   continuation?: true;
+  /** Variante do prompt que gerou a analise (teste A/B, aba Motor). */
+  prompt_variant: 'A' | 'B';
 }
 
 const MAX_KEY_REASONS = 3;
@@ -212,6 +214,7 @@ export function buildEngineRecord(params: {
   validatorFlags: SignalDecisionResult['validatorFlags'];
   timings: Partial<Record<keyof EngineTimings, number | null | undefined>>;
   continuation?: boolean;
+  promptVariant?: 'A' | 'B';
   warn: (message: string) => void;
 }): EngineRecord {
   const built = buildEngineContract(params.contract);
@@ -221,6 +224,7 @@ export function buildEngineRecord(params: {
   const t = params.timings;
   return {
     version: ENGINE_VERSION,
+    prompt_variant: params.promptVariant ?? 'A',
     provider: params.provider ?? null,
     data_mode: params.dataMode,
     signal_state: params.signalState,

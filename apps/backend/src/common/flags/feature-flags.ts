@@ -85,6 +85,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'PROMPT_VARIANT_B_PERCENT',
+    type: 'number',
+    label: 'Teste A/B do prompt: % na variante B',
+    description:
+      'Porcentagem de contas que recebem o prompt B (nivel de entrada no primeiro pullback com estrutura, nao no mais profundo). 0 = todos no atual; 100 = todos na B. A decisao sai pronta na aba Motor.',
+    defaultValue: '50',
+    risk: 'medio',
+  },
+  {
     key: 'DEMO_MODE',
     type: 'boolean',
     label: 'Modo demo (resposta sintética)',
@@ -294,6 +303,13 @@ export function flagBool(key: string): boolean {
   return definition.defaultValue.trim().toLowerCase() === 'true';
 }
 
+
+/** Numero da flag; valor que nao e numero cai no padrao da definicao. */
+export function flagNumber(key: string): number {
+  const { value, definition } = resolveFlag(key);
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : Number(definition.defaultValue);
+}
 
 /** Estado de todas as flags — é o que o painel /admin renderiza. */
 export function resolveAllFlags(): ResolvedFlag[] {

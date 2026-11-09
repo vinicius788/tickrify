@@ -107,6 +107,7 @@ describe('worker/ai.worker.ts: prompt e argumentos entregues ao adapter (montado
   const analyzeImageMock = jest.fn();
 
   beforeAll(() => {
+    process.env.PROMPT_VARIANT_B_PERCENT = '0';
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -115,6 +116,7 @@ describe('worker/ai.worker.ts: prompt e argumentos entregues ao adapter (montado
   });
 
   afterAll(() => {
+    delete process.env.PROMPT_VARIANT_B_PERCENT;
     jest.restoreAllMocks();
   });
 
@@ -169,6 +171,16 @@ describe('worker/ai.worker.ts: prompt e argumentos entregues ao adapter (montado
     expect(prompt).toContain('OUTPUT LANGUAGE: Portuguese (Brazil)');
     expect(prompt).not.toContain('OVERRIDE');
     expect(prompt.trimEnd().endsWith('</user_context>')).toBe(true);
+  });
+
+  it.each([['0', 'A'], ['100', 'B']] as const)('com %s%% na B, o worker entrega o prompt %s', async (percent, variant) => {
+    process.env.PROMPT_VARIANT_B_PERCENT = percent;
+    try {
+      const { args } = await run({ analysisId: 'a-ab', imageUrl: 'https://example.com/c.png', analysisType: 'quick', userId: 'user-1', isDemo: true, userLanguage: 'en' });
+      expect(args[1]).toBe(buildAnalysisPrompt({ userLanguage: 'en', analysisType: 'quick' }, variant));
+    } finally {
+      process.env.PROMPT_VARIANT_B_PERCENT = '0';
+    }
   });
 
   const profile: StrategyProfile = {
