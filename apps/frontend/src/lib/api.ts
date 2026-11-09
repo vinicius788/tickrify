@@ -51,6 +51,26 @@ export function warmupPaymentsApi(): void {
   }
 }
 
+const DEVICE_KEY = 'tk_device';
+
+/**
+ * Id aleatorio e estavel deste navegador, so para o anti-abuso do trial (uma
+ * conta nova no mesmo aparelho nao renova a cota). Fica em localStorage e num
+ * cookie de primeira parte: apagar um so nao troca o id.
+ */
+function browserDeviceId(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const fromCookie = document.cookie.match(new RegExp(`(?:^|; )${DEVICE_KEY}=([a-zA-Z0-9-]+)`))?.[1];
+    const id = localStorage.getItem(DEVICE_KEY) || fromCookie || crypto.randomUUID();
+    localStorage.setItem(DEVICE_KEY, id);
+    document.cookie = `${DEVICE_KEY}=${id}; Path=/; Max-Age=31536000; SameSite=Lax; Secure`;
+    return id;
+  } catch {
+    return null;
+  }
+}
+
 type FreshTokenGetter = () => Promise<string | null>;
 
 async function resolveAuthHeaders(
@@ -89,9 +109,11 @@ export async function fetchWithAuthRetry(
   // desktop, bem mais no 4G) antes de toda chamada ao backend. Era o grosso da
   // espera do painel carregar depois da logo.
   const initial = new Headers(options.headers || {});
+  const device = browserDeviceId();
+  if (device) initial.set('X-Tickrify-Device', device);
   const firstHeaders = initial.has('Authorization')
     ? initial
-    : await resolveAuthHeaders(options.headers, refreshToken);
+    : await resolveAuthHeaders(initial, refreshToken);
 
   const response = await fetch(url, { ...options, headers: firstHeaders });
 
@@ -100,7 +122,7 @@ export async function fetchWithAuthRetry(
   }
 
   console.warn('[Auth] Token expired, refreshing...');
-  return fetch(url, { ...options, headers: await resolveAuthHeaders(options.headers, refreshToken) });
+  return fetch(url, { ...options, headers: await resolveAuthHeaders(initial, refreshToken) });
 }
 
 export type Recommendation =

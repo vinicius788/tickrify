@@ -107,4 +107,18 @@ describe('trial de 3 dias no painel', () => {
     expect(onWeekly).toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Or monthly: $29/month for 200 Ticks' })).toBeTruthy();
   });
+
+  it('paywall da tela inicial registra paywall_viewed e mostra o valor da renovacao', async () => {
+    const { track } = await import('@/lib/analytics');
+    render(
+      <MemoryRouter>
+        <LanguageProvider>
+          <Paywall surface="home" variant="trial_ended" onWeekly={vi.fn()} onMonthly={vi.fn()} plansHref="/dashboard/plans" />
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+    expect(track).toHaveBeenCalledWith('paywall_viewed', { surface: 'home', trigger: 'trial_ended' });
+    expect(screen.getByText('Your free trial has ended')).toBeTruthy();
+    expect(screen.getByText(/every 7 days until canceled\. Billed \$29 now and monthly until canceled\./)).toBeTruthy();
+  });
 });

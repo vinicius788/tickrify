@@ -334,7 +334,7 @@ export class StripeService implements OnModuleInit {
     billingCycle: BillingCycle,
     currency: Currency = 'usd',
     couponId?: string,
-    source?: 'pricing' | 'locked_value' | 'last_free_result' | 'upgrade_modal',
+    source?: 'pricing' | 'locked_value' | 'last_free_result' | 'useful_result' | 'upgrade_modal',
     ads: MetaAdsContext = { consent: false },
     referral?: CheckoutReferral,
     founderCode?: string,
@@ -357,7 +357,7 @@ export class StripeService implements OnModuleInit {
     billingCycle: BillingCycle,
     currency: Currency,
     couponId?: string,
-    source?: 'pricing' | 'locked_value' | 'last_free_result' | 'upgrade_modal',
+    source?: 'pricing' | 'locked_value' | 'last_free_result' | 'useful_result' | 'upgrade_modal',
     ads: MetaAdsContext = { consent: false },
     referral?: CheckoutReferral,
     founderCode?: string,
@@ -1400,6 +1400,8 @@ export class StripeService implements OnModuleInit {
       return;
     }
 
+    await this.captureSubscriptionPaid(synced.userId, synced.subscription);
+
     // RECEITA (fonte de verdade): dispara na confirmação do pagamento, mesmo se
     // o usuário fechar a aba. distinctId = id do Clerk (casa com o funil do frontend).
     // O registro de eventos garante que isto sai UMA vez por checkout.
@@ -1587,11 +1589,8 @@ export class StripeService implements OnModuleInit {
     }
 
     if (eventType === 'customer.subscription.created') {
-      // Trial de 3 dias: assinatura que ja nasce paga encerra o trial como
-      // convertido (idempotente; a fatura paga faz o mesmo quando chega depois).
-      const trialDay = ['active', 'trialing'].includes(synced.subscription.status)
-        ? await markTrialConverted(this.prisma, synced.userId, new Date(synced.subscription.created * 1000))
-        : null;
+      // So o log do funil: a assinatura nasce `incomplete` antes do cartao. O
+      // evento do PostHog sai com o pagamento confirmado (captureSubscriptionPaid).
       funnelLog(
         'subscription_created',
         {
@@ -1602,30 +1601,34 @@ export class StripeService implements OnModuleInit {
         },
         { persist: this.prisma },
       );
-      await this.captureForUser(
-        synced.userId,
-        'subscription_created',
-        {
-          subscriptionId: synced.subscription.id,
-          status: synced.subscription.status,
-          priceId: synced.subscription.items.data[0]?.price.id ?? null,
-          checkoutSource: synced.subscription.metadata?.checkoutSource ?? null,
-          ...(trialDay !== null ? { trial_day_at_conversion: trialDay } : {}),
-          // Marca a pessoa no PostHog so se a assinatura ja nasceu paga. Com o
-          // cartao recusado ela nasce `incomplete` e expira sem evento de fim
-          // (29/09: cartao recusado ficou marcado como assinante). Quem paga
-          // depois e marcado pelo `payment_succeeded`.
-          ...(['active', 'trialing'].includes(synced.subscription.status)
-            ? { $set: { is_subscriber: true } }
-            : {}),
-        },
-        {
-          dedupeKey: `subscription_created:${synced.subscription.id}`,
-          timestamp: new Date(synced.subscription.created * 1000),
-        },
-        true,
-      );
     }
+  }
+
+  /**
+   * `subscription_created` no PostHog: so com pagamento confirmado. Chamado pelo
+   * checkout pago e pela 1a fatura paga (cartao aprovado depois do checkout); a
+   * mesma chave e o mesmo timestamp fazem os dois caminhos contarem uma vez.
+   * Antes saia no `customer.subscription.created`: 4 de 5 eventos em 60 dias
+   * eram `incomplete` (medido em 09/11/2026).
+   */
+  private async captureSubscriptionPaid(userId: string, subscription: Stripe.Subscription): Promise<void> {
+    if (!['active', 'trialing'].includes(subscription.status)) return;
+    const createdAt = new Date(subscription.created * 1000);
+    const trialDay = await markTrialConverted(this.prisma, userId, createdAt);
+    await this.captureForUser(
+      userId,
+      'subscription_created',
+      {
+        subscriptionId: subscription.id,
+        status: subscription.status,
+        priceId: subscription.items.data[0]?.price.id ?? null,
+        checkoutSource: subscription.metadata?.checkoutSource ?? null,
+        ...(trialDay !== null ? { trial_day_at_conversion: trialDay } : {}),
+        $set: { is_subscriber: true },
+      },
+      { dedupeKey: `subscription_created:${subscription.id}`, timestamp: createdAt },
+      true,
+    );
   }
 
   /**
@@ -1836,10 +1839,9 @@ export class StripeService implements OnModuleInit {
     const paidAt = invoice.status_transitions?.paid_at ?? invoice.created;
     const attempt = await this.invoiceAttemptDetails(invoice.id);
     // 1a cobranca de quem estava no trial de 3 dias: encerra como convertido.
-    const trialDay =
-      invoice.billing_reason === 'subscription_create'
-        ? await markTrialConverted(this.prisma, synced.userId, new Date(paidAt * 1000))
-        : null;
+    const firstInvoice = invoice.billing_reason === 'subscription_create';
+    if (firstInvoice) await this.captureSubscriptionPaid(synced.userId, synced.subscription);
+    const trialDay = firstInvoice ? await markTrialConverted(this.prisma, synced.userId, new Date(paidAt * 1000)) : null;
     await this.captureForUser(
       synced.userId,
       'payment_succeeded',

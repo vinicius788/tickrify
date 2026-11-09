@@ -165,7 +165,7 @@ export async function createCheckoutSession(
   billingCycle: BillingCycle = 'monthly',
   currency: Currency = 'usd',
   coupon?: 'EARLY35',
-  source?: 'pricing' | 'locked_value' | 'last_free_result' | 'upgrade_modal',
+  source?: 'pricing' | 'locked_value' | 'last_free_result' | 'useful_result' | 'upgrade_modal',
   offerCode?: string,
 ) {
   const session = await requestStripeApi<{ sessionId: string; url: string }>(

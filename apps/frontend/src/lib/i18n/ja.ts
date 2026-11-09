@@ -69,6 +69,7 @@ export default {
     TRIAL_EMAIL_NOT_ALLOWED: "無料トライアルを開始するには、継続して利用するメールアドレスで登録してください。",
     TRIAL_EMAIL_UNVERIFIED: "無料トライアルを開始するにはメールアドレスを認証してください。",
     TRIAL_NETWORK_LIMIT: "本日このネットワークから開始されたトライアルが多すぎます。明日再度お試しください。",
+    TRIAL_DEVICE_LIMIT: "このデバイスはすでに無料トライアルを利用しています。分析を続けるには登録してください。",
     trades_unavailable: "取引の追跡は一時的に利用できません。",
     analysis_not_found: "分析が見つかりません",
     not_a_trade: "完了したBUYまたはSELL分析のみ取引として追跡できます。",

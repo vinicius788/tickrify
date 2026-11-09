@@ -51,6 +51,8 @@ const BOOT_SQL = [
   )`,
   'CREATE INDEX IF NOT EXISTS "UserTrial_status_startedAt_idx" ON "tickrify"."UserTrial"("status", "startedAt")',
   'CREATE INDEX IF NOT EXISTS "UserTrial_ipHash_startedAt_idx" ON "tickrify"."UserTrial"("ipHash", "startedAt")',
+  'ALTER TABLE "tickrify"."UserTrial" ADD COLUMN IF NOT EXISTS "deviceHash" TEXT',
+  'CREATE INDEX IF NOT EXISTS "UserTrial_deviceHash_idx" ON "tickrify"."UserTrial"("deviceHash")',
   // Print repetido no trial: mesma imagem devolve a leitura anterior, sem IA.
   'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "imageSha256" TEXT',
 ];
@@ -78,7 +80,22 @@ export const TRIAL_ERRORS = {
       'Too many new trials from this network today. Please try again tomorrow.',
       HttpStatus.TOO_MANY_REQUESTS,
     ),
+  deviceLimit: () => trialError('TRIAL_DEVICE_LIMIT', 'This device has already used a free trial. Subscribe to keep analyzing.'),
 };
+
+export type TrialContext = {
+  ip?: string | null;
+  timezone?: string | null;
+  /** Id estavel do navegador (cabecalho X-Tickrify-Device). */
+  deviceId?: string | null;
+  userAgent?: string | null;
+};
+
+function deviceHashOf(deviceId: string | null | undefined): string | null {
+  const id = String(deviceId || '').trim();
+  if (!/^[a-zA-Z0-9-]{16,64}$/.test(id)) return null;
+  return createHash('sha256').update(`tickrify-trial-device|${id}`).digest('hex').slice(0, 32);
+}
 
 @Injectable()
 export class TrialService implements OnModuleInit {
@@ -110,12 +127,21 @@ export class TrialService implements OnModuleInit {
    * quem nao assina. Sem TRIAL_MODE, ou para quem ja usou a regra antiga, nao
    * faz nada. Lanca o erro de anti-abuso quando nao da para conceder.
    */
-  async ensure(userId: string, ctx: { ip?: string | null; timezone?: string | null } = {}): Promise<TrialRow | null> {
+  async ensure(userId: string, ctx: TrialContext = {}): Promise<TrialRow | null> {
     if (!this.ready) return null;
     const existing = await readTrial(this.prisma, userId);
     const tz = validTimezone(ctx.timezone);
+    const deviceHash = deviceHashOf(ctx.deviceId);
     if (existing) {
       if (existing.status === 'denied') throw TRIAL_ERRORS.emailNotAllowed();
+      // Trial anterior a esta regra: o aparelho entra na conta na proxima visita.
+      if (deviceHash) {
+        await this.prisma.$executeRawUnsafe(
+          'UPDATE "tickrify"."UserTrial" SET "deviceHash" = $2 WHERE "userId" = $1 AND "deviceHash" IS NULL',
+          userId,
+          deviceHash,
+        );
+      }
       if (tz && !existing.timezone) {
         await this.prisma.$executeRawUnsafe(
           'UPDATE "tickrify"."UserTrial" SET "timezone" = $2, "updatedAt" = NOW() WHERE "userId" = $1 AND "timezone" IS NULL',
@@ -137,7 +163,7 @@ export class TrialService implements OnModuleInit {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true, clerkUserId: true } });
     if (!user) return null;
     if (isDisposableEmail(user.email)) {
-      await this.insert(userId, { tz, ipHash: null, status: 'denied', denyReason: 'disposable_email', source: 'signup' });
+      await this.insert(userId, { tz, ipHash: null, deviceHash, status: 'denied', denyReason: 'disposable_email', source: 'signup' });
       this.logger.log(`[trial] Negado (e-mail descartavel) user=${userId}`);
       throw TRIAL_ERRORS.emailNotAllowed();
     }
@@ -145,7 +171,23 @@ export class TrialService implements OnModuleInit {
     const profile = user.clerkUserId ? await fetchClerkProfile(user.clerkUserId) : null;
     if (profile?.emailVerified === false) throw TRIAL_ERRORS.emailUnverified();
 
-    const ipHash = ctx.ip ? createHash('sha256').update(`tickrify-trial|${ctx.ip}`).digest('hex').slice(0, 32) : null;
+    if (deviceHash) {
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ n: bigint | number }>>(
+        'SELECT COUNT(*) AS n FROM "tickrify"."UserTrial" WHERE "deviceHash" = $1 AND "userId" <> $2',
+        deviceHash,
+        userId,
+      );
+      if (Number(rows[0]?.n ?? 0) >= TRIAL_RULES.maxTrialsPerDevice) {
+        this.logger.log(`[trial] Aparelho ja usou trial user=${userId}`);
+        throw TRIAL_ERRORS.deviceLimit();
+      }
+    }
+
+    // IP + navegador: quem renova em aba anonima repete os dois; quem divide a
+    // rede (NAT, operadora) quase nunca, e por isso nao cai no limite do vizinho.
+    const ipHash = ctx.ip
+      ? createHash('sha256').update(`tickrify-trial|${ctx.ip}|${ctx.userAgent ?? ''}`).digest('hex').slice(0, 32)
+      : null;
     if (ipHash) {
       const rows = await this.prisma.$queryRawUnsafe<Array<{ n: bigint | number }>>(
         `SELECT COUNT(*) AS n FROM "tickrify"."UserTrial" WHERE "ipHash" = $1 AND "startedAt" > NOW() - INTERVAL '24 hours'`,
@@ -157,21 +199,22 @@ export class TrialService implements OnModuleInit {
       }
     }
 
-    const row = await this.insert(userId, { tz, ipHash, status: 'active', denyReason: null, source: 'signup' });
+    const row = await this.insert(userId, { tz, ipHash, deviceHash, status: 'active', denyReason: null, source: 'signup' });
     if (row) void trackTrialStarted(this.prisma, userId, 'signup', row.startedAt);
     return row;
   }
 
   private async insert(
     userId: string,
-    data: { tz: string | null; ipHash: string | null; status: 'active' | 'denied'; denyReason: string | null; source: TrialRow['source'] },
+    data: { tz: string | null; ipHash: string | null; deviceHash?: string | null; status: 'active' | 'denied'; denyReason: string | null; source: TrialRow['source'] },
   ): Promise<TrialRow | null> {
     await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "tickrify"."UserTrial" ("userId", "timezone", "ipHash", "status", "denyReason", "source")
-       VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT ("userId") DO NOTHING`,
+      `INSERT INTO "tickrify"."UserTrial" ("userId", "timezone", "ipHash", "deviceHash", "status", "denyReason", "source")
+       VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT ("userId") DO NOTHING`,
       userId,
       data.tz,
       data.ipHash,
+      data.deviceHash ?? null,
       data.status,
       data.denyReason,
       data.source,

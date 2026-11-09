@@ -3,13 +3,13 @@ import {
   Controller,
   ForbiddenException,
   Get,
-  Ip,
   Logger,
   Param,
   Patch,
   Post,
   Put,
   Query,
+  Req,
   UnauthorizedException,
   UseGuards,
   UseInterceptors,
@@ -21,6 +21,8 @@ import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AiService, buildClientContext } from './ai.service';
+import type { TrialContext } from './trial.service';
+import { resolveClientIp } from '../../common/middleware/request-context.middleware';
 import { PrismaService } from '../database/prisma.service';
 import { UploadedFile as UploadedFileType } from '../../common/interfaces/multer';
 import { CreateAnalysisDto } from './dto/create-analysis.dto';
@@ -53,6 +55,17 @@ import {
 import { normalizeSymbol } from '../../common/utils/analysis-normalizer';
 import { analysisInterval } from '../market/candle-store';
 import { trackingWindowEnd } from '../../../worker/analysis-tracker';
+
+type TrialRequest = { ip?: string; headers?: Record<string, string | string[] | undefined> };
+
+/** Sinais da propria requisicao para o anti-abuso do trial. */
+function trialContextFrom(req: TrialRequest): TrialContext {
+  const single = (name: string) => {
+    const value = req.headers?.[name];
+    return (Array.isArray(value) ? value[0] : value) ?? null;
+  };
+  return { ip: resolveClientIp(req), deviceId: single('x-tickrify-device'), userAgent: single('user-agent') };
+}
 
 @Controller('ai')
 export class AiController {
@@ -89,7 +102,7 @@ export class AiController {
     @CurrentUser() user: { id?: string; clerkUserId: string; email?: string | null },
     @UploadedFile() file: UploadedFileType,
     @Body() body: CreateAnalysisDto,
-    @Ip() ip: string,
+    @Req() req: TrialRequest,
   ) {
     try {
       const dbUserId = await this.resolveDbUserId(user);
@@ -108,7 +121,7 @@ export class AiController {
         htfImages,
         buildClientContext(body),
         body.setupId ?? null,
-        { ip, timezone: body.timezone ?? null },
+        { ...trialContextFrom(req), timezone: body.timezone ?? null },
       );
 
       this.logger.log(`Analysis created: ${result.id}`);
@@ -522,14 +535,14 @@ export class AiController {
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   async getUsage(
     @CurrentUser() user: { id?: string; clerkUserId: string },
-    @Ip() ip: string,
+    @Req() req: TrialRequest,
     @Query('tz') tz?: string,
   ) {
     const dbUserId = await this.resolveDbUserId(user);
     if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
 
     // `tz`: fuso do navegador para o trial (validado no servico).
-    return this.aiService.getUsage(dbUserId, { ip, timezone: typeof tz === 'string' ? tz : null });
+    return this.aiService.getUsage(dbUserId, { ...trialContextFrom(req), timezone: typeof tz === 'string' ? tz : null });
   }
 
   /** Heatmap de consistência: análises por dia (últimos ~119 dias) do usuário. */

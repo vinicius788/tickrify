@@ -7,6 +7,7 @@
  * captura (quando um webhook chega), e mesmo aí qualquer erro é engolido.
  */
 import { createHash } from 'crypto';
+import { currentClientIp } from '../middleware/request-context.middleware';
 
 type PostHogLike = {
   capture: (args: {
@@ -15,6 +16,7 @@ type PostHogLike = {
     properties?: Record<string, unknown>;
     uuid?: string;
     timestamp?: Date;
+    disableGeoip?: boolean;
   }) => void;
 };
 
@@ -76,6 +78,10 @@ function getClient(): PostHogLike | null {
 /**
  * Captura um evento server-side. `distinctId` deve ser o MESMO id usado no
  * identify do frontend (o id do Clerk), para casar com o funil.
+ *
+ * Com usuario na ponta (requisicao ou job da fila), o evento leva o IP dele e
+ * liga a geolocalizacao, que o posthog-node desliga por padrao. Sem usuario
+ * (webhook da Stripe, varreduras) segue desligada: o IP seria o do Render.
  */
 export function captureServer(
   distinctId: string,
@@ -86,10 +92,12 @@ export function captureServer(
   try {
     const c = getClient();
     if (!c || !distinctId) return;
+    const ip = currentClientIp();
     c.capture({
       distinctId,
       event,
-      properties: { ...properties, tracked_by: 'server' },
+      properties: { ...properties, tracked_by: 'server', ...(ip ? { $ip: ip } : {}) },
+      ...(ip ? { disableGeoip: false } : {}),
       ...(options.dedupeKey ? { uuid: uuidFromKey(options.dedupeKey) } : {}),
       ...(options.timestamp ? { timestamp: options.timestamp } : {}),
     });

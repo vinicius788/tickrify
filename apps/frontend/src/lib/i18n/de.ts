@@ -69,6 +69,7 @@ export default {
     TRIAL_EMAIL_NOT_ALLOWED: "Registriere dich mit einer dauerhaften E-Mail-Adresse, um den kostenlosen Test zu starten.",
     TRIAL_EMAIL_UNVERIFIED: "Bestätige deine E-Mail-Adresse, um den kostenlosen Test zu starten.",
     TRIAL_NETWORK_LIMIT: "Zu viele neue Tests aus diesem Netzwerk heute. Versuche es morgen erneut.",
+    TRIAL_DEVICE_LIMIT: "Dieses Gerät hat bereits eine kostenlose Testphase genutzt. Abonniere, um weiter zu analysieren.",
     trades_unavailable: "Trade-Tracking ist vorübergehend nicht verfügbar.",
     analysis_not_found: "Analyse nicht gefunden",
     not_a_trade: "Nur eine abgeschlossene BUY- oder SELL-Analyse kann als Trade verfolgt werden.",

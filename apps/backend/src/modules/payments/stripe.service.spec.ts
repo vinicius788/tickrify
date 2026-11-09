@@ -301,7 +301,7 @@ describe('StripeService webhooks', () => {
           create: expect.objectContaining({ userId: 'usr_1', status: 'active', priceId: STARTER_MONTHLY }),
         }),
       );
-      expect(captureServer).toHaveBeenCalledTimes(1);
+      expect((captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'checkout_completed')).toHaveLength(1);
       expect(captureServer).toHaveBeenCalledWith(
         'clerk_1',
         'checkout_completed',
@@ -406,29 +406,42 @@ describe('StripeService webhooks', () => {
       );
     });
 
-    it('created emite subscription_created uma vez; updated nao emite', async () => {
-      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ created: 1789000000, metadata: { checkoutSource: 'pricing' } }));
-
-      await deliver('customer.subscription.created', subscription());
-      await deliver('customer.subscription.updated', subscription(), 'evt_2');
-
-      const created = (captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'subscription_created');
-      expect(created).toHaveLength(1);
-      expect(created[0][3]).toEqual({ dedupeKey: 'subscription_created:sub_1', timestamp: new Date(1789000000 * 1000) });
+    it('created nao emite subscription_created: a assinatura ainda nao foi paga', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'incomplete' }));
+      await deliver('customer.subscription.created', subscription({ status: 'incomplete' }));
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'active' }));
+      await deliver('customer.subscription.created', subscription(), 'evt_2');
+      expect((captureServer as jest.Mock).mock.calls.some((c) => c[1] === 'subscription_created')).toBe(false);
     });
 
-    it('created marca assinante no PostHog so quando a assinatura nasce paga', async () => {
-      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'active' }));
-      await deliver('customer.subscription.created', subscription());
-      const paid = (captureServer as jest.Mock).mock.calls.find((c) => c[1] === 'subscription_created');
-      expect(paid[2]).toEqual(expect.objectContaining({ $set: { is_subscriber: true } }));
+    it('checkout pago e 1a fatura paga emitem o MESMO subscription_created (o PostHog deduplica)', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(
+        subscription({ status: 'active', created: 1789000000, current_period_start: 1789000000, current_period_end: 1789000000 + 30 * 86400 }),
+      );
+      await deliver('checkout.session.completed', {
+        id: 'cs_1', mode: 'subscription', status: 'complete', payment_status: 'paid', subscription: 'sub_1',
+        customer: 'cus_1', client_reference_id: 'usr_1', metadata: { userId: 'usr_1', clerkUserId: 'clerk_1' },
+      });
+      await deliver('invoice.payment_succeeded', {
+        id: 'in_1', customer: 'cus_1', billing_reason: 'subscription_create', amount_paid: 799, created: 1789000100,
+        parent: { subscription_details: { subscription: 'sub_1', metadata: {} }, type: 'subscription_details' },
+      }, 'evt_2');
 
-      (captureServer as jest.Mock).mockClear();
-      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ id: 'sub_2', status: 'incomplete' }));
-      await deliver('customer.subscription.created', subscription({ id: 'sub_2', status: 'incomplete' }), 'evt_3');
-      const declined = (captureServer as jest.Mock).mock.calls.find((c) => c[1] === 'subscription_created');
-      expect(declined).toBeDefined();
-      expect(declined[2]).not.toHaveProperty('$set');
+      const created = (captureServer as jest.Mock).mock.calls.filter((c) => c[1] === 'subscription_created');
+      expect(created).toHaveLength(2);
+      for (const call of created) {
+        expect(call[2]).toEqual(expect.objectContaining({ status: 'active', $set: { is_subscriber: true } }));
+        expect(call[3]).toEqual({ dedupeKey: 'subscription_created:sub_1', timestamp: new Date(1789000000 * 1000) });
+      }
+    });
+
+    it('checkout concluido sem pagamento nao emite subscription_created', async () => {
+      stripe.subscriptions.retrieve.mockResolvedValue(subscription({ status: 'incomplete' }));
+      await deliver('checkout.session.completed', {
+        id: 'cs_2', mode: 'subscription', status: 'complete', payment_status: 'unpaid', subscription: 'sub_1',
+        customer: 'cus_1', client_reference_id: 'usr_1', metadata: { userId: 'usr_1', clerkUserId: 'clerk_1' },
+      });
+      expect((captureServer as jest.Mock).mock.calls.some((c) => c[1] === 'subscription_created')).toBe(false);
     });
 
     it('deleted grava canceled', async () => {
@@ -472,10 +485,16 @@ describe('StripeService webhooks', () => {
       ...overrides,
     });
 
+    // A janela mensal e calculada a partir de "agora": o relogio fica dentro do periodo que comeca em 08/10.
     beforeEach(() => {
+      jest.useFakeTimers({ now: new Date('2026-10-08T12:00:00Z'), doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
       stripe.subscriptions.retrieve.mockResolvedValue(
         subscription({ current_period_start: PERIOD_START, current_period_end: PERIOD_START + 30 * 86400 }),
       );
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
     });
 
     it('renovacao DEFINE o saldo em 200 (nao soma) e grava a janela do mes', async () => {

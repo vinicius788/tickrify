@@ -259,6 +259,8 @@ const DashboardPage = () => {
         ? 'daily_limit'
         : undefined
     : undefined;
+  // Aparelho que ja usou um trial em outra conta: o caminho e assinar.
+  const deviceBlocked = trialBlocked?.code === 'TRIAL_DEVICE_LIMIT';
   const queryClient = useQueryClient();
   const incrementAnalysis = useIncrementAnalysis();
   const { user } = useUser();
@@ -643,6 +645,7 @@ const DashboardPage = () => {
 
   const openUpgradeModal = useCallback((trigger: string) => {
     track('upgrade_modal_viewed', { trigger });
+    track('paywall_viewed', { surface: 'upgrade_modal', trigger });
     setShowUpgradeModal(true);
   }, []);
   openUpgradeModalRef.current = openUpgradeModal;
@@ -657,7 +660,7 @@ const DashboardPage = () => {
   // `cycle`: o semanal (US$ 7,99, 25 ticks) sai sem o EARLY35, que e do
   // primeiro MES; o servidor tambem descarta o cupom nesse caso.
   const startCheckout = useCallback(async (
-    source: 'locked_value' | 'last_free_result' | 'upgrade_modal',
+    source: 'locked_value' | 'last_free_result' | 'useful_result' | 'upgrade_modal',
     cycle: 'monthly' | 'weekly' = 'monthly',
     surface: PaywallSurface | null = null,
   ) => {
@@ -721,7 +724,7 @@ const DashboardPage = () => {
       onMonthly={() => void startCheckout('locked_value', 'monthly', surface)}
       unlockPending={unlockPending}
       plansHref={`${base}${SECTION_PATH.plans}`}
-      variant={trialVariant}
+      variant={trialVariant ?? (deviceBlocked ? 'trial_ended' : undefined)}
     >
       {children}
     </Paywall>
@@ -746,10 +749,25 @@ const DashboardPage = () => {
     if (!key || lastFreeCtaSeenFor.current === key) return;
     lastFreeCtaSeenFor.current = key;
     track('upgrade_cta_viewed', { source: 'last_free_result' });
-  }, [activeView, isDemo, isUnlimited, isPlanLoading, remaining, lastAnalysisId, route.section, analysisInMemory, routeAnalysisId]);
+    track('paywall_viewed', { surface: 'analysis_result', trigger: trialVariant ?? 'free_exhausted' });
+  }, [trialVariant, activeView, isDemo, isUnlimited, isPlanLoading, remaining, lastAnalysisId, route.section, analysisInMemory, routeAnalysisId]);
   // Barra do WAIT (topo do resultado): vista uma vez por analise.
   const isWaitResult = ['WAIT', 'HOLD'].includes(String(analysisData?.recommendation || '').toUpperCase());
   const waitNudgeSeenFor = useRef<string | null>(null);
+  // Leitura util (nao NO_TRADE) de quem ainda tem cota: a oferta aparece sem
+  // travar nada. Boa parte dos trials faz 1 ou 2 analises e nao volta: 100 de
+  // 111 encerraram por tempo, longe de qualquer paywall (30 dias ate 09/11/2026).
+  const showUsefulOffer =
+    !isDemo && !isPlanLoading && !isUnlimited && Number.isFinite(remaining) && remaining > 0 &&
+    analysisData?.status === 'completed' &&
+    resolveSignalState(analysisData?.signalState ?? analysisData?.fullResponse?.signalState, analysisData?.recommendation) !== 'NO_TRADE';
+  const usefulOfferSeenFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeView !== 'analysis-result' || !showUsefulOffer || !analysisData?.id) return;
+    if (usefulOfferSeenFor.current === analysisData.id) return;
+    usefulOfferSeenFor.current = analysisData.id;
+    track('paywall_viewed', { surface: 'analysis_result', trigger: 'useful_analysis' });
+  }, [activeView, showUsefulOffer, analysisData?.id]);
   useEffect(() => {
     if (activeView !== 'analysis-result' || isDemo || isUnlimited || !isWaitResult) return;
     if (!Number.isFinite(remaining) || remaining <= 0) return;
@@ -763,6 +781,11 @@ const DashboardPage = () => {
     track('upgrade_cta_clicked', { source: 'last_free_result', destination: 'checkout' });
     // Semanal primeiro (05/10/2026), como o paywall: a entrada mais barata.
     void startCheckout('last_free_result', 'weekly');
+  }, [startCheckout]);
+
+  const handleUsefulOfferCheckout = useCallback(() => {
+    track('upgrade_cta_clicked', { source: 'useful_result', destination: 'checkout' });
+    void startCheckout('useful_result', 'weekly');
   }, [startCheckout]);
 
   const resetNewAnalysisView = useCallback(() => {
@@ -1009,7 +1032,7 @@ const DashboardPage = () => {
         const apiCode = error.code || String(parsedBody?.code || '');
         // Trial de 3 dias: limite do dia e fim mostram o paywall certo (o /usage
         // relido decide a variante); fila e anti-abuso mostram a mensagem.
-        if (apiCode === 'TRIAL_DAILY_LIMIT' || apiCode === 'TRIAL_ENDED') {
+        if (apiCode === 'TRIAL_DAILY_LIMIT' || apiCode === 'TRIAL_ENDED' || apiCode === 'TRIAL_DEVICE_LIMIT') {
           track('free_limit_reached', { reason: apiCode });
           setFlow('locked');
           return;
@@ -1203,7 +1226,9 @@ const DashboardPage = () => {
         )}
         {!isDemo && freeLocked && alertsQuery.data?.paused && alertsQuery.data.pausedSymbol
           ? paywallFor('alerts', undefined, alertsQuery.data.pausedSymbol)
-          : null}
+          : !isDemo && (freeLocked || trialVariant || deviceBlocked)
+            ? paywallFor('home')
+            : null}
 
         {/* Perfil de estrategia salvo e os setups que a pessoa segue sem alerta
             (os com alerta estao no Today). Gratis esgotado: o servidor responde
@@ -1415,7 +1440,7 @@ const DashboardPage = () => {
             )}
             {/* Gratis esgotado: o envio vira o paywall direto, em vez de deixar
                 subir o print e so recusar depois. */}
-            {freeLocked || trialVariant ? (
+            {freeLocked || trialVariant || deviceBlocked ? (
               paywallFor('new_analysis')
             ) : trialBlocked ? (
               <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4 text-sm text-[var(--text-secondary)]">
@@ -1700,6 +1725,9 @@ const DashboardPage = () => {
                       {trialVariant === 'daily_limit' ? t.counter.trialComeBack : trialVariant === 'trial_ended' ? t.counter.trialEnded : t.counter.exhausted}
                     </p>
                   )}
+                  {(exhausted || showUsefulOffer) && (
+                    <p className="mt-1 text-xs text-[var(--text-secondary)]">{t.commercial.weeklyRenewal}</p>
+                  )}
                 </div>
                 <div className="flex min-w-0 flex-wrap items-center gap-3 sm:shrink-0">
                   {exhausted ? (
@@ -1727,6 +1755,12 @@ const DashboardPage = () => {
                       >
                         <PlusCircle className="h-4 w-4" /> {t.nav.newAnalysis}
                       </button>
+                      {showUsefulOffer && (
+                        <Button size="sm" variant="outline" className="h-auto max-w-full whitespace-normal py-2" onClick={handleUsefulOfferCheckout} disabled={unlockPending}>
+                          <Crown className="mr-2 h-4 w-4" />
+                          {t.paywall.ctaWeekly}
+                        </Button>
+                      )}
                       {freeLeftKnown && (
                         <Link
                           to={`${base}${SECTION_PATH.plans}`}

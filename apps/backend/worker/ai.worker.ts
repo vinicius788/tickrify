@@ -44,6 +44,7 @@ import { strategyFitFields, type StrategyProfile } from '../src/common/strategy/
 import { startOutcomeSweeper } from './outcome.sweeper';
 import { startAnalysisTracker } from './analysis-tracker';
 import { trackFreeAnalysisCompleted } from '../src/common/analytics/free-funnel';
+import { runWithClientIp } from '../src/common/middleware/request-context.middleware';
 import { safeAnalysisFailureCode, trackAnalysisExecutionFailed } from '../src/common/analytics/analysis-failure';
 import { MailService } from '../src/modules/mail/mail.service';
 import { notifyIfFreeQuotaExhausted, retryRecoveryEmails, type RecoveryEmailDeps } from '../src/modules/mail/recovery-email';
@@ -97,6 +98,8 @@ type SchemaRecommendation = 'COMPRA' | 'VENDA' | 'AGUARDAR';
 type MarketBias = 'bullish' | 'bearish' | 'neutral';
 
 interface JobData {
+  /** IP de quem pediu a analise, so para os eventos do PostHog. */
+  clientIp?: string | null;
   analysisId: string;
   imageUrl: string;
   htfImageUrls?: string[];
@@ -1482,7 +1485,7 @@ async function processAnalysis(job: Job<JobData>) {
 /// Custom backoff: attempt 1→3s, 2→8s (curto para retentar rápido em caso de lentidão da IA)
 const RETRY_DELAYS_MS = [3_000, 8_000];
 
-const worker = new Worker<JobData>('ai-analysis', processAnalysis, {
+const worker = new Worker<JobData>('ai-analysis', (job) => runWithClientIp(job.data.clientIp, () => processAnalysis(job)), {
   connection: getRedisConnection() as any,
   concurrency: 3,
   lockDuration: 300_000, // 5 minutes — prevents stalled jobs when OpenAI takes long

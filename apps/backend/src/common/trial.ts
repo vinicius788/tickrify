@@ -33,8 +33,10 @@ export const TRIAL_RULES = {
   dailySpendCapUsd: 10,
   /** Custo medio de uma analise quick (luna, esforco low), medido em 09/09/2026. */
   estimatedCostPerAnalysisUsd: 0.0195,
-  /** Trials novos por rede (IP) em 24h antes de pedir para voltar amanha. */
+  /** Trials novos pelo mesmo IP + navegador em 24h antes de pedir para voltar amanha. */
   maxNewTrialsPerIpPerDay: 3,
+  /** Contas com trial no mesmo aparelho antes de recusar a proxima. */
+  maxTrialsPerDevice: 1,
   /** Mesmo print da mesma pessoa nesta janela devolve a leitura anterior, sem IA. */
   duplicateChartWindowHours: 24,
 } as const;

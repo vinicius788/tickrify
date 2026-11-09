@@ -69,6 +69,7 @@ export default {
     TRIAL_EMAIL_NOT_ALLOWED: "Please sign up with a permanent email address to start your free trial.",
     TRIAL_EMAIL_UNVERIFIED: "Please verify your email address to start your free trial.",
     TRIAL_NETWORK_LIMIT: "Too many new trials from this network today. Please try again tomorrow.",
+    TRIAL_DEVICE_LIMIT: "This device has already used a free trial. Subscribe to keep analyzing.",
     trades_unavailable: "Trade tracking is temporarily unavailable.",
     analysis_not_found: "Analysis not found",
     not_a_trade: "Only a completed BUY or SELL analysis can be tracked as a trade.",

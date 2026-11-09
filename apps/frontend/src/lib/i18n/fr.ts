@@ -69,6 +69,7 @@ export default {
     TRIAL_EMAIL_NOT_ALLOWED: "Inscrivez-vous avec une adresse e-mail permanente pour commencer l’essai gratuit.",
     TRIAL_EMAIL_UNVERIFIED: "Vérifiez votre adresse e-mail pour commencer l’essai gratuit.",
     TRIAL_NETWORK_LIMIT: "Trop de nouveaux essais depuis ce réseau aujourd’hui. Réessayez demain.",
+    TRIAL_DEVICE_LIMIT: "Cet appareil a déjà utilisé un essai gratuit. Abonnez-vous pour continuer à analyser.",
     trades_unavailable: "Le suivi des trades est temporairement indisponible.",
     analysis_not_found: "Analyse introuvable",
     not_a_trade: "Seule une analyse BUY ou SELL terminée peut être suivie comme trade.",

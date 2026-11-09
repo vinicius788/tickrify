@@ -50,7 +50,8 @@ import {
 } from '../../common/utils/image-storage';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { FREE_READABLE_ANALYSES, getFreeQuota, hadEndedSubscription } from '../../common/free-quota';
-import { TrialService } from './trial.service';
+import { TrialService, type TrialContext } from './trial.service';
+import { currentClientIp } from '../../common/middleware/request-context.middleware';
 import { TradesService } from './trades.service';
 import { TRIAL_RULES, nextTrialAvailability } from '../../common/trial';
 import { TICK_COSTS, AnalysisType } from '../ticks/tick-packages';
@@ -416,7 +417,7 @@ export class AiService implements OnModuleInit {
     clientContext?: AnalysisClientContext | null,
     setupId?: string | null,
     /** Trial: IP (limite suave por rede) e fuso do navegador. */
-    trialContext: { ip?: string | null; timezone?: string | null } = {},
+    trialContext: TrialContext = {},
   ) {
     // Medicao por etapa (result.engine.timings): o upload ja chegou inteiro aqui.
     const receivedAt = Date.now();
@@ -592,6 +593,7 @@ export class AiService implements OnModuleInit {
         strategyProfile,
         setupId: setupId ?? null,
         intake,
+        clientIp: currentClientIp(),
       }, { jobId: analysis.id });
 
       return {
@@ -1061,7 +1063,7 @@ export class AiService implements OnModuleInit {
     return { profile };
   }
 
-  async getUsage(userId: string, trialContext: { ip?: string | null; timezone?: string | null } = {}) {
+  async getUsage(userId: string, trialContext: TrialContext = {}) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true },

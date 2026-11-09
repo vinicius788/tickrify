@@ -13,7 +13,7 @@ import { useTestimonials } from '@/lib/ratings';
  * `upgrade_cta_clicked`, `upgrade_clicked`, `checkout_started`) para o funil
  * separar "acabou a analise gratis" de "quis abrir o diario".
  */
-export type PaywallSurface = 'new_analysis' | 'trades' | 'journal' | 'history' | 'setups' | 'alerts';
+export type PaywallSurface = 'home' | 'new_analysis' | 'trades' | 'journal' | 'history' | 'setups' | 'alerts';
 
 interface PaywallProps {
   surface: PaywallSurface;
@@ -70,6 +70,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
 
   useEffect(() => {
     track('upgrade_cta_viewed', { source: 'paywall', surface, ...(variant ? { trial: variant } : {}) });
+    track('paywall_viewed', { surface, trigger: variant ?? 'free_exhausted' });
   }, [surface, variant]);
 
   const title =
@@ -77,12 +78,13 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
       ? p.titleAlerts.replace('{symbol}', symbol || 'Tickrify')
       : variant === 'daily_limit'
         ? p.titleDailyLimit
-        : variant === 'trial_ended' && surface === 'new_analysis'
+        : variant === 'trial_ended' && (surface === 'new_analysis' || surface === 'home')
           ? p.titleTrialEnded
-          : surface === 'new_analysis'
+          : surface === 'new_analysis' || surface === 'home'
             ? p.titleNewAnalysis
             : p.titleArea;
   const areaDescription: Record<PaywallSurface, string> = {
+    home: p.descTrialEnded,
     new_analysis: p.descNewAnalysis,
     trades: p.descTrades,
     journal: p.descJournal,
@@ -180,7 +182,9 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
               {p.offerNote.replace('{code}', offer.code).replace('{pct}', String(offer.percentOff))}
             </p>
           ) : null}
-          <p className="max-w-[440px] text-xs text-[var(--text-secondary)]">{t.commercial.weeklyRenewal}</p>
+          <p className="max-w-[440px] text-xs text-[var(--text-secondary)]">
+            {offer?.percentOff ? t.commercial.weeklyRenewal : `${t.commercial.weeklyRenewal} ${t.commercial.monthlyRenewal}`}
+          </p>
           <Link
             to={plansHref}
             onClick={() => track('upgrade_cta_clicked', { source: 'paywall', surface, destination: 'plans' })}

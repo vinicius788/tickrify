@@ -11,7 +11,8 @@ import type { PostHog } from 'posthog-js';
 // - Sem aceite de cookies (recusou ou ainda nao escolheu): PostHog em modo SEM
 //   COOKIES (`cookieless_mode: 'on_reject'`). Nada e gravado no navegador; a
 //   identidade vira um hash diario calculado no servidor do PostHog. Conta
-//   visita, pagina, origem (UTM) e pais, e nunca identifica a pessoa.
+//   visita, pagina e origem (UTM), e nunca identifica a pessoa. O PostHog descarta
+//   o IP nesse modo, entao esses eventos ficam sem pais (medido em 09/11/2026).
 // - Com aceite: modo completo, como antes (cookie + identify no login).
 // Antes o PostHog nem carregava sem aceite, e quem chegava pelo anuncio e
 // ignorava o banner era invisivel: 19 cliques no Meta em 22-24/09 e zero
@@ -387,6 +388,9 @@ export type FunnelEvent =
   // ultima gratis, menu). `source` diz qual. O clique no BOTAO DE COMPRA em si
   // continua sendo `upgrade_clicked`.
   | 'upgrade_cta_viewed'
+  // Oferta de assinatura na tela, em todos os caminhos. `surface` diz onde e
+  // `trigger` por que (cota do dia, fim do trial, analise util).
+  | 'paywall_viewed'
   // /try: leitura ja feita devolvida de novo (a resposta tinha se perdido).
   | 'demo_result_recovered'
   // Quadrinho de opiniao do painel (o texto fica so no banco, nunca no PostHog).
