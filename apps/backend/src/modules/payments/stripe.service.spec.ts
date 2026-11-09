@@ -472,10 +472,16 @@ describe('StripeService webhooks', () => {
       ...overrides,
     });
 
+    // A janela mensal e calculada a partir de "agora": o relogio fica dentro do periodo que comeca em 08/10.
     beforeEach(() => {
+      jest.useFakeTimers({ now: new Date('2026-10-08T12:00:00Z'), doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
       stripe.subscriptions.retrieve.mockResolvedValue(
         subscription({ current_period_start: PERIOD_START, current_period_end: PERIOD_START + 30 * 86400 }),
       );
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
     });
 
     it('renovacao DEFINE o saldo em 200 (nao soma) e grava a janela do mes', async () => {
