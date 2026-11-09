@@ -89,8 +89,8 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     type: 'number',
     label: 'Teste A/B do prompt: % na variante B',
     description:
-      'Porcentagem de contas que recebem o prompt B (nivel de entrada no primeiro pullback com estrutura, nao no mais profundo). 0 = todos no atual; 100 = todos na B. A decisao sai pronta na aba Motor.',
-    defaultValue: '50',
+      'Porcentagem de contas que recebem o prompt B (nivel de entrada no primeiro pullback com estrutura, nao no mais profundo). 0 (padrao) = todos no atual; 100 = todos na B. Desligada por decisao do dono em 09/11/2026: no replay a B piorou o nivel longe demais. A decisao sai pronta na aba Motor.',
+    defaultValue: '0',
     risk: 'medio',
   },
   {

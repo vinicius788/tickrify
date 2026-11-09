@@ -107,7 +107,6 @@ describe('worker/ai.worker.ts: prompt e argumentos entregues ao adapter (montado
   const analyzeImageMock = jest.fn();
 
   beforeAll(() => {
-    process.env.PROMPT_VARIANT_B_PERCENT = '0';
     jest.spyOn(console, 'log').mockImplementation(() => undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -116,7 +115,6 @@ describe('worker/ai.worker.ts: prompt e argumentos entregues ao adapter (montado
   });
 
   afterAll(() => {
-    delete process.env.PROMPT_VARIANT_B_PERCENT;
     jest.restoreAllMocks();
   });
 
@@ -179,7 +177,7 @@ describe('worker/ai.worker.ts: prompt e argumentos entregues ao adapter (montado
       const { args } = await run({ analysisId: 'a-ab', imageUrl: 'https://example.com/c.png', analysisType: 'quick', userId: 'user-1', isDemo: true, userLanguage: 'en' });
       expect(args[1]).toBe(buildAnalysisPrompt({ userLanguage: 'en', analysisType: 'quick' }, variant));
     } finally {
-      process.env.PROMPT_VARIANT_B_PERCENT = '0';
+      delete process.env.PROMPT_VARIANT_B_PERCENT;
     }
   });
 

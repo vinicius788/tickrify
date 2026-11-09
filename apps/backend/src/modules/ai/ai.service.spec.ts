@@ -415,7 +415,7 @@ describe('AiService access enforcement', () => {
       expect((service as any).aiAdapter.analyzeImage.mock.calls[0][1]).toBe(buildAnalysisPrompt({ userLanguage: 'pt', analysisType: 'quick' }, 'B'));
       expect(prisma.analysis.update.mock.calls.at(-1)[0].data.result.engine.prompt_variant).toBe('B');
     } finally {
-      process.env.PROMPT_VARIANT_B_PERCENT = '0';
+      delete process.env.PROMPT_VARIANT_B_PERCENT;
     }
   });
 

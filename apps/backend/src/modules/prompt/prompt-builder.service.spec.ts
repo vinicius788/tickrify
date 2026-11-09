@@ -112,7 +112,17 @@ describe('teste A/B do prompt', () => {
     expect(promptVariantForUser(null)).toBe('A');
   });
 
-  it('o padrao divide perto de 50% e a mesma pessoa fica na mesma variante', () => {
+  it('sem linha no /admin nem env, o padrao deixa todos na A', () => {
+    expect(users.every((u) => promptVariantForUser(u) === 'A')).toBe(true);
+  });
+
+  it('valor invalido cai no padrao: todos na A', () => {
+    process.env.PROMPT_VARIANT_B_PERCENT = 'abc';
+    expect(users.every((u) => promptVariantForUser(u) === 'A')).toBe(true);
+  });
+
+  it('com 50 divide perto da metade e a mesma pessoa fica na mesma variante', () => {
+    process.env.PROMPT_VARIANT_B_PERCENT = '50';
     const inB = users.filter((u) => promptVariantForUser(u) === 'B').length;
     expect(inB).toBeGreaterThan(900);
     expect(inB).toBeLessThan(1100);
