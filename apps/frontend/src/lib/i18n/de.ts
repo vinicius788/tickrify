@@ -451,6 +451,7 @@ export default {
     evidenceCalendar: 'Wirtschaftskalender',
     evidenceAttached: 'Beigefügt',
     evidenceNotAttached: 'Nicht beigefügt',
+    evidenceCandleReadTimeout: "Das Lesen des Charts dauerte zu lange",
     evidenceEventsAttached: 'Geplante Ereignisse beigefügt',
     evidenceNoEventsReturned: 'Quelle lieferte keine Ereignisse',
     evidenceNotConfirmed: 'Nicht bestätigt',

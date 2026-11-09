@@ -451,6 +451,7 @@ export default {
     evidenceCalendar: 'Calendrier économique',
     evidenceAttached: 'Joint',
     evidenceNotAttached: 'Non joint',
+    evidenceCandleReadTimeout: "La lecture du graphique a expiré",
     evidenceEventsAttached: 'Événements programmés joints',
     evidenceNoEventsReturned: 'La source n’a renvoyé aucun événement',
     evidenceNotConfirmed: 'Non confirmé',

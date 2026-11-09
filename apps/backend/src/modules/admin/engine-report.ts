@@ -29,6 +29,8 @@ export type EngineReportRow = {
   fillPrice: number | null;
   stopLoss: number | null;
   takeProfit1: number | null;
+  /** `groundingStats.coverage`; ausente em analise anterior ao registro do motivo. */
+  coverage?: string | null;
 };
 
 export type AssetClass = 'metal' | 'forex' | 'crypto' | 'other';
@@ -55,6 +57,7 @@ export type EngineReport = {
   hasVariantB: boolean;
   variants: { variant: 'A' | 'B'; total: EngineStats; classes: { assetClass: AssetClass; stats: EngineStats }[] }[];
   enterNow: { trades: number; meanR: number | null; verdict: string };
+  noCandles: { reason: string; count: number }[];
 };
 
 export function assetClassOf(symbol: string | null): AssetClass {
@@ -119,6 +122,17 @@ function enterNowVerdict(trades: number, meanR: number | null): string {
   return 'Manter e esperar mais dados: entre -0,15R e -0,05R a regra nao decide.';
 }
 
+/** Por que as analises vieram sem velas, do motivo mais comum para o menos comum. */
+function noCandlesOf(rows: readonly EngineReportRow[]): { reason: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (row.coverage === 'injected') continue;
+    const reason = row.coverage ?? 'not_recorded';
+    counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+  return [...counts].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason));
+}
+
 export function buildEngineReport(rows: readonly EngineReportRow[]): EngineReport {
   const hasVariantB = rows.some((r) => variantOf(r) === 'B');
   const variants = (hasVariantB ? (['A', 'B'] as const) : (['A'] as const)).map((variant) => {
@@ -137,6 +151,7 @@ export function buildEngineReport(rows: readonly EngineReportRow[]): EngineRepor
     verdict: hasVariantB ? abVerdict(variants[0], variants[1]) : 'So existe a variante A: nao ha teste A/B para decidir.',
     variants,
     enterNow: { trades: enterNowTrades.length, meanR, verdict: enterNowVerdict(enterNowTrades.length, meanR) },
+    noCandles: noCandlesOf(rows),
   };
 }
 
@@ -152,7 +167,8 @@ export async function loadEngineReport(db: RawQuerier): Promise<EngineReport> {
            t."outcome" AS "outcome",
            t."fillPrice" AS "fillPrice",
            t."stopLoss" AS "stopLoss",
-           t."takeProfit1" AS "takeProfit1"
+           t."takeProfit1" AS "takeProfit1",
+           a."groundingStats"->>'coverage' AS "coverage"
     FROM "tickrify"."Analysis" a
     LEFT JOIN "tickrify"."AnalysisTrack" t ON t."analysisId" = a."id"
     WHERE a."status" = 'completed'

@@ -451,6 +451,7 @@ export default {
     evidenceCalendar: 'Economic calendar',
     evidenceAttached: 'Attached',
     evidenceNotAttached: 'Not attached',
+    evidenceCandleReadTimeout: "The chart read timed out",
     evidenceEventsAttached: 'Scheduled events attached',
     evidenceNoEventsReturned: 'Source returned no events',
     evidenceNotConfirmed: 'Not confirmed',

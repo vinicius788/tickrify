@@ -23,9 +23,23 @@ type Report = {
   hasVariantB: boolean;
   variants: Variant[];
   enterNow: { trades: number; meanR: number | null; verdict: string };
+  noCandles: { reason: string; count: number }[];
 };
 
 const CLASSE: Record<string, string> = { metal: 'Metais', forex: 'Forex', crypto: 'Cripto', other: 'Outros' };
+const MOTIVO_SEM_VELAS: Record<string, string> = {
+  symbol_timeout: 'Leitura do ativo passou do tempo',
+  symbol_unreadable: 'Ativo ilegível no print',
+  timeframe_unreadable: 'Tempo gráfico ilegível',
+  timeout: 'Etapa de dados passou do tempo',
+  error: 'Erro na etapa de dados',
+  provider_quota: 'Cota do Twelve Data',
+  source_unavailable: 'Fonte de velas fora do ar',
+  provider_unconfigured: 'Fonte sem chave',
+  unsupported_asset: 'Ativo sem fonte de velas',
+  stale_withheld: 'Print antigo, velas retidas',
+  not_recorded: 'Motivo não registrado',
+};
 const pct = (v: number | null) => (v === null ? '·' : `${v.toFixed(0)}%`);
 const r = (v: number | null) => (v === null ? '·' : `${v >= 0 ? '+' : ''}${v.toFixed(2).replace('.', ',')}R`);
 
@@ -87,6 +101,19 @@ export default function MotorPainel() {
             <p className="mt-1 text-sm text-[var(--text-soft)]">
               {r(data.enterNow.meanR)} em {data.enterNow.trades} trades. {data.enterNow.verdict}
             </p>
+          </Card>
+
+          <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
+            <p className="text-[11px] uppercase tracking-wide text-[var(--text-faint)]">Análises sem velas, por motivo</p>
+            {data.noCandles.length === 0 ? (
+              <p className="mt-1 text-sm text-[var(--text-soft)]">Nenhuma.</p>
+            ) : (
+              <ul className="mt-1 space-y-0.5 text-sm text-[var(--text-soft)]">
+                {data.noCandles.map((item) => (
+                  <li key={item.reason}>{`${MOTIVO_SEM_VELAS[item.reason] ?? item.reason}: ${item.count}`}</li>
+                ))}
+              </ul>
+            )}
           </Card>
 
           {data.variants.map((v) => (

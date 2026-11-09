@@ -13,6 +13,8 @@ export interface AnalysisEvidence {
   version: 1;
   additionalChartsDelivered: number;
   candleFeedAttached: boolean;
+  /** So quando as velas nao vieram porque a leitura do print passou do tempo. */
+  candleFailure?: 'read_timeout';
   marketContextAttached: boolean;
   /** not_attached: o calendario nao foi buscado para esta analise (quick ou contexto desligado). */
   calendar: 'events_attached' | 'no_events_returned' | 'not_attached' | 'not_confirmed';

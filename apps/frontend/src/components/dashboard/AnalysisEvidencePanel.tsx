@@ -26,7 +26,7 @@ export function AnalysisEvidencePanel({ evidence: value }: { evidence: unknown }
           <dl className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             <div><dt className="inline">{t.analysis.evidenceCharts}: </dt><dd className="inline text-[var(--text-primary)]">{1 + additionalDelivered}</dd></div>
             <div><dt className="inline">{t.analysis.evidenceAdditionalCharts}: </dt><dd className="inline text-[var(--text-primary)]">{additionalDelivered}</dd></div>
-            <div><dt className="inline">{t.analysis.evidenceCandles}: </dt><dd className="inline text-[var(--text-primary)]">{evidence.candleFeedAttached === true ? t.analysis.evidenceAttached : t.analysis.evidenceNotAttached}</dd></div>
+            <div><dt className="inline">{t.analysis.evidenceCandles}: </dt><dd className="inline text-[var(--text-primary)]">{evidence.candleFeedAttached === true ? t.analysis.evidenceAttached : evidence.candleFailure === 'read_timeout' ? t.analysis.evidenceCandleReadTimeout : t.analysis.evidenceNotAttached}</dd></div>
             <div><dt className="inline">{t.analysis.evidenceMarketContext}: </dt><dd className="inline text-[var(--text-primary)]">{evidence.marketContextAttached === true ? t.analysis.evidenceAttached : t.analysis.evidenceNotAttached}</dd></div>
             <div className="sm:col-span-2"><dt className="inline">{t.analysis.evidenceCalendar}: </dt><dd className="inline text-[var(--text-primary)]">{calendar}</dd></div>
           </dl>
