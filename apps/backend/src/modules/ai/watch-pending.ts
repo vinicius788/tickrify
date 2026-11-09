@@ -25,6 +25,14 @@ export type WatchOutcome = 'pending' | 'reached' | 'expired' | 'invalidated' | '
 /** O preco tocou o nivel e depois: alvo do plano, invalidacao ou nenhum dos dois. So o rastreador diz. */
 export type WatchAfterReach = 'target' | 'invalidation' | 'neither' | null;
 
+/** Geometria valida no nivel: o plano condicional que a tela e o e-mail mostram. */
+export interface ConditionalPlan {
+  entry: number;
+  stopLoss: number;
+  takeProfit1: number;
+  tp1R: number;
+}
+
 export interface WatchSummary {
   direction: WatchPlan['direction'];
   /** Borda da area que o preco alcanca primeiro (o nivel que destrava a entrada). */
@@ -38,6 +46,8 @@ export interface WatchSummary {
   /** O ativo tem fonte de preco: a tela oferece o alerta no nivel. */
   alertAvailable: boolean;
   setupId: string | null;
+  /** null: geometria rejeitada no nivel ou analise sem o campo; so nivel e invalidacao. */
+  plan: ConditionalPlan | null;
 }
 
 export interface WatchTrack {
@@ -73,6 +83,14 @@ export function storedWatchPlan(result: unknown, recommendation: unknown): Watch
   return isValidWatchPlan(plan) ? plan : null;
 }
 
+/** Os niveis que o motor gravou para o WATCH; null = sem geometria valida no nivel. */
+export function conditionalPlanOf(result: unknown): ConditionalPlan | null {
+  const raw = record(record(result).watchLevels);
+  const positive = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
+  if (![raw.entry, raw.stopLoss, raw.takeProfit1, raw.tp1R].every(positive)) return null;
+  return { entry: raw.entry, stopLoss: raw.stopLoss, takeProfit1: raw.takeProfit1, tp1R: raw.tp1R };
+}
+
 /** Resumo do WATCH de um resultado salvo; null fora do WATCH ou sem plano coerente (analise antiga). */
 export function watchSummaryOf(
   result: unknown,
@@ -97,6 +115,7 @@ export function watchSummaryOf(
     afterReach: watchAfterReachOf(context?.track),
     setupId: context?.setupId ?? null,
     alertAvailable: priceSymbolOf(symbol) !== null,
+    plan: conditionalPlanOf(root),
   };
 }
 

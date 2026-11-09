@@ -106,6 +106,21 @@ function AlertLevelButton({
   );
 }
 
+/** "Plan if price reaches X": condicional, nunca ordem executada. Sem geometria valida, nada. */
+function useConditionalPlan() {
+  const { t, language } = useLanguage();
+  const p = t.pending;
+  return (direction: WatchSummary['direction'], plan: WatchSummary['plan'], price: (v: number) => string) =>
+    plan
+      ? p.planIf
+          .replace(/\{level\}/g, price(plan.entry))
+          .replace('{side}', direction === 'long' ? p.sideBuy : p.sideSell)
+          .replace('{stop}', price(plan.stopLoss))
+          .replace('{target}', price(plan.takeProfit1))
+          .replace('{r}', formatNumber(plan.tp1R, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }))
+      : null;
+}
+
 /**
  * O WATCH como item pendente: direcao e nivel, invalidacao, validade com o
  * tempo que falta e, depois da janela, o desfecho que o rastreador gravou.
@@ -133,6 +148,7 @@ export function WatchPending({
   const p = t.pending;
   const locale = DATE_LOCALES[language] ?? 'en-US';
   const price = (v: number) => formatAlertLevel(v, locale);
+  const conditionalPlan = useConditionalPlan()(watch.direction, watch.plan, price);
   const now = useExpiryClock(Date.parse(watch.expiresAt ?? ''), fixedNow);
   const open = isWatchOpen(watch, now);
   const left = watch.expiresAt ? Date.parse(watch.expiresAt) - now : null;
@@ -162,6 +178,7 @@ export function WatchPending({
       <p className="font-terminal text-xs text-[var(--text-primary)]">
         {levelLine.replace('{price}', price(watch.level))}
       </p>
+      {!closed && conditionalPlan && <p data-testid="conditional-plan" className="font-terminal text-[11px] text-[var(--text-primary)]">{conditionalPlan}</p>}
       {!closed && waitingFor && <p className="text-xs text-[var(--text-secondary)]">{waitingFor}</p>}
       {!closed && <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
         {[p.invalidation.replace('{price}', price(watch.invalidation)), validity].filter(Boolean).join(' · ')}
@@ -183,6 +200,7 @@ function WatchingRow({ item, now, surface }: { item: WatchingItem; now: number; 
   const { seen } = useAlertActions();
   const { watch, alert } = item;
   const price = (v: number) => formatAlertLevel(v, locale);
+  const conditionalPlan = useConditionalPlan()(watch.direction, watch.plan, price);
   const open = isWatchOpen(watch, now);
   const closed = watch.outcome !== 'pending' || (watch.expiresAt !== null && !open);
   const triggered = alert?.status === 'triggered';
@@ -238,6 +256,7 @@ function WatchingRow({ item, now, surface }: { item: WatchingItem; now: number; 
         <p className="mt-0.5 font-terminal text-xs text-[var(--text-primary)]">
           {[levelText, distance].filter(Boolean).join(' · ')}
         </p>
+        {!closed && conditionalPlan ? <p key="plan" data-testid="conditional-plan" className="mt-0.5 font-terminal text-[11px] text-[var(--text-primary)]">{conditionalPlan}</p> : null}
         {!closed ? (
           <p key="invalidation" className="mt-0.5 font-terminal text-[11px] text-[var(--text-secondary)]">
             {[p.invalidation.replace('{price}', price(watch.invalidation)), left !== null ? w.timeLeft.replace('{time}', formatTimeLeft(left, locale)) : null].filter(Boolean).join(' · ')}

@@ -1159,6 +1159,9 @@ export default {
     afterNeither: 'その後48時間、価格はどちらにも到達しませんでした。',
   },
   pending: {
+    planIf: "価格が{level}に達した場合のプラン: {level}で{side}、ストップ {stop}、ターゲット {target} ({r}R)。",
+    sideBuy: "買い",
+    sideSell: "売り",
     possibleBuy: '{price}で買いの可能性。価格が到達したらチャートを再確認してください。',
     possibleSell: '{price}で売りの可能性。価格が到達したらチャートを再確認してください。',
     buyLevel: '買いレベル {price}',

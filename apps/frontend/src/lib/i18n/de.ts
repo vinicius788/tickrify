@@ -1159,6 +1159,9 @@ export default {
     afterNeither: 'Danach erreichte der Kurs innerhalb von 48 Stunden keines von beiden.',
   },
   pending: {
+    planIf: "Plan, falls der Kurs {level} erreicht: {side} bei {level}, Stop {stop}, Ziel {target} ({r}R).",
+    sideBuy: "Kauf",
+    sideSell: "Verkauf",
     possibleBuy: 'Möglicher Kauf bei {price}. Prüfe den Chart erneut, wenn der Kurs dort ankommt.',
     possibleSell: 'Möglicher Verkauf bei {price}. Prüfe den Chart erneut, wenn der Kurs dort ankommt.',
     buyLevel: 'Kaufniveau {price}',

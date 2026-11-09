@@ -18,7 +18,7 @@ const pending = (extra: Record<string, unknown> = {}) => ({
   clerkUserId: 'clerk_1',
   analysisResult: { analysis: { symbol: 'XAUUSD', takeProfit1: 4180, stopLoss: 4100, entry: 4140, invalidationLevel: 4095 } },
   analysisRecommendation: 'BUY',
-  plan: { direction: 'long', invalidation: 4095, target: 4180 },
+  plan: { direction: 'long', invalidation: 4095, target: 4180, conditional: null },
   ...extra,
 });
 
@@ -99,20 +99,30 @@ describe('setup-alert email', () => {
 
   it('alerta do WATCH diz o que o nivel e, sem alvo; custom diz que foi escolhido', () => {
     const render = (label: string, plan: object) => renderSetupAlertEmail({ appUrl: 'https://tickrify.com', firstName: null, item: pending({ label, plan }) as any, unsubscribeUrl: 'https://x/u' }).html;
-    const watch = render('entry', { direction: 'short', invalidation: 4200, target: null });
+    const watch = render('entry', { direction: 'short', invalidation: 4200, target: null, conditional: null });
     expect(watch).toContain('possible sell level from your analysis');
     expect(watch).toContain('<b>Direction:</b> Sell');
     expect(watch).not.toContain('<b>Target:</b>');
-    const custom = render('custom', { direction: null, invalidation: null, target: null });
+    const custom = render('custom', { direction: null, invalidation: null, target: null, conditional: null });
     expect(custom).toContain('the level you chose');
     expect(custom).not.toContain('<b>Direction:</b>');
     expect(custom).not.toContain('<b>Invalidation:</b>');
   });
 
+  it('plano condicional do WATCH; sem geometria valida so nivel e invalidacao', () => {
+    const render = (conditional: object | null) => renderSetupAlertEmail({ appUrl: 'https://tickrify.com', firstName: null, item: pending({ label: 'entry', plan: { direction: 'long', invalidation: 4095, target: null, conditional } }) as any, unsubscribeUrl: 'https://x/u' }).html;
+    expect(render({ entry: 4180, stopLoss: 4150, takeProfit1: 4240, tp1R: 2 })).toContain('<b>Plan if price reaches 4,180:</b> buy at 4,180, stop 4,150, target 4,240 (2.0R).');
+    const none = render(null);
+    expect(none).not.toContain('Plan if price reaches');
+    expect(none).toContain('<b>Invalidation:</b> 4,095');
+  });
+
   it('alertPlanOf: WATCH usa o plano; BUY usa alvo e invalidacao gravados', () => {
     const watchResult = { signalState: 'WATCH', watchPlan: { direction: 'long', zoneLow: 99, zoneHigh: 100, invalidation: 95, target1: 110, target2: null, validForCandles: 6, trigger: 'x', triggerType: 'zone_reaction' } };
-    expect(alertPlanOf(watchResult, 'HOLD')).toEqual({ direction: 'long', invalidation: 95, target: null });
-    expect(alertPlanOf({ analysis: { entry: 100, stopLoss: 95, takeProfit1: 110, invalidationLevel: 94 } }, 'SELL')).toEqual({ direction: 'short', invalidation: 94, target: 110 });
+    expect(alertPlanOf(watchResult, 'HOLD')).toEqual({ direction: 'long', invalidation: 95, target: null, conditional: null });
+    const levels = { entry: 100, stopLoss: 96, takeProfit1: 110, takeProfit2: null, riskAtr: 1, tp1R: 2.5, stopWidened: false };
+    expect(alertPlanOf({ ...watchResult, watchLevels: levels }, 'HOLD').conditional).toEqual({ entry: 100, stopLoss: 96, takeProfit1: 110, tp1R: 2.5 });
+    expect(alertPlanOf({ analysis: { entry: 100, stopLoss: 95, takeProfit1: 110, invalidationLevel: 94 } }, 'SELL')).toEqual({ direction: 'short', invalidation: 94, target: 110, conditional: null });
   });
 
   it('niveis formatados sem perder casas de forex', () => {

@@ -1159,6 +1159,9 @@ export default {
     afterNeither: 'Después el precio no llegó a ninguno de los dos en 48 horas.',
   },
   pending: {
+    planIf: "Plan si el precio llega a {level}: {side} en {level}, stop {stop}, objetivo {target} ({r}R).",
+    sideBuy: "compra",
+    sideSell: "venta",
     possibleBuy: 'Posible compra en {price}. Vuelve a revisar el gráfico cuando el precio llegue ahí.',
     possibleSell: 'Posible venta en {price}. Vuelve a revisar el gráfico cuando el precio llegue ahí.',
     buyLevel: 'Nivel de compra {price}',

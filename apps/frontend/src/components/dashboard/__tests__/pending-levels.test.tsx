@@ -54,6 +54,18 @@ describe('WATCH pendente', () => {
   beforeEach(() => { alertItems = []; });
   afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
+  it('plano condicional com geometria valida; sem ela so nivel e invalidacao', () => {
+    wrap(<WatchPending analysisId="w1" watch={watch({ plan: { entry: 77800, stopLoss: 78500, takeProfit1: 76000, tp1R: 2.57 } })} surface="trades" now={NOW} />);
+    expect(screen.getByTestId('conditional-plan').textContent).toBe('Plan if price reaches 77,800: sell at 77,800, stop 78,500, target 76,000 (2.6R).');
+    cleanup();
+    wrap(<WatchPending analysisId="w1" watch={watch({ plan: null })} surface="trades" now={NOW} />);
+    expect(screen.queryByTestId('conditional-plan')).toBeNull();
+    expect(screen.getByTestId('watch-pending').textContent).toContain('Invalidation');
+    cleanup();
+    wrap(<WatchPending analysisId="w1" watch={watch({ plan: { entry: 77800, stopLoss: 78500, takeProfit1: 76000, tp1R: 2.57 } })} surface="trades" now={Date.parse('2026-11-03T15:00:00Z')} />);
+    expect(screen.queryByTestId('conditional-plan')).toBeNull();
+  });
+
   it('pendente: direcao e nivel, invalidacao, validade com o tempo que falta e o botao de alerta', () => {
     wrap(<WatchPending analysisId="w1" watch={watch()} surface="trades" now={NOW} />);
     const card = screen.getByTestId('watch-pending');

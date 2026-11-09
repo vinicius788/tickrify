@@ -346,6 +346,8 @@ export interface WatchSummary {
   /** O ativo tem fonte de preco (alerta de nivel). */
   alertAvailable: boolean;
   setupId?: string | null;
+  /** Geometria valida no nivel; null ou ausente = so nivel e invalidacao. */
+  plan?: { entry: number; stopLoss: number; takeProfit1: number; tp1R: number } | null;
 }
 
 /** Um lado do mapa de niveis do NO_TRADE: o nivel mais proximo e o seguinte. */

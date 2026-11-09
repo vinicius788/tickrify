@@ -21,7 +21,7 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import { captureServer } from '../../common/analytics/posthog';
 import { candleSourceFor } from '../market/candles';
 import { readPlan } from '../ai/setups.service';
-import { storedWatchPlan } from '../ai/watch-pending';
+import { conditionalPlanOf, storedWatchPlan, type ConditionalPlan } from '../ai/watch-pending';
 import { UNSUBSCRIBE_AUDIT_ACTION, escapeHtml, letter, unsubscribeUrl } from './lifecycle-email';
 
 export const SETUP_ALERT_EMAIL_FLAG = 'EMAIL_SETUP_ALERTS';
@@ -76,6 +76,8 @@ export type AlertPlan = {
   direction: AlertDirection;
   invalidation: number | null;
   target: number | null;
+  /** WATCH com geometria valida no nivel. Nunca soa como ordem executada. */
+  conditional: ConditionalPlan | null;
 };
 
 const record = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
@@ -83,12 +85,13 @@ const positive = (v: unknown): number | null => (typeof v === 'number' && Number
 
 export function alertPlanOf(result: unknown, recommendation: string | null): AlertPlan {
   const watch = storedWatchPlan(result, recommendation);
-  if (watch) return { direction: watch.direction, invalidation: watch.invalidation, target: null };
+  if (watch) return { direction: watch.direction, invalidation: watch.invalidation, target: null, conditional: conditionalPlanOf(result) };
   const plan = readPlan(result, recommendation);
   return {
     direction: plan.recommendation === 'BUY' ? 'long' : plan.recommendation === 'SELL' ? 'short' : null,
     invalidation: positive(record(record(result).analysis).invalidationLevel),
     target: plan.takeProfit1,
+    conditional: null,
   };
 }
 
@@ -125,6 +128,10 @@ export function renderSetupAlertEmail(params: {
     item.plan.target !== null ? `<b>Target:</b> ${escapeHtml(formatLevel(item.plan.target))}` : null,
     `<b>Reached:</b> ${escapeHtml(time)}`,
   ];
+  const c = item.plan.conditional;
+  const conditional = c && side
+    ? `<b>Plan if price reaches ${escapeHtml(formatLevel(c.entry))}:</b> ${side.toLowerCase()} at ${escapeHtml(formatLevel(c.entry))}, stop ${escapeHtml(formatLevel(c.stopLoss))}, target ${escapeHtml(formatLevel(c.takeProfit1))} (${c.tp1R.toFixed(1)}R).`
+    : null;
   const asset = `${item.symbol}${item.timeframe ? ` ${item.timeframe}` : ''}`;
   const subject = `Your ${item.symbol} setup reached ${level}`;
   const html = letter({
@@ -133,6 +140,7 @@ export function renderSetupAlertEmail(params: {
     paragraphs: [
       `Price reached a level from your <b>${escapeHtml(asset)}</b> analysis.`,
       rows.filter(Boolean).join('<br>'),
+      ...(conditional ? [conditional] : []),
       'Update the chart to review it. This is not a signal to enter.',
     ],
     cta: { label: 'Update chart', url: setupAlertLink(params.appUrl, item) },

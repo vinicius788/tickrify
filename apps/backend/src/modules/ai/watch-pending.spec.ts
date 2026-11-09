@@ -50,7 +50,7 @@ describe('watchSummaryOf', () => {
   it('WATCH: nivel = borda proxima, validade x tempo grafico a partir da analise, alerta pela fonte de preco', () => {
     expect(watchSummaryOf(watchResult(), 'WAIT', created, null)).toEqual({
       direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12,
-      expiresAt: '2026-11-03T15:00:00.000Z', outcome: 'pending', afterReach: null, alertAvailable: true, setupId: null,
+      expiresAt: '2026-11-03T15:00:00.000Z', outcome: 'pending', afterReach: null, alertAvailable: true, setupId: null, plan: null,
     });
     const long = watchSummaryOf(watchResult({ watchPlan: { ...plan, direction: 'long', invalidation: 77500, target1: 79000 } }), 'WAIT', created, null);
     expect(long?.level).toBe(78000);
