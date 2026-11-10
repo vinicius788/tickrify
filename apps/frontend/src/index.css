@@ -574,6 +574,8 @@ a.site-stat:hover .site-stat-n { color: #fff; }
 .site-price-amt { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 4px; }
 .site-price-amt b { font-size: 3.2rem; font-weight: 400; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
 .site-price-amt span { font-family: var(--font-mono); font-size: 12px; color: var(--s-on-light-2); }
+.site-price-amt s { font-size: 1.15rem; color: var(--s-on-light-2); font-variant-numeric: tabular-nums; }
+.site-price-then { font-family: var(--font-mono); font-size: 11.5px; color: var(--s-on-light-2); margin-bottom: 6px; }
 .site-price ul { list-style: none; margin: 26px 0; display: grid; gap: 12px; padding: 0; }
 .site-price li { display: flex; gap: 11px; font-size: 14px; color: var(--s-on-light); }
 .site-price li svg { flex: 0 0 auto; margin-top: 4px; }

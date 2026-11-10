@@ -19,7 +19,8 @@ vi.mock('@/lib/i18n/LanguageContext', async () => {
 });
 const offer = { current: null as null | { active: boolean; code: string; percentOff: number | null } };
 const founder = { current: null as null | { active: boolean; priceUsd: number; seatsLeft: number | null; expiresAt: number | null }, lastCode: undefined as string | null | undefined };
-vi.mock('@/hooks/useFoundingOffer', () => ({
+vi.mock('@/hooks/useFoundingOffer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useFoundingOffer')>()),
   useFoundingOffer: () => offer.current,
   useFounderOffer: (code: string | null) => {
     founder.lastCode = code;
@@ -181,18 +182,37 @@ describe('PricingCards: oferta do 1o mes', () => {
 
   it('com o EARLY35 ativo, so o mensal mostra o preco do 1o mes', async () => {
     offer.current = { active: true, code: 'EARLY35', percentOff: 35 };
-    render(<PricingCards />);
+    const { container } = render(<PricingCards />);
+    expect(container.querySelector('.site-price-amt s')?.textContent).toBe('Regular price $29');
+    expect(container.querySelector('.site-price-amt b')?.textContent).toBe('$18.85');
+    expect(screen.getByText('first month')).toBeTruthy();
+    expect(screen.getByText('Then $29/month. Cancel anytime in Settings.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Start for $18.85 first month' })).toBeTruthy();
+    expect(screen.queryByText(/\$18\.85\/mo/)).toBeNull();
     expect(screen.getByText(/Billed \$18\.85 now for the first month with EARLY35 \(35% off\)/)).toBeTruthy();
 
     await userEvent.click(screen.getByRole('button', { name: /yearly/i }));
-    expect(screen.queryByText(/Billed .*now for the first month/)).toBeNull();
+    expect(container.querySelector('s')).toBeNull();
+    expect(screen.queryByText(/18\.85|35%|first month/)).toBeNull();
+    expect(screen.getByRole('button', { name: /get started.*\$290\/yr/i })).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: /^weekly$/i }));
-    expect(screen.queryByText(/Billed .*now for the first month/)).toBeNull();
+    expect(container.querySelector('s')).toBeNull();
+    expect(screen.queryByText(/18\.85|35%|first month/)).toBeNull();
+    expect(screen.getByRole('button', { name: /start weekly.*\$7\.99\/wk/i })).toBeTruthy();
   });
 
-  it('sem cupom ativo, nenhuma promessa de desconto', () => {
+  it('o preco do 1o mes sai do percentOff da API, nao de um valor fixo', () => {
+    offer.current = { active: true, code: 'EARLY35', percentOff: 50 };
     render(<PricingCards />);
+    expect(screen.getByRole('button', { name: 'Start for $14.50 first month' })).toBeTruthy();
+  });
+
+  it('sem cupom ativo, $29 sem risco e nenhuma promessa de desconto', () => {
+    const { container } = render(<PricingCards />);
+    expect(container.querySelector('s')).toBeNull();
+    expect(container.querySelector('.site-price-amt b')?.textContent).toBe('$29');
     expect(screen.queryByText(/Billed .*now for the first month/)).toBeNull();
+    expect(screen.getByRole('button', { name: /get started.*\$29\/mo/i })).toBeTruthy();
   });
 });
 

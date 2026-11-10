@@ -13,7 +13,7 @@ vi.mock('@/lib/analytics', async (importOriginal) => ({
 }));
 
 const PATHS: Record<MobileNavSection, string> = {
-  home: '/dashboard', new: '/dashboard/new', trades: '/dashboard/trades', journal: '/dashboard/journal',
+  home: '/dashboard', new: '/dashboard/new', trades: '/dashboard/trades', journal: '/dashboard/journal', watching: '/dashboard/watching',
   strategy: '/dashboard/strategy', plans: '/dashboard/plans', settings: '/dashboard/settings',
 };
 
@@ -60,7 +60,7 @@ describe('ilha de navegacao do celular', () => {
     expect(current[0].getAttribute('data-nav')).toBe(section);
   });
 
-  it.each([['strategy'], ['plans'], ['settings']] as const)('area dentro do Mais (%s) marca o Mais, sem aria-current na ilha', (section) => {
+  it.each([['watching'], ['strategy'], ['plans'], ['settings']] as const)('area dentro do Mais (%s) marca o Mais, sem aria-current na ilha', (section) => {
     show(section);
     expect(nav().querySelector('[aria-current="page"]')).toBeNull();
     expect(nav().querySelector('[data-nav="more"]')?.className).toContain('bg-[var(--fill-5)]');
@@ -74,13 +74,16 @@ describe('ilha de navegacao do celular', () => {
     }
   });
 
-  it('contadores: alertas no Dashboard, chat soma no Mais e aparece na linha do chat', () => {
+  it('contadores: alertas (Watching) e chat ficam no Mais, somados na ilha e um em cada linha', () => {
     show('home', { alerts: 2, chat: 3 });
-    expect(within(nav()).getByLabelText('2 price alerts reached')).toBeTruthy();
-    expect(within(nav()).getByLabelText('3 new in More').textContent).toBe('3');
+    expect(within(nav()).getByLabelText('5 new in More').textContent).toBe('5');
+    expect(nav().querySelector('[data-nav="home"] [data-testid="bottom-nav-counter"]')).toBeNull();
     fireEvent.click(within(nav()).getByRole('button', { name: /More/ }));
     const sheet = screen.getByTestId('bottom-nav-more');
+    expect(within(sheet).getByLabelText('2 price alerts reached').textContent).toBe('2');
     expect(within(sheet).getByLabelText(/3/).textContent).toBe('3');
+    fireEvent.click(within(sheet).getByRole('link', { name: /Watching/ }));
+    expect(screen.getByTestId('where').textContent).toBe('/dashboard/watching');
   });
 
   it('sem contador, nenhum circulo vermelho', () => {

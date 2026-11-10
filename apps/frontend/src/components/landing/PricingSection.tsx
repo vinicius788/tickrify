@@ -4,6 +4,8 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { type Currency } from '@/lib/stripe';
 import { warmupPaymentsApi } from '@/lib/api';
 import { track } from '@/lib/analytics';
+import { interpolate } from '@/lib/i18n';
+import { firstMonthPrice, useFoundingOffer } from '@/hooks/useFoundingOffer';
 
 // PLANO ÚNICO (decisão 27/07/2026, Fase 2 da auditoria).
 //
@@ -37,8 +39,11 @@ const Check = () => (
 );
 
 const PricingSection = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const pr = t.landing.pricing;
+  // Mesmo estado do checkout: com o EARLY35 ativo na Stripe o mensal mostra o
+  // preco do 1o mes; sem resposta da API, $29 como sempre.
+  const offerPrice = firstMonthPrice(useFoundingOffer(), language);
 
   // Produto global: preço sempre em USD, independente do idioma do site.
   // Trader pensa em dólar, e fixar evita surpresa com o locale do navegador.
@@ -84,10 +89,24 @@ const PricingSection = () => {
 
         <div className="site-price">
           <span className="site-eyebrow">{pr.starterBadge}</span>
-          <div className="site-price-amt">
-            <b>{PLAN_PRICE[currency]}</b>
-            <span>{pr.perMonth}</span>
-          </div>
+          {offerPrice ? (
+            <>
+              <div className="site-price-amt">
+                <s>
+                  <span className="sr-only">{t.commercial.offerRegular} </span>
+                  {PLAN_PRICE[currency]}
+                </s>
+                <b>{offerPrice}</b>
+                <span>{t.commercial.offerFirstMonth}</span>
+              </div>
+              <p className="site-price-then">{t.commercial.offerThen}</p>
+            </>
+          ) : (
+            <div className="site-price-amt">
+              <b>{PLAN_PRICE[currency]}</b>
+              <span>{pr.perMonth}</span>
+            </div>
+          )}
           <p className="text-sm">
             {PLAN_TICKS} {pr.ticksMo} · {pr.upTo} {PLAN_TICKS} {pr.analysesQuick}
           </p>
@@ -99,7 +118,7 @@ const PricingSection = () => {
           </ul>
 
           <Link to="/pricing" className="site-btn site-btn-primary site-btn-block">
-            {pr.starterCta}
+            {offerPrice ? interpolate(t.commercial.offerCta, { price: offerPrice }) : pr.starterCta}
           </Link>
 
           {/* Semanal na vitrine (30/09/2026). Ele existe porque US$ 29 de uma vez
@@ -113,7 +132,7 @@ const PricingSection = () => {
               nao vende avulso e, desde 21/09/2026, o saldo do assinante volta
               para 200 a cada mes (nao acumula). As duas partes eram falsas. */}
           <p className="site-price-fine">{t.commercial.tickCosts}</p>
-          <p className="site-price-fine">{t.commercial.monthlyRenewal}</p>
+          {offerPrice ? null : <p className="site-price-fine">{t.commercial.monthlyRenewal}</p>}
           <p className="site-price-fine">{pr.monthlyReset}</p>
         </div>
 

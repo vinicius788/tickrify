@@ -633,8 +633,9 @@ describe('SetupAlertsService.watching', () => {
   const ago = (ms: number) => new Date(Date.now() - ms);
   const MIN = 60_000;
 
-  async function serviceWith(opts: { rows: unknown[]; tracks?: unknown[]; checks?: unknown[]; alerts?: unknown[] }) {
+  async function serviceWith(opts: { rows: unknown[]; tracks?: unknown[]; checks?: unknown[]; alerts?: unknown[]; next?: unknown[] }) {
     const { prisma, calls } = makePrisma([
+      ['DISTINCT ON (w."id")', () => opts.next ?? []],
       ['"result"->>\'signalState\' = \'WATCH\'', () => opts.rows],
       ['LEFT JOIN "tickrify"."AnalysisTrack"', () => opts.tracks ?? []],
       ['FROM "tickrify"."AlertPriceCheck"', () => opts.checks ?? []],
@@ -698,6 +699,26 @@ describe('SetupAlertsService.watching', () => {
       alerts: [{ id: 'other', analysisId: 'w1', level: 70000, status: 'active', triggeredAt: null, seenAt: null }],
     });
     expect((await service.watching('u1')).items[0].alert).toBeNull();
+  });
+
+  it('jornada: disparado, reanalisado e entrou pela marcacao do trader', async () => {
+    const { service } = await serviceWith({
+      rows: [row('w1', ago(60 * MIN))],
+      tracks: [context('w1')],
+      alerts: [{ id: 'a', analysisId: 'w1', level: 77800, status: 'triggered', triggeredAt: ago(30 * MIN), seenAt: ago(20 * MIN) }],
+      next: [{ watchId: 'w1', analysisId: 'n1', createdAt: ago(10 * MIN), signalState: 'ENTER_NOW', recommendation: 'SELL', userVerdict: 'open' }],
+    });
+    expect((await service.watching('u1')).items[0].journey).toEqual({
+      priceReached: true,
+      recheck: { analysisId: 'n1', createdAt: expect.any(Date), signalState: 'ENTER_NOW' },
+      entered: { analysisId: 'n1' },
+      end: 'entered',
+    });
+  });
+
+  it('jornada sem reanalise: so vigiando', async () => {
+    const { service } = await serviceWith({ rows: [row('w1', ago(MIN))], tracks: [context('w1')] });
+    expect((await service.watching('u1')).items[0].journey).toEqual({ priceReached: false, recheck: null, entered: null, end: null });
   });
 
   it('nao busca preco para a tela e sem WATCH nao consulta mais nada', async () => {

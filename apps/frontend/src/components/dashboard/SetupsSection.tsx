@@ -20,21 +20,24 @@ const DATE_LOCALES: Record<string, string> = {
 };
 
 /**
- * Topo do inicio do painel (12/10/2026): uma linha de preparacao (perfil de
- * estrategia salvo + nova analise) e os setups que a pessoa segue. Nada aqui
+ * Linha do perfil de estrategia (inicio do painel) e os setups que a pessoa
+ * segue (aba Watching desde 10/11/2026). Nada aqui
  * bloqueia ou obriga: sem perfil (ou no gratis) a linha so tem o atalho, e sem
  * setups aparece uma frase dizendo como seguir um.
  *
  * Honesto sobre o tempo: cada cartao mostra a data da ultima LEITURA, nunca
- * preco atual. Setup com alerta de nivel ativo sai daqui (`hiddenSetupIds`):
- * aparece no bloco Today, com o nivel e o ultimo preco checado.
+ * preco atual. Setup que ja aparece num WATCH da aba sai daqui
+ * (`hiddenSetupIds`), para nao repetir.
  */
 const SetupsSection = ({
   base,
   hiddenSetupIds,
+  part,
 }: {
   base: string;
   hiddenSetupIds?: ReadonlySet<string>;
+  /** Inicio: so a linha do perfil. Aba Watching: so os setups seguidos (10/11/2026). */
+  part: 'strategy' | 'list';
 }) => {
   const { t, language } = useLanguage();
   const s = t.setups;
@@ -42,11 +45,12 @@ const SetupsSection = ({
   const navigate = useNavigate();
   const { toast } = useToast();
   const apiClient = useAPIClient();
-  const { data, isError } = useFollowedSetups(true);
+  const { data, isError } = useFollowedSetups(part === 'list');
   const { setStatus } = useSetupActions();
   const [profile, setProfile] = useState<StrategyProfileDto | null>(null);
 
   useEffect(() => {
+    if (part !== 'strategy') return;
     let alive = true;
     apiClient
       .getStrategy()
@@ -57,7 +61,7 @@ const SetupsSection = ({
     return () => {
       alive = false;
     };
-  }, [apiClient]);
+  }, [apiClient, part]);
 
   const st = t.strategy;
   const instrumentLabel: Record<string, string> = {
@@ -96,7 +100,7 @@ const SetupsSection = ({
       },
     );
 
-  const showList = !isError && items.length > 0;
+  const showList = part === 'list' && !isError && items.length > 0;
   // Sem perfil salvo e sem setup fora do Today: nada a mostrar (o "New Analysis"
   // fica no cartao de boas-vindas e a frase de como comecar, no Today).
   if (!strategySummary && !showList) return null;

@@ -255,7 +255,7 @@ export default {
     partnerInvalid: "Esse código não é válido.",
     canceledTitle: "Pagamento cancelado",
     canceledDesc: "Nenhuma cobrança foi feita. Você pode assinar quando quiser.",
-    firstMonth: "Cobrado {price} agora pelo primeiro mês com {code} ({pct}% off), aplicado automaticamente. Depois $29/mês até cancelar.",
+    firstMonth: "Cobrado {price} agora pelo primeiro mês com {code} ({pct}% off), aplicado automaticamente. O saldo volta a 200 Ticks por mês; Ticks não utilizados não acumulam.",
     founderEyebrow: "Membro fundador",
     founderSub: "Travado enquanto sua assinatura continuar ativa",
     founderFeatures: [
@@ -353,6 +353,10 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "Cobrança de $7,99 agora e a cada 7 dias até cancelar.",
     monthlyRenewal: "Cobrança de $29 agora e mensalmente até cancelar.",
+    offerRegular: "Preço normal",
+    offerFirstMonth: "no primeiro mês",
+    offerThen: "Depois $29/mês. Cancele quando quiser em Configurações.",
+    offerCta: "Começar por {price} no primeiro mês",
     freeEligibility: "Uma demo anônima por dispositivo. Contas elegíveis: até 7 análises em 3 dias de uso (3/2/2), dentro de 7 dias. Contas existentes mantêm sua cota aplicável. Sem cartão."
   },
 
@@ -395,6 +399,7 @@ export default {
     assetAnalysis: 'Análise de {asset}',
     myTrades: 'Meus Trades',
     journal: 'Diário',
+    watching: "Vigiando",
     // Rotulos curtos usados SO na barra de abas do celular. Os longos
     // truncam antes da palavra que identifica a aba, em 5 abas numa tela de 375px.
     strategy: 'Estratégia',
@@ -613,6 +618,7 @@ export default {
         price: 'Preço',
         chipBuy: 'Observar compra',
         chipSell: 'Observar venda',
+        chipClosed: "Watch encerrado",
         noEntryAt: 'Sem entrada em {price}.',
         waitPullback: 'Espere um recuo até {zone}.',
         waitRally: 'Espere uma alta até {zone}.',
@@ -757,6 +763,7 @@ export default {
 
   // ── Trades ────────────────────────────────────────────────────────────────────
   trades: {
+    fromWatch: "Veio de um Watch em {date}",
     favorite: 'Adicionar aos favoritos',
     loadMore: 'Carregar mais',
     loadingMore: 'Carregando...',
@@ -784,8 +791,6 @@ export default {
     winShort: 'V',
     lossShort: 'D',
     markResult: 'Como terminou?',
-    noTrade: 'Sem operação (aguardar)',
-    noTradeHint: 'Aguardar não é operação. Não há o que marcar.',
     clearResult: 'Limpar resultado',
     markOpen: 'Ainda aberta',
     noFill: 'Entrada não atingida',
@@ -1180,6 +1185,7 @@ export default {
     menuBadge: '{n} alertas de preço atingidos',
   },
   today: {
+    seeWatching: "Abrir Vigiando",
     title: 'Hoje',
     watching: 'Vigiando',
     openTrades: 'Operações abertas',
@@ -1193,11 +1199,21 @@ export default {
     title: 'Vigiando',
     note: 'O que o preço fez nos seus níveis de Watch. Informação de mercado, não são operações.',
     distance: 'a {pct} ({price})',
-    timeLeft: 'faltam {time}',
     alertWatching: 'Alerta: vigiando',
     alertTriggered: 'Alerta: disparou',
     alertCancelled: 'Alerta: cancelado',
     windowClosed: 'Janela encerrada',
+    subtitle: "Níveis que a IA está vigiando para você. Um Watch é o começo de um trade, não um trade.",
+    reachedTitle: "Preço chegou",
+    openTitle: "Vigiando agora",
+    closedTitle: "Encerrados",
+    empty: "Nada sendo vigiado agora. Quando uma análise disser Watch, o nível aparece aqui com um alerta.",
+    recheck: "Reanalisar agora",
+    validUntil: "Vale até {time}",
+    lineOne: "1 setup sendo vigiado",
+    line: "{n} setups sendo vigiados",
+    journeyLabel: "Jornada",
+    journey: { watching: "Vigiando", reached: "Preço chegou", rechecked: "Reanalisado", entered: "Entrou", skipped: "Pulou", invalidated: "Invalidado", expired: "Expirou" },
   },
   pending: {
     planIf: "Plano se o preço chegar a {level}: {side} em {level}, stop {stop}, alvo {target} ({r}R).",
@@ -1240,7 +1256,6 @@ export default {
   },
   paywall: {
     ctaWeekly: 'Comece com uma semana: $7,99 por 25 Ticks',
-    orMonthlyFirst: 'Ou mensal: {price} no primeiro mês, depois $29/mês',
     orMonthly: 'Ou mensal: $29/mês por 200 Ticks',
     titleNewAnalysis: 'Suas análises grátis com plano de trade acabaram',
     titleArea: 'Assine para continuar com acesso às suas análises e operações',
@@ -1249,7 +1264,7 @@ export default {
     descJournal: 'O diário organiza cada análise e resultado por dia. Ele volta a abrir assim que você assinar.',
     descHistory: 'Esta análise é mais antiga que as suas 3 últimas. Assine para abrir o histórico completo de novo.',
     descSetups: 'Nenhuma análise deste setup está entre as suas 3 últimas. Assine para abrir todas as versões de novo.',
-    offerNote: '{code} dá {pct}% de desconto no primeiro mês do plano mensal, aplicado automaticamente. Depois $29/mês, cancele quando quiser.',
+    descWatching: "Seus níveis vigiados e o que o preço fez neles voltam assim que você assinar.",
     allPlans: 'Todos os planos, incluindo o anual de $290/ano',
     opening: 'Abrindo o checkout seguro…',
     yourChart: 'Seu gráfico',

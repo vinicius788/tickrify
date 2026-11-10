@@ -3,7 +3,7 @@ import { errorText } from '@/lib/i18n/messages';
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { History, CalendarDays, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, Upload, Sliders, Handshake, MessageCircle, Settings, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { History, CalendarDays, Eye, PlusCircle, Crown, AlertCircle, FlaskConical, LayoutGrid, CreditCard, Upload, Sliders, Handshake, MessageCircle, Settings, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import * as Sentry from "@sentry/react";
 import { UserButton, useAuth, useUser } from "@clerk/clerk-react";
@@ -67,6 +67,7 @@ import SetupAlertBar from "../dashboard/SetupAlertBar";
 import { isWatchPlan } from "../dashboard/WatchPlanCard";
 import TodaySection from "../dashboard/TodaySection";
 import SetupsSection from "../dashboard/SetupsSection";
+import WatchingPage from "../dashboard/WatchingPage";
 import SetupPage from "../dashboard/SetupPage";
 import TradePanel from "../dashboard/TradePanel";
 import { displayAsset, tradeQueryKey, type OpenTrade, type TradeCloseReason } from "@/lib/api";
@@ -124,7 +125,7 @@ const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
 };
 
-type View = 'dashboard' | 'new-analysis' | 'sample' | 'my-trades' | 'journal' | 'strategy' | 'plans' | 'settings' | 'setup' | 'analysis-result' | 'loading' | 'error' | 'locked';
+type View = 'dashboard' | 'new-analysis' | 'sample' | 'my-trades' | 'journal' | 'watching' | 'strategy' | 'plans' | 'settings' | 'setup' | 'analysis-result' | 'loading' | 'error' | 'locked';
 
 /**
  * Rotas do painel (05/10/2026). Antes era UMA rota so e as areas eram estado
@@ -138,19 +139,21 @@ type View = 'dashboard' | 'new-analysis' | 'sample' | 'my-trades' | 'journal' | 
  *   /dashboard/analysis/:id       resultado de uma analise
  *   /dashboard/trades             My Trades (o historico)
  *   /dashboard/journal            diario
+ *   /dashboard/watching           WATCH valendo, preco chegou, setups seguidos e encerrados
  *   /dashboard/strategy           perfil de estrategia
  *   /dashboard/plans              planos, sem sair do painel
  *   /dashboard/settings           conta, assinatura (portal da Stripe) e tema
  *   /dashboard/setups/:id         um setup acompanhado e as versoes dele
  *   /dashboard/new?setup=:id      atualizar esse setup (o envio de sempre)
  */
-type Section = 'home' | 'new' | 'sample' | 'analysis' | 'trades' | 'journal' | 'strategy' | 'plans' | 'settings' | 'setups';
-type NavSection = 'home' | 'new' | 'trades' | 'journal' | 'strategy' | 'plans' | 'settings';
+type Section = 'home' | 'new' | 'sample' | 'analysis' | 'trades' | 'journal' | 'watching' | 'strategy' | 'plans' | 'settings' | 'setups';
+type NavSection = 'home' | 'new' | 'trades' | 'journal' | 'watching' | 'strategy' | 'plans' | 'settings';
 const SECTION_PATH: Record<NavSection, string> = {
   home: '',
   new: '/new',
   trades: '/trades',
   journal: '/journal',
+  watching: '/watching',
   strategy: '/strategy',
   plans: '/plans',
   settings: '/settings',
@@ -165,7 +168,7 @@ function parseDashboardPath(pathname: string): { base: string; section: Section 
   if (first === 'new' && second === 'example' && third && rest.length === 3) return { base, section: 'sample', param: third };
   if (first === 'analysis' && second && rest.length === 2) return { base, section: 'analysis', param: decodeURIComponent(second) };
   if (first === 'setups' && second && rest.length === 2) return { base, section: 'setups', param: decodeURIComponent(second) };
-  if (rest.length === 1 && ['trades', 'journal', 'strategy', 'plans', 'settings'].includes(first)) {
+  if (rest.length === 1 && ['trades', 'journal', 'watching', 'strategy', 'plans', 'settings'].includes(first)) {
     return { base, section: first as Section, param: null };
   }
   return { base, section: null, param: null };
@@ -624,6 +627,8 @@ const DashboardPage = () => {
         return 'my-trades';
       case 'journal':
         return 'journal';
+      case 'watching':
+        return 'watching';
       case 'strategy':
         return 'strategy';
       case 'plans':
@@ -1202,10 +1207,8 @@ const DashboardPage = () => {
           ? paywallFor('alerts', undefined, alertsQuery.data.pausedSymbol)
           : null}
 
-        {/* Perfil de estrategia salvo e os setups que a pessoa segue sem alerta
-            (os com alerta estao no Today). Gratis esgotado: o servidor responde
-            402 e a secao fica de fora. */}
-        {!isDemo && !freeLocked && <SetupsSection base={base} hiddenSetupIds={watchedSetupIds} />}
+        {/* Perfil de estrategia salvo. Os setups seguidos moram na aba Watching. */}
+        {!isDemo && !freeLocked && <SetupsSection base={base} part="strategy" />}
 
         {/* De onde a pessoa veio, perguntado a ela. A atribuicao tecnica
             (PostHog + UTM) nao respondeu isso para os tres primeiros
@@ -1532,6 +1535,20 @@ const DashboardPage = () => {
           );
         }
         return <JournalCalendar onStartAnalysis={resetNewAnalysisView} />;
+      case 'watching':
+        // Gratis esgotado: /api/setups/watching responde 402; a aba vira o Paywall.
+        if (freeLocked || isDemo) {
+          return (
+            <div className="flex flex-col gap-4">
+              <div>
+                {viewEyebrow(t.nav.watching)}
+                <h1 className="tk-display mt-2 text-2xl md:text-3xl">{t.nav.watching}</h1>
+              </div>
+              {isDemo ? null : paywallFor('watching')}
+            </div>
+          );
+        }
+        return <WatchingPage base={base} eyebrow={viewEyebrow(t.nav.watching)} onStartAnalysis={resetNewAnalysisView} />;
       case 'strategy':
         return <StrategyProfile />;
       case 'setup':
@@ -1790,7 +1807,7 @@ const DashboardPage = () => {
     route.section === 'sample' || route.section === 'analysis'
       ? 'new'
       : route.section === 'setups'
-        ? 'home'
+        ? 'watching'
         : (route.section as NavSection | null);
   const openAnalysis = (route.section === 'sample' || analysisInMemory) ? analysisData : null;
   const openAnalysisName = [
@@ -1804,6 +1821,8 @@ const DashboardPage = () => {
       ? t.nav.myTrades
       : activeNav === 'journal'
         ? t.nav.journal
+        : activeNav === 'watching'
+        ? t.nav.watching
         : activeNav === 'strategy'
           ? t.nav.strategy
           : activeNav === 'plans'
@@ -1910,7 +1929,6 @@ const DashboardPage = () => {
                 collapsed={sidebarCollapsed}
                 icon={<LayoutGrid className="h-4 w-4" />}
                 label={t.nav.dashboard}
-                badge={alertsUnseen > 0 ? { key: 'alerts-unseen', value: String(alertsUnseen), label: t.alerts.menuBadge.replace('{n}', String(alertsUnseen)), tone: 'accent' } : null}
               />
             </Link>
             <Link to={navLink('new')} onClick={onNewAnalysisLink} aria-current={activeNav === 'new' ? 'page' : undefined} className={navItemClass('new')}>
@@ -1929,6 +1947,14 @@ const DashboardPage = () => {
             </Link>
             <Link to={navLink('journal')} aria-current={activeNav === 'journal' ? 'page' : undefined} className={navItemClass('journal')}>
               <SideItemBody collapsed={sidebarCollapsed} icon={<CalendarDays className="h-4 w-4" />} label={t.nav.journal} />
+            </Link>
+            <Link to={navLink('watching')} aria-current={activeNav === 'watching' ? 'page' : undefined} className={navItemClass('watching')}>
+              <SideItemBody
+                collapsed={sidebarCollapsed}
+                icon={<Eye className="h-4 w-4" />}
+                label={t.nav.watching}
+                badge={alertsUnseen > 0 ? { key: 'alerts-unseen', value: String(alertsUnseen), label: t.alerts.menuBadge.replace('{n}', String(alertsUnseen)), tone: 'accent' } : null}
+              />
             </Link>
             <Link to={navLink('strategy')} aria-current={activeNav === 'strategy' ? 'page' : undefined} className={navItemClass('strategy')}>
               <SideItemBody collapsed={sidebarCollapsed} icon={<Sliders className="h-4 w-4" />} label={t.nav.strategy} />

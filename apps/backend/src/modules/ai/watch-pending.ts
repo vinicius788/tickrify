@@ -178,3 +178,98 @@ export async function loadWatchContexts(db: Pick<PrismaClient, '$queryRaw'>, ids
   }
   return out;
 }
+
+/** A analise seguinte do setup propos entrada: ENTER_NOW (ou a ordem antiga) ou BUY/SELL de antes do estado. */
+export function isTradeSignal(signalState: string | null | undefined, recommendation: string | null | undefined): boolean {
+  if (signalState === 'ENTER_NOW' || signalState === 'ARMED') return true;
+  if (signalState === 'WATCH' || signalState === 'NO_TRADE') return false;
+  return recommendation === 'BUY' || recommendation === 'SELL';
+}
+
+const ENTERED_VERDICTS = new Set(['open', 'tp1', 'tp2', 'stop']);
+
+/** A analise seguinte no mesmo setup: a reanalise feita depois do WATCH. */
+export interface WatchNext {
+  analysisId: string;
+  createdAt: Date;
+  signalState: string | null;
+  recommendation: string | null;
+  userVerdict: string | null;
+}
+
+export type WatchJourneyEnd = 'entered' | 'skipped' | 'invalidated' | 'expired' | null;
+
+/**
+ * Jornada do WATCH na aba Watching: vigiando, o preco chegou, reanalisado,
+ * e o fim (entrou, pulou, invalidou ou expirou). "Entrou" so com o resultado
+ * que o trader marcou na reanalise; o motor nunca decide isso por ele.
+ */
+export interface WatchJourney {
+  priceReached: boolean;
+  recheck: { analysisId: string; createdAt: Date; signalState: string | null } | null;
+  entered: { analysisId: string } | null;
+  end: WatchJourneyEnd;
+}
+
+export function watchJourneyOf(watch: Pick<WatchSummary, 'outcome'>, alertTriggered: boolean, next: WatchNext | null): WatchJourney {
+  const priceReached = alertTriggered || watch.outcome === 'reached';
+  if (next) {
+    const recheck = { analysisId: next.analysisId, createdAt: next.createdAt, signalState: next.signalState };
+    const trade = isTradeSignal(next.signalState, next.recommendation);
+    if (trade && next.userVerdict && ENTERED_VERDICTS.has(next.userVerdict)) {
+      return { priceReached, recheck, entered: { analysisId: next.analysisId }, end: 'entered' };
+    }
+    // Entrada proposta e ainda sem marcacao: a decisao e do trader, a jornada para no reanalisado.
+    return { priceReached, recheck, entered: null, end: trade && !next.userVerdict ? null : 'skipped' };
+  }
+  const end = watch.outcome === 'invalidated' ? 'invalidated' : watch.outcome === 'expired' ? 'expired' : null;
+  return { priceReached, recheck: null, entered: null, end };
+}
+
+/** A primeira analise concluida do mesmo setup depois de cada WATCH. */
+export async function loadWatchNext(db: Pick<PrismaClient, '$queryRaw'>, userId: string, ids: readonly string[]): Promise<Map<string, WatchNext>> {
+  const out = new Map<string, WatchNext>();
+  if (!ids.length) return out;
+  try {
+    const rows = await db.$queryRaw<Array<WatchNext & { watchId: string }>>(Prisma.sql`
+      SELECT DISTINCT ON (w."id") w."id" AS "watchId", n."id" AS "analysisId", n."createdAt",
+        n."result"->>'signalState' AS "signalState", n."recommendation", n."userVerdict"
+      FROM "tickrify"."Analysis" w
+      JOIN "tickrify"."Analysis" n ON n."setupId" = w."setupId" AND n."userId" = w."userId"
+        AND n."status" = 'completed' AND n."createdAt" > w."createdAt"
+      WHERE w."userId" = ${userId} AND w."setupId" IS NOT NULL AND w."id" IN (${Prisma.join([...ids])})
+      ORDER BY w."id", n."createdAt" ASC, n."id" ASC
+    `);
+    for (const { watchId, ...next } of rows) out.set(watchId, next);
+  } catch {
+    // Sem a jornada a aba continua legivel: so nao mostra o reanalisado.
+  }
+  return out;
+}
+
+/** "From a watch on <data>": a analise anterior do mesmo setup era um WATCH. */
+export interface WatchOrigin {
+  analysisId: string;
+  createdAt: Date;
+}
+
+export async function loadWatchOrigins(db: Pick<PrismaClient, '$queryRaw'>, userId: string, ids: readonly string[]): Promise<Map<string, WatchOrigin>> {
+  const out = new Map<string, WatchOrigin>();
+  if (!ids.length) return out;
+  try {
+    const rows = await db.$queryRaw<Array<WatchOrigin & { id: string }>>(Prisma.sql`
+      SELECT a."id", p."id" AS "analysisId", p."createdAt"
+      FROM "tickrify"."Analysis" a
+      JOIN LATERAL (
+        SELECT q."id", q."createdAt", q."result"->>'signalState' AS "signalState" FROM "tickrify"."Analysis" q
+        WHERE q."setupId" = a."setupId" AND q."userId" = a."userId" AND q."status" = 'completed' AND q."createdAt" < a."createdAt"
+        ORDER BY q."createdAt" DESC, q."id" DESC LIMIT 1
+      ) p ON true
+      WHERE a."userId" = ${userId} AND a."setupId" IS NOT NULL AND a."id" IN (${Prisma.join([...ids])}) AND p."signalState" = 'WATCH'
+    `);
+    for (const { id, ...origin } of rows) out.set(id, origin);
+  } catch {
+    // Sem a origem a linha do My Trades fica igual a antes.
+  }
+  return out;
+}

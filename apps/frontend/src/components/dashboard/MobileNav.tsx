@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   BookOpen,
   CreditCard,
+  Eye,
   Handshake,
   History,
   LayoutGrid,
@@ -24,10 +25,9 @@ import { openChat } from '@/lib/support-chat';
  *
  * A area ativa vem da URL (o DashboardPage passa `activeNav`, a mesma conta da
  * barra lateral); nada aqui troca de area por estado. Os itens saem das duas
- * listas abaixo: area nova no "Mais" (ex.: Watching, quando a rota existir) e
- * uma linha em MORE_ITEMS.
+ * listas abaixo: area nova no "Mais" e uma linha em MORE_ITEMS.
  */
-export type MobileNavSection = 'home' | 'new' | 'trades' | 'journal' | 'strategy' | 'plans' | 'settings';
+export type MobileNavSection = 'home' | 'new' | 'trades' | 'journal' | 'watching' | 'strategy' | 'plans' | 'settings';
 type Messages = ReturnType<typeof useLanguage>['t'];
 type Counter = 'alerts' | 'chat';
 type Target =
@@ -45,13 +45,14 @@ interface NavItem {
 }
 
 export const BAR_ITEMS: NavItem[] = [
-  { id: 'home', icon: LayoutGrid, label: (t) => t.bottomNav.home, target: { kind: 'section', section: 'home' }, counter: 'alerts' },
+  { id: 'home', icon: LayoutGrid, label: (t) => t.bottomNav.home, target: { kind: 'section', section: 'home' } },
   { id: 'journal', icon: BookOpen, label: (t) => t.bottomNav.journal, target: { kind: 'section', section: 'journal' } },
   { id: 'new', icon: Plus, label: (t) => t.bottomNav.analyze, target: { kind: 'section', section: 'new' } },
   { id: 'trades', icon: History, label: (t) => t.bottomNav.trades, target: { kind: 'section', section: 'trades' } },
 ];
 
 export const MORE_ITEMS: NavItem[] = [
+  { id: 'watching', icon: Eye, label: (t) => t.nav.watching, target: { kind: 'section', section: 'watching' }, counter: 'alerts' },
   { id: 'strategy', icon: Sliders, label: (t) => t.nav.strategy, target: { kind: 'section', section: 'strategy' } },
   { id: 'plans', icon: CreditCard, label: (t) => t.nav.plans, target: { kind: 'section', section: 'plans' } },
   { id: 'settings', icon: Settings, label: (t) => t.nav.settings, target: { kind: 'section', section: 'settings' } },

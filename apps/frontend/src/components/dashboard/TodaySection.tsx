@@ -89,7 +89,14 @@ const TodaySection = ({
 
   return (
     <section aria-label={d.title} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
-      <h2 className="tk-stat-label">{d.title}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="tk-stat-label">{d.title}</h2>
+        {empty ? null : (
+          <Link key="watching" to={`${base}/watching`} data-testid="today-watching-link" className="text-xs text-[var(--text-secondary)] underline underline-offset-2 hover:text-[var(--text-primary)]">
+            {d.seeWatching}
+          </Link>
+        )}
+      </div>
 
       {/* Vazio: so a frase. O "New Analysis" e o do cartao de boas-vindas, logo acima. */}
       {empty ? (

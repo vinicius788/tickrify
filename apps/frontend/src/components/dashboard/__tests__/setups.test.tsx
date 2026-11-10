@@ -355,7 +355,7 @@ describe('parseAlertLevel', () => {
   });
 });
 
-describe('Setups no inicio do painel', () => {
+describe('Setups: linha do perfil no inicio, lista na aba Watching', () => {
   const listed = {
     ...SETUP,
     // Passou a seguir em 10/10, mas a 1a analise e de 08/10: o cartao mostra 08/10.
@@ -367,7 +367,7 @@ describe('Setups no inicio do painel', () => {
   it('cartao: ativo, datas, condicao de espera com a data; Update abre a nova analise com o setup', async () => {
     const user = userEvent.setup();
     serve({ 'GET /api/setups': () => json(200, { items: [listed], nextCursor: null }) });
-    wrap(<SetupsSection base="/dashboard" />);
+    wrap(<SetupsSection base="/dashboard" part="list" />);
 
     expect(await screen.findByText("Setups you're following")).toBeTruthy();
     expect(screen.getByText(/First analysis Oct 8 /)).toBeTruthy();
@@ -387,20 +387,22 @@ describe('Setups no inicio do painel', () => {
       'GET /api/setups': () => json(200, { items: [listed], nextCursor: null }),
       'PATCH /api/setups/setup-aaaaaaaa': () => json(200, { setup: { ...SETUP, status: 'archived' } }),
     });
-    wrap(<SetupsSection base="/dashboard" />);
+    wrap(<SetupsSection base="/dashboard" part="list" />);
     await user.click(await screen.findByRole('button', { name: /Archive/ }));
     const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
     expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ status: 'archived' });
   });
 
-  it('sem setup fora do Today: perfil salvo vira uma linha com Edit, sem botao repetido', async () => {
+  it('inicio: perfil salvo vira uma linha com Edit, sem a lista de setups', async () => {
     getStrategy.mockResolvedValue({
       paid: true,
       profile: { instruments: ['forex', 'metals'], timeframes: ['1h', '4h'], setups: ['breakout'], sessions: [], direction: 'both', minRiskReward: 1.5 },
     });
-    serve({ 'GET /api/setups': () => json(200, { items: [], nextCursor: null }) });
-    wrap(<SetupsSection base="/dashboard" />);
+    const fetchMock = serve({ 'GET /api/setups': () => json(200, { items: [listed], nextCursor: null }) });
+    wrap(<SetupsSection base="/dashboard" part="strategy" />);
     expect(await screen.findByText('Forex, Metals · 1h, 4h · Breakout')).toBeTruthy();
+    expect(screen.queryByText("Setups you're following")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.getByRole('link', { name: 'Edit' }).getAttribute('href')).toBe('/dashboard/strategy');
     expect(screen.queryByRole('button', { name: /New analysis/i })).toBeNull();
   });
@@ -408,16 +410,16 @@ describe('Setups no inicio do painel', () => {
   it('sem perfil e sem setup: a secao nao aparece (nada de cartao vazio)', async () => {
     getStrategy.mockResolvedValue({ paid: false, profile: { instruments: ['forex'], timeframes: [], setups: [], sessions: [], direction: 'both', minRiskReward: 1 } });
     serve({ 'GET /api/setups': () => json(200, { items: [], nextCursor: null }) });
-    wrap(<SetupsSection base="/dashboard" />);
+    wrap(<SetupsSection base="/dashboard" part="strategy" />);
     await waitFor(() => expect(getStrategy).toHaveBeenCalled());
     expect(screen.queryByRole('region', { name: "Setups you're following" })).toBeNull();
     expect(screen.queryByText(/Your strategy/)).toBeNull();
   });
 
-  it('setup com alerta ativo sai daqui (esta no Today)', async () => {
-    serve({ 'GET /api/setups': () => json(200, { items: [listed], nextCursor: null }) });
-    wrap(<SetupsSection base="/dashboard" hiddenSetupIds={new Set(['setup-aaaaaaaa'])} />);
-    await waitFor(() => expect(getStrategy).toHaveBeenCalled());
+  it('setup que ja aparece num WATCH da aba nao repete', async () => {
+    const fetchMock = serve({ 'GET /api/setups': () => json(200, { items: [listed], nextCursor: null }) });
+    wrap(<SetupsSection base="/dashboard" part="list" hiddenSetupIds={new Set(['setup-aaaaaaaa'])} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(screen.queryByText("Setups you're following")).toBeNull();
   });
 });
@@ -442,7 +444,7 @@ describe('Pagina do setup', () => {
       'GET /api/setups': () => json(200, { items: [{ ...SETUP, latest, versions: 1 }], nextCursor: null }),
       'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: SETUP, versions: [latest], nextCursor: null }),
     });
-    const list = wrap(<SetupsSection base="/dashboard" />);
+    const list = wrap(<SetupsSection base="/dashboard" part="list" />);
     expect(await screen.findByText('Buy level 100')).toBeTruthy();
     expect(screen.queryByText(/Close above 1.0950/)).toBeNull();
     list.unmount();
