@@ -25,7 +25,8 @@ import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
-import { WatchPlanCard, isWatchLevels, isWatchPlan } from './WatchPlanCard';
+import { WatchPlanCard, isWatchLevels, isWatchPlan, watchWindowOpen } from './WatchPlanCard';
+import { useExpiryClock } from '@/lib/setups';
 import { ReadModePanel, WherePriceIs, type ReadModeData } from './ReadModePanel';
 import { LevelMapCard } from './PendingLevels';
 import { AnalysisShareButton } from './ShareCard';
@@ -524,6 +525,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     NY: t.analysis.sessions.newYork,
   };
   const [showInvalidation, setShowInvalidation] = useState(false);
+  const watchNow = useExpiryClock(Date.parse(analysisData?.watch?.expiresAt ?? ''));
 
   // ⚠️ ESTES DOIS HOOKS PRECISAM FICAR ACIMA DO `return` DE BAIXO.
   //
@@ -1210,7 +1212,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
           {continuationLine && (
             <p data-testid="setup-continuation" className="mt-3 text-sm leading-relaxed text-[var(--text-primary)]">{continuationLine}</p>
           )}
-          {watchText && <p data-testid="watch-headline" className="mt-3 text-sm leading-relaxed text-[var(--text-primary)]">{watchText.headline}</p>}
+          {watchText && watchWindowOpen(analysisData.watch, watchNow) && <p data-testid="watch-headline" className="mt-3 text-sm leading-relaxed text-[var(--text-primary)]">{watchText.headline}</p>}
           {isWaitVerdict && !watchLayout && (
             // Explica o WAIT onde ele aparece: sem isto a pessoa le so a
             // palavra e entende que a ferramenta nao respondeu.

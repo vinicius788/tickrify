@@ -137,9 +137,13 @@ describe('resultado do WATCH', () => {
 
   it('janela fechada: sem botao de alerta nem distancia', () => {
     vi.setSystemTime(Date.parse('2026-11-09T20:00:00Z'));
-    show(result(long));
-    expect(text('watch-timing')).toBe('Window closed at 19:23 UTC');
-    expect(screen.queryByRole('button', { name: /Alert me/ })).toBeNull();
+    show(result(long, { watchLevels: levels, dataMode: 'real_data' }));
+    const card = screen.getByTestId('watch-plan-closed');
+    expect(card.textContent).toBe('Window closed at 19:23 UTCBuy level 27,730');
+    expect(screen.queryByTestId('watch-headline')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Plan if price reaches|Wait for a pullback|Not a signal/);
+    expect(screen.queryByTestId('watch-actions')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Alert me|Follow setup/ })).toBeNull();
   });
 
   it('why wait em 3 bullets, o que muda o plano uma vez e o resumo sem repetir', () => {

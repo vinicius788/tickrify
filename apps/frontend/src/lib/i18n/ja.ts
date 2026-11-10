@@ -352,8 +352,8 @@ export default {
     paymentRetry: "再確認",
     paymentSettings: "サブスクリプションを見る",
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
-    weeklyRenewal: "現在および解約まで7日ごとにUS$7.99を請求。",
-    monthlyRenewal: "現在および解約まで毎月US$29を請求。",
+    weeklyRenewal: "現在および解約まで7日ごとに$7.99を請求。",
+    monthlyRenewal: "現在および解約まで毎月$29を請求。",
     freeEligibility: "匿名デモは1デバイスにつき1回。対象アカウントは7日以内の3利用日で最大7回の分析（3/2/2）。既存アカウントには該当する利用枠が適用されます。カード不要。"
   },
 
@@ -389,6 +389,8 @@ export default {
     analysesWord: '分析',
     freeLeft: '件の無料分析が残り',
     newAnalysis: '新しい分析',
+    analysisLabel: '分析',
+    assetAnalysis: '{asset} の分析',
     myTrades: 'マイトレード',
     journal: 'ジャーナル',
     // Rotulos curtos usados SO na barra de abas do celular. Os longos
@@ -1153,6 +1155,7 @@ export default {
     limitDesc: '新しく作成するには1件キャンセルしてください。',
     limitDescFree: '1件キャンセルするか、登録すると最大10件のセットアップを監視できます。',
     activeTitle: '有効なアラート',
+    triggeredTitle: '発動済みのアラート',
     reachedTitle: '価格が設定レベルに到達しました',
     rises: '価格が上昇して到達したとき',
     falls: '価格が下落して到達したとき',
@@ -1307,6 +1310,7 @@ export default {
     loadFailed: 'サブスクリプションを読み込めませんでした。少し待ってから再試行してください。',
     retry: '再試行',
     noSubscription: 'サブスクリプションはありません。',
+    manualAccess: '手動アクセス',
     seePlans: 'プランを見る',
     statusActive: '有効、{date} に更新',
     statusCanceled: '解約済み、{date} まで利用可能',
