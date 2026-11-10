@@ -66,6 +66,7 @@ import { loadSavedDemoResult } from "@/lib/demo-api";
 import SetupAlertBar from "../dashboard/SetupAlertBar";
 import { isWatchPlan } from "../dashboard/WatchPlanCard";
 import TodaySection from "../dashboard/TodaySection";
+import MyAssets from "../dashboard/MyAssets";
 import SetupsSection from "../dashboard/SetupsSection";
 import WatchingPage from "../dashboard/WatchingPage";
 import SetupPage from "../dashboard/SetupPage";
@@ -1200,6 +1201,9 @@ const DashboardPage = () => {
 
         {/* Today: alertas disparados, niveis vigiados e operacoes abertas. Conta
             travada: os alertas ficam pausados e o paywall cita o ativo real. */}
+        {/* My assets: niveis do dia dos ativos da pessoa, so codigo e velas reais. */}
+        {!isDemo && !freeLocked && <MyAssets base={base} />}
+
         {!isDemo && !freeLocked && (
           <TodaySection base={base} alerts={alertsQuery.data} openTrades={openTradesQuery.data?.trades ?? []} analyses={rawAnalyses} />
         )}

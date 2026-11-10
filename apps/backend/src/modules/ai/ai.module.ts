@@ -11,10 +11,13 @@ import { AIAdapter } from './ai.adapter';
 import { TicksModule } from '../ticks/ticks.module';
 import { PaymentsModule } from '../payments/payments.module';
 
+import { WatchAssetsController } from './watch-assets.controller';
+import { WatchAssetsService } from './watch-assets.service';
+
 @Module({
   imports: [TicksModule, PaymentsModule],
-  controllers: [AiController, SetupsController, TradesController],
-  providers: [AiService, AIAdapter, SetupsService, SetupAlertsService, TrialService, TradesService],
+  controllers: [AiController, SetupsController, TradesController, WatchAssetsController],
+  providers: [AiService, AIAdapter, SetupsService, SetupAlertsService, TrialService, TradesService, WatchAssetsService],
   exports: [AIAdapter, AiService, TrialService],
 })
 export class AiModule {}

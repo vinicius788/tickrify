@@ -310,6 +310,45 @@ export function useAlertActions() {
   return { create, cancel, seen };
 }
 
+export interface DayLevel { price: number; atr: number; pct: number }
+export interface WatchAsset {
+  symbol: string;
+  timeframe: string;
+  levels: { price: number; atr: number; trend: 'uptrend' | 'downtrend' | 'range' | null; above: DayLevel | null; below: DayLevel | null; candleAt: number } | null;
+  status: 'ok' | 'stale' | 'unavailable';
+}
+export interface WatchAssets {
+  assets: WatchAsset[];
+  timeframe: string;
+  maxAssets: number;
+  suggested: string[];
+  timeframes: string[];
+}
+
+/** Lista de ativos e niveis do dia (so codigo, velas reais). Relida a cada 5 min. */
+export function useWatchAssets(enabled: boolean) {
+  const token = useToken();
+  return useQuery({
+    queryKey: ['watch-assets'],
+    queryFn: async () => send<WatchAssets>('/api/watch-assets', { method: 'GET' }, await token()),
+    enabled,
+    staleTime: 60_000,
+    refetchInterval: 5 * 60_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+}
+
+export function useSaveWatchAssets() {
+  const token = useToken();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { symbols: string[]; timeframe: string }) =>
+      send<WatchAssets>('/api/watch-assets', { method: 'PUT', body: JSON.stringify(input) }, await token()),
+    onSuccess: (data) => queryClient.setQueryData(['watch-assets'], data),
+  });
+}
+
 /** Nivel no formato da tela (sem perder as casas do forex). */
 export function formatAlertLevel(level: number, locale: string): string {
   return level.toLocaleString(locale, { maximumFractionDigits: level >= 1000 ? 2 : level >= 1 ? 5 : 8 });
