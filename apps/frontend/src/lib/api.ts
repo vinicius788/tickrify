@@ -117,6 +117,7 @@ export interface AnalysisEvidence {
   version: 1;
   additionalChartsDelivered: number;
   candleFeedAttached: boolean;
+  candleFailure?: 'read_timeout';
   marketContextAttached: boolean;
   calendar: 'events_attached' | 'no_events_returned' | 'not_attached' | 'not_confirmed';
 }

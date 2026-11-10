@@ -143,7 +143,8 @@ describe('resultado do WATCH', () => {
     it('relogio passou da validade: titulo, nivel e sem plano, alerta nem espera', () => {
       closedAt();
       show(result(long, plan));
-      const card = text('watch-plan');
+      const card = text('watch-plan-closed');
+      expect(text('watch-closed-level')).toBe('Buy level 27,730');
       expect(card).toContain('Window closed at 19:23 UTC');
       expect(card).toContain('Buy level 27,730');
       expect(card).toContain('What the market did');
@@ -156,6 +157,9 @@ describe('resultado do WATCH', () => {
       expect(screen.queryByRole('button', { name: /Alert me/ })).toBeNull();
       expect(screen.queryByTestId('watch-headline')).toBeNull();
       expect(screen.queryByTestId('watch-why-changes')).toBeNull();
+      expect(screen.queryByTestId('watch-actions')).toBeNull();
+      expect(screen.queryByRole('button', { name: /Alert me|Follow setup/ })).toBeNull();
+      expect(document.body.textContent).not.toMatch(/Plan if price reaches|Wait for a pullback|Not a signal/);
       expect(text('signal-state')).toBe('Watch');
     });
 
@@ -175,7 +179,7 @@ describe('resultado do WATCH', () => {
 
     it('rastreador ja fechou antes do relogio: tambem encerra', () => {
       show(result(long, plan, { ...summary, outcome: 'invalidated' }));
-      expect(text('watch-plan')).toContain('Window closed at 19:23 UTC');
+      expect(text('watch-plan-closed')).toContain('Window closed at 19:23 UTC');
     });
 
     it('sem linha no rastreador, mesmo com alerta disparado: Checking the result', () => {
@@ -185,13 +189,13 @@ describe('resultado do WATCH', () => {
       expect(text('watch-outcome')).toBe('What the market didChecking the result');
     });
 
-    it('ativo sem fonte de preco e alerta ligado: nenhum convite de alerta; venda usa o nivel de venda', () => {
+    it('ativo sem fonte de preco e alerta ligado: nenhum botao; venda usa o nivel de venda', () => {
       closedAt();
       options = { ...options, available: false };
       show(result(short, plan, { ...summary, direction: 'short', level: 27930, outcome: 'expired' }));
       expect(screen.queryByTestId('watch-broker')).toBeNull();
-      expect(text('watch-plan')).toContain('Sell level 27,930');
-      expect(screen.getByRole('button', { name: 'Follow setup' })).toBeTruthy();
+      expect(text('watch-closed-level')).toBe('Sell level 27,930');
+      expect(screen.queryByRole('button', { name: 'Follow setup' })).toBeNull();
       cleanup();
       options = { ...options, available: true, watchAlert: { id: 'al', level: 27730, status: 'active' } };
       show(result(long, plan));
@@ -211,7 +215,7 @@ describe('resultado do WATCH', () => {
       show(result(long, plan));
       expect(text('watch-plan')).toContain('Plan if price reaches');
       act(() => { vi.advanceTimersByTime(2_000); });
-      expect(text('watch-plan')).toContain('Window closed at 19:23 UTC');
+      expect(text('watch-plan-closed')).toContain('Window closed at 19:23 UTC');
     });
   });
 

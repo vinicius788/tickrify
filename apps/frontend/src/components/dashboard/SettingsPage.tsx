@@ -1,4 +1,4 @@
-import { LOCALES } from '@/lib/i18n';
+import { LOCALES, formatUsd } from '@/lib/i18n';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { Link } from "react-router-dom";
@@ -32,6 +32,7 @@ const SettingsPage = ({ eyebrow }: { eyebrow: ReactNode }) => {
   const [theme, setTheme] = useTheme();
   const [load, setLoad] = useState<Load>('loading');
   const [subscription, setSubscription] = useState<SubscriptionSummary | null>(null);
+  const [manualAccess, setManualAccess] = useState(false);
   const [busy, setBusy] = useState<'portal' | 'reactivate' | null>(null);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
 
@@ -49,7 +50,10 @@ const SettingsPage = ({ eyebrow }: { eyebrow: ReactNode }) => {
     try {
       const token = await getToken();
       if (!token) throw new Error('no token');
-      setSubscription(await getSubscription(token));
+      const result = await getSubscription(token);
+      const manual = result !== null && 'manualAccess' in result;
+      setManualAccess(manual);
+      setSubscription(manual ? null : result);
       window.dispatchEvent(new Event('tickrify:analysis-created'));
       setLoad('ready');
     } catch {
@@ -113,12 +117,14 @@ const SettingsPage = ({ eyebrow }: { eyebrow: ReactNode }) => {
         : s.cycleMonthly;
   const per =
     subscription?.billingCycle === 'weekly' ? s.perWeek : subscription?.billingCycle === 'yearly' ? s.perYear : s.perMonth;
+  const currency = (subscription?.currency ?? 'usd').toUpperCase();
   const price =
     subscription?.amount != null
-      ? `${subscription.amount.toLocaleString(LOCALES[language], {
-          style: 'currency',
-          currency: (subscription.currency ?? 'usd').toUpperCase(),
-        })} / ${per}`
+      ? `${
+          currency === 'USD'
+            ? formatUsd(subscription.amount, language)
+            : subscription.amount.toLocaleString(LOCALES[language], { style: 'currency', currency })
+        } / ${per}`
       : null;
 
   const status = subscription?.status ?? '';
@@ -164,6 +170,11 @@ const SettingsPage = ({ eyebrow }: { eyebrow: ReactNode }) => {
               {s.retry}
             </button>
           </div>
+        ) : manualAccess ? (
+          <p key="manual" data-testid="manual-access" className="flex items-center gap-2 text-base font-medium text-[var(--text-primary)]">
+            <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: 'var(--signal-buy)' }} />
+            <span>{s.manualAccess}</span>
+          </p>
         ) : !subscription ? (
           <div key="none" className="flex flex-col items-start gap-3">
             <p className="text-sm text-[var(--text-secondary)]">{s.noSubscription}</p>

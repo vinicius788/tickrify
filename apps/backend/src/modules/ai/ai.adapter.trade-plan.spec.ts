@@ -333,6 +333,7 @@ describe('AIAdapter trade-plan integrity', () => {
 
   it('reports the model that actually answered and no grounding when it is off', async () => {
     const adapter = new AIAdapter();
+    adapter.groundingEnabled = false;
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
@@ -603,11 +604,11 @@ describe('AIAdapter quick grounding stats', () => {
     expect(g.stats).toMatchObject({ v: 1, coverage: 'stale_withheld', numbers: null });
   });
 
-  it('has no stats when the symbol cannot be read', async () => {
+  it('records why when the symbol cannot be read', async () => {
     const adapter = new AIAdapter() as any;
     adapter.extractSymbol = jest.fn().mockResolvedValue(null);
     const g = await adapter.buildQuickGrounding('data:image/png;base64,AA==');
-    expect(g.stats).toBeNull();
+    expect(g.stats).toEqual({ v: 1, symbol: '', interval: null, coverage: 'symbol_unreadable', numbers: null });
   });
 });
 

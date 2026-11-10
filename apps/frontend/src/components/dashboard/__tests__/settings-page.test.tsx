@@ -5,6 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsPage from '@/components/dashboard/SettingsPage';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import type { SubscriptionSummary } from '@/lib/stripe';
+import { formatUsd } from '@/lib/i18n';
+
+describe('formatUsd', () => {
+  it('um formato so: $ na frente, sem centavos em valor inteiro', () => {
+    expect(formatUsd(29, 'en')).toBe('$29');
+    expect(formatUsd(18.85, 'pt')).toBe('$18,85');
+    expect(formatUsd(29 * 0.65, 'en')).toBe('$18.85');
+    expect(formatUsd(290, 'de')).toBe('$290');
+  });
+});
 
 const getToken = vi.fn().mockResolvedValue('tok');
 vi.mock('@clerk/clerk-react', () => ({
@@ -92,6 +102,30 @@ describe('Configuracoes: assinatura e tema', () => {
     expect(reactivateSubscription).toHaveBeenCalledWith('tok');
     expect(await screen.findByText('Active, renews on October 20, 2026')).toBeTruthy();
     expect(screen.getByText('Your subscription is active again.')).toBeTruthy();
+  });
+
+  it('assinante real no mensal: status, $29 e proxima cobranca', async () => {
+    getSubscription.mockResolvedValue(sub({ billingCycle: 'monthly', amount: 29 }));
+    renderPage();
+    expect(await screen.findByText('Active, renews on October 20, 2026')).toBeTruthy();
+    expect(screen.getByText('$29 / month')).toBeTruthy();
+    expect(screen.getByText('Next charge').nextElementSibling?.textContent).toBe('October 20, 2026');
+  });
+
+  it('mesmo formato de moeda em portugues: $7,99, nunca US$', async () => {
+    getSubscription.mockResolvedValue(sub());
+    window.localStorage.setItem('tickrify-language', 'pt');
+    render(<MemoryRouter><LanguageProvider><SettingsPage eyebrow={null} /></LanguageProvider></MemoryRouter>);
+    expect(await screen.findByText('$7,99 / semana')).toBeTruthy();
+    expect(document.body.textContent).not.toContain('US$');
+  });
+
+  it('acesso manual: "Manual access", sem status, valor nem portal de assinatura antiga', async () => {
+    getSubscription.mockResolvedValue({ manualAccess: true });
+    renderPage();
+    expect(await screen.findByText('Manual access')).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/Ended on|R\$|Next charge|You do not have/);
+    expect(screen.queryByRole('button', { name: /Manage subscription/ })).toBeNull();
   });
 
   it('sem assinatura: nao mostra o botao do portal, so os planos', async () => {

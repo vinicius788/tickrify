@@ -25,7 +25,7 @@ import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
-import { WatchPlanCard, isWatchLevels, isWatchPlan } from './WatchPlanCard';
+import { WatchPlanCard, isWatchLevels, isWatchPlan, watchWindowOpen } from './WatchPlanCard';
 import { ReadModePanel, WherePriceIs, type ReadModeData } from './ReadModePanel';
 import { LevelMapCard } from './PendingLevels';
 import { AnalysisShareButton } from './ShareCard';
@@ -623,7 +623,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   const levelsEstimated = fullResponse.dataMode === 'print';
   // WATCH com plano: cartao unico. Analise antiga sem plano segue no desenho anterior.
   const watchLayout = signalState === 'WATCH' && watchPlan !== null;
-  const watchClosed = watchLayout && ((analysisData.watch?.outcome ?? 'pending') !== 'pending' || watchExpires <= now);
+  const watchClosed = watchLayout && !watchWindowOpen(analysisData.watch, now);
 
   const detectedSession = String(analysis.detectedSession || fullResponse.detectedSession || '').trim() || null;
   const sessionNote =
