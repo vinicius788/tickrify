@@ -142,7 +142,7 @@ const TradePanel = ({ analysisId }: { analysisId: string }) => {
         <p className="text-sm font-semibold text-[var(--text-primary)]">
           <span>{`${tr.title} · ${displayAsset(view.symbol)} ${view.direction}`}</span>
         </p>
-        <span className="rounded-full border border-[var(--border-default)] px-3 py-1 font-terminal text-xs text-[var(--text-secondary)]">
+        <span className="rounded-full border border-[var(--border-default)] px-3 py-1 tabular-nums text-xs text-[var(--text-secondary)]">
           <span key={view.status}>
             {view.closeReason && view.status === 'closed'
               ? `${statusLabel[view.status]} · ${reasonLabel[view.closeReason]}`
@@ -287,7 +287,7 @@ const TradePanel = ({ analysisId }: { analysisId: string }) => {
           <p className="tk-stat-label mb-2">{tr.timeline}</p>
           <ol className="flex flex-col gap-1">
             {view.timeline.map((step, index) => (
-              <li key={`${step.at}-${index}`} className="font-terminal text-xs text-[var(--text-secondary)]">
+              <li key={`${step.at}-${index}`} className="tabular-nums text-xs text-[var(--text-secondary)]">
                 {`${new Date(step.at).toLocaleString(LOCALES[language])} · ${statusLabel[step.status]}${
                   step.entryPrice ? ` · ${tr.entryPrice} ${step.entryPrice}` : ''
                 }${step.closeReason && step.status === 'closed' ? ` · ${reasonLabel[step.closeReason]}` : ''}`}

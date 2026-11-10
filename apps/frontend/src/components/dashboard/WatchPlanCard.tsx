@@ -288,7 +288,7 @@ export function WatchPlanCard({
           <h3 className="tk-display text-base text-[var(--text-primary)]">
             {watch?.expiresAt ? w.windowClosed.replace('{time}', formatUtcTime(watch.expiresAt)) : t.watching.windowClosed}
           </h3>
-          <p data-testid="watch-closed-level" className="mt-1 font-terminal text-xs text-[var(--text-secondary)]">
+          <p data-testid="watch-closed-level" className="mt-1 tabular-nums text-xs text-[var(--text-secondary)]">
             {(long ? t.pending.buyLevel : t.pending.sellLevel).replace('{price}', money(alertLevel))}
           </p>
           {watch ? <div key="verdict" className="mt-3"><WatchVerdict watch={watch} tone={watchTone(watch, now)} /></div> : null}
@@ -304,11 +304,11 @@ export function WatchPlanCard({
           <div className="min-w-0">
             <h3 className="tk-display text-base text-[var(--text-primary)]">{w.planTitle.replace('{zone}', zone)}</h3>
             <p data-testid="watch-not-signal" className="mt-1 text-xs text-[var(--text-secondary)]">{w.notSignal}</p>
-            <dl data-testid="watch-numbers" className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-4 ${tiles.length > 2 ? 'lg:grid-cols-4' : ''}`}>
+            <dl data-testid="watch-numbers" className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-4 ${tiles.length > 2 ? '2xl:grid-cols-4' : ''}`}>
               {tiles.map((tile) => (
                 <div key={tile.key} className="min-w-0">
-                  <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{tile.label}</dt>
-                  <dd className="mt-1 font-terminal text-[17px] font-semibold leading-tight text-[var(--text-primary)]">
+                  <dt className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{tile.label}</dt>
+                  <dd className="mt-1 tabular-nums text-[17px] font-semibold leading-tight text-[var(--text-primary)]">
                     <span>{tile.value}</span>
                     {tile.note ? <span key="note" className="mt-0.5 block text-xs font-normal text-[var(--text-secondary)]">{`(${tile.note})`}</span> : null}
                   </dd>
@@ -319,7 +319,7 @@ export function WatchPlanCard({
             {estimated ? <p key="estimated" data-testid="levels-estimated" className="mt-3 text-xs text-[var(--text-secondary)]">{t.analysis.result.levelsEstimated}</p> : null}
             {condition ? <p key="condition" data-testid="watch-condition" className="mt-4 text-sm leading-relaxed text-[var(--text-primary)]">{condition}</p> : null}
             {distance || validity ? (
-              <p key="timing" data-testid="watch-timing" className="mt-2 font-terminal text-xs text-[var(--text-secondary)]">
+              <p key="timing" data-testid="watch-timing" className="mt-2 tabular-nums text-xs text-[var(--text-secondary)]">
                 {[distance, validity].filter(Boolean).join(' · ')}
               </p>
             ) : null}
@@ -336,7 +336,7 @@ export function WatchPlanCard({
               <div key={row.key} data-kind={row.kind} className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-2 text-[12px]" style={{ top: ladderY[i] }}>
                 <span className="flex w-[15px] shrink-0 justify-center"><LadderMarker kind={row.kind} /></span>
                 <span className={`shrink-0 ${row.kind === 'price' ? 'font-semibold text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{row.label}</span>
-                <span className="ml-auto whitespace-nowrap text-right font-terminal text-[var(--text-primary)]">
+                <span className="ml-auto whitespace-nowrap text-right tabular-nums text-[var(--text-primary)]">
                   <span>{row.value}</span>
                   {row.r ? <span key="r" className="ml-1.5 text-[var(--text-secondary)]">{row.r}</span> : null}
                 </span>

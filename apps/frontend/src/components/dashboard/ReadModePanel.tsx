@@ -51,7 +51,7 @@ export function WherePriceIs({ data, formatPrice }: ReadModePanelProps) {
       <dl className="mt-2 space-y-1 text-sm">
         <div className="flex justify-between gap-3">
           <dt className="text-[var(--text-secondary)]">{m.price}</dt>
-          <dd className="text-right font-terminal text-[var(--text-primary)]">
+          <dd className="text-right tabular-nums text-[var(--text-primary)]">
             {formatPrice(loc?.price ?? data.currentPrice)}
             {loc?.rangePosPct !== null && loc?.rangePosPct !== undefined && (
               <span className="block text-[11px] text-[var(--text-secondary)]">{m.rangePosition.replace('{pct}', String(Math.round(loc.rangePosPct)))}</span>
@@ -61,7 +61,7 @@ export function WherePriceIs({ data, formatPrice }: ReadModePanelProps) {
         {distanceRows.map(([label, d]) => (
           <div key={label} className="flex justify-between gap-3">
             <dt className="text-[var(--text-secondary)]">{label}</dt>
-            <dd className="text-right font-terminal text-[var(--text-primary)]">
+            <dd className="text-right tabular-nums text-[var(--text-primary)]">
               {formatPrice(d!.price)}
               <span className="block text-[11px] text-[var(--text-secondary)]">{m.atrAway.replace('{n}', atrText(d!.atr))}</span>
             </dd>
@@ -70,7 +70,7 @@ export function WherePriceIs({ data, formatPrice }: ReadModePanelProps) {
         {loc?.htfTrend && (
           <div className="flex justify-between gap-3">
             <dt className="text-[var(--text-secondary)]">{m.htfTrend}</dt>
-            <dd className="font-terminal text-[var(--text-primary)]">{m.htf[loc.htfTrend]}</dd>
+            <dd className="tabular-nums text-[var(--text-primary)]">{m.htf[loc.htfTrend]}</dd>
           </div>
         )}
       </dl>
@@ -99,7 +99,7 @@ export function ReadModePanel({ data, formatPrice }: ReadModePanelProps) {
   return (
     <div data-testid="read-mode" className="grid gap-3 md:grid-cols-3">
       <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-4">
-        <h4 className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{m.readTitle}</h4>
+        <h4 className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{m.readTitle}</h4>
         <p className="mt-2 text-sm font-semibold text-[var(--text-primary)]">
           {data.strength ? `${m.bias[data.bias]}, ${m.strength[data.strength]}` : m.bias[data.bias]}
         </p>
@@ -107,12 +107,12 @@ export function ReadModePanel({ data, formatPrice }: ReadModePanelProps) {
       </section>
 
       <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-4">
-        <h4 className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{m.whereTitle}</h4>
+        <h4 className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{m.whereTitle}</h4>
         <WherePriceIs data={data} formatPrice={formatPrice} />
       </section>
 
       <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-4">
-        <h4 className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{m.actionTitle}</h4>
+        <h4 className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{m.actionTitle}</h4>
         <p data-testid="read-mode-action" className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{signalStateLabel(a, data.state, actionSide)}</p>
         {(data.state === 'ENTER_NOW' || data.state === 'ARMED') && (
           <dl className="mt-2 space-y-1 text-sm">
@@ -124,7 +124,7 @@ export function ReadModePanel({ data, formatPrice }: ReadModePanelProps) {
             ] as const).filter(([, v]) => v !== null).map(([label, v]) => (
               <div key={label} className="flex justify-between gap-3">
                 <dt className="text-[var(--text-secondary)]">{label}</dt>
-                <dd className="font-terminal text-[var(--text-primary)]">{formatPrice(v)}</dd>
+                <dd className="tabular-nums text-[var(--text-primary)]">{formatPrice(v)}</dd>
               </div>
             ))}
           </dl>

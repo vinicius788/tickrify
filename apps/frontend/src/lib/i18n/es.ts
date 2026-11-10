@@ -1380,6 +1380,10 @@ export default {
     ja: '日本語',
   },
   // Chat com o fundador (12/10/2026), dentro da bolha "Chat, feedback or problem".
+  community: {
+    join: 'Únete a nuestra comunidad en Discord',
+    footerLink: 'Comunidad en Discord',
+  },
   chat: {
     title: 'Habla con Vinícius, fundador de Tickrify',
     subtitle: 'Suele responder en unas horas',

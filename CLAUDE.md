@@ -1024,6 +1024,7 @@ Vale para TODA mudanca, grande ou pequena:
   (`.yes`/`.no`, resultado da calculadora).
 - `og.png`: ao trocar a arte, subir o `?v=` (hoje `?v=4`, 54 referencias). Arte de 13/10/2026 (trial): "Your AI trading copilot.", cartao de exemplo SEM confianca, rodape "3-day free trial · no card"; fonte HTML em `_local/semana-2026-10-05/og-trial.html` (a anterior, "3 free trade plans", em `og-novo.html`). Gerar com Chrome headless em 1200x630.
 - Meta `msvalidate.01` do Bing no `index.html`: nao remover (o Bing revalida).
+- **Tipografia da area logada (09/11/2026): so Geist (`--font-sans`).** Sem serifa, sem mono, sem italico e sem `uppercase` com tracking largo. Titulo = `tk-display` (peso 600, tamanho pela classe `text-*`), rotulo de secao = `tk-eyebrow`/`tk-stat-label` (sentence case, 500, `--text-secondary`), metadado = `tk-meta` (`--text-tertiary`), numero = `tabular-nums`. A Geist Mono fica so no site publico (`.site-*`, `.tk-site`); componente compartilhado que precisa da mono no site recebe `site-mono` de fora (ex.: `LanguageSwitcher`). A folga do `<main>` para a bolha flutuante e a do PR #29 (`pb-24 md:pb-16`).
 
 ### 4.4 Claims e texto publico
 
@@ -1174,6 +1175,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 
+- **09/11 (tipografia e Discord):** area logada so em Geist (tokens e classes em 4.3), Fraunces e JetBrains Mono fora do `index.html`; comunidade no Discord (`COMMUNITY_URL` em `lib/analytics.ts`) no rodape publico e no menu da conta, evento `community_clicked { location: footer_public | app }`.
 - **09/11 (ciclo do ENTER_NOW no nivel):** leitura do validador regra por regra; travas do codigo achadas: atrasado depois do recuo e TP2 obrigatorio no worker. Ver 3.13 e 6.2.
 - **09/11 (vendas, branch `claude/sales-fixes`):** bolha do chat vira icone no celular e some enquanto houver botao embaixo (fim da pagina com folga); preco num formato so (`formatUsd`, "$29", "$18,85", sem "US$") nos 6 idiomas; setup separa alertas ativos de disparados e so mostra "Last checked" com alerta ativo; WATCH com janela encerrada mostra so "Window closed at HH:MM UTC" e o nivel, sem plano nem acao; analise pronta tem titulo "<ATIVO> <TF> analysis"; abas do celular com largura pelo texto; Configuracoes mostra "Manual access" para `manual_*` sem assinatura viva (`GET /api/stripe/subscription` devolve `{ manualAccess: true }`).
 - **09/11 (alerta rapido e Watching, prova em producao):** alerta real de BTC (criado 17:43:22, disparou na vela 17:44, 74.635,04 >= 74.630, `[mail] Enviado kind=setup_alert` 22,5 s depois) e de XAUUSD (criado 17:44:37, vela 17:45, 4.104,08 >= 4.101,5, e-mail 82,5 s depois); os dois no Today, no contador e no titulo. Os 5 disparos de ouro anteriores ao fuso eram falsos, todos na conta do dono.

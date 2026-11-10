@@ -94,12 +94,12 @@ function GroupCard({ title, rows, label, j }: { title: string; rows: GroupRow[];
   if (rows.length === 0) return null;
   return (
     <div className="min-w-0 rounded-lg border border-[var(--border-subtle)] p-3">
-      <p className="mb-2 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{title}</p>
+      <p className="mb-2 text-xs text-[var(--text-secondary)]">{title}</p>
       <div className="flex flex-col gap-1.5">
         {rows.slice(0, 6).map((row) => (
           <div key={row.key} className="flex items-center justify-between gap-3 text-xs">
-            <span className="truncate font-terminal text-[var(--text-primary)]">{label(row.key)}</span>
-            <span className="flex shrink-0 items-center gap-3 font-terminal">
+            <span className="truncate tabular-nums text-[var(--text-primary)]">{label(row.key)}</span>
+            <span className="flex shrink-0 items-center gap-3 tabular-nums">
               <span className="text-[var(--text-secondary)]">{j.closedTrades.replace('{n}', String(row.closed))}</span>
               <span className="w-10 text-right text-[var(--text-primary)]">{`${Math.round((row.wins / row.closed) * 100)}%`}</span>
               <span className="w-20 text-right font-semibold" style={{ color: pnlColor(row.pnl) }}>
@@ -130,40 +130,40 @@ function JournalStats({ stats, j, locale }: { stats: MonthStats; j: JournalCopy;
       <h3 id="journal-stats-title" className="mb-2 text-sm font-semibold text-[var(--text-primary)]">{j.statsTitle}</h3>
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-4">
         <div className={tile}>
-          <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.avgR}</p>
-          <p className="font-terminal text-lg font-semibold" style={{ color: pnlColor(stats.avgR) }}>
+          <p className="text-xs text-[var(--text-secondary)]">{j.avgR}</p>
+          <p className="tabular-nums text-lg font-semibold" style={{ color: pnlColor(stats.avgR) }}>
             {stats.avgR !== null ? `${stats.avgR > 0 ? '+' : ''}${stats.avgR.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}R` : '·'}
           </p>
           <p className="text-[10px] text-[var(--text-secondary)]">{j.avgRSub.replace('{n}', String(stats.rTrades))}</p>
         </div>
         <div className={tile}>
-          <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.profitFactor}</p>
-          <p className="font-terminal text-lg font-semibold text-[var(--text-primary)]">
+          <p className="text-xs text-[var(--text-secondary)]">{j.profitFactor}</p>
+          <p className="tabular-nums text-lg font-semibold text-[var(--text-primary)]">
             {stats.profitFactor !== null ? stats.profitFactor.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '·'}
           </p>
           <p className="text-[10px] text-[var(--text-secondary)]">{j.profitFactorSub}</p>
         </div>
         <div className={tile}>
-          <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.maxDrawdown}</p>
-          <p className="font-terminal text-lg font-semibold" style={{ color: pnlColor(stats.maxDrawdown) }}>
+          <p className="text-xs text-[var(--text-secondary)]">{j.maxDrawdown}</p>
+          <p className="tabular-nums text-lg font-semibold" style={{ color: pnlColor(stats.maxDrawdown) }}>
             {stats.maxDrawdown !== null ? fmtPnl(stats.maxDrawdown, locale) : '·'}
           </p>
           <p className="text-[10px] text-[var(--text-secondary)]">{j.maxDrawdownSub}</p>
         </div>
         <div className={tile}>
-          <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.bestDay}</p>
-          <p className="font-terminal text-sm font-semibold" style={{ color: pnlColor(stats.bestDay?.pnl ?? null) }}>
+          <p className="text-xs text-[var(--text-secondary)]">{j.bestDay}</p>
+          <p className="tabular-nums text-sm font-semibold" style={{ color: pnlColor(stats.bestDay?.pnl ?? null) }}>
             {stats.bestDay ? `${dayLabel(stats.bestDay.day)} ${fmtPnl(stats.bestDay.pnl, locale)}` : '·'}
           </p>
-          <p className="mt-1 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.worstDay}</p>
-          <p className="font-terminal text-sm font-semibold" style={{ color: pnlColor(stats.worstDay?.pnl ?? null) }}>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">{j.worstDay}</p>
+          <p className="tabular-nums text-sm font-semibold" style={{ color: pnlColor(stats.worstDay?.pnl ?? null) }}>
             {stats.worstDay ? `${dayLabel(stats.worstDay.day)} ${fmtPnl(stats.worstDay.pnl, locale)}` : '·'}
           </p>
         </div>
       </div>
 
       <div className="mt-3 rounded-lg border border-[var(--border-subtle)] p-3">
-        <p className="mb-1 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.equity}</p>
+        <p className="mb-1 text-xs text-[var(--text-secondary)]">{j.equity}</p>
         {stats.equity.length > 0 ? (
           <EquityCurve points={stats.equity} />
         ) : (
@@ -199,7 +199,7 @@ function AiComparisonCard({ c, j }: { c: AiComparison; j: JournalCopy }) {
       <div className="mt-3 flex flex-col gap-2">
         <div className={row}>
           <span className="text-[var(--text-secondary)]">{j.vsPlans}</span>
-          <span className="text-right font-terminal text-[var(--text-primary)]">
+          <span className="text-right tabular-nums text-[var(--text-primary)]">
             {c.measured > 0 ? n(j.vsPlansValue, { w: c.marketWins, n: c.measured }) : '·'}
           </span>
         </div>
@@ -207,7 +207,7 @@ function AiComparisonCard({ c, j }: { c: AiComparison; j: JournalCopy }) {
           <>
             <div className={row}>
               <span className="text-[var(--text-secondary)]">{j.vsSame}</span>
-              <span className="text-right font-terminal text-[var(--text-primary)]">{n(j.vsSameValue, { k: c.agree, n: c.both })}</span>
+              <span className="text-right tabular-nums text-[var(--text-primary)]">{n(j.vsSameValue, { k: c.agree, n: c.both })}</span>
             </div>
             {c.beatPlan > 0 && <p className="text-xs text-[var(--signal-buy)]">{n(j.vsBeatPlan, { n: c.beatPlan })}</p>}
             {c.missedPlan > 0 && <p className="text-xs text-[var(--signal-sell)]">{n(j.vsMissedPlan, { n: c.missedPlan })}</p>}
@@ -216,7 +216,7 @@ function AiComparisonCard({ c, j }: { c: AiComparison; j: JournalCopy }) {
         {c.untaken > 0 && (
           <div className={row}>
             <span className="text-[var(--text-secondary)]">{j.vsUntaken}</span>
-            <span className="text-right font-terminal text-[var(--text-primary)]">{n(j.vsUntakenValue, { n: c.untaken, w: c.untakenWins })}</span>
+            <span className="text-right tabular-nums text-[var(--text-primary)]">{n(j.vsUntakenValue, { n: c.untaken, w: c.untakenWins })}</span>
           </div>
         )}
         <div className="flex flex-col gap-0.5 text-[11px] text-[var(--text-secondary)]">
@@ -327,7 +327,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
             <button type="button" onClick={() => goMonth(-1)} className={navBtn} aria-label={j.prev} title={j.prev}>
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="min-w-[9rem] text-center font-terminal text-sm text-[var(--text-primary)]">
+            <span className="min-w-[9rem] text-center tabular-nums text-sm text-[var(--text-primary)]">
               {monthLabel}
             </span>
             <button
@@ -349,27 +349,27 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
         {/* ── Resumo do mes ─────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-px border-y border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-4">
           <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
-            <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.analyses}</p>
-            <p className="font-terminal text-lg font-semibold text-[var(--text-primary)]">{totals.count}</p>
+            <p className="text-xs text-[var(--text-secondary)]">{j.analyses}</p>
+            <p className="tabular-nums text-lg font-semibold text-[var(--text-primary)]">{totals.count}</p>
           </div>
           <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
-            <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.winRate}</p>
-            <p className="font-terminal text-lg font-semibold text-[var(--signal-buy)]">
+            <p className="text-xs text-[var(--text-secondary)]">{j.winRate}</p>
+            <p className="tabular-nums text-lg font-semibold text-[var(--signal-buy)]">
               {decided > 0 ? `${Math.round((totals.wins / decided) * 1000) / 10}%` : '-'}
             </p>
-            <p className="font-terminal text-[10px] text-[var(--text-secondary)]">
+            <p className="tabular-nums text-[10px] text-[var(--text-secondary)]">
               {totals.wins}{tr.winShort} / {totals.losses}{tr.lossShort}
             </p>
           </div>
           <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
-            <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.pnl}</p>
-            <p className="font-terminal text-lg font-semibold" style={{ color: pnlColor(totals.pnl) }}>
+            <p className="text-xs text-[var(--text-secondary)]">{j.pnl}</p>
+            <p className="tabular-nums text-lg font-semibold" style={{ color: pnlColor(totals.pnl) }}>
               {totals.pnl !== null ? fmtPnl(totals.pnl, locale) : '-'}
             </p>
           </div>
           <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
-            <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.activeDays}</p>
-            <p className="font-terminal text-lg font-semibold text-[var(--text-primary)]">{totals.activeDays}</p>
+            <p className="text-xs text-[var(--text-secondary)]">{j.activeDays}</p>
+            <p className="tabular-nums text-lg font-semibold text-[var(--text-primary)]">{totals.activeDays}</p>
           </div>
         </div>
 
@@ -395,7 +395,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
               {weekdayLabels.map((label) => (
                 <div
                   key={label}
-                  className="pb-1 text-center font-terminal text-[10px] uppercase tracking-wide text-[var(--text-secondary)]"
+                  className="pb-1 text-center tabular-nums text-xs text-[var(--text-secondary)]"
                 >
                   {label}
                 </div>
@@ -430,7 +430,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                     style={{ background: tint }}
                   >
                     <span
-                      className={`inline-flex h-5 w-5 items-center justify-center self-start rounded-full font-terminal text-[11px] sm:h-6 sm:w-6 sm:text-xs ${
+                      className={`inline-flex h-5 w-5 items-center justify-center self-start rounded-full tabular-nums text-[11px] sm:h-6 sm:w-6 sm:text-xs ${
                         isToday ? 'bg-[var(--inverse-bg)] font-semibold text-[var(--inverse-fg)]' : 'text-[var(--text-secondary)]'
                       }`}
                     >
@@ -447,25 +447,25 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                         )}
                         {day.pnl !== null && (
                           <span
-                            className="truncate font-terminal text-[10px] font-semibold sm:text-sm"
+                            className="truncate tabular-nums text-[10px] font-semibold sm:text-sm"
                             style={{ color: pnlColor(day.pnl) }}
                           >
                             <span className="sm:hidden">{fmtPnl(day.pnl, locale, true)}</span>
                             <span className="hidden sm:inline">{fmtPnl(day.pnl, locale)}</span>
                           </span>
                         )}
-                        <span className="hidden truncate font-terminal text-[10px] text-[var(--text-secondary)] sm:block">
+                        <span className="hidden truncate tabular-nums text-[10px] text-[var(--text-secondary)] sm:block">
                           {day.count === 1 ? j.dayAnalysis : j.dayAnalyses.replace('{n}', String(day.count))}
                         </span>
                         {(day.wins > 0 || day.losses > 0) && (
-                          <span className="hidden font-terminal text-[10px] sm:block">
+                          <span className="hidden tabular-nums text-[10px] sm:block">
                             <span className="text-[var(--signal-buy)]">{day.wins}{tr.winShort}</span>
                             <span className="text-[var(--text-secondary)]"> / </span>
                             <span className="text-[var(--signal-sell)]">{day.losses}{tr.lossShort}</span>
                           </span>
                         )}
                         {day.pnl === null && (
-                          <span className="font-terminal text-[10px] text-[var(--text-secondary)] sm:hidden">{day.count}</span>
+                          <span className="tabular-nums text-[10px] text-[var(--text-secondary)] sm:hidden">{day.count}</span>
                         )}
                       </span>
                     )}
@@ -506,7 +506,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                           )}
                         </span>
                         {selectedDay?.pnl != null && (
-                          <span className="font-terminal text-sm font-semibold" style={{ color: pnlColor(selectedDay.pnl) }}>
+                          <span className="tabular-nums text-sm font-semibold" style={{ color: pnlColor(selectedDay.pnl) }}>
                             {fmtPnl(selectedDay.pnl, locale)}
                           </span>
                         )}
@@ -567,17 +567,17 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                 </button>
                                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                                   <div className="flex flex-wrap items-center gap-2">
-                                    <span className="font-terminal text-sm font-bold text-[var(--text-primary)]">{symbol}</span>
+                                    <span className="tabular-nums text-sm font-bold text-[var(--text-primary)]">{symbol}</span>
                                     {timeframe && (
-                                      <span className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-1.5 py-0.5 font-terminal text-[10px] text-[var(--text-secondary)]">
+                                      <span className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-1.5 py-0.5 tabular-nums text-[10px] text-[var(--text-secondary)]">
                                         {timeframe}
                                       </span>
                                     )}
-                                    <Badge variant="outline" className={`border text-[10px] font-bold uppercase tracking-widest ${signalClass}`}>
+                                    <Badge variant="outline" className={`border text-xs font-medium ${signalClass}`}>
                                       {signalStateLabel(t.analysis, state, entrySide(a.fullResponse?.watchPlan, a.recommendation))}
                                     </Badge>
                                   </div>
-                                  <span className="font-terminal text-[10px] text-[var(--text-secondary)]">
+                                  <span className="tabular-nums text-[10px] text-[var(--text-secondary)]">
                                     {new Date(a.createdAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
                                   </span>
                                   {!isEmptyTradeNote(a.tradeNote) && (
@@ -610,7 +610,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                 </div>
                                 <div className="flex shrink-0 flex-col items-end gap-1">
                                   {a.watch && verdict === null ? null : <span
-                                    className="rounded px-2 py-0.5 font-terminal text-[10px] font-semibold"
+                                    className="rounded px-2 py-0.5 tabular-nums text-[10px] font-semibold"
                                     style={vcfg
                                       ? { background: vcfg.bg, border: `1px solid ${vcfg.border}`, color: vcfg.text }
                                       : { border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}
@@ -618,7 +618,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                     {verdictLabel(verdict, a.recommendation)}
                                   </span>}
                                   {pnl !== null && (
-                                    <span className="font-terminal text-xs font-semibold" style={{ color: pnlColor(pnl) }}>
+                                    <span className="tabular-nums text-xs font-semibold" style={{ color: pnlColor(pnl) }}>
                                       {fmtPnl(pnl, locale)}
                                     </span>
                                   )}
@@ -655,7 +655,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
 
       <Dialog open={viewer !== null} onOpenChange={(open) => { if (!open) setViewer(null); }}>
         <DialogContent className="max-w-5xl border-[var(--border-subtle)] bg-[var(--bg-card)] p-4">
-          <DialogTitle className="font-terminal text-sm text-[var(--text-primary)]">{viewer?.title}</DialogTitle>
+          <DialogTitle className="tabular-nums text-sm text-[var(--text-primary)]">{viewer?.title}</DialogTitle>
           <DialogDescription className="sr-only">{j.viewChart}</DialogDescription>
           {viewer && (
             <>

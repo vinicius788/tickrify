@@ -80,7 +80,7 @@ export function MarketResultCard(props: {
             <p className="mt-1 text-sm text-[var(--text-secondary)]">{m.pending.replace('{date}', date)}</p>
           </div>
         </div>
-        <p className="mt-3 text-xs text-[var(--text-muted)]">{m.fine}</p>
+        <p className="mt-3 text-xs text-[var(--text-tertiary)]">{m.fine}</p>
       </section>
     );
   }
@@ -111,7 +111,7 @@ export function MarketResultCard(props: {
           <p className="mt-1 text-sm text-[var(--text-primary)]">{desc}</p>
         </div>
       </div>
-      <p className="mt-3 text-xs text-[var(--text-muted)]">{m.fine}</p>
+      <p className="mt-3 text-xs text-[var(--text-tertiary)]">{m.fine}</p>
     </section>
   );
 }
@@ -173,7 +173,7 @@ export function TrackRecordCard() {
     <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4" data-testid="track-record">
       <div className="flex items-baseline justify-between gap-3">
         <p className="tk-stat-label">{r.title}</p>
-        <p className="font-terminal text-[12px] text-[var(--text-secondary)]">
+        <p className="tabular-nums text-[12px] text-[var(--text-secondary)]">
           <span className="font-semibold text-[var(--text-primary)]">{data.plans}</span> <span>{r.plans}</span>
         </p>
       </div>
@@ -181,7 +181,7 @@ export function TrackRecordCard() {
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
         {rows.map(([label, value, color]) => (
           <div key={label} className="rounded-lg bg-[var(--bg-base)] px-3 py-2">
-            <p className={`font-terminal text-lg font-semibold ${color}`}>{value}</p>
+            <p className={`tabular-nums text-lg font-semibold ${color}`}>{value}</p>
             <p className="text-xs text-[var(--text-secondary)]">{label}</p>
           </div>
         ))}

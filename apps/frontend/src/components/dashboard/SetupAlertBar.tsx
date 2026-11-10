@@ -272,7 +272,7 @@ const SetupAlertBar = ({ analysisId, recommendation, base, readHasLevels = false
           onKeyDown={(event) => {
             if (event.key === 'Enter') onSubmit();
           }}
-          className="w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2.5 font-terminal text-base text-[var(--text-primary)] outline-none focus:border-[var(--border-accent)] sm:max-w-[220px]"
+          className="w-full rounded-xl border border-[var(--border-default)] bg-[var(--bg-base)] px-3 py-2.5 tabular-nums text-base text-[var(--text-primary)] outline-none focus:border-[var(--border-accent)] sm:max-w-[220px]"
         />
         <button
           type="button"
@@ -289,7 +289,7 @@ const SetupAlertBar = ({ analysisId, recommendation, base, readHasLevels = false
           <p className="tk-stat-label">{a.activeTitle}</p>
           <ul className="mt-2 flex flex-col gap-1.5">
             {activeAlerts.map((alert) => (
-              <li key={alert.id} className="flex items-center justify-between gap-2 font-terminal text-xs text-[var(--text-primary)]">
+              <li key={alert.id} className="flex items-center justify-between gap-2 tabular-nums text-xs text-[var(--text-primary)]">
                 <span>{`${labelText[alert.label]} ${formatAlertLevel(alert.level, locale)} · ${alert.side === 'above' ? a.rises : a.falls}`}</span>
                 <button
                   type="button"

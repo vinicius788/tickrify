@@ -2,6 +2,8 @@ import { Instagram } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import lockup from '@/assets/tickrify-lockup.svg';
+import { DiscordIcon } from '@/components/ui/DiscordIcon';
+import { COMMUNITY_URL, trackCommunityClick } from '@/lib/analytics';
 
 const XBrandIcon = () => (
   <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor" className="h-[15px] w-[15px]">
@@ -40,6 +42,15 @@ const Footer = () => {
                 aria-label="Instagram"
               >
                 <Instagram className="h-4 w-4" />
+              </a>
+              <a
+                href={COMMUNITY_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={t.community.join}
+                onClick={() => trackCommunityClick('footer_public')}
+              >
+                <DiscordIcon />
               </a>
             </div>
           </div>
@@ -81,6 +92,11 @@ const Footer = () => {
               <li><a href="/blog/">{f.blog}</a></li>
               <li><a href="/#faq">{f.faq}</a></li>
               <li><a href="mailto:support@tickrify.com">{f.support}</a></li>
+              <li>
+                <a href={COMMUNITY_URL} target="_blank" rel="noopener noreferrer" onClick={() => trackCommunityClick('footer_public')}>
+                  {t.community.footerLink}
+                </a>
+              </li>
               <li><Link to="/affiliates">{t.interfaceExtras.affiliates}</Link></li>
             </ul>
           </div>
