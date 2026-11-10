@@ -27,7 +27,7 @@ import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
 import { WatchPlanCard, isWatchLevels, isWatchPlan, watchWindowOpen } from './WatchPlanCard';
 import { ReadModePanel, WherePriceIs, type ReadModeData } from './ReadModePanel';
-import { LevelMapCard } from './PendingLevels';
+import { LevelMapCard, WatchVerdict } from './PendingLevels';
 import { AnalysisShareButton } from './ShareCard';
 import type { ReadShareData } from '@/lib/share-card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -1179,11 +1179,18 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             <span className="whitespace-nowrap font-terminal">{timeframe}</span>
             <div
               data-testid="signal-state"
-              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold uppercase tracking-widest ${watchClosed && analysisData.watch ? WATCH_TONE_CLASSES[watchTone(analysisData.watch, now)] : signalToneClasses}`}
+              data-closed={watchClosed ? 'true' : undefined}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold uppercase tracking-widest ${watchClosed ? WATCH_TONE_CLASSES.neutral : signalToneClasses}`}
             >
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{watchLayout && !watchClosed ? (watchPlan?.direction === 'long' ? r.watch.chipBuy : r.watch.chipSell) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
+              <span>{watchClosed ? r.watch.chipClosed : watchLayout ? (watchPlan?.direction === 'long' ? r.watch.chipBuy : r.watch.chipSell) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
             </div>
+            {/* Janela encerrada: o selo fica cinza e o desfecho (o que o mercado fez) vem ao lado, pela regra unica. */}
+            {watchClosed && analysisData.watch ? (
+              <span key="closed-verdict" data-testid="closed-verdict" className="contents">
+                <WatchVerdict watch={analysisData.watch} tone={watchTone(analysisData.watch, now)} caption={false} />
+              </span>
+            ) : null}
             {strategyFit && (
               <span
                 title={r.strategyFitNote}

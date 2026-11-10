@@ -205,6 +205,8 @@ export interface AIAnalysisResponse {
   tradeNote?: TradeNote | null;
   /** WATCH nas listas: nivel, validade e o desfecho do rastreador; null fora do WATCH. */
   watch?: WatchSummary | null;
+  /** A analise anterior do mesmo setup era um WATCH: "From a watch on <data>" no My Trades. */
+  fromWatch?: { analysisId: string; createdAt: string } | null;
   /** Valor da operacao informado pelo trader no My Trades (moeda da conta dele). */
   pnlAmount?: number | null;
   pnlPercent?: number | null;

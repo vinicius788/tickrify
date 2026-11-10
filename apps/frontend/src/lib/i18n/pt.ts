@@ -395,6 +395,7 @@ export default {
     assetAnalysis: 'Análise de {asset}',
     myTrades: 'Meus Trades',
     journal: 'Diário',
+    watching: "Vigiando",
     // Rotulos curtos usados SO na barra de abas do celular. Os longos
     // truncam antes da palavra que identifica a aba, em 5 abas numa tela de 375px.
     newAnalysisShort: 'Analisar',
@@ -615,6 +616,7 @@ export default {
         price: 'Preço',
         chipBuy: 'Observar compra',
         chipSell: 'Observar venda',
+        chipClosed: "Watch encerrado",
         noEntryAt: 'Sem entrada em {price}.',
         waitPullback: 'Espere um recuo até {zone}.',
         waitRally: 'Espere uma alta até {zone}.',
@@ -759,6 +761,7 @@ export default {
 
   // ── Trades ────────────────────────────────────────────────────────────────────
   trades: {
+    fromWatch: "Veio de um Watch em {date}",
     favorite: 'Adicionar aos favoritos',
     loadMore: 'Carregar mais',
     loadingMore: 'Carregando...',
@@ -786,8 +789,6 @@ export default {
     winShort: 'V',
     lossShort: 'D',
     markResult: 'Como terminou?',
-    noTrade: 'Sem operação (aguardar)',
-    noTradeHint: 'Aguardar não é operação. Não há o que marcar.',
     clearResult: 'Limpar resultado',
     markOpen: 'Ainda aberta',
     noFill: 'Entrada não atingida',
@@ -1182,6 +1183,7 @@ export default {
     menuBadge: '{n} alertas de preço atingidos',
   },
   today: {
+    seeWatching: "Abrir Vigiando",
     title: 'Hoje',
     watching: 'Vigiando',
     openTrades: 'Operações abertas',
@@ -1195,11 +1197,21 @@ export default {
     title: 'Vigiando',
     note: 'O que o preço fez nos seus níveis de Watch. Informação de mercado, não são operações.',
     distance: 'a {pct} ({price})',
-    timeLeft: 'faltam {time}',
     alertWatching: 'Alerta: vigiando',
     alertTriggered: 'Alerta: disparou',
     alertCancelled: 'Alerta: cancelado',
     windowClosed: 'Janela encerrada',
+    subtitle: "Níveis que a IA está vigiando para você. Um Watch é o começo de um trade, não um trade.",
+    reachedTitle: "Preço chegou",
+    openTitle: "Vigiando agora",
+    closedTitle: "Encerrados",
+    empty: "Nada sendo vigiado agora. Quando uma análise disser Watch, o nível aparece aqui com um alerta.",
+    recheck: "Reanalisar agora",
+    validUntil: "Vale até {time}",
+    lineOne: "1 setup sendo vigiado",
+    line: "{n} setups sendo vigiados",
+    journeyLabel: "Jornada",
+    journey: { watching: "Vigiando", reached: "Preço chegou", rechecked: "Reanalisado", entered: "Entrou", skipped: "Pulou", invalidated: "Invalidado", expired: "Expirou" },
   },
   pending: {
     planIf: "Plano se o preço chegar a {level}: {side} em {level}, stop {stop}, alvo {target} ({r}R).",
@@ -1251,6 +1263,7 @@ export default {
     descJournal: 'O diário organiza cada análise e resultado por dia. Ele volta a abrir assim que você assinar.',
     descHistory: 'Esta análise é mais antiga que as suas 3 últimas. Assine para abrir o histórico completo de novo.',
     descSetups: 'Nenhuma análise deste setup está entre as suas 3 últimas. Assine para abrir todas as versões de novo.',
+    descWatching: "Seus níveis vigiados e o que o preço fez neles voltam assim que você assinar.",
     offerNote: '{code} dá {pct}% de desconto no primeiro mês do plano mensal, aplicado automaticamente. Depois $29/mês, cancele quando quiser.',
     allPlans: 'Todos os planos, incluindo o anual de $290/ano',
     opening: 'Abrindo o checkout seguro…',

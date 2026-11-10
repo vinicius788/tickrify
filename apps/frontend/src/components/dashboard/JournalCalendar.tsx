@@ -24,8 +24,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { entrySide, getRecommendationMeta, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import { VERDICT_CFG, isTradeCall, verdictFromOutcome, type Verdict } from '@/lib/verdict';
 import { buildMonthGrid, computeAiComparison, computeMonthStats, type AiComparison, dayKey, monthRange, summarizeByDay, weekStartFor, type GroupRow, type MonthStats } from '@/lib/journal';
-import { WatchPending, WatchingSection } from './PendingLevels';
-import { watchDayTint, watchTone, WATCH_TONE_CLASSES, WATCH_TONE_DOT, type WatchTone } from '@/lib/setups';
+import { WatchingLink } from './WatchingPage';
 
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
@@ -262,7 +261,8 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
     refetchOnWindowFocus: false,
   });
 
-  const items = useMemo(() => query.data?.items ?? [], [query.data]);
+  // So operacoes (10/11/2026): WATCH e NO_TRADE moram na aba Watching.
+  const items = useMemo(() => (query.data?.items ?? []).filter((a) => isTradeCall(a.recommendation, a.signalState)), [query.data]);
   // O Diario so le: o resultado e o do servidor (lib/verdict.ts).
   const verdictOf = (a: AIAnalysisResponse): Verdict => sideOf(a) ? verdictFromOutcome(a.outcome) : null;
   const pnlOf = (a: AIAnalysisResponse): number | null => {
@@ -295,12 +295,9 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
   const decided = totals.wins + totals.losses;
   const todayKey = dayKey(now);
   const selectedDay = selected ? days.get(selected) : undefined;
-  // Aguardar sem resultado mostra "sem operacao", nao "sem resultado": nao ha o
-  // que registrar, mesma regra do My Trades (isTradeCall em lib/verdict.ts).
-  const verdictLabel = (v: Verdict, recommendation: unknown): string =>
+  const verdictLabel = (v: Verdict): string =>
     v === 'TP1' ? tr.tp1Hit : v === 'TP2' ? tr.tp2Hit : v === 'SL' ? tr.slHit : v === 'OPEN' ? tr.open
-      : v === 'NO_FILL' ? tr.noFill
-      : isTradeCall(recommendation) ? j.noResult : tr.noTrade;
+      : v === 'NO_FILL' ? tr.noFill : j.noResult;
 
   const navBtn =
     'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-subtle)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)] disabled:pointer-events-none disabled:opacity-30';
@@ -345,7 +342,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
       </CardHeader>
 
       <CardContent className="p-0">
-        <WatchingSection surface="journal" enabled={Boolean(user)} />
+        {user ? <WatchingLink /> : null}
         {/* ── Resumo do mes ─────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-px border-y border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-4">
           <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
@@ -407,11 +404,9 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                 const isToday = key === todayKey;
                 const isSelected = key === selected;
                 const isFuture = date.getTime() > now.getTime() && !isToday;
-                // WATCH e o que o mercado fez: nunca soma no P&L do dia, que continua mandando no fundo.
-                const watchTones: WatchTone[] = day ? day.items.flatMap((a) => (a.watch && verdictOf(a) === null ? [watchTone(a.watch, now.getTime())] : [])) : [];
                 const tint = day?.pnl
                   ? day.pnl > 0 ? 'var(--signal-buy-bg)' : 'var(--signal-sell-bg)'
-                  : watchDayTint(watchTones) ?? (day ? 'var(--bg-overlay)' : 'transparent');
+                  : day ? 'var(--bg-overlay)' : 'transparent';
                 return (
                   <button
                     key={key}
@@ -438,13 +433,6 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                     </span>
                     {day && (
                       <span className="mt-auto flex flex-col gap-0.5">
-                        {watchTones.length > 0 && (
-                          <span key="watch" data-testid="day-watch" className="flex gap-1">
-                            {[...new Set(watchTones)].map((tone) => (
-                              <span key={tone} data-tone={tone} className={`h-1.5 w-1.5 rounded-full ${WATCH_TONE_DOT[tone]}`} />
-                            ))}
-                          </span>
-                        )}
                         {day.pnl !== null && (
                           <span
                             className="truncate font-terminal text-[10px] font-semibold sm:text-sm"
@@ -528,9 +516,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                             const title = `${symbol}${timeframe ? ` · ${timeframe}` : ''}`;
                             const imageUrl = typeof a.imageUrl === 'string' && a.imageUrl.trim() ? a.imageUrl : null;
                             const broken = brokenImages[a.id] === true;
-                            const signalClass = state === 'WATCH' && a.watch
-                              ? WATCH_TONE_CLASSES[watchTone(a.watch, now.getTime())]
-                              : stateTone === 'buy'
+                            const signalClass = stateTone === 'buy'
                               ? 'bg-[var(--signal-buy-bg)] border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
                               : stateTone === 'sell'
                                 ? 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
@@ -596,7 +582,6 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                   {a.tradeNote?.note && (
                                     <span className="line-clamp-2 text-xs text-[var(--text-secondary)]">{a.tradeNote.note}</span>
                                   )}
-                                  {a.watch && verdict === null && <WatchPending analysisId={a.id} watch={a.watch} surface="journal" symbol={a.symbol} />}
                                   {sideOf(a) && (
                                     <button
                                       type="button"
@@ -609,14 +594,14 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                   )}
                                 </div>
                                 <div className="flex shrink-0 flex-col items-end gap-1">
-                                  {a.watch && verdict === null ? null : <span
+                                  <span
                                     className="rounded px-2 py-0.5 font-terminal text-[10px] font-semibold"
                                     style={vcfg
                                       ? { background: vcfg.bg, border: `1px solid ${vcfg.border}`, color: vcfg.text }
                                       : { border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}
                                   >
-                                    {verdictLabel(verdict, a.recommendation)}
-                                  </span>}
+                                    {verdictLabel(verdict)}
+                                  </span>
                                   {pnl !== null && (
                                     <span className="font-terminal text-xs font-semibold" style={{ color: pnlColor(pnl) }}>
                                       {fmtPnl(pnl, locale)}

@@ -5,8 +5,9 @@ import { useUser } from '@clerk/clerk-react';
 import { Calculator, Check, ExternalLink, Filter, ImageOff, Maximize2, Star, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { WatchPending, WatchingSection } from './PendingLevels';
-import { watchTone, WATCH_TONE_CLASSES } from '@/lib/setups';
+import { Link } from 'react-router-dom';
+import { WatchingLink } from './WatchingPage';
+import { formatSetupDay } from '@/lib/setups';
 import { entrySide, getScenarioMeta, resolveSignalState, signalStateLabel, signalStateTone, type SignalStateCanonical } from '@/lib/trading-ui';
 import { useAnalyses } from '@/hooks/useAnalyses';
 import { asRecord } from '@/lib/utils';
@@ -230,9 +231,8 @@ const DEMO: AIAnalysisResponse[] = [
 // ── Component ────────────────────────────────────────────────────────────────
 // onStartAnalysis: o DashboardPage passa o resetNewAnalysisView (mesma navegação
 // por `activeView` usada no resto do painel — sem rota nova).
-/** 'favorites' mostra so as analises com estrela (antes era a aba Watchlist); `state:` filtra pelo estado do copiloto. */
-type TradesFilter = 'all' | 'pending' | 'favorites' | `state:${SignalStateCanonical}` | Verdict;
-const STATE_FILTERS: readonly SignalStateCanonical[] = ['ENTER_NOW', 'ARMED', 'WATCH', 'NO_TRADE'];
+/** 'favorites' mostra so as analises com estrela (antes era a aba Watchlist). */
+type TradesFilter = 'all' | 'pending' | 'favorites' | Verdict;
 
 const stateOf = (a: AIAnalysisResponse): SignalStateCanonical => {
   const full = asRecord(a.fullResponse);
@@ -280,7 +280,8 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
     return a.pnlAmount !== null && a.pnlAmount !== undefined && Number.isFinite(n) ? n : null;
   };
 
-  const rows = isDemo ? DEMO : analyses.filter((a) => a.status === 'completed');
+  // So operacoes (10/11/2026): WATCH e NO_TRADE moram na aba Watching, nunca entre os trades.
+  const rows = (isDemo ? DEMO : analyses).filter((a) => a.status === 'completed' && isTradeCall(a.recommendation, stateOf(a)));
 
   // Verdict efetivo — mesma função usada pelo Dashboard (lib/verdict.ts).
   const getVerdict = (a: AIAnalysisResponse): Verdict => isTradeCall(a.recommendation, stateOf(a)) ? resolveVerdict(a, verdicts) : null;
@@ -304,9 +305,8 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
       const { symbol } = extractLevels(a);
       if (filterSymbol && symbol !== filterSymbol) return false;
       if (filterVerdict === 'favorites') return getFavorite(a);
-      if (typeof filterVerdict === 'string' && filterVerdict.startsWith('state:')) return `state:${stateOf(a)}` === filterVerdict;
       const v = getVerdict(a);
-      if (filterVerdict === 'pending' && (v !== null || !isTradeCall(a.recommendation, stateOf(a)))) return false;
+      if (filterVerdict === 'pending' && v !== null) return false;
       if (filterVerdict !== 'all' && filterVerdict !== 'pending' && v !== filterVerdict) return false;
       return true;
     });
@@ -435,16 +435,13 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
               <option value="SL">{tr.slHit}</option>
               <option value="OPEN">{tr.open}</option>
               <option value="NO_FILL">{tr.noFill}</option>
-              {STATE_FILTERS.map((st) => (
-                <option key={st} value={`state:${st}`}>{t.analysis.states[st]}</option>
-              ))}
             </select>
           </div>
         </div>
       </CardHeader>
 
       <CardContent className="p-0">
-        <WatchingSection surface="trades" enabled={!isDemo} />
+        {!isDemo && <WatchingLink />}
         {/* ── Resumo de performance ─────────────────────────────── */}
         {rows.length > 0 && (
           <div className="grid grid-cols-2 gap-px border-y border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-5">
@@ -511,10 +508,6 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
               const stateTone = signalStateTone(state, a.recommendation);
               const verdict = getVerdict(a);
               const closed = isClosed(verdict);
-              // Aguardar sem resultado marcado: nada a marcar. Se um WAIT ja tiver
-              // resultado (marcado antes desta regra), os botoes seguem visiveis
-              // para a pessoa poder limpar.
-              const noTrade = !isTradeCall(a.recommendation, stateOf(a)) && verdict === null;
               const hasLevels = entry !== null && stopLoss !== null && entry !== stopLoss;
               const showCalc = hasLevels && calcOpen[a.id] === true;
               const imageUrl = typeof a.imageUrl === 'string' && a.imageUrl.trim() ? a.imageUrl : null;
@@ -522,9 +515,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
               const chartTitle = `${symbol}${timeframe && timeframe !== '-' ? ` · ${timeframe}` : ''}`;
               const toggleCalc = () => setCalcOpen((prev) => ({ ...prev, [a.id]: !prev[a.id] }));
 
-              const signalBg = state === 'WATCH' && a.watch
-                ? WATCH_TONE_CLASSES[watchTone(a.watch)]
-                : stateTone === 'buy'
+              const signalBg = stateTone === 'buy'
                 ? 'bg-[var(--signal-buy-bg)] border-[var(--signal-buy-border)] text-[var(--signal-buy)]'
                 : stateTone === 'sell'
                   ? 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]'
@@ -629,6 +620,16 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                         <span className="font-terminal text-[10px] text-[var(--text-secondary)] opacity-60">
                           {new Date(a.createdAt).toLocaleString(dateLocale, { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}
                         </span>
+                        {a.fromWatch ? (
+                          <Link
+                            key="from-watch"
+                            data-testid="from-watch"
+                            to={`/dashboard/analysis/${encodeURIComponent(a.fromWatch.analysisId)}`}
+                            className="text-[11px] text-[var(--text-secondary)] underline underline-offset-2 transition-colors hover:text-[var(--text-primary)]"
+                          >
+                            {tr.fromWatch.replace('{date}', formatSetupDay(a.fromWatch.createdAt, dateLocale))}
+                          </Link>
+                        ) : null}
                         {hasLevels && (
                           <button
                             type="button"
@@ -644,77 +645,64 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                     </div>
 
                     {/* DIREITA — resultado: TP1 / TP2 / Stop */}
-                    {noTrade && a.watch && !isDemo ? (
-                      <div className="flex-shrink-0 sm:max-w-[260px]">
-                        <WatchPending analysisId={a.id} watch={a.watch} surface="trades" alignEnd symbol={a.symbol} />
-                      </div>
-                    ) : noTrade ? (
-                      <div className="flex flex-shrink-0 flex-col gap-1 sm:items-end">
-                        <span className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-3 py-1.5 font-terminal text-xs text-[var(--text-secondary)]">
-                          {tr.noTrade}
-                        </span>
-                        <span className="text-[11px] text-[var(--text-secondary)] opacity-70 sm:text-right">{tr.noTradeHint}</span>
-                      </div>
-                    ) : (
-                      <div className="flex flex-shrink-0 flex-col gap-1.5 sm:items-end">
-                        <span className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.markResult}</span>
-                        <div className="flex gap-1.5">
-                          {resultButtons.map((b) => {
-                            const active = verdict === b.value;
-                            const c = VERDICT_CFG[b.value];
-                            return (
-                              <button
-                                key={b.value}
-                                type="button"
-                                data-active={active}
-                                aria-pressed={active}
-                                aria-label={b.label}
-                                title={b.label}
-                                onClick={() => handleVerdict(a, active ? null : b.value)}
-                                className="tk-verdict-btn inline-flex flex-1 items-center justify-center gap-1 rounded-lg border px-3 py-1.5 font-terminal text-xs font-semibold sm:flex-none"
-                                style={
-                                  active
-                                    ? { background: c.bg, borderColor: c.border, color: c.text, boxShadow: `0 0 16px ${c.border}` }
-                                    : { background: 'var(--bg-overlay)', borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }
-                                }
-                              >
-                                {active && <Check className="h-3 w-3" />}
-                                {b.short}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        <div className="flex gap-3 text-[11px]">
-                          <button
-                            type="button"
-                            onClick={() => handleVerdict(a, verdict === 'OPEN' ? null : 'OPEN')}
-                            aria-pressed={verdict === 'OPEN'}
-                            className="transition-colors hover:text-[var(--text-primary)]"
-                            style={{ color: verdict === 'OPEN' ? VERDICT_CFG.OPEN.text : 'var(--text-secondary)' }}
-                          >
-                            {verdict === 'OPEN' ? `● ${tr.open}` : tr.markOpen}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleVerdict(a, verdict === 'NO_FILL' ? null : 'NO_FILL')}
-                            aria-pressed={verdict === 'NO_FILL'}
-                            className="transition-colors hover:text-[var(--text-primary)]"
-                            style={{ color: verdict === 'NO_FILL' ? VERDICT_CFG.NO_FILL.text : 'var(--text-secondary)' }}
-                          >
-                            {verdict === 'NO_FILL' ? `● ${tr.noFill}` : tr.noFill}
-                          </button>
-                          {verdict !== null && (
+                    <div className="flex flex-shrink-0 flex-col gap-1.5 sm:items-end">
+                      <span className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.markResult}</span>
+                      <div className="flex gap-1.5">
+                        {resultButtons.map((b) => {
+                          const active = verdict === b.value;
+                          const c = VERDICT_CFG[b.value];
+                          return (
                             <button
+                              key={b.value}
                               type="button"
-                              onClick={() => handleVerdict(a, null)}
-                              className="text-[var(--text-secondary)] opacity-70 transition-opacity hover:opacity-100"
+                              data-active={active}
+                              aria-pressed={active}
+                              aria-label={b.label}
+                              title={b.label}
+                              onClick={() => handleVerdict(a, active ? null : b.value)}
+                              className="tk-verdict-btn inline-flex flex-1 items-center justify-center gap-1 rounded-lg border px-3 py-1.5 font-terminal text-xs font-semibold sm:flex-none"
+                              style={
+                                active
+                                  ? { background: c.bg, borderColor: c.border, color: c.text, boxShadow: `0 0 16px ${c.border}` }
+                                  : { background: 'var(--bg-overlay)', borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }
+                              }
                             >
-                              {tr.clearResult}
+                              {active && <Check className="h-3 w-3" />}
+                              {b.short}
                             </button>
-                          )}
-                        </div>
+                          );
+                        })}
                       </div>
-                    )}
+                      <div className="flex gap-3 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => handleVerdict(a, verdict === 'OPEN' ? null : 'OPEN')}
+                          aria-pressed={verdict === 'OPEN'}
+                          className="transition-colors hover:text-[var(--text-primary)]"
+                          style={{ color: verdict === 'OPEN' ? VERDICT_CFG.OPEN.text : 'var(--text-secondary)' }}
+                        >
+                          {verdict === 'OPEN' ? `● ${tr.open}` : tr.markOpen}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleVerdict(a, verdict === 'NO_FILL' ? null : 'NO_FILL')}
+                          aria-pressed={verdict === 'NO_FILL'}
+                          className="transition-colors hover:text-[var(--text-primary)]"
+                          style={{ color: verdict === 'NO_FILL' ? VERDICT_CFG.NO_FILL.text : 'var(--text-secondary)' }}
+                        >
+                          {verdict === 'NO_FILL' ? `● ${tr.noFill}` : tr.noFill}
+                        </button>
+                        {verdict !== null && (
+                          <button
+                            type="button"
+                            onClick={() => handleVerdict(a, null)}
+                            className="text-[var(--text-secondary)] opacity-70 transition-opacity hover:opacity-100"
+                          >
+                            {tr.clearResult}
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Painel: valor da operacao + calculadora de posicao */}

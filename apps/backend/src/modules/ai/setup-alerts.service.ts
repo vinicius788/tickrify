@@ -18,7 +18,7 @@ import { TwelveDataUnavailableError, fxMarketClosed, monitorFxIntervals, twelveD
 import { extractShadowPlan } from '../../../worker/outcome.sweeper';
 import { UNSUBSCRIBE_AUDIT_ACTION } from '../mail/lifecycle-email';
 import { SetupsService, findSetupOfAnalysis, followInTransaction, lockSetups, readPlan } from './setups.service';
-import { aiLevelExpiresAt, storedAiLevel, loadWatchContexts, storedWatchPlan, watchSummaryOf, type WatchSummary } from './watch-pending';
+import { aiLevelExpiresAt, storedAiLevel, loadWatchContexts, loadWatchNext, storedWatchPlan, watchJourneyOf, watchSummaryOf, type WatchJourney, type WatchSummary } from './watch-pending';
 
 /**
  * Alertas de nivel dos setups acompanhados (27/10/2026, fase 1 da sessao diaria).
@@ -81,7 +81,7 @@ export const ALERT_RULES = {
   watchAutoPendingMs: 15 * 1000,
 } as const;
 
-/** Secao "Watching" do My Trades e do Diario. */
+/** Aba Watching do painel. */
 export const WATCHING_RULES = {
   lookbackMs: 21 * 24 * HOUR,
   /** WATCH encerrado continua na secao por este tempo. */
@@ -407,6 +407,7 @@ export type WatchingItem = {
   checkIntervalMs: number | null;
   marketClosed: boolean;
   alert: { id: string; setupId: string; status: AlertStatus; triggeredAt: Date | null; seenAt: Date | null } | null;
+  journey: WatchJourney;
 };
 
 export type WatchAlertOutcome =
@@ -694,7 +695,7 @@ export class SetupAlertsService implements OnModuleInit {
   }
 
   /**
-   * Secao "Watching" do My Trades e do Diario: os WATCH valendo e os encerrados
+   * Aba Watching do painel: os WATCH valendo e os encerrados
    * ha ate 7 dias, com o alerta do nivel e o ultimo preco checado. O que o preco
    * fez vem so do rastreador (ou do proprio alerta, antes da linha existir).
    * Informacao de mercado: nada aqui entra em acerto, P&L ou estatistica.
@@ -733,11 +734,14 @@ export class SetupAlertsService implements OnModuleInit {
           ).map((c) => [c.symbol, c])
         : [],
     );
-    const alerts = await this.prisma.$queryRaw<WatchingAlertRow[]>`
-      SELECT "id", "setupId", "analysisId", "level", "status", "triggeredAt", "seenAt" FROM "tickrify"."SetupAlert"
-      WHERE "userId" = ${userId} AND "analysisId" IN (${Prisma.join(entries.map((e) => e.row.id))})
-      ORDER BY "createdAt" DESC
-    `;
+    const [alerts, nextById] = await Promise.all([
+      this.prisma.$queryRaw<WatchingAlertRow[]>`
+        SELECT "id", "setupId", "analysisId", "level", "status", "triggeredAt", "seenAt" FROM "tickrify"."SetupAlert"
+        WHERE "userId" = ${userId} AND "analysisId" IN (${Prisma.join(entries.map((e) => e.row.id))})
+        ORDER BY "createdAt" DESC
+      `,
+      loadWatchNext(this.prisma, userId, entries.map((e) => e.row.id)),
+    ]);
 
     const items = entries.map(({ row, watch, symbol, timeframe, priceSymbol }): WatchingItem => {
       const check = priceSymbol ? checks.get(priceSymbol) : undefined;
@@ -756,6 +760,7 @@ export class SetupAlertsService implements OnModuleInit {
         checkedAt: fresh ? check?.checkedAt ?? null : null,
         ...cadence,
         alert: alert ? { id: alert.id, setupId: alert.setupId, status: alert.status, triggeredAt: alert.triggeredAt, seenAt: alert.seenAt } : null,
+        journey: watchJourneyOf(watch, onLevel.some((a) => a.status === 'triggered'), nextById.get(row.id) ?? null),
       };
     });
     const open = (item: WatchingItem) => item.watch.outcome === 'pending' && item.watch.expiresAt !== null && Date.parse(item.watch.expiresAt) > now.getTime();
