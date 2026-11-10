@@ -276,6 +276,8 @@ describe('controle de acesso das rotas', () => {
         'stripe.controller.ts::getFounderOffer',
         'stripe.controller.ts::getOffer',
         'stripe.controller.ts::handleWebhook',
+        // Chamado pelo Telegram; so entra com o segredo do webhook no cabecalho.
+        'telegram.controller.ts::webhook',
       ].sort(),
     );
   });

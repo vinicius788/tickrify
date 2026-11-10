@@ -464,7 +464,9 @@ export type FunnelEvent =
   | 'demo_limit_hit'
   | 'signup_from_demo'
   // Link da comunidade no Discord. `location`: footer_public | app.
-  | 'community_clicked';
+  | 'community_clicked'
+  | 'telegram_connect_clicked'
+  | 'telegram_disconnect_clicked';
 
 // ─── Fila de pré-consentimento ────────────────────────────────────────────────
 // O banner de cookies só é respondido DEPOIS que a rota já montou, e a rota que

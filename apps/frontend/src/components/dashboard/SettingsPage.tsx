@@ -6,6 +6,7 @@ import { CreditCard, ExternalLink, Moon, RotateCcw, Sun } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { getSubscription, openBillingPortal, reactivateSubscription, type SubscriptionSummary } from "@/lib/stripe";
 import { saveThemeToServer, useTheme, type Theme } from "@/lib/theme";
+import TelegramCard from "./TelegramCard";
 
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
@@ -276,6 +277,8 @@ const SettingsPage = ({ eyebrow }: { eyebrow: ReactNode }) => {
           </p>
         ) : null}
       </section>
+
+      <TelegramCard getToken={getToken} className={card} />
 
       <section className={card} aria-labelledby="settings-appearance">
         <h2 id="settings-appearance" className="tk-stat-label mb-1">

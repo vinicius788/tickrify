@@ -58,6 +58,7 @@ import { loadPriorPlan, type PriorPlan } from '../src/modules/ai/setup-continuat
 import { startTwelveDataReport } from '../src/modules/market/twelve-data';
 import { registerCandleStore } from '../src/modules/market/candle-store';
 import { SETUP_ALERT_EMAIL_FLAG, runSetupAlertEmailSweep } from '../src/modules/mail/setup-alert-email';
+import { TELEGRAM_ALERT_FLAG, runSetupAlertTelegramSweep, telegramToken } from '../src/modules/telegram/telegram-alert';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from '../src/modules/ai/analysis-data-coverage';
 import { CHAT_EMAIL_FLAG, CHAT_SWEEP_INTERVAL_MS, runChatReplySweep } from '../src/modules/support/chat-email';
 import { recordProviderComparison, type ProviderComparison } from '../src/modules/ai/vision-model';
@@ -1637,15 +1638,28 @@ const alertPauseCache = new Map<string, { paused: boolean; at: number }>();
 const alertTick = createAlertTick({
   log: alertLog,
   monitor: () => runAlertMonitor({ prisma, pauseCache: alertPauseCache, log: alertLog }),
-  emails: () =>
-    runSetupAlertEmailSweep({
+  // O Telegram vai primeiro: quem recebeu por la nao recebe o e-mail do mesmo alerta.
+  emails: async () => {
+    const telegram = await runSetupAlertTelegramSweep({
+      prisma,
+      token: telegramToken(),
+      isEnabled: () => flagBool(TELEGRAM_ALERT_FLAG),
+      appUrl: publicUrl(process.env.FRONTEND_URL, 'https://tickrify.com'),
+      log: alertLog,
+    }).catch((err) => {
+      alertLog('warn', `[telegram] Varredura falhou: ${(err as Error)?.message ?? err}`);
+      return null;
+    });
+    if (telegram && telegram.sent > 0) alertLog('log', `[telegram] Volta: ${JSON.stringify(telegram)}`);
+    return runSetupAlertEmailSweep({
       prisma,
       mail: workerMail,
       isEnabled: () => flagBool(SETUP_ALERT_EMAIL_FLAG),
       appUrl: publicUrl(process.env.FRONTEND_URL, 'https://tickrify.com'),
       apiBaseUrl: publicUrl(process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL, 'https://tickrify.onrender.com'),
       log: alertLog,
-    }),
+    });
+  },
 });
 setTimeout(() => {
   void alertTick();

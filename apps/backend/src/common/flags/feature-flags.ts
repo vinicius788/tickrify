@@ -175,6 +175,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'TELEGRAM_SETUP_ALERTS',
+    type: 'boolean',
+    label: 'Alerta de nivel pelo Telegram',
+    description:
+      'Quando o preco toca o nivel vigiado, quem ligou a conta ao bot recebe a mensagem no Telegram na mesma volta, e o e-mail daquele alerta nao sai (poupa a cota da Resend). No maximo 20 mensagens por pessoa em 24h. Exige TELEGRAM_BOT_TOKEN no Render. DESLIGADO: so loga quem receberia ([telegram] dry-run).',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
     key: 'EMAIL_SETUP_ALERTS',
     type: 'boolean',
     label: 'E-mail de alerta de nivel do setup',
