@@ -112,7 +112,7 @@ integration('demo: disposable PostgreSQL admission, recovery and version coexist
     const f = fixture();
     const requests = Array.from({ length: 16 }, () => outcome(f.service.analyze(params())));
     await waitFor(() => f.ai.analyzeImage.mock.calls.length === 1);
-    expect(await f.service.getFingerprintStatus('synthetic-device')).toEqual({ used: false, result: null });
+    expect(await f.service.getFingerprintStatus('synthetic-device')).toEqual({ used: false, pending: true, result: null });
     expect(await count()).toBe(1);
     f.release();
     const results = await Promise.all(requests);
@@ -334,7 +334,7 @@ integration('demo: disposable PostgreSQL admission, recovery and version coexist
 
   it('negative rollback evidence: the old reader reports pending as already consumed', async () => {
     await seed('synthetic-device', undefined, null);
-    expect(await fixture().service.getFingerprintStatus('synthetic-device')).toEqual({ used: false, result: null });
+    expect(await fixture().service.getFingerprintStatus('synthetic-device')).toEqual({ used: false, pending: false, result: null });
     expect(await fixture({ old: true }).service.getFingerprintStatus('synthetic-device')).toEqual({ used: true, result: null });
   });
   const pausedCode = (error: any) => error?.getResponse?.()?.code;
@@ -419,6 +419,6 @@ integration('demo: disposable PostgreSQL admission, recovery and version coexist
     await Promise.all([(f.service as any).releaseStale(), (f.service as any).releaseStale()]);
     const ids = (await prisma.$queryRawUnsafe<Array<{ id: string }>>('SELECT id FROM tickrify."DemoUsage"')).map(r => r.id).sort();
     expect(ids).toEqual([fresh, done].sort());
-    expect(await f.service.getFingerprintStatus('stuck-device')).toEqual({ used: false, result: null });
+    expect(await f.service.getFingerprintStatus('stuck-device')).toEqual({ used: false, pending: false, result: null });
   });
 });
