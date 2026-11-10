@@ -33,6 +33,7 @@ import {
 } from '../src/common/utils/signal-decision';
 import type { EntryLevels, WatchPlan } from '../src/common/utils/plan-engine';
 import type { AiLevel, LevelMap } from '../src/common/utils/level-map';
+import type { RejectedPlan } from '../src/common/utils/signal-decision';
 import { BROKEN_PLAN_RULES, validateTradePlan } from '../src/common/utils/trade-plan-validator';
 import { buildEngineRecord, type AnalysisIntakeTimings } from '../src/modules/ai/engine-contract';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
@@ -181,6 +182,8 @@ interface WorkerAnalysisResult {
   watchLevels: EntryLevels | null;
   levelMap: LevelMap | null;
   aiLevel?: AiLevel | null;
+  rejectedPlan?: RejectedPlan;
+  enterAtLevel?: boolean;
   validatorNotes: ValidatorNote[];
   analysis: WorkerAnalysisDetails;
 }
@@ -358,6 +361,8 @@ interface AdapterDecision {
   watchLevels: EntryLevels | null;
   levelMap: LevelMap | null;
   aiLevel?: AiLevel | null;
+  rejectedPlan?: RejectedPlan;
+  enterAtLevel?: boolean;
   validatorAction: ValidatorAction;
   /** Cada mudanca de estado do validador do adapter. */
   validatorNotes: ValidatorNote[];
@@ -386,6 +391,8 @@ function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
     watchLevels: (aiSource.watchLevels as EntryLevels | null) ?? null,
     levelMap: (aiSource.levelMap as LevelMap | null) ?? null,
     aiLevel: (aiSource.aiLevel as AiLevel | null) ?? null,
+    ...(aiSource.rejectedPlan ? { rejectedPlan: aiSource.rejectedPlan as RejectedPlan } : {}),
+    ...(aiSource.enterAtLevel === true ? { enterAtLevel: true } : {}),
     validatorAction: meta.validatorAction as ValidatorAction,
     validatorNotes: Array.isArray(aiSource.validatorNotes) ? (aiSource.validatorNotes as ValidatorNote[]) : [],
     validatorReasons: meta.validatorReasons as ValidatorReason[],
@@ -487,6 +494,7 @@ async function toWorkerAnalysisResult(
         location: own.location,
         watchLevels: own.watchLevels,
         levelMap: null,
+        ...(own.rejectedPlan ? { rejectedPlan: own.rejectedPlan } : {}),
         validatorAction: own.validatorAction,
         validatorNotes: own.validatorNotes,
         validatorReasons: validatorReasons(own.validatorNotes),
@@ -528,6 +536,8 @@ async function toWorkerAnalysisResult(
     watchLevels: decision.watchLevels,
     levelMap: decision.levelMap,
     aiLevel: decision.aiLevel ?? null,
+    ...(decision.rejectedPlan ? { rejectedPlan: decision.rejectedPlan } : {}),
+    ...(decision.enterAtLevel ? { enterAtLevel: true } : {}),
     validatorNotes: decision.validatorNotes,
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),
@@ -1012,7 +1022,9 @@ function validateTradingLogic(result: WorkerAnalysisResult): DisplayMessage[] {
       }
     }
 
-    if (typeof a.takeProfit2 !== 'number') {
+    if (a.takeProfit2 === null && result.enterAtLevel) {
+      // Com a chave ENGINE_ENTER_AT_LEVEL: o plano do motor pode vir sem segundo alvo.
+    } else if (typeof a.takeProfit2 !== 'number') {
       errors.push({ code: 'validation_numeric_target2', params: { side: "BUY" }, text: 'COMPRA: takeProfit2 deve ser numérico' });
     } else if (typeof a.takeProfit1 === 'number' && a.takeProfit2 <= a.takeProfit1) {
       errors.push(
@@ -1043,7 +1055,9 @@ function validateTradingLogic(result: WorkerAnalysisResult): DisplayMessage[] {
       }
     }
 
-    if (typeof a.takeProfit2 !== 'number') {
+    if (a.takeProfit2 === null && result.enterAtLevel) {
+      // Com a chave ENGINE_ENTER_AT_LEVEL: o plano do motor pode vir sem segundo alvo.
+    } else if (typeof a.takeProfit2 !== 'number') {
       errors.push({ code: 'validation_numeric_target2', params: { side: "SELL" }, text: 'VENDA: takeProfit2 deve ser numérico' });
     } else if (typeof a.takeProfit1 === 'number' && a.takeProfit2 >= a.takeProfit1) {
       errors.push(

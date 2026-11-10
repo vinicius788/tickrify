@@ -618,6 +618,7 @@ describe('AiService access enforcement', () => {
       const rejected = await run(injected, 'an_ai_level', { ...raw, signalState: 'WATCH', watchPlan, analysis: { ...raw.analysis, symbol: 'ABCUSDT' } });
       expect(rejected.completed.result).toMatchObject({ signalState: 'NO_TRADE', watchPlan: null, aiLevel: { price: 99 } });
       expect(rejected.delivered.fullResponse.aiLevel).toEqual(rejected.completed.result.aiLevel);
+      expect(rejected.completed.result.rejectedPlan).toMatchObject({ reason: expect.any(String), plan: { direction: expect.any(String) } });
     } finally {
       keys.forEach((key, i) => { if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i]; });
     }

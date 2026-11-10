@@ -2394,6 +2394,7 @@ export class AIAdapter {
         realData,
         planFailures,
         priceFixed: parsed.analysis?.priceMagnitudeFixed === true,
+        priorWatch: priorPlan ? { plan: priorPlan.plan, confirmed: continuation?.status === 'CONFIRMED' } : null,
       });
       const validationMs = Date.now() - tValidation;
       if (decision.validatorAction === 'downgraded' || decision.validatorAction === 'promoted') {
@@ -2428,6 +2429,8 @@ export class AIAdapter {
         aiLevel: aiLevelOf(parsed.watchPlan, decision),
         validatorNotes: decision.validatorNotes,
         ...(continuation ? { continuation } : {}),
+        ...(decision.rejectedPlan ? { rejectedPlan: decision.rejectedPlan } : {}),
+        ...(decision.enterAtLevel ? { enterAtLevel: true } : {}),
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);
       logObservation(observation, m => this.logger.log(m));

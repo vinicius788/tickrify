@@ -419,6 +419,92 @@ describe('decideSignal: news guard', () => {
   });
 });
 
+describe('chave ENGINE_ENTER_AT_LEVEL: reanalise com o preco na zona do WATCH', () => {
+  const FLAG = 'ENGINE_ENTER_AT_LEVEL';
+  const lateLong = { late: { long: true, short: false } };
+  const atZone = { ...watch, structureValidation: checks(5), currentPrice: 99.3, realData: real(99.3, lateLong), priorWatch: { plan, confirmed: true } };
+  const withFlag = async <T>(value: 'true' | 'false', run: () => Promise<T>): Promise<T> => {
+    const before = process.env[FLAG];
+    process.env[FLAG] = value;
+    try { return await run(); } finally { if (before === undefined) delete process.env[FLAG]; else process.env[FLAG] = before; }
+  };
+
+  it('desligada, o recuo ate a zona continua contando como atrasado (o que barra hoje)', async () => {
+    const r = await withFlag('false', () => decide(atZone));
+    expect(r.state).toBe('WATCH');
+    expect(r.enterAtLevel).toBe(false);
+    const fromModel = await withFlag('false', () => decide({ ...atZone, state: 'ENTER_NOW', recommendation: 'BUY' }));
+    expect(fromModel.state).toBe('WATCH');
+    expect(fromModel.validatorNotes).toEqual([{ from: 'ENTER_NOW', to: 'WATCH', reason: 'late_move' }]);
+  });
+
+  it('ligada, IA confirmou e preco na zona: ENTER_NOW com os niveis medidos do preco de agora', async () => {
+    const r = await withFlag('true', () => decide(atZone));
+    expect(r).toMatchObject({ state: 'ENTER_NOW', recommendation: 'BUY', enterAtLevel: true, validatorAction: 'promoted' });
+    expect(r.levels.entry).toBe(99.3);
+    expect(r.validatorNotes).toEqual([{ from: 'WATCH', to: 'ENTER_NOW', reason: 'market_entry_valid' }]);
+  });
+
+  it.each([
+    ['IA nao confirmou', { priorWatch: { plan, confirmed: false } }],
+    ['sem WATCH anterior', { priorWatch: null }],
+    ['direcao trocada', { priorWatch: { plan: { ...plan, direction: 'short' as const, zoneLow: 99, zoneHigh: 99.5, invalidation: 100, target1: 97, target2: null }, confirmed: true } }],
+    ['preco acima da zona', { currentPrice: 99.9, realData: real(99.9, lateLong) }],
+  ])('ligada, %s: o atrasado continua valendo', async (_name, patch) => {
+    const r = await withFlag('true', () => decide({ ...atZone, ...patch }));
+    expect(r.state).toBe('WATCH');
+    expect(r.enterAtLevel).toBe(false);
+  });
+
+  it.each([
+    ['C7 reprovado', { structureValidation: checks(5, 7) }, 'WATCH'],
+    ['C2 reprovado', { structureValidation: checks(5, 2) }, 'WATCH'],
+    ['PASS abaixo do minimo', { structureValidation: checks(1, 4, 5) }, 'WATCH'],
+    ['sem geometria', { watchPlan: { ...plan, target1: 99.8, target2: null } }, 'NO_TRADE'],
+  ])('ligada, nenhuma outra regra afrouxa: %s', async (_name, patch, state) => {
+    const r = await withFlag('true', () => decide({ ...atZone, ...patch }));
+    expect(r.state).toBe(state);
+    expect(r.enterAtLevel).toBe(false);
+  });
+
+  it('desligada = identico a hoje em toda a grade de cenarios', async () => {
+    for (const price of [98.7, 99, 99.3, 99.5, 99.9, 100.4]) {
+      for (const late of [true, false]) {
+        for (const state of ['WATCH', 'ENTER_NOW', 'ARMED', 'NO_TRADE'] as const) {
+          for (const confirmed of [true, false]) {
+            const input = { ...base, state, recommendation: state === 'WATCH' || state === 'NO_TRADE' ? 'WAIT' as const : 'BUY' as const, currentPrice: price, realData: real(price, { late: { long: late, short: late } }) };
+            const today = await withFlag('false', () => decide(input));
+            const prior = await withFlag('false', () => decide({ ...input, priorWatch: { plan, confirmed } }));
+            expect(prior).toEqual(today);
+            expect(prior.enterAtLevel).toBe(false);
+          }
+        }
+      }
+    }
+  });
+});
+
+describe('rejectedPlan: o plano do modelo que o codigo rebaixou para NO_TRADE', () => {
+  it('guarda o plano cru (antes do encaixe) e o motivo', async () => {
+    const r = await decide({ ...watch, realData: real(99.9, { swings: [] }) });
+    expect(r.state).toBe('NO_TRADE');
+    expect(r.watchPlan).toBeNull();
+    expect(r.rejectedPlan).toEqual({ modelState: 'WATCH', reason: 'invalidation_unsnapped', plan });
+  });
+
+  it('guarda o motivo do degrau que chegou ao NO_TRADE', async () => {
+    const r = await decide({ structureValidation: checks(3) });
+    expect(r.state).toBe('NO_TRADE');
+    expect(r.rejectedPlan).toEqual({ modelState: 'ENTER_NOW', reason: 'setup_failed', plan });
+  });
+
+  it('nao existe quando o NO_TRADE e do proprio modelo ou quando o plano sobrevive', async () => {
+    expect((await decide({ state: 'NO_TRADE', recommendation: 'WAIT' })).rejectedPlan).toBeNull();
+    expect((await decide()).rejectedPlan).toBeNull();
+    expect((await decide({ ...watch })).rejectedPlan).toBeNull();
+  });
+});
+
 describe('deriveSignalState: analises gravadas sem estado', () => {
   it.each([
     ['BUY', 'market', null, 'ENTER_NOW'],

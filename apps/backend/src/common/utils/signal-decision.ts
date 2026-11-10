@@ -46,6 +46,8 @@ import type { HtfTrend } from '../../modules/ai/analysis-data-coverage';
 // decidem por aqui (paridade).
 // ============================================================================
 
+export const ENTER_AT_LEVEL_FLAG = 'ENGINE_ENTER_AT_LEVEL';
+
 export type SignalState = 'NO_TRADE' | 'WATCH' | 'ARMED' | 'ENTER_NOW';
 export const SIGNAL_STATES: readonly SignalState[] = ['NO_TRADE', 'WATCH', 'ARMED', 'ENTER_NOW'];
 
@@ -134,6 +136,20 @@ export interface WatchReach {
   candles: number;
 }
 
+/** O WATCH anterior do setup, na reanalise (setup-continuation.ts). */
+export interface PriorWatchInput {
+  plan: WatchPlan;
+  /** A IA leu o plano anterior como CONFIRMED: preco na zona e gatilho presente. */
+  confirmed: boolean;
+}
+
+/** O plano que o modelo entregou e o codigo rebaixou para NO_TRADE. So medicao: nada na tela le. */
+export interface RejectedPlan {
+  modelState: SignalState;
+  reason: ValidatorReason;
+  plan: WatchPlan;
+}
+
 export interface SignalDecisionInput {
   /** Estado que o modelo escolheu (ou o derivado da recomendacao, se ele nao mandou). */
   state: SignalState;
@@ -157,6 +173,8 @@ export interface SignalDecisionInput {
   planFailures?: TradePlanRule[];
   /** true quando `correctPriceMagnitude` reescreveu os niveis. */
   priceFixed?: boolean;
+  /** So na reanalise de um setup com WATCH valendo. */
+  priorWatch?: PriorWatchInput | null;
 }
 
 export interface SignalDecisionResult {
@@ -192,6 +210,10 @@ export interface SignalDecisionResult {
    * mesmos do rastreador. null sem REAL DATA ou sem geometria valida no nivel.
    */
   watchLevels: EntryLevels | null;
+  /** Modelo pediu WATCH ou ENTER_NOW e o codigo rebaixou para NO_TRADE; null fora disso. */
+  rejectedPlan: RejectedPlan | null;
+  /** ENTER_NOW liberado pela regra da chave ENGINE_ENTER_AT_LEVEL. */
+  enterAtLevel: boolean;
 }
 
 /**
@@ -440,6 +462,17 @@ function choosePrintState(input: SignalDecisionInput, plan: WatchPlan): { state:
   return { state, notes, levels };
 }
 
+/**
+ * Chave ENGINE_ENTER_AT_LEVEL: o preco voltou a zona do WATCH anterior, na mesma
+ * direcao, e a IA confirmou. O "atrasado" mede a tendencia inteira e nao sai
+ * com o recuo (3 pernas continuam 3 pernas): sem isto, o WATCH nascido de um
+ * movimento atrasado nunca destrava no nivel que ele mesmo pediu.
+ */
+function isAtPriorLevel(prior: PriorWatchInput | null | undefined, plan: WatchPlan | null, price: number): boolean {
+  return !!prior && !!plan && prior.confirmed && prior.plan.direction === plan.direction
+    && pricePosition(prior.plan, price) === 'inside_zone' && flagBool(ENTER_AT_LEVEL_FLAG);
+}
+
 const positive = (v: number | null | undefined): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
 
 function confidenceCap(trendStrength: unknown): number {
@@ -469,6 +502,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
   const signalWithoutSide = (model === 'ARMED' || model === 'ENTER_NOW') && !side;
   const start: SignalState = signalWithoutSide ? 'WATCH' : model;
   const mismatch: ValidatorNote[] = signalWithoutSide ? [{ from: model, to: 'WATCH', reason: 'state_mismatch' }] : [];
+  const atLevel = !!real && isAtPriorLevel(input.priorWatch, modelPlan, real.price);
   let chosen: { state: SignalState; notes: ValidatorNote[]; levels: PlanLevels };
   if (model === 'NO_TRADE') chosen = { state: 'NO_TRADE', notes: [], levels: NULL_LEVELS };
   else if (side && failures.includes('implausible_price')) chosen = stop('implausible_price');
@@ -478,7 +512,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     const ev = evaluatePlan({
       plan: modelPlan, symbol: input.symbol, structureValidation: input.structureValidation,
       price: real.price, atr: real.atr as number, htfTrend: real.htfTrend, volRegime: real.volRegime, swings: real.swings ?? [],
-      late: real.late ? real.late[modelPlan.direction] : false,
+      late: !atLevel && real.late ? real.late[modelPlan.direction] : false,
     });
     if (typeof ev === 'string') chosen = { state: 'NO_TRADE', notes: [...mismatch, { from: start, to: 'NO_TRADE', reason: ev }], levels: NULL_LEVELS };
     else {
@@ -542,6 +576,11 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     confidence = Math.min(confidence, ENGINE_RULES.confidenceCapNoSignal);
   }
 
+  const noTradeNote = notes.find((n) => n.to === 'NO_TRADE');
+  const rejectedPlan: RejectedPlan | null = state === 'NO_TRADE' && model !== 'NO_TRADE' && input.watchPlan && noTradeNote
+    ? { modelState: model, reason: noTradeNote.reason, plan: input.watchPlan }
+    : null;
+
   const action: ValidatorAction = rank(state) < rank(model)
     ? 'downgraded'
     : rank(state) > rank(model) ? 'promoted' : input.priceFixed ? 'fixed' : 'none';
@@ -563,6 +602,8 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     watchReach: state === 'WATCH' && real && plan ? watchReachOf(plan, input.symbol, real) : null,
     location: real ? locationOf(real, state === 'NO_TRADE' ? null : plan) : null,
     watchLevels: state === 'WATCH' && real && plan ? watchLevelsOf(plan, input.symbol, real) : null,
+    rejectedPlan,
+    enterAtLevel: atLevel && state === 'ENTER_NOW',
   };
 }
 
