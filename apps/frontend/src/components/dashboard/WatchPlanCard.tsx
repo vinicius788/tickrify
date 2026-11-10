@@ -13,15 +13,15 @@ import {
   formatUtcTime,
   useAlertActions,
   useAlertOptions,
-  useExpiryClock,
   useSetupActions,
   useSetupForAnalysis,
+  watchTone,
 } from '@/lib/setups';
-import { AlertLevelButton } from './PendingLevels';
+import { AlertLevelButton, WatchVerdict } from './PendingLevels';
 
 // Cartao do plano do WATCH: o que a pessoa faz se o preco chegar la, com os
-// numeros do servidor num lugar so. Nunca usa as cores de compra/venda: nao e
-// um sinal ativo.
+// numeros do servidor num lugar so. Aberto, nunca usa as cores de compra/venda:
+// nao e um sinal ativo. Verde e vermelho so no desfecho, com a janela encerrada.
 
 const LADDER_HEIGHT = 196;
 const LADDER_PAD = 10;
@@ -210,7 +210,9 @@ interface WatchPlanCardProps {
   /** null: sem botoes (conta travada, exemplo). */
   actionsFor: string | null;
   base: string;
-  now?: number;
+  /** Janela encerrada: so o nivel e o desfecho, nunca o plano nem o alerta. */
+  closed: boolean;
+  now: number;
 }
 
 export function WatchPlanCard({
@@ -225,32 +227,14 @@ export function WatchPlanCard({
   condition,
   actionsFor,
   base,
-  now: fixedNow,
+  closed,
+  now,
 }: WatchPlanCardProps) {
   const { t, language } = useLanguage();
   const w = t.analysis.result.watch;
   const locale = LOCALES[language];
   const long = plan.direction === 'long';
   const expires = Date.parse(watch?.expiresAt ?? '');
-  const now = useExpiryClock(expires, fixedNow);
-  const alertLevel = watchPlanLevel(plan);
-
-  if (!watchWindowOpen(watch, now)) {
-    const closedLevel = (long ? t.pending.buyLevel : t.pending.sellLevel).replace('{price}', formatPrice(alertLevel));
-    return (
-      <Card className="surface-terminal rounded-xl fade-in-stagger" data-testid="watch-plan-closed" style={{ animationDelay: '40ms' }}>
-        <CardContent className="p-5 md:p-6">
-          <h3 className="tk-display text-base text-[var(--text-primary)]">
-            {Number.isFinite(expires) && expires <= now && watch?.expiresAt
-              ? w.windowClosed.replace('{time}', formatUtcTime(watch.expiresAt))
-              : t.pending.windowClosed}
-          </h3>
-          <p data-testid="watch-closed-level" className="mt-2 font-terminal text-sm text-[var(--text-secondary)]">{closedLevel}</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   const rText = (r: number) => `${formatNumber(r, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}R`;
   const money = (value: number) => formatPrice(value).replace(/ /g, '\u00a0');
   const zone = plan.zoneLow === plan.zoneHigh
@@ -292,9 +276,26 @@ export function WatchPlanCard({
           '{distance}',
           formatAssetDistance(currentPrice > plan.zoneHigh ? currentPrice - plan.zoneHigh : plan.zoneLow - currentPrice, symbol, locale, w),
         );
-  const validity = !watch?.expiresAt
-    ? null
-    : w.validUntil.replace('{time}', formatUtcTime(watch.expiresAt)).replace('{left}', formatTimeLeft(expires - now, locale));
+  const validity = watch?.expiresAt
+    ? w.validUntil.replace('{time}', formatUtcTime(watch.expiresAt)).replace('{left}', formatTimeLeft(expires - now, locale))
+    : null;
+  const alertLevel = watchPlanLevel(plan);
+
+  if (closed) {
+    return (
+      <Card className="surface-terminal rounded-xl fade-in-stagger" data-testid="watch-plan-closed" style={{ animationDelay: '40ms' }}>
+        <CardContent className="p-5 md:p-6">
+          <h3 className="tk-display text-base text-[var(--text-primary)]">
+            {watch?.expiresAt ? w.windowClosed.replace('{time}', formatUtcTime(watch.expiresAt)) : t.watching.windowClosed}
+          </h3>
+          <p data-testid="watch-closed-level" className="mt-1 font-terminal text-xs text-[var(--text-secondary)]">
+            {(long ? t.pending.buyLevel : t.pending.sellLevel).replace('{price}', money(alertLevel))}
+          </p>
+          {watch ? <div key="verdict" className="mt-3"><WatchVerdict watch={watch} tone={watchTone(watch, now)} /></div> : null}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="surface-terminal-elevated rounded-xl border border-[var(--border-accent)] fade-in-stagger" data-testid="watch-plan" style={{ animationDelay: '40ms' }}>

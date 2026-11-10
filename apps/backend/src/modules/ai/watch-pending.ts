@@ -44,6 +44,8 @@ export interface WatchSummary {
   expiresAt: string | null;
   outcome: WatchOutcome;
   afterReach: WatchAfterReach;
+  /** R do alvo que o rastreador mediu (bruto); so com afterReach 'target'. Informacao de mercado, nunca P&L. */
+  targetR: number | null;
   /** O ativo tem fonte de preco: a tela oferece o alerta no nivel. */
   alertAvailable: boolean;
   setupId: string | null;
@@ -55,6 +57,9 @@ export interface WatchTrack {
   status: string;
   outcome: string | null;
   touched: boolean;
+  fillPrice?: number | null;
+  stopLoss?: number | null;
+  takeProfit1?: number | null;
 }
 
 export function watchOutcomeOf(track: WatchTrack | null | undefined): WatchOutcome {
@@ -71,6 +76,13 @@ export function watchAfterReachOf(track: WatchTrack | null | undefined): WatchAf
   if (track.outcome === 'WIN') return 'target';
   if (track.outcome === 'LOSS') return 'invalidation';
   return track.outcome === 'TIMEOUT' ? 'neither' : null;
+}
+
+/** R ate o alvo a partir do preco de entrada medido. */
+export function watchTargetROf(track: WatchTrack | null | undefined): number | null {
+  if (watchAfterReachOf(track) !== 'target' || !track?.fillPrice || !track.stopLoss || !track.takeProfit1) return null;
+  const risk = Math.abs(track.fillPrice - track.stopLoss);
+  return risk > 0 ? Math.abs(track.takeProfit1 - track.fillPrice) / risk : null;
 }
 
 const record = (v: unknown): Record<string, any> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, any>) : {});
@@ -130,6 +142,7 @@ export function watchSummaryOf(
     expiresAt: step ? new Date(createdAt.getTime() + plan.validForCandles * step).toISOString() : null,
     outcome: watchOutcomeOf(context?.track),
     afterReach: watchAfterReachOf(context?.track),
+    targetR: watchTargetROf(context?.track),
     setupId: context?.setupId ?? null,
     alertAvailable: priceSymbolOf(symbol) !== null,
     plan: conditionalPlanOf(root),
@@ -149,7 +162,7 @@ export async function loadWatchContexts(db: Pick<PrismaClient, '$queryRaw'>, ids
   try {
     const rows = await db.$queryRaw<Array<WatchTrack & { analysisId: string; groundingInterval: string | null; setupId: string | null }>>(Prisma.sql`
       SELECT a."id" AS "analysisId", a."groundingStats"->>'interval' AS "groundingInterval", a."setupId",
-        t."status", t."outcome", t."touched" FROM "tickrify"."Analysis" a
+        t."status", t."outcome", t."touched", t."fillPrice", t."stopLoss", t."takeProfit1" FROM "tickrify"."Analysis" a
       LEFT JOIN "tickrify"."AnalysisTrack" t ON t."analysisId" = a."id"
       WHERE a."id" IN (${Prisma.join([...ids])})
     `);
@@ -157,7 +170,7 @@ export async function loadWatchContexts(db: Pick<PrismaClient, '$queryRaw'>, ids
       out.set(row.analysisId, {
         groundingInterval: row.groundingInterval,
         setupId: row.setupId,
-        track: row.status ? { status: row.status, outcome: row.outcome, touched: row.touched } : null,
+        track: row.status ? { status: row.status, outcome: row.outcome, touched: row.touched, fillPrice: row.fillPrice, stopLoss: row.stopLoss, takeProfit1: row.takeProfit1 } : null,
       });
     }
   } catch {

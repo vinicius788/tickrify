@@ -80,7 +80,12 @@ const TodaySection = ({
     (row) => isWatchOpen(row.watch, now) && !hasActiveLevel(items, row.watch!.setupId, row.id, row.watch!.level),
   );
 
-  const empty = reached.length === 0 && watching.size === 0 && openTrades.length === 0 && pendingWatches.length === 0;
+  // O rastreador fecha a linha 48h depois da validade: 72h cobre a espera e o resultado.
+  const resolvedWatches = analyses
+    .filter((row) => row.watch?.expiresAt && !isWatchOpen(row.watch, now) && now - Date.parse(row.watch.expiresAt) < 72 * 3_600_000)
+    .slice(0, 5);
+
+  const empty = reached.length === 0 && watching.size === 0 && openTrades.length === 0 && pendingWatches.length === 0 && resolvedWatches.length === 0;
 
   return (
     <section aria-label={d.title} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
@@ -190,6 +195,30 @@ const TodaySection = ({
                   <p className="font-terminal text-sm text-[var(--text-primary)]">{`${displayAsset(row.symbol)}${row.timeframe ? ` ${row.timeframe}` : ''}`}</p>
                   <div className="mt-1">
                     <WatchPending analysisId={row.id} watch={row.watch!} surface="today" now={now} symbol={row.symbol} />
+                  </div>
+                </div>
+                <Link
+                  to={`${base}/analysis/${encodeURIComponent(row.id)}`}
+                  className="self-start rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)]"
+                >
+                  {t.setups.open}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {resolvedWatches.length > 0 ? (
+        <div key="resolved" className="mt-4">
+          <p className="tk-stat-label">{t.pending.marketDid}</p>
+          <ul className="mt-2 divide-y divide-[var(--border-subtle)]">
+            {resolvedWatches.map((row) => (
+              <li key={row.id} data-testid="today-resolved" className="flex flex-col gap-2 py-3 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0">
+                  <p className="font-terminal text-sm text-[var(--text-primary)]">{`${displayAsset(row.symbol)}${row.timeframe ? ` ${row.timeframe}` : ''}`}</p>
+                  <div className="mt-1">
+                    <WatchPending analysisId={row.id} watch={row.watch!} surface="today" now={now} symbol={row.symbol} caption={false} />
                   </div>
                 </div>
                 <Link

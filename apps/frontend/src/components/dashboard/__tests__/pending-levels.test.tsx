@@ -97,7 +97,7 @@ describe('WATCH pendente', () => {
       expect(screen.getByRole('button')).toBeTruthy();
       act(() => vi.advanceTimersByTime(5000));
       expect(screen.queryByRole('button')).toBeNull();
-      expect(screen.getByText('Window closed. Outcome pending.')).toBeTruthy();
+      expect(screen.getByText('Checking the result')).toBeTruthy();
       expect(screen.queryByText(/Re-check the chart/)).toBeNull();
     } finally { vi.useRealTimers(); }
   });
@@ -138,7 +138,7 @@ describe('WATCH pendente', () => {
     wrap(<WatchPending analysisId="w1" watch={watch({ expiresAt: '2026-11-03T11:00:00.000Z' })} surface="trades" now={NOW} />);
     const text = screen.getByTestId('watch-pending').textContent ?? '';
     expect(text).not.toContain('Invalidation');
-    expect(text).toContain('Window closed. Outcome pending.');
+    expect(text).toContain('Checking the result');
     expect(text).toContain('Sell level 77,800');
     expect(text).not.toContain('Re-check the chart');
     expect(screen.queryByRole('button')).toBeNull();
@@ -185,7 +185,9 @@ describe('Today: WATCH pendente mesmo sem alerta', () => {
     const analyses = [row('w1', watch()), row('w2', watch({ expiresAt: '2026-11-03T11:30:00.000Z' })), row('w3', null)];
     const { unmount } = wrap(<TodaySection base="/dashboard" alerts={undefined} openTrades={[]} analyses={analyses} />);
     expect(screen.getByText('Pending levels')).toBeTruthy();
-    expect(screen.getAllByTestId('watch-pending')).toHaveLength(1);
+    expect(screen.getAllByTestId('watch-pending')).toHaveLength(2);
+    expect(screen.getAllByTestId('today-resolved')).toHaveLength(1);
+    expect(screen.getByTestId('today-resolved').textContent).toContain('Checking the result');
     expect(screen.getByRole('button', { name: 'Alert me at 77,800' })).toBeTruthy();
     expect(screen.queryByText(/Run an analysis and set an alert/)).toBeNull();
     unmount();
@@ -325,32 +327,38 @@ describe('WatchingSection', () => {
   });
 
   it.each([
-    ['reached', 'target', 'Level reached', 'Afterwards price reached the plan target.'],
-    ['reached', 'invalidation', 'Level reached', 'Afterwards price reached the invalidation.'],
-    ['reached', 'neither', 'Level reached', 'Afterwards price reached neither within 48 hours.'],
-    ['invalidated', null, 'Invalidated before the level', null],
-    ['expired', null, 'Window closed', null],
-  ] as const)('encerrado %s/%s mostra o que o preco fez, sem cara de operacao', (outcome, afterReach, label, after) => {
-    watchingItems = [item({ alert: null }, { outcome, afterReach, expiresAt: '2026-11-01T00:00:00.000Z' })];
+    ['reached', 'target', 2.1, 'Level reached, target hit (+2.1 R)', 'target'],
+    ['reached', 'target', null, 'Level reached, target hit', 'target'],
+    ['reached', 'invalidation', null, 'Level reached, stopped (-1 R)', 'stopped'],
+    ['reached', 'neither', null, 'Level reached, no target or stop in 48 hours', 'neutral'],
+    ['invalidated', null, null, 'Invalidated before reaching it', 'neutral'],
+    ['expired', null, null, 'Expired without reaching it', 'neutral'],
+    ['unavailable', null, null, 'Outcome not tracked for this asset', 'neutral'],
+  ] as const)('encerrado %s/%s/%s: rotulo e cor do desfecho, sem cara de operacao', (outcome, afterReach, targetR, label, tone) => {
+    watchingItems = [item({ alert: null }, { outcome, afterReach, targetR, expiresAt: '2026-11-01T00:00:00.000Z' })];
     section();
     const row = screen.getByTestId('watching-item');
     expect(row.getAttribute('data-state')).toBe('closed');
+    expect(screen.getByTestId('watch-outcome').getAttribute('data-tone')).toBe(tone);
     expect(row.textContent).toContain(label);
     expect(row.textContent).toContain('Buy level $ 4,180.00');
-    if (after) expect(row.textContent).toContain(after);
     expect(row.textContent).not.toMatch(/\b(win|loss|profit|filled|hit rate|P&L)\b/i);
     expect(row.textContent).not.toContain('away');
+    const pill = screen.getByTestId('watch-outcome').lastElementChild!.className;
+    expect(pill).not.toContain('--signal-hold');
+    expect(pill.includes('--signal-buy')).toBe(tone === 'target');
+    expect(pill.includes('--signal-sell')).toBe(tone === 'stopped');
   });
 
-  it('janela fechada sem linha no rastreador: diz que falta conferir, ou o nivel se o alerta disparou dentro dela', () => {
+  it('janela fechada sem linha no rastreador: Checking the result, mesmo com alerta disparado', () => {
     const expiresAt = '2026-11-01T00:00:00.000Z';
     watchingItems = [item({ alert: null }, { expiresAt })];
     section();
-    expect(screen.getByTestId('watching-item').textContent).toContain('Window closed. Price check pending.');
+    expect(screen.getByTestId('watching-item').textContent).toContain('Checking the result');
     cleanup();
     watchingItems = [item({ alert: { id: 'al1', setupId: 's1', status: 'triggered', triggeredAt: '2026-10-31T00:00:00.000Z', seenAt: '2026-10-31T01:00:00.000Z' } }, { expiresAt })];
     section();
-    expect(screen.getByTestId('watching-item').textContent).toContain('Level reached');
+    expect(screen.getByTestId('watching-item').textContent).toContain('Checking the result');
     expect(screen.queryByText('Update chart')).toBeNull();
   });
 

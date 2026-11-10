@@ -26,7 +26,6 @@ import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
 import { WatchPlanCard, isWatchLevels, isWatchPlan, watchWindowOpen } from './WatchPlanCard';
-import { useExpiryClock } from '@/lib/setups';
 import { ReadModePanel, WherePriceIs, type ReadModeData } from './ReadModePanel';
 import { LevelMapCard } from './PendingLevels';
 import { AnalysisShareButton } from './ShareCard';
@@ -52,6 +51,7 @@ import {
 } from '@/lib/trading-ui';
 import { asRecord } from '@/lib/utils';
 import { computeDirectionalRiskReward } from '@/lib/trade-plan';
+import { useExpiryClock, watchTone, WATCH_TONE_CLASSES } from '@/lib/setups';
 
 interface AnalysisResultProps {
   analysisData: AIAnalysisResponse | null;
@@ -525,7 +525,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     NY: t.analysis.sessions.newYork,
   };
   const [showInvalidation, setShowInvalidation] = useState(false);
-  const watchNow = useExpiryClock(Date.parse(analysisData?.watch?.expiresAt ?? ''));
 
   // ⚠️ ESTES DOIS HOOKS PRECISAM FICAR ACIMA DO `return` DE BAIXO.
   //
@@ -556,6 +555,8 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   })();
   const { events: calEvents, loading: calLoading, unreliable: calUnreliable } = useEconomicCalendar(simboloParaContexto);
   const { data: liveMarket } = useMarketContext(simboloParaContexto);
+  const watchExpires = Date.parse(analysisData?.watch?.expiresAt ?? '');
+  const now = useExpiryClock(watchExpires);
 
   if (!analysisData) {
     return (
@@ -622,6 +623,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   const levelsEstimated = fullResponse.dataMode === 'print';
   // WATCH com plano: cartao unico. Analise antiga sem plano segue no desenho anterior.
   const watchLayout = signalState === 'WATCH' && watchPlan !== null;
+  const watchClosed = watchLayout && !watchWindowOpen(analysisData.watch, now);
 
   const detectedSession = String(analysis.detectedSession || fullResponse.detectedSession || '').trim() || null;
   const sessionNote =
@@ -997,7 +999,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     readIsEnglish: language === 'en',
     trendStrength: trendStrength === 'strong' || trendStrength === 'moderate' || trendStrength === 'weak' ? trendStrength : null,
     date: timestamp,
-    watchSide: watchLayout && watchPlan ? (watchPlan.direction === 'long' ? 'buy' : 'sell') : null,
+    watchSide: watchLayout && !watchClosed && watchPlan ? (watchPlan.direction === 'long' ? 'buy' : 'sell') : null,
   };
 
   // Tudo o que o WATCH escreve sai daqui: numeros do servidor, frases do codigo.
@@ -1061,9 +1063,8 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     };
   })();
   // Fora da validade do plano, um evento nao afeta esta analise.
-  const expiresAt = Date.parse(analysisData.watch?.expiresAt ?? '');
   const eventInPlan = (minutesUntil: number | null | undefined) =>
-    !watchLayout || !Number.isFinite(expiresAt) || (minutesUntil ?? 0) * 60_000 <= expiresAt - Date.now();
+    !watchLayout || (!watchClosed && (!Number.isFinite(watchExpires) || (minutesUntil ?? 0) * 60_000 <= watchExpires - now));
 
   const HeaderIcon = stateTone === 'buy' ? ArrowUp : stateTone === 'sell' ? ArrowDown : signalState === 'WATCH' ? Eye : Minus;
 
@@ -1178,10 +1179,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             <span className="whitespace-nowrap font-terminal">{timeframe}</span>
             <div
               data-testid="signal-state"
-              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold uppercase tracking-widest ${signalToneClasses}`}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold uppercase tracking-widest ${watchClosed && analysisData.watch ? WATCH_TONE_CLASSES[watchTone(analysisData.watch, now)] : signalToneClasses}`}
             >
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{watchLayout ? (watchPlan?.direction === 'long' ? r.watch.chipBuy : r.watch.chipSell) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
+              <span>{watchLayout && !watchClosed ? (watchPlan?.direction === 'long' ? r.watch.chipBuy : r.watch.chipSell) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
             </div>
             {strategyFit && (
               <span
@@ -1212,7 +1213,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
           {continuationLine && (
             <p data-testid="setup-continuation" className="mt-3 text-sm leading-relaxed text-[var(--text-primary)]">{continuationLine}</p>
           )}
-          {watchText && watchWindowOpen(analysisData.watch, watchNow) && <p data-testid="watch-headline" className="mt-3 text-sm leading-relaxed text-[var(--text-primary)]">{watchText.headline}</p>}
+          {watchText && !watchClosed && <p data-testid="watch-headline" className="mt-3 text-sm leading-relaxed text-[var(--text-primary)]">{watchText.headline}</p>}
           {isWaitVerdict && !watchLayout && (
             // Explica o WAIT onde ele aparece: sem isto a pessoa le so a
             // palavra e entende que a ferramenta nao respondeu.
@@ -1317,8 +1318,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             condition={watchText.condition}
             actionsFor={alertsEnabled && !sample && !isDemo && analysisData.id ? analysisData.id : null}
             base={base}
+            closed={watchClosed}
+            now={now}
           />
-          <Card data-testid="watch-why-changes" className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '50ms' }}>
+          {!watchClosed && <Card data-testid="watch-why-changes" className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '50ms' }}>
             <CardContent className="grid gap-5 p-5 md:grid-cols-2 md:gap-8 md:p-6">
               {watchText.whyWait.length > 0 ? (
                 <section key="why" data-testid="watch-why">
@@ -1349,7 +1352,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                 </dl>
               </section>
             </CardContent>
-          </Card>
+          </Card>}
         </>
       )}
 

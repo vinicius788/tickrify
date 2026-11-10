@@ -386,6 +386,42 @@ export function isWatchOpen(watch: WatchSummary | null | undefined, now = Date.n
   return Boolean(watch && watch.outcome === 'pending' && watch.expiresAt && Date.parse(watch.expiresAt) > now);
 }
 
+export type WatchTone = 'watching' | 'target' | 'stopped' | 'neutral' | 'checking';
+
+/** O que o mercado fez com o WATCH. Fora de P&L, acerto do usuario e /accuracy. */
+export function watchTone(watch: WatchSummary, now = Date.now()): WatchTone {
+  if (watch.outcome === 'pending') return watch.expiresAt === null || Date.parse(watch.expiresAt) > now ? 'watching' : 'checking';
+  if (watch.outcome === 'reached' && watch.afterReach === 'target') return 'target';
+  if (watch.outcome === 'reached' && watch.afterReach === 'invalidation') return 'stopped';
+  return 'neutral';
+}
+
+const GRAY_CHIP = 'border-[var(--border-subtle)] bg-[var(--bg-overlay)] text-[var(--text-secondary)]';
+export const WATCH_TONE_CLASSES: Record<WatchTone, string> = {
+  watching: 'border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)] text-[var(--signal-hold)]',
+  target: 'border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] text-[var(--signal-buy)]',
+  stopped: 'border-[var(--signal-sell-border)] bg-[var(--signal-sell-bg)] text-[var(--signal-sell)]',
+  neutral: GRAY_CHIP,
+  checking: GRAY_CHIP,
+};
+
+export const WATCH_TONE_DOT: Record<WatchTone, string> = {
+  watching: 'bg-[var(--signal-hold)]',
+  target: 'bg-[var(--signal-buy)]',
+  stopped: 'bg-[var(--signal-sell)]',
+  neutral: 'bg-[var(--text-muted)]',
+  checking: 'bg-[var(--text-muted)]',
+};
+
+/** Fundo do dia no Diario sem P&L: o desfecho ganha do laranja; alvo e stop no mesmo dia, neutro. */
+export function watchDayTint(tones: readonly WatchTone[]): string | null {
+  const target = tones.includes('target');
+  const stopped = tones.includes('stopped');
+  if (target !== stopped) return target ? 'var(--signal-buy-bg)' : 'var(--signal-sell-bg)';
+  if (target || tones.includes('neutral') || tones.includes('checking')) return null;
+  return tones.includes('watching') ? 'var(--signal-hold-bg)' : null;
+}
+
 /** Acorda na proxima validade. Janelas semanais podem exceder o limite de setTimeout. */
 export function useExpiryClock(expires: number, fixedNow?: number): number {
   const now = fixedNow ?? Date.now();
