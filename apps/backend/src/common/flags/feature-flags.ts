@@ -197,7 +197,7 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     type: 'boolean',
     label: 'Entrada no nivel do WATCH',
     description:
-      'So vale com a continuacao do setup ligada: na reanalise em que o preco esta dentro da zona do WATCH anterior, na mesma direcao, e a IA diz CONFIRMED, o movimento nao conta como atrasado e o ENTER_NOW pode sair sem TP2. O resto das regras nao muda. DESLIGADO: identico ao motor de sempre.',
+      'So vale com a continuacao do setup ligada: na reanalise em que o preco esta dentro da zona do WATCH anterior, na mesma direcao, e a IA diz CONFIRMED, o movimento nao conta como atrasado. O resto das regras nao muda. DESLIGADO: identico ao motor de sempre.',
     defaultValue: 'false',
     risk: 'alto',
   },

@@ -446,7 +446,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       return updates.find((d: any) => d.status === 'completed' || d.status === 'failed');
     };
 
-    it('ligada: movimento atrasado e sem TP2 viram ENTER_NOW gravado', async () => {
+    it('ligada: movimento atrasado vira ENTER_NOW gravado', async () => {
       const stored = await run('at-level-on', 'true', true);
       expect(stored.status).toBe('completed');
       expect(stored.result).toMatchObject({ signalState: 'ENTER_NOW', enterAtLevel: true });
@@ -460,11 +460,12 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       expect(stored.result.enterAtLevel).toBeUndefined();
     });
 
-    it('desligada: ENTER_NOW sem TP2 continua reprovado no worker, como hoje', async () => {
+    it('ENTER_NOW sem TP2 e gravado com a chave desligada (antes falhava com validation_failed)', async () => {
       const stored = await run('no-tp2-off', 'false', false);
-      expect(stored.status).toBe('failed');
-      expect(stored.errorCode).toBe('validation_failed');
-      expect(stored.errorMessage).toContain('takeProfit2');
+      expect(stored.status).toBe('completed');
+      expect(stored.result.signalState).toBe('ENTER_NOW');
+      expect(stored.result.enterAtLevel).toBeUndefined();
+      expect(stored.result.analysis).toMatchObject({ entry: 98.5, takeProfit2: null });
     });
   });
 

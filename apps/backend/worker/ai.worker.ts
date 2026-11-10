@@ -1022,11 +1022,8 @@ function validateTradingLogic(result: WorkerAnalysisResult): DisplayMessage[] {
       }
     }
 
-    if (a.takeProfit2 === null && result.enterAtLevel) {
-      // Com a chave ENGINE_ENTER_AT_LEVEL: o plano do motor pode vir sem segundo alvo.
-    } else if (typeof a.takeProfit2 !== 'number') {
-      errors.push({ code: 'validation_numeric_target2', params: { side: "BUY" }, text: 'COMPRA: takeProfit2 deve ser numérico' });
-    } else if (typeof a.takeProfit1 === 'number' && a.takeProfit2 <= a.takeProfit1) {
+    // TP2 e opcional: o motor do v11 entrega ENTER_NOW sem segundo alvo quando o plano nao tem target2.
+    if (typeof a.takeProfit2 === 'number' && typeof a.takeProfit1 === 'number' && a.takeProfit2 <= a.takeProfit1) {
       errors.push(
         { code: 'validation_greater', params: { side: "BUY", first: "takeProfit2", firstValue: a.takeProfit2, second: "takeProfit1", secondValue: a.takeProfit1 }, text: `COMPRA: takeProfit2 (${a.takeProfit2}) deve ser > takeProfit1 (${a.takeProfit1})` },
       );
@@ -1055,11 +1052,8 @@ function validateTradingLogic(result: WorkerAnalysisResult): DisplayMessage[] {
       }
     }
 
-    if (a.takeProfit2 === null && result.enterAtLevel) {
-      // Com a chave ENGINE_ENTER_AT_LEVEL: o plano do motor pode vir sem segundo alvo.
-    } else if (typeof a.takeProfit2 !== 'number') {
-      errors.push({ code: 'validation_numeric_target2', params: { side: "SELL" }, text: 'VENDA: takeProfit2 deve ser numérico' });
-    } else if (typeof a.takeProfit1 === 'number' && a.takeProfit2 >= a.takeProfit1) {
+    // TP2 e opcional: o motor do v11 entrega ENTER_NOW sem segundo alvo quando o plano nao tem target2.
+    if (typeof a.takeProfit2 === 'number' && typeof a.takeProfit1 === 'number' && a.takeProfit2 >= a.takeProfit1) {
       errors.push(
         { code: 'validation_less', params: { side: "SELL", first: "takeProfit2", firstValue: a.takeProfit2, second: "takeProfit1", secondValue: a.takeProfit1 }, text: `VENDA: takeProfit2 (${a.takeProfit2}) deve ser < takeProfit1 (${a.takeProfit1})` },
       );

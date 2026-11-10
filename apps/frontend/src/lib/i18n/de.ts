@@ -62,7 +62,6 @@ export default {
     validation_less: "{side}: {first} ({firstValue}) muss kleiner als {second} ({secondValue}) sein",
     validation_rr_denominator: "{side}: ungültiger Nenner für R:R",
     validation_rr: "{side}: ungültiges R:R ({value})",
-    validation_numeric_target2: "{side}: das zweite Ziel muss numerisch sein",
     drawing_references: "Visuelle Referenzen: {firstId} und {secondId}.",
     analysis_details_unavailable: "Analysedetails nicht verfügbar.",
     demo_disclaimer: "Analyse nur zu Bildungszwecken, keine Finanzberatung. Trading birgt Risiken; die Entscheidung liegt immer bei dir.",
