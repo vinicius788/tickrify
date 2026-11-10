@@ -552,7 +552,8 @@ const DashboardPage = () => {
   useEffect(() => {
     if (isDemo || !alertParam || !SETUP_ID_PATTERN.test(alertParam) || openedAlertRef.current === alertParam) return;
     openedAlertRef.current = alertParam;
-    const source = new URLSearchParams(location.search).get('utm_source') === 'email' ? 'email' : 'dashboard';
+    const utm = new URLSearchParams(location.search).get('utm_source');
+    const source = utm === 'email' || utm === 'telegram' ? utm : 'dashboard';
     track('setup_alert_opened', { source, alertId: alertParam, setupId: setupParam });
     markAlertSeen.mutate(alertParam);
   }, [alertParam, isDemo, location.search, markAlertSeen, setupParam]);

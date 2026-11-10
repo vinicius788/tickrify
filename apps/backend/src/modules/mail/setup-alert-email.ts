@@ -98,11 +98,11 @@ export function alertPlanOf(result: unknown, recommendation: string | null): Ale
 }
 
 /** Link do botao: o fluxo de atualizar o setup (custo na tela antes de enviar). */
-export function setupAlertLink(appUrl: string, item: Pick<SetupAlertEmailItem, 'setupId' | 'alertId'>): string {
+export function setupAlertLink(appUrl: string, item: Pick<SetupAlertEmailItem, 'setupId' | 'alertId'>, source: 'email' | 'telegram' = 'email'): string {
   const params = new URLSearchParams({
     setup: item.setupId,
     alert: item.alertId,
-    utm_source: 'email',
+    utm_source: source,
     utm_campaign: 'setup_alert',
   });
   return `${appUrl.replace(/\/+$/, '')}/dashboard/new?${params}`;

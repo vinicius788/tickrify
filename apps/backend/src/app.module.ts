@@ -18,6 +18,7 @@ import { DemoModule } from './modules/demo/demo.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { SupportModule } from './modules/support/support.module';
+import { TelegramModule } from './modules/telegram/telegram.module';
 import { TrialModule } from './modules/trial/trial.module';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { GlobalAuthGuard } from './common/guards/global-auth.guard';
@@ -54,6 +55,7 @@ import { HttpLoggingInterceptor } from './common/interceptors/http-logging.inter
     HealthModule,
     ReportsModule,
     SupportModule,
+    TelegramModule,
     TrialModule,
     AdminModule,
   ],
