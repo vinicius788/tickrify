@@ -351,8 +351,8 @@ export default {
     paymentRetry: "Comprobar de nuevo",
     paymentSettings: "Ver suscripción",
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
-    weeklyRenewal: "Se cobran US$ 7,99 ahora y cada 7 días hasta cancelar.",
-    monthlyRenewal: "Se cobran US$ 29 ahora y cada mes hasta cancelar.",
+    weeklyRenewal: "Se cobran $7,99 ahora y cada 7 días hasta cancelar.",
+    monthlyRenewal: "Se cobran $29 ahora y cada mes hasta cancelar.",
     freeEligibility: "Una demo anónima por dispositivo. Cuentas elegibles: hasta 7 análisis en 3 días de uso (3/2/2), dentro de 7 días. Las cuentas existentes conservan su cuota aplicable. Sin tarjeta."
   },
 
@@ -388,6 +388,8 @@ export default {
     analysesWord: 'análisis',
     freeLeft: 'gratis restantes',
     newAnalysis: 'Nuevo Análisis',
+    analysisLabel: 'Análisis',
+    assetAnalysis: 'Análisis de {asset}',
     myTrades: 'Mis Trades',
     journal: 'Diario',
     // Rotulos curtos usados SO na barra de abas do celular. Os longos
@@ -1152,6 +1154,7 @@ export default {
     limitDesc: 'Cancela una para crear otra.',
     limitDescFree: 'Cancela una o suscríbete para vigilar hasta 10 setups.',
     activeTitle: 'Alertas activas',
+    triggeredTitle: 'Alertas disparadas',
     reachedTitle: 'El precio llegó a tu nivel',
     rises: 'si el precio sube hasta él',
     falls: 'si el precio baja hasta él',
@@ -1306,6 +1309,7 @@ export default {
     loadFailed: 'No se pudo cargar tu suscripción. Inténtalo de nuevo en un momento.',
     retry: 'Reintentar',
     noSubscription: 'No tienes suscripción.',
+    manualAccess: 'Acceso manual',
     seePlans: 'Ver planes',
     statusActive: 'Activa, se renueva el {date}',
     statusCanceled: 'Cancelada, acceso hasta el {date}',
@@ -1506,9 +1510,9 @@ export default {
       analysesQuick: 'análisis rápidos',
       starterBadge: 'Todo incluido',
       starterCta: 'Empezar',
-      fS1: '200 Ticks mensuales (~200 rápidos o 66 deep)', fS2: 'Análisis rápido + deep, historial completo', fS3: 'Velas verificadas en análisis rápidos elegibles + calendario disponible', fS4: 'US$ 0,145 por análisis rápido en el plan mensual',
+      fS1: '200 Ticks mensuales (~200 rápidos o 66 deep)', fS2: 'Análisis rápido + deep, historial completo', fS3: 'Velas verificadas en análisis rápidos elegibles + calendario disponible', fS4: '$0,145 por análisis rápido en el plan mensual',
       monthlyReset: 'Tu saldo vuelve a 200 Ticks al inicio de cada mes de facturación. Los Ticks no usados no se acumulan.',
-      weeklyLine: '¿Aún no quieres un mes? US$ 7,99 por semana, 25 Ticks, cancela cuando quieras.',
+      weeklyLine: '¿Aún no quieres un mes? $7,99 por semana, 25 Ticks, cancela cuando quieras.',
     },
     faq: {
       label: 'FAQ', title: 'Preguntas', highlight: 'que hacen los traders.',

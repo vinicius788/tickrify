@@ -94,6 +94,29 @@ describe('bolha "Chat, feedback or problem"', () => {
     expect(track).toHaveBeenCalledWith('chat_opened', { surface: 'bubble', unread: 0 });
   });
 
+  it('nunca fica em cima de um botao: some enquanto houver acao embaixo e volta depois', async () => {
+    serve();
+    const cta = document.createElement('button');
+    cta.textContent = 'Subscribe';
+    document.body.appendChild(cta);
+    let underneath: Element[] = [cta];
+    const original = document.elementsFromPoint;
+    document.elementsFromPoint = () => underneath;
+    try {
+      renderBolha('/dashboard/plans');
+      const bubble = screen.getByRole('button', { name: 'Chat, feedback or problem' });
+      await waitFor(() => expect(bubble.getAttribute('data-covering')).toBe('true'));
+      expect(bubble.className).toContain('opacity-0');
+      expect(bubble.className).toContain('pointer-events-none');
+      underneath = [document.body];
+      window.dispatchEvent(new Event('scroll'));
+      await waitFor(() => expect(bubble.getAttribute('data-covering')).toBeNull());
+    } finally {
+      document.elementsFromPoint = original;
+      cta.remove();
+    }
+  });
+
   it('Enter envia, Shift+Enter quebra linha; o evento leva so o tamanho', async () => {
     const user = userEvent.setup();
     const fetchMock = serve();

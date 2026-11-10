@@ -92,6 +92,7 @@ const PRICE_CHECK_TTL_MS = 60 * 60 * 1000;
 
 /** Status em que a pessoa ainda tem o que gerenciar no portal (cartao, faturas, cancelar). */
 const MANAGEABLE_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due', 'unpaid'];
+const ENDED_SUBSCRIPTION_STATUSES = ['canceled', 'incomplete_expired'];
 
 function hasCurrentStripeAccess(subscription: Pick<Stripe.Subscription, 'status' | 'current_period_end'>): boolean {
   return ['active', 'trialing'].includes(subscription.status) &&
@@ -1050,7 +1051,8 @@ export class StripeService implements OnModuleInit {
 
   /**
    * Assinatura para a tela de Configuracoes, relida na Stripe (e gravada).
-   * null = nada para mostrar (nunca assinou, ou so o acesso manual `manual_*`).
+   * null = nunca assinou. Acesso manual (`manual_*`) sem assinatura viva devolve
+   * `{ manualAccess: true }`, sem dados de uma assinatura antiga da Stripe.
    */
   async getUserSubscription(clerkUserId: string) {
     let userId: string | null = null;
@@ -1067,17 +1069,30 @@ export class StripeService implements OnModuleInit {
       }
       userId = user.id;
 
-      const subscriptionRecord = await this.prisma.subscription.findFirst({
-        where: { userId: user.id, stripeId: { startsWith: 'sub_' } },
-        orderBy: { updatedAt: 'desc' },
-      });
+      const [subscriptionRecord, manualRecord] = await Promise.all([
+        this.prisma.subscription.findFirst({
+          where: { userId: user.id, stripeId: { startsWith: 'sub_' } },
+          orderBy: { updatedAt: 'desc' },
+        }),
+        this.prisma.subscription.findFirst({
+          where: { userId: user.id, stripeId: { startsWith: 'manual_' }, status: { in: ['active', 'trialing'] } },
+          select: { id: true },
+        }),
+      ]);
+      const manualView = manualRecord ? ({ manualAccess: true } as const) : null;
 
       if (!subscriptionRecord?.stripeId) {
-        return null;
+        return manualView;
+      }
+      if (manualView && ENDED_SUBSCRIPTION_STATUSES.includes(String(subscriptionRecord.status ?? '').toLowerCase())) {
+        return manualView;
       }
 
       const subscription = await stripe.subscriptions.retrieve(subscriptionRecord.stripeId);
       await this.upsertSubscriptionForUser(user.id, subscription);
+      if (manualView && ENDED_SUBSCRIPTION_STATUSES.includes(String(subscription.status).toLowerCase())) {
+        return manualView;
+      }
       return this.subscriptionViewWithSchedule(subscription, user.id);
     } catch (error) {
       this.logger.error('Failed to get user subscription', {

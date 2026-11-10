@@ -173,7 +173,7 @@ export default {
     foundingTitle: "Oferta Founding Trader",
     foundingDesc: "Você chegou cedo, e isso conta. Enquanto a oferta durar, o desconto",
     foundingCode: "EARLY35",
-    foundingSuffix: "é aplicado automaticamente no checkout do plano mensal: 35% no primeiro mês, depois US$ 29/mês.",
+    foundingSuffix: "é aplicado automaticamente no checkout do plano mensal: 35% no primeiro mês, depois $29/mês.",
     trust: [
       "Pagamento protegido pela Stripe",
       "Cancele quando quiser em Configurações",
@@ -188,7 +188,7 @@ export default {
       },
       {
         q: "Como funcionam os Ticks?",
-        a: "Ticks são os créditos de análise da Tickrify. O plano mensal volta seu saldo para 200 Ticks a cada mês de cobrança, e o plano semanal (US$ 7,99) volta para 25 Ticks toda semana. O anual custa US$ 290 antecipados e renova anualmente, com saldo renovado para 200 Ticks por mês. Ticks não utilizados não acumulam. Uma análise rápida consome 1 Tick; uma análise deep consome 3 Ticks."
+        a: "Ticks são os créditos de análise da Tickrify. O plano mensal volta seu saldo para 200 Ticks a cada mês de cobrança, e o plano semanal ($7,99) volta para 25 Ticks toda semana. O anual custa $290 antecipados e renova anualmente, com saldo renovado para 200 Ticks por mês. Ticks não utilizados não acumulam. Uma análise rápida consome 1 Tick; uma análise deep consome 3 Ticks."
       },
       {
         q: "Posso trocar de plano depois?",
@@ -216,7 +216,7 @@ export default {
       "200 Ticks mensais (~200 rápidas ou 66 deep)",
       "Análise rápida + deep",
       "Grounding com candles ao vivo + calendário econômico",
-      "US$ 0,145 por análise rápida (US$ 29 / 200 Ticks)"
+      "$0,145 por análise rápida ($29 / 200 Ticks)"
     ],
     cta: "Começar"
   },
@@ -231,7 +231,7 @@ export default {
       "Renova toda semana, cancele quando quiser"
     ],
     cta: "Assinar semanal",
-    note: "Cobrado US$ 7,99 agora e a cada 7 dias até cancelar. O saldo volta para 25 Ticks toda semana."
+    note: "Cobrado $7,99 agora e a cada 7 dias até cancelar. O saldo volta para 25 Ticks toda semana."
   },
   pricingChrome: {
     weekly: "Semanal",
@@ -255,7 +255,7 @@ export default {
     partnerInvalid: "Esse código não é válido.",
     canceledTitle: "Pagamento cancelado",
     canceledDesc: "Nenhuma cobrança foi feita. Você pode assinar quando quiser.",
-    firstMonth: "Cobrado {price} agora pelo primeiro mês com {code} ({pct}% off), aplicado automaticamente. Depois US$ 29/mês até cancelar.",
+    firstMonth: "Cobrado {price} agora pelo primeiro mês com {code} ({pct}% off), aplicado automaticamente. Depois $29/mês até cancelar.",
     founderEyebrow: "Membro fundador",
     founderSub: "Travado enquanto sua assinatura continuar ativa",
     founderFeatures: [
@@ -270,8 +270,8 @@ export default {
     founderNote: "Oferta única, não listada em nenhum outro lugar. Cobrança agora e mensalmente, cancele quando quiser pelo painel. Se cancelar, volta ao preço normal.",
     founderSeat: "Resta 1 vaga de fundador",
     billingCycle: "Ciclo de cobrança",
-    yearlyRenewal: "US$ 290 cobrados agora e a cada ano até cancelar. O saldo volta a 200 Ticks a cada mês; Ticks não utilizados não acumulam.",
-    monthlyRenewal: "US$ 29 cobrados agora e mensalmente até cancelar. O saldo volta a 200 Ticks por mês; Ticks não utilizados não acumulam."
+    yearlyRenewal: "$290 cobrados agora e a cada ano até cancelar. O saldo volta a 200 Ticks a cada mês; Ticks não utilizados não acumulam.",
+    monthlyRenewal: "$29 cobrados agora e mensalmente até cancelar. O saldo volta a 200 Ticks por mês; Ticks não utilizados não acumulam."
   },
   dashboardCopy: {
     weeklyPrice: "${price} / 7 dias",
@@ -302,7 +302,7 @@ export default {
     later: "Continuar depois",
     perMonth: "/mês",
     modalMonthly: "Mensal, 200 Ticks",
-    modalMonthlyOffer: "{price} no primeiro mês, depois US$ 29/mês",
+    modalMonthlyOffer: "{price} no primeiro mês, depois $29/mês",
     modalWeekly: "Semanal, 25 Ticks",
     modalCompare: "Comparar todos os planos",
     modalVideoCaption: "O que o assinante recebe: o gráfico de entrada mais até dois tempos maiores, lidos como um mercado só. 20 segundos.",
@@ -314,7 +314,7 @@ export default {
     plansSub: "O mesmo motor em todos os planos. Cancele quando quiser."
   },
   foundingBanner: {
-    text: "Oferta para os primeiros assinantes: {pct}% off no primeiro mês do plano mensal com {code}, aplicado no checkout. Depois US$ 29/mês.",
+    text: "Oferta para os primeiros assinantes: {pct}% off no primeiro mês do plano mensal com {code}, aplicado no checkout. Depois $29/mês.",
     cta: "Ver planos"
   },
   productClarity: {
@@ -351,8 +351,8 @@ export default {
     paymentRetry: "Verificar novamente",
     paymentSettings: "Ver assinatura",
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
-    weeklyRenewal: "Cobrança de US$ 7,99 agora e a cada 7 dias até cancelar.",
-    monthlyRenewal: "Cobrança de US$ 29 agora e mensalmente até cancelar.",
+    weeklyRenewal: "Cobrança de $7,99 agora e a cada 7 dias até cancelar.",
+    monthlyRenewal: "Cobrança de $29 agora e mensalmente até cancelar.",
     freeEligibility: "Uma demo anônima por dispositivo. Contas elegíveis: até 7 análises em 3 dias de uso (3/2/2), dentro de 7 dias. Contas existentes mantêm sua cota aplicável. Sem cartão."
   },
 
@@ -391,6 +391,8 @@ export default {
     analysesWord: 'análises',
     freeLeft: 'grátis restantes',
     newAnalysis: 'Nova Análise',
+    analysisLabel: 'Análise',
+    assetAnalysis: 'Análise de {asset}',
     myTrades: 'Meus Trades',
     journal: 'Diário',
     // Rotulos curtos usados SO na barra de abas do celular. Os longos
@@ -1165,6 +1167,7 @@ export default {
     limitDesc: 'Cancele um para criar outro.',
     limitDescFree: 'Cancele um ou assine para vigiar até 10 setups.',
     activeTitle: 'Alertas ativos',
+    triggeredTitle: 'Alertas disparados',
     reachedTitle: 'O preço chegou no seu nível',
     rises: 'se o preço subir até ele',
     falls: 'se o preço cair até ele',
@@ -1240,9 +1243,9 @@ export default {
     aiLevelNote: "A IA marcou este preço, mas o plano dela não passou na checagem de risco. É um preço para observar, não uma operação.",
   },
   paywall: {
-    ctaWeekly: 'Comece com uma semana: US$ 7,99 por 25 Ticks',
-    orMonthlyFirst: 'Ou mensal: {price} no primeiro mês, depois US$ 29/mês',
-    orMonthly: 'Ou mensal: US$ 29/mês por 200 Ticks',
+    ctaWeekly: 'Comece com uma semana: $7,99 por 25 Ticks',
+    orMonthlyFirst: 'Ou mensal: {price} no primeiro mês, depois $29/mês',
+    orMonthly: 'Ou mensal: $29/mês por 200 Ticks',
     titleNewAnalysis: 'Suas análises grátis com plano de trade acabaram',
     titleArea: 'Assine para continuar com acesso às suas análises e operações',
     descNewAnalysis: 'Assine para analisar este gráfico e os próximos: entrada, stop, alvos, risco e o raciocínio em cada leitura.',
@@ -1250,8 +1253,8 @@ export default {
     descJournal: 'O diário organiza cada análise e resultado por dia. Ele volta a abrir assim que você assinar.',
     descHistory: 'Esta análise é mais antiga que as suas 3 últimas. Assine para abrir o histórico completo de novo.',
     descSetups: 'Nenhuma análise deste setup está entre as suas 3 últimas. Assine para abrir todas as versões de novo.',
-    offerNote: '{code} dá {pct}% de desconto no primeiro mês do plano mensal, aplicado automaticamente. Depois US$ 29/mês, cancele quando quiser.',
-    allPlans: 'Todos os planos, incluindo o anual de US$ 290/ano',
+    offerNote: '{code} dá {pct}% de desconto no primeiro mês do plano mensal, aplicado automaticamente. Depois $29/mês, cancele quando quiser.',
+    allPlans: 'Todos os planos, incluindo o anual de $290/ano',
     opening: 'Abrindo o checkout seguro…',
     yourChart: 'Seu gráfico',
     includesTitle: 'O que toda leitura traz',
@@ -1319,6 +1322,7 @@ export default {
     loadFailed: 'Não foi possível carregar sua assinatura. Tente de novo em instantes.',
     retry: 'Tentar de novo',
     noSubscription: 'Você não tem assinatura.',
+    manualAccess: 'Acesso manual',
     seePlans: 'Ver planos',
     statusActive: 'Ativa, renova em {date}',
     statusCanceled: 'Cancelada, acesso até {date}',
@@ -1524,9 +1528,9 @@ export default {
       analysesQuick: 'análises rápidas',
       starterBadge: 'Tudo incluído',
       starterCta: 'Começar',
-      fS1: '200 Ticks mensais (~200 rápidas ou 66 deep)', fS2: 'Análise rápida + deep, histórico completo', fS3: 'Candles verificados no modo rápido elegível + calendário quando disponível', fS4: 'US$ 0,145 por análise rápida no plano mensal',
+      fS1: '200 Ticks mensais (~200 rápidas ou 66 deep)', fS2: 'Análise rápida + deep, histórico completo', fS3: 'Candles verificados no modo rápido elegível + calendário quando disponível', fS4: '$0,145 por análise rápida no plano mensal',
       monthlyReset: 'Seu saldo volta para 200 Ticks no início de cada mês de cobrança. Ticks não usados não acumulam.',
-      weeklyLine: 'Ainda não quer um mês? US$ 7,99 por semana, 25 Ticks, cancele quando quiser.',
+      weeklyLine: 'Ainda não quer um mês? $7,99 por semana, 25 Ticks, cancele quando quiser.',
     },
     faq: {
       label: 'FAQ', title: 'Perguntas', highlight: 'que traders fazem.',

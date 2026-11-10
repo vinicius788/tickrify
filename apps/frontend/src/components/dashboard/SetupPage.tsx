@@ -55,6 +55,8 @@ const SetupPage = ({
   const alertsQuery = useSetupAlerts(true, setupId);
   const { cancel, seen } = useAlertActions();
   const alerts = alertsQuery.data?.items ?? [];
+  const activeAlerts = alerts.filter((alert) => alert.status === 'active');
+  const triggeredAlerts = alerts.filter((alert) => alert.status === 'triggered');
   const unseenIds = alerts.filter((alert) => alert.status === 'triggered' && !alert.seenAt).map((alert) => alert.id).join(',');
 
   useEffect(() => {
@@ -185,39 +187,48 @@ const SetupPage = ({
         )}
       </div>
 
-      {alerts.length > 0 ? (
-        <section key="alerts" className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
+      {activeAlerts.length > 0 ? (
+        <section key="alerts" data-testid="alerts-active" className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="tk-stat-label">{t.alerts.activeTitle}</h2>
-            <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
-              {`${alerts[0].checkedAt ? t.alerts.lastChecked.replace('{time}', formatUtcTime(alerts[0].checkedAt)) : t.alerts.notChecked}${
-                alerts[0].lastPrice ? ` · ${formatAlertLevel(alerts[0].lastPrice, locale)}` : ''
-              }${checkFrequencyText(t.alerts, alerts[0]) ? ` · ${checkFrequencyText(t.alerts, alerts[0])}` : ''}`}
+            <p data-testid="alerts-checked" className="font-terminal text-[11px] text-[var(--text-secondary)]">
+              {`${activeAlerts[0].checkedAt ? t.alerts.lastChecked.replace('{time}', formatUtcTime(activeAlerts[0].checkedAt)) : t.alerts.notChecked}${
+                activeAlerts[0].lastPrice ? ` · ${formatAlertLevel(activeAlerts[0].lastPrice, locale)}` : ''
+              }${checkFrequencyText(t.alerts, activeAlerts[0]) ? ` · ${checkFrequencyText(t.alerts, activeAlerts[0])}` : ''}`}
             </p>
           </div>
           <ul className="mt-3 divide-y divide-[var(--border-subtle)]">
-            {alerts.map((alert) => (
+            {activeAlerts.map((alert) => (
               <li key={alert.id} className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
                 <div className="min-w-0 font-terminal text-xs">
                   <p className="text-[var(--text-primary)]">{`${alertLabel[alert.label]} ${formatAlertLevel(alert.level, locale)}`}</p>
-                  <p className="mt-0.5 text-[var(--text-secondary)]">
-                    {alert.status === 'triggered' && alert.triggeredAt
-                      ? t.alerts.reachedAt.replace('{level}', formatAlertLevel(alert.level, locale)).replace('{time}', formatUtcTime(alert.triggeredAt))
-                      : alert.side === 'above'
-                        ? t.alerts.rises
-                        : t.alerts.falls}
-                  </p>
+                  <p className="mt-0.5 text-[var(--text-secondary)]">{alert.side === 'above' ? t.alerts.rises : t.alerts.falls}</p>
                 </div>
-                {alert.status === 'active' ? (
-                  <button
-                    key="cancel"
-                    type="button"
-                    onClick={() => cancel.mutate(alert.id, { onSuccess: () => toast({ title: t.alerts.cancelled }) })}
-                    disabled={cancel.isPending}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-50"
-                  >
-                    <X className="h-3.5 w-3.5" /> {t.alerts.cancel}
-                  </button>
+                <button
+                  type="button"
+                  onClick={() => cancel.mutate(alert.id, { onSuccess: () => toast({ title: t.alerts.cancelled }) })}
+                  disabled={cancel.isPending}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-50"
+                >
+                  <X className="h-3.5 w-3.5" /> {t.alerts.cancel}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {triggeredAlerts.length > 0 ? (
+        <section key="triggered" data-testid="alerts-triggered" className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
+          <h2 className="tk-stat-label">{t.alerts.triggeredTitle}</h2>
+          <ul className="mt-3 divide-y divide-[var(--border-subtle)]">
+            {triggeredAlerts.map((alert) => (
+              <li key={alert.id} className="py-2.5 font-terminal text-xs first:pt-0 last:pb-0">
+                <p className="text-[var(--text-primary)]">{`${alertLabel[alert.label]} ${formatAlertLevel(alert.level, locale)}`}</p>
+                {alert.triggeredAt ? (
+                  <p key="reached" className="mt-0.5 text-[var(--text-secondary)]">
+                    {t.alerts.reachedAt.replace('{level}', formatAlertLevel(alert.level, locale)).replace('{time}', formatUtcTime(alert.triggeredAt))}
+                  </p>
                 ) : null}
               </li>
             ))}

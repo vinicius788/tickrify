@@ -484,6 +484,34 @@ describe('Pagina do setup', () => {
     await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: 'Alert cancelled.' }));
   });
 
+  it('so disparado: fica em "Triggered alerts", sem "Active alerts" nem o "Last checked" parado', async () => {
+    serve({
+      'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: SETUP, versions, nextCursor: null }),
+      'GET /api/setups/alerts': () => json(200, { paused: false, pausedSymbol: null, items: [{ ...ALERT, seenAt: '2026-10-27T14:00:00.000Z', checkIntervalMs: 60000 }], unseen: 0, emailEnabled: true }),
+    });
+    wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);
+    expect(await screen.findByText('Triggered alerts')).toBeTruthy();
+    expect(screen.getByTestId('alerts-triggered').textContent).toContain('Reached 4,180 at 13:42 UTC');
+    expect(screen.queryByText('Active alerts')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Last checked|every minute/i);
+    expect(screen.queryByRole('button', { name: /Cancel alert/ })).toBeNull();
+  });
+
+  it('ativo e disparado em secoes separadas; o horario checado so na de ativos', async () => {
+    const active = { ...ALERT, id: 'alert-bbbbbbbb', status: 'active', label: 'entry', level: 4140, side: 'below', triggeredAt: null, seenAt: null };
+    serve({
+      'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: SETUP, versions, nextCursor: null }),
+      'GET /api/setups/alerts': () => json(200, { paused: false, pausedSymbol: null, items: [{ ...ALERT, seenAt: '2026-10-27T14:00:00.000Z' }, active], unseen: 0, emailEnabled: true }),
+    });
+    wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);
+    const activeBox = await screen.findByTestId('alerts-active');
+    expect(activeBox.textContent).toContain('Entry 4,140');
+    expect(activeBox.textContent).not.toContain('4,180');
+    expect(activeBox.textContent).toContain('Last checked 13:50 UTC');
+    expect(screen.getByTestId('alerts-triggered').textContent).toContain('4,180');
+    expect(screen.getByTestId('alerts-triggered').textContent).not.toContain('Last checked');
+  });
+
   it('largado: so "Follow again", sem Update', async () => {
     serve({ 'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: { ...SETUP, status: 'untracked' }, versions, nextCursor: null }) });
     wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);
