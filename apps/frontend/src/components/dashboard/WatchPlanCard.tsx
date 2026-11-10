@@ -304,7 +304,7 @@ export function WatchPlanCard({
           <div className="min-w-0">
             <h3 className="tk-display text-base text-[var(--text-primary)]">{w.planTitle.replace('{zone}', zone)}</h3>
             <p data-testid="watch-not-signal" className="mt-1 text-xs text-[var(--text-secondary)]">{w.notSignal}</p>
-            <dl data-testid="watch-numbers" className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-4 ${tiles.length > 2 ? 'lg:grid-cols-4' : ''}`}>
+            <dl data-testid="watch-numbers" className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-4 ${tiles.length > 2 ? '2xl:grid-cols-4' : ''}`}>
               {tiles.map((tile) => (
                 <div key={tile.key} className="min-w-0">
                   <dt className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{tile.label}</dt>
