@@ -20,11 +20,11 @@ export default {
   	extend: {
   		fontFamily: {
   			sans: [
-  				'Inter',
+  				'Geist',
                     ...fontFamily.sans
                 ],
   			mono: [
-  				'JetBrains Mono',
+  				'Geist Mono',
                     ...fontFamily.mono
                 ]
   		},

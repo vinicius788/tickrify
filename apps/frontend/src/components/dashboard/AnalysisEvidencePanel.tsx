@@ -18,7 +18,7 @@ export function AnalysisEvidencePanel({ evidence: value }: { evidence: unknown }
 
   return (
     <div className="mt-3 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-3 text-xs text-[var(--text-secondary)]">
-      <p className="font-terminal font-semibold uppercase tracking-wide text-[var(--text-primary)]">
+      <p className="tabular-nums font-medium text-[var(--text-primary)]">
         {t.analysis.evidenceTitle}
       </p>
       {evidence ? (

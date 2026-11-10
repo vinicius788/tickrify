@@ -62,7 +62,6 @@ export default {
     validation_less: "{side}: {first} ({firstValue}) deve ser menor que {second} ({secondValue})",
     validation_rr_denominator: "{side}: denominador inválido para R:R",
     validation_rr: "{side}: R:R inválido ({value})",
-    validation_numeric_target2: "{side}: segundo alvo deve ser numérico",
     drawing_references: "Referencias visuais: {firstId} e {secondId}.",
     analysis_details_unavailable: "Detalhes da análise indisponíveis.",
     demo_disclaimer: "Análise apenas educacional, não é aconselhamento financeiro. Operar envolve risco; a decisão é sempre sua.",
@@ -1204,14 +1203,7 @@ export default {
     alertWatching: 'Alerta: vigiando',
     alertTriggered: 'Alerta: disparou',
     alertCancelled: 'Alerta: cancelado',
-    levelReached: 'Nível atingido',
-    invalidatedBefore: 'Invalidado antes do nível',
     windowClosed: 'Janela encerrada',
-    outcomePending: 'Janela encerrada. Conferência do preço pendente.',
-    unavailable: 'Sem acompanhamento para este ativo',
-    afterTarget: 'Depois o preço chegou ao alvo do plano.',
-    afterInvalidation: 'Depois o preço chegou à invalidação.',
-    afterNeither: 'Depois o preço não chegou a nenhum dos dois em 48 horas.',
   },
   pending: {
     planIf: "Plano se o preço chegar a {level}: {side} em {level}, stop {stop}, alvo {target} ({r}R).",
@@ -1225,7 +1217,12 @@ export default {
     validLeft: 'Vale por {n} velas, faltam {time}',
     validFor: 'Vale por {n} velas',
     statusPending: 'Pendente',
-    windowClosed: 'Janela encerrada. Desfecho pendente.',
+    marketDid: 'O que o mercado fez',
+    targetHit: 'Chegou ao nível, bateu o alvo',
+    targetHitR: 'Chegou ao nível, bateu o alvo ({r} R)',
+    stopped: 'Chegou ao nível, bateu o stop (-1 R)',
+    reachedNeither: 'Chegou ao nível, sem alvo nem stop em 48 horas',
+    checking: 'Conferindo o resultado',
     reached: 'O preço chegou ao nível',
     expired: 'Expirou sem chegar ao nível',
     invalidated: 'Invalidado antes de chegar ao nível',
@@ -1403,6 +1400,10 @@ export default {
   },
   // Botão flutuante de reportar problema (ReportProblemButton).
   // Chat com o fundador (12/10/2026), dentro da bolha "Chat, feedback or problem".
+  community: {
+    join: 'Entre na comunidade no Discord',
+    footerLink: 'Comunidade no Discord',
+  },
   chat: {
     title: 'Fale com o Vinícius, fundador da Tickrify',
     subtitle: 'Costuma responder em algumas horas',

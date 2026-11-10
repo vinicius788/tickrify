@@ -94,7 +94,7 @@ const SupportChat = ({ thread }: { thread: ChatThread | null }) => {
         ) : null}
         {items.length === 0 && !messages.isLoading ? (
           <div key="welcome" className="max-w-[85%] self-start rounded-lg bg-[var(--fill-3)] px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">{c.founder}</p>
+            <p className="text-xs font-medium text-[var(--text-faint)]">{c.founder}</p>
             <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-primary)]">{c.welcome}</p>
           </div>
         ) : null}
@@ -105,7 +105,7 @@ const SupportChat = ({ thread }: { thread: ChatThread | null }) => {
               key={message.id}
               className={`max-w-[85%] rounded-lg px-3 py-2 ${mine ? 'self-end bg-[var(--fill-6)]' : 'self-start bg-[var(--fill-3)]'}`}
             >
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">
+              <p className="text-xs font-medium text-[var(--text-faint)]">
                 {`${mine ? c.you : c.founder} · ${time(message.createdAt)}`}
               </p>
               <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-primary)]">{message.body}</p>

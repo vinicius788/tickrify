@@ -131,15 +131,15 @@ const SetupPage = ({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <div className="tk-eyebrow flex items-center gap-2 text-[11px]">
+        <div className="tk-eyebrow">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
           {`${t.nav.workspace} / ${s.pageEyebrow}`}
         </div>
-        <h1 className="tk-display mt-2 text-3xl md:text-4xl">
+        <h1 className="tk-display mt-2 text-2xl md:text-3xl">
           {`${setup.symbol ?? 'N/A'} `}
-          <span className="font-terminal text-lg text-[var(--text-secondary)]">{setup.timeframe ?? ''}</span>
+          <span className="tabular-nums text-lg text-[var(--text-secondary)]">{setup.timeframe ?? ''}</span>
         </h1>
-        <p className="mt-2 font-terminal text-xs text-[var(--text-secondary)]">
+        <p className="mt-2 tabular-nums text-xs text-[var(--text-secondary)]">
           {tracking ? s.followingSince.replace('{date}', formatSetupDay(setup.createdAt, locale)) : s.notFollowing}
         </p>
       </div>
@@ -191,7 +191,7 @@ const SetupPage = ({
         <section key="alerts" data-testid="alerts-active" className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="tk-stat-label">{t.alerts.activeTitle}</h2>
-            <p data-testid="alerts-checked" className="font-terminal text-[11px] text-[var(--text-secondary)]">
+            <p data-testid="alerts-checked" className="tabular-nums text-[11px] text-[var(--text-secondary)]">
               {`${activeAlerts[0].checkedAt ? t.alerts.lastChecked.replace('{time}', formatUtcTime(activeAlerts[0].checkedAt)) : t.alerts.notChecked}${
                 activeAlerts[0].lastPrice ? ` · ${formatAlertLevel(activeAlerts[0].lastPrice, locale)}` : ''
               }${checkFrequencyText(t.alerts, activeAlerts[0]) ? ` · ${checkFrequencyText(t.alerts, activeAlerts[0])}` : ''}`}
@@ -200,7 +200,7 @@ const SetupPage = ({
           <ul className="mt-3 divide-y divide-[var(--border-subtle)]">
             {activeAlerts.map((alert) => (
               <li key={alert.id} className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
-                <div className="min-w-0 font-terminal text-xs">
+                <div className="min-w-0 tabular-nums text-xs">
                   <p className="text-[var(--text-primary)]">{`${alertLabel[alert.label]} ${formatAlertLevel(alert.level, locale)}`}</p>
                   <p className="mt-0.5 text-[var(--text-secondary)]">{alert.side === 'above' ? t.alerts.rises : t.alerts.falls}</p>
                 </div>
@@ -223,7 +223,7 @@ const SetupPage = ({
           <h2 className="tk-stat-label">{t.alerts.triggeredTitle}</h2>
           <ul className="mt-3 divide-y divide-[var(--border-subtle)]">
             {triggeredAlerts.map((alert) => (
-              <li key={alert.id} className="py-2.5 font-terminal text-xs first:pt-0 last:pb-0">
+              <li key={alert.id} className="py-2.5 tabular-nums text-xs first:pt-0 last:pb-0">
                 <p className="text-[var(--text-primary)]">{`${alertLabel[alert.label]} ${formatAlertLevel(alert.level, locale)}`}</p>
                 {alert.triggeredAt ? (
                   <p key="reached" className="mt-0.5 text-[var(--text-secondary)]">
@@ -249,7 +249,7 @@ const SetupPage = ({
                   <p className="text-sm text-[var(--text-primary)] group-hover:underline">
                     {s.analysisFrom.replace('{date}', formatSetupMoment(v.createdAt, locale))}
                   </p>
-                  <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
+                  <p className="tabular-nums text-[11px] text-[var(--text-secondary)]">
                     {`${s.version.replace('{n}', String(v.version))} · `}
                     <span className={`font-semibold ${verdictTone(v)}`}>{verdictLabel(v)}</span>
                   </p>
@@ -261,7 +261,7 @@ const SetupPage = ({
                     </p>
                   ) : null
                 ) : (
-                  <dl className="grid grid-cols-2 gap-2 font-terminal text-xs sm:grid-cols-4">
+                  <dl className="grid grid-cols-2 gap-2 tabular-nums text-xs sm:grid-cols-4">
                     {([
                       [s.entry, v.entry],
                       [s.stop, v.stopLoss],
@@ -290,7 +290,7 @@ const SetupPage = ({
             type="button"
             onClick={() => void query.fetchNextPage()}
             disabled={query.isFetchingNextPage}
-            className="mt-4 font-terminal text-xs text-[var(--accent-green)] underline-offset-2 hover:underline disabled:opacity-50"
+            className="mt-4 tabular-nums text-xs text-[var(--accent-green)] underline-offset-2 hover:underline disabled:opacity-50"
           >
             {s.loadMore}
           </button>

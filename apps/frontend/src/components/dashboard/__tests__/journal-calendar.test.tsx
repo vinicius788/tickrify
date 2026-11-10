@@ -90,6 +90,24 @@ describe('Diario: WATCH pendente', () => {
     expect(screen.getByText('Mark TP or Stop on your trades in My Trades and your stats for the month show up here.')).toBeTruthy();
     expect(screen.queryByText('Your logged trading results')).toBeNull();
   });
+
+  it.each([
+    ['target', 'var(--signal-buy-bg)'],
+    ['invalidation', 'var(--signal-sell-bg)'],
+  ] as const)('dia com WATCH resolvido (%s) leva a cor do desfecho, fora do P&L', async (afterReach, background) => {
+    const today = new Date().getDate();
+    const resolved = {
+      ...item('w', today, 'BTCUSDT', 'WAIT', 'stop', -42, null),
+      signalState: 'WATCH',
+      watch: { direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12, expiresAt: '2026-01-01T00:00:00.000Z', outcome: 'reached', afterReach, targetR: 2, alertAvailable: true },
+    };
+    getJournal.mockResolvedValue({ truncated: false, items: [resolved] });
+    renderJournal();
+    const dot = await screen.findByTestId('day-watch', {}, LOAD);
+    expect(dot.firstElementChild!.getAttribute('data-tone')).toBe(afterReach === 'target' ? 'target' : 'stopped');
+    expect((dot.closest('button') as HTMLElement).style.background).toBe(background);
+    expect(screen.queryByText('Your logged trading results')).toBeNull();
+  });
 });
 
 describe('Diario: voce x o plano da IA', () => {

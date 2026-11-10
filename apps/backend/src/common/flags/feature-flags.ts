@@ -193,6 +193,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'ENGINE_ENTER_AT_LEVEL',
+    type: 'boolean',
+    label: 'Entrada no nivel do WATCH',
+    description:
+      'So vale com a continuacao do setup ligada: na reanalise em que o preco esta dentro da zona do WATCH anterior, na mesma direcao, e a IA diz CONFIRMED, o movimento nao conta como atrasado. O resto das regras nao muda. DESLIGADO: identico ao motor de sempre.',
+    defaultValue: 'false',
+    risk: 'alto',
+  },
+  {
     key: 'CHAT_EMAIL_NOTIFY',
     type: 'boolean',
     label: 'E-mails do chat com o fundador',

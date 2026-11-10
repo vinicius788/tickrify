@@ -4,7 +4,7 @@ import { Bias, Recommendation } from '../utils/analysis-normalizer';
 import { DrawingPlan } from '../utils/drawing-plan';
 import type { GroundingStats } from '../../modules/ai/analysis-data-coverage';
 import type { EntryLevels } from '../utils/plan-engine';
-import type { PriceLocation, SignalDecisionResult, SignalState, ValidatorAction, ValidatorNote, ValidatorReason, WatchReach } from '../utils/signal-decision';
+import type { PriceLocation, RejectedPlan, SignalDecisionResult, SignalState, ValidatorAction, ValidatorNote, ValidatorReason, WatchReach } from '../utils/signal-decision';
 import type { WatchPlan } from '../utils/plan-engine';
 import type { AiLevel, LevelMap } from '../utils/level-map';
 import type { ProviderComparison } from '../../modules/ai/vision-model';
@@ -44,6 +44,10 @@ export interface AIAnalysisResponse {
   validatorNotes: ValidatorNote[];
   /** So quando o plano anterior do setup entrou no prompt (setup-continuation.ts). */
   continuation?: SetupContinuation;
+  /** Modelo pediu WATCH ou ENTER_NOW e o codigo rebaixou para NO_TRADE. So medicao. */
+  rejectedPlan?: RejectedPlan;
+  /** ENTER_NOW liberado pela chave ENGINE_ENTER_AT_LEVEL. */
+  enterAtLevel?: boolean;
   bias: Bias;
   confidence: number; // 0-100
   reasoning: string;

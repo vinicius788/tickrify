@@ -3,7 +3,7 @@ import { useLanguage } from '../../lib/i18n/LanguageContext';
 import { LANGUAGES, Language } from '../../lib/i18n';
 import { useState, useRef, useEffect } from 'react';
 
-export function LanguageSwitcher() {
+export function LanguageSwitcher({ className = '' }: { className?: string }) {
   const { language, setLanguage, t } = useLanguage();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -22,7 +22,7 @@ export function LanguageSwitcher() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-terminal text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] transition-colors"
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] transition-colors ${className}`}
         title={t.language.select}
       >
         <Globe size={14} />

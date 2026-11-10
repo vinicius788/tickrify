@@ -1,4 +1,4 @@
-import { loadWatchContexts, storedWatchPlan, watchAfterReachOf, watchOutcomeOf, watchSummaryOf } from './watch-pending';
+import { loadWatchContexts, storedWatchPlan, watchAfterReachOf, watchOutcomeOf, watchSummaryOf, watchTargetROf } from './watch-pending';
 
 const plan = { direction: 'short', triggerType: 'zone_reaction', zoneLow: 77800, zoneHigh: 78000, invalidation: 78400,
   target1: 76900, target2: null, validForCandles: 12, trigger: 'Bearish close below 77,800' };
@@ -46,11 +46,25 @@ describe('watchOutcomeOf (so leitura do AnalysisTrack)', () => {
   });
 });
 
+describe('watchTargetROf', () => {
+  const base = { status: 'tracked', touched: true, fillPrice: 100, stopLoss: 98, takeProfit1: 105 };
+  it('R bruto so quando bateu o alvo', () => {
+    expect(watchTargetROf({ ...base, outcome: 'WIN' })).toBe(2.5);
+    expect(watchTargetROf({ ...base, outcome: 'LOSS' })).toBeNull();
+    expect(watchTargetROf({ ...base, outcome: 'TIMEOUT' })).toBeNull();
+  });
+  it('sem niveis gravados ou risco zero: sem numero', () => {
+    expect(watchTargetROf({ status: 'tracked', touched: true, outcome: 'WIN' })).toBeNull();
+    expect(watchTargetROf({ ...base, stopLoss: 100, outcome: 'WIN' })).toBeNull();
+    expect(watchTargetROf(null)).toBeNull();
+  });
+});
+
 describe('watchSummaryOf', () => {
   it('WATCH: nivel = borda proxima, validade x tempo grafico a partir da analise, alerta pela fonte de preco', () => {
     expect(watchSummaryOf(watchResult(), 'WAIT', created, null)).toEqual({
       direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12,
-      expiresAt: '2026-11-03T15:00:00.000Z', outcome: 'pending', afterReach: null, alertAvailable: true, setupId: null, plan: null,
+      expiresAt: '2026-11-03T15:00:00.000Z', outcome: 'pending', afterReach: null, targetR: null, alertAvailable: true, setupId: null, plan: null,
     });
     const long = watchSummaryOf(watchResult({ watchPlan: { ...plan, direction: 'long', invalidation: 77500, target1: 79000 } }), 'WAIT', created, null);
     expect(long?.level).toBe(78000);

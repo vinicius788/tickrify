@@ -61,7 +61,7 @@ function Conversa({ thread }: { thread: AdminChatThread }) {
           const doFundador = m.author === 'founder';
           return (
             <div key={m.id} className={`max-w-[85%] rounded-lg px-3 py-2 ${doFundador ? 'self-end bg-[var(--fill-6)]' : 'self-start bg-[var(--fill-3)]'}`}>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-faint)]">{`${doFundador ? 'Você' : 'Usuário'} · ${quando(m.createdAt)}`}</p>
+              <p className="text-xs font-medium text-[var(--text-faint)]">{`${doFundador ? 'Você' : 'Usuário'} · ${quando(m.createdAt)}`}</p>
               <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-primary)]">{m.body}</p>
             </div>
           );

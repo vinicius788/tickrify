@@ -16,6 +16,9 @@ import {
   useExpiryClock,
   useAlertOptions,
   isWatchOpen,
+  watchTone,
+  WATCH_TONE_CLASSES,
+  type WatchTone,
   useAlertActions,
   useSetupAlerts,
   useWatching,
@@ -67,7 +70,7 @@ export function AlertLevelButton({
 
   if (active) {
     return (
-      <span key="active" className="inline-flex items-center gap-1.5 font-terminal text-[11px] text-[var(--text-secondary)]">
+      <span key="active" className="inline-flex items-center gap-1.5 tabular-nums text-[11px] text-[var(--text-secondary)]">
         <BellRing className="h-3.5 w-3.5 text-[var(--accent-green)]" />
         <span>{p.alertActive.replace('{price}', price)}</span>
       </span>
@@ -122,6 +125,29 @@ function useConditionalPlan() {
       : null;
 }
 
+/** O desfecho do WATCH: verde no alvo, vermelho no stop, cinza no resto. Sempre "o que o mercado fez". */
+export function WatchVerdict({ watch, tone, caption = true, alignEnd = false }: { watch: WatchSummary; tone: WatchTone; caption?: boolean; alignEnd?: boolean }) {
+  const { t, language } = useLanguage();
+  const p = t.pending;
+  const label =
+    tone === 'target'
+      ? watch.targetR
+        ? p.targetHitR.replace('{r}', `+${formatNumber(watch.targetR, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}`)
+        : p.targetHit
+      : tone === 'stopped' ? p.stopped
+        : tone === 'checking' ? p.checking
+          : watch.outcome === 'reached' ? (watch.afterReach === 'neither' ? p.reachedNeither : p.reached)
+            : watch.outcome === 'invalidated' ? p.invalidated
+              : watch.outcome === 'expired' ? p.expired
+                : p.unavailable;
+  return (
+    <div data-testid="watch-outcome" data-tone={tone} data-outcome={watch.outcome} className={`flex flex-col gap-1 ${alignEnd ? 'sm:items-end' : 'items-start'}`}>
+      {caption ? <span key="caption" className="tabular-nums text-xs text-[var(--text-tertiary)]">{p.marketDid}</span> : null}
+      <span className={`w-fit rounded-lg border px-2.5 py-1 tabular-nums text-[11px] ${WATCH_TONE_CLASSES[tone]}`}>{label}</span>
+    </div>
+  );
+}
+
 /**
  * O WATCH como item pendente: direcao e nivel, invalidacao, validade com o
  * tempo que falta e, depois da janela, o desfecho que o rastreador gravou.
@@ -135,6 +161,7 @@ export function WatchPending({
   waitingFor,
   alignEnd = false,
   symbol,
+  caption = true,
 }: {
   analysisId: string;
   watch: WatchSummary;
@@ -147,6 +174,8 @@ export function WatchPending({
   alignEnd?: boolean;
   /** Ativo, para a unidade do preco (indice sem "$"). */
   symbol?: string | null;
+  /** false: o bloco em volta ja diz que e o que o mercado fez. */
+  caption?: boolean;
 }) {
   const { t, language } = useLanguage();
   const p = t.pending;
@@ -161,30 +190,26 @@ export function WatchPending({
     : watch.outcome === 'pending' && watch.expiresAt === null
       ? p.validFor.replace('{n}', String(watch.validForCandles))
       : null;
-  const status =
-    watch.outcome === 'reached' ? p.reached
-      : watch.outcome === 'expired' ? p.expired
-        : watch.outcome === 'invalidated' ? p.invalidated
-          : watch.outcome === 'unavailable' ? p.unavailable
-            : p.statusPending;
-  const closedNote = watch.outcome === 'pending' && !open && watch.expiresAt !== null ? p.windowClosed : null;
+  const tone = watchTone(watch, now);
   // Janela fechada: so o nivel e a direcao, sem mandar esperar algo que ja passou.
-  const closed = watch.outcome !== 'pending' || closedNote !== null;
+  const closed = tone !== 'watching';
   const levelLine = closed
     ? (watch.direction === 'long' ? p.buyLevel : p.sellLevel)
     : (watch.direction === 'long' ? p.watchBuy : p.watchSell);
 
   return (
     <div data-testid="watch-pending" data-outcome={watch.outcome} className={`flex flex-col gap-1.5 ${alignEnd ? 'sm:items-end sm:text-right' : ''}`}>
-      <span className="w-fit rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2.5 py-1 font-terminal text-[11px] text-[var(--text-secondary)]">
-        {closedNote ?? status}
-      </span>
-      <p className="font-terminal text-xs text-[var(--text-primary)]">
+      {closed ? (
+        <WatchVerdict key="verdict" watch={watch} tone={tone} caption={caption} alignEnd={alignEnd} />
+      ) : (
+        <span key="status" className={`w-fit rounded-lg border px-2.5 py-1 tabular-nums text-[11px] ${WATCH_TONE_CLASSES.watching}`}>{p.statusPending}</span>
+      )}
+      <p className="tabular-nums text-xs text-[var(--text-primary)]">
         {levelLine.replace('{price}', price(watch.level))}
       </p>
-      {!closed && conditionalPlan && <p data-testid="conditional-plan" className="font-terminal text-[11px] text-[var(--text-primary)]">{conditionalPlan}</p>}
+      {!closed && conditionalPlan && <p data-testid="conditional-plan" className="tabular-nums text-[11px] text-[var(--text-primary)]">{conditionalPlan}</p>}
       {!closed && waitingFor && <p className="text-xs text-[var(--text-secondary)]">{waitingFor}</p>}
-      {!closed && <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
+      {!closed && <p className="tabular-nums text-[11px] text-[var(--text-secondary)]">
         {[p.invalidation.replace('{price}', price(watch.invalidation)), validity].filter(Boolean).join(' · ')}
       </p>}
       {alerts && open && watch.alertAvailable ? (
@@ -206,24 +231,11 @@ function WatchingRow({ item, now, surface }: { item: WatchingItem; now: number; 
   const price = (v: number) => formatAssetPrice(v, item.symbol, locale);
   const conditionalPlan = useConditionalPlan()(watch.direction, watch.plan, price);
   const open = isWatchOpen(watch, now);
-  const closed = watch.outcome !== 'pending' || (watch.expiresAt !== null && !open);
+  const tone = watchTone(watch, now);
+  const closed = tone !== 'watching';
   const triggered = alert?.status === 'triggered';
 
-  // Disparo dentro da janela ja diz que o preco chegou, antes da linha do rastreador existir.
-  const hitInWindow = triggered && alert.triggeredAt !== null && (watch.expiresAt === null || Date.parse(alert.triggeredAt) <= Date.parse(watch.expiresAt));
-  const closedLabel =
-    watch.outcome === 'reached' ? w.levelReached
-      : watch.outcome === 'invalidated' ? w.invalidatedBefore
-        : watch.outcome === 'expired' ? w.windowClosed
-          : watch.outcome === 'unavailable' ? w.unavailable
-            : hitInWindow ? w.levelReached : w.outcomePending;
-  const after =
-    watch.afterReach === 'target' ? w.afterTarget
-      : watch.afterReach === 'invalidation' ? w.afterInvalidation
-        : watch.afterReach === 'neither' ? w.afterNeither : null;
   const alertLabel = triggered ? w.alertTriggered : alert?.status === 'active' ? w.alertWatching : alert?.status === 'cancelled' ? w.alertCancelled : null;
-  // Alerta automatico e cancelado ao fim da janela: depois dela, o que importa e o que o preco fez.
-  const pill = closed ? closedLabel : alertLabel;
   const left = open ? Date.parse(watch.expiresAt as string) - now : null;
 
   const pct = closed ? null : alertDistancePct({ level: watch.level, lastPrice: item.lastPrice });
@@ -254,26 +266,27 @@ function WatchingRow({ item, now, surface }: { item: WatchingItem; now: number; 
   return (
     <li data-testid="watching-item" data-state={closed ? 'closed' : 'open'} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
-        <p className="font-terminal text-sm text-[var(--text-primary)]">
+        <p className="tabular-nums text-sm text-[var(--text-primary)]">
           {`${displayAsset(item.symbol)}${item.timeframe ? ` ${item.timeframe}` : ''}`}
         </p>
-        <p className="mt-0.5 font-terminal text-xs text-[var(--text-primary)]">
+        <p className="mt-0.5 tabular-nums text-xs text-[var(--text-primary)]">
           {[levelText, distance].filter(Boolean).join(' · ')}
         </p>
-        {!closed && conditionalPlan ? <p key="plan" data-testid="conditional-plan" className="mt-0.5 font-terminal text-[11px] text-[var(--text-primary)]">{conditionalPlan}</p> : null}
+        {!closed && conditionalPlan ? <p key="plan" data-testid="conditional-plan" className="mt-0.5 tabular-nums text-[11px] text-[var(--text-primary)]">{conditionalPlan}</p> : null}
         {!closed ? (
-          <p key="invalidation" className="mt-0.5 font-terminal text-[11px] text-[var(--text-secondary)]">
+          <p key="invalidation" className="mt-0.5 tabular-nums text-[11px] text-[var(--text-secondary)]">
             {[p.invalidation.replace('{price}', price(watch.invalidation)), left !== null ? w.timeLeft.replace('{time}', formatTimeLeft(left, locale)) : null].filter(Boolean).join(' · ')}
           </p>
         ) : null}
-        {closed && after ? <p key="after" className="mt-0.5 text-xs text-[var(--text-secondary)]">{after}</p> : null}
-        {checked ? <p key="checked" className="mt-0.5 font-terminal text-[11px] text-[var(--text-secondary)]">{checked}</p> : null}
+        {checked ? <p key="checked" className="mt-0.5 tabular-nums text-[11px] text-[var(--text-secondary)]">{checked}</p> : null}
         {triggered && !closed ? <p key="not-signal" className="mt-0.5 text-[11px] text-[var(--text-secondary)]">{a.notSignal}</p> : null}
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-        {pill ? (
-          <span key="pill" className="w-fit rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2.5 py-1 font-terminal text-[11px] text-[var(--text-secondary)]">
-            {pill}
+        {closed ? (
+          <WatchVerdict key="verdict" watch={watch} tone={tone} caption={false} alignEnd />
+        ) : alertLabel ? (
+          <span key="pill" className={`w-fit rounded-lg border px-2.5 py-1 tabular-nums text-[11px] ${WATCH_TONE_CLASSES.watching}`}>
+            {alertLabel}
           </span>
         ) : null}
         {triggered && (open || !alert.seenAt) ? (
@@ -364,14 +377,14 @@ export function LevelMapCard({
 
   return (
     <section data-testid="level-map" className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-4">
-      <h4 className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{p.levelMapTitle}</h4>
+      <h4 className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{p.levelMapTitle}</h4>
       <ul className="mt-2 flex flex-col gap-3">
         {aiLevel ? (
           <li key="ai" data-testid="ai-level" className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <div className="min-w-0">
               {aiLevel.direction ? (
                 <>
-                  <p className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{p.aiLevelLabel}</p>
+                  <p className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{p.aiLevelLabel}</p>
                   <p className="mt-0.5 text-sm leading-relaxed text-[var(--text-primary)]">
                     <span>{(aiLevel.direction === 'long' ? p.aiLevelBuy : p.aiLevelSell).replace('{price}', price(aiLevel.price))}</span>
                     {alerts && analysisId ? <AiLevelAlertNote analysisId={analysisId} level={aiLevel.price} /> : null}
@@ -379,7 +392,7 @@ export function LevelMapCard({
                 </>
               ) : (
                 <>
-                  <p className="font-terminal text-sm text-[var(--text-primary)]">{p.aiLevel.replace('{price}', price(aiLevel.price))}</p>
+                  <p className="tabular-nums text-sm text-[var(--text-primary)]">{p.aiLevel.replace('{price}', price(aiLevel.price))}</p>
                   <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-secondary)]">{p.aiLevelNote}</p>
                 </>
               )}
@@ -391,7 +404,7 @@ export function LevelMapCard({
         ) : null}
         {sides.map(({ key, side, up }) => (
           <li key={key} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-            <p className="font-terminal text-sm text-[var(--text-primary)]">{line(side, up)}</p>
+            <p className="tabular-nums text-sm text-[var(--text-primary)]">{line(side, up)}</p>
             {alerts && analysisId ? (
               <MapAlertButton analysisId={analysisId} level={side.level} format={price} />
             ) : null}

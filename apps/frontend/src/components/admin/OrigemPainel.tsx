@@ -41,7 +41,7 @@ function Tabela({ titulo, nota, linhas, nomear }: { titulo: string; nota: string
       ) : (
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="text-[11px] uppercase tracking-wide text-[var(--text-faint)]">
+            <thead className="text-[11px] text-[var(--text-faint)]">
               <tr>
                 <th className="py-1 pr-3">Canal</th>
                 <th className="py-1 pr-3 text-right">Cadastros</th>

@@ -286,9 +286,9 @@ const StrategyProfile = () => {
                 const clamped = Number.isFinite(raw) ? Math.min(MAX_RR, Math.max(MIN_RR, raw)) : MIN_RR;
                 setProfile((p) => ({ ...p, minRiskReward: clamped }));
               }}
-              className="w-24 rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1.5 font-terminal text-sm text-[var(--text-primary)] outline-none"
+              className="w-24 rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1.5 tabular-nums text-sm text-[var(--text-primary)] outline-none"
             />
-            <span className="font-terminal text-sm text-[var(--text-secondary)]">:1</span>
+            <span className="tabular-nums text-sm text-[var(--text-secondary)]">:1</span>
           </div>
           <p className="mt-1.5 text-xs text-[var(--text-secondary)]">{st.minRrHint}</p>
         </div>

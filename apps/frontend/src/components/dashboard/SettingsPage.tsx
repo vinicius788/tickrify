@@ -148,7 +148,7 @@ const SettingsPage = ({ eyebrow }: { eyebrow: ReactNode }) => {
     <div className="flex max-w-3xl flex-col gap-6">
       <div>
         {eyebrow}
-        <h1 className="tk-display mt-2 text-3xl md:text-4xl">{s.title}</h1>
+        <h1 className="tk-display mt-2 text-2xl md:text-3xl">{s.title}</h1>
         <p className="mt-2 text-sm text-[var(--text-secondary)]">{s.sub}</p>
       </div>
 
@@ -198,7 +198,7 @@ const SettingsPage = ({ eyebrow }: { eyebrow: ReactNode }) => {
             {price ? (
               <div key="price" className={row}>
                 <span className="text-[var(--text-secondary)]">{s.priceLabel}</span>
-                <span className="font-terminal text-[var(--text-primary)]">{price}</span>
+                <span className="tabular-nums text-[var(--text-primary)]">{price}</span>
               </div>
             ) : null}
             {ended ? null : (

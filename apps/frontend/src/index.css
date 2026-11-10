@@ -131,14 +131,6 @@
     animation: pulse 2s ease-in-out infinite;
   }
 
-  .live-dot {
-    animation: pulse 2s ease-in-out infinite;
-    color: var(--accent-green);
-    font-size: 11px;
-    font-family: var(--font-mono);
-    letter-spacing: 0.05em;
-  }
-
   .grid-background {
     position: relative;
     isolation: isolate;
@@ -217,55 +209,40 @@
    Nada aqui era usado por outra tela: o seletor era escopado só na landing. */
 
 /* ============================================================
-   PELE EDITORIAL v1 — classes ADITIVAS (não sobrescrevem nada
-   existente). Usadas pelo componente PageHeader e telas.
+   TIPOGRAFIA DA AREA LOGADA (09/11/2026): uma familia so (Geist),
+   hierarquia por peso e cor. Cores: --text-primary, --text-secondary
+   e --text-tertiary (trading-tokens.css).
    ============================================================ */
 
-/* Sobrancelha: rótulo pequeno, monoespaçado, em maiúsculas */
+/* Titulo de pagina e de cartao. O tamanho vem da classe text-* de quem usa. */
+.tk-display {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+/* Rotulo de secao e linha de saudacao: sentence case, peso 500, cor secundaria. */
+.tk-eyebrow,
+.tk-stat-label {
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
 .tk-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--text-muted);
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-/* Título display em serifa editorial */
-.tk-display {
-  font-family: var(--font-serif);
-  font-weight: 400;
-  line-height: 1.04;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
-
-/* Palavra-acento em itálico (tom secundário) dentro do título */
-.tk-display-accent,
-.tk-display-em em {
-  font-style: italic;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-/* Número grande em serifa (cards de KPI) */
-.tk-stat {
-  font-family: var(--font-serif);
-  font-weight: 400;
-  line-height: 1;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-}
-
-/* Rótulo de KPI, monoespaçado */
-.tk-stat-label {
-  font-family: var(--font-mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+/* Metadado: datas, contadores, "atualizado ha". */
+.tk-meta {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-tertiary);
 }
 
 /* ============================================================
@@ -854,16 +831,18 @@ a.site-stat:hover .site-stat-n { color: #fff; }
 }
 .tk-scan-meta {
   display: flex; justify-content: space-between; align-items: center; gap: 16px;
-  margin-top: 16px; font-family: var(--font-mono); font-size: 10.5px;
-  letter-spacing: 0.1em; text-transform: uppercase; color: var(--scan-meta);
+  margin-top: 16px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--scan-meta);
 }
 .tk-phases { margin-top: 10px; border-top: 1px solid var(--scan-line); }
 .tk-phase {
   display: flex; align-items: center; gap: 10px; padding: 11px 2px;
   border-bottom: 1px solid var(--scan-line);
-  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.4;
+  font-size: 13px; line-height: 1.4;
   color: var(--scan-phase); transition: color 0.3s ease;
 }
+/* No /try (site publico) o carregamento segue no estilo mono do site. */
+.tk-site .tk-scan-meta { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; }
+.tk-site .tk-phase { font-family: var(--font-mono); font-size: 11.5px; }
 .tk-phase i { flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .tk-phase.is-done { color: var(--scan-phase-done); }
 .tk-phase.is-now { color: var(--scan-phase-now); }

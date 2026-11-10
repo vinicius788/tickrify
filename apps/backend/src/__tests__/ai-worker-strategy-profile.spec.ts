@@ -401,10 +401,72 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       expect(delivered.fullResponse.levelMap).toEqual(stored.result.levelMap);
       expect(stored.result.aiLevel).toMatchObject({ price: 99 });
       expect(delivered.fullResponse.aiLevel).toEqual(stored.result.aiLevel);
+      expect(stored.result.rejectedPlan).toMatchObject({ modelState: 'WATCH', reason: 'invalidation_unsnapped', plan: { zoneLow: 98, invalidation: 80 } });
     } finally {
       if (oldEnrichment === undefined) delete process.env.ENABLE_MARKET_ENRICHMENT;
       else process.env.ENABLE_MARKET_ENRICHMENT = oldEnrichment;
     }
+  });
+
+  describe('reanalise com o preco na zona do WATCH (ENGINE_ENTER_AT_LEVEL)', () => {
+    const plan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 98, zoneHigh: 99, invalidation: 97, target1: 104, target2: null, validForCandles: 12, trigger: 'Reaction at 98.' };
+    const passes = [1, 2, 3, 4, 5, 6, 7].map((n) => `C${n} PASS: 98.5`).join('; ');
+    const run = async (id: string, flag: 'true' | 'false', late: boolean) => {
+      const processAnalysis = (require('../../worker/ai.worker'), getProcessor());
+      const { prismaClient } = mockPaidRefund();
+      const { AIAdapter: RealAdapter } = jest.requireActual('../modules/ai/ai.adapter');
+      const { OpenAiVisionModel } = jest.requireActual('../modules/ai/vision-model');
+      const adapter = new RealAdapter();
+      const raw = { is_financial_chart: true, signalState: 'WATCH', watchPlan: plan, recommendation: 'HOLD', confidence: 50, analysis: {
+        symbol: 'ABCUSDT', timeframe: '1h', currentPrice: 98.5, entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null,
+        factorsPresent: 7, trendStrength: 'strong', marketStructure: { bias: 'bullish' }, structureValidation: passes,
+        executiveSummary: 'Price is back at the zone.\nPRIOR_PLAN_STATUS: CONFIRMED',
+      } };
+      adapter.visionModel = new OpenAiVisionModel({ chat: { completions: { create: jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(raw) } }] }) } } });
+      adapter.buildMarketEnrichment = jest.fn().mockResolvedValue({
+        block: 'SYNTHETIC CONTEXT', assetClass: 'crypto', marketContext: 'injected', calendar: 'no_events_returned', candles: 'injected',
+        stats: { v: 1, symbol: 'BTCUSDT', interval: '1h', coverage: 'injected', numbers: {
+          lastClose: 98.5, atr14: 2, windowHigh: 112, windowLow: 90, swingHighs: [], swingLows: [],
+          swings: [{ kind: 'high', price: 104 }, { kind: 'low', price: 97 }], late: { long: late, short: false },
+        } },
+      });
+      const priorPlan = { setupId: 's1', priorAnalysisId: 'a0', symbol: 'BTCUSDT', createdAt: new Date('2026-11-09T10:00:00Z'), plan, alert: null };
+      analyzeImageMock.mockImplementationOnce((...args: any[]) => { args[5] = { ...args[5], priorPlan }; return adapter.analyzeImage(...args); });
+      const saved = { flag: process.env.ENGINE_ENTER_AT_LEVEL, enrichment: process.env.ENABLE_MARKET_ENRICHMENT };
+      process.env.ENGINE_ENTER_AT_LEVEL = flag;
+      process.env.ENABLE_MARKET_ENRICHMENT = 'true';
+      try {
+        await processAnalysis(makeJob({ analysisId: id, imageUrl: 'data:image/png;base64,AA==', analysisType: 'deep', userId: 'user-1', isDemo: false }));
+      } finally {
+        for (const [key, value] of [['ENGINE_ENTER_AT_LEVEL', saved.flag], ['ENABLE_MARKET_ENRICHMENT', saved.enrichment]] as const) {
+          if (value === undefined) delete process.env[key]; else process.env[key] = value;
+        }
+      }
+      const updates = prismaClient.analysis.update.mock.calls.map(([args]: any[]) => args.data);
+      return updates.find((d: any) => d.status === 'completed' || d.status === 'failed');
+    };
+
+    it('ligada: movimento atrasado vira ENTER_NOW gravado', async () => {
+      const stored = await run('at-level-on', 'true', true);
+      expect(stored.status).toBe('completed');
+      expect(stored.result).toMatchObject({ signalState: 'ENTER_NOW', enterAtLevel: true });
+      expect(stored.result.analysis).toMatchObject({ entry: 98.5, takeProfit2: null });
+    });
+
+    it('desligada: o atrasado segura em WATCH, como hoje', async () => {
+      const stored = await run('at-level-off', 'false', true);
+      expect(stored.status).toBe('completed');
+      expect(stored.result.signalState).toBe('WATCH');
+      expect(stored.result.enterAtLevel).toBeUndefined();
+    });
+
+    it('ENTER_NOW sem TP2 e gravado com a chave desligada (antes falhava com validation_failed)', async () => {
+      const stored = await run('no-tp2-off', 'false', false);
+      expect(stored.status).toBe('completed');
+      expect(stored.result.signalState).toBe('ENTER_NOW');
+      expect(stored.result.enterAtLevel).toBeUndefined();
+      expect(stored.result.analysis).toMatchObject({ entry: 98.5, takeProfit2: null });
+    });
   });
 
   it('persists the same safe fallback as synchronous processing after the final retry', async () => {

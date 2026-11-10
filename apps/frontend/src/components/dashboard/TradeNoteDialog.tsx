@@ -55,7 +55,7 @@ const TradeNoteDialog = ({ analysisId, title, initial, onClose, onSaved }: Trade
         <DialogDescription className="text-xs text-[var(--text-secondary)]">{j.notePrivate}</DialogDescription>
 
         <fieldset className="mt-2">
-          <legend className="mb-2 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.noteSetup}</legend>
+          <legend className="mb-2 text-xs text-[var(--text-secondary)]">{j.noteSetup}</legend>
           <div className="flex flex-wrap gap-1.5">
             {TRADE_SETUPS.map((s) => (
               <button key={s} type="button" aria-pressed={setup === s} onClick={() => setSetup(setup === s ? null : s)} className={chip(setup === s)}>
@@ -66,7 +66,7 @@ const TradeNoteDialog = ({ analysisId, title, initial, onClose, onSaved }: Trade
         </fieldset>
 
         <fieldset className="mt-3">
-          <legend className="mb-2 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.noteEmotion}</legend>
+          <legend className="mb-2 text-xs text-[var(--text-secondary)]">{j.noteEmotion}</legend>
           <div className="flex flex-wrap gap-1.5">
             {TRADE_EMOTIONS.map((e) => (
               <button key={e} type="button" aria-pressed={emotion === e} onClick={() => setEmotion(emotion === e ? null : e)} className={chip(emotion === e)}>
@@ -77,7 +77,7 @@ const TradeNoteDialog = ({ analysisId, title, initial, onClose, onSaved }: Trade
         </fieldset>
 
         <fieldset className="mt-3">
-          <legend className="mb-2 text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{j.noteMistakes}</legend>
+          <legend className="mb-2 text-xs text-[var(--text-secondary)]">{j.noteMistakes}</legend>
           <div className="flex flex-wrap gap-1.5">
             {TRADE_MISTAKES.map((m) => (
               <button key={m} type="button" aria-pressed={mistakes.includes(m)} onClick={() => toggleMistake(m)} className={chip(mistakes.includes(m))}>

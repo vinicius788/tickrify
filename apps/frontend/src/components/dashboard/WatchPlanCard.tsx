@@ -13,15 +13,15 @@ import {
   formatUtcTime,
   useAlertActions,
   useAlertOptions,
-  useExpiryClock,
   useSetupActions,
   useSetupForAnalysis,
+  watchTone,
 } from '@/lib/setups';
-import { AlertLevelButton } from './PendingLevels';
+import { AlertLevelButton, WatchVerdict } from './PendingLevels';
 
 // Cartao do plano do WATCH: o que a pessoa faz se o preco chegar la, com os
-// numeros do servidor num lugar so. Nunca usa as cores de compra/venda: nao e
-// um sinal ativo.
+// numeros do servidor num lugar so. Aberto, nunca usa as cores de compra/venda:
+// nao e um sinal ativo. Verde e vermelho so no desfecho, com a janela encerrada.
 
 const LADDER_HEIGHT = 196;
 const LADDER_PAD = 10;
@@ -210,7 +210,9 @@ interface WatchPlanCardProps {
   /** null: sem botoes (conta travada, exemplo). */
   actionsFor: string | null;
   base: string;
-  now?: number;
+  /** Janela encerrada: so o nivel e o desfecho, nunca o plano nem o alerta. */
+  closed: boolean;
+  now: number;
 }
 
 export function WatchPlanCard({
@@ -225,32 +227,14 @@ export function WatchPlanCard({
   condition,
   actionsFor,
   base,
-  now: fixedNow,
+  closed,
+  now,
 }: WatchPlanCardProps) {
   const { t, language } = useLanguage();
   const w = t.analysis.result.watch;
   const locale = LOCALES[language];
   const long = plan.direction === 'long';
   const expires = Date.parse(watch?.expiresAt ?? '');
-  const now = useExpiryClock(expires, fixedNow);
-  const alertLevel = watchPlanLevel(plan);
-
-  if (!watchWindowOpen(watch, now)) {
-    const closedLevel = (long ? t.pending.buyLevel : t.pending.sellLevel).replace('{price}', formatPrice(alertLevel));
-    return (
-      <Card className="surface-terminal rounded-xl fade-in-stagger" data-testid="watch-plan-closed" style={{ animationDelay: '40ms' }}>
-        <CardContent className="p-5 md:p-6">
-          <h3 className="tk-display text-base text-[var(--text-primary)]">
-            {Number.isFinite(expires) && expires <= now && watch?.expiresAt
-              ? w.windowClosed.replace('{time}', formatUtcTime(watch.expiresAt))
-              : t.pending.windowClosed}
-          </h3>
-          <p data-testid="watch-closed-level" className="mt-2 font-terminal text-sm text-[var(--text-secondary)]">{closedLevel}</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   const rText = (r: number) => `${formatNumber(r, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}R`;
   const money = (value: number) => formatPrice(value).replace(/ /g, '\u00a0');
   const zone = plan.zoneLow === plan.zoneHigh
@@ -292,9 +276,26 @@ export function WatchPlanCard({
           '{distance}',
           formatAssetDistance(currentPrice > plan.zoneHigh ? currentPrice - plan.zoneHigh : plan.zoneLow - currentPrice, symbol, locale, w),
         );
-  const validity = !watch?.expiresAt
-    ? null
-    : w.validUntil.replace('{time}', formatUtcTime(watch.expiresAt)).replace('{left}', formatTimeLeft(expires - now, locale));
+  const validity = watch?.expiresAt
+    ? w.validUntil.replace('{time}', formatUtcTime(watch.expiresAt)).replace('{left}', formatTimeLeft(expires - now, locale))
+    : null;
+  const alertLevel = watchPlanLevel(plan);
+
+  if (closed) {
+    return (
+      <Card className="surface-terminal rounded-xl fade-in-stagger" data-testid="watch-plan-closed" style={{ animationDelay: '40ms' }}>
+        <CardContent className="p-5 md:p-6">
+          <h3 className="tk-display text-base text-[var(--text-primary)]">
+            {watch?.expiresAt ? w.windowClosed.replace('{time}', formatUtcTime(watch.expiresAt)) : t.watching.windowClosed}
+          </h3>
+          <p data-testid="watch-closed-level" className="mt-1 tabular-nums text-xs text-[var(--text-secondary)]">
+            {(long ? t.pending.buyLevel : t.pending.sellLevel).replace('{price}', money(alertLevel))}
+          </p>
+          {watch ? <div key="verdict" className="mt-3"><WatchVerdict watch={watch} tone={watchTone(watch, now)} /></div> : null}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="surface-terminal-elevated rounded-xl border border-[var(--border-accent)] fade-in-stagger" data-testid="watch-plan" style={{ animationDelay: '40ms' }}>
@@ -303,11 +304,11 @@ export function WatchPlanCard({
           <div className="min-w-0">
             <h3 className="tk-display text-base text-[var(--text-primary)]">{w.planTitle.replace('{zone}', zone)}</h3>
             <p data-testid="watch-not-signal" className="mt-1 text-xs text-[var(--text-secondary)]">{w.notSignal}</p>
-            <dl data-testid="watch-numbers" className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-4 ${tiles.length > 2 ? 'lg:grid-cols-4' : ''}`}>
+            <dl data-testid="watch-numbers" className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-4 ${tiles.length > 2 ? '2xl:grid-cols-4' : ''}`}>
               {tiles.map((tile) => (
                 <div key={tile.key} className="min-w-0">
-                  <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{tile.label}</dt>
-                  <dd className="mt-1 font-terminal text-[17px] font-semibold leading-tight text-[var(--text-primary)]">
+                  <dt className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{tile.label}</dt>
+                  <dd className="mt-1 tabular-nums text-[17px] font-semibold leading-tight text-[var(--text-primary)]">
                     <span>{tile.value}</span>
                     {tile.note ? <span key="note" className="mt-0.5 block text-xs font-normal text-[var(--text-secondary)]">{`(${tile.note})`}</span> : null}
                   </dd>
@@ -318,7 +319,7 @@ export function WatchPlanCard({
             {estimated ? <p key="estimated" data-testid="levels-estimated" className="mt-3 text-xs text-[var(--text-secondary)]">{t.analysis.result.levelsEstimated}</p> : null}
             {condition ? <p key="condition" data-testid="watch-condition" className="mt-4 text-sm leading-relaxed text-[var(--text-primary)]">{condition}</p> : null}
             {distance || validity ? (
-              <p key="timing" data-testid="watch-timing" className="mt-2 font-terminal text-xs text-[var(--text-secondary)]">
+              <p key="timing" data-testid="watch-timing" className="mt-2 tabular-nums text-xs text-[var(--text-secondary)]">
                 {[distance, validity].filter(Boolean).join(' · ')}
               </p>
             ) : null}
@@ -335,7 +336,7 @@ export function WatchPlanCard({
               <div key={row.key} data-kind={row.kind} className="absolute inset-x-0 flex -translate-y-1/2 items-center gap-2 text-[12px]" style={{ top: ladderY[i] }}>
                 <span className="flex w-[15px] shrink-0 justify-center"><LadderMarker kind={row.kind} /></span>
                 <span className={`shrink-0 ${row.kind === 'price' ? 'font-semibold text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{row.label}</span>
-                <span className="ml-auto whitespace-nowrap text-right font-terminal text-[var(--text-primary)]">
+                <span className="ml-auto whitespace-nowrap text-right tabular-nums text-[var(--text-primary)]">
                   <span>{row.value}</span>
                   {row.r ? <span key="r" className="ml-1.5 text-[var(--text-secondary)]">{row.r}</span> : null}
                 </span>
