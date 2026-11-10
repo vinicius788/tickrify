@@ -117,10 +117,10 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
         {/* Camada borrada (preview estático) */}
         <div className="pointer-events-none select-none p-6 md:p-8" aria-hidden="true">
           <div className="mb-4 flex items-center justify-between">
-            <span className="font-terminal text-xs uppercase tracking-[0.08em] text-[var(--text-secondary)]">
+            <span className="tabular-nums text-xs text-[var(--text-secondary)]">
               {p.yourChart}
             </span>
-            <span className="font-terminal text-xs text-[var(--text-secondary)]">{p.includesTitle}</span>
+            <span className="tabular-nums text-xs text-[var(--text-secondary)]">{p.includesTitle}</span>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -129,7 +129,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
                 key={r.label}
                 className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-4 py-3"
               >
-                <p className="font-terminal text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">
+                <p className="tabular-nums text-xs text-[var(--text-secondary)]">
                   {r.label}
                 </p>
                 <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]" style={{ filter: 'blur(7px)' }}>
@@ -176,7 +176,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
             {firstMonth ? p.orMonthlyFirst.replace('{price}', firstMonth) : p.orMonthly}
           </button>
           {offer?.percentOff ? (
-            <p className="max-w-[440px] font-terminal text-[11px] text-[var(--text-secondary)]">
+            <p className="max-w-[440px] tabular-nums text-[11px] text-[var(--text-secondary)]">
               {p.offerNote.replace('{code}', offer.code).replace('{pct}', String(offer.percentOff))}
             </p>
           ) : null}
@@ -189,7 +189,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
             {p.allPlans}
           </Link>
           {quote ? (
-            <p className="max-w-[440px] text-xs italic text-[var(--text-secondary)]">
+            <p className="max-w-[440px] text-xs text-[var(--text-secondary)]">
               &ldquo;{quote.comment}&rdquo; · {[quote.displayName, quote.country].filter(Boolean).join(', ') || t.rating.subscriber}
             </p>
           ) : null}

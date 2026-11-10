@@ -19,10 +19,13 @@
   --accent-yellow: #ffb800;
   --grid-color: rgba(255, 255, 255, 0.025);
 
-  --font-display: 'Geist', sans-serif;
   --font-sans: 'Geist', sans-serif;
+  /* So o site publico usa a mono; a area logada e toda em --font-sans. */
   --font-mono: 'Geist Mono', monospace;
-  --font-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
+
+  /* Tres niveis de texto da area logada: principal, secundario e terciario
+     (metadado). Vale nos dois temas: --text-faint muda no tema claro. */
+  --text-tertiary: var(--text-faint);
 
   /* Backward-compatible aliases used across app */
   --bg-base: var(--bg);
@@ -222,14 +225,6 @@
   --page-glow-2: rgba(0, 110, 220, 0.03);
   --page-glow-3: rgba(6, 132, 74, 0.02);
   color-scheme: light;
-}
-
-.font-terminal {
-  font-family: var(--font-mono);
-}
-
-.font-display {
-  font-family: var(--font-display);
 }
 
 .surface-terminal {

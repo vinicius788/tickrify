@@ -104,7 +104,7 @@ export default function ActivityHeatmap() {
     <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
       <div className="mb-3 flex items-center justify-between">
         <div className="tk-stat-label">{t.nav.heatTitle}</div>
-        <div className="flex items-center gap-4 font-terminal text-[12px] text-[var(--text-secondary)]">
+        <div className="flex items-center gap-4 tabular-nums text-[12px] text-[var(--text-secondary)]">
           <span className="flex items-center gap-1">
             <Flame className={`h-3.5 w-3.5 ${currentStreak > 0 ? 'text-[var(--accent-green)]' : 'opacity-40'}`} />
             <span className={currentStreak > 0 ? 'font-semibold text-[var(--text-primary)]' : ''}>

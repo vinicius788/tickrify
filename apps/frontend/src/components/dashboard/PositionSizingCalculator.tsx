@@ -46,7 +46,7 @@ export function PositionSizingCalculator({ entry, stopLoss, defaultOpen = false 
   // text-base (16px): abaixo disso o iPhone da zoom no campo ao focar e a
   // pagina balanca enquanto a pessoa digita.
   const inputClass =
-    'w-full rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 py-1 font-terminal text-base text-[var(--text-primary)] outline-none focus:border-[var(--signal-buy)]';
+    'w-full rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 py-1 tabular-nums text-base text-[var(--text-primary)] outline-none focus:border-[var(--signal-buy)]';
 
   return (
     <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-2 text-xs">
@@ -101,13 +101,13 @@ export function PositionSizingCalculator({ entry, stopLoss, defaultOpen = false 
         <div className="mt-2 space-y-1 border-t border-[var(--border-subtle)] pt-2">
           <div className="flex items-center justify-between">
             <span className="text-[var(--text-secondary)]">{labels.riskAmount}</span>
-            <span className="font-terminal font-semibold text-[var(--signal-sell)]">
+            <span className="tabular-nums font-semibold text-[var(--signal-sell)]">
               ${fmt(result.riskAmount, 2)}
             </span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-[var(--text-secondary)]">{labels.positionSize}</span>
-            <span className="font-terminal font-semibold text-[var(--signal-buy)]">
+            <span className="tabular-nums font-semibold text-[var(--signal-buy)]">
               {fmt(result.positionSize)}
             </span>
           </div>

@@ -81,7 +81,7 @@ function Relato({
 
               {migalhas.length > 0 && (
                 <div className="border-t border-[var(--border-subtle)] pt-2">
-                  <p className="mb-1 text-[10px] uppercase tracking-wide text-[var(--text-ghost)]">
+                  <p className="mb-1 text-xs text-[var(--text-ghost)]">
                     últimos passos antes do relato
                   </p>
                   <ol className="space-y-0.5 font-mono text-[11px] text-[var(--text-dim)]">

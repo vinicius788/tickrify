@@ -1398,6 +1398,10 @@ export default {
   },
   // Botão flutuante de reportar problema (ReportProblemButton).
   // Chat com o fundador (12/10/2026), dentro da bolha "Chat, feedback or problem".
+  community: {
+    join: 'Entre na comunidade no Discord',
+    footerLink: 'Comunidade no Discord',
+  },
   chat: {
     title: 'Fale com o Vinícius, fundador da Tickrify',
     subtitle: 'Costuma responder em algumas horas',

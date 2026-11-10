@@ -108,13 +108,13 @@ const TodaySection = ({
             {reached.map((alert) => (
               <li key={alert.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <p className="font-terminal text-sm text-[var(--text-primary)]">{`${asset(alert)} · ${labelText[alert.label]}`}</p>
-                  <p className="mt-0.5 font-terminal text-[11px] text-[var(--text-secondary)]">
+                  <p className="tabular-nums text-sm text-[var(--text-primary)]">{`${asset(alert)} · ${labelText[alert.label]}`}</p>
+                  <p className="mt-0.5 tabular-nums text-[11px] text-[var(--text-secondary)]">
                     {alert.triggeredAt
                       ? a.reachedAt.replace('{level}', formatAlertLevel(alert.level, locale)).replace('{time}', formatUtcTime(alert.triggeredAt))
                       : formatAlertLevel(alert.level, locale)}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">{a.notSignal}</p>
+                  <p className="mt-0.5 text-[11px] text-[var(--text-tertiary)]">{a.notSignal}</p>
                 </div>
                 <button
                   type="button"
@@ -136,7 +136,7 @@ const TodaySection = ({
             {[...watching.entries()].map(([setupId, list]) => (
               <li key={setupId} className="flex flex-col gap-2 py-3 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0">
-                  <p className="font-terminal text-sm text-[var(--text-primary)]">{asset(list[0])}</p>
+                  <p className="tabular-nums text-sm text-[var(--text-primary)]">{asset(list[0])}</p>
                   <ul className="mt-1 flex flex-col gap-0.5">
                     {list.map((alert) => {
                       const pct = alertDistancePct(alert);
@@ -146,7 +146,7 @@ const TodaySection = ({
                         const price = (v: number) => formatAssetPrice(v, alert.symbol, locale);
                         const plan = row.watch.plan;
                         return (
-                          <li key={alert.id} data-testid="today-watch" className="font-terminal text-xs text-[var(--text-primary)]">
+                          <li key={alert.id} data-testid="today-watch" className="tabular-nums text-xs text-[var(--text-primary)]">
                             <span className="block">{`${(row.watch.direction === 'long' ? t.pending.watchBuy : t.pending.watchSell).replace('{price}', price(alert.level))}${distance}`}</span>
                             {plan ? (
                               <span key="plan" className="block text-[11px] text-[var(--text-secondary)]">
@@ -162,13 +162,13 @@ const TodaySection = ({
                         );
                       }
                       return (
-                        <li key={alert.id} className="font-terminal text-xs text-[var(--text-secondary)]">
+                        <li key={alert.id} className="tabular-nums text-xs text-[var(--text-secondary)]">
                           {`${labelText[alert.label]} ${formatAlertLevel(alert.level, locale)}${distance}`}
                         </li>
                       );
                     })}
                   </ul>
-                  <p className="mt-1 font-terminal text-[11px] text-[var(--text-muted)]">
+                  <p className="mt-1 tabular-nums text-[11px] text-[var(--text-tertiary)]">
                     {[list[0].checkedAt ? a.lastChecked.replace('{time}', formatUtcTime(list[0].checkedAt)) : a.notChecked, checkFrequencyText(a, list[0])].filter(Boolean).join(' · ')}
                   </p>
                 </div>
@@ -192,7 +192,7 @@ const TodaySection = ({
             {pendingWatches.map((row) => (
               <li key={row.id} className="flex flex-col gap-2 py-3 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0">
-                  <p className="font-terminal text-sm text-[var(--text-primary)]">{`${displayAsset(row.symbol)}${row.timeframe ? ` ${row.timeframe}` : ''}`}</p>
+                  <p className="tabular-nums text-sm text-[var(--text-primary)]">{`${displayAsset(row.symbol)}${row.timeframe ? ` ${row.timeframe}` : ''}`}</p>
                   <div className="mt-1">
                     <WatchPending analysisId={row.id} watch={row.watch!} surface="today" now={now} symbol={row.symbol} />
                   </div>
@@ -216,7 +216,7 @@ const TodaySection = ({
             {resolvedWatches.map((row) => (
               <li key={row.id} data-testid="today-resolved" className="flex flex-col gap-2 py-3 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0">
-                  <p className="font-terminal text-sm text-[var(--text-primary)]">{`${displayAsset(row.symbol)}${row.timeframe ? ` ${row.timeframe}` : ''}`}</p>
+                  <p className="tabular-nums text-sm text-[var(--text-primary)]">{`${displayAsset(row.symbol)}${row.timeframe ? ` ${row.timeframe}` : ''}`}</p>
                   <div className="mt-1">
                     <WatchPending analysisId={row.id} watch={row.watch!} surface="today" now={now} symbol={row.symbol} caption={false} />
                   </div>
@@ -239,7 +239,7 @@ const TodaySection = ({
           <ul className="mt-2 divide-y divide-[var(--border-subtle)]">
             {openTrades.map((trade) => (
               <li key={trade.analysisId} className="flex items-center justify-between gap-2 py-3">
-                <p className="min-w-0 font-terminal text-sm text-[var(--text-primary)]">
+                <p className="min-w-0 tabular-nums text-sm text-[var(--text-primary)]">
                   {`${trade.symbol ?? 'N/A'}${trade.timeframe ? ` ${trade.timeframe}` : ''} · `}
                   <span className={trade.direction === 'BUY' ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'}>
                     {trade.direction === 'BUY' ? t.analysis.buy : t.analysis.sell}

@@ -1380,6 +1380,10 @@ export default {
     ja: '日本語',
   },
   // Chat com o fundador (12/10/2026), dentro da bolha "Chat, feedback or problem".
+  community: {
+    join: 'Discordコミュニティに参加する',
+    footerLink: 'Discordコミュニティ',
+  },
   chat: {
     title: 'Tickrify創業者のViníciusと話す',
     subtitle: '通常は数時間以内に返信します',

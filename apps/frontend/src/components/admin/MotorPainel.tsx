@@ -92,19 +92,19 @@ export default function MotorPainel() {
       {data ? (
         <>
           <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
-            <p className="text-[11px] uppercase tracking-wide text-[var(--text-faint)]">Decisão do teste A/B</p>
+            <p className="text-[11px] text-[var(--text-faint)]">Decisão do teste A/B</p>
             <p className="mt-1 text-base font-medium text-[var(--text-primary)]">{data.verdict}</p>
           </Card>
 
           <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
-            <p className="text-[11px] uppercase tracking-wide text-[var(--text-faint)]">R por trade do ENTER_NOW (variante A)</p>
+            <p className="text-[11px] text-[var(--text-faint)]">R por trade do ENTER_NOW (variante A)</p>
             <p className="mt-1 text-sm text-[var(--text-soft)]">
               {r(data.enterNow.meanR)} em {data.enterNow.trades} trades. {data.enterNow.verdict}
             </p>
           </Card>
 
           <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
-            <p className="text-[11px] uppercase tracking-wide text-[var(--text-faint)]">Análises sem velas, por motivo</p>
+            <p className="text-[11px] text-[var(--text-faint)]">Análises sem velas, por motivo</p>
             {data.noCandles.length === 0 ? (
               <p className="mt-1 text-sm text-[var(--text-soft)]">Nenhuma.</p>
             ) : (
@@ -121,7 +121,7 @@ export default function MotorPainel() {
               <h3 className="text-sm font-semibold text-[var(--text-primary)]">Variante {v.variant}</h3>
               <div className="mt-2 overflow-x-auto">
                 <table className="w-full text-left text-sm">
-                  <thead className="text-[11px] uppercase tracking-wide text-[var(--text-faint)]">
+                  <thead className="text-[11px] text-[var(--text-faint)]">
                     <tr>
                       <th className="py-1 pr-3">Classe</th>
                       <th className="py-1 pr-3">Análises</th>
