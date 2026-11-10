@@ -185,10 +185,11 @@ export class DemoService implements OnModuleInit, OnModuleDestroy {
    * "network error" e depois "you already used" sem nunca ver a analise
    * (05/10/2026: 16 network_error em 126 demos em 14 dias).
    */
-  async getFingerprintStatus(fingerprint: string): Promise<{ used: boolean; result: Record<string, unknown> | null }> {
-    if (!this.tableReady) return { used: false, result: null };
+  async getFingerprintStatus(fingerprint: string): Promise<{ used: boolean; pending: boolean; result: Record<string, unknown> | null }> {
+    if (!this.tableReady) return { used: false, pending: false, result: null };
     const row = await this.findUsage(this.hashIdentifier(fingerprint));
-    return { used: Boolean(row && !row.pending), result: this.recoverable(row) };
+    // `pending` = a analise deste aparelho esta rodando agora: a tela espera em vez de enviar de novo.
+    return { used: Boolean(row && !row.pending), pending: Boolean(row?.pending), result: this.recoverable(row) };
   }
 
   private async findUsage(fpHash: string, client: Pick<PrismaService, '$queryRaw'> = this.prisma) {

@@ -154,8 +154,13 @@ describe('Demo security gates', () => {
 
   it('status devolve a leitura das ultimas 24h deste device', async () => {
     prisma.$queryRaw = jest.fn().mockResolvedValueOnce([{ id: 'u1', result: { recommendation: 'SELL' }, createdAt: new Date() }]);
-    await expect(service.getFingerprintStatus('fp')).resolves.toEqual({ used: true, result: { recommendation: 'SELL', recovered: true } });
+    await expect(service.getFingerprintStatus('fp')).resolves.toEqual({ used: true, pending: false, result: { recommendation: 'SELL', recovered: true } });
     prisma.$queryRaw = jest.fn().mockResolvedValueOnce([]);
-    await expect(service.getFingerprintStatus('fp')).resolves.toEqual({ used: false, result: null });
+    await expect(service.getFingerprintStatus('fp')).resolves.toEqual({ used: false, pending: false, result: null });
+  });
+
+  it('status diz quando a analise deste device ainda esta rodando (a tela espera em vez de reenviar)', async () => {
+    prisma.$queryRaw = jest.fn().mockResolvedValueOnce([{ id: 'u1', result: null, createdAt: new Date(), pending: true }]);
+    await expect(service.getFingerprintStatus('fp')).resolves.toEqual({ used: false, pending: true, result: null });
   });
 });

@@ -78,20 +78,53 @@ async function parseErrorCode(response: Response): Promise<DemoErrorCode> {
  * ultimas 24h, a leitura que ele recebeu (05/10/2026: no celular a resposta
  * se perdia quando a pessoa trocava de app durante a espera).
  */
-export async function fetchDemoStatus(fingerprint: string): Promise<{ used: boolean; result: DemoAnalysisResult | null }> {
+export type DemoStatus = {
+  used: boolean;
+  /** A analise deste aparelho esta rodando. null = o servidor nao disse (versao antiga ou falha de rede). */
+  pending: boolean | null;
+  result: DemoAnalysisResult | null;
+};
+
+export async function fetchDemoStatus(fingerprint: string): Promise<DemoStatus> {
   try {
     const res = await fetch(
       buildApiUrl(`/api/demo/status?fingerprint=${encodeURIComponent(fingerprint)}`),
       { method: 'GET', cache: 'no-store' },
     );
-    if (!res.ok) return { used: false, result: null };
-    const data = (await res.json()) as { used?: boolean; result?: DemoAnalysisResult | null };
+    if (!res.ok) return { used: false, pending: null, result: null };
+    const data = (await res.json()) as { used?: boolean; pending?: boolean; result?: DemoAnalysisResult | null };
     const result = data?.result && data.result.status === 'completed' ? data.result : null;
-    return { used: data?.used === true, result };
+    return { used: data?.used === true, pending: typeof data?.pending === 'boolean' ? data.pending : null, result };
   } catch {
     // Rede/cold start: não bloquear a UI — o servidor ainda barra na hora do analyze.
-    return { used: false, result: null };
+    return { used: false, pending: null, result: null };
   }
+}
+
+/**
+ * A conexao caiu no meio do envio (10/11/2026: 95 de 150 falhas da demo em 45
+ * dias, quase todas no celular). O servidor pode ter recebido e seguir
+ * analisando: espera a leitura aparecer no `status` em vez de mostrar erro.
+ * `arrived: false` = o servidor confirmou duas vezes que nao ha analise deste
+ * aparelho (nem rodando, nem pronta): o envio nao chegou e pode ser repetido.
+ */
+export async function waitForDemoResult(
+  fingerprint: string,
+  options: { everyMs?: number; maxMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<{ result: DemoAnalysisResult | null; arrived: boolean }> {
+  const everyMs = options.everyMs ?? 4_000;
+  const maxMs = options.maxMs ?? 90_000;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let absent = 0;
+  for (let waited = 0; waited < maxMs; waited += everyMs) {
+    await sleep(everyMs);
+    const status = await fetchDemoStatus(fingerprint);
+    if (status.result) return { result: status.result, arrived: true };
+    // So conta como "nao chegou" quando o servidor responde e diz que nada roda.
+    absent = status.pending === false && !status.used ? absent + 1 : 0;
+    if (absent >= 2) return { result: null, arrived: false };
+  }
+  return { result: null, arrived: true };
 }
 
 export async function requestDemoAnalysis(params: {

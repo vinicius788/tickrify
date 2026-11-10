@@ -23,6 +23,7 @@ import {
   DemoApiError,
   DemoAnalysisResult,
   fetchDemoStatus,
+  waitForDemoResult,
   requestDemoAnalysis,
   saveDemoResult,
 } from '@/lib/demo-api';
@@ -195,13 +196,21 @@ const TryPage = () => {
         image = await exampleResponse.blob();
       }
 
-      const turnstileToken = await getTurnstileToken();
-      const analysis = await requestDemoAnalysis({
-        image,
-        fingerprint,
-        turnstileToken,
-        userLanguage: language,
-      });
+      const send = async () =>
+        requestDemoAnalysis({ image, fingerprint, turnstileToken: await getTurnstileToken(), userLanguage: language });
+      let analysis: DemoAnalysisResult;
+      try {
+        analysis = await send();
+      } catch (err) {
+        if (!(err instanceof DemoApiError) || err.code !== 'network_error') throw err;
+        // Conexao caiu (troca de app no celular): o servidor pode estar
+        // analisando. Espera a leitura; se o envio nem chegou, envia de novo.
+        track('demo_network_retry', { chart });
+        const waited = await waitForDemoResult(fingerprint);
+        if (waited.result) analysis = { ...waited.result, recovered: true };
+        else if (waited.arrived) throw err;
+        else analysis = await send();
+      }
 
       setResult(analysis);
       setState('done');

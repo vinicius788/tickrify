@@ -460,6 +460,7 @@ export type FunnelEvent =
   // Falha da demo com o motivo (`code`). Antes so o limite era rastreado e 20
   // de 83 demos iniciadas em set/26 sumiam sem explicacao.
   | 'demo_analysis_failed'
+  | 'demo_network_retry'
   | 'demo_after_viewed'
   | 'demo_limit_hit'
   | 'signup_from_demo'
