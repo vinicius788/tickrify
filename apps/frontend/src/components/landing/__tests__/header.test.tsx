@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import Header from '@/components/landing/Header';
 import HeroSection from '@/components/landing/HeroSection';
 import FoundingTraderBanner from '@/components/landing/FoundingTraderBanner';
+import PricingSection from '@/components/landing/PricingSection';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 
 vi.mock('@clerk/clerk-react', () => ({
@@ -16,7 +17,14 @@ vi.mock('@clerk/clerk-react', () => ({
 }));
 
 const offer = { current: null as null | { active: boolean; code: string; percentOff: number | null } };
-vi.mock('@/hooks/useFoundingOffer', () => ({ useFoundingOffer: () => offer.current }));
+vi.mock('@/hooks/useFoundingOffer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/hooks/useFoundingOffer')>()),
+  useFoundingOffer: () => offer.current,
+}));
+vi.mock('@/lib/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/api')>()),
+  warmupPaymentsApi: vi.fn(),
+}));
 
 function renderSite(node: ReactNode) {
   window.localStorage.setItem('tickrify-language', 'en');
@@ -81,5 +89,22 @@ describe('faixa da oferta de lancamento', () => {
   it('sem cupom ativo, a faixa nao aparece', () => {
     const { container } = renderSite(<FoundingTraderBanner />);
     expect(container.textContent).toBe('');
+  });
+
+  it('secao de preco da home com EARLY35 ativo: $29 riscado, preco do 1o mes e botao do 1o mes', () => {
+    offer.current = { active: true, code: 'EARLY35', percentOff: 35 };
+    const { container } = renderSite(<PricingSection />);
+    expect(container.querySelector('.site-price-amt s')?.textContent).toBe('Regular price $29');
+    expect(container.querySelector('.site-price-amt b')?.textContent).toBe('$18.85');
+    expect(screen.getByText('Then $29/month. Cancel anytime in Settings.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Start for $18.85 first month' })).toBeTruthy();
+    expect(screen.queryByText('Billed $29 now and monthly until canceled.')).toBeNull();
+  });
+
+  it('secao de preco da home sem oferta: $29 sem risco', () => {
+    const { container } = renderSite(<PricingSection />);
+    expect(container.querySelector('s')).toBeNull();
+    expect(container.querySelector('.site-price-amt b')?.textContent).toBe('$29');
+    expect(screen.getByText('Billed $29 now and monthly until canceled.')).toBeTruthy();
   });
 });

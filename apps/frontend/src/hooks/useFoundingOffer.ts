@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { buildApiUrl } from '@/lib/api';
+import { formatNumber, type Language } from '@/lib/i18n';
 
 export interface FoundingOffer {
   active: boolean;
@@ -29,6 +30,20 @@ export function useFoundingOffer(): FoundingOffer | null {
     retry: 1,
   });
   return data?.active ? data : null;
+}
+
+/** Preco de tabela do mensal. JSON-LD, meta e pre-render seguem com ele. */
+export const MONTHLY_PRICE_USD = 29;
+
+/**
+ * Preco do 1o mes do mensal com o EARLY35 ativo, ja formatado ("$18.85"), ou
+ * null sem oferta. Conta em centavos a partir do `percentOff` da Stripe, nunca
+ * fixo: a Stripe arredonda o desconto no centavo.
+ */
+export function firstMonthPrice(offer: FoundingOffer | null, language: Language): string | null {
+  if (!offer?.percentOff) return null;
+  const cents = Math.round((MONTHLY_PRICE_USD * 100 * (100 - offer.percentOff)) / 100);
+  return `$${formatNumber(cents / 100, language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })}`;
 }
 
 export interface FounderOffer {

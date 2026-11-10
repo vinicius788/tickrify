@@ -255,7 +255,7 @@ export default {
     partnerInvalid: "このコードは無効です。",
     canceledTitle: "支払いがキャンセルされました",
     canceledDesc: "請求は発生していません。いつでも契約できます。",
-    firstMonth: "{code}（{pct}%割引）を自動適用し、初月分として今すぐ{price}を請求します。その後は解約まで月額$29です。",
+    firstMonth: "{code}（{pct}%割引）を自動適用し、初月分として今すぐ{price}を請求します。残高は毎月200 Ticksにリセットされ、未使用のTicksは繰り越されません。",
     founderEyebrow: "創設メンバー",
     founderSub: "契約が有効な間は価格が固定されます",
     founderFeatures: [
@@ -353,6 +353,10 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "現在および解約まで7日ごとに$7.99を請求。",
     monthlyRenewal: "現在および解約まで毎月$29を請求。",
+    offerRegular: "通常価格",
+    offerFirstMonth: "初月",
+    offerThen: "その後は月額$29。設定からいつでも解約可能。",
+    offerCta: "初月{price}で始める",
     freeEligibility: "匿名デモは1デバイスにつき1回。対象アカウントは7日以内の3利用日で最大7回の分析（3/2/2）。既存アカウントには該当する利用枠が適用されます。カード不要。"
   },
 
@@ -1229,7 +1233,6 @@ export default {
   },
   paywall: {
     ctaWeekly: 'まずは1週間から：25 Ticksで $7.99',
-    orMonthlyFirst: 'または月額：初月 {price}、その後は月額 $29',
     orMonthly: 'または月額：200 Ticksで月額 $29',
     titleNewAnalysis: 'トレードプラン付きの無料分析を使い切りました',
     titleArea: '分析とトレードへのアクセスを続けるには登録してください',
@@ -1238,7 +1241,6 @@ export default {
     descJournal: 'ジャーナルはすべての分析と結果を日ごとに整理します。登録するとすぐに再び開けます。',
     descHistory: 'この分析は直近3件より古いものです。全履歴を再び開くには登録してください。',
     descSetups: 'このセットアップの分析は直近3件に含まれていません。すべてのバージョンを再び開くには登録してください。',
-    offerNote: '{code} で月額プランの初月が {pct}% オフ（自動適用）。その後は月額 $29、いつでも解約できます。',
     allPlans: '年額 $290 を含むすべてのプラン',
     opening: '安全な決済ページを開いています…',
     yourChart: 'あなたのチャート',

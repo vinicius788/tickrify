@@ -255,7 +255,7 @@ export default {
     partnerInvalid: "Ese código no es válido.",
     canceledTitle: "Pago cancelado",
     canceledDesc: "No se realizó ningún cargo. Puedes suscribirte cuando quieras.",
-    firstMonth: "Se cobran {price} ahora por el primer mes con {code} ({pct}% de descuento), aplicado automáticamente. Después $29/mes hasta cancelar.",
+    firstMonth: "Se cobran {price} ahora por el primer mes con {code} ({pct}% de descuento), aplicado automáticamente. Tu saldo se restablece a 200 Ticks por mes; los Ticks no usados no se acumulan.",
     founderEyebrow: "Miembro fundador",
     founderSub: "Precio fijo mientras tu suscripción siga activa",
     founderFeatures: [
@@ -353,6 +353,10 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "Se cobran $7,99 ahora y cada 7 días hasta cancelar.",
     monthlyRenewal: "Se cobran $29 ahora y cada mes hasta cancelar.",
+    offerRegular: "Precio normal",
+    offerFirstMonth: "el primer mes",
+    offerThen: "Luego $29/mes. Cancela cuando quieras en Configuración.",
+    offerCta: "Empieza por {price} el primer mes",
     freeEligibility: "Una demo anónima por dispositivo. Cuentas elegibles: hasta 7 análisis en 3 días de uso (3/2/2), dentro de 7 días. Las cuentas existentes conservan su cuota aplicable. Sin tarjeta."
   },
 
@@ -1229,7 +1233,6 @@ export default {
   },
   paywall: {
     ctaWeekly: 'Empieza con una semana: $7.99 por 25 Ticks',
-    orMonthlyFirst: 'O mensual: {price} el primer mes, luego $29/mes',
     orMonthly: 'O mensual: $29/mes por 200 Ticks',
     titleNewAnalysis: 'Se acabaron tus análisis gratis con plan de trade',
     titleArea: 'Suscríbete para seguir accediendo a tus análisis y operaciones',
@@ -1238,7 +1241,6 @@ export default {
     descJournal: 'El diario ordena cada análisis y resultado por día. Vuelve a abrirse en cuanto te suscribas.',
     descHistory: 'Este análisis es más antiguo que tus 3 últimos. Suscríbete para abrir de nuevo tu historial completo.',
     descSetups: 'Ningún análisis de este setup está entre tus 3 últimos. Suscríbete para abrir todas las versiones de nuevo.',
-    offerNote: '{code} descuenta un {pct}% del primer mes del plan mensual, aplicado automáticamente. Luego $29/mes, cancela cuando quieras.',
     allPlans: 'Todos los planes, incluido el anual de $290/año',
     opening: 'Abriendo el pago seguro…',
     yourChart: 'Tu gráfico',
