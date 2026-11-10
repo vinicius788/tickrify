@@ -394,8 +394,6 @@ export default {
     journal: 'ジャーナル',
     // Rotulos curtos usados SO na barra de abas do celular. Os longos
     // truncam antes da palavra que identifica a aba, em 5 abas numa tela de 375px.
-    newAnalysisShort: '分析',
-    journalShort: 'ジャーナル',
     strategy: '戦略',
     symbol: 'シンボル',
     signal: 'シグナル',
@@ -1380,6 +1378,16 @@ export default {
     ja: '日本語',
   },
   // Chat com o fundador (12/10/2026), dentro da bolha "Chat, feedback or problem".
+  bottomNav: {
+    label: 'ダッシュボードのナビゲーション',
+    home: 'ホーム',
+    journal: 'ジャーナル',
+    analyze: '分析',
+    trades: 'トレード',
+    more: 'その他',
+    moreTitle: 'その他のメニュー',
+    moreBadge: 'その他に新着{n}件',
+  },
   community: {
     join: 'Discordコミュニティに参加する',
     footerLink: 'Discordコミュニティ',

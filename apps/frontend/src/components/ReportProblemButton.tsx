@@ -188,7 +188,7 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
         onClick={() => abrirChat('bubble')}
         data-covering={sobreAcao ? 'true' : undefined}
         tabIndex={sobreAcao ? -1 : undefined}
-        className={`fixed bottom-4 right-4 z-40 flex h-11 w-11 items-center justify-center gap-2 rounded-full border border-[var(--border-strong)] bg-[var(--bg-floating)] text-xs text-[var(--text-dim)] backdrop-blur transition-[opacity,color,border-color] hover:border-[var(--border-heavy)] hover:text-[var(--text-primary)] md:h-auto md:w-auto md:px-3.5 md:py-2 ${sobreAcao ? 'pointer-events-none opacity-0' : ''}`}
+        className={`tk-chat-bubble fixed bottom-4 right-4 z-40 flex h-11 w-11 items-center justify-center gap-2 rounded-full border border-[var(--border-strong)] bg-[var(--bg-floating)] text-xs text-[var(--text-dim)] backdrop-blur transition-[opacity,color,border-color] hover:border-[var(--border-heavy)] hover:text-[var(--text-primary)] md:h-auto md:w-auto md:px-3.5 md:py-2 ${sobreAcao ? 'pointer-events-none opacity-0' : ''}`}
         aria-label={rotulo}
       >
         <MessageCircle className="h-5 w-5 md:hidden" aria-hidden />
@@ -203,7 +203,7 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex max-h-[min(640px,calc(100dvh-2rem))] w-[min(380px,calc(100vw-2rem))] flex-col rounded-xl border border-[var(--border-strong)] bg-[var(--bg-solid)] p-4 shadow-2xl">
+    <div className="tk-chat-panel fixed bottom-4 right-4 z-40 flex max-h-[min(640px,calc(100dvh-2rem))] w-[min(380px,calc(100vw-2rem))] flex-col rounded-xl border border-[var(--border-strong)] bg-[var(--bg-solid)] p-4 shadow-2xl">
       <div className="mb-3 flex shrink-0 items-start gap-2">
         <div className="flex flex-1 gap-1 rounded-lg bg-[var(--fill-2)] p-1" role="tablist">
           {(['chat', 'problem', 'feedback'] as const).map((m) => (

@@ -394,8 +394,6 @@ export default {
     journal: 'Diario',
     // Rotulos curtos usados SO na barra de abas do celular. Os longos
     // truncam antes da palavra que identifica a aba, em 5 abas numa tela de 375px.
-    newAnalysisShort: 'Analizar',
-    journalShort: 'Diario',
     strategy: 'Estrategia',
     symbol: 'Símbolo',
     signal: 'Señal',
@@ -1380,6 +1378,16 @@ export default {
     ja: '日本語',
   },
   // Chat com o fundador (12/10/2026), dentro da bolha "Chat, feedback or problem".
+  bottomNav: {
+    label: 'Navegación del panel',
+    home: 'Panel',
+    journal: 'Diario',
+    analyze: 'Analizar',
+    trades: 'Mis Trades',
+    more: 'Más',
+    moreTitle: 'Más opciones',
+    moreBadge: '{n} novedades en Más',
+  },
   community: {
     join: 'Únete a nuestra comunidad en Discord',
     footerLink: 'Comunidad en Discord',

@@ -44,6 +44,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnalysisProcessingError, analysisFailureTelemetry } from "@/lib/analysis-failure";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
 import { DiscordIcon } from "@/components/ui/DiscordIcon";
+import { MobileNav } from "@/components/dashboard/MobileNav";
 import { afterNextPaint, asRecord, isPageTranslated, scrollToTop } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
@@ -2056,55 +2057,21 @@ const DashboardPage = () => {
       </header>
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="border-b border-border md:hidden">
-          <div className="flex overflow-x-auto [scrollbar-width:none]">
-            {(['home', 'new', 'trades', 'journal', 'strategy'] as const).map((section) => (
-              <Link
-                key={section}
-                to={navLink(section)}
-                onClick={section === 'new' ? onNewAnalysisLink : undefined}
-                aria-current={activeNav === section ? 'page' : undefined}
-                className={`flex-auto shrink-0 whitespace-nowrap px-1.5 py-2 text-center text-[11px] font-medium leading-tight transition-colors ${
-                  activeNav === section
-                    ? 'border-b-2 border-primary text-primary'
-                    : 'text-muted-foreground'
-                }`}
-              >
-                <span key="label">
-                  {section === 'home'
-                    ? t.nav.dashboard
-                    : section === 'new'
-                      ? t.nav.newAnalysisShort
-                      : section === 'trades'
-                        ? t.nav.myTrades
-                        : section === 'journal'
-                          ? t.nav.journalShort
-                          : t.nav.strategy}
-                </span>
-                {section === 'home' && alertsUnseen > 0 ? (
-                  <span key="alerts" aria-label={t.alerts.menuBadge.replace('{n}', String(alertsUnseen))} className="ml-1 rounded-full bg-[var(--inverse-bg)] px-1.5 text-[10px] font-semibold text-[var(--inverse-fg)]">
-                    {String(alertsUnseen)}
-                  </span>
-                ) : null}
-              </Link>
-            ))}
+        {user && plan === 'free' && (
+          <div className="border-b border-border p-3 md:hidden">
+            <Button
+              className="w-full"
+              variant="outline"
+              onClick={() => openUpgradeModal('cta')}
+            >
+              <Crown className="mr-2 h-4 w-4" />
+              {dc.subscribeCta}
+            </Button>
           </div>
-          {user && plan === 'free' && (
-            <div className="p-3">
-              <Button
-                className="w-full"
-                variant="outline"
-                onClick={() => openUpgradeModal('cta')}
-              >
-                <Crown className="mr-2 h-4 w-4" />
-                {dc.subscribeCta}
-              </Button>
-            </div>
-          )}
-        </div>
+        )}
 
         <div className="flex flex-1 overflow-hidden">
-          <main className="min-w-0 flex-1 overflow-y-auto p-3 pb-24 md:p-6 md:pb-16">
+          <main className="min-w-0 flex-1 overflow-y-auto p-3 pb-[calc(env(safe-area-inset-bottom,0px)+6.75rem)] md:p-6 md:pb-16">
             <div className="flex flex-col gap-6 md:gap-8">
               {!isDemo && <CheckoutConfirmation hasPaidAccess={!isPlanLoading && isUnlimited} />}
               {user && !isDemo && !isPlanLoading && !isUsageUnavailable && plan === 'free' && (trial || trialBlocked) && (
@@ -2209,6 +2176,15 @@ const DashboardPage = () => {
         </div>
       </div>
       </div>
+
+      {/* Celular: ilha de navegacao embaixo (no computador, a barra lateral). */}
+      <MobileNav
+        activeNav={activeNav}
+        linkTo={navLink}
+        onNewAnalysis={onNewAnalysisLink}
+        counts={{ alerts: alertsUnseen, chat: chatUnread }}
+        signedIn={Boolean(user)}
+      />
 
       {/* Modal de Upgrade */}
       <Dialog open={showUpgradeModal && !isPlanLoading} onOpenChange={setShowUpgradeModal}>
