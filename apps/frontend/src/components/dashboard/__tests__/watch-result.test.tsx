@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AnalysisResult from '@/components/dashboard/AnalysisResult';
 import { buildReadCard } from '@/lib/share-card';
 import { formatAssetDistance, formatAssetPrice } from '@/lib/trading-ui';
-import { watchDayTint } from '@/lib/setups';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import type { AIAnalysisResponse, WatchPlan, WatchSummary } from '@/lib/api';
 
@@ -149,7 +148,9 @@ describe('resultado do WATCH', () => {
       expect(card).toContain('Buy level 27,730');
       expect(card).toContain('What the market did');
       expect(card).toContain('Checking the result');
+      expect(text('closed-verdict')).toBe('Checking the result');
       expect(screen.getByTestId('signal-state').className).not.toContain('--signal-hold');
+      expect(screen.getByTestId('signal-state').getAttribute('data-closed')).toBe('true');
       expect(card).not.toContain('Plan if price reaches');
       expect(card).not.toContain('Not a signal');
       expect(screen.queryByTestId('watch-numbers')).toBeNull();
@@ -160,7 +161,7 @@ describe('resultado do WATCH', () => {
       expect(screen.queryByTestId('watch-actions')).toBeNull();
       expect(screen.queryByRole('button', { name: /Alert me|Follow setup/ })).toBeNull();
       expect(document.body.textContent).not.toMatch(/Plan if price reaches|Wait for a pullback|Not a signal/);
-      expect(text('signal-state')).toBe('Watch');
+      expect(text('signal-state')).toBe('Watch closed');
     });
 
     it.each([
@@ -169,12 +170,15 @@ describe('resultado do WATCH', () => {
       ['reached', 'neither', null, 'Level reached, no target or stop in 48 hours', '--border-subtle'],
       ['invalidated', null, null, 'Invalidated before reaching it', '--border-subtle'],
       ['expired', null, null, 'Expired without reaching it', '--border-subtle'],
-    ] as const)('desfecho %s/%s com a cor no chip e no rotulo', (outcome, afterReach, targetR, label, token) => {
+    ] as const)('desfecho %s/%s: selo cinza "Watch closed" e o desfecho com cor ao lado', (outcome, afterReach, targetR, label, token) => {
       closedAt();
       show(result(long, plan, { ...summary, outcome, afterReach, targetR }));
-      expect(text('watch-outcome')).toBe(`What the market did${label}`);
-      expect(screen.getByTestId('watch-outcome').lastElementChild!.className).toContain(token);
-      expect(screen.getByTestId('signal-state').className).toContain(token);
+      expect(text('closed-verdict')).toBe(label);
+      expect(screen.getByTestId('closed-verdict').querySelector('[data-testid="watch-outcome"]')!.lastElementChild!.className).toContain(token);
+      expect(text('watch-plan-closed')).toContain(`What the market did${label}`);
+      expect(text('signal-state')).toBe('Watch closed');
+      expect(screen.getByTestId('signal-state').className).toContain('--border-subtle');
+      expect(screen.getByTestId('signal-state').className).not.toContain('--signal-hold');
     });
 
     it('rastreador ja fechou antes do relogio: tambem encerra', () => {
@@ -186,7 +190,7 @@ describe('resultado do WATCH', () => {
       closedAt();
       options = { ...options, alerts: [{ id: 'a', status: 'triggered', level: 27730, triggeredAt: '2026-11-09T18:40:00Z' }] };
       show(result(long, plan));
-      expect(text('watch-outcome')).toBe('What the market didChecking the result');
+      expect(text('closed-verdict')).toBe('Checking the result');
     });
 
     it('ativo sem fonte de preco e alerta ligado: nenhum botao; venda usa o nivel de venda', () => {
@@ -205,7 +209,7 @@ describe('resultado do WATCH', () => {
     it('sem conta com alertas o desfecho aparece igual', () => {
       closedAt();
       show(result(long, plan, { ...summary, outcome: 'expired' }), false);
-      expect(text('watch-outcome')).toBe('What the market didExpired without reaching it');
+      expect(text('closed-verdict')).toBe('Expired without reaching it');
       expect(screen.queryByTestId('watch-actions')).toBeNull();
     });
 
@@ -251,21 +255,6 @@ describe('resultado do WATCH', () => {
     show(result(long));
     fireEvent.click(screen.getByRole('button', { name: 'Technical Panel' }));
     expect(document.body.textContent).toContain('May affect this analysis');
-  });
-});
-
-describe('cor do dia no Diario', () => {
-  it.each([
-    [['watching'], 'var(--signal-hold-bg)'],
-    [['target'], 'var(--signal-buy-bg)'],
-    [['stopped'], 'var(--signal-sell-bg)'],
-    [['target', 'watching'], 'var(--signal-buy-bg)'],
-    [['target', 'stopped'], null],
-    [['neutral', 'watching'], null],
-    [['checking'], null],
-    [[], null],
-  ] as const)('%j', (tones, tint) => {
-    expect(watchDayTint(tones)).toBe(tint);
   });
 });
 

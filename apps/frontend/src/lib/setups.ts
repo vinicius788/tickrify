@@ -88,7 +88,19 @@ export interface WatchingItem {
   checkIntervalMs: number | null;
   marketClosed: boolean;
   alert: { id: string; setupId: string; status: SetupAlert['status']; triggeredAt: string | null; seenAt: string | null } | null;
+  journey: WatchJourney;
 }
+
+/** Watching, Price reached, Re-checked e o fim. "entered" so com o resultado que o trader marcou. */
+export interface WatchJourney {
+  priceReached: boolean;
+  recheck: { analysisId: string; createdAt: string; signalState: string | null } | null;
+  entered: { analysisId: string } | null;
+  end: 'entered' | 'skipped' | 'invalidated' | 'expired' | null;
+}
+
+/** O preco chegou ao nivel e a pessoa ainda nao revisou: o que pede acao na aba. */
+export const watchNeedsReview = (item: Pick<WatchingItem, 'alert'>) => item.alert?.status === 'triggered' && !item.alert.seenAt;
 
 export interface SetupAlertList {
   /** Conta travada (gratis esgotado): alertas pausados, nenhum devolvido. */
@@ -247,7 +259,7 @@ export function useAlertTabTitle(unseen: number, routeKey: string) {
   }, [unseen, routeKey]);
 }
 
-/** WATCH valendo e encerrados ha ate 7 dias: secao "Watching" do My Trades e do Diario. */
+/** WATCH valendo e encerrados ha ate 7 dias: aba Watching do painel. */
 export function useWatching(enabled: boolean) {
   const token = useToken();
   return useQuery({
@@ -306,6 +318,11 @@ export function formatAlertLevel(level: number, locale: string): string {
 /** "13:42 UTC": a hora do monitor e do e-mail e sempre em UTC. */
 export function formatUtcTime(iso: string): string {
   return `${new Date(iso).toISOString().slice(11, 16)} UTC`;
+}
+
+/** "Nov 10, 14:00 UTC": validade do WATCH, sempre em UTC. */
+export function formatUtcMoment(iso: string, locale: string): string {
+  return `${new Date(iso).toLocaleDateString(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' })}, ${formatUtcTime(iso)}`;
 }
 
 /** Distancia do ultimo preco checado ate o nivel, em %, com sinal. null sem preco. */
@@ -405,22 +422,7 @@ export const WATCH_TONE_CLASSES: Record<WatchTone, string> = {
   checking: GRAY_CHIP,
 };
 
-export const WATCH_TONE_DOT: Record<WatchTone, string> = {
-  watching: 'bg-[var(--signal-hold)]',
-  target: 'bg-[var(--signal-buy)]',
-  stopped: 'bg-[var(--signal-sell)]',
-  neutral: 'bg-[var(--text-muted)]',
-  checking: 'bg-[var(--text-muted)]',
-};
 
-/** Fundo do dia no Diario sem P&L: o desfecho ganha do laranja; alvo e stop no mesmo dia, neutro. */
-export function watchDayTint(tones: readonly WatchTone[]): string | null {
-  const target = tones.includes('target');
-  const stopped = tones.includes('stopped');
-  if (target !== stopped) return target ? 'var(--signal-buy-bg)' : 'var(--signal-sell-bg)';
-  if (target || tones.includes('neutral') || tones.includes('checking')) return null;
-  return tones.includes('watching') ? 'var(--signal-hold-bg)' : null;
-}
 
 /** Acorda na proxima validade. Janelas semanais podem exceder o limite de setTimeout. */
 export function useExpiryClock(expires: number, fixedNow?: number): number {

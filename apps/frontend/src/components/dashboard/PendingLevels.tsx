@@ -1,17 +1,13 @@
-import { useNavigate } from 'react-router-dom';
-import { BellPlus, BellRing, RefreshCw } from 'lucide-react';
+import { BellPlus, BellRing } from 'lucide-react';
 import { formatNumber } from '@/lib/i18n';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
-import { formatAssetDistance, formatAssetPrice } from '@/lib/trading-ui';
-import { APIError, displayAsset, type AiLevel, type LevelMap, type LevelMapSide, type WatchSummary } from '@/lib/api';
+import { formatAssetPrice } from '@/lib/trading-ui';
+import { APIError, type AiLevel, type LevelMap, type LevelMapSide, type WatchSummary } from '@/lib/api';
 import {
-  alertDistancePct,
-  checkFrequencyText,
   formatAlertLevel,
   formatTimeLeft,
-  formatUtcTime,
   hasActiveLevel,
   useExpiryClock,
   useAlertOptions,
@@ -21,20 +17,18 @@ import {
   type WatchTone,
   useAlertActions,
   useSetupAlerts,
-  useWatching,
   type AlertLabel,
-  type WatchingItem,
 } from '@/lib/setups';
 
 // WATCH pendente e mapa de niveis do NO_TRADE (03/11/2026). Arquivo proprio
-// porque My Trades, Diario, Today, setups e o resultado mostram o mesmo bloco.
+// porque Today, setups, a aba Watching e o resultado mostram o mesmo bloco.
 // Nunca acerto, P&L ou "win": o WATCH nao e operacao.
 
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
 };
 
-type Surface = 'trades' | 'journal' | 'today' | 'setups' | 'setup_page' | 'result';
+type Surface = 'today' | 'setups' | 'setup_page' | 'result';
 
 /**
  * "Alert me at <nivel>": cria o SetupAlert de sempre (mesmas regras, tetos e
@@ -216,118 +210,6 @@ export function WatchPending({
         <AlertLevelButton analysisId={analysisId} setupId={watch.setupId} level={watch.level} label="entry" surface={surface} kind="watch" />
       ) : null}
     </div>
-  );
-}
-
-function WatchingRow({ item, now, surface }: { item: WatchingItem; now: number; surface: 'trades' | 'journal' }) {
-  const { t, language } = useLanguage();
-  const w = t.watching;
-  const p = t.pending;
-  const a = t.alerts;
-  const locale = DATE_LOCALES[language] ?? 'en-US';
-  const navigate = useNavigate();
-  const { seen } = useAlertActions();
-  const { watch, alert } = item;
-  const price = (v: number) => formatAssetPrice(v, item.symbol, locale);
-  const conditionalPlan = useConditionalPlan()(watch.direction, watch.plan, price);
-  const open = isWatchOpen(watch, now);
-  const tone = watchTone(watch, now);
-  const closed = tone !== 'watching';
-  const triggered = alert?.status === 'triggered';
-
-  const alertLabel = triggered ? w.alertTriggered : alert?.status === 'active' ? w.alertWatching : alert?.status === 'cancelled' ? w.alertCancelled : null;
-  const left = open ? Date.parse(watch.expiresAt as string) - now : null;
-
-  const pct = closed ? null : alertDistancePct({ level: watch.level, lastPrice: item.lastPrice });
-  const distance = pct === null
-    ? null
-    : w.distance
-        .replace('{pct}', `${formatNumber(Math.abs(pct), language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })}%`)
-        .replace('{price}', formatAssetDistance(Math.abs(watch.level - (item.lastPrice as number)), item.symbol, locale, t.analysis.result.watch));
-  const levelText = (closed
-    ? (watch.direction === 'long' ? p.buyLevel : p.sellLevel)
-    : (watch.direction === 'long' ? p.watchBuy : p.watchSell)
-  ).replace('{price}', price(watch.level));
-  const checked = closed
-    ? null
-    : [
-        item.checkedAt ? a.lastChecked.replace('{time}', formatUtcTime(item.checkedAt)) : null,
-        checkFrequencyText(a, item),
-      ].filter(Boolean).join(' · ');
-
-  const updateChart = () => {
-    if (!alert) return;
-    track('setup_alert_opened', { source: 'dashboard', alertId: alert.id, setupId: alert.setupId });
-    track('setup_alert_update_clicked', { alertId: alert.id, setupId: alert.setupId, surface });
-    seen.mutate(alert.id);
-    navigate(`/dashboard/new?setup=${encodeURIComponent(alert.setupId)}&alert=${encodeURIComponent(alert.id)}`);
-  };
-
-  return (
-    <li data-testid="watching-item" data-state={closed ? 'closed' : 'open'} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between">
-      <div className="min-w-0">
-        <p className="tabular-nums text-sm text-[var(--text-primary)]">
-          {`${displayAsset(item.symbol)}${item.timeframe ? ` ${item.timeframe}` : ''}`}
-        </p>
-        <p className="mt-0.5 tabular-nums text-xs text-[var(--text-primary)]">
-          {[levelText, distance].filter(Boolean).join(' · ')}
-        </p>
-        {!closed && conditionalPlan ? <p key="plan" data-testid="conditional-plan" className="mt-0.5 tabular-nums text-[11px] text-[var(--text-primary)]">{conditionalPlan}</p> : null}
-        {!closed ? (
-          <p key="invalidation" className="mt-0.5 tabular-nums text-[11px] text-[var(--text-secondary)]">
-            {[p.invalidation.replace('{price}', price(watch.invalidation)), left !== null ? w.timeLeft.replace('{time}', formatTimeLeft(left, locale)) : null].filter(Boolean).join(' · ')}
-          </p>
-        ) : null}
-        {checked ? <p key="checked" className="mt-0.5 tabular-nums text-[11px] text-[var(--text-secondary)]">{checked}</p> : null}
-        {triggered && !closed ? <p key="not-signal" className="mt-0.5 text-[11px] text-[var(--text-secondary)]">{a.notSignal}</p> : null}
-      </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-        {closed ? (
-          <WatchVerdict key="verdict" watch={watch} tone={tone} caption={false} alignEnd />
-        ) : alertLabel ? (
-          <span key="pill" className={`w-fit rounded-lg border px-2.5 py-1 tabular-nums text-[11px] ${WATCH_TONE_CLASSES.watching}`}>
-            {alertLabel}
-          </span>
-        ) : null}
-        {triggered && (open || !alert.seenAt) ? (
-          <button
-            key="update"
-            type="button"
-            onClick={updateChart}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--inverse-bg)] px-3 py-2 text-xs font-semibold text-[var(--inverse-fg)] transition-opacity hover:opacity-90"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            <span>{a.updateChart}</span>
-          </button>
-        ) : null}
-      </div>
-    </li>
-  );
-}
-
-/**
- * Secao "Watching" no topo do My Trades e do Diario (09/11/2026): os niveis
- * sendo vigiados e o que o preco fez nos encerrados. Informacao de mercado:
- * nada aqui entra em acerto, P&L ou estatistica, nem fala como ordem executada.
- */
-export function WatchingSection({ surface, enabled }: { surface: 'trades' | 'journal'; enabled: boolean }) {
-  const { t } = useLanguage();
-  const w = t.watching;
-  const items = useWatching(enabled).data?.items ?? [];
-  const current = Date.now();
-  const nextExpiry = items.reduce((next, item) => (isWatchOpen(item.watch, current) ? Math.min(next, Date.parse(item.watch.expiresAt as string)) : next), Infinity);
-  const now = useExpiryClock(nextExpiry);
-  if (items.length === 0) return null;
-  return (
-    <section data-testid="watching-section" aria-label={w.title} className="border-b border-[var(--border-subtle)] p-4">
-      <h3 className="tk-stat-label">{w.title}</h3>
-      <p className="mt-1 text-xs text-[var(--text-secondary)]">{w.note}</p>
-      <ul className="mt-3 divide-y divide-[var(--border-subtle)]">
-        {items.map((item) => (
-          <WatchingRow key={item.analysisId} item={item} now={now} surface={surface} />
-        ))}
-      </ul>
-    </section>
   );
 }
 

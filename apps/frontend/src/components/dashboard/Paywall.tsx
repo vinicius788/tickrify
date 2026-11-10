@@ -13,7 +13,7 @@ import { useTestimonials } from '@/lib/ratings';
  * `upgrade_cta_clicked`, `upgrade_clicked`, `checkout_started`) para o funil
  * separar "acabou a analise gratis" de "quis abrir o diario".
  */
-export type PaywallSurface = 'new_analysis' | 'trades' | 'journal' | 'history' | 'setups' | 'alerts';
+export type PaywallSurface = 'new_analysis' | 'trades' | 'journal' | 'history' | 'setups' | 'alerts' | 'watching';
 
 interface PaywallProps {
   surface: PaywallSurface;
@@ -83,6 +83,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
     journal: p.descJournal,
     history: p.descHistory,
     setups: p.descSetups,
+    watching: p.descWatching,
     alerts: p.descAlerts,
   };
   const dailyLimitDescription =

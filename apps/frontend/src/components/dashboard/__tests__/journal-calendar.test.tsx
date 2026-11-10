@@ -9,6 +9,7 @@ vi.mock('@clerk/clerk-react', () => ({ useUser: () => ({ user: { id: 'u-1' } }),
 const getJournal = vi.fn();
 const setTradeNote = vi.fn();
 vi.mock('@/lib/api', () => ({ useAPIClient: () => ({ getJournal, setTradeNote }) }));
+vi.mock('@/components/dashboard/WatchingPage', () => ({ WatchingLink: () => <p data-testid="watching-link">2 setups being watched</p> }));
 // O pre-push roda tudo de uma vez e a primeira carga da query passa de 1 s
 // (padrao do findBy) com a maquina cheia: o teste quebrava no push da noite.
 const LOAD = { timeout: 5000 };
@@ -68,45 +69,27 @@ describe('Diario: desempenho do mes', () => {
   });
 });
 
-describe('Diario: WATCH pendente', () => {
+describe('Diario: so operacoes', () => {
   afterEach(() => {
     cleanup();
     getJournal.mockReset();
   });
 
-  it('aparece com o nivel e o desfecho, fora das estatisticas de trade', async () => {
+  it('WATCH e NO_TRADE ficam na aba Watching; no lugar, a linha discreta', async () => {
     const today = new Date().getDate();
     const watch = {
-      ...item('w', today, 'BTCUSDT', 'WAIT', 'stop', -42, null),
+      ...item('w', today, 'BTCUSDT', 'WAIT', null, null, null),
       signalState: 'WATCH',
-      watch: { direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12, expiresAt: '2026-01-01T00:00:00.000Z', outcome: 'reached', alertAvailable: true },
+      watch: { direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12, expiresAt: '2026-01-01T00:00:00.000Z', outcome: 'reached', afterReach: 'target', targetR: 2, alertAvailable: true },
     };
-    getJournal.mockResolvedValue({ truncated: false, items: [watch, { ...item('nt', today, 'EURUSD', 'WAIT', 'tp1', 70, null), signalState: 'NO_TRADE' }] });
+    getJournal.mockResolvedValue({ truncated: false, items: [watch, { ...item('nt', today, 'EURUSD', 'WAIT', null, null, null), signalState: 'NO_TRADE' }, item('t', today, 'XAUUSD', 'BUY', 'tp1', 50, 1.5)] });
     renderJournal();
-    expect(await screen.findByText('Sell level $ 77,800.00', {}, LOAD)).toBeTruthy();
-    expect(screen.getByTestId('watch-pending').textContent).toContain('Price reached the level');
-    expect(screen.getByTestId('watch-pending').textContent).not.toContain('No trade (wait)');
-    // Nao e operacao: o mes segue sem trade fechado, sem numero.
-    expect(screen.getByText('Mark TP or Stop on your trades in My Trades and your stats for the month show up here.')).toBeTruthy();
-    expect(screen.queryByText('Your logged trading results')).toBeNull();
-  });
-
-  it.each([
-    ['target', 'var(--signal-buy-bg)'],
-    ['invalidation', 'var(--signal-sell-bg)'],
-  ] as const)('dia com WATCH resolvido (%s) leva a cor do desfecho, fora do P&L', async (afterReach, background) => {
-    const today = new Date().getDate();
-    const resolved = {
-      ...item('w', today, 'BTCUSDT', 'WAIT', 'stop', -42, null),
-      signalState: 'WATCH',
-      watch: { direction: 'short', level: 77800, invalidation: 78400, validForCandles: 12, expiresAt: '2026-01-01T00:00:00.000Z', outcome: 'reached', afterReach, targetR: 2, alertAvailable: true },
-    };
-    getJournal.mockResolvedValue({ truncated: false, items: [resolved] });
-    renderJournal();
-    const dot = await screen.findByTestId('day-watch', {}, LOAD);
-    expect(dot.firstElementChild!.getAttribute('data-tone')).toBe(afterReach === 'target' ? 'target' : 'stopped');
-    expect((dot.closest('button') as HTMLElement).style.background).toBe(background);
-    expect(screen.queryByText('Your logged trading results')).toBeNull();
+    expect((await screen.findAllByText('XAUUSD', {}, LOAD)).length).toBeGreaterThan(0);
+    expect(screen.queryByText('BTCUSDT')).toBeNull();
+    expect(screen.queryByText('EURUSD')).toBeNull();
+    expect(screen.queryByTestId('watch-pending')).toBeNull();
+    expect(screen.queryByTestId('watching-section')).toBeNull();
+    expect(screen.getByTestId('watching-link')).toBeTruthy();
   });
 });
 
@@ -171,10 +154,10 @@ describe('Diario: anotacao do trade', () => {
     // Muitos cliques e digitacao: com a maquina cheia (pre-push) 5 s nao bastam.
   }, 15000);
 
-  it('WAIT nao tem botao de anotar (nao e operacao)', async () => {
-    getJournal.mockResolvedValue({ truncated: false, items: [item('w', new Date().getDate(), 'XAUUSD', 'WAIT', null, null, null)] });
+  it('WAIT nao aparece no Diario (nao e operacao)', async () => {
+    getJournal.mockResolvedValue({ truncated: false, items: [item('w', new Date().getDate(), 'XAUUSD', 'WAIT', null, null, null), item('b', new Date().getDate(), 'BTCUSDT', 'BUY', null, null, null)] });
     renderJournal();
-    await screen.findByText('XAUUSD', {}, LOAD);
-    expect(screen.queryByRole('button', { name: 'Add note' })).toBeNull();
+    await screen.findByText('BTCUSDT', {}, LOAD);
+    expect(screen.queryByText('XAUUSD')).toBeNull();
   });
 });

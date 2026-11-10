@@ -1,4 +1,4 @@
-import { loadWatchContexts, storedWatchPlan, watchAfterReachOf, watchOutcomeOf, watchSummaryOf, watchTargetROf } from './watch-pending';
+import { isTradeSignal, loadWatchContexts, loadWatchNext, loadWatchOrigins, watchJourneyOf, storedWatchPlan, watchAfterReachOf, watchOutcomeOf, watchSummaryOf, watchTargetROf } from './watch-pending';
 
 const plan = { direction: 'short', triggerType: 'zone_reaction', zoneLow: 77800, zoneHigh: 78000, invalidation: 78400,
   target1: 76900, target2: null, validForCandles: 12, trigger: 'Bearish close below 77,800' };
@@ -92,6 +92,54 @@ describe('loadWatchContexts', () => {
     expect((await loadWatchContexts(broken as any, ['a1'])).size).toBe(0);
     const none = { $queryRaw: jest.fn() };
     expect((await loadWatchContexts(none as any, [])).size).toBe(0);
+    expect(none.$queryRaw).not.toHaveBeenCalled();
+  });
+});
+
+describe('watchJourneyOf: Watching -> Price reached -> Re-checked -> fim', () => {
+  const next = (over: Record<string, unknown> = {}) => ({ analysisId: 'n1', createdAt: created, signalState: 'ENTER_NOW', recommendation: 'BUY', userVerdict: null, ...over });
+  it('sem reanalise: o fim vem do rastreador', () => {
+    expect(watchJourneyOf({ outcome: 'pending' }, false, null)).toEqual({ priceReached: false, recheck: null, entered: null, end: null });
+    expect(watchJourneyOf({ outcome: 'reached' }, false, null)).toMatchObject({ priceReached: true, end: null });
+    expect(watchJourneyOf({ outcome: 'invalidated' }, false, null).end).toBe('invalidated');
+    expect(watchJourneyOf({ outcome: 'expired' }, false, null).end).toBe('expired');
+  });
+  it('o alerta disparado ja conta como preco chegou', () => {
+    expect(watchJourneyOf({ outcome: 'pending' }, true, null).priceReached).toBe(true);
+  });
+  it('entrou so com a marcacao do trader na reanalise', () => {
+    for (const v of ['open', 'tp1', 'tp2', 'stop']) {
+      expect(watchJourneyOf({ outcome: 'reached' }, true, next({ userVerdict: v }))).toMatchObject({ entered: { analysisId: 'n1' }, end: 'entered' });
+    }
+  });
+  it('entrada proposta sem marcacao: decisao pendente', () => {
+    expect(watchJourneyOf({ outcome: 'pending' }, true, next())).toMatchObject({ recheck: { analysisId: 'n1' }, entered: null, end: null });
+  });
+  it('reanalise sem entrada ou no_fill: pulou', () => {
+    expect(watchJourneyOf({ outcome: 'reached' }, true, next({ signalState: 'NO_TRADE', recommendation: 'WAIT' })).end).toBe('skipped');
+    expect(watchJourneyOf({ outcome: 'reached' }, true, next({ signalState: 'WATCH', recommendation: 'WAIT' })).end).toBe('skipped');
+    expect(watchJourneyOf({ outcome: 'reached' }, true, next({ userVerdict: 'no_fill' })).end).toBe('skipped');
+  });
+  it('isTradeSignal: estado do copiloto vence; sem estado, BUY/SELL', () => {
+    expect(isTradeSignal('ENTER_NOW', 'WAIT')).toBe(true);
+    expect(isTradeSignal('WATCH', 'BUY')).toBe(false);
+    expect(isTradeSignal(null, 'SELL')).toBe(true);
+    expect(isTradeSignal(null, 'WAIT')).toBe(false);
+  });
+});
+
+describe('loadWatchNext e loadWatchOrigins', () => {
+  it('mapeiam pelo id e nunca derrubam a lista', async () => {
+    const db = { $queryRaw: jest.fn().mockResolvedValue([{ watchId: 'w1', analysisId: 'n1', createdAt: created, signalState: 'NO_TRADE', recommendation: 'WAIT', userVerdict: null }]) };
+    expect((await loadWatchNext(db as any, 'u1', ['w1'])).get('w1')).toMatchObject({ analysisId: 'n1' });
+    const origins = { $queryRaw: jest.fn().mockResolvedValue([{ id: 't1', analysisId: 'w1', createdAt: created }]) };
+    expect((await loadWatchOrigins(origins as any, 'u1', ['t1'])).get('t1')).toEqual({ analysisId: 'w1', createdAt: created });
+    const broken = { $queryRaw: jest.fn().mockRejectedValue(new Error('x')) };
+    expect((await loadWatchNext(broken as any, 'u1', ['w1'])).size).toBe(0);
+    expect((await loadWatchOrigins(broken as any, 'u1', ['t1'])).size).toBe(0);
+    const none = { $queryRaw: jest.fn() };
+    await loadWatchNext(none as any, 'u1', []);
+    await loadWatchOrigins(none as any, 'u1', []);
     expect(none.$queryRaw).not.toHaveBeenCalled();
   });
 });

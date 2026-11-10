@@ -65,7 +65,7 @@ import { StripeService } from '../payments/stripe.service';
 import { SetupsService, recordSetupVersion } from './setups.service';
 import { createWatchAlert } from './setup-alerts.service';
 import { loadPriorPlan } from './setup-continuation';
-import { loadWatchContexts, storedWatchPlan, watchSummaryOf } from './watch-pending';
+import { isTradeSignal, loadWatchContexts, loadWatchOrigins, storedWatchPlan, watchSummaryOf } from './watch-pending';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from './analysis-data-coverage';
 import { tp1RFromDetail } from '../mail/analysis-result-email';
 import { TRADE_EMOTIONS, TRADE_MISTAKES, TRADE_NOTE_MAX, TRADE_SETUPS } from './dto/set-trade-note.dto';
@@ -803,7 +803,11 @@ export class AiService implements OnModuleInit {
     const watchIds = analyses
       .filter((a) => storedSignalState(this.getStoredAnalysisPayload(a), a.recommendation) === 'WATCH')
       .map((a) => a.id);
-    const [outcomesMap, signedUrls, watchContexts] = await Promise.all([
+    // Operacao que nasceu de um WATCH do mesmo setup: "From a watch on <data>" no My Trades.
+    const tradeIds = analyses
+      .filter((a) => isTradeSignal(storedSignalState(this.getStoredAnalysisPayload(a), a.recommendation), a.recommendation))
+      .map((a) => a.id);
+    const [outcomesMap, signedUrls, watchContexts, watchOrigins] = await Promise.all([
       this.getOutcomesMap(userId, analyses.map((a) => a.id)),
       this.signImagesBatch(
         analyses.map((analysis) => {
@@ -819,6 +823,7 @@ export class AiService implements OnModuleInit {
         }),
       ),
       loadWatchContexts(this.prisma, watchIds),
+      loadWatchOrigins(this.prisma, userId, tradeIds),
     ]);
 
     return Promise.all(
@@ -902,6 +907,7 @@ export class AiService implements OnModuleInit {
           tradeNote: outcomeData?.tradeNote ?? null,
           // WATCH pendente: nivel, validade e o desfecho do rastreador. Nunca entra em acerto nem P&L.
           watch: watchSummaryOf(fullResponse, recommendation, analysis.createdAt, watchContexts.get(analysis.id)),
+          fromWatch: watchOrigins.get(analysis.id) ?? null,
         };
       }),
     );
