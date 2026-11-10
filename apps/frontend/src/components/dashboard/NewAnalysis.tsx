@@ -48,7 +48,7 @@ const SetupUpdateBanner = ({ context, deep }: { context: SetupUpdateContext; dee
     </div>
     {context.detail ? <p className="text-xs leading-relaxed text-[var(--text-primary)]/85">{context.detail}</p> : null}
     <p className="text-xs leading-relaxed text-[var(--text-secondary)]">{context.hint}</p>
-    {deep === null ? null : <p className="font-terminal text-[11px] text-[var(--text-primary)]">{context.costLine(deep)}</p>}
+    {deep === null ? null : <p className="tabular-nums text-[11px] text-[var(--text-primary)]">{context.costLine(deep)}</p>}
   </Card>
 );
 
@@ -169,12 +169,11 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
     <div className="flex items-center gap-4 sm:gap-7">
       <div className="flex items-center gap-3">
         <span
-          className={`flex h-8 w-8 items-center justify-center rounded-full text-sm ${
+          className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium tabular-nums ${
             active === 1
               ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]'
               : 'border border-[var(--border-default)] text-[var(--text-secondary)]'
           }`}
-          style={{ fontFamily: 'var(--font-serif)' }}
         >
           1
         </span>
@@ -182,7 +181,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
           <div className={`tk-display text-[15px] ${active === 1 ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
             {u.stepUpload}
           </div>
-          <div className="font-terminal text-[9px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">
+          <div className="tabular-nums text-xs text-[var(--text-secondary)]">
             {u.stepUploadSub}
           </div>
         </div>
@@ -190,12 +189,11 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
       <div className="h-px flex-1 bg-[var(--border-subtle)]" />
       <div className="flex items-center gap-3">
         <span
-          className={`flex h-8 w-8 items-center justify-center rounded-full text-sm ${
+          className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium tabular-nums ${
             active === 2
               ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]'
               : 'border border-[var(--border-default)] text-[var(--text-secondary)]'
           }`}
-          style={{ fontFamily: 'var(--font-serif)' }}
         >
           2
         </span>
@@ -203,7 +201,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
           <div className={`tk-display text-[15px] ${active === 2 ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
             {u.stepContext}
           </div>
-          <div className="font-terminal text-[9px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">
+          <div className="tabular-nums text-xs text-[var(--text-secondary)]">
             {u.stepContextSub}
           </div>
         </div>
@@ -245,7 +243,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
               ) : (
                 <span key="drop-idle">
                   {`${u.dropHere}, `}
-                  <em className="font-serif italic text-[var(--text-secondary)]">{u.orClick}</em>
+                  <span className="text-[var(--text-secondary)]">{u.orClick}</span>
                 </span>
               )}
             </h3>
@@ -255,17 +253,17 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
               {['PNG', 'JPG', 'WEBP'].map((fmt) => (
                 <span
                   key={fmt}
-                  className="rounded-[5px] border border-[var(--border-default)] px-2 py-0.5 font-terminal text-[10px] text-[var(--text-secondary)]"
+                  className="rounded-[5px] border border-[var(--border-default)] px-2 py-0.5 tabular-nums text-[10px] text-[var(--text-secondary)]"
                 >
                   {fmt}
                 </span>
               ))}
-              <span className="rounded-[5px] border border-[var(--border-default)] px-2 py-0.5 font-terminal text-[10px] text-[var(--text-secondary)] opacity-60">
+              <span className="rounded-[5px] border border-[var(--border-default)] px-2 py-0.5 tabular-nums text-[10px] text-[var(--text-secondary)] opacity-60">
                 {u.maxSize}
               </span>
             </div>
 
-            <p className="mt-4 font-terminal text-[10px] uppercase tracking-[0.1em] text-[var(--text-secondary)]">
+            <p className="mt-4 tabular-nums text-xs text-[var(--text-secondary)]">
               {u.pasteHint}
             </p>
             <p className="mt-3 text-xs text-[var(--text-secondary)]">{u.mobileCamera}</p>
@@ -300,7 +298,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
         </Card>
 
         <div className="flex flex-col items-center gap-2 pt-1">
-          <p className="font-terminal text-[11px] uppercase tracking-widest text-[var(--text-secondary)] opacity-50">
+          <p className="tabular-nums text-[11px] text-[var(--text-secondary)] opacity-50">
             {u.compatible}
           </p>
           <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 opacity-40">
@@ -397,7 +395,7 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
               </label>
             )}
             {setupUpdate ? (
-              <p className="mb-2 text-center font-terminal text-[11px] text-[var(--text-primary)]">{setupUpdate.costLine(deep)}</p>
+              <p className="mb-2 text-center tabular-nums text-[11px] text-[var(--text-primary)]">{setupUpdate.costLine(deep)}</p>
             ) : null}
             <button
               type="button"

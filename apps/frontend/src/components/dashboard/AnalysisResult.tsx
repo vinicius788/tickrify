@@ -1104,18 +1104,18 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     <dl aria-label={clarity.readingGuide} className="mt-4 space-y-3 border-t border-[var(--border-subtle)] pt-4 text-sm">
       {!whyRepeatsSummary && (
         <div key="why">
-          <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.why}</dt>
+          <dt className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{clarity.why}</dt>
           <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{readingReason || clarity.reasonMissing}</dd>
         </div>
       )}
       {!watchLayout && (
         <div key="risk">
-          <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.risk}</dt>
+          <dt className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{clarity.risk}</dt>
           <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{readingRisk || clarity.riskMissing}</dd>
         </div>
       )}
       <div>
-        <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.next}</dt>
+        <dt className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{clarity.next}</dt>
         <dd className="mt-1 leading-relaxed text-[var(--text-secondary)]">{clarity.reviewConditions}</dd>
       </div>
     </dl>
@@ -1143,14 +1143,14 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                 key={i}
                 className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2"
               >
-                <p className="mb-0.5 font-terminal text-[10px] font-semibold uppercase tracking-wider text-[var(--signal-buy)]">
+                <p className="mb-0.5 tabular-nums text-xs font-medium text-[var(--signal-buy)]">
                   {localizeDeepLabel(b.label, t.analysis as unknown as Record<string, string>)}
                 </p>
                 <p className="text-sm leading-relaxed text-[var(--text-primary)]">{b.text}</p>
               </div>
             ))}
             {footer.length > 0 && (
-              <p className="pt-1 text-xs italic leading-relaxed text-[var(--text-secondary)]">
+              <p className="pt-1 text-xs leading-relaxed text-[var(--text-secondary)]">
                 {footer.join(' ')}
               </p>
             )}
@@ -1175,12 +1175,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
       <Card className="surface-terminal-elevated rounded-xl fade-in-stagger" style={{ animationDelay: '0ms' }}>
         <CardContent className="p-5 md:p-6">
           <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)] md:gap-4">
-            <span className="whitespace-nowrap font-terminal font-semibold text-[var(--text-primary)]">{symbol}</span>
-            <span className="whitespace-nowrap font-terminal">{timeframe}</span>
+            <span className="whitespace-nowrap tabular-nums font-semibold text-[var(--text-primary)]">{symbol}</span>
+            <span className="whitespace-nowrap tabular-nums">{timeframe}</span>
             <div
               data-testid="signal-state"
               data-closed={watchClosed ? 'true' : undefined}
-              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold uppercase tracking-widest ${watchClosed ? WATCH_TONE_CLASSES.neutral : signalToneClasses}`}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium ${watchClosed ? WATCH_TONE_CLASSES.neutral : signalToneClasses}`}
             >
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
               <span>{watchClosed ? r.watch.chipClosed : watchLayout ? (watchPlan?.direction === 'long' ? r.watch.chipBuy : r.watch.chipSell) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
@@ -1194,7 +1194,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             {strategyFit && (
               <span
                 title={r.strategyFitNote}
-                className={`whitespace-nowrap rounded-sm border px-2 py-0.5 font-terminal text-[10px] font-semibold uppercase tracking-widest ${STRATEGY_FIT_TONE[strategyFit]}`}
+                className={`whitespace-nowrap rounded-sm border px-2 py-0.5 tabular-nums text-xs font-medium ${STRATEGY_FIT_TONE[strategyFit]}`}
               >
                 {r.strategyFitTitle}: {STRATEGY_FIT_LABEL[strategyFit]}
               </span>
@@ -1205,14 +1205,14 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                 <strong className="font-semibold">{t.scenarioLabels[scenarioMeta.label]}</strong>
               </span>
             )}
-            <span className="whitespace-nowrap font-terminal md:ml-auto">{formattedTimestamp}</span>
+            <span className="whitespace-nowrap tabular-nums md:ml-auto">{formattedTimestamp}</span>
             {/* Demo anônima não compartilha: o card leva a marca e o link da
                 /accuracy, e um print gerado a partir de dado de demonstração
                 circulando como leitura real é a mesma classe de problema que a
                 auditoria de 27/07 removeu da vitrine. */}
             {!isDemo && !sample && !invalidTradePlan && <AnalysisShareButton data={shareData} />}
             {detectedSession && (
-              <span className="whitespace-nowrap rounded-sm border border-[var(--border-subtle)] px-2 py-0.5 font-terminal text-xs text-[var(--text-secondary)] uppercase">
+              <span className="whitespace-nowrap rounded-sm border border-[var(--border-subtle)] px-2 py-0.5 tabular-nums text-xs text-[var(--text-secondary)]">
                 {detectedSession.replace('_', ' ')}
               </span>
             )}
@@ -1241,12 +1241,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             // veredito acima — só complementa.
             <div className="mt-3 flex flex-wrap items-start gap-x-2 gap-y-1 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-3 py-2 text-xs">
               <span
-                className={`whitespace-nowrap rounded-sm border px-2 py-0.5 font-terminal text-[10px] font-semibold uppercase tracking-widest ${STRATEGY_FIT_TONE[strategyFit]}`}
+                className={`whitespace-nowrap rounded-sm border px-2 py-0.5 tabular-nums text-xs font-medium ${STRATEGY_FIT_TONE[strategyFit]}`}
               >
                 {r.strategyFitTitle}: {STRATEGY_FIT_LABEL[strategyFit]}
               </span>
               {strategyFitReason && <span className="text-[var(--text-secondary)]">{strategyFitReason}</span>}
-              <span className="w-full text-[10px] italic text-[var(--text-secondary)]">{r.strategyFitNote}</span>
+              <span className="w-full text-xs text-[var(--text-tertiary)]">{r.strategyFitNote}</span>
             </div>
           )}
         </CardContent>
@@ -1300,7 +1300,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             <div className="space-y-3 text-sm">
               {waitFlipItems.map((item, idx) => (
                 <div key={`${idx}-${item.label}`}>
-                  <p className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                  <p className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">
                     {item.label}
                   </p>
                   <p className="mt-0.5 leading-relaxed text-[var(--text-primary)]/85">{item.text}</p>
@@ -1405,7 +1405,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
           style={{ animationDelay: '200ms' }}
         >
           <CardHeader className="pb-2">
-            <CardTitle className="tk-display text-lg tracking-wide">{t.analysis.levels.toUpperCase()}</CardTitle>
+            <CardTitle className="tk-display text-lg">{t.analysis.levels}</CardTitle>
             {levelsEstimated && (
               <p data-testid="levels-estimated" className="text-xs text-[var(--text-secondary)]">{r.levelsEstimated}</p>
             )}
@@ -1413,10 +1413,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
           <CardContent className="space-y-3 text-sm">
             {signalState === 'ARMED' && entry !== null && !invalidTradePlan && (
               <div data-testid="pending-order" className="rounded-md border border-[var(--border-accent)] bg-[var(--bg-overlay)] p-3 text-xs">
-                <p className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                <p className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">
                   {r.pending.title}
                 </p>
-                <p className="mt-1 font-terminal text-sm font-semibold text-[var(--text-primary)]">
+                <p className="mt-1 tabular-nums text-sm font-semibold text-[var(--text-primary)]">
                   {r.pending.limitAt.replace('{price}', formatPrice(entry))}
                 </p>
                 <p className="mt-2 text-[var(--text-secondary)]">{r.pending.cancelIf}</p>
@@ -1430,25 +1430,25 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             <div className="grid grid-cols-2 gap-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-3">
               <div>
                 <p className="text-xs text-[var(--text-secondary)]">{riskRewardLabel}</p>
-                <p className={`font-terminal text-base font-semibold ${riskRewardTone}`}>
+                <p className={`tabular-nums text-base font-semibold ${riskRewardTone}`}>
                   {riskReward !== null ? `${formatNumber(riskReward, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })} : 1` : 'N/A'}
                 </p>
                 {!invalidTradePlan && tradeTone !== 'hold' && (rrTp1 !== null || rrTp2 !== null) && (
-                  <p className="font-terminal text-[10px] text-[var(--text-secondary)]">
+                  <p className="tabular-nums text-[10px] text-[var(--text-secondary)]">
                     {[rrTp1 !== null ? `TP1 ${formatNumber(rrTp1, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}` : null, rrTp2 !== null ? `TP2 ${formatNumber(rrTp2, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}` : null]
                       .filter(Boolean)
                       .join(' · ')}
                   </p>
                 )}
                 {riskRewardLow && (
-                  <p className="mt-0.5 font-terminal text-[10px] font-semibold text-[var(--signal-sell)]">
+                  <p className="mt-0.5 tabular-nums text-[10px] font-semibold text-[var(--signal-sell)]">
                     {r.rrBelowIdeal}
                   </p>
                 )}
               </div>
               <div>
                 <p className="text-xs text-[var(--text-secondary)]">{t.analysis.confluence}</p>
-                <p className="font-terminal text-base font-semibold text-[var(--text-primary)]">
+                <p className="tabular-nums text-base font-semibold text-[var(--text-primary)]">
                   {confluence ? confluence.display : 'N/A'}
                 </p>
               </div>
@@ -1456,10 +1456,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
 
             <div className="space-y-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
               <div className="flex items-center justify-between gap-3 rounded px-2 py-1">
-                <span className="text-[var(--text-secondary)]">{t.analysis.currentPrice.toUpperCase()}</span>
+                <span className="text-[var(--text-secondary)]">{t.analysis.currentPrice}</span>
                 <button
                   type="button"
-                  className="font-terminal font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
+                  className="tabular-nums font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
                   onClick={() => void copyValue(t.analysis.currentPrice, currentPrice)}
                 >
                   {formatPrice(currentPrice)}
@@ -1467,10 +1467,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
               </div>
 
               <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
-                <span className="text-[var(--text-secondary)]">● {t.analysis.entry.toUpperCase()}</span>
+                <span className="text-[var(--text-secondary)]">● {t.analysis.entry}</span>
                 <button
                   type="button"
-                  className="font-terminal font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
+                  className="tabular-nums font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
                   onClick={() => void copyValue(t.analysis.entry, entry)}
                 >
                   {formatPrice(entry)}
@@ -1478,14 +1478,14 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
               </div>
 
               <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
-                <span className="whitespace-nowrap text-[var(--signal-sell)]">▼ {t.analysis.stopLoss.toUpperCase()}</span>
+                <span className="whitespace-nowrap text-[var(--signal-sell)]">▼ {t.analysis.stopLoss}</span>
                 <button
                   type="button"
-                  className="text-right font-terminal font-semibold text-[var(--signal-sell)] transition-opacity hover:opacity-80"
+                  className="text-right tabular-nums font-semibold text-[var(--signal-sell)] transition-opacity hover:opacity-80"
                   onClick={() => void copyValue(t.analysis.stopLoss, stopLoss)}
                 >
-                  {formatPrice(stopLoss)} <span className="font-terminal text-xs">{formatSignedPercent(stopPercent)}</span>
-                  {stopPips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-sell)]/70">{stopPips}p</span>}
+                  {formatPrice(stopLoss)} <span className="tabular-nums text-xs">{formatSignedPercent(stopPercent)}</span>
+                  {stopPips !== null && <span className="ml-1 tabular-nums text-[10px] text-[var(--signal-sell)]/70">{stopPips}p</span>}
                 </button>
               </div>
 
@@ -1493,11 +1493,11 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                 <span className="text-[var(--signal-buy)]">▲ TP1</span>
                 <button
                   type="button"
-                  className="text-right font-terminal font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
+                  className="text-right tabular-nums font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
                   onClick={() => void copyValue(t.analysis.tp1, takeProfit1)}
                 >
-                  {formatPrice(takeProfit1)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit1Percent)}</span>
-                  {tp1Pips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-buy)]/70">{tp1Pips}p</span>}
+                  {formatPrice(takeProfit1)} <span className="tabular-nums text-xs">{formatPositivePercent(takeProfit1Percent)}</span>
+                  {tp1Pips !== null && <span className="ml-1 tabular-nums text-[10px] text-[var(--signal-buy)]/70">{tp1Pips}p</span>}
                 </button>
               </div>
 
@@ -1505,18 +1505,18 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                 <span className="text-[var(--signal-buy)]">▲ TP2</span>
                 <button
                   type="button"
-                  className="text-right font-terminal font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
+                  className="text-right tabular-nums font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
                   onClick={() => void copyValue(t.analysis.tp2, takeProfit2)}
                 >
-                  {formatPrice(takeProfit2)} <span className="font-terminal text-xs">{formatPositivePercent(takeProfit2Percent)}</span>
-                  {tp2Pips !== null && <span className="ml-1 font-terminal text-[10px] text-[var(--signal-buy)]/70">{tp2Pips}p</span>}
+                  {formatPrice(takeProfit2)} <span className="tabular-nums text-xs">{formatPositivePercent(takeProfit2Percent)}</span>
+                  {tp2Pips !== null && <span className="ml-1 tabular-nums text-[10px] text-[var(--signal-buy)]/70">{tp2Pips}p</span>}
                 </button>
               </div>
 
               {entryType && (
                 <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1.5 text-xs">
-                  <span className="text-[var(--text-secondary)]">{t.analysis.entryType.toUpperCase()}: </span>
-                  <span className="font-terminal font-semibold uppercase text-[var(--text-primary)]">{entryType}</span>
+                  <span className="text-[var(--text-secondary)]">{t.analysis.entryType}: </span>
+                  <span className="tabular-nums font-medium text-[var(--text-primary)]">{entryType}</span>
                   {/* Trava de coerência: com R/R abaixo do ideal, não exibir "entrar a
                       mercado agora" (contradiz o aviso). Mostra orientação de aguardar recuo. */}
                   {invalidTradePlan ? null : riskRewardLow && entryType.toLowerCase() === 'market' ? (
@@ -1536,8 +1536,8 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                     aria-expanded={showInvalidation}
                   >
                     <span>
-                      <span className="text-[var(--signal-sell)]">{t.analysis.invalidation.toUpperCase()}: </span>
-                      <span className="font-terminal font-semibold text-[var(--signal-sell)]">{formatPrice(invalidationLevel)}</span>
+                      <span className="text-[var(--signal-sell)]">{t.analysis.invalidation}: </span>
+                      <span className="tabular-nums font-semibold text-[var(--signal-sell)]">{formatPrice(invalidationLevel)}</span>
                     </span>
                     {invalidationNote && (
                       <ChevronDown
@@ -1603,7 +1603,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                         {liveMarket.fundingRatePercent !== null && (
                           <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-2">
                             <p className="text-[var(--text-secondary)]">{t.analysis.liveMarket.fundingRate}</p>
-                            <p className={`font-terminal font-semibold ${liveMarket.fundingRatePercent >= 0 ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'}`}>
+                            <p className={`tabular-nums font-semibold ${liveMarket.fundingRatePercent >= 0 ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'}`}>
                               {`${liveMarket.fundingRatePercent >= 0 ? '+' : ''}${formatNumber(liveMarket.fundingRatePercent, language, { minimumFractionDigits: 4, maximumFractionDigits: 4, useGrouping: false })}%`}
                             </p>
                           </div>
@@ -1611,7 +1611,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                         {liveMarket.longShortRatio !== null && (
                           <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-2">
                             <p className="text-[var(--text-secondary)]">{t.analysis.liveMarket.longShort}</p>
-                            <p className="font-terminal font-semibold text-[var(--text-primary)]">
+                            <p className="tabular-nums font-semibold text-[var(--text-primary)]">
                               {formatNumber(liveMarket.longShortRatio, language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })}
                               {liveMarket.longAccountPercent !== null && liveMarket.shortAccountPercent !== null && (
                                 <span className="ml-1 text-[10px] text-[var(--text-secondary)]">
@@ -1624,7 +1624,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                         {liveMarket.openInterest !== null && (
                           <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-2">
                             <p className="text-[var(--text-secondary)]">{t.analysis.liveMarket.openInterest}</p>
-                            <p className="font-terminal font-semibold text-[var(--text-primary)]">
+                            <p className="tabular-nums font-semibold text-[var(--text-primary)]">
                               {liveMarket.openInterest.toLocaleString(LOCALES[language], { maximumFractionDigits: 0 })}
                             </p>
                           </div>
@@ -1632,7 +1632,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                         {liveMarket.fearGreedValue !== null && (
                           <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-2">
                             <p className="text-[var(--text-secondary)]">{t.analysis.liveMarket.fearGreed}</p>
-                            <p className={`font-terminal font-semibold ${liveMarket.fearGreedValue >= 55 ? 'text-[var(--signal-buy)]' : liveMarket.fearGreedValue <= 45 ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}`}>
+                            <p className={`tabular-nums font-semibold ${liveMarket.fearGreedValue >= 55 ? 'text-[var(--signal-buy)]' : liveMarket.fearGreedValue <= 45 ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]'}`}>
                               {liveMarket.fearGreedValue}
                               {liveMarket.fearGreedClassification && (
                                 <span className="ml-1 text-[10px] text-[var(--text-secondary)]">{liveMarket.fearGreedClassification}</span>
@@ -1668,7 +1668,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                         <CalendarClock className="h-4 w-4 text-[var(--tone-warn-2)]" />
                         {t.analysis.economicEvents}
                         {calEvents.some((e) => e.impact === 'High' && (e.minutesUntil ?? 999) <= 60 && eventInPlan(e.minutesUntil)) && (
-                          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-terminal text-[10px] font-bold text-[var(--tone-warn-2)] uppercase">
+                          <span className="rounded bg-amber-500/20 px-1.5 py-0.5 tabular-nums text-xs font-medium text-[var(--tone-warn-2)]">
                             {r.calHighImpactBadge}
                           </span>
                         )}
@@ -1719,7 +1719,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                                       {ev.title}
                                     </span>
                                   </div>
-                                  <span className={`flex-shrink-0 rounded px-1.5 py-0.5 font-terminal font-semibold ${
+                                  <span className={`flex-shrink-0 rounded px-1.5 py-0.5 tabular-nums font-semibold ${
                                     isJustHappened
                                       ? 'bg-[var(--bg-overlay)] text-[var(--text-secondary)]'
                                       : isSoon && isHigh
@@ -1730,7 +1730,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                                   </span>
                                 </div>
                                 <div className="mt-1 flex items-center gap-3 text-[var(--text-secondary)]">
-                                  <span className="rounded bg-[var(--bg-overlay)] px-1.5 py-0.5 font-terminal font-semibold">
+                                  <span className="rounded bg-[var(--bg-overlay)] px-1.5 py-0.5 tabular-nums font-semibold">
                                     {ev.country}
                                   </span>
                                   <span className={`font-medium ${isHigh ? 'text-[var(--tone-warn-2)]' : 'text-[var(--text-secondary)]'}`}>
@@ -1780,7 +1780,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                       {openSessions.map((s) => (
                         <span
                           key={s.abbr}
-                          className={`inline-flex items-center gap-1.5 rounded border px-2.5 py-1 font-terminal text-xs ${
+                          className={`inline-flex items-center gap-1.5 rounded border px-2.5 py-1 tabular-nums text-xs ${
                             s.open
                               ? 'border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] text-[var(--signal-buy)]'
                               : 'border-[var(--border-subtle)] text-[var(--text-secondary)] opacity-40'
@@ -1811,7 +1811,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                     <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-2">
                       {structureRows.map((row) => (
                         <div key={row.key} className="bg-[var(--bg-elevated)] px-3 py-2.5">
-                          <dt className="font-terminal text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
+                          <dt className="tabular-nums text-xs text-[var(--text-tertiary)]">
                             {row.label}
                           </dt>
                           <dd
@@ -1837,15 +1837,15 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                     {checklist.items.length >= 2 ? (
                       <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
                         <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-3 py-2">
-                          <span className="font-terminal text-[10px] uppercase tracking-[0.14em] text-[var(--text-muted)]">
+                          <span className="tabular-nums text-xs text-[var(--text-tertiary)]">
                             {t.analysis.structureValidation}
                           </span>
                           {checklist.scoreMismatch ? (
-                            <span className="font-terminal text-xs text-[var(--signal-hold)]">
+                            <span className="tabular-nums text-xs text-[var(--signal-hold)]">
                               {t.analysis.checklistScoreMismatch}
                             </span>
                           ) : checklist.score ? (
-                            <span className="font-terminal text-xs text-[var(--text-primary)]">
+                            <span className="tabular-nums text-xs text-[var(--text-primary)]">
                               {checklist.score}
                             </span>
                           ) : null}
@@ -1857,8 +1857,8 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                               className="flex items-start gap-2.5 px-3 py-2.5 text-sm"
                             >
                               <span
-                                className={`mt-px flex-shrink-0 font-terminal text-xs ${
-                                  item.notApplicable ? 'text-[var(--text-muted)]' : item.warning ? 'text-[var(--signal-hold)]' : item.ok ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'
+                                className={`mt-px flex-shrink-0 tabular-nums text-xs ${
+                                  item.notApplicable ? 'text-[var(--text-tertiary)]' : item.warning ? 'text-[var(--signal-hold)]' : item.ok ? 'text-[var(--signal-buy)]' : 'text-[var(--signal-sell)]'
                                 }`}
                               >
                                 {item.notApplicable ? '-' : item.warning ? '!' : item.ok ? '✓' : '✕'}
@@ -1970,12 +1970,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                       {hasStructuredExit && (
                         <div className="mb-2 flex flex-wrap gap-2">
                           {tp1ClosePercent !== null && (
-                            <span className="rounded-full border border-[var(--signal-buy)]/30 bg-[var(--signal-buy-bg)] px-2.5 py-1 font-terminal text-xs text-[var(--signal-buy)]">
+                            <span className="rounded-full border border-[var(--signal-buy)]/30 bg-[var(--signal-buy-bg)] px-2.5 py-1 tabular-nums text-xs text-[var(--signal-buy)]">
                               TP1: {Math.round(tp1ClosePercent)}%
                             </span>
                           )}
                           {tp2ClosePercent !== null && (
-                            <span className="rounded-full border border-[var(--signal-buy)]/30 bg-[var(--signal-buy-bg)] px-2.5 py-1 font-terminal text-xs text-[var(--signal-buy)]">
+                            <span className="rounded-full border border-[var(--signal-buy)]/30 bg-[var(--signal-buy-bg)] px-2.5 py-1 tabular-nums text-xs text-[var(--signal-buy)]">
                               TP2: {Math.round(tp2ClosePercent)}%
                             </span>
                           )}
@@ -1991,7 +1991,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                           {partialExitStrategy}
                         </div>
                       )}
-                      <p className="mt-2 text-xs italic text-[var(--text-secondary)]">
+                      <p className="mt-2 text-xs text-[var(--text-tertiary)]">
                         {t.analysis.exitPlanOptional}
                       </p>
                     </AccordionContent>

@@ -86,12 +86,12 @@ const AnalysisCounter = () => {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Gift className="h-4 w-4 text-[var(--accent-green)]" />
-                <span className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                <span className="text-xs font-medium text-[var(--text-secondary)]">
                   {c.trialTitle}
                 </span>
               </div>
               {ended ? null : (
-                <span className="font-terminal text-sm font-bold text-[var(--text-primary)]">
+                <span className="tabular-nums text-sm font-bold text-[var(--text-primary)]">
                   {c.trialDay.replace('{day}', String(trial.dayIndex)).replace('{days}', String(trial.daysTotal))}
                 </span>
               )}
@@ -172,11 +172,11 @@ const AnalysisCounter = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Gift className="h-4 w-4 text-[var(--accent-green)]" />
-                <span className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+                <span className="text-xs font-medium text-[var(--text-secondary)]">
                   {c.freeTitle}
                 </span>
               </div>
-              <span className="font-terminal text-sm font-bold text-[var(--text-primary)]">
+              <span className="tabular-nums text-sm font-bold text-[var(--text-primary)]">
                 {freeUsed}/{signalsLimit}
               </span>
             </div>
@@ -241,7 +241,7 @@ const AnalysisCounter = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Crown className="h-4 w-4 text-primary" />
-              <span className="text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]">
+              <span className="text-xs font-medium text-[var(--text-secondary)]">
                 {c.planPrefix} {planLabel}
               </span>
             </div>

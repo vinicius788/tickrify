@@ -255,7 +255,7 @@ export default {
     partnerInvalid: "Esse código não é válido.",
     canceledTitle: "Pagamento cancelado",
     canceledDesc: "Nenhuma cobrança foi feita. Você pode assinar quando quiser.",
-    firstMonth: "Cobrado {price} agora pelo primeiro mês com {code} ({pct}% off), aplicado automaticamente. Depois $29/mês até cancelar.",
+    firstMonth: "Cobrado {price} agora pelo primeiro mês com {code} ({pct}% off), aplicado automaticamente. O saldo volta a 200 Ticks por mês; Ticks não utilizados não acumulam.",
     founderEyebrow: "Membro fundador",
     founderSub: "Travado enquanto sua assinatura continuar ativa",
     founderFeatures: [
@@ -353,6 +353,10 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "Cobrança de $7,99 agora e a cada 7 dias até cancelar.",
     monthlyRenewal: "Cobrança de $29 agora e mensalmente até cancelar.",
+    offerRegular: "Preço normal",
+    offerFirstMonth: "no primeiro mês",
+    offerThen: "Depois $29/mês. Cancele quando quiser em Configurações.",
+    offerCta: "Começar por {price} no primeiro mês",
     freeEligibility: "Uma demo anônima por dispositivo. Contas elegíveis: até 7 análises em 3 dias de uso (3/2/2), dentro de 7 dias. Contas existentes mantêm sua cota aplicável. Sem cartão."
   },
 
@@ -1254,7 +1258,6 @@ export default {
   },
   paywall: {
     ctaWeekly: 'Comece com uma semana: $7,99 por 25 Ticks',
-    orMonthlyFirst: 'Ou mensal: {price} no primeiro mês, depois $29/mês',
     orMonthly: 'Ou mensal: $29/mês por 200 Ticks',
     titleNewAnalysis: 'Suas análises grátis com plano de trade acabaram',
     titleArea: 'Assine para continuar com acesso às suas análises e operações',
@@ -1264,7 +1267,6 @@ export default {
     descHistory: 'Esta análise é mais antiga que as suas 3 últimas. Assine para abrir o histórico completo de novo.',
     descSetups: 'Nenhuma análise deste setup está entre as suas 3 últimas. Assine para abrir todas as versões de novo.',
     descWatching: "Seus níveis vigiados e o que o preço fez neles voltam assim que você assinar.",
-    offerNote: '{code} dá {pct}% de desconto no primeiro mês do plano mensal, aplicado automaticamente. Depois $29/mês, cancele quando quiser.',
     allPlans: 'Todos os planos, incluindo o anual de $290/ano',
     opening: 'Abrindo o checkout seguro…',
     yourChart: 'Seu gráfico',
@@ -1411,6 +1413,10 @@ export default {
   },
   // Botão flutuante de reportar problema (ReportProblemButton).
   // Chat com o fundador (12/10/2026), dentro da bolha "Chat, feedback or problem".
+  community: {
+    join: 'Entre na comunidade no Discord',
+    footerLink: 'Comunidade no Discord',
+  },
   chat: {
     title: 'Fale com o Vinícius, fundador da Tickrify',
     subtitle: 'Costuma responder em algumas horas',

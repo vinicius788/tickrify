@@ -1,8 +1,8 @@
-import { formatUsd } from '@/lib/i18n';
+import { interpolate } from '@/lib/i18n';
 import { useEffect, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, Loader2, Lock } from 'lucide-react';
-import { useFoundingOffer } from '@/hooks/useFoundingOffer';
+import { firstMonthPrice, MONTHLY_PRICE_USD, useFoundingOffer } from '@/hooks/useFoundingOffer';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import UpgradeVideo from './UpgradeVideo';
@@ -45,8 +45,6 @@ interface PaywallProps {
   alertsOn?: 'email' | 'screen' | null;
 }
 
-const MONTHLY_PRICE_USD = 29;
-
 /**
  * Paywall UNICO do painel (05/10/2026): nova analise, My Trades, diario e
  * historico usam este componente, cada um com a sua `surface`. Antes so a nova
@@ -63,10 +61,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
   // Uma frase real de assinante, so com 2+ depoimentos publicados (com licenca).
   const quote = useTestimonials()[0];
   // O desconto so e anunciado com o cupom ativo na Stripe, e so vale no mensal.
-  const offer = useFoundingOffer();
-  const firstMonth = offer?.percentOff
-    ? formatUsd(MONTHLY_PRICE_USD * (1 - offer.percentOff / 100), language)
-    : null;
+  const firstMonth = firstMonthPrice(useFoundingOffer(), language);
 
   useEffect(() => {
     track('upgrade_cta_viewed', { source: 'paywall', surface, ...(variant ? { trial: variant } : {}) });
@@ -118,10 +113,10 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
         {/* Camada borrada (preview estático) */}
         <div className="pointer-events-none select-none p-6 md:p-8" aria-hidden="true">
           <div className="mb-4 flex items-center justify-between">
-            <span className="font-terminal text-xs uppercase tracking-[0.08em] text-[var(--text-secondary)]">
+            <span className="tabular-nums text-xs text-[var(--text-secondary)]">
               {p.yourChart}
             </span>
-            <span className="font-terminal text-xs text-[var(--text-secondary)]">{p.includesTitle}</span>
+            <span className="tabular-nums text-xs text-[var(--text-secondary)]">{p.includesTitle}</span>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -130,7 +125,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
                 key={r.label}
                 className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] px-4 py-3"
               >
-                <p className="font-terminal text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">
+                <p className="tabular-nums text-xs text-[var(--text-secondary)]">
                   {r.label}
                 </p>
                 <p className="mt-1 text-lg font-semibold text-[var(--text-primary)]" style={{ filter: 'blur(7px)' }}>
@@ -168,19 +163,27 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
               <span>{p.ctaWeekly}</span>
             )}
           </button>
+          {/* EARLY35 so vale no mensal (decidido no servidor): o semanal acima nunca risca preco. */}
+          {firstMonth ? (
+            <p className="flex items-baseline gap-2 text-[var(--text-primary)]">
+              <s className="text-sm text-[var(--text-secondary)]">
+                <span className="sr-only">{t.commercial.offerRegular} </span>
+                {`$${MONTHLY_PRICE_USD}`}
+              </s>
+              <b className="text-2xl font-semibold">{firstMonth}</b>
+              <span className="text-xs text-[var(--text-secondary)]">{t.commercial.offerFirstMonth}</span>
+            </p>
+          ) : null}
           <button
             type="button"
             onClick={onMonthly}
             disabled={unlockPending}
             className="inline-flex items-center rounded-xl border border-[var(--border-default)] px-5 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)] disabled:opacity-60"
           >
-            {firstMonth ? p.orMonthlyFirst.replace('{price}', firstMonth) : p.orMonthly}
+            {firstMonth ? interpolate(t.commercial.offerCta, { price: firstMonth }) : p.orMonthly}
           </button>
-          {offer?.percentOff ? (
-            <p className="max-w-[440px] font-terminal text-[11px] text-[var(--text-secondary)]">
-              {p.offerNote.replace('{code}', offer.code).replace('{pct}', String(offer.percentOff))}
-            </p>
-          ) : null}
+          {firstMonth ? (
+            <p className="max-w-[440px] tabular-nums text-[11px] text-[var(--text-secondary)]">{t.commercial.offerThen}</p>          ) : null}
           <p className="max-w-[440px] text-xs text-[var(--text-secondary)]">{t.commercial.weeklyRenewal}</p>
           <Link
             to={plansHref}
@@ -190,7 +193,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
             {p.allPlans}
           </Link>
           {quote ? (
-            <p className="max-w-[440px] text-xs italic text-[var(--text-secondary)]">
+            <p className="max-w-[440px] text-xs text-[var(--text-secondary)]">
               &ldquo;{quote.comment}&rdquo; · {[quote.displayName, quote.country].filter(Boolean).join(', ') || t.rating.subscriber}
             </p>
           ) : null}

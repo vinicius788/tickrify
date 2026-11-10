@@ -67,7 +67,7 @@ const Header = ({ active = null, minimal = false }: HeaderProps) => {
 
         <div className="site-header-actions">
           <div className="hidden md:block">
-            <LanguageSwitcher />
+            <LanguageSwitcher className="site-mono" />
           </div>
 
           {/* 05/10/2026: "Log in" visivel em TODA largura (no celular ficava
@@ -150,7 +150,7 @@ const Header = ({ active = null, minimal = false }: HeaderProps) => {
                   </SheetClose>
                 )}
                 <div className="mt-2">
-                  <LanguageSwitcher />
+                  <LanguageSwitcher className="site-mono" />
                 </div>
               </div>
             </SheetContent>

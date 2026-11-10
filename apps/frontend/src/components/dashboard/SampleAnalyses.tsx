@@ -138,12 +138,12 @@ const SampleButtons = ({
                 : 'border-[var(--border-subtle)] bg-[var(--bg-overlay)] hover:bg-[var(--fill-2)]'
             }`}
           >
-            <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-bold tracking-wider ${KIND_TONE[sample.kind]}`}>
+            <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${KIND_TONE[sample.kind]}`}>
               <Icon className="h-3 w-3" strokeWidth={2.5} />
               {actionOf(sample)}
             </span>
             <span className="w-full truncate text-sm font-semibold text-[var(--text-primary)]">{c.kind[sample.kind]}</span>
-            <span className="w-full break-words font-terminal text-[11px] leading-tight text-[var(--text-secondary)]">{sampleLabel(sample)}</span>
+            <span className="w-full break-words tabular-nums text-[11px] leading-tight text-[var(--text-secondary)]">{sampleLabel(sample)}</span>
             {viewed.has(sample.kind) && (
               <span className="inline-flex items-center gap-1 text-[11px] text-[var(--text-secondary)]">
                 <Check className="h-3 w-3" /> {c.viewed}
@@ -219,11 +219,11 @@ export const SampleAnalysisView = ({
         >
           <ArrowLeft className="h-3.5 w-3.5" /> {c.back}
         </button>
-        <div className="tk-eyebrow mt-3 flex items-center gap-2 text-[11px]">
+        <div className="tk-eyebrow mt-3">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
           {c.eyebrow}
         </div>
-        <h1 className="tk-display mt-2 text-3xl md:text-4xl">{c.title[sample.kind]}</h1>
+        <h1 className="tk-display mt-2 text-2xl md:text-3xl">{c.title[sample.kind]}</h1>
         <p className="mt-2 text-sm text-[var(--text-secondary)]">{c.banner.replace('{date}', date)}</p>
       </div>
 
@@ -251,7 +251,7 @@ export const SampleAnalysisView = ({
             className="mt-3 block h-auto w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] object-contain"
           />
         )}
-        <p className="mt-3 text-xs text-[var(--text-muted)]">{c.afterFine}</p>
+        <p className="mt-3 text-xs text-[var(--text-tertiary)]">{c.afterFine}</p>
       </section>
 
       <TurnCta allowance={allowance} onAnalyze={onAnalyze} />

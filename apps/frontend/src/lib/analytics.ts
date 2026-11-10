@@ -462,7 +462,9 @@ export type FunnelEvent =
   | 'demo_analysis_failed'
   | 'demo_after_viewed'
   | 'demo_limit_hit'
-  | 'signup_from_demo';
+  | 'signup_from_demo'
+  // Link da comunidade no Discord. `location`: footer_public | app.
+  | 'community_clicked';
 
 // ─── Fila de pré-consentimento ────────────────────────────────────────────────
 // O banner de cookies só é respondido DEPOIS que a rota já montou, e a rota que
@@ -533,6 +535,13 @@ export function track(event: FunnelEvent, props?: Record<string, unknown>): void
   } catch {
     /* noop */
   }
+}
+
+/** Convite da comunidade no Discord: o mesmo link no rodape do site e no app. */
+export const COMMUNITY_URL = 'https://discord.gg/bztF6yzPK';
+
+export function trackCommunityClick(location: 'footer_public' | 'app'): void {
+  track('community_clicked', { location });
 }
 
 /**

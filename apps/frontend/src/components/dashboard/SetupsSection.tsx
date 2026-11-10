@@ -126,7 +126,7 @@ const SetupsSection = ({
               return (
                 <li key={setup.id} className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 md:flex-row md:items-start md:justify-between">
                   <div className="min-w-0">
-                    <p className="font-terminal text-sm text-[var(--text-primary)]">
+                    <p className="tabular-nums text-sm text-[var(--text-primary)]">
                       {`${setup.symbol ?? 'N/A'} `}
                       <span className="text-xs text-[var(--text-secondary)]">{setup.timeframe ?? ''}</span>
                       {latest ? (
@@ -135,7 +135,7 @@ const SetupsSection = ({
                         </span>
                       ) : null}
                     </p>
-                    <p className="mt-1 font-terminal text-[11px] text-[var(--text-secondary)]">
+                    <p className="mt-1 tabular-nums text-[11px] text-[var(--text-secondary)]">
                       {`${s.firstAnalysis.replace('{date}', formatSetupDay(setup.firstAnalysisAt, locale))} · ${s.updated
                         .replace('{relative}', formatSetupRelative(setup.lastAnalysisAt, locale))
                         .replace('{date}', formatSetupDay(setup.lastAnalysisAt, locale))}`}

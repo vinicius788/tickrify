@@ -255,7 +255,7 @@ export default {
     partnerInvalid: "That code is not valid.",
     canceledTitle: "Payment canceled",
     canceledDesc: "No charge was made. You can subscribe whenever you want.",
-    firstMonth: "Billed {price} now for the first month with {code} ({pct}% off), applied automatically. Then $29/month until canceled.",
+    firstMonth: "Billed {price} now for the first month with {code} ({pct}% off), applied automatically. Your balance resets to 200 Ticks per month; unused Ticks do not carry over.",
     founderEyebrow: "Founding member",
     founderSub: "Locked for as long as your subscription stays active",
     founderFeatures: [
@@ -353,6 +353,10 @@ export default {
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
     weeklyRenewal: "Billed $7.99 now and every 7 days until canceled.",
     monthlyRenewal: "Billed $29 now and monthly until canceled.",
+    offerRegular: "Regular price",
+    offerFirstMonth: "first month",
+    offerThen: "Then $29/month. Cancel anytime in Settings.",
+    offerCta: "Start for {price} first month",
     freeEligibility: "One anonymous demo per device. Eligible accounts: up to 7 analyses over 3 usage days (3/2/2), within 7 days. Existing accounts keep their applicable allowance. No card required.",
   },
 
@@ -1241,7 +1245,6 @@ export default {
   },
   paywall: {
     ctaWeekly: 'Start with one week: $7.99 for 25 Ticks',
-    orMonthlyFirst: 'Or monthly: {price} first month, then $29/month',
     orMonthly: 'Or monthly: $29/month for 200 Ticks',
     titleNewAnalysis: 'Your free trade plans are used up',
     titleArea: 'Subscribe to keep access to your analyses and trades',
@@ -1251,7 +1254,6 @@ export default {
     descHistory: 'This analysis is older than your last 3. Subscribe to open your full history again.',
     descSetups: 'None of the analyses in this setup are among your last 3. Subscribe to open every version again.',
     descWatching: "Your watched levels and what price did at them open again the moment you subscribe.",
-    offerNote: '{code} takes {pct}% off your first month on the monthly plan, applied automatically. Then $29/month, cancel anytime.',
     allPlans: 'All plans, including yearly at $290/year',
     opening: 'Opening secure checkout…',
     yourChart: 'Your chart',
@@ -1393,6 +1395,10 @@ export default {
     ja: '日本語',
   },
   // Chat com o fundador (12/10/2026), dentro da bolha "Chat, feedback or problem".
+  community: {
+    join: 'Join our Discord community',
+    footerLink: 'Discord community',
+  },
   chat: {
     title: 'Talk to Vinícius, founder of Tickrify',
     subtitle: 'Usually replies within a few hours',

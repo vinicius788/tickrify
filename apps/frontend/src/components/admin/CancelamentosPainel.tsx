@@ -100,7 +100,7 @@ export default function CancelamentosPainel() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="text-[11px] uppercase tracking-wide text-[var(--text-faint)]">
+              <thead className="text-[11px] text-[var(--text-faint)]">
                 <tr>
                   <th className="py-1 pr-3">Pessoa</th>
                   <th className="py-1 pr-3">Plano</th>
@@ -122,7 +122,7 @@ export default function CancelamentosPainel() {
                     <td className="py-1.5 pr-3">{data(c.accessEndsAt)}</td>
                     <td className="py-1.5 pr-3">{c.status === 'canceled' ? 'encerrada' : 'agendada'}</td>
                     <td className="py-1.5 pr-3">{c.cancelFeedback ? MOTIVO[c.cancelFeedback] ?? c.cancelFeedback : '·'}</td>
-                    <td className="py-1.5 font-terminal">{c.affiliateCode ?? '·'}</td>
+                    <td className="py-1.5 tabular-nums">{c.affiliateCode ?? '·'}</td>
                   </tr>
                 ))}
               </tbody>

@@ -64,7 +64,7 @@ export function AlertLevelButton({
 
   if (active) {
     return (
-      <span key="active" className="inline-flex items-center gap-1.5 font-terminal text-[11px] text-[var(--text-secondary)]">
+      <span key="active" className="inline-flex items-center gap-1.5 tabular-nums text-[11px] text-[var(--text-secondary)]">
         <BellRing className="h-3.5 w-3.5 text-[var(--accent-green)]" />
         <span>{p.alertActive.replace('{price}', price)}</span>
       </span>
@@ -136,8 +136,8 @@ export function WatchVerdict({ watch, tone, caption = true, alignEnd = false }: 
                 : p.unavailable;
   return (
     <div data-testid="watch-outcome" data-tone={tone} data-outcome={watch.outcome} className={`flex flex-col gap-1 ${alignEnd ? 'sm:items-end' : 'items-start'}`}>
-      {caption ? <span key="caption" className="font-terminal text-[10px] uppercase tracking-widest text-[var(--text-muted)]">{p.marketDid}</span> : null}
-      <span className={`w-fit rounded-lg border px-2.5 py-1 font-terminal text-[11px] ${WATCH_TONE_CLASSES[tone]}`}>{label}</span>
+      {caption ? <span key="caption" className="tabular-nums text-xs text-[var(--text-tertiary)]">{p.marketDid}</span> : null}
+      <span className={`w-fit rounded-lg border px-2.5 py-1 tabular-nums text-[11px] ${WATCH_TONE_CLASSES[tone]}`}>{label}</span>
     </div>
   );
 }
@@ -196,14 +196,14 @@ export function WatchPending({
       {closed ? (
         <WatchVerdict key="verdict" watch={watch} tone={tone} caption={caption} alignEnd={alignEnd} />
       ) : (
-        <span key="status" className={`w-fit rounded-lg border px-2.5 py-1 font-terminal text-[11px] ${WATCH_TONE_CLASSES.watching}`}>{p.statusPending}</span>
+        <span key="status" className={`w-fit rounded-lg border px-2.5 py-1 tabular-nums text-[11px] ${WATCH_TONE_CLASSES.watching}`}>{p.statusPending}</span>
       )}
-      <p className="font-terminal text-xs text-[var(--text-primary)]">
+      <p className="tabular-nums text-xs text-[var(--text-primary)]">
         {levelLine.replace('{price}', price(watch.level))}
       </p>
-      {!closed && conditionalPlan && <p data-testid="conditional-plan" className="font-terminal text-[11px] text-[var(--text-primary)]">{conditionalPlan}</p>}
+      {!closed && conditionalPlan && <p data-testid="conditional-plan" className="tabular-nums text-[11px] text-[var(--text-primary)]">{conditionalPlan}</p>}
       {!closed && waitingFor && <p className="text-xs text-[var(--text-secondary)]">{waitingFor}</p>}
-      {!closed && <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
+      {!closed && <p className="tabular-nums text-[11px] text-[var(--text-secondary)]">
         {[p.invalidation.replace('{price}', price(watch.invalidation)), validity].filter(Boolean).join(' · ')}
       </p>}
       {alerts && open && watch.alertAvailable ? (
@@ -259,14 +259,14 @@ export function LevelMapCard({
 
   return (
     <section data-testid="level-map" className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-4">
-      <h4 className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{p.levelMapTitle}</h4>
+      <h4 className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{p.levelMapTitle}</h4>
       <ul className="mt-2 flex flex-col gap-3">
         {aiLevel ? (
           <li key="ai" data-testid="ai-level" className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <div className="min-w-0">
               {aiLevel.direction ? (
                 <>
-                  <p className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{p.aiLevelLabel}</p>
+                  <p className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{p.aiLevelLabel}</p>
                   <p className="mt-0.5 text-sm leading-relaxed text-[var(--text-primary)]">
                     <span>{(aiLevel.direction === 'long' ? p.aiLevelBuy : p.aiLevelSell).replace('{price}', price(aiLevel.price))}</span>
                     {alerts && analysisId ? <AiLevelAlertNote analysisId={analysisId} level={aiLevel.price} /> : null}
@@ -274,7 +274,7 @@ export function LevelMapCard({
                 </>
               ) : (
                 <>
-                  <p className="font-terminal text-sm text-[var(--text-primary)]">{p.aiLevel.replace('{price}', price(aiLevel.price))}</p>
+                  <p className="tabular-nums text-sm text-[var(--text-primary)]">{p.aiLevel.replace('{price}', price(aiLevel.price))}</p>
                   <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-secondary)]">{p.aiLevelNote}</p>
                 </>
               )}
@@ -286,7 +286,7 @@ export function LevelMapCard({
         ) : null}
         {sides.map(({ key, side, up }) => (
           <li key={key} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-            <p className="font-terminal text-sm text-[var(--text-primary)]">{line(side, up)}</p>
+            <p className="tabular-nums text-sm text-[var(--text-primary)]">{line(side, up)}</p>
             {alerts && analysisId ? (
               <MapAlertButton analysisId={analysisId} level={side.level} format={price} />
             ) : null}

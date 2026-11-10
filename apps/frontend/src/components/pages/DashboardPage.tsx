@@ -43,13 +43,14 @@ import { APIError, isFreeQuotaExhausted, useAPIClient, type AIAnalysisResponse }
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnalysisProcessingError, analysisFailureTelemetry } from "@/lib/analysis-failure";
 import { LanguageSwitcher } from "@/components/ui/LanguageSwitcher";
+import { DiscordIcon } from "@/components/ui/DiscordIcon";
 import { afterNextPaint, asRecord, isPageTranslated, scrollToTop } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
 import { entrySide, getRecommendationMeta, resolveSignalState, signalStateLabel } from "@/lib/trading-ui";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
-import { track } from "@/lib/analytics";
+import { COMMUNITY_URL, track, trackCommunityClick } from "@/lib/analytics";
 import { CheckoutError, createCheckoutSession, openBillingPortal } from "@/lib/stripe";
 import { clerkLightAppearance, useTheme } from "@/lib/theme";
 import SettingsPage from "../dashboard/SettingsPage";
@@ -1133,7 +1134,7 @@ const DashboardPage = () => {
   };
 
   const viewEyebrow = (label: string) => (
-    <div className="tk-eyebrow flex items-center gap-2 text-[11px]">
+    <div className="tk-eyebrow">
       <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
       {t.nav.workspace} / {label}
     </div>
@@ -1157,9 +1158,6 @@ const DashboardPage = () => {
   );
 
   const renderDashboardHome = () => {
-    const titleWords = t.nav.centralTitle.split(' ');
-    const titleLast = titleWords.length > 1 ? titleWords.pop() : '';
-    const titleHead = titleWords.join(' ');
     const firstName = user?.firstName || 'Trader';
     const ticksNum = Math.floor(Number(ticksBalance) || 0);
     return (
@@ -1171,15 +1169,12 @@ const DashboardPage = () => {
         >
           <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div className="min-w-0">
-              <div className="tk-eyebrow flex items-center gap-2 text-[11px]">
+              <div className="tk-eyebrow">
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--accent-green)]" />
                 {t.nav.greeting}, {firstName}
               </div>
-              <h1 className="tk-display mt-2 text-4xl md:text-5xl">
-                {titleHead}{' '}
-                {titleLast && <em className="font-serif italic text-[var(--text-secondary)]">{titleLast}</em>}
-              </h1>
-              <p className="mt-3 font-terminal text-xs text-[var(--text-secondary)]">
+              <h1 className="tk-display mt-2 text-[28px] md:text-4xl">{t.nav.centralTitle}</h1>
+              <p className="mt-2 tk-meta tabular-nums">
                 {ticksNum} ticks · {analysesTotal} {t.nav.analysesWord}
               </p>
             </div>
@@ -1247,12 +1242,12 @@ const DashboardPage = () => {
                 return (
                   <div key={a.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
-                      <p className="font-terminal text-sm text-[var(--text-primary)]">
+                      <p className="tabular-nums text-sm text-[var(--text-primary)]">
                         {String(raw.symbol || 'N/A')}{' '}
                         <span className="text-xs text-[var(--text-secondary)]">{String(raw.timeframe || '')}</span>
                       </p>
                       {created && (
-                        <p className="font-terminal text-[11px] text-[var(--text-secondary)]">
+                        <p className="tabular-nums text-[11px] text-[var(--text-secondary)]">
                           {created.toLocaleDateString(DATE_LOCALES[language] ?? 'en-US')}
                         </p>
                       )}
@@ -1273,7 +1268,7 @@ const DashboardPage = () => {
               <button
                 type="button"
                 onClick={() => openMyTrades('OPEN')}
-                className="mt-3 font-terminal text-xs text-[var(--accent-green)] underline-offset-2 hover:underline"
+                className="mt-3 tabular-nums text-xs text-[var(--accent-green)] underline-offset-2 hover:underline"
               >
                 {t.verdict.seeAll} ({openVerdictRows.length})
               </button>
@@ -1287,13 +1282,13 @@ const DashboardPage = () => {
         {!isDemo && verdictStats.decided >= 5 && verdictStats.winRate !== null && (
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
             <span className="text-sm text-[var(--text-secondary)]">{t.verdict.statsLabel}</span>
-            <span className="font-terminal text-xl font-semibold text-[var(--text-primary)]">{verdictStats.winRate}%</span>
+            <span className="tabular-nums text-xl font-semibold text-[var(--text-primary)]">{verdictStats.winRate}%</span>
             {verdictStats.avgRr !== null && (
-              <span className="font-terminal text-xs text-[var(--text-secondary)]">
+              <span className="tabular-nums text-xs text-[var(--text-secondary)]">
                 {t.verdict.statsRr} {formatNumber(verdictStats.avgRr, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}:1
               </span>
             )}
-            <span className="font-terminal text-xs text-[var(--text-muted)]">
+            <span className="tabular-nums text-xs text-[var(--text-tertiary)]">
               {t.verdict.statsBasedOn} {verdictStats.decided} {t.verdict.statsSample}
             </span>
           </div>
@@ -1344,7 +1339,7 @@ const DashboardPage = () => {
           <div className="flex flex-col gap-4">
             <div>
               {viewEyebrow(t.nav.newAnalysis)}
-              <h1 className="tk-display mt-2 text-3xl md:text-4xl">{t.nav.newAnalysis}</h1>
+              <h1 className="tk-display mt-2 text-2xl md:text-3xl">{t.nav.newAnalysis}</h1>
             </div>
             {/* Primeira experiencia: em poucos segundos, o que a Tickrify faz,
                 o que a pessoa envia e o que recebe. Some depois da 1a analise. */}
@@ -1363,7 +1358,7 @@ const DashboardPage = () => {
                     [t.onboarding.step3Title, t.onboarding.step3Text],
                   ].map(([title, text], index) => (
                     <li key={title} className="flex gap-3">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[var(--border-default)] font-terminal text-[11px] text-[var(--text-secondary)]">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[var(--border-default)] tabular-nums text-[11px] text-[var(--text-secondary)]">
                         {index + 1}
                       </span>
                       <div className="min-w-0">
@@ -1382,14 +1377,14 @@ const DashboardPage = () => {
               <section className="rounded-2xl border border-[var(--border-accent)] bg-[var(--bg-card)] p-5">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <h2 className="text-sm font-semibold text-[var(--text-primary)]">{t.onboarding.demoTitle}</h2>
-                  <span className="font-terminal text-xs text-[var(--text-secondary)]">
+                  <span className="tabular-nums text-xs text-[var(--text-secondary)]">
                     {`${savedDemo.symbol} · ${savedDemo.timeframe} · ${
                       signalStateLabel(t.analysis, resolveSignalState(savedDemo.signalState, savedDemo.recommendation), entrySide(null, savedDemo.recommendation))
                     }`}
                   </span>
                 </div>
                 {savedDemo.recommendation !== 'WAIT' && (
-                  <dl className="mt-3 grid grid-cols-3 gap-2 font-terminal text-xs">
+                  <dl className="mt-3 grid grid-cols-3 gap-2 tabular-nums text-xs">
                     {[
                       [t.onboarding.demoEntry, savedDemo.entry],
                       [t.onboarding.demoStop, savedDemo.stopLoss],
@@ -1494,7 +1489,7 @@ const DashboardPage = () => {
             <div className="flex flex-col gap-4">
               <div>
                 {viewEyebrow(t.nav.myTrades)}
-                <h1 className="tk-display mt-2 text-3xl md:text-4xl">{t.nav.myTrades}</h1>
+                <h1 className="tk-display mt-2 text-2xl md:text-3xl">{t.nav.myTrades}</h1>
               </div>
               {paywallFor(
                 'trades',
@@ -1509,11 +1504,11 @@ const DashboardPage = () => {
                           to={`${base}/analysis/${encodeURIComponent(a.id)}`}
                           className="flex items-center justify-between gap-3 border-t border-[var(--border-subtle)] py-2.5 text-sm first:border-t-0 hover:text-[var(--text-primary)]"
                         >
-                          <span className="font-terminal text-[var(--text-primary)]">
+                          <span className="tabular-nums text-[var(--text-primary)]">
                             {`${String(a.symbol || 'N/A')} `}
                             <span className="text-xs text-[var(--text-secondary)]">{String(a.timeframe || '')}</span>
                           </span>
-                          <span className="font-terminal text-xs text-[var(--text-secondary)]">
+                          <span className="tabular-nums text-xs text-[var(--text-secondary)]">
                             {`${actionLabel} · ${a.createdAt ? new Date(a.createdAt).toLocaleDateString(DATE_LOCALES[language] ?? 'en-US') : ''}`}
                           </span>
                         </Link>
@@ -1532,7 +1527,7 @@ const DashboardPage = () => {
             <div className="flex flex-col gap-4">
               <div>
                 {viewEyebrow(t.nav.journal)}
-                <h1 className="tk-display mt-2 text-3xl md:text-4xl">{t.nav.journal}</h1>
+                <h1 className="tk-display mt-2 text-2xl md:text-3xl">{t.nav.journal}</h1>
               </div>
               {paywallFor('journal')}
             </div>
@@ -1574,7 +1569,7 @@ const DashboardPage = () => {
           <div className="flex flex-col gap-4">
             <div>
               {viewEyebrow(dc.plansTitle)}
-              <h1 className="tk-display mt-2 text-3xl md:text-4xl">{dc.plansTitle}</h1>
+              <h1 className="tk-display mt-2 text-2xl md:text-3xl">{dc.plansTitle}</h1>
               <p className="mt-2 text-sm text-[var(--text-secondary)]">{dc.plansSub}</p>
             </div>
             {/* Os MESMOS cards da /pricing (checkout, ciclos, codigo de
@@ -1836,7 +1831,7 @@ const DashboardPage = () => {
               : activeNav === 'home'
                 ? t.nav.dashboard
                 : t.nav.newAnalysis;
-  const sidebarSectionTitleClass = 'text-xs font-semibold uppercase tracking-widest text-[var(--text-secondary)]';
+  const sidebarSectionTitleClass = 'text-xs font-medium text-[var(--text-secondary)]';
 
   // Painel e area logada: titulo por area (aba do navegador e $title do
   // PostHog) e nunca indexavel. Fora do seo-routes.json de proposito.
@@ -1862,7 +1857,8 @@ const DashboardPage = () => {
   };
 
   // Menu da conta (Clerk): Configuracoes sempre; "Manage subscription" so para
-  // quem tem assinatura da Stripe (abre o portal direto, sem tela no meio).
+  // quem tem assinatura da Stripe (abre o portal direto, sem tela no meio);
+  // comunidade no Discord para todos, sem checar plano.
   const accountMenu = (
     <UserButton afterSignOutUrl="/" appearance={theme === 'light' ? clerkLightAppearance : undefined}>
       <UserButton.MenuItems>
@@ -1878,6 +1874,14 @@ const DashboardPage = () => {
             }}
           />
         ) : null}
+        <UserButton.Action
+          label={t.community.join}
+          labelIcon={<DiscordIcon />}
+          onClick={() => {
+            trackCommunityClick('app');
+            window.open(COMMUNITY_URL, '_blank', 'noopener,noreferrer');
+          }}
+        />
       </UserButton.MenuItems>
     </UserButton>
   );
@@ -1900,7 +1904,7 @@ const DashboardPage = () => {
           {!sidebarCollapsed && (
             <div className="min-w-0 flex-1 leading-none">
               <div className="text-sm font-bold tracking-wide text-[var(--text-primary)]">TICKRIFY</div>
-              <div className="mt-1 font-terminal text-[8px] uppercase tracking-[0.14em] text-[var(--text-secondary)]">{t.landing.hero.terminal}</div>
+              <div className="mt-1 tabular-nums text-[11px] text-[var(--text-secondary)]">{t.landing.hero.terminal}</div>
             </div>
           )}
           <button
@@ -2010,7 +2014,7 @@ const DashboardPage = () => {
             {!sidebarCollapsed && (
               <div className="min-w-0 leading-tight">
                 <div className="truncate text-xs text-[var(--text-primary)]">{user.firstName || user.fullName || 'Trader'}</div>
-                <div className="font-terminal text-[8px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{isPlanLoading ? t.counter.loadingPlan : plan?.toUpperCase()}{navbarUnlimited ? ` · ${t.nav.statusActive}` : ''}</div>
+                <div className="tabular-nums text-[11px] text-[var(--text-secondary)]">{isPlanLoading ? t.counter.loadingPlan : plan?.toUpperCase()}{navbarUnlimited ? ` · ${t.nav.statusActive}` : ''}</div>
               </div>
             )}
           </div>
@@ -2039,9 +2043,9 @@ const DashboardPage = () => {
           <Link to={user ? "/dashboard" : "/"} className="md:hidden">
             <img src={officialIcon} alt="Tickrify" className="h-7 w-auto shrink-0 object-contain" />
           </Link>
-          <span className="hidden items-center gap-2 font-terminal text-[11px] uppercase tracking-[0.14em] md:flex">
+          <span className="hidden items-center gap-2 tabular-nums text-[11px] md:flex">
             <span className="text-[var(--text-secondary)]">{t.nav.workspace}</span>
-            <span className="text-[var(--text-muted)]">/</span>
+            <span className="text-[var(--text-tertiary)]">/</span>
             <span className="text-[var(--text-primary)]">{currentViewLabel}</span>
           </span>
         </div>
@@ -2049,7 +2053,7 @@ const DashboardPage = () => {
         <div className="flex min-w-0 items-center gap-1.5 overflow-visible text-sm md:gap-3">
           <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
             <span className={`inline-block h-1.5 w-1.5 rounded-full ${isOnline ? 'bg-[var(--accent-green)]' : 'bg-[var(--accent-red)]'}`} />
-            <span className={`font-terminal text-[11px] ${isOnline ? 'text-[var(--accent-green)]' : 'text-[var(--tone-down-3)]'}`}>
+            <span className={`tabular-nums text-[11px] ${isOnline ? 'text-[var(--accent-green)]' : 'text-[var(--tone-down-3)]'}`}>
               {isOnline ? t.common.online : t.common.offline}
             </span>
           </div>
@@ -2227,7 +2231,7 @@ const DashboardPage = () => {
                 </div>
               ) : null}
               {/* Aviso fixo do painel (13/10/2026). */}
-              <p className="pb-2 text-center font-terminal text-[11px] text-[var(--text-secondary)]">{t.trade.disclaimer}</p>
+              <p className="pb-2 text-center tabular-nums text-[11px] text-[var(--text-secondary)]">{t.trade.disclaimer}</p>
             </div>
           </main>
         </div>

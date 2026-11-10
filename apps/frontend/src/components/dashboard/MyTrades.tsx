@@ -135,9 +135,9 @@ function PnlField({ verdict, saved, labels, onSave }: PnlFieldProps) {
     return (
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{labels.logTitle}</p>
+          <p className="text-xs text-[var(--text-secondary)]">{labels.logTitle}</p>
           <p
-            className="font-terminal text-xl font-semibold"
+            className="tabular-nums text-xl font-semibold"
             style={{ color: saved < 0 ? 'var(--signal-sell)' : 'var(--signal-buy)' }}
           >
             {fmtPnl(saved, language)}
@@ -164,7 +164,7 @@ function PnlField({ verdict, saved, labels, onSave }: PnlFieldProps) {
         data-active={active}
         aria-pressed={active}
         onClick={() => setSide(value)}
-        className="tk-verdict-btn flex-1 rounded-md border px-3 py-1.5 font-terminal text-xs font-semibold"
+        className="tk-verdict-btn flex-1 rounded-md border px-3 py-1.5 tabular-nums text-xs font-semibold"
         style={
           active
             ? { color, borderColor: color, background: value === 'gain' ? 'var(--signal-buy-bg)' : 'var(--signal-sell-bg)' }
@@ -189,7 +189,7 @@ function PnlField({ verdict, saved, labels, onSave }: PnlFieldProps) {
       <div className="flex gap-2">
         <label className="flex min-w-0 flex-1 items-center rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 focus-within:border-[var(--signal-buy)]">
           <span
-            className="font-terminal text-base font-semibold"
+            className="tabular-nums text-base font-semibold"
             style={{ color: side === 'loss' ? 'var(--signal-sell)' : 'var(--signal-buy)' }}
           >
             {side === 'loss' ? '−' : '+'}
@@ -204,7 +204,7 @@ function PnlField({ verdict, saved, labels, onSave }: PnlFieldProps) {
             onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
             placeholder="0.00"
             aria-label={labels.amountLabel}
-            className="w-full bg-transparent px-1.5 py-1.5 font-terminal text-base text-[var(--text-primary)] outline-none"
+            className="w-full bg-transparent px-1.5 py-1.5 tabular-nums text-base text-[var(--text-primary)] outline-none"
           />
         </label>
         <button
@@ -417,7 +417,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
             <select
               value={filterSymbol}
               onChange={(e) => setFilterSymbol(e.target.value)}
-              className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1 font-terminal text-base text-[var(--text-primary)] outline-none sm:text-xs"
+              className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1 tabular-nums text-base text-[var(--text-primary)] outline-none sm:text-xs"
             >
               <option value="">{tr.allAssets}</option>
               {symbols.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -425,7 +425,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
             <select
               value={filterVerdict ?? 'all'}
               onChange={(e) => setFilterVerdict(e.target.value as typeof filterVerdict)}
-              className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1 font-terminal text-base text-[var(--text-primary)] outline-none sm:text-xs"
+              className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-2 py-1 tabular-nums text-base text-[var(--text-primary)] outline-none sm:text-xs"
             >
               <option value="all">{tr.allResults}</option>
               <option value="favorites">{tr.favorites}</option>
@@ -446,30 +446,30 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
         {rows.length > 0 && (
           <div className="grid grid-cols-2 gap-px border-y border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-5">
             <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
-              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.winRate}</p>
-              <p className="font-terminal text-lg font-semibold text-[var(--signal-buy)]">
+              <p className="text-xs text-[var(--text-secondary)]">{tr.winRate}</p>
+              <p className="tabular-nums text-lg font-semibold text-[var(--signal-buy)]">
                 {perf.winRate !== null ? `${perf.winRate}%` : '-'}
               </p>
-              <p className="font-terminal text-[10px] text-[var(--text-secondary)]">{perf.wins}{tr.winShort} / {perf.losses}{tr.lossShort}</p>
+              <p className="tabular-nums text-[10px] text-[var(--text-secondary)]">{perf.wins}{tr.winShort} / {perf.losses}{tr.lossShort}</p>
             </div>
             <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
-              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.avgRr}</p>
-              <p className="font-terminal text-lg font-semibold text-[var(--text-primary)]">
+              <p className="text-xs text-[var(--text-secondary)]">{tr.avgRr}</p>
+              <p className="tabular-nums text-lg font-semibold text-[var(--text-primary)]">
                 {perf.avgRr !== null ? `${formatNumber(perf.avgRr, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}:1` : '-'}
               </p>
             </div>
             <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
-              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.open}</p>
-              <p className="font-terminal text-lg font-semibold text-[var(--signal-hold)]">{perf.open}</p>
+              <p className="text-xs text-[var(--text-secondary)]">{tr.open}</p>
+              <p className="tabular-nums text-lg font-semibold text-[var(--signal-hold)]">{perf.open}</p>
             </div>
             <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
-              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.pendingCount}</p>
-              <p className="font-terminal text-lg font-semibold text-[var(--text-secondary)]">{perf.pending}</p>
+              <p className="text-xs text-[var(--text-secondary)]">{tr.pendingCount}</p>
+              <p className="tabular-nums text-lg font-semibold text-[var(--text-secondary)]">{perf.pending}</p>
             </div>
             <div className="col-span-2 bg-[var(--bg-surface)] px-3 py-2.5 text-center sm:col-span-1">
-              <p className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.loggedPnl}</p>
+              <p className="text-xs text-[var(--text-secondary)]">{tr.loggedPnl}</p>
               <p
-                className="font-terminal text-lg font-semibold"
+                className="tabular-nums text-lg font-semibold"
                 style={{
                   color: perf.pnlTotal === null
                     ? 'var(--text-secondary)'
@@ -478,7 +478,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
               >
                 {perf.pnlTotal !== null ? fmtPnl(perf.pnlTotal, language) : '-'}
               </p>
-              <p className="font-terminal text-[10px] text-[var(--text-secondary)]">
+              <p className="tabular-nums text-[10px] text-[var(--text-secondary)]">
                 {perf.pnlTotal !== null ? tr.loggedPnlSub.replace('{n}', String(perf.pnlCount)) : tr.noPnlSub}
               </p>
             </div>
@@ -573,13 +573,13 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                             />
                           </button>
                         )}
-                        <span className="font-terminal font-bold text-[var(--text-primary)]">{symbol}</span>
+                        <span className="tabular-nums font-bold text-[var(--text-primary)]">{symbol}</span>
                         {timeframe && timeframe !== '-' && (
-                          <span className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-1.5 py-0.5 font-terminal text-xs text-[var(--text-secondary)]">
+                          <span className="rounded border border-[var(--border-subtle)] bg-[var(--bg-overlay)] px-1.5 py-0.5 tabular-nums text-xs text-[var(--text-secondary)]">
                             {timeframe}
                           </span>
                         )}
-                        <Badge variant="outline" className={`border text-xs font-bold uppercase tracking-widest ${signalBg}`}>
+                        <Badge variant="outline" className={`border text-xs font-medium ${signalBg}`}>
                           {signalStateLabel(t.analysis, state, entrySide(asRecord(a.fullResponse).watchPlan, a.recommendation))}
                         </Badge>
                         <span className="text-xs text-[var(--text-secondary)]">
@@ -593,7 +593,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                       </div>
 
                       {/* Price levels */}
-                      <div className="flex flex-wrap gap-x-4 gap-y-0.5 font-terminal text-xs">
+                      <div className="flex flex-wrap gap-x-4 gap-y-0.5 tabular-nums text-xs">
                         {entry !== null && (
                           <span className="text-[var(--text-secondary)]">
                             {t.analysis.entry} <span className="text-[var(--text-primary)]">{fmt(entry, language)}</span>
@@ -617,7 +617,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                       </div>
 
                       <div className="flex flex-wrap items-center gap-3">
-                        <span className="font-terminal text-[10px] text-[var(--text-secondary)] opacity-60">
+                        <span className="tabular-nums text-[10px] text-[var(--text-secondary)] opacity-60">
                           {new Date(a.createdAt).toLocaleString(dateLocale, { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}
                         </span>
                         {a.fromWatch ? (
@@ -646,7 +646,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
 
                     {/* DIREITA — resultado: TP1 / TP2 / Stop */}
                     <div className="flex flex-shrink-0 flex-col gap-1.5 sm:items-end">
-                      <span className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">{tr.markResult}</span>
+                      <span className="text-xs text-[var(--text-secondary)]">{tr.markResult}</span>
                       <div className="flex gap-1.5">
                         {resultButtons.map((b) => {
                           const active = verdict === b.value;
@@ -660,7 +660,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                               aria-label={b.label}
                               title={b.label}
                               onClick={() => handleVerdict(a, active ? null : b.value)}
-                              className="tk-verdict-btn inline-flex flex-1 items-center justify-center gap-1 rounded-lg border px-3 py-1.5 font-terminal text-xs font-semibold sm:flex-none"
+                              className="tk-verdict-btn inline-flex flex-1 items-center justify-center gap-1 rounded-lg border px-3 py-1.5 tabular-nums text-xs font-semibold sm:flex-none"
                               style={
                                 active
                                   ? { background: c.bg, borderColor: c.border, color: c.text, boxShadow: `0 0 16px ${c.border}` }
@@ -775,7 +775,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
           da miniatura ja marca como indisponivel e o refetch traz uma nova. */}
       <Dialog open={viewer !== null} onOpenChange={(open) => { if (!open) setViewer(null); }}>
         <DialogContent className="max-w-5xl border-[var(--border-subtle)] bg-[var(--bg-card)] p-4">
-          <DialogTitle className="font-terminal text-sm text-[var(--text-primary)]">{viewer?.title}</DialogTitle>
+          <DialogTitle className="tabular-nums text-sm text-[var(--text-primary)]">{viewer?.title}</DialogTitle>
           <DialogDescription className="sr-only">{tr.viewChart}</DialogDescription>
           {viewer && (
             <>
