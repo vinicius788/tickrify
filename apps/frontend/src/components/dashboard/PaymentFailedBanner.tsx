@@ -35,7 +35,7 @@ const PaymentFailedBanner = () => {
         const token = await getTokenRef.current();
         if (!token) return;
         const subscription = await getSubscription(token);
-        if (cancelled || !subscription) return;
+        if (cancelled || !subscription || 'manualAccess' in subscription) return;
         const status = subscription.status;
         if ((status === 'past_due' || status === 'unpaid') && subscription.manageable) {
           setVisible(true);

@@ -26,11 +26,21 @@ const DATE_LOCALES: Record<string, string> = {
  * mesmo clique. Os niveis vem preenchidos pelo servidor (entrada, stop, TP1,
  * invalidacao; no WAIT, o que a leitura tiver) e a pessoa pode digitar outro.
  *
+ * WATCH com o alerta automatico valendo (09/11/2026): em vez do formulario, a
+ * frase de que o trader sera avisado e um botao para cancelar. Cancelou, o
+ * formulario volta.
+ *
  * Ativo sem fonte de preco (sinteticos, acoes, ETF): a tela diz que nao ha
  * alerta e oferece so seguir. Gratis esgotado: o servidor responde 402 e o
  * cartao nao aparece.
  */
-const SetupAlertBar = ({ analysisId, recommendation, base }: { analysisId: string; recommendation: SetupVerdict; base: string }) => {
+const SetupAlertBar = ({ analysisId, recommendation, base, readHasLevels = false }: {
+  analysisId: string;
+  recommendation: SetupVerdict;
+  base: string;
+  /** A leitura mostra niveis fora das sugestoes (mapa do NO_TRADE, nivel da IA). */
+  readHasLevels?: boolean;
+}) => {
   const { t, language } = useLanguage();
   const a = t.alerts;
   const s = t.setups;
@@ -153,6 +163,33 @@ const SetupAlertBar = ({ analysisId, recommendation, base }: { analysisId: strin
     </div>
   ) : null;
 
+  if (data.autoAlertPending) return null;
+
+  if (data.watchAlert) {
+    const { id, level } = data.watchAlert;
+    return (
+      <div key="watch-alert" className="flex flex-col gap-3 rounded-2xl border border-[var(--border-accent)] bg-[var(--bg-card)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[var(--text-primary)]">
+          <BellRing className="h-4 w-4 shrink-0" />
+          <span>{(data.emailEnabled ? a.watchingEmail : a.watchingScreen).replace('{level}', formatAlertLevel(level, locale))}</span>
+        </p>
+        <button
+          type="button"
+          onClick={() =>
+            cancel.mutate(id, {
+              onSuccess: () => toast({ title: a.cancelled }),
+              onError: () => toast({ title: s.actionFailed, variant: 'destructive' }),
+            })
+          }
+          disabled={cancel.isPending}
+          className="inline-flex shrink-0 items-center justify-center rounded-xl border border-[var(--border-default)] px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-90 disabled:opacity-60"
+        >
+          {a.cancel}
+        </button>
+      </div>
+    );
+  }
+
   if (!data.available) {
     return (
       <div key="unavailable" className="flex flex-col gap-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-4">
@@ -193,7 +230,7 @@ const SetupAlertBar = ({ analysisId, recommendation, base }: { analysisId: strin
           <span>{a.title}</span>
         </p>
         <p className="mt-1 text-xs leading-relaxed text-[var(--text-secondary)]">
-          {`${data.emailEnabled ? a.hintEmail : a.hintScreen}${following ? '' : ` ${a.followsToo}`}`}
+          {`${data.symbolClass === 'crypto' ? (data.emailEnabled ? a.hintEmail : a.hintScreen) : (data.emailEnabled ? a.hintEmailFx : a.hintScreenFx)}${following ? '' : ` ${a.followsToo}`}`}
         </p>
       </div>
 
@@ -219,7 +256,7 @@ const SetupAlertBar = ({ analysisId, recommendation, base }: { analysisId: strin
           );
         })}
       </div>
-      {suggestions.length === 0 ? <p className="text-xs text-[var(--text-secondary)]">{a.typeLevel}</p> : null}
+      {suggestions.length === 0 && !readHasLevels ? <p className="text-xs text-[var(--text-secondary)]">{a.typeLevel}</p> : null}
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <input

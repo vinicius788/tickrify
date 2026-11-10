@@ -13,6 +13,7 @@ import OrigemPainel from '@/components/admin/OrigemPainel';
 import AfiliadosPainel from '@/components/admin/AfiliadosPainel';
 import ChatPainel from '@/components/admin/ChatPainel';
 import CancelamentosPainel from '@/components/admin/CancelamentosPainel';
+import MotorPainel from '@/components/admin/MotorPainel';
 import { useAdminChatThreads } from '@/lib/support-chat';
 
 /**
@@ -162,7 +163,7 @@ function LinhaFlag({
   );
 }
 
-type Aba = 'chat' | 'afiliados' | 'origem' | 'relatos' | 'opinioes' | 'config' | 'cancelamentos';
+type Aba = 'chat' | 'afiliados' | 'origem' | 'relatos' | 'opinioes' | 'config' | 'cancelamentos' | 'motor';
 
 /** Contador do topo. Zero fica apagado; acima de zero chama atencao e leva a aba. */
 function Pendencia({ n, rotulo, onClick }: { n: number | null; rotulo: string; onClick: () => void }) {
@@ -186,6 +187,7 @@ const ABAS: Array<{ chave: Aba; rotulo: string }> = [
   { chave: 'afiliados', rotulo: 'Afiliados' },
   { chave: 'origem', rotulo: 'Origem' },
   { chave: 'cancelamentos', rotulo: 'Cancelamentos' },
+  { chave: 'motor', rotulo: 'Motor' },
   { chave: 'relatos', rotulo: 'Relatos de problema' },
   { chave: 'opinioes', rotulo: 'Opiniões' },
   { chave: 'config', rotulo: 'Configurações avançadas' },
@@ -299,6 +301,8 @@ export default function AdminPage() {
         {aba === 'origem' && <OrigemPainel />}
 
         {aba === 'cancelamentos' && <CancelamentosPainel />}
+
+        {aba === 'motor' && <MotorPainel />}
 
         {aba === 'config' && (
           <>

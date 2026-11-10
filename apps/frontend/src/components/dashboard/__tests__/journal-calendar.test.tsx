@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import JournalCalendar from '@/components/dashboard/JournalCalendar';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 
-vi.mock('@clerk/clerk-react', () => ({ useUser: () => ({ user: { id: 'u-1' } }) }));
+vi.mock('@clerk/clerk-react', () => ({ useUser: () => ({ user: { id: 'u-1' } }), useAuth: () => ({ getToken: vi.fn() }) }));
 const getJournal = vi.fn();
 const setTradeNote = vi.fn();
 vi.mock('@/lib/api', () => ({ useAPIClient: () => ({ getJournal, setTradeNote }) }));
@@ -83,7 +83,7 @@ describe('Diario: WATCH pendente', () => {
     };
     getJournal.mockResolvedValue({ truncated: false, items: [watch, { ...item('nt', today, 'EURUSD', 'WAIT', 'tp1', 70, null), signalState: 'NO_TRADE' }] });
     renderJournal();
-    expect(await screen.findByText('Sell level 77,800', {}, LOAD)).toBeTruthy();
+    expect(await screen.findByText('Sell level $ 77,800.00', {}, LOAD)).toBeTruthy();
     expect(screen.getByTestId('watch-pending').textContent).toContain('Price reached the level');
     expect(screen.getByTestId('watch-pending').textContent).not.toContain('No trade (wait)');
     // Nao e operacao: o mes segue sem trade fechado, sem numero.

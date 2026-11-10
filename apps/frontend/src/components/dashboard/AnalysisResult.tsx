@@ -25,8 +25,9 @@ import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
-import { WatchPlanChart, isWatchLevels, isWatchPlan } from './WatchPlanChart';
-import { ReadModePanel, type ReadModeData } from './ReadModePanel';
+import { WatchPlanCard, isWatchLevels, isWatchPlan, watchWindowOpen } from './WatchPlanCard';
+import { useExpiryClock } from '@/lib/setups';
+import { ReadModePanel, WherePriceIs, type ReadModeData } from './ReadModePanel';
 import { LevelMapCard } from './PendingLevels';
 import { AnalysisShareButton } from './ShareCard';
 import type { ReadShareData } from '@/lib/share-card';
@@ -45,6 +46,8 @@ import {
   resolveSignalState,
   signalStateTone,
   entrySide,
+  forexPipSize,
+  formatAssetPrice,
   signalStateLabel,
 } from '@/lib/trading-ui';
 import { asRecord } from '@/lib/utils';
@@ -61,6 +64,8 @@ interface AnalysisResultProps {
   sample?: boolean;
   /** Conta pode criar alerta de nivel (painel real, conta nao travada). */
   alertsEnabled?: boolean;
+  /** Raiz do painel (`/dashboard` ou `/demo`) para o link do setup. */
+  base?: string;
 }
 
 type MarketSession = { name: string; abbr: string; open: boolean };
@@ -81,17 +86,6 @@ function toNumber(value: unknown): number | null {
   if (value == null || (typeof value === 'string' && !value.trim())) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-const FOREX_CODES = new Set(['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CAD', 'CHF']);
-
-/** Tamanho do pip se for par de forex (0.01 p/ JPY, 0.0001 demais); null se não for forex. */
-function forexPipSize(symbol: string): number | null {
-  const s = String(symbol || '').replace(/[^A-Za-z]/g, '').toUpperCase();
-  if (s.length === 6 && FOREX_CODES.has(s.slice(0, 3)) && FOREX_CODES.has(s.slice(3, 6))) {
-    return s.endsWith('JPY') ? 0.01 : 0.0001;
-  }
-  return null;
 }
 
 /**
@@ -219,29 +213,6 @@ function parseSummaryBlocks(summary: string): { blocks: SummaryBlock[]; footer: 
     }
   }
   return { blocks, footer };
-}
-
-function formatPriceInLanguage(value: number | null, language: Language): string {
-  if (value === null || !Number.isFinite(value)) {
-    return 'N/A';
-  }
-  // Detect decimal precision needed:
-  // Forex (< 500 and not integer): use 4-5 decimals (e.g. 1.1605, 149.85)
-  // Crypto/Gold (>= 500): use 2 decimals
-  // Very small values (< 1): use 5 decimals
-  let decimals = 2;
-  if (value < 1) {
-    decimals = 5;
-  } else if (value < 500) {
-    // Forex range — detect actual decimal places in the number
-    const str = value.toString();
-    const decPart = str.includes('.') ? str.split('.')[1] : '';
-    decimals = Math.min(Math.max(decPart.length, 4), 5);
-  }
-  return `$ ${new Intl.NumberFormat(LOCALES[language], {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(value)}`;
 }
 
 function formatSignedPercentInLanguage(value: number | null, language: Language): string {
@@ -411,6 +382,37 @@ const ARROW_STATE = new RegExp(`\\s*(?:→|->)\\s*${MODEL_STATE}(?![\\w-])[^|;\\
 const SCORE_STATE = new RegExp(`(\\b[0-7]\\s*/\\s*7\\b(?:\\s*passes)?)\\s*[,:-]?\\s*${MODEL_STATE}(?![\\w-])[^|;\\n]*`, 'giu');
 const BARE_STATE = new RegExp(`([.,;])\\s*${MODEL_STATE}(?![\\w-])\\.?\\s*$`, 'u');
 
+/** Frases em que o modelo manda operar (6 idiomas). So para a tela, quando o codigo decidiu NO_TRADE. */
+const MODEL_ACTION = new RegExp(
+  [
+    String.raw`\b(?:buy|sell)(?:ing)?\s+(?:at|on|from|near|limit|stop|if|when|after|above|below|the)\b`,
+    String.raw`\b(?:enter|entering|entry)\s+(?:a\s+)?(?:long|short|at|on|near|from|if|when|after|above|below|only|the\s+trade)\b`,
+    String.raw`\bgo(?:ing)?\s+(?:long|short)\b`,
+    String.raw`\b(?:long|short)\s+(?:entry|setup|position|trade|from|at|near|if)\b`,
+    String.raw`\b(?:place|set)\s+(?:a|an|the)?\s*(?:limit|stop|buy|sell|order)\b`,
+    String.raw`\blimit\s+(?:buy|sell|order)\b`,
+    String.raw`\bwatch\s+(?:for\s+)?(?:a\s+|the\s+)?(?:long|short|buy|sell|entry|\d)`,
+    String.raw`\b(?:compra|comprar|venda|vender)\s+(?:em|no|na|a|perto|se|quando|acima|abaixo|ap[oó]s|limit)\b`,
+    String.raw`\bentrada\s+(?:em|no|na|de\s+compra|de\s+venda|long|short)\b`,
+    String.raw`\bentrar\s+(?:em|no|na|comprado|vendido|long|short)\b`,
+    String.raw`\b(?:compra|comprar|venta|vender)\s+(?:en|cerca|si|cuando|por)\b`,
+    String.raw`\b(?:acheter|achat|vendre|vente)\s+(?:à|a|au|près|si|quand|sur)\b`,
+    String.raw`\b(?:kaufen|kauf|verkaufen|verkauf)\s+(?:bei|über|unter|wenn|ab)\b`,
+    String.raw`\beinstieg\s+(?:bei|über|unter|ab)\b`,
+    String.raw`\d\s*(?:付近)?で?の?(?:買い|売り|エントリー)`,
+    String.raw`(?:買い|売り)(?:エントリー|注文|を検討|を狙)`,
+  ].join('|'),
+  'iu',
+);
+
+export function stripContradictingActions(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.split(/(?<=[.!?])\s+|(?<=[。！？])/u).filter((sentence) => !MODEL_ACTION.test(sentence)).join(' ').trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
 export function stripModelState(text: string): string {
   return text.replace(ARROW_STATE, '').replace(SCORE_STATE, '$1').replace(BARE_STATE, '$1').trim();
 }
@@ -502,7 +504,7 @@ export function parseStructureChecklist(text: string): StructureChecklist {
   return { items, score: scoreMismatch ? null : score, scoreMismatch };
 }
 
-const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEnabled = false }: AnalysisResultProps) => {
+const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEnabled = false, base = '/dashboard' }: AnalysisResultProps) => {
   // Diz ao botão de reportar problema qual análise está na tela. Sem isto o
   // relato chega sem o id e vira caça ao tesouro no histórico do usuário.
   useEffect(() => {
@@ -512,7 +514,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
 
   const { toast } = useToast();
   const { t, language } = useLanguage();
-  const formatPrice = (value: number | null) => formatPriceInLanguage(value, language);
   const formatSignedPercent = (value: number | null) => formatSignedPercentInLanguage(value, language);
   const formatPositivePercent = (value: number | null) => formatPositivePercentInLanguage(value, language);
 
@@ -524,6 +525,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     NY: t.analysis.sessions.newYork,
   };
   const [showInvalidation, setShowInvalidation] = useState(false);
+  const watchNow = useExpiryClock(Date.parse(analysisData?.watch?.expiresAt ?? ''));
 
   // ⚠️ ESTES DOIS HOOKS PRECISAM FICAR ACIMA DO `return` DE BAIXO.
   //
@@ -585,6 +587,11 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   analysis.reasoning = translatedAnnotation(t, language, String(analysis.reasoning ?? ''), messages.drawingReferences);
   analysis.multiTimeframeAlignment = translatedAnnotation(t, language, String(analysis.multiTimeframeAlignment ?? ''), analysisMessages.multiTimeframePrefix);
   const marketStructure = asRecord(analysis.marketStructure);
+  const symbol = String(
+    analysis.symbol || analysis.ticker || analysis.asset || fullResponse.symbol || fullResponse.ticker || 'UNKNOWN',
+  ).trim() || 'UNKNOWN';
+  const timeframe = String(analysis.timeframe || analysis.period || fullResponse.timeframe || 'UNKNOWN').trim() || 'UNKNOWN';
+  const formatPrice = (value: number | null) => formatAssetPrice(value, symbol, LOCALES[language]);
 
   const recommendationMeta = getRecommendationMeta(analysisData.recommendation);
   const scenarioMeta = getScenarioMeta(analysisData.bias || marketStructure.bias, analysisData.recommendation);
@@ -598,6 +605,14 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   const stateTone = signalStateTone(signalState, analysisData.recommendation);
   const stateActive = signalState === 'ENTER_NOW' || signalState === 'ARMED';
   const watchPlan = isWatchPlan(fullResponse.watchPlan) ? fullResponse.watchPlan : null;
+  const continuation = fullResponse.continuation as { status?: unknown; direction?: unknown; level?: unknown } | null | undefined;
+  const continuationStatus = typeof continuation?.status === 'string' ? r.continuationStatus[continuation.status as keyof typeof r.continuationStatus] : undefined;
+  const continuationLine =
+    continuationStatus && typeof continuation?.level === 'number' && (continuation.direction === 'long' || continuation.direction === 'short')
+      ? (continuation.direction === 'long' ? r.continuationBuy : r.continuationSell)
+          .replace('{level}', formatPrice(continuation.level))
+          .replace('{status}', continuationStatus)
+      : null;
   // Niveis do WATCH calculados pelo motor (desde 03/11/2026). undefined: analise
   // antiga ou sem velas reais (alvos do modelo, como antes); null: o motor
   // rejeitou a geometria no nivel do WATCH (sem alvos nem R na tela).
@@ -605,11 +620,9 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     ? fullResponse.watchLevels
     : signalState === 'WATCH' && fullResponse.dataMode === 'real_data' && 'watchLevels' in fullResponse ? null : undefined;
   const levelsEstimated = fullResponse.dataMode === 'print';
+  // WATCH com plano: cartao unico. Analise antiga sem plano segue no desenho anterior.
+  const watchLayout = signalState === 'WATCH' && watchPlan !== null;
 
-  const symbol = String(
-    analysis.symbol || analysis.ticker || analysis.asset || fullResponse.symbol || fullResponse.ticker || 'UNKNOWN',
-  ).trim() || 'UNKNOWN';
-  const timeframe = String(analysis.timeframe || analysis.period || fullResponse.timeframe || 'UNKNOWN').trim() || 'UNKNOWN';
   const detectedSession = String(analysis.detectedSession || fullResponse.detectedSession || '').trim() || null;
   const sessionNote =
     cleanModelText(analysis.sessionNote) || cleanModelText(fullResponse.sessionNote) || null;
@@ -779,13 +792,22 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     }
   };
 
+  // O validador rebaixou para NO_TRADE: a prosa do modelo ainda fala do plano recusado.
+  const downgradeNote = signalState === 'NO_TRADE'
+    ? (analysisData.fullResponse?.validatorNotes ?? []).find((note): note is { from?: string; to?: string; reason: string } => typeof note === 'object' && note.to === 'NO_TRADE' && note.from !== 'NO_TRADE')
+    : undefined;
+  const downgradedToNoTrade = downgradeNote !== undefined;
+  const finalDecisionReasons = r.finalDecisionReasons as Record<string, string>;
+  const finalDecision = downgradeNote
+    ? r.finalDecision.replace('{reason}', finalDecisionReasons[downgradeNote.reason] ?? r.finalDecisionReasons.other)
+    : null;
+  /** So na tela: tira da prosa do modelo o que contradiz a decisao final. */
+  const modelProse = (text: string) => (downgradedToNoTrade ? stripContradictingActions(text) : text);
   const technicalAnalysis =
-    cleanModelText(analysis.technicalAnalysis) ||
-    cleanModelText(analysis.reasoning) ||
-    cleanModelText(displayReasoning) ||
+    modelProse(cleanModelText(analysis.technicalAnalysis) || cleanModelText(analysis.reasoning) || cleanModelText(displayReasoning)) ||
     r.noAnalysis;
-  const executiveSummary =
-    cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary);
+  const modelSummary = modelProse(cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary));
+  const executiveSummary = downgradedToNoTrade ? modelSummary || r.downgradedSummary : modelSummary;
   const whyNotOpposite = cleanModelText(analysis.whyNotOpposite);
   // Checklist e paragrafo de reserva sem o estado ou a direcao que o modelo
   // escreveu ("6/7 WATCH", "MTF 2/3 → SELL"): a tela so mostra a decisao do codigo.
@@ -895,10 +917,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   };
   const waitFlipItems: Array<{ label: string; text: string }> = [];
   const waitHasPlan =
-    isWaitVerdict && (classifyWaitTrigger(entryCondition) !== null || classifyWaitTrigger(alternativeScenario) !== null);
+    isWaitVerdict && !downgradedToNoTrade && (classifyWaitTrigger(entryCondition) !== null || classifyWaitTrigger(alternativeScenario) !== null);
   if (isWaitVerdict) {
-    if (entryCondition) waitFlipItems.push({ label: triggerLabel(entryCondition, r.flipEntry), text: entryCondition });
-    if (alternativeScenario) waitFlipItems.push({ label: triggerLabel(alternativeScenario, r.flipAlt), text: alternativeScenario });
+    const entryShown = entryCondition ? modelProse(entryCondition) : null;
+    const alternativeShown = alternativeScenario ? modelProse(alternativeScenario) : null;
+    if (entryShown) waitFlipItems.push({ label: triggerLabel(entryShown, r.flipEntry), text: entryShown });
+    if (alternativeShown) waitFlipItems.push({ label: triggerLabel(alternativeShown, r.flipAlt), text: alternativeShown });
     if (invalidationLevel !== null && invalidationLevel > 0) {
       waitFlipItems.push({
         label: r.flipInvalidation,
@@ -973,7 +997,73 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     readIsEnglish: language === 'en',
     trendStrength: trendStrength === 'strong' || trendStrength === 'moderate' || trendStrength === 'weak' ? trendStrength : null,
     date: timestamp,
+    watchSide: watchLayout && watchPlan ? (watchPlan.direction === 'long' ? 'buy' : 'sell') : null,
   };
+
+  // Tudo o que o WATCH escreve sai daqui: numeros do servidor, frases do codigo.
+  const watchText = (() => {
+    if (!watchLayout || !watchPlan) return null;
+    const w = r.watch;
+    const long = watchPlan.direction === 'long';
+    // "$ 4,260.00" nunca quebra entre o simbolo e o numero.
+    const money = (value: number) => formatPrice(value).replace(/ /g, '\u00a0');
+    const zone = watchPlan.zoneLow === watchPlan.zoneHigh
+      ? money(watchPlan.zoneLow)
+      : w.zoneRange.replace('{low}', money(watchPlan.zoneLow)).replace('{high}', money(watchPlan.zoneHigh));
+    const headline = [
+      currentPrice !== null ? w.noEntryAt.replace('{price}', money(currentPrice)) : '',
+      (long ? w.waitPullback : w.waitRally).replace('{zone}', zone),
+    ].filter(Boolean).join(' ');
+
+    const clauses = cleanModelText(watchPlan.trigger).split(/;\s*/).filter(Boolean);
+    const conditional = clauses.find((clause) => /\b(only if|only after|once|if)\b/i.test(clause));
+    const raw = clauses.length > 1 && conditional ? conditional : cleanModelText(watchPlan.trigger);
+    const condition = raw ? `${raw[0].toUpperCase()}${raw.slice(1).replace(/\.$/, '')}.` : null;
+
+    const target1Price = watchLevels ? watchLevels.takeProfit1 : watchPlan.target1;
+    const failed = checklist.items
+      .filter((item) => !item.ok && !item.notApplicable)
+      .map((item) => item.label.match(/^C([1-7])\b/)?.[1])
+      .flatMap((code) => {
+        if (code === '7') {
+          return currentPrice !== null
+            ? [w.criteria.c7.replace('{price}', money(currentPrice)).replace('{target}', money(target1Price))]
+            : [w.criteria.c7NoPrice];
+        }
+        const text = code ? (w.criteria as Record<string, string>)[`c${code}`] : undefined;
+        return text ? [text] : [];
+      });
+    const risks = riskItems
+      .flatMap((item) => item.split(/;\s*/))
+      .map((item) => item.trim().replace(/\.$/, ''))
+      .filter(Boolean)
+      .map((item) => {
+        const sentence = item.length > 110 ? item.split(/(?<=[.!?])\s/)[0] : item;
+        return `${sentence[0].toUpperCase()}${sentence.slice(1)}`;
+      });
+
+    const cancelled = (long ? w.cancelBelow : w.cancelAbove)
+      .replace('{tf}', timeframe === 'UNKNOWN' ? '' : timeframe)
+      .replace('{price}', money(watchPlan.invalidation))
+      .replace(/[ \t]{2,}/g, ' ');
+    const invalidationDigits = String(watchPlan.invalidation);
+    const opposite = (alternativeScenario ? cleanModelText(alternativeScenario) : '')
+      .split(/(?<=[.!?。])\s+/)
+      .filter((sentence) => sentence && !sentence.replace(/,/g, '').includes(invalidationDigits) && !/invalidat/i.test(sentence));
+    const oppositeLine = opposite[0] ? `${opposite[0][0].toLowerCase()}${opposite[0].slice(1).replace(/\.$/, '')}` : null;
+    return {
+      headline,
+      condition,
+      whyWait: [...failed, ...risks].slice(0, 3),
+      cancelled,
+      oppositeLine,
+      planBRepeats: opposite.length <= 1,
+    };
+  })();
+  // Fora da validade do plano, um evento nao afeta esta analise.
+  const expiresAt = Date.parse(analysisData.watch?.expiresAt ?? '');
+  const eventInPlan = (minutesUntil: number | null | undefined) =>
+    !watchLayout || !Number.isFinite(expiresAt) || (minutesUntil ?? 0) * 60_000 <= expiresAt - Date.now();
 
   const HeaderIcon = stateTone === 'buy' ? ArrowUp : stateTone === 'sell' ? ArrowDown : signalState === 'WATCH' ? Eye : Minus;
 
@@ -1007,16 +1097,22 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
 
   // WAIT keeps the original explanation → plan → technical reading order.
   // Its clarity guide follows the full reading; active entries retain the header guide.
+  // Com o resumo logo acima, "Why this read" so aparece se disser outra coisa.
+  const whyRepeatsSummary = isWaitVerdict && readingReason.trim() !== '' && executiveSummary.includes(readingReason.trim());
   const readingGuide = !invalidTradePlan ? (
     <dl aria-label={clarity.readingGuide} className="mt-4 space-y-3 border-t border-[var(--border-subtle)] pt-4 text-sm">
-      <div>
-        <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.why}</dt>
-        <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{readingReason || clarity.reasonMissing}</dd>
-      </div>
-      <div>
-        <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.risk}</dt>
-        <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{readingRisk || clarity.riskMissing}</dd>
-      </div>
+      {!whyRepeatsSummary && (
+        <div key="why">
+          <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.why}</dt>
+          <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{readingReason || clarity.reasonMissing}</dd>
+        </div>
+      )}
+      {!watchLayout && (
+        <div key="risk">
+          <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.risk}</dt>
+          <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-[var(--text-primary)]">{readingRisk || clarity.riskMissing}</dd>
+        </div>
+      )}
       <div>
         <dt className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{clarity.next}</dt>
         <dd className="mt-1 leading-relaxed text-[var(--text-secondary)]">{clarity.reviewConditions}</dd>
@@ -1027,6 +1123,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   /** A leitura (executiveSummary). No WAIT sobe para logo abaixo do plano. */
   const summaryBlock = (
     <div className="rounded-md border border-[var(--border-emphasis)] bg-[var(--bg-overlay)] p-3">
+      {finalDecision && <p data-testid="final-decision" className="mb-2 text-sm font-semibold leading-relaxed text-[var(--text-primary)]">{finalDecision}</p>}
       <h4 className="tk-display mb-2 text-base text-[var(--text-primary)]">{t.analysis.executiveSummary}</h4>
       {(() => {
         const { blocks, footer } = parseSummaryBlocks(executiveSummary);
@@ -1084,7 +1181,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
               className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-bold uppercase tracking-widest ${signalToneClasses}`}
             >
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
+              <span>{watchLayout ? (watchPlan?.direction === 'long' ? r.watch.chipBuy : r.watch.chipSell) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
             </div>
             {strategyFit && (
               <span
@@ -1094,10 +1191,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                 {r.strategyFitTitle}: {STRATEGY_FIT_LABEL[strategyFit]}
               </span>
             )}
-            <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border px-2 py-1 ${scenarioToneClasses}`}>
-              {t.analysis.bias}:{' '}
-              <strong className="font-semibold">{t.scenarioLabels[scenarioMeta.label]}</strong>
-            </span>
+            {!watchLayout && (
+              <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border px-2 py-1 ${scenarioToneClasses}`}>
+                {t.analysis.bias}:{' '}
+                <strong className="font-semibold">{t.scenarioLabels[scenarioMeta.label]}</strong>
+              </span>
+            )}
             <span className="whitespace-nowrap font-terminal md:ml-auto">{formattedTimestamp}</span>
             {/* Demo anônima não compartilha: o card leva a marca e o link da
                 /accuracy, e um print gerado a partir de dado de demonstração
@@ -1110,7 +1209,11 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
               </span>
             )}
           </div>
-          {isWaitVerdict && (
+          {continuationLine && (
+            <p data-testid="setup-continuation" className="mt-3 text-sm leading-relaxed text-[var(--text-primary)]">{continuationLine}</p>
+          )}
+          {watchText && watchWindowOpen(analysisData.watch, watchNow) && <p data-testid="watch-headline" className="mt-3 text-sm leading-relaxed text-[var(--text-primary)]">{watchText.headline}</p>}
+          {isWaitVerdict && !watchLayout && (
             // Explica o WAIT onde ele aparece: sem isto a pessoa le so a
             // palavra e entende que a ferramenta nao respondeu.
             <p className="mt-3 text-sm leading-relaxed text-[var(--text-secondary)]">
@@ -1141,12 +1244,13 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
         </CardContent>
       </Card>
 
-      <ReadModePanel data={readMode} formatPrice={formatPrice} />
+      {!watchLayout && <ReadModePanel data={readMode} formatPrice={formatPrice} />}
 
       {/* NO_TRADE com velas reais: os dois lados do preco, calculados pelo codigo. Analise antiga ou print: nada. */}
-      {signalState === 'NO_TRADE' && analysisData.fullResponse?.dataMode === 'real_data' && analysisData.fullResponse.levelMap ? (
+      {signalState === 'NO_TRADE' && (analysisData.fullResponse?.aiLevel || (analysisData.fullResponse?.dataMode === 'real_data' && analysisData.fullResponse.levelMap)) ? (
         <LevelMapCard
-          levelMap={analysisData.fullResponse.levelMap}
+          levelMap={analysisData.fullResponse?.dataMode === 'real_data' ? analysisData.fullResponse.levelMap ?? null : null}
+          aiLevel={analysisData.fullResponse?.aiLevel ?? null}
           analysisId={analysisData.id ?? null}
           alerts={alertsEnabled && !sample}
           formatPrice={formatPrice}
@@ -1171,7 +1275,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
         </Alert>
       )}
 
-      {isWaitVerdict && waitFlipItems.length > 0 && (
+      {isWaitVerdict && !watchLayout && waitFlipItems.length > 0 && (
         // O bloco usava borda + fundo ambar. Problema: o badge HOLD ja e ambar
         // (--signal-hold), entao a tela tinha duas coisas ambar significando
         // coisas diferentes, e em UI de trading ambar le como ALERTA. Isto aqui
@@ -1199,8 +1303,54 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
         </Card>
       )}
 
-      {signalState === 'WATCH' && watchPlan && (
-        <WatchPlanChart plan={watchPlan} currentPrice={currentPrice} formatPrice={formatPrice} estimated={levelsEstimated} levels={watchLevels} />
+      {watchLayout && watchPlan && watchText && (
+        <>
+          <WatchPlanCard
+            plan={watchPlan}
+            levels={watchLevels}
+            currentPrice={currentPrice}
+            symbol={symbol}
+            formatPrice={formatPrice}
+            estimated={levelsEstimated}
+            watch={analysisData.watch}
+            reach={analysisData.fullResponse?.watchReach ?? null}
+            condition={watchText.condition}
+            actionsFor={alertsEnabled && !sample && !isDemo && analysisData.id ? analysisData.id : null}
+            base={base}
+          />
+          <Card data-testid="watch-why-changes" className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '50ms' }}>
+            <CardContent className="grid gap-5 p-5 md:grid-cols-2 md:gap-8 md:p-6">
+              {watchText.whyWait.length > 0 ? (
+                <section key="why" data-testid="watch-why">
+                  <h4 className="tk-display text-[15px] text-[var(--text-primary)]">{r.watch.whyWaitTitle}</h4>
+                  <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-[var(--text-primary)]/85">
+                    {watchText.whyWait.map((item) => (
+                      <li key={item} className="flex items-start gap-2">
+                        <span className="mt-[9px] h-1 w-1 flex-shrink-0 rounded-full bg-[var(--text-muted)]" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+              <section key="changes" data-testid="watch-changes">
+                <h4 className="tk-display text-[15px] text-[var(--text-primary)]">{r.watch.changesTitle}</h4>
+                <dl className="mt-2 space-y-1.5 text-sm leading-relaxed">
+                  <div key="cancel">
+                    <dt className="inline font-semibold text-[var(--text-primary)]">{r.watch.cancelledIf}</dt>
+                    <dd className="ml-1 inline text-[var(--text-primary)]/85">{watchText.cancelled}</dd>
+                  </div>
+                  {watchText.oppositeLine ? (
+                    <div key="opposite">
+                      <dt className="inline font-semibold text-[var(--text-primary)]">{r.watch.opposite}</dt>
+                      <dd className="ml-1 inline text-[var(--text-primary)]/85">{watchText.oppositeLine}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </section>
+            </CardContent>
+          </Card>
+        </>
       )}
 
       {isWaitVerdict && (
@@ -1507,7 +1657,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                       <span className="flex items-center gap-2">
                         <CalendarClock className="h-4 w-4 text-[var(--tone-warn-2)]" />
                         {t.analysis.economicEvents}
-                        {calEvents.some((e) => e.impact === 'High' && (e.minutesUntil ?? 999) <= 60) && (
+                        {calEvents.some((e) => e.impact === 'High' && (e.minutesUntil ?? 999) <= 60 && eventInPlan(e.minutesUntil)) && (
                           <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-terminal text-[10px] font-bold text-[var(--tone-warn-2)] uppercase">
                             {r.calHighImpactBadge}
                           </span>
@@ -1579,7 +1729,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                                   {ev.time && ev.time !== 'All Day' && (
                                     <span>{ev.time} ET</span>
                                   )}
-                                  {isHigh && !isJustHappened && (
+                                  {isHigh && !isJustHappened && eventInPlan(ev.minutesUntil) && (
                                     <span className="text-[var(--tone-warn-2)]">
                                       {r.calMayAffect}
                                     </span>
@@ -1590,6 +1740,20 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                           })}
                         </div>
                       )}
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
+
+                {watchLayout && readMode.location && (
+                  <AccordionItem value="where-price" className="border-[var(--border-subtle)]">
+                    <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <Target className="h-4 w-4 text-[var(--text-secondary)]" />
+                        {r.readMode.whereTitle}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <WherePriceIs data={readMode} formatPrice={formatPrice} />
                     </AccordionContent>
                   </AccordionItem>
                 )}
@@ -1824,7 +1988,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                   </AccordionItem>
                 )}
 
-                {alternativeScenario && (
+                {alternativeScenario && !watchText?.planBRepeats && (
                   <AccordionItem value="plan-b" className="border-[var(--border-subtle)]">
                     <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
                       <span className="flex items-center gap-2">
@@ -1840,17 +2004,19 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                   </AccordionItem>
                 )}
 
-                <AccordionItem value="opposite" className="border-[var(--border-subtle)]">
-                  <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
-                    <span className="flex items-center gap-2">
-                      <CircleHelp className="h-4 w-4 text-[var(--text-secondary)]" />
-                      {t.analysis.whyNotOpposite}
-                    </span>
-                  </AccordionTrigger>
-                  <AccordionContent className="text-sm leading-relaxed text-[var(--text-secondary)]">
-                    {whyNotOpposite || r.noWhyNot}
-                  </AccordionContent>
-                </AccordionItem>
+                {whyNotOpposite && (
+                  <AccordionItem value="opposite" className="border-[var(--border-subtle)]">
+                    <AccordionTrigger className="tk-display text-[15px] hover:no-underline">
+                      <span className="flex items-center gap-2">
+                        <CircleHelp className="h-4 w-4 text-[var(--text-secondary)]" />
+                        {t.analysis.whyNotOpposite}
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                      {whyNotOpposite}
+                    </AccordionContent>
+                  </AccordionItem>
+                )}
               </Accordion>
 
               {/* No WAIT a calculadora sairia com a entrada e o stop de um trade

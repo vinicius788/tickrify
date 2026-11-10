@@ -24,8 +24,9 @@
  * - Prioridade: analise primeiro, depois monitor, depois sweeper. Quem tem menos
  *   prioridade nunca gasta a reserva de quem tem mais; analise nunca fica sem
  *   candle por causa do monitor ou do sweeper.
- * - Acima de 80% do dia: monitor de forex a cada 30 min e sweeper de forex so no
- *   dia seguinte. Acima de 95%: so analise.
+ * - Monitor: o intervalo sai da reserva que ainda resta no dia, dividida pelos
+ *   ativos vigiados (ouro pesa mais). Acima de 80% do dia: monitor de forex a
+ *   cada 30 min e sweeper de forex so no dia seguinte. Acima de 95%: so analise.
  * - Fim de semana (forex/metal fechado): monitor e sweeper nao chamam.
  * - Twelve Data disse "acabaram os creditos": ninguem chama de novo ate a virada
  *   do dia UTC.
@@ -53,8 +54,11 @@ export const TWELVE_DATA_BUDGET = {
   lowPriorityPerMinute: 5,
   slowAbove: 0.8,
   analysisOnlyAbove: 0.95,
-  monitorBaseIntervalMs: 10 * MINUTE,
+  /** Menor intervalo por ativo: as velas sao de 5m, abaixo disto nao muda quase nada. */
+  monitorMinIntervalMs: 2 * MINUTE,
   monitorSlowIntervalMs: 30 * MINUTE,
+  /** Peso na divisao da reserva do monitor; quem nao esta aqui pesa 1. Ouro e ~59% do uso. */
+  monitorWeight: { XAUUSD: 3 } as Record<string, number>,
   /** Minuto cheio: a analise espera a virada se faltar ate isto. */
   analysisMinuteWaitMs: 4_000,
 } as const;
@@ -356,16 +360,38 @@ export function twelveDataDecision(
   return usage.total + 1 > budget.dailyLimit - analysisLeft - monitorLeft ? 'budget' : null;
 }
 
+/** Minutos de mercado aberto ate a virada do dia UTC, quando a reserva recomeca. */
+export function fxOpenMinutesLeftToday(now: Date): number {
+  const minute = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const close = now.getUTCDay() === 5 ? 22 * 60 : 24 * 60;
+  return Math.max(0, close - minute);
+}
+
 /**
- * Intervalo do monitor por ativo de forex/metal: 10 min, mais espacado se a
- * reserva do monitor nao der para o dia inteiro com N ativos, e 30 min acima
- * de 80% do dia.
+ * Intervalo por ativo de forex/metal: o menor que a reserva do monitor ainda
+ * paga ate o fim do dia, com o ouro pesando mais. Refeito a cada volta, entao
+ * dia com folga fica mais rapido sozinho e nunca passa do orcamento. Acima de
+ * 80% do dia, 30 min.
  */
-export function monitorFxIntervalMs(fxSymbols: number, usage: Pick<TwelveDataUsage, 'total'>, budget = TWELVE_DATA_BUDGET): number {
-  const perDay = Math.max(1, fxSymbols) * (24 * 60);
-  const spread = Math.ceil(perDay / budget.reserve.monitor) * MINUTE;
-  const base = Math.max(budget.monitorBaseIntervalMs, spread);
-  return usage.total / budget.dailyLimit >= budget.slowAbove ? Math.max(base, budget.monitorSlowIntervalMs) : base;
+export function monitorFxIntervals(
+  symbols: readonly string[],
+  usage: Pick<TwelveDataUsage, 'total' | 'analysis' | 'monitor'>,
+  now: Date,
+  budget = TWELVE_DATA_BUDGET,
+): Map<string, number> {
+  const left = Math.max(0, Math.min(budget.reserve.monitor - usage.monitor, budget.dailyLimit - usage.total - Math.max(0, budget.reserve.analysis - usage.analysis)));
+  const minutes = Math.max(1, fxOpenMinutesLeftToday(now));
+  const weightOf = (symbol: string) => budget.monitorWeight[symbol] ?? 1;
+  const totalWeight = symbols.reduce((sum, symbol) => sum + weightOf(symbol), 0);
+  const slow = usage.total / budget.dailyLimit >= budget.slowAbove;
+  return new Map(
+    symbols.map((symbol) => {
+      const credits = (left * weightOf(symbol)) / totalWeight;
+      const spread = credits > 0 ? Math.ceil(minutes / credits) * MINUTE : budget.monitorSlowIntervalMs;
+      const interval = Math.max(budget.monitorMinIntervalMs, spread);
+      return [symbol, slow ? Math.max(interval, budget.monitorSlowIntervalMs) : interval];
+    }),
+  );
 }
 
 async function take(consumer: TwelveDataConsumer, now: Date): Promise<TwelveDataDenyReason | null> {
@@ -399,7 +425,7 @@ async function take(consumer: TwelveDataConsumer, now: Date): Promise<TwelveData
 // ── Chamada e cache ─────────────────────────────────────────────────────────
 
 export type TwelveDataValue = { datetime: string; open: string; high: string; low: string; close: string; volume?: string };
-export type TwelveDataSeries = { values: TwelveDataValue[]; exchangeTimezone: string | null; fetchedAt: number };
+export type TwelveDataSeries = { values: TwelveDataValue[]; fetchedAt: number };
 export type TwelveDataResult =
   | { ok: true; series: TwelveDataSeries; cached: boolean }
   | { ok: false; reason: TwelveDataDenyReason | 'error' };
@@ -413,7 +439,6 @@ export type TwelveDataRequest = {
   outputsize: number;
   /** Janela fixa (sweeper). Com janela, nada de cache. */
   window?: { startMs: number; endMs: number };
-  timezoneUtc?: boolean;
   /** Aceita resposta "ultimos N" guardada ha ate isto. */
   cacheMaxAgeMs?: number;
   timeoutMs?: number;
@@ -423,8 +448,23 @@ const CACHE_TTL_SEC = 15 * 60;
 const iso = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
 
 /**
- * A URL de sempre de cada consumidor (o grounding continua pedindo exatamente o
- * que pedia: sem fuso, ultimos 120). Exportada para o teste provar isso.
+ * Abertura da vela em ms. Toda URL pede `timezone=UTC`, entao o texto
+ * ("2026-11-09 13:05:00", ou so a data no 1d) e sempre lido como UTC. Unico
+ * parser do horario do Twelve Data.
+ */
+export const twelveDataOpenMs = (datetime: string): number =>
+  Date.parse(/\d:\d/.test(datetime) ? `${datetime.replace(' ', 'T')}Z` : `${datetime}T00:00:00Z`);
+
+const INTERVAL_MS_OF: Record<string, number> = { min: MINUTE, h: HOUR, day: 24 * HOUR, week: 7 * 24 * HOUR };
+const intervalMs = (interval: string): number => {
+  const m = /^(\d+)(min|h|day|week)$/.exec(interval);
+  return m ? Number(m[1]) * INTERVAL_MS_OF[m[2]] : 0;
+};
+
+/**
+ * Sempre em UTC (09/11/2026): sem `timezone=UTC` o forex e o ouro vem no fuso do
+ * provedor (11h a frente em novembro) e o `meta` nem traz `exchange_timezone`
+ * para perceber. Exportada para o teste provar a URL.
  */
 export function twelveDataUrl(req: TwelveDataRequest, key: string): string {
   const symbol = `${req.pair.slice(0, 3)}/${req.pair.slice(3)}`;
@@ -436,13 +476,13 @@ export function twelveDataUrl(req: TwelveDataRequest, key: string): string {
     );
   }
   return (
-    `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${req.interval}` +
-    `${req.timezoneUtc ? '&timezone=UTC' : ''}&outputsize=${req.outputsize}&apikey=${key}`
+    `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${req.interval}&timezone=UTC` +
+    `&outputsize=${req.outputsize}&apikey=${key}`
   );
 }
 
 const cacheKeyOf = (req: TwelveDataRequest) =>
-  req.window ? null : `td:cache:${req.pair}:${req.interval}:${req.outputsize}:${req.timezoneUtc ? 'utc' : 'exchange'}`;
+  req.window ? null : `td:cache:${req.pair}:${req.interval}:${req.outputsize}:utc`;
 
 export async function twelveDataTimeSeries(req: TwelveDataRequest): Promise<TwelveDataResult> {
   const key = twelveDataApiKey();
@@ -475,7 +515,7 @@ export async function twelveDataTimeSeries(req: TwelveDataRequest): Promise<Twel
   }
   if (denied) return { ok: false, reason: denied };
 
-  type Body = { status?: string; code?: number; message?: string; values?: TwelveDataValue[]; meta?: { exchange_timezone?: string } };
+  type Body = { status?: string; code?: number; message?: string; values?: TwelveDataValue[] };
   let series: TwelveDataSeries;
   try {
     const res = await fetch(twelveDataUrl(req, key), {
@@ -496,7 +536,13 @@ export async function twelveDataTimeSeries(req: TwelveDataRequest): Promise<Twel
       return { ok: false, reason: 'quota_exhausted' };
     }
     if (!res.ok || !body || !Array.isArray(body.values)) return { ok: false, reason: 'error' };
-    series = { values: body.values, exchangeTimezone: body.meta?.exchange_timezone ?? null, fetchedAt: clock().getTime() };
+    // Vela no futuro = horario errado: descarta a resposta inteira, nunca grava nem usa.
+    const newest = body.values.reduce((max, v) => Math.max(max, twelveDataOpenMs(v.datetime) || 0), 0);
+    if (newest > clock().getTime() + intervalMs(req.interval)) {
+      console.warn(`[twelvedata] Resposta descartada: vela no futuro pair=${req.pair} interval=${req.interval} newest=${new Date(newest).toISOString()}`);
+      return { ok: false, reason: 'error' };
+    }
+    series = { values: body.values, fetchedAt: clock().getTime() };
   } catch {
     return { ok: false, reason: 'error' };
   }

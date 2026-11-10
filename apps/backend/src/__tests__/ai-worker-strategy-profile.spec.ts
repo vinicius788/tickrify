@@ -359,8 +359,11 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     const { OpenAiVisionModel } = jest.requireActual('../modules/ai/vision-model');
     const { AiService } = jest.requireActual('../modules/ai/ai.service');
     const adapter = new RealAdapter();
-    const raw = { is_financial_chart: true, signalState: 'NO_TRADE', watchPlan: null, recommendation: 'HOLD', confidence: 40, analysis: {
-      symbol: 'BTCUSDT', timeframe: '1h', currentPrice: 100, entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null,
+    // O modelo pede WATCH e a invalidacao fica longe de qualquer swing: o validador recusa.
+    const watchPlan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 98, zoneHigh: 99, invalidation: 80, target1: 110, target2: null, validForCandles: 12, trigger: 'Reaction at 98.' };
+    // Ativo sem faixa de preco conhecida: o preco 100 nao passa pela correcao de ordem de grandeza.
+    const raw = { is_financial_chart: true, signalState: 'WATCH', watchPlan, recommendation: 'HOLD', confidence: 40, analysis: {
+      symbol: 'ABCUSDT', timeframe: '1h', currentPrice: 100, entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null,
       factorsPresent: 2, trendStrength: 'weak', marketStructure: { bias: 'neutral' },
     } };
     const create = jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(raw) } }] });
@@ -396,6 +399,8 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
         id: 'analysis-level-map', ...JSON.parse(JSON.stringify(stored)), createdAt: new Date(), updatedAt: new Date(),
       });
       expect(delivered.fullResponse.levelMap).toEqual(stored.result.levelMap);
+      expect(stored.result.aiLevel).toMatchObject({ price: 99 });
+      expect(delivered.fullResponse.aiLevel).toEqual(stored.result.aiLevel);
     } finally {
       if (oldEnrichment === undefined) delete process.env.ENABLE_MARKET_ENRICHMENT;
       else process.env.ENABLE_MARKET_ENRICHMENT = oldEnrichment;
@@ -541,6 +546,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       engineMeta: { validatorAction: 'downgraded', validatorReasons: ['stop_inside_invalidation'], groundingMs: 5, modelMs: 900, parseMs: 2, validationMs: 1 },
     });
 
+    process.env.PROMPT_VARIANT_B_PERCENT = '100';
     await processAnalysis(makeJob({
       analysisId: 'analysis-validator', imageUrl: 'https://example.com/chart.png',
       analysisType: 'quick', userId: 'user-1', isDemo: false,
@@ -552,7 +558,9 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     );
     expect(completed).toBeDefined();
     expect(completed[0].data.recommendation).toBe('WAIT');
+    delete process.env.PROMPT_VARIANT_B_PERCENT;
     const engine = JSON.parse(JSON.stringify(completed[0].data.result)).engine;
+    expect(engine.prompt_variant).toBe('B');
     expect(engine).toMatchObject({
       version: '4.0.0',
       data_mode: 'print',

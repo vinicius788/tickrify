@@ -1,6 +1,7 @@
 import { logObservation, rawObservation, safeObserve } from '../../common/utils/analysis-observation';
 import { presentAnalysis } from '../../common/utils/analysis-presentation';
 import { flagBool } from '../../common/flags/feature-flags';
+import { buildPriorPlanBlock, continuationOf, readContinuationStatus, sameAsset, type PriorPlan, type SetupContinuation } from './setup-continuation';
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -39,7 +40,7 @@ import {
   type TriggerType,
   type WatchPlan,
 } from '../../common/utils/plan-engine';
-import { buildLevelMap } from '../../common/utils/level-map';
+import { aiLevelOf, buildLevelMap } from '../../common/utils/level-map';
 import { OUTPUT_LANGUAGE_NAMES, splitUserContextClose } from '../prompt/prompt-builder.service';
 import { computeCost, formatCostLog } from './model-cost';
 import {
@@ -1191,6 +1192,22 @@ export function eurUsdContextLine(usd: { eurusd: number; changePct: number }): s
   return `EUR/USD ${usd.eurusd.toFixed(4)}, ${move} ${Math.abs(usd.changePct).toFixed(2)}% in 7 days: ${dollar}`;
 }
 
+
+/**
+ * Leitura do ativo no print (09/11/2026, medido nas 51 analises do v11: p50 4,1 s,
+ * p90 5,6 s, 4 estouraram o teto antigo de 12 a 15 s). O teto da etapa inteira
+ * cobre a leitura mais a busca das velas. Nada aqui entra no AI_ANALYZE_TIMEOUT_MS.
+ */
+const SYMBOL_READ_TIMEOUT_MS = 20_000;
+const GROUNDING_TIMEOUT_MS = 25_000;
+
+class SymbolReadTimeout extends Error {}
+
+/** Analise sem velas: grava o motivo, para a tela e a aba Motor. */
+function noCandleStats(coverage: CandleCoverage): GroundingStats {
+  return { v: 1, symbol: '', interval: null, coverage, numbers: null };
+}
+
 @Injectable()
 export class AIAdapter {
   /** Toda chamada a modelo passa SO por aqui (ver vision-model.ts). */
@@ -1459,6 +1476,7 @@ export class AIAdapter {
   private async extractSymbol(
     imageUrl: string,
   ): Promise<{ symbol: string; timeframe: string; lastPrice: number | null } | null> {
+    const started = Date.now();
     try {
       // O print do usuario mora no Storage PRIVADO: a OpenAI nao abre a URL crua.
       // Sem isto a leitura falhava calada e nenhuma analise logada recebia os
@@ -1479,7 +1497,7 @@ export class AIAdapter {
         // Raciocinio conta dentro do teto: 80 tokens nao bastam para o luna.
         maxTokens: 2000,
         sampling: { temperature: 0 },
-        timeoutMs: 12_000,
+        timeoutMs: SYMBOL_READ_TIMEOUT_MS,
       });
       const txt = result.content;
       const parsed = JSON.parse(txt || '{}');
@@ -1491,8 +1509,26 @@ export class AIAdapter {
       const rawPrice = Number(parsed.lastPrice);
       const lastPrice = Number.isFinite(rawPrice) && rawPrice > 0 ? rawPrice : null;
       return symbol ? { symbol, timeframe, lastPrice } : null;
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && /timed out/i.test(error.message)) {
+        const ms = Date.now() - started;
+        this.logger.warn(`[grounding] extractSymbol timeout ms=${ms}`);
+        throw new SymbolReadTimeout();
+      }
       return null;
+    }
+  }
+
+  /** Leitura do ativo para as velas: o motivo da falha vai para a cobertura. */
+  private async readSymbolForCandles(imageUrl: string): Promise<
+    | { extracted: { symbol: string; timeframe: string; lastPrice: number | null }; failure: null }
+    | { extracted: null; failure: 'symbol_timeout' | 'symbol_unreadable' }
+  > {
+    try {
+      const extracted = await this.extractSymbol(imageUrl);
+      return extracted ? { extracted, failure: null } : { extracted: null, failure: 'symbol_unreadable' };
+    } catch (error) {
+      return { extracted: null, failure: error instanceof SymbolReadTimeout ? 'symbol_timeout' : 'symbol_unreadable' };
     }
   }
 
@@ -1645,10 +1681,10 @@ export class AIAdapter {
     candles: CandleCoverage;
     stats: GroundingStats | null;
   }> {
-    const extracted = await this.extractSymbol(imageUrl);
+    const { extracted, failure } = await this.readSymbolForCandles(imageUrl);
     if (!extracted) return {
       block: null, assetClass: 'unknown', marketContext: 'unavailable', calendar: 'symbol_unreadable',
-      candles: 'symbol_unreadable', stats: null,
+      candles: failure, stats: noCandleStats(failure),
     };
 
     // Deep com os MESMOS candles reais do quick (26/10/2026); antes so tinha contexto.
@@ -1821,9 +1857,9 @@ export class AIAdapter {
     assetClass: CoverageAssetClass;
     stats: GroundingStats | null;
   }> {
-    const extracted = await this.extractSymbol(imageUrl);
+    const { extracted, failure } = await this.readSymbolForCandles(imageUrl);
     if (!extracted) return {
-      block: null, candles: 'symbol_unreadable', marketContext: 'unavailable', assetClass: 'unknown', stats: null,
+      block: null, candles: failure, marketContext: 'unavailable', assetClass: 'unknown', stats: noCandleStats(failure),
     };
     const { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats } =
       await this.buildCandleBlocks(extracted);
@@ -1917,8 +1953,11 @@ export class AIAdapter {
     analysisType: AnalysisType = 'quick',
     extraImageUrls: string[] = [],
     strategyProfile?: StrategyProfile | null,
-    /** compareProviders: so quem grava a comparacao pede (worker e caminho sincrono; a demo nao). */
-    options: { compareProviders?: boolean } = {},
+    /**
+     * compareProviders: so quem grava a comparacao pede (worker e caminho sincrono; a demo nao).
+     * priorPlan: plano anterior do setup (setup-continuation.ts); so entra se o ativo lido for o mesmo.
+     */
+    options: { compareProviders?: boolean; priorPlan?: PriorPlan | null } = {},
   ): Promise<AIAnalysisResponse> {
     try {
       const userContent = await this.buildUserContent(imageUrl, extraImageUrls);
@@ -1944,7 +1983,7 @@ export class AIAdapter {
         try {
           const enrichment = await withTimeout(
             this.buildMarketEnrichment(imageUrl),
-            18_000,
+            GROUNDING_TIMEOUT_MS,
             'market enrichment timed out',
           );
           coverage.assetClass = enrichment.assetClass;
@@ -1960,15 +1999,16 @@ export class AIAdapter {
             ? 'timeout' : 'error';
           coverage.marketContext = failure;
           coverage.calendar = failure;
+          groundingStats = noCandleStats(failure);
           // graceful: mantém o prompt original
         }
       } else if (this.groundingEnabled) {
         // Grounding do QUICK: +1 leitura do simbolo (extractSymbol, ~US$0,0005)
-        // e alguns segundos, com teto de 15s. Falha → segue sem o bloco.
+        // e alguns segundos, com teto de GROUNDING_TIMEOUT_MS. Falha → segue sem o bloco.
         try {
           const grounding = await withTimeout(
             this.buildQuickGrounding(imageUrl),
-            15_000,
+            GROUNDING_TIMEOUT_MS,
             'quick grounding timed out',
           );
           coverage.candles = grounding.candles;
@@ -1983,6 +2023,7 @@ export class AIAdapter {
             ? 'timeout' : 'error';
           coverage.candles = failure;
           coverage.marketContext = failure;
+          groundingStats = noCandleStats(failure);
           // graceful: mantém o prompt original
         }
       }
@@ -2006,6 +2047,8 @@ export class AIAdapter {
       if (strategyProfile) {
         context.push(buildStrategyBlock(strategyProfile));
       }
+      const priorPlan = options.priorPlan && sameAsset(options.priorPlan.symbol, groundingStats?.symbol) ? options.priorPlan : null;
+      if (priorPlan) context.push(buildPriorPlanBlock(priorPlan));
       // REAL DATA e perfil entram DENTRO do <user_context> do v10, depois da
       // parte fixa (o cache de prompt do provedor pega o prefixo inteiro).
       const { instructions, close: userContextClose } = splitUserContextClose(prompt);
@@ -2318,6 +2361,13 @@ export class AIAdapter {
             rangePosPct: numbers.rangePosPct,
           }
         : null;
+      // A linha do status sai do texto antes de qualquer decisao ou exibicao.
+      let continuation: SetupContinuation | null = null;
+      if (priorPlan) {
+        const read = readContinuationStatus(parsed.analysis?.executiveSummary);
+        if (parsed.analysis && typeof read.text === 'string') parsed.analysis.executiveSummary = read.text;
+        continuation = continuationOf(priorPlan, read.status);
+      }
       const modelState =
         parsed.signalState ??
         deriveSignalState(rawRecommendation, parsed.analysis?.entryType, parsed.analysis?.alternativeScenario);
@@ -2375,7 +2425,9 @@ export class AIAdapter {
         watchLevels: decision.watchLevels,
         // NO_TRADE com velas reais: os dois lados do preco, pelo codigo (level-map.ts).
         levelMap: decision.state === 'NO_TRADE' && decision.dataMode === 'real_data' ? buildLevelMap(decision.location, numbers) : null,
+        aiLevel: aiLevelOf(parsed.watchPlan, decision),
         validatorNotes: decision.validatorNotes,
+        ...(continuation ? { continuation } : {}),
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);
       logObservation(observation, m => this.logger.log(m));

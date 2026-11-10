@@ -27,7 +27,7 @@ import { AIAdapter, AIAnalysisError } from './ai.adapter';
 import { resolveModel } from './openai-params';
 import { recordProviderComparison } from './vision-model';
 import { UploadedFile } from '../../common/interfaces/multer';
-import { buildAnalysisPrompt } from '../prompt/prompt-builder.service';
+import { buildAnalysisPrompt, promptVariantForUser } from '../prompt/prompt-builder.service';
 import {
   buildPersistedAnalysisPayload,
   normalizeStoredAnalysis,
@@ -63,7 +63,9 @@ import {
 } from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
 import { SetupsService, recordSetupVersion } from './setups.service';
-import { loadWatchContexts, watchSummaryOf } from './watch-pending';
+import { createWatchAlert } from './setup-alerts.service';
+import { loadPriorPlan } from './setup-continuation';
+import { loadWatchContexts, storedWatchPlan, watchSummaryOf } from './watch-pending';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from './analysis-data-coverage';
 import { tp1RFromDetail } from '../mail/analysis-result-email';
 import { TRADE_EMOTIONS, TRADE_MISTAKES, TRADE_NOTE_MAX, TRADE_SETUPS } from './dto/set-trade-note.dto';
@@ -1227,24 +1229,28 @@ export class AiService implements OnModuleInit {
 
       const tPrompt = Date.now();
       // Mesmo montador do worker (prompt-builder.service.ts).
-      const prompt = buildAnalysisPrompt({ userLanguage, analysisType });
+      const promptVariant = promptVariantForUser(userId);
+      const prompt = buildAnalysisPrompt({ userLanguage, analysisType }, promptVariant);
       const promptMs = Date.now() - tPrompt;
+      const priorPlan = await loadPriorPlan(this.prisma, { analysisId, userId, setupId }, (m) => this.logger.warn(m));
       const aiResponse = await this.aiAdapter.analyzeImage(
         imageUrl,
         prompt,
         analysisType,
         htfImageUrls ?? [],
         strategyProfile,
-        { compareProviders: true },
+        { compareProviders: true, ...(priorPlan ? { priorPlan } : {}) },
       );
 
       // Contrato v2 + validador + tempos (mesmo bloco do worker; sem fila aqui).
       const meta = aiResponse.engineMeta;
       const analysisFields = (aiResponse.analysis ?? {}) as Record<string, unknown>;
       const engine = buildEngineRecord({
+        promptVariant,
         provider: meta?.provider ?? null,
         signalState: aiResponse.signalState,
         dataMode: aiResponse.dataMode === 'real_data' ? 'real_data' : 'print',
+        continuation: Boolean(aiResponse.continuation),
         contract: {
           recommendation: aiResponse.recommendation,
           confidencePct: aiResponse.confidence,
@@ -1336,6 +1342,12 @@ export class AiService implements OnModuleInit {
           (message) => this.logger.warn(message),
         );
       }
+      // WATCH vira alerta no nivel do plano (mesma chamada do worker). Nunca lanca.
+      await createWatchAlert(
+        this.prisma,
+        { analysisId, userId, result: normalizedPayload.fullResponse, recommendation: normalizedPayload.recommendation },
+        (message) => this.logger.log(message),
+      );
 
       const model = resolveModel(analysisType);
       await runPostHooks(pipelineCtx, aiResponse, [
@@ -1892,6 +1904,10 @@ export class AiService implements OnModuleInit {
       analysis.errorMessage || normalized.reasoning,
     );
     const outcomeData = await this.getOutcomeById(analysis.id);
+    // Consulta extra so no WATCH com plano: a tela mostra ate quando ele vale.
+    const watchContexts = storedWatchPlan(normalized.fullResponse, normalized.recommendation)
+      ? await loadWatchContexts(this.prisma, [analysis.id])
+      : null;
 
     const response = {
       id: analysis.id,
@@ -1928,6 +1944,7 @@ export class AiService implements OnModuleInit {
       errorMessage: analysis.errorMessage || null,
       errorDetails: validationMessages(storedPayload?.displayMessages),
       errorCode: analysisFailureCodeForResponse(analysis.status, analysis.errorCode),
+      watch: watchContexts ? watchSummaryOf(normalized.fullResponse, normalized.recommendation, analysis.createdAt, watchContexts.get(analysis.id)) : null,
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
     };

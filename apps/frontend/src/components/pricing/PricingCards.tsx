@@ -7,7 +7,7 @@ import { getReferralCoupon, isAffiliateCode, saveReferralCoupon } from "../../li
 import { track } from "../../lib/analytics";
 import { useToast } from "../../hooks/use-toast";
 import { firstMonthPrice, useFounderOffer, useFoundingOffer } from "@/hooks/useFoundingOffer";
-import { interpolate, LOCALES, formatNumber, type Language, type Translations } from "@/lib/i18n";
+import { interpolate, LOCALES, formatNumber, formatUsd, type Language, type Translations } from "@/lib/i18n";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
   FOUNDER_CODE_PATTERN,
@@ -444,7 +444,7 @@ export function PricingCards() {
             : billingCycle === "monthly" ? copy.monthlyRenewal : weeklyCopy.note;
           const perCycle =
             billingCycle === "weekly" ? copy.perWeek : billingCycle === "monthly" ? copy.perMonth : copy.perYear;
-          const price = `$${formatNumber(Number(plan.prices[billingCycle][currency].slice(1)), language, { maximumFractionDigits: 2 })}`;
+          const price = formatUsd(Number(plan.prices[billingCycle][currency].slice(1)), language);
           // EARLY35 so no mensal (regra 4.0): semanal e anual nunca riscam o preco.
           const monthlyOffer = billingCycle === "monthly" ? offerPrice : null;
           return (

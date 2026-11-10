@@ -12,6 +12,15 @@ describe('AnalysisEvidencePanel', () => {
   beforeEach(() => window.localStorage.clear());
   afterEach(cleanup);
 
+  it('says the chart read timed out when that is why candles are missing', () => {
+    show({
+      version: 1, additionalChartsDelivered: 0,
+      candleFeedAttached: false, candleFailure: 'read_timeout', marketContextAttached: false,
+      calendar: 'not_attached',
+    });
+    expect(within(screen.getByText('Current candles:').parentElement!).getByText('The chart read timed out')).toBeTruthy();
+  });
+
   it('shows only data delivered to the model and states that screenshot time is unknown', () => {
     show({
       version: 1, additionalChartsDelivered: 1,

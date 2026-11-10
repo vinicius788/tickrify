@@ -87,6 +87,51 @@ export function getScenarioMeta(bias: unknown, recommendation?: unknown) {
       : SCENARIO_META.NEUTRAL;
 }
 
+const FOREX_CODES = new Set(['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CAD', 'CHF']);
+const INDEX_SYMBOL = /^(NAS|NDX|US100|USTEC|US30|DJ|DOW|US500|SPX|SP500|GER|DE30|DE40|DAX|UK100|FTSE|FRA40|CAC|JP225|JPN225|NI225|NIKKEI|HK50|HSI|AUS200|EU50|ESTX|STOXX|IBOV|VIX|BOOM|CRASH|VOLATILITY|V\d|R_\d|STEP|WIN[A-Z]\d)/;
+
+const bareSymbol = (symbol: unknown) => String(symbol || '').split(':').pop()!.toUpperCase().replace(/[^A-Z0-9_]/g, '');
+
+/** Tamanho do pip do par de forex (0.01 no JPY, 0.0001 nos demais), com sufixo de corretora; null fora de forex. */
+export function forexPipSize(symbol: unknown): number | null {
+  const m = bareSymbol(symbol).match(/^([A-Z]{3})([A-Z]{3})([A-Z]{0,3})$/);
+  if (!m || !FOREX_CODES.has(m[1]) || !FOREX_CODES.has(m[2]) || m[3] === 'T' || m[3] === 'C') return null;
+  return m[2] === 'JPY' ? 0.01 : 0.0001;
+}
+
+export function isIndexSymbol(symbol: unknown): boolean {
+  return INDEX_SYMBOL.test(bareSymbol(symbol));
+}
+
+/** Preco na unidade do ativo: indice em pontos, forex com as casas do par, ouro, cripto e o resto com "$". */
+export function formatAssetPrice(value: number | null, symbol: unknown, locale: string): string {
+  if (value === null || !Number.isFinite(value)) return 'N/A';
+  const format = (min: number, max: number) =>
+    new Intl.NumberFormat(locale, { minimumFractionDigits: min, maximumFractionDigits: max }).format(value);
+  if (isIndexSymbol(symbol)) return format(0, 2);
+  const pip = forexPipSize(symbol);
+  if (pip !== null) return format(pip === 0.01 ? 3 : 5, pip === 0.01 ? 3 : 5);
+  if (value < 1) return `$ ${format(5, 5)}`;
+  if (value >= 500) return `$ ${format(2, 2)}`;
+  const decimals = Math.min(Math.max((value.toString().split('.')[1] ?? '').length, 4), 5);
+  return `$ ${format(decimals, decimals)}`;
+}
+
+/** Distancia entre dois precos: indice em pontos, forex em pips, o resto em preco. */
+export function formatAssetDistance(
+  distance: number,
+  symbol: unknown,
+  locale: string,
+  units: { points: string; pips: string },
+): string {
+  const n = (value: number, digits: number) => new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(value);
+  if (isIndexSymbol(symbol)) return units.points.replace('{n}', n(distance, 2));
+  const pip = forexPipSize(symbol);
+  if (pip !== null) return units.pips.replace('{n}', n(distance / pip, 1));
+  const digits = distance < 1 ? 5 : 2;
+  return `$ ${new Intl.NumberFormat(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(distance)}`;
+}
+
 export function calcStopPercent(entry: number, stop: number): number {
   if (!Number.isFinite(entry) || entry === 0 || !Number.isFinite(stop)) {
     return 0;

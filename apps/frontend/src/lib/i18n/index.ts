@@ -60,6 +60,12 @@ export function formatNumber(value: number, language: Language, options?: Intl.N
   return new Intl.NumberFormat(LOCALES[language], options).format(value);
 }
 
+/** Preco em dolar, igual em toda a tela de planos: "$29", "$18,85". Sem "US$", sem ".00". */
+export function formatUsd(value: number, language: Language): string {
+  const digits = Number.isInteger(value) ? 0 : 2;
+  return `$${formatNumber(value, language, { minimumFractionDigits: digits, maximumFractionDigits: 2, useGrouping: false })}`;
+}
+
 export function interpolate(text: string, params: Record<string, string | number>): string {
   return text.replace(/\{(\w+)\}/g, (match, key: string) => String(params[key] ?? match));
 }

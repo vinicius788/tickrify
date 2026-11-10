@@ -31,9 +31,56 @@ interface ReadModePanelProps {
 }
 
 
-export function ReadModePanel({ data, formatPrice }: ReadModePanelProps) {
+/** Preco, distancias em ATR e tendencia maior, calculados pelo codigo. */
+export function WherePriceIs({ data, formatPrice }: ReadModePanelProps) {
   const { t, language } = useLanguage();
+  const m = t.analysis.result.readMode;
+  const loc = data.location;
   const atrText = (n: number) => formatNumber(Math.round(n * 10) / 10, language, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const distanceRows = loc
+    ? ([
+        [m.invalidation, loc.invalidation],
+        [m.support, loc.support],
+        [m.resistance, loc.resistance],
+        [m.planLevel, loc.planLevel],
+      ] as const).filter(([, d]) => d !== null)
+    : [];
+
+  return (
+    <>
+      <dl className="mt-2 space-y-1 text-sm">
+        <div className="flex justify-between gap-3">
+          <dt className="text-[var(--text-secondary)]">{m.price}</dt>
+          <dd className="text-right font-terminal text-[var(--text-primary)]">
+            {formatPrice(loc?.price ?? data.currentPrice)}
+            {loc?.rangePosPct !== null && loc?.rangePosPct !== undefined && (
+              <span className="block text-[11px] text-[var(--text-secondary)]">{m.rangePosition.replace('{pct}', String(Math.round(loc.rangePosPct)))}</span>
+            )}
+          </dd>
+        </div>
+        {distanceRows.map(([label, d]) => (
+          <div key={label} className="flex justify-between gap-3">
+            <dt className="text-[var(--text-secondary)]">{label}</dt>
+            <dd className="text-right font-terminal text-[var(--text-primary)]">
+              {formatPrice(d!.price)}
+              <span className="block text-[11px] text-[var(--text-secondary)]">{m.atrAway.replace('{n}', atrText(d!.atr))}</span>
+            </dd>
+          </div>
+        ))}
+        {loc?.htfTrend && (
+          <div className="flex justify-between gap-3">
+            <dt className="text-[var(--text-secondary)]">{m.htfTrend}</dt>
+            <dd className="font-terminal text-[var(--text-primary)]">{m.htf[loc.htfTrend]}</dd>
+          </div>
+        )}
+      </dl>
+      {!loc && data.dataMode === 'print' && <p data-testid="read-mode-estimated" className="mt-2 text-xs text-[var(--text-secondary)]">{t.analysis.result.levelsEstimated}</p>}
+    </>
+  );
+}
+
+export function ReadModePanel({ data, formatPrice }: ReadModePanelProps) {
+  const { t } = useLanguage();
   const m = t.analysis.result.readMode;
   const a = t.analysis;
   const loc = data.location;
@@ -44,15 +91,6 @@ export function ReadModePanel({ data, formatPrice }: ReadModePanelProps) {
   // Direcao do plano; sem plano, a dos niveis (entrada acima do stop = compra).
   const { entry, stopLoss } = data.levels;
   const actionSide = entrySide(plan, null) ?? (entry !== null && stopLoss !== null && entry !== stopLoss ? (entry > stopLoss ? 'buy' : 'sell') : null);
-
-  const distanceRows = loc
-    ? ([
-        [m.invalidation, loc.invalidation],
-        [m.support, loc.support],
-        [m.resistance, loc.resistance],
-        [m.planLevel, loc.planLevel],
-      ] as const).filter(([, d]) => d !== null)
-    : [];
 
   const invalidLine = invalidation !== null
     ? (long ? m.invalidBelow : m.invalidAbove).replace('{price}', formatPrice(invalidation))
@@ -70,33 +108,7 @@ export function ReadModePanel({ data, formatPrice }: ReadModePanelProps) {
 
       <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-4">
         <h4 className="font-terminal text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">{m.whereTitle}</h4>
-        <dl className="mt-2 space-y-1 text-sm">
-          <div className="flex justify-between gap-3">
-            <dt className="text-[var(--text-secondary)]">{m.price}</dt>
-            <dd className="text-right font-terminal text-[var(--text-primary)]">
-              {formatPrice(loc?.price ?? data.currentPrice)}
-              {loc?.rangePosPct !== null && loc?.rangePosPct !== undefined && (
-                <span className="block text-[11px] text-[var(--text-secondary)]">{m.rangePosition.replace('{pct}', String(Math.round(loc.rangePosPct)))}</span>
-              )}
-            </dd>
-          </div>
-          {distanceRows.map(([label, d]) => (
-            <div key={label} className="flex justify-between gap-3">
-              <dt className="text-[var(--text-secondary)]">{label}</dt>
-              <dd className="text-right font-terminal text-[var(--text-primary)]">
-                {formatPrice(d!.price)}
-                <span className="block text-[11px] text-[var(--text-secondary)]">{m.atrAway.replace('{n}', atrText(d!.atr))}</span>
-              </dd>
-            </div>
-          ))}
-          {loc?.htfTrend && (
-            <div className="flex justify-between gap-3">
-              <dt className="text-[var(--text-secondary)]">{m.htfTrend}</dt>
-              <dd className="font-terminal text-[var(--text-primary)]">{m.htf[loc.htfTrend]}</dd>
-            </div>
-          )}
-        </dl>
-        {!loc && data.dataMode === 'print' && <p data-testid="read-mode-estimated" className="mt-2 text-xs text-[var(--text-secondary)]">{t.analysis.result.levelsEstimated}</p>}
+        <WherePriceIs data={data} formatPrice={formatPrice} />
       </section>
 
       <section className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-overlay)] p-4">

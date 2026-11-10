@@ -50,8 +50,8 @@ export interface SetupVersion {
 }
 
 /**
- * Alertas de nivel (27/10/2026): o servidor vigia o nivel em candles reais de
- * 5m e marca o alerta quando o preco chega la (e-mail atras da chave
+ * Alertas de nivel (27/10/2026): o servidor vigia o nivel em candles reais
+ * (1m em cripto, 5m em forex e ouro) e marca o alerta quando o preco chega la (e-mail atras da chave
  * EMAIL_SETUP_ALERTS). Criar um alerta segue o setup no mesmo clique.
  */
 export type AlertLabel = 'entry' | 'stop' | 'tp1' | 'invalidation' | 'custom';
@@ -72,6 +72,22 @@ export interface SetupAlert {
   seenAt: string | null;
   lastPrice: number | null;
   checkedAt: string | null;
+  /** Intervalo em vigor no servidor; null = ainda nao checado ou mercado fechado. */
+  checkIntervalMs?: number | null;
+  marketClosed?: boolean;
+}
+
+export interface WatchingItem {
+  analysisId: string;
+  symbol: string | null;
+  timeframe: string | null;
+  createdAt: string;
+  watch: WatchSummary;
+  lastPrice: number | null;
+  checkedAt: string | null;
+  checkIntervalMs: number | null;
+  marketClosed: boolean;
+  alert: { id: string; setupId: string; status: SetupAlert['status']; triggeredAt: string | null; seenAt: string | null } | null;
 }
 
 export interface SetupAlertList {
@@ -91,6 +107,10 @@ export interface SetupAlertOptions {
   suggestions: Array<{ label: Exclude<AlertLabel, 'custom'>; level: number }>;
   setupId: string | null;
   alerts: SetupAlert[];
+  /** WATCH com alerta valendo no nivel do plano. */
+  watchAlert?: SetupAlert | null;
+  /** WATCH recem-concluido: o servidor ainda vai gravar o alerta automatico. */
+  autoAlertPending?: boolean;
   limits: { perSetup: number; maxSetups: number; setupsUsed: number };
   emailEnabled: boolean;
 }
@@ -191,7 +211,7 @@ export function useSetupActions() {
   return { follow, setStatus };
 }
 
-export function useSetupAlerts(enabled: boolean, setupId: string | null = null) {
+export function useSetupAlerts(enabled: boolean, setupId: string | null = null, options: { background?: boolean } = {}) {
   const token = useToken();
   return useQuery({
     queryKey: ['setups', 'alerts', setupId],
@@ -203,8 +223,39 @@ export function useSetupAlerts(enabled: boolean, setupId: string | null = null) 
       ),
     enabled,
     staleTime: 60_000,
-    // O monitor roda a cada 10 min: 5 min com a aba aberta basta.
-    refetchInterval: 5 * 60_000,
+    // O monitor roda a cada minuto: so vale reler rapido com nivel sendo vigiado.
+    refetchInterval: (query) => (query.state.data?.items?.some((a) => a.status === 'active') ? 60_000 : 5 * 60_000),
+    // So o painel pede: o "(N)" do titulo existe para chamar quem esta em outra aba.
+    refetchIntervalInBackground: options.background ?? false,
+    refetchOnWindowFocus: true,
+    retry: false,
+  });
+}
+
+/**
+ * "(1) Dashboard | Tickrify": alerta disparado e ainda nao aberto. `routeKey`
+ * muda sempre que o `useSeo` regrava o titulo (area ou endereco), senao o
+ * numero some ao passar de uma analise para outra.
+ */
+export function useAlertTabTitle(unseen: number, routeKey: string) {
+  useEffect(() => {
+    if (unseen <= 0) return;
+    document.title = `(${unseen}) ${document.title.replace(/^\(\d+\) /, '')}`;
+    return () => {
+      document.title = document.title.replace(/^\(\d+\) /, '');
+    };
+  }, [unseen, routeKey]);
+}
+
+/** WATCH valendo e encerrados ha ate 7 dias: secao "Watching" do My Trades e do Diario. */
+export function useWatching(enabled: boolean) {
+  const token = useToken();
+  return useQuery({
+    queryKey: ['setups', 'watching'],
+    queryFn: async () => send<{ items: WatchingItem[] }>('/api/setups/watching', { method: 'GET' }, await token()),
+    enabled,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     retry: false,
@@ -221,6 +272,7 @@ export function useAlertOptions(analysisId: string | null) {
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     retry: false,
+    refetchInterval: (query) => (query.state.data?.autoAlertPending ? 2_000 : false),
   });
 }
 
@@ -272,6 +324,17 @@ export function formatSetupDay(iso: string, locale: string): string {
 /** Data e hora da versao: o rotulo honesto e sempre "Analysis from <isto>". */
 export function formatSetupMoment(iso: string, locale: string): string {
   return new Date(iso).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/** "Checked every 5 minutes": o intervalo real do servidor. null = nao ha o que afirmar. */
+export function checkFrequencyText(
+  a: { everyMinute: string; everyMinutes: string; marketClosed: string },
+  check: { checkIntervalMs?: number | null; marketClosed?: boolean } | undefined,
+): string | null {
+  if (check?.marketClosed) return a.marketClosed;
+  if (!check?.checkIntervalMs) return null;
+  const minutes = Math.round(check.checkIntervalMs / 60_000);
+  return minutes <= 1 ? a.everyMinute : a.everyMinutes.replace('{n}', String(minutes));
 }
 
 /** "2 days ago", "today" etc., no idioma da tela. */

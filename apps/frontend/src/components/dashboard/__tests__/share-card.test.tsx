@@ -28,7 +28,7 @@ import {
 const getTrade = vi.fn<(id: string) => Promise<TradeView>>();
 let analyses: AIAnalysisResponse[] = [];
 
-vi.mock('@clerk/clerk-react', () => ({ useUser: () => ({ user: { id: 'user_1' } }) }));
+vi.mock('@clerk/clerk-react', () => ({ useUser: () => ({ user: { id: 'user_1' } }), useAuth: () => ({ getToken: vi.fn() }) }));
 vi.mock('@/hooks/useAnalyses', () => ({
   useAnalyses: () => ({ analyses, loading: false, hasMore: false, loadingMore: false, loadMore: vi.fn(), refetch: vi.fn() }),
 }));

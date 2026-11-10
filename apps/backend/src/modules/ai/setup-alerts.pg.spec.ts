@@ -2,14 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { SetupsService } from './setups.service';
-import { ALERT_RULES, SetupAlertsService, runAlertMonitor } from './setup-alerts.service';
+import { ALERT_RULES, SetupAlertsService, createWatchAlert, runAlertMonitor } from './setup-alerts.service';
 import { runSetupAlertEmailSweep } from '../mail/setup-alert-email';
 import type { Candle } from '../market/candles';
+import { __setTwelveDataForTests } from '../market/twelve-data';
+import { recentCandles, registerCandleStore } from '../market/candle-store';
 
 jest.mock('../market/candles', () => ({
   ...jest.requireActual('../market/candles'),
   // Sem preco de mercado por padrao: a criacao cai no preco da analise.
-  fetchWindowFor: jest.fn(async () => null),
+  fetchCrypto1m: jest.fn(async () => null),
 }));
 jest.mock('../../common/analytics/posthog', () => ({
   ...jest.requireActual('../../common/analytics/posthog'),
@@ -164,18 +166,18 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
     const now = new Date(created + 30 * 60 * 1000);
     const firstCandle = Math.ceil(created / M5) * M5;
     const candles: Candle[] = [[firstCandle - M5, 100, 120, 99, 101], [firstCandle + M5, 101, 111, 100, 109]];
-    const fetchWindow = jest.fn(async () => candles);
-    const run = () => runAlertMonitor({ prisma, now: () => now, fetchWindow, log: () => undefined });
+    const fetchCrypto = jest.fn(async () => candles);
+    const run = () => runAlertMonitor({ prisma, now: () => now, fetchCrypto, log: () => undefined });
     const [a, b] = await Promise.all([run(), run()]);
-    expect(fetchWindow).toHaveBeenCalledTimes(1);
+    expect(fetchCrypto).toHaveBeenCalledTimes(1);
     expect(a.triggered + b.triggered).toBe(1);
     const [row] = await prisma.$queryRawUnsafe('SELECT "status", "triggerPrice", "triggeredAt" FROM tickrify."SetupAlert" WHERE "id" = $1', alert.id);
     // O candle anterior a criacao foi a 120 e nao conta: o disparo e o seguinte.
     expect(row).toMatchObject({ status: 'triggered', triggerPrice: 111 });
     expect(new Date(row.triggeredAt).getTime()).toBe(firstCandle + M5);
     // Dentro do TTL o ativo nao e buscado de novo.
-    await runAlertMonitor({ prisma, now: () => new Date(now.getTime() + 60_000), fetchWindow, log: () => undefined });
-    expect(fetchWindow).toHaveBeenCalledTimes(1);
+    await runAlertMonitor({ prisma, now: () => new Date(now.getTime() + 30_000), fetchCrypto, log: () => undefined });
+    expect(fetchCrypto).toHaveBeenCalledTimes(1);
     const [check] = await prisma.$queryRawUnsafe('SELECT "lastPrice" FROM tickrify."AlertPriceCheck" WHERE "symbol" = $1', 'BTCUSDT');
     expect(check.lastPrice).toBe(109);
   });
@@ -188,9 +190,9 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
     });
     const t0 = new Date(alert.createdAt).getTime();
     const pausedAt = new Date(t0 + 2 * H);
-    const fetchWindow = jest.fn(async (): Promise<Candle[]> => [[Math.ceil(t0 / M5) * M5 + M5, 100, 115, 99, 112]]);
-    await expect(runAlertMonitor({ prisma, now: () => pausedAt, fetchWindow, log: () => undefined })).resolves.toMatchObject({ paused: 1, triggered: 0 });
-    expect(fetchWindow).not.toHaveBeenCalled();
+    const fetchCrypto = jest.fn(async (): Promise<Candle[]> => [[Math.ceil(t0 / M5) * M5 + M5, 100, 115, 99, 112]]);
+    await expect(runAlertMonitor({ prisma, now: () => pausedAt, fetchCrypto, log: () => undefined })).resolves.toMatchObject({ paused: 1, triggered: 0 });
+    expect(fetchCrypto).not.toHaveBeenCalled();
     let [row] = await prisma.$queryRawUnsafe('SELECT "status", "watchFrom" FROM tickrify."SetupAlert" WHERE "id" = $1', alert.id);
     expect(row.status).toBe('active');
     expect(new Date(row.watchFrom).getTime()).toBe(pausedAt.getTime());
@@ -198,9 +200,34 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
     await prisma.$executeRawUnsafe(`INSERT INTO tickrify."Subscription" ("id","userId","stripeId","status","updatedAt") VALUES ($1,$2,$3,'active',NOW())`, randomUUID(), u, `sub_${u}`);
     const later = new Date(pausedAt.getTime() + 20 * 60 * 1000);
     // O candle de 115 e de ANTES da pausa: nao dispara na volta.
-    await expect(runAlertMonitor({ prisma, now: () => later, fetchWindow, log: () => undefined })).resolves.toMatchObject({ triggered: 0 });
+    await expect(runAlertMonitor({ prisma, now: () => later, fetchCrypto, log: () => undefined })).resolves.toMatchObject({ triggered: 0 });
     [row] = await prisma.$queryRawUnsafe('SELECT "status" FROM tickrify."SetupAlert" WHERE "id" = $1', alert.id);
     expect(row.status).toBe('active');
+  });
+
+  it('armazem de velas: a busca do Twelve Data apaga o que foi gravado no fuso errado', async () => {
+    const NOW = new Date('2026-11-09T11:46:00Z');
+    const LAST = Date.parse('2026-11-09T11:45:00Z');
+    __setTwelveDataForTests({ now: () => NOW });
+    await registerCandleStore(prisma, () => undefined);
+    // Linhas antigas: 11h a frente, e uma no meio do fim de semana.
+    const stale = [LAST + 11 * H, LAST + 2 * M5 + 7 * H, Date.parse('2026-11-07T09:00:00Z')];
+    for (const t of stale) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO tickrify."MarketCandle" ("symbol","timeframe","openTime","open","high","low","close","source") VALUES ('XAUUSD','5m',$1::timestamp(3),1,2,0,1,'twelvedata')`,
+        new Date(t).toISOString(),
+      );
+    }
+    const stamp = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace('T', ' ');
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({ values: Array.from({ length: 40 }, (_, i) => ({ datetime: stamp(LAST - i * M5), open: '4105', high: '4110', low: '4100', close: '4108' })) }),
+    } as any);
+    const got = await recentCandles('XAUUSD', '5m', 'analysis', NOW.getTime());
+    fetchSpy.mockRestore();
+    expect(got.candles).toHaveLength(40);
+    const rows = await prisma.$queryRawUnsafe(`SELECT MIN("openTime") AS "min", MAX("openTime") AS "max", COUNT(*)::int AS "n" FROM tickrify."MarketCandle" WHERE "symbol" = 'XAUUSD'`);
+    expect(rows[0]).toEqual({ min: new Date(LAST - 39 * M5), max: new Date(LAST), n: 40 });
   });
 
   it('largar o setup cancela os alertas e o monitor nao olha mais', async () => {
@@ -209,6 +236,112 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
     await alerts.cancelForSetup(u, setupId);
     const [row] = await prisma.$queryRawUnsafe('SELECT "status" FROM tickrify."SetupAlert" WHERE "id" = $1', alert.id);
     expect(row.status).toBe('cancelled');
+  });
+
+  describe('alerta automatico do WATCH', () => {
+    const plan = { direction: 'short', triggerType: 'zone_reaction', zoneLow: 110, zoneHigh: 112, invalidation: 115, target1: 100, target2: null, validForCandles: 12, trigger: 'Bearish close' };
+    const result = (symbol = 'BTCUSD') => ({ signalState: 'WATCH', dataMode: 'real_data', watchPlan: plan, analysis: { symbol, timeframe: '15m', currentPrice: 100 } });
+
+    async function watch(userId: string, symbol = 'BTCUSD') {
+      const row = await prisma.analysis.create({ data: { userId, status: 'completed', recommendation: 'WAIT', result: result(symbol) } });
+      return row.id as string;
+    }
+    const run = (userId: string, analysisId: string, symbol = 'BTCUSD') =>
+      createWatchAlert(prisma, { analysisId, userId, result: result(symbol), recommendation: 'WAIT' });
+    const alertsOf = (userId: string) => prisma.$queryRawUnsafe(`SELECT "label", "level", "side", "status", "prefilled" FROM tickrify."SetupAlert" WHERE "userId" = $1`, userId);
+    const setupsOf = (userId: string) => prisma.$queryRawUnsafe(`SELECT "status" FROM tickrify."TrackedSetup" WHERE "userId" = $1`, userId);
+
+    it('grava o setup seguido e o alerta entry; repetir nao duplica', async () => {
+      const u = await newUser();
+      const id = await watch(u);
+      await expect(run(u, id)).resolves.toBe('created');
+      await expect(run(u, id)).resolves.toBe('already_handled');
+      expect(await alertsOf(u)).toEqual([{ label: 'entry', level: 110, side: 'above', status: 'active', prefilled: true }]);
+      expect(await setupsOf(u)).toEqual([{ status: 'tracking' }]);
+      const [linked] = await prisma.$queryRawUnsafe(`SELECT "setupId" FROM tickrify."Analysis" WHERE "id" = $1`, id);
+      expect(linked.setupId).toEqual(expect.any(String));
+    });
+
+    it('bater no teto desfaz o seguir: nenhum setup novo sem alerta', async () => {
+      const u = await newUser();
+      for (let i = 0; i < ALERT_RULES.maxSetupsWithAlerts.free; i++) await expect(run(u, await watch(u))).resolves.toBe('created');
+      await expect(run(u, await watch(u))).resolves.toBe('limit');
+      expect(await setupsOf(u)).toHaveLength(ALERT_RULES.maxSetupsWithAlerts.free);
+      expect(await alertsOf(u)).toHaveLength(ALERT_RULES.maxSetupsWithAlerts.free);
+    });
+
+    describe('expiracao com relogio falso', () => {
+      const monitor = (now: Date) => runAlertMonitor({ prisma, now: () => now, fetchCrypto: jest.fn(async () => []), isPaused: async () => false, log: () => undefined });
+      const expiry = async (userId: string) => (await prisma.$queryRawUnsafe(`SELECT "expiresAt" FROM tickrify."SetupAlert" WHERE "userId" = $1`, userId))[0].expiresAt as Date;
+
+      it('automatico cancela quando a janela fecha e libera o teto; o feito a mao continua', async () => {
+        const u = await newUser();
+        await run(u, await watch(u));
+        await run(u, await watch(u));
+        await expect(run(u, await watch(u))).resolves.toBe('limit');
+        const when = await expiry(u);
+        await monitor(new Date(when.getTime() - 60_000));
+        expect((await alertsOf(u)).map((a: any) => a.status)).toEqual(['active', 'active']);
+        await monitor(new Date(when.getTime() + 60_000));
+        expect((await alertsOf(u)).map((a: any) => a.status)).toEqual(['cancelled', 'cancelled']);
+        await expect(run(u, await watch(u))).resolves.toBe('created');
+
+        const v = await newUser({ subscriber: true });
+        await create(v, await analysis(v), 110, true);
+        await monitor(new Date(Date.now() + 365 * 24 * H));
+        expect((await alertsOf(v)).map((a: any) => a.status)).toEqual(['active']);
+      });
+
+      it('e-mail nunca sai para alerta automatico cujo WATCH venceu', async () => {
+        const u = await newUser({ subscriber: true });
+        await run(u, await watch(u));
+        const when = await expiry(u);
+        await prisma.$executeRawUnsafe(`UPDATE tickrify."SetupAlert" SET "status" = 'triggered', "triggeredAt" = $2 WHERE "userId" = $1`, u, new Date(when.getTime() - 60_000));
+        const send = (now: Date) => {
+          const mail = { sendLifecycle: jest.fn(async () => true) };
+          return runSetupAlertEmailSweep({ prisma, mail, isEnabled: () => true, appUrl: 'https://tickrify.com', apiBaseUrl: 'https://api.test', now: () => now, capture: jest.fn(), log: () => undefined });
+        };
+        await expect(send(new Date(when.getTime() + 60_000))).resolves.toEqual({ due: 0, sent: 0 });
+        await expect(send(new Date(when.getTime() - 30_000))).resolves.toEqual({ due: 1, sent: 1 });
+      });
+    });
+
+    it('corrida: dois WATCH ao mesmo tempo nao passam do teto', async () => {
+      const u = await newUser();
+      await expect(run(u, await watch(u))).resolves.toBe('created');
+      const ids = await Promise.all([watch(u), watch(u), watch(u)]);
+      const outcomes = await Promise.all(ids.map((id) => run(u, id)));
+      expect(outcomes.filter((o) => o === 'created')).toHaveLength(1);
+      expect(outcomes.filter((o) => o === 'limit')).toHaveLength(2);
+      expect(await setupsOf(u)).toHaveLength(2);
+    });
+
+    it('descadastrado, gratis esgotado e ativo sem fonte: nada gravado', async () => {
+      const a = await newUser();
+      await prisma.adminAudit.create({ data: { action: 'email_unsubscribed', targetUserId: a } });
+      await expect(run(a, await watch(a))).resolves.toBe('unsubscribed');
+      const b = await newUser({ exhausted: true });
+      await expect(run(b, await watch(b))).resolves.toBe('free_locked');
+      const c = await newUser();
+      await expect(run(c, await watch(c, 'Volatility 75 Index'), 'Volatility 75 Index')).resolves.toBe('no_price_source');
+      for (const u of [a, b, c]) {
+        expect(await alertsOf(u)).toEqual([]);
+        expect(await setupsOf(u)).toEqual([]);
+      }
+    });
+
+    it('alerta cancelado nao volta e setup largado continua largado', async () => {
+      const u = await newUser();
+      const id = await watch(u);
+      await run(u, id);
+      const { items } = await alerts.list(u);
+      await alerts.cancel(u, items[0].id);
+      await expect(run(u, id)).resolves.toBe('already_handled');
+      await setups.setStatus({ id: u }, items[0].setupId, 'untracked');
+      await prisma.$executeRawUnsafe(`DELETE FROM tickrify."SetupAlert" WHERE "userId" = $1`, u);
+      await expect(run(u, id)).resolves.toBe('already_handled');
+      expect(await setupsOf(u)).toEqual([{ status: 'untracked' }]);
+    });
   });
 
   describe('e-mail com relogio falso', () => {

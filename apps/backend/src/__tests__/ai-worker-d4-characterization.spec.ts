@@ -43,7 +43,8 @@ jest.mock('@prisma/client', () => {
       return client;
     }
   }
-  return { PrismaClient: MockPrismaClient, Prisma: { DbNull: 'DbNull', JsonNull: 'JsonNull' } };
+  const { Prisma } = jest.requireActual('@prisma/client');
+  return { PrismaClient: MockPrismaClient, Prisma: { ...Prisma, sql: Prisma.sql, empty: Prisma.empty, join: Prisma.join, DbNull: 'DbNull', JsonNull: 'JsonNull' } };
 });
 
 jest.mock('@prisma/adapter-pg', () => ({ PrismaPg: class { constructor(..._args: unknown[]) {} } }));
@@ -58,7 +59,7 @@ jest.mock('../common/utils/ai-runtime', () => ({
   hasValidOpenAiKey: () => !(globalThis as any).__demoSource,
   canUseDemoFallback: () => Boolean((globalThis as any).__demoSource),
 }));
-jest.mock('../../worker/outcome.sweeper', () => ({ startOutcomeSweeper: jest.fn() }));
+jest.mock('../../worker/outcome.sweeper', () => ({ ...jest.requireActual('../../worker/outcome.sweeper'), startOutcomeSweeper: jest.fn() }));
 
 // Cliente OpenAI falso: o adapter real monta a requisicao e le a resposta daqui.
 jest.mock('openai', () => ({
@@ -88,6 +89,9 @@ jest.mock('../common/utils/trade-plan-validator', () => {
 import { decideSignal } from '../common/utils/signal-decision';
 import { validateTradePlan } from '../common/utils/trade-plan-validator';
 import { AIAdapter } from '../modules/ai/ai.adapter';
+import { makeRawSqlPrisma } from './raw-sql-mock';
+import { __resetFlagCacheForTests, applyFlagOverrideLocally } from '../common/flags/feature-flags';
+import { SETUP_CONTINUATION_FLAG } from '../modules/ai/setup-continuation';
 
 type Event = { impact: string; minutesUntil: number; country: string; title: string };
 
@@ -168,6 +172,7 @@ interface Scenario {
   userLanguage?: string;
   calendar?: CalendarMode;
   market?: Market;
+  setupId?: string;
 }
 
 const scenarios: Scenario[] = [
@@ -299,6 +304,7 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     const job = processor()({ id: 'job-1', data: {
       analysisId: 'analysis-d4', imageUrl: 'data:image/png;base64,AA==',
       analysisType: scenario.analysisType ?? 'quick', userLanguage: scenario.userLanguage, userId: 'user-1', isDemo: true,
+      ...(scenario.setupId ? { setupId: scenario.setupId } : {}),
     }, opts: { attempts: 1 }, attemptsMade: 0 }).catch((error: unknown) => {
       thrown = error;
     });
@@ -503,6 +509,109 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     const done = (globalThis as any).__prisma.analysis.update.mock.calls
       .map(([args]: any[]) => args.data).find((d: any) => d.status === 'completed');
     expect(done.result.analysis).toMatchObject({ factorsPresent: 6, confluenceScore: 85.71 });
+  });
+
+  it('WATCH com velas reais: o worker grava o setup e o alerta entry no nivel do plano', async () => {
+    const client = (globalThis as any).__prisma;
+    const scaled = Object.fromEntries(Object.entries(LONG_PLAN).map(([k, v]) => [k, typeof v === 'number' && k !== 'validForCandles' ? v * 100 : v]));
+    const row = { id: 'setup-worker001', userId: 'user-1', status: 'tracking', symbol: 'BTCUSDT', timeframe: '30m', rootAnalysisId: 'analysis-d4', createdAt: new Date(), lastAnalysisAt: new Date() };
+    let setupCreated = false;
+    const fake = makeRawSqlPrisma([
+      ['SELECT "lastPrice", "checkedAt" FROM', () => [{ lastPrice: 10120, checkedAt: new Date() }]],
+      ['a."groundingStats"', () => [{ id: 'analysis-d4', setupId: null, createdAt: new Date(), groundingInterval: '30m', clerkUserId: 'clerk_1' }]],
+      ['COUNT(DISTINCT "setupId")', () => [{ n: 0 }]],
+      ['COUNT(*)::int AS "n"', () => [{ n: 0 }]],
+      ['AS "ok"', () => [{ ok: false }]],
+      ['INSERT INTO "tickrify"."TrackedSetup"', () => { setupCreated = true; return 1; }],
+      ['FROM "tickrify"."TrackedSetup"', () => (setupCreated ? [row] : [])],
+      ['WHERE a."id" =', () => [{ id: 'alert-worker001', setupId: row.id, analysisId: 'analysis-d4', symbol: 'BTCUSDT', level: 10000, label: 'entry', side: 'below', status: 'active', createdAt: new Date() }]],
+    ]);
+    const restore = { $queryRaw: client.$queryRaw, $executeRaw: client.$executeRaw, $transaction: client.$transaction, adminAudit: client.adminAudit, count: client.analysis.count };
+    Object.assign(client, { $queryRaw: fake.prisma.$queryRaw, $executeRaw: fake.prisma.$executeRaw, $transaction: fake.prisma.$transaction, adminAudit: { findFirst: jest.fn(async () => null) } });
+    client.analysis.count = jest.fn(async () => 0);
+    try {
+      const out = await run({
+        name: 'watch-auto', market: 'btc',
+        replies: [modelReply('BUY', 70, {
+          symbol: 'BTCUSDT', currentPrice: 10120, entry: 10000, stopLoss: 9500, takeProfit1: 11000, takeProfit2: 12000, entryType: 'limit',
+        }, { watchPlan: scaled })],
+      });
+      expect(out.thrown).toBeNull();
+      const saved = client.analysis.update.mock.calls.map(([args]: any[]) => args.data).find((d: any) => d.status === 'completed');
+      expect(saved.result).toMatchObject({ signalState: 'WATCH', dataMode: 'real_data' });
+      expect(fake.calls.some((c) => c.text.includes('INSERT INTO "tickrify"."TrackedSetup"'))).toBe(true);
+      const insert = fake.calls.find((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"'));
+      expect(insert?.values).toEqual(expect.arrayContaining(['user-1', row.id, 'analysis-d4', 10000, 'entry', 'below', 10120, true]));
+      expect(logLines.join('\n')).toContain('[alerts] watch-auto analysis=analysis-d4 outcome=created');
+    } finally {
+      Object.assign(client, { $queryRaw: restore.$queryRaw, $executeRaw: restore.$executeRaw, $transaction: restore.$transaction, adminAudit: restore.adminAudit });
+      client.analysis.count = restore.count;
+    }
+  });
+
+  describe('continuacao do setup', () => {
+    const reply = () => modelReply('BUY', 70, { ...buyPlan, executiveSummary: 'Price held the zone.\nPRIOR_PLAN_STATUS: CONFIRMED' });
+    const request = () => JSON.stringify(openaiCreate.mock.calls[0][0].messages);
+    const priorRow = (symbol: string) => ({
+      id: 'prior-d4', createdAt: new Date(), recommendation: 'WAIT', groundingInterval: '30m',
+      result: { signalState: 'WATCH', watchPlan: { ...LONG_PLAN, trigger: `Reclaim ${'y'.repeat(300)}` }, analysis: { symbol, timeframe: '30m' } },
+    });
+    const withDb = async (symbol: string, fn: () => Promise<void>) => {
+      const client = (globalThis as any).__prisma;
+      const restore = { $queryRaw: client.$queryRaw, $executeRaw: client.$executeRaw };
+      const fake = makeRawSqlPrisma([['"id" <>', () => [priorRow(symbol)]]]);
+      Object.assign(client, { $queryRaw: fake.prisma.$queryRaw, $executeRaw: fake.prisma.$executeRaw });
+      try {
+        await fn();
+      } finally {
+        Object.assign(client, restore);
+      }
+    };
+    const saved = () => (globalThis as any).__prisma.analysis.update.mock.calls.map(([args]: any[]) => args.data).find((d: any) => d.status === 'completed');
+    afterEach(() => __resetFlagCacheForTests());
+
+    it('chave desligada: com setupId o prompt fica byte a byte igual e nada e gravado', async () => {
+      await run({ name: 'base', replies: [reply()] });
+      const base = request();
+      await withDb('TEST', async () => {
+        await run({ name: 'off', replies: [reply()], setupId: 'setup-d4' });
+      });
+      expect(request()).toBe(base);
+      expect(saved().result).not.toHaveProperty('continuation');
+      expect(saved().result.engine).not.toHaveProperty('continuation');
+    });
+
+    it('chave ligada e mesmo ativo: o bloco entra depois da parte fixa e o status e gravado', async () => {
+      await run({ name: 'base', replies: [reply()] });
+      const base = JSON.parse(request());
+      applyFlagOverrideLocally(SETUP_CONTINUATION_FLAG, 'true');
+      await withDb('TEST', async () => {
+        await run({ name: 'on', replies: [reply()], setupId: 'setup-d4' });
+      });
+      const prompt = request();
+      const after = JSON.parse(prompt);
+      const fixed = base[0].content.slice(0, base[0].content.lastIndexOf('</user_context>')).trimEnd();
+      expect(after[0].content.startsWith(fixed)).toBe(true);
+      expect(prompt).toContain('# PRIOR PLAN');
+      expect(prompt.indexOf('# PRIOR PLAN')).toBeGreaterThan(prompt.indexOf('REAL DATA'));
+      expect(prompt.indexOf('# PRIOR PLAN')).toBeLessThan(prompt.lastIndexOf('</user_context>'));
+      expect(prompt).toContain(`Earlier trigger: Reclaim ${'y'.repeat(192)}`);
+      expect(prompt).not.toContain('y'.repeat(193));
+      expect(saved().result.continuation).toEqual({ setupId: 'setup-d4', priorAnalysisId: 'prior-d4', status: 'CONFIRMED', direction: 'long', level: 100 });
+      expect(saved().result.engine.continuation).toBe(true);
+      expect(saved().result.analysis.executiveSummary).not.toContain('PRIOR_PLAN_STATUS');
+    });
+
+    it('ativo diferente: nao injeta e o prompt fica igual', async () => {
+      await run({ name: 'base', replies: [reply()] });
+      const base = request();
+      applyFlagOverrideLocally(SETUP_CONTINUATION_FLAG, 'true');
+      await withDb('ETHUSDT', async () => {
+        await run({ name: 'other', replies: [reply()], setupId: 'setup-d4' });
+      });
+      expect(request()).toBe(base);
+      expect(saved().result).not.toHaveProperty('continuation');
+    });
   });
 
   it('fonte de demonstracao (nao passa pelo adapter): o worker valida e decide sozinho, uma vez', async () => {

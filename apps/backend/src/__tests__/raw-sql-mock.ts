@@ -11,6 +11,8 @@ export type RawSqlCall = { kind: 'query' | 'execute'; text: string; values: unkn
 type Handler = (text: string, values: unknown[]) => unknown;
 
 export function sqlOf(args: unknown[]): { text: string; values: unknown[] } {
+  const built = args[0] as { sql?: unknown; values?: unknown[] };
+  if (typeof built?.sql === 'string') return { text: built.sql, values: built.values ?? [] };
   const [strings, ...values] = args as [TemplateStringsArray, ...unknown[]];
   const sql = Prisma.sql(strings, ...values);
   return { text: sql.sql, values: sql.values };

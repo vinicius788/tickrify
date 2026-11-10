@@ -140,6 +140,59 @@ describe('Alerta de nivel no resultado', () => {
     expect(screen.getAllByRole('button', { name: /Set alert/ })).toHaveLength(1);
   });
 
+  describe('WATCH com alerta automatico', () => {
+    const WATCH_ALERT = { ...ALERT, status: 'active', label: 'entry', level: 4140, triggeredAt: null, triggerPrice: null };
+
+    it('troca o formulario pela frase e cancela; cancelado, o formulario volta', async () => {
+      const user = userEvent.setup();
+      let cancelled = false;
+      const fetchMock = serve({
+        'GET /api/setups/alerts/options/analysis00001': () => json(200, { ...OPTIONS, alerts: cancelled ? [] : [WATCH_ALERT], watchAlert: cancelled ? null : WATCH_ALERT }),
+        'GET /api/setups/by-analysis/analysis00001': () => json(200, { setup: null }),
+        'POST /api/setups/alerts/alert-aaaaaaaa/cancel': () => {
+          cancelled = true;
+          return json(200, { alert: { ...WATCH_ALERT, status: 'cancelled' } });
+        },
+      });
+      wrap(<SetupAlertBar analysisId="analysis00001" recommendation="WAIT" base="/dashboard" />);
+
+      expect(await screen.findByText("We'll email you when price reaches 4,140")).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /Set alert/ })).toBeNull();
+      expect(screen.queryByRole('textbox', { name: 'Price level' })).toBeNull();
+
+      await user.click(screen.getByRole('button', { name: 'Cancel alert' }));
+      expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/alert-aaaaaaaa/cancel') && init?.method === 'POST')).toBe(true);
+      await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: 'Alert cancelled.' }));
+      expect(await screen.findByRole('button', { name: /Set alert/ })).toBeTruthy();
+      expect(screen.queryByText(/We'll email you/)).toBeNull();
+    });
+
+    it('com a chave de e-mail desligada nao promete e-mail', async () => {
+      serve({
+        'GET /api/setups/alerts/options/analysis00001': () => json(200, { ...OPTIONS, emailEnabled: false, alerts: [WATCH_ALERT], watchAlert: WATCH_ALERT }),
+        'GET /api/setups/by-analysis/analysis00001': () => json(200, { setup: null }),
+      });
+      wrap(<SetupAlertBar analysisId="analysis00001" recommendation="WAIT" base="/dashboard" />);
+      expect(await screen.findByText("We'll show it on your dashboard when price reaches 4,140")).toBeTruthy();
+      expect(screen.queryByText(/email/)).toBeNull();
+    });
+
+    it('enquanto o servidor grava o alerta, espera em vez de oferecer criar', async () => {
+      let pending = true;
+      serve({
+        'GET /api/setups/alerts/options/analysis00001': () => {
+          const body = pending ? { ...OPTIONS, autoAlertPending: true } : { ...OPTIONS, alerts: [WATCH_ALERT], watchAlert: WATCH_ALERT, autoAlertPending: false };
+          pending = false;
+          return json(200, body);
+        },
+        'GET /api/setups/by-analysis/analysis00001': () => json(200, { setup: null }),
+      });
+      wrap(<SetupAlertBar analysisId="analysis00001" recommendation="WAIT" base="/dashboard" />);
+      await waitFor(() => expect(screen.queryByRole('button', { name: /Set alert/ })).toBeNull());
+      expect(await screen.findByText("We'll email you when price reaches 4,140", {}, { timeout: 4000 })).toBeTruthy();
+    });
+  });
+
   it('nivel digitado vai como custom; com a chave de e-mail desligada o texto nao promete e-mail', async () => {
     const user = userEvent.setup();
     const fetchMock = serve({
@@ -156,6 +209,16 @@ describe('Alerta de nivel no resultado', () => {
     await user.click(screen.getByRole('button', { name: /Set alert/ }));
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
     expect(JSON.parse(String(post?.[1]?.body))).toEqual({ analysisId: 'analysis00001', label: 'custom', level: 4200.5 });
+  });
+
+  it('a leitura mostra niveis fora das sugestoes: nao diz que nao ha nivel', async () => {
+    serve({
+      'GET /api/setups/alerts/options/analysis00001': () => json(200, { ...OPTIONS, suggestions: [] }),
+      'GET /api/setups/by-analysis/analysis00001': () => json(200, { setup: null }),
+    });
+    wrap(<SetupAlertBar analysisId="analysis00001" recommendation="WAIT" base="/dashboard" readHasLevels />);
+    expect(await screen.findByLabelText('Price level')).toBeTruthy();
+    expect(screen.queryByText('This read has no price level. Type the price you want to watch.')).toBeNull();
   });
 
   it('WAIT sem nivel: pede para digitar', async () => {
@@ -419,6 +482,34 @@ describe('Pagina do setup', () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('setupId=setup-aaaaaaaa'))).toBe(true);
     await user.click(screen.getByRole('button', { name: /Cancel alert/ }));
     await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: 'Alert cancelled.' }));
+  });
+
+  it('so disparado: fica em "Triggered alerts", sem "Active alerts" nem o "Last checked" parado', async () => {
+    serve({
+      'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: SETUP, versions, nextCursor: null }),
+      'GET /api/setups/alerts': () => json(200, { paused: false, pausedSymbol: null, items: [{ ...ALERT, seenAt: '2026-10-27T14:00:00.000Z', checkIntervalMs: 60000 }], unseen: 0, emailEnabled: true }),
+    });
+    wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);
+    expect(await screen.findByText('Triggered alerts')).toBeTruthy();
+    expect(screen.getByTestId('alerts-triggered').textContent).toContain('Reached 4,180 at 13:42 UTC');
+    expect(screen.queryByText('Active alerts')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/Last checked|every minute/i);
+    expect(screen.queryByRole('button', { name: /Cancel alert/ })).toBeNull();
+  });
+
+  it('ativo e disparado em secoes separadas; o horario checado so na de ativos', async () => {
+    const active = { ...ALERT, id: 'alert-bbbbbbbb', status: 'active', label: 'entry', level: 4140, side: 'below', triggeredAt: null, seenAt: null };
+    serve({
+      'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: SETUP, versions, nextCursor: null }),
+      'GET /api/setups/alerts': () => json(200, { paused: false, pausedSymbol: null, items: [{ ...ALERT, seenAt: '2026-10-27T14:00:00.000Z' }, active], unseen: 0, emailEnabled: true }),
+    });
+    wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);
+    const activeBox = await screen.findByTestId('alerts-active');
+    expect(activeBox.textContent).toContain('Entry 4,140');
+    expect(activeBox.textContent).not.toContain('4,180');
+    expect(activeBox.textContent).toContain('Last checked 13:50 UTC');
+    expect(screen.getByTestId('alerts-triggered').textContent).toContain('4,180');
+    expect(screen.getByTestId('alerts-triggered').textContent).not.toContain('Last checked');
   });
 
   it('largado: so "Follow again", sem Update', async () => {

@@ -257,8 +257,13 @@ export interface SubscriptionSummary {
   canReactivate: boolean;
 }
 
+/** Acesso concedido a mao (`manual_*`): sem dados de cobranca para mostrar. */
+export interface ManualAccessSummary {
+  manualAccess: true;
+}
+
 /** null = nunca assinou pela Stripe. */
-export async function getSubscription(token: string): Promise<SubscriptionSummary | null> {
+export async function getSubscription(token: string): Promise<SubscriptionSummary | ManualAccessSummary | null> {
   return requestStripeApi(
     '/api/stripe/subscription',
     { method: 'GET', headers: { Authorization: `Bearer ${token}` } },

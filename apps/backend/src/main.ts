@@ -62,7 +62,7 @@ async function bootstrap() {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Tickrify-Device'],
       // Toda chamada com Authorization dispara um OPTIONS antes. Sem maxAge o
       // Chrome guarda a resposta so 5s: do Brasil ate o Render (Oregon) cada
       // chamada da API pagava uma ida e volta a mais. 7200s = teto do Chrome.

@@ -1,4 +1,4 @@
-import { formatNumber } from '@/lib/i18n';
+import { formatNumber, formatUsd } from '@/lib/i18n';
 import { errorText } from '@/lib/i18n/messages';
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -62,12 +62,13 @@ import { PricingCards } from "@/components/pricing/PricingCards";
 import { useSeo } from "@/hooks/useSeo";
 import { loadSavedDemoResult } from "@/lib/demo-api";
 import SetupAlertBar from "../dashboard/SetupAlertBar";
+import { isWatchPlan } from "../dashboard/WatchPlanCard";
 import TodaySection from "../dashboard/TodaySection";
 import SetupsSection from "../dashboard/SetupsSection";
 import SetupPage from "../dashboard/SetupPage";
 import TradePanel from "../dashboard/TradePanel";
 import { displayAsset, tradeQueryKey, type OpenTrade, type TradeCloseReason } from "@/lib/api";
-import { SETUP_ID_PATTERN, formatSetupDay, useExpiryClock, isWatchOpen, useAlertActions, useSetupAlerts, useSetupVersions } from "@/lib/setups";
+import { SETUP_ID_PATTERN, formatSetupDay, useExpiryClock, isWatchOpen, useAlertActions, useAlertTabTitle, useSetupAlerts, useSetupVersions } from "@/lib/setups";
 import { openChat, useChatThread } from "@/lib/support-chat";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
@@ -210,7 +211,7 @@ const DashboardPage = () => {
   const dc = t.dashboardCopy;
   // Preço do 1º mês com o EARLY35, só quando a Stripe diz que o cupom está ativo.
   const foundingOffer = useFoundingOffer();
-  const modalFirstMonth = foundingOffer?.percentOff ? formatNumber((29 * (1 - foundingOffer.percentOff / 100)), language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false }) : null;
+  const modalFirstMonth = foundingOffer?.percentOff ? formatUsd(29 * (1 - foundingOffer.percentOff / 100), language) : null;
   const location = useLocation();
   const route = parseDashboardPath(location.pathname);
   const { base } = route;
@@ -445,7 +446,7 @@ const DashboardPage = () => {
 
   // Alertas de nivel (27/10/2026): o bloco Today, o contador no menu e no
   // titulo da aba, e o paywall `alerts` da conta travada.
-  const alertsQuery = useSetupAlerts(!isDemo);
+  const alertsQuery = useSetupAlerts(!isDemo, null, { background: true });
   const alertsUnseen = alertsQuery.data?.unseen ?? 0;
   const { seen: markAlertSeen } = useAlertActions();
   const watchedSetupIds = useMemo(
@@ -1650,10 +1651,10 @@ const DashboardPage = () => {
                   .replace('{date}', new Date(otherOpenTrade.updatedAt).toLocaleDateString(DATE_LOCALES[language] ?? 'en-US'))}
               </div>
             ) : null}
-            <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} alertsEnabled={!isDemo && !freeLocked} />
+            <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} alertsEnabled={!isDemo && !freeLocked} base={base} />
             {tradeAnalysisId ? <TradePanel key={`trade-${tradeAnalysisId}`} analysisId={tradeAnalysisId} /> : null}
             {/* Seguir o setup: ao lado das acoes de sempre, nunca no lugar delas. */}
-            {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' ? (
+            {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' && !(analysisData.fullResponse?.signalState === 'WATCH' && isWatchPlan(analysisData.fullResponse.watchPlan)) ? (
               <SetupAlertBar
                 key={`alerts-${analysisData.id}`}
                 analysisId={analysisData.id}
@@ -1662,6 +1663,7 @@ const DashboardPage = () => {
                   return tone === 'buy' ? 'BUY' : tone === 'sell' ? 'SELL' : 'WAIT';
                 })()}
                 base={base}
+                readHasLevels={Boolean(analysisData.fullResponse?.aiLevel || analysisData.fullResponse?.levelMap?.above || analysisData.fullResponse?.levelMap?.below)}
               />
             ) : null}
             {/* Pagantes mantêm as estrelas; gratuitos autenticados avaliam utilidade. */}
@@ -1794,8 +1796,15 @@ const DashboardPage = () => {
       : route.section === 'setups'
         ? 'home'
         : (route.section as NavSection | null);
+  const openAnalysis = (route.section === 'sample' || analysisInMemory) ? analysisData : null;
+  const openAnalysisName = [
+    openAnalysis?.symbol ?? openAnalysis?.fullResponse?.analysis?.symbol,
+    openAnalysis?.timeframe ?? openAnalysis?.fullResponse?.analysis?.timeframe,
+  ].filter(Boolean).map(String).join(' ');
   const currentViewLabel =
-    activeNav === 'trades'
+    route.section === 'analysis' || route.section === 'sample'
+      ? (openAnalysisName ? t.nav.assetAnalysis.replace('{asset}', displayAsset(openAnalysisName)) : t.nav.analysisLabel)
+      : activeNav === 'trades'
       ? t.nav.myTrades
       : activeNav === 'journal'
         ? t.nav.journal
@@ -1818,14 +1827,7 @@ const DashboardPage = () => {
     path: location.pathname,
     noindex: true,
   });
-  // "(1) Dashboard | Tickrify": alerta disparado e ainda nao aberto, na aba do navegador.
-  useEffect(() => {
-    if (alertsUnseen <= 0) return;
-    document.title = `(${alertsUnseen}) ${document.title.replace(/^\(\d+\) /, '')}`;
-    return () => {
-      document.title = document.title.replace(/^\(\d+\) /, '');
-    };
-  }, [alertsUnseen, currentViewLabel]);
+  useAlertTabTitle(alertsUnseen, `${currentViewLabel}|${location.pathname}`);
 
   const sideState = (active: boolean) =>
     active ? 'bg-[var(--inverse-bg)] text-[var(--inverse-fg)]' : 'text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]';
@@ -2051,14 +2053,14 @@ const DashboardPage = () => {
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="border-b border-border md:hidden">
-          <div className="flex">
+          <div className="flex overflow-x-auto [scrollbar-width:none]">
             {(['home', 'new', 'trades', 'journal', 'strategy'] as const).map((section) => (
               <Link
                 key={section}
                 to={navLink(section)}
                 onClick={section === 'new' ? onNewAnalysisLink : undefined}
                 aria-current={activeNav === section ? 'page' : undefined}
-                className={`min-w-0 flex-1 truncate px-1 py-2 text-center text-[11px] font-medium leading-tight transition-colors ${
+                className={`flex-auto shrink-0 whitespace-nowrap px-1.5 py-2 text-center text-[11px] font-medium leading-tight transition-colors ${
                   activeNav === section
                     ? 'border-b-2 border-primary text-primary'
                     : 'text-muted-foreground'
@@ -2098,7 +2100,7 @@ const DashboardPage = () => {
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          <main className="min-w-0 flex-1 overflow-y-auto p-3 md:p-6">
+          <main className="min-w-0 flex-1 overflow-y-auto p-3 pb-24 md:p-6 md:pb-16">
             <div className="flex flex-col gap-6 md:gap-8">
               {!isDemo && <CheckoutConfirmation hasPaidAccess={!isPlanLoading && isUnlimited} />}
               {user && !isDemo && !isPlanLoading && !isUsageUnavailable && plan === 'free' && (trial || trialBlocked) && (
@@ -2242,7 +2244,7 @@ const DashboardPage = () => {
             >
               <span className="text-sm font-semibold">{dc.modalMonthly}</span>
               <span className="text-right text-xs font-semibold">
-                {modalFirstMonth ? dc.modalMonthlyOffer.replace('{price}', `$${modalFirstMonth}`) : `$29${dc.perMonth}`}
+                {modalFirstMonth ? dc.modalMonthlyOffer.replace('{price}', modalFirstMonth) : `$29${dc.perMonth}`}
               </span>
             </button>
           </div>

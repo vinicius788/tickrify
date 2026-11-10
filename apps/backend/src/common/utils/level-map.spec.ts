@@ -1,4 +1,4 @@
-import { buildLevelMap } from './level-map';
+import { aiLevelOf, buildLevelMap } from './level-map';
 import type { PriceLocation } from './signal-decision';
 
 const location = (over: Partial<PriceLocation> = {}): PriceLocation => ({
@@ -51,5 +51,29 @@ describe('buildLevelMap (NO_TRADE, os dois lados do preco)', () => {
     expect(buildLevelMap(location({ resistance: null, support: null }), {})).toBeNull();
     expect(buildLevelMap(location({ atr: 0 }), {})).toBeNull();
     expect(buildLevelMap(null, {})).toBeNull();
+  });
+});
+
+describe('aiLevelOf (o preco que a IA marcou quando o validador recusou o plano)', () => {
+  const plan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 98, zoneHigh: 99, invalidation: 90, target1: 110, target2: null, validForCandles: 12, trigger: 'x' } as any;
+  const rejected = (reason: string, from = 'WATCH') => ({ state: 'NO_TRADE' as const, validatorNotes: [{ from, to: 'NO_TRADE', reason }] as any });
+
+  it('recusado pela geometria: a borda proxima da zona, long e short', () => {
+    expect(aiLevelOf(plan, rejected('invalidation_unsnapped'))).toEqual({ price: 99, direction: 'long', invalidation: 90, validForCandles: 12, reason: 'invalidation_unsnapped' });
+    expect(aiLevelOf({ ...plan, direction: 'short' }, rejected('no_valid_geometry'))).toMatchObject({ price: 98, direction: 'short', reason: 'no_valid_geometry' });
+    expect(aiLevelOf(plan, rejected('market_entry_invalid', 'ENTER_NOW'))).toMatchObject({ price: 99, reason: 'market_entry_invalid' });
+  });
+
+  it('motivo que nao e de risco: nada', () => {
+    for (const reason of ['implausible_price', 'state_mismatch', 'watch_plan_invalid', 'plan_invalidated', 'levels_unverified', 'late_move', 'news_event']) {
+      expect(aiLevelOf(plan, rejected(reason))).toBeNull();
+    }
+  });
+
+  it('o proprio modelo disse NO_TRADE, estado diferente ou sem plano: nada', () => {
+    expect(aiLevelOf(plan, { state: 'NO_TRADE', validatorNotes: [] })).toBeNull();
+    expect(aiLevelOf(plan, rejected('no_valid_geometry', 'NO_TRADE'))).toBeNull();
+    expect(aiLevelOf(plan, { state: 'WATCH', validatorNotes: [] })).toBeNull();
+    expect(aiLevelOf(null, rejected('no_valid_geometry'))).toBeNull();
   });
 });

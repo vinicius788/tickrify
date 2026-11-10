@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AnalysisResult from '@/components/dashboard/AnalysisResult';
-import { spreadLabels } from '@/components/dashboard/WatchPlanChart';
+import { spreadLabels } from '@/components/dashboard/WatchPlanCard';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import type { AIAnalysisResponse, WatchPlan } from '@/lib/api';
 
@@ -45,12 +45,9 @@ describe('plano do WATCH (v10.1)', () => {
     renderResult('WATCH', plan);
     const card = screen.getByTestId('watch-plan');
     const text = card.textContent ?? '';
-    expect(text).toContain('This is a level to watch, not a signal. The entry only counts if price gets there.');
     expect(text).not.toMatch(/limit/i);
-    expect(text).toContain('Sweep and reclaim');
     expect(text).toContain('A sweep of 2340 that closes back above it.');
-    expect(text).toContain('Valid for 12 candles');
-    for (const label of ['Area of interest', 'Invalidation', 'Target 1', 'Target 2']) expect(text).toContain(label);
+    for (const label of ['Plan if price reaches', 'Zone', 'Invalidation', 'Target 1', 'Target 2']) expect(text).toContain(label);
     expect(card.innerHTML).not.toContain('--signal-buy');
     expect(screen.queryByTestId('levels-card')).toBeNull();
   });
@@ -71,9 +68,9 @@ describe('plano do WATCH (v10.1)', () => {
   it('rotulo principal pelo estado; WATCH com cenario bullish nunca na cor de compra', () => {
     renderResult('WATCH', plan);
     const badge = screen.getByTestId('signal-state');
-    expect(badge.textContent).toBe('Watch');
+    expect(badge.textContent).toBe('Watch for a buy');
     expect(badge.className).not.toContain('--signal-buy');
-    expect(document.body.textContent).toContain('Scenario: BULLISH');
+    expect(document.body.textContent).not.toContain('Scenario:');
     expect(document.body.textContent).not.toMatch(/hit rate|win rate|high probability/i);
   });
 
@@ -99,7 +96,7 @@ describe('plano do WATCH (v10.1)', () => {
     expect(screen.getByTestId('levels-estimated').textContent).toBe('Levels estimated from the screenshot');
     cleanup();
     renderResult('WATCH', plan, { dataMode: 'print' });
-    expect(screen.getByTestId('watch-plan').textContent).toContain('Levels estimated from the screenshot');
+    expect(screen.getByTestId('levels-estimated').textContent).toBe('Levels estimated from the screenshot');
     cleanup();
     renderResult('ARMED', plan, { dataMode: 'real_data' });
     expect(screen.queryByTestId('levels-estimated')).toBeNull();
@@ -108,6 +105,29 @@ describe('plano do WATCH (v10.1)', () => {
   it('historico antigo sem estado: deriva pela recomendacao e pelo tipo de entrada', () => {
     renderResult('ARMED', null, { signalState: undefined });
     expect(screen.getByTestId('signal-state').textContent).toBe('Pending order');
+  });
+});
+
+describe('continuacao do setup', () => {
+  afterEach(cleanup);
+  const line = () => screen.queryByTestId('setup-continuation')?.textContent ?? null;
+
+  it.each([
+    ['long', 'CONFIRMED', 'Buy', 'Confirmed'],
+    ['long', 'STILL_WAITING', 'Buy', 'Still waiting'],
+    ['short', 'CHANGED', 'Sell', 'Changed'],
+    ['short', 'INVALIDATED', 'Sell', 'Invalidated'],
+  ])('%s %s', (direction, status, side, label) => {
+    renderResult('WATCH', plan, { continuation: { setupId: 's', priorAnalysisId: 'p', status, direction, level: 2345 } });
+    expect(line()).toBe(`Earlier plan: ${side} at $ 2,345.00. Now: ${label}`);
+  });
+
+  it('sem status ou sem continuacao, a linha nao aparece', () => {
+    renderResult('WATCH', plan, { continuation: { setupId: 's', priorAnalysisId: 'p', status: null, direction: 'long', level: 2345 } });
+    expect(line()).toBeNull();
+    cleanup();
+    renderResult('WATCH', plan);
+    expect(line()).toBeNull();
   });
 });
 
@@ -133,34 +153,25 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
     expect(screen.queryByTestId('read-mode-estimated')).toBeNull();
   });
 
-  it('WATCH: o nivel e a condicao que destravam, e a chance calibrada quando existe', () => {
+  it('WATCH: a chance calibrada fica no cartao do plano quando existe', () => {
     renderResult('WATCH', plan, { location, dataMode: 'real_data', watchReach: { probability: 0.42, candles: 12 } });
-    const text = screen.getByTestId('read-mode').textContent ?? '';
-    expect(text).toContain('Unlocks if price reaches $ 2,345.00: A sweep of 2340 that closes back above it.');
-    expect(screen.getByTestId('read-mode-reach').textContent).toBe('About 42% chance price reaches this level within 12 candles');
+    expect(screen.queryByTestId('read-mode')).toBeNull();
+    expect(screen.getByTestId('watch-reach').textContent).toBe('About 42% chance price reaches this level within 12 candles');
     cleanup();
     renderResult('WATCH', plan, { location, dataMode: 'real_data' });
-    expect(screen.queryByTestId('read-mode-reach')).toBeNull();
-  });
-
-  it('sem REAL DATA: o aviso de niveis estimados no lugar das distancias', () => {
-    renderResult('WATCH', plan, { dataMode: 'print' });
-    expect(screen.getByTestId('read-mode-estimated').textContent).toBe('Levels estimated from the screenshot');
+    expect(screen.queryByTestId('watch-reach')).toBeNull();
   });
 
   it('API antiga (v10.3) e historico: sem location, watchReach, trendStrength nem contrato, a tela abre sem inventar', () => {
     // Velas reais sem location: nada de "estimated from the screenshot".
     renderResult('WATCH', plan, { dataMode: 'real_data' });
-    let text = screen.getByTestId('read-mode').textContent ?? '';
-    expect(text).toContain('Bullish');
-    expect(text).toContain('Unlocks if price reaches $ 2,345.00');
-    expect(text).not.toContain('ATR away');
-    expect(screen.queryByTestId('read-mode-estimated')).toBeNull();
-    expect(screen.queryByTestId('read-mode-reach')).toBeNull();
+    expect(screen.getByTestId('watch-plan').textContent).toContain('Plan if price reaches');
+    expect(screen.queryByTestId('levels-estimated')).toBeNull();
+    expect(screen.queryByTestId('watch-reach')).toBeNull();
     cleanup();
     // ARMED do v10.3 continua mostrando os niveis gravados.
     renderResult('ARMED', plan, { dataMode: 'real_data' });
-    text = screen.getByTestId('read-mode').textContent ?? '';
+    const text = screen.getByTestId('read-mode').textContent ?? '';
     expect(text).toContain('Pending order');
     expect(text).toContain('$ 2,345.00');
     cleanup();
@@ -192,7 +203,7 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
       },
     });
     const card = screen.getByTestId('watch-plan').textContent ?? '';
-    expect(card).toContain('Target 1 (1.5R) $ 2,360.75');
+    expect(card).toContain('Target 1$\u00a02,360.75(1.5R)');
     expect(card).not.toContain('$ 2,362.00');
     fireEvent.click(screen.getByRole('button', { name: 'Technical Panel' }));
     const body = document.body.textContent ?? '';
@@ -208,7 +219,7 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
         structureValidation: 'C1 PASS: a. C2 PASS: b. C3 PASS: c. C4 PASS: d. C5 PASS: e. C6 PASS: limit 2345, Rk48, TP1 2362 gives 3.4R. C7 FAIL: f. 6/7, WATCH.',
       },
     });
-    expect(screen.getByTestId('watch-plan').textContent).toContain('Target 1 $ 2,362.00');
+    expect(screen.getByTestId('watch-plan').textContent).toContain('Target 1$ 2,362.00');
     fireEvent.click(screen.getByRole('button', { name: 'Technical Panel' }));
     expect(document.body.textContent).toContain('Rk48');
   });
@@ -221,15 +232,11 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
     expect(Math.max(...low)).toBeLessThanOrEqual(166);
     expect(low[1] - low[0]).toBeGreaterThanOrEqual(13);
     expect(low[2] - low[1]).toBeGreaterThanOrEqual(13);
-    // No grafico: invalidacao 2336 colada na area (2340-2345) com o alvo longe.
+    // Na escada: invalidacao colada na area com o alvo longe, sem rotulo por cima do outro.
     renderResult('WATCH', { ...plan, invalidation: 2339.9, target1: 2420, target2: null });
-    const texts = [...screen.getByTestId('watch-plan').querySelectorAll('svg text')];
-    const zone = texts.find((n) => n.textContent?.startsWith('Area of interest'))!;
-    const inv = texts.find((n) => n.textContent?.startsWith('Invalidation'))!;
-    expect(Math.abs(Number(zone.getAttribute('y')) - Number(inv.getAttribute('y')))).toBeGreaterThanOrEqual(13);
-    // A linha da invalidacao fica no preco (o fundo do desenho); so o rotulo sai do lugar.
-    const invLine = [...screen.getByTestId('watch-plan').querySelectorAll('svg line')][0];
-    expect(Number(invLine.getAttribute('y1'))).toBeCloseTo(168 - 14, 6);
+    const rows = [...screen.getByTestId('watch-ladder').querySelectorAll<HTMLElement>('[data-kind]')];
+    const top = (kind: string) => parseFloat(rows.find((row) => row.dataset.kind === kind)!.style.top);
+    expect(Math.abs(top('zone') - top('stop'))).toBeGreaterThanOrEqual(26);
   });
 
   it('modelo diz WATCH e o codigo decidiu NO_TRADE: so o estado do codigo aparece, o checklist fica sem rotulo de estado', () => {
@@ -246,6 +253,39 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
     expect(body).toContain('6/7');
     expect(body).not.toMatch(/6\/7\s*·?\s*WATCH/);
     expect(body).not.toContain('WATCH');
+  });
+
+  it('validador recusou o plano: "AI level" com o preco e resumo sem falar do plano recusado', () => {
+    renderResult('NO_TRADE', null, {
+      dataMode: 'print',
+      aiLevel: { price: 4100 },
+      validatorNotes: [{ from: 'WATCH', to: 'NO_TRADE', reason: 'no_valid_geometry' }],
+    });
+    expect(screen.getByTestId('ai-level').textContent).toContain('AI level');
+    expect(screen.getByTestId('ai-level').textContent).toContain('4,100.00');
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('The AI saw a possible setup, but it did not pass the risk check.');
+    expect(body).not.toContain('Watch 2340-2345.');
+  });
+
+  it('rebaixado por risco: linha da decisao final acima do resumo e frase de acao do modelo fora da tela', () => {
+    renderResult('NO_TRADE', null, {
+      dataMode: 'real_data',
+      aiLevel: { price: 4100, direction: 'long', invalidation: 4080, validForCandles: 12, reason: 'no_valid_geometry' },
+      validatorNotes: [{ from: 'WATCH', to: 'NO_TRADE', reason: 'no_valid_geometry' }],
+      analysis: { symbol: 'XAUUSD', timeframe: '5M', currentPrice: 4120, executiveSummary: 'Price is holding above support. Buy at 4,100 with a stop below 4,080.' },
+    });
+    expect(screen.getByTestId('final-decision').textContent).toBe('Final decision: No trade. Reason: the distance to the stop or to the target does not fit our risk rules.');
+    expect(screen.getByTestId('ai-level').textContent).toContain('The AI saw a possible buy at');
+    const body = document.body.textContent ?? '';
+    expect(body).toContain('Price is holding above support.');
+    expect(body).not.toContain('Buy at 4,100');
+  });
+
+  it('o proprio modelo disse NO_TRADE: resumo do modelo e nenhum "AI level"', () => {
+    renderResult('NO_TRADE', null, { validatorNotes: [] });
+    expect(screen.queryByTestId('ai-level')).toBeNull();
+    expect(document.body.textContent).toContain('Watch 2340-2345.');
   });
 
   it('imagem do grafico com o texto alternativo no idioma da tela', () => {
@@ -288,7 +328,7 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
     expect(card).not.toContain('Target 2');
     expect(card).not.toMatch(/\dR\)/);
     expect(card).toContain('Invalidation');
-    expect(card).toContain('Area of interest');
+    expect(card).toContain('Zone');
     fireEvent.click(screen.getByRole('button', { name: 'Technical Panel' }));
     const body = document.body.textContent ?? '';
     expect(body).not.toContain('Rk48');
@@ -297,11 +337,11 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
 
   it('campo ausente (analise antiga) e WATCH sem velas reais seguem com os alvos do modelo', () => {
     renderResult('WATCH', plan, { dataMode: 'real_data' });
-    expect(screen.getByTestId('watch-plan').textContent).toContain('Target 1 $ 2,362.00');
+    expect(screen.getByTestId('watch-plan').textContent).toContain('Target 1$ 2,362.00');
     expect(screen.queryByTestId('targets-rejected')).toBeNull();
     cleanup();
     renderResult('WATCH', plan, { dataMode: 'print', watchLevels: null });
-    expect(screen.getByTestId('watch-plan').textContent).toContain('Target 1 $ 2,362.00');
+    expect(screen.getByTestId('watch-plan').textContent).toContain('Target 1$ 2,362.00');
     expect(screen.queryByTestId('targets-rejected')).toBeNull();
   });
 
@@ -312,7 +352,7 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
         structureValidation: '✅ HTF 1H LH/LL | ✅ Premium $4308 | ✅ OB $4305-15 | ✅ No bullish confirmation | ✅ Bearish BOS | ✅ R:R 1:2.3 | ✅ MTF 2/3 → SELL',
       },
     });
-    expect(screen.getByTestId('signal-state').textContent).toBe('Watch');
+    expect(screen.getByTestId('signal-state').textContent).toBe('Watch for a buy');
     fireEvent.click(screen.getByRole('button', { name: 'Technical Panel' }));
     const body = document.body.textContent ?? '';
     expect(body).toContain('MTF 2/3');

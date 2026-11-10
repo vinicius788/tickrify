@@ -24,7 +24,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { entrySide, getRecommendationMeta, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import { VERDICT_CFG, isTradeCall, verdictFromOutcome, type Verdict } from '@/lib/verdict';
 import { buildMonthGrid, computeAiComparison, computeMonthStats, type AiComparison, dayKey, monthRange, summarizeByDay, weekStartFor, type GroupRow, type MonthStats } from '@/lib/journal';
-import { WatchPending } from './PendingLevels';
+import { WatchPending, WatchingSection } from './PendingLevels';
 
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
@@ -344,6 +344,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
       </CardHeader>
 
       <CardContent className="p-0">
+        <WatchingSection surface="journal" enabled={Boolean(user)} />
         {/* ── Resumo do mes ─────────────────────────────────────── */}
         <div className="grid grid-cols-2 gap-px border-y border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-4">
           <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
@@ -583,7 +584,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
                                   {a.tradeNote?.note && (
                                     <span className="line-clamp-2 text-xs text-[var(--text-secondary)]">{a.tradeNote.note}</span>
                                   )}
-                                  {a.watch && verdict === null && <WatchPending analysisId={a.id} watch={a.watch} surface="journal" />}
+                                  {a.watch && verdict === null && <WatchPending analysisId={a.id} watch={a.watch} surface="journal" symbol={a.symbol} />}
                                   {sideOf(a) && (
                                     <button
                                       type="button"

@@ -266,13 +266,13 @@ export class MailService {
    */
   async sendLifecycle(
     to: string,
-    email: { kind: string; subject: string; html: string; unsubscribeUrl: string },
+    email: { kind: string; subject: string; html: string; unsubscribeUrl: string; from?: string; replyTo?: string },
   ): Promise<boolean> {
     // Nome do dono: Vinicius, nunca "Vini" (Founder e CEO valem). Sem acento no
     // cabecalho From de proposito: nome com acento exige codificacao especial
     // e uma recusa aqui derrubaria todos os e-mails de ciclo de vida.
-    const from = process.env.LIFECYCLE_MAIL_FROM || 'Vinicius from Tickrify <vinicius@tickrify.com>';
-    const replyTo = process.env.LIFECYCLE_MAIL_REPLY_TO || 'vinicius@tickrify.com';
+    const from = email.from ?? (process.env.LIFECYCLE_MAIL_FROM || 'Vinicius from Tickrify <vinicius@tickrify.com>');
+    const replyTo = email.replyTo ?? (process.env.LIFECYCLE_MAIL_REPLY_TO || 'vinicius@tickrify.com');
     return this.send(to, email.subject, email.html, {
       kind: email.kind,
       from,

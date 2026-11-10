@@ -85,6 +85,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'PROMPT_VARIANT_B_PERCENT',
+    type: 'number',
+    label: 'Teste A/B do prompt: % na variante B',
+    description:
+      'Porcentagem de contas que recebem o prompt B (nivel de entrada no primeiro pullback com estrutura, nao no mais profundo). 0 (padrao) = todos no atual; 100 = todos na B. Desligada por decisao do dono em 09/11/2026: no replay a B piorou o nivel longe demais. A decisao sai pronta na aba Motor.',
+    defaultValue: '0',
+    risk: 'medio',
+  },
+  {
     key: 'DEMO_MODE',
     type: 'boolean',
     label: 'Modo demo (resposta sintética)',
@@ -171,6 +180,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     label: 'E-mail de alerta de nivel do setup',
     description:
       'Quando o preco toca o nivel que a pessoa pediu para vigiar (entrada, stop, alvo, invalidacao ou digitado), avisa por e-mail com o link para atualizar o grafico. No maximo 1 e-mail por setup a cada 12h e 3 por pessoa em 24h, respeitando o descadastro. Usa a mesma cota diaria da Resend. DESLIGADO: o alerta dispara na tela e so loga quem receberia ([setup-alert] dry-run).',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
+    key: 'ENABLE_SETUP_CONTINUATION',
+    type: 'boolean',
+    label: 'Continuacao do setup na analise',
+    description:
+      'Quando o trader atualiza um setup cujo WATCH ainda vale, no mesmo ativo, a IA recebe o plano anterior, le o grafico de novo e diz se ele foi confirmado, segue esperando, mudou ou foi invalidado. Os checks e o estado seguem as mesmas regras. Muda a entrada do modelo (uma medicao separa essas analises por result.engine.continuation). DESLIGADO: o prompt fica igual ao de sempre.',
     defaultValue: 'false',
     risk: 'medio',
   },
@@ -285,6 +303,13 @@ export function flagBool(key: string): boolean {
   return definition.defaultValue.trim().toLowerCase() === 'true';
 }
 
+
+/** Numero da flag; valor que nao e numero cai no padrao da definicao. */
+export function flagNumber(key: string): number {
+  const { value, definition } = resolveFlag(key);
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : Number(definition.defaultValue);
+}
 
 /** Estado de todas as flags — é o que o painel /admin renderiza. */
 export function resolveAllFlags(): ResolvedFlag[] {

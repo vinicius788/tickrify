@@ -20,8 +20,8 @@
  */
 import { canonicalFxPair } from '../../common/utils/analysis-normalizer';
 import { normalizeToBinancePerp } from './market.service';
-import { twelveDataTimeSeries, type TwelveDataConsumer, type TwelveDataDenyReason } from './twelve-data';
-import { fetchJson } from './candles';
+import { twelveDataOpenMs, twelveDataTimeSeries, type TwelveDataConsumer, type TwelveDataDenyReason } from './twelve-data';
+import { BINANCE_HOSTS, fetchJson } from './candles';
 
 /** [openTime ms, open, high, low, close, volume]; mais antiga primeiro. */
 export type StoredCandle = [number, number, number, number, number, number];
@@ -132,7 +132,6 @@ const volumeOf = (raw: unknown) => {
 };
 const finite = (c: StoredCandle) => c.every((v) => Number.isFinite(v));
 
-const BINANCE_HOSTS = ['https://api.binance.com', 'https://data-api.binance.vision'] as const;
 const OKX_BAR: Record<string, string> = {
   '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1H', '2h': '2H', '4h': '4H', '1d': '1D',
 };
@@ -167,8 +166,7 @@ const TWELVE_INTERVAL: Record<string, string> = {
 async function fetchFx(pair: string, interval: string, consumer: TwelveDataConsumer): Promise<CandleFetch> {
   const itv = TWELVE_INTERVAL[interval];
   if (!itv) return { candles: null, source: null, denied: null };
-  // A mesma requisicao de sempre do grounding (ultimos 120, sem fuso): o cache
-  // do medidor continua compartilhado com o monitor de alertas.
+  // Ultimos 120 em UTC: o cache do medidor continua compartilhado com o monitor de alertas.
   const res = await twelveDataTimeSeries({
     consumer,
     pair,
@@ -182,7 +180,7 @@ async function fetchFx(pair: string, interval: string, consumer: TwelveDataConsu
   if (!Array.isArray(values) || values.length < CANDLE_STORE.minCandles) return { candles: null, source: null, denied: null };
   // Mais recente primeiro. Forex spot nao tem volume centralizado: 0, nunca inventado.
   const candles = values
-    .map((v): StoredCandle => [Date.parse(v.datetime), Number(v.open), Number(v.high), Number(v.low), Number(v.close), volumeOf(v.volume)])
+    .map((v): StoredCandle => [twelveDataOpenMs(v.datetime), Number(v.open), Number(v.high), Number(v.low), Number(v.close), volumeOf(v.volume)])
     .reverse();
   return { candles: candles.every(finite) ? candles : null, source: 'twelvedata', denied: null };
 }
@@ -271,7 +269,7 @@ export async function fetchWindow(
       });
       if (!res.ok) return { candles: null, source: null, denied: res.reason === 'error' || res.reason === 'no_key' ? null : res.reason };
       for (const v of res.series.values) {
-        const t = Date.parse(`${v.datetime.replace(' ', 'T')}Z`);
+        const t = twelveDataOpenMs(v.datetime);
         out.set(t, [t, Number(v.open), Number(v.high), Number(v.low), Number(v.close), volumeOf(v.volume)]);
       }
     }
@@ -312,6 +310,14 @@ async function store(client: CandleDb, key: string, interval: string, fetched: C
     candles.map((c) => new Date(c[0]).toISOString()), candles.map((c) => c[1]), candles.map((c) => c[2]),
     candles.map((c) => c[3]), candles.map((c) => c[4]), candles.map((c) => c[5] || null),
   );
+  // O Twelve Data manda a janela inteira a cada busca: o que nao veio nela e vela
+  // gravada no fuso errado ate 09/11/2026 (ate 11h no futuro ou no meio do fim de semana).
+  if (fetched.source === 'twelvedata') {
+    await client.$executeRawUnsafe(
+      `DELETE FROM "tickrify"."MarketCandle" WHERE "symbol" = $1 AND "timeframe" = $2 AND "openTime" <> ALL(SELECT t::timestamp(3) FROM unnest($3::text[]) AS x(t))`,
+      key, interval, candles.map((c) => new Date(c[0]).toISOString()),
+    );
+  }
   await client.$executeRawUnsafe(
     `DELETE FROM "tickrify"."MarketCandle" WHERE "symbol" = $1 AND "timeframe" = $2 AND "openTime" < (
        SELECT "openTime" FROM "tickrify"."MarketCandle" WHERE "symbol" = $1 AND "timeframe" = $2

@@ -4,6 +4,8 @@ import {
   ALERT_RULES,
   SetupAlertsService,
   alertSuggestions,
+  createAlertTick,
+  createWatchAlert,
   findTrigger,
   runAlertMonitor,
   sideFor,
@@ -11,15 +13,15 @@ import {
 import { CreateSetupAlertDto, ListSetupAlertsQueryDto } from './dto/setups.dto';
 import { SetupsController } from './setups.controller';
 import { TwelveDataUnavailableError, __setTwelveDataForTests, fxMarketClosed } from '../market/twelve-data';
-import { fetchFxLatest5m as fetchFxLatest5mMock, fetchWindowFor as fetchWindowForMock, priceSymbolOf, type Candle } from '../market/candles';
-const fetchWindowFor = fetchWindowForMock as jest.Mock;
+import { fetchFxLatest5m as fetchFxLatest5mMock, fetchCrypto1m as fetchCrypto1mMock, priceSymbolOf, type Candle } from '../market/candles';
+const fetchCrypto1m = fetchCrypto1mMock as jest.Mock;
 const fetchFxLatest5m = fetchFxLatest5mMock as jest.Mock;
 import { captureServer as captureServerMock } from '../../common/analytics/posthog';
 
 jest.mock('../market/candles', () => ({
   ...jest.requireActual('../market/candles'),
   // Sem preco de mercado por padrao: a criacao cai no preco da analise.
-  fetchWindowFor: jest.fn(async () => null),
+  fetchCrypto1m: jest.fn(async () => null),
   fetchFxLatest5m: jest.fn(async () => null),
 }));
 jest.mock('../../common/analytics/posthog', () => ({
@@ -53,29 +55,31 @@ afterAll(() => {
 });
 beforeEach(() => {
   captureServer.mockClear();
-  fetchWindowFor.mockReset();
-  fetchWindowFor.mockResolvedValue(null);
+  fetchCrypto1m.mockReset();
+  fetchCrypto1m.mockResolvedValue(null);
   fetchFxLatest5m.mockReset();
   fetchFxLatest5m.mockResolvedValue(null);
   __setTwelveDataForTests({ now: () => new Date('2026-10-27T12:30:00Z') });
 });
 
+const CLOCK = { nowMs: T + 60 * M5, stepMs: M5 };
+
 describe('regras puras dos alertas', () => {
   it('disparo acima: maxima de um candle depois da criacao toca o nivel', () => {
     const alert = { level: 110, side: 'above' as const, watchFrom: new Date(T + M5) };
-    expect(findTrigger(alert, [bar(0, 109, 100), bar(1, 109.9, 101), bar(2, 110, 102)])).toEqual({ at: new Date(T + 2 * M5), price: 110 });
-    expect(findTrigger(alert, [bar(1, 109.9, 101)])).toBeNull();
+    expect(findTrigger(alert, [bar(0, 109, 100), bar(1, 109.9, 101), bar(2, 110, 102)], CLOCK)).toEqual({ at: new Date(T + 2 * M5), price: 110 });
+    expect(findTrigger(alert, [bar(1, 109.9, 101)], CLOCK)).toBeNull();
   });
 
   it('disparo abaixo: minima toca o nivel', () => {
     const alert = { level: 95, side: 'below' as const, watchFrom: new Date(T) };
-    expect(findTrigger(alert, [bar(0, 101, 96), bar(1, 100, 94.5)])).toEqual({ at: new Date(T + M5), price: 94.5 });
+    expect(findTrigger(alert, [bar(0, 101, 96), bar(1, 100, 94.5)], CLOCK)).toEqual({ at: new Date(T + M5), price: 94.5 });
   });
 
   it('candle que abriu ANTES do alerta nunca conta, mesmo cruzando o nivel', () => {
     const alert = { level: 110, side: 'above' as const, watchFrom: new Date(T + M5 / 2) };
-    expect(findTrigger(alert, [bar(0, 120, 100)])).toBeNull();
-    expect(findTrigger(alert, [bar(0, 120, 100), bar(1, 111, 100)])?.at).toEqual(new Date(T + M5));
+    expect(findTrigger(alert, [bar(0, 120, 100)], CLOCK)).toBeNull();
+    expect(findTrigger(alert, [bar(0, 120, 100), bar(1, 111, 100)], CLOCK)?.at).toEqual(new Date(T + M5));
   });
 
   it('lado sai do preco da analise; nivel no preco nao tem lado', () => {
@@ -177,6 +181,8 @@ describe('SetupAlertsService.create', () => {
     expect(setups.follow).toHaveBeenCalledWith(user, 'analysis00001');
     expect(alert).toMatchObject({ label: 'entry', level: 4140, status: 'active' });
     const insert = calls.find((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"'));
+    // Alerta feito a mao nao expira.
+    expect(insert?.values[insert.values.length - 1]).toBeNull();
     // Entrada abaixo do preco da analise (4150): dispara quando a minima toca.
     expect(insert?.values).toEqual(expect.arrayContaining(['u1', SETUP.id, 'XAUUSD', 4140, 'entry', 'below', 4150, true]));
     expect(calls.findIndex((c) => c.text.includes('pg_advisory_xact_lock'))).toBeLessThan(
@@ -233,7 +239,7 @@ describe('SetupAlertsService.create', () => {
     await service.create(user, { analysisId: 'analysis00001', label: 'custom', level: 4200 }, free);
     const insert = calls.find((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"'));
     expect(insert?.values).toEqual(expect.arrayContaining(['below', 4300]));
-    expect(fetchWindowFor).not.toHaveBeenCalled();
+    expect(fetchCrypto1m).not.toHaveBeenCalled();
   });
 
   it('cache velho: busca o ultimo candle de 5m de forex pelo cache compartilhado com o grounding', async () => {
@@ -241,7 +247,7 @@ describe('SetupAlertsService.create', () => {
     const { service, calls } = await ready({ cachedPrice: { lastPrice: 4000, checkedAt: new Date(Date.now() - 60 * 60_000) } });
     await service.create(user, { analysisId: 'analysis00001', label: 'custom', level: 4200 }, free);
     expect(fetchFxLatest5m).toHaveBeenCalledWith('XAUUSD', 'monitor', ALERT_RULES.cacheTtlMs.fx);
-    expect(fetchWindowFor).not.toHaveBeenCalled();
+    expect(fetchCrypto1m).not.toHaveBeenCalled();
     expect(calls.find((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"'))?.values).toEqual(expect.arrayContaining(['below', 4290]));
   });
 
@@ -372,6 +378,18 @@ describe('DTOs de alerta contra o ValidationPipe real', () => {
 });
 
 describe('runAlertMonitor', () => {
+  it('cancela os automaticos vencidos pelo relogio, mesmo sem alerta ativo depois', async () => {
+    const now = new Date('2026-11-09T15:00:00Z');
+    const { prisma, calls } = makePrisma([]);
+    const log = jest.fn();
+    await runAlertMonitor({ prisma, now: () => now, isPaused: async () => false, log });
+    const update = calls.find((c) => c.kind === 'execute' && c.text.includes('"expiresAt" <='));
+    expect(update?.text).toContain('"expiresAt" IS NOT NULL');
+    expect(update?.text).toContain(`"status" = 'cancelled'`);
+    expect(update?.values).toEqual([now, now]);
+    expect(log).toHaveBeenCalledWith('log', '[alerts] expirados=1');
+  });
+
   const NOW = new Date(T + 30 * 60 * 1000);
   const alertRow = (extra: Record<string, unknown> = {}) => ({
     id: 'alert-1', userId: 'u1', setupId: SETUP.id, priceSymbol: 'BTCUSDT', level: 110, label: 'tp1', side: 'above',
@@ -384,23 +402,23 @@ describe('runAlertMonitor', () => {
       ['INSERT INTO "tickrify"."AlertPriceCheck"', () => (opts.claimed === false ? [] : [{ symbol: 'BTCUSDT' }])],
       ['SET "status" = \'triggered\'', () => opts.won ?? 1],
     ]);
-    const fetchWindow = jest.fn(async () => (opts.candles === undefined ? [bar(0, 105, 100), bar(3, 111, 104)] : opts.candles));
+    const fetchCrypto = jest.fn(async () => (opts.candles === undefined ? [bar(0, 105, 100), bar(3, 111, 104)] : opts.candles));
     const log = jest.fn();
     const run = () =>
       runAlertMonitor({
         prisma,
         now: () => NOW,
-        fetchWindow,
+        fetchCrypto,
         isPaused: async (userId) => (opts.paused ?? []).includes(userId),
         log,
       });
-    return { run, calls, fetchWindow, log };
+    return { run, calls, fetchCrypto, log };
   }
 
   it('busca o ativo, grava o ultimo preco e dispara por UPDATE condicional', async () => {
-    const { run, calls, fetchWindow } = monitor({});
+    const { run, calls, fetchCrypto } = monitor({});
     await expect(run()).resolves.toEqual({ symbols: 1, checked: 1, triggered: 1, paused: 0 });
-    expect(fetchWindow).toHaveBeenCalledWith('BTCUSDT', expect.any(Number), NOW.getTime(), '5m', 1, 'monitor');
+    expect(fetchCrypto).toHaveBeenCalledWith('BTCUSDT', expect.any(Number), NOW.getTime());
     const trigger = calls.find((c) => c.text.includes('SET "status" = \'triggered\''));
     expect(trigger?.text).toContain('AND "status" = \'active\'');
     expect(trigger?.values).toEqual(expect.arrayContaining([new Date(T + 3 * M5), 111, 'alert-1']));
@@ -417,15 +435,15 @@ describe('runAlertMonitor', () => {
   });
 
   it('sem o claim do ativo (outra instancia buscou ha pouco): nao busca candles', async () => {
-    const { run, fetchWindow } = monitor({ claimed: false });
+    const { run, fetchCrypto } = monitor({ claimed: false });
     await expect(run()).resolves.toMatchObject({ symbols: 0, checked: 0 });
-    expect(fetchWindow).not.toHaveBeenCalled();
+    expect(fetchCrypto).not.toHaveBeenCalled();
   });
 
   it('conta travada: nao busca, nao dispara e empurra o watchFrom (volta sem disparar pelo passado)', async () => {
-    const { run, calls, fetchWindow } = monitor({ paused: ['u1'] });
+    const { run, calls, fetchCrypto } = monitor({ paused: ['u1'] });
     await expect(run()).resolves.toMatchObject({ paused: 1, triggered: 0 });
-    expect(fetchWindow).not.toHaveBeenCalled();
+    expect(fetchCrypto).not.toHaveBeenCalled();
     const push = calls.find((c) => c.text.includes('SET "watchFrom"'));
     expect(push?.values).toEqual(expect.arrayContaining([NOW, 'u1']));
   });
@@ -433,7 +451,7 @@ describe('runAlertMonitor', () => {
   it('ativo sem fonte de preco e ignorado; sem candles nada dispara', async () => {
     const synthetic = monitor({ rows: [alertRow({ priceSymbol: 'R_75' })] });
     await expect(synthetic.run()).resolves.toMatchObject({ symbols: 0 });
-    expect(synthetic.fetchWindow).not.toHaveBeenCalled();
+    expect(synthetic.fetchCrypto).not.toHaveBeenCalled();
     const empty = monitor({ candles: null });
     await expect(empty.run()).resolves.toMatchObject({ symbols: 1, triggered: 0 });
     expect(empty.log).toHaveBeenCalledWith('warn', '[alerts] Sem candles symbol=BTCUSDT');
@@ -444,11 +462,11 @@ describe('runAlertMonitor', () => {
     const rows = symbols.map((s, i) => alertRow({ id: `alert-${i}`, priceSymbol: s }));
     const { prisma } = makePrisma([
       ['WHERE a."status" = \'active\'\n    ORDER BY', () => rows],
-      ['SELECT "symbol", "claimedAt" FROM', () => [{ symbol: 'EURUSD', claimedAt: new Date(T) }]],
+      ['SELECT "symbol", "claimedAt", "lastCandleAt" FROM', () => [{ symbol: 'EURUSD', claimedAt: new Date(T) }]],
       ['INSERT INTO "tickrify"."AlertPriceCheck"', (_t, values) => [{ symbol: values[0] }]],
     ]);
     const fetchFxLatest = jest.fn(async () => [bar(0, 1, 1)]);
-    const counts = await runAlertMonitor({ prisma, now: () => NOW, fetchWindow: jest.fn(), fetchFxLatest, isPaused: async () => false, log: jest.fn() });
+    const counts = await runAlertMonitor({ prisma, now: () => NOW, fetchCrypto: jest.fn(), fetchFxLatest, isPaused: async () => false, log: jest.fn() });
     expect(counts.symbols).toBe(ALERT_RULES.maxFxSymbolsPerRun);
     expect(fetchFxLatest).toHaveBeenCalledTimes(ALERT_RULES.maxFxSymbolsPerRun);
     // EURUSD foi checado nesta janela: fica para a proxima volta.
@@ -463,10 +481,10 @@ describe('runAlertMonitor', () => {
     ]);
     const fetchFxLatest = jest.fn(async () => [[T - M5, 4000, 4020, 3990, 4000], [T + M5, 4000, 4011, 3999, 4005]] as Candle[]);
     const log = jest.fn();
-    const base = { prisma, now: () => NOW, fetchWindow: jest.fn(), fetchFxLatest, isPaused: async () => false, log };
+    const base = { prisma, now: () => NOW, fetchCrypto: jest.fn(), fetchFxLatest, isPaused: async () => false, log };
     await expect(runAlertMonitor(base)).resolves.toMatchObject({ symbols: 1, triggered: 1 });
-    expect(fetchFxLatest).toHaveBeenCalledWith('XAUUSD', 'monitor', ALERT_RULES.cacheTtlMs.fx);
-    expect(base.fetchWindow).not.toHaveBeenCalled();
+    expect(fetchFxLatest).toHaveBeenCalledWith('XAUUSD', 'monitor', expect.any(Number));
+    expect(base.fetchCrypto).not.toHaveBeenCalled();
 
     const denied = jest.fn(async () => {
       throw new TwelveDataUnavailableError('budget');
@@ -477,10 +495,418 @@ describe('runAlertMonitor', () => {
     expect(quiet).not.toHaveBeenCalledWith('warn', expect.anything());
   });
 
+  it('cripto: pede so o que falta desde a ultima vela, em 1 pedido por ativo', async () => {
+    const seen = new Date(NOW.getTime() - 2 * 60_000);
+    const { prisma } = makePrisma([
+      ['WHERE a."status" = \'active\'\n    ORDER BY', () => [alertRow(), alertRow({ id: 'alert-2', level: 120 })]],
+      ['SELECT "symbol", "claimedAt", "lastCandleAt" FROM', () => [{ symbol: 'BTCUSDT', claimedAt: seen, lastCandleAt: seen }]],
+      ['INSERT INTO "tickrify"."AlertPriceCheck"', () => [{ symbol: 'BTCUSDT' }]],
+    ]);
+    const fetchCrypto = jest.fn(async (): Promise<Candle[]> => [[NOW.getTime() - 60_000, 100, 101, 99, 100]]);
+    await runAlertMonitor({ prisma, now: () => NOW, fetchCrypto, isPaused: async () => false, log: jest.fn() });
+    expect(fetchCrypto).toHaveBeenCalledTimes(1);
+    expect(fetchCrypto).toHaveBeenCalledWith('BTCUSDT', seen.getTime() - 60_000, NOW.getTime());
+  });
+
+  it('vela de 1m que abriu antes do watchFrom nao dispara', async () => {
+    const watchFrom = new Date(NOW.getTime() - 30_000);
+    const { run } = monitor({ rows: [alertRow({ watchFrom })], candles: [[NOW.getTime() - 60_000, 100, 200, 99, 100]] });
+    await expect(run()).resolves.toMatchObject({ checked: 1, triggered: 0 });
+  });
+
+  it('claim do ativo vence 10 s antes da volta seguinte de 1 min', async () => {
+    const { run, calls } = monitor({});
+    await run();
+    const claim = calls.find((c) => c.text.includes('INSERT INTO "tickrify"."AlertPriceCheck"'));
+    expect(claim?.values).toEqual(expect.arrayContaining([new Date(NOW.getTime() - 50_000)]));
+  });
+
+  it('grava o intervalo em vigor do ativo', async () => {
+    const { run, calls } = monitor({});
+    await run();
+    const update = calls.find((c) => c.text.includes('"intervalMs" ='));
+    expect(update?.values).toEqual(expect.arrayContaining([ALERT_RULES.monitorIntervalMs]));
+  });
+
+  it('ouro vai antes dos outros forex, mesmo checado ha pouco', async () => {
+    const rows = ['EURUSD', 'XAUUSD'].map((priceSymbol, i) => alertRow({ id: `a-${i}`, priceSymbol }));
+    const { prisma } = makePrisma([
+      ['WHERE a."status" = \'active\'\n    ORDER BY', () => rows],
+      ['SELECT "symbol", "claimedAt", "lastCandleAt" FROM', () => [{ symbol: 'XAUUSD', claimedAt: new Date(NOW.getTime() - 3_600_000), lastCandleAt: null }]],
+      ['INSERT INTO "tickrify"."AlertPriceCheck"', (_t, values) => [{ symbol: values[0] }]],
+    ]);
+    const fetchFxLatest = jest.fn(async () => [bar(0, 1, 1)]);
+    await runAlertMonitor({ prisma, now: () => NOW, fetchCrypto: jest.fn(), fetchFxLatest, isPaused: async () => false, log: jest.fn() });
+    expect(fetchFxLatest.mock.calls.map((c: unknown[]) => c[0])).toEqual(['XAUUSD', 'EURUSD']);
+  });
+
+  it('minuto cheio no Twelve Data solta o claim; falta de orcamento nao', async () => {
+    const route = (): Array<[string, (text: string, values: unknown[]) => unknown]> => [
+      ['WHERE a."status" = \'active\'\n    ORDER BY', () => [alertRow({ priceSymbol: 'XAUUSD' })]],
+      ['INSERT INTO "tickrify"."AlertPriceCheck"', () => [{ symbol: 'XAUUSD' }]],
+    ];
+    const deniedWith = async (reason: 'rate_limited' | 'budget') => {
+      const { prisma, calls } = makePrisma(route());
+      const fetchFxLatest = jest.fn(async () => { throw new TwelveDataUnavailableError(reason); });
+      await runAlertMonitor({ prisma, now: () => NOW, fetchCrypto: jest.fn(), fetchFxLatest, isPaused: async () => false, log: jest.fn() });
+      return calls.some((c) => c.text.includes('SET "claimedAt" = NULL'));
+    };
+    await expect(deniedWith('rate_limited')).resolves.toBe(true);
+    await expect(deniedWith('budget')).resolves.toBe(false);
+  });
+
+  it('com pauseCache, a trava da conta so e refeita depois de 5 min', async () => {
+    const { prisma } = makePrisma([['WHERE a."status" = \'active\'\n    ORDER BY', () => [alertRow()]]]);
+    const isPaused = jest.fn(async () => false);
+    const pauseCache = new Map();
+    const at = (ms: number) => runAlertMonitor({ prisma, now: () => new Date(T + ms), fetchCrypto: jest.fn(async () => null), isPaused, pauseCache, log: jest.fn() });
+    await at(0);
+    await at(4 * 60_000);
+    expect(isPaused).toHaveBeenCalledTimes(1);
+    await at(5 * 60_000);
+    expect(isPaused).toHaveBeenCalledTimes(2);
+  });
+
   it('sem alerta ativo nao faz nada', async () => {
-    const { run, fetchWindow, calls } = monitor({ rows: [] });
+    const { run, fetchCrypto, calls } = monitor({ rows: [] });
     await expect(run()).resolves.toEqual({ symbols: 0, checked: 0, triggered: 0, paused: 0 });
-    expect(fetchWindow).not.toHaveBeenCalled();
+    expect(fetchCrypto).not.toHaveBeenCalled();
+    expect(calls.filter((c) => c.kind === 'query')).toHaveLength(1);
+  });
+});
+
+describe('createAlertTick', () => {
+  const counts = (triggered: number) => ({ symbols: 1, checked: 1, triggered, paused: 0 });
+  const tick = (triggered: number[]) => {
+    let t = 1_000_000;
+    let i = 0;
+    const emails = jest.fn(async () => ({ due: 0, sent: 0 }));
+    const log = jest.fn();
+    const run = createAlertTick({ monitor: async () => counts(triggered[i++] ?? 0), emails, log, now: () => t });
+    return { run, emails, log, advance: (ms: number) => { t += ms; } };
+  };
+
+  it('o e-mail sai na mesma volta que dispara', async () => {
+    const { run, emails, advance } = tick([0, 1]);
+    await run();
+    expect(emails).toHaveBeenCalledTimes(1);
+    advance(60_000);
+    await run();
+    expect(emails).toHaveBeenCalledTimes(2);
+  });
+
+  it('sem disparo, so tenta de novo a cada 10 min', async () => {
+    const { run, emails, advance } = tick([0, 0, 0]);
+    await run();
+    advance(9 * 60_000);
+    await run();
+    expect(emails).toHaveBeenCalledTimes(1);
+    advance(60_000);
+    await run();
+    expect(emails).toHaveBeenCalledTimes(2);
+  });
+
+  it('volta lenta nao se sobrepoe a seguinte', async () => {
+    let release = () => undefined as void;
+    const monitor = jest.fn(() => new Promise<ReturnType<typeof counts>>((resolve) => { release = () => resolve(counts(0)); }));
+    const run = createAlertTick({ monitor, emails: async () => ({ due: 0, sent: 0 }), log: jest.fn() });
+    const first = run();
+    await run();
+    expect(monitor).toHaveBeenCalledTimes(1);
+    release();
+    await first;
+  });
+
+  it('monitor falhou: nao derruba o e-mail nem a volta', async () => {
+    const emails = jest.fn(async () => ({ due: 0, sent: 0 }));
+    const log = jest.fn();
+    const run = createAlertTick({ monitor: async () => { throw new Error('boom'); }, emails, log });
+    await expect(run()).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith('warn', '[alerts] Varredura falhou: boom');
+    expect(emails).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('SetupAlertsService.watching', () => {
+  const plan = { direction: 'short', triggerType: 'zone_reaction', zoneLow: 77800, zoneHigh: 78000, invalidation: 78400, target1: 76900, target2: null, validForCandles: 12, trigger: 'x' };
+  const result = (symbol = 'BTCUSDT') => ({ signalState: 'WATCH', watchPlan: plan, analysis: { symbol, timeframe: '15m' } });
+  const ago = (ms: number) => new Date(Date.now() - ms);
+  const MIN = 60_000;
+
+  async function serviceWith(opts: { rows: unknown[]; tracks?: unknown[]; checks?: unknown[]; alerts?: unknown[] }) {
+    const { prisma, calls } = makePrisma([
+      ['"result"->>\'signalState\' = \'WATCH\'', () => opts.rows],
+      ['LEFT JOIN "tickrify"."AnalysisTrack"', () => opts.tracks ?? []],
+      ['FROM "tickrify"."AlertPriceCheck"', () => opts.checks ?? []],
+      ['"analysisId" IN', () => opts.alerts ?? []],
+    ]);
+    const service = new SetupAlertsService(prisma, {} as never);
+    await service.onModuleInit();
+    return { service, calls };
+  }
+  const row = (id: string, createdAt: Date, symbol?: string) => ({ id, recommendation: 'WAIT', result: result(symbol), createdAt });
+  const context = (analysisId: string, track: Record<string, unknown> = {}) => ({ analysisId, groundingInterval: '15m', setupId: 'setup-1', status: null, outcome: null, touched: false, ...track });
+
+  it('WATCH valendo: nivel, ultimo preco, frequencia real e estado do alerta', async () => {
+    const { service } = await serviceWith({
+      rows: [row('w1', ago(10 * MIN))],
+      tracks: [context('w1')],
+      checks: [{ symbol: 'BTCUSDT', lastPrice: 77000, checkedAt: ago(MIN), intervalMs: 60_000 }],
+      alerts: [{ id: 'al1', analysisId: 'w1', level: 77800, status: 'active', triggeredAt: null, seenAt: null }],
+    });
+    const { items } = await service.watching('u1');
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ analysisId: 'w1', symbol: 'BTCUSDT', timeframe: '15m', lastPrice: 77000, checkIntervalMs: 60_000, alert: { id: 'al1', status: 'active' } });
+    expect(items[0].watch).toMatchObject({ level: 77800, invalidation: 78400, outcome: 'pending', afterReach: null });
+  });
+
+  it('preco velho nao vira distancia atual', async () => {
+    const { service } = await serviceWith({
+      rows: [row('w1', ago(10 * MIN))],
+      tracks: [context('w1')],
+      checks: [{ symbol: 'BTCUSDT', lastPrice: 77000, checkedAt: ago(3 * 60 * MIN), intervalMs: 60_000 }],
+    });
+    expect((await service.watching('u1')).items[0]).toMatchObject({ lastPrice: null, checkedAt: null, alert: null });
+  });
+
+  it('encerrado mostra o que o preco fez, pelo rastreador', async () => {
+    const { service } = await serviceWith({
+      rows: [row('w1', ago(3 * 24 * 60 * MIN))],
+      tracks: [context('w1', { status: 'tracked', outcome: 'WIN', touched: true })],
+    });
+    expect((await service.watching('u1')).items[0].watch).toMatchObject({ outcome: 'reached', afterReach: 'target' });
+  });
+
+  it('encerrado ha mais de 7 dias sai da secao', async () => {
+    const { service } = await serviceWith({ rows: [row('w1', ago(9 * 24 * 60 * MIN))], tracks: [context('w1')] });
+    expect((await service.watching('u1')).items).toEqual([]);
+  });
+
+  it('disparado e nao visto vem primeiro; depois os valendo, o que vence antes na frente', async () => {
+    const { service } = await serviceWith({
+      rows: [row('late', ago(MIN)), row('soon', ago(120 * MIN)), row('hit', ago(30 * MIN))],
+      tracks: [context('late'), context('soon'), context('hit')],
+      alerts: [{ id: 'a', analysisId: 'hit', level: 77800, status: 'triggered', triggeredAt: ago(MIN), seenAt: null }],
+    });
+    expect((await service.watching('u1')).items.map((i) => i.analysisId)).toEqual(['hit', 'soon', 'late']);
+  });
+
+  it('alerta em outro nivel da mesma analise nao e o alerta do WATCH', async () => {
+    const { service } = await serviceWith({
+      rows: [row('w1', ago(MIN))],
+      tracks: [context('w1')],
+      alerts: [{ id: 'other', analysisId: 'w1', level: 70000, status: 'active', triggeredAt: null, seenAt: null }],
+    });
+    expect((await service.watching('u1')).items[0].alert).toBeNull();
+  });
+
+  it('nao busca preco para a tela e sem WATCH nao consulta mais nada', async () => {
+    fetchCrypto1m.mockClear();
+    const { service, calls } = await serviceWith({ rows: [] });
+    await expect(service.watching('u1')).resolves.toEqual({ items: [] });
     expect(calls).toHaveLength(1);
+    expect(fetchCrypto1m).not.toHaveBeenCalled();
+  });
+});
+
+describe('createWatchAlert: todo WATCH vira alerta', () => {
+  const NOW = new Date('2026-10-27T12:30:00Z');
+  const WATCH = {
+    signalState: 'WATCH',
+    dataMode: 'real_data',
+    watchPlan: WATCH_BTC.result.watchPlan,
+    analysis: { symbol: 'BTCUSDT', timeframe: '15m', currentPrice: 77200 },
+  };
+  const INPUT = { analysisId: 'analysis00002', userId: 'u1', result: WATCH, recommendation: 'WAIT' };
+  const SETUP_ROW = { id: 'setup-auto00001', userId: 'u1', status: 'tracking', symbol: 'BTCUSDT', timeframe: '15m', rootAnalysisId: 'analysis00002', createdAt: NOW, lastAnalysisAt: NOW };
+
+  type Options = {
+    analysis?: Record<string, unknown> | null;
+    unsubscribed?: boolean;
+    used?: number;
+    subscriber?: boolean;
+    setupsWithAlerts?: number;
+    activeOnSetup?: number;
+    handled?: boolean;
+    existingSetup?: Record<string, unknown>;
+    trackedTotal?: number;
+  };
+
+  function fake(opts: Options = {}) {
+    let inserted = false;
+    const { prisma, calls } = makePrisma(
+      [
+        ['SELECT "lastPrice", "checkedAt" FROM', () => []],
+        ['a."groundingStats"', () => (opts.analysis === null ? [] : [{ id: INPUT.analysisId, setupId: null, createdAt: new Date(), groundingInterval: '15m', clerkUserId: 'clerk_1', ...opts.analysis }])],
+        ['COUNT(DISTINCT "setupId")', () => [{ n: opts.setupsWithAlerts ?? 0 }]],
+        ['COUNT(*)::int AS "n" FROM "tickrify"."SetupAlert"', () => [{ n: opts.activeOnSetup ?? 0 }]],
+        ['COUNT(*)::int AS "n" FROM "tickrify"."TrackedSetup"', () => [{ n: opts.trackedTotal ?? 0 }]],
+        ['SELECT EXISTS (SELECT 1 FROM "tickrify"."Subscription"', () => [{ ok: Boolean(opts.subscriber) }]],
+        ['AS "ok"', () => [{ ok: false }]],
+        ['SELECT "id" FROM "tickrify"."SetupAlert" WHERE "analysisId"', () => (opts.handled ? [{ id: 'alert-old000001' }] : [])],
+        ['INSERT INTO "tickrify"."TrackedSetup"', () => { inserted = true; return 1; }],
+        ['"rootAnalysisId" =', () => (opts.existingSetup ? [opts.existingSetup] : [])],
+        ['FROM "tickrify"."TrackedSetup"', () => (inserted ? [SETUP_ROW] : opts.existingSetup ? [opts.existingSetup] : [])],
+        ['WHERE a."id" =', (_text, values) => [{ id: values[0], setupId: SETUP_ROW.id, analysisId: INPUT.analysisId, symbol: 'BTCUSDT', level: 77800, label: 'entry', side: 'above', status: 'active', createdAt: NOW }]],
+      ],
+      {
+        adminAudit: { findFirst: jest.fn(async () => (opts.unsubscribed ? { id: 'audit' } : null)) },
+        analysis: { count: jest.fn(async () => opts.used ?? 0) },
+        subscription: { findFirst: jest.fn(async () => null) },
+      },
+    );
+    const texts = () => calls.map((c) => c.text);
+    return {
+      prisma,
+      calls,
+      alertInsert: () => calls.find((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"')),
+      setupInsert: () => texts().find((t) => t.includes('INSERT INTO "tickrify"."TrackedSetup"')),
+    };
+  }
+
+  it('WATCH com velas reais grava o setup seguido e o alerta entry no nivel do plano, e avisa o PostHog com auto', async () => {
+    const f = fake();
+    await expect(createWatchAlert(f.prisma, INPUT)).resolves.toBe('created');
+    expect(f.setupInsert()).toBeDefined();
+    expect(f.alertInsert()?.values).toEqual(expect.arrayContaining(['u1', SETUP_ROW.id, 'analysis00002', 'BTCUSDT', 'BTCUSDT', 77800, 'entry', 'above', 77200, true]));
+    // Validade = hora da analise + 12 velas de 15m.
+    const expiresAt = f.alertInsert()?.values.find((v) => v instanceof Date) as Date;
+    expect(expiresAt.getTime()).toBeGreaterThan(Date.now() + 2.9 * 3600_000);
+    expect(expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 3 * 3600_000);
+    const locks = f.calls.filter((c) => c.text.includes('pg_advisory_xact_lock'));
+    expect(locks.map((c) => c.values[0])).toEqual(['alerts:u1', 'setups:u1']);
+    expect(captureServer).toHaveBeenCalledWith('clerk_1', 'setup_alert_created', expect.objectContaining({
+      label: 'entry', prefilled: true, auto: true, symbol_class: 'crypto', is_subscriber: false,
+    }));
+    expect(f.prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('o lado sai do preco de agora, como no alerta manual', async () => {
+    fetchCrypto1m.mockResolvedValue([[T, 77900, 78000, 77850, 77900]]);
+    const f = fake();
+    await createWatchAlert(f.prisma, INPUT);
+    expect(f.alertInsert()?.values).toEqual(expect.arrayContaining([77800, 'entry', 'below', 77900]));
+  });
+
+  it('analise que ja e versao de um setup seguido entra no mesmo setup, sem criar outro', async () => {
+    const f = fake({ analysis: { setupId: SETUP_ROW.id }, existingSetup: SETUP_ROW });
+    await expect(createWatchAlert(f.prisma, INPUT)).resolves.toBe('created');
+    expect(f.setupInsert()).toBeUndefined();
+    expect(f.alertInsert()?.values).toEqual(expect.arrayContaining([SETUP_ROW.id, 77800]));
+  });
+
+  it('assinante usa o teto de assinante', async () => {
+    const f = fake({ subscriber: true, setupsWithAlerts: 2 });
+    await expect(createWatchAlert(f.prisma, INPUT)).resolves.toBe('created');
+    expect(captureServer.mock.calls[0][2]).toMatchObject({ is_subscriber: true, trial_day: null });
+  });
+
+  it.each([
+    ['teto de setups com alerta', { setupsWithAlerts: ALERT_RULES.maxSetupsWithAlerts.free }, 'limit'],
+    ['teto de alertas no setup', { analysis: { setupId: SETUP_ROW.id }, existingSetup: SETUP_ROW, activeOnSetup: ALERT_RULES.maxActivePerSetup }, 'limit'],
+    ['teto de setups seguidos', { trackedTotal: 20 }, 'limit'],
+    ['descadastrado', { unsubscribed: true }, 'unsubscribed'],
+    ['gratis esgotado', { used: 50 }, 'free_locked'],
+    ['ja tratado (alerta desta analise cancelado pela pessoa)', { handled: true }, 'already_handled'],
+    ['setup largado pela pessoa', { analysis: { setupId: SETUP_ROW.id }, existingSetup: { ...SETUP_ROW, status: 'untracked' } }, 'already_handled'],
+    ['analise nao concluida', { analysis: null }, 'analysis_missing'],
+  ] as Array<[string, Options, string]>)('%s: nao cria e nao lanca', async (_name, opts, outcome) => {
+    const f = fake(opts);
+    await expect(createWatchAlert(f.prisma, INPUT)).resolves.toBe(outcome);
+    expect(f.alertInsert()).toBeUndefined();
+    expect(captureServer).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['fora do WATCH', { ...INPUT, result: BUY_GOLD.result, recommendation: 'BUY' }, 'not_watch'],
+    ['WATCH sem plano (analise antiga)', { ...INPUT, result: { ...WATCH, watchPlan: undefined } }, 'not_watch'],
+    ['niveis estimados do print', { ...INPUT, result: { ...WATCH, dataMode: 'print' } }, 'print_mode'],
+    ['ativo sem fonte de preco', { ...INPUT, result: { ...WATCH, analysis: { ...WATCH.analysis, symbol: 'Volatility 75 Index' } } }, 'no_price_source'],
+  ])('%s: nem consulta o banco', async (_name, input, outcome) => {
+    const f = fake();
+    await expect(createWatchAlert(f.prisma, input)).resolves.toBe(outcome);
+    expect(f.calls).toHaveLength(0);
+  });
+
+  it('so o nivel do plano do modelo: niveis guardados pelo codigo nao mudam o alerta', async () => {
+    const f = fake();
+    const result = { ...WATCH, analysis: { ...WATCH.analysis, entry: 70000, stopLoss: 69000, takeProfit1: 72000 } };
+    await expect(createWatchAlert(f.prisma, { ...INPUT, result })).resolves.toBe('created');
+    expect(f.alertInsert()?.values).toEqual(expect.arrayContaining([77800, 'entry']));
+    expect(f.alertInsert()?.values).not.toContain(70000);
+  });
+
+  const MAP = { price: 77200, atr: 100, above: { level: 78100, atr: 9, next: null, nextAtr: null }, below: null };
+
+  it('NO_TRADE recusado por risco: o nivel da IA recebe o alerta automatico, nunca os extremos do mapa', async () => {
+    const f = fake();
+    const aiLevel = { price: 77800, direction: 'short', invalidation: 78400, validForCandles: 12, reason: 'no_valid_geometry' };
+    const result = { ...WATCH, signalState: 'NO_TRADE', watchPlan: null, aiLevel, levelMap: MAP };
+    await expect(createWatchAlert(f.prisma, { ...INPUT, result })).resolves.toBe('created');
+    expect(f.alertInsert()?.values).toEqual(expect.arrayContaining([77800, 'entry']));
+    expect(f.alertInsert()?.values).not.toContain(78100);
+  });
+
+  it('NO_TRADE so com o mapa de niveis, ou nivel da IA de analise antiga: nenhum alerta automatico', async () => {
+    for (const extra of [{}, { aiLevel: { price: 77800 } }]) {
+      const f = fake();
+      await expect(createWatchAlert(f.prisma, { ...INPUT, result: { ...WATCH, signalState: 'NO_TRADE', watchPlan: null, levelMap: MAP, ...extra } })).resolves.toBe('not_watch');
+      expect(f.calls).toHaveLength(0);
+    }
+  });
+
+  it('janela do WATCH ja fechada: nao ha nivel para vigiar', async () => {
+    const f = fake({ analysis: { createdAt: new Date(Date.now() - 24 * 3600_000) } });
+    await expect(createWatchAlert(f.prisma, INPUT)).resolves.toBe('no_level');
+    expect(f.alertInsert()).toBeUndefined();
+  });
+
+  it.each([
+    ['preco no proprio nivel', 77800],
+    ['nivel longe demais do preco', 30000],
+  ])('%s: nao cria', async (_name, currentPrice) => {
+    const f = fake();
+    await expect(createWatchAlert(f.prisma, { ...INPUT, result: { ...WATCH, analysis: { ...WATCH.analysis, currentPrice } } })).resolves.toBe('level_rejected');
+    expect(f.alertInsert()).toBeUndefined();
+  });
+
+  it('banco fora do ar: a analise segue, so fica no log', async () => {
+    const f = fake();
+    f.prisma.$queryRaw = jest.fn(async () => {
+      throw new Error('db down');
+    });
+    const log = jest.fn();
+    await expect(createWatchAlert(f.prisma, INPUT, log)).resolves.toBe('error');
+    expect(log.mock.calls.flat().join(' ')).toContain('db down');
+  });
+});
+
+describe('options: alerta automatico na tela do WATCH', () => {
+  const active = { id: 'alert-auto00001', userId: 'u', setupId: SETUP.id, analysisId: WATCH_BTC.id, symbol: 'BTCUSDT', level: 77800, label: 'entry', side: 'above', status: 'active', createdAt: new Date(), triggeredAt: null, triggerPrice: null, seenAt: null };
+  const WATCH_REAL = { ...WATCH_BTC, result: { ...WATCH_BTC.result, dataMode: 'real_data' } };
+
+  async function options(analysis: unknown, alerts: unknown[], following = true) {
+    const made = await ready({ analysis });
+    (made.service as any).list = jest.fn(async () => ({ items: alerts, unseen: 0 }));
+    made.setups.findForAnalysis.mockResolvedValue({ setup: following ? SETUP : null } as any);
+    return made.service.options('u', WATCH_BTC.id, false);
+  }
+
+  it('WATCH com alerta entry ativo desta analise devolve watchAlert', async () => {
+    const out = await options(WATCH_REAL, [active]);
+    expect(out.watchAlert).toMatchObject({ id: 'alert-auto00001', level: 77800 });
+    expect(out.autoAlertPending).toBe(false);
+  });
+
+  it('alerta cancelado, de outra analise ou fora do WATCH nao vira watchAlert', async () => {
+    expect((await options(WATCH_REAL, [{ ...active, status: 'triggered' }])).watchAlert).toBeNull();
+    expect((await options(WATCH_REAL, [{ ...active, analysisId: 'analysis00009' }])).watchAlert).toBeNull();
+    expect((await options({ ...BUY_GOLD, createdAt: new Date() }, [{ ...active, analysisId: BUY_GOLD.id }])).watchAlert).toBeNull();
+  });
+
+  it('WATCH recem-concluido sem alerta gravado: a tela espera; passou a janela, nao espera mais', async () => {
+    expect((await options({ ...WATCH_REAL, updatedAt: new Date() }, [], false)).autoAlertPending).toBe(true);
+    expect((await options({ ...WATCH_REAL, updatedAt: new Date(Date.now() - ALERT_RULES.watchAutoPendingMs - 1000) }, [], false)).autoAlertPending).toBe(false);
+    expect((await options({ ...WATCH_BTC, updatedAt: new Date() }, [], false)).autoAlertPending).toBe(false);
   });
 });
