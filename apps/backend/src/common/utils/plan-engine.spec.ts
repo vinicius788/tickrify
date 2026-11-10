@@ -144,6 +144,18 @@ describe('snapInvalidation', () => {
   });
 });
 
+describe('moveIsLate depois do recuo', () => {
+  // 4 pernas de alta com fundos subindo; depois o preco recua ate o fundo anterior.
+  const bar = (t: number, c: number): number[] => [t, c, c + 0.2, c - 0.2, c];
+  const path = [100, 100.5, 101, 102, 103, 104, 103, 102.5, 102, 103, 104, 105, 106, 105, 104.5, 104, 105, 106, 107, 108, 107, 106.5, 106, 107, 108, 109, 110, 109, 108.5, 108, 107.5, 107.2];
+  const bars = path.map((c, i) => bar(i, c));
+
+  it('o recuo nao zera o atrasado: as pernas completas continuam contadas', () => {
+    expect(bars[bars.length - 1][4]).toBeLessThan(110);
+    expect(moveIsLate(bars, 1, 'long')).toBe(true);
+  });
+});
+
 describe('fractalSwings e moveIsLate', () => {
   // Escada de alta: fundos e topos subindo, pernas de 2.
   const stairs = (legs: number) => {

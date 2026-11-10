@@ -618,6 +618,14 @@ describe('AiService access enforcement', () => {
       const rejected = await run(injected, 'an_ai_level', { ...raw, signalState: 'WATCH', watchPlan, analysis: { ...raw.analysis, symbol: 'ABCUSDT' } });
       expect(rejected.completed.result).toMatchObject({ signalState: 'NO_TRADE', watchPlan: null, aiLevel: { price: 99 } });
       expect(rejected.delivered.fullResponse.aiLevel).toEqual(rejected.completed.result.aiLevel);
+      expect(rejected.completed.result.rejectedPlan).toMatchObject({ reason: expect.any(String), plan: { direction: expect.any(String) } });
+      // ENTER_NOW sem segundo alvo (target2 null): grava como concluida, sem TP2.
+      const enterPlan = { ...watchPlan, zoneLow: 98, zoneHigh: 99, invalidation: 97, target1: 104, target2: null };
+      const passes = [1, 2, 3, 4, 5, 6, 7].map((n) => `C${n} PASS: 100`).join('; ');
+      const enter = await run(injected, 'an_enter_no_tp2', { ...raw, signalState: 'ENTER_NOW', recommendation: 'BUY', confidence: 55, watchPlan: enterPlan,
+        analysis: { ...raw.analysis, symbol: 'ABCUSDT', entry: 100, stopLoss: 96.5, takeProfit1: 104, takeProfit2: null, trendStrength: 'strong', marketStructure: { bias: 'bullish' }, structureValidation: passes } });
+      expect(enter.completed.result).toMatchObject({ signalState: 'ENTER_NOW' });
+      expect(enter.completed.result.analysis).toMatchObject({ entry: 100, takeProfit2: null });
     } finally {
       keys.forEach((key, i) => { if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i]; });
     }

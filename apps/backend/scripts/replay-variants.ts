@@ -55,6 +55,7 @@ import { TIMEFRAME_MS, fetchWindow } from '../src/modules/market/candle-store';
 import { PrismaClient } from '@prisma/client';
 import { calibrationPair, decideSignal, type SignalDecisionResult, type SignalState } from '../src/common/utils/signal-decision';
 import { ENGINE_VERSION } from '../src/modules/ai/engine-contract';
+import { ENGINE_REPORT_SINCE, isFilledWatch, reviewDecision } from '../src/modules/admin/engine-report';
 import {
   ENGINE_RULES,
   atr14Series,
@@ -510,16 +511,20 @@ async function calibrate(): Promise<void> {
 
 // ── Revisao mensal (--review) ───────────────────────────────────────────────
 /**
- * Regras da revisao mensal, fixadas pelo dono em 02/11/2026, so para o
- * ENTER_NOW da versao atual do motor:
+ * Regras da revisao mensal, fixadas pelo dono em 02/11/2026 (reviewDecision,
+ * engine-report.ts), para o ENTER_NOW da versao atual do motor e, desde
+ * 09/11/2026, tambem para o WATCH que tocou o nivel e foi preenchido, em
+ * series separadas:
  *   n >= 30 e R liquido >= -0,05R: mantem.
- *   n >= 30 e R liquido <= -0,15R: desligar o ENTER_NOW (o produto fica so no
- *     modo leitura). E decisao do dono; o script so aponta.
+ *   n >= 30 e R liquido <= -0,15R: desligar. E decisao do dono; o script so aponta.
  *   resto: mantem e espera mais dados.
+ * Ouro e forex antes da correcao do fuso do Twelve Data ficam fora sozinhos.
  */
-const REVIEW_RULES = { minTrades: 30, keepAtOrAbove: -0.05, disableAtOrBelow: -0.15 } as const;
 
 interface TrackRecord {
+  createdAt: Date;
+  touched: boolean;
+  filled: boolean;
   signalState: string;
   engineVersion: string | null;
   symbol: string | null;
@@ -532,6 +537,9 @@ interface TrackRecord {
   refOutcome: string | null;
   refFillPrice: number | null;
 }
+
+/** Ouro e forex antes da correcao do fuso: entrada do motor sem swings, nao servem para julgar. */
+const isBeforeFxFix = (r: TrackRecord) => ['metal', 'forex'].includes(classOfSymbol(r.symbol ?? '')) && new Date(r.createdAt) < new Date(ENGINE_REPORT_SINCE);
 
 function classOfSymbol(symbol: string): string {
   if (normalizeToBinancePerp(symbol).isCrypto) return 'cripto';
@@ -558,13 +566,16 @@ async function review(): Promise<void> {
   const since = arg('--since');
   const prisma = new PrismaClient();
   try {
-    const rows = await prisma.$queryRawUnsafe<TrackRecord[]>(
-      `SELECT "signalState", "engineVersion", "symbol", "direction", "outcome", "fillPrice", "stopLoss", "takeProfit1",
-              "atr", "refOutcome", "refFillPrice"
-       FROM "tickrify"."AnalysisTrack"
-       WHERE "status" = 'tracked' AND ($1::text IS NULL OR "evaluatedAt" >= $1::date)`,
+    const all = await prisma.$queryRawUnsafe<TrackRecord[]>(
+      `SELECT a."createdAt", t."touched", t."filled", t."signalState", t."engineVersion", t."symbol", t."direction", t."outcome",
+              t."fillPrice", t."stopLoss", t."takeProfit1", t."atr", t."refOutcome", t."refFillPrice"
+       FROM "tickrify"."AnalysisTrack" t
+       JOIN "tickrify"."Analysis" a ON a."id" = t."analysisId"
+       WHERE t."status" = 'tracked' AND ($1::text IS NULL OR a."createdAt" >= $1::date)`,
       since,
     );
+    const rows = all.filter((r) => !isBeforeFxFix(r));
+    if (rows.length < all.length) console.log(`Fora: ${all.length - rows.length} planos de ouro e forex antes da correcao do fuso (${ENGINE_REPORT_SINCE}).`);
     console.log(`Revisao mensal do motor: ${rows.length} planos medidos pelo rastreador${since ? ` desde ${since}` : ''}. Versao atual: ${ENGINE_VERSION}.`);
     const dims: [string, (r: TrackRecord) => string][] = [
       ['estado', (r) => r.signalState],
@@ -581,17 +592,16 @@ async function review(): Promise<void> {
         console.log(line(`${value}: referencia de direcao (1 ATR)`, of.length, of.flatMap((r) => { const t = reviewReference(r); return t ? [t] : []; })));
       }
     }
-    const enter = rows.filter((r) => r.signalState === 'ENTER_NOW' && r.engineVersion === ENGINE_VERSION)
-      .flatMap((r) => { const t = reviewTrade(r); return t ? [t] : []; });
-    const n = enter.length;
-    const meanR = mean(enter.map((t) => t.r));
-    const R = REVIEW_RULES;
-    const verdict = n >= R.minTrades && meanR >= R.keepAtOrAbove
-      ? 'MANTEM o ENTER_NOW'
-      : n >= R.minTrades && meanR <= R.disableAtOrBelow
-        ? 'DESLIGAR o ENTER_NOW (o produto fica so no modo leitura): decisao do dono'
-        : 'MANTEM e espera mais dados';
-    console.log(`\nRegra da revisao (ENTER_NOW do motor ${ENGINE_VERSION}): n ${n}, R liquido ${signed(meanR)}. ${verdict}. O script so reporta; nada foi mudado.`);
+    const current = rows.filter((r) => r.engineVersion === ENGINE_VERSION);
+    const verdictLine = (title: string, subject: string, off: string, of: TrackRecord[]) => {
+      const trades = of.flatMap((r) => { const t = reviewTrade(r); return t ? [t] : []; });
+      const meanR = mean(trades.map((t) => t.r));
+      const decision = reviewDecision(trades.length, trades.length ? meanR : null);
+      const verdict = decision === 'keep' ? `MANTEM ${subject}` : decision === 'disable' ? `DESLIGAR ${off}: decisao do dono` : 'MANTEM e espera mais dados';
+      console.log(`\nRegra da revisao (${title} do motor ${ENGINE_VERSION}): n ${trades.length}, R liquido ${signed(meanR)}. ${verdict}. O script so reporta; nada foi mudado.`);
+    };
+    verdictLine('ENTER_NOW', 'o ENTER_NOW', 'o ENTER_NOW (o produto fica so no modo leitura)', current.filter((r) => r.signalState === 'ENTER_NOW'));
+    verdictLine('WATCH tocado e preenchido', 'a entrada no nivel', 'a entrada no nivel (ENGINE_ENTER_AT_LEVEL)', current.filter(isFilledWatch));
   } finally {
     await prisma.$disconnect();
   }

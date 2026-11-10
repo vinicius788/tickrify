@@ -1,4 +1,4 @@
-import { assetClassOf, buildEngineReport, type EngineReportRow } from './engine-report';
+import { assetClassOf, buildEngineReport, isFilledWatch, reviewDecision, type EngineReportRow } from './engine-report';
 
 const trade = (variant: 'A' | 'B', outcome: 'WIN' | 'LOSS', symbol = 'BTCUSDT', state = 'WATCH'): EngineReportRow => ({
   symbol, variant, signalState: state, trackStatus: 'tracked', touched: true, outcome,
@@ -75,5 +75,22 @@ describe('analises sem velas, por motivo', () => {
       { reason: 'not_recorded', count: 1 },
       { reason: 'provider_quota', count: 1 },
     ]);
+  });
+});
+
+describe('regra da revisao mensal (ENTER_NOW e WATCH preenchido)', () => {
+  it('mantem, desliga e espera nos mesmos limites', () => {
+    expect(reviewDecision(30, -0.05)).toBe('keep');
+    expect(reviewDecision(30, -0.15)).toBe('disable');
+    expect(reviewDecision(30, -0.1)).toBe('wait');
+    expect(reviewDecision(29, 1)).toBe('wait');
+    expect(reviewDecision(30, null)).toBe('wait');
+  });
+
+  it('WATCH so conta quando tocou o nivel e foi preenchido', () => {
+    expect(isFilledWatch({ signalState: 'WATCH', touched: true, filled: true })).toBe(true);
+    expect(isFilledWatch({ signalState: 'WATCH', touched: true, filled: false })).toBe(false);
+    expect(isFilledWatch({ signalState: 'WATCH', touched: false, filled: false })).toBe(false);
+    expect(isFilledWatch({ signalState: 'ENTER_NOW', touched: true, filled: true })).toBe(false);
   });
 });

@@ -114,12 +114,26 @@ function abVerdict(a: EngineReport['variants'][number], b: EngineReport['variant
   return `Manter e esperar mais dados: ${compare}, sem diferenca que decida${worseClass ? ' (a B perde em alguma classe com 10 ou mais trades)' : ''}. Ja ha trades suficientes (faltam 0 na A e 0 na B).`;
 }
 
+/** Regra da revisao mensal: vale para ENTER_NOW e para WATCH tocado e preenchido, cada um na sua serie. */
+export function reviewDecision(trades: number, meanR: number | null): 'keep' | 'disable' | 'wait' {
+  const R = ENGINE_DECISION_RULES.enterNow;
+  if (trades < R.minTrades || meanR === null) return 'wait';
+  return meanR >= R.keepAtOrAbove ? 'keep' : meanR <= R.disableAtOrBelow ? 'disable' : 'wait';
+}
+
+/** WATCH em que o preco chegou ao nivel e a ordem no nivel foi preenchida, pelo rastreador. */
+export function isFilledWatch(r: { signalState: string | null; touched: boolean | null; filled: boolean | null }): boolean {
+  return r.signalState === 'WATCH' && r.touched === true && r.filled === true;
+}
+
 function enterNowVerdict(trades: number, meanR: number | null): string {
   const R = ENGINE_DECISION_RULES.enterNow;
-  if (trades < R.minTrades || meanR === null) return `Manter e esperar mais dados: faltam ${R.minTrades - trades} trades de ENTER_NOW.`;
-  if (meanR >= R.keepAtOrAbove) return 'Manter o ENTER_NOW.';
-  if (meanR <= R.disableAtOrBelow) return 'Desligar o ENTER_NOW: o produto fica so no modo leitura.';
-  return 'Manter e esperar mais dados: entre -0,15R e -0,05R a regra nao decide.';
+  const decision = reviewDecision(trades, meanR);
+  if (decision === 'keep') return 'Manter o ENTER_NOW.';
+  if (decision === 'disable') return 'Desligar o ENTER_NOW: o produto fica so no modo leitura.';
+  return trades < R.minTrades || meanR === null
+    ? `Manter e esperar mais dados: faltam ${R.minTrades - trades} trades de ENTER_NOW.`
+    : 'Manter e esperar mais dados: entre -0,15R e -0,05R a regra nao decide.';
 }
 
 /** Por que as analises vieram sem velas, do motivo mais comum para o menos comum. */

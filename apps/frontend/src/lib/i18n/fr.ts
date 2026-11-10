@@ -62,7 +62,6 @@ export default {
     validation_less: "{side} : {first} ({firstValue}) doit être inférieur à {second} ({secondValue})",
     validation_rr_denominator: "{side} : dénominateur non valide pour R:R",
     validation_rr: "{side} : R:R non valide ({value})",
-    validation_numeric_target2: "{side} : le deuxième objectif doit être numérique",
     drawing_references: "Références visuelles : {firstId} et {secondId}.",
     analysis_details_unavailable: "Détails de l’analyse indisponibles.",
     demo_disclaimer: "Analyse à but éducatif uniquement, pas un conseil financier. Le trading comporte des risques ; la décision vous appartient toujours.",

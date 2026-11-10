@@ -62,7 +62,6 @@ export default {
     validation_less: "{side}：{first}（{firstValue}）は{second}（{secondValue}）より小さい必要があります",
     validation_rr_denominator: "{side}：R:Rの分母が無効です",
     validation_rr: "{side}：R:Rが無効です（{value}）",
-    validation_numeric_target2: "{side}：第2目標は数値である必要があります",
     drawing_references: "視覚的な参照：{firstId}と{secondId}。",
     analysis_details_unavailable: "分析の詳細を表示できません。",
     demo_disclaimer: "教育目的の分析であり、投資助言ではありません。取引にはリスクが伴い、判断は常にご自身で行ってください。",

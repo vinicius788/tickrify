@@ -62,7 +62,6 @@ export default {
     validation_less: "{side}: {first} ({firstValue}) deve ser menor que {second} ({secondValue})",
     validation_rr_denominator: "{side}: denominador inválido para R:R",
     validation_rr: "{side}: R:R inválido ({value})",
-    validation_numeric_target2: "{side}: segundo alvo deve ser numérico",
     drawing_references: "Referencias visuais: {firstId} e {secondId}.",
     analysis_details_unavailable: "Detalhes da análise indisponíveis.",
     demo_disclaimer: "Análise apenas educacional, não é aconselhamento financeiro. Operar envolve risco; a decisão é sempre sua.",
