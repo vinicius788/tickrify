@@ -687,7 +687,8 @@ describe('DashboardPage', () => {
 
       renderDashboard();
       // Quem nunca analisou cai direto em "Nova analise", com os exemplos em cima.
-      await user.click(await screen.findByRole('button', { name: /Otimista/ }));
+      // A 1a montagem do painel (com a ilha do celular) passa de 1 s com os arquivos rodando em paralelo.
+      await user.click(await screen.findByRole('button', { name: /Otimista/ }, { timeout: 5000 }));
       expect(await screen.findByText('Analysis result (sample)')).toBeTruthy();
       expect(screen.getByText('Exemplo otimista')).toBeTruthy();
       expect(screen.getByText('after bullish')).toBeTruthy();
