@@ -595,7 +595,7 @@ describe('DashboardPage', () => {
       expect(await screen.findByText(/Suas análises grátis com plano de trade acabaram/)).toBeTruthy();
       expect(screen.queryByText(/is ready/i)).toBeNull();
       expect(screen.queryByText(/calculated for this chart/i)).toBeNull();
-      expect(screen.getByRole('button', { name: /uma semana: US\$ 7,99/ })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /uma semana: \$7,99/ })).toBeTruthy();
     });
 
     it('se o contador do navegador estiver defasado, o 403 do backend tambem leva ao paywall', async () => {
@@ -914,6 +914,25 @@ describe('DashboardPage', () => {
       expect(await screen.findByText('Analysis result')).toBeTruthy();
       expect(getAnalysis).toHaveBeenCalledWith('a-77');
     });
+
+    it('analise pronta: aba e caminho dizem o ativo e o tempo grafico, nunca "Nova Analise"', async () => {
+      const getAnalysis = vi.fn().mockResolvedValue({ id: 'a-78', status: 'completed', recommendation: 'WAIT', symbol: 'NAS100', timeframe: 'M5' });
+      mockUseAPIClient.mockReturnValue(makeApiClient({ getAnalysis }));
+      renderDashboard('/dashboard/analysis/a-78');
+      await waitFor(() => expect(document.title).toBe('Análise de NAS100 M5 | Tickrify'));
+      expect(document.querySelector('header')?.textContent).toContain('Análise de NAS100 M5');
+      expect(document.querySelector('header')?.textContent).not.toContain('Nova Análise');
+    });
+
+    it('abas do celular: largura pelo texto, sem cortar o rotulo', async () => {
+      renderDashboard('/dashboard/strategy');
+      const findTab = () => [...document.querySelectorAll('a')].find((a) => a.className.includes('flex-auto') && a.textContent === 'Estratégia');
+      await waitFor(() => expect(findTab()).toBeTruthy());
+      const tab = findTab()!;
+      expect(tab.className).toContain('whitespace-nowrap');
+      expect(tab.className).not.toContain('truncate');
+      expect(tab.parentElement?.className).toContain('overflow-x-auto');
+    });
   });
 
   describe('feedback de utilidade no resultado autenticado', () => {
@@ -1051,7 +1070,7 @@ describe('DashboardPage', () => {
       Object.defineProperty(window, 'location', { value: { ...window.location, href: '' }, writable: true, configurable: true });
       renderDashboard('/dashboard/journal');
 
-      await user.click(await screen.findByRole('button', { name: /uma semana: US\$ 7,99/ }));
+      await user.click(await screen.findByRole('button', { name: /uma semana: \$7,99/ }));
       await waitFor(() =>
         expect(mockTrack).toHaveBeenCalledWith('checkout_started', expect.objectContaining({ source: 'locked_value', surface: 'journal', billingCycle: 'weekly', coupon: null })),
       );
@@ -1184,7 +1203,7 @@ describe('DashboardPage', () => {
 
     await screen.findByRole('button', { name: /Comece com uma semana/ });
     const botoes = screen.getAllByRole('button').map((b) => b.textContent ?? '');
-    const semanal = botoes.findIndex((b) => b.includes('Comece com uma semana: US$ 7,99 por 25 Ticks'));
+    const semanal = botoes.findIndex((b) => b.includes('Comece com uma semana: $7,99 por 25 Ticks'));
     const mensal = botoes.findIndex((b) => b.startsWith('Ou mensal:'));
     expect(semanal).toBeGreaterThanOrEqual(0);
     expect(mensal).toBeGreaterThan(semanal);

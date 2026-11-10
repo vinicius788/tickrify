@@ -215,6 +215,45 @@ describe('StripeService webhooks', () => {
     });
   });
 
+  describe('Configuracoes: assinatura real x acesso manual', () => {
+    const records = (rows: Record<string, any>) => jest.fn(async ({ where }: any) =>
+      rows[String(where.stripeId?.startsWith ?? '')] ?? null);
+
+    it('assinante real com sub_* ativo: status, valor e proxima cobranca da Stripe', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1' });
+      prisma.subscription.findFirst = records({ sub_: { stripeId: 'sub_1', status: 'active' } });
+      const view = await service.getUserSubscription('clerk_1');
+      expect(stripe.subscriptions.retrieve).toHaveBeenCalledWith('sub_1');
+      expect(view).toMatchObject({ id: 'sub_1', status: 'active', manageable: true });
+      expect(view).toHaveProperty('amount');
+      expect((view as any).nextChargeAt).toBe((view as any).currentPeriodEnd);
+      expect(view).not.toHaveProperty('manualAccess');
+    });
+
+    it('acesso manual com sub_* antiga encerrada: "Manual access" sem chamar a Stripe', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1' });
+      prisma.subscription.findFirst = records({ sub_: { stripeId: 'sub_old', status: 'canceled' }, manual_: { id: 'manual_owner_1' } });
+      stripe.subscriptions.retrieve.mockClear();
+      await expect(service.getUserSubscription('clerk_1')).resolves.toEqual({ manualAccess: true });
+      expect(stripe.subscriptions.retrieve).not.toHaveBeenCalled();
+    });
+
+    it('acesso manual com registro velho ainda "active" que a Stripe diz encerrado: manual', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1' });
+      prisma.subscription.findFirst = records({ sub_: { stripeId: 'sub_old', status: 'active' }, manual_: { id: 'manual_owner_1' } });
+      stripe.subscriptions.retrieve.mockResolvedValue({ ...subscription(), id: 'sub_old', status: 'canceled' });
+      await expect(service.getUserSubscription('clerk_1')).resolves.toEqual({ manualAccess: true });
+    });
+
+    it('so acesso manual, sem sub_*: manual; ninguem: null', async () => {
+      prisma.user.findUnique.mockResolvedValue({ id: 'usr_1' });
+      prisma.subscription.findFirst = records({ manual_: { id: 'manual_owner_1' } });
+      await expect(service.getUserSubscription('clerk_1')).resolves.toEqual({ manualAccess: true });
+      prisma.subscription.findFirst = records({});
+      await expect(service.getUserSubscription('clerk_1')).resolves.toBeNull();
+    });
+  });
+
   describe('portal e reativacao', () => {
     it('sem assinatura gerenciavel o portal responde 403 e nao cria sessao', async () => {
       prisma.user.findUnique.mockResolvedValue({ id: 'usr_1', stripeCustomerId: 'cus_1' });

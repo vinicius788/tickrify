@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { MessageCircle } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { buildApiUrl } from '@/lib/api';
@@ -27,6 +28,20 @@ import SupportChat from '@/components/SupportChat';
  * fundador como aba padrao (problema e opiniao continuam iguais). O numero no
  * botao sao respostas do fundador ainda nao lidas.
  */
+const ACTION_SELECTOR = 'a[href],button,input,select,textarea,[role="button"]';
+
+/** A bolha esta em cima de algo clicavel? */
+function coversAction(bubble: HTMLElement): boolean {
+  if (typeof document.elementsFromPoint !== 'function') return false;
+  const { left, top, width, height } = bubble.getBoundingClientRect();
+  // Dentro da forma arredondada e 6 px para os lados: a bolha nao encosta num botao.
+  const xs = [left - 6, left + width * 0.2, left + width / 2, left + width * 0.8, left + width + 6];
+  const points = xs.flatMap((x) => [0.25, 0.5, 0.75].map((fy) => [x, top + height * fy]));
+  return points.some(([x, y]) =>
+    document.elementsFromPoint(x, y).some((el) => !bubble.contains(el) && el.closest(ACTION_SELECTOR) !== null),
+  );
+}
+
 export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId?: string } = {}) {
   const { getToken, isSignedIn } = useAuth();
   const { pathname, search } = useLocation();
@@ -60,6 +75,32 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
     setAberto(true);
     track('chat_opened', { surface, unread: naoLidas });
   };
+
+  // A bolha nunca fica em cima de um botao: some enquanto houver um embaixo e
+  // volta quando a pessoa rola. O contexto (menu do painel) continua abrindo o chat.
+  const bolhaRef = useRef<HTMLButtonElement>(null);
+  const [sobreAcao, setSobreAcao] = useState(false);
+  useEffect(() => {
+    if (!isSignedIn || aberto) return;
+    let quadro = 0;
+    const conferir = () => {
+      cancelAnimationFrame(quadro);
+      quadro = requestAnimationFrame(() => {
+        if (bolhaRef.current) setSobreAcao(coversAction(bolhaRef.current));
+      });
+    };
+    conferir();
+    window.addEventListener('scroll', conferir, { capture: true, passive: true });
+    window.addEventListener('resize', conferir);
+    const mudancas = new MutationObserver(conferir);
+    mudancas.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      cancelAnimationFrame(quadro);
+      window.removeEventListener('scroll', conferir, { capture: true });
+      window.removeEventListener('resize', conferir);
+      mudancas.disconnect();
+    };
+  }, [isSignedIn, aberto, pathname]);
 
   // Menu do painel e link do e-mail ("Vinicius replied") abrem direto no chat.
   useEffect(() => {
@@ -142,14 +183,18 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
     const rotulo = naoLidas > 0 ? `${r.bubble} (${t.chat.unread.replace('{n}', String(naoLidas))})` : r.bubble;
     return (
       <button
+        ref={bolhaRef}
         type="button"
         onClick={() => abrirChat('bubble')}
-        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-[var(--border-strong)] bg-[var(--bg-floating)] px-3.5 py-2 text-xs text-[var(--text-dim)] backdrop-blur transition-colors hover:border-[var(--border-heavy)] hover:text-[var(--text-primary)]"
+        data-covering={sobreAcao ? 'true' : undefined}
+        tabIndex={sobreAcao ? -1 : undefined}
+        className={`fixed bottom-4 right-4 z-40 flex h-11 w-11 items-center justify-center gap-2 rounded-full border border-[var(--border-strong)] bg-[var(--bg-floating)] text-xs text-[var(--text-dim)] backdrop-blur transition-[opacity,color,border-color] hover:border-[var(--border-heavy)] hover:text-[var(--text-primary)] md:h-auto md:w-auto md:px-3.5 md:py-2 ${sobreAcao ? 'pointer-events-none opacity-0' : ''}`}
         aria-label={rotulo}
       >
-        <span>{r.bubble}</span>
+        <MessageCircle className="h-5 w-5 md:hidden" aria-hidden />
+        <span className="hidden md:inline">{r.bubble}</span>
         {naoLidas > 0 ? (
-          <span key="unread" className="min-w-[18px] rounded-full bg-[var(--inverse-bg)] px-1.5 text-center text-[11px] font-semibold leading-[18px] text-[var(--inverse-fg)]">
+          <span key="unread" className="absolute -right-1 -top-1 min-w-[18px] rounded-full md:static bg-[var(--inverse-bg)] px-1.5 text-center text-[11px] font-semibold leading-[18px] text-[var(--inverse-fg)]">
             {String(naoLidas)}
           </span>
         ) : null}

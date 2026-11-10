@@ -7,7 +7,7 @@ import { getReferralCoupon, isAffiliateCode, saveReferralCoupon } from "../../li
 import { track } from "../../lib/analytics";
 import { useToast } from "../../hooks/use-toast";
 import { useFounderOffer, useFoundingOffer } from "@/hooks/useFoundingOffer";
-import { interpolate, LOCALES, formatNumber, type Language, type Translations } from "@/lib/i18n";
+import { interpolate, LOCALES, formatNumber, formatUsd, type Language, type Translations } from "@/lib/i18n";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
   FOUNDER_CODE_PATTERN,
@@ -149,7 +149,7 @@ export function PricingCards() {
   // com o cupom e nunca aparece no semanal nem no anual (o servidor descarta).
   const foundingOffer = useFoundingOffer();
   const firstMonthPrice = foundingOffer?.percentOff
-    ? `$${formatNumber((29 * (1 - foundingOffer.percentOff / 100)), language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })}`
+    ? formatUsd(29 * (1 - foundingOffer.percentOff / 100), language)
     : null;
   // Oferta Founding Member: so existe com um link pessoal valido. Sem codigo, ou
   // com codigo usado ou vencido, a pagina fica exatamente como sempre foi.
@@ -446,7 +446,7 @@ export function PricingCards() {
             : billingCycle === "monthly" ? copy.monthlyRenewal : weeklyCopy.note;
           const perCycle =
             billingCycle === "weekly" ? copy.perWeek : billingCycle === "monthly" ? copy.perMonth : copy.perYear;
-          const price = `$${formatNumber(Number(plan.prices[billingCycle][currency].slice(1)), language, { maximumFractionDigits: 2 })}`;
+          const price = formatUsd(Number(plan.prices[billingCycle][currency].slice(1)), language);
           const ctaPrice = billingCycle === "monthly" && firstMonthPrice ? firstMonthPrice : price;
           return (
           <div key={plan.id} className="site-price">

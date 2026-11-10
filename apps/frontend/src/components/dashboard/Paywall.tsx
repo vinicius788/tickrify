@@ -1,4 +1,4 @@
-import { formatNumber } from '@/lib/i18n';
+import { formatUsd } from '@/lib/i18n';
 import { useEffect, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, Loader2, Lock } from 'lucide-react';
@@ -65,7 +65,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
   // O desconto so e anunciado com o cupom ativo na Stripe, e so vale no mensal.
   const offer = useFoundingOffer();
   const firstMonth = offer?.percentOff
-    ? formatNumber((MONTHLY_PRICE_USD * (1 - offer.percentOff / 100)), language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })
+    ? formatUsd(MONTHLY_PRICE_USD * (1 - offer.percentOff / 100), language)
     : null;
 
   useEffect(() => {
@@ -173,7 +173,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
             disabled={unlockPending}
             className="inline-flex items-center rounded-xl border border-[var(--border-default)] px-5 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)] disabled:opacity-60"
           >
-            {firstMonth ? p.orMonthlyFirst.replace('{price}', `$${firstMonth}`) : p.orMonthly}
+            {firstMonth ? p.orMonthlyFirst.replace('{price}', firstMonth) : p.orMonthly}
           </button>
           {offer?.percentOff ? (
             <p className="max-w-[440px] font-terminal text-[11px] text-[var(--text-secondary)]">
