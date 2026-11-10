@@ -63,6 +63,13 @@ export function normalizeToBinancePerp(symbol: string): {
     }
   }
 
+  // Sufixo de corretora depois do USD (BTCUSDm, BTCUSD.pro): sem isto a analise
+  // ficava sem velas reais (5 de 28 prints de cripto, medido em 10/11/2026).
+  if (!CRYPTO_BASES.has(base)) {
+    const broker = clean.match(/^([A-Z0-9]+?)USD[A-Z]{1,5}$/);
+    if (broker && CRYPTO_BASES.has(broker[1])) base = broker[1];
+  }
+
   if (!CRYPTO_BASES.has(base)) {
     return { isCrypto: false, binanceSymbol: null, base: null };
   }

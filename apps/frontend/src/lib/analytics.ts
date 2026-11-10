@@ -465,6 +465,8 @@ export type FunnelEvent =
   | 'signup_from_demo'
   // Link da comunidade no Discord. `location`: footer_public | app.
   | 'community_clicked'
+  | 'telegram_connect_clicked'
+  | 'telegram_disconnect_clicked'
   | 'watch_assets_edit_clicked'
   | 'watch_assets_saved'
   | 'watch_assets_analyze_clicked';
