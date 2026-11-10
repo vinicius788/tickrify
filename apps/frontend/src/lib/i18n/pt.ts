@@ -402,8 +402,6 @@ export default {
     watching: "Vigiando",
     // Rotulos curtos usados SO na barra de abas do celular. Os longos
     // truncam antes da palavra que identifica a aba, em 5 abas numa tela de 375px.
-    newAnalysisShort: 'Analisar',
-    journalShort: 'Diário',
     strategy: 'Estratégia',
     symbol: 'Símbolo',
     signal: 'Signal',
@@ -1413,6 +1411,16 @@ export default {
   },
   // Botão flutuante de reportar problema (ReportProblemButton).
   // Chat com o fundador (12/10/2026), dentro da bolha "Chat, feedback or problem".
+  bottomNav: {
+    label: 'Navegação do painel',
+    home: 'Dashboard',
+    journal: 'Diário',
+    analyze: 'Analisar',
+    trades: 'Trades',
+    more: 'Mais',
+    moreTitle: 'Mais opções',
+    moreBadge: '{n} novidades em Mais',
+  },
   community: {
     join: 'Entre na comunidade no Discord',
     footerLink: 'Comunidade no Discord',

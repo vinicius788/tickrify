@@ -399,8 +399,6 @@ export default {
     watching: "Beobachtet",
     // Rotulos curtos usados SO na barra de abas do celular. Os longos
     // truncam antes da palavra que identifica a aba, em 5 abas numa tela de 375px.
-    newAnalysisShort: 'Analyse',
-    journalShort: 'Journal',
     strategy: 'Strategie',
     symbol: 'Symbol',
     signal: 'Signal',
@@ -1395,6 +1393,16 @@ export default {
     ja: '日本語',
   },
   // Chat com o fundador (12/10/2026), dentro da bolha "Chat, feedback or problem".
+  bottomNav: {
+    label: 'Dashboard-Navigation',
+    home: 'Dashboard',
+    journal: 'Journal',
+    analyze: 'Analyse',
+    trades: 'Trades',
+    more: 'Mehr',
+    moreTitle: 'Weitere Optionen',
+    moreBadge: '{n} neu unter Mehr',
+  },
   community: {
     join: 'Tritt unserer Discord-Community bei',
     footerLink: 'Discord-Community',

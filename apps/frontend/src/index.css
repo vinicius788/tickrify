@@ -896,3 +896,14 @@ a.site-stat:hover .site-stat-n { color: #fff; }
   opacity: 1;
 }
 
+
+/* Ilha de navegacao do celular (MobileNav, 10/11/2026). Com ela na tela
+   (html[data-bottom-nav]), a bolha fechada some no celular: o chat esta no
+   "Mais". O painel aberto sobe para cima da ilha, sem cobrir nenhum item. */
+@media (max-width: 767.98px) {
+  html[data-bottom-nav] .tk-chat-bubble { display: none; }
+  html[data-bottom-nav] .tk-chat-panel {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 6.25rem);
+    max-height: calc(100dvh - env(safe-area-inset-bottom, 0px) - 8.25rem);
+  }
+}

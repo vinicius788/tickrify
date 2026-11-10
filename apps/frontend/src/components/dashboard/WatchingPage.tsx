@@ -194,7 +194,7 @@ const WatchingPage = ({ base, eyebrow, onStartAnalysis }: { base: string; eyebro
     <div className="flex flex-col gap-4">
       <div>
         {eyebrow}
-        <h1 className="tk-display mt-2 text-3xl md:text-4xl">{w.title}</h1>
+        <h1 className="tk-display mt-2 text-2xl md:text-3xl">{w.title}</h1>
         <p className="mt-2 max-w-2xl text-sm text-[var(--text-secondary)]">{w.subtitle}</p>
       </div>
       {!query.isLoading && items.length === 0 ? (

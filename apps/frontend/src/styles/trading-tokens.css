@@ -75,6 +75,10 @@
   --bg-inset: rgba(0, 0, 0, 0.4);
   --bg-floating: rgba(0, 0, 0, 0.7);
   --bg-solid: #0b0b12;
+  /* Ilha de navegacao do celular (MobileNav) e contador vermelho dela. */
+  --bg-island: rgba(17, 17, 24, 0.94);
+  --badge-bg: #ef4444;
+  --badge-fg: #ffffff;
   --bg-header: rgba(5, 5, 8, 0.95);
   --paywall-veil: rgba(5, 5, 8, 0.7);
   --verdict-tp1: #00ff7f;
@@ -174,6 +178,9 @@
   --bg-inset: #f1f2f5;
   --bg-floating: rgba(255, 255, 255, 0.92);
   --bg-solid: #ffffff;
+  --bg-island: rgba(255, 255, 255, 0.94);
+  --badge-bg: #d32f2f;
+  --badge-fg: #ffffff;
   --bg-header: rgba(246, 247, 249, 0.95);
   --paywall-veil: rgba(246, 247, 249, 0.8);
   --verdict-tp1: #057a44;

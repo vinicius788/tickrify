@@ -687,7 +687,8 @@ describe('DashboardPage', () => {
 
       renderDashboard();
       // Quem nunca analisou cai direto em "Nova analise", com os exemplos em cima.
-      await user.click(await screen.findByRole('button', { name: /Otimista/ }));
+      // A 1a montagem do painel (com a ilha do celular) passa de 1 s com os arquivos rodando em paralelo.
+      await user.click(await screen.findByRole('button', { name: /Otimista/ }, { timeout: 5000 }));
       expect(await screen.findByText('Analysis result (sample)')).toBeTruthy();
       expect(screen.getByText('Exemplo otimista')).toBeTruthy();
       expect(screen.getByText('after bullish')).toBeTruthy();
@@ -924,14 +925,24 @@ describe('DashboardPage', () => {
       expect(document.querySelector('header')?.textContent).not.toContain('Nova Análise');
     });
 
-    it('abas do celular: largura pelo texto, sem cortar o rotulo', async () => {
-      renderDashboard('/dashboard/strategy');
-      const findTab = () => [...document.querySelectorAll('a')].find((a) => a.className.includes('flex-auto') && a.textContent === 'Estratégia');
-      await waitFor(() => expect(findTab()).toBeTruthy());
-      const tab = findTab()!;
-      expect(tab.className).toContain('whitespace-nowrap');
-      expect(tab.className).not.toContain('truncate');
-      expect(tab.parentElement?.className).toContain('overflow-x-auto');
+    it('celular: ilha embaixo com o item ativo pela URL, sem a barra de abas do topo', async () => {
+      renderDashboard('/dashboard/journal');
+      const nav = await screen.findByRole('navigation', { name: 'Navegação do painel' });
+      expect(nav.querySelector('[aria-current="page"]')?.getAttribute('data-nav')).toBe('journal');
+      expect(document.querySelector('a.flex-auto')).toBeNull();
+      // Folga embaixo para nada ficar atras da ilha (mais a area de seguranca do iPhone).
+      expect(document.querySelector('main')?.className).toContain('pb-[calc(env(safe-area-inset-bottom,0px)+6.75rem)]');
+    });
+
+    it('celular: Mais abre a folha e navega pela URL; a ilha marca o Mais', async () => {
+      const user = userEvent.setup();
+      renderDashboard('/dashboard');
+      await user.click(await screen.findByRole('button', { name: 'Mais' }));
+      const sheet = await screen.findByTestId('bottom-nav-more');
+      await user.click(within(sheet).getByRole('link', { name: 'Estratégia' }));
+      await waitFor(() => expect(currentPath()).toBe('/dashboard/strategy'));
+      const more = screen.getByRole('navigation', { name: 'Navegação do painel' }).querySelector('[data-nav="more"]');
+      expect(more?.className).toContain('bg-[var(--fill-5)]');
     });
   });
 
