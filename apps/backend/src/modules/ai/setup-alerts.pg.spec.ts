@@ -155,7 +155,7 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
     const { alert } = await create(owner, await analysis(owner), 110);
     await expect(alerts.cancel(other, alert.id)).rejects.toMatchObject({ status: 404 });
     await expect(alerts.markSeen(other, alert.id)).rejects.toMatchObject({ status: 404 });
-    await expect(alerts.create({ id: other }, { analysisId: alert.analysisId, label: 'custom', level: 110 }, { isSubscriber: false, trialDay: null }))
+    await expect(alerts.create({ id: other }, { analysisId: alert.analysisId!, label: 'custom', level: 110 }, { isSubscriber: false, trialDay: null }))
       .rejects.toMatchObject({ status: 404 });
   });
 
@@ -337,11 +337,60 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
       const { items } = await alerts.list(u);
       await alerts.cancel(u, items[0].id);
       await expect(run(u, id)).resolves.toBe('already_handled');
-      await setups.setStatus({ id: u }, items[0].setupId, 'untracked');
+      await setups.setStatus({ id: u }, items[0].setupId!, 'untracked');
       await prisma.$executeRawUnsafe(`DELETE FROM tickrify."SetupAlert" WHERE "userId" = $1`, u);
       await expect(run(u, id)).resolves.toBe('already_handled');
       expect(await setupsOf(u)).toEqual([{ status: 'untracked' }]);
     });
+  });
+
+  it('alerta do My assets: sem setup nem analise, vigiado pelo monitor, com e-mail e fora da lista de setups', async () => {
+    const u = await newUser({ subscriber: true });
+    expect(alerts.assetAlertsAvailable).toBe(true);
+    const [nullable] = await prisma.$queryRawUnsafe(
+      `SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_schema = 'tickrify' AND table_name = 'SetupAlert' AND column_name IN ('setupId','analysisId') AND is_nullable = 'YES'`,
+    );
+    expect(nullable.n).toBe(2);
+    alerts.latestPrice = jest.fn(async () => 100);
+    const user = { id: u, clerkUserId: `synthetic-${u}` };
+    await expect(alerts.setAssetAlerts(user, { symbol: 'BTCUSDT', referencePrice: 100, levels: [110, 95] }, { isSubscriber: true })).resolves.toEqual({ created: 2 });
+    // Ligar de novo troca os anteriores; nunca acumula.
+    await alerts.setAssetAlerts(user, { symbol: 'BTCUSDT', referencePrice: 100, levels: [110, 95] }, { isSubscriber: true });
+    const active = await alerts.assetAlerts(u);
+    expect(active.map((a) => [a.level, a.side, a.status])).toEqual([[110, 'above', 'active'], [95, 'below', 'active']]);
+    expect((await alerts.list(u)).items).toHaveLength(0);
+    // Um alerta de setup da mesma pessoa convive e nao e tocado.
+    const { alert: fromSetup } = await create(u, await analysis(u, 'ETHUSD'), 120, true);
+
+    const [row] = await prisma.$queryRawUnsafe('SELECT "createdAt", "setupId", "analysisId", "expiresAt" FROM tickrify."SetupAlert" WHERE "id" = $1', active[0].id);
+    expect(row).toMatchObject({ setupId: null, analysisId: null });
+    const created = new Date(row.createdAt).getTime();
+    expect(new Date(row.expiresAt).getTime() - created).toBeGreaterThan(23 * H);
+    const now = new Date(created + 30 * 60 * 1000);
+    const first = Math.ceil(created / M5) * M5;
+    const fetchCrypto = jest.fn(async (symbol: string): Promise<Candle[] | null> => (symbol === 'BTCUSDT' ? [[first + M5, 101, 111, 100, 109]] : null));
+    await expect(runAlertMonitor({ prisma, now: () => now, fetchCrypto, log: () => undefined })).resolves.toMatchObject({ triggered: 1 });
+    const after = await alerts.assetAlerts(u, now);
+    expect(after.map((a) => [a.level, a.status])).toEqual([[110, 'triggered'], [95, 'active']]);
+
+    const mail = { sendLifecycle: jest.fn(async (_to: string, _email: { subject: string; html: string }) => true) };
+    const sweep = { prisma, mail, isEnabled: () => true, appUrl: 'https://tickrify.com', apiBaseUrl: 'https://api.test', now: () => now, capture: jest.fn(), log: () => undefined };
+    await expect(runSetupAlertEmailSweep(sweep)).resolves.toEqual({ due: 1, sent: 1 });
+    const sent = mail.sendLifecycle.mock.calls[0][1];
+    expect(sent.subject).toBe('BTCUSDT reached 110');
+    expect(sent.html).toContain('/dashboard/new?asset=BTCUSDT&amp;alert=');
+
+    // Visto some da lista; desligar cancela o que sobrou e nao toca o alerta do setup.
+    await alerts.markSeen(u, after[0].id);
+    await alerts.cancelAssetAlerts(u, { symbol: 'BTCUSDT' });
+    expect(await alerts.assetAlerts(u, now)).toHaveLength(0);
+    expect((await alerts.list(u)).items.map((a) => a.id)).toEqual([fromSetup.id]);
+    // Tirar o ativo da lista (keep sem ele) cancela; quem ficou na lista segue.
+    await alerts.setAssetAlerts(user, { symbol: 'BTCUSDT', referencePrice: 100, levels: [110] }, { isSubscriber: true });
+    await alerts.cancelAssetAlerts(u, { keep: ['BTCUSDT'] });
+    expect(await alerts.assetAlerts(u)).toHaveLength(1);
+    await alerts.cancelAssetAlerts(u, { keep: [] });
+    expect(await alerts.assetAlerts(u)).toHaveLength(0);
   });
 
   describe('e-mail com relogio falso', () => {
@@ -373,7 +422,7 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
       const u = await newUser({ subscriber: true });
       const t = new Date();
       const a = await triggered(u, t);
-      const { alert: b } = await create(u, a.analysisId, 105, true);
+      const { alert: b } = await create(u, a.analysisId!, 105, true);
       await prisma.$executeRawUnsafe(`UPDATE tickrify."SetupAlert" SET "status" = 'triggered', "triggeredAt" = $2 WHERE "id" = $1`, b.id, t);
 
       // Recusa tira a marca: o outro alerta do setup tambem tenta (e tambem e recusado).

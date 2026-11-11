@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
-import { formatAlertLevel, formatUtcTime, useSaveWatchAssets, useWatchAssets, type DayLevel, type WatchAsset } from '@/lib/setups';
+import { formatAlertLevel, formatUtcTime, useAlertActions, useSaveWatchAssets, useWatchAssetAlert, useWatchAssets, type DayLevel, type WatchAsset } from '@/lib/setups';
 
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
@@ -22,6 +22,8 @@ const MyAssets = ({ base }: { base: string }) => {
   const locale = DATE_LOCALES[language] ?? 'en-US';
   const query = useWatchAssets(true);
   const save = useSaveWatchAssets();
+  const alert = useWatchAssetAlert();
+  const { seen } = useAlertActions();
   const [editing, setEditing] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [timeframe, setTimeframe] = useState('15m');
@@ -103,7 +105,7 @@ const MyAssets = ({ base }: { base: string }) => {
   }
 
   const trendText = { uptrend: a.up, downtrend: a.down, range: a.range } as const;
-  const level = (label: string, value: DayLevel | null) => (
+  const level = (label: string, value: DayLevel | null, watched: number | null) => (
     <div className="rounded-xl border border-[var(--border-subtle)] px-3 py-2.5">
       <p className="tk-meta">{label}</p>
       {value ? (
@@ -114,9 +116,21 @@ const MyAssets = ({ base }: { base: string }) => {
       ) : (
         <p className="tk-meta">{a.none}</p>
       )}
+      {watched !== null ? (
+        <p className="tk-meta mt-1 tabular-nums" style={{ color: 'var(--signal-hold)' }}>{fill(a.alertAt, { level: formatAlertLevel(watched, locale) })}</p>
+      ) : null}
     </div>
   );
-  const row = (asset: WatchAsset) => (
+  const row = (asset: WatchAsset) => {
+    const alerts = asset.alerts ?? [];
+    const active = alerts.filter((item) => item.status === 'active');
+    const reached = alerts.filter((item) => item.status === 'triggered');
+    const on = active.length > 0;
+    const watchedAt = (side: 'above' | 'below') => active.find((item) => item.side === side)?.level ?? null;
+    const canAlert = data.alertsAvailable === true && Boolean(asset.levels && (asset.levels.above || asset.levels.below));
+    const busy = alert.isPending && alert.variables?.symbol === asset.symbol;
+    const analyzeUrl = `${base}/new?asset=${encodeURIComponent(asset.symbol)}`;
+    return (
     <li key={asset.symbol} className="flex flex-col gap-3 border-t border-[var(--border-subtle)] pt-4 first:border-t-0 first:pt-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -128,23 +142,71 @@ const MyAssets = ({ base }: { base: string }) => {
             <span className="tk-meta tabular-nums">{`${a.price} ${formatAlertLevel(asset.levels.price, locale)} · ${formatUtcTime(new Date(asset.levels.candleAt).toISOString())}`}</span>
           ) : null}
         </div>
-        <Link
-          to={`${base}/new`}
-          onClick={() => track('watch_assets_analyze_clicked', { symbol: asset.symbol })}
-          className="rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--fill-2)]"
-        >
-          {a.analyze}
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {canAlert || on ? (
+            <button
+              type="button"
+              aria-pressed={on}
+              disabled={busy}
+              onClick={() => {
+                track('watch_asset_alert_toggled', { symbol: asset.symbol, on: !on });
+                alert.mutate({ symbol: asset.symbol, on: !on });
+              }}
+              className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 ${
+                on
+                  ? 'border-transparent bg-[var(--inverse-bg)] text-[var(--inverse-fg)]'
+                  : 'border-[var(--border-default)] text-[var(--text-primary)] hover:bg-[var(--fill-2)]'
+              }`}
+            >
+              <span key={on ? 'on' : 'off'}>{on ? a.alertOn : a.alertOff}</span>
+            </button>
+          ) : null}
+          <Link
+            to={analyzeUrl}
+            onClick={() => track('watch_assets_analyze_clicked', { symbol: asset.symbol })}
+            className="rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--fill-2)]"
+          >
+            {a.analyze}
+          </Link>
+        </div>
       </div>
+      {reached.map((item) => (
+        <div key={item.id} role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--border-default)] bg-[var(--fill-2)] px-3 py-2.5">
+          <p className="text-sm font-medium tabular-nums text-[var(--text-primary)]">
+            {fill(a.alertReached, { level: formatAlertLevel(item.level, locale), time: item.triggeredAt ? formatUtcTime(item.triggeredAt) : '' })}
+          </p>
+          <div className="flex gap-2">
+            <Link
+              to={`${analyzeUrl}&alert=${encodeURIComponent(item.id)}`}
+              onClick={() => track('setup_alert_update_clicked', { alertId: item.id, setupId: null, surface: 'assets' })}
+              className="rounded-lg bg-[var(--inverse-bg)] px-3 py-1.5 text-sm font-semibold text-[var(--inverse-fg)] hover:opacity-90"
+            >
+              {a.analyze}
+            </Link>
+            <button
+              type="button"
+              onClick={() => seen.mutate(item.id, { onSuccess: () => query.refetch() })}
+              className="rounded-lg border border-[var(--border-default)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--fill-3)]"
+            >
+              {a.alertDismiss}
+            </button>
+          </div>
+        </div>
+      ))}
       {asset.levels ? (
         <div className="grid gap-2 sm:grid-cols-2">
-          {level(a.above, asset.levels.above)}
-          {level(a.below, asset.levels.below)}
+          {level(a.above, asset.levels.above, watchedAt('above'))}
+          {level(a.below, asset.levels.below, watchedAt('below'))}
         </div>
+      ) : null}
+      {on ? <p className="tk-meta">{a.alertHint}</p> : null}
+      {alert.isError && alert.variables?.symbol === asset.symbol ? (
+        <p role="status" className="text-sm" style={{ color: 'var(--signal-sell)' }}>{a.alertFailed}</p>
       ) : null}
       {asset.status !== 'ok' ? <p className="tk-meta">{asset.status === 'stale' ? a.stale : a.unavailable}</p> : null}
     </li>
-  );
+    );
+  };
 
   return (
     <section className={card} aria-labelledby="my-assets-title">

@@ -1206,6 +1206,13 @@ export default {
     unavailable: "Price data isn't available right now. Try again in a few minutes.",
     failed: "Couldn't save. Try again.",
     limit: 'Your plan allows up to {max} assets.',
+    alertOn: 'Alert on',
+    alertOff: 'Alert off',
+    alertAt: 'Alert set at {level}',
+    alertHint: "We'll tell you when price reaches either level. Valid for 24 hours, then turn it on again for the new levels.",
+    alertReached: 'Price reached {level} at {time}',
+    alertDismiss: 'Got it',
+    alertFailed: "Couldn't set the alert. Try again.",
   },
   today: {
     seeWatching: "Open Watching",

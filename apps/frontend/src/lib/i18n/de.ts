@@ -1206,6 +1206,13 @@ export default {
     unavailable: 'Gerade keine Preisdaten. Versuch es in ein paar Minuten erneut.',
     failed: 'Speichern fehlgeschlagen. Versuch es erneut.',
     limit: 'Dein Plan erlaubt bis zu {max} Assets.',
+    alertOn: 'Alarm an',
+    alertOff: 'Alarm aus',
+    alertAt: 'Alarm bei {level}',
+    alertHint: 'Wir melden uns, wenn der Preis eines der beiden Niveaus erreicht. Gilt 24 Stunden; danach für die neuen Niveaus wieder einschalten.',
+    alertReached: 'Preis erreichte {level} um {time}',
+    alertDismiss: 'Verstanden',
+    alertFailed: 'Alarm konnte nicht gesetzt werden. Bitte erneut versuchen.',
   },
   today: {
     seeWatching: "Beobachtet öffnen",

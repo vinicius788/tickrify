@@ -60,6 +60,22 @@ describe('alerta de nivel pelo Telegram', () => {
     expect(m.button.url).toBe('https://tickrify.com/dashboard/new?setup=setup-1&alert=alert-1&utm_source=telegram&utm_campaign=setup_alert');
   });
 
+  it('alerta do My assets: nao fala em analise, o botao abre a nova analise com o ativo, e a varredura aceita sem setup', async () => {
+    const m = renderSetupAlertTelegram('https://tickrify.com', {
+      ...pending(), setupId: null, timeframe: null, label: 'custom', level: 74530, plan: { direction: null, invalidation: null, target: null, conditional: null },
+    } as any);
+    expect(m.text).toContain('BTCUSDT reached 74,530');
+    expect(m.text).toContain('Nearest level from recent candles. Touched at 14:44 UTC.');
+    expect(m.text).not.toContain('your analysis');
+    expect(m.text).toContain('This is not a signal to enter.');
+    expect(m.button).toEqual({ text: 'Analyze chart', url: 'https://tickrify.com/dashboard/new?asset=BTCUSDT&alert=alert-1&utm_source=telegram&utm_campaign=setup_alert' });
+    const t = makeDeps({});
+    await runSetupAlertTelegramSweep(t.deps as any);
+    const sweep = t.calls.find((c) => c.text.includes(`a."status" = 'triggered'`))!;
+    expect(sweep.text).toContain('LEFT JOIN "tickrify"."TrackedSetup"');
+    expect(sweep.text).toContain('a."setupId" IS NULL OR s."id" IS NOT NULL');
+  });
+
   it('sem token nao consulta nada', async () => {
     const t = makeDeps({ token: null });
     expect(await runSetupAlertTelegramSweep(t.deps)).toEqual({ due: 0, sent: 0 });

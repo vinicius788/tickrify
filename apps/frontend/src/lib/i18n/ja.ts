@@ -1206,6 +1206,13 @@ export default {
     unavailable: '現在、価格データを取得できません。数分後にもう一度お試しください。',
     failed: '保存できませんでした。もう一度お試しください。',
     limit: 'ご利用のプランでは最大{max}銘柄です。',
+    alertOn: 'アラートON',
+    alertOff: 'アラートOFF',
+    alertAt: '{level} にアラート設定中',
+    alertHint: '価格がどちらかの水準に達したらお知らせします。有効期間は24時間です。その後は新しい水準で再度ONにしてください。',
+    alertReached: '{time} に価格が {level} に到達しました',
+    alertDismiss: '了解',
+    alertFailed: 'アラートを設定できませんでした。もう一度お試しください。',
   },
   today: {
     seeWatching: "監視中を開く",

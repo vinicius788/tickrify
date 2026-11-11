@@ -3,7 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { makeRawSqlPrisma as makePrisma } from '../../__tests__/raw-sql-mock';
 import { WATCH_ASSET_RULES, canonicalWatchSymbol, dayLevels } from './watch-assets';
 import { WatchAssetsService } from './watch-assets.service';
-import { SaveWatchAssetsDto } from './dto/watch-assets.dto';
+import { SaveWatchAssetsDto, SetWatchAssetAlertDto } from './dto/watch-assets.dto';
 
 jest.mock('../../common/analytics/posthog', () => ({ captureServer: jest.fn() }));
 
@@ -83,10 +83,16 @@ describe('niveis do dia (so codigo)', () => {
 
 function makeService(stored: Array<{ symbol: string; timeframe: string }> = []) {
   const { prisma, calls } = makePrisma([['FROM "tickrify"."UserWatchAsset"', () => stored]]);
-  const service = new WatchAssetsService(prisma);
+  const alerts = {
+    assetAlertsAvailable: true,
+    assetAlerts: jest.fn(async (): Promise<any[]> => []),
+    setAssetAlerts: jest.fn(async () => ({ created: 2 })),
+    cancelAssetAlerts: jest.fn(async () => undefined),
+  };
+  const service = new WatchAssetsService(prisma, alerts as any);
   const candles = jest.fn(async () => ({ candles: wave(101) as any, source: 'test', denied: null }));
   service.candles = candles as any;
-  return { service, calls, candles };
+  return { service, calls, candles, alerts };
 }
 const user = { id: 'u1', clerkUserId: 'clerk_1' };
 const inserts = (calls: Array<{ kind: string; text: string; values: unknown[] }>) =>
@@ -127,6 +133,52 @@ describe('WatchAssetsService', () => {
     expect(view.maxAssets).toBe(5);
   });
 
+  it('ligar o alerta vigia o nivel acima e o abaixo recalculados no servidor', async () => {
+    const t = makeService([{ symbol: 'XAUUSD', timeframe: '15m' }]);
+    await t.service.onModuleInit();
+    const levels = dayLevels(wave(101), '15m', NOW)!;
+    jest.useFakeTimers().setSystemTime(NOW);
+    try {
+      await t.service.setAlert(user, 'XAUUSDm', true, true);
+    } finally {
+      jest.useRealTimers();
+    }
+    expect(t.alerts.setAssetAlerts).toHaveBeenCalledWith(
+      user,
+      { symbol: 'XAUUSD', referencePrice: levels.price, levels: [levels.above!.price, levels.below!.price] },
+      { isSubscriber: true },
+    );
+  });
+
+  it('alerta so em ativo da lista; sem velas nao liga; desligar cancela so aquele ativo', async () => {
+    const t = makeService([{ symbol: 'XAUUSD', timeframe: '15m' }]);
+    await t.service.onModuleInit();
+    await expect(t.service.setAlert(user, 'BTCUSDT', true, true)).rejects.toMatchObject({ response: { code: 'asset_not_in_list' } });
+    t.candles.mockResolvedValueOnce({ candles: null, source: null, denied: 'weekend' } as any);
+    await expect(t.service.setAlert(user, 'XAUUSD', true, true)).rejects.toMatchObject({ response: { code: 'asset_levels_unavailable' } });
+    expect(t.alerts.setAssetAlerts).not.toHaveBeenCalled();
+    await t.service.setAlert(user, 'XAUUSD', false, true);
+    expect(t.alerts.cancelAssetAlerts).toHaveBeenCalledWith('u1', { symbol: 'XAUUSD' });
+  });
+
+  it('a lista devolve os alertas de cada ativo e se o botao existe', async () => {
+    const t = makeService([{ symbol: 'XAUUSD', timeframe: '15m' }, { symbol: 'BTCUSDT', timeframe: '15m' }]);
+    await t.service.onModuleInit();
+    t.alerts.assetAlerts.mockResolvedValueOnce([{ id: 'a1', symbol: 'BTCUSDT', level: 74000, side: 'above', status: 'active', triggeredAt: null }]);
+    const view = await t.service.view('u1', true, NOW);
+    expect(view.alertsAvailable).toBe(true);
+    expect(view.assets.map((a) => a.alerts.length)).toEqual([0, 1]);
+  });
+
+  it('salvar a lista cancela os alertas de quem saiu ou mudou de tempo grafico', async () => {
+    const t = makeService([{ symbol: 'XAUUSD', timeframe: '15m' }, { symbol: 'BTCUSDT', timeframe: '15m' }]);
+    await t.service.onModuleInit();
+    await t.service.save(user, { symbols: ['XAUUSD', 'ETHUSDT'], timeframe: '15m' }, true);
+    expect(t.alerts.cancelAssetAlerts).toHaveBeenLastCalledWith('u1', { keep: ['XAUUSD'] });
+    await t.service.save(user, { symbols: ['XAUUSD'], timeframe: '5m' }, true);
+    expect(t.alerts.cancelAssetAlerts).toHaveBeenLastCalledWith('u1', { keep: [] });
+  });
+
   it('fonte recusou e ha velas guardadas: niveis com status stale; sem velas: unavailable', async () => {
     const t = makeService([{ symbol: 'XAUUSD', timeframe: '15m' }, { symbol: 'EURUSD', timeframe: '15m' }]);
     await t.service.onModuleInit();
@@ -159,5 +211,18 @@ describe('SaveWatchAssetsDto contra o ValidationPipe real', () => {
     await expect(run({ symbols: ['A1', 'A2', 'A3', 'A4', 'A5', 'A6'], timeframe: '5m' })).rejects.toBeDefined();
     await expect(run({ symbols: ['<script>'], timeframe: '5m' })).rejects.toBeDefined();
     await expect(run({ symbols: ['XAUUSD'], timeframe: '5m', userId: 'x' })).rejects.toBeDefined();
+  });
+});
+
+describe('SetWatchAssetAlertDto contra o ValidationPipe real', () => {
+  const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+  const run = (value: unknown) => pipe.transform(value, { type: 'body', metatype: SetWatchAssetAlertDto });
+
+  it('so aceita ligar ou desligar; nivel vindo da tela e recusado', async () => {
+    await expect(run({ on: true })).resolves.toMatchObject({ on: true });
+    await expect(run({ on: false })).resolves.toMatchObject({ on: false });
+    await expect(run({ on: 'yes' })).rejects.toBeDefined();
+    await expect(run({})).rejects.toBeDefined();
+    await expect(run({ on: true, level: 4180 })).rejects.toBeDefined();
   });
 });

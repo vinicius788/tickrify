@@ -317,6 +317,82 @@ describe('SetupAlertsService.create', () => {
   });
 });
 
+describe('alerta do My assets (sem analise)', () => {
+  const inserted = (calls: Array<{ kind: string; text: string; values: unknown[] }>) =>
+    calls.filter((c) => c.kind === 'execute' && c.text.includes('INSERT INTO "tickrify"."SetupAlert"'));
+
+  it('grava um alerta por nivel, sem setup nem analise, com o lado pelo preco e validade de um dia', async () => {
+    const { service, calls } = await ready();
+    const before = Date.now();
+    await expect(service.setAssetAlerts(user, { symbol: 'BTCUSDT', referencePrice: 100, levels: [104, 97, 104] }, { isSubscriber: false }))
+      .resolves.toEqual({ created: 2 });
+    const rows = inserted(calls);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].text).toContain('NULL, NULL');
+    expect(rows[0].text).toContain(`'custom'`);
+    expect(rows.map((c) => c.values.slice(1, 7))).toEqual([
+      ['u1', 'BTCUSDT', 'BTCUSDT', 104, 'above', 100],
+      ['u1', 'BTCUSDT', 'BTCUSDT', 97, 'below', 100],
+    ]);
+    const expires = (rows[0].values[7] as Date).getTime();
+    expect(expires).toBeGreaterThanOrEqual(before + ALERT_RULES.assetAlertMs);
+    // Os anteriores do mesmo ativo saem antes; os de setup nao sao tocados.
+    const cancel = calls.find((c) => c.kind === 'execute' && c.text.includes(`"status" = 'cancelled'`))!;
+    expect(cancel.text).toContain('"setupId" IS NULL AND "symbol" =');
+    expect(captureServer).toHaveBeenCalledWith('clerk_1', 'setup_alert_created', expect.objectContaining({ source: 'asset', levels: 2, symbol_class: 'crypto' }));
+  });
+
+  it('nivel que o preco real ja passou nao vira alerta; sem nenhum, recusa e nada e gravado', async () => {
+    const { service, calls } = await ready();
+    service.latestPrice = jest.fn(async () => 105);
+    await service.setAssetAlerts(user, { symbol: 'BTCUSDT', referencePrice: 100, levels: [104, 97] }, { isSubscriber: true });
+    expect(inserted(calls).map((c) => c.values[4])).toEqual([97]);
+    service.latestPrice = jest.fn(async () => 90);
+    await expect(service.setAssetAlerts(user, { symbol: 'BTCUSDT', referencePrice: 100, levels: [97] }, { isSubscriber: true }))
+      .rejects.toMatchObject({ response: { code: 'asset_levels_unavailable' } });
+    expect(inserted(calls)).toHaveLength(1);
+  });
+
+  it('ativo sem fonte de preco nao tem alerta', async () => {
+    const { service, calls } = await ready();
+    await expect(service.setAssetAlerts(user, { symbol: 'NAS100', referencePrice: 100, levels: [104] }, { isSubscriber: true }))
+      .rejects.toMatchObject({ response: { code: 'alert_unavailable' } });
+    expect(inserted(calls)).toHaveLength(0);
+  });
+
+  it('boot: so altera a coluna que ainda recusa NULL; falhou, so este alerta fica fora', async () => {
+    const ok = makeService();
+    await ok.service.onModuleInit();
+    expect(ok.service.assetAlertsAvailable).toBe(true);
+    expect((ok.prisma.$executeRawUnsafe as jest.Mock).mock.calls.some(([sql]) => String(sql).includes('DROP NOT NULL'))).toBe(false);
+
+    const { prisma } = makePrisma([['information_schema.columns', () => [{ name: 'setupId' }, { name: 'analysisId' }]]]);
+    const service = new SetupAlertsService(prisma, {} as any);
+    await service.onModuleInit();
+    const ddl = (prisma.$executeRawUnsafe as jest.Mock).mock.calls.map(([sql]) => String(sql));
+    expect(ddl).toContain(`SET LOCAL lock_timeout = '3s'`);
+    expect(ddl.filter((sql) => sql.includes('DROP NOT NULL'))).toHaveLength(2);
+
+    const broken = makePrisma([['information_schema.columns', () => { throw new Error('lock timeout'); }]]);
+    const off = new SetupAlertsService(broken.prisma, {} as any);
+    await off.onModuleInit();
+    expect(off.assetAlertsAvailable).toBe(false);
+    await expect(off.assetAlerts('u1')).resolves.toEqual([]);
+    await expect(off.setAssetAlerts(user, { symbol: 'BTCUSDT', referencePrice: 100, levels: [104] }, { isSubscriber: true }))
+      .rejects.toMatchObject({ response: { code: 'alerts_unavailable' } });
+    // Os alertas de setup seguem valendo.
+    await expect(off.list('u1')).resolves.toEqual({ items: [], unseen: 0 });
+  });
+
+  it('lista so os sem setup: ativos valendo e disparados nao vistos de um dia', async () => {
+    const { service, calls } = await ready();
+    await service.assetAlerts('u1', new Date(T));
+    const query = calls.find((c) => c.text.includes('"setupId" IS NULL') && c.kind === 'query')!;
+    expect(query.text).toContain(`"status" = 'triggered' AND "seenAt" IS NULL`);
+    expect(query.values).toEqual(expect.arrayContaining(['u1', new Date(T), new Date(T - ALERT_RULES.assetAlertMs)]));
+  });
+});
+
 describe('SetupsController (alertas): conta travada', () => {
   const locked = () => {
     const alerts = {
@@ -426,6 +502,15 @@ describe('runAlertMonitor', () => {
     expect(captureServer).toHaveBeenCalledWith('clerk_1', 'setup_alert_triggered', {
       alertId: 'alert-1', setupId: SETUP.id, label: 'tp1', symbol_class: 'crypto', minutes_to_trigger: 15,
     }, { dedupeKey: 'setup_alert_triggered:alert-1' });
+  });
+
+  it('alerta do My assets (sem setup) e vigiado e dispara igual; setup largado segue fora', async () => {
+    const { run, calls } = monitor({ rows: [alertRow({ setupId: null, label: 'custom' })] });
+    await expect(run()).resolves.toMatchObject({ checked: 1, triggered: 1 });
+    const select = calls.find((c) => c.text.includes('ORDER BY a."priceSymbol"'))!;
+    expect(select.text).toContain('LEFT JOIN "tickrify"."TrackedSetup"');
+    expect(select.text).toContain('AND (a."setupId" IS NULL OR s."id" IS NOT NULL)');
+    expect(captureServer).toHaveBeenCalledWith('clerk_1', 'setup_alert_triggered', expect.objectContaining({ setupId: null, label: 'custom' }), expect.anything());
   });
 
   it('outra instancia ja disparou (UPDATE afetou 0 linhas): nao conta nem emite de novo', async () => {
@@ -725,7 +810,7 @@ describe('SetupAlertsService.watching', () => {
     fetchCrypto1m.mockClear();
     const { service, calls } = await serviceWith({ rows: [] });
     await expect(service.watching('u1')).resolves.toEqual({ items: [] });
-    expect(calls).toHaveLength(1);
+    expect(calls.filter((c) => !c.text.includes('information_schema'))).toHaveLength(1);
     expect(fetchCrypto1m).not.toHaveBeenCalled();
   });
 });

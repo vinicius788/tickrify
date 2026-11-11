@@ -1,7 +1,7 @@
 import { useDropzone } from 'react-dropzone';
 import { Card } from '@/components/ui/card';
 import { UploadCloud, X, Plus, Layers, Info } from 'lucide-react';
-import { useCallback, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import { shrinkChartImage } from '@/lib/chart-image';
@@ -26,6 +26,8 @@ interface NewAnalysisProps {
    * O motor so usa se a leitura da imagem nao achar o ativo ou o tempo grafico.
    */
   assetChoices?: AssetChoices | null;
+  /** Ativo ja escolhido ao chegar (link do My assets ou do alerta): `?asset=XAUUSD`. */
+  initialAsset?: string | null;
   onAssetHintChange?: (hint: AssetHintChoice | null) => void;
 }
 
@@ -79,7 +81,7 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdate = null, assetChoices = null, onAssetHintChange }: NewAnalysisProps) => {
+const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdate = null, assetChoices = null, initialAsset = null, onAssetHintChange }: NewAnalysisProps) => {
   const { t } = useLanguage();
   const u = t.analysis.upload;
   const [mainFile, setMainFile] = useState<File | null>(null);
@@ -161,6 +163,15 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
     setHintTimeframe(tf);
     onAssetHintChange?.(symbol && tf ? { symbol, timeframe: tf } : null);
   };
+
+  // Chegou com o ativo no endereco: marca uma vez, quando a lista da pessoa carrega.
+  const [initialApplied, setInitialApplied] = useState(false);
+  useEffect(() => {
+    if (initialApplied || !initialAsset || !assetChoices?.symbols.includes(initialAsset)) return;
+    setInitialApplied(true);
+    chooseHint(initialAsset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialAsset, assetChoices, initialApplied]);
 
   const reset = () => {
     chooseHint(null);

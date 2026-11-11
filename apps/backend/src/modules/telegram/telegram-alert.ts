@@ -22,6 +22,8 @@ import {
   formatLevel,
   levelDescription,
   setupAlertLink,
+  ASSET_ALERT_CTA,
+  ASSET_LEVEL_DESCRIPTION,
   type SetupAlertEmailItem,
 } from '../mail/setup-alert-email';
 
@@ -87,7 +89,8 @@ export async function callTelegram(token: string, method: string, body: Record<s
 export function renderSetupAlertTelegram(appUrl: string, item: SetupAlertEmailItem): { text: string; button: { text: string; url: string } } {
   const level = formatLevel(item.level);
   const asset = `${item.symbol}${item.timeframe ? ` ${item.timeframe}` : ''}`;
-  const label = levelDescription(item.label, item.plan.direction);
+  const fromAssets = !item.setupId;
+  const label = fromAssets ? ASSET_LEVEL_DESCRIPTION : levelDescription(item.label, item.plan.direction);
   const side = item.plan.direction === 'long' ? 'buy' : item.plan.direction === 'short' ? 'sell' : null;
   const c = item.plan.conditional;
   const lines = [
@@ -98,7 +101,7 @@ export function renderSetupAlertTelegram(appUrl: string, item: SetupAlertEmailIt
     c && side ? `Plan if price reaches ${formatLevel(c.entry)}: ${side} at ${formatLevel(c.entry)}, stop ${formatLevel(c.stopLoss)}, target ${formatLevel(c.takeProfit1)} (${c.tp1R.toFixed(1)}R).` : null,
     'Re-check the chart before you act. This is not a signal to enter.',
   ];
-  return { text: lines.filter(Boolean).join('\n'), button: { text: 'Update chart', url: setupAlertLink(appUrl, item, 'telegram') } };
+  return { text: lines.filter(Boolean).join('\n'), button: { text: fromAssets ? ASSET_ALERT_CTA : 'Update chart', url: setupAlertLink(appUrl, item, 'telegram') } };
 }
 
 type PendingRow = Omit<SetupAlertEmailItem, 'plan'> & {
@@ -141,12 +144,13 @@ export async function runSetupAlertTelegramSweep(deps: SetupAlertTelegramDeps): 
     SELECT a."id" AS "alertId", a."setupId", a."userId", a."symbol", a."priceSymbol", s."timeframe", a."level", a."label", a."triggeredAt",
       t."chatId", u."clerkUserId", an."result" AS "analysisResult", an."recommendation" AS "analysisRecommendation"
     FROM "tickrify"."SetupAlert" a
-    JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
+    LEFT JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
     JOIN "tickrify"."UserTelegram" t ON t."userId" = a."userId" AND t."chatId" IS NOT NULL
     JOIN "tickrify"."User" u ON u."id" = a."userId"
     LEFT JOIN "tickrify"."Analysis" an ON an."id" = a."analysisId"
     LEFT JOIN "tickrify"."TelegramAlertSend" ts ON ts."alertId" = a."id"
     WHERE a."status" = 'triggered' AND ts."alertId" IS NULL AND a."emailedAt" IS NULL AND a."seenAt" IS NULL AND ${recent}
+      AND (a."setupId" IS NULL OR s."id" IS NOT NULL)
       AND (a."expiresAt" IS NULL OR a."expiresAt" > ${now})
     ORDER BY a."triggeredAt" ASC, a."id" ASC
     LIMIT 200

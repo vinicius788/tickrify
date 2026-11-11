@@ -1219,6 +1219,13 @@ export default {
     unavailable: 'Sem dados de preço agora. Tente de novo em alguns minutos.',
     failed: 'Não foi possível salvar. Tente de novo.',
     limit: 'Seu plano permite até {max} ativos.',
+    alertOn: 'Alerta ligado',
+    alertOff: 'Alerta desligado',
+    alertAt: 'Alerta em {level}',
+    alertHint: 'Avisamos quando o preço chegar a um dos dois níveis. Vale por 24 horas; depois, ligue de novo para os níveis novos.',
+    alertReached: 'O preço chegou a {level} às {time}',
+    alertDismiss: 'Entendi',
+    alertFailed: 'Não deu para ligar o alerta. Tente de novo.',
   },
   today: {
     seeWatching: "Abrir Vigiando",
