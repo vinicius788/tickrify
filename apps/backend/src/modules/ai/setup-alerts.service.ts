@@ -148,6 +148,11 @@ const BOOT_SQL = [
  * essas linhas; monitor, e-mail e Telegram usam LEFT JOIN.
  */
 const ASSET_ALERT_COLUMNS = ['setupId', 'analysisId'] as const;
+/** DDL fixo por coluna: nenhum valor entra no texto do SQL. */
+const ASSET_ALERT_DDL: Record<(typeof ASSET_ALERT_COLUMNS)[number], string> = {
+  setupId: `ALTER TABLE "tickrify"."SetupAlert" ALTER COLUMN "setupId" DROP NOT NULL`,
+  analysisId: `ALTER TABLE "tickrify"."SetupAlert" ALTER COLUMN "analysisId" DROP NOT NULL`,
+};
 
 export type AssetAlertView = {
   id: string;
@@ -584,9 +589,8 @@ export class SetupAlertsService implements OnModuleInit {
       if (locked.length > 0) {
         await this.prisma.$transaction(async (tx) => {
           await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '3s'`);
-          for (const { name } of locked) {
-            if (!(ASSET_ALERT_COLUMNS as readonly string[]).includes(name)) continue;
-            await tx.$executeRawUnsafe(`ALTER TABLE "tickrify"."SetupAlert" ALTER COLUMN "${name}" DROP NOT NULL`);
+          for (const column of ASSET_ALERT_COLUMNS) {
+            if (locked.some(({ name }) => name === column)) await tx.$executeRawUnsafe(ASSET_ALERT_DDL[column]);
           }
         });
       }
