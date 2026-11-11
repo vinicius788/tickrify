@@ -1206,6 +1206,13 @@ export default {
     unavailable: 'No hay datos de precio ahora. Inténtalo de nuevo en unos minutos.',
     failed: 'No se pudo guardar. Inténtalo de nuevo.',
     limit: 'Tu plan permite hasta {max} activos.',
+    alertOn: 'Alerta activada',
+    alertOff: 'Alerta desactivada',
+    alertAt: 'Alerta en {level}',
+    alertHint: 'Te avisamos cuando el precio llegue a uno de los dos niveles. Vale 24 horas; después, actívala de nuevo para los niveles nuevos.',
+    alertReached: 'El precio llegó a {level} a las {time}',
+    alertDismiss: 'Entendido',
+    alertFailed: 'No se pudo activar la alerta. Inténtalo de nuevo.',
   },
   today: {
     seeWatching: "Abrir Vigilando",

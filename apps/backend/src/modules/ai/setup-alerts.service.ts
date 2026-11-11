@@ -79,6 +79,8 @@ export const ALERT_RULES = {
   triggeredVisibleOnSetupMs: 30 * 24 * HOUR,
   /** Depois de concluir um WATCH, quanto a tela espera o alerta automatico aparecer. */
   watchAutoPendingMs: 15 * 1000,
+  /** Alerta ligado no My assets: os niveis sao do dia, entao vale um dia e sai sozinho. */
+  assetAlertMs: 24 * HOUR,
 } as const;
 
 /** Aba Watching do painel. */
@@ -140,12 +142,29 @@ const BOOT_SQL = [
   `ALTER TABLE "tickrify"."AlertPriceCheck" ADD COLUMN IF NOT EXISTS "intervalMs" INTEGER`,
 ];
 
+/**
+ * Alerta do My assets (11/11/2026): nao tem setup nem analise por tras, entao as
+ * duas colunas passam a aceitar NULL. Quem le com JOIN no setup segue sem ver
+ * essas linhas; monitor, e-mail e Telegram usam LEFT JOIN.
+ */
+const ASSET_ALERT_COLUMNS = ['setupId', 'analysisId'] as const;
+
+export type AssetAlertView = {
+  id: string;
+  symbol: string;
+  level: number;
+  side: AlertSide;
+  status: AlertStatus;
+  triggeredAt: Date | null;
+};
+
 export type AlertSuggestion = { label: Exclude<AlertLabel, 'custom'>; level: number };
 
 export type AlertView = {
   id: string;
-  setupId: string;
-  analysisId: string;
+  /** null = alerta do My assets (sem setup nem analise). */
+  setupId: string | null;
+  analysisId: string | null;
   symbol: string;
   timeframe: string | null;
   level: number;
@@ -528,6 +547,9 @@ export async function createWatchAlert(
 export class SetupAlertsService implements OnModuleInit {
   private readonly logger = new Logger(SetupAlertsService.name);
   private ready = false;
+  private assetReady = false;
+  /** Trocado no teste. */
+  latestPrice: typeof latestAlertPrice = latestAlertPrice;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -542,7 +564,42 @@ export class SetupAlertsService implements OnModuleInit {
     } catch (error) {
       this.ready = false;
       this.logger.warn(`[alerts] Indisponivel (alertas desligados): ${error instanceof Error ? error.message : error}`);
+      return;
     }
+    await this.prepareAssetAlerts();
+  }
+
+  /**
+   * Solta o NOT NULL das duas colunas uma vez. So altera se ainda precisa (o
+   * ALTER pede trava exclusiva) e desiste em 3 s: falhou, so o alerta do
+   * My assets fica fora; os alertas de setup seguem iguais.
+   */
+  private async prepareAssetAlerts(): Promise<void> {
+    try {
+      const locked = await this.prisma.$queryRaw<Array<{ name: string }>>`
+        SELECT column_name::text AS "name" FROM information_schema.columns
+        WHERE table_schema = 'tickrify' AND table_name = 'SetupAlert'
+          AND column_name IN (${Prisma.join([...ASSET_ALERT_COLUMNS])}) AND is_nullable = 'NO'
+      `;
+      if (locked.length > 0) {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(`SET LOCAL lock_timeout = '3s'`);
+          for (const { name } of locked) {
+            if (!(ASSET_ALERT_COLUMNS as readonly string[]).includes(name)) continue;
+            await tx.$executeRawUnsafe(`ALTER TABLE "tickrify"."SetupAlert" ALTER COLUMN "${name}" DROP NOT NULL`);
+          }
+        });
+      }
+      this.assetReady = true;
+      this.logger.log('[alerts] Alerta do My assets pronto.');
+    } catch (error) {
+      this.assetReady = false;
+      this.logger.warn(`[alerts] Alerta do My assets indisponivel: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  get assetAlertsAvailable(): boolean {
+    return this.ready && this.assetReady;
   }
 
   private assertReady() {
@@ -812,6 +869,84 @@ export class SetupAlertsService implements OnModuleInit {
     return { alert: toView({ ...row, seenAt }) };
   }
 
+  /** Alertas do My assets da pessoa: ativos e disparados ainda nao vistos (um dia). */
+  async assetAlerts(userId: string, now: Date = new Date()): Promise<AssetAlertView[]> {
+    if (!this.assetAlertsAvailable) return [];
+    const rows = await this.prisma.$queryRaw<AssetAlertView[]>`
+      SELECT "id", "symbol", "level", "side", "status", "triggeredAt" FROM "tickrify"."SetupAlert"
+      WHERE "userId" = ${userId} AND "setupId" IS NULL
+        AND (("status" = 'active' AND ("expiresAt" IS NULL OR "expiresAt" > ${now}))
+          OR ("status" = 'triggered' AND "seenAt" IS NULL AND "triggeredAt" > ${new Date(now.getTime() - ALERT_RULES.assetAlertMs)}))
+      ORDER BY "level" DESC, "id" ASC
+      LIMIT 50
+    `;
+    return rows.map((row) => ({ ...row, level: Number(row.level) }));
+  }
+
+  /**
+   * Liga o alerta de um ativo do My assets nos niveis do dia (calculados pelo
+   * servidor, nunca vindos da tela). Troca os ativos anteriores do mesmo ativo.
+   * O lado e conferido contra o ultimo preco REAL: nivel que o preco ja passou
+   * nao vira alerta (dispararia na primeira volta).
+   */
+  async setAssetAlerts(
+    user: { id: string; clerkUserId: string },
+    input: { symbol: string; referencePrice: number; levels: number[] },
+    context: { isSubscriber: boolean },
+  ): Promise<{ created: number }> {
+    this.assertReady();
+    if (!this.assetReady) throw new ServiceUnavailableException({ code: 'alerts_unavailable', message: 'Price alerts are temporarily unavailable.' });
+    const price = priceSymbolOf(input.symbol);
+    if (!price) {
+      throw new UnprocessableEntityException({ code: 'alert_unavailable', message: "Price alerts aren't available for this asset yet." });
+    }
+    const real = (await this.latestPrice(this.prisma, price.priceSymbol, price.source)) ?? input.referencePrice;
+    const levels = [...new Set(input.levels)]
+      .map((level) => ({ level, side: sideFor(level, input.referencePrice) }))
+      .filter((l): l is { level: number; side: AlertSide } => l.side !== null && levelInBand(l.level, real) && sideFor(l.level, real) === l.side);
+    if (levels.length === 0) {
+      throw new UnprocessableEntityException({ code: 'asset_levels_unavailable', message: 'No level to watch on this asset right now.' });
+    }
+    const expiresAt = new Date(Date.now() + ALERT_RULES.assetAlertMs);
+    await this.prisma.$transaction(async (tx) => {
+      await lockAlerts(tx, user.id);
+      await tx.$executeRaw`
+        UPDATE "tickrify"."SetupAlert" SET "status" = 'cancelled', "cancelledAt" = NOW(), "updatedAt" = NOW()
+        WHERE "userId" = ${user.id} AND "setupId" IS NULL AND "symbol" = ${input.symbol} AND "status" = 'active'
+      `;
+      for (const { level, side } of levels) {
+        await tx.$executeRaw`
+          INSERT INTO "tickrify"."SetupAlert"
+            ("id", "userId", "setupId", "analysisId", "symbol", "priceSymbol", "level", "label", "side", "referencePrice",
+             "prefilled", "status", "createdAt", "updatedAt", "watchFrom", "expiresAt")
+          VALUES (${randomUUID()}, ${user.id}, NULL, NULL, ${input.symbol}, ${price.priceSymbol}, ${level}, 'custom',
+            ${side}, ${real}, true, 'active', NOW(), NOW(), NOW(), ${expiresAt})
+        `;
+      }
+    });
+    captureServer(user.clerkUserId, 'setup_alert_created', {
+      label: 'custom', prefilled: true, source: 'asset', levels: levels.length,
+      symbol_class: price.symbolClass, is_subscriber: context.isSubscriber,
+    });
+    return { created: levels.length };
+  }
+
+  /** Desliga os alertas do My assets: de um ativo, ou de todos fora da lista `keep`. Nunca lanca. */
+  async cancelAssetAlerts(userId: string, target: { symbol: string } | { keep: string[] }): Promise<void> {
+    if (!this.assetAlertsAvailable) return;
+    try {
+      const which = 'symbol' in target
+        ? Prisma.sql`AND "symbol" = ${target.symbol}`
+        : target.keep.length > 0 ? Prisma.sql`AND "symbol" NOT IN (${Prisma.join(target.keep)})` : Prisma.empty;
+      await this.prisma.$executeRaw`
+        UPDATE "tickrify"."SetupAlert" SET "status" = 'cancelled', "cancelledAt" = NOW(), "updatedAt" = NOW()
+        WHERE "userId" = ${userId} AND "setupId" IS NULL AND "status" = 'active' ${which}
+      `;
+    } catch (error) {
+      this.logger.warn(`[alerts] Alertas do My assets nao cancelados: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
   /** Setup largado ou arquivado: os alertas ativos dele acabam junto. Nunca lanca. */
   async cancelForSetup(userId: string, setupId: string): Promise<void> {
     if (!this.ready) return;
@@ -831,7 +966,7 @@ export class SetupAlertsService implements OnModuleInit {
 type MonitorRow = {
   id: string;
   userId: string;
-  setupId: string;
+  setupId: string | null;
   priceSymbol: string;
   level: number;
   label: AlertLabel;
@@ -883,12 +1018,14 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<AlertMoni
   `;
   if (Number(expired) > 0) deps.log('log', `[alerts] expirados=${Number(expired)}`);
 
+  // Sem setup = alerta do My assets; com setup, so o que ainda e acompanhado.
   const rows = await deps.prisma.$queryRaw<MonitorRow[]>`
     SELECT a."id", a."userId", a."setupId", a."priceSymbol", a."level", a."label", a."side", a."createdAt", a."watchFrom",
       u."clerkUserId"
     FROM "tickrify"."SetupAlert" a
-    JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
+    LEFT JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
     JOIN "tickrify"."User" u ON u."id" = a."userId"
+      AND (a."setupId" IS NULL OR s."id" IS NOT NULL)
     WHERE a."status" = 'active'
     ORDER BY a."priceSymbol", a."createdAt"
     LIMIT 2000

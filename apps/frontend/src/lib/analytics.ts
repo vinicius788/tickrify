@@ -470,6 +470,7 @@ export type FunnelEvent =
   | 'telegram_disconnect_clicked'
   | 'watch_assets_edit_clicked'
   | 'watch_assets_saved'
+  | 'watch_asset_alert_toggled'
   | 'watch_assets_analyze_clicked';
 
 // ─── Fila de pré-consentimento ────────────────────────────────────────────────

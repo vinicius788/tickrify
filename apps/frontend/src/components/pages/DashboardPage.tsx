@@ -1448,6 +1448,7 @@ const DashboardPage = () => {
                         }
                       : null
                   }
+                  initialAsset={new URLSearchParams(location.search).get('asset')}
                   onAssetHintChange={(hint) => {
                     assetHintRef.current = hint;
                   }}

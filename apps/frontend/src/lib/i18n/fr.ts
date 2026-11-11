@@ -1206,6 +1206,13 @@ export default {
     unavailable: 'Pas de données de prix pour le moment. Réessayez dans quelques minutes.',
     failed: "Impossible d'enregistrer. Réessayez.",
     limit: "Votre offre permet jusqu'à {max} actifs.",
+    alertOn: 'Alerte activée',
+    alertOff: 'Alerte désactivée',
+    alertAt: 'Alerte à {level}',
+    alertHint: "Nous vous prévenons quand le prix atteint l'un des deux niveaux. Valable 24 heures ; ensuite, réactivez-la pour les nouveaux niveaux.",
+    alertReached: 'Le prix a atteint {level} à {time}',
+    alertDismiss: 'Compris',
+    alertFailed: "Impossible d'activer l'alerte. Réessayez.",
   },
   today: {
     seeWatching: "Ouvrir Surveillance",

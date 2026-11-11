@@ -41,6 +41,10 @@ export const SETUP_ALERT_REPLY_TO = 'support@tickrify.com';
 
 export type AlertDirection = 'long' | 'short' | null;
 
+/** Alerta do My assets: o nivel veio das velas, nao de uma analise. */
+export const ASSET_LEVEL_DESCRIPTION = 'nearest level from recent candles';
+export const ASSET_ALERT_CTA = 'Analyze chart';
+
 /** O que o nivel e, em palavras: nunca soa como ordem executada. */
 export function levelDescription(label: string, direction: AlertDirection): string {
   if (label === 'entry') {
@@ -60,7 +64,8 @@ export function formatLevel(level: number): string {
 
 export type SetupAlertEmailItem = {
   alertId: string;
-  setupId: string;
+  /** null = alerta do My assets (sem setup nem analise). */
+  setupId: string | null;
   symbol: string;
   timeframe: string | null;
   level: number;
@@ -97,10 +102,13 @@ export function alertPlanOf(result: unknown, recommendation: string | null): Ale
   };
 }
 
-/** Link do botao: o fluxo de atualizar o setup (custo na tela antes de enviar). */
-export function setupAlertLink(appUrl: string, item: Pick<SetupAlertEmailItem, 'setupId' | 'alertId'>, source: 'email' | 'telegram' = 'email'): string {
+/**
+ * Link do botao: o fluxo de atualizar o setup (custo na tela antes de enviar).
+ * Alerta do My assets: nova analise com o ativo ja escolhido.
+ */
+export function setupAlertLink(appUrl: string, item: Pick<SetupAlertEmailItem, 'setupId' | 'alertId' | 'symbol'>, source: 'email' | 'telegram' = 'email'): string {
   const params = new URLSearchParams({
-    setup: item.setupId,
+    ...(item.setupId ? { setup: item.setupId } : { asset: item.symbol }),
     alert: item.alertId,
     utm_source: source,
     utm_campaign: 'setup_alert',
@@ -116,7 +124,8 @@ export function renderSetupAlertEmail(params: {
 }): { kind: string; subject: string; html: string; unsubscribeUrl: string; from: string; replyTo: string } {
   const { item } = params;
   const level = formatLevel(item.level);
-  const label = levelDescription(item.label, item.plan.direction);
+  const fromAssets = !item.setupId;
+  const label = fromAssets ? ASSET_LEVEL_DESCRIPTION : levelDescription(item.label, item.plan.direction);
   const time = `${item.triggeredAt.toISOString().slice(11, 16)} UTC on ${item.triggeredAt.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -135,17 +144,21 @@ export function renderSetupAlertEmail(params: {
     ? `<b>Plan if price reaches ${escapeHtml(formatLevel(c.entry))}:</b> ${side.toLowerCase()} at ${escapeHtml(formatLevel(c.entry))}, stop ${escapeHtml(formatLevel(c.stopLoss))}, target ${escapeHtml(formatLevel(c.takeProfit1))} (${c.tp1R.toFixed(1)}R).`
     : null;
   const asset = `${item.symbol}${item.timeframe ? ` ${item.timeframe}` : ''}`;
-  const subject = `Your ${item.symbol} setup reached ${level}`;
+  const subject = fromAssets ? `${item.symbol} reached ${level}` : `Your ${item.symbol} setup reached ${level}`;
   const html = letter({
     preview: `${item.symbol} touched ${level} (${label}) at ${time}.`,
     firstName: params.firstName,
     paragraphs: [
-      `Price reached a level from your <b>${escapeHtml(asset)}</b> analysis.`,
+      fromAssets
+        ? `Price reached a level you are watching on <b>${escapeHtml(asset)}</b> in My assets.`
+        : `Price reached a level from your <b>${escapeHtml(asset)}</b> analysis.`,
       rows.filter(Boolean).join('<br>'),
       ...(conditional ? [conditional] : []),
-      'Update the chart to review it. This is not a signal to enter.',
+      fromAssets
+        ? 'Send the chart to see what the AI reads there. This is not a signal to enter.'
+        : 'Update the chart to review it. This is not a signal to enter.',
     ],
-    cta: { label: 'Update chart', url: setupAlertLink(params.appUrl, item) },
+    cta: { label: fromAssets ? ASSET_ALERT_CTA : 'Update chart', url: setupAlertLink(params.appUrl, item) },
     afterCta: [
       `<span style="font-size:13px;color:#5b6773;">Checked on ${candleSourceFor(item.priceSymbol) === 'crypto' ? 1 : 5}-minute candles from public price feeds. Your broker's price can differ by the spread.</span>`,
     ],
@@ -189,10 +202,11 @@ export async function runSetupAlertEmailSweep(deps: SetupAlertEmailDeps): Promis
     SELECT a."id" AS "alertId", a."setupId", a."userId", a."symbol", a."priceSymbol", s."timeframe", a."level", a."label", a."triggeredAt",
       u."email", u."name", u."clerkUserId", an."result" AS "analysisResult", an."recommendation" AS "analysisRecommendation"
     FROM "tickrify"."SetupAlert" a
-    JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
+    LEFT JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
     JOIN "tickrify"."User" u ON u."id" = a."userId"
     LEFT JOIN "tickrify"."Analysis" an ON an."id" = a."analysisId"
     WHERE a."status" = 'triggered' AND a."emailedAt" IS NULL AND a."seenAt" IS NULL AND ${recent}
+      AND (a."setupId" IS NULL OR s."id" IS NOT NULL)
       AND (a."expiresAt" IS NULL OR a."expiresAt" > ${now})
       AND u."email" IS NOT NULL
     ORDER BY a."triggeredAt" ASC, a."id" ASC
@@ -217,9 +231,13 @@ export async function runSetupAlertEmailSweep(deps: SetupAlertEmailDeps): Promis
         unsubscribed.set(row.userId, Boolean(hit));
       }
       if (unsubscribed.get(row.userId)) continue;
+      // Mesmo intervalo por setup; no My assets, por ativo.
+      const sameTarget = row.setupId
+        ? Prisma.sql`"setupId" = ${row.setupId}`
+        : Prisma.sql`"setupId" IS NULL AND "priceSymbol" = ${row.priceSymbol}`;
       const [limits] = await deps.prisma.$queryRaw<Array<{ setupRecent: number; personRecent: number }>>`
         SELECT
-          COUNT(*) FILTER (WHERE "setupId" = ${row.setupId} AND "emailedAt" > ${new Date(now.getTime() - SETUP_ALERT_EMAIL_RULES.perSetupGapMs)})::int AS "setupRecent",
+          COUNT(*) FILTER (WHERE ${sameTarget} AND "emailedAt" > ${new Date(now.getTime() - SETUP_ALERT_EMAIL_RULES.perSetupGapMs)})::int AS "setupRecent",
           COUNT(*) FILTER (WHERE "emailedAt" > ${new Date(now.getTime() - 24 * HOUR)})::int AS "personRecent"
         FROM "tickrify"."SetupAlert"
         WHERE "userId" = ${row.userId} AND "emailedAt" IS NOT NULL

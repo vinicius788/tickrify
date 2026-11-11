@@ -316,6 +316,16 @@ export interface WatchAsset {
   timeframe: string;
   levels: { price: number; atr: number; trend: 'uptrend' | 'downtrend' | 'range' | null; above: DayLevel | null; below: DayLevel | null; candleAt: number } | null;
   status: 'ok' | 'stale' | 'unavailable';
+  /** Alertas nos niveis do dia: valendo, e disparados que a pessoa ainda nao viu. */
+  alerts?: WatchAssetAlert[];
+}
+export interface WatchAssetAlert {
+  id: string;
+  symbol: string;
+  level: number;
+  side: 'above' | 'below';
+  status: 'active' | 'triggered' | 'cancelled';
+  triggeredAt: string | null;
 }
 export interface WatchAssets {
   assets: WatchAsset[];
@@ -323,6 +333,7 @@ export interface WatchAssets {
   maxAssets: number;
   suggested: string[];
   timeframes: string[];
+  alertsAvailable?: boolean;
 }
 
 /** Lista de ativos e niveis do dia (so codigo, velas reais). Relida a cada 5 min. */
@@ -345,6 +356,17 @@ export function useSaveWatchAssets() {
   return useMutation({
     mutationFn: async (input: { symbols: string[]; timeframe: string }) =>
       send<WatchAssets>('/api/watch-assets', { method: 'PUT', body: JSON.stringify(input) }, await token()),
+    onSuccess: (data) => queryClient.setQueryData(['watch-assets'], data),
+  });
+}
+
+/** Liga ou desliga o alerta nos niveis do dia de um ativo da lista (sem analise). */
+export function useWatchAssetAlert() {
+  const token = useToken();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { symbol: string; on: boolean }) =>
+      send<WatchAssets>(`/api/watch-assets/${encodeURIComponent(input.symbol)}/alert`, { method: 'PUT', body: JSON.stringify({ on: input.on }) }, await token()),
     onSuccess: (data) => queryClient.setQueryData(['watch-assets'], data),
   });
 }

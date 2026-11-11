@@ -134,9 +134,37 @@ describe('setup-alert email', () => {
     expect(formatLevel(4180)).toBe('4,180');
     expect(formatLevel(1.0952)).toBe('1.0952');
     expect(formatLevel(0.00001234)).toBe('0.00001234');
-    expect(setupAlertLink('https://tickrify.com/', { setupId: 's1', alertId: 'a1' })).toBe(
+    expect(setupAlertLink('https://tickrify.com/', { setupId: 's1', alertId: 'a1', symbol: 'XAUUSD' })).toBe(
       'https://tickrify.com/dashboard/new?setup=s1&alert=a1&utm_source=email&utm_campaign=setup_alert',
     );
+  });
+
+  it('alerta do My assets: sem setup, o link abre a nova analise com o ativo e o texto nao fala em analise', () => {
+    expect(setupAlertLink('https://tickrify.com', { setupId: null, alertId: 'a1', symbol: 'XAUUSD' }, 'telegram')).toBe(
+      'https://tickrify.com/dashboard/new?asset=XAUUSD&alert=a1&utm_source=telegram&utm_campaign=setup_alert',
+    );
+    const item = { ...pending({ setupId: null, timeframe: null, label: 'custom' }), plan: alertPlanOf(null, null) } as any;
+    const mail = renderSetupAlertEmail({ appUrl: 'https://tickrify.com', firstName: 'Joao', item, unsubscribeUrl: 'https://api.tickrify.com/u' });
+    expect(mail.subject).toBe('XAUUSD reached 4,180');
+    expect(mail.html).toContain('a level you are watching on <b>XAUUSD</b> in My assets');
+    expect(mail.html).toContain('nearest level from recent candles');
+    expect(mail.html).toContain('Analyze chart');
+    expect(mail.html).toContain('This is not a signal to enter.');
+    expect(mail.html).not.toContain('your analysis');
+    expect(mail.html).not.toContain('Direction:');
+    expect(mail.html).not.toContain('—');
+  });
+
+  it('alerta do My assets entra na varredura e o intervalo e por ativo, nao por setup', async () => {
+    const t = makeDeps({ rows: [pending({ setupId: null, timeframe: null, label: 'custom', analysisResult: null, analysisRecommendation: null })] });
+    await expect(runSetupAlertEmailSweep(t.deps as any)).resolves.toEqual({ due: 1, sent: 1 });
+    const sweep = t.calls.find((c) => c.text.includes(`WHERE a."status" = 'triggered'`))!;
+    expect(sweep.text).toContain('LEFT JOIN "tickrify"."TrackedSetup"');
+    expect(sweep.text).toContain('a."setupId" IS NULL OR s."id" IS NOT NULL');
+    const limits = t.calls.find((c) => c.text.includes('AS "setupRecent"'))!;
+    expect(limits.text).toContain('"setupId" IS NULL AND "priceSymbol" =');
+    expect(limits.values).toContain('XAUUSD');
+    expect(t.capture).toHaveBeenCalledWith('clerk_1', 'setup_alert_email_sent', expect.objectContaining({ setupId: null }), expect.anything());
   });
 
   it('chave desligada: so dry-run, sem marcar nem enviar', async () => {
