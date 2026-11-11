@@ -228,6 +228,8 @@ export interface AIAnalysisResponse {
     watchReach?: WatchReach | null;
     /** Niveis do WATCH calculados pelo motor; ausente em analise antiga, null sem REAL DATA. */
     watchLevels?: WatchLevels | null;
+    /** WATCH com a entrada a mercado de geometria valida (chave do /admin); ausente fora disso. */
+    marketLevels?: WatchLevels;
     /** NO_TRADE com REAL DATA: os dois lados do preco, pelo codigo; ausente em analise antiga. */
     levelMap?: LevelMap | null;
     /** NO_TRADE em que o validador recusou o plano do modelo: o preco que a IA marcou. */

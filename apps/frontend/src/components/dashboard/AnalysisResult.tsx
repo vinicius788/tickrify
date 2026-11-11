@@ -25,7 +25,7 @@ import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
-import { WatchPlanCard, isWatchLevels, isWatchPlan, watchWindowOpen } from './WatchPlanCard';
+import { MarketPlanCard, WatchPlanCard, isWatchLevels, isWatchPlan, watchWindowOpen } from './WatchPlanCard';
 import { ReadModePanel, WherePriceIs, type ReadModeData } from './ReadModePanel';
 import { LevelMapCard, WatchVerdict } from './PendingLevels';
 import { AnalysisShareButton } from './ShareCard';
@@ -1328,6 +1328,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             closed={watchClosed}
             now={now}
           />
+          {/* O plano a mercado ao lado do plano no nivel; some com a janela encerrada. */}
+          {!watchClosed && isWatchLevels(fullResponse.marketLevels) ? (
+            <MarketPlanCard direction={watchPlan.direction} levels={fullResponse.marketLevels} formatPrice={formatPrice} />
+          ) : null}
           {!watchClosed && <Card data-testid="watch-why-changes" className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '50ms' }}>
             <CardContent className="grid gap-5 p-5 md:grid-cols-2 md:gap-8 md:p-6">
               {watchText.whyWait.length > 0 ? (

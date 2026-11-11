@@ -2458,6 +2458,7 @@ export class AIAdapter {
         ...(continuation ? { continuation } : {}),
         ...(decision.rejectedPlan ? { rejectedPlan: decision.rejectedPlan } : {}),
         ...(decision.enterAtLevel ? { enterAtLevel: true } : {}),
+        ...(decision.marketLevels ? { marketLevels: decision.marketLevels } : {}),
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);
       logObservation(observation, m => this.logger.log(m));

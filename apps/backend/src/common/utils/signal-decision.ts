@@ -47,6 +47,8 @@ import type { HtfTrend } from '../../modules/ai/analysis-data-coverage';
 // ============================================================================
 
 export const ENTER_AT_LEVEL_FLAG = 'ENGINE_ENTER_AT_LEVEL';
+/** WATCH mostra tambem o plano a mercado quando a geometria dele vale (11/11/2026). */
+export const MARKET_PLAN_FLAG = 'ENGINE_MARKET_PLAN_ON_WATCH';
 
 export type SignalState = 'NO_TRADE' | 'WATCH' | 'ARMED' | 'ENTER_NOW';
 export const SIGNAL_STATES: readonly SignalState[] = ['NO_TRADE', 'WATCH', 'ARMED', 'ENTER_NOW'];
@@ -210,6 +212,13 @@ export interface SignalDecisionResult {
    * mesmos do rastreador. null sem REAL DATA ou sem geometria valida no nivel.
    */
   watchLevels: EntryLevels | null;
+  /**
+   * WATCH com REAL DATA e a chave ENGINE_MARKET_PLAN_ON_WATCH ligada: os niveis
+   * da entrada A MERCADO quando a geometria dela vale (risco ate 2 ATR, alvo a
+   * 1R ou mais) e o que segurou o ENTER_NOW foi o checklist ou o atrasado. O
+   * estado continua WATCH; a tela mostra os dois planos e a pessoa escolhe.
+   */
+  marketLevels: EntryLevels | null;
   /** Modelo pediu WATCH ou ENTER_NOW e o codigo rebaixou para NO_TRADE; null fora disso. */
   rejectedPlan: RejectedPlan | null;
   /** ENTER_NOW liberado pela regra da chave ENGINE_ENTER_AT_LEVEL. */
@@ -504,6 +513,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
   const mismatch: ValidatorNote[] = signalWithoutSide ? [{ from: model, to: 'WATCH', reason: 'state_mismatch' }] : [];
   const atLevel = !!real && isAtPriorLevel(input.priorWatch, modelPlan, real.price);
   let chosen: { state: SignalState; notes: ValidatorNote[]; levels: PlanLevels };
+  let evaluation: PlanEvaluation | null = null;
   if (model === 'NO_TRADE') chosen = { state: 'NO_TRADE', notes: [], levels: NULL_LEVELS };
   else if (side && failures.includes('implausible_price')) chosen = stop('implausible_price');
   else if (!modelPlan) chosen = stop('watch_plan_invalid');
@@ -517,6 +527,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     if (typeof ev === 'string') chosen = { state: 'NO_TRADE', notes: [...mismatch, { from: start, to: 'NO_TRADE', reason: ev }], levels: NULL_LEVELS };
     else {
       plan = ev.plan;
+      evaluation = ev;
       const picked = chooseState(start, ev, !signalWithoutSide);
       chosen = { ...picked, notes: [...mismatch, ...picked.notes] };
     }
@@ -602,6 +613,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     watchReach: state === 'WATCH' && real && plan ? watchReachOf(plan, input.symbol, real) : null,
     location: real ? locationOf(real, state === 'NO_TRADE' ? null : plan) : null,
     watchLevels: state === 'WATCH' && real && plan ? watchLevelsOf(plan, input.symbol, real) : null,
+    marketLevels: state === 'WATCH' && evaluation && typeof evaluation.market !== 'string' && flagBool(MARKET_PLAN_FLAG) ? evaluation.market : null,
     rejectedPlan,
     enterAtLevel: atLevel && state === 'ENTER_NOW',
   };

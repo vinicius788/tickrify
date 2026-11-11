@@ -202,6 +202,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'ENGINE_MARKET_PLAN_ON_WATCH',
+    type: 'boolean',
+    label: 'WATCH mostra tambem o plano a mercado',
+    description:
+      'Em analise com velas reais que termina em WATCH, quando a entrada a mercado tem geometria valida (risco ate 2 ATR, alvo a 1R ou mais) e foi o checklist ou o movimento atrasado que segurou o ENTER_NOW, a tela mostra os dois planos lado a lado: entrar agora e esperar o nivel. O estado continua WATCH, o rastreador e a /accuracy nao mudam. Motivo: em 15.966 momentos medidos (10/11/2026), nem o item C7 nem o atrasado separaram acerto de erro. DESLIGADO: identico ao de sempre.',
+    defaultValue: 'false',
+    risk: 'alto',
+  },
+  {
     key: 'ENGINE_ENTER_AT_LEVEL',
     type: 'boolean',
     label: 'Entrada no nivel do WATCH',

@@ -478,6 +478,25 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       expect(stored.result.enterAtLevel).toBeUndefined();
     });
 
+    it('ENGINE_MARKET_PLAN_ON_WATCH ligada: o WATCH gravado leva o plano a mercado; desligada, nao leva (caminho da fila)', async () => {
+      const before = process.env.ENGINE_MARKET_PLAN_ON_WATCH;
+      try {
+        process.env.ENGINE_MARKET_PLAN_ON_WATCH = 'true';
+        const on = await run('market-plan-on', 'false', true);
+        expect(on.result.signalState).toBe('WATCH');
+        expect(on.result.analysis).toMatchObject({ entry: null, stopLoss: null });
+        expect(on.result.marketLevels).toMatchObject({ entry: 98.5 });
+        expect(on.result.marketLevels.stopLoss).toBeLessThan(98.5);
+        expect(on.result.marketLevels.takeProfit1).toBeGreaterThan(98.5);
+        process.env.ENGINE_MARKET_PLAN_ON_WATCH = 'false';
+        const off = await run('market-plan-off', 'false', true);
+        expect(off.result.signalState).toBe('WATCH');
+        expect(off.result.marketLevels).toBeUndefined();
+      } finally {
+        if (before === undefined) delete process.env.ENGINE_MARKET_PLAN_ON_WATCH; else process.env.ENGINE_MARKET_PLAN_ON_WATCH = before;
+      }
+    });
+
     it('ENTER_NOW sem TP2 e gravado com a chave desligada (antes falhava com validation_failed)', async () => {
       const stored = await run('no-tp2-off', 'false', false);
       expect(stored.status).toBe('completed');
