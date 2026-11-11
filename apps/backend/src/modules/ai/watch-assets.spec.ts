@@ -40,6 +40,31 @@ describe('niveis do dia (so codigo)', () => {
     expect(b.price).toBe(101);
   });
 
+  it('nivel colado no preco e pulado: nenhum lado fica a menos de 0,25 ATR', () => {
+    for (let n = 60; n <= 101; n++) {
+      const candles = wave(n);
+      const levels = dayLevels(candles, '15m', T0 + (n - 1) * STEP + 60_000);
+      if (!levels) continue;
+      for (const side of [levels.above, levels.below]) {
+        if (side) expect(side.atr).toBeGreaterThanOrEqual(WATCH_ASSET_RULES.minDistanceAtr);
+      }
+    }
+  });
+
+  it('preco logo abaixo de um topo: o nivel acima e o topo seguinte, nao o que esta a centavos', () => {
+    const candles = wave(101);
+    const base = dayLevels(candles, '15m', NOW)!;
+    // Vela em formacao fecha a 0,05 ATR abaixo do nivel de cima.
+    const near = base.above!.price - 0.05 * base.atr;
+    const moved = [...candles.slice(0, 100), [candles[100][0], near, near, near, near, 1]];
+    const levels = dayLevels(moved, '15m', NOW)!;
+    expect(levels.price).toBe(near);
+    if (levels.above) {
+      expect(levels.above.price).toBeGreaterThan(base.above!.price);
+      expect(levels.above.atr).toBeGreaterThanOrEqual(WATCH_ASSET_RULES.minDistanceAtr);
+    }
+  });
+
   it('poucas velas ou tempo grafico desconhecido: null', () => {
     expect(dayLevels(wave(20), '15m', T0 + 20 * STEP)).toBeNull();
     expect(dayLevels(wave(101), '7m', NOW)).toBeNull();
