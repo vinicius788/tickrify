@@ -471,6 +471,11 @@ export type FunnelEvent =
   | 'watch_assets_edit_clicked'
   | 'watch_assets_saved'
   | 'watch_asset_alert_toggled'
+  | 'onboarding_quiz_viewed'
+  | 'onboarding_quiz_answered'
+  | 'onboarding_quiz_completed'
+  | 'onboarding_quiz_skipped'
+  | 'onboarding_quiz_cta_clicked'
   | 'watch_assets_analyze_clicked';
 
 // ─── Fila de pré-consentimento ────────────────────────────────────────────────
