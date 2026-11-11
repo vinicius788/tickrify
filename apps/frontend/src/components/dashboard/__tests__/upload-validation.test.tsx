@@ -48,4 +48,40 @@ describe('chart upload validation', () => {
     expect(start).not.toHaveBeenCalled();
     expect(screen.getByText('Main chart (execution timeframe)')).toBeTruthy();
   });
+
+  describe('qual ativo e este (lista do My assets)', () => {
+    const choices = { symbols: ['XAUUSD', 'BTCUSDT'], timeframe: '5m', timeframes: ['1m', '5m', '15m', '1h', '4h'] };
+    const onHint = vi.fn();
+    const open = async (props: Record<string, unknown> = {}) => {
+      render(<LanguageProvider><NewAnalysis onStartAnalysis={start} assetChoices={choices} onAssetHintChange={onHint} {...props} /></LanguageProvider>);
+      drop(file('image/png'));
+      await screen.findByText('Main chart (execution timeframe)');
+    };
+
+    it('sem lista, a pergunta nao aparece', async () => {
+      render(<LanguageProvider><NewAnalysis onStartAnalysis={start} /></LanguageProvider>);
+      drop(file('image/png'));
+      await screen.findByText('Main chart (execution timeframe)');
+      expect(screen.queryByText('Which asset is this? (optional)')).toBeNull();
+    });
+
+    it('comeca em Auto; escolher um ativo manda a dica com o tempo grafico da lista', async () => {
+      await open();
+      expect(screen.getByRole('button', { name: 'Auto' }).getAttribute('aria-pressed')).toBe('true');
+      fireEvent.click(screen.getByRole('button', { name: 'XAUUSD' }));
+      expect(onHint).toHaveBeenLastCalledWith({ symbol: 'XAUUSD', timeframe: '5m' });
+      fireEvent.click(screen.getByRole('button', { name: '15m' }));
+      expect(onHint).toHaveBeenLastCalledWith({ symbol: 'XAUUSD', timeframe: '15m' });
+    });
+
+    it('voltar para Auto ou trocar de grafico tira a dica', async () => {
+      await open();
+      fireEvent.click(screen.getByRole('button', { name: 'BTCUSDT' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Auto' }));
+      expect(onHint).toHaveBeenLastCalledWith(null);
+      fireEvent.click(screen.getByRole('button', { name: 'BTCUSDT' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+      expect(onHint).toHaveBeenLastCalledWith(null);
+    });
+  });
 });

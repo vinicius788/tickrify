@@ -401,6 +401,9 @@ export interface CreateAnalysisPayload {
   htfBase64Images?: string[];
   /** Atualizacao de um setup acompanhado (o servidor confere dono e status). */
   setupId?: string;
+  /** O ativo que a pessoa indicou para este grafico; o motor so usa se a imagem nao mostrar. */
+  hintSymbol?: string;
+  hintTimeframe?: string;
 }
 
 export interface AnalysisUsageResponse {
@@ -717,6 +720,10 @@ class APIClient {
     if (timezone) formData.append('timezone', timezone);
     if (payload.setupId) {
       formData.append('setupId', payload.setupId);
+    }
+    if (payload.hintSymbol) {
+      formData.append('hintSymbol', payload.hintSymbol);
+      if (payload.hintTimeframe) formData.append('hintTimeframe', payload.hintTimeframe);
     }
 
     const response = await this.request(

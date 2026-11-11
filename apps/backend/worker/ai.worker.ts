@@ -9,7 +9,8 @@ import {
   buildPersistedAnalysisPayload,
   NormalizedPersistedAnalysis,
 } from '../src/common/utils/analysis-payload';
-import { AIAdapter, AIAnalysisError, logNewsGuardStatus } from '../src/modules/ai/ai.adapter';
+import { AIAdapter, AIAnalysisError, logNewsGuardStatus, type AssetHint } from '../src/modules/ai/ai.adapter';
+import { loadAssetHint } from '../src/modules/ai/watch-assets';
 import {
   computeRiskReward,
   formatRiskReward,
@@ -888,6 +889,7 @@ async function resolveAiSource(
   htfImageUrls: string[] = [],
   strategyProfile?: StrategyProfile | null,
   priorPlan?: PriorPlan | null,
+  assetHint?: AssetHint | null,
 ): Promise<unknown> {
   if (hasValidOpenAiKey()) {
     // Caminho VIVO em produção (RUN_EMBEDDED_WORKER=true por padrão, então
@@ -898,6 +900,7 @@ async function resolveAiSource(
     return aiAdapter.analyzeImage(imageUrl, prompt, analysisType, htfImageUrls, strategyProfile, {
       compareProviders: true,
       ...(priorPlan ? { priorPlan } : {}),
+      ...(assetHint ? { assetHint } : {}),
     });
   }
 
@@ -1196,6 +1199,7 @@ async function processAnalysis(job: Job<JobData>) {
       htfImageUrls ?? [],
       strategyProfile,
       priorPlan,
+      await loadAssetHint(prisma, analysisId),
     );
     aiMs = Date.now() - tAi;
 

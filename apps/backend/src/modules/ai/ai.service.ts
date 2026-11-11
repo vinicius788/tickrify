@@ -64,6 +64,7 @@ import {
 import { StripeService } from '../payments/stripe.service';
 import { SetupsService, recordSetupVersion } from './setups.service';
 import { createWatchAlert } from './setup-alerts.service';
+import { canonicalWatchSymbol, loadAssetHint } from './watch-assets';
 import { loadPriorPlan } from './setup-continuation';
 import { isTradeSignal, loadWatchContexts, loadWatchOrigins, storedWatchPlan, watchSummaryOf } from './watch-pending';
 import { saveAnalysisTelemetry, telemetryFromAiSource } from './analysis-data-coverage';
@@ -117,6 +118,9 @@ export type AnalysisClientContext = {
   platform?: string;
   chartSymbol?: string;
   chartTimeframe?: string;
+  /** Painel web: o que a pessoa disse que o grafico e. O motor so usa onde a leitura da imagem falhou. */
+  hintSymbol?: string;
+  hintTimeframe?: string;
 };
 
 export function buildClientContext(body: {
@@ -124,8 +128,15 @@ export function buildClientContext(body: {
   platform?: string;
   chartSymbol?: string;
   chartTimeframe?: string;
+  hintSymbol?: string;
+  hintTimeframe?: string;
 }): AnalysisClientContext | null {
-  if (body.source !== 'extension') return null;
+  if (body.source !== 'extension') {
+    // Ativo sem fonte de preco nao vira dica: nao ha velas para buscar.
+    const hintSymbol = canonicalWatchSymbol(body.hintSymbol);
+    if (!hintSymbol) return null;
+    return { source: 'web', hintSymbol, ...(body.hintTimeframe ? { hintTimeframe: body.hintTimeframe } : {}) };
+  }
   const context: AnalysisClientContext = { source: 'extension' };
   if (body.platform) context.platform = body.platform;
   if (body.chartSymbol) context.chartSymbol = body.chartSymbol;
@@ -1239,13 +1250,14 @@ export class AiService implements OnModuleInit {
       const prompt = buildAnalysisPrompt({ userLanguage, analysisType }, promptVariant);
       const promptMs = Date.now() - tPrompt;
       const priorPlan = await loadPriorPlan(this.prisma, { analysisId, userId, setupId }, (m) => this.logger.warn(m));
+      const assetHint = await loadAssetHint(this.prisma, analysisId);
       const aiResponse = await this.aiAdapter.analyzeImage(
         imageUrl,
         prompt,
         analysisType,
         htfImageUrls ?? [],
         strategyProfile,
-        { compareProviders: true, ...(priorPlan ? { priorPlan } : {}) },
+        { compareProviders: true, ...(priorPlan ? { priorPlan } : {}), ...(assetHint ? { assetHint } : {}) },
       );
 
       // Contrato v2 + validador + tempos (mesmo bloco do worker; sem fila aqui).

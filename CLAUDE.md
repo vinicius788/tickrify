@@ -910,6 +910,14 @@ Vale para TODA mudanca, grande ou pequena:
 - **PostHog:** servidor `watch_assets_saved { count, timeframe, is_subscriber }`; navegador `watch_assets_saved`, `watch_assets_edit_clicked`, `watch_assets_analyze_clicked { symbol }`.
 - **Fora desta versao:** alerta direto no nivel da lista. `SetupAlert` exige setup e analise; ligar alerta sem analise mexe no monitor de producao e fica para um PR proprio.
 
+### 3.18 Dica de ativo na nova analise (11/11/2026)
+
+- **Por que:** em 45 dias, 6% das analises ficaram sem ativo (o modelo nao le o ticker em print cortado) e, por isso, sem velas reais.
+- **Tela:** quem tem lista no My assets ve, na revisao do envio, "Which asset is this? (optional)" com Auto (padrao) e os ativos da lista; escolhido um, aparece o tempo grafico (o da lista vem marcado). Fora da atualizacao de setup. A dica vale para UM envio.
+- **Regra do motor (`applyAssetHint`, `ai.adapter.ts`):** a dica SO preenche o que a leitura da imagem nao achou: leitura falha ou ativo vazio recebem o ativo indicado; tempo grafico ilegivel recebe o indicado. O que a imagem mostra nunca e trocado. Sem preco lido, a trava de print velho nao roda para aquele envio.
+- **Caminho:** `hintSymbol`/`hintTimeframe` no `CreateAnalysisDto` -> `buildClientContext` grava em `Analysis.clientContext` (`source: web`, ativo normalizado por `canonicalWatchSymbol`; sem fonte de preco, nada e gravado) -> `loadAssetHint` rele do banco no worker E no sincrono -> `analyzeImage(..., { assetHint })` -> quick e deep. A extensao segue como era.
+- **Medicao:** `groundingStats.hinted` = `symbol | timeframe | both` quando a dica entrou. `select "groundingStats"->>'hinted', count(*) from tickrify."Analysis" where "createdAt" > <deploy> group by 1;`
+
 ## 4. Regras tecnicas que nasceram de bug real (nao desfazer)
 
 ### 4.0 Regras de 05/10/2026

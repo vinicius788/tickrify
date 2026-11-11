@@ -21,6 +21,22 @@ interface NewAnalysisProps {
    * com o setup no topo e o custo real antes de enviar.
    */
   setupUpdate?: SetupUpdateContext | null;
+  /**
+   * Ativos do My assets (10/11/2026): a pessoa pode dizer qual e este grafico.
+   * O motor so usa se a leitura da imagem nao achar o ativo ou o tempo grafico.
+   */
+  assetChoices?: AssetChoices | null;
+  onAssetHintChange?: (hint: AssetHintChoice | null) => void;
+}
+
+export interface AssetChoices {
+  symbols: string[];
+  timeframe: string;
+  timeframes: string[];
+}
+export interface AssetHintChoice {
+  symbol: string;
+  timeframe: string;
 }
 
 export interface SetupUpdateContext {
@@ -63,7 +79,7 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdate = null }: NewAnalysisProps) => {
+const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdate = null, assetChoices = null, onAssetHintChange }: NewAnalysisProps) => {
   const { t } = useLanguage();
   const u = t.analysis.upload;
   const [mainFile, setMainFile] = useState<File | null>(null);
@@ -137,7 +153,17 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
 
   const removeHtf = (i: number) => setHtf((prev) => prev.filter((_, idx) => idx !== i));
 
+  const [hintSymbol, setHintSymbol] = useState<string | null>(null);
+  const [hintTimeframe, setHintTimeframe] = useState<string | null>(null);
+  const chooseHint = (symbol: string | null, timeframe: string | null = hintTimeframe) => {
+    const tf = timeframe ?? assetChoices?.timeframe ?? null;
+    setHintSymbol(symbol);
+    setHintTimeframe(tf);
+    onAssetHintChange?.(symbol && tf ? { symbol, timeframe: tf } : null);
+  };
+
   const reset = () => {
+    chooseHint(null);
     setMainFile(null);
     setMainPreview(null);
     setHtf([]);
@@ -335,6 +361,53 @@ const NewAnalysis = ({ onStartAnalysis, allowHigherTimeframes = true, setupUpdat
           <div className="overflow-hidden rounded-md border border-[var(--border-subtle)] bg-[var(--bg-base)]">
             {mainPreview && <img src={mainPreview} alt={u.mainChart} className="max-h-[300px] w-full object-contain" />}
           </div>
+
+          {/* Qual ativo e este: so para quem tem lista no My assets, e fora da atualizacao de setup. */}
+          {assetChoices && assetChoices.symbols.length > 0 && !setupUpdate ? (
+            <div className="mt-5">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">{u.assetHintLabel}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {[null, ...assetChoices.symbols].map((symbol) => (
+                  <button
+                    key={symbol ?? 'auto'}
+                    type="button"
+                    aria-pressed={hintSymbol === symbol}
+                    onClick={() => chooseHint(symbol)}
+                    className={`rounded-full border px-3.5 py-1.5 text-sm transition-colors ${
+                      hintSymbol === symbol
+                        ? 'border-transparent bg-[var(--inverse-bg)] text-[var(--inverse-fg)]'
+                        : 'border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    {symbol ?? u.assetHintAuto}
+                  </button>
+                ))}
+              </div>
+              {hintSymbol ? (
+                <div key="timeframes" className="mt-2 flex flex-wrap gap-2">
+                  {assetChoices.timeframes.map((tf) => {
+                    const active = (hintTimeframe ?? assetChoices.timeframe) === tf;
+                    return (
+                      <button
+                        key={tf}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => chooseHint(hintSymbol, tf)}
+                        className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                          active
+                            ? 'border-transparent bg-[var(--fill-5)] text-[var(--text-primary)]'
+                            : 'border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--fill-2)]'
+                        }`}
+                      >
+                        {tf}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <p className="mt-2 text-xs leading-relaxed text-[var(--text-secondary)]">{u.assetHintNote}</p>
+            </div>
+          ) : null}
 
           {/* Timeframes maiores (top-down) — somente assinante */}
           {allowHigherTimeframes && (
