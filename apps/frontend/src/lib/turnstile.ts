@@ -54,6 +54,27 @@ const CHALLENGE_STYLE =
 
 let scriptPromise: Promise<TurnstileApi | null> | null = null;
 
+/**
+ * Por que a ultima tentativa terminou como terminou (11/11/2026). O servidor so
+ * responde `bot_check_failed`: sem isto nao da para saber se o token nem
+ * existiu (script bloqueado, desafio sem resposta) ou se a Cloudflare recusou.
+ */
+export type TurnstileOutcome =
+  | 'ok'
+  | 'not_configured'
+  | 'script_blocked'
+  | 'render_error'
+  | 'widget_error'
+  | 'expired'
+  | 'timeout'
+  | 'timeout_interactive';
+let lastOutcome: TurnstileOutcome = 'not_configured';
+export const getTurnstileOutcome = (): TurnstileOutcome => lastOutcome;
+
+/** Desafio silencioso: 20 s. Com o desafio na tela, a pessoa tem ate 90 s para resolver. */
+const SILENT_TIMEOUT_MS = 20_000;
+const INTERACTIVE_TIMEOUT_MS = 90_000;
+
 function loadScript(): Promise<TurnstileApi | null> {
   if (!SITE_KEY) return Promise.resolve(null);
   if (window.turnstile) return Promise.resolve(window.turnstile);
@@ -78,7 +99,10 @@ function loadScript(): Promise<TurnstileApi | null> {
  */
 export async function getTurnstileToken(): Promise<string | null> {
   const api = await loadScript();
-  if (!api) return null;
+  if (!api) {
+    lastOutcome = SITE_KEY ? 'script_blocked' : 'not_configured';
+    return null;
+  }
 
   return new Promise((resolve) => {
     // Fora da tela enquanto o desafio e silencioso, sobreposto e clicavel
@@ -89,9 +113,13 @@ export async function getTurnstileToken(): Promise<string | null> {
 
     let settled = false;
     let widgetId: string | null = null;
-    const finish = (token: string | null) => {
+    let interactive = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (token: string | null, outcome: TurnstileOutcome) => {
       if (settled) return;
       settled = true;
+      lastOutcome = outcome;
+      clearTimeout(timer);
       try {
         if (widgetId && window.turnstile) window.turnstile.remove(widgetId);
       } catch {
@@ -110,24 +138,28 @@ export async function getTurnstileToken(): Promise<string | null> {
         // O comportamento invisivel vem de `appearance`, nao de `size`.
         appearance: 'interaction-only',
         execution: 'render',
-        callback: (token) => finish(token),
-        'error-callback': () => finish(null),
-        'expired-callback': () => finish(null),
+        callback: (token) => finish(token, 'ok'),
+        'error-callback': () => finish(null, 'widget_error'),
+        'expired-callback': () => finish(null, 'expired'),
         // A Cloudflare so chama isto quando decide que o desafio silencioso nao
         // basta e precisa da pessoa. E o unico momento em que o widget PRECISA
         // estar visivel.
         'before-interactive-callback': () => {
           container.style.cssText = CHALLENGE_STYLE;
+          // O desafio apareceu: nao tirar da tela aos 20 s com a pessoa resolvendo.
+          interactive = true;
+          clearTimeout(timer);
+          timer = setTimeout(() => finish(null, 'timeout_interactive'), INTERACTIVE_TIMEOUT_MS);
         },
         'after-interactive-callback': () => {
           container.style.cssText = HIDDEN_STYLE;
         },
       });
     } catch {
-      finish(null);
+      finish(null, 'render_error');
       return;
     }
 
-    setTimeout(() => finish(null), 20_000);
+    if (!interactive) timer = setTimeout(() => finish(null, 'timeout'), SILENT_TIMEOUT_MS);
   });
 }
