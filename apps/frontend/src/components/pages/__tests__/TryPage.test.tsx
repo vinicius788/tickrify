@@ -11,7 +11,7 @@ vi.mock('@/lib/demo-api', async (orig) => ({
   requestDemoAnalysis: vi.fn(),
 }));
 vi.mock('@/lib/fingerprint', () => ({ getDeviceFingerprint: vi.fn().mockResolvedValue('fp-test') }));
-vi.mock('@/lib/turnstile', () => ({ getTurnstileToken: vi.fn() }));
+vi.mock('@/lib/turnstile', () => ({ getTurnstileToken: vi.fn(), getTurnstileOutcome: () => 'ok' }));
 vi.mock('@/lib/api', () => ({ warmupPaymentsApi: vi.fn(), buildApiUrl: (p: string) => p }));
 const track = vi.fn();
 vi.mock('@/lib/analytics', () => ({ track: (...a: unknown[]) => track(...a), trackSignupStartedOnce: vi.fn() }));

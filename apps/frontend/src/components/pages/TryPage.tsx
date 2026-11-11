@@ -18,7 +18,7 @@ import SiteLayout from '@/components/layout/SiteLayout';
 import AnalysisLoading from '@/components/dashboard/AnalysisLoading';
 import { track, trackSignupStartedOnce } from '@/lib/analytics';
 import { getDeviceFingerprint } from '@/lib/fingerprint';
-import { getTurnstileToken } from '@/lib/turnstile';
+import { getTurnstileOutcome, getTurnstileToken } from '@/lib/turnstile';
 import {
   DemoApiError,
   DemoAnalysisResult,
@@ -196,8 +196,10 @@ const TryPage = () => {
         image = await exampleResponse.blob();
       }
 
+      // Token que nao veio (script bloqueado, desafio sem resposta): tenta mais
+      // uma vez antes de enviar, em vez de mandar sem token e tomar a recusa.
       const send = async () =>
-        requestDemoAnalysis({ image, fingerprint, turnstileToken: await getTurnstileToken(), userLanguage: language });
+        requestDemoAnalysis({ image, fingerprint, turnstileToken: (await getTurnstileToken()) ?? (await getTurnstileToken()), userLanguage: language });
       let analysis: DemoAnalysisResult;
       try {
         analysis = await send();
@@ -225,6 +227,8 @@ const TryPage = () => {
       track('demo_analysis_failed', {
         code: err instanceof DemoApiError ? err.code : 'client_error',
         chart,
+        // Diz se a recusa do anti-robo foi por falta de token ou por token recusado.
+        turnstile: getTurnstileOutcome(),
       });
       if (err instanceof DemoApiError) {
         if (err.code === 'demo_limit_reached') {
