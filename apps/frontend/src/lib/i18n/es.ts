@@ -550,7 +550,7 @@ export default {
       symbolAutoTitle: 'El símbolo se lee automáticamente',
       symbolAutoText: 'El copiloto extrae el ticker directamente de la imagen. Deja el símbolo visible en la parte superior de la captura.',
       readError: 'No pudimos abrir esta imagen. Si viene de Google Fotos o de una carpeta en la nube, guárdala en tu dispositivo o haz una captura nueva y vuelve a intentarlo.',
-      outcomesTitle: 'Lo que recibes: Entrar ahora, Orden pendiente, Vigilar o Sin operación',
+      outcomesTitle: 'Lo que recibes: Entrar ahora, Vigilar o Sin operación',
       outcomesText: 'Vigilar y Sin operación son respuestas reales, no errores. Significan que no hay entrada al precio actual, y la lectura muestra el área a vigilar y qué cancelaría la idea.',
     },
     result: {

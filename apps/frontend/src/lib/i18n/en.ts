@@ -550,7 +550,7 @@ export default {
       symbolAutoTitle: 'The symbol is read automatically',
       symbolAutoText: 'The copilot extracts the ticker straight from the image. Keep the symbol visible at the top of the screenshot.',
       readError: 'We couldn\'t open this image. If it came from Google Photos or a cloud folder, save it to your device or take a new screenshot, then try again.',
-      outcomesTitle: 'What you get back: Enter now, Pending order, Watch or No trade',
+      outcomesTitle: 'What you get back: Enter now, Watch or No trade',
       outcomesText: 'Watch and No trade are real answers, not errors. They mean there is no entry at the current price, and the read shows the area to watch and what would cancel the idea.',
     },
     result: {

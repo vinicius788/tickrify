@@ -559,7 +559,7 @@ export default {
       symbolAutoTitle: 'O símbolo é lido automaticamente',
       symbolAutoText: 'O copiloto extrai o ticker direto da imagem. Deixe o símbolo visível no topo do print.',
       readError: 'Não conseguimos abrir esta imagem. Se ela veio do Google Fotos ou de uma pasta na nuvem, salve no aparelho ou tire um print novo e tente de novo.',
-      outcomesTitle: 'O que você recebe: Entrar agora, Ordem pendente, Observar ou Sem operação',
+      outcomesTitle: 'O que você recebe: Entrar agora, Observar ou Sem operação',
       outcomesText: 'Observar e Sem operação são respostas reais, não erros. Querem dizer que não há entrada no preço atual, e a leitura mostra a área a observar e o que cancelaria a ideia.',
     },
     result: {
