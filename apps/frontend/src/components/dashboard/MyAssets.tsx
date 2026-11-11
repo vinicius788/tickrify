@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import OnboardingQuiz, { readQuizState } from '@/components/dashboard/OnboardingQuiz';
 import { track } from '@/lib/analytics';
 import { formatAlertLevel, formatUtcTime, useAlertActions, useSaveWatchAssets, useWatchAssetAlert, useWatchAssets, type DayLevel, type WatchAsset } from '@/lib/setups';
 
@@ -16,7 +17,7 @@ const fill = (text: string, values: Record<string, string | number>) =>
  * reais. Motivo para abrir o painel sem gastar analise. Conta travada ou
  * servidor fora: o bloco nao aparece.
  */
-const MyAssets = ({ base }: { base: string }) => {
+const MyAssets = ({ base, newAccount = false }: { base: string; newAccount?: boolean }) => {
   const { t, language } = useLanguage();
   const a = t.assets;
   const locale = DATE_LOCALES[language] ?? 'en-US';
@@ -27,6 +28,7 @@ const MyAssets = ({ base }: { base: string }) => {
   const [editing, setEditing] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [timeframe, setTimeframe] = useState('15m');
+  const [quiz, setQuiz] = useState(readQuizState);
   const data = query.data;
   // Resposta sem a lista (servidor antigo durante o deploy): o bloco nao aparece.
   if (!data || !Array.isArray(data.assets)) return null;
@@ -37,6 +39,15 @@ const MyAssets = ({ base }: { base: string }) => {
     save.reset();
     setEditing(true);
   };
+  // Conta nova, sem lista e sem analise: o quiz monta o painel (uma vez por aparelho).
+  if (newAccount && !quiz.done && !editing && data.assets.length === 0) {
+    return <OnboardingQuiz data={data} onDone={() => setQuiz(readQuizState())} />;
+  }
+  const quizLine = newAccount && quiz.pain
+    ? quiz.pain === 'miss'
+      ? (quiz.alertsOn ? t.quiz.doneMiss : t.quiz.doneMissOff)
+      : { late: t.quiz.doneLate, stop: t.quiz.doneStop, over: t.quiz.doneOver }[quiz.pain]
+    : null;
   const picking = editing || data.assets.length === 0;
   const chosen = picked;
   const options = [...new Set([...data.suggested, ...chosen])];
@@ -226,6 +237,18 @@ const MyAssets = ({ base }: { base: string }) => {
           {a.edit}
         </button>
       </div>
+      {quizLine ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border-default)] bg-[var(--fill-2)] px-4 py-3">
+          <p className="min-w-0 flex-1 text-sm text-[var(--text-primary)]">{quizLine}</p>
+          <Link
+            to={`${base}/new${data.assets[0] ? `?asset=${encodeURIComponent(data.assets[0].symbol)}` : ''}`}
+            onClick={() => track('onboarding_quiz_cta_clicked', { pain: quiz.pain })}
+            className="rounded-lg bg-[var(--inverse-bg)] px-4 py-2 text-sm font-semibold text-[var(--inverse-fg)] hover:opacity-90"
+          >
+            {t.quiz.cta}
+          </Link>
+        </div>
+      ) : null}
       <ul className="flex flex-col gap-4">{data.assets.map(row)}</ul>
     </section>
   );

@@ -1210,7 +1210,7 @@ const DashboardPage = () => {
         {/* Today: alertas disparados, niveis vigiados e operacoes abertas. Conta
             travada: os alertas ficam pausados e o paywall cita o ativo real. */}
         {/* My assets: niveis do dia dos ativos da pessoa, so codigo e velas reais. */}
-        {!isDemo && !freeLocked && <MyAssets base={base} />}
+        {!isDemo && !freeLocked && <MyAssets base={base} newAccount={!loadingAnalyses && rawAnalyses.length === 0} />}
 
         {!isDemo && !freeLocked && (
           <TodaySection base={base} alerts={alertsQuery.data} openTrades={openTradesQuery.data?.trades ?? []} analyses={rawAnalyses} />
