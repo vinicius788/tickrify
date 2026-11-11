@@ -1204,6 +1204,34 @@ const GROUNDING_TIMEOUT_MS = 25_000;
 class SymbolReadTimeout extends Error {}
 
 /** Analise sem velas: grava o motivo, para a tela e a aba Motor. */
+/** O ativo e o tempo grafico que a pessoa indicou para este grafico (painel web). */
+export type AssetHint = { symbol: string; timeframe: string | null };
+
+type SymbolRead =
+  | { extracted: { symbol: string; timeframe: string; lastPrice: number | null }; failure: null }
+  | { extracted: null; failure: 'symbol_timeout' | 'symbol_unreadable' };
+
+/**
+ * A dica so preenche o que a leitura da imagem NAO achou: ativo vazio ou
+ * leitura falha recebem o ativo indicado; tempo grafico ilegivel recebe o
+ * indicado. O que a imagem mostra nunca e trocado pela dica.
+ */
+export function applyAssetHint(read: SymbolRead, hint: AssetHint | null | undefined): SymbolRead & { hinted: GroundingStats['hinted'] } {
+  if (!hint) return { ...read, hinted: undefined };
+  const seen = read.extracted;
+  const symbolMissing = !seen || !seen.symbol.trim();
+  const timeframeMissing = !seen || !normalizeTimeframe(seen.timeframe);
+  const symbol = symbolMissing ? hint.symbol : seen.symbol;
+  const timeframe = timeframeMissing && hint.timeframe ? hint.timeframe : seen?.timeframe ?? '';
+  const usedTimeframe = timeframeMissing && !!hint.timeframe;
+  if (!symbolMissing && !usedTimeframe) return { ...read, hinted: undefined };
+  return {
+    extracted: { symbol, timeframe, lastPrice: seen?.lastPrice ?? null },
+    failure: null,
+    hinted: symbolMissing && usedTimeframe ? 'both' : symbolMissing ? 'symbol' : 'timeframe',
+  };
+}
+
 function noCandleStats(coverage: CandleCoverage): GroundingStats {
   return { v: 1, symbol: '', interval: null, coverage, numbers: null };
 }
@@ -1520,10 +1548,7 @@ export class AIAdapter {
   }
 
   /** Leitura do ativo para as velas: o motivo da falha vai para a cobertura. */
-  private async readSymbolForCandles(imageUrl: string): Promise<
-    | { extracted: { symbol: string; timeframe: string; lastPrice: number | null }; failure: null }
-    | { extracted: null; failure: 'symbol_timeout' | 'symbol_unreadable' }
-  > {
+  private async readSymbolForCandles(imageUrl: string): Promise<SymbolRead> {
     try {
       const extracted = await this.extractSymbol(imageUrl);
       return extracted ? { extracted, failure: null } : { extracted: null, failure: 'symbol_unreadable' };
@@ -1673,7 +1698,7 @@ export class AIAdapter {
     }
   }
 
-  private async buildMarketEnrichment(imageUrl: string): Promise<{
+  private async buildMarketEnrichment(imageUrl: string, hint: AssetHint | null = null): Promise<{
     block: string | null;
     assetClass: CoverageAssetClass;
     marketContext: AnalysisDataCoverage['marketContext'];
@@ -1681,7 +1706,7 @@ export class AIAdapter {
     candles: CandleCoverage;
     stats: GroundingStats | null;
   }> {
-    const { extracted, failure } = await this.readSymbolForCandles(imageUrl);
+    const { extracted, failure, hinted } = applyAssetHint(await this.readSymbolForCandles(imageUrl), hint);
     if (!extracted) return {
       block: null, assetClass: 'unknown', marketContext: 'unavailable', calendar: 'symbol_unreadable',
       candles: failure, stats: noCandleStats(failure),
@@ -1699,6 +1724,7 @@ export class AIAdapter {
         : Promise.resolve({ block: null, status: 'disabled' as CalendarCoverage }),
     ]);
     const { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats } = candles;
+    if (hinted) stats.hinted = hinted;
 
     // Contexto de AGORA nao entra junto de print velho (mesma regra do quick).
     let classBlock: string | null = null;
@@ -1850,19 +1876,20 @@ export class AIAdapter {
     return Date.now();
   }
 
-  private async buildQuickGrounding(imageUrl: string): Promise<{
+  private async buildQuickGrounding(imageUrl: string, hint: AssetHint | null = null): Promise<{
     block: string | null;
     candles: CandleCoverage;
     marketContext: AnalysisDataCoverage['marketContext'];
     assetClass: CoverageAssetClass;
     stats: GroundingStats | null;
   }> {
-    const { extracted, failure } = await this.readSymbolForCandles(imageUrl);
+    const { extracted, failure, hinted } = applyAssetHint(await this.readSymbolForCandles(imageUrl), hint);
     if (!extracted) return {
       block: null, candles: failure, marketContext: 'unavailable', assetClass: 'unknown', stats: noCandleStats(failure),
     };
     const { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats } =
       await this.buildCandleBlocks(extracted);
+    if (hinted) stats.hinted = hinted;
 
     // O contexto abaixo descreve o mercado de AGORA. Se o preço da imagem
     // denuncia um print antigo, injetá-lo junto do aviso de print histórico
@@ -1957,7 +1984,7 @@ export class AIAdapter {
      * compareProviders: so quem grava a comparacao pede (worker e caminho sincrono; a demo nao).
      * priorPlan: plano anterior do setup (setup-continuation.ts); so entra se o ativo lido for o mesmo.
      */
-    options: { compareProviders?: boolean; priorPlan?: PriorPlan | null } = {},
+    options: { compareProviders?: boolean; priorPlan?: PriorPlan | null; assetHint?: AssetHint | null } = {},
   ): Promise<AIAnalysisResponse> {
     try {
       const userContent = await this.buildUserContent(imageUrl, extraImageUrls);
@@ -1982,7 +2009,7 @@ export class AIAdapter {
       if (this.groundingEnabled && analysisType === 'deep') {
         try {
           const enrichment = await withTimeout(
-            this.buildMarketEnrichment(imageUrl),
+            this.buildMarketEnrichment(imageUrl, options.assetHint ?? null),
             GROUNDING_TIMEOUT_MS,
             'market enrichment timed out',
           );
@@ -2007,7 +2034,7 @@ export class AIAdapter {
         // e alguns segundos, com teto de GROUNDING_TIMEOUT_MS. Falha → segue sem o bloco.
         try {
           const grounding = await withTimeout(
-            this.buildQuickGrounding(imageUrl),
+            this.buildQuickGrounding(imageUrl, options.assetHint ?? null),
             GROUNDING_TIMEOUT_MS,
             'quick grounding timed out',
           );

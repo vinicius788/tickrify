@@ -8,7 +8,8 @@
 import { atr14Series, closedBars, fractalSwings, type Bar } from '../../common/utils/plan-engine';
 import { buildLevelMap } from '../../common/utils/level-map';
 import { TIMEFRAME_MS, candleMarketOf } from '../market/candle-store';
-import { summarizeHigherTimeframe } from './ai.adapter';
+import { summarizeHigherTimeframe, type AssetHint } from './ai.adapter';
+import type { PrismaClient } from '@prisma/client';
 import type { HtfTrend } from './analysis-data-coverage';
 
 export const WATCH_ASSET_RULES = {
@@ -85,4 +86,24 @@ export function dayLevels(candles: readonly Bar[], interval: string, nowMs: numb
     below: side(map?.below),
     candleAt: last[0],
   };
+}
+
+/**
+ * A dica de ativo gravada com a analise (`clientContext.hintSymbol`), relida do
+ * banco pelos dois caminhos (worker e sincrono). Nunca lanca: sem dica, a
+ * analise segue como sempre.
+ */
+export async function loadAssetHint(prisma: Pick<PrismaClient, '$queryRaw'>, analysisId: string): Promise<AssetHint | null> {
+  try {
+    const [row] = await prisma.$queryRaw<Array<{ symbol: string | null; timeframe: string | null }>>`
+      SELECT "clientContext"->>'hintSymbol' AS "symbol", "clientContext"->>'hintTimeframe' AS "timeframe"
+      FROM "tickrify"."Analysis" WHERE "id" = ${analysisId} AND "clientContext"->>'source' = 'web'
+    `;
+    const symbol = canonicalWatchSymbol(row?.symbol);
+    if (!symbol) return null;
+    const timeframe = (WATCH_ASSET_RULES.timeframes as readonly string[]).includes(String(row?.timeframe)) ? String(row?.timeframe) : null;
+    return { symbol, timeframe };
+  } catch {
+    return null;
+  }
 }

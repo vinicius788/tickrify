@@ -72,7 +72,7 @@ import WatchingPage from "../dashboard/WatchingPage";
 import SetupPage from "../dashboard/SetupPage";
 import TradePanel from "../dashboard/TradePanel";
 import { displayAsset, tradeQueryKey, type OpenTrade, type TradeCloseReason } from "@/lib/api";
-import { SETUP_ID_PATTERN, formatSetupDay, useExpiryClock, isWatchOpen, useAlertActions, useAlertTabTitle, useSetupAlerts, useSetupVersions } from "@/lib/setups";
+import { SETUP_ID_PATTERN, formatSetupDay, useExpiryClock, isWatchOpen, useAlertActions, useAlertTabTitle, useSetupAlerts, useSetupVersions, useWatchAssets } from "@/lib/setups";
 import { openChat, useChatThread } from "@/lib/support-chat";
 
 // Textos do dashboard que estavam hardcoded em PT — agora EN por padrão (público global),
@@ -453,6 +453,9 @@ const DashboardPage = () => {
   // Alertas de nivel (27/10/2026): o bloco Today, o contador no menu e no
   // titulo da aba, e o paywall `alerts` da conta travada.
   const alertsQuery = useSetupAlerts(!isDemo, null, { background: true });
+  // My assets: a pessoa pode indicar qual ativo e o grafico que esta enviando.
+  const watchAssetsQuery = useWatchAssets(!isDemo);
+  const assetHintRef = useRef<{ symbol: string; timeframe: string } | null>(null);
   const alertsUnseen = alertsQuery.data?.unseen ?? 0;
   const { seen: markAlertSeen } = useAlertActions();
   const watchedSetupIds = useMemo(
@@ -904,7 +907,11 @@ const DashboardPage = () => {
         htfBase64Images: htfBase64Images.length > 0 ? htfBase64Images : undefined,
         analysisType,
         setupId,
+        hintSymbol: assetHintRef.current?.symbol,
+        hintTimeframe: assetHintRef.current?.timeframe,
       });
+      // A dica vale para UM grafico: o proximo envio comeca sem ela.
+      assetHintRef.current = null;
 
       const uploadMs = Math.round(performance.now() - uploadStartedAt);
 
@@ -1432,6 +1439,18 @@ const DashboardPage = () => {
                   key={analysisKey}
                   onStartAnalysis={handleStartAnalysis}
                   allowHigherTimeframes={!isDemo && isUnlimited}
+                  assetChoices={
+                    Array.isArray(watchAssetsQuery.data?.assets) && watchAssetsQuery.data.assets.length > 0
+                      ? {
+                          symbols: watchAssetsQuery.data.assets.map((asset) => asset.symbol),
+                          timeframe: watchAssetsQuery.data.timeframe,
+                          timeframes: watchAssetsQuery.data.timeframes,
+                        }
+                      : null
+                  }
+                  onAssetHintChange={(hint) => {
+                    assetHintRef.current = hint;
+                  }}
                   setupUpdate={
                     updatingSetup
                       ? {

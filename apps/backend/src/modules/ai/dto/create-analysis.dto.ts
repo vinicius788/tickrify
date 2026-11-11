@@ -56,6 +56,18 @@ export class CreateAnalysisDto {
   @Matches(/^[A-Za-z0-9]+$/)
   chartTimeframe?: string;
 
+  // O ativo e o tempo grafico que a PESSOA disse que este grafico e (painel web,
+  // pela lista do My assets). So preenche o que a leitura da imagem nao achou.
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  @Matches(/^[A-Za-z0-9./+-]+$/)
+  hintSymbol?: string;
+
+  @IsOptional()
+  @IsIn(['1m', '5m', '15m', '1h', '4h'])
+  hintTimeframe?: string;
+
   // Fuso IANA do navegador (trial de 3 dias: o dia de uso e o dia no fuso da
   // pessoa). O servico confere com Intl e ignora valor invalido.
   @IsOptional()

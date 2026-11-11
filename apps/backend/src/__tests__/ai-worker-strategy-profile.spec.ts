@@ -201,6 +201,24 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     }));
   });
 
+  it('repassa a dica de ativo gravada com a analise ao adapter (caminho da fila)', async () => {
+    require('../../worker/ai.worker');
+    const processAnalysis = getProcessor();
+    const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
+    const original = prismaClient.$queryRaw;
+    prismaClient.$queryRaw = jest.fn(async (strings: TemplateStringsArray) =>
+      Array.from(strings ?? []).join('').includes('hintSymbol') ? [{ symbol: 'XAUUSD', timeframe: '5m' }] : []);
+    analyzeImageMock.mockClear();
+    try {
+      await expect(processAnalysis(makeJob({
+        analysisId: 'analysis-hint', imageUrl: 'https://example.com/chart.png', analysisType: 'quick', userId: 'user-1', isDemo: true,
+      }))).rejects.toThrow('stop-after-capture');
+    } finally {
+      prismaClient.$queryRaw = original;
+    }
+    expect(analyzeImageMock.mock.calls[0][5]).toEqual({ compareProviders: true, assetHint: { symbol: 'XAUUSD', timeframe: '5m' } });
+  });
+
   function mockPaidRefund() {
     const prismaClient = (require('@prisma/client').PrismaClient as any).lastClient;
     const tx = {

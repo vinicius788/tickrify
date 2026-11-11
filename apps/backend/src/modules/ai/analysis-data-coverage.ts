@@ -138,6 +138,8 @@ export interface GroundingStats {
   interval: string | null;
   coverage: CandleCoverage;
   numbers: GroundingNumbers | null;
+  /** O que veio da dica da pessoa (10/11/2026) porque a leitura da imagem nao achou. Ausente = tudo lido da imagem. */
+  hinted?: 'symbol' | 'timeframe' | 'both';
 }
 
 export interface AnalysisTelemetry {
