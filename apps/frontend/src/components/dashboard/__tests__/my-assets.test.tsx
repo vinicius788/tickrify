@@ -80,6 +80,8 @@ describe('MyAssets', () => {
     renderBlock();
     expect(await screen.findByText('XAUUSD')).toBeTruthy();
     expect(screen.getByText('Uptrend')).toBeTruthy();
+    // O preco pode ter ate 15 min: a hora da vela vai junto.
+    expect(screen.getByText('Price 4,102 · 00:00 UTC')).toBeTruthy();
     expect(screen.getByText('4,118.5')).toBeTruthy();
     expect(screen.getByText('0.31% away')).toBeTruthy();
     expect(screen.getByText('Levels computed from real candles, 5m. Market information, not a signal.')).toBeTruthy();
