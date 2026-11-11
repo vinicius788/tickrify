@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 type Options = Record<string, (...a: unknown[]) => void> & { sitekey: string };
 let rendered: Options | null = null;
 const remove = vi.fn();
+const host = window as unknown as { turnstile?: { render: (c: HTMLElement, o: Options) => string; execute: () => void; remove: (id: string) => void } };
 
 async function load(siteKey = 'site-key') {
   vi.resetModules();
@@ -15,12 +16,12 @@ describe('Turnstile da demo: motivo de cada falha', () => {
     vi.useFakeTimers();
     rendered = null;
     remove.mockClear();
-    (window as any).turnstile = { render: (_c: HTMLElement, o: Options) => { rendered = o; return 'w1'; }, execute: vi.fn(), remove };
+    host.turnstile = { render: (_c: HTMLElement, o: Options) => { rendered = o; return 'w1'; }, execute: vi.fn(), remove };
   });
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
-    delete (window as any).turnstile;
+    delete host.turnstile;
   });
 
   it('sem chave configurada: null e motivo not_configured', async () => {
@@ -84,7 +85,7 @@ describe('Turnstile da demo: motivo de cada falha', () => {
   });
 
   it('render que estoura vira render_error', async () => {
-    (window as any).turnstile.render = () => { throw new Error('TurnstileError'); };
+    host.turnstile!.render = () => { throw new Error('TurnstileError'); };
     const t = await load();
     expect(await t.getTurnstileToken()).toBeNull();
     expect(t.getTurnstileOutcome()).toBe('render_error');
