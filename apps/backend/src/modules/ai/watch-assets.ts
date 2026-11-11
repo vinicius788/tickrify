@@ -17,6 +17,8 @@ export const WATCH_ASSET_RULES = {
   defaultTimeframe: '15m',
   /** Velas guardadas valem ate isto para os niveis do dia (a analise segue no frescor dela). */
   maxAgeMs: 15 * 60 * 1000,
+  /** Nivel a menos disto do preco (em ATR) esta colado nele: vale o proximo (em producao saiu BTC a 2 dolares, 0,00%). */
+  minDistanceAtr: 0.25,
   /** Ativos oferecidos na tela; a pessoa tambem pode digitar outro com fonte de preco. */
   suggested: ['XAUUSD', 'BTCUSDT', 'EURUSD', 'ETHUSDT', 'GBPUSD', 'USDJPY', 'SOLUSDT', 'EURJPY'],
 } as const;
@@ -56,15 +58,23 @@ export function dayLevels(candles: readonly Bar[], interval: string, nowMs: numb
   const price = last[4];
   const swings = fractalSwings(closed).map(({ kind, price: p }) => ({ kind, price: p }));
   const at = (p: number) => ({ price: p, atr: Math.abs(price - p) / atr });
-  const lows = swings.filter((s) => s.kind === 'low' && s.price < price).map((s) => s.price);
-  const highs = swings.filter((s) => s.kind === 'high' && s.price > price).map((s) => s.price);
+  const windowHigh = Math.max(...closed.map((b) => b[2]));
+  const windowLow = Math.min(...closed.map((b) => b[3]));
+  const gap = WATCH_ASSET_RULES.minDistanceAtr * atr;
+  const lows = swings.filter((s) => s.kind === 'low' && price - s.price >= gap).map((s) => s.price);
+  const highs = swings.filter((s) => s.kind === 'high' && s.price - price >= gap).map((s) => s.price);
   const map = buildLevelMap(
     {
       price, atr, rangePosPct: null, htfTrend: null, invalidation: null, planLevel: null,
       support: lows.length ? at(Math.max(...lows)) : null,
       resistance: highs.length ? at(Math.min(...highs)) : null,
     },
-    { swings, windowHigh: Math.max(...closed.map((b) => b[2])), windowLow: Math.min(...closed.map((b) => b[3])) },
+    // Sem swing longe o bastante: a maxima ou a minima da janela, se tambem nao estiver colada.
+    {
+      swings: swings.filter((s) => Math.abs(s.price - price) >= gap),
+      windowHigh: windowHigh - price >= gap ? windowHigh : null,
+      windowLow: price - windowLow >= gap ? windowLow : null,
+    },
   );
   const side = (s: { level: number; atr: number } | null | undefined): DayLevel | null =>
     s ? { price: s.level, atr: s.atr, pct: (100 * Math.abs(s.level - price)) / price } : null;

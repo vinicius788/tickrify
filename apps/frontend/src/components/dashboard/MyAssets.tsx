@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
-import { formatAlertLevel, useSaveWatchAssets, useWatchAssets, type DayLevel, type WatchAsset } from '@/lib/setups';
+import { formatAlertLevel, formatUtcTime, useSaveWatchAssets, useWatchAssets, type DayLevel, type WatchAsset } from '@/lib/setups';
 
 const DATE_LOCALES: Record<string, string> = {
   pt: 'pt-BR', en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
@@ -125,7 +125,7 @@ const MyAssets = ({ base }: { base: string }) => {
             <span className="rounded-full bg-[var(--fill-3)] px-2.5 py-0.5 text-xs font-medium text-[var(--text-secondary)]">{trendText[asset.levels.trend]}</span>
           ) : null}
           {asset.levels ? (
-            <span className="tk-meta tabular-nums">{a.price} {formatAlertLevel(asset.levels.price, locale)}</span>
+            <span className="tk-meta tabular-nums">{`${a.price} ${formatAlertLevel(asset.levels.price, locale)} · ${formatUtcTime(new Date(asset.levels.candleAt).toISOString())}`}</span>
           ) : null}
         </div>
         <Link
