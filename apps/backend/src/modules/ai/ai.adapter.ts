@@ -1180,6 +1180,8 @@ function parseSchemaResult(
 // batendo na fonte externa sem necessidade e multiplicando o risco de
 // bloqueio/rate-limit (achado em 25/08/2026, junto do bug do cache vazio).
 const calendarService = new EconomicCalendarService();
+/** Calendario economico tambem na analise rapida (so o deep recebia). Padrao desligado. */
+export const QUICK_CALENDAR_FLAG = 'ENABLE_QUICK_CALENDAR';
 
 /**
  * Linha do EUR/USD no bloco de forex/metais. EUR/USD subindo = dolar
@@ -1882,14 +1884,26 @@ export class AIAdapter {
     marketContext: AnalysisDataCoverage['marketContext'];
     assetClass: CoverageAssetClass;
     stats: GroundingStats | null;
+    calendar: CalendarCoverage;
   }> {
     const { extracted, failure, hinted } = applyAssetHint(await this.readSymbolForCandles(imageUrl), hint);
     if (!extracted) return {
       block: null, candles: failure, marketContext: 'unavailable', assetClass: 'unknown', stats: noCandleStats(failure),
+      calendar: 'not_attempted',
     };
-    const { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats } =
-      await this.buildCandleBlocks(extracted);
+    // Calendario no quick (11/11/2026, chave QUICK_CALENDAR_FLAG, desligada): o
+    // mesmo bloco do deep, em paralelo com as velas. Desligada, nem busca.
+    const withCalendar = flagBool(QUICK_CALENDAR_FLAG) && flagBool('ENABLE_MARKET_ENRICHMENT');
+    const [candles, calendarRead] = await Promise.all([
+      this.buildCandleBlocks(extracted),
+      withCalendar
+        ? this.buildCalendarEnrichment(extracted.symbol.toUpperCase())
+        : Promise.resolve({ block: null, status: 'not_attempted' as CalendarCoverage }),
+    ]);
+    const { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats } = candles;
     if (hinted) stats.hinted = hinted;
+    // Os eventos sao de AGORA: com print velho ficam fora, como o contexto.
+    const calendar = staleReason && withCalendar ? { block: null, status: 'not_attempted' as CalendarCoverage } : calendarRead;
 
     // O contexto abaixo descreve o mercado de AGORA. Se o preço da imagem
     // denuncia um print antigo, injetá-lo junto do aviso de print histórico
@@ -1903,21 +1917,22 @@ export class AIAdapter {
       }
     }
 
-    const parts = [candleBlock, staleBlock, contextBlock].filter(Boolean) as string[];
+    const parts = [candleBlock, staleBlock, contextBlock, calendar.block].filter(Boolean) as string[];
     if (parts.length > 0) {
       // Log de verificação: permite confirmar no Render que o grounding está
       // ativo e com quais dados (sem vazar o conteúdo do prompt).
       this.logger.log(
-        `[QuickGrounding] ${sym} ${interval ?? 'tf?'} — candles: ${candleBlock ? 'sim' : 'não'}${staleReason ? ` (retido: ${staleReason})` : ''}, contexto: ${contextBlock ? 'sim' : 'não'}`,
+        `[QuickGrounding] ${sym} ${interval ?? 'tf?'} — candles: ${candleBlock ? 'sim' : 'não'}${staleReason ? ` (retido: ${staleReason})` : ''}, contexto: ${contextBlock ? 'sim' : 'não'}${withCalendar ? `, calendario: ${calendar.status}` : ''}`,
       );
       return {
         block: parts.join('\n\n'), candles: candleCoverage,
         marketContext: staleReason ? 'stale_withheld' : contextBlock ? 'injected' : 'unavailable',
         assetClass,
         stats,
+        calendar: calendar.status,
       };
     }
-    return { block: null, candles: candleCoverage, marketContext: 'unavailable', assetClass, stats };
+    return { block: null, candles: candleCoverage, marketContext: 'unavailable', assetClass, stats, calendar: calendar.status };
   }
 
   /**
@@ -2041,6 +2056,7 @@ export class AIAdapter {
           coverage.candles = grounding.candles;
           coverage.marketContext = grounding.marketContext;
           coverage.assetClass = grounding.assetClass;
+          coverage.calendar = grounding.calendar;
           groundingStats = grounding.stats;
           if (grounding.block) {
             context.push(grounding.block);
