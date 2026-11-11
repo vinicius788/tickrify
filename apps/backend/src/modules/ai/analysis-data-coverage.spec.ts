@@ -198,6 +198,7 @@ describe('analysis data coverage', () => {
     expect(unavailable).toEqual({
       block: null, candles: 'source_unavailable', marketContext: 'unavailable', assetClass: 'crypto',
       stats: { v: 1, symbol: 'BTCUSDT', interval: '30m', coverage: 'source_unavailable', numbers: null },
+      calendar: 'not_attempted',
     });
 
     adapter.fetchCandles.mockResolvedValue({ candles: Array.from({ length: 30 }, (_, i) => [i, 100, 102, 98, 100, 1]), source: 'binance', denied: null });
