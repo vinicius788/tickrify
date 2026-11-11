@@ -918,6 +918,13 @@ Vale para TODA mudanca, grande ou pequena:
 - **Caminho:** `hintSymbol`/`hintTimeframe` no `CreateAnalysisDto` -> `buildClientContext` grava em `Analysis.clientContext` (`source: web`, ativo normalizado por `canonicalWatchSymbol`; sem fonte de preco, nada e gravado) -> `loadAssetHint` rele do banco no worker E no sincrono -> `analyzeImage(..., { assetHint })` -> quick e deep. A extensao segue como era.
 - **Medicao:** `groundingStats.hinted` = `symbol | timeframe | both` quando a dica entrou. `select "groundingStats"->>'hinted', count(*) from tickrify."Analysis" where "createdAt" > <deploy> group by 1;`
 
+### 3.19 Dois planos no WATCH (11/11/2026; pronto, DESLIGADO)
+
+- **Por que:** o motor v11 deu 0 ENTER_NOW desde 03/11. Em 15.966 momentos medidos sem IA (cripto e ouro, 20/08 a 13/10, stop e alvo a 1 ATR), nivel com 2+ toques no caminho (C7 em codigo) deu 49,8% contra 50,0% sem, e atrasado 50,1%: os portoes nao separam acerto de erro. Em vez de afrouxar o portao, a tela mostra os dois planos e a pessoa escolhe.
+- **Chave `ENGINE_MARKET_PLAN_ON_WATCH`** no /admin (desligada = identico). Ligada, analise com velas reais que termina em WATCH e cuja entrada A MERCADO tem geometria valida (`entryLevels`: risco ate 2 ATR, alvo a 1R ou mais, TP1 ate 1,5R) grava `result.marketLevels` (os mesmos niveis que o ENTER_NOW teria). O estado, a recomendacao, os niveis principais, o rastreador e a /accuracy NAO mudam.
+- **Tela:** `MarketPlanCard` (em `WatchPlanCard.tsx`) abaixo do plano no nivel, so com `marketLevels` e a janela aberta: entrada, stop, alvo, risco em ATR, R e a frase "Neither plan has a measured edge over the other. The decision is yours."
+- **Nao medido:** o resultado dessas entradas a mercado em producao. O rastreador so mede o plano no nivel. Antes de divulgar, medir offline com `result.marketLevels` e as velas (mesma regua do `trackPlan`).
+
 ## 4. Regras tecnicas que nasceram de bug real (nao desfazer)
 
 ### 4.0 Regras de 05/10/2026
@@ -1131,6 +1138,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 11/11 | **Dois planos no WATCH (3.19) prontos e DESLIGADOS.** Dono decide ligar `ENGINE_MARKET_PLAN_ON_WATCH` no /admin. Depois de ligar: conferir uma analise WATCH com velas reais mostrando o cartao "Or enter at the current price"; em 30 dias, medir offline o R dessas entradas a mercado (WIN/LOSS pelo `trackPlan` sobre `result.marketLevels`) contra o plano no nivel. | dono / Claude |
 | 10/11 | **Telegram (3.16) pronto e DESLIGADO.** Dono: (1) criar o bot no @BotFather e por `TELEGRAM_BOT_TOKEN` no Render; (2) conferir no boot `[telegram] ... webhook: registrado`; (3) ligar a conta em Configuracoes e testar com alerta de BTC perto do preco; (4) ligar `TELEGRAM_SETUP_ALERTS` no /admin; (5) aprovar o texto da mensagem e uma linha na /privacy sobre o id do chat do Telegram. | dono / Claude |
 | 10/11 | **My assets (3.17) no PR, sem merge.** Depois do deploy: (1) boot `[watch-assets] Tabela pronta.`; (2) conferir na linha `[twelvedata] day=... monitor=N` se a lista cabe na reserva do monitor (200/dia); se encostar, subir `maxAgeMs`; (3) medir em 14 dias: % de contas que salvam lista, retorno no dia 2 de quem salvou x quem nao salvou, `watch_assets_analyze_clicked`. Proximo PR: alerta no nivel da lista sem precisar de analise. Nao foi visto no navegador (so testes). | dono / Claude |
 | 09/11 | **Fechamento de 09/11: PRs #24 e #25 no ar em `08a60e3` (18:25 UTC). Falta conferir, na proxima analise, o motivo gravado em `groundingStats`.** Branches sem decisao, patches em `_local/arquivo-2026-11-09/`: `claude/funnel-paywall-webhook-ip`, `codex/early35-display`, `codex/tracker-confirmation`, `codex/watch-next-steps`, `claude/paste-upload-dashboard`, `claude/blissful-heisenberg-dwasmg`, `claude/validator-measurement` (8 arquivos sem commit), `claude/watch-pending-level-map` (commit local `5f08195`, /try). | dono |

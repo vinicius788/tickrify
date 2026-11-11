@@ -48,6 +48,8 @@ export interface AIAnalysisResponse {
   rejectedPlan?: RejectedPlan;
   /** ENTER_NOW liberado pela chave ENGINE_ENTER_AT_LEVEL. */
   enterAtLevel?: boolean;
+  /** WATCH com a entrada a mercado de geometria valida (chave ENGINE_MARKET_PLAN_ON_WATCH). */
+  marketLevels?: EntryLevels;
   bias: Bias;
   confidence: number; // 0-100
   reasoning: string;

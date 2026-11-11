@@ -186,6 +186,7 @@ interface WorkerAnalysisResult {
   aiLevel?: AiLevel | null;
   rejectedPlan?: RejectedPlan;
   enterAtLevel?: boolean;
+  marketLevels?: EntryLevels;
   validatorNotes: ValidatorNote[];
   analysis: WorkerAnalysisDetails;
 }
@@ -365,6 +366,7 @@ interface AdapterDecision {
   aiLevel?: AiLevel | null;
   rejectedPlan?: RejectedPlan;
   enterAtLevel?: boolean;
+  marketLevels?: EntryLevels;
   validatorAction: ValidatorAction;
   /** Cada mudanca de estado do validador do adapter. */
   validatorNotes: ValidatorNote[];
@@ -395,6 +397,7 @@ function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
     aiLevel: (aiSource.aiLevel as AiLevel | null) ?? null,
     ...(aiSource.rejectedPlan ? { rejectedPlan: aiSource.rejectedPlan as RejectedPlan } : {}),
     ...(aiSource.enterAtLevel === true ? { enterAtLevel: true } : {}),
+    ...(aiSource.marketLevels ? { marketLevels: aiSource.marketLevels as EntryLevels } : {}),
     validatorAction: meta.validatorAction as ValidatorAction,
     validatorNotes: Array.isArray(aiSource.validatorNotes) ? (aiSource.validatorNotes as ValidatorNote[]) : [],
     validatorReasons: meta.validatorReasons as ValidatorReason[],
@@ -540,6 +543,7 @@ async function toWorkerAnalysisResult(
     aiLevel: decision.aiLevel ?? null,
     ...(decision.rejectedPlan ? { rejectedPlan: decision.rejectedPlan } : {}),
     ...(decision.enterAtLevel ? { enterAtLevel: true } : {}),
+    ...(decision.marketLevels ? { marketLevels: decision.marketLevels } : {}),
     validatorNotes: decision.validatorNotes,
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),

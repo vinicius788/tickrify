@@ -484,6 +484,61 @@ describe('chave ENGINE_ENTER_AT_LEVEL: reanalise com o preco na zona do WATCH', 
   });
 });
 
+describe('chave ENGINE_MARKET_PLAN_ON_WATCH: o WATCH mostra tambem o plano a mercado', () => {
+  const FLAG = 'ENGINE_MARKET_PLAN_ON_WATCH';
+  const lateLong = { late: { long: true, short: false } };
+  const lateAtPrice = { ...watch, structureValidation: checks(5), currentPrice: 99.3, realData: real(99.3, lateLong) };
+  const withFlag = async <T>(value: 'true' | 'false', run: () => Promise<T>): Promise<T> => {
+    const before = process.env[FLAG];
+    process.env[FLAG] = value;
+    try { return await run(); } finally { if (before === undefined) delete process.env[FLAG]; else process.env[FLAG] = before; }
+  };
+
+  it('desligada: nenhum plano a mercado no WATCH, como sempre', async () => {
+    const r = await withFlag('false', () => decide(lateAtPrice));
+    expect(r.state).toBe('WATCH');
+    expect(r.marketLevels).toBeNull();
+  });
+
+  it('ligada, atrasado segurou o ENTER_NOW: o estado segue WATCH e o plano a mercado vai junto', async () => {
+    const r = await withFlag('true', () => decide(lateAtPrice));
+    expect(r.state).toBe('WATCH');
+    expect(r.recommendation).toBe('WAIT');
+    expect(r.levels).toEqual({ entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null });
+    expect(r.marketLevels).toMatchObject({ entry: 99.3 });
+    expect(r.marketLevels!.stopLoss).toBeLessThan(99.3);
+    expect(r.marketLevels!.takeProfit1).toBeGreaterThan(99.3);
+    expect(r.marketLevels!.riskAtr).toBeLessThanOrEqual(ENGINE_RULES.riskMaxAtr);
+    expect(r.marketLevels!.tp1R).toBeGreaterThanOrEqual(ENGINE_RULES.tp1MinR);
+    expect(r.marketLevels!.tp1R).toBeLessThanOrEqual(ENGINE_RULES.tp1CapR);
+  });
+
+  it('ligada, C7 reprovado: mesmo plano a mercado, estado WATCH', async () => {
+    const r = await withFlag('true', () => decide({ ...lateAtPrice, realData: real(99.3), structureValidation: checks(5, 7) }));
+    expect(r.state).toBe('WATCH');
+    expect(r.marketLevels).toMatchObject({ entry: 99.3 });
+  });
+
+  it('ligada, os niveis sao os mesmos que o ENTER_NOW teria com o checklist aprovado', async () => {
+    const watchResult = await withFlag('true', () => decide(lateAtPrice));
+    const enter = await withFlag('true', () => decide({ ...lateAtPrice, realData: real(99.3) }));
+    expect(enter.state).toBe('ENTER_NOW');
+    expect(enter.marketLevels).toBeNull();
+    expect(watchResult.marketLevels).toMatchObject({ entry: enter.levels.entry, stopLoss: enter.levels.stopLoss, takeProfit1: enter.levels.takeProfit1 });
+  });
+
+  it('ligada, entrada a mercado sem geometria: nenhum plano a mercado', async () => {
+    // Alvo logo acima do preco: sem 1R de espaco a mercado.
+    const r = await withFlag('true', () => decide({ ...lateAtPrice, watchPlan: { ...plan, target1: 99.8, target2: null } }));
+    expect(r.marketLevels).toBeNull();
+  });
+
+  it('ligada, sem velas reais ou NO_TRADE: nunca ha plano a mercado', async () => {
+    expect((await withFlag('true', () => decide({ ...lateAtPrice, realData: null }))).marketLevels).toBeNull();
+    expect((await withFlag('true', () => decide({ state: 'NO_TRADE', recommendation: 'WAIT' }))).marketLevels).toBeNull();
+  });
+});
+
 describe('rejectedPlan: o plano do modelo que o codigo rebaixou para NO_TRADE', () => {
   it('guarda o plano cru (antes do encaixe) e o motivo', async () => {
     const r = await decide({ ...watch, realData: real(99.9, { swings: [] }) });
