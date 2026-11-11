@@ -123,11 +123,11 @@ function JournalStats({ stats, j, locale }: { stats: MonthStats; j: JournalCopy;
   // 04/01/2026 foi domingo: chave 0 = domingo, como `Date.getDay()`.
   const weekdayLabel = (key: string) => upperFirst(weekdayFmt.format(new Date(2026, 0, 4 + Number(key))), locale);
   const sideLabel = (key: string) => getRecommendationMeta(key).label;
-  const tile = 'bg-[var(--bg-surface)] px-3 py-2.5';
+  const tile = 'rounded-lg bg-[var(--bg-base)] px-3 py-2';
   return (
     <section className="mt-4" aria-labelledby="journal-stats-title">
       <h3 id="journal-stats-title" className="mb-2 text-sm font-semibold text-[var(--text-primary)]">{j.statsTitle}</h3>
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className={tile}>
           <p className="text-xs text-[var(--text-secondary)]">{j.avgR}</p>
           <p className="tabular-nums text-lg font-semibold" style={{ color: pnlColor(stats.avgR) }}>
@@ -344,12 +344,12 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
       <CardContent className="p-0">
         {user ? <WatchingLink /> : null}
         {/* ── Resumo do mes ─────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-px border-y border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-4">
-          <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
+        <div className="grid grid-cols-2 gap-2 border-y border-[var(--border-subtle)] px-5 py-4 sm:grid-cols-4">
+          <div className="rounded-lg bg-[var(--bg-base)] px-3 py-2">
             <p className="text-xs text-[var(--text-secondary)]">{j.analyses}</p>
             <p className="tabular-nums text-lg font-semibold text-[var(--text-primary)]">{totals.count}</p>
           </div>
-          <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
+          <div className="rounded-lg bg-[var(--bg-base)] px-3 py-2">
             <p className="text-xs text-[var(--text-secondary)]">{j.winRate}</p>
             <p className="tabular-nums text-lg font-semibold text-[var(--signal-buy)]">
               {decided > 0 ? `${Math.round((totals.wins / decided) * 1000) / 10}%` : '-'}
@@ -358,13 +358,13 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
               {totals.wins}{tr.winShort} / {totals.losses}{tr.lossShort}
             </p>
           </div>
-          <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
+          <div className="rounded-lg bg-[var(--bg-base)] px-3 py-2">
             <p className="text-xs text-[var(--text-secondary)]">{j.pnl}</p>
             <p className="tabular-nums text-lg font-semibold" style={{ color: pnlColor(totals.pnl) }}>
               {totals.pnl !== null ? fmtPnl(totals.pnl, locale) : '-'}
             </p>
           </div>
-          <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
+          <div className="rounded-lg bg-[var(--bg-base)] px-3 py-2">
             <p className="text-xs text-[var(--text-secondary)]">{j.activeDays}</p>
             <p className="tabular-nums text-lg font-semibold text-[var(--text-primary)]">{totals.activeDays}</p>
           </div>
