@@ -186,6 +186,29 @@ describe('recentCandles com o banco: compartilhado entre usuarios', () => {
     expect(second.source).toBe('binance');
   });
 
+  it('lista de ativos: aceita velas guardadas ate a idade pedida, sem chamar a fonte', async () => {
+    const { db } = fakeDb();
+    await registerCandleStore(db, () => undefined);
+    await recentCandles('BTCUSDT', '5m');
+    const later = Date.now() + 10 * 60_000;
+    const out = await recentCandles('BTCUSDT', '5m', 'monitor', later, { maxAgeMs: 15 * 60_000 });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(out.candles).toHaveLength(120);
+    expect(out.stale).toBeUndefined();
+  });
+
+  it('lista de ativos: fonte falhou, devolve as guardadas marcadas como stale; a analise continua sem velas', async () => {
+    const { db } = fakeDb();
+    await registerCandleStore(db, () => undefined);
+    await recentCandles('BTCUSDT', '5m');
+    fetchSpy.mockResolvedValue(json(null, false, 500));
+    const later = Date.now() + 60 * 60_000;
+    const relaxed = await recentCandles('BTCUSDT', '5m', 'monitor', later, { maxAgeMs: 15 * 60_000 });
+    expect(relaxed.stale).toBe(true);
+    expect(relaxed.candles).toHaveLength(120);
+    expect((await recentCandles('BTCUSDT', '5m', 'analysis', later)).candles).toBeNull();
+  });
+
   it('velas guardadas velhas: busca de novo', async () => {
     const { db } = fakeDb();
     await registerCandleStore(db, () => undefined);

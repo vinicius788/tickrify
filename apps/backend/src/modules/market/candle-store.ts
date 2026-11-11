@@ -336,21 +336,26 @@ export async function recentCandles(
   interval: string,
   consumer: TwelveDataConsumer = 'analysis',
   nowMs: number = Date.now(),
-): Promise<CandleFetch> {
+  /**
+   * So a lista de ativos (watch-assets) passa isto: aceita velas guardadas ate
+   * `maxAgeMs` e, se a fonte recusar ou falhar, devolve as guardadas de
+   * qualquer idade (`stale`). A analise nunca passa: o frescor dela nao muda.
+   */
+  relaxed?: { maxAgeMs: number },
+): Promise<CandleFetch & { stale?: boolean }> {
   const pair = candleMarketOf(symbol);
   if (!pair || !TIMEFRAME_MS[interval]) return { candles: null, source: null, denied: null };
   const client = db;
+  let kept: { candles: StoredCandle[]; source: string | null } | null = null;
   if (client) {
     try {
       const rows = await readStored(client, pair.key, interval);
-      const freshMs = CANDLE_STORE.freshMs[interval] ?? CANDLE_STORE.freshDefaultMs;
+      const freshMs = relaxed?.maxAgeMs ?? CANDLE_STORE.freshMs[interval] ?? CANDLE_STORE.freshDefaultMs;
       const newest = rows[rows.length - 1];
-      if (rows.length >= CANDLE_STORE.minCandles && newest && nowMs - newest.fetchedAt.getTime() <= freshMs) {
-        return {
-          candles: rows.map((r): StoredCandle => [r.openTime.getTime(), r.open, r.high, r.low, r.close, r.volume ?? 0]),
-          source: newest.source,
-          denied: null,
-        };
+      if (rows.length >= CANDLE_STORE.minCandles && newest) {
+        const candles = rows.map((r): StoredCandle => [r.openTime.getTime(), r.open, r.high, r.low, r.close, r.volume ?? 0]);
+        if (nowMs - newest.fetchedAt.getTime() <= freshMs) return { candles, source: newest.source, denied: null };
+        if (relaxed) kept = { candles, source: newest.source };
       }
     } catch {
       /* leitura falhou: busca direto */
@@ -358,5 +363,6 @@ export async function recentCandles(
   }
   const fetched = await fetchFromSource(pair.market, pair.key, interval, consumer);
   if (client && fetched.candles) await store(client, pair.key, interval, fetched).catch(() => undefined);
+  if (!fetched.candles && kept) return { candles: kept.candles, source: kept.source, denied: fetched.denied, stale: true };
   return fetched;
 }
