@@ -117,3 +117,56 @@ describe('CreateAnalysisDto: dica contra o ValidationPipe real', () => {
     await expect(run({ hintSymbol: 'XAUUSD', hintTimeframe: '2m' })).rejects.toBeDefined();
   });
 });
+
+describe('calendario na analise rapida (chave ENABLE_QUICK_CALENDAR)', () => {
+  const flags = jest.requireActual('../../common/flags/feature-flags') as typeof import('../../common/flags/feature-flags');
+  const make = (opts: { stale?: boolean } = {}) => {
+    const adapter: any = new AIAdapter();
+    adapter.extractSymbol = jest.fn(async () => ({ symbol: 'XAUUSD', timeframe: '5m', lastPrice: 4100 }));
+    adapter.buildCandleBlocks = jest.fn(async (e: { symbol: string; timeframe: string }) => ({
+      sym: e.symbol, interval: e.timeframe, isCrypto: false, assetClass: 'metal', candleBlock: 'REAL DATA',
+      staleReason: opts.stale ? 'old print' : null, staleBlock: opts.stale ? 'STALE' : null,
+      candleCoverage: 'injected', stats: { v: 1, symbol: e.symbol, interval: e.timeframe, coverage: 'injected', numbers: null },
+    }));
+    adapter.buildFxEnrichment = jest.fn(async () => null);
+    adapter.buildCalendarEnrichment = jest.fn(async () => ({ block: '# REAL DATA: ECONOMIC CALENDAR', status: 'events_injected' }));
+    return adapter;
+  };
+  const withFlag = (on: boolean) =>
+    jest.spyOn(flags, 'flagBool').mockImplementation((key: string) => (key === 'ENABLE_QUICK_CALENDAR' ? on : true));
+  afterEach(() => jest.restoreAllMocks());
+
+  it('desligada: nem busca o calendario e o bloco e o de sempre', async () => {
+    withFlag(false);
+    const adapter = make();
+    const out = await adapter.buildQuickGrounding('img');
+    expect(adapter.buildCalendarEnrichment).not.toHaveBeenCalled();
+    expect(out.block).toBe('REAL DATA');
+    expect(out.calendar).toBe('not_attempted');
+  });
+
+  it('ligada: o bloco do calendario entra depois das velas e a cobertura diz o que foi entregue', async () => {
+    withFlag(true);
+    const adapter = make();
+    const out = await adapter.buildQuickGrounding('img');
+    expect(adapter.buildCalendarEnrichment).toHaveBeenCalledWith('XAUUSD');
+    expect(out.block).toBe('REAL DATA\n\n# REAL DATA: ECONOMIC CALENDAR');
+    expect(out.calendar).toBe('events_injected');
+  });
+
+  it('ligada com print velho: os eventos de agora ficam fora', async () => {
+    withFlag(true);
+    const out = await make({ stale: true }).buildQuickGrounding('img');
+    expect(out.block).toBe('REAL DATA\n\nSTALE');
+    expect(out.calendar).toBe('not_attempted');
+  });
+
+  it('ligada com a fonte fora do ar: nenhum bloco, e a cobertura registra a falha', async () => {
+    withFlag(true);
+    const adapter = make();
+    adapter.buildCalendarEnrichment = jest.fn(async () => ({ block: null, status: 'source_degraded' }));
+    const out = await adapter.buildQuickGrounding('img');
+    expect(out.block).toBe('REAL DATA');
+    expect(out.calendar).toBe('source_degraded');
+  });
+});

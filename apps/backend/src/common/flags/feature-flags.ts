@@ -202,6 +202,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'ENABLE_QUICK_CALENDAR',
+    type: 'boolean',
+    label: 'Calendario economico na analise rapida',
+    description:
+      'A analise rapida passa a receber o mesmo bloco de calendario que a deep ja recebe: eventos de impacto alto ou medio das proximas 24h para as moedas do ativo. Sem custo de IA a mais (so texto no prompt) e buscado em paralelo com as velas. Muda a ENTRADA do modelo: medir o estado das analises antes e depois (WATCH, NO_TRADE, ENTER_NOW) antes de deixar ligado. Print velho e fonte do calendario fora do ar: nada entra. DESLIGADO: identico ao de sempre.',
+    defaultValue: 'false',
+    risk: 'alto',
+  },
+  {
     key: 'ENGINE_MARKET_PLAN_ON_WATCH',
     type: 'boolean',
     label: 'WATCH mostra tambem o plano a mercado',
