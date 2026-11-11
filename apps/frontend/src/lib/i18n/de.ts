@@ -550,7 +550,7 @@ export default {
       symbolAutoTitle: 'Das Symbol wird automatisch erkannt',
       symbolAutoText: 'Der Copilot liest den Ticker direkt aus dem Bild. Lass das Symbol oben im Screenshot sichtbar.',
       readError: 'Wir konnten dieses Bild nicht öffnen. Wenn es aus Google Fotos oder einem Cloud-Ordner stammt, speichere es auf dem Gerät oder mache einen neuen Screenshot und versuche es erneut.',
-      outcomesTitle: 'Was du bekommst: Jetzt einsteigen, Ausstehende Order, Beobachten oder Kein Trade',
+      outcomesTitle: 'Was du bekommst: Jetzt einsteigen, Beobachten oder Kein Trade',
       outcomesText: 'Beobachten und Kein Trade sind echte Antworten, keine Fehler. Sie heißen, dass es zum aktuellen Preis keinen Einstieg gibt, und die Analyse zeigt den Bereich zum Beobachten und was die Idee aufheben würde.',
     },
     result: {
