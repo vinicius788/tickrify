@@ -444,29 +444,29 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
         {!isDemo && <WatchingLink />}
         {/* ── Resumo de performance ─────────────────────────────── */}
         {rows.length > 0 && (
-          <div className="grid grid-cols-2 gap-px border-y border-[var(--border-subtle)] bg-[var(--border-subtle)] sm:grid-cols-5">
-            <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
+          <div className="grid grid-cols-2 gap-2 border-y border-[var(--border-subtle)] px-5 py-4 sm:grid-cols-5">
+            <div className="rounded-lg bg-[var(--bg-base)] px-3 py-2">
               <p className="text-xs text-[var(--text-secondary)]">{tr.winRate}</p>
               <p className="tabular-nums text-lg font-semibold text-[var(--signal-buy)]">
                 {perf.winRate !== null ? `${perf.winRate}%` : '-'}
               </p>
               <p className="tabular-nums text-[10px] text-[var(--text-secondary)]">{perf.wins}{tr.winShort} / {perf.losses}{tr.lossShort}</p>
             </div>
-            <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
+            <div className="rounded-lg bg-[var(--bg-base)] px-3 py-2">
               <p className="text-xs text-[var(--text-secondary)]">{tr.avgRr}</p>
               <p className="tabular-nums text-lg font-semibold text-[var(--text-primary)]">
                 {perf.avgRr !== null ? `${formatNumber(perf.avgRr, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })}:1` : '-'}
               </p>
             </div>
-            <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
+            <div className="rounded-lg bg-[var(--bg-base)] px-3 py-2">
               <p className="text-xs text-[var(--text-secondary)]">{tr.open}</p>
               <p className="tabular-nums text-lg font-semibold text-[var(--signal-hold)]">{perf.open}</p>
             </div>
-            <div className="bg-[var(--bg-surface)] px-3 py-2.5 text-center">
+            <div className="rounded-lg bg-[var(--bg-base)] px-3 py-2">
               <p className="text-xs text-[var(--text-secondary)]">{tr.pendingCount}</p>
               <p className="tabular-nums text-lg font-semibold text-[var(--text-secondary)]">{perf.pending}</p>
             </div>
-            <div className="col-span-2 bg-[var(--bg-surface)] px-3 py-2.5 text-center sm:col-span-1">
+            <div className="col-span-2 rounded-lg bg-[var(--bg-base)] px-3 py-2 sm:col-span-1">
               <p className="text-xs text-[var(--text-secondary)]">{tr.loggedPnl}</p>
               <p
                 className="tabular-nums text-lg font-semibold"
