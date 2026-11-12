@@ -100,7 +100,7 @@ export default {
   demoUi: {
     createAccount: "Créer un compte gratuit",
     dashboard: "Accéder au tableau de bord",
-    eligibility: "Comptes éligibles : jusqu’à 7 analyses · 3 jours d’utilisation sur 7 jours · sans carte",
+    eligibility: "Essai gratuit de 3 jours après l’inscription · 7 analyses · sans carte",
     openImage: "Impossible d’ouvrir cette image. Si elle vient de Google Photos ou d’un dossier cloud, enregistrez-la sur votre appareil ou faites une nouvelle capture, puis réessayez.",
     rateLimited: "Trop de tentatives depuis votre réseau. Réessayez dans environ une heure.",
     nonChart: "Cette image ne semble pas être un graphique de trading. Importez une capture de graphique et réessayez.",
@@ -204,7 +204,7 @@ export default {
       },
       {
         q: "Existe-t-il une garantie de remboursement ?",
-        a: "Vous pouvez essayer une démo anonyme par appareil. Les comptes éligibles reçoivent jusqu’à 7 analyses sur 3 jours d’utilisation (3/2/2), dans un délai de 7 jours, sans carte ni prélèvement automatique. Les comptes existants conservent leur quota gratuit applicable. Les abonnements se renouvellent jusqu’à leur annulation. Selon les Conditions d’utilisation, les achats sont définitifs, mais si une analyse pose problème, répondez à n’importe quel e-mail et nous le réglerons. Nous lisons chaque message."
+        a: "Vous pouvez essayer une démo par appareil, sans compte. Un nouveau compte reçoit un essai gratuit de 3 jours : 3 analyses le premier jour d’utilisation et 2 chacun des deux jours suivants, dans les 7 jours, sans carte ni prélèvement automatique. Donnez votre avis une fois dans le tableau de bord et recevez 3 analyses de plus.",
       }
     ]
   },
@@ -333,7 +333,7 @@ export default {
     exampleDemo: "La démo anonyme permet au maximum une analyse gratuite par appareil, WAIT compris. Les exemples fixes ne consomment pas ce quota.",
     examplePaid: "Les analyses utilisent les Ticks de votre forfait, WAIT compris.",
     exampleLegacy: "Ancien quota gratuit : il reste {left} signaux BUY/SELL. WAIT ne consomme pas un de ces signaux, mais compte dans la limite totale des analyses.",
-    trialRules: "Jusqu’à 7 analyses sur 3 jours d’utilisation (3/2/2), dans les 7 jours suivant le début. WAIT compte. Sans carte ni prélèvement automatique.",
+    trialRules: "Essai gratuit de 3 jours : 3 analyses le premier jour d’utilisation et 2 chacun des deux jours suivants, dans les 7 jours. WAIT compte. Sans carte ni prélèvement automatique. Donnez votre avis une fois et recevez 3 analyses de plus.",
     trialEndRule: "Se termine à épuisement du jour 3, au début d’un quatrième jour d’utilisation ou à expiration des 7 jours, selon la première éventualité.",
     trialWindow: "Fin de la période d’essai : {date}.",
     trialNext: "Prochaines analyses : {date}.",
@@ -357,7 +357,7 @@ export default {
     offerFirstMonth: "le premier mois",
     offerThen: "Puis $29/mois. Annulez à tout moment dans les Paramètres.",
     offerCta: "Commencer à {price} le premier mois",
-    freeEligibility: "Une démo anonyme par appareil. Comptes éligibles : jusqu’à 7 analyses sur 3 jours d’utilisation (3/2/2), dans les 7 jours. Les comptes existants conservent leur quota applicable. Sans carte."
+    freeEligibility: "Une démo gratuite par appareil, sans compte. Les nouveaux comptes reçoivent un essai gratuit de 3 jours avec 7 analyses, sans carte.",
   },
 
   tryDemo: {
@@ -1576,7 +1576,7 @@ export default {
       startFree: 'Commencer gratuitement',
       goToPanel: 'Aller au tableau de bord',
       valueNow: "Revenez lorsque les conditions changent : comparez un nouveau graphique aux lectures précédentes et vérifiez si le setup correspond encore à votre plan.",
-      freeNote: "Comptes éligibles : jusqu’à 7 analyses gratuites · sans carte",
+      freeNote: "Essai gratuit de 3 jours · 7 analyses · sans carte",
       terminal: 'terminal d\'analyse',
       mockLabel: 'Exemple',
       mockScored: 'Évaluée 48 h plus tard',
@@ -1612,7 +1612,7 @@ export default {
       badge: 'Ouvert maintenant',
       title: 'Prêt à voir ce que',
       highlight: 'le graphique dit vraiment ?',
-      subtitle: "Comptes éligibles : jusqu’à 7 analyses sur 3 jours d’utilisation (3/2/2), dans les 7 jours. Sans carte ni prélèvement automatique.",
+      subtitle: "Les nouveaux comptes reçoivent un essai gratuit de 3 jours : 7 analyses (3, 2 et 2 par jour), sans carte ni prélèvement automatique.",
       primary: 'Analyser mon graphique gratuitement →',
       footnote: 'Sans carte · Connexion en un geste',
     },
@@ -1620,7 +1620,7 @@ export default {
       compat: 'Lit les graphiques de toute plateforme',
       s1label: 'fenêtre de vérification', s1sub: 'Chaque plan de trade évaluable est confronté aux bougies réelles 48 heures plus tard',
       s2label: 'types de marchés', s2sub: 'Forex, Crypto, Actions, Indices',
-      s3label: "jours d’utilisation pour les comptes éligibles", s3sub: "Sous 7 jours · sans carte",
+      s3label: "jours d’essai gratuit", s3sub: "7 analyses · sans carte",
       s4label: 'tick par analyse rapide', s4sub: 'Une analyse deep utilise 3 ticks',
     },
     ticker: { recent: 'Analyses récentes' },

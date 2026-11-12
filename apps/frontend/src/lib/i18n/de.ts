@@ -100,7 +100,7 @@ export default {
   demoUi: {
     createAccount: "Kostenloses Konto erstellen",
     dashboard: "Zum Dashboard",
-    eligibility: "Berechtigte Konten: bis zu 7 Analysen · 3 Nutzungstage innerhalb von 7 Tagen · ohne Karte",
+    eligibility: "3 Tage gratis testen nach der Registrierung · 7 Analysen · ohne Karte",
     openImage: "Dieses Bild konnte nicht geöffnet werden. Wenn es aus Google Fotos oder einem Cloud-Ordner stammt, speichere es auf deinem Gerät oder erstelle einen neuen Screenshot und versuche es erneut.",
     rateLimited: "Zu viele Versuche aus deinem Netzwerk. Versuche es in etwa einer Stunde erneut.",
     nonChart: "Dieses Bild scheint kein Trading-Chart zu sein. Lade einen Chart-Screenshot hoch und versuche es erneut.",
@@ -204,7 +204,7 @@ export default {
       },
       {
         q: "Gibt es eine Rückerstattungsgarantie?",
-        a: "Du kannst eine anonyme Demo pro Gerät testen. Berechtigte Konten erhalten bis zu 7 Analysen an 3 Nutzungstagen (3/2/2) innerhalb von 7 Tagen, ohne Karte oder automatische Abbuchung. Bestehende Konten behalten ihr jeweiliges kostenloses Kontingent. Abonnements verlängern sich bis zur Kündigung. Laut Nutzungsbedingungen sind Käufe endgültig. Sollte bei einer Analyse etwas schiefgehen, antworte auf eine beliebige E-Mail und wir kümmern uns darum. Wir lesen jede Nachricht."
+        a: "Du kannst eine Demo pro Gerät testen, ohne Konto. Ein neues Konto bekommt einen 3-tägigen Gratistest: 3 Analysen am ersten Nutzungstag und je 2 an den beiden folgenden, innerhalb von 7 Tagen, ohne Karte oder automatische Abbuchung. Gib einmal im Dashboard Feedback und erhalte 3 weitere Analysen.",
       }
     ]
   },
@@ -333,7 +333,7 @@ export default {
     exampleDemo: "Die anonyme Demo erlaubt bis zu eine kostenlose Analyse pro Gerät, einschließlich WAIT. Gespeicherte Beispiele verbrauchen dieses Kontingent nicht.",
     examplePaid: "Analysen verbrauchen die Ticks deines Tarifs, einschließlich WAIT.",
     exampleLegacy: "Bisheriges Gratiskontingent: noch {left} BUY/SELL-Signale. WAIT verbraucht keines dieser Signale, zählt aber zum Gesamtlimit der Analysen.",
-    trialRules: "Bis zu 7 Analysen an 3 Nutzungstagen (3/2/2), innerhalb von 7 Tagen ab Beginn. WAIT zählt mit. Ohne Karte oder automatische Abbuchung.",
+    trialRules: "3-tägiger Gratistest: 3 Analysen am ersten Nutzungstag und je 2 an den beiden folgenden, innerhalb von 7 Tagen. WAIT zählt mit. Ohne Karte oder automatische Abbuchung. Gib einmal Feedback und erhalte 3 weitere.",
     trialEndRule: "Endet nach Verbrauch von Tag 3, zu Beginn eines vierten Nutzungstags oder nach Ablauf der 7 Tage, je nachdem, was zuerst eintritt.",
     trialWindow: "Testzeitraum endet: {date}.",
     trialNext: "Nächste Analysen: {date}.",
@@ -357,7 +357,7 @@ export default {
     offerFirstMonth: "im ersten Monat",
     offerThen: "Danach $29/Monat. Jederzeit in den Einstellungen kündigen.",
     offerCta: "Für {price} im ersten Monat starten",
-    freeEligibility: "Eine anonyme Demo pro Gerät. Berechtigte Konten: bis zu 7 Analysen an 3 Nutzungstagen (3/2/2), innerhalb von 7 Tagen. Bestehende Konten behalten ihr geltendes Kontingent. Ohne Karte."
+    freeEligibility: "Eine Gratis-Demo pro Gerät, ohne Konto. Neue Konten bekommen einen 3-tägigen Gratistest mit 7 Analysen, ohne Karte.",
   },
 
   tryDemo: {
@@ -1576,7 +1576,7 @@ export default {
       startFree: 'Kostenlos starten',
       goToPanel: 'Zum Dashboard',
       valueNow: "Kehre bei geänderten Bedingungen zurück: Vergleiche einen neuen Chart mit früheren Analysen und prüfe, ob das Setup noch zu deinem Plan passt.",
-      freeNote: "Berechtigte Konten: bis zu 7 Gratis-Analysen · ohne Karte",
+      freeNote: "3 Tage gratis testen · 7 Analysen · ohne Karte",
       terminal: 'Analyse-Terminal',
       mockLabel: 'Beispiel',
       mockScored: 'Nach 48 h bewertet',
@@ -1612,7 +1612,7 @@ export default {
       badge: 'Jetzt geöffnet',
       title: 'Bereit zu sehen, was',
       highlight: 'der Chart wirklich sagt?',
-      subtitle: "Berechtigte Konten: bis zu 7 Analysen an 3 Nutzungstagen (3/2/2), innerhalb von 7 Tagen. Ohne Karte oder automatische Abbuchung.",
+      subtitle: "Neue Konten bekommen einen 3-tägigen Gratistest: 7 Analysen (3, 2 und 2 pro Tag), ohne Karte oder automatische Abbuchung.",
       primary: 'Chart kostenlos analysieren →',
       footnote: 'Keine Karte nötig · Anmeldung mit einem Tipp',
     },
@@ -1620,7 +1620,7 @@ export default {
       compat: 'Liest Charts von jeder Plattform',
       s1label: 'Prüffenster', s1sub: 'Jeder auswertbare Tradeplan wird 48 Stunden später mit echten Kerzen abgeglichen',
       s2label: 'Marktarten', s2sub: 'Forex, Krypto, Aktien, Indizes',
-      s3label: "Nutzungstage für berechtigte Konten", s3sub: "Innerhalb von 7 Tagen · ohne Karte",
+      s3label: "Tage Gratistest", s3sub: "7 Analysen · ohne Karte",
       s4label: 'Tick pro Schnellanalyse', s4sub: 'Eine Deep-Analyse kostet 3 Ticks',
     },
     ticker: { recent: 'Letzte Analysen' },

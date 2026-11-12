@@ -100,7 +100,7 @@ export default {
   demoUi: {
     createAccount: "Criar conta grátis",
     dashboard: "Ir para o painel",
-    eligibility: "Contas elegíveis: até 7 análises · 3 dias de uso em 7 dias · sem cartão",
+    eligibility: "Teste grátis de 3 dias após o cadastro · 7 análises · sem cartão",
     openImage: "Não foi possível abrir esta imagem. Se veio do Google Fotos ou de uma pasta na nuvem, salve no dispositivo ou tire outro print e tente novamente.",
     rateLimited: "Muitas tentativas da sua rede. Tente novamente em cerca de uma hora.",
     nonChart: "Esta imagem não parece um gráfico de trading. Envie um print de gráfico e tente novamente.",
@@ -204,7 +204,7 @@ export default {
       },
       {
         q: "Há garantia de reembolso?",
-        a: "Você pode testar uma demo anônima por dispositivo. Contas elegíveis recebem até 7 análises em 3 dias de uso (3/2/2), dentro de 7 dias, sem cartão nem cobrança automática. Contas existentes mantêm sua cota gratuita aplicável. Assinaturas renovam até cancelar. Pelos Termos de Serviço as compras são finais, mas se algo der errado em uma análise, responda qualquer e-mail que a gente resolve. Lemos cada mensagem."
+        a: "Você pode testar uma demo por dispositivo, sem conta. Conta nova ganha um teste grátis de 3 dias: 3 análises no primeiro dia de uso e 2 em cada um dos dois seguintes, dentro de 7 dias, sem cartão nem cobrança automática. Mande uma opinião uma vez no painel e ganhe mais 3 análises.",
       }
     ]
   },
@@ -333,7 +333,7 @@ export default {
     exampleDemo: "A demo anônima permite até uma análise grátis por dispositivo, incluindo WAIT. Os exemplos fixos não consomem essa cota.",
     examplePaid: "As análises usam os Ticks do seu plano, incluindo WAIT.",
     exampleLegacy: "Gratuidade legada: restam {left} sinais BUY/SELL. WAIT não consome um desses sinais, mas conta no limite total de análises.",
-    trialRules: "Até 7 análises em 3 dias de uso (3/2/2), dentro de 7 dias do início. WAIT conta. Sem cartão nem cobrança automática.",
+    trialRules: "Teste grátis de 3 dias: 3 análises no primeiro dia de uso e 2 em cada um dos dois seguintes, dentro de 7 dias. WAIT conta. Sem cartão nem cobrança automática. Mande uma opinião uma vez e ganhe mais 3.",
     trialEndRule: "Termina ao esgotar o dia 3, iniciar um quarto dia de uso ou vencer a janela de 7 dias, o que ocorrer primeiro.",
     trialWindow: "Fim da janela do teste: {date}.",
     trialNext: "Próximas análises: {date}.",
@@ -357,7 +357,7 @@ export default {
     offerFirstMonth: "no primeiro mês",
     offerThen: "Depois $29/mês. Cancele quando quiser em Configurações.",
     offerCta: "Começar por {price} no primeiro mês",
-    freeEligibility: "Uma demo anônima por dispositivo. Contas elegíveis: até 7 análises em 3 dias de uso (3/2/2), dentro de 7 dias. Contas existentes mantêm sua cota aplicável. Sem cartão."
+    freeEligibility: "Uma demo grátis por dispositivo, sem conta. Conta nova ganha teste grátis de 3 dias com 7 análises, sem cartão.",
   },
 
   tryDemo: {
@@ -1594,7 +1594,7 @@ export default {
       startFree: 'Começar grátis',
       goToPanel: 'Ir para o painel',
       valueNow: "Volte quando as condições mudarem: compare um novo gráfico com as leituras anteriores e revise se o setup ainda se encaixa no seu plano.",
-      freeNote: "Contas elegíveis: até 7 análises grátis · sem cartão",
+      freeNote: "Teste grátis de 3 dias · 7 análises · sem cartão",
       terminal: 'terminal de análise',
       mockLabel: 'Exemplo',
       mockScored: 'Conferida 48h depois',
@@ -1630,7 +1630,7 @@ export default {
       badge: 'Aberto agora',
       title: 'Pronto para ver o que',
       highlight: 'o gráfico realmente diz?',
-      subtitle: "Contas elegíveis: até 7 análises em 3 dias de uso (3/2/2), dentro de 7 dias. Sem cartão nem cobrança automática.",
+      subtitle: "Conta nova ganha teste grátis de 3 dias: 7 análises (3, 2 e 2 por dia), sem cartão nem cobrança automática.",
       primary: 'Analisar meu gráfico grátis →',
       footnote: 'Sem cartão · Login em um toque',
     },
@@ -1638,7 +1638,7 @@ export default {
       compat: 'Lê gráfico de qualquer plataforma',
       s1label: 'janela de verificação', s1sub: 'Todo plano de trade avaliável é conferido contra candles reais 48 horas depois',
       s2label: 'tipos de mercado', s2sub: 'Forex, Cripto, Ações, Índices',
-      s3label: "dias de uso para contas elegíveis", s3sub: "Dentro de 7 dias · sem cartão",
+      s3label: "dias de teste grátis", s3sub: "7 análises · sem cartão",
       s4label: 'tick por análise rápida', s4sub: 'Uma análise deep usa 3 ticks',
     },
     ticker: { recent: 'Análises recentes' },

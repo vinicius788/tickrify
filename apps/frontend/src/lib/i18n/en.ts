@@ -100,7 +100,7 @@ export default {
   demoUi: {
     createAccount: "Create free account",
     dashboard: "Go to your dashboard",
-    eligibility: "Eligible accounts: up to 7 analyses · 3 usage days within 7 days · no card",
+    eligibility: "3-day free trial after signup · 7 analyses · no card",
     openImage: "We couldn't open this image. If it came from Google Photos or a cloud folder, save it to your device or take a new screenshot, then try again.",
     rateLimited: "Too many attempts from your network. Please try again in about an hour.",
     nonChart: "That image does not look like a trading chart. Upload a chart screenshot and try again.",
@@ -204,7 +204,7 @@ export default {
       },
       {
         q: "Is there a refund guarantee?",
-        a: "You can try one anonymous demo per device. Eligible accounts receive up to 7 analyses across 3 usage days (3/2/2), within 7 days, with no card or automatic charge. Existing accounts keep their applicable free allowance. Subscriptions renew until canceled. Per the Terms of Service purchases are final, but if anything goes wrong with an analysis, reply to any email and we’ll make it right. We read every message."
+        a: "You can try one demo per device, no account needed. A new account gets a 3-day free trial: 3 analyses on your first day of use and 2 on each of the next two, within 7 days, with no card and no automatic charge. Share feedback once in the dashboard and get 3 more analyses.",
       }
     ]
   },
@@ -333,7 +333,7 @@ export default {
     exampleDemo: "The anonymous demo allows up to one free analysis per device, including WAIT. Fixed examples do not use this allowance.",
     examplePaid: "Analyses use your plan’s Ticks, including WAIT.",
     exampleLegacy: "Legacy free allowance: {left} BUY/SELL signals left. WAIT does not use one of these signals, but counts toward the total analysis limit.",
-    trialRules: "Up to 7 analyses across 3 usage days (3/2/2), within 7 days of starting. WAIT counts. No card or automatic charge.",
+    trialRules: "3-day free trial: 3 analyses on your first day of use and 2 on each of the next two, within 7 days. WAIT counts. No card, no automatic charge. Share feedback once and get 3 more.",
     trialEndRule: "Ends when day 3 is used up, a fourth usage day begins, or the 7-day window expires, whichever comes first.",
     trialWindow: "Trial window ends: {date}.",
     trialNext: "Next analyses: {date}.",
@@ -357,7 +357,7 @@ export default {
     offerFirstMonth: "first month",
     offerThen: "Then $29/month. Cancel anytime in Settings.",
     offerCta: "Start for {price} first month",
-    freeEligibility: "One anonymous demo per device. Eligible accounts: up to 7 analyses over 3 usage days (3/2/2), within 7 days. Existing accounts keep their applicable allowance. No card required.",
+    freeEligibility: "One free demo per device, no account. New accounts get a 3-day free trial with 7 analyses, no card.",
   },
 
   tryDemo: {
@@ -1576,7 +1576,7 @@ export default {
       startFree: 'Analyze my chart free',
       goToPanel: 'Go to dashboard',
       valueNow: "Return as conditions change: compare a new chart with earlier reads and review whether the setup still fits your plan.",
-      freeNote: "Eligible accounts: up to 7 free analyses · no card",
+      freeNote: "3-day free trial · 7 analyses · no card",
       terminal: 'analysis terminal',
       mockLabel: 'Example',
       mockScored: 'Scored 48h later',
@@ -1612,7 +1612,7 @@ export default {
       badge: 'Open now',
       title: 'Ready to see what',
       highlight: 'the chart actually says?',
-      subtitle: "Eligible accounts: up to 7 analyses in 3 usage days (3/2/2), within 7 days. No card or automatic charge.",
+      subtitle: "New accounts get a 3-day free trial: 7 analyses (3, 2 and 2 a day), no card, no automatic charge.",
       primary: 'Analyze my chart free →',
       footnote: 'No card needed · One-tap sign-in',
     },
@@ -1620,7 +1620,7 @@ export default {
       compat: 'Reads charts from any platform',
       s1label: 'scoring window', s1sub: 'Every eligible trade plan is checked against real candles 48 hours later',
       s2label: 'market types', s2sub: 'Forex, Crypto, Stocks, Indices',
-      s3label: "usage days for eligible accounts", s3sub: "Within 7 days · no card",
+      s3label: "free trial days", s3sub: "7 analyses · no card",
       s4label: 'tick per quick analysis', s4sub: 'A deep analysis uses 3 ticks',
     },
     ticker: { recent: 'Recent analyses' },
