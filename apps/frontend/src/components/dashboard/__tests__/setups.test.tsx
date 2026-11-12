@@ -330,13 +330,13 @@ describe('Paywall dos alertas e limite diario do trial', () => {
 
   it('limite diario: fala do e-mail so com ele ligado; sem alerta, o texto de sempre', () => {
     const view = wrap(<Paywall surface="new_analysis" variant="daily_limit" alertsOn="email" onWeekly={vi.fn()} onMonthly={vi.fn()} plansHref="/p" />);
-    expect(screen.getByText("Your alerts stay on. We'll email you when price reaches your levels. See your trial allowance for your next analyses.")).toBeTruthy();
+    expect(screen.getByText("Your alerts stay on. We'll email you when price reaches your levels. Your trial continues on your next day of use, within 7 days of starting.")).toBeTruthy();
     view.unmount();
     const screenOnly = wrap(<Paywall surface="new_analysis" variant="daily_limit" alertsOn="screen" onWeekly={vi.fn()} onMonthly={vi.fn()} plansHref="/p" />);
-    expect(screen.getByText('Your alerts stay on. See your trial allowance for your next analyses.')).toBeTruthy();
+    expect(screen.getByText('Your alerts stay on. Your trial continues on your next day of use, within 7 days of starting.')).toBeTruthy();
     screenOnly.unmount();
     wrap(<Paywall surface="new_analysis" variant="daily_limit" onWeekly={vi.fn()} onMonthly={vi.fn()} plansHref="/p" />);
-    expect(screen.getByText('Today’s analyses are used up. See your trial allowance for availability.')).toBeTruthy();
+    expect(screen.getByText("Today's free analyses are used up. Your trial continues on your next day of use, within 7 days of starting, or subscribe to keep analyzing now.")).toBeTruthy();
   });
 });
 

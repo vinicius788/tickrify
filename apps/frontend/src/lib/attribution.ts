@@ -84,6 +84,17 @@ function referrerDomain(referrer: string): string | undefined {
   }
 }
 
+/**
+ * Volta do login (Google, Apple, Clerk) ou do checkout da Stripe nao e origem:
+ * gravada como primeiro toque, escondia de onde a pessoa veio (95 cadastros de
+ * 60 dias com accounts.google.com, lido no banco em 12/11/2026).
+ */
+const PASS_THROUGH_HOSTS = /(^|\.)(accounts\.google\.com|appleid\.apple\.com|clerk\.accounts\.dev|accounts\.dev|tickrify\.com|stripe\.com)$/;
+
+export function isPassThroughReferrer(domain: string | undefined): boolean {
+  return Boolean(domain && PASS_THROUGH_HOSTS.test(domain));
+}
+
 function clean(value: string | null): string | undefined {
   const trimmed = String(value || '').trim();
   return trimmed || undefined;
@@ -109,9 +120,10 @@ function buildSnapshot(): TechnicalAttributionPayload | null {
   }
 
   const referrer = clean(document.referrer);
-  if (referrer && !referrer.startsWith(url.origin)) {
+  const domain = referrer ? referrerDomain(referrer) : undefined;
+  if (referrer && !referrer.startsWith(url.origin) && !isPassThroughReferrer(domain)) {
     snapshot.referrer = referrer.slice(0, 500);
-    snapshot.referrerDomain = referrerDomain(referrer);
+    snapshot.referrerDomain = domain;
   }
 
   const hasCampaignSignal =

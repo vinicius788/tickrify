@@ -219,7 +219,7 @@ export function trialCopy(
           preview: 'No card needed. Your first read takes about 20 seconds.',
           paragraphs: [
             `Your free trial is ready: 3 days of use, with up to ${d1} chart analyses on the first day and ${d2} on each of the next two. No card needed.`,
-            'Take a screenshot of the chart you are watching and upload it. In about 20 seconds you get the read: BUY, SELL or WAIT, with entry, stop, targets and the reasoning behind it.',
+            'Take a screenshot of the chart you are watching and upload it. In about 20 seconds you get the read: Enter now with entry, stop and target, Watch with the price level to wait for, or No trade with the reason.',
           ],
           cta: analyze,
           afterCta: [`The trial ends after 3 days of use or ${TRIAL_RULES.windowDays} days after it started, whichever comes first.`],

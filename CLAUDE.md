@@ -446,6 +446,8 @@ Vale para TODA mudanca, grande ou pequena:
   marcado (`tags.webview`), nao descartado.
 - Pergunta de atribuicao no painel (`AcquisitionSurvey`): a primeira resposta
   vale, dispensar nao grava nada.
+- **Ativo e tempo grafico canonicos so no servidor (12/11/2026):** `free_analysis_completed` leva `symbol` (XAUUSD, BTCUSDT; lido de `result.engine.asset` por `candleMarketOf`) e `timeframe` (5m, 4h; `normalizeTimeframe`). O `analysis_completed` do navegador segue com o texto cru do grafico (GOLD, M5, H4): agrupar pelo do servidor.
+- **Origem tecnica ignora a volta do login e do checkout (12/11/2026):** `isPassThroughReferrer` (`lib/attribution.ts`) descarta accounts.google.com, appleid.apple.com, Clerk, *.tickrify.com e stripe.com como referrer. Antes, 95 cadastros de 60 dias tinham `firstTouchAttribution` = accounts.google.com. Linhas antigas nao foram corrigidas.
 - **Medir ativacao com o navegador E o servidor.** `free_analysis_started/completed`
   so existem desde 21/09: contar so eles deu "metade dos cadastros nunca analisa"
   quando o real era 83% (80 de 96, 29/09). Usar `analysis_started` OU
@@ -1232,6 +1234,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 
+- **12/11 (conversao, ganhos rapidos, branch `claude/quick-wins`):** diagnostico do funil (0 assinante novo desde 06/10, 0 de 125 trials convertidos, 1 assinatura real ativa; `EMAIL_TRIAL_SEQUENCE` desligada, nenhum e-mail `trial_*` enviado). Textos que prometiam entry/stop/targets em toda leitura (FAQ, /try, og:image:alt, paywall, contador do trial, boas-vindas, 1o e-mail do trial) passam a falar Enter now / Watch / No trade nos 6 idiomas; FAQ deixa de citar o R/R guard de 1,2:1 (saiu no v11); paywall fala em analises rapidas, nao Ticks.
 - **10/11 (ilha de navegacao do celular, branch `claude/bottom-nav`):** barra de abas do topo trocada pela ilha flutuante embaixo, com o Mais em folha de baixo e contadores; ver 4.3.
 - **10/11 (aba Watching, branch `claude/watching-tab`, PR sem merge):** WATCH fora do My Trades e do Diario, aba propria com jornada e "From a watch"; ver 3.13. Prints antes/depois em `_local/prints-aba-watching/` (harness com dados falsos).
 - **10/11 (velas em cripto com sufixo):** `normalizeToBinancePerp` aceita sufixo de corretora depois do USD (`BTCUSDm`, `BTCUSD.pro`); antes a analise ficava sem velas reais, em modo print (5 de 28 prints de cripto do replay). Vale tambem para sweeper, rastreador, alertas e spread. Tempos graficos `2m`, `10m`, `45m`, `3h`, `8h` e `12h` seguem sem velas.

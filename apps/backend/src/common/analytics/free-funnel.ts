@@ -12,16 +12,26 @@
  *
  * Eventos (distinctId = id do Clerk, o mesmo do identify do frontend):
  *   free_analysis_started   { analysisNumber, freeRemaining, signalsUsed, source }
- *   free_analysis_completed { analysisNumber, freeRemaining, signalsUsed, isLastFree }
+ *   free_analysis_completed { analysisNumber, freeRemaining, signalsUsed, isLastFree, symbol, timeframe }
  *   free_quota_exhausted    { analysisNumber, signalsUsed }  (uma vez por usuario)
  *
  * `analysisNumber` = posicao da analise entre as gratis nao falhadas (conta WAIT).
  * `freeRemaining` = sinais (BUY/SELL) que ainda podem ser liberados.
+ * `symbol`/`timeframe` = forma canonica (XAUUSD, 5m), lida de `result.engine`;
+ * o evento do navegador manda o texto cru do grafico (GOLD, M5, H4).
  */
 import { captureServer } from './posthog';
 import { getFreeQuota, type FreeQuotaCounter } from '../free-quota';
+import { normalizeSymbol } from '../utils/analysis-normalizer';
+import { candleMarketOf, normalizeTimeframe } from '../../modules/market/candle-store';
 
-type PrismaLike = FreeQuotaCounter & {
+type AnalysisReader = {
+  analysis: {
+    findUnique?: (args: { where: { id: string }; select: { result: true } }) => Promise<{ result: unknown } | null>;
+  };
+};
+
+type PrismaLike = FreeQuotaCounter & AnalysisReader & {
   user: {
     findUnique: (args: { where: { id: string }; select: { clerkUserId: true } }) => Promise<{ clerkUserId: string } | null>;
   };
@@ -30,6 +40,22 @@ type PrismaLike = FreeQuotaCounter & {
 async function clerkIdFor(prisma: PrismaLike, userId: string): Promise<string | null> {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { clerkUserId: true } });
   return user?.clerkUserId ?? null;
+}
+
+/** Ativo e tempo grafico canonicos da analise; null quando o motor nao leu. */
+export async function chartOf(
+  prisma: AnalysisReader,
+  analysisId: string,
+): Promise<{ symbol: string | null; timeframe: string | null }> {
+  const row = await prisma.analysis.findUnique?.({ where: { id: analysisId }, select: { result: true } });
+  const result = row?.result && typeof row.result === 'object' ? (row.result as Record<string, unknown>) : {};
+  const engine = result.engine && typeof result.engine === 'object' ? (result.engine as Record<string, unknown>) : {};
+  const asset = typeof engine.asset === 'string' && engine.asset !== 'UNKNOWN' ? engine.asset.trim() : '';
+  const tf = typeof engine.timeframe === 'string' ? engine.timeframe : '';
+  return {
+    symbol: asset ? (candleMarketOf(asset)?.key ?? normalizeSymbol(asset).toUpperCase()) : null,
+    timeframe: normalizeTimeframe(tf),
+  };
 }
 
 /** Chamar logo depois de criar a linha de uma analise gratis. */
@@ -66,7 +92,10 @@ export async function trackFreeAnalysisCompleted(
   try {
     const clerkId = await clerkIdFor(prisma, params.userId);
     if (!clerkId) return;
-    const quota = await getFreeQuota(prisma, params.userId);
+    const [quota, chart] = await Promise.all([
+      getFreeQuota(prisma, params.userId),
+      chartOf(prisma, params.analysisId).catch(() => ({ symbol: null, timeframe: null })),
+    ]);
     // So resultado conhecido esgota: analise em andamento ainda pode virar WAIT.
     const isLastFree = quota.settledExhausted;
     captureServer(
@@ -80,6 +109,8 @@ export async function trackFreeAnalysisCompleted(
         isLastFree,
         trial: Boolean(quota.trial),
         ...(quota.trial ? { trial_day: quota.trial.dayIndex } : {}),
+        symbol: chart.symbol,
+        timeframe: chart.timeframe,
       },
       { dedupeKey: `free_analysis_completed:${params.analysisId}`, timestamp: params.completedAt },
     );
