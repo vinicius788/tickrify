@@ -72,7 +72,7 @@ describe('trial de 3 dias no painel', () => {
   it('cota do dia esgotada: volte amanha ou assine', () => {
     trial = day({ usedToday: 3, remainingToday: 0, paywall: 'daily_limit' });
     renderCounter();
-    expect(screen.getByText("Today’s analyses are used up. See your trial allowance for availability.")).toBeTruthy();
+    expect(screen.getByText("Today's free analyses are used up. Your trial continues on your next day of use, within 7 days of starting, or subscribe to keep analyzing now.")).toBeTruthy();
   });
 
   it('trial encerrado: modo leitura', () => {
@@ -106,10 +106,10 @@ describe('trial de 3 dias no painel', () => {
       </MemoryRouter>,
     );
     expect(screen.getByText("You have used today's analyses")).toBeTruthy();
-    expect(screen.getByText('Today’s analyses are used up. See your trial allowance for availability.')).toBeTruthy();
-    screen.getByRole('button', { name: 'Start with one week: $7.99 for 25 Ticks' }).click();
+    expect(screen.getByText("Today's free analyses are used up. Your trial continues on your next day of use, within 7 days of starting, or subscribe to keep analyzing now.")).toBeTruthy();
+    screen.getByRole('button', { name: 'Start with one week: $7.99 for 25 quick analyses' }).click();
     expect(onWeekly).toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Or monthly: $29/month for 200 Ticks' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Or monthly: $29/month for 200 quick analyses' })).toBeTruthy();
     expect(document.querySelector('s')).toBeNull();
   });
 
@@ -129,7 +129,7 @@ describe('trial de 3 dias no painel', () => {
       expect(screen.getByRole('button', { name: 'Start for $18.85 first month' })).toBeTruthy();
       expect(screen.getByText('Then $29/month. Cancel anytime in Settings.')).toBeTruthy();
       // O semanal segue sem desconto.
-      expect(screen.getByRole('button', { name: 'Start with one week: $7.99 for 25 Ticks' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Start with one week: $7.99 for 25 quick analyses' })).toBeTruthy();
     } finally {
       offer.current = null;
     }

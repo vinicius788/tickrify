@@ -1,7 +1,7 @@
 {
   "/": {
     "title": "AI Chart Analysis for Forex, Gold & Crypto | Tickrify",
-    "description": "AI chart analysis that says Enter now, Watch or No trade, with the levels. One demo per device; eligible accounts get up to 7 free analyses. No card required."
+    "description": "AI chart analysis that says Enter now, Watch or No trade, with the levels. Free demo without signup, then a 3-day free trial with 7 analyses. No card."
   },
   "/pricing": {
     "title": "Pricing: $29/mo for 200 AI Chart Analyses | Tickrify",
@@ -21,7 +21,7 @@
   },
   "/try": {
     "title": "Free AI Chart Analysis, No Signup Required | Tickrify",
-    "description": "Upload a chart screenshot and get a real AI analysis in seconds: entry, stop, targets and risk. No account, no card. One free analysis, right now."
+    "description": "Upload a chart screenshot and get a real AI read in seconds: Enter now with entry, stop and target, Watch with the level, or No trade with the reason. No signup."
   },
   "/privacy": {
     "title": "Privacy Policy | Tickrify",
@@ -56,7 +56,7 @@
   },
   "/sign-up": {
     "title": "Create your account | Tickrify",
-    "description": "Create a Tickrify account. Eligible accounts get up to 7 analyses across 3 usage days within 7 days, no card required.",
+    "description": "Create a Tickrify account and start a 3-day free trial: 7 AI chart analyses over your first three days of use, with no card and no automatic charge.",
     "noindex": true
   },
   "/affiliate": {

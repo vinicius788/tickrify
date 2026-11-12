@@ -75,6 +75,34 @@ describe('funil gratis no backend', () => {
     expect(events).toEqual(['free_analysis_completed']);
   });
 
+  it('manda ativo e tempo grafico canonicos lidos de result.engine', async () => {
+    const db = {
+      ...prisma({ signals: 1 }),
+      analysis: {
+        count: quotaCount({ signals: 1 }),
+        findUnique: jest.fn().mockResolvedValue({ result: { engine: { asset: 'BTCUSDm', timeframe: 'M5' } } }),
+      },
+    };
+    await trackFreeAnalysisCompleted(db, { userId: 'u1', analysisId: 'a1' });
+    expect((captureServer as jest.Mock).mock.calls[0][2]).toEqual(
+      expect.objectContaining({ symbol: 'BTCUSDT', timeframe: '5m' }),
+    );
+  });
+
+  it('motor sem ativo lido: symbol e timeframe nulos, evento sai igual', async () => {
+    const db = {
+      ...prisma({ signals: 1 }),
+      analysis: {
+        count: quotaCount({ signals: 1 }),
+        findUnique: jest.fn().mockResolvedValue({ result: { engine: { asset: 'UNKNOWN', timeframe: 'UNKNOWN' } } }),
+      },
+    };
+    await trackFreeAnalysisCompleted(db, { userId: 'u1', analysisId: 'a1' });
+    expect((captureServer as jest.Mock).mock.calls[0][2]).toEqual(
+      expect.objectContaining({ symbol: null, timeframe: null, analysisNumber: 1 }),
+    );
+  });
+
   it('usuario sem id do Clerk ou banco fora do ar: nada quebra', async () => {
     const broken = { user: { findUnique: jest.fn().mockRejectedValue(new Error('db')) }, analysis: { count: jest.fn() } };
     await expect(trackFreeAnalysisCompleted(broken, { userId: 'u1', analysisId: 'a1' })).resolves.toBeUndefined();

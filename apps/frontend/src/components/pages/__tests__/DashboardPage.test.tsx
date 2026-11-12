@@ -526,7 +526,7 @@ describe('DashboardPage', () => {
       expect(createAnalysis).toHaveBeenCalledTimes(1);
       expect(screen.getByText('Suas análises grátis foram utilizadas.')).toBeTruthy();
       expect(screen.getByRole('button', { name: /Comece com uma semana/ })).toBeTruthy();
-      expect(screen.queryByText(/Suas análises grátis com plano de trade acabaram/)).toBeNull();
+      expect(screen.queryByText(/Suas análises grátis acabaram/)).toBeNull();
     });
 
     it('com a cota esgotada, a proxima tentativa cai direto no paywall sem chamar a API', async () => {
@@ -539,7 +539,7 @@ describe('DashboardPage', () => {
       await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
       await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
 
-      expect(await screen.findByText(/Suas análises grátis com plano de trade acabaram/)).toBeTruthy();
+      expect(await screen.findByText(/Suas análises grátis acabaram/)).toBeTruthy();
       expect(createAnalysis).not.toHaveBeenCalled();
     });
 
@@ -592,7 +592,7 @@ describe('DashboardPage', () => {
       await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
       await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
 
-      expect(await screen.findByText(/Suas análises grátis com plano de trade acabaram/)).toBeTruthy();
+      expect(await screen.findByText(/Suas análises grátis acabaram/)).toBeTruthy();
       expect(screen.queryByText(/is ready/i)).toBeNull();
       expect(screen.queryByText(/calculated for this chart/i)).toBeNull();
       expect(screen.getByRole('button', { name: /uma semana: \$7,99/ })).toBeTruthy();
@@ -611,7 +611,7 @@ describe('DashboardPage', () => {
       await user.click((await screen.findAllByRole('button', { name: 'Nova Análise' }))[0]);
       await user.click(screen.getAllByRole('button', { name: 'start-with-image' })[0]);
 
-      expect(await screen.findByText(/Suas análises grátis com plano de trade acabaram/)).toBeTruthy();
+      expect(await screen.findByText(/Suas análises grátis acabaram/)).toBeTruthy();
     });
   });
   // ── Cobranca de trades em aberto (25/09/2026) ─────────────────────────────
@@ -1056,7 +1056,7 @@ describe('DashboardPage', () => {
       mockUseAPIClient.mockReturnValue(makeApiClient({ listAnalyses: vi.fn().mockResolvedValue(recent) }));
       renderDashboard('/dashboard/new');
 
-      expect(await screen.findByText('Suas análises grátis com plano de trade acabaram')).toBeTruthy();
+      expect(await screen.findByText('Suas análises grátis acabaram')).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'start-with-image' })).toBeNull();
     });
 
@@ -1214,7 +1214,7 @@ describe('DashboardPage', () => {
 
     await screen.findByRole('button', { name: /Comece com uma semana/ });
     const botoes = screen.getAllByRole('button').map((b) => b.textContent ?? '');
-    const semanal = botoes.findIndex((b) => b.includes('Comece com uma semana: $7,99 por 25 Ticks'));
+    const semanal = botoes.findIndex((b) => b.includes('Comece com uma semana: $7,99 por 25 análises rápidas'));
     const mensal = botoes.findIndex((b) => b.startsWith('Ou mensal:'));
     expect(semanal).toBeGreaterThanOrEqual(0);
     expect(mensal).toBeGreaterThan(semanal);
