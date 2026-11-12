@@ -392,6 +392,11 @@ export type FunnelEvent =
   // Quadrinho de opiniao do painel (o texto fica so no banco, nunca no PostHog).
   | 'feedback_sent'
   | 'feedback_dismissed'
+  // Opiniao que vale 3 analises: pedido na tela { source }. O envio aceito e
+  // `feedback_submitted` (servidor, com a origem).
+  | 'feedback_prompt_shown'
+  // Envio de relato/opiniao recusado ou sem rede { status, kind }.
+  | 'report_send_failed'
   // Card de novidade da extensao de navegador (so com o link da loja).
   | 'extension_card_viewed'
   | 'extension_card_clicked'
@@ -453,6 +458,8 @@ export type FunnelEvent =
   // nao lidas e tamanho. O envio confirmado e `chat_message_sent` (servidor).
   | 'chat_opened'
   | 'chat_message_submitted'
+  // Mensagem do chat que nao foi aceita { status, code }.
+  | 'chat_send_failed'
   // Funil da demo anônima (/try) — Fase 0 de ativação:
   | 'demo_page_view'
   | 'demo_analysis_started'

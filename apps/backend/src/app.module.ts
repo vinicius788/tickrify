@@ -17,6 +17,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { DemoModule } from './modules/demo/demo.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { FeedbackModule } from './modules/feedback/feedback.module';
 import { SupportModule } from './modules/support/support.module';
 import { TelegramModule } from './modules/telegram/telegram.module';
 import { TrialModule } from './modules/trial/trial.module';
@@ -54,6 +55,7 @@ import { HttpLoggingInterceptor } from './common/interceptors/http-logging.inter
     PromptModule,
     HealthModule,
     ReportsModule,
+    FeedbackModule,
     SupportModule,
     TelegramModule,
     TrialModule,

@@ -21,6 +21,7 @@ const SupportChat = ({ thread }: { thread: ChatThread | null }) => {
   const { sendMessage, markRead } = useChatActions();
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<'failed' | 'rateLimited' | 'unavailable' | null>(null);
+  const [errorDetail, setErrorDetail] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
 
   const pages = messages.data?.pages ?? [];
@@ -51,6 +52,10 @@ const SupportChat = ({ thread }: { thread: ChatThread | null }) => {
     sendMessage.mutate(body, {
       onSuccess: () => setDraft(''),
       onError: (err) => {
+        // So status e codigo (nunca o texto): sem isto uma falha de envio nao deixava rastro.
+        const api = err instanceof APIError ? err : null;
+        setErrorDetail(api ? `${api.status || 'network'}${api.code ? ` ${api.code}` : ''}` : 'unknown');
+        track('chat_send_failed', { status: api?.status ?? 0, code: api?.code ?? 'unknown' });
         if (err instanceof APIError && err.status === 429) setError('rateLimited');
         else if (err instanceof APIError && err.status === 503) setError('unavailable');
         else setError('failed');
@@ -116,7 +121,7 @@ const SupportChat = ({ thread }: { thread: ChatThread | null }) => {
 
       {error ? (
         <p key={error} role="alert" className="mt-2 text-[11px] text-[var(--tone-down-1)]">
-          {c[error]}
+          {`${c[error]} (${errorDetail})`}
         </p>
       ) : null}
 

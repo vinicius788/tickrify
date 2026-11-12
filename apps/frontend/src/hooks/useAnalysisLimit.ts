@@ -32,6 +32,8 @@ interface AnalysisLimitData {
   trial: TrialUsage | null;
   /** Trial recusado pelo anti-abuso: mensagem do servidor para mostrar. */
   trialBlocked: { code: string; message: string } | null;
+  /** Conta sem assinatura que ainda nao enviou a opiniao que vale analises. */
+  feedbackRewardAvailable: boolean;
   /** true enquanto o backend ainda não confirmou o plano/limite do usuário logado.
    *  Durante esse tempo NÃO se deve tratar o usuário como "free 3 grátis". */
   isLoading: boolean;
@@ -43,6 +45,8 @@ const FREE_LIMIT = 3;
 const ANALYSIS_REFRESH_EVENT = 'tickrify:analysis-created';
 const USAGE_REFRESH_EVENT = 'tickrify:usage-refresh';
 const retryUsage = () => window.dispatchEvent(new Event(USAGE_REFRESH_EVENT));
+/** Rele o /usage em todo lugar que usa o hook (ex.: depois do credito da opiniao). */
+export const refreshUsage = retryUsage;
 
 // O painel e o contador da barra lateral usam este hook ao mesmo tempo, e cada
 // um buscava /api/ai/usage: duas requisicoes identicas a cada abertura e a
@@ -77,6 +81,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
   const [billingManageable, setBillingManageable] = useState(false);
   const [trial, setTrial] = useState<TrialUsage | null>(null);
   const [trialBlocked, setTrialBlocked] = useState<{ code: string; message: string } | null>(null);
+  const [feedbackRewardAvailable, setFeedbackRewardAvailable] = useState(false);
   // Começa carregando: o backend (Render hiberna) pode levar segundos a confirmar
   // que a conta é paga. Sem isto, a tela mostrava "3 grátis" no meio-tempo e o
   // assinante conseguia gastar análise grátis antes do plano ser reconhecido.
@@ -136,6 +141,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setBillingManageable(usage.billingManageable === true);
       setTrial(usage.trial ?? null);
       setTrialBlocked(usage.trialBlocked ?? null);
+      setFeedbackRewardAvailable(usage.feedbackReward?.available === true);
       // Só marca resolvido em caso de sucesso — assim canAnalyze fica travado até
       // termos a verdade do backend, evitando gastar grátis por engano.
       setStatusResolved(true);
@@ -184,6 +190,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       setBillingManageable(false);
       setTrial(null);
       setTrialBlocked(null);
+      setFeedbackRewardAvailable(false);
       setUserPlan('free');
       setBackendUnlimited(false);
       setStatusResolved(false);
@@ -209,6 +216,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       billingManageable: false,
       trial: null,
       trialBlocked: null,
+      feedbackRewardAvailable: false,
       isLoading: false,
       isUnavailable: false,
       retry: retryUsage,
@@ -234,6 +242,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
       billingManageable: false,
       trial: null,
       trialBlocked: null,
+      feedbackRewardAvailable: false,
       isLoading: true,
       isUnavailable,
       retry: retryUsage,
@@ -273,6 +282,7 @@ export function useAnalysisLimit(): AnalysisLimitData {
     billingManageable: isUnlimited && billingManageable,
     trial: activeTrial,
     trialBlocked: isUnlimited ? null : trialBlocked,
+    feedbackRewardAvailable: !isUnlimited && feedbackRewardAvailable,
     isLoading: false,
     isUnavailable: false,
     retry: retryUsage,
