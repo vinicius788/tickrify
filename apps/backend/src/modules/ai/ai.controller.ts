@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Put,
+  Delete,
   Query,
   UnauthorizedException,
   UseGuards,
@@ -27,6 +28,7 @@ import { CreateAnalysisDto } from './dto/create-analysis.dto';
 import { ListAnalysesQueryDto } from './dto/list-analyses-query.dto';
 import { JournalQueryDto } from './dto/journal-query.dto';
 import { SetTradeNoteDto } from './dto/set-trade-note.dto';
+import { SetWatchEntryDto } from './dto/set-watch-entry.dto';
 import { SetOutcomeDto } from './dto/set-outcome.dto';
 import { SetFavoriteDto } from './dto/set-favorite.dto';
 import { SetStrategyDto } from './dto/set-strategy.dto';
@@ -209,6 +211,29 @@ export class AiController {
     if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
 
     return this.aiService.setTradeNote(dbUserId, id, body);
+  }
+
+  /** "I entered" num WATCH: registra a operacao do trader (qual plano e o preco). */
+  @Put('analysis/:id/watch-entry')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async setWatchEntry(
+    @CurrentUser() user: { id?: string; clerkUserId: string },
+    @Param('id') id: string,
+    @Body() body: SetWatchEntryDto,
+  ) {
+    const dbUserId = await this.resolveDbUserId(user);
+    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
+    return this.aiService.setWatchEntry(dbUserId, id, { plan: body.plan, entry: body.entry });
+  }
+
+  @Delete('analysis/:id/watch-entry')
+  @UseGuards(AuthGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async clearWatchEntry(@CurrentUser() user: { id?: string; clerkUserId: string }, @Param('id') id: string) {
+    const dbUserId = await this.resolveDbUserId(user);
+    if (!dbUserId) throw new UnauthorizedException('Authenticated user not found');
+    return this.aiService.setWatchEntry(dbUserId, id, null);
   }
 
   /** Escala do eixo para as linhas da extensao. Uma leitura de IA por analise, guardada. */

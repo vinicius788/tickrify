@@ -6,6 +6,8 @@ import { LanguageProvider } from '@/lib/i18n/LanguageContext';
 import type { AIAnalysisResponse, WatchPlan } from '@/lib/api';
 
 vi.mock('@/hooks/useEconomicCalendar', () => ({ useEconomicCalendar: () => ({ events: [], loading: false, unreliable: false }) }));
+// O registro de entrada do trader tem teste proprio (watch-entry.test.tsx).
+vi.mock('@/components/dashboard/WatchEntryLog', () => ({ WatchEntryLog: () => null }));
 vi.mock('@/hooks/useMarketContext', () => ({ useMarketContext: () => ({ data: undefined, isLoading: false }) }));
 
 const plan: WatchPlan = {

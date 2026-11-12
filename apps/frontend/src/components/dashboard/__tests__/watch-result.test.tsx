@@ -9,6 +9,8 @@ import type { AIAnalysisResponse, WatchPlan, WatchSummary } from '@/lib/api';
 
 let calEvents: Array<Record<string, unknown>> = [];
 vi.mock('@/hooks/useEconomicCalendar', () => ({ useEconomicCalendar: () => ({ events: calEvents, loading: false, unreliable: false }) }));
+// O registro de entrada do trader tem teste proprio (watch-entry.test.tsx).
+vi.mock('@/components/dashboard/WatchEntryLog', () => ({ WatchEntryLog: () => null }));
 vi.mock('@/hooks/useMarketContext', () => ({ useMarketContext: () => ({ data: undefined, isLoading: false }) }));
 
 let options: Record<string, unknown>;
