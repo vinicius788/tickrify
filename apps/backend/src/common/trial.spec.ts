@@ -210,3 +210,44 @@ describe('e-mails do trial (modo simulado)', () => {
     }
   });
 });
+
+describe('bonus da opiniao no trial', () => {
+  const bonus = (iso: string) => ({ grantedAt: new Date(iso), analyses: 3 });
+  const three = [done('2026-10-20T13:00:00Z'), done('2026-10-20T14:00:00Z'), done('2026-10-20T15:00:00Z')];
+
+  it('sem bonus o estado e identico ao de antes', () => {
+    const now = new Date('2026-10-20T20:00:00Z');
+    expect(computeTrialState(row(), three, now)).toMatchObject({ blocked: true, paywall: 'daily_limit', bonusTotal: 0, bonusRemaining: 0 });
+  });
+
+  it('cota do dia esgotada + bonus: libera 3 e nao conta dia de uso a mais', () => {
+    const now = new Date('2026-10-20T20:00:00Z');
+    const granted = row({ bonus: bonus('2026-10-20T16:00:00Z') });
+    expect(computeTrialState(granted, three, now)).toMatchObject({ blocked: false, paywall: null, remainingToday: 3, bonusRemaining: 3, usedToday: 3 });
+    const withTwo = [...three, done('2026-10-20T17:00:00Z'), { createdAt: new Date('2026-10-20T18:00:00Z'), status: 'pending' }];
+    expect(computeTrialState(granted, withTwo, now)).toMatchObject({ blocked: false, bonusRemaining: 1, bonusSettledRemaining: 2, usedToday: 3, daysUsed: 1 });
+    const withThree = [...three, done('2026-10-20T17:00:00Z'), done('2026-10-20T18:00:00Z'), done('2026-10-20T19:00:00Z')];
+    expect(computeTrialState(granted, withThree, now)).toMatchObject({ blocked: true, paywall: 'daily_limit', bonusRemaining: 0, usedToday: 3 });
+  });
+
+  it('no dia seguinte a cota do trial vem antes do bonus', () => {
+    const granted = row({ bonus: bonus('2026-10-20T16:00:00Z') });
+    const next = [...three, done('2026-10-21T13:00:00Z')];
+    expect(computeTrialState(granted, next, new Date('2026-10-21T14:00:00Z'))).toMatchObject({
+      dayIndex: 2, usedToday: 1, remainingToday: 1, bonusRemaining: 3, blocked: false,
+    });
+  });
+
+  it('trial encerrado no banco: o bonus libera 3, falha nao consome, e depois trava de novo', () => {
+    const ended = row({ status: 'ended_unconverted', endedAt: new Date('2026-10-23T00:00:00Z'), endReason: 'completed', bonus: bonus('2026-10-25T10:00:00Z') });
+    const now = new Date('2026-10-25T12:00:00Z');
+    expect(computeTrialState(ended, three, now)).toMatchObject({ status: 'ended', endedSettled: true, blocked: false, paywall: null, remainingToday: 3 });
+    const used = [...three, done('2026-10-25T10:30:00Z'), { createdAt: new Date('2026-10-25T10:40:00Z'), status: 'failed' }, done('2026-10-25T10:50:00Z'), done('2026-10-25T11:00:00Z')];
+    expect(computeTrialState(ended, used, now)).toMatchObject({ blocked: true, paywall: 'day3_quota', bonusRemaining: 0, bonusSettledRemaining: 0 });
+  });
+
+  it('trial negado pelo anti-abuso nao recebe bonus', () => {
+    const denied = row({ status: 'denied', bonus: bonus('2026-10-20T16:00:00Z') });
+    expect(computeTrialState(denied, [], new Date('2026-10-20T20:00:00Z'))).toMatchObject({ blocked: true, bonusTotal: 0 });
+  });
+});

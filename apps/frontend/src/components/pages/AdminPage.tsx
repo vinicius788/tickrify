@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { useSeo, seoFor } from '@/hooks/useSeo';
-import RelatosPainel from '@/components/admin/RelatosPainel';
+import RelatosPainel, { OpinioesBonusPainel } from '@/components/admin/RelatosPainel';
 import NotasPainel from '@/components/admin/NotasPainel';
 import OrigemPainel from '@/components/admin/OrigemPainel';
 import AfiliadosPainel from '@/components/admin/AfiliadosPainel';
@@ -293,6 +293,7 @@ export default function AdminPage() {
 
         {aba === 'opinioes' && (
           <div className="flex flex-col gap-8">
+            <OpinioesBonusPainel />
             <NotasPainel />
             <RelatosPainel kind="feedback" />
           </div>

@@ -153,7 +153,10 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
         toast({ title: r.rateTitle, description: r.rateDesc });
         return;
       }
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) {
+        track('report_send_failed', { status: res.status, kind: opiniao ? 'feedback' : 'problem' });
+        throw new Error(`${res.status}`);
+      }
 
       const { id } = await res.json();
       const tamanho = texto.trim().length;
@@ -169,6 +172,8 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
         description: r.sentDesc.replace('{id}', String(id).slice(0, 8)),
       });
     } catch (erro) {
+      // Falha de rede (sem status) tambem deixa rastro.
+      if (!(erro instanceof Error) || !/^\d{3}$/.test(erro.message)) track('report_send_failed', { status: 0, kind: opiniao ? 'feedback' : 'problem' });
       toast({
         title: r.failTitle,
         description: erro instanceof Error ? `${r.failDesc} (${erro.message})` : r.failDesc,
@@ -203,7 +208,7 @@ export function ReportProblemButton({ analysisId: analysisIdProp }: { analysisId
   }
 
   return (
-    <div className="tk-chat-panel fixed bottom-4 right-4 z-40 flex max-h-[min(640px,calc(100dvh-2rem))] w-[min(380px,calc(100vw-2rem))] flex-col rounded-xl border border-[var(--border-strong)] bg-[var(--bg-solid)] p-4 shadow-2xl">
+    <div className="tk-chat-panel fixed bottom-4 right-4 z-[90] flex max-h-[min(640px,calc(100dvh-2rem))] w-[min(380px,calc(100vw-2rem))] flex-col rounded-xl border border-[var(--border-strong)] bg-[var(--bg-solid)] p-4 shadow-2xl">
       <div className="mb-3 flex shrink-0 items-start gap-2">
         <div className="flex flex-1 gap-1 rounded-lg bg-[var(--fill-2)] p-1" role="tablist">
           {(['chat', 'problem', 'feedback'] as const).map((m) => (

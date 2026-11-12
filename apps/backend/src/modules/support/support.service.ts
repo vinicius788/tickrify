@@ -113,6 +113,14 @@ export class SupportService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    await this.prepare();
+  }
+
+  private lastPrepareAt = 0;
+
+  /** Garante as tabelas. Falhou no boot (banco fora por um instante)? Tenta de novo depois. */
+  private async prepare(): Promise<void> {
+    this.lastPrepareAt = Date.now();
     try {
       for (const sql of BOOT_SQL) await this.prisma.$executeRawUnsafe(sql);
       this.ready = true;
@@ -123,7 +131,13 @@ export class SupportService implements OnModuleInit {
     }
   }
 
-  private assertReady() {
+  /**
+   * Antes de 12/11/2026 uma falha no boot desligava o chat NESTA instancia ate
+   * o proximo deploy (metade dos pedidos respondia 503 com 2 instancias).
+   * Agora cada pedido tenta preparar de novo, no maximo uma vez por minuto.
+   */
+  private async assertReady() {
+    if (!this.ready && Date.now() - this.lastPrepareAt >= 60_000) await this.prepare();
     if (!this.ready) throw new ServiceUnavailableException({ code: 'chat_unavailable', message: 'Chat is temporarily unavailable.' });
   }
 
@@ -193,7 +207,7 @@ export class SupportService implements OnModuleInit {
 
   /** A conversa da pessoa e quantas respostas do fundador ela ainda nao leu. */
   async getThreadForUser(userId: string) {
-    this.assertReady();
+    await this.assertReady();
     const thread = (await this.threadOfUser(userId)) ?? (await this.askForFeedback(userId));
     if (!thread) return { thread: null };
     return {
@@ -253,14 +267,14 @@ export class SupportService implements OnModuleInit {
   }
 
   async listMessagesForUser(userId: string, cursor: string | null, limit = 50) {
-    this.assertReady();
+    await this.assertReady();
     const thread = await this.threadOfUser(userId);
     if (!thread) return { items: [], nextCursor: null };
     return this.page(thread.id, cursor, limit);
   }
 
   async sendUserMessage(user: { id: string; clerkUserId?: string; email?: string | null }, rawBody: unknown): Promise<{ message: ChatMessage }> {
-    this.assertReady();
+    await this.assertReady();
     const body = cleanBody(rawBody);
     const since = new Date(Date.now() - 60 * 60 * 1000);
     const [{ n }] = await this.prisma.$queryRaw<Array<{ n: number }>>`
@@ -312,7 +326,7 @@ export class SupportService implements OnModuleInit {
   }
 
   async markReadByUser(userId: string): Promise<{ ok: true }> {
-    this.assertReady();
+    await this.assertReady();
     await this.prisma.$executeRaw`
       UPDATE "tickrify"."SupportThread" SET "lastUserReadAt" = NOW() WHERE "userId" = ${userId}
     `;
@@ -340,7 +354,7 @@ export class SupportService implements OnModuleInit {
 
   /** Conversas com o que ajuda a responder: nao lidas primeiro. */
   async adminListThreads() {
-    this.assertReady();
+    await this.assertReady();
     const rows = await this.prisma.$queryRaw<
       Array<{
         id: string;
@@ -414,7 +428,7 @@ export class SupportService implements OnModuleInit {
 
   /** Abrir a conversa no /admin conta como o fundador ter lido. */
   async adminGetThread(threadId: string, cursor: string | null, limit = 100) {
-    this.assertReady();
+    await this.assertReady();
     const thread = await this.threadById(threadId);
     if (!thread) throw new NotFoundException({ code: 'thread_not_found' });
     const messages = await this.page(threadId, cursor, limit);
@@ -425,7 +439,7 @@ export class SupportService implements OnModuleInit {
   }
 
   async adminReply(threadId: string, rawBody: unknown): Promise<{ message: ChatMessage }> {
-    this.assertReady();
+    await this.assertReady();
     const body = cleanBody(rawBody);
     const thread = await this.threadById(threadId);
     if (!thread) throw new NotFoundException({ code: 'thread_not_found' });
@@ -436,7 +450,7 @@ export class SupportService implements OnModuleInit {
   }
 
   async adminSetStatus(threadId: string, status: 'open' | 'closed') {
-    this.assertReady();
+    await this.assertReady();
     const updated = await this.prisma.$executeRaw`
       UPDATE "tickrify"."SupportThread" SET "status" = ${status}, "updatedAt" = NOW() WHERE "id" = ${threadId}
     `;
@@ -446,7 +460,7 @@ export class SupportService implements OnModuleInit {
 
   /** O fundador puxa assunto (ex.: assinante que parou de usar). Usa a conversa que ja existir. */
   async adminStartConversation(email: string, rawBody: unknown) {
-    this.assertReady();
+    await this.assertReady();
     const body = cleanBody(rawBody);
     const user = await this.prisma.user.findFirst({
       where: { email: { equals: email.trim(), mode: 'insensitive' } },

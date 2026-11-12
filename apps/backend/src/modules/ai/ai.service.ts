@@ -51,6 +51,7 @@ import {
 } from '../../common/utils/image-storage';
 import { isProductionRuntime } from '../../common/utils/runtime-env';
 import { FREE_READABLE_ANALYSES, getFreeQuota, hadEndedSubscription } from '../../common/free-quota';
+import { FEEDBACK_RULES, readFeedbackBonus } from '../../common/feedback-bonus';
 import { TrialService } from './trial.service';
 import { TradesService } from './trades.service';
 import { TRIAL_RULES, nextTrialAvailability } from '../../common/trial';
@@ -1208,6 +1209,11 @@ export class AiService implements OnModuleInit {
       const freeLocked = quota.settledExhausted && !(await this.isAdmin(userId));
       const trialState = quota.trial ? ((await this.trial.sync(userId)) ?? quota.trial) : null;
       if (trialState?.paywall) this.trial.paywallShown(userId, trialState);
+      // Rodando no bonus da opiniao: a tela ve um trial ativo com o que resta do bonus.
+      const onBonus = trialState ? trialState.bonusRemaining > 0 && trialState.remainingToday === trialState.bonusRemaining : false;
+      // Opiniao que vale analises: uma vez por conta, nunca para trial negado.
+      const feedbackRewardAvailable =
+        !trialBlocked && (trialState ? trialState.bonusTotal === 0 : !(await readFeedbackBonus(this.prisma, userId)));
       return {
         plan: 'free',
         period: 'monthly',
@@ -1226,16 +1232,18 @@ export class AiService implements OnModuleInit {
         // Gratis esgotado: o painel trava historico, diario e marcacao de
         // resultado (mesma regra de `isFreeLocked`).
         freeLocked,
-        formerSubscriber: quota.formerSubscriber,
+        // Ex-assinante com bonus da opiniao por usar ainda pode analisar.
+        formerSubscriber: quota.formerSubscriber && quota.remaining <= 0,
+        feedbackReward: { available: feedbackRewardAvailable, analyses: FEEDBACK_RULES.bonusAnalyses },
         trial: trialState
           ? {
               dayIndex: trialState.dayIndex,
               daysTotal: TRIAL_RULES.usageDays,
-              usedToday: trialState.usedToday,
-              limitToday: trialState.limitToday,
+              usedToday: onBonus ? trialState.bonusTotal - trialState.bonusRemaining : trialState.usedToday,
+              limitToday: onBonus ? trialState.bonusTotal : trialState.limitToday,
               remainingToday: trialState.remainingToday,
               daysUsed: trialState.daysUsed,
-              status: trialState.status,
+              status: onBonus ? 'active' : trialState.status,
               paywall: trialState.paywall,
               windowEndsAt: trialState.windowEndsAt.toISOString(),
               timezone: trialState.timezone,

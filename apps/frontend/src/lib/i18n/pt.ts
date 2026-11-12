@@ -1082,6 +1082,21 @@ export default {
     cta: 'Adicionar ao Chrome',
     dismiss: 'Agora não',
   },
+  // Opiniao que vale 3 analises (11/11/2026): FeedbackRewardCard.
+  feedbackReward: {
+    title: "Conte o que você achou",
+    subtitle: "Escreva uma frase sobre a Tickrify e ganhe 3 análises extras grátis.",
+    placeholder: "Por exemplo: o plano ficou claro, mas eu queria saber antes quando o preço chegou no meu nível.",
+    send: "Enviar opinião e ganhar 3 análises",
+    sending: "Enviando…",
+    thanks: "Obrigado. 3 análises foram adicionadas à sua conta.",
+    short: "Escreva uma frase, com pelo menos 15 caracteres.",
+    counter: "{n} de 500",
+    failed: "Não foi enviado. Tente de novo em instantes.",
+    used: "Esta oferta já foi usada nesta conta.",
+    unavailable: "Esta oferta não está disponível para esta conta.",
+    limitLead: "Antes de assinar",
+  },
   feedback: {
     title: 'O que você está achando da Tickrify?',
     subtitle: 'O que funciona, o que confunde, o que falta. Só a equipe da Tickrify lê isto.',

@@ -1069,6 +1069,21 @@ export default {
     cta: 'Chrome に追加',
     dismiss: '後で',
   },
+  // Opiniao que vale 3 analises (11/11/2026): FeedbackRewardCard.
+  feedbackReward: {
+    title: "ご意見をお聞かせください",
+    subtitle: "Tickrifyについて一文書くと、分析が3回分無料で追加されます。",
+    placeholder: "例：プランは分かりやすかったが、価格が自分の水準に届いたことをもっと早く知りたかった。",
+    send: "意見を送って分析を3回分受け取る",
+    sending: "送信中…",
+    thanks: "ありがとうございます。分析3回分がアカウントに追加されました。",
+    short: "15文字以上で一文お書きください。",
+    counter: "{n} / 500",
+    failed: "送信できませんでした。少ししてからもう一度お試しください。",
+    used: "この特典はこのアカウントで使用済みです。",
+    unavailable: "この特典はこのアカウントではご利用いただけません。",
+    limitLead: "登録の前に",
+  },
   feedback: {
     title: 'ここまでのTickrifyの感想を教えてください',
     subtitle: '良かった点、わかりにくい点、足りない点。Tickrifyのチームだけが読みます。',

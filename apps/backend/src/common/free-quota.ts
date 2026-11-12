@@ -29,7 +29,12 @@
  * regra do trial de 3 dias, no MESMO formato de resposta, para que acesso,
  * /usage, trava de leitura, funil e e-mails mudem juntos. Sem linha, tudo
  * igual a antes.
+ *
+ * BONUS DA OPINIAO (11/11/2026, feedback-bonus.ts): quem enviou a opiniao
+ * ganha N analises. Regra antiga: os dois tetos sobem N. Ex-assinante: N
+ * analises contadas a partir do credito. Trial: ver trial.ts.
  */
+import { readFeedbackBonus } from './feedback-bonus';
 import { TRIAL_TOTAL_ANALYSES, computeTrialState, readTrial, type TrialState } from './trial';
 
 export const FREE_SIGNAL_LIMIT = 3;
@@ -119,17 +124,43 @@ export async function getFreeQuota(prisma: FreeQuotaCounter, userId: string): Pr
 
   const signalsUsed = signalsDone + inFlight;
   const formerSubscriber = await hadEndedSubscription(prisma, userId);
-  const exhausted = formerSubscriber || signalsUsed >= FREE_SIGNAL_LIMIT || totalUsed >= FREE_TOTAL_LIMIT;
-  const settledExhausted =
-    formerSubscriber || signalsDone >= FREE_SIGNAL_LIMIT ||
-    totalUsed - inFlight - checks.filter((c) => c.status === 'pending').length >= FREE_TOTAL_LIMIT;
+  const raw = prisma.$queryRawUnsafe?.bind(prisma);
+  const bonus = raw ? await readFeedbackBonus({ $queryRawUnsafe: raw }, userId) : null;
+  const pendingChecks = checks.filter((c) => c.status === 'pending').length;
+
+  if (formerSubscriber) {
+    // Modo leitura: so o bonus da opiniao libera analise, contado desde o credito.
+    const since = bonus ? { userId, isDemo: true, createdAt: { gte: bonus.grantedAt } } : null;
+    const bonusChecks = bonus ? checks.filter((c) => c.createdAt.getTime() >= bonus.grantedAt.getTime()) : [];
+    const bonusLive = since ? (await prisma.analysis.count({ where: { ...since, status: { not: 'failed' } } })) + bonusChecks.length : 0;
+    const bonusDone = since
+      ? (await prisma.analysis.count({ where: { ...since, status: 'completed' } })) + bonusChecks.filter((c) => c.status !== 'pending').length
+      : 0;
+    const limit = bonus?.analyses ?? 0;
+    return {
+      signalsUsed: Math.min(bonusLive, limit),
+      signalsLimit: limit,
+      totalUsed,
+      totalLimit: FREE_TOTAL_LIMIT + limit,
+      remaining: Math.max(0, limit - bonusLive),
+      exhausted: bonusLive >= limit,
+      settledExhausted: bonusDone >= limit,
+      trial: null,
+      formerSubscriber,
+    };
+  }
+
+  const signalsLimit = FREE_SIGNAL_LIMIT + (bonus?.analyses ?? 0);
+  const totalLimit = FREE_TOTAL_LIMIT + (bonus?.analyses ?? 0);
+  const exhausted = signalsUsed >= signalsLimit || totalUsed >= totalLimit;
+  const settledExhausted = signalsDone >= signalsLimit || totalUsed - inFlight - pendingChecks >= totalLimit;
 
   return {
     signalsUsed,
-    signalsLimit: FREE_SIGNAL_LIMIT,
+    signalsLimit,
     totalUsed,
-    totalLimit: FREE_TOTAL_LIMIT,
-    remaining: exhausted ? 0 : FREE_SIGNAL_LIMIT - signalsUsed,
+    totalLimit,
+    remaining: exhausted ? 0 : signalsLimit - signalsUsed,
     exhausted,
     settledExhausted,
     trial: null,
@@ -206,7 +237,8 @@ async function getTrialQuota(prisma: FreeQuotaCounter, userId: string): Promise<
     totalLimit: TRIAL_TOTAL_ANALYSES,
     remaining: state.blocked ? 0 : state.remainingToday,
     exhausted: state.blocked,
-    settledExhausted: state.endedSettled,
+    // Bonus da opiniao ainda por usar mantem a conta destravada.
+    settledExhausted: state.endedSettled && state.bonusSettledRemaining <= 0,
     trial: state,
     formerSubscriber: false,
   };
