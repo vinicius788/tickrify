@@ -12,6 +12,7 @@ import NewAnalysis from "../dashboard/NewAnalysis";
 import EmptyState from '@/components/dashboard/EmptyState';
 import AcquisitionSurvey from '@/components/dashboard/AcquisitionSurvey';
 import FeedbackCard from '@/components/dashboard/FeedbackCard';
+import FeedbackRewardCard from '@/components/dashboard/FeedbackRewardCard';
 import ExtensionAnnouncement from '@/components/dashboard/ExtensionAnnouncement';
 import {
   VERDICT_MAX_ROWS,
@@ -256,7 +257,7 @@ const DashboardPage = () => {
     });
   };
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, formerSubscriber, billingManageable, trial, trialBlocked, isLoading: isPlanLoading, isUnavailable: isUsageUnavailable, retry: retryUsage } = useAnalysisLimit();
+  const { plan, total, used, isUnlimited, remaining, analysesAllTime, totalUsed, totalLimit, freeLocked, formerSubscriber, billingManageable, trial, trialBlocked, feedbackRewardAvailable, isLoading: isPlanLoading, isUnavailable: isUsageUnavailable, retry: retryUsage } = useAnalysisLimit();
   const [theme] = useTheme();
   // Trial de 3 dias: qual paywall mostrar (volte amanha ou trial encerrado).
   const trialVariant: 'daily_limit' | 'trial_ended' | undefined = trial
@@ -726,6 +727,9 @@ const DashboardPage = () => {
   // Todo paywall fecha no mesmo checkout (`locked_value` na Stripe); a area de
   // onde veio vai junto para o PostHog.
   const paywallFor = (surface: PaywallSurface, children?: ReactNode, symbol?: string) => (
+    <div className="flex flex-col gap-4">
+      {/* Opiniao que vale 3 analises: com destaque, antes do paywall. */}
+      {feedbackRewardAvailable ? <FeedbackRewardCard source="limit" prominent /> : null}
     <Paywall
       surface={surface}
       symbol={symbol}
@@ -738,6 +742,7 @@ const DashboardPage = () => {
     >
       {children}
     </Paywall>
+    </div>
   );
   // Janela de upgrade: checkout direto, como no paywall. Antes o unico botao
   // levava para a /pricing (um passo a mais) e so mostrava o mensal de US$ 29.
@@ -1322,14 +1327,14 @@ const DashboardPage = () => {
           </div>
         ) : null}
 
-        {/* Opiniao livre, lida no /admin (aba Opinioes). So para quem ja fez
-            ao menos uma analise (antes disso nao ha o que opinar) e nunca junto
-            da pergunta de origem: um pedido por vez. */}
         {/* Novidade: extensao de navegador. So aparece com o link da loja
             preenchido e em Chrome/Edge de computador. */}
         {!isDemo && <ExtensionAnnouncement />}
 
-        {!isDemo && !showAcquisitionSurvey && analysesTotal > 0 && <FeedbackCard />}
+        {/* Opiniao, lida no /admin (aba Opinioes). So para quem ja fez ao menos
+            uma analise e nunca junto da pergunta de origem: um pedido por vez.
+            Conta sem assinatura que ainda nao usou ve a versao que vale 3 analises. */}
+        {!isDemo && !showAcquisitionSurvey && analysesTotal > 0 && (feedbackRewardAvailable ? <FeedbackRewardCard source="home" /> : <FeedbackCard />)}
 
         {/* O que o mercado fez com os planos da pessoa nos ultimos 30 dias */}
         {!isDemo && <TrackRecordCard />}
@@ -1691,6 +1696,7 @@ const DashboardPage = () => {
             ) : null}
             <AnalysisResult analysisData={analysisData} uploadedImage={uploadedImage} alertsEnabled={!isDemo && !freeLocked} base={base} />
             {tradeAnalysisId ? <TradePanel key={`trade-${tradeAnalysisId}`} analysisId={tradeAnalysisId} /> : null}
+            {!isDemo && !freeLocked && feedbackRewardAvailable && analysisData?.status === 'completed' ? <FeedbackRewardCard source="result" /> : null}
             {/* Seguir o setup: ao lado das acoes de sempre, nunca no lugar delas. */}
             {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' && !(analysisData.fullResponse?.signalState === 'WATCH' && isWatchPlan(analysisData.fullResponse.watchPlan)) ? (
               <SetupAlertBar

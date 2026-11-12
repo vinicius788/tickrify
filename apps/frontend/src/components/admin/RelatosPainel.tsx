@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { useAuth } from '@clerk/clerk-react';
+import { useQuery } from '@tanstack/react-query';
+import { buildApiUrl } from '@/lib/api';
 import { useProblemReports, type ProblemReport, type ReportKind, type ReportStatus } from '@/hooks/useProblemReports';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -165,3 +168,49 @@ export function RelatosPainel({ kind = 'problem' }: { kind?: ReportKind }) {
 }
 
 export default RelatosPainel;
+
+type OpiniaoComBonus = { id: string; userEmail: string | null; message: string; source: string; bonusAnalyses: number; createdAt: string };
+
+const ORIGEM_OPINIAO: Record<string, string> = { home: 'início do painel', result: 'abaixo do resultado', limit: 'tela de limite' };
+
+/** Opiniões que valeram análises grátis (uma por conta), da mais nova para a mais antiga. */
+export function OpinioesBonusPainel() {
+  const { getToken, isSignedIn } = useAuth();
+  const { data, isLoading, isError } = useQuery<{ total: number; items: OpiniaoComBonus[] }, Error>({
+    queryKey: ['admin-feedback-bonus'],
+    enabled: Boolean(isSignedIn),
+    retry: false,
+    queryFn: async () => {
+      const token = await getToken();
+      const res = await fetch(buildApiUrl('/api/admin/feedback'), { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) throw new Error(`Falha ao carregar (${res.status})`);
+      return res.json();
+    },
+  });
+
+  return (
+    <section>
+      <h2 className="mb-1 text-lg font-semibold text-[var(--text-primary)]">
+        Opiniões que valeram 3 análises{data ? ` (${data.total})` : ''}
+      </h2>
+      <p className="mb-3 text-xs text-[var(--text-faint)]">Uma frase por conta sem assinatura, em troca de 3 análises grátis.</p>
+      {isLoading && <p className="text-sm text-[var(--text-faint)]">Carregando…</p>}
+      {isError && <p className="text-sm text-[var(--tone-down-2)]">Não consegui carregar as opiniões.</p>}
+      {data && data.items.length === 0 && (
+        <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-6 text-center">
+          <p className="text-sm text-[var(--text-dim)]">Nenhuma opinião enviada ainda.</p>
+        </Card>
+      )}
+      <div className="space-y-3">
+        {data?.items.map((item) => (
+          <Card key={item.id} className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
+            <p className="whitespace-pre-wrap break-words text-sm text-[var(--text-primary)]">{item.message}</p>
+            <p className="mt-2 text-[11px] text-[var(--text-faint)]">
+              {`${quando(item.createdAt)} · ${item.userEmail ?? 'sem e-mail'} · ${ORIGEM_OPINIAO[item.source] ?? item.source} · +${item.bonusAnalyses} análises`}
+            </p>
+          </Card>
+        ))}
+      </div>
+    </section>
+  );
+}

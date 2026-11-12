@@ -462,6 +462,8 @@ export interface AnalysisUsageResponse {
   trial?: TrialUsage | null;
   /** Trial recusado pelo anti-abuso (e-mail, rede); `message` vem do servidor. */
   trialBlocked?: { code: string; message: string } | null;
+  /** Opiniao que vale analises: `available` = a conta ainda pode enviar (uma vez). */
+  feedbackReward?: { available: boolean; analyses: number };
 }
 
 export type TrialPaywall = 'daily_limit' | 'day3_quota' | 'fourth_day' | 'expired';

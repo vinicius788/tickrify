@@ -21,7 +21,14 @@
  * pelos e-mails e pelos eventos do PostHog, em dois processos. Tabela
  * `UserTrial` criada por SQL no boot (TrialService) e na migracao
  * 20261013120000_user_trial; FORA do schema.prisma, lida por SQL.
+ *
+ * BONUS DA OPINIAO (11/11/2026, feedback-bonus.ts): quem enviou a opiniao tem
+ * `row.bonus`. Analise feita depois do credito, num momento em que o trial ja
+ * barrava (cota do dia, trial encerrado ou vencido), sai do bonus e NAO entra
+ * na conta de dias do trial. A separacao mora em `computeTrialState`, entao
+ * API, worker, funil e e-mails enxergam o mesmo.
  */
+import { readFeedbackBonuses, type FeedbackBonus } from './feedback-bonus';
 
 export const TRIAL_RULES = {
   /** Analises por dia de uso, na ordem dos dias. */
@@ -69,6 +76,8 @@ export type TrialRow = {
   todayDate: string | null;
   source: 'signup' | 'reactivation';
   denyReason: string | null;
+  /** Credito da opiniao (feedback-bonus.ts). Ausente = nunca enviou. */
+  bonus?: FeedbackBonus | null;
 };
 
 export type TrialAnalysis = { createdAt: Date; status: string };
@@ -96,6 +105,12 @@ export type TrialState = {
   /** Acabou com resultados ja conhecidos: e o que trava a conta (modo leitura). */
   endedSettled: boolean;
   settledPaywall: TrialPaywall | null;
+  /** Analises do bonus da opiniao: total creditado (0 = sem bonus). */
+  bonusTotal: number;
+  /** O que resta do bonus, contando analise em andamento. */
+  bonusRemaining: number;
+  /** O que resta do bonus so com resultados conhecidos (decide a trava). */
+  bonusSettledRemaining: number;
 };
 
 /** Fuso IANA valido ou null. */
@@ -195,8 +210,11 @@ export function computeTrialState(row: TrialRow, analyses: TrialAnalysis[], now 
   const timezone = validTimezone(row.timezone) ?? 'UTC';
   const today = localDate(now, timezone);
   const windowEndsAt = new Date(row.startedAt.getTime() + TRIAL_RULES.windowDays * DAY_MS);
-  const live = analyses.filter((a) => a.status !== 'failed');
-  const done = analyses.filter((a) => a.status === 'completed');
+  // Encerrado no banco continua encerrado (o calculo pode mudar com fuso novo).
+  const storedEnd = row.status === 'ended_unconverted' || row.status === 'ended_converted' || row.status === 'denied';
+  const split = splitBonus(row, analyses, timezone, storedEnd);
+  const live = split.trial.filter((a) => a.status !== 'failed');
+  const done = split.trial.filter((a) => a.status === 'completed');
   const all = core(live, row.startedAt, timezone, now);
   const settled = core(done, row.startedAt, timezone, now);
 
@@ -205,8 +223,6 @@ export function computeTrialState(row: TrialRow, analyses: TrialAnalysis[], now 
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, count]) => ({ date, count, ...(reported.has(date) ? { reported: true } : {}) }));
 
-  // Encerrado no banco continua encerrado (o calculo pode mudar com fuso novo).
-  const storedEnd = row.status === 'ended_unconverted' || row.status === 'ended_converted' || row.status === 'denied';
   const endedSettled = storedEnd || settled.ended;
   const ended = endedSettled || all.ended;
   const storedPaywall: TrialPaywall | null =
@@ -214,25 +230,69 @@ export function computeTrialState(row: TrialRow, analyses: TrialAnalysis[], now 
   const settledPaywall = storedEnd ? storedPaywall ?? 'expired' : settled.ended ? settled.paywall : null;
   const paywall = endedSettled ? settledPaywall : all.paywall;
   const dayIndex = Math.min(all.dayIndex, TRIAL_RULES.usageDays);
+  const bonusRemaining = Math.max(0, split.total - split.used);
+  const trialRemaining = ended ? 0 : Math.max(0, all.limitToday - all.usedToday);
 
   return {
     status: ended ? 'ended' : 'active',
     endReason: storedEnd ? row.endReason : (settled.endReason ?? all.endReason),
-    paywall,
+    // Com bonus sobrando nada barra: a tela nao mostra paywall.
+    paywall: bonusRemaining > 0 ? null : paywall,
     dayIndex,
     usedToday: all.usedToday,
     limitToday: all.limitToday,
-    remainingToday: ended ? 0 : Math.max(0, all.limitToday - all.usedToday),
+    remainingToday: trialRemaining > 0 ? trialRemaining : bonusRemaining,
     daysUsed: usageDays.length,
     usageDays,
     totalUsed: live.filter((a) => a.createdAt.getTime() >= row.startedAt.getTime()).length,
     windowEndsAt,
     timezone,
     today,
-    blocked: ended || all.blocked,
+    blocked: (ended || all.blocked) && bonusRemaining <= 0,
     endedSettled,
     settledPaywall,
+    bonusTotal: split.total,
+    bonusRemaining,
+    bonusSettledRemaining: Math.max(0, split.total - split.usedDone),
   };
+}
+
+/**
+ * Separa as analises do bonus da opiniao das analises do trial. Em ordem de
+ * criacao: analise feita depois do credito, enquanto o trial (so com as
+ * analises do proprio trial ate ali) ja barrava, consome o bonus. Trial negado
+ * pelo anti-abuso nao tem bonus. Falha nao consome nada.
+ */
+function splitBonus(
+  row: TrialRow,
+  analyses: TrialAnalysis[],
+  timezone: string,
+  storedEnd: boolean,
+): { trial: TrialAnalysis[]; total: number; used: number; usedDone: number } {
+  const bonus = row.status === 'denied' ? null : row.bonus ?? null;
+  if (!bonus || bonus.analyses <= 0) return { trial: analyses, total: 0, used: 0, usedDone: 0 };
+  const grantedAt = bonus.grantedAt.getTime();
+  const endedAt = storedEnd ? (row.endedAt?.getTime() ?? 0) : null;
+  const trial: TrialAnalysis[] = [];
+  let used = 0;
+  let usedDone = 0;
+  for (const a of [...analyses].sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())) {
+    const at = a.createdAt.getTime();
+    if (a.status === 'failed' || at < grantedAt || used >= bonus.analyses) {
+      trial.push(a);
+      continue;
+    }
+    const barred =
+      (endedAt !== null && at >= endedAt) ||
+      core(trial.filter((t) => t.status !== 'failed'), row.startedAt, timezone, a.createdAt).blocked;
+    if (!barred) {
+      trial.push(a);
+      continue;
+    }
+    used += 1;
+    if (a.status === 'completed') usedDone += 1;
+  }
+  return { trial, total: bonus.analyses, used, usedDone };
 }
 
 // ── Anti-abuso ──────────────────────────────────────────────────────────────
@@ -317,7 +377,8 @@ export async function readTrial(db: TrialDb, userId: string): Promise<TrialRow |
   if (!(await trialTableExists(db))) return null;
   try {
     const rows = await db.$queryRawUnsafe<Record<string, unknown>[]>(`${SELECT_ROW} WHERE "userId" = $1`, userId);
-    return rows[0] ? toRow(rows[0]) : null;
+    if (!rows[0]) return null;
+    return { ...toRow(rows[0]), bonus: (await readFeedbackBonuses(db, [userId])).get(userId) ?? null };
   } catch {
     return null;
   }
@@ -330,7 +391,9 @@ export async function readTrialsByStatus(db: TrialDb, statuses: TrialStatus[], l
       `${SELECT_ROW} WHERE "status" = ANY($1::text[]) ORDER BY "startedAt" DESC LIMIT ${Math.max(1, Math.floor(limit))}`,
       statuses,
     );
-    return rows.map(toRow);
+    const trials = rows.map(toRow);
+    const bonuses = await readFeedbackBonuses(db, trials.map((t) => t.userId));
+    return trials.map((t) => ({ ...t, bonus: bonuses.get(t.userId) ?? null }));
   } catch {
     return [];
   }

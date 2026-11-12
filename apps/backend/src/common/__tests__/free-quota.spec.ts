@@ -17,6 +17,7 @@ function matches(row: Row, where: Record<string, any>): boolean {
     if ('notIn' in st && st.notIn.includes(row.status)) return false;
   }
   if (where.createdAt?.gt && !(row.createdAt > where.createdAt.gt)) return false;
+  if (where.createdAt?.gte && !(row.createdAt >= where.createdAt.gte)) return false;
   const rec = where.recommendation;
   if (rec && typeof rec === 'object' && 'in' in rec && !rec.in.includes(row.recommendation)) return false;
   return true;
@@ -129,5 +130,39 @@ describe('getFreeQuota (regra unica da cota gratis)', () => {
   it('quem nunca assinou nao e ex-assinante', async () => {
     const q = await getFreeQuota(db([]), 'u1');
     expect(q).toMatchObject({ formerSubscriber: false, exhausted: false });
+  });
+});
+
+describe('bonus da opiniao na regra antiga', () => {
+  /** Banco com SQL cru: so a tabela UserFeedback existe (sem trial, sem TradeCheck, sem assinatura). */
+  function dbWithBonus(rows: Array<Partial<Row>>, opts: { bonusAt?: string; former?: boolean } = {}) {
+    const base = db(rows);
+    return {
+      ...base,
+      $queryRawUnsafe: jest.fn(async (sql: string) => {
+        if (sql.includes('to_regclass')) return [{ ok: sql.includes('UserFeedback') }];
+        if (sql.includes('"UserFeedback"')) return opts.bonusAt ? [{ userId: 'u1', createdAt: new Date(opts.bonusAt), bonusAnalyses: 3 }] : [];
+        if (sql.includes('"Subscription"')) return [{ ok: opts.former === true }];
+        return [];
+      }),
+    } as unknown as Parameters<typeof getFreeQuota>[0];
+  }
+
+  it('3 sinais esgotam; com a opiniao enviada sobem para 6 e a conta destrava', async () => {
+    const rows = times(3, { recommendation: 'BUY' });
+    expect(await getFreeQuota(dbWithBonus(rows), 'u1')).toMatchObject({ exhausted: true, settledExhausted: true });
+    expect(await getFreeQuota(dbWithBonus(rows, { bonusAt: '2026-09-11T00:00:00Z' }), 'u1')).toMatchObject({
+      signalsLimit: FREE_SIGNAL_LIMIT + 3, totalLimit: FREE_TOTAL_LIMIT + 3, remaining: 3, exhausted: false, settledExhausted: false,
+    });
+    expect(await getFreeQuota(dbWithBonus(times(6, { recommendation: 'BUY' }), { bonusAt: '2026-09-11T00:00:00Z' }), 'u1')).toMatchObject({
+      remaining: 0, exhausted: true, settledExhausted: true,
+    });
+  });
+
+  it('ex-assinante: so o bonus libera, contado a partir do credito', async () => {
+    const old = times(2, { recommendation: 'BUY' });
+    expect(await getFreeQuota(dbWithBonus(old, { former: true }), 'u1')).toMatchObject({ formerSubscriber: true, exhausted: true, settledExhausted: true });
+    const granted = dbWithBonus([...old, { recommendation: 'WAIT', createdAt: new Date('2026-09-12T00:00:00Z') }], { former: true, bonusAt: '2026-09-11T00:00:00Z' });
+    expect(await getFreeQuota(granted, 'u1')).toMatchObject({ formerSubscriber: true, remaining: 2, exhausted: false, settledExhausted: false });
   });
 });
