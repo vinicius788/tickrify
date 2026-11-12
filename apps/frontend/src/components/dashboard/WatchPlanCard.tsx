@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { BellRing, BookmarkCheck, BookmarkPlus, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -202,10 +202,13 @@ export function MarketPlanCard({
   direction,
   levels,
   formatPrice,
+  footer = null,
 }: {
   direction: WatchPlan['direction'];
   levels: WatchLevels;
   formatPrice: (value: number | null) => string;
+  /** Registro de entrada do trader neste plano. */
+  footer?: ReactNode;
 }) {
   const { t, language } = useLanguage();
   const w = t.analysis.result.watch;
@@ -234,6 +237,7 @@ export function MarketPlanCard({
         ))}
       </dl>
       <p className="mt-3 text-xs leading-relaxed text-[var(--text-secondary)]">{w.marketNote}</p>
+      {footer}
     </section>
   );
 }
@@ -259,6 +263,8 @@ interface WatchPlanCardProps {
   /** Janela encerrada: so o nivel e o desfecho, nunca o plano nem o alerta. */
   closed: boolean;
   now: number;
+  /** Registro de entrada do trader neste plano. */
+  footer?: ReactNode;
 }
 
 export function WatchPlanCard({
@@ -275,6 +281,7 @@ export function WatchPlanCard({
   base,
   closed,
   now,
+  footer = null,
 }: WatchPlanCardProps) {
   const { t, language } = useLanguage();
   const w = t.analysis.result.watch;
@@ -338,6 +345,7 @@ export function WatchPlanCard({
             {(long ? t.pending.buyLevel : t.pending.sellLevel).replace('{price}', money(alertLevel))}
           </p>
           {watch ? <div key="verdict" className="mt-3"><WatchVerdict watch={watch} tone={watchTone(watch, now)} /></div> : null}
+          {footer}
         </CardContent>
       </Card>
     );
@@ -394,6 +402,7 @@ export function WatchPlanCard({
         {actionsFor ? (
           <WatchPlanActions analysisId={actionsFor} level={alertLevel} price={money(alertLevel)} base={base} />
         ) : null}
+        {footer}
       </CardContent>
     </Card>
   );

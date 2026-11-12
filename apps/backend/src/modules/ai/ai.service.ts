@@ -34,6 +34,7 @@ import {
   NormalizedPersistedAnalysis,
 } from '../../common/utils/analysis-payload';
 import { storedSignalState } from '../../common/utils/signal-decision';
+import { buildWatchEntry, sanitizeWatchEntry, type WatchEntry, type WatchEntryPlan } from './watch-entry';
 import {
   normalizeBias,
   normalizeConfidence,
@@ -151,6 +152,7 @@ export class AiService implements OnModuleInit {
   private outcomeColumnsReady = false;
   /** true quando a coluna da anotacao do trader existe (separada: se falhar, so as notas param). */
   private tradeNoteReady = false;
+  private watchEntryReady = false;
   /** true quando a coluna da origem da analise existe (se falhar, so a marcacao para). */
   private clientContextReady = false;
 
@@ -276,6 +278,17 @@ export class AiService implements OnModuleInit {
       this.tradeNoteReady = false;
       this.logger.warn(`[outcome] Coluna de anotacao indisponivel: ${err instanceof Error ? err.message : err}`);
     }
+    // "I entered" num WATCH (11/11/2026). Bloco proprio: se falhar, so esse
+    // registro fica indisponivel.
+    try {
+      await this.prisma.$executeRawUnsafe(
+        'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "watchEntry" JSONB',
+      );
+      this.watchEntryReady = true;
+    } catch (err) {
+      this.watchEntryReady = false;
+      this.logger.warn(`[outcome] Coluna da entrada no WATCH indisponivel: ${err instanceof Error ? err.message : err}`);
+    }
     // Origem da analise (extensao, 06/10/2026). Fora do schema.prisma de
     // proposito: o client nao conhece a coluna, entao create/update do worker
     // nunca dependem dela. Se falhar, a analise segue sem a marcacao.
@@ -366,16 +379,16 @@ export class AiService implements OnModuleInit {
     userId: string,
     /** Se vier, le so estas analises (a pagina da lista). Sem ele, todas. */
     ids?: string[],
-  ): Promise<Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean; tradeNote: TradeNote | null }>> {
-    const map = new Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean; tradeNote: TradeNote | null }>();
+  ): Promise<Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean; tradeNote: TradeNote | null; watchEntry: WatchEntry | null }>> {
+    const map = new Map<string, { outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean; tradeNote: TradeNote | null; watchEntry: WatchEntry | null }>();
     if (!this.outcomeColumnsReady) {
       return map;
     }
     // Sem a coluna da anotacao, a consulta segue sem ela (nunca derruba o resultado).
-    const noteColumn = this.tradeNoteReady ? Prisma.sql`, "tradeNote"` : Prisma.empty;
+    const noteColumn = Prisma.sql`${this.tradeNoteReady ? Prisma.sql`, "tradeNote"` : Prisma.empty}${this.watchEntryReady ? Prisma.sql`, "watchEntry"` : Prisma.empty}`;
     try {
       const rows = await this.prisma.$queryRaw<
-        Array<{ id: string; outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean | null; tradeNote?: unknown }>
+        Array<{ id: string; outcome: string | null; pnlPercent: number | null; pnlAmount: number | null; isFavorite: boolean | null; tradeNote?: unknown; watchEntry?: unknown }>
       >(ids
         ? ids.length === 0
           ? Prisma.sql`SELECT NULL::text AS "id" WHERE false`
@@ -391,6 +404,7 @@ export class AiService implements OnModuleInit {
           pnlAmount: r.pnlAmount ?? null,
           isFavorite: r.isFavorite === true,
           tradeNote: sanitizeTradeNote(r.tradeNote),
+          watchEntry: sanitizeWatchEntry(r.watchEntry),
         });
       }
     } catch (err) {
@@ -916,6 +930,8 @@ export class AiService implements OnModuleInit {
           pnlAmount: outcomeData?.pnlAmount ?? null,
           isFavorite: outcomeData?.isFavorite ?? false,
           tradeNote: outcomeData?.tradeNote ?? null,
+          // "I entered" num WATCH: o registro do trader (My Trades e Diario).
+          watchEntry: outcomeData?.watchEntry ?? null,
           // WATCH pendente: nivel, validade e o desfecho do rastreador. Nunca entra em acerto nem P&L.
           watch: watchSummaryOf(fullResponse, recommendation, analysis.createdAt, watchContexts.get(analysis.id)),
           fromWatch: watchOrigins.get(analysis.id) ?? null,
@@ -992,6 +1008,57 @@ export class AiService implements OnModuleInit {
     return { id, tradeNote };
   }
 
+  /** `userId` nulo so quando o dono ja foi conferido por quem chama (leitura da propria analise). */
+  private async readWatchEntry(userId: string | null, id: string): Promise<WatchEntry | null> {
+    if (!this.watchEntryReady) return null;
+    try {
+      const owner = userId ? Prisma.sql`AND "userId" = ${userId}` : Prisma.empty;
+      const rows = await this.prisma.$queryRaw<Array<{ watchEntry: unknown }>>`
+        SELECT "watchEntry" FROM "tickrify"."Analysis" WHERE "id" = ${id} ${owner} LIMIT 1
+      `;
+      return sanitizeWatchEntry(rows[0]?.watchEntry);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * "I entered" num WATCH: grava qual plano e o preco de entrada, e marca a
+   * operacao como aberta. Stop e alvo vem do plano gravado pelo motor, nunca
+   * da tela. `input` nulo desfaz (apaga a entrada, o resultado e o valor).
+   * Owner-checked e atras da trava do gratis. Fora de /accuracy e do sweeper.
+   */
+  async setWatchEntry(userId: string, id: string, input: { plan: WatchEntryPlan; entry: number } | null) {
+    if (await this.isFreeLocked(userId)) throw this.freeLockedError();
+    const analysis = await this.prisma.analysis.findFirst({
+      where: { id, userId, status: 'completed' },
+      select: { id: true, result: true, recommendation: true },
+    });
+    if (!analysis) throw new BadRequestException('Analysis not found');
+    if (!this.watchEntryReady || !this.outcomeColumnsReady) {
+      throw new ServiceUnavailableException('Logging this trade is temporarily unavailable. Try again in a moment.');
+    }
+    if (!input) {
+      await this.prisma.$executeRaw`
+        UPDATE "tickrify"."Analysis"
+        SET "watchEntry" = NULL, "userVerdict" = NULL, "pnlPercent" = NULL, "pnlAmount" = NULL, "closedAt" = NULL
+        WHERE "id" = ${id} AND "userId" = ${userId} AND "watchEntry" IS NOT NULL
+      `;
+      void trackUserActivity(this.prisma, userId, 'watch_entry_removed', { analysisId: id });
+      return { id, watchEntry: null };
+    }
+    const built = buildWatchEntry(analysis.result, analysis.recommendation, input);
+    if (typeof built === 'string') throw new BadRequestException({ code: built });
+    // Resultado ja marcado (a pessoa so corrigiu o preco) fica como esta.
+    await this.prisma.$executeRaw`
+      UPDATE "tickrify"."Analysis"
+      SET "watchEntry" = ${JSON.stringify(built)}::jsonb, "userVerdict" = COALESCE("userVerdict", 'open')
+      WHERE "id" = ${id} AND "userId" = ${userId}
+    `;
+    void trackUserActivity(this.prisma, userId, 'watch_entry_logged', { analysisId: id, plan: built.plan, direction: built.direction });
+    return { id, watchEntry: built };
+  }
+
   /**
    * Registra o resultado de uma análise (TP1/TP2/Stop/BE/aberto + P&L manual).
    * Owner-checked. Usa SQL isolado e tolera a ausência das colunas (sem derrubar nada).
@@ -1012,7 +1079,8 @@ export class AiService implements OnModuleInit {
     }
 
     const state = storedSignalState(analysis.result, analysis.recommendation);
-    if ((state === 'WATCH' || state === 'NO_TRADE') && input.outcome) {
+    // WATCH so aceita resultado quando o trader registrou que entrou nele.
+    if ((state === 'WATCH' || state === 'NO_TRADE') && input.outcome && !(state === 'WATCH' && (await this.readWatchEntry(userId, id)))) {
       throw new BadRequestException({ code: 'not_a_trade' });
     }
 
@@ -1963,6 +2031,7 @@ export class AiService implements OnModuleInit {
       errorDetails: validationMessages(storedPayload?.displayMessages),
       errorCode: analysisFailureCodeForResponse(analysis.status, analysis.errorCode),
       watch: watchContexts ? watchSummaryOf(normalized.fullResponse, normalized.recommendation, analysis.createdAt, watchContexts.get(analysis.id)) : null,
+      watchEntry: watchContexts ? await this.readWatchEntry(null, analysis.id) : null,
       createdAt: analysis.createdAt,
       updatedAt: analysis.updatedAt,
     };

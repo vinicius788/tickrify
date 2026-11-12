@@ -27,6 +27,31 @@ export type Verdict = 'TP1' | 'TP2' | 'SL' | 'OPEN' | 'NO_FILL' | null;
  * Stop nem valor a marcar, e nao pode aparecer como "pendente" esperando um
  * resultado que nunca vai existir. Continua contando como ANALISE feita.
  */
+/**
+ * WATCH em que o trader registrou "I entered" (11/11/2026) vira operacao DELE
+ * no My Trades e no Diario: direcao, entrada, stop, alvo e R do registro. So
+ * essas duas telas usam; em todo o resto a leitura continua WATCH.
+ */
+export function asLoggedTrade<T extends { recommendation?: unknown; signalState?: unknown; watchEntry?: { direction: 'long' | 'short'; entry: number; stopLoss: number; takeProfit1: number; rr: number } | null }>(a: T): T {
+  const e = a.watchEntry;
+  if (!e || a.signalState !== 'WATCH') return a;
+  return {
+    ...a,
+    recommendation: e.direction === 'long' ? 'BUY' : 'SELL',
+    signalState: 'ENTER_NOW',
+    entry: e.entry,
+    stopLoss: e.stopLoss,
+    takeProfit1: e.takeProfit1,
+    takeProfit2: null,
+    riskReward: e.rr,
+    riskRewardRatio: e.rr,
+    riskRewardTp1: e.rr,
+    riskRewardTp2: null,
+    // Os niveis do registro valem; os do resultado completo sao os da leitura.
+    fullResponse: undefined,
+  };
+}
+
 export function isTradeCall(recommendation: unknown, signalState?: unknown): boolean {
   if (signalState === 'WATCH' || signalState === 'NO_TRADE') return false;
   return getRecommendationMeta(recommendation).tone !== 'hold';

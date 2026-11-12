@@ -22,7 +22,7 @@ import { useAPIClient, type AIAnalysisResponse } from '@/lib/api';
 import { LOCALES } from '@/lib/i18n';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { entrySide, getRecommendationMeta, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
-import { VERDICT_CFG, isTradeCall, verdictFromOutcome, type Verdict } from '@/lib/verdict';
+import { VERDICT_CFG, asLoggedTrade, isTradeCall, verdictFromOutcome, type Verdict } from '@/lib/verdict';
 import { buildMonthGrid, computeAiComparison, computeMonthStats, type AiComparison, dayKey, monthRange, summarizeByDay, weekStartFor, type GroupRow, type MonthStats } from '@/lib/journal';
 import { WatchingLink } from './WatchingPage';
 
@@ -262,7 +262,7 @@ const JournalCalendar = ({ onStartAnalysis }: JournalCalendarProps) => {
   });
 
   // So operacoes (10/11/2026): WATCH e NO_TRADE moram na aba Watching.
-  const items = useMemo(() => (query.data?.items ?? []).filter((a) => isTradeCall(a.recommendation, a.signalState)), [query.data]);
+  const items = useMemo(() => (query.data?.items ?? []).map(asLoggedTrade).filter((a) => isTradeCall(a.recommendation, a.signalState)), [query.data]);
   // O Diario so le: o resultado e o do servidor (lib/verdict.ts).
   const verdictOf = (a: AIAnalysisResponse): Verdict => sideOf(a) ? verdictFromOutcome(a.outcome) : null;
   const pnlOf = (a: AIAnalysisResponse): number | null => {

@@ -32,7 +32,9 @@ export async function trackUserActivity(
     | 'trade_marked_pending'
     | 'trade_marked_open'
     | 'trade_management_requested'
-    | 'trade_closed',
+    | 'trade_closed'
+    | 'watch_entry_logged'
+    | 'watch_entry_removed',
   properties: Record<string, unknown>,
   options: CaptureOptions = {},
 ): Promise<void> {

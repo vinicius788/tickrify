@@ -205,6 +205,8 @@ export interface AIAnalysisResponse {
   tradeNote?: TradeNote | null;
   /** WATCH nas listas: nivel, validade e o desfecho do rastreador; null fora do WATCH. */
   watch?: WatchSummary | null;
+  /** "I entered" num WATCH: a operacao que o trader registrou a partir desta leitura. */
+  watchEntry?: WatchEntry | null;
   /** A analise anterior do mesmo setup era um WATCH: "From a watch on <data>" no My Trades. */
   fromWatch?: { analysisId: string; createdAt: string } | null;
   /** Valor da operacao informado pelo trader no My Trades (moeda da conta dele). */
@@ -337,6 +339,17 @@ export interface WatchLevels {
  * validade; unavailable = o rastreador nao teve velas do ativo.
  */
 export type WatchOutcome = 'pending' | 'reached' | 'expired' | 'invalidated' | 'unavailable';
+
+/** Operacao que o trader registrou a partir de um WATCH (plano no nivel ou a mercado). */
+export interface WatchEntry {
+  plan: 'level' | 'market';
+  direction: 'long' | 'short';
+  entry: number;
+  stopLoss: number;
+  takeProfit1: number;
+  rr: number;
+  at: string;
+}
 
 export interface WatchSummary {
   direction: 'long' | 'short';
@@ -1019,6 +1032,30 @@ class APIClient {
     return response.json();
   }
 
+  /** "I entered" num WATCH: `body` nulo desfaz o registro. */
+  async setWatchEntry(
+    analysisId: string,
+    body: { plan: WatchEntry['plan']; entry: number } | null,
+    token: string | null,
+    getFreshToken?: FreshTokenGetter,
+  ): Promise<{ id: string; watchEntry: WatchEntry | null }> {
+    const response = await this.request(
+      `/api/ai/analysis/${analysisId}/watch-entry`,
+      {
+        method: body ? 'PUT' : 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...this.getAuthHeader(token) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      },
+      'Failed to log trade',
+      APIClient.REQUEST_TIMEOUT_MS,
+      getFreshToken,
+    );
+    if (!response.ok) {
+      throw await this.buildApiError(response, 'Failed to log trade');
+    }
+    return response.json();
+  }
+
   async setOutcome(
     analysisId: string,
     payload: { outcome: string | null; pnlPercent?: number | null; pnlAmount?: number | null },
@@ -1269,6 +1306,16 @@ export function useAPIClient() {
     return apiClient.setOutcome(analysisId, payload, token, getFreshToken);
   }, [getFreshToken, getInitialToken]);
 
+  const setWatchEntry = useCallback(async (analysisId: string, body: { plan: WatchEntry['plan']; entry: number }) => {
+    const token = await getInitialToken();
+    return apiClient.setWatchEntry(analysisId, body, token, getFreshToken);
+  }, [getFreshToken, getInitialToken]);
+
+  const clearWatchEntry = useCallback(async (analysisId: string) => {
+    const token = await getInitialToken();
+    return apiClient.setWatchEntry(analysisId, null, token, getFreshToken);
+  }, [getFreshToken, getInitialToken]);
+
   const setFavorite = useCallback(async (analysisId: string, isFavorite: boolean) => {
     const token = await getInitialToken();
     return apiClient.setFavorite(analysisId, isFavorite, token, getFreshToken);
@@ -1337,6 +1384,8 @@ export function useAPIClient() {
     setAcquisitionSource,
     setTechnicalAttribution,
     setOutcome,
+    setWatchEntry,
+    clearWatchEntry,
     setFavorite,
     setTradeNote,
     getStrategy,

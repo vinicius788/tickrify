@@ -933,6 +933,14 @@ Vale para TODA mudanca, grande ou pequena:
 - **Frases da dor = claims:** "Watch e o nivel para esperar" (atrasado vira WATCH), "stop atras de um swing real, com velas ao vivo" (so com velas reais), "alertas ligados" so quando o servidor confirmou ao menos um. Mudou o motor, conferir as frases nos 6 idiomas (`t.quiz`).
 - **PostHog (navegador):** `onboarding_quiz_viewed`, `onboarding_quiz_answered { step, ... }`, `onboarding_quiz_completed { assets, other, timeframe, pain, alerts_on }`, `onboarding_quiz_skipped { step }`, `onboarding_quiz_cta_clicked { pain }`.
 
+### 3.21 "I entered" no WATCH (11/11/2026)
+
+- **Por que:** o motor quase so da WATCH desde 03/11 e o Diario e o My Trades so contam operacao, entao ficavam vazios (pedido do dono, demo aprovada em 11/11, `_local/entrei-watch/demo.html`).
+- **O que e:** botao "I entered this plan" em cada plano do WATCH (no nivel, `watchLevels`; a mercado, `marketLevels`, so com a chave dos dois planos). A pessoa confirma o preco de entrada; stop e alvo sao os do plano gravado pelo motor (o servidor rele do resultado; a tela so manda `{ plan, entry }`). Grava `Analysis.watchEntry` (JSONB por SQL: boot do `AiService` com flag propria + migracao `20261111140000`, fora do schema.prisma) e `userVerdict = open`. Preco fora do intervalo stop/alvo, WATCH sem geometria gravada ou fora do WATCH: recusado (`watch-entry.ts`).
+- **Onde aparece:** My Trades e Diario tratam o WATCH com registro como operacao do trader (`asLoggedTrade` em `lib/verdict.ts`: direcao, entrada, stop, alvo e R do registro), com a marca "From a Watch plan". `setOutcome` aceita resultado em WATCH so com registro. Em todo o resto a leitura continua WATCH: rastreador, sweeper, /accuracy, Automatic market review e Watching nao mudam.
+- **Rotas:** `PUT/DELETE /api/ai/analysis/:id/watch-entry` (AuthGuard, trava do gratis). Desfazer apaga entrada, resultado e valor.
+- **PostHog:** servidor `watch_entry_logged { plan, direction }`, `watch_entry_removed`; navegador `watch_entry_clicked`, `watch_entry_logged`, `watch_entry_removed`.
+
 ## 4. Regras tecnicas que nasceram de bug real (nao desfazer)
 
 ### 4.0 Regras de 05/10/2026
@@ -1146,6 +1154,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 11/11 | **"I entered" no WATCH (3.21) no PR, sem merge.** Depois do deploy: boot sem `[outcome] Coluna da entrada no WATCH indisponivel`; registrar uma entrada num WATCH real e conferir My Trades e Diario. Medir em 14 dias: `watch_entry_logged` por WATCH concluido e quantos registros ganham resultado. | dono / Claude |
 | 11/11 | **Quiz de conta nova (3.20) no PR, sem merge (empilhado no PR do alerta do My assets).** Depois do deploy: ver o quiz com uma conta nova de verdade (nao foi visto no navegador). Medir em 14 dias: `onboarding_quiz_completed` / `onboarding_quiz_viewed`, e o retorno no dia 2 do trial de quem completou x quem pulou (meta: de 21% para 35%). | dono / Claude |
 | 11/11 | **Alerta do My assets (3.17) no PR, sem merge.** Texto novo de e-mail e Telegram vai ao ar no merge (as chaves `EMAIL_SETUP_ALERTS` e `TELEGRAM_SETUP_ALERTS` estao ligadas): o merge e a aprovacao do texto. Depois do deploy: (1) boot `[alerts] Alerta do My assets pronto.`; (2) ligar o alerta de BTC no cartao e conferir disparo, Telegram e o link com o ativo marcado; (3) em 14 dias, `watch_asset_alert_toggled on=true` por pessoa e `setup_alert_triggered` com `setupId` nulo. | dono / Claude |
 | 11/11 | **Dois planos no WATCH (3.19) prontos e DESLIGADOS.** Dono decide ligar `ENGINE_MARKET_PLAN_ON_WATCH` no /admin. Depois de ligar: conferir uma analise WATCH com velas reais mostrando o cartao "Or enter at the current price"; em 30 dias, medir offline o R dessas entradas a mercado (WIN/LOSS pelo `trackPlan` sobre `result.marketLevels`) contra o plano no nivel. | dono / Claude |

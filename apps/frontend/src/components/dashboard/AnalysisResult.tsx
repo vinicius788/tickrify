@@ -26,6 +26,7 @@ import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
 import { MarketPlanCard, WatchPlanCard, isWatchLevels, isWatchPlan, watchWindowOpen } from './WatchPlanCard';
+import { WatchEntryLog } from './WatchEntryLog';
 import { ReadModePanel, WherePriceIs, type ReadModeData } from './ReadModePanel';
 import { LevelMapCard, WatchVerdict } from './PendingLevels';
 import { AnalysisShareButton } from './ShareCard';
@@ -34,7 +35,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import type { AIAnalysisResponse, WatchLevels } from '@/lib/api';
+import type { AIAnalysisResponse, WatchEntry, WatchLevels } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import {
   calcStopPercent,
@@ -525,6 +526,11 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     NY: t.analysis.sessions.newYork,
   };
   const [showInvalidation, setShowInvalidation] = useState(false);
+  // Entrada registrada pelo trader neste WATCH; segue a analise aberta na tela.
+  const [watchEntry, setWatchEntry] = useState<WatchEntry | null>(analysisData?.watchEntry ?? null);
+  useEffect(() => {
+    setWatchEntry(analysisData?.watchEntry ?? null);
+  }, [analysisData?.id, analysisData?.watchEntry]);
 
   // ⚠️ ESTES DOIS HOOKS PRECISAM FICAR ACIMA DO `return` DE BAIXO.
   //
@@ -1087,6 +1093,8 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   const pendingTarget = watchPlan?.target1 ?? takeProfit1;
 
   const isDemo = Boolean(analysisData.isDemo);
+  // "I entered" num WATCH: so na analise real da propria conta (nunca exemplo ou demo).
+  const entryLogFor = !sample && !isDemo && analysisData.id ? analysisData.id : null;
   const clarity = t.productClarity;
   // Presentation only: reuse stored evidence, never infer a new signal or level.
   // Preview the first stored paragraph; the complete reading stays in the technical panel.
@@ -1327,10 +1335,20 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             base={base}
             closed={watchClosed}
             now={now}
+            footer={entryLogFor && isWatchLevels(watchLevels) && (!watchEntry || watchEntry.plan === 'level') ? (
+              <WatchEntryLog analysisId={entryLogFor} plan="level" levels={watchLevels} entry={watchEntry} onChange={setWatchEntry} formatPrice={formatPrice} base={base} closed={watchClosed} />
+            ) : null}
           />
           {/* O plano a mercado ao lado do plano no nivel; some com a janela encerrada. */}
-          {!watchClosed && isWatchLevels(fullResponse.marketLevels) ? (
-            <MarketPlanCard direction={watchPlan.direction} levels={fullResponse.marketLevels} formatPrice={formatPrice} />
+          {(!watchClosed || watchEntry?.plan === 'market') && isWatchLevels(fullResponse.marketLevels) ? (
+            <MarketPlanCard
+              direction={watchPlan.direction}
+              levels={fullResponse.marketLevels}
+              formatPrice={formatPrice}
+              footer={entryLogFor && (!watchEntry || watchEntry.plan === 'market') ? (
+                <WatchEntryLog analysisId={entryLogFor} plan="market" levels={fullResponse.marketLevels} entry={watchEntry} onChange={setWatchEntry} formatPrice={formatPrice} base={base} closed={watchClosed} />
+              ) : null}
+            />
           ) : null}
           {!watchClosed && <Card data-testid="watch-why-changes" className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '50ms' }}>
             <CardContent className="grid gap-5 p-5 md:grid-cols-2 md:gap-8 md:p-6">

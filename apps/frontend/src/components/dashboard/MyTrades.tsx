@@ -23,6 +23,7 @@ import {
   VERDICT_CFG,
   outcomeFromVerdict,
   isTradeCall,
+  asLoggedTrade,
   resolveVerdict,
   withoutPending,
   type Verdict,
@@ -281,7 +282,7 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
   };
 
   // So operacoes (10/11/2026): WATCH e NO_TRADE moram na aba Watching, nunca entre os trades.
-  const rows = (isDemo ? DEMO : analyses).filter((a) => a.status === 'completed' && isTradeCall(a.recommendation, stateOf(a)));
+  const rows = (isDemo ? DEMO : analyses.map(asLoggedTrade)).filter((a) => a.status === 'completed' && isTradeCall(a.recommendation, stateOf(a)));
 
   // Verdict efetivo — mesma função usada pelo Dashboard (lib/verdict.ts).
   const getVerdict = (a: AIAnalysisResponse): Verdict => isTradeCall(a.recommendation, stateOf(a)) ? resolveVerdict(a, verdicts) : null;
@@ -620,6 +621,16 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                         <span className="tabular-nums text-[10px] text-[var(--text-secondary)] opacity-60">
                           {new Date(a.createdAt).toLocaleString(dateLocale, { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}
                         </span>
+                        {a.watchEntry ? (
+                          <Link
+                            key="watch-entry"
+                            data-testid="from-watch-plan"
+                            to={`/dashboard/analysis/${encodeURIComponent(a.id)}`}
+                            className="rounded-full bg-[var(--fill-3)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+                          >
+                            {tr.fromWatchPlan}
+                          </Link>
+                        ) : null}
                         {a.fromWatch ? (
                           <Link
                             key="from-watch"
