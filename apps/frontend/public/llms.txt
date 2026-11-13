@@ -15,10 +15,10 @@ Last updated: 2026-11-04. Canonical location: [https://tickrify.com/llms.txt](ht
 - Reads chart screenshots from any platform (TradingView, MetaTrader, broker
   terminals, mobile apps). The image is the input; no account connection and no
   broker integration is involved.
-- Returns a structured analysis: market structure (BOS/CHoCH), entry, stop,
-  take-profit levels, risk-to-reward per target, confluence factors, risk factors and
-  an executive summary.
-- Says when there is nothing to do. Many reads come back as Watch (a level to
+- Returns a structured analysis: market structure (BOS/CHoCH), confluence
+  factors, risk factors and an executive summary, plus entry, stop, target and
+  risk-to-reward when the read is Enter now.
+- Says when there is nothing to do. Most reads come back as Watch (a level to
   wait for, not an order) or No trade. Both are designed outcomes, not a
   failure to answer.
 - Grounds the read in live candle data where that data exists (see coverage
