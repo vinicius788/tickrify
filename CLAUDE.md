@@ -164,8 +164,10 @@ Vale para TODA mudanca, grande ou pequena:
   assinante e NO MAXIMO 200: no inicio de cada janela mensal volta a ser
   exatamente 200 (nao acumula). Quick = 1 tick, deep = 3. Free = 3 analises
   quick (deep so para assinante). Na UI se fala em "analyses"; "ticks" e so
-  unidade de cobranca. Checkout sempre em USD (Adaptive Pricing da Stripe
-  converte).
+  unidade de cobranca. Checkout sempre em USD. **O Adaptive Pricing NAO
+  converte** (lido no Sigma em 13/11/2026: 0 de ~100 sessoes com
+  `is_adaptive_pricing_active`, embora ligado no painel): a conta e BR e
+  liquida em BRL, e ele exige preco numa moeda de liquidacao da conta.
 - **Semanal (28/09):** o mesmo plano por US$ 7,99/semana, saldo volta a 25
   ticks a cada 7 dias (`WEEKLY_PRICE_ID` e `WEEKLY_TICKS` em
   `config/stripe.config.ts`; price `price_1UKeWPB1hl0IoocUjsQNv9BG`). Sem
@@ -400,6 +402,15 @@ Vale para TODA mudanca, grande ou pequena:
 
 ### 3.3 Pagamentos (Stripe)
 
+- **Checkout por dentro (Sigma, 13/11/2026):** de 76 sessoes desde 01/09, 75
+  abriram a pagina da Stripe e 4 pagaram; expirar e abandono (24h), nao bug.
+  Formas de pagamento ligadas: cartao, Apple Pay, Google Pay e Link; Pix e
+  Boleto desligados (Pix exige preco em BRL + Pix Automatico). Recusas desde
+  ago: 11 de 15 por falta de saldo, 5 cartoes pre-pagos. Consulta util: tabela
+  `checkout_session_interactions` no Sigma (pais, aparelho, abriu, confirmou,
+  pagou, `is_adaptive_pricing_active`). Marca do Checkout ja usa as cores do
+  site (cor da marca `#f7f7f5`, destaque `#08090a`, "Usar cores da marca") e o
+  logo oficial.
 - **Moeda fixa `usd` no servidor** (controller ignora o body). E fronteira de
   seguranca, nao preferencia: nao reverter. Price IDs BRL/EUR e planos
   `pro`/`elite` ficam no `stripe.config.ts` so como legado.
@@ -1243,6 +1254,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 
+- **13/11 (checkout, confianca):** FAQ de pagamento lista cartao, Apple Pay, Google Pay e Link, cobranca em USD e o que fazer com cartao recusado; "Is there a refund guarantee?" virou "Can I get a refund?" com a politica real (periodo iniciado nao reembolsa, trial antes, Tick de analise que falha volta sozinho); Termos (secao 15) trocam "three analyses are free" pelo trial de 3 dias; 6 idiomas; comentario errado sobre Adaptive Pricing e Pix no `stripe.service.ts` corrigido.
 - **12/11 (paginas estaticas e PostHog):** 14 paginas de blog, /for e /tools e o llms.txt deixam de prometer entry/stop/targets (ou BUY/SELL/WAIT, dois alvos, niveis desenhados no grafico) em toda leitura: falam Enter now / Watch / No trade; dateModified e sitemap em 2026-11-12. PostHog: filtro de usuarios internos por e-mail (contas do dono e `tickrify+*`) ligado por padrao; insights "Alerta de trafego" e 4 alertas (visitantes -30% na semana, ChatGPT -40%, cadastros -30%, menos de 10 visitantes no dia), aviso por e-mail ao dono. Ligadas no /admin em 12/11: `CHAT_EMAIL_NOTIFY`, `EMAIL_TRIAL_SEQUENCE`, `EMAIL_PAYMENT_FAILED` (texto conferido contra o acesso: past_due perde o plano).
 - **12/11 (conversao, ganhos rapidos, branch `claude/quick-wins`):** diagnostico do funil (0 assinante novo desde 06/10, 0 de 125 trials convertidos, 1 assinatura real ativa; `EMAIL_TRIAL_SEQUENCE` desligada, nenhum e-mail `trial_*` enviado). Textos que prometiam entry/stop/targets em toda leitura (FAQ, /try, og:image:alt, paywall, contador do trial, boas-vindas, 1o e-mail do trial) passam a falar Enter now / Watch / No trade nos 6 idiomas; FAQ deixa de citar o R/R guard de 1,2:1 (saiu no v11); paywall fala em analises rapidas, nao Ticks.
 - **12/11 (oferta gratis padronizada):** vitrine, /try, /pricing, metas, sign-up, llms.txt e regras do painel dizem a MESMA coisa nos 6 idiomas: "3-day free trial · 7 analyses · no card" (regra 3/2/2 dentro de 7 dias onde cabe detalhe) e o bonus de opiniao (+3 analises, uma vez) no FAQ do /try, nas regras do painel e no llms.txt. Saiu "Eligible accounts: up to 7" e "usage days". Chaves lidas no banco em 12/11: `TRIAL_MODE` true (13/10), `EMAIL_TRIAL_SEQUENCE` false (05/11, nenhum e-mail `trial_*` ja saiu), `TELEGRAM_SETUP_ALERTS`, `EMAIL_SETUP_ALERTS`, `EMAIL_ACTIVATION_NUDGE`, `EMAIL_CHECKOUT_RECOVERY`, `EMAIL_CHECKOUT_WINBACK` true; o resto no padrao (desligado). Bonus de opiniao no ar (rota 401 sem login, cartao no pacote), 0 creditos ate 12/11 17h UTC. 12 de 12 cadastros dos ultimos 7 dias com trial.

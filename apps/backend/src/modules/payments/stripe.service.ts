@@ -542,11 +542,12 @@ export class StripeService implements OnModuleInit {
       const baseParams: Stripe.Checkout.SessionCreateParams = {
         customer: customerId,
         mode: 'subscription',
-        // NÃO fixar payment_method_types: ao omitir, a Stripe usa os métodos
-        // automáticos configurados no painel (por país) e habilita o Adaptive
-        // Pricing — cada cliente vê o preço e paga na MOEDA LOCAL dele (150+
-        // países), além de liberar métodos locais (Pix no BR, etc.). Fixar
-        // ['card'] travava tudo em cartão e atrapalhava a conversão de moeda.
+        // NAO fixar payment_method_types: ao omitir, a Stripe usa os metodos
+        // ligados no painel (hoje cartao, Apple Pay, Google Pay e Link).
+        // Moeda local NAO acontece (lido no Sigma em 13/11/2026: 0 de ~100
+        // sessoes com Adaptive Pricing ativo): a conta e BR e liquida em BRL,
+        // e o Adaptive Pricing exige preco numa moeda de liquidacao da conta.
+        // Pix exige preco em BRL e opcoes de mandato (Pix Automatico).
         line_items: [
           {
             price: priceId,

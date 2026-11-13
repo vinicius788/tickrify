@@ -196,15 +196,15 @@ export default {
       },
       {
         q: "Quais métodos de pagamento são aceitos?",
-        a: "Aceitamos todos os principais cartões de crédito (Visa, Mastercard, Amex) através do nosso processador de pagamentos seguro Stripe."
+        a: "Cartões (Visa, Mastercard, American Express), Apple Pay, Google Pay e Link, processados pela Stripe. A cobrança é em dólares americanos: se o seu cartão usa outra moeda, o banco converte e pode cobrar uma taxa. Alguns bancos recusam pagamentos internacionais online em cartão de débito ou pré-pago; se o seu for recusado, peça ao banco para liberar ou use outro cartão."
       },
       {
         q: "Os dados do meu cartão estão seguros?",
         a: "Sim! Utilizamos o Stripe, um dos processadores de pagamento mais seguros do mundo. Não armazenamos dados do seu cartão em nossos servidores."
       },
       {
-        q: "Há garantia de reembolso?",
-        a: "Você pode testar uma demo por dispositivo, sem conta. Conta nova ganha um teste grátis de 3 dias: 3 análises no primeiro dia de uso e 2 em cada um dos dois seguintes, dentro de 7 dias, sem cartão nem cobrança automática. Mande uma opinião uma vez no painel e ganhe mais 3 análises.",
+        q: "Posso pedir reembolso?",
+        a: "Um período de cobrança que já começou não é reembolsado, então você pode testar tudo antes. Você pode testar uma demo por dispositivo, sem conta. Conta nova ganha um teste grátis de 3 dias: 3 análises no primeiro dia de uso e 2 em cada um dos dois seguintes, dentro de 7 dias, sem cartão nem cobrança automática. Mande uma opinião uma vez no painel e ganhe mais 3 análises. Se cancelar, não é cobrado de novo e mantém o acesso até o fim do período pago. Se uma análise falhar, o Tick volta sozinho; se algo mais deu errado numa análise paga, escreva para support@tickrify.com.",
       }
     ]
   },

@@ -196,15 +196,15 @@ export default {
       },
       {
         q: "Which payment methods are accepted?",
-        a: "We accept all major credit cards (Visa, Mastercard, Amex) through our secure payment processor, Stripe."
+        a: "Cards (Visa, Mastercard, American Express), Apple Pay, Google Pay and Link, processed by Stripe. Prices are charged in US dollars: if your card uses another currency, your bank converts it and may add a fee. Some banks decline international online payments on debit or prepaid cards; if yours is declined, ask your bank to allow it or try another card."
       },
       {
         q: "Is my card data safe?",
         a: "Yes. We use Stripe, one of the most secure payment processors in the world. We never store your card data on our servers."
       },
       {
-        q: "Is there a refund guarantee?",
-        a: "You can try one demo per device, no account needed. A new account gets a 3-day free trial: 3 analyses on your first day of use and 2 on each of the next two, within 7 days, with no card and no automatic charge. Share feedback once in the dashboard and get 3 more analyses.",
+        q: "Can I get a refund?",
+        a: "A billing period that has already started is not refunded, so you can try everything first. You can try one demo per device, no account needed. A new account gets a 3-day free trial: 3 analyses on your first day of use and 2 on each of the next two, within 7 days, with no card and no automatic charge. Share feedback once in the dashboard and get 3 more analyses. If you cancel, you are not charged again and keep access until the end of the period you paid for. If an analysis fails, its Tick comes back automatically; if something else went wrong with a paid analysis, write to support@tickrify.com.",
       }
     ]
   },

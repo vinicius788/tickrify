@@ -196,15 +196,15 @@ export default {
       },
       {
         q: "Welche Zahlungsmethoden werden akzeptiert?",
-        a: "Wir akzeptieren alle gängigen Kreditkarten (Visa, Mastercard, Amex) über unseren sicheren Zahlungsdienstleister Stripe."
+        a: "Karten (Visa, Mastercard, American Express), Apple Pay, Google Pay und Link, abgewickelt über Stripe. Abgerechnet wird in US-Dollar: Läuft deine Karte in einer anderen Währung, rechnet deine Bank um und kann eine Gebühr verlangen. Manche Banken lehnen internationale Onlinezahlungen mit Debit- oder Prepaid-Karten ab; wird deine abgelehnt, bitte deine Bank um Freigabe oder nutze eine andere Karte."
       },
       {
         q: "Sind meine Kartendaten sicher?",
         a: "Ja. Wir nutzen Stripe, einen der sichersten Zahlungsdienstleister der Welt. Wir speichern deine Kartendaten niemals auf unseren Servern."
       },
       {
-        q: "Gibt es eine Rückerstattungsgarantie?",
-        a: "Du kannst eine Demo pro Gerät testen, ohne Konto. Ein neues Konto bekommt einen 3-tägigen Gratistest: 3 Analysen am ersten Nutzungstag und je 2 an den beiden folgenden, innerhalb von 7 Tagen, ohne Karte oder automatische Abbuchung. Gib einmal im Dashboard Feedback und erhalte 3 weitere Analysen.",
+        q: "Kann ich eine Rückerstattung bekommen?",
+        a: "Ein bereits begonnener Abrechnungszeitraum wird nicht erstattet, deshalb kannst du vorher alles testen. Du kannst eine Demo pro Gerät testen, ohne Konto. Ein neues Konto bekommt einen 3-tägigen Gratistest: 3 Analysen am ersten Nutzungstag und je 2 an den beiden folgenden, innerhalb von 7 Tagen, ohne Karte oder automatische Abbuchung. Gib einmal im Dashboard Feedback und erhalte 3 weitere Analysen. Wenn du kündigst, wirst du nicht erneut belastet und behältst den Zugang bis zum Ende des bezahlten Zeitraums. Schlägt eine Analyse fehl, kommt ihr Tick automatisch zurück; ist bei einer bezahlten Analyse etwas anderes schiefgelaufen, schreib an support@tickrify.com.",
       }
     ]
   },
