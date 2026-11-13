@@ -14,7 +14,7 @@ import { seoFor, useSeo } from '@/hooks/useSeo';
  * a cláusula. Nada foi acrescentado nem retirado: mudar o que os Termos dizem é
  * decisão do dono do produto, não de quem redesenha o site.
  */
-const LAST_UPDATED = 'November 3, 2026';
+const LAST_UPDATED = 'November 13, 2026';
 
 const SECTIONS: LegalSection[] = [
   {
@@ -202,9 +202,10 @@ const SECTIONS: LegalSection[] = [
           to a refund, chargeback or credit for a period already started.
         </p>
         <p>
-          You are never asked to pay blind: three analyses are free before any charge, and{' '}
-          <Link to="/try">one analysis runs without an account at all</Link>. If something goes wrong with an
-          analysis you paid for, write to us and we will look at it.
+          You are never asked to pay blind: a new account gets a 3-day free trial with 7 analyses and no card, and{' '}
+          <Link to="/try">one analysis runs without an account at all</Link>. If an analysis fails, its Tick comes
+          back automatically. If something else goes wrong with an analysis you paid for, write to
+          support@tickrify.com and we will look at it.
         </p>
       </>
     ),

@@ -196,15 +196,15 @@ export default {
       },
       {
         q: "Quels moyens de paiement sont acceptés ?",
-        a: "Nous acceptons les principales cartes de crédit (Visa, Mastercard, Amex) via notre prestataire de paiement sécurisé, Stripe."
+        a: "Cartes (Visa, Mastercard, American Express), Apple Pay, Google Pay et Link, traités par Stripe. Le prélèvement se fait en dollars américains : si votre carte utilise une autre devise, votre banque la convertit et peut ajouter des frais. Certaines banques refusent les paiements internationaux en ligne par carte de débit ou prépayée ; si la vôtre est refusée, demandez à votre banque de l’autoriser ou utilisez une autre carte."
       },
       {
         q: "Les données de ma carte sont-elles en sécurité ?",
         a: "Oui. Nous utilisons Stripe, l’un des prestataires de paiement les plus sûrs au monde. Nous ne stockons jamais les données de votre carte sur nos serveurs."
       },
       {
-        q: "Existe-t-il une garantie de remboursement ?",
-        a: "Vous pouvez essayer une démo par appareil, sans compte. Un nouveau compte reçoit un essai gratuit de 3 jours : 3 analyses le premier jour d’utilisation et 2 chacun des deux jours suivants, dans les 7 jours, sans carte ni prélèvement automatique. Donnez votre avis une fois dans le tableau de bord et recevez 3 analyses de plus.",
+        q: "Puis-je être remboursé ?",
+        a: "Une période de facturation déjà commencée n’est pas remboursée, vous pouvez donc tout essayer avant. Vous pouvez essayer une démo par appareil, sans compte. Un nouveau compte reçoit un essai gratuit de 3 jours : 3 analyses le premier jour d’utilisation et 2 chacun des deux jours suivants, dans les 7 jours, sans carte ni prélèvement automatique. Donnez votre avis une fois dans le tableau de bord et recevez 3 analyses de plus. Si vous résiliez, vous n’êtes plus prélevé et gardez l’accès jusqu’à la fin de la période payée. Si une analyse échoue, son Tick revient automatiquement ; si autre chose s’est mal passé sur une analyse payée, écrivez à support@tickrify.com.",
       }
     ]
   },
