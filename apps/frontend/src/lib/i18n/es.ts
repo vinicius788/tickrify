@@ -700,7 +700,7 @@ export default {
       levelsEstimated: 'Niveles estimados a partir de la captura',
       entryWarningLocation: 'Atención: la entrada no está en el borde del rango.',
       entryWarningRoom: 'Atención: hay un nivel que ya giró el precio entre la entrada y el objetivo 1.',
-      entryWarningLate: 'Atención: el movimiento ya está extendido. Entrar aquí es entrar tarde.',
+      entryWarningLate: 'Atención: el movimiento ya está extendido, así que esta entrada es más tardía de lo ideal.',
       pending: {
         title: 'Orden pendiente',
         limitAt: 'Orden límite en {price}',

@@ -700,7 +700,7 @@ export default {
       levelsEstimated: 'Niveaus aus dem Screenshot geschätzt',
       entryWarningLocation: 'Achtung: Der Einstieg liegt nicht am Rand der Range.',
       entryWarningRoom: 'Achtung: Zwischen Einstieg und Ziel 1 liegt ein Niveau, das den Preis schon gedreht hat.',
-      entryWarningLate: 'Achtung: Die Bewegung ist bereits weit gelaufen. Ein Einstieg hier ist ein später Einstieg.',
+      entryWarningLate: 'Achtung: Die Bewegung ist bereits weit gelaufen, dieser Einstieg ist daher später als ideal.',
       pending: {
         title: 'Ausstehende Order',
         limitAt: 'Limit-Order bei {price}',

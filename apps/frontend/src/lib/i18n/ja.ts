@@ -700,7 +700,7 @@ export default {
       levelsEstimated: 'スクリーンショットから推定したレベル',
       entryWarningLocation: '注意：エントリーはレンジの端にありません。',
       entryWarningRoom: '注意：エントリーと目標1の間に、過去に価格を反転させた水準があります。',
-      entryWarningLate: '注意：値動きはすでに伸びています。ここでのエントリーは遅いエントリーです。',
+      entryWarningLate: '注意：値動きはすでに伸びているため、このエントリーは理想より遅めです。',
       pending: {
         title: '予約注文',
         limitAt: '{price} の指値注文',

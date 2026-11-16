@@ -709,7 +709,7 @@ export default {
       levelsEstimated: 'Níveis estimados pelo print',
       entryWarningLocation: 'Atenção: a entrada não está na borda do range.',
       entryWarningRoom: 'Atenção: há um nível que já virou o preço entre a entrada e o alvo 1.',
-      entryWarningLate: 'Atenção: o movimento já está esticado. Entrar aqui é entrar tarde.',
+      entryWarningLate: 'Atenção: o movimento já está esticado, então esta entrada é mais tardia que o ideal.',
       pending: {
         title: 'Ordem pendente',
         limitAt: 'Ordem limitada em {price}',

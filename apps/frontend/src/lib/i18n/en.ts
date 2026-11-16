@@ -700,7 +700,7 @@ export default {
       levelsEstimated: 'Levels estimated from the screenshot',
       entryWarningLocation: 'Heads up: the entry is not at the edge of the range.',
       entryWarningRoom: 'Heads up: a level that has turned price before sits between the entry and target 1.',
-      entryWarningLate: 'Heads up: the move is already extended. Entering here is entering late.',
+      entryWarningLate: 'Heads up: the move is already extended, so this entry is later than ideal.',
       pending: {
         title: 'Pending order',
         limitAt: 'Limit order at {price}',
