@@ -25,9 +25,20 @@ describe('createCheckoutSession', () => {
     const [, init] = fetchMock.mock.calls[0];
     // Sem aceite de cookies: `adsConsent: false` e nenhum fbp/fbc.
     expect(JSON.parse(init.body)).toEqual({
-      planType: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35', adsConsent: false,
+      planType: 'starter', billingCycle: 'monthly', currency: 'usd', coupon: 'EARLY35', localCurrency: 'usd', adsConsent: false,
     });
     expect(init.headers.Authorization).toBe('Bearer tok');
+  });
+
+  it('manda a moeda local escolhida pelo site (currency_options do price em USD)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ sessionId: 'cs_1', url: 'https://checkout.stripe.com/c/pay/cs_1' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await createCheckoutSession('starter', 'tok', 'weekly', 'usd', undefined, 'pricing', undefined, 'eur');
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.currency).toBe('usd');
+    expect(body.localCurrency).toBe('eur');
   });
 
   it('com aceite de cookies manda fbp/fbc validos e descarta cookie fora do formato', async () => {

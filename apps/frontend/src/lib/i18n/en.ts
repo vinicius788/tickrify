@@ -173,7 +173,7 @@ export default {
     foundingTitle: "Founding Trader offer",
     foundingDesc: "You are early, and that counts. While this offer lasts, the",
     foundingCode: "EARLY35",
-    foundingSuffix: "discount is applied automatically at checkout on the monthly plan: 35% off your first month, then $29/month.",
+    foundingSuffix: "discount is applied automatically at checkout on the monthly plan: 35% off your first month, then {monthly}/month.",
     trust: [
       "Payments secured by Stripe",
       "Cancel anytime in Settings",
@@ -188,7 +188,7 @@ export default {
       },
       {
         q: "How do Ticks work?",
-        a: "Ticks are Tickrify’s analysis credits. The monthly plan resets your balance to 200 Ticks every billing month, and the weekly plan ($7.99) resets it to 25 Ticks every week. The yearly plan costs $290 upfront and renews annually, with a balance reset to 200 Ticks each month. Unused Ticks do not carry over. A quick analysis uses 1 Tick; a deep analysis uses 3 Ticks."
+        a: "Ticks are Tickrify’s analysis credits. The monthly plan resets your balance to 200 Ticks every billing month, and the weekly plan resets it to 25 Ticks every week. The yearly plan is paid once a year upfront and renews annually, with a balance reset to 200 Ticks each month. Unused Ticks do not carry over. A quick analysis uses 1 Tick; a deep analysis uses 3 Ticks."
       },
       {
         q: "Can I switch plans later?",
@@ -196,7 +196,7 @@ export default {
       },
       {
         q: "Which payment methods are accepted?",
-        a: "Cards (Visa, Mastercard, American Express), Apple Pay, Google Pay and Link, processed by Stripe. Prices are charged in US dollars: if your card uses another currency, your bank converts it and may add a fee. Some banks decline international online payments on debit or prepaid cards; if yours is declined, ask your bank to allow it or try another card."
+        a: "Cards (Visa, Mastercard, American Express), Apple Pay, Google Pay and Link, processed by Stripe. Prices are shown and charged in euros, pounds, yen, Canadian dollars or Australian dollars where you are, and in US dollars everywhere else. If your card uses a different currency, your bank converts it and may add a fee. Some banks decline international online payments on debit or prepaid cards; if yours is declined, ask your bank to allow it or try another card."
       },
       {
         q: "Is my card data safe?",
@@ -216,7 +216,7 @@ export default {
       "200 monthly Ticks (~200 quick or 66 deep)",
       "Quick + deep analysis",
       "Live candle grounding + economic calendar",
-      "$0.145 per quick analysis ($29 / 200 Ticks)"
+      "{perAnalysis} per quick analysis ({monthly} / 200 Ticks)"
     ],
     cta: "Get started"
   },
@@ -231,7 +231,7 @@ export default {
       "Renews weekly, cancel anytime"
     ],
     cta: "Start weekly",
-    note: "Billed $7.99 now and every 7 days until canceled. Your balance resets to 25 Ticks each week."
+    note: "Billed {weekly} now and every 7 days until canceled. Your balance resets to 25 Ticks each week."
   },
   pricingChrome: {
     weekly: "Weekly",
@@ -270,11 +270,11 @@ export default {
     founderNote: "One-time offer, not listed anywhere else. Billed now and every month, cancel anytime from your dashboard. If you cancel, you come back at the regular price.",
     founderSeat: "1 founding spot left",
     billingCycle: "Billing cycle",
-    yearlyRenewal: "$290 billed now and every year until canceled. Your balance resets to 200 Ticks each month; unused Ticks do not carry over.",
-    monthlyRenewal: "$29 billed now and monthly until canceled. Your balance resets to 200 Ticks per month; unused Ticks do not carry over."
+    yearlyRenewal: "{yearly} billed now and every year until canceled. Your balance resets to 200 Ticks each month; unused Ticks do not carry over.",
+    monthlyRenewal: "{monthly} billed now and monthly until canceled. Your balance resets to 200 Ticks per month; unused Ticks do not carry over."
   },
   dashboardCopy: {
-    weeklyPrice: "${price} / 7d",
+    weeklyPrice: "{price} / 7d",
     checkoutErrorTitle: "Could not open checkout",
     allowanceNoticeTitle: "Your Ticks now reset every month",
     allowanceNoticeDesc: "At the start of each billing month your balance goes back to 200 Ticks. Unused Ticks do not carry over.",
@@ -302,7 +302,7 @@ export default {
     later: "Maybe later",
     perMonth: "/mo",
     modalMonthly: "Monthly, 200 Ticks",
-    modalMonthlyOffer: "{price} first month, then $29/month",
+    modalMonthlyOffer: "{price} first month, then {monthly}/month",
     modalWeekly: "Weekly, 25 Ticks",
     modalCompare: "Compare all plans",
     modalVideoCaption: "What subscribers get: the entry chart plus up to two higher timeframes, read as one market. 20 seconds.",
@@ -314,7 +314,7 @@ export default {
     plansSub: "Same engine on every plan. Cancel anytime."
   },
   foundingBanner: {
-    text: "Early subscriber offer: {pct}% off your first month on the monthly plan with {code}, applied at checkout. Then $29/month.",
+    text: "Early subscriber offer: {pct}% off your first month on the monthly plan with {code}, applied at checkout. Then {monthly}/month.",
     cta: "See plans"
   },
   productClarity: {
@@ -351,11 +351,11 @@ export default {
     paymentRetry: "Check again",
     paymentSettings: "View subscription",
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
-    weeklyRenewal: "Billed $7.99 now and every 7 days until canceled.",
-    monthlyRenewal: "Billed $29 now and monthly until canceled.",
+    weeklyRenewal: "Billed {weekly} now and every 7 days until canceled.",
+    monthlyRenewal: "Billed {monthly} now and monthly until canceled.",
     offerRegular: "Regular price",
     offerFirstMonth: "first month",
-    offerThen: "Then $29/month. Cancel anytime in Settings.",
+    offerThen: "Then {monthly}/month. Cancel anytime in Settings.",
     offerCta: "Start for {price} first month",
     freeEligibility: "One free demo per device, no account. New accounts get a 3-day free trial with 7 analyses, no card.",
   },
@@ -1353,8 +1353,8 @@ export default {
     aiLevelNote: "The AI marked this price, but its plan did not pass the risk check. It is a price to look at, not a trade.",
   },
   paywall: {
-    ctaWeekly: "Start with one week: $7.99 for 25 quick analyses",
-    orMonthly: "Or monthly: $29/month for 200 quick analyses",
+    ctaWeekly: "Start with one week: {weekly} for 25 quick analyses",
+    orMonthly: "Or monthly: {monthly}/month for 200 quick analyses",
     titleNewAnalysis: "Your free analyses are used up",
     titleArea: 'Subscribe to keep access to your analyses and trades',
     descNewAnalysis: "Subscribe to analyze this chart and the next ones: Enter now, Watch or No trade with the levels and the reasoning, plus price alerts on crypto, forex and metals.",
@@ -1363,7 +1363,7 @@ export default {
     descHistory: 'This analysis is older than your last 3. Subscribe to open your full history again.',
     descSetups: 'None of the analyses in this setup are among your last 3. Subscribe to open every version again.',
     descWatching: "Your watched levels and what price did at them open again the moment you subscribe.",
-    allPlans: 'All plans, including yearly at $290/year',
+    allPlans: 'All plans, including yearly at {yearly}/year',
     opening: 'Opening secure checkout…',
     yourChart: 'Your chart',
     includesTitle: "What a trade plan includes",
@@ -1654,9 +1654,9 @@ export default {
       analysesQuick: 'quick analyses',
       starterBadge: 'Everything included',
       starterCta: 'Get started',
-      fS1: '200 monthly Ticks (~200 quick or 66 deep)', fS2: 'Quick + deep analysis, full history', fS3: 'Verified candles for eligible quick reads + calendar when available', fS4: '$0.145 per quick analysis on the monthly plan',
+      fS1: '200 monthly Ticks (~200 quick or 66 deep)', fS2: 'Quick + deep analysis, full history', fS3: 'Verified candles for eligible quick reads + calendar when available', fS4: '{perAnalysis} per quick analysis on the monthly plan',
       monthlyReset: 'Your balance resets to 200 Ticks at the start of each billing month. Unused Ticks don\'t carry over.',
-      weeklyLine: 'Not ready for a month? $7.99 a week for 25 Ticks, cancel anytime.',
+      weeklyLine: 'Not ready for a month? {weekly} a week for 25 Ticks, cancel anytime.',
     },
     faq: {
       label: 'FAQ', title: 'Questions', highlight: 'traders ask.',

@@ -17,10 +17,14 @@ vi.mock('@clerk/clerk-react', () => ({
 }));
 
 const offer = { current: null as null | { active: boolean; code: string; percentOff: number | null } };
-vi.mock('@/hooks/useFoundingOffer', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/hooks/useFoundingOffer')>()),
-  useFoundingOffer: () => offer.current,
-}));
+vi.mock('@/hooks/useFoundingOffer', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@/hooks/useFoundingOffer')>();
+  return {
+    ...mod,
+    useFoundingOffer: () => offer.current,
+    useLocalPrices: (language: Parameters<typeof mod.localPricesFrom>[1]) => mod.localPricesFrom(null, language),
+  };
+});
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api')>()),
   warmupPaymentsApi: vi.fn(),

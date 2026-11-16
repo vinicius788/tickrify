@@ -275,6 +275,8 @@ describe('controle de acesso das rotas', () => {
         // se o codigo existe e esta valido na Stripe; nao expoe lista nem enumera.
         'stripe.controller.ts::getFounderOffer',
         'stripe.controller.ts::getOffer',
+        // Preco do plano por moeda (vitrine sem login); so le os prices da Stripe.
+        'stripe.controller.ts::getPrices',
         'stripe.controller.ts::handleWebhook',
         // Chamado pelo Telegram; so entra com o segredo do webhook no cabecalho.
         'telegram.controller.ts::webhook',

@@ -2,7 +2,7 @@ import { interpolate } from '@/lib/i18n';
 import { useEffect, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, Loader2, Lock } from 'lucide-react';
-import { firstMonthPrice, MONTHLY_PRICE_USD, useFoundingOffer } from '@/hooks/useFoundingOffer';
+import { firstMonthPrice, useFoundingOffer, useLocalPrices } from '@/hooks/useFoundingOffer';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import UpgradeVideo from './UpgradeVideo';
@@ -61,7 +61,9 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
   // Uma frase real de assinante, so com 2+ depoimentos publicados (com licenca).
   const quote = useTestimonials()[0];
   // O desconto so e anunciado com o cupom ativo na Stripe, e so vale no mensal.
-  const firstMonth = firstMonthPrice(useFoundingOffer(), language);
+  // Moeda da pessoa (13/11/2026): o checkout do painel cobra nesta mesma.
+  const local = useLocalPrices(language);
+  const firstMonth = firstMonthPrice(useFoundingOffer(), language, local);
 
   useEffect(() => {
     track('upgrade_cta_viewed', { source: 'paywall', surface, ...(variant ? { trial: variant } : {}) });
@@ -160,7 +162,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
                 <span>{p.opening}</span>
               </>
             ) : (
-              <span>{p.ctaWeekly}</span>
+              <span>{interpolate(p.ctaWeekly, local.params)}</span>
             )}
           </button>
           {/* EARLY35 so vale no mensal (decidido no servidor): o semanal acima nunca risca preco. */}
@@ -168,7 +170,7 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
             <p className="flex items-baseline gap-2 text-[var(--text-primary)]">
               <s className="text-sm text-[var(--text-secondary)]">
                 <span className="sr-only">{t.commercial.offerRegular} </span>
-                {`$${MONTHLY_PRICE_USD}`}
+                {local.price('monthly')}
               </s>
               <b className="text-2xl font-semibold">{firstMonth}</b>
               <span className="text-xs text-[var(--text-secondary)]">{t.commercial.offerFirstMonth}</span>
@@ -180,17 +182,18 @@ const Paywall = ({ surface, onWeekly, onMonthly, unlockPending = false, plansHre
             disabled={unlockPending}
             className="inline-flex items-center rounded-xl border border-[var(--border-default)] px-5 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition-colors hover:bg-[var(--fill-2)] disabled:opacity-60"
           >
-            {firstMonth ? interpolate(t.commercial.offerCta, { price: firstMonth }) : p.orMonthly}
+            {firstMonth ? interpolate(t.commercial.offerCta, { price: firstMonth }) : interpolate(p.orMonthly, local.params)}
           </button>
           {firstMonth ? (
-            <p className="max-w-[440px] tabular-nums text-[11px] text-[var(--text-secondary)]">{t.commercial.offerThen}</p>          ) : null}
-          <p className="max-w-[440px] text-xs text-[var(--text-secondary)]">{t.commercial.weeklyRenewal}</p>
+            <p className="max-w-[440px] tabular-nums text-[11px] text-[var(--text-secondary)]">{interpolate(t.commercial.offerThen, local.params)}</p>
+          ) : null}
+          <p className="max-w-[440px] text-xs text-[var(--text-secondary)]">{interpolate(t.commercial.weeklyRenewal, local.params)}</p>
           <Link
             to={plansHref}
             onClick={() => track('upgrade_cta_clicked', { source: 'paywall', surface, destination: 'plans' })}
             className="text-xs text-[var(--text-secondary)] underline underline-offset-2 hover:text-[var(--text-primary)]"
           >
-            {p.allPlans}
+            {interpolate(p.allPlans, local.params)}
           </Link>
           {quote ? (
             <p className="max-w-[440px] text-xs text-[var(--text-secondary)]">

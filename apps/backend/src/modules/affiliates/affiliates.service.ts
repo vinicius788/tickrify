@@ -671,9 +671,33 @@ export class AffiliatesService implements OnModuleInit {
     try {
       const charge = await this.stripe.charges.retrieve(chargeId, { expand: ['balance_transaction'] });
       const bt = charge.balance_transaction;
-      if (!bt || typeof bt === 'string' || bt.currency !== 'usd' || !invoice.amount_paid) return null;
-      // Proporcao inteira: tira o imposto na mesma razao em que foi cobrado.
-      return Math.max(0, Math.floor((bt.amount * net) / invoice.amount_paid));
+      if (bt && typeof bt !== 'string' && bt.currency === 'usd' && invoice.amount_paid) {
+        // Proporcao inteira: tira o imposto na mesma razao em que foi cobrado.
+        return Math.max(0, Math.floor((bt.amount * net) / invoice.amount_paid));
+      }
+    } catch {
+      // segue para a conversao pelo price
+    }
+    return this.usdByPriceRatio(invoice, net);
+  }
+
+  /**
+   * Conta BR liquida em BRL, entao a transacao de saldo nunca vem em USD.
+   * Fatura em EUR/GBP/JPY/CAD/AUD (13/11/2026) vem de uma `currency_option` do
+   * MESMO price USD: o valor pago vira USD na razao entre os dois precos de
+   * tabela. Desconto e imposto ficam na mesma proporcao.
+   */
+  private async usdByPriceRatio(invoice: Stripe.Invoice, net: number): Promise<number | null> {
+    const subscriptionId = stripeId(invoice.subscription);
+    if (!subscriptionId || !this.stripe) return null;
+    try {
+      const subscription = await this.stripe.subscriptions.retrieve(subscriptionId);
+      const priceId = subscription.items.data[0]?.price?.id;
+      if (!priceId) return null;
+      const price = await this.stripe.prices.retrieve(priceId, { expand: ['currency_options'] });
+      const local = price.currency_options?.[invoice.currency]?.unit_amount;
+      if (price.currency !== 'usd' || typeof price.unit_amount !== 'number' || typeof local !== 'number' || local <= 0) return null;
+      return Math.max(0, Math.floor((price.unit_amount * net) / local));
     } catch {
       return null;
     }

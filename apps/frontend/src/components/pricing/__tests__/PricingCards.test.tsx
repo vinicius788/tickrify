@@ -19,14 +19,18 @@ vi.mock('@/lib/i18n/LanguageContext', async () => {
 });
 const offer = { current: null as null | { active: boolean; code: string; percentOff: number | null } };
 const founder = { current: null as null | { active: boolean; priceUsd: number; seatsLeft: number | null; expiresAt: number | null }, lastCode: undefined as string | null | undefined };
-vi.mock('@/hooks/useFoundingOffer', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/hooks/useFoundingOffer')>()),
-  useFoundingOffer: () => offer.current,
-  useFounderOffer: (code: string | null) => {
-    founder.lastCode = code;
-    return code ? founder.current : null;
-  },
-}));
+vi.mock('@/hooks/useFoundingOffer', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@/hooks/useFoundingOffer')>();
+  return {
+    ...mod,
+    useFoundingOffer: () => offer.current,
+    useLocalPrices: (language: Parameters<typeof mod.localPricesFrom>[1]) => mod.localPricesFrom(null, language),
+    useFounderOffer: (code: string | null) => {
+      founder.lastCode = code;
+      return code ? founder.current : null;
+    },
+  };
+});
 
 import { PricingCards } from '@/components/pricing/PricingCards';
 import { clearCheckoutIntent, loadCheckoutIntent } from '@/lib/checkoutIntent';
@@ -88,7 +92,7 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
     await waitFor(() => expect(location.assigned).toBe('https://checkout.stripe.com/c/pay/cs_1'));
     expect(createCheckoutSession).toHaveBeenCalledTimes(1);
     // EARLY35 e so do mensal: o anual vai sem cupom.
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'yearly', 'usd', undefined, 'pricing', undefined);
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'yearly', 'usd', undefined, 'pricing', undefined, 'usd');
     expect(loadCheckoutIntent()).toBeNull();
   });
 
@@ -104,7 +108,7 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
     render(<PricingCards />);
 
     await waitFor(() => expect(location.assigned).toBe('https://checkout.stripe.com/c/pay/cs_2'));
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', 'EARLY35', 'locked_value', undefined);
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', 'EARLY35', 'locked_value', undefined, 'usd');
   });
 
   it('logado sem intencao: nao abre checkout sozinho', async () => {
@@ -146,7 +150,7 @@ describe('PricingCards: Upgrade -> login -> checkout', () => {
     await userEvent.click(screen.getByRole('button', { name: /get started|start weekly/i }));
 
     await waitFor(() => expect(createCheckoutSession).toHaveBeenCalledTimes(1));
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', cycle, 'usd', coupon, 'pricing', undefined);
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', cycle, 'usd', coupon, 'pricing', undefined, 'usd');
   });
 
   it('conta que ja tem assinatura (past_due incluso): avisa e leva para Configuracoes, onde fica o cartao', async () => {
@@ -278,7 +282,7 @@ describe('PricingCards: oferta Founding Member (link pessoal)', () => {
     await userEvent.click(screen.getByRole('button', { name: /claim my founding price/i }));
 
     await waitFor(() => expect(location.assigned).toBe('https://checkout.stripe.com/c/pay/cs_f'));
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', undefined, 'pricing', CODE);
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', undefined, 'pricing', CODE, 'usd');
   });
 
   it('deslogado: guarda o codigo na intencao e o login devolve para o checkout com ele', async () => {
@@ -308,7 +312,7 @@ describe('PricingCards: oferta Founding Member (link pessoal)', () => {
 
     await waitFor(() => expect(location.assigned).toBe('https://checkout.stripe.com/c/pay/cs_r'));
     expect(createCheckoutSession).toHaveBeenCalledTimes(1);
-    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', undefined, 'pricing', CODE);
+    expect(createCheckoutSession).toHaveBeenCalledWith('starter', 'tok', 'monthly', 'usd', undefined, 'pricing', CODE, 'usd');
   });
 
   it('servidor recusa o codigo no checkout: erro na tela e nenhum redirect para o preco cheio', async () => {

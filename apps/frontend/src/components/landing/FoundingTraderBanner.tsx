@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { interpolate } from '@/lib/i18n';
 import { track } from '@/lib/analytics';
-import { useFoundingOffer } from '@/hooks/useFoundingOffer';
+import { useFoundingOffer, useLocalPrices } from '@/hooks/useFoundingOffer';
 
 // Faixa da oferta de lancamento (EARLY35). Diz a oferta REAL: X% no primeiro
 // mes do plano mensal, aplicado no checkout. Ate 05/10/2026 dizia que os
@@ -20,6 +20,7 @@ const FoundingTraderBanner = () => {
   const copy = t.foundingBanner;
   // Sem cupom ativo na Stripe a oferta acabou: a faixa some junto.
   const offer = useFoundingOffer();
+  const local = useLocalPrices(language);
 
   if (dismissed || !offer?.percentOff) return null;
 
@@ -27,7 +28,7 @@ const FoundingTraderBanner = () => {
     <div className="site-banner">
       <div className="site-wrap">
         <p>
-          {interpolate(copy.text, { pct: offer.percentOff, code: offer.code })}{' '}
+          {interpolate(copy.text, { ...local.params, pct: offer.percentOff, code: offer.code })}{' '}
           <Link to="/pricing" onClick={() => track('founding_banner_clicked', { language })}>
             {copy.cta}
           </Link>

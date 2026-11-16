@@ -1,4 +1,4 @@
-import { formatNumber, formatUsd } from '@/lib/i18n';
+import { formatNumber, interpolate } from '@/lib/i18n';
 import { errorText } from '@/lib/i18n/messages';
 import { useState, useEffect, useMemo, useCallback, useRef, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -57,7 +57,7 @@ import { CheckoutError, createCheckoutSession, openBillingPortal } from "@/lib/s
 import { clerkLightAppearance, useTheme } from "@/lib/theme";
 import SettingsPage from "../dashboard/SettingsPage";
 import { checkoutReturnPath, loadCheckoutIntent } from "@/lib/checkoutIntent";
-import { useFoundingOffer } from "@/hooks/useFoundingOffer";
+import { firstMonthPrice, useFoundingOffer, useLocalPrices } from "@/hooks/useFoundingOffer";
 import UpgradeVideo from "../dashboard/UpgradeVideo";
 import { SampleAnalysisView, SamplePicker, type SampleAllowance } from "../dashboard/SampleAnalyses";
 import { SAMPLE_ANALYSES, type SampleKind } from "@/lib/sample-analyses";
@@ -218,7 +218,9 @@ const DashboardPage = () => {
   const dc = t.dashboardCopy;
   // Preço do 1º mês com o EARLY35, só quando a Stripe diz que o cupom está ativo.
   const foundingOffer = useFoundingOffer();
-  const modalFirstMonth = foundingOffer?.percentOff ? formatUsd(29 * (1 - foundingOffer.percentOff / 100), language) : null;
+  // Moeda da pessoa (13/11/2026): o modal mostra e o checkout cobra nela.
+  const local = useLocalPrices(language);
+  const modalFirstMonth = firstMonthPrice(foundingOffer, language, local);
   const location = useLocation();
   const route = parseDashboardPath(location.pathname);
   const { base } = route;
@@ -692,8 +694,8 @@ const DashboardPage = () => {
       // EARLY35 so no mensal (regra do servidor, 05/10/2026).
       const coupon = cycle === 'monthly' ? 'EARLY35' : undefined;
       track('upgrade_clicked', { source, cycle, coupon: coupon ?? null, surface });
-      const { url, sessionId } = await createCheckoutSession('starter', token, cycle, 'usd', coupon, source);
-      track('checkout_started', { plan: 'starter', billingCycle: cycle, currency: 'usd', coupon: coupon ?? null, source, surface, sessionId });
+      const { url, sessionId } = await createCheckoutSession('starter', token, cycle, 'usd', coupon, source, undefined, local.currency);
+      track('checkout_started', { plan: 'starter', billingCycle: cycle, currency: local.currency, coupon: coupon ?? null, source, surface, sessionId });
       window.location.href = url;
     } catch (error) {
       // Este catch era silencioso: a falha virava um desvio para /pricing sem
@@ -722,7 +724,7 @@ const DashboardPage = () => {
     } finally {
       setUnlockPending(false);
     }
-  }, [unlockPending, getToken, goTo, toast, dc, t, language]);
+  }, [unlockPending, getToken, goTo, toast, dc, t, language, local.currency]);
 
   // Todo paywall fecha no mesmo checkout (`locked_value` na Stripe); a area de
   // onde veio vai junto para o PostHog.
@@ -1754,7 +1756,7 @@ const DashboardPage = () => {
                           Antes ia para /pricing e exigia mais um clique. */}
                       <Button size="sm" className="h-auto max-w-full whitespace-normal py-2" onClick={handleLastFreeCheckout} disabled={unlockPending}>
                         <Crown className="mr-2 h-4 w-4" />
-                        {t.paywall.ctaWeekly}
+                        {interpolate(t.paywall.ctaWeekly, local.params)}
                       </Button>
                       <Link
                         to={`${base}${SECTION_PATH.plans}`}
@@ -2271,7 +2273,7 @@ const DashboardPage = () => {
                 <Crown className="h-4 w-4 flex-shrink-0 text-primary" />
                 <span className="text-sm font-semibold">{dc.modalWeekly}</span>
               </span>
-              <span className="text-right text-xs font-semibold">{dc.weeklyPrice.replace('{price}', formatNumber(7.99, language, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}</span>
+              <span className="text-right text-xs font-semibold">{dc.weeklyPrice.replace('{price}', local.price('weekly'))}</span>
             </button>
             <button
               type="button"
@@ -2281,12 +2283,12 @@ const DashboardPage = () => {
             >
               <span className="text-sm font-semibold">{dc.modalMonthly}</span>
               <span className="text-right text-xs font-semibold">
-                {modalFirstMonth ? dc.modalMonthlyOffer.replace('{price}', modalFirstMonth) : `$29${dc.perMonth}`}
+                {modalFirstMonth ? interpolate(dc.modalMonthlyOffer, { ...local.params, price: modalFirstMonth }) : `${local.price('monthly')}${dc.perMonth}`}
               </span>
             </button>
           </div>
 
-          <p className="text-xs text-[var(--text-secondary)]">{t.commercial.weeklyRenewal}</p>
+          <p className="text-xs text-[var(--text-secondary)]">{interpolate(t.commercial.weeklyRenewal, local.params)}</p>
           <UpgradeVideo surface="upgrade_modal" caption={dc.modalVideoCaption} />
 
           <DialogFooter className="sm:flex-col gap-2">

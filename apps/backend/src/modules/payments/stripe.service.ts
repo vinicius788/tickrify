@@ -48,6 +48,9 @@ import {
   BillingCycle,
   Currency,
   stripeKeyMode,
+  CHARGE_CURRENCIES,
+  type ChargeCurrency,
+  toMajorUnits,
 } from '../../config/stripe.config';
 
 type AttributionRecord = Record<string, unknown>;
@@ -89,6 +92,18 @@ const REUSE_MIN_REMAINING_SECONDS = 10 * 60;
 
 /** Validacao do price vale por 1h; mudar o price no painel reflete em ate 1h. */
 const PRICE_CHECK_TTL_MS = 60 * 60 * 1000;
+/** Valores por moeda de cada price (currency_options), relidos da Stripe a cada 10 min. */
+const PRICE_AMOUNTS_TTL_MS = 10 * 60 * 1000;
+
+/** Planos que a vitrine vende, na ordem em que a tela mostra. */
+const PUBLIC_CYCLES: BillingCycle[] = ['weekly', 'monthly', 'yearly'];
+
+export type PublicPrices = {
+  /** Moedas em que TODOS os ciclos tem preco (sempre inclui usd). */
+  currencies: ChargeCurrency[];
+  /** Valor em unidade normal (29, 27, 4500) por ciclo e moeda. */
+  plans: Record<BillingCycle, Partial<Record<ChargeCurrency, number>>>;
+};
 
 /** Status em que a pessoa ainda tem o que gerenciar no portal (cartao, faturas, cancelar). */
 const MANAGEABLE_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due', 'unpaid'];
@@ -128,6 +143,7 @@ export class StripeService implements OnModuleInit {
    */
   private readonly checkoutInFlight = new Map<string, Promise<CheckoutResult>>();
   private readonly priceCheckedAt = new Map<string, number>();
+  private readonly priceAmountsCache = new Map<string, { at: number; amounts: Partial<Record<ChargeCurrency, number>> }>();
 
   private portalConfigurationId: string | null = null;
 
@@ -306,6 +322,64 @@ export class StripeService implements OnModuleInit {
     this.priceCheckedAt.set(priceId, Date.now());
   }
 
+  /**
+   * Valor (unidade minima da Stripe) de um price em cada moeda de cobranca:
+   * a moeda principal mais as `currency_options` cadastradas no painel.
+   */
+  private async priceAmounts(priceId: string): Promise<Partial<Record<ChargeCurrency, number>>> {
+    const cached = this.priceAmountsCache.get(priceId);
+    if (cached && Date.now() - cached.at < PRICE_AMOUNTS_TTL_MS) return cached.amounts;
+
+    const price = await this.getStripeClient().prices.retrieve(priceId, { expand: ['currency_options'] });
+    const amounts: Partial<Record<ChargeCurrency, number>> = {};
+    for (const currency of CHARGE_CURRENCIES) {
+      const unit = currency === price.currency ? price.unit_amount : price.currency_options?.[currency]?.unit_amount;
+      if (typeof unit === 'number' && unit > 0) amounts[currency] = unit;
+    }
+    this.priceAmountsCache.set(priceId, { at: Date.now(), amounts });
+    return amounts;
+  }
+
+  /** Precos da vitrine por moeda. Sem Stripe, so o USD que a tela ja conhece. */
+  async getPublicPrices(): Promise<PublicPrices> {
+    const plans = {} as PublicPrices['plans'];
+    let currencies: ChargeCurrency[] = [...CHARGE_CURRENCIES];
+    try {
+      for (const cycle of PUBLIC_CYCLES) {
+        const priceId = getPriceId('starter', cycle, 'usd');
+        const amounts = priceId ? await this.priceAmounts(priceId) : {};
+        plans[cycle] = Object.fromEntries(
+          Object.entries(amounts).map(([currency, unit]) => [currency, toMajorUnits(unit, currency)]),
+        );
+        currencies = currencies.filter((currency) => typeof amounts[currency] === 'number');
+      }
+    } catch (error) {
+      this.logger.warn(`[stripe] Precos por moeda indisponiveis: ${error instanceof Error ? error.message : String(error)}`);
+      throw new ServiceUnavailableException({ code: 'prices_unavailable', message: 'Prices are temporarily unavailable.' });
+    }
+    if (!currencies.includes('usd')) {
+      throw new ServiceUnavailableException({ code: 'prices_unavailable', message: 'Prices are temporarily unavailable.' });
+    }
+    return { currencies, plans };
+  }
+
+  /**
+   * Moeda da sessao: a que a pessoa viu na tela, se o price tiver essa opcao.
+   * Founding Member fica em USD (a oferta promete US$ 15). Qualquer falha
+   * cobra em USD, que todo price tem.
+   */
+  private async sessionCurrencyFor(priceId: string, wanted: ChargeCurrency, founder: boolean): Promise<ChargeCurrency> {
+    if (wanted === 'usd' || founder) return 'usd';
+    try {
+      const amounts = await this.priceAmounts(priceId);
+      if (typeof amounts[wanted] === 'number') return wanted;
+      this.logger.warn(`[stripe] Price ${priceId} sem a moeda ${wanted}; checkout em USD.`);
+    } catch (error) {
+      this.logger.warn(`[stripe] Moedas do price ${priceId} ilegiveis (${error instanceof Error ? error.message : String(error)}); checkout em USD.`);
+    }
+    return 'usd';
+  }
+
   private founderUnavailable(userId: string): ConflictException {
     this.logger.warn(`[founder] Codigo recusado para o usuario ${userId}.`);
     return new ConflictException({
@@ -339,6 +413,7 @@ export class StripeService implements OnModuleInit {
     ads: MetaAdsContext = { consent: false },
     referral?: CheckoutReferral,
     founderCode?: string,
+    localCurrency: ChargeCurrency = 'usd',
   ): Promise<CheckoutResult> {
     const inFlight = this.checkoutInFlight.get(clerkUserId);
     if (inFlight) {
@@ -346,7 +421,7 @@ export class StripeService implements OnModuleInit {
       return inFlight;
     }
 
-    const run = this.createCheckoutSessionUnlocked(clerkUserId, planType, billingCycle, currency, couponId, source, ads, referral, founderCode)
+    const run = this.createCheckoutSessionUnlocked(clerkUserId, planType, billingCycle, currency, couponId, source, ads, referral, founderCode, localCurrency)
       .finally(() => this.checkoutInFlight.delete(clerkUserId));
     this.checkoutInFlight.set(clerkUserId, run);
     return run;
@@ -362,6 +437,7 @@ export class StripeService implements OnModuleInit {
     ads: MetaAdsContext = { consent: false },
     referral?: CheckoutReferral,
     founderCode?: string,
+    localCurrency: ChargeCurrency = 'usd',
   ): Promise<CheckoutResult> {
     const startedAt = Date.now();
     // Resolvido logo que o usuario e lido; os logs de erro usam o que houver.
@@ -450,6 +526,8 @@ export class StripeService implements OnModuleInit {
       // 35% "aplicados automaticamente" e a promessa tem que valer para todos.
       // A comissao sai sobre o valor pago de fato, entao o afiliado segue
       // recebendo pela indicacao (vinculo no banco, nao no cupom).
+      const sessionCurrency = await this.sessionCurrencyFor(priceId, localCurrency, Boolean(founderPromotionId));
+
       let discount: Stripe.Checkout.SessionCreateParams.Discount | undefined = founderPromotionId
         ? { promotion_code: founderPromotionId }
         : couponId
@@ -506,6 +584,7 @@ export class StripeService implements OnModuleInit {
           open.mode === 'subscription' &&
           open.metadata?.priceId === priceId &&
           (open.metadata?.coupon ?? '') === discountLabel &&
+          open.currency === sessionCurrency &&
           Boolean(open.url) &&
           open.expires_at - nowSeconds > REUSE_MIN_REMAINING_SECONDS;
 
@@ -542,6 +621,10 @@ export class StripeService implements OnModuleInit {
       const baseParams: Stripe.Checkout.SessionCreateParams = {
         customer: customerId,
         mode: 'subscription',
+        // Moeda explicita = a mesma que a tela mostrou. Sem ela, a Stripe
+        // escolheria pela localizacao do IP e podia cobrar numa moeda
+        // diferente do preco anunciado.
+        currency: sessionCurrency,
         // NAO fixar payment_method_types: ao omitir, a Stripe usa os metodos
         // ligados no painel (hoje cartao, Apple Pay, Google Pay e Link).
         // Moeda local NAO acontece (lido no Sigma em 13/11/2026: 0 de ~100
@@ -579,7 +662,7 @@ export class StripeService implements OnModuleInit {
           clerkUserId,
           planType,
           billingCycle,
-          currency,
+          currency: sessionCurrency,
           // `priceId` e `coupon` identificam a sessao para a Trava 3 acima.
           priceId,
           checkoutSource: source ?? 'unknown',
@@ -678,8 +761,8 @@ export class StripeService implements OnModuleInit {
           plan: planType,
           cycle: billingCycle,
           source,
-          amount: (session.amount_total ?? 0) / 100,
-          currency,
+          amount: toMajorUnits(session.amount_total, session.currency),
+          currency: session.currency ?? sessionCurrency,
           // O que a Stripe ofereceu de fato (sem `payment_method_types` na
           // criacao, quem decide e a configuracao do painel). Carteiras como
           // Apple Pay e Google Pay aparecem como `card`.
@@ -698,7 +781,11 @@ export class StripeService implements OnModuleInit {
         eventSourceUrl: `${appBaseUrl}/pricing`,
         user: { externalId: clerkUserId, email: user.email },
         ads,
-        customData: { value: (session.amount_total ?? 0) / 100, currency, contentName: planType },
+        customData: {
+          value: toMajorUnits(session.amount_total, session.currency),
+          currency: session.currency ?? sessionCurrency,
+          contentName: planType,
+        },
       });
 
       return {
@@ -759,7 +846,7 @@ export class StripeService implements OnModuleInit {
       return {
         sessionId,
         paid,
-        value: paid ? (session.amount_total ?? 0) / 100 : null,
+        value: paid ? toMajorUnits(session.amount_total, session.currency) : null,
         currency: paid ? String(session.currency || 'usd').toUpperCase() : null,
       };
     } catch (error) {
@@ -1113,7 +1200,14 @@ export class StripeService implements OnModuleInit {
       ? schedule.phases.find(phase => phase.start_date >= subscription.current_period_end)
       : null;
     const nextPrice = next ? this.refId(next.items[0]?.price) : null;
-    return { ...this.subscriptionView(subscription),
+    const view = this.subscriptionView(subscription);
+    const priceId = subscription.items.data[0]?.price?.id;
+    if (view.amount === null && priceId) {
+      const local = await this.priceAmounts(priceId).catch(() => ({} as Partial<Record<ChargeCurrency, number>>));
+      const unit = local[subscription.currency as ChargeCurrency];
+      if (typeof unit === 'number') view.amount = toMajorUnits(unit, subscription.currency);
+    }
+    return { ...view,
       canChangePlans: Boolean(process.env.STRIPE_PORTAL_V2_CONFIG_ID) && portalUpgradeEnabled(userId) && subscription.status === 'active' && !subscription.schedule && !subscription.pending_update && !cancelScheduled(subscription) && subscription.items.data.length === 1 && subscription.items.data[0].quantity === 1 && subscription.items.data[0].price.id === portalCatalog().weekly,
       pendingPayment: Boolean(subscription.pending_update),
       scheduledChange: next && nextPrice ? { billingCycle: billingCycleForPriceId(nextPrice), effectiveAt: next.start_date } : null,
@@ -1143,8 +1237,12 @@ export class StripeService implements OnModuleInit {
       accessEndsAt: accessEndsAt ?? null,
       /** Proxima cobranca: so existe para assinatura viva e sem cancelamento agendado. */
       nextChargeAt: isActive && !canceling ? subscription.current_period_end : null,
-      amount: typeof price?.unit_amount === 'number' ? price.unit_amount / 100 : null,
-      currency: price?.currency ?? null,
+      // Assinatura em outra moeda (currency_options): o `unit_amount` do item e
+      // o do USD. O valor certo vem do `subscriptionViewWithSchedule`.
+      amount: typeof price?.unit_amount === 'number' && (!subscription.currency || price.currency === subscription.currency)
+        ? toMajorUnits(price.unit_amount, price.currency)
+        : null,
+      currency: subscription.currency ?? price?.currency ?? null,
       manageable: MANAGEABLE_SUBSCRIPTION_STATUSES.includes(status),
       canReactivate: canceling && isActive,
     };
@@ -1314,7 +1412,7 @@ export class StripeService implements OnModuleInit {
             priceId: expired.metadata?.priceId ?? null,
             coupon: expired.metadata?.coupon || null,
             source: expired.metadata?.checkoutSource ?? null,
-            value: (expired.amount_total ?? 0) / 100,
+            value: toMajorUnits(expired.amount_total, expired.currency),
             currency: String(expired.currency || 'usd').toUpperCase(),
           },
           { dedupeKey: `checkout_session_expired:${expired.id}`, timestamp: new Date(event.created * 1000) },
@@ -1445,7 +1543,7 @@ export class StripeService implements OnModuleInit {
           sessionId: session.id,
           subscriptionId: synced.subscription.id,
           priceId: synced.subscription.items?.data?.[0]?.price?.id,
-          value: (session.amount_total ?? 0) / 100,
+          value: toMajorUnits(session.amount_total, session.currency),
           currency: String(session.currency || 'usd').toUpperCase(),
           coupon: session.metadata?.coupon || null,
           // Criacao da sessao (o timestamp do evento e a conclusao, abaixo).
@@ -1483,7 +1581,7 @@ export class StripeService implements OnModuleInit {
             userAgent: meta.ads_ua ?? null,
           },
           customData: {
-            value: (session.amount_total ?? 0) / 100,
+            value: toMajorUnits(session.amount_total, session.currency),
             currency: String(session.currency || 'usd'),
             contentName: meta.planType,
           },
@@ -1808,7 +1906,7 @@ export class StripeService implements OnModuleInit {
       'payment_failed',
       {
         user: userId,
-        amount: (intent.amount ?? 0) / 100,
+        amount: toMajorUnits(intent.amount, intent.currency),
         currency: intent.currency,
         code: error?.code ?? null,
         declineCode: error?.decline_code ?? null,
@@ -1842,7 +1940,7 @@ export class StripeService implements OnModuleInit {
         invoice: invoice.id,
         subscription: subscriptionId,
         billingReason: invoice.billing_reason ?? null,
-        amount: (invoice.amount_paid ?? 0) / 100,
+        amount: toMajorUnits(invoice.amount_paid, invoice.currency),
         currency: invoice.currency,
       },
       { persist: this.prisma },
@@ -1863,7 +1961,7 @@ export class StripeService implements OnModuleInit {
         invoiceId: invoice.id,
         subscriptionId,
         billingReason: invoice.billing_reason ?? null,
-        value: (invoice.amount_paid ?? 0) / 100,
+        value: toMajorUnits(invoice.amount_paid, invoice.currency),
         currency: String(invoice.currency || 'usd').toUpperCase(),
         attemptCount: invoice.attempt_count ?? null,
         priceId: synced.subscription.items?.data?.[0]?.price?.id ?? null,
@@ -1895,7 +1993,7 @@ export class StripeService implements OnModuleInit {
           attemptCount: invoice.attempt_count ?? null,
           detectedBy: recoveredBy,
           billingReason: invoice.billing_reason ?? null,
-          value: (invoice.amount_paid ?? 0) / 100,
+          value: toMajorUnits(invoice.amount_paid, invoice.currency),
           currency: String(invoice.currency || 'usd').toUpperCase(),
         },
         { dedupeKey: `payment_recovered:${invoice.id}`, timestamp: new Date(paidAt * 1000) },
@@ -1910,7 +2008,7 @@ export class StripeService implements OnModuleInit {
           invoiceId: invoice.id,
           subscriptionId,
           priceId: synced.subscription.items?.data?.[0]?.price?.id ?? null,
-          value: (invoice.amount_paid ?? 0) / 100,
+          value: toMajorUnits(invoice.amount_paid, invoice.currency),
           currency: String(invoice.currency || 'usd').toUpperCase(),
         },
         { dedupeKey: `subscription_renewed:${invoice.id}`, timestamp: new Date(paidAt * 1000) },
@@ -2084,7 +2182,7 @@ export class StripeService implements OnModuleInit {
         invoice: invoice.id,
         subscription: subscriptionId,
         status: details.subscriptionStatus,
-        amount: (invoice.amount_due ?? 0) / 100,
+        amount: toMajorUnits(invoice.amount_due, invoice.currency),
         currency: invoice.currency,
         attempt: invoice.attempt_count ?? null,
         billingReason: invoice.billing_reason ?? null,
@@ -2168,7 +2266,7 @@ export class StripeService implements OnModuleInit {
       const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } });
       if (!user?.email) return;
       const sent = await this.mail.sendPaymentFailed(user.email, user.name, {
-        amount: (invoice.amount_due ?? 0) / 100,
+        amount: toMajorUnits(invoice.amount_due, invoice.currency),
         currency: String(invoice.currency || 'usd'),
         nextAttempt: invoice.next_payment_attempt ? new Date(invoice.next_payment_attempt * 1000) : null,
       });

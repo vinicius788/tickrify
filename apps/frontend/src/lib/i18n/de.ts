@@ -173,7 +173,7 @@ export default {
     foundingTitle: "Founding Trader-Angebot",
     foundingDesc: "Du bist früh dabei, und das zählt. Solange dieses Angebot gilt, wird der Rabatt",
     foundingCode: "EARLY35",
-    foundingSuffix: "beim Bezahlen des Monatstarifs automatisch angewendet: 35% Rabatt im ersten Monat, danach $29/Monat.",
+    foundingSuffix: "beim Bezahlen des Monatstarifs automatisch angewendet: 35% Rabatt im ersten Monat, danach {monthly}/Monat.",
     trust: [
       "Sichere Zahlungen mit Stripe",
       "Jederzeit in den Einstellungen kündigen",
@@ -188,7 +188,7 @@ export default {
       },
       {
         q: "Wie funktionieren Ticks?",
-        a: "Ticks sind die Analyseguthaben von Tickrify. Der Monatstarif setzt dein Guthaben jeden Abrechnungsmonat auf 200 Ticks zurück, der Wochentarif ($7.99) jede Woche auf 25 Ticks. Der Jahrestarif kostet $290 im Voraus und verlängert sich jährlich, wobei das Guthaben jeden Monat auf 200 Ticks zurückgesetzt wird. Ungenutzte Ticks werden nicht übertragen. Eine schnelle Analyse verbraucht 1 Tick, eine ausführliche Analyse 3 Ticks."
+        a: "Ticks sind die Analyseguthaben von Tickrify. Der Monatstarif setzt dein Guthaben jeden Abrechnungsmonat auf 200 Ticks zurück, der Wochentarif jede Woche auf 25 Ticks. Der Jahrestarif wird einmal im Jahr im Voraus bezahlt und verlängert sich jährlich, wobei das Guthaben jeden Monat auf 200 Ticks zurückgesetzt wird. Ungenutzte Ticks werden nicht übertragen. Eine schnelle Analyse verbraucht 1 Tick, eine ausführliche Analyse 3 Ticks."
       },
       {
         q: "Kann ich später den Tarif wechseln?",
@@ -196,7 +196,7 @@ export default {
       },
       {
         q: "Welche Zahlungsmethoden werden akzeptiert?",
-        a: "Karten (Visa, Mastercard, American Express), Apple Pay, Google Pay und Link, abgewickelt über Stripe. Abgerechnet wird in US-Dollar: Läuft deine Karte in einer anderen Währung, rechnet deine Bank um und kann eine Gebühr verlangen. Manche Banken lehnen internationale Onlinezahlungen mit Debit- oder Prepaid-Karten ab; wird deine abgelehnt, bitte deine Bank um Freigabe oder nutze eine andere Karte."
+        a: "Karten (Visa, Mastercard, American Express), Apple Pay, Google Pay und Link, abgewickelt über Stripe. Der Preis wird je nach Land in Euro, Pfund, Yen, kanadischen oder australischen Dollar angezeigt und abgerechnet, überall sonst in US-Dollar. Läuft deine Karte in einer anderen Währung, rechnet deine Bank um und kann eine Gebühr verlangen. Manche Banken lehnen internationale Onlinezahlungen mit Debit- oder Prepaid-Karten ab; wird deine abgelehnt, bitte deine Bank um Freigabe oder nutze eine andere Karte."
       },
       {
         q: "Sind meine Kartendaten sicher?",
@@ -216,7 +216,7 @@ export default {
       "200 Ticks monatlich (~200 schnelle oder 66 ausführliche Analysen)",
       "Schnelle + ausführliche Analyse",
       "Abgleich mit Live-Kerzen + Wirtschaftskalender",
-      "$0.145 pro schneller Analyse ($29 / 200 Ticks)"
+      "{perAnalysis} pro schneller Analyse ({monthly} / 200 Ticks)"
     ],
     cta: "Loslegen"
   },
@@ -231,7 +231,7 @@ export default {
       "Wöchentliche Verlängerung, jederzeit kündbar"
     ],
     cta: "Wöchentlich starten",
-    note: "$7.99 werden jetzt und alle 7 Tage bis zur Kündigung berechnet. Dein Guthaben wird jede Woche auf 25 Ticks zurückgesetzt."
+    note: "{weekly} werden jetzt und alle 7 Tage bis zur Kündigung berechnet. Dein Guthaben wird jede Woche auf 25 Ticks zurückgesetzt."
   },
   pricingChrome: {
     weekly: "Wöchentlich",
@@ -270,11 +270,11 @@ export default {
     founderNote: "Einmaliges Angebot, nirgendwo sonst aufgeführt. Zahlung jetzt und jeden Monat, jederzeit im Dashboard kündbar. Bei einer Rückkehr nach Kündigung gilt der reguläre Preis.",
     founderSeat: "Noch 1 Gründerplatz verfügbar",
     billingCycle: "Abrechnungszyklus",
-    yearlyRenewal: "$290 werden jetzt und jedes Jahr bis zur Kündigung berechnet. Dein Guthaben wird jeden Monat auf 200 Ticks zurückgesetzt; ungenutzte Ticks werden nicht übertragen.",
-    monthlyRenewal: "$29 werden jetzt und monatlich bis zur Kündigung berechnet. Dein Guthaben wird pro Monat auf 200 Ticks zurückgesetzt; ungenutzte Ticks werden nicht übertragen."
+    yearlyRenewal: "{yearly} werden jetzt und jedes Jahr bis zur Kündigung berechnet. Dein Guthaben wird jeden Monat auf 200 Ticks zurückgesetzt; ungenutzte Ticks werden nicht übertragen.",
+    monthlyRenewal: "{monthly} werden jetzt und monatlich bis zur Kündigung berechnet. Dein Guthaben wird pro Monat auf 200 Ticks zurückgesetzt; ungenutzte Ticks werden nicht übertragen."
   },
   dashboardCopy: {
-    weeklyPrice: "${price} / 7 Tage",
+    weeklyPrice: "{price} / 7 Tage",
     checkoutErrorTitle: "Zahlung konnte nicht geöffnet werden",
     allowanceNoticeTitle: "Deine Ticks werden jetzt jeden Monat zurückgesetzt",
     allowanceNoticeDesc: "Zu Beginn jedes Abrechnungsmonats wird dein Guthaben auf 200 Ticks zurückgesetzt. Ungenutzte Ticks werden nicht übertragen.",
@@ -302,7 +302,7 @@ export default {
     later: "Vielleicht später",
     perMonth: "/Monat",
     modalMonthly: "Monatlich, 200 Ticks",
-    modalMonthlyOffer: "{price} im ersten Monat, danach $29/Monat",
+    modalMonthlyOffer: "{price} im ersten Monat, danach {monthly}/Monat",
     modalWeekly: "Wöchentlich, 25 Ticks",
     modalCompare: "Alle Tarife vergleichen",
     modalVideoCaption: "Das erhalten Abonnenten: den Einstiegschart und bis zu zwei höhere Zeitrahmen, als ein Markt gelesen. 20 Sekunden.",
@@ -314,7 +314,7 @@ export default {
     plansSub: "Dieselbe Engine in jedem Tarif. Jederzeit kündbar."
   },
   foundingBanner: {
-    text: "Angebot für frühe Abonnenten: {pct}% Rabatt im ersten Monat des Monatstarifs mit {code}, beim Bezahlen angewendet. Danach $29/Monat.",
+    text: "Angebot für frühe Abonnenten: {pct}% Rabatt im ersten Monat des Monatstarifs mit {code}, beim Bezahlen angewendet. Danach {monthly}/Monat.",
     cta: "Tarife ansehen"
   },
   productClarity: {
@@ -351,11 +351,11 @@ export default {
     paymentRetry: "Erneut prüfen",
     paymentSettings: "Abo ansehen",
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
-    weeklyRenewal: "$7,99 jetzt und alle 7 Tage bis zur Kündigung.",
-    monthlyRenewal: "$29 jetzt und monatlich bis zur Kündigung.",
+    weeklyRenewal: "{weekly} jetzt und alle 7 Tage bis zur Kündigung.",
+    monthlyRenewal: "{monthly} jetzt und monatlich bis zur Kündigung.",
     offerRegular: "Regulärer Preis",
     offerFirstMonth: "im ersten Monat",
-    offerThen: "Danach $29/Monat. Jederzeit in den Einstellungen kündigen.",
+    offerThen: "Danach {monthly}/Monat. Jederzeit in den Einstellungen kündigen.",
     offerCta: "Für {price} im ersten Monat starten",
     freeEligibility: "Eine Gratis-Demo pro Gerät, ohne Konto. Neue Konten bekommen einen 3-tägigen Gratistest mit 7 Analysen, ohne Karte.",
   },
@@ -1353,8 +1353,8 @@ export default {
     aiLevelNote: "Die KI hat diesen Preis markiert, aber ihr Plan hat die Risikoprüfung nicht bestanden. Es ist ein Preis zum Beobachten, kein Trade.",
   },
   paywall: {
-    ctaWeekly: "Starte mit einer Woche: $7,99 für 25 Schnellanalysen",
-    orMonthly: "Oder monatlich: $29/Monat für 200 Schnellanalysen",
+    ctaWeekly: "Starte mit einer Woche: {weekly} für 25 Schnellanalysen",
+    orMonthly: "Oder monatlich: {monthly}/Monat für 200 Schnellanalysen",
     titleNewAnalysis: "Deine kostenlosen Analysen sind aufgebraucht",
     titleArea: 'Abonniere, um weiter Zugriff auf deine Analysen und Trades zu haben',
     descNewAnalysis: "Abonniere, um diesen Chart und die nächsten zu analysieren: Jetzt einsteigen, Beobachten oder Kein Trade mit den Levels und der Begründung, dazu Preisalarme für Krypto, Forex und Metalle.",
@@ -1363,7 +1363,7 @@ export default {
     descHistory: 'Diese Analyse ist älter als deine letzten 3. Abonniere, um deinen kompletten Verlauf wieder zu öffnen.',
     descSetups: 'Keine Analyse dieses Setups gehört zu deinen letzten 3. Abonniere, um alle Versionen wieder zu öffnen.',
     descWatching: "Deine beobachteten Levels und was der Kurs dort gemacht hat, sind sofort nach dem Abo wieder offen.",
-    allPlans: 'Alle Pläne, auch jährlich für $290/Jahr',
+    allPlans: 'Alle Pläne, auch jährlich für {yearly}/Jahr',
     opening: 'Sicherer Checkout wird geöffnet…',
     yourChart: 'Dein Chart',
     includesTitle: "Was ein Tradeplan enthält",
@@ -1654,9 +1654,9 @@ export default {
       analysesQuick: 'Schnellanalysen',
       starterBadge: 'Alles inklusive',
       starterCta: 'Loslegen',
-      fS1: '200 Ticks monatlich (~200 schnelle oder 66 Deep)', fS2: 'Schnell- + Deep-Analyse, vollständige Historie', fS3: 'Verifizierte Kerzen bei geeigneten Schnellanalysen + Kalender, falls verfügbar', fS4: '$0,145 pro Schnellanalyse im Monatsplan',
+      fS1: '200 Ticks monatlich (~200 schnelle oder 66 Deep)', fS2: 'Schnell- + Deep-Analyse, vollständige Historie', fS3: 'Verifizierte Kerzen bei geeigneten Schnellanalysen + Kalender, falls verfügbar', fS4: '{perAnalysis} pro Schnellanalyse im Monatsplan',
       monthlyReset: 'Ihr Guthaben wird zu Beginn jedes Abrechnungsmonats auf 200 Ticks zurückgesetzt. Nicht genutzte Ticks verfallen.',
-      weeklyLine: 'Noch keinen Monat? $7,99 pro Woche für 25 Ticks, jederzeit kündbar.',
+      weeklyLine: 'Noch keinen Monat? {weekly} pro Woche für 25 Ticks, jederzeit kündbar.',
     },
     faq: {
       label: 'FAQ', title: 'Fragen,', highlight: 'die Trader stellen.',

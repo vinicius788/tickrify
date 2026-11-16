@@ -10,10 +10,14 @@ vi.mock('@/lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('@clerk/clerk-react', () => ({ useAuth: () => ({ getToken: async () => null }) }));
 vi.mock('@/hooks/useTicks', () => ({ useTicks: () => ({ balance: 0 }) }));
 const offer = { current: null as null | { active: boolean; code: string; percentOff: number | null } };
-vi.mock('@/hooks/useFoundingOffer', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/hooks/useFoundingOffer')>()),
-  useFoundingOffer: () => offer.current,
-}));
+vi.mock('@/hooks/useFoundingOffer', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@/hooks/useFoundingOffer')>();
+  return {
+    ...mod,
+    useFoundingOffer: () => offer.current,
+    useLocalPrices: (language: Parameters<typeof mod.localPricesFrom>[1]) => mod.localPricesFrom(null, language),
+  };
+});
 vi.mock('@/lib/ratings', () => ({ useTestimonials: () => [] }));
 vi.mock('@/components/dashboard/UpgradeVideo', () => ({ default: () => null }));
 

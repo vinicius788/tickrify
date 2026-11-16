@@ -71,6 +71,36 @@ export const PRICES: Record<PlanType, Record<PlanCycle, Record<Currency, string>
 export const WEEKLY_PRICE_ID = 'price_1UKeWPB1hl0IoocUjsQNv9BG';
 export const WEEKLY_TICKS = 25;
 
+/**
+ * Moedas em que o checkout COBRA (13/11/2026). O price ID continua sempre o
+ * USD (a fronteira do controller nao mudou); estas moedas sao as
+ * `currency_options` cadastradas DENTRO desse mesmo price, no valor do dolar
+ * pelo cambio, arredondado. A sessao so usa uma delas se o price tiver a opcao;
+ * senao cobra em USD. Real fica de fora de proposito (decisao do dono: o
+ * produto e global e o Brasil nao e foco).
+ */
+export const CHARGE_CURRENCIES = ['usd', 'eur', 'gbp', 'jpy', 'cad', 'aud'] as const;
+export type ChargeCurrency = (typeof CHARGE_CURRENCIES)[number];
+
+export function isChargeCurrency(value: unknown): value is ChargeCurrency {
+  return typeof value === 'string' && (CHARGE_CURRENCIES as readonly string[]).includes(value);
+}
+
+/** Moedas sem centavos na Stripe: o valor da API ja e a unidade inteira (¥4500 = 4500). */
+const ZERO_DECIMAL_CURRENCIES = new Set([
+  'bif', 'clp', 'djf', 'gnf', 'jpy', 'kmf', 'krw', 'mga', 'pyg', 'rwf', 'ugx', 'vnd', 'vuv', 'xaf', 'xof', 'xpf',
+]);
+
+/**
+ * Valor da Stripe (unidade minima) para a unidade normal da moeda. Todo valor
+ * que sai para PostHog, Meta, e-mail ou tela passa por aqui: dividir por 100
+ * direto transformava ¥4500 em 45.
+ */
+export function toMajorUnits(amount: number | null | undefined, currency: string | null | undefined): number {
+  const value = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;
+  return ZERO_DECIMAL_CURRENCIES.has(String(currency || 'usd').toLowerCase()) ? value : value / 100;
+}
+
 export function isWeeklyPriceId(priceId: string | null | undefined): boolean {
   return priceId === WEEKLY_PRICE_ID || Boolean(process.env.STRIPE_TEST_PRICE_WEEKLY && priceId === process.env.STRIPE_TEST_PRICE_WEEKLY);
 }

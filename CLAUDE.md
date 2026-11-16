@@ -164,7 +164,8 @@ Vale para TODA mudanca, grande ou pequena:
   assinante e NO MAXIMO 200: no inicio de cada janela mensal volta a ser
   exatamente 200 (nao acumula). Quick = 1 tick, deep = 3. Free = 3 analises
   quick (deep so para assinante). Na UI se fala em "analyses"; "ticks" e so
-  unidade de cobranca. Checkout sempre em USD. **O Adaptive Pricing NAO
+  unidade de cobranca. Price sempre o de USD; a moeda cobrada pode ser local
+  (3.3, moeda local). **O Adaptive Pricing NAO
   converte** (lido no Sigma em 13/11/2026: 0 de ~100 sessoes com
   `is_adaptive_pricing_active`, embora ligado no painel): a conta e BR e
   liquida em BRL, e ele exige preco numa moeda de liquidacao da conta.
@@ -411,9 +412,24 @@ Vale para TODA mudanca, grande ou pequena:
   pagou, `is_adaptive_pricing_active`). Marca do Checkout ja usa as cores do
   site (cor da marca `#f7f7f5`, destaque `#08090a`, "Usar cores da marca") e o
   logo oficial.
-- **Moeda fixa `usd` no servidor** (controller ignora o body). E fronteira de
-  seguranca, nao preferencia: nao reverter. Price IDs BRL/EUR e planos
-  `pro`/`elite` ficam no `stripe.config.ts` so como legado.
+- **Moeda fixa `usd` no servidor** (controller ignora o `currency` do body). E
+  fronteira de seguranca, nao preferencia: nao reverter. O price e SEMPRE o de
+  USD. Price IDs BRL/EUR e planos `pro`/`elite` ficam no `stripe.config.ts` so
+  como legado.
+- **Moeda local (16/11/2026, branch `claude/local-currency`):** EUR, GBP, JPY,
+  CAD e AUD saem das `currency_options` do MESMO price de USD (valor = o dolar
+  convertido e arredondado, decisao do dono em 13/11). `GET /api/stripe/prices`
+  (publica, cache de 10 min) devolve os valores que existem na Stripe; o site
+  escolhe a moeda pelo fuso (`detectChargeCurrency`, `localPricesFrom` em
+  `hooks/useFoundingOffer.ts`) e so mostra moeda local se os 3 ciclos tiverem
+  valor nela, senao tudo em USD. O checkout recebe `localCurrency` (lista
+  fechada `CHARGE_CURRENCIES`) e o servidor so a usa se o price tiver a opcao
+  (`sessionCurrencyFor`); Founding Member sempre USD. Sessao aberta so e
+  reaproveitada na mesma moeda. Valores da Stripe em unidade menor sempre por
+  `toMajorUnits` (iene nao tem centavos). Comissao de afiliado em USD pela
+  proporcao do price (`usdByPriceRatio`). HTML cru (`geo-body.mjs`) e e-mails
+  seguem em USD. **Sem `currency_options` cadastradas na Stripe, tudo fica
+  igual a antes (USD).**
 - **Webhook na API `2025-07-30.basil`:** a fatura traz a assinatura em
   `parent.subscription_details`, nao no topo (`invoiceSubscriptionRef` le os dois
   formatos). Todo campo novo lido do payload: conferir no formato basil.
@@ -1175,6 +1191,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 16/11 | **Moeda local (3.3): cadastrar as `currency_options` na Stripe depois do deploy, so com OK do dono.** Valores propostos (dolar convertido e arredondado): semanal / mensal / anual em EUR 7,49/27/270, GBP 6,49/23/230, JPY 1200/4500/45000, CAD 10,99/39/390, AUD 11,99/44/440 nos prices `price_1UKeWPB1hl0IoocUjsQNv9BG` (semanal), `price_1TRvEJB1hl0IoocUvbCyxkt5` (mensal), `price_1TRvKHB1hl0IoocU3N7MMGcG` (anual). Depois: `/api/stripe/prices` com as moedas, e uma sessao de teste por moeda (fuso trocado no navegador) conferindo que a pagina da Stripe mostra o mesmo valor do site. Telefone de suporte da Stripe: trocar quando o dono mandar o numero. | dono / Claude |
 | 11/11 | **"I entered" no WATCH (3.21) no ar (#47, 12/11 12:32 UTC).** Conferido com a conta do dono em 12/11: a lista traz `watchEntry` e registro numa analise NO_TRADE e recusado com `not_a_watch` (coluna no banco ok). Falta: um registro real num WATCH conferido no My Trades e no Diario. Medir em 14 dias: `watch_entry_logged` por WATCH concluido e quantos registros ganham resultado. | dono / Claude |
 | 11/11 | **Quiz de conta nova (3.20) no ar (#45, 11/11 21:18 UTC; o #44 foi mesclado na branch do #42 e o #45 o levou a main).** No pacote publicado; nao aparece para conta com lista ou analise (conferido na conta do dono). Falta ver com uma conta nova de verdade. Medir em 14 dias: `onboarding_quiz_completed` / `onboarding_quiz_viewed`, e o retorno no dia 2 do trial de quem completou x quem pulou (meta: de 21% para 35%). | dono / Claude |
 | 11/11 | **Alerta do My assets (3.17) no ar (#42 em 11/11 20:45 UTC; correcao da auditoria pelo #45).** Conferido com a conta do dono em 12/11: `alertsAvailable: true`, botao "Alert on/off" na tela, XAUUSD com alerta. Falta: ver um disparo chegar pelo Telegram com o link do ativo marcado. Medir em 14 dias: `watch_asset_alert_toggled on=true` por pessoa e `setup_alert_triggered` com `setupId` nulo. | dono / Claude |
@@ -1254,6 +1271,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 
+- **16/11 (moeda local):** preco e checkout em EUR/GBP/JPY/CAD/AUD pelas `currency_options` do price de USD (3.3); dormente ate os valores serem cadastrados na Stripe. Telefone de suporte da Stripe: o dono diz que +55 31 98672 0240 nao e dele; a Stripe exige um numero e ele aparece no extrato do cartao. Trocar quando o dono mandar o novo.
 - **13/11 (checkout, confianca):** FAQ de pagamento lista cartao, Apple Pay, Google Pay e Link, cobranca em USD e o que fazer com cartao recusado; "Is there a refund guarantee?" virou "Can I get a refund?" com a politica real (periodo iniciado nao reembolsa, trial antes, Tick de analise que falha volta sozinho); Termos (secao 15) trocam "three analyses are free" pelo trial de 3 dias; 6 idiomas; comentario errado sobre Adaptive Pricing e Pix no `stripe.service.ts` corrigido.
 - **12/11 (paginas estaticas e PostHog):** 14 paginas de blog, /for e /tools e o llms.txt deixam de prometer entry/stop/targets (ou BUY/SELL/WAIT, dois alvos, niveis desenhados no grafico) em toda leitura: falam Enter now / Watch / No trade; dateModified e sitemap em 2026-11-12. PostHog: filtro de usuarios internos por e-mail (contas do dono e `tickrify+*`) ligado por padrao; insights "Alerta de trafego" e 4 alertas (visitantes -30% na semana, ChatGPT -40%, cadastros -30%, menos de 10 visitantes no dia), aviso por e-mail ao dono. Ligadas no /admin em 12/11: `CHAT_EMAIL_NOTIFY`, `EMAIL_TRIAL_SEQUENCE`, `EMAIL_PAYMENT_FAILED` (texto conferido contra o acesso: past_due perde o plano).
 - **12/11 (conversao, ganhos rapidos, branch `claude/quick-wins`):** diagnostico do funil (0 assinante novo desde 06/10, 0 de 125 trials convertidos, 1 assinatura real ativa; `EMAIL_TRIAL_SEQUENCE` desligada, nenhum e-mail `trial_*` enviado). Textos que prometiam entry/stop/targets em toda leitura (FAQ, /try, og:image:alt, paywall, contador do trial, boas-vindas, 1o e-mail do trial) passam a falar Enter now / Watch / No trade nos 6 idiomas; FAQ deixa de citar o R/R guard de 1,2:1 (saiu no v11); paywall fala em analises rapidas, nao Ticks.
