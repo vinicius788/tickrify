@@ -75,6 +75,8 @@ export interface SetupAlert {
   /** Intervalo em vigor no servidor; null = ainda nao checado ou mercado fechado. */
   checkIntervalMs?: number | null;
   marketClosed?: boolean;
+  /** Preco chegou perto do nivel (chave SETUP_ALERT_NEAR no servidor). */
+  near?: boolean;
 }
 
 export interface WatchingItem {
@@ -87,7 +89,7 @@ export interface WatchingItem {
   checkedAt: string | null;
   checkIntervalMs: number | null;
   marketClosed: boolean;
-  alert: { id: string; setupId: string; status: SetupAlert['status']; triggeredAt: string | null; seenAt: string | null } | null;
+  alert: { id: string; setupId: string; status: SetupAlert['status']; triggeredAt: string | null; seenAt: string | null; near?: boolean } | null;
   journey: WatchJourney;
 }
 
@@ -499,8 +501,11 @@ export function useExpiryClock(expires: number, fixedNow?: number): number {
   return now;
 }
 
-export function hasActiveLevel(items: SetupAlert[], setupId: string | null | undefined, analysisId: string, level: number): boolean {
+export function findActiveLevel(items: SetupAlert[], setupId: string | null | undefined, analysisId: string, level: number): SetupAlert | undefined {
   // A lista pode anteceder o primeiro clique, que acabou de vincular a analise ao setup.
   const id = setupId ?? items.find((item) => item.analysisId === analysisId)?.setupId;
-  return Boolean(id && items.some((item) => item.setupId === id && item.status === 'active' && item.level === level));
+  return id ? items.find((item) => item.setupId === id && item.status === 'active' && item.level === level) : undefined;
 }
+
+export const hasActiveLevel = (items: SetupAlert[], setupId: string | null | undefined, analysisId: string, level: number): boolean =>
+  Boolean(findActiveLevel(items, setupId, analysisId, level));

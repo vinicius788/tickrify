@@ -64,6 +64,20 @@ describe('WATCH pendente', () => {
     expect(screen.queryByTestId('conditional-plan')).toBeNull();
   });
 
+  it('aviso de proximidade: selo e linha so com near, sem near nada muda', () => {
+    alertItems = [alert()];
+    wrap(<WatchPending analysisId="w1" watch={watch()} surface="today" now={NOW} />);
+    expect(screen.queryByTestId('alert-near')).toBeNull();
+    expect(screen.getByText('Alert active at 77,800')).toBeTruthy();
+    cleanup();
+    alertItems = [alert({ near: true })];
+    wrap(<WatchPending analysisId="w1" watch={watch()} surface="today" now={NOW} />);
+    expect(screen.getByTestId('alert-near').textContent).toBe('Price is closeNot an entry signal. Re-check the chart when price reaches the level.');
+    cleanup();
+    wrap(<WatchPending analysisId="w1" watch={watch()} surface="today" now={NOW} />, 'pt');
+    expect(screen.getByTestId('alert-near').textContent).toContain('Preço está perto');
+  });
+
   it('nivel da IA: so promete o aviso quando o alerta existe', () => {
     const aiLevel = { price: 77800, direction: 'long' as const, invalidation: 77000, validForCandles: 12, reason: 'no_valid_geometry' };
     wrap(<LevelMapCard levelMap={null} aiLevel={aiLevel} analysisId="w1" alerts formatPrice={(v) => String(v)} />);

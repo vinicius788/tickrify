@@ -538,6 +538,7 @@ interface TrackRecord {
   refFillPrice: number | null;
   snapFallback: boolean | null;
   entryWarned: boolean | null;
+  lateWarned: boolean | null;
 }
 
 /** Ouro e forex antes da correcao do fuso: entrada do motor sem swings, nao servem para julgar. */
@@ -571,7 +572,8 @@ async function review(): Promise<void> {
     const all = await prisma.$queryRawUnsafe<TrackRecord[]>(
       `SELECT a."createdAt", t."touched", t."filled", t."signalState", t."engineVersion", t."symbol", t."direction", t."outcome",
               t."fillPrice", t."stopLoss", t."takeProfit1", t."atr", t."refOutcome", t."refFillPrice",
-              (a."result"->>'snapFallback') = 'true' AS "snapFallback", a."result" ? 'entryWarnings' AS "entryWarned"
+              (a."result"->>'snapFallback') = 'true' AS "snapFallback", (a."result"->'entryWarnings' @> '[2]'::jsonb OR a."result"->'entryWarnings' @> '[7]'::jsonb) AS "entryWarned",
+              a."result"->'entryWarnings' @> '[8]'::jsonb AS "lateWarned"
        FROM "tickrify"."AnalysisTrack" t
        JOIN "tickrify"."Analysis" a ON a."id" = t."analysisId"
        WHERE t."status" = 'tracked' AND ($1::text IS NULL OR a."createdAt" >= $1::date)`,
@@ -607,6 +609,7 @@ async function review(): Promise<void> {
     const enterNow = current.filter((r) => r.signalState === 'ENTER_NOW');
     verdictLine('ENTER_NOW sem swing encaixada', 'a chave ENGINE_SNAP_FALLBACK', 'a chave ENGINE_SNAP_FALLBACK (voltar para 0)', enterNow.filter((r) => r.snapFallback === true));
     verdictLine('ENTER_NOW com C2 ou C7 em FAIL', 'a chave ENGINE_ENTER_REQUIRED_CHECKS', 'a chave ENGINE_ENTER_REQUIRED_CHECKS (voltar para 0)', enterNow.filter((r) => r.entryWarned === true));
+    verdictLine('ENTER_NOW com movimento atrasado', 'a chave ENGINE_LATE_AS_WARNING', 'a chave ENGINE_LATE_AS_WARNING', enterNow.filter((r) => r.lateWarned === true));
     verdictLine('WATCH tocado e preenchido', 'a entrada no nivel', 'a entrada no nivel (ENGINE_ENTER_AT_LEVEL)', current.filter(isFilledWatch));
   } finally {
     await prisma.$disconnect();

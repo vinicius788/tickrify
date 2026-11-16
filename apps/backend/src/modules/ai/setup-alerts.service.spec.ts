@@ -5,6 +5,7 @@ import {
   SetupAlertsService,
   alertSuggestions,
   createAlertTick,
+  createEntryAlerts,
   createWatchAlert,
   findTrigger,
   runAlertMonitor,
@@ -660,6 +661,85 @@ describe('runAlertMonitor', () => {
   });
 });
 
+describe('runAlertMonitor: aviso de proximidade (SETUP_ALERT_NEAR)', () => {
+  const NOW = new Date(T + 30 * 60 * 1000);
+  const row = (extra: Record<string, unknown> = {}) => ({
+    id: 'alert-1', userId: 'u1', setupId: SETUP.id, priceSymbol: 'BTCUSDT', level: 110, label: 'tp1', side: 'above',
+    createdAt: new Date(T), watchFrom: new Date(T), clerkUserId: 'clerk_1', ...extra,
+  });
+  // Ultimo fechamento = 108: a 2 do nivel (110).
+  const candles = [bar(0, 105, 100), bar(1, 108, 100)];
+
+  function run(rows: unknown[], marked = 1) {
+    const { prisma, calls } = makePrisma([
+      ['WHERE a."status" = \'active\'\n    ORDER BY', () => rows],
+      ['INSERT INTO "tickrify"."AlertPriceCheck"', () => [{ symbol: 'BTCUSDT' }]],
+      ['SET "nearAt"', () => marked],
+    ]);
+    const go = () => runAlertMonitor({ prisma, now: () => NOW, fetchCrypto: jest.fn(async () => candles), isPaused: async () => false, log: jest.fn() });
+    return { go, calls };
+  }
+  const select = (calls: Array<{ text: string; values: unknown[] }>) => calls.find((c) => c.text.includes('ORDER BY a."priceSymbol"'))!;
+  const nearUpdate = (calls: Array<{ text: string; values: unknown[] }>) => calls.find((c) => c.text.includes('SET "nearAt"'));
+
+  afterEach(() => {
+    delete process.env.SETUP_ALERT_NEAR;
+  });
+
+  it('chave desligada: o SELECT e o monitor ficam como eram, sem ATR e sem marca', async () => {
+    const { go, calls } = run([row({ atr: 5 })]);
+    await go();
+    expect(select(calls).text).not.toContain('nearAt');
+    expect(select(calls).text).not.toContain('atr14');
+    expect(nearUpdate(calls)).toBeUndefined();
+    expect(captureServer).not.toHaveBeenCalled();
+  });
+
+  it('ligada: marca near por UPDATE condicional e emite setup_alert_near uma vez', async () => {
+    process.env.SETUP_ALERT_NEAR = 'true';
+    const { go, calls } = run([row({ atr: 5, nearAt: null })]);
+    await expect(go()).resolves.toMatchObject({ checked: 1, triggered: 0 });
+    expect(select(calls).text).toContain('atr14');
+    const update = nearUpdate(calls);
+    expect(update?.text).toContain('"status" = \'active\' AND "nearAt" IS NULL');
+    expect(update?.values).toEqual(expect.arrayContaining([NOW, 'alert-1']));
+    expect(captureServer).toHaveBeenCalledWith('clerk_1', 'setup_alert_near', {
+      alertId: 'alert-1', setupId: SETUP.id, label: 'tp1', symbol_class: 'crypto',
+    }, { dedupeKey: 'setup_alert_near:alert-1' });
+  });
+
+  it('outra instancia ja marcou (UPDATE em 0 linhas): nao emite de novo', async () => {
+    process.env.SETUP_ALERT_NEAR = 'true';
+    const { go } = run([row({ atr: 5, nearAt: null })], 0);
+    await go();
+    expect(captureServer).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['sem ATR', { atr: null, nearAt: null }],
+    ['ATR zero', { atr: 0, nearAt: null }],
+    ['longe (3 > 0,5 x 5)', { atr: 1, nearAt: null }],
+    ['ja marcado', { atr: 5, nearAt: new Date(T) }],
+  ])('%s: nao marca', async (_name, extra) => {
+    process.env.SETUP_ALERT_NEAR = 'true';
+    const { go, calls } = run([row(extra)]);
+    await go();
+    expect(nearUpdate(calls)).toBeUndefined();
+    expect(captureServer).not.toHaveBeenCalled();
+  });
+
+  it('a regra mora em ALERT_RULES e o view so mostra near com a chave ligada e o alerta ativo', async () => {
+    expect(ALERT_RULES.nearAtr).toBe(0.5);
+    const active = { id: 'a1', userId: 'u', setupId: SETUP.id, analysisId: 'x', symbol: 'BTCUSDT', priceSymbol: 'BTCUSDT', level: 110, label: 'tp1', side: 'above', status: 'active', createdAt: new Date(T), triggeredAt: null, triggerPrice: null, seenAt: null, nearAt: new Date(T), timeframe: '15m' };
+    const { prisma } = makePrisma([['FROM "tickrify"."SetupAlert" a', () => [active, { ...active, id: 'a2', status: 'triggered' }]]]);
+    const service = new SetupAlertsService(prisma, {} as never);
+    await service.onModuleInit();
+    expect((await service.list('u')).items.map((a) => a.near)).toEqual([false, false]);
+    process.env.SETUP_ALERT_NEAR = 'true';
+    expect((await service.list('u')).items.map((a) => a.near)).toEqual([true, false]);
+  });
+});
+
 describe('createAlertTick', () => {
   const counts = (triggered: number) => ({ symbols: 1, checked: 1, triggered, paused: 0 });
   const tick = (triggered: number[]) => {
@@ -984,6 +1064,121 @@ describe('createWatchAlert: todo WATCH vira alerta', () => {
     const log = jest.fn();
     await expect(createWatchAlert(f.prisma, INPUT, log)).resolves.toBe('error');
     expect(log.mock.calls.flat().join(' ')).toContain('db down');
+  });
+});
+
+describe('createEntryAlerts: TP1 e stop do Enter now (ENTER_NOW_AUTO_ALERTS)', () => {
+  const ENTER = {
+    signalState: 'ENTER_NOW',
+    dataMode: 'real_data',
+    analysis: { symbol: 'BTCUSDT', timeframe: '15m', currentPrice: 77200, entry: 77200, stopLoss: 76800, takeProfit1: 78000 },
+  };
+  const INPUT = { analysisId: 'analysis00003', userId: 'u1', result: ENTER, recommendation: 'BUY' };
+  const SETUP_ROW = { id: 'setup-entry0001', userId: 'u1', status: 'tracking', symbol: 'BTCUSDT', timeframe: '15m', rootAnalysisId: 'analysis00003', createdAt: new Date(), lastAnalysisAt: new Date() };
+
+  function fake(opts: { handled?: boolean; setupsWithAlerts?: number; activeOnSetup?: number } = {}) {
+    let inserted = false;
+    let active = opts.activeOnSetup ?? 0;
+    const { prisma, calls } = makePrisma(
+      [
+        ['SELECT "lastPrice", "checkedAt" FROM', () => []],
+        ['a."groundingStats"', () => [{ id: INPUT.analysisId, setupId: null, createdAt: new Date(), groundingInterval: '15m', clerkUserId: 'clerk_1' }]],
+        ['COUNT(DISTINCT "setupId")', () => [{ n: opts.setupsWithAlerts ?? 0 }]],
+        ['COUNT(*)::int AS "n" FROM "tickrify"."SetupAlert"', () => [{ n: active }]],
+        ['COUNT(*)::int AS "n" FROM "tickrify"."TrackedSetup"', () => [{ n: 0 }]],
+        ['SELECT EXISTS (SELECT 1 FROM "tickrify"."Subscription"', () => [{ ok: false }]],
+        ['AS "ok"', () => [{ ok: false }]],
+        ['SELECT "label" FROM "tickrify"."SetupAlert"', () => (opts.handled ? [{ label: 'tp1' }] : [])],
+        ['INSERT INTO "tickrify"."TrackedSetup"', () => { inserted = true; return 1; }],
+        ['INSERT INTO "tickrify"."SetupAlert"', () => { active += 1; return 1; }],
+        ['"rootAnalysisId" =', () => []],
+        ['FROM "tickrify"."TrackedSetup"', () => (inserted ? [SETUP_ROW] : [])],
+        ['WHERE a."id" =', (_text, values) => [{ id: values[0], setupId: SETUP_ROW.id, analysisId: INPUT.analysisId, symbol: 'BTCUSDT', level: 78000, label: 'tp1', side: 'above', status: 'active', createdAt: new Date() }]],
+      ],
+      {
+        adminAudit: { findFirst: jest.fn(async () => null) },
+        analysis: { count: jest.fn(async () => 0) },
+        subscription: { findFirst: jest.fn(async () => null) },
+      },
+    );
+    return { prisma, calls, inserts: () => calls.filter((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"')) };
+  }
+
+  afterEach(() => {
+    delete process.env.ENTER_NOW_AUTO_ALERTS;
+  });
+
+  it('chave desligada: nem consulta o banco', async () => {
+    const f = fake();
+    await expect(createEntryAlerts(f.prisma, INPUT)).resolves.toBe('disabled');
+    expect(f.calls).toHaveLength(0);
+  });
+
+  describe('ligada', () => {
+    beforeEach(() => {
+      process.env.ENTER_NOW_AUTO_ALERTS = 'true';
+    });
+
+    it('segue o setup e cria tp1 e stop na mesma transacao, com validade de 48h, e avisa o PostHog com auto', async () => {
+      const f = fake();
+      const log = jest.fn();
+      await expect(createEntryAlerts(f.prisma, INPUT, log)).resolves.toBe('created');
+      expect(f.prisma.$transaction).toHaveBeenCalledTimes(1);
+      const [tp1, stop] = f.inserts();
+      expect(tp1.values).toEqual(expect.arrayContaining(['u1', SETUP_ROW.id, 'analysis00003', 78000, 'tp1', 'above', 77200]));
+      expect(stop.values).toEqual(expect.arrayContaining([76800, 'stop', 'below']));
+      const expiresAt = tp1.values.find((v) => v instanceof Date) as Date;
+      expect(expiresAt.getTime()).toBeGreaterThan(Date.now() + 47.9 * 3600_000);
+      expect(expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 48 * 3600_000);
+      expect(captureServer.mock.calls.map((c) => [c[1], c[2].label, c[2].prefilled, c[2].auto])).toEqual([
+        ['setup_alert_created', 'tp1', true, true],
+        ['setup_alert_created', 'stop', true, true],
+      ]);
+      expect(captureServer.mock.calls.some((c) => c[1] === 'setup_followed')).toBe(false);
+      expect(log).toHaveBeenCalledWith('[alerts] entry-auto analysis=analysis00003 outcome=created');
+    });
+
+    it('idempotente: analise que ja tem alerta de tp1 ou stop nao recria', async () => {
+      const f = fake({ handled: true });
+      await expect(createEntryAlerts(f.prisma, INPUT)).resolves.toBe('already_handled');
+      expect(f.inserts()).toHaveLength(0);
+      expect(captureServer).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['teto de setups com alerta', { setupsWithAlerts: ALERT_RULES.maxSetupsWithAlerts.free }],
+      ['teto de alertas no setup (so cabe 1 vaga)', { activeOnSetup: ALERT_RULES.maxActivePerSetup - 1 }],
+    ])('%s: nao cria e nao lanca', async (_name, opts) => {
+      const f = fake(opts);
+      await expect(createEntryAlerts(f.prisma, INPUT)).resolves.toBe('limit');
+      expect(captureServer).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['fora do Enter now', { ...INPUT, result: { ...ENTER, signalState: 'WATCH' } }, 'not_enter_now'],
+      ['niveis estimados do print', { ...INPUT, result: { ...ENTER, dataMode: 'print' } }, 'print_mode'],
+      ['ativo sem fonte de preco', { ...INPUT, result: { ...ENTER, analysis: { ...ENTER.analysis, symbol: 'Volatility 75 Index' } } }, 'no_price_source'],
+      ['sem TP1', { ...INPUT, result: { ...ENTER, analysis: { ...ENTER.analysis, takeProfit1: null } } }, 'no_level'],
+      ['sem stop', { ...INPUT, result: { ...ENTER, analysis: { ...ENTER.analysis, stopLoss: null } } }, 'no_level'],
+    ])('%s: nem consulta o banco', async (_name, input, outcome) => {
+      const f = fake();
+      await expect(createEntryAlerts(f.prisma, input)).resolves.toBe(outcome);
+      expect(f.calls).toHaveLength(0);
+    });
+
+    it('nivel no proprio preco: recusa e nao cria nenhum dos dois', async () => {
+      const f = fake();
+      await expect(createEntryAlerts(f.prisma, { ...INPUT, result: { ...ENTER, analysis: { ...ENTER.analysis, takeProfit1: 77200 } } })).resolves.toBe('level_rejected');
+      expect(f.inserts()).toHaveLength(0);
+    });
+
+    it('banco fora do ar: nunca lanca', async () => {
+      const f = fake();
+      f.prisma.$queryRaw = jest.fn(async () => {
+        throw new Error('db down');
+      });
+      await expect(createEntryAlerts(f.prisma, INPUT)).resolves.toBe('error');
+    });
   });
 });
 

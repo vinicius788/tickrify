@@ -33,12 +33,14 @@ export type EngineReportRow = {
   coverage?: string | null;
   /** `result.snapFallback`: seguiu com a invalidacao do modelo (chave ENGINE_SNAP_FALLBACK). */
   snapFallback?: boolean | null;
-  /** `result.entryWarnings` presente: ENTER_NOW com C2 ou C7 em FAIL (chave ENGINE_ENTER_REQUIRED_CHECKS). */
+  /** `result.entryWarnings` com 2 ou 7: ENTER_NOW com C2 ou C7 em FAIL (chave ENGINE_ENTER_REQUIRED_CHECKS). */
   entryWarned?: boolean | null;
+  /** `result.entryWarnings` com 8: ENTER_NOW com movimento atrasado (chave ENGINE_LATE_AS_WARNING). */
+  lateWarned?: boolean | null;
 };
 
 /** ENTER_NOW que so existe por causa de uma chave de 16/11/2026, em serie propria. */
-export type GateSeries = { flag: 'ENGINE_SNAP_FALLBACK' | 'ENGINE_ENTER_REQUIRED_CHECKS'; trades: number; meanR: number | null; verdict: string };
+export type GateSeries = { flag: 'ENGINE_SNAP_FALLBACK' | 'ENGINE_ENTER_REQUIRED_CHECKS' | 'ENGINE_LATE_AS_WARNING'; trades: number; meanR: number | null; verdict: string };
 
 export type AssetClass = 'metal' | 'forex' | 'crypto' | 'other';
 const CLASSES: readonly AssetClass[] = ['metal', 'forex', 'crypto', 'other'];
@@ -62,7 +64,7 @@ export type EngineReport = {
   since: string;
   verdict: string;
   hasVariantB: boolean;
-  variants: { variant: 'A' | 'B'; total: EngineStats; classes: { assetClass: AssetClass; stats: EngineStats }[] }[];
+  variants: { variant: 'A' | 'B' | 'C'; total: EngineStats; classes: { assetClass: AssetClass; stats: EngineStats }[] }[];
   enterNow: { trades: number; meanR: number | null; verdict: string };
   gates: GateSeries[];
   noCandles: { reason: string; count: number }[];
@@ -79,7 +81,7 @@ export function assetClassOf(symbol: string | null): AssetClass {
   return 'other';
 }
 
-const variantOf = (row: EngineReportRow): 'A' | 'B' => (row.variant === 'B' ? 'B' : 'A');
+const variantOf = (row: EngineReportRow): 'A' | 'B' | 'C' => (row.variant === 'B' || row.variant === 'C' ? row.variant : 'A');
 const pct = (part: number, whole: number) => (whole ? (100 * part) / whole : null);
 const tradeOf = (row: EngineReportRow) => trackedTradeR({ symbol: row.symbol, outcome: row.outcome, fillPrice: row.fillPrice, stopLoss: row.stopLoss, takeProfit1: row.takeProfit1 });
 
@@ -106,20 +108,22 @@ function statsOf(rows: readonly EngineReportRow[]): EngineStats {
 const signed = (r: number) => `${r >= 0 ? '+' : ''}${r.toFixed(2).replace('.', ',')}R`;
 
 function abVerdict(a: EngineReport['variants'][number], b: EngineReport['variants'][number]): string {
+  const B = b.variant;
+  const key = `PROMPT_VARIANT_${B}_PERCENT`;
   const R = ENGINE_DECISION_RULES;
   const missingA = Math.max(0, R.minTradesPerVariant - a.total.closedTrades);
   const missingB = Math.max(0, R.minTradesPerVariant - b.total.closedTrades);
   if (missingA || missingB || a.total.meanR === null || b.total.meanR === null) {
-    return `Manter e esperar mais dados: faltam ${missingA} trades fechados na A e ${missingB} na B.`;
+    return `Manter e esperar mais dados: faltam ${missingA} trades fechados na A e ${missingB} na ${B}.`;
   }
   const worseClass = b.classes.some(({ assetClass, stats }) => {
     const other = a.classes.find((c) => c.assetClass === assetClass)?.stats;
     return stats.closedTrades >= R.minClassTrades && !!other && other.closedTrades >= R.minClassTrades && (stats.meanR as number) < (other.meanR as number);
   });
-  const compare = `A ${signed(a.total.meanR)}, B ${signed(b.total.meanR)} por trade`;
-  if (a.total.meanR - b.total.meanR >= R.turnOffGapR) return `Desligar a B: ${compare}. Ponha PROMPT_VARIANT_B_PERCENT em 0 na aba Config.`;
-  if (b.total.meanR > a.total.meanR && !worseClass) return `Ligar a B para todos: ${compare}. Ponha PROMPT_VARIANT_B_PERCENT em 100 na aba Config.`;
-  return `Manter e esperar mais dados: ${compare}, sem diferenca que decida${worseClass ? ' (a B perde em alguma classe com 10 ou mais trades)' : ''}. Ja ha trades suficientes (faltam 0 na A e 0 na B).`;
+  const compare = `A ${signed(a.total.meanR)}, ${B} ${signed(b.total.meanR)} por trade`;
+  if (a.total.meanR - b.total.meanR >= R.turnOffGapR) return `Desligar a ${B}: ${compare}. Ponha ${key} em 0 na aba Config.`;
+  if (b.total.meanR > a.total.meanR && !worseClass) return `Ligar a ${B} para todos: ${compare}. Ponha ${key} em 100 na aba Config.`;
+  return `Manter e esperar mais dados: ${compare}, sem diferenca que decida${worseClass ? ` (a ${B} perde em alguma classe com 10 ou mais trades)` : ''}. Ja ha trades suficientes (faltam 0 na A e 0 na ${B}).`;
 }
 
 /** Regra da revisao mensal: vale para ENTER_NOW e para WATCH tocado e preenchido, cada um na sua serie. */
@@ -172,7 +176,8 @@ function noCandlesOf(rows: readonly EngineReportRow[]): { reason: string; count:
 
 export function buildEngineReport(rows: readonly EngineReportRow[]): EngineReport {
   const hasVariantB = rows.some((r) => variantOf(r) === 'B');
-  const variants = (hasVariantB ? (['A', 'B'] as const) : (['A'] as const)).map((variant) => {
+  const present = (['A', 'B', 'C'] as const).filter((variant) => variant === 'A' || rows.some((r) => variantOf(r) === variant));
+  const variants = present.map((variant) => {
     const own = rows.filter((r) => variantOf(r) === variant);
     return {
       variant,
@@ -185,12 +190,13 @@ export function buildEngineReport(rows: readonly EngineReportRow[]): EngineRepor
   return {
     since: ENGINE_REPORT_SINCE,
     hasVariantB,
-    verdict: hasVariantB ? abVerdict(variants[0], variants[1]) : 'So existe a variante A: nao ha teste A/B para decidir.',
+    verdict: variants.length > 1 ? variants.slice(1).map((v) => abVerdict(variants[0], v)).join(' ') : 'So existe a variante A: nao ha teste A/B para decidir.',
     variants,
     enterNow: { trades: enterNowTrades.length, meanR, verdict: enterNowVerdict(enterNowTrades.length, meanR) },
     gates: [
       gateSeries('ENGINE_SNAP_FALLBACK', rows.filter((r) => r.snapFallback === true)),
       gateSeries('ENGINE_ENTER_REQUIRED_CHECKS', rows.filter((r) => r.entryWarned === true)),
+      gateSeries('ENGINE_LATE_AS_WARNING', rows.filter((r) => r.lateWarned === true)),
     ],
     noCandles: noCandlesOf(rows),
   };
@@ -211,7 +217,8 @@ export async function loadEngineReport(db: RawQuerier): Promise<EngineReport> {
            t."takeProfit1" AS "takeProfit1",
            a."groundingStats"->>'coverage' AS "coverage",
            (a."result"->>'snapFallback') = 'true' AS "snapFallback",
-           a."result" ? 'entryWarnings' AS "entryWarned"
+           (a."result"->'entryWarnings' @> '[2]'::jsonb OR a."result"->'entryWarnings' @> '[7]'::jsonb) AS "entryWarned",
+           a."result"->'entryWarnings' @> '[8]'::jsonb AS "lateWarned"
     FROM "tickrify"."Analysis" a
     LEFT JOIN "tickrify"."AnalysisTrack" t ON t."analysisId" = a."id"
     WHERE a."status" = 'completed'

@@ -61,6 +61,12 @@ export const SNAP_FALLBACK_FLAG = 'ENGINE_SNAP_FALLBACK';
  * aviso). O minimo de PASS nao muda. So com velas reais.
  */
 export const ENTER_CHECKS_FLAG = 'ENGINE_ENTER_REQUIRED_CHECKS';
+/** Movimento atrasado deixa de barrar o ENTER_NOW e vira aviso (item 8 de `entryWarnings`). 16/11/2026. */
+export const LATE_WARNING_FLAG = 'ENGINE_LATE_AS_WARNING';
+/** Item de `entryWarnings` do movimento atrasado (2 e 7 sao os do checklist). */
+export const LATE_WARNING_ITEM = 8;
+/** WATCH do modelo sem geometria valida a mercado nem no nivel segue WATCH (sem niveis), em vez de NO_TRADE. 16/11/2026. */
+export const GEOMETRY_WATCH_FLAG = 'ENGINE_WATCH_ON_REJECTED_GEOMETRY';
 
 function snapFallbackMode(): 0 | 1 | 2 {
   const value = flagNumber(SNAP_FALLBACK_FLAG);
@@ -249,7 +255,7 @@ export interface SignalDecisionResult {
   enterAtLevel: boolean;
   /** WATCH ou ENTER_NOW que seguiu com a invalidacao do modelo, sem swing encaixada (chave ENGINE_SNAP_FALLBACK). */
   snapFallback: boolean;
-  /** ENTER_NOW com C2 ou C7 em FAIL (chave ENGINE_ENTER_REQUIRED_CHECKS): os itens, para o aviso e a medicao. */
+  /** ENTER_NOW com C2 ou C7 em FAIL (chave ENGINE_ENTER_REQUIRED_CHECKS) ou com movimento atrasado (8, chave ENGINE_LATE_AS_WARNING). */
   entryWarnings: number[];
 }
 
@@ -426,7 +432,7 @@ function whyNot(state: SignalState, ev: PlanEvaluation): ValidatorReason | null 
   }
   if (state === 'WATCH') {
     if (!allPass(ev.checks, R.watchChecks)) return 'setup_failed';
-    if (!marketValid && typeof ev.limit === 'string') return 'no_valid_geometry';
+    if (!marketValid && typeof ev.limit === 'string' && !flagBool(GEOMETRY_WATCH_FLAG)) return 'no_valid_geometry';
     return ev.passes < R.minPassWatch ? 'checks_below_min' : null;
   }
   return null;
@@ -545,6 +551,8 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
   const start: SignalState = signalWithoutSide ? 'WATCH' : model;
   const mismatch: ValidatorNote[] = signalWithoutSide ? [{ from: model, to: 'WATCH', reason: 'state_mismatch' }] : [];
   const atLevel = !!real && isAtPriorLevel(input.priorWatch, modelPlan, real.price);
+  const lateNow = !!real && !!modelPlan && !atLevel && !!real.late?.[modelPlan.direction];
+  const lateAsWarning = lateNow && flagBool(LATE_WARNING_FLAG);
   let chosen: { state: SignalState; notes: ValidatorNote[]; levels: PlanLevels };
   let evaluation: PlanEvaluation | null = null;
   if (model === 'NO_TRADE') chosen = { state: 'NO_TRADE', notes: [], levels: NULL_LEVELS };
@@ -555,7 +563,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     const ev = evaluatePlan({
       plan: modelPlan, symbol: input.symbol, structureValidation: input.structureValidation,
       price: real.price, atr: real.atr as number, htfTrend: real.htfTrend, volRegime: real.volRegime, swings: real.swings ?? [],
-      late: !atLevel && real.late ? real.late[modelPlan.direction] : false,
+      late: lateNow && !lateAsWarning,
     });
     if (typeof ev === 'string') chosen = { state: 'NO_TRADE', notes: [...mismatch, { from: start, to: 'NO_TRADE', reason: ev }], levels: NULL_LEVELS };
     else {
@@ -651,7 +659,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     enterAtLevel: atLevel && state === 'ENTER_NOW',
     snapFallback: !!evaluation?.unsnapped && state !== 'NO_TRADE',
     entryWarnings: state === 'ENTER_NOW' && evaluation?.checks
-      ? ENGINE_RULES.enterNowChecks.filter((n) => evaluation.checks?.get(n) !== true)
+      ? [...ENGINE_RULES.enterNowChecks.filter((n) => evaluation.checks?.get(n) !== true), ...(lateAsWarning ? [LATE_WARNING_ITEM] : [])]
       : [],
   };
 }

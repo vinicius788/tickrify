@@ -700,6 +700,7 @@ export default {
       levelsEstimated: 'Niveaus aus dem Screenshot geschätzt',
       entryWarningLocation: 'Achtung: Der Einstieg liegt nicht am Rand der Range.',
       entryWarningRoom: 'Achtung: Zwischen Einstieg und Ziel 1 liegt ein Niveau, das den Preis schon gedreht hat.',
+      entryWarningLate: 'Achtung: Die Bewegung ist bereits weit gelaufen. Ein Einstieg hier ist ein später Einstieg.',
       pending: {
         title: 'Ausstehende Order',
         limitAt: 'Limit-Order bei {price}',
@@ -1339,6 +1340,8 @@ export default {
     unavailable: 'Ergebnis für diesen Wert nicht verfolgt',
     alertMe: 'Alarm bei {price}',
     alertActive: 'Alarm aktiv bei {price}',
+    nearBadge: 'Preis ist nah',
+    nearNote: 'Kein Einstiegssignal. Prüfe das Chart erneut, wenn der Preis das Level erreicht.',
     alertPaused: 'Abonniere, um Kursalarme zu setzen.',
     todayTitle: 'Ausstehende Niveaus',
     levelMapTitle: 'Niveaus im Blick',

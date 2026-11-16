@@ -709,6 +709,7 @@ export default {
       levelsEstimated: 'Níveis estimados pelo print',
       entryWarningLocation: 'Atenção: a entrada não está na borda do range.',
       entryWarningRoom: 'Atenção: há um nível que já virou o preço entre a entrada e o alvo 1.',
+      entryWarningLate: 'Atenção: o movimento já está esticado. Entrar aqui é entrar tarde.',
       pending: {
         title: 'Ordem pendente',
         limitAt: 'Ordem limitada em {price}',
@@ -1352,6 +1353,8 @@ export default {
     unavailable: 'Desfecho não acompanhado para este ativo',
     alertMe: 'Me avise em {price}',
     alertActive: 'Alerta ativo em {price}',
+    nearBadge: 'Preço está perto',
+    nearNote: 'Não é sinal de entrada. Reveja o gráfico quando o preço chegar ao nível.',
     alertPaused: 'Assine para criar alertas de preço.',
     todayTitle: 'Níveis pendentes',
     levelMapTitle: 'Níveis para observar',

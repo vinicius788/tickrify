@@ -701,3 +701,52 @@ describe('chaves de 16/11/2026: ENGINE_SNAP_FALLBACK e ENGINE_ENTER_REQUIRED_CHE
     });
   });
 });
+
+describe('chaves de 16/11/2026: ENGINE_LATE_AS_WARNING e ENGINE_WATCH_ON_REJECTED_GEOMETRY', () => {
+  const withFlag = async <T>(key: string, value: string, run: () => Promise<T>): Promise<T> => {
+    const before = process.env[key];
+    process.env[key] = value;
+    try { return await run(); } finally { if (before === undefined) delete process.env[key]; else process.env[key] = before; }
+  };
+  const late = { realData: real(99.9, { late: { long: true, short: false } }) };
+
+  it('atrasado desligada: rebaixa a WATCH, como sempre', async () => {
+    const d = await withFlag('ENGINE_LATE_AS_WARNING', 'false', () => decide(late));
+    expect(d).toMatchObject({ state: 'WATCH', entryWarnings: [], validatorNotes: [{ from: 'ENTER_NOW', to: 'WATCH', reason: 'late_move' }] });
+  });
+
+  it('atrasado ligada: ENTER_NOW com o aviso 8; sem atraso, nada muda', async () => {
+    const d = await withFlag('ENGINE_LATE_AS_WARNING', 'true', () => decide(late));
+    expect(d).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [8], validatorNotes: [] });
+    const promoted = await withFlag('ENGINE_LATE_AS_WARNING', 'true', () => decide({ ...watch, ...late }));
+    expect(promoted).toMatchObject({ state: 'ENTER_NOW', validatorAction: 'promoted', entryWarnings: [8] });
+    expect(await withFlag('ENGINE_LATE_AS_WARNING', 'true', () => decide())).toEqual(await decide());
+  });
+
+  it('atrasado ligada: geometria e checklist continuam barrando', async () => {
+    const c7 = await withFlag('ENGINE_LATE_AS_WARNING', 'true', () => decide({ ...late, structureValidation: checks(7) }));
+    expect(c7).toMatchObject({ state: 'WATCH', entryWarnings: [] });
+    const far = await withFlag('ENGINE_LATE_AS_WARNING', 'true', () => decide({ ...late, watchPlan: nearTarget }));
+    expect(far.state).toBe('WATCH');
+  });
+
+  /** Sem entrada valida a mercado nem no nivel: alvo a menos de 1R das duas. */
+  const noGeometry = { ...watch, watchPlan: { ...plan, target1: 99.8, target2: null } };
+
+  it('geometria desligada: WATCH sem geometria vira NO_TRADE, como sempre', async () => {
+    const d = await withFlag('ENGINE_WATCH_ON_REJECTED_GEOMETRY', 'false', () => decide(noGeometry));
+    expect(d).toMatchObject({ state: 'NO_TRADE', validatorNotes: [{ from: 'WATCH', to: 'NO_TRADE', reason: 'no_valid_geometry' }] });
+  });
+
+  it('geometria ligada: segue WATCH sem niveis, nunca ENTER_NOW; C3 e o minimo de PASS continuam valendo', async () => {
+    const d = await withFlag('ENGINE_WATCH_ON_REJECTED_GEOMETRY', 'true', () => decide(noGeometry));
+    expect(d).toMatchObject({ state: 'WATCH', recommendation: 'WAIT', watchLevels: null, validatorNotes: [], rejectedPlan: null });
+    expect(d.levels.entry).toBeNull();
+    const fromEnter = await withFlag('ENGINE_WATCH_ON_REJECTED_GEOMETRY', 'true', () => decide({ ...noGeometry, state: 'ENTER_NOW', recommendation: 'BUY' }));
+    expect(fromEnter.state).toBe('WATCH');
+    const c3 = await withFlag('ENGINE_WATCH_ON_REJECTED_GEOMETRY', 'true', () => decide({ ...noGeometry, structureValidation: checks(3) }));
+    expect(c3.state).toBe('NO_TRADE');
+    const few = await withFlag('ENGINE_WATCH_ON_REJECTED_GEOMETRY', 'true', () => decide({ ...noGeometry, structureValidation: checks(1, 2, 4, 5) }));
+    expect(few.state).toBe('NO_TRADE');
+  });
+});

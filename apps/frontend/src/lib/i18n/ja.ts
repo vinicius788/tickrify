@@ -700,6 +700,7 @@ export default {
       levelsEstimated: 'スクリーンショットから推定したレベル',
       entryWarningLocation: '注意：エントリーはレンジの端にありません。',
       entryWarningRoom: '注意：エントリーと目標1の間に、過去に価格を反転させた水準があります。',
+      entryWarningLate: '注意：値動きはすでに伸びています。ここでのエントリーは遅いエントリーです。',
       pending: {
         title: '予約注文',
         limitAt: '{price} の指値注文',
@@ -1339,6 +1340,8 @@ export default {
     unavailable: 'この銘柄の結果は追跡していません',
     alertMe: '{price}で通知',
     alertActive: '{price}で通知中',
+    nearBadge: '価格が近づいています',
+    nearNote: 'エントリーシグナルではありません。価格がこの水準に達したらチャートを再確認してください。',
     alertPaused: '価格アラートを設定するには購読してください。',
     todayTitle: '保留中のレベル',
     levelMapTitle: '注目レベル',
