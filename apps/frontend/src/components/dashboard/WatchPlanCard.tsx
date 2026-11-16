@@ -253,6 +253,8 @@ interface WatchPlanCardProps {
   symbol: string;
   formatPrice: (value: number | null) => string;
   estimated?: boolean;
+  /** Mostra o plano como entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL). */
+  pending?: boolean;
   watch?: WatchSummary | null;
   reach?: WatchReach | null;
   /** Condicao em uma linha, escrita pelo modelo. */
@@ -274,6 +276,7 @@ export function WatchPlanCard({
   symbol,
   formatPrice,
   estimated = false,
+  pending = false,
   watch,
   reach,
   condition,
@@ -356,8 +359,8 @@ export function WatchPlanCard({
       <CardContent className="p-5 md:p-6">
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(250px,300px)] md:gap-8">
           <div className="min-w-0">
-            <h3 className="tk-display text-base text-[var(--text-primary)]">{w.planTitle.replace('{zone}', zone)}</h3>
-            <p data-testid="watch-not-signal" className="mt-1 text-xs text-[var(--text-secondary)]">{w.notSignal}</p>
+            <h3 data-testid="watch-plan-title" className="tk-display text-base text-[var(--text-primary)]">{pending ? (long ? w.pendingBuy : w.pendingSell) : w.planTitle.replace('{zone}', zone)}</h3>
+            <p data-testid="watch-not-signal" className="mt-1 text-xs text-[var(--text-secondary)]">{pending ? w.pendingNote : w.notSignal}</p>
             <dl data-testid="watch-numbers" className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-4 ${tiles.length > 2 ? '2xl:grid-cols-4' : ''}`}>
               {tiles.map((tile) => (
                 <div key={tile.key} className="min-w-0">

@@ -827,3 +827,29 @@ describe('modo permissivo (chave ENGINE_PERMISSIVE, 16/11/2026)', () => {
     expect(outside.state).toBe('WATCH');
   });
 });
+
+describe('entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL, so apresentacao)', () => {
+  const run = async (value: string, patch: Partial<SignalDecisionInput>) => {
+    const before = process.env.ENGINE_PENDING_ENTRY_LABEL;
+    process.env.ENGINE_PENDING_ENTRY_LABEL = value;
+    try { return await decide(patch); } finally { if (before === undefined) delete process.env.ENGINE_PENDING_ENTRY_LABEL; else process.env.ENGINE_PENDING_ENTRY_LABEL = before; }
+  };
+  /** WATCH do modelo que fica WATCH: C7 em FAIL, com niveis validos no recuo. */
+  const waiting = { ...watch, structureValidation: checks(7) };
+
+  it('ligada: WATCH com niveis validos no nivel ganha pendingEntry; o estado e o resto nao mudam', async () => {
+    const off = await run('0', waiting);
+    const on = await run('1', waiting);
+    expect(off).toMatchObject({ state: 'WATCH', pendingEntry: false });
+    expect(off.watchLevels).not.toBeNull();
+    expect(on).toEqual({ ...off, pendingEntry: true });
+  });
+
+  it('ligada: sem niveis validos, ENTER_NOW e NO_TRADE nunca sao entrada pendente', async () => {
+    expect(await run('1', {})).toMatchObject({ state: 'ENTER_NOW', pendingEntry: false });
+    expect(await run('1', { state: 'NO_TRADE', recommendation: 'WAIT' })).toMatchObject({ state: 'NO_TRADE', pendingEntry: false });
+    const print = await run('1', { ...waiting, realData: null });
+    expect(print).toMatchObject({ state: 'WATCH', watchLevels: null, pendingEntry: false });
+    expect((await run('abc', waiting)).pendingEntry).toBe(false);
+  });
+});

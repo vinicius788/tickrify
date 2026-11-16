@@ -636,6 +636,9 @@ export default {
         price: 'Prix',
         chipBuy: 'Surveiller un achat',
         chipSell: 'Surveiller une vente',
+        pendingBuy: 'BUY sur repli',
+        pendingSell: 'SELL sur repli',
+        pendingNote: 'Entrée en attente : elle ne compte que si le prix atteint l’entrée avant l’expiration du plan.',
         chipClosed: "Watch clôturé",
         noEntryAt: 'Pas d’entrée à {price}.',
         waitPullback: 'Attendez un repli vers {zone}.',
@@ -702,7 +705,7 @@ export default {
       entryWarningRoom: 'Attention : un niveau qui a déjà retourné le prix se trouve entre l’entrée et l’objectif 1.',
       entryWarningLate: 'Attention : le mouvement est déjà étendu, cette entrée est donc plus tardive que l’idéal.',
       entryWarningTrend: 'Attention : ce trade va contre la tendance 4h.',
-      entryWarningForex: 'Attention : c’est une paire forex, pour laquelle le moteur demande normalement plus de confirmation.',
+      entryWarningForex: 'Attention : les paires forex demandent généralement plus de confirmation.',
       pending: {
         title: 'Ordre en attente',
         limitAt: 'Ordre limite à {price}',
