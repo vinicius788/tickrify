@@ -698,6 +698,8 @@ export default {
       watchExplain: 'Surveiller signifie qu\'il n\'y a pas encore d\'entrée au prix actuel. Rien à faire tant que le prix n\'atteint pas la zone d\'intérêt.',
       noTradeExplain: 'Pas de trade signifie que l\'IA n\'a pas trouvé de setup propre sur ce graphique pour l\'instant. Rester hors d\'un mauvais trade fait aussi partie du travail.',
       levelsEstimated: 'Niveaux estimés à partir de la capture',
+      entryWarningLocation: 'Attention : l’entrée n’est pas en bord de range.',
+      entryWarningRoom: 'Attention : un niveau qui a déjà retourné le prix se trouve entre l’entrée et l’objectif 1.',
       pending: {
         title: 'Ordre en attente',
         limitAt: 'Ordre limite à {price}',

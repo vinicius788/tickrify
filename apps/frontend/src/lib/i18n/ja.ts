@@ -698,6 +698,8 @@ export default {
       watchExplain: '監視は、現在の価格ではまだエントリーがないという意味です。価格が注目エリアに届くまで何もする必要はありません。',
       noTradeExplain: 'トレードなしは、AI がこのチャートで今はきれいなセットアップを見つけられなかったという意味です。悪いトレードを避けることも仕事のうちです。',
       levelsEstimated: 'スクリーンショットから推定したレベル',
+      entryWarningLocation: '注意：エントリーはレンジの端にありません。',
+      entryWarningRoom: '注意：エントリーと目標1の間に、過去に価格を反転させた水準があります。',
       pending: {
         title: '予約注文',
         limitAt: '{price} の指値注文',

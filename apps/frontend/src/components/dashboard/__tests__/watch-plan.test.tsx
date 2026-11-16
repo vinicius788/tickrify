@@ -93,6 +93,16 @@ describe('plano do WATCH (v10.1)', () => {
     expect(screen.queryByTestId('pending-order')).toBeNull();
   });
 
+  it('ENTER_NOW com C2 ou C7 em FAIL (chave do /admin): mostra o aviso de cada item; sem o campo, nada', () => {
+    renderResult('ENTER_NOW', null, { entryWarnings: [2, 7] });
+    expect(screen.getByTestId('entry-warning-2').textContent).toBe('Heads up: the entry is not at the edge of the range.');
+    expect(screen.getByTestId('entry-warning-7').textContent).toBe('Heads up: a level that has turned price before sits between the entry and target 1.');
+    cleanup();
+    renderResult('ENTER_NOW', null);
+    expect(screen.queryByTestId('entry-warning-2')).toBeNull();
+    expect(screen.queryByTestId('entry-warning-7')).toBeNull();
+  });
+
   it('sem velas reais (dataMode print): avisa que os niveis sao estimados do print', () => {
     renderResult('ARMED', plan, { dataMode: 'print' });
     expect(screen.getByTestId('levels-estimated').textContent).toBe('Levels estimated from the screenshot');

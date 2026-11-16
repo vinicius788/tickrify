@@ -186,6 +186,8 @@ interface WorkerAnalysisResult {
   aiLevel?: AiLevel | null;
   rejectedPlan?: RejectedPlan;
   enterAtLevel?: boolean;
+  snapFallback?: boolean;
+  entryWarnings?: number[];
   marketLevels?: EntryLevels;
   validatorNotes: ValidatorNote[];
   analysis: WorkerAnalysisDetails;
@@ -366,6 +368,8 @@ interface AdapterDecision {
   aiLevel?: AiLevel | null;
   rejectedPlan?: RejectedPlan;
   enterAtLevel?: boolean;
+  snapFallback?: boolean;
+  entryWarnings?: number[];
   marketLevels?: EntryLevels;
   validatorAction: ValidatorAction;
   /** Cada mudanca de estado do validador do adapter. */
@@ -397,6 +401,8 @@ function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
     aiLevel: (aiSource.aiLevel as AiLevel | null) ?? null,
     ...(aiSource.rejectedPlan ? { rejectedPlan: aiSource.rejectedPlan as RejectedPlan } : {}),
     ...(aiSource.enterAtLevel === true ? { enterAtLevel: true } : {}),
+    ...(aiSource.snapFallback === true ? { snapFallback: true } : {}),
+    ...(Array.isArray(aiSource.entryWarnings) && aiSource.entryWarnings.length ? { entryWarnings: aiSource.entryWarnings as number[] } : {}),
     ...(aiSource.marketLevels ? { marketLevels: aiSource.marketLevels as EntryLevels } : {}),
     validatorAction: meta.validatorAction as ValidatorAction,
     validatorNotes: Array.isArray(aiSource.validatorNotes) ? (aiSource.validatorNotes as ValidatorNote[]) : [],
@@ -543,6 +549,8 @@ async function toWorkerAnalysisResult(
     aiLevel: decision.aiLevel ?? null,
     ...(decision.rejectedPlan ? { rejectedPlan: decision.rejectedPlan } : {}),
     ...(decision.enterAtLevel ? { enterAtLevel: true } : {}),
+    ...(decision.snapFallback ? { snapFallback: true } : {}),
+    ...(decision.entryWarnings?.length ? { entryWarnings: decision.entryWarnings } : {}),
     ...(decision.marketLevels ? { marketLevels: decision.marketLevels } : {}),
     validatorNotes: decision.validatorNotes,
     analysis: {

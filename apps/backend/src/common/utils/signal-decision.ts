@@ -1,4 +1,4 @@
-import { flagBool } from '../flags/feature-flags';
+import { flagBool, flagNumber } from '../flags/feature-flags';
 import {
   Recommendation,
   canonicalFxPair,
@@ -49,6 +49,30 @@ import type { HtfTrend } from '../../modules/ai/analysis-data-coverage';
 export const ENTER_AT_LEVEL_FLAG = 'ENGINE_ENTER_AT_LEVEL';
 /** WATCH mostra tambem o plano a mercado quando a geometria dele vale (11/11/2026). */
 export const MARKET_PLAN_FLAG = 'ENGINE_MARKET_PLAN_ON_WATCH';
+/**
+ * Sem swing encaixada na invalidacao (16/11/2026): 0 = NO_TRADE, o motor de
+ * sempre; 1 = o plano segue com a invalidacao do modelo, no maximo ate WATCH;
+ * 2 = segue tambem ate ENTER_NOW. Risco, alvo, checklist e atrasado nao mudam.
+ */
+export const SNAP_FALLBACK_FLAG = 'ENGINE_SNAP_FALLBACK';
+/**
+ * Itens obrigatorios do ENTER_NOW (16/11/2026): 0 = C2, C3, C6, C7, o motor de
+ * sempre; 1 = C2, C3, C6 (C7 em FAIL vira aviso); 2 = C3, C6 (C2 e C7 viram
+ * aviso). O minimo de PASS nao muda. So com velas reais.
+ */
+export const ENTER_CHECKS_FLAG = 'ENGINE_ENTER_REQUIRED_CHECKS';
+
+function snapFallbackMode(): 0 | 1 | 2 {
+  const value = flagNumber(SNAP_FALLBACK_FLAG);
+  return value === 1 || value === 2 ? value : 0;
+}
+
+function enterNowChecks(): readonly number[] {
+  const value = flagNumber(ENTER_CHECKS_FLAG);
+  if (value === 1) return [2, 3, 6];
+  if (value === 2) return [3, 6];
+  return ENGINE_RULES.enterNowChecks;
+}
 
 export type SignalState = 'NO_TRADE' | 'WATCH' | 'ARMED' | 'ENTER_NOW';
 export const SIGNAL_STATES: readonly SignalState[] = ['NO_TRADE', 'WATCH', 'ARMED', 'ENTER_NOW'];
@@ -223,6 +247,10 @@ export interface SignalDecisionResult {
   rejectedPlan: RejectedPlan | null;
   /** ENTER_NOW liberado pela regra da chave ENGINE_ENTER_AT_LEVEL. */
   enterAtLevel: boolean;
+  /** WATCH ou ENTER_NOW que seguiu com a invalidacao do modelo, sem swing encaixada (chave ENGINE_SNAP_FALLBACK). */
+  snapFallback: boolean;
+  /** ENTER_NOW com C2 ou C7 em FAIL (chave ENGINE_ENTER_REQUIRED_CHECKS): os itens, para o aviso e a medicao. */
+  entryWarnings: number[];
 }
 
 /**
@@ -333,8 +361,10 @@ export function requiredPasses(symbol: string, direction: WatchPlan['direction']
 
 /** Tudo o que o codigo mediu do plano com as velas reais. */
 export interface PlanEvaluation {
-  /** O plano com a invalidacao encaixada na swing real. */
+  /** O plano com a invalidacao encaixada na swing real (ou a do modelo, com `unsnapped`). */
   plan: WatchPlan;
+  /** Sem swing encaixada: a invalidacao e a do modelo (chave ENGINE_SNAP_FALLBACK). */
+  unsnapped: boolean;
   market: EntryLevels | EntryRejection;
   /** Entrada no nivel do plano (o recuo que destrava o WATCH). */
   limit: EntryLevels | EntryRejection;
@@ -363,12 +393,14 @@ export function evaluatePlan(input: {
   late: boolean;
 }): PlanEvaluation | ValidatorReason {
   if (pricePosition(input.plan, input.price) === 'invalidated') return 'plan_invalidated';
-  const plan = snapInvalidation(input.plan, input.swings, input.atr, input.price);
-  if (!plan) return 'invalidation_unsnapped';
+  const snapped = snapInvalidation(input.plan, input.swings, input.atr, input.price);
+  if (!snapped && snapFallbackMode() === 0) return 'invalidation_unsnapped';
+  const plan = snapped ?? input.plan;
   const margin = stopMarginAtr(calibrationPair(input.symbol), input.volRegime);
   const checks = parsePassFailChecklist(input.structureValidation);
   return {
     plan,
+    unsnapped: !snapped,
     market: entryLevels(plan, input.atr, input.price, margin),
     limit: limitEntryLevels(plan, input.atr, input.price, margin),
     late: input.late,
@@ -386,8 +418,9 @@ function whyNot(state: SignalState, ev: PlanEvaluation): ValidatorReason | null 
   const R = ENGINE_RULES;
   const marketValid = typeof ev.market !== 'string';
   if (state === 'ENTER_NOW') {
+    if (ev.unsnapped && snapFallbackMode() !== 2) return 'invalidation_unsnapped';
     if (!marketValid) return 'market_entry_invalid';
-    if (!allPass(ev.checks, R.enterNowChecks)) return 'required_check_failed';
+    if (!allPass(ev.checks, enterNowChecks())) return 'required_check_failed';
     if (ev.passes < ev.requiredPasses) return 'checks_below_min';
     return ev.late ? 'late_move' : null;
   }
@@ -616,6 +649,10 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     marketLevels: state === 'WATCH' && evaluation && typeof evaluation.market !== 'string' && flagBool(MARKET_PLAN_FLAG) ? evaluation.market : null,
     rejectedPlan,
     enterAtLevel: atLevel && state === 'ENTER_NOW',
+    snapFallback: !!evaluation?.unsnapped && state !== 'NO_TRADE',
+    entryWarnings: state === 'ENTER_NOW' && evaluation?.checks
+      ? ENGINE_RULES.enterNowChecks.filter((n) => evaluation.checks?.get(n) !== true)
+      : [],
   };
 }
 

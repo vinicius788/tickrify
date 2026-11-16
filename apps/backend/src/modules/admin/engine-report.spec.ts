@@ -87,6 +87,21 @@ describe('regra da revisao mensal (ENTER_NOW e WATCH preenchido)', () => {
     expect(reviewDecision(30, null)).toBe('wait');
   });
 
+  it('ENTER_NOW liberado por chave fica em serie propria, com a mesma regra', () => {
+    const enter = (outcome: 'WIN' | 'LOSS', mark: Partial<EngineReportRow>) => ({ ...trade('A', outcome, 'BTCUSDT', 'ENTER_NOW'), ...mark });
+    const report = buildEngineReport([
+      ...many(30, () => enter('LOSS', { snapFallback: true })),
+      ...many(4, () => enter('WIN', { entryWarned: true })),
+      ...many(5, () => enter('WIN', {})),
+    ]);
+    expect(report.gates).toEqual([
+      expect.objectContaining({ flag: 'ENGINE_SNAP_FALLBACK', trades: 30, verdict: 'Voltar a chave para 0.' }),
+      expect.objectContaining({ flag: 'ENGINE_ENTER_REQUIRED_CHECKS', trades: 4, verdict: 'Esperar mais dados: faltam 26 trades.' }),
+    ]);
+    expect(report.enterNow.trades).toBe(39);
+    expect(buildEngineReport([trade('A', 'WIN')]).gates.map((g) => g.trades)).toEqual([0, 0]);
+  });
+
   it('WATCH so conta quando tocou o nivel e foi preenchido', () => {
     expect(isFilledWatch({ signalState: 'WATCH', touched: true, filled: true })).toBe(true);
     expect(isFilledWatch({ signalState: 'WATCH', touched: true, filled: false })).toBe(false);

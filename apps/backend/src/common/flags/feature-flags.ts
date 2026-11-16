@@ -229,6 +229,24 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'alto',
   },
   {
+    key: 'ENGINE_SNAP_FALLBACK',
+    type: 'number',
+    label: 'Plano sem swing encaixada na invalidacao',
+    description:
+      '0 (padrao) = motor de sempre: sem swing real a ate 0,5 ATR da invalidacao do modelo, o plano vira No trade. 1 = o plano segue com a invalidacao do proprio modelo, no maximo ate Watch. 2 = segue tambem ate Enter now. Risco de 0,5 a 2 ATR, alvo a 1R, checklist e atrasado continuam valendo. Grava result.snapFallback para medir a serie separada. Valor invalido cai no 0.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
+    key: 'ENGINE_ENTER_REQUIRED_CHECKS',
+    type: 'number',
+    label: 'Itens obrigatorios do Enter now',
+    description:
+      '0 (padrao) = C2, C3, C6 e C7 em PASS. 1 = C2, C3 e C6 (C7 em FAIL deixa de barrar). 2 = C3 e C6 (C2 e C7 deixam de barrar). O minimo de PASS (5, ou 6 com agravante) nao muda; so vale com velas reais. Grava result.entryWarnings com os itens em FAIL. Nao ligar antes de a tela mostrar o aviso. Valor invalido cai no 0.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
     key: 'CHAT_EMAIL_NOTIFY',
     type: 'boolean',
     label: 'E-mails do chat com o fundador',

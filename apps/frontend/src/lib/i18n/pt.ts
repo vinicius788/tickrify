@@ -707,6 +707,8 @@ export default {
       watchExplain: 'Observar quer dizer que ainda não há entrada no preço atual. Nada a fazer até o preço chegar à área de interesse.',
       noTradeExplain: 'Sem operação quer dizer que a IA não achou setup limpo neste gráfico agora. Ficar fora de uma operação ruim também é parte do trabalho.',
       levelsEstimated: 'Níveis estimados pelo print',
+      entryWarningLocation: 'Atenção: a entrada não está na borda do range.',
+      entryWarningRoom: 'Atenção: há um nível que já virou o preço entre a entrada e o alvo 1.',
       pending: {
         title: 'Ordem pendente',
         limitAt: 'Ordem limitada em {price}',

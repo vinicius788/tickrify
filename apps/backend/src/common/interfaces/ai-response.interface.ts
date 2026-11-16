@@ -48,6 +48,10 @@ export interface AIAnalysisResponse {
   rejectedPlan?: RejectedPlan;
   /** ENTER_NOW liberado pela chave ENGINE_ENTER_AT_LEVEL. */
   enterAtLevel?: boolean;
+  /** Plano que seguiu com a invalidacao do modelo (chave ENGINE_SNAP_FALLBACK). So medicao. */
+  snapFallback?: boolean;
+  /** ENTER_NOW com C2 ou C7 em FAIL (chave ENGINE_ENTER_REQUIRED_CHECKS). */
+  entryWarnings?: number[];
   /** WATCH com a entrada a mercado de geometria valida (chave ENGINE_MARKET_PLAN_ON_WATCH). */
   marketLevels?: EntryLevels;
   bias: Bias;

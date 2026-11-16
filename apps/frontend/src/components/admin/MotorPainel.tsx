@@ -23,6 +23,7 @@ type Report = {
   hasVariantB: boolean;
   variants: Variant[];
   enterNow: { trades: number; meanR: number | null; verdict: string };
+  gates?: { flag: string; trades: number; meanR: number | null; verdict: string }[];
   noCandles: { reason: string; count: number }[];
 };
 
@@ -102,6 +103,17 @@ export default function MotorPainel() {
               {r(data.enterNow.meanR)} em {data.enterNow.trades} trades. {data.enterNow.verdict}
             </p>
           </Card>
+
+          {(data.gates ?? []).some((g) => g.trades > 0) && (
+            <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
+              <p className="text-[11px] text-[var(--text-faint)]">ENTER_NOW liberado por chave, em série separada</p>
+              {(data.gates ?? []).filter((g) => g.trades > 0).map((g) => (
+                <p key={g.flag} className="mt-1 text-sm text-[var(--text-soft)]">
+                  {g.flag}: {r(g.meanR)} em {g.trades} trades. {g.verdict}
+                </p>
+              ))}
+            </Card>
+          )}
 
           <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
             <p className="text-[11px] text-[var(--text-faint)]">Análises sem velas, por motivo</p>

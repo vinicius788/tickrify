@@ -698,6 +698,8 @@ export default {
       watchExplain: 'Watch means there is no entry at the current price yet. Nothing to do until price reaches the area of interest.',
       noTradeExplain: 'No trade means the AI found no clean setup on this chart right now. Staying out of a bad trade is part of the job.',
       levelsEstimated: 'Levels estimated from the screenshot',
+      entryWarningLocation: 'Heads up: the entry is not at the edge of the range.',
+      entryWarningRoom: 'Heads up: a level that has turned price before sits between the entry and target 1.',
       pending: {
         title: 'Pending order',
         limitAt: 'Limit order at {price}',
