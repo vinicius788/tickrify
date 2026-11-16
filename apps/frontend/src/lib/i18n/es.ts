@@ -698,6 +698,8 @@ export default {
       watchExplain: 'Vigilar significa que todavía no hay entrada al precio actual. No hay nada que hacer hasta que el precio llegue al área de interés.',
       noTradeExplain: 'Sin operación significa que la IA no encontró un setup limpio en este gráfico ahora. Quedarse fuera de una mala operación también es parte del trabajo.',
       levelsEstimated: 'Niveles estimados a partir de la captura',
+      entryWarningLocation: 'Atención: la entrada no está en el borde del rango.',
+      entryWarningRoom: 'Atención: hay un nivel que ya giró el precio entre la entrada y el objetivo 1.',
       pending: {
         title: 'Orden pendiente',
         limitAt: 'Orden límite en {price}',

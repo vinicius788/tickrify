@@ -536,6 +536,8 @@ interface TrackRecord {
   atr: number | null;
   refOutcome: string | null;
   refFillPrice: number | null;
+  snapFallback: boolean | null;
+  entryWarned: boolean | null;
 }
 
 /** Ouro e forex antes da correcao do fuso: entrada do motor sem swings, nao servem para julgar. */
@@ -568,7 +570,8 @@ async function review(): Promise<void> {
   try {
     const all = await prisma.$queryRawUnsafe<TrackRecord[]>(
       `SELECT a."createdAt", t."touched", t."filled", t."signalState", t."engineVersion", t."symbol", t."direction", t."outcome",
-              t."fillPrice", t."stopLoss", t."takeProfit1", t."atr", t."refOutcome", t."refFillPrice"
+              t."fillPrice", t."stopLoss", t."takeProfit1", t."atr", t."refOutcome", t."refFillPrice",
+              (a."result"->>'snapFallback') = 'true' AS "snapFallback", a."result" ? 'entryWarnings' AS "entryWarned"
        FROM "tickrify"."AnalysisTrack" t
        JOIN "tickrify"."Analysis" a ON a."id" = t."analysisId"
        WHERE t."status" = 'tracked' AND ($1::text IS NULL OR a."createdAt" >= $1::date)`,
@@ -601,6 +604,9 @@ async function review(): Promise<void> {
       console.log(`\nRegra da revisao (${title} do motor ${ENGINE_VERSION}): n ${trades.length}, R liquido ${signed(meanR)}. ${verdict}. O script so reporta; nada foi mudado.`);
     };
     verdictLine('ENTER_NOW', 'o ENTER_NOW', 'o ENTER_NOW (o produto fica so no modo leitura)', current.filter((r) => r.signalState === 'ENTER_NOW'));
+    const enterNow = current.filter((r) => r.signalState === 'ENTER_NOW');
+    verdictLine('ENTER_NOW sem swing encaixada', 'a chave ENGINE_SNAP_FALLBACK', 'a chave ENGINE_SNAP_FALLBACK (voltar para 0)', enterNow.filter((r) => r.snapFallback === true));
+    verdictLine('ENTER_NOW com C2 ou C7 em FAIL', 'a chave ENGINE_ENTER_REQUIRED_CHECKS', 'a chave ENGINE_ENTER_REQUIRED_CHECKS (voltar para 0)', enterNow.filter((r) => r.entryWarned === true));
     verdictLine('WATCH tocado e preenchido', 'a entrada no nivel', 'a entrada no nivel (ENGINE_ENTER_AT_LEVEL)', current.filter(isFilledWatch));
   } finally {
     await prisma.$disconnect();

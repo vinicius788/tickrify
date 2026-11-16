@@ -698,6 +698,8 @@ export default {
       watchExplain: 'Beobachten heißt, dass es zum aktuellen Preis noch keinen Einstieg gibt. Nichts zu tun, bis der Preis den Interessenbereich erreicht.',
       noTradeExplain: 'Kein Trade heißt, dass die KI auf diesem Chart gerade kein sauberes Setup gefunden hat. Einem schlechten Trade fernzubleiben gehört auch zur Arbeit.',
       levelsEstimated: 'Niveaus aus dem Screenshot geschätzt',
+      entryWarningLocation: 'Achtung: Der Einstieg liegt nicht am Rand der Range.',
+      entryWarningRoom: 'Achtung: Zwischen Einstieg und Ziel 1 liegt ein Niveau, das den Preis schon gedreht hat.',
       pending: {
         title: 'Ausstehende Order',
         limitAt: 'Limit-Order bei {price}',

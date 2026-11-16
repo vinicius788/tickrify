@@ -609,3 +609,95 @@ describe('applyDecisionToAnalysis', () => {
     expect(none.alternativeScenario).toBeNull();
   });
 });
+
+describe('chaves de 16/11/2026: ENGINE_SNAP_FALLBACK e ENGINE_ENTER_REQUIRED_CHECKS', () => {
+  const SNAP = 'ENGINE_SNAP_FALLBACK';
+  const CHECKS = 'ENGINE_ENTER_REQUIRED_CHECKS';
+  const withFlags = async <T>(flags: Record<string, string>, run: () => Promise<T>): Promise<T> => {
+    const before = Object.fromEntries(Object.keys(flags).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, flags);
+    try { return await run(); } finally {
+      for (const [k, v] of Object.entries(before)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    }
+  };
+  /** Nenhum fundo real entre o preco e a invalidacao do modelo (98,8). */
+  const noSwing = { realData: real(99.9, { swings: [{ kind: 'high' as const, price: 101.5 }, { kind: 'low' as const, price: 98 }] }) };
+
+  describe('sem swing encaixada', () => {
+    it.each(['0', 'abc', '7'])('valor %s: No trade, como sempre', async (value) => {
+      const d = await withFlags({ [SNAP]: value }, () => decide(noSwing));
+      expect(d).toMatchObject({ state: 'NO_TRADE', snapFallback: false, validatorNotes: [{ from: 'ENTER_NOW', to: 'NO_TRADE', reason: 'invalidation_unsnapped' }] });
+    });
+
+    it('1: o plano segue com a invalidacao do modelo, no maximo ate WATCH', async () => {
+      const d = await withFlags({ [SNAP]: '1' }, () => decide(noSwing));
+      expect(d).toMatchObject({ state: 'WATCH', recommendation: 'WAIT', snapFallback: true, rejectedPlan: null });
+      expect(d.validatorNotes).toEqual([{ from: 'ENTER_NOW', to: 'WATCH', reason: 'invalidation_unsnapped' }]);
+      expect(d.watchPlan?.invalidation).toBe(98.8);
+      expect(d.levels.entry).toBeNull();
+      const fromWatch = await withFlags({ [SNAP]: '1' }, () => decide({ ...watch, ...noSwing }));
+      expect(fromWatch).toMatchObject({ state: 'WATCH', snapFallback: true, validatorNotes: [] });
+    });
+
+    it('2: ENTER_NOW com o stop saindo da invalidacao do modelo', async () => {
+      const d = await withFlags({ [SNAP]: '2' }, () => decide(noSwing));
+      expect(d).toMatchObject({ state: 'ENTER_NOW', recommendation: 'BUY', snapFallback: true, validatorNotes: [] });
+      expect(d.levels.stopLoss).toBeCloseTo(98.55);
+    });
+
+    it('2: risco acima de 2 ATR continua barrando', async () => {
+      const far = { ...plan, invalidation: 97 };
+      const d = await withFlags({ [SNAP]: '2' }, () => decide({ ...noSwing, watchPlan: far }));
+      expect(d.state).toBe('NO_TRADE');
+      expect(validatorReasons(d.validatorNotes)).toEqual(['market_entry_invalid', 'no_valid_geometry']);
+      expect(d.snapFallback).toBe(false);
+    });
+
+    it('com swing encaixada a chave nao muda nada', async () => {
+      const off = await decide();
+      const on = await withFlags({ [SNAP]: '2' }, () => decide());
+      expect(on).toEqual(off);
+      expect(on.snapFallback).toBe(false);
+    });
+  });
+
+  describe('itens obrigatorios do ENTER_NOW', () => {
+    it('0: C7 ou C2 em FAIL barra, como sempre', async () => {
+      for (const fail of [7, 2]) {
+        const d = await withFlags({ [CHECKS]: '0' }, () => decide({ structureValidation: checks(fail) }));
+        expect(d).toMatchObject({ state: 'WATCH', entryWarnings: [], validatorNotes: [{ from: 'ENTER_NOW', to: 'WATCH', reason: 'required_check_failed' }] });
+      }
+    });
+
+    it('1: C7 em FAIL vira aviso; C2 continua obrigatorio', async () => {
+      const c7 = await withFlags({ [CHECKS]: '1' }, () => decide({ structureValidation: checks(7) }));
+      expect(c7).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [7], validatorNotes: [] });
+      const c2 = await withFlags({ [CHECKS]: '1' }, () => decide({ structureValidation: checks(2) }));
+      expect(c2.state).toBe('WATCH');
+    });
+
+    it('2: C2 e C7 viram aviso, com o minimo de PASS valendo', async () => {
+      const both = await withFlags({ [CHECKS]: '2' }, () => decide({ structureValidation: checks(2, 7) }));
+      expect(both).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [2, 7] });
+      const few = await withFlags({ [CHECKS]: '2' }, () => decide({ structureValidation: checks(2, 5, 7) }));
+      expect(few).toMatchObject({ state: 'WATCH', entryWarnings: [] });
+      expect(validatorReasons(few.validatorNotes)).toEqual(['checks_below_min']);
+    });
+
+    it.each([3, 6])('2: C%s continua obrigatorio', async (fail) => {
+      const d = await withFlags({ [CHECKS]: '2' }, () => decide({ structureValidation: checks(fail) }));
+      expect(d.state).not.toBe('ENTER_NOW');
+    });
+
+    it('2: sem velas reais nada afrouxa', async () => {
+      const print = { realData: null, currentPrice: 99.3, estimatedLevels: { entry: 99.3, stopLoss: 98.6, takeProfit1: 101.5, takeProfit2: null }, structureValidation: checks(7) };
+      const d = await withFlags({ [CHECKS]: '2' }, () => decide(print));
+      expect(d).toMatchObject({ state: 'WATCH', entryWarnings: [] });
+    });
+
+    it('WATCH do modelo com C7 em FAIL sobe para ENTER_NOW com o aviso', async () => {
+      const d = await withFlags({ [CHECKS]: '1' }, () => decide({ ...watch, structureValidation: checks(7) }));
+      expect(d).toMatchObject({ state: 'ENTER_NOW', recommendation: 'BUY', validatorAction: 'promoted', entryWarnings: [7] });
+    });
+  });
+});

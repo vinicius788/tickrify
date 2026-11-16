@@ -31,7 +31,14 @@ export type EngineReportRow = {
   takeProfit1: number | null;
   /** `groundingStats.coverage`; ausente em analise anterior ao registro do motivo. */
   coverage?: string | null;
+  /** `result.snapFallback`: seguiu com a invalidacao do modelo (chave ENGINE_SNAP_FALLBACK). */
+  snapFallback?: boolean | null;
+  /** `result.entryWarnings` presente: ENTER_NOW com C2 ou C7 em FAIL (chave ENGINE_ENTER_REQUIRED_CHECKS). */
+  entryWarned?: boolean | null;
 };
+
+/** ENTER_NOW que so existe por causa de uma chave de 16/11/2026, em serie propria. */
+export type GateSeries = { flag: 'ENGINE_SNAP_FALLBACK' | 'ENGINE_ENTER_REQUIRED_CHECKS'; trades: number; meanR: number | null; verdict: string };
 
 export type AssetClass = 'metal' | 'forex' | 'crypto' | 'other';
 const CLASSES: readonly AssetClass[] = ['metal', 'forex', 'crypto', 'other'];
@@ -57,6 +64,7 @@ export type EngineReport = {
   hasVariantB: boolean;
   variants: { variant: 'A' | 'B'; total: EngineStats; classes: { assetClass: AssetClass; stats: EngineStats }[] }[];
   enterNow: { trades: number; meanR: number | null; verdict: string };
+  gates: GateSeries[];
   noCandles: { reason: string; count: number }[];
 };
 
@@ -136,6 +144,21 @@ function enterNowVerdict(trades: number, meanR: number | null): string {
     : 'Manter e esperar mais dados: entre -0,15R e -0,05R a regra nao decide.';
 }
 
+function gateSeries(flag: GateSeries['flag'], rows: readonly EngineReportRow[]): GateSeries {
+  const R = ENGINE_DECISION_RULES.enterNow;
+  const trades = rows.filter((r) => r.signalState === 'ENTER_NOW').flatMap((r) => tradeOf(r) ?? []);
+  const meanR = trades.length ? trades.reduce((sum, t) => sum + t.r, 0) / trades.length : null;
+  const decision = reviewDecision(trades.length, meanR);
+  const verdict = decision === 'keep'
+    ? 'Manter a chave ligada.'
+    : decision === 'disable'
+      ? 'Voltar a chave para 0.'
+      : trades.length < R.minTrades || meanR === null
+        ? `Esperar mais dados: faltam ${R.minTrades - trades.length} trades.`
+        : 'Esperar mais dados: entre -0,15R e -0,05R a regra nao decide.';
+  return { flag, trades: trades.length, meanR, verdict };
+}
+
 /** Por que as analises vieram sem velas, do motivo mais comum para o menos comum. */
 function noCandlesOf(rows: readonly EngineReportRow[]): { reason: string; count: number }[] {
   const counts = new Map<string, number>();
@@ -165,6 +188,10 @@ export function buildEngineReport(rows: readonly EngineReportRow[]): EngineRepor
     verdict: hasVariantB ? abVerdict(variants[0], variants[1]) : 'So existe a variante A: nao ha teste A/B para decidir.',
     variants,
     enterNow: { trades: enterNowTrades.length, meanR, verdict: enterNowVerdict(enterNowTrades.length, meanR) },
+    gates: [
+      gateSeries('ENGINE_SNAP_FALLBACK', rows.filter((r) => r.snapFallback === true)),
+      gateSeries('ENGINE_ENTER_REQUIRED_CHECKS', rows.filter((r) => r.entryWarned === true)),
+    ],
     noCandles: noCandlesOf(rows),
   };
 }
@@ -182,7 +209,9 @@ export async function loadEngineReport(db: RawQuerier): Promise<EngineReport> {
            t."fillPrice" AS "fillPrice",
            t."stopLoss" AS "stopLoss",
            t."takeProfit1" AS "takeProfit1",
-           a."groundingStats"->>'coverage' AS "coverage"
+           a."groundingStats"->>'coverage' AS "coverage",
+           (a."result"->>'snapFallback') = 'true' AS "snapFallback",
+           a."result" ? 'entryWarnings' AS "entryWarned"
     FROM "tickrify"."Analysis" a
     LEFT JOIN "tickrify"."AnalysisTrack" t ON t."analysisId" = a."id"
     WHERE a."status" = 'completed'
