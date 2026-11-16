@@ -5,7 +5,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import { displayAsset, type AIAnalysisResponse, type OpenTrade } from '@/lib/api';
 import { formatAssetPrice } from '@/lib/trading-ui';
-import { WatchPending } from './PendingLevels';
+import { NearNote, WatchPending } from './PendingLevels';
 import {
   alertDistancePct,
   checkFrequencyText,
@@ -155,6 +155,7 @@ const TodaySection = ({
                         return (
                           <li key={alert.id} data-testid="today-watch" className="tabular-nums text-xs text-[var(--text-primary)]">
                             <span className="block">{`${(row.watch.direction === 'long' ? t.pending.watchBuy : t.pending.watchSell).replace('{price}', price(alert.level))}${distance}`}</span>
+                            <NearNote key="near" near={alert.near} />
                             {plan ? (
                               <span key="plan" className="block text-[11px] text-[var(--text-secondary)]">
                                 {t.pending.planIf

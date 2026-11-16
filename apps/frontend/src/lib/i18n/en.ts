@@ -700,6 +700,7 @@ export default {
       levelsEstimated: 'Levels estimated from the screenshot',
       entryWarningLocation: 'Heads up: the entry is not at the edge of the range.',
       entryWarningRoom: 'Heads up: a level that has turned price before sits between the entry and target 1.',
+      entryWarningLate: 'Heads up: the move is already extended, so this entry is later than ideal.',
       pending: {
         title: 'Pending order',
         limitAt: 'Limit order at {price}',
@@ -1339,6 +1340,8 @@ export default {
     unavailable: 'Outcome not tracked for this asset',
     alertMe: 'Alert me at {price}',
     alertActive: 'Alert active at {price}',
+    nearBadge: 'Price is close',
+    nearNote: 'Not an entry signal. Re-check the chart when price reaches the level.',
     alertPaused: 'Subscribe to set price alerts.',
     todayTitle: 'Pending levels',
     levelMapTitle: 'Levels to watch',

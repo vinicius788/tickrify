@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { SetupsService } from './setups.service';
-import { ALERT_RULES, SetupAlertsService, createWatchAlert, runAlertMonitor } from './setup-alerts.service';
+import { ALERT_RULES, SetupAlertsService, createEntryAlerts, createWatchAlert, runAlertMonitor } from './setup-alerts.service';
 import { runSetupAlertEmailSweep } from '../mail/setup-alert-email';
 import type { Candle } from '../market/candles';
 import { __setTwelveDataForTests } from '../market/twelve-data';
@@ -450,6 +450,56 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
       await prisma.adminAudit.create({ data: { action: 'email_unsubscribed', targetUserId: v } });
       const run = deps(new Date(t.getTime() + 60_000));
       await expect(runSetupAlertEmailSweep(run.deps)).resolves.toEqual({ due: 0, sent: 0 });
+    });
+  });
+  describe('chaves de 16/11/2026 em Postgres real', () => {
+    const withFlag = async <T>(key: string, run: () => Promise<T>): Promise<T> => {
+      const before = process.env[key];
+      process.env[key] = 'true';
+      try { return await run(); } finally { if (before === undefined) delete process.env[key]; else process.env[key] = before; }
+    };
+
+    it('SETUP_ALERT_NEAR: marca nearAt uma vez a ate 0,5 ATR do nivel e a lista devolve near', async () => {
+      const u = await newUser();
+      const a = await analysis(u, 'ETHUSD');
+      await prisma.$executeRawUnsafe(`UPDATE tickrify."Analysis" SET "groundingStats" = '{"numbers":{"atr14":4}}'::jsonb WHERE "id" = $1`, a);
+      const { alert } = await create(u, a, 110);
+      const created = new Date(alert.createdAt).getTime();
+      const first = Math.ceil(created / M5) * M5;
+      const candles: Candle[] = [[first + M5, 101, 109, 100, 108.5]];
+      const at = (ms: number) => new Date(created + ms);
+      const run = (now: Date) => runAlertMonitor({ prisma, now: () => now, fetchCrypto: jest.fn(async () => candles), log: () => undefined });
+      await run(at(30 * 60 * 1000));
+      const off = await prisma.$queryRawUnsafe('SELECT "nearAt", "status" FROM tickrify."SetupAlert" WHERE "id" = $1', alert.id);
+      expect(off[0]).toMatchObject({ nearAt: null, status: 'active' });
+      await withFlag('SETUP_ALERT_NEAR', async () => {
+        await run(at(40 * 60 * 1000));
+        const [marked] = await prisma.$queryRawUnsafe('SELECT "nearAt", "status" FROM tickrify."SetupAlert" WHERE "id" = $1', alert.id);
+        expect(marked.status).toBe('active');
+        expect(marked.nearAt).not.toBeNull();
+        await run(at(50 * 60 * 1000));
+        const [again] = await prisma.$queryRawUnsafe('SELECT "nearAt" FROM tickrify."SetupAlert" WHERE "id" = $1', alert.id);
+        expect(new Date(again.nearAt).getTime()).toBe(new Date(marked.nearAt).getTime());
+        const listed = await alerts.list(u);
+        expect(listed.items.find((item: any) => item.id === alert.id)).toMatchObject({ near: true });
+      });
+      const listedOff = await alerts.list(u);
+      expect(listedOff.items.find((item: any) => item.id === alert.id)).toMatchObject({ near: false });
+    });
+
+    it('ENTER_NOW_AUTO_ALERTS: grava TP1 e stop com validade, uma vez; desligada nao grava', async () => {
+      const u = await newUser();
+      const result = { signalState: 'ENTER_NOW', dataMode: 'real_data', analysis: { symbol: 'BTCUSD', timeframe: '15m', currentPrice: 100, entry: 100, stopLoss: 95, takeProfit1: 105 } };
+      const row = await prisma.analysis.create({ data: { userId: u, status: 'completed', recommendation: 'BUY', result } });
+      const input = { analysisId: row.id as string, userId: u, result, recommendation: 'BUY' };
+      await expect(createEntryAlerts(prisma, input)).resolves.toBe('disabled');
+      await withFlag('ENTER_NOW_AUTO_ALERTS', async () => {
+        await expect(createEntryAlerts(prisma, input)).resolves.toBe('created');
+        await expect(createEntryAlerts(prisma, input)).resolves.toBe('already_handled');
+      });
+      const rows = await prisma.$queryRawUnsafe('SELECT "label", "side", "level", "status", "expiresAt" FROM tickrify."SetupAlert" WHERE "analysisId" = $1 ORDER BY "label"', row.id);
+      expect(rows.map((r: any) => [r.label, r.side, r.level, r.status])).toEqual([['stop', 'below', 95, 'active'], ['tp1', 'above', 105, 'active']]);
+      expect(rows.every((r: any) => r.expiresAt !== null)).toBe(true);
     });
   });
 });

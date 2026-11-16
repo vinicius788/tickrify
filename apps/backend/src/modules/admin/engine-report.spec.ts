@@ -1,6 +1,6 @@
 import { assetClassOf, buildEngineReport, isFilledWatch, reviewDecision, type EngineReportRow } from './engine-report';
 
-const trade = (variant: 'A' | 'B', outcome: 'WIN' | 'LOSS', symbol = 'BTCUSDT', state = 'WATCH'): EngineReportRow => ({
+const trade = (variant: 'A' | 'B' | 'C', outcome: 'WIN' | 'LOSS', symbol = 'BTCUSDT', state = 'WATCH'): EngineReportRow => ({
   symbol, variant, signalState: state, trackStatus: 'tracked', touched: true, outcome,
   fillPrice: 100, stopLoss: 99, takeProfit1: outcome === 'WIN' ? 101.5 : 101,
 });
@@ -97,9 +97,21 @@ describe('regra da revisao mensal (ENTER_NOW e WATCH preenchido)', () => {
     expect(report.gates).toEqual([
       expect.objectContaining({ flag: 'ENGINE_SNAP_FALLBACK', trades: 30, verdict: 'Voltar a chave para 0.' }),
       expect.objectContaining({ flag: 'ENGINE_ENTER_REQUIRED_CHECKS', trades: 4, verdict: 'Esperar mais dados: faltam 26 trades.' }),
+      expect.objectContaining({ flag: 'ENGINE_LATE_AS_WARNING', trades: 0 }),
     ]);
     expect(report.enterNow.trades).toBe(39);
-    expect(buildEngineReport([trade('A', 'WIN')]).gates.map((g) => g.trades)).toEqual([0, 0]);
+    expect(buildEngineReport([trade('A', 'WIN')]).gates.map((g) => g.trades)).toEqual([0, 0, 0]);
+    const late = buildEngineReport(many(3, () => enter('WIN', { lateWarned: true }))).gates;
+    expect(late.map((g) => [g.flag, g.trades])).toEqual([['ENGINE_SNAP_FALLBACK', 0], ['ENGINE_ENTER_REQUIRED_CHECKS', 0], ['ENGINE_LATE_AS_WARNING', 3]]);
+  });
+
+  it('variante C entra na tabela e ganha o proprio veredito contra a A', () => {
+    const report = buildEngineReport([...many(30, () => trade('A', 'LOSS')), ...many(30, () => trade('C', 'WIN'))]);
+    expect(report.variants.map((v) => v.variant)).toEqual(['A', 'C']);
+    expect(report.hasVariantB).toBe(false);
+    expect(report.verdict).toContain('Ligar a C para todos');
+    expect(report.verdict).toContain('PROMPT_VARIANT_C_PERCENT em 100');
+    expect(buildEngineReport([trade('A', 'WIN'), trade('C', 'WIN')]).verdict).toBe('Manter e esperar mais dados: faltam 29 trades fechados na A e 29 na C.');
   });
 
   it('WATCH so conta quando tocou o nivel e foi preenchido', () => {

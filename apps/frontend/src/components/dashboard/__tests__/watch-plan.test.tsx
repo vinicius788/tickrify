@@ -94,6 +94,9 @@ describe('plano do WATCH (v10.1)', () => {
   });
 
   it('ENTER_NOW com C2 ou C7 em FAIL (chave do /admin): mostra o aviso de cada item; sem o campo, nada', () => {
+    renderResult('ENTER_NOW', null, { entryWarnings: [8] });
+    expect(screen.getByTestId('entry-warning-8').textContent).toBe('Heads up: the move is already extended, so this entry is later than ideal.');
+    cleanup();
     renderResult('ENTER_NOW', null, { entryWarnings: [2, 7] });
     expect(screen.getByTestId('entry-warning-2').textContent).toBe('Heads up: the entry is not at the edge of the range.');
     expect(screen.getByTestId('entry-warning-7').textContent).toBe('Heads up: a level that has turned price before sits between the entry and target 1.');

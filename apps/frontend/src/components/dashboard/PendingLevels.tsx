@@ -8,6 +8,7 @@ import { APIError, type AiLevel, type LevelMap, type LevelMapSide, type WatchSum
 import {
   formatAlertLevel,
   formatTimeLeft,
+  findActiveLevel,
   hasActiveLevel,
   useExpiryClock,
   useAlertOptions,
@@ -29,6 +30,18 @@ const DATE_LOCALES: Record<string, string> = {
 };
 
 type Surface = 'today' | 'setups' | 'setup_page' | 'result';
+
+/** Selo e aviso quando o preco chegou perto do nivel. Nunca sinal de entrada. */
+export function NearNote({ near }: { near?: boolean }) {
+  const { t } = useLanguage();
+  if (!near) return null;
+  return (
+    <span data-testid="alert-near" className="flex flex-col gap-0.5">
+      <span className="w-fit text-[11px] font-medium text-[var(--accent-yellow)]">{t.pending.nearBadge}</span>
+      <span className="text-[11px] text-[var(--text-tertiary)]">{t.pending.nearNote}</span>
+    </span>
+  );
+}
 
 /**
  * "Alert me at <nivel>": cria o SetupAlert de sempre (mesmas regras, tetos e
@@ -60,13 +73,16 @@ export function AlertLevelButton({
   const alerts = useSetupAlerts(true);
   const { create } = useAlertActions();
   const price = format ? format(level) : formatAlertLevel(level, locale);
-  const active = hasActiveLevel(alerts.data?.items ?? [], setupId, analysisId, level);
+  const active = findActiveLevel(alerts.data?.items ?? [], setupId, analysisId, level);
 
   if (active) {
     return (
-      <span key="active" className="inline-flex items-center gap-1.5 tabular-nums text-[11px] text-[var(--text-secondary)]">
-        <BellRing className="h-3.5 w-3.5 text-[var(--accent-green)]" />
-        <span>{p.alertActive.replace('{price}', price)}</span>
+      <span key="active" className="inline-flex flex-col gap-1">
+        <span className="inline-flex items-center gap-1.5 tabular-nums text-[11px] text-[var(--text-secondary)]">
+          <BellRing className="h-3.5 w-3.5 text-[var(--accent-green)]" />
+          <span>{p.alertActive.replace('{price}', price)}</span>
+        </span>
+        <NearNote near={active.near} />
       </span>
     );
   }

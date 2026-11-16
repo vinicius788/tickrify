@@ -700,6 +700,7 @@ export default {
       levelsEstimated: 'Niveaux estimés à partir de la capture',
       entryWarningLocation: 'Attention : l’entrée n’est pas en bord de range.',
       entryWarningRoom: 'Attention : un niveau qui a déjà retourné le prix se trouve entre l’entrée et l’objectif 1.',
+      entryWarningLate: 'Attention : le mouvement est déjà étendu, cette entrée est donc plus tardive que l’idéal.',
       pending: {
         title: 'Ordre en attente',
         limitAt: 'Ordre limite à {price}',
@@ -1339,6 +1340,8 @@ export default {
     unavailable: 'Résultat non suivi pour cet actif',
     alertMe: 'M\'alerter à {price}',
     alertActive: 'Alerte active à {price}',
+    nearBadge: "Le prix est proche",
+    nearNote: "Ce n'est pas un signal d'entrée. Revérifiez le graphique quand le prix atteint le niveau.",
     alertPaused: 'Abonnez-vous pour créer des alertes de prix.',
     todayTitle: 'Niveaux en attente',
     levelMapTitle: 'Niveaux à surveiller',

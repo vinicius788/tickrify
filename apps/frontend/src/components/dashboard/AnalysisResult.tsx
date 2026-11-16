@@ -627,7 +627,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     ? fullResponse.watchLevels
     : signalState === 'WATCH' && fullResponse.dataMode === 'real_data' && 'watchLevels' in fullResponse ? null : undefined;
   const levelsEstimated = fullResponse.dataMode === 'print';
-  const entryWarnings = Array.isArray(fullResponse.entryWarnings) ? fullResponse.entryWarnings.filter((item) => item === 2 || item === 7) : [];
+  const entryWarnings = Array.isArray(fullResponse.entryWarnings) ? fullResponse.entryWarnings.filter((item) => item === 2 || item === 7 || item === 8) : [];
   // WATCH com plano: cartao unico. Analise antiga sem plano segue no desenho anterior.
   const watchLayout = signalState === 'WATCH' && watchPlan !== null;
   const watchClosed = watchLayout && !watchWindowOpen(analysisData.watch, now);
@@ -1434,7 +1434,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             )}
             {entryWarnings.map((item) => (
               <p key={item} data-testid={`entry-warning-${item}`} className="text-xs text-[var(--accent-yellow)]">
-                {item === 2 ? r.entryWarningLocation : r.entryWarningRoom}
+                {item === 2 ? r.entryWarningLocation : item === 7 ? r.entryWarningRoom : r.entryWarningLate}
               </p>
             ))}
           </CardHeader>

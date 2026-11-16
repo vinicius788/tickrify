@@ -247,6 +247,51 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'alto',
   },
   {
+    key: 'ENGINE_LATE_AS_WARNING',
+    type: 'boolean',
+    label: 'Movimento atrasado vira aviso',
+    description:
+      'DESLIGADO (padrao) = movimento atrasado (3 pernas, vela de 2 ATR ou perna atual maior que a anterior) rebaixa o Enter now para Watch. LIGADO = nao rebaixa: o Enter now sai com o aviso de movimento esticado na tela e grava o item 8 em result.entryWarnings. Geometria, checklist e noticias continuam valendo. Serie propria na aba Motor.',
+    defaultValue: 'false',
+    risk: 'alto',
+  },
+  {
+    key: 'ENGINE_WATCH_ON_REJECTED_GEOMETRY',
+    type: 'boolean',
+    label: 'Watch em vez de No trade sem geometria',
+    description:
+      'DESLIGADO (padrao) = Watch do modelo sem entrada valida a mercado nem no nivel vira No trade. LIGADO = segue Watch com a zona e a invalidacao, sem stop nem alvo (a tela ja trata esse caso). Nunca vira Enter now. C3 e o minimo de 4 PASS continuam valendo.',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
+    key: 'PROMPT_VARIANT_C_PERCENT',
+    type: 'number',
+    label: 'Prompt C: % das contas',
+    description:
+      'Porcentagem de contas que recebem o prompt C (invalidacao no preco exato da swing, lado oposto so neutraliza com setup proprio, Enter now quando as condicoes valem, tese fraca mas valida vira Watch). 0 (padrao) = ninguem; 10 = 10% das contas. Quem esta na variante B fica na B. O resultado sai por variante na aba Motor.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
+    key: 'SETUP_ALERT_NEAR',
+    type: 'boolean',
+    label: 'Aviso de preco perto do nivel',
+    description:
+      'LIGADO = o monitor de alertas marca o alerta como "perto" quando o ultimo preco fica a ate 0,5 ATR do nivel (uma vez por alerta) e o painel mostra "Price is close". Nao e sinal de entrada, nao manda e-mail e nao chama IA. DESLIGADO (padrao): nada muda.',
+    defaultValue: 'false',
+    risk: 'baixo',
+  },
+  {
+    key: 'ENTER_NOW_AUTO_ALERTS',
+    type: 'boolean',
+    label: 'Alertas automaticos de alvo e stop no Enter now',
+    description:
+      'LIGADO = todo Enter now com velas reais cria sozinho dois alertas no setup (TP1 e stop), que expiram em 48h; o disparo usa o painel, o e-mail e o Telegram que ja existem. Respeita os tetos de alertas. DESLIGADO (padrao): nada muda.',
+    defaultValue: 'false',
+    risk: 'baixo',
+  },
+  {
     key: 'CHAT_EMAIL_NOTIFY',
     type: 'boolean',
     label: 'E-mails do chat com o fundador',
