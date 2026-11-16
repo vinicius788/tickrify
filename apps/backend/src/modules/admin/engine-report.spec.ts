@@ -99,20 +99,12 @@ describe('regra da revisao mensal (ENTER_NOW e WATCH preenchido)', () => {
       expect.objectContaining({ flag: 'ENGINE_ENTER_REQUIRED_CHECKS', trades: 4, verdict: 'Esperar mais dados: faltam 26 trades.' }),
       expect.objectContaining({ flag: 'ENGINE_LATE_AS_WARNING', trades: 0 }),
       expect.objectContaining({ flag: 'ENGINE_PERMISSIVE', trades: 0 }),
-      expect.objectContaining({ flag: 'ENGINE_PENDING_ENTRY_LABEL', trades: 0 }),
     ]);
-    const pending = buildEngineReport([
-      ...many(2, () => ({ ...trade('A', 'LOSS'), pendingEntry: true })),
-      { ...trade('A', 'WIN'), pendingEntry: true, outcome: 'EXPIRED', fillPrice: null },
-      { ...enter('WIN', { pendingEntry: true }) },
-    ]).gates[4];
-    expect(pending).toMatchObject({ flag: 'ENGINE_PENDING_ENTRY_LABEL', trades: 2 });
-    expect(pending.meanR).toBeLessThan(0);
     expect(buildEngineReport(many(2, () => enter('WIN', { permissiveEntry: true }))).gates[3]).toMatchObject({ flag: 'ENGINE_PERMISSIVE', trades: 2 });
     expect(report.enterNow.trades).toBe(39);
-    expect(buildEngineReport([trade('A', 'WIN')]).gates.map((g) => g.trades)).toEqual([0, 0, 0, 0, 0]);
+    expect(buildEngineReport([trade('A', 'WIN')]).gates.map((g) => g.trades)).toEqual([0, 0, 0, 0]);
     const late = buildEngineReport(many(3, () => enter('WIN', { lateWarned: true }))).gates;
-    expect(late.map((g) => [g.flag, g.trades])).toEqual([['ENGINE_SNAP_FALLBACK', 0], ['ENGINE_ENTER_REQUIRED_CHECKS', 0], ['ENGINE_LATE_AS_WARNING', 3], ['ENGINE_PERMISSIVE', 0], ['ENGINE_PENDING_ENTRY_LABEL', 0]]);
+    expect(late.map((g) => [g.flag, g.trades])).toEqual([['ENGINE_SNAP_FALLBACK', 0], ['ENGINE_ENTER_REQUIRED_CHECKS', 0], ['ENGINE_LATE_AS_WARNING', 3], ['ENGINE_PERMISSIVE', 0]]);
   });
 
   it('variante C entra na tabela e ganha o proprio veredito contra a A', () => {

@@ -256,15 +256,6 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'alto',
   },
   {
-    key: 'ENGINE_PENDING_ENTRY_LABEL',
-    type: 'number',
-    label: 'Watch com niveis vira entrada pendente',
-    description:
-      'So apresentacao. 0 (padrao) = como hoje. 1 = Watch com entrada, stop e TP1 validos no nivel de recuo aparece como "BUY on pullback" / "SELL on pullback", com a condicao e a validade. O estado interno continua Watch e o validador nao muda. Grava result.pendingEntry; a aba Motor mede em serie propria o retorno em R do preenchimento simulado pelo rastreador. Valor invalido cai no 0.',
-    defaultValue: '0',
-    risk: 'medio',
-  },
-  {
     key: 'ENGINE_LATE_AS_WARNING',
     type: 'boolean',
     label: 'Movimento atrasado vira aviso',

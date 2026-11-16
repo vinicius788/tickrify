@@ -636,9 +636,6 @@ export default {
         price: 'Kurs',
         chipBuy: 'Kauf beobachten',
         chipSell: 'Verkauf beobachten',
-        pendingBuy: 'BUY beim Rücksetzer',
-        pendingSell: 'SELL beim Rücksetzer',
-        pendingNote: 'Ausstehender Einstieg: Er zählt nur, wenn der Preis den Einstieg erreicht, bevor der Plan abläuft.',
         chipClosed: "Watch beendet",
         noEntryAt: 'Kein Einstieg bei {price}.',
         waitPullback: 'Warte auf einen Rücklauf bis {zone}.',
@@ -705,7 +702,7 @@ export default {
       entryWarningRoom: 'Achtung: Zwischen Einstieg und Ziel 1 liegt ein Niveau, das den Preis schon gedreht hat.',
       entryWarningLate: 'Achtung: Die Bewegung ist bereits weit gelaufen, dieser Einstieg ist daher später als ideal.',
       entryWarningTrend: 'Achtung: Dieser Trade läuft gegen den 4h-Trend.',
-      entryWarningForex: 'Achtung: Forex-Paare brauchen meist mehr Bestätigung.',
+      entryWarningForex: 'Achtung: Dies ist ein Forex-Paar, bei dem die Engine normalerweise mehr Bestätigung verlangt.',
       pending: {
         title: 'Ausstehende Order',
         limitAt: 'Limit-Order bei {price}',

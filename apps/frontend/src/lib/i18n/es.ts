@@ -636,9 +636,6 @@ export default {
         price: 'Precio',
         chipBuy: 'Vigilar compra',
         chipSell: 'Vigilar venta',
-        pendingBuy: 'BUY en el retroceso',
-        pendingSell: 'SELL en el retroceso',
-        pendingNote: 'Entrada pendiente: solo cuenta si el precio llega a la entrada antes de que el plan expire.',
         chipClosed: "Watch cerrado",
         noEntryAt: 'Sin entrada en {price}.',
         waitPullback: 'Espera un retroceso hasta {zone}.',
@@ -705,7 +702,7 @@ export default {
       entryWarningRoom: 'Atención: hay un nivel que ya giró el precio entre la entrada y el objetivo 1.',
       entryWarningLate: 'Atención: el movimiento ya está extendido, así que esta entrada es más tardía de lo ideal.',
       entryWarningTrend: 'Atención: esta operación va contra la tendencia de 4h.',
-      entryWarningForex: 'Atención: los pares de forex suelen necesitar más confirmación.',
+      entryWarningForex: 'Atención: este es un par de forex, donde el motor normalmente pide más confirmación.',
       pending: {
         title: 'Orden pendiente',
         limitAt: 'Orden límite en {price}',

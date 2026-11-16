@@ -77,8 +77,6 @@ export const GEOMETRY_WATCH_FLAG = 'ENGINE_WATCH_ON_REJECTED_GEOMETRY';
  * sem preco na zona. 0 = motor de sempre.
  */
 export const PERMISSIVE_FLAG = 'ENGINE_PERMISSIVE';
-/** So apresentacao (16/11/2026): 1 = WATCH com geometria valida no nivel e mostrado como entrada pendente ("BUY/SELL on pullback"). O estado nao muda. */
-export const PENDING_ENTRY_FLAG = 'ENGINE_PENDING_ENTRY_LABEL';
 export const HTF_WARNING_ITEM = 9;
 export const FOREX_WARNING_ITEM = 10;
 const permissive = (): boolean => flagNumber(PERMISSIVE_FLAG) === 1;
@@ -276,8 +274,6 @@ export interface SignalDecisionResult {
   entryWarnings: number[];
   /** ENTER_NOW que so existe pelo modo permissivo (chave ENGINE_PERMISSIVE): serie propria na medicao. */
   permissiveEntry: boolean;
-  /** WATCH com niveis validos no recuo, mostrado como entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL). So apresentacao e medicao. */
-  pendingEntry: boolean;
 }
 
 /**
@@ -669,8 +665,6 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     ? { modelState: model, reason: noTradeNote.reason, plan: input.watchPlan }
     : null;
 
-  const watchLevels = state === 'WATCH' && real && plan ? watchLevelsOf(plan, input.symbol, real) : null;
-
   const action: ValidatorAction = rank(state) < rank(model)
     ? 'downgraded'
     : rank(state) > rank(model) ? 'promoted' : input.priceFixed ? 'fixed' : 'none';
@@ -691,8 +685,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     stalePrint,
     watchReach: state === 'WATCH' && real && plan ? watchReachOf(plan, input.symbol, real) : null,
     location: real ? locationOf(real, state === 'NO_TRADE' ? null : plan) : null,
-    watchLevels,
-    pendingEntry: watchLevels !== null && flagNumber(PENDING_ENTRY_FLAG) === 1,
+    watchLevels: state === 'WATCH' && real && plan ? watchLevelsOf(plan, input.symbol, real) : null,
     marketLevels: state === 'WATCH' && evaluation && typeof evaluation.market !== 'string' && flagBool(MARKET_PLAN_FLAG) ? evaluation.market : null,
     rejectedPlan,
     enterAtLevel: atLevel && state === 'ENTER_NOW',

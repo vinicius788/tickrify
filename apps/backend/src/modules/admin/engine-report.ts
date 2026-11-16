@@ -39,12 +39,10 @@ export type EngineReportRow = {
   lateWarned?: boolean | null;
   /** `result.permissiveEntry`: ENTER_NOW que so existe pelo modo permissivo (chave ENGINE_PERMISSIVE). */
   permissiveEntry?: boolean | null;
-  /** `result.pendingEntry`: WATCH mostrado como entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL). */
-  pendingEntry?: boolean | null;
 };
 
 /** ENTER_NOW que so existe por causa de uma chave de 16/11/2026, em serie propria. */
-export type GateSeries = { flag: 'ENGINE_SNAP_FALLBACK' | 'ENGINE_ENTER_REQUIRED_CHECKS' | 'ENGINE_LATE_AS_WARNING' | 'ENGINE_PERMISSIVE' | 'ENGINE_PENDING_ENTRY_LABEL'; trades: number; meanR: number | null; verdict: string };
+export type GateSeries = { flag: 'ENGINE_SNAP_FALLBACK' | 'ENGINE_ENTER_REQUIRED_CHECKS' | 'ENGINE_LATE_AS_WARNING' | 'ENGINE_PERMISSIVE'; trades: number; meanR: number | null; verdict: string };
 
 export type AssetClass = 'metal' | 'forex' | 'crypto' | 'other';
 const CLASSES: readonly AssetClass[] = ['metal', 'forex', 'crypto', 'other'];
@@ -152,9 +150,9 @@ function enterNowVerdict(trades: number, meanR: number | null): string {
     : 'Manter e esperar mais dados: entre -0,15R e -0,05R a regra nao decide.';
 }
 
-function gateSeries(flag: GateSeries['flag'], rows: readonly EngineReportRow[], state = 'ENTER_NOW'): GateSeries {
+function gateSeries(flag: GateSeries['flag'], rows: readonly EngineReportRow[]): GateSeries {
   const R = ENGINE_DECISION_RULES.enterNow;
-  const trades = rows.filter((r) => r.signalState === state).flatMap((r) => tradeOf(r) ?? []);
+  const trades = rows.filter((r) => r.signalState === 'ENTER_NOW').flatMap((r) => tradeOf(r) ?? []);
   const meanR = trades.length ? trades.reduce((sum, t) => sum + t.r, 0) / trades.length : null;
   const decision = reviewDecision(trades.length, meanR);
   const verdict = decision === 'keep'
@@ -202,8 +200,6 @@ export function buildEngineReport(rows: readonly EngineReportRow[]): EngineRepor
       gateSeries('ENGINE_ENTER_REQUIRED_CHECKS', rows.filter((r) => r.entryWarned === true)),
       gateSeries('ENGINE_LATE_AS_WARNING', rows.filter((r) => r.lateWarned === true)),
       gateSeries('ENGINE_PERMISSIVE', rows.filter((r) => r.permissiveEntry === true)),
-      // Entrada pendente: so os WATCH que o rastreador preencheu no nivel viram trade.
-      gateSeries('ENGINE_PENDING_ENTRY_LABEL', rows.filter((r) => r.pendingEntry === true), 'WATCH'),
     ],
     noCandles: noCandlesOf(rows),
   };
@@ -226,8 +222,7 @@ export async function loadEngineReport(db: RawQuerier): Promise<EngineReport> {
            (a."result"->>'snapFallback') = 'true' AS "snapFallback",
            (a."result"->'entryWarnings' @> '[2]'::jsonb OR a."result"->'entryWarnings' @> '[7]'::jsonb) AS "entryWarned",
            a."result"->'entryWarnings' @> '[8]'::jsonb AS "lateWarned",
-           (a."result"->>'permissiveEntry') = 'true' AS "permissiveEntry",
-           (a."result"->>'pendingEntry') = 'true' AS "pendingEntry"
+           (a."result"->>'permissiveEntry') = 'true' AS "permissiveEntry"
     FROM "tickrify"."Analysis" a
     LEFT JOIN "tickrify"."AnalysisTrack" t ON t."analysisId" = a."id"
     WHERE a."status" = 'completed'

@@ -189,7 +189,6 @@ interface WorkerAnalysisResult {
   snapFallback?: boolean;
   entryWarnings?: number[];
   permissiveEntry?: boolean;
-  pendingEntry?: boolean;
   marketLevels?: EntryLevels;
   validatorNotes: ValidatorNote[];
   analysis: WorkerAnalysisDetails;
@@ -373,7 +372,6 @@ interface AdapterDecision {
   snapFallback?: boolean;
   entryWarnings?: number[];
   permissiveEntry?: boolean;
-  pendingEntry?: boolean;
   marketLevels?: EntryLevels;
   validatorAction: ValidatorAction;
   /** Cada mudanca de estado do validador do adapter. */
@@ -408,7 +406,6 @@ function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
     ...(aiSource.snapFallback === true ? { snapFallback: true } : {}),
     ...(Array.isArray(aiSource.entryWarnings) && aiSource.entryWarnings.length ? { entryWarnings: aiSource.entryWarnings as number[] } : {}),
     ...(aiSource.permissiveEntry === true ? { permissiveEntry: true } : {}),
-    ...(aiSource.pendingEntry === true ? { pendingEntry: true } : {}),
     ...(aiSource.marketLevels ? { marketLevels: aiSource.marketLevels as EntryLevels } : {}),
     validatorAction: meta.validatorAction as ValidatorAction,
     validatorNotes: Array.isArray(aiSource.validatorNotes) ? (aiSource.validatorNotes as ValidatorNote[]) : [],
@@ -558,7 +555,6 @@ async function toWorkerAnalysisResult(
     ...(decision.snapFallback ? { snapFallback: true } : {}),
     ...(decision.entryWarnings?.length ? { entryWarnings: decision.entryWarnings } : {}),
     ...(decision.permissiveEntry ? { permissiveEntry: true } : {}),
-    ...(decision.pendingEntry ? { pendingEntry: true } : {}),
     ...(decision.marketLevels ? { marketLevels: decision.marketLevels } : {}),
     validatorNotes: decision.validatorNotes,
     analysis: {

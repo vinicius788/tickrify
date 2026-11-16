@@ -636,9 +636,6 @@ export default {
         price: 'Price',
         chipBuy: 'Watch for a buy',
         chipSell: 'Watch for a sell',
-        pendingBuy: 'BUY on pullback',
-        pendingSell: 'SELL on pullback',
-        pendingNote: 'Pending entry: it only counts if price reaches the entry before the plan expires.',
         chipClosed: "Watch closed",
         noEntryAt: 'No entry at {price}.',
         waitPullback: 'Wait for a pullback to {zone}.',
@@ -705,7 +702,7 @@ export default {
       entryWarningRoom: 'Heads up: a level that has turned price before sits between the entry and target 1.',
       entryWarningLate: 'Heads up: the move is already extended, so this entry is later than ideal.',
       entryWarningTrend: 'Heads up: this trade goes against the 4h trend.',
-      entryWarningForex: 'Heads up: forex pairs usually need more confirmation.',
+      entryWarningForex: 'Heads up: this is a forex pair, where the engine normally asks for more confirmation.',
       pending: {
         title: 'Pending order',
         limitAt: 'Limit order at {price}',

@@ -54,8 +54,6 @@ export interface AIAnalysisResponse {
   entryWarnings?: number[];
   /** ENTER_NOW que so existe pelo modo permissivo (chave ENGINE_PERMISSIVE). So medicao. */
   permissiveEntry?: boolean;
-  /** WATCH mostrado como entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL). */
-  pendingEntry?: boolean;
   /** WATCH com a entrada a mercado de geometria valida (chave ENGINE_MARKET_PLAN_ON_WATCH). */
   marketLevels?: EntryLevels;
   bias: Bias;

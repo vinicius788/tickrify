@@ -636,9 +636,6 @@ export default {
         price: '価格',
         chipBuy: '買いを監視',
         chipSell: '売りを監視',
-        pendingBuy: '押し目でBUY',
-        pendingSell: '戻りでSELL',
-        pendingNote: '保留中のエントリー：プランの期限前に価格がエントリーに到達した場合のみ有効です。',
         chipClosed: "Watch 終了",
         noEntryAt: '{price} ではエントリーなし。',
         waitPullback: '{zone} への押しを待ちます。',
@@ -705,7 +702,7 @@ export default {
       entryWarningRoom: '注意：エントリーと目標1の間に、過去に価格を反転させた水準があります。',
       entryWarningLate: '注意：値動きはすでに伸びているため、このエントリーは理想より遅めです。',
       entryWarningTrend: '注意：この取引は4時間足のトレンドに逆らっています。',
-      entryWarningForex: '注意：FX通貨ペアは通常、より多くの確認が必要です。',
+      entryWarningForex: '注意：これはFX通貨ペアで、エンジンは通常より多くの確認を求めます。',
       pending: {
         title: '予約注文',
         limitAt: '{price} の指値注文',

@@ -627,7 +627,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     ? fullResponse.watchLevels
     : signalState === 'WATCH' && fullResponse.dataMode === 'real_data' && 'watchLevels' in fullResponse ? null : undefined;
   const levelsEstimated = fullResponse.dataMode === 'print';
-  const pendingEntry = fullResponse.pendingEntry === true && isWatchLevels(fullResponse.watchLevels);
   const entryWarnings = Array.isArray(fullResponse.entryWarnings) ? fullResponse.entryWarnings.filter((item) => [2, 7, 8, 9, 10].includes(item)) : [];
   // WATCH com plano: cartao unico. Analise antiga sem plano segue no desenho anterior.
   const watchLayout = signalState === 'WATCH' && watchPlan !== null;
@@ -1193,7 +1192,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
               className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium ${watchClosed ? WATCH_TONE_CLASSES.neutral : signalToneClasses}`}
             >
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{watchClosed ? r.watch.chipClosed : watchLayout ? (watchPlan?.direction === 'long' ? (pendingEntry ? r.watch.pendingBuy : r.watch.chipBuy) : (pendingEntry ? r.watch.pendingSell : r.watch.chipSell)) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
+              <span>{watchClosed ? r.watch.chipClosed : watchLayout ? (watchPlan?.direction === 'long' ? r.watch.chipBuy : r.watch.chipSell) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
             </div>
             {/* Janela encerrada: o selo fica cinza e o desfecho (o que o mercado fez) vem ao lado, pela regra unica. */}
             {watchClosed && analysisData.watch ? (
@@ -1330,7 +1329,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             symbol={symbol}
             formatPrice={formatPrice}
             estimated={levelsEstimated}
-            pending={pendingEntry}
             watch={analysisData.watch}
             reach={analysisData.fullResponse?.watchReach ?? null}
             condition={watchText.condition}
