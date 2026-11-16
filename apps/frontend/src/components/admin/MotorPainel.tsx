@@ -16,7 +16,7 @@ type Stats = {
   timeout: number;
   meanR: number | null;
 };
-type Variant = { variant: 'A' | 'B' | 'C'; total: Stats; classes: { assetClass: string; stats: Stats }[] };
+type Variant = { variant: 'A' | 'B' | 'C' | 'D'; total: Stats; classes: { assetClass: string; stats: Stats }[] };
 type Report = {
   since: string;
   verdict: string;

@@ -292,6 +292,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'alto',
   },
   {
+    key: 'PROMPT_VARIANT_D_PERCENT',
+    type: 'number',
+    label: 'Prompt D: % das contas',
+    description:
+      'Porcentagem de contas que recebem o prompt D (sobre o C: invalidacao na swing confirmada mais proxima a ate 2 ATR do preco, com a distancia escrita em ATR; Enter now com direcao, C3, C6 e 4 PASS; No trade so com motivo nomeado). 0 (padrao) = ninguem. Quem esta na B ou na C fica nelas. Feito para rodar junto do ENGINE_PERMISSIVE = 1. Resultado por variante na aba Motor.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
     key: 'SETUP_ALERT_NEAR',
     type: 'boolean',
     label: 'Aviso de preco perto do nivel',
