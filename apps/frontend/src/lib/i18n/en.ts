@@ -701,6 +701,8 @@ export default {
       entryWarningLocation: 'Heads up: the entry is not at the edge of the range.',
       entryWarningRoom: 'Heads up: a level that has turned price before sits between the entry and target 1.',
       entryWarningLate: 'Heads up: the move is already extended, so this entry is later than ideal.',
+      entryWarningTrend: 'Heads up: this trade goes against the 4h trend.',
+      entryWarningForex: 'Heads up: this is a forex pair, where the engine normally asks for more confirmation.',
       pending: {
         title: 'Pending order',
         limitAt: 'Limit order at {price}',

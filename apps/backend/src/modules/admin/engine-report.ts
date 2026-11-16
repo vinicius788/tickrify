@@ -37,10 +37,12 @@ export type EngineReportRow = {
   entryWarned?: boolean | null;
   /** `result.entryWarnings` com 8: ENTER_NOW com movimento atrasado (chave ENGINE_LATE_AS_WARNING). */
   lateWarned?: boolean | null;
+  /** `result.permissiveEntry`: ENTER_NOW que so existe pelo modo permissivo (chave ENGINE_PERMISSIVE). */
+  permissiveEntry?: boolean | null;
 };
 
 /** ENTER_NOW que so existe por causa de uma chave de 16/11/2026, em serie propria. */
-export type GateSeries = { flag: 'ENGINE_SNAP_FALLBACK' | 'ENGINE_ENTER_REQUIRED_CHECKS' | 'ENGINE_LATE_AS_WARNING'; trades: number; meanR: number | null; verdict: string };
+export type GateSeries = { flag: 'ENGINE_SNAP_FALLBACK' | 'ENGINE_ENTER_REQUIRED_CHECKS' | 'ENGINE_LATE_AS_WARNING' | 'ENGINE_PERMISSIVE'; trades: number; meanR: number | null; verdict: string };
 
 export type AssetClass = 'metal' | 'forex' | 'crypto' | 'other';
 const CLASSES: readonly AssetClass[] = ['metal', 'forex', 'crypto', 'other'];
@@ -197,6 +199,7 @@ export function buildEngineReport(rows: readonly EngineReportRow[]): EngineRepor
       gateSeries('ENGINE_SNAP_FALLBACK', rows.filter((r) => r.snapFallback === true)),
       gateSeries('ENGINE_ENTER_REQUIRED_CHECKS', rows.filter((r) => r.entryWarned === true)),
       gateSeries('ENGINE_LATE_AS_WARNING', rows.filter((r) => r.lateWarned === true)),
+      gateSeries('ENGINE_PERMISSIVE', rows.filter((r) => r.permissiveEntry === true)),
     ],
     noCandles: noCandlesOf(rows),
   };
@@ -218,7 +221,8 @@ export async function loadEngineReport(db: RawQuerier): Promise<EngineReport> {
            a."groundingStats"->>'coverage' AS "coverage",
            (a."result"->>'snapFallback') = 'true' AS "snapFallback",
            (a."result"->'entryWarnings' @> '[2]'::jsonb OR a."result"->'entryWarnings' @> '[7]'::jsonb) AS "entryWarned",
-           a."result"->'entryWarnings' @> '[8]'::jsonb AS "lateWarned"
+           a."result"->'entryWarnings' @> '[8]'::jsonb AS "lateWarned",
+           (a."result"->>'permissiveEntry') = 'true' AS "permissiveEntry"
     FROM "tickrify"."Analysis" a
     LEFT JOIN "tickrify"."AnalysisTrack" t ON t."analysisId" = a."id"
     WHERE a."status" = 'completed'

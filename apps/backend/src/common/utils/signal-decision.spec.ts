@@ -750,3 +750,80 @@ describe('chaves de 16/11/2026: ENGINE_LATE_AS_WARNING e ENGINE_WATCH_ON_REJECTE
     expect(few.state).toBe('NO_TRADE');
   });
 });
+
+describe('modo permissivo (chave ENGINE_PERMISSIVE, 16/11/2026)', () => {
+  const on = async <T>(run: () => Promise<T>, value = '1'): Promise<T> => {
+    const before = process.env.ENGINE_PERMISSIVE;
+    process.env.ENGINE_PERMISSIVE = value;
+    try { return await run(); } finally { if (before === undefined) delete process.env.ENGINE_PERMISSIVE; else process.env.ENGINE_PERMISSIVE = before; }
+  };
+
+  it.each(['0', 'abc', '2'])('valor %s: identico ao motor de sempre', async (value) => {
+    for (const patch of [{}, { structureValidation: checks(7) }, { structureValidation: checks(1, 4, 5) }, { realData: real(99.9, { late: { long: true, short: false } }) }]) {
+      expect(await on(() => decide(patch), value)).toEqual(await decide(patch));
+    }
+    expect((await decide()).permissiveEntry).toBe(false);
+  });
+
+  it('C2, C7 e atrasado deixam de barrar e viram avisos; a entrada fica marcada como do modo', async () => {
+    const d = await on(() => decide({ structureValidation: checks(2, 7), realData: real(99.9, { late: { long: true, short: false } }) }));
+    expect(d).toMatchObject({ state: 'ENTER_NOW', recommendation: 'BUY', entryWarnings: [2, 7, 8], permissiveEntry: true, validatorNotes: [] });
+    expect(d.levels.stopLoss).toBeCloseTo(98.55);
+  });
+
+  it('piso de 4 de 7: 4 PASS entra, 3 nao', async () => {
+    const four = await on(() => decide({ structureValidation: checks(1, 2, 7) }));
+    expect(four).toMatchObject({ state: 'ENTER_NOW', permissiveEntry: true });
+    const three = await on(() => decide({ structureValidation: checks(1, 2, 4, 7) }));
+    expect(three.state).toBe('NO_TRADE');
+  });
+
+  it.each([3, 6])('C%s em FAIL continua barrando', async (fail) => {
+    expect((await on(() => decide({ structureValidation: checks(fail) }))).state).not.toBe('ENTER_NOW');
+  });
+
+  it('geometria invalida continua barrando: alvo abaixo de 1R e risco acima de 2 ATR', async () => {
+    const noRoom = await on(() => decide({ watchPlan: nearTarget }));
+    expect(noRoom.state).toBe('WATCH');
+    const wide = await on(() => decide({ watchPlan: { ...plan, invalidation: 97 }, realData: real(99.9, { swings: [{ kind: 'low', price: 97 }] }) }));
+    expect(wide.state).not.toBe('ENTER_NOW');
+  });
+
+  it('sem swing encaixada vale a invalidacao do modelo, dentro dos limites de risco', async () => {
+    const d = await on(() => decide({ realData: real(99.9, { swings: [{ kind: 'low', price: 98 }] }) }));
+    expect(d).toMatchObject({ state: 'ENTER_NOW', snapFallback: true, permissiveEntry: true });
+    expect(d.watchPlan?.invalidation).toBe(98.8);
+  });
+
+  it('contra o 4h e forex viram avisos em vez de exigir 6 PASS', async () => {
+    const htf = await on(() => decide({ structureValidation: checks(1, 5), realData: real(99.9, { htfTrend: 'downtrend' }) }));
+    expect(htf).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [9], permissiveEntry: true });
+    const fx = await on(() => decide({ symbol: 'EURUSD', structureValidation: checks(4, 5) }));
+    expect(fx).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [10], permissiveEntry: true });
+  });
+
+  it('entrada que o motor de sempre ja daria nao e marcada como do modo', async () => {
+    expect(await on(() => decide())).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [], permissiveEntry: false });
+  });
+
+  it('WATCH do modelo com geometria a mercado valida sobe para ENTER_NOW; NO_TRADE do modelo fica', async () => {
+    const up = await on(() => decide({ ...watch, structureValidation: checks(2, 7) }));
+    expect(up).toMatchObject({ state: 'ENTER_NOW', recommendation: 'BUY', validatorAction: 'promoted' });
+    expect((await on(() => decide({ state: 'NO_TRADE', recommendation: 'WAIT' }))).state).toBe('NO_TRADE');
+  });
+
+  it('noticias continuam rebaixando', async () => {
+    process.env.ENABLE_NEWS_GUARD = 'true';
+    getEventsForSymbol.mockResolvedValue({ events: [{ impact: 'High', minutesUntil: 10, country: 'US', title: 'CPI' }], degraded: false });
+    const d = await on(() => decide({ structureValidation: checks(2, 7) }));
+    expect(d).toMatchObject({ state: 'WATCH', permissiveEntry: false, entryWarnings: [] });
+  });
+
+  it('sem velas: C2 e C7 viram aviso, mas o preco fora da zona continua barrando', async () => {
+    const est = { entry: 99.3, stopLoss: 98.6, takeProfit1: 101.5, takeProfit2: null };
+    const inside = await on(() => decide({ realData: null, currentPrice: 99.3, estimatedLevels: est, structureValidation: checks(2, 7) }));
+    expect(inside).toMatchObject({ state: 'ENTER_NOW', dataMode: 'print', entryWarnings: [2, 7], permissiveEntry: true });
+    const outside = await on(() => decide({ realData: null, currentPrice: 99.9, estimatedLevels: est, structureValidation: checks(2, 7) }));
+    expect(outside.state).toBe('WATCH');
+  });
+});

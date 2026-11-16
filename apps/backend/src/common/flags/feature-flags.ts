@@ -247,6 +247,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'alto',
   },
   {
+    key: 'ENGINE_PERMISSIVE',
+    type: 'number',
+    label: 'Modo permissivo do Enter now',
+    description:
+      '0 (padrao) = motor de sempre. 1 = Enter now sai com direcao, C3 e C6 em PASS, geometria valida (risco de 0,5 a 2 ATR, alvo a 1R) e 4 de 7 PASS. C2, C7, movimento atrasado, contra o 4h e forex deixam de barrar e viram avisos na tela; sem swing encaixada vale a invalidacao do modelo. Seguem barrando: plano invalidado, geometria invalida, noticias, print velho e imagem que nao e grafico. Serie propria na aba Motor (result.permissiveEntry). Valor invalido cai no 0.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
     key: 'ENGINE_LATE_AS_WARNING',
     type: 'boolean',
     label: 'Movimento atrasado vira aviso',
