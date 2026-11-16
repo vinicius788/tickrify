@@ -701,6 +701,8 @@ export default {
       entryWarningLocation: 'Attention : l’entrée n’est pas en bord de range.',
       entryWarningRoom: 'Attention : un niveau qui a déjà retourné le prix se trouve entre l’entrée et l’objectif 1.',
       entryWarningLate: 'Attention : le mouvement est déjà étendu, cette entrée est donc plus tardive que l’idéal.',
+      entryWarningTrend: 'Attention : ce trade va contre la tendance 4h.',
+      entryWarningForex: 'Attention : c’est une paire forex, pour laquelle le moteur demande normalement plus de confirmation.',
       pending: {
         title: 'Ordre en attente',
         limitAt: 'Ordre limite à {price}',

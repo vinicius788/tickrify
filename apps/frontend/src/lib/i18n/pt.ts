@@ -710,6 +710,8 @@ export default {
       entryWarningLocation: 'Atenção: a entrada não está na borda do range.',
       entryWarningRoom: 'Atenção: há um nível que já virou o preço entre a entrada e o alvo 1.',
       entryWarningLate: 'Atenção: o movimento já está esticado, então esta entrada é mais tardia que o ideal.',
+      entryWarningTrend: 'Atenção: esta operação vai contra a tendência do 4h.',
+      entryWarningForex: 'Atenção: este é um par de forex, em que o motor normalmente pede mais confirmação.',
       pending: {
         title: 'Ordem pendente',
         limitAt: 'Ordem limitada em {price}',

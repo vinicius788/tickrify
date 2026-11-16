@@ -701,6 +701,8 @@ export default {
       entryWarningLocation: '注意：エントリーはレンジの端にありません。',
       entryWarningRoom: '注意：エントリーと目標1の間に、過去に価格を反転させた水準があります。',
       entryWarningLate: '注意：値動きはすでに伸びているため、このエントリーは理想より遅めです。',
+      entryWarningTrend: '注意：この取引は4時間足のトレンドに逆らっています。',
+      entryWarningForex: '注意：これはFX通貨ペアで、エンジンは通常より多くの確認を求めます。',
       pending: {
         title: '予約注文',
         limitAt: '{price} の指値注文',

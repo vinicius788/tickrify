@@ -232,7 +232,7 @@ export interface AIAnalysisResponse {
     watchLevels?: WatchLevels | null;
     /** WATCH com a entrada a mercado de geometria valida (chave do /admin); ausente fora disso. */
     marketLevels?: WatchLevels;
-    /** ENTER_NOW com C2 (2) ou C7 (7) em FAIL ou movimento atrasado (8), liberado por chave do /admin; ausente fora disso. */
+    /** ENTER_NOW com C2 (2) ou C7 (7) em FAIL movimento atrasado (8), contra o 4h (9) ou forex (10), liberado por chave do /admin; ausente fora disso. */
     entryWarnings?: number[];
     /** NO_TRADE com REAL DATA: os dois lados do preco, pelo codigo; ausente em analise antiga. */
     levelMap?: LevelMap | null;

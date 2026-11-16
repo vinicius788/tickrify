@@ -68,12 +68,27 @@ export const LATE_WARNING_ITEM = 8;
 /** WATCH do modelo sem geometria valida a mercado nem no nivel segue WATCH (sem niveis), em vez de NO_TRADE. 16/11/2026. */
 export const GEOMETRY_WATCH_FLAG = 'ENGINE_WATCH_ON_REJECTED_GEOMETRY';
 
+/**
+ * Modo permissivo (16/11/2026, decisao do dono): 1 = ENTER_NOW com direcao, C3 e
+ * C6 em PASS, geometria valida e 4 de 7 PASS. C2, C7, atrasado, contra o 4h e
+ * forex deixam de barrar e viram avisos (`entryWarnings` 2, 7, 8, 9, 10); sem
+ * swing encaixada vale a invalidacao do modelo. Seguem barrando: plano
+ * invalidado, risco fora de 0,5 a 2 ATR, alvo abaixo de 1R, noticias, print
+ * sem preco na zona. 0 = motor de sempre.
+ */
+export const PERMISSIVE_FLAG = 'ENGINE_PERMISSIVE';
+export const HTF_WARNING_ITEM = 9;
+export const FOREX_WARNING_ITEM = 10;
+const permissive = (): boolean => flagNumber(PERMISSIVE_FLAG) === 1;
+
 function snapFallbackMode(): 0 | 1 | 2 {
+  if (permissive()) return 2;
   const value = flagNumber(SNAP_FALLBACK_FLAG);
   return value === 1 || value === 2 ? value : 0;
 }
 
 function enterNowChecks(): readonly number[] {
+  if (permissive()) return [3, 6];
   const value = flagNumber(ENTER_CHECKS_FLAG);
   if (value === 1) return [2, 3, 6];
   if (value === 2) return [3, 6];
@@ -257,6 +272,8 @@ export interface SignalDecisionResult {
   snapFallback: boolean;
   /** ENTER_NOW com C2 ou C7 em FAIL (chave ENGINE_ENTER_REQUIRED_CHECKS) ou com movimento atrasado (8, chave ENGINE_LATE_AS_WARNING). */
   entryWarnings: number[];
+  /** ENTER_NOW que so existe pelo modo permissivo (chave ENGINE_PERMISSIVE): serie propria na medicao. */
+  permissiveEntry: boolean;
 }
 
 /**
@@ -412,7 +429,7 @@ export function evaluatePlan(input: {
     late: input.late,
     checks,
     passes: checks ? [...checks.values()].filter(Boolean).length : 0,
-    requiredPasses: requiredPasses(input.symbol, plan.direction, input.htfTrend),
+    requiredPasses: permissive() ? ENGINE_RULES.minPassWatch : requiredPasses(input.symbol, plan.direction, input.htfTrend),
   };
 }
 
@@ -477,7 +494,7 @@ function choosePrintState(input: SignalDecisionInput, plan: WatchPlan): { state:
   const R = ENGINE_RULES;
   const checks = parsePassFailChecklist(input.structureValidation);
   const passes = checks ? [...checks.values()].filter(Boolean).length : 0;
-  const required = requiredPasses(input.symbol, plan.direction, null);
+  const required = permissive() ? R.minPassWatch : requiredPasses(input.symbol, plan.direction, null);
   const est = input.estimatedLevels;
   const price = input.currentPrice;
   const levelsOk = !!est && positive(est.entry) && positive(est.stopLoss) && positive(est.takeProfit1) && positive(price);
@@ -489,7 +506,7 @@ function choosePrintState(input: SignalDecisionInput, plan: WatchPlan): { state:
     if (state === 'ENTER_NOW') {
       if (!levelsOk) return 'levels_unverified';
       if (position !== 'inside_zone') return 'not_at_price';
-      if (!allPass(checks, R.enterNowChecks)) return 'required_check_failed';
+      if (!allPass(checks, permissive() ? [3, 6] : R.enterNowChecks)) return 'required_check_failed';
       return passes < required ? 'checks_below_min' : null;
     }
     if (state === 'WATCH') {
@@ -552,7 +569,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
   const mismatch: ValidatorNote[] = signalWithoutSide ? [{ from: model, to: 'WATCH', reason: 'state_mismatch' }] : [];
   const atLevel = !!real && isAtPriorLevel(input.priorWatch, modelPlan, real.price);
   const lateNow = !!real && !!modelPlan && !atLevel && !!real.late?.[modelPlan.direction];
-  const lateAsWarning = lateNow && flagBool(LATE_WARNING_FLAG);
+  const lateAsWarning = lateNow && (flagBool(LATE_WARNING_FLAG) || permissive());
   let chosen: { state: SignalState; notes: ValidatorNote[]; levels: PlanLevels };
   let evaluation: PlanEvaluation | null = null;
   if (model === 'NO_TRADE') chosen = { state: 'NO_TRADE', notes: [], levels: NULL_LEVELS };
@@ -628,6 +645,21 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     confidence = Math.min(confidence, ENGINE_RULES.confidenceCapNoSignal);
   }
 
+  // Avisos do ENTER_NOW: itens obrigatorios do motor de sempre em FAIL, atrasado e, no modo permissivo, contra o 4h e forex.
+  const entryChecks = evaluation?.checks ?? (permissive() ? parsePassFailChecklist(input.structureValidation) : null);
+  const entryWarnings: number[] = [];
+  if (isSignal && entryChecks) {
+    entryWarnings.push(...ENGINE_RULES.enterNowChecks.filter((n) => entryChecks.get(n) !== true));
+    if (lateAsWarning) entryWarnings.push(LATE_WARNING_ITEM);
+    if (permissive() && plan) {
+      if (real?.htfTrend === (plan.direction === 'long' ? 'downtrend' : 'uptrend')) entryWarnings.push(HTF_WARNING_ITEM);
+      if (isForexPair(input.symbol)) entryWarnings.push(FOREX_WARNING_ITEM);
+    }
+  }
+  const entryPasses = entryChecks ? [...entryChecks.values()].filter(Boolean).length : 0;
+  const permissiveEntry = isSignal && permissive() && !!plan
+    && (entryWarnings.length > 0 || !!evaluation?.unsnapped || entryPasses < requiredPasses(input.symbol, plan.direction, real?.htfTrend ?? null));
+
   const noTradeNote = notes.find((n) => n.to === 'NO_TRADE');
   const rejectedPlan: RejectedPlan | null = state === 'NO_TRADE' && model !== 'NO_TRADE' && input.watchPlan && noTradeNote
     ? { modelState: model, reason: noTradeNote.reason, plan: input.watchPlan }
@@ -658,9 +690,8 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     rejectedPlan,
     enterAtLevel: atLevel && state === 'ENTER_NOW',
     snapFallback: !!evaluation?.unsnapped && state !== 'NO_TRADE',
-    entryWarnings: state === 'ENTER_NOW' && evaluation?.checks
-      ? [...ENGINE_RULES.enterNowChecks.filter((n) => evaluation.checks?.get(n) !== true), ...(lateAsWarning ? [LATE_WARNING_ITEM] : [])]
-      : [],
+    entryWarnings,
+    permissiveEntry,
   };
 }
 

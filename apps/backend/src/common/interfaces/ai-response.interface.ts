@@ -52,6 +52,8 @@ export interface AIAnalysisResponse {
   snapFallback?: boolean;
   /** ENTER_NOW com C2 ou C7 em FAIL (chave ENGINE_ENTER_REQUIRED_CHECKS). */
   entryWarnings?: number[];
+  /** ENTER_NOW que so existe pelo modo permissivo (chave ENGINE_PERMISSIVE). So medicao. */
+  permissiveEntry?: boolean;
   /** WATCH com a entrada a mercado de geometria valida (chave ENGINE_MARKET_PLAN_ON_WATCH). */
   marketLevels?: EntryLevels;
   bias: Bias;

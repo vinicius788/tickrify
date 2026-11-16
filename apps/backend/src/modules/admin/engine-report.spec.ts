@@ -98,11 +98,13 @@ describe('regra da revisao mensal (ENTER_NOW e WATCH preenchido)', () => {
       expect.objectContaining({ flag: 'ENGINE_SNAP_FALLBACK', trades: 30, verdict: 'Voltar a chave para 0.' }),
       expect.objectContaining({ flag: 'ENGINE_ENTER_REQUIRED_CHECKS', trades: 4, verdict: 'Esperar mais dados: faltam 26 trades.' }),
       expect.objectContaining({ flag: 'ENGINE_LATE_AS_WARNING', trades: 0 }),
+      expect.objectContaining({ flag: 'ENGINE_PERMISSIVE', trades: 0 }),
     ]);
+    expect(buildEngineReport(many(2, () => enter('WIN', { permissiveEntry: true }))).gates[3]).toMatchObject({ flag: 'ENGINE_PERMISSIVE', trades: 2 });
     expect(report.enterNow.trades).toBe(39);
-    expect(buildEngineReport([trade('A', 'WIN')]).gates.map((g) => g.trades)).toEqual([0, 0, 0]);
+    expect(buildEngineReport([trade('A', 'WIN')]).gates.map((g) => g.trades)).toEqual([0, 0, 0, 0]);
     const late = buildEngineReport(many(3, () => enter('WIN', { lateWarned: true }))).gates;
-    expect(late.map((g) => [g.flag, g.trades])).toEqual([['ENGINE_SNAP_FALLBACK', 0], ['ENGINE_ENTER_REQUIRED_CHECKS', 0], ['ENGINE_LATE_AS_WARNING', 3]]);
+    expect(late.map((g) => [g.flag, g.trades])).toEqual([['ENGINE_SNAP_FALLBACK', 0], ['ENGINE_ENTER_REQUIRED_CHECKS', 0], ['ENGINE_LATE_AS_WARNING', 3], ['ENGINE_PERMISSIVE', 0]]);
   });
 
   it('variante C entra na tabela e ganha o proprio veredito contra a A', () => {

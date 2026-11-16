@@ -94,6 +94,10 @@ describe('plano do WATCH (v10.1)', () => {
   });
 
   it('ENTER_NOW com C2 ou C7 em FAIL (chave do /admin): mostra o aviso de cada item; sem o campo, nada', () => {
+    renderResult('ENTER_NOW', null, { entryWarnings: [9, 10] });
+    expect(screen.getByTestId('entry-warning-9').textContent).toBe('Heads up: this trade goes against the 4h trend.');
+    expect(screen.getByTestId('entry-warning-10').textContent).toBe('Heads up: this is a forex pair, where the engine normally asks for more confirmation.');
+    cleanup();
     renderResult('ENTER_NOW', null, { entryWarnings: [8] });
     expect(screen.getByTestId('entry-warning-8').textContent).toBe('Heads up: the move is already extended, so this entry is later than ideal.');
     cleanup();

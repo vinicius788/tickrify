@@ -701,6 +701,8 @@ export default {
       entryWarningLocation: 'Achtung: Der Einstieg liegt nicht am Rand der Range.',
       entryWarningRoom: 'Achtung: Zwischen Einstieg und Ziel 1 liegt ein Niveau, das den Preis schon gedreht hat.',
       entryWarningLate: 'Achtung: Die Bewegung ist bereits weit gelaufen, dieser Einstieg ist daher später als ideal.',
+      entryWarningTrend: 'Achtung: Dieser Trade läuft gegen den 4h-Trend.',
+      entryWarningForex: 'Achtung: Dies ist ein Forex-Paar, bei dem die Engine normalerweise mehr Bestätigung verlangt.',
       pending: {
         title: 'Ausstehende Order',
         limitAt: 'Limit-Order bei {price}',
