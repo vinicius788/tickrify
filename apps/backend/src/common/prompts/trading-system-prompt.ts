@@ -293,4 +293,36 @@ export const PROMPT_C_CHANGES: readonly (readonly [string, string])[] = [
 ];
 export const TRADING_SYSTEM_PROMPT_C = PROMPT_C_CHANGES.reduce((prompt, [from, to]) => prompt.replace(from, () => to), TRADING_SYSTEM_PROMPT);
 
+/**
+ * Variante D (17/11/2026), sobre a C: regra numerica da invalidacao (swing
+ * confirmada mais proxima, ate 2,0 ATR do preco, distancia escrita em ATR no
+ * [PLAN]; sem ela, plano de recuo), ENTER_NOW com direcao, C3, C6, entrada a
+ * mercado valida e 4 PASS (C2, C7 e atraso viram risco escrito, como o modo
+ * permissivo do validador), NO_TRADE so com motivo nomeado. C3, C6 e o
+ * contrato nao mudam. `result.engine.prompt_variant = 'D'`.
+ */
+export const PROMPT_D_CHANGES: readonly (readonly [string, string])[] = [
+  [
+    'Never choose it to improve the ratio.',
+    'Never choose it to improve the ratio. Use the nearest confirmed swing on the side of the setup that sits at most 2.0 ATR from the current price (distance = |price - swing| / ATR14 from REAL DATA). Write that distance in the [PLAN] line, for example "inv 84512 = 1.4 ATR". If no confirmed swing sits within 2.0 ATR, never use a farther one for a market entry: build the plan as a pullback to a level whose own invalidation is within 2.0 ATR of that entry, and the state is WATCH.',
+  ],
+  [
+    'Use when: C2, C3, C6 and C7 PASS, the market entry is valid, at least 5 PASS, and the move is not late.',
+    'Use when: the direction is clear, C3 and C6 PASS, the market entry is valid and at least 4 PASS. A FAIL on C2 or C7, or a late move, is a risk to write in riskFactors, not a reason to wait.',
+  ],
+  [
+    'Use when: C3 PASS and a valid geometry exists, but C2 or C7 FAIL, or the only valid entry is the pullback limit, or the move is late.',
+    'Use when: C3 PASS and the only valid entry is the pullback limit.',
+  ],
+  [
+    'Use when: the bias is neutral, the tape is empty, C3 FAIL, no valid geometry, or fewer than 4 PASS.',
+    'Use when: the bias is neutral, the tape is empty, C3 FAIL, no valid geometry, or fewer than 4 PASS.\n   NO_TRADE names which of these reasons applies. A thesis with a direction, a named level and an invalidation is never NO_TRADE: it is WATCH with the entry condition.',
+  ],
+  [
+    'A late move in the trend direction is never a market entry: it becomes WATCH for a pullback. Confidence is at most 55.',
+    'A late move in the trend direction is a risk to write, not a reason to wait: keep the market entry when its geometry is valid, with confidence at most 55.',
+  ],
+];
+export const TRADING_SYSTEM_PROMPT_D = PROMPT_D_CHANGES.reduce((prompt, [from, to]) => prompt.replace(from, () => to), TRADING_SYSTEM_PROMPT_C);
+
 export default TRADING_SYSTEM_PROMPT;

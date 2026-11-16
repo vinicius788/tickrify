@@ -68,7 +68,7 @@ export type EngineReport = {
   since: string;
   verdict: string;
   hasVariantB: boolean;
-  variants: { variant: 'A' | 'B' | 'C'; total: EngineStats; classes: { assetClass: AssetClass; stats: EngineStats }[] }[];
+  variants: { variant: 'A' | 'B' | 'C' | 'D'; total: EngineStats; classes: { assetClass: AssetClass; stats: EngineStats }[] }[];
   enterNow: { trades: number; meanR: number | null; verdict: string };
   gates: GateSeries[];
   noCandles: { reason: string; count: number }[];
@@ -85,7 +85,7 @@ export function assetClassOf(symbol: string | null): AssetClass {
   return 'other';
 }
 
-const variantOf = (row: EngineReportRow): 'A' | 'B' | 'C' => (row.variant === 'B' || row.variant === 'C' ? row.variant : 'A');
+const variantOf = (row: EngineReportRow): 'A' | 'B' | 'C' | 'D' => (row.variant === 'B' || row.variant === 'C' || row.variant === 'D' ? row.variant : 'A');
 const pct = (part: number, whole: number) => (whole ? (100 * part) / whole : null);
 const tradeOf = (row: EngineReportRow) => trackedTradeR({ symbol: row.symbol, outcome: row.outcome, fillPrice: row.fillPrice, stopLoss: row.stopLoss, takeProfit1: row.takeProfit1 });
 
@@ -180,7 +180,7 @@ function noCandlesOf(rows: readonly EngineReportRow[]): { reason: string; count:
 
 export function buildEngineReport(rows: readonly EngineReportRow[]): EngineReport {
   const hasVariantB = rows.some((r) => variantOf(r) === 'B');
-  const present = (['A', 'B', 'C'] as const).filter((variant) => variant === 'A' || rows.some((r) => variantOf(r) === variant));
+  const present = (['A', 'B', 'C', 'D'] as const).filter((variant) => variant === 'A' || rows.some((r) => variantOf(r) === variant));
   const variants = present.map((variant) => {
     const own = rows.filter((r) => variantOf(r) === variant);
     return {
