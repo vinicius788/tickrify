@@ -3,8 +3,8 @@ import type { AnalysisObservation } from '../utils/analysis-observation';
 import { Bias, Recommendation } from '../utils/analysis-normalizer';
 import { DrawingPlan } from '../utils/drawing-plan';
 import type { GroundingStats } from '../../modules/ai/analysis-data-coverage';
-import type { EntryLevels } from '../utils/plan-engine';
-import type { PriceLocation, RejectedPlan, SignalDecisionResult, SignalState, ValidatorAction, ValidatorNote, ValidatorReason, WatchReach } from '../utils/signal-decision';
+import type { EngineProfile, EntryLevels } from '../utils/plan-engine';
+import type { PriceLocation, ProfileOutcome, RejectedPlan, SignalDecisionResult, SignalState, ValidatorAction, ValidatorNote, ValidatorReason, WatchReach } from '../utils/signal-decision';
 import type { WatchPlan } from '../utils/plan-engine';
 import type { AiLevel, LevelMap } from '../utils/level-map';
 import type { ProviderComparison } from '../../modules/ai/vision-model';
@@ -60,6 +60,9 @@ export interface AIAnalysisResponse {
   permissiveEntry?: boolean;
   /** WATCH mostrado como entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL). */
   pendingEntry?: boolean;
+  /** ENGINE_RISK_PROFILE (17/11/2026): perfil mostrado e o que cada perfil decidiu sobre a mesma resposta. */
+  riskProfile?: EngineProfile;
+  riskProfiles?: Record<EngineProfile, ProfileOutcome>;
   /** TP1 no proximo nivel (chave ENGINE_NEXT_TARGET). */
   targetMoved?: boolean;
   /** WATCH com a entrada a mercado de geometria valida (chave ENGINE_MARKET_PLAN_ON_WATCH). */

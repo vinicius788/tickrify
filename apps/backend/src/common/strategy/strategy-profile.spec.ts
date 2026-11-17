@@ -1,4 +1,5 @@
 import {
+  riskProfileOf,
   sanitizeStrategyProfile,
   strategyProfileHash,
   buildStrategyBlock,
@@ -118,5 +119,27 @@ describe('TRAVA 1: ordem de geracao do schema', () => {
 
   it('nenhum codigo atribui recommendation a partir de strategyFit', () => {
     expect(code).not.toMatch(/recommendation\s*=\s*[^;]*strategyFit/);
+  });
+});
+
+describe('riskProfileOf', () => {
+  const base = { timeframes: ['5m'], direction: 'long', minRiskReward: 2 };
+
+  it('le o valor valido e cai em balanced no resto', () => {
+    expect(riskProfileOf({ riskProfile: 'aggressive' })).toBe('aggressive');
+    expect(riskProfileOf({ riskProfile: 'conservative' })).toBe('conservative');
+    expect(riskProfileOf({ riskProfile: 'x' })).toBe('balanced');
+    expect(riskProfileOf(null)).toBe('balanced');
+    expect(riskProfileOf([])).toBe('balanced');
+    expect(riskProfileOf('aggressive')).toBe('balanced');
+  });
+
+  it('nao entra no bloco do prompt, no hash nem conta como criterio', () => {
+    const plain = sanitizeStrategyProfile(base)!;
+    const withRisk = sanitizeStrategyProfile({ ...base, riskProfile: 'aggressive' })!;
+    expect(withRisk).toEqual(plain);
+    expect(buildStrategyBlock(withRisk)).not.toMatch(/aggressive|riskProfile/i);
+    expect(strategyProfileHash(withRisk)).toBe(strategyProfileHash(plain));
+    expect(sanitizeStrategyProfile({ riskProfile: 'aggressive' })).toBeNull();
   });
 });

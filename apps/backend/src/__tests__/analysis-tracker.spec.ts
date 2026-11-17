@@ -2,7 +2,7 @@
  * Rastreador de resultado (28/10/2026): janela, regua do replay
  * (trackPlan) e o que fica para a volta seguinte.
  */
-import { TRACKER_RULES, TRACKER_SQL, startAnalysisTracker, trackAnalysis } from '../../worker/analysis-tracker';
+import { TRACKER_RULES, TRACKER_SQL, runAnalysisTracker, startAnalysisTracker, trackAnalysis, trackProfiles } from '../../worker/analysis-tracker';
 import type { CandleFetch, StoredCandle, fetchWindow } from '../modules/market/candle-store';
 import { ENGINE_RULES, stopMarginAtr } from '../common/utils/plan-engine';
 import { STOP_MARGIN_P80 } from '../common/utils/engine-calibration';
@@ -160,5 +160,50 @@ describe('startAnalysisTracker (DDL do boot)', () => {
       warn.mockRestore();
       log.mockRestore();
     }
+  });
+});
+
+describe('perfis de risco (AnalysisProfileTrack)', () => {
+  const watchLevels = { entry: 99.5, stopLoss: 98, takeProfit1: 101, takeProfit2: null, tp1R: 1, riskAtr: 1.5 };
+  const riskProfiles = {
+    conservative: { state: 'NO_TRADE', entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null, watchLevels: null, direction: 'long', reasons: [] },
+    balanced: { state: 'WATCH', entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null, watchLevels, direction: 'long', reasons: [] },
+    aggressive: { state: 'ENTER_NOW', entry: 100, stopLoss: 99, takeProfit1: 101.4, takeProfit2: null, watchLevels: null, direction: 'long', reasons: [] },
+  };
+
+  it('uma analise com riskProfiles gera 3 linhas, cada uma com o estado e os niveis do perfil', async () => {
+    (fetchOk as unknown as jest.Mock).mockClear();
+    const rows = await trackProfiles(candidate({ riskProfiles }), after, fetchOk);
+    expect(rows?.map((r) => r.profile)).toEqual(['conservative', 'balanced', 'aggressive']);
+    expect(rows?.[0]).toMatchObject({ signalState: 'NO_TRADE', status: 'skipped', reason: 'no_plan' });
+    expect(rows?.[1]).toMatchObject({ signalState: 'WATCH', status: 'tracked', entry: 99.5, stopLoss: 98, takeProfit1: 101, outcome: 'WIN' });
+    expect(rows?.[2]).toMatchObject({ signalState: 'ENTER_NOW', status: 'tracked', entry: 100, stopLoss: 99, takeProfit1: 101.4, fillPrice: 100 });
+    // velas buscadas uma vez so (tf + fina), nao 2 por perfil
+    expect(fetchOk).toHaveBeenCalledTimes(2);
+  });
+
+  it('sem riskProfiles, nenhuma linha', async () => {
+    expect(await trackProfiles(candidate({}), after, fetchOk)).toEqual([]);
+  });
+
+  it('janela aberta: nada gravado, fica para a volta seguinte', async () => {
+    expect(await trackProfiles(candidate({ riskProfiles }), t0 + 60 * M, fetchOk)).toBeNull();
+  });
+
+  it('runAnalysisTracker grava as linhas por perfil com ON CONFLICT e nao mexe no AnalysisTrack ja existente', async () => {
+    const exec = jest.fn(async () => 1);
+    const prisma = {
+      $executeRawUnsafe: exec,
+      $queryRawUnsafe: jest.fn(async () => [{ ...candidate({ riskProfiles }), hasTrack: true, profileRows: 0 }]),
+    };
+    jest.spyOn(Date, 'now').mockReturnValue(after);
+    try {
+      await runAnalysisTracker(prisma as never, after);
+    } finally {
+      (Date.now as unknown as jest.Mock).mockRestore?.();
+    }
+    const sqls = exec.mock.calls.map((c) => String((c as unknown[])[0]));
+    expect(sqls.filter((q) => q.includes('"AnalysisProfileTrack"') && q.includes('ON CONFLICT ("analysisId", "profile") DO NOTHING'))).toHaveLength(3);
+    expect(sqls.some((q) => q.includes('INSERT INTO "tickrify"."AnalysisTrack"'))).toBe(false);
   });
 });

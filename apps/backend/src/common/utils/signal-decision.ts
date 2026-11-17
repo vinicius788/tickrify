@@ -25,6 +25,10 @@ import {
   snapInvalidation,
   stopMarginAtr,
   type VolRegime,
+  type EngineProfile,
+  PROFILE_GATES,
+  currentGates,
+  withProfileGates,
 } from './plan-engine';
 import type { HtfTrend } from '../../modules/ai/analysis-data-coverage';
 
@@ -97,15 +101,19 @@ export const PERMISSIVE_FLAG = 'ENGINE_PERMISSIVE';
 export const PENDING_ENTRY_FLAG = 'ENGINE_PENDING_ENTRY_LABEL';
 export const HTF_WARNING_ITEM = 9;
 export const FOREX_WARNING_ITEM = 10;
-const permissive = (): boolean => flagNumber(PERMISSIVE_FLAG) === 1;
+const permissive = (): boolean => currentGates().permissive ?? flagNumber(PERMISSIVE_FLAG) === 1;
 
 function snapFallbackMode(): 0 | 1 | 2 {
+  const forced = currentGates().snapMode;
+  if (forced !== undefined) return forced;
   if (permissive()) return 2;
   const value = flagNumber(SNAP_FALLBACK_FLAG);
   return value === 1 || value === 2 ? value : 0;
 }
 
 function enterNowChecks(): readonly number[] {
+  const forced = currentGates().enterChecks;
+  if (forced) return forced;
   if (permissive()) return [3, 6];
   const value = flagNumber(ENTER_CHECKS_FLAG);
   if (value === 1) return [2, 3, 6];
@@ -455,7 +463,7 @@ export function evaluatePlan(input: {
     late: input.late,
     checks,
     passes: checks ? [...checks.values()].filter(Boolean).length : 0,
-    requiredPasses: permissive() ? ENGINE_RULES.minPassWatch : requiredPasses(input.symbol, plan.direction, input.htfTrend),
+    requiredPasses: currentGates().minPass ?? (permissive() ? ENGINE_RULES.minPassWatch : requiredPasses(input.symbol, plan.direction, input.htfTrend)),
   };
 }
 
@@ -595,7 +603,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
   const mismatch: ValidatorNote[] = signalWithoutSide ? [{ from: model, to: 'WATCH', reason: 'state_mismatch' }] : [];
   const atLevel = !!real && isAtPriorLevel(input.priorWatch, modelPlan, real.price);
   const lateNow = !!real && !!modelPlan && !atLevel && !!real.late?.[modelPlan.direction];
-  const lateAsWarning = lateNow && (flagBool(LATE_WARNING_FLAG) || permissive());
+  const lateAsWarning = lateNow && (currentGates().lateAsWarning ?? (flagBool(LATE_WARNING_FLAG) || permissive()));
   let chosen: { state: SignalState; notes: ValidatorNote[]; levels: PlanLevels };
   let evaluation: PlanEvaluation | null = null;
   if (model === 'NO_TRADE') chosen = { state: 'NO_TRADE', notes: [], levels: NULL_LEVELS };
@@ -811,5 +819,64 @@ export function applyDecisionToAnalysis<T extends Record<string, any>>(
     ...decision.probabilities,
     alternativeScenario: decision.state === 'NO_TRADE' ? null : analysis.alternativeScenario ?? null,
     riskFactors: staleNote ? [riskFactors, staleNote].filter(Boolean).join('\n') : riskFactors,
+  };
+}
+
+// ─── Perfis de risco (ENGINE_RISK_PROFILE, 17/11/2026) ───────────────────────
+
+export const RISK_PROFILE_FLAG = 'ENGINE_RISK_PROFILE';
+
+/** O que cada perfil decidiu sobre a mesma resposta do modelo (gravado em result.riskProfiles). */
+export interface ProfileOutcome {
+  state: SignalState;
+  entry: number | null;
+  stopLoss: number | null;
+  takeProfit1: number | null;
+  takeProfit2: number | null;
+  watchLevels: EntryLevels | null;
+  direction: WatchPlan['direction'] | null;
+  reasons: ValidatorReason[];
+}
+
+export function profileOutcomeOf(decision: SignalDecisionResult): ProfileOutcome {
+  return {
+    state: decision.state,
+    entry: decision.levels.entry,
+    stopLoss: decision.levels.stopLoss,
+    takeProfit1: decision.levels.takeProfit1,
+    takeProfit2: decision.levels.takeProfit2,
+    watchLevels: decision.watchLevels,
+    direction: decision.watchPlan?.direction ?? null,
+    reasons: decision.validatorNotes.map((note) => note.reason),
+  };
+}
+
+/**
+ * Roda o validador nos 3 perfis sobre o MESMO input (sem nova chamada de IA) e
+ * devolve a decisao do perfil da pessoa. Sem velas reais (print, print antigo
+ * retido, ativo sem fonte) o perfil nao muda nada: os 3 recebem a decisao do
+ * Equilibrado.
+ */
+export async function decideSignalForProfile(input: SignalDecisionInput, profile: EngineProfile): Promise<{
+  decision: SignalDecisionResult;
+  profiles: Record<EngineProfile, ProfileOutcome>;
+}> {
+  const balanced = await decideSignal(input);
+  if (balanced.dataMode !== 'real_data') {
+    const same = profileOutcomeOf(balanced);
+    return { decision: balanced, profiles: { conservative: same, balanced: same, aggressive: same } };
+  }
+  const [conservative, aggressive] = await Promise.all([
+    withProfileGates(PROFILE_GATES.conservative, () => decideSignal(input)),
+    withProfileGates(PROFILE_GATES.aggressive, () => decideSignal(input)),
+  ]);
+  const byProfile: Record<EngineProfile, SignalDecisionResult> = { conservative, balanced, aggressive };
+  return {
+    decision: byProfile[profile] ?? balanced,
+    profiles: {
+      conservative: profileOutcomeOf(conservative),
+      balanced: profileOutcomeOf(balanced),
+      aggressive: profileOutcomeOf(aggressive),
+    },
   };
 }

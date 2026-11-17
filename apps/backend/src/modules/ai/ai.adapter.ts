@@ -23,6 +23,9 @@ import {
 import {
   applyDecisionToAnalysis,
   decideSignal,
+  decideSignalForProfile,
+  RISK_PROFILE_FLAG,
+  type SignalDecisionInput,
   deriveSignalState,
   parseSignalState,
   validatorReasons,
@@ -39,6 +42,7 @@ import {
   type Bar,
   type TriggerType,
   type WatchPlan,
+  type EngineProfile,
 } from '../../common/utils/plan-engine';
 import { aiLevelOf, buildLevelMap } from '../../common/utils/level-map';
 import { OUTPUT_LANGUAGE_NAMES, splitUserContextClose } from '../prompt/prompt-builder.service';
@@ -2005,7 +2009,7 @@ export class AIAdapter {
      * compareProviders: so quem grava a comparacao pede (worker e caminho sincrono; a demo nao).
      * priorPlan: plano anterior do setup (setup-continuation.ts); so entra se o ativo lido for o mesmo.
      */
-    options: { compareProviders?: boolean; priorPlan?: PriorPlan | null; assetHint?: AssetHint | null } = {},
+    options: { compareProviders?: boolean; priorPlan?: PriorPlan | null; assetHint?: AssetHint | null; riskProfile?: EngineProfile } = {},
   ): Promise<AIAnalysisResponse> {
     try {
       const userContent = await this.buildUserContent(imageUrl, extraImageUrls);
@@ -2420,7 +2424,7 @@ export class AIAdapter {
       const modelState =
         parsed.signalState ??
         deriveSignalState(rawRecommendation, parsed.analysis?.entryType, parsed.analysis?.alternativeScenario);
-      const decision = await decideSignal({
+      const decisionInput: SignalDecisionInput = {
         state: modelState,
         recommendation: rawRecommendation,
         confidence: normalizeConfidence(parsed.confidence, 0),
@@ -2444,7 +2448,12 @@ export class AIAdapter {
         planFailures,
         priceFixed: parsed.analysis?.priceMagnitudeFixed === true,
         priorWatch: priorPlan ? { plan: priorPlan.plan, confirmed: continuation?.status === 'CONFIRMED' } : null,
-      });
+      };
+      // ENGINE_RISK_PROFILE (17/11/2026): os 3 perfis sobre a mesma resposta; a pessoa ve o dela.
+      const riskProfileOn = flagNumber(RISK_PROFILE_FLAG) === 1;
+      const riskProfile: EngineProfile = options.riskProfile ?? 'balanced';
+      const profiled = riskProfileOn ? await decideSignalForProfile(decisionInput, riskProfile) : null;
+      const decision = profiled ? profiled.decision : await decideSignal(decisionInput);
       const validationMs = Date.now() - tValidation;
       if (decision.validatorAction === 'downgraded' || decision.validatorAction === 'promoted') {
         this.logger.warn(
@@ -2486,6 +2495,7 @@ export class AIAdapter {
         ...(decision.pendingEntry ? { pendingEntry: true } : {}),
         ...(decision.targetMoved ? { targetMoved: true } : {}),
         ...(decision.marketLevels ? { marketLevels: decision.marketLevels } : {}),
+        ...(profiled ? { riskProfile, riskProfiles: profiled.profiles } : {}),
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);
       logObservation(observation, m => this.logger.log(m));

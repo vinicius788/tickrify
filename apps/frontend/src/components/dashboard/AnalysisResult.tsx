@@ -1016,6 +1016,28 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     watchSide: watchLayout && !watchClosed && watchPlan ? (watchPlan.direction === 'long' ? 'buy' : 'sell') : null,
   };
 
+  // Perfil de risco da conta nesta analise (so quando o motor gravou e nao e o padrao).
+  const riskProfile = fullResponse.riskProfile;
+  const riskProfileLabel = riskProfile === 'conservative' || riskProfile === 'aggressive'
+    ? r.riskProfile.label.replace('{profile}', riskProfile === 'aggressive' ? r.riskProfile.aggressive : r.riskProfile.conservative)
+    : null;
+  // No agressivo o R/R pode ser baixo: diz a taxa de acerto minima para empatar.
+  const breakEvenLevels = riskProfile !== 'aggressive'
+    ? null
+    : signalState === 'ENTER_NOW' && entry !== null && stopLoss !== null && takeProfit1 !== null
+      ? { entry, stop: stopLoss, tp1: takeProfit1 }
+      : signalState === 'WATCH' && watchLevels
+        ? { entry: watchLevels.entry, stop: watchLevels.stopLoss, tp1: watchLevels.takeProfit1 }
+        : null;
+  const breakEvenText = (() => {
+    if (!breakEvenLevels || breakEvenLevels.entry === breakEvenLevels.stop) return null;
+    const rr = Math.abs(breakEvenLevels.tp1 - breakEvenLevels.entry) / Math.abs(breakEvenLevels.entry - breakEvenLevels.stop);
+    if (!Number.isFinite(rr) || rr <= 0) return null;
+    return r.riskProfile.breakEven
+      .replace('{rr}', formatNumber(rr, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }))
+      .replace('{pct}', String(Math.ceil(100 / (1 + rr))));
+  })();
+
   // Tudo o que o WATCH escreve sai daqui: numeros do servidor, frases do codigo.
   const watchText = (() => {
     if (!watchLayout || !watchPlan) return null;
@@ -1026,10 +1048,14 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     const zone = watchPlan.zoneLow === watchPlan.zoneHigh
       ? money(watchPlan.zoneLow)
       : w.zoneRange.replace('{low}', money(watchPlan.zoneLow)).replace('{high}', money(watchPlan.zoneHigh));
-    const headline = [
-      currentPrice !== null ? w.noEntryAt.replace('{price}', money(currentPrice)) : '',
-      (long ? w.waitPullback : w.waitRally).replace('{zone}', zone),
-    ].filter(Boolean).join(' ');
+    const insideZone = currentPrice !== null && currentPrice >= watchPlan.zoneLow && currentPrice <= watchPlan.zoneHigh;
+    // Preco dentro da zona: "espere o recuo ate a zona" seria contraditorio.
+    const headline = insideZone
+      ? w.inZoneWait.replace('{level}', money(long ? watchPlan.zoneLow : watchPlan.zoneHigh))
+      : [
+        currentPrice !== null ? w.noEntryAt.replace('{price}', money(currentPrice)) : '',
+        (long ? w.waitPullback : w.waitRally).replace('{zone}', zone),
+      ].filter(Boolean).join(' ');
 
     const clauses = cleanModelText(watchPlan.trigger).split(/;\s*/).filter(Boolean);
     const conditional = clauses.find((clause) => /\b(only if|only after|once|if)\b/i.test(clause));
@@ -1213,6 +1239,8 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
               <span>{historicalPrint ? t.analysis.historicalPrintChip : watchClosed ? r.watch.chipClosed : watchLayout ? (watchPlan?.direction === 'long' ? (pendingEntry ? r.watch.pendingBuy : r.watch.chipBuy) : (pendingEntry ? r.watch.pendingSell : r.watch.chipSell)) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
             </div>
+            {riskProfileLabel ? <span data-testid="risk-profile-label" className="whitespace-nowrap text-xs text-[var(--text-secondary)]">{riskProfileLabel}</span> : null}
+            {breakEvenText ? <span data-testid="risk-breakeven" className="text-xs tabular-nums text-[var(--text-secondary)]">{breakEvenText}</span> : null}
             {/* Janela encerrada: o selo fica cinza e o desfecho (o que o mercado fez) vem ao lado, pela regra unica. */}
             {watchClosed && analysisData.watch ? (
               <span key="closed-verdict" data-testid="closed-verdict" className="contents">

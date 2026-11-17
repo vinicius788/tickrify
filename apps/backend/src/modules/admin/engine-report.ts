@@ -17,6 +17,8 @@ export const ENGINE_DECISION_RULES = {
   minClassTrades: 10,
   turnOffGapR: 0.1,
   enterNow: { minTrades: 30, keepAtOrAbove: -0.05, disableAtOrBelow: -0.15 },
+  /** Perfis de risco (17/11/2026): mesmos limites de R, amostra minima menor. */
+  profile: { minTrades: 20 },
 } as const;
 
 export type EngineReportRow = {
@@ -74,7 +76,14 @@ export type EngineReport = {
   enterNow: { trades: number; meanR: number | null; verdict: string };
   gates: GateSeries[];
   noCandles: { reason: string; count: number }[];
+  /** Perfis de risco (AnalysisProfileTrack); ausente enquanto nenhuma analise tem perfis. */
+  profiles?: ProfileReport[];
 };
+
+export type ProfileKey = 'conservative' | 'balanced' | 'aggressive';
+export const PROFILE_ORDER: readonly ProfileKey[] = ['conservative', 'balanced', 'aggressive'];
+export type ProfileRow = Omit<EngineReportRow, 'variant'> & { profile: string };
+export type ProfileReport = { profile: ProfileKey; stats: EngineStats; verdict: string };
 
 export function assetClassOf(symbol: string | null): AssetClass {
   if (!symbol) return 'other';
@@ -89,9 +98,9 @@ export function assetClassOf(symbol: string | null): AssetClass {
 
 const variantOf = (row: EngineReportRow): 'A' | 'B' | 'C' | 'D' => (row.variant === 'B' || row.variant === 'C' || row.variant === 'D' ? row.variant : 'A');
 const pct = (part: number, whole: number) => (whole ? (100 * part) / whole : null);
-const tradeOf = (row: EngineReportRow) => trackedTradeR({ symbol: row.symbol, outcome: row.outcome, fillPrice: row.fillPrice, stopLoss: row.stopLoss, takeProfit1: row.takeProfit1 });
+const tradeOf = (row: Omit<EngineReportRow, 'variant'>) => trackedTradeR({ symbol: row.symbol, outcome: row.outcome, fillPrice: row.fillPrice, stopLoss: row.stopLoss, takeProfit1: row.takeProfit1 });
 
-function statsOf(rows: readonly EngineReportRow[]): EngineStats {
+function statsOf(rows: readonly Omit<EngineReportRow, 'variant'>[]): EngineStats {
   const watch = rows.filter((r) => r.signalState === 'WATCH');
   const watchTracked = watch.filter((r) => r.trackStatus === 'tracked');
   const watchTouched = watchTracked.filter((r) => r.touched === true).length;
@@ -133,9 +142,9 @@ function abVerdict(a: EngineReport['variants'][number], b: EngineReport['variant
 }
 
 /** Regra da revisao mensal: vale para ENTER_NOW e para WATCH tocado e preenchido, cada um na sua serie. */
-export function reviewDecision(trades: number, meanR: number | null): 'keep' | 'disable' | 'wait' {
+export function reviewDecision(trades: number, meanR: number | null, minTrades: number = ENGINE_DECISION_RULES.enterNow.minTrades): 'keep' | 'disable' | 'wait' {
   const R = ENGINE_DECISION_RULES.enterNow;
-  if (trades < R.minTrades || meanR === null) return 'wait';
+  if (trades < minTrades || meanR === null) return 'wait';
   return meanR >= R.keepAtOrAbove ? 'keep' : meanR <= R.disableAtOrBelow ? 'disable' : 'wait';
 }
 
@@ -167,6 +176,25 @@ function gateSeries(flag: GateSeries['flag'], rows: readonly EngineReportRow[], 
         ? `Esperar mais dados: faltam ${R.minTrades - trades.length} trades.`
         : 'Esperar mais dados: entre -0,15R e -0,05R a regra nao decide.';
   return { flag, trades: trades.length, meanR, verdict };
+}
+
+function profileVerdict(trades: number, meanR: number | null): string {
+  const min = ENGINE_DECISION_RULES.profile.minTrades;
+  if (trades < min || meanR === null) return `Esperar mais dados (faltam ${Math.max(0, min - trades)}).`;
+  const decision = reviewDecision(trades, meanR, min);
+  if (decision === 'keep') return 'Manter o perfil.';
+  if (decision === 'disable') return 'Desligar o perfil.';
+  return 'Esperar mais dados: entre -0,15R e -0,05R a regra nao decide.';
+}
+
+/** Um bloco por perfil de risco, so com as linhas do AnalysisProfileTrack. Vazio = sem bloco. */
+export function buildProfileReport(rows: readonly ProfileRow[]): ProfileReport[] {
+  if (!rows.length) return [];
+  return PROFILE_ORDER.map((profile) => {
+    const own = rows.filter((r) => r.profile === profile);
+    const stats = statsOf(own);
+    return { profile, stats, verdict: profileVerdict(stats.closedTrades, stats.meanR) };
+  });
 }
 
 /** Por que as analises vieram sem velas, do motivo mais comum para o menos comum. */
@@ -215,6 +243,28 @@ export function buildEngineReport(rows: readonly EngineReportRow[]): EngineRepor
 type RawQuerier = { $queryRaw<T = unknown>(query: Prisma.Sql): Promise<T> };
 
 export async function loadEngineReport(db: RawQuerier): Promise<EngineReport> {
+  const report = await loadBaseReport(db);
+  // Tabela nova e criada pelo worker no boot: se ainda nao existe, o relatorio segue sem o bloco.
+  const profileRows = await db.$queryRaw<ProfileRow[]>(Prisma.sql`
+    SELECT t."profile" AS "profile",
+           t."symbol" AS "symbol",
+           t."signalState" AS "signalState",
+           t."status" AS "trackStatus",
+           t."touched" AS "touched",
+           t."outcome" AS "outcome",
+           t."fillPrice" AS "fillPrice",
+           t."stopLoss" AS "stopLoss",
+           t."takeProfit1" AS "takeProfit1"
+    FROM "tickrify"."AnalysisProfileTrack" t
+    JOIN "tickrify"."Analysis" a ON a."id" = t."analysisId"
+    WHERE a."status" = 'completed'
+      AND a."createdAt" >= ${new Date(ENGINE_REPORT_SINCE)}
+  `).catch(() => [] as ProfileRow[]);
+  const profiles = buildProfileReport(profileRows);
+  return profiles.length ? { ...report, profiles } : report;
+}
+
+async function loadBaseReport(db: RawQuerier): Promise<EngineReport> {
   const rows = await db.$queryRaw<EngineReportRow[]>(Prisma.sql`
     SELECT a."result"->'analysis'->>'symbol' AS "symbol",
            a."result"->'engine'->>'prompt_variant' AS "variant",

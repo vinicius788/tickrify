@@ -4,7 +4,7 @@ import { Sliders } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import EmptyState from '@/components/dashboard/EmptyState';
-import { APIError, useAPIClient, type StrategyProfileDto } from '@/lib/api';
+import { APIError, useAPIClient, type RiskProfile, type StrategyProfileDto } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 /**
@@ -36,6 +36,8 @@ const SETUPS = ['breakout', 'pullback', 'reversal', 'range', 'trend_continuation
 const DIRECTIONS = ['long', 'short', 'both'] as const;
 
 type Direction = (typeof DIRECTIONS)[number];
+
+const RISK_PROFILES = ['conservative', 'balanced', 'aggressive'] as const;
 
 const MIN_RR = 1;
 const MAX_RR = 10;
@@ -97,6 +99,7 @@ const StrategyProfile = () => {
   const [paid, setPaid] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [profile, setProfile] = useState<StrategyProfileDto>(EMPTY_PROFILE);
+  const [riskProfile, setRiskProfile] = useState<RiskProfile>('balanced');
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveErrorMessage, setSaveErrorMessage] = useState<string | null>(null);
@@ -111,6 +114,7 @@ const StrategyProfile = () => {
         if (cancelled) return;
         setPaid(res.paid);
         if (res.profile) setProfile(res.profile);
+        if (res.riskProfile) setRiskProfile(res.riskProfile);
       } catch {
         if (!cancelled) setLoadError(true);
       } finally {
@@ -163,15 +167,21 @@ const StrategyProfile = () => {
     }
   };
 
+  const riskLabel = (v: RiskProfile): string =>
+    v === 'conservative' ? st.riskConservative : v === 'aggressive' ? st.riskAggressive : st.riskBalanced;
+  const riskHint = (v: RiskProfile): string =>
+    v === 'conservative' ? st.riskConservativeHint : v === 'aggressive' ? st.riskAggressiveHint : st.riskBalancedHint;
+
   const handleSave = async () => {
     setSaving(true);
     setSaveMessage(null);
     setSaveErrorMessage(null);
     try {
-      const res = await saveStrategy(profile);
+      const res = await saveStrategy({ ...profile, riskProfile });
       if (res.profile) {
         setProfile(res.profile);
       }
+      if (res.riskProfile) setRiskProfile(res.riskProfile);
       setSaveMessage(st.saved);
     } catch (error) {
       setSaveErrorMessage(error instanceof APIError ? error.message : st.saveError);
@@ -291,6 +301,31 @@ const StrategyProfile = () => {
             <span className="tabular-nums text-sm text-[var(--text-secondary)]">:1</span>
           </div>
           <p className="mt-1.5 text-xs text-[var(--text-secondary)]">{st.minRrHint}</p>
+        </div>
+
+        <div>
+          <div className="tk-stat-label mb-2">{st.riskLabel}</div>
+          <div className="flex flex-wrap gap-2">
+            {RISK_PROFILES.map((value) => {
+              const active = riskProfile === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setRiskProfile(value)}
+                  className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    active
+                      ? 'border-transparent bg-[var(--inverse-bg)] text-[var(--inverse-fg)]'
+                      : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--fill-2)] hover:text-[var(--text-primary)]'
+                  }`}
+                >
+                  {riskLabel(value)}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1.5 text-xs text-[var(--text-secondary)]">{riskHint(riskProfile)}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border-subtle)] pt-4">

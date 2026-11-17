@@ -15,6 +15,7 @@ jest.mock('../../modules/calendar/calendar.service', () => ({
 import {
   applyDecisionToAnalysis,
   decideSignal,
+  decideSignalForProfile,
   deriveSignalState,
   requiredPasses,
   storedSignalState,
@@ -891,5 +892,55 @@ describe('alvo no proximo nivel (chave ENGINE_NEXT_TARGET)', () => {
     expect(off.watchLevels).toBeNull();
     expect(on).toMatchObject({ state: 'WATCH', targetMoved: true });
     expect(on.watchLevels?.tp1R).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('perfis de risco (ENGINE_RISK_PROFILE, 17/11/2026)', () => {
+  const env = ['ENGINE_PERMISSIVE', 'ENGINE_NEXT_TARGET', 'ENGINE_WATCH_ON_REJECTED_GEOMETRY'] as const;
+  const before = env.map((k) => process.env[k]);
+  beforeAll(() => {
+    process.env.ENGINE_PERMISSIVE = '1';
+    process.env.ENGINE_NEXT_TARGET = 'true';
+    process.env.ENGINE_WATCH_ON_REJECTED_GEOMETRY = 'true';
+  });
+  afterAll(() => env.forEach((k, i) => { if (before[i] === undefined) delete process.env[k]; else process.env[k] = before[i]; }));
+
+  // XAUUSD 5M de 16/11/2026 22:53 BRT (prompt D): venda dentro da zona, regime de volatilidade alto.
+  const swings = [3856.66975, 3855.85464, 3857.30921, 3866.13478, 3841.13083, 3861.00386, 3861.52612, 3856.68556]
+    .map((price) => ({ kind: 'low' as 'low' | 'high', price }))
+    .concat([3861.45113, 3860.85817, 3870.11881, 3870.86785, 3851.35571, 3866.92385, 3866.25575, 3865.13177, 3854.75104].map((price) => ({ kind: 'high' as const, price })));
+  const gold = {
+    state: 'WATCH' as const, recommendation: 'WAIT' as const, confidence: 50, trendStrength: 'moderate',
+    structureValidation: 'C1 PASS: a. C2 PASS: b. C3 PASS: c. C4 PASS: d. C5 PASS: e. C6 FAIL market Rk5.33, limit valid. C7 PASS: g. 6/7, WATCH.',
+    symbol: 'XAUUSD', currentPrice: 3866.95,
+    watchPlan: { direction: 'short' as const, triggerType: 'sweep_reclaim' as const, zoneLow: 3864.44, zoneHigh: 3870.36, invalidation: 3870.86785, target1: 3862.5, target2: 3854.16, validForCandles: 16, trigger: 'x' },
+    estimatedLevels: null, probabilities: { probabilityTp1: null, probabilityTp2: null, probabilityStop: null },
+    realData: { price: 3866.95221, atr: 6.965625714285774, rangePosPct: null, htfTrend: 'downtrend' as const, swings, late: { long: true, short: false }, volRegime: 'high' as const },
+  };
+
+  it('mesma resposta, 3 decisoes: o Equilibrado repete producao e o Arriscado aceita o alvo a 0,98R', async () => {
+    const { decision, profiles } = await decideSignalForProfile(gold as never, 'balanced');
+    expect(decision.state).toBe('WATCH');
+    expect(decision.watchLevels).toBeNull();
+    expect(profiles.conservative.state).toBe('WATCH');
+    expect(profiles.aggressive.state).toBe('WATCH');
+    expect(profiles.aggressive.watchLevels?.takeProfit1).toBe(3854.16);
+    expect(profiles.aggressive.watchLevels?.tp1R).toBeCloseTo(0.98, 2);
+    const aggressive = await decideSignalForProfile(gold as never, 'aggressive');
+    expect(aggressive.decision.watchLevels?.entry).toBe(3864.44);
+  });
+
+  it('sem velas reais o perfil nao muda nada', async () => {
+    const print = { ...gold, realData: null, estimatedLevels: { entry: 3866, stopLoss: 3875, takeProfit1: 3855, takeProfit2: null } };
+    const { profiles } = await decideSignalForProfile(print as never, 'aggressive');
+    expect(profiles.aggressive).toEqual(profiles.balanced);
+    expect(profiles.conservative).toEqual(profiles.balanced);
+  });
+
+  it('o Arriscado nunca destrava plano invalidado', async () => {
+    const invalidated = { ...gold, realData: { ...gold.realData, price: 3872 } };
+    const { profiles } = await decideSignalForProfile(invalidated as never, 'aggressive');
+    expect(profiles.aggressive.state).toBe('NO_TRADE');
+    expect(profiles.aggressive.reasons).toContain('plan_invalidated');
   });
 });
