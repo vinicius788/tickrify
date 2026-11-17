@@ -49,7 +49,7 @@ import { MobileNav } from "@/components/dashboard/MobileNav";
 import { afterNextPaint, asRecord, isPageTranslated, scrollToTop } from "@/lib/utils";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useToast } from "@/hooks/use-toast";
-import { entrySide, getRecommendationMeta, resolveSignalState, signalStateLabel } from "@/lib/trading-ui";
+import { entrySide, getRecommendationMeta, historicalPrintOf, resolveSignalState, signalStateLabel } from "@/lib/trading-ui";
 import { useAnalyses } from "@/hooks/useAnalyses";
 import { useTicks } from "@/hooks/useTicks";
 import { COMMUNITY_URL, track, trackCommunityClick } from "@/lib/analytics";
@@ -1698,7 +1698,7 @@ const DashboardPage = () => {
             {tradeAnalysisId ? <TradePanel key={`trade-${tradeAnalysisId}`} analysisId={tradeAnalysisId} /> : null}
             {!isDemo && !freeLocked && feedbackRewardAvailable && analysisData?.status === 'completed' ? <FeedbackRewardCard source="result" /> : null}
             {/* Seguir o setup: ao lado das acoes de sempre, nunca no lugar delas. */}
-            {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' && !(analysisData.fullResponse?.signalState === 'WATCH' && isWatchPlan(analysisData.fullResponse.watchPlan)) ? (
+            {!isDemo && !freeLocked && analysisData?.id && analysisData.status === 'completed' && !(analysisData.fullResponse?.signalState === 'WATCH' && isWatchPlan(analysisData.fullResponse.watchPlan)) && !historicalPrintOf(analysisData.fullResponse) ? (
               <SetupAlertBar
                 key={`alerts-${analysisData.id}`}
                 analysisId={analysisData.id}

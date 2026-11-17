@@ -63,6 +63,16 @@ describe('analysis data coverage', () => {
     });
   });
 
+  it('stale print withheld: evidence carries the image and live prices (presentation only)', () => {
+    const stale = {
+      analysisType: 'quick' as const, htfImagesRequested: 0, htfImagesDelivered: 0,
+      assetClass: 'metal' as const, candles: 'stale_withheld' as const, marketContext: 'stale_withheld' as const, calendar: 'not_attempted' as const,
+    };
+    expect(toAnalysisEvidence(stale, { imagePrice: 4268, livePrice: 3862 }).stalePrint).toEqual({ imagePrice: 4268, livePrice: 3862 });
+    expect(toAnalysisEvidence(stale).stalePrint).toEqual({ imagePrice: null, livePrice: null });
+    expect(toAnalysisEvidence({ ...stale, candles: 'injected' }, { imagePrice: 1, livePrice: 2 })).not.toHaveProperty('stalePrint');
+  });
+
   it('calendar never fetched (quick, context off) is not_attached, not "not confirmed"', () => {
     const quick = {
       analysisType: 'quick' as const, htfImagesRequested: 0, htfImagesDelivered: 0,

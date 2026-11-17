@@ -18,6 +18,10 @@ export interface AnalysisEvidence {
   marketContextAttached: boolean;
   /** not_attached: o calendario nao foi buscado para esta analise (quick ou contexto desligado). */
   calendar: 'events_attached' | 'no_events_returned' | 'not_attached' | 'not_confirmed';
+  /** So quando a guarda de print velho reteve as velas: a tela trata o print como historico. */
+  stalePrint?: { imagePrice: number | null; livePrice: number | null };
+  /** UI_HISTORICAL_PRINT = 1 no momento da analise (so apresentacao). */
+  historicalPrintUi?: true;
 }
 
 export interface AIAnalysisResponse {

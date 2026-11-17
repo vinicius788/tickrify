@@ -48,6 +48,9 @@ import {
   entrySide,
   forexPipSize,
   formatAssetPrice,
+  historicalPrintOf,
+  historicalPrintUiOf,
+  isDataQualityReason,
   signalStateLabel,
 } from '@/lib/trading-ui';
 import { asRecord } from '@/lib/utils';
@@ -628,6 +631,9 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     : signalState === 'WATCH' && fullResponse.dataMode === 'real_data' && 'watchLevels' in fullResponse ? null : undefined;
   const levelsEstimated = fullResponse.dataMode === 'print';
   const pendingEntry = fullResponse.pendingEntry === true && isWatchLevels(fullResponse.watchLevels);
+  // UI_HISTORICAL_PRINT (17/11/2026): print velho vira historico na tela; motivos do mercado antes dos de dados.
+  const historicalPrint = historicalPrintOf(fullResponse);
+  const marketReasonsFirst = historicalPrintUiOf(fullResponse);
   const entryWarnings = Array.isArray(fullResponse.entryWarnings) ? fullResponse.entryWarnings.filter((item) => [2, 7, 8, 9, 10, 11].includes(item)) : [];
   // WATCH com plano: cartao unico. Analise antiga sem plano segue no desenho anterior.
   const watchLayout = signalState === 'WATCH' && watchPlan !== null;
@@ -1064,7 +1070,9 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     return {
       headline,
       condition,
-      whyWait: [...failed, ...risks].slice(0, 3),
+      whyWait: (marketReasonsFirst
+        ? [...failed, ...risks.filter((item) => !isDataQualityReason(item)), ...risks.filter((item) => isDataQualityReason(item))]
+        : [...failed, ...risks]).slice(0, 3),
       cancelled,
       oppositeLine,
       planBRepeats: opposite.length <= 1,
@@ -1182,6 +1190,16 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
         </div>
       )}
 
+      {historicalPrint ? (
+        <div key="historical-print" role="status" data-testid="historical-print" className="rounded-xl border border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)] px-4 py-3 text-sm leading-relaxed text-[var(--text-primary)]">
+          {historicalPrint.imagePrice !== null && historicalPrint.livePrice !== null
+            ? t.analysis.historicalPrint
+              .replace('{image}', formatPrice(historicalPrint.imagePrice))
+              .replace('{live}', formatPrice(historicalPrint.livePrice))
+            : t.analysis.historicalPrintNoPrices}
+        </div>
+      ) : null}
+
       <Card className="surface-terminal-elevated rounded-xl fade-in-stagger" style={{ animationDelay: '0ms' }}>
         <CardContent className="p-5 md:p-6">
           <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)] md:gap-4">
@@ -1190,10 +1208,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             <div
               data-testid="signal-state"
               data-closed={watchClosed ? 'true' : undefined}
-              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium ${watchClosed ? WATCH_TONE_CLASSES.neutral : signalToneClasses}`}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium ${watchClosed || historicalPrint ? WATCH_TONE_CLASSES.neutral : signalToneClasses}`}
             >
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{watchClosed ? r.watch.chipClosed : watchLayout ? (watchPlan?.direction === 'long' ? (pendingEntry ? r.watch.pendingBuy : r.watch.chipBuy) : (pendingEntry ? r.watch.pendingSell : r.watch.chipSell)) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
+              <span>{historicalPrint ? t.analysis.historicalPrintChip : watchClosed ? r.watch.chipClosed : watchLayout ? (watchPlan?.direction === 'long' ? (pendingEntry ? r.watch.pendingBuy : r.watch.chipBuy) : (pendingEntry ? r.watch.pendingSell : r.watch.chipSell)) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
             </div>
             {/* Janela encerrada: o selo fica cinza e o desfecho (o que o mercado fez) vem ao lado, pela regra unica. */}
             {watchClosed && analysisData.watch ? (
@@ -1335,7 +1353,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             watch={analysisData.watch}
             reach={analysisData.fullResponse?.watchReach ?? null}
             condition={watchText.condition}
-            actionsFor={alertsEnabled && !sample && !isDemo && analysisData.id ? analysisData.id : null}
+            actionsFor={alertsEnabled && !sample && !isDemo && !historicalPrint && analysisData.id ? analysisData.id : null}
             base={base}
             closed={watchClosed}
             now={now}

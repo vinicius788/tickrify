@@ -274,6 +274,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'UI_HISTORICAL_PRINT',
+    type: 'number',
+    label: 'Print antigo aparece como historico',
+    description:
+      'So apresentacao. 0 (padrao) = como hoje. 1 = quando a guarda de print antigo retem as velas, o resultado mostra um aviso no topo com o preco da imagem e o ao vivo, sem titulo de compra/venda e sem os botoes de alerta e seguir setup; e os motivos de espera mostram primeiro a razao do mercado (checklist e riscos) e so depois a qualidade dos dados. Validador e guarda de print antigo nao mudam. Vale para analises novas (grava result.evidence.historicalPrintUi). Valor invalido cai no 0.',
+    defaultValue: '0',
+    risk: 'baixo',
+  },
+  {
     key: 'ENGINE_LATE_AS_WARNING',
     type: 'boolean',
     label: 'Movimento atrasado vira aviso',
