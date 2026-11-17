@@ -97,6 +97,9 @@ describe('plano do WATCH (v10.1)', () => {
     renderResult('ENTER_NOW', null, { entryWarnings: [11] });
     expect(screen.getByTestId('entry-warning-11').textContent).toBe('Heads up: the first level is close, so the target moved to the next level.');
     cleanup();
+    renderResult('ENTER_NOW', null, { entryWarnings: [11, 12] });
+    expect(screen.getByTestId('entry-warning-12').textContent).toBe('Heads up: a level between entry and target 1 may stop price.');
+    cleanup();
     renderResult('ENTER_NOW', null, { entryWarnings: [9, 10] });
     expect(screen.getByTestId('entry-warning-9').textContent).toBe('Heads up: this trade goes against the 4h trend.');
     expect(screen.getByTestId('entry-warning-10').textContent).toBe('Heads up: forex pairs usually need more confirmation.');

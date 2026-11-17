@@ -690,6 +690,9 @@ async function main() {
   if (process.argv.includes('--profiles')) {
     for (const profile of ['conservative', 'balanced', 'aggressive'] as const) {
       await withProfileGates(PROFILE_GATES[profile], () => measure(`perfil ${profile}`, ctxs, withReal.length));
+      const enter = (await withProfileGates(PROFILE_GATES[profile], () => Promise.all(ctxs.map((c) => decide(c))))).filter((d) => d.state === 'ENTER_NOW');
+      const rr = enter.map((d) => Math.abs((d.levels.takeProfit1 as number) - (d.levels.entry as number)) / Math.abs((d.levels.entry as number) - (d.levels.stopLoss as number)));
+      console.log(`PERFIL ${profile}: ENTER_NOW ${enter.length}, R/R abaixo de 1: ${rr.filter((x) => x < 1).length} (${rr.map((x) => x.toFixed(2)).join(' ')})`);
     }
   }
 

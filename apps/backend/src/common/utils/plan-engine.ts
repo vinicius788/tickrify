@@ -82,6 +82,8 @@ export interface ProfileGates {
   tp1MinR?: number;
   /** PASS minimos do ENTER_NOW. */
   minPass?: number;
+  /** Perfil elegivel ao C6 pela geometria real (ENGINE_C6_FROM_GEOMETRY): so o Arriscado. */
+  c6FromGeometry?: boolean;
 }
 
 /**
@@ -92,7 +94,7 @@ export interface ProfileGates {
 export const PROFILE_GATES: Record<EngineProfile, ProfileGates> = {
   conservative: { permissive: false, snapMode: 0, enterChecks: ENGINE_RULES.enterNowChecks, lateAsWarning: false },
   balanced: {},
-  aggressive: { permissive: true, tp1MinR: 0.7, minPass: 3, lateAsWarning: true },
+  aggressive: { permissive: true, tp1MinR: 0.7, minPass: 3, lateAsWarning: true, c6FromGeometry: true },
 };
 
 const profileGates = new AsyncLocalStorage<ProfileGates>();
