@@ -144,6 +144,8 @@ export type AdminChatThread = {
   userId: string;
   status: 'open' | 'closed';
   lastMessageAt: string | null;
+  /** Ultima vez que a pessoa abriu o chat com mensagem nova (ou escreveu). */
+  userReadAt: string | null;
   createdAt: string;
   email: string | null;
   name: string | null;
@@ -174,7 +176,11 @@ export function useAdminChatThread(threadId: string | null) {
   const query = useQuery({
     queryKey: ['admin-support', 'thread', threadId],
     queryFn: async () =>
-      send<{ thread: { id: string; userId: string; status: 'open' | 'closed'; email: string | null }; items: ChatMessage[]; nextCursor: string | null }>(
+      send<{
+        thread: { id: string; userId: string; status: 'open' | 'closed'; email: string | null; userReadAt: string | null };
+        items: ChatMessage[];
+        nextCursor: string | null;
+      }>(
         `/api/admin/support/threads/${encodeURIComponent(String(threadId))}`,
         { method: 'GET' },
         await token(),
@@ -184,6 +190,11 @@ export function useAdminChatThread(threadId: string | null) {
   });
   useVisiblePolling(() => void query.refetch(), CHAT_OPEN_POLL_MS, Boolean(threadId));
   return query;
+}
+
+/** Mensagem do fundador ja vista: a pessoa abriu o chat depois dela. */
+export function founderMessageSeen(createdAt: string, userReadAt: string | null | undefined): boolean {
+  return Boolean(userReadAt) && new Date(createdAt).getTime() <= new Date(String(userReadAt)).getTime();
 }
 
 export function useAdminChatActions() {

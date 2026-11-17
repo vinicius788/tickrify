@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { APIError } from '@/lib/api';
-import { useAdminChatActions, useAdminChatThread, useAdminChatThreads, type AdminChatThread } from '@/lib/support-chat';
+import { founderMessageSeen, useAdminChatActions, useAdminChatThread, useAdminChatThreads, type AdminChatThread } from '@/lib/support-chat';
 
 const quando = (iso: string | null) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'nunca');
 
@@ -35,6 +35,7 @@ function Conversa({ thread }: { thread: AdminChatThread }) {
     );
   };
   const fechada = (data?.thread.status ?? thread.status) === 'closed';
+  const lidaEm = data?.thread.userReadAt ?? thread.userReadAt;
 
   return (
     <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
@@ -44,6 +45,7 @@ function Conversa({ thread }: { thread: AdminChatThread }) {
           <p className="text-xs text-[var(--text-faint)]">
             {`${PLANO[thread.plan] ?? thread.plan} · origem: ${thread.acquisitionSource ?? 'não respondeu'} · última análise: ${quando(thread.lastAnalysisAt)}`}
           </p>
+          <p className="text-xs text-[var(--text-faint)]">{`abriu o chat por último: ${quando(lidaEm)}`}</p>
         </div>
         <Button
           size="sm"
@@ -59,9 +61,10 @@ function Conversa({ thread }: { thread: AdminChatThread }) {
         {isLoading ? <p className="text-xs text-[var(--text-faint)]">Carregando…</p> : null}
         {(data?.items ?? []).map((m) => {
           const doFundador = m.author === 'founder';
+          const visto = doFundador ? (founderMessageSeen(m.createdAt, lidaEm) ? ' · Visto' : ' · Não visto') : '';
           return (
             <div key={m.id} className={`max-w-[85%] rounded-lg px-3 py-2 ${doFundador ? 'self-end bg-[var(--fill-6)]' : 'self-start bg-[var(--fill-3)]'}`}>
-              <p className="text-xs font-medium text-[var(--text-faint)]">{`${doFundador ? 'Você' : 'Usuário'} · ${quando(m.createdAt)}`}</p>
+              <p className="text-xs font-medium text-[var(--text-faint)]">{`${doFundador ? 'Você' : 'Usuário'} · ${quando(m.createdAt)}${visto}`}</p>
               <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-[var(--text-primary)]">{m.body}</p>
             </div>
           );
@@ -173,6 +176,9 @@ export default function ChatPainel() {
                     <span>{quando(t.lastMessageAt)}</span>
                     {t.unread > 0 ? (
                       <span key="nova" className="rounded-full bg-amber-500/20 px-2 text-[var(--tone-warn-1)]">{`${t.unread} nova(s)`}</span>
+                    ) : null}
+                    {t.lastAuthor === 'founder' && t.lastMessageAt && !founderMessageSeen(t.lastMessageAt, t.userReadAt) ? (
+                      <span key="nao-visto">não viu</span>
                     ) : null}
                     {t.status === 'closed' ? <span key="fechada">fechada</span> : null}
                   </span>

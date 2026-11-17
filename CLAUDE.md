@@ -699,6 +699,10 @@ Vale para TODA mudanca, grande ou pequena:
   few hours", sem bolinha verde); numero de nao lidas no botao e no menu do
   painel; `?chat=open` abre direto. Polling 10 s com o chat aberto e 60 s para
   o contador, parado com a aba oculta. /admin ganhou a aba Chat (`?aba=chat`).
+  **Visto (17/11/2026, so no /admin):** cada mensagem do fundador mostra
+  "Visto"/"Nao visto" e a lista marca "nao viu" pelo `lastUserReadAt` (gravado
+  quando a pessoa abre o chat com mensagem nova ou escreve; e "abriu o chat",
+  nao "leu a frase"). A pessoa NAO ve se o fundador leu (decisao de 17/11).
 - **E-mails** (`chat-email.ts`, chave `CHAT_EMAIL_NOTIFY` DESLIGADA = so
   `[chat] dry-run`): `chat_founder_notify` para `FOUNDER_CHAT_NOTIFY_TO`
   (padrao support@), com o texto, 1 por conversa a cada 15 min;
