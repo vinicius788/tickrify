@@ -54,4 +54,12 @@ describe('SetStrategyDto contra o ValidationPipe real', () => {
     await expect(pipe.transform({ timeframes: 'nao e array' } as never, META)).rejects.toThrow();
     await expect(pipe.transform({ minRiskReward: 'dois' } as never, META)).rejects.toThrow();
   });
+
+  it('aceita riskProfile da lista fechada e rejeita o resto', async () => {
+    for (const r of ['conservative', 'balanced', 'aggressive']) {
+      await expect(pipe.transform({ riskProfile: r }, META)).resolves.toBeDefined();
+    }
+    await expect(pipe.transform({ riskProfile: 'yolo' } as never, META)).rejects.toThrow();
+    await expect(pipe.transform({ riskProfile: 3 } as never, META)).rejects.toThrow();
+  });
 });

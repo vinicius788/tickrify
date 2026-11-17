@@ -222,6 +222,8 @@ export interface AIAnalysisResponse {
     recommendation: Recommendation;
     signalState?: SignalState;
     watchPlan?: WatchPlan | null;
+    /** Perfil de risco da conta nesta analise; ausente em analise antiga. */
+    riskProfile?: RiskProfile;
     /** De onde sairam os niveis: velas reais ou estimados do print. Analise antiga: null. */
     dataMode?: 'real_data' | 'print' | null;
     /** Onde o preco esta, calculado pelo codigo do REAL DATA (modo leitura); null sem ele. */
@@ -571,6 +573,11 @@ export interface StrategyProfileDto {
   direction: string;
   minRiskReward: number;
 }
+
+export type RiskProfile = 'conservative' | 'balanced' | 'aggressive';
+
+/** Corpo do PUT /api/ai/strategy: o perfil de estrategia mais o perfil de risco. */
+export type StrategySaveBody = StrategyProfileDto & { riskProfile?: RiskProfile };
 
 /** Recorte do que o painel consome de `GET /api/auth/me`. */
 export interface UserProfile {
@@ -1163,7 +1170,7 @@ class APIClient {
   async getStrategy(
     token: string | null,
     getFreshToken?: FreshTokenGetter,
-  ): Promise<{ profile: StrategyProfileDto | null; paid: boolean }> {
+  ): Promise<{ profile: StrategyProfileDto | null; riskProfile?: RiskProfile; paid: boolean }> {
     const response = await this.request(
       '/api/ai/strategy',
       {
@@ -1185,10 +1192,10 @@ class APIClient {
   }
 
   async saveStrategy(
-    profile: StrategyProfileDto,
+    profile: StrategySaveBody,
     token: string | null,
     getFreshToken?: FreshTokenGetter,
-  ): Promise<{ profile: StrategyProfileDto | null }> {
+  ): Promise<{ profile: StrategyProfileDto | null; riskProfile?: RiskProfile }> {
     const response = await this.request(
       '/api/ai/strategy',
       {
@@ -1364,7 +1371,7 @@ export function useAPIClient() {
     return apiClient.matchTrade(payload, token, getFreshToken);
   }, [getFreshToken, getInitialToken]);
 
-  const saveStrategy = useCallback(async (profile: StrategyProfileDto) => {
+  const saveStrategy = useCallback(async (profile: StrategySaveBody) => {
     const token = await getInitialToken();
     return apiClient.saveStrategy(profile, token, getFreshToken);
   }, [getFreshToken, getInitialToken]);

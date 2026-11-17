@@ -18,6 +18,16 @@ export const STRATEGY_INSTRUMENTS = ['crypto', 'forex', 'metals', 'indices', 'st
 export const STRATEGY_SETUPS = ['breakout', 'pullback', 'reversal', 'range', 'trend_continuation'] as const;
 export const STRATEGY_DIRECTIONS = ['long', 'short', 'both'] as const;
 
+export const RISK_PROFILES = ['conservative', 'balanced', 'aggressive'] as const;
+export type RiskProfile = (typeof RISK_PROFILES)[number];
+
+/** Le o perfil de risco do JSON cru da coluna. Qualquer coisa fora da lista vira 'balanced'. */
+export function riskProfileOf(raw: unknown): RiskProfile {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return 'balanced';
+  const value = (raw as Record<string, unknown>).riskProfile;
+  return RISK_PROFILES.find((r) => r === value) ?? 'balanced';
+}
+
 export const STRATEGY_FIT_VALUES = ['ideal', 'good', 'poor', 'conflict'] as const;
 export type StrategyFit = (typeof STRATEGY_FIT_VALUES)[number];
 

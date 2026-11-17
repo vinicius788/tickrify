@@ -25,7 +25,10 @@ type Report = {
   enterNow: { trades: number; meanR: number | null; verdict: string };
   gates?: { flag: string; trades: number; meanR: number | null; verdict: string }[];
   noCandles: { reason: string; count: number }[];
+  profiles?: { profile: 'conservative' | 'balanced' | 'aggressive'; stats: Stats; verdict: string }[];
 };
+
+const PERFIL: Record<string, string> = { conservative: 'Conservador', balanced: 'Equilibrado', aggressive: 'Arriscado' };
 
 const CLASSE: Record<string, string> = { metal: 'Metais', forex: 'Forex', crypto: 'Cripto', other: 'Outros' };
 const MOTIVO_SEM_VELAS: Record<string, string> = {
@@ -110,6 +113,38 @@ export default function MotorPainel() {
               {(data.gates ?? []).filter((g) => g.trades > 0).map((g) => (
                 <p key={g.flag} className="mt-1 text-sm text-[var(--text-soft)]">
                   {g.flag}: {r(g.meanR)} em {g.trades} trades. {g.verdict}
+                </p>
+              ))}
+            </Card>
+          )}
+
+          {data.profiles && data.profiles.length > 0 && (
+            <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Perfis de risco</h3>
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="text-[11px] text-[var(--text-faint)]">
+                    <tr>
+                      <th className="py-1 pr-3">Perfil</th>
+                      <th className="py-1 pr-3">Análises</th>
+                      <th className="py-1 pr-3">ENTER_NOW</th>
+                      <th className="py-1 pr-3">WATCH</th>
+                      <th className="py-1 pr-3">WATCH tocado</th>
+                      <th className="py-1 pr-3">Trades</th>
+                      <th className="py-1 pr-3">W/L/T</th>
+                      <th className="py-1">R por trade</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.profiles.map((p) => (
+                      <Linha key={p.profile} rotulo={PERFIL[p.profile] ?? p.profile} s={p.stats} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {data.profiles.map((p) => (
+                <p key={p.profile} className="mt-1 text-sm text-[var(--text-soft)]">
+                  {`${PERFIL[p.profile] ?? p.profile}: ${p.verdict}`}
                 </p>
               ))}
             </Card>

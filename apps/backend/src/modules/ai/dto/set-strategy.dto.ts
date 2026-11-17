@@ -1,4 +1,5 @@
-import { IsArray, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsIn, IsNumber, IsOptional, IsString } from 'class-validator';
+import { RISK_PROFILES, type RiskProfile } from '../../../common/strategy/strategy-profile';
 
 /**
  * Corpo da rota PUT /api/ai/strategy.
@@ -45,4 +46,8 @@ export class SetStrategyDto {
   @IsOptional()
   @IsNumber()
   minRiskReward?: number;
+
+  @IsOptional()
+  @IsIn(RISK_PROFILES)
+  riskProfile?: RiskProfile;
 }

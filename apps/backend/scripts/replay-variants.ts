@@ -71,6 +71,8 @@ import {
   type Bar,
   type VolRegime,
   type WatchPlan,
+  PROFILE_GATES,
+  withProfileGates,
 } from '../src/common/utils/plan-engine';
 
 const H = 3_600_000;
@@ -212,7 +214,7 @@ async function decide(c: Ctx): Promise<SignalDecisionResult> {
 
 /** ENTER_NOW a mercado, pela regua do rastreador; null = nao executou. */
 function simulate(c: Ctx, d: SignalDecisionResult): Trade | null {
-  if (d.state !== 'ENTER_NOW') return null;
+  if (d.state !== 'ENTER_NOW' || !c.w.fine) return null;
   const plan = d.watchPlan as WatchPlan;
   const t = trackPlan({
     plan, enterNow: d.state === 'ENTER_NOW', atr: c.atr, marginAtr: stopMarginAtr(calibrationPair(c.row.symbol), volatilityRegime(c.history)),
@@ -225,6 +227,7 @@ function simulate(c: Ctx, d: SignalDecisionResult): Trade | null {
 
 /** Referencia: a direcao do plano a mercado no print, stop e alvo de 1 ATR. */
 function reference(c: Ctx): Trade | null {
+  if (!c.w.fine) return null;
   const i = c.w.fine.findIndex((b) => b[0] >= c.print);
   if (i < 0) return null;
   const long = c.plan.direction === 'long';
@@ -683,6 +686,12 @@ async function main() {
 
   console.log(`Distancia ${distanceToInvalidation(ctxs)}.`);
   await measure('v11, configuracao de producao (ENGINE_RULES)', ctxs, withReal.length);
+  // --profiles (17/11/2026): a mesma medida em cada perfil de risco (ENGINE_RISK_PROFILE).
+  if (process.argv.includes('--profiles')) {
+    for (const profile of ['conservative', 'balanced', 'aggressive'] as const) {
+      await withProfileGates(PROFILE_GATES[profile], () => measure(`perfil ${profile}`, ctxs, withReal.length));
+    }
+  }
 
 }
 

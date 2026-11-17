@@ -32,9 +32,9 @@ import {
   type WatchReach,
   validatorReasons,
 } from '../src/common/utils/signal-decision';
-import type { EntryLevels, WatchPlan } from '../src/common/utils/plan-engine';
+import type { EngineProfile, EntryLevels, WatchPlan } from '../src/common/utils/plan-engine';
 import type { AiLevel, LevelMap } from '../src/common/utils/level-map';
-import type { RejectedPlan } from '../src/common/utils/signal-decision';
+import type { ProfileOutcome, RejectedPlan } from '../src/common/utils/signal-decision';
 import { BROKEN_PLAN_RULES, validateTradePlan } from '../src/common/utils/trade-plan-validator';
 import { buildEngineRecord, type AnalysisIntakeTimings } from '../src/modules/ai/engine-contract';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
@@ -109,6 +109,8 @@ interface JobData {
   isDemo?: boolean;
   userLanguage?: string;
   strategyProfile?: StrategyProfile | null;
+  /** Perfil de risco da pessoa (ENGINE_RISK_PROFILE); ausente = Equilibrado. */
+  riskProfile?: EngineProfile;
   /** Versao de um setup acompanhado (o vinculo ja foi gravado na criacao). */
   setupId?: string | null;
   /** Tempos da API antes da fila (job antigo nao tem). */
@@ -192,6 +194,8 @@ interface WorkerAnalysisResult {
   pendingEntry?: boolean;
   targetMoved?: boolean;
   marketLevels?: EntryLevels;
+  riskProfile?: EngineProfile;
+  riskProfiles?: Record<EngineProfile, ProfileOutcome>;
   validatorNotes: ValidatorNote[];
   analysis: WorkerAnalysisDetails;
 }
@@ -377,6 +381,8 @@ interface AdapterDecision {
   pendingEntry?: boolean;
   targetMoved?: boolean;
   marketLevels?: EntryLevels;
+  riskProfile?: EngineProfile;
+  riskProfiles?: Record<EngineProfile, ProfileOutcome>;
   validatorAction: ValidatorAction;
   /** Cada mudanca de estado do validador do adapter. */
   validatorNotes: ValidatorNote[];
@@ -413,6 +419,9 @@ function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
     ...(aiSource.pendingEntry === true ? { pendingEntry: true } : {}),
     ...(aiSource.targetMoved === true ? { targetMoved: true } : {}),
     ...(aiSource.marketLevels ? { marketLevels: aiSource.marketLevels as EntryLevels } : {}),
+    ...(aiSource.riskProfile && aiSource.riskProfiles
+      ? { riskProfile: aiSource.riskProfile as EngineProfile, riskProfiles: aiSource.riskProfiles as Record<EngineProfile, ProfileOutcome> }
+      : {}),
     validatorAction: meta.validatorAction as ValidatorAction,
     validatorNotes: Array.isArray(aiSource.validatorNotes) ? (aiSource.validatorNotes as ValidatorNote[]) : [],
     validatorReasons: meta.validatorReasons as ValidatorReason[],
@@ -914,6 +923,7 @@ async function resolveAiSource(
   strategyProfile?: StrategyProfile | null,
   priorPlan?: PriorPlan | null,
   assetHint?: AssetHint | null,
+  riskProfile?: EngineProfile,
 ): Promise<unknown> {
   if (hasValidOpenAiKey()) {
     // Caminho VIVO em produção (RUN_EMBEDDED_WORKER=true por padrão, então
@@ -925,6 +935,7 @@ async function resolveAiSource(
       compareProviders: true,
       ...(priorPlan ? { priorPlan } : {}),
       ...(assetHint ? { assetHint } : {}),
+      ...(riskProfile && riskProfile !== 'balanced' ? { riskProfile } : {}),
     });
   }
 
@@ -1174,6 +1185,7 @@ async function processAnalysis(job: Job<JobData>) {
     isDemo,
     userLanguage,
     strategyProfile,
+    riskProfile,
     setupId,
     intake,
   } = job.data;
@@ -1224,6 +1236,7 @@ async function processAnalysis(job: Job<JobData>) {
       strategyProfile,
       priorPlan,
       await loadAssetHint(prisma, analysisId),
+      riskProfile,
     );
     aiMs = Date.now() - tAi;
 

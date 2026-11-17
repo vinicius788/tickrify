@@ -41,6 +41,48 @@ export const TRACKER_RULES = {
   ddlRetryMs: 10 * MINUTE,
 } as const;
 
+export const RISK_PROFILE_KEYS = ['conservative', 'balanced', 'aggressive'] as const;
+export type ProfileKey = (typeof RISK_PROFILE_KEYS)[number];
+
+/** Mesmo texto da migracao 20261117120000_analysis_profile_track. */
+export const PROFILE_TRACK_SQL: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS "tickrify"."AnalysisProfileTrack" (
+    "analysisId" TEXT NOT NULL,
+    "profile" TEXT NOT NULL,
+    "promptVer" INTEGER,
+    "engineVersion" TEXT,
+    "symbol" TEXT,
+    "timeframe" TEXT,
+    "signalState" TEXT NOT NULL,
+    "dataMode" TEXT,
+    "status" TEXT NOT NULL,
+    "reason" TEXT,
+    "outcome" TEXT,
+    "touched" BOOLEAN NOT NULL DEFAULT false,
+    "touchedAt" TIMESTAMP(3),
+    "filled" BOOLEAN NOT NULL DEFAULT false,
+    "fillAt" TIMESTAMP(3),
+    "fillPrice" DOUBLE PRECISION,
+    "entry" DOUBLE PRECISION,
+    "stopLoss" DOUBLE PRECISION,
+    "takeProfit1" DOUBLE PRECISION,
+    "mfeR" DOUBLE PRECISION,
+    "maeR" DOUBLE PRECISION,
+    "missed" BOOLEAN NOT NULL DEFAULT false,
+    "candleInterval" TEXT,
+    "direction" TEXT,
+    "atr" DOUBLE PRECISION,
+    "refOutcome" TEXT,
+    "refFillPrice" DOUBLE PRECISION,
+    "evaluatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "AnalysisProfileTrack_pkey" PRIMARY KEY ("analysisId", "profile"),
+    CONSTRAINT "AnalysisProfileTrack_status_check" CHECK ("status" IN ('tracked', 'skipped')),
+    CONSTRAINT "AnalysisProfileTrack_profile_check" CHECK ("profile" IN ('conservative', 'balanced', 'aggressive')),
+    CONSTRAINT "AnalysisProfileTrack_analysisId_fkey" FOREIGN KEY ("analysisId") REFERENCES "tickrify"."Analysis"("id") ON DELETE CASCADE ON UPDATE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS "AnalysisProfileTrack_profile_idx" ON "tickrify"."AnalysisProfileTrack"("profile")`,
+];
+
 export const TRACKER_SQL: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS "tickrify"."AnalysisTrack" (
     "analysisId" TEXT NOT NULL,
@@ -76,6 +118,8 @@ export const TRACKER_SQL: readonly string[] = [
   `ALTER TABLE "tickrify"."AnalysisTrack" ADD COLUMN IF NOT EXISTS "atr" DOUBLE PRECISION`,
   `ALTER TABLE "tickrify"."AnalysisTrack" ADD COLUMN IF NOT EXISTS "refOutcome" TEXT`,
   `ALTER TABLE "tickrify"."AnalysisTrack" ADD COLUMN IF NOT EXISTS "refFillPrice" DOUBLE PRECISION`,
+  // Perfis de risco (17/11/2026): uma linha por analise e perfil, mesma regua. Tabela nova; nada do AnalysisTrack muda.
+  ...PROFILE_TRACK_SQL,
 ];
 
 type Candidate = {
@@ -89,6 +133,14 @@ type Candidate = {
     numbers?: { atr14?: number | null; volRegime?: 'low' | 'normal' | 'high' | null } | null;
   } | null;
 };
+
+/** Estado e niveis de um perfil de risco (result.riskProfiles[perfil]); troca a fonte do plano sem mudar a regua. */
+export type PlanOverride = {
+  state: string;
+  levels: { entry: number; stopLoss: number; takeProfit1: number } | null;
+};
+
+export type ProfileTrackRow = TrackRow & { profile: ProfileKey };
 
 export type TrackRow = {
   analysisId: string;
@@ -153,10 +205,11 @@ export async function trackAnalysis(
   c: Candidate,
   nowMs: number,
   fetch: typeof fetchWindow = fetchWindow,
+  override?: PlanOverride,
 ): Promise<TrackRow | null> {
   const result = c.result ?? {};
   const analysis = (result.analysis ?? {}) as Record<string, unknown>;
-  const state = String(result.signalState ?? '');
+  const state = override ? override.state : String(result.signalState ?? '');
   const symbol = typeof analysis.symbol === 'string' ? analysis.symbol : null;
   const interval = analysisInterval(c.groundingStats?.interval, analysis.timeframe);
   const base: TrackRow = {
@@ -167,7 +220,7 @@ export async function trackAnalysis(
     direction: null, atr: null, refOutcome: null, refFillPrice: null,
   };
   const plan = planOf(result.watchPlan);
-  if (!plan) return { ...base, reason: 'no_plan' };
+  if (!plan || (override && state === 'NO_TRADE')) return { ...base, reason: 'no_plan' };
   base.direction = plan.direction;
   const step = interval ? TIMEFRAME_MS[interval] : undefined;
   if (!symbol || !interval || !step) return { ...base, reason: 'no_timeframe' };
@@ -186,9 +239,11 @@ export async function trackAnalysis(
   if (!tf.candles || !fine.candles) return { ...base, reason: 'no_candles' };
 
   const signal = state === 'ARMED' || state === 'ENTER_NOW';
-  const levels = signal && positive(analysis.entry) && positive(analysis.stopLoss) && positive(analysis.takeProfit1)
-    ? { entry: analysis.entry, stopLoss: analysis.stopLoss, takeProfit1: analysis.takeProfit1 }
-    : null;
+  const levels = override
+    ? override.levels
+    : signal && positive(analysis.entry) && positive(analysis.stopLoss) && positive(analysis.takeProfit1)
+      ? { entry: analysis.entry, stopLoss: analysis.stopLoss, takeProfit1: analysis.takeProfit1 }
+      : null;
   const injected = c.groundingStats?.coverage === 'injected' ? c.groundingStats.numbers ?? null : null;
   const atr = injected?.atr14 ?? null;
   base.atr = atr;
@@ -243,24 +298,88 @@ async function insert(prisma: PrismaClient, r: TrackRow): Promise<void> {
   );
 }
 
+const isProfileKey = (k: string): k is ProfileKey => (RISK_PROFILE_KEYS as readonly string[]).includes(k);
+
+/** O que o perfil decidiu: ENTER_NOW com os niveis a mercado, WATCH com os niveis no nivel (watchLevels), senao so o plano. */
+export function profileOverride(outcome: unknown): PlanOverride | null {
+  if (!outcome || typeof outcome !== 'object') return null;
+  const o = outcome as Record<string, any>;
+  const state = typeof o.state === 'string' ? o.state : null;
+  if (!state) return null;
+  const pick = (v: Record<string, any> | null | undefined) =>
+    v && positive(v.entry) && positive(v.stopLoss) && positive(v.takeProfit1)
+      ? { entry: v.entry as number, stopLoss: v.stopLoss as number, takeProfit1: v.takeProfit1 as number }
+      : null;
+  const levels = state === 'ENTER_NOW' ? pick(o) : state === 'WATCH' ? pick(o.watchLevels) : null;
+  return { state, levels };
+}
+
+/** Os 3 perfis de uma analise; null = ainda nao da (janela aberta ou cota recusada). As velas sao buscadas uma vez so. */
+export async function trackProfiles(c: Candidate, nowMs: number, fetch: typeof fetchWindow = fetchWindow): Promise<ProfileTrackRow[] | null> {
+  const profiles = (c.result?.riskProfiles ?? null) as Record<string, unknown> | null;
+  if (!profiles || typeof profiles !== 'object') return [];
+  const memo = new Map<string, ReturnType<typeof fetchWindow>>();
+  const cached = ((...args: Parameters<typeof fetchWindow>) => {
+    const key = JSON.stringify(args);
+    if (!memo.has(key)) memo.set(key, fetch(...args));
+    return memo.get(key) as ReturnType<typeof fetchWindow>;
+  }) as typeof fetchWindow;
+  const rows: ProfileTrackRow[] = [];
+  for (const key of Object.keys(profiles).filter(isProfileKey)) {
+    const override = profileOverride(profiles[key]);
+    if (!override) continue;
+    const row = await trackAnalysis(c, nowMs, cached, override);
+    if (!row) return null;
+    rows.push({ ...row, profile: key });
+  }
+  return rows;
+}
+
+async function insertProfile(prisma: PrismaClient, r: ProfileTrackRow): Promise<void> {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "tickrify"."AnalysisProfileTrack" ("analysisId", "profile", "promptVer", "engineVersion", "symbol", "timeframe", "signalState",
+       "dataMode", "status", "reason", "outcome", "touched", "touchedAt", "filled", "fillAt", "fillPrice", "entry", "stopLoss",
+       "takeProfit1", "mfeR", "maeR", "missed", "candleInterval", "direction", "atr", "refOutcome", "refFillPrice")
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+     ON CONFLICT ("analysisId", "profile") DO NOTHING`,
+    r.analysisId, r.profile, r.promptVer, r.engineVersion, r.symbol, r.timeframe, r.signalState, r.dataMode, r.status, r.reason, r.outcome,
+    r.touched, r.touchedAt, r.filled, r.fillAt, r.fillPrice, r.entry, r.stopLoss, r.takeProfit1, r.mfeR, r.maeR, r.missed, r.candleInterval,
+    r.direction, r.atr, r.refOutcome, r.refFillPrice,
+  );
+}
+
 export async function runAnalysisTracker(prisma: PrismaClient, nowMs: number = Date.now()): Promise<{ tracked: number; skipped: number; pending: number }> {
-  const candidates = await prisma.$queryRawUnsafe<Candidate[]>(
-    `SELECT a."id", a."createdAt", a."promptVer", a."result", a."groundingStats"
+  // Uma consulta so: analise sem linha no AnalysisTrack OU com perfis de risco ainda sem as 3 linhas.
+  const candidates = await prisma.$queryRawUnsafe<(Candidate & { hasTrack?: boolean; profileRows?: number | string })[]>(
+    `SELECT a."id", a."createdAt", a."promptVer", a."result", a."groundingStats",
+            EXISTS (SELECT 1 FROM "tickrify"."AnalysisTrack" t WHERE t."analysisId" = a."id") AS "hasTrack",
+            (SELECT COUNT(*) FROM "tickrify"."AnalysisProfileTrack" p WHERE p."analysisId" = a."id") AS "profileRows"
      FROM "tickrify"."Analysis" a
      WHERE a."status" = 'completed'
        AND a."createdAt" > NOW() - ($1 || ' days')::interval
        AND a."result"->>'signalState' IS NOT NULL
-       AND NOT EXISTS (SELECT 1 FROM "tickrify"."AnalysisTrack" t WHERE t."analysisId" = a."id")
+       AND (
+         NOT EXISTS (SELECT 1 FROM "tickrify"."AnalysisTrack" t WHERE t."analysisId" = a."id")
+         OR (a."result" ? 'riskProfiles'
+             AND (SELECT COUNT(*) FROM "tickrify"."AnalysisProfileTrack" p WHERE p."analysisId" = a."id") < 3)
+       )
      ORDER BY a."createdAt" ASC
      LIMIT $2`,
     String(TRACKER_RULES.lookbackDays), TRACKER_RULES.batch,
   );
   const counts = { tracked: 0, skipped: 0, pending: 0 };
   for (const c of candidates) {
-    const row = await trackAnalysis(c, nowMs).catch(() => null);
-    if (!row) { counts.pending++; continue; }
-    await insert(prisma, row);
-    counts[row.status === 'tracked' ? 'tracked' : 'skipped']++;
+    if (!c.hasTrack) {
+      const row = await trackAnalysis(c, nowMs).catch(() => null);
+      if (!row) { counts.pending++; continue; }
+      await insert(prisma, row);
+      counts[row.status === 'tracked' ? 'tracked' : 'skipped']++;
+    }
+    if (c.result?.riskProfiles && Number(c.profileRows ?? 0) < 3) {
+      const rows = await trackProfiles(c, nowMs).catch(() => null);
+      if (!rows) { if (c.hasTrack) counts.pending++; continue; }
+      for (const r of rows) await insertProfile(prisma, r).catch(() => undefined);
+    }
   }
   return counts;
 }

@@ -256,6 +256,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'alto',
   },
   {
+    key: 'ENGINE_RISK_PROFILE',
+    type: 'number',
+    label: 'Perfil de risco do usuario',
+    description:
+      '0 (padrao) = como hoje. 1 = o validador roda a MESMA resposta do modelo em 3 perfis (Conservador = motor antes do modo permissivo; Equilibrado = chaves de hoje; Arriscado = alvo a partir de 0,7R, 3 PASS, atrasado e contra o 4h como aviso) e a pessoa ve o dela (perfil de estrategia, padrao Equilibrado). Nunca afrouxa plano invalidado, risco fora de 0,5 a 2 ATR, noticia, print antigo, imagem que nao e grafico. Grava result.riskProfile e result.riskProfiles; o rastreador mede os 3 (AnalysisProfileTrack) e a aba Motor tem serie por perfil. Sem nova chamada de IA. Valor invalido cai no 0.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
     key: 'ENGINE_NEXT_TARGET',
     type: 'boolean',
     label: 'Alvo no proximo nivel quando o primeiro esta perto',
