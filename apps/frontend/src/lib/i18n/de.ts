@@ -712,6 +712,7 @@ export default {
       entryWarningTrend: 'Achtung: Dieser Trade läuft gegen den 4h-Trend.',
       entryWarningForex: 'Achtung: Forex-Paare brauchen meist mehr Bestätigung.',
       entryWarningNextTarget: 'Achtung: Das erste Niveau liegt nah, daher wurde das Ziel auf das nächste Niveau verlegt.',
+      entryWarningLevelInPath: 'Achtung: Ein Niveau zwischen Einstieg und Ziel 1 kann den Kurs stoppen.',
       pending: {
         title: 'Ausstehende Order',
         limitAt: 'Limit-Order bei {price}',

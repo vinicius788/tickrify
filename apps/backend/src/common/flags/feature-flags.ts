@@ -256,6 +256,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'alto',
   },
   {
+    key: 'ENGINE_C6_FROM_GEOMETRY',
+    type: 'number',
+    label: 'C6 recalculado pela geometria real',
+    description:
+      '0 (padrao) = o C6 e o que o modelo escreveu. 1 = so no perfil Arriscado (ENGINE_RISK_PROFILE ligada), com velas reais: o C6 vira PASS quando a entrada a mercado calculada pelo codigo vale (risco 0,5 a 2 ATR, alvo a partir de 0,7R, proximo nivel com ENGINE_NEXT_TARGET) e FAIL quando nao vale. Se o primeiro nivel do modelo fica entre a entrada e o TP1, a tela avisa ("A level between entry and target 1 may stop price", item 12 de entryWarnings). Equilibrado e Conservador usam sempre o C6 do modelo. Print antigo, noticias e geometria invalida nao mudam. Valor invalido cai no 0.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
     key: 'ENGINE_RISK_PROFILE',
     type: 'number',
     label: 'Perfil de risco do usuario',

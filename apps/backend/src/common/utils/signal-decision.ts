@@ -102,6 +102,16 @@ export const PENDING_ENTRY_FLAG = 'ENGINE_PENDING_ENTRY_LABEL';
 export const HTF_WARNING_ITEM = 9;
 export const FOREX_WARNING_ITEM = 10;
 const permissive = (): boolean => currentGates().permissive ?? flagNumber(PERMISSIVE_FLAG) === 1;
+/**
+ * C6 pela geometria real (17/11/2026, chave em 0): o C6 do modelo e trocado
+ * pela entrada a mercado que o codigo calculou (risco 0,5 a 2 ATR, alvo minimo
+ * do perfil, proximo nivel). So com velas reais e SO no perfil Arriscado
+ * (Equilibrado e Conservador usam sempre o C6 do modelo).
+ */
+export const C6_GEOMETRY_FLAG = 'ENGINE_C6_FROM_GEOMETRY';
+/** Aviso do ENTER_NOW destravado pelo C6 do codigo: o primeiro nivel do modelo fica entre a entrada e o TP1. */
+export const LEVEL_IN_PATH_WARNING_ITEM = 12;
+const c6FromGeometry = (): boolean => currentGates().c6FromGeometry === true && flagNumber(C6_GEOMETRY_FLAG) === 1;
 
 function snapFallbackMode(): 0 | 1 | 2 {
   const forced = currentGates().snapMode;
@@ -420,6 +430,8 @@ export interface PlanEvaluation {
   unsnapped: boolean;
   /** A entrada a mercado usa o proximo nivel como TP1 (chave ENGINE_NEXT_TARGET). */
   marketTargetMoved: boolean;
+  /** O C6 em FAIL do modelo virou PASS pela geometria do codigo (ENGINE_C6_FROM_GEOMETRY). */
+  c6FromCode: boolean;
   market: EntryLevels | EntryRejection;
   /** Entrada no nivel do plano (o recuo que destrava o WATCH). */
   limit: EntryLevels | EntryRejection;
@@ -452,9 +464,11 @@ export function evaluatePlan(input: {
   if (!snapped && snapFallbackMode() === 0) return 'invalidation_unsnapped';
   const plan = snapped ?? input.plan;
   const margin = stopMarginAtr(calibrationPair(input.symbol), input.volRegime);
-  const checks = parsePassFailChecklist(input.structureValidation);
+  const parsed = parsePassFailChecklist(input.structureValidation);
   const market = levelsWithNextTarget(plan, (p) => entryLevels(p, input.atr, input.price, margin));
+  const checks = parsed && c6FromGeometry() ? new Map(parsed).set(6, typeof market.levels !== 'string') : parsed;
   return {
+    c6FromCode: !!parsed && parsed.get(6) !== true && checks?.get(6) === true,
     plan,
     unsnapped: !snapped,
     marketTargetMoved: market.moved,
@@ -686,6 +700,13 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     entryWarnings.push(...ENGINE_RULES.enterNowChecks.filter((n) => entryChecks.get(n) !== true));
     if (lateAsWarning) entryWarnings.push(LATE_WARNING_ITEM);
     if (evaluation?.marketTargetMoved) entryWarnings.push(NEXT_TARGET_WARNING_ITEM);
+    // C6 destravado pelo codigo: o primeiro nivel do modelo entre a entrada e o TP1 pode segurar o preco.
+    const first = modelPlan?.target1;
+    const { entry, takeProfit1 } = levels;
+    if (evaluation?.c6FromCode && first != null && entry !== null && takeProfit1 !== null
+      && Math.min(entry, takeProfit1) < first && first < Math.max(entry, takeProfit1)) {
+      entryWarnings.push(LEVEL_IN_PATH_WARNING_ITEM);
+    }
     if (permissive() && plan) {
       if (real?.htfTrend === (plan.direction === 'long' ? 'downtrend' : 'uptrend')) entryWarnings.push(HTF_WARNING_ITEM);
       if (isForexPair(input.symbol)) entryWarnings.push(FOREX_WARNING_ITEM);

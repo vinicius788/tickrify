@@ -712,6 +712,7 @@ export default {
       entryWarningTrend: '注意：この取引は4時間足のトレンドに逆らっています。',
       entryWarningForex: '注意：FX通貨ペアは通常、より多くの確認が必要です。',
       entryWarningNextTarget: '注意：最初の水準が近いため、目標を次の水準に移しました。',
+      entryWarningLevelInPath: '注意：エントリーと目標1の間にある水準で価格が止まる可能性があります。',
       pending: {
         title: '予約注文',
         limitAt: '{price} の指値注文',

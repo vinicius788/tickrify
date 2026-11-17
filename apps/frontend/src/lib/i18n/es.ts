@@ -712,6 +712,7 @@ export default {
       entryWarningTrend: 'Atención: esta operación va contra la tendencia de 4h.',
       entryWarningForex: 'Atención: los pares de forex suelen necesitar más confirmación.',
       entryWarningNextTarget: 'Atención: el primer nivel está cerca, así que el objetivo pasó al siguiente nivel.',
+      entryWarningLevelInPath: 'Atención: un nivel entre la entrada y el objetivo 1 puede frenar el precio.',
       pending: {
         title: 'Orden pendiente',
         limitAt: 'Orden límite en {price}',

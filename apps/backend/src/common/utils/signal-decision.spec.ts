@@ -937,6 +937,24 @@ describe('perfis de risco (ENGINE_RISK_PROFILE, 17/11/2026)', () => {
     expect(profiles.conservative).toEqual(profiles.balanced);
   });
 
+  it('C6 pela geometria (chave 1): so o Arriscado destrava, com o aviso do nivel no caminho', async () => {
+    const before = process.env.ENGINE_C6_FROM_GEOMETRY;
+    process.env.ENGINE_C6_FROM_GEOMETRY = '1';
+    try {
+      const { profiles } = await decideSignalForProfile(gold as never, 'aggressive');
+      expect(profiles.aggressive.state).toBe('ENTER_NOW');
+      expect(profiles.aggressive.entry).toBeCloseTo(3866.95, 1);
+      expect(profiles.balanced.state).toBe('WATCH');
+      expect(profiles.conservative.state).toBe('WATCH');
+      const { decision } = await decideSignalForProfile(gold as never, 'aggressive');
+      expect(decision.entryWarnings).toContain(12);
+    } finally {
+      if (before === undefined) delete process.env.ENGINE_C6_FROM_GEOMETRY; else process.env.ENGINE_C6_FROM_GEOMETRY = before;
+    }
+    const off = await decideSignalForProfile(gold as never, 'aggressive');
+    expect(off.profiles.aggressive.state).toBe('WATCH');
+  });
+
   it('o Arriscado nunca destrava plano invalidado', async () => {
     const invalidated = { ...gold, realData: { ...gold.realData, price: 3872 } };
     const { profiles } = await decideSignalForProfile(invalidated as never, 'aggressive');
