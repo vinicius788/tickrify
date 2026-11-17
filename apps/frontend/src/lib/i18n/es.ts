@@ -706,6 +706,7 @@ export default {
       entryWarningLate: 'Atención: el movimiento ya está extendido, así que esta entrada es más tardía de lo ideal.',
       entryWarningTrend: 'Atención: esta operación va contra la tendencia de 4h.',
       entryWarningForex: 'Atención: los pares de forex suelen necesitar más confirmación.',
+      entryWarningNextTarget: 'Atención: el primer nivel está cerca, así que el objetivo pasó al siguiente nivel.',
       pending: {
         title: 'Orden pendiente',
         limitAt: 'Orden límite en {price}',

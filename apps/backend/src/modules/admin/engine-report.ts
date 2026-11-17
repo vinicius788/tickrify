@@ -41,10 +41,12 @@ export type EngineReportRow = {
   permissiveEntry?: boolean | null;
   /** `result.pendingEntry`: WATCH mostrado como entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL). */
   pendingEntry?: boolean | null;
+  /** `result.targetMoved`: TP1 no proximo nivel (chave ENGINE_NEXT_TARGET). */
+  targetMoved?: boolean | null;
 };
 
 /** ENTER_NOW que so existe por causa de uma chave de 16/11/2026, em serie propria. */
-export type GateSeries = { flag: 'ENGINE_SNAP_FALLBACK' | 'ENGINE_ENTER_REQUIRED_CHECKS' | 'ENGINE_LATE_AS_WARNING' | 'ENGINE_PERMISSIVE' | 'ENGINE_PENDING_ENTRY_LABEL'; trades: number; meanR: number | null; verdict: string };
+export type GateSeries = { flag: 'ENGINE_SNAP_FALLBACK' | 'ENGINE_ENTER_REQUIRED_CHECKS' | 'ENGINE_LATE_AS_WARNING' | 'ENGINE_PERMISSIVE' | 'ENGINE_PENDING_ENTRY_LABEL' | 'ENGINE_NEXT_TARGET'; trades: number; meanR: number | null; verdict: string };
 
 export type AssetClass = 'metal' | 'forex' | 'crypto' | 'other';
 const CLASSES: readonly AssetClass[] = ['metal', 'forex', 'crypto', 'other'];
@@ -204,6 +206,7 @@ export function buildEngineReport(rows: readonly EngineReportRow[]): EngineRepor
       gateSeries('ENGINE_PERMISSIVE', rows.filter((r) => r.permissiveEntry === true)),
       // Entrada pendente: so os WATCH que o rastreador preencheu no nivel viram trade.
       gateSeries('ENGINE_PENDING_ENTRY_LABEL', rows.filter((r) => r.pendingEntry === true), 'WATCH'),
+      gateSeries('ENGINE_NEXT_TARGET', rows.filter((r) => r.targetMoved === true)),
     ],
     noCandles: noCandlesOf(rows),
   };
@@ -227,7 +230,8 @@ export async function loadEngineReport(db: RawQuerier): Promise<EngineReport> {
            (a."result"->'entryWarnings' @> '[2]'::jsonb OR a."result"->'entryWarnings' @> '[7]'::jsonb) AS "entryWarned",
            a."result"->'entryWarnings' @> '[8]'::jsonb AS "lateWarned",
            (a."result"->>'permissiveEntry') = 'true' AS "permissiveEntry",
-           (a."result"->>'pendingEntry') = 'true' AS "pendingEntry"
+           (a."result"->>'pendingEntry') = 'true' AS "pendingEntry",
+           (a."result"->>'targetMoved') = 'true' AS "targetMoved"
     FROM "tickrify"."Analysis" a
     LEFT JOIN "tickrify"."AnalysisTrack" t ON t."analysisId" = a."id"
     WHERE a."status" = 'completed'

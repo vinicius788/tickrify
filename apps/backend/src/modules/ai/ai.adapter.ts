@@ -2478,6 +2478,7 @@ export class AIAdapter {
         ...(decision.entryWarnings.length ? { entryWarnings: decision.entryWarnings } : {}),
         ...(decision.permissiveEntry ? { permissiveEntry: true } : {}),
         ...(decision.pendingEntry ? { pendingEntry: true } : {}),
+        ...(decision.targetMoved ? { targetMoved: true } : {}),
         ...(decision.marketLevels ? { marketLevels: decision.marketLevels } : {}),
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);

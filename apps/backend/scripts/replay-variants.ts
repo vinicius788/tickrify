@@ -541,6 +541,7 @@ interface TrackRecord {
   lateWarned: boolean | null;
   permissiveEntry: boolean | null;
   pendingEntry: boolean | null;
+  targetMoved: boolean | null;
 }
 
 /** Ouro e forex antes da correcao do fuso: entrada do motor sem swings, nao servem para julgar. */
@@ -576,7 +577,8 @@ async function review(): Promise<void> {
               t."fillPrice", t."stopLoss", t."takeProfit1", t."atr", t."refOutcome", t."refFillPrice",
               (a."result"->>'snapFallback') = 'true' AS "snapFallback", (a."result"->'entryWarnings' @> '[2]'::jsonb OR a."result"->'entryWarnings' @> '[7]'::jsonb) AS "entryWarned",
               a."result"->'entryWarnings' @> '[8]'::jsonb AS "lateWarned", (a."result"->>'permissiveEntry') = 'true' AS "permissiveEntry",
-              (a."result"->>'pendingEntry') = 'true' AS "pendingEntry"
+              (a."result"->>'pendingEntry') = 'true' AS "pendingEntry",
+              (a."result"->>'targetMoved') = 'true' AS "targetMoved"
        FROM "tickrify"."AnalysisTrack" t
        JOIN "tickrify"."Analysis" a ON a."id" = t."analysisId"
        WHERE t."status" = 'tracked' AND ($1::text IS NULL OR a."createdAt" >= $1::date)`,
@@ -615,6 +617,7 @@ async function review(): Promise<void> {
     verdictLine('ENTER_NOW com movimento atrasado', 'a chave ENGINE_LATE_AS_WARNING', 'a chave ENGINE_LATE_AS_WARNING', enterNow.filter((r) => r.lateWarned === true));
     verdictLine('ENTER_NOW do modo permissivo', 'a chave ENGINE_PERMISSIVE', 'a chave ENGINE_PERMISSIVE (voltar para 0)', enterNow.filter((r) => r.permissiveEntry === true));
     verdictLine('entrada pendente preenchida', 'a chave ENGINE_PENDING_ENTRY_LABEL', 'a chave ENGINE_PENDING_ENTRY_LABEL (voltar para 0)', current.filter((r) => isFilledWatch(r) && r.pendingEntry === true));
+    verdictLine('ENTER_NOW com alvo no proximo nivel', 'a chave ENGINE_NEXT_TARGET', 'a chave ENGINE_NEXT_TARGET (desligar)', enterNow.filter((r) => r.targetMoved === true));
     verdictLine('WATCH tocado e preenchido', 'a entrada no nivel', 'a entrada no nivel (ENGINE_ENTER_AT_LEVEL)', current.filter(isFilledWatch));
   } finally {
     await prisma.$disconnect();

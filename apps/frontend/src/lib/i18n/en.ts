@@ -706,6 +706,7 @@ export default {
       entryWarningLate: 'Heads up: the move is already extended, so this entry is later than ideal.',
       entryWarningTrend: 'Heads up: this trade goes against the 4h trend.',
       entryWarningForex: 'Heads up: forex pairs usually need more confirmation.',
+      entryWarningNextTarget: 'Heads up: the first level is close, so the target moved to the next level.',
       pending: {
         title: 'Pending order',
         limitAt: 'Limit order at {price}',

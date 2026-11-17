@@ -236,6 +236,8 @@ export interface AIAnalysisResponse {
     entryWarnings?: number[];
     /** WATCH com niveis validos no recuo, mostrado como entrada pendente (chave do /admin); ausente fora disso. */
     pendingEntry?: boolean;
+    /** TP1 no proximo nivel (chave do /admin); ausente fora disso. */
+    targetMoved?: boolean;
     /** NO_TRADE com REAL DATA: os dois lados do preco, pelo codigo; ausente em analise antiga. */
     levelMap?: LevelMap | null;
     /** NO_TRADE em que o validador recusou o plano do modelo: o preco que a IA marcou. */
