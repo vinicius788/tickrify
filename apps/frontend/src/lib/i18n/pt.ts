@@ -715,6 +715,7 @@ export default {
       entryWarningLate: 'Atenção: o movimento já está esticado, então esta entrada é mais tardia que o ideal.',
       entryWarningTrend: 'Atenção: esta operação vai contra a tendência do 4h.',
       entryWarningForex: 'Atenção: pares de forex costumam precisar de mais confirmação.',
+      entryWarningNextTarget: 'Atenção: o primeiro nível está perto, então o alvo foi para o próximo nível.',
       pending: {
         title: 'Ordem pendente',
         limitAt: 'Ordem limitada em {price}',

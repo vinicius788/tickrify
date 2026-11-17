@@ -628,7 +628,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     : signalState === 'WATCH' && fullResponse.dataMode === 'real_data' && 'watchLevels' in fullResponse ? null : undefined;
   const levelsEstimated = fullResponse.dataMode === 'print';
   const pendingEntry = fullResponse.pendingEntry === true && isWatchLevels(fullResponse.watchLevels);
-  const entryWarnings = Array.isArray(fullResponse.entryWarnings) ? fullResponse.entryWarnings.filter((item) => [2, 7, 8, 9, 10].includes(item)) : [];
+  const entryWarnings = Array.isArray(fullResponse.entryWarnings) ? fullResponse.entryWarnings.filter((item) => [2, 7, 8, 9, 10, 11].includes(item)) : [];
   // WATCH com plano: cartao unico. Analise antiga sem plano segue no desenho anterior.
   const watchLayout = signalState === 'WATCH' && watchPlan !== null;
   const watchClosed = watchLayout && !watchWindowOpen(analysisData.watch, now);
@@ -1331,6 +1331,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             formatPrice={formatPrice}
             estimated={levelsEstimated}
             pending={pendingEntry}
+            targetMoved={fullResponse.targetMoved === true && isWatchLevels(fullResponse.watchLevels)}
             watch={analysisData.watch}
             reach={analysisData.fullResponse?.watchReach ?? null}
             condition={watchText.condition}
@@ -1436,7 +1437,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             )}
             {entryWarnings.map((item) => (
               <p key={item} data-testid={`entry-warning-${item}`} className="text-xs text-[var(--accent-yellow)]">
-                {item === 2 ? r.entryWarningLocation : item === 7 ? r.entryWarningRoom : item === 8 ? r.entryWarningLate : item === 9 ? r.entryWarningTrend : r.entryWarningForex}
+                {item === 2 ? r.entryWarningLocation : item === 7 ? r.entryWarningRoom : item === 8 ? r.entryWarningLate : item === 9 ? r.entryWarningTrend : item === 10 ? r.entryWarningForex : r.entryWarningNextTarget}
               </p>
             ))}
           </CardHeader>

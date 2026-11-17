@@ -853,3 +853,43 @@ describe('entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL, so apresentacao)',
     expect((await run('abc', waiting)).pendingEntry).toBe(false);
   });
 });
+
+describe('alvo no proximo nivel (chave ENGINE_NEXT_TARGET)', () => {
+  const run = async (value: string, patch: Partial<SignalDecisionInput>) => {
+    const before = process.env.ENGINE_NEXT_TARGET;
+    process.env.ENGINE_NEXT_TARGET = value;
+    try { return await decide(patch); } finally { if (before === undefined) delete process.env.ENGINE_NEXT_TARGET; else process.env.ENGINE_NEXT_TARGET = before; }
+  };
+  /** Primeiro nivel a 0,74R da entrada a mercado; o seguinte a 2,3R. */
+  const close = { watchPlan: { ...plan, target1: 100.9, target2: 103 } };
+
+  it('desligada: primeiro nivel perto barra a entrada, como sempre', async () => {
+    const d = await run('false', close);
+    expect(d).toMatchObject({ state: 'WATCH', targetMoved: false, entryWarnings: [] });
+    expect(validatorReasons(d.validatorNotes)).toEqual(['market_entry_invalid']);
+  });
+
+  it('ligada: TP1 vai para o proximo nivel com o teto de 1,5R, aviso 11 e targetMoved', async () => {
+    const d = await run('true', close);
+    expect(d).toMatchObject({ state: 'ENTER_NOW', targetMoved: true, entryWarnings: [11] });
+    expect(d.levels.takeProfit1).toBeCloseTo(99.9 + 1.5 * 1.35);
+    expect(d.levels.takeProfit2).toBeNull();
+  });
+
+  it('ligada: sem proximo nivel, ou com ele tambem abaixo de 1R, nada muda; primeiro nivel ja bom nao e mexido', async () => {
+    expect((await run('true', { watchPlan: { ...plan, target1: 100.9, target2: null } })).state).toBe('WATCH');
+    expect((await run('true', { watchPlan: { ...plan, target1: 100.5, target2: 100.9 } })).state).toBe('WATCH');
+    const good = await run('true', {});
+    expect(good).toEqual(await run('false', {}));
+    expect(good.targetMoved).toBe(false);
+  });
+
+  it('ligada: WATCH no recuo tambem usa o proximo nivel e marca targetMoved', async () => {
+    const recuo = { ...watch, structureValidation: checks(7), watchPlan: { ...plan, target1: 100.0, target2: 103 } };
+    const off = await run('false', recuo);
+    const on = await run('true', recuo);
+    expect(off.watchLevels).toBeNull();
+    expect(on).toMatchObject({ state: 'WATCH', targetMoved: true });
+    expect(on.watchLevels?.tp1R).toBeGreaterThanOrEqual(1);
+  });
+});

@@ -56,6 +56,8 @@ export interface AIAnalysisResponse {
   permissiveEntry?: boolean;
   /** WATCH mostrado como entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL). */
   pendingEntry?: boolean;
+  /** TP1 no proximo nivel (chave ENGINE_NEXT_TARGET). */
+  targetMoved?: boolean;
   /** WATCH com a entrada a mercado de geometria valida (chave ENGINE_MARKET_PLAN_ON_WATCH). */
   marketLevels?: EntryLevels;
   bias: Bias;

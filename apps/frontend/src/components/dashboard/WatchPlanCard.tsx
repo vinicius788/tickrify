@@ -255,6 +255,8 @@ interface WatchPlanCardProps {
   estimated?: boolean;
   /** Mostra o plano como entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL). */
   pending?: boolean;
+  /** O TP1 do plano esta no proximo nivel (chave ENGINE_NEXT_TARGET). */
+  targetMoved?: boolean;
   watch?: WatchSummary | null;
   reach?: WatchReach | null;
   /** Condicao em uma linha, escrita pelo modelo. */
@@ -277,6 +279,7 @@ export function WatchPlanCard({
   formatPrice,
   estimated = false,
   pending = false,
+  targetMoved = false,
   watch,
   reach,
   condition,
@@ -374,6 +377,7 @@ export function WatchPlanCard({
             </dl>
             {rejected ? <p key="rejected" data-testid="targets-rejected" className="mt-3 text-xs text-[var(--text-secondary)]">{w.targetsRejected}</p> : null}
             {estimated ? <p key="estimated" data-testid="levels-estimated" className="mt-3 text-xs text-[var(--text-secondary)]">{t.analysis.result.levelsEstimated}</p> : null}
+            {targetMoved ? <p key="target-moved" data-testid="target-moved" className="mt-3 text-xs text-[var(--accent-yellow)]">{t.analysis.result.entryWarningNextTarget}</p> : null}
             {condition ? <p key="condition" data-testid="watch-condition" className="mt-4 text-sm leading-relaxed text-[var(--text-primary)]">{condition}</p> : null}
             {distance || validity ? (
               <p key="timing" data-testid="watch-timing" className="mt-2 tabular-nums text-xs text-[var(--text-secondary)]">

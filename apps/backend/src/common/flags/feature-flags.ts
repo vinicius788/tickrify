@@ -256,6 +256,15 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'alto',
   },
   {
+    key: 'ENGINE_NEXT_TARGET',
+    type: 'boolean',
+    label: 'Alvo no proximo nivel quando o primeiro esta perto',
+    description:
+      'DESLIGADO (padrao) = motor de sempre: primeiro nivel a menos de 1R da entrada barra a entrada. LIGADO = o TP1 vai para o proximo nivel do plano quando ele da 1R ou mais (teto de 1,5R de sempre); a tela avisa "First level is close; target moved to the next level." Vale para a entrada a mercado e para o nivel do Watch. Grava result.targetMoved; serie propria na aba Motor.',
+    defaultValue: 'false',
+    risk: 'alto',
+  },
+  {
     key: 'ENGINE_PENDING_ENTRY_LABEL',
     type: 'number',
     label: 'Watch com niveis vira entrada pendente',

@@ -65,6 +65,22 @@ export const ENTER_CHECKS_FLAG = 'ENGINE_ENTER_REQUIRED_CHECKS';
 export const LATE_WARNING_FLAG = 'ENGINE_LATE_AS_WARNING';
 /** Item de `entryWarnings` do movimento atrasado (2 e 7 sao os do checklist). */
 export const LATE_WARNING_ITEM = 8;
+/**
+ * Alvo no proximo nivel (17/11/2026): com a chave ligada, quando o primeiro
+ * nivel (target1) fica a menos de 1R da entrada e o seguinte (target2) da 1R ou
+ * mais, o TP1 vai para o seguinte (teto de 1,5R de sempre). Aviso 11 em
+ * `entryWarnings` e `result.targetMoved`. Desligada = motor de sempre.
+ */
+export const NEXT_TARGET_FLAG = 'ENGINE_NEXT_TARGET';
+export const NEXT_TARGET_WARNING_ITEM = 11;
+
+/** Entrada com o alvo do plano; sem espaco e com a chave ligada, tenta o proximo nivel. */
+function levelsWithNextTarget(plan: WatchPlan, compute: (p: WatchPlan) => EntryLevels | EntryRejection): { levels: EntryLevels | EntryRejection; moved: boolean } {
+  const first = compute(plan);
+  if (first !== 'no_room' || plan.target2 === null || !flagBool(NEXT_TARGET_FLAG)) return { levels: first, moved: false };
+  const next = compute({ ...plan, target1: plan.target2, target2: null });
+  return typeof next === 'string' ? { levels: first, moved: false } : { levels: next, moved: true };
+}
 /** WATCH do modelo sem geometria valida a mercado nem no nivel segue WATCH (sem niveis), em vez de NO_TRADE. 16/11/2026. */
 export const GEOMETRY_WATCH_FLAG = 'ENGINE_WATCH_ON_REJECTED_GEOMETRY';
 
@@ -278,6 +294,8 @@ export interface SignalDecisionResult {
   permissiveEntry: boolean;
   /** WATCH com niveis validos no recuo, mostrado como entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL). So apresentacao e medicao. */
   pendingEntry: boolean;
+  /** O TP1 mostrado esta no proximo nivel (chave ENGINE_NEXT_TARGET): ENTER_NOW a mercado ou niveis do WATCH. */
+  targetMoved: boolean;
 }
 
 /**
@@ -392,6 +410,8 @@ export interface PlanEvaluation {
   plan: WatchPlan;
   /** Sem swing encaixada: a invalidacao e a do modelo (chave ENGINE_SNAP_FALLBACK). */
   unsnapped: boolean;
+  /** A entrada a mercado usa o proximo nivel como TP1 (chave ENGINE_NEXT_TARGET). */
+  marketTargetMoved: boolean;
   market: EntryLevels | EntryRejection;
   /** Entrada no nivel do plano (o recuo que destrava o WATCH). */
   limit: EntryLevels | EntryRejection;
@@ -425,11 +445,13 @@ export function evaluatePlan(input: {
   const plan = snapped ?? input.plan;
   const margin = stopMarginAtr(calibrationPair(input.symbol), input.volRegime);
   const checks = parsePassFailChecklist(input.structureValidation);
+  const market = levelsWithNextTarget(plan, (p) => entryLevels(p, input.atr, input.price, margin));
   return {
     plan,
     unsnapped: !snapped,
-    market: entryLevels(plan, input.atr, input.price, margin),
-    limit: limitEntryLevels(plan, input.atr, input.price, margin),
+    marketTargetMoved: market.moved,
+    market: market.levels,
+    limit: levelsWithNextTarget(plan, (p) => limitEntryLevels(p, input.atr, input.price, margin)).levels,
     late: input.late,
     checks,
     passes: checks ? [...checks.values()].filter(Boolean).length : 0,
@@ -655,6 +677,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
   if (isSignal && entryChecks) {
     entryWarnings.push(...ENGINE_RULES.enterNowChecks.filter((n) => entryChecks.get(n) !== true));
     if (lateAsWarning) entryWarnings.push(LATE_WARNING_ITEM);
+    if (evaluation?.marketTargetMoved) entryWarnings.push(NEXT_TARGET_WARNING_ITEM);
     if (permissive() && plan) {
       if (real?.htfTrend === (plan.direction === 'long' ? 'downtrend' : 'uptrend')) entryWarnings.push(HTF_WARNING_ITEM);
       if (isForexPair(input.symbol)) entryWarnings.push(FOREX_WARNING_ITEM);
@@ -669,7 +692,8 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     ? { modelState: model, reason: noTradeNote.reason, plan: input.watchPlan }
     : null;
 
-  const watchLevels = state === 'WATCH' && real && plan ? watchLevelsOf(plan, input.symbol, real) : null;
+  const watchMove = state === 'WATCH' && real && plan ? watchLevelsWithMove(plan, input.symbol, real) : { levels: null, moved: false };
+  const watchLevels = watchMove.levels;
 
   const action: ValidatorAction = rank(state) < rank(model)
     ? 'downgraded'
@@ -693,6 +717,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     location: real ? locationOf(real, state === 'NO_TRADE' ? null : plan) : null,
     watchLevels,
     pendingEntry: watchLevels !== null && flagNumber(PENDING_ENTRY_FLAG) === 1,
+    targetMoved: (isSignal && !!evaluation?.marketTargetMoved) || watchMove.moved,
     marketLevels: state === 'WATCH' && evaluation && typeof evaluation.market !== 'string' && flagBool(MARKET_PLAN_FLAG) ? evaluation.market : null,
     rejectedPlan,
     enterAtLevel: atLevel && state === 'ENTER_NOW',
@@ -704,8 +729,13 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
 
 /** Niveis do WATCH se destravar no nivel do plano (borda proxima), como o rastreador mede. */
 export function watchLevelsOf(plan: WatchPlan, symbol: string, real: RealDataInput): EntryLevels | null {
-  const levels = entryLevels(plan, real.atr as number, nearEdge(plan), stopMarginAtr(calibrationPair(symbol), real.volRegime));
-  return typeof levels === 'string' ? null : levels;
+  return watchLevelsWithMove(plan, symbol, real).levels;
+}
+
+function watchLevelsWithMove(plan: WatchPlan, symbol: string, real: RealDataInput): { levels: EntryLevels | null; moved: boolean } {
+  const margin = stopMarginAtr(calibrationPair(symbol), real.volRegime);
+  const { levels, moved } = levelsWithNextTarget(plan, (p) => entryLevels(p, real.atr as number, nearEdge(p), margin));
+  return typeof levels === 'string' ? { levels: null, moved: false } : { levels, moved };
 }
 
 /** Preco, posicao no range, tendencia do 4h e a distancia em ATR ate os niveis que importam. */

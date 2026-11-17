@@ -706,6 +706,7 @@ export default {
       entryWarningLate: 'Achtung: Die Bewegung ist bereits weit gelaufen, dieser Einstieg ist daher später als ideal.',
       entryWarningTrend: 'Achtung: Dieser Trade läuft gegen den 4h-Trend.',
       entryWarningForex: 'Achtung: Forex-Paare brauchen meist mehr Bestätigung.',
+      entryWarningNextTarget: 'Achtung: Das erste Niveau liegt nah, daher wurde das Ziel auf das nächste Niveau verlegt.',
       pending: {
         title: 'Ausstehende Order',
         limitAt: 'Limit-Order bei {price}',
