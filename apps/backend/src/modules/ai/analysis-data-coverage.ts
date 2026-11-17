@@ -65,7 +65,7 @@ function boundedImageCount(value: number): number {
   return Number.isSafeInteger(value) ? Math.min(2, Math.max(0, value)) : 0;
 }
 
-export function toAnalysisEvidence(value: AnalysisDataCoverage): AnalysisEvidence {
+export function toAnalysisEvidence(value: AnalysisDataCoverage, stale?: GroundingStats['stale']): AnalysisEvidence {
   return {
     version: 1,
     additionalChartsDelivered: boundedImageCount(value.htfImagesDelivered),
@@ -79,6 +79,10 @@ export function toAnalysisEvidence(value: AnalysisDataCoverage): AnalysisEvidenc
       : value.calendar === 'no_events_returned'
         ? 'no_events_returned'
         : value.calendar === 'not_attempted' || value.calendar === 'disabled' ? 'not_attached' : 'not_confirmed',
+    // Print tratado como historico pela guarda de print velho (17/11/2026).
+    ...(value.candles === 'stale_withheld'
+      ? { stalePrint: stale ? { imagePrice: stale.imagePrice, livePrice: stale.livePrice } : { imagePrice: null, livePrice: null } }
+      : {}),
   };
 }
 
@@ -140,6 +144,8 @@ export interface GroundingStats {
   numbers: GroundingNumbers | null;
   /** O que veio da dica da pessoa (10/11/2026) porque a leitura da imagem nao achou. Ausente = tudo lido da imagem. */
   hinted?: 'symbol' | 'timeframe' | 'both';
+  /** Print velho retido (coverage stale_withheld): preco lido da imagem e ultimo fechamento ao vivo. So apresentacao. */
+  stale?: { imagePrice: number; livePrice: number };
 }
 
 export interface AnalysisTelemetry {

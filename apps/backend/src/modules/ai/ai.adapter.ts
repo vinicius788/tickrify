@@ -1,6 +1,6 @@
 import { logObservation, rawObservation, safeObserve } from '../../common/utils/analysis-observation';
 import { presentAnalysis } from '../../common/utils/analysis-presentation';
-import { flagBool } from '../../common/flags/feature-flags';
+import { flagBool, flagNumber } from '../../common/flags/feature-flags';
 import { buildPriorPlanBlock, continuationOf, readContinuationStatus, sameAsset, type PriorPlan, type SetupContinuation } from './setup-continuation';
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
@@ -1807,6 +1807,8 @@ export class AIAdapter {
     let candleBlock: string | null = null;
     let numbers: GroundingNumbers | null = null;
     let staleReason: string | null = null;
+    // Precos do print velho (17/11/2026, so apresentacao): a tela mostra os dois.
+    let stalePrices: GroundingStats['stale'] = undefined;
     let candleCoverage: CandleCoverage = 'timeframe_unreadable';
     if (interval) {
       const market = candleMarketOf(sym)?.market ?? null;
@@ -1831,6 +1833,10 @@ export class AIAdapter {
           staleReason = this.detectStaleChart(candles, extracted.lastPrice);
           if (staleReason) {
             candleCoverage = 'stale_withheld';
+            const livePrice = candles[candles.length - 1]?.[4];
+            if (extracted.lastPrice != null && Number.isFinite(livePrice)) {
+              stalePrices = { imagePrice: extracted.lastPrice, livePrice };
+            }
           } else {
             const real = buildRealDataBlock(sym, interval, candles);
             numbers = real?.numbers ?? null;
@@ -1869,7 +1875,7 @@ export class AIAdapter {
     // Numeros so quando os candles ENTRARAM no prompt; com print velho retido,
     // eles descrevem o mercado de agora, nao o grafico analisado.
 
-    const stats: GroundingStats = { v: 1, symbol: sym, interval, coverage: candleCoverage, numbers };
+    const stats: GroundingStats = { v: 1, symbol: sym, interval, coverage: candleCoverage, numbers, ...(stalePrices ? { stale: stalePrices } : {}) };
     return { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats };
   }
 
@@ -2491,7 +2497,11 @@ export class AIAdapter {
         confidence,
         reasoning: presentedAnalysis.reasoning,
         analysis: presentedAnalysis,
-        evidence: toAnalysisEvidence(coverage),
+        evidence: {
+          ...toAnalysisEvidence(coverage, groundingStats?.stale),
+          // So apresentacao (UI_HISTORICAL_PRINT, 17/11/2026): congela a escolha na analise.
+          ...(flagNumber('UI_HISTORICAL_PRINT') === 1 ? { historicalPrintUi: true as const } : {}),
+        },
         // Telemetria gravada por analise (saveAnalysisTelemetry): o snapshot que
         // a OpenAI de fato usou e os numeros do grounding que entraram no prompt.
         respondedModel: modelResult.respondedModel,
