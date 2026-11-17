@@ -1,0 +1,39 @@
+name: IndexNow
+
+# Avisa Bing, Yandex, Naver, Seznam e Yep das paginas que mudaram, logo depois de
+# cada deploy de PRODUCAO na Vercel (a Vercel publica um deployment_status no GitHub).
+# Motivo, regras e modos em apps/frontend/scripts/indexnow.mjs.
+# Rodar a mao: Actions > IndexNow > Run workflow (com "all" = envia as 32 URLs).
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      all:
+        description: 'Enviar todas as URLs do sitemap (nao so as de lastmod recente)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: indexnow
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       startsWith(github.event.deployment.environment, 'Production'))
+    runs-on: ubuntu-latest
+    # Teto: um job travado nao pode comer a cota de 2.000 min/mes.
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: apps/frontend/scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Avisar buscadores
+        run: node apps/frontend/scripts/indexnow.mjs ${{ inputs.all && '--all' || '' }}

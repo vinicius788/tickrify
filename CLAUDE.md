@@ -1155,6 +1155,19 @@ caminho critico (`media="print"`) e Syne removida · `llms.txt` com links Markdo
 (audit do Lighthouse passa, "Navegacao agentica" 3/3) · `Organization` schema ·
 Bing Webmaster verificado com sitemap (15/09) · `<html lang>` segue o idioma.
 
+**IndexNow (17/11/2026):** `apps/frontend/scripts/indexnow.mjs`. O build grava a chave em
+`dist/<chave>.txt` (nenhum arquivo de chave no repo) e o workflow `indexnow.yml` roda depois
+de cada deploy de producao da Vercel, enviando as URLs do sitemap com `<lastmod>` dos ultimos
+3 dias (`--all` envia as 32). **Pagina publica que mudou de conteudo = `<lastmod>` novo no
+`public/sitemap.xml` no MESMO commit**, senao o Bing nao fica sabendo. Vale para Bing, Yandex,
+Naver, Seznam e Yep; Google e Brave nao usam IndexNow.
+
+**Como cada IA busca (pesquisa de 17/11/2026):** ChatGPT = indice proprio (OAI-SearchBot) +
+provedores externos, entre eles Bing e Google; Claude = indice do Brave Search (sem painel de
+webmaster, so `search.brave.com/submit-url`); Gemini = indice do Google, mesmas regras da busca.
+Auditoria do mesmo dia: Brave com 2 das 32 paginas; Bing com home e /try e texto de antes de
+12/11; nenhum dos dois mostra a Tickrify em "ai chart analysis screenshot tool".
+
 Licoes: `Disallow` no robots impede rastrear, nao indexar (usar `noindex`). URL
 sem link interno e despriorizada pelo Google mesmo estando no sitemap. Em
 propriedade de dominio no Search Console, o sitemap vai com URL completa. Cota
@@ -1181,6 +1194,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 17/11 | **IndexNow e indices das IAs (secao 5).** (1) Push: o `pre-push` roda o `pnpm check` completo (na VM do Claude o vitest nao subiu: falta `@rollup/rollup-linux-arm64-gnu`; tsc passou). (2) Depois do deploy: conferir `https://tickrify.com/9ae64cf43104787d2cd87597280cedc4.txt` e rodar Actions > IndexNow > Run workflow com `all` marcado (primeiro envio das 32; resposta 200 ou 202 no log). Se o workflow nao disparar sozinho no deploy seguinte, a Vercel nao publica `deployment_status` neste repo: ver o nome do ambiente em Settings > Environments. (3) Com OK do dono, no navegador: enviar as 32 URLs no Brave (`search.brave.com/submit-url`), reenviar o sitemap e ler "AI Performance" no Bing Webmaster, pedir reindexacao no Search Console das 7 paginas de 12/11. (4) Em 01/12/2026: refazer `site:tickrify.com` no Brave e no Bing e as 10 perguntas no ChatGPT, Claude e Gemini. | dono / Claude |
 | 17/11 | **`ENGINE_NEXT_TARGET` (alvo no proximo nivel).** Com a chave ligada, primeiro nivel a menos de 1R da entrada e o seguinte (target2) a 1R ou mais: TP1 vai para o seguinte (teto 1,5R), aviso "first level is close, so the target moved to the next level" (6 idiomas, `entryWarnings` 11), `result.targetMoved`, serie propria na aba Motor. Vale a mercado e no nivel do Watch. Medido nos planos da D (17/11): 7 de 13 com TP1 abaixo de 1R, 5 deles com o proximo nivel a 1R ou mais. Replay gratis (20 prints, `ENGINE_PERMISSIVE`=1), sem/com regra: v11 2/4/14 -> 3/3/14 e 1/1/18 -> 2/0/18; D 0/5/15 -> 5/1/14 e 3/3/14 -> 5/3/12. R/R planejado do TP1 sempre >= 1R por construcao; resultado medido da D1 com a regra: 4 decididos, 1 alvo, -0,38R (amostra minima). Valor anterior em producao: desligada (padrao do codigo). | dono / Claude |
 | 17/11 | **Prompt D (`PROMPT_VARIANT_D_PERCENT`, `PROMPT_D_CHANGES` sobre a C).** Diagnostico: o modelo recebe ATR14 e as ultimas 5 swings em preco no REAL DATA, mas nao a distancia delas; escolhia invalidacao a 2,8 a 2,95 ATR (mediana) e o alvo fica a ~1,26 ATR, entao a mercado quase nunca vale. D: invalidacao na swing confirmada mais proxima a ate 2 ATR, distancia escrita em ATR no [PLAN], Enter now com direcao + C3 + C6 + 4 PASS, No trade so com motivo. Replay pago 17/11 (20 prints de cripto, US$ 0,20, `_local/replay-2026-11-16/`, ENGINE_PERMISSIVE=1): v11 (2 rodadas) final Enter/Watch/No 2/4/14 e 1/1/18, inv mediana 2,95 e 2,67 ATR; D (2 rodadas) 0/5/15 e 3/3/14, inv 1,12 e 1,24 ATR. No trade do proprio modelo igual (~10 de 20); `no_valid_geometry` caiu de 8 para 4-5; o que sobra e `market_entry_invalid` (alvo a menos de 1R). Ligada em 10%. |  dono / Claude |
 | 16/11 | **Chaves do motor LIGADAS em producao em 16/11/2026 ~18:35 UTC (lido no /admin, a pedido do dono).** Todas estavam no padrao do codigo. `SETUP_ALERT_NEAR`: desligada -> true. `ENTER_NOW_AUTO_ALERTS`: desligada -> true. `ENGINE_WATCH_ON_REJECTED_GEOMETRY`: desligada -> true. `ENGINE_PERMISSIVE`: 0 -> 1. `PROMPT_VARIANT_C_PERCENT`: 0 -> 10. Seguem em 0/desligadas de proposito: `ENGINE_SNAP_FALLBACK`, `ENGINE_ENTER_REQUIRED_CHECKS`, `ENGINE_LATE_AS_WARNING` (o permissivo cobre as tres). Reverter = botao "reverter" da chave no /admin. Corte de medicao: analises a partir de 16/11 18:35 UTC. Criterio: serie propria de cada chave na aba Motor, manter a partir de -0,05R com 20 a 30 casos, voltar em -0,15R; prompt C volta a 0 se ficar 0,10R ou mais abaixo da A com 30 trades por variante. `ENGINE_PENDING_ENTRY_LABEL` (0/1, so apresentacao, branch `claude/pending-entry-label`): 1 = Watch com `watchLevels` validos aparece como "BUY on pullback" / "SELL on pullback" (chip e titulo do `WatchPlanCard`, 6 idiomas), grava `result.pendingEntry`; serie propria na aba Motor = Watch com `pendingEntry` preenchido pelo rastreador. Estado, validador e listas nao mudam. Textos dos avisos (C2, C7, atraso, contra o 4h, forex) aprovados pelo dono em 16/11. | dono / Claude |
