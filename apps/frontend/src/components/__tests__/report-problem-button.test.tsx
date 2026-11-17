@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ReportProblemButton } from '@/components/ReportProblemButton';
 import { LanguageProvider } from '@/lib/i18n/LanguageContext';
-import { openChat, useVisiblePolling } from '@/lib/support-chat';
+import { founderMessageSeen, openChat, useVisiblePolling } from '@/lib/support-chat';
 
 vi.mock('@clerk/clerk-react', () => ({
   useAuth: () => ({ isSignedIn: true, getToken: vi.fn().mockResolvedValue('tok') }),
@@ -263,5 +263,14 @@ describe('polling do chat', () => {
     renderHook(() => useVisiblePolling(tick, 10_000, false));
     vi.advanceTimersByTime(60_000);
     expect(tick).not.toHaveBeenCalled();
+  });
+});
+
+describe('Visto no /admin (founderMessageSeen)', () => {
+  it('visto so quando a pessoa abriu o chat depois da mensagem', () => {
+    expect(founderMessageSeen('2026-11-17T13:00:00Z', '2026-11-17T13:05:00Z')).toBe(true);
+    expect(founderMessageSeen('2026-11-17T13:00:00Z', '2026-11-17T13:00:00Z')).toBe(true);
+    expect(founderMessageSeen('2026-11-17T13:10:00Z', '2026-11-17T13:05:00Z')).toBe(false);
+    expect(founderMessageSeen('2026-11-17T13:00:00Z', null)).toBe(false);
   });
 });

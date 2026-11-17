@@ -151,6 +151,20 @@ describe('SupportService (chat com o fundador)', () => {
     expect(captureServer).toHaveBeenCalledWith('clerk_uC', 'chat_message_sent', expect.objectContaining({ author: 'founder', length: 18 }));
   });
 
+  it('o /admin recebe quando a pessoa leu (userReadAt), na conversa e na lista', async () => {
+    const lida = new Date('2026-11-17T13:00:00Z');
+    const { service } = setup([
+      ['WHERE t."id" = ', () => [{ ...THREAD_C, lastUserReadAt: lida, clerkUserId: 'clerk_uC', email: 'c@x.com' }]],
+      ['SELECT * FROM (', () => [{ ...THREAD_C, lastUserReadAt: lida, createdAt: lida, email: 'c@x.com', unread: 0, lastAuthor: 'founder' }]],
+      ['ORDER BY "createdAt" DESC', () => []],
+    ]);
+    await service.onModuleInit();
+    const conversa = await service.adminGetThread(THREAD_C.id, null);
+    expect(conversa.thread.userReadAt).toEqual(lida);
+    const lista = await service.adminListThreads();
+    expect(lista.items[0].userReadAt).toEqual(lida);
+  });
+
   it('sem as tabelas no boot: 503 e nada gravado', async () => {
     const { service, prisma, calls } = setup();
     prisma.$executeRawUnsafe.mockRejectedValue(new Error('denied'));

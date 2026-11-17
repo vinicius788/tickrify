@@ -361,6 +361,7 @@ export class SupportService implements OnModuleInit {
         userId: string;
         status: string;
         lastMessageAt: Date | null;
+        lastUserReadAt: Date | null;
         createdAt: Date;
         email: string | null;
         name: string | null;
@@ -374,7 +375,7 @@ export class SupportService implements OnModuleInit {
       }>
     >`
       SELECT * FROM (
-        SELECT t."id", t."userId", t."status", t."lastMessageAt", t."createdAt",
+        SELECT t."id", t."userId", t."status", t."lastMessageAt", t."lastUserReadAt", t."createdAt",
           u."email", u."name", u."acquisitionSource",
           (SELECT COUNT(*)::int FROM "tickrify"."SupportMessage" m
             WHERE m."threadId" = t."id" AND m."author" = 'user'
@@ -402,6 +403,7 @@ export class SupportService implements OnModuleInit {
         userId: row.userId,
         status: row.status,
         lastMessageAt: row.lastMessageAt,
+        userReadAt: row.lastUserReadAt,
         createdAt: row.createdAt,
         email: row.email,
         name: row.name,
@@ -435,7 +437,11 @@ export class SupportService implements OnModuleInit {
     if (!cursor) {
       await this.prisma.$executeRaw`UPDATE "tickrify"."SupportThread" SET "lastFounderReadAt" = NOW() WHERE "id" = ${threadId}`;
     }
-    return { thread: { id: thread.id, userId: thread.userId, status: thread.status, email: thread.email }, ...messages };
+    // userReadAt: ultima vez que a pessoa abriu o chat com mensagem nova ou escreveu. O /admin mostra "Visto" por ele.
+    return {
+      thread: { id: thread.id, userId: thread.userId, status: thread.status, email: thread.email, userReadAt: thread.lastUserReadAt },
+      ...messages,
+    };
   }
 
   async adminReply(threadId: string, rawBody: unknown): Promise<{ message: ChatMessage }> {
