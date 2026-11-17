@@ -229,6 +229,132 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'alto',
   },
   {
+    key: 'ENGINE_SNAP_FALLBACK',
+    type: 'number',
+    label: 'Plano sem swing encaixada na invalidacao',
+    description:
+      '0 (padrao) = motor de sempre: sem swing real a ate 0,5 ATR da invalidacao do modelo, o plano vira No trade. 1 = o plano segue com a invalidacao do proprio modelo, no maximo ate Watch. 2 = segue tambem ate Enter now. Risco de 0,5 a 2 ATR, alvo a 1R, checklist e atrasado continuam valendo. Grava result.snapFallback para medir a serie separada. Valor invalido cai no 0.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
+    key: 'ENGINE_ENTER_REQUIRED_CHECKS',
+    type: 'number',
+    label: 'Itens obrigatorios do Enter now',
+    description:
+      '0 (padrao) = C2, C3, C6 e C7 em PASS. 1 = C2, C3 e C6 (C7 em FAIL deixa de barrar). 2 = C3 e C6 (C2 e C7 deixam de barrar). O minimo de PASS (5, ou 6 com agravante) nao muda; so vale com velas reais. Grava result.entryWarnings com os itens em FAIL. Nao ligar antes de a tela mostrar o aviso. Valor invalido cai no 0.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
+    key: 'ENGINE_PERMISSIVE',
+    type: 'number',
+    label: 'Modo permissivo do Enter now',
+    description:
+      '0 (padrao) = motor de sempre. 1 = Enter now sai com direcao, C3 e C6 em PASS, geometria valida (risco de 0,5 a 2 ATR, alvo a 1R) e 4 de 7 PASS. C2, C7, movimento atrasado, contra o 4h e forex deixam de barrar e viram avisos na tela; sem swing encaixada vale a invalidacao do modelo. Seguem barrando: plano invalidado, geometria invalida, noticias, print velho e imagem que nao e grafico. Serie propria na aba Motor (result.permissiveEntry). Valor invalido cai no 0.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
+    key: 'ENGINE_C6_FROM_GEOMETRY',
+    type: 'number',
+    label: 'C6 recalculado pela geometria real',
+    description:
+      '0 (padrao) = o C6 e o que o modelo escreveu. 1 = so no perfil Arriscado (ENGINE_RISK_PROFILE ligada), com velas reais: o C6 vira PASS quando a entrada a mercado calculada pelo codigo vale (risco 0,5 a 2 ATR, alvo a partir de 0,7R, proximo nivel com ENGINE_NEXT_TARGET) e FAIL quando nao vale. Se o primeiro nivel do modelo fica entre a entrada e o TP1, a tela avisa ("A level between entry and target 1 may stop price", item 12 de entryWarnings). Equilibrado e Conservador usam sempre o C6 do modelo. Print antigo, noticias e geometria invalida nao mudam. Valor invalido cai no 0.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
+    key: 'ENGINE_RISK_PROFILE',
+    type: 'number',
+    label: 'Perfil de risco do usuario',
+    description:
+      '0 (padrao) = como hoje. 1 = o validador roda a MESMA resposta do modelo em 3 perfis (Conservador = motor antes do modo permissivo; Equilibrado = chaves de hoje; Arriscado = alvo a partir de 0,7R, 3 PASS, atrasado e contra o 4h como aviso) e a pessoa ve o dela (perfil de estrategia, padrao Equilibrado). Nunca afrouxa plano invalidado, risco fora de 0,5 a 2 ATR, noticia, print antigo, imagem que nao e grafico. Grava result.riskProfile e result.riskProfiles; o rastreador mede os 3 (AnalysisProfileTrack) e a aba Motor tem serie por perfil. Sem nova chamada de IA. Valor invalido cai no 0.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
+    key: 'ENGINE_NEXT_TARGET',
+    type: 'boolean',
+    label: 'Alvo no proximo nivel quando o primeiro esta perto',
+    description:
+      'DESLIGADO (padrao) = motor de sempre: primeiro nivel a menos de 1R da entrada barra a entrada. LIGADO = o TP1 vai para o proximo nivel do plano quando ele da 1R ou mais (teto de 1,5R de sempre); a tela avisa "First level is close; target moved to the next level." Vale para a entrada a mercado e para o nivel do Watch. Grava result.targetMoved; serie propria na aba Motor.',
+    defaultValue: 'false',
+    risk: 'alto',
+  },
+  {
+    key: 'ENGINE_PENDING_ENTRY_LABEL',
+    type: 'number',
+    label: 'Watch com niveis vira entrada pendente',
+    description:
+      'So apresentacao. 0 (padrao) = como hoje. 1 = Watch com entrada, stop e TP1 validos no nivel de recuo aparece como "BUY on pullback" / "SELL on pullback", com a condicao e a validade. O estado interno continua Watch e o validador nao muda. Grava result.pendingEntry; a aba Motor mede em serie propria o retorno em R do preenchimento simulado pelo rastreador. Valor invalido cai no 0.',
+    defaultValue: '0',
+    risk: 'medio',
+  },
+  {
+    key: 'UI_HISTORICAL_PRINT',
+    type: 'number',
+    label: 'Print antigo aparece como historico',
+    description:
+      'So apresentacao. 0 (padrao) = como hoje. 1 = quando a guarda de print antigo retem as velas, o resultado mostra um aviso no topo com o preco da imagem e o ao vivo, sem titulo de compra/venda e sem os botoes de alerta e seguir setup; e os motivos de espera mostram primeiro a razao do mercado (checklist e riscos) e so depois a qualidade dos dados. Validador e guarda de print antigo nao mudam. Vale para analises novas (grava result.evidence.historicalPrintUi). Valor invalido cai no 0.',
+    defaultValue: '0',
+    risk: 'baixo',
+  },
+  {
+    key: 'ENGINE_LATE_AS_WARNING',
+    type: 'boolean',
+    label: 'Movimento atrasado vira aviso',
+    description:
+      'DESLIGADO (padrao) = movimento atrasado (3 pernas, vela de 2 ATR ou perna atual maior que a anterior) rebaixa o Enter now para Watch. LIGADO = nao rebaixa: o Enter now sai com o aviso de movimento esticado na tela e grava o item 8 em result.entryWarnings. Geometria, checklist e noticias continuam valendo. Serie propria na aba Motor.',
+    defaultValue: 'false',
+    risk: 'alto',
+  },
+  {
+    key: 'ENGINE_WATCH_ON_REJECTED_GEOMETRY',
+    type: 'boolean',
+    label: 'Watch em vez de No trade sem geometria',
+    description:
+      'DESLIGADO (padrao) = Watch do modelo sem entrada valida a mercado nem no nivel vira No trade. LIGADO = segue Watch com a zona e a invalidacao, sem stop nem alvo (a tela ja trata esse caso). Nunca vira Enter now. C3 e o minimo de 4 PASS continuam valendo.',
+    defaultValue: 'false',
+    risk: 'medio',
+  },
+  {
+    key: 'PROMPT_VARIANT_C_PERCENT',
+    type: 'number',
+    label: 'Prompt C: % das contas',
+    description:
+      'Porcentagem de contas que recebem o prompt C (invalidacao no preco exato da swing, lado oposto so neutraliza com setup proprio, Enter now quando as condicoes valem, tese fraca mas valida vira Watch). 0 (padrao) = ninguem; 10 = 10% das contas. Quem esta na variante B fica na B. O resultado sai por variante na aba Motor.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
+    key: 'PROMPT_VARIANT_D_PERCENT',
+    type: 'number',
+    label: 'Prompt D: % das contas',
+    description:
+      'Porcentagem de contas que recebem o prompt D (sobre o C: invalidacao na swing confirmada mais proxima a ate 2 ATR do preco, com a distancia escrita em ATR; Enter now com direcao, C3, C6 e 4 PASS; No trade so com motivo nomeado). 0 (padrao) = ninguem. Quem esta na B ou na C fica nelas. Feito para rodar junto do ENGINE_PERMISSIVE = 1. Resultado por variante na aba Motor.',
+    defaultValue: '0',
+    risk: 'alto',
+  },
+  {
+    key: 'SETUP_ALERT_NEAR',
+    type: 'boolean',
+    label: 'Aviso de preco perto do nivel',
+    description:
+      'LIGADO = o monitor de alertas marca o alerta como "perto" quando o ultimo preco fica a ate 0,5 ATR do nivel (uma vez por alerta) e o painel mostra "Price is close". Nao e sinal de entrada, nao manda e-mail e nao chama IA. DESLIGADO (padrao): nada muda.',
+    defaultValue: 'false',
+    risk: 'baixo',
+  },
+  {
+    key: 'ENTER_NOW_AUTO_ALERTS',
+    type: 'boolean',
+    label: 'Alertas automaticos de alvo e stop no Enter now',
+    description:
+      'LIGADO = todo Enter now com velas reais cria sozinho dois alertas no setup (TP1 e stop), que expiram em 48h; o disparo usa o painel, o e-mail e o Telegram que ja existem. Respeita os tetos de alertas. DESLIGADO (padrao): nada muda.',
+    defaultValue: 'false',
+    risk: 'baixo',
+  },
+  {
     key: 'CHAT_EMAIL_NOTIFY',
     type: 'boolean',
     label: 'E-mails do chat com o fundador',

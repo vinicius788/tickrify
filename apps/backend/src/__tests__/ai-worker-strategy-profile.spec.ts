@@ -429,7 +429,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
   describe('reanalise com o preco na zona do WATCH (ENGINE_ENTER_AT_LEVEL)', () => {
     const plan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 98, zoneHigh: 99, invalidation: 97, target1: 104, target2: null, validForCandles: 12, trigger: 'Reaction at 98.' };
     const passes = [1, 2, 3, 4, 5, 6, 7].map((n) => `C${n} PASS: 98.5`).join('; ');
-    const run = async (id: string, flag: 'true' | 'false', late: boolean) => {
+    const run = async (id: string, flag: 'true' | 'false', late: boolean, over: { sv?: string; swings?: { kind: string; price: number }[] } = {}) => {
       const processAnalysis = (require('../../worker/ai.worker'), getProcessor());
       const { prismaClient } = mockPaidRefund();
       const { AIAdapter: RealAdapter } = jest.requireActual('../modules/ai/ai.adapter');
@@ -437,7 +437,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       const adapter = new RealAdapter();
       const raw = { is_financial_chart: true, signalState: 'WATCH', watchPlan: plan, recommendation: 'HOLD', confidence: 50, analysis: {
         symbol: 'ABCUSDT', timeframe: '1h', currentPrice: 98.5, entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null,
-        factorsPresent: 7, trendStrength: 'strong', marketStructure: { bias: 'bullish' }, structureValidation: passes,
+        factorsPresent: 7, trendStrength: 'strong', marketStructure: { bias: 'bullish' }, structureValidation: over.sv ?? passes,
         executiveSummary: 'Price is back at the zone.\nPRIOR_PLAN_STATUS: CONFIRMED',
       } };
       adapter.visionModel = new OpenAiVisionModel({ chat: { completions: { create: jest.fn().mockResolvedValue({ model: 'test-model', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(raw) } }] }) } } });
@@ -445,7 +445,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
         block: 'SYNTHETIC CONTEXT', assetClass: 'crypto', marketContext: 'injected', calendar: 'no_events_returned', candles: 'injected',
         stats: { v: 1, symbol: 'BTCUSDT', interval: '1h', coverage: 'injected', numbers: {
           lastClose: 98.5, atr14: 2, windowHigh: 112, windowLow: 90, swingHighs: [], swingLows: [],
-          swings: [{ kind: 'high', price: 104 }, { kind: 'low', price: 97 }], late: { long: late, short: false },
+          swings: over.swings ?? [{ kind: 'high', price: 104 }, { kind: 'low', price: 97 }], late: { long: late, short: false },
         } },
       });
       const priorPlan = { setupId: 's1', priorAnalysisId: 'a0', symbol: 'BTCUSDT', createdAt: new Date('2026-11-09T10:00:00Z'), plan, alert: null };
@@ -494,6 +494,36 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
         expect(off.result.marketLevels).toBeUndefined();
       } finally {
         if (before === undefined) delete process.env.ENGINE_MARKET_PLAN_ON_WATCH; else process.env.ENGINE_MARKET_PLAN_ON_WATCH = before;
+      }
+    });
+
+    it('ENGINE_SNAP_FALLBACK e ENGINE_ENTER_REQUIRED_CHECKS: o que a fila grava, ligadas e desligadas', async () => {
+      const keys = ['ENGINE_SNAP_FALLBACK', 'ENGINE_ENTER_REQUIRED_CHECKS'] as const;
+      const before = keys.map((k) => process.env[k]);
+      const noSwing = { swings: [{ kind: 'high', price: 104 }, { kind: 'low', price: 95 }] };
+      const c7Fail = { sv: passes.replace('C7 PASS', 'C7 FAIL') };
+      try {
+        keys.forEach((k) => delete process.env[k]);
+        const offSnap = await run('snap-off', 'false', false, noSwing);
+        expect(offSnap.result.signalState).toBe('NO_TRADE');
+        expect(offSnap.result.snapFallback).toBeUndefined();
+        const offChecks = await run('checks-off', 'false', false, c7Fail);
+        expect(offChecks.result.signalState).toBe('WATCH');
+        expect(offChecks.result.entryWarnings).toBeUndefined();
+
+        process.env.ENGINE_SNAP_FALLBACK = '2';
+        const onSnap = await run('snap-on', 'false', false, noSwing);
+        expect(onSnap.status).toBe('completed');
+        expect(onSnap.result).toMatchObject({ signalState: 'ENTER_NOW', snapFallback: true });
+        expect(onSnap.result.analysis.stopLoss).toBeLessThan(97);
+        delete process.env.ENGINE_SNAP_FALLBACK;
+
+        process.env.ENGINE_ENTER_REQUIRED_CHECKS = '1';
+        const onChecks = await run('checks-on', 'false', false, c7Fail);
+        expect(onChecks.status).toBe('completed');
+        expect(onChecks.result).toMatchObject({ signalState: 'ENTER_NOW', entryWarnings: [7] });
+      } finally {
+        keys.forEach((k, i) => { if (before[i] === undefined) delete process.env[k]; else process.env[k] = before[i]; });
       }
     });
 

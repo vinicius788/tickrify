@@ -1,4 +1,4 @@
-import { flagBool } from '../flags/feature-flags';
+import { flagBool, flagNumber } from '../flags/feature-flags';
 import {
   Recommendation,
   canonicalFxPair,
@@ -25,6 +25,10 @@ import {
   snapInvalidation,
   stopMarginAtr,
   type VolRegime,
+  type EngineProfile,
+  PROFILE_GATES,
+  currentGates,
+  withProfileGates,
 } from './plan-engine';
 import type { HtfTrend } from '../../modules/ai/analysis-data-coverage';
 
@@ -49,6 +53,83 @@ import type { HtfTrend } from '../../modules/ai/analysis-data-coverage';
 export const ENTER_AT_LEVEL_FLAG = 'ENGINE_ENTER_AT_LEVEL';
 /** WATCH mostra tambem o plano a mercado quando a geometria dele vale (11/11/2026). */
 export const MARKET_PLAN_FLAG = 'ENGINE_MARKET_PLAN_ON_WATCH';
+/**
+ * Sem swing encaixada na invalidacao (16/11/2026): 0 = NO_TRADE, o motor de
+ * sempre; 1 = o plano segue com a invalidacao do modelo, no maximo ate WATCH;
+ * 2 = segue tambem ate ENTER_NOW. Risco, alvo, checklist e atrasado nao mudam.
+ */
+export const SNAP_FALLBACK_FLAG = 'ENGINE_SNAP_FALLBACK';
+/**
+ * Itens obrigatorios do ENTER_NOW (16/11/2026): 0 = C2, C3, C6, C7, o motor de
+ * sempre; 1 = C2, C3, C6 (C7 em FAIL vira aviso); 2 = C3, C6 (C2 e C7 viram
+ * aviso). O minimo de PASS nao muda. So com velas reais.
+ */
+export const ENTER_CHECKS_FLAG = 'ENGINE_ENTER_REQUIRED_CHECKS';
+/** Movimento atrasado deixa de barrar o ENTER_NOW e vira aviso (item 8 de `entryWarnings`). 16/11/2026. */
+export const LATE_WARNING_FLAG = 'ENGINE_LATE_AS_WARNING';
+/** Item de `entryWarnings` do movimento atrasado (2 e 7 sao os do checklist). */
+export const LATE_WARNING_ITEM = 8;
+/**
+ * Alvo no proximo nivel (17/11/2026): com a chave ligada, quando o primeiro
+ * nivel (target1) fica a menos de 1R da entrada e o seguinte (target2) da 1R ou
+ * mais, o TP1 vai para o seguinte (teto de 1,5R de sempre). Aviso 11 em
+ * `entryWarnings` e `result.targetMoved`. Desligada = motor de sempre.
+ */
+export const NEXT_TARGET_FLAG = 'ENGINE_NEXT_TARGET';
+export const NEXT_TARGET_WARNING_ITEM = 11;
+
+/** Entrada com o alvo do plano; sem espaco e com a chave ligada, tenta o proximo nivel. */
+function levelsWithNextTarget(plan: WatchPlan, compute: (p: WatchPlan) => EntryLevels | EntryRejection): { levels: EntryLevels | EntryRejection; moved: boolean } {
+  const first = compute(plan);
+  if (first !== 'no_room' || plan.target2 === null || !flagBool(NEXT_TARGET_FLAG)) return { levels: first, moved: false };
+  const next = compute({ ...plan, target1: plan.target2, target2: null });
+  return typeof next === 'string' ? { levels: first, moved: false } : { levels: next, moved: true };
+}
+/** WATCH do modelo sem geometria valida a mercado nem no nivel segue WATCH (sem niveis), em vez de NO_TRADE. 16/11/2026. */
+export const GEOMETRY_WATCH_FLAG = 'ENGINE_WATCH_ON_REJECTED_GEOMETRY';
+
+/**
+ * Modo permissivo (16/11/2026, decisao do dono): 1 = ENTER_NOW com direcao, C3 e
+ * C6 em PASS, geometria valida e 4 de 7 PASS. C2, C7, atrasado, contra o 4h e
+ * forex deixam de barrar e viram avisos (`entryWarnings` 2, 7, 8, 9, 10); sem
+ * swing encaixada vale a invalidacao do modelo. Seguem barrando: plano
+ * invalidado, risco fora de 0,5 a 2 ATR, alvo abaixo de 1R, noticias, print
+ * sem preco na zona. 0 = motor de sempre.
+ */
+export const PERMISSIVE_FLAG = 'ENGINE_PERMISSIVE';
+/** So apresentacao (16/11/2026): 1 = WATCH com geometria valida no nivel e mostrado como entrada pendente ("BUY/SELL on pullback"). O estado nao muda. */
+export const PENDING_ENTRY_FLAG = 'ENGINE_PENDING_ENTRY_LABEL';
+export const HTF_WARNING_ITEM = 9;
+export const FOREX_WARNING_ITEM = 10;
+const permissive = (): boolean => currentGates().permissive ?? flagNumber(PERMISSIVE_FLAG) === 1;
+/**
+ * C6 pela geometria real (17/11/2026, chave em 0): o C6 do modelo e trocado
+ * pela entrada a mercado que o codigo calculou (risco 0,5 a 2 ATR, alvo minimo
+ * do perfil, proximo nivel). So com velas reais e SO no perfil Arriscado
+ * (Equilibrado e Conservador usam sempre o C6 do modelo).
+ */
+export const C6_GEOMETRY_FLAG = 'ENGINE_C6_FROM_GEOMETRY';
+/** Aviso do ENTER_NOW destravado pelo C6 do codigo: o primeiro nivel do modelo fica entre a entrada e o TP1. */
+export const LEVEL_IN_PATH_WARNING_ITEM = 12;
+const c6FromGeometry = (): boolean => currentGates().c6FromGeometry === true && flagNumber(C6_GEOMETRY_FLAG) === 1;
+
+function snapFallbackMode(): 0 | 1 | 2 {
+  const forced = currentGates().snapMode;
+  if (forced !== undefined) return forced;
+  if (permissive()) return 2;
+  const value = flagNumber(SNAP_FALLBACK_FLAG);
+  return value === 1 || value === 2 ? value : 0;
+}
+
+function enterNowChecks(): readonly number[] {
+  const forced = currentGates().enterChecks;
+  if (forced) return forced;
+  if (permissive()) return [3, 6];
+  const value = flagNumber(ENTER_CHECKS_FLAG);
+  if (value === 1) return [2, 3, 6];
+  if (value === 2) return [3, 6];
+  return ENGINE_RULES.enterNowChecks;
+}
 
 export type SignalState = 'NO_TRADE' | 'WATCH' | 'ARMED' | 'ENTER_NOW';
 export const SIGNAL_STATES: readonly SignalState[] = ['NO_TRADE', 'WATCH', 'ARMED', 'ENTER_NOW'];
@@ -223,6 +304,16 @@ export interface SignalDecisionResult {
   rejectedPlan: RejectedPlan | null;
   /** ENTER_NOW liberado pela regra da chave ENGINE_ENTER_AT_LEVEL. */
   enterAtLevel: boolean;
+  /** WATCH ou ENTER_NOW que seguiu com a invalidacao do modelo, sem swing encaixada (chave ENGINE_SNAP_FALLBACK). */
+  snapFallback: boolean;
+  /** ENTER_NOW com C2 ou C7 em FAIL (chave ENGINE_ENTER_REQUIRED_CHECKS) ou com movimento atrasado (8, chave ENGINE_LATE_AS_WARNING). */
+  entryWarnings: number[];
+  /** ENTER_NOW que so existe pelo modo permissivo (chave ENGINE_PERMISSIVE): serie propria na medicao. */
+  permissiveEntry: boolean;
+  /** WATCH com niveis validos no recuo, mostrado como entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL). So apresentacao e medicao. */
+  pendingEntry: boolean;
+  /** O TP1 mostrado esta no proximo nivel (chave ENGINE_NEXT_TARGET): ENTER_NOW a mercado ou niveis do WATCH. */
+  targetMoved: boolean;
 }
 
 /**
@@ -333,8 +424,14 @@ export function requiredPasses(symbol: string, direction: WatchPlan['direction']
 
 /** Tudo o que o codigo mediu do plano com as velas reais. */
 export interface PlanEvaluation {
-  /** O plano com a invalidacao encaixada na swing real. */
+  /** O plano com a invalidacao encaixada na swing real (ou a do modelo, com `unsnapped`). */
   plan: WatchPlan;
+  /** Sem swing encaixada: a invalidacao e a do modelo (chave ENGINE_SNAP_FALLBACK). */
+  unsnapped: boolean;
+  /** A entrada a mercado usa o proximo nivel como TP1 (chave ENGINE_NEXT_TARGET). */
+  marketTargetMoved: boolean;
+  /** O C6 em FAIL do modelo virou PASS pela geometria do codigo (ENGINE_C6_FROM_GEOMETRY). */
+  c6FromCode: boolean;
   market: EntryLevels | EntryRejection;
   /** Entrada no nivel do plano (o recuo que destrava o WATCH). */
   limit: EntryLevels | EntryRejection;
@@ -363,18 +460,24 @@ export function evaluatePlan(input: {
   late: boolean;
 }): PlanEvaluation | ValidatorReason {
   if (pricePosition(input.plan, input.price) === 'invalidated') return 'plan_invalidated';
-  const plan = snapInvalidation(input.plan, input.swings, input.atr, input.price);
-  if (!plan) return 'invalidation_unsnapped';
+  const snapped = snapInvalidation(input.plan, input.swings, input.atr, input.price);
+  if (!snapped && snapFallbackMode() === 0) return 'invalidation_unsnapped';
+  const plan = snapped ?? input.plan;
   const margin = stopMarginAtr(calibrationPair(input.symbol), input.volRegime);
-  const checks = parsePassFailChecklist(input.structureValidation);
+  const parsed = parsePassFailChecklist(input.structureValidation);
+  const market = levelsWithNextTarget(plan, (p) => entryLevels(p, input.atr, input.price, margin));
+  const checks = parsed && c6FromGeometry() ? new Map(parsed).set(6, typeof market.levels !== 'string') : parsed;
   return {
+    c6FromCode: !!parsed && parsed.get(6) !== true && checks?.get(6) === true,
     plan,
-    market: entryLevels(plan, input.atr, input.price, margin),
-    limit: limitEntryLevels(plan, input.atr, input.price, margin),
+    unsnapped: !snapped,
+    marketTargetMoved: market.moved,
+    market: market.levels,
+    limit: levelsWithNextTarget(plan, (p) => limitEntryLevels(p, input.atr, input.price, margin)).levels,
     late: input.late,
     checks,
     passes: checks ? [...checks.values()].filter(Boolean).length : 0,
-    requiredPasses: requiredPasses(input.symbol, plan.direction, input.htfTrend),
+    requiredPasses: currentGates().minPass ?? (permissive() ? ENGINE_RULES.minPassWatch : requiredPasses(input.symbol, plan.direction, input.htfTrend)),
   };
 }
 
@@ -386,14 +489,15 @@ function whyNot(state: SignalState, ev: PlanEvaluation): ValidatorReason | null 
   const R = ENGINE_RULES;
   const marketValid = typeof ev.market !== 'string';
   if (state === 'ENTER_NOW') {
+    if (ev.unsnapped && snapFallbackMode() !== 2) return 'invalidation_unsnapped';
     if (!marketValid) return 'market_entry_invalid';
-    if (!allPass(ev.checks, R.enterNowChecks)) return 'required_check_failed';
+    if (!allPass(ev.checks, enterNowChecks())) return 'required_check_failed';
     if (ev.passes < ev.requiredPasses) return 'checks_below_min';
     return ev.late ? 'late_move' : null;
   }
   if (state === 'WATCH') {
     if (!allPass(ev.checks, R.watchChecks)) return 'setup_failed';
-    if (!marketValid && typeof ev.limit === 'string') return 'no_valid_geometry';
+    if (!marketValid && typeof ev.limit === 'string' && !flagBool(GEOMETRY_WATCH_FLAG)) return 'no_valid_geometry';
     return ev.passes < R.minPassWatch ? 'checks_below_min' : null;
   }
   return null;
@@ -438,7 +542,7 @@ function choosePrintState(input: SignalDecisionInput, plan: WatchPlan): { state:
   const R = ENGINE_RULES;
   const checks = parsePassFailChecklist(input.structureValidation);
   const passes = checks ? [...checks.values()].filter(Boolean).length : 0;
-  const required = requiredPasses(input.symbol, plan.direction, null);
+  const required = permissive() ? R.minPassWatch : requiredPasses(input.symbol, plan.direction, null);
   const est = input.estimatedLevels;
   const price = input.currentPrice;
   const levelsOk = !!est && positive(est.entry) && positive(est.stopLoss) && positive(est.takeProfit1) && positive(price);
@@ -450,7 +554,7 @@ function choosePrintState(input: SignalDecisionInput, plan: WatchPlan): { state:
     if (state === 'ENTER_NOW') {
       if (!levelsOk) return 'levels_unverified';
       if (position !== 'inside_zone') return 'not_at_price';
-      if (!allPass(checks, R.enterNowChecks)) return 'required_check_failed';
+      if (!allPass(checks, permissive() ? [3, 6] : R.enterNowChecks)) return 'required_check_failed';
       return passes < required ? 'checks_below_min' : null;
     }
     if (state === 'WATCH') {
@@ -512,6 +616,8 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
   const start: SignalState = signalWithoutSide ? 'WATCH' : model;
   const mismatch: ValidatorNote[] = signalWithoutSide ? [{ from: model, to: 'WATCH', reason: 'state_mismatch' }] : [];
   const atLevel = !!real && isAtPriorLevel(input.priorWatch, modelPlan, real.price);
+  const lateNow = !!real && !!modelPlan && !atLevel && !!real.late?.[modelPlan.direction];
+  const lateAsWarning = lateNow && (currentGates().lateAsWarning ?? (flagBool(LATE_WARNING_FLAG) || permissive()));
   let chosen: { state: SignalState; notes: ValidatorNote[]; levels: PlanLevels };
   let evaluation: PlanEvaluation | null = null;
   if (model === 'NO_TRADE') chosen = { state: 'NO_TRADE', notes: [], levels: NULL_LEVELS };
@@ -522,7 +628,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     const ev = evaluatePlan({
       plan: modelPlan, symbol: input.symbol, structureValidation: input.structureValidation,
       price: real.price, atr: real.atr as number, htfTrend: real.htfTrend, volRegime: real.volRegime, swings: real.swings ?? [],
-      late: !atLevel && real.late ? real.late[modelPlan.direction] : false,
+      late: lateNow && !lateAsWarning,
     });
     if (typeof ev === 'string') chosen = { state: 'NO_TRADE', notes: [...mismatch, { from: start, to: 'NO_TRADE', reason: ev }], levels: NULL_LEVELS };
     else {
@@ -587,10 +693,36 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     confidence = Math.min(confidence, ENGINE_RULES.confidenceCapNoSignal);
   }
 
+  // Avisos do ENTER_NOW: itens obrigatorios do motor de sempre em FAIL, atrasado e, no modo permissivo, contra o 4h e forex.
+  const entryChecks = evaluation?.checks ?? (permissive() ? parsePassFailChecklist(input.structureValidation) : null);
+  const entryWarnings: number[] = [];
+  if (isSignal && entryChecks) {
+    entryWarnings.push(...ENGINE_RULES.enterNowChecks.filter((n) => entryChecks.get(n) !== true));
+    if (lateAsWarning) entryWarnings.push(LATE_WARNING_ITEM);
+    if (evaluation?.marketTargetMoved) entryWarnings.push(NEXT_TARGET_WARNING_ITEM);
+    // C6 destravado pelo codigo: o primeiro nivel do modelo entre a entrada e o TP1 pode segurar o preco.
+    const first = modelPlan?.target1;
+    const { entry, takeProfit1 } = levels;
+    if (evaluation?.c6FromCode && first != null && entry !== null && takeProfit1 !== null
+      && Math.min(entry, takeProfit1) < first && first < Math.max(entry, takeProfit1)) {
+      entryWarnings.push(LEVEL_IN_PATH_WARNING_ITEM);
+    }
+    if (permissive() && plan) {
+      if (real?.htfTrend === (plan.direction === 'long' ? 'downtrend' : 'uptrend')) entryWarnings.push(HTF_WARNING_ITEM);
+      if (isForexPair(input.symbol)) entryWarnings.push(FOREX_WARNING_ITEM);
+    }
+  }
+  const entryPasses = entryChecks ? [...entryChecks.values()].filter(Boolean).length : 0;
+  const permissiveEntry = isSignal && permissive() && !!plan
+    && (entryWarnings.length > 0 || !!evaluation?.unsnapped || entryPasses < requiredPasses(input.symbol, plan.direction, real?.htfTrend ?? null));
+
   const noTradeNote = notes.find((n) => n.to === 'NO_TRADE');
   const rejectedPlan: RejectedPlan | null = state === 'NO_TRADE' && model !== 'NO_TRADE' && input.watchPlan && noTradeNote
     ? { modelState: model, reason: noTradeNote.reason, plan: input.watchPlan }
     : null;
+
+  const watchMove = state === 'WATCH' && real && plan ? watchLevelsWithMove(plan, input.symbol, real) : { levels: null, moved: false };
+  const watchLevels = watchMove.levels;
 
   const action: ValidatorAction = rank(state) < rank(model)
     ? 'downgraded'
@@ -612,17 +744,27 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     stalePrint,
     watchReach: state === 'WATCH' && real && plan ? watchReachOf(plan, input.symbol, real) : null,
     location: real ? locationOf(real, state === 'NO_TRADE' ? null : plan) : null,
-    watchLevels: state === 'WATCH' && real && plan ? watchLevelsOf(plan, input.symbol, real) : null,
+    watchLevels,
+    pendingEntry: watchLevels !== null && flagNumber(PENDING_ENTRY_FLAG) === 1,
+    targetMoved: (isSignal && !!evaluation?.marketTargetMoved) || watchMove.moved,
     marketLevels: state === 'WATCH' && evaluation && typeof evaluation.market !== 'string' && flagBool(MARKET_PLAN_FLAG) ? evaluation.market : null,
     rejectedPlan,
     enterAtLevel: atLevel && state === 'ENTER_NOW',
+    snapFallback: !!evaluation?.unsnapped && state !== 'NO_TRADE',
+    entryWarnings,
+    permissiveEntry,
   };
 }
 
 /** Niveis do WATCH se destravar no nivel do plano (borda proxima), como o rastreador mede. */
 export function watchLevelsOf(plan: WatchPlan, symbol: string, real: RealDataInput): EntryLevels | null {
-  const levels = entryLevels(plan, real.atr as number, nearEdge(plan), stopMarginAtr(calibrationPair(symbol), real.volRegime));
-  return typeof levels === 'string' ? null : levels;
+  return watchLevelsWithMove(plan, symbol, real).levels;
+}
+
+function watchLevelsWithMove(plan: WatchPlan, symbol: string, real: RealDataInput): { levels: EntryLevels | null; moved: boolean } {
+  const margin = stopMarginAtr(calibrationPair(symbol), real.volRegime);
+  const { levels, moved } = levelsWithNextTarget(plan, (p) => entryLevels(p, real.atr as number, nearEdge(p), margin));
+  return typeof levels === 'string' ? { levels: null, moved: false } : { levels, moved };
 }
 
 /** Preco, posicao no range, tendencia do 4h e a distancia em ATR ate os niveis que importam. */
@@ -698,5 +840,64 @@ export function applyDecisionToAnalysis<T extends Record<string, any>>(
     ...decision.probabilities,
     alternativeScenario: decision.state === 'NO_TRADE' ? null : analysis.alternativeScenario ?? null,
     riskFactors: staleNote ? [riskFactors, staleNote].filter(Boolean).join('\n') : riskFactors,
+  };
+}
+
+// ─── Perfis de risco (ENGINE_RISK_PROFILE, 17/11/2026) ───────────────────────
+
+export const RISK_PROFILE_FLAG = 'ENGINE_RISK_PROFILE';
+
+/** O que cada perfil decidiu sobre a mesma resposta do modelo (gravado em result.riskProfiles). */
+export interface ProfileOutcome {
+  state: SignalState;
+  entry: number | null;
+  stopLoss: number | null;
+  takeProfit1: number | null;
+  takeProfit2: number | null;
+  watchLevels: EntryLevels | null;
+  direction: WatchPlan['direction'] | null;
+  reasons: ValidatorReason[];
+}
+
+export function profileOutcomeOf(decision: SignalDecisionResult): ProfileOutcome {
+  return {
+    state: decision.state,
+    entry: decision.levels.entry,
+    stopLoss: decision.levels.stopLoss,
+    takeProfit1: decision.levels.takeProfit1,
+    takeProfit2: decision.levels.takeProfit2,
+    watchLevels: decision.watchLevels,
+    direction: decision.watchPlan?.direction ?? null,
+    reasons: decision.validatorNotes.map((note) => note.reason),
+  };
+}
+
+/**
+ * Roda o validador nos 3 perfis sobre o MESMO input (sem nova chamada de IA) e
+ * devolve a decisao do perfil da pessoa. Sem velas reais (print, print antigo
+ * retido, ativo sem fonte) o perfil nao muda nada: os 3 recebem a decisao do
+ * Equilibrado.
+ */
+export async function decideSignalForProfile(input: SignalDecisionInput, profile: EngineProfile): Promise<{
+  decision: SignalDecisionResult;
+  profiles: Record<EngineProfile, ProfileOutcome>;
+}> {
+  const balanced = await decideSignal(input);
+  if (balanced.dataMode !== 'real_data') {
+    const same = profileOutcomeOf(balanced);
+    return { decision: balanced, profiles: { conservative: same, balanced: same, aggressive: same } };
+  }
+  const [conservative, aggressive] = await Promise.all([
+    withProfileGates(PROFILE_GATES.conservative, () => decideSignal(input)),
+    withProfileGates(PROFILE_GATES.aggressive, () => decideSignal(input)),
+  ]);
+  const byProfile: Record<EngineProfile, SignalDecisionResult> = { conservative, balanced, aggressive };
+  return {
+    decision: byProfile[profile] ?? balanced,
+    profiles: {
+      conservative: profileOutcomeOf(conservative),
+      balanced: profileOutcomeOf(balanced),
+      aggressive: profileOutcomeOf(aggressive),
+    },
   };
 }

@@ -253,6 +253,10 @@ interface WatchPlanCardProps {
   symbol: string;
   formatPrice: (value: number | null) => string;
   estimated?: boolean;
+  /** Mostra o plano como entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL). */
+  pending?: boolean;
+  /** O TP1 do plano esta no proximo nivel (chave ENGINE_NEXT_TARGET). */
+  targetMoved?: boolean;
   watch?: WatchSummary | null;
   reach?: WatchReach | null;
   /** Condicao em uma linha, escrita pelo modelo. */
@@ -274,6 +278,8 @@ export function WatchPlanCard({
   symbol,
   formatPrice,
   estimated = false,
+  pending = false,
+  targetMoved = false,
   watch,
   reach,
   condition,
@@ -356,8 +362,8 @@ export function WatchPlanCard({
       <CardContent className="p-5 md:p-6">
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(250px,300px)] md:gap-8">
           <div className="min-w-0">
-            <h3 className="tk-display text-base text-[var(--text-primary)]">{w.planTitle.replace('{zone}', zone)}</h3>
-            <p data-testid="watch-not-signal" className="mt-1 text-xs text-[var(--text-secondary)]">{w.notSignal}</p>
+            <h3 data-testid="watch-plan-title" className="tk-display text-base text-[var(--text-primary)]">{pending ? (long ? w.pendingBuy : w.pendingSell) : w.planTitle.replace('{zone}', zone)}</h3>
+            <p data-testid="watch-not-signal" className="mt-1 text-xs text-[var(--text-secondary)]">{pending ? w.pendingNote : w.notSignal}</p>
             <dl data-testid="watch-numbers" className={`mt-4 grid grid-cols-2 gap-x-4 gap-y-4 ${tiles.length > 2 ? '2xl:grid-cols-4' : ''}`}>
               {tiles.map((tile) => (
                 <div key={tile.key} className="min-w-0">
@@ -371,6 +377,7 @@ export function WatchPlanCard({
             </dl>
             {rejected ? <p key="rejected" data-testid="targets-rejected" className="mt-3 text-xs text-[var(--text-secondary)]">{w.targetsRejected}</p> : null}
             {estimated ? <p key="estimated" data-testid="levels-estimated" className="mt-3 text-xs text-[var(--text-secondary)]">{t.analysis.result.levelsEstimated}</p> : null}
+            {targetMoved ? <p key="target-moved" data-testid="target-moved" className="mt-3 text-xs text-[var(--accent-yellow)]">{t.analysis.result.entryWarningNextTarget}</p> : null}
             {condition ? <p key="condition" data-testid="watch-condition" className="mt-4 text-sm leading-relaxed text-[var(--text-primary)]">{condition}</p> : null}
             {distance || validity ? (
               <p key="timing" data-testid="watch-timing" className="mt-2 tabular-nums text-xs text-[var(--text-secondary)]">

@@ -1,6 +1,6 @@
 import { logObservation, rawObservation, safeObserve } from '../../common/utils/analysis-observation';
 import { presentAnalysis } from '../../common/utils/analysis-presentation';
-import { flagBool } from '../../common/flags/feature-flags';
+import { flagBool, flagNumber } from '../../common/flags/feature-flags';
 import { buildPriorPlanBlock, continuationOf, readContinuationStatus, sameAsset, type PriorPlan, type SetupContinuation } from './setup-continuation';
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
@@ -23,6 +23,9 @@ import {
 import {
   applyDecisionToAnalysis,
   decideSignal,
+  decideSignalForProfile,
+  RISK_PROFILE_FLAG,
+  type SignalDecisionInput,
   deriveSignalState,
   parseSignalState,
   validatorReasons,
@@ -39,6 +42,7 @@ import {
   type Bar,
   type TriggerType,
   type WatchPlan,
+  type EngineProfile,
 } from '../../common/utils/plan-engine';
 import { aiLevelOf, buildLevelMap } from '../../common/utils/level-map';
 import { OUTPUT_LANGUAGE_NAMES, splitUserContextClose } from '../prompt/prompt-builder.service';
@@ -1807,6 +1811,8 @@ export class AIAdapter {
     let candleBlock: string | null = null;
     let numbers: GroundingNumbers | null = null;
     let staleReason: string | null = null;
+    // Precos do print velho (17/11/2026, so apresentacao): a tela mostra os dois.
+    let stalePrices: GroundingStats['stale'] = undefined;
     let candleCoverage: CandleCoverage = 'timeframe_unreadable';
     if (interval) {
       const market = candleMarketOf(sym)?.market ?? null;
@@ -1831,6 +1837,10 @@ export class AIAdapter {
           staleReason = this.detectStaleChart(candles, extracted.lastPrice);
           if (staleReason) {
             candleCoverage = 'stale_withheld';
+            const livePrice = candles[candles.length - 1]?.[4];
+            if (extracted.lastPrice != null && Number.isFinite(livePrice)) {
+              stalePrices = { imagePrice: extracted.lastPrice, livePrice };
+            }
           } else {
             const real = buildRealDataBlock(sym, interval, candles);
             numbers = real?.numbers ?? null;
@@ -1869,7 +1879,7 @@ export class AIAdapter {
     // Numeros so quando os candles ENTRARAM no prompt; com print velho retido,
     // eles descrevem o mercado de agora, nao o grafico analisado.
 
-    const stats: GroundingStats = { v: 1, symbol: sym, interval, coverage: candleCoverage, numbers };
+    const stats: GroundingStats = { v: 1, symbol: sym, interval, coverage: candleCoverage, numbers, ...(stalePrices ? { stale: stalePrices } : {}) };
     return { sym, interval, isCrypto, assetClass, candleBlock, staleReason, staleBlock, candleCoverage, stats };
   }
 
@@ -1999,7 +2009,7 @@ export class AIAdapter {
      * compareProviders: so quem grava a comparacao pede (worker e caminho sincrono; a demo nao).
      * priorPlan: plano anterior do setup (setup-continuation.ts); so entra se o ativo lido for o mesmo.
      */
-    options: { compareProviders?: boolean; priorPlan?: PriorPlan | null; assetHint?: AssetHint | null } = {},
+    options: { compareProviders?: boolean; priorPlan?: PriorPlan | null; assetHint?: AssetHint | null; riskProfile?: EngineProfile } = {},
   ): Promise<AIAnalysisResponse> {
     try {
       const userContent = await this.buildUserContent(imageUrl, extraImageUrls);
@@ -2414,7 +2424,7 @@ export class AIAdapter {
       const modelState =
         parsed.signalState ??
         deriveSignalState(rawRecommendation, parsed.analysis?.entryType, parsed.analysis?.alternativeScenario);
-      const decision = await decideSignal({
+      const decisionInput: SignalDecisionInput = {
         state: modelState,
         recommendation: rawRecommendation,
         confidence: normalizeConfidence(parsed.confidence, 0),
@@ -2438,7 +2448,12 @@ export class AIAdapter {
         planFailures,
         priceFixed: parsed.analysis?.priceMagnitudeFixed === true,
         priorWatch: priorPlan ? { plan: priorPlan.plan, confirmed: continuation?.status === 'CONFIRMED' } : null,
-      });
+      };
+      // ENGINE_RISK_PROFILE (17/11/2026): os 3 perfis sobre a mesma resposta; a pessoa ve o dela.
+      const riskProfileOn = flagNumber(RISK_PROFILE_FLAG) === 1;
+      const riskProfile: EngineProfile = options.riskProfile ?? 'balanced';
+      const profiled = riskProfileOn ? await decideSignalForProfile(decisionInput, riskProfile) : null;
+      const decision = profiled ? profiled.decision : await decideSignal(decisionInput);
       const validationMs = Date.now() - tValidation;
       if (decision.validatorAction === 'downgraded' || decision.validatorAction === 'promoted') {
         this.logger.warn(
@@ -2474,7 +2489,13 @@ export class AIAdapter {
         ...(continuation ? { continuation } : {}),
         ...(decision.rejectedPlan ? { rejectedPlan: decision.rejectedPlan } : {}),
         ...(decision.enterAtLevel ? { enterAtLevel: true } : {}),
+        ...(decision.snapFallback ? { snapFallback: true } : {}),
+        ...(decision.entryWarnings.length ? { entryWarnings: decision.entryWarnings } : {}),
+        ...(decision.permissiveEntry ? { permissiveEntry: true } : {}),
+        ...(decision.pendingEntry ? { pendingEntry: true } : {}),
+        ...(decision.targetMoved ? { targetMoved: true } : {}),
         ...(decision.marketLevels ? { marketLevels: decision.marketLevels } : {}),
+        ...(profiled ? { riskProfile, riskProfiles: profiled.profiles } : {}),
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);
       logObservation(observation, m => this.logger.log(m));
@@ -2486,7 +2507,11 @@ export class AIAdapter {
         confidence,
         reasoning: presentedAnalysis.reasoning,
         analysis: presentedAnalysis,
-        evidence: toAnalysisEvidence(coverage),
+        evidence: {
+          ...toAnalysisEvidence(coverage, groundingStats?.stale),
+          // So apresentacao (UI_HISTORICAL_PRINT, 17/11/2026): congela a escolha na analise.
+          ...(flagNumber('UI_HISTORICAL_PRINT') === 1 ? { historicalPrintUi: true as const } : {}),
+        },
         // Telemetria gravada por analise (saveAnalysisTelemetry): o snapshot que
         // a OpenAI de fato usou e os numeros do grounding que entraram no prompt.
         respondedModel: modelResult.respondedModel,

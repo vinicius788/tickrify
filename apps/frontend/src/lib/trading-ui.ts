@@ -170,3 +170,41 @@ export function signalToneClass(value: unknown): string {
   if (tone === 'sell') return 'text-[var(--signal-sell)]';
   return 'text-[var(--signal-hold)]';
 }
+
+// ─── Print tratado como historico (UI_HISTORICAL_PRINT, 17/11/2026) ─────────
+// So apresentacao: a guarda de print antigo do servidor reteve as velas e a
+// analise foi gravada com a chave ligada (evidence.historicalPrintUi).
+
+export interface HistoricalPrint {
+  imagePrice: number | null;
+  livePrice: number | null;
+}
+
+function evidenceOf(fullResponse: unknown): Record<string, unknown> | null {
+  const evidence = fullResponse && typeof fullResponse === 'object' ? (fullResponse as Record<string, unknown>).evidence : null;
+  return evidence && typeof evidence === 'object' ? (evidence as Record<string, unknown>) : null;
+}
+
+/** A analise foi gravada com UI_HISTORICAL_PRINT = 1. */
+export function historicalPrintUiOf(fullResponse: unknown): boolean {
+  return evidenceOf(fullResponse)?.historicalPrintUi === true;
+}
+
+/** Print antigo com a chave ligada: precos da imagem e ao vivo (null quando nao gravados). */
+export function historicalPrintOf(fullResponse: unknown): HistoricalPrint | null {
+  const evidence = evidenceOf(fullResponse);
+  if (evidence?.historicalPrintUi !== true) return null;
+  const stale = evidence.stalePrint;
+  if (!stale || typeof stale !== 'object') return null;
+  const price = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null);
+  const record = stale as Record<string, unknown>;
+  return { imagePrice: price(record.imagePrice), livePrice: price(record.livePrice) };
+}
+
+// Motivo que fala da qualidade do dado (print, feed, velas), nao do mercado.
+const DATA_QUALITY_REASON =
+  /\b(screenshot|image|live (?:data|feed|price)|real[- ]time|data|feed|candles?|withheld|stale|outdated|historical|timestamp|print|imagem|dados|captura|velas|desatualizad\w*|histórico|imagen|datos|données|bougies|Daten|Kerzen|veraltet)\b|データ|スクリーンショット|画像/i;
+
+export function isDataQualityReason(text: string): boolean {
+  return DATA_QUALITY_REASON.test(text);
+}

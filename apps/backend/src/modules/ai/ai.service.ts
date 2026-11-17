@@ -2,6 +2,8 @@ import { imageErrorResponse, validationMessages } from '../../common/utils/displ
 import { logObservation, safeObserve } from '../../common/utils/analysis-observation';
 import {
   sanitizeStrategyProfile,
+  riskProfileOf,
+  type RiskProfile,
   strategyFitFields,
   strategyProfileHash,
   type StrategyProfile,
@@ -65,7 +67,7 @@ import {
 } from '../mail/recovery-email';
 import { StripeService } from '../payments/stripe.service';
 import { SetupsService, recordSetupVersion } from './setups.service';
-import { createWatchAlert } from './setup-alerts.service';
+import { createEntryAlerts, createWatchAlert } from './setup-alerts.service';
 import { canonicalWatchSymbol, loadAssetHint } from './watch-assets';
 import { loadPriorPlan } from './setup-continuation';
 import { isTradeSignal, loadWatchContexts, loadWatchOrigins, storedWatchPlan, watchSummaryOf } from './watch-pending';
@@ -491,6 +493,9 @@ export class AiService implements OnModuleInit {
     // mesmo com a linha ainda no banco.
     const strategyProfile = paidAccess ? await this.getStrategy(userId) : null;
     const strategyHash = strategyProfile ? strategyProfileHash(strategyProfile) : null;
+    // Perfil de risco vale para qualquer conta (gratis nunca consegue gravar: o PUT e pago).
+    // Nunca entra no prompt nem no hash.
+    const riskProfile = await this.getRiskProfile(userId);
 
     const storage = new ImageStorageClient();
 
@@ -618,6 +623,7 @@ export class AiService implements OnModuleInit {
         isDemo,
         userLanguage,
         strategyProfile,
+        riskProfile,
         setupId: setupId ?? null,
         intake,
       }, { jobId: analysis.id });
@@ -1135,18 +1141,54 @@ export class AiService implements OnModuleInit {
     return sanitizeStrategyProfile(row?.strategyProfile ?? null);
   }
 
-  /** Grava o perfil ja sanitizado. Perfil sem criterio nenhum vira NULL. */
-  async setStrategy(userId: string, input: unknown): Promise<{ profile: StrategyProfile | null }> {
+  /** Perfil de risco gravado junto do perfil de estrategia; padrao 'balanced'. */
+  async getRiskProfile(userId: string): Promise<RiskProfile> {
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { strategyProfile: true },
+    });
+    return riskProfileOf(row?.strategyProfile ?? null);
+  }
+
+  /** Perfil de estrategia sanitizado mais o perfil de risco (para a tela). */
+  async getStrategyWithRisk(
+    userId: string,
+  ): Promise<{ profile: StrategyProfile | null; riskProfile: RiskProfile }> {
+    const row = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { strategyProfile: true },
+    });
+    return {
+      profile: sanitizeStrategyProfile(row?.strategyProfile ?? null),
+      riskProfile: riskProfileOf(row?.strategyProfile ?? null),
+    };
+  }
+
+  /**
+   * Grava o perfil ja sanitizado mais o perfil de risco. Sem criterio e sem
+   * risco diferente de 'balanced' vira NULL. O risco nunca entra no prompt nem no hash.
+   */
+  async setStrategy(
+    userId: string,
+    input: unknown,
+  ): Promise<{ profile: StrategyProfile | null; riskProfile: RiskProfile }> {
     const profile = sanitizeStrategyProfile(input);
+    const riskProfile = riskProfileOf(input);
+    const stored =
+      profile && riskProfile !== 'balanced'
+        ? { ...profile, riskProfile }
+        : profile
+          ? { ...profile }
+          : riskProfile !== 'balanced'
+            ? { riskProfile }
+            : null;
     await this.prisma.user.update({
       where: { id: userId },
-      // Conversao explicita: StrategyProfile e uma interface sem index signature, e o Prisma exige
-      // InputJsonValue. E segura porque `profile` acabou de sair do sanitizeStrategyProfile acima,
-      // entao so contem valores da whitelist.
-      data: { strategyProfile: (profile as unknown as Prisma.InputJsonValue) ?? Prisma.DbNull },
+      // Conversao explicita: so contem valores da whitelist (sanitize + enum fechado).
+      data: { strategyProfile: (stored as unknown as Prisma.InputJsonValue) ?? Prisma.DbNull },
     });
     void trackUserActivity(this.prisma, userId, 'strategy_saved', { hasProfile: profile !== null });
-    return { profile };
+    return { profile, riskProfile };
   }
 
   async getUsage(userId: string, trialContext: { ip?: string | null; timezone?: string | null } = {}) {
@@ -1327,13 +1369,20 @@ export class AiService implements OnModuleInit {
       const promptMs = Date.now() - tPrompt;
       const priorPlan = await loadPriorPlan(this.prisma, { analysisId, userId, setupId }, (m) => this.logger.warn(m));
       const assetHint = await loadAssetHint(this.prisma, analysisId);
+      const syncRiskProfile = userId ? await this.getRiskProfile(userId) : 'balanced';
       const aiResponse = await this.aiAdapter.analyzeImage(
         imageUrl,
         prompt,
         analysisType,
         htfImageUrls ?? [],
         strategyProfile,
-        { compareProviders: true, ...(priorPlan ? { priorPlan } : {}), ...(assetHint ? { assetHint } : {}) },
+        {
+          compareProviders: true,
+          ...(priorPlan ? { priorPlan } : {}),
+          ...(assetHint ? { assetHint } : {}),
+          // Equilibrado e o padrao do adapter: so manda o perfil quando ele muda algo.
+          ...(syncRiskProfile !== 'balanced' ? { riskProfile: syncRiskProfile } : {}),
+        },
       );
 
       // Contrato v2 + validador + tempos (mesmo bloco do worker; sem fila aqui).
@@ -1438,6 +1487,11 @@ export class AiService implements OnModuleInit {
       }
       // WATCH vira alerta no nivel do plano (mesma chamada do worker). Nunca lanca.
       await createWatchAlert(
+        this.prisma,
+        { analysisId, userId, result: normalizedPayload.fullResponse, recommendation: normalizedPayload.recommendation },
+        (message) => this.logger.log(message),
+      );
+      await createEntryAlerts(
         this.prisma,
         { analysisId, userId, result: normalizedPayload.fullResponse, recommendation: normalizedPayload.recommendation },
         (message) => this.logger.log(message),

@@ -22,7 +22,7 @@ import {
   watchTone,
   type WatchingItem,
 } from '@/lib/setups';
-import { WatchVerdict } from './PendingLevels';
+import { NearNote, WatchVerdict } from './PendingLevels';
 import SetupsSection from './SetupsSection';
 
 // Aba Watching (10/11/2026). O WATCH e o inicio do trade, nao o trade: mora
@@ -131,6 +131,7 @@ function WatchRow({ item, now, base }: { item: WatchingItem; now: number; base: 
         {details.length ? <p key="details" className="mt-0.5 text-xs tabular-nums text-[var(--text-secondary)]">{details.filter(Boolean).join(' · ')}</p> : null}
         {checked ? <p key="checked" className="mt-0.5 text-xs tabular-nums text-[var(--text-secondary)]">{checked}</p> : null}
         {review && open ? <p key="not-signal" className="mt-0.5 text-xs text-[var(--text-secondary)]">{a.notSignal}</p> : null}
+        {open ? <NearNote key="near" near={item.alert?.near} /> : null}
         <Journey item={item} base={base} />
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">

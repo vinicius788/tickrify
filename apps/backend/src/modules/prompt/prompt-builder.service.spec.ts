@@ -6,7 +6,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { TRADING_SYSTEM_PROMPT, TRADING_SYSTEM_PROMPT_B } from '../../common/prompts/trading-system-prompt';
+import { PROMPT_C_CHANGES, PROMPT_D_CHANGES, TRADING_SYSTEM_PROMPT, TRADING_SYSTEM_PROMPT_B, TRADING_SYSTEM_PROMPT_C, TRADING_SYSTEM_PROMPT_D } from '../../common/prompts/trading-system-prompt';
 import {
   assembleAnalysisPrompt,
   buildAnalysisPrompt,
@@ -127,5 +127,85 @@ describe('teste A/B do prompt', () => {
     expect(inB).toBeGreaterThan(900);
     expect(inB).toBeLessThan(1100);
     expect(users.map(promptVariantForUser)).toEqual(users.map(promptVariantForUser));
+  });
+});
+
+describe('prompt C (16/11/2026)', () => {
+  afterEach(() => { delete process.env.PROMPT_VARIANT_B_PERCENT; delete process.env.PROMPT_VARIANT_C_PERCENT; });
+  const users = Array.from({ length: 2000 }, (_, i) => `user_${i}`);
+
+  it('cada trecho trocado existe uma vez no prompt atual, e a C e o atual com so essas trocas', () => {
+    let back = TRADING_SYSTEM_PROMPT_C;
+    for (const [from, to] of PROMPT_C_CHANGES) {
+      expect(TRADING_SYSTEM_PROMPT.split(from)).toHaveLength(2);
+      expect(TRADING_SYSTEM_PROMPT_C.split(to)).toHaveLength(2);
+      back = back.replace(to, () => from);
+    }
+    expect(back).toBe(TRADING_SYSTEM_PROMPT);
+    expect(TRADING_SYSTEM_PROMPT_C).not.toBe(TRADING_SYSTEM_PROMPT);
+  });
+
+  it('nao afrouxa C3 nem C6, nao muda o contrato e nao tem travessao nem emoji', () => {
+    const line = (prompt: string, start: string) => prompt.split('\n').find((l) => l.startsWith(start));
+    for (const start of ['C3 Setup:', 'C6 Geometry:', '4. NO_TRADE']) expect(line(TRADING_SYSTEM_PROMPT_C, start)).toBe(line(TRADING_SYSTEM_PROMPT, start));
+    expect(TRADING_SYSTEM_PROMPT_C).toContain('Use when: the bias is neutral, the tape is empty, C3 FAIL, no valid geometry, or fewer than 4 PASS.');
+    for (const [, to] of PROMPT_C_CHANGES) expect(to).not.toMatch(/[\u2014\u2013]|\p{Extended_Pictographic}/u);
+    expect(buildAnalysisPrompt({ userLanguage: 'en', analysisType: 'quick' }, 'C')).toContain('not a round number');
+  });
+
+  it('0 (padrao) = ninguem na C; 10 = perto de 10% das contas, sempre as mesmas; 100 = todos', () => {
+    expect(users.every((u) => promptVariantForUser(u) === 'A')).toBe(true);
+    process.env.PROMPT_VARIANT_C_PERCENT = '10';
+    const inC = users.filter((u) => promptVariantForUser(u) === 'C');
+    expect(inC.length).toBeGreaterThan(150);
+    expect(inC.length).toBeLessThan(250);
+    expect(users.filter((u) => promptVariantForUser(u) === 'C')).toEqual(inC);
+    expect(promptVariantForUser(null)).toBe('A');
+    process.env.PROMPT_VARIANT_C_PERCENT = '100';
+    expect(users.every((u) => promptVariantForUser(u) === 'C')).toBe(true);
+    process.env.PROMPT_VARIANT_C_PERCENT = 'abc';
+    expect(users.every((u) => promptVariantForUser(u) === 'A')).toBe(true);
+  });
+
+  it('quem esta na B fica na B', () => {
+    process.env.PROMPT_VARIANT_B_PERCENT = '100';
+    process.env.PROMPT_VARIANT_C_PERCENT = '100';
+    expect(users.every((u) => promptVariantForUser(u) === 'B')).toBe(true);
+  });
+});
+
+describe('prompt D (17/11/2026)', () => {
+  afterEach(() => { for (const v of ['B', 'C', 'D']) delete process.env[`PROMPT_VARIANT_${v}_PERCENT`]; });
+  const users = Array.from({ length: 2000 }, (_, i) => `user_${i}`);
+
+  it('e a C com so as trocas da D, cada uma achada uma vez', () => {
+    let back = TRADING_SYSTEM_PROMPT_D;
+    for (const [from, to] of PROMPT_D_CHANGES) {
+      expect(TRADING_SYSTEM_PROMPT_C.split(from)).toHaveLength(2);
+      expect(TRADING_SYSTEM_PROMPT_D.split(to)).toHaveLength(2);
+      back = back.replace(to, () => from);
+    }
+    expect(back).toBe(TRADING_SYSTEM_PROMPT_C);
+  });
+
+  it('nao muda C3, C6 nem o contrato de saida, e pede a distancia da invalidacao em ATR', () => {
+    const line = (prompt: string, start: string) => prompt.split('\n').find((l) => l.startsWith(start));
+    for (const start of ['C3 Setup:', 'C6 Geometry:']) expect(line(TRADING_SYSTEM_PROMPT_D, start)).toBe(line(TRADING_SYSTEM_PROMPT, start));
+    const contract = (prompt: string) => prompt.slice(prompt.indexOf('<output'), prompt.indexOf('</output'));
+    expect(contract(TRADING_SYSTEM_PROMPT_D)).toBe(contract(TRADING_SYSTEM_PROMPT));
+    expect(TRADING_SYSTEM_PROMPT_D).toContain('at most 2.0 ATR from the current price');
+    expect(TRADING_SYSTEM_PROMPT_D).toContain('"inv 84512 = 1.4 ATR"');
+    for (const [, to] of PROMPT_D_CHANGES) expect(to).not.toMatch(/[\u2014\u2013]|\p{Extended_Pictographic}/u);
+  });
+
+  it('0 (padrao) = ninguem; 10 = perto de 10%; quem esta na C fica na C', () => {
+    expect(users.every((u) => promptVariantForUser(u) === 'A')).toBe(true);
+    process.env.PROMPT_VARIANT_D_PERCENT = '10';
+    const inD = users.filter((u) => promptVariantForUser(u) === 'D').length;
+    expect(inD).toBeGreaterThan(150);
+    expect(inD).toBeLessThan(250);
+    process.env.PROMPT_VARIANT_C_PERCENT = '100';
+    expect(users.every((u) => promptVariantForUser(u) === 'C')).toBe(true);
+    expect(buildAnalysisPrompt({ userLanguage: 'en', analysisType: 'quick' }, 'D')).toContain('at most 2.0 ATR');
   });
 });

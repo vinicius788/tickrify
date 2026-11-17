@@ -1,6 +1,6 @@
-import { assetClassOf, buildEngineReport, isFilledWatch, reviewDecision, type EngineReportRow } from './engine-report';
+import { assetClassOf, buildEngineReport, buildProfileReport, isFilledWatch, reviewDecision, type EngineReportRow } from './engine-report';
 
-const trade = (variant: 'A' | 'B', outcome: 'WIN' | 'LOSS', symbol = 'BTCUSDT', state = 'WATCH'): EngineReportRow => ({
+const trade = (variant: 'A' | 'B' | 'C', outcome: 'WIN' | 'LOSS', symbol = 'BTCUSDT', state = 'WATCH'): EngineReportRow => ({
   symbol, variant, signalState: state, trackStatus: 'tracked', touched: true, outcome,
   fillPrice: 100, stopLoss: 99, takeProfit1: outcome === 'WIN' ? 101.5 : 101,
 });
@@ -87,10 +87,94 @@ describe('regra da revisao mensal (ENTER_NOW e WATCH preenchido)', () => {
     expect(reviewDecision(30, null)).toBe('wait');
   });
 
+  it('ENTER_NOW liberado por chave fica em serie propria, com a mesma regra', () => {
+    const enter = (outcome: 'WIN' | 'LOSS', mark: Partial<EngineReportRow>) => ({ ...trade('A', outcome, 'BTCUSDT', 'ENTER_NOW'), ...mark });
+    const report = buildEngineReport([
+      ...many(30, () => enter('LOSS', { snapFallback: true })),
+      ...many(4, () => enter('WIN', { entryWarned: true })),
+      ...many(5, () => enter('WIN', {})),
+    ]);
+    expect(report.gates).toEqual([
+      expect.objectContaining({ flag: 'ENGINE_SNAP_FALLBACK', trades: 30, verdict: 'Voltar a chave para 0.' }),
+      expect.objectContaining({ flag: 'ENGINE_ENTER_REQUIRED_CHECKS', trades: 4, verdict: 'Esperar mais dados: faltam 26 trades.' }),
+      expect.objectContaining({ flag: 'ENGINE_LATE_AS_WARNING', trades: 0 }),
+      expect.objectContaining({ flag: 'ENGINE_PERMISSIVE', trades: 0 }),
+      expect.objectContaining({ flag: 'ENGINE_PENDING_ENTRY_LABEL', trades: 0 }),
+      expect.objectContaining({ flag: 'ENGINE_NEXT_TARGET', trades: 0 }),
+    ]);
+    expect(buildEngineReport(many(3, () => enter('WIN', { targetMoved: true }))).gates[5]).toMatchObject({ flag: 'ENGINE_NEXT_TARGET', trades: 3 });
+    const pending = buildEngineReport([
+      ...many(2, () => ({ ...trade('A', 'LOSS'), pendingEntry: true })),
+      { ...trade('A', 'WIN'), pendingEntry: true, outcome: 'EXPIRED', fillPrice: null },
+      { ...enter('WIN', { pendingEntry: true }) },
+    ]).gates[4];
+    expect(pending).toMatchObject({ flag: 'ENGINE_PENDING_ENTRY_LABEL', trades: 2 });
+    expect(pending.meanR).toBeLessThan(0);
+    expect(buildEngineReport(many(2, () => enter('WIN', { permissiveEntry: true }))).gates[3]).toMatchObject({ flag: 'ENGINE_PERMISSIVE', trades: 2 });
+    expect(report.enterNow.trades).toBe(39);
+    expect(buildEngineReport([trade('A', 'WIN')]).gates.map((g) => g.trades)).toEqual([0, 0, 0, 0, 0, 0]);
+    const late = buildEngineReport(many(3, () => enter('WIN', { lateWarned: true }))).gates;
+    expect(late.map((g) => [g.flag, g.trades])).toEqual([['ENGINE_SNAP_FALLBACK', 0], ['ENGINE_ENTER_REQUIRED_CHECKS', 0], ['ENGINE_LATE_AS_WARNING', 3], ['ENGINE_PERMISSIVE', 0], ['ENGINE_PENDING_ENTRY_LABEL', 0], ['ENGINE_NEXT_TARGET', 0]]);
+  });
+
+  it('variante C entra na tabela e ganha o proprio veredito contra a A', () => {
+    const report = buildEngineReport([...many(30, () => trade('A', 'LOSS')), ...many(30, () => trade('C', 'WIN'))]);
+    expect(report.variants.map((v) => v.variant)).toEqual(['A', 'C']);
+    expect(report.hasVariantB).toBe(false);
+    expect(report.verdict).toContain('Ligar a C para todos');
+    expect(report.verdict).toContain('PROMPT_VARIANT_C_PERCENT em 100');
+    expect(buildEngineReport([trade('A', 'WIN'), trade('C', 'WIN')]).verdict).toBe('Manter e esperar mais dados: faltam 29 trades fechados na A e 29 na C.');
+  });
+
   it('WATCH so conta quando tocou o nivel e foi preenchido', () => {
     expect(isFilledWatch({ signalState: 'WATCH', touched: true, filled: true })).toBe(true);
     expect(isFilledWatch({ signalState: 'WATCH', touched: true, filled: false })).toBe(false);
     expect(isFilledWatch({ signalState: 'WATCH', touched: false, filled: false })).toBe(false);
     expect(isFilledWatch({ signalState: 'ENTER_NOW', touched: true, filled: true })).toBe(false);
+  });
+});
+
+describe('perfis de risco', () => {
+  const prow = (profile: string, outcome: 'WIN' | 'LOSS', state = 'ENTER_NOW') => ({
+    profile, symbol: 'BTCUSDT', signalState: state, trackStatus: 'tracked', touched: true, outcome,
+    fillPrice: 100, stopLoss: 99, takeProfit1: outcome === 'WIN' ? 101.5 : 101,
+  });
+  const run = (n: number, profile: string, outcome: 'WIN' | 'LOSS') => Array.from({ length: n }, () => prow(profile, outcome));
+
+  it('sem linhas, sem bloco; com linhas, os 3 perfis na ordem', () => {
+    expect(buildProfileReport([])).toEqual([]);
+    expect(buildProfileReport([prow('balanced', 'WIN')]).map((p) => p.profile)).toEqual(['conservative', 'balanced', 'aggressive']);
+  });
+
+  it('menos de 20 trades fechados: esperar, dizendo quantos faltam', () => {
+    const [cons] = buildProfileReport([...run(5, 'conservative', 'WIN'), ...run(5, 'conservative', 'LOSS')]);
+    expect(cons.stats.closedTrades).toBe(10);
+    expect(cons.verdict).toBe('Esperar mais dados (faltam 10).');
+  });
+
+  it('com 20 trades: mantem, desliga e espera nos limites de -0,05R e -0,15R', () => {
+    const rows = [
+      ...run(20, 'conservative', 'WIN'),
+      ...run(20, 'balanced', 'LOSS'),
+      ...run(10, 'aggressive', 'WIN'), ...run(10, 'aggressive', 'LOSS'),
+    ];
+    const [cons, bal, agg] = buildProfileReport(rows);
+    expect(cons.verdict).toBe('Manter o perfil.');
+    expect(bal.verdict).toBe('Desligar o perfil.');
+    // 10 x +1,5R e 10 x -1R: media positiva, mantem.
+    expect(agg.verdict).toBe('Manter o perfil.');
+  });
+
+  it('entre -0,15R e -0,05R a regra nao decide', () => {
+    // 7 WIN (+1,5R) e 13 LOSS (-1R): media de -0,125R.
+    const [cons] = buildProfileReport([...run(7, 'conservative', 'WIN'), ...run(13, 'conservative', 'LOSS')]);
+    expect(cons.stats.meanR).toBeGreaterThan(-0.15);
+    expect(cons.stats.meanR).toBeLessThan(-0.05);
+    expect(cons.verdict).toContain('a regra nao decide');
+  });
+
+  it('reviewDecision com minimo 20 e o padrao de 30 para o ENTER_NOW', () => {
+    expect(reviewDecision(25, 0.1)).toBe('wait');
+    expect(reviewDecision(25, 0.1, 20)).toBe('keep');
   });
 });

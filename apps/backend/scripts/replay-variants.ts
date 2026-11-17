@@ -71,6 +71,8 @@ import {
   type Bar,
   type VolRegime,
   type WatchPlan,
+  PROFILE_GATES,
+  withProfileGates,
 } from '../src/common/utils/plan-engine';
 
 const H = 3_600_000;
@@ -212,7 +214,7 @@ async function decide(c: Ctx): Promise<SignalDecisionResult> {
 
 /** ENTER_NOW a mercado, pela regua do rastreador; null = nao executou. */
 function simulate(c: Ctx, d: SignalDecisionResult): Trade | null {
-  if (d.state !== 'ENTER_NOW') return null;
+  if (d.state !== 'ENTER_NOW' || !c.w.fine) return null;
   const plan = d.watchPlan as WatchPlan;
   const t = trackPlan({
     plan, enterNow: d.state === 'ENTER_NOW', atr: c.atr, marginAtr: stopMarginAtr(calibrationPair(c.row.symbol), volatilityRegime(c.history)),
@@ -225,6 +227,7 @@ function simulate(c: Ctx, d: SignalDecisionResult): Trade | null {
 
 /** Referencia: a direcao do plano a mercado no print, stop e alvo de 1 ATR. */
 function reference(c: Ctx): Trade | null {
+  if (!c.w.fine) return null;
   const i = c.w.fine.findIndex((b) => b[0] >= c.print);
   if (i < 0) return null;
   const long = c.plan.direction === 'long';
@@ -536,6 +539,12 @@ interface TrackRecord {
   atr: number | null;
   refOutcome: string | null;
   refFillPrice: number | null;
+  snapFallback: boolean | null;
+  entryWarned: boolean | null;
+  lateWarned: boolean | null;
+  permissiveEntry: boolean | null;
+  pendingEntry: boolean | null;
+  targetMoved: boolean | null;
 }
 
 /** Ouro e forex antes da correcao do fuso: entrada do motor sem swings, nao servem para julgar. */
@@ -568,7 +577,11 @@ async function review(): Promise<void> {
   try {
     const all = await prisma.$queryRawUnsafe<TrackRecord[]>(
       `SELECT a."createdAt", t."touched", t."filled", t."signalState", t."engineVersion", t."symbol", t."direction", t."outcome",
-              t."fillPrice", t."stopLoss", t."takeProfit1", t."atr", t."refOutcome", t."refFillPrice"
+              t."fillPrice", t."stopLoss", t."takeProfit1", t."atr", t."refOutcome", t."refFillPrice",
+              (a."result"->>'snapFallback') = 'true' AS "snapFallback", (a."result"->'entryWarnings' @> '[2]'::jsonb OR a."result"->'entryWarnings' @> '[7]'::jsonb) AS "entryWarned",
+              a."result"->'entryWarnings' @> '[8]'::jsonb AS "lateWarned", (a."result"->>'permissiveEntry') = 'true' AS "permissiveEntry",
+              (a."result"->>'pendingEntry') = 'true' AS "pendingEntry",
+              (a."result"->>'targetMoved') = 'true' AS "targetMoved"
        FROM "tickrify"."AnalysisTrack" t
        JOIN "tickrify"."Analysis" a ON a."id" = t."analysisId"
        WHERE t."status" = 'tracked' AND ($1::text IS NULL OR a."createdAt" >= $1::date)`,
@@ -601,6 +614,13 @@ async function review(): Promise<void> {
       console.log(`\nRegra da revisao (${title} do motor ${ENGINE_VERSION}): n ${trades.length}, R liquido ${signed(meanR)}. ${verdict}. O script so reporta; nada foi mudado.`);
     };
     verdictLine('ENTER_NOW', 'o ENTER_NOW', 'o ENTER_NOW (o produto fica so no modo leitura)', current.filter((r) => r.signalState === 'ENTER_NOW'));
+    const enterNow = current.filter((r) => r.signalState === 'ENTER_NOW');
+    verdictLine('ENTER_NOW sem swing encaixada', 'a chave ENGINE_SNAP_FALLBACK', 'a chave ENGINE_SNAP_FALLBACK (voltar para 0)', enterNow.filter((r) => r.snapFallback === true));
+    verdictLine('ENTER_NOW com C2 ou C7 em FAIL', 'a chave ENGINE_ENTER_REQUIRED_CHECKS', 'a chave ENGINE_ENTER_REQUIRED_CHECKS (voltar para 0)', enterNow.filter((r) => r.entryWarned === true));
+    verdictLine('ENTER_NOW com movimento atrasado', 'a chave ENGINE_LATE_AS_WARNING', 'a chave ENGINE_LATE_AS_WARNING', enterNow.filter((r) => r.lateWarned === true));
+    verdictLine('ENTER_NOW do modo permissivo', 'a chave ENGINE_PERMISSIVE', 'a chave ENGINE_PERMISSIVE (voltar para 0)', enterNow.filter((r) => r.permissiveEntry === true));
+    verdictLine('entrada pendente preenchida', 'a chave ENGINE_PENDING_ENTRY_LABEL', 'a chave ENGINE_PENDING_ENTRY_LABEL (voltar para 0)', current.filter((r) => isFilledWatch(r) && r.pendingEntry === true));
+    verdictLine('ENTER_NOW com alvo no proximo nivel', 'a chave ENGINE_NEXT_TARGET', 'a chave ENGINE_NEXT_TARGET (desligar)', enterNow.filter((r) => r.targetMoved === true));
     verdictLine('WATCH tocado e preenchido', 'a entrada no nivel', 'a entrada no nivel (ENGINE_ENTER_AT_LEVEL)', current.filter(isFilledWatch));
   } finally {
     await prisma.$disconnect();
@@ -666,6 +686,15 @@ async function main() {
 
   console.log(`Distancia ${distanceToInvalidation(ctxs)}.`);
   await measure('v11, configuracao de producao (ENGINE_RULES)', ctxs, withReal.length);
+  // --profiles (17/11/2026): a mesma medida em cada perfil de risco (ENGINE_RISK_PROFILE).
+  if (process.argv.includes('--profiles')) {
+    for (const profile of ['conservative', 'balanced', 'aggressive'] as const) {
+      await withProfileGates(PROFILE_GATES[profile], () => measure(`perfil ${profile}`, ctxs, withReal.length));
+      const enter = (await withProfileGates(PROFILE_GATES[profile], () => Promise.all(ctxs.map((c) => decide(c))))).filter((d) => d.state === 'ENTER_NOW');
+      const rr = enter.map((d) => Math.abs((d.levels.takeProfit1 as number) - (d.levels.entry as number)) / Math.abs((d.levels.entry as number) - (d.levels.stopLoss as number)));
+      console.log(`PERFIL ${profile}: ENTER_NOW ${enter.length}, R/R abaixo de 1: ${rr.filter((x) => x < 1).length} (${rr.map((x) => x.toFixed(2)).join(' ')})`);
+    }
+  }
 
 }
 

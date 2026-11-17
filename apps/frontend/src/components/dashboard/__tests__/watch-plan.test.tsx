@@ -93,6 +93,29 @@ describe('plano do WATCH (v10.1)', () => {
     expect(screen.queryByTestId('pending-order')).toBeNull();
   });
 
+  it('ENTER_NOW com C2 ou C7 em FAIL (chave do /admin): mostra o aviso de cada item; sem o campo, nada', () => {
+    renderResult('ENTER_NOW', null, { entryWarnings: [11] });
+    expect(screen.getByTestId('entry-warning-11').textContent).toBe('Heads up: the first level is close, so the target moved to the next level.');
+    cleanup();
+    renderResult('ENTER_NOW', null, { entryWarnings: [11, 12] });
+    expect(screen.getByTestId('entry-warning-12').textContent).toBe('Heads up: a level between entry and target 1 may stop price.');
+    cleanup();
+    renderResult('ENTER_NOW', null, { entryWarnings: [9, 10] });
+    expect(screen.getByTestId('entry-warning-9').textContent).toBe('Heads up: this trade goes against the 4h trend.');
+    expect(screen.getByTestId('entry-warning-10').textContent).toBe('Heads up: forex pairs usually need more confirmation.');
+    cleanup();
+    renderResult('ENTER_NOW', null, { entryWarnings: [8] });
+    expect(screen.getByTestId('entry-warning-8').textContent).toBe('Heads up: the move is already extended, so this entry is later than ideal.');
+    cleanup();
+    renderResult('ENTER_NOW', null, { entryWarnings: [2, 7] });
+    expect(screen.getByTestId('entry-warning-2').textContent).toBe('Heads up: the entry is not at the edge of the range.');
+    expect(screen.getByTestId('entry-warning-7').textContent).toBe('Heads up: a level that has turned price before sits between the entry and target 1.');
+    cleanup();
+    renderResult('ENTER_NOW', null);
+    expect(screen.queryByTestId('entry-warning-2')).toBeNull();
+    expect(screen.queryByTestId('entry-warning-7')).toBeNull();
+  });
+
   it('sem velas reais (dataMode print): avisa que os niveis sao estimados do print', () => {
     renderResult('ARMED', plan, { dataMode: 'print' });
     expect(screen.getByTestId('levels-estimated').textContent).toBe('Levels estimated from the screenshot');
@@ -212,6 +235,23 @@ describe('modo leitura: Read, Where price is e Action em toda analise', () => {
     expect(body).toContain('If price reaches $ 2,345.00: stop $ 2,334.50, TP1 $ 2,360.75 (1.5R).');
     expect(body).not.toContain('Rk48');
     expect(body).not.toContain('3.4R');
+  });
+
+  it('entrada pendente (chave do /admin): o WATCH com niveis vira "BUY on pullback" com entrada, stop, alvo, condicao e nota; sem o campo, como hoje', () => {
+    const watchLevels = { entry: 2345, stopLoss: 2334.5, takeProfit1: 2360.75, takeProfit2: 2380, tp1R: 1.5, riskAtr: 1.05 };
+    renderResult('WATCH', plan, { dataMode: 'real_data', watchLevels, pendingEntry: true });
+    expect(screen.getByTestId('signal-state').textContent).toBe('BUY on pullback');
+    expect(screen.getByTestId('watch-plan-title').textContent).toBe('BUY on pullback');
+    expect(screen.getByTestId('watch-not-signal').textContent).toBe('Pending entry: it only counts if price reaches the entry before the plan expires.');
+    const numbers = screen.getByTestId('watch-numbers').textContent ?? '';
+    for (const value of ['2,345', '2,334.5', '2,360.75']) expect(numbers).toContain(value);
+    expect(screen.getByTestId('watch-condition').textContent).toContain('2340');
+    cleanup();
+    renderResult('WATCH', plan, { dataMode: 'real_data', watchLevels });
+    expect(screen.getByTestId('signal-state').textContent).toBe('Watch for a buy');
+    cleanup();
+    renderResult('WATCH', plan, { dataMode: 'real_data', watchLevels: null, pendingEntry: true });
+    expect(screen.getByTestId('signal-state').textContent).toBe('Watch for a buy');
   });
 
   it('analise antiga sem watchLevels: alvos e C6 como o modelo escreveu', () => {

@@ -48,6 +48,9 @@ import {
   entrySide,
   forexPipSize,
   formatAssetPrice,
+  historicalPrintOf,
+  historicalPrintUiOf,
+  isDataQualityReason,
   signalStateLabel,
 } from '@/lib/trading-ui';
 import { asRecord } from '@/lib/utils';
@@ -627,6 +630,11 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     ? fullResponse.watchLevels
     : signalState === 'WATCH' && fullResponse.dataMode === 'real_data' && 'watchLevels' in fullResponse ? null : undefined;
   const levelsEstimated = fullResponse.dataMode === 'print';
+  const pendingEntry = fullResponse.pendingEntry === true && isWatchLevels(fullResponse.watchLevels);
+  // UI_HISTORICAL_PRINT (17/11/2026): print velho vira historico na tela; motivos do mercado antes dos de dados.
+  const historicalPrint = historicalPrintOf(fullResponse);
+  const marketReasonsFirst = historicalPrintUiOf(fullResponse);
+  const entryWarnings = Array.isArray(fullResponse.entryWarnings) ? fullResponse.entryWarnings.filter((item) => [2, 7, 8, 9, 10, 11, 12].includes(item)) : [];
   // WATCH com plano: cartao unico. Analise antiga sem plano segue no desenho anterior.
   const watchLayout = signalState === 'WATCH' && watchPlan !== null;
   const watchClosed = watchLayout && !watchWindowOpen(analysisData.watch, now);
@@ -1008,6 +1016,28 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     watchSide: watchLayout && !watchClosed && watchPlan ? (watchPlan.direction === 'long' ? 'buy' : 'sell') : null,
   };
 
+  // Perfil de risco da conta nesta analise (so quando o motor gravou e nao e o padrao).
+  const riskProfile = fullResponse.riskProfile;
+  const riskProfileLabel = riskProfile === 'conservative' || riskProfile === 'aggressive'
+    ? r.riskProfile.label.replace('{profile}', riskProfile === 'aggressive' ? r.riskProfile.aggressive : r.riskProfile.conservative)
+    : null;
+  // No agressivo o R/R pode ser baixo: diz a taxa de acerto minima para empatar.
+  const breakEvenLevels = riskProfile !== 'aggressive'
+    ? null
+    : signalState === 'ENTER_NOW' && entry !== null && stopLoss !== null && takeProfit1 !== null
+      ? { entry, stop: stopLoss, tp1: takeProfit1 }
+      : signalState === 'WATCH' && watchLevels
+        ? { entry: watchLevels.entry, stop: watchLevels.stopLoss, tp1: watchLevels.takeProfit1 }
+        : null;
+  const breakEvenText = (() => {
+    if (!breakEvenLevels || breakEvenLevels.entry === breakEvenLevels.stop) return null;
+    const rr = Math.abs(breakEvenLevels.tp1 - breakEvenLevels.entry) / Math.abs(breakEvenLevels.entry - breakEvenLevels.stop);
+    if (!Number.isFinite(rr) || rr <= 0) return null;
+    return r.riskProfile.breakEven
+      .replace('{rr}', formatNumber(rr, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }))
+      .replace('{pct}', String(Math.ceil(100 / (1 + rr))));
+  })();
+
   // Tudo o que o WATCH escreve sai daqui: numeros do servidor, frases do codigo.
   const watchText = (() => {
     if (!watchLayout || !watchPlan) return null;
@@ -1018,10 +1048,14 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     const zone = watchPlan.zoneLow === watchPlan.zoneHigh
       ? money(watchPlan.zoneLow)
       : w.zoneRange.replace('{low}', money(watchPlan.zoneLow)).replace('{high}', money(watchPlan.zoneHigh));
-    const headline = [
-      currentPrice !== null ? w.noEntryAt.replace('{price}', money(currentPrice)) : '',
-      (long ? w.waitPullback : w.waitRally).replace('{zone}', zone),
-    ].filter(Boolean).join(' ');
+    const insideZone = currentPrice !== null && currentPrice >= watchPlan.zoneLow && currentPrice <= watchPlan.zoneHigh;
+    // Preco dentro da zona: "espere o recuo ate a zona" seria contraditorio.
+    const headline = insideZone
+      ? w.inZoneWait.replace('{level}', money(long ? watchPlan.zoneLow : watchPlan.zoneHigh))
+      : [
+        currentPrice !== null ? w.noEntryAt.replace('{price}', money(currentPrice)) : '',
+        (long ? w.waitPullback : w.waitRally).replace('{zone}', zone),
+      ].filter(Boolean).join(' ');
 
     const clauses = cleanModelText(watchPlan.trigger).split(/;\s*/).filter(Boolean);
     const conditional = clauses.find((clause) => /\b(only if|only after|once|if)\b/i.test(clause));
@@ -1062,7 +1096,9 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     return {
       headline,
       condition,
-      whyWait: [...failed, ...risks].slice(0, 3),
+      whyWait: (marketReasonsFirst
+        ? [...failed, ...risks.filter((item) => !isDataQualityReason(item)), ...risks.filter((item) => isDataQualityReason(item))]
+        : [...failed, ...risks]).slice(0, 3),
       cancelled,
       oppositeLine,
       planBRepeats: opposite.length <= 1,
@@ -1180,6 +1216,16 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
         </div>
       )}
 
+      {historicalPrint ? (
+        <div key="historical-print" role="status" data-testid="historical-print" className="rounded-xl border border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)] px-4 py-3 text-sm leading-relaxed text-[var(--text-primary)]">
+          {historicalPrint.imagePrice !== null && historicalPrint.livePrice !== null
+            ? t.analysis.historicalPrint
+              .replace('{image}', formatPrice(historicalPrint.imagePrice))
+              .replace('{live}', formatPrice(historicalPrint.livePrice))
+            : t.analysis.historicalPrintNoPrices}
+        </div>
+      ) : null}
+
       <Card className="surface-terminal-elevated rounded-xl fade-in-stagger" style={{ animationDelay: '0ms' }}>
         <CardContent className="p-5 md:p-6">
           <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)] md:gap-4">
@@ -1188,11 +1234,13 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             <div
               data-testid="signal-state"
               data-closed={watchClosed ? 'true' : undefined}
-              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium ${watchClosed ? WATCH_TONE_CLASSES.neutral : signalToneClasses}`}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium ${watchClosed || historicalPrint ? WATCH_TONE_CLASSES.neutral : signalToneClasses}`}
             >
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{watchClosed ? r.watch.chipClosed : watchLayout ? (watchPlan?.direction === 'long' ? r.watch.chipBuy : r.watch.chipSell) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
+              <span>{historicalPrint ? t.analysis.historicalPrintChip : watchClosed ? r.watch.chipClosed : watchLayout ? (watchPlan?.direction === 'long' ? (pendingEntry ? r.watch.pendingBuy : r.watch.chipBuy) : (pendingEntry ? r.watch.pendingSell : r.watch.chipSell)) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
             </div>
+            {riskProfileLabel ? <span data-testid="risk-profile-label" className="whitespace-nowrap text-xs text-[var(--text-secondary)]">{riskProfileLabel}</span> : null}
+            {breakEvenText ? <span data-testid="risk-breakeven" className="text-xs tabular-nums text-[var(--text-secondary)]">{breakEvenText}</span> : null}
             {/* Janela encerrada: o selo fica cinza e o desfecho (o que o mercado fez) vem ao lado, pela regra unica. */}
             {watchClosed && analysisData.watch ? (
               <span key="closed-verdict" data-testid="closed-verdict" className="contents">
@@ -1328,10 +1376,12 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             symbol={symbol}
             formatPrice={formatPrice}
             estimated={levelsEstimated}
+            pending={pendingEntry}
+            targetMoved={fullResponse.targetMoved === true && isWatchLevels(fullResponse.watchLevels)}
             watch={analysisData.watch}
             reach={analysisData.fullResponse?.watchReach ?? null}
             condition={watchText.condition}
-            actionsFor={alertsEnabled && !sample && !isDemo && analysisData.id ? analysisData.id : null}
+            actionsFor={alertsEnabled && !sample && !isDemo && !historicalPrint && analysisData.id ? analysisData.id : null}
             base={base}
             closed={watchClosed}
             now={now}
@@ -1431,6 +1481,11 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             {levelsEstimated && (
               <p data-testid="levels-estimated" className="text-xs text-[var(--text-secondary)]">{r.levelsEstimated}</p>
             )}
+            {entryWarnings.map((item) => (
+              <p key={item} data-testid={`entry-warning-${item}`} className="text-xs text-[var(--accent-yellow)]">
+                {item === 2 ? r.entryWarningLocation : item === 7 ? r.entryWarningRoom : item === 8 ? r.entryWarningLate : item === 9 ? r.entryWarningTrend : item === 10 ? r.entryWarningForex : item === 12 ? r.entryWarningLevelInPath : r.entryWarningNextTarget}
+              </p>
+            ))}
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {signalState === 'ARMED' && entry !== null && !invalidTradePlan && (

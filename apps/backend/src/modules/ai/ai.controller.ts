@@ -258,7 +258,7 @@ export class AiController {
     const dbUserId = await this.resolveDbUserId(user);
     if (!dbUserId) return { profile: null, paid: false };
     const paid = await this.aiService.hasPaidAccess(dbUserId);
-    return { profile: await this.aiService.getStrategy(dbUserId), paid };
+    return { ...(await this.aiService.getStrategyWithRisk(dbUserId)), paid };
   }
 
   @Put('strategy')

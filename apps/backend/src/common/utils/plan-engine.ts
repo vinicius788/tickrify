@@ -11,6 +11,7 @@
 // Velas no formato [ts, o, h, l, c, ...] em ordem cronologica, todas fechadas.
 // ============================================================================
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { REACH_TABLE, STOP_MARGIN_P80 } from './engine-calibration';
 
 /** Limites do motor e do validador. Recalibrar AQUI, e so aqui. */
@@ -62,6 +63,51 @@ export const ENGINE_RULES = {
   /** probabilityTp1 fica a no maximo isto da confianca. */
   probabilityTp1Band: 3,
 } as const;
+
+// ─── Perfis de risco (ENGINE_RISK_PROFILE, 17/11/2026) ───────────────────────
+// O validador roda sobre a MESMA resposta do modelo com regras diferentes por
+// perfil. Cada perfil so mexe em preferencias; plano invalidado, risco fora de
+// 0,5 a 2 ATR, noticia, print antigo (sem velas o perfil nao muda nada) e
+// imagem que nao e grafico valem para todos.
+
+export type EngineProfile = 'conservative' | 'balanced' | 'aggressive';
+
+/** Regras que um perfil sobrescreve; ausente = a chave do /admin de hoje. */
+export interface ProfileGates {
+  permissive?: boolean;
+  snapMode?: 0 | 1 | 2;
+  enterChecks?: readonly number[];
+  lateAsWarning?: boolean;
+  /** Alvo minimo em R (entrada a mercado e no nivel). */
+  tp1MinR?: number;
+  /** PASS minimos do ENTER_NOW. */
+  minPass?: number;
+  /** Perfil elegivel ao C6 pela geometria real (ENGINE_C6_FROM_GEOMETRY): so o Arriscado. */
+  c6FromGeometry?: boolean;
+}
+
+/**
+ * Conservador = o motor antes do modo permissivo; Equilibrado = as chaves de
+ * hoje; Arriscado = alvo a partir de 0,7R, 3 PASS, atrasado e contra o 4h
+ * como aviso (valores do replay gratis de 17/11/2026).
+ */
+export const PROFILE_GATES: Record<EngineProfile, ProfileGates> = {
+  conservative: { permissive: false, snapMode: 0, enterChecks: ENGINE_RULES.enterNowChecks, lateAsWarning: false },
+  balanced: {},
+  aggressive: { permissive: true, tp1MinR: 0.7, minPass: 3, lateAsWarning: true, c6FromGeometry: true },
+};
+
+const profileGates = new AsyncLocalStorage<ProfileGates>();
+
+/** As regras do perfil em execucao ({} fora de `withProfileGates`). */
+export function currentGates(): ProfileGates {
+  return profileGates.getStore() ?? {};
+}
+
+/** Roda `fn` com as regras do perfil; seguro com await (AsyncLocalStorage). */
+export function withProfileGates<T>(gates: ProfileGates, fn: () => T): T {
+  return profileGates.run(gates, fn);
+}
 
 export type TriggerType = 'zone_reaction' | 'sweep_reclaim' | 'breakout_close';
 export const TRIGGER_TYPES: readonly TriggerType[] = ['zone_reaction', 'sweep_reclaim', 'breakout_close'];
@@ -247,7 +293,7 @@ export function entryLevels(plan: WatchPlan, atr: number, entry: number, marginA
   const riskAtr = risk / atr;
   if (riskAtr > R.riskMaxAtr) return 'stop_out_of_range';
   const room = (long ? plan.target1 - entry : entry - plan.target1) / risk;
-  if (room < R.tp1MinR) return 'no_room';
+  if (room < (currentGates().tp1MinR ?? R.tp1MinR)) return 'no_room';
   const tp1R = Math.min(room, R.tp1CapR);
   const takeProfit1 = room <= R.tp1CapR ? plan.target1 : precise(long ? entry + tp1R * risk : entry - tp1R * risk);
   const t2 = plan.target2;
