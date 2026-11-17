@@ -222,6 +222,58 @@ describe('StripeService.createCheckoutSession', () => {
     });
   });
 
+  describe('moeda local (currency_options do price USD)', () => {
+    const withOptions = (options: Record<string, number>) =>
+      stripe.prices.retrieve.mockResolvedValue({
+        id: PRICE, active: true, type: 'recurring', currency: 'usd', livemode: false, unit_amount: 2900,
+        currency_options: Object.fromEntries(Object.entries(options).map(([c, unit]) => [c, { unit_amount: unit }])),
+      });
+    const open = (local: 'usd' | 'eur' | 'jpy') =>
+      service.createCheckoutSession('clerk_1', 'starter', 'monthly', 'usd', 'EARLY35', 'pricing', { consent: false }, undefined, undefined, local);
+
+    it('cobra na moeda que a tela mostrou quando o price tem a opcao, sempre no MESMO price USD', async () => {
+      withOptions({ eur: 2700 });
+      await open('eur');
+      const params = stripe.checkout.sessions.create.mock.calls[0][0];
+      expect(params.currency).toBe('eur');
+      expect(params.line_items).toEqual([{ price: PRICE, quantity: 1 }]);
+      expect(params.metadata).toMatchObject({ currency: 'eur', priceId: PRICE });
+      expect(params.discounts).toEqual([{ coupon: 'EARLY35' }]);
+    });
+
+    it('price sem a opcao pedida: cobra em USD em vez de falhar', async () => {
+      withOptions({});
+      await open('eur');
+      expect(stripe.checkout.sessions.create.mock.calls[0][0].currency).toBe('usd');
+    });
+
+    it('sem pedido de moeda continua em USD', async () => {
+      withOptions({ eur: 2700 });
+      await open('usd');
+      expect(stripe.checkout.sessions.create.mock.calls[0][0].currency).toBe('usd');
+    });
+
+    it('nao reaproveita sessao aberta em outra moeda', async () => {
+      withOptions({ eur: 2700 });
+      stripe.checkout.sessions.list.mockResolvedValue({
+        data: [{
+          id: 'cs_old', mode: 'subscription', currency: 'usd', url: 'https://checkout.stripe.com/c/pay/cs_old',
+          expires_at: Math.floor(Date.now() / 1000) + 3600, metadata: { priceId: PRICE, coupon: 'EARLY35' },
+        }],
+      });
+      const result = await open('eur');
+      expect(stripe.checkout.sessions.expire).toHaveBeenCalledWith('cs_old');
+      expect(result.reused).toBe(false);
+    });
+
+    it('precos publicos em unidade normal, com iene sem centavos', async () => {
+      withOptions({ eur: 2700, jpy: 4500 });
+      const prices = await service.getPublicPrices();
+      expect(prices.currencies).toEqual(['usd', 'eur', 'jpy']);
+      expect(prices.plans.monthly).toEqual({ usd: 29, eur: 27, jpy: 4500 });
+    });
+  });
+
   it('semanal: preco semanal, sem EARLY35 e sem endereco obrigatorio', async () => {
     await service.createCheckoutSession('clerk_1', 'starter', 'weekly', 'usd', 'EARLY35');
 
@@ -388,7 +440,7 @@ describe('StripeService.createCheckoutSession', () => {
     const now = Math.floor(Date.now() / 1000);
     stripe.checkout.sessions.list.mockResolvedValue({
       data: [
-        { id: 'cs_same', mode: 'subscription', url: 'https://checkout.stripe.com/c/pay/cs_same', expires_at: now + 3600, metadata: { priceId: PRICE, coupon: 'EARLY35' } },
+        { id: 'cs_same', mode: 'subscription', currency: 'usd', url: 'https://checkout.stripe.com/c/pay/cs_same', expires_at: now + 3600, metadata: { priceId: PRICE, coupon: 'EARLY35' } },
         { id: 'cs_old', mode: 'subscription', url: 'https://checkout.stripe.com/c/pay/cs_old', expires_at: now + 3600, metadata: {} },
       ],
     });

@@ -1,11 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { type Currency } from '@/lib/stripe';
 import { warmupPaymentsApi } from '@/lib/api';
 import { track } from '@/lib/analytics';
 import { interpolate } from '@/lib/i18n';
-import { firstMonthPrice, useFoundingOffer } from '@/hooks/useFoundingOffer';
+import { firstMonthPrice, useFoundingOffer, useLocalPrices } from '@/hooks/useFoundingOffer';
 
 // PLANO ÚNICO (decisão 27/07/2026, Fase 2 da auditoria).
 //
@@ -29,7 +28,6 @@ import { firstMonthPrice, useFoundingOffer } from '@/hooks/useFoundingOffer';
 // O preço no Stripe continua sendo o objeto `Starter-usd`
 // (price_1TRvEJB1hl0IoocUvbCyxkt5), editado $12 → $19 → $29 — o ID nunca
 // mudou, então o backend não precisa de novo price ID.
-const PLAN_PRICE: Record<Currency, string> = { brl: '$29', usd: '$29', eur: '$29' };
 const PLAN_TICKS = 200;
 
 const Check = () => (
@@ -43,11 +41,10 @@ const PricingSection = () => {
   const pr = t.landing.pricing;
   // Mesmo estado do checkout: com o EARLY35 ativo na Stripe o mensal mostra o
   // preco do 1o mes; sem resposta da API, $29 como sempre.
-  const offerPrice = firstMonthPrice(useFoundingOffer(), language);
-
-  // Produto global: preço sempre em USD, independente do idioma do site.
-  // Trader pensa em dólar, e fixar evita surpresa com o locale do navegador.
-  const currency: Currency = 'usd';
+  // Preco na moeda da pessoa (13/11/2026); sem resposta da API, USD.
+  const local = useLocalPrices(language);
+  const offerPrice = firstMonthPrice(useFoundingOffer(), language, local);
+  const monthlyPrice = local.price('monthly');
 
   // Acorda a API de pagamentos (o Render hiberna) já na landing, antes do clique.
   useEffect(() => {
@@ -77,7 +74,7 @@ const PricingSection = () => {
     return () => observer.disconnect();
   }, []);
 
-  const features = [pr.fS1, pr.fS2, pr.fS3, pr.fS4];
+  const features = [pr.fS1, pr.fS2, pr.fS3, pr.fS4].map((feature) => interpolate(feature, local.params));
 
   return (
     <section id="pricing" ref={sectionRef} className="site-light">
@@ -94,16 +91,16 @@ const PricingSection = () => {
               <div className="site-price-amt">
                 <s>
                   <span className="sr-only">{t.commercial.offerRegular} </span>
-                  {PLAN_PRICE[currency]}
+                  {monthlyPrice}
                 </s>
                 <b>{offerPrice}</b>
                 <span>{t.commercial.offerFirstMonth}</span>
               </div>
-              <p className="site-price-then">{t.commercial.offerThen}</p>
+              <p className="site-price-then">{interpolate(t.commercial.offerThen, local.params)}</p>
             </>
           ) : (
             <div className="site-price-amt">
-              <b>{PLAN_PRICE[currency]}</b>
+              <b>{monthlyPrice}</b>
               <span>{pr.perMonth}</span>
             </div>
           )}
@@ -125,14 +122,14 @@ const PricingSection = () => {
               nao fecha para boa parte do publico (11 de 12 checkouts sem cartao
               ate 29/09), e a home so mostrava o mensal. */}
           <p className="site-price-fine">
-            <Link to="/pricing?cycle=weekly">{pr.weeklyLine}</Link>
+            <Link to="/pricing?cycle=weekly">{interpolate(pr.weeklyLine, local.params)}</Link>
           </p>
 
           {/* Era "compre Ticks avulsos no painel · Ticks nunca expiram": o painel
               nao vende avulso e, desde 21/09/2026, o saldo do assinante volta
               para 200 a cada mes (nao acumula). As duas partes eram falsas. */}
           <p className="site-price-fine">{t.commercial.tickCosts}</p>
-          {offerPrice ? null : <p className="site-price-fine">{t.commercial.monthlyRenewal}</p>}
+          {offerPrice ? null : <p className="site-price-fine">{interpolate(t.commercial.monthlyRenewal, local.params)}</p>}
           <p className="site-price-fine">{pr.monthlyReset}</p>
         </div>
 

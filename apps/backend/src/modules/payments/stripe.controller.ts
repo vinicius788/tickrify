@@ -16,7 +16,7 @@ import { StripeService } from './stripe.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthGuard } from '../auth/auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
-import { BillingCycle, Currency } from '../../config/stripe.config';
+import { BillingCycle, Currency, isChargeCurrency } from '../../config/stripe.config';
 import { Throttle } from '@nestjs/throttler';
 import { CreateCheckoutSessionDto } from './dto/create-checkout-session.dto';
 import type { MetaAdsContext } from '../../common/analytics/meta-capi';
@@ -76,6 +76,10 @@ export class StripeController {
     // para assinaturas LEGADAS resolverem os ticks certos; nenhum checkout novo
     // chega neles.
     const currency: Currency = 'usd';
+    // A moeda de COBRANCA (13/11/2026) e outra coisa: escolhe uma das
+    // `currency_options` do MESMO price USD, conferida no servico. Nao abre
+    // caminho para price legado nenhum.
+    const localCurrency = isChargeCurrency(body.localCurrency) ? body.localCurrency : 'usd';
 
     const coupon = body.coupon === 'EARLY35' ? body.coupon : undefined;
 
@@ -91,6 +95,7 @@ export class StripeController {
         ? { code: body.affiliateCode, kind: body.affiliateKind, clickId: body.affiliateClickId ?? null }
         : undefined,
       body.offerCode,
+      localCurrency,
     );
   }
 
@@ -168,6 +173,18 @@ export class StripeController {
    * pode estar sem login. O codigo tem 8 caracteres sorteados (~1 trilhao de
    * combinacoes) e a rota so devolve "ativa, preco, vagas, validade".
    */
+  /**
+   * Precos do plano em cada moeda de cobranca, lidos da Stripe (13/11/2026).
+   * Publica porque a /pricing e a home mostram o preco para quem nao esta
+   * logado. Valores em unidade normal (29, 27, 4500).
+   */
+  @Public()
+  @Get('prices')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  getPrices() {
+    return this.stripeService.getPublicPrices();
+  }
+
   @Public()
   @Get('founder-offer')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })

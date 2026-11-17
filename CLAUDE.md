@@ -164,7 +164,8 @@ Vale para TODA mudanca, grande ou pequena:
   assinante e NO MAXIMO 200: no inicio de cada janela mensal volta a ser
   exatamente 200 (nao acumula). Quick = 1 tick, deep = 3. Free = 3 analises
   quick (deep so para assinante). Na UI se fala em "analyses"; "ticks" e so
-  unidade de cobranca. Checkout sempre em USD. **O Adaptive Pricing NAO
+  unidade de cobranca. Price sempre o de USD; a moeda cobrada pode ser local
+  (3.3, moeda local). **O Adaptive Pricing NAO
   converte** (lido no Sigma em 13/11/2026: 0 de ~100 sessoes com
   `is_adaptive_pricing_active`, embora ligado no painel): a conta e BR e
   liquida em BRL, e ele exige preco numa moeda de liquidacao da conta.
@@ -411,9 +412,24 @@ Vale para TODA mudanca, grande ou pequena:
   pagou, `is_adaptive_pricing_active`). Marca do Checkout ja usa as cores do
   site (cor da marca `#f7f7f5`, destaque `#08090a`, "Usar cores da marca") e o
   logo oficial.
-- **Moeda fixa `usd` no servidor** (controller ignora o body). E fronteira de
-  seguranca, nao preferencia: nao reverter. Price IDs BRL/EUR e planos
-  `pro`/`elite` ficam no `stripe.config.ts` so como legado.
+- **Moeda fixa `usd` no servidor** (controller ignora o `currency` do body). E
+  fronteira de seguranca, nao preferencia: nao reverter. O price e SEMPRE o de
+  USD. Price IDs BRL/EUR e planos `pro`/`elite` ficam no `stripe.config.ts` so
+  como legado.
+- **Moeda local (16/11/2026, branch `claude/local-currency`):** EUR, GBP, JPY,
+  CAD e AUD saem das `currency_options` do MESMO price de USD (valor = o dolar
+  convertido e arredondado, decisao do dono em 13/11). `GET /api/stripe/prices`
+  (publica, cache de 10 min) devolve os valores que existem na Stripe; o site
+  escolhe a moeda pelo fuso (`detectChargeCurrency`, `localPricesFrom` em
+  `hooks/useFoundingOffer.ts`) e so mostra moeda local se os 3 ciclos tiverem
+  valor nela, senao tudo em USD. O checkout recebe `localCurrency` (lista
+  fechada `CHARGE_CURRENCIES`) e o servidor so a usa se o price tiver a opcao
+  (`sessionCurrencyFor`); Founding Member sempre USD. Sessao aberta so e
+  reaproveitada na mesma moeda. Valores da Stripe em unidade menor sempre por
+  `toMajorUnits` (iene nao tem centavos). Comissao de afiliado em USD pela
+  proporcao do price (`usdByPriceRatio`). HTML cru (`geo-body.mjs`) e e-mails
+  seguem em USD. **Sem `currency_options` cadastradas na Stripe, tudo fica
+  igual a antes (USD).**
 - **Webhook na API `2025-07-30.basil`:** a fatura traz a assinatura em
   `parent.subscription_details`, nao no topo (`invoiceSubscriptionRef` le os dois
   formatos). Todo campo novo lido do payload: conferir no formato basil.
@@ -1177,6 +1193,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 | Desde | Item | Quem |
 |---|---|---|
+| 16/11 | **Moeda local (3.3): cadastrar as `currency_options` na Stripe depois do deploy, so com OK do dono.** Valores propostos (dolar convertido e arredondado): semanal / mensal / anual em EUR 7,49/27/270, GBP 6,49/23/230, JPY 1200/4500/45000, CAD 10,99/39/390, AUD 11,99/44/440 nos prices `price_1UKeWPB1hl0IoocUjsQNv9BG` (semanal), `price_1TRvEJB1hl0IoocUvbCyxkt5` (mensal), `price_1TRvKHB1hl0IoocU3N7MMGcG` (anual). Depois: `/api/stripe/prices` com as moedas, e uma sessao de teste por moeda (fuso trocado no navegador) conferindo que a pagina da Stripe mostra o mesmo valor do site. Telefone de suporte da Stripe: trocar quando o dono mandar o numero. | dono / Claude |
 | 17/11 | **`ENGINE_NEXT_TARGET` (alvo no proximo nivel).** Com a chave ligada, primeiro nivel a menos de 1R da entrada e o seguinte (target2) a 1R ou mais: TP1 vai para o seguinte (teto 1,5R), aviso "first level is close, so the target moved to the next level" (6 idiomas, `entryWarnings` 11), `result.targetMoved`, serie propria na aba Motor. Vale a mercado e no nivel do Watch. Medido nos planos da D (17/11): 7 de 13 com TP1 abaixo de 1R, 5 deles com o proximo nivel a 1R ou mais. Replay gratis (20 prints, `ENGINE_PERMISSIVE`=1), sem/com regra: v11 2/4/14 -> 3/3/14 e 1/1/18 -> 2/0/18; D 0/5/15 -> 5/1/14 e 3/3/14 -> 5/3/12. R/R planejado do TP1 sempre >= 1R por construcao; resultado medido da D1 com a regra: 4 decididos, 1 alvo, -0,38R (amostra minima). Valor anterior em producao: desligada (padrao do codigo). | dono / Claude |
 | 17/11 | **Prompt D (`PROMPT_VARIANT_D_PERCENT`, `PROMPT_D_CHANGES` sobre a C).** Diagnostico: o modelo recebe ATR14 e as ultimas 5 swings em preco no REAL DATA, mas nao a distancia delas; escolhia invalidacao a 2,8 a 2,95 ATR (mediana) e o alvo fica a ~1,26 ATR, entao a mercado quase nunca vale. D: invalidacao na swing confirmada mais proxima a ate 2 ATR, distancia escrita em ATR no [PLAN], Enter now com direcao + C3 + C6 + 4 PASS, No trade so com motivo. Replay pago 17/11 (20 prints de cripto, US$ 0,20, `_local/replay-2026-11-16/`, ENGINE_PERMISSIVE=1): v11 (2 rodadas) final Enter/Watch/No 2/4/14 e 1/1/18, inv mediana 2,95 e 2,67 ATR; D (2 rodadas) 0/5/15 e 3/3/14, inv 1,12 e 1,24 ATR. No trade do proprio modelo igual (~10 de 20); `no_valid_geometry` caiu de 8 para 4-5; o que sobra e `market_entry_invalid` (alvo a menos de 1R). Ligada em 10%. |  dono / Claude |
 | 16/11 | **Chaves do motor LIGADAS em producao em 16/11/2026 ~18:35 UTC (lido no /admin, a pedido do dono).** Todas estavam no padrao do codigo. `SETUP_ALERT_NEAR`: desligada -> true. `ENTER_NOW_AUTO_ALERTS`: desligada -> true. `ENGINE_WATCH_ON_REJECTED_GEOMETRY`: desligada -> true. `ENGINE_PERMISSIVE`: 0 -> 1. `PROMPT_VARIANT_C_PERCENT`: 0 -> 10. Seguem em 0/desligadas de proposito: `ENGINE_SNAP_FALLBACK`, `ENGINE_ENTER_REQUIRED_CHECKS`, `ENGINE_LATE_AS_WARNING` (o permissivo cobre as tres). Reverter = botao "reverter" da chave no /admin. Corte de medicao: analises a partir de 16/11 18:35 UTC. Criterio: serie propria de cada chave na aba Motor, manter a partir de -0,05R com 20 a 30 casos, voltar em -0,15R; prompt C volta a 0 se ficar 0,10R ou mais abaixo da A com 30 trades por variante. `ENGINE_PENDING_ENTRY_LABEL` (0/1, so apresentacao, branch `claude/pending-entry-label`): 1 = Watch com `watchLevels` validos aparece como "BUY on pullback" / "SELL on pullback" (chip e titulo do `WatchPlanCard`, 6 idiomas), grava `result.pendingEntry`; serie propria na aba Motor = Watch com `pendingEntry` preenchido pelo rastreador. Estado, validador e listas nao mudam. Textos dos avisos (C2, C7, atraso, contra o 4h, forex) aprovados pelo dono em 16/11. | dono / Claude |
@@ -1260,6 +1277,7 @@ antigo. Ao fechar, mover para a secao 7 no mesmo commit.
 
 Uma linha por marco. Detalhe completo no arquivo historico em `_local/`.
 
+- **16/11 (moeda local):** preco e checkout em EUR/GBP/JPY/CAD/AUD pelas `currency_options` do price de USD (3.3); dormente ate os valores serem cadastrados na Stripe. Telefone de suporte da Stripe: o dono diz que +55 31 98672 0240 nao e dele; a Stripe exige um numero e ele aparece no extrato do cartao. Trocar quando o dono mandar o novo.
 - **16/11 (auditoria do motor):** mapa de 21 bloqueios, prompt antigo (v1 do banco) avaliado como ilusao (nao emite entrada, stop nem alvo), consulta ao banco e duas chaves novas desligadas. Ver 6.2.
 - **13/11 (checkout, confianca):** FAQ de pagamento lista cartao, Apple Pay, Google Pay e Link, cobranca em USD e o que fazer com cartao recusado; "Is there a refund guarantee?" virou "Can I get a refund?" com a politica real (periodo iniciado nao reembolsa, trial antes, Tick de analise que falha volta sozinho); Termos (secao 15) trocam "three analyses are free" pelo trial de 3 dias; 6 idiomas; comentario errado sobre Adaptive Pricing e Pix no `stripe.service.ts` corrigido.
 - **12/11 (paginas estaticas e PostHog):** 14 paginas de blog, /for e /tools e o llms.txt deixam de prometer entry/stop/targets (ou BUY/SELL/WAIT, dois alvos, niveis desenhados no grafico) em toda leitura: falam Enter now / Watch / No trade; dateModified e sitemap em 2026-11-12. PostHog: filtro de usuarios internos por e-mail (contas do dono e `tickrify+*`) ligado por padrao; insights "Alerta de trafego" e 4 alertas (visitantes -30% na semana, ChatGPT -40%, cadastros -30%, menos de 10 visitantes no dia), aviso por e-mail ao dono. Ligadas no /admin em 12/11: `CHAT_EMAIL_NOTIFY`, `EMAIL_TRIAL_SEQUENCE`, `EMAIL_PAYMENT_FAILED` (texto conferido contra o acesso: past_due perde o plano).

@@ -6,8 +6,8 @@ import { buildApiUrl, warmupPaymentsApi } from "../../lib/api";
 import { getReferralCoupon, isAffiliateCode, saveReferralCoupon } from "../../lib/attribution";
 import { track } from "../../lib/analytics";
 import { useToast } from "../../hooks/use-toast";
-import { firstMonthPrice, useFounderOffer, useFoundingOffer } from "@/hooks/useFoundingOffer";
-import { interpolate, LOCALES, formatNumber, formatUsd, type Language, type Translations } from "@/lib/i18n";
+import { firstMonthPrice, useFounderOffer, useFoundingOffer, useLocalPrices } from "@/hooks/useFoundingOffer";
+import { interpolate, LOCALES, formatNumber, type Language, type Translations } from "@/lib/i18n";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import {
   FOUNDER_CODE_PATTERN,
@@ -27,7 +27,6 @@ const Check = () => (
   </svg>
 );
 
-type PriceMap = Record<BillingCycle, Record<Currency, string>>;
 
 /**
  * Cupom de parceiro digitado no site. So identifica o afiliado: o servidor
@@ -98,25 +97,13 @@ function PartnerCode({ copy }: { copy: Translations["pricingChrome"] }) {
 
 type Plan = {
   id: "starter";
-  prices: PriceMap;
 };
 
 // PLANO ÚNICO. Os tiers Pro e Elite saíram da vitrine em 27/07/2026 — eles
 // diferiam so em volume e o Starter era mais caro por analise que o pacote
 // avulso. Os price IDs antigos continuam no backend para assinaturas legadas.
-// Checkout sempre em USD (ver `currency` abaixo), então os campos brl/eur são
-// só rótulo e repetem o valor em dólar de propósito.
-const PLANS: Plan[] = [
-  {
-    id: "starter",
-    prices: {
-      weekly:  { brl: "$7.99", usd: "$7.99", eur: "$7.99" },
-      monthly: { brl: "$29", usd: "$29", eur: "$29" },
-      yearly:  { brl: "$290", usd: "$290", eur: "$290" },
-    },
-
-  },
-];
+// O preco mostrado vem de `useLocalPrices` (moeda da pessoa, 13/11/2026).
+const PLANS: Plan[] = [{ id: "starter" }];
 
 const CYCLES_FROM_URL: readonly BillingCycle[] = ["weekly", "monthly", "yearly"];
 
@@ -148,7 +135,8 @@ export function PricingCards() {
   // "$29" e o paywall do painel, "$18.85 no 1o mes" (05/10/2026). Some junto
   // com o cupom e nunca aparece no semanal nem no anual (o servidor descarta).
   const foundingOffer = useFoundingOffer();
-  const offerPrice = firstMonthPrice(foundingOffer, language);
+  const local = useLocalPrices(language);
+  const offerPrice = firstMonthPrice(foundingOffer, language, local);
   // Oferta Founding Member: so existe com um link pessoal valido. Sem codigo, ou
   // com codigo usado ou vencido, a pagina fica exatamente como sempre foi.
   const [offerCode] = useState<string | null>(() => offerFromUrl());
@@ -204,7 +192,8 @@ export function PricingCards() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Global product: prices always in USD, regardless of site language.
+  // Price ID sempre o USD (fronteira do servidor). A moeda COBRADA e
+  // `local.currency`, a mesma que o card mostra.
   const currency: Currency = "usd";
 
   // Acorda a API de pagamentos assim que a página de planos monta, para que o
@@ -273,13 +262,15 @@ export function PricingCards() {
          * o anual tambem ia com ele (US$ 290 virava US$ 188,50). O servidor
          * descarta igual; mandar so aqui evita sessao marcada com cupom. */
         const coupon = cycle === "monthly" && !offer ? "EARLY35" : undefined;
-        const { url, sessionId } = await createCheckoutSession(planType, token, cycle, currency, coupon, source, offer);
+        // Founding Member promete US$ 15: segue em USD (o servidor tambem forca).
+        const chargeCurrency = offer ? "usd" : local.currency;
+        const { url, sessionId } = await createCheckoutSession(planType, token, cycle, currency, coupon, source, offer, chargeCurrency);
         // Dispara SO com a URL da Stripe em maos: antes saia antes da chamada a
         // API e contava clique como checkout, inclusive quando a sessao falhava.
         track('checkout_started', {
           plan: planType,
           billingCycle: cycle,
-          currency,
+          currency: chargeCurrency,
           coupon: coupon ?? null,
           ...(offer ? { offer: true } : {}),
           source,
@@ -330,7 +321,7 @@ export function PricingCards() {
         }
       }
     },
-    [getToken, isSignedIn, toast, billingCycle, currency, copy, t, language],
+    [getToken, isSignedIn, toast, billingCycle, currency, local.currency, copy, t, language],
   );
 
   // Retomada depois do login/cadastro: a URL traz a intencao (caminho normal) e
@@ -440,11 +431,11 @@ export function PricingCards() {
           const cardCopy = billingCycle === "weekly" ? weeklyCopy : billingCycle === "yearly"
             ? { ...baseCopy, features: baseCopy.features.slice(0, 3) }
             : baseCopy;
-          const renewalNote = billingCycle === "yearly" ? copy.yearlyRenewal
-            : billingCycle === "monthly" ? copy.monthlyRenewal : weeklyCopy.note;
+          const renewalNote = interpolate(billingCycle === "yearly" ? copy.yearlyRenewal
+            : billingCycle === "monthly" ? copy.monthlyRenewal : weeklyCopy.note, local.params);
           const perCycle =
             billingCycle === "weekly" ? copy.perWeek : billingCycle === "monthly" ? copy.perMonth : copy.perYear;
-          const price = formatUsd(Number(plan.prices[billingCycle][currency].slice(1)), language);
+          const price = local.price(billingCycle);
           // EARLY35 so no mensal (regra 4.0): semanal e anual nunca riscam o preco.
           const monthlyOffer = billingCycle === "monthly" ? offerPrice : null;
           return (
@@ -460,7 +451,7 @@ export function PricingCards() {
                   <b>{monthlyOffer}</b>
                   <span>{t.commercial.offerFirstMonth}</span>
                 </div>
-                <p className="site-price-then">{t.commercial.offerThen}</p>
+                <p className="site-price-then">{interpolate(t.commercial.offerThen, local.params)}</p>
               </>
             ) : (
               <div className="site-price-amt">
@@ -476,7 +467,7 @@ export function PricingCards() {
               {cardCopy.features.map((feature) => (
                 <li key={feature}>
                   <Check />
-                  {feature}
+                  {interpolate(feature, local.params)}
                 </li>
               ))}
             </ul>

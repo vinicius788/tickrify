@@ -1,5 +1,5 @@
 import { IsBoolean, IsEnum, IsIn, IsOptional, Matches } from 'class-validator';
-import { BillingCycle, Currency, PlanType } from '../../../config/stripe.config';
+import { BillingCycle, CHARGE_CURRENCIES, ChargeCurrency, Currency, PlanType } from '../../../config/stripe.config';
 
 enum PlanTypeDto {
   STARTER = 'starter',
@@ -31,6 +31,15 @@ export class CreateCheckoutSessionDto {
   @IsOptional()
   @IsEnum(CurrencyDto)
   currency?: Currency;
+
+  /**
+   * Moeda em que a pessoa VIU o preco (lista fechada). Nao escolhe price ID:
+   * o servidor segue no price USD e so cobra nesta moeda se o price tiver a
+   * opcao cadastrada na Stripe, no valor do dolar pelo cambio.
+   */
+  @IsOptional()
+  @IsIn([...CHARGE_CURRENCIES])
+  localCurrency?: ChargeCurrency;
 
   /**
    * Cupom pré-aplicado no checkout (whitelist — nunca aceitar cupom arbitrário

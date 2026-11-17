@@ -1,6 +1,7 @@
 // Cliente Stripe para o frontend
 import { API_BASE_URL } from './api';
 import { getAdsPayload, getReferralPayload } from './attribution';
+import type { ChargeCurrency } from '@/hooks/useFoundingOffer';
 
 export type BillingCycle = 'monthly' | 'yearly' | 'weekly';
 export type Currency = 'brl' | 'usd' | 'eur';
@@ -16,8 +17,13 @@ export type PlanType = 'starter' | 'pro' | 'elite';
 // Manter 18 objetos de preço (3 planos × 2 ciclos × 3 moedas) sincronizados à
 // mão é o que criou o bug — e o recriaria no próximo reajuste. Com USD único
 // sobra 1 preço para manter, e a Stripe converte para a moeda local do cliente
-// no checkout via Adaptive Pricing, na cotação do dia. O tipo `Currency` segue
-// com as três moedas porque assinaturas LEGADAS ainda resolvem por elas.
+// no checkout. O tipo `Currency` segue com as três moedas porque assinaturas
+// LEGADAS ainda resolvem por elas.
+//
+// 13/11/2026: o Adaptive Pricing nunca converteu (conta BR liquida em BRL). A
+// moeda local agora e `localCurrency`: uma das `currency_options` do MESMO
+// price USD, escolhida pelo fuso (`useLocalPrices`) e conferida no servidor.
+// O price ID continua sempre o USD.
 
 function isLocalHostname(hostname: string) {
   return hostname === 'localhost' || hostname === '127.0.0.1';
@@ -167,6 +173,7 @@ export async function createCheckoutSession(
   coupon?: 'EARLY35',
   source?: 'pricing' | 'locked_value' | 'last_free_result' | 'upgrade_modal',
   offerCode?: string,
+  localCurrency: ChargeCurrency = 'usd',
 ) {
   const session = await requestStripeApi<{ sessionId: string; url: string }>(
     '/api/stripe/create-checkout-session',
@@ -180,6 +187,8 @@ export async function createCheckoutSession(
         planType,
         billingCycle,
         currency,
+        // Moeda em que a tela mostrou o preco: o checkout cobra nela.
+        localCurrency,
         ...(coupon ? { coupon } : {}),
         ...(source ? { source } : {}),
         // Link pessoal Founding Member: o servidor confere o codigo na Stripe.

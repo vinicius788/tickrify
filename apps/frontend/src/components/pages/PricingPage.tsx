@@ -4,13 +4,15 @@ import { PricingCards } from '@/components/pricing/PricingCards';
 import TestimonialsSection from '@/components/landing/TestimonialsSection';
 import { seoFor, useJsonLd, useSeo } from '@/hooks/useSeo';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { useFoundingOffer } from '@/hooks/useFoundingOffer';
+import { useFoundingOffer, useLocalPrices } from '@/hooks/useFoundingOffer';
+import { interpolate } from '@/lib/i18n';
 
 
 
 export default function PricingPage() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const copy = t.pricingPage;
+  const local = useLocalPrices(language);
   const foundingOffer = useFoundingOffer();
 
   // Intenção transacional pura, e até 10/08/2026 esta página servia o title e
@@ -82,7 +84,7 @@ export default function PricingPage() {
             <div className="site-founding">
               <span className="site-eyebrow">{copy.foundingTitle}</span>
               <p>
-                {copy.foundingDesc} <b>{copy.foundingCode}</b> {copy.foundingSuffix}
+                {copy.foundingDesc} <b>{copy.foundingCode}</b> {interpolate(copy.foundingSuffix, local.params)}
               </p>
             </div>
           </div>

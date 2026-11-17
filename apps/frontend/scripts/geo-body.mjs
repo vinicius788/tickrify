@@ -542,14 +542,21 @@ function featuresBlock(l) {
   return `<h2>${esc(`${l.features.title} ${l.features.highlight}`)}</h2>\n<ul>${items}</ul>`;
 }
 
+// Precos da vitrine em i18n trazem {weekly}/{monthly}/{yearly}/{perAnalysis}:
+// no navegador vira a moeda local; no HTML cru (indexavel, ingles) vale o USD.
+const USD_PRICE_PARAMS = { weekly: '$7.99', monthly: '$29', yearly: '$290', perAnalysis: '$0.145' };
+function usd(text) {
+  return String(text ?? '').replace(/\{(weekly|monthly|yearly|perAnalysis)\}/g, (_, k) => USD_PRICE_PARAMS[k]);
+}
+
 function pricingBlock(l) {
   const items = ['fS1', 'fS2', 'fS3', 'fS4']
-    .map((k) => `<li>${esc(l.pricing[k])}</li>`)
+    .map((k) => `<li>${esc(usd(l.pricing[k]))}</li>`)
     .join('');
   return [
     `<h2>${esc(`${l.pricing.title} ${l.pricing.highlight}`)}</h2>`,
     `<p>${esc(l.pricing.subtitle)}</p>`,
-    `<ul>${items}<li>${esc(l.pricing.monthlyReset)}</li><li>${esc(l.pricing.weeklyLine)}</li></ul>`,
+    `<ul>${items}<li>${esc(l.pricing.monthlyReset)}</li><li>${esc(usd(l.pricing.weeklyLine))}</li></ul>`,
   ].join('\n');
 }
 
@@ -601,7 +608,7 @@ export function buildBody({ path, meta, copy, accuracy, pricingFaq }) {
       `<h1>${esc(headingFromTitle(meta.title))}</h1>`,
       `<p>${esc(meta.description)}</p>`,
       `<p>${esc(l.pricing.subtitle)}</p>`,
-      `<ul>${['fS1', 'fS2', 'fS3', 'fS4'].map((k) => `<li>${esc(l.pricing[k])}</li>`).join('')}<li>${esc(l.pricing.monthlyReset)}</li><li>${esc(l.pricing.weeklyLine)}</li></ul>`,
+      `<ul>${['fS1', 'fS2', 'fS3', 'fS4'].map((k) => `<li>${esc(usd(l.pricing[k]))}</li>`).join('')}<li>${esc(l.pricing.monthlyReset)}</li><li>${esc(usd(l.pricing.weeklyLine))}</li></ul>`,
       `<h2>${esc(l.faq.q6)}</h2><p>${esc(l.faq.a6)}</p>`,
       ACCURACY_POINTER,
       /* As MESMAS perguntas que a tela mostra. Sem isto o crawler que não

@@ -173,7 +173,7 @@ export default {
     foundingTitle: "Founding Trader オファー",
     foundingDesc: "早期に参加いただいたことへの感謝を込めて。このオファー期間中は、割引コード",
     foundingCode: "EARLY35",
-    foundingSuffix: "が月額プランの決済時に自動適用されます。初月は35%割引、その後は月額$29です。",
+    foundingSuffix: "が月額プランの決済時に自動適用されます。初月は35%割引、その後は月額{monthly}です。",
     trust: [
       "Stripeによる安全な決済",
       "設定からいつでも解約可能",
@@ -188,7 +188,7 @@ export default {
       },
       {
         q: "Ticksとは？",
-        a: "TicksはTickrifyの分析クレジットです。月額プランでは請求月ごとに残高が200 Ticksに、週額プラン（$7.99）では毎週25 Ticksにリセットされます。年額プランは$290の前払いで毎年更新され、残高は毎月200 Ticksにリセットされます。未使用のTicksは繰り越されません。クイック分析は1 Tick、詳細分析は3 Ticksを消費します。"
+        a: "TicksはTickrifyの分析クレジットです。月額プランでは請求月ごとに残高が200 Ticksに、週額プランでは毎週25 Ticksにリセットされます。年額プランは年1回の前払いで毎年更新され、残高は毎月200 Ticksにリセットされます。未使用のTicksは繰り越されません。クイック分析は1 Tick、詳細分析は3 Ticksを消費します。"
       },
       {
         q: "後からプランを変更できますか？",
@@ -196,7 +196,7 @@ export default {
       },
       {
         q: "利用できる支払い方法は？",
-        a: "Stripeを通じて、カード（Visa、Mastercard、American Express）、Apple Pay、Google Pay、Linkをご利用いただけます。請求は米ドルです。カードが別の通貨の場合は銀行が換算し、手数料がかかることがあります。デビットカードやプリペイドカードでの海外オンライン決済を拒否する銀行もあります。拒否された場合は、銀行に利用を許可してもらうか、別のカードをお使いください。"
+        a: "Stripeを通じて、カード（Visa、Mastercard、American Express）、Apple Pay、Google Pay、Linkをご利用いただけます。価格は地域に応じてユーロ、ポンド、円、カナダドル、オーストラリアドルで表示・請求され、それ以外の地域では米ドルです。カードが別の通貨の場合は銀行が換算し、手数料がかかることがあります。デビットカードやプリペイドカードでの海外オンライン決済を拒否する銀行もあります。拒否された場合は、銀行に利用を許可してもらうか、別のカードをお使いください。"
       },
       {
         q: "カード情報は安全ですか？",
@@ -216,7 +216,7 @@ export default {
       "毎月200 Ticks（クイック約200回または詳細66回）",
       "クイック分析 + 詳細分析",
       "ライブローソク足での検証 + 経済カレンダー",
-      "クイック分析1回あたり$0.145（$29 / 200 Ticks）"
+      "クイック分析1回あたり{perAnalysis}（{monthly} / 200 Ticks）"
     ],
     cta: "始める"
   },
@@ -231,7 +231,7 @@ export default {
       "毎週更新、いつでも解約可能"
     ],
     cta: "週額で始める",
-    note: "今すぐ$7.99、その後解約まで7日ごとに請求されます。残高は毎週25 Ticksにリセットされます。"
+    note: "今すぐ{weekly}、その後解約まで7日ごとに請求されます。残高は毎週25 Ticksにリセットされます。"
   },
   pricingChrome: {
     weekly: "週額",
@@ -270,11 +270,11 @@ export default {
     founderNote: "他では公開していない一度限りのオファーです。今すぐ、その後毎月請求されます。ダッシュボードからいつでも解約できます。解約後に再契約する場合は通常料金になります。",
     founderSeat: "創設メンバー枠は残り1名",
     billingCycle: "請求サイクル",
-    yearlyRenewal: "今すぐ$290、その後解約まで毎年請求されます。残高は毎月200 Ticksにリセットされ、未使用のTicksは繰り越されません。",
-    monthlyRenewal: "今すぐ$29、その後解約まで毎月請求されます。残高は毎月200 Ticksにリセットされ、未使用のTicksは繰り越されません。"
+    yearlyRenewal: "今すぐ{yearly}、その後解約まで毎年請求されます。残高は毎月200 Ticksにリセットされ、未使用のTicksは繰り越されません。",
+    monthlyRenewal: "今すぐ{monthly}、その後解約まで毎月請求されます。残高は毎月200 Ticksにリセットされ、未使用のTicksは繰り越されません。"
   },
   dashboardCopy: {
-    weeklyPrice: "${price} / 7日",
+    weeklyPrice: "{price} / 7日",
     checkoutErrorTitle: "決済画面を開けませんでした",
     allowanceNoticeTitle: "Ticksが毎月リセットされるようになりました",
     allowanceNoticeDesc: "各請求月の開始時に残高が200 Ticksに戻ります。未使用のTicksは繰り越されません。",
@@ -302,7 +302,7 @@ export default {
     later: "後で",
     perMonth: "/月",
     modalMonthly: "月額、200 Ticks",
-    modalMonthlyOffer: "初月{price}、その後は月額$29",
+    modalMonthlyOffer: "初月{price}、その後は月額{monthly}",
     modalWeekly: "週額、25 Ticks",
     modalCompare: "すべてのプランを比較",
     modalVideoCaption: "契約者が利用できる内容：エントリーチャートと最大2つの上位時間足を、1つの市場として分析します。20秒。",
@@ -314,7 +314,7 @@ export default {
     plansSub: "すべてのプランで同じエンジン。いつでも解約可能です。"
   },
   foundingBanner: {
-    text: "早期契約者向けオファー：月額プランの初月が{pct}%割引。{code}を決済時に適用します。その後は月額$29です。",
+    text: "早期契約者向けオファー：月額プランの初月が{pct}%割引。{code}を決済時に適用します。その後は月額{monthly}です。",
     cta: "プランを見る"
   },
   productClarity: {
@@ -351,11 +351,11 @@ export default {
     paymentRetry: "再確認",
     paymentSettings: "サブスクリプションを見る",
     tickCosts: "Quick = 1 Tick · Deep = 3 Ticks",
-    weeklyRenewal: "現在および解約まで7日ごとに$7.99を請求。",
-    monthlyRenewal: "現在および解約まで毎月$29を請求。",
+    weeklyRenewal: "現在および解約まで7日ごとに{weekly}を請求。",
+    monthlyRenewal: "現在および解約まで毎月{monthly}を請求。",
     offerRegular: "通常価格",
     offerFirstMonth: "初月",
-    offerThen: "その後は月額$29。設定からいつでも解約可能。",
+    offerThen: "その後は月額{monthly}。設定からいつでも解約可能。",
     offerCta: "初月{price}で始める",
     freeEligibility: "アカウントなしの無料デモは1デバイスにつき1回。新規アカウントには分析7回の3日間無料トライアル（カード不要）。",
   },
@@ -1377,8 +1377,8 @@ export default {
     aiLevelNote: "AIはこの価格を示しましたが、そのプランはリスクチェックを通過しませんでした。確認するための価格であり、トレードではありません。",
   },
   paywall: {
-    ctaWeekly: "まずは1週間から：クイック分析25回で $7.99",
-    orMonthly: "または月額：クイック分析200回で月額 $29",
+    ctaWeekly: "まずは1週間から：クイック分析25回で {weekly}",
+    orMonthly: "または月額：クイック分析200回で月額 {monthly}",
     titleNewAnalysis: "無料分析を使い切りました",
     titleArea: '分析とトレードへのアクセスを続けるには登録してください',
     descNewAnalysis: "このチャートと次のチャートを分析するには登録してください：毎回「今すぐエントリー」「監視」「トレードなし」を価格水準と根拠つきで返し、暗号資産、FX、貴金属では価格アラートも使えます。",
@@ -1387,7 +1387,7 @@ export default {
     descHistory: 'この分析は直近3件より古いものです。全履歴を再び開くには登録してください。',
     descSetups: 'このセットアップの分析は直近3件に含まれていません。すべてのバージョンを再び開くには登録してください。',
     descWatching: "監視中の価格帯とそこでの値動きは、登録するとすぐに再び見られます。",
-    allPlans: '年額 $290 を含むすべてのプラン',
+    allPlans: '年額 {yearly} を含むすべてのプラン',
     opening: '安全な決済ページを開いています…',
     yourChart: 'あなたのチャート',
     includesTitle: "トレードプランに含まれるもの",
@@ -1678,9 +1678,9 @@ export default {
       analysesQuick: '回のクイック分析',
       starterBadge: 'すべて込み',
       starterCta: '始める',
-      fS1: '月200ティック（クイック約200回／ディープ約66回）', fS2: 'クイック＋ディープ分析、完全な履歴', fS3: '条件を満たすクイック分析の検証済みローソク足＋利用可能な経済カレンダー', fS4: '月額プランならクイック分析1回あたり0.145ドル',
+      fS1: '月200ティック（クイック約200回／ディープ約66回）', fS2: 'クイック＋ディープ分析、完全な履歴', fS3: '条件を満たすクイック分析の検証済みローソク足＋利用可能な経済カレンダー', fS4: '月額プランならクイック分析1回あたり{perAnalysis}',
       monthlyReset: '残高は毎月の請求開始時に200ティックへリセットされます。未使用のティックは繰り越されません。',
-      weeklyLine: 'まずは1週間から？週7.99ドルで25 Ticks、いつでも解約できます。',
+      weeklyLine: 'まずは1週間から？週{weekly}で25 Ticks、いつでも解約できます。',
     },
     faq: {
       label: 'FAQ', title: 'トレーダーから', highlight: 'よくある質問',
