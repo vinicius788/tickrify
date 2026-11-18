@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
 import { APIError, isFreeQuotaExhausted, type SignalState } from '@/lib/api';
 import { WatchPending } from './PendingLevels';
+import SetupMonitoring from './SetupMonitoring';
 import { entrySide, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import {
   checkFrequencyText,
@@ -88,6 +89,7 @@ const SetupPage = ({
   const setup = pages[0]?.setup;
   if (!setup) return null;
   const versions = pages.flatMap((page) => page.versions);
+  const monitoringEnabled = pages[0]?.monitoringEnabled === true;
   const tracking = setup.status === 'tracking';
   const busy = follow.isPending || setStatus.isPending;
   const price = (value: number | null) => (value === null ? 'n/a' : value.toLocaleString(locale, { maximumFractionDigits: 6 }));
@@ -187,7 +189,15 @@ const SetupPage = ({
         )}
       </div>
 
-      {activeAlerts.length > 0 ? (
+      {monitoringEnabled ? <SetupMonitoring
+        versions={versions} alerts={alerts} base={base}
+        paused={alertsQuery.data?.paused === true || !tracking}
+        loading={alertsQuery.isLoading} error={alertsQuery.isError}
+        cancelling={cancel.isPending}
+        onCancel={(id) => cancel.mutate(id, { onSuccess: () => toast({ title: t.alerts.cancelled }) })}
+      /> : null}
+
+      {!monitoringEnabled && activeAlerts.length > 0 ? (
         <section key="alerts" data-testid="alerts-active" className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="tk-stat-label">{t.alerts.activeTitle}</h2>
@@ -218,7 +228,7 @@ const SetupPage = ({
         </section>
       ) : null}
 
-      {triggeredAlerts.length > 0 ? (
+      {!monitoringEnabled && triggeredAlerts.length > 0 ? (
         <section key="triggered" data-testid="alerts-triggered" className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
           <h2 className="tk-stat-label">{t.alerts.triggeredTitle}</h2>
           <ul className="mt-3 divide-y divide-[var(--border-subtle)]">

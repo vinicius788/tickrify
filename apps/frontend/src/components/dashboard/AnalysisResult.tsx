@@ -615,7 +615,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
   const stateTone = signalStateTone(signalState, analysisData.recommendation);
   const stateActive = signalState === 'ENTER_NOW' || signalState === 'ARMED';
   const watchPlan = isWatchPlan(fullResponse.watchPlan) ? fullResponse.watchPlan : null;
-  const continuation = fullResponse.continuation as { status?: unknown; direction?: unknown; level?: unknown } | null | undefined;
+  const continuation = fullResponse.continuation as { status?: unknown; direction?: unknown; level?: unknown; reason?: unknown } | null | undefined;
   const continuationStatus = typeof continuation?.status === 'string' ? r.continuationStatus[continuation.status as keyof typeof r.continuationStatus] : undefined;
   const continuationLine =
     continuationStatus && typeof continuation?.level === 'number' && (continuation.direction === 'long' || continuation.direction === 'short')
@@ -1274,7 +1274,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             )}
           </div>
           {continuationLine && (
-            <p data-testid="setup-continuation" className="mt-3 text-sm leading-relaxed text-[var(--text-primary)]">{continuationLine}</p>
+            <p data-testid="setup-continuation" className="mt-3 text-sm leading-relaxed text-[var(--text-primary)]">
+              {continuationLine}
+              {typeof continuation?.reason === 'string' && continuation.reason.trim() ? ` · ${continuation.reason.trim().slice(0, 180)}` : ''}
+            </p>
           )}
           {watchText && !watchClosed && <p data-testid="watch-headline" className="mt-3 text-sm leading-relaxed text-[var(--text-primary)]">{watchText.headline}</p>}
           {isWaitVerdict && !watchLayout && (

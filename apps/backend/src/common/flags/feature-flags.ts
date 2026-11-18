@@ -202,6 +202,24 @@ export const FLAG_REGISTRY: readonly FlagDefinition[] = [
     risk: 'medio',
   },
   {
+    key: 'SETUP_CONTINUATION_REASON',
+    type: 'number',
+    label: 'Motivo curto da continuacao do setup',
+    description:
+      '0 (padrao) = continuacao de sempre. 1 = nas novas reanalises com ENABLE_SETUP_CONTINUATION, pede na mesma resposta uma frase factual no idioma da analise explicando o status do plano anterior e a mostra junto dele. Sem chamada extra de IA; nao altera regras do motor. O motivo fica salvo na analise. Nao liga a continuacao nem ENGINE_ENTER_AT_LEVEL.',
+    defaultValue: '0',
+    risk: 'medio',
+  },
+  {
+    key: 'SETUP_LIVE_VIEW',
+    type: 'number',
+    label: 'Acompanhamento no detalhe do setup',
+    description:
+      '0 (padrao) = detalhe de sempre. 1 = mostra Acompanhamento: versao, niveis salvos, distancia ao nivel quando o preco esta recente, ultima consulta, alertas e historico disponivel de analises e disparos. Rele banco/cache a cada 60 s com a pagina visivel. Sem nova tabela, busca de preco ou chamada de IA. Nao abre nem gerencia operacoes.',
+    defaultValue: '0',
+    risk: 'baixo',
+  },
+  {
     key: 'ENABLE_QUICK_CALENDAR',
     type: 'boolean',
     label: 'Calendario economico na analise rapida',

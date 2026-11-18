@@ -9,7 +9,7 @@ function leaves(value: unknown, path = ''): Record<string, string> {
   if (typeof value === 'string') return { [path]: value };
   return Object.assign({}, ...Object.entries(value as object).map(([key, child]) => leaves(child, `${path}.${key}`)));
 }
-const sections = ['pricingPage', 'pricingPlan', 'pricingWeekly', 'pricingChrome', 'dashboardCopy', 'foundingBanner', 'demoUi', 'interfaceExtras', 'sampleUi', 'backendMessages', 'scenarioLabels'] as const;
+const sections = ['pricingPage', 'pricingPlan', 'pricingWeekly', 'pricingChrome', 'dashboardCopy', 'foundingBanner', 'demoUi', 'interfaceExtras', 'sampleUi', 'backendMessages', 'scenarioLabels', 'monitoring', 'alerts'] as const;
 
 describe('six-language presentation contract', () => {
   it('has complete keys and the same interpolation parameters in every language', () => {

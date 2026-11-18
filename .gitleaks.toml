@@ -135,6 +135,15 @@ regexes = [
 ]
 
 [[allowlists]]
+description = "Chave publica exata do IndexNow, publicada pelo build em /<chave>.txt"
+# O script indexnow.mjs publica este mesmo valor como prova de dominio.
+# Apenas o valor completo e publico; nenhum caminho ou linha fica liberado.
+regexTarget = "secret"
+regexes = [
+  '^9ae64cf43104787d2cd87597280cedc4$',
+]
+
+[[allowlists]]
 description = "Placeholders de token nos exemplos de curl da documentação"
 regexTarget = "line"
 # Descobertos varrendo os 325 commits do histórico em 12/08/2026: 23 ocorrências,

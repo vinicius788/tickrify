@@ -16,18 +16,21 @@
  * Arquivo proprio: worker, caminho sincrono e adapter usam a mesma regra.
  */
 import type { PrismaClient } from '@prisma/client';
-import { flagBool } from '../../common/flags/feature-flags';
+import { flagBool, flagNumber } from '../../common/flags/feature-flags';
 import { canonicalFxPair, normalizeSymbol } from '../../common/utils/analysis-normalizer';
 import { nearEdge, type WatchPlan } from '../../common/utils/plan-engine';
 import { readPlan } from './setups.service';
 import { storedWatchPlan, watchSummaryOf } from './watch-pending';
 
 export const SETUP_CONTINUATION_FLAG = 'ENABLE_SETUP_CONTINUATION';
+export const CONTINUATION_REASON_FLAG = 'SETUP_CONTINUATION_REASON';
 export const CONTINUATION_STATUSES = ['CONFIRMED', 'STILL_WAITING', 'CHANGED', 'INVALIDATED'] as const;
 export type ContinuationStatus = (typeof CONTINUATION_STATUSES)[number];
 
 const MAX_TRIGGER_CHARS = 200;
 const STATUS_LINE = /^[^\S\n]*[*_`]*PRIOR_PLAN_STATUS[*_`]*\s*[:=]\s*[*_`]*([A-Z_ ]+?)[*_`.]*[^\S\n]*$/gim;
+const REASON_LINE = /^[^\S\n]*[*_`]*PRIOR_PLAN_REASON[*_`]*[^\S\n]*[:=][^\S\n]*([^\r\n]*)/gim;
+const cleanReason = (text: string) => text.replace(/[<>\p{Cc}\p{Cf}]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 180);
 
 export interface PriorPlan {
   setupId: string;
@@ -44,6 +47,7 @@ export interface SetupContinuation {
   status: ContinuationStatus | null;
   direction: WatchPlan['direction'];
   level: number;
+  reason?: string;
 }
 
 const assetKey = (symbol: unknown): string => {
@@ -115,7 +119,7 @@ const utc = (date: Date) => `${date.toISOString().slice(0, 16).replace('T', ' ')
 /** O gatilho numa linha so, sem nada que feche o <user_context>. */
 const cleanTrigger = (trigger: string) => trigger.replace(/\s+/g, ' ').replace(/[<>]/g, '').trim().slice(0, MAX_TRIGGER_CHARS).trim();
 
-export function buildPriorPlanBlock(prior: PriorPlan): string {
+export function buildPriorPlanBlock(prior: PriorPlan, reasonEnabled = flagNumber(CONTINUATION_REASON_FLAG) === 1): string {
   const { plan, alert } = prior;
   const lines = [
     '# PRIOR PLAN (your earlier read of this same setup; context only, never a reason to enter)',
@@ -139,6 +143,10 @@ export function buildPriorPlanBlock(prior: PriorPlan): string {
     'The checks C1 to C7 and the state follow the same rules as always. The earlier plan is never a reason to enter or to pass a check.',
     'End "analysis.executiveSummary" with a final line that contains only: PRIOR_PLAN_STATUS: followed by one of the four words above.',
   );
+  if (reasonEnabled) lines.push(
+    'Immediately before PRIOR_PLAN_STATUS, write one line: PRIOR_PLAN_REASON: followed by one short factual sentence (at most 180 characters) in the language requested for this analysis explaining the comparison status.',
+    'Name the observed change, missing trigger, or invalidation. A price touch alone never confirms the trigger. Do not give instructions to enter, exit, hold, or move a stop. Never invent a reason when the chart is unclear.',
+  );
   return lines.join('\n');
 }
 
@@ -146,23 +154,29 @@ export function buildPriorPlanBlock(prior: PriorPlan): string {
  * Le o status do texto do modelo e tira a linha. Sem status reconhecivel: null,
  * nunca erro. Com mais de uma linha, vale a ultima.
  */
-export function readContinuationStatus(text: unknown): { status: ContinuationStatus | null; text: unknown } {
+export function readContinuationStatus(text: unknown, reasonEnabled = flagNumber(CONTINUATION_REASON_FLAG) === 1): { status: ContinuationStatus | null; text: unknown; reason?: string } {
   if (typeof text !== 'string') return { status: null, text };
   let status: ContinuationStatus | null = null;
-  const cleaned = text.replace(STATUS_LINE, (_line, value: string) => {
+  let reason: string | undefined;
+  const withoutReason = text.replace(REASON_LINE, (_line, value: string) => {
+    if (reasonEnabled) reason = cleanReason(value) || undefined;
+    return '';
+  });
+  const cleaned = withoutReason.replace(STATUS_LINE, (_line, value: string) => {
     const word = value.trim().toUpperCase().replace(/\s+/g, '_');
     status = CONTINUATION_STATUSES.find((s) => s === word) ?? status;
     return '';
   });
-  return { status, text: cleaned.trimEnd() };
+  return { status, text: cleaned.trimEnd(), ...(status && reason ? { reason } : {}) };
 }
 
-export function continuationOf(prior: PriorPlan, status: ContinuationStatus | null): SetupContinuation {
+export function continuationOf(prior: PriorPlan, status: ContinuationStatus | null, reason?: string): SetupContinuation {
   return {
     setupId: prior.setupId,
     priorAnalysisId: prior.priorAnalysisId,
     status,
     direction: prior.plan.direction,
     level: nearEdge(prior.plan),
+    ...(status && reason ? { reason } : {}),
   };
 }

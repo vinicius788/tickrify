@@ -1,7 +1,7 @@
 import { logObservation, rawObservation, safeObserve } from '../../common/utils/analysis-observation';
 import { presentAnalysis } from '../../common/utils/analysis-presentation';
 import { flagBool, flagNumber } from '../../common/flags/feature-flags';
-import { buildPriorPlanBlock, continuationOf, readContinuationStatus, sameAsset, type PriorPlan, type SetupContinuation } from './setup-continuation';
+import { CONTINUATION_REASON_FLAG, buildPriorPlanBlock, continuationOf, readContinuationStatus, sameAsset, type PriorPlan, type SetupContinuation } from './setup-continuation';
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -2101,7 +2101,8 @@ export class AIAdapter {
         context.push(buildStrategyBlock(strategyProfile));
       }
       const priorPlan = options.priorPlan && sameAsset(options.priorPlan.symbol, groundingStats?.symbol) ? options.priorPlan : null;
-      if (priorPlan) context.push(buildPriorPlanBlock(priorPlan));
+      const continuationReasonEnabled = flagNumber(CONTINUATION_REASON_FLAG) === 1;
+      if (priorPlan) context.push(buildPriorPlanBlock(priorPlan, continuationReasonEnabled));
       // REAL DATA e perfil entram DENTRO do <user_context> do v10, depois da
       // parte fixa (o cache de prompt do provedor pega o prefixo inteiro).
       const { instructions, close: userContextClose } = splitUserContextClose(prompt);
@@ -2417,9 +2418,9 @@ export class AIAdapter {
       // A linha do status sai do texto antes de qualquer decisao ou exibicao.
       let continuation: SetupContinuation | null = null;
       if (priorPlan) {
-        const read = readContinuationStatus(parsed.analysis?.executiveSummary);
+        const read = readContinuationStatus(parsed.analysis?.executiveSummary, continuationReasonEnabled);
         if (parsed.analysis && typeof read.text === 'string') parsed.analysis.executiveSummary = read.text;
-        continuation = continuationOf(priorPlan, read.status);
+        continuation = continuationOf(priorPlan, read.status, read.reason);
       }
       const modelState =
         parsed.signalState ??

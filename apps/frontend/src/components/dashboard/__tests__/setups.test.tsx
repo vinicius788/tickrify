@@ -465,6 +465,18 @@ describe('Pagina do setup', () => {
     expect(versionLinks[1].textContent).toContain('Waiting for: Close above 1.0950');
     expect(versionLinks[1].textContent).not.toMatch(/Entry|Stop/);
     expect(document.body.textContent).not.toMatch(/\b(current|live|now)\b/i);
+    expect(screen.queryByTestId('setup-monitoring')).toBeNull();
+  });
+
+  it('flag do servidor liga Acompanhamento com os GETs existentes, sem analise nem fonte de preco', async () => {
+    const fetchMock = serve({
+      'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: SETUP, versions, nextCursor: null, monitoringEnabled: true }),
+      'GET /api/setups/alerts': () => json(200, { paused: false, items: [], unseen: 0, emailEnabled: false }),
+    });
+    wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);
+    expect(await screen.findByRole('region', { name: 'Monitoring' })).toBeTruthy();
+    expect(screen.getByText('No checked price for this version.')).toBeTruthy();
+    expect(fetchMock.mock.calls.every(([url, init]) => init?.method === 'GET' && String(url).startsWith('https://api.test/api/setups/'))).toBe(true);
   });
 
   it('alertas: ativo com cancelar, disparado com a hora em UTC, ultimo preco checado; abrir marca o disparado como visto', async () => {

@@ -6,7 +6,7 @@ import { AiService } from './ai.service';
 import { SetupsService } from './setups.service';
 import { SetupAlertsService } from './setup-alerts.service';
 import { getFreeQuota } from '../../common/free-quota';
-import { flagBool } from '../../common/flags/feature-flags';
+import { flagBool, flagNumber } from '../../common/flags/feature-flags';
 import { SETUP_ALERT_EMAIL_FLAG } from '../mail/setup-alert-email';
 import { PrismaService } from '../database/prisma.service';
 import {
@@ -135,7 +135,7 @@ export class SetupsController {
     const readableIds = await this.ai.readableAnalysisIds(userId);
     const page = await this.setups.get(userId, id, { cursor: query.cursor ?? null, limit: query.limit, readableIds });
     if (readableIds && !query.cursor && page.versions.length === 0) throw this.ai.freeLockedError();
-    return page;
+    return { ...page, monitoringEnabled: flagNumber('SETUP_LIVE_VIEW') === 1 };
   }
 
   @Patch(':id')
