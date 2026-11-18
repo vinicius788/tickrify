@@ -612,6 +612,18 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
       expect(request()).toBe(base);
       expect(saved().result).not.toHaveProperty('continuation');
     });
+
+    it('motivo ligado: mesma chamada, frase salva e marcadores fora do texto exibido', async () => {
+      applyFlagOverrideLocally(SETUP_CONTINUATION_FLAG, 'true');
+      applyFlagOverrideLocally('SETUP_CONTINUATION_REASON', '1');
+      await withDb('TEST', async () => {
+        await run({ name: 'reason', replies: [modelReply('BUY', 70, { ...buyPlan, executiveSummary: 'Price held.\nPRIOR_PLAN_REASON: Price returned to the zone with a bullish close.\nPRIOR_PLAN_STATUS: CONFIRMED' })], setupId: 'setup-d4' });
+      });
+      expect(openaiCreate).toHaveBeenCalledTimes(1);
+      expect(request()).toContain('PRIOR_PLAN_REASON');
+      expect(saved().result.continuation.reason).toBe('Price returned to the zone with a bullish close.');
+      expect(saved().result.analysis.executiveSummary).not.toMatch(/PRIOR_PLAN_(REASON|STATUS)/);
+    });
   });
 
   it('fonte de demonstracao (nao passa pelo adapter): o worker valida e decide sozinho, uma vez', async () => {

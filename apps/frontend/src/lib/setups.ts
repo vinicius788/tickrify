@@ -190,7 +190,7 @@ export function useSetupVersions(setupId: string | null, pageSize = 20) {
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({ limit: String(pageSize) });
       if (pageParam) params.set('cursor', String(pageParam));
-      return send<{ setup: SetupSummary; versions: SetupVersion[]; nextCursor: string | null }>(
+      return send<{ setup: SetupSummary; versions: SetupVersion[]; nextCursor: string | null; monitoringEnabled?: boolean }>(
         `/api/setups/${encodeURIComponent(String(setupId))}?${params}`,
         { method: 'GET' },
         await token(),
@@ -199,7 +199,9 @@ export function useSetupVersions(setupId: string | null, pageSize = 20) {
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled: Boolean(setupId),
-    refetchOnWindowFocus: false,
+    refetchInterval: (query) => query.state.data?.pages[0]?.monitoringEnabled === true ? 60_000 : false,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: (query) => query.state.data?.pages[0]?.monitoringEnabled === true,
     retry: false,
   });
 }

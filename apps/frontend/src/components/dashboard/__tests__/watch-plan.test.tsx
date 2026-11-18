@@ -154,6 +154,11 @@ describe('continuacao do setup', () => {
     renderResult('WATCH', plan);
     expect(line()).toBeNull();
   });
+
+  it('mostra o motivo salvo na mesma linha, como texto, sem exigir nova analise', () => {
+    renderResult('WATCH', plan, { continuation: { status: 'CHANGED', direction: 'long', level: 2345, reason: 'Price closed below prior support.' } });
+    expect(line()).toBe('Earlier plan: Buy at $ 2,345.00. Now: Changed · Price closed below prior support.');
+  });
 });
 
 describe('modo leitura: Read, Where price is e Action em toda analise', () => {

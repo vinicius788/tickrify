@@ -1,6 +1,6 @@
 import { makeRawSqlPrisma } from '../../__tests__/raw-sql-mock';
 import { __resetFlagCacheForTests, applyFlagOverrideLocally } from '../../common/flags/feature-flags';
-import { SETUP_CONTINUATION_FLAG, buildPriorPlanBlock, continuationOf, loadPriorPlan, readContinuationStatus, sameAsset, type PriorPlan } from './setup-continuation';
+import { CONTINUATION_REASON_FLAG, SETUP_CONTINUATION_FLAG, buildPriorPlanBlock, continuationOf, loadPriorPlan, readContinuationStatus, sameAsset, type PriorPlan } from './setup-continuation';
 
 const NOW = new Date('2026-11-09T15:00:00Z');
 const PLAN = {
@@ -67,6 +67,7 @@ describe('sameAsset', () => {
 });
 
 describe('buildPriorPlanBlock', () => {
+  afterEach(() => __resetFlagCacheForTests());
   const prior: PriorPlan = {
     setupId: 's', priorAnalysisId: 'p', symbol: 'XAUUSD', createdAt: new Date('2026-11-09T14:00:00Z'),
     plan: PLAN as PriorPlan['plan'], alert: { level: 100, triggeredAt: new Date('2026-11-09T14:40:00Z') },
@@ -87,6 +88,17 @@ describe('buildPriorPlanBlock', () => {
     const block = buildPriorPlanBlock({ ...prior, alert: null, plan: { ...prior.plan, target2: null } });
     expect(block).not.toContain('Alert reached');
     expect(block).toContain('Targets: 105\n');
+  });
+
+  it('motivo so entra com a flag em 1; flag em 0 preserva o prompt', () => {
+    const original = buildPriorPlanBlock(prior, false);
+    expect(buildPriorPlanBlock(prior)).toBe(original);
+    expect(original).not.toContain('PRIOR_PLAN_REASON');
+    applyFlagOverrideLocally(CONTINUATION_REASON_FLAG, '1');
+    expect(buildPriorPlanBlock(prior)).toContain('PRIOR_PLAN_REASON');
+    expect(buildPriorPlanBlock(prior)).toContain('A price touch alone never confirms the trigger');
+    applyFlagOverrideLocally(CONTINUATION_REASON_FLAG, '0');
+    expect(buildPriorPlanBlock(prior)).toBe(original);
   });
 
   it('gatilho com mais de 200 caracteres e cortado, numa linha so e sem fechar o user_context', () => {
@@ -117,5 +129,24 @@ describe('readContinuationStatus', () => {
   it('o registro leva a direcao e o nivel proximo do plano', () => {
     const prior = { setupId: 's', priorAnalysisId: 'p', plan: PLAN } as unknown as PriorPlan;
     expect(continuationOf(prior, 'CHANGED')).toEqual({ setupId: 's', priorAnalysisId: 'p', status: 'CHANGED', direction: 'long', level: 100 });
+  });
+
+  it('extrai motivo factual, remove marcadores e grava junto do status', () => {
+    const read = readContinuationStatus('Structure changed.\nPRIOR_PLAN_REASON: Closed below the prior support.\nPRIOR_PLAN_STATUS: CHANGED', true);
+    expect(read).toEqual({ status: 'CHANGED', reason: 'Closed below the prior support.', text: 'Structure changed.' });
+    expect(continuationOf({ setupId: 's', priorAnalysisId: 'p', plan: PLAN } as unknown as PriorPlan, read.status, read.reason)).toMatchObject({ status: 'CHANGED', reason: read.reason });
+  });
+
+  it('flag desligada, motivo vazio ou status ausente: nao inventa explicacao', () => {
+    expect(readContinuationStatus('A.\nPRIOR_PLAN_REASON: A change.\nPRIOR_PLAN_STATUS: CHANGED', false)).toEqual({ status: 'CHANGED', text: 'A.' });
+    expect(readContinuationStatus('A.\nPRIOR_PLAN_REASON: \nPRIOR_PLAN_STATUS: CHANGED', true)).toEqual({ status: 'CHANGED', text: 'A.' });
+    expect(readContinuationStatus('A.\nPRIOR_PLAN_REASON: A change.', true)).toEqual({ status: null, text: 'A.' });
+  });
+
+  it('limita o motivo a 180 caracteres e remove controles e delimitadores HTML', () => {
+    const read = readContinuationStatus(`A.\nPRIOR_PLAN_REASON: <b>Price\u0000 changed</b> ${'x'.repeat(220)}\nPRIOR_PLAN_STATUS: INVALIDATED`, true);
+    expect(read.reason).toHaveLength(180);
+    expect(read.reason).not.toMatch(/[<>]/);
+    expect(read.reason).not.toContain(String.fromCharCode(0));
   });
 });
