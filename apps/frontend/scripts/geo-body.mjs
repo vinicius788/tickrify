@@ -133,7 +133,10 @@ export async function fetchAccuracy() {
     const res = await fetch(`${API_BASE}/api/ai/accuracy`, { signal: controller.signal });
     clearTimeout(timer);
     if (!res.ok) return null;
-    return await res.json();
+    const data = await res.json();
+    // API de antes do motor de 23/11 (sem a serie v11): a data do motor atual estaria errada.
+    // Sai o texto sem numeros, como com a API fora do ar.
+    return data && 'v11' in data ? data : null;
   } catch {
     return null;
   }
