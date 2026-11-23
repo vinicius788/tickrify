@@ -15,6 +15,7 @@ export interface CodeSummaryTexts {
   turnsBuy: string;
   turnsSell: string;
   flipped: string;
+  underPressure: string;
   reasons: Record<string, string>;
 }
 
@@ -66,10 +67,14 @@ export function buildCodeSummaryText(
     if (cs.takeProfit2 !== null) parts.push(fill(texts.target2, { tp2: px(cs.takeProfit2) }));
   }
   if (cs.flippedFromPrior) parts.push(texts.flipped);
+  if (cs.priorUnderPressure) parts.push(texts.underPressure);
 
   const headline = cs.action === 'wait' ? [texts.lead.wait, reason].filter(Boolean).join(' ') : `${texts.label[cs.action]}.`;
   return { text: parts.filter(Boolean).join(' '), headline };
 }
+
+/** Tempo grafico da direcao; analise antiga nao grava a escada e usava sempre o 4h. */
+export const directionTimeframe = (bias: CandleBias | null | undefined): string => bias?.timeframes?.direction ?? '4h';
 
 export type BiasLineKey = 'htfUp' | 'htfDown' | 'structUp' | 'structDown' | 'aboveEma' | 'belowEma' | 'htfAboveEma' | 'htfBelowEma';
 

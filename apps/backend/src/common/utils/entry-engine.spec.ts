@@ -1,4 +1,4 @@
-import { breakoutEntry, candleBias, chooseEntry, collectReaders, majorityOf, nowEntry, pullbackEntry, watchPlanOf, type CandleView } from './entry-engine';
+import { againstTrend, breakoutEntry, candleBias, chooseEntry, collectReaders, isStrongBias, majorityOf, nowEntry, pullbackEntry, resolveVote, timeframeLadder, watchPlanOf, type CandleBias, type CandleView, type ReaderVote } from './entry-engine';
 import { isValidWatchPlan } from './plan-engine';
 
 const up: CandleView = {
@@ -101,5 +101,80 @@ describe('collectReaders', () => {
     const r = await collectReaders([{ label: 'a', run: fail(5) }, { label: 'b', run: later(10, 'E') }, { label: 'c', run: later(15, 'E') }], out, 30);
     expect(r.done.filter((d) => d.ok)).toHaveLength(2);
     expect(r.ignored).toEqual([]);
+  });
+});
+
+describe('regras de 23/11/2026 (filter-2026-11-23)', () => {
+  it('escada de tempos: direcao e setup pelo tempo do print', () => {
+    expect(timeframeLadder('1m')).toEqual({ chart: '1m', direction: '15m', setup: '5m' });
+    expect(timeframeLadder('5m')).toEqual({ chart: '5m', direction: '1h', setup: '15m' });
+    expect(timeframeLadder('15m')?.direction).toBe('4h');
+    expect(timeframeLadder('30m')?.direction).toBe('4h');
+    expect(timeframeLadder('1h')?.direction).toBe('1d');
+    expect(timeframeLadder('4h')?.direction).toBe('1w');
+    expect(timeframeLadder('1w')).toBeNull();
+    expect(timeframeLadder(null)).toBeNull();
+  });
+
+  it('vies forte = pontuacao 2+ com a tendencia do tempo de direcao na mesma direcao', () => {
+    expect(isStrongBias({ direction: 'short', score: -2, htfTrend: 'downtrend' })).toBe(true);
+    expect(isStrongBias({ direction: 'short', score: -2, htfTrend: 'range' })).toBe(false);
+    expect(isStrongBias({ direction: 'long', score: 1.5, htfTrend: 'uptrend' })).toBe(false);
+    expect(isStrongBias({ direction: 'neutral', score: 0, htfTrend: 'uptrend' })).toBe(false);
+  });
+
+  it('filtro de tendencia: tempo de direcao em tendencia e preco do mesmo lado da EMA50 barra a entrada contra', () => {
+    expect(againstTrend({ htfTrend: 'uptrend', vsEma50: 'above' }, 'short')).toBe(true);
+    expect(againstTrend({ htfTrend: 'uptrend', vsEma50: 'below' }, 'short')).toBe(false);
+    expect(againstTrend({ htfTrend: 'downtrend', vsEma50: 'below' }, 'long')).toBe(true);
+    expect(againstTrend({ htfTrend: 'downtrend', vsEma50: 'below' }, 'short')).toBe(false);
+    expect(againstTrend({ htfTrend: 'range', vsEma50: 'above' }, 'short')).toBe(false);
+  });
+
+  const vote = (state: string, direction: 'long' | 'short' | null, outDir: 'long' | 'short' | 'neutral' = direction ?? 'neutral'): ReaderVote =>
+    ({ raw: { state, direction }, outcome: { state, direction: outDir } });
+  // Vies pelo tempo de direcao da escada. Tendencia do 1h calculada por summarizeHigherTimeframe sobre
+  // velas publicas de 1h (PAXGUSDT para o ouro, BTCUSDT) fechadas antes de cada analise.
+  const biasAt = (view: Partial<CandleView>): CandleBias => candleBias({ ...up, rangePosPct: 50, late: null, ...view });
+
+  it('ouro 5M 23/11 12:55 (cmwt9rc4j): ENTER_NOW long x WATCH short, 1h em alta: nunca venda', () => {
+    // estrutura do 5M mista (sem swings), preco abaixo da EMA50 do 5M; 1h uptrend acima da EMA50
+    const bias = biasAt({ swings: [], htfTrend: 'uptrend', vsEma50: 'below', htfVsEma50: 'above' });
+    expect(bias.direction).toBe('long');
+    expect(isStrongBias(bias)).toBe(false);
+    const r = resolveVote([vote('ENTER_NOW', 'long'), vote('WATCH', 'short')], bias);
+    expect(r).toMatchObject({ decidedBy: 'no_majority', noMajority: true });
+    // com o vies gravado do 4h (score -2, downtrend) a venda saia; a mesma divergencia agora so desempata com vies forte
+    const old4h = biasAt({ swings: [], htfTrend: 'downtrend', vsEma50: 'below', htfVsEma50: 'below' });
+    const r4h = resolveVote([vote('ENTER_NOW', 'long'), vote('WATCH', 'short')], old4h);
+    expect(r4h).toMatchObject({ decidedBy: 'candle_bias', allowNow: false });
+  });
+
+  it('ouro 5M 23/11 13:02 (cmwta01tf): ENTER_NOW short x WATCH short sem maioria, 1h em range: aguardar', () => {
+    const bias = biasAt({ swings: [], htfTrend: 'range', vsEma50: 'above', htfVsEma50: 'above' });
+    expect(isStrongBias(bias)).toBe(false);
+    expect(resolveVote([vote('ENTER_NOW', 'short'), vote('WATCH', 'short')], bias)).toMatchObject({ decidedBy: 'no_majority' });
+  });
+
+  it('BTC 5M 23/11 13:07 (cmwta5ys9): WATCH long x NO_TRADE: nunca ENTER_NOW', () => {
+    const stored = biasAt({
+      swings: [{ kind: 'high', price: 110 }, { kind: 'low', price: 104 }, { kind: 'high', price: 108 }, { kind: 'low', price: 102 }],
+      htfTrend: 'uptrend', vsEma50: 'below', htfVsEma50: 'above',
+    });
+    expect(isStrongBias(stored)).toBe(false);
+    const r = resolveVote([vote('WATCH', 'long'), vote('NO_TRADE', null)], stored);
+    expect(r.decidedBy).toBe('no_majority');
+    expect(r.allowNow).toBeFalsy();
+  });
+
+  it('maioria vale; desempate forte so libera o agora com 1 leitor que pediu ENTER_NOW na direcao; leitor unico precisa do vies forte', () => {
+    const strongLong = biasAt({ htfTrend: 'uptrend', vsEma50: 'above', htfVsEma50: 'above' });
+    expect(isStrongBias(strongLong)).toBe(true);
+    expect(resolveVote([vote('WATCH', 'long'), vote('WATCH', 'long'), vote('NO_TRADE', null)], strongLong)).toMatchObject({ decidedBy: 'majority', chosen: 0 });
+    expect(resolveVote([vote('ENTER_NOW', 'long'), vote('WATCH', 'short')], strongLong)).toMatchObject({ decidedBy: 'candle_bias', chosen: 0, allowNow: true });
+    expect(resolveVote([vote('WATCH', 'short'), vote('WATCH', 'long', 'neutral')], strongLong)).toMatchObject({ decidedBy: 'candle_bias', chosen: 1, allowNow: false });
+    expect(resolveVote([vote('ENTER_NOW', 'long')], strongLong)).toMatchObject({ decidedBy: 'single', allowNow: true });
+    expect(resolveVote([vote('ENTER_NOW', 'short')], strongLong)).toMatchObject({ decidedBy: 'single', allowNow: false });
+    expect(resolveVote([vote('ENTER_NOW', 'long')], null)).toEqual({ decidedBy: 'single', chosen: 0 });
   });
 });

@@ -23,6 +23,8 @@ export interface ReadModeData {
   watchPlan: WatchPlan | null;
   watchReach: WatchReach | null;
   noTradeReason: string | null;
+  /** Tempo grafico da direcao (candleBias.timeframes.direction); ausente = 4h. */
+  directionTimeframe?: string | null;
 }
 
 interface ReadModePanelProps {
@@ -69,7 +71,7 @@ export function WherePriceIs({ data, formatPrice }: ReadModePanelProps) {
         ))}
         {loc?.htfTrend && (
           <div className="flex justify-between gap-3">
-            <dt className="text-[var(--text-secondary)]">{m.htfTrend}</dt>
+            <dt className="text-[var(--text-secondary)]">{m.htfTrend.replace('{tf}', data.directionTimeframe ?? '4h')}</dt>
             <dd className="tabular-nums text-[var(--text-primary)]">{m.htf[loc.htfTrend]}</dd>
           </div>
         )}

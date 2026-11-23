@@ -1,4 +1,4 @@
-import { collectReaders, majorityOf, sameOutcome, VETO_REASONS, type VetoReason } from '../../common/utils/entry-engine';
+import { collectReaders, majorityOf, resolveVote, timeframeLadder, VETO_REASONS, type VetoReason } from '../../common/utils/entry-engine';
 import type { EngineReaderRecord, EngineVoteRecord } from './engine-contract';
 import type { ReaderRead } from '../../common/utils/signal-decision';
 import { logObservation, rawObservation, safeObserve } from '../../common/utils/analysis-observation';
@@ -751,6 +751,7 @@ export function buildCompactSummary(
   atr: number,
   htf: readonly Bar[] | null,
   fmt: (n: number) => number,
+  htfLabel = '4h',
 ): { block: string; htf: ReturnType<typeof summarizeHigherTimeframe> } | null {
   if (closed.length < 10 || !(atr > 0)) return null;
   const n = closed.length;
@@ -773,8 +774,8 @@ export function buildCompactSummary(
   };
   const summary = htf && htf.length >= 10 ? summarizeHigherTimeframe(htf) : null;
   const htfLine = summary
-    ? `- Higher timeframe summary (4h, ${htf!.length} candles): ${summary.trend} (last highs ${summary.highs.map(fmt).join(' then ')}, last lows ${summary.lows.map(fmt).join(' then ')}); ${
-        summary.ema50 === null ? 'EMA50 unavailable (under 50 candles)' : `last 4h close ${summary.vsEma50} EMA50 ${fmt(summary.ema50)}`
+    ? `- Higher timeframe summary (${htfLabel}, ${htf!.length} candles): ${summary.trend} (last highs ${summary.highs.map(fmt).join(' then ')}, last lows ${summary.lows.map(fmt).join(' then ')}); ${
+        summary.ema50 === null ? 'EMA50 unavailable (under 50 candles)' : `last ${htfLabel} close ${summary.vsEma50} EMA50 ${fmt(summary.ema50)}`
       }.`
     : null;
   const lines = [
@@ -1839,9 +1840,10 @@ export class AIAdapter {
       } else if (market === 'fx' && !this.fxSourceConfigured()) {
         candleCoverage = 'provider_unconfigured';
       } else {
-        // Resumo do 4h (v10.1): so para tempo grafico abaixo de 4h.
-        const wantsHtf = (TIMEFRAME_MS[interval] ?? Infinity) < TIMEFRAME_MS['4h'];
-        const [fx, htf4] = await Promise.all([this.fetchCandles(sym, interval), wantsHtf ? this.fetchCandles(sym, '4h') : Promise.resolve(null)]);
+        // Tempo de direcao pela escada (23/11/2026; antes o 4h fixo, so abaixo de 4h).
+        const ladder = timeframeLadder(interval);
+        const dirTf = ladder?.direction ?? null;
+        const [fx, htf4] = await Promise.all([this.fetchCandles(sym, interval), dirTf ? this.fetchCandles(sym, dirTf) : Promise.resolve(null)]);
         const candles = fx.candles;
         const htfCandles = htf4?.candles ?? null;
         candleCoverage = 'source_unavailable';
@@ -1865,11 +1867,12 @@ export class AIAdapter {
             const now = this.nowMs();
             const step = TIMEFRAME_MS[interval];
             const bars = step ? closedBars(candles, step, now) : [];
-            const htf = htfCandles ? closedBars(htfCandles, TIMEFRAME_MS['4h'], now) : null;
-            const compact = numbers?.atr14 ? buildCompactSummary(bars, numbers.atr14, htf, (n) => Number(n.toPrecision(6))) : null;
+            const htf = htfCandles && dirTf ? closedBars(htfCandles, TIMEFRAME_MS[dirTf], now) : null;
+            const compact = numbers?.atr14 ? buildCompactSummary(bars, numbers.atr14, htf, (n) => Number(n.toPrecision(6)), dirTf ?? '4h') : null;
             if (numbers) {
               numbers.htfTrend = compact?.htf?.trend ?? null;
               numbers.htfVsEma50 = compact?.htf?.vsEma50 ?? null;
+              numbers.timeframes = ladder;
               // O validador do v11 encaixa a invalidacao nestas swings e le a maturidade daqui.
               numbers.swings = fractalSwings(bars).map(({ kind, price }) => ({ kind, price }));
               const atr = numbers.atr14;
@@ -2385,12 +2388,12 @@ export class AIAdapter {
         ? {
             price: numbers.lastClose, atr: numbers.atr14, htfTrend: numbers.htfTrend ?? null,
             swings: numbers.swings ?? null, late: numbers.late ?? null, volRegime: numbers.volRegime ?? null,
-            rangePosPct: numbers.rangePosPct, vsEma50: numbers.vsEma50 ?? null, htfVsEma50: numbers.htfVsEma50 ?? null,
+            rangePosPct: numbers.rangePosPct, vsEma50: numbers.vsEma50 ?? null, htfVsEma50: numbers.htfVsEma50 ?? null, timeframes: numbers.timeframes ?? null,
             windowHigh: numbers.windowHigh, windowLow: numbers.windowLow,
           }
         : null;
       const riskProfile: EngineProfile = options.riskProfile ?? 'balanced';
-      const prior = priorPlan ? { direction: priorPlan.plan.direction, invalidation: priorPlan.plan.invalidation } : null;
+      const prior = priorPlan ? { direction: priorPlan.plan.direction, invalidation: priorPlan.plan.invalidation, binding: priorPlan.binding } : null;
       const inputOf = (run: Run, read: ReaderRead | null | undefined): SignalDecisionInput => {
         const parsed = run.parsed;
         return {
@@ -2420,7 +2423,16 @@ export class AIAdapter {
           ...(realData ? { read, prior } : {}),
         };
       };
-      const decide = (run: Run, read: ReaderRead | null | undefined) => decideSignalForProfile(inputOf(run, read), riskProfile);
+      const decide = (run: Run, read: ReaderRead | null | undefined, extra: Pick<SignalDecisionInput, 'allowNow' | 'noMajority'> = {}) =>
+        decideSignalForProfile({ ...inputOf(run, read), ...(realData ? extra : {}) }, riskProfile);
+      // O que o leitor pediu (antes do codigo): estado do modelo e direcao da leitura ou do plano.
+      const rawOf = (run: Run) => {
+        const read = run.parsed.read;
+        return {
+          state: inputOf(run, null).state,
+          direction: read && read.direction !== 'neutral' ? read.direction : run.parsed.watchPlan?.direction ?? null,
+        };
+      };
       const decisions = new Map<Run, Awaited<ReturnType<typeof decide>>>();
       // Os leitores do provedor ativo vao direto nele: a contingencia do outro ja e o terceiro leitor.
       const primaryModel = (this.visionModel as Partial<FallbackVisionModel>).primary ?? this.visionModel;
@@ -2457,19 +2469,18 @@ export class AIAdapter {
         const failed = collected.done.find((d) => !d.ok) as { error: unknown } | undefined;
         throw failed?.error ?? new AIAnalysisError({ code: 'openai_request_failed', message: 'Nenhum leitor respondeu.', retriable: true });
       }
-      const majority = oks.length >= 2 ? majorityOf(oks.map((o) => o.outcome)) : null;
-      let chosen = oks[0];
-      let profiled = decisions.get(chosen.value)!;
-      let decidedBy: 'majority' | 'candle_bias' | 'single' = 'single';
-      if (majority) {
-        chosen = oks.find((o) => sameOutcome(o.outcome, majority.outcome))!;
-        profiled = decisions.get(chosen.value)!;
-        decidedBy = 'majority';
-      } else if (realData) {
-        // Sem maioria (ou um leitor so): decide o vies das velas, sem a leitura.
-        profiled = await decide(chosen.value, null);
-        decidedBy = 'candle_bias';
-      }
+      // Regras de 23/11/2026 (ENGINE_RULES_ID), num lugar so: resolveVote em entry-engine.ts.
+      const firstDecision = decisions.get(oks[0].value)!;
+      const vote0 = resolveVote(
+        oks.map((o) => ({ raw: rawOf(o.value), outcome: o.outcome })),
+        realData ? firstDecision.decision.candleBias ?? null : null,
+      );
+      const chosen = oks[vote0.chosen];
+      const decidedBy: EngineVoteRecord['decidedBy'] = vote0.decidedBy;
+      const majority = decidedBy === 'majority' ? majorityOf(oks.map((o) => o.outcome)) : null;
+      const profiled = vote0.decidedBy === 'majority' || !realData
+        ? decisions.get(chosen.value)!
+        : await decide(chosen.value, vote0.tieRead ?? (vote0.noMajority ? null : chosen.value.parsed.read), { allowNow: vote0.allowNow, noMajority: vote0.noMajority });
       const run = chosen.value;
       const { modelResult, content, parsed, parseMs, tValidation, rawRecommendation, continuation } = run;
       const readerRecords: EngineReaderRecord[] = readerModels.map((r) => {

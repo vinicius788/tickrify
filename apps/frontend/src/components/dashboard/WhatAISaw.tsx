@@ -1,5 +1,5 @@
 import type { AIAnalysisResponse } from '@/lib/api';
-import { biasArguments, type BiasLineKey } from '@/lib/code-summary';
+import { biasArguments, directionTimeframe, type BiasLineKey } from '@/lib/code-summary';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 type Full = NonNullable<AIAnalysisResponse['fullResponse']>;
@@ -21,14 +21,19 @@ export function WhatAISaw({ fullResponse, formatPrice }: Props) {
   const bias = fullResponse.candleBias ?? null;
   const location = fullResponse.location ?? null;
   const calendar = fullResponse.evidence?.calendar;
+  const tf = directionTimeframe(bias);
   const htf = bias?.htfTrend ?? location?.htfTrend ?? null;
 
   const rows: Array<{ key: string; label: string; value: string }> = [];
-  if (htf) rows.push({ key: 'htf', label: s.trend4h, value: s.htf[htf] });
+  if (htf) rows.push({ key: 'htf', label: s.trendTf.replace('{tf}', tf), value: s.htf[htf] });
+  if (bias?.timeframes) {
+    const { chart, direction, setup } = bias.timeframes;
+    rows.push({ key: 'timeframes', label: s.timeframes, value: s.timeframesValue.replace('{chart}', chart).replace('{direction}', direction).replace('{setup}', setup) });
+  }
   if (bias?.structure) rows.push({ key: 'structure', label: s.structure, value: s.structureValues[bias.structure] });
   const ema = [
     bias?.vsEma50 ? s.emaChart.replace('{side}', s.sides[bias.vsEma50]) : '',
-    bias?.htfVsEma50 ? s.emaHtf.replace('{side}', s.sides[bias.htfVsEma50]) : '',
+    bias?.htfVsEma50 ? s.emaHtf.replace('{side}', s.sides[bias.htfVsEma50]).replace('{tf}', tf) : '',
   ].filter(Boolean);
   if (ema.length) rows.push({ key: 'ema', label: s.ema, value: ema.join(', ') });
   if (typeof bias?.rsi14 === 'number') rows.push({ key: 'rsi', label: s.rsi, value: bias.rsi14.toFixed(0) });
@@ -49,7 +54,7 @@ export function WhatAISaw({ fullResponse, formatPrice }: Props) {
       <p className="mb-1 text-xs font-medium text-[var(--text-secondary)]">{title}</p>
       {keys.length ? (
         <ul className="space-y-1 text-sm leading-relaxed text-[var(--text-primary)]">
-          {keys.map((k) => <li key={k}>{s.lines[k]}</li>)}
+          {keys.map((k) => <li key={k}>{s.lines[k].replace('{tf}', tf)}</li>)}
         </ul>
       ) : (
         <p className="text-sm leading-relaxed text-[var(--text-tertiary)]">{s.none}</p>

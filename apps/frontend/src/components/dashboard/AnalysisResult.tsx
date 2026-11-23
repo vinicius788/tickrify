@@ -1018,6 +1018,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     levels: { entry, stopLoss, takeProfit1, takeProfit2 },
     watchPlan,
     watchReach: analysisData.fullResponse?.watchReach ?? null,
+    directionTimeframe: analysisData.fullResponse?.candleBias?.timeframes?.direction ?? null,
     noTradeReason: typeof engineContract.no_trade_reason === 'string' ? messageText(t, language, engineContract.no_trade_reason_code, engineContract.no_trade_reason_params, engineContract.no_trade_reason) : readReason || null,
   };
 

@@ -166,9 +166,9 @@ function Analise({ id, onUsuario }: { id: string; onUsuario: (userId: string) =>
                   <Campo rotulo="Direção" valor={bias.direction} />
                   <Campo rotulo="Placar" valor={bias.score} />
                   <Campo rotulo="Estrutura" valor={bias.structure} />
-                  <Campo rotulo="Tendência no 4h" valor={bias.htfTrend} />
+                  <Campo rotulo={`Tendência no ${bias.timeframes?.direction ?? '4h'}`} valor={bias.htfTrend} />
                   <Campo rotulo="Preço x EMA50" valor={bias.vsEma50} />
-                  <Campo rotulo="4h x EMA50" valor={bias.htfVsEma50} />
+                  <Campo rotulo={`${bias.timeframes?.direction ?? '4h'} x EMA50`} valor={bias.htfVsEma50} />
                   <Campo rotulo="Esticado" valor={bias.stretched ? 'sim' : 'não'} />
                   <Campo rotulo="RSI(14)" valor={bias.rsi14 ?? null} />
                 </dl>

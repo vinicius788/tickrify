@@ -19,6 +19,7 @@ import { canonicalFxPair, normalizeSymbol } from '../../common/utils/analysis-no
 import { nearEdge, type WatchPlan } from '../../common/utils/plan-engine';
 import { readPlan } from './setups.service';
 import { storedWatchPlan, watchSummaryOf } from './watch-pending';
+import { isStrongBias } from '../../common/utils/entry-engine';
 
 export const CONTINUATION_STATUSES = ['CONFIRMED', 'STILL_WAITING', 'CHANGED', 'INVALIDATED'] as const;
 export type ContinuationStatus = (typeof CONTINUATION_STATUSES)[number];
@@ -35,6 +36,25 @@ export interface PriorPlan {
   createdAt: Date;
   plan: WatchPlan;
   alert: { level: number; triggeredAt: Date } | null;
+  /** Nasceu de maioria ou de vies forte: so assim segura a direcao da analise nova (23/11/2026). */
+  binding: boolean;
+}
+
+/**
+ * O plano anterior prende a direcao? So se veio de maioria dos leitores ou de
+ * desempate por vies forte. Desempate fraco, leitor unico ou analise de antes
+ * do voto: nao prende (a analise nova le o grafico por conta propria).
+ */
+export function priorBinding(result: unknown): boolean {
+  const r = (result && typeof result === 'object' ? result : {}) as Record<string, any>;
+  const decidedBy = r.engine?.vote?.decidedBy;
+  if (decidedBy === 'majority') return true;
+  // Antes das regras de 23/11 (sem engine.rules) o desempate aceitava vies fraco: nao prende.
+  if (decidedBy === 'candle_bias' && r.engine?.rules) {
+    const b = r.candleBias;
+    return !!b && typeof b.score === 'number' && isStrongBias(b);
+  }
+  return false;
 }
 
 export interface SetupContinuation {
@@ -103,6 +123,7 @@ export async function loadPriorPlan(
       createdAt: prior.createdAt,
       plan,
       alert: alert && Number.isFinite(level) ? { level, triggeredAt: alert.triggeredAt } : null,
+      binding: priorBinding(prior.result),
     };
   } catch (error) {
     log(`[continuation] Plano anterior nao lido (${analysisId}): ${error instanceof Error ? error.message : error}`);
@@ -127,6 +148,7 @@ export function buildPriorPlanBlock(prior: PriorPlan): string {
     `Targets: ${plan.target2 === null ? plan.target1 : `${plan.target1}, ${plan.target2}`}`,
   ];
   if (alert) lines.push(`Alert reached: ${alert.level} at ${utc(alert.triggeredAt)}`);
+  if (!prior.binding) lines.push('Note: the earlier readers did not agree on this plan, so it carries no weight. Take the direction from the current chart only.');
   const trigger = cleanTrigger(plan.trigger);
   if (trigger) lines.push(`Earlier trigger: ${trigger}`);
   lines.push(

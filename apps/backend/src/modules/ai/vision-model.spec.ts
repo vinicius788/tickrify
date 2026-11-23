@@ -3,11 +3,10 @@ import {
   AnthropicVisionModel,
   FallbackVisionModel,
   OpenAiVisionModel,
-  collapseNullable,
-  countUnionFields,
+  anthropicJsonInstruction,
   createVisionModels,
   recordProviderComparison,
-  restoreNulls,
+  stripJsonFence,
   type VisionModelRequest,
 } from './vision-model';
 
@@ -106,7 +105,7 @@ describe('createVisionModels', () => {
 describe('AnthropicVisionModel request', () => {
   const models = { quick: 'claude-q', deep: 'claude-d' };
 
-  it('sends base64 images, cached fixed instructions and structured output', async () => {
+  it('sends base64 images, cached fixed instructions and the schema as text, never a strict grammar', async () => {
     const fetchImpl = anthropicReply({ stop_reason: 'end_turn', content: [{ type: 'text', text: '{}' }], usage: {} });
     await new AnthropicVisionModel('k', models, fetchImpl as any).complete(request());
 
@@ -116,58 +115,33 @@ describe('AnthropicVisionModel request', () => {
     const body = JSON.parse(init.body);
     expect(body.model).toBe('claude-q');
     expect(body.system).toEqual([
-      { type: 'text', text: 'FIXED', cache_control: { type: 'ephemeral' } },
+      { type: 'text', text: `FIXED\n\n${anthropicJsonInstruction(request().schema as Record<string, unknown>)}`, cache_control: { type: 'ephemeral' } },
       { type: 'text', text: 'VARIABLE' },
     ]);
     expect(body.messages[0].content[1]).toEqual({
       type: 'image',
       source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
     });
-    expect(body.output_config.format).toMatchObject({ type: 'json_schema' });
+    // 23/11/2026: a saida estruturada compilava gramatica grande demais (400 em 100% das analises).
+    expect(body.output_config).not.toHaveProperty('format');
+    expect(body).not.toHaveProperty('tools');
     expect(body).not.toHaveProperty('temperature');
   });
 
-  it('schema with more than 16 nullable fields goes structured, collapsed, and 0 / empty string come back as null', async () => {
-    const properties: Record<string, unknown> = {};
-    for (let i = 0; i < 17; i++) properties[`f${i}`] = { type: ['number', 'null'] };
-    properties.txt = { type: ['string', 'null'] };
-    properties.plain = { type: 'number' };
-    const schema = { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
-    expect(countUnionFields(schema)).toBe(18);
-
-    const fetchImpl = anthropicReply({
-      stop_reason: 'end_turn',
-      content: [{ type: 'text', text: '{"f0":0,"f1":5,"txt":"","plain":0}' }],
-      usage: {},
-    });
+  it('the JSON instruction carries the whole schema in order and nulls come back as written', async () => {
+    const schema = { type: 'object', properties: { z: { type: ['number', 'null'] }, a: { type: 'string' } }, required: ['z', 'a'], additionalProperties: false };
+    const text = anthropicJsonInstruction(schema);
+    expect(text).toContain(JSON.stringify(schema));
+    expect(text.indexOf('"z"')).toBeLessThan(text.indexOf('"a"'));
+    const fetchImpl = anthropicReply({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Here it is:\n```json\n{"z":null,"a":"x"}\n```' }], usage: {} });
     const result = await new AnthropicVisionModel('k', models, fetchImpl as any).complete(request({ schema }));
-    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    const sent = body.output_config.format.schema;
-    expect(body.output_config.format.type).toBe('json_schema');
-    expect(sent.properties.f0).toEqual({ type: 'number' });
-    expect(sent.properties.txt).toEqual({ type: 'string' });
-    expect(countUnionFields(sent)).toBe(0);
-    expect(body.system[0].text).toContain('write 0 for a number');
-    // campo anulavel: 0 e '' viram null; campo NAO anulavel mantem o 0
-    expect(JSON.parse(result.content)).toMatchObject({ f0: null, f1: 5, txt: null, plain: 0 });
+    expect(JSON.parse(result.content)).toEqual({ z: null, a: 'x' });
   });
 
-  it('collapseNullable removes null from enums and restoreNulls follows array paths', () => {
-    const schema = {
-      type: 'object',
-      properties: {
-        dir: { type: ['string', 'null'], enum: ['long', 'short', null] },
-        list: { type: 'array', items: { type: 'object', properties: { n: { type: ['number', 'null'] } } } },
-      },
-    };
-    const { schema: out, paths } = collapseNullable(schema);
-    const props = (out as any).properties;
-    expect(props.dir).toEqual({ type: 'string', enum: ['long', 'short'] });
-    expect(props.list.items.properties.n).toEqual({ type: 'number' });
-    expect(restoreNulls({ dir: '', list: [{ n: 0 }, { n: 3 }] }, paths)).toEqual({
-      dir: null,
-      list: [{ n: null }, { n: 3 }],
-    });
+  it('stripJsonFence keeps only the object when there is prose around it', () => {
+    expect(stripJsonFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
+    expect(stripJsonFence('Sure. {"a":{"b":2}} Done.')).toBe('{"a":{"b":2}}');
+    expect(stripJsonFence('{"a":1}')).toBe('{"a":1}');
   });
 
   it('sends output_config.effort: low by default, medium/high when asked', async () => {

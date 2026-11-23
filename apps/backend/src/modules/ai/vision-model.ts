@@ -205,9 +205,10 @@ export class OpenAiVisionModel implements VisionModel {
 // Formato conferido em platform.claude.com em 13/10/2026:
 //   - imagem: { type: 'image', source: { type: 'base64', media_type, data } }
 //     ou { type: 'url', url }; jpeg/png/gif/webp.
-//   - saida estruturada: output_config.format = { type: 'json_schema', schema },
-//     sem cabecalho beta; JSON no bloco `text`. Limite: 16 campos com uniao de
-//     tipos (["number","null"]) por requisicao.
+//   - saida: JSON pedido em TEXTO, com o schema no system (23/11/2026). A saida
+//     estruturada (output_config.format) compila uma gramatica; com o schema da
+//     analise a API recusou 100% em producao ("compiled grammar is too large").
+//     O JSON volta no bloco `text` e passa pelo mesmo parser dos outros leitores.
 //   - cache: cache_control { type: 'ephemeral' } no bloco do system;
 //     usage.input_tokens NAO inclui cache_read/cache_creation.
 //   - stop_reason: end_turn | max_tokens | refusal | stop_sequence.
@@ -219,7 +220,6 @@ export class OpenAiVisionModel implements VisionModel {
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
-const ANTHROPIC_MAX_UNION_FIELDS = 16;
 const ANTHROPIC_DEFAULT_MODELS: Record<ModelTier, string> = {
   quick: 'claude-haiku-5-5',
   deep: 'claude-haiku-5-5',
@@ -232,53 +232,6 @@ class ProviderHttpError extends Error {
   }
 }
 
-/** Campos com uniao de tipos no schema (o limite da Anthropic e por requisicao). */
-export function countUnionFields(schema: unknown): number {
-  if (!schema || typeof schema !== 'object') return 0;
-  if (Array.isArray(schema)) return schema.reduce((n: number, item) => n + countUnionFields(item), 0);
-  const node = schema as Record<string, unknown>;
-  const own = Array.isArray(node.type) || Array.isArray(node.anyOf) ? 1 : 0;
-  return own + Object.values(node).reduce((n: number, value) => n + countUnionFields(value), 0);
-}
-
-type NullPath = string[];
-
-/**
- * Acima do limite de unioes, cada campo `type: [X, 'null']` vira `X` e o caminho
- * fica guardado: na resposta, 0 (numero) ou '' (texto) nesses campos volta a ser
- * null. Assim o schema inteiro cabe na saida estruturada (23/11/2026).
- */
-export function collapseNullable(schema: unknown, path: NullPath = [], out: NullPath[] = []): { schema: unknown; paths: NullPath[] } {
-  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return { schema, paths: out };
-  const node = { ...(schema as Record<string, unknown>) };
-  if (Array.isArray(node.type) && node.type.includes('null') && node.type.length === 2) {
-    node.type = (node.type as string[]).find((t) => t !== 'null');
-    if (Array.isArray(node.enum)) node.enum = node.enum.filter((v) => v !== null);
-    out.push(path);
-  }
-  if (node.properties && typeof node.properties === 'object') {
-    node.properties = Object.fromEntries(
-      Object.entries(node.properties as Record<string, unknown>).map(([k, v]) => [k, collapseNullable(v, [...path, k], out).schema]),
-    );
-  }
-  if (node.items) node.items = collapseNullable(node.items, [...path, '*'], out).schema;
-  if (Array.isArray(node.anyOf)) node.anyOf = node.anyOf.map((v) => collapseNullable(v, path, out).schema);
-  return { schema: node, paths: out };
-}
-
-export function restoreNulls(value: unknown, paths: NullPath[]): unknown {
-  const walk = (node: unknown, path: string[]): unknown => {
-    if (!path.length) return node === 0 || node === '' ? null : node;
-    if (node === null || typeof node !== 'object') return node;
-    const [head, ...rest] = path;
-    if (head === '*') return Array.isArray(node) ? node.map((n) => walk(n, rest)) : node;
-    const obj = node as Record<string, unknown>;
-    if (head in obj) obj[head] = walk(obj[head], rest);
-    return obj;
-  };
-  return paths.reduce((acc, p) => walk(acc, p), value);
-}
-
 const anthropicEffort = (e: ReasoningEffort | undefined): string =>
   e === 'medium' || e === 'high' ? e : 'low';
 
@@ -289,19 +242,26 @@ function anthropicImageSource(url: string): Record<string, string> {
     : { type: 'url', url };
 }
 
-/** Sem saida estruturada o modelo pode cercar o JSON com ```json. */
-function stripJsonFence(text: string): string {
-  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text.trim());
-  return fenced ? fenced[1].trim() : text.trim();
+/** Pedido do JSON em texto: um objeto so, na ordem do schema (a ordem e a de geracao). */
+export function anthropicJsonInstruction(schema: Record<string, unknown>): string {
+  return [
+    'Reply with exactly one JSON object and nothing else: no prose, no code fence.',
+    'It must match this JSON Schema. Write the properties in the order the schema lists them, include every required property, and use null where the schema allows null.',
+    JSON.stringify(schema),
+  ].join('\n');
 }
 
-function restoreJson(text: string, paths: NullPath[]): string {
-  try {
-    return JSON.stringify(restoreNulls(JSON.parse(text), paths));
-  } catch {
-    return text.trim();
-  }
+/** Sem saida estruturada o modelo pode cercar o JSON com ```json. */
+export function stripJsonFence(text: string): string {
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text.trim());
+  const body = fenced ? fenced[1].trim() : text.trim();
+  if (body.startsWith('{')) return body;
+  // Frase antes ou depois do objeto: fica do primeiro `{` ao ultimo `}`.
+  const first = body.indexOf('{');
+  const last = body.lastIndexOf('}');
+  return first >= 0 && last > first ? body.slice(first, last + 1) : body;
 }
+
 
 export class AnthropicVisionModel implements VisionModel {
   readonly provider = 'anthropic';
@@ -314,15 +274,9 @@ export class AnthropicVisionModel implements VisionModel {
 
   async complete(request: VisionModelRequest): Promise<VisionModelResult> {
     const model = this.models[request.tier];
-    // O schema da analise tem mais campos anulaveis que o limite da saida
-    // estruturada: os anulaveis viram obrigatorios e voltam a null na resposta.
-    const collapsed = request.schema && countUnionFields(request.schema) > ANTHROPIC_MAX_UNION_FIELDS
-      ? collapseNullable(request.schema)
-      : { schema: request.schema ?? null, paths: [] as NullPath[] };
-    const structured = collapsed.schema as Record<string, unknown> | null;
-    const schemaAsText = collapsed.paths.length
-      ? 'Where a field would be null, write 0 for a number and an empty string for text.'
-      : '';
+    // Sem gramatica estrita: o schema vai como texto e o JSON e conferido pelo
+    // parser do adapter (o mesmo dos outros leitores).
+    const schemaAsText = request.schema ? anthropicJsonInstruction(request.schema) : '';
 
     const system: Array<Record<string, unknown>> = [];
     const fixed = [request.instructions, schemaAsText].filter((t) => t && t.trim()).join('\n\n');
@@ -344,7 +298,6 @@ export class AnthropicVisionModel implements VisionModel {
       ...(system.length > 0 ? { system } : {}),
       output_config: {
         effort: anthropicEffort(request.reasoningEffort),
-        ...(structured ? { format: { type: 'json_schema', schema: structured } } : {}),
       },
     };
 
@@ -385,7 +338,7 @@ export class AnthropicVisionModel implements VisionModel {
     return {
       provider: this.provider,
       model,
-      content: structured && collapsed.paths.length ? restoreJson(text, collapsed.paths) : structured ? text.trim() : stripJsonFence(text),
+      content: stripJsonFence(text),
       finishReason: stop === 'max_tokens' ? 'length' : 'stop',
       refusal: stop === 'refusal' ? text.trim() || 'refusal' : '',
       usage: {
