@@ -160,8 +160,10 @@ const BAND_LABEL = {
 };
 
 /*
- * 04/11/2026: a /accuracy separa o motor atual (v11, medido pelo rastreador) do
- * motor anterior (arquivado, todos os numeros de antes). Os textos ate
+ * 04/11/2026: a /accuracy separa o motor atual (medido pelo rastreador) do
+ * motor anterior (arquivado, todos os numeros de antes). 23/11/2026: o motor
+ * pelas velas com varios leitores (marcador `engine.vote`) vira o atual e o v11
+ * passa a serie propria; os tres registros nunca se somam. Os textos ate
  * `trackingRows` sao gerados da MESMA fonte que a AccuracyPage.tsx usa (o teste
  * da pagina compara os dois lados); data, minimo e toda frase que depende do dado
  * vem da API.
@@ -188,19 +190,19 @@ const PREVIOUS_METHOD =
   'An automated sweeper runs hourly and attempts to evaluate completed analyses after 48 hours. BUY and SELL plans with available candles are scored: the entry must fill first, then the first target races the stop on 30-minute candles. A candle touching both is recorded as a loss. WAIT, incomplete plans and cases without reliable candles are reported separately rather than counted as wins or losses. The headline figures use the original rule, which also counts a target touched in the same candle where the entry fills as a win; analyses scored under a later, stricter rule, where only the stop counts in that candle, are reported as a separate series and never added to the headline figures.';
 
 const CURRENT_METHOD =
-  'Trade plans and Watch levels are checked against real candles once their window closes (the validity of the plan plus 48 hours, longer for markets that close at weekends), when a price source is available; reads that cannot be checked are counted separately, by reason. A closed window waits for the next tracker run, every 30 minutes. Prices come from 1-minute candles when the window is short enough, otherwise 5-minute candles. An Enter now fills at the market price right after the analysis; then the first target races the stop for 48 hours, and inside the fill candle only the stop counts. A trade that reaches neither is a timeout: it is left out of the hit rate and counts as zero, minus spread, in the average result. A Watch is not a trade and has no win or loss: it is checked for one thing, whether price reached its level before the window closed or before price went beyond its invalidation.';
+  'The current engine and the v11 engine are measured by the same tracker. Trade plans and Watch levels are checked against real candles once their window closes (the validity of the plan plus 48 hours, longer for markets that close at weekends), when a price source is available; reads that cannot be checked are counted separately, by reason. A closed window waits for the next tracker run, every 30 minutes. Prices come from 1-minute candles when the window is short enough, otherwise 5-minute candles. An Enter now (a Buy now or Sell now in the current engine) fills at the market price right after the analysis; then the first target races the stop for 48 hours, and inside the fill candle only the stop counts. A trade that reaches neither is a timeout: it is left out of the hit rate and counts as zero, minus spread, in the average result. A Watch (a pullback or breakout entry, or a level to wait for) is not a trade and has no win or loss: it is checked for one thing, whether price reached its level before the window closed or before price went beyond its invalidation.';
 
 const ENGINE_STATES =
-  "Enter now is a complete plan to act on at market. With live candles, code checks the plan: the stop sits beyond a real swing near the invalidation plus a margin measured per market, risk stays between 0.5 and 2 ATR, and the first target is 1R to 1.5R away. Without live candles, the entry, stop and targets are the AI's own estimates read from the screenshot; Enter now then still needs the screenshot price inside the plan's zone and the required checks, and the screen says the levels are estimated. Watch is a level worth waiting for, not an order: the price where the setup would become valid, how long it stays valid and what would cancel it. No trade means there is nothing to do on that chart.";
+  "Every chart is read by more than one independent AI read, and the reads vote on the direction. When the recent candles show a strong trend (swing structure and the 4h trend pointing the same way), the candles set the direction; when the reads do not agree with each other, the market candles decide. With market candles, the entry, stop and target are set or checked by code: the stop sits beyond a real swing near the invalidation plus a margin measured per market, risk stays between 0.5 and 2 ATR, and the first target is 1R to 1.5R away. The outcome is Buy now or Sell now (enter at the current price), Buy or Sell on pullback (wait for price to come back to a level), Buy or Sell on breakout (enter only after a candle closes beyond the level), or Wait. A Wait always states its reason and, with market candles, the price that would turn it into a buy or a sell. In this record Buy now and Sell now are tracked as Enter now, pullback and breakout entries as Watch, and Wait as No trade. Without market candles, the levels are the AI's own estimates read from the screenshot, the screen says so, and the outcomes are Enter now, Watch and No trade.";
 
 const WHAT_CHANGED_OUTRO =
-  "These states do different jobs, so they are measured differently, and none of their results are mixed with the previous engine's.";
+  "These outcomes do different jobs, so they are measured differently, and none of their results are mixed with the earlier engines'.";
 
 const EDGE_INTRO =
   'A hit rate only means something next to the size of the wins: if the average win is R times the risk, a plan breaks even at a hit rate of 1 / (1 + R), before costs. That is why the verdict here uses the average result per trade in R, not the hit rate.';
 
 const WHO_CURRENT =
-  "Who is counted, current engine: analyses from free, trial and paid accounts all count, because the engine is the same for everyone. The founder's own account and analyses run with a personal strategy profile are left out.";
+  "Who is counted, current and v11 engines: analyses from free, trial and paid accounts all count, because the engine is the same for everyone. The founder's own account and analyses run with a personal strategy profile are left out.";
 
 const WHO_PREVIOUS =
   "Who is counted, previous engine: only analyses made with paid access, as before, which includes the founder's own account. Analyses from the free allowance and the free trial, and analyses run with a personal strategy profile, are left out.";
@@ -220,63 +222,81 @@ export function whatChangedTitle(data) {
   return since ? `What changed on ${since}` : 'What changed with the current engine';
 }
 
+/** O motor anterior (BUY, SELL, WAIT) termina quando o v11 entra. */
 export function previousTitle(data) {
-  const since = fmtDate(data?.currentEngine?.since);
-  return since ? `Previous engine (archived, until ${since})` : 'Previous engine (archived)';
+  const until = fmtDate(data?.currentEngine?.v11Since);
+  return until ? `Previous engine (archived, until ${until})` : 'Previous engine (archived)';
+}
+
+/** O v11 (Enter now, Watch, No trade) vai da entrada dele ate a do motor atual. */
+export function v11Title(data) {
+  const from = fmtDate(data?.currentEngine?.v11Since);
+  const to = fmtDate(data?.currentEngine?.since);
+  return from && to ? `v11 engine (archived, ${from} to ${to})` : 'v11 engine (archived)';
 }
 
 export function whatChangedIntro(data) {
   const since = fmtDate(data?.currentEngine?.since);
   const time = fmtTime(data?.currentEngine?.since);
+  const v11 = fmtDate(data?.currentEngine?.v11Since);
   const when = since && time ? `On ${since}, at ${time} UTC, Tickrify` : 'Tickrify';
-  return `${when} switched to a new analysis engine. The previous engine returned BUY, SELL or WAIT, and it was scored by one rule: did the first target print before the stop within 48 hours.`;
+  const middle = v11 ? `From ${v11} until then, the v11 engine returned Enter now, Watch or No trade.` : 'Before that, the v11 engine returned Enter now, Watch or No trade.';
+  return `${when} changed its analysis engine again: more than one independent AI read now votes on the direction, the market candles decide when the reads disagree, and the result is Buy now, Sell now, a pullback or breakout entry, or Wait. ${middle} Before the v11 engine, the previous engine returned BUY, SELL or WAIT, and it was scored by one rule: did the first target print before the stop within 48 hours.`;
 }
 
 /** A resposta de abertura (pagina, geo-body e FAQPage). Data e minimo vem da API. */
 export function accuracyAnswer(data) {
   const since = fmtDate(data?.currentEngine?.since);
   const min = minOf(data);
-  const opening = since ? `Since ${since}, a new engine` : 'A new engine';
+  const opening = since ? `Since ${since}, the current engine` : 'The current engine';
   const publish = min
     ? `A result is published once a cut has at least ${min} resolved cases.`
     : 'A result is published only once a cut has enough resolved cases.';
-  return `Tickrify does not claim an edge. ${opening} decides between three states: Enter now, Watch and No trade. It gives an Enter now plan only when fixed checks pass, so it is measured on what it actually outputs: how its Watch levels resolved, how its Enter now plans resolved in R, and how much of each read used live candle data. ${publish} The previous engine's record stays public in full, archived, with its own rules.`;
+  return `Tickrify does not claim an edge. ${opening} decides between Buy now or Sell now, a Buy or Sell on pullback or on breakout, and Wait. It gives an entry at the current price only when fixed checks pass, so it is measured on what it actually outputs: how its pullback and breakout levels resolved, how its Buy now and Sell now plans resolved in R, and how much of each read used market candle data. ${publish} The earlier engines' records stay public in full, archived, with their own rules.`;
+}
+
+/** As frases do rastreador de uma serie (motor atual ou v11); `tagged` explica o nome novo de cada estado. */
+function trackedSentences(who, c, min, asOf, tagged) {
+  const e = tagged ? ' (Buy now or Sell now)' : '';
+  const w = tagged ? ' (pullback or breakout entry)' : '';
+  const n = tagged ? ' (Wait)' : '';
+  const parts = [
+    `As of ${asOf}, the ${who} has made ${c.analyses} analyses: ${countOf(c.byState, 'ENTER_NOW')} Enter now${e}, ${countOf(c.byState, 'WATCH')} Watch${w} and ${countOf(c.byState, 'NO_TRADE')} No trade${n}, ${countOf(c.dataMode, 'real_data')} of them read with market candle data.`,
+  ];
+  const hit = c.enterNow.hitRate;
+  parts.push(
+    isRate(hit)
+      ? `${hit.n} Enter now plans resolved at target or stop: ${hit.rate}% reached the first target before the stop (95% CI ${hit.low}% to ${hit.high}%).`
+      : `Enter now results: collecting data, ${hit.n} of ${min} resolved at target or stop.`,
+  );
+  const reach = c.watch.reachRate;
+  parts.push(
+    isRate(reach)
+      ? `${reach.n} Watch levels resolved: ${reach.rate}% were reached in time (95% CI ${reach.low}% to ${reach.high}%).`
+      : `Watch results: collecting data, ${reach.n} of ${min} resolved.`,
+  );
+  return parts;
 }
 
 /**
  * O resumo com numeros, depois da abertura: motor atual primeiro (estados com
- * o n mesmo abaixo do minimo, porque contagem nao e taxa), motor anterior no fim.
+ * o n mesmo abaixo do minimo, porque contagem nao e taxa), o v11 e o motor anterior no fim.
  */
 export function accuracySummary(data) {
   if (!data?.previous) return null;
   const asOf = data.updatedAt.slice(0, 10);
   const min = minOf(data);
   const c = data.current;
+  const v = data.v11;
   const parts = [];
-  if (c) {
-    parts.push(
-      `As of ${asOf}, the current engine has made ${c.analyses} analyses: ${countOf(c.byState, 'ENTER_NOW')} Enter now, ${countOf(c.byState, 'WATCH')} Watch and ${countOf(c.byState, 'NO_TRADE')} No trade, ${countOf(c.dataMode, 'real_data')} of them read with live candle data.`,
-    );
-    const hit = c.enterNow.hitRate;
-    parts.push(
-      isRate(hit)
-        ? `${hit.n} Enter now plans resolved at target or stop: ${hit.rate}% reached the first target before the stop (95% CI ${hit.low}% to ${hit.high}%).`
-        : `Enter now results: collecting data, ${hit.n} of ${min} resolved at target or stop.`,
-    );
-    const reach = c.watch.reachRate;
-    parts.push(
-      isRate(reach)
-        ? `${reach.n} Watch levels resolved: ${reach.rate}% were reached in time (95% CI ${reach.low}% to ${reach.high}%).`
-        : `Watch results: collecting data, ${reach.n} of ${min} resolved.`,
-    );
-  } else {
-    parts.push(`As of ${asOf}, the current engine's results are not loading.`);
-  }
+  if (c) parts.push(...trackedSentences('current engine', c, min, asOf, true));
+  else parts.push(`As of ${asOf}, the current engine's results are not loading.`);
+  if (v && v.analyses > 0) parts.push(...trackedSentences('v11 engine, kept apart,', v, min, asOf, false));
   const o = data.previous.overall;
   parts.push(
     isRate(o)
-      ? `The previous engine, archived, recorded ${o.rate}% across ${o.n} resolved trades (${o.wins} wins, ${o.losses} losses, 95% CI ${o.low}% to ${o.high}%). The two records are never added together.`
-      : `The previous engine, archived, has ${data.previous.overall.n} resolved trades, below the minimum to publish a rate. The two records are never added together.`,
+      ? `The previous engine, archived, recorded ${o.rate}% across ${o.n} resolved trades (${o.wins} wins, ${o.losses} losses, 95% CI ${o.low}% to ${o.high}%). The records are never added together.`
+      : `The previous engine, archived, has ${data.previous.overall.n} resolved trades, below the minimum to publish a rate. The records are never added together.`,
   );
   return parts.join(' ');
 }
@@ -297,22 +317,24 @@ export function edgeSentence(name, ar, costs, min) {
   return `${head} Zero sits inside that interval, so the data cannot tell a positive average from a negative one.${left}`;
 }
 
-/** As duas frases do resultado medio, motor atual primeiro. */
+/** As frases do resultado medio: motor atual, v11 e motor anterior, nunca somados. */
 export function edgeAnswer(data) {
   if (!data?.previous) {
     return "Tickrify does not claim an edge. On the live page, each engine's average result per trade in R is published with a 95% interval, and only once enough trades have resolved.";
   }
   const min = minOf(data);
+  const spread = 'after an estimated spread, before other costs';
   const cur = data.current
-    ? edgeSentence('Current engine', data.current.enterNow.averageResult, 'after an estimated spread, before other costs', min)
+    ? edgeSentence('Current engine', data.current.enterNow.averageResult, spread, min)
     : 'Current engine: results are not loading right now.';
+  const v11 = data.v11 && data.v11.analyses > 0 ? `${edgeSentence('v11 engine', data.v11.enterNow.averageResult, spread, min)} ` : '';
   const prev = edgeSentence('Previous engine', data.previous.averageResult, 'before costs', min);
-  return `${cur} ${prev} Tickrify does not claim an edge; this comparison is published so you can check.`;
+  return `${cur} ${v11}${prev} Tickrify does not claim an edge; this comparison is published so you can check.`;
 }
 
 export function averageMethod(data) {
   const min = minOf(data);
-  return `Average result per trade: a trade that reaches the first target is worth its own reward in R, a stop is -1R and a timeout 0R. For the previous engine the reward is the plan's recorded first-target ratio, before costs; for the current engine it is the distance from the fill to the target divided by the risk, minus a typical retail spread for the instrument. Trades without a valid R are left out and counted. The 95% interval of the mean uses Student's t, and the verdict compares that interval with zero. It is published only once ${min ? `at least ${min}` : 'enough'} of its trades reached target or stop.`;
+  return `Average result per trade: a trade that reaches the first target is worth its own reward in R, a stop is -1R and a timeout 0R. For the previous engine the reward is the plan's recorded first-target ratio, before costs; for the current and v11 engines it is the distance from the fill to the target divided by the risk, minus a typical retail spread for the instrument. Trades without a valid R are left out and counted. The 95% interval of the mean uses Student's t, and the verdict compares that interval with zero. It is published only once ${min ? `at least ${min}` : 'enough'} of its trades reached target or stop.`;
 }
 
 export function intervalsMethod(data) {
@@ -322,12 +344,12 @@ export function intervalsMethod(data) {
 
 export function measurementTechnique(data) {
   const min = minOf(data);
-  return `Current engine: trade plans and Watch levels are tracked against real candles after the validity window plus 48 hours, when a price source is available; reads that cannot be checked are counted separately. Previous engine: eligible trade plans scored automatically against real candles after 48 hours. No human in the loop.${min ? ` Cuts below n = ${min} are shown as sample size only.` : ''}`;
+  return `Current and v11 engines: trade plans and Watch levels are tracked against real candles after the validity window plus 48 hours, when a price source is available; reads that cannot be checked are counted separately. Previous engine: eligible trade plans scored automatically against real candles after 48 hours. No human in the loop.${min ? ` Cuts below n = ${min} are shown as sample size only.` : ''}`;
 }
 
 export function datasetDescription(data) {
   const since = fmtDate(data?.currentEngine?.since);
-  return `Measured results of Tickrify's AI chart analysis in two separate records: the current engine${since ? ` since ${since}` : ''}, tracked by what it delivers (Enter now trades and Watch levels), and the archived previous engine. Published with sample sizes, 95% confidence intervals and the average result per trade in R.`;
+  return `Measured results of Tickrify's AI chart analysis in three separate records: the current engine${since ? ` since ${since}` : ''}, tracked by what it delivers (Buy now and Sell now trades, and pullback and breakout levels), the archived v11 engine, and the archived previous engine. Published with sample sizes, 95% confidence intervals and the average result per trade in R.`;
 }
 
 /** Comparacao das faixas de confianca do motor anterior: so com as duas faixas publicaveis, frase pelo dado. */
@@ -345,30 +367,34 @@ export function confidenceSentence(data) {
 /** As MESMAS perguntas e respostas da pagina, do HTML pre-renderizado e do FAQPage. */
 export function accuracyFaqItems(data) {
   const c = data?.current;
+  const v = data?.v11;
   const p = data?.previous;
   const since = fmtDate(data?.currentEngine?.since);
+  const v11Since = fmtDate(data?.currentEngine?.v11Since);
   const asOf = data?.updatedAt ? data.updatedAt.slice(0, 10) : null;
+  const stops = c && p
+    ? `${c.enterNow.outcomes.stop} so far for the current engine${v && v.analyses > 0 ? `, ${v.enterNow.outcomes.stop} for the v11 engine` : ''} and ${p.overall.losses} in the previous engine's headline figures`
+    : '';
   return [
     { q: 'How accurate is Tickrify?', a: [accuracyAnswer(data), accuracySummary(data)].filter(Boolean).join(' ') },
     {
-      q: 'Why are there two sets of results?',
-      a: `Tickrify changed its analysis engine${since ? ` on ${since}` : ''}. The previous engine returned BUY, SELL or WAIT; the current one returns Enter now, Watch or No trade. The two are measured with different rules, so their results are published separately and never added together. The previous engine's record stays public, archived, with its own methodology.`,
+      q: 'Why are there three sets of results?',
+      a: `Tickrify changed its analysis engine twice${since ? `, most recently on ${since}` : ''}. The first engine returned BUY, SELL or WAIT; the v11 engine${v11Since ? `, from ${v11Since},` : ''} returned Enter now, Watch or No trade; the current one returns Buy now or Sell now, a pullback or breakout entry, or Wait. They are measured with different rules, so their results are published separately and never added together. The earlier records stay public, archived, with their own methodology.`,
     },
-    { q: 'How is the current engine measured?', a: CURRENT_METHOD },
+    { q: 'How are the current and v11 engines measured?', a: CURRENT_METHOD },
     { q: 'How was the previous engine measured?', a: PREVIOUS_METHOD },
     { q: 'Does Tickrify have an edge?', a: edgeAnswer(data) },
     {
       q: 'Does the AI suggest a trade on every chart?',
       a: c
-        ? `No. Of ${c.analyses} current-engine analyses, ${countOf(c.byState, 'ENTER_NOW')} were Enter now, ${countOf(c.byState, 'WATCH')} were Watch and ${countOf(c.byState, 'NO_TRADE')} were No trade. Watch and No trade are designed outcomes, not failures to answer, and neither counts as a win or a loss.`
-        : 'No. Many analyses return Watch, a level worth waiting for, or No trade. Those are designed outcomes, not failures to answer, and neither counts as a win or a loss.',
+        ? `No. Of ${c.analyses} current-engine analyses, ${countOf(c.byState, 'ENTER_NOW')} were Enter now (Buy now or Sell now), ${countOf(c.byState, 'WATCH')} were Watch (a pullback or breakout entry) and ${countOf(c.byState, 'NO_TRADE')} were No trade (Wait). Watch and No trade are designed outcomes, not failures to answer, and neither counts as a win or a loss.`
+        : 'No. Many analyses return a pullback or breakout entry to wait for, or Wait. Those are designed outcomes, not failures to answer, and neither counts as a win or a loss.',
     },
     {
       q: 'Are losing trades included?',
-      a:
-        c && p
-          ? `Yes. Every stop is counted: ${c.enterNow.outcomes.stop} so far for the current engine and ${p.overall.losses} in the previous engine's headline figures. Unfilled entries, timeouts and cases without reliable candles are reported separately rather than quietly dropped.`
-          : 'Yes. Every stop is counted. Unfilled entries, timeouts and cases without reliable candles are reported separately rather than quietly dropped.',
+      a: stops
+        ? `Yes. Every stop is counted: ${stops}. Unfilled entries, timeouts and cases without reliable candles are reported separately rather than quietly dropped.`
+        : 'Yes. Every stop is counted. Unfilled entries, timeouts and cases without reliable candles are reported separately rather than quietly dropped.',
     },
     {
       q: 'How often is this page updated?',
@@ -379,14 +405,14 @@ export function accuracyFaqItems(data) {
   ];
 }
 
-/** Nota do bloco EUR/USD invertido: horarios e data vem da API. */
+/** Nota do bloco EUR/USD invertido (so o v11 a recebeu): horarios e data vem da API. */
 export function eurUsdNote(data) {
-  const c = data?.current;
+  const c = data?.v11;
   const b = c?.eurUsdBlock;
   if (!c || !b) return null;
-  const head = `Note on gold and forex: from ${fmtTime(c.since)} to ${fmtTime(b.until)} UTC on ${fmtDate(b.until)}, the market context sent to the current engine for gold and forex described EUR/USD rising as the dollar strengthening, the opposite of what it means. It was corrected at ${fmtTime(b.until)} UTC.`;
+  const head = `Note on gold and forex: from ${fmtTime(c.since)} to ${fmtTime(b.until)} UTC on ${fmtDate(b.until)}, the market context sent to the v11 engine for gold and forex described EUR/USD rising as the dollar strengthening, the opposite of what it means. It was corrected at ${fmtTime(b.until)} UTC.`;
   return b.analyses > 0
-    ? `${head} ${b.analyses} gold and forex analyses in the published sample were made in that window (${b.enterNow} Enter now, ${b.closedWatch} Watch with a closed window). They are included in the figures above and flagged for the monthly review.`
+    ? `${head} ${b.analyses} gold and forex analyses in the published sample were made in that window (${b.enterNow} Enter now, ${b.closedWatch} Watch with a closed window). They are included in the v11 figures and flagged for the monthly review.`
     : `${head} No gold or forex analysis in the published sample was made in that window.`;
 }
 
@@ -420,36 +446,46 @@ export function accuracyBlock(data) {
       ? `${signedR(ar.mean)} (95% CI ${signedR(ar.low)} to ${signedR(ar.high)}), n = ${ar.n}`
       : `Collecting data: ${ar.decided} of ${min} resolved at target or stop`;
 
-  const current = c
-    ? [
-        `<h2>Current engine: results so far${asOf ? `, as of ${esc(asOf)}` : ''}</h2>`,
-        `<table><thead><tr><th>Metric</th><th>Value</th><th>Sample</th></tr></thead><tbody>${[
-          metricRow('Enter now reached target before stop', c.enterNow.hitRate, min),
-          metricRow('Watch levels reached in time', c.watch.reachRate, min),
-        ].join('')}</tbody></table>`,
-        `<table><thead><tr><th>Current engine</th><th>Count</th></tr></thead><tbody>${[
-          countRow('Analyses by the current engine', c.analyses),
-          countRow('Enter now given', countOf(c.byState, 'ENTER_NOW')),
-          countRow('Watch given', countOf(c.byState, 'WATCH')),
-          countRow('No trade given', countOf(c.byState, 'NO_TRADE')),
-          countRow('Read with live candles', countOf(c.dataMode, 'real_data')),
-          countRow('Read from the screenshot alone', countOf(c.dataMode, 'print')),
-        ].join('')}</tbody></table>`,
-        `<table><thead><tr><th>Tracker</th><th>Enter now</th><th>Watch</th></tr></thead><tbody>${trackingRows(c)
-          .map(([label, e, w]) => `<tr><td>${esc(label)}</td><td>${esc(e)}</td><td>${esc(w)}</td></tr>`)
-          .join('')}</tbody></table>`,
-        `<table><thead><tr><th>Checked Enter now and Watch</th><th>Count</th></tr></thead><tbody>${[
-          countRow('Enter now reached the first target', c.enterNow.outcomes.tp1),
-          countRow('Enter now hit the stop', c.enterNow.outcomes.stop),
-          countRow('Enter now timeout, neither in 48 hours', c.enterNow.outcomes.timeout),
-          countRow('Enter now average result per trade, estimated spread deducted', avgCell(c.enterNow.averageResult)),
-          countRow('Watch reached the level in time', c.watch.outcomes.reached),
-          countRow('Watch went beyond the invalidation first', c.watch.outcomes.invalidated),
-          countRow('Watch window closed without reaching the level', c.watch.outcomes.expired),
-          countRow('Watch could not be checked', c.watch.outcomes.unavailable),
-        ].join('')}</tbody></table>`,
-      ].join('\n')
-    : '<h2>Current engine: results so far</h2>\n<p>The current engine’s results were not available when this page was built. The live page loads them from the same API.</p>';
+  /** As tabelas de uma serie do rastreador (motor atual ou v11). */
+  const engineTables = (title, name, ser, unavailable) =>
+    ser
+      ? [
+          `<h2>${esc(title)}${asOf ? `, as of ${esc(asOf)}` : ''}</h2>`,
+          `<table><thead><tr><th>Metric</th><th>Value</th><th>Sample</th></tr></thead><tbody>${[
+            metricRow('Enter now reached target before stop', ser.enterNow.hitRate, min),
+            metricRow('Watch levels reached in time', ser.watch.reachRate, min),
+          ].join('')}</tbody></table>`,
+          `<table><thead><tr><th>${esc(name)}</th><th>Count</th></tr></thead><tbody>${[
+            countRow(`Analyses by the ${name.toLowerCase()}`, ser.analyses),
+            countRow('Enter now given', countOf(ser.byState, 'ENTER_NOW')),
+            countRow('Watch given', countOf(ser.byState, 'WATCH')),
+            countRow('No trade given', countOf(ser.byState, 'NO_TRADE')),
+            countRow('Read with market candles', countOf(ser.dataMode, 'real_data')),
+            countRow('Read from the screenshot alone', countOf(ser.dataMode, 'print')),
+          ].join('')}</tbody></table>`,
+          `<table><thead><tr><th>Tracker</th><th>Enter now</th><th>Watch</th></tr></thead><tbody>${trackingRows(ser)
+            .map(([label, e, w]) => `<tr><td>${esc(label)}</td><td>${esc(e)}</td><td>${esc(w)}</td></tr>`)
+            .join('')}</tbody></table>`,
+          `<table><thead><tr><th>Checked Enter now and Watch</th><th>Count</th></tr></thead><tbody>${[
+            countRow('Enter now reached the first target', ser.enterNow.outcomes.tp1),
+            countRow('Enter now hit the stop', ser.enterNow.outcomes.stop),
+            countRow('Enter now timeout, neither in 48 hours', ser.enterNow.outcomes.timeout),
+            countRow('Enter now average result per trade, estimated spread deducted', avgCell(ser.enterNow.averageResult)),
+            countRow('Watch reached the level in time', ser.watch.outcomes.reached),
+            countRow('Watch went beyond the invalidation first', ser.watch.outcomes.invalidated),
+            countRow('Watch window closed without reaching the level', ser.watch.outcomes.expired),
+            countRow('Watch could not be checked', ser.watch.outcomes.unavailable),
+          ].join('')}</tbody></table>`,
+        ].join('\n')
+      : unavailable;
+
+  const current = engineTables(
+    'Current engine: results so far',
+    'Current engine',
+    c,
+    '<h2>Current engine: results so far</h2>\n<p>The current engine’s results were not available when this page was built. The live page loads them from the same API.</p>',
+  );
+  const v11 = data.v11 && data.v11.analyses > 0 ? engineTables(v11Title(data), 'v11 engine', data.v11, '') : '';
 
   const rows = [
     metricRow('Hit rate, original scoring rule', p.overall),
@@ -468,11 +504,12 @@ export function accuracyBlock(data) {
 
   return [
     current,
+    v11,
     '<h2>Does Tickrify have an edge?</h2>',
     `<p>${esc(EDGE_INTRO)}</p>`,
     `<p>${esc(edgeAnswer(data))}</p>`,
     `<h2>${esc(previousTitle(data))}</h2>`,
-    '<p>The record of the previous engine, kept as it was and scored by its own rules. No current-engine analysis is counted here.</p>',
+    '<p>The record of the previous engine, kept as it was and scored by its own rules. No analysis of the current or v11 engine is counted here.</p>',
     rows ? `<table><thead><tr><th>Metric</th><th>Value</th><th>Sample</th></tr></thead><tbody>${rows}</tbody></table>` : '',
     `<p>Average result per trade, before costs: ${esc(avgCell(p.averageResult))}.</p>`,
     conf ? `<p>${esc(conf)}</p>` : '',
@@ -583,7 +620,7 @@ function headingFromTitle(title) {
  * e metodologia, ate a amostra sustentar. Mesma regra da faixa da home.
  */
 const ACCURACY_POINTER =
-  '<p>Trade plans and Watch levels are checked against real market candles once their window closes, when a price source is available; reads that cannot be checked are counted separately. Results are published in two separate records, the current engine and the archived previous engine, with sample sizes, 95% confidence intervals, the average result per trade and the results that look bad, at <a href="https://tickrify.com/accuracy">tickrify.com/accuracy</a>.</p>';
+  '<p>Trade plans and Watch levels are checked against real market candles once their window closes, when a price source is available; reads that cannot be checked are counted separately. Results are published in three separate records, the current engine and two archived earlier engines, with sample sizes, 95% confidence intervals, the average result per trade and the results that look bad, at <a href="https://tickrify.com/accuracy">tickrify.com/accuracy</a>.</p>';
 
 export function buildBody({ path, meta, copy, accuracy, pricingFaq }) {
   if (meta.noindex) return '';
@@ -651,12 +688,12 @@ export function buildBody({ path, meta, copy, accuracy, pricingFaq }) {
       `<p>${esc(WHAT_CHANGED_OUTRO)}</p>`,
       accuracyBlock(accuracy),
       '<h2>Why a hit rate is not profit</h2>',
-      '<p>A hit rate ignores how far the target was: a low rate can pay and a high one can lose. Spread, slippage, commission and funding are not in the hit rates; the current engine’s average result deducts an estimated spread only. Timeouts are left out of the hit rate. Tickrify does not know whether you took the trade, at what size, or when you exited.</p>',
+      '<p>A hit rate ignores how far the target was: a low rate can pay and a high one can lose. Spread, slippage, commission and funding are not in the hit rates; the current and v11 engines’ average result deducts an estimated spread only. Timeouts are left out of the hit rate. Tickrify does not know whether you took the trade, at what size, or when you exited.</p>',
       '<h2>Method</h2>',
       `<p>${esc(WHO_CURRENT)}</p>`,
       `<p>${esc(WHO_PREVIOUS)}</p>`,
       `<p>${esc(WHO_DEMO)}</p>`,
-      `<p>Current engine. ${esc(CURRENT_METHOD)}</p>`,
+      `<p>Current and v11 engines. ${esc(CURRENT_METHOD)}</p>`,
       `<p>Previous engine. ${esc(PREVIOUS_METHOD)}</p>`,
       `<p>${esc(averageMethod(accuracy))}</p>`,
       `<p>${esc(intervalsMethod(accuracy))}</p>`,
@@ -788,7 +825,7 @@ export function buildJsonLd({ path, copy, accuracy, offer, pricingFaq }) {
       operatingSystem: 'Web',
       url: `${SITE}`,
       description:
-        'AI chart analysis for traders: upload a chart screenshot and get Enter now with entry, stop and target, Watch with the level to wait for, or No trade, as a second opinion before you enter.',
+        'AI chart analysis for traders: upload a chart screenshot and get a buy or sell plan with entry, stop and target, an entry to wait for at a level, or Wait with the reason, as a second opinion before you enter.',
       offers: {
         '@type': 'Offer',
         price: offer.price,
@@ -824,7 +861,7 @@ export function buildJsonLd({ path, copy, accuracy, offer, pricingFaq }) {
     const hit = accuracy?.current?.enterNow?.hitRate;
     const dataset = {
       '@type': 'Dataset',
-      name: 'Tickrify AI accuracy: current engine and archived previous engine',
+      name: 'Tickrify AI accuracy: current engine, v11 engine and archived previous engine',
       description: datasetDescription(accuracy),
       url: `${SITE}/accuracy`,
       isAccessibleForFree: true,

@@ -175,6 +175,22 @@ export function breakdownOf(rows: OutcomeRow[]): Record<string, number> {
 export const CURRENT_ENGINE_MAJOR = 4;
 export const CURRENT_ENGINE_SINCE = new Date('2026-11-03T01:24:00.000Z');
 
+/**
+ * Motor pelas velas com varios leitores (PR #66, no ar em 23/11/2026 12:34:36 UTC).
+ * A versao NAO subiu (segue 4.x), entao o que separa as duas series do major 4 e
+ * o bloco `result.engine.vote`, que so o motor novo grava: `current` = com o
+ * bloco, `v11` = major >= 4 sem ele (3/11 a 23/11). As series nunca se somam.
+ */
+export const ENGINE_VOTE_SINCE = new Date('2026-11-23T12:34:36.000Z');
+
+/** Predicado SQL: a analise veio do motor novo (tem `engine.vote`), sobre o alias `a`. */
+export const VOTE_ENGINE_SQL = `jsonb_exists(a."result"->'engine', 'vote')`;
+
+/** Separa as linhas do major >= 4 pelo marcador `engine.vote` (`hasVote`). */
+export function splitByVoteMarker<T extends { hasVote: boolean }>(rows: T[]): { current: T[]; v11: T[] } {
+  return { current: rows.filter((r) => r.hasVote), v11: rows.filter((r) => !r.hasVote) };
+}
+
 /** Major da versao gravada; null sem versao legivel. */
 export function engineMajor(version: unknown): number | null {
   const m = typeof version === 'string' ? /^(\d+)/.exec(version.trim()) : null;
@@ -342,7 +358,7 @@ export function trackingStatus(rows: CurrentEngineRow[], nowMs: number) {
  *   medio em R (regra do --review, spread estimado).
  * Todo derivado com menos de 20 casos na propria conta sai so com o n.
  */
-export function currentEngineReport(rows: CurrentEngineRow[], nowMs: number = Date.now()) {
+export function currentEngineReport(rows: CurrentEngineRow[], nowMs: number = Date.now(), since: Date = CURRENT_ENGINE_SINCE) {
   const watchRows = rows.filter((r) => r.signalState === 'WATCH');
   const watchClosed = watchRows.filter((r) => r.track);
   const watchOutcomes = watchClosed.map((r) => watchOutcomeOf(r.track));
@@ -374,7 +390,7 @@ export function currentEngineReport(rows: CurrentEngineRow[], nowMs: number = Da
   const flagged = rows.filter((r) => r.createdAt < EURUSD_BLOCK_FIXED_AT && canonicalFxPair(r.symbol ?? '') !== null);
 
   return {
-    since: CURRENT_ENGINE_SINCE.toISOString(),
+    since: since.toISOString(),
     analyses: rows.length,
     byState: countBy(rows.map((r) => r.signalState ?? 'unknown')),
     dataMode: countBy(rows.map((r) => (r.dataMode === 'real_data' || r.dataMode === 'print' ? r.dataMode : 'unknown'))),

@@ -41,25 +41,45 @@ const current = {
   },
   eurUsdBlock: { until: '2026-11-03T17:28:26.000Z', analyses: 0, closedWatch: 0, enterNow: 0 },
 };
+const engineNow = {
+  ...current,
+  since: '2026-11-23T12:34:36.000Z',
+  analyses: 5,
+  byState: { ENTER_NOW: 1, WATCH: 2, NO_TRADE: 2 },
+  dataMode: { real_data: 5, print: 0 },
+  tracking: { ENTER_NOW: tracking({ open: 1 }), WATCH: tracking({ open: 2 }) },
+  watch: {
+    emitted: 2, outcomes: { reached: 0, invalidated: 0, expired: 0, unavailable: 0 },
+    reachRate: { n: 0, publishable: false }, calibrationAvailable: false, calibration: [],
+  },
+  enterNow: {
+    emitted: 1, resolved: 0, outcomes: { tp1: 0, stop: 0, timeout: 0 },
+    hitRate: { n: 0, publishable: false }, averageResult: { n: 0, decided: 0, excluded: 0, publishable: false },
+  },
+  eurUsdBlock: { until: '2026-11-03T17:28:26.000Z', analyses: 0, closedWatch: 0, enterNow: 0 },
+};
 const base = {
-  updatedAt: '2026-11-04T10:00:00.000Z',
+  updatedAt: '2026-11-24T10:00:00.000Z',
   filters: { minResolvedToPublish: 20 },
-  currentEngine: { major: 4, since: '2026-11-03T01:24:00.000Z' },
+  currentEngine: { major: 4, since: '2026-11-23T12:34:36.000Z', v11Since: '2026-11-03T01:24:00.000Z' },
   previous,
-  current,
+  v11: current,
+  current: engineNow,
 };
 
-describe('geo-body: /accuracy com dois motores', () => {
+describe('geo-body: /accuracy com tres registros (motor atual, v11 e anterior)', () => {
   it('abertura do dono com data e minimo da API; numeros so no resumo, motor atual primeiro', () => {
     const answer: string = accuracyAnswer(base);
-    expect(answer.startsWith('Tickrify does not claim an edge. Since November 3, 2026, a new engine decides between three states: Enter now, Watch and No trade.')).toBe(true);
+    expect(answer.startsWith('Tickrify does not claim an edge. Since November 23, 2026, the current engine decides between Buy now or Sell now, a Buy or Sell on pullback or on breakout, and Wait.')).toBe(true);
     expect(answer).toContain('A result is published once a cut has at least 20 resolved cases.');
-    const other: string = accuracyAnswer({ ...base, filters: { minResolvedToPublish: 30 }, currentEngine: { major: 4, since: '2026-12-01T05:00:00Z' } });
+    const other: string = accuracyAnswer({ ...base, filters: { minResolvedToPublish: 30 }, currentEngine: { major: 4, since: '2026-12-01T05:00:00Z', v11Since: '2026-11-03T01:24:00.000Z' } });
     expect(other).toContain('Since December 1, 2026');
     expect(other).toContain('at least 30 resolved cases');
     expect(accuracyAnswer(null)).not.toMatch(/\d/);
     const summary: string = accuracySummary(base);
-    expect(summary.startsWith('As of 2026-11-04, the current engine has made 40 analyses: 6 Enter now, 14 Watch and 20 No trade, 30 of them read with live candle data.')).toBe(true);
+    expect(summary.startsWith('As of 2026-11-24, the current engine has made 5 analyses: 1 Enter now (Buy now or Sell now), 2 Watch (pullback or breakout entry) and 2 No trade (Wait), 5 of them read with market candle data.')).toBe(true);
+    expect(summary).toContain('Enter now results: collecting data, 0 of 20 resolved at target or stop.');
+    expect(summary).toContain('As of 2026-11-24, the v11 engine, kept apart, has made 40 analyses: 6 Enter now, 14 Watch and 20 No trade, 30 of them read with market candle data.');
     expect(summary).toContain('Enter now results: collecting data, 3 of 20 resolved at target or stop.');
     expect(summary).toMatch(/The previous engine, archived, recorded 40% across 75 resolved trades.*never added together\.$/);
     expect(accuracyFaqItems(base)[0].a).toBe(`${answer} ${summary}`);
@@ -75,7 +95,8 @@ describe('geo-body: /accuracy com dois motores', () => {
     expect(edgeSentence('X', { n: 20, decided: 1, excluded: 0, publishable: false }, 'before costs', 20)).toBe(
       'X: still collecting data, 1 of 20 trades resolved at target or stop, so no average result is published yet.',
     );
-    expect(edgeAnswer(base)).toContain('Current engine: still collecting data, 3 of 20');
+    expect(edgeAnswer(base)).toContain('Current engine: still collecting data, 0 of 20');
+    expect(edgeAnswer(base)).toContain('v11 engine: still collecting data, 3 of 20');
     expect(edgeAnswer(base)).toContain('Previous engine: the average result was -0.05R per trade (95% CI -0.30R to +0.20R), before costs, over 75 trades. Zero sits inside that interval');
     expect(edgeAnswer(base)).toContain('2 more trades had no valid R and are left out.');
     expect(edgeAnswer(base)).not.toMatch(/break-even/i);
@@ -86,6 +107,9 @@ describe('geo-body: /accuracy com dois motores', () => {
     expect(html).toContain('<tr><td>Window closed, waiting for the next tracker run</td><td>0</td><td>2</td></tr>');
     expect(html).toContain('<tr><td>Not checked: no price source for this instrument</td><td>0</td><td>3</td></tr>');
     expect(html).toContain('Previous engine (archived, until November 3, 2026)');
+    expect(html).toContain('v11 engine (archived, November 3, 2026 to November 23, 2026)');
+    expect(html).toContain('Analyses by the v11 engine');
+    expect(html).toContain('Analyses by the current engine');
     expect(html).toContain('Hit rate, original scoring rule');
     expect(html).toContain('Hit rate, updated scoring rule (separate series)');
     expect(html).toContain('Collecting data: 3 of 20');
@@ -102,17 +126,18 @@ describe('geo-body: /accuracy com dois motores', () => {
   it('nota do EUR/USD: horarios e data da API, contagem com e sem analises na janela', () => {
     expect(eurUsdNote(base)).toContain('from 01:24 to 17:28 UTC on November 3, 2026');
     expect(eurUsdNote(base)).toContain('No gold or forex analysis in the published sample was made in that window.');
-    const flagged = { ...base, current: { ...current, eurUsdBlock: { ...current.eurUsdBlock, analyses: 3, enterNow: 1, closedWatch: 2 } } };
+    const flagged = { ...base, v11: { ...current, eurUsdBlock: { ...current.eurUsdBlock, analyses: 3, enterNow: 1, closedWatch: 2 } } };
     expect(eurUsdNote(flagged)).toContain('3 gold and forex analyses in the published sample were made in that window (1 Enter now, 2 Watch');
-    expect(eurUsdNote({ ...base, current: null })).toBeNull();
+    expect(eurUsdNote({ ...base, v11: null })).toBeNull();
   });
 
   it('corpo e JSON-LD: H1, regras de quem conta, FAQPage das mesmas strings, temporalCoverage do registro mais antigo', () => {
     const body: string = buildBody({ path: '/accuracy', meta: { title: 't', description: 'd' }, copy: null, accuracy: base, pricingFaq: [] });
     expect(body).toContain('<h1>How accurate is Tickrify? Here is how we measure it</h1>');
-    expect(body).toContain('What changed on November 3, 2026');
-    expect(body).toMatch(/Without live candles, the entry, stop and targets are the AI(&#39;|&#x27;|')s own estimates read from the screenshot/);
-    expect(body).toContain('Who is counted, current engine: analyses from free, trial and paid accounts all count');
+    expect(body).toContain('What changed on November 23, 2026');
+    expect(body).toContain('more than one independent AI read');
+    expect(body).toMatch(/Without market candles, the levels are the AI(&#39;|&#x27;|')s own estimates read from the screenshot/);
+    expect(body).toContain('Who is counted, current and v11 engines: analyses from free, trial and paid accounts all count');
     expect(body).toContain('Who is counted, previous engine: only analyses made with paid access');
     const ld = buildJsonLd({ path: '/accuracy', copy: null, accuracy: base, offer: null, pricingFaq: [] });
     const [dataset, faq] = ld.data['@graph'];

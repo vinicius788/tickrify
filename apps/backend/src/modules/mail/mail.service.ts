@@ -191,7 +191,7 @@ export class MailService {
     const subject = 'Your free Tickrify analyses are used up';
     const html = this.wrap(
       subject,
-      `To keep getting entry, stop and targets on your charts, pick a plan:<br><br>` +
+      `To keep getting buy or sell plans, entries to wait for and the reasons to wait on your charts, pick a plan:<br><br>` +
         `<b>One week:</b> $7.99 for 25 analyses.<br>` +
         `<b>Monthly:</b> $29 for 200 analyses${oferta}.<br><br>` +
         `Both renew automatically and you can cancel anytime.`,

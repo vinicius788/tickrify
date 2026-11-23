@@ -219,7 +219,7 @@ export function trialCopy(
           preview: 'No card needed. Your first read takes about 20 seconds.',
           paragraphs: [
             `Your free trial is ready: 3 days of use, with up to ${d1} chart analyses on the first day and ${d2} on each of the next two. No card needed.`,
-            'Take a screenshot of the chart you are watching and upload it. In about 20 seconds you get the read: Enter now with entry, stop and target, Watch with the price level to wait for, or No trade with the reason.',
+            'Take a screenshot of the chart you are watching and upload it. In about 20 seconds you get the read: a buy or sell plan with entry, stop and target, an entry to wait for at a price level, or Wait with the reason.',
           ],
           cta: analyze,
           afterCta: [`The trial ends after 3 days of use or ${TRIAL_RULES.windowDays} days after it started, whichever comes first.`],
@@ -345,7 +345,7 @@ export function renderLifecycleEmail(
         preview: 'One screenshot, about 20 seconds, and you get the read.',
         paragraphs: [
           'You created your Tickrify account but have not analyzed a chart yet.',
-          'It takes one step: take a screenshot of the chart you are watching (a phone photo of the screen works too) and upload it. In about 20 seconds you get the read: BUY, SELL or WAIT, with entry, stop, targets and the reasoning behind it.',
+          'It takes one step: take a screenshot of the chart you are watching (a phone photo of the screen works too) and upload it. In about 20 seconds you get the read: a buy or sell plan with entry, stop and target, an entry to wait for, or Wait, with the reasoning behind it.',
         ],
         cta: { label: 'Analyze a chart', url: `${app}/dashboard` },
         afterCta: [

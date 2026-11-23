@@ -14,7 +14,7 @@ import { seoFor, useSeo } from '@/hooks/useSeo';
  * bonito do que a realidade medida. É por isso que ela manda o leitor para o
  * placar de acurácia em vez de prometer resultado.
  */
-const LAST_UPDATED = 'November 3, 2026';
+const LAST_UPDATED = 'November 23, 2026';
 
 const SECTIONS: LegalSection[] = [
   {
@@ -93,7 +93,7 @@ const SECTIONS: LegalSection[] = [
       <>
         <p>
           The analysis is produced by an artificial intelligence model reading an image of a chart, alongside
-          live candle data where it is available (crypto, major forex pairs and metals; not stocks or indices).
+          market candle data where it is available (crypto, major forex pairs and metals; not stocks or indices).
           It is wrong regularly, and it can be wrong in ways that look convincing:
         </p>
         <ul>

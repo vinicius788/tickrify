@@ -23,7 +23,7 @@ import { TRIAL_RULES } from '../../common/trial';
 export const WELCOME_ICON_URL = 'https://tickrify.com/icon.png';
 
 export const WELCOME_PREVIEW_TEXT =
-  'Send a chart and get Enter now, Watch or No trade, with the reason. The decision is always yours.';
+  'Send a chart and get a buy or sell plan, an entry to wait for, or Wait, with the reason. The decision is always yours.';
 
 /**
  * `trial`: a conta nova entra no trial de 3 dias (chave TRIAL_MODE ligada).
@@ -75,9 +75,9 @@ const COPY = {
     'Tickrify is a trading copilot. You send a screenshot of a chart, the AI reads it cold, and you get a second opinion before you enter.',
   getTitle: 'What every read gives you',
   get: [
-    'Enter now: entry, stop and target when there is a clean setup.',
-    'Watch: the price level to wait for and what cancels it.',
-    'No trade: why there is nothing worth taking right now.',
+    'Buy now or Sell now: entry, stop and target when there is a clean entry at the current price.',
+    'Buy or Sell on pullback or on breakout: the price level to wait for and what cancels it.',
+    'Wait: why there is nothing worth taking right now and, with market candles, the price that would change it.',
     'The reasoning behind it, so you can check it against your own view.',
   ],
   freeTitle: 'Your free plan',

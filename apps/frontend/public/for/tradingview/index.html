@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI Chart Analysis for TradingView Screenshots (2026) | Tickrify</title>
-  <meta name="description" content="Screenshot your TradingView chart and get a structured AI read; eligible quick analyses can also use verified live candles. No install, no account connection." />
+  <meta name="description" content="Screenshot your TradingView chart and get a structured AI read; eligible quick analyses can also use verified market candles. No install, no account connection." />
   <link rel="canonical" href="https://tickrify.com/for/tradingview/" />
   <link rel="icon" type="image/png" href="/icon.png?v=3" />
   <meta property="og:title" content="AI Chart Analysis for Your TradingView Screenshots" />
@@ -32,7 +32,7 @@
   {"@context": "https://schema.org", "@type": "WebPage", "name": "AI Chart Analysis for Your TradingView Screenshots", "description": "Ctrl+Alt+S in TradingView, Ctrl+V in Tickrify. The AI reads your chart and checks available candles for eligible quick analyses.", "url": "https://tickrify.com/for/tradingview/", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "name": "Tickrify", "url": "https://tickrify.com/"}, "publisher": {"@type": "Organization", "name": "Tickrify", "url": "https://tickrify.com/"}}
   </script>
   <script type="application/ld+json">
-  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Does Tickrify connect to my TradingView account?", "acceptedAnswer": {"@type": "Answer", "text": "No. There is no integration, no API key and no login. You paste an image. That is the entire surface."}}, {"@type": "Question", "name": "Do I need a paid TradingView plan?", "acceptedAnswer": {"@type": "Answer", "text": "No. A free TradingView account produces screenshots that work fine. The features that help most, a visible price axis and a legible timeframe, are on the free tier."}}, {"@type": "Question", "name": "How is this different from TradingView's own AI assistant?", "acceptedAnswer": {"@type": "Answer", "text": "Two things. It is willing to come back with \"no trade\", and its results are published with sample sizes and confidence intervals on our accuracy page. If the in-chart copilot already does what you need, you may not need us."}}, {"@type": "Question", "name": "Can it read my drawings and annotations?", "acceptedAnswer": {"@type": "Answer", "text": "It reads what is visible in the image, drawings included. Leaving your trendlines and zones on generally helps, because the read is then about the setup you are actually considering."}}, {"@type": "Question", "name": "Does it work with the TradingView mobile app?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. A phone screenshot works as long as the price axis and the timeframe are in frame. Landscape captures more structure than portrait."}}, {"@type": "Question", "name": "Is Tickrify a TradingView replacement?", "acceptedAnswer": {"@type": "Answer", "text": "No, and it is not trying to be. No charting, no alerts, no screeners, no broker integration. If you had to pick one, pick the charting platform."}}]}
+  {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "Does Tickrify connect to my TradingView account?", "acceptedAnswer": {"@type": "Answer", "text": "No. There is no integration, no API key and no login. You paste an image. That is the entire surface."}}, {"@type": "Question", "name": "Do I need a paid TradingView plan?", "acceptedAnswer": {"@type": "Answer", "text": "No. A free TradingView account produces screenshots that work fine. The features that help most, a visible price axis and a legible timeframe, are on the free tier."}}, {"@type": "Question", "name": "How is this different from TradingView's own AI assistant?", "acceptedAnswer": {"@type": "Answer", "text": "Two things. It is willing to come back with \"Wait\", and its results are published with sample sizes and confidence intervals on our accuracy page. If the in-chart copilot already does what you need, you may not need us."}}, {"@type": "Question", "name": "Can it read my drawings and annotations?", "acceptedAnswer": {"@type": "Answer", "text": "It reads what is visible in the image, drawings included. Leaving your trendlines and zones on generally helps, because the read is then about the setup you are actually considering."}}, {"@type": "Question", "name": "Does it work with the TradingView mobile app?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. A phone screenshot works as long as the price axis and the timeframe are in frame. Landscape captures more structure than portrait."}}, {"@type": "Question", "name": "Is Tickrify a TradingView replacement?", "acceptedAnswer": {"@type": "Answer", "text": "No, and it is not trying to be. No charting, no alerts, no screeners, no broker integration. If you had to pick one, pick the charting platform."}}]}
   </script>
   <link rel="stylesheet" href="/site.css?v=1" />
 </head>
@@ -63,7 +63,7 @@
         <li><a href="#screenshot">How to frame a screenshot the model can read</a></li>
         <li><a href="#fetch">What happens after it reads your screenshot</a></li>
         <li><a href="#stale">The stale screenshot guard</a></li>
-        <li><a href="#coverage">Which TradingView instruments get live data</a></li>
+        <li><a href="#coverage">Which TradingView instruments get market data</a></li>
         <li><a href="#pine">Why there is no Pine Script indicator</a></li>
         <li><a href="#never">What it will not do</a></li>
         <li><a href="#faq">Questions people actually ask</a></li>
@@ -76,7 +76,7 @@
       <li>Open the chart in TradingView. Draw your setup or leave it bare.</li>
       <li>Screenshot the chart. On desktop TradingView, <strong>Ctrl+Alt+S</strong> (Cmd+Alt+S on Mac) copies the chart image straight to your clipboard.</li>
       <li>Paste it into Tickrify. Ctrl+V works directly, no upload dialog.</li>
-      <li>Read what comes back: Enter now, Watch or No trade, the bias, the levels (entry, stop and target when there is a plan), the confluence it found, the risk and what would prove the read wrong.</li>
+      <li>Read what comes back: Buy now or Sell now, an entry to wait for, or Wait, the bias, the levels (entry, stop and target when there is a plan), the confluence it found, the risk and what would prove the read wrong.</li>
     </ol>
 
     <p>The output is not a verdict you follow. It is a structured second read against which you compare your own. When it agrees with you, that is a small amount of extra confidence. When it disagrees, that is the useful case, and it will tell you what specifically it disagrees about.</p>
@@ -87,7 +87,7 @@
 
     <ul>
       <li><strong>Keep the price axis visible.</strong> Without it the model has no numbers to anchor to, only shapes. If you have the right axis hidden for a clean look, turn it back on before you capture.</li>
-      <li><strong>Keep the symbol and timeframe in frame.</strong> Tickrify reads both off the image. The timeframe in particular matters: if it cannot be read, the live candle block is skipped entirely, because computing ATR and swing structure on the wrong interval is worse than computing nothing.</li>
+      <li><strong>Keep the symbol and timeframe in frame.</strong> Tickrify reads both off the image. The timeframe in particular matters: if it cannot be read, the market candle block is skipped entirely, because computing ATR and swing structure on the wrong interval is worse than computing nothing.</li>
       <li><strong>Show enough history.</strong> Roughly 100 to 200 candles. A chart zoomed into the last twelve bars gives the model no structure to read, and structure is most of what it is looking for.</li>
       <li><strong>Do not stack six indicators.</strong> Overlays cover the candles. Price action plus one or two things you actually use reads far better than a chart buried under studies.</li>
       <li><strong>Capture at full width.</strong> A narrow crop compresses the candles into noise. The wider the capture, the more legible the wicks.</li>
@@ -112,11 +112,11 @@
 
     <h2 id="stale">The stale screenshot guard</h2>
 
-    <p>If you upload a TradingView capture you saved three days ago, injecting the live price next to it would be actively harmful: the model would build entry, stop and target from numbers that contradict the chart in front of it, and the result would look authoritative and be nonsense.</p>
+    <p>If you upload a TradingView capture you saved three days ago, injecting the current price next to it would be actively harmful: the model would build entry, stop and target from numbers that contradict the chart in front of it, and the result would look authoritative and be nonsense.</p>
 
-    <p>So the backend reads the last visible close off your screenshot and compares it to the live close. More than three ATRs apart and <strong>the live data is withheld</strong>. The model is told it is looking at a historical chart, that every level must come from the image, and that it must say so in the output. You get an honest weaker read instead of a confident wrong one.</p>
+    <p>So the backend reads the last visible close off your screenshot and compares it to the latest close. More than three ATRs apart and <strong>the market data is withheld</strong>. The model is told it is looking at a historical chart, that every level must come from the image, and that it must say so in the output. You get an honest weaker read instead of a confident wrong one.</p>
 
-    <h2 id="coverage">Which TradingView instruments get live data</h2>
+    <h2 id="coverage">Which TradingView instruments get market data</h2>
 
     <p>Not all of them, and we are not going to pretend otherwise. Crypto pairs, gold, silver and forex majors get verified candles. Index CFDs and single stocks do not, and on those the analysis works from your screenshot alone. The <a href="/for/">full coverage table is here</a>.</p>
 
@@ -130,7 +130,7 @@
       <li>It will not place, modify or close a trade. There is no broker connection and there will not be one.</li>
       <li>It will not scan or screen. You bring the chart.</li>
       <li>It will not read the news. No headlines, no sentiment, no order flow.</li>
-      <li>It will not always give you a trade. A large share of reads come back as "no trade", and that abstention is the feature. If you want something that always finds a setup, plenty of tools will oblige you.</li>
+      <li>It will not always give you a trade. A large share of reads come back as "Wait", and that abstention is the feature. If you want something that always finds a setup, plenty of tools will oblige you.</li>
     </ul>
 
     <h2 id="faq">Questions people actually ask</h2>
@@ -142,7 +142,7 @@
     <p>No. A free TradingView account produces screenshots that work fine. The features that help most, a visible price axis and a legible timeframe, are on the free tier.</p>
 
     <h3>How is this different from TradingView&#x27;s own AI assistant?</h3>
-    <p>Two things. It is willing to come back with "no trade", and its results are published with sample sizes and confidence intervals on <a href="/accuracy">our accuracy page</a>. If the in-chart copilot already does what you need, you may not need us.</p>
+    <p>Two things. It is willing to come back with "Wait", and its results are published with sample sizes and confidence intervals on <a href="/accuracy">our accuracy page</a>. If the in-chart copilot already does what you need, you may not need us.</p>
 
     <h3>Can it read my drawings and annotations?</h3>
     <p>It reads what is visible in the image, drawings included. Leaving your trendlines and zones on generally helps, because the read is then about the setup you are actually considering.</p>
