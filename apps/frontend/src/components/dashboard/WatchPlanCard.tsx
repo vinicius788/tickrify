@@ -192,56 +192,6 @@ function WatchPlanActions({
   );
 }
 
-/**
- * O plano A MERCADO ao lado do plano no nivel (11/11/2026). So aparece quando o
- * servidor manda `marketLevels`: WATCH com velas reais em que a entrada ao
- * preco de agora tem geometria valida e foi o checklist que segurou. O estado
- * continua WATCH; o texto diz que nenhum dos dois planos tem vantagem medida.
- */
-export function MarketPlanCard({
-  direction,
-  levels,
-  formatPrice,
-  footer = null,
-}: {
-  direction: WatchPlan['direction'];
-  levels: WatchLevels;
-  formatPrice: (value: number | null) => string;
-  /** Registro de entrada do trader neste plano. */
-  footer?: ReactNode;
-}) {
-  const { t, language } = useLanguage();
-  const w = t.analysis.result.watch;
-  const number = (value: number) => formatNumber(value, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false });
-  const money = (value: number) => formatPrice(value).replace(/ /g, '\u00a0');
-  const rows: Array<{ key: string; label: string; value: string; tone?: string }> = [
-    { key: 'entry', label: w.marketEntry, value: money(levels.entry) },
-    { key: 'stop', label: w.stop, value: money(levels.stopLoss), tone: 'var(--signal-sell)' },
-    { key: 't1', label: w.target1, value: money(levels.takeProfit1), tone: 'var(--signal-buy)' },
-    { key: 'risk', label: w.marketRisk, value: w.marketRiskValue.replace('{atr}', number(levels.riskAtr)) },
-    { key: 'reward', label: w.marketReward, value: `${number(levels.tp1R)}R` },
-  ];
-  return (
-    <section data-testid="market-plan" className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5" aria-labelledby="market-plan-title">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h3 id="market-plan-title" className="text-sm font-semibold text-[var(--text-primary)]">{w.marketTitle}</h3>
-        <span className="rounded-full bg-[var(--fill-3)] px-2.5 py-0.5 text-xs font-medium text-[var(--text-secondary)]">{w.marketChip}</span>
-      </div>
-      <p className="mb-3 text-sm font-medium text-[var(--text-primary)]">{direction === 'long' ? w.marketBuy : w.marketSell}</p>
-      <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-sm">
-        {rows.map((row) => (
-          <div key={row.key} className="contents">
-            <dt className="text-[var(--text-secondary)]">{row.label}</dt>
-            <dd className="text-right font-medium tabular-nums text-[var(--text-primary)]" style={row.tone ? { color: row.tone } : undefined}>{row.value}</dd>
-          </div>
-        ))}
-      </dl>
-      <p className="mt-3 text-xs leading-relaxed text-[var(--text-secondary)]">{w.marketNote}</p>
-      {footer}
-    </section>
-  );
-}
-
 interface WatchPlanCardProps {
   plan: WatchPlan;
   /**
@@ -253,9 +203,9 @@ interface WatchPlanCardProps {
   symbol: string;
   formatPrice: (value: number | null) => string;
   estimated?: boolean;
-  /** Mostra o plano como entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL). */
+  /** Mostra o plano como entrada pendente (`pendingEntry` do resultado). */
   pending?: boolean;
-  /** O TP1 do plano esta no proximo nivel (chave ENGINE_NEXT_TARGET). */
+  /** O TP1 do plano esta no proximo nivel (`targetMoved` do resultado). */
   targetMoved?: boolean;
   watch?: WatchSummary | null;
   reach?: WatchReach | null;

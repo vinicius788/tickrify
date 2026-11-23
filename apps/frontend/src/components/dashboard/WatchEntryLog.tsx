@@ -7,7 +7,7 @@ import { useAPIClient, type WatchEntry, type WatchLevels } from '@/lib/api';
 
 /**
  * "I entered this plan" num WATCH (11/11/2026). O trader registra que entrou
- * num dos planos; a operacao passa a aparecer no My Trades e no Diario. Stop e
+ * no plano; a operacao passa a aparecer no My Trades e no Diario. Stop e
  * alvo sao os do plano (o servidor relê do resultado gravado); a tela so manda
  * o plano e o preco de entrada. A leitura continua WATCH.
  */
@@ -24,7 +24,7 @@ export function WatchEntryLog({
   analysisId: string;
   plan: WatchEntry['plan'];
   levels: WatchLevels;
-  /** Entrada ja registrada nesta leitura (em qualquer um dos dois planos). */
+  /** Entrada ja registrada nesta leitura. */
   entry: WatchEntry | null;
   onChange: (entry: WatchEntry | null) => void;
   formatPrice: (value: number | null) => string;
@@ -45,9 +45,6 @@ export function WatchEntryLog({
     void queryClient.invalidateQueries({ queryKey: ['journal'] });
   };
   const money = (n: number) => formatPrice(n).replace(/ /g, ' ');
-
-  // Registrada no OUTRO plano: este cartao nao oferece nada.
-  if (entry && entry.plan !== plan) return null;
 
   if (entry) {
     const undo = async () => {

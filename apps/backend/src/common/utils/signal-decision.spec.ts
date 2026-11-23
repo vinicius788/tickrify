@@ -24,7 +24,7 @@ import {
   type SignalDecisionInput,
   watchLevelsOf,
 } from './signal-decision';
-import { ENGINE_RULES, type WatchPlan, entryLevels, nearEdge, trackPlan } from './plan-engine';
+import { ENGINE_RULES, PROFILE_GATES, type WatchPlan, entryLevels, nearEdge, trackPlan, withProfileGates } from './plan-engine';
 import { STOP_MARGIN_P80 } from './engine-calibration';
 import { buildPersistedAnalysisPayload } from './analysis-payload';
 
@@ -58,7 +58,10 @@ const base: SignalDecisionInput = {
   planFailures: [],
 };
 
-const decide = (patch: Partial<SignalDecisionInput> = {}) => decideSignal({ ...base, ...patch });
+/** O motor de antes do modo permissivo (perfil Conservador): as regras estritas de ENGINE_RULES. */
+const decide = (patch: Partial<SignalDecisionInput> = {}) => withProfileGates(PROFILE_GATES.conservative, () => decideSignal({ ...base, ...patch }));
+/** O motor de hoje (Equilibrado): modo permissivo fixo, sem perfil aplicado. */
+const decideBalanced = (patch: Partial<SignalDecisionInput> = {}) => decideSignal({ ...base, ...patch });
 const watch = { state: 'WATCH' as const, recommendation: 'WAIT' as const };
 /** Alvo perto demais para entrar a 99,9 (o nivel do plano em 99,5 ainda serve ao WATCH). */
 const nearTarget = { ...plan, target1: 100.9, target2: null };
@@ -119,11 +122,12 @@ describe('decideSignal: a ordem limit (ARMED) nao e mais emitida', () => {
     expect((await decide({ state: 'ARMED' })).state).toBe('WATCH');
   });
 
-  it('ARMED sem geometria nenhuma cai ate NO_TRADE, cada degrau anotado', async () => {
+  it('ARMED sem geometria nenhuma segue WATCH sem niveis, o degrau anotado', async () => {
     const d = await decide({ state: 'ARMED', realData: real(99.9, { atr: 0.3 }) });
+    expect(d.state).toBe('WATCH');
+    expect(d.watchLevels).toBeNull();
     expect(d.validatorNotes).toEqual([
       { from: 'ARMED', to: 'WATCH', reason: 'limit_order_retired' },
-      { from: 'WATCH', to: 'NO_TRADE', reason: 'no_valid_geometry' },
     ]);
   });
 });
@@ -225,10 +229,11 @@ describe('decideSignal: a escada de estados', () => {
     expect((await decide({ structureValidation: checks(1, 4, 5, 6) })).state).toBe('NO_TRADE');
   });
 
-  it('nenhuma entrada valida: NO_TRADE (no_valid_geometry)', async () => {
+  it('nenhuma entrada valida: ENTER_NOW cai a WATCH sem niveis (market_entry_invalid)', async () => {
     const d = await decide({ realData: real(99.9, { atr: 0.3, swings: [{ kind: 'low', price: 98.8 }] }) });
-    expect(d.state).toBe('NO_TRADE');
-    expect(d.validatorNotes.at(-1)?.reason).toBe('no_valid_geometry');
+    expect(d.state).toBe('WATCH');
+    expect(d.watchLevels).toBeNull();
+    expect(d.validatorNotes.at(-1)?.reason).toBe('market_entry_invalid');
   });
 
   it('sem swing real entre o preco e a invalidacao, a ate 0,5 ATR: NO_TRADE', async () => {
@@ -420,126 +425,6 @@ describe('decideSignal: news guard', () => {
   });
 });
 
-describe('chave ENGINE_ENTER_AT_LEVEL: reanalise com o preco na zona do WATCH', () => {
-  const FLAG = 'ENGINE_ENTER_AT_LEVEL';
-  const lateLong = { late: { long: true, short: false } };
-  const atZone = { ...watch, structureValidation: checks(5), currentPrice: 99.3, realData: real(99.3, lateLong), priorWatch: { plan, confirmed: true } };
-  const withFlag = async <T>(value: 'true' | 'false', run: () => Promise<T>): Promise<T> => {
-    const before = process.env[FLAG];
-    process.env[FLAG] = value;
-    try { return await run(); } finally { if (before === undefined) delete process.env[FLAG]; else process.env[FLAG] = before; }
-  };
-
-  it('desligada, o recuo ate a zona continua contando como atrasado (o que barra hoje)', async () => {
-    const r = await withFlag('false', () => decide(atZone));
-    expect(r.state).toBe('WATCH');
-    expect(r.enterAtLevel).toBe(false);
-    const fromModel = await withFlag('false', () => decide({ ...atZone, state: 'ENTER_NOW', recommendation: 'BUY' }));
-    expect(fromModel.state).toBe('WATCH');
-    expect(fromModel.validatorNotes).toEqual([{ from: 'ENTER_NOW', to: 'WATCH', reason: 'late_move' }]);
-  });
-
-  it('ligada, IA confirmou e preco na zona: ENTER_NOW com os niveis medidos do preco de agora', async () => {
-    const r = await withFlag('true', () => decide(atZone));
-    expect(r).toMatchObject({ state: 'ENTER_NOW', recommendation: 'BUY', enterAtLevel: true, validatorAction: 'promoted' });
-    expect(r.levels.entry).toBe(99.3);
-    expect(r.validatorNotes).toEqual([{ from: 'WATCH', to: 'ENTER_NOW', reason: 'market_entry_valid' }]);
-  });
-
-  it.each([
-    ['IA nao confirmou', { priorWatch: { plan, confirmed: false } }],
-    ['sem WATCH anterior', { priorWatch: null }],
-    ['direcao trocada', { priorWatch: { plan: { ...plan, direction: 'short' as const, zoneLow: 99, zoneHigh: 99.5, invalidation: 100, target1: 97, target2: null }, confirmed: true } }],
-    ['preco acima da zona', { currentPrice: 99.9, realData: real(99.9, lateLong) }],
-  ])('ligada, %s: o atrasado continua valendo', async (_name, patch) => {
-    const r = await withFlag('true', () => decide({ ...atZone, ...patch }));
-    expect(r.state).toBe('WATCH');
-    expect(r.enterAtLevel).toBe(false);
-  });
-
-  it.each([
-    ['C7 reprovado', { structureValidation: checks(5, 7) }, 'WATCH'],
-    ['C2 reprovado', { structureValidation: checks(5, 2) }, 'WATCH'],
-    ['PASS abaixo do minimo', { structureValidation: checks(1, 4, 5) }, 'WATCH'],
-    ['sem geometria', { watchPlan: { ...plan, target1: 99.8, target2: null } }, 'NO_TRADE'],
-  ])('ligada, nenhuma outra regra afrouxa: %s', async (_name, patch, state) => {
-    const r = await withFlag('true', () => decide({ ...atZone, ...patch }));
-    expect(r.state).toBe(state);
-    expect(r.enterAtLevel).toBe(false);
-  });
-
-  it('desligada = identico a hoje em toda a grade de cenarios', async () => {
-    for (const price of [98.7, 99, 99.3, 99.5, 99.9, 100.4]) {
-      for (const late of [true, false]) {
-        for (const state of ['WATCH', 'ENTER_NOW', 'ARMED', 'NO_TRADE'] as const) {
-          for (const confirmed of [true, false]) {
-            const input = { ...base, state, recommendation: state === 'WATCH' || state === 'NO_TRADE' ? 'WAIT' as const : 'BUY' as const, currentPrice: price, realData: real(price, { late: { long: late, short: late } }) };
-            const today = await withFlag('false', () => decide(input));
-            const prior = await withFlag('false', () => decide({ ...input, priorWatch: { plan, confirmed } }));
-            expect(prior).toEqual(today);
-            expect(prior.enterAtLevel).toBe(false);
-          }
-        }
-      }
-    }
-  });
-});
-
-describe('chave ENGINE_MARKET_PLAN_ON_WATCH: o WATCH mostra tambem o plano a mercado', () => {
-  const FLAG = 'ENGINE_MARKET_PLAN_ON_WATCH';
-  const lateLong = { late: { long: true, short: false } };
-  const lateAtPrice = { ...watch, structureValidation: checks(5), currentPrice: 99.3, realData: real(99.3, lateLong) };
-  const withFlag = async <T>(value: 'true' | 'false', run: () => Promise<T>): Promise<T> => {
-    const before = process.env[FLAG];
-    process.env[FLAG] = value;
-    try { return await run(); } finally { if (before === undefined) delete process.env[FLAG]; else process.env[FLAG] = before; }
-  };
-
-  it('desligada: nenhum plano a mercado no WATCH, como sempre', async () => {
-    const r = await withFlag('false', () => decide(lateAtPrice));
-    expect(r.state).toBe('WATCH');
-    expect(r.marketLevels).toBeNull();
-  });
-
-  it('ligada, atrasado segurou o ENTER_NOW: o estado segue WATCH e o plano a mercado vai junto', async () => {
-    const r = await withFlag('true', () => decide(lateAtPrice));
-    expect(r.state).toBe('WATCH');
-    expect(r.recommendation).toBe('WAIT');
-    expect(r.levels).toEqual({ entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null });
-    expect(r.marketLevels).toMatchObject({ entry: 99.3 });
-    expect(r.marketLevels!.stopLoss).toBeLessThan(99.3);
-    expect(r.marketLevels!.takeProfit1).toBeGreaterThan(99.3);
-    expect(r.marketLevels!.riskAtr).toBeLessThanOrEqual(ENGINE_RULES.riskMaxAtr);
-    expect(r.marketLevels!.tp1R).toBeGreaterThanOrEqual(ENGINE_RULES.tp1MinR);
-    expect(r.marketLevels!.tp1R).toBeLessThanOrEqual(ENGINE_RULES.tp1CapR);
-  });
-
-  it('ligada, C7 reprovado: mesmo plano a mercado, estado WATCH', async () => {
-    const r = await withFlag('true', () => decide({ ...lateAtPrice, realData: real(99.3), structureValidation: checks(5, 7) }));
-    expect(r.state).toBe('WATCH');
-    expect(r.marketLevels).toMatchObject({ entry: 99.3 });
-  });
-
-  it('ligada, os niveis sao os mesmos que o ENTER_NOW teria com o checklist aprovado', async () => {
-    const watchResult = await withFlag('true', () => decide(lateAtPrice));
-    const enter = await withFlag('true', () => decide({ ...lateAtPrice, realData: real(99.3) }));
-    expect(enter.state).toBe('ENTER_NOW');
-    expect(enter.marketLevels).toBeNull();
-    expect(watchResult.marketLevels).toMatchObject({ entry: enter.levels.entry, stopLoss: enter.levels.stopLoss, takeProfit1: enter.levels.takeProfit1 });
-  });
-
-  it('ligada, entrada a mercado sem geometria: nenhum plano a mercado', async () => {
-    // Alvo logo acima do preco: sem 1R de espaco a mercado.
-    const r = await withFlag('true', () => decide({ ...lateAtPrice, watchPlan: { ...plan, target1: 99.8, target2: null } }));
-    expect(r.marketLevels).toBeNull();
-  });
-
-  it('ligada, sem velas reais ou NO_TRADE: nunca ha plano a mercado', async () => {
-    expect((await withFlag('true', () => decide({ ...lateAtPrice, realData: null }))).marketLevels).toBeNull();
-    expect((await withFlag('true', () => decide({ state: 'NO_TRADE', recommendation: 'WAIT' }))).marketLevels).toBeNull();
-  });
-});
-
 describe('rejectedPlan: o plano do modelo que o codigo rebaixou para NO_TRADE', () => {
   it('guarda o plano cru (antes do encaixe) e o motivo', async () => {
     const r = await decide({ ...watch, realData: real(99.9, { swings: [] }) });
@@ -611,300 +496,165 @@ describe('applyDecisionToAnalysis', () => {
   });
 });
 
-describe('chaves de 16/11/2026: ENGINE_SNAP_FALLBACK e ENGINE_ENTER_REQUIRED_CHECKS', () => {
-  const SNAP = 'ENGINE_SNAP_FALLBACK';
-  const CHECKS = 'ENGINE_ENTER_REQUIRED_CHECKS';
-  const withFlags = async <T>(flags: Record<string, string>, run: () => Promise<T>): Promise<T> => {
-    const before = Object.fromEntries(Object.keys(flags).map((k) => [k, process.env[k]]));
-    Object.assign(process.env, flags);
-    try { return await run(); } finally {
-      for (const [k, v] of Object.entries(before)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
-    }
-  };
+describe('perfil Conservador: o motor de antes do modo permissivo', () => {
   /** Nenhum fundo real entre o preco e a invalidacao do modelo (98,8). */
   const noSwing = { realData: real(99.9, { swings: [{ kind: 'high' as const, price: 101.5 }, { kind: 'low' as const, price: 98 }] }) };
-
-  describe('sem swing encaixada', () => {
-    it.each(['0', 'abc', '7'])('valor %s: No trade, como sempre', async (value) => {
-      const d = await withFlags({ [SNAP]: value }, () => decide(noSwing));
-      expect(d).toMatchObject({ state: 'NO_TRADE', snapFallback: false, validatorNotes: [{ from: 'ENTER_NOW', to: 'NO_TRADE', reason: 'invalidation_unsnapped' }] });
-    });
-
-    it('1: o plano segue com a invalidacao do modelo, no maximo ate WATCH', async () => {
-      const d = await withFlags({ [SNAP]: '1' }, () => decide(noSwing));
-      expect(d).toMatchObject({ state: 'WATCH', recommendation: 'WAIT', snapFallback: true, rejectedPlan: null });
-      expect(d.validatorNotes).toEqual([{ from: 'ENTER_NOW', to: 'WATCH', reason: 'invalidation_unsnapped' }]);
-      expect(d.watchPlan?.invalidation).toBe(98.8);
-      expect(d.levels.entry).toBeNull();
-      const fromWatch = await withFlags({ [SNAP]: '1' }, () => decide({ ...watch, ...noSwing }));
-      expect(fromWatch).toMatchObject({ state: 'WATCH', snapFallback: true, validatorNotes: [] });
-    });
-
-    it('2: ENTER_NOW com o stop saindo da invalidacao do modelo', async () => {
-      const d = await withFlags({ [SNAP]: '2' }, () => decide(noSwing));
-      expect(d).toMatchObject({ state: 'ENTER_NOW', recommendation: 'BUY', snapFallback: true, validatorNotes: [] });
-      expect(d.levels.stopLoss).toBeCloseTo(98.55);
-    });
-
-    it('2: risco acima de 2 ATR continua barrando', async () => {
-      const far = { ...plan, invalidation: 97 };
-      const d = await withFlags({ [SNAP]: '2' }, () => decide({ ...noSwing, watchPlan: far }));
-      expect(d.state).toBe('NO_TRADE');
-      expect(validatorReasons(d.validatorNotes)).toEqual(['market_entry_invalid', 'no_valid_geometry']);
-      expect(d.snapFallback).toBe(false);
-    });
-
-    it('com swing encaixada a chave nao muda nada', async () => {
-      const off = await decide();
-      const on = await withFlags({ [SNAP]: '2' }, () => decide());
-      expect(on).toEqual(off);
-      expect(on.snapFallback).toBe(false);
-    });
-  });
-
-  describe('itens obrigatorios do ENTER_NOW', () => {
-    it('0: C7 ou C2 em FAIL barra, como sempre', async () => {
-      for (const fail of [7, 2]) {
-        const d = await withFlags({ [CHECKS]: '0' }, () => decide({ structureValidation: checks(fail) }));
-        expect(d).toMatchObject({ state: 'WATCH', entryWarnings: [], validatorNotes: [{ from: 'ENTER_NOW', to: 'WATCH', reason: 'required_check_failed' }] });
-      }
-    });
-
-    it('1: C7 em FAIL vira aviso; C2 continua obrigatorio', async () => {
-      const c7 = await withFlags({ [CHECKS]: '1' }, () => decide({ structureValidation: checks(7) }));
-      expect(c7).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [7], validatorNotes: [] });
-      const c2 = await withFlags({ [CHECKS]: '1' }, () => decide({ structureValidation: checks(2) }));
-      expect(c2.state).toBe('WATCH');
-    });
-
-    it('2: C2 e C7 viram aviso, com o minimo de PASS valendo', async () => {
-      const both = await withFlags({ [CHECKS]: '2' }, () => decide({ structureValidation: checks(2, 7) }));
-      expect(both).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [2, 7] });
-      const few = await withFlags({ [CHECKS]: '2' }, () => decide({ structureValidation: checks(2, 5, 7) }));
-      expect(few).toMatchObject({ state: 'WATCH', entryWarnings: [] });
-      expect(validatorReasons(few.validatorNotes)).toEqual(['checks_below_min']);
-    });
-
-    it.each([3, 6])('2: C%s continua obrigatorio', async (fail) => {
-      const d = await withFlags({ [CHECKS]: '2' }, () => decide({ structureValidation: checks(fail) }));
-      expect(d.state).not.toBe('ENTER_NOW');
-    });
-
-    it('2: sem velas reais nada afrouxa', async () => {
-      const print = { realData: null, currentPrice: 99.3, estimatedLevels: { entry: 99.3, stopLoss: 98.6, takeProfit1: 101.5, takeProfit2: null }, structureValidation: checks(7) };
-      const d = await withFlags({ [CHECKS]: '2' }, () => decide(print));
-      expect(d).toMatchObject({ state: 'WATCH', entryWarnings: [] });
-    });
-
-    it('WATCH do modelo com C7 em FAIL sobe para ENTER_NOW com o aviso', async () => {
-      const d = await withFlags({ [CHECKS]: '1' }, () => decide({ ...watch, structureValidation: checks(7) }));
-      expect(d).toMatchObject({ state: 'ENTER_NOW', recommendation: 'BUY', validatorAction: 'promoted', entryWarnings: [7] });
-    });
-  });
-});
-
-describe('chaves de 16/11/2026: ENGINE_LATE_AS_WARNING e ENGINE_WATCH_ON_REJECTED_GEOMETRY', () => {
-  const withFlag = async <T>(key: string, value: string, run: () => Promise<T>): Promise<T> => {
-    const before = process.env[key];
-    process.env[key] = value;
-    try { return await run(); } finally { if (before === undefined) delete process.env[key]; else process.env[key] = before; }
-  };
   const late = { realData: real(99.9, { late: { long: true, short: false } }) };
 
-  it('atrasado desligada: rebaixa a WATCH, como sempre', async () => {
-    const d = await withFlag('ENGINE_LATE_AS_WARNING', 'false', () => decide(late));
+  it('sem swing encaixada: No trade, com invalidation_unsnapped', async () => {
+    const d = await decide(noSwing);
+    expect(d).toMatchObject({ state: 'NO_TRADE', validatorNotes: [{ from: 'ENTER_NOW', to: 'NO_TRADE', reason: 'invalidation_unsnapped' }] });
+  });
+
+  it('C2 ou C7 em FAIL barram o ENTER_NOW', async () => {
+    for (const fail of [7, 2]) {
+      const d = await decide({ structureValidation: checks(fail) });
+      expect(d).toMatchObject({ state: 'WATCH', entryWarnings: [], validatorNotes: [{ from: 'ENTER_NOW', to: 'WATCH', reason: 'required_check_failed' }] });
+    }
+  });
+
+  it('movimento atrasado rebaixa a WATCH', async () => {
+    const d = await decide(late);
     expect(d).toMatchObject({ state: 'WATCH', entryWarnings: [], validatorNotes: [{ from: 'ENTER_NOW', to: 'WATCH', reason: 'late_move' }] });
   });
 
-  it('atrasado ligada: ENTER_NOW com o aviso 8; sem atraso, nada muda', async () => {
-    const d = await withFlag('ENGINE_LATE_AS_WARNING', 'true', () => decide(late));
-    expect(d).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [8], validatorNotes: [] });
-    const promoted = await withFlag('ENGINE_LATE_AS_WARNING', 'true', () => decide({ ...watch, ...late }));
-    expect(promoted).toMatchObject({ state: 'ENTER_NOW', validatorAction: 'promoted', entryWarnings: [8] });
-    expect(await withFlag('ENGINE_LATE_AS_WARNING', 'true', () => decide())).toEqual(await decide());
-  });
-
-  it('atrasado ligada: geometria e checklist continuam barrando', async () => {
-    const c7 = await withFlag('ENGINE_LATE_AS_WARNING', 'true', () => decide({ ...late, structureValidation: checks(7) }));
-    expect(c7).toMatchObject({ state: 'WATCH', entryWarnings: [] });
-    const far = await withFlag('ENGINE_LATE_AS_WARNING', 'true', () => decide({ ...late, watchPlan: nearTarget }));
-    expect(far.state).toBe('WATCH');
-  });
-
-  /** Sem entrada valida a mercado nem no nivel: alvo a menos de 1R das duas. */
-  const noGeometry = { ...watch, watchPlan: { ...plan, target1: 99.8, target2: null } };
-
-  it('geometria desligada: WATCH sem geometria vira NO_TRADE, como sempre', async () => {
-    const d = await withFlag('ENGINE_WATCH_ON_REJECTED_GEOMETRY', 'false', () => decide(noGeometry));
-    expect(d).toMatchObject({ state: 'NO_TRADE', validatorNotes: [{ from: 'WATCH', to: 'NO_TRADE', reason: 'no_valid_geometry' }] });
-  });
-
-  it('geometria ligada: segue WATCH sem niveis, nunca ENTER_NOW; C3 e o minimo de PASS continuam valendo', async () => {
-    const d = await withFlag('ENGINE_WATCH_ON_REJECTED_GEOMETRY', 'true', () => decide(noGeometry));
-    expect(d).toMatchObject({ state: 'WATCH', recommendation: 'WAIT', watchLevels: null, validatorNotes: [], rejectedPlan: null });
-    expect(d.levels.entry).toBeNull();
-    const fromEnter = await withFlag('ENGINE_WATCH_ON_REJECTED_GEOMETRY', 'true', () => decide({ ...noGeometry, state: 'ENTER_NOW', recommendation: 'BUY' }));
-    expect(fromEnter.state).toBe('WATCH');
-    const c3 = await withFlag('ENGINE_WATCH_ON_REJECTED_GEOMETRY', 'true', () => decide({ ...noGeometry, structureValidation: checks(3) }));
-    expect(c3.state).toBe('NO_TRADE');
-    const few = await withFlag('ENGINE_WATCH_ON_REJECTED_GEOMETRY', 'true', () => decide({ ...noGeometry, structureValidation: checks(1, 2, 4, 5) }));
-    expect(few.state).toBe('NO_TRADE');
+  it('o piso de PASS e o de sempre (5, ou 6 com agravante), nao o do modo permissivo', async () => {
+    expect((await decide({ structureValidation: checks(1, 2, 7) })).state).not.toBe('ENTER_NOW');
   });
 });
 
-describe('modo permissivo (chave ENGINE_PERMISSIVE, 16/11/2026)', () => {
-  const on = async <T>(run: () => Promise<T>, value = '1'): Promise<T> => {
-    const before = process.env.ENGINE_PERMISSIVE;
-    process.env.ENGINE_PERMISSIVE = value;
-    try { return await run(); } finally { if (before === undefined) delete process.env.ENGINE_PERMISSIVE; else process.env.ENGINE_PERMISSIVE = before; }
-  };
-
-  it.each(['0', 'abc', '2'])('valor %s: identico ao motor de sempre', async (value) => {
-    for (const patch of [{}, { structureValidation: checks(7) }, { structureValidation: checks(1, 4, 5) }, { realData: real(99.9, { late: { long: true, short: false } }) }]) {
-      expect(await on(() => decide(patch), value)).toEqual(await decide(patch));
-    }
-    expect((await decide()).permissiveEntry).toBe(false);
-  });
-
-  it('C2, C7 e atrasado deixam de barrar e viram avisos; a entrada fica marcada como do modo', async () => {
-    const d = await on(() => decide({ structureValidation: checks(2, 7), realData: real(99.9, { late: { long: true, short: false } }) }));
+describe('modo permissivo (fixo, 16/11/2026)', () => {
+  it('sem perfil aplicado, C2, C7 e atrasado deixam de barrar e viram avisos; a entrada fica marcada como do modo', async () => {
+    const d = await decideBalanced({ structureValidation: checks(2, 7), realData: real(99.9, { late: { long: true, short: false } }) });
     expect(d).toMatchObject({ state: 'ENTER_NOW', recommendation: 'BUY', entryWarnings: [2, 7, 8], permissiveEntry: true, validatorNotes: [] });
     expect(d.levels.stopLoss).toBeCloseTo(98.55);
   });
 
+  it('atrasado so: ENTER_NOW com o aviso 8; sem atraso nada muda; WATCH do modelo sobe com o aviso', async () => {
+    const late = { realData: real(99.9, { late: { long: true, short: false } }) };
+    expect(await decideBalanced(late)).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [8], validatorNotes: [] });
+    expect(await decideBalanced({ ...watch, ...late })).toMatchObject({ state: 'ENTER_NOW', validatorAction: 'promoted', entryWarnings: [8] });
+    expect(await decideBalanced()).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [], permissiveEntry: false });
+  });
+
+  it('atrasado: geometria e checklist continuam barrando', async () => {
+    const late = { realData: real(99.9, { late: { long: true, short: false } }) };
+    expect(await decideBalanced({ ...late, structureValidation: checks(1, 2, 4, 7) })).toMatchObject({ state: 'NO_TRADE' });
+    expect((await decideBalanced({ ...late, watchPlan: nearTarget })).state).toBe('WATCH');
+  });
+
   it('piso de 4 de 7: 4 PASS entra, 3 nao', async () => {
-    const four = await on(() => decide({ structureValidation: checks(1, 2, 7) }));
-    expect(four).toMatchObject({ state: 'ENTER_NOW', permissiveEntry: true });
-    const three = await on(() => decide({ structureValidation: checks(1, 2, 4, 7) }));
-    expect(three.state).toBe('NO_TRADE');
+    expect(await decideBalanced({ structureValidation: checks(1, 2, 7) })).toMatchObject({ state: 'ENTER_NOW', permissiveEntry: true });
+    expect((await decideBalanced({ structureValidation: checks(1, 2, 4, 7) })).state).toBe('NO_TRADE');
   });
 
   it.each([3, 6])('C%s em FAIL continua barrando', async (fail) => {
-    expect((await on(() => decide({ structureValidation: checks(fail) }))).state).not.toBe('ENTER_NOW');
+    expect((await decideBalanced({ structureValidation: checks(fail) })).state).not.toBe('ENTER_NOW');
   });
 
   it('geometria invalida continua barrando: alvo abaixo de 1R e risco acima de 2 ATR', async () => {
-    const noRoom = await on(() => decide({ watchPlan: nearTarget }));
-    expect(noRoom.state).toBe('WATCH');
-    const wide = await on(() => decide({ watchPlan: { ...plan, invalidation: 97 }, realData: real(99.9, { swings: [{ kind: 'low', price: 97 }] }) }));
+    expect((await decideBalanced({ watchPlan: nearTarget })).state).toBe('WATCH');
+    const wide = await decideBalanced({ watchPlan: { ...plan, invalidation: 97 }, realData: real(99.9, { swings: [{ kind: 'low', price: 97 }] }) });
     expect(wide.state).not.toBe('ENTER_NOW');
   });
 
   it('sem swing encaixada vale a invalidacao do modelo, dentro dos limites de risco', async () => {
-    const d = await on(() => decide({ realData: real(99.9, { swings: [{ kind: 'low', price: 98 }] }) }));
-    expect(d).toMatchObject({ state: 'ENTER_NOW', snapFallback: true, permissiveEntry: true });
+    const d = await decideBalanced({ realData: real(99.9, { swings: [{ kind: 'low', price: 98 }] }) });
+    expect(d).toMatchObject({ state: 'ENTER_NOW', permissiveEntry: true, validatorNotes: [] });
     expect(d.watchPlan?.invalidation).toBe(98.8);
+    expect(d.levels.stopLoss).toBeCloseTo(98.55);
+    const far = await decideBalanced({ watchPlan: { ...plan, invalidation: 97 }, realData: real(99.9, { swings: [{ kind: 'low', price: 98 }] }) });
+    expect(far.state).toBe('WATCH');
+    expect(far.watchLevels).toBeNull();
+    expect(validatorReasons(far.validatorNotes)).toEqual(['market_entry_invalid']);
   });
 
   it('contra o 4h e forex viram avisos em vez de exigir 6 PASS', async () => {
-    const htf = await on(() => decide({ structureValidation: checks(1, 5), realData: real(99.9, { htfTrend: 'downtrend' }) }));
+    const htf = await decideBalanced({ structureValidation: checks(1, 5), realData: real(99.9, { htfTrend: 'downtrend' }) });
     expect(htf).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [9], permissiveEntry: true });
-    const fx = await on(() => decide({ symbol: 'EURUSD', structureValidation: checks(4, 5) }));
+    const fx = await decideBalanced({ symbol: 'EURUSD', structureValidation: checks(4, 5) });
     expect(fx).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [10], permissiveEntry: true });
   });
 
-  it('entrada que o motor de sempre ja daria nao e marcada como do modo', async () => {
-    expect(await on(() => decide())).toMatchObject({ state: 'ENTER_NOW', entryWarnings: [], permissiveEntry: false });
-  });
-
   it('WATCH do modelo com geometria a mercado valida sobe para ENTER_NOW; NO_TRADE do modelo fica', async () => {
-    const up = await on(() => decide({ ...watch, structureValidation: checks(2, 7) }));
+    const up = await decideBalanced({ ...watch, structureValidation: checks(2, 7) });
     expect(up).toMatchObject({ state: 'ENTER_NOW', recommendation: 'BUY', validatorAction: 'promoted' });
-    expect((await on(() => decide({ state: 'NO_TRADE', recommendation: 'WAIT' }))).state).toBe('NO_TRADE');
+    expect((await decideBalanced({ state: 'NO_TRADE', recommendation: 'WAIT' })).state).toBe('NO_TRADE');
   });
 
   it('noticias continuam rebaixando', async () => {
     process.env.ENABLE_NEWS_GUARD = 'true';
     getEventsForSymbol.mockResolvedValue({ events: [{ impact: 'High', minutesUntil: 10, country: 'US', title: 'CPI' }], degraded: false });
-    const d = await on(() => decide({ structureValidation: checks(2, 7) }));
+    const d = await decideBalanced({ structureValidation: checks(2, 7) });
     expect(d).toMatchObject({ state: 'WATCH', permissiveEntry: false, entryWarnings: [] });
   });
 
   it('sem velas: C2 e C7 viram aviso, mas o preco fora da zona continua barrando', async () => {
     const est = { entry: 99.3, stopLoss: 98.6, takeProfit1: 101.5, takeProfit2: null };
-    const inside = await on(() => decide({ realData: null, currentPrice: 99.3, estimatedLevels: est, structureValidation: checks(2, 7) }));
+    const inside = await decideBalanced({ realData: null, currentPrice: 99.3, estimatedLevels: est, structureValidation: checks(2, 7) });
     expect(inside).toMatchObject({ state: 'ENTER_NOW', dataMode: 'print', entryWarnings: [2, 7], permissiveEntry: true });
-    const outside = await on(() => decide({ realData: null, currentPrice: 99.9, estimatedLevels: est, structureValidation: checks(2, 7) }));
+    const outside = await decideBalanced({ realData: null, currentPrice: 99.9, estimatedLevels: est, structureValidation: checks(2, 7) });
     expect(outside.state).toBe('WATCH');
   });
 });
 
-describe('entrada pendente (chave ENGINE_PENDING_ENTRY_LABEL, so apresentacao)', () => {
-  const run = async (value: string, patch: Partial<SignalDecisionInput>) => {
-    const before = process.env.ENGINE_PENDING_ENTRY_LABEL;
-    process.env.ENGINE_PENDING_ENTRY_LABEL = value;
-    try { return await decide(patch); } finally { if (before === undefined) delete process.env.ENGINE_PENDING_ENTRY_LABEL; else process.env.ENGINE_PENDING_ENTRY_LABEL = before; }
-  };
-  /** WATCH do modelo que fica WATCH: C7 em FAIL, com niveis validos no recuo. */
-  const waiting = { ...watch, structureValidation: checks(7) };
+describe('WATCH sem geometria valida (fixo): segue WATCH sem niveis em vez de No trade', () => {
+  /** Sem entrada valida a mercado nem no nivel: alvo a menos de 1R das duas. */
+  const noGeometry = { ...watch, watchPlan: { ...plan, target1: 99.8, target2: null } };
 
-  it('ligada: WATCH com niveis validos no nivel ganha pendingEntry; o estado e o resto nao mudam', async () => {
-    const off = await run('0', waiting);
-    const on = await run('1', waiting);
-    expect(off).toMatchObject({ state: 'WATCH', pendingEntry: false });
-    expect(off.watchLevels).not.toBeNull();
-    expect(on).toEqual({ ...off, pendingEntry: true });
-  });
-
-  it('ligada: sem niveis validos, ENTER_NOW e NO_TRADE nunca sao entrada pendente', async () => {
-    expect(await run('1', {})).toMatchObject({ state: 'ENTER_NOW', pendingEntry: false });
-    expect(await run('1', { state: 'NO_TRADE', recommendation: 'WAIT' })).toMatchObject({ state: 'NO_TRADE', pendingEntry: false });
-    const print = await run('1', { ...waiting, realData: null });
-    expect(print).toMatchObject({ state: 'WATCH', watchLevels: null, pendingEntry: false });
-    expect((await run('abc', waiting)).pendingEntry).toBe(false);
+  it('segue WATCH sem niveis, nunca ENTER_NOW; C3 e o minimo de PASS continuam valendo', async () => {
+    const d = await decide(noGeometry);
+    expect(d).toMatchObject({ state: 'WATCH', recommendation: 'WAIT', watchLevels: null, validatorNotes: [], rejectedPlan: null });
+    expect(d.levels.entry).toBeNull();
+    expect((await decide({ ...noGeometry, state: 'ENTER_NOW', recommendation: 'BUY' })).state).toBe('WATCH');
+    expect((await decide({ ...noGeometry, structureValidation: checks(3) })).state).toBe('NO_TRADE');
+    expect((await decide({ ...noGeometry, structureValidation: checks(1, 2, 4, 5) })).state).toBe('NO_TRADE');
   });
 });
 
-describe('alvo no proximo nivel (chave ENGINE_NEXT_TARGET)', () => {
-  const run = async (value: string, patch: Partial<SignalDecisionInput>) => {
-    const before = process.env.ENGINE_NEXT_TARGET;
-    process.env.ENGINE_NEXT_TARGET = value;
-    try { return await decide(patch); } finally { if (before === undefined) delete process.env.ENGINE_NEXT_TARGET; else process.env.ENGINE_NEXT_TARGET = before; }
-  };
+describe('entrada pendente (fixo, so apresentacao)', () => {
+  /** WATCH do modelo que fica WATCH: C7 em FAIL, com niveis validos no recuo. */
+  const waiting = { ...watch, structureValidation: checks(7) };
+
+  it('WATCH com niveis validos no nivel ganha pendingEntry', async () => {
+    const d = await decide(waiting);
+    expect(d).toMatchObject({ state: 'WATCH', pendingEntry: true });
+    expect(d.watchLevels).not.toBeNull();
+  });
+
+  it('sem niveis validos, ENTER_NOW e NO_TRADE nunca sao entrada pendente', async () => {
+    expect(await decide({})).toMatchObject({ state: 'ENTER_NOW', pendingEntry: false });
+    expect(await decide({ state: 'NO_TRADE', recommendation: 'WAIT' })).toMatchObject({ state: 'NO_TRADE', pendingEntry: false });
+    expect(await decide({ ...waiting, realData: null })).toMatchObject({ state: 'WATCH', watchLevels: null, pendingEntry: false });
+  });
+});
+
+describe('alvo no proximo nivel (fixo)', () => {
   /** Primeiro nivel a 0,74R da entrada a mercado; o seguinte a 2,3R. */
   const close = { watchPlan: { ...plan, target1: 100.9, target2: 103 } };
 
-  it('desligada: primeiro nivel perto barra a entrada, como sempre', async () => {
-    const d = await run('false', close);
-    expect(d).toMatchObject({ state: 'WATCH', targetMoved: false, entryWarnings: [] });
-    expect(validatorReasons(d.validatorNotes)).toEqual(['market_entry_invalid']);
-  });
-
-  it('ligada: TP1 vai para o proximo nivel com o teto de 1,5R, aviso 11 e targetMoved', async () => {
-    const d = await run('true', close);
+  it('TP1 vai para o proximo nivel com o teto de 1,5R, aviso 11 e targetMoved', async () => {
+    const d = await decide(close);
     expect(d).toMatchObject({ state: 'ENTER_NOW', targetMoved: true, entryWarnings: [11] });
     expect(d.levels.takeProfit1).toBeCloseTo(99.9 + 1.5 * 1.35);
     expect(d.levels.takeProfit2).toBeNull();
   });
 
-  it('ligada: sem proximo nivel, ou com ele tambem abaixo de 1R, nada muda; primeiro nivel ja bom nao e mexido', async () => {
-    expect((await run('true', { watchPlan: { ...plan, target1: 100.9, target2: null } })).state).toBe('WATCH');
-    expect((await run('true', { watchPlan: { ...plan, target1: 100.5, target2: 100.9 } })).state).toBe('WATCH');
-    const good = await run('true', {});
-    expect(good).toEqual(await run('false', {}));
-    expect(good.targetMoved).toBe(false);
+  it('sem proximo nivel, ou com ele tambem abaixo de 1R, nada muda; primeiro nivel ja bom nao e mexido', async () => {
+    expect((await decide({ watchPlan: { ...plan, target1: 100.9, target2: null } })).state).toBe('WATCH');
+    expect((await decide({ watchPlan: { ...plan, target1: 100.5, target2: 100.9 } })).state).toBe('WATCH');
+    expect((await decide({})).targetMoved).toBe(false);
   });
 
-  it('ligada: WATCH no recuo tambem usa o proximo nivel e marca targetMoved', async () => {
+  it('WATCH no recuo tambem usa o proximo nivel e marca targetMoved', async () => {
     const recuo = { ...watch, structureValidation: checks(7), watchPlan: { ...plan, target1: 100.0, target2: 103 } };
-    const off = await run('false', recuo);
-    const on = await run('true', recuo);
-    expect(off.watchLevels).toBeNull();
-    expect(on).toMatchObject({ state: 'WATCH', targetMoved: true });
-    expect(on.watchLevels?.tp1R).toBeGreaterThanOrEqual(1);
+    const d = await decide(recuo);
+    expect(d).toMatchObject({ state: 'WATCH', targetMoved: true });
+    expect(d.watchLevels?.tp1R).toBeGreaterThanOrEqual(1);
   });
 });
 
-describe('perfis de risco (ENGINE_RISK_PROFILE, 17/11/2026)', () => {
-  const env = ['ENGINE_PERMISSIVE', 'ENGINE_NEXT_TARGET', 'ENGINE_WATCH_ON_REJECTED_GEOMETRY'] as const;
-  const before = env.map((k) => process.env[k]);
-  beforeAll(() => {
-    process.env.ENGINE_PERMISSIVE = '1';
-    process.env.ENGINE_NEXT_TARGET = 'true';
-    process.env.ENGINE_WATCH_ON_REJECTED_GEOMETRY = 'true';
-  });
-  afterAll(() => env.forEach((k, i) => { if (before[i] === undefined) delete process.env[k]; else process.env[k] = before[i]; }));
-
+describe('perfis de risco (17/11/2026)', () => {
   // XAUUSD 5M de 16/11/2026 22:53 BRT (prompt D): venda dentro da zona, regime de volatilidade alto.
   const swings = [3856.66975, 3855.85464, 3857.30921, 3866.13478, 3841.13083, 3861.00386, 3861.52612, 3856.68556]
     .map((price) => ({ kind: 'low' as 'low' | 'high', price }))
@@ -937,22 +687,11 @@ describe('perfis de risco (ENGINE_RISK_PROFILE, 17/11/2026)', () => {
     expect(profiles.conservative).toEqual(profiles.balanced);
   });
 
-  it('C6 pela geometria (chave 1): so o Arriscado destrava, com o aviso do nivel no caminho', async () => {
-    const before = process.env.ENGINE_C6_FROM_GEOMETRY;
-    process.env.ENGINE_C6_FROM_GEOMETRY = '1';
-    try {
-      const { profiles } = await decideSignalForProfile(gold as never, 'aggressive');
-      expect(profiles.aggressive.state).toBe('ENTER_NOW');
-      expect(profiles.aggressive.entry).toBeCloseTo(3866.95, 1);
-      expect(profiles.balanced.state).toBe('WATCH');
-      expect(profiles.conservative.state).toBe('WATCH');
-      const { decision } = await decideSignalForProfile(gold as never, 'aggressive');
-      expect(decision.entryWarnings).toContain(12);
-    } finally {
-      if (before === undefined) delete process.env.ENGINE_C6_FROM_GEOMETRY; else process.env.ENGINE_C6_FROM_GEOMETRY = before;
-    }
-    const off = await decideSignalForProfile(gold as never, 'aggressive');
-    expect(off.profiles.aggressive.state).toBe('WATCH');
+  it('o C6 e o do modelo em todos os perfis: C6 em FAIL segue barrando o ENTER_NOW', async () => {
+    const { profiles } = await decideSignalForProfile(gold as never, 'aggressive');
+    expect(profiles.aggressive.state).toBe('WATCH');
+    expect(profiles.balanced.state).toBe('WATCH');
+    expect(profiles.conservative.state).toBe('WATCH');
   });
 
   it('o Arriscado nunca destrava plano invalidado', async () => {

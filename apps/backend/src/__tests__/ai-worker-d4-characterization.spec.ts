@@ -79,19 +79,17 @@ jest.mock('../modules/calendar/calendar.service', () => ({
 // Espioes que chamam a implementacao real (adapter e worker importam o mesmo modulo).
 jest.mock('../common/utils/signal-decision', () => {
   const actual = jest.requireActual('../common/utils/signal-decision');
-  return { ...actual, decideSignal: jest.fn(actual.decideSignal) };
+  return { ...actual, decideSignal: jest.fn(actual.decideSignal), decideSignalForProfile: jest.fn(actual.decideSignalForProfile) };
 });
 jest.mock('../common/utils/trade-plan-validator', () => {
   const actual = jest.requireActual('../common/utils/trade-plan-validator');
   return { ...actual, validateTradePlan: jest.fn(actual.validateTradePlan) };
 });
 
-import { decideSignal } from '../common/utils/signal-decision';
+import { decideSignal, decideSignalForProfile } from '../common/utils/signal-decision';
 import { validateTradePlan } from '../common/utils/trade-plan-validator';
 import { AIAdapter } from '../modules/ai/ai.adapter';
 import { makeRawSqlPrisma } from './raw-sql-mock';
-import { __resetFlagCacheForTests, applyFlagOverrideLocally } from '../common/flags/feature-flags';
-import { SETUP_CONTINUATION_FLAG } from '../modules/ai/setup-continuation';
 
 type Event = { impact: string; minutesUntil: number; country: string; title: string };
 
@@ -180,7 +178,7 @@ const scenarios: Scenario[] = [
   { name: 'venda valida', market: 'short', replies: [modelReply('SELL', 70, { ...sellPlan, marketStructure: { bias: 'bearish' } })] },
   { name: 'WAIT original', replies: [modelReply('HOLD', 55, { currentPrice: 101 })] },
   {
-    name: 'sem geometria (alvo a menos de 1R das duas entradas)',
+    name: 'sem geometria (alvo a menos de 1R das duas entradas: WATCH sem niveis)',
     replies: [modelReply('BUY', 70, buyPlan, { watchPlan: { ...LONG_PLAN, target1: 101.9, target2: null } })],
   },
   {
@@ -296,6 +294,7 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     else calendar.mockResolvedValue({ events: mode.events, degraded: Boolean(mode.degraded) });
     (validateTradePlan as jest.Mock).mockClear();
     (decideSignal as jest.Mock).mockClear();
+    (decideSignalForProfile as jest.Mock).mockClear();
     const prisma = (globalThis as any).__prisma;
     prisma.analysis.update.mockClear();
 
@@ -308,19 +307,23 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     }, opts: { attempts: 1 }, attemptsMade: 0 }).catch((error: unknown) => {
       thrown = error;
     });
-    if (mode.kind === 'timeout') await jest.advanceTimersByTimeAsync(6_000);
+    // O Equilibrado decide primeiro e os outros dois perfis depois: cada rodada espera os 6 s do news guard.
+    if (mode.kind === 'timeout') await jest.advanceTimersByTimeAsync(12_000);
     await job;
 
     const updates = prisma.analysis.update.mock.calls.map(([args]: any[]) => args.data);
     const done = updates.find((d: any) => d.status === 'completed');
     const failed = updates.find((d: any) => d.status === 'failed');
-    const decisions = await Promise.all((decideSignal as jest.Mock).mock.results.map((r) => r.value));
+    // Uma decisao autoritativa: a do worker (fonte de demonstracao) ou a do adapter, que roda os 3 perfis sobre a mesma resposta.
+    const direct = await Promise.all((decideSignal as jest.Mock).mock.results.map((r) => r.value));
+    const profiled = await Promise.all((decideSignalForProfile as jest.Mock).mock.results.map((r) => r.value));
+    const decisions = [...direct, ...profiled.map((p: any) => p.decision)];
     const adapter = adapterResults[0];
     return {
       calls: {
         model: openaiCreate.mock.calls.length,
         validateTradePlan: (validateTradePlan as jest.Mock).mock.calls.length,
-        decideSignal: (decideSignal as jest.Mock).mock.calls.length,
+        decideSignal: (decideSignal as jest.Mock).mock.calls.length + (decideSignalForProfile as jest.Mock).mock.calls.length,
         newsCalendar: calendar.mock.calls.filter((c) => c[2] === 2).length,
         otherCalendar: calendar.mock.calls.filter((c) => c[2] !== 2).length,
       },
@@ -395,7 +398,8 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
 
 
   // Contagens depois da correcao: 1 modelo, 2 validateTradePlan (adapter + worker,
-  // puro), 1 decideSignal (so o adapter) e 1 consulta ao calendario com compra/venda.
+  // puro), 1 decisao (so o adapter, com os 3 perfis) e, com compra/venda, 1 consulta
+  // ao calendario por perfil (3; o servico guarda o calendario em cache por 1 h).
   const calls = (validateTradePlan: number, decideSignal: number, newsCalendar: number, model = 1) => ({
     model, validateTradePlan, decideSignal, newsCalendar, otherCalendar: 0,
   });
@@ -422,13 +426,13 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
   });
 
   const expected: Record<string, unknown> = {
-    'compra valida': ok(calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'no_event'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'no_event'),
-    'venda valida': ok(calls(2, 1, 1), adapterSaid('SELL', 70, 'none', [], 'no_event'), tradeSaved('SELL', 70, 'none', [1.19, 3.22]), 'no_event'),
+    'compra valida': ok(calls(2, 1, 3), adapterSaid('BUY', 70, 'none', [], 'no_event'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'no_event'),
+    'venda valida': ok(calls(2, 1, 3), adapterSaid('SELL', 70, 'none', [], 'no_event'), tradeSaved('SELL', 70, 'none', [1.19, 3.22]), 'no_event'),
     // HOLD sem cenario alternativo e NO_TRADE: confianca no maximo 49.
     'WAIT original': ok(calls(2, 1, 0), adapterSaid('WAIT', 49, 'none', [], 'skipped'), waitSaved(49, 'none', []), 'skipped'),
-    'sem geometria (alvo a menos de 1R das duas entradas)': ok(
-      calls(2, 1, 0), adapterSaid('WAIT', 49, 'downgraded', ['market_entry_invalid', 'no_valid_geometry'], 'skipped'),
-      waitSaved(49, 'downgraded', ['market_entry_invalid', 'no_valid_geometry']), 'skipped',
+    'sem geometria (alvo a menos de 1R das duas entradas: WATCH sem niveis)': ok(
+      calls(2, 1, 0), adapterSaid('WAIT', 49, 'downgraded', ['market_entry_invalid'], 'skipped'),
+      waitSaved(49, 'downgraded', ['market_entry_invalid']), 'skipped',
     ),
     // ARMED do modelo (ordem limit) vira WATCH com o plano, sem niveis.
     'ARMED do modelo vira WATCH (a ordem limit nao e mais emitida)': ok(
@@ -436,29 +440,29 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
       waitSaved(49, 'downgraded', ['limit_order_retired']), 'skipped',
     ),
     'noticia: evento encontrado (rebaixa)': ok(
-      calls(2, 1, 1), adapterSaid('WAIT', 49, 'downgraded', ['news_event'], 'event'),
+      calls(2, 1, 3), adapterSaid('WAIT', 49, 'downgraded', ['news_event'], 'event'),
       waitSaved(49, 'downgraded', ['news_event']), 'event',
     ),
-    'noticia: nenhum evento': ok(calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'no_event'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'no_event'),
+    'noticia: nenhum evento': ok(calls(2, 1, 3), adapterSaid('BUY', 70, 'none', [], 'no_event'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'no_event'),
     'noticia: timeout de 6 s (segue sem rebaixar, status timeout)': ok(
-      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'timeout'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'timeout',
+      calls(2, 1, 3), adapterSaid('BUY', 70, 'none', [], 'timeout'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'timeout',
     ),
     'noticia: erro do calendario (segue sem rebaixar, status error)': ok(
-      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'error'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'error',
+      calls(2, 1, 3), adapterSaid('BUY', 70, 'none', [], 'error'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'error',
     ),
     'noticia: fonte degradada sem evento': ok(
-      calls(2, 1, 1), adapterSaid('BUY', 70, 'none', [], 'degraded_no_event'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'degraded_no_event',
+      calls(2, 1, 3), adapterSaid('BUY', 70, 'none', [], 'degraded_no_event'), tradeSaved('BUY', 70, 'none', [1.19, 3.22]), 'degraded_no_event',
     ),
     'noticia: fonte degradada com o evento no cache velho (rebaixa)': ok(
-      calls(2, 1, 1), adapterSaid('WAIT', 49, 'downgraded', ['news_event'], 'degraded_event'),
+      calls(2, 1, 3), adapterSaid('WAIT', 49, 'downgraded', ['news_event'], 'degraded_event'),
       waitSaved(49, 'downgraded', ['news_event']), 'degraded_event',
     ),
     // Tendencia forte: teto 72.
-    'confianca decimal (72.4)': ok(calls(2, 1, 1), adapterSaid('BUY', 72, 'none', [], 'no_event'), tradeSaved('BUY', 72, 'none', [1.19, 3.22], [69, 30, 31]), 'no_event'),
+    'confianca decimal (72.4)': ok(calls(2, 1, 3), adapterSaid('BUY', 72, 'none', [], 'no_event'), tradeSaved('BUY', 72, 'none', [1.19, 3.22], [69, 30, 31]), 'no_event'),
     // O parser zera o texto; sem o piso antigo de 30, o sinal fica com confianca 0.
-    'confianca em texto ("70%")': ok(calls(2, 1, 1), adapterSaid('BUY', 0, 'none', [], 'no_event'), tradeSaved('BUY', 0, 'none', [1.19, 3.22], [3, 3, 45]), 'no_event'),
+    'confianca em texto ("70%")': ok(calls(2, 1, 3), adapterSaid('BUY', 0, 'none', [], 'no_event'), tradeSaved('BUY', 0, 'none', [1.19, 3.22], [3, 3, 45]), 'no_event'),
     'preco corrigido por escala (BTC lido 100x menor)': ok(
-      calls(2, 1, 1), adapterSaid('BUY', 70, 'fixed', [], 'no_event'), tradeSaved('BUY', 70, 'fixed', [1.19, 3.22], [null, null, null]),
+      calls(2, 1, 3), adapterSaid('BUY', 70, 'fixed', [], 'no_event'), tradeSaved('BUY', 70, 'fixed', [1.19, 3.22], [null, null, null]),
       'no_event', 'BTCUSDT',
     ),
   };
@@ -556,10 +560,10 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
       id: 'prior-d4', createdAt: new Date(), recommendation: 'WAIT', groundingInterval: '30m',
       result: { signalState: 'WATCH', watchPlan: { ...LONG_PLAN, trigger: `Reclaim ${'y'.repeat(300)}` }, analysis: { symbol, timeframe: '30m' } },
     });
-    const withDb = async (symbol: string, fn: () => Promise<void>) => {
+    const withDb = async (symbol: string | null, fn: () => Promise<void>) => {
       const client = (globalThis as any).__prisma;
       const restore = { $queryRaw: client.$queryRaw, $executeRaw: client.$executeRaw };
-      const fake = makeRawSqlPrisma([['"id" <>', () => [priorRow(symbol)]]]);
+      const fake = makeRawSqlPrisma([['"id" <>', () => (symbol === null ? [] : [priorRow(symbol)])]]);
       Object.assign(client, { $queryRaw: fake.prisma.$queryRaw, $executeRaw: fake.prisma.$executeRaw });
       try {
         await fn();
@@ -568,12 +572,10 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
       }
     };
     const saved = () => (globalThis as any).__prisma.analysis.update.mock.calls.map(([args]: any[]) => args.data).find((d: any) => d.status === 'completed');
-    afterEach(() => __resetFlagCacheForTests());
-
-    it('chave desligada: com setupId o prompt fica byte a byte igual e nada e gravado', async () => {
+    it('setup sem analise anterior: com setupId o prompt fica byte a byte igual e nada e gravado', async () => {
       await run({ name: 'base', replies: [reply()] });
       const base = request();
-      await withDb('TEST', async () => {
+      await withDb(null, async () => {
         await run({ name: 'off', replies: [reply()], setupId: 'setup-d4' });
       });
       expect(request()).toBe(base);
@@ -581,10 +583,9 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
       expect(saved().result.engine).not.toHaveProperty('continuation');
     });
 
-    it('chave ligada e mesmo ativo: o bloco entra depois da parte fixa e o status e gravado', async () => {
+    it('mesmo ativo: o bloco entra depois da parte fixa e o status e gravado', async () => {
       await run({ name: 'base', replies: [reply()] });
       const base = JSON.parse(request());
-      applyFlagOverrideLocally(SETUP_CONTINUATION_FLAG, 'true');
       await withDb('TEST', async () => {
         await run({ name: 'on', replies: [reply()], setupId: 'setup-d4' });
       });
@@ -605,7 +606,6 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
     it('ativo diferente: nao injeta e o prompt fica igual', async () => {
       await run({ name: 'base', replies: [reply()] });
       const base = request();
-      applyFlagOverrideLocally(SETUP_CONTINUATION_FLAG, 'true');
       await withDb('ETHUSDT', async () => {
         await run({ name: 'other', replies: [reply()], setupId: 'setup-d4' });
       });
@@ -613,9 +613,7 @@ describe('worker + adapter real: uma decisao autoritativa (D4)', () => {
       expect(saved().result).not.toHaveProperty('continuation');
     });
 
-    it('motivo ligado: mesma chamada, frase salva e marcadores fora do texto exibido', async () => {
-      applyFlagOverrideLocally(SETUP_CONTINUATION_FLAG, 'true');
-      applyFlagOverrideLocally('SETUP_CONTINUATION_REASON', '1');
+    it('motivo: mesma chamada, frase salva e marcadores fora do texto exibido', async () => {
       await withDb('TEST', async () => {
         await run({ name: 'reason', replies: [modelReply('BUY', 70, { ...buyPlan, executiveSummary: 'Price held.\nPRIOR_PLAN_REASON: Price returned to the zone with a bullish close.\nPRIOR_PLAN_STATUS: CONFIRMED' })], setupId: 'setup-d4' });
       });

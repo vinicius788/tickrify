@@ -64,7 +64,7 @@ export const ENGINE_RULES = {
   probabilityTp1Band: 3,
 } as const;
 
-// ─── Perfis de risco (ENGINE_RISK_PROFILE, 17/11/2026) ───────────────────────
+// ─── Perfis de risco (17/11/2026) ────────────────────────────────────────────
 // O validador roda sobre a MESMA resposta do modelo com regras diferentes por
 // perfil. Cada perfil so mexe em preferencias; plano invalidado, risco fora de
 // 0,5 a 2 ATR, noticia, print antigo (sem velas o perfil nao muda nada) e
@@ -72,29 +72,28 @@ export const ENGINE_RULES = {
 
 export type EngineProfile = 'conservative' | 'balanced' | 'aggressive';
 
-/** Regras que um perfil sobrescreve; ausente = a chave do /admin de hoje. */
+/** Regras que um perfil sobrescreve; ausente = o motor de hoje (Equilibrado). */
 export interface ProfileGates {
   permissive?: boolean;
-  snapMode?: 0 | 1 | 2;
+  /** Sem swing encaixada, segue com a invalidacao do modelo. */
+  snapFallback?: boolean;
   enterChecks?: readonly number[];
   lateAsWarning?: boolean;
   /** Alvo minimo em R (entrada a mercado e no nivel). */
   tp1MinR?: number;
   /** PASS minimos do ENTER_NOW. */
   minPass?: number;
-  /** Perfil elegivel ao C6 pela geometria real (ENGINE_C6_FROM_GEOMETRY): so o Arriscado. */
-  c6FromGeometry?: boolean;
 }
 
 /**
- * Conservador = o motor antes do modo permissivo; Equilibrado = as chaves de
+ * Conservador = o motor antes do modo permissivo; Equilibrado = o motor de
  * hoje; Arriscado = alvo a partir de 0,7R, 3 PASS, atrasado e contra o 4h
  * como aviso (valores do replay gratis de 17/11/2026).
  */
 export const PROFILE_GATES: Record<EngineProfile, ProfileGates> = {
-  conservative: { permissive: false, snapMode: 0, enterChecks: ENGINE_RULES.enterNowChecks, lateAsWarning: false },
+  conservative: { permissive: false, snapFallback: false, enterChecks: ENGINE_RULES.enterNowChecks, lateAsWarning: false },
   balanced: {},
-  aggressive: { permissive: true, tp1MinR: 0.7, minPass: 3, lateAsWarning: true, c6FromGeometry: true },
+  aggressive: { tp1MinR: 0.7, minPass: 3, lateAsWarning: true },
 };
 
 const profileGates = new AsyncLocalStorage<ProfileGates>();

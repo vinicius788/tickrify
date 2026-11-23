@@ -171,9 +171,10 @@ export function signalToneClass(value: unknown): string {
   return 'text-[var(--signal-hold)]';
 }
 
-// ─── Print tratado como historico (UI_HISTORICAL_PRINT, 17/11/2026) ─────────
+// ─── Print tratado como historico (17/11/2026) ──────────────────────────────
 // So apresentacao: a guarda de print antigo do servidor reteve as velas e a
-// analise foi gravada com a chave ligada (evidence.historicalPrintUi).
+// analise foi gravada com o tratamento de historico (evidence.historicalPrintUi;
+// analise anterior a ele fica como era).
 
 export interface HistoricalPrint {
   imagePrice: number | null;
@@ -185,12 +186,12 @@ function evidenceOf(fullResponse: unknown): Record<string, unknown> | null {
   return evidence && typeof evidence === 'object' ? (evidence as Record<string, unknown>) : null;
 }
 
-/** A analise foi gravada com UI_HISTORICAL_PRINT = 1. */
+/** A analise foi gravada com o tratamento de print historico. */
 export function historicalPrintUiOf(fullResponse: unknown): boolean {
   return evidenceOf(fullResponse)?.historicalPrintUi === true;
 }
 
-/** Print antigo com a chave ligada: precos da imagem e ao vivo (null quando nao gravados). */
+/** Print antigo tratado como historico: precos da imagem e ao vivo (null quando nao gravados). */
 export function historicalPrintOf(fullResponse: unknown): HistoricalPrint | null {
   const evidence = evidenceOf(fullResponse);
   if (evidence?.historicalPrintUi !== true) return null;

@@ -661,7 +661,7 @@ describe('runAlertMonitor', () => {
   });
 });
 
-describe('runAlertMonitor: aviso de proximidade (SETUP_ALERT_NEAR)', () => {
+describe('runAlertMonitor: aviso de proximidade', () => {
   const NOW = new Date(T + 30 * 60 * 1000);
   const row = (extra: Record<string, unknown> = {}) => ({
     id: 'alert-1', userId: 'u1', setupId: SETUP.id, priceSymbol: 'BTCUSDT', level: 110, label: 'tp1', side: 'above',
@@ -682,21 +682,7 @@ describe('runAlertMonitor: aviso de proximidade (SETUP_ALERT_NEAR)', () => {
   const select = (calls: Array<{ text: string; values: unknown[] }>) => calls.find((c) => c.text.includes('ORDER BY a."priceSymbol"'))!;
   const nearUpdate = (calls: Array<{ text: string; values: unknown[] }>) => calls.find((c) => c.text.includes('SET "nearAt"'));
 
-  afterEach(() => {
-    delete process.env.SETUP_ALERT_NEAR;
-  });
-
-  it('chave desligada: o SELECT e o monitor ficam como eram, sem ATR e sem marca', async () => {
-    const { go, calls } = run([row({ atr: 5 })]);
-    await go();
-    expect(select(calls).text).not.toContain('nearAt');
-    expect(select(calls).text).not.toContain('atr14');
-    expect(nearUpdate(calls)).toBeUndefined();
-    expect(captureServer).not.toHaveBeenCalled();
-  });
-
-  it('ligada: marca near por UPDATE condicional e emite setup_alert_near uma vez', async () => {
-    process.env.SETUP_ALERT_NEAR = 'true';
+  it('marca near por UPDATE condicional e emite setup_alert_near uma vez', async () => {
     const { go, calls } = run([row({ atr: 5, nearAt: null })]);
     await expect(go()).resolves.toMatchObject({ checked: 1, triggered: 0 });
     expect(select(calls).text).toContain('atr14');
@@ -709,7 +695,6 @@ describe('runAlertMonitor: aviso de proximidade (SETUP_ALERT_NEAR)', () => {
   });
 
   it('outra instancia ja marcou (UPDATE em 0 linhas): nao emite de novo', async () => {
-    process.env.SETUP_ALERT_NEAR = 'true';
     const { go } = run([row({ atr: 5, nearAt: null })], 0);
     await go();
     expect(captureServer).not.toHaveBeenCalled();
@@ -721,21 +706,18 @@ describe('runAlertMonitor: aviso de proximidade (SETUP_ALERT_NEAR)', () => {
     ['longe (3 > 0,5 x 5)', { atr: 1, nearAt: null }],
     ['ja marcado', { atr: 5, nearAt: new Date(T) }],
   ])('%s: nao marca', async (_name, extra) => {
-    process.env.SETUP_ALERT_NEAR = 'true';
     const { go, calls } = run([row(extra)]);
     await go();
     expect(nearUpdate(calls)).toBeUndefined();
     expect(captureServer).not.toHaveBeenCalled();
   });
 
-  it('a regra mora em ALERT_RULES e o view so mostra near com a chave ligada e o alerta ativo', async () => {
+  it('a regra mora em ALERT_RULES e o view so mostra near com o alerta ativo', async () => {
     expect(ALERT_RULES.nearAtr).toBe(0.5);
     const active = { id: 'a1', userId: 'u', setupId: SETUP.id, analysisId: 'x', symbol: 'BTCUSDT', priceSymbol: 'BTCUSDT', level: 110, label: 'tp1', side: 'above', status: 'active', createdAt: new Date(T), triggeredAt: null, triggerPrice: null, seenAt: null, nearAt: new Date(T), timeframe: '15m' };
     const { prisma } = makePrisma([['FROM "tickrify"."SetupAlert" a', () => [active, { ...active, id: 'a2', status: 'triggered' }]]]);
     const service = new SetupAlertsService(prisma, {} as never);
     await service.onModuleInit();
-    expect((await service.list('u')).items.map((a) => a.near)).toEqual([false, false]);
-    process.env.SETUP_ALERT_NEAR = 'true';
     expect((await service.list('u')).items.map((a) => a.near)).toEqual([true, false]);
   });
 });
@@ -1067,7 +1049,7 @@ describe('createWatchAlert: todo WATCH vira alerta', () => {
   });
 });
 
-describe('createEntryAlerts: TP1 e stop do Enter now (ENTER_NOW_AUTO_ALERTS)', () => {
+describe('createEntryAlerts: TP1 e stop do Enter now', () => {
   const ENTER = {
     signalState: 'ENTER_NOW',
     dataMode: 'real_data',
@@ -1104,21 +1086,7 @@ describe('createEntryAlerts: TP1 e stop do Enter now (ENTER_NOW_AUTO_ALERTS)', (
     return { prisma, calls, inserts: () => calls.filter((c) => c.text.includes('INSERT INTO "tickrify"."SetupAlert"')) };
   }
 
-  afterEach(() => {
-    delete process.env.ENTER_NOW_AUTO_ALERTS;
-  });
-
-  it('chave desligada: nem consulta o banco', async () => {
-    const f = fake();
-    await expect(createEntryAlerts(f.prisma, INPUT)).resolves.toBe('disabled');
-    expect(f.calls).toHaveLength(0);
-  });
-
-  describe('ligada', () => {
-    beforeEach(() => {
-      process.env.ENTER_NOW_AUTO_ALERTS = 'true';
-    });
-
+  describe('alertas automaticos', () => {
     it('segue o setup e cria tp1 e stop na mesma transacao, com validade de 48h, e avisa o PostHog com auto', async () => {
       const f = fake();
       const log = jest.fn();

@@ -6,7 +6,7 @@ import { captureServer as captureServerMock } from '../../common/analytics/posth
 import { recordSetupVersion } from './setups.service';
 import { buildAnalysisPrompt } from '../prompt/prompt-builder.service';
 import { makeRawSqlPrisma } from '../../__tests__/raw-sql-mock';
-import { __resetFlagCacheForTests, applyFlagOverrideLocally } from '../../common/flags/feature-flags';
+import { __resetFlagCacheForTests } from '../../common/flags/feature-flags';
 
 const captureServer = captureServerMock as jest.Mock;
 
@@ -372,8 +372,8 @@ describe('AiService access enforcement', () => {
 
   describe('continuacao do setup no caminho sincrono', () => {
     const plan = { direction: 'short', triggerType: 'zone_reaction', zoneLow: 77800, zoneHigh: 78000, invalidation: 78400, target1: 76900, target2: null, validForCandles: 12, trigger: 'Bearish close' };
-    const analyze = async (continuation?: unknown) => {
-      const fake = makeRawSqlPrisma([['"id" <>', () => [{
+    const analyze = async (continuation?: unknown, withPrior = true) => {
+      const fake = makeRawSqlPrisma([['"id" <>', () => !withPrior ? [] : [{
         id: 'prior-s', createdAt: new Date(), recommendation: 'WAIT', groundingInterval: '15m',
         result: { signalState: 'WATCH', watchPlan: plan, analysis: { symbol: 'BTCUSDT', timeframe: '15m' } },
       }]]]);
@@ -395,15 +395,14 @@ describe('AiService access enforcement', () => {
     };
     afterEach(() => __resetFlagCacheForTests());
 
-    it('chave desligada: o adapter recebe os mesmos argumentos e nada e gravado', async () => {
-      const result = await analyze();
+    it('sem plano anterior no setup: o adapter recebe os mesmos argumentos e nada e gravado', async () => {
+      const result = await analyze(undefined, false);
       expect((service as any).aiAdapter.analyzeImage.mock.calls[0][5]).toEqual({ compareProviders: true });
       expect(result).not.toHaveProperty('continuation');
       expect(result.engine).not.toHaveProperty('continuation');
     });
 
-    it('chave ligada: passa o plano anterior ao adapter e grava o status', async () => {
-      applyFlagOverrideLocally('ENABLE_SETUP_CONTINUATION', 'true');
+    it('com WATCH anterior valendo: passa o plano anterior ao adapter e grava o status', async () => {
       const continuation = { setupId: 'setup-123456', priorAnalysisId: 'prior-s', status: 'STILL_WAITING', direction: 'short', level: 77800 };
       const result = await analyze(continuation);
       expect((service as any).aiAdapter.analyzeImage.mock.calls[0][5].priorPlan).toMatchObject({ setupId: 'setup-123456', priorAnalysisId: 'prior-s', symbol: 'BTCUSDT' });
@@ -413,28 +412,6 @@ describe('AiService access enforcement', () => {
   });
 
   // 26/10/2026: o sincrono monta pelo mesmo montador do worker (buildAnalysisPrompt).
-  it('caminho sincrono com 100% na B usa o prompt B e grava a variante', async () => {
-    process.env.PROMPT_VARIANT_B_PERCENT = '100';
-    try {
-      (service as any).aiAdapter.analyzeImage = jest.fn().mockResolvedValue({
-        recommendation: 'WAIT', bias: 'neutral', confidence: 40, reasoning: 'No trigger yet.',
-        analysis: { symbol: 'EURUSD', timeframe: '1H' }, rawResponse: {}, rawContent: '{}',
-      });
-      prisma.analysis.update
-        .mockResolvedValueOnce({ id: 'an_b', status: 'processing' })
-        .mockResolvedValueOnce({ id: 'an_b', status: 'completed', isDemo: true, createdAt: new Date(), updatedAt: new Date() });
-      (service as any).serializeAnalysis = jest.fn().mockResolvedValue({ id: 'an_b' });
-      await (service as any).processSynchronously({
-        analysisId: 'an_b', imageUrl: VALID_PNG_DATA_URL, userId: 'usr_1', analysisType: 'quick', isDemo: true,
-        userLanguage: 'pt', intake: { receivedAt: Date.now(), imagePrepMs: 0, intakeMs: 0 },
-      });
-      expect((service as any).aiAdapter.analyzeImage.mock.calls[0][1]).toBe(buildAnalysisPrompt({ userLanguage: 'pt', analysisType: 'quick' }, 'B'));
-      expect(prisma.analysis.update.mock.calls.at(-1)[0].data.result.engine.prompt_variant).toBe('B');
-    } finally {
-      delete process.env.PROMPT_VARIANT_B_PERCENT;
-    }
-  });
-
   it.each(['quick', 'deep'] as const)('caminho sincrono (%s) usa o montador unico do prompt', async (analysisType) => {
     (service as any).aiAdapter.analyzeImage = jest.fn().mockResolvedValue({
       recommendation: 'WAIT', bias: 'neutral', confidence: 40, reasoning: 'No trigger yet.',
@@ -451,7 +428,7 @@ describe('AiService access enforcement', () => {
 
     const prompt = (service as any).aiAdapter.analyzeImage.mock.calls[0][1] as string;
     expect(prompt).toBe(buildAnalysisPrompt({ userLanguage: 'pt', analysisType }));
-    expect(prisma.analysis.update.mock.calls.at(-1)[0].data.result.engine.prompt_variant).toBe('A');
+    expect(prisma.analysis.update.mock.calls.at(-1)[0].data.result.engine).not.toHaveProperty('prompt_variant');
     expect(prompt).toContain('OUTPUT LANGUAGE: Portuguese (Brazil)');
     expect(prompt.includes('ANALYSIS MODE: DEEP')).toBe(analysisType === 'deep');
   });
@@ -613,8 +590,9 @@ describe('AiService access enforcement', () => {
       expect(real.delivered.fullResponse.levelMap).toEqual(real.completed.result.levelMap);
       const print = await run(printOnly, 'an_level_map_print');
       expect(print.completed.result).toMatchObject({ signalState: 'NO_TRADE', dataMode: 'print', levelMap: null, aiLevel: null });
-      // WATCH recusado pelo validador: o nivel do modelo fica guardado, o estado segue NO_TRADE.
+      // WATCH recusado pelo validador (perfil Conservador, que exige swing real na invalidacao): o nivel do modelo fica guardado, o estado segue NO_TRADE.
       const watchPlan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 98, zoneHigh: 99, invalidation: 80, target1: 110, target2: null, validForCandles: 12, trigger: 'Reaction at 98.' };
+      jest.spyOn(service as any, 'getRiskProfile').mockResolvedValueOnce('conservative');
       const rejected = await run(injected, 'an_ai_level', { ...raw, signalState: 'WATCH', watchPlan, analysis: { ...raw.analysis, symbol: 'ABCUSDT' } });
       expect(rejected.completed.result).toMatchObject({ signalState: 'NO_TRADE', watchPlan: null, aiLevel: { price: 99 } });
       expect(rejected.delivered.fullResponse.aiLevel).toEqual(rejected.completed.result.aiLevel);

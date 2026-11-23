@@ -1,7 +1,7 @@
 import { logObservation, rawObservation, safeObserve } from '../../common/utils/analysis-observation';
 import { presentAnalysis } from '../../common/utils/analysis-presentation';
-import { flagBool, flagNumber } from '../../common/flags/feature-flags';
-import { CONTINUATION_REASON_FLAG, buildPriorPlanBlock, continuationOf, readContinuationStatus, sameAsset, type PriorPlan, type SetupContinuation } from './setup-continuation';
+import { flagBool } from '../../common/flags/feature-flags';
+import { buildPriorPlanBlock, continuationOf, readContinuationStatus, sameAsset, type PriorPlan, type SetupContinuation } from './setup-continuation';
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -22,9 +22,7 @@ import {
 } from '../../common/utils/analysis-normalizer';
 import {
   applyDecisionToAnalysis,
-  decideSignal,
   decideSignalForProfile,
-  RISK_PROFILE_FLAG,
   type SignalDecisionInput,
   deriveSignalState,
   parseSignalState,
@@ -1184,9 +1182,6 @@ function parseSchemaResult(
 // batendo na fonte externa sem necessidade e multiplicando o risco de
 // bloqueio/rate-limit (achado em 25/08/2026, junto do bug do cache vazio).
 const calendarService = new EconomicCalendarService();
-/** Calendario economico tambem na analise rapida (so o deep recebia). Padrao desligado. */
-export const QUICK_CALENDAR_FLAG = 'ENABLE_QUICK_CALENDAR';
-
 /**
  * Linha do EUR/USD no bloco de forex/metais. EUR/USD subindo = dolar
  * ENFRAQUECENDO (de 09/06 a 03/11/2026 o bloco dizia o contrario e chamava a
@@ -1901,9 +1896,9 @@ export class AIAdapter {
       block: null, candles: failure, marketContext: 'unavailable', assetClass: 'unknown', stats: noCandleStats(failure),
       calendar: 'not_attempted',
     };
-    // Calendario no quick (11/11/2026, chave QUICK_CALENDAR_FLAG, desligada): o
-    // mesmo bloco do deep, em paralelo com as velas. Desligada, nem busca.
-    const withCalendar = flagBool(QUICK_CALENDAR_FLAG) && flagBool('ENABLE_MARKET_ENRICHMENT');
+    // Calendario no quick (11/11/2026, fixo desde 23/11/2026): o mesmo bloco do
+    // deep, em paralelo com as velas. Sem contexto de mercado, nem busca.
+    const withCalendar = flagBool('ENABLE_MARKET_ENRICHMENT');
     const [candles, calendarRead] = await Promise.all([
       this.buildCandleBlocks(extracted),
       withCalendar
@@ -2101,8 +2096,7 @@ export class AIAdapter {
         context.push(buildStrategyBlock(strategyProfile));
       }
       const priorPlan = options.priorPlan && sameAsset(options.priorPlan.symbol, groundingStats?.symbol) ? options.priorPlan : null;
-      const continuationReasonEnabled = flagNumber(CONTINUATION_REASON_FLAG) === 1;
-      if (priorPlan) context.push(buildPriorPlanBlock(priorPlan, continuationReasonEnabled));
+      if (priorPlan) context.push(buildPriorPlanBlock(priorPlan));
       // REAL DATA e perfil entram DENTRO do <user_context> do v10, depois da
       // parte fixa (o cache de prompt do provedor pega o prefixo inteiro).
       const { instructions, close: userContextClose } = splitUserContextClose(prompt);
@@ -2418,7 +2412,7 @@ export class AIAdapter {
       // A linha do status sai do texto antes de qualquer decisao ou exibicao.
       let continuation: SetupContinuation | null = null;
       if (priorPlan) {
-        const read = readContinuationStatus(parsed.analysis?.executiveSummary, continuationReasonEnabled);
+        const read = readContinuationStatus(parsed.analysis?.executiveSummary);
         if (parsed.analysis && typeof read.text === 'string') parsed.analysis.executiveSummary = read.text;
         continuation = continuationOf(priorPlan, read.status, read.reason);
       }
@@ -2448,13 +2442,11 @@ export class AIAdapter {
         realData,
         planFailures,
         priceFixed: parsed.analysis?.priceMagnitudeFixed === true,
-        priorWatch: priorPlan ? { plan: priorPlan.plan, confirmed: continuation?.status === 'CONFIRMED' } : null,
       };
-      // ENGINE_RISK_PROFILE (17/11/2026): os 3 perfis sobre a mesma resposta; a pessoa ve o dela.
-      const riskProfileOn = flagNumber(RISK_PROFILE_FLAG) === 1;
+      // Perfis de risco (17/11/2026): os 3 perfis sobre a mesma resposta; a pessoa ve o dela.
       const riskProfile: EngineProfile = options.riskProfile ?? 'balanced';
-      const profiled = riskProfileOn ? await decideSignalForProfile(decisionInput, riskProfile) : null;
-      const decision = profiled ? profiled.decision : await decideSignal(decisionInput);
+      const profiled = await decideSignalForProfile(decisionInput, riskProfile);
+      const decision = profiled.decision;
       const validationMs = Date.now() - tValidation;
       if (decision.validatorAction === 'downgraded' || decision.validatorAction === 'promoted') {
         this.logger.warn(
@@ -2489,14 +2481,12 @@ export class AIAdapter {
         validatorNotes: decision.validatorNotes,
         ...(continuation ? { continuation } : {}),
         ...(decision.rejectedPlan ? { rejectedPlan: decision.rejectedPlan } : {}),
-        ...(decision.enterAtLevel ? { enterAtLevel: true } : {}),
-        ...(decision.snapFallback ? { snapFallback: true } : {}),
         ...(decision.entryWarnings.length ? { entryWarnings: decision.entryWarnings } : {}),
         ...(decision.permissiveEntry ? { permissiveEntry: true } : {}),
         ...(decision.pendingEntry ? { pendingEntry: true } : {}),
         ...(decision.targetMoved ? { targetMoved: true } : {}),
-        ...(decision.marketLevels ? { marketLevels: decision.marketLevels } : {}),
-        ...(profiled ? { riskProfile, riskProfiles: profiled.profiles } : {}),
+        riskProfile,
+        riskProfiles: profiled.profiles,
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);
       logObservation(observation, m => this.logger.log(m));
@@ -2510,8 +2500,8 @@ export class AIAdapter {
         analysis: presentedAnalysis,
         evidence: {
           ...toAnalysisEvidence(coverage, groundingStats?.stale),
-          // So apresentacao (UI_HISTORICAL_PRINT, 17/11/2026): congela a escolha na analise.
-          ...(flagNumber('UI_HISTORICAL_PRINT') === 1 ? { historicalPrintUi: true as const } : {}),
+          // So apresentacao (17/11/2026): marca as analises feitas com o print antigo como historico na tela.
+          historicalPrintUi: true as const,
         },
         // Telemetria gravada por analise (saveAnalysisTelemetry): o snapshot que
         // a OpenAI de fato usou e os numeros do grounding que entraram no prompt.

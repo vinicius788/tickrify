@@ -25,7 +25,7 @@ import { useMarketContext } from '@/hooks/useMarketContext';
 import { PositionSizingCalculator } from './PositionSizingCalculator';
 import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
-import { MarketPlanCard, WatchPlanCard, isWatchLevels, isWatchPlan, watchWindowOpen } from './WatchPlanCard';
+import { WatchPlanCard, isWatchLevels, isWatchPlan, watchWindowOpen } from './WatchPlanCard';
 import { WatchEntryLog } from './WatchEntryLog';
 import { ReadModePanel, WherePriceIs, type ReadModeData } from './ReadModePanel';
 import { LevelMapCard, WatchVerdict } from './PendingLevels';
@@ -631,7 +631,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     : signalState === 'WATCH' && fullResponse.dataMode === 'real_data' && 'watchLevels' in fullResponse ? null : undefined;
   const levelsEstimated = fullResponse.dataMode === 'print';
   const pendingEntry = fullResponse.pendingEntry === true && isWatchLevels(fullResponse.watchLevels);
-  // UI_HISTORICAL_PRINT (17/11/2026): print velho vira historico na tela; motivos do mercado antes dos de dados.
+  // Print velho vira historico na tela (17/11/2026); motivos do mercado antes dos de dados.
   const historicalPrint = historicalPrintOf(fullResponse);
   const marketReasonsFirst = historicalPrintUiOf(fullResponse);
   const entryWarnings = Array.isArray(fullResponse.entryWarnings) ? fullResponse.entryWarnings.filter((item) => [2, 7, 8, 9, 10, 11, 12].includes(item)) : [];
@@ -1388,21 +1388,10 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             base={base}
             closed={watchClosed}
             now={now}
-            footer={entryLogFor && isWatchLevels(watchLevels) && (!watchEntry || watchEntry.plan === 'level') ? (
+            footer={entryLogFor && isWatchLevels(watchLevels) ? (
               <WatchEntryLog analysisId={entryLogFor} plan="level" levels={watchLevels} entry={watchEntry} onChange={setWatchEntry} formatPrice={formatPrice} base={base} closed={watchClosed} />
             ) : null}
           />
-          {/* O plano a mercado ao lado do plano no nivel; some com a janela encerrada. */}
-          {(!watchClosed || watchEntry?.plan === 'market') && isWatchLevels(fullResponse.marketLevels) ? (
-            <MarketPlanCard
-              direction={watchPlan.direction}
-              levels={fullResponse.marketLevels}
-              formatPrice={formatPrice}
-              footer={entryLogFor && (!watchEntry || watchEntry.plan === 'market') ? (
-                <WatchEntryLog analysisId={entryLogFor} plan="market" levels={fullResponse.marketLevels} entry={watchEntry} onChange={setWatchEntry} formatPrice={formatPrice} base={base} closed={watchClosed} />
-              ) : null}
-            />
-          ) : null}
           {!watchClosed && <Card data-testid="watch-why-changes" className="surface-terminal rounded-xl fade-in-stagger" style={{ animationDelay: '50ms' }}>
             <CardContent className="grid gap-5 p-5 md:grid-cols-2 md:gap-8 md:p-6">
               {watchText.whyWait.length > 0 ? (
@@ -1486,7 +1475,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             )}
             {entryWarnings.map((item) => (
               <p key={item} data-testid={`entry-warning-${item}`} className="text-xs text-[var(--accent-yellow)]">
-                {item === 2 ? r.entryWarningLocation : item === 7 ? r.entryWarningRoom : item === 8 ? r.entryWarningLate : item === 9 ? r.entryWarningTrend : item === 10 ? r.entryWarningForex : item === 12 ? r.entryWarningLevelInPath : r.entryWarningNextTarget}
+                {item === 2 ? r.entryWarningLocation : item === 7 ? r.entryWarningRoom : item === 8 ? r.entryWarningLate : item === 9 ? r.entryWarningTrend : item === 10 ? r.entryWarningForex : r.entryWarningNextTarget}
               </p>
             ))}
           </CardHeader>

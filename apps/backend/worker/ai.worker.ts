@@ -41,7 +41,7 @@ import { ImageStorageClient } from '../src/common/utils/image-storage';
 import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-runtime';
 import { resolvePrismaDatasourceUrl } from '../src/modules/database/prisma.datasource';
 import { AnalysisType } from '../src/modules/ticks/tick-packages';
-import { buildAnalysisPrompt, promptVariantForUser } from '../src/modules/prompt/prompt-builder.service';
+import { buildAnalysisPrompt } from '../src/modules/prompt/prompt-builder.service';
 import { strategyFitFields, type StrategyProfile } from '../src/common/strategy/strategy-profile';
 import { startOutcomeSweeper } from './outcome.sweeper';
 import { startAnalysisTracker } from './analysis-tracker';
@@ -109,7 +109,7 @@ interface JobData {
   isDemo?: boolean;
   userLanguage?: string;
   strategyProfile?: StrategyProfile | null;
-  /** Perfil de risco da pessoa (ENGINE_RISK_PROFILE); ausente = Equilibrado. */
+  /** Perfil de risco da pessoa; ausente = Equilibrado. */
   riskProfile?: EngineProfile;
   /** Versao de um setup acompanhado (o vinculo ja foi gravado na criacao). */
   setupId?: string | null;
@@ -187,13 +187,10 @@ interface WorkerAnalysisResult {
   levelMap: LevelMap | null;
   aiLevel?: AiLevel | null;
   rejectedPlan?: RejectedPlan;
-  enterAtLevel?: boolean;
-  snapFallback?: boolean;
   entryWarnings?: number[];
   permissiveEntry?: boolean;
   pendingEntry?: boolean;
   targetMoved?: boolean;
-  marketLevels?: EntryLevels;
   riskProfile?: EngineProfile;
   riskProfiles?: Record<EngineProfile, ProfileOutcome>;
   validatorNotes: ValidatorNote[];
@@ -374,13 +371,10 @@ interface AdapterDecision {
   levelMap: LevelMap | null;
   aiLevel?: AiLevel | null;
   rejectedPlan?: RejectedPlan;
-  enterAtLevel?: boolean;
-  snapFallback?: boolean;
   entryWarnings?: number[];
   permissiveEntry?: boolean;
   pendingEntry?: boolean;
   targetMoved?: boolean;
-  marketLevels?: EntryLevels;
   riskProfile?: EngineProfile;
   riskProfiles?: Record<EngineProfile, ProfileOutcome>;
   validatorAction: ValidatorAction;
@@ -412,13 +406,10 @@ function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
     levelMap: (aiSource.levelMap as LevelMap | null) ?? null,
     aiLevel: (aiSource.aiLevel as AiLevel | null) ?? null,
     ...(aiSource.rejectedPlan ? { rejectedPlan: aiSource.rejectedPlan as RejectedPlan } : {}),
-    ...(aiSource.enterAtLevel === true ? { enterAtLevel: true } : {}),
-    ...(aiSource.snapFallback === true ? { snapFallback: true } : {}),
     ...(Array.isArray(aiSource.entryWarnings) && aiSource.entryWarnings.length ? { entryWarnings: aiSource.entryWarnings as number[] } : {}),
     ...(aiSource.permissiveEntry === true ? { permissiveEntry: true } : {}),
     ...(aiSource.pendingEntry === true ? { pendingEntry: true } : {}),
     ...(aiSource.targetMoved === true ? { targetMoved: true } : {}),
-    ...(aiSource.marketLevels ? { marketLevels: aiSource.marketLevels as EntryLevels } : {}),
     ...(aiSource.riskProfile && aiSource.riskProfiles
       ? { riskProfile: aiSource.riskProfile as EngineProfile, riskProfiles: aiSource.riskProfiles as Record<EngineProfile, ProfileOutcome> }
       : {}),
@@ -566,13 +557,10 @@ async function toWorkerAnalysisResult(
     levelMap: decision.levelMap,
     aiLevel: decision.aiLevel ?? null,
     ...(decision.rejectedPlan ? { rejectedPlan: decision.rejectedPlan } : {}),
-    ...(decision.enterAtLevel ? { enterAtLevel: true } : {}),
-    ...(decision.snapFallback ? { snapFallback: true } : {}),
     ...(decision.entryWarnings?.length ? { entryWarnings: decision.entryWarnings } : {}),
     ...(decision.permissiveEntry ? { permissiveEntry: true } : {}),
     ...(decision.pendingEntry ? { pendingEntry: true } : {}),
     ...(decision.targetMoved ? { targetMoved: true } : {}),
-    ...(decision.marketLevels ? { marketLevels: decision.marketLevels } : {}),
     validatorNotes: decision.validatorNotes,
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),
@@ -1222,8 +1210,7 @@ async function processAnalysis(job: Job<JobData>) {
 
     // ── Free analyses (isDemo=true) now run real AI — no tick cost, same pipeline ─
     const tPrompt = Date.now();
-    const promptVariant = promptVariantForUser(userId);
-    const prompt = buildAnalysisPrompt({ userLanguage, analysisType: normalizedAnalysisType }, promptVariant);
+    const prompt = buildAnalysisPrompt({ userLanguage, analysisType: normalizedAnalysisType });
     promptMs = Date.now() - tPrompt;
 
     const priorPlan = userId ? await loadPriorPlan(prisma, { analysisId, userId, setupId }, (m) => console.warn(m)) : null;
@@ -1317,7 +1304,6 @@ async function processAnalysis(job: Job<JobData>) {
         : undefined;
     const continuation = isRecord(aiSource) && isRecord(aiSource.continuation) ? aiSource.continuation : null;
     const engine = buildEngineRecord({
-      promptVariant,
       provider: adapterMeta?.provider ?? null,
       signalState: parsed.signalState,
       dataMode: parsed.dataMode,

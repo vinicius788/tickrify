@@ -458,19 +458,20 @@ describe('Pagina do setup', () => {
     wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);
 
     const links = await screen.findAllByRole('link');
-    const versionLinks = links.filter((a) => a.getAttribute('href')?.startsWith('/dashboard/analysis/'));
+    // A linha do tempo do Acompanhamento tambem aponta para as analises: aqui so a lista de versoes.
+    const versionLinks = links.filter((a) => a.getAttribute('href')?.startsWith('/dashboard/analysis/') && a.textContent?.startsWith('Analysis from'));
     expect(versionLinks.map((a) => a.getAttribute('href'))).toEqual(['/dashboard/analysis/analysis00003', '/dashboard/analysis/analysis00001']);
     expect(versionLinks[0].textContent).toMatch(/^Analysis from Oct 12, 2026/);
     expect(versionLinks[0].textContent).toContain('1.0952');
     expect(versionLinks[1].textContent).toContain('Waiting for: Close above 1.0950');
     expect(versionLinks[1].textContent).not.toMatch(/Entry|Stop/);
     expect(document.body.textContent).not.toMatch(/\b(current|live|now)\b/i);
-    expect(screen.queryByTestId('setup-monitoring')).toBeNull();
+    expect(screen.getByTestId('setup-monitoring')).toBeTruthy();
   });
 
-  it('flag do servidor liga Acompanhamento com os GETs existentes, sem analise nem fonte de preco', async () => {
+  it('Acompanhamento usa so os GETs existentes, sem analise nem fonte de preco', async () => {
     const fetchMock = serve({
-      'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: SETUP, versions, nextCursor: null, monitoringEnabled: true }),
+      'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: SETUP, versions, nextCursor: null }),
       'GET /api/setups/alerts': () => json(200, { paused: false, items: [], unseen: 0, emailEnabled: false }),
     });
     wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);
@@ -479,7 +480,7 @@ describe('Pagina do setup', () => {
     expect(fetchMock.mock.calls.every(([url, init]) => init?.method === 'GET' && String(url).startsWith('https://api.test/api/setups/'))).toBe(true);
   });
 
-  it('alertas: ativo com cancelar, disparado com a hora em UTC, ultimo preco checado; abrir marca o disparado como visto', async () => {
+  it('alertas: ativo com cancelar, disparado na lista e na linha do tempo, ultimo preco checado; abrir marca o disparado como visto', async () => {
     const user = userEvent.setup();
     const active = { ...ALERT, id: 'alert-bbbbbbbb', status: 'active', label: 'entry', level: 4140, side: 'below', triggeredAt: null };
     const fetchMock = serve({
@@ -489,41 +490,27 @@ describe('Pagina do setup', () => {
       'POST /api/setups/alerts/alert-bbbbbbbb/cancel': () => json(200, { alert: { ...active, status: 'cancelled' } }),
     });
     wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);
-    expect(await screen.findByText('Reached 4,180 at 13:42 UTC')).toBeTruthy();
-    expect(screen.getByText('Last checked 13:50 UTC · 4,150')).toBeTruthy();
-    expect(screen.getByText('if price falls to it')).toBeTruthy();
+    const monitoring = await screen.findByTestId('setup-monitoring');
+    await waitFor(() => expect(monitoring.textContent).toContain('Entry 4,140'));
+    expect(monitoring.textContent).toContain('Triggered');
+    expect(monitoring.textContent).toContain('4,180');
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('https://api.test/api/setups/alerts/alert-aaaaaaaa/seen', expect.anything()));
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('setupId=setup-aaaaaaaa'))).toBe(true);
     await user.click(screen.getByRole('button', { name: /Cancel alert/ }));
     await waitFor(() => expect(toast).toHaveBeenCalledWith({ title: 'Alert cancelled.' }));
   });
 
-  it('so disparado: fica em "Triggered alerts", sem "Active alerts" nem o "Last checked" parado', async () => {
+  it('so disparado: sem botao de cancelar e sem "No active alert" escondido', async () => {
     serve({
       'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: SETUP, versions, nextCursor: null }),
       'GET /api/setups/alerts': () => json(200, { paused: false, pausedSymbol: null, items: [{ ...ALERT, seenAt: '2026-10-27T14:00:00.000Z', checkIntervalMs: 60000 }], unseen: 0, emailEnabled: true }),
     });
     wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);
-    expect(await screen.findByText('Triggered alerts')).toBeTruthy();
-    expect(screen.getByTestId('alerts-triggered').textContent).toContain('Reached 4,180 at 13:42 UTC');
-    expect(screen.queryByText('Active alerts')).toBeNull();
-    expect(document.body.textContent).not.toMatch(/Last checked|every minute/i);
+    const monitoring = await screen.findByTestId('setup-monitoring');
+    await waitFor(() => expect(monitoring.textContent).toContain('4,180'));
+    expect(monitoring.textContent).toContain('Triggered');
+    expect(monitoring.textContent).toContain('No active alert for this version');
     expect(screen.queryByRole('button', { name: /Cancel alert/ })).toBeNull();
-  });
-
-  it('ativo e disparado em secoes separadas; o horario checado so na de ativos', async () => {
-    const active = { ...ALERT, id: 'alert-bbbbbbbb', status: 'active', label: 'entry', level: 4140, side: 'below', triggeredAt: null, seenAt: null };
-    serve({
-      'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: SETUP, versions, nextCursor: null }),
-      'GET /api/setups/alerts': () => json(200, { paused: false, pausedSymbol: null, items: [{ ...ALERT, seenAt: '2026-10-27T14:00:00.000Z' }, active], unseen: 0, emailEnabled: true }),
-    });
-    wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);
-    const activeBox = await screen.findByTestId('alerts-active');
-    expect(activeBox.textContent).toContain('Entry 4,140');
-    expect(activeBox.textContent).not.toContain('4,180');
-    expect(activeBox.textContent).toContain('Last checked 13:50 UTC');
-    expect(screen.getByTestId('alerts-triggered').textContent).toContain('4,180');
-    expect(screen.getByTestId('alerts-triggered').textContent).not.toContain('Last checked');
   });
 
   it('largado: so "Follow again", sem Update', async () => {

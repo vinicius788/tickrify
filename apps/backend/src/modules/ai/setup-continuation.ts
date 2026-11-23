@@ -1,6 +1,5 @@
 /**
- * Continuacao do setup (09/11/2026, chave ENABLE_SETUP_CONTINUATION, desligada
- * por padrao). Quando o trader reanalisa um setup cujo WATCH ainda vale, o
+ * Continuacao do setup (09/11/2026, fixa em 23/11/2026: sem chave). Quando o trader reanalisa um setup cujo WATCH ainda vale, o
  * modelo recebe o plano anterior DEPOIS da parte fixa do prompt, le o grafico
  * de novo e diz o que aconteceu com o plano.
  *
@@ -16,14 +15,11 @@
  * Arquivo proprio: worker, caminho sincrono e adapter usam a mesma regra.
  */
 import type { PrismaClient } from '@prisma/client';
-import { flagBool, flagNumber } from '../../common/flags/feature-flags';
 import { canonicalFxPair, normalizeSymbol } from '../../common/utils/analysis-normalizer';
 import { nearEdge, type WatchPlan } from '../../common/utils/plan-engine';
 import { readPlan } from './setups.service';
 import { storedWatchPlan, watchSummaryOf } from './watch-pending';
 
-export const SETUP_CONTINUATION_FLAG = 'ENABLE_SETUP_CONTINUATION';
-export const CONTINUATION_REASON_FLAG = 'SETUP_CONTINUATION_REASON';
 export const CONTINUATION_STATUSES = ['CONFIRMED', 'STILL_WAITING', 'CHANGED', 'INVALIDATED'] as const;
 export type ContinuationStatus = (typeof CONTINUATION_STATUSES)[number];
 
@@ -62,8 +58,8 @@ export function sameAsset(a: unknown, b: unknown): boolean {
 }
 
 /**
- * O plano anterior do setup, se ele terminou em WATCH e ainda vale. Sem chave,
- * sem plano ou com o banco fora: null, e a analise segue como sempre. O ativo so
+ * O plano anterior do setup, se ele terminou em WATCH e ainda vale. Sem plano
+ * ou com o banco fora: null, e a analise segue como sempre. O ativo so
  * e conferido no adapter, que le o simbolo do grafico novo.
  */
 export async function loadPriorPlan(
@@ -73,7 +69,7 @@ export async function loadPriorPlan(
   now: Date = new Date(),
 ): Promise<PriorPlan | null> {
   const { analysisId, userId, setupId } = input;
-  if (!setupId || !flagBool(SETUP_CONTINUATION_FLAG)) return null;
+  if (!setupId) return null;
   try {
     const [prior] = await prisma.$queryRaw<
       Array<{ id: string; createdAt: Date; recommendation: string | null; result: unknown; groundingInterval: string | null }>
@@ -119,7 +115,7 @@ const utc = (date: Date) => `${date.toISOString().slice(0, 16).replace('T', ' ')
 /** O gatilho numa linha so, sem nada que feche o <user_context>. */
 const cleanTrigger = (trigger: string) => trigger.replace(/\s+/g, ' ').replace(/[<>]/g, '').trim().slice(0, MAX_TRIGGER_CHARS).trim();
 
-export function buildPriorPlanBlock(prior: PriorPlan, reasonEnabled = flagNumber(CONTINUATION_REASON_FLAG) === 1): string {
+export function buildPriorPlanBlock(prior: PriorPlan): string {
   const { plan, alert } = prior;
   const lines = [
     '# PRIOR PLAN (your earlier read of this same setup; context only, never a reason to enter)',
@@ -143,7 +139,7 @@ export function buildPriorPlanBlock(prior: PriorPlan, reasonEnabled = flagNumber
     'The checks C1 to C7 and the state follow the same rules as always. The earlier plan is never a reason to enter or to pass a check.',
     'End "analysis.executiveSummary" with a final line that contains only: PRIOR_PLAN_STATUS: followed by one of the four words above.',
   );
-  if (reasonEnabled) lines.push(
+  lines.push(
     'Immediately before PRIOR_PLAN_STATUS, write one line: PRIOR_PLAN_REASON: followed by one short factual sentence (at most 180 characters) in the language requested for this analysis explaining the comparison status.',
     'Name the observed change, missing trigger, or invalidation. A price touch alone never confirms the trigger. Do not give instructions to enter, exit, hold, or move a stop. Never invent a reason when the chart is unclear.',
   );
@@ -154,12 +150,12 @@ export function buildPriorPlanBlock(prior: PriorPlan, reasonEnabled = flagNumber
  * Le o status do texto do modelo e tira a linha. Sem status reconhecivel: null,
  * nunca erro. Com mais de uma linha, vale a ultima.
  */
-export function readContinuationStatus(text: unknown, reasonEnabled = flagNumber(CONTINUATION_REASON_FLAG) === 1): { status: ContinuationStatus | null; text: unknown; reason?: string } {
+export function readContinuationStatus(text: unknown): { status: ContinuationStatus | null; text: unknown; reason?: string } {
   if (typeof text !== 'string') return { status: null, text };
   let status: ContinuationStatus | null = null;
   let reason: string | undefined;
   const withoutReason = text.replace(REASON_LINE, (_line, value: string) => {
-    if (reasonEnabled) reason = cleanReason(value) || undefined;
+    reason = cleanReason(value) || undefined;
     return '';
   });
   const cleaned = withoutReason.replace(STATUS_LINE, (_line, value: string) => {

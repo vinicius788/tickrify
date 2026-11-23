@@ -93,12 +93,9 @@ describe('plano do WATCH (v10.1)', () => {
     expect(screen.queryByTestId('pending-order')).toBeNull();
   });
 
-  it('ENTER_NOW com C2 ou C7 em FAIL (chave do /admin): mostra o aviso de cada item; sem o campo, nada', () => {
+  it('ENTER_NOW com avisos (C2, C7, atraso, 4h, forex, alvo no proximo nivel): mostra o aviso de cada item; sem o campo, nada', () => {
     renderResult('ENTER_NOW', null, { entryWarnings: [11] });
     expect(screen.getByTestId('entry-warning-11').textContent).toBe('Heads up: the first level is close, so the target moved to the next level.');
-    cleanup();
-    renderResult('ENTER_NOW', null, { entryWarnings: [11, 12] });
-    expect(screen.getByTestId('entry-warning-12').textContent).toBe('Heads up: a level between entry and target 1 may stop price.');
     cleanup();
     renderResult('ENTER_NOW', null, { entryWarnings: [9, 10] });
     expect(screen.getByTestId('entry-warning-9').textContent).toBe('Heads up: this trade goes against the 4h trend.');

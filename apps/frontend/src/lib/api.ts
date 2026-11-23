@@ -232,11 +232,9 @@ export interface AIAnalysisResponse {
     watchReach?: WatchReach | null;
     /** Niveis do WATCH calculados pelo motor; ausente em analise antiga, null sem REAL DATA. */
     watchLevels?: WatchLevels | null;
-    /** WATCH com a entrada a mercado de geometria valida (chave do /admin); ausente fora disso. */
-    marketLevels?: WatchLevels;
-    /** ENTER_NOW com C2 (2) ou C7 (7) em FAIL movimento atrasado (8), contra o 4h (9) ou forex (10), liberado por chave do /admin; ausente fora disso. */
+    /** ENTER_NOW com C2 (2) ou C7 (7) em FAIL movimento atrasado (8), contra o 4h (9) ou forex (10); ausente fora disso. */
     entryWarnings?: number[];
-    /** WATCH com niveis validos no recuo, mostrado como entrada pendente (chave do /admin); ausente fora disso. */
+    /** WATCH com niveis validos no recuo, mostrado como entrada pendente; ausente em analise antiga. */
     pendingEntry?: boolean;
     /** TP1 no proximo nivel (chave do /admin); ausente fora disso. */
     targetMoved?: boolean;
@@ -348,9 +346,9 @@ export interface WatchLevels {
  */
 export type WatchOutcome = 'pending' | 'reached' | 'expired' | 'invalidated' | 'unavailable';
 
-/** Operacao que o trader registrou a partir de um WATCH (plano no nivel ou a mercado). */
+/** Operacao que o trader registrou a partir de um WATCH (plano no nivel). */
 export interface WatchEntry {
-  plan: 'level' | 'market';
+  plan: 'level';
   direction: 'long' | 'short';
   entry: number;
   stopLoss: number;

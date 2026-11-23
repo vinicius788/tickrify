@@ -377,7 +377,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     const { OpenAiVisionModel } = jest.requireActual('../modules/ai/vision-model');
     const { AiService } = jest.requireActual('../modules/ai/ai.service');
     const adapter = new RealAdapter();
-    // O modelo pede WATCH e a invalidacao fica longe de qualquer swing: o validador recusa.
+    // O modelo pede WATCH e a invalidacao fica longe de qualquer swing: o validador (perfil Conservador) recusa.
     const watchPlan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 98, zoneHigh: 99, invalidation: 80, target1: 110, target2: null, validForCandles: 12, trigger: 'Reaction at 98.' };
     // Ativo sem faixa de preco conhecida: o preco 100 nao passa pela correcao de ordem de grandeza.
     const raw = { is_financial_chart: true, signalState: 'WATCH', watchPlan, recommendation: 'HOLD', confidence: 40, analysis: {
@@ -394,7 +394,8 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
         late: { long: false, short: false },
       } },
     });
-    analyzeImageMock.mockImplementationOnce(adapter.analyzeImage.bind(adapter));
+    // So o perfil Conservador devolve No trade quando a invalidacao nao esta numa swing real.
+    analyzeImageMock.mockImplementationOnce((...args: any[]) => { args[5] = { ...args[5], riskProfile: 'conservative' }; return adapter.analyzeImage(...args); });
     const oldEnrichment = process.env.ENABLE_MARKET_ENRICHMENT;
     process.env.ENABLE_MARKET_ENRICHMENT = 'true';
     try {
@@ -426,10 +427,10 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     }
   });
 
-  describe('reanalise com o preco na zona do WATCH (ENGINE_ENTER_AT_LEVEL)', () => {
+  describe('motor fixo: o que a fila grava com o modo permissivo', () => {
     const plan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 98, zoneHigh: 99, invalidation: 97, target1: 104, target2: null, validForCandles: 12, trigger: 'Reaction at 98.' };
     const passes = [1, 2, 3, 4, 5, 6, 7].map((n) => `C${n} PASS: 98.5`).join('; ');
-    const run = async (id: string, flag: 'true' | 'false', late: boolean, over: { sv?: string; swings?: { kind: string; price: number }[] } = {}) => {
+    const run = async (id: string, late: boolean, over: { sv?: string; swings?: { kind: string; price: number }[] } = {}) => {
       const processAnalysis = (require('../../worker/ai.worker'), getProcessor());
       const { prismaClient } = mockPaidRefund();
       const { AIAdapter: RealAdapter } = jest.requireActual('../modules/ai/ai.adapter');
@@ -450,88 +451,39 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       });
       const priorPlan = { setupId: 's1', priorAnalysisId: 'a0', symbol: 'BTCUSDT', createdAt: new Date('2026-11-09T10:00:00Z'), plan, alert: null };
       analyzeImageMock.mockImplementationOnce((...args: any[]) => { args[5] = { ...args[5], priorPlan }; return adapter.analyzeImage(...args); });
-      const saved = { flag: process.env.ENGINE_ENTER_AT_LEVEL, enrichment: process.env.ENABLE_MARKET_ENRICHMENT };
-      process.env.ENGINE_ENTER_AT_LEVEL = flag;
+      const saved = { enrichment: process.env.ENABLE_MARKET_ENRICHMENT };
       process.env.ENABLE_MARKET_ENRICHMENT = 'true';
       try {
         await processAnalysis(makeJob({ analysisId: id, imageUrl: 'data:image/png;base64,AA==', analysisType: 'deep', userId: 'user-1', isDemo: false }));
       } finally {
-        for (const [key, value] of [['ENGINE_ENTER_AT_LEVEL', saved.flag], ['ENABLE_MARKET_ENRICHMENT', saved.enrichment]] as const) {
-          if (value === undefined) delete process.env[key]; else process.env[key] = value;
-        }
+        if (saved.enrichment === undefined) delete process.env.ENABLE_MARKET_ENRICHMENT; else process.env.ENABLE_MARKET_ENRICHMENT = saved.enrichment;
       }
       const updates = prismaClient.analysis.update.mock.calls.map(([args]: any[]) => args.data);
       return updates.find((d: any) => d.status === 'completed' || d.status === 'failed');
     };
 
-    it('ligada: movimento atrasado vira ENTER_NOW gravado', async () => {
-      const stored = await run('at-level-on', 'true', true);
+    it('movimento atrasado vira aviso: ENTER_NOW gravado com o item 8', async () => {
+      const stored = await run('late-warning', true);
       expect(stored.status).toBe('completed');
-      expect(stored.result).toMatchObject({ signalState: 'ENTER_NOW', enterAtLevel: true });
+      expect(stored.result).toMatchObject({ signalState: 'ENTER_NOW', entryWarnings: [8] });
       expect(stored.result.analysis).toMatchObject({ entry: 98.5, takeProfit2: null });
     });
 
-    it('desligada: o atrasado segura em WATCH, como hoje', async () => {
-      const stored = await run('at-level-off', 'false', true);
-      expect(stored.status).toBe('completed');
-      expect(stored.result.signalState).toBe('WATCH');
-      expect(stored.result.enterAtLevel).toBeUndefined();
-    });
-
-    it('ENGINE_MARKET_PLAN_ON_WATCH ligada: o WATCH gravado leva o plano a mercado; desligada, nao leva (caminho da fila)', async () => {
-      const before = process.env.ENGINE_MARKET_PLAN_ON_WATCH;
-      try {
-        process.env.ENGINE_MARKET_PLAN_ON_WATCH = 'true';
-        const on = await run('market-plan-on', 'false', true);
-        expect(on.result.signalState).toBe('WATCH');
-        expect(on.result.analysis).toMatchObject({ entry: null, stopLoss: null });
-        expect(on.result.marketLevels).toMatchObject({ entry: 98.5 });
-        expect(on.result.marketLevels.stopLoss).toBeLessThan(98.5);
-        expect(on.result.marketLevels.takeProfit1).toBeGreaterThan(98.5);
-        process.env.ENGINE_MARKET_PLAN_ON_WATCH = 'false';
-        const off = await run('market-plan-off', 'false', true);
-        expect(off.result.signalState).toBe('WATCH');
-        expect(off.result.marketLevels).toBeUndefined();
-      } finally {
-        if (before === undefined) delete process.env.ENGINE_MARKET_PLAN_ON_WATCH; else process.env.ENGINE_MARKET_PLAN_ON_WATCH = before;
-      }
-    });
-
-    it('ENGINE_SNAP_FALLBACK e ENGINE_ENTER_REQUIRED_CHECKS: o que a fila grava, ligadas e desligadas', async () => {
-      const keys = ['ENGINE_SNAP_FALLBACK', 'ENGINE_ENTER_REQUIRED_CHECKS'] as const;
-      const before = keys.map((k) => process.env[k]);
+    it('sem swing encaixada o plano segue com a invalidacao do modelo; C7 em FAIL vira aviso', async () => {
       const noSwing = { swings: [{ kind: 'high', price: 104 }, { kind: 'low', price: 95 }] };
-      const c7Fail = { sv: passes.replace('C7 PASS', 'C7 FAIL') };
-      try {
-        keys.forEach((k) => delete process.env[k]);
-        const offSnap = await run('snap-off', 'false', false, noSwing);
-        expect(offSnap.result.signalState).toBe('NO_TRADE');
-        expect(offSnap.result.snapFallback).toBeUndefined();
-        const offChecks = await run('checks-off', 'false', false, c7Fail);
-        expect(offChecks.result.signalState).toBe('WATCH');
-        expect(offChecks.result.entryWarnings).toBeUndefined();
-
-        process.env.ENGINE_SNAP_FALLBACK = '2';
-        const onSnap = await run('snap-on', 'false', false, noSwing);
-        expect(onSnap.status).toBe('completed');
-        expect(onSnap.result).toMatchObject({ signalState: 'ENTER_NOW', snapFallback: true });
-        expect(onSnap.result.analysis.stopLoss).toBeLessThan(97);
-        delete process.env.ENGINE_SNAP_FALLBACK;
-
-        process.env.ENGINE_ENTER_REQUIRED_CHECKS = '1';
-        const onChecks = await run('checks-on', 'false', false, c7Fail);
-        expect(onChecks.status).toBe('completed');
-        expect(onChecks.result).toMatchObject({ signalState: 'ENTER_NOW', entryWarnings: [7] });
-      } finally {
-        keys.forEach((k, i) => { if (before[i] === undefined) delete process.env[k]; else process.env[k] = before[i]; });
-      }
+      const onSnap = await run('snap', false, noSwing);
+      expect(onSnap.status).toBe('completed');
+      expect(onSnap.result.signalState).toBe('ENTER_NOW');
+      expect(onSnap.result.analysis.stopLoss).toBeLessThan(97);
+      const onChecks = await run('checks', false, { sv: passes.replace('C7 PASS', 'C7 FAIL') });
+      expect(onChecks.status).toBe('completed');
+      expect(onChecks.result).toMatchObject({ signalState: 'ENTER_NOW', entryWarnings: [7] });
     });
 
-    it('ENTER_NOW sem TP2 e gravado com a chave desligada (antes falhava com validation_failed)', async () => {
-      const stored = await run('no-tp2-off', 'false', false);
+    it('ENTER_NOW sem TP2 e gravado (antes falhava com validation_failed)', async () => {
+      const stored = await run('no-tp2', false);
       expect(stored.status).toBe('completed');
       expect(stored.result.signalState).toBe('ENTER_NOW');
-      expect(stored.result.enterAtLevel).toBeUndefined();
       expect(stored.result.analysis).toMatchObject({ entry: 98.5, takeProfit2: null });
     });
   });
@@ -675,7 +627,6 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       engineMeta: { validatorAction: 'downgraded', validatorReasons: ['stop_inside_invalidation'], groundingMs: 5, modelMs: 900, parseMs: 2, validationMs: 1 },
     });
 
-    process.env.PROMPT_VARIANT_B_PERCENT = '100';
     await processAnalysis(makeJob({
       analysisId: 'analysis-validator', imageUrl: 'https://example.com/chart.png',
       analysisType: 'quick', userId: 'user-1', isDemo: false,
@@ -687,9 +638,8 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     );
     expect(completed).toBeDefined();
     expect(completed[0].data.recommendation).toBe('WAIT');
-    delete process.env.PROMPT_VARIANT_B_PERCENT;
     const engine = JSON.parse(JSON.stringify(completed[0].data.result)).engine;
-    expect(engine.prompt_variant).toBe('B');
+    expect(engine).not.toHaveProperty('prompt_variant');
     expect(engine).toMatchObject({
       version: '4.0.0',
       data_mode: 'print',

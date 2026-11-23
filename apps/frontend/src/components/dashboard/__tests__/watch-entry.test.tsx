@@ -25,7 +25,7 @@ const levels = { entry: 74470, stopLoss: 74310, takeProfit1: 74710, takeProfit2:
 const logged: WatchEntry = { plan: 'level', direction: 'long', entry: 74480, stopLoss: 74310, takeProfit1: 74710, rr: 1.35, at: '2026-11-11T15:00:00.000Z' };
 const price = (value: number | null) => (value === null ? '' : `$${value.toLocaleString('en-US')}`);
 
-function Harness({ initial = null, plan = 'level', closed = false }: { initial?: WatchEntry | null; plan?: 'level' | 'market'; closed?: boolean }) {
+function Harness({ initial = null, plan = 'level', closed = false }: { initial?: WatchEntry | null; plan?: 'level'; closed?: boolean }) {
   const [entry, setEntry] = useState<WatchEntry | null>(initial);
   return <WatchEntryLog analysisId="an-1" plan={plan} levels={levels} entry={entry} onChange={setEntry} formatPrice={price} base="/dashboard" closed={closed} />;
 }
@@ -101,10 +101,7 @@ describe('I entered num WATCH', () => {
     expect(screen.getByLabelText('Your entry price')).toBeTruthy();
   });
 
-  it('registrada no outro plano, este cartao nao oferece nada; janela encerrada sem registro tambem nao', async () => {
-    const other = renderLog({ initial: logged, plan: 'market' });
-    expect(other.container.textContent).toBe('');
-    cleanup();
+  it('janela encerrada sem registro nao oferece nada; com registro, mostra o que foi registrado', async () => {
     const closed = renderLog({ closed: true });
     expect(closed.container.textContent).toBe('');
     cleanup();

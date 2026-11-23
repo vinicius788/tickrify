@@ -1,7 +1,7 @@
 import { assetClassOf, buildEngineReport, buildProfileReport, isFilledWatch, reviewDecision, type EngineReportRow } from './engine-report';
 
-const trade = (variant: 'A' | 'B' | 'C', outcome: 'WIN' | 'LOSS', symbol = 'BTCUSDT', state = 'WATCH'): EngineReportRow => ({
-  symbol, variant, signalState: state, trackStatus: 'tracked', touched: true, outcome,
+const trade = (outcome: 'WIN' | 'LOSS', symbol = 'BTCUSDT', state = 'WATCH'): EngineReportRow => ({
+  symbol, signalState: state, trackStatus: 'tracked', touched: true, outcome,
   fillPrice: 100, stopLoss: 99, takeProfit1: outcome === 'WIN' ? 101.5 : 101,
 });
 const many = (n: number, make: () => EngineReportRow) => Array.from({ length: n }, make);
@@ -14,48 +14,21 @@ describe('engine-report', () => {
     expect(assetClassOf('Some Stock plc')).toBe('other');
   });
 
-  it('sem B, mostra so A e diz que nao ha teste', () => {
-    const report = buildEngineReport([trade('A', 'WIN'), { ...trade('A', 'WIN'), variant: null }]);
-    expect(report.hasVariantB).toBe(false);
-    expect(report.variants.map((v) => v.variant)).toEqual(['A']);
-    expect(report.variants[0].total.analyses).toBe(2);
-    expect(report.verdict).toContain('So existe a variante A');
-  });
-
-  it('conta o que falta para decidir', () => {
-    const report = buildEngineReport([...many(10, () => trade('A', 'WIN')), ...many(25, () => trade('B', 'WIN'))]);
-    expect(report.verdict).toBe('Manter e esperar mais dados: faltam 20 trades fechados na A e 5 na B.');
-  });
-
-  it('liga a B com R maior e nenhuma classe pior', () => {
-    const rows = [...many(15, () => trade('A', 'WIN')), ...many(15, () => trade('A', 'LOSS')), ...many(25, () => trade('B', 'WIN')), ...many(5, () => trade('B', 'LOSS'))];
-    expect(buildEngineReport(rows).verdict).toContain('Ligar a B para todos');
-  });
-
-  it('nao liga a B se ela perde numa classe com 10 ou mais trades', () => {
-    const rows = [
-      ...many(20, () => trade('A', 'LOSS')), ...many(12, () => trade('A', 'WIN', 'XAUUSD')),
-      ...many(20, () => trade('B', 'WIN')), ...many(6, () => trade('B', 'WIN', 'XAUUSD')), ...many(6, () => trade('B', 'LOSS', 'XAUUSD')),
-    ];
-    const verdict = buildEngineReport(rows).verdict;
-    expect(verdict).toContain('Manter e esperar mais dados');
-    expect(verdict).toContain('perde em alguma classe');
-  });
-
-  it('desliga a B quando o R cai 0,10 ou mais', () => {
-    const rows = [...many(25, () => trade('A', 'WIN')), ...many(5, () => trade('A', 'LOSS')), ...many(5, () => trade('B', 'WIN')), ...many(25, () => trade('B', 'LOSS'))];
-    expect(buildEngineReport(rows).verdict).toContain('Desligar a B');
+  it('total e por classe de ativo, sem variantes', () => {
+    const report = buildEngineReport([trade('WIN'), trade('LOSS', 'XAUUSD')]);
+    expect(report.total.analyses).toBe(2);
+    expect(report.classes.map((c) => c.assetClass)).toEqual(['metal', 'crypto']);
   });
 
   it('% de WATCH tocado usa so janelas fechadas, e sem desfecho nao vira trade', () => {
-    const open: EngineReportRow = { symbol: 'BTCUSDT', variant: 'A', signalState: 'WATCH', trackStatus: null, touched: null, outcome: null, fillPrice: null, stopLoss: null, takeProfit1: null };
+    const open: EngineReportRow = { symbol: 'BTCUSDT', signalState: 'WATCH', trackStatus: null, touched: null, outcome: null, fillPrice: null, stopLoss: null, takeProfit1: null };
     const untouched: EngineReportRow = { ...open, trackStatus: 'tracked', touched: false, outcome: 'EXPIRED' };
-    const { total } = buildEngineReport([open, untouched, trade('A', 'WIN')]).variants[0];
+    const { total } = buildEngineReport([open, untouched, trade('WIN')]);
     expect(total).toMatchObject({ analyses: 3, watchTracked: 2, watchTouched: 1, watchTouchedPct: 50, closedTrades: 1 });
   });
 
-  it('aplica a regra da revisao mensal ao ENTER_NOW da A', () => {
-    const enter = (outcome: 'WIN' | 'LOSS') => trade('A', outcome, 'BTCUSDT', 'ENTER_NOW');
+  it('aplica a regra da revisao mensal ao ENTER_NOW', () => {
+    const enter = (outcome: 'WIN' | 'LOSS') => trade(outcome, 'BTCUSDT', 'ENTER_NOW');
     expect(buildEngineReport(many(29, () => enter('WIN'))).enterNow.verdict).toContain('faltam 1 trades');
     expect(buildEngineReport(many(30, () => enter('WIN'))).enterNow.verdict).toBe('Manter o ENTER_NOW.');
     expect(buildEngineReport(many(30, () => enter('LOSS'))).enterNow.verdict).toContain('Desligar o ENTER_NOW');
@@ -64,7 +37,7 @@ describe('engine-report', () => {
 
 describe('analises sem velas, por motivo', () => {
   const row = (coverage: string | null | undefined): EngineReportRow => ({
-    symbol: 'XAUUSD', variant: 'A', signalState: 'NO_TRADE', trackStatus: null, touched: null, outcome: null,
+    symbol: 'XAUUSD', signalState: 'NO_TRADE', trackStatus: null, touched: null, outcome: null,
     fillPrice: null, stopLoss: null, takeProfit1: null, coverage,
   });
 
@@ -85,45 +58,6 @@ describe('regra da revisao mensal (ENTER_NOW e WATCH preenchido)', () => {
     expect(reviewDecision(30, -0.1)).toBe('wait');
     expect(reviewDecision(29, 1)).toBe('wait');
     expect(reviewDecision(30, null)).toBe('wait');
-  });
-
-  it('ENTER_NOW liberado por chave fica em serie propria, com a mesma regra', () => {
-    const enter = (outcome: 'WIN' | 'LOSS', mark: Partial<EngineReportRow>) => ({ ...trade('A', outcome, 'BTCUSDT', 'ENTER_NOW'), ...mark });
-    const report = buildEngineReport([
-      ...many(30, () => enter('LOSS', { snapFallback: true })),
-      ...many(4, () => enter('WIN', { entryWarned: true })),
-      ...many(5, () => enter('WIN', {})),
-    ]);
-    expect(report.gates).toEqual([
-      expect.objectContaining({ flag: 'ENGINE_SNAP_FALLBACK', trades: 30, verdict: 'Voltar a chave para 0.' }),
-      expect.objectContaining({ flag: 'ENGINE_ENTER_REQUIRED_CHECKS', trades: 4, verdict: 'Esperar mais dados: faltam 26 trades.' }),
-      expect.objectContaining({ flag: 'ENGINE_LATE_AS_WARNING', trades: 0 }),
-      expect.objectContaining({ flag: 'ENGINE_PERMISSIVE', trades: 0 }),
-      expect.objectContaining({ flag: 'ENGINE_PENDING_ENTRY_LABEL', trades: 0 }),
-      expect.objectContaining({ flag: 'ENGINE_NEXT_TARGET', trades: 0 }),
-    ]);
-    expect(buildEngineReport(many(3, () => enter('WIN', { targetMoved: true }))).gates[5]).toMatchObject({ flag: 'ENGINE_NEXT_TARGET', trades: 3 });
-    const pending = buildEngineReport([
-      ...many(2, () => ({ ...trade('A', 'LOSS'), pendingEntry: true })),
-      { ...trade('A', 'WIN'), pendingEntry: true, outcome: 'EXPIRED', fillPrice: null },
-      { ...enter('WIN', { pendingEntry: true }) },
-    ]).gates[4];
-    expect(pending).toMatchObject({ flag: 'ENGINE_PENDING_ENTRY_LABEL', trades: 2 });
-    expect(pending.meanR).toBeLessThan(0);
-    expect(buildEngineReport(many(2, () => enter('WIN', { permissiveEntry: true }))).gates[3]).toMatchObject({ flag: 'ENGINE_PERMISSIVE', trades: 2 });
-    expect(report.enterNow.trades).toBe(39);
-    expect(buildEngineReport([trade('A', 'WIN')]).gates.map((g) => g.trades)).toEqual([0, 0, 0, 0, 0, 0]);
-    const late = buildEngineReport(many(3, () => enter('WIN', { lateWarned: true }))).gates;
-    expect(late.map((g) => [g.flag, g.trades])).toEqual([['ENGINE_SNAP_FALLBACK', 0], ['ENGINE_ENTER_REQUIRED_CHECKS', 0], ['ENGINE_LATE_AS_WARNING', 3], ['ENGINE_PERMISSIVE', 0], ['ENGINE_PENDING_ENTRY_LABEL', 0], ['ENGINE_NEXT_TARGET', 0]]);
-  });
-
-  it('variante C entra na tabela e ganha o proprio veredito contra a A', () => {
-    const report = buildEngineReport([...many(30, () => trade('A', 'LOSS')), ...many(30, () => trade('C', 'WIN'))]);
-    expect(report.variants.map((v) => v.variant)).toEqual(['A', 'C']);
-    expect(report.hasVariantB).toBe(false);
-    expect(report.verdict).toContain('Ligar a C para todos');
-    expect(report.verdict).toContain('PROMPT_VARIANT_C_PERCENT em 100');
-    expect(buildEngineReport([trade('A', 'WIN'), trade('C', 'WIN')]).verdict).toBe('Manter e esperar mais dados: faltam 29 trades fechados na A e 29 na C.');
   });
 
   it('WATCH so conta quando tocou o nivel e foi preenchido', () => {
