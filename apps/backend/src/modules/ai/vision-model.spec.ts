@@ -3,9 +3,11 @@ import {
   AnthropicVisionModel,
   FallbackVisionModel,
   OpenAiVisionModel,
+  collapseNullable,
   countUnionFields,
   createVisionModels,
   recordProviderComparison,
+  restoreNulls,
   type VisionModelRequest,
 } from './vision-model';
 
@@ -125,18 +127,58 @@ describe('AnthropicVisionModel request', () => {
     expect(body).not.toHaveProperty('temperature');
   });
 
-  it('puts a schema with more than 16 nullable fields in the instructions instead', async () => {
+  it('schema with more than 16 nullable fields goes structured, collapsed, and 0 / empty string come back as null', async () => {
     const properties: Record<string, unknown> = {};
     for (let i = 0; i < 17; i++) properties[`f${i}`] = { type: ['number', 'null'] };
+    properties.txt = { type: ['string', 'null'] };
+    properties.plain = { type: 'number' };
     const schema = { type: 'object', properties, required: Object.keys(properties), additionalProperties: false };
-    expect(countUnionFields(schema)).toBe(17);
+    expect(countUnionFields(schema)).toBe(18);
 
-    const fetchImpl = anthropicReply({ stop_reason: 'end_turn', content: [{ type: 'text', text: '```json\n{"f0":1}\n```' }], usage: {} });
+    const fetchImpl = anthropicReply({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: '{"f0":0,"f1":5,"txt":"","plain":0}' }],
+      usage: {},
+    });
     const result = await new AnthropicVisionModel('k', models, fetchImpl as any).complete(request({ schema }));
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    expect(body).not.toHaveProperty('output_config');
-    expect(body.system[0].text).toContain('JSON Schema');
-    expect(result.content).toBe('{"f0":1}');
+    const sent = body.output_config.format.schema;
+    expect(body.output_config.format.type).toBe('json_schema');
+    expect(sent.properties.f0).toEqual({ type: 'number' });
+    expect(sent.properties.txt).toEqual({ type: 'string' });
+    expect(countUnionFields(sent)).toBe(0);
+    expect(body.system[0].text).toContain('write 0 for a number');
+    // campo anulavel: 0 e '' viram null; campo NAO anulavel mantem o 0
+    expect(JSON.parse(result.content)).toMatchObject({ f0: null, f1: 5, txt: null, plain: 0 });
+  });
+
+  it('collapseNullable removes null from enums and restoreNulls follows array paths', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        dir: { type: ['string', 'null'], enum: ['long', 'short', null] },
+        list: { type: 'array', items: { type: 'object', properties: { n: { type: ['number', 'null'] } } } },
+      },
+    };
+    const { schema: out, paths } = collapseNullable(schema);
+    const props = (out as any).properties;
+    expect(props.dir).toEqual({ type: 'string', enum: ['long', 'short'] });
+    expect(props.list.items.properties.n).toEqual({ type: 'number' });
+    expect(restoreNulls({ dir: '', list: [{ n: 0 }, { n: 3 }] }, paths)).toEqual({
+      dir: null,
+      list: [{ n: null }, { n: 3 }],
+    });
+  });
+
+  it('sends output_config.effort: low by default, medium/high when asked', async () => {
+    const run = async (reasoningEffort?: 'medium' | 'high' | 'low') => {
+      const fetchImpl = anthropicReply({ stop_reason: 'end_turn', content: [{ type: 'text', text: '{}' }], usage: {} });
+      await new AnthropicVisionModel('k', models, fetchImpl as any).complete(request({ reasoningEffort }));
+      return JSON.parse(fetchImpl.mock.calls[0][1].body).output_config.effort;
+    };
+    expect(await run()).toBe('low');
+    expect(await run('medium')).toBe('medium');
+    expect(await run('high')).toBe('high');
   });
 
   it('maps truncation, refusal and HTTP errors', async () => {

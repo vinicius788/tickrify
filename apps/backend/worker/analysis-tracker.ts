@@ -243,7 +243,7 @@ export async function trackAnalysis(
     ? override.levels
     : signal && positive(analysis.entry) && positive(analysis.stopLoss) && positive(analysis.takeProfit1)
       ? { entry: analysis.entry, stopLoss: analysis.stopLoss, takeProfit1: analysis.takeProfit1 }
-      : null;
+      : state === 'WATCH' ? storedWatchLevels(result.watchLevels) : null;
   const injected = c.groundingStats?.coverage === 'injected' ? c.groundingStats.numbers ?? null : null;
   const atr = injected?.atr14 ?? null;
   base.atr = atr;
@@ -283,6 +283,14 @@ export async function trackAnalysis(
     refOutcome: ref?.outcome ?? null,
     refFillPrice: ref?.price ?? null,
   };
+}
+
+/** Niveis do WATCH gravados pelo motor (recuo ou rompimento): o rastreador mede os mesmos que a tela mostrou. */
+function storedWatchLevels(v: unknown): { entry: number; stopLoss: number; takeProfit1: number } | null {
+  const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+  return o && positive(o.entry) && positive(o.stopLoss) && positive(o.takeProfit1)
+    ? { entry: o.entry as number, stopLoss: o.stopLoss as number, takeProfit1: o.takeProfit1 as number }
+    : null;
 }
 
 async function insert(prisma: PrismaClient, r: TrackRow): Promise<void> {

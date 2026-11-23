@@ -474,6 +474,17 @@ integration('PostgreSQL descartavel: alertas de nivel', () => {
       expect(listed.items.find((item: any) => item.id === alert.id)).toMatchObject({ near: true });
     });
 
+    it('armCheck: coluna JSONB grava, volta na lista e pendente nunca sai para a tela', async () => {
+      const u = await newUser();
+      const a = await analysis(u, 'ETHUSD');
+      const { alert } = await create(u, a, 110);
+      const check = { status: 'armed', direction: 'long', entry: 110, stop: 100, target: 130, checkedAt: new Date().toISOString() };
+      await prisma.$executeRawUnsafe(`UPDATE tickrify."SetupAlert" SET "armCheck" = $1::jsonb WHERE "id" = $2`, JSON.stringify(check), alert.id);
+      expect((await alerts.list(u)).items.find((i: any) => i.id === alert.id)).toMatchObject({ armCheck: { status: 'armed', entry: 110, stop: 100, target: 130 } });
+      await prisma.$executeRawUnsafe(`UPDATE tickrify."SetupAlert" SET "armCheck" = $1::jsonb WHERE "id" = $2`, JSON.stringify({ ...check, status: 'pending' }), alert.id);
+      expect((await alerts.list(u)).items.find((i: any) => i.id === alert.id)).toMatchObject({ armCheck: null });
+    });
+
     it('Enter now: grava TP1 e stop com validade, uma vez', async () => {
       const u = await newUser();
       const result = { signalState: 'ENTER_NOW', dataMode: 'real_data', analysis: { symbol: 'BTCUSD', timeframe: '15m', currentPrice: 100, entry: 100, stopLoss: 95, takeProfit1: 105 } };

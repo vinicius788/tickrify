@@ -39,7 +39,7 @@ import { TIMEFRAME_MS } from '../src/modules/market/candle-store';
 import { buildAnalysisPrompt } from '../src/modules/prompt/prompt-builder.service';
 import { canonicalFxPair } from '../src/common/utils/analysis-normalizer';
 import { computeCost } from '../src/modules/ai/model-cost';
-import { FILL_CANDLE_RULE } from '../src/modules/ai/accuracy.util';
+import { FILL_CANDLE_RULE, spreadOf } from '../src/modules/ai/accuracy.util';
 import { normalizeToBinancePerp } from '../src/modules/market/market.service';
 import { evaluateTrade } from '../worker/outcome.sweeper';
 import { Candle, fetchCryptoWindow, fetchFxWindow } from '../src/modules/market/candles';
@@ -129,7 +129,12 @@ function planOf(res: any, state: State): Plan | null {
     if (entry == null || stopLoss == null || takeProfit1 == null) return null;
     return { side: res.recommendation === 'SELL' ? 'SELL' : 'BUY', entry, stopLoss, takeProfit1, takeProfit2: num(a.takeProfit2) };
   }
-  // WATCH do v10.1 nao tem entrada nem stop: o replay-variants.ts simula o watchPlan.
+  // WATCH com niveis do codigo (recuo ou rompimento, 23/11/2026): mede a ordem como a tela mostra.
+  const w = res?.watchLevels;
+  const dir = res?.watchPlan?.direction;
+  if (state === 'WATCH' && w && num(w.entry) && num(w.stopLoss) && num(w.takeProfit1) && (dir === 'long' || dir === 'short')) {
+    return { side: dir === 'long' ? 'BUY' : 'SELL', entry: Number(w.entry), stopLoss: Number(w.stopLoss), takeProfit1: Number(w.takeProfit1), takeProfit2: num(w.takeProfit2) };
+  }
   return null;
 }
 
@@ -266,8 +271,12 @@ function measure(plan: Plan | null, window: Candle[] | null, symbol: string): { 
     window,
     FILL_CANDLE_RULE,
   );
-  const rTp1 = Math.abs(plan.takeProfit1 - plan.entry) / Math.abs(plan.entry - plan.stopLoss);
-  return { outcome, r: outcome === 'WIN' ? rTp1 : outcome === 'LOSS' ? -1 : 0 };
+  const risk = Math.abs(plan.entry - plan.stopLoss);
+  const rTp1 = Math.abs(plan.takeProfit1 - plan.entry) / risk;
+  // Liquido de spread (accuracy.util.spreadOf) em toda operacao que encheu.
+  const filled = outcome === 'WIN' || outcome === 'LOSS' || outcome === 'TIMEOUT';
+  const spreadR = filled ? spreadOf(symbol, plan.entry) / risk : 0;
+  return { outcome, r: (outcome === 'WIN' ? rTp1 : outcome === 'LOSS' ? -1 : 0) - spreadR };
 }
 
 const pct = (a: number, b: number) => (b ? `${((100 * a) / b).toFixed(0)}%` : '-');
@@ -329,7 +338,24 @@ function summarize(rows: Done[]): void {
     for (const d of ok) if (d.coverage) cov.set(d.coverage, (cov.get(d.coverage) ?? 0) + 1);
     if (cov.size) console.log(`cobertura do REAL DATA: ${[...cov].map(([k, v]) => `${k} ${v}`).join(', ')}`);
     const ms = ok.map((d) => d.ms);
-    console.log(`latencia: p50 ${(quantile(ms, 0.5) / 1000).toFixed(1)} s, p95 ${(quantile(ms, 0.95) / 1000).toFixed(1)} s`);
+    console.log(`latencia: p50 ${(quantile(ms, 0.5) / 1000).toFixed(1)} s, p90 ${(quantile(ms, 0.9) / 1000).toFixed(1)} s, p95 ${(quantile(ms, 0.95) / 1000).toFixed(1)} s`);
+    const clear = ok.filter((d) => d.state === 'ENTER_NOW' || (d.state === 'WATCH' && d.plan));
+    const filled = ok.filter((d) => ['WIN', 'LOSS', 'TIMEOUT'].includes(d.outcome));
+    console.log(`PORTAO ${arm}: operacao clara ${pct(clear.length, ok.length)} (${clear.length}/${ok.length}), aguardar ${pct(ok.length - clear.length, ok.length)}, R por analise ${ok.length ? (sumR(ok) / ok.length).toFixed(3) : '-'} (liquido de spread), R por trade ${perR(filled)} (n=${filled.length}), custo medio US$ ${(all.reduce((x, d) => x + d.costUsd, 0) / Math.max(1, all.length)).toFixed(4)}`);
+    const kinds = new Map<string, number>();
+    for (const d of ok) { const k = String((d as any).kind ?? (d.state === 'NO_TRADE' ? `wait:${(d as any).waitReason ?? '-'}` : d.state)); kinds.set(k, (kinds.get(k) ?? 0) + 1); }
+    console.log(`  tipos: ${[...kinds].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ')}`);
+    const votes = ok.map((d) => (d as any).vote).filter(Boolean);
+    if (votes.length) console.log(`  votos: forte ${votes.filter((v: any) => v.strongRead).length}, maioria antecipada ${votes.filter((v: any) => v.earlyMajority).length}, por vies ${votes.filter((v: any) => v.decidedBy === 'candle_bias').length}, de ${votes.length}`);
+  }
+  // Estabilidade: mesmo estado entre rodadas do mesmo braco (arm com sufixo -1/-2).
+  const bases = [...new Set(rows.map((d) => d.arm.replace(/-\d+$/, '')))];
+  for (const base of bases) {
+    const arms = [...new Set(rows.filter((d) => d.arm.replace(/-\d+$/, '') === base).map((d) => d.arm))];
+    if (arms.length < 2) continue;
+    const [a, b] = arms.map((arm) => new Map(rows.filter((d) => d.arm === arm && !d.error).map((d) => [d.id, d.state])));
+    const ids = [...a.keys()].filter((id) => b.has(id));
+    console.log(`PORTAO estabilidade ${base}: ${pct(ids.filter((id) => a.get(id) === b.get(id)).length, ids.length)} (${ids.filter((id) => a.get(id) === b.get(id)).length}/${ids.length}) iguais entre ${arms.join(' e ')}`);
   }
 }
 
@@ -384,14 +410,21 @@ async function main() {
   const prompt = buildAnalysisPrompt({ userLanguage: 'en', analysisType: 'quick' });
   let spent = done.reduce((s, d) => s + (d.costUsd || 0), 0);
   let callCost = 0;
-  // Custo real de cada chamada (inclui a nova tentativa do adapter), para o teto.
-  const model = adapter.visionModel;
-  const complete = model.complete.bind(model);
-  model.complete = async (req: unknown) => {
-    const result = await complete(req);
-    callCost += computeCost(result.model, result.usage, 0).costUsd ?? 0;
-    return result;
-  };
+  // Custo real de cada chamada de cada leitor, para o teto. Leitor ignorado pela
+  // maioria antecipada termina depois e ainda conta no total (custo real).
+  let lateCost = 0;
+  let current = 0;
+  for (const model of [adapter.visionModel.primary ?? adapter.visionModel, adapter.secondaryModel].filter(Boolean)) {
+    const complete = model.complete.bind(model);
+    model.complete = async (req: unknown) => {
+      const at = current;
+      const result = await complete(req);
+      const c = computeCost(result.model, result.usage, 0).costUsd ?? 0;
+      if (at === current) callCost += c;
+      else lateCost += c;
+      return result;
+    };
+  }
   const candles = loadCandles(candlesFile);
   let i = 0;
   for (const t of todo) {
@@ -400,7 +433,9 @@ async function main() {
       break;
     }
     i += 1;
+    current = i;
     callCost = 0;
+    if (lateCost) { spent += lateCost; lateCost = 0; }
     const t0 = Date.now();
     let record: Done;
     try {
@@ -429,6 +464,11 @@ async function main() {
         realPrice: numbers?.lastClose ?? null,
         htfTrend: numbers?.htfTrend ?? null,
         htfVsEma50: numbers?.htfVsEma50 ?? null,
+        kind: res.entryPlan?.kind ?? null,
+        bias: res.candleBias?.direction ?? null,
+        waitReason: res.codeSummary?.waitReason ?? null,
+        readers: res.engineMeta?.readers ?? null,
+        vote: res.engineMeta?.vote ?? null,
       };
     } catch (err) {
       record = {

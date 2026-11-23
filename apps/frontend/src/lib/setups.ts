@@ -77,6 +77,17 @@ export interface SetupAlert {
   marketClosed?: boolean;
   /** Preco chegou perto do nivel (a ate 0,5 ATR; so com o alerta ativo). */
   near?: boolean;
+  /** Watch que arma sozinho: o que o servidor conferiu no disparo; ausente = so "chegou no nivel". */
+  armCheck?: ArmCheck | null;
+}
+
+export interface ArmCheck {
+  status: 'armed' | 'invalidated';
+  direction: 'long' | 'short';
+  entry: number;
+  stop: number;
+  target: number | null;
+  checkedAt: string;
 }
 
 export interface WatchingItem {
@@ -89,7 +100,7 @@ export interface WatchingItem {
   checkedAt: string | null;
   checkIntervalMs: number | null;
   marketClosed: boolean;
-  alert: { id: string; setupId: string; status: SetupAlert['status']; triggeredAt: string | null; seenAt: string | null; near?: boolean } | null;
+  alert: { id: string; setupId: string; status: SetupAlert['status']; triggeredAt: string | null; seenAt: string | null; near?: boolean; armCheck?: ArmCheck | null } | null;
   journey: WatchJourney;
 }
 
@@ -511,3 +522,18 @@ export function findActiveLevel(items: SetupAlert[], setupId: string | null | un
 
 export const hasActiveLevel = (items: SetupAlert[], setupId: string | null | undefined, analysisId: string, level: number): boolean =>
   Boolean(findActiveLevel(items, setupId, analysisId, level));
+
+/** Mesmo texto do e-mail e do Telegram, nos idiomas da tela. */
+export function armCheckLabel(
+  texts: { armedBuy: string; armedSell: string; invalidatedLong: string; invalidatedShort: string },
+  check: ArmCheck,
+  locale: string,
+): string {
+  const f = (n: number) => formatAlertLevel(n, locale);
+  const template =
+    check.status === 'armed' ? (check.direction === 'long' ? texts.armedBuy : texts.armedSell) : check.direction === 'long' ? texts.invalidatedLong : texts.invalidatedShort;
+  return template
+    .replace('{entry}', f(check.entry))
+    .replace('{stop}', f(check.stop))
+    .replace('{target}', check.target === null ? '' : f(check.target));
+}

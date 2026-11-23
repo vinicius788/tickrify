@@ -26,6 +26,7 @@ import {
   ASSET_LEVEL_DESCRIPTION,
   type SetupAlertEmailItem,
 } from '../mail/setup-alert-email';
+import { armCheckText, armCheckView } from '../ai/watch-pending';
 
 export const TELEGRAM_ALERT_FLAG = 'TELEGRAM_SETUP_ALERTS';
 
@@ -92,14 +93,16 @@ export function renderSetupAlertTelegram(appUrl: string, item: SetupAlertEmailIt
   const fromAssets = !item.setupId;
   const label = fromAssets ? ASSET_LEVEL_DESCRIPTION : levelDescription(item.label, item.plan.direction);
   const side = item.plan.direction === 'long' ? 'buy' : item.plan.direction === 'short' ? 'sell' : null;
-  const c = item.plan.conditional;
+  const arm = item.armCheck ?? null;
+  const c = arm ? null : item.plan.conditional;
   const lines = [
     `${asset} reached ${level}`,
     `${label.charAt(0).toUpperCase()}${label.slice(1)}. Touched at ${item.triggeredAt.toISOString().slice(11, 16)} UTC.`,
     item.plan.invalidation !== null ? `Invalidation ${formatLevel(item.plan.invalidation)}.` : null,
     item.plan.target !== null ? `Target ${formatLevel(item.plan.target)}.` : null,
     c && side ? `Plan if price reaches ${formatLevel(c.entry)}: ${side} at ${formatLevel(c.entry)}, stop ${formatLevel(c.stopLoss)}, target ${formatLevel(c.takeProfit1)} (${c.tp1R.toFixed(1)}R).` : null,
-    'Re-check the chart before you act. This is not a signal to enter.',
+    arm ? armCheckText(arm) : null,
+    arm ? 'Re-check the chart before you act. This is not a signal to enter. Your call.' : 'Re-check the chart before you act. This is not a signal to enter.',
   ];
   return { text: lines.filter(Boolean).join('\n'), button: { text: fromAssets ? ASSET_ALERT_CTA : 'Update chart', url: setupAlertLink(appUrl, item, 'telegram') } };
 }
@@ -110,6 +113,7 @@ type PendingRow = Omit<SetupAlertEmailItem, 'plan'> & {
   clerkUserId: string | null;
   analysisResult: unknown;
   analysisRecommendation: string | null;
+  armCheck?: unknown;
 };
 
 export type SetupAlertTelegramDeps = {
@@ -142,7 +146,7 @@ export async function runSetupAlertTelegramSweep(deps: SetupAlertTelegramDeps): 
     : Prisma.sql`a."updatedAt" > ${new Date(now.getTime() - TELEGRAM_ALERT_RULES.dryRunRecentMs)}`;
   const rows = await deps.prisma.$queryRaw<PendingRow[]>`
     SELECT a."id" AS "alertId", a."setupId", a."userId", a."symbol", a."priceSymbol", s."timeframe", a."level", a."label", a."triggeredAt",
-      t."chatId", u."clerkUserId", an."result" AS "analysisResult", an."recommendation" AS "analysisRecommendation"
+      t."chatId", u."clerkUserId", an."result" AS "analysisResult", an."recommendation" AS "analysisRecommendation", a."armCheck"
     FROM "tickrify"."SetupAlert" a
     LEFT JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
     JOIN "tickrify"."UserTelegram" t ON t."userId" = a."userId" AND t."chatId" IS NOT NULL
@@ -152,6 +156,7 @@ export async function runSetupAlertTelegramSweep(deps: SetupAlertTelegramDeps): 
     WHERE a."status" = 'triggered' AND ts."alertId" IS NULL AND a."emailedAt" IS NULL AND a."seenAt" IS NULL AND ${recent}
       AND (a."setupId" IS NULL OR s."id" IS NOT NULL)
       AND (a."expiresAt" IS NULL OR a."expiresAt" > ${now})
+      AND COALESCE(a."armCheck"->>'status', '') <> 'pending'
     ORDER BY a."triggeredAt" ASC, a."id" ASC
     LIMIT 200
   `;
@@ -174,7 +179,7 @@ export async function runSetupAlertTelegramSweep(deps: SetupAlertTelegramDeps): 
         ON CONFLICT ("alertId") DO NOTHING
       `;
       if (Number(claimed) !== 1) continue;
-      const message = renderSetupAlertTelegram(deps.appUrl, { ...row, level: Number(row.level), plan: alertPlanOf(row.analysisResult, row.analysisRecommendation) });
+      const message = renderSetupAlertTelegram(deps.appUrl, { ...row, level: Number(row.level), plan: alertPlanOf(row.analysisResult, row.analysisRecommendation), armCheck: armCheckView(row.armCheck) });
       const res = await callTelegram(deps.token, 'sendMessage', {
         chat_id: row.chatId,
         text: message.text,

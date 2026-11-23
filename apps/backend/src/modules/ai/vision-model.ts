@@ -221,8 +221,8 @@ const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 const ANTHROPIC_MAX_UNION_FIELDS = 16;
 const ANTHROPIC_DEFAULT_MODELS: Record<ModelTier, string> = {
-  quick: 'claude-sonnet-5-5',
-  deep: 'claude-sonnet-5-5',
+  quick: 'claude-haiku-5-5',
+  deep: 'claude-haiku-5-5',
 };
 
 /** Erro de HTTP do provedor com `status`, que o adapter usa para classificar. */
@@ -241,6 +241,47 @@ export function countUnionFields(schema: unknown): number {
   return own + Object.values(node).reduce((n: number, value) => n + countUnionFields(value), 0);
 }
 
+type NullPath = string[];
+
+/**
+ * Acima do limite de unioes, cada campo `type: [X, 'null']` vira `X` e o caminho
+ * fica guardado: na resposta, 0 (numero) ou '' (texto) nesses campos volta a ser
+ * null. Assim o schema inteiro cabe na saida estruturada (23/11/2026).
+ */
+export function collapseNullable(schema: unknown, path: NullPath = [], out: NullPath[] = []): { schema: unknown; paths: NullPath[] } {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return { schema, paths: out };
+  const node = { ...(schema as Record<string, unknown>) };
+  if (Array.isArray(node.type) && node.type.includes('null') && node.type.length === 2) {
+    node.type = (node.type as string[]).find((t) => t !== 'null');
+    if (Array.isArray(node.enum)) node.enum = node.enum.filter((v) => v !== null);
+    out.push(path);
+  }
+  if (node.properties && typeof node.properties === 'object') {
+    node.properties = Object.fromEntries(
+      Object.entries(node.properties as Record<string, unknown>).map(([k, v]) => [k, collapseNullable(v, [...path, k], out).schema]),
+    );
+  }
+  if (node.items) node.items = collapseNullable(node.items, [...path, '*'], out).schema;
+  if (Array.isArray(node.anyOf)) node.anyOf = node.anyOf.map((v) => collapseNullable(v, path, out).schema);
+  return { schema: node, paths: out };
+}
+
+export function restoreNulls(value: unknown, paths: NullPath[]): unknown {
+  const walk = (node: unknown, path: string[]): unknown => {
+    if (!path.length) return node === 0 || node === '' ? null : node;
+    if (node === null || typeof node !== 'object') return node;
+    const [head, ...rest] = path;
+    if (head === '*') return Array.isArray(node) ? node.map((n) => walk(n, rest)) : node;
+    const obj = node as Record<string, unknown>;
+    if (head in obj) obj[head] = walk(obj[head], rest);
+    return obj;
+  };
+  return paths.reduce((acc, p) => walk(acc, p), value);
+}
+
+const anthropicEffort = (e: ReasoningEffort | undefined): string =>
+  e === 'medium' || e === 'high' ? e : 'low';
+
 function anthropicImageSource(url: string): Record<string, string> {
   const match = /^data:([^;,]+);base64,(.*)$/s.exec(url);
   return match
@@ -252,6 +293,14 @@ function anthropicImageSource(url: string): Record<string, string> {
 function stripJsonFence(text: string): string {
   const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text.trim());
   return fenced ? fenced[1].trim() : text.trim();
+}
+
+function restoreJson(text: string, paths: NullPath[]): string {
+  try {
+    return JSON.stringify(restoreNulls(JSON.parse(text), paths));
+  } catch {
+    return text.trim();
+  }
 }
 
 export class AnthropicVisionModel implements VisionModel {
@@ -266,13 +315,13 @@ export class AnthropicVisionModel implements VisionModel {
   async complete(request: VisionModelRequest): Promise<VisionModelResult> {
     const model = this.models[request.tier];
     // O schema da analise tem mais campos anulaveis que o limite da saida
-    // estruturada: nesse caso ele vai como texto no fim das instrucoes.
-    const structured =
-      request.schema && countUnionFields(request.schema) <= ANTHROPIC_MAX_UNION_FIELDS
-        ? request.schema
-        : null;
-    const schemaAsText = request.schema && !structured
-      ? `Respond with a single JSON object that follows this JSON Schema exactly, keys in this order, and nothing else:\n${JSON.stringify(request.schema)}`
+    // estruturada: os anulaveis viram obrigatorios e voltam a null na resposta.
+    const collapsed = request.schema && countUnionFields(request.schema) > ANTHROPIC_MAX_UNION_FIELDS
+      ? collapseNullable(request.schema)
+      : { schema: request.schema ?? null, paths: [] as NullPath[] };
+    const structured = collapsed.schema as Record<string, unknown> | null;
+    const schemaAsText = collapsed.paths.length
+      ? 'Where a field would be null, write 0 for a number and an empty string for text.'
       : '';
 
     const system: Array<Record<string, unknown>> = [];
@@ -293,7 +342,10 @@ export class AnthropicVisionModel implements VisionModel {
       max_tokens: request.maxTokens,
       messages: [{ role: 'user', content }],
       ...(system.length > 0 ? { system } : {}),
-      ...(structured ? { output_config: { format: { type: 'json_schema', schema: structured } } } : {}),
+      output_config: {
+        effort: anthropicEffort(request.reasoningEffort),
+        ...(structured ? { format: { type: 'json_schema', schema: structured } } : {}),
+      },
     };
 
     const started = Date.now();
@@ -333,7 +385,7 @@ export class AnthropicVisionModel implements VisionModel {
     return {
       provider: this.provider,
       model,
-      content: structured ? text.trim() : stripJsonFence(text),
+      content: structured && collapsed.paths.length ? restoreJson(text, collapsed.paths) : structured ? text.trim() : stripJsonFence(text),
       finishReason: stop === 'max_tokens' ? 'length' : 'stop',
       refusal: stop === 'refusal' ? text.trim() || 'refusal' : '',
       usage: {

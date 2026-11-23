@@ -135,3 +135,23 @@ describe('alerta de nivel pelo Telegram', () => {
     expect(telegramWebhookSecret('a')).not.toBe(telegramWebhookSecret('b'));
   });
 });
+
+describe('Watch que arma sozinho: Telegram', () => {
+  const armed = { status: 'armed', direction: 'long', entry: 74530, stop: 74380, target: 74880, checkedAt: '2026-11-10T14:44:00.000Z' };
+  const item = (armCheck: unknown) => ({ ...pending(), level: 74530, plan: { direction: 'long', invalidation: 74410, target: null, conditional: null }, armCheck } as never);
+
+  it('armado: mesma frase do e-mail e Your call', () => {
+    const m = renderSetupAlertTelegram('https://tickrify.com', item(armed));
+    expect(m.text).toContain('Setup armed: buy at 74,530, stop 74,380, target 74,880.');
+    expect(m.text).toContain('This is not a signal to enter. Your call.');
+  });
+
+  it('invalidado (venda: acima)', () => {
+    const m = renderSetupAlertTelegram('https://tickrify.com', item({ ...armed, status: 'invalidated', direction: 'short', stop: 74900, target: null }));
+    expect(m.text).toContain('Setup invalidated: a candle closed above 74,900 before price reached 74,530.');
+  });
+
+  it('sem conferencia: igual a antes', () => {
+    expect(renderSetupAlertTelegram('https://tickrify.com', item(null)).text).not.toContain('Your call');
+  });
+});

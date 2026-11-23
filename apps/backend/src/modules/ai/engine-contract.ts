@@ -58,6 +58,31 @@ export interface EngineTimings {
   server_total_ms: number | null;
 }
 
+/** Um leitor da analise (23/11/2026): quem leu, quanto custou e o que votou. */
+export interface EngineReaderRecord {
+  label: string;
+  provider: string;
+  model: string | null;
+  /** used = respondeu a tempo; ignored = a maioria saiu antes; failed = erro ou estouro. */
+  status: 'used' | 'ignored' | 'failed';
+  ms: number | null;
+  costUsd: number | null;
+  state: string | null;
+  direction: 'long' | 'short' | 'neutral' | null;
+  veto: string | null;
+  error?: string;
+}
+
+export interface EngineVoteRecord {
+  /** Leitores que concordaram / leitores que responderam. */
+  agreement: string;
+  /** Os 3 leram igual. */
+  strongRead: boolean;
+  /** Os 2 primeiros concordaram e o terceiro nao foi esperado. */
+  earlyMajority: boolean;
+  decidedBy: 'majority' | 'candle_bias' | 'single';
+}
+
 export interface EngineRecord {
   version: string;
   /** Provedor de IA que respondeu (vision-model.ts). null = caminho sem adapter. */
@@ -74,6 +99,8 @@ export interface EngineRecord {
   contract: EngineContract | null;
   /** So existe (true) quando o plano anterior do setup entrou no prompt. */
   continuation?: true;
+  readers?: EngineReaderRecord[];
+  vote?: EngineVoteRecord;
 }
 
 const MAX_KEY_REASONS = 3;
@@ -88,6 +115,10 @@ const VERDICTS: Record<Recommendation, EngineVerdict> = {
 
 // Motivo fixo de cada mudanca de estado (o texto da IA defendia o estado dela).
 const VALIDATOR_REASON_TEXT: Record<ValidatorReason, string> = {
+  model_veto: 'The AI vetoed the read with a named reason.',
+  neutral_direction: 'The real candles do not show a clear direction.',
+  conflicting_direction: 'The AI read the opposite direction of the real candles.',
+  no_majority: 'The readers did not agree on the state and the direction.',
   state_mismatch: 'The state and the recommendation did not agree.',
   watch_plan_invalid: 'The plan has its levels out of order.',
   implausible_price: 'A price level is outside a plausible range of the chart price.',
@@ -212,6 +243,8 @@ export function buildEngineRecord(params: {
   validatorFlags: SignalDecisionResult['validatorFlags'];
   timings: Partial<Record<keyof EngineTimings, number | null | undefined>>;
   continuation?: boolean;
+  readers?: EngineReaderRecord[];
+  vote?: EngineVoteRecord;
   warn: (message: string) => void;
 }): EngineRecord {
   const built = buildEngineContract(params.contract);
@@ -228,6 +261,8 @@ export function buildEngineRecord(params: {
     validator_reasons: [...params.contract.validatorReasons],
     validator_flags: [...params.validatorFlags],
     ...(params.continuation ? { continuation: true as const } : {}),
+    ...(params.readers ? { readers: params.readers } : {}),
+    ...(params.vote ? { vote: params.vote } : {}),
     timings: {
       image_prep_ms: ms(t.image_prep_ms),
       intake_ms: ms(t.intake_ms),

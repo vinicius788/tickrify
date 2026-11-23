@@ -21,6 +21,7 @@ import {
   watchNeedsReview,
   watchTone,
   type WatchingItem,
+  armCheckLabel,
 } from '@/lib/setups';
 import { NearNote, WatchVerdict } from './PendingLevels';
 import SetupsSection from './SetupsSection';
@@ -130,6 +131,7 @@ function WatchRow({ item, now, base }: { item: WatchingItem; now: number; base: 
         <p className="mt-0.5 text-xs tabular-nums text-[var(--text-primary)]">{[levelText, distance].filter(Boolean).join(' · ')}</p>
         {details.length ? <p key="details" className="mt-0.5 text-xs tabular-nums text-[var(--text-secondary)]">{details.filter(Boolean).join(' · ')}</p> : null}
         {checked ? <p key="checked" className="mt-0.5 text-xs tabular-nums text-[var(--text-secondary)]">{checked}</p> : null}
+        {alert?.armCheck ? <p key="arm" data-testid="alert-arm" className="mt-0.5 text-xs font-medium text-[var(--text-primary)]">{armCheckLabel(a, alert.armCheck, locale)}</p> : null}
         {review && open ? <p key="not-signal" className="mt-0.5 text-xs text-[var(--text-secondary)]">{a.notSignal}</p> : null}
         {open ? <NearNote key="near" near={item.alert?.near} /> : null}
         <Journey item={item} base={base} />

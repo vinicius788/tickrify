@@ -237,3 +237,35 @@ describe('setup-alert email', () => {
     expect(on.calls[0].text).toContain('a."expiresAt" IS NULL OR a."expiresAt" >');
   });
 });
+
+describe('Watch que arma sozinho: e-mail', () => {
+  const base = { appUrl: 'https://tickrify.com', firstName: null, unsubscribeUrl: 'https://x/u' };
+  const armed = { status: 'armed' as const, direction: 'long' as const, entry: 4140, stop: 4095, target: 4180, checkedAt: '2026-10-27T13:42:00.000Z' };
+  const item = (armCheck: unknown) => ({ ...pending({ label: 'entry', level: 4140 }), armCheck } as never);
+
+  it('armado: assunto e texto com entrada, stop e alvo; termina com Your call', () => {
+    const r = renderSetupAlertEmail({ ...base, item: item(armed) });
+    expect(r.subject).toBe('Setup armed: XAUUSD buy at 4,140');
+    expect(r.html).toContain('Setup armed: buy at 4,140, stop 4,095, target 4,180.');
+    expect(r.html).toContain('This is not a signal to enter. Your call.');
+  });
+
+  it('invalidado: avisa que caiu e nao mostra plano', () => {
+    const r = renderSetupAlertEmail({ ...base, item: item({ ...armed, status: 'invalidated', target: null }) });
+    expect(r.subject).toBe('Setup invalidated: XAUUSD');
+    expect(r.html).toContain('Setup invalidated: a candle closed below 4,095 before price reached 4,140.');
+    expect(r.html).not.toContain('Setup armed');
+  });
+
+  it('sem conferencia ou alerta sem analise: texto de sempre', () => {
+    expect(renderSetupAlertEmail({ ...base, item: item(null) }).subject).toBe('Your XAUUSD setup reached 4,140');
+    const assets = renderSetupAlertEmail({ ...base, item: { ...pending({ setupId: null }), armCheck: null } as never });
+    expect(assets.subject).toBe('XAUUSD reached 4,180');
+  });
+
+  it('a varredura nao envia alerta com conferencia pendente (rompimento sem fechamento)', async () => {
+    const { prisma, calls } = makePrisma([['WHERE a."status" = \'triggered\'', () => []]], { adminAudit: { findFirst: jest.fn() } });
+    await runSetupAlertEmailSweep({ prisma, mail: { sendLifecycle: jest.fn() }, isEnabled: () => true, appUrl: 'x', apiBaseUrl: 'y', now: () => NOW, log: jest.fn() });
+    expect(calls[0].text).toContain(`COALESCE(a."armCheck"->>'status', '') <> 'pending'`);
+  });
+});

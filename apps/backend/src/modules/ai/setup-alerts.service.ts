@@ -18,7 +18,11 @@ import { TwelveDataUnavailableError, fxMarketClosed, monitorFxIntervals, twelveD
 import { extractShadowPlan } from '../../../worker/outcome.sweeper';
 import { UNSUBSCRIBE_AUDIT_ACTION } from '../mail/lifecycle-email';
 import { SetupsService, findSetupOfAnalysis, followInTransaction, lockSetups, readPlan } from './setups.service';
-import { aiLevelExpiresAt, storedAiLevel, loadWatchContexts, loadWatchNext, storedWatchPlan, watchJourneyOf, watchSummaryOf, type WatchJourney, type WatchSummary } from './watch-pending';
+import {
+  aiLevelExpiresAt, armCheckOf, armCheckView, closedTimeframeBars, conditionalPlanOf, storedAiLevel, loadWatchContexts, loadWatchNext, storedWatchPlan, watchJourneyOf, watchSummaryOf,
+  type ArmCheck, type ArmCheckView, type WatchJourney, type WatchSummary,
+} from './watch-pending';
+import { TIMEFRAME_MS, analysisInterval } from '../market/candle-store';
 
 /**
  * Alertas de nivel dos setups acompanhados (27/10/2026, fase 1 da sessao diaria).
@@ -133,6 +137,7 @@ const BOOT_SQL = [
   )`,
   `ALTER TABLE "tickrify"."SetupAlert" ADD COLUMN IF NOT EXISTS "expiresAt" TIMESTAMP(3)`,
   `ALTER TABLE "tickrify"."SetupAlert" ADD COLUMN IF NOT EXISTS "nearAt" TIMESTAMP(3)`,
+  `ALTER TABLE "tickrify"."SetupAlert" ADD COLUMN IF NOT EXISTS "armCheck" JSONB`,
   `CREATE INDEX IF NOT EXISTS "SetupAlert_status_priceSymbol_idx" ON "tickrify"."SetupAlert"("status", "priceSymbol")`,
   `CREATE INDEX IF NOT EXISTS "SetupAlert_userId_status_idx" ON "tickrify"."SetupAlert"("userId", "status")`,
   `CREATE INDEX IF NOT EXISTS "SetupAlert_setupId_idx" ON "tickrify"."SetupAlert"("setupId")`,
@@ -185,6 +190,8 @@ export type AlertView = {
   triggeredAt: Date | null;
   triggerPrice: number | null;
   seenAt: Date | null;
+  /** Watch que arma sozinho: o resultado da conferencia no disparo (so alerta 'entry' de WATCH); null = nao conferido. */
+  armCheck: ArmCheckView | null;
   /** Preco ja chegou perto do nivel; so vale com o alerta ativo. */
   near: boolean;
   /** Ultimo preco checado do ativo (o mesmo para todas as contas) e quando. */
@@ -195,7 +202,8 @@ export type AlertView = {
   marketClosed: boolean;
 };
 
-type AlertRow = Omit<AlertView, 'timeframe' | 'lastPrice' | 'checkedAt' | 'checkIntervalMs' | 'marketClosed' | 'near'> & {
+type AlertRow = Omit<AlertView, 'timeframe' | 'lastPrice' | 'checkedAt' | 'checkIntervalMs' | 'marketClosed' | 'near' | 'armCheck'> & {
+  armCheck?: unknown;
   userId: string;
   priceSymbol: string;
   nearAt?: Date | null;
@@ -306,7 +314,7 @@ export async function alertsPausedFor(prisma: FreeQuotaCounter & RawPrisma, user
 }
 
 const alertColumns = () => Prisma.sql`a."id", a."userId", a."setupId", a."analysisId", a."symbol", a."priceSymbol", a."level", a."label", a."side",
-  a."status", a."createdAt", a."triggeredAt", a."triggerPrice", a."seenAt"`;
+  a."status", a."createdAt", a."triggeredAt", a."triggerPrice", a."seenAt", a."armCheck"`;
 
 function toView(row: AlertRow): AlertView {
   return {
@@ -323,6 +331,7 @@ function toView(row: AlertRow): AlertView {
     triggeredAt: row.triggeredAt,
     triggerPrice: row.triggerPrice == null ? null : Number(row.triggerPrice),
     seenAt: row.seenAt,
+    armCheck: armCheckView(row.armCheck),
     near: row.status === 'active' && row.nearAt != null,
     lastPrice: row.lastPrice == null ? null : Number(row.lastPrice),
     checkedAt: row.checkedAt ?? null,
@@ -426,7 +435,7 @@ async function insertAlertLocked(
   return { row: inserted[0], created: true };
 }
 
-type WatchingAlertRow = { id: string; setupId: string; analysisId: string; level: number; status: AlertStatus; triggeredAt: Date | null; seenAt: Date | null; nearAt: Date | null };
+type WatchingAlertRow = { id: string; setupId: string; analysisId: string; level: number; status: AlertStatus; triggeredAt: Date | null; seenAt: Date | null; nearAt: Date | null; armCheck?: unknown };
 
 export type WatchingItem = {
   analysisId: string;
@@ -439,7 +448,7 @@ export type WatchingItem = {
   checkedAt: Date | null;
   checkIntervalMs: number | null;
   marketClosed: boolean;
-  alert: { id: string; setupId: string; status: AlertStatus; triggeredAt: Date | null; seenAt: Date | null; near: boolean } | null;
+  alert: { id: string; setupId: string; status: AlertStatus; triggeredAt: Date | null; seenAt: Date | null; near: boolean; armCheck: ArmCheckView | null } | null;
   journey: WatchJourney;
 };
 
@@ -910,7 +919,7 @@ export class SetupAlertsService implements OnModuleInit {
     );
     const [alerts, nextById] = await Promise.all([
       this.prisma.$queryRaw<WatchingAlertRow[]>`
-        SELECT "id", "setupId", "analysisId", "level", "status", "triggeredAt", "seenAt", "nearAt" FROM "tickrify"."SetupAlert"
+        SELECT "id", "setupId", "analysisId", "level", "status", "triggeredAt", "seenAt", "nearAt", "armCheck" FROM "tickrify"."SetupAlert"
         WHERE "userId" = ${userId} AND "analysisId" IN (${Prisma.join(entries.map((e) => e.row.id))})
         ORDER BY "createdAt" DESC
       `,
@@ -934,7 +943,7 @@ export class SetupAlertsService implements OnModuleInit {
         checkedAt: fresh ? check?.checkedAt ?? null : null,
         ...cadence,
         alert: alert
-          ? { id: alert.id, setupId: alert.setupId, status: alert.status, triggeredAt: alert.triggeredAt, seenAt: alert.seenAt, near: alert.status === 'active' && alert.nearAt != null }
+          ? { id: alert.id, setupId: alert.setupId, status: alert.status, triggeredAt: alert.triggeredAt, seenAt: alert.seenAt, near: alert.status === 'active' && alert.nearAt != null, armCheck: armCheckView(alert.armCheck) }
           : null,
         journey: watchJourneyOf(watch, onLevel.some((a) => a.status === 'triggered'), nextById.get(row.id) ?? null),
       };
@@ -1095,7 +1104,58 @@ type MonitorRow = {
   clerkUserId: string | null;
   nearAt?: Date | null;
   atr?: number | null;
+  /** So alerta 'entry' de analise: o pedaco do resultado que a conferencia precisa. */
+  armSource?: unknown;
+  analysisAt?: Date | null;
+  groundingInterval?: string | null;
 };
+
+/** Conferencia de "arma sozinho": ate 8 paginas de 1m (cripto, sem cota). */
+const ARM_CHECK = { maxCryptoPages: 8, pendingWithinMs: 6 * HOUR } as const;
+
+type ArmSourceRow = Pick<MonitorRow, 'id' | 'level' | 'armSource' | 'analysisAt' | 'groundingInterval'>;
+
+/** Velas finas desde a analise: so o que o monitor ja tem (forex) ou Binance gratis (cripto). */
+async function fineSince(
+  source: CandleSource,
+  priceSymbol: string,
+  sinceMs: number,
+  nowMs: number,
+  have: Candle[],
+  fetchCrypto: typeof fetchCrypto1m,
+): Promise<Candle[]> {
+  if (source === 'fx') return have;
+  const out = new Map<number, Candle>();
+  let start = sinceMs;
+  for (let page = 0; page < ARM_CHECK.maxCryptoPages && start < nowMs; page++) {
+    const rows = await fetchCrypto(priceSymbol, start, nowMs);
+    if (!rows || rows.length === 0) break;
+    for (const c of rows) out.set(c[0], c);
+    const next = rows[rows.length - 1][0] + INTERVAL_MS['1m'];
+    if (next <= start) break;
+    start = next;
+  }
+  return [...out.values()].sort((a, b) => a[0] - b[0]);
+}
+
+/** null = nao e alerta de WATCH conferivel (sem analise, sem plano, sem tempo grafico). */
+async function armCheckFor(
+  row: ArmSourceRow,
+  source: CandleSource,
+  priceSymbol: string,
+  fine: (sinceMs: number) => Promise<Candle[]>,
+  nowMs: number,
+): Promise<ArmCheck | null> {
+  if (!row.armSource || !row.analysisAt) return null;
+  const plan = storedWatchPlan(row.armSource, null);
+  const interval = analysisInterval(row.groundingInterval, record(record(row.armSource).analysis).timeframe);
+  const tfStep = interval ? TIMEFRAME_MS[interval] : undefined;
+  if (!plan || !tfStep) return null;
+  const fineStep = INTERVAL_MS[ALERT_RULES.candleInterval[source]];
+  const candles = await fine(row.analysisAt.getTime());
+  const bars = closedTimeframeBars(candles as never, fineStep, tfStep, row.analysisAt.getTime(), nowMs);
+  return armCheckOf({ plan, levels: conditionalPlanOf(row.armSource), alertLevel: Number(row.level), bars, nowMs });
+}
 
 export type AlertMonitorDeps = {
   prisma: RawPrisma & FreeQuotaCounter;
@@ -1142,7 +1202,11 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<AlertMoni
   // Sem setup = alerta do My assets; com setup, so o que ainda e acompanhado.
   const rows = await deps.prisma.$queryRaw<MonitorRow[]>`
     SELECT a."id", a."userId", a."setupId", a."priceSymbol", a."level", a."label", a."side", a."createdAt", a."watchFrom",
-      u."clerkUserId", a."nearAt", NULLIF(an."groundingStats"->'numbers'->>'atr14', '')::float8 AS "atr"
+      u."clerkUserId", a."nearAt", NULLIF(an."groundingStats"->'numbers'->>'atr14', '')::float8 AS "atr",
+      CASE WHEN a."label" = 'entry' AND an."id" IS NOT NULL THEN jsonb_build_object(
+        'signalState', an."result"->'signalState', 'watchPlan', an."result"->'watchPlan', 'watchLevels', an."result"->'watchLevels',
+        'analysis', jsonb_build_object('timeframe', an."result"->'analysis'->'timeframe')) END AS "armSource",
+      an."createdAt" AS "analysisAt", an."groundingStats"->>'interval' AS "groundingInterval"
     FROM "tickrify"."SetupAlert" a
     LEFT JOIN "tickrify"."Analysis" an ON an."id" = a."analysisId"
     LEFT JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
@@ -1152,7 +1216,20 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<AlertMoni
     ORDER BY a."priceSymbol", a."createdAt"
     LIMIT 2000
   `;
-  if (rows.length === 0) return counts;
+  // Rompimento que cruzou o nivel mas ainda nao fechou alem dele: dispara, mas so avisa quando a conferencia resolver.
+  const pendingRows = await deps.prisma.$queryRaw<MonitorRow[]>`
+    SELECT a."id", a."userId", a."setupId", a."priceSymbol", a."level", a."label", a."side", a."createdAt", a."watchFrom", a."triggeredAt",
+      u."clerkUserId",
+      jsonb_build_object('signalState', an."result"->'signalState', 'watchPlan', an."result"->'watchPlan', 'watchLevels', an."result"->'watchLevels',
+        'analysis', jsonb_build_object('timeframe', an."result"->'analysis'->'timeframe')) AS "armSource",
+      an."createdAt" AS "analysisAt", an."groundingStats"->>'interval' AS "groundingInterval"
+    FROM "tickrify"."SetupAlert" a
+    JOIN "tickrify"."Analysis" an ON an."id" = a."analysisId"
+    JOIN "tickrify"."User" u ON u."id" = a."userId"
+    WHERE a."status" = 'triggered' AND a."armCheck"->>'status' = 'pending' AND a."triggeredAt" > ${new Date(now.getTime() - ARM_CHECK.pendingWithinMs)}
+    LIMIT 200
+  `;
+  if (rows.length === 0 && pendingRows.length === 0) return counts;
 
   const pausedUsers = new Set<string>();
   for (const userId of new Set(rows.map((r) => r.userId))) {
@@ -1179,6 +1256,12 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<AlertMoni
     bySymbol.set(row.priceSymbol, [...(bySymbol.get(row.priceSymbol) ?? []), row]);
   }
 
+  const pendingBySymbol = new Map<string, MonitorRow[]>();
+  for (const row of pendingRows) {
+    if (pausedUsers.has(row.userId)) continue;
+    pendingBySymbol.set(row.priceSymbol, [...(pendingBySymbol.get(row.priceSymbol) ?? []), row]);
+    if (!bySymbol.has(row.priceSymbol)) bySymbol.set(row.priceSymbol, []);
+  }
   if (bySymbol.size === 0) return counts;
   // Quem foi checado ha mais tempo primeiro, e o ouro sempre antes dos outros
   // forex: o teto por volta nunca deixa o mesmo ativo de fora.
@@ -1215,17 +1298,31 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<AlertMoni
       counts.symbols++;
       if (source === 'fx') fxFetches++;
 
-      const earliest = Math.min(...alerts.map((a) => a.watchFrom.getTime()));
+      const earliest = alerts.length ? Math.min(...alerts.map((a) => a.watchFrom.getTime())) : now.getTime();
       const step = INTERVAL_MS[ALERT_RULES.candleInterval[source]];
       // So o que falta: normalmente 2 ou 3 velas desde a ultima volta.
       // Ignora o gravado no futuro (fuso errado ate 09/11/2026): senao filtraria todas as velas.
       const stored = lastChecks.get(priceSymbol)?.lastCandleAt?.getTime() ?? 0;
       const seen = stored > now.getTime() + step ? 0 : stored;
       const startMs = Math.max(earliest - step, seen - step, now.getTime() - ALERT_RULES.lookbackMs);
-      const candles =
-        source === 'fx'
-          ? (await fetchFxLatest(priceSymbol, 'monitor', interval / 2))?.filter((c) => c[0] >= startMs) ?? null
-          : await fetchCrypto(priceSymbol, startMs, now.getTime());
+      let fxAll: Candle[] = [];
+      let candles: Candle[] | null;
+      if (source === 'fx') {
+        fxAll = (await fetchFxLatest(priceSymbol, 'monitor', interval / 2)) ?? [];
+        candles = fxAll.length ? fxAll.filter((c) => c[0] >= startMs) : null;
+      } else {
+        candles = await fetchCrypto(priceSymbol, startMs, now.getTime());
+      }
+      // Historico fino da conferencia, uma vez por volta e ativo (cripto: Binance gratis; forex: so o que ja veio).
+      let history: Promise<Candle[]> | null = null;
+      let historySince = Infinity;
+      const fine = (sinceMs: number) => {
+        if (!history || sinceMs < historySince) {
+          historySince = sinceMs;
+          history = fineSince(source, priceSymbol, sinceMs, now.getTime(), fxAll, fetchCrypto);
+        }
+        return history;
+      };
       if (!candles || candles.length === 0) {
         deps.log('warn', `[alerts] Sem candles symbol=${priceSymbol}`);
         continue;
@@ -1264,9 +1361,18 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<AlertMoni
           }
           continue;
         }
+        // Nunca bloqueia o disparo: sem conferencia, o alerta segue como "chegou no nivel".
+        let arm: ArmCheck | null = null;
+        if (alert.label === 'entry' && alert.armSource) {
+          try {
+            arm = await armCheckFor(alert, source, priceSymbol, fine, now.getTime());
+          } catch (err) {
+            deps.log('warn', `[alerts] Conferencia do plano falhou alert=${alert.id}: ${(err as Error)?.message ?? err}`);
+          }
+        }
         const won = await deps.prisma.$executeRaw`
           UPDATE "tickrify"."SetupAlert"
-          SET "status" = 'triggered', "triggeredAt" = ${hit.at}, "triggerPrice" = ${hit.price}, "updatedAt" = NOW()
+          SET "status" = 'triggered', "triggeredAt" = ${hit.at}, "triggerPrice" = ${hit.price}, "armCheck" = ${arm ? JSON.stringify(arm) : null}::jsonb, "updatedAt" = NOW()
           WHERE "id" = ${alert.id} AND "status" = 'active'
         `;
         if (Number(won) !== 1) continue;
@@ -1279,6 +1385,20 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<AlertMoni
             symbol_class: priceSymbolOf(priceSymbol)?.symbolClass ?? null,
             minutes_to_trigger: Math.max(0, Math.round((hit.at.getTime() - alert.createdAt.getTime()) / MINUTE)),
           }, { dedupeKey: `setup_alert_triggered:${alert.id}` });
+        }
+      }
+
+      for (const pending of pendingBySymbol.get(priceSymbol) ?? []) {
+        try {
+          const arm = await armCheckFor(pending, source, priceSymbol, fine, now.getTime());
+          // Ainda pendente: espera a proxima volta, sem mandar nada.
+          if (!arm || arm.status === 'pending') continue;
+          await deps.prisma.$executeRaw`
+            UPDATE "tickrify"."SetupAlert" SET "armCheck" = ${JSON.stringify(arm)}::jsonb, "updatedAt" = NOW()
+            WHERE "id" = ${pending.id} AND "armCheck"->>'status' = 'pending'
+          `;
+        } catch (err) {
+          deps.log('warn', `[alerts] Conferencia pendente falhou alert=${pending.id}: ${(err as Error)?.message ?? err}`);
         }
       }
     } catch (err) {

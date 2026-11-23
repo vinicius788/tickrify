@@ -36,7 +36,7 @@ import type { EngineProfile, EntryLevels, WatchPlan } from '../src/common/utils/
 import type { AiLevel, LevelMap } from '../src/common/utils/level-map';
 import type { ProfileOutcome, RejectedPlan } from '../src/common/utils/signal-decision';
 import { BROKEN_PLAN_RULES, validateTradePlan } from '../src/common/utils/trade-plan-validator';
-import { buildEngineRecord, type AnalysisIntakeTimings } from '../src/modules/ai/engine-contract';
+import { buildEngineRecord, type AnalysisIntakeTimings, type EngineReaderRecord, type EngineVoteRecord } from '../src/modules/ai/engine-contract';
 import { ImageStorageClient } from '../src/common/utils/image-storage';
 import { canUseDemoFallback, hasValidOpenAiKey } from '../src/common/utils/ai-runtime';
 import { resolvePrismaDatasourceUrl } from '../src/modules/database/prisma.datasource';
@@ -193,6 +193,10 @@ interface WorkerAnalysisResult {
   targetMoved?: boolean;
   riskProfile?: EngineProfile;
   riskProfiles?: Record<EngineProfile, ProfileOutcome>;
+  /** Motor pelas velas (23/11/2026): vies, entrada do codigo e resumo; ausentes no caminho antigo. */
+  candleBias?: unknown;
+  entryPlan?: unknown;
+  codeSummary?: unknown;
   validatorNotes: ValidatorNote[];
   analysis: WorkerAnalysisDetails;
 }
@@ -377,6 +381,10 @@ interface AdapterDecision {
   targetMoved?: boolean;
   riskProfile?: EngineProfile;
   riskProfiles?: Record<EngineProfile, ProfileOutcome>;
+  /** Motor pelas velas (23/11/2026): vies, entrada do codigo e resumo; ausentes no caminho antigo. */
+  candleBias?: unknown;
+  entryPlan?: unknown;
+  codeSummary?: unknown;
   validatorAction: ValidatorAction;
   /** Cada mudanca de estado do validador do adapter. */
   validatorNotes: ValidatorNote[];
@@ -413,6 +421,9 @@ function adapterDecisionFrom(aiSource: unknown): AdapterDecision | null {
     ...(aiSource.riskProfile && aiSource.riskProfiles
       ? { riskProfile: aiSource.riskProfile as EngineProfile, riskProfiles: aiSource.riskProfiles as Record<EngineProfile, ProfileOutcome> }
       : {}),
+    ...(aiSource.candleBias ? { candleBias: aiSource.candleBias } : {}),
+    ...('entryPlan' in aiSource ? { entryPlan: aiSource.entryPlan } : {}),
+    ...(aiSource.codeSummary ? { codeSummary: aiSource.codeSummary } : {}),
     validatorAction: meta.validatorAction as ValidatorAction,
     validatorNotes: Array.isArray(aiSource.validatorNotes) ? (aiSource.validatorNotes as ValidatorNote[]) : [],
     validatorReasons: meta.validatorReasons as ValidatorReason[],
@@ -561,6 +572,10 @@ async function toWorkerAnalysisResult(
     ...(decision.permissiveEntry ? { permissiveEntry: true } : {}),
     ...(decision.pendingEntry ? { pendingEntry: true } : {}),
     ...(decision.targetMoved ? { targetMoved: true } : {}),
+    ...(decision.riskProfile && decision.riskProfiles ? { riskProfile: decision.riskProfile, riskProfiles: decision.riskProfiles } : {}),
+    ...(decision.candleBias ? { candleBias: decision.candleBias } : {}),
+    ...(decision.entryPlan !== undefined ? { entryPlan: decision.entryPlan } : {}),
+    ...(decision.codeSummary ? { codeSummary: decision.codeSummary } : {}),
     validatorNotes: decision.validatorNotes,
     analysis: {
       symbol: ensureString(analysisSource.symbol ?? source.symbol, 'UNKNOWN'),
@@ -1300,7 +1315,7 @@ async function processAnalysis(job: Job<JobData>) {
     // Contrato v2 + validador + tempos de cada etapa (result.engine, vai ao PostHog).
     const adapterMeta =
       aiSource && typeof aiSource === 'object' && 'engineMeta' in aiSource
-        ? (aiSource as { engineMeta?: { provider?: string; groundingMs?: number; modelMs?: number; parseMs?: number } }).engineMeta
+        ? (aiSource as { engineMeta?: { provider?: string; groundingMs?: number; modelMs?: number; parseMs?: number; readers?: EngineReaderRecord[]; vote?: EngineVoteRecord } }).engineMeta
         : undefined;
     const continuation = isRecord(aiSource) && isRecord(aiSource.continuation) ? aiSource.continuation : null;
     const engine = buildEngineRecord({
@@ -1308,6 +1323,8 @@ async function processAnalysis(job: Job<JobData>) {
       signalState: parsed.signalState,
       dataMode: parsed.dataMode,
       continuation: Boolean(continuation),
+      readers: adapterMeta?.readers,
+      vote: adapterMeta?.vote,
       contract: {
         recommendation: parsed.recommendation === 'COMPRA' ? 'BUY' : parsed.recommendation === 'VENDA' ? 'SELL' : 'WAIT',
         confidencePct: parsed.confidence * 100,

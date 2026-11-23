@@ -73,7 +73,7 @@ describe('AIAdapter trade-plan integrity', () => {
     else process.env.ENABLE_NEWS_GUARD = oldNews;
   });
 
-  it('rejects a BUY whose TP1 is below entry after ONE retry, even when TP2 looks attractive', async () => {
+  it('rejects a BUY whose TP1 is below entry when every reader fails (error of the first), even when TP2 looks attractive', async () => {
     const adapter = new AIAdapter();
     const create = jest.fn().mockResolvedValue(responseFor(90));
     withFakeOpenAi(adapter, create);
@@ -83,7 +83,7 @@ describe('AIAdapter trade-plan integrity', () => {
     expect(create).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps the retry answer when the second plan is coherent', async () => {
+  it('a reader with a broken plan is dropped and the other one decides (single reader)', async () => {
     const adapter = new AIAdapter();
     const create = jest.fn()
       .mockResolvedValueOnce(responseFor(90))
@@ -97,7 +97,7 @@ describe('AIAdapter trade-plan integrity', () => {
     expect(result.engineMeta?.provider).toBe('openai');
   });
 
-  it('treats a BUY without a stop as a broken plan (retry, then fail)', async () => {
+  it('treats a BUY without a stop as a broken plan (both readers dropped, then fail)', async () => {
     const adapter = new AIAdapter();
     const create = jest.fn().mockResolvedValue(responseFor(110, { stopLoss: null }));
     withFakeOpenAi(adapter, create);
@@ -107,7 +107,7 @@ describe('AIAdapter trade-plan integrity', () => {
     expect(create).toHaveBeenCalledTimes(2);
   });
 
-  it('retries once when the answer is not valid JSON', async () => {
+  it('a reader with invalid JSON is dropped (no retry) and the other one decides', async () => {
     const adapter = new AIAdapter();
     const broken = { model: 'gpt-5.6-luna', choices: [{ finish_reason: 'stop', message: { content: 'not json' } }] };
     const create = jest.fn().mockResolvedValueOnce(broken).mockResolvedValueOnce(responseFor(110));
@@ -117,6 +117,48 @@ describe('AIAdapter trade-plan integrity', () => {
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(create).toHaveBeenCalledTimes(2);
     expect(result.recommendation).toBe('BUY');
+  });
+
+  it('a reader that fails does not break the analysis: the other one decides and engineMeta records it', async () => {
+    const adapter = new AIAdapter();
+    const create = jest.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('socket hang up'), { status: 500 }))
+      .mockResolvedValueOnce(responseFor(110));
+    withFakeOpenAi(adapter, create);
+    withRealCandles(adapter);
+
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ENTER_NOW' });
+    const { readers, vote } = result.engineMeta!;
+    expect(readers!.map((r) => [r.label, r.status])).toEqual([['openai-1', 'failed'], ['openai-2', 'used']]);
+    expect(readers![0].error).toContain('socket hang up');
+    // Um leitor so: sem maioria, com velas decide o codigo (vies das velas), sem a leitura.
+    expect(vote).toMatchObject({ agreement: '1/1', strongRead: false, earlyMajority: false, decidedBy: 'candle_bias' });
+  });
+
+  it('early majority: the two first readers agree, the slow third is ignored and the vote is recorded', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
+    withRealCandles(adapter);
+    const body = JSON.parse(responseFor(110).choices[0].message.content);
+    (adapter as any).secondaryModel = {
+      provider: 'slow-second',
+      complete: jest.fn(() => new Promise((resolve) => setTimeout(() => resolve({
+        provider: 'slow-second', model: 'slow', content: JSON.stringify(body), finishReason: 'stop', refusal: '',
+        respondedModel: 'slow', modelMs: 300,
+        usage: { promptTokens: 1, cachedTokens: 0, completionTokens: 1, reasoningTokens: 0, totalTokens: 2 },
+      }), 300).unref?.())),
+    };
+
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ENTER_NOW' });
+    const { readers, vote } = result.engineMeta!;
+    expect(readers!.map((r) => [r.label, r.status])).toEqual([
+      ['openai-1', 'used'], ['openai-2', 'used'], ['slow-second-1', 'ignored'],
+    ]);
+    expect(readers![0]).toMatchObject({ state: 'ENTER_NOW', direction: 'long' });
+    expect(vote).toMatchObject({ agreement: '2/2', strongRead: false, earlyMajority: true, decidedBy: 'majority' });
   });
 
   it('v11: entrada a mercado no preco real e stop pela invalidacao, nao os niveis do modelo', async () => {
@@ -132,27 +174,56 @@ describe('AIAdapter trade-plan integrity', () => {
     expect(result.analysis?.takeProfit2).toBe(103);
   });
 
-  it('v11: ARMED do modelo vira WATCH com o plano (a ordem limit nao e mais emitida)', async () => {
+  // Sem velas (modo print) vale o caminho antigo: a ordem limit do modelo nao e mais emitida.
+  it('v11: ARMED do modelo vira WATCH com o plano em modo print (a ordem limit nao e mais emitida)', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { entryType: 'limit' }, { signalState: 'ARMED' })));
-    withRealCandles(adapter);
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-    expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'WATCH', watchPlan: PLAN });
+    expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'WATCH', watchPlan: PLAN, dataMode: 'print' });
     expect(result.validatorNotes).toEqual([{ from: 'ARMED', to: 'WATCH', reason: 'limit_order_retired' }]);
     expect(result.analysis?.entry).toBeNull();
   });
 
-  it('v11: C3 em FAIL no checklist: NO_TRADE, cada degrau com o motivo', async () => {
+  // Com velas reais (23/11/2026) quem decide e o codigo: o ARMED do modelo conta so como WATCH
+  // de partida; o plano da IA passa pelo validador antigo e, valido a mercado (preco real 99,95
+  // dentro dos limites de risco e alvo), vira ENTER_NOW com os niveis do codigo, nao os do modelo.
+  it('v11: com velas reais, o ARMED do modelo com plano valido a mercado vira ENTER_NOW pela conta do codigo', async () => {
     const adapter = new AIAdapter();
-    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { structureValidation: CHECKLIST.replace('C3 PASS', 'C3 FAIL') })));
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { entryType: 'limit' }, { signalState: 'ARMED' })));
     withRealCandles(adapter);
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-    expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'NO_TRADE' });
+    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ENTER_NOW', watchPlan: PLAN, dataMode: 'real_data' });
+    expect(result.validatorNotes).toEqual([{ from: 'WATCH', to: 'ENTER_NOW', reason: 'market_entry_valid' }]);
+    expect(result.analysis?.entryType).toBe('market');
+    expect(result.analysis?.entry).toBeCloseTo(99.95, 2);
+    expect(result.analysis?.stopLoss).toBeCloseTo(98.5625, 3);
+    expect(result.analysis?.takeProfit1).toBe(101.5);
+  });
+
+  it('v11: C3 em FAIL no checklist: NO_TRADE, cada degrau com o motivo (modo print)', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { currentPrice: 99.3, entry: 99.3, structureValidation: CHECKLIST.replace('C3 PASS', 'C3 FAIL') })));
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'NO_TRADE', dataMode: 'print' });
     expect(result.validatorNotes).toEqual([
       { from: 'ENTER_NOW', to: 'WATCH', reason: 'required_check_failed' },
       { from: 'WATCH', to: 'NO_TRADE', reason: 'setup_failed' },
     ]);
     expect(result.engineMeta?.validatorReasons).toEqual(['required_check_failed', 'setup_failed']);
+  });
+
+  // Com velas reais o checklist do modelo (C3) deixa de ser portao: o codigo escolhe a entrada pelas
+  // velas. O plano da IA nao passa como ENTER_NOW, entao sobra o recuo calculado (nivel 98,8 = fundo real).
+  it('v11: com velas reais, C3 em FAIL no checklist nao derruba: o codigo escolhe o recuo ate o fundo real', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { structureValidation: CHECKLIST.replace('C3 PASS', 'C3 FAIL') })));
+    withRealCandles(adapter);
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'WATCH', dataMode: 'real_data' });
+    expect(result.analysis?.entry).toBeNull();
+    expect(result.watchLevels).toMatchObject({ entry: 98.8, tp1R: 1.5 });
+    expect((result as any).entryPlan).toMatchObject({ kind: 'pullback', direction: 'long', level: 98.8 });
+    expect((result as any).codeSummary).toMatchObject({ action: 'buy_pullback', waitReason: null });
   });
 
   it('v11: o REAL DATA grava as swings e a maturidade que o validador usou', async () => {
@@ -185,13 +256,17 @@ describe('AIAdapter trade-plan integrity', () => {
     expect(result.engineMeta?.validatorAction).toBe('promoted');
   });
 
-  it('v11: alvo a menos de 1R das duas entradas: WATCH sem niveis', async () => {
+  // Antes: alvo do modelo a menos de 1R das duas entradas = WATCH sem niveis. Agora o codigo nao
+  // depende do alvo do modelo: com velas reais ele propoe o proprio recuo (stop pela margem, alvo a
+  // 1,5R), entao o WATCH sai COM niveis calculados pelo codigo.
+  it('v11: alvo do modelo a menos de 1R: o codigo calcula o proprio recuo e o WATCH sai com niveis', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, {}, { watchPlan: { ...PLAN, target1: 100.3, target2: null } })));
     withRealCandles(adapter);
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-    expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'WATCH', watchLevels: null });
-    expect(result.engineMeta?.validatorReasons).toEqual(['market_entry_invalid']);
+    expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'WATCH' });
+    expect(result.watchLevels).toMatchObject({ entry: 98.8, stopLoss: 98.325, takeProfit1: 99.5125, tp1R: 1.5 });
+    expect(result.watchPlan?.target1).toBeCloseTo(99.5125, 4);
     expect(result.confidence).toBeLessThanOrEqual(49);
   });
 
@@ -223,7 +298,7 @@ describe('AIAdapter trade-plan integrity', () => {
     withFakeOpenAi(adapter, create);
     await expect(adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick'))
       .rejects.toMatchObject({ code: 'non_chart_image', retriable: false });
-    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(2); // um por leitor; os dois recusam o nao-grafico
   });
 
   it.each([true, undefined, null, 'false'])('preserves only a boolean chart classification: %s', async (value) => {
@@ -237,7 +312,7 @@ describe('AIAdapter trade-plan integrity', () => {
     withFakeOpenAi(adapter, create);
     withRealCandles(adapter);
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-    expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(2); // dois leitores do mesmo provedor
     expect(result.recommendation).toBe('BUY');
     if (value === true) expect(result.rawResponse).toHaveProperty('is_financial_chart', true);
     else expect(result.rawResponse).not.toHaveProperty('is_financial_chart');
@@ -296,10 +371,9 @@ describe('AIAdapter trade-plan integrity', () => {
     expect(result.analysis).toMatchObject({ factorsPresent: 6, confluenceScore: 85.71 });
   });
 
-  it('turns a BUY with an absurd target (extra digit) into NO_TRADE, without levels', async () => {
+  it('turns a BUY with an absurd target (extra digit) into NO_TRADE, without levels (modo print)', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { takeProfit2: 1200 })));
-    withRealCandles(adapter);
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(result.recommendation).toBe('WAIT');
@@ -310,6 +384,19 @@ describe('AIAdapter trade-plan integrity', () => {
       validatorAction: 'downgraded',
       validatorReasons: ['implausible_price'],
     });
+  });
+
+  // Com velas reais os niveis da IA (analysis.*) nao entram: o alvo absurdo do modelo e descartado e
+  // o ENTER_NOW sai com os niveis do plano e do codigo.
+  it('com velas reais o alvo absurdo da IA nao chega ao resultado: os niveis sao do codigo', async () => {
+    const adapter = new AIAdapter();
+    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, { takeProfit2: 1200 })));
+    withRealCandles(adapter);
+
+    const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
+    expect(result).toMatchObject({ recommendation: 'BUY', signalState: 'ENTER_NOW', dataMode: 'real_data' });
+    expect(result.analysis?.takeProfit2).toBe(103);
+    expect(result.analysis?.takeProfit1).toBe(101.5);
   });
 
   it('sends fixed instructions first, then the variable blocks, then the image (same messages as before)', async () => {
@@ -405,7 +492,8 @@ describe('AIAdapter currentPrice no parser (caracterizacao)', () => {
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(reply('HOLD', analysis)));
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     const priceLogs = warn.mock.calls.map(([m]) => String(m)).filter((m) => m.startsWith('[price]'));
-    expect(priceLogs).toEqual([`[price] currentPrice do modelo sem preco util: ${issue}`]);
+    // uma vez por leitor (2 leituras do provedor ativo)
+    expect(priceLogs).toEqual(Array(2).fill(`[price] currentPrice do modelo sem preco util: ${issue}`));
     expect(result.recommendation).toBe('WAIT');
     expect(result.analysis?.currentPrice).toBe(price === -5 ? -5 : 0);
   });
@@ -460,21 +548,36 @@ describe('AIAdapter provider comparison (AI_COMPARE_PROVIDERS)', () => {
     process.env = { ...saved };
   });
 
+  // O segundo provedor e o terceiro leitor: responde SELL com niveis de venda coerentes. Atrasa 30 ms
+  // para o primeiro leitor OpenAI terminar antes (o 2o abre o empate e a analise espera o 3o).
   function secondaryAnswering(recommendation: string): VisionModel {
     const body = JSON.parse(responseFor(110).choices[0].message.content);
+    const sell = { entry: 100, stopLoss: 105, takeProfit1: 90, takeProfit2: 80, entryType: 'market' };
     return {
       provider: 'fake-second',
-      complete: jest.fn().mockResolvedValue({
-        provider: 'fake-second', model: 'fake-model', content: JSON.stringify({ ...body, recommendation }),
-        finishReason: 'stop', refusal: '', respondedModel: 'fake-model', modelMs: 5,
-        usage: { promptTokens: 10, cachedTokens: 0, completionTokens: 20, reasoningTokens: 0, totalTokens: 30 },
+      complete: jest.fn(async () => {
+        await new Promise((r) => setTimeout(r, 30));
+        return {
+          provider: 'fake-second', model: 'fake-model',
+          content: JSON.stringify({ ...body, recommendation, analysis: { ...body.analysis, ...sell }, read: { direction: 'short', veto: 'conflicting_signals' } }),
+          finishReason: 'stop', refusal: '', respondedModel: 'fake-model', modelMs: 5,
+          usage: { promptTokens: 10, cachedTokens: 0, completionTokens: 20, reasoningTokens: 0, totalTokens: 30 },
+        };
       }),
     };
   }
 
-  it('runs the second provider only when the flag is on AND the caller records it', async () => {
+  // O 2o leitor OpenAI chega depois do secundario (150 ms): os dois primeiros (OpenAI-1 e o secundario)
+  // discordam, o terceiro desempata e o resultado e o do provedor ativo.
+  function slowSecondOpenAi(): jest.Mock {
+    return jest.fn()
+      .mockResolvedValueOnce(responseFor(110))
+      .mockImplementationOnce(() => new Promise((r) => setTimeout(() => r(responseFor(110)), 150)));
+  }
+
+  it('the second provider is the third reader on every analysis; the comparison reuses its read and is recorded only with the flag AND the caller', async () => {
     const adapter = new AIAdapter();
-    withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
+    withFakeOpenAi(adapter, slowSecondOpenAi());
     withRealCandles(adapter);
     const second = secondaryAnswering('SELL');
     (adapter as any).secondaryModel = second;
@@ -484,13 +587,18 @@ describe('AIAdapter provider comparison (AI_COMPARE_PROVIDERS)', () => {
     expect(off.providerComparison).toBeUndefined();
 
     process.env.AI_COMPARE_PROVIDERS = 'true';
+    withFakeOpenAi(adapter, slowSecondOpenAi());
     const demo = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(demo.providerComparison).toBeUndefined();
-    expect(second.complete).not.toHaveBeenCalled();
+    // Sem chamada extra: o secundario foi chamado UMA vez por analise (como leitor), nunca a mais.
+    expect(second.complete).toHaveBeenCalledTimes(2);
 
+    withFakeOpenAi(adapter, slowSecondOpenAi());
     const on = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick', [], null, { compareProviders: true });
-    // O usuario ve so o ativo.
+    expect(second.complete).toHaveBeenCalledTimes(3);
+    // O usuario ve so o ativo: 2 leituras de compra contra 1 veto do secundario.
     expect(on.recommendation).toBe('BUY');
+    expect(on.engineMeta?.vote).toMatchObject({ agreement: '2/3', decidedBy: 'majority' });
     const comparison = await on.providerComparison;
     expect(comparison).toMatchObject({
       agree: false,
@@ -499,7 +607,9 @@ describe('AIAdapter provider comparison (AI_COMPARE_PROVIDERS)', () => {
     });
   });
 
-  it('records a failing second provider without touching the analysis', async () => {
+  // Mudou de proposito: o secundario que falha e leitor descartado, nao ha segunda chamada para
+  // registrar o erro; a falha fica em engineMeta.readers e a comparacao nao e gravada.
+  it('a failing second provider is a dropped reader: analysis intact, failure in engineMeta.readers and in the comparison', async () => {
     process.env.AI_COMPARE_PROVIDERS = 'true';
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110)));
@@ -508,7 +618,9 @@ describe('AIAdapter provider comparison (AI_COMPARE_PROVIDERS)', () => {
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick', [], null, { compareProviders: true });
     expect(result.recommendation).toBe('BUY');
-    await expect(result.providerComparison).resolves.toMatchObject({ agree: null, secondary: { error: 'down' } });
+    await expect(result.providerComparison).resolves.toMatchObject({ secondary: { error: 'down' }, agree: null });
+    const failed = result.engineMeta!.readers!.find((r) => r.provider === 'x');
+    expect(failed).toMatchObject({ status: 'failed', error: 'down' });
   });
 });
 
@@ -658,7 +770,7 @@ describe('AIAdapter Deep P1 regressions', () => {
         } else {
           await expect(pending).rejects.toMatchObject({ code: 'non_chart_image', retriable: false });
         }
-        expect(create).toHaveBeenCalledTimes(1);
+        expect(create).toHaveBeenCalledTimes(2); // dois leitores do provedor ativo
         // As velas entram sempre; a chave so desliga contexto e calendario dentro do enriquecimento.
         expect(enrichment).toHaveBeenCalledTimes(1);
         if (mode === 'injected') expect(JSON.stringify(create.mock.calls[0][0].messages)).toContain('SYNTHETIC MARKET CONTEXT');
