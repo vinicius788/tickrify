@@ -18,7 +18,15 @@ export function percentile(values: readonly number[], p: number): number | null 
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1))];
 }
 
-export type ReaderLite = { status?: unknown; costUsd?: unknown };
+export type ReaderLite = { status?: unknown; costUsd?: unknown; label?: unknown; error?: unknown };
+
+export type ReaderLabelStat = {
+  label: string;
+  seen: number;
+  failures: number;
+  /** Erro mais comum entre as falhas, cortado em 80 caracteres. */
+  topError: string | null;
+};
 
 export type HomeAnalysisRow = {
   createdAt: Date;
@@ -26,6 +34,8 @@ export type HomeAnalysisRow = {
   signalState: string | null;
   action: string | null;
   agreement: string | null;
+  /** `result.engine.vote.decidedBy`: majority, candle_bias, single... (o texto gravado). */
+  decidedBy?: string | null;
   strongRead: boolean | null;
   readers: unknown;
   totalMs: number | null;
@@ -37,6 +47,11 @@ export type AnalysisWindow = {
   byState: Record<string, number>;
   byAction: Record<string, number>;
   agreement: Record<string, number>;
+  /** Quem decidiu o voto, agrupado pelo texto gravado; sem voto fica em 'sem registro'. */
+  decidedBy: Record<string, number>;
+  /** Analises com voto decidido sem maioria (decidedBy diferente de majority). */
+  withoutMajority: number;
+  readerLabels: ReaderLabelStat[];
   strongRead: number;
   readerFailures: number;
   readersSeen: number;
@@ -55,29 +70,61 @@ export function readersOf(value: unknown): ReaderLite[] {
   return Array.isArray(value) ? value.filter((r): r is ReaderLite => !!r && typeof r === 'object') : [];
 }
 
+const ERROR_MAX = 80;
+
+/** Falhas por rotulo de leitor, com o erro mais comum de cada um. Rotulo ausente vira '?'. */
+export function readerFailuresByLabel(readers: readonly ReaderLite[]): ReaderLabelStat[] {
+  const byLabel = new Map<string, { seen: number; failures: number; errors: Map<string, number> }>();
+  for (const reader of readers) {
+    const label = typeof reader.label === 'string' && reader.label ? reader.label : '?';
+    const entry = byLabel.get(label) ?? { seen: 0, failures: 0, errors: new Map() };
+    entry.seen += 1;
+    if (reader.status === 'failed') {
+      entry.failures += 1;
+      const error = typeof reader.error === 'string' && reader.error ? reader.error.slice(0, ERROR_MAX) : 'sem texto de erro';
+      entry.errors.set(error, (entry.errors.get(error) ?? 0) + 1);
+    }
+    byLabel.set(label, entry);
+  }
+  return [...byLabel].map(([label, e]) => ({
+    label,
+    seen: e.seen,
+    failures: e.failures,
+    topError: [...e.errors].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? null,
+  })).sort((a, b) => a.label.localeCompare(b.label));
+}
+
 /** Resume um conjunto de analises (uma janela do Inicio). So analise concluida entra nas contagens de estado. */
 export function summarizeAnalyses(rows: readonly HomeAnalysisRow[]): AnalysisWindow {
   const done = rows.filter((r) => r.status === 'completed');
   const out: AnalysisWindow = {
     analyses: done.length,
     failed: rows.length - done.length,
-    byState: {}, byAction: {}, agreement: {},
+    byState: {}, byAction: {}, agreement: {}, decidedBy: {}, withoutMajority: 0, readerLabels: [],
     strongRead: 0, readerFailures: 0, readersSeen: 0,
     totalMsP50: null, totalMsP90: null, costUsd: 0, costPerAnalysisUsd: null,
   };
   const times: number[] = [];
+  const allReaders: ReaderLite[] = [];
   for (const row of done) {
     bump(out.byState, row.signalState ?? 'sem estado');
     if (row.action) bump(out.byAction, row.action);
     if (row.agreement) bump(out.agreement, row.agreement);
+    if (row.decidedBy || row.agreement) {
+      bump(out.decidedBy, row.decidedBy ?? 'sem registro');
+      if (row.decidedBy && row.decidedBy !== 'majority') out.withoutMajority += 1;
+    }
     if (row.strongRead === true) out.strongRead += 1;
-    for (const reader of readersOf(row.readers)) {
+    const readers = readersOf(row.readers);
+    allReaders.push(...readers);
+    for (const reader of readers) {
       out.readersSeen += 1;
       if (reader.status === 'failed') out.readerFailures += 1;
       if (typeof reader.costUsd === 'number' && Number.isFinite(reader.costUsd)) out.costUsd += reader.costUsd;
     }
     if (typeof row.totalMs === 'number' && Number.isFinite(row.totalMs) && row.totalMs > 0) times.push(row.totalMs);
   }
+  out.readerLabels = readerFailuresByLabel(allReaders);
   out.totalMsP50 = percentile(times, 0.5);
   out.totalMsP90 = percentile(times, 0.9);
   out.costPerAnalysisUsd = done.length ? out.costUsd / done.length : null;
@@ -133,6 +180,7 @@ export async function loadHomeReport(db: RawQuerier, now: Date = new Date()): Pr
              a."result"->>'signalState' AS "signalState",
              a."result"->'codeSummary'->>'action' AS "action",
              a."result"->'engine'->'vote'->>'agreement' AS "agreement",
+             a."result"->'engine'->'vote'->>'decidedBy' AS "decidedBy",
              (a."result"->'engine'->'vote'->>'strongRead') = 'true' AS "strongRead",
              a."result"->'engine'->'readers' AS "readers",
              NULLIF((a."result"->'engine'->'timings'->>'server_total_ms'), '')::double precision AS "totalMs"

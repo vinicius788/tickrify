@@ -14,7 +14,8 @@ vi.mock('@/lib/api', () => ({ buildApiUrl: (p: string) => `https://api.test${p}`
 const janela = (analyses: number) => ({
   signups: 2,
   analysis: {
-    analyses, failed: 1, byState: { ENTER_NOW: 1, WATCH: 2 }, byAction: { buy_pullback: 1, wait: 2 }, agreement: { '3/3': 2, '2/3': 1 },
+    analyses, failed: 1, byState: { ENTER_NOW: 1, WATCH: 2 }, byAction: { buy_pullback: 1, wait: 2 }, agreement: { '3/3': 2, '2/3': 1 }, decidedBy: { majority: 2, candle_bias: 1 }, withoutMajority: 1,
+    readerLabels: [{ label: 'C', seen: 3, failures: 1, topError: 'timeout' }],
     strongRead: 2, readerFailures: 1, readersSeen: 9, totalMsP50: 15600, totalMsP90: 18200, costUsd: 0.12, costPerAnalysisUsd: 0.04,
   },
   alerts: { triggered: 3, armed: 2, invalidated: 1, notified: 3, notifyDelayP50Ms: 4000, notifyDelayP90Ms: 9000 },
@@ -31,6 +32,10 @@ const motor = {
   byEntry: [{ entry: 'pullback', stats: stats() }, { entry: 'wait', stats: stats({ clearPct: 0 }) }],
   byClass: [{ assetClass: 'crypto', stats: stats() }],
   agreement: [{ agreement: '3/3', count: 8 }, { agreement: '2/3', count: 4 }],
+  decidedBy: [{ decidedBy: 'majority', count: 10 }, { decidedBy: 'candle_bias', count: 2 }],
+  withoutMajorityPct: 16.7,
+  readerFailures: [{ label: 'C', seen: 12, failures: 3, topError: 'timeout' }],
+  byRules: [{ rules: 'filter-2026-11-23', stats: stats() }, { rules: null, stats: stats() }],
   noCandles: [{ reason: 'provider_quota', count: 2 }],
 };
 

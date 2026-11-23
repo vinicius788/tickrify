@@ -20,11 +20,11 @@ integration('PostgreSQL descartavel: relatorios do /admin', () => {
       id, userId, status, createdAt, result === null ? null : JSON.stringify(result), `${userId}/${id}.png`,
     );
   }
-  const engineResult = (symbol: string, action: string, agreement: string, readers: unknown[], totalMs: number) => ({
+  const engineResult = (symbol: string, action: string, agreement: string, readers: unknown[], totalMs: number, extra: { decidedBy?: string; rules?: string } = {}) => ({
     analysis: { symbol, timeframe: '5m' },
     signalState: action === 'wait' ? 'WATCH' : 'ENTER_NOW',
     codeSummary: { action },
-    engine: { vote: { agreement, strongRead: agreement === '3/3' }, readers, timings: { server_total_ms: totalMs } },
+    engine: { vote: { agreement, strongRead: agreement === '3/3', ...(extra.decidedBy ? { decidedBy: extra.decidedBy } : {}) }, readers, ...(extra.rules ? { rules: extra.rules } : {}), timings: { server_total_ms: totalMs } },
   });
 
   beforeAll(async () => {
@@ -78,8 +78,8 @@ integration('PostgreSQL descartavel: relatorios do /admin', () => {
 
     await analysis('a_btc', 'u_ana', new Date(NOW.getTime() - 1 * H), engineResult('BTCUSDT', 'buy_pullback', '3/3', [
       { label: 'A', provider: 'openai', status: 'used', costUsd: 0.01 }, { label: 'B', provider: 'openai', status: 'used', costUsd: 0.01 }, { label: 'C', provider: 'anthropic', status: 'failed', costUsd: null, error: 'timeout' },
-    ], 16000));
-    await analysis('a_xau', 'u_ana', new Date(NOW.getTime() - 2 * H), engineResult('XAUUSD', 'wait', '2/3', [{ label: 'A', provider: 'openai', status: 'used', costUsd: 0.02 }], 20000));
+    ], 16000, { decidedBy: 'majority', rules: 'filter-2026-11-23' }));
+    await analysis('a_xau', 'u_ana', new Date(NOW.getTime() - 2 * H), engineResult('XAUUSD', 'wait', '2/3', [{ label: 'A', provider: 'openai', status: 'used', costUsd: 0.02 }, { label: 'C', provider: 'anthropic', status: 'failed', costUsd: null, error: 'x'.repeat(120) }], 20000, { decidedBy: 'candle_bias' }));
     await analysis('a_old', 'u_ana', new Date(NOW.getTime() - 3 * 24 * H), engineResult('EURUSD', 'sell_now', '3/3', [], 14000));
     await analysis('a_legacy', 'u_bob', new Date(NOW.getTime() - 4 * H), { analysis: { symbol: 'ETHUSDT' }, signalState: 'NO_TRADE' });
     await analysis('a_fail', 'u_bob', new Date(NOW.getTime() - 5 * H), null, 'failed');
@@ -110,7 +110,15 @@ integration('PostgreSQL descartavel: relatorios do /admin', () => {
     expect(home.activeAlerts).toBe(1);
     expect(home.today.signups).toBe(1);
     expect(home.week.signups).toBe(2);
-    expect(home.today.analysis).toMatchObject({ analyses: 3, failed: 1, byAction: { buy_pullback: 1, wait: 1 }, agreement: { '3/3': 1, '2/3': 1 }, strongRead: 1, readerFailures: 1, readersSeen: 4 });
+    expect(home.today.analysis).toMatchObject({
+      analyses: 3, failed: 1, byAction: { buy_pullback: 1, wait: 1 }, agreement: { '3/3': 1, '2/3': 1 }, strongRead: 1, readerFailures: 2, readersSeen: 5,
+      decidedBy: { majority: 1, candle_bias: 1 }, withoutMajority: 1,
+    });
+    expect(home.today.analysis.readerLabels).toEqual([
+      { label: 'A', seen: 2, failures: 0, topError: null },
+      { label: 'B', seen: 1, failures: 0, topError: null },
+      { label: 'C', seen: 2, failures: 2, topError: 'timeout' },
+    ]);
     expect(home.today.analysis.costUsd).toBeCloseTo(0.04, 6);
     expect(home.today.analysis.totalMsP50).toBe(16000);
     expect(home.week.analysis.analyses).toBe(4);
@@ -166,6 +174,11 @@ integration('PostgreSQL descartavel: relatorios do /admin', () => {
     expect(report.byEntry.map((e) => e.entry)).toEqual(['now', 'pullback', 'wait']);
     expect(report.byClass.map((c) => c.assetClass)).toEqual(['metal', 'forex', 'crypto']);
     expect(report.agreement).toEqual([{ agreement: '3/3', count: 2 }, { agreement: '2/3', count: 1 }]);
+    expect(report.decidedBy).toEqual([{ decidedBy: 'candle_bias', count: 1 }, { decidedBy: 'majority', count: 1 }, { decidedBy: 'sem registro', count: 1 }]);
+    expect(report.withoutMajorityPct).toBeCloseTo(100 / 3, 6);
+    const failedC = report.readerFailures.find((l) => l.label === 'C')!;
+    expect(failedC).toMatchObject({ seen: 2, failures: 2, topError: 'timeout' });
+    expect(report.byRules.map((g) => [g.rules, g.stats.analyses])).toEqual([['filter-2026-11-23', 1], [null, 2]]);
     const pullback = report.byEntry.find((e) => e.entry === 'pullback')!.stats;
     expect(pullback).toMatchObject({ closedTrades: 1, win: 1, decision: 'wait' });
     expect(pullback.meanR).toBeGreaterThan(1);
