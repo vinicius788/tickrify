@@ -31,6 +31,18 @@ import {
   withProfileGates,
 } from './plan-engine';
 import type { HtfTrend } from '../../modules/ai/analysis-data-coverage';
+import {
+  type CandleBias,
+  type CandleView,
+  type CodeSummary,
+  type EntryPlan,
+  type VetoReason,
+  type WaitReason,
+  buildCodeSummary,
+  candleBias,
+  chooseEntry,
+  watchPlanOf,
+} from './entry-engine';
 
 // ============================================================================
 // VALIDADOR DE ESTADO DO v11 (02/11/2026): O CODIGO DECIDE O ESTADO
@@ -108,7 +120,11 @@ export type ValidatorReason =
   | 'no_valid_geometry'
   | 'levels_unverified'
   | 'not_at_price'
-  | 'news_event';
+  | 'news_event'
+  | 'model_veto'
+  | 'neutral_direction'
+  | 'conflicting_direction'
+  | 'no_majority';
 
 /** Uma mudanca de estado feita pelo codigo, gravada em `validatorNotes`. */
 export interface ValidatorNote {
@@ -146,6 +162,23 @@ export interface RealDataInput {
   volRegime: VolRegime | null;
   /** Posicao do preco no range visivel (0 = minima, 100 = maxima); null sem o calculo. */
   rangePosPct: number | null;
+  /** Fechamento do grafico e do 4h contra a EMA50 de cada um; extremos da janela (23/11/2026). */
+  vsEma50?: 'above' | 'below' | null;
+  htfVsEma50?: 'above' | 'below' | null;
+  windowHigh?: number | null;
+  windowLow?: number | null;
+}
+
+/** O que um leitor disse: direcao e veto com motivo nomeado. null = sem leitura (decide o vies das velas). */
+export interface ReaderRead {
+  direction: 'long' | 'short' | 'neutral';
+  veto: VetoReason | null;
+}
+
+/** Ultimo plano ainda valido do setup: a direcao so vira com a invalidacao fechada. */
+export interface PriorDirection {
+  direction: 'long' | 'short';
+  invalidation: number;
 }
 
 /** Um nivel e a distancia dele ao preco real, em ATR. */
@@ -206,6 +239,12 @@ export interface SignalDecisionInput {
   planFailures?: TradePlanRule[];
   /** true quando `correctPriceMagnitude` reescreveu os niveis. */
   priceFixed?: boolean;
+  /**
+   * Motor pelas velas (23/11/2026): com REAL DATA e esta leitura (mesmo null), a
+   * direcao vem do codigo e a IA so confirma ou veta. undefined = caminho antigo.
+   */
+  read?: ReaderRead | null;
+  prior?: PriorDirection | null;
 }
 
 export interface SignalDecisionResult {
@@ -247,6 +286,10 @@ export interface SignalDecisionResult {
   entryWarnings: number[];
   /** ENTER_NOW que so existe pelo modo permissivo (medicao). */
   permissiveEntry: boolean;
+  /** Motor pelas velas: vies, a entrada escolhida e o resumo montado pelo codigo. null no caminho antigo. */
+  candleBias?: CandleBias | null;
+  entryPlan?: EntryPlan | null;
+  codeSummary?: CodeSummary | null;
   /** WATCH com niveis validos no recuo, mostrado como entrada pendente ("BUY/SELL on pullback"). So apresentacao e medicao. */
   pendingEntry: boolean;
   /** O TP1 mostrado esta no proximo nivel: ENTER_NOW a mercado ou niveis do WATCH. */
@@ -539,7 +582,21 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
   const lateAsWarning = lateNow && (currentGates().lateAsWarning ?? true);
   let chosen: { state: SignalState; notes: ValidatorNote[]; levels: PlanLevels };
   let evaluation: PlanEvaluation | null = null;
-  if (model === 'NO_TRADE') chosen = { state: 'NO_TRADE', notes: [], levels: NULL_LEVELS };
+  const code = real && input.read !== undefined ? decideFromCandles(input, real, modelPlan) : null;
+  // Plano da IA primeiro: na direcao escolhida, com as regras do validador; sem nivel valido, as entradas do codigo.
+  const modelFirst = code && !code.waitReason && modelPlan && modelPlan.direction === code.direction
+    ? modelPlanChoice(input, real!, modelPlan, model)
+    : null;
+  if (code && modelFirst) {
+    plan = modelFirst.plan;
+    evaluation = modelFirst.evaluation;
+    chosen = modelFirst.chosen;
+    code.entry = null;
+    code.fromModel = true;
+  } else if (code) {
+    plan = code.plan;
+    chosen = { state: code.state, notes: code.waitReason ? [{ from: model, to: 'NO_TRADE', reason: reasonOfWait(code.waitReason) }] : [], levels: code.levels };
+  } else if (model === 'NO_TRADE') chosen = { state: 'NO_TRADE', notes: [], levels: NULL_LEVELS };
   else if (side && failures.includes('implausible_price')) chosen = stop('implausible_price');
   else if (!modelPlan) chosen = stop('watch_plan_invalid');
   else if (side && (modelPlan.direction === 'long') !== (side === 'BUY')) chosen = stop('state_mismatch');
@@ -581,9 +638,12 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
           (e) => e.impact === 'High' && typeof e.minutesUntil === 'number' && e.minutesUntil >= -15 && e.minutesUntil <= 45,
         );
         if (imminent) {
-          notes.push({ from: state, to: 'WATCH', reason: 'news_event' });
-          state = 'WATCH';
+          // Motor pelas velas: noticia forte na janela e aguardar, com o plano guardado no resumo.
+          const to: SignalState = code ? 'NO_TRADE' : 'WATCH';
+          notes.push({ from: state, to, reason: 'news_event' });
+          state = to;
           levels = NULL_LEVELS;
+          if (code) code.waitReason = 'news_event';
           newsEvent = `${imminent.country} ${imminent.title} (${imminent.minutesUntil}min)`;
         }
         newsGuardStatus = imminent ? (degraded ? 'degraded_event' : 'event') : (degraded ? 'degraded_no_event' : 'no_event');
@@ -594,6 +654,7 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
   }
 
   const isSignal = state === 'ENTER_NOW';
+  const entryWarnings0: number[] = [];
   let confidence = Number.isFinite(input.confidence) ? input.confidence : 0;
   let probabilities = NULL_PROBABILITIES;
   if (isSignal) {
@@ -613,8 +674,12 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
   }
 
   // Avisos do ENTER_NOW: itens obrigatorios do motor de sempre em FAIL, atrasado e, no modo permissivo, contra o 4h e forex.
-  const entryChecks = evaluation?.checks ?? (permissive() ? parsePassFailChecklist(input.structureValidation) : null);
-  const entryWarnings: number[] = [];
+  const entryChecks = code && !code.fromModel ? null : evaluation?.checks ?? (permissive() ? parsePassFailChecklist(input.structureValidation) : null);
+  if (code && isSignal) {
+    if (code.entry?.targetMoved) entryWarnings0.push(NEXT_TARGET_WARNING_ITEM);
+    if (isForexPair(input.symbol)) entryWarnings0.push(FOREX_WARNING_ITEM);
+  }
+  const entryWarnings: number[] = entryWarnings0;
   if (isSignal && entryChecks) {
     entryWarnings.push(...ENGINE_RULES.enterNowChecks.filter((n) => entryChecks.get(n) !== true));
     if (lateAsWarning) entryWarnings.push(LATE_WARNING_ITEM);
@@ -633,7 +698,9 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     ? { modelState: model, reason: noTradeNote.reason, plan: input.watchPlan }
     : null;
 
-  const watchMove = state === 'WATCH' && real && plan ? watchLevelsWithMove(plan, input.symbol, real) : { levels: null, moved: false };
+  const watchMove = code && !code.fromModel
+    ? { levels: state === 'WATCH' && code.entry ? entryLevelsOf(code.entry) : null, moved: state === 'WATCH' && !!code.entry?.targetMoved }
+    : state === 'WATCH' && real && plan ? watchLevelsWithMove(plan, input.symbol, real) : { levels: null, moved: false };
   const watchLevels = watchMove.levels;
 
   const action: ValidatorAction = rank(state) < rank(model)
@@ -658,10 +725,132 @@ export async function decideSignal(input: SignalDecisionInput): Promise<SignalDe
     location: real ? locationOf(real, state === 'NO_TRADE' ? null : plan) : null,
     watchLevels,
     pendingEntry: watchLevels !== null,
-    targetMoved: (isSignal && !!evaluation?.marketTargetMoved) || watchMove.moved,
-    rejectedPlan,
+    targetMoved: (isSignal && (code && !code.fromModel ? !!code.entry?.targetMoved : !!evaluation?.marketTargetMoved)) || watchMove.moved,
+    // Com velas, so a conta que nao fechou guarda o plano recusado (e o AI level); veto ou direcao neutra nao.
+    rejectedPlan: code && code.waitReason !== 'no_geometry' ? null : rejectedPlan,
     entryWarnings,
-    permissiveEntry,
+    permissiveEntry: code ? false : permissiveEntry,
+    ...(code
+      ? {
+          candleBias: code.bias,
+          entryPlan: code.entry,
+          codeSummary: buildCodeSummary({
+            plan: code.entry ?? planFromLevels(code.direction, state, levels, watchMove.levels, plan),
+            waitReason: state === 'NO_TRADE' ? code.waitReason ?? 'no_geometry' : code.waitReason,
+            view: code.view,
+            flippedFromPrior: code.flipped,
+          }),
+        }
+      : {}),
+  };
+}
+
+const WAIT_TO_REASON: Partial<Record<WaitReason, ValidatorReason>> = {
+  neutral_direction: 'neutral_direction',
+  conflicting_direction: 'conflicting_direction',
+  no_geometry: 'no_valid_geometry',
+  no_majority: 'no_majority',
+  news_event: 'news_event',
+};
+
+function reasonOfWait(w: WaitReason): ValidatorReason {
+  return WAIT_TO_REASON[w] ?? 'model_veto';
+}
+
+export function candleViewOf(real: RealDataInput): CandleView {
+  return {
+    price: real.price,
+    atr: real.atr as number,
+    swings: real.swings ?? [],
+    htfTrend: real.htfTrend,
+    htfVsEma50: real.htfVsEma50 ?? null,
+    vsEma50: real.vsEma50 ?? null,
+    rangePosPct: real.rangePosPct,
+    windowHigh: real.windowHigh ?? null,
+    windowLow: real.windowLow ?? null,
+    late: real.late,
+  };
+}
+
+function entryLevelsOf(e: EntryPlan): EntryLevels {
+  return {
+    entry: e.entry, stopLoss: e.stopLoss, takeProfit1: e.takeProfit1, takeProfit2: e.takeProfit2,
+    riskAtr: e.riskAtr, tp1R: e.tp1R, stopWidened: e.stopWidened,
+  };
+}
+
+/**
+ * Motor pelas velas (23/11/2026). A direcao e o vies das velas; a leitura da IA
+ * confirma (mesma direcao ou neutra) ou veta com motivo nomeado. Com plano
+ * anterior valido no setup, a direcao so vira se o ultimo FECHAMENTO passou da
+ * invalidacao dele. Os niveis saem de chooseEntry (agora, recuo ou rompimento).
+ */
+function decideFromCandles(input: SignalDecisionInput, real: RealDataInput, modelPlan: WatchPlan | null) {
+  const view = candleViewOf(real);
+  const bias = candleBias(view);
+  const read = input.read ?? null;
+  const readDir = read && read.direction !== 'neutral' ? read.direction : modelPlan?.direction ?? null;
+  // Velas decidem quando o vies e forte (estrutura e 4h juntos); fraco ou neutro, vale a leitura.
+  const strong = Math.abs(bias.score) >= BIAS_STRONG_SCORE && bias.structure === (bias.direction === 'long' ? 'up' : 'down');
+  let direction: CandleBias['direction'] = bias.direction === 'neutral' || (!strong && readDir) ? readDir ?? 'neutral' : bias.direction;
+  let flipped = false;
+  const prior = input.prior;
+  if (prior && direction !== prior.direction) {
+    const closedBeyond = prior.direction === 'long' ? real.price < prior.invalidation : real.price > prior.invalidation;
+    if (closedBeyond) flipped = direction !== 'neutral';
+    else direction = prior.direction;
+  }
+  let waitReason = null as WaitReason | null;
+  let entry: EntryPlan | null = null;
+  if (read?.veto) waitReason = `veto_${read.veto}`;
+  else if (direction === 'neutral') waitReason = 'neutral_direction';
+  else if (readDir && readDir !== direction) waitReason = 'conflicting_direction';
+  if (direction !== 'neutral') {
+    const margin = stopMarginAtr(calibrationPair(input.symbol), real.volRegime);
+    entry = chooseEntry(view, direction, bias.stretched, { marginAtr: margin, tp1MinR: currentGates().tp1MinR }).best;
+  }
+  if (direction !== 'neutral' && !entry && !waitReason) waitReason = 'no_geometry';
+  const state: SignalState = waitReason ? 'NO_TRADE' : entry!.kind === 'now' ? 'ENTER_NOW' : 'WATCH';
+  const levels: PlanLevels = state === 'ENTER_NOW' && entry
+    ? { entry: entry.entry, stopLoss: entry.stopLoss, takeProfit1: entry.takeProfit1, takeProfit2: entry.takeProfit2 }
+    : NULL_LEVELS;
+  return {
+    state, levels, waitReason, entry, bias, direction, view, flipped, fromModel: false,
+    plan: state === 'NO_TRADE' || !entry ? null : watchPlanOf(entry, view.atr),
+  };
+}
+
+/** Pontos do vies a partir dos quais as velas mandam na direcao (estrutura + 4h). */
+export const BIAS_STRONG_SCORE = 2;
+
+/** O plano da IA pelas regras do validador; so vale se der ENTER_NOW ou WATCH com niveis. */
+function modelPlanChoice(input: SignalDecisionInput, real: RealDataInput, modelPlan: WatchPlan, model: SignalState) {
+  const ev = evaluatePlan({
+    plan: modelPlan, symbol: input.symbol, structureValidation: input.structureValidation,
+    price: real.price, atr: real.atr as number, htfTrend: real.htfTrend, volRegime: real.volRegime, swings: real.swings ?? [],
+    late: false,
+  });
+  if (typeof ev === 'string') return null;
+  // A IA nao recusa mais por stop ou alvo: o plano dela entra pelo menos como WATCH.
+  const start: SignalState = model === 'ENTER_NOW' ? 'ENTER_NOW' : 'WATCH';
+  const picked = chooseState(start, ev, true);
+  if (picked.state === 'ENTER_NOW') return { plan: ev.plan, evaluation: ev, chosen: picked };
+  if (picked.state === 'WATCH' && watchLevelsWithMove(ev.plan, input.symbol, real).levels) return { plan: ev.plan, evaluation: ev, chosen: picked };
+  return null;
+}
+
+/** Resumo de um plano que veio da IA (niveis do validador) no formato da entrada do codigo. */
+function planFromLevels(
+  direction: CandleBias['direction'], state: SignalState, levels: PlanLevels, watch: EntryLevels | null, plan: WatchPlan | null,
+): EntryPlan | null {
+  if (direction === 'neutral' || !plan) return null;
+  const l = state === 'ENTER_NOW' ? levels : watch;
+  if (!l || l.entry === null || l.stopLoss === null || l.takeProfit1 === null) return null;
+  const risk = Math.abs(l.entry - l.stopLoss);
+  return {
+    kind: state === 'ENTER_NOW' ? 'now' : 'pullback', direction, entry: l.entry, stopLoss: l.stopLoss, takeProfit1: l.takeProfit1,
+    takeProfit2: l.takeProfit2, level: state === 'ENTER_NOW' ? l.entry : l.entry, invalidation: plan.invalidation,
+    riskAtr: 0, tp1R: risk ? Math.abs(l.takeProfit1 - l.entry) / risk : 0, stopWidened: false, targetMoved: false,
   };
 }
 

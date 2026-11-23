@@ -1392,6 +1392,8 @@ export class AiService implements OnModuleInit {
         signalState: aiResponse.signalState,
         dataMode: aiResponse.dataMode === 'real_data' ? 'real_data' : 'print',
         continuation: Boolean(aiResponse.continuation),
+        readers: meta?.readers,
+        vote: meta?.vote,
         contract: {
           recommendation: aiResponse.recommendation,
           confidencePct: aiResponse.confidence,

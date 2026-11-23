@@ -100,5 +100,8 @@ export interface AIAnalysisResponse {
     modelMs: number;
     parseMs: number;
     validationMs: number;
+    /** Tres leitores com voto (23/11/2026). */
+    readers?: import('../../modules/ai/engine-contract').EngineReaderRecord[];
+    vote?: import('../../modules/ai/engine-contract').EngineVoteRecord;
   };
 }

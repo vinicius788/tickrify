@@ -657,7 +657,8 @@ describe('runAlertMonitor', () => {
     const { run, fetchCrypto, calls } = monitor({ rows: [] });
     await expect(run()).resolves.toEqual({ symbols: 0, checked: 0, triggered: 0, paused: 0 });
     expect(fetchCrypto).not.toHaveBeenCalled();
-    expect(calls.filter((c) => c.kind === 'query')).toHaveLength(1);
+    // o alerta ativo e a conferencia pendente (rompimento): nada mais
+    expect(calls.filter((c) => c.kind === 'query')).toHaveLength(2);
   });
 });
 
@@ -1177,5 +1178,87 @@ describe('options: alerta automatico na tela do WATCH', () => {
     expect((await options({ ...WATCH_REAL, updatedAt: new Date() }, [], false)).autoAlertPending).toBe(true);
     expect((await options({ ...WATCH_REAL, updatedAt: new Date(Date.now() - ALERT_RULES.watchAutoPendingMs - 1000) }, [], false)).autoAlertPending).toBe(false);
     expect((await options({ ...WATCH_BTC, updatedAt: new Date() }, [], false)).autoAlertPending).toBe(false);
+  });
+});
+
+describe('Watch que arma sozinho: monitor', () => {
+  const H = 60 * 60 * 1000;
+  const A0 = T - 2 * H; // analise: 2h antes
+  const NOW2 = new Date(T + 30 * 60 * 1000);
+  const min = (i: number, o: number, h: number, l: number, c: number): Candle => [T - 2 * H + i * 60_000, o, h, l, c];
+  const levels = { entry: 100, stopLoss: 90, takeProfit1: 120, tp1R: 2 };
+  const src = (triggerType: string) => ({
+    signalState: 'WATCH',
+    watchPlan: { direction: 'long', triggerType, zoneLow: 98, zoneHigh: 100, invalidation: 95, target1: 120, target2: null, validForCandles: 12, trigger: 'x' },
+    watchLevels: levels,
+    analysis: { timeframe: '1h' },
+  });
+  const row = (triggerType = 'zone_reaction') => ({
+    id: 'alert-1', userId: 'u1', setupId: SETUP.id, priceSymbol: 'BTCUSDT', level: 100, label: 'entry', side: 'below',
+    createdAt: new Date(A0), watchFrom: new Date(A0), clerkUserId: 'clerk_1', armSource: src(triggerType), analysisAt: new Date(A0), groundingInterval: '1h',
+  });
+  // 1h inteira por hora (60 velas de 1m): fechamentos dados por hora.
+  const hours = (closes: number[]): Candle[] =>
+    closes.flatMap((close, h) => Array.from({ length: 60 }, (_, i) => [A0 + h * H + i * 60_000, close, Math.max(close, 100) + 1, Math.min(close, 100) - 1, close] as Candle));
+
+  function run(r: unknown, candles: Candle[], won = 1) {
+    const { prisma, calls } = makePrisma([
+      ['WHERE a."status" = \'active\'\n    ORDER BY', () => [r]],
+      ['INSERT INTO "tickrify"."AlertPriceCheck"', () => [{ symbol: 'BTCUSDT' }]],
+      ['SET "status" = \'triggered\'', () => won],
+    ]);
+    const fetchCrypto = jest.fn(async () => candles);
+    return runAlertMonitor({ prisma, now: () => NOW2, fetchCrypto, isPaused: async () => false, log: jest.fn() }).then(() => calls);
+  }
+  const written = (calls: Array<{ text: string; values: unknown[] }>) => {
+    const v = calls.find((c) => c.text.includes('SET "status" = \'triggered\''))!.values.find((x) => typeof x === 'string' && x.startsWith('{')) as string | undefined;
+    return v ? JSON.parse(v) : null;
+  };
+
+  it('armado: nenhuma vela fechou alem da invalidacao', async () => {
+    const check = written(await run(row(), hours([110, 105])));
+    expect(check).toMatchObject({ status: 'armed', direction: 'long', entry: 100, stop: 90, target: 120 });
+  });
+
+  it('invalidado: uma vela do tempo grafico fechou abaixo da invalidacao', async () => {
+    const check = written(await run(row(), hours([110, 94])));
+    expect(check).toMatchObject({ status: 'invalidated', entry: 100, stop: 95, target: null });
+  });
+
+  it('rompimento sem fechamento alem do nivel: fica pendente (nada e avisado)', async () => {
+    const check = written(await run(row('breakout_close'), hours([98, 99])));
+    expect(check?.status).toBe('pending');
+  });
+
+  it('rompimento que fechou alem do nivel: arma', async () => {
+    const check = written(await run(row('breakout_close'), hours([98, 103])));
+    expect(check?.status).toBe('armed');
+  });
+
+  it('alerta sem analise (My assets) ou que nao e entry: sem conferencia', async () => {
+    expect(written(await run({ ...row(), setupId: null, armSource: null, analysisAt: null, label: 'custom' }, hours([110, 105])))).toBeNull();
+    expect(written(await run({ ...row(), label: 'tp1', armSource: null }, hours([110, 105])))).toBeNull();
+  });
+
+  it('cripto: busca as velas de 1m desde a analise sem tocar no Twelve Data', async () => {
+    const { prisma } = makePrisma([
+      ['WHERE a."status" = \'active\'\n    ORDER BY', () => [row()]],
+      ['INSERT INTO "tickrify"."AlertPriceCheck"', () => [{ symbol: 'BTCUSDT' }]],
+    ]);
+    const fetchCrypto = jest.fn(async () => hours([110, 105]));
+    await runAlertMonitor({ prisma, now: () => NOW2, fetchCrypto, isPaused: async () => false, log: jest.fn() });
+    expect(fetchCrypto.mock.calls.some((c: unknown[]) => c[1] === A0)).toBe(true);
+  });
+
+  it('pendente que depois fechou alem do nivel: grava armed so se ainda pendente', async () => {
+    const pend = { ...row('breakout_close'), triggeredAt: new Date(T) };
+    const { prisma, calls } = makePrisma([
+      ['WHERE a."status" = \'active\'\n    ORDER BY', () => []],
+      [`a."armCheck"->>'status' = 'pending'`, () => [pend]],
+      ['INSERT INTO "tickrify"."AlertPriceCheck"', () => [{ symbol: 'BTCUSDT' }]],
+    ]);
+    await runAlertMonitor({ prisma, now: () => NOW2, fetchCrypto: jest.fn(async () => hours([98, 103])), isPaused: async () => false, log: jest.fn() });
+    const upd = calls.find((c) => c.kind === 'execute' && c.text.includes(`"armCheck"->>'status' = 'pending'`))!;
+    expect(JSON.parse(upd.values[0] as string).status).toBe('armed');
   });
 });

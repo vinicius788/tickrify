@@ -533,7 +533,7 @@ describe('AiService access enforcement', () => {
       expect(readback.fullResponse.analysis.reasoning).toBe(presented);
       expect(readback.fullResponse.analysis.invalidationLevel).toBe(107.72 * 0.01);
       expect(readback).toMatchObject({ recommendation: 'BUY', riskRewardTp1: 1.19, riskRewardTp2: 3.22, errorCode: null });
-      expect(create).toHaveBeenCalledTimes(1);
+      expect(create).toHaveBeenCalledTimes(2); // dois leitores do provedor ativo
     } finally {
       keys.forEach((key, i) => { if (saved[i] === undefined) delete process.env[key]; else process.env[key] = saved[i]; });
     }
@@ -590,13 +590,19 @@ describe('AiService access enforcement', () => {
       expect(real.delivered.fullResponse.levelMap).toEqual(real.completed.result.levelMap);
       const print = await run(printOnly, 'an_level_map_print');
       expect(print.completed.result).toMatchObject({ signalState: 'NO_TRADE', dataMode: 'print', levelMap: null, aiLevel: null });
-      // WATCH recusado pelo validador (perfil Conservador, que exige swing real na invalidacao): o nivel do modelo fica guardado, o estado segue NO_TRADE.
+      // Com velas reais (23/11/2026) a decisao e do codigo: o WATCH do modelo com invalidacao a 10 ATR
+      // (80) nao e recusado, e o codigo monta a propria entrada pelo fundo real (97) e grava o plano dele.
+      // Sem recusa do validador nao ha nivel da IA nem plano rejeitado guardado.
       const watchPlan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 98, zoneHigh: 99, invalidation: 80, target1: 110, target2: null, validForCandles: 12, trigger: 'Reaction at 98.' };
-      jest.spyOn(service as any, 'getRiskProfile').mockResolvedValueOnce('conservative');
-      const rejected = await run(injected, 'an_ai_level', { ...raw, signalState: 'WATCH', watchPlan, analysis: { ...raw.analysis, symbol: 'ABCUSDT' } });
-      expect(rejected.completed.result).toMatchObject({ signalState: 'NO_TRADE', watchPlan: null, aiLevel: { price: 99 } });
-      expect(rejected.delivered.fullResponse.aiLevel).toEqual(rejected.completed.result.aiLevel);
-      expect(rejected.completed.result.rejectedPlan).toMatchObject({ reason: expect.any(String), plan: { direction: expect.any(String) } });
+      const coded = await run(injected, 'an_ai_level', { ...raw, signalState: 'WATCH', watchPlan, analysis: { ...raw.analysis, symbol: 'ABCUSDT' } });
+      expect(coded.completed.result).toMatchObject({ signalState: 'ENTER_NOW', dataMode: 'real_data', aiLevel: null });
+      expect(coded.completed.result).not.toHaveProperty('rejectedPlan');
+      expect(coded.completed.result.watchPlan).toMatchObject({ direction: 'long', invalidation: 96.5 });
+      expect(coded.delivered.fullResponse.aiLevel).toBeNull();
+      // Veto da leitura da IA: o codigo aguarda (NO_TRADE) e, com velas reais, mantem o mapa de niveis.
+      const vetoed = await run(injected, 'an_veto', { ...raw, read: { direction: 'long', veto: 'conflicting_signals' } });
+      expect(vetoed.completed.result).toMatchObject({ signalState: 'NO_TRADE', dataMode: 'real_data', watchPlan: null });
+      expect(vetoed.completed.result.levelMap).toMatchObject({ price: 100, atr: 2 });
       // ENTER_NOW sem segundo alvo (target2 null): grava como concluida, sem TP2.
       const enterPlan = { ...watchPlan, zoneLow: 98, zoneHigh: 99, invalidation: 97, target1: 104, target2: null };
       const passes = [1, 2, 3, 4, 5, 6, 7].map((n) => `C${n} PASS: 100`).join('; ');

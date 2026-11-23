@@ -93,8 +93,8 @@ describe('prompt unico (as mudancas da variante D incorporadas em 23/11/2026)', 
   });
 
   it('ENTER_NOW com direcao clara, C3 e C6 e 4 PASS; C2, C7 e atraso sao risco escrito', () => {
-    expect(TRADING_SYSTEM_PROMPT).toContain('Use when: the direction is clear, C3 and C6 PASS, the market entry is valid and at least 4 PASS.');
-    expect(TRADING_SYSTEM_PROMPT).toContain('A late move in the trend direction is a risk to write, not a reason to wait');
+    expect(TRADING_SYSTEM_PROMPT).toContain('Use when the direction is clear, C3 and C6 PASS, the market entry is valid and at least 4 PASS.');
+    expect(TRADING_SYSTEM_PROMPT).toContain('A FAIL on C2 or C7, or a late move, is a risk to write in riskFactors, not a reason to wait.');
   });
 
   it('C3 e C6 seguem no texto', () => {

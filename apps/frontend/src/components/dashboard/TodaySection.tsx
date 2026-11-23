@@ -18,6 +18,7 @@ import {
   type AlertLabel,
   type SetupAlert,
   type SetupAlertList,
+  armCheckLabel,
 } from '@/lib/setups';
 
 const DATE_LOCALES: Record<string, string> = {
@@ -121,6 +122,7 @@ const TodaySection = ({
                       ? a.reachedAt.replace('{level}', formatAlertLevel(alert.level, locale)).replace('{time}', formatUtcTime(alert.triggeredAt))
                       : formatAlertLevel(alert.level, locale)}
                   </p>
+                  {alert.armCheck ? <p key="arm" data-testid="alert-arm" className="mt-0.5 text-[11px] font-medium text-[var(--text-primary)]">{armCheckLabel(a, alert.armCheck, locale)}</p> : null}
                   <p className="mt-0.5 text-[11px] text-[var(--text-tertiary)]">{a.notSignal}</p>
                 </div>
                 <button

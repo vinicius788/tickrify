@@ -245,7 +245,18 @@ export interface AIAnalysisResponse {
     /** Mudancas de estado escritas pelo codigo; analises muito antigas guardam so o texto. */
     validatorNotes?: Array<string | { from?: string; to?: string; reason: string }>;
     /** Contrato do motor; `no_trade_reason` e o motivo em uma linha do NO_TRADE. */
-    engine?: { contract?: { no_trade_reason?: string | null; no_trade_reason_code?: string | null; no_trade_reason_params?: Record<string, string | number> } | null } | null;
+    engine?: {
+      contract?: { no_trade_reason?: string | null; no_trade_reason_code?: string | null; no_trade_reason_params?: Record<string, string | number> } | null;
+      /** Os leitores concordaram? `strongRead` = os 3 de acordo. */
+      vote?: { agreement?: string; strongRead?: boolean; earlyMajority?: boolean; decidedBy?: string } | null;
+    } | null;
+    /** Resumo montado pelo codigo (motor novo, so analise nova com velas reais); a tela escreve a frase a partir dele. */
+    codeSummary?: CodeSummary | null;
+    /** O que as velas dizem sobre a direcao (motor novo). */
+    candleBias?: CandleBias | null;
+    /** Entrada escolhida pelo codigo: agora, no recuo ou no rompimento; null sem plano. */
+    entryPlan?: { kind: 'now' | 'pullback' | 'breakout'; direction: 'long' | 'short'; entry: number; stopLoss: number; takeProfit1: number; takeProfit2: number | null; level: number; invalidation: number; tp1R: number } | null;
+    /** Numeros do REAL DATA (RSI, volume); so aparece se o servidor os mandar. */
     bias: Bias;
     confidence: number;
     reasoning: string;
@@ -301,6 +312,34 @@ export interface AIAnalysisResponse {
   isDemo?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export type CodeSummaryAction = 'buy_now' | 'sell_now' | 'buy_pullback' | 'sell_pullback' | 'buy_breakout' | 'sell_breakout' | 'wait';
+
+export interface CodeSummary {
+  action: CodeSummaryAction;
+  waitReason: string | null;
+  entry: number | null;
+  stopLoss: number | null;
+  takeProfit1: number | null;
+  takeProfit2: number | null;
+  level: number | null;
+  turnsBuyAbove: number | null;
+  turnsSellBelow: number | null;
+  flippedFromPrior: boolean;
+}
+
+export interface CandleBias {
+  direction: 'long' | 'short' | 'neutral';
+  score: number;
+  structure: 'up' | 'down' | 'mixed' | null;
+  htfTrend: 'uptrend' | 'downtrend' | 'range' | null;
+  vsEma50: 'above' | 'below' | null;
+  htfVsEma50: 'above' | 'below' | null;
+  stretched: boolean;
+  /** RSI(14) e volume relativo da ultima vela (volume so em cripto). */
+  rsi14?: number | null;
+  relVolumeLast?: number | null;
 }
 
 export type SignalState = 'NO_TRADE' | 'WATCH' | 'ARMED' | 'ENTER_NOW';

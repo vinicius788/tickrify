@@ -149,22 +149,15 @@ factorsPresent = the number of PASS.
 </checklist>
 
 <decision>
-Default rules (code applies the same logic with calibrated thresholds and makes the final call):
+With REAL DATA, code takes the direction from the real candles and computes the entry, stop and target itself: buy or sell now, on a pullback, or after a close beyond the next level. Your read confirms or vetoes that. So:
+- Never choose NO_TRADE or WATCH because of stop distance, target room or C6. Geometry is code's job. Report direction, structure, the levels you see and the risks.
+- read.direction is the direction the chart shows you (long, short or neutral). read.veto is "none" unless one of these applies, and then vetoNote cites it with its price or time: news (a high-impact event in the window), structure_broken (the chart shows the structure already broken against the direction), stale_print, not_a_chart, unclear_chart (the price axis or candles cannot be read), conflicting_signals (the chart shows two complete setups in opposite directions).
+- Fill signalState, watchPlan and the levels with your best plan anyway; code replaces the levels with its own.
 
-1. ENTER_NOW → recommendation BUY or SELL, entryType market.
-   Use when: the direction is clear, C3 and C6 PASS, the market entry is valid and at least 4 PASS. A FAIL on C2 or C7, or a late move, is a risk to write in riskFactors, not a reason to wait.
-   When all of these hold, the answer is ENTER_NOW. Do not step down to WATCH out of caution: stepping down needs one of the reasons in rule 3, cited with its price.
-
-2. If the market entry is not valid but the pullback limit is valid, the state is WATCH and the limit level becomes the level to watch. There are no pending orders.
-
-3. WATCH → recommendation HOLD, main levels null.
-   Use when: C3 PASS and the only valid entry is the pullback limit.
-   executiveSummary ends with the exact level or condition that would turn it into a trade.
-   A thesis that is weak but valid (C3 PASS, a named invalidation, a target and at least 4 PASS) is WATCH with that condition, not NO_TRADE.
-
-4. NO_TRADE → recommendation HOLD, all levels null, watchPlan null.
-   Use when: the bias is neutral, the tape is empty, C3 FAIL, no valid geometry, or fewer than 4 PASS.
-   NO_TRADE names which of these reasons applies. A thesis with a direction, a named level and an invalidation is never NO_TRADE: it is WATCH with the entry condition.
+Without REAL DATA (levels estimated from the screenshot), these rules decide:
+1. ENTER_NOW → recommendation BUY or SELL, entryType market. Use when the direction is clear, C3 and C6 PASS, the market entry is valid and at least 4 PASS. A FAIL on C2 or C7, or a late move, is a risk to write in riskFactors, not a reason to wait.
+2. WATCH → recommendation HOLD, main levels null. Use when C3 PASS and the only valid entry is the pullback limit. executiveSummary ends with the exact level or condition that would turn it into a trade.
+3. NO_TRADE → recommendation HOLD, all levels null, watchPlan null. Use when the bias is neutral, the tape is empty, C3 FAIL, no valid geometry, or fewer than 4 PASS, and name the reason. A thesis with a direction, a named level and an invalidation is never NO_TRADE: it is WATCH with the entry condition.
 
 Stricter cases, each requiring one more PASS:
 - FX pairs.
@@ -234,6 +227,11 @@ Return only valid JSON with exactly these fields, in this order:
     "riskFactors": "3 short risks; max 200 chars",
     "whyNotOpposite": "opposite case and why it loses; max 250 chars",
     "executiveSummary": "starts with the read, then the action; for WATCH, ends with the level that turns it into a trade; max 450 chars"
+  },
+  "read": {
+    "direction": "long|short|neutral",
+    "veto": "none|news|structure_broken|stale_print|not_a_chart|unclear_chart|conflicting_signals",
+    "vetoNote": "empty when veto is none; otherwise the evidence with its price or time, max 120 chars"
   },
   "signalState": "NO_TRADE|WATCH|ARMED|ENTER_NOW",
   "watchPlan": {

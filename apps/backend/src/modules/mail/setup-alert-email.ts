@@ -21,7 +21,7 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import { captureServer } from '../../common/analytics/posthog';
 import { candleSourceFor } from '../market/candles';
 import { readPlan } from '../ai/setups.service';
-import { conditionalPlanOf, storedAiLevel, storedWatchPlan, type ConditionalPlan } from '../ai/watch-pending';
+import { armCheckText, armCheckView, conditionalPlanOf, storedAiLevel, storedWatchPlan, type ArmCheckView, type ConditionalPlan } from '../ai/watch-pending';
 import { UNSUBSCRIBE_AUDIT_ACTION, escapeHtml, letter, unsubscribeUrl } from './lifecycle-email';
 
 export const SETUP_ALERT_EMAIL_FLAG = 'EMAIL_SETUP_ALERTS';
@@ -74,6 +74,8 @@ export type SetupAlertEmailItem = {
   /** BTCUSDT, XAUUSD: decide o tamanho da vela citado no rodape. */
   priceSymbol: string;
   plan: AlertPlan;
+  /** Watch que arma sozinho: o que o codigo conferiu no disparo; null = como antes. */
+  armCheck?: ArmCheckView | null;
 };
 
 /** O plano da analise do alerta, como foi gravado. Campo ausente some do e-mail. */
@@ -139,12 +141,17 @@ export function renderSetupAlertEmail(params: {
     item.plan.target !== null ? `<b>Target:</b> ${escapeHtml(formatLevel(item.plan.target))}` : null,
     `<b>Reached:</b> ${escapeHtml(time)}`,
   ];
-  const c = item.plan.conditional;
+  const arm = item.armCheck ?? null;
+  const c = arm ? null : item.plan.conditional;
   const conditional = c && side
     ? `<b>Plan if price reaches ${escapeHtml(formatLevel(c.entry))}:</b> ${side.toLowerCase()} at ${escapeHtml(formatLevel(c.entry))}, stop ${escapeHtml(formatLevel(c.stopLoss))}, target ${escapeHtml(formatLevel(c.takeProfit1))} (${c.tp1R.toFixed(1)}R).`
     : null;
   const asset = `${item.symbol}${item.timeframe ? ` ${item.timeframe}` : ''}`;
-  const subject = fromAssets ? `${item.symbol} reached ${level}` : `Your ${item.symbol} setup reached ${level}`;
+  const subject = arm
+    ? arm.status === 'armed'
+      ? `Setup armed: ${item.symbol} ${arm.direction === 'long' ? 'buy' : 'sell'} at ${formatLevel(arm.entry)}`
+      : `Setup invalidated: ${item.symbol}`
+    : fromAssets ? `${item.symbol} reached ${level}` : `Your ${item.symbol} setup reached ${level}`;
   const html = letter({
     preview: `${item.symbol} touched ${level} (${label}) at ${time}.`,
     firstName: params.firstName,
@@ -153,10 +160,13 @@ export function renderSetupAlertEmail(params: {
         ? `Price reached a level you are watching on <b>${escapeHtml(asset)}</b> in My assets.`
         : `Price reached a level from your <b>${escapeHtml(asset)}</b> analysis.`,
       rows.filter(Boolean).join('<br>'),
+      ...(arm ? [`<b>${escapeHtml(armCheckText(arm))}</b>`] : []),
       ...(conditional ? [conditional] : []),
       fromAssets
         ? 'Send the chart to see what the AI reads there. This is not a signal to enter.'
-        : 'Update the chart to review it. This is not a signal to enter.',
+        : arm
+          ? 'Update the chart to review it. This is not a signal to enter. Your call.'
+          : 'Update the chart to review it. This is not a signal to enter.',
     ],
     cta: { label: fromAssets ? ASSET_ALERT_CTA : 'Update chart', url: setupAlertLink(params.appUrl, item) },
     afterCta: [
@@ -175,6 +185,7 @@ type PendingRow = Omit<SetupAlertEmailItem, 'plan'> & {
   clerkUserId: string | null;
   analysisResult: unknown;
   analysisRecommendation: string | null;
+  armCheck?: unknown;
 };
 
 export type SetupAlertEmailDeps = {
@@ -200,7 +211,7 @@ export async function runSetupAlertEmailSweep(deps: SetupAlertEmailDeps): Promis
     : Prisma.sql`a."updatedAt" > ${new Date(now.getTime() - SETUP_ALERT_EMAIL_RULES.dryRunRecentMs)}`;
   const rows = await deps.prisma.$queryRaw<PendingRow[]>`
     SELECT a."id" AS "alertId", a."setupId", a."userId", a."symbol", a."priceSymbol", s."timeframe", a."level", a."label", a."triggeredAt",
-      u."email", u."name", u."clerkUserId", an."result" AS "analysisResult", an."recommendation" AS "analysisRecommendation"
+      u."email", u."name", u."clerkUserId", an."result" AS "analysisResult", an."recommendation" AS "analysisRecommendation", a."armCheck"
     FROM "tickrify"."SetupAlert" a
     LEFT JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
     JOIN "tickrify"."User" u ON u."id" = a."userId"
@@ -208,6 +219,7 @@ export async function runSetupAlertEmailSweep(deps: SetupAlertEmailDeps): Promis
     WHERE a."status" = 'triggered' AND a."emailedAt" IS NULL AND a."seenAt" IS NULL AND ${recent}
       AND (a."setupId" IS NULL OR s."id" IS NOT NULL)
       AND (a."expiresAt" IS NULL OR a."expiresAt" > ${now})
+      AND COALESCE(a."armCheck"->>'status', '') <> 'pending'
       AND u."email" IS NOT NULL
     ORDER BY a."triggeredAt" ASC, a."id" ASC
     LIMIT 200
@@ -263,7 +275,7 @@ export async function runSetupAlertEmailSweep(deps: SetupAlertEmailDeps): Promis
       const rendered = renderSetupAlertEmail({
         appUrl: deps.appUrl,
         firstName: row.name ? row.name.trim().split(/\s+/)[0] : null,
-        item: { ...row, level: Number(row.level), plan: alertPlanOf(row.analysisResult, row.analysisRecommendation) },
+        item: { ...row, level: Number(row.level), plan: alertPlanOf(row.analysisResult, row.analysisRecommendation), armCheck: armCheckView(row.armCheck) },
         unsubscribeUrl: url,
       });
       const ok = await deps.mail.sendLifecycle(row.email, rendered);

@@ -338,7 +338,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
       }));
       if (isChart) await pending;
       else await expect(pending).rejects.toThrow('financial chart');
-      expect(create).toHaveBeenCalledTimes(1);
+      expect(create).toHaveBeenCalledTimes(2); // dois leitores do provedor ativo
       expect(adapter.buildMarketEnrichment).toHaveBeenCalledTimes(1);
       const stored = prismaClient.analysis.update.mock.calls.find(([args]: any[]) => args.data.status === (isChart ? 'completed' : 'failed'))[0].data;
       // Use the real API serializer on the worker-produced record, with only I/O mocked.
@@ -377,10 +377,11 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
     const { OpenAiVisionModel } = jest.requireActual('../modules/ai/vision-model');
     const { AiService } = jest.requireActual('../modules/ai/ai.service');
     const adapter = new RealAdapter();
-    // O modelo pede WATCH e a invalidacao fica longe de qualquer swing: o validador (perfil Conservador) recusa.
+    // Com velas reais (23/11/2026) a decisao e do codigo. O modelo pede WATCH, mas a leitura dele veta
+    // (conflicting_signals): o codigo aguarda (NO_TRADE) e entrega o mapa de niveis pelas swings reais.
     const watchPlan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 98, zoneHigh: 99, invalidation: 80, target1: 110, target2: null, validForCandles: 12, trigger: 'Reaction at 98.' };
     // Ativo sem faixa de preco conhecida: o preco 100 nao passa pela correcao de ordem de grandeza.
-    const raw = { is_financial_chart: true, signalState: 'WATCH', watchPlan, recommendation: 'HOLD', confidence: 40, analysis: {
+    const raw = { is_financial_chart: true, signalState: 'WATCH', watchPlan, read: { direction: 'long', veto: 'conflicting_signals' }, recommendation: 'HOLD', confidence: 40, analysis: {
       symbol: 'ABCUSDT', timeframe: '1h', currentPrice: 100, entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null,
       factorsPresent: 2, trendStrength: 'weak', marketStructure: { bias: 'neutral' },
     } };
@@ -394,8 +395,7 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
         late: { long: false, short: false },
       } },
     });
-    // So o perfil Conservador devolve No trade quando a invalidacao nao esta numa swing real.
-    analyzeImageMock.mockImplementationOnce((...args: any[]) => { args[5] = { ...args[5], riskProfile: 'conservative' }; return adapter.analyzeImage(...args); });
+    analyzeImageMock.mockImplementationOnce(adapter.analyzeImage.bind(adapter));
     const oldEnrichment = process.env.ENABLE_MARKET_ENRICHMENT;
     process.env.ENABLE_MARKET_ENRICHMENT = 'true';
     try {
@@ -418,9 +418,11 @@ describe('worker/ai.worker.ts — propagacao de strategyProfile pela fila', () =
         id: 'analysis-level-map', ...JSON.parse(JSON.stringify(stored)), createdAt: new Date(), updatedAt: new Date(),
       });
       expect(delivered.fullResponse.levelMap).toEqual(stored.result.levelMap);
-      expect(stored.result.aiLevel).toMatchObject({ price: 99 });
-      expect(delivered.fullResponse.aiLevel).toEqual(stored.result.aiLevel);
-      expect(stored.result.rejectedPlan).toMatchObject({ modelState: 'WATCH', reason: 'invalidation_unsnapped', plan: { zoneLow: 98, invalidation: 80 } });
+      // Veto do codigo, nao recusa do validador: sem nivel da IA nem plano rejeitado guardado.
+      expect(stored.result.aiLevel).toBeNull();
+      expect(delivered.fullResponse.aiLevel).toBeNull();
+      expect(stored.result.watchPlan).toBeNull();
+      expect(stored.result.engine.readers.map((r: any) => [r.status, r.veto])).toEqual([['used', 'conflicting_signals'], ['used', 'conflicting_signals']]);
     } finally {
       if (oldEnrichment === undefined) delete process.env.ENABLE_MARKET_ENRICHMENT;
       else process.env.ENABLE_MARKET_ENRICHMENT = oldEnrichment;

@@ -8,7 +8,7 @@
  * (setups.service) montam o mesmo resumo.
  */
 import { Prisma, type PrismaClient } from '@prisma/client';
-import { clampValidity, isValidWatchPlan, nearEdge, type WatchPlan } from '../../common/utils/plan-engine';
+import { clampValidity, closesBeyondInvalidation, isValidWatchPlan, nearEdge, type WatchPlan } from '../../common/utils/plan-engine';
 import { storedSignalState } from '../../common/utils/signal-decision';
 import type { AiLevel } from '../../common/utils/level-map';
 import { TIMEFRAME_MS, analysisInterval } from '../market/candle-store';
@@ -272,4 +272,89 @@ export async function loadWatchOrigins(db: Pick<PrismaClient, '$queryRaw'>, user
     // Sem a origem a linha do My Trades fica igual a antes.
   }
   return out;
+}
+
+/**
+ * Watch que arma sozinho (23/11/2026): quando o alerta do nivel de um WATCH
+ * dispara, o codigo confere o plano nas velas que o monitor ja tem, sem IA e
+ * sem cota extra. `armed` = nenhuma vela do tempo grafico fechou alem da
+ * invalidacao desde a analise; `invalidated` = alguma fechou; `pending` =
+ * rompimento (breakout_close) que ainda nao fechou alem do nivel (so interno:
+ * nada sai para pessoa nenhuma enquanto pendente).
+ */
+export interface ArmCheck {
+  status: 'armed' | 'invalidated' | 'pending';
+  direction: 'long' | 'short';
+  entry: number;
+  stop: number;
+  target: number | null;
+  checkedAt: string;
+}
+
+/** O que a tela, o e-mail e o Telegram recebem: so armed e invalidated. */
+export type ArmCheckView = Omit<ArmCheck, 'status'> & { status: 'armed' | 'invalidated' };
+
+export function armCheckView(raw: unknown): ArmCheckView | null {
+  const r = record(raw);
+  const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+  if ((r.status !== 'armed' && r.status !== 'invalidated') || (r.direction !== 'long' && r.direction !== 'short')) return null;
+  if (!num(r.entry) || !num(r.stop) || typeof r.checkedAt !== 'string') return null;
+  return { status: r.status, direction: r.direction, entry: r.entry, stop: r.stop, target: num(r.target) ? (r.target as number) : null, checkedAt: r.checkedAt };
+}
+
+const fmtLevel = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: n >= 1000 ? 2 : n >= 1 ? 5 : 8 });
+
+/** Mesmo texto no e-mail e no Telegram (ingles, copiloto: nunca ordem). */
+export function armCheckText(check: ArmCheckView): string {
+  const long = check.direction === 'long';
+  if (check.status === 'invalidated') {
+    return `Setup invalidated: a candle closed ${long ? 'below' : 'above'} ${fmtLevel(check.stop)} before price reached ${fmtLevel(check.entry)}.`;
+  }
+  return `Setup armed: ${long ? 'buy' : 'sell'} at ${fmtLevel(check.entry)}, stop ${fmtLevel(check.stop)}${check.target !== null ? `, target ${fmtLevel(check.target)}` : ''}.`;
+}
+
+type FineBar = readonly [number, number, number, number, number];
+
+/** Velas finas -> velas do tempo grafico, so as FECHADAS e inteiras (cobertura completa do balde). */
+export function closedTimeframeBars(fine: readonly FineBar[], fineStepMs: number, tfStepMs: number, fromMs: number, nowMs: number): FineBar[] {
+  if (tfStepMs <= fineStepMs) return fine.filter((c) => c[0] + fineStepMs > fromMs && c[0] + fineStepMs <= nowMs);
+  const buckets = new Map<number, FineBar[]>();
+  for (const c of fine) {
+    const start = Math.floor(c[0] / tfStepMs) * tfStepMs;
+    if (start + tfStepMs <= fromMs || start + tfStepMs > nowMs) continue;
+    buckets.set(start, [...(buckets.get(start) ?? []), c]);
+  }
+  const out: FineBar[] = [];
+  for (const [start, cs] of [...buckets.entries()].sort((a, b) => a[0] - b[0])) {
+    const sorted = [...cs].sort((a, b) => a[0] - b[0]);
+    // Balde incompleto (a fonte nao cobre o comeco ou o fim dele): nao se afirma nada.
+    if (sorted[0][0] - start >= fineStepMs || start + tfStepMs - sorted[sorted.length - 1][0] > fineStepMs) continue;
+    out.push([start, sorted[0][1], Math.max(...sorted.map((c) => c[2])), Math.min(...sorted.map((c) => c[3])), sorted[sorted.length - 1][4]]);
+  }
+  return out;
+}
+
+/**
+ * A conferencia. `bars` = velas do tempo grafico fechadas desde a analise.
+ * null = nao da para afirmar nada (sem plano; armado sem os niveis do plano):
+ * o alerta segue como era, so "chegou no nivel".
+ */
+export function armCheckOf(input: {
+  plan: WatchPlan | null;
+  levels: ConditionalPlan | null;
+  alertLevel: number;
+  bars: readonly FineBar[];
+  nowMs: number;
+}): ArmCheck | null {
+  const { plan, levels, alertLevel, bars, nowMs } = input;
+  if (!plan) return null;
+  const base = { direction: plan.direction, checkedAt: new Date(nowMs).toISOString() };
+  const dead = bars.findIndex((b) => closesBeyondInvalidation(plan, b));
+  if (dead >= 0) return { ...base, status: 'invalidated', entry: levels?.entry ?? alertLevel, stop: plan.invalidation, target: null };
+  if (!levels) return null;
+  if (plan.triggerType === 'breakout_close') {
+    const closed = bars.some((b) => (plan.direction === 'long' ? b[4] > alertLevel : b[4] < alertLevel));
+    if (!closed) return { ...base, status: 'pending', entry: levels.entry, stop: levels.stopLoss, target: levels.takeProfit1 };
+  }
+  return { ...base, status: 'armed', entry: levels.entry, stop: levels.stopLoss, target: levels.takeProfit1 };
 }

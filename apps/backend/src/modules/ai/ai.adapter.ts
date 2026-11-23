@@ -1,3 +1,6 @@
+import { collectReaders, majorityOf, sameOutcome, VETO_REASONS, type VetoReason } from '../../common/utils/entry-engine';
+import type { EngineReaderRecord, EngineVoteRecord } from './engine-contract';
+import type { ReaderRead } from '../../common/utils/signal-decision';
 import { logObservation, rawObservation, safeObserve } from '../../common/utils/analysis-observation';
 import { presentAnalysis } from '../../common/utils/analysis-presentation';
 import { flagBool } from '../../common/flags/feature-flags';
@@ -48,6 +51,7 @@ import { computeCost, formatCostLog } from './model-cost';
 import {
   compareProvidersEnabled,
   createVisionModels,
+  type FallbackVisionModel,
   withTimeout,
   type ProviderComparison,
   type ProviderRunSummary,
@@ -191,6 +195,8 @@ interface TradingAnalysisDetails {
 
 interface TradingAnalysisSchemaResult {
   is_financial_chart?: boolean;
+  /** Direcao lida e veto com motivo nomeado (23/11/2026); null em resposta sem o campo. */
+  read: ReaderRead | null;
   /** Estado que o modelo escolheu; null quando faltou ou veio fora do enum. */
   signalState: SignalState | null;
   /** Plano do modelo (zona, gatilho, invalidacao, alvos), com a ordem de grandeza corrigida. */
@@ -888,8 +894,6 @@ const ANALYZE_TIMEOUT_MS = (() => {
   return Number.isFinite(raw) && raw >= 20_000 && raw <= 180_000 ? raw : 55_000;
 })();
 
-/** Nova tentativa so se sobrar ao menos isto do orcamento da analise. */
-const MIN_RETRY_BUDGET_MS = 20_000;
 
 /** Resumo de uma resposta para o modo comparacao (vision-model.ts). */
 function summarizeProviderRun(result: VisionModelResult | null, error: string | null): ProviderRunSummary {
@@ -1028,6 +1032,24 @@ function parseWatchPlan(value: unknown, symbol: string, currentPrice: number): W
   };
 }
 
+function parseRead(value: unknown): ReaderRead | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as Record<string, unknown>;
+  const dir = String(v.direction ?? '').toLowerCase();
+  const veto = String(v.veto ?? '').toLowerCase();
+  return {
+    direction: dir === 'long' || dir === 'short' ? dir : 'neutral',
+    veto: (VETO_REASONS as readonly string[]).includes(veto) ? (veto as VetoReason) : null,
+  };
+}
+
+/** Direcao da decisao final: plano, senao a recomendacao; neutra sem plano. */
+function decisionDirection(d: { watchPlan: WatchPlan | null; recommendation: string; state: string }): 'long' | 'short' | 'neutral' {
+  if (d.state === 'NO_TRADE') return 'neutral';
+  if (d.watchPlan) return d.watchPlan.direction;
+  return d.recommendation === 'BUY' ? 'long' : d.recommendation === 'SELL' ? 'short' : 'neutral';
+}
+
 function parseSchemaResult(
   content: string,
   onPriceIssue?: (issue: RawCurrentPriceIssue) => void,
@@ -1105,6 +1127,7 @@ function parseSchemaResult(
     ...(typeof parsed.is_financial_chart === 'boolean'
       ? { is_financial_chart: parsed.is_financial_chart }
       : {}),
+    read: parseRead(parsed.read),
     signalState: parseSignalState(parsed.signalState),
     watchPlan: parseWatchPlan(parsed.watchPlan, rawSymbol, ensureNumber(parsedAnalysis.currentPrice, 0)),
     recommendation: normalizeSchemaRecommendation(parsed.recommendation),
@@ -1852,6 +1875,8 @@ export class AIAdapter {
               const atr = numbers.atr14;
               numbers.late = atr ? { long: moveIsLate(bars, atr, 'long'), short: moveIsLate(bars, atr, 'short') } : null;
               numbers.volRegime = volatilityRegime(bars);
+              const e50 = ema(bars.map((b) => b[4]), 50);
+              numbers.vsEma50 = e50 === null || !bars.length ? null : bars[bars.length - 1][4] > e50 ? 'above' : 'below';
             }
             candleBlock = real ? [real.block, compact?.block].filter(Boolean).join('\n\n') : null;
             candleCoverage = candleBlock ? 'injected' : 'block_unavailable';
@@ -2160,6 +2185,16 @@ export class AIAdapter {
               required: Object.keys(ANALYSIS_SCHEMA_PROPERTIES),
               additionalProperties: false,
             },
+            read: {
+              type: 'object',
+              properties: {
+                direction: { type: 'string', enum: ['long', 'short', 'neutral'] },
+                veto: { type: 'string', enum: ['none', ...VETO_REASONS] },
+                vetoNote: { type: 'string' },
+              },
+              required: ['direction', 'veto', 'vetoNote'],
+              additionalProperties: false,
+            },
             signalState: { type: 'string', enum: ['NO_TRADE', 'WATCH', 'ARMED', 'ENTER_NOW'] },
             watchPlan: {
               anyOf: [
@@ -2190,7 +2225,7 @@ export class AIAdapter {
             ...strategyFitProps,
           },
           required: [
-            'is_financial_chart', 'analysis', 'signalState', 'watchPlan', 'recommendation', 'confidence',
+            'is_financial_chart', 'analysis', 'read', 'signalState', 'watchPlan', 'recommendation', 'confidence',
             ...strategyFitRequired,
           ],
           additionalProperties: false,
@@ -2201,18 +2236,8 @@ export class AIAdapter {
         timeoutMs: ANALYZE_TIMEOUT_MS,
       };
 
-      // Modo comparacao (desligado por padrao; vision-model.ts): o outro
-      // provedor roda em paralelo e ninguem espera por ele.
-      const secondaryRun =
-        options.compareProviders && this.secondaryModel && compareProvidersEnabled()
-          ? this.secondaryModel.complete(request).then(
-              (result) => ({ result, error: null as string | null }),
-              (err: unknown) => ({ result: null, error: err instanceof Error ? err.message : 'error' }),
-            )
-          : null;
-
-      const runOnce = async (timeoutMs: number) => {
-        const modelResult = await this.visionModel.complete({ ...request, timeoutMs });
+      const runOnce = async (timeoutMs: number, reader: VisionModel) => {
+        const modelResult = await reader.complete({ ...request, timeoutMs });
 
         const { content, finishReason, refusal, usage } = modelResult;
 
@@ -2336,62 +2361,156 @@ export class AIAdapter {
           invalidationLevel: parsed.analysis?.invalidationLevel,
           currentPrice: parsed.analysis?.currentPrice,
         });
-        return { modelResult, content, parsed, parseMs, tValidation, rawRecommendation, planFailures, rawDiagnostic };
+        // A linha do status do plano anterior sai do texto antes de qualquer decisao ou exibicao.
+        let continuation: SetupContinuation | null = null;
+        if (priorPlan) {
+          const status = readContinuationStatus(parsed.analysis?.executiveSummary);
+          if (parsed.analysis && typeof status.text === 'string') parsed.analysis.executiveSummary = status.text;
+          continuation = continuationOf(priorPlan, status.status, status.reason);
+        }
+        return { modelResult, content, parsed, parseMs, tValidation, rawRecommendation, planFailures, rawDiagnostic, continuation };
       };
 
-      // CHECAGEM POR CODIGO + UMA NOVA TENTATIVA (13/10/2026). JSON que nao
-      // abre, ou BUY/SELL com stop/alvo do lado errado ou nivel faltando ->
-      // repete a chamada UMA vez, dentro do MESMO orcamento de tempo (o
-      // frontend desiste depois dele; CLAUDE.md 3.2, timeouts acoplados).
-      // Falhou de novo -> erro claro e o tick volta. Nunca corrigir a direcao
-      // por conta propria: viraria uma operacao que ninguem avaliou.
-      const deadline = Date.now() + ANALYZE_TIMEOUT_MS;
+      // TRES LEITORES COM VOTO (23/11/2026): a mesma pergunta vai em paralelo
+      // a 2 leituras do provedor ativo e 1 do outro (vision-model.ts). O
+      // validador roda sobre cada leitura; vencem o estado e a direcao da
+      // maioria; os niveis sao do codigo. Os 2 primeiros que concordarem
+      // decidem na hora; discordando, o terceiro tem TIE_WAIT_MS. Leitor que
+      // falha nao derruba: com 1 so, decide o vies das velas. Tudo dentro do
+      // ANALYZE_TIMEOUT_MS (timeouts acoplados, CLAUDE.md 3.2).
+      type Run = Awaited<ReturnType<typeof runOnce>>;
       const broken = (failures: TradePlanRule[]) => failures.filter((r) => BROKEN_PLAN_RULES.includes(r));
-      let retried = false;
-      let modelMsTotal = 0;
-      const retryOnce = async (reason: string) => {
-        retried = true;
-        this.logger.warn(`[AIAdapter] ${reason}: repetindo a chamada uma vez`);
-        const next = await runOnce(deadline - Date.now());
-        modelMsTotal += next.modelResult.modelMs;
-        return next;
+      const numbers = groundingStats?.coverage === 'injected' ? groundingStats.numbers : null;
+      const realData = numbers && numbers.lastClose !== null && numbers.lastClose > 0
+        ? {
+            price: numbers.lastClose, atr: numbers.atr14, htfTrend: numbers.htfTrend ?? null,
+            swings: numbers.swings ?? null, late: numbers.late ?? null, volRegime: numbers.volRegime ?? null,
+            rangePosPct: numbers.rangePosPct, vsEma50: numbers.vsEma50 ?? null, htfVsEma50: numbers.htfVsEma50 ?? null,
+            windowHigh: numbers.windowHigh, windowLow: numbers.windowLow,
+          }
+        : null;
+      const riskProfile: EngineProfile = options.riskProfile ?? 'balanced';
+      const prior = priorPlan ? { direction: priorPlan.plan.direction, invalidation: priorPlan.plan.invalidation } : null;
+      const inputOf = (run: Run, read: ReaderRead | null | undefined): SignalDecisionInput => {
+        const parsed = run.parsed;
+        return {
+          state: parsed.signalState ?? deriveSignalState(run.rawRecommendation, parsed.analysis?.entryType, parsed.analysis?.alternativeScenario),
+          recommendation: run.rawRecommendation,
+          confidence: normalizeConfidence(parsed.confidence, 0),
+          trendStrength: parsed.analysis?.trendStrength,
+          structureValidation: parsed.analysis?.structureValidation,
+          symbol: String(parsed.analysis?.symbol || ''),
+          currentPrice: parsed.analysis?.currentPrice ?? null,
+          watchPlan: parsed.watchPlan,
+          estimatedLevels: {
+            entry: parsed.analysis?.entry ?? null,
+            stopLoss: parsed.analysis?.stopLoss ?? null,
+            takeProfit1: parsed.analysis?.takeProfit1 ?? null,
+            takeProfit2: parsed.analysis?.takeProfit2 ?? null,
+          },
+          probabilities: {
+            probabilityTp1: parsed.analysis?.probabilityTp1 ?? null,
+            probabilityTp2: parsed.analysis?.probabilityTp2 ?? null,
+            probabilityStop: parsed.analysis?.probabilityStop ?? null,
+          },
+          realData,
+          planFailures: run.planFailures,
+          priceFixed: parsed.analysis?.priceMagnitudeFixed === true,
+          // Com velas, a leitura so confirma ou veta; sem velas, o caminho de sempre.
+          ...(realData ? { read, prior } : {}),
+        };
       };
-      const canRetry = () => !retried && deadline - Date.now() >= MIN_RETRY_BUDGET_MS;
-
-      let run: Awaited<ReturnType<typeof runOnce>>;
-      try {
-        run = await runOnce(ANALYZE_TIMEOUT_MS);
-        modelMsTotal += run.modelResult.modelMs;
-      } catch (error) {
-        if (!(error instanceof AIAnalysisError && error.code === 'openai_invalid_json') || !canRetry()) throw error;
-        run = await retryOnce('Resposta sem JSON valido');
+      const decide = (run: Run, read: ReaderRead | null | undefined) => decideSignalForProfile(inputOf(run, read), riskProfile);
+      const decisions = new Map<Run, Awaited<ReturnType<typeof decide>>>();
+      // Os leitores do provedor ativo vao direto nele: a contingencia do outro ja e o terceiro leitor.
+      const primaryModel = (this.visionModel as Partial<FallbackVisionModel>).primary ?? this.visionModel;
+      const readerModels: { label: string; model: VisionModel }[] = [
+        { label: `${primaryModel.provider}-1`, model: primaryModel },
+        { label: `${primaryModel.provider}-2`, model: primaryModel },
+        ...(this.secondaryModel ? [{ label: `${this.secondaryModel.provider}-1`, model: this.secondaryModel }] : []),
+      ];
+      const tReaders = Date.now();
+      const collected = await collectReaders(
+        readerModels.map((r) => ({
+          label: r.label,
+          run: async () => {
+            const run = await runOnce(ANALYZE_TIMEOUT_MS, r.model);
+            if (broken(run.planFailures).length > 0) {
+              throw new AIAnalysisError({
+                code: 'invalid_trade_plan',
+                message: `A IA retornou níveis incoerentes de entrada, stop ou alvo (${broken(run.planFailures).join(',')}).`,
+                retriable: false,
+              });
+            }
+            return run;
+          },
+        })),
+        async (run) => {
+          const d = await decide(run, run.parsed.read);
+          decisions.set(run, d);
+          return { state: d.decision.state, direction: decisionDirection(d.decision) };
+        },
+      );
+      const modelMsTotal = Date.now() - tReaders;
+      const oks = collected.done.filter((d): d is Extract<typeof d, { ok: true }> => d.ok);
+      if (!oks.length) {
+        const failed = collected.done.find((d) => !d.ok) as { error: unknown } | undefined;
+        throw failed?.error ?? new AIAnalysisError({ code: 'openai_request_failed', message: 'Nenhum leitor respondeu.', retriable: true });
       }
-      if (broken(run.planFailures).length > 0 && canRetry()) {
-        run = await retryOnce(`Plano incoerente (${broken(run.planFailures).join(',')})`);
+      const majority = oks.length >= 2 ? majorityOf(oks.map((o) => o.outcome)) : null;
+      let chosen = oks[0];
+      let profiled = decisions.get(chosen.value)!;
+      let decidedBy: 'majority' | 'candle_bias' | 'single' = 'single';
+      if (majority) {
+        chosen = oks.find((o) => sameOutcome(o.outcome, majority.outcome))!;
+        profiled = decisions.get(chosen.value)!;
+        decidedBy = 'majority';
+      } else if (realData) {
+        // Sem maioria (ou um leitor so): decide o vies das velas, sem a leitura.
+        profiled = await decide(chosen.value, null);
+        decidedBy = 'candle_bias';
       }
-      const { modelResult, content, parsed, parseMs, tValidation, rawRecommendation, planFailures } = run;
-      if (broken(planFailures).length > 0) {
-        throw new AIAnalysisError({
-          code: 'invalid_trade_plan',
-          message: `A IA retornou níveis incoerentes de entrada, stop ou alvo (${broken(planFailures).join(',')}).`,
-          retriable: false,
-        });
-      }
-
-      const providerComparison = secondaryRun
-        ? secondaryRun.then((secondary): ProviderComparison => {
-            const primarySummary = summarizeProviderRun(modelResult, null);
-            const secondarySummary = summarizeProviderRun(secondary.result, secondary.error);
-            return {
-              primary: primarySummary,
-              secondary: secondarySummary,
-              agree:
-                primarySummary.recommendation && secondarySummary.recommendation
-                  ? primarySummary.recommendation === secondarySummary.recommendation
-                  : null,
-            };
-          })
-        : undefined;
+      const run = chosen.value;
+      const { modelResult, content, parsed, parseMs, tValidation, rawRecommendation, continuation } = run;
+      const readerRecords: EngineReaderRecord[] = readerModels.map((r) => {
+        const d = collected.done.find((x) => x.label === r.label);
+        if (!d) return { label: r.label, provider: r.model.provider, model: null, status: 'ignored', ms: null, costUsd: null, state: null, direction: null, veto: null };
+        if (!d.ok) return { label: r.label, provider: r.model.provider, model: null, status: 'failed', ms: d.ms, costUsd: null, state: null, direction: null, veto: null, error: d.error instanceof AIAnalysisError ? d.error.code : d.error instanceof Error ? d.error.message.slice(0, 160) : 'error' };
+        let costUsd: number | null = null;
+        try { costUsd = computeCost(d.value.modelResult.model, d.value.modelResult.usage, analysisType === 'deep' ? 3 : 1).costUsd; } catch { /* medir nunca quebra */ }
+        return {
+          label: r.label, provider: r.model.provider, model: d.value.modelResult.model, status: 'used', ms: d.ms, costUsd,
+          state: d.outcome.state, direction: d.outcome.direction, veto: d.value.parsed.read?.veto ?? null,
+        };
+      });
+      const used = readerRecords.filter((r) => r.status === 'used');
+      const agreeing = majority ? majority.count : 1;
+      const vote: EngineVoteRecord = {
+        agreement: `${agreeing}/${used.length}`,
+        strongRead: used.length === 3 && agreeing === 3,
+        earlyMajority: collected.early,
+        decidedBy,
+      };
+      this.logger.log(`[readers] ${readerRecords.map((r) => `${r.label}=${r.status}${r.state ? `:${r.state}/${r.direction}` : ''}${r.ms ? `@${r.ms}ms` : ''}`).join(' ')} vote=${vote.agreement} by=${decidedBy}${collected.early ? ' early' : ''}`);
+      // Modo comparacao: a leitura do provedor ativo contra a do outro, ja feitas como leitores.
+      const secondaryProvider = this.secondaryModel?.provider ?? null;
+      const primaryRead = oks.find((o) => o.label.startsWith(`${primaryModel.provider}-`));
+      const secondaryDone = secondaryProvider ? collected.done.find((d) => d.label.startsWith(`${secondaryProvider}-`)) : undefined;
+      const providerComparison: Promise<ProviderComparison> | undefined =
+        options.compareProviders && compareProvidersEnabled() && primaryRead && secondaryDone
+          ? Promise.resolve(((): ProviderComparison => {
+              const primarySummary = summarizeProviderRun(primaryRead.value.modelResult, null);
+              const secondarySummary = secondaryDone.ok
+                ? summarizeProviderRun(secondaryDone.value.modelResult, null)
+                : summarizeProviderRun(null, secondaryDone.error instanceof Error ? secondaryDone.error.message : 'error');
+              return {
+                primary: primarySummary,
+                secondary: secondarySummary,
+                agree: primarySummary.recommendation && secondarySummary.recommendation
+                  ? primarySummary.recommendation === secondarySummary.recommendation : null,
+              };
+            })())
+          : undefined;
       // TRAVA 1: le e propaga, nunca decide. Se algum dia alguem escrever aqui
       // algo como `if (strategyFit === 'ideal') recommendation = 'BUY'`, isso
       // transforma preferencia do usuario em sinal, que e exatamente o que este
@@ -2399,54 +2518,8 @@ export class AIAdapter {
       const strategyFit = STRATEGY_FIT_VALUES.find((v) => v === parsed.strategyFit) ?? null;
       const strategyFitReason =
         typeof parsed.strategyFitReason === 'string' ? parsed.strategyFitReason.slice(0, 400) : null;
-      // Validador do v11 (signal-decision.ts): decide o estado. Preco, ATR,
-      // swings e maturidade reais valem quando os candles entraram no prompt.
-      const numbers = groundingStats?.coverage === 'injected' ? groundingStats.numbers : null;
-      const realData = numbers && numbers.lastClose !== null && numbers.lastClose > 0
-        ? {
-            price: numbers.lastClose, atr: numbers.atr14, htfTrend: numbers.htfTrend ?? null,
-            swings: numbers.swings ?? null, late: numbers.late ?? null, volRegime: numbers.volRegime ?? null,
-            rangePosPct: numbers.rangePosPct,
-          }
-        : null;
-      // A linha do status sai do texto antes de qualquer decisao ou exibicao.
-      let continuation: SetupContinuation | null = null;
-      if (priorPlan) {
-        const read = readContinuationStatus(parsed.analysis?.executiveSummary);
-        if (parsed.analysis && typeof read.text === 'string') parsed.analysis.executiveSummary = read.text;
-        continuation = continuationOf(priorPlan, read.status, read.reason);
-      }
-      const modelState =
-        parsed.signalState ??
-        deriveSignalState(rawRecommendation, parsed.analysis?.entryType, parsed.analysis?.alternativeScenario);
-      const decisionInput: SignalDecisionInput = {
-        state: modelState,
-        recommendation: rawRecommendation,
-        confidence: normalizeConfidence(parsed.confidence, 0),
-        trendStrength: parsed.analysis?.trendStrength,
-        structureValidation: parsed.analysis?.structureValidation,
-        symbol: String(parsed.analysis?.symbol || ''),
-        currentPrice: parsed.analysis?.currentPrice ?? null,
-        watchPlan: parsed.watchPlan,
-        estimatedLevels: {
-          entry: parsed.analysis?.entry ?? null,
-          stopLoss: parsed.analysis?.stopLoss ?? null,
-          takeProfit1: parsed.analysis?.takeProfit1 ?? null,
-          takeProfit2: parsed.analysis?.takeProfit2 ?? null,
-        },
-        probabilities: {
-          probabilityTp1: parsed.analysis?.probabilityTp1 ?? null,
-          probabilityTp2: parsed.analysis?.probabilityTp2 ?? null,
-          probabilityStop: parsed.analysis?.probabilityStop ?? null,
-        },
-        realData,
-        planFailures,
-        priceFixed: parsed.analysis?.priceMagnitudeFixed === true,
-      };
-      // Perfis de risco (17/11/2026): os 3 perfis sobre a mesma resposta; a pessoa ve o dela.
-      const riskProfile: EngineProfile = options.riskProfile ?? 'balanced';
-      const profiled = await decideSignalForProfile(decisionInput, riskProfile);
       const decision = profiled.decision;
+      const modelState = inputOf(run, undefined).state;
       const validationMs = Date.now() - tValidation;
       if (decision.validatorAction === 'downgraded' || decision.validatorAction === 'promoted') {
         this.logger.warn(
@@ -2487,6 +2560,12 @@ export class AIAdapter {
         ...(decision.targetMoved ? { targetMoved: true } : {}),
         riskProfile,
         riskProfiles: profiled.profiles,
+        // RSI e volume relativo (volume so existe em cripto) vao junto do vies para o bloco "What the AI saw".
+        ...(decision.candleBias
+          ? { candleBias: { ...decision.candleBias, rsi14: numbers?.rsi14 ?? null, relVolumeLast: coverage.assetClass === 'crypto' ? numbers?.relVolumeLast ?? null : null } }
+          : {}),
+        ...(decision.entryPlan !== undefined ? { entryPlan: decision.entryPlan } : {}),
+        ...(decision.codeSummary ? { codeSummary: decision.codeSummary } : {}),
       };
       const observation = safeObserve({ ...parsed, recommendation, confidence, analysis: presentedAnalysis }, 'adapter', run.rawDiagnostic);
       logObservation(observation, m => this.logger.log(m));
@@ -2531,6 +2610,8 @@ export class AIAdapter {
           modelMs: modelMsTotal,
           parseMs,
           validationMs,
+          readers: readerRecords,
+          vote,
         },
       };
     } catch (error) {

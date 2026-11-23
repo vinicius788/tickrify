@@ -384,6 +384,14 @@ export function runLimitOrder(
   const expiresMs = startMs + plan.validForCandles * tfStepMs;
   const dead = tf.find((b) => b[0] + tfStepMs > startMs && b[0] + tfStepMs <= expiresMs && closesBeyondInvalidation(plan, b));
   const endMs = dead ? dead[0] + tfStepMs : expiresMs;
+  if (plan.triggerType === 'breakout_close') {
+    // Rompimento (23/11/2026): a ordem so arma quando uma vela do tempo grafico FECHA alem da entrada;
+    // o fill e a abertura da primeira vela fina depois desse fechamento.
+    const armed = tf.find((b) => b[0] + tfStepMs > startMs && b[0] + tfStepMs <= endMs && (long ? b[4] > entry : b[4] < entry));
+    if (!armed) return dead ? { kind: 'invalidated' } : { kind: 'expired' };
+    const i = fine.findIndex((b) => b[0] >= armed[0] + tfStepMs);
+    return i < 0 ? { kind: 'expired' } : { kind: 'filled', fill: { index: i, price: fine[i][1] } };
+  }
   for (let i = 0; i < fine.length; i++) {
     const [t, o, h, l] = fine[i];
     if (t < startMs) continue;

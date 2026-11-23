@@ -36,6 +36,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import type { AIAnalysisResponse, WatchEntry, WatchLevels } from '@/lib/api';
+import { buildCodeSummaryText, isCodeSummary, type CodeSummaryTexts } from '@/lib/code-summary';
+import { WhatAISaw } from './WhatAISaw';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import {
   calcStopPercent,
@@ -403,6 +405,13 @@ const MODEL_ACTION = new RegExp(
     String.raw`\b(?:acheter|achat|vendre|vente)\s+(?:à|a|au|près|si|quand|sur)\b`,
     String.raw`\b(?:kaufen|kauf|verkaufen|verkauf)\s+(?:bei|über|unter|wenn|ab)\b`,
     String.raw`\beinstieg\s+(?:bei|über|unter|ab)\b`,
+    String.raw`\b(?:buy|sell)\s+(?:now|immediately|at\s+market)\b`,
+    String.raw`\b(?:buy|sell)ing\s+now\b`,
+    String.raw`\b(?:comprar|vender|compra|venda|compre|venda)\s+(?:agora|ahora|ya|já)\b`,
+    String.raw`\b(?:acheter|vendre|achat|vente)\s+(?:maintenant|immédiatement|tout\s+de\s+suite)\b`,
+    String.raw`\b(?:jetzt|sofort)\s+(?:kaufen|verkaufen)\b`,
+    String.raw`\b(?:kaufen|verkaufen)\s+(?:jetzt|sofort)\b`,
+    String.raw`今すぐ(?:買|売|購入|エントリー)`,
     String.raw`\d\s*(?:付近)?で?の?(?:買い|売り|エントリー)`,
     String.raw`(?:買い|売り)(?:エントリー|注文|を検討|を狙)`,
   ].join('|'),
@@ -823,7 +832,16 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     modelProse(cleanModelText(analysis.technicalAnalysis) || cleanModelText(analysis.reasoning) || cleanModelText(displayReasoning)) ||
     r.noAnalysis;
   const modelSummary = modelProse(cleanModelText(analysis.executiveSummary) || cleanModelText(analysis.technicalSummary));
-  const executiveSummary = downgradedToNoTrade ? modelSummary || r.downgradedSummary : modelSummary;
+  // Motor novo: o resumo e escrito pelo codigo; a prosa do modelo so vai ao painel tecnico.
+  const codeSummary = isCodeSummary(fullResponse.codeSummary) ? fullResponse.codeSummary : null;
+  const codeSummaryView = codeSummary ? buildCodeSummaryText(codeSummary, r.codeSummary as CodeSummaryTexts, formatPrice) : null;
+  const executiveSummary = codeSummaryView
+    ? codeSummaryView.text
+    : downgradedToNoTrade ? modelSummary || r.downgradedSummary : modelSummary;
+  const strongRead = asRecord(asRecord(fullResponse.engine).vote).strongRead === true;
+  const breakoutPlan = codeSummary
+    ? codeSummary.action.endsWith('_breakout')
+    : watchPlan?.triggerType === 'breakout_close' && isWatchLevels(fullResponse.watchLevels);
   const whyNotOpposite = cleanModelText(analysis.whyNotOpposite);
   // Checklist e paragrafo de reserva sem o estado ou a direcao que o modelo
   // escreveu ("6/7 WATCH", "MTF 2/3 → SELL"): a tela so mostra a decisao do codigo.
@@ -966,6 +984,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
    * O card existe para TODO veredito, WAIT incluído.
    */
   const shareRead = (() => {
+    if (codeSummaryView) return codeSummaryView.headline;
     if (executiveSummary) {
       const { blocks } = parseSummaryBlocks(executiveSummary);
       if (blocks.length >= 2) {
@@ -1167,6 +1186,14 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
 
   /** A leitura (executiveSummary). No WAIT sobe para logo abaixo do plano. */
   const summaryBlock = (
+    <div className="space-y-3">
+    {breakoutPlan && !codeSummary && watchPlan && watchLevels ? (
+      <p data-testid="breakout-line" className="text-sm font-medium leading-relaxed text-[var(--text-primary)]">
+        {(watchPlan.direction === 'long' ? r.codeSummary.breakoutAbove : r.codeSummary.breakoutBelow)
+          .replace('{entry}', formatPrice(watchLevels.entry))
+          .replace('{level}', formatPrice(watchPlan.direction === 'long' ? watchPlan.zoneLow : watchPlan.zoneHigh))}
+      </p>
+    ) : null}
     <div className="rounded-md border border-[var(--border-emphasis)] bg-[var(--bg-overlay)] p-3">
       {finalDecision && <p data-testid="final-decision" className="mb-2 text-sm font-semibold leading-relaxed text-[var(--text-primary)]">{finalDecision}</p>}
       <h4 className="tk-display mb-2 text-base text-[var(--text-primary)]">{t.analysis.executiveSummary}</h4>
@@ -1201,6 +1228,8 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
           </div>
         );
       })()}
+    </div>
+    <WhatAISaw fullResponse={fullResponse as NonNullable<AIAnalysisResponse['fullResponse']>} formatPrice={formatPrice} />
     </div>
   );
 
@@ -1237,8 +1266,9 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
               className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium ${watchClosed || historicalPrint ? WATCH_TONE_CLASSES.neutral : signalToneClasses}`}
             >
               <HeaderIcon className="h-3.5 w-3.5" strokeWidth={2.5} />
-              <span>{historicalPrint ? t.analysis.historicalPrintChip : watchClosed ? r.watch.chipClosed : watchLayout ? (watchPlan?.direction === 'long' ? (pendingEntry ? r.watch.pendingBuy : r.watch.chipBuy) : (pendingEntry ? r.watch.pendingSell : r.watch.chipSell)) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
+              <span>{historicalPrint ? t.analysis.historicalPrintChip : watchClosed ? r.watch.chipClosed : codeSummary ? r.codeSummary.label[codeSummary.action] : watchLayout && breakoutPlan ? (watchPlan?.direction === 'long' ? r.codeSummary.breakoutBuy : r.codeSummary.breakoutSell) : watchLayout ? (watchPlan?.direction === 'long' ? (pendingEntry ? r.watch.pendingBuy : r.watch.chipBuy) : (pendingEntry ? r.watch.pendingSell : r.watch.chipSell)) : signalStateLabel(t.analysis, signalState, entrySide(watchPlan, analysisData.recommendation))}</span>
             </div>
+            {strongRead ? <span data-testid="strong-read" title={r.codeSummary.strongReadNote} className="whitespace-nowrap rounded-sm border border-[var(--border-accent)] px-2 py-0.5 text-xs font-medium text-[var(--text-primary)]">{r.codeSummary.strongRead}</span> : null}
             {riskProfileLabel ? <span data-testid="risk-profile-label" className="whitespace-nowrap text-xs text-[var(--text-secondary)]">{riskProfileLabel}</span> : null}
             {breakEvenText ? <span data-testid="risk-breakeven" className="text-xs tabular-nums text-[var(--text-secondary)]">{breakEvenText}</span> : null}
             {/* Janela encerrada: o selo fica cinza e o desfecho (o que o mercado fez) vem ao lado, pela regra unica. */}
@@ -1958,7 +1988,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-secondary)]">
-                    {technicalAnalysis}
+                    {codeSummaryView && modelSummary ? `${modelSummary}\n\n` : ''}{technicalAnalysis}
                   </AccordionContent>
                 </AccordionItem>
 
