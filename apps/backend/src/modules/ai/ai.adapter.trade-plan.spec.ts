@@ -126,6 +126,8 @@ describe('AIAdapter trade-plan integrity', () => {
       .mockResolvedValueOnce(responseFor(110));
     withFakeOpenAi(adapter, create);
     withRealCandles(adapter);
+    // Sem o terceiro leitor, mesmo com ANTHROPIC_API_KEY no .env local.
+    (adapter as any).secondaryModel = null;
 
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
     expect(create).toHaveBeenCalledTimes(2);
