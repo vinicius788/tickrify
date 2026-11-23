@@ -15,6 +15,14 @@ import type { SignalDecisionResult, SignalState, ValidatorAction, ValidatorReaso
 
 /** Versao do motor. Unico lugar; vai para o banco e para o PostHog. */
 export const ENGINE_VERSION = '4.0.0';
+/**
+ * Conjunto de regras do voto e das entradas, sem mudar ENGINE_VERSION (a aba
+ * Motor e a /accuracy separam antes e depois). filter-2026-11-23: sem maioria so
+ * o vies forte desempata, ENTER_NOW so com 2 leitores ou 1 + vies forte, filtro
+ * de tendencia do tempo de direcao, escada de tempos e plano anterior que so
+ * prende quando nasceu de maioria ou vies forte.
+ */
+export const ENGINE_RULES_ID = 'filter-2026-11-23';
 
 export type EngineVerdict = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 
@@ -80,7 +88,8 @@ export interface EngineVoteRecord {
   strongRead: boolean;
   /** Os 2 primeiros concordaram e o terceiro nao foi esperado. */
   earlyMajority: boolean;
-  decidedBy: 'majority' | 'candle_bias' | 'single';
+  /** no_majority = leituras divergentes sem vies forte: aguardar. */
+  decidedBy: 'majority' | 'candle_bias' | 'single' | 'no_majority';
 }
 
 export interface EngineRecord {
@@ -101,6 +110,8 @@ export interface EngineRecord {
   continuation?: true;
   readers?: EngineReaderRecord[];
   vote?: EngineVoteRecord;
+  /** Conjunto de regras que decidiu (ENGINE_RULES_ID); ausente = antes de 23/11/2026 tarde. */
+  rules?: string;
 }
 
 const MAX_KEY_REASONS = 3;
@@ -119,6 +130,7 @@ const VALIDATOR_REASON_TEXT: Record<ValidatorReason, string> = {
   neutral_direction: 'The real candles do not show a clear direction.',
   conflicting_direction: 'The AI read the opposite direction of the real candles.',
   no_majority: 'The readers did not agree on the state and the direction.',
+  against_trend: 'The entry would go against the trend of the direction timeframe; only a breakout close is allowed.',
   state_mismatch: 'The state and the recommendation did not agree.',
   watch_plan_invalid: 'The plan has its levels out of order.',
   implausible_price: 'A price level is outside a plausible range of the chart price.',
@@ -262,7 +274,7 @@ export function buildEngineRecord(params: {
     validator_flags: [...params.validatorFlags],
     ...(params.continuation ? { continuation: true as const } : {}),
     ...(params.readers ? { readers: params.readers } : {}),
-    ...(params.vote ? { vote: params.vote } : {}),
+    ...(params.vote ? { vote: params.vote, rules: ENGINE_RULES_ID } : {}),
     timings: {
       image_prep_ms: ms(t.image_prep_ms),
       intake_ms: ms(t.intake_ms),

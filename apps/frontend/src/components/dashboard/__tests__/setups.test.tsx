@@ -445,11 +445,11 @@ describe('Pagina do setup', () => {
       'GET /api/setups/setup-aaaaaaaa': () => json(200, { setup: SETUP, versions: [latest], nextCursor: null }),
     });
     const list = wrap(<SetupsSection base="/dashboard" part="list" />);
-    expect(await screen.findByText('Buy level 100')).toBeTruthy();
+    expect(await screen.findByText((_, el) => el?.tagName === 'P' && el.textContent === 'Buy level 100')).toBeTruthy();
     expect(screen.queryByText(/Close above 1.0950/)).toBeNull();
     list.unmount();
     wrap(<SetupPage setupId="setup-aaaaaaaa" base="/dashboard" onUpdate={vi.fn()} paywall={() => <p>PAYWALL</p>} />);
-    expect(await screen.findByText('Buy level 100')).toBeTruthy();
+    expect(await screen.findByText((_, el) => el?.tagName === 'P' && el.textContent === 'Buy level 100')).toBeTruthy();
     expect(screen.queryByText(/Close above 1.0950|Invalidation 90/)).toBeNull();
   });
 

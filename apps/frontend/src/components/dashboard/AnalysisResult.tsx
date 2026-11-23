@@ -27,6 +27,7 @@ import { AnalysisEvidencePanel } from './AnalysisEvidencePanel';
 import { MarketResultCard } from './MarketResult';
 import { WatchPlanCard, isWatchLevels, isWatchPlan, watchWindowOpen } from './WatchPlanCard';
 import { WatchEntryLog } from './WatchEntryLog';
+import { CopyPrice } from './CopyPrice';
 import { ReadModePanel, WherePriceIs, type ReadModeData } from './ReadModePanel';
 import { LevelMapCard, WatchVerdict } from './PendingLevels';
 import { AnalysisShareButton } from './ShareCard';
@@ -34,7 +35,6 @@ import type { ReadShareData } from '@/lib/share-card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
 import type { AIAnalysisResponse, WatchEntry, WatchLevels } from '@/lib/api';
 import { buildCodeSummaryText, isCodeSummary, type CodeSummaryTexts } from '@/lib/code-summary';
 import { WhatAISaw } from './WhatAISaw';
@@ -525,7 +525,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     return () => definirAnaliseAtual(null);
   }, [analysisData?.id, sample]);
 
-  const { toast } = useToast();
   const { t, language } = useLanguage();
   const formatSignedPercent = (value: number | null) => formatSignedPercentInLanguage(value, language);
   const formatPositivePercent = (value: number | null) => formatPositivePercentInLanguage(value, language);
@@ -801,22 +800,6 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     conflict: 'bg-[var(--signal-sell-bg)] border-[var(--signal-sell-border)] text-[var(--signal-sell)]',
   };
 
-  const copyValue = async (label: string, value: number | null) => {
-    if (value === null) {
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(String(value));
-      toast({
-        title: r.copied,
-        description: `${label} ${r.copySuffix}`,
-      });
-    } catch (error) {
-      console.error('Falha ao copiar valor:', error);
-    }
-  };
-
   // O validador rebaixou para NO_TRADE: a prosa do modelo ainda fala do plano recusado.
   const downgradeNote = signalState === 'NO_TRADE'
     ? (analysisData.fullResponse?.validatorNotes ?? []).find((note): note is { from?: string; to?: string; reason: string } => typeof note === 'object' && note.to === 'NO_TRADE' && note.from !== 'NO_TRADE')
@@ -1018,6 +1001,7 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
     levels: { entry, stopLoss, takeProfit1, takeProfit2 },
     watchPlan,
     watchReach: analysisData.fullResponse?.watchReach ?? null,
+    directionTimeframe: analysisData.fullResponse?.candleBias?.timeframes?.direction ?? null,
     noTradeReason: typeof engineContract.no_trade_reason === 'string' ? messageText(t, language, engineContract.no_trade_reason_code, engineContract.no_trade_reason_params, engineContract.no_trade_reason) : readReason || null,
   };
 
@@ -1556,60 +1540,30 @@ const AnalysisResult = ({ analysisData, uploadedImage, sample = false, alertsEna
             <div className="space-y-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
               <div className="flex items-center justify-between gap-3 rounded px-2 py-1">
                 <span className="text-[var(--text-secondary)]">{t.analysis.currentPrice}</span>
-                <button
-                  type="button"
-                  className="tabular-nums font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue(t.analysis.currentPrice, currentPrice)}
-                >
-                  {formatPrice(currentPrice)}
-                </button>
+                <CopyPrice value={currentPrice} text={formatPrice(currentPrice)} className="tabular-nums font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80" />
               </div>
 
               <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
                 <span className="text-[var(--text-secondary)]">● {t.analysis.entry}</span>
-                <button
-                  type="button"
-                  className="tabular-nums font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue(t.analysis.entry, entry)}
-                >
-                  {formatPrice(entry)}
-                </button>
+                <CopyPrice value={entry} text={formatPrice(entry)} className="tabular-nums font-semibold text-[var(--text-primary)] transition-opacity hover:opacity-80" />
               </div>
 
               <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
                 <span className="whitespace-nowrap text-[var(--signal-sell)]">▼ {t.analysis.stopLoss}</span>
-                <button
-                  type="button"
-                  className="text-right tabular-nums font-semibold text-[var(--signal-sell)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue(t.analysis.stopLoss, stopLoss)}
-                >
-                  {formatPrice(stopLoss)} <span className="tabular-nums text-xs">{formatSignedPercent(stopPercent)}</span>
-                  {stopPips !== null && <span className="ml-1 tabular-nums text-[10px] text-[var(--signal-sell)]/70">{stopPips}p</span>}
-                </button>
+                <span className="text-right"><CopyPrice value={stopLoss} text={formatPrice(stopLoss)} className="tabular-nums font-semibold text-[var(--signal-sell)] transition-opacity hover:opacity-80" /> <span className="tabular-nums text-xs">{formatSignedPercent(stopPercent)}</span>
+                  {stopPips !== null && <span className="ml-1 tabular-nums text-[10px] text-[var(--signal-sell)]/70">{stopPips}p</span>}</span>
               </div>
 
               <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
                 <span className="text-[var(--signal-buy)]">▲ TP1</span>
-                <button
-                  type="button"
-                  className="text-right tabular-nums font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue(t.analysis.tp1, takeProfit1)}
-                >
-                  {formatPrice(takeProfit1)} <span className="tabular-nums text-xs">{formatPositivePercent(takeProfit1Percent)}</span>
-                  {tp1Pips !== null && <span className="ml-1 tabular-nums text-[10px] text-[var(--signal-buy)]/70">{tp1Pips}p</span>}
-                </button>
+                <span className="text-right"><CopyPrice value={takeProfit1} text={formatPrice(takeProfit1)} className="tabular-nums font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80" /> <span className="tabular-nums text-xs">{formatPositivePercent(takeProfit1Percent)}</span>
+                  {tp1Pips !== null && <span className="ml-1 tabular-nums text-[10px] text-[var(--signal-buy)]/70">{tp1Pips}p</span>}</span>
               </div>
 
               <div className="flex items-center justify-between gap-3 rounded border-t border-[var(--border-subtle)] px-2 py-1">
                 <span className="text-[var(--signal-buy)]">▲ TP2</span>
-                <button
-                  type="button"
-                  className="text-right tabular-nums font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80"
-                  onClick={() => void copyValue(t.analysis.tp2, takeProfit2)}
-                >
-                  {formatPrice(takeProfit2)} <span className="tabular-nums text-xs">{formatPositivePercent(takeProfit2Percent)}</span>
-                  {tp2Pips !== null && <span className="ml-1 tabular-nums text-[10px] text-[var(--signal-buy)]/70">{tp2Pips}p</span>}
-                </button>
+                <span className="text-right"><CopyPrice value={takeProfit2} text={formatPrice(takeProfit2)} className="tabular-nums font-semibold text-[var(--signal-buy)] transition-opacity hover:opacity-80" /> <span className="tabular-nums text-xs">{formatPositivePercent(takeProfit2Percent)}</span>
+                  {tp2Pips !== null && <span className="ml-1 tabular-nums text-[10px] text-[var(--signal-buy)]/70">{tp2Pips}p</span>}</span>
               </div>
 
               {entryType && (

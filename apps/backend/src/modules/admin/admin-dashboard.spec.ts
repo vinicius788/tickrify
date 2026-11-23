@@ -1,4 +1,4 @@
-import { escapeLike, percentile, readersOf, startOfUtcDay, summarizeAnalyses, type HomeAnalysisRow } from './admin-dashboard';
+import { escapeLike, percentile, readerFailuresByLabel, readersOf, startOfUtcDay, summarizeAnalyses, type HomeAnalysisRow } from './admin-dashboard';
 
 const row = (over: Partial<HomeAnalysisRow> = {}): HomeAnalysisRow => ({
   createdAt: new Date('2026-11-23T10:00:00Z'),
@@ -58,5 +58,24 @@ describe('admin-dashboard: contas puras', () => {
   it('escapa % e _ da busca e acha o inicio do dia UTC', () => {
     expect(escapeLike('a_b%c\\d')).toBe('a\\_b\\%c\\\\d');
     expect(startOfUtcDay(new Date('2026-11-23T23:59:59Z')).toISOString()).toBe('2026-11-23T00:00:00.000Z');
+  });
+
+  it('falhas por rotulo de leitor, erro mais comum cortado em 80 caracteres', () => {
+    const longo = 'e'.repeat(120);
+    const out = readerFailuresByLabel([
+      { label: 'C', status: 'failed', error: longo }, { label: 'C', status: 'failed', error: longo }, { label: 'C', status: 'failed', error: 'timeout' },
+      { label: 'C', status: 'used' }, { label: 'A', status: 'used' }, { status: 'failed' },
+    ]);
+    expect(out).toEqual([
+      { label: '?', seen: 1, failures: 1, topError: 'sem texto de erro' },
+      { label: 'A', seen: 1, failures: 0, topError: null },
+      { label: 'C', seen: 4, failures: 3, topError: 'e'.repeat(80) },
+    ]);
+  });
+
+  it('decidedBy agrupado pelo texto gravado; sem maioria = decidedBy diferente de majority', () => {
+    const out = summarizeAnalyses([row({ decidedBy: 'majority' }), row({ decidedBy: 'candle_bias' }), row({ decidedBy: 'outro' }), row({ decidedBy: null, agreement: null })]);
+    expect(out.decidedBy).toEqual({ majority: 1, candle_bias: 1, outro: 1 });
+    expect(out.withoutMajority).toBe(2);
   });
 });

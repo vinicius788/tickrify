@@ -701,3 +701,52 @@ describe('perfis de risco (17/11/2026)', () => {
     expect(profiles.aggressive.reasons).toContain('plan_invalidated');
   });
 });
+
+describe('motor pelas velas: regras de 23/11/2026 (filter-2026-11-23)', () => {
+  // Alta limpa: fundos e topos subindo, tempo de direcao em alta e preco acima das duas EMA50.
+  const trendUp = real(108, {
+    atr: 2, htfTrend: 'uptrend', vsEma50: 'above', htfVsEma50: 'above', rangePosPct: 60,
+    swings: [{ kind: 'low', price: 96 }, { kind: 'high', price: 104 }, { kind: 'low', price: 100 }, { kind: 'high', price: 112 }, { kind: 'low', price: 104.5 }],
+  });
+  const read = (direction: 'long' | 'short' | 'neutral') => ({ direction, veto: null });
+  const longPlan: WatchPlan = { ...plan, zoneLow: 105, zoneHigh: 106, invalidation: 104, target1: 112, target2: null };
+
+  it('sem maioria e sem vies forte: aguardar com "leituras divergentes", sem plano', async () => {
+    const d = await decideBalanced({ state: 'ENTER_NOW', currentPrice: 108, watchPlan: longPlan, realData: trendUp, read: null, noMajority: true });
+    expect(d.state).toBe('NO_TRADE');
+    expect(d.codeSummary).toMatchObject({ action: 'wait', waitReason: 'no_majority' });
+    expect(d.validatorNotes.map((n) => n.reason)).toContain('no_majority');
+  });
+
+  it('o codigo nunca promove: WATCH do modelo nao vira ENTER_NOW, mesmo com a entrada a mercado valida', async () => {
+    const withNow = await decideBalanced({ state: 'ENTER_NOW', recommendation: 'BUY', currentPrice: 108, watchPlan: null, realData: trendUp, read: read('long') });
+    const asked = await decideBalanced({ state: 'WATCH', recommendation: 'WAIT', currentPrice: 108, watchPlan: null, realData: trendUp, read: read('long') });
+    expect(asked.state).not.toBe('ENTER_NOW');
+    expect(withNow.state).toBe('ENTER_NOW');
+    expect(asked.codeSummary?.action).not.toBe('buy_now');
+    const blocked = await decideBalanced({ state: 'ENTER_NOW', recommendation: 'BUY', currentPrice: 108, watchPlan: null, realData: trendUp, read: read('long'), allowNow: false });
+    expect(blocked.state).not.toBe('ENTER_NOW');
+  });
+
+  it('filtro de tendencia: tempo de direcao em alta e preco acima da EMA50: venda so no rompimento, nunca no recuo', async () => {
+    const d = await decideBalanced({ state: 'WATCH', recommendation: 'WAIT', currentPrice: 108, watchPlan: null, realData: trendUp, read: read('short') });
+    expect(['sell_pullback', 'sell_now']).not.toContain(d.codeSummary?.action);
+    expect(['sell_breakout', 'wait']).toContain(d.codeSummary?.action);
+  });
+
+  it('plano anterior que nao prende (desempate fraco) nao segura a direcao e aparece sob pressao', async () => {
+    const prior = { direction: 'short' as const, invalidation: 120, binding: false };
+    const d = await decideBalanced({ state: 'WATCH', recommendation: 'WAIT', currentPrice: 108, watchPlan: longPlan, realData: trendUp, read: read('long'), prior });
+    expect(d.codeSummary?.action.startsWith('sell')).toBe(false);
+    expect(d.codeSummary?.priorUnderPressure).toBe(true);
+    const holds = await decideBalanced({ state: 'WATCH', recommendation: 'WAIT', currentPrice: 108, watchPlan: longPlan, realData: { ...trendUp, htfTrend: 'range' }, read: read('long'), prior: { ...prior, binding: true } });
+    expect(holds.codeSummary?.priorUnderPressure).toBeFalsy();
+  });
+
+  it('vies forte contra o plano anterior que prendia: deixa de prender', async () => {
+    const prior = { direction: 'short' as const, invalidation: 120, binding: true };
+    const d = await decideBalanced({ state: 'WATCH', recommendation: 'WAIT', currentPrice: 108, watchPlan: longPlan, realData: trendUp, read: read('long'), prior });
+    expect(d.codeSummary?.priorUnderPressure).toBe(true);
+    expect(d.codeSummary?.action.startsWith('sell')).toBe(false);
+  });
+});

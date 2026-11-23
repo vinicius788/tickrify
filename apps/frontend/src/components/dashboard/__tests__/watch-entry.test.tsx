@@ -58,13 +58,13 @@ describe('I entered num WATCH', () => {
     fetchMock.mockResolvedValue(json({ id: 'an-1', watchEntry: logged }));
     renderLog();
     await userEvent.click(screen.getByRole('button', { name: 'I entered this plan' }));
-    expect(screen.getByText('Stop $74,310 · Target $74,710')).toBeTruthy();
+    expect(screen.getByText((_, el) => el?.tagName === 'P' && el.textContent === 'Stop $74,310 · Target $74,710')).toBeTruthy();
     const input = screen.getByLabelText('Your entry price') as HTMLInputElement;
     expect(input.value).toBe('74470');
     await userEvent.clear(input);
     await userEvent.type(input, '74480');
     await userEvent.click(screen.getByRole('button', { name: 'Log trade' }));
-    expect(await screen.findByText('You logged a buy at $74,480')).toBeTruthy();
+    expect(await screen.findByText((_, el) => el?.tagName === 'P' && el.textContent === 'You logged a buy at $74,480')).toBeTruthy();
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toMatch(/\/api\/ai\/analysis\/an-1\/watch-entry$/);
     expect(init.method).toBe('PUT');
@@ -106,7 +106,7 @@ describe('I entered num WATCH', () => {
     expect(closed.container.textContent).toBe('');
     cleanup();
     renderLog({ initial: logged, closed: true });
-    await waitFor(() => expect(screen.getByText('You logged a buy at $74,480')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText((_, el) => el?.tagName === 'P' && el.textContent === 'You logged a buy at $74,480')).toBeTruthy());
   });
 
   it('nas listas, o WATCH com registro vira operacao do trader com os niveis do registro', () => {

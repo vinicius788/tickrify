@@ -207,7 +207,11 @@ export class OpenAiVisionModel implements VisionModel {
 //     ou { type: 'url', url }; jpeg/png/gif/webp.
 //   - saida estruturada: output_config.format = { type: 'json_schema', schema },
 //     sem cabecalho beta; JSON no bloco `text`. Limite: 16 campos com uniao de
-//     tipos (["number","null"]) por requisicao.
+//     tipos (["number","null"]) por requisicao, e um teto de tamanho da gramatica
+//     compilada: o schema da analise com perfil de estrategia passava dele
+//     ("compiled grammar is too large", 100% em producao em 23/11/2026). Por isso
+//     saem os campos que ninguem usa (ANTHROPIC_UNUSED_ANALYSIS_FIELDS) e, se a
+//     API ainda recusar a gramatica, o pedido vai uma vez com o schema em texto.
 //   - cache: cache_control { type: 'ephemeral' } no bloco do system;
 //     usage.input_tokens NAO inclui cache_read/cache_creation.
 //   - stop_reason: end_turn | max_tokens | refusal | stop_sequence.
@@ -220,6 +224,13 @@ export class OpenAiVisionModel implements VisionModel {
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 const ANTHROPIC_MAX_UNION_FIELDS = 16;
+/**
+ * Posicao em pixel dos niveis: a IA erra ate ~82 px e nada le (a extensao usa
+ * price-axis). Fora do schema da Anthropic, a gramatica cabe com o strategyFit
+ * (medido na API em 23/11/2026: com os dois campos do perfil e sem estes 4, 200).
+ */
+export const ANTHROPIC_UNUSED_ANALYSIS_FIELDS = ['entryY', 'stopY', 'tp1Y', 'tp2Y'] as const;
+const GRAMMAR_TOO_LARGE = /compiled grammar is too large/i;
 const ANTHROPIC_DEFAULT_MODELS: Record<ModelTier, string> = {
   quick: 'claude-haiku-5-5',
   deep: 'claude-haiku-5-5',
@@ -279,6 +290,26 @@ export function restoreNulls(value: unknown, paths: NullPath[]): unknown {
   return paths.reduce((acc, p) => walk(acc, p), value);
 }
 
+/** Tira de `analysis` os campos que nada le (o parser ja trata ausente como null). */
+export function reduceAnalysisSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  const props = schema.properties as Record<string, any> | undefined;
+  const analysis = props?.analysis;
+  if (!analysis || typeof analysis !== 'object' || !analysis.properties) return schema;
+  const drop = new Set<string>(ANTHROPIC_UNUSED_ANALYSIS_FIELDS);
+  const kept = Object.fromEntries(Object.entries(analysis.properties as Record<string, unknown>).filter(([k]) => !drop.has(k)));
+  const required = Array.isArray(analysis.required) ? analysis.required.filter((k: string) => !drop.has(k)) : analysis.required;
+  return { ...schema, properties: { ...props, analysis: { ...analysis, properties: kept, required } } };
+}
+
+/** Pedido do JSON em texto (plano B): um objeto so, na ordem do schema. */
+export function anthropicJsonInstruction(schema: Record<string, unknown>): string {
+  return [
+    'Reply with exactly one JSON object and nothing else: no prose, no code fence.',
+    'It must match this JSON Schema. Write the properties in the order the schema lists them, include every required property, and use null where the schema allows null.',
+    JSON.stringify(schema),
+  ].join('\n');
+}
+
 const anthropicEffort = (e: ReasoningEffort | undefined): string =>
   e === 'medium' || e === 'high' ? e : 'low';
 
@@ -290,9 +321,14 @@ function anthropicImageSource(url: string): Record<string, string> {
 }
 
 /** Sem saida estruturada o modelo pode cercar o JSON com ```json. */
-function stripJsonFence(text: string): string {
+export function stripJsonFence(text: string): string {
   const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text.trim());
-  return fenced ? fenced[1].trim() : text.trim();
+  const body = fenced ? fenced[1].trim() : text.trim();
+  if (body.startsWith('{')) return body;
+  // Frase antes ou depois do objeto: fica do primeiro `{` ao ultimo `}`.
+  const first = body.indexOf('{');
+  const last = body.lastIndexOf('}');
+  return first >= 0 && last > first ? body.slice(first, last + 1) : body;
 }
 
 function restoreJson(text: string, paths: NullPath[]): string {
@@ -313,16 +349,31 @@ export class AnthropicVisionModel implements VisionModel {
   ) {}
 
   async complete(request: VisionModelRequest): Promise<VisionModelResult> {
+    const reduced = request.schema ? reduceAnalysisSchema(request.schema) : undefined;
+    try {
+      return await this.send({ ...request, schema: reduced }, 'structured');
+    } catch (error) {
+      // Gramatica grande demais: uma vez com o schema em texto (o parser do adapter confere o JSON).
+      if (reduced && error instanceof ProviderHttpError && error.status === 400 && GRAMMAR_TOO_LARGE.test(error.message)) {
+        return this.send({ ...request, schema: reduced }, 'text');
+      }
+      throw error;
+    }
+  }
+
+  private async send(request: VisionModelRequest, mode: 'structured' | 'text'): Promise<VisionModelResult> {
     const model = this.models[request.tier];
     // O schema da analise tem mais campos anulaveis que o limite da saida
     // estruturada: os anulaveis viram obrigatorios e voltam a null na resposta.
-    const collapsed = request.schema && countUnionFields(request.schema) > ANTHROPIC_MAX_UNION_FIELDS
+    const collapsed = mode === 'structured' && request.schema && countUnionFields(request.schema) > ANTHROPIC_MAX_UNION_FIELDS
       ? collapseNullable(request.schema)
-      : { schema: request.schema ?? null, paths: [] as NullPath[] };
+      : { schema: mode === 'structured' ? request.schema ?? null : null, paths: [] as NullPath[] };
     const structured = collapsed.schema as Record<string, unknown> | null;
-    const schemaAsText = collapsed.paths.length
-      ? 'Where a field would be null, write 0 for a number and an empty string for text.'
-      : '';
+    const schemaAsText = mode === 'text' && request.schema
+      ? anthropicJsonInstruction(request.schema)
+      : collapsed.paths.length
+        ? 'Where a field would be null, write 0 for a number and an empty string for text.'
+        : '';
 
     const system: Array<Record<string, unknown>> = [];
     const fixed = [request.instructions, schemaAsText].filter((t) => t && t.trim()).join('\n\n');

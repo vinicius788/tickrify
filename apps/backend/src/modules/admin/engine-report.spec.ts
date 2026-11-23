@@ -63,4 +63,17 @@ describe('analises sem velas, por motivo', () => {
   it('sem nenhuma analise, lista vazia', () => {
     expect(buildEngineReport([]).noCandles).toEqual([]);
   });
+
+  it('agrupa por regras (mais novo primeiro, sem registro por ultimo), por decidedBy e por leitor', () => {
+    const base = { symbol: 'BTCUSDT', action: 'buy_now', agreement: '2/3', trackStatus: null, outcome: null, fillPrice: null, stopLoss: null, takeProfit1: null } as const;
+    const report = buildEngineReport([
+      { ...base, rules: null, decidedBy: 'majority' },
+      { ...base, rules: 'filter-2026-11-23', decidedBy: 'candle_bias', readers: [{ label: 'B', status: 'failed', error: 'boom' }] },
+      { ...base, rules: 'filter-2026-11-30', decidedBy: 'majority' },
+    ]);
+    expect(report.byRules.map((g) => g.rules)).toEqual(['filter-2026-11-30', 'filter-2026-11-23', null]);
+    expect(report.decidedBy).toEqual([{ decidedBy: 'majority', count: 2 }, { decidedBy: 'candle_bias', count: 1 }]);
+    expect(report.withoutMajorityPct).toBeCloseTo(100 / 3, 6);
+    expect(report.readerFailures).toEqual([{ label: 'B', seen: 1, failures: 1, topError: 'boom' }]);
+  });
 });

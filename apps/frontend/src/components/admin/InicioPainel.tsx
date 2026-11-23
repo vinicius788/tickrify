@@ -8,6 +8,9 @@ type Janela = {
     byState: Record<string, number>;
     byAction: Record<string, number>;
     agreement: Record<string, number>;
+    decidedBy: Record<string, number>;
+    withoutMajority: number;
+    readerLabels: { label: string; seen: number; failures: number; topError: string | null }[];
     strongRead: number;
     readerFailures: number;
     readersSeen: number;
@@ -33,6 +36,27 @@ const ACAO: Record<string, string> = {
   buy_now: 'Compra agora', sell_now: 'Venda agora', buy_pullback: 'Compra no recuo', sell_pullback: 'Venda no recuo',
   buy_breakout: 'Compra no rompimento', sell_breakout: 'Venda no rompimento', wait: 'Esperar',
 };
+
+/** "12 de 40 (30%)": parte de um total, ou "-" sem total. */
+function parteDe(parte: number, total: number) {
+  return total ? `${parte} de ${total} (${Math.round((100 * parte) / total)}%)` : '-';
+}
+
+const somaValores = (map: Record<string, number>) => Object.values(map).reduce((sum, n) => sum + n, 0);
+
+/** Falhas por leitor (A, B, C...) com o erro mais comum de cada um. */
+function falhasPorLeitor(leitores: Janela['analysis']['readerLabels']) {
+  const comFalha = leitores.filter((l) => l.failures > 0);
+  return comFalha.length ? (
+    <ul className="space-y-0.5">
+      {comFalha.map((l) => (
+        <li key={l.label} className="break-words">{`${l.label}: ${l.failures} de ${l.seen}${l.topError ? ` (${l.topError})` : ''}`}</li>
+      ))}
+    </ul>
+  ) : (
+    '-'
+  );
+}
 
 /** "Compra agora: 3 · Esperar: 5", do maior para o menor. */
 function lista(map: Record<string, number>, nomes: Record<string, string>) {
@@ -87,12 +111,19 @@ export default function InicioPainel() {
                 <Linha rotulo="Por estado final" hoje={lista(d.today.analysis.byState, ESTADO)} semana={lista(d.week.analysis.byState, ESTADO)} />
                 <Linha rotulo="Por tipo de entrada" hoje={lista(d.today.analysis.byAction, ACAO)} semana={lista(d.week.analysis.byAction, ACAO)} />
                 <Linha rotulo="Concordância dos leitores" hoje={lista(d.today.analysis.agreement, {})} semana={lista(d.week.analysis.agreement, {})} />
+                <Linha
+                  rotulo="Sem maioria"
+                  hoje={parteDe(d.today.analysis.withoutMajority, somaValores(d.today.analysis.decidedBy))}
+                  semana={parteDe(d.week.analysis.withoutMajority, somaValores(d.week.analysis.decidedBy))}
+                />
+                <Linha rotulo="Quem decidiu o voto" hoje={lista(d.today.analysis.decidedBy, {})} semana={lista(d.week.analysis.decidedBy, {})} />
                 <Linha rotulo="Leitura forte (3 de 3)" hoje={d.today.analysis.strongRead} semana={d.week.analysis.strongRead} />
                 <Linha
                   rotulo="Leitor que falhou"
                   hoje={`${d.today.analysis.readerFailures} de ${d.today.analysis.readersSeen}`}
                   semana={`${d.week.analysis.readerFailures} de ${d.week.analysis.readersSeen}`}
                 />
+                <Linha rotulo="Falhas por leitor" hoje={falhasPorLeitor(d.today.analysis.readerLabels)} semana={falhasPorLeitor(d.week.analysis.readerLabels)} />
                 <Linha rotulo="Tempo total p50 / p90" hoje={`${seg(d.today.analysis.totalMsP50)} / ${seg(d.today.analysis.totalMsP90)}`} semana={`${seg(d.week.analysis.totalMsP50)} / ${seg(d.week.analysis.totalMsP90)}`} />
                 <Linha rotulo="Custo de IA" hoje={usd(d.today.analysis.costUsd, 2)} semana={usd(d.week.analysis.costUsd, 2)} />
                 <Linha rotulo="Custo por análise" hoje={usd(d.today.analysis.costPerAnalysisUsd)} semana={usd(d.week.analysis.costPerAnalysisUsd)} />

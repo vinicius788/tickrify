@@ -595,9 +595,11 @@ describe('AiService access enforcement', () => {
       // Sem recusa do validador nao ha nivel da IA nem plano rejeitado guardado.
       const watchPlan = { direction: 'long', triggerType: 'zone_reaction', zoneLow: 98, zoneHigh: 99, invalidation: 80, target1: 110, target2: null, validForCandles: 12, trigger: 'Reaction at 98.' };
       const coded = await run(injected, 'an_ai_level', { ...raw, signalState: 'WATCH', watchPlan, analysis: { ...raw.analysis, symbol: 'ABCUSDT' } });
-      expect(coded.completed.result).toMatchObject({ signalState: 'ENTER_NOW', dataMode: 'real_data', aiLevel: null });
+      // Regras de 23/11/2026: o modelo pediu WATCH, entao o codigo nunca promove a ENTER_NOW.
+      expect(coded.completed.result).toMatchObject({ signalState: 'WATCH', dataMode: 'real_data', aiLevel: null });
       expect(coded.completed.result).not.toHaveProperty('rejectedPlan');
-      expect(coded.completed.result.watchPlan).toMatchObject({ direction: 'long', invalidation: 96.5 });
+      // Sem o agora, o codigo monta o recuo ate o fundo real, com o stop dele (96).
+      expect(coded.completed.result.watchPlan).toMatchObject({ direction: 'long', invalidation: 96 });
       expect(coded.delivered.fullResponse.aiLevel).toBeNull();
       // Veto da leitura da IA: o codigo aguarda (NO_TRADE) e, com velas reais, mantem o mapa de niveis.
       const vetoed = await run(injected, 'an_veto', { ...raw, read: { direction: 'long', veto: 'conflicting_signals' } });

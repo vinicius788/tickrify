@@ -1,11 +1,14 @@
 import OpenAI from 'openai';
+import { analysisResponseSchema } from './ai.adapter';
 import {
   AnthropicVisionModel,
   FallbackVisionModel,
   OpenAiVisionModel,
   collapseNullable,
   countUnionFields,
+  ANTHROPIC_UNUSED_ANALYSIS_FIELDS,
   createVisionModels,
+  stripJsonFence,
   recordProviderComparison,
   restoreNulls,
   type VisionModelRequest,
@@ -300,5 +303,48 @@ describe('recordProviderComparison', () => {
       warn,
     );
     expect(warn).toHaveBeenCalled();
+  });
+});
+
+describe('AnthropicVisionModel: pedido real da analise (23/11/2026)', () => {
+  const models = { quick: 'claude-q', deep: 'claude-d' };
+  const ok = () => ({ ok: true, status: 200, statusText: 'ok', json: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: '{"a":1}' }], usage: {} }) });
+
+  it('o schema real com perfil de estrategia vai estruturado, sem os campos de pixel que ninguem le', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(ok());
+    await new AnthropicVisionModel('k', models, fetchImpl as any).complete(request({ schema: analysisResponseSchema(true) }));
+    const sent = JSON.parse(fetchImpl.mock.calls[0][1].body).output_config.format.schema;
+    const analysis = sent.properties.analysis;
+    for (const k of ANTHROPIC_UNUSED_ANALYSIS_FIELDS) {
+      expect(analysis.properties).not.toHaveProperty(k);
+      expect(analysis.required).not.toContain(k);
+    }
+    // Medido na API em 23/11/2026: com estes 4 campos e o strategyFit a gramatica passava do teto (400).
+    expect(sent.properties).toHaveProperty('strategyFit');
+    expect(Object.keys(analysis.properties).length).toBe(Object.keys((analysisResponseSchema(true) as any).properties.analysis.properties).length - 4);
+  });
+
+  it('gramatica grande demais: uma vez com o schema em texto e o JSON volta pelo mesmo caminho', async () => {
+    const fetchImpl = jest.fn()
+      .mockResolvedValueOnce({ ok: false, status: 400, statusText: 'bad', json: async () => ({ error: { message: 'The compiled grammar is too large, which would cause performance issues.' } }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, statusText: 'ok', json: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Here:\n```json\n{"a":null}\n```' }], usage: {} }) });
+    const result = await new AnthropicVisionModel('k', models, fetchImpl as any).complete(request({ schema: analysisResponseSchema(true) }));
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const second = JSON.parse(fetchImpl.mock.calls[1][1].body);
+    expect(second.output_config).not.toHaveProperty('format');
+    expect(second.system[0].text).toContain('Reply with exactly one JSON object');
+    expect(second.system[0].text).not.toContain('entryY');
+    expect(JSON.parse(result.content)).toEqual({ a: null });
+  });
+
+  it('outro 400 nao repete', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue({ ok: false, status: 400, statusText: 'bad', json: async () => ({ error: { message: 'invalid image' } }) });
+    await expect(new AnthropicVisionModel('k', models, fetchImpl as any).complete(request())).rejects.toThrow('Anthropic 400: invalid image');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('stripJsonFence fica so com o objeto', () => {
+    expect(stripJsonFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
+    expect(stripJsonFence('Sure. {"a":{"b":2}} Done.')).toBe('{"a":{"b":2}}');
   });
 });

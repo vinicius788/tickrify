@@ -1,5 +1,6 @@
 import { makeRawSqlPrisma } from '../../__tests__/raw-sql-mock';
-import { buildPriorPlanBlock, continuationOf, loadPriorPlan, readContinuationStatus, sameAsset, type PriorPlan } from './setup-continuation';
+import { buildPriorPlanBlock,
+  priorBinding, continuationOf, loadPriorPlan, readContinuationStatus, sameAsset, type PriorPlan } from './setup-continuation';
 
 const NOW = new Date('2026-11-09T15:00:00Z');
 const PLAN = {
@@ -61,8 +62,13 @@ describe('sameAsset', () => {
 describe('buildPriorPlanBlock', () => {
   const prior: PriorPlan = {
     setupId: 's', priorAnalysisId: 'p', symbol: 'XAUUSD', createdAt: new Date('2026-11-09T14:00:00Z'),
-    plan: PLAN as PriorPlan['plan'], alert: { level: 100, triggeredAt: new Date('2026-11-09T14:40:00Z') },
+    plan: PLAN as PriorPlan['plan'], alert: { level: 100, triggeredAt: new Date('2026-11-09T14:40:00Z') }, binding: true,
   };
+
+  it('plano que nao prende ganha a nota de que nao pesa; o que prende, nao', () => {
+    expect(buildPriorPlanBlock({ ...prior, binding: false })).toContain('carries no weight');
+    expect(buildPriorPlanBlock(prior)).not.toContain('carries no weight');
+  });
 
   it('so campos fechados e numeros, em UTC, com a instrucao de ler primeiro', () => {
     const block = buildPriorPlanBlock(prior);
@@ -134,5 +140,19 @@ describe('readContinuationStatus', () => {
     expect(read.reason).toHaveLength(180);
     expect(read.reason).not.toMatch(/[<>]/);
     expect(read.reason).not.toContain(String.fromCharCode(0));
+  });
+});
+
+describe('priorBinding (23/11/2026)', () => {
+  it('maioria prende; desempate so com vies forte; leitor unico e analise antiga nao', () => {
+    expect(priorBinding({ engine: { vote: { decidedBy: 'majority' } } })).toBe(true);
+    const rules = 'filter-2026-11-23';
+    expect(priorBinding({ engine: { rules, vote: { decidedBy: 'candle_bias' } }, candleBias: { direction: 'short', score: -2, htfTrend: 'downtrend' } })).toBe(true);
+    expect(priorBinding({ engine: { rules, vote: { decidedBy: 'candle_bias' } }, candleBias: { direction: 'short', score: -1, htfTrend: 'downtrend' } })).toBe(false);
+    expect(priorBinding({ engine: { rules, vote: { decidedBy: 'candle_bias' } }, candleBias: { direction: 'short', score: -2, htfTrend: 'uptrend' } })).toBe(false);
+    // ouro 5M de 23/11 12:55 (gravado, antes das regras): desempate de 1 x 1 leitores nao prende a de 13:02
+    expect(priorBinding({ engine: { vote: { agreement: '1/2', decidedBy: 'candle_bias' } }, candleBias: { direction: 'short', score: -2, htfTrend: 'downtrend', structure: 'mixed' } })).toBe(false);
+    expect(priorBinding({ engine: { vote: { decidedBy: 'single' } } })).toBe(false);
+    expect(priorBinding({})).toBe(false);
   });
 });

@@ -133,8 +133,8 @@ describe('AIAdapter trade-plan integrity', () => {
     const { readers, vote } = result.engineMeta!;
     expect(readers!.map((r) => [r.label, r.status])).toEqual([['openai-1', 'failed'], ['openai-2', 'used']]);
     expect(readers![0].error).toContain('socket hang up');
-    // Um leitor so: sem maioria, com velas decide o codigo (vies das velas), sem a leitura.
-    expect(vote).toMatchObject({ agreement: '1/1', strongRead: false, earlyMajority: false, decidedBy: 'candle_bias' });
+    // Um leitor so (23/11/2026): vale a leitura dele; o agora so com vies forte junto.
+    expect(vote).toMatchObject({ agreement: '1/1', strongRead: false, earlyMajority: false, decidedBy: 'single' });
   });
 
   it('early majority: the two first readers agree, the slow third is ignored and the vote is recorded', async () => {

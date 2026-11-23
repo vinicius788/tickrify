@@ -27,7 +27,7 @@ const fmt = (v: number | null) => String(v);
 const base: CodeSummary = { action: 'wait', waitReason: null, entry: null, stopLoss: null, takeProfit1: null, takeProfit2: null, level: null, turnsBuyAbove: 1.1, turnsSellBelow: 1.05, flippedFromPrior: false };
 const texts = (l: { analysis: { result: { codeSummary: unknown } } }) => l.analysis.result.codeSummary as CodeSummaryTexts;
 
-const REASONS = ['neutral_direction', 'conflicting_direction', 'no_geometry', 'no_majority', 'news_event', 'stale_print', 'no_data', 'veto_news', 'veto_structure_broken', 'veto_stale_print', 'veto_not_a_chart', 'veto_unclear_chart', 'veto_conflicting_signals'];
+const REASONS = ['neutral_direction', 'conflicting_direction', 'no_geometry', 'no_majority', 'against_trend', 'news_event', 'stale_print', 'no_data', 'veto_news', 'veto_structure_broken', 'veto_stale_print', 'veto_not_a_chart', 'veto_unclear_chart', 'veto_conflicting_signals'];
 
 describe('resumo montado pelo codigo', () => {
   it.each(REASONS)('waitReason %s: motivo + o que viraria operacao, nos 6 idiomas', (reason) => {
@@ -48,6 +48,15 @@ describe('resumo montado pelo codigo', () => {
     const brk = buildCodeSummaryText({ ...base, action: 'buy_breakout', entry: 101, level: 100.9, stopLoss: 99, takeProfit1: 104, flippedFromPrior: true }, texts(en), fmt).text;
     expect(brk).toContain('only after a candle closes above 100.9');
     expect(brk).toContain('direction flipped');
+  });
+
+  it('plano anterior sob pressao: frase propria nos 6 idiomas', () => {
+    for (const lang of [en, pt, es, fr, de, ja]) {
+      const { text } = buildCodeSummaryText({ ...base, priorUnderPressure: true }, texts(lang), fmt);
+      expect(text).toContain(texts(lang).underPressure);
+      const plain = buildCodeSummaryText(base, texts(lang), fmt).text;
+      expect(plain).not.toContain(texts(lang).underPressure);
+    }
   });
 
   it('numero nulo cai no rotulo, nunca em chave solta', () => {
@@ -119,6 +128,22 @@ describe('tela com codeSummary', () => {
     expect(box).toContain('Not attached');
     expect(screen.getByTestId('ai-saw-buy').textContent).toContain('The 4h trend is up.');
     expect(screen.getByTestId('ai-saw-sell').textContent).toContain('Price is below the EMA50.');
+  });
+
+  it('"What the AI saw": usa o tempo grafico da direcao e mostra a escada', () => {
+    const bias = { direction: 'long', score: 2, structure: 'up', htfTrend: 'uptrend', vsEma50: 'above', htfVsEma50: 'above', stretched: false } as const;
+    show(fixture({ candleBias: { ...bias, timeframes: { chart: '5m', direction: '1h', setup: '15m' } }, codeSummary: base }));
+    const box = screen.getByTestId('what-ai-saw').textContent ?? '';
+    expect(box).toContain('1h trend');
+    expect(box).not.toContain('4h');
+    expect(box).toContain('Chart 5m, direction 1h, setup 15m');
+    expect(screen.getByTestId('ai-saw-buy').textContent).toContain('The 1h trend is up.');
+    expect(box).toContain('above it on the 1h');
+    cleanup();
+    show(fixture({ candleBias: { ...bias }, codeSummary: base }));
+    const old = screen.getByTestId('what-ai-saw').textContent ?? '';
+    expect(old).toContain('4h trend');
+    expect(old).not.toContain('Timeframes');
   });
 
   it('sem velas reais o bloco nao aparece', () => {

@@ -24,6 +24,8 @@ export interface CandleView {
   windowHigh: number | null;
   windowLow: number | null;
   late: { long: boolean; short: boolean } | null;
+  /** Tempos usados (grafico, direcao, setup); so informativo. */
+  timeframes?: TimeframeLadder | null;
 }
 
 export interface CandleBias {
@@ -36,9 +38,42 @@ export interface CandleBias {
   htfVsEma50: 'above' | 'below' | null;
   /** Preco esticado na direcao: movimento atrasado ou no extremo da janela. */
   stretched: boolean;
+  /** Escada de tempos (23/11/2026): o do grafico, o de direcao (htfTrend) e o de setup. */
+  timeframes?: TimeframeLadder | null;
+}
+
+/**
+ * Escada de tempos (Elder, fator 4 a 6). O vies usa a tendencia do tempo de
+ * DIRECAO; o de setup e so informativo. Antes de 23/11/2026 era o 4h fixo.
+ */
+export interface TimeframeLadder {
+  chart: string;
+  direction: string;
+  setup: string;
+}
+
+const LADDER: Record<string, { direction: string; setup: string }> = {
+  '1m': { direction: '15m', setup: '5m' },
+  '3m': { direction: '15m', setup: '5m' },
+  '5m': { direction: '1h', setup: '15m' },
+  '15m': { direction: '4h', setup: '1h' },
+  '30m': { direction: '4h', setup: '1h' },
+  '1h': { direction: '1d', setup: '4h' },
+  '2h': { direction: '1d', setup: '4h' },
+  '4h': { direction: '1w', setup: '1d' },
+  '6h': { direction: '1w', setup: '1d' },
+  '1d': { direction: '1w', setup: '1d' },
+};
+
+/** Tempo de direcao e de setup para o tempo grafico do print; null = sem escada (semanal ou desconhecido). */
+export function timeframeLadder(chart: string | null | undefined): TimeframeLadder | null {
+  const step = chart ? LADDER[chart] : undefined;
+  return step && chart ? { chart, ...step } : null;
 }
 
 export const BIAS_RULES = {
+  /** Pontos a partir dos quais o vies e forte (com a tendencia do tempo de direcao junto). */
+  strongScore: 2,
   /** Pontos para a direcao valer (de 3). Backtest de 23/11/2026 (6.090 momentos, cripto 15m e 1h): 1 deixa 27% neutro. */
   minScore: 1,
   /** Posicao no range que conta como esticado (compra acima, venda abaixo de 100 - isto). */
@@ -86,7 +121,27 @@ export function candleBias(view: CandleView, minScore: number = BIAS_RULES.minSc
       : direction === 'short'
         ? !!view.late?.short || (pos !== null && pos <= 100 - BIAS_RULES.stretchedRangePct)
         : false;
-  return { direction, score, structure, htfTrend: view.htfTrend, vsEma50: view.vsEma50, htfVsEma50: view.htfVsEma50, stretched };
+  return { direction, score, structure, htfTrend: view.htfTrend, vsEma50: view.vsEma50, htfVsEma50: view.htfVsEma50, stretched, timeframes: view.timeframes ?? null };
+}
+
+/**
+ * Vies forte (23/11/2026): pontuacao a partir de `strongScore` E a estrutura do
+ * tempo de direcao (htfTrend, topos e fundos do tempo maior) na mesma direcao.
+ * So o vies forte desempata leituras divergentes ou segura um ENTER_NOW de um leitor.
+ */
+export function isStrongBias(bias: Pick<CandleBias, 'direction' | 'score' | 'htfTrend'>): boolean {
+  if (bias.direction === 'neutral') return false;
+  return Math.abs(bias.score) >= BIAS_RULES.strongScore && bias.htfTrend === (bias.direction === 'long' ? 'uptrend' : 'downtrend');
+}
+
+/**
+ * Filtro de tendencia (23/11/2026): o tempo de direcao em tendencia e o preco do
+ * grafico do mesmo lado da EMA50 = nada de entrada contra (nem no recuo); so
+ * rompimento com fechamento ou aguardar.
+ */
+export function againstTrend(view: Pick<CandleView, 'htfTrend' | 'vsEma50'>, d: Direction): boolean {
+  if (d === 'long') return view.htfTrend === 'downtrend' && view.vsEma50 === 'below';
+  return view.htfTrend === 'uptrend' && view.vsEma50 === 'above';
 }
 
 export interface EntryPlan {
@@ -296,6 +351,54 @@ export function sameOutcome(a: ReaderOutcome, b: ReaderOutcome): boolean {
   return key(a) === key(b);
 }
 
+/** O que cada leitor pediu (antes do codigo) e o que o codigo decidiu com a leitura dele. */
+export interface ReaderVote {
+  raw: { state: string; direction: Direction | null };
+  outcome: ReaderOutcome;
+}
+
+export type VoteDecidedBy = 'majority' | 'candle_bias' | 'single' | 'no_majority';
+
+export interface VoteResolution {
+  decidedBy: VoteDecidedBy;
+  /** Indice do leitor cuja resposta vira a analise. */
+  chosen: number;
+  /** Leitura sintetica do desempate (direcao do vies forte); undefined = a do leitor escolhido. */
+  tieRead?: { direction: Direction; veto: null };
+  /** undefined = a decisao do leitor escolhido vale como esta (maioria). */
+  allowNow?: boolean;
+  noMajority?: boolean;
+}
+
+/**
+ * Voto dos leitores (23/11/2026, filter-2026-11-23). Maioria (estado e direcao) =
+ * a decisao dela. Sem maioria: so o vies FORTE desempata (`isStrongBias`), e o
+ * agora so com 1 leitor que pediu ENTER_NOW nessa direcao; sem vies forte,
+ * aguardar com "leituras divergentes". Um leitor so: a leitura dele, agora so
+ * com o vies forte na mesma direcao. Nunca promove WATCH/NO_TRADE a ENTER_NOW.
+ */
+export function resolveVote(votes: readonly ReaderVote[], bias: CandleBias | null): VoteResolution {
+  const strongDir = bias && isStrongBias(bias) && bias.direction !== 'neutral' ? bias.direction : null;
+  if (votes.length >= 2) {
+    const majority = majorityOf(votes.map((v) => v.outcome));
+    if (majority) return { decidedBy: 'majority', chosen: votes.findIndex((v) => sameOutcome(v.outcome, majority.outcome)) };
+    if (!bias) return { decidedBy: 'single', chosen: 0 };
+    if (strongDir) {
+      const inDir = votes.findIndex((v) => v.raw.direction === strongDir);
+      return {
+        decidedBy: 'candle_bias',
+        chosen: inDir >= 0 ? inDir : 0,
+        tieRead: { direction: strongDir, veto: null },
+        allowNow: votes.some((v) => v.raw.state === 'ENTER_NOW' && v.raw.direction === strongDir),
+      };
+    }
+    return { decidedBy: 'no_majority', chosen: 0, noMajority: true };
+  }
+  const only = votes[0];
+  if (!bias || !only) return { decidedBy: 'single', chosen: 0 };
+  return { decidedBy: 'single', chosen: 0, allowNow: only.raw.state === 'ENTER_NOW' && !!strongDir && only.raw.direction === strongDir };
+}
+
 // ---------------------------------------------------------------------------
 // Resumo pelo codigo: a tela monta a frase a partir disto, nos 6 idiomas.
 // ---------------------------------------------------------------------------
@@ -306,7 +409,7 @@ export type SummaryAction =
 /** Por que aguardar. Nenhum motivo fala de stop ou alvo do modelo. */
 export type WaitReason =
   | 'neutral_direction' | 'conflicting_direction' | 'no_geometry' | 'no_majority' | 'news_event'
-  | 'stale_print' | 'no_data' | `veto_${VetoReason}`;
+  | 'stale_print' | 'no_data' | 'against_trend' | `veto_${VetoReason}`;
 
 export interface CodeSummary {
   action: SummaryAction;
@@ -322,6 +425,8 @@ export interface CodeSummary {
   turnsSellBelow: number | null;
   /** A direcao virou por invalidacao fechada do plano anterior do setup. */
   flippedFromPrior: boolean;
+  /** O plano anterior do setup nao prende esta leitura: nasceu de desempate fraco ou o vies virou forte contra. */
+  priorUnderPressure?: boolean;
 }
 
 export function actionOf(plan: Pick<EntryPlan, 'kind' | 'direction'> | null): SummaryAction {
@@ -343,6 +448,7 @@ export function buildCodeSummary(input: {
   waitReason: WaitReason | null;
   view: CandleView | null;
   flippedFromPrior?: boolean;
+  priorUnderPressure?: boolean;
 }): CodeSummary {
   const { plan } = input;
   const near = !plan && input.view ? nearestLevels(input.view) : { above: null, below: null };
@@ -357,6 +463,7 @@ export function buildCodeSummary(input: {
     turnsBuyAbove: input.waitReason ? (plan?.direction === 'long' ? plan.level : near.above) : null,
     turnsSellBelow: input.waitReason ? (plan?.direction === 'short' ? plan.level : near.below) : null,
     flippedFromPrior: !!input.flippedFromPrior,
+    ...(input.priorUnderPressure ? { priorUnderPressure: true } : {}),
   };
 }
 

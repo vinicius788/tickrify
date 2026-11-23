@@ -327,6 +327,8 @@ export interface CodeSummary {
   turnsBuyAbove: number | null;
   turnsSellBelow: number | null;
   flippedFromPrior: boolean;
+  /** O plano anterior do setup esta sob pressao e nao segura esta leitura. */
+  priorUnderPressure?: boolean;
 }
 
 export interface CandleBias {
@@ -337,6 +339,8 @@ export interface CandleBias {
   vsEma50: 'above' | 'below' | null;
   htfVsEma50: 'above' | 'below' | null;
   stretched: boolean;
+  /** Tempos graficos usados (escada do motor); ausente em analise antiga: o de direcao era 4h. */
+  timeframes?: { chart: string; direction: string; setup: string } | null;
   /** RSI(14) e volume relativo da ultima vela (volume so em cripto). */
   rsi14?: number | null;
   relVolumeLast?: number | null;
