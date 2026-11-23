@@ -86,7 +86,7 @@ const NotasPainel = () => {
                     {MOTIVO[motivo] ?? motivo}
                   </span>
                 ))}
-                <span className={`rounded-full border px-2 py-0.5 ${nota.quoteConsent ? 'border-emerald-500/40 text-[var(--tone-up-2)]' : 'border-[var(--border-strong)] text-[var(--text-faint)]'}`}>
+                <span className={`rounded-full border px-2 py-0.5 ${nota.quoteConsent ? 'border-[var(--signal-buy-border)] text-[var(--signal-buy)]' : 'border-[var(--border-strong)] text-[var(--text-faint)]'}`}>
                   {nota.quoteConsent ? `autorizou citar${nota.displayName ? ` como "${nota.displayName}"` : ''}` : 'não autorizou citar'}
                 </span>
               </div>

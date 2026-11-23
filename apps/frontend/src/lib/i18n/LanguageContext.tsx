@@ -10,7 +10,8 @@ interface LanguageContextValue {
   setLanguage: (lang: Language) => void;
 }
 
-const LanguageContext = createContext<LanguageContextValue | null>(null);
+/** Exportado so para o inspetor do /admin fixar o inglês na prévia do que a pessoa viu. */
+export const LanguageContext = createContext<LanguageContextValue | null>(null);
 type AccountConnection = { save: (language: Language) => void; revision: number };
 const AccountContext = createContext<{
   connection: React.MutableRefObject<AccountConnection | null>;

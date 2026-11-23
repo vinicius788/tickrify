@@ -14,6 +14,9 @@ import AfiliadosPainel from '@/components/admin/AfiliadosPainel';
 import ChatPainel from '@/components/admin/ChatPainel';
 import CancelamentosPainel from '@/components/admin/CancelamentosPainel';
 import MotorPainel from '@/components/admin/MotorPainel';
+import InicioPainel from '@/components/admin/InicioPainel';
+import InspetorPainel from '@/components/admin/InspetorPainel';
+import UsuarioPainel from '@/components/admin/UsuarioPainel';
 import { useAdminChatThreads } from '@/lib/support-chat';
 
 /**
@@ -29,28 +32,35 @@ import { useAdminChatThreads } from '@/lib/support-chat';
  * com o 403 é escolher o que desenhar — ela nunca concede acesso a nada.
  */
 
+/**
+ * Só chaves de e-mail e de operação aparecem aqui. As do motor (contexto de
+ * mercado, guarda de evento, modo demo) existem no código, mas não se mexe nelas
+ * por este painel: o motor só muda na revisão mensal.
+ */
+const CHAVES_DE_OPERACAO = /^(EMAIL_|TELEGRAM_|CHAT_|TRIAL_|ENABLE_OUTCOME_TRACKING$)/;
+
 const ORIGEM_ROTULO: Record<string, { texto: string; classe: string; ajuda: string }> = {
   banco: {
     texto: 'definido aqui',
-    classe: 'bg-emerald-500/15 text-[var(--tone-up-1)] border-emerald-500/30',
+    classe: 'border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] text-[var(--signal-buy)]',
     ajuda: 'Alguém mudou por este painel. Vence a variável de ambiente do Render.',
   },
   ambiente: {
     texto: 'vem do Render',
-    classe: 'bg-sky-500/15 text-[var(--tone-info-1)] border-sky-500/30',
+    classe: 'border-[var(--border-strong)] bg-[var(--fill-2)] text-[var(--tone-info-1)]',
     ajuda: 'Valor herdado da variável de ambiente. Mudar aqui passa a ignorá-la.',
   },
   padrao: {
     texto: 'padrão do código',
-    classe: 'bg-zinc-500/15 text-[var(--text-dim)] border-zinc-500/30',
+    classe: 'border-[var(--border-strong)] bg-[var(--fill-2)] text-[var(--text-dim)]',
     ajuda: 'Nada configurado em lugar nenhum: é o comportamento histórico do código.',
   },
 };
 
 const RISCO_ROTULO: Record<string, string> = {
-  alto: 'bg-red-500/15 text-[var(--tone-down-1)] border-red-500/30',
-  medio: 'bg-amber-500/15 text-[var(--tone-warn-1)] border-amber-500/30',
-  baixo: 'bg-zinc-500/15 text-[var(--text-dim)] border-zinc-500/30',
+  alto: 'border-[var(--signal-sell-border)] bg-[var(--signal-sell-bg)] text-[var(--signal-sell)]',
+  medio: 'border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)] text-[var(--signal-hold)]',
+  baixo: 'border-[var(--border-strong)] bg-[var(--fill-2)] text-[var(--text-dim)]',
 };
 
 function LinhaFlag({
@@ -89,7 +99,7 @@ function LinhaFlag({
             <h3 className="text-sm font-semibold text-[var(--text-primary)]">{def.label}</h3>
             {def.soldOnSite && (
               <Badge
-                className="border-purple-500/30 bg-purple-500/15 text-[var(--tone-violet-1)]"
+                className="border-[var(--border-strong)] bg-[var(--fill-2)] text-[var(--tone-violet-1)]"
                 title="A landing page vende esta função. Desligar torna uma afirmação pública falsa."
               >
                 vendida na vitrine
@@ -163,7 +173,7 @@ function LinhaFlag({
   );
 }
 
-type Aba = 'chat' | 'afiliados' | 'origem' | 'relatos' | 'opinioes' | 'config' | 'cancelamentos' | 'motor';
+type Aba = 'inicio' | 'inspetor' | 'usuario' | 'chat' | 'afiliados' | 'origem' | 'relatos' | 'opinioes' | 'config' | 'cancelamentos' | 'motor';
 
 /** Contador do topo. Zero fica apagado; acima de zero chama atencao e leva a aba. */
 function Pendencia({ n, rotulo, onClick }: { n: number | null; rotulo: string; onClick: () => void }) {
@@ -172,25 +182,28 @@ function Pendencia({ n, rotulo, onClick }: { n: number | null; rotulo: string; o
     <button
       type="button"
       onClick={onClick}
-      className={`flex-1 rounded-xl border px-4 py-3 text-left transition-colors ${
-        ativo ? 'border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/15' : 'border-[var(--border-strong)] bg-[var(--fill-1)] hover:bg-[var(--fill-2)]'
+      className={`min-w-0 rounded-xl border px-4 py-3 text-left transition-colors ${
+        ativo ? 'border-[var(--signal-hold-border)] bg-[var(--signal-hold-bg)]' : 'border-[var(--border-strong)] bg-[var(--fill-1)] hover:bg-[var(--fill-2)]'
       }`}
     >
-      <div className={`text-2xl font-semibold ${ativo ? 'text-[var(--tone-warn-1)]' : 'text-[var(--text-faint)]'}`}>{n ?? '·'}</div>
+      <div className={`text-2xl font-semibold ${ativo ? 'text-[var(--signal-hold)]' : 'text-[var(--text-faint)]'}`}>{n ?? '·'}</div>
       <div className="mt-0.5 text-xs text-[var(--text-dim)]">{rotulo}</div>
     </button>
   );
 }
 
 const ABAS: Array<{ chave: Aba; rotulo: string }> = [
+  { chave: 'inicio', rotulo: 'Início' },
+  { chave: 'inspetor', rotulo: 'Inspetor de análise' },
+  { chave: 'usuario', rotulo: 'Usuário' },
+  { chave: 'motor', rotulo: 'Motor' },
   { chave: 'chat', rotulo: 'Chat' },
   { chave: 'afiliados', rotulo: 'Afiliados' },
   { chave: 'origem', rotulo: 'Origem' },
   { chave: 'cancelamentos', rotulo: 'Cancelamentos' },
-  { chave: 'motor', rotulo: 'Motor' },
   { chave: 'relatos', rotulo: 'Relatos de problema' },
   { chave: 'opinioes', rotulo: 'Opiniões' },
-  { chave: 'config', rotulo: 'Configurações avançadas' },
+  { chave: 'config', rotulo: 'Configurações' },
 ];
 
 export default function AdminPage() {
@@ -200,8 +213,19 @@ export default function AdminPage() {
   // `?aba=chat` vem do e-mail de aviso de mensagem nova.
   const [aba, setAba] = useState<Aba>(() => {
     const pedida = new URLSearchParams(window.location.search).get('aba');
-    return ABAS.some((a) => a.chave === pedida) ? (pedida as Aba) : 'afiliados';
+    return ABAS.some((a) => a.chave === pedida) ? (pedida as Aba) : 'inicio';
   });
+  // Links entre abas: da ficha da pessoa para a análise, da análise para a pessoa.
+  const [analiseAberta, setAnaliseAberta] = useState<string | null>(null);
+  const [usuarioAberto, setUsuarioAberto] = useState<string | null>(null);
+  const irParaAnalise = (id: string) => {
+    setAnaliseAberta(id);
+    setAba('inspetor');
+  };
+  const irParaUsuario = (id: string) => {
+    setUsuarioAberto(id);
+    setAba('usuario');
+  };
   const conversas = useAdminChatThreads();
   const conversasNovas = conversas.data ? conversas.data.items.filter((t) => t.unread > 0).length : null;
   const { affiliates, payouts } = useAffiliateAdmin();
@@ -218,6 +242,7 @@ export default function AdminPage() {
     pedidosAfiliado === 0 && saquesAbertos === 0 && relatosAbertos === 0 && opinioesNovas === 0 && (conversasNovas ?? 0) === 0;
 
   const salvando = setFlag.isPending || clearFlag.isPending;
+  const chavesVisiveis = flags.filter((f) => CHAVES_DE_OPERACAO.test(f.key));
 
   const salvar = (key: string, value: string) =>
     setFlag.mutate(
@@ -247,19 +272,19 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg-base)] px-6 py-10">
-      <div className="mx-auto max-w-3xl">
+    <div className="min-h-screen bg-[var(--bg-base)] px-4 py-6 sm:px-6 sm:py-10">
+      <div className="mx-auto max-w-[1600px]">
         <header className="mb-4">
           <h1 className="text-xl font-semibold text-[var(--text-primary)]">Painel</h1>
           <p className="mt-1 text-sm text-[var(--text-dim)]">O que precisa de você:</p>
         </header>
 
         {nadaPendente ? (
-          <div className="mb-8 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-[var(--tone-up-1)]">
+          <div className="mb-6 rounded-xl border border-[var(--signal-buy-border)] bg-[var(--signal-buy-bg)] px-4 py-3 text-sm text-[var(--signal-buy)]">
             Nada pendente. Tudo em dia.
           </div>
         ) : (
-          <div className="mb-8 flex flex-col gap-3 sm:flex-row">
+          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Pendencia n={conversasNovas} rotulo="conversas com mensagem nova" onClick={() => setAba('chat')} />
             <Pendencia n={pedidosAfiliado} rotulo="pedidos de afiliado para aprovar" onClick={() => setAba('afiliados')} />
             <Pendencia n={saquesAbertos} rotulo="saques de afiliado para pagar" onClick={() => setAba('afiliados')} />
@@ -285,6 +310,12 @@ export default function AdminPage() {
           ))}
         </nav>
 
+        {aba === 'inicio' && <InicioPainel />}
+
+        {aba === 'inspetor' && <InspetorPainel analiseInicial={analiseAberta} onUsuario={irParaUsuario} />}
+
+        {aba === 'usuario' && <UsuarioPainel usuarioInicial={usuarioAberto} onAnalise={irParaAnalise} onChat={() => setAba('chat')} />}
+
         {aba === 'chat' && <ChatPainel />}
 
         {aba === 'afiliados' && <AfiliadosPainel />}
@@ -308,9 +339,8 @@ export default function AdminPage() {
         {aba === 'config' && (
           <>
             <div className="mb-5 rounded-lg border border-[var(--border-strong)] bg-[var(--fill-1)] px-4 py-3 text-sm text-[var(--text-soft)]">
-              Você não precisa mexer aqui no dia a dia. Estas chaves ligam e desligam partes do motor de análise, e
-              está tudo configurado. Desligar algo marcado como &quot;vendida na vitrine&quot; torna falsa uma promessa
-              do site.
+              Você não precisa mexer aqui no dia a dia. Estas são as chaves de e-mail, Telegram, chat, trial e medição de
+              acerto. Desligar algo marcado como &quot;vendida na vitrine&quot; torna falsa uma promessa do site.
               {cache?.ultimoErro && (
                 <span className="mt-2 block text-[var(--tone-warn-1)]">
                   O banco destas chaves não respondeu, então vale o que está no Render. Nada quebrou, mas mudanças feitas
@@ -324,8 +354,8 @@ export default function AdminPage() {
               <p className="text-sm text-[var(--tone-down-2)]">Não deu para carregar: {error.message}</p>
             )}
 
-            <div className="space-y-3">
-              {flags.map((flag) => (
+            <div className="grid gap-3 xl:grid-cols-2">
+              {chavesVisiveis.map((flag) => (
                 <LinhaFlag
                   key={flag.key}
                   flag={flag}
