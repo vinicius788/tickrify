@@ -31,12 +31,6 @@ describe('entrada registrada num WATCH', () => {
     expect(buildWatchEntry(watch('short'), 'HOLD', { plan: 'level', entry: 74300 }, NOW)).toBe('entry_out_of_plan');
   });
 
-  it('a mercado usa os niveis a mercado; sem eles gravados, recusa', () => {
-    const marketLevels = { entry: 74535, stopLoss: 74380, takeProfit1: 74768, takeProfit2: null, tp1R: 1.5, riskAtr: 1.3 };
-    expect(buildWatchEntry(watch('long', { marketLevels }), 'HOLD', { plan: 'market', entry: 74535 }, NOW)).toMatchObject({ plan: 'market', stopLoss: 74380, takeProfit1: 74768 });
-    expect(buildWatchEntry(watch('long'), 'HOLD', { plan: 'market', entry: 74535 }, NOW)).toBe('watch_plan_unavailable');
-  });
-
   it('WATCH sem geometria valida no nivel (print ou alvos rejeitados): nada a registrar', () => {
     expect(buildWatchEntry(watch('long', { watchLevels: null }), 'HOLD', { plan: 'level', entry: 74470 }, NOW)).toBe('watch_plan_unavailable');
   });
@@ -71,7 +65,7 @@ describe('SetWatchEntryDto contra o ValidationPipe real', () => {
 
   it('aceita o plano e o preco; stop e alvo vindos da tela sao recusados', async () => {
     await expect(run({ plan: 'level', entry: 74480 })).resolves.toMatchObject({ plan: 'level', entry: 74480 });
-    await expect(run({ plan: 'market', entry: 1.0952 })).resolves.toBeDefined();
+    await expect(run({ plan: 'market', entry: 1.0952 })).rejects.toBeDefined();
     await expect(run({ plan: 'limit', entry: 1 })).rejects.toBeDefined();
     await expect(run({ plan: 'level', entry: 0 })).rejects.toBeDefined();
     await expect(run({ plan: 'level', entry: '74480' })).rejects.toBeDefined();

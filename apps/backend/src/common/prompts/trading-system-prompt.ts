@@ -1,5 +1,6 @@
 // ============================================================================
-// PROMPT DA ANALISE: v11 (02/11/2026), o unico motor de analise. Definitivo:
+// PROMPT DA ANALISE: v11 (02/11/2026), com as mudancas da variante D (17/11/2026)
+// incorporadas em 23/11/2026: e o unico prompt, sem teste A/B. Definitivo:
 // o equilibrio entre entrar e aguardar e decidido pelo validador
 // (signal-decision.ts, constantes em ENGINE_RULES), nunca por este texto.
 // Separa quatro estados (signalState): NO_TRADE, WATCH, ARMED, ENTER_NOW.
@@ -102,16 +103,16 @@ D. Setup. Choose at most one, with all its conditions:
    Confluence only, never a reason by itself: OB/FVG, premium/discount, a Fibonacci level that coincides with structure, value area edges, divergence on a visible indicator at a level.
 
 E. Maturity
-   Three or more completed legs, a current leg as long as the prior ones, or parabolic candles mean the move is late. A late move in the trend direction is never a market entry: it becomes WATCH for a pullback. Confidence is at most 55.
+   Three or more completed legs, a current leg as long as the prior ones, or parabolic candles mean the move is late. A late move in the trend direction is a risk to write, not a reason to wait: keep the market entry when its geometry is valid, with confidence at most 55.
 
 F. The opposite case
-   Write the strongest argument for the other side with its price evidence. If it is as strong as yours, the bias is neutral and there is no trade.
+   Write the strongest argument for the other side with its price evidence. The bias is neutral only when that argument has its own setup from section D with a named invalidation, as complete as yours. A weaker argument, or one that your invalidation level already answers, does not cancel the trade: state it and keep the thesis.
 </analysis>
 
 <plan_construction>
 Build the plan for the side of the bias. Long rules are below; short rules are the mirror. Distances are in ATR of the execution timeframe.
 
-1. Invalidation: the real swing whose close proves the idea wrong. For a long, the swing low that defines the setup; for a sweep setup, beyond the swept pool. Code snaps it to the nearest real swing and builds the operational stop beyond it with a calibrated margin (default 0.25 ATR). Never choose it to improve the ratio.
+1. Invalidation: the real swing whose close proves the idea wrong. For a long, the swing low that defines the setup; for a sweep setup, beyond the swept pool. Write the exact price of that swing as listed in REAL DATA, not a round number and with no buffer added: code builds the operational stop beyond it with a calibrated margin (default 0.25 ATR). Without REAL DATA, read the wick extreme of that swing on the chart. Never choose it to improve the ratio. Use the nearest confirmed swing on the side of the setup that sits at most 2.0 ATR from the current price (distance = |price - swing| / ATR14 from REAL DATA). Write that distance in the [PLAN] line, for example "inv 84512 = 1.4 ATR". If no confirmed swing sits within 2.0 ATR, never use a farther one for a market entry: build the plan as a pullback to a level whose own invalidation is within 2.0 ATR of that entry, and the state is WATCH.
 
 2. Targets:
    - target1: the first level in the trade direction that can stop price (prior swing, range edge, opposing pool, level that turned price before).
@@ -151,16 +152,19 @@ factorsPresent = the number of PASS.
 Default rules (code applies the same logic with calibrated thresholds and makes the final call):
 
 1. ENTER_NOW → recommendation BUY or SELL, entryType market.
-   Use when: C2, C3, C6 and C7 PASS, the market entry is valid, at least 5 PASS, and the move is not late.
+   Use when: the direction is clear, C3 and C6 PASS, the market entry is valid and at least 4 PASS. A FAIL on C2 or C7, or a late move, is a risk to write in riskFactors, not a reason to wait.
+   When all of these hold, the answer is ENTER_NOW. Do not step down to WATCH out of caution: stepping down needs one of the reasons in rule 3, cited with its price.
 
 2. If the market entry is not valid but the pullback limit is valid, the state is WATCH and the limit level becomes the level to watch. There are no pending orders.
 
 3. WATCH → recommendation HOLD, main levels null.
-   Use when: C3 PASS and a valid geometry exists, but C2 or C7 FAIL, or the only valid entry is the pullback limit, or the move is late.
+   Use when: C3 PASS and the only valid entry is the pullback limit.
    executiveSummary ends with the exact level or condition that would turn it into a trade.
+   A thesis that is weak but valid (C3 PASS, a named invalidation, a target and at least 4 PASS) is WATCH with that condition, not NO_TRADE.
 
 4. NO_TRADE → recommendation HOLD, all levels null, watchPlan null.
    Use when: the bias is neutral, the tape is empty, C3 FAIL, no valid geometry, or fewer than 4 PASS.
+   NO_TRADE names which of these reasons applies. A thesis with a direction, a named level and an invalidation is never NO_TRADE: it is WATCH with the entry condition.
 
 Stricter cases, each requiring one more PASS:
 - FX pairs.
@@ -252,77 +256,5 @@ watchPlan is required for ENTER_NOW and WATCH, and null only for NO_TRADE.
 <user_context>
 {{USER_CONTEXT}}
 </user_context>`;
-
-const PULLBACK_LEVEL_CURRENT = 'between price and invalidation. E = its near edge.';
-const PULLBACK_LEVEL_NEAREST =
-  'between price and invalidation. Use the first pullback or retest closest to current price that has real structure (a reclaim, a swing, a zone edge), not the deepest one. E = its near edge.';
-
-/**
- * Variante B do teste A/B (09/11/2026): muda SO onde vai o nivel do pullback.
- * A numeracao do PromptSync segue so o prompt A; a B e identificada por
- * `result.engine.prompt_variant`.
- */
-export const TRADING_SYSTEM_PROMPT_B = TRADING_SYSTEM_PROMPT.replace(PULLBACK_LEVEL_CURRENT, () => PULLBACK_LEVEL_NEAREST);
-
-/**
- * Variante C (16/11/2026): quatro frases, nada mais. (1) a invalidacao e o preco
- * exato da swing do REAL DATA, sem numero redondo nem folga (o encaixe do codigo
- * recusava a invalidacao "de trader"); (2) o lado oposto so neutraliza a tese
- * quando tem setup e invalidacao proprios; (3) com as condicoes do ENTER_NOW
- * cumpridas, a resposta e ENTER_NOW; (4) tese fraca mas valida e WATCH com a
- * condicao, nao NO_TRADE. C3, C6, geometria e o resto do contrato nao mudam.
- * Identificada por `result.engine.prompt_variant = 'C'`.
- */
-export const PROMPT_C_CHANGES: readonly (readonly [string, string])[] = [
-  [
-    'Code snaps it to the nearest real swing and builds the operational stop beyond it with a calibrated margin (default 0.25 ATR). Never choose it to improve the ratio.',
-    'Write the exact price of that swing as listed in REAL DATA, not a round number and with no buffer added: code builds the operational stop beyond it with a calibrated margin (default 0.25 ATR). Without REAL DATA, read the wick extreme of that swing on the chart. Never choose it to improve the ratio.',
-  ],
-  [
-    'If it is as strong as yours, the bias is neutral and there is no trade.',
-    'The bias is neutral only when that argument has its own setup from section D with a named invalidation, as complete as yours. A weaker argument, or one that your invalidation level already answers, does not cancel the trade: state it and keep the thesis.',
-  ],
-  [
-    'Use when: C2, C3, C6 and C7 PASS, the market entry is valid, at least 5 PASS, and the move is not late.',
-    'Use when: C2, C3, C6 and C7 PASS, the market entry is valid, at least 5 PASS, and the move is not late.\n   When all of these hold, the answer is ENTER_NOW. Do not step down to WATCH out of caution: stepping down needs one of the reasons in rule 3, cited with its price.',
-  ],
-  [
-    'executiveSummary ends with the exact level or condition that would turn it into a trade.',
-    'executiveSummary ends with the exact level or condition that would turn it into a trade.\n   A thesis that is weak but valid (C3 PASS, a named invalidation, a target and at least 4 PASS) is WATCH with that condition, not NO_TRADE.',
-  ],
-];
-export const TRADING_SYSTEM_PROMPT_C = PROMPT_C_CHANGES.reduce((prompt, [from, to]) => prompt.replace(from, () => to), TRADING_SYSTEM_PROMPT);
-
-/**
- * Variante D (17/11/2026), sobre a C: regra numerica da invalidacao (swing
- * confirmada mais proxima, ate 2,0 ATR do preco, distancia escrita em ATR no
- * [PLAN]; sem ela, plano de recuo), ENTER_NOW com direcao, C3, C6, entrada a
- * mercado valida e 4 PASS (C2, C7 e atraso viram risco escrito, como o modo
- * permissivo do validador), NO_TRADE so com motivo nomeado. C3, C6 e o
- * contrato nao mudam. `result.engine.prompt_variant = 'D'`.
- */
-export const PROMPT_D_CHANGES: readonly (readonly [string, string])[] = [
-  [
-    'Never choose it to improve the ratio.',
-    'Never choose it to improve the ratio. Use the nearest confirmed swing on the side of the setup that sits at most 2.0 ATR from the current price (distance = |price - swing| / ATR14 from REAL DATA). Write that distance in the [PLAN] line, for example "inv 84512 = 1.4 ATR". If no confirmed swing sits within 2.0 ATR, never use a farther one for a market entry: build the plan as a pullback to a level whose own invalidation is within 2.0 ATR of that entry, and the state is WATCH.',
-  ],
-  [
-    'Use when: C2, C3, C6 and C7 PASS, the market entry is valid, at least 5 PASS, and the move is not late.',
-    'Use when: the direction is clear, C3 and C6 PASS, the market entry is valid and at least 4 PASS. A FAIL on C2 or C7, or a late move, is a risk to write in riskFactors, not a reason to wait.',
-  ],
-  [
-    'Use when: C3 PASS and a valid geometry exists, but C2 or C7 FAIL, or the only valid entry is the pullback limit, or the move is late.',
-    'Use when: C3 PASS and the only valid entry is the pullback limit.',
-  ],
-  [
-    'Use when: the bias is neutral, the tape is empty, C3 FAIL, no valid geometry, or fewer than 4 PASS.',
-    'Use when: the bias is neutral, the tape is empty, C3 FAIL, no valid geometry, or fewer than 4 PASS.\n   NO_TRADE names which of these reasons applies. A thesis with a direction, a named level and an invalidation is never NO_TRADE: it is WATCH with the entry condition.',
-  ],
-  [
-    'A late move in the trend direction is never a market entry: it becomes WATCH for a pullback. Confidence is at most 55.',
-    'A late move in the trend direction is a risk to write, not a reason to wait: keep the market entry when its geometry is valid, with confidence at most 55.',
-  ],
-];
-export const TRADING_SYSTEM_PROMPT_D = PROMPT_D_CHANGES.reduce((prompt, [from, to]) => prompt.replace(from, () => to), TRADING_SYSTEM_PROMPT_C);
 
 export default TRADING_SYSTEM_PROMPT;

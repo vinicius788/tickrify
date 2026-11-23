@@ -185,13 +185,13 @@ describe('AIAdapter trade-plan integrity', () => {
     expect(result.engineMeta?.validatorAction).toBe('promoted');
   });
 
-  it('v11: alvo a menos de 1R das duas entradas: NO_TRADE', async () => {
+  it('v11: alvo a menos de 1R das duas entradas: WATCH sem niveis', async () => {
     const adapter = new AIAdapter();
     withFakeOpenAi(adapter, jest.fn().mockResolvedValue(responseFor(110, {}, { watchPlan: { ...PLAN, target1: 100.3, target2: null } })));
     withRealCandles(adapter);
     const result = await adapter.analyzeImage('data:image/png;base64,AA==', 'prompt', 'quick');
-    expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'NO_TRADE' });
-    expect(result.engineMeta?.validatorReasons).toEqual(['market_entry_invalid', 'no_valid_geometry']);
+    expect(result).toMatchObject({ recommendation: 'WAIT', signalState: 'WATCH', watchLevels: null });
+    expect(result.engineMeta?.validatorReasons).toEqual(['market_entry_invalid']);
     expect(result.confidence).toBeLessThanOrEqual(49);
   });
 

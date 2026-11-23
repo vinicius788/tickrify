@@ -381,10 +381,7 @@ async function main() {
   }
 
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
-  // --variant A|B|C (16/11/2026): o braco usa essa variante do prompt do codigo.
-  const variant = arg('--variant');
-  if (variant && !['A', 'B', 'C', 'D'].includes(variant)) throw new Error('--variant aceita A, B, C ou D');
-  const prompt = buildAnalysisPrompt({ userLanguage: 'en', analysisType: 'quick' }, (variant ?? 'A') as 'A' | 'B' | 'C' | 'D');
+  const prompt = buildAnalysisPrompt({ userLanguage: 'en', analysisType: 'quick' });
   let spent = done.reduce((s, d) => s + (d.costUsd || 0), 0);
   let callCost = 0;
   // Custo real de cada chamada (inclui a nova tentativa do adapter), para o teto.

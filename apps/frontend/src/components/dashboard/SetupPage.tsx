@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, X } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
@@ -10,16 +10,12 @@ import { WatchPending } from './PendingLevels';
 import SetupMonitoring from './SetupMonitoring';
 import { entrySide, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import {
-  checkFrequencyText,
-  formatAlertLevel,
   formatSetupDay,
   formatSetupMoment,
-  formatUtcTime,
   useAlertActions,
   useSetupActions,
   useSetupAlerts,
   useSetupVersions,
-  type AlertLabel,
 } from '@/lib/setups';
 
 const DATE_LOCALES: Record<string, string> = {
@@ -31,9 +27,9 @@ const DATE_LOCALES: Record<string, string> = {
  * nova para a mais antiga. Cada uma diz de quando e ("Analysis from <data>"),
  * nunca "current", "live" ou "now": e a leitura daquele grafico, naquela hora.
  *
- * Alertas de nivel (27/10/2026): os ativos (com cancelar), os disparados nos
- * ultimos 30 dias e o ultimo preco checado com a hora em UTC. Abrir a pagina
- * marca como vistos os disparados deste setup.
+ * Alertas de nivel (27/10/2026): o bloco Acompanhamento lista os alertas (com
+ * cancelar), os disparados nos ultimos 30 dias e o ultimo preco checado com a
+ * hora em UTC. Abrir a pagina marca como vistos os disparados deste setup.
  */
 const SetupPage = ({
   setupId,
@@ -56,8 +52,6 @@ const SetupPage = ({
   const alertsQuery = useSetupAlerts(true, setupId);
   const { cancel, seen } = useAlertActions();
   const alerts = alertsQuery.data?.items ?? [];
-  const activeAlerts = alerts.filter((alert) => alert.status === 'active');
-  const triggeredAlerts = alerts.filter((alert) => alert.status === 'triggered');
   const unseenIds = alerts.filter((alert) => alert.status === 'triggered' && !alert.seenAt).map((alert) => alert.id).join(',');
 
   useEffect(() => {
@@ -89,7 +83,6 @@ const SetupPage = ({
   const setup = pages[0]?.setup;
   if (!setup) return null;
   const versions = pages.flatMap((page) => page.versions);
-  const monitoringEnabled = pages[0]?.monitoringEnabled === true;
   const tracking = setup.status === 'tracking';
   const busy = follow.isPending || setStatus.isPending;
   const price = (value: number | null) => (value === null ? 'n/a' : value.toLocaleString(locale, { maximumFractionDigits: 6 }));
@@ -99,14 +92,6 @@ const SetupPage = ({
   const verdictTone = (v: { recommendation: string; signalState?: SignalState }) => {
     const tone = signalStateTone(resolveSignalState(v.signalState, v.recommendation), v.recommendation);
     return tone === 'buy' ? 'text-[var(--signal-buy)]' : tone === 'sell' ? 'text-[var(--signal-sell)]' : 'text-[var(--signal-hold)]';
-  };
-
-  const alertLabel: Record<AlertLabel, string> = {
-    entry: t.alerts.labelEntry,
-    stop: t.alerts.labelStop,
-    tp1: t.alerts.labelTp1,
-    invalidation: t.alerts.labelInvalidation,
-    custom: t.alerts.labelCustom,
   };
 
   const changeStatus = (status: 'untracked' | 'archived') =>
@@ -189,62 +174,13 @@ const SetupPage = ({
         )}
       </div>
 
-      {monitoringEnabled ? <SetupMonitoring
+      <SetupMonitoring
         versions={versions} alerts={alerts} base={base}
         paused={alertsQuery.data?.paused === true || !tracking}
         loading={alertsQuery.isLoading} error={alertsQuery.isError}
         cancelling={cancel.isPending}
         onCancel={(id) => cancel.mutate(id, { onSuccess: () => toast({ title: t.alerts.cancelled }) })}
-      /> : null}
-
-      {!monitoringEnabled && activeAlerts.length > 0 ? (
-        <section key="alerts" data-testid="alerts-active" className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="tk-stat-label">{t.alerts.activeTitle}</h2>
-            <p data-testid="alerts-checked" className="tabular-nums text-[11px] text-[var(--text-secondary)]">
-              {`${activeAlerts[0].checkedAt ? t.alerts.lastChecked.replace('{time}', formatUtcTime(activeAlerts[0].checkedAt)) : t.alerts.notChecked}${
-                activeAlerts[0].lastPrice ? ` · ${formatAlertLevel(activeAlerts[0].lastPrice, locale)}` : ''
-              }${checkFrequencyText(t.alerts, activeAlerts[0]) ? ` · ${checkFrequencyText(t.alerts, activeAlerts[0])}` : ''}`}
-            </p>
-          </div>
-          <ul className="mt-3 divide-y divide-[var(--border-subtle)]">
-            {activeAlerts.map((alert) => (
-              <li key={alert.id} className="flex items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0">
-                <div className="min-w-0 tabular-nums text-xs">
-                  <p className="text-[var(--text-primary)]">{`${alertLabel[alert.label]} ${formatAlertLevel(alert.level, locale)}`}</p>
-                  <p className="mt-0.5 text-[var(--text-secondary)]">{alert.side === 'above' ? t.alerts.rises : t.alerts.falls}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => cancel.mutate(alert.id, { onSuccess: () => toast({ title: t.alerts.cancelled }) })}
-                  disabled={cancel.isPending}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-50"
-                >
-                  <X className="h-3.5 w-3.5" /> {t.alerts.cancel}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {!monitoringEnabled && triggeredAlerts.length > 0 ? (
-        <section key="triggered" data-testid="alerts-triggered" className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
-          <h2 className="tk-stat-label">{t.alerts.triggeredTitle}</h2>
-          <ul className="mt-3 divide-y divide-[var(--border-subtle)]">
-            {triggeredAlerts.map((alert) => (
-              <li key={alert.id} className="py-2.5 tabular-nums text-xs first:pt-0 last:pb-0">
-                <p className="text-[var(--text-primary)]">{`${alertLabel[alert.label]} ${formatAlertLevel(alert.level, locale)}`}</p>
-                {alert.triggeredAt ? (
-                  <p key="reached" className="mt-0.5 text-[var(--text-secondary)]">
-                    {t.alerts.reachedAt.replace('{level}', formatAlertLevel(alert.level, locale)).replace('{time}', formatUtcTime(alert.triggeredAt))}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      />
 
       <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
         <h2 className="tk-stat-label">{s.versionsTitle}</h2>

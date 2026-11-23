@@ -16,14 +16,11 @@ type Stats = {
   timeout: number;
   meanR: number | null;
 };
-type Variant = { variant: 'A' | 'B' | 'C' | 'D'; total: Stats; classes: { assetClass: string; stats: Stats }[] };
 type Report = {
   since: string;
-  verdict: string;
-  hasVariantB: boolean;
-  variants: Variant[];
+  total: Stats;
+  classes: { assetClass: string; stats: Stats }[];
   enterNow: { trades: number; meanR: number | null; verdict: string };
-  gates?: { flag: string; trades: number; meanR: number | null; verdict: string }[];
   noCandles: { reason: string; count: number }[];
   profiles?: { profile: 'conservative' | 'balanced' | 'aggressive'; stats: Stats; verdict: string }[];
 };
@@ -96,27 +93,11 @@ export default function MotorPainel() {
       {data ? (
         <>
           <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
-            <p className="text-[11px] text-[var(--text-faint)]">Decisão do teste A/B</p>
-            <p className="mt-1 text-base font-medium text-[var(--text-primary)]">{data.verdict}</p>
-          </Card>
-
-          <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
-            <p className="text-[11px] text-[var(--text-faint)]">R por trade do ENTER_NOW (variante A)</p>
+            <p className="text-[11px] text-[var(--text-faint)]">R por trade do ENTER_NOW</p>
             <p className="mt-1 text-sm text-[var(--text-soft)]">
               {r(data.enterNow.meanR)} em {data.enterNow.trades} trades. {data.enterNow.verdict}
             </p>
           </Card>
-
-          {(data.gates ?? []).some((g) => g.trades > 0) && (
-            <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
-              <p className="text-[11px] text-[var(--text-faint)]">ENTER_NOW liberado por chave, em série separada</p>
-              {(data.gates ?? []).filter((g) => g.trades > 0).map((g) => (
-                <p key={g.flag} className="mt-1 text-sm text-[var(--text-soft)]">
-                  {g.flag}: {r(g.meanR)} em {g.trades} trades. {g.verdict}
-                </p>
-              ))}
-            </Card>
-          )}
 
           {data.profiles && data.profiles.length > 0 && (
             <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
@@ -163,33 +144,31 @@ export default function MotorPainel() {
             )}
           </Card>
 
-          {data.variants.map((v) => (
-            <Card key={v.variant} className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
-              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Variante {v.variant}</h3>
-              <div className="mt-2 overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-[11px] text-[var(--text-faint)]">
-                    <tr>
-                      <th className="py-1 pr-3">Classe</th>
-                      <th className="py-1 pr-3">Análises</th>
-                      <th className="py-1 pr-3">ENTER_NOW</th>
-                      <th className="py-1 pr-3">WATCH</th>
-                      <th className="py-1 pr-3">WATCH tocado</th>
-                      <th className="py-1 pr-3">Trades</th>
-                      <th className="py-1 pr-3">W/L/T</th>
-                      <th className="py-1">R por trade</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {v.classes.map((c) => (
-                      <Linha key={c.assetClass} rotulo={CLASSE[c.assetClass] ?? c.assetClass} s={c.stats} />
-                    ))}
-                    <Linha rotulo="Total" s={v.total} forte />
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          ))}
+          <Card className="border-[var(--border-strong)] bg-[var(--fill-1)] p-4">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Por classe de ativo</h3>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="text-[11px] text-[var(--text-faint)]">
+                  <tr>
+                    <th className="py-1 pr-3">Classe</th>
+                    <th className="py-1 pr-3">Análises</th>
+                    <th className="py-1 pr-3">ENTER_NOW</th>
+                    <th className="py-1 pr-3">WATCH</th>
+                    <th className="py-1 pr-3">WATCH tocado</th>
+                    <th className="py-1 pr-3">Trades</th>
+                    <th className="py-1 pr-3">W/L/T</th>
+                    <th className="py-1">R por trade</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.classes.map((c) => (
+                    <Linha key={c.assetClass} rotulo={CLASSE[c.assetClass] ?? c.assetClass} s={c.stats} />
+                  ))}
+                  <Linha rotulo="Total" s={data.total} forte />
+                </tbody>
+              </table>
+            </div>
+          </Card>
         </>
       ) : null}
     </section>

@@ -12,7 +12,6 @@ import {
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { captureServer } from '../../common/analytics/posthog';
-import { flagBool } from '../../common/flags/feature-flags';
 import { getFreeQuota, type FreeQuotaCounter } from '../../common/free-quota';
 import { INTERVAL_MS, candleSourceFor, fetchCrypto1m, fetchFxLatest5m, priceSymbolOf, type Candle, type CandleInterval, type CandleSource } from '../market/candles';
 import { TwelveDataUnavailableError, fxMarketClosed, monitorFxIntervals, twelveDataUsage } from '../market/twelve-data';
@@ -82,9 +81,9 @@ export const ALERT_RULES = {
   watchAutoPendingMs: 15 * 1000,
   /** Alerta ligado no My assets: os niveis sao do dia, entao vale um dia e sai sozinho. */
   assetAlertMs: 24 * HOUR,
-  /** Aviso de proximidade (chave SETUP_ALERT_NEAR): ultimo preco a ate esta fracao do ATR do nivel. */
+  /** Aviso de proximidade: ultimo preco a ate esta fracao do ATR do nivel. */
   nearAtr: 0.5,
-  /** Alertas automaticos de TP1 e stop do Enter now (chave ENTER_NOW_AUTO_ALERTS) valem este tempo. */
+  /** Alertas automaticos de TP1 e stop do Enter now valem este tempo. */
   entryAlertMs: 48 * HOUR,
 } as const;
 
@@ -186,7 +185,7 @@ export type AlertView = {
   triggeredAt: Date | null;
   triggerPrice: number | null;
   seenAt: Date | null;
-  /** Preco ja chegou perto do nivel (chave SETUP_ALERT_NEAR); so vale com o alerta ativo. */
+  /** Preco ja chegou perto do nivel; so vale com o alerta ativo. */
   near: boolean;
   /** Ultimo preco checado do ativo (o mesmo para todas as contas) e quando. */
   lastPrice: number | null;
@@ -324,7 +323,7 @@ function toView(row: AlertRow): AlertView {
     triggeredAt: row.triggeredAt,
     triggerPrice: row.triggerPrice == null ? null : Number(row.triggerPrice),
     seenAt: row.seenAt,
-    near: row.status === 'active' && row.nearAt != null && flagBool('SETUP_ALERT_NEAR'),
+    near: row.status === 'active' && row.nearAt != null,
     lastPrice: row.lastPrice == null ? null : Number(row.lastPrice),
     checkedAt: row.checkedAt ?? null,
     ...checkCadence(row.priceSymbol, row.intervalMs),
@@ -558,10 +557,10 @@ export async function createWatchAlert(
   return outcome;
 }
 
-export type EntryAlertOutcome = Exclude<WatchAlertOutcome, 'not_watch'> | 'disabled' | 'not_enter_now';
+export type EntryAlertOutcome = Exclude<WatchAlertOutcome, 'not_watch'> | 'not_enter_now';
 
 /**
- * Enter now com velas reais (chave ENTER_NOW_AUTO_ALERTS): segue o setup e cria
+ * Enter now com velas reais: segue o setup e cria
  * sozinho os alertas de TP1 e de stop, que valem 48h. Mesmas regras do alerta
  * manual (lado pelo preco de agora, tetos, conta travada, descadastrado);
  * seguir e gravar os dois alertas acontecem na MESMA transacao. Uma vez por
@@ -573,7 +572,6 @@ export async function createEntryAlerts(
   log: (message: string) => void = () => undefined,
 ): Promise<EntryAlertOutcome> {
   const { analysisId, userId, result, recommendation } = input;
-  if (!flagBool('ENTER_NOW_AUTO_ALERTS')) return 'disabled';
   if (record(result).signalState !== 'ENTER_NOW') return 'not_enter_now';
   const outcome = await (async (): Promise<EntryAlertOutcome> => {
     if (record(result).dataMode !== 'real_data') return 'print_mode';
@@ -919,7 +917,6 @@ export class SetupAlertsService implements OnModuleInit {
       loadWatchNext(this.prisma, userId, entries.map((e) => e.row.id)),
     ]);
 
-    const nearOn = flagBool('SETUP_ALERT_NEAR');
     const items = entries.map(({ row, watch, symbol, timeframe, priceSymbol }): WatchingItem => {
       const check = priceSymbol ? checks.get(priceSymbol) : undefined;
       const cadence = priceSymbol ? checkCadence(priceSymbol, check?.intervalMs, now) : { checkIntervalMs: null, marketClosed: false };
@@ -937,7 +934,7 @@ export class SetupAlertsService implements OnModuleInit {
         checkedAt: fresh ? check?.checkedAt ?? null : null,
         ...cadence,
         alert: alert
-          ? { id: alert.id, setupId: alert.setupId, status: alert.status, triggeredAt: alert.triggeredAt, seenAt: alert.seenAt, near: alert.status === 'active' && alert.nearAt != null && nearOn }
+          ? { id: alert.id, setupId: alert.setupId, status: alert.status, triggeredAt: alert.triggeredAt, seenAt: alert.seenAt, near: alert.status === 'active' && alert.nearAt != null }
           : null,
         journey: watchJourneyOf(watch, onLevel.some((a) => a.status === 'triggered'), nextById.get(row.id) ?? null),
       };
@@ -1096,7 +1093,6 @@ type MonitorRow = {
   createdAt: Date;
   watchFrom: Date;
   clerkUserId: string | null;
-  /** So com a chave SETUP_ALERT_NEAR ligada. */
   nearAt?: Date | null;
   atr?: number | null;
 };
@@ -1144,14 +1140,11 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<AlertMoni
   if (Number(expired) > 0) deps.log('log', `[alerts] expirados=${Number(expired)}`);
 
   // Sem setup = alerta do My assets; com setup, so o que ainda e acompanhado.
-  const nearOn = flagBool('SETUP_ALERT_NEAR');
-  const nearColumns = nearOn ? Prisma.sql`, a."nearAt", NULLIF(an."groundingStats"->'numbers'->>'atr14', '')::float8 AS "atr"` : Prisma.empty;
-  const nearJoin = nearOn ? Prisma.sql`LEFT JOIN "tickrify"."Analysis" an ON an."id" = a."analysisId"` : Prisma.empty;
   const rows = await deps.prisma.$queryRaw<MonitorRow[]>`
     SELECT a."id", a."userId", a."setupId", a."priceSymbol", a."level", a."label", a."side", a."createdAt", a."watchFrom",
-      u."clerkUserId"${nearColumns}
+      u."clerkUserId", a."nearAt", NULLIF(an."groundingStats"->'numbers'->>'atr14', '')::float8 AS "atr"
     FROM "tickrify"."SetupAlert" a
-    ${nearJoin}
+    LEFT JOIN "tickrify"."Analysis" an ON an."id" = a."analysisId"
     LEFT JOIN "tickrify"."TrackedSetup" s ON s."id" = a."setupId" AND s."userId" = a."userId" AND s."status" = 'tracking'
     JOIN "tickrify"."User" u ON u."id" = a."userId"
       AND (a."setupId" IS NULL OR s."id" IS NOT NULL)
@@ -1254,7 +1247,7 @@ export async function runAlertMonitor(deps: AlertMonitorDeps): Promise<AlertMoni
         });
         if (!hit) {
           const atr = alert.atr == null ? 0 : Number(alert.atr);
-          if (nearOn && !alert.nearAt && atr > 0 && Math.abs(last[4] - Number(alert.level)) <= ALERT_RULES.nearAtr * atr) {
+          if (!alert.nearAt && atr > 0 && Math.abs(last[4] - Number(alert.level)) <= ALERT_RULES.nearAtr * atr) {
             // Uma vez por alerta, mesmo com 2 instancias: o UPDATE condicional decide.
             const marked = await deps.prisma.$executeRaw`
               UPDATE "tickrify"."SetupAlert" SET "nearAt" = ${now}, "updatedAt" = NOW()

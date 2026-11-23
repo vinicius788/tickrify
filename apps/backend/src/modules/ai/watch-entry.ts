@@ -1,12 +1,12 @@
 /**
- * "I entered" num WATCH (11/11/2026): o trader registra que entrou num dos
- * planos da leitura (no nivel ou a mercado). E o registro DELE: aparece no
+ * "I entered" num WATCH (11/11/2026): o trader registra que entrou no
+ * plano da leitura (no nivel). E o registro DELE: aparece no
  * My Trades e no Diario, com o resultado que ele marcar. A leitura continua
  * WATCH; nada daqui entra na /accuracy, no sweeper nem no rastreador.
  */
 import { storedWatchPlan } from './watch-pending';
 
-export const WATCH_ENTRY_PLANS = ['level', 'market'] as const;
+export const WATCH_ENTRY_PLANS = ['level'] as const;
 export type WatchEntryPlan = (typeof WATCH_ENTRY_PLANS)[number];
 
 export interface WatchEntry {
@@ -45,7 +45,7 @@ export type WatchEntryRefusal = 'not_a_watch' | 'watch_plan_unavailable' | 'entr
 
 /**
  * Monta a entrada a partir do resultado salvo. Stop e alvo vem SO do plano que
- * o motor gravou (`watchLevels` no nivel, `marketLevels` a mercado): sem
+ * o motor gravou (`watchLevels`, no nivel): sem
  * geometria valida gravada, nao ha o que registrar. O preco digitado tem de
  * ficar entre o stop e o alvo, do lado certo.
  */
@@ -57,7 +57,7 @@ export function buildWatchEntry(
 ): WatchEntry | WatchEntryRefusal {
   const watch = storedWatchPlan(result, recommendation);
   if (!watch) return 'not_a_watch';
-  const levels = record(record(result)[input.plan === 'market' ? 'marketLevels' : 'watchLevels']);
+  const levels = record(record(result).watchLevels);
   if (![levels.stopLoss, levels.takeProfit1].every(positive)) return 'watch_plan_unavailable';
   const stopLoss = levels.stopLoss as number;
   const takeProfit1 = levels.takeProfit1 as number;

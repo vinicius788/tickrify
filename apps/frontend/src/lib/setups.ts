@@ -75,7 +75,7 @@ export interface SetupAlert {
   /** Intervalo em vigor no servidor; null = ainda nao checado ou mercado fechado. */
   checkIntervalMs?: number | null;
   marketClosed?: boolean;
-  /** Preco chegou perto do nivel (chave SETUP_ALERT_NEAR no servidor). */
+  /** Preco chegou perto do nivel (a ate 0,5 ATR; so com o alerta ativo). */
   near?: boolean;
 }
 
@@ -190,7 +190,7 @@ export function useSetupVersions(setupId: string | null, pageSize = 20) {
     queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams({ limit: String(pageSize) });
       if (pageParam) params.set('cursor', String(pageParam));
-      return send<{ setup: SetupSummary; versions: SetupVersion[]; nextCursor: string | null; monitoringEnabled?: boolean }>(
+      return send<{ setup: SetupSummary; versions: SetupVersion[]; nextCursor: string | null }>(
         `/api/setups/${encodeURIComponent(String(setupId))}?${params}`,
         { method: 'GET' },
         await token(),
@@ -199,9 +199,9 @@ export function useSetupVersions(setupId: string | null, pageSize = 20) {
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled: Boolean(setupId),
-    refetchInterval: (query) => query.state.data?.pages[0]?.monitoringEnabled === true ? 60_000 : false,
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
-    refetchOnWindowFocus: (query) => query.state.data?.pages[0]?.monitoringEnabled === true,
+    refetchOnWindowFocus: true,
     retry: false,
   });
 }

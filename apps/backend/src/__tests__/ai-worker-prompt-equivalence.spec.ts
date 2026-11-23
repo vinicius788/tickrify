@@ -171,16 +171,6 @@ describe('worker/ai.worker.ts: prompt e argumentos entregues ao adapter (montado
     expect(prompt.trimEnd().endsWith('</user_context>')).toBe(true);
   });
 
-  it.each([['0', 'A'], ['100', 'B']] as const)('com %s%% na B, o worker entrega o prompt %s', async (percent, variant) => {
-    process.env.PROMPT_VARIANT_B_PERCENT = percent;
-    try {
-      const { args } = await run({ analysisId: 'a-ab', imageUrl: 'https://example.com/c.png', analysisType: 'quick', userId: 'user-1', isDemo: true, userLanguage: 'en' });
-      expect(args[1]).toBe(buildAnalysisPrompt({ userLanguage: 'en', analysisType: 'quick' }, variant));
-    } finally {
-      delete process.env.PROMPT_VARIANT_B_PERCENT;
-    }
-  });
-
   const profile: StrategyProfile = {
     timeframes: ['1h', '4h'],
     sessions: ['london'],

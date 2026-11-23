@@ -118,7 +118,7 @@ describe('CreateAnalysisDto: dica contra o ValidationPipe real', () => {
   });
 });
 
-describe('calendario na analise rapida (chave ENABLE_QUICK_CALENDAR)', () => {
+describe('calendario na analise rapida (fixo)', () => {
   const flags = jest.requireActual('../../common/flags/feature-flags') as typeof import('../../common/flags/feature-flags');
   const make = (opts: { stale?: boolean } = {}) => {
     const adapter: any = new AIAdapter();
@@ -133,10 +133,10 @@ describe('calendario na analise rapida (chave ENABLE_QUICK_CALENDAR)', () => {
     return adapter;
   };
   const withFlag = (on: boolean) =>
-    jest.spyOn(flags, 'flagBool').mockImplementation((key: string) => (key === 'ENABLE_QUICK_CALENDAR' ? on : true));
+    jest.spyOn(flags, 'flagBool').mockImplementation((key: string) => (key === 'ENABLE_MARKET_ENRICHMENT' ? on : true));
   afterEach(() => jest.restoreAllMocks());
 
-  it('desligada: nem busca o calendario e o bloco e o de sempre', async () => {
+  it('contexto de mercado desligado: nem busca o calendario e o bloco so tem as velas', async () => {
     withFlag(false);
     const adapter = make();
     const out = await adapter.buildQuickGrounding('img');
@@ -145,7 +145,7 @@ describe('calendario na analise rapida (chave ENABLE_QUICK_CALENDAR)', () => {
     expect(out.calendar).toBe('not_attempted');
   });
 
-  it('ligada: o bloco do calendario entra depois das velas e a cobertura diz o que foi entregue', async () => {
+  it('o bloco do calendario entra depois das velas e a cobertura diz o que foi entregue', async () => {
     withFlag(true);
     const adapter = make();
     const out = await adapter.buildQuickGrounding('img');
@@ -154,7 +154,7 @@ describe('calendario na analise rapida (chave ENABLE_QUICK_CALENDAR)', () => {
     expect(out.calendar).toBe('events_injected');
   });
 
-  it('ligada com print velho: os eventos de agora ficam fora', async () => {
+  it('com print velho: os eventos de agora ficam fora', async () => {
     withFlag(true);
     const out = await make({ stale: true }).buildQuickGrounding('img');
     expect(out.block).toBe('REAL DATA\n\nSTALE');

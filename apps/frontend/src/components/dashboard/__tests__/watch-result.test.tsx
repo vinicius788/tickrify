@@ -137,11 +137,11 @@ describe('resultado do WATCH', () => {
     expect(screen.queryByRole('button', { name: /Alert me/ })).toBeNull();
   });
 
-  describe('print antigo (UI_HISTORICAL_PRINT)', () => {
+  describe('print antigo (historico)', () => {
     const stale = { version: 1, additionalChartsDelivered: 0, candleFeedAttached: false, marketContextAttached: false, calendar: 'not_attached', stalePrint: { imagePrice: 4268, livePrice: 3862 } };
     const dataRisk = { analysis: { ...result(long).fullResponse!.analysis, riskFactors: 'Live data withheld; screenshot is outdated; H1/H4 bearish alignment' } };
 
-    it('chave ligada: aviso no topo, sem titulo de compra e sem alerta nem seguir', () => {
+    it('analise com tratamento de historico: aviso no topo, sem titulo de compra e sem alerta nem seguir', () => {
       show(result(long, { dataMode: 'print', evidence: { ...stale, historicalPrintUi: true } }));
       expect(text('historical-print')).toBe('This screenshot looks older than the live market (image: 4,268, live: 3,862). Upload a current screenshot to get a trade plan.');
       expect(text('signal-state')).toBe('Historical chart');
@@ -155,14 +155,14 @@ describe('resultado do WATCH', () => {
       expect(text('historical-print')).toBe('This screenshot looks older than the live market. Upload a current screenshot to get a trade plan.');
     });
 
-    it('chave desligada na analise: tela como antes', () => {
+    it('analise anterior ao tratamento de historico: tela como antes', () => {
       show(result(long, { dataMode: 'print', evidence: stale }));
       expect(screen.queryByTestId('historical-print')).toBeNull();
       expect(text('signal-state')).toBe('Watch for a buy');
       expect(screen.getByRole('button', { name: 'Alert me at 27,730' })).toBeTruthy();
     });
 
-    it('motivos do mercado antes da qualidade dos dados so com a chave', () => {
+    it('motivos do mercado antes da qualidade dos dados so com o tratamento de historico', () => {
       show(result(long, { ...dataRisk, evidence: { ...stale, historicalPrintUi: true } }));
       expect([...screen.getByTestId('watch-why').querySelectorAll('li')].map((li) => li.textContent)).toEqual([
         'From 27,832 there is little room to 27,880.', 'H1/H4 bearish alignment', 'Live data withheld',

@@ -204,11 +204,12 @@ describe('analysis data coverage', () => {
     adapter.extractSymbol = jest.fn().mockResolvedValue({ symbol: 'BTCUSDT', timeframe: '30m', lastPrice: 100 });
     adapter.fetchCandles = jest.fn().mockResolvedValue({ candles: null, source: 'binance', denied: null });
     adapter.buildCryptoEnrichment = jest.fn().mockResolvedValue(null);
+    adapter.buildCalendarEnrichment = jest.fn().mockResolvedValue({ block: null, status: 'no_events_returned' });
     const unavailable = await adapter.buildQuickGrounding('chart');
     expect(unavailable).toEqual({
       block: null, candles: 'source_unavailable', marketContext: 'unavailable', assetClass: 'crypto',
       stats: { v: 1, symbol: 'BTCUSDT', interval: '30m', coverage: 'source_unavailable', numbers: null },
-      calendar: 'not_attempted',
+      calendar: 'no_events_returned',
     });
 
     adapter.fetchCandles.mockResolvedValue({ candles: Array.from({ length: 30 }, (_, i) => [i, 100, 102, 98, 100, 1]), source: 'binance', denied: null });
