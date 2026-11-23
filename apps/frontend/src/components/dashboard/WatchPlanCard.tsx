@@ -18,6 +18,7 @@ import {
   watchTone,
 } from '@/lib/setups';
 import { AlertLevelButton, WatchVerdict } from './PendingLevels';
+import { CopyPrice } from './CopyPrice';
 
 // Cartao do plano do WATCH: o que a pessoa faz se o preco chegar la, com os
 // numeros do servidor num lugar so. Aberto, nunca usa as cores de compra/venda:
@@ -258,21 +259,21 @@ export function WatchPlanCard({
     ? Math.abs(levels.takeProfit2 - levels.entry) / Math.abs(levels.entry - levels.stopLoss)
     : null;
 
-  const tiles: Array<{ key: string; label: string; value: string; note?: string }> = [
+  const tiles: Array<{ key: string; label: string; value: string; raw?: number; note?: string }> = [
     levels
-      ? { key: 'entry', label: long ? w.buyAt : w.sellAt, value: money(levels.entry) }
+      ? { key: 'entry', label: long ? w.buyAt : w.sellAt, value: money(levels.entry), raw: levels.entry }
       : { key: 'zone', label: long ? w.buyZone : w.sellZone, value: zone },
-    { key: 'stop', label: stopLabel, value: money(stopPrice) },
+    { key: 'stop', label: stopLabel, value: money(stopPrice), raw: stopPrice },
   ];
-  if (target1 !== null) tiles.push({ key: 't1', label: w.target1, value: money(target1), note: levels ? rText(levels.tp1R) : undefined });
-  if (target2 !== null) tiles.push({ key: 't2', label: w.target2, value: money(target2) });
+  if (target1 !== null) tiles.push({ key: 't1', label: w.target1, value: money(target1), raw: target1, note: levels ? rText(levels.tp1R) : undefined });
+  if (target2 !== null) tiles.push({ key: 't2', label: w.target2, value: money(target2), raw: target2 });
 
-  const ladder: Array<{ key: string; kind: LadderKind; label: string; value: string; r: string | null; at: number }> = [
-    ...(target2 !== null ? [{ key: 't2', kind: 'target' as const, label: w.target2, value: formatPrice(target2), r: tp2R !== null ? rText(tp2R) : null, at: target2 }] : []),
-    ...(target1 !== null ? [{ key: 't1', kind: 'target' as const, label: w.target1, value: formatPrice(target1), r: levels ? rText(levels.tp1R) : null, at: target1 }] : []),
-    ...(currentPrice !== null ? [{ key: 'price', kind: 'price' as const, label: w.price, value: formatPrice(currentPrice), r: null, at: currentPrice }] : []),
+  const ladder: Array<{ key: string; kind: LadderKind; label: string; value: string; r: string | null; at: number; raw?: number }> = [
+    ...(target2 !== null ? [{ key: 't2', kind: 'target' as const, label: w.target2, value: formatPrice(target2), r: tp2R !== null ? rText(tp2R) : null, at: target2, raw: target2 }] : []),
+    ...(target1 !== null ? [{ key: 't1', kind: 'target' as const, label: w.target1, value: formatPrice(target1), r: levels ? rText(levels.tp1R) : null, at: target1, raw: target1 }] : []),
+    ...(currentPrice !== null ? [{ key: 'price', kind: 'price' as const, label: w.price, value: formatPrice(currentPrice), r: null, at: currentPrice, raw: currentPrice }] : []),
     { key: 'zone', kind: 'zone', label: w.zone, value: zone, r: null, at: (plan.zoneLow + plan.zoneHigh) / 2 },
-    { key: 'stop', kind: 'stop', label: stopLabel, value: formatPrice(stopPrice), r: null, at: stopPrice },
+    { key: 'stop', kind: 'stop', label: stopLabel, value: formatPrice(stopPrice), r: null, at: stopPrice, raw: stopPrice },
   ];
   ladder.sort((a, b) => b.at - a.at);
   const ladderY = ladderPositions(ladder.map((row) => row.at));
@@ -319,7 +320,7 @@ export function WatchPlanCard({
                 <div key={tile.key} className="min-w-0">
                   <dt className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{tile.label}</dt>
                   <dd className="mt-1 tabular-nums text-[17px] font-semibold leading-tight text-[var(--text-primary)]">
-                    <span>{tile.value}</span>
+                    <CopyPrice value={tile.raw} text={tile.value} />
                     {tile.note ? <span key="note" className="mt-0.5 block text-xs font-normal text-[var(--text-secondary)]">{`(${tile.note})`}</span> : null}
                   </dd>
                 </div>
@@ -348,7 +349,7 @@ export function WatchPlanCard({
                 <span className="flex w-[15px] shrink-0 justify-center"><LadderMarker kind={row.kind} /></span>
                 <span className={`shrink-0 ${row.kind === 'price' ? 'font-semibold text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{row.label}</span>
                 <span className="ml-auto whitespace-nowrap text-right tabular-nums text-[var(--text-primary)]">
-                  <span>{row.value}</span>
+                  <CopyPrice value={row.raw} text={row.value} />
                   {row.r ? <span key="r" className="ml-1.5 text-[var(--text-secondary)]">{row.r}</span> : null}
                 </span>
               </div>

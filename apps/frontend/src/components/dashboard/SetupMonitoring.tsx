@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { LOCALES } from '@/lib/i18n';
+import { CopyPrice } from './CopyPrice';
 import { checkFrequencyText, formatAlertLevel, useExpiryClock, type AlertLabel, type SetupAlert, type SetupVersion } from '@/lib/setups';
 
 /** Read-only projection of the loaded versions and persisted price checks. No collector or AI call. */
@@ -64,7 +65,7 @@ export default function SetupMonitoring({ versions, alerts, paused, loading, err
       <p className="mt-2 text-xs text-[var(--text-secondary)]">{m.priceOnly}</p>
       <dl className="mt-4 grid grid-cols-2 gap-3 tabular-nums text-xs sm:grid-cols-4">
         {levels.map(([name, value]) => (
-          <div key={name}><dt className="text-[var(--text-secondary)]">{name}</dt><dd className="mt-1 text-[var(--text-primary)]">{price(value)}</dd></div>
+          <div key={name}><dt className="text-[var(--text-secondary)]">{name}</dt><dd className="mt-1 text-[var(--text-primary)]"><CopyPrice value={value} text={price(value)} /></dd></div>
         ))}
       </dl>
       {Number.isFinite(expires) ? <p className="mt-3 text-xs text-[var(--text-secondary)]">{ended ? m.validityEnded : m.validUntil.replace('{time}', moment(latest!.watch!.expiresAt!))}</p> : null}

@@ -565,7 +565,7 @@ export default {
       invalidTradePlan: '価格水準に矛盾があります。損切りまたは目標がエントリーの反対側にありません。この取引計画は実行しないでください。',
       entryCautionRRLow: 'エントリーゾーンへの押し目を待ってください、成行のR/Rが理想以下です。',
       copied: 'コピーしました!',
-      copySuffix: 'をクリップボードにコピーしました。',
+      copyPrice: '価格をコピー',
       highImpact: '高インパクト',
       medImpact: '中インパクト',
       calHighImpactBadge: '高インパクト',

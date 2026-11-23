@@ -19,6 +19,7 @@ import { PositionSizingCalculator } from '@/components/dashboard/PositionSizingC
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { TradeShareButton } from '@/components/dashboard/ShareCard';
+import { CopyPrice } from './CopyPrice';
 import {
   VERDICT_CFG,
   outcomeFromVerdict,
@@ -597,22 +598,22 @@ const MyTrades = ({ onStartAnalysis, initialFilter }: MyTradesProps) => {
                       <div className="flex flex-wrap gap-x-4 gap-y-0.5 tabular-nums text-xs">
                         {entry !== null && (
                           <span className="text-[var(--text-secondary)]">
-                            {t.analysis.entry} <span className="text-[var(--text-primary)]">{fmt(entry, language)}</span>
+                            {t.analysis.entry} <span className="text-[var(--text-primary)]"><CopyPrice value={entry} text={fmt(entry, language)} /></span>
                           </span>
                         )}
                         {stopLoss !== null && (
                           <span className="text-[var(--text-secondary)]">
-                            SL <span className="text-[var(--signal-sell)]">{fmt(stopLoss, language)}</span>
+                            SL <span className="text-[var(--signal-sell)]"><CopyPrice value={stopLoss} text={fmt(stopLoss, language)} /></span>
                           </span>
                         )}
                         {takeProfit1 !== null && (
                           <span className="text-[var(--text-secondary)]">
-                            TP1 <span className="text-[var(--signal-buy)]">{fmt(takeProfit1, language)}</span>
+                            TP1 <span className="text-[var(--signal-buy)]"><CopyPrice value={takeProfit1} text={fmt(takeProfit1, language)} /></span>
                           </span>
                         )}
                         {takeProfit2 !== null && (
                           <span className="text-[var(--text-secondary)]">
-                            TP2 <span className="text-[var(--signal-buy)]">{fmt(takeProfit2, language)}</span>
+                            TP2 <span className="text-[var(--signal-buy)]"><CopyPrice value={takeProfit2} text={fmt(takeProfit2, language)} /></span>
                           </span>
                         )}
                       </div>

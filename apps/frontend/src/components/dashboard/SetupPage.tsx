@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
 import { APIError, isFreeQuotaExhausted, type SignalState } from '@/lib/api';
 import { WatchPending } from './PendingLevels';
+import { CopyPrice } from './CopyPrice';
 import SetupMonitoring from './SetupMonitoring';
 import { entrySide, resolveSignalState, signalStateLabel, signalStateTone } from '@/lib/trading-ui';
 import {
@@ -216,7 +217,7 @@ const SetupPage = ({
                     ] as const).map(([label, value]) => (
                       <div key={label} className="rounded-lg border border-[var(--border-subtle)] px-3 py-2">
                         <dt className="text-[var(--text-secondary)]">{label}</dt>
-                        <dd className="mt-0.5 text-[var(--text-primary)]">{price(value)}</dd>
+                        <dd className="mt-0.5 text-[var(--text-primary)]"><CopyPrice value={value} text={price(value)} /></dd>
                       </div>
                     ))}
                   </dl>

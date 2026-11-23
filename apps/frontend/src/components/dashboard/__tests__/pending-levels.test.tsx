@@ -48,6 +48,9 @@ const alert = (over: Partial<SetupAlert> = {}): SetupAlert => ({
   ...over,
 });
 
+// Os precos viram botoes de copiar; so o botao de alerta interessa a estes testes.
+const alertButtons = () => screen.queryAllByRole('button').filter((b) => !(b.getAttribute('aria-label') ?? '').startsWith('Copy price'));
+
 describe('WATCH pendente', () => {
   beforeEach(() => { alertItems = []; });
   afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -106,9 +109,9 @@ describe('WATCH pendente', () => {
     try {
       vi.setSystemTime(NOW);
       wrap(<WatchPending analysisId="w1" watch={watch({ expiresAt: new Date(NOW + 5000).toISOString() })} surface="result" />);
-      expect(screen.getByRole('button')).toBeTruthy();
+      expect(alertButtons().length).toBe(1);
       act(() => vi.advanceTimersByTime(5000));
-      expect(screen.queryByRole('button')).toBeNull();
+      expect(alertButtons().length).toBe(0);
       expect(screen.getByText('Checking the result')).toBeTruthy();
       expect(screen.queryByText(/Re-check the chart/)).toBeNull();
     } finally { vi.useRealTimers(); }
@@ -118,7 +121,7 @@ describe('WATCH pendente', () => {
     wrap(<WatchPending analysisId="w1" watch={watch({ direction: 'long', level: 2345, expiresAt: null })} surface="result" now={NOW} />);
     expect(screen.getByTestId('watch-pending').textContent).toContain('Watch for a buy at 2,345');
     expect(screen.getByTestId('watch-pending').textContent).toContain('Valid for 12 candles');
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(alertButtons().length).toBe(0);
   });
 
   it.each([
@@ -136,7 +139,7 @@ describe('WATCH pendente', () => {
     expect(card.textContent).not.toContain('Watch for a');
     expect(card.textContent).not.toContain('Re-check the chart');
     expect(card.textContent).not.toMatch(/\bwin\b|P&L/i);
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(alertButtons().length).toBe(0);
   });
 
   it('desfecho de compra: "Buy level"', () => {
@@ -153,19 +156,19 @@ describe('WATCH pendente', () => {
     expect(text).toContain('Checking the result');
     expect(text).toContain('Sell level 77,800');
     expect(text).not.toContain('Re-check the chart');
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(alertButtons().length).toBe(0);
   });
 
   it('ativo sem fonte de preco: sem botao (mesma regra do SetupAlertBar)', () => {
     wrap(<WatchPending analysisId="w1" watch={watch({ alertAvailable: false })} surface="today" now={NOW} />);
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(alertButtons().length).toBe(0);
   });
 
   it('alerta ja ativo no nivel: mostra o estado em vez do botao', () => {
     alertItems = [alert({ analysisId: 'outra-versao' })];
     wrap(<WatchPending analysisId="w1" watch={watch({ setupId: 's1' })} surface="today" now={NOW} />);
     expect(screen.getByText('Alert active at 77,800')).toBeTruthy();
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(alertButtons().length).toBe(0);
   });
 
   it('conta travada: o servidor responde 402 e a tela diz para assinar', () => {

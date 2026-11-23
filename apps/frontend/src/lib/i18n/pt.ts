@@ -574,7 +574,7 @@ export default {
       invalidTradePlan: 'Níveis incoerentes: stop ou alvo está do lado errado da entrada. Não execute este plano.',
       entryCautionRRLow: 'Aguarde um recuo à zona de entrada, R/R a mercado abaixo do ideal.',
       copied: 'Copiado!',
-      copySuffix: 'copiado para a área de transferência.',
+      copyPrice: 'Copiar preço',
       highImpact: 'Alto impacto',
       medImpact: 'Médio impacto',
       calHighImpactBadge: 'Alto impacto',

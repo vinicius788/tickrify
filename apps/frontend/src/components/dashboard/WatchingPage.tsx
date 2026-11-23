@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
 import { displayAsset } from '@/lib/api';
 import { formatAssetDistance, formatAssetPrice } from '@/lib/trading-ui';
+import { PriceTemplate } from './CopyPrice';
 import {
   WATCH_TONE_CLASSES,
   alertDistancePct,
@@ -87,17 +88,11 @@ function WatchRow({ item, now, base }: { item: WatchingItem; now: number; base: 
     : w.distance
         .replace('{pct}', `${formatNumber(Math.abs(pct), language, { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })}%`)
         .replace('{price}', formatAssetDistance(Math.abs(watch.level - (item.lastPrice as number)), item.symbol, locale, t.analysis.result.watch));
-  const levelText = (closed
+  const levelTemplate = closed
     ? (watch.direction === 'long' ? p.buyLevel : p.sellLevel)
-    : (watch.direction === 'long' ? p.watchBuy : p.watchSell)
-  ).replace('{price}', price(watch.level));
+    : (watch.direction === 'long' ? p.watchBuy : p.watchSell);
   const alertLabel = alert?.status === 'triggered' ? w.alertTriggered : alert?.status === 'active' ? w.alertWatching : alert?.status === 'cancelled' ? w.alertCancelled : null;
-  const details = closed
-    ? []
-    : [
-        p.invalidation.replace('{price}', price(watch.invalidation)),
-        watch.expiresAt ? w.validUntil.replace('{time}', formatUtcMoment(watch.expiresAt, locale)) : null,
-      ];
+  const validUntil = !closed && watch.expiresAt ? w.validUntil.replace('{time}', formatUtcMoment(watch.expiresAt, locale)) : null;
   const checked = closed
     ? null
     : [alertLabel, item.checkedAt ? a.lastChecked.replace('{time}', formatUtcTime(item.checkedAt)) : null, checkFrequencyText(a, item)].filter(Boolean).join(' · ');
@@ -128,8 +123,16 @@ function WatchRow({ item, now, base }: { item: WatchingItem; now: number; base: 
         <Link to={`${base}/analysis/${encodeURIComponent(item.analysisId)}`} className="text-sm font-medium text-[var(--text-primary)] hover:underline">
           {`${displayAsset(item.symbol)}${item.timeframe ? ` ${item.timeframe}` : ''}`}
         </Link>
-        <p className="mt-0.5 text-xs tabular-nums text-[var(--text-primary)]">{[levelText, distance].filter(Boolean).join(' · ')}</p>
-        {details.length ? <p key="details" className="mt-0.5 text-xs tabular-nums text-[var(--text-secondary)]">{details.filter(Boolean).join(' · ')}</p> : null}
+        <p className="mt-0.5 text-xs tabular-nums text-[var(--text-primary)]">
+          <PriceTemplate template={levelTemplate} prices={{ price: { value: watch.level, text: price(watch.level) } }} />
+          {distance ? <span key="distance">{` · ${distance}`}</span> : null}
+        </p>
+        {!closed ? (
+          <p key="details" className="mt-0.5 text-xs tabular-nums text-[var(--text-secondary)]">
+            <PriceTemplate template={p.invalidation} prices={{ price: { value: watch.invalidation, text: price(watch.invalidation) } }} />
+            {validUntil ? <span key="valid">{` · ${validUntil}`}</span> : null}
+          </p>
+        ) : null}
         {checked ? <p key="checked" className="mt-0.5 text-xs tabular-nums text-[var(--text-secondary)]">{checked}</p> : null}
         {alert?.armCheck ? <p key="arm" data-testid="alert-arm" className="mt-0.5 text-xs font-medium text-[var(--text-primary)]">{armCheckLabel(a, alert.armCheck, locale)}</p> : null}
         {review && open ? <p key="not-signal" className="mt-0.5 text-xs text-[var(--text-secondary)]">{a.notSignal}</p> : null}
