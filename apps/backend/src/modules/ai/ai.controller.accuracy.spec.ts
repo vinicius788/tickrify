@@ -11,7 +11,10 @@ import {
   engineMajor,
   fillCandleRuleOf,
   isCurrentEngine,
+  ENGINE_VOTE_SINCE,
+  VOTE_ENGINE_SQL,
   splitByFillCandleRule,
+  splitByVoteMarker,
   tQuantile975,
   tally,
   trackedTradeR,
@@ -129,7 +132,7 @@ describe('separacao por versao do motor', () => {
       current: { freeTrialAndPaid: true, strategyHash: null, excludesOwnerAccount: true },
       minResolvedToPublish: 20,
     });
-    expect(payload.currentEngine).toEqual({ major: 4, since: '2026-11-03T01:24:00.000Z' });
+    expect(payload.currentEngine).toEqual({ major: 4, since: '2026-11-23T12:34:36.000Z', v11Since: '2026-11-03T01:24:00.000Z' });
   });
 });
 
@@ -325,9 +328,39 @@ describe('current (motor atual, rastreador)', () => {
   it('o controller monta as linhas do rastreador e entrega o relatorio', async () => {
     const raw = [{
       createdAt: new Date('2026-11-04T10:00:00Z'), signalState: 'ENTER_NOW', dataMode: 'real_data', symbol: 'BTCUSDT', reachProbability: null,
+      hasVote: true,
       trackStatus: 'tracked', trackOutcome: 'WIN', touched: true, fillPrice: 100, stopLoss: 99, takeProfit1: 101.5, trackSymbol: 'BTCUSDT',
     }];
-    const { current }: any = await controllerWith(LEGACY, raw).controller.getAccuracy();
+    const { current, v11 }: any = await controllerWith(LEGACY, raw).controller.getAccuracy();
     expect(current).toMatchObject({ analyses: 1, enterNow: { resolved: 1, outcomes: { tp1: 1, stop: 0, timeout: 0 } } });
+    expect(v11).toMatchObject({ analyses: 0 });
+  });
+
+  it('major 4 se divide pelo marcador engine.vote: com ele e o motor atual, sem ele e o v11, nunca somados', async () => {
+    const base = {
+      createdAt: new Date('2026-11-24T10:00:00Z'), signalState: 'ENTER_NOW', dataMode: 'real_data', symbol: 'BTCUSDT', reachProbability: null,
+      trackStatus: 'tracked', trackOutcome: 'WIN', touched: true, fillPrice: 100, stopLoss: 99, takeProfit1: 101.5, trackSymbol: 'BTCUSDT',
+    };
+    const raw = [
+      { ...base, hasVote: true },
+      { ...base, hasVote: true, signalState: 'WATCH', trackStatus: null },
+      { ...base, hasVote: false, createdAt: new Date('2026-11-10T10:00:00Z') },
+      { ...base, hasVote: null, createdAt: new Date('2026-11-11T10:00:00Z') },
+    ];
+    const { controller, queryRaw } = controllerWith(LEGACY, raw);
+    const payload: any = await controller.getAccuracy();
+    expect(payload.current.analyses).toBe(2);
+    expect(payload.current.since).toBe('2026-11-23T12:34:36.000Z');
+    expect(payload.v11.analyses).toBe(2);
+    expect(payload.v11.since).toBe('2026-11-03T01:24:00.000Z');
+    expect(payload.current.analyses + payload.v11.analyses).toBe(raw.length);
+    expect(sqlOf(queryRaw, 'AnalysisTrack')).toContain(`jsonb_exists(a."result"->'engine', 'vote') AS "hasVote"`);
+    expect(VOTE_ENGINE_SQL).toBe(`jsonb_exists(a."result"->'engine', 'vote')`);
+    expect(ENGINE_VOTE_SINCE.toISOString()).toBe('2026-11-23T12:34:36.000Z');
+  });
+
+  it('splitByVoteMarker: cada linha cai em exatamente uma serie', () => {
+    const rows = [{ hasVote: true, id: 1 }, { hasVote: false, id: 2 }, { hasVote: true, id: 3 }];
+    expect(splitByVoteMarker(rows)).toEqual({ current: [rows[0], rows[2]], v11: [rows[1]] });
   });
 });

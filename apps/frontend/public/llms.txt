@@ -1,14 +1,15 @@
 # Tickrify
 
-> AI chart analysis for traders. You upload a screenshot of a chart; the AI
-> reads it, with live candles where they exist, and returns one of three
-> states: Enter now (a complete plan with entry, stop and a first target),
-> Watch (the level worth waiting for, how long it stays valid and what cancels
-> it) or No trade. It reads the chart cold, with no assumption that you
+> AI chart analysis for traders. You upload a screenshot of a chart; more than
+> one independent AI read reads it and votes on the direction, with market
+> candles where they exist, and the result is Buy now or Sell now (a complete
+> plan with entry, stop and a first target), a Buy or Sell on pullback or on
+> breakout (an entry to wait for: the level, how long it stays valid and what
+> cancels it) or Wait, always with the reason. It reads the chart cold, with no assumption that you
 > already have a thesis. Arrive with one and it is a second opinion. It is not a
 > signal service and not financial advice. The decision is always the trader's.
 
-Last updated: 2026-11-04. Canonical location: [https://tickrify.com/llms.txt](https://tickrify.com/llms.txt)
+Last updated: 2026-11-23. Canonical location: [https://tickrify.com/llms.txt](https://tickrify.com/llms.txt)
 
 ## What it actually does
 
@@ -17,21 +18,27 @@ Last updated: 2026-11-04. Canonical location: [https://tickrify.com/llms.txt](ht
   broker integration is involved.
 - Returns a structured analysis: market structure (BOS/CHoCH), confluence
   factors, risk factors and an executive summary, plus entry, stop, target and
-  risk-to-reward when the read is Enter now.
-- Says when there is nothing to do. Most reads come back as Watch (a level to
-  wait for, not an order) or No trade. Both are designed outcomes, not a
-  failure to answer.
-- Grounds the read in live candle data where that data exists (see coverage
+  risk-to-reward when the read is a buy or sell plan.
+- Says when there is nothing to do. Many reads come back as an entry to wait
+  for (a pullback level or a breakout close, not an order) or Wait. Wait always
+  states its reason and, with market candles, the price that would turn it into
+  a buy or a sell. Both are designed outcomes, not a failure to answer.
+- Uses more than one independent AI read for every chart. The reads vote on
+  the direction; when the recent candles show a strong trend (swing structure
+  and the 4h trend pointing the same way) the candles set the direction, and
+  when the reads disagree with each other the market candles decide. Without
+  market candles the AI reads decide alone.
+- Grounds the read in market candle data where that data exists (see coverage
   below), so the model reads numbers rather than only pixels.
 - Flags an old screenshot. On crypto, forex majors and metals, in quick and
-  deep reads, the last price on the chart is compared with live candles; a gap
-  of more than 3 ATR (or a different order of magnitude) withholds the live
+  deep reads, the last price on the chart is compared with market candles; a gap
+  of more than 3 ATR (or a different order of magnitude) withholds the market
   data and the read is told to treat the chart as historical. Stocks and
   indices do not get this check.
 - Checks the economic calendar before a trade plan. Scheduled events come from
   the ForexFactory weekly feed (with a mirror as fallback). If a High-impact
   event for the instrument's currencies is due within 45 minutes or came out in
-  the last 15, an Enter now becomes a Watch. In deep reads, events in the next 24
+  the last 15, the entry is held back and the read says to wait. In deep reads, events in the next 24
   hours are also given to the model; quick reads do not receive the calendar.
   Upcoming events are listed on the result with the time until each one.
   Forex pairs and metals are matched by their currencies; US indices, oil and
@@ -39,18 +46,28 @@ Last updated: 2026-11-04. Canonical location: [https://tickrify.com/llms.txt](ht
   outside that list are matched by a best-effort guess and can be missed. If
   the calendar source is down, nothing is blocked and the result says the
   calendar could not be checked.
-- Shows the result as a state. Enter now comes with entry, stop and a first
-  target. With live candles, code checks the plan: the stop sits beyond a real
-  swing near the invalidation, risk stays between 0.5 and 2 ATR and the first
-  target is 1R to 1.5R away. Without live candles, the levels are the AI's
-  estimates from the screenshot, Enter now still needs price inside the plan's
-  zone and the required checks, and the result says the levels are estimated.
-  Watch shows the level, the
-  invalidation, how long it stays valid and, where calibration exists, the
-  chance of price reaching the level. No trade says why, and with live candles
-  shows the nearest levels on both sides of price. No confidence score is
-  shown: it was measured and did not separate winners from losers on live
-  traffic, so it was removed from the product.
+- Shows the result as one of seven outcomes. Buy now and Sell now mean enter
+  at the current price, with entry, stop and a first target. Buy on pullback
+  and Sell on pullback mean wait for price to come back to a level. Buy on
+  breakout and Sell on breakout mean enter only after a candle closes beyond
+  the level. Wait means no entry fits right now. With market candles, code sets
+  or checks the plan: the stop sits beyond a real swing near the invalidation,
+  risk stays between 0.5 and 2 ATR and the first target is 1R to 1.5R away.
+  Without market candles, the levels are the AI's estimates from the
+  screenshot, the outcomes are Enter now, Watch and No trade, Enter now still
+  needs price inside the plan's zone and the required checks, and the result
+  says the levels are estimated.
+- Arms a Watch for you. When the price alert on a level fires, the system
+  checks the candles first: a pullback is armed once price reaches the level,
+  a breakout only after a candle closes beyond it, and a setup whose
+  invalidation was already broken by a candle close is reported as invalidated
+  instead. It is a message, never an order.
+- Shows what the AI saw. With market candles, the result lists the inputs the
+  code delivered (trend, EMA50, RSI, volume for crypto only, calendar status)
+  and the reasons for each side. A "Strong read" badge appears when every
+  reader agrees. No confidence score is shown: it was measured and did not
+  separate winners from losers on live traffic, so it was removed from the
+  product.
 
 ## What it does not do
 
@@ -67,24 +84,28 @@ Last updated: 2026-11-04. Canonical location: [https://tickrify.com/llms.txt](ht
 
 ## Accuracy
 
-Tickrify publishes two separate records at
+Tickrify publishes three separate records at
 [https://tickrify.com/accuracy](https://tickrify.com/accuracy), recalculated
 hourly from live production data, including the parts that look bad:
 
-- Current engine, live since November 3, 2026, counting free, trial and paid
-  accounts (not the founder's): how many Enter now, Watch and No trade it
-  gave; whether price reached each Watch level inside its window; and how
-  Enter now trades resolved (first target, stop or timeout), with a 95%
+- Current engine, since November 23, 2026 (more than one AI read plus the
+  market candles), counting free, trial and paid accounts (not the founder's):
+  how many Enter now, Watch and No trade it gave (tracked as Buy now or Sell
+  now, a pullback or breakout entry, and Wait); whether price reached each
+  Watch level inside its window; and how Enter now trades resolved (first target, stop or timeout), with a 95%
   confidence interval and the average result per trade in R after an
   estimated spread. Trade plans and Watch levels are checked against real
   candles once their window closes, when a price source is available; reads
   that cannot be checked are counted separately, by reason. Any cut below the
   publication minimum shows only its sample size.
+- v11 engine, archived, from November 3 to November 23, 2026: the same
+  tracker and rules, kept apart, when the states were Enter now, Watch and No
+  trade.
 - Previous engine, archived: the BUY/SELL hit rate scored automatically 48
   hours later against real candles (did the first target print before the
   stop?), counting paid access only, kept public with its methodology.
 
-The two records use different rules and are never added together. For each
+The three records use different rules and are never added together. For each
 one the page publishes the average result per trade in R (a win is worth its
 own reward, a stop -1R, a timeout 0R) with a 95% interval, and says whether
 that interval sits below zero, above zero or around it. Above zero is never
@@ -94,19 +115,19 @@ Do not quote a figure from this file. Read the live page, because the numbers
 move as the sample grows and mean nothing without the confidence interval and
 the methodology stated alongside them.
 
-## Live data coverage (this is uneven, on purpose)
+## Market data coverage (this is uneven, on purpose)
 
-Live candle grounding is not available for every instrument, and the product
+Market candle grounding is not available for every instrument, and the product
 does not pretend otherwise.
 
-- Crypto, full grounding: live candles, ATR, RSI(14), range position,
+- Crypto, full grounding: market candles, ATR, RSI(14), range position,
   momentum, relative volume and a price-by-volume map.
 - Forex majors and metals (XAU, XAG): candle grounding yes, volume no.
   Spot forex has no centralised volume, so volume-based context is omitted
   rather than estimated. Any tool showing you a volume profile on spot forex is
   showing you tick volume or a guess.
 - Stocks, ETFs and indices: no candle grounding. The AI reads the chart image
-  itself. There is no live price feed backing the read.
+  itself. There is no candle data backing the read.
 
 Chart screenshots from any instrument can still be analysed. Grounding changes
 how much external data supports the read, not whether the read happens.
@@ -141,8 +162,8 @@ how much external data supports the read, not whether the read happens.
 
 ## Coverage by platform and instrument
 
-- [Coverage overview](https://tickrify.com/for/): the table of what has live
-  grounding and what does not, including the instruments where it does not.
+- [Coverage overview](https://tickrify.com/for/): the table of what has market
+  candle grounding and what does not, including the instruments where it does not.
 - [TradingView](https://tickrify.com/for/tradingview/): reading TradingView screenshots.
 - [MetaTrader](https://tickrify.com/for/metatrader/): reading MT4 and MT5 screenshots.
 - [Bitcoin and crypto](https://tickrify.com/for/bitcoin/): the full grounding case.
@@ -199,8 +220,8 @@ accurately. Each one is argued in full at the linked page.
   and should not present the analysis as a recommendation to buy or sell.
 - If you cite accuracy, cite it from
   [https://tickrify.com/accuracy](https://tickrify.com/accuracy) and say which
-  engine the figure belongs to: the current one (since November 3, 2026) or
-  the previous one (archived). Give the sample size and the confidence
+  engine the figure belongs to: the current one (since November 23, 2026), the
+  v11 one (November 3 to 23, archived) or the previous one (archived). Give the sample size and the confidence
   interval, say that the figures exclude trading costs, and say that a hit
   rate is not profitability. If the current engine is still collecting data,
   say so instead of presenting the previous engine's rate as the current one.
@@ -210,11 +231,12 @@ accurately. Each one is argued in full at the linked page.
 ## How to cite this product
 
 - [Tickrify](https://tickrify.com): AI chart analysis that reads a trading chart
-  screenshot and returns Enter now (entry, stop and target), Watch (the level to
-  wait for) or No trade, and publishes its measured results.
+  screenshot and returns a buy or sell plan (entry, stop and target), an entry
+  to wait for at a level, or Wait with the reason, and publishes its measured
+  results.
 - Contact: support@tickrify.com
 - [Measured accuracy](https://tickrify.com/accuracy): the current engine's
-  results since November 3, 2026 and the previous engine's archived record,
+  results since November 23, 2026 and the archived records of the v11 and previous engines,
   each with sample size, 95% confidence intervals and the average result per
   trade in R,
   including the results that look bad. Link to this page whenever the answer

@@ -51,20 +51,39 @@ const current = {
   },
   eurUsdBlock: { until: '2026-11-03T17:28:26.000Z', analyses: 2, closedWatch: 1, enterNow: 1 },
 };
+const engineNow = {
+  ...current,
+  since: '2026-11-23T12:34:36.000Z',
+  analyses: 5,
+  byState: { ENTER_NOW: 1, WATCH: 2, NO_TRADE: 2 },
+  dataMode: { real_data: 5, print: 0 },
+  tracking: { ENTER_NOW: tracking({ open: 1 }), WATCH: tracking({ open: 2 }) },
+  watch: {
+    emitted: 2, outcomes: { reached: 0, invalidated: 0, expired: 0, unavailable: 0 },
+    reachRate: { n: 0, publishable: false }, calibrationAvailable: false, calibration: [],
+  },
+  enterNow: {
+    emitted: 1, resolved: 0, outcomes: { tp1: 0, stop: 0, timeout: 0 },
+    hitRate: { n: 0, publishable: false }, averageResult: { n: 0, decided: 0, excluded: 0, publishable: false },
+  },
+  eurUsdBlock: { until: '2026-11-03T17:28:26.000Z', analyses: 0, closedWatch: 0, enterNow: 0 },
+};
+// `current` = motor pelas velas com varios leitores (desde 23/11); `v11` = major 4 sem `engine.vote`, serie propria.
 const base = {
-  updatedAt: '2026-11-04T10:00:00.000Z',
+  updatedAt: '2026-11-24T10:00:00.000Z',
   filters: { minResolvedToPublish: 20 },
-  currentEngine: { major: 4, since: '2026-11-03T01:24:00.000Z' },
+  currentEngine: { major: 4, since: '2026-11-23T12:34:36.000Z', v11Since: '2026-11-03T01:24:00.000Z' },
   previous,
-  current,
+  v11: current,
+  current: engineNow,
 };
 const publishable = {
   ...base,
   previous: { ...previous, averageResult: { ...previous.averageResult, mean: -0.4, low: -0.6, high: -0.2, verdict: 'below' } },
   current: {
-    ...current,
+    ...engineNow,
     enterNow: {
-      ...current.enterNow, resolved: 25, hitRate: interval(10, 14, 41.7),
+      ...engineNow.enterNow, resolved: 25, hitRate: interval(10, 14, 41.7),
       averageResult: { n: 25, decided: 24, excluded: 0, publishable: true, mean: 0.3, low: 0.05, high: 0.55, verdict: 'above' },
     },
   },
@@ -91,17 +110,18 @@ describe('AccuracyPage com motor atual e anterior', () => {
   it('motor atual abaixo do minimo: "Collecting data", rastreador por estado, sem enum na tela', async () => {
     renderWith(base);
     await screen.findByText('Current engine: results so far');
+    expect(screen.getByText('v11 engine (archived, November 3, 2026 to November 23, 2026)', { selector: 'h2' })).toBeTruthy();
     expect(screen.getAllByText('Collecting data: 3 of 20').length).toBeGreaterThan(0);
     expect(screen.getByText('Collecting data: 4 of 20')).toBeTruthy();
-    expect(screen.getByText('Enter now reached target before stop')).toBeTruthy();
-    expect(screen.getByText('Window closed, waiting for the next tracker run')).toBeTruthy();
+    expect(screen.getAllByText('Enter now reached target before stop')).toHaveLength(2);
+    expect(screen.getAllByText('Window closed, waiting for the next tracker run').length).toBeGreaterThan(0);
     expect(screen.getByText('Not checked: no price source for this instrument')).toBeTruthy();
     expect(screen.queryByText(/ENTER_NOW|NO_TRADE|\bWATCH\b/)).toBeNull();
   });
 
   it('anterior arquivado com os numeros intactos; titulo e datas vem da API; sem os numeros fixos do backtest', async () => {
-    renderWith({ ...base, currentEngine: { major: 4, since: '2026-12-01T05:00:00Z' } });
-    await screen.findByText('Previous engine (archived, until December 1, 2026)');
+    renderWith({ ...base, currentEngine: { major: 4, since: '2026-12-01T05:00:00Z', v11Since: '2026-11-03T01:24:00.000Z' } });
+    await screen.findByText('Previous engine (archived, until November 3, 2026)');
     expect(screen.getByText('What changed on December 1, 2026')).toBeTruthy();
     expect(screen.getByText('Hit rate, original scoring rule')).toBeTruthy();
     expect(screen.getByText('30 wins, 45 losses')).toBeTruthy();
@@ -126,6 +146,7 @@ describe('AccuracyPage com motor atual e anterior', () => {
     renderWith(publishable);
     await screen.findByText('Does Tickrify have an edge?', { selector: 'h2' });
     expect(screen.getAllByText(/Previous engine: .*The whole interval is below zero\./).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/v11 engine: still collecting data/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Current engine: the average result per trade was above zero after an estimated spread, before other costs, over 25 trades/).length).toBeGreaterThan(0);
   });
 
@@ -133,6 +154,7 @@ describe('AccuracyPage com motor atual e anterior', () => {
     ['abaixo do minimo', base],
     ['publicavel', publishable],
     ['rastreador fora', { ...base, current: null }],
+    ['sem v11 (API sem a serie)', { ...base, v11: undefined }],
   ])('pagina e HTML pre-renderizado dizem o mesmo (%s)', async (_name, payload) => {
     renderWith(payload);
     await screen.findByText('Questions people ask about Tickrify accuracy');
@@ -152,7 +174,7 @@ describe('AccuracyPage com motor atual e anterior', () => {
   });
 
   it('API antiga (sem previous): so a resposta sem numero, nada de tabela', async () => {
-    renderWith({ updatedAt: '2026-11-04T10:00:00.000Z', overall: interval(30, 45, 40) });
+    renderWith({ updatedAt: '2026-11-24T10:00:00.000Z', overall: interval(30, 45, 40) });
     await screen.findByText('How accurate is Tickrify? Here is how we measure it');
     expect(screen.queryByText(/Previous engine \(archived/)).toBeNull();
     expect(screen.queryByText(/40%/)).toBeNull();

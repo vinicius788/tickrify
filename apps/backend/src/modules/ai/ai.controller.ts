@@ -38,6 +38,7 @@ import {
   CURRENT_ENGINE_MAJOR,
   CURRENT_ENGINE_SINCE,
   CURRENT_ENGINE_SQL,
+  ENGINE_VOTE_SINCE,
   FILL_CANDLE_RULE,
   GROUNDING_LIVE_SINCE,
   MIN_N_TO_PUBLISH,
@@ -48,6 +49,7 @@ import {
   currentEngineReport,
   previousTradeR,
   splitByFillCandleRule,
+  splitByVoteMarker,
   tally,
   type ConfidenceBand,
   type OutcomeRow,
@@ -382,8 +384,9 @@ export class AiController {
    *    manual do My Trades mora no mesmo campo em minusculas e e autorrelato);
    *  - todo recorte sai com n e intervalo de Wilson, nunca so a taxa;
    *  - recorte com n < 20 sai com publishable=false e o front mostra so o n;
-   *  - motor anterior (`previous`, sweeper) e motor atual (`current`,
-   *    rastreador, major >= 4) nunca se somam (04/11/2026).
+   *  - motor anterior (`previous`, sweeper), v11 (`v11`, rastreador, major >= 4
+   *    sem `engine.vote`) e motor atual (`current`, rastreador, com `engine.vote`,
+   *    desde 23/11/2026) nunca se somam.
    *
    * Cache em memoria de 1h: o Render roda no plano free, isto nao pode
    * recalcular a cada request. Sem dependencia nova.
@@ -486,11 +489,12 @@ export class AiController {
     // acesso manual `manual_%`) e analise com perfil de estrategia. A demo
     // anonima do /try nunca grava em "Analysis" (so em "DemoUsage").
     let currentReport: ReturnType<typeof currentEngineReport> | null = null;
+    let v11Report: ReturnType<typeof currentEngineReport> | null = null;
     try {
       const raw = await this.prisma.$queryRaw<Array<{
         createdAt: Date; signalState: string | null; dataMode: string | null; symbol: string | null; reachProbability: number | null;
         watchPlan: unknown; groundingInterval: string | null; timeframe: string | null;
-        trackStatus: string | null; trackOutcome: string | null; trackReason: string | null; touched: boolean | null;
+        hasVote: boolean | null; trackStatus: string | null; trackOutcome: string | null; trackReason: string | null; touched: boolean | null;
         fillPrice: number | null; stopLoss: number | null; takeProfit1: number | null; trackSymbol: string | null;
       }>>(Prisma.sql`
         SELECT a."createdAt", a."result"->>'signalState' AS "signalState", a."result"->>'dataMode' AS "dataMode",
@@ -499,6 +503,7 @@ export class AiController {
             THEN (a."result"->'watchReach'->>'probability')::float8 END AS "reachProbability",
           a."result"->'watchPlan' AS "watchPlan", a."groundingStats"->>'interval' AS "groundingInterval",
           a."result"->'analysis'->>'timeframe' AS "timeframe",
+          jsonb_exists(a."result"->'engine', 'vote') AS "hasVote",
           t."status" AS "trackStatus", t."outcome" AS "trackOutcome", t."reason" AS "trackReason", t."touched", t."fillPrice", t."stopLoss", t."takeProfit1",
           t."symbol" AS "trackSymbol"
         FROM "tickrify"."Analysis" a
@@ -507,7 +512,8 @@ export class AiController {
           AND NOT EXISTS (SELECT 1 FROM "tickrify"."User" u WHERE u."id" = a."userId" AND u."role" = 'admin')
           AND NOT EXISTS (SELECT 1 FROM "tickrify"."Subscription" s WHERE s."userId" = a."userId" AND s."stripeId" LIKE 'manual_%')
       `);
-      currentReport = currentEngineReport(raw.map((r) => ({
+      const rowsOf = raw.map((r) => ({
+        hasVote: Boolean(r.hasVote),
         createdAt: r.createdAt,
         signalState: r.signalState,
         dataMode: r.dataMode,
@@ -520,7 +526,11 @@ export class AiController {
             symbol: r.trackSymbol ?? r.symbol, fillPrice: r.fillPrice, stopLoss: r.stopLoss, takeProfit1: r.takeProfit1,
           }
           : null,
-      })));
+      }));
+      // Mesmo major 4, duas series que nunca se somam: com `engine.vote` (motor de 23/11) e sem ele (v11).
+      const split = splitByVoteMarker(rowsOf);
+      currentReport = currentEngineReport(split.current, Date.now(), ENGINE_VOTE_SINCE);
+      v11Report = currentEngineReport(split.v11, Date.now(), CURRENT_ENGINE_SINCE);
     } catch (err) {
       this.logger.warn(`[accuracy] Motor atual indisponivel: ${err instanceof Error ? err.message : err}`);
     }
@@ -533,8 +543,10 @@ export class AiController {
         current: { freeTrialAndPaid: true, strategyHash: null, excludesOwnerAccount: true },
         minResolvedToPublish: MIN_N_TO_PUBLISH,
       },
-      currentEngine: { major: CURRENT_ENGINE_MAJOR, since: CURRENT_ENGINE_SINCE.toISOString() },
+      // `since` = entrada do motor atual (com `engine.vote`); `v11Since` = o v11, major 4 sem o bloco, ate `since`.
+      currentEngine: { major: CURRENT_ENGINE_MAJOR, since: ENGINE_VOTE_SINCE.toISOString(), v11Since: CURRENT_ENGINE_SINCE.toISOString() },
       previous,
+      v11: v11Report,
       current: currentReport,
     };
 

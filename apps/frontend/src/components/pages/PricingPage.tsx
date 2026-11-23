@@ -41,7 +41,7 @@ export default function PricingPage() {
           operatingSystem: 'Web',
           url: 'https://tickrify.com',
           description:
-            'AI chart analysis for traders: upload a chart screenshot and get entry, stop, targets and risk, or a WAIT, as a second opinion before you enter.',
+            'AI chart analysis for traders: upload a chart screenshot and get a buy or sell plan with entry, stop and target, an entry to wait for at a level, or Wait with the reason, as a second opinion before you enter.',
           offers: {
             '@type': 'Offer',
             price: '29',
