@@ -5,6 +5,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import { displayAsset, type AIAnalysisResponse, type OpenTrade } from '@/lib/api';
 import { formatAssetPrice } from '@/lib/trading-ui';
+import { PriceTemplate } from './CopyPrice';
 import { NearNote, WatchPending } from './PendingLevels';
 import {
   alertDistancePct,
@@ -156,16 +157,23 @@ const TodaySection = ({
                         const plan = row.watch.plan;
                         return (
                           <li key={alert.id} data-testid="today-watch" className="tabular-nums text-xs text-[var(--text-primary)]">
-                            <span className="block">{`${(row.watch.direction === 'long' ? t.pending.watchBuy : t.pending.watchSell).replace('{price}', price(alert.level))}${distance}`}</span>
+                            <span className="block">
+                              <PriceTemplate template={row.watch.direction === 'long' ? t.pending.watchBuy : t.pending.watchSell} prices={{ price: { value: alert.level, text: price(alert.level) } }} />
+                              {distance ? <span key="distance">{distance}</span> : null}
+                            </span>
                             <NearNote key="near" near={alert.near} />
                             {plan ? (
                               <span key="plan" className="block text-[11px] text-[var(--text-secondary)]">
-                                {t.pending.planIf
-                                  .replace(/\{level\}/g, price(plan.entry))
-                                  .replace('{side}', row.watch.direction === 'long' ? t.pending.sideBuy : t.pending.sideSell)
-                                  .replace('{stop}', price(plan.stopLoss))
-                                  .replace('{target}', price(plan.takeProfit1))
-                                  .replace('{r}', formatNumber(plan.tp1R, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }))}
+                                <PriceTemplate
+                                  template={t.pending.planIf
+                                    .replace('{side}', row.watch.direction === 'long' ? t.pending.sideBuy : t.pending.sideSell)
+                                    .replace('{r}', formatNumber(plan.tp1R, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }))}
+                                  prices={{
+                                    level: { value: plan.entry, text: price(plan.entry) },
+                                    stop: { value: plan.stopLoss, text: price(plan.stopLoss) },
+                                    target: { value: plan.takeProfit1, text: price(plan.takeProfit1) },
+                                  }}
+                                />
                               </span>
                             ) : null}
                           </li>

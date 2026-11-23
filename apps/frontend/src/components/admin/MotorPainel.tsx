@@ -17,6 +17,10 @@ type Report = {
   byEntry: { entry: string; stats: Stats }[];
   byClass: { assetClass: string; stats: Stats }[];
   agreement: { agreement: string; count: number }[];
+  decidedBy: { decidedBy: string; count: number }[];
+  withoutMajorityPct: number | null;
+  readerFailures: { label: string; seen: number; failures: number; topError: string | null }[];
+  byRules: { rules: string | null; stats: Stats }[];
   noCandles: { reason: string; count: number }[];
 };
 
@@ -42,7 +46,7 @@ const COLUNAS = [
 function Linha({ rotulo, s, forte }: { rotulo: string; s: Stats; forte?: boolean }) {
   return (
     <tr className={`border-t border-[var(--border-subtle)] ${forte ? 'font-medium text-[var(--text-primary)]' : ''}`}>
-      <td className="py-1.5 pr-3">{rotulo}</td>
+      <td className="whitespace-nowrap py-1.5 pr-3">{rotulo}</td>
       <td className="py-1.5 pr-3 text-right tabular-nums">{s.analyses}</td>
       <td className="py-1.5 pr-3 text-right tabular-nums">{pct(s.clearPct)}</td>
       <td className="py-1.5 pr-3 text-right tabular-nums">{s.closedTrades}</td>
@@ -80,6 +84,14 @@ export default function MotorPainel() {
             </Tabela>
           </Painel>
 
+          <Painel titulo="Por versão das regras" nota="Valor gravado em result.engine.rules. Sem valor = antes de existir o registro. Para comparar antes e depois de uma mudança.">
+            <Tabela colunas={[{ rotulo: 'Regras' }, ...COLUNAS.slice(1)]}>
+              {data.byRules.map((g) => (
+                <Linha key={g.rules ?? 'sem'} rotulo={g.rules ?? 'sem registro'} s={g.stats} />
+              ))}
+            </Tabela>
+          </Painel>
+
           <div className="grid gap-4 xl:grid-cols-3">
             <Painel titulo="Por classe de ativo" className="xl:col-span-2">
               <Tabela colunas={COLUNAS}>
@@ -99,6 +111,32 @@ export default function MotorPainel() {
                     </li>
                   ))}
                 </ul>
+              </Painel>
+
+              <Painel titulo="Quem decidiu o voto" nota={`Sem maioria: ${pct(data.withoutMajorityPct)} das análises.`}>
+                <ul className="space-y-1 text-sm text-[var(--text-soft)]">
+                  {data.decidedBy.map((a) => (
+                    <li key={a.decidedBy} className="flex justify-between gap-3">
+                      <span>{a.decidedBy}</span>
+                      <span className="tabular-nums">{`${a.count} (${pct((100 * a.count) / totalVotos)})`}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Painel>
+
+              <Painel titulo="Falhas por leitor" nota="Leitor com status failed, pelo rótulo. Erro mais comum cortado em 80 caracteres.">
+                {data.readerFailures.every((l) => l.failures === 0) ? (
+                  <p className="text-sm text-[var(--text-soft)]">Nenhuma.</p>
+                ) : (
+                  <ul className="space-y-1 text-sm text-[var(--text-soft)]">
+                    {data.readerFailures.filter((l) => l.failures > 0).map((l) => (
+                      <li key={l.label}>
+                        <span className="flex justify-between gap-3"><span>{l.label}</span><span className="tabular-nums">{`${l.failures} de ${l.seen}`}</span></span>
+                        {l.topError ? <span className="block break-words text-xs text-[var(--text-faint)]">{l.topError}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </Painel>
 
               <Painel titulo="Análises sem velas, por motivo">

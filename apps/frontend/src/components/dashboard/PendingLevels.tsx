@@ -4,6 +4,7 @@ import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { track } from '@/lib/analytics';
 import { formatAssetPrice } from '@/lib/trading-ui';
+import { PriceTemplate } from './CopyPrice';
 import { APIError, type AiLevel, type LevelMap, type LevelMapSide, type WatchSummary } from '@/lib/api';
 import {
   formatAlertLevel,
@@ -126,12 +127,18 @@ function useConditionalPlan() {
   const p = t.pending;
   return (direction: WatchSummary['direction'], plan: WatchSummary['plan'], price: (v: number) => string) =>
     plan
-      ? p.planIf
-          .replace(/\{level\}/g, price(plan.entry))
-          .replace('{side}', direction === 'long' ? p.sideBuy : p.sideSell)
-          .replace('{stop}', price(plan.stopLoss))
-          .replace('{target}', price(plan.takeProfit1))
-          .replace('{r}', formatNumber(plan.tp1R, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }))
+      ? (
+          <PriceTemplate
+            template={p.planIf
+              .replace('{side}', direction === 'long' ? p.sideBuy : p.sideSell)
+              .replace('{r}', formatNumber(plan.tp1R, language, { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false }))}
+            prices={{
+              level: { value: plan.entry, text: price(plan.entry) },
+              stop: { value: plan.stopLoss, text: price(plan.stopLoss) },
+              target: { value: plan.takeProfit1, text: price(plan.takeProfit1) },
+            }}
+          />
+        )
       : null;
 }
 
@@ -215,12 +222,13 @@ export function WatchPending({
         <span key="status" className={`w-fit rounded-lg border px-2.5 py-1 tabular-nums text-[11px] ${WATCH_TONE_CLASSES.watching}`}>{p.statusPending}</span>
       )}
       <p className="tabular-nums text-xs text-[var(--text-primary)]">
-        {levelLine.replace('{price}', price(watch.level))}
+        <PriceTemplate template={levelLine} prices={{ price: { value: watch.level, text: price(watch.level) } }} />
       </p>
       {!closed && conditionalPlan && <p data-testid="conditional-plan" className="tabular-nums text-[11px] text-[var(--text-primary)]">{conditionalPlan}</p>}
       {!closed && waitingFor && <p className="text-xs text-[var(--text-secondary)]">{waitingFor}</p>}
       {!closed && <p className="tabular-nums text-[11px] text-[var(--text-secondary)]">
-        {[p.invalidation.replace('{price}', price(watch.invalidation)), validity].filter(Boolean).join(' · ')}
+        <PriceTemplate template={p.invalidation} prices={{ price: { value: watch.invalidation, text: price(watch.invalidation) } }} />
+        {validity ? <span key="validity">{` · ${validity}`}</span> : null}
       </p>}
       {alerts && open && watch.alertAvailable ? (
         <AlertLevelButton analysisId={analysisId} setupId={watch.setupId} level={watch.level} label="entry" surface={surface} kind="watch" />
@@ -284,13 +292,13 @@ export function LevelMapCard({
                 <>
                   <p className="tabular-nums text-xs font-medium text-[var(--text-secondary)]">{p.aiLevelLabel}</p>
                   <p className="mt-0.5 text-sm leading-relaxed text-[var(--text-primary)]">
-                    <span>{(aiLevel.direction === 'long' ? p.aiLevelBuy : p.aiLevelSell).replace('{price}', price(aiLevel.price))}</span>
+                    <span><PriceTemplate template={aiLevel.direction === 'long' ? p.aiLevelBuy : p.aiLevelSell} prices={{ price: { value: aiLevel.price, text: price(aiLevel.price) } }} /></span>
                     {alerts && analysisId ? <AiLevelAlertNote analysisId={analysisId} level={aiLevel.price} /> : null}
                   </p>
                 </>
               ) : (
                 <>
-                  <p className="tabular-nums text-sm text-[var(--text-primary)]">{p.aiLevel.replace('{price}', price(aiLevel.price))}</p>
+                  <p className="tabular-nums text-sm text-[var(--text-primary)]"><PriceTemplate template={p.aiLevel} prices={{ price: { value: aiLevel.price, text: price(aiLevel.price) } }} /></p>
                   <p className="mt-0.5 text-xs leading-relaxed text-[var(--text-secondary)]">{p.aiLevelNote}</p>
                 </>
               )}

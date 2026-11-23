@@ -1,6 +1,7 @@
 import type { AIAnalysisResponse } from '@/lib/api';
 import { biasArguments, directionTimeframe, type BiasLineKey } from '@/lib/code-summary';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { CopyPrice } from './CopyPrice';
 
 type Full = NonNullable<AIAnalysisResponse['fullResponse']>;
 
@@ -24,7 +25,7 @@ export function WhatAISaw({ fullResponse, formatPrice }: Props) {
   const tf = directionTimeframe(bias);
   const htf = bias?.htfTrend ?? location?.htfTrend ?? null;
 
-  const rows: Array<{ key: string; label: string; value: string }> = [];
+  const rows: Array<{ key: string; label: string; value: string; raw?: number }> = [];
   if (htf) rows.push({ key: 'htf', label: s.trendTf.replace('{tf}', tf), value: s.htf[htf] });
   if (bias?.timeframes) {
     const { chart, direction, setup } = bias.timeframes;
@@ -41,8 +42,8 @@ export function WhatAISaw({ fullResponse, formatPrice }: Props) {
   if (typeof bias?.relVolumeLast === 'number') {
     rows.push({ key: 'volume', label: s.volume, value: s.volumeValue.replace('{x}', bias.relVolumeLast.toFixed(1)) });
   }
-  if (location?.support) rows.push({ key: 'support', label: s.support, value: formatPrice(location.support.price) });
-  if (location?.resistance) rows.push({ key: 'resistance', label: s.resistance, value: formatPrice(location.resistance.price) });
+  if (location?.support) rows.push({ key: 'support', label: s.support, value: formatPrice(location.support.price), raw: location.support.price });
+  if (location?.resistance) rows.push({ key: 'resistance', label: s.resistance, value: formatPrice(location.resistance.price), raw: location.resistance.price });
   if (calendar) rows.push({ key: 'calendar', label: s.calendar, value: s.calendarValues[calendar] });
 
   const args = biasArguments(bias);
@@ -70,7 +71,7 @@ export function WhatAISaw({ fullResponse, formatPrice }: Props) {
           {rows.map((row) => (
             <div key={row.key} className="flex justify-between gap-3">
               <dt className="tk-meta">{row.label}</dt>
-              <dd className="tabular-nums text-right text-[var(--text-primary)]">{row.value}</dd>
+              <dd className="tabular-nums text-right text-[var(--text-primary)]"><CopyPrice value={row.raw} text={row.value} /></dd>
             </div>
           ))}
         </dl>

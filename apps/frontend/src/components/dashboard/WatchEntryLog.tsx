@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { track } from '@/lib/analytics';
 import { useAPIClient, type WatchEntry, type WatchLevels } from '@/lib/api';
+import { PriceTemplate } from './CopyPrice';
 
 /**
  * "I entered this plan" num WATCH (11/11/2026). O trader registra que entrou
@@ -64,7 +65,7 @@ export function WatchEntryLog({
     return (
       <div data-testid="watch-entry-logged" className="mt-4 rounded-xl border border-[var(--border-default)] bg-[var(--fill-2)] px-4 py-3">
         <p className="text-sm font-medium text-[var(--text-primary)]">
-          {(entry.direction === 'long' ? w.entryLoggedBuy : w.entryLoggedSell).replace('{price}', money(entry.entry))}
+          <PriceTemplate template={entry.direction === 'long' ? w.entryLoggedBuy : w.entryLoggedSell} prices={{ price: { value: entry.entry, text: money(entry.entry) } }} />
         </p>
         <p className="tk-meta mt-0.5">{w.entryLoggedSub}</p>
         <div className="mt-2 flex flex-wrap items-center gap-4">
@@ -132,7 +133,13 @@ export function WatchEntryLog({
         className="mt-1 w-full rounded-lg border border-[var(--border-default)] bg-transparent px-3 py-2 text-base tabular-nums text-[var(--text-primary)]"
       />
       <p className="tk-meta mt-1 tabular-nums">
-        {w.entryPlanLine.replace('{stop}', money(levels.stopLoss)).replace('{target}', money(levels.takeProfit1))}
+        <PriceTemplate
+          template={w.entryPlanLine}
+          prices={{
+            stop: { value: levels.stopLoss, text: money(levels.stopLoss) },
+            target: { value: levels.takeProfit1, text: money(levels.takeProfit1) },
+          }}
+        />
       </p>
       {!valid ? <p key="range" className="mt-1 text-xs" style={{ color: 'var(--signal-hold)' }}>{w.entryRange}</p> : null}
       {error ? <p key="error" role="status" className="mt-1 text-sm" style={{ color: 'var(--signal-sell)' }}>{error}</p> : null}

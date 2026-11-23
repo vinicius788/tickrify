@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { canonicalFxPair } from '../../common/utils/analysis-normalizer';
 import { candleMarketOf } from '../market/candle-store';
 import { trackedTradeR } from '../ai/accuracy.util';
+import { readerFailuresByLabel, readersOf, type ReaderLabelStat } from './admin-dashboard';
 
 /** Deploy da correcao do fuso do Twelve Data (corte de ouro e forex na revisao mensal). */
 export const ENGINE_REPORT_SINCE = '2026-11-09T14:09:48Z';
@@ -29,6 +30,12 @@ export type EngineReportRow = {
   action: string | null;
   /** `result.engine.vote.agreement`, ex.: "3/3". */
   agreement: string | null;
+  /** `result.engine.vote.decidedBy`. */
+  decidedBy?: string | null;
+  /** `result.engine.rules`: texto gravado por quem muda as regras (null = antes). */
+  rules?: string | null;
+  /** `result.engine.readers`. */
+  readers?: unknown;
   signalState?: string | null;
   trackStatus: string | null;
   outcome: string | null;
@@ -61,6 +68,13 @@ export type EngineReport = {
   byEntry: { entry: EntryKind; stats: EngineStats }[];
   byClass: { assetClass: AssetClass; stats: EngineStats }[];
   agreement: { agreement: string; count: number }[];
+  /** Quem decidiu o voto, pelo texto gravado. */
+  decidedBy: { decidedBy: string; count: number }[];
+  /** % das analises com voto que nao fechou por maioria (decidedBy diferente de majority). */
+  withoutMajorityPct: number | null;
+  readerFailures: ReaderLabelStat[];
+  /** Mesmas contas por versao das regras (`result.engine.rules`), para comparar antes e depois. */
+  byRules: { rules: string | null; stats: EngineStats }[];
   noCandles: { reason: string; count: number }[];
 };
 
@@ -143,6 +157,22 @@ function agreementOf(rows: readonly EngineReportRow[]): { agreement: string; cou
   return [...counts].map(([agreement, count]) => ({ agreement, count })).sort((a, b) => b.agreement.localeCompare(a.agreement));
 }
 
+function decidedByOf(rows: readonly EngineReportRow[]): { decidedBy: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.decidedBy ?? 'sem registro';
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts].map(([decidedBy, count]) => ({ decidedBy, count })).sort((a, b) => b.count - a.count || a.decidedBy.localeCompare(b.decidedBy));
+}
+
+/** Uma linha por valor de `rules`, o mais novo primeiro (texto em ordem decrescente); null (antes) por ultimo. */
+function byRulesOf(rows: readonly EngineReportRow[]): { rules: string | null; stats: EngineStats }[] {
+  const keys = [...new Set(rows.map((r) => r.rules ?? null))];
+  keys.sort((a, b) => (a === null ? 1 : b === null ? -1 : b.localeCompare(a)));
+  return keys.map((rules) => ({ rules, stats: statsOf(rows.filter((r) => (r.rules ?? null) === rules)) }));
+}
+
 export function buildEngineReport(rows: readonly EngineReportRow[], since: string | null = null): EngineReport {
   return {
     since,
@@ -150,6 +180,10 @@ export function buildEngineReport(rows: readonly EngineReportRow[], since: strin
     byEntry: ENTRY_KINDS.map((entry) => ({ entry, stats: statsOf(rows.filter((r) => entryKindOf(r.action) === entry)) })).filter((e) => e.stats.analyses > 0),
     byClass: CLASSES.map((assetClass) => ({ assetClass, stats: statsOf(rows.filter((r) => assetClassOf(r.symbol) === assetClass)) })).filter((c) => c.stats.analyses > 0),
     agreement: agreementOf(rows),
+    decidedBy: decidedByOf(rows),
+    withoutMajorityPct: pct(rows.filter((r) => r.decidedBy && r.decidedBy !== 'majority').length, rows.length),
+    readerFailures: readerFailuresByLabel(rows.flatMap((r) => readersOf(r.readers))),
+    byRules: byRulesOf(rows),
     noCandles: noCandlesOf(rows),
   };
 }
@@ -162,6 +196,9 @@ export async function loadEngineReport(db: RawQuerier): Promise<EngineReport> {
            a."result"->'analysis'->>'symbol' AS "symbol",
            a."result"->'codeSummary'->>'action' AS "action",
            a."result"->'engine'->'vote'->>'agreement' AS "agreement",
+           a."result"->'engine'->'vote'->>'decidedBy' AS "decidedBy",
+           a."result"->'engine'->>'rules' AS "rules",
+           a."result"->'engine'->'readers' AS "readers",
            a."result"->>'signalState' AS "signalState",
            t."status" AS "trackStatus",
            t."outcome" AS "outcome",
