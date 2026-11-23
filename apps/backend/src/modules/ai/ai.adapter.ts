@@ -1261,6 +1261,79 @@ function noCandleStats(coverage: CandleCoverage): GroundingStats {
   return { v: 1, symbol: '', interval: null, coverage, numbers: null };
 }
 
+/**
+ * Schema da resposta da analise (ordem das chaves = ordem de geracao, CLAUDE.md
+ * 4.1). Com perfil de estrategia ganha strategyFit no fim (TRAVA 1). Exportado
+ * para o teste do pedido da Anthropic conferir o tamanho (23/11/2026).
+ */
+export function analysisResponseSchema(withStrategy: boolean): Record<string, unknown> {
+  const strategyFitProps = withStrategy
+    ? {
+        strategyFit: { type: 'string', enum: [...STRATEGY_FIT_VALUES] },
+        strategyFitReason: { type: 'string' },
+      }
+    : {};
+  // strict:true exige que TODO campo declarado esteja em required. Por isso
+  // o campo so existe no schema de quem tem perfil: sem isso o modelo seria
+  // obrigado a inventar um valor para quem nao tem estrategia nenhuma.
+  const strategyFitRequired = withStrategy ? ['strategyFit', 'strategyFitReason'] : [];
+  return {
+    type: 'object',
+    properties: {
+      is_financial_chart: { type: 'boolean' },
+      analysis: {
+        type: 'object',
+        properties: ANALYSIS_SCHEMA_PROPERTIES,
+        required: Object.keys(ANALYSIS_SCHEMA_PROPERTIES),
+        additionalProperties: false,
+      },
+      read: {
+        type: 'object',
+        properties: {
+          direction: { type: 'string', enum: ['long', 'short', 'neutral'] },
+          veto: { type: 'string', enum: ['none', ...VETO_REASONS] },
+          vetoNote: { type: 'string' },
+        },
+        required: ['direction', 'veto', 'vetoNote'],
+        additionalProperties: false,
+      },
+      signalState: { type: 'string', enum: ['NO_TRADE', 'WATCH', 'ARMED', 'ENTER_NOW'] },
+      watchPlan: {
+        anyOf: [
+          {
+            type: 'object',
+            properties: {
+              direction: { type: 'string', enum: ['long', 'short'] },
+              triggerType: { type: 'string', enum: [...TRIGGER_TYPES] },
+              zoneLow: { type: 'number' },
+              zoneHigh: { type: 'number' },
+              invalidation: { type: 'number' },
+              target1: { type: 'number' },
+              target2: nullable('number'),
+              validForCandles: { type: 'integer' },
+              trigger: { type: 'string' },
+            },
+            required: [
+              'direction', 'triggerType', 'zoneLow', 'zoneHigh', 'invalidation', 'target1', 'target2',
+              'validForCandles', 'trigger',
+            ],
+            additionalProperties: false,
+          },
+          { type: 'null' },
+        ],
+      },
+      recommendation: { type: 'string', enum: ['BUY', 'SELL', 'HOLD'] },
+      confidence: { type: 'number' },
+      ...strategyFitProps,
+    },
+    required: [
+      'is_financial_chart', 'analysis', 'read', 'signalState', 'watchPlan', 'recommendation', 'confidence',
+      ...strategyFitRequired,
+    ],
+    additionalProperties: false,
+  };
+}
+
 @Injectable()
 export class AIAdapter {
   /** Toda chamada a modelo passa SO por aqui (ver vision-model.ts). */
@@ -2159,16 +2232,6 @@ export class AIAdapter {
       // entao quando o modelo chega nele o veredito ja esta escrito e imutavel.
       // Mover este bloco para cima desfaz a trava sem quebrar nenhum teste de
       // tipo. Nao mova.
-      const strategyFitProps = strategyProfile
-        ? {
-            strategyFit: { type: 'string', enum: [...STRATEGY_FIT_VALUES] },
-            strategyFitReason: { type: 'string' },
-          }
-        : {};
-      // strict:true exige que TODO campo declarado esteja em required. Por isso
-      // o campo so existe no schema de quem tem perfil: sem isso o modelo seria
-      // obrigado a inventar um valor para quem nao tem estrategia nenhuma.
-      const strategyFitRequired = strategyProfile ? ['strategyFit', 'strategyFitReason'] : [];
 
       // A chamada passa pela interface do provedor (vision-model.ts): instrucoes
       // fixas primeiro, contexto variavel depois, imagens por ultimo.
@@ -2178,61 +2241,7 @@ export class AIAdapter {
         context,
         userContent,
         schemaName: 'trading_analysis',
-        schema: {
-          type: 'object',
-          properties: {
-            is_financial_chart: { type: 'boolean' },
-            analysis: {
-              type: 'object',
-              properties: ANALYSIS_SCHEMA_PROPERTIES,
-              required: Object.keys(ANALYSIS_SCHEMA_PROPERTIES),
-              additionalProperties: false,
-            },
-            read: {
-              type: 'object',
-              properties: {
-                direction: { type: 'string', enum: ['long', 'short', 'neutral'] },
-                veto: { type: 'string', enum: ['none', ...VETO_REASONS] },
-                vetoNote: { type: 'string' },
-              },
-              required: ['direction', 'veto', 'vetoNote'],
-              additionalProperties: false,
-            },
-            signalState: { type: 'string', enum: ['NO_TRADE', 'WATCH', 'ARMED', 'ENTER_NOW'] },
-            watchPlan: {
-              anyOf: [
-                {
-                  type: 'object',
-                  properties: {
-                    direction: { type: 'string', enum: ['long', 'short'] },
-                    triggerType: { type: 'string', enum: [...TRIGGER_TYPES] },
-                    zoneLow: { type: 'number' },
-                    zoneHigh: { type: 'number' },
-                    invalidation: { type: 'number' },
-                    target1: { type: 'number' },
-                    target2: nullable('number'),
-                    validForCandles: { type: 'integer' },
-                    trigger: { type: 'string' },
-                  },
-                  required: [
-                    'direction', 'triggerType', 'zoneLow', 'zoneHigh', 'invalidation', 'target1', 'target2',
-                    'validForCandles', 'trigger',
-                  ],
-                  additionalProperties: false,
-                },
-                { type: 'null' },
-              ],
-            },
-            recommendation: { type: 'string', enum: ['BUY', 'SELL', 'HOLD'] },
-            confidence: { type: 'number' },
-            ...strategyFitProps,
-          },
-          required: [
-            'is_financial_chart', 'analysis', 'read', 'signalState', 'watchPlan', 'recommendation', 'confidence',
-            ...strategyFitRequired,
-          ],
-          additionalProperties: false,
-        },
+        schema: analysisResponseSchema(!!strategyProfile),
         maxTokens,
         reasoningEffort: resolveReasoningEffort(analysisType),
         sampling: { temperature: 0.1, topP: 0.1, seed: 42 },
