@@ -72,6 +72,17 @@ export async function trackTrialStarted(db: TrialFunnelDb, userId: string, sourc
   }
 }
 
+/** Trial negado. So o e-mail repetido emite (23/11/2026); o e-mail nunca vai ao evento. */
+export async function trackTrialDenied(db: TrialFunnelDb, userId: string, reason: 'repeat_email') {
+  try {
+    const w = await who(db, userId);
+    if (!w) return;
+    captureServer(w.clerkId, 'trial_denied', { reason, ...w.origin }, { dedupeKey: `trial_denied:${userId}` });
+  } catch {
+    /* analytics nunca derruba o fluxo */
+  }
+}
+
 /** Paywall do trial visto (pelo /usage ou por uma analise recusada). 1 vez por dia e gatilho. */
 export async function trackTrialPaywallShown(db: TrialFunnelDb, userId: string, state: TrialState, trigger: TrialPaywall) {
   try {

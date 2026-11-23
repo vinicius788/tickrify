@@ -1002,6 +1002,22 @@ describe('AiService access enforcement', () => {
       await expect(service.isFreeLocked('usr_1')).resolves.toBe(false);
     });
 
+    it('e-mail repetido: gratis travado e sem oferta da opiniao; assinante repetido continua com acesso', async () => {
+      prisma.$queryRawUnsafe = jest.fn(async (sql: string) =>
+        sql.includes('information_schema')
+          ? [{ column: true, trial: true, feedback: true }]
+          : sql.includes('"repeat"')
+            ? [{ repeat: true }]
+            : [],
+      );
+      expect(await service.isFreeLocked('usr_1')).toBe(true);
+      const usage = await service.getUsage('usr_1');
+      expect(usage).toMatchObject({ freeLocked: true, canAnalyze: false, feedbackReward: { available: false } });
+
+      prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', stripeId: 'sub_123', priceId: null });
+      await expect(service.isFreeLocked('usr_1')).resolves.toBe(false);
+    });
+
     it('/usage avisa a tela com freeLocked', async () => {
       setFreeQuota(prisma, { signals: 3 });
       expect((await service.getUsage('usr_1')).freeLocked).toBe(true);

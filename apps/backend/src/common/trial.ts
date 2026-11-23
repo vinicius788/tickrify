@@ -15,7 +15,9 @@
  * - Acaba ao esgotar a cota do 3o dia, ao comecar um 4o dia de uso ou 7 dias
  *   depois do inicio, o que vier primeiro. Depois: modo leitura (historico
  *   aberto, nada novo ate assinar).
- * - Uma conta, um trial (chave primaria em userId).
+ * - Uma conta, um trial (chave primaria em userId). Conta nova de um e-mail
+ *   (normalizado) que ja usou o produto em conta mais antiga nao ganha trial
+ *   nem cota gratis (`isRepeatEmailAccount`, 23/11/2026).
  *
  * Arquivo proprio (como free-quota.ts): lido pela cota gratis (API e worker),
  * pelos e-mails e pelos eventos do PostHog, em dois processos. Tabela
@@ -317,6 +319,97 @@ export function isDisposableEmail(email: string | null | undefined): boolean {
   if (DISPOSABLE_DOMAINS.has(domain)) return true;
   // Subdominio de um descartavel (ex.: x.mailinator.com).
   return [...DISPOSABLE_DOMAINS].some((d) => domain.endsWith(`.${d}`));
+}
+
+// ── E-mail repetido (23/11/2026) ────────────────────────────────────────────
+
+/**
+ * Mesmo endereco de verdade, escrito de outro jeito. Minusculo, sem espacos,
+ * sem "+tag"; no Gmail (googlemail.com e o mesmo) os pontos nao contam.
+ * Numeros ficam: sao caixas diferentes. Sem "@" ou com parte vazia: null.
+ * `normalizedEmailSql` e a mesma regra em SQL; teste .pg confere as duas.
+ */
+export function normalizeEmail(email: string | null | undefined): string | null {
+  const [rawLocal = '', domain = ''] = String(email ?? '').toLowerCase().replace(/\s+/g, '').split('@');
+  const local = rawLocal.split('+')[0];
+  if (!domain) return null;
+  if (domain === 'gmail.com' || domain === 'googlemail.com') {
+    const plain = local.replace(/\./g, '');
+    return plain ? `${plain}@gmail.com` : null;
+  }
+  return local ? `${local}@${domain}` : null;
+}
+
+/** `normalizeEmail` em SQL (so funcoes IMMUTABLE: vira coluna gerada). */
+export function normalizedEmailSql(column: string): string {
+  const e = `regexp_replace(lower(${column}), '\\s', '', 'g')`;
+  const local = `split_part(split_part(${e}, '@', 1), '+', 1)`;
+  const domain = `split_part(${e}, '@', 2)`;
+  return `CASE WHEN ${domain} IN ('gmail.com', 'googlemail.com') THEN NULLIF(replace(${local}, '.', ''), '') || '@gmail.com'
+    WHEN ${domain} <> '' THEN NULLIF(${local}, '') || '@' || ${domain} END`;
+}
+
+/**
+ * `User.emailNormalized`: coluna GERADA (preenche linhas antigas e novas
+ * sozinha, acompanha troca de e-mail), fora do schema.prisma. Boot do
+ * TrialService + migracao 20261123130000_user_email_normalized.
+ */
+export const USER_EMAIL_NORMALIZED_SQL = [
+  `ALTER TABLE "tickrify"."User" ADD COLUMN IF NOT EXISTS "emailNormalized" TEXT GENERATED ALWAYS AS (${normalizedEmailSql('"email"')}) STORED`,
+  'CREATE INDEX IF NOT EXISTS "User_emailNormalized_idx" ON "tickrify"."User"("emailNormalized")',
+];
+
+/**
+ * Fontes da checagem de conta repetida. Consulta que nunca da erro, pelo mesmo
+ * motivo de `trialTableExists` (roda na transacao serializavel da reserva).
+ */
+let repeatSourcesSeen = false;
+async function repeatSources(db: TrialDb): Promise<{ column: boolean; trial: boolean; feedback: boolean }> {
+  if (repeatSourcesSeen) return { column: true, trial: true, feedback: true };
+  try {
+    const rows = await db.$queryRawUnsafe<Array<{ column: boolean; trial: boolean; feedback: boolean }>>(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_schema = 'tickrify' AND table_name = 'User' AND column_name = 'emailNormalized') AS "column",
+              to_regclass('"tickrify"."UserTrial"') IS NOT NULL AS "trial",
+              to_regclass('"tickrify"."UserFeedback"') IS NOT NULL AS "feedback"`,
+    );
+    const found = { column: rows?.[0]?.column === true, trial: rows?.[0]?.trial === true, feedback: rows?.[0]?.feedback === true };
+    repeatSourcesSeen = found.column && found.trial && found.feedback;
+    return found;
+  } catch {
+    return { column: false, trial: false, feedback: false };
+  }
+}
+
+/**
+ * Conta repetida: existe OUTRA conta, criada antes, com o mesmo e-mail
+ * normalizado, que ja usou o produto (analise, trial ou opiniao). Quem apaga a
+ * conta no Clerk e cadastra de novo ganha outro id; esta e a trava. A conta
+ * mais antiga de cada e-mail nunca e repetida. Nunca lanca (erro = false).
+ */
+export async function isRepeatEmailAccount(db: TrialDb, userId: string): Promise<boolean> {
+  const sources = await repeatSources(db);
+  if (!sources.column) return false;
+  const used = [
+    `EXISTS (SELECT 1 FROM "tickrify"."Analysis" a WHERE a."userId" = o."id")`,
+    ...(sources.trial ? [`EXISTS (SELECT 1 FROM "tickrify"."UserTrial" t WHERE t."userId" = o."id")`] : []),
+    ...(sources.feedback ? [`EXISTS (SELECT 1 FROM "tickrify"."UserFeedback" f WHERE f."userId" = o."id")`] : []),
+  ].join(' OR ');
+  try {
+    const rows = await db.$queryRawUnsafe<Array<{ repeat: boolean }>>(
+      `SELECT EXISTS (
+         SELECT 1 FROM "tickrify"."User" me
+           JOIN "tickrify"."User" o ON o."emailNormalized" = me."emailNormalized" AND o."id" <> me."id"
+          WHERE me."id" = $1
+            AND (o."createdAt" < me."createdAt" OR (o."createdAt" = me."createdAt" AND o."id" < me."id"))
+            AND (${used})
+       ) AS "repeat"`,
+      userId,
+    );
+    return rows?.[0]?.repeat === true;
+  } catch {
+    return false;
+  }
 }
 
 // ── Banco (SQL cru: a tabela fica fora do schema.prisma) ───────────────────

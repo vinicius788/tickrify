@@ -7,13 +7,15 @@ import { fetchClerkProfile } from '../../common/utils/clerk-email';
 import { getFreeQuota, hadEndedSubscription } from '../../common/free-quota';
 import {
   TRIAL_RULES,
+  USER_EMAIL_NORMALIZED_SQL,
   isDisposableEmail,
+  isRepeatEmailAccount,
   readTrial,
   validTimezone,
   type TrialRow,
   type TrialState,
 } from '../../common/trial';
-import { syncTrial, trackTrialPaywallShown, trackTrialStarted } from '../../common/analytics/trial-funnel';
+import { syncTrial, trackTrialDenied, trackTrialPaywallShown, trackTrialStarted } from '../../common/analytics/trial-funnel';
 
 /**
  * Trial de 3 dias sem cartao (13/10/2026). Regras e estado em common/trial.ts;
@@ -53,6 +55,8 @@ const BOOT_SQL = [
   'CREATE INDEX IF NOT EXISTS "UserTrial_ipHash_startedAt_idx" ON "tickrify"."UserTrial"("ipHash", "startedAt")',
   // Print repetido no trial: mesma imagem devolve a leitura anterior, sem IA.
   'ALTER TABLE "tickrify"."Analysis" ADD COLUMN IF NOT EXISTS "imageSha256" TEXT',
+  // E-mail repetido (conta recriada com o mesmo e-mail): coluna gerada + indice.
+  ...USER_EMAIL_NORMALIZED_SQL,
 ];
 
 /** Recusa do trial, em forma que o front traduz (codigo estavel + texto em ingles). */
@@ -115,7 +119,11 @@ export class TrialService implements OnModuleInit {
     const existing = await readTrial(this.prisma, userId);
     const tz = validTimezone(ctx.timezone);
     if (existing) {
-      if (existing.status === 'denied') throw TRIAL_ERRORS.emailNotAllowed();
+      // Repetida cai no paywall normal (cota zero em getFreeQuota), sem mensagem de e-mail.
+      if (existing.status === 'denied') {
+        if (existing.denyReason === 'repeat_email') return null;
+        throw TRIAL_ERRORS.emailNotAllowed();
+      }
       if (tz && !existing.timezone) {
         await this.prisma.$executeRawUnsafe(
           'UPDATE "tickrify"."UserTrial" SET "timezone" = $2, "updatedAt" = NOW() WHERE "userId" = $1 AND "timezone" IS NULL',
@@ -133,6 +141,13 @@ export class TrialService implements OnModuleInit {
     if (used > 0) return null;
     // Ex-assinante nao ganha trial depois de cancelar: cai no modo leitura.
     if (await hadEndedSubscription(this.prisma, userId)) return null;
+    // Mesmo e-mail (normalizado) ja usou o produto em conta mais antiga: sem trial.
+    if (await isRepeatEmailAccount(this.prisma, userId)) {
+      await this.insert(userId, { tz, ipHash: null, status: 'denied', denyReason: 'repeat_email', source: 'signup' });
+      this.logger.log(`[trial] repeat_email user=${userId}`);
+      void trackTrialDenied(this.prisma, userId, 'repeat_email');
+      return null;
+    }
 
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true, clerkUserId: true } });
     if (!user) return null;

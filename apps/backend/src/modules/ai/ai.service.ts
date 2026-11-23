@@ -1255,7 +1255,7 @@ export class AiService implements OnModuleInit {
       const onBonus = trialState ? trialState.bonusRemaining > 0 && trialState.remainingToday === trialState.bonusRemaining : false;
       // Opiniao que vale analises: uma vez por conta, nunca para trial negado.
       const feedbackRewardAvailable =
-        !trialBlocked && (trialState ? trialState.bonusTotal === 0 : !(await readFeedbackBonus(this.prisma, userId)));
+        !trialBlocked && !quota.repeatEmail && (trialState ? trialState.bonusTotal === 0 : !(await readFeedbackBonus(this.prisma, userId)));
       return {
         plan: 'free',
         period: 'monthly',

@@ -4,7 +4,7 @@ import { PrismaService } from '../database/prisma.service';
 import { AiService } from '../ai/ai.service';
 import { captureServer } from '../../common/analytics/posthog';
 import { FEEDBACK_RULES } from '../../common/feedback-bonus';
-import { readTrial } from '../../common/trial';
+import { isRepeatEmailAccount, readTrial } from '../../common/trial';
 import type { FeedbackSource } from './dto/submit-feedback.dto';
 
 /**
@@ -108,8 +108,8 @@ export class FeedbackService implements OnModuleInit {
     if (await this.ai.hasPaidAccess(user.id)) {
       throw feedbackError('feedback_subscriber', 'This offer is for accounts without an active subscription.', HttpStatus.FORBIDDEN);
     }
-    // Trial negado pelo anti-abuso (e-mail descartavel) nao ganha analise por aqui.
-    if ((await readTrial(this.prisma, user.id))?.status === 'denied') {
+    // Trial negado pelo anti-abuso (e-mail descartavel ou repetido) e conta repetida nao ganham analise por aqui.
+    if ((await readTrial(this.prisma, user.id))?.status === 'denied' || (await isRepeatEmailAccount(this.prisma, user.id))) {
       throw feedbackError('feedback_not_eligible', 'This offer is not available for this account.', HttpStatus.FORBIDDEN);
     }
 

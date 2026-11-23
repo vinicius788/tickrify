@@ -187,7 +187,11 @@ export async function loadHomeReport(db: RawQuerier, now: Date = new Date()): Pr
         FROM "tickrify"."Analysis" a
        WHERE a."createdAt" >= ${weekStart}
          AND a."status" IN ('completed', 'failed')`),
-    db.$queryRaw<Array<{ createdAt: Date }>>(Prisma.sql`SELECT "createdAt" FROM "tickrify"."User" WHERE "createdAt" >= ${weekStart}`),
+    // Cadastro = pessoa (e-mail normalizado), na data da 1a conta: conta recriada nao infla.
+    db.$queryRaw<Array<{ createdAt: Date }>>(Prisma.sql`
+      SELECT MIN("createdAt") AS "createdAt" FROM "tickrify"."User"
+       GROUP BY COALESCE("emailNormalized", "id")
+      HAVING MIN("createdAt") >= ${weekStart}`),
     db.$queryRaw<Array<AlertRow>>(Prisma.sql`
       SELECT "triggeredAt", "emailedAt", "armCheck"->>'status' AS "armStatus"
         FROM "tickrify"."SetupAlert"

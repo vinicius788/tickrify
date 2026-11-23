@@ -9,6 +9,9 @@
  * - TECNICA: primeiro toque gravado pelo navegador (`firstTouchAttribution`):
  *   `utmSource`, senao o dominio de onde veio.
  *
+ * Contagem por PESSOA (e-mail normalizado, `User.emailNormalized`), nao por
+ * conta: quem apaga a conta e cadastra de novo conta uma vez so.
+ *
  * `assinaram` = criou assinatura na Stripe em qualquer estado (inclui cartao
  * recusado e cancelada); `ativos` = pagando hoje. A conversao da tela usa
  * `ativos`. Assinatura sempre SEM o acesso manual do dono (`stripeId NOT LIKE 'manual_%'`)
@@ -41,10 +44,15 @@ export function parseDias(raw: unknown): number | null {
   return [7, 30, 90].includes(n) ? n : 30;
 }
 
+// Uma linha por PESSOA (e-mail normalizado; sem e-mail, a conta): canal da 1a
+// conta, data da 1a conta, e analisou/assinou/ativo em qualquer conta dela.
+// Conta recriada com o mesmo e-mail nao vira cadastro novo (23/11/2026).
 const BASE = (dias: number | null) => Prisma.sql`
-  WITH base AS (
+  WITH contas AS (
     SELECT
       u."id",
+      u."createdAt",
+      COALESCE(u."emailNormalized", u."id") AS pessoa,
       COALESCE(NULLIF(u."acquisitionSource", ''), '(sem resposta)') AS declarada,
       COALESCE(
         NULLIF(u."firstTouchAttribution"->>'utmSource', ''),
@@ -59,7 +67,19 @@ const BASE = (dias: number | null) => Prisma.sql`
       ) AS ativo
     FROM "tickrify"."User" u
     WHERE COALESCE(u."role", 'user') <> 'admin'
-    ${dias ? Prisma.sql`AND u."createdAt" >= NOW() - make_interval(days => ${dias}::int)` : Prisma.empty}
+  ),
+  pessoas AS (
+    SELECT DISTINCT ON (pessoa)
+      pessoa, "createdAt", declarada, tecnica,
+      bool_or(analisou) OVER (PARTITION BY pessoa) AS analisou,
+      bool_or(assinou) OVER (PARTITION BY pessoa) AS assinou,
+      bool_or(ativo) OVER (PARTITION BY pessoa) AS ativo
+    FROM contas
+    ORDER BY pessoa, "createdAt", "id"
+  ),
+  base AS (
+    SELECT * FROM pessoas
+    ${dias ? Prisma.sql`WHERE "createdAt" >= NOW() - make_interval(days => ${dias}::int)` : Prisma.empty}
   )
 `;
 

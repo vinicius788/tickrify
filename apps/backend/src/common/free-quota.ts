@@ -33,9 +33,14 @@
  * BONUS DA OPINIAO (11/11/2026, feedback-bonus.ts): quem enviou a opiniao
  * ganha N analises. Regra antiga: os dois tetos sobem N. Ex-assinante: N
  * analises contadas a partir do credito. Trial: ver trial.ts.
+ *
+ * E-MAIL REPETIDO (23/11/2026, `isRepeatEmailAccount` em trial.ts): conta nova
+ * de um e-mail que ja usou o produto em outra conta tem cota ZERO (sem trial,
+ * sem regra antiga, sem bonus). Vem antes de tudo; assinar continua liberado
+ * porque todo chamador confere o acesso pago antes.
  */
 import { readFeedbackBonus } from './feedback-bonus';
-import { TRIAL_TOTAL_ANALYSES, computeTrialState, readTrial, type TrialState } from './trial';
+import { TRIAL_TOTAL_ANALYSES, computeTrialState, isRepeatEmailAccount, readTrial, type TrialState } from './trial';
 
 export const FREE_SIGNAL_LIMIT = 3;
 export const FREE_TOTAL_LIMIT = 10;
@@ -92,6 +97,8 @@ export type FreeQuota = {
    * diario e marcar resultado ficam para quem assina de novo.
    */
   formerSubscriber: boolean;
+  /** Conta repetida do mesmo e-mail (normalizado): cota zero. */
+  repeatEmail: boolean;
 };
 
 /**
@@ -100,6 +107,20 @@ export type FreeQuota = {
  * que usa uma conexao so.
  */
 export async function getFreeQuota(prisma: FreeQuotaCounter, userId: string): Promise<FreeQuota> {
+  if (prisma.$queryRawUnsafe && (await isRepeatEmailAccount({ $queryRawUnsafe: prisma.$queryRawUnsafe.bind(prisma) }, userId))) {
+    return {
+      signalsUsed: 0,
+      signalsLimit: 0,
+      totalUsed: 0,
+      totalLimit: 0,
+      remaining: 0,
+      exhausted: true,
+      settledExhausted: true,
+      trial: null,
+      formerSubscriber: await hadEndedSubscription(prisma, userId),
+      repeatEmail: true,
+    };
+  }
   const trial = await getTrialQuota(prisma, userId);
   if (trial) return trial;
 
@@ -147,6 +168,7 @@ export async function getFreeQuota(prisma: FreeQuotaCounter, userId: string): Pr
       settledExhausted: bonusDone >= limit,
       trial: null,
       formerSubscriber,
+      repeatEmail: false,
     };
   }
 
@@ -165,6 +187,7 @@ export async function getFreeQuota(prisma: FreeQuotaCounter, userId: string): Pr
     settledExhausted,
     trial: null,
     formerSubscriber,
+    repeatEmail: false,
   };
 }
 
@@ -241,5 +264,6 @@ async function getTrialQuota(prisma: FreeQuotaCounter, userId: string): Promise<
     settledExhausted: state.endedSettled && state.bonusSettledRemaining <= 0,
     trial: state,
     formerSubscriber: false,
+    repeatEmail: false,
   };
 }

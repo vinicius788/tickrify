@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { loadAnalysisDetail, loadHomeReport, loadUserDetail, searchAnalyses, searchUsers } from './admin-dashboard';
 import { loadEngineReport } from './engine-report';
+import { USER_EMAIL_NORMALIZED_SQL } from '../../common/trial';
 
 // Opt-in explicito, como o setup-alerts.pg.spec.ts. Nunca usa o DATABASE_URL de ninguem.
 const integration = process.env.TICKRIFY_PG_INTEGRATION === '1' ? describe : describe.skip;
@@ -55,6 +56,7 @@ integration('PostgreSQL descartavel: relatorios do /admin', () => {
     }
     // Colunas e tabelas que o app cria no boot (fora do Prisma), so as que os relatorios leem.
     await exec('ALTER TABLE tickrify."Analysis" ADD COLUMN "groundingStats" JSONB');
+    for (const sql of USER_EMAIL_NORMALIZED_SQL) await exec(sql);
     await exec(`CREATE TABLE tickrify."UserTrial" ("userId" TEXT PRIMARY KEY, "status" TEXT NOT NULL, "startedAt" TIMESTAMP(3) NOT NULL, "endedAt" TIMESTAMP(3), "endReason" TEXT, "source" TEXT NOT NULL DEFAULT 'signup')`);
     await exec(`CREATE TABLE tickrify."TrackedSetup" ("id" TEXT PRIMARY KEY, "userId" TEXT NOT NULL, "symbol" TEXT, "timeframe" TEXT, "status" TEXT NOT NULL, "lastAnalysisAt" TIMESTAMP(3) NOT NULL)`);
     await exec(`CREATE TABLE tickrify."SetupAlert" ("id" TEXT PRIMARY KEY, "userId" TEXT NOT NULL, "setupId" TEXT, "symbol" TEXT NOT NULL, "level" DOUBLE PRECISION NOT NULL, "label" TEXT NOT NULL, "status" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL, "triggeredAt" TIMESTAMP(3), "emailedAt" TIMESTAMP(3), "armCheck" JSONB)`);
@@ -68,6 +70,8 @@ integration('PostgreSQL descartavel: relatorios do /admin', () => {
     await user('u_bob', 'bob@example.com', 'user', new Date(NOW.getTime() - 3 * 24 * H));
     await user('u_adm', 'dono@example.com', 'admin', new Date(NOW.getTime() - 30 * 24 * H));
     await user('u_old', 'old@example.com', 'user', new Date(NOW.getTime() - 20 * 24 * H));
+    // Mesma pessoa que a Ana (e-mail normalizado): nao conta como cadastro novo.
+    await user('u_ana2', ' Ana+2@Example.com', 'user', new Date(NOW.getTime() - 1 * H));
     // Assinantes: Ana (real), dono (manual, admin) e Bob cancelado nao contam.
     const sub = (id: string, userId: string, stripeId: string, status: string) =>
       exec(`INSERT INTO tickrify."Subscription" ("id","userId","stripeId","status","createdAt","updatedAt") VALUES ($1,$2,$3,$4,NOW(),NOW())`, id, userId, stripeId, status);
@@ -108,7 +112,7 @@ integration('PostgreSQL descartavel: relatorios do /admin', () => {
     expect(home.subscribers).toBe(1);
     expect(home.activeTrials).toBe(1);
     expect(home.activeAlerts).toBe(1);
-    expect(home.today.signups).toBe(1);
+    expect(home.today.signups).toBe(1); // Ana e u_ana2 sao a mesma pessoa
     expect(home.week.signups).toBe(2);
     expect(home.today.analysis).toMatchObject({
       analyses: 3, failed: 1, byAction: { buy_pullback: 1, wait: 1 }, agreement: { '3/3': 1, '2/3': 1 }, strongRead: 1, readerFailures: 2, readersSeen: 5,

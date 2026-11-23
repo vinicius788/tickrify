@@ -281,7 +281,8 @@ Detalhe completo de cada item: `_local/CLAUDE-historico-ate-2026-11-23.md`.
 - **Estado da operacao** (`TradeState`) e modo gerenciamento (chamada separada).
 - **Chat com o fundador** (`modules/support`, feito em casa, polling).
 - **Trial** em `common/trial.ts`; anti-abuso (e-mail descartavel, 3 por IP/24h,
-  teto US$ 10/dia).
+  teto US$ 10/dia); e-mail repetido (normalizado) nao ganha trial nem cota gratis
+  (`isRepeatEmailAccount`, coluna gerada `User.emailNormalized`, 23/11).
 - **Configuracoes** com assinatura e portal; tema claro so na area logada (tokens
   em `styles/trading-tokens.css`).
 - **/admin** (PR #67): Inicio, Inspetor de analise, Usuario, Motor, Origem,

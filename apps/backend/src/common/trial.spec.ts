@@ -1,4 +1,4 @@
-import { TRIAL_RULES, computeTrialState, nextTrialAvailability, isDisposableEmail, localDate, validTimezone, type TrialRow } from './trial';
+import { TRIAL_RULES, computeTrialState, nextTrialAvailability, isDisposableEmail, isRepeatEmailAccount, localDate, normalizeEmail, validTimezone, type TrialRow } from './trial';
 import { getFreeQuota } from './free-quota';
 import { runLifecycleSweep, renderLifecycleEmail, type TrialEmailInput } from '../modules/mail/lifecycle-email';
 
@@ -109,6 +109,56 @@ describe('regras do trial de 3 dias', () => {
     expect(isDisposableEmail('a@inbox.mailinator.com')).toBe(true);
     expect(isDisposableEmail('trader@gmail.com')).toBe(false);
     expect(isDisposableEmail(null)).toBe(false);
+  });
+});
+
+describe('e-mail repetido', () => {
+  it('normaliza: minusculo, sem espacos, sem +tag; no Gmail sem pontos e googlemail = gmail', () => {
+    expect(normalizeEmail(' Allaoui.Yahya232+x@Gmail.com ')).toBe('allaouiyahya232@gmail.com');
+    expect(normalizeEmail('a.l.l.a.o.u.i.yahya232@googlemail.com')).toBe('allaouiyahya232@gmail.com');
+    expect(normalizeEmail('john.doe+news@outlook.com')).toBe('john.doe@outlook.com');
+    expect(normalizeEmail('JOHN.DOE@Outlook.com')).toBe('john.doe@outlook.com');
+  });
+
+  it('numeros ficam: sao enderecos diferentes de verdade', () => {
+    expect(normalizeEmail('allaouiyahya190@gmail.com')).not.toBe(normalizeEmail('allaouiyahya232@gmail.com'));
+    expect(normalizeEmail('trader1@yahoo.com')).toBe('trader1@yahoo.com');
+  });
+
+  it('sem @ ou com parte vazia: null', () => {
+    expect(normalizeEmail(null)).toBeNull();
+    expect(normalizeEmail('semarroba')).toBeNull();
+    expect(normalizeEmail('@gmail.com')).toBeNull();
+    expect(normalizeEmail('+tag@gmail.com')).toBeNull();
+    expect(normalizeEmail('abc@')).toBeNull();
+  });
+
+  const repeatDb = (repeat: boolean) => ({
+    user: { findUnique: async () => ({ freeQuotaResetAt: null }) },
+    analysis: { count: async () => 0, findMany: async () => [] },
+    $queryRawUnsafe: async (sql: string) =>
+      sql.includes('information_schema')
+        ? [{ column: true, trial: true, feedback: true }]
+        : sql.includes('"repeat"')
+          ? [{ repeat }]
+          : sql.includes('to_regclass')
+            ? [{ ok: true }]
+            : [],
+  });
+
+  it('conta repetida: cota zero, sem trial e sem bonus', async () => {
+    const q = await getFreeQuota(repeatDb(true) as any, 'u2');
+    expect(q).toMatchObject({ repeatEmail: true, exhausted: true, settledExhausted: true, remaining: 0, signalsLimit: 0, totalLimit: 0, trial: null });
+  });
+
+  it('conta nao repetida segue a regra de sempre', async () => {
+    const q = await getFreeQuota(repeatDb(false) as any, 'u1');
+    expect(q).toMatchObject({ repeatEmail: false, exhausted: false, signalsLimit: 3 });
+  });
+
+  it('coluna ausente ou erro no banco nunca marca repetida', async () => {
+    expect(await isRepeatEmailAccount({ $queryRawUnsafe: async () => [{ column: false }] } as any, 'u1')).toBe(false);
+    expect(await isRepeatEmailAccount({ $queryRawUnsafe: async () => { throw new Error('x'); } } as any, 'u1')).toBe(false);
   });
 });
 
